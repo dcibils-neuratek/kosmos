@@ -91,6 +91,8 @@
 #define REG_TARC1       0x3940u
 #define REG_RFCTL       0x5008u
 #define REG_FWSM        0x5B54u
+#define REG_PBA         0x1000u     /* packet buffer: receive's share, in KB */
+#define REG_WUC         0x5800u     /* wake-up control */
 
 #define CTRL_GIO_MASTER_DISABLE 0x00000004u
 #define CTRL_MEHE               0x00080000u
@@ -114,6 +116,15 @@
 #define KABGTXD_BGSQLBIAS       0x00050000u
 #define EXTCNF_CTRL_SWFLAG      0x00000020u
 #define RAH_AV                  0x80000000u
+#define TCTL_CT_MASK            0x00000FF0u
+#define TCTL_COLD_MASK          0x003FF000u
+#define PBA_SPT_KB              26u     /* e1000_pch_spt_info's `.pba` */
+
+/* In configuration space (`SYS_DEV_CONFIG`): `e1000.h`'s. */
+#define PCI_COMMAND_WORD        0x04u
+#define PCI_COMMAND_MASTER      0x0004u
+#define PCICFG_DESC_RING_STATUS 0xE4u
+#define FLUSH_DESC_REQUIRED     0x0100u
 
 #define CTRL_SLU        (1u << 6)   /* set link up */
 #define CTRL_ASDE       (1u << 5)   /* auto-speed detection */
@@ -195,6 +206,7 @@ static struct {
     uint64_t      hz;               /* the counter's, for "a second" */
     unsigned long tick_hz;          /* the scheduler's, for a sleep */
     bool          pch;              /* an I219, brought up as e1000e does */
+    uint32_t      tctl_firmware;    /* TCTL as the firmware left it */
     bool          reset_first;      /* `opt/kosmos/e1000path=pch-reset` */
 
     struct eth_ring *ring;          /* the stack's, when it has attached */
@@ -371,9 +383,22 @@ static void rings_start(void)
      * exactly that with TCTL.EN clear. It is the one way to show, under
      * QEMU, that a card which never sends cannot stop the stack.
      */
-    reg_write(REG_TCTL, (card.tx_off ? 0u : TCTL_EN) | TCTL_PSP
-                        | (card.pch ? TCTL_RTLC | TCTL_CT_E1000E | TCTL_COLD_E1000E
-                                    : TCTL_CT | TCTL_COLD));
+    if (card.pch) {
+        /*
+         * **Read, changed and written, as `e1000_configure_tx` does it** -
+         * the collision fields and the enable replaced, and every other bit
+         * kept: on the M700 that is multiple requests, which a fixed value
+         * here cleared (`testing.md` 18.347).
+         */
+        uint32_t tctl = reg_read(REG_TCTL)
+                        & ~(TCTL_EN | TCTL_CT_MASK | TCTL_COLD_MASK);
+
+        reg_write(REG_TCTL, tctl | (card.tx_off ? 0u : TCTL_EN) | TCTL_PSP
+                            | TCTL_RTLC | TCTL_CT_E1000E | TCTL_COLD_E1000E);
+    } else {
+        reg_write(REG_TCTL, (card.tx_off ? 0u : TCTL_EN) | TCTL_PSP
+                            | TCTL_CT | TCTL_COLD);
+    }
 
     /*
      * **Frames addressed to this card and broadcast, and nothing else.**
@@ -435,6 +460,8 @@ static void say_transmitter(struct say_line *line, const char *what)
     say_hex(line, reg_read(REG_TARC0), 8);
     say_text(line, " STATUS ");
     say_hex(line, reg_read(REG_STATUS), 8);
+    say_text(line, " RDH ");
+    say_dec(line, reg_read(REG_RDH));
     say_send(console, line);
 }
 
@@ -445,6 +472,8 @@ static void say_transmitter(struct say_line *line, const char *what)
  */
 static void say_firmware(struct say_line *line)
 {
+    card.tctl_firmware = reg_read(REG_TCTL);
+
     say_begin(line);
     say_text(line, "e1000: as the firmware left it: CTRL ");
     say_hex(line, reg_read(REG_CTRL), 8);
@@ -475,6 +504,48 @@ static void say_firmware(struct say_line *line)
     say_dec(line, reg_read(REG_RDT));
     say_text(line, " TARC0 ");
     say_hex(line, reg_read(REG_TARC0), 8);
+    say_text(line, " PBA ");
+    say_hex(line, reg_read(REG_PBA), 8);
+    say_text(line, " WUC ");
+    say_hex(line, reg_read(REG_WUC), 8);
+    say_send(console, line);
+}
+
+/*
+ * **What the card is on the bus** (`testing.md` 18.347): its command
+ * register, which says whether it may fetch from memory at all, and - for
+ * an I219 - the descriptor-ring status Linux's `e1000e` reads before a
+ * reset, whose bit 8 says the rings must be emptied first or the chip
+ * "enter[s] a unit hang state which can only be released by PCI reset".
+ */
+static void say_pci(struct say_line *line)
+{
+    long command = kosmos_dev_config(DEV_INTEL_ETHERNET, 0, PCI_COMMAND_WORD);
+    long rings = kosmos_dev_config(DEV_INTEL_ETHERNET, 0, PCICFG_DESC_RING_STATUS);
+
+    say_begin(line);
+    say_text(line, "e1000: on PCI: ");
+
+    if (command < 0) {
+        say_text(line, "its configuration could not be read");
+        say_send(console, line);
+        return;
+    }
+
+    say_text(line, "command ");
+    say_hex(line, (unsigned long)command & 0xFFFFu, 4);
+    say_text(line, ((unsigned long)command & PCI_COMMAND_MASTER) != 0
+                   ? ", bus mastering on" : ", bus mastering OFF");
+    say_text(line, "; status ");
+    say_hex(line, ((unsigned long)command >> 16) & 0xFFFFu, 4);
+
+    if (card.pch && rings >= 0) {
+        say_text(line, "; descriptor rings ");
+        say_hex(line, (unsigned long)rings & 0xFFFFu, 4);
+        say_text(line, ((unsigned long)rings & FLUSH_DESC_REQUIRED) != 0
+                       ? ", a flush asked for" : ", no flush asked for");
+    }
+
     say_send(console, line);
 }
 
@@ -483,11 +554,20 @@ static void say_firmware(struct say_line *line)
  * `e1000_reset_hw_ich8lan`'s first steps, "to allow any pending
  * transactions to complete".
  */
-static void pch_quiet(void)
+static void pch_quiet(bool reset_follows)
 {
     reg_write(REG_IMC, 0xFFFFFFFFu);
     reg_write(REG_RCTL, 0);
-    reg_write(REG_TCTL, TCTL_PSP);
+
+    /*
+     * `e1000e` writes PSP alone, because a reset follows and puts TCTL back
+     * to what the chip starts with - multiple requests among it (MULR, bit
+     * 28, and bit 29 with it on the M700's). With no reset, that write
+     * would be the last word, so the firmware's bits are kept and only the
+     * enable taken away (`testing.md` 18.347).
+     */
+    reg_write(REG_TCTL, reset_follows ? TCTL_PSP
+                                      : (card.tctl_firmware & ~TCTL_EN));
     (void)reg_read(REG_STATUS);
     sleep_ms(10);
 }
@@ -528,7 +608,11 @@ static void pch_reset(struct say_line *line)
         }
     }
 
-    pch_quiet();
+    pch_quiet(true);
+
+    /* `e1000e_reset`'s first line: the packet buffer's split, which "require[s] a
+     * configuration cycle of the hardware" - the reset below. */
+    reg_write(REG_PBA, PBA_SPT_KB);
 
     /*
      * The software flag: free first (PHY_CFG_TIMEOUT, 100 ms), then taken
@@ -642,12 +726,14 @@ static void pch_start(void)
         reg_write(REG_MTA + i * 4u, 0);
     }
 
+    /* `e1000e_reset`'s order: "let the f/w know that the h/w is now under
+     * the control of the driver", the wake-up control cleared, and then
+     * the rest of the bring-up. */
+    reg_write(REG_CTRL_EXT, reg_read(REG_CTRL_EXT) | CTRL_EXT_DRV_LOAD);
+    reg_write(REG_WUC, 0);
+
     reg_write(REG_CTRL, reg_read(REG_CTRL) | CTRL_SLU);
     rings_start();
-
-    /* "let the f/w know that the h/w is now under the control of the
-     * driver" - set when the interface is up, on a part with AMT. */
-    reg_write(REG_CTRL_EXT, reg_read(REG_CTRL_EXT) | CTRL_EXT_DRV_LOAD);
 }
 
 /*
@@ -678,7 +764,7 @@ static void pch_bring_up(struct say_line *line)
                        "first as the firmware left it, without a reset");
         say_send(console, line);
 
-        pch_quiet();
+        pch_quiet(false);
         pch_start();
 
         if (self_test(&took)) {
@@ -773,6 +859,8 @@ static bool bring_up(struct say_line *line)
         card.pch = true;
         card.reset_first = true;
     }
+
+    say_pci(line);
 
     region = kosmos_mem_create_flags(REGION_PAGES, MEM_CONTIGUOUS);
     mapped = region < 0 ? region : kosmos_mem_map(region);
@@ -972,6 +1060,13 @@ static void tx_watch(struct say_line *line)
     say_hex(line, reg_read(REG_CTRL_EXT), 8);
     say_text(line, " STATUS ");
     say_hex(line, reg_read(REG_STATUS), 8);
+
+    /* And whether it receives: frames written into memory are the card
+     * using the bus, which a transmitter that reads nothing does not say. */
+    say_text(line, " RDH ");
+    say_dec(line, reg_read(REG_RDH));
+    say_text(line, " got ");
+    say_dec(line, card.received);
     say_send(console, line);
 }
 

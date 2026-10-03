@@ -2043,6 +2043,30 @@ void syscall_dispatch(struct syscall_frame *sc)
         break;
     }
 
+    case SYS_DEV_CONFIG: {
+        /*
+         * One word of a found device's configuration space, read only
+         * (`syscall.h`). Device authority, as finding it is; and the board
+         * reads only a device it has found and kept, so this is never a
+         * way to look at hardware nobody was given.
+         */
+        uint32_t word = 0;
+
+        if (!p->owns_devices) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        if (!hal_device_config((unsigned)sc->arg[0], (unsigned)sc->arg[1],
+                               (unsigned)sc->arg[2], &word)) {
+            result = SYS_ERR_NO_DEVICE;
+            break;
+        }
+
+        result = (long)word;
+        break;
+    }
+
     case SYS_IRQ_CLAIM: {
         /*
          * A line, claimed, and handed back as a capability.

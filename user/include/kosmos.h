@@ -255,6 +255,14 @@ static inline long kosmos_dev_find(unsigned long kind, unsigned long index,
     return sys3(SYS_DEV_FIND, (long)kind, (long)index, (long)(uintptr_t)out);
 }
 
+/* One word of a found device's PCI configuration space, read only: the word,
+ * or an error (`SYS_DEV_CONFIG`). */
+static inline long kosmos_dev_config(unsigned long kind, unsigned long index,
+                                     unsigned long offset)
+{
+    return sys3(SYS_DEV_CONFIG, (long)kind, (long)index, (long)offset);
+}
+
 /* The registers, mapped uncached. RAM is refused. */
 static inline long kosmos_dev_map(unsigned long phys, unsigned long pages)
 {

@@ -368,3 +368,33 @@ emulator's transmitter held off, both attempts are reported as failed - and
 a version that pretends the test passed is caught by the test. What the
 emulator cannot say is whether this is what the I219 needed. (`testing.md`
 18.346)
+
+## 2 October, late - the M700 boots from the Mac, over the network
+
+**In short:** every try on the M700 used to mean building a USB stick,
+writing it, carrying it over and booting it. Now the M700 can load Kosmos
+straight from the Mac over the network cable. A new build is a command on
+the Mac and a restart of the M700. The stick stays plugged in only for the
+person's files.
+
+**Why.** Diego, after three sticks spent chasing the network card: "is
+there any way we can simulate the e1000 driver in qemu so i dont have to
+build sticks all the time?" The emulator has no model of that card, so its
+fault can't be reproduced there. But the M700's own firmware - the
+software that runs before any operating system - already knows how to use
+that card, and knows how to start an operating system from the network.
+
+**How it works.** At power-on, the M700 asks the network for something to
+boot. A small server on the Mac (dnsmasq, set to answer only that question
+and to leave everything else to the router) replies with Kosmos's loader.
+The loader then fetches the rest of Kosmos from the same server, checks it
+page by page against what the build wrote, and starts it. The person's
+files stay on the stick, which is never rewritten.
+
+**Measured** under the emulator, set up the same way - network first, the
+files' stick on USB: 12 seconds from power-on to a working Kosmos, the
+33 MB system fetched and checked. Two surprises on the way: the emulator's
+firmware would not start its network at all until it was given a source
+of random numbers, which modern firmware insists on; and a test of the
+loader made to lose track of its server proves the test notices.
+(`testing.md` 18.348)

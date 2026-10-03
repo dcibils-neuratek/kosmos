@@ -254,3 +254,44 @@ bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out)
 
     return found;
 }
+
+/*
+ * **One word of a found device's configuration space** (`SYS_DEV_CONFIG`,
+ * `testing.md` 18.347). Only of a device found and kept above - so only
+ * where a driver already has it - and only read: the I219's
+ * descriptor-ring status, which Linux's `e1000e` reads before it resets one,
+ * and its command register, which says whether the card may use the bus.
+ * The legacy mechanism's 256 bytes, a word at a time.
+ */
+bool hal_device_config(unsigned kind, unsigned index, unsigned offset,
+                       uint32_t *out)
+{
+    unsigned long flags;
+    unsigned where = 0;
+    bool known = false;
+
+    if (out == NULL || offset > 252u || (offset & 3u) != 0) {
+        return false;
+    }
+
+    flags = spin_lock(&devices_lock);
+
+    if (kind == HAL_DEV_INTEL_ETHERNET && index < ETHERNET_KEPT
+        && ether_known[index]) {
+        where = ether_kept[index].where;
+        known = true;
+    } else if (kind == HAL_DEV_XHCI && index < XHCI_KEPT && xhci_known[index]) {
+        where = xhci_kept[index].where;
+        known = true;
+    }
+
+    spin_unlock(&devices_lock, flags);
+
+    if (!known) {
+        return false;
+    }
+
+    *out = pci_config_read((uint8_t)(where >> 8), (uint8_t)((where >> 3) & 0x1Fu),
+                           (uint8_t)(where & 0x7u), (uint8_t)offset);
+    return true;
+}

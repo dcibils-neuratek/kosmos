@@ -336,6 +336,14 @@ struct hal_device {
 bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out);
 
 /*
+ * One word of a found device's configuration space (`SYS_DEV_CONFIG`): only
+ * of a device `hal_device_find` has found and kept, only to read, and false
+ * where the board has no such space.
+ */
+bool hal_device_config(unsigned kind, unsigned index, unsigned offset,
+                       uint32_t *out);
+
+/*
  * **What the firmware says this machine is.**
  *
  * The manufacturer, the product and the version as the firmware wrote them,

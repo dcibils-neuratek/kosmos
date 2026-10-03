@@ -738,10 +738,15 @@ void kmain(void)
             /* And whether the stick's bytes were the build's, from a loader
              * that knows - one that does not leaves no word, and no clause. */
             {
-                char build[8];
+                char build[8], from[8];
+                bool network = hal_boot_option("kosmos-boot/from", from,
+                                               sizeof(from))
+                               && from[0] == 'n';
 
                 if (hal_boot_option("kosmos-boot/build", build, sizeof(build))) {
-                    kputs("; the stick against the build: ");
+                    kputs(network ? "; fetched over the network, against the "
+                                    "build: "
+                                  : "; the stick against the build: ");
                     kputs(build);
                 }
             }

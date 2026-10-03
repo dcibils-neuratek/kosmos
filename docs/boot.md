@@ -396,6 +396,26 @@ that stick**: if it boots, the stops were the writes, which `mkusb.sh` now
 catches; if it stops with its bytes checked, it is that layout, and a stop
 that can be repeated is one that can be found.
 
+### Over the network, from the Mac (2 October 2026)
+
+**The same loader, fetched by the firmware's PXE**, fetches the kernel
+beside it by TFTP rather than reading the stick - `source_read` in
+`loader.c`, `testing.md` 18.348 - and holds it to the build's sums just
+the same. `/Home` stays on the stick in the machine, written once: the
+command line served is the one that stick carries.
+
+On the Mac, each time:
+
+    make netboot                 # build, and lay out build/netboot
+    bash tools/netboot-serve.sh  # in a Terminal of its own; asks for the password
+
+On the machine: the stick in, power on, F12, the network entry ("UEFI
+PXEv4" or "IPv4"). The firmware's own network boot has to be on in its
+setup for that entry to exist. Each new build is `make netboot` again,
+and the next reboot takes it; the server can stay running. The loader's
+lines say "this loader came over the network" and the kernel's "fetched
+over the network, against the build: same".
+
 ---
 
 ## 3b. The screen, in the largest mode the firmware has

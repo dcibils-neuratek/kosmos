@@ -4582,6 +4582,15 @@ def ethernet_pch(image, check):
               and "e1000: as the firmware left it: CTRL " in out,
               "the card did not go the I219's way, or did not say what the "
               "firmware left:\n    " + shown(out))
+        # What the card is on the bus, from `SYS_DEV_CONFIG` (18.347): read
+        # through the kernel, since a driver cannot reach configuration
+        # space itself, and bus mastering on, which `pci_enable` sets.
+        check(re.search(r"e1000: on PCI: command [0-9a-f]{4}, bus mastering "
+                        r"on; status [0-9a-f]{4}; descriptor rings [0-9a-f]{4}",
+                        out) is not None,
+              "the driver did not say what the card is on PCI - command, "
+              "status and the descriptor-ring status - through SYS_DEV_CONFIG:"
+              "\n    " + shown(out))
         check(re.search(r"e1000: a frame to itself went out in \d+ us - it "
                         r"sends", out) is not None
               and "its MAC reset" not in out,

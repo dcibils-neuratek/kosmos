@@ -3703,6 +3703,22 @@ USB_TELNETD ?= 23
 # September) and the folder is his to leave as it is. `tools/installed.py`
 # is the list, for this and for `install-apps`.
 #
+#
+# **The M700 booted over the network** (`roadmap.md`; Diego, 2 October: "lets
+# try network boot"). `netboot` lays out what a boot server hands it - the
+# loader, the kernel, the kernel's sums and the command line of the stick in
+# the machine, whose `/Home` stays there (`STICK=`, the newest development
+# stick by default) - and `netboot-serve` starts `dnsmasq` as a proxy to
+# serve it, which asks for Diego's password (`tools/netboot-serve.sh`).
+#
+.PHONY: netboot netboot-serve
+
+netboot: x86-build $(EFI_LOADER)
+	python3 tools/netboot.py $(X86_BUILD)/kosmos.bin --loader $(EFI_LOADER) $(if $(STICK),--stick $(STICK)) --out build/netboot
+
+netboot-serve:
+	bash tools/netboot-serve.sh build/netboot
+
 USB_HOME      ?= partition
 HOME_DIR      ?= $(HOME)/Kosmos/home
 STICK_HOME_MB ?= 512
@@ -4071,6 +4087,7 @@ gate-images: $(TARGET) $(HOSTDIR)/lua
 	    $(HOSTDIR)/lua tools/kfs.lua create build/x86_64/uefi-disk.img 4 >/dev/null && \
 	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi.img --loader $(EFI_LOADER) --disk build/x86_64/uefi-disk.img >/dev/null && \
 	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi-home.img --loader $(EFI_LOADER) --home build/x86_64/uefi-disk.img >/dev/null && \
+	    python3 tools/netboot.py build/x86_64/kosmos.bin --loader $(EFI_LOADER) --stick build/x86_64/kosmos-uefi-home.img --out build/x86_64/netboot-test >/dev/null && \
 	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi-video.img --loader $(EFI_LOADER) video=1024x768 >/dev/null && \
 	    head -c 65536 /dev/zero > build/x86_64/uefi-zeros.bin && \
 	    python3 tools/mkusb_image.py build/x86_64/uefi-zeros.bin build/x86_64/kosmos-refusal.img --loader $(EFI_LOADER) >/dev/null; \

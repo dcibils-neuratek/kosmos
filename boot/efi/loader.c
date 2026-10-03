@@ -311,6 +311,9 @@ static const struct efi_guid FILE_SYSTEM_GUID =
     { 0x964e5b22, 0x6459, 0x11d2, { 0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b } };
 static const struct efi_guid FILE_INFO_GUID =
     { 0x09576e92, 0x6d3f, 0x11d2, { 0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b } };
+/* EFI_PXE_BASE_CODE_PROTOCOL_GUID, EDK2's `PxeBaseCode.h`. */
+static const struct efi_guid PXE_GUID =
+    { 0x03c4e603, 0xac28, 0x11d3, { 0x9a, 0x2d, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d } };
 static const struct efi_guid GOP_GUID =
     { 0x9042a9de, 0x23dc, 0x4a38, { 0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a } };
 static const struct efi_guid ACPI_20_GUID =
@@ -728,6 +731,200 @@ static efi_status read_all(struct efi_file *file, uint8_t *into, uint64_t size)
     return EFI_SUCCESS;
 }
 
+/*------------------------------------------------------------------------
+ * **The network, when the firmware booted this loader from it**
+ * (`roadmap.md`, the M700 booted over the network).
+ *
+ * The firmware's own PXE Base Code protocol, which it used to fetch this
+ * file: the same TFTP server holds the kernel, its sums and its command
+ * line beside it. Laid out from EDK2's `MdePkg/Include/Protocol/
+ * PxeBaseCode.h` and `Uefi/UefiBaseType.h` (edk2-stable202408), and every
+ * offset this reads is held to that header below, so a misreading is a
+ * build that will not compile rather than a boot that reads the wrong
+ * bytes. Only what is used is named.
+ *----------------------------------------------------------------------*/
+
+/* EFI_IP_ADDRESS: sixteen bytes, IPv4 in the first four. */
+struct efi_ip {
+    uint32_t addr[4];
+};
+
+#define PXE_PACKET_BYTES        1472u   /* EFI_PXE_BASE_CODE_PACKET */
+#define DHCPV4_SIADDR           20u     /* BootpSiAddr within a DHCPv4 packet */
+
+struct efi_pxe_mode {
+    uint8_t started, ipv6_available, ipv6_supported, using_ipv6;
+    uint8_t bis_supported, bis_detected, auto_arp, send_guid;
+    uint8_t dhcp_discover_valid, dhcp_ack_received, proxy_offer_received;
+    uint8_t pxe_discover_valid, pxe_reply_received, pxe_bis_reply_received;
+    uint8_t icmp_error_received, tftp_error_received, make_callbacks;
+    uint8_t ttl, tos;
+    struct efi_ip station_ip, subnet_mask;
+    uint8_t dhcp_discover[PXE_PACKET_BYTES];
+    uint8_t dhcp_ack[PXE_PACKET_BYTES];
+    uint8_t proxy_offer[PXE_PACKET_BYTES];
+    uint8_t pxe_discover[PXE_PACKET_BYTES];
+    uint8_t pxe_reply[PXE_PACKET_BYTES];
+    /* PxeBisReply, the filter, the caches and the errors follow, unread. */
+};
+
+/* EFI_PXE_BASE_CODE_TFTP_OPCODE. */
+#define TFTP_GET_FILE_SIZE      1u
+#define TFTP_READ_FILE          2u
+
+struct efi_pxe {
+    uint64_t revision;
+    void *start, *stop, *dhcp, *discover;
+    efi_status (EFIAPI *mtftp)(struct efi_pxe *self, uint32_t operation,
+                               void *buffer, uint8_t overwrite,
+                               uint64_t *buffer_size, uint64_t *block_size,
+                               struct efi_ip *server, const uint8_t *filename,
+                               void *info, uint8_t dont_use_buffer);
+    void *udp_write, *udp_read, *set_ip_filter, *arp, *set_parameters;
+    void *set_station_ip, *set_packets;
+    struct efi_pxe_mode *mode;
+};
+
+_Static_assert(__builtin_offsetof(struct efi_pxe_mode, station_ip) == 20,
+               "EFI_PXE_BASE_CODE_MODE.StationIp follows 19 bytes, aligned to 4");
+_Static_assert(__builtin_offsetof(struct efi_pxe_mode, dhcp_discover) == 52,
+               "EFI_PXE_BASE_CODE_MODE.DhcpDiscover");
+_Static_assert(__builtin_offsetof(struct efi_pxe_mode, dhcp_ack) == 1524,
+               "EFI_PXE_BASE_CODE_MODE.DhcpAck");
+_Static_assert(__builtin_offsetof(struct efi_pxe_mode, proxy_offer) == 2996,
+               "EFI_PXE_BASE_CODE_MODE.ProxyOffer");
+_Static_assert(__builtin_offsetof(struct efi_pxe_mode, pxe_reply) == 5940,
+               "EFI_PXE_BASE_CODE_MODE.PxeReply");
+_Static_assert(__builtin_offsetof(struct efi_pxe, mtftp) == 40,
+               "EFI_PXE_BASE_CODE_PROTOCOL.Mtftp, fifth after Revision");
+_Static_assert(__builtin_offsetof(struct efi_pxe, mode) == 104,
+               "EFI_PXE_BASE_CODE_PROTOCOL.Mode, after twelve calls");
+
+/*
+ * **Where this loader's files are**: the stick's filesystem, or the TFTP
+ * server the firmware fetched this loader from. One of the two is set.
+ */
+struct source {
+    struct efi_file *root;
+    struct efi_pxe *pxe;
+    struct efi_ip server;
+};
+
+/* A TFTP block that fits an Ethernet frame whole: 1500 less the IP, UDP
+ * and TFTP headers. The server may say less, and the firmware takes that. */
+#define TFTP_BLOCK      1468u
+
+/*
+ * A file's size, from wherever the files are - over the network, TFTP's
+ * `tsize` option, which dnsmasq and QEMU's own server both answer.
+ */
+static efi_status source_size(const struct source *src, const char16 *stick,
+                              const char *net, uint64_t *size)
+{
+    struct efi_file *file;
+    efi_status status;
+
+    if (src->root != NULL) {
+        status = open_file(src->root, stick, &file, size);
+
+        if (status == EFI_SUCCESS) {
+            file->close(file);
+        }
+
+        return status;
+    }
+
+    {
+        struct efi_ip server = src->server;
+        uint64_t block = TFTP_BLOCK;
+
+        *size = 0;
+        return src->pxe->mtftp(src->pxe, TFTP_GET_FILE_SIZE, NULL, 0, size,
+                               &block, &server, (const uint8_t *)net, NULL, 0);
+    }
+}
+
+/*
+ * A whole file into `into`, at most `max` bytes, and how many it was. From
+ * the stick in pieces, as `read_all` reads; over the network in one TFTP
+ * transfer, which the firmware fills and says the length of.
+ */
+static efi_status source_read(const struct source *src, const char16 *stick,
+                              const char *net, uint8_t *into, uint64_t max,
+                              uint64_t *size)
+{
+    struct efi_file *file;
+    efi_status status;
+
+    if (src->root != NULL) {
+        status = open_file(src->root, stick, &file, size);
+
+        if (status != EFI_SUCCESS) {
+            return status;
+        }
+
+        if (*size > max) {
+            *size = max;
+        }
+
+        status = read_all(file, into, *size);
+        file->close(file);
+        return status;
+    }
+
+    {
+        struct efi_ip server = src->server;
+        uint64_t block = TFTP_BLOCK;
+
+        *size = max;
+        return src->pxe->mtftp(src->pxe, TFTP_READ_FILE, into, 0, size, &block,
+                               &server, (const uint8_t *)net, NULL, 0);
+    }
+}
+
+/* Where to say a file came from. */
+static const char *from_where(const struct source *src)
+{
+    return src->root != NULL ? "the stick" : "the network";
+}
+
+static void add_ip(struct line *l, const struct efi_ip *ip)
+{
+    const uint8_t *b = (const uint8_t *)ip->addr;
+    unsigned i;
+
+    for (i = 0; i < 4; i++) {
+        if (i > 0) {
+            add_text(l, ".");
+        }
+
+        add_dec(l, b[i]);
+    }
+}
+
+/*
+ * **The boot server**, out of what the firmware received: a PXE server's
+ * reply if there was one, a proxy's offer - dnsmasq's, beside the router -
+ * if not, and the DHCP answer itself otherwise, as QEMU's own server gives.
+ * Its next-server field, `siaddr`, is the TFTP server.
+ */
+static bool boot_server(const struct efi_pxe_mode *mode, struct efi_ip *out)
+{
+    const uint8_t *packet = mode->pxe_reply_received ? mode->pxe_reply
+                          : mode->proxy_offer_received ? mode->proxy_offer
+                          : mode->dhcp_ack_received ? mode->dhcp_ack : NULL;
+    uint8_t *to = (uint8_t *)out->addr;
+
+    memset(out, 0, sizeof(*out));
+
+    if (packet == NULL) {
+        return false;
+    }
+
+    memcpy(to, packet + DHCPV4_SIADDR, 4);
+    return to[0] != 0 || to[1] != 0 || to[2] != 0 || to[3] != 0;
+}
+
 /*
  * **Whether what was read is what the build wrote**, against the sums
  * `mkusb_image.py` put beside the file.
@@ -741,35 +938,35 @@ static efi_status read_all(struct efi_file *file, uint8_t *into, uint64_t size)
  *
  * Answers NULL when the file may be used, and the refusal otherwise.
  */
-static const char *against_build(struct efi_file *root, const char16 *name,
-                                 const char *what, const uint8_t *data,
-                                 uint64_t size, bool *checked)
+static const char *against_build(const struct source *src, const char16 *name,
+                                 const char *net_name, const char *what,
+                                 const uint8_t *data, uint64_t size,
+                                 bool *checked)
 {
-    struct efi_file *file;
     struct sums_result r;
     struct line l;
-    uint64_t sums_size = 0;
+    uint64_t sums_size = 0, got = 0;
     void *pool = NULL;
 
     *checked = false;
 
-    if (open_file(root, name, &file, &sums_size) != EFI_SUCCESS) {
+    if (source_size(src, name, net_name, &sums_size) != EFI_SUCCESS) {
         begin(&l);
         add_text(&l, what);
-        add_text(&l, ": no sums beside it on this stick, so what was read is "
-                     "not checked against the build");
+        add_text(&l, ": no sums beside it on ");
+        add_text(&l, from_where(src));
+        add_text(&l, ", so what was read is not checked against the build");
         send(&l);
         return NULL;
     }
 
     if (sums_size > 64u * 1024 * 1024
         || boot->allocate_pool(LOADER_DATA, sums_size + 1, &pool) != EFI_SUCCESS
-        || read_all(file, pool, sums_size) != EFI_SUCCESS) {
-        file->close(file);
-        return "the build's sums on this stick could not be read";
+        || source_read(src, name, net_name, pool, sums_size, &got) != EFI_SUCCESS
+        || got != sums_size) {
+        return "the build's sums could not be read";
     }
 
-    file->close(file);
     sums_check(data, size, pool, sums_size, &r);
     begin(&l);
     add_text(&l, what);
@@ -799,7 +996,9 @@ static const char *against_build(struct efi_file *root, const char16 *name,
     case SUMS_SIZE:
         add_text(&l, " is ");
         add_dec(&l, size);
-        add_text(&l, " bytes on this stick, and the build wrote ");
+        add_text(&l, " bytes on ");
+        add_text(&l, from_where(src));
+        add_text(&l, ", and the build wrote ");
         add_dec(&l, r.built);
         send(&l);
         return "this stick does not hold the files the build wrote";
@@ -920,22 +1119,14 @@ static void digits5(char *at, uint64_t v)
  * line used to carry. Only the characters `mkusb_image.py` allows through;
  * anything else ends the line.
  */
-static unsigned read_cmdline(struct efi_file *root, char *out, unsigned max)
+static unsigned read_cmdline(const struct source *src, char *out, unsigned max)
 {
-    struct efi_file *file;
-    uint64_t size;
+    uint64_t size = 0;
     uint8_t text[200];
     unsigned n = 0, i;
 
-    if (open_file(root, u"\\boot\\kosmos.cmdline", &file, &size) != EFI_SUCCESS) {
-        return 0;
-    }
-
-    if (size > sizeof(text)) {
-        size = sizeof(text);
-    }
-
-    if (read_all(file, text, size) == EFI_SUCCESS) {
+    if (source_read(src, u"\\boot\\kosmos.cmdline", "boot/kosmos.cmdline",
+                    text, sizeof(text), &size) == EFI_SUCCESS) {
         for (i = 0; i < size && n + 1 < max; i++) {
             char c = (char)text[i];
 
@@ -949,8 +1140,6 @@ static unsigned read_cmdline(struct efi_file *root, char *out, unsigned max)
             out[n++] = c;
         }
     }
-
-    file->close(file);
 
     while (n > 0 && out[n - 1] == ' ') {
         n--;
@@ -1436,6 +1625,7 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
     struct efi_loaded_image *image;
     struct efi_file_system *volume;
     struct efi_file *root, *file;
+    struct source src;
     struct kernel k;
     struct screen screen;
     struct line l;
@@ -1497,6 +1687,9 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
     add_text(&l, ", where the firmware put it");
     send(&l);
 
+    memset(&src, 0, sizeof(src));
+    root = NULL;
+
     status = boot->handle_protocol(image->device, &FILE_SYSTEM_GUID,
                                    (void **)&volume);
 
@@ -1504,24 +1697,71 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
         status = volume->open_volume(volume, &root);
     }
 
-    if (status != EFI_SUCCESS) {
-        return refuse("the stick's partition cannot be read as a filesystem",
-                      status);
+    /*
+     * **A stick, or the network.** A loader the firmware fetched over the
+     * network sits on a device with no filesystem and the firmware's PXE
+     * protocol instead, already started, with the answer that named the
+     * boot server in it - and the kernel and the rest are beside this file
+     * on that server (`roadmap.md`, the M700 booted over the network).
+     */
+    if (status == EFI_SUCCESS) {
+        src.root = root;
+    } else if (boot->handle_protocol(image->device, &PXE_GUID,
+                                     (void **)&src.pxe) == EFI_SUCCESS
+               && src.pxe != NULL && src.pxe->mode != NULL
+               && src.pxe->mode->started) {
+        if (!boot_server(src.pxe->mode, &src.server)) {
+            return refuse("booted from the network, and nothing the firmware "
+                          "received names a server to fetch the kernel from",
+                          EFI_SUCCESS);
+        }
+
+        begin(&l);
+        add_text(&l, "this loader came over the network: this machine at ");
+        add_ip(&l, &src.pxe->mode->station_ip);
+        add_text(&l, ", its files from ");
+        add_ip(&l, &src.server);
+        send(&l);
+    } else {
+        return refuse("the stick's partition cannot be read as a filesystem, "
+                      "and this is not a network boot", status);
     }
 
-    /* The header first, out of a buffer of this loader's own. */
-    status = open_file(root, u"\\boot\\kosmos.bin", &file, &kernel_size);
+    /*
+     * The header first, out of a buffer of this loader's own - off the
+     * stick as the file's first pages, and over the network as a file of
+     * its own (`kosmos.head`, `make netboot`), since TFTP sends a file
+     * whole and the kernel's place has to be claimed before anything that
+     * size is allocated.
+     */
+    if (src.root != NULL) {
+        status = open_file(root, u"\\boot\\kosmos.bin", &file, &kernel_size);
 
-    if (status != EFI_SUCCESS) {
-        return refuse("there is no \\boot\\kosmos.bin on this stick", status);
+        if (status != EFI_SUCCESS) {
+            return refuse("there is no \\boot\\kosmos.bin on this stick",
+                          status);
+        }
+
+        head_bytes = kernel_size < sizeof(head) ? kernel_size : sizeof(head);
+        status = read_all(file, head, head_bytes);
+        file->close(file);
+    } else {
+        status = source_size(&src, NULL, "boot/kosmos.bin", &kernel_size);
+
+        if (status != EFI_SUCCESS) {
+            return refuse("the boot server has no boot/kosmos.bin, or will not "
+                          "say its size", status);
+        }
+
+        status = source_read(&src, NULL, "boot/kosmos.head", head,
+                             sizeof(head), &head_bytes);
     }
 
-    head_bytes = kernel_size < sizeof(head) ? kernel_size : sizeof(head);
-    status = read_all(file, head, head_bytes);
-    file->close(file);
-
     if (status != EFI_SUCCESS) {
-        return refuse("the kernel could not be read off the stick", status);
+        return refuse(src.root != NULL ? "the kernel could not be read off "
+                                         "the stick"
+                                       : "the kernel's header could not be "
+                                         "fetched over the network", status);
     }
 
     why = mb2_image_parse(head, head_bytes, kernel_size, &k.img);
@@ -1552,24 +1792,38 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
     send(&l);
 
     /* The kernel, into two copies with a fingerprint a page. */
-    status = open_file(root, u"\\boot\\kosmos.bin", &file, &kernel_size);
+    status = boot->allocate_pool(LOADER_DATA, kernel_size, &pool);
 
     if (status == EFI_SUCCESS) {
-        status = boot->allocate_pool(LOADER_DATA, kernel_size, &pool);
-    }
+        uint64_t got = 0;
 
-    if (status == EFI_SUCCESS) {
         k.a = pool;
-        status = read_all(file, pool, kernel_size);
-        file->close(file);
+        status = source_read(&src, u"\\boot\\kosmos.bin", "boot/kosmos.bin",
+                             pool, kernel_size, &got);
+
+        if (status == EFI_SUCCESS && got != kernel_size) {
+            status = EFI_LOAD_ERROR;    /* it ended before its size */
+        }
     }
 
     if (status != EFI_SUCCESS) {
-        return refuse("the kernel could not be read off the stick", status);
+        return refuse(src.root != NULL ? "the kernel could not be read off "
+                                         "the stick"
+                                       : "the kernel could not be fetched over "
+                                         "the network", status);
     }
 
-    why = against_build(root, u"\\boot\\kosmos.sums", "the kernel", k.a,
-                        kernel_size, &kernel_checked);
+    if (src.pxe != NULL) {
+        begin(&l);
+        add_text(&l, "the kernel: ");
+        add_dec(&l, kernel_size / 1024);
+        add_text(&l, " KB fetched from ");
+        add_ip(&l, &src.server);
+        send(&l);
+    }
+
+    why = against_build(&src, u"\\boot\\kosmos.sums", "boot/kosmos.sums",
+                        "the kernel", k.a, kernel_size, &kernel_checked);
 
     if (why != NULL) {
         return refuse(why, EFI_SUCCESS);
@@ -1620,8 +1874,10 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
     add_hex(&l, k.img.entry, 8);
     send(&l);
 
-    /* The disk, below 4 GB because a module's addresses are 32 bits. */
-    if (open_file(root, u"\\boot\\disk.img", &file, &disk_size) == EFI_SUCCESS
+    /* The disk, below 4 GB because a module's addresses are 32 bits - a
+     * stick's only: over the network `/Home` is the stick's partition. */
+    if (src.root != NULL
+        && open_file(root, u"\\boot\\disk.img", &file, &disk_size) == EFI_SUCCESS
         && disk_size > 0) {
         status = boot->allocate_pages(ALLOCATE_MAX_ADDRESS, LOADER_DATA,
                                       (disk_size + PAGE - 1) / PAGE, &disk_at);
@@ -1644,9 +1900,9 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
 
         disk_print = fingerprint((uint8_t *)(uintptr_t)disk_at, disk_size);
 
-        why = against_build(root, u"\\boot\\disk.sums", "the disk",
-                            (const uint8_t *)(uintptr_t)disk_at, disk_size,
-                            &disk_checked);
+        why = against_build(&src, u"\\boot\\disk.sums", "boot/disk.sums",
+                            "the disk", (const uint8_t *)(uintptr_t)disk_at,
+                            disk_size, &disk_checked);
 
         if (why != NULL) {
             return refuse(why, EFI_SUCCESS);
@@ -1663,11 +1919,14 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
         send(&l);
     } else {
         disk_size = 0;
-        say("no \\boot\\disk.img on this stick; Kosmos keeps /home in memory");
+        say(src.root != NULL
+            ? "no \\boot\\disk.img on this stick; Kosmos keeps /home in memory"
+            : "no disk over the network; /Home is the stick's, where the "
+              "command line names it");
     }
 
     /* The command line, and four fields filled in as the facts arrive. */
-    cmdline_n = read_cmdline(root, cmdline, CMDLINE_MAX);
+    cmdline_n = read_cmdline(&src, cmdline, CMDLINE_MAX);
     cmdline[cmdline_n] = '\0';
 
     /*
@@ -1706,6 +1965,10 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
     append(cmdline, &cmdline_n, " kosmos-boot/build=");
     append(cmdline, &cmdline_n,
            kernel_checked && (disk_size == 0 || disk_checked) ? "same" : "none");
+
+    /* And where it was read from, for the kernel's line about it. */
+    append(cmdline, &cmdline_n, " kosmos-boot/from=");
+    append(cmdline, &cmdline_n, src.root != NULL ? "stick" : "network");
 
     find_screen(&screen);
 

@@ -551,7 +551,19 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 #define CURSOR_HIDE     3u
 #define CURSOR_SIDE     64u
 
-#define SYS_MAX         65
+/*
+ * **One word of a found device's PCI configuration space**, read only
+ * (`testing.md` 18.347): `kind` and `index` as `SYS_DEV_FIND` takes them,
+ * and `offset` a multiple of four below 256. The answer is the word, or
+ * `SYS_ERR_NO_DEVICE` for a device the board has not found and kept, an
+ * offset it will not read, or a board with no such space. Gated on device
+ * authority, as finding and mapping are. It arrived with the I219, whose
+ * descriptor-ring status lives there (Linux's `e1000e`,
+ * `PCICFG_DESC_RING_STATUS`), and the M700's graphics will want it next.
+ */
+#define SYS_DEV_CONFIG  65  /* (kind, index, offset)  -> the word or error  */
+
+#define SYS_MAX         66
 
 #define PROFILE_START   1u
 #define PROFILE_READ    2u  /* up to `max` samples into `buf`: how many */

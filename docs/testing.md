@@ -16467,3 +16467,116 @@ to have failed, with the registers, and `ping` saying there is no address.
 failed". What QEMU cannot say is which of `e1000e`'s steps the I219
 needed, if any; the M700's log will, either "a frame to itself went out"
 or both tries with the transmitter's registers after each.
+
+## 18.347 The I219 once more: TCTL kept, the bus asked, and receiving watched
+
+**What 0.10.205 said on the M700** (`build/stick-diagnose.txt`, 2
+October, night):
+
+    e1000: as the firmware left it: CTRL 18180240 STATUS 00080083
+           CTRL_EXT 915a1027 RCTL 00000000 TCTL 3003f0f8 FWSM e001c258
+    e1000: its rings as the firmware left them: TDLEN 128 TDH 4 TDT 4
+           RDLEN 1024 RDH 7 RDT 6 TARC0 2d800403
+    e1000: a frame to itself did not go out in 50 ms: TCTL 0103f0fa TDH 0
+           TDT 1 TXDCTL 0141001f TARC0 2d800403 STATUS 00080083
+    e1000: its MAC reset as e1000e does it: bus requests stopped in 12 us,
+           the flag taken; after it CTRL 00100240 STATUS 00080483
+    e1000: after the reset, a frame to itself did not go out either: ...
+           TDH 0 TDT 1 TXDCTL 00400000
+
+The firmware left the card in good order - its own transmit ring drained
+(TDH = TDT), both units stopped, TARC0 holding exactly `e1000e`'s bits,
+the Management Engine running (FWSM's valid bit) and not forbidding a PHY
+reset (RSPCIPHY). Both tries failed the same way: the descriptor never
+read. **And one difference from `e1000e` was this driver's own**: the
+firmware's TCTL has bits 28 (MULR, "multiple request support") and 29
+set, and this driver wrote TCTL whole and cleared them, where
+`e1000_configure_tx` reads TCTL and changes only its fields.
+
+**Changed** (`user/drivers/net/e1000.c`): TCTL read, changed and written
+as `e1000e` does, and with no reset the firmware's TCTL kept apart from
+its enable; the packet buffer's split (PBA, 26 KB to receiving, the
+`pch_spt` value) written before the reset, as `e1000e_reset` does, since
+it takes a configuration cycle; wake-up control cleared after
+`DRV_LOAD`, in `e1000e_reset`'s order; PBA and WUC said with the
+firmware's state; and the receive head and frames received said beside
+the transmitter's registers, since a card that writes received frames into
+memory is using the bus whatever its transmitter does.
+
+**`SYS_DEV_CONFIG`, new** (`kernel/syscall.h` 65; `hal_device_config`):
+one word of a found device's PCI configuration space, read only, gated on
+device authority as `SYS_DEV_FIND` is, and only of a device the board has
+already found and kept - the PC's Intel cards and xHCI controllers; the
+ARM board has none and says no. The driver says, before anything else:
+
+    e1000: on PCI: command 0106, bus mastering on; status 0010;
+           descriptor rings 8020, no flush asked for
+
+QEMU's 82574L's, there. On the M700 it says whether the I219 may use the
+bus at all, and whether it asks for its rings to be emptied - Linux's
+`PCICFG_DESC_RING_STATUS`, bit 8.
+
+**`ethernet_pch`, 9 checks now**: the PCI line, with bus mastering on.
+Its control - `hal_device_config` refusing - fails it: "on PCI: its
+configuration could not be read". The other eight as 18.346, passing with
+TCTL kept; QEMU's 82574L cares about none of these bits, so what decides
+them is the M700.
+
+**Diego, the same night**: "is there any way we can simulate the e1000
+driver in qemu so i dont have to build sticks all the time?" Not the
+fault: QEMU has no I219, and the fault is how that silicon answers being
+brought up. What ends the sticks is either the M700 booting Kosmos over
+the network from the Mac - its firmware drives the I219 for its own
+network boot - or a USB Ethernet adapter on it with drivers restartable
+and pushed by Telnet (`roadmap.md`).
+
+## 18.348 Kosmos booted over the network, with /Home on the stick
+
+**Diego, 2 October, after three sticks for the I219**: "is there any way we
+can simulate the e1000 driver in qemu so i dont have to build sticks all
+the time?", "can you network boot the m700?", "lets try network boot". QEMU
+has no I219, so the fault cannot be simulated; what ends the sticks is the
+M700's firmware, which drives the I219 itself - it had sent four frames of
+its own before Kosmos took the card - and boots from the network.
+
+**The loader** (`boot/efi/loader.c`): when the device it was started from
+has no filesystem and the firmware's PXE Base Code protocol instead, it
+fetches its files from the TFTP server that served it - `boot/kosmos.head`
+(the kernel's first 36 KB, so its place is claimed before anything that
+size is allocated), `boot/kosmos.bin` by size first (`tsize`), its sums,
+and its command line - through `source_size` and `source_read`, which read
+a stick exactly as before. The server is the PXE reply's, a proxy offer's,
+or the DHCP answer's next-server address. The protocol is laid out from
+EDK2's `PxeBaseCode.h` and `UefiBaseType.h` (edk2-stable202408, fetched to
+`build/downloads/edk2`), and every offset read is held to it by
+`_Static_assert` - the mode's packets at 52, 1524, 2996 and 5940, `Mtftp`
+at 40, `Mode` at 104. The kernel's line says `fetched over the network,
+against the build: same` (`kosmos-boot/from`).
+
+**`make netboot`** (`tools/netboot.py`) lays out `build/netboot`: the
+loader as `bootx64.efi`, the kernel, its head, its sums, and the command
+line taken off the stick image in the machine - the newest development
+stick unless `STICK=` - so `/Home` is that stick's partition and the stick
+is written once. **`tools/netboot-serve.sh`** starts `dnsmasq` (Homebrew,
+2.93, installed for this) as a proxy on the Mac's own network: it answers
+only PXE clients, for both UEFI client types (7 and 9), and hands out no
+addresses. Its ports are root's, so it is Diego's to start.
+
+**Found on the way: OVMF's network stack never started.** Both Homebrew's
+OVMF and Debian 13's (fetched to `build/downloads/ovmf-debian`, its sum
+matching Debian's index) went straight to the shell; `drivers` showed the
+virtio-net driver idle and `ifconfig -l` nothing, though the LZMA-packed
+volume holds `PxeBcDxe`, `Mtftp4Dxe` and the rest. EDK II's network
+stack waits for a random number source, and QEMU's default processor has
+no RDRAND: with `-device virtio-rng-pci`, PXE starts at once. The M700's
+processor has RDRAND.
+
+**`x86-netboot`, new** (`tools/run_netboot.py`, 5 checks): OVMF with the
+network card first and the `/Home` stick on USB second - the M700's
+arrangement - and QEMU's own DHCP and TFTP serving `build/x86_64/
+netboot-test` (laid out by `gate-images` from `kosmos-uefi-home.img`'s
+command line). The firmware fetched the loader by PXE, not off the stick;
+the loader said it came over the network, from 10.0.2.2; the 34 MB kernel
+was fetched and was the build's, page for page; the kernel's own line said
+so; and `/Home` is the stick's Kosmos partition. **12 s** to the prompt.
+Its control, a loader that finds no boot server, fails four of the five.

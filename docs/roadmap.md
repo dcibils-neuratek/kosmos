@@ -154,6 +154,33 @@ not wait or hang waiting for network or anything" (`testing.md` 18.345).
    itself does not go out - and the log says which. Diego: "lets fix the
    network now on the m700". Waiting on the M700's log.
 
+**The M700 booted over the network from the Mac.** Diego, 2 October
+2026, after three sticks for the I219: "is there any way we can simulate
+the e1000 driver in qemu so i dont have to build sticks all the time?",
+then "can you network boot the m700?" and "lets try network boot". QEMU
+has no I219, so the fault cannot be simulated; what ends the sticks is
+the M700's firmware, which drives the I219 itself and boots from the
+network. So:
+
+1. **The loader fetches its files over the network** when the firmware
+   started it from there - the kernel image, its sums and the command
+   line, by TFTP through the firmware's own network stack - and reads
+   them from the stick as before when it started from a stick.
+2. **`make netboot`** puts them where a boot server serves them, the
+   command line naming the `/Home` of the stick in the M700, which stays
+   plugged in and is written once.
+3. **A boot server on the Mac**: `dnsmasq` in proxy mode - it answers only
+   machines asking to boot, and hands out no addresses - started by Diego
+   with `sudo`, since its ports are privileged.
+4. **Held under QEMU**: OVMF boots the loader from QEMU's own TFTP the
+   same way, in the gate.
+5. Diego turns on UEFI network boot in the M700's setup, once.
+
+   **1 to 4 BUILT the same night** (`testing.md` 18.348): the loader
+   fetches by TFTP through the firmware's PXE, `make netboot` and
+   `tools/netboot-serve.sh`, and `x86-netboot` in the gate - OVMF needed a
+   virtio-rng device for its network stack to start. Waiting on the M700.
+
 **Servers and drivers restarted, from the prompt or from a system
 application.** Diego, 2 October 2026, asking whether one can be restarted
 "instead of restarting the computer": "based on the fact we have a

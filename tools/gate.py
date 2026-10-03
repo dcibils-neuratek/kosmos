@@ -362,6 +362,14 @@ SUITES = [
                        "build/x86_64/kosmos-uefi-home.img",
                        "build/x86_64/kosmos-uefi-video.img"], x86=True),
 
+    # **And booted over the network, as the M700 is from the Mac** (18.348):
+    # OVMF's PXE fetches the loader from QEMU's own TFTP, the loader the
+    # kernel beside it, and `/Home` is the stick on USB - which must not be
+    # what boots.
+    Suite("x86-netboot", ["python3", "tools/run_netboot.py",
+                          "build/x86_64/netboot-test",
+                          "build/x86_64/kosmos-uefi-home.img"], x86=True),
+
     # `test_stickcheck.py` streams that stick, with faults put where mtools
     # says they are, into the check `mkusb.sh` runs on every stick it writes:
     # damage named where it is, and a mount's bookkeeping told apart from it.
