@@ -4541,6 +4541,10 @@ handlers.resize = function(req)
     place_bottom(win)
     damage_window(win)
     print(("wm: the dock at %d,%d %dx%d"):format(win.x, win.y, win.w, win.h))
+
+    -- And told, as a drag tells a window: a floating dock that grew is
+    -- centred again, and its menu opens from where it is now.
+    post(win, { type = "moved", x = win.x, y = win.y })
   end
 
   -- A strip that changes height changes the room above everything else.

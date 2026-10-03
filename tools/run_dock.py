@@ -83,6 +83,17 @@ def room(session):
     return tuple(int(v) for v in m.groups()) if m else None
 
 
+def button_left(at, dock, colour):
+    """Where the Kosmos button begins, by its colour along the dock's middle."""
+    dx, dy, dw, dh = dock
+
+    for x in range(dx, dx + dw):
+        if at(x, dy + dh // 2) == colour:
+            return x
+
+    return None
+
+
 def last_dock(seen):
     """The dock's place, as the window manager last said it."""
     places = re.findall(r"wm: the dock at (\d+),(\d+) (\d+)x(\d+)", seen)
@@ -145,6 +156,7 @@ def main():
         time.sleep(1)
         _, _, at = R.pixel_reader(guest.screendump())
         said["lit"] = at(bx, by)
+        said["button"] = button_left(at, said["dock"], said["lit"])
         click(width // 2, STRIP_H // 2, width, height)    # the strip's middle: nothing there
         time.sleep(1.5)
         _, _, at = R.pixel_reader(guest.screendump())
@@ -157,6 +169,21 @@ def main():
         said["along"] = guest.wait_for_line("wm: window Deskbar at ", "the dock's window", mark)
         time.sleep(1)
         said["room whole"] = room(session)
+
+        # Its Kosmos button is in the middle of the bar, and its menu has to
+        # open there (Diego's photograph: "way off the kosmos button").
+        whole_dock = (0, height - DOCK_H, width, DOCK_H)
+        _, _, at = R.pixel_reader(guest.screendump())
+        start = button_left(at, whole_dock, said["unlit"])
+        said["whole button"] = start
+
+        if start is not None:
+            mark = len(guest.seen)
+            click(start + 40, height - DOCK_H // 2, width, height)
+            said["whole menu"] = guest.wait_for_line("wm: menu of Deskbar at ",
+                                                     "the Kosmos menu, the whole width", mark)
+            click(width // 2, STRIP_H // 2, width, height)
+            time.sleep(1)
 
         # ---- 5: back to the top ----
         mark = len(guest.seen)
@@ -222,6 +249,20 @@ def main():
         fails.append("the Kosmos menu did not open upwards from above the dock: "
                      "%r, dock %r" % (said.get("menu"), dock))
 
+    def menu_over(menu, button):
+        m = re.match(r"(\d+),", menu or "")
+        return m is not None and button is not None and abs(int(m.group(1)) - button) <= 2
+
+    if not menu_over(said.get("menu"), said.get("button")):
+        fails.append("the floating dock's Kosmos menu did not open over its "
+                     "button: the menu %r, the button from %r"
+                     % (said.get("menu"), said.get("button")))
+
+    if not menu_over(said.get("whole menu"), said.get("whole button")):
+        fails.append("along the whole width the Kosmos menu did not open over "
+                     "its button: the menu %r, the button from %r"
+                     % (said.get("whole menu"), said.get("whole button")))
+
     if not said.get("lit") or said.get("lit") == said.get("unlit"):
         fails.append("the Kosmos button was not lit while its menu was open: "
                      "%r, then %r" % (said.get("unlit"), said.get("lit")))
@@ -273,7 +314,7 @@ def main():
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:400])
 
-    checks = 17
+    checks = 19
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))
@@ -288,7 +329,8 @@ def main():
           "the write moving the bar answered, and the same place asked "
           "for again starting nothing; the login items opened once; the "
           "strip across the top; the dock centred %d above the edge; a "
-          "maximised window ending above it; the Kosmos menu opening upwards; "
+          "maximised window ending above it; the Kosmos menu opening upwards, "
+          "over its button, floating and along the whole width; "
           "its button lit while it is open and dark once it is dismissed; the "
           "whole width along the foot, giving the gap back; the bar at the "
           "top again with all the room back) - and a 1920x1080 wallpaper "

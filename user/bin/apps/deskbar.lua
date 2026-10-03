@@ -493,6 +493,7 @@ local DOCKED = (asked_bar or appearance.bar) == "dock"
 local FLOATING = (asked_dock or appearance.dock) ~= "whole"
 local dock = DOCKED and use("/Kosmos/Libraries/dock.lua") or nil
 local topstrip = nil              -- the dock's strip across the top
+local kosmos_at = nil             -- where the dock drew its Kosmos button, in it
 
 if DOCKED then H = dock.H end
 
@@ -1013,8 +1014,11 @@ local function open_kosmos_menu()
     }
 
     if DOCKED then
-      -- Upwards, from above the dock's Kosmos button.
-      win:open_menu(win.origin_x + dock.PAD, win.origin_y - 6, items, true)
+      -- Upwards, from above the dock's Kosmos button - where it was drawn,
+      -- which along the whole width is the middle of the bar rather than its
+      -- end (Diego's photograph, 3 October: "the apps menu appears way off
+      -- the kosmos button").
+      win:open_menu(win.origin_x + (kosmos_at or dock.PAD), win.origin_y - 6, items, true)
     else
       win:open_menu(win.origin_x, win.origin_y + H, items)
     end
@@ -1780,6 +1784,7 @@ if DOCKED then
     end
 
     self.offset = off
+    kosmos_at = items[1] and items[1].x + off or nil
   end
 
   function bar:mouse(action, x, y)

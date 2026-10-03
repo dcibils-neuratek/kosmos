@@ -17083,3 +17083,27 @@ is the wallpaper's path inside the window manager and nothing else of it,
 so the suites that can see it - `host`, `x86-dock`, `display-2` for the
 compositor budget, `display-3` for the wallpapers and Appearance - were
 the test. They passed inside it.
+
+## 18.359 The dock's Kosmos menu over its button
+
+**Diego's photograph from the M700, 3 October**: "The apps menu appears way
+off the kosmos button" - the dock along the whole width, its Kosmos button
+in the middle of the bar, and the log saying `menu of Deskbar at 10,1138`.
+Two faults, each enough on its own:
+
+- **The whole width**: the dock's cells are drawn centred in a bar as wide
+  as the screen, and the menu was placed from the bar's left end plus its
+  margin - 10 - rather than from where the button was drawn. The dock now
+  keeps where it drew the button (`kosmos_at`) and the menu opens there.
+- **Floating**: the dock opens 400 wide and grows to fit its cells, and the
+  window manager centres it again - without telling it, so the window
+  went on believing it was where it opened, 171 pixels to the right at
+  1720x1440. A re-centred dock is now posted `moved`, as a dragged window
+  is.
+
+**`run_dock.py`, 19 checks**: in both modes the menu's left edge where the
+Kosmos button begins, the button found by its colour along the dock's
+middle. The first version checked only that the menu opened upwards,
+which both faults pass. **Control**, both fixes out: "the menu
+'670,1126', the button from 499" floating, and "'10,1138', the button from
+499" along the whole width - the photograph's own number.
