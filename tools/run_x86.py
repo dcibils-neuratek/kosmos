@@ -4634,6 +4634,75 @@ def ethernet_pch(image, check):
               "address:\n    " + out[-500:])
 
 
+def restart(image, check):
+    """`restart` at the prompt restarts the machine, the firmware's way first.
+
+    `testing.md` 18.352. Restart was the 8042's reset pulse and a triple
+    fault, and on the M700 the 8042 is the firmware playing one, gone once
+    the USB driver takes the controller: the menu's Restart did nothing
+    there (Diego, 3 October). Now the FADT's reset register comes first,
+    then the chipset's port 0xCF9 by hand, then the 8042, then the triple
+    fault, each said before it is tried.
+
+    QEMU's q35 names its reset register - port 0xCF9, value 0x0F - so the
+    first way has to be the one that works: the machine resets, which
+    `-no-reboot` turns into QEMU leaving, and nothing after the ACPI line
+    is tried. Timed from the command, since a machine that did not restart
+    would sit at the prompt until the harness gave up.
+    """
+    binary = os.path.join(os.path.dirname(image), "kosmos.bin")
+    p = subprocess.Popen([QEMU] + ARGS + ["-kernel", binary],
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         stdin=subprocess.PIPE)
+    os.set_blocking(p.stdout.fileno(), False)
+
+    out, typed_at, exited_after = b"", None, None
+    start = quiet = time.time()
+
+    try:
+        while time.time() - start < 120.0:
+            chunk = p.stdout.read()
+
+            if chunk:
+                out += chunk
+                quiet = time.time()
+            elif p.poll() is not None:
+                if typed_at is not None:
+                    exited_after = time.time() - typed_at
+                break
+            else:
+                time.sleep(0.1)
+
+            if (typed_at is None and b"kosmos>" in out
+                    and time.time() - quiet > 0.5):
+                p.stdin.write(b"restart\n")
+                p.stdin.flush()
+                typed_at = time.time()
+
+            if typed_at is not None and time.time() - typed_at > 30.0:
+                break
+    finally:
+        if p.poll() is None:
+            p.kill()
+        p.wait()
+
+    said = out.decode("utf-8", "replace").replace("\r", "")
+    shown = "\n    ".join(l.strip() for l in said.splitlines()
+                           if "restart" in l)
+
+    check(exited_after is not None,
+          "`restart` at the prompt did not restart the machine within 30 "
+          "seconds:\n    " + shown)
+
+    check(re.search(r"restart: the ACPI reset register, port 0cf9 <- 0f", said)
+          is not None
+          and "restart: the reset port" not in said
+          and "restart: the keyboard controller" not in said,
+          "the machine was not restarted by the FADT's reset register - "
+          "QEMU's q35 names port 0xCF9 and 0x0F, and nothing after that "
+          "should have been tried:\n    " + shown)
+
+
 def memory_home(image, check):
     """A `/Home` in memory takes a write from pages, and says it is memory.
 
@@ -4765,7 +4834,7 @@ def memory(image, check):
 
 
 PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
-    'memory', 'memory_home', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
+    'memory', 'memory_home', 'restart', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
 def main():
@@ -4878,6 +4947,10 @@ def main():
     # And a /Home in memory, written from pages (18.350).
     if 'memory_home' in wanted:
         memory_home(image, check)
+
+    # And `restart`, the firmware's way first (18.352).
+    if 'restart' in wanted:
+        restart(image, check)
 
     # And an Intel Ethernet card on a PCI line, which is the M700's.
     if 'ethernet' in wanted:

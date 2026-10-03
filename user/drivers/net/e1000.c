@@ -97,6 +97,10 @@
 #define REG_WUS         0x5810u     /* wake-up status */
 #define REG_MANC        0x5820u     /* management control */
 #define REG_RXCSUM      0x5000u
+#define REG_RDTR        0x2820u     /* receive delay timer */
+#define REG_RXDCTL      0x2828u     /* queue 0's receive descriptor control */
+#define REG_RADV        0x282Cu     /* receive absolute delay */
+#define REG_ITR         0x00C4u     /* interrupt throttling */
 
 /* The card's own counts, each cleared as it is read (`regs.h`). */
 #define REG_CRCERRS     0x4000u
@@ -150,6 +154,13 @@
 #define RCTL_BSIZE_2048 0u          /* bits 17:16 = 00 with BSEX clear */
 #define RCTL_SECRC      (1u << 26)  /* strip the CRC the card checked */
 #define RCTL_UPE        (1u << 3)   /* unicast promiscuous */
+
+/* RXDCTL's write-back threshold, bits 21:16, and its unit (`ich8lan.h`'s
+ * E1000_RXDCTL_THRESH_UNIT_DESC): descriptors rather than cache lines. The
+ * prefetch and host thresholds below it are left as they were. */
+#define RXDCTL_WTHRESH          0x003F0000u
+#define RXDCTL_WTHRESH_ONE      (1u << 16)
+#define RXDCTL_UNIT_DESC        0x01000000u
 
 #define TCTL_EN         (1u << 1)
 #define TCTL_PSP        (1u << 3)   /* pad short packets to 64 */
@@ -444,6 +455,21 @@ static void rings_start(void)
     if (card.pch) {
         reg_write(REG_RFCTL, reg_read(REG_RFCTL) | RFCTL_EXTEN);
         card.rx_ext = true;
+
+        /*
+         * **Each frame written back as it arrives** (`testing.md` 18.352).
+         * The firmware's driver batches them - a write-back threshold, which
+         * `e1000e` notes "only takes effect if the RDTR is set" - and taken
+         * as the firmware left it, the M700 answered the Mac's pings 7 to 18
+         * seconds late: a frame waited in the card until several more had
+         * come. The threshold is one, counted in descriptors, and both of
+         * the receive timers are nought, which is where `e1000e` leaves a
+         * chip of this kind after its reset.
+         */
+        reg_write(REG_RXDCTL, (reg_read(REG_RXDCTL) & ~RXDCTL_WTHRESH)
+                              | RXDCTL_WTHRESH_ONE | RXDCTL_UNIT_DESC);
+        reg_write(REG_RDTR, 0);
+        reg_write(REG_RADV, 0);
     }
 
     card.started_at = kosmos_ticks();
@@ -550,6 +576,17 @@ static void say_firmware(struct say_line *line)
     say_hex(line, reg_read(REG_WUC), 8);
     say_text(line, " RFCTL ");
     say_hex(line, reg_read(REG_RFCTL), 8);
+    say_send(console, line);
+
+    say_begin(line);
+    say_text(line, "e1000: its receive timing as the firmware left it: RXDCTL ");
+    say_hex(line, reg_read(REG_RXDCTL), 8);
+    say_text(line, " RDTR ");
+    say_hex(line, reg_read(REG_RDTR), 8);
+    say_text(line, " RADV ");
+    say_hex(line, reg_read(REG_RADV), 8);
+    say_text(line, " ITR ");
+    say_hex(line, reg_read(REG_ITR), 8);
     say_send(console, line);
 }
 

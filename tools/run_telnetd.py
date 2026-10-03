@@ -243,7 +243,40 @@ def main():
     if " died: " in out:
         fails.append("something died: " + out[out.find(" died: ") - 80:][:400])
 
-    checks = 12
+    #
+    # **Started before there is an address, and still there after**
+    # (`testing.md` 18.352). On the M700 the shell starts `telnetd` before
+    # DHCP has answered, the stack refuses to listen with no address, and it
+    # left - so the Mac had nothing to reach when the lease came. A card on
+    # a hub with nothing else on it is a network whose DHCP never answers:
+    # `telnetd` has to say it is waiting, not that it could not listen, and
+    # still be running three seconds later.
+    #
+    waiting = "telnetd: waiting for an address to listen on port 23"
+
+    try:
+        lonely = run_network.boot(image, [
+            "-netdev", "hubport,id=net0,hubid=0",
+            "-device", run_screenshot.device(image, "net") + ",netdev=net0",
+            "-fw_cfg", "name=opt/kosmos/telnetd,string=23",
+        ], ['sys.sleep(750) local alive = false for _, p in ipairs(sys.processes()) '
+            'do if p.name == "telnetd" and not p.exited then alive = true end end '
+            'print("TELNETD" .. "ALIVE", alive)'], seconds=90, after=waiting)
+        # Reached only past the wait for `waiting`, which `boot` makes before
+        # it types anything - and clears from what it hands back.
+        lonely = waiting + "\n" + lonely
+    except Exception as e:              # noqa: BLE001 - said below
+        lonely = "%s: %s" % (type(e).__name__, e)
+
+    if (waiting not in lonely
+            or "could not listen" in lonely
+            or "TELNETDALIVE\ttrue" not in lonely):
+        fails.append("on a network that gives no address, telnetd did not "
+                     "wait for one - or left:\n    " + "\n    ".join(
+                         l for l in lonely.splitlines()
+                         if "telnetd" in l or "TELNETD" in l))
+
+    checks = 13
 
     if fails:
         print("FAIL: %d of %d checks on telnetd:" % (len(fails), checks))
@@ -258,7 +291,8 @@ def main():
           "value in them, whole; a read given the next line typed; a failure's "
           "exit code; Control-C as Telnet's interrupt; no such program; a file "
           "put into new folders and back; a program pushed and run; open with "
-          "no desktop refused; nothing dead)." % (checks, len(BLOB)))
+          "no desktop refused; nothing dead; and waiting for an address)."
+          % (checks, len(BLOB)))
     return 0
 
 

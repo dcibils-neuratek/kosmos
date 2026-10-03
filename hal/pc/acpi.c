@@ -186,6 +186,18 @@ static bool     s5_found;
 #define FADT_FLAGS          112u
 #define FADT_HW_REDUCED     (1u << 20)
 
+/*
+ * **The reset register** (`testing.md` 18.352), by the same method: the
+ * template compiled and disassembled prints `[074h 0116 00Ch] Reset
+ * Register` - a generic address structure, its space ID at 74h and its
+ * address at 78h - `[080h 0128 001h] Value to cause reset`, and, with
+ * "Reset Register Supported (V2)" set and nothing else, Flags 00000400.
+ */
+#define FADT_RESET_SUPPORTED (1u << 10)
+#define FADT_RESET_SPACE    116u
+#define FADT_RESET_ADDR     120u
+#define FADT_RESET_VALUE    128u
+
 #define ECDT_CONTROL_SPACE  36u
 #define ECDT_CONTROL_ADDR   40u
 #define ECDT_DATA_SPACE     48u
@@ -195,6 +207,13 @@ static bool     s5_found;
 
 static struct acpi_ec_facts ec_facts;
 static bool                 ec_facts_found;
+
+static struct {
+    bool     found;
+    unsigned space;
+    uint64_t address;
+    uint8_t  value;
+} reset_reg;
 
 /* A field of `length` bytes at `at`, when the table reaches it; else 0. */
 static uint64_t field(const struct sdt *t, unsigned at, unsigned length)
@@ -500,6 +519,16 @@ static void read_fadt(const struct sdt *table)
     ec_facts.hardware_reduced =
         (field(table, FADT_FLAGS, 4) & FADT_HW_REDUCED) != 0;
     ec_facts_found = true;
+
+    /* Only when the firmware says it is there: the field exists in every
+     * table this long, and is zeros in one without the register. */
+    if ((field(table, FADT_FLAGS, 4) & FADT_RESET_SUPPORTED) != 0
+        && table->length >= FADT_RESET_VALUE + 1u) {
+        reset_reg.space   = (unsigned)field(table, FADT_RESET_SPACE, 1);
+        reset_reg.address = field(table, FADT_RESET_ADDR, 8);
+        reset_reg.value   = (uint8_t)field(table, FADT_RESET_VALUE, 1);
+        reset_reg.found   = reset_reg.address != 0;
+    }
 }
 
 static void read_ecdt(const struct sdt *table)
@@ -522,6 +551,18 @@ bool acpi_s5(unsigned *pm1a_cnt, unsigned *slp_typ)
 
     *pm1a_cnt = ec_facts.pm1a_cnt;
     *slp_typ = s5_slp_typ;
+    return true;
+}
+
+bool acpi_reset_register(unsigned *space, uint64_t *address, uint8_t *value)
+{
+    if (!reset_reg.found) {
+        return false;
+    }
+
+    *space = reset_reg.space;
+    *address = reset_reg.address;
+    *value = reset_reg.value;
     return true;
 }
 

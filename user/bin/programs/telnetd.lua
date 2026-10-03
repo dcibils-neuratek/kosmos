@@ -59,15 +59,42 @@ if not info or not info.card then
   return
 end
 
+--
+-- **Waiting for an address, rather than leaving** (`testing.md` 18.352). A
+-- stick and a network boot both start this before DHCP has answered, and
+-- with no address the stack refuses to listen - so on the M700 it said
+-- "could not listen on port 23: 3" and was gone a second after it started,
+-- and the Mac had nothing to reach once the lease came. So a refusal while
+-- the machine has no address is waited out, a second at a time, said once;
+-- any other refusal is said and ends it as before.
+--
+local tick_hz = (sys.info() or {}).tick_hz or 250
 local listener, why = fs.listen("/Network", port)
+local waited = false
 
-if not listener then
-  print("telnetd: could not listen on port " .. port .. ": " .. tostring(why))
-  return
+while not listener do
+  info = fs.net_info("/Network") or info
+
+  local addressed = type(info.address) == "string" and info.address ~= "\0\0\0\0"
+
+  if addressed then
+    print("telnetd: could not listen on port " .. port .. ": " .. tostring(why))
+    return
+  end
+
+  if not waited then
+    print(("telnetd: waiting for an address to listen on port %d"):format(port))
+    waited = true
+  end
+
+  sys.sleep(tick_hz)
+  listener, why = fs.listen("/Network", port)
 end
 
--- The address is DHCP's, and may arrive after this starts; asked again
--- whenever somebody connects.
+info = fs.net_info("/Network") or info
+
+-- The address is DHCP's, and may change; asked again whenever somebody
+-- connects.
 print(("telnetd: on port %d, at %s"):format(port, dotted(info.address)))
 
 --

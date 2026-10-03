@@ -16682,3 +16682,60 @@ holding received frames until several have gathered: the firmware's
 descriptor write-back threshold, which `e1000e` notes "only takes effect if
 the RDTR is set", kept because the I219 is taken as the firmware left it.
 Gate 86 of 86 in 10:05.
+
+## 18.352 Restart that works on a PC, `telnetd` that waits, and frames written back at once
+
+**Restart** (Diego, 3 October: "Can you work on the restart function on in
+kosmos? That is helpful for the user as well. Right now only shutdown is
+done"). The menu had Restart, through the window manager to `SYS_POWER`,
+and the PC's `hal_restart` pulsed the 8042's reset line and then
+triple-faulted. The M700 has no 8042: its firmware plays one, and stops
+once the USB driver takes the controller from it. Now four ways, in an
+order, each said before it is tried (`hal/pc/power.c`):
+
+1. **the FADT's reset register** when the firmware names one - offsets by
+   the project's method, an `iasl -T FACP` template compiled and
+   disassembled: `[074h 0116 00Ch] Reset Register`, its space at 116 and its
+   address at 120, `[080h 0128 001h] Value to cause reset`, and Flags
+   `00000400` with only "Reset Register Supported (V2)" set;
+2. **port 0xCF9 by hand**, as Linux's `BOOT_CF9` writes it (`reboot.c`,
+   v6.12): the hard-reset request, 50 us, then 0x06;
+3. the 8042, as before;
+4. a triple fault, as before.
+
+**`restart`**, a program (`kosmos: needs processes`): through the desktop
+when it runs, so windows are told, and `SYS_POWER` directly otherwise - the
+step the build cycle needs over Telnet. **`restart` in `x86-core`**, 2
+checks: typed at the prompt, QEMU's q35 restarts - `-no-reboot` turns that
+into QEMU leaving - within 30 s, and by the first way, `restart: the ACPI
+reset register, port 0cf9 <- 0f`, with nothing after it tried. Its
+control, the old `hal_restart`, still restarts QEMU, whose 8042 is real,
+and fails the second check: the firmware's way was never tried.
+
+**`telnetd` waits for an address.** The shell starts it before DHCP has
+answered, the stack will not listen without an address, and it left - "could
+not listen on port 23: 3" - a second after starting, on the M700 and on
+every network boot. Now a refusal while there is no address is waited out a
+second at a time, said once. **`run_telnetd.py`, 13 checks**, the new one a
+second machine whose card is on a QEMU hub with nothing else on it - a
+network that never gives an address: `telnetd` says it is waiting and is
+still running three seconds later. Its control, the old `telnetd`, never
+says it is waiting.
+
+**Received frames written back at once on the I219.** 0.10.208 answered
+the Mac's pings 7 to 19 seconds late, through the twenty minutes it was
+watched - 740 answers to 1200 - at a steady delay that grew as traffic
+thinned: the firmware's receive write-back batching, kept because the card
+is taken as the firmware left it. RXDCTL's write-back threshold is now one,
+counted in descriptors, and RDTR and RADV are nought; the firmware's
+RXDCTL, RDTR, RADV and ITR are said first.
+
+**A correction to 18.351, from 0.10.207's own log** (Diego's photo, 3
+October): the firmware left RFCTL at `000000c0` - the extended layout off -
+and the reading that nothing addressed to the card arrived rests on three
+pings from the Mac that gave up after five seconds each, when the answers,
+we now know, come seven and more seconds late. So unicast very likely
+arrived all along, delayed by the write-back batching; `ping 8.8.8.8`
+gave up on a router whose ARP answer was still in the card. 0.10.208's
+filter experiment stays as a measurement, and 0.10.209's write-back is the
+fix the evidence points to. Gate 86 of 86 in 10:00.

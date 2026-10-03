@@ -21,13 +21,25 @@
  * SLP_EN, each keeping the bits around it (SCI_EN among them). QEMU's
  * constant stays as what is written when the firmware said nothing.
  *
- * Restart is different and is genuinely general: pulse the 8042 keyboard
- * controller's reset line, which is how a PC has been restarted since 1984
- * and works whether or not there is a keyboard attached.
+ * **Restart is four ways, in an order** (`testing.md` 18.352). It was one -
+ * pulse the 8042 keyboard controller's reset line, "how a PC has been
+ * restarted since 1984", and a triple fault behind it - and on the M700 the
+ * 8042 is the firmware playing one, which stops once the USB driver takes
+ * the controller from it: Restart in the menu did nothing there (Diego, 3
+ * October: "Right now only shutdown is done"). So, as Linux's
+ * `native_machine_emergency_restart` would, first the way the firmware
+ * says: the FADT's reset register, a byte written to an I/O port - 0xCF9
+ * on an Intel chipset, and on QEMU's q35. Then that port by hand, as
+ * Linux's `BOOT_CF9` does it: the hard-reset request, 50 microseconds, the
+ * reset. Then the keyboard controller, and the triple fault last. Each says
+ * so before it is tried, and the first that works is the last line.
  */
 
 #include "acpi.h"
+#include "console.h"
+#include "cpu.h"
 #include "hal.h"
+#include "multiboot.h"
 #include "pc.h"
 
 /* q35's ACPI PM1a control block. See above: this is QEMU's, not a PC's. */
@@ -39,6 +51,32 @@
 #define PS2_COMMAND     0x64
 #define PS2_STATUS      0x64
 #define PS2_RESET       0xFE
+
+/* The reset control register of Intel's chipsets (and QEMU's ICH9), as
+ * Linux's `reboot.c` writes it: bit 1 asks for a hard reset, and 0x06 -
+ * that and the reset bit - performs it. */
+#define RESET_CONTROL   0xCF9
+#define RESET_HARD      0x02
+#define RESET_NOW       0x06
+
+#define GAS_SYSTEM_IO   1u
+
+/* At least `us` microseconds, on the counter: an x86 machine whose timer
+ * has not measured it is assumed faster than any, so the wait is longer. */
+static void pause_us(unsigned us)
+{
+    uint64_t hz = pc_timer_tsc_hz();
+    uint64_t until;
+
+    if (hz == 0) {
+        hz = 8000000000ULL;
+    }
+
+    until = cpu_cycles() + hz / 1000000u * us;
+
+    while (cpu_cycles() < until) {
+    }
+}
 
 static void out16(uint16_t port, uint16_t value)
 {
@@ -70,14 +108,43 @@ void hal_power_off(void)
 
 void hal_restart(void)
 {
-    unsigned tries;
+    unsigned tries, space;
+    uint64_t address;
+    uint8_t value, control;
+
+    /* 1. The firmware's own way, when it names one in system I/O. */
+    if (acpi_reset_register(&space, &address, &value)) {
+        kputs("restart: the ACPI reset register, ");
+
+        if (space == GAS_SYSTEM_IO && address <= 0xFFFFu) {
+            kputs("port ");
+            kputx(address, 4);
+            kputs(" <- ");
+            kputx(value, 2);
+            kputs("\n");
+            pc_out8((uint16_t)address, value);
+            pause_us(50000);
+        } else {
+            kputs("in an address space this does not write; next\n");
+        }
+    }
+
+    /* 2. The chipset's reset port, by hand, as Linux's BOOT_CF9 does. */
+    kputs("restart: the reset port, 0xcf9\n");
+    control = (uint8_t)(pc_in8(RESET_CONTROL) & ~RESET_NOW);
+    pc_out8(RESET_CONTROL, (uint8_t)(control | RESET_HARD));
+    pause_us(50);
+    pc_out8(RESET_CONTROL, (uint8_t)(control | RESET_NOW));
+    pause_us(50000);
 
     /*
-     * The input buffer has to be empty before a command is accepted, and
-     * bit 1 of the status port says whether it is. Bounded rather than
-     * spun on: a controller that never drains is a machine that hangs here
-     * instead of restarting, and there is a bigger hammer below.
+     * 3. The keyboard controller. The input buffer has to be empty before a
+     * command is accepted, and bit 1 of the status port says whether it is.
+     * Bounded rather than spun on: a controller that never drains is a
+     * machine that hangs here instead of restarting.
      */
+    kputs("restart: the keyboard controller\n");
+
     for (tries = 0; tries < 100000u; tries++) {
         if ((pc_in8(PS2_STATUS) & 0x02) == 0) {
             break;
@@ -85,15 +152,17 @@ void hal_restart(void)
     }
 
     pc_out8(PS2_COMMAND, PS2_RESET);
+    pause_us(50000);
 
     /*
-     * And if the pulse did not arrive, a triple fault will.
+     * 4. And a triple fault, which needs no device at all.
      *
      * Loading a null IDT and then taking an interrupt means the processor
      * cannot find a handler, cannot find the double-fault handler either,
-     * and resets - which is the last resort every x86 kernel keeps, and the
-     * only one that needs no cooperation from any device.
+     * and resets - the last resort every x86 kernel keeps.
      */
+    kputs("restart: a triple fault\n");
+
     {
         struct { uint16_t limit; uint64_t base; } __attribute__((packed))
             nothing = { 0, 0 };

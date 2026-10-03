@@ -401,3 +401,34 @@ loader made to lose track of its server proves the test notices.
 
 **Confirmed on the machine.** The same night, the M700 started 0.10.206
 from the Mac: "it booted over network!"
+
+## 3 October - Restart that restarts, and the M700 on the network
+
+**In short:** choosing Restart on the M700 did nothing; now it restarts
+the machine, from the menu or by typing `restart`. And the M700's network
+card, which last night could only send, now receives too: the M700 gets an
+address from the router and answers from across the network - slowly at
+first, because the card was holding incoming messages back in batches,
+which the next build stops.
+
+**Restart.** Kosmos restarted a PC the way PCs have been restarted since
+1984: through the keyboard chip. The M700 has no such chip - its firmware
+pretends to have one, and stops pretending once Kosmos takes over the USB
+ports. Modern PCs describe their own restart switch in their firmware
+tables, and Kosmos now uses that first, then three older ways in turn,
+saying each one as it tries it. In the emulator, the first way restarts the
+machine; a test checks that it is the first way that does it.
+
+**The network, step by step.** After the power cut, 0.10.207 got an
+address - so the card receives - but nothing could reach the internet.
+Pinging the M700 from the Mac showed why: it heard messages sent to
+everyone, but not ones sent to it alone. 0.10.208 counted what the card
+received and, finding nothing addressed to itself, switched off the card's
+address filter; from then on the M700 answered the Mac - but each answer
+came 7 to 19 seconds late. The card was keeping received messages until
+several had piled up, a setting the M700's firmware leaves behind. The next
+build has the card hand over each message as it arrives.
+
+**And the remote program** (`telnetd`) used to give up if it started before
+the M700 had an address, which on every network boot it did. It now waits
+for one.

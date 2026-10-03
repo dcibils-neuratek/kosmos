@@ -107,4 +107,11 @@ bool acpi_ec_facts(struct acpi_ec_facts *out);
  */
 bool acpi_s5(unsigned *pm1a_cnt, unsigned *slp_typ);
 
+/*
+ * The FADT's reset register, when the firmware says it has one: its address
+ * space (1 is system I/O), its address, and the byte that resets the
+ * machine when written there (`testing.md` 18.352).
+ */
+bool acpi_reset_register(unsigned *space, uint64_t *address, uint8_t *value);
+
 #endif

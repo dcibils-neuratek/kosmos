@@ -218,6 +218,11 @@ manager's `power`) - and what is missing is the joining:
    which restarts the machine and waits for it to come back - the
    connection closing, then `telnetd` answering again - and says which
    build answered.
+   **`restart` BUILT on 3 October** (`testing.md` 18.352), with restart
+   itself made to work on a PC - the FADT's reset register first, then
+   0xCF9, the 8042 and a triple fault (Diego: "Right now only shutdown is
+   done") - and `telnetd` waiting for its address instead of leaving. The
+   Mac's half, waiting for the machine to come back, is next.
 4. **One command on the Mac** - build, `make netboot`, restart the M700,
    wait, check the version it runs, run the commands asked for (`log`,
    `diagnose`, `frames`, a suite), bring the output and the files back,
