@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-02
+Last updated: 2026-10-03
 
 ---
 
@@ -590,6 +590,29 @@ restarted*, written the same evening). **The I219 brought up as `e1000e`
 does** (18.346): Linux v6.12's e1000e read from `build/downloads/
 e1000e-v6.12`; no reset first, then its MAC reset, each with a frame to
 itself, and the registers said; `ethernet_pch` in x86-core with a control. **The gate ran 85 of 85 in 10:02** - two seconds over Diego's ten minutes (9:56 before it), the slowest `x86-cafesa3d-2` at 202 s and `x86-core` at 52 s, off the longest path: to bring back under before the next thing lands. **Stick 0.10.205** (`ec1114f`): OVMF 32 checks, handed over for the M700 with `log e1000` to read. **Its log** (18.347): the firmware left the card in good order (its own ring drained, TARC0 already e1000e's), the ME present, and both tries failed with TDH 0 against TDT 1; this driver cleared TCTL's MULR, which e1000e keeps. **Changed**: TCTL read-modify-write, PBA before the reset, WUC cleared, and `SYS_DEV_CONFIG` (65) to say the PCI command and the descriptor-ring status; gate 85/85 in 10:14 (over the budget, to trim). **Then network boot, Diego's ask** (18.348): the loader fetches by TFTP through the firmware's PXE, `make netboot` + `bash tools/netboot-serve.sh` (dnsmasq proxy, Diego's sudo), `x86-netboot` in the gate (OVMF needs `-device virtio-rng-pci` for its network stack). The M700 needs network boot on in its setup, F12, the network entry; the 0.10.205 stick stays in for /Home. **0.10.206 booted on the M700 over the network the same night** ("it booted over network!"); its `log e1000` is next. **It said the I219 sends** - a frame to itself in 13 ms, no reset (18.349) - and got no address: receiving. **0.10.207** (`make netboot`): extended receive descriptors on the I219 as e1000e uses (RFCTL.EXTEN), the firmware's RFCTL and the first five seconds' frames said. Network boot is first in the M700's boot order (Diego), so a restart takes the newest build. Next: the build-boot-test loop (roadmap), the late `/Home` stick, `diagnose`'s nil, and the gate back under ten minutes.
+
+**3 October, later: `make m700`, Groove, Night and the dock.** **0.10.215**:
+a USB stick's transfers given thirty seconds and its reset five, as Linux's
+`sd.h` and `usb_stor_reset_common` give them, after `make m700`'s first run
+found a written megabyte refused (18.354). **`make m700`** (`tools/run_m700.py`):
+126 of 126 checks on the M700 in 4:37 - hardware, every application opened a
+dozen at a time and pictured by VNC, numbers kept in `build/m700/history.jsonl`
+- all of it shown in a Terminal on its screen. **0.10.216**: a direct window
+read at the size it drew, which was Groove's diagonal bands, and Groove
+resizable and opening maximised (18.355). **The M700 stopped answering on
+0.10.216** while the suite ended its second dozen of applications ("Host is
+down"); Diego's photograph of its screen is what to read first when he is
+back at it. **Night and the dock** (Diego's design, `docs/dock.html`):
+Night committed (9ffe962), then steps 2 and 3 built and tried under QEMU
+while Diego was away from the M700 - the bar's place and the dock's width in
+Appearance, the Deskbar as a floating dock with a strip at the top, six
+faults the first look found and fixed (18.356), and `run_dock.py` in the
+gate as `x86-dock`. **Not pushed**: 0.10.215, 0.10.216, Night and the dock
+wait for Diego's word. **Next**: the dock's steps 4 to 6 (the launcher grid,
+quick settings, Night's title bars and desktop tiles); then the late `/Home`
+stick (B, agreed), the screenshot key into Captures, `>` and `>>`, the
+prompt's directory, the minimise outline, the VNC viewer in Kosmos (drawn
+first), and the gate under ten minutes.
 
 **3 October: the M700 on the network, and used from the Mac.** A power cut
 the night before; the Mac came back as 192.168.1.38. **0.10.208 to 0.10.212**,

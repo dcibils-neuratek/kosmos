@@ -132,6 +132,24 @@ settings.ITEMS = {
         --
         keep_default = true, clears = { "fonts" } },
 
+  --
+  -- **Where the bar is** (`roadmap.md`, a dock at the bottom; Diego, 3
+  -- October: "1. two" - the bar's place and the look are two settings - and
+  -- "make it an option but defaults to floating"). Told to the Deskbar as it
+  -- changes, which starts itself again in its new place (`preferences.lua`).
+  --
+  item{ category = "appearance", group = "Look",
+        label = "The bar", note = "Across the top, or a dock at the foot of the screen",
+        kind = "choice", file = settings.APPEARANCE, key = "bar",
+        default = "top",
+        choices = { { "top", "Top" }, { "dock", "Bottom, centred" } } },
+
+  item{ category = "appearance", group = "Look",
+        label = "The dock", note = "Floating above the edge, or the whole width",
+        kind = "choice", file = settings.APPEARANCE, key = "dock",
+        default = "floating",
+        choices = { { "floating", "Floating" }, { "whole", "Whole width" } } },
+
   item{ category = "appearance", group = "Look",
         label = "Wallpaper", note = "Carried in the image, or a picture in /Home",
         kind = "choice", file = settings.APPEARANCE, key = "wallpaper",

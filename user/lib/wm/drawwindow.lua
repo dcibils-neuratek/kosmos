@@ -260,7 +260,7 @@ return function(ctx)
           -- underneath it; `blend` is source-over and costs more than a copy,
           -- which is why it is not what every window gets.
           --
-          if win.backdrop then
+          if win.backdrop or win.blend then
             back:blend(from, x0 - win.x, y0 - win.y,
                        x1 - x0, y1 - y0, x0, y0)
           elseif win.menubar then

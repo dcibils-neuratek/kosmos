@@ -16905,3 +16905,143 @@ diagonal bands, a row length that is not the surface's; under QEMU, smaller,
 it draws true (the gallery). **`neofetch` takes eleven seconds there**, and
 every Telnet connection pays it as its banner. The stick reads at 32 MB/s on
 a USB 3 port.
+
+## 18.355 A direct window read at the size it drew, and Groove resizable
+
+**Groove in diagonal bands on the M700** (18.354) came out the same under
+QEMU at 1720x1440 with the Plex look, which is what made it a bug rather
+than a machine: Groove asked for the whole width - a window whose header
+is its title bar has no border - and was given 1712, the screen less a
+border. The window manager read its buffers at 1712 and Groove drew into
+them at 1720, so every row began eight pixels further on than the last.
+
+**0.10.216, both sides.** The window manager reads a client's region at
+the size the client made it, and refuses a region too small for that
+rather than read past its end (a window asking under the floor of 32
+would have). The kit, told a size other than the one it asked for, makes
+its buffers again at the granted size before the first frame
+(`take_size`), so the application lays out from what it was given.
+
+**Groove** (Diego, 3 October: "groove needs to be resizable", "like we did
+with the browser", "and open maximised to the full screen size"):
+resizable; maximised unless `--size` says otherwise - it draws only what
+changed now, so a whole work area costs what a song changes; and laid out
+again when resized, by its own loop, which is given the resize event the
+kit leaves to an application that runs one.
+
+**`kosmos_vnc.py`'s drag is spaced as a hand moves**: `vncd` folds
+pointer events with the same buttons into one, so a press and its moves
+sent together arrived as a single place.
+
+**`run_servers.py`, 27 checks**: a window asking 4000 wide draws a colour
+of its own in every column (`x * 2654435761`), and at every 37th column on
+the screen, near its top and its bottom, the screen holds that colour; its
+buffers are the granted size; Groove opened at 700 by 500 and dragged by
+its grip 120 right and 80 down says it was laid out larger. **Controls**:
+both fixes out, 100 of 102 places the wrong colour and buffers 4000 wide;
+the resize branch out, Groove never says it was resized. **The first
+version's stripes repeated, and passed the control** - a shear by a whole
+number of stripes looks like no shear at all - so each column has its own
+colour, and columns past the screen's edge are not asked about.
+
+## 18.356 Night, and the Deskbar as a dock
+
+**Diego, 3 October**, with photographs of Googlebook: "an appearance
+setting to place the taskbar on the bottom center and replicate as mich as
+possible the design language of googlebook", "I dont want to replace the
+current BeOS inspired one". Drawn as `docs/dock.html` and agreed: two
+settings, the dock floating by default and the whole width as the other,
+a strip at the top, the look called Night, no widgets for now.
+
+**Step 1, Night** (9ffe962): night blue in three steps, a pale blue accent
+with dark navy written on it, Plex, flat, a title bar on every window -
+and a look may now say how round a window is and how far its shadow goes
+(`corner` 18, `shadow` 24; every other look keeps 10 and 14).
+`test_theme.lua`, 236 checks; its control, the two keys out of the list,
+fails four.
+
+**Steps 2 and 3, the bar's place and the dock.** Appearance has *The bar*
+(Top, or Bottom, centred) and *The dock* (Floating, or Whole width);
+Preferences tells the Deskbar by writing `/Running/Deskbar/bar`, and the
+Deskbar starts itself again in the new place. In a dock it is two windows
+of one process: the dock, a strip at the foot of the screen that the
+window manager keeps centred twelve points above the edge (`strip =
+"bottom"`, `floating`), drawn in front of every window without taking the
+focus (`OUT.order`); and a strip across the top with the time and the
+indicators over the wallpaper. Both are blended, so what they do not draw
+is the screen. The dock's cells are the Kosmos button, eight pinned
+applications and, after a separator, what runs that is not pinned - an
+application once, however many windows - with a mark under each that runs
+(`user/lib/dock.lua`). A press launches, raises, or puts away the
+application in front; the Kosmos menu opens upwards.
+
+**What the first look under QEMU found**, each fixed before the suite was
+written:
+
+- **A maximised window went under the dock.** The window manager counted
+  the dock's room by walking its list of windows - before the dock was in
+  it. The top strip had always set its room directly; the dock does now.
+- **The strip at the top stayed empty.** The Deskbar set its frame hook
+  twice and the second, the breathing launcher's, replaced the dock's: the
+  strip was painted once, before the clock had been heard. One hook now,
+  which does both.
+- **A relaunch opened the login items again**: four more windows. The new
+  Deskbar is started with `--again`.
+- **`setprop` was refused** - "no such capability" - by a Deskbar that
+  closed itself inside the setter, before answering the write. The setter
+  now notes the new place and the next pass of the loop moves.
+- **The Kosmos button stayed lit** after a press elsewhere dismissed its
+  menu: the window manager closed the menu and never told its owner, whose
+  list said it was open - the list the top bar's button reads too, which
+  goes dark now as well. It now says which menus
+  went (`menus_gone`), and the kit forgets those.
+- **The build stamp in the corner sat under the dock**: it is drawn above
+  the dock's room now, and drawn again where it was when that changes.
+
+**`tools/run_dock.py`, 14 checks, x86 (`x86-dock`, 31 s)**: Night applied;
+the write that moves the bar answered, and the same place asked for again
+starting nothing; the login items opened once; the strip across the top;
+the dock centred twelve above the edge; a maximised window's room ending
+above it; the Kosmos menu above the dock; its button lit while the menu is
+open and dark again once a press on the strip has dismissed it; the whole
+width along the foot, giving the gap back; the bar at the top again with
+all the room back; nothing died. **Controls**, all in one build: the room
+counted from the list, the kit deaf to `menus_gone`, login items on every
+start and the relaunch inside the setter - five checks fail, each the one
+for its fix; the same-place guard out, its check fails alone.
+`test_dock.lua`, 25 checks on the host: the cells for what is pinned and
+what runs, where each goes, what a press hit and what it does.
+
+## 18.357 A drag's last stretch told before its release
+
+**The gate for the dock lost `x86-cafesa3d-1`'s Rotation Z scrub**, 16
+degrees for 20 - and again with only the two Cafesa3D halves beside it,
+then not at all run by itself: the flake `roadmap.md` 6zw recorded on 30
+September. Its note had the right suspicion, a release overtaking the
+last move, and the window manager's pointer pass shows how: a move is
+posted only while a button is held, so when the last stretch of a drag and
+the release land in the same pass - the harness waits 0.15 s between them,
+and a pass under load can take longer - the window is told only the
+release, at the new place. Cafesa3D follows a scrub by its moves, as an
+application may, and the last 8 pixels never turned anything.
+
+**Fixed in the window manager, for everything**: a release in a pass the
+pointer also moved in is told as a move to that place first, then the
+release (`user/lib/wm/pointer.lua`). Input that arrives in order is told
+in it.
+
+**The display harness's `drag order`** (part 2, 2.8 s): a window that says
+every event it is given; pressed, moved, and then the last stretch and the
+release sent to QEMU in one batch, which puts them in one pass. The last
+move it hears must be where the release is, and further on than the move
+before. **Control**: the move taken out, "the moves [('move', '139',
+'99')], the release at 219,99" - every time, where Cafesa3D lost it
+only when a pass fell that way.
+
+**The gate, for 18.356 and this: 87 of 87 in 10:12**, the slowest
+`x86-cafesa3d-2` at 188 s. The first run was 85 of 87: this scrub, and the
+host's line icons - the dock's strip chose the battery's glyph inside the
+call, and the check that every name the Lua draws is rendered read
+`"charging"` from the condition as a name; the bar and the strip share one
+`battery_glyph` now. Twelve seconds over Diego's ten minutes, as the last
+push was ten over: still to bring back.

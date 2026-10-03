@@ -26,9 +26,15 @@ return function(ctx)
     local visible  = {}
     local remaining = { r }
 
-    for i = #windows, 1, -1 do
+    -- In the order they are drawn: the stack, and a dock in front of all of
+    -- it (`OUT.order`, nil when there is no dock).
+    local order = OUT.order()
+    local count = order and #order or #windows
+
+    for k = count, 1, -1 do
       if #remaining == 0 then break end
 
+      local i = order and order[k] or k
       local win = windows[i]
 
       if not win.hidden then
@@ -85,7 +91,9 @@ return function(ctx)
               -- a window that covers a rectangle makes `draw_desktop` skip it
               -- altogether, so the picture was never drawn at all.
               --
-              if win.backdrop then
+              -- And a strip that asked to be blended, which is as
+              -- transparent as the backdrop wherever it has drawn nothing.
+              if win.backdrop or win.blend then
                 keep[#keep + 1] = piece
               else
                 subtract_into(keep, piece, x0, y0, x1, y1)
@@ -112,7 +120,8 @@ return function(ctx)
 
     -- And the windows, bottom to top, each clipped to what it shows - each
     -- with its shadow first, which lies outside what it shows.
-    for i = 1, #windows do
+    for k = 1, count do
+      local i = order and order[k] or k
       local v = visible[i]
 
       OUT.cast_shadow(windows[i], r)

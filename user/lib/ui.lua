@@ -5623,6 +5623,13 @@ function ui.window(spec)
     -- which takes room away from the screen rather than sitting over it.
     strip = spec.strip or nil,
 
+    -- A strip at the foot of the screen that floats above the edge and is
+    -- centred rather than across it - the dock (`roadmap.md`, a dock at the
+    -- bottom) - and a strip blended over what is behind it, as the desktop
+    -- is: the dock's pill, and the strip at the top over the wallpaper.
+    floating = (spec.strip and spec.floating) or nil,
+    blend = (spec.strip and spec.blend) or nil,
+
     --
     -- In the middle of the screen, and asked for rather than computed here.
     --
@@ -6561,8 +6568,10 @@ end
 -- record, the same window, the same routing. What makes it a submenu is
 -- only that something above it in the stack is still open.
 --
-function window:push_menu(x, y, items)
+function window:push_menu(x, y, items, above)
   local w, h, row = menu_metrics(items)
+
+  if above then y = y - h end
 
   local reply = fs.send("/Running/wm", { type = "open", kind = "menu",
                                      owner = self.handle,
@@ -6643,10 +6652,15 @@ end
 
 -- The old single-menu names, kept because the menu bar and anything else
 -- that only ever wants one still reads better this way.
-function window:open_menu(x, y, items)
+--
+-- `above`: `y` is where the menu's bottom edge goes rather than its top -
+-- the dock's Kosmos menu, which opens upwards from the foot of the screen
+-- (`roadmap.md`, a dock at the bottom).
+--
+function window:open_menu(x, y, items, above)
   self:close_menus()
 
-  return self:push_menu(x, y, items)
+  return self:push_menu(x, y, items, above)
 end
 
 function window:close_menu()
@@ -7324,6 +7338,21 @@ function window:run()
         --
         self.origin_x, self.origin_y = ev.x, ev.y
         self.x, self.y = ev.x, ev.y
+      elseif ev.type == "menus_gone" then
+        --
+        -- Menus the window manager closed - a press outside them - which
+        -- this window would otherwise go on believing were open.
+        --
+        local went, kept = {}, {}
+
+        for _, h in ipairs(ev.menus or {}) do went[h] = true end
+        for _, m in ipairs(self.menus) do
+          if not went[m.handle] then kept[#kept + 1] = m end
+        end
+        for i = #self.menus, 1, -1 do self.menus[i] = nil end
+        for i, m in ipairs(kept) do self.menus[i] = m end
+
+        changed = true
       elseif ev.type == "mouse" and ev.menu then
         -- Tagged with a menu handle by the window manager, so it belongs to
         -- the open menu rather than to any widget in this window.

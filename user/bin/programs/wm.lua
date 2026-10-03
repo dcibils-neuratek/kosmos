@@ -1702,6 +1702,75 @@ end
 --
 local reserved_top = 0
 
+--
+-- **And the dock's, at the bottom** (`roadmap.md`, a dock at the bottom;
+-- Diego, 3 October: "place the taskbar on the bottom center"): a strip
+-- across the foot of the screen, or a dock floating above it, which takes
+-- its height - and when it floats, the gap under it and one above - away
+-- from what a maximised window may cover. Nought with no dock.
+--
+local reserved_bottom = 0
+local DOCK_GAP = 12             -- a floating dock's distance from the edge, in points
+
+-- The room a bottom strip takes from the screen: its height, and the gap
+-- above and below it when it floats.
+local function bottom_room(win)
+  return win.h + (win.floating and scale.px(DOCK_GAP) * 2 or 0)
+end
+
+-- The stamp in the corner sits above the dock (`draw_desktop`), so where it
+-- was and where it is are both drawn again when the dock's room changes.
+local function bottom_changed(was)
+  if was == reserved_bottom then return end
+
+  local band = math.max(was, reserved_bottom) + gfx.font.h + 16
+
+  add_damage(0, H - band, W, band)
+end
+
+-- Where a bottom strip goes: centred and `DOCK_GAP` above the edge when it
+-- floats, across the foot of the screen when it does not.
+local function place_bottom(win)
+  local gap = win.floating and scale.px(DOCK_GAP) or 0
+
+  win.x = win.floating and (W - win.w) // 2 or 0
+  win.y = H - win.h - gap
+end
+
+--
+-- **The order windows are drawn and pressed in**: the stack, and the dock
+-- in front of all of it. It is not moved to the top of the stack, because
+-- the top of the stack is the focus (`focused_window`) and a dock that took
+-- the keys would take them from every window. Nil when there is no dock,
+-- which is every look but one, so that case costs nothing; the table is
+-- reused, so the other costs no garbage.
+--
+local drawing_order = {}
+
+function OUT.order()
+  local dock = false
+
+  for _, w in ipairs(windows) do
+    if w.strip == "bottom" then dock = true break end
+  end
+
+  if not dock then return nil end
+
+  local n = 0
+
+  for i, w in ipairs(windows) do
+    if w.strip ~= "bottom" then n = n + 1; drawing_order[n] = i end
+  end
+
+  for i, w in ipairs(windows) do
+    if w.strip == "bottom" then n = n + 1; drawing_order[n] = i end
+  end
+
+  for k = #drawing_order, n + 1, -1 do drawing_order[k] = nil end
+
+  return drawing_order
+end
+
 local function top_limit()
   return OUT.TAB_H + reserved_top
 end
@@ -1721,7 +1790,7 @@ end
 -- with them.
 --
 function OUT.room(win)
-  if win.headed then return W, H - reserved_top end
+  if win.headed then return W, H - reserved_top - reserved_bottom end
 
   return W - OUT.BORDER * 2, H - OUT.TAB_H - OUT.BORDER
 end
@@ -2151,12 +2220,15 @@ local post
 -- Super key's, and the power button's when Preferences asks for the menu.
 -- Posted, never sent - it runs on the key path.
 function OUT.open_kosmos_menu()
+  local to = nil
+
+  -- The dock's Kosmos button when there is one, the bar's otherwise.
   for _, win in ipairs(windows) do
-    if win.strip then
-      post(win, { type = "menu" })
-      break
-    end
+    if win.strip == "bottom" then to = win break end
+    if win.strip and not to then to = win end
   end
+
+  if to then post(to, { type = "menu" }) end
 end
 PT.grabbed = nil           -- the window a press landed in, until release
 
@@ -2400,7 +2472,8 @@ local function draw_desktop(r)
   -- Measured rather than counted: the interface font need not be monospaced,
   -- and a stamp positioned by character count would drift off the corner the
   -- moment it is not.
-  local sx, sy = W - gfx.measure(stamp) - 10, H - gfx.font.h - 8
+  -- Above the dock when there is one, which would otherwise sit on it.
+  local sx, sy = W - gfx.measure(stamp) - 10, H - reserved_bottom - gfx.font.h - 8
 
   if r.x < W and r.x + r.w > sx and r.y < H and r.y + r.h > sy then
     back:text(sx, sy, stamp, stamp_colour(), desktop_colour())
@@ -2622,6 +2695,7 @@ function OUT.maximised(win)
 
   return math.min(W - OUT.BORDER * 2, W - 8),
          math.min(H - top_limit() - OUT.BORDER, H - OUT.TAB_H - 8)
+         - reserved_bottom
 end
 
 local function maximise(win)
@@ -2703,14 +2777,19 @@ end
 local fit_backdrop            -- below: the backdrop follows this number
 
 local function recount_strips()
-  reserved_top = 0
+  local was_bottom = reserved_bottom
+
+  reserved_top, reserved_bottom = 0, 0
 
   for _, w in ipairs(windows) do
     if w.strip == "top" and not w.hidden then
       reserved_top = w.h
+    elseif w.strip == "bottom" and not w.hidden then
+      reserved_bottom = bottom_room(w)
     end
   end
 
+  bottom_changed(was_bottom)
   fit_backdrop()
 end
 
@@ -3024,8 +3103,9 @@ handlers.open = function(req, who, cap)
     return (asked and v == scale.px(asked, pct)) and asked or scale.pt(v, pct)
   end
 
-  local room_w = (req.strip == "top") and W or (W - 8)
-  local room_h = (req.strip == "top") and H or (H - OUT.TAB_H - 8)
+  local strip = req.strip == "top" or req.strip == "bottom"
+  local room_w = strip and W or (W - 8)
+  local room_h = strip and H or (H - OUT.TAB_H - 8 - reserved_bottom)
 
   --
   -- The floor of 32 is so a window cannot be smaller than its own
@@ -3034,7 +3114,7 @@ handlers.open = function(req, who, cap)
   -- six rows nobody painted showed as a dark line under the bar. Which read
   -- as a border, and was chased three times as one.
   --
-  local floor = (req.strip == "top") and 1 or 32
+  local floor = strip and 1 or 32
 
   --
   -- **A maximised window whose header will be its title bar** has no tab
@@ -3043,7 +3123,7 @@ handlers.open = function(req, who, cap)
   -- with its header.
   --
   if req.maximised and OUT.wants_head(req) and theme.title_bars == false then
-    room_w, room_h = W, H - reserved_top
+    room_w, room_h = W, H - reserved_top - reserved_bottom
   end
 
   local w_ = math.min(math.max(tonumber(req.w) or 320, floor), room_w)
@@ -3508,6 +3588,37 @@ handlers.open = function(req, who, cap)
     reserved_top = win.h
     fit_backdrop()
   end
+
+  --
+  -- **And one across the foot of the screen**: the dock (`roadmap.md`, a dock
+  -- at the bottom), centred and floating above the edge unless it asks for
+  -- the whole width. Pinned and undecorated as the top strip is, and in
+  -- front of every window (`OUT.order`) rather than at the top of the
+  -- stack, which is the focus.
+  --
+  if req.strip == "bottom" then
+    win.strip = "bottom"
+    win.pinned = true
+    win.floating = req.floating == true or nil
+    place_bottom(win)
+    -- Set here, as the top strip's is: the window is not in `windows` yet,
+    -- so counting them would not find it - which is what a maximised
+    -- window opened after the dock was given, the whole height.
+    local was = reserved_bottom
+
+    reserved_bottom = bottom_room(win)
+    bottom_changed(was)
+    fit_backdrop()
+  end
+
+  --
+  -- **A strip may be blended**, as the backdrop always is: what it has not
+  -- drawn shows what is behind it. The dock's strip at the top is the time
+  -- and the indicators over the wallpaper, and the dock a pill with the
+  -- screen round it. Strips only, since blending costs more than a copy and
+  -- an application window has no reason to.
+  --
+  if req.blend == true and win.strip then win.blend = true end
 
   --
   -- **Full screen: the window *is* the screen.**
@@ -4381,6 +4492,15 @@ handlers.resize = function(req)
                 tonumber(req.w) and scale.px(tonumber(req.w), pct) or win.w,
                 tonumber(req.h) and scale.px(tonumber(req.h), pct) or win.h)
 
+  -- A dock that changes width stays centred, and keeps its place above the
+  -- edge (`place_bottom`).
+  if win.strip == "bottom" then
+    damage_window(win)
+    place_bottom(win)
+    damage_window(win)
+    print(("wm: the dock at %d,%d %dx%d"):format(win.x, win.y, win.w, win.h))
+  end
+
   -- A strip that changes height changes the room above everything else.
   if win.strip then recount_strips() end
 
@@ -4793,7 +4913,8 @@ handlers.workarea = function(req)
   -- Asked by a window that will have its header for a title bar, in a look
   -- where it will: no tab and no border to leave room for (`OUT.room`).
   if req and req.header == true and theme.title_bars == false then
-    return { ok = true, x = 0, y = reserved_top, w = W, h = H - reserved_top, headed = true }
+    return { ok = true, x = 0, y = reserved_top, w = W,
+             h = H - reserved_top - reserved_bottom, headed = true }
   end
 
   local w, h = OUT.maximised()
@@ -5094,7 +5215,11 @@ function scale.rescale(pct)
       damage_window(win)
 
       if win.strip then
-        swap_surface(win, W, scale.px(scale.pt(win.h, old), pct))
+        swap_surface(win, (win.strip == "bottom" and win.floating)
+                          and scale.px(scale.pt(win.w, old), pct) or W,
+                     scale.px(scale.pt(win.h, old), pct))
+
+        if win.strip == "bottom" then place_bottom(win) end
       elseif win.backdrop then
         -- Sized from what the strip leaves, below.
       elseif win.shared then
@@ -5814,18 +5939,37 @@ end
 -- by - which is the reason for building a menu as a window in the first
 -- place and would be wasted by tearing one down by hand here.
 --
+--
+-- **And the owner is told which went** (`menus_gone`): it keeps a list of
+-- what it has open, and a list nobody corrected is a Kosmos button that
+-- stayed lit after its menu was dismissed - the dock's, 3 October. The
+-- handles rather than "all of them", so a menu the owner opened after this
+-- and before reading it is not forgotten with them.
+--
 local function dismiss_menus(owner_handle)
   local n = #menus
+  local gone = {}
 
   for i = n, 1, -1 do
     local m = menus[i]
 
     if owner_handle == nil or m.owner == owner_handle then
+      local list = gone[m.owner or 0] or {}
+
+      gone[m.owner or 0] = list
+      list[#list + 1] = m.handle
+
       -- pcall because this runs from `pointer_pass`, which the main loop
       -- calls bare rather than inside the pcall that wraps handlers. An
       -- error here would take the desktop with it.
       pcall(handlers.close, { window = m.handle })
     end
+  end
+
+  for owner, list in pairs(gone) do
+    local win = by_handle[owner]
+
+    if win then post(win, { type = "menus_gone", menus = list }) end
   end
 
   return #menus < n
@@ -5840,6 +5984,16 @@ end
 -- and a window you cannot see must not be a window you can click.
 --
 local function window_at(x, y)
+  -- The dock first: it is drawn in front of everything (`OUT.order`).
+  for i = #windows, 1, -1 do
+    local win = windows[i]
+
+    if win.strip == "bottom" and not win.hidden
+       and x >= win.x and x < win.x + win.w and y >= win.y and y < win.y + win.h then
+      return win, win.x, win.y
+    end
+  end
+
   for i = #windows, 1, -1 do
     local win = windows[i]
     local fx, fy, fw, fh = frame_of(win)

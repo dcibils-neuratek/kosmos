@@ -191,6 +191,14 @@ SUITES = [
     Suite("arm-servers", ["python3", "tools/run_servers.py", ARM]),
     Suite("x86-servers", ["python3", "tools/run_servers.py", X86], x86=True),
 
+    # **The Deskbar as a dock, in Night** (`roadmap.md`, a dock at the
+    # bottom): moved there as Preferences moves it, floating and centred
+    # with its strip at the top, a maximised window ending above it, the
+    # Kosmos menu upwards and its button dark once the menu is dismissed,
+    # the whole width, and the top again. One board: it is Lua over the
+    # window manager, the same on both.
+    Suite("x86-dock", ["python3", "tools/run_dock.py", X86], x86=True),
+
     # **The browser, browsing** (`roadmap.md` 6zz a, b): the test page in
     # `assets/www/` served from this Mac - drawn, scrolled, reloaded, a link
     # followed, Home with nothing served, an address typed after Control-L,
@@ -457,7 +465,7 @@ DISPLAY_PARTS = [
      "preferences", "file types", "compress"],
     ["log view", "text size", "window resize", "triangle", "repaints",
      "@@BOARD@@", "volume keys", "compositor budget", "corners", "shadow",
-     "wheel"],
+     "wheel", "drag order"],
     ["faces", "wallpapers", "direct menu", "super drag", "no title bar",
      "tabs", "appearance",
      "deskbar", "deskbar focus", "starting", "deskbar layers",

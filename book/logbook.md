@@ -488,3 +488,56 @@ itself and reconnecting after each restart. It is built on the same code
 the tests use. The first picture takes about 7 seconds, because the M700
 sends at only 1.4 MB a second - the next thing to measure. A viewer the
 other way round, inside Kosmos, is agreed and will be drawn first.
+
+## 3 October, night - a dock at the bottom, in a look called Night
+
+**In short:** Kosmos can now put its taskbar where Googlebook puts it - a
+floating dock at the bottom centre, with the time and the indicators in a
+thin strip across the top - in a new dark-blue look called Night, as Diego
+asked, drew and agreed the same day. The BeOS-style bar at the top is still
+the default and one setting away. Trying it under the emulator found six
+faults before any test was written; each is fixed, and a new 31-second
+test checks the dock every time the system is tested.
+
+**What.** Appearance in Preferences has two new choices: *The bar* (Top,
+or Bottom, centred) and *The dock* (Floating, or Whole width). Chosen, the
+Deskbar restarts itself in its new place. As a dock it shows the Kosmos
+button, eight pinned applications, a separator and whatever else is
+running - each application once, however many windows it has, with a small
+mark under it while it runs. A press opens an application, brings it to the
+front, or puts it away if it is already in front. The Kosmos menu opens
+upwards. A window maximised fills the room between the strip and the dock.
+
+**Why this shape.** Diego wanted the design language of Googlebook beside
+BeOS's, not instead of it, and drew both into one page before any code
+(`docs/dock.html`). The Deskbar stays one program that draws either way, so
+everything it knows - what runs, what is starting, the menu - is shared
+rather than written twice.
+
+**What the first look found.** A maximised window slid under the dock,
+because the window manager counted the dock's space before the dock was on
+its list. The strip at the top stayed blank, because a second piece of the
+Deskbar replaced the hook that redraws it. Moving the bar reopened the four
+login windows. The command that moved it got an error back, because the old
+Deskbar left before answering. The Kosmos button stayed lit after its menu
+was dismissed - the window manager closed the menu without telling its
+owner, and the bar at the top reads the same list. And the version line in
+the corner sat under the dock. All six are fixed, and each of the four
+that a test could undo was undone once to prove its check notices.
+
+**Visible impact.** On a 1440 by 900 screen the dock sits twelve pixels
+above the edge with a faint light outline that separates it from a dark
+window behind it; Groove opened maximised now ends above it. Switching
+between the dock, the whole-width dock and the bar at the top takes about a
+second each way. Still to come, in the agreed order: the launcher as a grid
+of applications above the Kosmos button, quick settings under the strip,
+and Night's own title bars and desktop icons.
+
+**And an older fault the gate turned up.** Cafesa3D's test drags across
+a rotation field and expects 20 degrees; now and then it got 16. The window
+manager tells a window about a drag move by move, but only while the button
+is held - so when the last bit of movement and the letting go reached it at
+the same moment, it reported only the letting go, and the last movement was
+lost to any program that counts moves. It now reports the movement first,
+then the release, and a new 3-second test sends both at once to prove it,
+every time.

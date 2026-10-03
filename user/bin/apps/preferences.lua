@@ -353,6 +353,25 @@ local APPLY = {
     return fs.send("/Running/wm", { type = "theme", shadow = on })
   end,
 
+  -- Where the bar is, and how wide the dock: told to the Deskbar, which
+  -- starts itself again there. A machine with no Deskbar running keeps the
+  -- setting all the same, for the next one to read.
+  bar = function(where)
+    local ok, why = fs.write("/Running/Deskbar/bar", tostring(where))
+
+    if not ok then print("preferences: the Deskbar was not told: " .. tostring(why)) end
+
+    return true
+  end,
+
+  dock = function(how)
+    local ok, why = fs.write("/Running/Deskbar/dock", tostring(how))
+
+    if not ok then print("preferences: the Deskbar was not told: " .. tostring(why)) end
+
+    return true
+  end,
+
   -- What the power button and the Super key do: the manager acts on both
   -- in its key path and holds them rather than reading a file there.
   button = function(what)

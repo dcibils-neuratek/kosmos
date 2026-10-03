@@ -260,6 +260,27 @@ return function(ctx)
       end
     elseif not is_down and was_down then
       if PT.grabbed then
+        --
+        -- **The move first, when the button came up in a pass the pointer
+        -- also moved in.** The moves below are posted only while a button
+        -- is down, so the last stretch of a drag that ended in the same
+        -- pass arrived as the release's place alone - and an application
+        -- that follows a drag by its moves never saw it: Cafesa3D's Rotation
+        -- Z scrub turned 16 degrees for 20 whenever a pass fell that way
+        -- (`roadmap.md` 6zw). Input that arrives in order is told in it.
+        --
+        if moved_this_pass then
+          if PT.grabbed.kind == "menu" then
+            post(by_handle[PT.grabbed.owner],
+                 { type = "mouse", menu = PT.grabbed.handle, action = "move",
+                   x = nx - PT.grabbed.x, y = ny - PT.grabbed.y })
+          else
+            post(PT.grabbed, { type = "mouse", action = "move",
+                            x = nx - PT.grabbed.x,
+                            y = ny - PT.grabbed.y - strips.below(PT.grabbed) })
+          end
+        end
+
         if PT.grabbed.kind == "menu" then
           post(by_handle[PT.grabbed.owner],
                { type = "mouse", menu = PT.grabbed.handle, action = "release",

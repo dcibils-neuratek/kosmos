@@ -475,7 +475,45 @@ local ICON = 24
 local LINE = 19
 local W = sw
 
-local win, err = ui.window{ title = "Deskbar", w = W, h = H, strip = "top" }
+--
+-- **Where the bar is** (`roadmap.md`, a dock at the bottom; Diego, 3
+-- October: "an appearance setting to place the taskbar on the bottom
+-- center"): across the top, as it has been, or a dock at the foot of the
+-- screen with a strip across the top for the time and the indicators -
+-- Appearance's `bar`, the dock floating unless `dock` says the whole
+-- width. `--bar dock` or `--bar top` says so for one start, as a test asks.
+--
+local appearance = fs.read("/Home/Preferences/appearance")
+
+if type(appearance) ~= "table" then appearance = {} end
+
+local asked_bar = tostring(args or ""):match("%-%-bar%s+(%a+)")
+local asked_dock = tostring(args or ""):match("%-%-dock%s+(%a+)")
+local DOCKED = (asked_bar or appearance.bar) == "dock"
+local FLOATING = (asked_dock or appearance.dock) ~= "whole"
+local dock = DOCKED and use("/Kosmos/Libraries/dock.lua") or nil
+local topstrip = nil              -- the dock's strip across the top
+
+if DOCKED then H = dock.H end
+
+local win, err
+
+if DOCKED then
+  -- The dock: as wide as what is in it once that is known (`dock_frame`),
+  -- or the whole width; blended, so its corners and the gap round it are
+  -- the screen.
+  win, err = ui.window{ title = "Deskbar", w = FLOATING and 400 or W, h = H,
+                        strip = "bottom", floating = FLOATING or nil, blend = true }
+
+  if win then
+    topstrip = ui.window{ title = "Deskbar strip", w = W, h = dock.STRIP_H,
+                          strip = "top", blend = true }
+  end
+
+  print(("deskbar: a dock, %s"):format(FLOATING and "floating" or "the whole width"))
+else
+  win, err = ui.window{ title = "Deskbar", w = W, h = H, strip = "top" }
+end
 
 if not win then
   print("deskbar: " .. tostring(err))
@@ -523,6 +561,62 @@ win:publish("menu",
   function()
     read_sections()
     win.dirty = true
+  end)
+
+--
+-- **Another place for the bar**, told by Preferences as the setting changes
+-- (`roadmap.md`, a dock at the bottom): a Deskbar started again with the
+-- new words, and this one closed once the window manager has said yes - as
+-- Groove starts itself again at another size. The words go on its command
+-- line rather than through the file, because Preferences applies a setting
+-- before it writes it.
+--
+--
+-- **Asked for, then done from the loop**: the setter only notes the words,
+-- so the write that asked is answered by a Deskbar still there to answer
+-- it - closing from inside the setter left `setprop` holding an error from
+-- a process that had gone. `--again` is what keeps the new one from opening
+-- the login items a second time.
+--
+local leaving = nil         -- { bar, dock } once a new place has been asked for
+
+local function again(bar_is, dock_is)
+  local reply = fs.send("/Running/wm", { type = "launch", program = "deskbar",
+                                         args = ("--bar %s --dock %s --again"):format(bar_is, dock_is) })
+
+  if reply and reply.ok then
+    print(("deskbar: again, the bar %s and the dock %s"):format(bar_is, dock_is))
+    if topstrip then topstrip:close() end
+    win:close()
+  else
+    print("deskbar: could not start again: " .. tostring(reply and reply.error))
+  end
+end
+
+-- The place it already has asks for nothing: Preferences applying the
+-- setting it shows is not a reason for the bar to blink. Nor does the
+-- dock's width while the bar is at the top - it is kept for when it moves.
+local function move_to(bar_is, dock_is)
+  if bar_is == "top" and not DOCKED then
+    FLOATING = dock_is ~= "whole"
+    return
+  end
+
+  if bar_is == "dock" and DOCKED and (dock_is ~= "whole") == FLOATING then return end
+
+  leaving = { bar_is, dock_is }
+end
+
+win:publish("bar",
+  function() return DOCKED and "dock" or "top" end,
+  function(v)
+    move_to(tostring(v) == "dock" and "dock" or "top", FLOATING and "floating" or "whole")
+  end)
+
+win:publish("dock",
+  function() return FLOATING and "floating" or "whole" end,
+  function(v)
+    move_to(DOCKED and "dock" or "top", tostring(v) == "whole" and "whole" or "floating")
   end)
 
 --------------------------------------------------------------------------
@@ -664,7 +758,7 @@ local function refresh()
 
   for i, w_ in ipairs(list) do
     rows[i] = { handle = w_.handle, title = w_.title,
-                icon = picture(w_.program),
+                icon = picture(w_.program), program = w_.program,
                 focused = w_.focused, hidden = w_.hidden }
   end
 
@@ -918,7 +1012,12 @@ local function open_kosmos_menu()
       end,
     }
 
-    win:open_menu(win.origin_x, win.origin_y + H, items)
+    if DOCKED then
+      -- Upwards, from above the dock's Kosmos button.
+      win:open_menu(win.origin_x + dock.PAD, win.origin_y - 6, items, true)
+    else
+      win:open_menu(win.origin_x, win.origin_y + H, items)
+    end
 end
 
 --
@@ -1184,6 +1283,15 @@ local function task_spans()
   return out
 end
 
+-- The battery's line glyph: the bolt while it charges, else how full. The
+-- bar and the dock's strip both draw it.
+local function battery_glyph(bat)
+  return bat.state == "charging" and "battery-charging"
+         or (bat.percent >= 80 and "battery-full")
+         or (bat.percent >= 30 and "battery-medium")
+         or "battery-low"
+end
+
 function bar:draw(g)
   for row = 0, self.h - 1 do
     local k = (38 * (self.h - 1 - row)) // (self.h - 1)
@@ -1333,10 +1441,7 @@ function bar:draw(g)
     local low = bat.critical == 1
                 or (bat.state == "discharging" and bat.percent <= 10)
     local ink = low and (theme.bad or 0xffe04848) or theme.tab_text
-    local glyph = charging and "battery-charging"
-                  or (bat.percent >= 80 and "battery-full")
-                  or (bat.percent >= 30 and "battery-medium")
-                  or "battery-low"
+    local glyph = battery_glyph(bat)
     local lw = gfx.measure(label)
 
     x = x - PAD - LINE - 4 - lw
@@ -1591,6 +1696,250 @@ function bar:on_context(x, _)
   return false
 end
 
+--------------------------------------------------------------------------
+-- **The dock** (`roadmap.md`, a dock at the bottom; `docs/dock.html`): the
+-- same bar's Kosmos button and what runs, and what is pinned, drawn as
+-- Googlebook's dock - an application a cell, its picture, a mark under it
+-- while it runs - and a strip across the top for the time and the
+-- indicators. What is where is `dock.lua`'s arithmetic; this draws it.
+--------------------------------------------------------------------------
+
+local dock_frame = nil        -- the dock's own work each pass, below
+
+if DOCKED then
+  local saved = fs.read("/Home/Preferences/dock")
+  local pins = (type(saved) == "table" and type(saved.pins) == "table")
+               and saved.pins or dock.PINS
+  local items = {}
+  local wanted_w = nil            -- the dock's width once its cells are known
+
+  local function pinned_icon(name)
+    local attrs = programs[name]
+
+    return attrs and attrs.icon or nil
+  end
+
+  -- The cells and their places, from what runs now; and the width the dock
+  -- should be, which `on_frame` asks for outside the draw.
+  local function lay_out()
+    items = dock.items(pins, running, pinned_icon)
+
+    local width = dock.layout(items, gfx.measure("Kosmos"))
+
+    wanted_w = FLOATING and width or nil
+  end
+
+  -- A colour at an opacity: the dock's surface is the look's window, a
+  -- little see-through, as the drawing's is.
+  local function at(c, a) return (c & 0x00ffffff) | (a << 24) end
+
+  function bar:draw(g)
+    lay_out()
+
+    g:fill(0, 0, self.w, self.h, 0x00000000)
+
+    -- A hairline of white at a twelfth round the surface, as the drawing
+    -- has (`--d-line`): what tells a dark dock from a dark window under it.
+    -- The fill replaces rather than blends, so the inner shape leaves a
+    -- ring of the outer one.
+    if FLOATING then
+      g:fill_round(0, 0, self.w, self.h, 0x14ffffff, dock.RADIUS)
+      g:fill_round(1, 1, self.w - 2, self.h - 2, at(theme.window, 0xd8), dock.RADIUS - 1)
+    else
+      g:fill(0, 0, self.w, self.h, at(theme.window, 0xd8))
+      g:fill(0, 0, self.w, 1, 0x14ffffff)
+    end
+
+    -- Centred in the whole width, as the floating dock is on the screen.
+    local off = FLOATING and 0 or (self.w - (dock.layout(items, gfx.measure("Kosmos")))) // 2
+    local cy = self.h // 2
+
+    for _, it in ipairs(items) do
+      local x = it.x + off
+
+      if it.kind == "kosmos" then
+        local open = #win.menus > 0
+        local bh = dock.KOSMOS_H
+
+        g:fill_round(x, cy - bh // 2, it.w, bh, open and theme.accent or theme.raised, bh // 2)
+        g:icon(x + dock.KOSMOS_IN, cy - dock.MARK // 2, "App_Deskbar.png", dock.MARK)
+        g:text(x + dock.KOSMOS_IN + dock.MARK + 8, cy - gfx.font.h // 2, "Kosmos",
+               open and theme.text_on or theme.text)
+      elseif it.kind == "separator" then
+        g:fill(x + it.w // 2, cy - 15, 1, 30, at(theme.text_dim, 0x70))
+      else
+        g:icon(x + (it.w - dock.ICON) // 2, cy - dock.ICON // 2 - 3, it.icon .. ".png", dock.ICON)
+
+        if it.running then
+          local mw = it.front and 16 or 6
+
+          g:fill_round(x + (it.w - mw) // 2, self.h - 9, mw, 4,
+                       it.front and theme.accent or theme.text_dim, 2)
+        end
+      end
+    end
+
+    self.offset = off
+  end
+
+  function bar:mouse(action, x, y)
+    local _ = y
+
+    if action ~= "press" then return false end
+
+    local it = dock.hit(items, x - (self.offset or 0))
+
+    if not it then return false end
+
+    if it.kind == "kosmos" then
+      open_kosmos_menu()
+      return true
+    end
+
+    local what, arg = dock.action(it)
+
+    if what == "launch" then
+      fs.send("/Running/wm", { type = "launch", program = arg })
+      print("deskbar: the dock launched " .. arg)
+    elseif what == "raise" or what == "minimise" then
+      -- Drawn on this press from what is known, as the bar's buttons are.
+      for _, other in ipairs(running) do
+        if other.handle == arg then
+          other.focused = (what == "raise") or nil
+          other.hidden = (what == "minimise") or nil
+        elseif what == "raise" then
+          other.focused = nil
+        end
+      end
+
+      if not fs.send("/Running/wm", { type = what, window = arg }) then refresh() end
+    end
+
+    return true
+  end
+
+  function bar:on_context()
+    return false
+  end
+
+  --
+  -- **The strip across the top**: the time and the date at the left, the
+  -- indicators at the right, in the desktop's own words' colour over the
+  -- wallpaper - a shadow under each so they read on a light picture too.
+  --
+  local strip = ui.view{ x = 0, y = 0, w = topstrip and topstrip.w or W, h = dock.STRIP_H }
+
+  local function shadowed(g, x, y, text, ink)
+    g:text(x + 1, y + 1, text, 0x80000000)
+    g:text(x, y, text, ink)
+  end
+
+  function strip:draw(g)
+    g:fill(0, 0, self.w, self.h, 0x00000000)
+
+    local ink = theme.desktop_text or 0xffffffff
+    local ty = (self.h - gfx.font.h) // 2
+    local ly = (self.h - LINE) // 2
+    local time = heard.now and clock.time_string(heard.now) or ""
+    local date = heard.now and clock.date_string(heard.now) or ""
+
+    shadowed(g, 18, ty, time, ink)
+    shadowed(g, 18 + gfx.measure(time) + 10, ty, date, ink)
+    self.clock_w = 18 + gfx.measure(time) + 10 + gfx.measure(date)
+
+    local x = self.w - 18
+
+    self.volume_x, self.network_x, self.battery_x = nil, nil, nil
+
+    local bat = heard.battery
+
+    if bat then
+      local label = ("%d%%"):format(bat.percent)
+
+      x = x - gfx.measure(label)
+      shadowed(g, x, ty, label, ink)
+      x = x - 4 - LINE
+      g:line_icon(x, ly, battery_glyph(bat), ink, LINE)
+      self.battery_x = x
+      x = x - 14
+    end
+
+    if heard.level then
+      x = x - LINE
+      g:line_icon(x, ly, heard.muted and "muted" or "sound", ink, LINE)
+      self.volume_x = x
+      x = x - 14
+    end
+
+    if heard.network then
+      x = x - LINE
+      g:line_icon(x, ly, heard.network, ink, LINE)
+      self.network_x = x
+    end
+  end
+
+  -- What a press on the strip opens, as the bar's indicators do.
+  local function strip_press(x)
+    local function near(at_) return at_ and x >= at_ - 6 and x < at_ + LINE + 6 end
+    local program = nil
+
+    if near(strip.volume_x) then
+      program = "/Kosmos/Apps/mixer.lua"
+    elseif near(strip.network_x) then
+      program = "/Kosmos/Apps/network.lua"
+    elseif x < (strip.clock_w or 0) + 6 then
+      program = "/Kosmos/Apps/datetime.lua"
+    end
+
+    if program then fs.send("/Running/wm", { type = "launch", program = program }) end
+  end
+
+  if topstrip then
+    topstrip:add(strip)
+    topstrip:paint()
+  end
+
+  --
+  -- **The strip is served from the dock's loop** - one process, two windows,
+  -- and the kit's loop polls one: its presses asked for without waiting, and
+  -- it is painted again when what it shows has changed. And the dock asks
+  -- for the width its cells want, outside its own draw.
+  --
+  local strip_said = nil
+  local wmproto = use("/Kosmos/Libraries/wmproto.lua")
+
+  function dock_frame(self)
+    if topstrip then
+      local reply = wmproto.poll(topstrip.handle, 0)
+
+      for _, ev in ipairs(reply and reply.events or {}) do
+        if ev.type == "mouse" and ev.action == "press" then strip_press(ev.x) end
+      end
+
+      local now = table.concat({ heard.now and clock.time_string(heard.now) or "",
+                                 tostring(heard.level), tostring(heard.muted),
+                                 tostring(heard.network),
+                                 heard.battery and heard.battery.percent or "",
+                                 tostring(theme.desktop_text) }, "|")
+
+      if now ~= strip_said then
+        strip_said = now
+        topstrip:paint()
+      end
+    end
+
+    if wanted_w and wanted_w ~= self.w then
+      local w = wanted_w
+
+      wanted_w = nil
+      self:resize(w, H)
+      return true
+    end
+
+    return false
+  end
+end
+
 win:add(bar)
 
 --------------------------------------------------------------------------
@@ -1611,7 +1960,7 @@ win:add(bar)
 -- Started through the same `launch` message the menu sends, so an item that
 -- opens at startup and the same item chosen by hand are the same thing.
 --------------------------------------------------------------------------
-do
+if not tostring(args or ""):match("%-%-again") then
   -- The list, or what a machine nobody has told opens. `/Kosmos/Libraries/startup.lua`
   -- holds both so that this and the panel cannot disagree about it.
   local items = use("/Kosmos/Libraries/startup.lua").items()
@@ -1652,7 +2001,23 @@ end
 -- Repainted every pass while a program breathes on the bar - the passes
 -- themselves come twelve times a second then (`pace_breathing`) - and on
 -- its own reasons otherwise.
-win.on_frame = function() return any_starting() end
+--
+-- And the dock's own work (`dock_frame`, above), and a new place for the bar
+-- once the write that asked for it has been answered.
+--
+win.on_frame = function(self)
+  if leaving then
+    local to = leaving
+
+    leaving = nil
+    again(to[1], to[2])
+    return false
+  end
+
+  local more = dock_frame and dock_frame(self) or false
+
+  return any_starting() or more
+end
 
 -- The first second at once, after the first picture (`heard`, above): a
 -- pass a tick from now rather than a second, which `pace_breathing` puts

@@ -306,7 +306,8 @@ the indicators in a strip at the top**; **the look called Night**. Built in
 this order, each step its own test:
 
 1. **Night**, a look beside Plex, Classic, Endeavour and Studio: the night
-   surfaces, the pale blue accent and its dark ink, Plex's faces.
+   surfaces, the pale blue accent and its dark ink, Plex's faces. **Done**
+   (9ffe962): and a look's own corner and shadow, 18 and 24 for Night.
 2. **The bar's place** in Appearance - Top (as now) or Bottom, centred -
    and **the dock's width**, floating or the whole width: the window
    manager's work area keeps the strip at the top and the dock's height at
@@ -314,7 +315,17 @@ this order, each step its own test:
 3. **The Deskbar as a dock**: the Kosmos button, the pinned launchers and
    the running windows, centred and floating, a running one marked under its
    icon; and **the strip** across the top, the time and date on the left and
-   the indicators on the right, transparent over the wallpaper.
+   the indicators on the right, transparent over the wallpaper. **Steps 2
+   and 3 done** (`testing.md` 18.356): Appearance's *The bar* and *The
+   dock*, told to the Deskbar through `/Running/Deskbar/bar` and `dock`;
+   the window manager's bottom strip, centred and blended, in front of
+   every window without the focus; `user/lib/dock.lua`'s cells, an
+   application once; and `run_dock.py` (`x86-dock`), 14 checks. **Left
+   for later in them**: a pin added or taken away from the dock itself
+   (`/Home/Preferences/dock` is read, nothing writes it yet), a name shown
+   over a cell under the pointer, and a window maximised before the dock
+   arrived fitted to the room that is left (`recount_strips` fits the
+   desktop and nothing else).
 4. **The launcher as a grid** above the Kosmos button: its search first,
    then every application in round tiles (`launchpad`, drawn so when the
    bar is a dock).
@@ -3782,6 +3793,12 @@ processors, and still what follows USB:
    0.15 s between a move and the release; the window manager may take a
    release before the move queued ahead of it is applied, which is worth a
    look of its own: input that arrives in order should be acted on in it.
+   **Found and fixed on 3 October** (`testing.md` 18.357), after it failed
+   the dock's gate and a run beside one other suite: a move is posted only
+   while a button is held, so a drag's last stretch that came in the same
+   pass as its release was told as the release's place alone. The window
+   manager now tells it as a move first; the display harness's `drag
+   order` holds it, and its control fails every time.
 
 6zv. **ASKED on 29 September - does lazy FP saving still earn its place?**
    Diego, asking for SIMD "when possible in all you code": "Why do we need

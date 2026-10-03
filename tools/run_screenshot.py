@@ -5556,6 +5556,106 @@ def check_wheel(guest):
     return 2
 
 
+def check_drag_order(guest):
+    """**The end of a drag is told as a move, then the release.**
+
+    The window manager posts a move while a button is held and the pointer
+    has moved since its last pass. A drag whose last stretch and release
+    came in the *same* pass was told only the release, at the new place -
+    and an application following a drag by its moves never saw that
+    stretch: Cafesa3D's Rotation Z scrub turned 16 degrees for 20 whenever
+    a pass fell so, twice in the gate of 3 October and once on 30
+    September (`roadmap.md` 6zw).
+
+    So the last move and the release go to QEMU in one batch, which puts
+    them in one pass, to a window that says every event it is given: the
+    last move it hears must be where the release is, and further on than
+    the move before it.
+    """
+    program = (
+        "local ui = use('/Kosmos/Libraries/ui.lua') "
+        "local wmproto = use('/Kosmos/Libraries/wmproto.lua') "
+        "local w = ui.window{ title = 'Drag', w = 400, h = 200, direct = true } "
+        "for _ = 1, 2 do w:surface():fill(0, 0, 400, 200, 0xff3060a0) "
+        "w:commit{ x = 0, y = 0, w = 400, h = 200 } end "
+        "print('drag' .. ': ready') "
+        "while w.running do local r = wmproto.poll(w.handle, 1) "
+        "if not r then break end "
+        "for _, ev in ipairs(r.events or {}) do "
+        "if ev.type == 'mouse' and not ev.menu then "
+        "print(('drag: %s %d,%d'):format(ev.action, ev.x, ev.y)) end end end"
+    )
+    guest.type("fs.write('/Temporary/drag.lua', %r)" % program)
+    mark = len(guest.seen)
+    guest.type("wm /Temporary/drag.lua")
+
+    try:
+        placed = None
+        deadline = time.monotonic() + 40
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+            placed = re.search(r"wm: window Drag at (\d+),(\d+) (\d+)x(\d+)",
+                               guest.seen[mark:])
+
+            if placed and "drag: ready" in guest.seen[mark:]:
+                break
+
+            time.sleep(0.3)
+        else:
+            raise Failure("the window that says its events did not open:\n"
+                          + guest.seen[mark:][-800:])
+
+        wx, wy, ww, wh = (int(v) for v in placed.groups())
+        width, height, _ = parse_ppm(guest.screendump())
+        y = wy + wh // 2
+
+        guest.mouse_to(*_to_tablet(wx + 60, y, width, height))
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.4)
+        guest.mouse_to(*_to_tablet(wx + 140, y, width, height))
+        time.sleep(0.6)
+
+        # The last stretch and the release in one batch: one pass.
+        tx, ty = _to_tablet(wx + 220, y, width, height)
+        guest._qmp("input-send-event", {"events": [
+            {"type": "abs", "data": {"axis": "x", "value": int(tx)}},
+            {"type": "abs", "data": {"axis": "y", "value": int(ty)}},
+            {"type": "btn", "data": {"down": False, "button": "left"}},
+        ]})
+
+        heard = []
+        deadline = time.monotonic() + 20
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+            heard = re.findall(r"drag: (press|move|release) (-?\d+),(-?\d+)",
+                               guest.seen[mark:])
+
+            if heard and heard[-1][0] == "release":
+                break
+
+            time.sleep(0.2)
+
+        if not heard or heard[-1][0] != "release":
+            raise Failure("the drag's release never reached the window: %r"
+                          % (heard,))
+
+        moves = [h for h in heard if h[0] == "move"]
+        release = heard[-1]
+
+        if len(moves) < 2 or moves[-1][1:] != release[1:] \
+           or int(moves[-1][1]) <= int(moves[-2][1]):
+            raise Failure("a drag ending in the pass it last moved in was not "
+                          "told the move before the release - the moves %r, "
+                          "the release at %s,%s" % (moves, release[1], release[2]))
+    finally:
+        stop_desktop(guest)
+
+    return 1
+
+
 def check_scale(guest):
     """**Everything at 150 per cent** (`roadmap.md` 5z, `ui.md` 16.18).
 
@@ -11519,6 +11619,7 @@ def main():
         corner_checks = phase("corners", check_corners)
         shadow_checks = phase("shadow", check_shadow)
         wheel_checks = phase("wheel", check_wheel)
+        drag_order_checks = phase("drag order", check_drag_order)
         scale_checks = phase("scale", check_scale)
         scale_live_checks = phase("scale changed", check_scale_live)
         appearance_checks = phase("appearance", check_appearance)
@@ -11599,6 +11700,7 @@ def main():
              + unknown_key_checks + power_setting_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks + super_drag_checks + no_title_checks + layers_checks + types_checks + compress_checks
              + default_look_checks
              + tab_checks + corner_checks + shadow_checks + wheel_checks
+             + drag_order_checks
              + split_checks + monitor_checks + camera_checks
              + drives_app_checks
              + name_checks + file_checks)
@@ -11723,6 +11825,8 @@ def main():
           f"it when it moves, "
           f"{wheel_checks} on the scroll wheel scrolling the list under the "
           f"pointer, both ways, "
+          f"{drag_order_checks} on a drag's last move told before its release "
+          f"in the same pass, "
           f"{split_checks} on a processor's busy time split into a thread's "
           f"own and the kernel's, "
           f"{monitor_checks} on Monitor's minute of history filling in, "
