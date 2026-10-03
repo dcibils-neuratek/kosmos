@@ -281,6 +281,50 @@ control remote machines from kosmos using vnc". An application, so drawn
 first as an HTML mockup in `docs/` and agreed before any code; RFB's client
 half in C - a loop over pixels - beside `vncd`'s, and the window in Lua.
 
+**A dock at the bottom, and a look in Googlebook's language - beside the
+BeOS-style bar, not instead of it.** Diego, 3 October 2026, with
+photographs of Google's Googlebook: "I want to have a design option to place
+the deskbar on the top and on the bottom center like the googlebook with a
+mich more modern design", "I dont want to replace the current BeOS inspired
+one, but i would like to have an appearance setting to place the taskbar on
+the bottom center and replicate as mich as possible the design language of
+googlebook", and "first lets mockup in html how it would like and we can
+decide from there". **Drawn the same day: `docs/dock.html`** - the bar at
+the top or a floating dock at the bottom centre, the launcher above it with
+its search and every application, quick settings under a strip at the top
+right, a window and its panels rounded in night blue, desktop icons in round
+tiles, three desklets - with five questions his to answer before anything is
+built: one setting or two, a floating dock or the whole width, the strip or
+the dock for the time, the look's name (not another company's product's),
+and the desklets now or later - **not now**, Diego the same evening: "i
+dont care for widgets for now".
+
+**Agreed the same evening** - "everything else is just perfect!", "lets do
+it!" - with his answers: **two settings**, the bar's place and the look;
+**the dock floating by default, the whole width an option**; **the time and
+the indicators in a strip at the top**; **the look called Night**. Built in
+this order, each step its own test:
+
+1. **Night**, a look beside Plex, Classic, Endeavour and Studio: the night
+   surfaces, the pale blue accent and its dark ink, Plex's faces.
+2. **The bar's place** in Appearance - Top (as now) or Bottom, centred -
+   and **the dock's width**, floating or the whole width: the window
+   manager's work area keeps the strip at the top and the dock's height at
+   the bottom, and a maximised window sits between them.
+3. **The Deskbar as a dock**: the Kosmos button, the pinned launchers and
+   the running windows, centred and floating, a running one marked under its
+   icon; and **the strip** across the top, the time and date on the left and
+   the indicators on the right, transparent over the wallpaper.
+4. **The launcher as a grid** above the Kosmos button: its search first,
+   then every application in round tiles (`launchpad`, drawn so when the
+   bar is a dock).
+5. **Quick settings** under the strip's indicators: volume, brightness where
+   there is a backlight, the network, the servers, the screenshot, `/Home`,
+   restart and shut down.
+6. **Night's windows**: rounded, the icon and the name at the title bar's
+   left and the three at its right; and the desktop's icons on the right in
+   round tiles.
+
 **A window minimised or restored shows where it went.** Diego, 3 October
 2026: "can we add a simple anomation to when windows minimize and restore
 from the task bar? a simple border only anomation that tells the user where
