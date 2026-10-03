@@ -4636,6 +4636,11 @@ def ethernet_pch(image, check):
         check(len(re.findall(r"ttl=255 time=", out)) >= 3,
               "taken without a reset, the card answered %d of 4 pings"
               % len(re.findall(r"ttl=255 time=", out)))
+        # The tail rung again only for a card that holds frames and uses no
+        # descriptor (18.353): never for one that works, as QEMU's does.
+        check("the tail written again" not in out,
+              "a card that takes its frames had its tail rung again:\n    "
+              + shown(out))
 
     out = run("pch-reset")
 

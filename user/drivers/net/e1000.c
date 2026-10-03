@@ -266,6 +266,13 @@ static struct {
     } counted;                      /* the card's counts, accumulated */
     bool          reset_first;      /* `opt/kosmos/e1000path=pch-reset` */
     bool          snoop_firmware;   /* `opt/kosmos/e1000snoop=firmware` */
+    bool          rxdctl_firmware;  /* `opt/kosmos/e1000rxdctl=firmware` */
+    struct {
+        uint64_t      at;           /* when it last looked */
+        unsigned long good, taken;  /* the counts then */
+        uint32_t      head;         /* ...and the card's RDH */
+        unsigned long rung;         /* how often it rang the tail again */
+    } kick;                         /* `rx_kick` */
 
     struct eth_ring *ring;          /* the stack's, when it has attached */
     long          ring_cap;
@@ -456,7 +463,7 @@ static void rings_start(void)
     reg_write(REG_RDBAH, (uint32_t)((card.bus + RX_DESC_AT) >> 32));
     reg_write(REG_RDLEN, RING_SLOTS * E1000_DESC_BYTES);
     reg_write(REG_RDH, 0);
-    reg_write(REG_RDT, RING_SLOTS - 1u);
+    reg_write(REG_RDT, 0);              /* none yet: given once it is on */
 
     reg_write(REG_TDBAL, (uint32_t)(card.bus + TX_DESC_AT));
     reg_write(REG_TDBAH, (uint32_t)((card.bus + TX_DESC_AT) >> 32));
@@ -543,10 +550,12 @@ static void rings_start(void)
          * "prefetch threshold to 31, host threshold to 1 and make sure the
          * granularity is "descriptors" and not "cache lines"".
          */
-        reg_write(REG_RXDCTL, (reg_read(REG_RXDCTL)
-                               & ~(RXDCTL_THRESHOLDS | RXDCTL_WTHRESH))
-                              | RXDCTL_PTHRESH_31 | RXDCTL_HTHRESH_ONE
-                              | RXDCTL_WTHRESH_ONE | RXDCTL_UNIT_DESC);
+        if (!card.rxdctl_firmware) {
+            reg_write(REG_RXDCTL, (reg_read(REG_RXDCTL)
+                                   & ~(RXDCTL_THRESHOLDS | RXDCTL_WTHRESH))
+                                  | RXDCTL_PTHRESH_31 | RXDCTL_HTHRESH_ONE
+                                  | RXDCTL_WTHRESH_ONE | RXDCTL_UNIT_DESC);
+        }
         reg_write(REG_RDTR, 0);
         reg_write(REG_RADV, 0);
     }
@@ -554,6 +563,20 @@ static void rings_start(void)
     card.started_at = kosmos_ticks();
 
     reg_write(REG_RCTL, RCTL_EN | RCTL_BAM | RCTL_BSIZE_2048 | RCTL_SECRC);
+
+    /*
+     * **The descriptors handed over once the receiver is on** (`testing.md`
+     * 18.353), in `e1000e`'s order: `e1000_configure_rx` ends by enabling
+     * the receiver and only then does `alloc_rx_buf` write the tail. A
+     * card fetches what the tail offers when the tail is written; written
+     * here first, with the receiver still off, the M700's I219 was handed
+     * thirty-one descriptors it never fetched, and nothing after that
+     * writes the tail but a frame taken. On 0.10.211 it took none: good
+     * frames counted, nothing missed, nothing short of a descriptor, and
+     * nothing arrived. QEMU's cards fetch when they need one, which is why
+     * the order never mattered there.
+     */
+    reg_write(REG_RDT, RING_SLOTS - 1u);
 }
 
 /*--------------------------------------------------------------- the I219 */
@@ -1109,6 +1132,18 @@ static bool bring_up(struct say_line *line)
         say_send(console, line);
     }
 
+    /* The receive thresholds as the firmware left them (`testing.md`
+     * 18.353): a comparison on the machine by the boot server's command
+     * line alone, with nothing rebuilt. */
+    if (kosmos_boot_option("opt/kosmos/e1000rxdctl", option, sizeof(option))
+            == 8 && memcmp(option, "firmware", 8u) == 0) {
+        card.rxdctl_firmware = true;
+        say_begin(line);
+        say_text(line, "e1000: its receive thresholds left as the firmware set "
+                       "them, as opt/kosmos/e1000rxdctl asks");
+        say_send(console, line);
+    }
+
     /*
      * The I219's way for an I219, and - when a test asks - for QEMU's
      * 82574L, so that the way is run in the gate on the one card QEMU has
@@ -1461,6 +1496,60 @@ static void count_up(void)
 }
 
 /*
+ * **The tail written again when the card holds frames and uses no
+ * descriptor** (`testing.md` 18.353). A card fetches the descriptors the
+ * tail offers when the tail is written, and this driver writes it only as
+ * it takes a frame - so a card that has stopped fetching, for whatever
+ * reason, is never asked again. On 0.10.211 the M700's I219 counted
+ * thousands of good frames, used none of the thirty-one descriptors it had
+ * been handed (RDH still nought), and the machine never had an address.
+ *
+ * Once a second at most: if the card counted good frames since the last
+ * look while its head stayed where it was and nothing was taken, the tail is
+ * written again with the value it already holds. It changes nothing a
+ * working card does, and it says, the first few times, that it was needed -
+ * which is the measurement: whether a written tail is what this card waits
+ * for. `counts_watch` says how often it rang.
+ */
+static void rx_kick(struct say_line *line)
+{
+    uint64_t now = kosmos_ticks();
+    uint32_t head;
+    bool stuck;
+
+    if (!card.pch || card.started_at == 0 || now - card.kick.at < card.hz) {
+        return;
+    }
+
+    count_up();
+    head = reg_read(REG_RDH);
+    stuck = card.kick.at != 0 && card.counted.good != card.kick.good
+            && head == card.kick.head && card.received == card.kick.taken;
+
+    card.kick.at = now;
+    card.kick.good = card.counted.good;
+    card.kick.head = head;
+    card.kick.taken = card.received;
+
+    if (!stuck) {
+        return;
+    }
+
+    reg_write(REG_RDT, (card.rx_next + RING_SLOTS - 1u) % RING_SLOTS);
+    card.kick.rung++;
+
+    if (card.kick.rung <= 3u) {
+        say_begin(line);
+        say_text(line, "e1000: frames counted for a second and no descriptor "
+                       "used - the tail written again; RDH ");
+        say_dec(line, head);
+        say_text(line, " RDT ");
+        say_dec(line, (card.rx_next + RING_SLOTS - 1u) % RING_SLOTS);
+        say_send(console, line);
+    }
+}
+
+/*
  * **Where frames addressed to this card go** (`testing.md` 18.351). On
  * 0.10.207 the M700 took its DHCP lease - broadcast - and answered the
  * Mac's ARP - broadcast - but nothing sent to its own address arrived: not
@@ -1512,13 +1601,19 @@ static void counts_watch(struct say_line *line)
     say_dec(line, card.counted.crc);
     say_text(line, "; taken ");
     say_dec(line, card.received);
+    say_text(line, ", tail rung again ");
+    say_dec(line, card.kick.rung);
     say_text(line, card.promiscuous ? "; the filter set aside" : "");
-    say_text(line, "; RAL0 ");
-    say_hex(line, reg_read(REG_RAL0), 8);
-    say_text(line, " RAH0 ");
-    say_hex(line, reg_read(REG_RAH0), 8);
-    say_text(line, " RCTL ");
+    say_text(line, "; RDH ");
+    say_dec(line, reg_read(REG_RDH));
+    say_text(line, " RDT ");
+    say_dec(line, reg_read(REG_RDT));
+    say_text(line, " next ");
+    say_dec(line, card.rx_next);
+    say_text(line, "; RCTL ");
     say_hex(line, reg_read(REG_RCTL), 8);
+    say_text(line, " RXDCTL ");
+    say_hex(line, reg_read(REG_RXDCTL), 8);
     say_send(console, line);
 
     if (card.counts_said == 0) {
@@ -1797,6 +1892,7 @@ void e1000_server(long console_cap, long frames_cap)
         if (card.present) {
             (void)reg_read(REG_ICR);     /* read to clear */
             take_frames();
+            rx_kick(&line);
             say_link(&line);
             tx_watch(&line);
             rx_watch(&line);
