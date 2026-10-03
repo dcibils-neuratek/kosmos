@@ -589,7 +589,7 @@ on the m700", and restarting servers after** (roadmap, *Servers and drivers
 restarted*, written the same evening). **The I219 brought up as `e1000e`
 does** (18.346): Linux v6.12's e1000e read from `build/downloads/
 e1000e-v6.12`; no reset first, then its MAC reset, each with a frame to
-itself, and the registers said; `ethernet_pch` in x86-core with a control.
+itself, and the registers said; `ethernet_pch` in x86-core with a control. **The gate ran 85 of 85 in 10:02** - two seconds over Diego's ten minutes (9:56 before it), the slowest `x86-cafesa3d-2` at 202 s and `x86-core` at 52 s, off the longest path: to bring back under before the next thing lands. **Stick 0.10.205** (`ec1114f`): OVMF 32 checks, handed over for the M700 with `log e1000` to read.
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the
