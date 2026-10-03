@@ -148,6 +148,52 @@ int main(void)
     check(!e1000_decode_tx_done(NULL), "no transmit descriptor read as done");
 
     /*
+     * **A receive descriptor in the extended layout** (`testing.md` 18.349):
+     * `e1000e`'s `union e1000_rx_desc_extended` - the status word at byte 8,
+     * the length at byte 12. A 1514-byte frame, done and the end of its
+     * packet, as the I219 writes it with RFCTL.EXTEN on.
+     */
+    {
+        uint8_t ext[E1000_DESC_BYTES];
+        struct e1000_rx legacy;
+
+        memset(ext, 0, sizeof(ext));
+        ext[8] = 0x03u;                     /* DD and EOP */
+        ext[12] = (uint8_t)(1514u & 0xFFu);
+        ext[13] = (uint8_t)(1514u >> 8);
+
+        e1000_decode_rx_ext(ext, &rx);
+        check(rx.done && rx.end && !rx.error && rx.length == 1514,
+              "an extended descriptor's frame was not read as done, whole and "
+              "1514 bytes");
+
+        /* The same bytes read as legacy are the bug this decoder is for:
+         * the length's low byte, 0xEA, taken for a status - not done. */
+        e1000_decode_rx(ext, &legacy);
+        check(!legacy.done,
+              "an extended descriptor read as legacy came out done, so the "
+              "test cannot tell the two layouts apart");
+
+        ext[11] = 0x80u;                    /* RXE, the top error bit */
+        e1000_decode_rx_ext(ext, &rx);
+        check(rx.done && rx.error, "an extended descriptor's RX error was not "
+                                   "reported");
+
+        ext[11] = 0x01u;                    /* CE, a CRC error */
+        e1000_decode_rx_ext(ext, &rx);
+        check(rx.error, "an extended descriptor's CRC error was not reported");
+
+        ext[11] = 0x08u;                    /* bit 27, not a frame error */
+        e1000_decode_rx_ext(ext, &rx);
+        check(!rx.error, "a bit outside e1000e's frame errors was read as one");
+
+        memset(ext, 0, sizeof(ext));
+        e1000_decode_rx_ext(ext, &rx);
+        check(!rx.done && rx.length == 0,
+              "an extended descriptor not written back read as done");
+    }
+
+    /*
      * **The transmit ring, kept without waiting** (`testing.md` 18.345). The
      * driver waited for every frame's write-back, so a card that never wrote
      * one - the M700's I219 - held the driver, the network stack behind it,

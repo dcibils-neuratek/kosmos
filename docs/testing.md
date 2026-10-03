@@ -16580,3 +16580,49 @@ the loader said it came over the network, from 10.0.2.2; the 34 MB kernel
 was fetched and was the build's, page for page; the kernel's own line said
 so; and `/Home` is the stick's Kosmos partition. **12 s** to the prompt.
 Its control, a loader that finds no boot server, fails four of the five.
+
+## 18.349 The I219 sends; receiving in e1000e's layout
+
+**What 0.10.206 said on the M700**, booted over the network (Diego's
+photo, 2 October):
+
+    e1000: on PCI: command 0006, bus mastering on; status 0010;
+           descriptor rings 0000, no flush asked for
+    e1000: as the firmware left it: CTRL 18180240 STATUS 00080083
+           CTRL_EXT 915a1027 RCTL 00000000 TCTL 3003f0f8 FWSM e001c258
+    e1000: its rings as the firmware left them: TDLEN 128 TDH 6 TDT 6
+           RDLEN 1024 RDH 39 RDT 38 TARC0 2d800403 PBA 0000001a WUC 00000109
+    e1000: an I219, taken as Linux's e1000e takes one - first as the
+           firmware left it, without a reset
+    e1000: a frame to itself went out in 12971 us - it sends
+
+**The I219 sends.** On the first try, with no reset. Against 0.10.205's
+first try, three things differed, all `e1000e`'s: TCTL kept as the firmware
+left it (MULR and bit 29) rather than written whole, the wake-up control
+cleared (the firmware's was `0x109`), and `DRV_LOAD` set before the rings
+rather than after. Which of them the chip needed is not known - TCTL's
+multiple requests is the likeliest, since the SPT errata in TARC0 are about
+outstanding requests - and nothing is gained by taking them apart on the
+machine. Bus mastering was on all along, and no flush was asked for.
+
+**And it did not get an address**: two minutes up, "asking the network
+for an address". The DHCP question now goes out; the answer does not
+come in. `e1000e` reads received frames in the *extended* layout on every
+chip (`e1000_setup_rctl` sets RFCTL.EXTEN), and this driver read the
+legacy one: status at byte 12, where the extended layout has the length.
+An Intel firmware driver leaving EXTEN set is enough for every frame to be
+missed.
+
+**Changed**: on the I219's way, RFCTL.EXTEN set and received descriptors
+read with `e1000_decode_rx_ext` - the status word at byte 8, the length at
+12, `e1000e`'s five frame errors; the firmware's RFCTL said beside its
+rings; and once, five seconds after the rings are handed over, what came
+in - frames received and dropped, sent, RDH against RDT, RFCTL.
+
+**`test_e1000decode`, 36 checks** (6 new): an extended descriptor read
+whole, done and 1514 bytes; the same bytes read as legacy *not* done - the
+fault, shown; an RX error and a CRC error reported, a bit outside the five
+not; and one not written back. **`ethernet_pch`** passes with extended
+descriptors on QEMU's 82574L, which writes that layout too: four pings.
+The gate 86 of 86 in 10:05 - over Diego's ten minutes by five seconds, as
+9:55 was under them by five; the budget is the next thing to mend.

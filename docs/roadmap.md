@@ -181,6 +181,46 @@ network. So:
    `tools/netboot-serve.sh`, and `x86-netboot` in the gate - OVMF needed a
    virtio-rng device for its network stack to start. **The M700 booted
    0.10.206 this way the same night**: "it booted over network!" (Diego).
+6. **Two faults its first boot found** (Diego: "i hadnt plug in the stick,
+   and then i pluged in the stick after the network boot but it didnt mount
+   as needd because the diagnose commmand will send a nil message"):
+   - **A `/Home` stick plugged in after boot is never `/Home`.** The shell
+     decides once, at boot: the disk server waits a bounded time for the
+     named stick, and when it has not come `/Home` is moved into memory for
+     the rest of the boot - so a stick plugged in later is never adopted.
+     A stick the command line names should become `/Home` whenever it
+     arrives.
+   - **`diagnose` says `nil`** where it should say why it could not save:
+     `fs.write_from` returns nothing and no error when the server's answer
+     carries no byte count, which the in-memory `/Home` does not give.
+
+**Build, boot and test the M700 in a loop, from the Mac.** Diego, 2 October
+2026, the M700 network-booting: "Once the network is established in the
+m700 we will ve able to net boot the m700 with new builds automatically and
+connect to it and issue commands over Telnet and also remote restart so we
+can have a dynamic circle of build reboot test automatically". Most of it
+exists - network boot (above), `telnetd` and `tools/kosmos_telnet.py` with
+`run`, `get`, `put` and `push`, and restarting (`SYS_POWER`, the window
+manager's `power`) - and what is missing is the joining:
+
+1. **The M700 on the network in Kosmos** - the I219 sending (18.347) and
+   receiving (18.349); being built.
+2. **Network first in the M700's boot order**, set once by Diego in its
+   setup: with the Mac serving, every restart takes the newest build; with
+   nothing served, the firmware falls through to the stick. **Done by
+   Diego on 2 October.**
+3. **`restart` at the prompt**, and `kosmos_telnet.py ADDRESS restart`,
+   which restarts the machine and waits for it to come back - the
+   connection closing, then `telnetd` answering again - and says which
+   build answered.
+4. **One command on the Mac** - build, `make netboot`, restart the M700,
+   wait, check the version it runs, run the commands asked for (`log`,
+   `diagnose`, `frames`, a suite), bring the output and the files back,
+   and say plainly what failed: the machine not coming back in its time
+   is a result too.
+5. **What it cannot do**, said rather than discovered: a build that hangs
+   the machine, or breaks its network, cannot be restarted from here - a
+   hand on the power button, or a watchdog later.
 
 **Servers and drivers restarted, from the prompt or from a system
 application.** Diego, 2 October 2026, asking whether one can be restarted

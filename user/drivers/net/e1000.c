@@ -111,6 +111,7 @@
 #define TCTL_CT_E1000E          (15u << 4)
 #define TCTL_COLD_E1000E        (63u << 12)
 #define RFCTL_NFS_DIS           0x000000C0u     /* NFSW_DIS | NFSR_DIS */
+#define RFCTL_EXTEN             0x00008000u     /* extended receive descriptors */
 #define PBECCSTS_ECC_ENABLE     0x00010000u
 #define RDMTS_HEX               0x00010000u     /* E1000_RCTL_RDMTS_HEX */
 #define KABGTXD_BGSQLBIAS       0x00050000u
@@ -207,6 +208,9 @@ static struct {
     unsigned long tick_hz;          /* the scheduler's, for a sleep */
     bool          pch;              /* an I219, brought up as e1000e does */
     uint32_t      tctl_firmware;    /* TCTL as the firmware left it */
+    bool          rx_ext;           /* receive descriptors in e1000e's layout */
+    uint64_t      started_at;       /* when the rings were handed over */
+    bool          rx_said;          /* the first five seconds, said */
     bool          reset_first;      /* `opt/kosmos/e1000path=pch-reset` */
 
     struct eth_ring *ring;          /* the stack's, when it has attached */
@@ -408,6 +412,21 @@ static void rings_start(void)
      * multicast address reaches nothing until something asks for one -
      * which is a thing to build when there is something that wants it.
      */
+    /*
+     * **Received frames in `e1000e`'s layout on an I219** (`testing.md`
+     * 18.349): `e1000_setup_rctl` sets RFCTL.EXTEN on every chip, and the
+     * M700's firmware - whose own driver is Intel's - may leave it on, in
+     * which case a frame read in the legacy layout is a length taken for a
+     * status and never arrives. So the I219 is told to write the extended
+     * layout and is read in it, whatever the firmware chose.
+     */
+    if (card.pch) {
+        reg_write(REG_RFCTL, reg_read(REG_RFCTL) | RFCTL_EXTEN);
+        card.rx_ext = true;
+    }
+
+    card.started_at = kosmos_ticks();
+
     reg_write(REG_RCTL, RCTL_EN | RCTL_BAM | RCTL_BSIZE_2048 | RCTL_SECRC);
 }
 
@@ -508,6 +527,8 @@ static void say_firmware(struct say_line *line)
     say_hex(line, reg_read(REG_PBA), 8);
     say_text(line, " WUC ");
     say_hex(line, reg_read(REG_WUC), 8);
+    say_text(line, " RFCTL ");
+    say_hex(line, reg_read(REG_RFCTL), 8);
     say_send(console, line);
 }
 
@@ -1087,7 +1108,12 @@ static void take_frames(void)
         struct e1000_rx got;
 
         RING_BARRIER();
-        e1000_decode_rx(desc, &got);
+
+        if (card.rx_ext) {
+            e1000_decode_rx_ext(desc, &got);
+        } else {
+            e1000_decode_rx(desc, &got);
+        }
 
         if (!got.done) {
             break;
@@ -1125,6 +1151,37 @@ static void take_frames(void)
     if (taken > 0) {
         (void)kosmos_net_wake();
     }
+}
+
+/*
+ * **What arrived in the first five seconds**, said once (`testing.md`
+ * 18.349): a card that sends and receives nothing looks, from above, like a
+ * network with no router, and only this end can tell the two apart. On any
+ * network something arrives in five seconds - an ARP, a router's
+ * advertisement, the answer to the DHCP question this machine asked.
+ */
+static void rx_watch(struct say_line *line)
+{
+    if (card.rx_said || card.started_at == 0
+        || kosmos_ticks() - card.started_at < 5u * card.hz) {
+        return;
+    }
+
+    card.rx_said = true;
+    say_begin(line);
+    say_text(line, "e1000: in its first five seconds, ");
+    say_dec(line, card.received);
+    say_text(line, " frames received and ");
+    say_dec(line, card.dropped);
+    say_text(line, " dropped, ");
+    say_dec(line, card.sent);
+    say_text(line, card.rx_ext ? " sent; RDH " : " sent (legacy layout); RDH ");
+    say_dec(line, reg_read(REG_RDH));
+    say_text(line, " RDT ");
+    say_dec(line, reg_read(REG_RDT));
+    say_text(line, " RFCTL ");
+    say_hex(line, reg_read(REG_RFCTL), 8);
+    say_send(console, line);
 }
 
 /* Whatever the stack has put in the ring, onto the wire. */
@@ -1373,6 +1430,7 @@ void e1000_server(long console_cap, long frames_cap)
             take_frames();
             say_link(&line);
             tx_watch(&line);
+            rx_watch(&line);
 
             if (card.irq >= 0) {
                 (void)kosmos_irq_ack(card.irq);

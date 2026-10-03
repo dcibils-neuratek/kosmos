@@ -108,6 +108,36 @@ void e1000_decode_rx(const uint8_t *desc, struct e1000_rx *out)
                 | ((unsigned)desc[RX_LENGTH_AT + 1u] << 8);
 }
 
+/* `e1000e`'s: CE, SE, SEQ, CXE and RXE in the extended status word. */
+#define RXDEXT_FRAME_ERRORS     0x97000000u
+
+void e1000_decode_rx_ext(const uint8_t *desc, struct e1000_rx *out)
+{
+    uint32_t status;
+
+    if (out == NULL) {
+        return;
+    }
+
+    memset(out, 0, sizeof(*out));
+
+    if (desc == NULL) {
+        return;
+    }
+
+    status = (uint32_t)desc[8] | ((uint32_t)desc[9] << 8)
+           | ((uint32_t)desc[10] << 16) | ((uint32_t)desc[11] << 24);
+
+    if ((status & RX_STATUS_DD) == 0) {
+        return;
+    }
+
+    out->done = true;
+    out->end = (status & RX_STATUS_EOP) != 0;
+    out->error = (status & RXDEXT_FRAME_ERRORS) != 0;
+    out->length = (unsigned)desc[12] | ((unsigned)desc[13] << 8);
+}
+
 bool e1000_decode_tx_done(const uint8_t *desc)
 {
     return desc != NULL && (desc[TX_STATUS_AT] & TX_STATUS_DD) != 0;

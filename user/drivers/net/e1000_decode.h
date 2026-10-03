@@ -76,6 +76,18 @@ struct e1000_rx {
 
 void e1000_decode_rx(const uint8_t *desc, struct e1000_rx *out);
 
+/*
+ * **The same, written back in the extended layout** (`testing.md` 18.349),
+ * which Linux's `e1000e` asks of every chip it drives (RFCTL.EXTEN) and the
+ * I219's firmware may leave on: a 32-bit status and error word at byte 8 -
+ * Descriptor Done, End Of Packet, and the frame errors in its top byte -
+ * and the length at byte 12, where the legacy layout has its status. Read
+ * as legacy, an extended descriptor is a status made of the length's low
+ * byte. From `e1000e`'s `hw.h` (`union e1000_rx_desc_extended`) and
+ * `defines.h` (`E1000_RXDEXT_ERR_FRAME_ERR_MASK`).
+ */
+void e1000_decode_rx_ext(const uint8_t *desc, struct e1000_rx *out);
+
 /* Whether the card has finished with a transmit descriptor: its Descriptor
  * Done bit, which it writes back only for one that asked (Report Status). */
 bool e1000_decode_tx_done(const uint8_t *desc);
