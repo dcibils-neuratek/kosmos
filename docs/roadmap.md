@@ -281,6 +281,21 @@ control remote machines from kosmos using vnc". An application, so drawn
 first as an HTML mockup in `docs/` and agreed before any code; RFB's client
 half in C - a loop over pixels - beside `vncd`'s, and the window in Lua.
 
+**A window minimised or restored shows where it went.** Diego, 3 October
+2026: "can we add a simple anomation to when windows minimize and restore
+from the task bar? a simple border only anomation that tells the user where
+the window went! right now when minimizing iut just dissapears! it needs to
+be fast like 0.5 sec at most for the whole animation but a border only
+shrinking annimation that ends up in the taskbar button, and then when
+cliccking the minimzed app in the task bar it maximises from there to the
+actiual window app position". A rectangle's outline only, drawn by the
+window manager over everything, from the window's frame to its Deskbar
+button when it is minimised and from the button back to the frame when it
+is restored - half a second at most, eased, a few frames on the window
+manager's own clock and nothing else waiting on it. A shared piece, so the
+whole gate. Queued after the M700's suite, the late `/Home` stick (B) and
+the screenshot key.
+
 **A suite on the M700, for performance and real hardware.** Diego, 3
 October 2026, asking whether the gate could run on the M700: "We could run
 the test from the Mac into the m700 via telnet?", "And grab results from vnc
@@ -6915,14 +6930,19 @@ the Pi", and the Pi is not here yet.
   the whole screen as a PNG **in `/home/Desktop`**, where it shows up as an
   icon, named `screenshot-2026-09-22-114503.png` - the date and time it was
   taken, with no spaces so the prompt can name it. (The 14 September
-  version said a Super binding and `/home/screenshots`; this replaces it.) Most of it is
+  version said a Super binding and `/home/screenshots`; this replaces it.)
+  **Into `/Home/Captures` instead, Diego, 3 October 2026**: "what is the
+  shortcut in kosmos to grab a screenshot and save it in captures dir?", and
+  "go!" to it being built that way - beside the camera's and the recorder's
+  files, Tracker's Captures place. Queued after the late `/Home` stick (B).
+  Most of it is
   here already: the window manager composes every frame into its backbuffer,
   `SUPER_BINDINGS` in `wm.lua` is where a shortcut goes and what the Shortcuts
   window lists, and `sysinfo`'s `epoch` is the board's real-time clock, in
   UTC, for Date & Time's offset to turn into the time on the wall. **What is
   not: nothing in Kosmos writes a PNG** - `png.c` and `inflate.c` read one -
   so it wants a writer in C, which can start with deflate's stored blocks and
-  compress later. And the saving happens outside the key handler, which must
+  compress later. (The writer exists since: `gfx.encode_png`.) And the saving happens outside the key handler, which must
   never wait on anything: a synchronous call from there once deadlocked the
   desktop.
 - **A region's pages freed while a process still has it mapped.** Found by
