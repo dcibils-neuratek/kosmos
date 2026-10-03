@@ -376,6 +376,21 @@ through the loop (*Build, boot and test the M700*), does what QEMU cannot:
    restarts as the checks allow. Run when a change touches hardware, and
    before a build is called stable.
 
+   **1, 2, 3 and 5 BUILT on 3 October** (`testing.md` 18.354): `make
+   m700`, 126 checks in 4:37, shown on the M700's screen as it runs; 4, the in-image suite, is next. **What its first runs found**:
+   - **a stick given a second** for a write it may take longer over - fixed
+     in 0.10.215, thirty seconds as Linux gives a disk;
+   - **Groove draws sheared on the M700**: at 1712x1080, its maximised size
+     there, its clip rows come out as diagonal bands - a row length that is
+     not the surface's. Under QEMU, smaller, it draws true. To fix first of
+     these, reproduced under QEMU at the M700's screen size;
+   - **`neofetch` takes eleven seconds** on the M700, and every Telnet
+     connection pays it as its banner;
+   - **the stick reads at 32 MB/s** on a USB 3 port, where the drive is
+     rated well above it;
+   - and its numbers move fifteen per cent run to run on one build - a
+     history before any of them is read as a change.
+
 **Servers and drivers restarted, from the prompt or from a system
 application.** Diego, 2 October 2026, asking whether one can be restarted
 "instead of restarting the computer": "based on the fact we have a

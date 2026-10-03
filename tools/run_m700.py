@@ -283,7 +283,7 @@ class Suite:
                        if n.endswith(".lua") and n[:-4] not in SKIP)
         everything = names + INSTALLED
         batches = [everything[i:i + BATCH] for i in range(0, len(everything), BATCH)]
-        died_before = self.m.run("log died").count(" died")
+        died_before = len(self.died())
 
         for k, batch in enumerate(batches, 1):
             pids = []
@@ -293,22 +293,35 @@ class Suite:
                 started = "started" in said
                 self.check(started, "%s did not open: %s" % (app, said[-160:]))
 
-            time.sleep(4)
-            launched = self.m.run("log launched")
+            # Launched by name the log says `launched tracker`, by path
+            # `launched /Home/Apps/Doom/doom.lua`; and each opens its window
+            # when it reaches `ui.window`, so the arranging waits for all.
+            launched = {}
+            deadline = time.monotonic() + 30
+
+            while time.monotonic() < deadline:
+                # One word: `log` keeps the last forty matches, and "wm:"
+                # matched every line the window manager says.
+                log = self.m.run("log launched")
+
+                for app in batch:
+                    for m in re.finditer(r"wm: launched %s -> (true|false) ?(\d*)"
+                                         % re.escape(app), log):
+                        launched[app] = m
+
+                if len(launched) == len(batch):
+                    break
+
+                time.sleep(1)
 
             for app in batch:
-                base = os.path.basename(app)
-                m = None
+                m = launched.get(app)
 
-                for m in re.finditer(r"launched (\S*%s) -> (true|false) ?(\d*)"
-                                     % re.escape(base if base.endswith(".lua") else
-                                                 base + ".lua"), launched):
-                    pass
+                if self.check(m is not None and m.group(1) == "true",
+                              "%s was not launched" % app) and m.group(2):
+                    pids.append(m.group(2))
 
-                if self.check(m is not None and m.group(2) == "true",
-                              "%s was not launched" % app) and m.group(3):
-                    pids.append(m.group(3))
-
+            time.sleep(3)
             self.m.run("tile")
             time.sleep(2)
 
@@ -327,9 +340,15 @@ class Suite:
 
             time.sleep(1)
 
-        died = [l for l in self.m.run("log died").splitlines() if " died" in l]
+        died = self.died()
         self.check(len(died) <= died_before, "an application died:\n    "
                    + "\n    ".join(died[-4:]))
+
+    def died(self):
+        """A process's death as the system says it, and not this suite's own
+        `log` command echoed into the log."""
+        return [l for l in self.m.run("log died:").splitlines()
+                if " died: " in l and "telnetd:" not in l]
 
 
 def history(numbers, version):

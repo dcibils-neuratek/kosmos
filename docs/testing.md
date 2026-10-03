@@ -16834,3 +16834,74 @@ as 0.10.209's pings showed.
   Homebrew - `tcl-tk` 9.0.4 and `python-tk@3.14` alone, 44 MB, with
   Python, OpenSSL and SQLite left as they were (`--ignore-dependencies`;
   a plain install would have upgraded all three).
+
+## 18.354 A stick given thirty seconds, and the M700's own suite
+
+**The first thing `make m700` found** (Diego, 3 October: "a subset of tests
+on the m700 mostly for performance tests and real Hardware"): `diskbench
+/Home 2 1` on 0.10.214 - "the disk refused" for the written megabyte, and in
+`log xhci` at 382 s "the WRITE (10)'s data failed: no answer within a
+second, so the stick is reset" and "the Bulk-Only Mass Storage Reset
+failed: no answer within a second". Every transfer had `ANSWER_MS`, one
+second; the Kingston DataTraveler took longer over a megabyte, as flash may
+while it erases, and was still busy when the reset came. Nothing of Diego's
+was lost - the refused write was the benchmark's own file, and `/Home` read
+and wrote afterwards - but a large save of his could have met the same.
+
+**0.10.215**: a stick's wrapper, data and status each get thirty seconds,
+as `sd.h`'s SD_TIMEOUT gives a disk command, and its class reset five, as
+`usb_stor_reset_common` sends it - Linux v6.12, read from GitHub. The USB
+network adapter and MIDI keep their second; the mouse's and keyboard's
+reports are read as they come throughout (`wait_serving`). x86-usb-1 and
+x86-usb-2, 62 and 69 checks; the gate 86 of 86 in 10:10. **On the M700**:
+the same megabyte written at 11.9 MB/s, then 15.3, and nothing in `log
+xhci` given up on. The suite's check - the stick takes a written megabyte,
+and the USB driver gives up on nothing - is its permanent test, and
+0.10.214 is its control.
+
+**`make m700`** (`tools/run_m700.py`): `make netboot`, then the M700
+restarted over Telnet into the build, then, all of it in a Terminal on its
+screen for Diego to watch - each test run over Telnet, which brings the
+exact output back, then shown by `cat` from `/Temporary/m700`:
+
+- **hardware, pass or fail**: the I219 reset and sending, its 30-second
+  counts with nothing missed and every frame taken, an address by DHCP, the
+  router, 8.8.8.8 and a name; a keyboard, a mouse and a stick named on USB;
+  `/Home` on the stick (`kfs`); the screen at least 1280 wide; the sound
+  device and 400 periods without an underrun; a written megabyte taken; no
+  transfer given up on; latency's own PASS; nothing over 10 ms of jitter.
+- **every application**: the 48 of the image that are not the desktop, the
+  open Log, `stuck` or `adopt`, and Doom, Quake and the Super Nintendo from
+  `/Home/Apps` - a dozen at a time, each `open`ed, its `launched -> true`
+  read from the log, tiled once all are in, pictured by VNC into
+  `build/m700/<version>-<time>/apps-N.png`, and ended by its number; and no
+  `died:` from the system. `frames 5` measured while the first dozen draw.
+- **numbers, kept and compared, not judged**: each run's in
+  `build/m700/history.jsonl`, printed beside the run before. Run to run on
+  one build they moved: fill 5667 then 5036 Mpx/s, blit 4664 then 4016,
+  the frame's worst 2.5 then 3.3 ms, jitter's worst 4123 then 3455 us
+  (28 us measured alone, so the suite's own traffic is in it), a whole VNC
+  frame 34.2 s with the previous run's fifty applications still open and 4.2
+  without. So a change of fifteen per cent is noise until there are more
+  runs to read it against.
+
+**PASS: 126 of 126 checks on the M700 in 4:37**, the third run: restart to
+answer 72 s, the router 0.55 ms, 8.8.8.8 13 ms, `/Home` read 34.2 MB/s and
+written 19.5, the stick's blocks 32.2, fill 4914 Mpx/s, blit 4250, an IPC
+round trip 19.0 us, a busy frame 214 us on average and 3.6 ms at worst, a
+whole VNC frame 3.9 s.
+
+**Three runs to make the runner right, each a fault of its own**: its
+restart gave the Telnet banner ten seconds and `neofetch` takes eleven with
+`/Home` on the stick (and `answers()` three); an application opened by name
+is logged `launched tracker`, not by its file; and `log` keeps the last
+forty matches, so "wm: launched" - every line the window manager says -
+lost a dozen's first launches. And `log died` echoed the suite's own command
+into the log, which the check then read as a death.
+
+**Found, not yet fixed** (`roadmap.md`): **Groove draws sheared on the
+M700** - at 1712x1080, its maximised size there, its clip rows come out as
+diagonal bands, a row length that is not the surface's; under QEMU, smaller,
+it draws true (the gallery). **`neofetch` takes eleven seconds there**, and
+every Telnet connection pays it as its banner. The stick reads at 32 MB/s on
+a USB 3 port.

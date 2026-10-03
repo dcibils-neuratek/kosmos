@@ -127,10 +127,13 @@ def answers(host):
     """Whether a Kosmos telnetd is at this address: its banner says so."""
     try:
         with socket.create_connection((host, 23), timeout=0.4) as s:
-            s.settimeout(3)
+            # The banner is `neofetch`, a dozen seconds on the M700 with its
+            # stick; the version line is what is wanted, and enough.
+            s.settimeout(30)
             seen = b""
 
-            while PROMPT not in seen and len(seen) < 8192:
+            while (PROMPT not in seen and len(seen) < 8192
+                   and re.search(rb"Kosmos \d+\.\d+\.\d+", seen) is None):
                 piece = s.recv(4096)
 
                 if not piece:
@@ -225,7 +228,10 @@ def restart(address, seconds):
         print("restart: no Kosmos telnetd at %s" % host)
         return 1
 
-    session = Session(address, timeout=10.0)
+    # The banner is `neofetch`, which takes a dozen seconds on the M700 with
+    # `/Home` on its stick; a shorter wait gave up before asking.
+    session = Session(address, timeout=60.0)
+    asked = time.monotonic()
     session.sock.sendall(b"restart\r\n")
 
     try:
@@ -238,7 +244,7 @@ def restart(address, seconds):
     except OSError:
         pass
 
-    started = time.monotonic()
+    started = asked                         # from the asking, not the hanging up
     gone = False
 
     while time.monotonic() - started < seconds:
