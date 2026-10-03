@@ -398,3 +398,6 @@ firmware would not start its network at all until it was given a source
 of random numbers, which modern firmware insists on; and a test of the
 loader made to lose track of its server proves the test notices.
 (`testing.md` 18.348)
+
+**Confirmed on the machine.** The same night, the M700 started 0.10.206
+from the Mac: "it booted over network!"

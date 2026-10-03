@@ -179,7 +179,8 @@ network. So:
    **1 to 4 BUILT the same night** (`testing.md` 18.348): the loader
    fetches by TFTP through the firmware's PXE, `make netboot` and
    `tools/netboot-serve.sh`, and `x86-netboot` in the gate - OVMF needed a
-   virtio-rng device for its network stack to start. Waiting on the M700.
+   virtio-rng device for its network stack to start. **The M700 booted
+   0.10.206 this way the same night**: "it booted over network!" (Diego).
 
 **Servers and drivers restarted, from the prompt or from a system
 application.** Diego, 2 October 2026, asking whether one can be restarted

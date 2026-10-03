@@ -416,6 +416,9 @@ and the next reboot takes it; the server can stay running. The loader's
 lines say "this loader came over the network" and the kernel's "fetched
 over the network, against the build: same".
 
+**First on the M700 on 2 October**, 0.10.206 (`736ef1e`): "it booted over
+network!" (Diego), with `/Home` on the 0.10.205 stick.
+
 ---
 
 ## 3b. The screen, in the largest mode the firmware has
