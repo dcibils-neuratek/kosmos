@@ -296,6 +296,56 @@ manager's own clock and nothing else waiting on it. A shared piece, so the
 whole gate. Queued after the M700's suite, the late `/Home` stick (B) and
 the screenshot key.
 
+**Redirection at the prompt: `>` and `>>` now, `|` later.** Diego, 3
+October 2026: "why cant we add shell redirection?", "like linux" - and,
+of three ways put to him, "> and >> now, | later". The shell's help said
+there are none because composing programs "would need a stream between two
+processes, and what this system has between processes is messages and
+shared memory"; that argues against Linux's mechanism - descriptors, `fork`,
+a kernel pipe - and not against the feature. So, Kosmos's way:
+
+1. **`cmd > file` and `cmd >> file`**: the shell hands the program a
+   console that writes into the file - the console ABI a Terminal already
+   implements (`user/kits/console`) - so nothing global, no descriptors,
+   no `fork`. The file is the shell's to name, in its own namespace.
+2. **Which lines are commands**: today a line with Lua punctuation is Lua,
+   and `>` is Lua punctuation. The rule becomes "a line that starts with a
+   program's name is a command" - which also ends the trap the help warns
+   of, `grep [ f` having to be typed `/grep [ f`.
+3. **Later, `|`**: a single-producer, single-consumer ring in shared
+   memory between the two programs' consoles - how this system already
+   moves a stream (sound, frames).
+
+Queued after the M700's suite, the late `/Home` stick (B) and the
+screenshot key.
+
+**A shell with bash's power and Lua's language.** Diego, 3 October 2026:
+"our terminal program needs a more powerful bash like shell. is it a good
+idea to replicate bash as much as possible?" - answered: not bash itself,
+whose language would be a second and worse one beside the Lua the prompt
+already speaks, and whose behaviour stands on `fork`, descriptors, signals
+and an inherited environment that Kosmos does not have on purpose; but its
+interactive power, all of which fits - "yes lets do that direction for our
+shell". In this order, beside redirection above:
+
+1. **The prompt says where you are**, as bash's does (Diego, the same
+   message: "the prompt needs to tell which directory the user is standing
+   like bash does") - `kosmos:/Home/Photos> `, the working directory the
+   shell already keeps. `kosmos_telnet.py` and the suites that wait for
+   `kosmos> ` learn the new shape in the same change.
+2. **Line editing** with readline's keys - Ctrl+A, E, K, U, W, a word left
+   and right - and **history kept in `/Home`** across sessions, searched
+   with **Ctrl+R**; today the Terminal keeps 32 lines until it closes.
+3. **Tab completion**: programs, paths, applications and Lua names.
+4. **Globs**, `*` and `?`, expanded by the shell from the namespace.
+5. **`;`, `&&`, `||`** on exit codes, and **`$?`**.
+6. **Background jobs**: `cmd &`, `jobs`, `fg` - the shell holds the
+   processes it started, so no signals are needed.
+7. **`!!` and `!$`**, and a file of commands run like a program, as a Lua
+   file already is.
+
+Queued after redirection's first step.
+
 **A suite on the M700, for performance and real hardware.** Diego, 3
 October 2026, asking whether the gate could run on the M700: "We could run
 the test from the Mac into the m700 via telnet?", "And grab results from vnc
