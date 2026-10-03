@@ -16655,3 +16655,30 @@ machine and the stick was not there when it started - rather than that
 `diagnose` saves and says `/Home` is in memory. Its control, the namespace
 and `diagnose` as they were, fails both - with Diego's own line,
 `diagnose: /Home/diagnose.txt: nil`, and the file read back as `nil`.
+
+## 18.351 Where frames for the M700's own address go
+
+**0.10.207 on the M700** (Diego's photos, 3 October): an address by DHCP,
+192.168.1.40 - so the I219 receives, in the extended layout (18.349) - and
+`ping 8.8.8.8` unanswered, Wikipedia not loading. From the Mac, `arp`
+learnt the M700's address (it answered a broadcast question) and `ping
+192.168.1.40` went unanswered. The stack answers echo requests, so: every
+broadcast arrived, and nothing sent to the card's own address did.
+
+**0.10.208, to say where they go** (`counts_watch`): at 30, 60 and 120 s,
+the card's own counts - good frames, broadcast, multicast, the difference
+being what its address filter let through; frames handed to the
+management engine and dropped there; missed, no buffer, CRC - with RAL0 and
+RAH0, RCTL, MANC, WUC, WUS, WUFC, RXCSUM and FWSM. And if broadcasts came
+and no unicast did, the address filter is set aside (RCTL.UPE) at 30 s and
+counted again; `take_frames` then keeps only what is this card's or a
+group's. Under QEMU, its 82574L: 2 broadcast and 6 unicast at 30 s, so the
+filter stays.
+
+**What the Mac saw while 0.10.208 ran**, pinging it once a second: replies
+from about 30 s after boot - the filter set aside - every one of them 7 to
+18 seconds late, at a steady delay that grew when traffic thinned. A card
+holding received frames until several have gathered: the firmware's
+descriptor write-back threshold, which `e1000e` notes "only takes effect if
+the RDTR is set", kept because the I219 is taken as the firmware left it.
+Gate 86 of 86 in 10:05.

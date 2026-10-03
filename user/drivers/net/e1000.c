@@ -93,6 +93,20 @@
 #define REG_FWSM        0x5B54u
 #define REG_PBA         0x1000u     /* packet buffer: receive's share, in KB */
 #define REG_WUC         0x5800u     /* wake-up control */
+#define REG_WUFC        0x5808u     /* wake-up filters */
+#define REG_WUS         0x5810u     /* wake-up status */
+#define REG_MANC        0x5820u     /* management control */
+#define REG_RXCSUM      0x5000u
+
+/* The card's own counts, each cleared as it is read (`regs.h`). */
+#define REG_CRCERRS     0x4000u
+#define REG_MPC         0x4010u     /* missed */
+#define REG_GPRC        0x4074u     /* good frames received */
+#define REG_BPRC        0x4078u     /* ...of them broadcast */
+#define REG_MPRC        0x407Cu     /* ...and multicast */
+#define REG_RNBC        0x40A0u     /* no buffer for it */
+#define REG_MGTPRC      0x40B4u     /* to the management engine */
+#define REG_MGTPDC      0x40B8u     /* ...and dropped there */
 
 #define CTRL_GIO_MASTER_DISABLE 0x00000004u
 #define CTRL_MEHE               0x00080000u
@@ -135,6 +149,7 @@
 #define RCTL_BAM        (1u << 15)  /* broadcast accept */
 #define RCTL_BSIZE_2048 0u          /* bits 17:16 = 00 with BSEX clear */
 #define RCTL_SECRC      (1u << 26)  /* strip the CRC the card checked */
+#define RCTL_UPE        (1u << 3)   /* unicast promiscuous */
 
 #define TCTL_EN         (1u << 1)
 #define TCTL_PSP        (1u << 3)   /* pad short packets to 64 */
@@ -211,6 +226,12 @@ static struct {
     bool          rx_ext;           /* receive descriptors in e1000e's layout */
     uint64_t      started_at;       /* when the rings were handed over */
     bool          rx_said;          /* the first five seconds, said */
+    unsigned      counts_said;      /* how many of the counts' lines */
+    bool          promiscuous;      /* RCTL.UPE, as an experiment (18.351) */
+    struct {
+        unsigned long good, broadcast, multicast, missed, no_buffer, crc;
+        unsigned long management, management_dropped;
+    } counted;                      /* the card's counts, accumulated */
     bool          reset_first;      /* `opt/kosmos/e1000path=pch-reset` */
 
     struct eth_ring *ring;          /* the stack's, when it has attached */
@@ -1119,8 +1140,25 @@ static void take_frames(void)
             break;
         }
 
-        if (got.end && !got.error && got.length >= 14u
-            && got.length <= ETH_RING_SLOT && card.ring != NULL) {
+        /*
+         * With the address filter set aside (`counts_watch`), what is
+         * addressed to another machine is not this one's to pass on: only
+         * this card's own address, and a group's - broadcast and multicast,
+         * the low bit of the first byte.
+         */
+        bool foreign = false;
+
+        if (got.end && !got.error && card.promiscuous && got.length >= 14u) {
+            const uint8_t *dst = (const uint8_t *)(card.mem + RX_FRAMES_AT
+                                                   + card.rx_next * FRAME_SLOT);
+
+            foreign = (dst[0] & 1u) == 0 && memcmp(dst, card.mac, 6) != 0;
+        }
+
+        if (foreign) {
+            /* another machine's, seen only because the filter is aside */
+        } else if (got.end && !got.error && got.length >= 14u
+                   && got.length <= ETH_RING_SLOT && card.ring != NULL) {
             uint32_t write = card.ring->in_write;
             uint32_t read = eth_ring_acquire(&card.ring->in_read);
 
@@ -1182,6 +1220,113 @@ static void rx_watch(struct say_line *line)
     say_text(line, " RFCTL ");
     say_hex(line, reg_read(REG_RFCTL), 8);
     say_send(console, line);
+}
+
+/* The card's counts since the last look, added to what was counted before:
+ * every one of them is cleared as it is read. */
+static void count_up(void)
+{
+    card.counted.good += reg_read(REG_GPRC);
+    card.counted.broadcast += reg_read(REG_BPRC);
+    card.counted.multicast += reg_read(REG_MPRC);
+    card.counted.missed += reg_read(REG_MPC);
+    card.counted.no_buffer += reg_read(REG_RNBC);
+    card.counted.crc += reg_read(REG_CRCERRS);
+    card.counted.management += reg_read(REG_MGTPRC);
+    card.counted.management_dropped += reg_read(REG_MGTPDC);
+}
+
+/*
+ * **Where frames addressed to this card go** (`testing.md` 18.351). On
+ * 0.10.207 the M700 took its DHCP lease - broadcast - and answered the
+ * Mac's ARP - broadcast - but nothing sent to its own address arrived: not
+ * the router's ARP answer, not the Mac's pings. So, an I219's, the card's
+ * own counts at 30 seconds - good frames less broadcast and multicast is
+ * what its address filter let through - and the registers that decide it.
+ * If broadcasts came and no unicast did, the filter is set aside
+ * (RCTL.UPE) and counted again at 60: unicast arriving then is the filter
+ * dropping it, and the network works meanwhile, since `take_frames` keeps
+ * only what is this card's.
+ */
+static void counts_watch(struct say_line *line)
+{
+    static const unsigned long at[] = { 30, 60, 120 };
+    unsigned long unicast;
+
+    if (!card.pch || card.started_at == 0 || card.counts_said >= 3u
+        || kosmos_ticks() - card.started_at < at[card.counts_said] * card.hz) {
+        return;
+    }
+
+    count_up();
+
+    unicast = card.counted.good - card.counted.broadcast - card.counted.multicast;
+
+    say_begin(line);
+    say_text(line, "e1000: at ");
+    say_dec(line, at[card.counts_said]);
+    say_text(line, " s the card counted ");
+    say_dec(line, card.counted.good);
+    say_text(line, " good: ");
+    say_dec(line, card.counted.broadcast);
+    say_text(line, " broadcast, ");
+    say_dec(line, card.counted.multicast);
+    say_text(line, " multicast, ");
+    say_dec(line, unicast);
+    say_text(line, " unicast; to management ");
+    say_dec(line, card.counted.management);
+    say_text(line, ", dropped there ");
+    say_dec(line, card.counted.management_dropped);
+    say_send(console, line);
+
+    say_begin(line);
+    say_text(line, "e1000: ... missed ");
+    say_dec(line, card.counted.missed);
+    say_text(line, ", no buffer ");
+    say_dec(line, card.counted.no_buffer);
+    say_text(line, ", CRC ");
+    say_dec(line, card.counted.crc);
+    say_text(line, "; taken ");
+    say_dec(line, card.received);
+    say_text(line, card.promiscuous ? "; the filter set aside" : "");
+    say_text(line, "; RAL0 ");
+    say_hex(line, reg_read(REG_RAL0), 8);
+    say_text(line, " RAH0 ");
+    say_hex(line, reg_read(REG_RAH0), 8);
+    say_text(line, " RCTL ");
+    say_hex(line, reg_read(REG_RCTL), 8);
+    say_send(console, line);
+
+    if (card.counts_said == 0) {
+        say_begin(line);
+        say_text(line, "e1000: ... MANC ");
+        say_hex(line, reg_read(REG_MANC), 8);
+        say_text(line, " WUC ");
+        say_hex(line, reg_read(REG_WUC), 8);
+        say_text(line, " WUS ");
+        say_hex(line, reg_read(REG_WUS), 8);
+        say_text(line, " WUFC ");
+        say_hex(line, reg_read(REG_WUFC), 8);
+        say_text(line, " RXCSUM ");
+        say_hex(line, reg_read(REG_RXCSUM), 8);
+        say_text(line, " FWSM ");
+        say_hex(line, reg_read(REG_FWSM), 8);
+        say_send(console, line);
+    }
+
+    card.counts_said++;
+
+    if (!card.promiscuous && card.counts_said == 1
+        && card.counted.broadcast > 0 && unicast == 0) {
+        card.promiscuous = true;
+        reg_write(REG_RCTL, reg_read(REG_RCTL) | RCTL_UPE);
+
+        say_begin(line);
+        say_text(line, "e1000: broadcasts came and nothing for this address - "
+                       "the address filter set aside (RCTL.UPE) to see if it "
+                       "is what drops them");
+        say_send(console, line);
+    }
 }
 
 /* Whatever the stack has put in the ring, onto the wire. */
@@ -1431,6 +1576,7 @@ void e1000_server(long console_cap, long frames_cap)
             say_link(&line);
             tx_watch(&line);
             rx_watch(&line);
+            counts_watch(&line);
 
             if (card.irq >= 0) {
                 (void)kosmos_irq_ack(card.irq);

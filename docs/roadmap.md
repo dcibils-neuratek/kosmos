@@ -142,6 +142,11 @@ not wait or hang waiting for network or anything" (`testing.md` 18.345).
 4. **An audit**: every server and driver for a wait on hardware or on
    another process inside a request; every window for a call in its draw
    or its click.
+   **Found already, 3 October**: the browser on the M700 (0.10.207) stopped
+   collecting its events - "Browser - Kosmos is not collecting its events;
+   dropped a mouse move ... 100" - while it waited for wikipedia.org, whose
+   name's answer could not arrive (the I219 took no unicast). A load is
+   meant to be walked away from (18.332); one step of it still blocks.
 5. **The M700's I219 itself**: the next stick's log says what the
    transmitter is doing (TCTL, TDH against TDT, TXDCTL, CTRL, CTRL_EXT,
    STATUS), and the PCH datasheet and Linux's `e1000e` say what an I219
