@@ -613,13 +613,15 @@ menu on the M700. **`tools/kosmos_view.py`** for Diego - Python with Tk 9
 (Homebrew's `tcl-tk` and `python-tk@3.14`, nothing upgraded), the screen in a
 window, keys and pointer, reconnecting after a restart; 300 of 300 sampled
 pixels the frame's. **Agreed and on the roadmap**: a VNC viewer in Kosmos,
-drawn first. **Not pushed** - every commit since 0.10.202 (`af5f34f`), a
-push being Diego's word, after a full gate. **The M700 runs 0.10.214 by
+drawn first. **Pushed** at Diego's word ("Push"), after `make prepush`: 86
+suites green in 10:10, `af5f34f..954566c`, the picture
+`docs/screenshots/2026-10-03-1615-55db3e2.png`. **The M700 runs 0.10.214 by
 network boot**, `/Home` in memory (no stick at boot). **Next**: the late
 `/Home` stick (A, B or C, his; B recommended), `vncd` started at boot on a
 network boot, the M700's TCP send (a whole frame 7.2 s, 1.4 MB/s), the
 browser's blocking name lookup (the async audit), servers and drivers
-restarted, and the gate back under ten minutes.
+restarted, the gate back under ten minutes (10:10 at the push), and the
+suite on the M700 for performance and real hardware (roadmap, agreed).
 What is left of forms is in 6zz j6 (a select's menu first). The gate's audio
 flakes (6zw) were being looked at and are paused: `x86-film` passed under 10
 and 30 busy loops on this Mac, so host CPU alone does not make it fail - the
