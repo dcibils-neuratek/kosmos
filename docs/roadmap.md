@@ -204,6 +204,13 @@ network. So:
      the rest of the boot - so a stick plugged in later is never adopted.
      A stick the command line names should become `/Home` whenever it
      arrives.
+     **Diego chose B on 3 October** of three ways put to him - A, wait for
+     the stick with no `/Home` until then; B, memory until it comes, then
+     the stick; C, say it and ask for a restart: "go with option B in the
+     stick question". The desktop starts complete with `/Home` in memory;
+     when the named stick arrives, the disk server switches `/Home` to it
+     for every program, with no restart, and what was saved in memory
+     before is dropped and said so in the log. After the M700's suite.
    - **`diagnose` says `nil`** where it should say why it could not save:
      `fs.write_from` returns nothing and no error when the server's answer
      carries no byte count, which the in-memory `/Home` does not give.
