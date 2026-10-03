@@ -155,6 +155,12 @@ settings.ITEMS = {
         kind = "choice", file = settings.APPEARANCE, key = "wallpaper",
         default = "", choices = nil },   -- filled at run time from the image
 
+  item{ category = "appearance", group = "Look",
+        label = "Wallpaper size", note = "Filling the screen, its middle kept, or as it is in the middle",
+        kind = "choice", file = settings.APPEARANCE, key = "wallpaper_fit",
+        default = "fill",
+        choices = { { "fill", "Fill the screen" }, { "centre", "Centred" } } },
+
   item{ category = "appearance", group = "Size",
         label = "Scale",
         note = "Everything larger, for a small screen at a high resolution",

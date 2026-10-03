@@ -17045,3 +17045,41 @@ call, and the check that every name the Lua draws is rendered read
 `"charging"` from the condition as a name; the bar and the strip share one
 `battery_glyph` now. Twelve seconds over Diego's ten minutes, as the last
 push was ten over: still to bring back.
+
+## 18.358 The wallpaper filling the screen, or centred
+
+**Diego, 3 October, back at the M700**: "the wallpaper needs to be either
+stretched or expanded to fill the screen", then "can we put a setting in
+the appearance menu either center or fill". At its 1720 by 1440 a shipped
+1920x1080 picture was centred: 100 pixels cut from each side and bands of
+the desktop's colour 180 tall above and below it.
+
+**Appearance's *Wallpaper size***: Fill the screen (the default) or
+Centred, kept as `wallpaper_fit` and told to the window manager as
+`{ type = "wallpaper_fit" }`. A fill keeps the picture's shape - the part
+with the screen's proportions taken from its middle, here 1290x1080 of
+1920x1080 - and the gfx kit's `stretch` resamples it, smoothed, once, into
+a surface the screen's size; a pass blits that as it blitted the picture.
+A picture already the screen's size is never resampled, so the display
+harness's `wallpapers` phase, one to one at 1920x1080, is unchanged.
+
+**`run_dock.py` now boots at 1720x1440**, the M700's size, which every
+dock check was already worked out from, and adds three: the picture filling
+the screen, its bottom left corner the picture's; centred, that corner
+Night's desktop colour below it; a fit that is neither refused. 17 checks.
+**Control**: the fill taken out, "the corner (11, 18, 32)" - Night's
+desktop.
+
+**The first try at it called `gfx.stretch`**, which is a surface's method
+(`dst:stretch(src, ...)`), and the window manager answered the wallpaper
+with the error rather than a picture - correctly; the probe printed the
+wrong half of `fs.send`'s two answers and read it as no answer at all.
+
+**Its gate**: 86 of 87 in 10:18 - the one `arm-kernel`'s `smp: a new
+thread avoids a loaded core`, the placement count taken at an instant that
+fails about once in thirty under load (18.340), and 197 of 197 alone after.
+The whole gate was more than this needed, and Diego asked why: the change
+is the wallpaper's path inside the window manager and nothing else of it,
+so the suites that can see it - `host`, `x86-dock`, `display-2` for the
+compositor budget, `display-3` for the wallpapers and Appearance - were
+the test. They passed inside it.

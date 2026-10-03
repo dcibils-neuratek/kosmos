@@ -373,6 +373,7 @@ end
 
 -- What `load_appearance` found, for the startup below to apply.
 local saved_wallpaper = nil
+local saved_fit = nil
 
 -- Three faces, not one: a titlebar, a paragraph and a terminal want
 -- different things, and the terminal's has to be fixed-width whatever the
@@ -630,6 +631,7 @@ local function load_appearance()
   -- Kept, not applied: this runs before the framebuffer is taken, and a
   -- picture cannot be centred until something knows how big the screen is.
   saved_wallpaper = saved.wallpaper
+  saved_fit = saved.wallpaper_fit
 end
 
 local screen = gfx.screen()
@@ -640,13 +642,24 @@ local screen = gfx.screen()
 -- loaded rather than per rectangle: the desktop is composed in pieces and
 -- the arithmetic would otherwise be redone for every one of them.
 --
--- **Centred, never stretched.** Scaling would need a resampler and would
--- make a picture that is the size of the screen - the case worth having -
--- pass through one anyway, losing sharpness for nothing. An image smaller
--- than the screen sits in the middle on the desktop colour; a larger one is
--- cropped to the middle by the same arithmetic, since `blit` clips.
+-- **Filling the screen, or centred** - Appearance's *Wallpaper size*
+-- (Diego, 3 October, at the M700's 1720 by 1440: "the wallpaper needs to be
+-- either stretched or expanded to fill the screen", "either center or
+-- fill"). This said *centred, never stretched*: scaling needed a resampler
+-- and would blur a picture already the screen's size. Both halves still
+-- hold, and neither stops a fill: the gfx kit's `stretch` resamples, in C
+-- and smoothed, **once**, when the picture or the choice changes - into a
+-- surface the screen's size that a pass blits as it blitted the picture -
+-- and a picture already the screen's size is never resampled at all.
+--
+-- **Fill keeps the picture's shape**: as large as covers the screen, its
+-- middle kept and the rest cut away, rather than stretched out of
+-- proportion. Centred, a smaller picture sits in the middle on the desktop
+-- colour and a larger one is cropped to its middle, since `blit` clips.
 --
 local wallpaper, wall_x, wall_y, wall_w, wall_h = nil, 0, 0, 0, 0
+local wall_fit = "fill"           -- or "centre"
+local wall_filled = nil           -- the picture made the screen's size
 
 --
 -- Read a picture and make it the desktop.
@@ -795,11 +808,38 @@ local function wallpaper_load(path)
 end
 
 local function wallpaper_place()
+  if wall_filled then
+    wall_filled:free()
+    wall_filled = nil
+  end
+
   if not wallpaper then return end
 
   local sw, sh = screen:size()
+  local pw, ph = wallpaper:size()
 
-  wall_w, wall_h = wallpaper:size()
+  if wall_fit == "fill" and (pw ~= sw or ph ~= sh) then
+    -- The part of the picture with the screen's shape, from its middle.
+    local cw, ch = pw, ph
+
+    if pw * sh > ph * sw then
+      cw = ph * sw // sh
+    else
+      ch = pw * sh // sw
+    end
+
+    -- On the desktop colour, for a picture with transparent parts.
+    wall_filled = gfx.surface{ w = sw, h = sh }
+    wall_filled:fill(0, 0, sw, sh, desktop_colour())
+    wall_filled:stretch(wallpaper, (pw - cw) // 2, (ph - ch) // 2, cw, ch,
+                0, 0, sw, sh, nil, true)
+    wall_x, wall_y, wall_w, wall_h = 0, 0, sw, sh
+    print(("wm: the wallpaper, %dx%d, fills the screen from %dx%d of it")
+          :format(pw, ph, cw, ch))
+    return
+  end
+
+  wall_w, wall_h = pw, ph
   wall_x = (sw - wall_w) // 2
   wall_y = (sh - wall_h) // 2
 end
@@ -1101,6 +1141,8 @@ end
 -- same lesson as the region error three files away, which had three
 -- causes and named none of them.
 --
+wall_fit = saved_fit == "centre" and "centre" or "fill"
+
 if saved_wallpaper then
   local ok, why = wallpaper_load(saved_wallpaper)
 
@@ -2459,7 +2501,7 @@ local function draw_desktop(r)
   if wallpaper then
     -- `blit` clips against both surfaces, so a rectangle that misses the
     -- picture copies nothing and one that runs off its edge stops there.
-    back:blit(wallpaper, r.x - wall_x, r.y - wall_y, r.w, r.h, r.x, r.y)
+    back:blit(wall_filled or wallpaper, r.x - wall_x, r.y - wall_y, r.w, r.h, r.x, r.y)
   end
 
   -- What is running, bottom right, on the desktop and under everything
@@ -5183,6 +5225,23 @@ handlers.wallpaper = function(req)
 
   wallpaper_place()
   add_damage(0, 0, W, H)
+
+  return { ok = true }
+end
+
+--
+-- How it covers the screen: `{ type = "wallpaper_fit", fit = "fill" }` or
+-- `"centre"`, Appearance's *Wallpaper size*. Placed again at once.
+--
+handlers.wallpaper_fit = function(req)
+  local fit = (req.fit == "fill" or req.fit == "centre") and req.fit or nil
+
+  if not fit then return { ok = false, error = "a wallpaper fills or is centred" } end
+
+  wall_fit = fit
+  wallpaper_place()
+  add_damage(0, 0, W, H)
+  print("wm: the wallpaper " .. (fit == "fill" and "fills the screen" or "is centred"))
 
   return { ok = true }
 end

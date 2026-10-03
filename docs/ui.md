@@ -702,12 +702,20 @@ window owns.
 
 ## 16.9 Themes, and colours that are named rather than captured
 
-**Since 22 September there are four looks and nothing else to choose**
-(`roadmap.md` 5y): Plex, Plex Night, Classic and Studio, in `themes.lua`,
-each a whole designed in `docs/looks.html`, all four naming the same faces.
-The Appearance panel offers a look and a wallpaper, and
-`/Home/.appearance` holds those two. What follows is how a theme came
-to carry its faces at all, and the per-role choices the panel no longer has.
+**Since 22 September a look is chosen whole, never colour by colour**
+(`roadmap.md` 5y). There were four then - Plex, Plex Night, Classic and
+Studio, each designed in `docs/looks.html` - and there are six on 3
+October: Endeavour first, and **Night**, in Googlebook's language for the
+dock (`docs/dock.html`), the first look to say its own corner and shadow.
+They live in `themes.lua`. Appearance offers the look, where the bar is
+(the top, or a dock at the bottom, floating or the whole width), the
+wallpaper and **how it covers the screen** - filling it, its middle kept
+and its edges cut away, or centred as it is (Diego, 3 October, at the
+M700's 1720 by 1440: "either center or fill"; a fill is resampled once,
+when the picture or the choice changes, and never per frame) - and the
+scale, the corners, the shadows and the icon sizes, all in
+`/Home/Preferences/appearance`. What follows is how a theme came to carry
+its faces at all, and the per-role choices the panel no longer has.
 
 **A theme is its colours and its faces.** There were two palettes - `dark`,
 which is what Kosmos looked like first, and `light`, the 1998 one on

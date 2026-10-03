@@ -343,6 +343,10 @@ local APPLY = {
                                 path = (path ~= "") and path or nil })
   end,
 
+  wallpaper_fit = function(fit)
+    return fs.send("/Running/wm", { type = "wallpaper_fit", fit = fit })
+  end,
+
   -- One field each, and the manager ignores a field it does not know - so
   -- another of these is one line.
   corner = function(on)

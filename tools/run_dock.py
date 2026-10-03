@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""The Deskbar as a dock, in the Night look (`roadmap.md`, a dock at the bottom).
+"""The desktop at the M700's size: the Deskbar as a dock, in the Night look
+(`roadmap.md`, a dock at the bottom), and the wallpaper filling the screen.
 
 Diego, 3 October 2026: "an appearance setting to place the taskbar on the
 bottom center and replicate as mich as possible the design language of
@@ -23,6 +24,14 @@ the look named Night. One boot, driven over Telnet and by QEMU's pointer:
   4. The whole width: the dock along the foot, and the room given back to
      the gap it no longer leaves.
   5. The bar at the top again: no dock, and all the room back.
+  6. **The wallpaper** (Diego, 3 October, at the M700: "the wallpaper needs
+     to be either stretched or expanded to fill the screen", "either center
+     or fill"): a shipped 1920x1080 picture on this 1720x1440 screen fills
+     it, the bottom left corner the picture's; centred, that corner is the
+     desktop's colour below it; and a fit that is neither is refused.
+
+All of it at 1720x1440, the M700's screen, which no shipped wallpaper is
+the size of - so a fill has to resample, and a centred picture leaves bands.
 
 Usage: run_dock.py IMAGE
 """
@@ -55,6 +64,14 @@ LOOK = ('local ui = use("/Kosmos/Libraries/ui.lua")\n'
 
 # What a maximised window is given: its place and size, in the screen's
 # points - which at this screen's scale are its pixels.
+# The wallpaper as Preferences sets it, and its fit as Appearance's
+# Wallpaper size does - then a word that is neither.
+WALL = ('local r, why = fs.send("/Running/wm", { type = "wallpaper", '
+        'path = "wallpaper/alexander-slattery-LI748t0BK8w.jpg" })\n'
+        'print("WALL " .. tostring(r and r.ok) .. " " .. tostring(why))\n')
+FIT = ('local r, why = fs.send("/Running/wm", { type = "wallpaper_fit", fit = args })\n'
+       'print("FIT " .. tostring(r and r.ok) .. " " .. tostring(why))\n')
+
 ROOM = ('local r = fs.send("/Running/wm", { type = "workarea" })\n'
         'print(("ROOM %d %d %d %d"):format(r.x, r.y, r.w, r.h))\n')
 
@@ -76,7 +93,8 @@ def last_dock(seen):
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
     telnet, web = random.randint(20000, 40000), random.randint(40001, 60000)
-    guest = S.boot(image, telnet, web)
+    guest = S.boot(image, telnet, web,
+                   extra=("-fw_cfg", "name=opt/kosmos/fb,string=1720x1440"))
     fails = []
     said = {}
 
@@ -146,6 +164,20 @@ def main():
         said["again"] = guest.wait_for_line("wm: window Deskbar at ", "the bar again", mark)
         time.sleep(1)
         said["room again"] = room(session)
+
+        # ---- 6: the wallpaper ----
+        session.put(WALL.encode(), "/Temporary/wall.lua")
+        session.put(FIT.encode(), "/Temporary/fit.lua")
+        corner = (6, height - 6)                  # clear of the dock, the stamp and the icons
+        said["wall"] = session.run("/Temporary/wall.lua").decode(errors="replace")
+        time.sleep(2)
+        _, _, at = R.pixel_reader(guest.screendump())
+        said["filled"] = at(*corner)
+        said["centre"] = session.run("/Temporary/fit.lua centre").decode(errors="replace")
+        time.sleep(2)
+        _, _, at = R.pixel_reader(guest.screendump())
+        said["centred"] = at(*corner)
+        said["sideways"] = session.run("/Temporary/fit.lua sideways").decode(errors="replace")
         guest._read_available()
     except Exception as e:                  # noqa: BLE001 - said below
         fails.append("the boot stopped: %s: %s" % (type(e).__name__, e))
@@ -222,10 +254,26 @@ def main():
                      "%r, %r, room %r, at first %r"
                      % (said.get("top"), said.get("again"), again, top))
 
+    desk = (0x0b, 0x12, 0x20)                    # Night's desktop
+
+    if "WALL true" not in said.get("wall", "") \
+       or "fills the screen from 1290x1080 of it" not in seen \
+       or not said.get("filled") or said.get("filled") == desk:
+        fails.append("a 1920x1080 wallpaper did not fill a 1720x1440 screen: %r, "
+                     "the corner %r" % (said.get("wall"), said.get("filled")))
+
+    if "FIT true" not in said.get("centre", "") or said.get("centred") != desk:
+        fails.append("the wallpaper centred did not leave the desktop's colour "
+                     "below it: %r, the corner %r" % (said.get("centre"), said.get("centred")))
+
+    if "a wallpaper fills or is centred" not in said.get("sideways", ""):
+        fails.append("a wallpaper fit that is neither was not refused: %r"
+                     % said.get("sideways"))
+
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:400])
 
-    checks = 14
+    checks = 17
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))
@@ -235,14 +283,17 @@ def main():
 
         return 1
 
-    print("PASS: %d checks on the Deskbar as a dock, in Night (the look applied; "
+    print("PASS: %d checks on the desktop at the M700's 1720x1440 - the Deskbar "
+          "as a dock, in Night (the look applied; "
           "the write moving the bar answered, and the same place asked "
           "for again starting nothing; the login items opened once; the "
           "strip across the top; the dock centred %d above the edge; a "
           "maximised window ending above it; the Kosmos menu opening upwards; "
           "its button lit while it is open and dark once it is dismissed; the "
-          "whole width along the foot, giving the gap back; and the bar at the "
-          "top again with all the room back)." % (checks, GAP))
+          "whole width along the foot, giving the gap back; the bar at the "
+          "top again with all the room back) - and a 1920x1080 wallpaper "
+          "filling the screen, centred leaving the desktop below it, and a "
+          "fit that is neither refused." % (checks, GAP))
     return 0
 
 

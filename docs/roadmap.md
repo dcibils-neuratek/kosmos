@@ -336,6 +336,17 @@ this order, each step its own test:
    left and the three at its right; and the desktop's icons on the right in
    round tiles.
 
+**The wallpaper fills the screen, or is centred - Appearance's choice.**
+Diego, 3 October 2026, at the M700, whose 1720 by 1440 no shipped
+wallpaper is the size of: "the wallpaper needs to be either stretched or
+expanded to fill the screen", then "can we put a setting in the appearance
+menu either center or fill". **Done the same evening** (`testing.md`
+18.358): *Wallpaper size* - Fill the screen, the default, or Centred.
+Fill keeps the picture's shape and cuts its edges away rather than
+stretching it; the window manager resamples it once, smoothed, in C, when
+the picture or the choice changes, and a picture already the screen's size
+is used as it is.
+
 **A window minimised or restored shows where it went.** Diego, 3 October
 2026: "can we add a simple anomation to when windows minimize and restore
 from the task bar? a simple border only anomation that tells the user where
@@ -7161,6 +7172,29 @@ should be the default, and `make usb` should write the image that was
 checked rather than a new one.
 
 ## Known and unexplained
+
+**The M700 stopped, whole, while `make m700` ended its applications** (3
+October, 0.10.216). The suite had opened its second dozen - the seven GL
+demos, Groove, `hello-win`, the IDE, Info, the launcher editor - tiled
+them, pictured them by VNC, and ended `glcube` by its number at 181.8 s.
+Its process ended; then nothing: the window manager never said it closed
+Cube's window, the screen held its last frame (Diego's photograph), and the
+machine stopped answering on the network ("Host is down"). The first dozen
+had ended cleanly a minute before, and 0.10.214 and 0.10.215 ended all
+fifty in three runs. **No panic**, which narrows it: a spinlock waits a
+bounded time and then panics naming the lock and its holder, and so does a
+TLB shootdown nobody answers, and a panic takes the screen back - so the
+kernel did not see itself stop. That leaves a processor that stopped taking
+its timer (a thread never leaves its home, so whatever is homed there stops
+for good - a window manager and a network stack on it would be both
+symptoms), or programs waiting on each other in a ring. **Not reproduced
+under QEMU** at the M700's 1720x1440: both dozens opened, tiled and ended
+on four processors and on eight, with the VNC picture between, the machine
+answering after every kill. **The next step is the machine saying which**:
+each processor checking on every tick that the others are still ticking,
+and panicking - naming the processor, the thread it last ran and its
+process - when one has stopped; a thing to agree with Diego, since it is
+the kernel watching itself. Then `make m700` run until it stops again.
 
 **A kernel thread's capability table read as null, in one build's layout**
 (24 September, 0.10.155). The gate's x86-64 test image panicked on test 58,
