@@ -388,6 +388,10 @@ through the loop (*Build, boot and test the M700*), does what QEMU cannot:
      connection pays it as its banner;
    - **the stick reads at 32 MB/s** on a USB 3 port, where the drive is
      rated well above it;
+   - **This Machine is wrong on the M700**: "Keyboard virtio-input,
+     polled", where the keyboard is a USB one, and "Disk none attached;
+     /Home is in memory", with `/Home` on the stick - seen in the suite's
+     pictures (`apps-3.png`), which is what they are for;
    - and its numbers move fifteen per cent run to run on one build - a
      history before any of them is read as a change.
 
