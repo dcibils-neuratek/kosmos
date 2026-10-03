@@ -264,6 +264,20 @@
 #define RESET_MS            1000u
 #define SETTLE_MS           500u
 #define ANSWER_MS           1000u       /* a command, a transfer, a port reset */
+
+/*
+ * **A stick is given what Linux gives a disk** (`testing.md` 18.354): thirty
+ * seconds for each stage of a command - the wrapper, the data, the status -
+ * as `sd.h`'s SD_TIMEOUT, and five for its class reset, as
+ * `usb_stor_reset_common` sends it (v6.12, read on 3 October 2026). A flash
+ * stick may hold a write off while it erases, and a second was too little:
+ * the M700's Kingston DataTraveler took longer over a megabyte of
+ * `diskbench`, its write was refused, and the reset after it went unanswered
+ * because the stick was still busy. Mouse and keyboard reports are read as
+ * they come throughout (`wait_serving`), so the wait holds nothing of theirs.
+ */
+#define STICK_MS            30000u
+#define STICK_RESET_MS      5000u
 #define EVENTS_MAX          64u         /* unrelated events borne while waiting */
 
 /*
@@ -1474,7 +1488,7 @@ static bool reset_port(struct controller *c, unsigned port)
 static const char *completion_name(uint32_t code)
 {
     switch (code) {
-    case 0u: return "no answer within a second";
+    case 0u: return "no answer in the time allowed";
     case 1u: return "Success";
     case 2u: return "Data Buffer Error";
     case 3u: return "Babble Detected Error";
@@ -1707,7 +1721,7 @@ static bool address_device(struct controller *c, struct device *d,
  * is read as it comes (`wait_serving`).
  */
 static bool control_wait(struct controller *c, struct device *d,
-                         uint64_t status)
+                         uint64_t status, unsigned ms)
 {
     uint32_t done[4];
     unsigned seen;
@@ -1718,7 +1732,7 @@ static bool control_wait(struct controller *c, struct device *d,
     for (seen = 0; seen < EVENTS_MAX; seen++) {
         uint32_t code;
 
-        if (!wait_serving(c, ANSWER_MS, done)) {
+        if (!wait_serving(c, ms, done)) {
             return false;
         }
 
@@ -1765,7 +1779,7 @@ static bool control_in(struct controller *c, struct device *d,
                     TRB_TYPE(TRB_DATA) | TRB_DIR_IN);
     status = ring_push(&d->ep0, 0, 0, 0, TRB_TYPE(TRB_STATUS) | TRB_IOC);
 
-    return control_wait(c, d, status);
+    return control_wait(c, d, status, ANSWER_MS);
 }
 
 /*
@@ -1775,8 +1789,9 @@ static bool control_in(struct controller *c, struct device *d,
  * then a Status stage that is IN, because with no data stage it is the
  * device that answers (Table 4-7).
  */
-static bool control_nodata(struct controller *c, struct device *d,
-                           uint32_t request, uint16_t value, uint16_t index)
+static bool control_nodata_within(struct controller *c, struct device *d,
+                                  uint32_t request, uint16_t value,
+                                  uint16_t index, unsigned ms)
 {
     uint64_t status;
 
@@ -1785,7 +1800,13 @@ static bool control_nodata(struct controller *c, struct device *d,
     status = ring_push(&d->ep0, 0, 0, 0,
                        TRB_TYPE(TRB_STATUS) | TRB_DIR_IN | TRB_IOC);
 
-    return control_wait(c, d, status);
+    return control_wait(c, d, status, ms);
+}
+
+static bool control_nodata(struct controller *c, struct device *d,
+                           uint32_t request, uint16_t value, uint16_t index)
+{
+    return control_nodata_within(c, d, request, value, index, ANSWER_MS);
 }
 
 /*
@@ -2523,7 +2544,7 @@ static void say_descriptor(const struct controller *c, unsigned port,
  */
 static bool bulk(struct controller *c, unsigned slot, unsigned dci,
                  struct ring *r, uint64_t bus, unsigned length,
-                 unsigned *moved)
+                 unsigned *moved, unsigned ms)
 {
     uint64_t at = ring_push(r, (uint32_t)bus, (uint32_t)(bus >> 32), length,
                             TRB_TYPE(TRB_NORMAL) | TRB_ISP | TRB_IOC);
@@ -2537,7 +2558,7 @@ static bool bulk(struct controller *c, unsigned slot, unsigned dci,
     for (seen = 0; seen < EVENTS_MAX; seen++) {
         uint32_t left;
 
-        if (!wait_serving(c, ANSWER_MS, done)) {
+        if (!wait_serving(c, ms, done)) {
             return false;
         }
 
@@ -2678,20 +2699,20 @@ static const char *transact_once(struct controller *c, struct device *d,
     }
 
     if (!bulk(c, d->slot, s->out_dci, &s->out, d->buffer_bus, BOT_CBW_LENGTH,
-              &moved) || moved != BOT_CBW_LENGTH) {
+              &moved, STICK_MS) || moved != BOT_CBW_LENGTH) {
         return named(command, "'s command");
     }
 
     if (length > 0u && out) {
         if (!bulk(c, d->slot, s->out_dci, &s->out, s->transfer_bus, length,
-                  got) || *got != length) {
+                  got, STICK_MS) || *got != length) {
             return named(command, "'s data");
         }
     } else if (length > 0u) {
         memset((void *)s->transfer, 0, length);
 
         if (!bulk(c, d->slot, s->in_dci, &s->in, s->transfer_bus, length,
-                  got)) {
+                  got, STICK_MS)) {
             return named(command, "'s data");
         }
 
@@ -2701,7 +2722,7 @@ static const char *transact_once(struct controller *c, struct device *d,
     }
 
     if (!bulk(c, d->slot, s->in_dci, &s->in, d->buffer_bus, BOT_CSW_LENGTH,
-              &moved)) {
+              &moved, STICK_MS)) {
         return named(command, "'s status");
     }
 
@@ -2827,7 +2848,8 @@ static const char *recover(struct controller *c, struct device *d,
 {
     const char *failed;
 
-    if (!control_nodata(c, d, MASS_STORAGE_RESET, 0, s->interface)) {
+    if (!control_nodata_within(c, d, MASS_STORAGE_RESET, 0, s->interface,
+                               STICK_RESET_MS)) {
         return "the Bulk-Only Mass Storage Reset";
     }
 
@@ -3467,13 +3489,13 @@ static bool ether_send(struct controller *c, unsigned slot,
     memcpy((uint8_t *)(e->frames + ETHER_OUT_AT), frame, length);
 
     if (!bulk(c, slot, e->out_dci, &e->out, e->frames_bus + ETHER_OUT_AT,
-              length, &moved) || moved != length) {
+              length, &moved, ANSWER_MS) || moved != length) {
         return false;
     }
 
     if (packet != 0 && length % packet == 0) {
         if (!bulk(c, slot, e->out_dci, &e->out, e->frames_bus + ETHER_OUT_AT,
-                  0, &moved)) {
+                  0, &moved, ANSWER_MS)) {
             return false;
         }
     }
@@ -4446,8 +4468,8 @@ static bool midi_usb_send(struct controller *c, unsigned slot,
 
     memcpy(m->out_data, packets, n * 4u);
 
-    if (!bulk(c, slot, m->out_dci, &m->out, m->out_bus, n * 4u, &moved)
-        || moved != n * 4u) {
+    if (!bulk(c, slot, m->out_dci, &m->out, m->out_bus, n * 4u, &moved,
+              ANSWER_MS) || moved != n * 4u) {
         return false;
     }
 
@@ -5063,7 +5085,7 @@ static bool control_out(struct controller *c, struct device *d,
     status = ring_push(&d->ep0, 0, 0, 0,
                        TRB_TYPE(TRB_STATUS) | TRB_DIR_IN | TRB_IOC);
 
-    return control_wait(c, d, status);
+    return control_wait(c, d, status, ANSWER_MS);
 }
 
 /*

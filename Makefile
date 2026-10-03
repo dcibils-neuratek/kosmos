@@ -3724,6 +3724,17 @@ netboot: x86-build $(EFI_LOADER)
 netboot-serve:
 	bash tools/netboot-serve.sh build/netboot
 
+# **The M700's suite** (`roadmap.md`, a suite on the M700; Diego, 3
+# October: "a subset of tests on the m700 mostly for performance tests and
+# real Hardware"): this build served, the M700 restarted into it over
+# Telnet, and `tools/run_m700.py` - its hardware checked, its numbers kept
+# beside the last run's in build/m700, every application opened and
+# pictured, all of it shown on the M700's screen as it goes. Needs the boot
+# server running (`netboot-serve`) and the M700 on the network.
+.PHONY: m700
+m700: netboot
+	python3 tools/run_m700.py --restart $(M700)
+
 USB_HOME      ?= partition
 HOME_DIR      ?= $(HOME)/Kosmos/home
 STICK_HOME_MB ?= 512
