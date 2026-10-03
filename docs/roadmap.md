@@ -274,6 +274,36 @@ control remote machines from kosmos using vnc". An application, so drawn
 first as an HTML mockup in `docs/` and agreed before any code; RFB's client
 half in C - a loop over pixels - beside `vncd`'s, and the window in Lua.
 
+**A suite on the M700, for performance and real hardware.** Diego, 3
+October 2026, asking whether the gate could run on the M700: "We could run
+the test from the Mac into the m700 via telnet?", "And grab results from vnc
+and telnet?", then "We could do a subset of tests on the m700 mostly for
+performance tests and real Hardware". The gate stays on QEMU - injected
+faults, emulated devices, `-icount`'s exact clock and eight boots at once
+are what make it the same every time - and a second suite, run from the Mac
+through the loop (*Build, boot and test the M700*), does what QEMU cannot:
+
+1. **The harness given a second kind of machine.** What a suite does to a
+   QEMU guest it does to the M700: the log read over Telnet (`log`) for the
+   lines it waits for, commands and applications by Telnet (`run`,
+   `open`), keys, clicks and pictures by VNC (`kosmos_vnc.py`), boot
+   options written into the served command line before a `restart`, and
+   files put on it by Telnet (`put`).
+2. **Real hardware**: the I219 - an address by DHCP, every frame counted
+   taken, a ping and a name; the USB stick, keyboard and mouse; restart;
+   the sound codec; the display's mode; each application opened and its
+   picture taken.
+3. **Real performance**: `gfxbench`, `diskbench`, `frames` and `latency`
+   on the M700's own cores, the numbers QEMU's are not, kept per build so a
+   change is seen.
+4. **The in-image suite on real silicon** - the kernel's tests and the Lua
+   suite on eight cores and real timers - once the test image can go on
+   into the normal system and leave its TAP in the log, rather than report
+   by switching QEMU off.
+5. **One command, `make m700`**, inside Diego's five to ten minutes: as few
+   restarts as the checks allow. Run when a change touches hardware, and
+   before a build is called stable.
+
 **Servers and drivers restarted, from the prompt or from a system
 application.** Diego, 2 October 2026, asking whether one can be restarted
 "instead of restarting the computer": "based on the fact we have a
