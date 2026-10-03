@@ -5811,6 +5811,20 @@ function ui.window(spec)
     end
   end
 
+  --
+  -- **Buffers at the size granted, not the size asked** (`testing.md`
+  -- 18.355). A window that draws its own pixels made them at what it asked
+  -- for, and the window manager may give it less - the screen less a
+  -- border - or more, the floor of 32. Drawn at the asked size into a window
+  -- shown at the granted one, Groove came out in diagonal bands on the
+  -- M700; so before the first frame there are buffers the granted size,
+  -- handed over as a resize hands them (`take_size`), and `surface()` is
+  -- the size to lay out from.
+  --
+  if region and (w.w ~= (spec.w or 400) or w.h ~= (spec.h or 240)) then
+    w:take_size(w.w, w.h)
+  end
+
   return w
 end
 

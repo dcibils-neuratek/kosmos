@@ -305,13 +305,20 @@ def step(viewer, text):
     elif verb == "move":
         viewer.pointer(*numbers(2))
     elif verb == "drag":
+        # Spaced as a hand moves, as the browser's resize test drags its
+        # grip: `vncd` folds pointer events with the same buttons into the
+        # last, so a press and its moves sent at once arrive as one place.
         x1, y1, x2, y2 = numbers(4)
         viewer.pointer(x1, y1)
+        time.sleep(0.3)
         viewer.pointer(x1, y1, 1)
+        time.sleep(0.3)
 
         for i in range(1, 9):
             viewer.pointer(x1 + (x2 - x1) * i // 8, y1 + (y2 - y1) * i // 8, 1)
+            time.sleep(0.1)
 
+        time.sleep(0.3)
         viewer.pointer(x2, y2, 0)
     elif verb == "type":
         viewer.type_text(rest.replace("\\n", "\n"))

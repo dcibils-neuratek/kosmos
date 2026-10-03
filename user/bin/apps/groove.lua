@@ -50,17 +50,19 @@ local asked = tostring(args or ""):match("%-%-size%s+(%S+)")
 local carried = tostring(args or ""):match("%-%-carry%s+(%S+)")
 
 --------------------------------------------------------------------------
--- **The window: 1920 by 1080**, centred, or the whole work area where that
--- is no bigger. It was maximised, as Cafesa3D is, and on the M700's
--- 3440x1440 that was five million pixels drawn again every frame while a
--- song played - Diego, 28 September: "the app feels laggy", "It should open
--- at 1920x1080 by default", "Or have the launcher parameter to open at a
--- certain resolution", "Also a 3 dot menu option to go full screen". So
--- `--size WxH` or `--size full`, and Full screen in the bar's menu, which
--- starts Groove again at the new size with the song carried over (`again`
--- below): a window that draws its own pixels cannot be resized, because its
--- buffers are this process's, as Video's are. PulseMusic's own 1400 by 860
--- when there is nobody to ask.
+-- **The window: maximised, and resizable** - Diego, 3 October: "groove
+-- needs to be resizable", "like we did with the browser", "and open
+-- maximised to the full screen size". It opened at 1920 by 1080 since 28
+-- September, when a maximised Groove drew five million pixels every frame
+-- on the M700's 3440x1440 ("the app feels laggy", "It should open at
+-- 1920x1080 by default"); it has drawn only what changed since
+-- (`groove/ui.lua`), so the whole work area costs what a playing song
+-- changes. Resized by the grip or by maximise, the kit hands it buffers the
+-- new size, as it does the browser's (`roadmap.md` 6zz e), and it lays out
+-- again (`resized`). `--size WxH` still opens it at a size, and Full
+-- screen in the bar's menu still starts it again there with the song
+-- carried over (`again` below). PulseMusic's own 1400 by 860 when there is
+-- nobody to ask.
 --
 -- **Its top bar is its title bar** (`roadmap.md` 6zj), as Diego chose:
 -- "GROOVE bar is the title bar". It says it has a header, so where the
@@ -71,7 +73,6 @@ local carried = tostring(args or ""):match("%-%-carry%s+(%S+)")
 -- with no tab and no border has the whole width.
 --------------------------------------------------------------------------
 
-local DEFAULT_W, DEFAULT_H = 1920, 1080
 local W, H, whole = 1400, 860, false
 
 do
@@ -81,12 +82,10 @@ do
     local aw, ah = got.w, got.h
     local w, h = tostring(asked or ""):match("^(%d+)[xX](%d+)$")
 
-    if asked == "full" then
-      W, H = aw, ah
-    elseif w then
+    if w then
       W, H = math.min(tonumber(w), aw), math.min(tonumber(h), ah)
     else
-      W, H = math.min(DEFAULT_W, aw), math.min(DEFAULT_H, ah)
+      W, H = aw, ah                     -- `--size full`, and the default
     end
 
     whole = W == aw and H == ah
@@ -94,6 +93,7 @@ do
 end
 
 local win = ui.window{ title = "Groove", w = W, h = H, direct = true, header = true,
+                       resizable = true,
                        maximised = whole or nil, centre = not whole or nil }
 
 if not win or not win:surface() then
@@ -426,6 +426,21 @@ local function frame(touched)
   return true
 end
 
+-- **Resized**, by the grip or by maximise: the kit has made buffers the new
+-- size and handed them over (`direct_event`, `take_size`) and left the event
+-- to this loop, which runs its own; this is Groove's half - the size
+-- PulseMusic lays out from, the menu's idea of it, the three in the bar's
+-- right end, and a whole frame drawn into the new buffers (`groove/ui.lua`
+-- draws a buffer whole the first time it sees it).
+local function resized(w, h)
+  W, H = w, h
+  app.size(W, H)
+  app.sizing.w, app.sizing.h = W, H
+  place_lights()
+  dirty = true
+  print(("groove: resized to %dx%d"):format(W, H))
+end
+
 while win.running do
   local busy = app.busy()
   local wait = (busy or app.midiOpen() or reportAt) and 1 or (dirty and 0 or 25)
@@ -440,6 +455,9 @@ while win.running do
 
   for _, ev in ipairs(reply.events or {}) do
     if win:direct_event(ev) then
+      draw = true
+    elseif ev.type == "resize" then
+      resized(ev.w, ev.h)
       draw = true
     elseif ev.type == "close" then
       win:close()

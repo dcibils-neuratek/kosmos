@@ -3155,16 +3155,39 @@ handlers.open = function(req, who, cap)
   -- into. Two buffers in one region, and `live` says which one is being
   -- shown - `gfx.md` 19.4.
   --
+  --
+  -- **The surface is the size the application made it**, in its points:
+  -- what it asked for, and not the window's size after the clamp above. It
+  -- is composed stretched to its place (`src_w`, `src_h`). This was the
+  -- clamped size, and the application had made its buffers at the asked
+  -- one and drew into them at it: every row read short by the difference,
+  -- and Groove, asking 1720 in a look with no borders and given 1712, came
+  -- out in diagonal bands on the M700 (`testing.md` 18.355). The kit makes
+  -- its buffers again at the granted size once it is told it, and this side
+  -- reads them at that size from the first frame drawn in them.
+  --
+  local src_w = math.tointeger(asked_w) or given(w_, asked_w)
+  local src_h = math.tointeger(asked_h) or given(h_, asked_h)
+
+  --
+  -- **And a region too small for that is refused, not read past.** A
+  -- window asking for less than the floor of 32 was given 32, and its
+  -- buffers read at 32 - beyond the end of a region made for less; the
+  -- full-screen case above was caught on 21 September for exactly that,
+  -- after it killed the desktop, and this one never was.
+  --
+  if cap and cap >= 0
+     and (sys.memory_size(cap) or 0) * 4096 < gfx.bytes(src_w, src_h) * 2 then
+    print(("wm: %s's region does not hold two %dx%d pictures, so it is not "
+           .. "shown"):format(tostring(req.title), src_w, src_h))
+    sys.release(cap)
+    cap = nil
+  end
+
   if cap and cap >= 0 then
     local at, why = sys.memory_map(cap)
 
     if at then
-      --
-      -- **The surface is the application's size, in its points**, and at
-      -- a scale that is not the window's size on the screen: it is
-      -- composed stretched to its place (`src_w`, `src_h`).
-      --
-      local src_w, src_h = given(w_, asked_w), given(h_, asked_h)
       local bytes = gfx.bytes(src_w, src_h)
 
       win.src_w, win.src_h = src_w, src_h

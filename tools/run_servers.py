@@ -32,6 +32,7 @@ Usage: run_servers.py IMAGE
 import http.client
 import os
 import random
+import re
 import subprocess
 import sys
 import time
@@ -86,6 +87,44 @@ PROBES = {
                     'fs.write("/Home/Preferences/servers", all)\n'
                     'print("PASSWORD " .. fs.read("/Home/Preferences/servers").vnc.password)\n'),
 }
+
+
+STRIPES = """-- kosmos: application
+local ui = use("/Kosmos/Libraries/ui.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
+local win = ui.window{ title = "Stripes", w = 4000, h = 120, x = 0, y = 60, direct = true }
+local s = win:surface()
+local w, h = s:size()
+for x = 0, w - 1 do s:fill(x, 0, 1, h, 0xff000000 | ((x * 2654435761) & 0xffffff)) end
+win:commit{ x = 0, y = 0, w = w, h = h }
+print(("STRIPES %dx%d, granted %dx%d"):format(w, h, win.w, win.h))
+while win.running do
+  if not wmproto.poll(win.handle, 25) then break end
+end
+"""
+
+
+def upright(width, px, placed):
+    """Whether the probe's columns are on the screen where it drew them: at
+    every 37th column of its window, near its top and near its bottom, the
+    very colour it gave that column. Answers how many of the places looked
+    at are wrong, and how many were looked at. A blank window, a shear and
+    a picture stretched from another size all fail it."""
+    m = re.match(r"(\d+),(\d+) (\d+)x(\d+)", placed)
+    x0, y0, w, h = (int(m.group(i)) for i in range(1, 5))
+    wrong = looked = 0
+
+    for x in range(0, min(w, width - x0), 37):     # what is on the screen
+        c = (x * 2654435761) & 0xffffff
+        want = bytes(((c >> 16) & 255, (c >> 8) & 255, c & 255))
+
+        for y in (y0 + 10, y0 + h - 10):
+            at = (y * width + x0 + x) * 3
+            looked += 1
+
+            wrong += px[at:at + 3] != want
+
+    return wrong, looked
 
 
 def same_share(frame, width, height, px):
@@ -532,12 +571,39 @@ def main():
         guest.wait_for("vncd: keys and the pointer lent to every viewer, as "
                        "opt/kosmos/vnc asks", "the boot's word taken")
         import kosmos_vnc as V
+        import run_screenshot as R
 
         viewer = V.Viewer("127.0.0.1:%d" % lent)
         viewer.pointer(233, 333)
         viewer.pointer(233, 333, 1)
         viewer.pointer(233, 333, 0)
         guest.wait_for("wm: button down at 233,333", "a click lent by the boot")
+
+        # **A window that draws its own pixels, granted less than it asked**
+        # (`testing.md` 18.355): 4000 wide on any screen, so the window
+        # manager gives it the screen less a border. Its buffers must be
+        # made again at that size and read at it - the stripes it draws stay
+        # upright - where Groove came out in diagonal bands on the M700. Each
+        # column its own colour: stripes that repeat let a shear of a whole
+        # number of them pass, which the first version's did.
+        session.put(STRIPES.encode(), "/Temporary/stripes.lua")
+        session.run("open /Temporary/stripes.lua")
+        said["stripes"] = guest.wait_for_line("STRIPES ", "the probe's size")
+        placed = guest.wait_for_line("wm: window Stripes at ", "the probe's window")
+        width, height, px = R.parse_ppm(guest.screendump())
+        said["upright"] = upright(width, px, placed)
+
+        # **Groove resized by its grip** (Diego, 3 October: "groove needs to
+        # be resizable", "like we did with the browser"): opened at 700 by
+        # 500, the bottom right corner dragged 120 right and 80 down, and
+        # Groove lays itself out at the size the kit's new buffers are.
+        session.run("open groove --size 700x500")
+        line = guest.wait_for_line("wm: window Groove at ", "Groove's window")
+        m = re.match(r"(\d+),(\d+) (\d+)x(\d+)", line)
+        gx, gy = int(m.group(1)) + int(m.group(3)) - 6, int(m.group(2)) + int(m.group(4)) - 6
+        time.sleep(3)
+        V.step(viewer, "drag %d %d %d %d" % (gx, gy, gx + 120, gy + 80))
+        said["groove"] = guest.wait_for_line("groove: resized to ", "Groove laid out again")
         viewer.close()
 
         # The Disconnect ends this very session, so it is read to its close.
@@ -580,6 +646,25 @@ def main():
         fails.append("the window did not say the web server and the screen "
                      "stopped:\n" + "\n".join(l for l in first.splitlines()
                                                 if "servers:" in l)[:600])
+
+    stripes = re.match(r"(\d+)x(\d+), granted (\d+)x(\d+)", said.get("stripes", ""))
+
+    if not stripes or stripes.group(1, 2) != stripes.group(3, 4):
+        fails.append("a direct window granted less than it asked drew into "
+                     "buffers of another size: %r" % said.get("stripes"))
+
+    wrong, looked = said.get("upright", (None, 0))
+
+    if wrong is None or wrong > 0:
+        fails.append("a direct window granted less than it asked was not on "
+                     "the screen as it drew it: %s of %d places the wrong "
+                     "colour" % (wrong, looked))
+
+    resized = re.match(r"(\d+)x(\d+)", said.get("groove", ""))
+
+    if not resized or int(resized.group(1)) <= 700 or int(resized.group(2)) <= 500:
+        fails.append("Groove dragged larger by its grip did not lay itself out "
+                     "larger: %r" % said.get("groove"))
 
     if "wm: button down at 233,333" not in first:
         fails.append("with opt/kosmos/vnc=control and no control kept, a "
@@ -634,7 +719,7 @@ def main():
         if line not in guest.seen:
             fails.append("the log never said %r" % line)
 
-    checks = 24
+    checks = 27
 
     if fails:
         print("FAIL: %d of %d checks on the Servers window:" % (len(fails), checks))
@@ -657,8 +742,10 @@ def main():
           "refused wrong and admitted right, and with control kept a command "
           "typed into a Terminal, a click at its own place and the pointer "
           "staying there with the mouse at rest; the desktop "
-          "lent to vncd and to nothing else; and a click lent by "
-          "opt/kosmos/vnc=control alone)."
+          "lent to vncd and to nothing else; a click lent by "
+          "opt/kosmos/vnc=control alone; a direct window granted less than "
+          "it asked drawing upright at the granted size; and Groove resized "
+          "by its grip)."
           % (checks, seen.get("whole"), seen.get("update"), seen.get("565")))
     return 0
 
