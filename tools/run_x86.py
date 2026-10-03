@@ -4634,6 +4634,44 @@ def ethernet_pch(image, check):
               "address:\n    " + out[-500:])
 
 
+def memory_home(image, check):
+    """A `/Home` in memory takes a write from pages, and says it is memory.
+
+    `testing.md` 18.350. The M700 booted over the network with its stick out
+    (Diego, 2 October), so `/Home` was in memory, and `diagnose` said
+    "/Home/diagnose.txt: nil". `fs.write_from` hands the server a region, and
+    the namespace's path to the in-memory server ignored it: it wrote `nil`,
+    packed, as the file and answered with no count. Now the region is read
+    and written as the string it is, an answer with no count is an error
+    with a reason, and `diagnose` says the file goes with the machine rather
+    than that `make stick-log` will bring it back.
+    """
+    probe = ('local b = sys.memory(2) sys.region_write(b, 0, ("x"):rep(5000)) '
+             'local n, e = fs.write_from("/Home/wf.txt", b, 5000) '
+             'local back = fs.read("/Home/wf.txt") '
+             'print("WF" .. "ROM", n, e, type(back), back and #back, '
+             'back == ("x"):rep(5000))')
+
+    out = boot(image, None, 120.0, typed=(probe, "diagnose"))
+
+    if out is None:
+        check(False, "the machine would not boot with /Home in memory")
+        return
+
+    wrote = re.search(r"WFROM\t(\S+)\t(\S+)\t(\S+)\t(\S+)\t(\S+)", out)
+
+    check(wrote is not None and wrote.groups() == ("5000", "nil", "string",
+                                                   "5000", "true"),
+          "5000 bytes written from pages to a /Home in memory did not come "
+          "back whole: %r" % ((wrote.groups() if wrote else out[-400:]),))
+
+    check(re.search(r"diagnose: \d+ KB saved to /Home/diagnose\.txt - but "
+                    r"/Home is in memory", out) is not None,
+          "diagnose on a /Home in memory did not save, or did not say the "
+          "file goes with the machine:\n    " + "\n    ".join(
+              l for l in out.splitlines() if "diagnose" in l))
+
+
 def memory(image, check):
     """More RAM than the kernel used to be able to describe.
 
@@ -4727,7 +4765,7 @@ def memory(image, check):
 
 
 PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
-    'memory', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
+    'memory', 'memory_home', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
 def main():
@@ -4836,6 +4874,10 @@ def main():
     # And a machine with more memory than the kernel used to describe.
     if 'memory' in wanted:
         memory(image, check)
+
+    # And a /Home in memory, written from pages (18.350).
+    if 'memory_home' in wanted:
+        memory_home(image, check)
 
     # And an Intel Ethernet card on a PCI line, which is the M700's.
     if 'ethernet' in wanted:

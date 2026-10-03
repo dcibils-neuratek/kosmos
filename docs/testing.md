@@ -16626,3 +16626,32 @@ not; and one not written back. **`ethernet_pch`** passes with extended
 descriptors on QEMU's 82574L, which writes that layout too: four pings.
 The gate 86 of 86 in 10:05 - over Diego's ten minutes by five seconds, as
 9:55 was under them by five; the budget is the next thing to mend.
+
+## 18.350 A `/Home` in memory takes a write from pages, and says it is memory
+
+**Diego, 2 October**, on the M700's first boot over the network: "i hadnt
+plug in the stick, and then i pluged in the stick after the network boot
+but it didnt mount as needd because the diagnose commmand will send a nil
+message" - and the photo: `diagnose: /Home/diagnose.txt: nil`, twice.
+
+**Two faults.** The stick plugged in late is the second, and is
+`roadmap.md`'s to decide (*the M700 booted over the network*, 6). The
+first: `diagnose` writes through `fs.write_from`, which hands the server a
+region rather than a message, and the namespace's way to the in-memory
+server (`ram_request`) never looked at the region - it packed the missing
+value, `nil`, wrote that as the file, and answered with no count, which
+`write_from` returned as its result with no error beside it. So the file
+was not even empty: it was a packed `nil`, and read back as nothing.
+
+**Mended** (`user/init/init.lua`): the region is read (`sys.region_read`)
+and written as the string it is, with the count in the answer; and
+`write_from` calls an answer with no count an error, with its reason.
+`diagnose` says, when `/Home` is in memory, that the file goes with the
+machine and the stick was not there when it started - rather than that
+`make stick-log` will bring it back.
+
+**`memory_home`, in `x86-storage`** (2 checks): on a machine with no disk,
+5000 bytes written from pages to `/Home/wf.txt` come back whole, and
+`diagnose` saves and says `/Home` is in memory. Its control, the namespace
+and `diagnose` as they were, fails both - with Diego's own line,
+`diagnose: /Home/diagnose.txt: nil`, and the file read back as `nil`.

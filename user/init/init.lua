@@ -1762,7 +1762,7 @@ local function new_namespace()
              packed = packed ~= 0, blob = blob }
   end
 
-  local function ram_request(capability, op, rest, extra)
+  local function ram_request(capability, op, rest, extra, pass)
     local code = RAM_OPS[op]
 
     if not code then
@@ -1806,6 +1806,22 @@ local function new_namespace()
       local value = extra.value
       local text, packed
 
+      --
+      -- **Bytes in the caller's pages** (`write_from`), which this server
+      -- never took: it wrote `nil` - packed - as the file and answered with
+      -- no count, and `diagnose` on a `/Home` in memory said
+      -- "/Home/diagnose.txt: nil" (Diego, 2 October; `testing.md` 18.350).
+      -- They are read out of the region here and written as the string they
+      -- are; `/Temporary` holds values a message at a time either way.
+      --
+      if extra.from then
+        local why
+
+        value, why = sys.region_read(pass, 0, tonumber(extra.bytes) or 0)
+
+        if not value then return nil, why end
+      end
+
       if type(value) == "string" then
         text, packed = value, 0
       else
@@ -1833,7 +1849,7 @@ local function new_namespace()
         at = at + #piece
       until at >= #text
 
-      return { ok = true }
+      return { ok = true, bytes = #text }
     end
 
     if op == "setattr" then
@@ -2432,7 +2448,7 @@ local function new_namespace()
     end
 
     if proto == "ram" then
-      return ram_request(capability, op, rest, extra)
+      return ram_request(capability, op, rest, extra, pass)
     end
 
     if proto == "disk" then
@@ -2733,6 +2749,12 @@ local function new_namespace()
                          region)
 
     if not r then return nil, e end
+
+    -- An answer with no count is not a write this can vouch for: said, not
+    -- passed on as a `nil` with no reason beside it.
+    if r.bytes == nil then
+      return nil, "the server answered without saying what it wrote"
+    end
 
     return r.bytes
   end

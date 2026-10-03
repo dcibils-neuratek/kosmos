@@ -307,7 +307,8 @@ SUITES = [
                        "ethernet_pch"],
           x86=True),
     Suite("x86-storage", ["python3", "tools/run_x86.py", X86, "--parts",
-                          "storage,memdisk,memory,identity,firmware,machine_report"],
+                          "storage,memdisk,memory,memory_home,identity,firmware,"
+                          "machine_report"],
           x86=True),
 
     # **The HDA sessions on a quiet machine**: `audiolag` measures the ring

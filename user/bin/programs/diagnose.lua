@@ -232,5 +232,21 @@ if not wrote then
   return
 end
 
-print(("diagnose: %d KB saved to %s - on the Mac, `make stick-log` brings it back")
-      :format((#body + 1023) // 1024, path))
+--
+-- **Where it went, truthfully**: `make stick-log` brings back a file on the
+-- stick, and nothing brings back one in memory. A `/Home` in memory means
+-- the stick was not there when the machine started - which is worth more
+-- to the person reading this than the file is (`testing.md` 18.350).
+--
+local on_disk = path:sub(1, 6) == "/Home/"
+                and type(fs.read("/Home/.super")) == "table"
+                and fs.read("/Home/.super").formatted
+
+if path:sub(1, 6) == "/Home/" and not on_disk then
+  print(("diagnose: %d KB saved to %s - but /Home is in memory, so it goes "
+         .. "when the machine does: the stick was not there when it started")
+        :format((#body + 1023) // 1024, path))
+else
+  print(("diagnose: %d KB saved to %s - on the Mac, `make stick-log` brings it back")
+        :format((#body + 1023) // 1024, path))
+end
