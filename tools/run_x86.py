@@ -4546,9 +4546,10 @@ def ethernet_pch(image, check):
     differently from an 82574L: no register touched for 20 ms after a reset
     ("it hangs the hardware"), the bus requests stopped first, the units
     quiet, the firmware's flag taken, and transmit bits set before the
-    transmitter is enabled. The driver now does that for the I219s `e1000e`
-    calls SPT - first with no reset at all, as the firmware left the card,
-    then with `e1000e`'s reset if a frame to itself does not go out.
+    transmitter is enabled. The driver does that for the I219s `e1000e`
+    calls SPT, its MAC reset first (18.353: without it the M700's card kept
+    working from the firmware's ring); `pch` takes the card as the firmware
+    left it and resets only if a frame to itself does not go out.
 
     QEMU has no I219, so `opt/kosmos/e1000path` puts its 82574L through the
     same way, three times: as the firmware left it (`pch`), straight to the
@@ -4584,8 +4585,8 @@ def ethernet_pch(image, check):
     if out is None:
         check(False, "the machine would not boot with its card on the I219's way")
     else:
-        check("e1000: an I219, taken as Linux's e1000e takes one - first as "
-              "the firmware left it, without a reset" in out
+        check("e1000: an I219, first as the firmware left it, without a "
+              "reset, as opt/kosmos/e1000path asks" in out
               and "e1000: as the firmware left it: CTRL " in out,
               "the card did not go the I219's way, or did not say what the "
               "firmware left:\n    " + shown(out))
@@ -4613,16 +4614,6 @@ def ethernet_pch(image, check):
               "left not snooping, the card was not put back to snooping with "
               "its writes in order - or the driver did not say so:\n    "
               + shown(out))
-        # The receive thresholds (18.353): fetch while fewer than 31 are
-        # held and one is free, write each back alone, all counted in
-        # descriptors - `e1000_flush_rx_ring`'s for an I219 - read back
-        # from the card after bring-up.
-        timing = re.search(r"e1000: its receive timing now: RXDCTL ([0-9a-f]{8})",
-                           out)
-        check(timing is not None
-              and int(timing.group(1), 16) & 0x013F3FFF == 0x0101011F,
-              "after bring-up the card's receive thresholds were not prefetch "
-              "31, host 1 and write-back 1, in descriptors:\n    " + shown(out))
         check(re.search(r"e1000: on PCI Express: device control [0-9a-f]{4}, "
                         r"no-snoop (not )?allowed, relaxed ordering (not )?"
                         r"allowed", out) is not None,
@@ -4636,11 +4627,6 @@ def ethernet_pch(image, check):
         check(len(re.findall(r"ttl=255 time=", out)) >= 3,
               "taken without a reset, the card answered %d of 4 pings"
               % len(re.findall(r"ttl=255 time=", out)))
-        # The tail rung again only for a card that holds frames and uses no
-        # descriptor (18.353): never for one that works, as QEMU's does.
-        check("the tail written again" not in out,
-              "a card that takes its frames had its tail rung again:\n    "
-              + shown(out))
 
     out = run("pch-reset")
 

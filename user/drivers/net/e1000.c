@@ -170,18 +170,6 @@
 #define RCTL_BAM        (1u << 15)  /* broadcast accept */
 #define RCTL_BSIZE_2048 0u          /* bits 17:16 = 00 with BSEX clear */
 #define RCTL_SECRC      (1u << 26)  /* strip the CRC the card checked */
-#define RCTL_UPE        (1u << 3)   /* unicast promiscuous */
-
-/* RXDCTL: the prefetch and host thresholds in its low fourteen bits (5:0
- * and 13:8), the write-back threshold in 21:16, and their unit in bit 24
- * (`ich8lan.h`'s E1000_RXDCTL_THRESH_UNIT_DESC): descriptors rather than
- * cache lines. The values are `e1000_flush_rx_ring`'s for an I219. */
-#define RXDCTL_THRESHOLDS       0x00003FFFu
-#define RXDCTL_PTHRESH_31       0x0000001Fu
-#define RXDCTL_HTHRESH_ONE      (1u << 8)
-#define RXDCTL_WTHRESH          0x003F0000u
-#define RXDCTL_WTHRESH_ONE      (1u << 16)
-#define RXDCTL_UNIT_DESC        0x01000000u
 
 #define TCTL_EN         (1u << 1)
 #define TCTL_PSP        (1u << 3)   /* pad short packets to 64 */
@@ -259,20 +247,11 @@ static struct {
     uint64_t      started_at;       /* when the rings were handed over */
     bool          rx_said;          /* the first five seconds, said */
     unsigned      counts_said;      /* how many of the counts' lines */
-    bool          promiscuous;      /* RCTL.UPE, as an experiment (18.351) */
     struct {
         unsigned long good, broadcast, multicast, missed, no_buffer, crc;
         unsigned long management, management_dropped;
     } counted;                      /* the card's counts, accumulated */
-    bool          reset_first;      /* `opt/kosmos/e1000path=pch-reset` */
-    bool          snoop_firmware;   /* `opt/kosmos/e1000snoop=firmware` */
-    bool          rxdctl_firmware;  /* `opt/kosmos/e1000rxdctl=firmware` */
-    struct {
-        uint64_t      at;           /* when it last looked */
-        unsigned long good, taken;  /* the counts then */
-        uint32_t      head;         /* ...and the card's RDH */
-        unsigned long rung;         /* how often it rang the tail again */
-    } kick;                         /* `rx_kick` */
+    bool          firmware_first;   /* `opt/kosmos/e1000path=pch` */
 
     struct eth_ring *ring;          /* the stack's, when it has attached */
     long          ring_cap;
@@ -410,30 +389,22 @@ static void pch_transmit_bits(void)
  * order it made them** (`testing.md` 18.353) - where `e1000_init_hw_ich8lan`
  * leaves every chip of this kind: GCR's six no-snoop bits cleared ("By
  * default, we should use snoop behavior"), and CTRL_EXT.RO_DIS set, so no
- * write of the card's may pass an earlier one.
+ * write of the card's may pass an earlier one. The rings and frames are
+ * ordinary cached memory (`RING_BARRIER`), which is right only while every
+ * transfer the card makes is snooped.
  *
- * Why it matters: the rings and frames are ordinary cached memory
- * (`RING_BARRIER`), which is right only while every transfer the card makes
- * is snooped. A read that is not looks past the cache at memory that may
- * still hold what a slot said one trip round the ring ago; a write that is
- * not lands beneath a cached line the driver goes on reading. Either way a
- * frame turns up late, by however long its line takes to leave the cache -
- * and on 0.10.209 the M700 answered the Mac 5 to 29 seconds late, with the
- * receive write-back already made immediate. QEMU's memory is coherent
- * whatever the bits say, so only the machine can tell whether this was it.
+ * Suspected, for a day, of the M700's late frames; its firmware had left
+ * both as they are wanted (GCR 00000000, RO_DIS set), and the delay was the
+ * firmware's ring (`pch_bring_up`). Kept because it is what the reference
+ * does, and a firmware that leaves them otherwise is possible.
  *
  * Linux writes `e1000e_set_pcie_no_snoop(hw, ~PCIE_NO_SNOOP_ALL)`, which
  * clears the six and, by the shape of that function, sets every other bit of
  * GCR as well. Only the six are cleared here: the rest is not what its
- * comment asks for. `opt/kosmos/e1000snoop=firmware` leaves both as the
- * firmware set them, for the comparison on the machine.
+ * comment asks for.
  */
 static void pch_memory_bits(void)
 {
-    if (card.snoop_firmware) {
-        return;
-    }
-
     reg_write(REG_GCR, reg_read(REG_GCR) & ~GCR_NO_SNOOP_ALL);
     reg_write(REG_CTRL_EXT, reg_read(REG_CTRL_EXT) | CTRL_EXT_RO_DIS);
 }
@@ -528,36 +499,13 @@ static void rings_start(void)
         card.rx_ext = true;
 
         /*
-         * **Each frame written back as it arrives** (`testing.md` 18.352),
-         * and **free descriptors fetched as soon as there is one** (18.353).
-         *
-         * The write-back threshold is one and both receive timers nought,
-         * which is where `e1000e` leaves a chip of this kind after its
-         * reset. The fetch is the other half, and 0.10.209 left it as the
-         * firmware set it while changing the unit it is counted in - from
-         * cache lines to descriptors - under it. The card fetches the
-         * descriptors it is given only while it holds fewer than the
-         * prefetch threshold and the ring has at least the host threshold
-         * free; this driver hands them back one at a time, as each frame is
-         * taken, so a host threshold above one can leave the card with
-         * nowhere to put a frame and a ring full of places for it. That is
-         * what 0.10.210's counts said on the M700: a third to half of what
-         * arrived "missed" - the card's own buffer full - while "no buffer"
-         * stayed nought.
-         *
-         * So the thresholds are the ones Linux gives an I219 when it must be
-         * sure the card takes what it is handed (`e1000_flush_rx_ring`):
-         * "prefetch threshold to 31, host threshold to 1 and make sure the
-         * granularity is "descriptors" and not "cache lines"".
+         * The receive thresholds and timers are left as the reset leaves
+         * them, which is where `e1000e` leaves a chip of this kind: RXDCTL
+         * 00010000 and both timers nought on the M700, every frame taken as
+         * it came. 0.10.209 to 0.10.211 set them, each against a delay whose
+         * cause was the firmware's ring (`testing.md` 18.353), and none of
+         * it was wanted.
          */
-        if (!card.rxdctl_firmware) {
-            reg_write(REG_RXDCTL, (reg_read(REG_RXDCTL)
-                                   & ~(RXDCTL_THRESHOLDS | RXDCTL_WTHRESH))
-                                  | RXDCTL_PTHRESH_31 | RXDCTL_HTHRESH_ONE
-                                  | RXDCTL_WTHRESH_ONE | RXDCTL_UNIT_DESC);
-        }
-        reg_write(REG_RDTR, 0);
-        reg_write(REG_RADV, 0);
     }
 
     card.started_at = kosmos_ticks();
@@ -565,16 +513,11 @@ static void rings_start(void)
     reg_write(REG_RCTL, RCTL_EN | RCTL_BAM | RCTL_BSIZE_2048 | RCTL_SECRC);
 
     /*
-     * **The descriptors handed over once the receiver is on** (`testing.md`
-     * 18.353), in `e1000e`'s order: `e1000_configure_rx` ends by enabling
-     * the receiver and only then does `alloc_rx_buf` write the tail. A
-     * card fetches what the tail offers when the tail is written; written
-     * here first, with the receiver still off, the M700's I219 was handed
-     * thirty-one descriptors it never fetched, and nothing after that
-     * writes the tail but a frame taken. On 0.10.211 it took none: good
-     * frames counted, nothing missed, nothing short of a descriptor, and
-     * nothing arrived. QEMU's cards fetch when they need one, which is why
-     * the order never mattered there.
+     * **The descriptors handed over once the receiver is on**, in
+     * `e1000e`'s order: `e1000_configure_rx` ends by enabling the receiver
+     * and only then does `alloc_rx_buf` write the tail. Suspected for a
+     * build of the M700's frames that never arrived, and cleared by the
+     * next (`testing.md` 18.353) - kept because it is the reference's order.
      */
     reg_write(REG_RDT, RING_SLOTS - 1u);
 }
@@ -1001,16 +944,24 @@ static void pch_start(void)
 }
 
 /*
- * **An I219, brought up as `e1000e` would** (`testing.md` 18.346).
+ * **An I219, brought up as `e1000e` brings one up: its MAC reset first**
+ * (`testing.md` 18.346, 18.353), then the rings this driver's and the bits
+ * `e1000e` sets. A frame to itself says whether it sends; either way the
+ * log says what happened, and the driver goes on - a card that will not
+ * send is the stack's to live with (18.345), not a reason to stop.
  *
- * First as the firmware left it - the units stopped, the rings this
- * driver's, the bits `e1000e` sets - with no reset at all: a reset is where
- * `e1000e`'s warnings about this chip are, and the firmware's own network
- * boot has already brought it up. A frame to itself says whether that
- * sends. If it does not, the MAC is reset as `e1000e` resets it and the
- * test is made again. Either way the log says what happened and with what
- * the card said, and the driver goes on: a card that will not send is the
- * stack's to live with (18.345), not a reason to stop.
+ * **The reset is not optional**, and for six builds it was skipped. The
+ * firmware's network boot leaves its own receive ring in the card - 64
+ * descriptors, the head at 63 - and taken without a reset, the M700's I219
+ * went on working from what it had fetched of that ring: frames counted
+ * good and none missed, and in this driver's ring nothing, or something
+ * seconds late (0.10.207 to 0.10.212; once, RDH never left nought). Written
+ * into memory that was the firmware's and is the system's now. Reset, it
+ * took every frame it counted and answered a ping in half a millisecond.
+ *
+ * The way without a reset is kept behind `opt/kosmos/e1000path=pch`, where
+ * the MAC is reset only if a frame will not go out: the gate runs it on
+ * QEMU's card, and a machine can be compared by its command line.
  */
 static void pch_bring_up(struct say_line *line)
 {
@@ -1022,10 +973,10 @@ static void pch_bring_up(struct say_line *line)
                                      card.mac);
     card.present = true;
 
-    if (!card.reset_first) {
+    if (card.firmware_first) {
         say_begin(line);
-        say_text(line, "e1000: an I219, taken as Linux's e1000e takes one - "
-                       "first as the firmware left it, without a reset");
+        say_text(line, "e1000: an I219, first as the firmware left it, "
+                       "without a reset, as opt/kosmos/e1000path asks");
         say_send(console, line);
 
         pch_quiet(false);
@@ -1123,40 +1074,21 @@ static bool bring_up(struct say_line *line)
         say_send(console, line);
     }
 
-    if (kosmos_boot_option("opt/kosmos/e1000snoop", option, sizeof(option))
-            == 8 && memcmp(option, "firmware", 8u) == 0) {
-        card.snoop_firmware = true;
-        say_begin(line);
-        say_text(line, "e1000: snooping and ordering left as the firmware set "
-                       "them, as opt/kosmos/e1000snoop asks");
-        say_send(console, line);
-    }
-
-    /* The receive thresholds as the firmware left them (`testing.md`
-     * 18.353): a comparison on the machine by the boot server's command
-     * line alone, with nothing rebuilt. */
-    if (kosmos_boot_option("opt/kosmos/e1000rxdctl", option, sizeof(option))
-            == 8 && memcmp(option, "firmware", 8u) == 0) {
-        card.rxdctl_firmware = true;
-        say_begin(line);
-        say_text(line, "e1000: its receive thresholds left as the firmware set "
-                       "them, as opt/kosmos/e1000rxdctl asks");
-        say_send(console, line);
-    }
-
     /*
-     * The I219's way for an I219, and - when a test asks - for QEMU's
-     * 82574L, so that the way is run in the gate on the one card QEMU has
-     * (`opt/kosmos/e1000path`, `pch` or `pch-reset`).
+     * The I219's way for an I219 - its MAC reset first - and, when a test
+     * asks, for QEMU's 82574L, so that the way is run in the gate on the one
+     * card QEMU has: `opt/kosmos/e1000path=pch-reset` as an I219 is taken,
+     * and `pch` as the firmware left it, the MAC reset only if it will not
+     * send - which is also how a machine compares the two.
      */
     card.pch = is_pch_spt(card.device);
     n = kosmos_boot_option("opt/kosmos/e1000path", option, sizeof(option));
 
     if (n == 3 && memcmp(option, "pch", 3u) == 0) {
         card.pch = true;
+        card.firmware_first = true;
     } else if (n == 9 && memcmp(option, "pch-reset", 9u) == 0) {
         card.pch = true;
-        card.reset_first = true;
     }
 
     say_pci(line);
@@ -1399,24 +1331,7 @@ static void take_frames(void)
             break;
         }
 
-        /*
-         * With the address filter set aside (`counts_watch`), what is
-         * addressed to another machine is not this one's to pass on: only
-         * this card's own address, and a group's - broadcast and multicast,
-         * the low bit of the first byte.
-         */
-        bool foreign = false;
-
-        if (got.end && !got.error && card.promiscuous && got.length >= 14u) {
-            const uint8_t *dst = (const uint8_t *)(card.mem + RX_FRAMES_AT
-                                                   + card.rx_next * FRAME_SLOT);
-
-            foreign = (dst[0] & 1u) == 0 && memcmp(dst, card.mac, 6) != 0;
-        }
-
-        if (foreign) {
-            /* another machine's, seen only because the filter is aside */
-        } else if (got.end && !got.error && got.length >= 14u
+        if (got.end && !got.error && got.length >= 14u
                    && got.length <= ETH_RING_SLOT && card.ring != NULL) {
             uint32_t write = card.ring->in_write;
             uint32_t read = eth_ring_acquire(&card.ring->in_read);
@@ -1496,70 +1411,14 @@ static void count_up(void)
 }
 
 /*
- * **The tail written again when the card holds frames and uses no
- * descriptor** (`testing.md` 18.353). A card fetches the descriptors the
- * tail offers when the tail is written, and this driver writes it only as
- * it takes a frame - so a card that has stopped fetching, for whatever
- * reason, is never asked again. On 0.10.211 the M700's I219 counted
- * thousands of good frames, used none of the thirty-one descriptors it had
- * been handed (RDH still nought), and the machine never had an address.
- *
- * Once a second at most: if the card counted good frames since the last
- * look while its head stayed where it was and nothing was taken, the tail is
- * written again with the value it already holds. It changes nothing a
- * working card does, and it says, the first few times, that it was needed -
- * which is the measurement: whether a written tail is what this card waits
- * for. `counts_watch` says how often it rang.
- */
-static void rx_kick(struct say_line *line)
-{
-    uint64_t now = kosmos_ticks();
-    uint32_t head;
-    bool stuck;
-
-    if (!card.pch || card.started_at == 0 || now - card.kick.at < card.hz) {
-        return;
-    }
-
-    count_up();
-    head = reg_read(REG_RDH);
-    stuck = card.kick.at != 0 && card.counted.good != card.kick.good
-            && head == card.kick.head && card.received == card.kick.taken;
-
-    card.kick.at = now;
-    card.kick.good = card.counted.good;
-    card.kick.head = head;
-    card.kick.taken = card.received;
-
-    if (!stuck) {
-        return;
-    }
-
-    reg_write(REG_RDT, (card.rx_next + RING_SLOTS - 1u) % RING_SLOTS);
-    card.kick.rung++;
-
-    if (card.kick.rung <= 3u) {
-        say_begin(line);
-        say_text(line, "e1000: frames counted for a second and no descriptor "
-                       "used - the tail written again; RDH ");
-        say_dec(line, head);
-        say_text(line, " RDT ");
-        say_dec(line, (card.rx_next + RING_SLOTS - 1u) % RING_SLOTS);
-        say_send(console, line);
-    }
-}
-
-/*
- * **Where frames addressed to this card go** (`testing.md` 18.351). On
- * 0.10.207 the M700 took its DHCP lease - broadcast - and answered the
- * Mac's ARP - broadcast - but nothing sent to its own address arrived: not
- * the router's ARP answer, not the Mac's pings. So, an I219's, the card's
- * own counts at 30 seconds - good frames less broadcast and multicast is
- * what its address filter let through - and the registers that decide it.
- * If broadcasts came and no unicast did, the filter is set aside
- * (RCTL.UPE) and counted again at 60: unicast arriving then is the filter
- * dropping it, and the network works meanwhile, since `take_frames` keeps
- * only what is this card's.
+ * **What the card counted against what this driver took** (`testing.md`
+ * 18.351, 18.353), an I219's, at 30, 60 and 120 seconds: good frames by
+ * kind, missed for want of room in the card, short of a descriptor, and
+ * taken - with where the card's head and tail are and where this driver
+ * looks next. It is these lines that showed the M700's card counting frames
+ * it never put in this driver's ring. The counts run from whenever they were
+ * last cleared, so the first carries what came before Kosmos - the kernel
+ * itself, on a network boot.
  */
 static void counts_watch(struct say_line *line)
 {
@@ -1601,9 +1460,6 @@ static void counts_watch(struct say_line *line)
     say_dec(line, card.counted.crc);
     say_text(line, "; taken ");
     say_dec(line, card.received);
-    say_text(line, ", tail rung again ");
-    say_dec(line, card.kick.rung);
-    say_text(line, card.promiscuous ? "; the filter set aside" : "");
     say_text(line, "; RDH ");
     say_dec(line, reg_read(REG_RDH));
     say_text(line, " RDT ");
@@ -1634,18 +1490,6 @@ static void counts_watch(struct say_line *line)
     }
 
     card.counts_said++;
-
-    if (!card.promiscuous && card.counts_said == 1
-        && card.counted.broadcast > 0 && unicast == 0) {
-        card.promiscuous = true;
-        reg_write(REG_RCTL, reg_read(REG_RCTL) | RCTL_UPE);
-
-        say_begin(line);
-        say_text(line, "e1000: broadcasts came and nothing for this address - "
-                       "the address filter set aside (RCTL.UPE) to see if it "
-                       "is what drops them");
-        say_send(console, line);
-    }
 }
 
 /* Whatever the stack has put in the ring, onto the wire. */
@@ -1892,7 +1736,6 @@ void e1000_server(long console_cap, long frames_cap)
         if (card.present) {
             (void)reg_read(REG_ICR);     /* read to clear */
             take_frames();
-            rx_kick(&line);
             say_link(&line);
             tx_watch(&line);
             rx_watch(&line);
