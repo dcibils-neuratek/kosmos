@@ -96,6 +96,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 **That is a constraint on *word size*, not on architecture.** More than one `arch/` is expected: AArch64 today, **x86-64 later**, which is a second instruction set, a different interrupt controller, a different boot protocol and a different memory model - and none of that disturbs the 64-bit assumptions, which is exactly why the line is drawn here and not around ARM. A board like the Pi 5 is a new `hal/`; a machine like an x86-64 PC is a new `arch/`; a 32-bit machine is neither, because it is out of scope. `hal.md` records the Pi 1 argument and why it was answered no.
 
 - The layers and how a command crosses them: `docs/architecture.md`
+- Every module from Nebula to the applications, as one picture: `docs/stack.png`, drawn from `docs/stack.html`
 - What lives where, in the tree and at runtime: `docs/layout.md`
 - Where things live, drawn - `/Kosmos` and `/Home`, agreed 27 September and kept as documentation: `docs/layout.html`
 - Design and the reasoning behind every decision: `docs/design.md`

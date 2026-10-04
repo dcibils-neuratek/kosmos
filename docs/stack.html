@@ -1,0 +1,315 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Kosmos from Nebula to the applications, as one picture: every module in
+  the tree at 0.10.257, by layer. Rendered to docs/stack.png by headless
+  Chrome at twice its size:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --screenshot=docs/stack.png --window-size=1800,H --hide-scrollbars \
+      --force-device-scale-factor=2 docs/stack.html
+
+  Drawn for Diego on 4 October 2026: "I want the diagram as a detailed one
+  in png". The names are the tree's - `ls` of kernel/, hal/, user/servers,
+  user/drivers, user/kits, user/lib and user/bin - and each application by
+  its own `kosmos: name`.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos stack</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --user: #e9f4ef; --user-line: #9fd4c1; --user-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --metal: #f1f0eb; --metal-line: #cfcdc4; --metal-ink: #444441;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1800px; background: var(--paper); color: var(--ink);
+         font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 44px; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 26px; }
+  header h1 { font-size: 40px; font-weight: 600; letter-spacing: -0.5px; }
+  header h1 span { color: var(--dim); font-weight: 400; }
+  header p { color: var(--dim); font-size: 16px; text-align: right; }
+
+  .band { display: grid; grid-template-columns: 250px 1fr; gap: 18px; padding: 16px 18px;
+          border-radius: 14px; border: 1px solid; margin-bottom: 10px; }
+  .band .label h2 { font-size: 21px; font-weight: 600; line-height: 1.2; }
+  .band .label p { font-size: 13.5px; margin-top: 6px; }
+  .tag { display: inline-block; font: 500 11.5px/1 "Plex", sans-serif; letter-spacing: 0.6px;
+         padding: 4px 7px; border-radius: 5px; margin-top: 8px; margin-right: 4px; }
+
+  .cards { display: grid; gap: 10px; }
+  .card { background: #fff; border: 1px solid; border-radius: 10px; padding: 10px 12px; }
+  .card h3 { font-size: 15.5px; font-weight: 600; margin-bottom: 3px; }
+  .card h3 code { font-weight: 400; color: var(--dim); font-size: 12.5px; margin-left: 6px; }
+  .card p { font-size: 13.5px; color: var(--ink); }
+  .card .files { font: 12px/1.5 "Plex Mono", Menlo, monospace; color: var(--dim); margin-top: 4px; }
+  code, .mono { font-family: "Plex Mono", Menlo, monospace; font-size: 0.92em; }
+
+  .user  { background: var(--user); border-color: var(--user-line); }
+  .user  .label h2, .user .label p { color: var(--user-ink); }
+  .user  .card { border-color: var(--user-line); }
+  .clang { background: var(--c); border-color: var(--c-line); }
+  .clang .label h2, .clang .label p { color: var(--c-ink); }
+  .clang .card { border-color: var(--c-line); }
+  .kern  { background: var(--kern); border-color: var(--kern-line); }
+  .kern  .label h2, .kern .label p { color: var(--kern-ink); }
+  .kern  .card { border-color: var(--kern-line); }
+  .metal { background: var(--metal); border-color: var(--metal-line); }
+  .metal .label h2, .metal .label p { color: var(--metal-ink); }
+  .metal .card { border-color: var(--metal-line); }
+
+  .t-lua { background: #cfeee2; color: var(--user-ink); }
+  .t-c   { background: #f7d9bf; color: var(--c-ink); }
+  .t-el0 { background: #ffffff; color: var(--dim); border: 1px solid #d8d6ce; }
+  .t-el1 { background: #ddd8f8; color: var(--kern-ink); }
+
+  .divider { display: grid; grid-template-columns: 250px 1fr; gap: 18px; align-items: center;
+             margin: 16px 0 16px; }
+  .divider .rule { border-top: 2px dashed #a9a69c; position: relative; }
+  .divider .label { font-weight: 600; font-size: 17px; color: var(--metal-ink); }
+  .divider .what { font-size: 14px; color: var(--dim); margin-top: 8px; }
+
+  .side { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 18px; }
+  .side .card { border-color: #d8d6ce; }
+  footer { margin-top: 18px; color: var(--dim); font-size: 13px; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Kosmos <span>on Nebula - every module, from the microkernel to the applications</span></h1>
+  <p>Kosmos 0.10.257 · 4 October 2026<br>64-bit only: AArch64 today, x86-64 beside it</p>
+</header>
+
+<!-- ============================ Applications ============================ -->
+<section class="band user">
+  <div class="label">
+    <h2>Applications</h2>
+    <p>Windows a person uses. The thinnest layer: they put together what kits and servers supply.</p>
+    <span class="tag t-lua">LUA</span><span class="tag t-el0">EL0</span>
+    <p class="mono">/Kosmos/Apps · /Home/Apps</p>
+  </div>
+  <div class="cards" style="grid-template-columns: repeat(4, 1fr)">
+    <div class="card"><h3>Desktop</h3><p>Deskbar · Desktop · Tracker · Launcher · Launcher Editor · Startup Apps · Keyboard Shortcuts · Notifications · Get Info</p></div>
+    <div class="card"><h3>Making things</h3><p>Kosmos Write · Cafesa3D · Kosmos IDE · Text Editor · Paint · Groove</p></div>
+    <div class="card"><h3>Media and reading</h3><p>Music · Video Player · Camera · Photo Viewer · PDF Viewer · Reader · Sound Mixer</p></div>
+    <div class="card"><h3>Network</h3><p>Browser (NetSurf's engine) · Network · Servers - web, Telnet, VNC</p></div>
+    <div class="card"><h3>The machine</h3><p>Preferences · System Monitor · Process Viewer · Processor Cores · About This Machine · About Kosmos · Log Viewer · Drives · Terminal · Calculator · Clock · Date &amp; Time · Scheduler · System Benchmark</p></div>
+    <div class="card"><h3>3D and demos</h3><p>Solar System · 3D Cube · GL Gears · GL Cube · GL Teapot · GL Mech · GL Morph 3D · GL Spin · GL Bounce · GL Textures · Plasma · Falling Blocks · Widget Gallery</p></div>
+    <div class="card"><h3>Installed in /Home/Apps</h3><p>Doom · Quake · Super Nintendo - each an image of its own, carrying its own copy of the runtime</p></div>
+    <div class="card"><h3>For the tests</h3><p>Hello Window · Adopt Test · Stuck Window · Window Latency</p></div>
+  </div>
+</section>
+
+<!-- ============================== Programs ============================== -->
+<section class="band user">
+  <div class="label">
+    <h2>Programs</h2>
+    <p>What the prompt runs, by name or by its file. They print.</p>
+    <span class="tag t-lua">LUA</span><span class="tag t-el0">EL0</span>
+    <p class="mono">/Kosmos/Programs</p>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.4fr 1.4fr 0.9fr 0.9fr 1.2fr">
+    <div class="card"><h3>Files</h3><p class="mono">ls cat cp mv rm mkdir mkfs find grep head tail tree wc du df touch stat attr setprop which zip unzip open save edit</p></div>
+    <div class="card"><h3>The system</h3><p class="mono">wm apps kits launcher tile restart kill htop log watch notify say screenshot pointer sticks diskinfo diagnose neofetch acpi uselib hello</p></div>
+    <div class="card"><h3>Network</h3><p class="mono">ping fetch host telnet telnetd httpd vncd netframe</p></div>
+    <div class="card"><h3>Sound, PDF</h3><p class="mono">play beep midi mp3info audiolag pdfinfo</p></div>
+    <div class="card"><h3>Measuring</h3><p class="mono">benchmark gfxbench pdfbench qbench diskbench latency jitter stress score frames profile monitor spin gltest</p></div>
+  </div>
+</section>
+
+<!-- ============================== Libraries ============================= -->
+<section class="band user">
+  <div class="label">
+    <h2>Libraries</h2>
+    <p>Code you run, in your own process: <code>use("/Kosmos/Libraries/ui.lua")</code>. 76 files and four folders.</p>
+    <span class="tag t-lua">LUA</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: repeat(4, 1fr)">
+    <div class="card"><h3>Interface</h3><p class="mono">ui pixelkit theme themes keys wmproto panel sidebar filemenu longmenu launchgrid iconlayout iconsize deskbarmenu dock favorites places textsize faces paint</p></div>
+    <div class="card"><h3>Documents</h3><p class="mono">richtext writedoc docfile pageset pagedraw pdf pdfpage pdfwrite docxwrite docview hyphen markdown mdstyle text textbuf</p></div>
+    <div class="card"><h3>Media and 3D</h3><p class="mono">audio video camera midi mp4 wav media pulse g3d scenefile gldemo</p><p class="files">groove/ · solar/ · translators/ (fbx obj stl)</p></div>
+    <div class="card"><h3>Files and settings</h3><p class="mono">files filetypes prefs settings tags history startup drivelist zip regions json licences</p></div>
+    <div class="card"><h3>The window manager's own</h3><p class="mono">wm/compose wm/drawwindow wm/keys wm/osd wm/pointer wm/profile wm/strips</p></div>
+    <div class="card"><h3>Network</h3><p class="mono">http httpcache browserprefs</p></div>
+    <div class="card"><h3>Code</h3><p class="mono">lualex lint libdoc</p></div>
+    <div class="card"><h3>The machine</h3><p class="mono">hardware prockind procshare notify backlight bench tally diskbench clock clock-replicant blocks hello</p></div>
+  </div>
+</section>
+
+<!-- ================================ Kits ================================ -->
+<section class="band clang">
+  <div class="label">
+    <h2>Kits</h2>
+    <p>C you run in your own process, reached as a library is: <code>use("/Kosmos/Kits/pdf")</code>. The byte loops: pixels, samples, ciphers.</p>
+    <span class="tag t-c">C</span><span class="tag t-el0">EL0</span>
+    <p class="mono">/Kosmos/Kits</p>
+  </div>
+  <div class="cards" style="grid-template-columns: repeat(5, 1fr)">
+    <div class="card"><h3>gfx</h3><p>Surfaces, blits, outline fonts, PNG and JPEG, a document's glyphs</p></div>
+    <div class="card"><h3>gl</h3><p>OpenGL-style 3D for the GL demos</p></div>
+    <div class="card"><h3>3d</h3><p>Cafesa3D's engine; FBX through ufbx</p></div>
+    <div class="card"><h3>pdf</h3><p>The PDF scanner and its glyph rasteriser</p></div>
+    <div class="card"><h3>compress</h3><p>Deflate, inflate, zip</p></div>
+    <div class="card"><h3>crypto</h3><p>Every cipher and hash, held to its specification's vectors</p></div>
+    <div class="card"><h3>tls</h3><p>TLS, for HTTPS</p></div>
+    <div class="card"><h3>network</h3><p>The client side of <code>/Network</code>'s declared shape</p></div>
+    <div class="card"><h3>ffmpeg</h3><p>FFmpeg's H.264 and AAC decoders</p></div>
+    <div class="card"><h3>mp3</h3><p>MP3 decoding</p></div>
+    <div class="card"><h3>synth</h3><p>The Synth Kit: Groove's sound, its DSP in C</p></div>
+    <div class="card"><h3>record</h3><p>A camera's frames into an MP4 of H.264</p></div>
+    <div class="card"><h3>game</h3><p>The Game Kit's drawing layer</p></div>
+    <div class="card"><h3>console</h3><p>The console's wire format - what a terminal speaks</p></div>
+    <div class="card"><h3>apptest</h3><p>The ELF loader's test kit, in no image but its own</p></div>
+  </div>
+</section>
+
+<!-- =========================== System processes ========================== -->
+<section class="band user">
+  <div class="label">
+    <h2>The first processes</h2>
+    <p>Started at boot; every process is born with what init gives it.</p>
+    <span class="tag t-lua">LUA</span><span class="tag t-c">C</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: 1fr 1fr">
+    <div class="card"><h3>init <code>user/init</code></h3><p>The first process and the roles it becomes. The Lua runtime and its <code>sys</code> bindings, the namespace kit every process builds its own names with, <code>tabletext</code>, <code>panic</code> and <code>say</code>.</p></div>
+    <div class="card"><h3>wm <code>the window manager</code></h3><p>Windows, focus, the Deskbar's strip, input routed to whoever should have it, and the screen composed from each window's shared surface - the pixels in <code>gfx</code>'s C, the policy in Lua.</p></div>
+  </div>
+</section>
+
+<!-- ============================== Servers =============================== -->
+<section class="band clang">
+  <div class="label">
+    <h2>Servers</h2>
+    <p>Someone you ask. Each owns something and rents it out under a name, and speaks a declared shape - <code>user/include/*proto.h</code>.</p>
+    <span class="tag t-c">C</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: repeat(4, 1fr)">
+    <div class="card"><h3>diskfs <code>/Home</code></h3><p>The person's files on disk: kfs, journalled, the disk's small reads kept (diskcache)</p></div>
+    <div class="card"><h3>ramfs <code>/Temporary</code></h3><p>Files in memory - and /Home on a machine with no disk</p></div>
+    <div class="card"><h3>binfs <code>/Kosmos</code></h3><p>The image's own applications, programs, libraries and assets</p></div>
+    <div class="card"><h3>drives <code>/Drives</code></h3><p>FAT32 and exFAT sticks, read only</p></div>
+    <div class="card"><h3>devices <code>/Devices</code></h3><p>What hardware this turned out to be</p></div>
+    <div class="card"><h3>appfs <code>/Running</code></h3><p>The names programs give themselves while they run</p></div>
+    <div class="card"><h3>console <code>/Devices/console</code></h3><p>Text screens and the prompt</p></div>
+    <div class="card"><h3>audio <code>/Devices/audio</code></h3><p>Every program's sound mixed, through shared rings, in the AUDIO band</p></div>
+    <div class="card"><h3>net <code>/Network</code></h3><p>TCP/IP, DHCP and names</p></div>
+    <div class="card"><h3>notify <code>/Notifications</code></h3><p>Banners and their history; who sent each, said by the kernel</p></div>
+  </div>
+</section>
+
+<!-- ============================== Drivers =============================== -->
+<section class="band clang">
+  <div class="label">
+    <h2>Drivers</h2>
+    <p>Hardware driven from user space: an interrupt claimed, registers mapped, nothing waited on inside a request.</p>
+    <span class="tag t-c">C</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.6fr 1fr 1fr 1fr">
+    <div class="card"><h3>xhci <code>usb/</code></h3><p>USB: sticks as disks, MIDI keyboards, game pads, UVC cameras, the ThinkPad's mouse</p></div>
+    <div class="card"><h3>e1000 <code>net/</code></h3><p>Intel Ethernet, the M700's I219 brought up as e1000e does</p></div>
+    <div class="card"><h3>backlight <code>display/</code></h3><p>The screen's brightness</p></div>
+    <div class="card"><h3>powerbutton <code>power/</code></h3><p>The power key, outside the kernel</p></div>
+  </div>
+</section>
+
+<!-- =========================== The boundary ============================= -->
+<div class="divider">
+  <div>
+    <div class="label">System calls</div>
+  </div>
+  <div>
+    <div class="rule"></div>
+    <div class="what">Above: Kosmos, ordinary processes at EL0, each behind its own address space. Below: Nebula at EL1. What crosses: a call and its reply · a region mapped or shared · a capability, always by index into the caller's own table · an interrupt claimed · entropy · a profile's samples.</div>
+  </div>
+</div>
+
+<!-- ============================== Nebula ================================ -->
+<section class="band kern">
+  <div class="label">
+    <h2>Nebula</h2>
+    <p>The microkernel: threads, address spaces, IPC and capabilities - and nothing else. No files, no network, no graphics, no Lua.</p>
+    <span class="tag t-c">C</span><span class="tag t-el1">EL1</span>
+    <p class="mono">kernel/</p>
+  </div>
+  <div class="cards" style="grid-template-columns: repeat(4, 1fr)">
+    <div class="card"><h3>Threads and scheduling</h3><p>Six strict priority bands with immediate preemption, AUDIO among them; a runqueue per processor, a thread homed on one</p><p class="files">thread.c sched_prio.c sched_rr.c smp.c spinlock.c</p></div>
+    <div class="card"><h3>Memory</h3><p>Physical pages; pools of kernel objects that grow by slabs and never shrink; regions two processes share</p><p class="files">pmm.c pmm_place.c pool.c memobj.c sharemap.c</p></div>
+    <div class="card"><h3>Processes and capabilities</h3><p>An address space and a table of capabilities each: what you were not handed, you cannot reach</p><p class="files">process.c</p></div>
+    <div class="card"><h3>IPC</h3><p>Endpoints, calls, replies: a message says what to do, a region holds what to do it to</p><p class="files">ipc.c</p></div>
+    <div class="card"><h3>System calls</h3><p>The one door in from EL0</p><p class="files">syscall.c</p></div>
+    <div class="card"><h3>Interrupts</h3><p>Lines a driver claims, and wakes on</p><p class="files">irq.c</p></div>
+    <div class="card"><h3>Entropy and profile</h3><p>Randomness held to a repetition test; where every processor is, a tick at a time</p><p class="files">entropy.c profile.c</p></div>
+    <div class="card"><h3>Boot</h3><p>The stages narrated on the boot screen and the serial line</p><p class="files">main.c boot.c console.c screen.c panic.c</p></div>
+  </div>
+</section>
+
+<!-- =============================== arch ================================= -->
+<section class="band kern">
+  <div class="label">
+    <h2>arch/ and boot/</h2>
+    <p>Which processor: reimplemented for each, not abstracted.</p>
+    <span class="tag t-c">C</span><span class="tag t-el1">EL1</span>
+  </div>
+  <div class="cards" style="grid-template-columns: 1fr 1fr 1fr">
+    <div class="card"><h3>aarch64</h3><p>39-bit addresses in three levels of tables, the exception vector, the context switch, lazy floating point - the kernel itself may touch no FP register</p><p class="files">mmu.c vectors.S trap.c switch.S fp.c el0.S cpu.c</p></div>
+    <div class="card"><h3>x86_64</h3><p>Page tables, the GDT, interrupts, <code>swapgs</code>, lazy floating point, and processors started through a real-mode trampoline</p><p class="files">mmu.c gdt.c vectors.S trap.c switch.S fp.c user.S entry.c</p></div>
+    <div class="card"><h3>boot/efi</h3><p>Kosmos's own UEFI loader for PCs: from a stick or the network, its read held to the build's sums</p><p class="files">loader.c sums.c mbi.c trampoline.S</p></div>
+  </div>
+</section>
+
+<!-- ================================ hal ================================= -->
+<section class="band kern">
+  <div class="label">
+    <h2>hal/</h2>
+    <p>Which board: one interface, <code>hal/hal.h</code>, an implementation for each.</p>
+    <span class="tag t-c">C</span><span class="tag t-el1">EL1</span>
+  </div>
+  <div class="cards" style="grid-template-columns: 1fr 1.5fr 1fr">
+    <div class="card"><h3>qemu-virt</h3><p>GIC, generic timer, PL011 serial, ramfb through fw_cfg, PSCI to start processors, RTC</p></div>
+    <div class="card"><h3>pc</h3><p>ACPI, local APIC and the processors' start, PCI, HDA sound, NVMe, the i8042 keyboard and TrackPoint, the embedded controller's battery and keys, SMBIOS, the pointer every relative device adds into</p></div>
+    <div class="card"><h3>virtio</h3><p>Disk, GPU with its own cursor, input, network, randomness and sound - on both boards under QEMU</p></div>
+  </div>
+</section>
+
+<!-- ============================== Hardware ============================== -->
+<section class="band metal">
+  <div class="label">
+    <h2>Hardware</h2>
+    <p>Where it runs.</p>
+  </div>
+  <div class="cards" style="grid-template-columns: repeat(5, 1fr)">
+    <div class="card"><h3>QEMU virt</h3><p>AArch64, four Cortex-A72 - the active target</p></div>
+    <div class="card"><h3>QEMU PC</h3><p>x86-64 under OVMF</p></div>
+    <div class="card"><h3>ThinkPad T14</h3><p>x86-64, eight processors - the first real machine</p></div>
+    <div class="card"><h3>ThinkCentre M700</h3><p>x86-64, booted over the network from the Mac</p></div>
+    <div class="card"><h3>Raspberry Pi 5</h3><p>The target chosen to be hard - when the board is here</p></div>
+  </div>
+</section>
+
+<!-- =========================== How they talk ============================ -->
+<div class="side">
+  <div class="card"><h3>A message says what; a region holds the bytes</h3><p>Control by message, data by shared memory: a frame, a period, a packet or a block never travels as a message. Single-producer, single-consumer rings carry them.</p></div>
+  <div class="card"><h3>A kit is code you run; a server is someone you ask</h3><p>Kits and libraries run inside your process. Servers and drivers are processes of their own, reached by a message in a declared shape.</p></div>
+  <div class="card"><h3>Capabilities by index</h3><p>A system call names a slot in the caller's own table. There is no global name to guess, and no ambient authority.</p></div>
+  <div class="card"><h3>The namespace</h3><p class="mono">/Home /Kosmos /Temporary /Devices /Running /Network /Notifications /Drives</p><p>Each process builds its own; what it was not given, it cannot see.</p></div>
+</div>
+
+<footer>
+  <span>Kits, servers and drivers supply; applications orchestrate - Diego's premise, 4 October 2026.</span>
+  <span>docs/stack.html, drawn from the tree</span>
+</footer>
+
+</body>
+</html>
