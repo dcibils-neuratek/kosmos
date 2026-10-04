@@ -137,6 +137,9 @@ ICONS = {
 
     # A page that is a favorite (6zz d3): the same star, filled.
     "starred":    ("star", None),
+
+    # Do Not Disturb, in the notifications' history (`docs/notifications.html`).
+    "moon":       ("moon", None),
 }
 
 # The ones drawn filled as well as stroked - Lucide's shapes are outlines,

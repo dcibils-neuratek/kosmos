@@ -5641,6 +5641,10 @@ function ui.window(spec)
     -- name over a dock's icon.
     tip = spec.tip or nil,
 
+    -- **A banner**: a tip that takes a press - a notification, in front of
+    -- everything and never taking the keys from whoever is typing.
+    banner = spec.banner or nil,
+
     --
     -- In the middle of the screen, and asked for rather than computed here.
     --

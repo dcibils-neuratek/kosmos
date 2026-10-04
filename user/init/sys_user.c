@@ -1668,6 +1668,34 @@ static int l_info(lua_State *L)
     return 1;
 }
 
+/*
+ * `sys.sender()`: who sent the message this process last received - a table
+ * of `id`, `parent`, `name` and `from` (the file it runs, empty for one
+ * built into the image) - or nil when that has ended or nothing has come.
+ * The kernel's answer (`SYS_SENDER`), so a server can know who asked
+ * without taking the message's word for it.
+ */
+static int l_sender(lua_State *L)
+{
+    struct sender_info info;
+
+    if (kosmos_sender(&info) != 0) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_createtable(L, 0, 4);
+    lua_pushinteger(L, (lua_Integer)info.id);
+    lua_setfield(L, -2, "id");
+    lua_pushinteger(L, (lua_Integer)info.parent);
+    lua_setfield(L, -2, "parent");
+    lua_pushstring(L, info.name);
+    lua_setfield(L, -2, "name");
+    lua_pushstring(L, info.from);
+    lua_setfield(L, -2, "from");
+    return 1;
+}
+
 static int l_setname(lua_State *L)
 {
     size_t len, from_len = 0;
@@ -3315,6 +3343,7 @@ static const luaL_Reg sys_functions[] = {
     { "ticks",    l_ticks },
     { "info",     l_info },
     { "name",     l_setname },
+    { "sender",   l_sender },
     { "processes", l_processes },
     { "entropy",     l_entropy },
     { "profile",  l_profile },

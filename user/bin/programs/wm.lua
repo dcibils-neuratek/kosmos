@@ -1795,22 +1795,29 @@ end
 local drawing_order = {}
 
 function OUT.order()
-  local dock = false
+  local dock, tips = false, false
 
   for _, w in ipairs(windows) do
-    if w.strip == "bottom" then dock = true break end
+    if w.strip == "bottom" then dock = true end
+    if w.tip then tips = true end
   end
 
-  if not dock then return nil end
+  if not dock and not tips then return nil end
 
   local n = 0
 
   for i, w in ipairs(windows) do
-    if w.strip ~= "bottom" then n = n + 1; drawing_order[n] = i end
+    if w.strip ~= "bottom" and not w.tip then n = n + 1; drawing_order[n] = i end
   end
 
   for i, w in ipairs(windows) do
     if w.strip == "bottom" then n = n + 1; drawing_order[n] = i end
+  end
+
+  -- And the tips and banners in front of even the dock: a name over one
+  -- of its icons, and a notification, which is there to be seen.
+  for i, w in ipairs(windows) do
+    if w.tip then n = n + 1; drawing_order[n] = i end
   end
 
   for k = #drawing_order, n + 1, -1 do drawing_order[k] = nil end
@@ -3724,6 +3731,23 @@ handlers.open = function(req, who, cap)
     win.y = math.min(math.max(tonumber(req.y) or 0, 0), H - h_)
   end
 
+  --
+  -- **A banner** (`ui.window{ banner = true }`, `roadmap.md`,
+  -- *Notifications*): a tip that takes a press. Everything a tip is - never
+  -- focused, so a notification arriving while somebody types takes nothing
+  -- from them; no frame, no shadow, not listed, not minimised; blended, so
+  -- it draws its own rounded cards and its own shadow - and pressed as a
+  -- popup is, straight to the application. In front of every window and
+  -- the dock (`OUT.order`), and found first by a press (`window_at`).
+  --
+  if req.banner == true then
+    win.tip = true
+    win.banner = true
+    win.blend = true
+    win.x = math.min(math.max(tonumber(req.x) or 0, 0), W - w_)
+    win.y = math.min(math.max(tonumber(req.y) or 0, 0), H - h_)
+  end
+
   if req.kind == "menu" then
     win.kind = "menu"
     win.owner = tonumber(req.owner)
@@ -3771,9 +3795,20 @@ handlers.open = function(req, who, cap)
           tostring(win.title), win.x, win.y, win.w, win.h, tabs.width(win)))
   end
 
-  -- Whoever was launched most recently, if this is their first window.
-  win.pid = pending_pid
-  pending_pid = nil
+  --
+  -- **Whose window it is, as the kernel says** (`SYS_SENDER`, `roadmap.md`
+  -- *Notifications*): the process this `open` came from. It was whoever
+  -- was launched most recently - a guess, written down as one, that a
+  -- window opened by anything else in between took for its own: a banner
+  -- arriving while an application started would have been given that
+  -- application's process, and closing one could end the other. The guess
+  -- stays only for a kernel that cannot say.
+  --
+  local opener = sys.sender()
+
+  win.pid = (opener and opener.id) or pending_pid
+
+  if not opener or opener.id == pending_pid then pending_pid = nil end
 
   --
   -- And what was started to produce it. The Deskbar draws a button per
@@ -3951,11 +3986,9 @@ local function finish_launch(l, ok, err, id)
       if s.launch == l then s.pid = id end
     end
 
-    -- Remembered so that the *next* window to open can be tied to it. There
-    -- is nothing better available: a window arrives in a message and a
-    -- message does not say which process sent it - the sender is a thread
-    -- pointer, and the thread that opens a window is the one this started.
-    -- Good enough to end what was just launched, and honestly not more.
+    -- Remembered so that the *next* window to open can be tied to it, when
+    -- the kernel cannot say whose an `open` is - which it now can
+    -- (`SYS_SENDER`, in `handlers.open`); this is that answer's fallback.
     pending_pid = id
     pending_program = l.path
   end
@@ -6172,7 +6205,17 @@ end
 -- and a window you cannot see must not be a window you can click.
 --
 local function window_at(x, y)
-  -- The dock first: it is drawn in front of everything (`OUT.order`).
+  -- A banner first, which is drawn in front of everything (`OUT.order`).
+  for i = #windows, 1, -1 do
+    local win = windows[i]
+
+    if win.banner and not win.hidden
+       and x >= win.x and x < win.x + win.w and y >= win.y and y < win.y + win.h then
+      return win, win.x, win.y
+    end
+  end
+
+  -- Then the dock, which is in front of every window.
   for i = #windows, 1, -1 do
     local win = windows[i]
 
@@ -6368,7 +6411,7 @@ local key = use("/Kosmos/Libraries/wm/keys.lua"){
 --
 local wanted = tostring(args or ""):match("^%s*(.-)%s*$")
 
-if wanted == "" then wanted = "desktop,deskbar" end
+if wanted == "" then wanted = "notifications,desktop,deskbar" end
 
 --
 -- `trace` first, so it is a setting rather than a program: it has to be out
@@ -6391,7 +6434,7 @@ do
 
   wanted = table.concat(rest, ",")
 
-  if wanted == "" then wanted = "desktop,deskbar" end
+  if wanted == "" then wanted = "notifications,desktop,deskbar" end
 
   if TRACE then
     print(("wm: tracing, screen %dx%d"):format(W, H))

@@ -17443,3 +17443,52 @@ its PASS ran the old image; it was redone.
 **Its gate: 87 of 87 in 10:39** - over the ten minutes by 39 seconds, the
 slowest `x86-cafesa3d-2` at 196 s; the budget has been edging past it for
 a week (`roadmap.md`, the gate back under ten minutes).
+
+## 18.368 Notifications, step 2: banners, and the history from the clock
+
+**`notifications`** (`user/bin/apps/notifications.lua`), started with the
+desktop (`wm`'s list is `notifications,desktop,deskbar` now, first so the
+window manager's old guess about the last program started still lands where
+it did). It asks `/Notifications` four times a second what came after the
+last number it saw, applies Do Not Disturb and the applications turned off
+(`/Home/Preferences/notifications`, read when something arrives), and shows
+each at the top right under the bar or the strip: a card with the sender's
+picture and name, "now", the title and two lines at most, a cross at its
+corner, an alert edged in red - newest on top, three at most, each for five
+seconds counted from when it is on the screen. A press opens what it names
+(`open`), the cross closes it. With `notifications panel` - a press on the
+clock - **the history**: a popup under the strip at the right, Do Not
+Disturb with its switch, Clear all, everything kept grouped by sender; it
+tells the banners showing to go (`/Running/Notifications/hide`), and the
+banners hold what comes while it is open. The Deskbar's clock opens it in
+both places the bar can be, and a dot beside the date says something came
+since it was last opened.
+
+**A banner window** (`ui.window{ banner = true }`, `ui.md` 16.27): a tip
+that takes a press - never the focused window, drawn in front of every
+window and the dock, found first by a press. **And a window is its
+process's by the kernel's word**: `open` asks `sys.sender()` (`SYS_SENDER`,
+18.367) where it took whichever program was started last.
+
+**`run_notify.py`, 16, as `x86-notify`**, at the M700's 1720x1440: a banner
+at the top right, a Terminal still focused under it, every window its own
+process's, the card on the screen (its rectangle compared whole - in a light
+look the card is the colour of the Terminal's header behind it, so a pixel
+could not say), gone by itself and its picture with it; an alert still there
+after seven seconds and closed by its cross; a press opening `/Home`; Do Not
+Disturb holding one, with no window; an alert showing when the history opens
+going with it; the history's five in one group; Do Not Disturb turned off
+from its switch, and the file saying so; Clear all leaving nothing; a press
+outside closing it. **Two first tries were the test's**: the card's pixel
+was taken too late, after a banner that had started counting before its
+window opened - which is how the count came to start on the screen - and
+then was the same white as what was behind it; and "as before once gone"
+could not hold over the Log window, which goes on scrolling under it.
+
+**Controls**, in three builds. A banner allowed the focus and Do Not
+Disturb ignored: 2 of 16 fail, "FOCUS Notifications". A press not sent to
+a banner: 2 of 16, the cross and the opening. `open` not asking the kernel,
+and `hide` doing nothing: 4 of 16 - and the first says more than this step:
+**with the guess, the desktop's own windows were already mislabelled** -
+"OWNER Deskbar tracker", "OWNER Monitor logview", three with none - so the
+kernel's answer fixes a fault that was there before any banner.

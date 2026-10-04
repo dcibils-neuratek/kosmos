@@ -597,3 +597,42 @@ Each new check was proven by breaking what it checks and watching it fail.
 Still to come: the dock's numbers in a file Diego can edit, a Spotlight
 look for Super Space, quick settings, notifications, and every older
 application moved onto the new window chrome.
+
+## 4 October - notifications, and the kernel saying who asked
+
+**In short:** Kosmos can tell you things now. An application posts - a
+render finished, a stick arrived - and a card slides in at the top right
+for five seconds, or stays until closed when it is an alert. A press on the
+clock opens the history of everything said, with Do Not Disturb and Clear
+all, as Diego drew and agreed it the night before. To make it honest, the
+kernel learned something it never knew: who sent a message.
+
+**What.** A server, `/Notifications`, keeps what is said, numbered. A
+program, `notifications`, starts with the desktop, asks the server four
+times a second what is new, and shows it in a new kind of window - a
+*banner*, which can be pressed but never takes the keyboard, so a
+notification arriving while you type takes nothing from you. `notify` at
+the prompt posts one, for testing and for scripts.
+
+**Why the kernel had to change.** The history groups notifications by the
+application that sent them, and Preferences will let a person turn one
+application's off by its name. That only means something if an application
+cannot claim to be another. Until now no server knew who called it, and any
+program could rename itself. So a server can now ask the kernel which
+process sent the message it just received, and a program's file is fixed
+before its first line runs. Under the emulator, a program that tried to
+call itself Cafesa3D was refused, and its post was filed under its own file.
+
+**What it fixed on the way.** The window manager tied each new window to
+whichever program it had started last - its own comment called that "good
+enough, and honestly not more". A banner opening at the wrong moment would
+have taken another application's identity, so closing one could have ended
+the other. It now asks the kernel too.
+
+**Visible impact.** Banners in the Night look match the drawing: a rounded
+card, the application's picture, its name and "now", the title and a line,
+a cross at the corner, an alert edged in red. The history is a tall panel
+under the strip, grouped by application. Next: Preferences' Notifications
+page - Do Not Disturb, how long a banner stays, how many are kept, and a
+switch for each application - and then the first real senders: Cafesa3D's
+renders, downloads, sticks arriving, a program that stopped, Clock's timers.

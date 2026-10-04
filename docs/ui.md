@@ -1831,3 +1831,27 @@ gives by name (`faces("bold")`). The marks stay, faint, and the ones that
 start a line hang in the margin before its bullet or its words. A text
 command carries a `variant` beside its role and size, and `ui.sized(role,
 px, variant)` is the role's font with that ending - `ibmplexsans-bold`.
+
+## 16.27 A banner: a window that takes a press and never the keys
+
+Notifications (`roadmap.md`, *Notifications*; `docs/notifications.html`)
+needed a window the kinds before it could not be. A **popup** - the launcher
+grid, the history - takes the keys, which is right for something opened on
+purpose and wrong for something that arrives while you type. A **tip** - a
+name over a dock's icon - never takes the keys, but is never pressed either.
+A banner is pressed (the cross, the card) and must take nothing from the
+window being typed in.
+
+So `ui.window{ banner = true }` is **a tip that takes a press**: everything a
+tip is - never the focused window, no frame and no shadow, not listed by the
+Deskbar, never minimised, blended so it draws its own rounded cards and their
+shadow - and a press on it goes straight to the application, as a popup's
+does. Tips and banners are drawn in front of every window and the dock
+(`OUT.order`), and a press finds a banner first (`window_at`).
+
+**And a window is its process's, as the kernel says.** The window manager tied
+a window to whichever program it had started last, and said so - "good
+enough, and honestly not more". A banner opening while an application started
+would have taken that application's process, so closing one could have ended
+the other. `open` now asks the kernel who sent it (`sys.sender()`,
+`SYS_SENDER`), and the guess is kept only for a kernel that cannot say.

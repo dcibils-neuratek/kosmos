@@ -447,6 +447,11 @@ now; Do Not Disturb a switch, its hours later.
    the clock: it asks the server on its own clock what came since, shows
    a banner window at the top right that takes a press and never the
    focus, and opens the history from the clock.
+   **BUILT on 4 October** (`testing.md` 18.368) - as a program of its own,
+   `notifications`, rather than more of the Deskbar, which keeps the clock
+   that opens the history and a dot beside the date. And the window
+   manager's guess at a window's process gone for the kernel's answer,
+   which found the desktop's own windows mislabelled under the guess.
 3. **Preferences' Notifications**: Do Not Disturb, how long a banner
    stays, how many the history keeps, and a switch for each application
    that has said something. The rules are applied by what shows them -

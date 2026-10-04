@@ -200,7 +200,7 @@ return function(ctx)
         -- desktop, the Deskbar or a full-screen window, which do not move.
         --
         if OUT.chord.move_held() and not (win.backdrop or win.strip or win.fullscreen
-                                          or win.popup) then
+                                          or win.popup or win.banner) then
           PT.dragging = { win = win, dx = nx - win.x, dy = ny - win.y,
                        held = true }
           OUT.chord.super_moved = true
@@ -225,7 +225,8 @@ return function(ctx)
         -- 26 September when Cafesa3D's dots, at exactly that corner, closed
         -- Cafesa3D instead of opening its menu.
         --
-        elseif win.backdrop or win.strip or win.fullscreen or win.popup then
+        elseif win.backdrop or win.strip or win.fullscreen or win.popup
+               or win.banner then
           -- Straight to the application, which is what a bar is for - and
           -- grabbed, like any other press, or the release never arrives and a
           -- shortcut is a word that highlights and does nothing.

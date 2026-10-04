@@ -6,6 +6,8 @@
 --                                       with a line under the title
 --   notify --alert Timer | The 25 minutes are up
 --                                       one that stays until it is closed
+--   notify --open /Home/Renders Render finished
+--                                       and what a press on it opens
 --   notify --list                       everything kept, oldest first
 --   notify --clear                      and nothing kept
 --
@@ -19,6 +21,7 @@ local text = tostring(args or ""):match("^%s*(.-)%s*$")
 if text == "" then
   print("usage: notify <title> [| <line>]   say something")
   print("       notify --alert <title> [| <line>]   one that stays until closed")
+  print("       notify --open <path> <title> [| <line>]   and what a press opens")
   print("       notify --list | --clear")
   return
 end
@@ -41,16 +44,27 @@ if text == "--clear" then
   return
 end
 
-local alert = false
-local rest = text:match("^%-%-alert%s+(.*)$")
+local alert, open = false, ""
 
-if rest then alert, text = true, rest end
+while true do
+  local rest = text:match("^%-%-alert%s+(.*)$")
+
+  if rest then
+    alert, text = true, rest
+  else
+    local path, after = text:match("^%-%-open%s+(%S+)%s+(.*)$")
+
+    if not path then break end
+
+    open, text = path, after
+  end
+end
 
 local title, body = text:match("^(.-)%s*|%s*(.*)$")
 
 title = title or text
 
-local id, why = notify.post{ title = title, body = body or "", alert = alert }
+local id, why = notify.post{ title = title, body = body or "", alert = alert, open = open }
 
 if id then
   print(("notify: said, as %d"):format(id))

@@ -77,6 +77,7 @@ local menudata = use("/Kosmos/Libraries/deskbarmenu.lua")
 local files = use("/Kosmos/Libraries/files.lua")
 local types = use("/Kosmos/Libraries/filetypes.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
+local notify = use("/Kosmos/Libraries/notify.lua")
 -- The *kit's* palette, not a copy of it.
 --
 -- `use` runs the chunk again and hands back a different table, and only the
@@ -457,8 +458,32 @@ end
 --
 local heard = {}
 
+--
+-- **The notifications' history, from the clock** (`roadmap.md`,
+-- *Notifications*, step 2): a press on the clock opens it - the
+-- `notifications` program's panel - and a dot beside the date says
+-- something has arrived since it was last opened. What has arrived is the
+-- server's newest number, asked on the bar's second with the rest; what
+-- was looked at is the newest when the panel was last opened, or when this
+-- bar started, so a Deskbar starting again does not call old news new.
+--
+local looked = nil
+
+local function open_history()
+  looked = heard.newest or looked
+  fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/notifications.lua",
+                           args = "panel" })
+  print("deskbar: the notifications' history asked for")
+end
+
+local function news()
+  return heard.newest and looked and heard.newest > looked
+end
+
 local function listen()
   heard.at = sys.ticks()
+  heard.newest = notify.newest()
+  looked = looked or heard.newest
   heard.now = clock.now()
   heard.level, heard.muted = volume_now()
   heard.network = network_now() and "wired" or "offline"
@@ -1417,6 +1442,12 @@ function bar:draw(g)
   x = x - KERN - gfx.measure(date)
   g:text(x, ty, date, theme.tab_text)
 
+  -- Something said since the history was last opened.
+  if news() then
+    x = x - 6 - 6
+    g:fill_round(x, (self.h - 6) // 2, 6, 6, theme.accent, 3)
+  end
+
   --
   -- The volume, and **nothing is drawn when the machine cannot answer.**
   --
@@ -1668,10 +1699,10 @@ function bar:mouse(action, x, y)
   end
 
   if x >= right_x then
-    -- The clock and the date, which are a control: a clock showing the
-    -- wrong time with no way to say so from the clock is the first thing
-    -- anybody hits on a new machine.
-    fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/datetime.lua" })
+    -- The clock and the date open what has been said, as macOS's and
+    -- Googlebook's do (`docs/notifications.html`); the date and time
+    -- themselves are set in Preferences, Date & Time.
+    open_history()
     return true
   end
 
@@ -2218,6 +2249,11 @@ if DOCKED then
     shadowed(g, 18 + gfx.measure(time) + 10, ty, date, ink)
     self.clock_w = 18 + gfx.measure(time) + 10 + gfx.measure(date)
 
+    -- Something said since the history was last opened.
+    if news() then
+      g:fill_round(self.clock_w + 8, (self.h - 6) // 2, 6, 6, theme.accent, 3)
+    end
+
     local x = self.w - 18
 
     self.volume_x, self.network_x, self.battery_x = nil, nil, nil
@@ -2258,8 +2294,9 @@ if DOCKED then
       program = "/Kosmos/Apps/mixer.lua"
     elseif near(strip.network_x) then
       program = "/Kosmos/Apps/network.lua"
-    elseif x < (strip.clock_w or 0) + 6 then
-      program = "/Kosmos/Apps/datetime.lua"
+    elseif x < (strip.clock_w or 0) + 16 then
+      open_history()
+      return
     end
 
     if program then fs.send("/Running/wm", { type = "launch", program = program }) end
@@ -2289,6 +2326,7 @@ if DOCKED then
       end
 
       local now = table.concat({ heard.now and clock.time_string(heard.now) or "",
+                                 tostring(news()),
                                  tostring(heard.level), tostring(heard.muted),
                                  tostring(heard.network),
                                  heard.battery and heard.battery.percent or "",
