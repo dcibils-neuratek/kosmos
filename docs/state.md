@@ -627,6 +627,43 @@ diskless `/Home` are 128 x 16 KB, compiled in - to grow (roadmap). **Not pushed*
 0.10.214; a push is Diego's word. The gate is at 10:33 to 10:46, over the
 ten minutes, to bring back.
 
+**4 October, late: the whole of Kosmos Write's mockup built.** Diego asked
+for typing first ("so I can test it"), then "Contienue with the rest of the
+app" and "Let me know when the entire mockup is built". Each step was its
+own revision, with its suites (`host`, `arm-write`, `arm-writeapp`,
+`arm-interchange`) and a control that bites:
+- **0.10.243** W4b typing;
+- **0.10.244** the window as drawn and the Format panel, with pixelkit's
+  controls;
+- **0.10.245** the Document panel, View and Add Page;
+- **0.10.246** lists and drop caps;
+- **0.10.247** ligatures, hyphenation and facing pages;
+- **0.10.248** DOCX;
+- **0.10.249** pictures and captions (18.390);
+- **0.10.250** tables, and Insert's list (18.391). A cell is a paragraph,
+  a row a line of the page. **Tab had never reached Write**: a window kept
+  it for focus until the page said `takes_tab`;
+- **0.10.251** text boxes and line breaks (18.392);
+- **0.10.252** shapes (18.393);
+- **0.10.253** charts (18.394);
+- **0.10.254** comments (18.395).
+
+**Every tool and panel of `docs/write.html` now does something.** Two
+screenshots were taken from the machine at 0.10.253 by a scratch script,
+one with the Comment part and one with a chart's data shown, the second
+retaken at 0.10.255 with its steppers a row each. **Found for
+others**:
+- Kosmos's PDF reader draws no paths, so a table's rules and shapes show
+  in Preview and not in PDF View (roadmap, W7b, for the PDF Kit);
+- the Open panel's list does not take Return as it opens (roadmap, W5a).
+
+**Next in Write**, each its own step: comments beside the page, columns
+of their own widths, a picture cropped, floating boxes with text wrapping
+round them, opening a DOCX, kerning. **Before them, in order**: the
+premise's review (eight places making regions by hand), and `ramfs`
+growing. **Not pushed**: everything since 0.10.214; a push is Diego's
+word, and `make prepush` runs the whole gate first.
+
 **4 October: notifications, in four steps.** Diego's order: notifications,
 then storage in C, then Kosmos Write. **0.10.227** the server,
 `/Notifications` (`notify.c`, `notifyproto.h`), and **who sent a message

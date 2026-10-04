@@ -876,8 +876,8 @@ local function draw_panel(s)
     y = y + 34
 
     if data_open == caret.para then
-      local half = (w0 - 8) // 2
-      local cats = { x = x0, y = y, w = half,
+      -- A row each: "4 categories" is more than half the panel holds.
+      local cats = { x = x0, y = y, w = w0,
                      text = ("%d categor%s"):format(#t.rows - 1, #t.rows == 2 and "y" or "ies") }
       pk.stepper(s, cats)
       control("chart_categories", cats, function(cx, cy)
@@ -885,8 +885,9 @@ local function draw_panel(s)
         if d and d ~= 0 then reshape({ rows = math.max(2, #t.rows + d) }) end
       end)
 
-      local sers = { x = x0 + half + 8, y = y, w = w0 - half - 8,
-                     text = ("%d series"):format(t.columns - 1) }
+      y = y + 38
+
+      local sers = { x = x0, y = y, w = w0, text = ("%d series"):format(t.columns - 1) }
       pk.stepper(s, sers)
       control("chart_series", sers, function(cx, cy)
         local d = pk.step_at(sers, cx, cy)
