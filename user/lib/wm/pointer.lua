@@ -174,6 +174,20 @@ return function(ctx)
         return
       end
 
+      --
+      -- **And a popup the same way**: a press outside it closes it and
+      -- stops there - the launcher above the dock, which a second press on
+      -- the Kosmos button closes rather than opens again. Asked, as the
+      -- close box asks: the application goes in its own time.
+      --
+      local pop = OUT.popup_outside(nx, ny)
+
+      if pop then
+        post(pop, { type = "close" })
+        PT.buttons = p.buttons
+        return
+      end
+
       local win, fx, fy = window_at(nx, ny)
 
       if win then
@@ -185,7 +199,8 @@ return function(ctx)
         -- the pointer is not pressed, a game's picture is not clicked. Not the
         -- desktop, the Deskbar or a full-screen window, which do not move.
         --
-        if OUT.chord.move_held() and not (win.backdrop or win.strip or win.fullscreen) then
+        if OUT.chord.move_held() and not (win.backdrop or win.strip or win.fullscreen
+                                          or win.popup) then
           PT.dragging = { win = win, dx = nx - win.x, dy = ny - win.y,
                        held = true }
           OUT.chord.super_moved = true
@@ -210,7 +225,7 @@ return function(ctx)
         -- 26 September when Cafesa3D's dots, at exactly that corner, closed
         -- Cafesa3D instead of opening its menu.
         --
-        elseif win.backdrop or win.strip or win.fullscreen then
+        elseif win.backdrop or win.strip or win.fullscreen or win.popup then
           -- Straight to the application, which is what a bar is for - and
           -- grabbed, like any other press, or the release never arrives and a
           -- shortcut is a word that highlights and does nothing.
@@ -529,6 +544,9 @@ return function(ctx)
         else
           dismiss_menus()
         end
+      elseif OUT.popup_outside(nx, ny) then
+        -- A popup, as a left press outside it does: closed, and no further.
+        post(OUT.popup_outside(nx, ny), { type = "close" })
       else
         local win = window_at(nx, ny)
 

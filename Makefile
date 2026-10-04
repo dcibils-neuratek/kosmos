@@ -3932,6 +3932,7 @@ host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000de
 	@# The dock's arithmetic (roadmap, a dock at the bottom): its cells for
 	@# what is pinned and what runs, where each goes, what a press does.
 	$(HOSTDIR)/lua tools/test_dock.lua
+	$(HOSTDIR)/lua tools/test_launchgrid.lua
 	@# The Deskbar's menu, read off a folder tree - what counts as an item,
 	@# what order things come in, how deep a folder may go. The store it
 	@# reads through is a table here, which is the whole reason the reading

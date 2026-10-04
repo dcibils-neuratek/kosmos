@@ -104,7 +104,7 @@ return function(ctx)
   --------------------------------------------------------------------------
   local function cycle_windows()
     for _, win in ipairs(windows) do
-      if not (win.backdrop or win.strip or win.kind == "menu") then
+      if not (win.backdrop or win.strip or win.kind == "menu" or win.popup) then
         raise(win)
         return
       end

@@ -1488,7 +1488,7 @@ local function frame_of(win)
   -- `roadmap.md` 6zj): no tab and no border, so its frame is its page -
   -- rounded, and with its shadow, which the others here do not have.
   if win.kind == "menu" or win.backdrop or win.strip or win.fullscreen
-     or win.headed then
+     or win.headed or win.popup then
     return win.x, win.y, win.w, win.h
   end
 
@@ -1752,7 +1752,12 @@ local reserved_top = 0
 -- from what a maximised window may cover. Nought with no dock.
 --
 local reserved_bottom = 0
-local DOCK_GAP = 12             -- a floating dock's distance from the edge, in points
+-- A floating dock's distance from the edge, in points: a tenth of its
+-- height, as macOS's dock has it (Diego, 3 October, with a picture of his:
+-- "the whitespace from the bottom of the screen to the dock should be half
+-- of whats now", "mac os dock margin to the bottom of the screen is what it
+-- should be"). It was 12, the drawing's.
+local DOCK_GAP = 6
 
 -- The room a bottom strip takes from the screen: its height, and the gap
 -- above and below it when it floats.
@@ -3376,7 +3381,7 @@ handlers.open = function(req, who, cap)
   end
 
   if req.kind ~= "menu" and not req.backdrop and req.strip ~= "top"
-     and not req.centre and not req.maximised then
+     and not req.centre and not req.maximised and not req.popup then
     --
     -- **Taken means hidden, not "in the same spot".**
     --
@@ -3402,7 +3407,7 @@ handlers.open = function(req, who, cap)
     -- scenery rather than windows you are being hidden behind.
     local function taken_at(x, y)
       for _, other in ipairs(windows) do
-        if not (other.backdrop or other.strip or other.kind == "menu") then
+        if not (other.backdrop or other.strip or other.kind == "menu" or other.popup) then
           local ox = math.min(x + win.w, other.x + other.w) - math.max(x, other.x)
           local oy = math.min(y + win.h, other.y + other.h) - math.max(y, other.y)
 
@@ -3482,7 +3487,7 @@ handlers.open = function(req, who, cap)
       --
       local function slot_ok(x, y)
         for _, other in ipairs(windows) do
-          if not (other.backdrop or other.strip or other.kind == "menu") then
+          if not (other.backdrop or other.strip or other.kind == "menu" or other.popup) then
             local ox = math.min(x + win.w, other.x + other.w) - math.max(x, other.x)
             local oy = math.min(y + win.h, other.y + other.h) - math.max(y, other.y)
 
@@ -3684,6 +3689,19 @@ handlers.open = function(req, who, cap)
     win.x, win.y = 0, 0
   end
 
+  --
+  -- **A popup** (`ui.window{ popup = true }`): put where it asked, pulled
+  -- back only onto the screen, as a menu is - the dock's launcher above the
+  -- dock, quick settings under the strip. Chrome rather than something
+  -- running, so the Deskbar lists none; closed by a press outside it
+  -- (`OUT.popup`, `pointer.lua`).
+  --
+  if req.popup == true then
+    win.popup = true
+    win.x = math.min(math.max(tonumber(req.x) or 0, 0), W - w_)
+    win.y = math.min(math.max(tonumber(req.y) or 0, 0), H - h_)
+  end
+
   if req.kind == "menu" then
     win.kind = "menu"
     win.owner = tonumber(req.owner)
@@ -3715,7 +3733,7 @@ handlers.open = function(req, who, cap)
 
     print(("wm: menu of %s at %d,%d %dx%d"):format(
           tostring(owner and owner.title), win.x, win.y, win.w, win.h))
-  elseif win.backdrop or win.strip then
+  elseif win.backdrop or win.strip or win.popup then
     print(("wm: window %s at %d,%d %dx%d"):format(
           tostring(win.title), win.x, win.y, win.w, win.h))
   elseif win.headed then
@@ -4088,7 +4106,7 @@ handlers.windows = function(req)
                -- started or can switch to, so it filters on this rather
                -- than on titles - which is what it did for its own window
                -- and does not scale to a second one.
-               chrome = (win.backdrop or win.strip) and true or nil,
+               chrome = (win.backdrop or win.strip or win.popup) and true or nil,
 
                -- Which *kind* of chrome, because "is there a desktop
                -- already" is a question with an answer only this process
@@ -4255,8 +4273,8 @@ handlers.minimise = function(req)
     return { ok = false, error = "no such window" }
   end
 
-  if win.backdrop or win.strip then
-    return { ok = false, error = "the desktop and the bar do not minimise" }
+  if win.backdrop or win.strip or win.popup then
+    return { ok = false, error = "the desktop, the bar and a popup do not minimise" }
   end
 
   return { ok = minimise(win) }
@@ -5302,7 +5320,7 @@ function scale.rescale(pct)
                       scale.px(scale.pt(win.h, old), pct))
       end
 
-      if not (win.strip or win.backdrop) then
+      if not (win.strip or win.backdrop or win.popup) then
         win.x = math.min(math.max(scale.px(lx, pct), KEEP - win.w), W - KEEP)
         win.y = math.min(math.max(scale.px(ly, pct), OUT.top_of(win)), H - KEEP)
       end
@@ -5507,7 +5525,7 @@ function resizable(win)
   -- hour earlier and I put it in one place there; this is the other half of
   -- it. A window with no frame has no corner to pull.
   --
-  if win.backdrop or win.strip then return false end
+  if win.backdrop or win.strip or win.popup then return false end
 
   return win.shared == nil or win.resizes_itself == true
 end
@@ -6009,6 +6027,31 @@ end
 -- handles rather than "all of them", so a menu the owner opened after this
 -- and before reading it is not forgotten with them.
 --
+--
+-- The popup on the screen, if there is one: the frontmost, since a press
+-- outside it closes it and the next one closes the next.
+--
+function OUT.popup()
+  for i = #windows, 1, -1 do
+    local w = windows[i]
+
+    if w.popup and not w.hidden then return w end
+  end
+
+  return nil
+end
+
+-- That popup, when a press at `x, y` lands outside it - which closes it.
+function OUT.popup_outside(x, y)
+  local pop = OUT.popup()
+
+  if pop and not (x >= pop.x and x < pop.x + pop.w and y >= pop.y and y < pop.y + pop.h) then
+    return pop
+  end
+
+  return nil
+end
+
 local function dismiss_menus(owner_handle)
   local n = #menus
   local gone = {}
@@ -6064,7 +6107,7 @@ local function window_at(x, y)
     if not win.hidden
        and x >= fx and x < fx + fw and y >= fy and y < fy + fh
        and not (y < fy + OUT.TAB_H and win.kind ~= "menu" and not win.backdrop
-                and not win.strip and x >= fx + tabs.width(win)) then
+                and not win.strip and not win.popup and x >= fx + tabs.width(win)) then
       return win, fx, fy
     end
   end
@@ -6131,7 +6174,7 @@ function OUT.boxes_under(x, y)
   local win = window_at(x, y)
 
   if not win or win.kind == "menu" or win.backdrop or win.strip
-     or win.fullscreen or win.pinned then
+     or win.fullscreen or win.pinned or win.popup then
     return nil
   end
 

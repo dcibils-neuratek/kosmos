@@ -59,7 +59,20 @@ local function everything()
     end
   end
 
-  for _, section in ipairs(menu.sections(fs, "/Home/Deskbar") or {}) do
+  --
+  -- **The menu as the Deskbar shows it**: what ships in `/Kosmos/Deskbar`,
+  -- the applications installed in `/Home/Apps`, and the person's own in
+  -- `/Home/Deskbar` over both. This read the last alone, which held nothing
+  -- on a machine whose person had not added to the menu - so the grid, the
+  -- first thing to show the count, said "Every application, 0".
+  --
+  local types = use("/Kosmos/Libraries/filetypes.lua")
+  local sections = menu.merge_sections(
+    menu.merge_sections(menu.sections(fs, "/Kosmos/Deskbar"),
+                        menu.installed(types.installed(fs), types.declared)),
+    menu.sections(fs, "/Home/Deskbar"))
+
+  for _, section in ipairs(sections or {}) do
     walk(section.items)
   end
 
@@ -68,6 +81,219 @@ end
 
 local all = everything()
 local shown = {}
+
+--------------------------------------------------------------------------
+-- **The grid, when the bar is a dock** (`roadmap.md`, a dock at the
+-- bottom, step 4; `docs/dock.html`, agreed by Diego on 3 October - "like
+-- the googlebook has"). The Deskbar says where its dock is in
+-- `/Running/Deskbar/anchor`, the middle of the dock's top edge; with it,
+-- this is a panel above the dock - the search first, then every
+-- application A to Z in round tiles - and without it, the list below.
+--
+-- A popup (`ui.window{ popup = true }`): no title bar, rounded and shadowed
+-- as the look has windows, and closed by the window manager when a press
+-- lands anywhere outside it - which is also how a second press on the
+-- Kosmos button closes it. Escape closes it, Return opens the tile chosen,
+-- the arrows choose, typing searches, the wheel scrolls.
+--
+-- What is where is `launchgrid.lua`'s arithmetic, held on the Mac by
+-- `tools/test_launchgrid.lua`; this draws it.
+--------------------------------------------------------------------------
+local function grid_mode(ax, ay)
+  local grid = use("/Kosmos/Libraries/launchgrid.lua")
+  local dock = use("/Kosmos/Libraries/dock.lua")
+  local theme = ui.theme
+  local screen = gfx.screen()
+  local sw = screen and (screen:size()) or 1920
+  local px, py, pw, ph = grid.panel(ax, ay, sw, dock.STRIP_H)
+  local apps = grid.everything(all)
+  local typed, list, sel, top = "", apps, (#apps > 0) and 1 or nil, 0
+  local rows = grid.rows_shown(ph)
+
+  local win, err = ui.window{ title = "Open", w = pw, h = ph, x = px, y = py,
+                              popup = true }
+
+  if not win then
+    print("launchpad: " .. tostring(err))
+    return
+  end
+
+  print(("launchpad: the grid at %d,%d %dx%d, %d applications")
+        :format(px, py, pw, ph, #apps))
+
+  -- A picture for each: the launcher's own, else the one its program
+  -- declares (`-- kosmos: icon`), as the Deskbar finds them.
+  local icon_of = {}
+
+  local function picture(item)
+    if item.icon and item.icon ~= "" then return item.icon end
+
+    local program = tostring(item.program)
+
+    if icon_of[program] == nil then
+      local attrs = fs.getattr(program)
+
+      icon_of[program] = (attrs and attrs.icon) or "App_Generic"
+    end
+
+    return icon_of[program]
+  end
+
+  -- `b` over `a` by `t` of 255, opaque: the tiles and the chosen cell are
+  -- the drawing's whites at a tenth and a twelfth over the panel.
+  local function mix(a, b, t)
+    local function ch(shift)
+      return (((a >> shift) & 0xff) * (255 - t) + ((b >> shift) & 0xff) * t) // 255
+    end
+
+    return 0xff000000 | (ch(16) << 16) | (ch(8) << 8) | ch(0)
+  end
+
+  local function search(text)
+    typed = text
+    list = grid.filter(apps, typed)
+    sel = (#list > 0) and 1 or nil
+    top = 0
+    win.dirty = true
+  end
+
+  local function open(item)
+    if not item then return end
+
+    fs.send("/Running/wm", { type = "launch", program = item.program,
+                             args = item.args })
+    print("launchpad: opened " .. tostring(item.name))
+    win:close()
+  end
+
+  local SMALL = 12
+  local small = ui.sized("ui", SMALL)
+
+  -- A name as wide as its cell allows, cut with an ellipsis if not.
+  local function fitted(name, room)
+    if gfx.measure(name, small) <= room then return name end
+
+    while #name > 1 and gfx.measure(name .. "...", small) > room do
+      name = name:sub(1, -2)
+    end
+
+    return name .. "..."
+  end
+
+  local view = ui.view{ x = 0, y = 0, w = pw, h = ph }
+
+  function view:draw(g)
+    local P = grid.PAD
+    local face = theme.window
+
+    g:fill(0, 0, self.w, self.h, face)
+
+    -- The search: a pill, the glass, what was typed or what to type, and
+    -- the caret where the next letter goes.
+    local sx, sy, sw_, sh_ = P, P, self.w - 2 * P, grid.SEARCH_H
+    local tx = sx + 18 + 19 + 12
+    local ty = sy + (sh_ - gfx.font.h) // 2
+
+    g:fill_round(sx, sy, sw_, sh_, theme.raised, sh_ // 2)
+    g:line_icon(sx + 18, sy + (sh_ - 19) // 2, "search", theme.text_dim, 19)
+
+    if typed == "" then
+      g:text(tx, ty, "Search applications", theme.text_dim, theme.raised)
+      g:fill(tx - 2, sy + 14, 2, sh_ - 28, theme.accent)
+    else
+      g:text(tx, ty, typed, theme.text, theme.raised)
+      g:fill(tx + gfx.measure(typed) + 1, sy + 14, 2, sh_ - 28, theme.accent)
+    end
+
+    -- What the grid holds, and in what order.
+    local head = (typed == "") and ("Every application, %d"):format(#apps)
+                 or ("%d of %d"):format(#list, #apps)
+
+    g:text(P + 8, grid.HEAD_Y, head, theme.text_dim, face, "ui", SMALL)
+    g:text(self.w - P - 8 - gfx.measure("A to Z", small), grid.HEAD_Y, "A to Z",
+           theme.text_dim, face, "ui", SMALL)
+
+    -- The tiles that show: a round tile, its picture, its name under it.
+    local tile, chosen = mix(face, 0xffd6e4ff, 26), mix(face, 0xffffffff, 20)
+
+    for i = top * grid.COLS + 1, math.min(#list, (top + rows) * grid.COLS) do
+      local item = list[i]
+      local cx, cy, cw, ch = grid.place(i, top, self.w)
+      local behind = face
+
+      if i == sel then
+        g:fill_round(cx + 2, cy, cw - 4, ch - 4, chosen, 14)
+        behind = chosen
+      end
+
+      local x0 = cx + (cw - grid.TILE) // 2
+
+      g:fill_round(x0, cy + 6, grid.TILE, grid.TILE, tile, grid.TILE // 2)
+      g:icon(x0 + (grid.TILE - grid.ICON) // 2, cy + 6 + (grid.TILE - grid.ICON) // 2,
+             picture(item) .. ".png", grid.ICON)
+
+      local name = fitted(grid.title(item.name), cw - 8)
+
+      g:text(cx + (cw - gfx.measure(name, small)) // 2, cy + 6 + grid.TILE + 6, name,
+             theme.text, behind, "ui", SMALL)
+    end
+
+    if #list == 0 then
+      g:text(P + 8, grid.TOP + 8, "Nothing here is called that", theme.text_dim, face)
+    end
+  end
+
+  function view:mouse(action, x, y)
+    if action ~= "press" then return false end
+
+    local i = grid.hit(#list, top, self.w, self.h, x, y)
+
+    if i then open(list[i]) end
+
+    return true
+  end
+
+  function view:wheel(n, _, _)
+    top = grid.scroll(top, #list, rows, -n)
+    return true
+  end
+
+  local ARROW = { [-1] = "up", [-2] = "down", [-3] = "right", [-4] = "left" }
+
+  function win:on_key(c)
+    if c == 27 then
+      self:close()
+    elseif c == 10 or c == 13 then
+      open(sel and list[sel])
+    elseif c == 8 or c == 127 then
+      search(typed:sub(1, (utf8.offset(typed, -1) or 1) - 1))
+    elseif ARROW[c] then
+      sel = grid.move(sel, #list, ARROW[c])
+
+      if sel then top = grid.keep_visible(sel, top, rows) end
+    elseif c >= 32 then
+      search(typed .. utf8.char(c))
+    else
+      return false
+    end
+
+    self.dirty = true
+    return true
+  end
+
+  win:add(view)
+  win:run()
+end
+
+do
+  local anchor = fs.read("/Running/Deskbar/anchor")
+  local ax, ay = tostring(anchor or ""):match("^(%-?%d+),(%-?%d+)$")
+
+  if ax then
+    grid_mode(tonumber(ax), tonumber(ay))
+    return
+  end
+end
 
 --
 -- In the middle of the screen, every time.

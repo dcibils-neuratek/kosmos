@@ -705,6 +705,10 @@ local function new_namespace()
   --
   local autos = {}
 
+  -- The names `lookup_into` mounted, by their folded prefix: what a registry
+  -- said once, which `forget_if_gone` drops when it stops being true.
+  local looked_up = {}
+
   local function lookup_into(prefix, cap, path)
     local name = path:sub(#prefix + 2):match("^([^/]+)")
 
@@ -728,8 +732,10 @@ local function new_namespace()
     end
 
     ns.mount(prefix .. "/" .. name, got)
+    looked_up[fold(prefix .. "/" .. name)] = true
     return true
   end
+
 
   local function match(path)
     for _, m in ipairs(mounts) do
@@ -756,6 +762,46 @@ local function new_namespace()
       end
     end
     return nil
+  end
+
+  --
+  -- **A name looked up is forgotten when what it named has gone.**
+  --
+  -- `resolve` below looks a registry's name up once and mounts it, so a
+  -- program that keeps running keeps the capability it was given - for the
+  -- process that was there then. When that process ends and another takes
+  -- the name, every call from here went to the dead endpoint and failed:
+  -- Preferences, open the whole time, moved the Deskbar to the bottom once
+  -- and never again, because the Deskbar it moved had started itself again
+  -- (Diego, 3 October: "it changes only one time and then does not change
+  -- any more times"). `setprop`, new each time, looked the name up fresh.
+  --
+  -- So a call that finds the endpoint gone drops the mount and gives the
+  -- capability back, and the caller asks once more - which looks the name
+  -- up again. Only for names a registry gave: a mount somebody made by hand
+  -- is theirs to replace.
+  --
+  local function forget_if_gone(path, err)
+    if err ~= "no such capability" and err ~= "the endpoint was destroyed" then
+      return false
+    end
+
+    local _, _, prefix = match(path)
+    local key = prefix and fold(prefix)
+
+    if not key or not looked_up[key] then return false end
+
+    looked_up[key] = nil
+
+    for i, m in ipairs(mounts) do
+      if m.key == key then
+        table.remove(mounts, i)
+        pcall(sys.release, m.cap)
+        break
+      end
+    end
+
+    return true
   end
 
   local function resolve(path)
@@ -2431,7 +2477,7 @@ local function new_namespace()
                 :format(tostring(name))
   end
 
-  local function request(op, path, extra, pass)
+  local function request(op, path, extra, pass, again)
     local capability, rest, prefix, proto = resolve(path)
     if not capability then
       -- The sentence design.md 2 asks for. Nothing was denied; there is
@@ -2550,6 +2596,10 @@ local function new_namespace()
 
         sys.release(region)
 
+        if not reply and not again and forget_if_gone(path, err) then
+          return request(op, path, extra, pass, true)
+        end
+
         if not reply then return nil, err end
         if not reply.ok then return nil, reply.error end
 
@@ -2558,6 +2608,11 @@ local function new_namespace()
     end
 
     local reply, err = sys.call(capability, req, pass)
+
+    if not reply and not again and forget_if_gone(path, err) then
+      return request(op, path, extra, pass, true)
+    end
+
     if not reply then return nil, err end
     if not reply.ok then return nil, reply.error end
     return reply
@@ -2998,7 +3053,7 @@ local function new_namespace()
   -- you. It goes as a third argument rather than inside the table, because
   -- an index means something different on each side and only the kernel can
   -- translate it.
-  function ns.send(path, message, pass)
+  function ns.send(path, message, pass, again)
     local capability, rest, prefix, proto = resolve(path)
 
     if not capability then
@@ -3112,6 +3167,13 @@ local function new_namespace()
     end
 
     local reply, err = sys.call(capability, req, pass)
+
+    -- The name's process gone and another in its place: once more, looked
+    -- up again (`forget_if_gone`).
+    if not reply and not again and forget_if_gone(path, err) then
+      return ns.send(path, message, pass, true)
+    end
+
     if not reply then return nil, err end
     if not reply.ok then return nil, reply.error end
     return reply

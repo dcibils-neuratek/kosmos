@@ -69,7 +69,7 @@ return function(ctx)
         -- which the others are not, and it has the three, drawn over its
         -- header below.
         local rounded = not (win.backdrop or win.strip or win.fullscreen)
-        local bare = not rounded or win.headed
+        local bare = not rounded or win.headed or win.popup
 
         -- The shadow is drawn before this, by `compose_rect`: it lies
         -- outside the frame, and `r` here is only the frame's visible part.

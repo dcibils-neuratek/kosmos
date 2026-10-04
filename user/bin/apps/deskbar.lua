@@ -495,6 +495,21 @@ local dock = DOCKED and use("/Kosmos/Libraries/dock.lua") or nil
 local topstrip = nil              -- the dock's strip across the top
 local kosmos_at = nil             -- where the dock drew its Kosmos button, in it
 
+--
+-- **The launcher**, `launchpad`, which the dock's Kosmos button opens as a
+-- grid above it (`roadmap.md`, a dock at the bottom, step 4). Open while
+-- the window manager lists it; asked for at the press, so the button lights
+-- then rather than when the grid arrives (`ui.md`, instant feedback).
+--
+local launcher_open = false
+local launcher_asked = nil        -- the counter when the button was pressed
+
+local function is_launcher(program)
+  local p = tostring(program or "")
+
+  return p == "launchpad" or p:match("/launchpad%.lua$") ~= nil
+end
+
 if DOCKED then H = dock.H end
 
 local win, err
@@ -749,8 +764,18 @@ local function refresh()
   -- windows, because everything here is, but neither is an application you
   -- started or one you can switch to. The window manager marks them.
   --
+  --
+  -- **Nor is the launcher**: a panel that comes and goes, which lights the
+  -- Kosmos button while it is open rather than taking a place of its own.
+  --
+  local launcher = false
+
   for _, w_ in ipairs(reply and reply.windows or {}) do
-    if not w_.chrome then list[#list + 1] = w_ end
+    if is_launcher(w_.program) then
+      launcher = true
+    elseif not w_.chrome then
+      list[#list + 1] = w_
+    end
   end
 
   table.sort(list, function(a, b) return a.handle < b.handle end)
@@ -766,6 +791,11 @@ local function refresh()
   -- What is starting, after what is running: where its window's button
   -- will be when it opens, so nothing jumps.
   for _, s in ipairs(reply and reply.starting or {}) do
+    if is_launcher(s.program) then
+      launcher = true
+      goto next_starting
+    end
+
     rows[#rows + 1] = { starting = true, program = s.program,
                         title = title_of(s.program), icon = picture(s.program),
                         failed = s.failed }
@@ -774,9 +804,18 @@ local function refresh()
       print(("deskbar: %s did not start: %s"):format(title_of(s.program),
             tostring(s.failed)))
     end
+
+    ::next_starting::
   end
 
   local changed = (#rows ~= #running)
+
+  if launcher ~= launcher_open then
+    launcher_open = launcher
+    changed = true
+
+    if launcher then launcher_asked = nil end
+  end
 
   for i, row in ipairs(rows) do
     local was = running[i]
@@ -999,6 +1038,7 @@ local function open_kosmos_menu()
 
     items[#items + 1] = {
       text = "Restart",
+      icon = "App_Generic",   -- the three cubes (Diego: "like the ones used for demos like snes")
       on_choose = function()
         say("restarting")
         fs.send("/Running/wm", { type = "power", action = "restart" })
@@ -1007,6 +1047,7 @@ local function open_kosmos_menu()
 
     items[#items + 1] = {
       text = "Shut Down",
+      icon = "App_Generic",   -- the three cubes (Diego: "like the ones used for demos like snes")
       on_choose = function()
         say("shutting down")
         fs.send("/Running/wm", { type = "power", action = "off" })
@@ -1762,7 +1803,9 @@ if DOCKED then
       local x = it.x + off
 
       if it.kind == "kosmos" then
-        local open = #win.menus > 0
+        local open = #win.menus > 0 or launcher_open
+                     or (launcher_asked ~= nil
+                         and sys.ticks() - launcher_asked < 2 * counter_hz)
         local bh = dock.KOSMOS_H
 
         g:fill_round(x, cy - bh // 2, it.w, bh, open and theme.accent or theme.raised, bh // 2)
@@ -1796,8 +1839,18 @@ if DOCKED then
 
     if not it then return false end
 
+    --
+    -- **The Kosmos button opens the launcher** - every application, as a
+    -- grid with its search, above the dock (`launchpad`, which reads where
+    -- from `anchor` below). A press while it is open never arrives here:
+    -- the window manager closes a popup on a press outside it and stops
+    -- there, so a second press closes it. The menu it used to open is the
+    -- right button's (`on_context`).
+    --
     if it.kind == "kosmos" then
-      open_kosmos_menu()
+      launcher_asked = sys.ticks()
+      fs.send("/Running/wm", { type = "launch", program = "launchpad" })
+      print("deskbar: the launcher asked for")
       return true
     end
 
@@ -1823,9 +1876,27 @@ if DOCKED then
     return true
   end
 
-  function bar:on_context()
+  -- The right button on the Kosmos button: the Deskbar's menu, with
+  -- Restart and Shut Down, until quick settings hold those (step 5).
+  function bar:on_context(x, _)
+    local it = dock.hit(items, x - (self.offset or 0))
+
+    if it and it.kind == "kosmos" then
+      open_kosmos_menu()
+      return true
+    end
+
     return false
   end
+
+  --
+  -- **Where the launcher goes**: the middle of the dock's top edge, on the
+  -- screen, which `launchpad` centres its grid over - the Kosmos button,
+  -- Super and Space, and anything else that opens it alike.
+  --
+  win:publish("anchor", function()
+    return ("%d,%d"):format(win.origin_x + win.w // 2, win.origin_y)
+  end)
 
   --
   -- **The strip across the top**: the time and the date at the left, the

@@ -17107,3 +17107,64 @@ middle. The first version checked only that the menu opened upwards,
 which both faults pass. **Control**, both fixes out: "the menu
 '670,1126', the button from 499" floating, and "'10,1138', the button from
 499" along the whole width - the photograph's own number.
+
+## 18.360 The launcher as a grid, the bar moved more than once, the dock nearer the edge
+
+**The launcher** (`roadmap.md`, a dock at the bottom, step 4; Diego, 3
+October, "like the googlebook has"). The dock's Kosmos button opens
+`launchpad` as a grid above the dock: a search pill, then every
+application A to Z in round tiles, six to a row. The Deskbar publishes
+where (`/Running/Deskbar/anchor`, the middle of the dock's top edge), so
+the button and Super+Space open the same grid; without an anchor -
+the bar at the top - `launchpad` is its list as before. Typing searches
+(a name that begins with it first), the arrows choose, Return opens, the
+wheel scrolls, Escape closes. The menu with Restart and Shut Down moved
+to the button's right press until quick settings hold those.
+`user/lib/launchgrid.lua` is the arithmetic, `tools/test_launchgrid.lua`
+holds it on the Mac: 35 checks.
+
+**A popup window** (`ui.window{ popup = true }`): no title bar or frame,
+rounded and shadowed as the look has windows, put where it asked, listed
+as chrome, and **closed by a press anywhere outside it, which goes no
+further** - the window manager's rule for menus, so a second press on the
+Kosmos button closes the grid rather than opening another. Unlike a menu,
+it takes the keys.
+
+**The grid's first look said "Every application, 0"**: `launchpad` read
+`/Home/Deskbar` alone, the person's own layer of the menu, and a machine
+whose person had added nothing has nothing there. It reads the menu as the
+Deskbar does now - what ships, what is installed, the person's own - and
+leaves out itself, the desktop and the Deskbar.
+
+**Preferences moved the bar once and never again** (Diego: "it changes
+only one time and then does not change any more times", and the bar set to
+Top with the dock still at the bottom). The namespace looks a `/Running`
+name up once and mounts it, so a program that stays open keeps the
+capability of the process that held the name then - and the Deskbar starts
+itself again on every move. `setprop`, new each time, looked it up fresh,
+which is why the suite's moves all passed. A call that finds a looked-up
+name's endpoint gone - "no such capability", "the endpoint was destroyed"
+- now forgets the mount, gives the capability back and asks once more
+(`forget_if_gone`, `user/init/init.lua`). Any long-lived program talking
+to one that restarted had the same fault.
+
+**The floating dock is 6 points off the edge**, from 12: a tenth of its
+height, as macOS's dock in Diego's screenshot.
+
+**`run_dock.py`, 25 checks in 1:33**: the grid centred over the dock, 12
+above it, with every application; the button lit while it is open; "calc"
+and Return opening the Calculator; a second press on the button closing it
+and opening nothing; a press outside closing it; and **one program moving
+the bar four times**, each write heard by the Deskbar that started since.
+The menu's checks press the right button now. **Controls**, each on its
+own: the merged menu out, "0 applications"; the namespace's forgetting
+out, "SWITCH dock floating false no such capability" for the three writes
+after the first, which is Diego's fault exactly; the popup rule out, a
+second grid opened and none closed.
+
+**Its gate: 87 of 87 in 10:24.** After it, the Kosmos menu's Restart and
+Shut Down given Haiku's three cubes (Diego: "shutdown and restart need
+icons in the launch menu", "a 3 cube"), held by `run_dock.py`'s 26th: colour
+in the picture column of the menu's last two rows. Control: the pictures
+out, 0 coloured pixels. A change to two rows of the Deskbar's menu, so the
+dock's suite was its test rather than the gate again.

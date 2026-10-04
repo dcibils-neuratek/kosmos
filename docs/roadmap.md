@@ -328,7 +328,9 @@ this order, each step its own test:
    desktop and nothing else).
 4. **The launcher as a grid** above the Kosmos button: its search first,
    then every application in round tiles (`launchpad`, drawn so when the
-   bar is a dock).
+   bar is a dock). **Done** (`testing.md` 18.360): a popup window placed
+   from the Deskbar's anchor, closed by a press outside it; the menu with
+   Restart and Shut Down on the button's right press until step 5.
 5. **Quick settings** under the strip's indicators: volume, brightness where
    there is a backlight, the network, the servers, the screenshot, `/Home`,
    restart and shut down.
@@ -346,6 +348,56 @@ Fill keeps the picture's shape and cuts its edges away rather than
 stretching it; the window manager resamples it once, smoothed, in C, when
 the picture or the choice changes, and a picture already the screen's size
 is used as it is.
+
+**The Super+Space launcher in the new look.** Diego, 3 October 2026, with a
+screenshot of macOS's Spotlight: "the super+space app to launch apps should
+adopt the new look of the new ui", "something like the screenshot
+attached". With the bar at the top, `launchpad` is a plain window with a
+field and a list; it becomes a dark rounded panel - the magnifier and what
+was typed, large, across the top; under a line, the results as rows, each
+an application's picture and name, the chosen one on a lighter rounded
+band - and keeps its keys (type, arrows, Return, Escape). With the bar a
+dock, Super+Space opens the grid (18.360). Next after the grid's build.
+
+**Applications by their real names.** Diego, 3 October 2026: "the apps in
+the menus are lowercase and not really the real names" - "Procs should be
+Process Viewer, startup should be Startup Apps, machine should be About this
+Machine, sysmon is System Monitor, network is Network and so on", "it needs
+real app names not just the file name", "ide is Kosmos IDE". The menu, the
+launcher grid and the dock name an application by its file. Each declares
+its name - `-- kosmos: name Process Viewer`, beside its icon - and `binfs`
+hands it over as the shipped launcher's **title**, a field of its own in
+`binproto.h`'s reply; the namespace passes it on, `deskbarmenu` keeps it,
+and the menu, the grid and the dock's names show it. The file's name stays
+the key, since a person's own menu layer (a hidden item, a launcher moved)
+refers to it. Installed applications say it the same way. The names
+proposed to Diego the same evening, for him to correct.
+
+**And a Development folder** (Diego, the same evening: "that should be in
+a menu folder called Development where demos and IDE and documentation
+should live"): the Kosmos IDE, the Demos - moved into it, the GL demos a
+folder inside - and the documentation, as launchers that open the cheat
+sheet and the tutorials in the browser. A section path two folders deep
+(`development/Demos/GL Demos`), which the menu's `section` does not take
+yet: one folder under a section is all it reads.
+
+**Restart and Shut Down wear a picture** in the Kosmos menu, Haiku's
+generic application - the three cubes Doom, Quake and the Super Nintendo
+wear (Diego, 3 October: "shutdown and restart need icons in the launch
+menu", "like the ones used for demos like snes", "a 3 cube").
+
+**Names over the dock's icons, and the dock's numbers in a file.** Diego,
+3 October: "hovering over the icons in the dock app icons should tell the
+name of the app" - in the agreed drawing as a switch. It needs the window
+manager to tell the dock where the pointer is without a button (it tells
+only the focused window, and the dock never has the focus), and a name
+drawn above the dock, outside its own window. And: "Is these settings in a
+settings text file so i can change these variables like size, margin, etc
+to custom values in the future?" - not yet; the dock's height, icon,
+cell, padding, corner and gap are constants in `user/lib/dock.lua` and the
+window manager. They go in `/Home/Preferences/dock`, beside its pins, with
+today's values as defaults, the gap told to the window manager by the
+Deskbar rather than kept by both.
 
 **A window minimised or restored shows where it went.** Diego, 3 October
 2026: "can we add a simple anomation to when windows minimize and restore

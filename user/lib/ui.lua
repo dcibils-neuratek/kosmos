@@ -5630,6 +5630,13 @@ function ui.window(spec)
     floating = (spec.strip and spec.floating) or nil,
     blend = (spec.strip and spec.blend) or nil,
 
+    -- **A panel that comes and goes** - the dock's launcher, and its quick
+    -- settings: no title bar and no frame, rounded and shadowed as the look
+    -- has windows, put exactly where it asked, and closed by a press
+    -- anywhere outside it, which goes nowhere else. It takes the keys, as a
+    -- menu does not.
+    popup = spec.popup or nil,
+
     --
     -- In the middle of the screen, and asked for rather than computed here.
     --
