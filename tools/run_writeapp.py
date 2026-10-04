@@ -362,10 +362,71 @@ def main():
             else:
                 check(False, "the Format panel did not say where its controls are")
 
+            # The Document panel and the tools (W4d): Add Page, Letter, the
+            # header's words, the left margin, View.
+            def tool(key):
+                m = re.search(r"writer: tool %s at (\d+),(\d+) (\d+)x(\d+)" % key,
+                              guest.seen[seen_from:])
+                return tuple(int(v) for v in m.groups()) if m else None
+
+            def last_report(since):
+                return said("writer: Untitled, ", since, 15)
+
+            add = tool("addpage")
+            mark = len(guest.seen)
+
+            if add:
+                press_at(add[0] + add[2] // 2, add[1] + 20)
+
+            pages = last_report(mark)
+            check(pages is not None and pages.startswith("2 pages"),
+                  "Add Page did not make a second page: %r" % pages)
+
+            tabs = control("tabs")
+
+            if tabs:
+                press_at(tabs[0] + tabs[2] * 3 // 4, tabs[1] + tabs[3] // 2)
+
+            paper = control("paper")
+            mark = len(guest.seen)
+
+            if paper:
+                press_at(paper[0] + 30, paper[1] + paper[3] // 2)
+                listed = re.search(r"writer: menu paper at (\d+),(\d+)", guest.seen[mark:])
+
+                if listed:
+                    mark = len(guest.seen)
+                    press_at(int(listed.group(1)) + 40, int(listed.group(2)) + 4 + 30 + 15)
+
+            letter = last_report(mark)
+            check(letter is not None and (" %dx%d" % (round(612 * 1.25), round(792 * 1.25))) in letter,
+                  "choosing Letter did not make the page 612 by 792 points: %r" % letter)
+
+            words = control("header_text")
+            left = control("margin_left")
+
+            if words and left:
+                press_at(words[0] + 20, words[1] + words[3] // 2)
+                press(*letters("Header words"), "ret")
+                plus = left[0] + left[2] - 12
+                press_at(plus, left[1] + left[3] // 2)
+                press_at(plus, left[1] + left[3] // 2)
+            else:
+                check(False, "the Document panel did not say where its controls are")
+
+            view = tool("view")
+            mark = len(guest.seen)
+
+            if view:
+                press_at(view[0] + view[2] // 2, view[1] + 20)
+
+            check(said("writer: thumbnails shown", mark, 10) is not None,
+                  "View did not show the page thumbnails")
+
             mark = len(guest.seen)
             press("ctrl-s")
             saved = said("writer: saved ", mark, 30)
-            check(saved == "/Home/Untitled.write, 2 paragraphs",
+            check(saved == "/Home/Untitled.write, 3 paragraphs",
                   "Control-S did not save the typed document: %r" % saved)
 
             time.sleep(1)
@@ -403,8 +464,15 @@ def main():
         except (R.Failure, OSError, KeyError, zipfile.BadZipFile) as e:
             got, hello, heading = ["could not be read: %s" % e], None, None
 
-        check(got == ["Yes ", "Hello world!", "A Second text"],
+        # The file's keys are sorted, so the body's words come before the
+        # header's.
+        check(got == ["Yes ", "Hello world!", "A Second text", "Header words"],
               "the typed document holds %r, not what the keys meant" % got)
+        check(text.count('name = "Letter"') == 1 and 'text = "Header words"' in text
+              and re.search(r"left = 27[,\n]", text) is not None
+              and "page_break_before = true" in text,
+              "the Document panel's paper, header words and margin, and Add "
+              "Page's break, are not in the file")
         check(hello is not None and 'weight = "Bold"' in hello.group(0)
               and "italic = true" in hello.group(0) and heading is not None,
               "the Format panel did not make the words bold and italic and "

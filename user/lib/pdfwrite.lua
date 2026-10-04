@@ -313,6 +313,11 @@ local function operators(set, page, font_for, notes)
     end
   end
 
+  if page.header then
+    show(page.header.piece, set.looks[page.header.piece.look],
+         page.header.baseline_pt, 0)
+  end
+
   if page.footer then
     show(page.footer.piece, set.looks[page.footer.piece.look],
          page.footer.baseline_pt, 0)

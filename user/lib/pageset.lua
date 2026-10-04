@@ -374,6 +374,7 @@ end
 --                       `height_pt`
 --       pieces    each `{ text, look, x_pt, width_pt, at }` - `at` is where
 --                 its bytes start in its paragraph's text
+--     header    the header's words as a piece and its baseline, or nil
 --     footer    the page number as a piece and its baseline, or nil
 --
 --
@@ -501,6 +502,12 @@ function pageset.set(doc, measure, cache)
     local lines, layout = para.lines, para.layout
     local k, first = 1, true
 
+    -- **A page break before it** (Add Page): this paragraph begins a
+    -- page, wherever the one before it ended.
+    if layout.page_break_before and #page.lines > 0 then
+      new_page()
+    end
+
     while k <= #lines do
       local at_top = #page.lines == 0
 
@@ -542,6 +549,22 @@ function pageset.set(doc, measure, cache)
     end
 
     y = y + layout.after_pt
+  end
+
+  -- The header's words, centred, `from_top_mm` from the page's top to
+  -- their top, in Caption as the page numbers are.
+  if doc.header.on and doc.header.text ~= "" then
+    local style = by_name.Caption or doc.styles[1]
+    local look = look_of(richtext.look({}, style))
+    local ascent = measure.line(looks[look])
+    local baseline = writedoc.pt(doc.header.from_top_mm) + ascent
+    local w = width(look, doc.header.text)
+
+    for _, pg in ipairs(pages) do
+      pg.header = { baseline_pt = baseline,
+                    piece = { text = doc.header.text, look = look,
+                              x_pt = (page_w - w) / 2, width_pt = w } }
+    end
   end
 
   -- Page numbers, centred in the footer, in Caption - what a caption and a

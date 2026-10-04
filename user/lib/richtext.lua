@@ -107,14 +107,14 @@ richtext.CHAR = {
 -- lines, the space before and after it, its three indents, a drop cap so
 -- many lines deep, and a list - and its More tab's *keep with the next
 -- paragraph*, which is what stops a heading standing alone at the foot of a
--- page.
+-- page, and *a page break before*, which Add Page makes.
 --
 richtext.PARA = {
   align = enum(ALIGN), spacing_lines = number(0.5, 5),
   before_pt = number(0, 500), after_pt = number(0, 500),
   indent_first_mm = number(-200, 200), indent_left_mm = number(0, 200),
   indent_right_mm = number(0, 200), drop_cap_lines = number(0, 10, true),
-  list = enum(LIST), keep_with_next = boolean,
+  list = enum(LIST), keep_with_next = boolean, page_break_before = boolean,
 }
 
 -- Both sets, in one order, so what is written and compared is always the
@@ -139,6 +139,7 @@ richtext.PLAIN = {
   align = "left", spacing_lines = 1, before_pt = 0, after_pt = 0,
   indent_first_mm = 0, indent_left_mm = 0, indent_right_mm = 0,
   drop_cap_lines = 0, list = "none", keep_with_next = false,
+  page_break_before = false,
 }
 
 --------------------------------------------------------------------------

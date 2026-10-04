@@ -149,6 +149,10 @@ function Drawer:page(set, page, surface, scale, x, y, paper, marks)
     end
   end
 
+  if page.header then
+    piece(page.header.piece, page.header.baseline_pt, 0)
+  end
+
   if page.footer then
     piece(page.footer.piece, page.footer.baseline_pt, 0)
   end

@@ -92,7 +92,7 @@ function writedoc.new()
     format = writedoc.FORMAT, version = writedoc.VERSION,
     paper = { name = "A4", width_mm = 210, height_mm = 297, landscape = false },
     margins_mm = { top = 25, bottom = 25, left = 25, right = 25 },
-    header = { on = true, from_top_mm = 9 },
+    header = { on = true, from_top_mm = 9, text = "" },
     footer = { on = true, from_bottom_mm = 6, page_numbers = true },
     facing = false, hyphenation = false, ligatures = true,
     styles = styles,
@@ -192,8 +192,13 @@ function writedoc.check(t)
   local head = type(t.header) == "table" and t.header or {}
   local foot = type(t.footer) == "table" and t.footer or {}
 
+  -- A header's words: one line, printable, short enough for a margin.
+  local words = type(head.text) == "string"
+                and head.text:gsub("[%z\1-\31\127]", ""):sub(1, 200) or ""
+
   doc.header = { on = flag(head.on, true),
-                 from_top_mm = measure(head.from_top_mm, 0, 100, 9) }
+                 from_top_mm = measure(head.from_top_mm, 0, 100, 9),
+                 text = words }
   doc.footer = { on = flag(foot.on, true),
                  from_bottom_mm = measure(foot.from_bottom_mm, 0, 100, 6),
                  page_numbers = flag(foot.page_numbers, true) }

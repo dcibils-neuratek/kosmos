@@ -18234,3 +18234,39 @@ italic in a Heading 1. **Control**: Italic leaving italic as it was - the
 run is bold and not italic.
 
 **Whole gate**: 90 suites in 653 s (10:53), all passing.
+
+## 18.386 Kosmos Write's Document panel, View and Add Page (W4d)
+
+**The Document panel** (`docs/write.html`): the paper - A4 or Letter - and
+which way it lies; a header and a footer, each with its distance from the
+edge; the header's words, typed into a field that has the keyboard while it
+is pressed; the four margins; page numbers. Each a change to the document's
+settings, checked as a file's would be (`writedoc.check`), undone as an edit
+is - an undo keeps the paper, the margins, the header and the footer beside
+the body now - and the header's words typed in a run one step to undo.
+**View** shows the page thumbnails at the left, each page drawn small by the
+same drawer, its lines grey rules at that size, the caret's page ringed and
+numbered; a press goes to that page. **Add Page** makes a paragraph after
+the caret's that begins a page of its own - `page_break_before`, a new
+paragraph field, which the setting honours and which a page's head makes no
+empty page of. A page wider than the desk - both columns open at 125% -
+scrolls across, the caret kept in view.
+
+**In the kits**: `richtext`'s `page_break_before`; `writedoc`'s header
+words, one line, printable, 200 bytes at most; `pageset` setting the page
+break and the header's words centred, `from_top_mm` from the top, in
+Caption as the page numbers are; `pagedraw` and `pdfwrite` drawing and
+writing the header.
+
+**Host**: `test_pageset.lua` 59 to 64 - a page break starting a page with
+its paragraph, none at the first page's head, the header's words centred 9
+mm down on every page, a header that is off not drawn, and a file's header
+words cleaned and held to 200 bytes.
+
+**`arm-writeapp`, 13 to 16**: after the typing and the formatting, Add Page
+makes a second page; the Document tab, then Letter from the paper's list,
+makes the page 765 by 990 at 125%; "Header words" typed into the header's
+field; the left margin stepped up twice to 27 mm; View shows the
+thumbnails; and the file read on the Mac has Letter, the header's words, a
+left margin of 27 and the page break. **Control**: Add Page without its
+break - no second page, and none in the file.

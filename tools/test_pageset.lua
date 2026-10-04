@@ -548,6 +548,39 @@ do
         "Home and End are not the line's ends")
 end
 
+-- 14. **A page break before a paragraph** (Add Page) and **the header's
+-- words** (W4d).
+do
+  local doc = doc_of({ para("Body", "first"), para("Body", "second",
+                                                    { page_break_before = true }),
+                       para("Body", "third") },
+                     { header = { on = true, from_top_mm = 9, text = "The header" } })
+  local set = pageset.set(doc, measure)
+
+  check(#set.pages == 2 and set.pages[2].lines[1].para == 2
+        and set.pages[2].lines[2].para == 3,
+        "a page break before a paragraph did not start a page with it")
+
+  local first_at_top = doc_of({ para("Body", "only", { page_break_before = true }) })
+  check(#pageset.set(first_at_top, measure).pages == 1,
+        "a page break at the head of the first page made an empty page")
+
+  local h = set.pages[1].header
+  check(h and h.piece.text == "The header" and set.pages[2].header
+        and near(h.baseline_pt, PT(9) + 0.8 * 9)
+        and near(h.piece.x_pt + h.piece.width_pt / 2, PAGE_W / 2),
+        "the header's words are not centred 9 mm from the top on every page")
+
+  local none = doc_of({ para("Body", "x") }, { header = { on = false, text = "Hidden" } })
+  check(pageset.set(none, measure).pages[1].header == nil,
+        "a header that is off was drawn")
+
+  local raw = writedoc.check{ format = "kosmos-write", version = 1, body = {},
+                              header = { text = "a\nb\27[2J" .. ("x"):rep(300) } }
+  check(raw.header.text:sub(1, 6) == "ab[2Jx" and #raw.header.text == 200,
+        "a header's words from a file were not cleaned and held to 200 bytes")
+end
+
 if fails > 0 then
   print(("pageset: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

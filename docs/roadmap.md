@@ -465,6 +465,8 @@ kits under `user/lib/` for Present and Sheets to stand on:
   ligatures and facing pages; W6 the Export list's DOCX; W5 Media's
   pictures and captions, and tables; W7 text boxes, shapes, charts and
   comments.
+- **W4d - the Document panel, View and Add Page**: *Done, 4 October*
+  (`testing.md` 18.386).
 - **W4 - the window**, from `docs/write.html`: the pages on a dark desk,
   the toolbar, Format and Document switching the panel, View for the
   thumbnails, zoom; typing and choosing styles, on the document page the
