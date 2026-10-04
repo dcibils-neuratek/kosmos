@@ -17244,3 +17244,30 @@ shortcuts over everything and Escape closing them. **`run_queries.py`,
 named Cheat Sheet, and About This Machine no longer in Applications.
 
 **Its gate: 87 of 87 in 10:23.** Controls, two builds: the category ignored, "50 of 50"; the binding out, no shortcuts; pages out of `binfs`, no Cheat Sheet launcher; the section order out, A to Z (on the host).
+
+## 18.363 A held key repeats, on a USB keyboard too
+
+**Diego, 3 October, on the M700**: "maintaining pressed backspace does not
+keep deleting letters. i need to press and release to delete letter by
+letter". A USB keyboard reports which keys are down and never repeats one;
+repeating is the computer's. The ThinkPad's PS/2 keyboard and QEMU's
+virtio one repeat by themselves, so nothing here ever had to - until the
+M700, whose only keyboard is USB.
+
+**In `hal/keys.c`, where a pushed key becomes characters** - Linux puts
+software repeat in its input core rather than in each driver, and this is
+ours. A pushed key that meant a character or a sequence, held, means it
+again after half a second and about thirty times a second after, until it
+is let go; the character only, so a game reading the key's event still
+sees it go down once and up once; and never a Super chord, which is a
+command. **No timer of its own**: the kernel wakes whoever waits for input
+on every interrupt at which input is pending - the timer's 250 a second
+among them - so a repeat that is due counts as pending, and is made when
+it is read. Timed in processor 0's ticks, one clock whichever core pushed
+the key or reads it (`hal_ticks` answers for the core that asks).
+
+**`run_x86.py`'s `usb_keyboard`**: on QEMU's `usb-kbd`, the M700's path, x
+held for 1.2 seconds (`sendkey x 1200`), and Return - ten or more x's. 6
+checks. **Control**: the repeat never due, two at most.
+
+**Its gate: 86 of 87 in 10:09.** The one was `arm-display-1`: the harness typed a long line of Lua over the serial line and it arrived cut ("unfinished string near <eof>"), on ARM, where nothing pushes keys and the repeat cannot act - 74 of 74 alone after. Load, recorded rather than explained.

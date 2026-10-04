@@ -25,6 +25,7 @@
 #include <stddef.h>
 
 #include "hal.h"
+#include "kernel.h"
 #include "keys.h"
 #include "spinlock.h"
 
@@ -96,6 +97,36 @@ static unsigned char pushed_chars[PUSHED_CHARS];
 static unsigned pushed_chars_head, pushed_chars_tail;
 static bool pushed_shift, pushed_ctrl, pushed_caps, pushed_super;
 
+/*
+ * **A held key repeats** (Diego, 3 October 2026, on the M700: "maintaining
+ * pressed backspace does not keep deleting letters"). A USB keyboard says
+ * which keys are down and never repeats one - repeating is the computer's,
+ * and a PS/2 keyboard and QEMU's do it themselves, which is why nobody had
+ * met it. So a pushed key that meant a character, held, means it again
+ * after `REPEAT_AFTER` and every `REPEAT_EVERY` until it is let go - the
+ * character only: the event a game reads is still one key, down and then up.
+ *
+ * **No timer of its own.** Every interrupt, the timer's 250 a second among
+ * them, wakes whoever waits for input when input is pending; a repeat that
+ * is due counts as pending (`keys_pushed_char_pending`), and is made when
+ * the character is read (`keys_pushed_char`). In processor 0's ticks,
+ * which are one clock whichever core pushed the key or reads it.
+ *
+ * Not a key held with Super: that is a command, and Super and Q held would
+ * close one window after another.
+ */
+#define REPEAT_AFTER  (TICK_HZ / 2)          /* half a second */
+#define REPEAT_EVERY  (TICK_HZ / 30)         /* about thirty a second */
+
+static unsigned volatile repeat_code;        /* 0: nothing repeats */
+static unsigned long volatile repeat_at;     /* processor 0's tick it is due */
+
+static bool repeat_due(void)
+{
+    return repeat_code != 0
+           && (long)(hal_ticks_on(0) - repeat_at) >= 0;
+}
+
 static void pushed_char(unsigned char c)
 {
     unsigned next = (pushed_chars_head + 1u) % PUSHED_CHARS;
@@ -113,14 +144,42 @@ static void pushed_string(const char *s)
     }
 }
 
-/* Called with the lock held, so what a key means and the event it made
- * cannot be interleaved with another core's. */
-static void pushed_typed(unsigned code, bool down)
+/*
+ * What a key means now, as characters - its sequence, its character, or a
+ * Super chord - pushed. True when it is what a held key repeats.
+ */
+static bool pushed_meaning(unsigned code)
 {
     char buffer[KEY_SEQUENCE_MAX];
     const char *sequence;
     int c;
 
+    sequence = hal_key_sequence(code, pushed_shift, pushed_ctrl, buffer);
+
+    if (sequence != NULL) {
+        pushed_string(sequence);
+        return true;
+    }
+
+    c = hal_key_char(code, pushed_shift, pushed_ctrl, pushed_caps);
+
+    if (c < 0) {
+        return false;
+    }
+
+    if (pushed_super) {
+        pushed_string(hal_key_super(c, buffer));
+        return false;
+    }
+
+    pushed_char((unsigned char)c);
+    return true;
+}
+
+/* Called with the lock held, so what a key means and the event it made
+ * cannot be interleaved with another core's. */
+static void pushed_typed(unsigned code, bool down)
+{
     switch (code) {
     case KEY_LEFTSHIFT:
     case KEY_RIGHTSHIFT:  pushed_shift = down; return;
@@ -133,28 +192,19 @@ static void pushed_typed(unsigned code, bool down)
     }
 
     if (!down) {
+        if (code == repeat_code) {
+            repeat_code = 0;
+        }
+
         return;
     }
 
-    sequence = hal_key_sequence(code, pushed_shift, pushed_ctrl, buffer);
-
-    if (sequence != NULL) {
-        pushed_string(sequence);
-        return;
+    if (pushed_meaning(code)) {
+        repeat_code = code;
+        repeat_at = hal_ticks_on(0) + REPEAT_AFTER;
+    } else {
+        repeat_code = 0;
     }
-
-    c = hal_key_char(code, pushed_shift, pushed_ctrl, pushed_caps);
-
-    if (c < 0) {
-        return;
-    }
-
-    if (pushed_super) {
-        pushed_string(hal_key_super(c, buffer));
-        return;
-    }
-
-    pushed_char((unsigned char)c);
 }
 
 bool hal_key_push(unsigned code, bool down)
@@ -185,6 +235,14 @@ int keys_pushed_char(void)
     unsigned long flags = spin_lock(&pushed_lock);
     int c = -1;
 
+    /* A held key's next time, made now that somebody reads - and its next
+     * due from now rather than from when it was, so a reader that was busy
+     * gets one rather than the burst it missed. */
+    if (pushed_chars_head == pushed_chars_tail && repeat_due()) {
+        (void)pushed_meaning(repeat_code);
+        repeat_at = hal_ticks_on(0) + REPEAT_EVERY;
+    }
+
     if (pushed_chars_head != pushed_chars_tail) {
         c = (int)pushed_chars[pushed_chars_tail];
         pushed_chars_tail = (pushed_chars_tail + 1u) % PUSHED_CHARS;
@@ -196,7 +254,7 @@ int keys_pushed_char(void)
 
 bool keys_pushed_char_pending(void)
 {
-    return pushed_chars_head != pushed_chars_tail;
+    return pushed_chars_head != pushed_chars_tail || repeat_due();
 }
 
 bool hal_key_release_all(void)
@@ -204,6 +262,8 @@ bool hal_key_release_all(void)
     unsigned long flags = spin_lock(&pushed_lock);
     bool any = false;
     unsigned code;
+
+    repeat_code = 0;
 
     for (code = 0; code <= KEY_PUSH_MOST; code++) {
         if ((pushed_held[code / 32u] & (1u << (code % 32u))) != 0) {

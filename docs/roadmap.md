@@ -430,6 +430,7 @@ themselves, which is why it had never been seen. The USB keyboard's
 driver repeats a held key: after half a second, about thirty a second
 until it is let go, every key but the modifiers. The delay and the rate
 in Preferences' Keyboard later. **A bug, so next after the grid's build.**
+**Done** (`testing.md` 18.363), in `hal/keys.c` rather than the driver.
 
 **The launcher grid's categories.** Diego, 3 October 2026, with a picture of
 macOS's Applications: "the app launcher needs a category filter so we can
@@ -520,9 +521,34 @@ generic application - the three cubes Doom, Quake and the Super Nintendo
 wear (Diego, 3 October: "shutdown and restart need icons in the launch
 menu", "like the ones used for demos like snes", "a 3 cube").
 
+**The dock's own applications, arranged by hand.** Diego, 3 October 2026:
+"we need a way to move apps around the dock to reorder them as the user
+wants. also how do i add or remove apps from the dock?" - which until now
+was only by editing `/Home/Preferences/dock`'s `pins` by hand. As macOS's
+dock does it:
+
+- **reordered by dragging** an icon along the dock, the others making room,
+  dropped where it is let go;
+- **taken out** by dragging it up off the dock, or *Remove from Dock* on
+  its right press;
+- **kept** - an application running after the separator - by *Keep in
+  Dock* on its right press, or dragged left past the separator; and from the
+  launcher grid, *Add to Dock* on a tile's right press;
+- **a right press on an icon**: Open, or Show when it runs; Keep in Dock or
+  Remove from Dock; Quit;
+
+each change written to `/Home/Preferences/dock` at once. After the names
+over the icons, below.
+
 **Names over the dock's icons, and the dock's numbers in a file.** Diego,
 3 October: "hovering over the icons in the dock app icons should tell the
-name of the app" - in the agreed drawing as a switch. It needs the window
+name of the app" - in the agreed drawing as a switch - and, the same night,
+"the hover tooltip of the name of the app in the dock is still missing",
+with macOS's: a dark pill, the name in white, centred over the icon and a
+small arrow down to it. A *tip* window for it - shown and nothing else: no
+press, no focus, blended so the arrow's corners are the screen - and the
+dock told where the pointer is while it is over it, focus or not. The name
+is the application's own (`kosmos: name`), not its window's title. It needs the window
 manager to tell the dock where the pointer is without a button (it tells
 only the focused window, and the dock never has the focus), and a name
 drawn above the dock, outside its own window. And: "Is these settings in a

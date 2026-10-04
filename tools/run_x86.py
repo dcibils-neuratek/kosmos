@@ -4040,6 +4040,15 @@ def usb_keyboard(image, check):
 
         time.sleep(0.5)
 
+        # **A key held** (Diego, 3 October 2026: "maintaining pressed
+        # backspace does not keep deleting letters"): x for 1.2 seconds,
+        # which a USB keyboard reports as one press and one release, and
+        # Return - the shell says it knows no such program, x after x.
+        line.sendall(b"sendkey x 1200\n")
+        time.sleep(1.6)
+        line.sendall(b"sendkey ret\n")
+        time.sleep(0.8)
+
         for key in ("d", "e", "v", "i", "c", "e", "s", "ret"):
             line.sendall(("sendkey " + key + "\n").encode())
             time.sleep(0.25)
@@ -4081,6 +4090,14 @@ def usb_keyboard(image, check):
           "no key ever arrived from the keyboard. The driver reads its "
           "report on an interrupt IN endpoint and pushes what changed "
           "against the report before:\n    " + shown)
+
+    held = max((len(run) for run in re.findall(r"x+", out)), default=0)
+
+    check(held >= 10,
+          "x held for 1.2 seconds on the USB keyboard came out %d times - a "
+          "USB keyboard never repeats a key, so `keys.c` has to: half a "
+          "second, then about thirty a second (Diego: \"maintaining pressed "
+          "backspace does not keep deleting letters\")" % held)
 
     check("Devices found on this machine" in out,
           "`devices` was typed on the USB keyboard and did not run. The keys "
