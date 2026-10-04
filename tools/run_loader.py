@@ -14,6 +14,9 @@ Booted with a /Home of its own holding `/Home/apps/apptest/`:
                  the reader's sentence, and nothing started
   stranger.lua   names stranger.elf, the image's first page with the other
                  processor's number in it: refused as built for that one
+  stale.lua      names stale.elf, the image whole with another protocol
+                 stamp in it (`tools/protostamp.py`): refused as built for
+                 another Kosmos, with what to do, and nothing run
 
 and `run` at the prompt for each, then apptest.lua again - from the image
 made the first time, which the launcher says only when it makes one. How
@@ -84,9 +87,24 @@ stranger[18:20] = (183 if X86 else 62).to_bytes(2, "little")
 with open(os.path.join(WORK, "stranger.elf"), "wb") as f:
     f.write(bytes(stranger))
 
+# The image whole, its protocol stamp another: what Doom linked for 0.10.205
+# was on 4 October, as the system sees one.
+MARK = b"KOSMOS-PROTOSTAMP:"
+at = whole.find(MARK)
+
+if at < 0:
+    print("FAIL: apptest.elf carries no protocol stamp (`tools/protostamp.py`)")
+    sys.exit(1)
+
+STAMP = whole[at + len(MARK):at + len(MARK) + 16].decode()
+
+with open(os.path.join(WORK, "stale.elf"), "wb") as f:
+    f.write(whole[:at + len(MARK)] + b"0000000000000000" + whole[at + len(MARK) + 16:])
+
 for name, line in (("apptest", "-- kosmos: image apptest.elf"), ("plain", ""),
                    ("broken", "-- kosmos: image broken.elf"),
-                   ("stranger", "-- kosmos: image stranger.elf")):
+                   ("stranger", "-- kosmos: image stranger.elf"),
+                   ("stale", "-- kosmos: image stale.elf")):
     with open(os.path.join(WORK, name + ".lua"), "w") as f:
         f.write(PROGRAM.format(line=line))
 
@@ -122,8 +140,8 @@ for folder, image in (("Doom", "doom.elf"), ("Quake", "quake.elf"), ("SNES", "sn
         if name.endswith(".lua"):
             installed.append("%s:/Home/Apps/%s/%s" % (os.path.join(source, name), folder, name))
 
-files = ["apptest.lua", "plain.lua", "broken.lua", "stranger.lua", "apptest.elf",
-         "broken.elf", "stranger.elf"]
+files = ["apptest.lua", "plain.lua", "broken.lua", "stranger.lua", "stale.lua",
+         "apptest.elf", "broken.elf", "stranger.elf", "stale.elf"]
 subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, "224"]
                + ["%s:/Home/apps/apptest/%s" % (os.path.join(WORK, n), n) for n in files]
                + installed,
@@ -215,6 +233,13 @@ def main():
         other = "an AArch64 processor" if X86 else "an x86-64 processor"
         check(said is not None and ("stranger.elf: built for %s, not this one" % other) in said,
               "stranger.elf was not refused as built for another processor: %r" % said)
+
+        said, _ = run("stale", "run:", 180)
+        check(said is not None
+              and ("stale was built for another Kosmos (protocols 0000000000000000, and "
+                   "this system's %s): build it again - make install-apps" % STAMP) in said,
+              "stale.elf, built for other protocols, was not refused with the sentence "
+              "that says so: %r" % said)
 
         again = len(guest.seen)
         said, took = run("apptest", "apptest:", 180)

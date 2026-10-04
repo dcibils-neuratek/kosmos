@@ -621,6 +621,25 @@ opened under QEMU in Night and in Plex, pictured, the ones in the old
 chrome listed, each moved onto the kit's header, and the pictures kept as
 the check that none goes back.
 
+**ASKED, for the future - C compiled inside Kosmos, for the IDE's hybrid
+applications.** Diego, 4 October 2026: "how hard is to compile a c program
+within kosmos? I want to see if we can extend our kosmos ide to build hybrid
+apps (Lua + C) apps like the OpenGL demos and else". Assessed the same day,
+not scheduled. **The running half exists**: an installed application is
+already Lua and C - `-- kosmos: image doom.elf`, its engine `use("doom.elf")`
+(`docs/elf.md` step 5); what is missing is a compiler that runs here, all C
+being compiled on the Mac. **The route is TinyCC** - small, fast, x86-64 and
+ARM64 back ends, and able to compile into memory: (1) tcc as a Kosmos
+program, compiling to an object, on the libc that resolves files through
+the namespace; (2) **a kernel decision, Diego's**: memory a process writes
+code into and then runs, writable and then executable and never both, which
+Kosmos has never allowed; (3) a C kit compiled on the machine - `myapp.c`
+beside `myapp.lua`, `use("myapp.c")`; (4) the IDE's Build and its errors at
+their lines. **The cost**: tcc's code two or three times slower than GCC's,
+and no GCC vector types, so the kits that want every cycle - GL, video -
+stay GCC's in the image, and an application's own C is still far faster
+than its Lua.
+
 **A settings kit, for any application to keep its settings.** Diego, 4
 October 2026: "There should be a settings kit that allows an app to store
 and read settings". Each application read and wrote `/Home/Preferences/
@@ -653,7 +672,10 @@ compiled into the system and into every application image, compared when
 one is started, and a mismatch refused with a sentence - "Doom was built for
 an older Kosmos; build it again: make install-apps" - rather than an error
 from deep inside the kit. `CLAUDE.md` has said this happens; nothing yet
-says it when it does.
+says it when it does. **Done the same day** (`testing.md` 18.375): the protocol
+stamp, in every image, compared by the started program's own runtime; and
+Diego's "Revisit all apps and adapt them to the new protocol" - every
+application audited against the week's changes.
 
 **Every setting a text file a person can read and edit.** Diego, 4 October
 2026: "Are we making sure all the preferences and settings are stored in

@@ -841,7 +841,8 @@ USER_SRCS := user/init/start-$(ARCH).S \
              $(USER_LIBC) \
              $(LUA_SRCS) \
              $(GEN)/init_lua.c \
-             $(GEN)/tabletext_lua.c
+             $(GEN)/tabletext_lua.c \
+             $(GEN)/protostamp.c
 
 # The Lua tests and the Lua benchmarks, each in one image only. Both used to
 # run inside the kernel against a lua_State it carried; they run out here now,
@@ -1627,6 +1628,15 @@ $(GEN)/init_lua.c: user/init/init.lua tools/bin2c.py $(HOSTDIR)/lua.ok
 $(GEN)/tabletext_lua.c: user/init/tabletext.lua tools/bin2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/bin2c.py $< tabletext_lua $@
+
+# Which protocols an image speaks, as one word (`tools/protostamp.py`): in the
+# system's image and every installed application's, compared when one starts
+# the other, so an application built for another Kosmos says so.
+PROTO_HEADERS := $(wildcard user/include/*proto.h) $(wildcard user/include/*ring.h)
+
+$(GEN)/protostamp.c: $(PROTO_HEADERS) tools/protostamp.py
+	@mkdir -p $(dir $@)
+	python3 tools/protostamp.py $@ $(PROTO_HEADERS)
 
 # The font, from the BDF the author ships to an array with one byte per
 # pixel row. Vendored unmodified for the same reason lua/upstream/ is.

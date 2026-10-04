@@ -4389,6 +4389,7 @@ query. `find` and `watch` are built on exactly these two calls.
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       backlight = 12, notify = 13, camera = camera_at, midi = midi_at,
       home_in_memory = home_in_memory or nil,
+      protostamp = sys.protostamp,
     })
 
     -- A private channel for one message. There are ninety-six of them, and
@@ -5629,6 +5630,25 @@ if role == ROLE_RUNNER then
   local req, who = sys.receive(SOURCE_EP)
   if not req then return end
 
+  --
+  -- **An image built for other protocols says so, and runs nothing**
+  -- (`tools/protostamp.py`; Diego, 4 October, "launching doom raises an
+  -- error and does not work"). The launcher said which protocols the system
+  -- speaks; this runtime knows which it was built for. An installed
+  -- application linked before a protocol changed reads the system wrong in
+  -- ways that look like anything but that - Doom's "ui.lua:1: unexpected
+  -- symbol" - so the refusal is a sentence, and its button says it.
+  --
+  if req.protostamp and req.protostamp ~= sys.protostamp then
+    local name = tostring(req.path or "it"):match("([^/]+)%.lua$") or tostring(req.path)
+
+    sys.reply(who, { ok = false,
+                     error = ("%s was built for another Kosmos (protocols %s, and this "
+                              .. "system's %s): build it again - make install-apps")
+                             :format(name, sys.protostamp, req.protostamp) })
+    return
+  end
+
   local ns = new_namespace()
   -- The namespace is built before the program is fetched, because fetching
   -- it goes through the namespace: the shell sends a *name*, not the source.
@@ -5889,6 +5909,10 @@ if role == ROLE_RUNNER then
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       backlight = 12, notify = 13, camera = camera_at, midi = midi_at,
       mounts = (#mounts > 0) and mounts or nil,
+
+      -- Which protocols the system speaks, for an image built for others
+      -- to say so (`tools/protostamp.py`).
+      protostamp = sys.protostamp,
 
       -- Inherited rather than decided again. This is a program starting a
       -- program - the window manager starting Tracker is the case that

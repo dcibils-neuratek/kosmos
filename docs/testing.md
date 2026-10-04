@@ -17760,3 +17760,35 @@ the first time the kit was under a helper. The helpers' tests, `textsize`
 kit's places.
 
 **Its gate: 88 of 88 in 10:44.**
+
+## 18.375 Every application on today's protocols, and an image that is not says so
+
+Diego, 4 October: "Revisit all apps and adapt them to the new protocol".
+**The audit**: every application in the image and every one installed,
+against what changed this week - the program store's names (0.10.221),
+notifications (0.10.227), settings as text and the settings kit (0.10.233,
+0.10.234). In the image, every settings write goes through the kit now and
+`make host-check` holds it there; the rest of their writes are documents,
+status files in `/Temporary` and the format tool's word. Installed, Doom,
+Quake and the Super Nintendo keep save data only, and were built again for
+the M700 the same morning.
+
+**The stamp** (`tools/protostamp.py`): the first sixteen hex digits of a
+SHA-256 over the protocol headers - `*proto.h` and `*ring.h`, eighteen of
+them - written behind `KOSMOS-PROTOSTAMP:` into `protostamp.c` in every
+image, the system's and each installed application's, and `sys.protostamp`
+to Lua. The launcher puts the system's in every request that starts a
+program; a runner whose own differs refuses before running anything:
+"stale was built for another Kosmos (protocols 0000000000000000, and this
+system's c3869c5dbd0322f3): build it again - make install-apps", which is
+what the Deskbar's button then says. Any change to a header changes it,
+which is `CLAUDE.md`'s rule - build the installed applications again -
+made something the machine notices.
+
+**`run_loader.py`, 14** (one new): `stale.elf`, the test image whole with
+its stamp's sixteen digits zeros, named by `stale.lua` and refused with the
+sentence, the system's stamp in it. **Control**: the runner's check off,
+built into the system and the test image both - "stale.elf ... was not
+refused with the sentence that says so: None".
+
+**Its gate: 88 of 88 in 10:42.**

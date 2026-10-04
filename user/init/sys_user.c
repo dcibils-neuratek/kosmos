@@ -3398,8 +3398,19 @@ static const luaL_Reg sys_functions[] = {
     { NULL, NULL }
 };
 
+/* Which protocols this image speaks (`tools/protostamp.py`). */
+extern const char kosmos_protostamp[];
+
 int luaopen_sys(lua_State *L)
 {
     luaL_newlib(L, sys_functions);
+
+    /*
+     * `sys.protostamp`: the stamp without its marker. The launcher puts it in
+     * the request that starts a program, and the runner of an image built
+     * for other protocols refuses with a sentence (`init.lua`).
+     */
+    lua_pushstring(L, kosmos_protostamp + sizeof("KOSMOS-PROTOSTAMP:") - 1);
+    lua_setfield(L, -2, "protostamp");
     return 1;
 }
