@@ -1,7 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Pe
--- kosmos: section applications
+-- kosmos: name Kosmos IDE
+-- kosmos: section development
 -- kosmos: opens lua
 --
 -- **Kosmos IDE**: where Lua for Kosmos is written and run.

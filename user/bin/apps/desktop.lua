@@ -3,7 +3,8 @@
 --
 -- kosmos: application
 -- kosmos: icon Prefs_Backgrounds
--- kosmos: section system
+-- kosmos: name Desktop
+-- kosmos: section none
 --
 -- **Tracker in backdrop mode, and the only reason this file exists is that
 -- there was no way to ask for it.** `tracker desktop` has drawn the icon

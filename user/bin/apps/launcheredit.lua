@@ -1,6 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon Prefs_Appearance
+-- kosmos: name Launcher Editor
+-- kosmos: section preferences
 -- kosmos: needs screen
 -- kosmos: opens launcher
 -- Edit a launcher: what it starts, with what arguments, under what picture.

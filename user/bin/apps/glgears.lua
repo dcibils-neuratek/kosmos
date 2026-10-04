@@ -2,7 +2,8 @@
 -- Brian Paul's gears, the oldest OpenGL demo there is.
 -- kosmos: application
 -- kosmos: icon App_GLDirectMode
--- kosmos: section demos/GLDemos
+-- kosmos: name GL Gears
+-- kosmos: section demos/GL Demos
 --
 --   wm glgears
 --

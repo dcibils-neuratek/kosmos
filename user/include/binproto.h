@@ -62,15 +62,17 @@
  * tree: a name anywhere in Kosmos may be sixty-four characters, and a store
  * that held fewer would be the one place that broke it.
  *
- * The assert below still holds at 64: 1792 / 64 is 28 names to a listing
- * reply, against the sixteen it asks for.
+ * The assert below still holds at 64: 1760 / 64 is 27 names to a listing
+ * reply, against the sixteen it asks for - 1792 and 28 until a title took
+ * thirty-two bytes of it (3 October 2026).
  */
 #define BIN_NAME_MAX    64u
 #define BIN_WORD_MAX    16u       /* a kind, a section, one `needs` word */
 #define BIN_NEEDS_MAX    8u       /* authorities one program may declare */
 #define BIN_ICON_MAX    32u       /* `Misc_Deskbar_Group` is eighteen */
 #define BIN_OPENS_MAX   40u       /* `kosmos: opens`, a line of types */
-#define BIN_CHUNK     1792u       /* source bytes, or 28 names, per reply */
+#define BIN_TITLE_MAX   32u       /* `kosmos: name`, "About This Machine" */
+#define BIN_CHUNK     1760u       /* source bytes, or 27 names, per reply */
 
 struct bin_request {
     uint32_t op;
@@ -105,6 +107,13 @@ struct bin_reply {
      * words apart. Blank when it declares none. Programs as well as
      * applications: `play` opens a film in a window of its own. */
     char     opens[BIN_OPENS_MAX];
+
+    /* Its name for a person - `kosmos: name Process Viewer` - which the
+     * Deskbar's menu, the launcher and the dock show (Diego, 3 October 2026:
+     * "it needs real app names not just the file name"). The file's own
+     * name stays what everything is found by. Blank when none is declared,
+     * and whoever shows it falls back to the file's. */
+    char     title[BIN_TITLE_MAX];
 
     uint8_t  data[BIN_CHUNK];
 };

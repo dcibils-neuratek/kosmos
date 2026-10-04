@@ -2,6 +2,7 @@
 -- What opens when the desktop does.
 -- kosmos: application
 -- kosmos: icon App_Launchbox
+-- kosmos: name Startup Apps
 -- kosmos: section preferences
 --
 -- A list of everything that can be started, with a box beside each. Tick

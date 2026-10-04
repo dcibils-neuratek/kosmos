@@ -1,5 +1,7 @@
 -- kosmos: application
 -- kosmos: icon App_NetSurf
+-- kosmos: name Browser
+-- kosmos: section applications
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: needs network
 -- kosmos: opens html favorite

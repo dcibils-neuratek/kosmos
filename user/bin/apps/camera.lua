@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_CodyCam
+-- kosmos: name Camera
 -- kosmos: section applications
 -- kosmos: needs camera
 -- A USB camera's live picture (`roadmap.md` 6d), as `docs/camera.html`

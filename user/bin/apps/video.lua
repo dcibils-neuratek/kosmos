@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_MediaPlayer
+-- kosmos: name Video Player
 -- kosmos: section applications
 -- kosmos: opens mp4
 --

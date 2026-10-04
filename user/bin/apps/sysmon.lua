@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Pulse
+-- kosmos: name System Monitor
 -- kosmos: section system
 -- The processors, in a window: what each is doing now, and for the last
 -- minute.

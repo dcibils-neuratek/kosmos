@@ -2,7 +2,8 @@
 -- The Super Nintendo.
 -- kosmos: application
 -- kosmos: icon App_Generic
--- kosmos: section demos
+-- kosmos: name Super Nintendo
+-- kosmos: section applications
 -- kosmos: opens sfc smc
 -- kosmos: image snes.elf
 --

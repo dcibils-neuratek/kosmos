@@ -2,7 +2,8 @@
 -- A textured cube.
 -- kosmos: application
 -- kosmos: icon App_GLDirectMode
--- kosmos: section demos/GLDemos
+-- kosmos: name GL Cube
+-- kosmos: section demos/GL Demos
 --
 --   wm glcube
 --

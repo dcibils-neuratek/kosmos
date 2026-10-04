@@ -1,6 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Terminal
+-- kosmos: name Terminal
+-- kosmos: section applications
 -- kosmos: needs profile
 -- A terminal, in a window.
 --

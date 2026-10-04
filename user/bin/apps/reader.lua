@@ -1,6 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon Misc_Book
+-- kosmos: name Reader
+-- kosmos: section applications
 -- kosmos: opens md
 -- A markdown viewer: manuals and tutorials, inside the system they describe.
 --

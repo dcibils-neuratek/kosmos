@@ -239,10 +239,14 @@ def main():
             'local t = a("/Kosmos/Deskbar/Applications/tracker") '
             'local wrote = fs.write("/Kosmos/Deskbar/Applications/mine", "") '
             'print("K-DESKBAR", table.concat(fs.list("/Kosmos/Deskbar") or {}, ","), '
-            't.kind, t.program, t.icon, a("/Kosmos/Deskbar/Demos/GLDemos").kind, '
-            'a("/Kosmos/Deskbar/Demos/GLDemos/glgears").kind, '
+            't.kind, t.program, t.icon, a("/Kosmos/Deskbar/Demos/GL Demos").kind, '
+            'a("/Kosmos/Deskbar/Demos/GL Demos/glgears").kind, '
             'fs.getattr("/Kosmos/Deskbar/Applications/deskbar") == nil, '
-            'fs.getattr("/Kosmos/Deskbar/Applications/info") == nil, not wrote)',
+            'fs.getattr("/Kosmos/Deskbar/Applications/info") == nil, not wrote, '
+            # Each one's name for a person (`kosmos: name`, 3 October): the
+            # launcher's title, with the file's name still its own.
+            '"[" .. tostring(a("/Kosmos/Deskbar/System/procs").title) .. "]", '
+            '"[" .. tostring(a("/Kosmos/Apps/machine.lua").title) .. "]")',
 
             # **A file's time is a date** (`roadmap.md` 6za step b): written
             # to the disk now, its `modified` is the clock's second, give or
@@ -350,12 +354,13 @@ def main():
              "an application's `kosmos: opens` did not reach its attributes - "
              "Photo's three, Video's and Play's film - or one that declares "
              "nothing had some"),
-            ("K-DESKBAR", "Applications,Demos,Preferences,System launcher "
+            ("K-DESKBAR", "Applications,Demos,Development,Preferences,System launcher "
                           "/Kosmos/Apps/tracker.lua App_Tracker directory "
-                          "launcher true true true",
-             "/Kosmos/Deskbar was not the shipped menu - its sections, Tracker "
-             "a launcher of its own path and picture, GLDemos a submenu, no "
-             "Deskbar and no Info, and nothing written into it"),
+                          "launcher true true true [Process Viewer] [About This Machine]",
+             "/Kosmos/Deskbar was not the shipped menu - its five sections, "
+             "Tracker a launcher of its own path and picture, GL Demos a "
+             "submenu, no Deskbar and no Info, nothing written into it, and "
+             "each application's name for a person carried as its title"),
             ("D-DATED", "integer true",
              "a file written to the disk did not carry the clock's date as "
              "its modified, within five seconds"),

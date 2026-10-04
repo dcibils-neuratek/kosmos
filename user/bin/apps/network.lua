@@ -1,7 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon Prefs_Network
--- kosmos: section system
+-- kosmos: name Network
+-- kosmos: section preferences
 -- kosmos: needs network
 -- What this machine is on the network, and how to change it.
 --

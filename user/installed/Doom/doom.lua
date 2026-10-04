@@ -2,7 +2,8 @@
 -- Doom.
 -- kosmos: application
 -- kosmos: icon App_Generic
--- kosmos: section demos
+-- kosmos: name Doom
+-- kosmos: section applications
 -- kosmos: opens wad
 -- kosmos: image doom.elf
 --

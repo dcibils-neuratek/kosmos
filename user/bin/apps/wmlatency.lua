@@ -1,7 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Generic
--- kosmos: section system
+-- kosmos: name Window Latency
+-- kosmos: section development
 -- How long the window manager takes to answer when it has nothing to do.
 --
 --   wm wmlatency

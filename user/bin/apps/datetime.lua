@@ -2,6 +2,7 @@
 -- Where you are, in hours from UTC.
 -- kosmos: application
 -- kosmos: icon Prefs_Locale
+-- kosmos: name Date & Time
 -- kosmos: section preferences
 --
 -- The board's clock reads UTC and that is all it knows. This says how far

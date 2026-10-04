@@ -2,7 +2,8 @@
 -- Quake.
 -- kosmos: application
 -- kosmos: icon App_Generic
--- kosmos: section demos
+-- kosmos: name Quake
+-- kosmos: section applications
 -- kosmos: image quake.elf
 --
 --   wm quake                       the id1/pak0.pak beside this file

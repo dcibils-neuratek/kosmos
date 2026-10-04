@@ -2,7 +2,8 @@
 -- A walking mech, and the largest of them.
 -- kosmos: application
 -- kosmos: icon App_GLDirectMode
--- kosmos: section demos/GLDemos
+-- kosmos: name GL Mech
+-- kosmos: section demos/GL Demos
 --
 --   wm glmech
 --

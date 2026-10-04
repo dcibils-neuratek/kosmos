@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_About
+-- kosmos: name Get Info
 -- kosmos: section none
 -- kosmos: needs screen
 -- Info: what a file or a folder is, where, and how much (`roadmap.md` 6za).

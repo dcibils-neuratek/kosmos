@@ -2,7 +2,8 @@
 -- Two spinning shapes.
 -- kosmos: application
 -- kosmos: icon App_GLDirectMode
--- kosmos: section demos/GLDemos
+-- kosmos: name GL Spin
+-- kosmos: section demos/GL Demos
 --
 --   wm glspin
 --

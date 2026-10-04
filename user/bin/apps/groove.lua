@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon File_Audio
+-- kosmos: name Groove
 -- kosmos: section applications
 -- kosmos: needs audio midi
 -- Groove: making music - eight tracks of drums and synthesisers, clips

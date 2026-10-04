@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon Prefs_Devices
+-- kosmos: name Preferences
 -- kosmos: section preferences
 -- kosmos: needs network
 -- One place to configure Kosmos, divided by part.

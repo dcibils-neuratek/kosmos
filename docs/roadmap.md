@@ -349,6 +349,79 @@ stretching it; the window manager resamples it once, smoothed, in C, when
 the picture or the choice changes, and a picture already the screen's size
 is used as it is.
 
+**Kosmos Write - a word processor after Apple's Pages.** Diego, 3 October
+2026, with two screenshots of Pages: "add to the roadmap a Word editing app
+called Kosmos Write. Its an Apple pages inspired word writing and editing
+app. See the screenshots and try to replicate the most important features."
+What the screenshots show, and so what it is to have:
+
+- **pages, laid out as they print**: a paper size (A4, US Letter) and its
+  orientation, margins on four sides, a header and a footer with their
+  distance from the edge, page numbers, facing pages, hyphenation and
+  ligatures - Pages' *Document* side;
+- **text formatted by style**: paragraph styles (Title, Heading, Body,
+  Caption) chosen from one list, and a character's face, weight, size,
+  bold, italic, underline, strike-through and colour; alignment four ways,
+  indents, line spacing, bullets and numbered lists, a drop cap - Pages'
+  *Format* side, in its Style, Layout and More tabs;
+- **things placed in the text**: a picture with its caption, a table, a
+  text box, a shape, a chart, a comment - the toolbar's Insert, Table,
+  Chart, Text, Shape, Media and Comment;
+- **a window like Pages'**: the pages on a grey desk, the toolbar across
+  the top (View, Zoom, Add Page; the things to insert; Format and Document
+  on the right), the side panel that Format and Document switch, page
+  thumbnails to the left from View;
+- **its own file, and PDF out**: a document saved as Kosmos's own format,
+  and printed to a PDF - which is the PDF Kit writing for the first time,
+  where it has only read.
+
+Built on what exists: the browser's text layout and the TrueType faces for
+setting text, the PDF Kit, `ui.lua`'s widgets for the panels. An
+application, so drawn first as an HTML mockup (`docs/write.html`) and
+agreed before any code. Its own pieces in C where they loop over glyphs
+and lines - line breaking, hyphenation, a page's layout - and Lua for
+what a person does.
+
+**Notifications.** Diego, 3 October 2026, with a picture of a macOS banner:
+"one of the things we might need is a notifications system in kosmos",
+"apps want to say stuff like a new email arrived, cafesa render finalized,
+new device connected or disconnected in usb", "a system notification
+system that apps can publish to and the user have notifications in the
+upper corner like mac os does, with history", "A timer, a reminder, a
+system error, a download completed", "all optional with a do not disturb
+setting that allows me to silence all notifications if needed, just like
+the iphone does", "Notifications are defined per app and the user should
+be able to not allow notifications from certain apps in the preferences
+panel Notifications", "on by default". The shape proposed the same
+evening:
+
+- **a server, in C**, which applications ask - `notifyproto.h`, a declared
+  shape: post (title, body, picture), list, clear. The sender is known by
+  the message itself, so no application posts as another. It keeps the
+  history and applies the person's rules - Do Not Disturb, and each
+  application allowed or not, on by default;
+- **banners at the top right**, under the strip, that go by themselves, a
+  press on one opening what posted it;
+- **the history**, grouped by application and clearable, opened from the
+  strip;
+- **Preferences' Notifications**: Do Not Disturb, and every application
+  that has posted with a switch of its own;
+- **the first to post**: Cafesa3D's render done, a USB device arriving or
+  leaving, a download done, a program that died, and Clock's timers and
+  reminders, which Clock does not have yet.
+
+Drawn first as `docs/notifications.html`, for Diego to adjust.
+
+**The launcher grid's categories.** Diego, 3 October 2026, with a picture of
+macOS's Applications: "the app launcher needs a category filter so we can
+show apps from apps, system, preferences, demos, etc in subcategories",
+"right now we have 53 apps all at once which makes find one fairly hard".
+A row of pills under the search - All, then the menu's five folders - each
+showing that folder's applications, its own folders inside it folded in
+(the GL demos under Demos); the search working within the one chosen; Tab
+and Shift+Tab stepping through them. Its arithmetic in `launchgrid.lua`,
+held on the host, as the rest of the grid's.
+
 **The Super+Space launcher in the new look.** Diego, 3 October 2026, with a
 screenshot of macOS's Spotlight: "the super+space app to launch apps should
 adopt the new look of the new ui", "something like the screenshot
@@ -371,7 +444,8 @@ hands it over as the shipped launcher's **title**, a field of its own in
 and the menu, the grid and the dock's names show it. The file's name stays
 the key, since a person's own menu layer (a hidden item, a launcher moved)
 refers to it. Installed applications say it the same way. The names
-proposed to Diego the same evening, for him to correct.
+proposed to Diego the same evening, for him to correct. **Done the same
+night** (`testing.md` 18.361), with the five folders below.
 
 **And a Development folder** (Diego, the same evening: "that should be in
 a menu folder called Development where demos and IDE and documentation
@@ -385,7 +459,16 @@ yet: one folder under a section is all it reads.
 Preferences (Diego, 3 October: "i see there is some redundancy or
 missplacement of items", "now lets sort all our apps into these 5 folders
 accordingly"). Each application's `section` says which; a sort proposed to
-him the same evening, with the names above, for him to correct.
+him the same evening, with the names above, for him to correct. **Done**
+(18.361). **The documentation in Development is not yet**: what ships is a
+cheat sheet and Cafesa3D's tutorial, pages the browser opens, and the
+menu's launchers are made only from applications. **Diego chose** (3
+October): "launchers that go straight to each page", in a Documentation
+folder under Development. **And his order** - "i want my order":
+Applications, System, Development, Demos, Preferences, in the menu and in
+the grid's pills, a person's own folders after them A to Z. That turns
+round the choice `deskbarmenu.lua` records, that a folder's name rather
+than a list decides the order; the record is corrected where it is made.
 
 **About This Machine as a panel of Preferences**, as macOS keeps About in
 System Settings (Diego, 3 October, with a screenshot of it: "we can turn
@@ -407,7 +490,10 @@ clicks are.
 "pressing º should show a modal window of the shortcuts of the kosmos os").
 `shortcuts` exists and asks the window manager for the list; this binds it
 to a key and shows it modal. º alone is also a character Spanish types
-(1º, nº), so which key - º alone, or Super and º - is his to say.
+(1º, nº), so which key - º alone, or Super and º - is his to say. **Super
+and º**, Diego chose; bound to the key's place (left of 1, where a US
+keyboard has the grave accent) rather than to the character, so it is the
+same key whatever the layout.
 
 **Restart and Shut Down wear a picture** in the Kosmos menu, Haiku's
 generic application - the three cubes Doom, Quake and the Super Nintendo

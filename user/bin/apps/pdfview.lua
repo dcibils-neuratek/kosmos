@@ -1,5 +1,7 @@
 -- kosmos: application
 -- kosmos: icon File_PDF
+-- kosmos: name PDF Viewer
+-- kosmos: section applications
 -- kosmos: opens pdf
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 --

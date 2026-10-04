@@ -1,7 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon Misc_Book
--- kosmos: section Applications
+-- kosmos: name Keyboard Shortcuts
+-- kosmos: section preferences
 -- kosmos: needs screen
 --
 -- shortcuts: what the keyboard does, asked of the thing that decides.

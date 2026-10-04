@@ -1,7 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Playground
--- kosmos: section demos
+-- kosmos: name Widget Gallery
+-- kosmos: section development
 -- The widget gallery. Every control the kit has, in one window.
 --
 --   wm gallery

@@ -1,6 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_About
+-- kosmos: name About Kosmos
+-- kosmos: section system
 -- About Kosmos.
 --
 -- BeOS's About box: the machine down the left, and text down the right. In

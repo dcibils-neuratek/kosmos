@@ -2,6 +2,8 @@
 -- Music: what is playing on top, the library underneath.
 -- kosmos: application
 -- kosmos: icon App_MediaPlayer
+-- kosmos: name Music
+-- kosmos: section applications
 -- kosmos: opens mp3 wav
 --
 --   wm music                      everything in /Home

@@ -51,6 +51,24 @@ local menu = {}
 -- Preferences (`roadmap.md` 5zp) - and it opened nothing. The file stays;
 -- it is the person's, and a program can come back.
 --
+--
+-- **What a row says, and the order rows come in**: an application's name
+-- for a person when it declares one (`kosmos: name`, `title` here), else
+-- the launcher's own name - and sorted by what is shown, ignoring case, so
+-- About This Machine sits under A rather than where `machine` would.
+--
+function menu.shown(item)
+  return tostring(item.title or item.name or "")
+end
+
+local function by_shown(a, b)
+  local x, y = menu.shown(a):lower(), menu.shown(b):lower()
+
+  if x ~= y then return x < y end
+
+  return tostring(a.name) < tostring(b.name)
+end
+
 function menu.read(store, path, depth, exists)
   depth = depth or 12
 
@@ -70,6 +88,7 @@ function menu.read(store, path, depth, exists)
         program = tostring(attrs.program or ""),
         args = tostring(attrs.args or ""),
         icon = attrs.icon,
+        title = attrs.title,
       }
     elseif attrs.kind == "hidden" then
       -- A person's note that a shipped item is not wanted: it takes that
@@ -78,10 +97,8 @@ function menu.read(store, path, depth, exists)
     end
   end
 
-  local function by_name(a, b) return a.name < b.name end
-
-  table.sort(folders, by_name)
-  table.sort(launchers, by_name)
+  table.sort(folders, by_shown)
+  table.sort(launchers, by_shown)
 
   local items = {}
 
@@ -158,10 +175,8 @@ local function in_order(items)
     else launchers[#launchers + 1] = item end
   end
 
-  local function by_name(a, b) return a.name < b.name end
-
-  table.sort(folders, by_name)
-  table.sort(launchers, by_name)
+  table.sort(folders, by_shown)
+  table.sort(launchers, by_shown)
 
   for _, one in ipairs(launchers) do folders[#folders + 1] = one end
 
@@ -241,7 +256,8 @@ function menu.installed(apps, declared)
       end
 
       local item = { name = app.folder, program = app.program, args = "",
-                     icon = declared(app.source, "icon") }
+                     icon = declared(app.source, "icon"),
+                     title = declared(app.source, "name") }
       local into = section.items
 
       if group then

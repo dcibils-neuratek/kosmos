@@ -2,6 +2,8 @@
 -- Drives: every drive this machine found, how it is split, and what is on it.
 -- kosmos: application
 -- kosmos: icon Device_Harddisk
+-- kosmos: name Drives
+-- kosmos: section system
 --
 -- USB step 6e, drawn first in `docs/drives.html` and approved on 14
 -- September: "Tracker is for your files. Drives is for the drives

@@ -1,7 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon Misc_Bug
--- kosmos: section demos
+-- kosmos: name Stuck Window
+-- kosmos: section development
 -- An application that hangs, on purpose.
 --
 -- It opens a window, draws it once, and then stops answering for ever.

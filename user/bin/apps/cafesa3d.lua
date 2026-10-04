@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Teapot
+-- kosmos: name Cafesa3D
 -- kosmos: section applications
 -- Cafesa3D: scenes of spheres, cubes and cylinders, arranged in a 3D view,
 -- after Blender (`roadmap.md` 4l), as `docs/cafesa3d.html` draws it.

@@ -1220,13 +1220,13 @@ local function new_namespace()
   --
   local BIN_NAME_MAX = 64                 -- has to match binproto.h
   local BIN_REQUEST  = "<I4I4c" .. BIN_NAME_MAX   -- op, offset, name
-  local BIN_HEAD     = "<I4I4I4I4I4I4c16c16c16c16c16c16c16c16c16c16c32c40"
+  local BIN_HEAD     = "<I4I4I4I4I4I4c16c16c16c16c16c16c16c16c16c16c32c40c32"
 
   assert(#string.pack(BIN_REQUEST, 0, 0, "") == 8 + BIN_NAME_MAX,
          "namespace: the /bin request layout does not match binproto.h")
 
-  -- Past the header, the icon and what it opens, 1-based.
-  local BIN_DATA = 24 + 160 + 32 + 40 + 1
+  -- Past the header, the icon, what it opens and its name, 1-based.
+  local BIN_DATA = 24 + 160 + 32 + 40 + 32 + 1
   local BIN_OPS = { list = 1, read = 2, getattr = 3 }
   local BIN_ERRORS = {
     [1] = "no such program",
@@ -1254,7 +1254,7 @@ local function new_namespace()
     if #reply < BIN_DATA then return nil, "a /bin reply of the wrong size" end
 
     local err, count, size, length, more, windowed,
-          kind, section, n1, n2, n3, n4, n5, n6, n7, n8, icon, opens =
+          kind, section, n1, n2, n3, n4, n5, n6, n7, n8, icon, opens, title =
       string.unpack(BIN_HEAD, reply)
 
     if err ~= 0 then
@@ -1315,6 +1315,8 @@ local function new_namespace()
         -- What the Deskbar draws beside it, and nil rather than "" when the
         -- program declares nothing, so `or` picks the default.
         icon = (trim(icon) ~= "") and trim(icon) or nil,
+        -- Its name for a person (`kosmos: name`), nil when it declares none.
+        title = (trim(title) ~= "") and trim(title) or nil,
         type = launcher and "launcher" or nil,
         program = launcher and ("/Kosmos/Apps/" .. starts) or nil,
         args = launcher and "" or nil,

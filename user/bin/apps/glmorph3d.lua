@@ -2,7 +2,8 @@
 -- Morphing platonic solids.
 -- kosmos: application
 -- kosmos: icon App_GLDirectMode
--- kosmos: section demos/GLDemos
+-- kosmos: name GL Morph 3D
+-- kosmos: section demos/GL Demos
 --
 --   wm glmorph3d
 --

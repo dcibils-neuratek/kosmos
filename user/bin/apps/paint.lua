@@ -1,6 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Wonderbrush
+-- kosmos: name Paint
+-- kosmos: section applications
 -- Paint.
 --
 --   wm paint

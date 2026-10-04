@@ -1,6 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_ShowImage
+-- kosmos: name Photo Viewer
+-- kosmos: section applications
 -- kosmos: opens png jpg jpeg
 -- A picture, in a window.
 --

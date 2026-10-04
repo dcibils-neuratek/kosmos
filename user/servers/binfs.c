@@ -451,6 +451,11 @@ static void fill_attrs(const struct source_entry *e, struct bin_reply *rep)
     copy_word(rep->opens, BIN_OPENS_MAX, (s != NULL) ? s : "",
               (s != NULL) ? n : 0);
 
+    /* Its name for a person, as the line says it. */
+    s = declared(e->text, e->length, "name", &n);
+    copy_word(rep->title, BIN_TITLE_MAX, (s != NULL) ? s : "",
+              (s != NULL) ? n : 0);
+
     /*
      * `needs` is a line of words, and each becomes one entry. A program that
      * declares more than `BIN_NEEDS_MAX` gets the first few, which is the
@@ -504,6 +509,12 @@ static void fill_launcher(const struct source_entry *e, struct bin_reply *rep)
 
     copy_word(rep->kind, BIN_WORD_MAX, "launcher", 8);
     copy_word(rep->icon, BIN_ICON_MAX, (s != NULL) ? s : "",
+              (s != NULL) ? n : 0);
+
+    /* The application's name for a person, which the menu shows; the
+     * launcher's own name in the store stays the file's. */
+    s = declared(e->text, e->length, "name", &n);
+    copy_word(rep->title, BIN_TITLE_MAX, (s != NULL) ? s : "",
               (s != NULL) ? n : 0);
 
     if (len > BIN_CHUNK) {

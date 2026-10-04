@@ -1,7 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Chart
--- kosmos: section demos
+-- kosmos: name System Benchmark
+-- kosmos: section development
 -- System Benchmark. What this machine can do, as one number and its parts.
 --
 --   wm sysbench

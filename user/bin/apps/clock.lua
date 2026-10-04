@@ -1,6 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Clock
+-- kosmos: name Clock
+-- kosmos: section applications
 -- A window with a clock in it, and an offer to give the clock away.
 --
 --   wm clock

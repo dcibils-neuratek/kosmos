@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Pulse
+-- kosmos: name Processor Cores
 -- kosmos: section system
 -- kosmos: needs processes
 -- What every processor in this machine is doing, and a way to give them

@@ -44,10 +44,17 @@ local function program_name(program)
   return tostring(program or ""):match("([^/]+)%.lua$") or tostring(program or "")
 end
 
--- What a tile says: the menu's name, its first letter a capital, as the
--- Deskbar titles a program (`about` is About).
-function grid.title(name)
-  name = tostring(name or "")
+-- What a tile says: the application's name for a person when it declares
+-- one (`kosmos: name`, the menu's `title`), else the menu's name with its
+-- first letter a capital, as the Deskbar titles a program (`about` is About).
+function grid.title(item)
+  if type(item) == "table" then
+    if item.title and item.title ~= "" then return tostring(item.title) end
+
+    item = item.name
+  end
+
+  local name = tostring(item or "")
 
   return name:sub(1, 1):upper() .. name:sub(2)
 end
@@ -66,7 +73,7 @@ function grid.everything(items)
   end
 
   table.sort(out, function(a, b)
-    local x, y = tostring(a.name or ""):lower(), tostring(b.name or ""):lower()
+    local x, y = grid.title(a):lower(), grid.title(b):lower()
 
     if x ~= y then return x < y end
 
@@ -86,7 +93,7 @@ function grid.filter(items, typed)
   local starts, contains = {}, {}
 
   for _, item in ipairs(items or {}) do
-    local name = tostring(item.name or ""):lower()
+    local name = grid.title(item):lower()
 
     if want == "" or name:sub(1, #want) == want then
       starts[#starts + 1] = item

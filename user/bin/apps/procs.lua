@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon TeamIcon
+-- kosmos: name Process Viewer
 -- kosmos: section system
 -- kosmos: needs processes
 -- Every process, and what it is costing.

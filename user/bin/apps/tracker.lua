@@ -1,6 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Tracker
+-- kosmos: name Tracker
+-- kosmos: section applications
 -- kosmos: opens zip
 -- Tracker: the file manager.
 --

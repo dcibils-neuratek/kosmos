@@ -1,7 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Deskbar
--- kosmos: section Applications
+-- kosmos: name Launcher
+-- kosmos: section none
 -- kosmos: needs screen
 --
 -- launchpad: start something by typing part of its name.
@@ -232,7 +233,7 @@ local function grid_mode(ax, ay)
       g:icon(x0 + (grid.TILE - grid.ICON) // 2, cy + 6 + (grid.TILE - grid.ICON) // 2,
              picture(item) .. ".png", grid.ICON)
 
-      local name = fitted(grid.title(item.name), cw - 8)
+      local name = fitted(grid.title(item), cw - 8)
 
       g:text(cx + (cw - gfx.measure(name, small)) // 2, cy + 6 + grid.TILE + 6, name,
              theme.text, behind, "ui", SMALL)
@@ -330,7 +331,7 @@ local function refilter(typed)
   local starts, contains, names = {}, {}, {}
 
   for _, item in ipairs(all) do
-    local name = tostring(item.name or "")
+    local name = menu.shown(item)
 
     if want == "" then
       starts[#starts + 1] = item
@@ -352,7 +353,7 @@ local function refilter(typed)
   end
 
   for i, item in ipairs(shown) do
-    names[i] = tostring(item.name or "?")
+    names[i] = menu.shown(item)
   end
 
   list.items = names

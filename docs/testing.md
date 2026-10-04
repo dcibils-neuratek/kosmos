@@ -17168,3 +17168,38 @@ icons in the launch menu", "a 3 cube"), held by `run_dock.py`'s 26th: colour
 in the picture column of the menu's last two rows. Control: the pictures
 out, 0 coloured pixels. A change to two rows of the Deskbar's menu, so the
 dock's suite was its test rather than the gate again.
+
+## 18.361 Applications by their real names, in five folders
+
+**Diego, 3 October, on the M700**: "the apps in the menus are lowercase and
+not really the real names" - "Procs should be Process Viewer, startup
+should be Startup Apps, machine should be About this Machine, sysmon is
+System Monitor", "it needs real app names not just the file name" - and
+"The main folders are: Applications, System, Development, Demos,
+Preferences; now lets sort all our apps into these 5 folders accordingly".
+
+**A name for a person, declared where the icon is**: `-- kosmos: name
+Process Viewer`, in all 55 applications and the three installed. `binfs`
+hands it over as a **title** - a field of its own in `binproto.h`'s reply,
+32 bytes paid for out of `BIN_CHUNK` (1792 to 1760, 27 names to a listing
+against the 16 its assert asks) - for an application and for the shipped
+menu's launcher of it; the namespace decodes it beside the icon;
+`deskbarmenu` keeps it and sorts by what is shown (`menu.shown`), so About
+This Machine is under A. The Deskbar's rows, the grid's tiles and
+`launchpad`'s list show it. **The file's name stays the key**: a person's
+own layer of the menu - a launcher saved, a note hiding one - refers to
+it, and so does every path.
+
+**Five folders** from each application's `section`, the GL demos a folder
+in Demos (`demos/GL Demos`); the Launcher, Info and the desktop in none,
+since nobody starts them from the menu.
+
+**`run_queries.py`'s `K-DESKBAR`**: the five sections, `GL Demos` a
+submenu, and Process Viewer's launcher and About This Machine's program
+carrying their titles - 37 checks on ARM. The display harness's menu
+layers key on files' names, which did not change.
+
+**Under QEMU**: the Kosmos menu with its five folders and Demos' rows by
+name, and the grid's fifty tiles, 3D Cube to Window Latency, A to Z.
+
+**Its gate: 87 of 87 in 10:13.**

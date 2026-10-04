@@ -2,6 +2,7 @@
 -- Mixer: a fader for every program making a noise.
 -- kosmos: application
 -- kosmos: icon Misc_Speaker
+-- kosmos: name Sound Mixer
 -- kosmos: section preferences
 --
 --   wm mixer

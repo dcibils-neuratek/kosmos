@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Poorman
+-- kosmos: name Servers
 -- kosmos: section system
 -- kosmos: needs processes
 -- Every network server this machine can run, in one window.

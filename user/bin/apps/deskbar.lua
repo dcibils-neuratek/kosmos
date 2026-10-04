@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Deskbar
+-- kosmos: name Deskbar
 -- kosmos: needs screen network
 -- The Deskbar: the strip across the top, and everything you reach from it.
 --
@@ -927,7 +928,7 @@ end
 --
 local function launcher(item)
   return {
-    text = item.name,
+    text = menudata.shown(item),
     icon = item.icon or "App_Generic",
 
     -- The file this row came from, so a right press on it has something to
@@ -954,7 +955,7 @@ local function launcher(item)
 
       if not already then
         running[#running + 1] = { starting = true, program = item.program,
-                                  title = item.name or title_of(item.program),
+                                  title = menudata.shown(item),
                                   icon = item.icon or picture(item.program) }
         pace_breathing()
         win.dirty = true

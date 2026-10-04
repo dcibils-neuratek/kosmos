@@ -2,7 +2,8 @@
 -- The Utah teapot, lit.
 -- kosmos: application
 -- kosmos: icon App_Teapot
--- kosmos: section demos/GLDemos
+-- kosmos: name GL Teapot
+-- kosmos: section demos/GL Demos
 --
 --   wm glteapot
 --

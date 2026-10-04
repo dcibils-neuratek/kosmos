@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_GLDirectMode
+-- kosmos: name Solar System
 -- kosmos: section demos
 --
 -- Solar System: the Kosmos host for the portable simulator.

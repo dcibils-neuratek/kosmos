@@ -2,7 +2,8 @@
 -- A bouncing ball.
 -- kosmos: application
 -- kosmos: icon App_GLDirectMode
--- kosmos: section demos/GLDemos
+-- kosmos: name GL Bounce
+-- kosmos: section demos/GL Demos
 --
 --   wm glbounce
 --

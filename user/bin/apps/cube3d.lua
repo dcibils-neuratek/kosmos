@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_GLDirectMode
+-- kosmos: name 3D Cube
 -- kosmos: section demos
 -- A rotating solid cube, rendered in software.
 --

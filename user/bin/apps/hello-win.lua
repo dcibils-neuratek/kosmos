@@ -1,7 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: icon App_Generic
--- kosmos: section demos
+-- kosmos: name Hello Window
+-- kosmos: section development
 -- An application with a window.
 --
 -- Started by `wm`, which hands it the window manager under /Running/wm and
