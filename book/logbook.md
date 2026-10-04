@@ -847,3 +847,13 @@ through one door, and never copied. The same day had already broken it
 twice: the PDF writer copied a helper from the zip library, and reading and
 writing PDF ended up in three places. Both are now first on the roadmap to
 put right, followed by a review of every app for the same thing.
+
+**Then the premise, applied.** The two places it had been broken that day
+were fixed first. Everything to do with PDF now goes through one library
+that any app can use to open, draw or write a PDF. Four separate copies of
+the same "read a PDF file a piece at a time" code went, from the viewer, two
+tools and a test. The memory helpers the PDF writer had copied from the zip
+library are shared by both now. A list of eight more places that each wrote
+the same few lines is on the roadmap, to be gone through next. Kosmos's own
+PDF viewer is also tested for the first time: it opens a PDF that Kosmos
+Write exported and draws every letter.

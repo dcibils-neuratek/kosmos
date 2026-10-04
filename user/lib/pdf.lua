@@ -37,6 +37,25 @@
 
 local pdf = {}
 
+--
+-- **The PDF Kit's one door** (`CLAUDE.md`: kits supply, applications
+-- orchestrate). Everything an application does with a PDF starts here, so no
+-- application builds its own way to:
+--
+--   pdf.open(path or source)     a document, its structure read
+--   pdf.file(path)               a source over a file, read a window at a time
+--   pdf.render(doc, page, surface, scale, colour)
+--                                a page drawn (`pdfpage.lua`)
+--   pdf.write(path, set, measure, info)
+--                                pages written as a PDF (`pdfwrite.lua`)
+--
+-- The loops are C - the scanner is `/Kosmos/Kits/pdf`, glyphs are `gfx`'s,
+-- deflating the Compression Kit's - and are reached through this, not
+-- around it. Until 4 October the viewer, `pdfinfo` and `pdfbench` each built
+-- their own source over a file, and the writer was a library nothing named
+-- as the PDF Kit's.
+--
+
 -- How much is read at once. One window is live at a time and it is replaced,
 -- never grown, so this is the memory cost of parsing, however large the
 -- document is.
@@ -663,10 +682,83 @@ end
 -- Opening one.
 --------------------------------------------------------------------------
 
--- `source` is a table with `read(offset, length) -> string` and `size`.
--- Nothing else: whether that is a file on this Mac or a capability into
--- the disk inside the machine is not this layer's concern.
+--
+-- **A source over a file in the namespace**, inside the machine: `read`
+-- puts a range into a few pages this process owns and returns it as a
+-- string - the small structural reads this file makes - and `read_into`
+-- puts a range straight into the caller's region, the path a page's content
+-- and a font program take. Never the whole file: a PDF is the format whose
+-- cross-reference table exists so it need not be. `close` gives the pages
+-- back. Nil and why when there is no such file.
+--
+function pdf.file(path, pages)
+  local attrs, why = fs.getattr(path)
+
+  if not attrs or attrs.kind == "directory" then
+    return nil, ("%s: %s"):format(path, tostring(why or "no such file"))
+  end
+
+  pages = pages or 4
+
+  local buffer = sys.memory(pages)
+
+  if not buffer then return nil, "no memory for a read buffer" end
+
+  local capacity = pages * 4096
+
+  return {
+    size = attrs.size,
+    path = path,
+
+    read = function(offset, length)
+      local out, done = {}, 0
+
+      while done < length do
+        local want = math.min(length - done, capacity)
+        local got = fs.read_into(path, buffer, offset + done, want)
+
+        if not got or got == 0 then break end
+
+        out[#out + 1] = sys.region_read(buffer, 0, got)
+        done = done + got
+      end
+
+      return table.concat(out)
+    end,
+
+    read_into = function(region, offset, length)
+      return fs.read_into(path, region, offset, length)
+    end,
+
+    close = function()
+      if buffer then sys.release(buffer) buffer = nil end
+    end,
+  }
+end
+
+-- A page drawn: `pdfpage.render`, through the door.
+function pdf.render(...)
+  return use("/Kosmos/Libraries/pdfpage.lua").render(...)
+end
+
+-- Pages written as a PDF: `pdfwrite.write`, through the door.
+function pdf.write(...)
+  return use("/Kosmos/Libraries/pdfwrite.lua").write(...)
+end
+
+-- `source` is a table with `read(offset, length) -> string` and `size` - or
+-- a path, which inside the machine is `pdf.file(path)`. Whether a source is
+-- a file on this Mac or a capability into the disk inside the machine is
+-- not this layer's concern.
 function pdf.open(source)
+  if type(source) == "string" then
+    local file, why = pdf.file(source)
+
+    if not file then error("pdf.open: " .. why) end
+
+    source = file
+  end
+
   if type(source) ~= "table" or type(source.read) ~= "function" then
     error("pdf.open: a source needs read(offset, length)")
   end

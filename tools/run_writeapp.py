@@ -227,6 +227,26 @@ def main():
               "Control-E did not export the PDF: %r - the guest said:\n%s"
               % (exported, guest.seen[mark:][-600:]))
 
+        # ---- the PDF opened in Kosmos's own PDF viewer, through the PDF
+        # Kit's door: every glyph of its page drawn, no face missing ----
+        # The desktop put away first, as `run_editor.py` does: typed lines
+        # reach the shell only when it is at its prompt.
+        mark = len(guest.seen)
+        guest.proc.stdin.write(R.STOP_DESKTOP)
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 20
+
+        while time.monotonic() < deadline and R.PROMPT not in guest.seen[mark:]:
+            guest._read_available()
+            time.sleep(0.2)
+
+        mark = len(guest.seen)
+        guest.type("wm pdfview:/Home/t.pdf")
+        viewed = said("pdfview: page 1 of 1, ", mark, 90)
+        m = re.match(r"(\d+) glyphs, (\d+) faces missing", viewed or "")
+        check(m is not None and int(m.group(1)) > 100 and m.group(2) == "0",
+              "the PDF viewer did not draw the exported page: %r" % viewed)
+
         # ---- the PDF, off the disk ----
         guest.close()
         pdf = os.path.join(work, "t.pdf")

@@ -18111,3 +18111,32 @@ nothing had named: `.write` is a "Kosmos Write document" now, in Documents
 the screen is 23 pixels from the PDF's".
 
 **Whole gate**: 90 suites in 646 s (10:45), all passing.
+
+## 18.383 One kit, one door: PDF, and regions
+
+The premise's first two fixes (`CLAUDE.md`; `roadmap.md`, *One kit, one
+door*), both to things built the same day.
+
+**PDF behind one door, `/Kosmos/Libraries/pdf.lua`**: `pdf.open` takes a path
+as well as a source, `pdf.file(path)` is a source over a file - read a
+window at a time, `read_into` for a page, `close` - and `pdf.render` and
+`pdf.write` are the reader's drawing and the writer, reached through it.
+**Four copies of a file source went**: the PDF viewer's, `pdfinfo`'s,
+`pdfbench`'s, and `run_write.py`'s program's. The viewer gives a document's
+window back when it opens the next, which its single shared buffer had
+never needed to. Kosmos Write exports through `pdf.write`.
+
+**`regions.lua`**: a region made and mapped, given back, a file read into
+one and written from one - `zip.lua`'s, which `pdfwrite.lua` had copied.
+Both use it; `free` now passes over a nil anywhere in its list, where the
+copies stopped at the first.
+
+**Checked**: `arm-interchange` (zip both ways, `.write` files), `arm-write`
+(the PDF read back through the door), `host`; and **`arm-writeapp`, 8 to 9**:
+the exported PDF opened in the PDF viewer, which now says what it drew -
+"pdfview: page 1 of 1, N glyphs, 0 faces missing" - more than a hundred
+glyphs and no face missing. Nothing had opened the viewer in the gate
+before; a suite that did would have shown 18.381's small glyphs only to a
+person looking.
+
+**Whole gate**: 90 suites in 638 s (10:38), all passing.

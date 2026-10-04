@@ -34,7 +34,7 @@ local writedoc  = use("/Kosmos/Libraries/writedoc.lua")
 local pageset   = use("/Kosmos/Libraries/pageset.lua")
 local faces     = use("/Kosmos/Libraries/faces.lua")
 local pagedraw  = use("/Kosmos/Libraries/pagedraw.lua")
-local pdfwrite  = use("/Kosmos/Libraries/pdfwrite.lua")
+local pdf       = use("/Kosmos/Libraries/pdf.lua")
 
 local W, H = 920, 700
 local BAR = 44                  -- the toolbar, across the top
@@ -298,7 +298,7 @@ end
 
 local function export()
   local to = path and path:gsub("%.write$", "") .. ".pdf" or "/Home/Untitled.pdf"
-  local ok, notes = pdfwrite.write(to, set, measure,
+  local ok, notes = pdf.write(to, set, measure,
                                    { title = (name:gsub("%.write$", "")) })
 
   if ok then

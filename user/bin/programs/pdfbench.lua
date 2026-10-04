@@ -36,30 +36,12 @@ local out_cap = sys.memory(OUT_PAGES)
 local raw_at  = sys.memory_map(raw_cap)
 local out_at  = sys.memory_map(out_cap)
 
-local capacity = RAW_PAGES * 4096
+-- The file through the PDF Kit's door, `pdf.file`, a window as large as
+-- the raw region; the raw region itself is this program's, for timing a
+-- stream's read below.
+local source = pdf.file(path, RAW_PAGES)
 
-local source = {
-  size = attrs.size,
-  read = function (offset, length)
-    local out, done = {}, 0
-    while done < length do
-      local want = length - done
-      if want > capacity then want = capacity end
-      local got = fs.read_into(path, raw_cap, offset + done, want)
-      if not got or got == 0 then break end
-      out[#out + 1] = sys.region_read(raw_cap, 0, got)
-      done = done + got
-    end
-    return table.concat(out)
-  end,
-
-  -- The same range, straight into a region the caller owns. This is the
-  -- path a page takes; `read` above is for the small structural reads the
-  -- object layer makes, where a string is the right answer.
-  read_into = function (region, offset, length)
-    return fs.read_into(path, region, offset, length)
-  end,
-}
+if not source then print("pdfbench: no memory for a read buffer") return end
 
 local ok, doc = pcall(pdf.open, source)
 if not ok then print("pdfbench: " .. tostring(doc)) return end

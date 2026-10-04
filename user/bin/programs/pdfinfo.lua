@@ -24,55 +24,15 @@ local compress = use("/Kosmos/Kits/compress")
 
 local path = args[1] or "/Home/odyssey.pdf"
 
---------------------------------------------------------------------------
--- A source over a file in the namespace.
---
--- `pdf.lua` wants `read(offset, length)` and `size`, and this is the whole
--- of what it takes to give it those in here. A file does not arrive as a
--- string: `fs.read` would return the lot, and the lot is 1.6 MB against a
--- 2 MB heap. `fs.read_into` puts a range into pages this process owns and
--- says how many bytes landed, which is `pread` with the buffer named by a
--- capability because a server at EL0 cannot follow the caller's pointer.
---------------------------------------------------------------------------
+-- A file read a window at a time - sixteen pages, the biggest single read
+-- - through the PDF Kit's door, `pdf.file`. This program built its own
+-- source until 4 October, as the viewer and `pdfbench` did.
+local source, why = pdf.file(path, 16)
 
-local WINDOW_PAGES = 16                      -- 64 KB, the biggest single read
-
-local attrs, why = fs.getattr(path)
-if not attrs then
-  print("pdfinfo: " .. tostring(why or "no such file") .. ": " .. path)
+if not source then
+  print("pdfinfo: " .. tostring(why))
   return
 end
-
-local buffer = sys.memory(WINDOW_PAGES)
-if not buffer then
-  print("pdfinfo: no memory for a read buffer")
-  return
-end
-
-local capacity = WINDOW_PAGES * 4096
-
-local source = {
-  size = attrs.size,
-
-  read = function (offset, length)
-    -- Longer than the buffer arrives in pieces. Nothing in the parser asks
-    -- for more than a window, but a content stream does.
-    local out, done = {}, 0
-
-    while done < length do
-      local want = length - done
-      if want > capacity then want = capacity end
-
-      local got = fs.read_into(path, buffer, offset + done, want)
-      if not got or got == 0 then break end
-
-      out[#out + 1] = sys.region_read(buffer, 0, got)
-      done = done + got
-    end
-
-    return table.concat(out)
-  end,
-}
 
 --------------------------------------------------------------------------
 
@@ -83,7 +43,7 @@ if not ok then
   return
 end
 
-print(("%s  %d bytes"):format(path, attrs.size))
+print(("%s  %d bytes"):format(path, source.size))
 print(("  PDF %s, %d pages"):format(doc.version, #doc.pages))
 
 -- The first two pages of the document this was written for are a cover and

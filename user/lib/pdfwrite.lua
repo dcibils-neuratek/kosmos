@@ -46,8 +46,7 @@
 local pdfwrite = {}
 
 local kit = use("/Kosmos/Kits/compress")
-
-local PAGE = 4096
+local regions = use("/Kosmos/Libraries/regions.lua")
 
 --------------------------------------------------------------------------
 -- The PDF's own syntax.
@@ -108,33 +107,9 @@ local function rgb(colour)
          .. num(tonumber(b, 16) / 255)
 end
 
---------------------------------------------------------------------------
--- Regions, as `zip.lua` keeps them.
---------------------------------------------------------------------------
-
-local function region(bytes)
-  local pages = math.max(1, (bytes + PAGE - 1) // PAGE)
-  local cap = sys.memory(pages)
-
-  if not cap then
-    return nil, ("no memory for %d KB"):format(pages * PAGE // 1024)
-  end
-
-  local at = sys.memory_map(cap)
-
-  if not at then
-    sys.release(cap)
-    return nil, "could not map a region"
-  end
-
-  return { cap = cap, at = at, size = pages * PAGE }
-end
-
-local function free(...)
-  for _, r in ipairs({ ... }) do
-    if r then sys.release(r.cap) end
-  end
-end
+-- Regions: `regions.lua`'s, shared with `zip.lua` - this file began with a
+-- copy of that one's, the second copy the premise in `CLAUDE.md` names.
+local region, free = regions.make, regions.free
 
 --------------------------------------------------------------------------
 -- The fonts.
@@ -550,12 +525,7 @@ function pdfwrite.write(path, set, measure, info)
       :format(count + 1, CATALOG, INFO, xref))
 
   local ok
-  ok, why = fs.write_from(path, out.cap, at)
-
-  if not ok then
-    local written, oops = fs.write(path, sys.region_read(out.cap, 0, at))
-    ok, why = written, oops or why
-  end
+  ok, why = regions.write_file(path, out, at)
 
   free(out, plain, squeezed, program)
 

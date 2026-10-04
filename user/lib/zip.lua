@@ -43,8 +43,8 @@ local zip = {}
 local kit = use("/Kosmos/Kits/compress")
 local files = use("/Kosmos/Libraries/files.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
+local regions = use("/Kosmos/Libraries/regions.lua")
 
-local PAGE = 4096
 
 local LOCAL, CENTRAL, EOCD = 0x04034b50, 0x02014b50, 0x06054b50
 
@@ -55,66 +55,10 @@ local safe
 -- Bit 11: the names are UTF-8, as a FAT long name read here is.
 local UTF8 = 0x0800
 
---------------------------------------------------------------------------
--- Regions: pages of this process's, mapped, and given back.
---------------------------------------------------------------------------
-
-local function region(bytes)
-  local pages = math.max(1, (bytes + PAGE - 1) // PAGE)
-  local cap = sys.memory(pages)
-
-  if not cap then
-    return nil, ("no memory for %d KB"):format(pages * PAGE // 1024)
-  end
-
-  local at = sys.memory_map(cap)
-
-  if not at then
-    sys.release(cap)
-    return nil, "could not map a region"
-  end
-
-  return { cap = cap, at = at, size = pages * PAGE }
-end
-
-local function free(...)
-  for _, r in ipairs({ ... }) do
-    if r then sys.release(r.cap) end
-  end
-end
-
---
--- **A file into a region, and a region into a file**: straight where the
--- filesystem hands over pages, and through a string where it does not -
--- `/Home` in memory on a machine with no disk, or `/Temporary` - which is
--- what `files.copy` does, and for its reason: those hold small files, so the
--- string is small too.
---
-local function read_in(path, r, size)
-  local got = fs.read_into(path, r.cap, 0, size)
-
-  if got then return got end
-
-  local data = fs.read(path)
-
-  if type(data) ~= "string" then return nil end
-
-  sys.region_write(r.cap, 0, data)
-
-  return #data
-end
-
-local function write_out(path, r, size)
-  local ok, why = fs.write_from(path, r.cap, size)
-
-  if ok then return ok end
-
-  local put, oops = fs.write(path, sys.region_read(r.cap, 0, size))
-
-  if put then return put end
-
-  return nil, oops or why
-end
+-- Regions, a file read into one and written from one: `regions.lua`'s,
+-- which this file had its own copy of until 4 October.
+local region, free = regions.make, regions.free
+local read_in, write_out = regions.read_file, regions.write_file
 
 --
 -- **A date as a zip keeps it**: MS-DOS's two words, in local time, to two

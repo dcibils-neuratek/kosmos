@@ -473,13 +473,20 @@ and what more than one application wants is a reusable kit - "This is a
 premise" (`CLAUDE.md`). Two things built today break it and are the first to
 fix, then a review of the rest:
 
-- **PDF behind one door**: `use("/Kosmos/Kits/pdf")` gives `open` (read a
-  file's structure, `pdf.lua`), `render` and `text` (a page drawn or read,
-  `pdfpage.lua`) and `write` (`pdfwrite.lua`), rather than three libraries
-  and a kit that holds only the scanner. Present, Sheets, Text Editor's
-  Print to PDF and the browser's Save as PDF are its next users.
-- **Regions shared**: the region helpers `pdfwrite.lua` copied from
-  `zip.lua` (`region`, `free`, `write_out`) become one library both use.
+- **PDF behind one door**: *done, 4 October* (`testing.md` 18.383).
+  `/Kosmos/Libraries/pdf.lua` is the door - `open` (a path or a source),
+  `file`, `render`, `write` - with the scanner (`/Kosmos/Kits/pdf`), the
+  glyphs and the deflating as its engines; four copies of a file source
+  went. Present, Sheets, Text Editor's Print to PDF and the browser's Save
+  as PDF are its next users. Serving a kit's Lua half at `/Kosmos/Kits/pdf`
+  itself - which `use`'s own comment anticipates - is a namespace decision
+  for later, not needed for one door.
+- **Regions shared**: *done* (18.383), `regions.lua`, used by `zip.lua` and
+  `pdfwrite.lua`. **Still making their own**, the review's first list: the
+  PDF reader (`pdfpage.lua`), video and camera (`video.lua`, `camera.lua`),
+  MIDI (`midi.lua`), Groove's engine, the UI kit's shared surface, and
+  `screenshot`, `vncd` and `stress` - each the same four lines, each to be
+  read for whether `regions` serves it as it is.
 - **Then a review of every application** for code that another one has too
   or could want - formats read and written, media decoded, pictures loaded,
   lists and panels drawn - each found either moved into a kit or recorded

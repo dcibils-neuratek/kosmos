@@ -43,7 +43,6 @@
 local ui       = use("/Kosmos/Libraries/ui.lua")
 local panel    = use("/Kosmos/Libraries/panel.lua")
 local pdf      = use("/Kosmos/Libraries/pdf.lua")
-local pdfpage  = use("/Kosmos/Libraries/pdfpage.lua")
 
 local W, H = 760, 620
 local BAR  = 22                       -- the status line along the bottom
@@ -84,48 +83,6 @@ local paper, paper_w, paper_h = nil, 0, 0
 local top, zoom = 0, 1.0
 local said = "no document"
 local render_ms, glyph_count = 0, 0
-
---------------------------------------------------------------------------
--- The file, read a window at a time and never held.
---------------------------------------------------------------------------
-
-local buffer, capacity
-
-local function source_for(file, size)
-  if not buffer then
-    -- Four pages. `pdf.lua` reads in 256-byte windows; the only larger read
-    -- is a content stream, which goes straight into `pdfpage`'s own region.
-    buffer = sys.memory(4)
-    capacity = 4 * 4096
-  end
-
-  if not buffer then return nil end
-
-  return {
-    size = size,
-
-    read = function (offset, length)
-      local out, done = {}, 0
-
-      while done < length do
-        local want = length - done
-        if want > capacity then want = capacity end
-
-        local got = fs.read_into(file, buffer, offset + done, want)
-        if not got or got == 0 then break end
-
-        out[#out + 1] = sys.region_read(buffer, 0, got)
-        done = done + got
-      end
-
-      return table.concat(out)
-    end,
-
-    read_into = function (region, offset, length)
-      return fs.read_into(file, region, offset, length)
-    end,
-  }
-end
 
 --------------------------------------------------------------------------
 -- Drawing.
@@ -235,7 +192,7 @@ local function show(n)
   paper:fill(0, 0, paper_w, paper_h, PAPER)
 
   local started = sys.ticks()
-  local ok, drawn, _, missing = pcall(pdfpage.render, doc, page, paper,
+  local ok, drawn, _, missing = pcall(pdf.render, doc, page, paper,
                                       scale, INK)
   render_ms = (sys.ticks() - started) // 62500
 
@@ -252,6 +209,10 @@ local function show(n)
       said = said .. (" - %d face%s would not load"):format(
                missing, missing == 1 and "" or "s")
     end
+
+    -- And to the log, for a person reading it and a harness alike.
+    print(("pdfview: page %d of %d, %d glyphs, %d faces missing"):format(
+      n, #doc.pages, glyph_count, missing or 0))
   end
 
   top = 0
@@ -265,19 +226,24 @@ local function open(file)
     return
   end
 
-  local source = source_for(file, attrs.size)
+  -- The file read a window at a time, through the PDF Kit's door; the
+  -- document before it gives its window back.
+  local source, oops = pdf.file(file)
 
   if not source then
-    said = "no memory for a read buffer"
+    said = tostring(oops)
     return
   end
 
   local ok, got = pcall(pdf.open, source)
 
   if not ok then
+    source.close()
     said = tostring(got)
     return
   end
+
+  if doc and doc.source.close then doc.source.close() end
 
   doc = got
 

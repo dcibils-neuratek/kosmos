@@ -306,8 +306,8 @@ end
 
 local letter = writedoc.check{ format = "kosmos-write", version = 1, body = body }
 local placed = pageset.set(letter, measure)
-local ok, notes = pdfwrite.write("/Home/w.pdf", placed, measure,
-                                 { title = "Kosmos Write" })
+local ok, notes = use("/Kosmos/Libraries/pdf.lua").write("/Home/w.pdf",
+  placed, measure, { title = "Kosmos Write" })
 
 print("PDF", ok, type(notes) == "table" and notes.pages, type(notes) == "table" and notes.fonts,
       type(notes) == "table" and notes.missing, type(notes) == "table" and notes.bytes or notes)
@@ -336,31 +336,12 @@ for p, page in ipairs(placed.pages) do
   if page.footer then piece(page.footer.piece, page.footer.baseline_pt) end
 end
 
--- And read back by Kosmos's own reader: every page drawn, no face refused.
+-- And read back by Kosmos's own reader, through the PDF Kit's door: every
+-- page drawn, no face refused.
 local pdf = use("/Kosmos/Libraries/pdf.lua")
-local pdfpage = use("/Kosmos/Libraries/pdfpage.lua")
-local size = fs.getattr("/Home/w.pdf").size
-local buffer = sys.memory(16)
-local source = {
-  size = size,
-  read = function(offset, length)
-    local out, done = {}, 0
-    while done < length do
-      local want = math.min(length - done, 16 * 4096)
-      local got = fs.read_into("/Home/w.pdf", buffer, offset + done, want)
-      if not got or got == 0 then break end
-      out[#out + 1] = sys.region_read(buffer, 0, got)
-      done = done + got
-    end
-    return table.concat(out)
-  end,
-  -- A content stream into the reader's own region, as the viewer gives it.
-  read_into = function(region, offset, length)
-    return fs.read_into("/Home/w.pdf", region, offset, length)
-  end,
-}
-
-local doc, why = pdf.open(source)
+local opened, doc = pcall(pdf.open, "/Home/w.pdf")
+local why = not opened and doc or nil
+doc = opened and doc or nil
 print("READ", doc ~= nil and #doc.pages or tostring(why))
 
 local drawn_all, refused = 0, 0
@@ -370,7 +351,7 @@ if doc then
 
   for i = 1, #doc.pages do
     local page = doc:page(i)
-    local okr, drawn, _, missing = pcall(pdfpage.render, doc, page, paper, 1,
+    local okr, drawn, _, missing = pcall(pdf.render, doc, page, paper, 1,
                                          0xff000000)
     print("RENDER", i, okr, drawn, missing)
     drawn_all = drawn_all + (okr and drawn or 0)
