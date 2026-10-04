@@ -159,6 +159,17 @@ settings.ITEMS = {
         default = "floating",
         choices = { { "floating", "Floating" }, { "whole", "Whole width" } } },
 
+  --
+  -- **How much shows through the dock** (Diego, 4 October: "a slider from
+  -- 100% to 0% for the dock bar", 25% unless said); its icons stay as they
+  -- are. Told to the Deskbar as it moves (`preferences.lua`).
+  --
+  item{ category = "appearance", group = "Look",
+        label = "The dock's transparency",
+        note = "How much of what is behind shows through; its icons stay as they are",
+        kind = "percent", file = settings.APPEARANCE, key = "dock_transparency",
+        default = 25 },
+
   item{ category = "appearance", group = "Look",
         label = "Wallpaper", note = "Carried in the image, or a picture in /Home",
         kind = "choice", file = settings.APPEARANCE, key = "wallpaper",

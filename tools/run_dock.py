@@ -123,6 +123,18 @@ FOCUS = ('local r = use("/Kosmos/Libraries/wmproto.lua").windows()\n'
 ROOM = ('local r = fs.send("/Running/wm", { type = "workarea" })\n'
         'print(("ROOM %d %d %d %d"):format(r.x, r.y, r.w, r.h))\n')
 
+# Preferences on Appearance, as a press on its row opens it; and a window
+# closed by its title.
+PREFS = ('local r = fs.send("/Running/wm", { type = "launch", '
+         'program = "/Kosmos/Apps/preferences.lua", args = "appearance" })\n'
+         'print("PREFS " .. tostring(r and r.ok))\n')
+CLOSE = ('local r = use("/Kosmos/Libraries/wmproto.lua").windows()\n'
+         'for _, w in ipairs(r and r.windows or {}) do\n'
+         '  if w.title == args then fs.send("/Running/wm", { type = "close", window = w.handle }) end\n'
+         'end\n')
+CLEAR = ('local f = fs.read("/Home/Preferences/appearance")\n'
+         'print("CLEAR " .. tostring(type(f) == "table" and f.dock_transparency))\n')
+
 
 def room(session):
     out = session.run("/Temporary/room.lua").decode(errors="replace")
@@ -183,6 +195,9 @@ def main():
         session = S.connect(telnet)
         session.put(LOOK.encode(), "/Temporary/look.lua")
         session.put(ROOM.encode(), "/Temporary/room.lua")
+        session.put(PREFS.encode(), "/Temporary/prefs.lua")
+        session.put(CLOSE.encode(), "/Temporary/close.lua")
+        session.put(CLEAR.encode(), "/Temporary/clear.lua")
         said["look"] = session.run("/Temporary/look.lua").decode(errors="replace")
         width, height, _ = R.parse_ppm(guest.screendump())
         said["room top"] = room(session)
@@ -323,6 +338,48 @@ def main():
             if said["launched"]:
                 guest.wait_for("wm: window Calculator at ", "the Calculator from the dock")
             time.sleep(1)
+
+        # ---- 2d: how much shows through the dock ----
+        # Diego, 4 October: a slider from 100% to 0%, 25% unless said, and
+        # the icons as they are. The pill sampled in its end's padding and an
+        # icon at its middle, at 0, 100 and 25; then the slider in
+        # Preferences pressed at its middle.
+        dx, dy, dw, dh = dock_now()
+        found, _, _ = cells()
+        cell = found.get("terminal") or found.get("tracker")
+
+        def dock_at(percent):
+            mark_ = len(guest.seen)
+            session.run("setprop /Running/Deskbar/transparency %d" % percent)
+            heard = maybe("deskbar: the dock %d%% transparent" % percent, "the transparency", mark_)
+            time.sleep(1)
+            _, _, at_ = R.pixel_reader(guest.screendump())
+            pill = at_(dx + dw - 5, dy + dh // 2)
+            icon = at_(dx + cell[0] + cell[1] // 2, dy + dh // 2) if cell else None
+            return heard is not None, pill, icon
+
+        said["clear 0"] = dock_at(0)
+        said["clear 100"] = dock_at(100)
+        said["clear 25"] = dock_at(25)
+
+        mark = len(guest.seen)
+        session.run("/Temporary/prefs.lua")
+        prefs = maybe("wm: window Preferences at ", "Preferences", mark)
+        slider = maybe("preferences: dock_transparency, a slider at ", "the slider", mark)
+        p_ = re.match(r"(\d+),(\d+)", prefs or "")
+        s_ = re.match(r"(\d+),(\d+), (\d+) wide", slider or "")
+
+        if p_ and s_:
+            time.sleep(1)
+            mark = len(guest.seen)
+            click(int(p_.group(1)) + int(s_.group(1)) + int(s_.group(3)) // 2,
+                  int(p_.group(2)) + int(s_.group(2)), width, height)
+            said["slid"] = maybe("deskbar: the dock ", "the slider pressed", mark)
+            said["slid kept"] = session.run("/Temporary/clear.lua").decode(errors="replace")
+
+        session.run("/Temporary/close.lua Preferences")
+        dock_at(25)
+        time.sleep(1)
 
         # ---- 3: the Kosmos button and its menu ----
         dx, dy, dw, dh = said["dock"]
@@ -734,7 +791,31 @@ def main():
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:400])
 
-    checks = 44
+    # ---- 2d ----
+    c0, c100, c25 = said.get("clear 0"), said.get("clear 100"), said.get("clear 25")
+
+    if not (c0 and c100 and c25 and c0[0] and c100[0] and c25[0]):
+        fails.append("the dock's transparency was not taken as it was set: %r"
+                     % ((c0, c100, c25),))
+    elif not (c0[1] != c25[1] != c100[1] and c0[1] != c100[1]):
+        fails.append("the dock's pill did not change with its transparency - 0, 25, "
+                     "100: %r %r %r" % (c0[1], c25[1], c100[1]))
+    elif not (c0[2] is not None and c0[2] == c100[2] == c25[2]):
+        fails.append("the dock's icon changed with the pill's transparency: %r %r %r"
+                     % (c0[2], c25[2], c100[2]))
+
+    # Pressed at its middle, the slider says about half - a pixel either
+    # side of the middle is a percent - and the file keeps what it says.
+    slid = re.match(r"(\d+)% transparent", said.get("slid") or "")
+    kept = re.search(r"CLEAR (\d+)", said.get("slid kept") or "")
+
+    if not (slid and kept and 45 <= int(slid.group(1)) <= 55
+            and kept.group(1) == slid.group(1)):
+        fails.append("the slider in Preferences, pressed at its middle, did not make "
+                     "the dock about half transparent and keep it: %r"
+                     % ((said.get("slid"), said.get("slid kept")),))
+
+    checks = 46
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))

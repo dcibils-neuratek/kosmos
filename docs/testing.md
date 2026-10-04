@@ -17632,3 +17632,33 @@ the M700's to say, and it said it above.
 
 **Its gate: 87 of 88**, `x86-usb-1` failing on its own words - it expected
 "in 124 KB reads" - and passing, 63 of 63, once they said 1 MB.
+
+## 18.372 The dock's transparency, a slider in Appearance
+
+Diego, 4 October: "a slider from 100% to 0% for the dock bar", "the icons
+within the dock are not altered by that setting", 25% unless said. A row in
+Preferences' Appearance, *The dock's transparency*, a slider and its number
+(`kind = "percent"`, new), kept as `dock_transparency` in
+`/Home/Preferences/appearance` and told to the Deskbar as it moves
+(`/Running/Deskbar/transparency`), which draws its pill - fill and edge -
+at that much less than opaque and everything on it at its own. The pill was
+drawn at 0xd8 before, about 15%.
+
+**`run_dock.py`, 46** (two new, step 2d): the pill sampled in its end's
+padding at 0, 25 and 100 percent - three colours - and an icon's middle the
+same at all three; then Preferences opened on Appearance, its slider
+pressed at its middle - Preferences says where it is - and the dock and the
+file both at the same value near half. The first run wanted exactly 50 and
+got 49, which is where the press landed: a percent is two pixels of the
+slider. **`test_settings.lua`, 180.** **Control**: the pill at a fixed
+strength - "0, 25, 100: (30, 36, 52) (30, 36, 52) (30, 36, 52)".
+
+**And the stick's one wait a command, tried and taken back** (`roadmap.md`):
+queued whole, QEMU's stick was asked for its data before it had taken the
+command, stalled, and every read failed - the USB parts that take 46 s ran
+for eighteen minutes before they were stopped. 0.10.231 stands.
+
+**And Doom on the M700**, which Diego found failing: an image built for
+0.10.205 reading the program store's 0.10.221 protocol. Doom, Quake and the
+Super Nintendo built again and sent over Telnet; Doom at 62 frames a second,
+Quake playing its demo.

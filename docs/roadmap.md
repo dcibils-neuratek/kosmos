@@ -621,6 +621,48 @@ opened under QEMU in Night and in Plex, pictured, the ones in the old
 chrome listed, each moved onto the kit's header, and the pictures kept as
 the check that none goes back.
 
+**An installed application built for older protocols says so.** Diego, 4
+October 2026, on the M700: "launching doom raises an error and does not
+work". Doom's image was the 0.10.205 stick's, and an installed application
+carries its own runtime (`docs/elf.md` step 5), so it spoke the program
+store's protocol as it was before 0.10.221 gave a launcher its name and the
+chunks another size - and read `ui.lua` misaligned: "ui.lua:1: unexpected
+symbol". Doom, Quake and the Super Nintendo built again and put in the
+M700's `/Home/Apps` over Telnet the same hour; Doom at 62 frames a second.
+**What is wanted**: a stamp of the protocol headers (`user/include/*proto.h`)
+compiled into the system and into every application image, compared when
+one is started, and a mismatch refused with a sentence - "Doom was built for
+an older Kosmos; build it again: make install-apps" - rather than an error
+from deep inside the kit. `CLAUDE.md` has said this happens; nothing yet
+says it when it does.
+
+**Every setting a text file a person can read and edit.** Diego, 4 October
+2026: "Are we making sure all the preferences and settings are stored in
+text based config files under preferences", then "Nothing is stored in
+binary format for settings and preferences". **They were**: `fs.write` of
+a table to `/Home` stored the system's serialisation - `\0KTV`, then a type
+byte and a four-byte length before each value (the M700's `appearance`,
+read back the same day) - so every file in `/Home/Preferences` was binary.
+So a table written to a file in `/Home` is stored as **text in Lua's table
+form**, keys sorted and indented, a comment allowed; read back by a parser
+that takes **values only** - strings, numbers, booleans, nested tables -
+and never runs anything, so a settings file cannot carry code, and one
+broken by hand is refused with where, rather than taking down what reads
+it. A binary file already there is still read, and is text the next time
+it is written. Next, after the stick's one wait and the dock's slider.
+
+**The dock's transparency, a slider in Appearance.** Diego, 4 October 2026:
+"the new dock needs a transparency setting in appearance so i can make it
+50% transparent", "a slider from 100% to 0% for the dock bar", "the icons
+within the dock are not altered by that setting", and "the default
+transparency for the dock bar is 25% (100% being transparent, 0% being
+opaque)". So the dock's pill - its fill and its edge - drawn at that much
+of its colour, and the icons, the names, the running marks and the Kosmos
+button at their own. A slider row in Preferences' Appearance, beside *The
+bar* and *The dock*, kept in `/Home/Preferences/appearance` and told to the
+Deskbar as it moves, as those two are. **Done the same day** (`testing.md`
+18.372).
+
 **The dock's own applications, arranged by hand.** Diego, 3 October 2026:
 "we need a way to move apps around the dock to reorder them as the user
 wants. also how do i add or remove apps from the dock?" - which until now
@@ -1026,8 +1068,14 @@ next measurement, `/home`'s path through the disk server and kfs, for later -
    controller held its interrupts a millisecond apart, three to a command -
    now 40 microseconds, as Linux: 31.9 to 60.6 MB/s and 332 to 1,346 random
    reads a second, on the M700. And a read of up to 1 MB, a chain of TRBs:
-   64.5. **Next**: one wait a command rather than three (0.75 ms a command
-   is left), then the NVMe driver.
+   64.5. **One wait a command was tried and taken back the same day**: the
+   whole command queued at once - its wrapper on the OUT ring, its data and
+   status on the IN ring, both doorbells rung - fails under QEMU, whose stick
+   is asked for data before it has taken the wrapper and stalls, where a
+   real controller retries. Two waits rather than three - the wrapper
+   waited for, then data and status as one - would keep the order, for a
+   part of the 0.75 ms a command that is left; measured first, when it is
+   wanted. Then the NVMe driver.
 
    **And a fault the same log showed**: the M700's mouse, after 2,998
    seconds, "the mouse's report failed: USB Transaction Error (4); not read

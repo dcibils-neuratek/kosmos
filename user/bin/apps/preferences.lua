@@ -372,6 +372,16 @@ local APPLY = {
   -- Where the bar is, and how wide the dock: told to the Deskbar, which
   -- starts itself again there. A machine with no Deskbar running keeps the
   -- setting all the same, for the next one to read.
+  -- The dock's transparency, told as the slider moves: the Deskbar draws its
+  -- pill again and starts nothing.
+  dock_transparency = function(percent)
+    local ok, why = fs.write("/Running/Deskbar/transparency", tostring(percent))
+
+    if not ok then print("preferences: the Deskbar was not told: " .. tostring(why)) end
+
+    return true
+  end,
+
   bar = function(where)
     local ok, why = fs.write("/Running/Deskbar/bar", tostring(where))
 
@@ -559,6 +569,28 @@ local function control_for(it, x, y, changed)
                       on_change = function(_, on)
                         audio.set{ master_muted = on }
                       end }
+  end
+
+  --
+  -- **A percentage, as a slider and its number** - the dock's transparency.
+  -- Written and applied as it moves, as a switch is when it is pressed.
+  --
+  if it.kind == "percent" then
+    local box = ui.view{ x = x, y = y, w = 256, h = 20 }
+    local shown = ui.label{ x = 212, y = (20 - gfx.height()) // 2, w = 44,
+                            text = ("%d%%"):format(settings.get(it) or 0),
+                            color = theme.text_dim, role = "ui" }
+    local slider = ui.slider{ x = 0, y = 0, w = 200, max = 100,
+                              value = tonumber(settings.get(it)) or 0,
+                              on_change = function(_, v)
+                                shown.text = ("%d%%"):format(v)
+                                if live(it, v) then settings.set(it, v) end
+                                if changed then changed() end
+                              end }
+
+    box:add(slider)
+    box:add(shown)
+    return box
   end
 
   if it.kind == "brightness" then
@@ -881,6 +913,13 @@ rebuild = function()
         c.x = right - c.w
         c.y = y + (h - c.h) // 2
         page:add(c)
+
+        -- A slider's place, in the window's points, for a harness - which
+        -- can press and cannot aim.
+        if it.kind == "percent" then
+          print(("preferences: %s, a slider at %d,%d, %d wide"):format(
+                it.key, SIDE + c.x, c.y + c.h // 2, 200))
+        end
       elseif taken > 0 then
         local shown = ui.label{ x = right - taken, y = y + (h - ch) // 2,
                                 w = taken + 2, text = value_text(it),

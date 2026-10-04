@@ -517,6 +517,24 @@ local asked_bar = tostring(args or ""):match("%-%-bar%s+(%a+)")
 local asked_dock = tostring(args or ""):match("%-%-dock%s+(%a+)")
 local DOCKED = (asked_bar or appearance.bar) == "dock"
 local FLOATING = (asked_dock or appearance.dock) ~= "whole"
+
+--
+-- **How much of what is behind shows through the dock** (Diego, 4 October:
+-- "a slider from 100% to 0% for the dock bar", "the icons within the dock
+-- are not altered by that setting", 25% unless said): Appearance's
+-- `dock_transparency`, a percentage - 100 is all of it, 0 none. Only the
+-- pill, its fill and its edge, is drawn at it; what is on the pill is drawn
+-- at its own.
+--
+local DOCK_TRANSPARENCY = 25
+
+local function transparency_of(v)
+  v = math.floor(tonumber(v) or DOCK_TRANSPARENCY)
+
+  return math.max(0, math.min(100, v))
+end
+
+local transparency = transparency_of(appearance.dock_transparency)
 local dock = DOCKED and use("/Kosmos/Libraries/dock.lua") or nil
 local topstrip = nil              -- the dock's strip across the top
 local kosmos_at = nil             -- where the dock drew its Kosmos button, in it
@@ -661,6 +679,16 @@ win:publish("dock",
   function() return FLOATING and "floating" or "whole" end,
   function(v)
     move_to(DOCKED and "dock" or "top", tostring(v) == "whole" and "whole" or "floating")
+  end)
+
+-- The dock's transparency, as Appearance's slider moves: drawn again, and
+-- nothing started again.
+win:publish("transparency",
+  function() return tostring(transparency) end,
+  function(v)
+    transparency = transparency_of(v)
+    win.dirty = true
+    print(("deskbar: the dock %d%% transparent"):format(transparency))
   end)
 
 --------------------------------------------------------------------------
@@ -1879,12 +1907,20 @@ if DOCKED then
     -- has (`--d-line`): what tells a dark dock from a dark window under it.
     -- The fill replaces rather than blends, so the inner shape leaves a
     -- ring of the outer one.
+    --
+    -- At Appearance's transparency (`transparency`, above): the fill at that
+    -- much less than opaque, and the hairline with it, so at 100% the pill
+    -- is gone and only what is on it is left.
+    --
+    local fill = (255 * (100 - transparency) + 50) // 100
+    local edge = (0x18 * (100 - transparency) + 50) // 100
+
     if FLOATING then
-      g:fill_round(0, 0, self.w, self.h, 0x14ffffff, dock.RADIUS)
-      g:fill_round(1, 1, self.w - 2, self.h - 2, at(theme.window, 0xd8), dock.RADIUS - 1)
+      g:fill_round(0, 0, self.w, self.h, at(0xffffffff, edge), dock.RADIUS)
+      g:fill_round(1, 1, self.w - 2, self.h - 2, at(theme.window, fill), dock.RADIUS - 1)
     else
-      g:fill(0, 0, self.w, self.h, at(theme.window, 0xd8))
-      g:fill(0, 0, self.w, 1, 0x14ffffff)
+      g:fill(0, 0, self.w, self.h, at(theme.window, fill))
+      g:fill(0, 0, self.w, 1, at(0xffffffff, edge))
     end
 
     -- Centred in the whole width, as the floating dock is on the screen.
