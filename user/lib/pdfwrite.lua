@@ -333,9 +333,27 @@ local function operators(set, page, font_for, notes, image_for)
     end
   end
 
-  shift = page.shift_pt or 0
+  --
+  -- **What a line draws under its text** (`pageset`'s `art`): a table's
+  -- tint as a filled rectangle and its rules as stroked lines, each in its
+  -- own graphics state so its colour and width go no further.
+  --
+  local function art(a, top)
+    if a.kind == "rect" then
+      out[#out + 1] = ("q %s rg %s %s %s %s re f Q"):format(rgb(a.fill),
+        num(a.x_pt + shift), num(height - (top + a.y_pt + a.h_pt)), num(a.w_pt), num(a.h_pt))
+    elseif a.kind == "rule" then
+      out[#out + 1] = ("q %s RG %s w %s %s m %s %s l S Q"):format(rgb(a.colour),
+        num(a.width_pt), num(a.x_pt + shift), num(height - (top + a.y_pt)),
+        num(a.x2_pt + shift), num(height - (top + a.y2_pt)))
+    end
+  end
 
-  for _, line in ipairs(page.lines) do
+  local function draw_line(line)
+    for _, a in ipairs(line.art or {}) do
+      art(a, line.baseline_pt - line.ascent_pt)
+    end
+
     if line.marker then
       show(line.marker, set.looks[line.marker.look], line.baseline_pt, 0)
     end
@@ -344,7 +362,16 @@ local function operators(set, page, font_for, notes, image_for)
       show(piece, set.looks[piece.look], line.baseline_pt,
            piece.cap and 0 or line.extra_space_pt)
     end
+
+    -- A table row's cells, each a paragraph's lines.
+    for _, cell in ipairs(line.cells or {}) do
+      for _, l in ipairs(cell.lines) do draw_line(l) end
+    end
   end
+
+  shift = page.shift_pt or 0
+
+  for _, line in ipairs(page.lines) do draw_line(line) end
 
   shift = 0
 

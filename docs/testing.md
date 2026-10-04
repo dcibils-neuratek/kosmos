@@ -18431,3 +18431,86 @@ Return in the Open panel did not open its first entry as it opened - the
 list does not have the keyboard then - so the suite presses Open, and the
 panel's Return is on the roadmap. **Control**: Save leaving the pictures
 out - "does not hold the picture".
+
+## 18.391 Kosmos Write's tables (W5b)
+
+**The Table tool puts in a table** of three rows and three columns, the
+first a header, after the caret's paragraph, the caret in its first cell;
+Insert's list - a page break, a table, a picture - is built with it. Tab
+goes to the next cell and makes a row after the last, Shift-Tab goes back,
+Return goes to the cell below and out of the table under its last row. The
+Format panel's Table part, above the text's, has the rows and the columns
+as steppers, the header row as a box to tick, and Delete table; the text's
+parts work on the cell the caret is in.
+
+**In the kits, a table is a paragraph** holding rows of cells, and **a
+cell is a paragraph of its own** - its style, its fields, its runs, never a
+picture or a table. `richtext` checks one as it checks everything: at most
+20 columns and 1000 rows, every row as many cells as there are columns.
+**An edit in a cell is the same edit on a body of one paragraph**, put back
+into a new table whose other rows are the same tables as before - so
+typing, formatting, the look at the caret and undo work in a cell with no
+second copy of any of them, and `pageset`'s cache sets again only the cell
+that changed. A place in a cell says the cell, `{ para, at, row, col }`.
+Left and Right go cell by cell and out of the table; a range from text
+over a table takes the table whole, and so does one ending on a picture,
+which before this left the picture behind in the paragraph that stayed; a
+copy is rows of tabbed cells; a style over a picture keeps the picture,
+which before this lost it. `pageset` sets **a row as one line** of the
+page, its columns sharing the room equally and each cell's text set as a
+paragraph's is in its own room. So a table breaks between rows, never
+inside one, and **its header row heads every page it runs on to**, as a
+copy the caret never stands in. A row carries its rules and the header's
+tint as `art`: rectangles and rules in points that the screen and the PDF
+both draw (`pagedraw`, `pdfwrite`). `docxwrite` writes Word's `w:tbl`:
+fixed columns, the rules, the header row tinted, bold and repeated
+(`w:tblHeader`), and cells without a paragraph's space round them, as Write
+sets them.
+
+**Host**: `test_pageset.lua` 86 to 105. They check:
+- a row is a line, and the columns share the column;
+- a cell's text sits inside its room;
+- the header is bold over its tint;
+- a long cell wraps and its row grows to fit;
+- a place in a cell is found, and a point finds it;
+- Up and Down move through the cells, out of the table and into it under
+  the caret, keeping the column;
+- Home and End and a selection stay in a cell;
+- an edit sets that one cell;
+- an 80-row table runs on to the next page, with its header again and no
+  row past a page's foot.
+
+`test_writedoc.lua` 72 to 87 checks:
+- the table's check;
+- the file round trip;
+- typing, deleting and formatting in a cell, with the rest of the table
+  shared;
+- Left and Right through cells;
+- a range taking a table whole;
+- the copy;
+- reshaping;
+- fields over a whole table.
+
+`test_docx.lua` 23 to 33 checks Word's table, closed element for element.
+
+**`arm-write`**: the export suite's document has a table. Its PDF draws 18
+rules and one tint, and every cell's words are among the pieces placed
+where the setting put them. Its DOCX has a `w:tbl` of three columns with
+the header row repeated, and the cells' words.
+
+**`arm-writeapp`, 21 to 25**: the Table tool is used, then the window's cells are
+typed with Tab, Shift-Tab goes back once, and Tab in the last cell makes a
+fourth row. A column is added from the Table part, and Return leaves the
+table for the line after. The `.write` file holds every cell's words in
+order and four columns with a header. The DOCX holds one table, four by
+four, with its header.
+
+**Found**: Tab had never reached Kosmos Write. A window keeps Tab for
+moving between its controls unless a view says `takes_tab` (`ui.lua`), so
+the window's "Tab types a tab" from W4b never ran, and nothing had pressed
+it. The suite's first run typed every cell's words into the first cell.
+The page now takes Tab, and Control-Tab still moves the focus.
+**Control**: that first run, which failed three checks.
+**Controls**, on a copy of the kits: a header row not put again at the head
+of a page - "did not head it with its header row"; an edit in a cell copying
+every row rather than sharing them - "the rest shared".

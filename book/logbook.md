@@ -920,3 +920,28 @@ picture in the file panel, types a caption, saves, and checks that the saved
 file holds the picture byte for byte. That test also found a small fault in
 the file panel, in every app, not only this one. Return does not open the
 first file until the list has been clicked. It is on the roadmap.
+
+## 4 October, later still - tables in Kosmos Write
+
+**In short:** Kosmos Write has tables. The Table button puts in three rows
+by three columns with a header row. Tab moves to the next cell and makes a
+new row at the end, Shift-Tab goes back, and Return moves down. The Format
+panel can add or remove rows and columns, turn the header row on or off,
+or delete the table. A table that runs past the foot of a page continues
+on the next one, with its header row repeated at the top, and it exports to
+PDF and to Word as a real table.
+
+**How it is built.** The interesting decision is that every cell is an
+ordinary paragraph. Everything Kosmos Write already knew how to do with a
+paragraph works in a cell for free: typing, bold, fonts, colours, undo,
+and the panel showing what the caret is in. Each table row is placed on
+the page as if it were one line of text, so the rules that already decide
+where a page breaks decide where a table breaks too.
+
+**Found on the way.** The Tab key had never reached Kosmos Write at all,
+because a window keeps Tab for moving between its controls unless the
+view asks for it. So "Tab types a tab", written weeks ago, had never once
+worked, and no test had pressed it. The table test was the first to press
+Tab. Two older faults also surfaced and are fixed: choosing a style over a
+range that included a picture lost the picture, and deleting a range that
+ended on a picture left it stuck in the paragraph that remained.

@@ -172,16 +172,60 @@ function Drawer:page(set, page, surface, scale, x, y, paper, marks)
     end
   end
 
-  shift = page.shift_pt or 0
+  --
+  -- **What a line draws under its text** (`pageset`'s `art`): a table's
+  -- tint and rules, `y` down from the line's top. A rule across or down is
+  -- a fill a pixel or more thick, so a hairline stays one at any scale.
+  --
+  local function art(a, top)
+    if a.kind == "rect" then
+      local ax = math.floor(x + (a.x_pt + shift) * scale + 0.5)
+      local ay = math.floor(y + (top + a.y_pt) * scale + 0.5)
 
-  for _, line in ipairs(page.lines) do
+      surface:fill(ax, ay,
+                   math.max(1, math.floor(x + (a.x_pt + a.w_pt + shift) * scale + 0.5) - ax),
+                   math.max(1, math.floor(y + (top + a.y_pt + a.h_pt) * scale + 0.5) - ay),
+                   argb(a.fill))
+    elseif a.kind == "rule" then
+      local thick = math.max(1, math.floor(a.width_pt * scale + 0.5))
+      local x1 = math.floor(x + (a.x_pt + shift) * scale + 0.5)
+      local y1 = math.floor(y + (top + a.y_pt) * scale + 0.5)
+      local x2 = math.floor(x + (a.x2_pt + shift) * scale + 0.5)
+      local y2 = math.floor(y + (top + a.y2_pt) * scale + 0.5)
+
+      if y1 == y2 then
+        surface:fill(math.min(x1, x2), y1 - thick // 2, math.abs(x2 - x1) + thick, thick,
+                     argb(a.colour))
+      elseif x1 == x2 then
+        surface:fill(x1 - thick // 2, math.min(y1, y2), thick, math.abs(y2 - y1) + thick,
+                     argb(a.colour))
+      else
+        surface:line(x1, y1, x2, y2, thick, argb(a.colour))
+      end
+    end
+  end
+
+  local function draw_line(line)
+    for _, a in ipairs(line.art or {}) do
+      art(a, line.baseline_pt - line.ascent_pt)
+    end
+
     -- A list's marker, before the line's text.
     if line.marker then piece(line.marker, line.baseline_pt, 0) end
 
     for _, pc in ipairs(line.pieces) do
       piece(pc, line.baseline_pt, pc.cap and 0 or line.extra_space_pt)
     end
+
+    -- A table row's cells, each a paragraph's lines.
+    for _, cell in ipairs(line.cells or {}) do
+      for _, l in ipairs(cell.lines) do draw_line(l) end
+    end
   end
+
+  shift = page.shift_pt or 0
+
+  for _, line in ipairs(page.lines) do draw_line(line) end
 
   shift = 0
 

@@ -24,6 +24,9 @@
 --   Control-B, Control-U                   bold, underline
 --   Control-S                              save
 --   Control-E                              Export PDF, beside the document
+--   in a table: Tab, Shift-Tab             the next cell - a new row after
+--                                          the last - and the one before
+--               Return                     the cell below, or out of it
 --
 -- **As drawn** (`docs/write.html`): the tools across the top - View, Zoom
 -- and Add Page; Insert, Table, Chart, Text, Shape, Media and Comment;
@@ -277,7 +280,8 @@ end
 local drawn = {}
 
 local function selected()
-  return anchor and (anchor.para ~= caret.para or anchor.at ~= caret.at)
+  return anchor and (anchor.para ~= caret.para or anchor.at ~= caret.at
+                     or anchor.row ~= caret.row or anchor.col ~= caret.col)
 end
 
 local function marks_on(i)
@@ -352,8 +356,9 @@ local function shown_look()
 
   if selected() then
     local a = richtext.before(anchor, caret) and anchor or caret
-    local plain = richtext.plain(doc.body[a.para])
-    place = { para = a.para, at = math.min(a.at + 1, #plain + 1) }
+    local p = doc.body[a.para]
+    local plain = richtext.plain(a.row and p.table.rows[a.row][a.col] or p)
+    place = { para = a.para, at = math.min(a.at + 1, #plain + 1), row = a.row, col = a.col }
   end
 
   local look, layout, style = richtext.look_at(doc.body, place, by_name)
@@ -374,8 +379,8 @@ local TOOLS = {
   { key = "zoom",     icon = "zoom",     text = "Zoom" },
   { key = "addpage",  icon = "new",      text = "Add Page" },
   { gap = 14 },
-  { key = "insert",   icon = "insert",   text = "Insert",   later = "W5" },
-  { key = "table",    icon = "table",    text = "Table",    later = "W5" },
+  { key = "insert",   icon = "insert",   text = "Insert" },
+  { key = "table",    icon = "table",    text = "Table" },
   { key = "chart",    icon = "chart",    text = "Chart",    later = "W7" },
   { key = "textbox",  icon = "textbox",  text = "Text",     later = "W7" },
   { key = "shape",    icon = "shape",    text = "Shape",    later = "W7" },
@@ -482,9 +487,12 @@ end
 local function argb(c) return 0xff000000 | (tonumber((c or "#000000"):sub(2), 16) or 0) end
 
 local open_menu, apply_char, apply_para, apply_style, doc_edit, apply_picture
+local reshape, delete_table, table_key
 
 local function say_where()
-  local key = panel == "text" and ("text:" .. part) or tostring(panel)
+  local here = doc.body[caret.para]
+  local kind = here and (here.picture and ":picture" or here.table and ":table") or ""
+  local key = panel == "text" and ("text:" .. part .. kind) or tostring(panel)
 
   if not said_where[key] then
     said_where[key] = true
@@ -721,8 +729,51 @@ local function draw_panel(s)
     return
   end
 
+  --
+  -- **In a table** (W5b): its rows and columns, a stepper each, whether its
+  -- first row is a header, and the table taken out - above the text's
+  -- part, which works on the cell's text.
+  --
+  if here and here.table and caret.row then
+    local t = here.table
+
+    pk.label(s, x0, y, "Table")
+    y = y + 18
+
+    local half = (w0 - 8) // 2
+    local rows = { x = x0, y = y, w = half,
+                   text = ("%d row%s"):format(#t.rows, #t.rows == 1 and "" or "s") }
+    pk.stepper(s, rows)
+    control("table_rows", rows, function(cx, cy)
+      local d = pk.step_at(rows, cx, cy)
+      if d and d ~= 0 then reshape({ rows = #t.rows + d }) end
+    end)
+
+    local cols = { x = x0 + half + 8, y = y, w = w0 - half - 8,
+                   text = ("%d column%s"):format(t.columns, t.columns == 1 and "" or "s") }
+    pk.stepper(s, cols)
+    control("table_columns", cols, function(cx, cy)
+      local d = pk.step_at(cols, cx, cy)
+      if d and d ~= 0 then reshape({ columns = t.columns + d }) end
+    end)
+
+    y = y + 38
+
+    local hr = { x = x0, y = y + 4, text = "Header row", on = t.header }
+    pk.check(s, hr)
+    control("table_header", hr, function() reshape({ header = not t.header }) end)
+
+    local del = { x = 0, y = y, text = "Delete table" }
+    del.w = pk.button_width(del.text)
+    del.x = x0 + w0 - del.w
+    pk.button(s, del)
+    control("table_delete", del, function() delete_table() end)
+
+    y = y + 44
+  end
+
   -- The paragraph style, in a box of its own, its name large.
-  local sbox = { x = x0, y = y, w = w0, h = 46 }
+  local sbox = { x = x0, y = y, w = w0, h = here and here.table and 40 or 46 }
   s:fill_round(sbox.x, sbox.y, sbox.w, sbox.h, theme.raised, 12)
   s:text(sbox.x + 12, sbox.y + (sbox.h - gfx.height("title")) // 2, style,
          theme.text, nil, "title")
@@ -1241,6 +1292,8 @@ function doc_edit(kind, fields)
   report_if_changed()
 end
 
+local move
+
 local function without_selection()
   if not selected() then return doc.body, caret end
   return richtext.delete(doc.body, anchor, caret)
@@ -1294,7 +1347,20 @@ local function back_or_forward(forward)
 
   local other = richtext.step(doc.body, caret, forward)
 
-  if other.para == caret.para and other.at == caret.at then return end
+  if other.para == caret.para and other.at == caret.at and other.row == caret.row
+     and other.col == caret.col then
+    return
+  end
+
+  -- **A table's edges hold**: Backspace at a cell's start and Delete at
+  -- its end do nothing, as in Pages; into a table from beside it, the
+  -- caret goes in and nothing is taken.
+  if caret.row and not (other.row and richtext.same_cell(caret, other)) then return end
+
+  if other.row and not caret.row then
+    move(other)
+    return
+  end
 
   local body, place = richtext.delete(doc.body, caret, other)
   edited(body, place, "delete")
@@ -1356,10 +1422,45 @@ local function swap(from, to)
   report_if_changed()
 end
 
-local function move(place, extend, keep_column)
+--
+-- **A selection stays in its cell**, as a text field's does; one begun
+-- outside a table that reaches into it takes the table whole, its end past
+-- the table on the side it went.
+--
+local function clamp(place)
+  if not anchor then return place end
+
+  if anchor.row then
+    if richtext.same_cell(anchor, place) then return place end
+
+    local cell = doc.body[anchor.para].table.rows[anchor.row][anchor.col]
+
+    return { para = anchor.para, row = anchor.row, col = anchor.col,
+             at = richtext.before(place, anchor) and 1 or #richtext.plain(cell) + 1 }
+  end
+
+  if place.row then
+    local n = place.para
+
+    if richtext.before(anchor, place) and doc.body[n + 1] then
+      return richtext.enter(doc.body, n + 1, true)
+    elseif n > 1 then
+      return richtext.enter(doc.body, n - 1, false)
+    end
+  end
+
+  return place
+end
+
+function move(place, extend, keep_column)
   local had = selected()
 
-  if extend then anchor = anchor or caret else anchor = nil end
+  if extend then
+    anchor = anchor or caret
+    place = clamp(place)
+  else
+    anchor = nil
+  end
 
   caret = place
   last_kind = nil
@@ -1528,19 +1629,126 @@ local function insert_picture(file)
   edited(body, { para = caret.para + 2, at = 1 }, "picture")
 end
 
-local TOOL_ACTS = {
-  media = function()
-    local start = fs.getattr("/Home/Pictures") and "/Home/Pictures" or "/Home"
-    local picked = use("/Kosmos/Libraries/panel.lua").open{
-      start = start, title = "Choose a picture",
-      filter = function(n) return n:lower():match("%.png$") or n:lower():match("%.jpe?g$") end,
-      on_choose = function(chosen) insert_picture(chosen) end,
-    }
+--
+-- **A table put in** (Table, W5b): three rows of three cells, the first a
+-- header, after the caret's paragraph - or the table the caret is in - the
+-- caret in its first cell, and a paragraph after it to type on when there
+-- was none.
+--
+local function insert_table()
+  local body = {}
+  for i, p in ipairs(doc.body) do body[i] = p end
 
-    if picked then picked:run() end
+  local style = by_name[writedoc.BODY] and writedoc.BODY or doc.styles[1].name
+  local t = richtext.paragraph(richtext.new_table(3, 3, style, true), by_name, style)
+  local n = caret.para + 1
 
-    frame()
+  table.insert(body, n, t)
+
+  if not body[n + 1] then body[n + 1] = { style = style, runs = {} } end
+
+  print(("writer: table %d by %d at paragraph %d"):format(#t.table.rows, t.table.columns, n))
+  edited(body, { para = n, at = 1, row = 1, col = 1 }, "table")
+end
+
+-- The caret's table with rows, columns or its header changed; the caret
+-- kept in the table.
+function reshape(fields)
+  local n = caret.para
+  local body = richtext.reshape(doc.body, n, fields, by_name)
+  local t = body[n].table
+  local r, c = math.min(caret.row, #t.rows), math.min(caret.col, t.columns)
+  local at = math.min(caret.at, #richtext.plain(t.rows[r][c]) + 1)
+
+  print(("writer: table %d by %d"):format(#t.rows, t.columns))
+  edited(body, { para = n, at = at, row = r, col = c }, "table")
+end
+
+-- The caret's table taken out, the caret where it stood.
+function delete_table()
+  local n = caret.para
+  local body = {}
+  for i, p in ipairs(doc.body) do body[i] = p end
+
+  table.remove(body, n)
+
+  if #body == 0 then body[1] = { style = writedoc.BODY, runs = {} } end
+
+  local place = body[n] and richtext.enter(body, n, true) or richtext.enter(body, n - 1, false)
+
+  print("writer: table deleted")
+  edited(body, place, "table")
+end
+
+--
+-- **Tab, Shift-Tab and Return in a cell**: the next cell - a new row after
+-- the last cell, as Pages and Word make one - the cell before, and the
+-- cell below, out of the table under its last row.
+--
+function table_key(step)
+  local n = caret.para
+  local t = doc.body[n].table
+
+  if step == "down" then
+    if caret.row < #t.rows then
+      local below = t.rows[caret.row + 1][caret.col]
+      move({ para = n, row = caret.row + 1, col = caret.col,
+             at = #richtext.plain(below) + 1 })
+    elseif doc.body[n + 1] then
+      move(richtext.enter(doc.body, n + 1, true))
+    end
+
+    return
+  end
+
+  local other = richtext.next_cell(doc.body, caret, step)
+
+  if other then
+    move(other)
+  elseif step > 0 then
+    local body = richtext.reshape(doc.body, n, { rows = #t.rows + 1 }, by_name)
+    edited(body, { para = n, at = 1, row = #t.rows + 1, col = 1 }, "table")
+  end
+end
+
+local choose_picture
+
+-- **Media**: the system's Open panel at Pictures, a PNG or a JPEG chosen.
+function choose_picture()
+  local start = fs.getattr("/Home/Pictures") and "/Home/Pictures" or "/Home"
+  local picked = use("/Kosmos/Libraries/panel.lua").open{
+    start = start, title = "Choose a picture",
+    filter = function(n) return n:lower():match("%.png$") or n:lower():match("%.jpe?g$") end,
+    on_choose = function(chosen) insert_picture(chosen) end,
+  }
+
+  if picked then picked:run() end
+
+  frame()
+end
+
+local TOOL_ACTS
+
+TOOL_ACTS = {
+  table = function() insert_table() end,
+  --
+  -- **Insert**: what goes into the text, in a list - a page break, a table
+  -- and a picture so far (W5); the rest of the toolbar's middle joins it as
+  -- it is built.
+  --
+  insert = function(t)
+    local items = { "Page Break", "Table", "Picture..." }
+    open_menu("insert", t.x, TOOLS_H + 2, 180, items, nil, function(i)
+      if i == 1 then
+        TOOL_ACTS.addpage()
+      elseif i == 2 then
+        insert_table()
+      else
+        choose_picture()
+      end
+    end)
   end,
+  media = function() choose_picture() end,
   zoom = function(t)
     local labels = {}
     for i, z in ipairs(ZOOMS) do labels[i] = z .. "%" end
@@ -1576,6 +1784,15 @@ local TOOL_ACTS = {
   --
   addpage = function()
     local p = doc.body[caret.para]
+
+    if richtext.block(p) then
+      local body = {}
+      for j, q in ipairs(doc.body) do body[j] = q end
+      table.insert(body, caret.para + 1, { style = writedoc.BODY, runs = {}, page_break_before = true })
+      edited(body, { para = caret.para + 1, at = 1 }, "page")
+      return
+    end
+
     local at_end = { para = caret.para, at = #richtext.plain(p) + 1 }
     local body, place = richtext.split(doc.body, at_end, by_name)
 
@@ -1590,6 +1807,11 @@ local TOOL_ACTS = {
 
 local sink = ui.view{ x = 0, y = 0, w = W, h = H }
 sink.focusable = true
+
+-- **Tab is the page's**: a tab in the text, the next cell in a table. A
+-- window keeps Tab for moving between its controls unless a view says it
+-- takes it (`ui.lua`), and Control-Tab still does that here.
+sink.takes_tab = true
 
 local utf8_pending = ""
 
@@ -1642,9 +1864,8 @@ function sink:key(c)
     move(place, shift, true)
   elseif k == keys.HOME or k == keys.END then
     if ctrl then
-      local last = #doc.body
-      move(k == keys.HOME and { para = 1, at = 1 }
-           or { para = last, at = #richtext.plain(doc.body[last]) + 1 }, shift)
+      move(k == keys.HOME and richtext.enter(doc.body, 1, true)
+           or richtext.enter(doc.body, #doc.body, false), shift)
     else
       local home, finish = pageset.line_ends(set, measure, caret)
       move(k == keys.HOME and home or finish, shift)
@@ -1655,10 +1876,14 @@ function sink:key(c)
     frame()
   elseif k == keys.DELETE and mods == 0 then
     back_or_forward(true)
+  elseif k == 9 and caret.row and (mods == 0 or mods == keys.SHIFT) then
+    table_key(mods == keys.SHIFT and -1 or 1)
   elseif mods ~= 0 then
     return false
   elseif c == 8 or c == 127 then
     back_or_forward(false)
+  elseif caret.row and (c == 13 or c == 10) then
+    table_key("down")
   elseif c == 13 or c == 10 then
     local p = doc.body[caret.para]
 
@@ -1675,9 +1900,8 @@ function sink:key(c)
   elseif c == 9 then
     type_text("\t")
   elseif c == 1 then                                     -- Control-A
-    anchor = { para = 1, at = 1 }
-    local last = #doc.body
-    caret = { para = last, at = #richtext.plain(doc.body[last]) + 1 }
+    anchor = richtext.enter(doc.body, 1, true)
+    caret = richtext.enter(doc.body, #doc.body, false)
     changed()
   elseif c == 2 then                                     -- Control-B
     local look = shown_look()
@@ -1711,9 +1935,8 @@ end
 
 function sink:edit(kind)
   if kind == "selectall" then
-    anchor = { para = 1, at = 1 }
-    local last = #doc.body
-    caret = { para = last, at = #richtext.plain(doc.body[last]) + 1 }
+    anchor = richtext.enter(doc.body, 1, true)
+    caret = richtext.enter(doc.body, #doc.body, false)
     changed()
     return true
   end
@@ -1838,7 +2061,7 @@ function sink:mouse(action, x, y)
       pending = {}
       frame()
     else
-      caret = place
+      caret = clamp(place)
       version = version + 1
       frame()
     end

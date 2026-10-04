@@ -28,8 +28,10 @@
 -- spacing, the space before and after a paragraph and none before at the
 -- top of a page, **no paragraph leaving one line alone at the foot of a page
 -- or the head of the next**, a paragraph kept with the next when its style
--- says so, and page numbers. What it does not do yet, and says so in
--- `docs/write.md`: hyphenation, kerning, ligatures, lists and drop caps.
+-- says so, and page numbers; lists, drop caps, hyphenation, pictures, and
+-- tables - a row a line, broken between rows, the header row again at the
+-- head of each page a table runs on to. What it does not do yet, and says
+-- so in `docs/write.md`: kerning.
 
 local pageset = {}
 
@@ -405,6 +407,13 @@ end
 -- How far a list's lines stand in from its marker.
 pageset.LIST_MM = 6
 
+-- **A table's look** (W5b): the room inside a cell round its text, its
+-- rules, and the tint under a header row - Pages' plain table's.
+pageset.CELL_PAD_PT = 4
+pageset.RULE_PT = 0.5
+pageset.RULE = "#a3abb6"
+pageset.HEADER_TINT = "#e9edf2"
+
 -- The room between a drop cap and the lines beside it.
 pageset.CAP_GAP_MM = 1.5
 
@@ -456,6 +465,13 @@ end
 --                       `height_pt`
 --       pieces    each `{ text, look, x_pt, width_pt, at }` - `at` is where
 --                 its bytes start in its paragraph's text
+--       art       rules and fills under the line's text, each `{ kind =
+--                 "rect", x_pt, y_pt, w_pt, h_pt, fill }` or `{ kind =
+--                 "rule", x_pt, y_pt, x2_pt, y2_pt, colour, width_pt }`,
+--                 `y` down from the line's top - what a table row draws
+--       cells     a table row's cells, each `{ x_pt, width_pt, lines }`:
+--                 its text's lines, set as a paragraph's are, each with
+--                 the `row` and `col` it is in
 --     header    the header's words as a piece and its baseline, or nil
 --     footer    the page number as a piece and its baseline, or nil
 --
@@ -497,6 +513,7 @@ function pageset.set(doc, measure, cache, opts)
     cache.looks, cache.look_of = looks_table()
     cache.width = widths(measure, cache.looks, doc.ligatures)
     cache.paras = setmetatable({}, { __mode = "k" })
+    cache.cells = setmetatable({}, { __mode = "k" })
   end
 
   local looks, look_of, width = cache.looks, cache.look_of, cache.width
@@ -504,49 +521,15 @@ function pageset.set(doc, measure, cache, opts)
   local by_name = {}
   for _, s in ipairs(doc.styles) do by_name[s.name] = s end
 
-  -- Every paragraph broken into lines first: the column is the same on
-  -- every page, so where a line breaks does not depend on where it lands,
-  -- and keeping a paragraph with the next needs to know the next.
-  local paras = {}
-  local numbered = 0
-
-  for n, p in ipairs(doc.body) do
-    local kept = cache.paras[p]
-
-    if kept then
-      for _, line in ipairs(kept.lines) do line.para = n end
-      paras[n] = kept
-    elseif p.picture then
-      -- **A picture** (W5): one line as tall as the picture, scaled down
-      -- to the column when it is wider, placed as its paragraph aligns.
-      local style = by_name[p.style] or doc.styles[1]
-      local layout = richtext.layout(p, style)
-      local inner = left + writedoc.pt(layout.indent_left_mm)
-      local room = math.max(1, column - writedoc.pt(layout.indent_left_mm)
-                                   - writedoc.pt(layout.indent_right_mm))
-      local w = writedoc.pt(p.picture.width_mm)
-      local h = writedoc.pt(p.picture.height_mm)
-
-      if w > room then w, h = room, h * room / w end
-
-      local line = { pieces = { { picture = p.picture.name, text = "", at = 1,
-                                  look = look_of(richtext.look({}, style)),
-                                  x_pt = 0, width_pt = w, height_pt = h } },
-                     width_pt = w, spaces = 0, forced = false, first = true,
-                     from = 1, para = n, ascent_pt = h, height_pt = h + 4 }
-
-      align(line, layout, inner, room, true)
-
-      paras[n] = { lines = { line }, layout = layout, style = style, inner = inner }
-      cache.paras[p] = paras[n]
-    else
-      local style = by_name[p.style] or doc.styles[1]
-      local layout = richtext.layout(p, style)
+  --
+  -- **A paragraph's text in lines**, `inner` from the page's left and
+  -- `column_room` wide: a list's hang, a drop cap beside its first lines,
+  -- each line's height and its place across. The page's paragraphs and a
+  -- table's cells alike.
+  --
+  local function text_lines(p, style, layout, inner, column_room)
       local tokens = tokens_of(p, style, look_of)
       local empty = look_of(richtext.look({}, style))
-      local inner = left + writedoc.pt(layout.indent_left_mm)
-      local column_room = math.max(1, column - writedoc.pt(layout.indent_left_mm)
-                                          - writedoc.pt(layout.indent_right_mm))
 
       -- **A list hangs**: every line in from its marker, the first line's
       -- indent not applied.
@@ -574,7 +557,6 @@ function pageset.set(doc, measure, cache, opts)
       local lines = break_lines(tokens, room_of, width, hyphenate)
 
       for k, line in ipairs(lines) do
-        line.para = n
         line_height(line, looks, measure, empty, layout.spacing_lines)
         align(line, layout, start_of(k), room_of(k), k == #lines)
       end
@@ -598,6 +580,180 @@ function pageset.set(doc, measure, cache, opts)
         table.insert(first.pieces, 1, cap)
         first.from = 1
       end
+
+      return lines, listed
+  end
+
+  -- A style as a header row's text wears it: bold.
+  local heavy = {}
+
+  local function header_style(style)
+    if not heavy[style] then
+      local h = {}
+      for k, v in pairs(style) do h[k] = v end
+      h.weight = "Bold"
+      heavy[style] = h
+    end
+
+    return heavy[style]
+  end
+
+  --
+  -- **A cell's lines**, `x` from the page's left and `room` wide: set as a
+  -- paragraph's are, without a list, a drop cap or the space round a
+  -- paragraph, which a cell has no use for - and kept by the cell, so a
+  -- keystroke in one cell sets that cell and no other.
+  --
+  local function cell_lines(cell, header, x, room)
+    local kept = cache.cells[cell]
+
+    if kept and kept.x == x and kept.room == room and kept.header == header then
+      return kept.lines
+    end
+
+    local style = by_name[cell.style] or doc.styles[1]
+
+    if header then style = header_style(style) end
+
+    local layout = richtext.layout(cell, style)
+    layout.list, layout.drop_cap_lines = "none", 0
+
+    local lines = text_lines(cell, style, layout, x, room)
+
+    cache.cells[cell] = { x = x, room = room, header = header, lines = lines }
+
+    return lines
+  end
+
+  --
+  -- **A table, a line for each row** (W5b): its columns share the room
+  -- between its paragraph's indents equally; a row is as tall as its
+  -- tallest cell's text and the room round it; each row draws its cells'
+  -- rules, and a header row its tint, under its text.
+  --
+  local function set_table(p, n)
+    local style = by_name[p.style] or doc.styles[1]
+    local layout = richtext.layout(p, style)
+    local inner = left + writedoc.pt(layout.indent_left_mm)
+    local room = math.max(20, column - writedoc.pt(layout.indent_left_mm)
+                                 - writedoc.pt(layout.indent_right_mm))
+    local t = p.table
+    local width_of = room / t.columns
+    local pad = pageset.CELL_PAD_PT
+    local rows = {}
+
+    for r, row in ipairs(t.rows) do
+      local header = t.header and r == 1
+      local cells, tallest = {}, 0
+
+      for c, cell in ipairs(row) do
+        local x = inner + (c - 1) * width_of
+        local lines = cell_lines(cell, header, x + pad, math.max(1, width_of - 2 * pad))
+        local h = 0
+
+        for _, l in ipairs(lines) do h = h + l.height_pt end
+
+        cells[c] = { x_pt = x, width_pt = width_of, lines = lines }
+        tallest = math.max(tallest, h)
+      end
+
+      local height = tallest + 2 * pad
+
+      -- Each line of a cell, its baseline below the row's top, and where
+      -- it is in the table.
+      for c, cell in ipairs(cells) do
+        local dy = pad
+
+        for _, l in ipairs(cell.lines) do
+          l.para, l.row, l.col = n, r, c
+          l.dy_pt = dy + l.ascent_pt
+          dy = dy + l.height_pt
+        end
+      end
+
+      local art = {}
+
+      if header then
+        art[#art + 1] = { kind = "rect", x_pt = inner, y_pt = 0, w_pt = room,
+                          h_pt = height, fill = pageset.HEADER_TINT }
+      end
+
+      local function rule(x, y, x2, y2)
+        art[#art + 1] = { kind = "rule", x_pt = x, y_pt = y, x2_pt = x2, y2_pt = y2,
+                          colour = pageset.RULE, width_pt = pageset.RULE_PT }
+      end
+
+      rule(inner, 0, inner + room, 0)
+      rule(inner, height, inner + room, height)
+
+      for c = 0, t.columns do
+        local x = inner + c * width_of
+        rule(x, 0, x, height)
+      end
+
+      rows[r] = { para = n, row = r, cells = cells, art = art, header = header,
+                  pieces = {}, x_pt = inner, width_pt = room, from = 1, spaces = 0,
+                  extra_space_pt = 0, ascent_pt = height, height_pt = height }
+    end
+
+    return { lines = rows, layout = layout, style = style, inner = inner,
+             repeat_header = t.header and #rows > 1 }
+  end
+
+  -- Every paragraph broken into lines first: the column is the same on
+  -- every page, so where a line breaks does not depend on where it lands,
+  -- and keeping a paragraph with the next needs to know the next.
+  local paras = {}
+  local numbered = 0
+
+  for n, p in ipairs(doc.body) do
+    local kept = cache.paras[p]
+
+    if kept then
+      for _, line in ipairs(kept.lines) do
+        line.para = n
+
+        for _, cell in ipairs(line.cells or {}) do
+          for _, l in ipairs(cell.lines) do l.para = n end
+        end
+      end
+
+      paras[n] = kept
+    elseif p.picture then
+      -- **A picture** (W5): one line as tall as the picture, scaled down
+      -- to the column when it is wider, placed as its paragraph aligns.
+      local style = by_name[p.style] or doc.styles[1]
+      local layout = richtext.layout(p, style)
+      local inner = left + writedoc.pt(layout.indent_left_mm)
+      local room = math.max(1, column - writedoc.pt(layout.indent_left_mm)
+                                   - writedoc.pt(layout.indent_right_mm))
+      local w = writedoc.pt(p.picture.width_mm)
+      local h = writedoc.pt(p.picture.height_mm)
+
+      if w > room then w, h = room, h * room / w end
+
+      local line = { pieces = { { picture = p.picture.name, text = "", at = 1,
+                                  look = look_of(richtext.look({}, style)),
+                                  x_pt = 0, width_pt = w, height_pt = h } },
+                     width_pt = w, spaces = 0, forced = false, first = true,
+                     from = 1, para = n, ascent_pt = h, height_pt = h + 4 }
+
+      align(line, layout, inner, room, true)
+
+      paras[n] = { lines = { line }, layout = layout, style = style, inner = inner }
+      cache.paras[p] = paras[n]
+    elseif p.table then
+      paras[n] = set_table(p, n)
+      cache.paras[p] = paras[n]
+    else
+      local style = by_name[p.style] or doc.styles[1]
+      local layout = richtext.layout(p, style)
+      local inner = left + writedoc.pt(layout.indent_left_mm)
+      local column_room = math.max(1, column - writedoc.pt(layout.indent_left_mm)
+                                          - writedoc.pt(layout.indent_right_mm))
+      local lines, listed = text_lines(p, style, layout, inner, column_room)
+
+      for _, line in ipairs(lines) do line.para = n end
 
       paras[n] = { lines = lines, layout = layout, style = style, inner = inner,
                    listed = listed }
@@ -648,8 +804,37 @@ function pageset.set(doc, measure, cache, opts)
 
   local function put(line)
     line.baseline_pt = y + line.ascent_pt
+
+    for _, cell in ipairs(line.cells or {}) do
+      for _, l in ipairs(cell.lines) do l.baseline_pt = y + l.dy_pt end
+    end
+
     page.lines[#page.lines + 1] = line
     y = y + line.height_pt
+  end
+
+  -- **A header row again**, at the head of a page a table runs on to: a
+  -- copy, with lines of its own to place, that a caret never stands in.
+  local function again(row)
+    local copy = {}
+    for k, v in pairs(row) do copy[k] = v end
+
+    copy.repeated = true
+    copy.cells = {}
+
+    for c, cell in ipairs(row.cells) do
+      local lines = {}
+
+      for i, l in ipairs(cell.lines) do
+        local lc = {}
+        for k, v in pairs(l) do lc[k] = v end
+        lines[i] = lc
+      end
+
+      copy.cells[c] = { x_pt = cell.x_pt, width_pt = cell.width_pt, lines = lines }
+    end
+
+    return copy
   end
 
   -- How tall lines `from` to `to` of a paragraph are.
@@ -698,6 +883,8 @@ function pageset.set(doc, measure, cache, opts)
 
     while k <= #lines do
       local at_top = #page.lines == 0
+
+      if at_top and k > 1 and para.repeat_header then put(again(lines[1])) end
 
       -- Space before a paragraph, but never at the head of a page.
       if first and not at_top then y = y + layout.before_pt end
@@ -782,17 +969,40 @@ end
 -- text box and a cell alike. A place is `richtext`'s: `{ para, at }`.
 --------------------------------------------------------------------------
 
--- Every line of a set in order, each with the number of its page.
+-- Every line of a set in order, each with the number of its page: a table
+-- row's cells' lines in their place, cell after cell, and a header row
+-- repeated on a later page not at all - a caret stands in the first.
 local function all_lines(set)
   local out = {}
 
   for n, page in ipairs(set.pages) do
     for _, line in ipairs(page.lines) do
-      out[#out + 1] = { page = n, line = line }
+      if line.cells then
+        if not line.repeated then
+          for _, cell in ipairs(line.cells) do
+            for _, l in ipairs(cell.lines) do
+              out[#out + 1] = { page = n, line = l, row_line = line }
+            end
+          end
+        end
+      else
+        out[#out + 1] = { page = n, line = line }
+      end
     end
   end
 
   return out
+end
+
+-- A place on `line` at byte `at`: in its cell, when it is a cell's.
+local function place_at(line, at)
+  return { para = line.para, at = at, row = line.row, col = line.col }
+end
+
+-- Whether a line is where a place is: the same paragraph, and the same
+-- cell or none.
+local function holds(line, place)
+  return line.para == place.para and line.row == place.row and line.col == place.col
 end
 
 -- How far into `piece` the byte `at` is, in points: its prefix's advance,
@@ -827,9 +1037,9 @@ function pageset.locate(set, measure, place)
   local found
 
   for _, entry in ipairs(all_lines(set)) do
-    if entry.line.para == place.para and entry.line.from <= place.at then
+    if holds(entry.line, place) and entry.line.from <= place.at then
       found = entry
-    elseif found and entry.line.para ~= place.para then
+    elseif found and not holds(entry.line, place) then
       break
     end
   end
@@ -862,7 +1072,7 @@ end
 -- first.
 --
 function pageset.place_on(set, measure, line, x_pt)
-  local place = { para = line.para, at = line.from }
+  local place = place_at(line, line.from)
 
   for _, piece in ipairs(line.pieces) do
     if piece.soft then return place end
@@ -875,24 +1085,20 @@ function pageset.place_on(set, measure, line, x_pt)
       local w = measure.width(look, ch, set.ligatures)
                 + (ch == " " and line.extra_space_pt or 0)
 
-      if x_pt < pen + w / 2 then return { para = line.para, at = at } end
+      if x_pt < pen + w / 2 then return place_at(line, at) end
 
       pen = pen + w
       at = at + #ch
     end
 
-    place = { para = line.para, at = at }
+    place = place_at(line, at)
   end
 
   return place
 end
 
---
--- **The place under a point** of page `page`, in points from its top left:
--- the line whose height holds it, or the nearest, and the place on it.
---
-function pageset.hit(set, measure, page, x_pt, y_pt)
-  local lines = set.pages[page] and set.pages[page].lines or {}
+-- Of `lines`, the one whose height holds `y_pt`, or the nearest.
+local function nearest(lines, y_pt)
   local best, gap = nil, math.huge
 
   for _, line in ipairs(lines) do
@@ -905,9 +1111,36 @@ function pageset.hit(set, measure, page, x_pt, y_pt)
     if d < gap then best, gap = line, d end
   end
 
+  return best
+end
+
+-- The cell of a table row under `x_pt`, or the nearest at either side.
+local function cell_under(row, x_pt)
+  for _, cell in ipairs(row.cells) do
+    if x_pt < cell.x_pt + cell.width_pt then return cell end
+  end
+
+  return row.cells[#row.cells]
+end
+
+--
+-- **The place under a point** of page `page`, in points from its top left:
+-- the line whose height holds it, or the nearest, and the place on it - in
+-- a table, the cell under it and that cell's nearest line.
+--
+function pageset.hit(set, measure, page, x_pt, y_pt)
+  local lines = set.pages[page] and set.pages[page].lines or {}
+  local best = nearest(lines, y_pt)
+
   if not best then return nil end
 
-  return pageset.place_on(set, measure, best, x_pt - set.pages[page].shift_pt)
+  x_pt = x_pt - set.pages[page].shift_pt
+
+  if best.cells then
+    best = nearest(cell_under(best, x_pt).lines, y_pt)
+  end
+
+  return pageset.place_on(set, measure, best, x_pt)
 end
 
 --
@@ -921,16 +1154,61 @@ function pageset.vertical(set, measure, place, step, x_pt)
   if not here then return place end
 
   local lines = all_lines(set)
+  local x = x_pt or here.x_pt
+
+  local function on(entry, line)
+    return pageset.place_on(set, measure, line or entry.line,
+                            x - set.pages[entry.page].shift_pt), x
+  end
+
+  -- The first or the last line of the cell under x in a table's row:
+  -- what Up and Down reach entering a row.
+  local function into(entry, last)
+    local cell = cell_under(entry.row_line, x - set.pages[entry.page].shift_pt)
+    return on(entry, cell.lines[last and #cell.lines or 1])
+  end
 
   for i, entry in ipairs(lines) do
     if entry.line == here.line then
+      local line = entry.line
+
+      if line.row then
+        -- **In a table**: the next line of this cell, then the cell above
+        -- or below, then out of the table.
+        local other = lines[i + step]
+
+        if other and holds(other.line, line) then return on(other) end
+
+        local first, last
+
+        for j, e in ipairs(lines) do
+          if e.line.para == line.para then
+            first = first or j
+            last = j
+
+            if e.line.row == line.row + step and e.line.col == line.col then
+              if step > 0 then return on(e) end
+              other = e
+            end
+          end
+        end
+
+        if other and other.line.row == line.row + step then return on(other) end
+
+        other = lines[step > 0 and last + 1 or first - 1]
+
+        if not other then return place, x end
+        if other.line.row then return into(other, step < 0) end
+
+        return on(other)
+      end
+
       local other = lines[i + step]
 
-      if not other then return place, x_pt or here.x_pt end
+      if not other then return place, x end
+      if other.line.row then return into(other, step < 0) end
 
-      return pageset.place_on(set, measure, other.line,
-                              (x_pt or here.x_pt) - set.pages[other.page].shift_pt),
-             x_pt or here.x_pt
+      return on(other)
     end
   end
 
@@ -944,7 +1222,7 @@ end
 -- ends, every line between whole.
 --
 function pageset.selection(set, measure, a, b)
-  if b.para < a.para or (b.para == a.para and b.at < a.at) then a, b = b, a end
+  if richtext.before(b, a) then a, b = b, a end
 
   local from = pageset.locate(set, measure, a)
   local to = pageset.locate(set, measure, b)
@@ -984,8 +1262,7 @@ function pageset.line_ends(set, measure, place)
 
   if not here then return place, place end
 
-  return { para = place.para, at = here.line.from },
-         { para = place.para, at = line_end(here.line) }
+  return place_at(here.line, here.line.from), place_at(here.line, line_end(here.line))
 end
 
 return pageset

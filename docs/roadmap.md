@@ -472,9 +472,33 @@ kits under `user/lib/` for Present and Sheets to stand on:
 - **W6 - DOCX out**: *Done, 4 October* (`testing.md` 18.389), before W5 -
   the drawing's Export list was nearer done than Media and Table.
 - **W5a - pictures and captions**: *Done, 4 October* (`testing.md` 18.390).
-  Next, W5b, tables. **Found on the way**: the Open panel's list does not
-  have the keyboard as it opens, so Return does not open its first entry -
-  every application's, since the panel is shared.
+  **Found on the way**: the Open panel's list does not have the keyboard as
+  it opens, so Return does not open its first entry - every application's,
+  since the panel is shared.
+- **W5b - tables, and Insert's list**: *Done, 4 October* (`testing.md`
+  18.391). Next in it: columns of their own widths, dragged at a rule;
+  cells joined; tabbed text pasted into cells. Next, W7.
+- **W7 - text boxes, shapes, charts and comments**, the toolbar's last
+  four, each a thing in the text as a picture and a table are - set in its
+  paragraph's place, not floating over the page - so the setting, the
+  caret, the PDF and the DOCX each meet one more kind of paragraph rather
+  than a second layout:
+  - **W7a, a text box**: a table of one cell drawn as a box, narrower than
+    the column and placed as its paragraph aligns, with a fill and a
+    border; Return in it a line break, as Shift-Return becomes everywhere.
+  - **W7b, a shape**: a rectangle, a rounded one, an oval, a triangle, a
+    star or an arrow, filled, drawn by the same `art` a table's rules are -
+    on the screen as triangles, in the PDF as paths, in Word as its own
+    preset shapes.
+  - **W7c, a chart**: a table whose data is drawn as columns, bars, lines
+    or a pie, its first row the series and its first column the
+    categories; Edit Data shows the table above the chart to type into,
+    with every table key. Word gets a chart of its own with the numbers in
+    it.
+  - **W7d, a comment**: a field on the text it is about, its words in a
+    list the document keeps; the text tinted on the screen, the words in
+    the Format panel to type into, a note in the PDF and Word's own
+    comments in the DOCX.
 - **W4 - the window**, from `docs/write.html`: the pages on a dark desk,
   the toolbar, Format and Document switching the panel, View for the
   thumbnails, zoom; typing and choosing styles, on the document page the

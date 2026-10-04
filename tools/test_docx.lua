@@ -80,6 +80,40 @@ has(se, "<w:autoHyphenation/>", "hyphenation")
 
 has(docx.parts.numbering(doc), '<w:numFmt w:val="decimal"/>', "numbers")
 
+-- **A table** (W5b): `w:tbl` with fixed columns sharing the column, rules
+-- round every cell, the header row repeated, tinted and bold, each cell a
+-- paragraph without the space round one - and a paragraph after a table
+-- that ends the body, as Word wants.
+local function cell(text) return { style = "Body", runs = { { text = text } } } end
+
+local tdoc = writedoc.check{ format = "kosmos-write", version = 1,
+  margins_mm = { top = 25, bottom = 25, left = 25, right = 25 },
+  body = {
+    { style = "Body", runs = { { text = "Before" } } },
+    { style = "Body", table = { columns = 2, header = true, rows = {
+      { cell("Planet"), cell("Moons") }, { cell("Mars"), cell("2") } } } },
+  } }
+local td = docx.parts.document(tdoc)
+
+has(td, '<w:tblGrid><w:gridCol w:w="4535"/><w:gridCol w:w="4535"/></w:tblGrid>',
+    "two columns sharing A4's 160 mm column")
+has(td, '<w:tblHeader/>', "the header row repeated")
+has(td, 'w:fill="E9EDF2"', "the header row's tint")
+has(td, '<w:insideV w:val="single"', "rules between the columns")
+has(td, '<w:b/></w:rPr><w:t xml:space="preserve">Planet</w:t>', "the header's text bold")
+has(td, '<w:t xml:space="preserve">Mars</w:t>', "a cell's text")
+has(td, 'w:before="0" w:after="0"', "a cell without a paragraph's space round it")
+check(td:find("</w:tbl><w:p/>", 1, true) ~= nil, "a table that ends the body has no paragraph after it")
+check(not td:find('Mars</w:t></w:r><w:r><w:rPr><w:b/>', 1, true) and
+      select(2, td:gsub("<w:b/>", "")) == 2, "a row below the header is bold")
+
+local o2, c2 = 0, 0
+for tag in td:gmatch("<w:%a+[^>]*>") do
+  if tag:sub(-2) ~= "/>" then o2 = o2 + 1 end
+end
+for _ in td:gmatch("</w:%a+>") do c2 = c2 + 1 end
+check(o2 == c2, ("in a table, %d elements opened and %d closed"):format(o2, c2))
+
 if fails > 0 then
   print(("docx: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

@@ -746,6 +746,135 @@ do
         "a picture's sizes were not held to their range, as every number is")
 end
 
+-- 18. **Tables** (W5b): a row a line, its columns sharing the column, a
+-- cell's text set as a paragraph's in its room, the header row bold over
+-- its tint and again at the head of each page the table runs on to; a
+-- place in a cell found, hit, and moved through by Up and Down; an edit in
+-- one cell setting that cell and no other.
+do
+  local PAD = pageset.CELL_PAD_PT
+  local LINE = (0.8 + 0.2) * 11 * 1.2           -- a Body line
+
+  local function cell(text) return { style = "Body", runs = { { text = text } } } end
+
+  local tdoc = doc_of{
+    { style = "Body", table = { columns = 3, header = true, rows = {
+      { cell("Name"), cell("Size"), cell("Kind") },
+      { cell("one"), cell("two"), cell("three") },
+      { cell(("word "):rep(30)), cell("x"), cell("y") },
+    } } },
+    para("Body", "after"),
+  }
+  local set = pageset.set(tdoc, measure)
+  local lines = set.pages[1].lines
+  local w = COLUMN / 3
+
+  check(#lines == 4 and lines[1].cells and #lines[1].cells == 3 and lines[1].row == 1
+        and lines[3].row == 3 and lines[4].para == 2,
+        "a table's rows are not a line each, before the paragraph after it")
+  check(near(lines[1].cells[2].x_pt, LEFT + w) and near(lines[1].cells[2].width_pt, w),
+        "a table's columns do not share the column equally")
+
+  local h1 = lines[1].cells[1].lines[1]
+  check(near(h1.pieces[1].x_pt, LEFT + PAD) and near(lines[1].height_pt, LINE + 2 * PAD)
+        and near(lines[1].baseline_pt - lines[1].ascent_pt, TOP)
+        and near(h1.baseline_pt, TOP + PAD + 0.8 * 11),
+        "a cell's text does not stand inside its cell, the room round it")
+  check(set.looks[h1.pieces[1].look].weight == "Bold"
+        and set.looks[lines[2].cells[1].lines[1].pieces[1].look].weight == "Regular",
+        "the header row's text is not bold, or the rows below it are")
+
+  local tints, rules = 0, 0
+  for _, a in ipairs(lines[1].art) do
+    if a.kind == "rect" and a.fill == pageset.HEADER_TINT then tints = tints + 1 end
+    if a.kind == "rule" then rules = rules + 1 end
+  end
+  check(tints == 1 and rules == 2 + 4 and #lines[2].art == 6,
+        "a row's rules or the header's tint are not what a table draws")
+
+  -- A long cell wraps in its own room, and its row is as tall as it.
+  local room = w - 2 * PAD
+  local per_line = math.floor((room + BODY) / (5 * BODY)) -- "word " fits this many
+  local long = lines[3].cells[1].lines
+  check(#long > 1 and near(lines[3].height_pt, #long * LINE + 2 * PAD)
+        and #lines[3].cells[2].lines == 1,
+        ("a long cell did not wrap in its room (%d lines, %d words a line)")
+        :format(#long, per_line))
+
+  -- A place in cell (2, 2), found and hit.
+  local place = { para = 1, at = 3, row = 2, col = 2 }
+  local here = pageset.locate(set, measure, place)
+  local row2 = TOP + lines[1].height_pt
+  check(here and near(here.x_pt, LEFT + w + PAD + 2 * BODY)
+        and near(here.baseline_pt, row2 + PAD + 0.8 * 11),
+        "a place in a cell is not where its text is")
+  local back = pageset.hit(set, measure, 1, here.x_pt + 0.1, here.baseline_pt - 2)
+  check(back.para == 1 and back.row == 2 and back.col == 2 and back.at == 3,
+        "a point in a cell did not find its place there")
+  local edge = pageset.hit(set, measure, 1, LEFT + 2 * w + 1, row2 + 1)
+  check(edge.row == 2 and edge.col == 3 and edge.at == 1,
+        "a point at a cell's left did not find that cell's start")
+
+  -- Up and Down: the cell above and below, then out of the table, and into
+  -- it at the cell under the caret.
+  local down = pageset.vertical(set, measure, { para = 1, at = 1, row = 1, col = 2 }, 1)
+  check(down.row == 2 and down.col == 2, "Down from a cell did not reach the cell below")
+  local out = pageset.vertical(set, measure, { para = 1, at = 1, row = 3, col = 2 }, 1)
+  check(out.para == 2 and out.row == nil, "Down from the last row did not leave the table")
+  local x_in = pageset.locate(set, measure, { para = 2, at = 1 }).x_pt
+  local up = pageset.vertical(set, measure, { para = 2, at = 1 }, -1)
+  check(up.para == 1 and up.row == 3 and up.col == 1,
+        "Up into a table did not reach its last row's cell under the caret")
+  local _, kept_x = pageset.vertical(set, measure, { para = 2, at = 1 }, -1, x_in + w)
+  local up2 = pageset.vertical(set, measure, { para = 2, at = 1 }, -1, x_in + w)
+  check(up2.col == 2 and near(kept_x, x_in + w), "Up into a table did not keep its column")
+
+  -- Home and End in a cell, and a selection inside one.
+  local home, finish = pageset.line_ends(set, measure, { para = 1, at = 2, row = 2, col = 3 })
+  check(home.row == 2 and home.col == 3 and home.at == 1 and finish.at == 6,
+        "Home and End in a cell did not stay in it")
+  local marks = pageset.selection(set, measure, { para = 1, at = 1, row = 2, col = 1 },
+                                  { para = 1, at = 4, row = 2, col = 1 })
+  check(#marks == 1 and near(marks[1].x_pt, LEFT + PAD) and near(marks[1].w_pt, 3 * BODY),
+        "a selection in a cell is not its text's")
+
+  -- **An edit in one cell sets that cell and no other**: the cells it did
+  -- not touch keep their lines from the setting before.
+  local cache = pageset.cache()
+  local before = pageset.set(tdoc, measure, cache)
+  local body2 = richtext.type(tdoc.body, { para = 1, at = 4, row = 2, col = 2 }, "!")
+  local after = pageset.set(with_body(tdoc, body2), measure, cache)
+  local b1, a1 = before.pages[1].lines[2], after.pages[1].lines[2]
+  check(a1.cells[1].lines == b1.cells[1].lines and a1.cells[2].lines ~= b1.cells[2].lines
+        and text_of(a1.cells[2].lines[1]) == "two!",
+        "an edit in one cell set again cells it did not touch, or missed its own")
+
+  -- **A long table runs on**: broken between rows, never inside one, and
+  -- its header row again at the head of the next page - a caret never in
+  -- that copy.
+  local rows = { { cell("Head"), cell("Two") } }
+  for r = 2, 80 do rows[r] = { cell("row " .. r), cell("x") } end
+  local long_doc = doc_of{ { style = "Body", table = { columns = 2, header = true, rows = rows } } }
+  local lset = pageset.set(long_doc, measure)
+  local p2 = lset.pages[2] and lset.pages[2].lines
+
+  check(#lset.pages >= 2 and p2[1].repeated and p2[1].row == 1 and p2[2].row > 2,
+        "a table running on to a page did not head it with its header row")
+
+  local fits = true
+  for _, pg in ipairs(lset.pages) do
+    for _, l in ipairs(pg.lines) do
+      if l.baseline_pt - l.ascent_pt + l.height_pt > BOTTOM + 1e-6 then fits = false end
+    end
+  end
+  check(fits, "a table row ran past the foot of a page")
+
+  local first = pageset.locate(lset, measure, { para = 1, at = 1, row = 1, col = 1 })
+  check(first.page == 1, "a caret in the header row stood in its copy on a later page")
+  local hit2 = pageset.hit(lset, measure, 2, LEFT + 1, p2[2].baseline_pt - 1)
+  check(hit2.row == p2[2].row, "a point on a later page's row did not find that row")
+end
+
 if fails > 0 then
   print(("pageset: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

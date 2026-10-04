@@ -14,7 +14,8 @@
 -- named in `[Content_Types].xml` and joined by relationships. Word, Pages,
 -- LibreOffice and macOS's own text system all read it.
 --
--- **What maps, and how**: a paragraph is `w:p` in its style, with what it
+-- **What maps, and how**: a table is `w:tbl`, its cells' text paragraphs
+-- of their own; a paragraph is `w:p` in its style, with what it
 -- changes from it - alignment, spacing, indents, a list, a page break
 -- before, kept with the next; a run is `w:r` with its face, size, bold (a
 -- weight of SemiBold or more), italic, underline, strike-through and
@@ -191,6 +192,109 @@ local function drawing(pic, media)
     cx, cy, media.n, media.n, media.n, esc(media.file), media.rid, cx, cy)
 end
 
+--
+-- **One paragraph as `w:p`**: its style, what it changes from it, a
+-- picture, its runs. `cell` when it is a table's cell, which has none of
+-- the space round a paragraph - as Write sets one - and, in a header row,
+-- bold text.
+--
+local function paragraph_xml(p, style, media, cell)
+  local own = {}
+  for _, k in ipairs(richtext.PARA_KEYS) do
+    if p[k] ~= nil then own[k] = true end
+  end
+
+  local layout = richtext.layout(p, style)
+
+  if cell then
+    layout.before_pt, layout.after_pt = 0, 0
+    own.before_pt, own.after_pt = true, true
+    own.list, own.drop_cap_lines = nil, nil
+  end
+
+  -- A list's indents are Word's numbering's: the paragraph says only that
+  -- it is in one.
+  local parts = { "<w:p>", ppr(layout, p.style, own) }
+
+  if p.picture and media[p.picture.name] then
+    parts[#parts + 1] = drawing(p.picture, media[p.picture.name])
+  end
+
+  for _, r in ipairs(p.runs) do
+    local only = {}
+    for _, k in ipairs(richtext.CHAR_KEYS) do
+      if r[k] ~= nil then only[k] = true end
+    end
+
+    if cell == "header" and r.weight == nil then
+      r = setmetatable({ weight = "Bold" }, { __index = r })
+      only.weight = true
+    end
+
+    parts[#parts + 1] = "<w:r>" .. rpr(r, only) .. run_text(r.text) .. "</w:r>"
+  end
+
+  parts[#parts + 1] = "</w:p>"
+
+  return table.concat(parts)
+end
+
+--
+-- **A table as `w:tbl`** (W5b): fixed columns sharing the room between its
+-- paragraph's indents, Write's rules round every cell, the room inside a
+-- cell, and a header row tinted, bold and repeated on each page - Word's
+-- `w:tblHeader`, which is the same rule.
+--
+local function table_xml(p, style, doc, by_name, media)
+  local t = p.table
+  local layout = richtext.layout(p, style)
+  local page_w = writedoc.page_mm(doc)
+  local room = page_w - doc.margins_mm.left - doc.margins_mm.right
+               - layout.indent_left_mm - layout.indent_right_mm
+  local col = math.floor(twips_mm(room) / t.columns)
+  local pad = twips_pt(4)
+  local rule = '<w:%s w:val="single" w:sz="4" w:space="0" w:color="A3ABB6"/>'
+  local edges = {}
+
+  for _, e in ipairs({ "top", "left", "bottom", "right", "insideH", "insideV" }) do
+    edges[#edges + 1] = rule:format(e)
+  end
+
+  local out = { "<w:tbl><w:tblPr>",
+    ('<w:tblW w:w="%d" w:type="dxa"/>'):format(col * t.columns),
+    ('<w:tblInd w:w="%d" w:type="dxa"/>'):format(twips_mm(layout.indent_left_mm)),
+    "<w:tblBorders>", table.concat(edges), "</w:tblBorders>",
+    '<w:tblLayout w:type="fixed"/>',
+    ('<w:tblCellMar><w:top w:w="%d" w:type="dxa"/><w:left w:w="%d" w:type="dxa"/>'
+     .. '<w:bottom w:w="%d" w:type="dxa"/><w:right w:w="%d" w:type="dxa"/></w:tblCellMar>')
+      :format(pad, pad, pad, pad),
+    "</w:tblPr><w:tblGrid>" }
+
+  for _ = 1, t.columns do out[#out + 1] = ('<w:gridCol w:w="%d"/>'):format(col) end
+
+  out[#out + 1] = "</w:tblGrid>"
+
+  for r, row in ipairs(t.rows) do
+    local header = t.header and r == 1
+
+    out[#out + 1] = header and "<w:tr><w:trPr><w:tblHeader/></w:trPr>" or "<w:tr>"
+
+    for _, cell in ipairs(row) do
+      out[#out + 1] = ('<w:tc><w:tcPr><w:tcW w:w="%d" w:type="dxa"/>%s</w:tcPr>'):format(col,
+        header and '<w:shd w:val="clear" w:color="auto" w:fill="E9EDF2"/>' or "")
+      out[#out + 1] = paragraph_xml(cell, by_name[cell.style] or style, media,
+                                    header and "header" or "cell")
+      out[#out + 1] = "</w:tc>"
+    end
+
+    out[#out + 1] = "</w:tr>"
+  end
+
+  out[#out + 1] = "</w:tbl>"
+
+  return table.concat(out)
+end
+
 local function document_xml(doc, media)
   media = media or {}
 
@@ -199,32 +303,19 @@ local function document_xml(doc, media)
 
   local body = {}
 
-  for _, p in ipairs(doc.body) do
+  for i, p in ipairs(doc.body) do
     local style = by_name[p.style] or doc.styles[1]
-    local own = {}
-    for _, k in ipairs(richtext.PARA_KEYS) do
-      if p[k] ~= nil then own[k] = true end
+
+    if p.table then
+      body[#body + 1] = table_xml(p, style, doc, by_name, media)
+
+      -- Word joins two tables that touch, and ends a body on a paragraph:
+      -- an empty one after a table that has no paragraph after it.
+      local after = doc.body[i + 1]
+      if not after or after.table then body[#body + 1] = "<w:p/>" end
+    else
+      body[#body + 1] = paragraph_xml(p, style, media)
     end
-
-    -- A list's indents are Word's numbering's: the paragraph says only that
-    -- it is in one.
-    local parts = { "<w:p>", ppr(richtext.layout(p, style), p.style, own) }
-
-    if p.picture and media[p.picture.name] then
-      parts[#parts + 1] = drawing(p.picture, media[p.picture.name])
-    end
-
-    for _, r in ipairs(p.runs) do
-      local only = {}
-      for _, k in ipairs(richtext.CHAR_KEYS) do
-        if r[k] ~= nil then only[k] = true end
-      end
-
-      parts[#parts + 1] = "<w:r>" .. rpr(r, only) .. run_text(r.text) .. "</w:r>"
-    end
-
-    parts[#parts + 1] = "</w:p>"
-    body[#body + 1] = table.concat(parts)
   end
 
   local w_mm, h_mm = writedoc.page_mm(doc)

@@ -292,10 +292,55 @@ end
 richtext.picture_of = picture_of
 
 --
+-- **A table** a paragraph is (W5b): rows of cells, each cell a paragraph of
+-- its own - its style, its own fields and its runs, never a picture or a
+-- table - every row as many cells as the table has columns, and whether
+-- its first row is a header. Nil when it is not one.
+--
+-- **The header row is a rule of the table, said by its name**: drawn over a
+-- tint, its text bold, and repeated at the head of each page the table runs
+-- on to, as Pages' and Word's are.
+--
+richtext.TABLE_ROWS, richtext.TABLE_COLUMNS = 1000, 20
+
+local function cell_of(t, by_name, style_name)
+  if type(t) ~= "table" then t = {} end
+
+  local raw = { style = t.style, runs = t.runs }
+  for _, k in ipairs(PARA_KEYS) do raw[k] = t[k] end
+
+  return richtext.paragraph(raw, by_name, style_name)
+end
+
+local function table_of(t, by_name, style_name)
+  if type(t) ~= "table" or type(t.rows) ~= "table" then return nil end
+
+  local columns = number(1, richtext.TABLE_COLUMNS, true)(t.columns)
+
+  if not columns then return nil end
+
+  local out = { columns = columns, header = boolean(t.header) or false, rows = {} }
+
+  for _, raw in ipairs(t.rows) do
+    if #out.rows >= richtext.TABLE_ROWS then break end
+
+    if type(raw) == "table" then
+      local row = {}
+      for c = 1, columns do row[c] = cell_of(raw[c], by_name, style_name) end
+      out.rows[#out.rows + 1] = row
+    end
+  end
+
+  if #out.rows == 0 then return nil end
+
+  return out
+end
+
+--
 -- One paragraph, checked: its style's name - the one it gave if that is a
 -- style, and `fallback` if not - its own paragraph fields where they differ
 -- from that style, and its runs, joined where they look alike. A picture's
--- paragraph holds the picture and no text.
+-- paragraph holds the picture and no text, and a table's the table.
 --
 function richtext.paragraph(t, by_name, fallback)
   if type(t) ~= "table" then t = {} end
@@ -313,6 +358,10 @@ function richtext.paragraph(t, by_name, fallback)
   out.picture = picture_of(t.picture)
 
   if out.picture then return out end
+
+  out.table = table_of(t.table, by_name, style_name)
+
+  if out.table then return out end
 
   local runs = out.runs
 
@@ -475,6 +524,51 @@ local function copy_body(body)
   return out
 end
 
+-- A paragraph that is a thing rather than text: a picture or a table. It
+-- goes whole or not at all.
+local function block(p)
+  return p.picture ~= nil or p.table ~= nil
+end
+
+richtext.block = block
+
+--
+-- **A place in a table's cell** (W5b) says the cell too: `{ para, at, row,
+-- col }`, `at` a byte of that cell's text. An edit there is the same edit
+-- on a body of one paragraph - the cell - put back into a new table whose
+-- other rows and cells are the same tables as before, so every function
+-- here works in a cell as it does on the page, and a page sets again only
+-- the cell that changed.
+--
+local function same_cell(a, b)
+  return a.para == b.para and a.row == b.row and a.col == b.col
+end
+
+richtext.same_cell = same_cell
+
+local function in_cell(body, a, b, edit)
+  local p = body[a.para]
+  local t = p.table
+  local got, place = edit({ t.rows[a.row][a.col] }, { para = 1, at = a.at },
+                          b and { para = 1, at = b.at })
+
+  local rows, row = {}, {}
+  for r, x in ipairs(t.rows) do rows[r] = x end
+  for c, x in ipairs(t.rows[a.row]) do row[c] = x end
+
+  row[a.col] = got[1]
+  rows[a.row] = row
+
+  local q = {}
+  for k, v in pairs(p) do q[k] = v end
+  q.table = { columns = t.columns, header = t.header, rows = rows }
+
+  local out = copy_body(body)
+  out[a.para] = q
+
+  return out, place and { para = a.para, at = place.at, row = a.row, col = a.col }
+end
+
 -- Text a body may hold: line breaks go between paragraphs, so what comes
 -- from a clipboard is split there, and bytes below a space are dropped but
 -- a tab.
@@ -489,6 +583,12 @@ end
 -- The new body and the caret after what was typed.
 --
 function richtext.type(body, place, text, with)
+  if place.row then
+    return in_cell(body, place, nil, function(cell, at)
+      return richtext.type(cell, at, (text:gsub("[\r\n]+", " ")), with)
+    end)
+  end
+
   local out = copy_body(body)
   local p = body[place.para]
   local plain = richtext.plain(p)
@@ -537,8 +637,12 @@ end
 -- the style's `next` - a heading is followed by Body - and with none of the
 -- paragraph's own fields; anywhere else both halves keep the style and the
 -- fields, as Pages does. `by_name` is the document's styles by name.
+-- In a table's cell it does nothing: what Return means there - the cell
+-- below - is the window's.
 --
 function richtext.split(body, place, by_name)
+  if place.row then return body, place end
+
   local out = copy_body(body)
   local p = body[place.para]
   local plain = richtext.plain(p)
@@ -562,24 +666,47 @@ function richtext.split(body, place, by_name)
   return out, { para = place.para + 1, at = 1 }
 end
 
--- Whether place `a` comes before place `b`.
+-- Whether place `a` comes before place `b`: in a table, row by row and
+-- cell by cell.
 function richtext.before(a, b)
-  return a.para < b.para or (a.para == b.para and a.at < b.at)
+  if a.para ~= b.para then return a.para < b.para end
+  if (a.row or 0) ~= (b.row or 0) then return (a.row or 0) < (b.row or 0) end
+  if (a.col or 0) ~= (b.col or 0) then return (a.col or 0) < (b.col or 0) end
+  return a.at < b.at
 end
 
 --
 -- **What is between two places taken out**: the paragraphs between them
 -- gone, and the first and last made one, in the first one's style. The new
--- body and the caret where the range began.
+-- body and the caret where the range began. Both in one cell, it is that
+-- cell's text; a range from a cell to outside it takes its table whole.
 --
 function richtext.delete(body, a, b)
   if richtext.before(b, a) then a, b = b, a end
 
+  if a.row and b.row and same_cell(a, b) then
+    return in_cell(body, a, b, richtext.delete)
+  end
+
+  -- From a cell to anywhere else, the table goes whole.
+  if a.row then a = { para = a.para, at = 1 } end
+  if b.row then b = { para = b.para, at = 1 } end
+
   local out = copy_body(body)
   local first, last = body[a.para], body[b.para]
-  local tail = slice(last, b.at, #richtext.plain(last) + 1)
 
-  out[a.para] = with_runs(first, concat(slice(first, 1, a.at), tail))
+  if a.para == b.para and block(first) then return out, a end
+
+  -- **A picture or a table at either end goes with the range**: what stays
+  -- is the text before the range and the text after it, in the style of
+  -- whichever of the two ends is text.
+  local head = block(first) and {} or slice(first, 1, a.at)
+  local tail = block(last) and {} or slice(last, b.at, #richtext.plain(last) + 1)
+  local keep = first
+
+  if block(first) then keep = block(last) and { style = first.style } or last end
+
+  out[a.para] = with_runs(keep, concat(head, tail))
 
   for _ = a.para + 1, b.para do table.remove(out, a.para + 1) end
 
@@ -593,14 +720,38 @@ end
 function richtext.text(body, a, b)
   if richtext.before(b, a) then a, b = b, a end
 
+  if a.row and b.row and same_cell(a, b) then
+    local cell = { body[a.para].table.rows[a.row][a.col] }
+    return richtext.text(cell, { para = 1, at = a.at }, { para = 1, at = b.at })
+  end
+
   local parts = {}
 
   for n = a.para, b.para do
+    local t = body[n].table
+
+    if t then
+      local rows = {}
+
+      for r, row in ipairs(t.rows) do
+        local cells = {}
+        for c, cell in ipairs(row) do cells[c] = richtext.plain(cell) end
+        rows[r] = table.concat(cells, "\t")
+      end
+
+      parts[#parts + 1] = table.concat(rows, "\n")
+      goto next
+    end
+
+    do
     local plain = richtext.plain(body[n])
     local from = n == a.para and a.at or 1
     local to = n == b.para and b.at or #plain + 1
 
     parts[#parts + 1] = plain:sub(from, to - 1)
+    end
+
+    ::next::
   end
 
   return table.concat(parts, "\n")
@@ -621,6 +772,27 @@ local function ordered(a, b)
   return a, b
 end
 
+-- A table paragraph like `p` with `change` made to each of its cells.
+local function each_cell(p, change)
+  local rows = {}
+
+  for r, row in ipairs(p.table.rows) do
+    rows[r] = {}
+    for c, cell in ipairs(row) do rows[r][c] = change(cell) end
+  end
+
+  local q = {}
+  for k, v in pairs(p) do q[k] = v end
+  q.table = { columns = p.table.columns, header = p.table.header, rows = rows }
+
+  return q
+end
+
+-- The whole of a cell as a range, for a format over a whole table.
+local function all_of(cell)
+  return { para = 1, at = 1 }, { para = 1, at = #richtext.plain(cell) + 1 }
+end
+
 --
 -- **A paragraph style** for every paragraph the range touches, their own
 -- paragraph fields given up - choosing Title makes a title - and their runs'
@@ -629,11 +801,26 @@ end
 function richtext.restyle(body, a, b, name, by_name)
   a, b = ordered(a, b)
 
+  if a.row and b.row and same_cell(a, b) then
+    return (in_cell(body, a, b, function(cell, x, y)
+      return richtext.restyle(cell, x, y, name, by_name)
+    end))
+  end
+
   local out = copy_body(body)
 
   for n = a.para, b.para do
-    out[n] = richtext.paragraph({ style = name, runs = body[n].runs }, by_name,
-                                body[n].style)
+    local p = body[n]
+
+    if p.table then
+      out[n] = each_cell(p, function(cell)
+        local x, y = all_of(cell)
+        return richtext.restyle({ cell }, x, y, name, by_name)[1]
+      end)
+    else
+      out[n] = richtext.paragraph({ style = name, runs = p.runs, picture = p.picture },
+                                  by_name, p.style)
+    end
   end
 
   return out
@@ -646,13 +833,31 @@ end
 function richtext.arrange(body, a, b, fields, by_name)
   a, b = ordered(a, b)
 
+  if a.row and b.row and same_cell(a, b) then
+    return (in_cell(body, a, b, function(cell, x, y)
+      return richtext.arrange(cell, x, y, fields, by_name)
+    end))
+  end
+
   local out = copy_body(body)
 
   for n = a.para, b.para do
+    if body[n].table then
+      out[n] = each_cell(body[n], function(cell)
+        local x, y = all_of(cell)
+        return richtext.arrange({ cell }, x, y, fields, by_name)[1]
+      end)
+      goto next
+    end
+
+    do
     local p = {}
     for k, v in pairs(body[n]) do p[k] = v end
     for k, v in pairs(fields) do p[k] = v end
     out[n] = richtext.paragraph(p, by_name, body[n].style)
+    end
+
+    ::next::
   end
 
   return out
@@ -665,11 +870,25 @@ end
 function richtext.format(body, a, b, fields, by_name)
   a, b = ordered(a, b)
 
+  if a.row and b.row and same_cell(a, b) then
+    return (in_cell(body, a, b, function(cell, x, y)
+      return richtext.format(cell, x, y, fields, by_name)
+    end))
+  end
+
   local out = copy_body(body)
 
   for n = a.para, b.para do
     local p = body[n]
     local plain = richtext.plain(p)
+
+    if p.table and not (n == a.para and a.row) and not (n == b.para and b.row) then
+      out[n] = each_cell(p, function(cell)
+        local x, y = all_of(cell)
+        return richtext.format({ cell }, x, y, fields, by_name)[1]
+      end)
+    end
+
     local from = n == a.para and a.at or 1
     local to = n == b.para and b.at or #plain + 1
 
@@ -696,6 +915,11 @@ end
 -- would be, and what the Format panel shows.
 --
 function richtext.look_at(body, place, by_name)
+  if place.row then
+    return richtext.look_at({ body[place.para].table.rows[place.row][place.col] },
+                            { para = 1, at = place.at }, by_name)
+  end
+
   local p = body[place.para]
   local style = by_name[p.style] or richtext.PLAIN
 
@@ -704,8 +928,37 @@ function richtext.look_at(body, place, by_name)
 end
 
 -- The place one character before or after `place` - across a paragraph's
--- end - or the place itself at the body's ends.
+-- end - or the place itself at the body's ends. **Through a table cell by
+-- cell**: past a cell's end is the next cell's start, past the last the
+-- paragraph after the table; into one from either side, its first cell or
+-- its last.
 function richtext.step(body, place, forward)
+  local t = body[place.para].table
+
+  if t and place.row then
+    local plain = richtext.plain(t.rows[place.row][place.col])
+
+    if forward and place.at <= #plain or not forward and place.at > 1 then
+      local cell = { t.rows[place.row][place.col] }
+      local got = richtext.step(cell, { para = 1, at = place.at }, forward)
+      return { para = place.para, at = got.at, row = place.row, col = place.col }
+    end
+
+    local other = richtext.next_cell(body, place, forward and 1 or -1)
+
+    if other then return other end
+
+    if forward then
+      if body[place.para + 1] then
+        return richtext.enter(body, place.para + 1, true)
+      end
+    elseif place.para > 1 then
+      return richtext.enter(body, place.para - 1, false)
+    end
+
+    return place
+  end
+
   local plain = richtext.plain(body[place.para])
 
   if forward then
@@ -717,7 +970,7 @@ function richtext.step(body, place, forward)
       return { para = place.para, at = i }
     end
 
-    if body[place.para + 1] then return { para = place.para + 1, at = 1 } end
+    if body[place.para + 1] then return richtext.enter(body, place.para + 1, true) end
 
     return place
   end
@@ -731,10 +984,114 @@ function richtext.step(body, place, forward)
   end
 
   if place.para > 1 then
-    return { para = place.para - 1, at = #richtext.plain(body[place.para - 1]) + 1 }
+    return richtext.enter(body, place.para - 1, false)
   end
 
   return place
+end
+
+--
+-- **Paragraph `n` entered** from before it (`from_start`) or after it: its
+-- start or its end - a table's first cell's start or its last cell's end.
+--
+function richtext.enter(body, n, from_start)
+  local p = body[n]
+  local t = p.table
+
+  if t then
+    local r = from_start and 1 or #t.rows
+    local c = from_start and 1 or t.columns
+    local at = from_start and 1 or #richtext.plain(t.rows[r][c]) + 1
+
+    return { para = n, at = at, row = r, col = c }
+  end
+
+  return { para = n, at = from_start and 1 or #richtext.plain(p) + 1 }
+end
+
+--------------------------------------------------------------------------
+-- **Tables** (W5b): one made, its size changed, and the cell after or
+-- before a place - what the Table tool, the Format panel's Table part and
+-- Tab do. Each returns a new body, as every edit does.
+--------------------------------------------------------------------------
+
+-- An empty cell, in `style`.
+local function empty_cell(style)
+  return { style = style, runs = {} }
+end
+
+--
+-- **A table's paragraph**: `rows` by `columns` empty cells in `style`, the
+-- first row a header when `header` says so.
+--
+function richtext.new_table(rows, columns, style, header)
+  local t = { columns = columns, header = header and true or false, rows = {} }
+
+  for r = 1, rows do
+    t.rows[r] = {}
+    for c = 1, columns do t.rows[r][c] = empty_cell(style) end
+  end
+
+  return { style = style, runs = {}, table = t }
+end
+
+--
+-- **The cell after or before `place`'s** - `step` 1 or -1, row by row - its
+-- text's start going forward and its end going back; nil past the table's
+-- ends.
+--
+function richtext.next_cell(body, place, step)
+  local t = body[place.para].table
+  local r, c = place.row, place.col + step
+
+  if c > t.columns then r, c = r + 1, 1 end
+  if c < 1 then r, c = r - 1, t.columns end
+
+  if r < 1 or r > #t.rows then return nil end
+
+  local at = step > 0 and 1 or #richtext.plain(t.rows[r][c]) + 1
+
+  return { para = place.para, at = at, row = r, col = c }
+end
+
+--
+-- **Table `n` reshaped**: `fields.rows` and `fields.columns` - rows and
+-- columns added at the end, empty, in the table's style, or taken from the
+-- end - and `fields.header`, each only when given. Never smaller than one
+-- cell, never larger than the checks allow.
+--
+function richtext.reshape(body, n, fields, by_name)
+  local p = body[n]
+  local t = p.table
+  local rows = math.max(1, math.min(richtext.TABLE_ROWS, fields.rows or #t.rows))
+  local columns = math.max(1, math.min(richtext.TABLE_COLUMNS, fields.columns or t.columns))
+  local header = t.header
+
+  if fields.header ~= nil then header = fields.header end
+
+  local out_rows = {}
+
+  for r = 1, rows do
+    local old = t.rows[r]
+
+    if old and columns == t.columns then
+      out_rows[r] = old
+    else
+      out_rows[r] = {}
+      for c = 1, columns do
+        out_rows[r][c] = old and old[c] or empty_cell(p.style)
+      end
+    end
+  end
+
+  local q = {}
+  for k, v in pairs(p) do q[k] = v end
+  q.table = { columns = columns, header = header, rows = out_rows }
+
+  local out = copy_body(body)
+  out[n] = richtext.paragraph(q, by_name, p.style)
+
+  return out
 end
 
 return richtext

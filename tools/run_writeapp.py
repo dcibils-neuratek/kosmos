@@ -530,6 +530,37 @@ def main():
                   "Media did not put the picture in: %r" % put_in)
             press(*letters("A sea"))
 
+            # A table (W5b): the Table tool, its cells typed into with Tab -
+            # Shift-Tab back once, and a fourth row made by Tab in the last
+            # cell - a column added from the Format panel's Table part, and
+            # Return out of its last row onto the line after it.
+            table_tool = tool("table")
+            mark = len(guest.seen)
+
+            if table_tool:
+                press_at(table_tool[0] + table_tool[2] // 2, table_tool[1] + 20)
+
+            made = said("writer: table 3 by 3 at paragraph ", mark, 30)
+            check(made is not None, "the Table tool did not put a table in")
+
+            for i, word in enumerate(["Planet", "Moons", "Kind", "Mars", "2", "rock",
+                                      "Earth", "1", "rock", "Venus"]):
+                if i:
+                    press("tab")
+                press(*letters(word))
+
+            press("tab", "0", "shift-tab", "shift-1", "tab", "tab", *letters("rock"))
+            columns = control("table_columns")
+            mark = len(guest.seen)
+
+            if columns:
+                press_at(columns[0] + columns[2] - 12, columns[1] + columns[3] // 2)
+
+            check(said("writer: table 4 by 4", mark, 15) is not None,
+                  "the Table part's stepper did not add a column to the table "
+                  "Tab had made four rows")
+            press("ret", *letters("Done"))
+
             # Export's list, its third item: Word's DOCX (W6).
             export_tool = tool("export")
             mark = len(guest.seen)
@@ -542,13 +573,13 @@ def main():
                     press_at(int(listed.group(1)) + 40, int(listed.group(2)) + 4 + 2 * 30 + 15)
 
             docx_said = said("writer: exported /Home/Untitled.docx, ", mark, 30)
-            check(docx_said is not None and docx_said.startswith("8 paragraphs"),
+            check(docx_said is not None and docx_said.startswith("10 paragraphs"),
                   "Export's list did not export Word's DOCX: %r" % docx_said)
 
             mark = len(guest.seen)
             press("ctrl-s")
             saved = said("writer: saved ", mark, 30)
-            check(saved == "/Home/Untitled.write, 8 paragraphs",
+            check(saved == "/Home/Untitled.write, 10 paragraphs",
                   "Control-S did not save the typed document: %r" % saved)
 
             time.sleep(1)
@@ -588,6 +619,20 @@ def main():
             check(kept == sea_bytes and 'name = "pictures/1.png"' in text,
                   "the .write file does not hold the picture as it came, or its paragraph")
             hello = re.search(r'\{[^{}]*text = "Hello world!"[^{}]*\}', text)
+            check("columns = 4" in text and "header = true" in text,
+                  "the table in the file is not four columns with a header row")
+
+            # Word's DOCX, read here: the table as Word's, its new column.
+            word_file = os.path.join(work, "typed.docx")
+            kfs("get", disk, "/Home/Untitled.docx", word_file)
+
+            with zipfile.ZipFile(word_file) as z:
+                word = z.read("word/document.xml").decode("utf-8")
+
+            check(word.count("<w:tbl>") == 1 and word.count("<w:gridCol ") == 4
+                  and word.count("<w:tr>") == 4
+                  and "Venus!" in word and "<w:tblHeader/>" in word,
+                  "the DOCX does not hold the table, four by four with its header")
             heading = re.search(r'style = "Heading 1"', text)
         except (R.Failure, OSError, KeyError, zipfile.BadZipFile) as e:
             got, hello, heading = ["could not be read: %s" % e], None, None
@@ -595,7 +640,9 @@ def main():
         # The file's keys are sorted, so the body's words come before the
         # header's.
         check(got == ["Yes ", "Hello world!", "A Second text", "Item one",
-                      "Item two", "After", "A sea", "Header words"],
+                      "Item two", "After", "A sea", "Planet", "Moons", "Kind",
+                      "Mars", "2", "rock", "Earth", "1", "rock", "Venus!", "0",
+                      "rock", "Done", "Header words"],
               "the typed document holds %r, not what the keys meant" % got)
         check(text.count('name = "Letter"') == 1 and 'text = "Header words"' in text
               and re.search(r"left = 27[,\n]", text) is not None

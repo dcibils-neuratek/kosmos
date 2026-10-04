@@ -319,6 +319,13 @@ table.insert(body, 3, { style = "Body", align = "center",
                         picture = { name = "pictures/1.png", width_mm = 60, height_mm = 40 } })
 table.insert(body, 4, { style = "Caption", align = "center", runs = { { text = "Sky over sea" } } })
 
+-- A table (W5b): a header row and two below it.
+local function cell(text) return { style = "Body", runs = { { text = text } } } end
+table.insert(body, 5, { style = "Body", table = { columns = 3, header = true, rows = {
+  { cell("Planet"), cell("Moons"), cell("Day") },
+  { cell("Mars"), cell("2"), cell("24.6 h") },
+  { cell("Venus"), cell("0"), cell("2802 h") } } } })
+
 local letter = writedoc.check{ format = "kosmos-write", version = 1, body = body }
 local placed = pageset.set(letter, measure)
 local ok, notes = use("/Kosmos/Libraries/pdf.lua").write("/Home/w.pdf",
@@ -347,9 +354,17 @@ for p, page in ipairs(placed.pages) do
     end
   end
 
-  for _, line in ipairs(page.lines) do
+  -- A line's pieces, then a table row's cells' lines: the order the PDF
+  -- draws them in.
+  local function line_of(line)
     for _, pc in ipairs(line.pieces) do piece(pc, line.baseline_pt) end
+
+    for _, cell in ipairs(line.cells or {}) do
+      for _, l in ipairs(cell.lines) do line_of(l) end
+    end
   end
+
+  for _, line in ipairs(page.lines) do line_of(line) end
 
   if page.footer then piece(page.footer.piece, page.footer.baseline_pt) end
 end
@@ -385,8 +400,9 @@ local okd, nd = use("/Kosmos/Libraries/docxwrite.lua").write("/Home/w.docx", let
                                                                pictures = pictures })
 print("DOCX", okd, type(nd) == "table" and nd.bytes or tostring(nd))
 
+-- A table is not one of the body's paragraphs in Word's file, but `w:tbl`.
 for _, p in ipairs(letter.body) do
-  print("PARA", "[" .. richtext.plain(p) .. "]")
+  if not p.table then print("PARA", "[" .. richtext.plain(p) .. "]") end
 end
 '''
 
@@ -649,6 +665,19 @@ def docx_checks(said, out, disk, work):
 
     checks += 1
 
+    # The table (W5b): Word's, a header row repeated and two rows below it.
+    tbl = body.find(W + "tbl")
+    rows = [] if tbl is None else tbl.findall(W + "tr")
+    cells = [["".join(t.text or "" for t in tc.iter(W + "t")) for tc in tr.findall(W + "tc")]
+             for tr in rows]
+
+    if cells != [["Planet", "Moons", "Day"], ["Mars", "2", "24.6 h"], ["Venus", "0", "2802 h"]] \
+            or rows[0].find(W + "trPr/" + W + "tblHeader") is None \
+            or len(tbl.findall(W + "tblGrid/" + W + "gridCol")) != 3:
+        raise Failure("the DOCX's table is not the document's: %r" % cells)
+
+    checks += 1
+
     # macOS reads it as a document: every paragraph's words, in order.
     done = subprocess.run(["textutil", "-convert", "txt", "-stdout", path],
                           capture_output=True)
@@ -883,6 +912,23 @@ def pdf_checks(said, out, fonts, disk, work):
 
     if not re.search(r"q [\d.]+ 0 0 [\d.]+ [\d.]+ [\d.]+ cm /Im1 Do Q", first_ops):
         raise Failure("page 1 does not draw the picture")
+
+    checks += 1
+
+    # The table (W5b): three rows, each with its rules - across its top and
+    # foot and down each of four edges - and the header row's tint; its
+    # cells' words are among the pieces above, where the setting put them.
+    every_ops = "".join(stream_of(objects[ref(o, b"Contents")]).decode("latin-1")
+                        for o in page_objs)
+    rules = len(re.findall(r"q [\d. ]+ RG 0\.5 w [\d.]+ [\d.]+ m [\d.]+ [\d.]+ l S Q", every_ops))
+    tints = len(re.findall(r"q [\d. ]+ rg [\d.]+ [\d.]+ [\d.]+ [\d.]+ re f Q", every_ops))
+
+    if rules != 3 * 6 or tints != 1:
+        raise Failure("the PDF draws %d rules and %d tints for the table; wanted 18 and 1"
+                      % (rules, tints))
+
+    if not any(p.endswith("[Planet]") for p in said("PIECE")):
+        raise Failure("the table's header text is not among the pieces the PDF shows")
 
     checks += 1
 

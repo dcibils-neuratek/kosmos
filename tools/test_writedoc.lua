@@ -444,6 +444,111 @@ do
         "typing with a chosen look did not take it")
 end
 
+-- 11. **Tables** (W5b): a table checked as everything is - its columns and
+-- rows held to their ranges, every row its columns' cells, a cell text and
+-- never a table or a picture - kept through a file; an edit in a cell is
+-- that cell's, its other rows the same tables; Left and Right go cell by
+-- cell and out; a range from text over a table takes it whole; a copy is
+-- rows of tabbed cells; and a table reshaped keeps what it holds.
+do
+  local doc = writedoc.new()
+  local by_name = {}
+  for _, st in ipairs(doc.styles) do by_name[st.name] = st end
+
+  local function cell(text) return { style = "Body", runs = { { text = text } } } end
+
+  local raw = { style = "Body", table = { columns = 99, header = "yes", rows = {
+    { cell("a"), { style = "Body", runs = { { text = "b" } },
+                   table = { columns = 1, rows = { { cell("deep") } } },
+                   picture = { name = "pictures/1.png", width_mm = 5, height_mm = 5 } } },
+    "not a row",
+    { cell("c") },
+  } } }
+  local p = richtext.paragraph(raw, by_name, "Body")
+
+  check(p.table and p.table.columns == richtext.TABLE_COLUMNS and p.table.header == false
+        and #p.table.rows == 2 and #p.table.rows[1] == richtext.TABLE_COLUMNS,
+        "a table's columns, header or rows were not held to what a table is")
+  check(p.table.rows[1][2].table == nil and p.table.rows[1][2].picture == nil
+        and richtext.plain(p.table.rows[1][2]) == "b"
+        and richtext.plain(p.table.rows[2][5]) == "",
+        "a cell held a table or a picture, or a short row was not filled out")
+  check(richtext.paragraph({ style = "Body", table = { columns = 2, rows = {} } }, by_name, "Body").table == nil,
+        "a table with no rows was kept")
+
+  local t = richtext.new_table(2, 2, "Body", true)
+  t.table.rows[1][1] = cell("Name")
+  local body = { { style = "Body", runs = { { text = "Intro" } } },
+                 richtext.paragraph(t, by_name, "Body"),
+                 { style = "Body", runs = { { text = "End" } } } }
+  doc.body = body
+  check(same(round(doc).body, body), "a table did not come back from its file as it went")
+
+  -- An edit in a cell.
+  local b2, at = richtext.type(body, { para = 2, at = 5, row = 1, col = 1 }, "s\nnow")
+  check(richtext.plain(b2[2].table.rows[1][1]) == "Names now" and at.row == 1 and at.col == 1
+        and at.at == 10 and b2[2].table.rows[2] == body[2].table.rows[2] and b2[1] == body[1],
+        "typing in a cell was not that cell's, its line break a space, the rest shared")
+  local b3 = richtext.delete(b2, { para = 2, at = 1, row = 1, col = 1 }, { para = 2, at = 7, row = 1, col = 1 })
+  check(richtext.plain(b3[2].table.rows[1][1]) == "now", "a range in a cell was not taken from it")
+  local b4 = richtext.format(b2, { para = 2, at = 1, row = 1, col = 1 }, { para = 2, at = 6, row = 1, col = 1 },
+                             { italic = true }, by_name)
+  check(b4[2].table.rows[1][1].runs[1].italic and not b4[2].table.rows[1][1].runs[2].italic,
+        "a format in a cell did not reach just the range")
+  local look = richtext.look_at(b4, { para = 2, at = 3, row = 1, col = 1 }, by_name)
+  check(look.italic, "the look in a cell is not that cell's text's")
+
+  -- Left and Right.
+  local function eq(a, b)
+    return a.para == b.para and a.at == b.at and a.row == b.row and a.col == b.col
+  end
+  check(eq(richtext.step(b2, { para = 1, at = 6 }, true), { para = 2, at = 1, row = 1, col = 1 }),
+        "Right at a paragraph's end before a table did not enter its first cell")
+  check(eq(richtext.step(b2, { para = 2, at = 10, row = 1, col = 1 }, true), { para = 2, at = 1, row = 1, col = 2 }),
+        "Right at a cell's end did not reach the next cell")
+  check(eq(richtext.step(b2, { para = 2, at = 1, row = 2, col = 1 }, false), { para = 2, at = 1, row = 1, col = 2 }),
+        "Left at a cell's start did not reach the end of the cell before")
+  check(eq(richtext.step(b2, { para = 2, at = 1, row = 2, col = 2 }, true), { para = 3, at = 1 }),
+        "Right at the last cell's end did not leave the table")
+  check(eq(richtext.step(b2, { para = 3, at = 1 }, false), { para = 2, at = 1, row = 2, col = 2 }),
+        "Left into a table did not reach its last cell's end")
+  check(richtext.before({ para = 2, at = 9, row = 1, col = 2 }, { para = 2, at = 1, row = 2, col = 1 }),
+        "places in a table are not in order row by row")
+
+  -- A range over a table takes it whole; one in a table's text stays there.
+  local b5 = richtext.delete(b2, { para = 1, at = 3 }, { para = 3, at = 2 })
+  check(#b5 == 1 and richtext.plain(b5[1]) == "Innd" and not b5[1].table,
+        "a range over a table did not take it whole")
+  local b6 = richtext.delete(b2, { para = 2, at = 1 }, { para = 3, at = 4 })
+  check(#b6 == 2 and b6[2].table == nil and richtext.plain(b6[2]) == "",
+        "a range from a table's start did not take the table")
+  check(richtext.text(b2, { para = 1, at = 1 }, { para = 3, at = 4 }) == "Intro\nNames now\t\n\t\nEnd",
+        "a table copied is not rows of tabbed cells")
+  check(richtext.text(b2, { para = 2, at = 3, row = 1, col = 1 }, { para = 2, at = 6, row = 1, col = 1 }) == "mes",
+        "a copy in a cell is not that cell's text")
+
+  -- Reshaped: rows and columns added and taken at the end, what was there kept.
+  local b7 = richtext.reshape(b2, 2, { rows = 3, columns = 3 }, by_name)
+  check(#b7[2].table.rows == 3 and b7[2].table.columns == 3
+        and richtext.plain(b7[2].table.rows[1][1]) == "Names now" and b7[2].table.header,
+        "a table made larger lost what it held")
+  local b8 = richtext.reshape(b7, 2, { rows = 0, columns = 0, header = false }, by_name)
+  check(#b8[2].table.rows == 1 and b8[2].table.columns == 1 and not b8[2].table.header,
+        "a table was made smaller than one cell, or kept its header")
+  local nx = richtext.next_cell(b7, { para = 2, at = 1, row = 1, col = 3 }, 1)
+  check(nx.row == 2 and nx.col == 1 and richtext.next_cell(b7, { para = 2, at = 1, row = 3, col = 3 }, 1) == nil,
+        "the cell after the last of a row is not the next row's first, or there is one after the table")
+
+  -- A style or a paragraph field over a whole table reaches its cells, and
+  -- a style over a picture keeps the picture.
+  local b9 = richtext.arrange(b2, { para = 1, at = 1 }, { para = 3, at = 1 }, { align = "center" }, by_name)
+  check(b9[2].table.rows[2][2].align == "center", "a paragraph field over a table missed its cells")
+  local pic = { style = "Body", runs = {}, picture = { name = "pictures/1.png", width_mm = 5, height_mm = 5 } }
+  local b10 = richtext.restyle({ richtext.paragraph(pic, by_name, "Body") }, { para = 1, at = 1 },
+                               { para = 1, at = 1 }, "Caption", by_name)
+  check(b10[1].picture and b10[1].style == "Caption", "a style over a picture lost the picture")
+end
+
 if fails > 0 then
   print(("writedoc: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

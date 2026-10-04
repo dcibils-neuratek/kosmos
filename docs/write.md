@@ -217,8 +217,38 @@ was about 93 KB deflated and the suite's three pages in seven faces were
 
 Not yet: kerning, and pictures (W5).
 
+## W5 - pictures, captions and tables
+
+**A picture is a paragraph** that holds it and no text: a name inside the
+document's `pictures/` and the size it is shown at, in millimetres. It is
+set as one line as tall as the picture, scaled to the column when it is
+wider, and the `.write` file keeps its bytes as they came.
+
+**A table is a paragraph too**, and **its cells are paragraphs of their
+own**. That one decision is what makes a table cheap:
+- an edit in a cell is the same edit as on a page, done on a body of one
+  paragraph - the cell - and put back into a new table that shares every
+  row it did not touch;
+- typing, formatting, the Format panel's look and undo needed no second
+  copy;
+- the setting's cache sets again only the cell that changed.
+
+A place in a cell says which cell: `{ para, at, row, col }`.
+
+**A row is one line of the page.** So a table breaks between rows and never
+inside one, the rule about not leaving one line alone applies to rows, and a
+header row is repeated at the head of each page as a copy that a caret
+never stands in.
+
+A row draws its rules and a header's tint as `art`, rectangles and rules in
+points under its text, and the screen and the PDF draw the same list. That
+is also where a shape or a chart will draw (W7).
+
+**A picture or a table goes whole or not at all**: a range that reaches one
+takes it. Nothing ever leaves half a table, or a picture's paragraph with
+text in it.
+
 ## Not here yet
 
-Pictures, captions and tables are W5, DOCX out is W6, and shapes, charts and
-comments come after the core (Diego's second answer). Opening a DOCX is
-later than writing one.
+Text boxes, shapes, charts and comments are W7. Opening a DOCX is later
+than writing one.
