@@ -499,7 +499,7 @@ kits under `user/lib/` for Present and Sheets to stand on:
     or a pie, its first row the series and its first column the
     categories; Edit Data shows the table above the chart to type into,
     with every table key. Word gets a chart of its own with the numbers in
-    it.
+    it. *Done, 4 October* (`testing.md` 18.394).
   - **W7d, a comment**: a field on the text it is about, its words in a
     list the document keeps; the text tinted on the screen, the words in
     the Format panel to type into, a note in the PDF and Word's own

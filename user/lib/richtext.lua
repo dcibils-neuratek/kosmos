@@ -347,6 +347,22 @@ local function box_of(t)
            border = border == nil and true or border, fill = colour(t.fill) }
 end
 
+--
+-- **A chart** (W7c) is a table whose numbers are drawn: `chart` says as
+-- what - columns, bars, lines or a pie - and how tall. Its first row names
+-- the series and is always its header; its first column names the
+-- categories; the cells between are the numbers.
+--
+richtext.CHARTS = { "column", "bar", "line", "pie" }
+
+local CHART = set_of(richtext.CHARTS)
+
+local function chart_of(t)
+  if type(t) ~= "table" or not CHART[t.kind] then return nil end
+
+  return { kind = t.kind, height_mm = number(20, 250)(t.height_mm) or 70 }
+end
+
 local function table_of(t, by_name, style_name)
   if type(t) ~= "table" or type(t.rows) ~= "table" then return nil end
 
@@ -355,12 +371,13 @@ local function table_of(t, by_name, style_name)
   if not columns then return nil end
 
   local box = box_of(t.box)
+  local chart = not box and chart_of(t.chart) or nil
   local most = richtext.TABLE_ROWS
 
   if box then columns, most = 1, 1 end
 
-  local out = { columns = columns, header = not box and boolean(t.header) or false,
-                rows = {}, box = box }
+  local out = { columns = columns, header = chart ~= nil or (not box and boolean(t.header) or false),
+                rows = {}, box = box, chart = chart }
 
   for _, raw in ipairs(t.rows) do
     if #out.rows >= most then break end
@@ -606,7 +623,8 @@ local function in_cell(body, a, b, edit)
 
   local q = {}
   for k, v in pairs(p) do q[k] = v end
-  q.table = { columns = t.columns, header = t.header, rows = rows, box = t.box }
+  q.table = { columns = t.columns, header = t.header, rows = rows, box = t.box,
+              chart = t.chart }
 
   local out = copy_body(body)
   out[a.para] = q
@@ -854,7 +872,7 @@ local function each_cell(p, change)
   local q = {}
   for k, v in pairs(p) do q[k] = v end
   q.table = { columns = p.table.columns, header = p.table.header, rows = rows,
-              box = p.table.box }
+              box = p.table.box, chart = p.table.chart }
 
   return q
 end
@@ -1063,13 +1081,15 @@ end
 
 --
 -- **Paragraph `n` entered** from before it (`from_start`) or after it: its
--- start or its end - a table's first cell's start or its last cell's end.
+-- start or its end - a table's first cell's start or its last cell's end;
+-- a chart itself.
 --
 function richtext.enter(body, n, from_start)
   local p = body[n]
   local t = p.table
 
-  if t then
+  -- A chart is entered as a picture is: the caret on it, not in a number.
+  if t and not t.chart then
     local r = from_start and 1 or #t.rows
     local c = from_start and 1 or t.columns
     local at = from_start and 1 or #richtext.plain(t.rows[r][c]) + 1
@@ -1113,6 +1133,53 @@ end
 function richtext.new_shape(kind, style)
   return { style = style, runs = {}, align = "center",
            shape = { kind = kind, width_mm = 40, height_mm = 30, fill = "#2a55c9" } }
+end
+
+--
+-- **A chart's paragraph**: `kind`, 70 mm tall, over a year's seasons in
+-- two series - numbers a person changes rather than a blank they start
+-- from, as Pages' charts begin.
+--
+function richtext.new_chart(kind, style)
+  local words = { { "", "2025", "2026" }, { "Spring", "12", "18" }, { "Summer", "20", "26" },
+                  { "Autumn", "15", "21" }, { "Winter", "9", "14" } }
+  local t = { columns = 3, header = true, rows = {}, chart = { kind = kind, height_mm = 70 } }
+
+  for r, row in ipairs(words) do
+    t.rows[r] = {}
+
+    for c, text in ipairs(row) do
+      t.rows[r][c] = { style = style, runs = text ~= "" and { { text = text } } or {} }
+    end
+  end
+
+  return { style = style, runs = {}, align = "center", table = t }
+end
+
+--
+-- **A chart's numbers**, read from its table: the series' names, the
+-- categories' names, and each series' number for each category - a cell
+-- that is not a number counts as nought, and a thousands comma is read
+-- past. What the setting draws and Word's chart holds, from one reading.
+--
+function richtext.chart_data(t)
+  local series, categories, values = {}, {}, {}
+
+  for c = 2, t.columns do series[c - 1] = richtext.plain(t.rows[1][c]) end
+  for r = 2, #t.rows do categories[r - 1] = richtext.plain(t.rows[r][1]) end
+
+  for s = 1, #series do
+    values[s] = {}
+
+    for k = 1, #categories do
+      local text = richtext.plain(t.rows[k + 1][s + 1]):gsub(",", "")
+      local v = tonumber(text)
+
+      values[s][k] = (v and v == v and v ~= math.huge and v ~= -math.huge) and v or 0
+    end
+  end
+
+  return { series = series, categories = categories, values = values }
 end
 
 --
@@ -1178,7 +1245,7 @@ function richtext.reshape(body, n, fields, by_name)
   local q = {}
   for k, v in pairs(p) do q[k] = v end
   q.table = { columns = columns, header = header, rows = out_rows,
-              box = fields.box or t.box }
+              box = fields.box or t.box, chart = fields.chart or t.chart }
 
   local out = copy_body(body)
   out[n] = richtext.paragraph(q, by_name, p.style)

@@ -629,6 +629,67 @@ def main():
                   "the Shape part's stepper did not make the star wider")
             press("down", *letters("Fin"))
 
+            # A chart (W7c): the Chart tool's first, columns - on the screen
+            # in both series' colours - its data shown from the panel, a
+            # number typed over, Bar chosen, the data hidden, Down past it.
+            chart_tool = tool("chart")
+            mark = len(guest.seen)
+
+            if chart_tool:
+                press_at(chart_tool[0] + chart_tool[2] // 2, chart_tool[1] + 20)
+                listed = re.search(r"writer: menu chart at (\d+),(\d+)", guest.seen[mark:])
+
+                if listed:
+                    press_at(int(listed.group(1)) + 40, int(listed.group(2)) + 4 + 15)
+
+            drawn = said("writer: chart column at paragraph ", mark, 30)
+            box = re.search(r", (\d+)x(\d+) px at (-?\d+),(-?\d+)", drawn or "")
+            check(box is not None, "the Chart tool did not put a chart in: %r" % drawn)
+
+            if box:
+                bw, bh, bx, by = (int(v) for v in box.groups())
+                time.sleep(1.0)
+                sw3, sh3, shot3 = R.parse_ppm(guest.screendump())
+                inks = {}
+
+                for yy in range(max(0, wy + by), min(sh3, wy + by + bh), 2):
+                    for xx in range(max(0, wx + bx), min(sw3, wx + bx + bw), 2):
+                        i = 3 * (yy * sw3 + xx)
+                        key = (shot3[i], shot3[i + 1], shot3[i + 2])
+                        inks[key] = inks.get(key, 0) + 1
+
+                common = sorted(inks.items(), key=lambda kv: -kv[1])[:5]
+                check(inks.get((0x2a, 0x55, 0xc9), 0) > 100 and inks.get((0xd3, 0x54, 0x00), 0) > 100,
+                      "the chart on the screen is not columns in its two series' colours: "
+                      "%r, the box's commonest %r" % (drawn, common))
+
+            data = control("chart_data")
+            mark = len(guest.seen)
+
+            if data:
+                press_at(data[0] + 8, data[1] + data[3] // 2)
+
+            check(said("writer: chart data shown", mark, 15) is not None,
+                  "Edit data did not show the chart's data")
+            press("backspace", "backspace", *letters("40"))
+
+            kinds = control("chart_kind")
+            mark = len(guest.seen)
+
+            if kinds:
+                press_at(kinds[0] + 3 + (kinds[2] - 6) * 3 // 8, kinds[1] + kinds[3] // 2)
+
+            check(said("writer: chart bar 70 mm, 4 categories, 2 series", mark, 15) is not None,
+                  "the Chart part did not make the chart bars")
+
+            if data:
+                mark = len(guest.seen)
+                press_at(data[0] + 8, data[1] + data[3] // 2)
+
+            check(said("writer: chart data hidden", mark, 15) is not None,
+                  "Edit data did not hide the chart's data again")
+            press("down", *letters("Last"))
+
             # Export's list, its third item: Word's DOCX (W6).
             export_tool = tool("export")
             mark = len(guest.seen)
@@ -641,13 +702,13 @@ def main():
                     press_at(int(listed.group(1)) + 40, int(listed.group(2)) + 4 + 2 * 30 + 15)
 
             docx_said = said("writer: exported /Home/Untitled.docx, ", mark, 30)
-            check(docx_said is not None and docx_said.startswith("14 paragraphs"),
+            check(docx_said is not None and docx_said.startswith("16 paragraphs"),
                   "Export's list did not export Word's DOCX: %r" % docx_said)
 
             mark = len(guest.seen)
             press("ctrl-s")
             saved = said("writer: saved ", mark, 30)
-            check(saved == "/Home/Untitled.write, 14 paragraphs",
+            check(saved == "/Home/Untitled.write, 16 paragraphs",
                   "Control-S did not save the typed document: %r" % saved)
 
             time.sleep(1)
@@ -693,6 +754,8 @@ def main():
                   "the text box in the file is not filled with Mist")
             check(re.search(r'shape = \{[^{}]*kind = "star"[^{}]*width_mm = 45', text) is not None,
                   "the star in the file is not 45 mm wide")
+            check(re.search(r'chart = \{[^{}]*kind = "bar"', text) is not None,
+                  "the chart in the file is not bars")
 
             # Word's DOCX, read here: the table as Word's, its new column.
             word_file = os.path.join(work, "typed.docx")
@@ -702,6 +765,7 @@ def main():
                 word = z.read("word/document.xml").decode("utf-8")
 
             check(word.count("<w:tbl>") == 2 and word.count("<w:gridCol ") == 5
+                  and 'r:id="rIdChart1"' in word
                   and word.count("<w:tr>") == 5
                   and "Venus!" in word and "<w:tblHeader/>" in word,
                   "the DOCX does not hold the table, four by four with its header")
@@ -715,7 +779,8 @@ def main():
                       "Item two", "After", "A sea", "Planet", "Moons", "Kind",
                       "Mars", "2", "rock", "Earth", "1", "rock", "Venus!", "0",
                       "rock", "Done", "Note\\ntwo", "End", "Fin",
-                      "Header words"],
+                      "2025", "2026", "Spring", "40", "18", "Summer", "20", "26",
+                      "Autumn", "15", "21", "Winter", "9", "14", "Last", "Header words"],
               "the typed document holds %r, not what the keys meant" % got)
         check(text.count('name = "Letter"') == 1 and 'text = "Header words"' in text
               and re.search(r"left = 27[,\n]", text) is not None

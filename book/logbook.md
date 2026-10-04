@@ -978,3 +978,21 @@ arrow, so someone can still edit them there.
 pictures, so table lines and shapes in an exported PDF show in macOS's
 Preview but not in Kosmos itself. That is a job for the PDF viewer, and
 it is on the list.
+
+## 4 October, later still - charts
+
+**In short:** the Chart button puts in a column, bar, line or pie chart,
+with a year's seasons as numbers to start from. Edit Data in the panel
+shows the chart's numbers as a table right above it. Type over a number
+and the chart changes as you type.
+
+**How it is built.** A chart is a table whose numbers are drawn instead of
+shown. The first row names the series and the first column the categories.
+So editing a chart's data needed nothing new: it is the table editing
+built earlier in the evening. Word receives a real chart with the numbers
+written inside it, so it is still a chart, and editable, there.
+
+**Found on the way.** In the test the chart sat on the right-hand page of
+a two-page spread. The view scrolled only far enough to show the caret at
+the chart's left edge, so the chart itself was hidden under the panel. The
+view now brings the whole object into sight when it fits.

@@ -458,6 +458,206 @@ function pageset.shape_art(kind, x, y, w, h, fill)
   return { kind = "poly", points = points, cx_pt = cx, cy_pt = cy, fill = fill }
 end
 
+--------------------------------------------------------------------------
+-- **Charts** (W7c).
+--------------------------------------------------------------------------
+
+-- The series' colours, in turn: the drawing's accent first.
+pageset.CHART_COLOURS = { "#2a55c9", "#d35400", "#27ae60", "#8e44ad", "#c0392b", "#16a085" }
+pageset.GRID = "#d5dae1"
+pageset.AXIS = "#8e959f"
+
+-- A step for an axis near `x` that a person reads easily: 1, 2 or 5 of a
+-- power of ten.
+local function nice(x)
+  if x <= 0 then return 1 end
+
+  local e = 10 ^ math.floor(math.log(x, 10))
+  local f = x / e
+
+  return (f <= 1 and 1 or f <= 2 and 2 or f <= 5 and 5 or 10) * e
+end
+
+-- A number as an axis says it.
+local function figure(v)
+  if math.abs(v - math.floor(v + 0.5)) < 1e-9 then return ("%d"):format(math.floor(v + 0.5)) end
+  return ("%g"):format(v)
+end
+
+--
+-- **A chart planned** in a box `x`, `y`, `w`, `h` - `y` down from its
+-- line's top - from `data` (`richtext.chart_data`): its `art`, and its
+-- labels, each `{ text, x_pt, y_pt, align }` with `y_pt` the baseline and
+-- `align` which end of the words `x_pt` is. `text_w` says how wide words
+-- are, for the legend and the room a bar chart's names need.
+--
+-- A legend across the top - each series' colour and name, or each
+-- category's for a pie - then the plot: columns and bars side by side in
+-- each category, lines through each category's middle with a mark at
+-- each, gridlines at a step a person reads; a pie of the first series,
+-- clockwise from twelve.
+--
+function pageset.chart_plan(data, kind, x, y, w, h, text_w)
+  local art, labels = {}, {}
+  local colours = pageset.CHART_COLOURS
+
+  local function colour(i) return colours[(i - 1) % #colours + 1] end
+
+  local function rule(x1, y1, x2, y2, c, width)
+    art[#art + 1] = { kind = "rule", x_pt = x1, y_pt = y1, x2_pt = x2, y2_pt = y2,
+                      colour = c, width_pt = width or 0.5 }
+  end
+
+  local function label(text, lx, ly, align)
+    labels[#labels + 1] = { text = text, x_pt = lx, y_pt = ly, align = align }
+  end
+
+  -- The legend.
+  local names = kind == "pie" and data.categories or data.series
+  local lx = x
+
+  for i, name in ipairs(names) do
+    art[#art + 1] = { kind = "rect", x_pt = lx, y_pt = y + 2, w_pt = 8, h_pt = 8, fill = colour(i) }
+    label(name, lx + 11, y + 9, "left")
+    lx = lx + 11 + text_w(name) + 12
+  end
+
+  local top, bottom = y + 22, y + h - 14
+  local ncat, nser = #data.categories, #data.series
+
+  if kind == "pie" then
+    local values, total = data.values[1] or {}, 0
+
+    for _, v in ipairs(values) do if v > 0 then total = total + v end end
+
+    local r = math.max(1, math.min(w, y + h - top) / 2 - 2)
+    local cx, cy = x + w / 2, top + (y + h - top) / 2
+
+    if total <= 0 then
+      art[#art + 1] = { kind = "ellipse", x_pt = cx - r, y_pt = cy - r, w_pt = 2 * r,
+                        h_pt = 2 * r, fill = pageset.GRID }
+      return { art = art, labels = labels }
+    end
+
+    local from = -math.pi / 2
+
+    for k, v in ipairs(values) do
+      if v > 0 then
+        local sweep = v / total * 2 * math.pi
+        local steps = math.max(2, math.ceil(sweep / (math.pi / 36)))
+        local points = { cx, cy }
+
+        for i = 0, steps do
+          local a = from + sweep * i / steps
+          points[#points + 1] = cx + math.cos(a) * r
+          points[#points + 1] = cy + math.sin(a) * r
+        end
+
+        art[#art + 1] = { kind = "poly", points = points, cx_pt = cx, cy_pt = cy, fill = colour(k) }
+        from = from + sweep
+      end
+    end
+
+    return { art = art, labels = labels }
+  end
+
+  -- The numbers' range, from nought, at a step a person reads.
+  local lo, hi = 0, 0
+
+  for s = 1, nser do
+    for k = 1, ncat do
+      lo, hi = math.min(lo, data.values[s][k]), math.max(hi, data.values[s][k])
+    end
+  end
+
+  if hi <= lo then hi = lo + 1 end
+
+  local step = nice((hi - lo) / 4)
+  lo, hi = math.floor(lo / step + 1e-9) * step, math.ceil(hi / step - 1e-9) * step
+
+  if kind == "bar" then
+    -- Categories down the left, the numbers along the foot.
+    local widest = 0
+    for _, name in ipairs(data.categories) do widest = math.max(widest, text_w(name)) end
+
+    local left, right = x + widest + 6, x + w - 4
+
+    local function vx(v) return left + (v - lo) / (hi - lo) * (right - left) end
+
+    for v = lo, hi + step / 2, step do
+      rule(vx(v), top, vx(v), bottom, pageset.GRID)
+      label(figure(v), vx(v), bottom + 10, "center")
+    end
+
+    local gh = (bottom - top) / math.max(1, ncat)
+    local bh = gh * 0.7 / math.max(1, nser)
+
+    for k, name in ipairs(data.categories) do
+      label(name, left - 4, top + (k - 0.5) * gh + 3, "right")
+
+      for s = 1, nser do
+        local v = data.values[s][k]
+        local a, b = vx(math.min(v, 0)), vx(math.max(v, 0))
+
+        art[#art + 1] = { kind = "rect", x_pt = a, y_pt = top + (k - 1) * gh + gh * 0.15 + (s - 1) * bh,
+                          w_pt = math.max(0.1, b - a), h_pt = bh, fill = colour(s) }
+      end
+    end
+
+    rule(vx(0), top, vx(0), bottom, pageset.AXIS, 0.75)
+
+    return { art = art, labels = labels }
+  end
+
+  -- Columns and lines: the numbers up the left, categories along the foot.
+  local left, right = x + 30, x + w - 4
+
+  local function vy(v) return bottom - (v - lo) / (hi - lo) * (bottom - top) end
+
+  for v = lo, hi + step / 2, step do
+    rule(left, vy(v), right, vy(v), pageset.GRID)
+    label(figure(v), left - 4, vy(v) + 3, "right")
+  end
+
+  local gw = (right - left) / math.max(1, ncat)
+
+  for k, name in ipairs(data.categories) do
+    label(name, left + (k - 0.5) * gw, bottom + 10, "center")
+  end
+
+  if kind == "line" then
+    for s = 1, nser do
+      local px, py
+
+      for k = 1, ncat do
+        local cx, cy = left + (k - 0.5) * gw, vy(data.values[s][k])
+
+        if px then rule(px, py, cx, cy, colour(s), 1.5) end
+
+        art[#art + 1] = { kind = "rect", x_pt = cx - 2, y_pt = cy - 2, w_pt = 4, h_pt = 4,
+                          fill = colour(s) }
+        px, py = cx, cy
+      end
+    end
+  else
+    local bw = gw * 0.7 / math.max(1, nser)
+
+    for k = 1, ncat do
+      for s = 1, nser do
+        local v = data.values[s][k]
+        local a, b = vy(math.max(v, 0)), vy(math.min(v, 0))
+
+        art[#art + 1] = { kind = "rect", x_pt = left + (k - 1) * gw + gw * 0.15 + (s - 1) * bw,
+                          y_pt = a, w_pt = bw, h_pt = math.max(0.1, b - a), fill = colour(s) }
+      end
+    end
+  end
+
+  rule(left, vy(0), right, vy(0), pageset.AXIS, 0.75)
+
+  return { art = art, labels = labels }
+end
+
 -- **A text box's** (W7a): more room round its text, and a darker border.
 pageset.BOX_PAD_PT = 8
 pageset.BOX_RULE_PT = 0.75
@@ -521,6 +721,8 @@ end
 --       cells     a table row's cells, each `{ x_pt, width_pt, lines }`:
 --                 its text's lines, set as a paragraph's are, each with
 --                 the `row` and `col` it is in
+--       labels    a chart's words, each a line of one piece, which a caret
+--                 never stands in
 --     header    the header's words as a piece and its baseline, or nil
 --     footer    the page number as a piece and its baseline, or nil
 --
@@ -539,7 +741,9 @@ end
 --
 -- `opts.hyphenate`, when the document says to hyphenate, is a function from
 -- a word to where it may break (`hyphen.lua`): handed in, so the setting
--- stays a sum a test can do on the Mac.
+-- stays a sum a test can do on the Mac. `opts.data` is the number of a
+-- chart's paragraph whose data is shown, as a table above the chart, for
+-- typing into (W7c) - the window's to choose, not the document's.
 --
 function pageset.set(doc, measure, cache, opts)
   local page_w, page_h = writedoc.page_mm(doc)
@@ -551,6 +755,7 @@ function pageset.set(doc, measure, cache, opts)
   local column = page_w - left - writedoc.pt(m.right)
   local top, bottom = writedoc.pt(m.top), page_h - writedoc.pt(m.bottom)
   local hyphenate = doc.hyphenation and opts and opts.hyphenate or nil
+  local data_at = opts and opts.data
   local geometry = ("%s:%s:%s:%s:%s"):format(left, column, tostring(doc.ligatures),
                                           tostring(hyphenate ~= nil), doc.language)
 
@@ -768,6 +973,58 @@ function pageset.set(doc, measure, cache, opts)
              repeat_header = t.header and #rows > 1 }
   end
 
+  --
+  -- **A chart** (W7c): one line as tall as it says across the column, its
+  -- bars, lines or slices its `art` and its words `labels` in Caption's
+  -- face at eight points - and, when its data is shown, the table's rows
+  -- above it to type into.
+  --
+  local function set_chart(p, n, shown)
+    local style = by_name[p.style] or doc.styles[1]
+    local layout = richtext.layout(p, style)
+    local inner = left + writedoc.pt(layout.indent_left_mm)
+    local room = math.max(20, column - writedoc.pt(layout.indent_left_mm)
+                                 - writedoc.pt(layout.indent_right_mm))
+    local lines = {}
+    local para = { lines = lines, layout = layout, style = style, inner = inner, shown = shown }
+
+    if shown then
+      local data = set_table(p, n)
+      for _, l in ipairs(data.lines) do lines[#lines + 1] = l end
+      para.repeat_header = data.repeat_header
+    end
+
+    local h = writedoc.pt(p.table.chart.height_mm)
+    local look = richtext.look({}, by_name.Caption or style)
+
+    look.italic, look.size_pt = false, 8
+
+    local lk = look_of(look)
+    local ascent, descent = measure.line(looks[lk])
+
+    local function text_w(text) return width(lk, text) end
+
+    local plan = pageset.chart_plan(richtext.chart_data(p.table), p.table.chart.kind,
+                                    inner, 2, room, h, text_w)
+    local labels = {}
+
+    for _, lb in ipairs(plan.labels) do
+      local w = text_w(lb.text)
+      local x = lb.align == "right" and lb.x_pt - w or lb.align == "center" and lb.x_pt - w / 2
+                or lb.x_pt
+
+      labels[#labels + 1] = { pieces = { { text = lb.text, look = lk, x_pt = x, width_pt = w, at = 1 } },
+                              x_pt = x, width_pt = w, from = 1, spaces = 0, extra_space_pt = 0,
+                              dy_pt = lb.y_pt, ascent_pt = ascent, height_pt = ascent + descent }
+    end
+
+    lines[#lines + 1] = { para = n, chart = true, pieces = {}, art = plan.art, labels = labels,
+                          x_pt = inner, width_pt = room, from = 1, spaces = 0,
+                          extra_space_pt = 0, ascent_pt = h + 2, height_pt = h + 4 }
+
+    return para
+  end
+
   -- Every paragraph broken into lines first: the column is the same on
   -- every page, so where a line breaks does not depend on where it lands,
   -- and keeping a paragraph with the next needs to know the next.
@@ -776,6 +1033,9 @@ function pageset.set(doc, measure, cache, opts)
 
   for n, p in ipairs(doc.body) do
     local kept = cache.paras[p]
+    local shown = p.table and p.table.chart and data_at == n or nil
+
+    if kept and kept.shown ~= shown then kept = nil end
 
     if kept then
       for _, line in ipairs(kept.lines) do
@@ -809,6 +1069,9 @@ function pageset.set(doc, measure, cache, opts)
       align(line, layout, inner, room, true)
 
       paras[n] = { lines = { line }, layout = layout, style = style, inner = inner }
+      cache.paras[p] = paras[n]
+    elseif p.table and p.table.chart then
+      paras[n] = set_chart(p, n, shown)
       cache.paras[p] = paras[n]
     elseif p.table then
       paras[n] = set_table(p, n)
@@ -898,6 +1161,8 @@ function pageset.set(doc, measure, cache, opts)
     for _, cell in ipairs(line.cells or {}) do
       for _, l in ipairs(cell.lines) do l.baseline_pt = y + l.dy_pt end
     end
+
+    for _, l in ipairs(line.labels or {}) do l.baseline_pt = y + l.dy_pt end
 
     page.lines[#page.lines + 1] = line
     y = y + line.height_pt

@@ -144,6 +144,31 @@ has(sd, '<mc:Choice Requires="wps">', "the wrapper Word writes a shape in")
 check(sd:find('wp:docPr id="1001"', 1, true) and sd:find('wp:docPr id="1002"', 1, true),
       "two shapes do not have drawings' ids of their own")
 
+-- **Charts** (W7c): drawn inline from a chart part of its own, the numbers
+-- written into it; and a chart is not a table in Word's body.
+local cdoc = writedoc.check{ format = "kosmos-write", version = 1, body = {
+  { style = "Body", runs = { { text = "before" } } },
+  use("/Kosmos/Libraries/richtext.lua").new_chart("column", "Body") } }
+local cd = docx.parts.document(cdoc)
+
+has(cd, '<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="rIdChart1"/>',
+    "the chart drawn from its part")
+check(not cd:find("<w:tbl>", 1, true), "a chart was written as a table")
+
+local part = docx.chart_part(cdoc.body[2].table)
+has(part, '<c:barDir val="col"/>', "columns")
+has(part, '<c:tx><c:v>2026</c:v></c:tx>', "the second series' name")
+has(part, '<c:pt idx="1"><c:v>Summer</c:v></c:pt>', "a category")
+has(part, '<c:pt idx="3"><c:v>14</c:v></c:pt>', "the last number")
+check(select(2, part:gsub("<c:ser>", "")) == 2, "a chart's two series are not two")
+
+local o3, c3 = 0, 0
+for tag in part:gmatch("<c:%a+[^>]*>") do
+  if tag:sub(-2) ~= "/>" then o3 = o3 + 1 end
+end
+for _ in part:gmatch("</c:%a+>") do c3 = c3 + 1 end
+check(o3 == c3, ("in a chart, %d elements opened and %d closed"):format(o3, c3))
+
 if fails > 0 then
   print(("docx: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

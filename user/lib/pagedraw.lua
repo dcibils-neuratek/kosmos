@@ -250,10 +250,12 @@ function Drawer:page(set, page, surface, scale, x, y, paper, marks)
       piece(pc, line.baseline_pt, pc.cap and 0 or line.extra_space_pt)
     end
 
-    -- A table row's cells, each a paragraph's lines.
+    -- A table row's cells, each a paragraph's lines, and a chart's words.
     for _, cell in ipairs(line.cells or {}) do
       for _, l in ipairs(cell.lines) do draw_line(l) end
     end
+
+    for _, l in ipairs(line.labels or {}) do draw_line(l) end
   end
 
   shift = page.shift_pt or 0

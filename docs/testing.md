@@ -18637,3 +18637,83 @@ own PDF View, which draws text and pictures only. That is on the roadmap,
 as the reader's work rather than Write's.
 **Control**: on a copy of the kits, an arrow fanned from a point outside
 its shaft - "a shape has a point its centre cannot see".
+
+## 18.394 Kosmos Write's charts (W7c)
+
+**The Chart tool's list puts in a chart**: columns, bars, lines or a pie,
+70 mm tall across the column, over a year's four seasons in two series,
+after the caret's paragraph, with the caret on it. Insert's list has it
+too. The Format panel's Chart part has:
+- the kind, as four segments;
+- the height, as a stepper;
+- **Edit data**, which shows the chart's table above it with the caret in
+  its first number, and, while the data is shown, how many categories and
+  series as steppers;
+- Delete chart.
+
+The data closes when the caret leaves the chart. Every table key works in
+it, so Tab in its last cell adds a category. Typing on a chart starts a
+paragraph after it, and Backspace takes it out, as with a picture.
+
+**A chart is a table** with a `chart` field, its kind and its height
+(`richtext`). Its first row is always a header, naming the series; its
+first column names the categories; the cells between are its numbers.
+`richtext.chart_data` reads them once for everyone: a thousands comma read
+past, words as nought. `pageset.chart_plan` draws it into `art` and words:
+- a legend across the top;
+- gridlines at a step a person reads - 1, 2 or 5 of a power of ten;
+- columns or bars side by side in each category, in each series' colour;
+- lines through each category's middle with a mark at each;
+- or a pie of the first series, clockwise from twelve.
+
+`pageset` sets it as one line that carries its words as `labels`, which a
+caret never stands in. When the window says its data is shown
+(`opts.data`), the table's rows are set above it, and the cache knows the
+difference. Entering a chart from beside it lands on the chart, never in
+a number. Word gets a chart of its own (`word/charts/chartN.xml`) with the
+numbers written into it - `c:strLit`, `c:numLit`, no workbook - drawn
+inline from a relationship.
+
+**The window, on the way**: a caret on something wide now brings the whole
+of it into view where it fits, not only its left edge. The suite's chart
+was on the right-hand page of a spread, and the view stopped scrolling at
+the chart's first pixel, under the panel.
+
+**Host**: `test_pageset.lua` 117 to 128 check:
+- a column for each number, in its series' colour;
+- each column's height against an axis to 30;
+- the axis's, the categories' and the legend's words;
+- a bar chart's longest bar after the categories' names;
+- three strokes for each line series;
+- a slice and a name for each category in a pie;
+- the chart as one line with its words, and a caret on it;
+- the data's five rows above it when shown, and a place found in them;
+- the cache not keeping the data shown.
+
+`test_writedoc.lua` 96 to 100 check:
+- the chart's check and its forced header;
+- an unknown kind refused;
+- the numbers read as a person wrote them;
+- the caret entering a chart;
+- a reshape keeping the chart.
+
+`test_docx.lua` 44 to 51 check Word's chart: drawn from its part, not a
+table, its columns, a series' name, a category and the last number, two
+series, and closed element for element.
+
+**`arm-write`**: the export suite's document has a column chart. Its PDF
+draws five blue and five orange rectangles - eight columns and two legend
+keys - and the seasons and the axis's 30 are among its pieces. Its DOCX
+has `chart1.xml`, related, with Winter in it. **Found**: the table's and
+the box's checks had counted the chart's gridlines and bars as their own,
+and now say each colour they count.
+
+**`arm-writeapp`**: the Chart tool's columns are put in, and the screen
+where the log says the chart is drawn holds both series' colours. The data
+is then shown from the panel, a number typed over, Bar chosen and the data
+hidden again. The `.write` holds bars and the new number, and the DOCX
+draws the chart.
+**Controls**: on a copy of the kits, every series in the first colour - "a
+column chart is not a bar for every number in its series' colour"; in the
+machine, the first run with the chart under the panel - "is not columns in
+its two series' colours", the box's commonest pixels the panel's.

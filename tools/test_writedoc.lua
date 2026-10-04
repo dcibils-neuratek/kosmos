@@ -609,6 +609,43 @@ do
   check(b2[2].shape and b2[2].shape.kind == "oval", "a style over a shape lost the shape")
 end
 
+-- 14. **Charts** (W7c): a kind this knows, a height held to its range,
+-- its first row always a header; its numbers read from its cells - a
+-- thousands comma read past, words as nought; and the caret entering one
+-- from beside it lands on the chart, never in a number.
+do
+  local doc = writedoc.new()
+  local by_name = {}
+  for _, st in ipairs(doc.styles) do by_name[st.name] = st end
+
+  local function cell(text) return { style = "Body", runs = { { text = text } } } end
+
+  local p = richtext.paragraph({ style = "Body", table = { columns = 3, header = false,
+    chart = { kind = "pie", height_mm = 900 },
+    rows = { { cell(""), cell("A"), cell("B") }, { cell("x"), cell("1,200"), cell("lots") } } } },
+    by_name, "Body")
+  check(p.table.chart.kind == "pie" and p.table.chart.height_mm == 250 and p.table.header,
+        "a chart's height was not held, or its first row is not its header")
+  check(richtext.paragraph({ style = "Body", table = { columns = 1, chart = { kind = "radar" },
+          rows = { { cell("a") } } } }, by_name, "Body").table.chart == nil,
+        "a chart of no kind this knows was kept as one")
+
+  local data = richtext.chart_data(p.table)
+  check(data.series[2] == "B" and data.categories[1] == "x" and data.values[1][1] == 1200
+        and data.values[2][1] == 0, "a chart's numbers were not read as a person wrote them")
+
+  local body = { { style = "Body", runs = { { text = "one" } } }, p,
+                 { style = "Body", runs = { { text = "two" } } } }
+  local into = richtext.step(body, { para = 1, at = 4 }, true)
+  local back = richtext.step(body, { para = 3, at = 1 }, false)
+  check(into.para == 2 and into.row == nil and back.para == 2 and back.row == nil,
+        "the caret entered a chart's numbers from beside it")
+
+  local b2 = richtext.reshape(body, 2, { rows = 4 }, by_name)
+  check(b2[2].table.chart.kind == "pie" and #b2[2].table.rows == 4,
+        "a chart reshaped is no longer a chart")
+end
+
 if fails > 0 then
   print(("writedoc: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

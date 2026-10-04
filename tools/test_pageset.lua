@@ -984,6 +984,83 @@ do
   check(here and near(here.x_pt, lines[4].x_pt), "a caret on a shape does not stand at its left")
 end
 
+-- 21. **Charts** (W7c): the plan from the numbers - a legend, a bar for
+-- each number in its series' colour and as tall as it is against an axis
+-- at a step a person reads, lines through each category, a pie of the
+-- first series - and the chart as one line of the page, its data's table
+-- above it only when the window shows it, a caret on the chart itself.
+do
+  local data = { series = { "2025", "2026" }, categories = { "Spring", "Summer", "Autumn", "Winter" },
+                 values = { { 12, 20, 15, 9 }, { 18, 26, 21, 14 } } }
+  local function tw(text) return #text * 4 end
+
+  local plan = pageset.chart_plan(data, "column", 0, 0, 400, 200, tw)
+  local bars, legend = {}, 0
+  for _, a in ipairs(plan.art) do
+    if a.kind == "rect" and a.w_pt == 8 and a.h_pt == 8 then legend = legend + 1
+    elseif a.kind == "rect" then bars[#bars + 1] = a end
+  end
+  local summer26 = bars[2 * 2]
+  local spring25 = bars[1]
+  check(#bars == 8 and legend == 2 and spring25.fill == pageset.CHART_COLOURS[1]
+        and summer26.fill == pageset.CHART_COLOURS[2],
+        "a column chart is not a bar for every number in its series' colour, and a legend")
+  -- The axis runs to 30 in steps of 10: 26 is 26/30 of the plot's height.
+  local plot = (200 - 14) - 22
+  check(near(summer26.h_pt, plot * 26 / 30) and near(spring25.h_pt, plot * 12 / 30)
+        and near(spring25.y_pt + spring25.h_pt, 200 - 14),
+        "a column is not as tall as its number against an axis to 30")
+  local said = {}
+  for _, l in ipairs(plan.labels) do said[l.text] = l end
+  check(said["30"] and said["0"] and said["Winter"] and said["2026"] and said["Winter"].align == "center",
+        "a column chart's axis, categories or legend are not labelled")
+
+  local bar = pageset.chart_plan(data, "bar", 0, 0, 400, 200, tw)
+  local wide = 0
+  for _, a in ipairs(bar.art) do
+    if a.kind == "rect" and a.h_pt ~= 8 then wide = math.max(wide, a.w_pt) end
+  end
+  check(near(wide, (400 - 4 - (#"Spring" * 4 + 6)) * 26 / 30),
+        "a bar chart's longest bar is not 26 of 30 across, after the categories' names")
+
+  local line = pageset.chart_plan(data, "line", 0, 0, 400, 200, tw)
+  local strokes = 0
+  for _, a in ipairs(line.art) do
+    if a.kind == "rule" and a.width_pt == 1.5 then strokes = strokes + 1 end
+  end
+  check(strokes == 2 * 3, "a line chart is not three strokes a series")
+
+  local pie = pageset.chart_plan(data, "pie", 0, 0, 400, 200, tw)
+  local slices = 0
+  for _, a in ipairs(pie.art) do if a.kind == "poly" then slices = slices + 1 end end
+  check(slices == 4 and #pie.labels == 4, "a pie is not a slice and a name for each category")
+
+  local raw = richtext.new_chart("column", "Body")
+  local cdoc = doc_of{ para("Body", "before"), raw, para("Body", "after") }
+  check(cdoc.body[2].table.chart.kind == "column" and cdoc.body[2].table.header,
+        "a chart did not come through the check as one")
+  local set = pageset.set(cdoc, measure)
+  local lines = set.pages[1].lines
+  check(#lines == 3 and lines[2].chart and #lines[2].labels > 8
+        and near(lines[2].ascent_pt, PT(70) + 2),
+        "a chart is not one line as tall as it says, with its words")
+  local here = pageset.locate(set, measure, { para = 2, at = 1 })
+  check(here and here.line == lines[2], "a caret on a chart does not stand on it")
+
+  local shown = pageset.set(cdoc, measure, nil, { data = 2 })
+  local sl = shown.pages[1].lines
+  check(#sl == 3 + 5 and sl[2].row == 1 and sl[6].row == 5 and sl[7].chart,
+        "a chart's data is not its table's five rows above it when shown")
+  local cell = pageset.locate(shown, measure, { para = 2, at = 3, row = 2, col = 2 })
+  check(cell and cell.line.row == 2, "a place in a shown chart's data is not found")
+
+  -- The cache knows the difference between shown and not.
+  local cache = pageset.cache()
+  pageset.set(cdoc, measure, cache, { data = 2 })
+  check(#pageset.set(cdoc, measure, cache).pages[1].lines == 3,
+        "a chart's data stayed shown from the cache")
+end
+
 if fails > 0 then
   print(("pageset: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

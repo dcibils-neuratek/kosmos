@@ -330,11 +330,13 @@ table.insert(body, 5, { style = "Body", table = { columns = 3, header = true, ro
 table.insert(body, 6, { style = "Body", align = "center", table = { columns = 1,
   rows = { { cell("A note\\nin a box") } }, box = { width_mm = 70, fill = "#eef3fb" } } })
 
+-- A chart (W7c): columns, over a year's seasons.
 -- Shapes (W7b): a star and an oval.
 table.insert(body, 7, { style = "Body", align = "center",
                         shape = { kind = "star", width_mm = 30, height_mm = 30, fill = "#d35400" } })
 table.insert(body, 8, { style = "Body", align = "center",
                         shape = { kind = "oval", width_mm = 50, height_mm = 20, fill = "#27ae60" } })
+table.insert(body, 9, richtext.new_chart("column", "Body"))
 
 local letter = writedoc.check{ format = "kosmos-write", version = 1, body = body }
 local placed = pageset.set(letter, measure)
@@ -372,6 +374,8 @@ for p, page in ipairs(placed.pages) do
     for _, cell in ipairs(line.cells or {}) do
       for _, l in ipairs(cell.lines) do line_of(l) end
     end
+
+    for _, l in ipairs(line.labels or {}) do line_of(l) end
   end
 
   for _, line in ipairs(page.lines) do line_of(line) end
@@ -413,10 +417,13 @@ print("DOCX", okd, type(nd) == "table" and nd.bytes or tostring(nd))
 -- A table is not one of the body's paragraphs in Word's file, but `w:tbl` -
 -- and one that touches another table, or ends the body, has an empty
 -- paragraph after it, since Word would join the two.
+-- A chart is a paragraph holding its drawing, with no words of its own.
 for i, p in ipairs(letter.body) do
-  if not p.table then
+  local after = letter.body[i + 1]
+
+  if not p.table or p.table.chart then
     print("PARA", "[" .. richtext.plain(p) .. "]")
-  elseif not letter.body[i + 1] or letter.body[i + 1].table then
+  elseif not after or (after.table and not after.table.chart) then
     print("PARA", "[]")
   end
 end
@@ -654,6 +661,8 @@ def docx_checks(said, out, disk, work):
 
         W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
         z_document = z.read("word/document.xml").decode("utf-8")
+        z_chart = z.read("word/charts/chart1.xml").decode("utf-8") \
+            if "word/charts/chart1.xml" in names else ""
         body = ET.fromstring(z.read("word/document.xml")).find(W + "body")
         paras = []
 
@@ -702,6 +711,13 @@ def docx_checks(said, out, disk, work):
             or 'w:w="3969"' not in box_xml.replace("ns0:", "w:") \
             or box.find(".//" + W + "br") is None:
         raise Failure("the DOCX's text box is not a 70 mm table of one cell with its line break")
+
+    # The chart (W7c): a part of its own, related, its numbers in it.
+    chart = z_chart
+
+    if not chart or '<c:barDir val="col"/>' not in chart or "<c:v>Winter</c:v>" not in chart \
+            or 'Target="charts/chart1.xml"' not in rels:
+        raise Failure("the DOCX does not carry the chart as a part of its own, related")
 
     # The shapes (W7b): Word's own star and ellipse, in their colours.
     doc_xml = z_document
@@ -954,9 +970,9 @@ def pdf_checks(said, out, fonts, disk, work):
     # cells' words are among the pieces above, where the setting put them.
     every_ops = "".join(stream_of(objects[ref(o, b"Contents")]).decode("latin-1")
                         for o in page_objs)
-    rules = len(re.findall(r"q [\d. ]+ RG 0\.5 w [\d.]+ [\d.]+ m [\d.]+ [\d.]+ l S Q", every_ops))
-    borders = len(re.findall(r"q [\d. ]+ RG 0\.75 w [\d.]+ [\d.]+ m [\d.]+ [\d.]+ l S Q", every_ops))
-    tints = len(re.findall(r"q [\d. ]+ rg [\d.]+ [\d.]+ [\d.]+ [\d.]+ re f Q", every_ops))
+    rules = len(re.findall(r"q 0\.639 0\.671 0\.714 RG 0\.5 w [\d.]+ [\d.]+ m [\d.]+ [\d.]+ l S Q", every_ops))
+    borders = len(re.findall(r"q 0\.357 0\.4 0\.467 RG 0\.75 w [\d.]+ [\d.]+ m [\d.]+ [\d.]+ l S Q", every_ops))
+    tints = len(re.findall(r"q (?:0\.914 0\.929 0\.949|0\.933 0\.953 0\.984) rg [\d.]+ [\d.]+ [\d.]+ [\d.]+ re f Q", every_ops))
 
     # And the text box (W7a): its four borders and its fill.
     if rules != 3 * 6 or borders != 4 or tints != 2:
@@ -972,6 +988,18 @@ def pdf_checks(said, out, fonts, disk, work):
 
     if len(stars) != 1 or len(ovals) != 1:
         raise Failure("the PDF draws %d stars and %d ovals; wanted one of each" % (len(stars), len(ovals)))
+
+    # The chart (W7c): a column for each of its eight numbers and two in
+    # its legend, in its two series' colours, and its words among the
+    # pieces - the seasons and the axis to 30.
+    blue = len(re.findall(r"q 0\.165 0\.333 0\.788 rg [\d.]+ [\d.]+ [\d.]+ [\d.]+ re f Q", every_ops))
+    orange = len(re.findall(r"q 0\.827 0\.329 0 rg [\d.]+ [\d.]+ [\d.]+ [\d.]+ re f Q", every_ops))
+    words = [p.rsplit(" ", 1)[-1] for p in said("PIECE")]
+
+    if blue != 5 or orange != 5 or "[Winter]" not in words or "[30]" not in words:
+        raise Failure("the PDF's chart is %d blue and %d orange rectangles, and its words %s; "
+                      "wanted five of each, Winter and 30" % (blue, orange,
+                                                              "are there" if "[Winter]" in words else "are not"))
 
     if not any(p.endswith("[A note]") for p in said("PIECE")) \
             or not any(p.endswith("[in a box]") for p in said("PIECE")):

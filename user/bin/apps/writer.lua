@@ -84,6 +84,9 @@ local ZOOMS = { 50, 75, 100, 125, 150, 200, 300 }
 local SIZES = { 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 30, 36, 48, 64, 72 }
 local SPACINGS = { 1, 1.15, 1.2, 1.5, 2 }
 
+-- The charts the Chart tool offers (W7c).
+local CHART_KINDS = { { "column", "Column" }, { "bar", "Bar" }, { "line", "Line" }, { "pie", "Pie" } }
+
 -- The shapes the Shape tool offers (W7b), in Pages' order.
 local SHAPE_KINDS = {
   { "rectangle", "Rectangle" }, { "rounded", "Rounded rectangle" }, { "oval", "Oval" },
@@ -183,11 +186,16 @@ end
 local by_name = {}
 for _, s in ipairs(doc.styles) do by_name[s.name] = s end
 
+-- The chart whose data is shown as a table above it, for typing into
+-- (W7c): its paragraph's number, or nil. The window's, not the document's.
+local data_open = nil
+
 -- The pages set again: with the document's language's hyphenation when it
--- says so (`hyphen.lua`).
+-- says so (`hyphen.lua`), and the chart's data when it is shown.
 local function setting()
   return pageset.set(doc, measure, cache,
-                     { hyphenate = doc.hyphenation and hyphen.language(doc.language) or nil })
+                     { hyphenate = doc.hyphenation and hyphen.language(doc.language) or nil,
+                       data = data_open })
 end
 
 local set = setting()
@@ -196,6 +204,26 @@ local top = 0                   -- how far down the desk the view is
 local across = 0                -- and how far across, when a page is wider
 
 local caret = { para = 1, at = 1 }
+
+--
+-- **A chart's data is open while the caret is in it**: in one of its cells
+-- it is shown, on the chart it stays as it was, anywhere else it closes.
+-- True when that changed, so the pages are set again.
+--
+local function fit_data()
+  local p = doc.body[caret.para]
+  local chart = p and p.table and p.table.chart
+  local want = nil
+
+  if chart and (caret.row or data_open == caret.para) then want = caret.para end
+
+  if want ~= data_open then
+    data_open = want
+    return true
+  end
+
+  return false
+end
 local anchor, column = nil, nil
 local dirty = false
 local pending = {}              -- a look chosen with nothing selected, for typing
@@ -395,7 +423,7 @@ local TOOLS = {
   { gap = 14 },
   { key = "insert",   icon = "insert",   text = "Insert" },
   { key = "table",    icon = "table",    text = "Table" },
-  { key = "chart",    icon = "chart",    text = "Chart",    later = "W7" },
+  { key = "chart",    icon = "chart",    text = "Chart" },
   { key = "textbox",  icon = "textbox",  text = "Text" },
   { key = "shape",    icon = "shape",    text = "Shape" },
   { key = "media",    icon = "pictures", text = "Media" },
@@ -502,12 +530,13 @@ local function argb(c) return 0xff000000 | (tonumber((c or "#000000"):sub(2), 16
 
 local open_menu, apply_char, apply_para, apply_style, doc_edit, apply_picture
 local reshape, delete_table, table_key, line_break, apply_shape, insert_shape
-local remove_block
+local remove_block, toggle_data
 
 local function say_where()
   local here = doc.body[caret.para]
   local kind = here and (here.picture and ":picture" or here.shape and ":shape"
-                         or here.table and (here.table.box and ":box" or ":table")) or ""
+                         or here.table and (here.table.box and ":box"
+                                            or here.table.chart and ":chart" or ":table")) or ""
   local key = panel == "text" and ("text:" .. part .. kind) or tostring(panel)
 
   if not said_where[key] then
@@ -741,6 +770,77 @@ local function draw_panel(s)
 
   if panel == "document" then
     draw_document(s, x0, w0, y)
+    say_where(s)
+    return
+  end
+
+  --
+  -- **On a chart** (W7c): which kind, how tall, its data shown to type
+  -- into - and while it is, how many categories and series - and the
+  -- chart taken out.
+  --
+  if here and here.table and here.table.chart then
+    local t = here.table
+    local ch = t.chart
+
+    pk.label(s, x0, y, "Chart")
+    y = y + 18
+
+    local kinds = { x = x0, y = y, w = w0, items = {} , chosen = 1 }
+    for i, k in ipairs(CHART_KINDS) do
+      kinds.items[i] = { text = k[2] }
+      if k[1] == ch.kind then kinds.chosen = i end
+    end
+    pk.segments(s, kinds)
+    control("chart_kind", kinds, function(cx, cy)
+      local i = pk.segment_at(kinds, cx, cy)
+      if i then reshape({ chart = { kind = CHART_KINDS[i][1], height_mm = ch.height_mm } }) end
+    end)
+
+    y = y + kinds.h + 10
+
+    local ht = { x = x0, y = y, w = w0, text = ("%g mm tall"):format(ch.height_mm) }
+    pk.stepper(s, ht)
+    control("chart_height", ht, function(cx, cy)
+      local d = pk.step_at(ht, cx, cy)
+      if d and d ~= 0 then
+        reshape({ chart = { kind = ch.kind, height_mm = math.max(20, ch.height_mm + 10 * d) } })
+      end
+    end)
+
+    y = y + 38
+
+    local ed = { x = x0, y = y + 4, text = "Edit data", on = data_open == caret.para }
+    pk.check(s, ed)
+    control("chart_data", ed, function() toggle_data() end)
+
+    y = y + 34
+
+    if data_open == caret.para then
+      local half = (w0 - 8) // 2
+      local cats = { x = x0, y = y, w = half,
+                     text = ("%d categor%s"):format(#t.rows - 1, #t.rows == 2 and "y" or "ies") }
+      pk.stepper(s, cats)
+      control("chart_categories", cats, function(cx, cy)
+        local d = pk.step_at(cats, cx, cy)
+        if d and d ~= 0 then reshape({ rows = math.max(2, #t.rows + d) }) end
+      end)
+
+      local sers = { x = x0 + half + 8, y = y, w = w0 - half - 8,
+                     text = ("%d series"):format(t.columns - 1) }
+      pk.stepper(s, sers)
+      control("chart_series", sers, function(cx, cy)
+        local d = pk.step_at(sers, cx, cy)
+        if d and d ~= 0 then reshape({ columns = math.max(2, t.columns + d) }) end
+      end)
+
+      y = y + 38
+    end
+
+    local del = { x = x0, y = y + 6, text = "Delete chart" }
+    pk.button(s, del)
+    control("chart_delete", del, function() delete_table() end)
+
     say_where(s)
     return
   end
@@ -1306,16 +1406,23 @@ local function scroll_to(y)
 end
 
 local function follow()
-  local cx, cy, ch = caret_px()
+  local cx, cy, ch, here = caret_px()
   local dx, dy, dw = desk()
 
   if not cy then return end
 
-  -- Across first, when the page - or a spread - is wider than the desk.
+  -- Across first, when the page - or a spread - is wider than the desk:
+  -- the caret always, and **the whole of its line where that fits** - a
+  -- chart or a shape the caret is on, not only its left edge.
   local most = math.max(0, content_width() + 2 * GAP - dw)
+  local px = page_at(here.page)
+  local right = px + math.floor((here.line.x_pt + here.line.width_pt
+                                 + set.pages[here.page].shift_pt) * scale() + 0.5)
+  local by = math.max(cx - (dx + dw - 24),
+                      math.min(right - (dx + dw - 24), cx - (dx + 24)))
 
-  if cx > dx + dw - 24 then
-    across = math.min(most, across + (cx - (dx + dw - 24)))
+  if by > 0 then
+    across = math.min(most, across + by)
   elseif cx < dx + 24 then
     across = math.max(0, across - (dx + 24 - cx))
   end
@@ -1392,6 +1499,7 @@ local function edited(body, place, kind, keep)
 
   if not keep then anchor = nil end
 
+  fit_data()
   dirty = true
   said = nil
   set = setting()
@@ -1446,7 +1554,7 @@ end
 local function after_picture(body, place)
   local p = body[place.para]
 
-  if p and (p.picture or p.shape) then
+  if p and (p.picture or p.shape or (p.table and p.table.chart and not place.row)) then
     local out = {}
     for i, p in ipairs(body) do out[i] = p end
     table.insert(out, place.para + 1, { style = writedoc.BODY, runs = {} })
@@ -1489,7 +1597,7 @@ local function back_or_forward(forward)
 
   local here = doc.body[caret.para]
 
-  if here.picture or here.shape then
+  if here.picture or here.shape or (here.table and here.table.chart and not caret.row) then
     remove_block(caret.para, { para = math.max(1, caret.para - (forward and 0 or 1)), at = 1 })
     return
   end
@@ -1497,7 +1605,7 @@ local function back_or_forward(forward)
   local before = caret.para > 1 and doc.body[caret.para - 1]
 
   if not forward and caret.at == 1 and not caret.row and before
-     and (before.picture or before.shape) then
+     and (before.picture or before.shape or (before.table and before.table.chart)) then
     remove_block(caret.para - 1, { para = caret.para - 1, at = 1 })
     return
   end
@@ -1594,6 +1702,7 @@ local function swap(from, to)
   doc.ligatures, doc.language = entry.ligatures, entry.language
   last_kind = nil
   dirty = true
+  fit_data()
   set = setting()
   follow()
   changed()
@@ -1647,6 +1756,11 @@ function move(place, extend, keep_column)
   if not keep_column then column = nil end
 
   if had or selected() then version = version + 1 end
+
+  if fit_data() then
+    set = setting()
+    version = version + 1
+  end
 
   follow()
   frame()
@@ -1878,6 +1992,64 @@ function insert_shape(kind)
     py + math.floor(top * sc + 0.5)))
 end
 
+--
+-- **A chart put in** (Chart, W7c): `kind`, over a year's seasons, after the
+-- caret's paragraph, the caret on it. The log says where it is drawn.
+--
+local function insert_chart(kind)
+  local body = {}
+  for i, p in ipairs(doc.body) do body[i] = p end
+
+  local style = by_name[writedoc.BODY] and writedoc.BODY or doc.styles[1].name
+  local n = caret.para + 1
+
+  table.insert(body, n, richtext.paragraph(richtext.new_chart(kind, style), by_name, style))
+
+  if not body[n + 1] then body[n + 1] = { style = style, runs = {} } end
+
+  edited(body, { para = n, at = 1 }, "chart")
+
+  local here = pageset.locate(set, measure, caret)
+  local line = here.line
+  local px, py = page_at(here.page)
+  local sc = scale()
+
+  print(("writer: chart %s at paragraph %d, %dx%d px at %d,%d"):format(kind, n,
+    math.floor(line.width_pt * sc + 0.5), math.floor((line.ascent_pt - 2) * sc + 0.5),
+    px + math.floor((line.x_pt + set.pages[here.page].shift_pt) * sc + 0.5),
+    py + math.floor((line.baseline_pt - line.ascent_pt + 2) * sc + 0.5)))
+end
+
+-- **Edit data**: the chart's table shown above it, the caret in its first
+-- number - or hidden again, the caret on the chart.
+function toggle_data()
+  local n = caret.para
+  local t = doc.body[n].table
+
+  if data_open == n then
+    data_open = nil
+    caret = { para = n, at = 1 }
+  else
+    data_open = n
+    local r, c = math.min(2, #t.rows), math.min(2, t.columns)
+    caret = { para = n, row = r, col = c, at = #richtext.plain(t.rows[r][c]) + 1 }
+  end
+
+  anchor = nil
+  print(("writer: chart data %s"):format(data_open and "shown" or "hidden"))
+  set = setting()
+  version = version + 1
+  follow()
+  frame()
+end
+
+local function chart_menu(x)
+  local labels = {}
+  for i, k in ipairs(CHART_KINDS) do labels[i] = k[2] end
+  open_menu("chart", x, TOOLS_H + 2, 160, labels, nil,
+            function(i) insert_chart(CHART_KINDS[i][1]) end)
+end
+
 local function shape_menu(x)
   local labels = {}
   for i, k in ipairs(SHAPE_KINDS) do labels[i] = k[2] end
@@ -1891,23 +2063,32 @@ function reshape(fields)
   local n = caret.para
   local body = richtext.reshape(doc.body, n, fields, by_name)
   local t = body[n].table
-  local r, c = math.min(caret.row, #t.rows), math.min(caret.col, t.columns)
-  local at = math.min(caret.at, #richtext.plain(t.rows[r][c]) + 1)
+  local place = { para = n, at = 1 }
 
-  if t.box then
+  if caret.row then
+    local r, c = math.min(caret.row, #t.rows), math.min(caret.col, t.columns)
+    place = { para = n, row = r, col = c,
+              at = math.min(caret.at, #richtext.plain(t.rows[r][c]) + 1) }
+  end
+
+  if t.chart then
+    print(("writer: chart %s %g mm, %d categories, %d series"):format(t.chart.kind,
+      t.chart.height_mm, #t.rows - 1, t.columns - 1))
+  elseif t.box then
     print(("writer: text box %g mm, %s, %s"):format(t.box.width_mm,
       t.box.border and "bordered" or "no border", t.box.fill or "no fill"))
   else
     print(("writer: table %d by %d"):format(#t.rows, t.columns))
   end
 
-  edited(body, { para = n, at = at, row = r, col = c }, "table")
+  edited(body, place, "table")
 end
 
 -- The caret's table taken out, the caret where it stood.
 function delete_table()
   local n = caret.para
-  local here_box = doc.body[n].table.box ~= nil
+  local t = doc.body[n].table
+  local what = t.chart and "chart" or t.box and "text box" or "table"
   local body = {}
   for i, p in ipairs(doc.body) do body[i] = p end
 
@@ -1917,7 +2098,7 @@ function delete_table()
 
   local place = body[n] and richtext.enter(body, n, true) or richtext.enter(body, n - 1, false)
 
-  print(here_box and "writer: text box deleted" or "writer: table deleted")
+  print(("writer: %s deleted"):format(what))
   edited(body, place, "table")
 end
 
@@ -1985,13 +2166,14 @@ TOOL_ACTS = {
   table = function() insert_table() end,
   textbox = function() insert_box() end,
   shape = function(t) shape_menu(t.x) end,
+  chart = function(t) chart_menu(t.x) end,
   --
   -- **Insert**: what goes into the text, in a list - a page break, a table,
-  -- a picture, a text box and a shape so far; the rest of the toolbar's
-  -- middle joins it as it is built.
+  -- a picture, a text box, a shape and a chart; a comment is about text
+  -- already there, and is the Comment tool's.
   --
   insert = function(t)
-    local items = { "Page Break", "Table", "Picture...", "Text Box", "Shape..." }
+    local items = { "Page Break", "Table", "Picture...", "Text Box", "Shape...", "Chart..." }
     open_menu("insert", t.x, TOOLS_H + 2, 180, items, nil, function(i)
       if i == 1 then
         TOOL_ACTS.addpage()
@@ -2001,8 +2183,10 @@ TOOL_ACTS = {
         choose_picture()
       elseif i == 4 then
         insert_box()
-      else
+      elseif i == 5 then
         shape_menu(t.x)
+      else
+        chart_menu(t.x)
       end
     end)
   end,

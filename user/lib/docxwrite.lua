@@ -338,6 +338,118 @@ local function table_xml(p, style, doc, by_name, media)
   return table.concat(out)
 end
 
+--
+-- **A chart as Word's own** (W7c): a chart part of its own with the numbers
+-- written into it - `c:strLit` and `c:numLit`, no workbook beside it - so
+-- Word draws it, and it says what it shows without Kosmos.
+--
+local CHART_COLOURS = { "2A55C9", "D35400", "27AE60", "8E44AD", "C0392B", "16A085" }
+
+local function chart_part(t)
+  local data = richtext.chart_data(t)
+  local kind = t.chart.kind
+  local out = { HEAD, '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" ',
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ',
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">',
+    '<c:chart><c:autoTitleDeleted val="1"/><c:plotArea><c:layout/>' }
+
+  if kind == "pie" then
+    out[#out + 1] = '<c:pieChart><c:varyColors val="1"/>'
+  elseif kind == "line" then
+    out[#out + 1] = '<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>'
+  else
+    out[#out + 1] = ('<c:barChart><c:barDir val="%s"/><c:grouping val="clustered"/>'
+                     .. '<c:varyColors val="0"/>'):format(kind == "bar" and "bar" or "col")
+  end
+
+  local function points(list, as_number)
+    local p = { ('<c:ptCount val="%d"/>'):format(#list) }
+
+    for i, v in ipairs(list) do
+      p[#p + 1] = ('<c:pt idx="%d"><c:v>%s</c:v></c:pt>'):format(i - 1,
+        as_number and ("%.15g"):format(v) or esc(v))
+    end
+
+    return table.concat(p)
+  end
+
+  for s, name in ipairs(data.series) do
+    if kind == "pie" and s > 1 then break end
+
+    local fill = ('<a:solidFill><a:srgbClr val="%s"/></a:solidFill>'):format(
+      CHART_COLOURS[(s - 1) % #CHART_COLOURS + 1])
+
+    out[#out + 1] = ('<c:ser><c:idx val="%d"/><c:order val="%d"/><c:tx><c:v>%s</c:v></c:tx>')
+                    :format(s - 1, s - 1, esc(name))
+
+    if kind == "line" then
+      out[#out + 1] = '<c:spPr><a:ln w="19050">' .. fill .. '</a:ln></c:spPr>'
+    elseif kind ~= "pie" then
+      out[#out + 1] = '<c:spPr>' .. fill .. '</c:spPr>'
+    end
+
+    out[#out + 1] = '<c:cat><c:strLit>' .. points(data.categories) .. '</c:strLit></c:cat>'
+    out[#out + 1] = '<c:val><c:numLit>' .. points(data.values[s], true) .. '</c:numLit></c:val>'
+    out[#out + 1] = '</c:ser>'
+  end
+
+  if kind == "pie" then
+    out[#out + 1] = '<c:firstSliceAng val="0"/></c:pieChart>'
+  else
+    if kind == "line" then
+      out[#out + 1] = '<c:marker val="1"/><c:axId val="111"/><c:axId val="222"/></c:lineChart>'
+    else
+      out[#out + 1] = '<c:gapWidth val="43"/><c:axId val="111"/><c:axId val="222"/></c:barChart>'
+    end
+
+    local cat_at, val_at = kind == "bar" and "l" or "b", kind == "bar" and "b" or "l"
+
+    out[#out + 1] = ('<c:catAx><c:axId val="111"/><c:scaling><c:orientation val="%s"/></c:scaling>'
+      .. '<c:delete val="0"/><c:axPos val="%s"/><c:numFmt formatCode="General" sourceLinked="0"/>'
+      .. '<c:tickLblPos val="nextTo"/><c:crossAx val="222"/><c:crosses val="autoZero"/></c:catAx>')
+      :format(kind == "bar" and "maxMin" or "minMax", cat_at)
+    out[#out + 1] = ('<c:valAx><c:axId val="222"/><c:scaling><c:orientation val="minMax"/></c:scaling>'
+      .. '<c:delete val="0"/><c:axPos val="%s"/><c:majorGridlines/>'
+      .. '<c:numFmt formatCode="General" sourceLinked="0"/><c:tickLblPos val="nextTo"/>'
+      .. '<c:crossAx val="111"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>')
+      :format(val_at)
+  end
+
+  out[#out + 1] = '</c:plotArea><c:legend><c:legendPos val="t"/><c:overlay val="0"/></c:legend>'
+                  .. '<c:plotVisOnly val="1"/></c:chart></c:chartSpace>'
+
+  return table.concat(out)
+end
+
+-- A chart drawn inline, its part found by a relationship, as wide as the
+-- column and as tall as it says.
+local function chart_drawing(k, width_mm, height_mm)
+  local cx = math.floor(width_mm * 36000 + 0.5)
+  local cy = math.floor(height_mm * 36000 + 0.5)
+
+  return ('<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:drawing>'
+    .. '<wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="%d" cy="%d"/>'
+    .. '<wp:docPr id="%d" name="Chart %d"/>'
+    .. '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+    .. '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">'
+    .. '<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="rIdChart%d"/>'
+    .. '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'):format(
+    cx, cy, 2000 + k, k, k)
+end
+
+-- The document's charts in order: what `chartN.xml` each is.
+local function charts_of(doc)
+  local out = {}
+
+  for _, p in ipairs(doc.body) do
+    if p.table and p.table.chart then out[#out + 1] = p end
+  end
+
+  return out
+end
+
+docxwrite.chart_part = chart_part
+
 local function document_xml(doc, media)
   media = media or {}
 
@@ -345,17 +457,23 @@ local function document_xml(doc, media)
   for _, st in ipairs(doc.styles) do by_name[st.name] = st end
 
   local body = {}
+  local charts = 0
+  local page_w = writedoc.page_mm(doc)
+  local column_mm = page_w - doc.margins_mm.left - doc.margins_mm.right
 
   for i, p in ipairs(doc.body) do
     local style = by_name[p.style] or doc.styles[1]
 
-    if p.table then
+    if p.table and p.table.chart then
+      charts = charts + 1
+      body[#body + 1] = chart_drawing(charts, column_mm, p.table.chart.height_mm)
+    elseif p.table then
       body[#body + 1] = table_xml(p, style, doc, by_name, media)
 
       -- Word joins two tables that touch, and ends a body on a paragraph:
       -- an empty one after a table that has no paragraph after it.
       local after = doc.body[i + 1]
-      if not after or after.table then body[#body + 1] = "<w:p/>" end
+      if not after or (after.table and not after.table.chart) then body[#body + 1] = "<w:p/>" end
     else
       -- A drawing's id is the document's to keep unique: a shape's above
       -- every picture's.
@@ -465,6 +583,7 @@ function docxwrite.write(path, doc, info)
     end
   end
 
+  local charts = charts_of(doc)
   local CT = "application/vnd.openxmlformats-officedocument.wordprocessingml"
   local header = doc.header.on and doc.header.text ~= ""
   local footer = doc.footer.on and doc.footer.page_numbers
@@ -489,6 +608,11 @@ function docxwrite.write(path, doc, info)
     types[#types + 1] = '<Override PartName="/word/footer1.xml" ContentType="' .. CT .. '.footer+xml"/>'
   end
 
+  for k = 1, #charts do
+    types[#types + 1] = ('<Override PartName="/word/charts/chart%d.xml" ContentType="'
+      .. 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>'):format(k)
+  end
+
   types[#types + 1] = "</Types>"
 
   local REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/"
@@ -508,6 +632,11 @@ function docxwrite.write(path, doc, info)
   for _, f in ipairs(files) do
     doc_rels[#doc_rels + 1] = ('<Relationship Id="%s" Type="%simage" Target="media/%s"/>')
                               :format(f.rid, REL, f.file)
+  end
+
+  for k = 1, #charts do
+    doc_rels[#doc_rels + 1] = ('<Relationship Id="rIdChart%d" Type="%schart" Target="charts/chart%d.xml"/>')
+                              :format(k, REL, k)
   end
 
   doc_rels[#doc_rels + 1] = "</Relationships>"
@@ -533,6 +662,10 @@ function docxwrite.write(path, doc, info)
   if header then entries[#entries + 1] = { name = "word/header1.xml", text = header_xml(doc) } end
 
   for _, f in ipairs(files) do entries[#entries + 1] = { name = f.name, text = f.text } end
+
+  for k, p in ipairs(charts) do
+    entries[#entries + 1] = { name = ("word/charts/chart%d.xml"):format(k), text = chart_part(p.table) }
+  end
   if footer then entries[#entries + 1] = { name = "word/footer1.xml", text = footer_xml() } end
 
   -- The zip when it is written, so the parts can be read on the Mac
