@@ -17821,3 +17821,52 @@ at the control did not build (`m->failures < 0u` is an always-false
 comparison `-Werror` refuses) and its PASS ran the old image; it was redone.
 
 **Whole gate**: 88 suites in 642 s (10:41), all passing.
+
+## 18.377 Kosmos Write's document and its file (W1)
+
+The first step of Kosmos Write (`docs/write.md`, `roadmap.md` W1), built as
+kits for Present and Sheets after it: **`richtext.lua`** - paragraphs, runs
+and whole styles, each field checked to its type and range - **`writedoc.lua`**
+- the page around them: paper, margins, header and footer, the Document
+panel's switches, the seven styles of the Format panel - and
+**`docfile.lua`** - a document's file, a zip whose first entry is the
+document as `tabletext` and whose others are its pictures. **`zip.lua`**
+learned the two things a document file needs that a folder does not: an
+archive written from named entries, each a string or a file, and one entry
+read back as a string with a ceiling, refused before anything is inflated.
+
+**`tools/test_writedoc.lua`, 44, in `host`**: a new document as the drawing
+has it (A4 upright, 25 mm, a header 9 mm and a footer 6 mm from the edge,
+page numbers, ligatures, Title to Quote in order, every style whole); a
+document checked once is checked - checking it again, and writing it as text
+and reading it back, give it back equal, types included; runs that look
+alike joined, a run's field equal to its style's left out, bytes below a
+space dropped but a line break and a tab; every field held to its type and
+range, defaults included (25 mm is no margin for a page 50 mm tall), and
+nothing undeclared kept - not a field of a document, a paragraph or a run,
+nor a body entry that is not a table; styles filled from the default of
+their name, a name twice kept once, a `next` to nothing its own name; six
+refusals that say why; Letter whatever the file says, a page on its side,
+72 points to the inch.
+
+**What a hundred pages cost**, measured there: a thousand paragraphs of three
+hundred characters in three runs are **866 KB as tables and 502 KB as text,
+1,368 KB both**. A process's heap starts at 2 MB and grows, so this is not a
+ceiling - the check holds it under 2 MB so a document's shape growing fat is
+seen. The first draft of `docfile.lua` and this test both said "a 2 MB
+heap" as though it were one; `malloc.c` has grown it 256 KB at a time since
+30 September, and they were corrected before landing.
+
+**`run_interchange.py`, 15 to 24, in `arm-interchange`**: the machine saves a
+`.write` with a picture in it and opens it again equal to itself, the
+document the archive's first entry, an entry over its ceiling refused, and
+four files that are not documents refused with why - a zip with no document,
+one from a newer Write, one whose document is not a table, a picture named
+`../evil.png`, which also leaves no file behind. **Then Python's `zipfile`
+reads the same file on the Mac** - a second reader that has never heard of
+Kosmos: the two names in order, every CRC right, the document text a person
+can read with `Café` in it as UTF-8, and the picture byte for byte.
+
+**Controls**: runs never joined - 1 of 44 fail, the join; a run keeping
+every field it arrived with - 3 of 44 fail; the document written after the
+pictures - `WRITE-FIRST` fails in the machine.

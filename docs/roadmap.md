@@ -418,7 +418,9 @@ and the two below its next.
 **Built in these steps** (4 October), each its own revision and test, the
 kits under `user/lib/` for Present and Sheets to stand on:
 
-- **W1 - the document and its file.** A document as data - its paper,
+- **W1 - the document and its file.** *Done, 4 October* (`testing.md`
+  18.377): `richtext.lua`, `writedoc.lua`, `docfile.lua`, and `zip.lua`
+  writing from named entries and reading one back. A document as data - its paper,
   margins, header and footer, its styles (Title, Subtitle, Heading 1 and 2,
   Body, Caption, Quote), and its paragraphs, each a style and runs of text
   with their own face, weight, size, bold, italic, underline, strike and

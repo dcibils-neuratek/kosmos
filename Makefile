@@ -3978,6 +3978,9 @@ host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000de
 	$(HOSTDIR)/lua tools/test_tabletext.lua
 	@# The settings kit every application keeps its settings with.
 	$(HOSTDIR)/lua tools/test_prefs.lua
+	@# Kosmos Write's document (docs/write.md, W1): checked once is
+	@# checked, out as text and back the same, and what a hundred pages cost.
+	$(HOSTDIR)/lua tools/test_writedoc.lua
 	@# The Deskbar's menu, read off a folder tree - what counts as an item,
 	@# what order things come in, how deep a folder may go. The store it
 	@# reads through is a table here, which is the whole reason the reading

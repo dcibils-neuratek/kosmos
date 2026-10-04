@@ -5,6 +5,15 @@
 --   zip.write{ paths = { "/Home/roms" }, to = "/Home/roms.zip" }
 --   zip.extract{ from = "/Home/roms.zip", into = "/Home/roms 2" }
 --
+-- And for a document's file (`docfile.lua`, `docs/write.md`), whose text is
+-- made in memory and whose pictures are files somewhere else: an archive
+-- from named entries, each a string or a file, and one entry read back.
+--
+--   zip.write{ entries = { { name = "document", text = text },
+--                          { name = "pictures/1.png", path = "/Home/a.png" } },
+--              to = "/Home/Letter.write" }
+--   local text = zip.read("/Home/Letter.write", "document", 1024 * 1024)
+--
 -- **The structure here, the bytes in C.** A zip is a local header before
 -- each file, the file, and a directory of them all at the end - a few dozen
 -- bytes an entry and a decision about each, which is this side of the line
@@ -38,6 +47,10 @@ local clock = use("/Kosmos/Libraries/clock.lua")
 local PAGE = 4096
 
 local LOCAL, CENTRAL, EOCD = 0x04034b50, 0x02014b50, 0x06054b50
+
+-- A name as a place under a folder, or nil (*Opening one*, below); used by
+-- the writing half too.
+local safe
 
 -- Bit 11: the names are UTF-8, as a FAT long name read here is.
 local UTF8 = 0x0800
@@ -122,6 +135,46 @@ end
 --------------------------------------------------------------------------
 
 --
+-- **Entries by name**, in the order given: `{ name, text }` is a string
+-- made here, `{ name, path }` a file. A name that would open outside the
+-- folder it was opened into, or that is there twice, is refused - an
+-- archive this writes is one `extract` would take.
+--
+local function named(entries)
+  local out, seen = {}, {}
+  local dev = fs.read("/Devices/clock")
+  local now = type(dev) == "table" and dev.epoch or nil
+
+  for _, e in ipairs(entries) do
+    local name = type(e.name) == "string" and safe(e.name)
+
+    if not name or name ~= e.name or name:sub(-1) == "/" then
+      return nil, tostring(e.name) .. " is not a name a zip may hold"
+    end
+
+    if seen[name] then return nil, name .. " is in it twice" end
+
+    seen[name] = true
+
+    if type(e.text) == "string" then
+      out[#out + 1] = { name = name, text = e.text, size = #e.text,
+                        modified = now }
+    else
+      local attrs = type(e.path) == "string" and fs.getattr(e.path)
+
+      if not attrs or attrs.kind == "directory" then
+        return nil, tostring(e.path) .. ": no such file"
+      end
+
+      out[#out + 1] = { path = e.path, name = name, size = attrs.size or 0,
+                        modified = attrs.modified }
+    end
+  end
+
+  return out
+end
+
+--
 -- Every file and folder under `paths`, named as the archive names them:
 -- from the folder that holds each one given, with `/` between, and a
 -- folder's name ending in one. In name order, so an archive of the same
@@ -168,11 +221,17 @@ local function gather(paths)
 end
 
 --
--- `spec.paths` into a zip at `spec.to`. True, or nil and why; nothing is
--- written unless all of it is.
+-- `spec.paths` - or `spec.entries`, by name - into a zip at `spec.to`.
+-- True, or nil and why; nothing is written unless all of it is.
 --
 function zip.write(spec)
-  local items, why = gather(spec.paths or {})
+  local items, why
+
+  if spec.entries then
+    items, why = named(spec.entries)
+  else
+    items, why = gather(spec.paths or {})
+  end
 
   if not items then return nil, why end
 
@@ -187,8 +246,8 @@ function zip.write(spec)
     local n = e.size or 0
 
     if n >= 0xffffffff then
-      return nil, e.path .. " is 4 GB or more, which a zip without ZIP64 "
-                  .. "cannot hold"
+      return nil, (e.path or e.name) .. " is 4 GB or more, which a zip "
+                  .. "without ZIP64 cannot hold"
     end
 
     if not e.dir then count = count + 1 end
@@ -219,11 +278,18 @@ function zip.write(spec)
     local head = 30 + #e.name
 
     if not e.dir and e.size > 0 then
-      local got = read_in(e.path, input, e.size)
+      local got
+
+      if e.text then
+        sys.region_write(input.cap, 0, e.text)
+        got = #e.text
+      else
+        got = read_in(e.path, input, e.size)
+      end
 
       if got ~= e.size then
         free(input, out)
-        return nil, e.path .. ": could not be read"
+        return nil, (e.path or e.name) .. ": could not be read"
       end
 
       usize = got
@@ -288,7 +354,7 @@ end
 -- would not be under it: from the root, with a drive's letter, or through
 -- `..`. Backslashes are what some zips separate with.
 --
-local function safe(name)
+function safe(name)
   name = name:gsub("\\", "/")
 
   if name == "" or name:sub(1, 1) == "/" or name:find("^%a:") then
@@ -418,6 +484,79 @@ function zip.entries(path)
 end
 
 --
+-- One entry's bytes, from the archive in `whole` into the region `out`:
+-- inflated or copied, and held to the CRC the archive gave it. True, or nil
+-- and why.
+--
+local function unpack_entry(whole, e, out)
+  if e.method == 8 then
+    local done, got = pcall(kit.inflate_into, whole.at + e.data, e.csize,
+                            out.at, e.usize, true)
+
+    if not done or got ~= e.usize then
+      return nil, e.name .. " would not inflate: " .. tostring(got)
+    end
+  else
+    kit.copy_into(whole.at + e.data, out.at, e.usize)
+  end
+
+  if kit.crc32(out.at, e.usize) ~= e.crc then
+    return nil, e.name .. " is not what the archive says it is - its CRC "
+                .. "differs"
+  end
+
+  return true
+end
+
+--
+-- **One entry of an archive, as a string**: for a document's text, which
+-- is small, rather than for a picture, which is not. `most` bytes at most,
+-- refused before anything is inflated. Nil and why, naming the archive.
+--
+function zip.read(path, name, most)
+  local list, whole = read_directory(path)
+
+  if not list then return nil, whole end
+
+  local e
+
+  for _, x in ipairs(list) do
+    if x.name == name and not x.dir then e = x break end
+  end
+
+  if not e then
+    free(whole)
+    return nil, path .. " holds no " .. name
+  end
+
+  if most and e.usize > most then
+    free(whole)
+    return nil, ("%s: its %s is %d KB, more than the %d KB it may be")
+                :format(path, name, e.usize // 1024, most // 1024)
+  end
+
+  if e.usize == 0 then
+    free(whole)
+    return ""
+  end
+
+  local out, why = region(e.usize)
+
+  if not out then free(whole) return nil, why end
+
+  local ok
+  ok, why = unpack_entry(whole, e, out)
+
+  local bytes = ok and sys.region_read(out.cap, 0, e.usize)
+
+  free(whole, out)
+
+  if not ok then return nil, path .. ": " .. why end
+
+  return bytes
+end
+
+--
 -- **One folder at the top is the archive's folder**: a zip made from `roms`
 -- holds `roms/...`, and opened into a folder called `roms` it should not be
 -- `roms/roms/...`. So when every name is under one folder, that folder is
@@ -516,21 +655,9 @@ function zip.extract(spec)
       if e.usize == 0 then
         ok, oops = fs.write(dest, "")
       else
-        if e.method == 8 then
-          local done, got = pcall(kit.inflate_into, whole.at + e.data,
-                                  e.csize, out.at, e.usize, true)
+        ok, oops = unpack_entry(whole, e, out)
 
-          if not done or got ~= e.usize then
-            return fail(e.name .. " would not inflate: " .. tostring(got))
-          end
-        else
-          kit.copy_into(whole.at + e.data, out.at, e.usize)
-        end
-
-        if kit.crc32(out.at, e.usize) ~= e.crc then
-          return fail(e.name .. " is not what the archive says it is - "
-                      .. "its CRC differs")
-        end
+        if not ok then return fail(oops) end
 
         ok, oops = write_out(dest, out, e.usize)
       end

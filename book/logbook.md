@@ -702,3 +702,35 @@ request sent once more. The device is given up only after five failures in
 a row, which means it is really going. Under QEMU the test pretends one
 report failed and watches the mouse carry on, and with the recovery switched
 off the same test fails.
+
+## 4 October, evening - Kosmos Write's first step: a document and its file
+
+**In short:** nothing to look at yet, but the first piece of Kosmos Write is
+done. There is now a way to hold a document in memory (its paper, margins,
+header and footer, styles, and styled paragraphs) and a `.write` file to
+keep it in. That file is an ordinary zip that any computer can open. Inside
+it, the document is text a person can read, and pictures sit beside it.
+
+**What.** Three small kits rather than code inside an application, because
+Diego wants Kosmos Present and Kosmos Sheets built on the same technology:
+one for styled text, one for Write's page around that text, and one for a
+document's file. The zip library learned to make an archive from things in
+memory and to read a single entry back out.
+
+**Why it is built this way.** A document arrives as a file, and a file can
+come from anywhere. So when one is opened, every field is checked against
+what a document may contain: numbers are held to sensible ranges (a margin
+can't be wider than the paper), and anything unknown is left behind. The
+editor never sees a field it didn't expect. Also, every number says its
+unit in its name (`size_pt`, `width_mm`), because a page is measured in
+millimetres, type in points, and Word in twentieths of a point. This
+project has already been bitten twice by a number that didn't say which
+unit it was in.
+
+**Measured.** A hundred-page document - a thousand paragraphs - takes about
+870 KB of memory as Lua tables and 500 KB as text. Python on the Mac opened a
+`.write` file made inside Kosmos and found every byte where it should be.
+
+**Next:** W2, setting the paragraphs into lines and the lines onto pages,
+measured exactly as the PDF will be, so the screen and the PDF never
+disagree about where a line breaks.

@@ -77,8 +77,12 @@ ENVIRONMENTS = {
     # A library is loaded into the environment of whoever asked for it, so it
     # sees the same names a program does - minus `args`, which belongs to the
     # program and not to what it loaded.
+    #
+    # And `tabletext`, the table-as-text reader every Lua state is born with
+    # (`lua_glue.c`, `design.md` 8.3e): a document's file is a table as
+    # text inside a zip, which no `fs.read` decodes for it (`docfile.lua`).
     "user/lib/": {"sys", "gfx", "fs", "cwd", "run", "interrupted", "use",
-                  "write"},
+                  "write", "tabletext"},
 }
 
 

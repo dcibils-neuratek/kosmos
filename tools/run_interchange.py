@@ -141,6 +141,59 @@ ok, why = zip.extract{ from = "/Home/evil.zip", into = "/Home/evilx" }
 print("ZIP-SLIP", ok, fs.getattr("/Home/evil.txt") == nil,
       fs.getattr("/Home/evilx") == nil, tostring(why):find("outside") ~= nil)
 '''),
+            #
+            # **Kosmos Write's file** (`docs/write.md`, W1): a document
+            # saved with a picture in it and opened again equal to itself,
+            # the document first in the archive, one entry read with a
+            # ceiling, and what is not a document refused with why - a zip
+            # with no document, one from a newer Write, one whose document
+            # is not a table, a picture's name that reaches outside.
+            #
+            ("wtest.lua", b'''
+local writedoc = use("/Kosmos/Libraries/writedoc.lua")
+local zip = use("/Kosmos/Libraries/zip.lua")
+
+local doc = writedoc.new()
+doc.body = {
+  { style = "Title", runs = { { text = "Simple Home Styling" } } },
+  { style = "Body", runs = { { text = "Caf\\u{e9}, " },
+                             { text = "write over this", italic = true },
+                             { text = ".\\nA second line." } } },
+}
+
+local ok, why = writedoc.save("/Home/w.write", doc,
+  { { name = "pictures/noise.bin", path = "/Home/zt/sub/b.bin" } })
+print("WRITE-SAVE", ok, why)
+
+local back, pictures = writedoc.open("/Home/w.write")
+print("WRITE-OPEN", back ~= nil,
+      back and tabletext.encode(back) == tabletext.encode(writedoc.check(doc)),
+      type(pictures) == "table" and table.concat(pictures, ",") or tostring(pictures))
+
+local list = zip.entries("/Home/w.write") or {}
+print("WRITE-FIRST", list[1] and list[1].name, #list)
+
+local text, small = zip.read("/Home/w.write", "document", 64)
+print("WRITE-MOST", text, tostring(small):find("more than the 0 KB", 1, true) ~= nil)
+
+ok, why = writedoc.open("/Home/py.zip")
+print("WRITE-NODOC", ok, tostring(why):find("holds no document", 1, true) ~= nil)
+
+zip.write{ entries = { { name = "document", text = tabletext.encode{
+  format = "kosmos-write", version = 2, body = {} } } }, to = "/Home/new.write" }
+ok, why = writedoc.open("/Home/new.write")
+print("WRITE-NEWER", ok, tostring(why):find("newer Kosmos Write", 1, true) ~= nil)
+
+zip.write{ entries = { { name = "document", text = "just words" } },
+           to = "/Home/words.write" }
+ok, why = writedoc.open("/Home/words.write")
+print("WRITE-NOTTABLE", ok, tostring(why):find("not a stored table", 1, true) ~= nil)
+
+ok, why = writedoc.save("/Home/bad.write", doc,
+  { { name = "../evil.png", path = "/Home/zt/a.txt" } })
+print("WRITE-BADNAME", ok, fs.getattr("/Home/bad.write") == nil,
+      tostring(why):find("not a picture", 1, true) ~= nil)
+'''),
         ):
             path = os.path.join(work, name)
 
@@ -221,6 +274,7 @@ print("ZIP-SLIP", ok, fs.getattr("/Home/evil.txt") == nil,
             'print("GUEST" .. "-MANY", worked)',
             # The zip library, and the two programs at the prompt.
             "run /Home/ztest.lua",
+            "run /Home/wtest.lua",
             "zip /Home/prog.zip /Home/zt",
             "unzip /Home/prog.zip",
             'print("GUEST" .. "-UNZIPPED", fs.read("/Home/prog/a.txt") == '
@@ -331,6 +385,61 @@ print("ZIP-SLIP", ok, fs.getattr("/Home/evil.txt") == nil,
                               + (repr(lines[-1]) if lines else out[-900:]))
 
             checks += 1
+
+        for marker, want, what in [
+            ("WRITE-SAVE", "true nil", "the machine did not save a .write file"),
+            ("WRITE-OPEN", "true true pictures/noise.bin",
+             "a .write file saved and opened again is not equal to itself, "
+             "or lost its picture"),
+            ("WRITE-FIRST", "document 2",
+             "a .write file's first entry is not its document"),
+            ("WRITE-MOST", "nil true",
+             "an entry larger than its ceiling was read rather than refused"),
+            ("WRITE-NODOC", "nil true",
+             "a zip with no document was opened as a .write file"),
+            ("WRITE-NEWER", "nil true",
+             "a document from a newer Kosmos Write was not refused with why"),
+            ("WRITE-NOTTABLE", "nil true",
+             "a .write file whose document is not a table was not refused"),
+            ("WRITE-BADNAME", "nil true true",
+             "a picture named ../evil.png was saved, or the file made, or "
+             "not refused with why"),
+        ]:
+            lines = [l for l in flat.splitlines() if l.startswith(marker + " ")]
+
+            if not lines or lines[-1][len(marker) + 1:].strip() != want:
+                raise Failure(f"{what}: wanted {want!r}, got "
+                              + (repr(lines[-1]) if lines else out[-900:]))
+
+            checks += 1
+
+        # And the file, read here by Python's zipfile: a second reader of
+        # the same bytes, which has never heard of Kosmos.
+        written = os.path.join(work, "w.write")
+        kfs("get", disk, "/Home/w.write", written)
+
+        with zipfile.ZipFile(written) as z:
+            if z.namelist() != ["document", "pictures/noise.bin"]:
+                raise Failure("a .write file, read by Python, holds %r"
+                              % z.namelist())
+
+            if z.testzip() is not None:
+                raise Failure("Python finds a CRC wrong in a .write file")
+
+            text = z.read("document").decode("utf-8")
+
+            if (not text.startswith("-- kosmos: table\n")
+                    or 'text = "Simple Home Styling"' not in text
+                    or 'format = "kosmos-write"' not in text
+                    or "Caf\u00e9" not in text):
+                raise Failure("a .write file's document does not read as "
+                              "text a person can read:\n" + text[:600])
+
+            if z.read("pictures/noise.bin") != zip_noise:
+                raise Failure("the picture in a .write file is not the file "
+                              "it was made from")
+
+        checks += 1
 
         zipped = os.path.join(work, "zt.zip")
         kfs("get", disk, "/Home/zt.zip", zipped)
