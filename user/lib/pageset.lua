@@ -516,6 +516,29 @@ function pageset.set(doc, measure, cache, opts)
     if kept then
       for _, line in ipairs(kept.lines) do line.para = n end
       paras[n] = kept
+    elseif p.picture then
+      -- **A picture** (W5): one line as tall as the picture, scaled down
+      -- to the column when it is wider, placed as its paragraph aligns.
+      local style = by_name[p.style] or doc.styles[1]
+      local layout = richtext.layout(p, style)
+      local inner = left + writedoc.pt(layout.indent_left_mm)
+      local room = math.max(1, column - writedoc.pt(layout.indent_left_mm)
+                                   - writedoc.pt(layout.indent_right_mm))
+      local w = writedoc.pt(p.picture.width_mm)
+      local h = writedoc.pt(p.picture.height_mm)
+
+      if w > room then w, h = room, h * room / w end
+
+      local line = { pieces = { { picture = p.picture.name, text = "", at = 1,
+                                  look = look_of(richtext.look({}, style)),
+                                  x_pt = 0, width_pt = w, height_pt = h } },
+                     width_pt = w, spaces = 0, forced = false, first = true,
+                     from = 1, para = n, ascent_pt = h, height_pt = h + 4 }
+
+      align(line, layout, inner, room, true)
+
+      paras[n] = { lines = { line }, layout = layout, style = style, inner = inner }
+      cache.paras[p] = paras[n]
     else
       local style = by_name[p.style] or doc.styles[1]
       local layout = richtext.layout(p, style)

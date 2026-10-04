@@ -18388,3 +18388,46 @@ which finds every paragraph's words in order. **`arm-writeapp`, 18 to 19**:
 Export's list, its third item, "writer: exported /Home/Untitled.docx, 6
 paragraphs". **Control**: the writer dropping the second paragraph - "17
 against 18", named from the first that differs.
+
+## 18.390 Kosmos Write's pictures and captions (W5)
+
+**Media puts a picture in**: the system's Open panel (`panel.lua`) at
+`/Home/Pictures`, a PNG or a JPEG chosen, read and decoded once, named
+inside the document - `pictures/1.png` - and set after the caret's
+paragraph at its size at 96 to the inch, no wider than the column, centred,
+with a Caption paragraph under it and the caret in it, as Pages does. A
+picture's paragraph holds the picture and no text: typing on it starts a
+paragraph after it, Backspace just after it or Delete on it takes it out,
+and the Format panel shows its width in a stepper, its height kept in
+proportion. A `.write` keeps each picture as an entry of its zip, as it
+came, and a page reads one from the file only when it first shows it.
+
+**In the kits**: `richtext` checks a picture as it checks everything - a
+name inside `pictures/`, and sizes held to 1 to 1000 mm; `pageset` sets one
+as a line as tall as the picture, scaled down to the column when wider,
+placed as its paragraph aligns; `pagedraw` draws it through a provider the
+application hands it, smoothed to its size; `pdfwrite` makes each picture
+one image object however often it is shown - a JPEG as it came,
+`DCTDecode`, with its size and components read from its frame header, and
+anything else drawn over white and written as a PNG's data with the
+predictor that reads it (`gfx.encode_png`, no new C); `docxwrite` carries
+the picture's own bytes in `word/media`, related and drawn inline at its
+size in EMUs; `docfile` writes a picture from its bytes as well as from a
+file.
+
+**Host**: `test_pageset.lua` 81 to 85 - a picture wider than the column
+scaled to it in proportion and centred, a narrower one kept and centred,
+one named outside `pictures/` not a picture, and sizes held to their range.
+
+**`arm-write`, 16 to 17, and two checks it had**: the PDF suite's document
+has a picture made in the machine, sky over sea; the PDF holds one image
+object of 120 by 80, page 1 draws it, and its pixels - PNG's row filters
+undone on the Mac, as a reader with predictor 15 does - are sky at the top
+and sea below; the DOCX carries it as a PNG of that size, related and
+drawn. **`arm-writeapp`, 19 to 21**: a PNG put on the disk, Media, the
+panel's Open, a caption typed - and the `.write` holds the picture byte for
+byte, its paragraph and the caption; the DOCX eight paragraphs. **Found**:
+Return in the Open panel did not open its first entry as it opened - the
+list does not have the keyboard then - so the suite presses Open, and the
+panel's Return is on the roadmap. **Control**: Save leaving the pictures
+out - "does not hold the picture".

@@ -712,6 +712,40 @@ do
   check(back.para == 2 and back.at == 2, "a point on a left-hand page did not find its place")
 end
 
+-- 17. **Pictures** (W5): a picture's paragraph is one line as tall as the
+-- picture, scaled down to the column when wider, placed as it aligns; and
+-- a picture's name outside `pictures/` is not one.
+do
+  local wide = doc_of{ { style = "Body", align = "center",
+                         picture = { name = "pictures/1.png", width_mm = 400, height_mm = 200 } },
+                       para("Body", "after") }
+  local set = pageset.set(wide, measure)
+  local line = set.pages[1].lines[1]
+  local pc = line.pieces[1]
+
+  check(pc.picture == "pictures/1.png" and near(pc.width_pt, COLUMN)
+        and near(pc.height_pt, COLUMN / 2) and near(pc.x_pt, LEFT)
+        and near(line.baseline_pt, TOP + COLUMN / 2),
+        "a picture wider than the column was not scaled to it, in proportion")
+
+  local narrow = doc_of{ { style = "Body", align = "center",
+                           picture = { name = "pictures/2.jpg", width_mm = 50, height_mm = 30 } } }
+  local npc = pageset.set(narrow, measure).pages[1].lines[1].pieces[1]
+  check(near(npc.width_pt, PT(50)) and near(npc.x_pt, LEFT + (COLUMN - PT(50)) / 2),
+        "a narrower picture did not keep its size, centred")
+
+  local bad = doc_of{ { style = "Body", picture = { name = "../etc/x.png", width_mm = 5, height_mm = 5 },
+                        runs = { { text = "words" } } } }
+  check(bad.body[1].picture == nil and richtext.plain(bad.body[1]) == "words",
+        "a picture named outside pictures/ was kept")
+
+  local held = doc_of{ { style = "Body", picture = { name = "pictures/3.png", width_mm = 5000,
+                                                     height_mm = 0 } } }
+  check(held.body[1].picture and held.body[1].picture.width_mm == 1000
+        and held.body[1].picture.height_mm == 1,
+        "a picture's sizes were not held to their range, as every number is")
+end
+
 if fails > 0 then
   print(("pageset: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

@@ -471,6 +471,10 @@ kits under `user/lib/` for Present and Sheets to stand on:
   4 October* (`testing.md` 18.387, 18.388).
 - **W6 - DOCX out**: *Done, 4 October* (`testing.md` 18.389), before W5 -
   the drawing's Export list was nearer done than Media and Table.
+- **W5a - pictures and captions**: *Done, 4 October* (`testing.md` 18.390).
+  Next, W5b, tables. **Found on the way**: the Open panel's list does not
+  have the keyboard as it opens, so Return does not open its first entry -
+  every application's, since the panel is shared.
 - **W4 - the window**, from `docs/write.html`: the pages on a dark desk,
   the toolbar, Format and Document switching the panel, View for the
   thumbnails, zoom; typing and choosing styles, on the document page the

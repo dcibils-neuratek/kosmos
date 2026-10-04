@@ -267,9 +267,35 @@ function richtext.run(t, style)
 end
 
 --
+-- **A picture** a paragraph is (W5): a file inside the document's own -
+-- `pictures/` and a plain name, as `docfile` keeps them - and the size it
+-- is shown at, in millimetres. Nil when it is not one.
+--
+local function picture_of(t)
+  if type(t) ~= "table" then return nil end
+
+  local name = t.name
+
+  if type(name) ~= "string" or #name > 128 or not name:find("^pictures/[%w][%w_%-%.]*$")
+     or name:find("%.%.") then
+    return nil
+  end
+
+  local size = number(1, 1000)
+  local w, h = size(t.width_mm), size(t.height_mm)
+
+  if not w or not h then return nil end
+
+  return { name = name, width_mm = w, height_mm = h }
+end
+
+richtext.picture_of = picture_of
+
+--
 -- One paragraph, checked: its style's name - the one it gave if that is a
 -- style, and `fallback` if not - its own paragraph fields where they differ
--- from that style, and its runs, joined where they look alike.
+-- from that style, and its runs, joined where they look alike. A picture's
+-- paragraph holds the picture and no text.
 --
 function richtext.paragraph(t, by_name, fallback)
   if type(t) ~= "table" then t = {} end
@@ -283,6 +309,10 @@ function richtext.paragraph(t, by_name, fallback)
 
     if v ~= nil and v ~= style[k] then out[k] = v end
   end
+
+  out.picture = picture_of(t.picture)
+
+  if out.picture then return out end
 
   local runs = out.runs
 

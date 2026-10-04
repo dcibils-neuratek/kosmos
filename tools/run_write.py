@@ -306,10 +306,23 @@ for i = 1, 14 do
                       runs = { { text = i %% 5 == 0 and ("Part " .. i) or long } } }
 end
 
+-- A picture (W5), made here: sky over sea, 120 by 80.
+local pic = gfx.surface{ w = 120, h = 80 }
+pic:fill(0, 0, 120, 80, 0xff3366aa)
+pic:fill(0, 0, 120, 30, 0xff99ccee)
+local pic_bytes = gfx.encode_png(pic)
+local function pictures(name)
+  if name == "pictures/1.png" then return { bytes = pic_bytes, surface = pic } end
+end
+
+table.insert(body, 3, { style = "Body", align = "center",
+                        picture = { name = "pictures/1.png", width_mm = 60, height_mm = 40 } })
+table.insert(body, 4, { style = "Caption", align = "center", runs = { { text = "Sky over sea" } } })
+
 local letter = writedoc.check{ format = "kosmos-write", version = 1, body = body }
 local placed = pageset.set(letter, measure)
 local ok, notes = use("/Kosmos/Libraries/pdf.lua").write("/Home/w.pdf",
-  placed, measure, { title = "Kosmos Write" })
+  placed, measure, { title = "Kosmos Write", pictures = pictures })
 
 print("PDF", ok, type(notes) == "table" and notes.pages, type(notes) == "table" and notes.fonts,
       type(notes) == "table" and notes.missing, type(notes) == "table" and notes.bytes or notes)
@@ -368,7 +381,8 @@ print("DRAWN", drawn_all, nonspace, refused)
 
 -- W6: the same document as Word's DOCX, and each paragraph's words.
 local okd, nd = use("/Kosmos/Libraries/docxwrite.lua").write("/Home/w.docx", letter,
-                                                             { title = "Kosmos Write" })
+                                                             { title = "Kosmos Write",
+                                                               pictures = pictures })
 print("DOCX", okd, type(nd) == "table" and nd.bytes or tostring(nd))
 
 for _, p in ipairs(letter.body) do
@@ -413,6 +427,41 @@ def stream_of(obj):
         return zlib.decompress(raw)
 
     return raw
+
+
+def unfilter(data, width, bpp):
+    """PNG's row filters undone - None, Sub, Up, Average, Paeth - as a PDF
+    reader does for a FlateDecode stream with predictor 15."""
+    stride = width * bpp
+    out = bytearray()
+    prior = bytearray(stride)
+    i = 0
+
+    while i < len(data):
+        kind, row = data[i], bytearray(data[i + 1:i + 1 + stride])
+        i += 1 + stride
+
+        for x in range(stride):
+            a = row[x - bpp] if x >= bpp else 0
+            b = prior[x]
+            c = prior[x - bpp] if x >= bpp else 0
+
+            if kind == 1:
+                row[x] = (row[x] + a) & 255
+            elif kind == 2:
+                row[x] = (row[x] + b) & 255
+            elif kind == 3:
+                row[x] = (row[x] + (a + b) // 2) & 255
+            elif kind == 4:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pred = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+                row[x] = (row[x] + pred) & 255
+
+        out += row
+        prior = row
+
+    return bytes(out)
 
 
 def ref(obj, key):
@@ -550,6 +599,9 @@ def docx_checks(said, out, disk, work):
         types = z.read("[Content_Types].xml").decode()
 
         for name in names:
+            if not name.endswith((".xml", ".rels")):
+                continue                        # a picture, in word/media
+
             try:
                 ET.fromstring(z.read(name))
             except ET.ParseError as e:
@@ -559,6 +611,14 @@ def docx_checks(said, out, disk, work):
                     and ('PartName="/%s"' % name) not in types \
                     and name.startswith("word/") and "_rels" not in name:
                 raise Failure("the DOCX's %s is not in [Content_Types].xml" % name)
+
+        media = z.read("word/media/image1.png") if "word/media/image1.png" in names else b""
+        rels = z.read("word/_rels/document.xml.rels").decode()
+
+        if not media.startswith(b"\x89PNG") or struct.unpack(">II", media[16:24]) != (120, 80) \
+                or 'Target="media/image1.png"' not in rels \
+                or b'r:embed="rIdImage1"' not in z.read("word/document.xml"):
+            raise Failure("the DOCX does not carry the picture as its PNG, related and drawn")
 
         W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
         body = ET.fromstring(z.read("word/document.xml")).find(W + "body")
@@ -798,6 +858,31 @@ def pdf_checks(said, out, fonts, disk, work):
     if len(data) > 200 * 1024:
         raise Failure("the PDF is %d KB; its faces are not subsets"
                       % (len(data) // 1024))
+
+    checks += 1
+
+    # The picture (W5): one image object, drawn on page 1, and its pixels -
+    # the PNG's row filters undone here - sky at the top and sea below.
+    images = [o for o in objects.values() if b"/Subtype /Image" in o]
+
+    if len(images) != 1 or b"/Width 120 /Height 80" not in images[0]:
+        raise Failure("the PDF does not hold the one 120 by 80 picture: %d images"
+                      % len(images))
+
+    pixels = unfilter(stream_of(images[0]), 120, 3)
+
+    def at(x, y):
+        i = (y * 120 + x) * 3
+        return tuple(pixels[i:i + 3])
+
+    if at(60, 10) != (0x99, 0xcc, 0xee) or at(60, 60) != (0x33, 0x66, 0xaa):
+        raise Failure("the PDF's picture is not sky over sea: %r and %r"
+                      % (at(60, 10), at(60, 60)))
+
+    first_ops = stream_of(objects[ref(page_objs[0], b"Contents")]).decode("latin-1")
+
+    if not re.search(r"q [\d.]+ 0 0 [\d.]+ [\d.]+ [\d.]+ cm /Im1 Do Q", first_ops):
+        raise Failure("page 1 does not draw the picture")
 
     checks += 1
 

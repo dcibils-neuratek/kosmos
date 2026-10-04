@@ -260,12 +260,26 @@ end
 -- operator has it. `Tw`, which says the same in one number, applies only to
 -- a single-byte space, and these are two-byte glyphs.
 --
-local function operators(set, page, font_for, notes)
+local function operators(set, page, font_for, notes, image_for)
   local out = {}
   local height = page.height_pt
   local shift = 0               -- a left-hand page's, on facing pages
 
   local function show(piece, look, baseline, extra)
+    if piece.picture then
+      -- **A picture**: its image drawn into its place - a PDF draws an
+      -- image into the unit square, so the matrix is its size and where.
+      local image = image_for(piece.picture)
+
+      if image then
+        out[#out + 1] = ("q %s 0 0 %s %s %s cm /Im%d Do Q"):format(
+          num(piece.width_pt), num(piece.height_pt), num(piece.x_pt + shift),
+          num(height - baseline), image.n)
+      end
+
+      return
+    end
+
     if piece.text == "" then return end
 
     local font = font_for(look)
@@ -348,6 +362,98 @@ local function operators(set, page, font_for, notes)
 end
 
 --------------------------------------------------------------------------
+-- Pictures (W5).
+--------------------------------------------------------------------------
+
+local function be16(s, i) return s:byte(i) * 256 + s:byte(i + 1) end
+
+--
+-- A JPEG's size and how many components it has, from its frame header:
+-- the markers walked from the start until a start of frame. Nil when it is
+-- not a JPEG this reads.
+--
+local function jpeg_size(b)
+  if b:sub(1, 2) ~= "\xff\xd8" then return nil end
+
+  local i = 3
+
+  while i + 9 <= #b do
+    if b:byte(i) ~= 0xFF then return nil end
+
+    local marker = b:byte(i + 1)
+
+    -- A start of frame - not DHT, JPG or DAC, which share the range.
+    if marker >= 0xC0 and marker <= 0xCF and marker ~= 0xC4 and marker ~= 0xC8
+       and marker ~= 0xCC then
+      return be16(b, i + 7), be16(b, i + 5), b:byte(i + 9)
+    end
+
+    if marker == 0x01 or (marker >= 0xD0 and marker <= 0xD9) then
+      i = i + 2
+    else
+      i = i + 2 + be16(b, i + 2)
+    end
+  end
+end
+
+-- A PNG's image data: its IDAT chunks, one zlib stream.
+local function png_idat(png)
+  local i, parts = 9, {}
+
+  while i + 8 <= #png do
+    local len = string.unpack(">I4", png, i)
+    local kind = png:sub(i + 4, i + 7)
+
+    if kind == "IDAT" then parts[#parts + 1] = png:sub(i + 8, i + 7 + len) end
+    if kind == "IEND" then break end
+
+    i = i + 12 + len
+  end
+
+  return table.concat(parts)
+end
+
+--
+-- **A picture as a PDF's image**: `{ dict, data }` - the dictionary's
+-- entries and the stream - from `{ bytes, surface }`. A JPEG as it came; a
+-- PNG or anything else drawn over white - a transparent picture on paper -
+-- and written as a PNG's data with the predictor that reads it.
+--
+function pdfwrite.image(got)
+  if type(got.bytes) == "string" then
+    local w, h, comps = jpeg_size(got.bytes)
+
+    if w and (comps == 1 or comps == 3) then
+      return { data = got.bytes,
+               dict = ("/Type /XObject /Subtype /Image /Width %d /Height %d "
+                       .. "/ColorSpace /%s /BitsPerComponent 8 /Filter /DCTDecode")
+                      :format(w, h, comps == 1 and "DeviceGray" or "DeviceRGB") }
+    end
+  end
+
+  local src = got.surface
+
+  if not src then return nil end
+
+  local w, h = src:size()
+  local ok, white = pcall(gfx.surface, { w = w, h = h })
+
+  if not ok or not white then return nil end
+
+  white:fill(0, 0, w, h, 0xffffffff)
+  white:stretch(src, 0, 0, w, h, 0, 0, w, h, 255, false)
+
+  local png = gfx.encode_png(white)
+  white:free()
+
+  return { data = png_idat(png),
+           dict = ("/Type /XObject /Subtype /Image /Width %d /Height %d "
+                   .. "/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode "
+                   .. "/DecodeParms << /Predictor 15 /Colors 3 /BitsPerComponent 8 "
+                   .. "/Columns %d >>"):format(w, h, w) }
+end
+
+--------------------------------------------------------------------------
 -- The file.
 --------------------------------------------------------------------------
 
@@ -378,13 +484,48 @@ function pdfwrite.write(path, set, measure, info)
     return font
   end
 
+  --
+  -- **The pictures the pages show** (W5), each an image object once
+  -- however often it is shown: a JPEG as it is - a PDF reads one itself,
+  -- `DCTDecode` - and anything else drawn over white and written as a PNG's
+  -- data, which a PDF reads with its PNG predictor. `info.pictures(name)`
+  -- gives `{ bytes, surface }`: the file as it came and it decoded.
+  --
+  local images, by_picture = {}, {}
+
+  local function image_for(name)
+    local image = by_picture[name]
+
+    if image ~= nil then return image or nil end
+
+    local got = info.pictures and info.pictures(name)
+
+    if not got then
+      by_picture[name] = false
+      notes.missing_pictures = (notes.missing_pictures or 0) + 1
+      return nil
+    end
+
+    image = pdfwrite.image(got)
+
+    if not image then
+      by_picture[name] = false
+      return nil
+    end
+
+    image.n = #images + 1
+    images[#images + 1] = image
+    by_picture[name] = image
+    return image
+  end
+
   -- Every page's operators first, so the fonts and their glyphs are known
   -- before the first object is written and the room needed before it is
   -- asked for.
   local contents, biggest_content = {}, 1
 
   for i, page in ipairs(set.pages) do
-    contents[i] = operators(set, page, font_for, notes)
+    contents[i] = operators(set, page, font_for, notes, image_for)
     biggest_content = math.max(biggest_content, #contents[i])
   end
 
@@ -393,6 +534,7 @@ function pdfwrite.write(path, set, measure, info)
   local room, biggest = 64 * 1024, biggest_content
 
   for _, c in ipairs(contents) do room = room + #c + 512 end
+  for _, im in ipairs(images) do room = room + #im.data + 1024 end
 
   local biggest_program = 1
 
@@ -475,10 +617,11 @@ function pdfwrite.write(path, set, measure, info)
 
   -- Numbers: the catalogue, the page tree, the information; five for each
   -- face - the font, its glyphs' font, its descriptor, its program, its
-  -- ToUnicode - and two for each page.
+  -- ToUnicode - one for each picture, and two for each page.
   local CATALOG, PAGES, INFO = 1, 2, 3
   local first_font = 4
-  local first_page = first_font + 5 * #fonts
+  local first_image = first_font + 5 * #fonts
+  local first_page = first_image + #images
   local count = first_page + 2 * #set.pages - 1
 
   put("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
@@ -525,7 +668,23 @@ function pdfwrite.write(path, set, measure, info)
     text_stream(n + 4, f.cmap)
   end
 
-  local font_resources = "<< /Font << " .. table.concat(resources, " ") .. " >> >>"
+  -- The pictures, each an image object as it was made, after the faces.
+  local xobjects = {}
+
+  for _, im in ipairs(images) do
+    local n = first_image + im.n - 1
+
+    xobjects[#xobjects + 1] = ("/Im%d %d 0 R"):format(im.n, n)
+    offsets[n] = at
+    put(("%d 0 obj\n<< %s /Length %d >>\nstream\n"):format(n, im.dict, #im.data))
+    put(im.data)
+    put("\nendstream\nendobj\n")
+  end
+
+  local font_resources = "<< /Font << " .. table.concat(resources, " ") .. " >>"
+                         .. (#xobjects > 0 and (" /XObject << " .. table.concat(xobjects, " ")
+                                                .. " >>") or "")
+                         .. " >>"
 
   for i, page in ipairs(set.pages) do
     local n = first_page + 2 * (i - 1)

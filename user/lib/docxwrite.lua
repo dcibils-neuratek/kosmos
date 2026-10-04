@@ -51,7 +51,8 @@ local esc = docxwrite.escape
 
 local HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 local W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-          .. 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+          .. 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+          .. 'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
 
 -- Millimetres and points in Word's twentieths of a point.
 local function twips_mm(mm) return math.floor(writedoc.pt(mm) * 20 + 0.5) end
@@ -169,7 +170,30 @@ end
 -- The parts.
 --------------------------------------------------------------------------
 
-local function document_xml(doc)
+--
+-- **A picture as Word draws one inline**: its bytes in `word/media`, found
+-- by a relationship, at its size in EMUs - 36,000 to the millimetre.
+--
+local function drawing(pic, media)
+  local cx = math.floor(pic.width_mm * 36000 + 0.5)
+  local cy = math.floor(pic.height_mm * 36000 + 0.5)
+
+  return ('<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
+    .. '<wp:extent cx="%d" cy="%d"/><wp:docPr id="%d" name="Picture %d"/>'
+    .. '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+    .. '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+    .. '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+    .. '<pic:nvPicPr><pic:cNvPr id="%d" name="%s"/><pic:cNvPicPr/></pic:nvPicPr>'
+    .. '<pic:blipFill><a:blip r:embed="%s"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+    .. '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="%d" cy="%d"/></a:xfrm>'
+    .. '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>'
+    .. '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>'):format(
+    cx, cy, media.n, media.n, media.n, esc(media.file), media.rid, cx, cy)
+end
+
+local function document_xml(doc, media)
+  media = media or {}
+
   local by_name = {}
   for _, st in ipairs(doc.styles) do by_name[st.name] = st end
 
@@ -185,6 +209,10 @@ local function document_xml(doc)
     -- A list's indents are Word's numbering's: the paragraph says only that
     -- it is in one.
     local parts = { "<w:p>", ppr(richtext.layout(p, style), p.style, own) }
+
+    if p.picture and media[p.picture.name] then
+      parts[#parts + 1] = drawing(p.picture, media[p.picture.name])
+    end
 
     for _, r in ipairs(p.runs) do
       local only = {}
@@ -283,6 +311,24 @@ end
 function docxwrite.write(path, doc, info)
   info = info or {}
 
+  -- The pictures the document shows, each once, as their own files.
+  local media, files = {}, {}
+
+  for _, p in ipairs(doc.body) do
+    local name = p.picture and p.picture.name
+    local got = name and not media[name] and info.pictures and info.pictures(name)
+
+    if got and type(got.bytes) == "string" then
+      local ext = name:match("%.(%w+)$") or "png"
+      local n = #files + 1
+      local file = ("image%d.%s"):format(n, ext:lower())
+
+      media[name] = { n = n, file = file, rid = "rIdImage" .. n }
+      files[#files + 1] = { name = "word/media/" .. file, text = got.bytes,
+                            rid = "rIdImage" .. n, file = file }
+    end
+  end
+
   local CT = "application/vnd.openxmlformats-officedocument.wordprocessingml"
   local header = doc.header.on and doc.header.text ~= ""
   local footer = doc.footer.on and doc.footer.page_numbers
@@ -290,6 +336,9 @@ function docxwrite.write(path, doc, info)
   local types = { HEAD, '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
     '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
     '<Default Extension="xml" ContentType="application/xml"/>',
+    '<Default Extension="png" ContentType="image/png"/>',
+    '<Default Extension="jpg" ContentType="image/jpeg"/>',
+    '<Default Extension="jpeg" ContentType="image/jpeg"/>',
     '<Override PartName="/word/document.xml" ContentType="', CT, '.document.main+xml"/>',
     '<Override PartName="/word/styles.xml" ContentType="', CT, '.styles+xml"/>',
     '<Override PartName="/word/numbering.xml" ContentType="', CT, '.numbering+xml"/>',
@@ -320,6 +369,11 @@ function docxwrite.write(path, doc, info)
     doc_rels[#doc_rels + 1] = '<Relationship Id="rIdFooter" Type="' .. REL .. 'footer" Target="footer1.xml"/>'
   end
 
+  for _, f in ipairs(files) do
+    doc_rels[#doc_rels + 1] = ('<Relationship Id="%s" Type="%simage" Target="media/%s"/>')
+                              :format(f.rid, REL, f.file)
+  end
+
   doc_rels[#doc_rels + 1] = "</Relationships>"
 
   local entries = {
@@ -334,13 +388,15 @@ function docxwrite.write(path, doc, info)
       .. 'xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>' .. esc(info.title or "")
       .. "</dc:title><dc:creator>Kosmos Write</dc:creator></cp:coreProperties>" },
     { name = "word/_rels/document.xml.rels", text = table.concat(doc_rels) },
-    { name = "word/document.xml", text = document_xml(doc) },
+    { name = "word/document.xml", text = document_xml(doc, media) },
     { name = "word/styles.xml", text = styles_xml(doc) },
     { name = "word/numbering.xml", text = numbering_xml() },
     { name = "word/settings.xml", text = settings_xml(doc) },
   }
 
   if header then entries[#entries + 1] = { name = "word/header1.xml", text = header_xml(doc) } end
+
+  for _, f in ipairs(files) do entries[#entries + 1] = { name = f.name, text = f.text } end
   if footer then entries[#entries + 1] = { name = "word/footer1.xml", text = footer_xml() } end
 
   -- The zip when it is written, so the parts can be read on the Mac

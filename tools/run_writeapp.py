@@ -88,6 +88,28 @@ def png(width, height, rgb):
             + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b""))
 
 
+def sea_png(width=160, height=100):
+    """A picture to put in (W5): sky over sea, as a PNG made here."""
+    rows = []
+
+    for y in range(height):
+        sky = y < height * 2 // 5
+        row = bytearray(b"\0")
+
+        for x in range(width):
+            row += bytes((90 + x // 4, 150 + y // 2, 230) if sky else (20, 70 + y // 3, 140))
+
+        rows.append(bytes(row))
+
+    def chunk(kind, body):
+        return (struct.pack(">I", len(body)) + kind + body
+                + struct.pack(">I", zlib.crc32(kind + body) & 0xffffffff))
+
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(b"".join(rows), 9)) + chunk(b"IEND", b""))
+
+
 def bands(width, height, inked):
     """The lines of text in a picture: runs of rows with ink, each as its
     top, bottom, leftmost and rightmost inked pixel."""
@@ -124,6 +146,14 @@ def main():
 
     kfs("create", disk, "32")
     kfs("put", disk, maker, "/Home/mk.lua")
+
+    sea = os.path.join(work, "sea.png")
+    sea_bytes = sea_png()
+
+    with open(sea, "wb") as f:
+        f.write(sea_bytes)
+
+    kfs("put", disk, sea, "/Home/Pictures/sea.png")
 
     guest = with_disk(image, disk)
     failed = []
@@ -471,6 +501,35 @@ def main():
             press(*letters("Item one"), "ret", *letters("Item two"), "ret", "ret",
                   *letters("After"))
 
+            # A picture (W5): Media, the Open panel at /Home/Pictures with
+            # the one picture there chosen, Return, and a caption.
+            media = tool("media")
+            mark = len(guest.seen)
+
+            if media:
+                press_at(media[0] + media[2] // 2, media[1] + 20)
+
+            # The Open panel (`panel.lua`): its first entry is chosen as it
+            # opens, and its Open button - 96 by 24, 12 from the right and
+            # 62 from the foot - opens it.
+            chooser = said("wm: window Choose a picture at ", mark, 30)
+            where = re.match(r"(\d+),(\d+) (\d+)x(\d+)", chooser or "")
+
+            if where:
+                cx, cy, cw, ch = (int(v) for v in where.groups())
+                time.sleep(1.0)
+                guest.mouse_to(*R._to_tablet(cx + cw - 12 - 48, cy + ch - 62 + 12, sw, sh))
+                time.sleep(0.3)
+                guest.mouse_button(True)
+                time.sleep(0.15)
+                guest.mouse_button(False)
+                time.sleep(0.5)
+
+            put_in = said("writer: picture ", mark, 30)
+            check(put_in is not None and put_in.startswith("pictures/1.png, 160x100 px"),
+                  "Media did not put the picture in: %r" % put_in)
+            press(*letters("A sea"))
+
             # Export's list, its third item: Word's DOCX (W6).
             export_tool = tool("export")
             mark = len(guest.seen)
@@ -483,13 +542,13 @@ def main():
                     press_at(int(listed.group(1)) + 40, int(listed.group(2)) + 4 + 2 * 30 + 15)
 
             docx_said = said("writer: exported /Home/Untitled.docx, ", mark, 30)
-            check(docx_said is not None and docx_said.startswith("6 paragraphs"),
+            check(docx_said is not None and docx_said.startswith("8 paragraphs"),
                   "Export's list did not export Word's DOCX: %r" % docx_said)
 
             mark = len(guest.seen)
             press("ctrl-s")
             saved = said("writer: saved ", mark, 30)
-            check(saved == "/Home/Untitled.write, 6 paragraphs",
+            check(saved == "/Home/Untitled.write, 8 paragraphs",
                   "Control-S did not save the typed document: %r" % saved)
 
             time.sleep(1)
@@ -522,6 +581,12 @@ def main():
                 text = z.read("document").decode("utf-8")
 
             got = re.findall(r'text = "([^"]*)"', text)
+
+            with zipfile.ZipFile(typed_file) as z:
+                kept = z.read("pictures/1.png") if "pictures/1.png" in z.namelist() else None
+
+            check(kept == sea_bytes and 'name = "pictures/1.png"' in text,
+                  "the .write file does not hold the picture as it came, or its paragraph")
             hello = re.search(r'\{[^{}]*text = "Hello world!"[^{}]*\}', text)
             heading = re.search(r'style = "Heading 1"', text)
         except (R.Failure, OSError, KeyError, zipfile.BadZipFile) as e:
@@ -530,7 +595,7 @@ def main():
         # The file's keys are sorted, so the body's words come before the
         # header's.
         check(got == ["Yes ", "Hello world!", "A Second text", "Item one",
-                      "Item two", "After", "Header words"],
+                      "Item two", "After", "A sea", "Header words"],
               "the typed document holds %r, not what the keys meant" % got)
         check(text.count('name = "Letter"') == 1 and 'text = "Header words"' in text
               and re.search(r"left = 27[,\n]", text) is not None

@@ -108,7 +108,46 @@ end
 
 local catalogue = faces.catalogue(gfx.typefaces())
 local measure = faces.measure(catalogue, gfx.typeface)
-local drawer = pagedraw.new(measure)
+
+--
+-- **The document's pictures** (W5): each one's bytes, as they came or as
+-- the `.write` file holds them, and decoded once when first shown - read
+-- from the file only when a page needs them.
+--
+local pictures = {}
+
+local function decode(bytes)
+  local ok, surface
+
+  if bytes:sub(1, 2) == "\xff\xd8" then
+    ok, surface = pcall(gfx.jpeg, bytes)
+  else
+    ok, surface = pcall(gfx.png, bytes)
+  end
+
+  return ok and surface or nil
+end
+
+local function picture(name)
+  local p = pictures[name]
+
+  if p == nil and path then
+    local bytes = use("/Kosmos/Libraries/zip.lua").read(path, name, 64 * 1024 * 1024)
+    p = bytes and { bytes = bytes } or false
+    pictures[name] = p
+  end
+
+  if not p then return nil end
+
+  if p.surface == nil then p.surface = decode(p.bytes) or false end
+
+  return p.surface and p or nil
+end
+
+local drawer = pagedraw.new(measure, function(name)
+  local p = picture(name)
+  return p and p.surface
+end)
 local cache = pageset.cache()
 local doc, said
 
@@ -340,7 +379,7 @@ local TOOLS = {
   { key = "chart",    icon = "chart",    text = "Chart",    later = "W7" },
   { key = "textbox",  icon = "textbox",  text = "Text",     later = "W7" },
   { key = "shape",    icon = "shape",    text = "Shape",    later = "W7" },
-  { key = "media",    icon = "pictures", text = "Media",    later = "W5" },
+  { key = "media",    icon = "pictures", text = "Media" },
   { key = "comment",  icon = "comment",  text = "Comment",  later = "W7" },
   { right = true },
   { key = "export",   icon = "export",   text = "Export" },
@@ -442,7 +481,7 @@ end
 
 local function argb(c) return 0xff000000 | (tonumber((c or "#000000"):sub(2), 16) or 0) end
 
-local open_menu, apply_char, apply_para, apply_style, doc_edit
+local open_menu, apply_char, apply_para, apply_style, doc_edit, apply_picture
 
 local function say_where()
   local key = panel == "text" and ("text:" .. part) or tostring(panel)
@@ -649,6 +688,32 @@ local function draw_panel(s)
   end)
 
   y = tabs.y + tabs.h + 16
+
+  local here = doc.body[caret.para]
+
+  if panel == "text" and here and here.picture then
+    local pic = here.picture
+
+    pk.label(s, x0, y, "Picture")
+    y = y + 18
+
+    s:text(x0, y + (30 - gfx.height()) // 2, "Width", theme.text_dim, nil, "ui")
+
+    local wd = { x = x0 + 120, y = y, w = w0 - 120, text = ("%.0f mm"):format(pic.width_mm) }
+    pk.stepper(s, wd)
+    control("picture_width", wd, function(cx, cy)
+      local d = pk.step_at(wd, cx, cy)
+
+      if d and d ~= 0 then apply_picture(math.max(10, pic.width_mm + 5 * d)) end
+    end)
+
+    y = y + 38
+    s:text(x0, y, ("Height %.0f mm, kept in proportion"):format(pic.height_mm),
+           theme.text_dim, nil, "ui")
+
+    say_where(s)
+    return
+  end
 
   if panel == "document" then
     draw_document(s, x0, w0, y)
@@ -1181,8 +1246,29 @@ local function without_selection()
   return richtext.delete(doc.body, anchor, caret)
 end
 
+-- A paragraph after the picture the caret is on, for what is typed there.
+local function after_picture(body, place)
+  if body[place.para] and body[place.para].picture then
+    local out = {}
+    for i, p in ipairs(body) do out[i] = p end
+    table.insert(out, place.para + 1, { style = writedoc.BODY, runs = {} })
+    return out, { para = place.para + 1, at = 1 }
+  end
+
+  return body, place
+end
+
+-- The picture paragraph `n` taken out.
+local function remove_picture(n, place)
+  local out = {}
+  for i, p in ipairs(doc.body) do out[i] = p end
+  table.remove(out, n)
+  edited(out, place, "delete")
+end
+
 local function type_text(text)
   local body, place = without_selection()
+  body, place = after_picture(body, place)
   body, place = richtext.type(body, place, text, pending)
   edited(body, place, "type")
 end
@@ -1191,6 +1277,18 @@ local function back_or_forward(forward)
   if selected() then
     local body, place = richtext.delete(doc.body, anchor, caret)
     edited(body, place, "delete")
+    return
+  end
+
+  local here = doc.body[caret.para]
+
+  if here.picture then
+    remove_picture(caret.para, { para = math.max(1, caret.para - (forward and 0 or 1)), at = 1 })
+    return
+  end
+
+  if not forward and caret.at == 1 and caret.para > 1 and doc.body[caret.para - 1].picture then
+    remove_picture(caret.para - 1, { para = caret.para - 1, at = 1 })
     return
   end
 
@@ -1217,6 +1315,21 @@ end
 function apply_para(fields)
   local a, b = range()
   edited(richtext.arrange(doc.body, a, b, fields, by_name), caret, "format", true)
+end
+
+-- A picture's width, its height kept in proportion.
+function apply_picture(width_mm)
+  local here = doc.body[caret.para]
+  local pic = here.picture
+  local body = {}
+  for i, p in ipairs(doc.body) do body[i] = p end
+
+  local raw = {}
+  for k, v in pairs(here) do raw[k] = v end
+  raw.picture = { name = pic.name, width_mm = width_mm,
+                  height_mm = pic.height_mm * width_mm / pic.width_mm }
+  body[caret.para] = richtext.paragraph(raw, by_name, here.style)
+  edited(body, caret, "format", true)
 end
 
 function apply_style(style_name)
@@ -1272,7 +1385,18 @@ local function save()
     name = path:match("([^/]+)$")
   end
 
-  local ok, why = writedoc.save(path, doc)
+  local shown, list = {}, {}
+
+  for _, p in ipairs(doc.body) do
+    local name = p.picture and p.picture.name
+
+    if name and not shown[name] and picture(name) then
+      shown[name] = true
+      list[#list + 1] = { name = name, bytes = pictures[name].bytes }
+    end
+  end
+
+  local ok, why = writedoc.save(path, doc, list)
 
   if ok then
     dirty = false
@@ -1289,7 +1413,7 @@ end
 local function export()
   local to = path and path:gsub("%.write$", "") .. ".pdf" or "/Home/Untitled.pdf"
   local ok, notes = pdf.write(to, set, measure,
-                              { title = (name:gsub("%.write$", "")) })
+                              { title = (name:gsub("%.write$", "")), pictures = picture })
 
   if ok then
     said = ("Exported %s  -  %d page%s, %d KB"):format(to:match("([^/]+)$"),
@@ -1314,7 +1438,8 @@ end
 -- somebody without Kosmos can open and go on editing.
 local function export_docx()
   local to = path and path:gsub("%.write$", "") .. ".docx" or "/Home/Untitled.docx"
-  local ok, notes = docxwrite.write(to, doc, { title = (name:gsub("%.write$", "")) })
+  local ok, notes = docxwrite.write(to, doc, { title = (name:gsub("%.write$", "")),
+                                                pictures = picture })
 
   if ok then
     said = ("Exported %s  -  %d paragraph%s, %d KB"):format(to:match("([^/]+)$"),
@@ -1347,7 +1472,75 @@ function open_menu(kind, x, y, w, items, chosen, pick)
   frame()
 end
 
+--
+-- **A picture put in** (Media, W5): read, decoded for its size, named
+-- inside the document, and set after the caret's paragraph at its size at
+-- 96 to the inch - no wider than the column - with a caption under it in
+-- Caption, the caret in the caption, as Pages does.
+--
+local function insert_picture(file)
+  local bytes = fs.read(file)
+
+  if type(bytes) ~= "string" then
+    said = "Could not read " .. tostring(file)
+    frame()
+    return
+  end
+
+  local surface = decode(bytes)
+
+  if not surface then
+    said = file:match("([^/]+)$") .. " is not a picture this reads"
+    frame()
+    return
+  end
+
+  local n = 1
+  local ext = (file:match("%.(%w+)$") or "png"):lower()
+
+  while pictures[("pictures/%d.%s"):format(n, ext)] ~= nil do n = n + 1 end
+
+  local pname = ("pictures/%d.%s"):format(n, ext)
+  local pw, ph = surface:size()
+  local w_mm = pw * 25.4 / 96
+  local page_w = writedoc.page_mm(doc)
+  local column = page_w - doc.margins_mm.left - doc.margins_mm.right
+
+  if w_mm > column then w_mm = column end
+
+  local h_mm = w_mm * ph / pw
+
+  pictures[pname] = { bytes = bytes, surface = surface }
+
+  local body = {}
+  for i, p in ipairs(doc.body) do body[i] = p end
+
+  local pic = richtext.paragraph({ style = writedoc.BODY, align = "center",
+                                   picture = { name = pname, width_mm = w_mm, height_mm = h_mm } },
+                                 by_name, writedoc.BODY)
+  local caption = richtext.paragraph({ style = by_name.Caption and "Caption" or writedoc.BODY,
+                                       align = "center", runs = {} }, by_name, writedoc.BODY)
+
+  table.insert(body, caret.para + 1, pic)
+  table.insert(body, caret.para + 2, caption)
+
+  print(("writer: picture %s, %dx%d px, %.1f by %.1f mm"):format(pname, pw, ph, w_mm, h_mm))
+  edited(body, { para = caret.para + 2, at = 1 }, "picture")
+end
+
 local TOOL_ACTS = {
+  media = function()
+    local start = fs.getattr("/Home/Pictures") and "/Home/Pictures" or "/Home"
+    local picked = use("/Kosmos/Libraries/panel.lua").open{
+      start = start, title = "Choose a picture",
+      filter = function(n) return n:lower():match("%.png$") or n:lower():match("%.jpe?g$") end,
+      on_choose = function(chosen) insert_picture(chosen) end,
+    }
+
+    if picked then picked:run() end
+
+    frame()
+  end,
   zoom = function(t)
     local labels = {}
     for i, z in ipairs(ZOOMS) do labels[i] = z .. "%" end

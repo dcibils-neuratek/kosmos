@@ -43,7 +43,8 @@ end
 docfile.picture_name = picture_name
 
 --
--- `doc` and `pictures` - `{ name = "pictures/...", path = file }` each -
+-- `doc` and `pictures` - `{ name = "pictures/...", path = file }` or
+-- `{ name, bytes }` each -
 -- into the file at `path`. Written whole in one write, so a save that does
 -- not finish leaves the file as it was. True, or nil and why.
 --
@@ -62,7 +63,8 @@ function docfile.save(path, doc, pictures)
       return nil, tostring(p.name) .. " is not a picture's name in a document"
     end
 
-    entries[#entries + 1] = { name = p.name, path = p.path }
+    -- A picture as a file somewhere, or as its bytes already read.
+    entries[#entries + 1] = { name = p.name, path = p.path, text = p.bytes }
   end
 
   return zip.write{ entries = entries, to = path }

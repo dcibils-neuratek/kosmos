@@ -875,3 +875,48 @@ app decides what each key means.
 through the emulator's keyboard: a mistake, Backspace, Return, Home, undo,
 redo, a selection typed over, a click in the margin. It saves, and the Mac
 reads the file to confirm it says exactly what the keys meant.
+
+## 4 October, later still - Kosmos Write as it was drawn, and pictures
+
+**In short:** Kosmos Write now looks like its mockup, `docs/write.html`,
+and most of what the mockup shows works. There is a toolbar, a Format panel
+for text and paragraphs, and a Document panel for paper, margins and the
+header. A View shows the pages as thumbnails. Add Page starts a new page.
+It has numbered and bulleted lists, drop caps, ligatures, hyphenation in
+English and Spanish, and facing pages for a book. It exports Word documents
+as well as PDF, and now it takes pictures, each with a caption under it.
+
+**What each step was, in plain terms.**
+- **The window.** The buttons, steppers, colour swatches and menus are new
+  controls in the shared toolkit, so the next app gets them for free.
+- **Lists and drop caps.** A list's numbers are worked out when the page is
+  set, so moving a paragraph renumbers the list on its own.
+- **Ligatures.** "fi" and "fl" are drawn as one joined letter, as a printed
+  book draws them, in the PDF as well as on the screen.
+- **Hyphenation.** This uses Franklin Liang's 1983 method, which is still
+  how TeX breaks words, with TeX's own lists of word patterns copied in
+  unchanged. It finds that "computer" breaks as com-puter and "computadora"
+  as compu-tado-ra.
+- **Word.** The `.docx` export writes the same paragraphs, styles, lists and
+  page setup. Word opens it as a document, not as a picture of one.
+- **Pictures.** The Media button opens the system's file panel at
+  Pictures. A chosen PNG or JPEG goes in centred, at its own size or the
+  column's width if that is smaller, with a caption ready for typing. The
+  `.write` file keeps the picture exactly as it came. The PDF holds it once,
+  however many pages show it: a JPEG goes in unchanged, and anything else
+  is compressed with the same code Kosmos already uses to save PNGs. Word
+  gets the picture's own file.
+
+**Why it is built this way.** This follows the premise from earlier in the
+evening. Kosmos Write adds no new C code for pictures. Reading them, scaling
+them and compressing them are things the system already had, and the app
+only connects them.
+
+**Checked the way a person would do it.** One test makes a picture of sky
+over sea inside the machine, puts it in a document and exports it. Then the
+Mac decodes the PDF's picture and checks that the top is sky and the bottom
+is sea. Another test uses the window itself: it clicks Media, chooses a
+picture in the file panel, types a caption, saves, and checks that the saved
+file holds the picture byte for byte. That test also found a small fault in
+the file panel, in every app, not only this one. Return does not open the
+first file until the list has been clicked. It is on the roadmap.

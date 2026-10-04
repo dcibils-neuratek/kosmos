@@ -34,9 +34,14 @@ local function argb(colour)
   return 0xff000000 | n
 end
 
-function pagedraw.new(measure)
-  return setmetatable({ measure = measure, rasters = {}, descriptors = {} },
-                      Drawer)
+--
+-- `pictures(name)`, when a document has pictures (W5), gives a picture's
+-- decoded surface by its name inside the document - the application's to
+-- keep, since it is the application that read them.
+--
+function pagedraw.new(measure, pictures)
+  return setmetatable({ measure = measure, rasters = {}, descriptors = {},
+                        pictures = pictures }, Drawer)
 end
 
 --
@@ -86,6 +91,25 @@ function Drawer:page(set, page, surface, scale, x, y, paper, marks)
   local shift = 0
 
   local function piece(pc, baseline_pt, extra_pt)
+    if pc.picture then
+      -- **A picture**, standing on its line's baseline, scaled to its place.
+      local src = self.pictures and self.pictures(pc.picture)
+      local px = math.floor(x + (pc.x_pt + shift) * scale + 0.5)
+      local py = math.floor(y + (baseline_pt - pc.height_pt) * scale + 0.5)
+      local pw = math.max(1, math.floor(pc.width_pt * scale + 0.5))
+      local ph = math.max(1, math.floor(pc.height_pt * scale + 0.5))
+
+      if src then
+        local sw, sh = src:size()
+        surface:stretch(src, 0, 0, sw, sh, px, py, pw, ph, 255, true)
+      else
+        -- One that would not load: its place, so the page does not move.
+        surface:fill(px, py, pw, ph, 0xffe4e7ec)
+      end
+
+      return
+    end
+
     if pc.text == "" then return end
 
     local look = set.looks[pc.look]
