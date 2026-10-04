@@ -338,4 +338,268 @@ function richtext.layout(p, style)
   return out
 end
 
+--------------------------------------------------------------------------
+-- **Editing** (`docs/write.md` W4b): text typed, taken out, a paragraph
+-- broken in two and two made one - over a body, a list of paragraphs, as
+-- Write's document, a slide's text box and a spreadsheet's cell all are.
+--
+-- **A place is a paragraph and a byte**: `{ para = n, at = i }`, the caret
+-- before the `i`th byte of paragraph `n`'s text - one past its end at the
+-- end. Always at the start of a UTF-8 character.
+--
+-- **Nothing is changed; each edit returns a new body.** The paragraphs it
+-- did not touch are the same tables in the new body as in the old, so an
+-- undo is the old body kept, and a page that set them once need not set
+-- them again (`pageset`'s cache is keyed by the paragraph).
+--------------------------------------------------------------------------
+
+-- A run's character fields, without its text.
+local function fields_of(run)
+  local out = {}
+  for _, k in ipairs(CHAR_KEYS) do out[k] = run[k] end
+  return out
+end
+
+-- A paragraph like `p` - its style and its own fields - with `runs`, those
+-- made tidy: empty ones dropped and neighbours that look alike joined.
+local function with_runs(p, runs)
+  local out = {}
+
+  for k, v in pairs(p) do
+    if k ~= "runs" then out[k] = v end
+  end
+
+  local tidy = {}
+
+  for _, r in ipairs(runs) do
+    if r.text ~= "" then
+      local last = tidy[#tidy]
+
+      if last and alike(last, r) then
+        last.text = last.text .. r.text
+      else
+        local copy = fields_of(r)
+        copy.text = r.text
+        tidy[#tidy + 1] = copy
+      end
+    end
+  end
+
+  out.runs = tidy
+  return out
+end
+
+-- The runs of `p` from byte `from` up to (not including) byte `to`.
+local function slice(p, from, to)
+  local out, start = {}, 1
+
+  for _, r in ipairs(p.runs) do
+    local stop = start + #r.text
+    local a, b = math.max(from, start), math.min(to, stop)
+
+    if a < b then
+      local piece = fields_of(r)
+      piece.text = r.text:sub(a - start + 1, b - start)
+      out[#out + 1] = piece
+    end
+
+    start = stop
+  end
+
+  return out
+end
+
+richtext.slice = slice
+
+local function concat(...)
+  local out = {}
+  for _, list in ipairs({ ... }) do
+    for _, r in ipairs(list) do out[#out + 1] = r end
+  end
+  return out
+end
+
+-- The fields a run typed at `at` takes: the text before the caret's, or the
+-- text after it at a paragraph's start.
+local function look_at(p, at)
+  local start, before, after = 1, nil, nil
+
+  for _, r in ipairs(p.runs) do
+    local stop = start + #r.text
+
+    if at > start and at <= stop then before = r end
+    if at >= start and at < stop and not after then after = r end
+
+    start = stop
+  end
+
+  local r = before or after
+  return r and fields_of(r) or {}
+end
+
+-- A copy of a body, so an edit can replace paragraphs in it.
+local function copy_body(body)
+  local out = {}
+  for i, p in ipairs(body) do out[i] = p end
+  return out
+end
+
+-- Text a body may hold: line breaks go between paragraphs, so what comes
+-- from a clipboard is split there, and bytes below a space are dropped but
+-- a tab.
+local function clean(text)
+  return (text:gsub("\r\n?", "\n"):gsub("[%z\1-\8\11-\31\127]", ""))
+end
+
+--
+-- **`text` typed at `place`**: in the look of what is before the caret, a
+-- line break in it starting a new paragraph in the same style. The new body
+-- and the caret after what was typed.
+--
+function richtext.type(body, place, text)
+  local out = copy_body(body)
+  local p = body[place.para]
+  local plain = richtext.plain(p)
+  local fields = look_at(p, place.at)
+  local tail = slice(p, place.at, #plain + 1)
+  local head = slice(p, 1, place.at)
+  local lines = {}
+
+  for line in (clean(text) .. "\n"):gmatch("([^\n]*)\n") do
+    lines[#lines + 1] = line
+  end
+
+  local function typed(line)
+    local r = {}
+    for k, v in pairs(fields) do r[k] = v end
+    r.text = line
+    return { r }
+  end
+
+  if #lines == 1 then
+    out[place.para] = with_runs(p, concat(head, typed(lines[1]), tail))
+    return out, { para = place.para, at = place.at + #lines[1] }
+  end
+
+  -- Several lines: the first ends this paragraph, the last begins the one
+  -- that holds the tail, and each between is a paragraph of its own.
+  local new = { with_runs(p, concat(head, typed(lines[1]))) }
+
+  for i = 2, #lines - 1 do
+    new[#new + 1] = with_runs(p, typed(lines[i]))
+  end
+
+  new[#new + 1] = with_runs(p, concat(typed(lines[#lines]), tail))
+
+  table.remove(out, place.para)
+
+  for i, q in ipairs(new) do table.insert(out, place.para + i - 1, q) end
+
+  return out, { para = place.para + #new - 1, at = #lines[#lines] + 1 }
+end
+
+--
+-- **Return**: the paragraph broken at `place`. At its end the new one is in
+-- the style's `next` - a heading is followed by Body - and with none of the
+-- paragraph's own fields; anywhere else both halves keep the style and the
+-- fields, as Pages does. `by_name` is the document's styles by name.
+--
+function richtext.split(body, place, by_name)
+  local out = copy_body(body)
+  local p = body[place.para]
+  local plain = richtext.plain(p)
+  local first = with_runs(p, slice(p, 1, place.at))
+  local second
+
+  if place.at > #plain then
+    local style = by_name and by_name[p.style]
+    second = { style = style and style.next or p.style, runs = {} }
+  else
+    second = with_runs(p, slice(p, place.at, #plain + 1))
+  end
+
+  out[place.para] = first
+  table.insert(out, place.para + 1, second)
+
+  return out, { para = place.para + 1, at = 1 }
+end
+
+-- Whether place `a` comes before place `b`.
+function richtext.before(a, b)
+  return a.para < b.para or (a.para == b.para and a.at < b.at)
+end
+
+--
+-- **What is between two places taken out**: the paragraphs between them
+-- gone, and the first and last made one, in the first one's style. The new
+-- body and the caret where the range began.
+--
+function richtext.delete(body, a, b)
+  if richtext.before(b, a) then a, b = b, a end
+
+  local out = copy_body(body)
+  local first, last = body[a.para], body[b.para]
+  local tail = slice(last, b.at, #richtext.plain(last) + 1)
+
+  out[a.para] = with_runs(first, concat(slice(first, 1, a.at), tail))
+
+  for _ = a.para + 1, b.para do table.remove(out, a.para + 1) end
+
+  return out, { para = a.para, at = a.at }
+end
+
+--
+-- The text between two places, paragraphs ended by line breaks: what a
+-- copy puts on the clipboard.
+--
+function richtext.text(body, a, b)
+  if richtext.before(b, a) then a, b = b, a end
+
+  local parts = {}
+
+  for n = a.para, b.para do
+    local plain = richtext.plain(body[n])
+    local from = n == a.para and a.at or 1
+    local to = n == b.para and b.at or #plain + 1
+
+    parts[#parts + 1] = plain:sub(from, to - 1)
+  end
+
+  return table.concat(parts, "\n")
+end
+
+-- The place one character before or after `place` - across a paragraph's
+-- end - or the place itself at the body's ends.
+function richtext.step(body, place, forward)
+  local plain = richtext.plain(body[place.para])
+
+  if forward then
+    if place.at <= #plain then
+      local i = place.at + 1
+      while i <= #plain and plain:byte(i) >= 0x80 and plain:byte(i) < 0xC0 do
+        i = i + 1
+      end
+      return { para = place.para, at = i }
+    end
+
+    if body[place.para + 1] then return { para = place.para + 1, at = 1 } end
+
+    return place
+  end
+
+  if place.at > 1 then
+    local i = place.at - 1
+    while i > 1 and plain:byte(i) >= 0x80 and plain:byte(i) < 0xC0 do
+      i = i - 1
+    end
+    return { para = place.para, at = i }
+  end
+
+  if place.para > 1 then
+    return { para = place.para - 1, at = #richtext.plain(body[place.para - 1]) + 1 }
+  end
+
+  return place
+end
+
 return richtext

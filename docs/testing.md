@@ -18140,3 +18140,45 @@ before; a suite that did would have shown 18.381's small glyphs only to a
 person looking.
 
 **Whole gate**: 90 suites in 638 s (10:38), all passing.
+
+## 18.384 Kosmos Write: typing (W4b)
+
+Diego, 4 October: "Typing first so I can test it". **Editing is the kits'**,
+by the premise: **`richtext`** types in the look before the caret (line
+breaks becoming paragraphs in the same style), breaks a paragraph on Return
+(at a heading's end into its `next`, Body), takes out a range across
+paragraphs into the first one's style, gives the text between two places
+and steps a character - each edit a new body, the paragraphs it did not
+touch the same tables. **`pageset`** keeps a cache by paragraph, so a
+keystroke sets the paragraph it changed, and says where a place stands
+(`locate`), which place is under a point (`hit`), the line above and below
+at the same column, a line's ends, and a selection's rectangles line by
+line; **`pagedraw`** draws those marks under the text. **`writer.lua`**
+orchestrates: the caret drawn on the window over the pages, so moving it
+draws no page; Shift with the arrows, Home and End, and a drag, to select;
+Control-A, the system's copy, cut and paste; undo and redo, a run of typing
+one step; Control-S to save, a new document as `/Home/Untitled.write`;
+Save on the bar; zoom on the bar alone now that + and - type.
+
+**Host**: `test_writedoc.lua` 44 to 55 - typed inside a bold word is bold
+and joined to it, at a bold run's start takes the look before, line breaks
+make paragraphs, Return at a heading's end gives Body and inside one keeps
+it for both halves, a range across paragraphs, the text between two
+places, a step over an accent and across a paragraph's end, nothing
+changed in place, and an edited body is what checking it gives back.
+`test_pageset.lua` 45 to 59 - a cached set setting nothing again and an
+edit setting only its paragraph, places at their advance, at a wrap and in
+a justified line, a point's nearest place, Up and Down keeping a column,
+Home and End, and a selection's rectangles.
+
+**`arm-writeapp`, 9 to 11, by QEMU's keyboard and mouse**: `wm writer`, a new
+document; "Hello wordl", two Backspaces, "ld", Return, "Second line", Home,
+"A ", Control-Z, Control-Y, End, Shift-Left four times, "text", Up, End,
+"!", a click inside the left margin before the first line, "Yes ",
+Control-S - "writer: saved /Home/Untitled.write, 2 paragraphs" - and the
+file read on the Mac holds **"Yes Hello world!" and "A Second text"**. The
+caret is drawn in the drawing's accent, which the line-by-line comparison
+with the PDF leaves out of the ink: it stood at the title's start and
+stretched the first line 11 pixels.
+
+**Control**: Control-Y doing nothing - the document holds "Second text".

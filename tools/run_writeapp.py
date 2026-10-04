@@ -23,6 +23,7 @@ import struct
 import subprocess
 import sys
 import time
+import zipfile
 import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -30,6 +31,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                   # noqa: E402
 import scratch                                               # noqa: E402
+from run_editor import letters                               # noqa: E402
 
 HOST_LUA = "build/host/lua"
 
@@ -202,21 +204,34 @@ def main():
 
         check(all(c == (255, 255, 255) for c in corners),
               "the page is not white paper at its corners: %r" % corners)
-        screen = bands(pw, visible, lambda x, y: sum(rgb(left + x, top + y)) < 3 * 150)
+        # Ink is text: the caret - the drawing's accent, 0x2a55c9 - stands at
+        # the title's start and is not.
+        caret_colour = (0x2a, 0x55, 0xc9)
+        screen = bands(pw, visible,
+                       lambda x, y: (sum(rgb(left + x, top + y)) < 3 * 150
+                                     and rgb(left + x, top + y) != caret_colour))
 
         check(len(screen) >= 6, "the page on the screen has %d lines of ink"
               % len(screen))
 
-        # ---- zoom ----
+        # ---- zoom, by the bar's buttons: + and - are typed ----
+        def click(x, y):
+            guest.mouse_to(*R._to_tablet(wx + x, wy + y, sw, sh))
+            time.sleep(0.3)
+            guest.mouse_button(True)
+            time.sleep(0.15)
+            guest.mouse_button(False)
+            time.sleep(0.3)
+
         mark = len(guest.seen)
-        guest.sendkey("equal")
+        click(136, 22)                          # the bar's +
         zoomed = said("writer: t.write, ", mark, 20)
         check(zoomed is not None and " at 150%, " in zoomed
               and ("%dx" % round(595.276 * 1.5)) in zoomed,
-              "+ did not zoom to 150%%: %r" % zoomed)
+              "the bar's + did not zoom to 150%%: %r" % zoomed)
 
         mark = len(guest.seen)
-        guest.sendkey("minus")
+        click(28, 22)                           # the bar's -
         said("writer: t.write, ", mark, 20)
 
         # ---- Export PDF ----
@@ -247,6 +262,66 @@ def main():
         check(m is not None and int(m.group(1)) > 100 and m.group(2) == "0",
               "the PDF viewer did not draw the exported page: %r" % viewed)
 
+        # ---- typing (W4b): a new document, by the keyboard and a click ----
+        mark = len(guest.seen)
+        guest.proc.stdin.write(R.STOP_DESKTOP)
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 20
+
+        while time.monotonic() < deadline and R.PROMPT not in guest.seen[mark:]:
+            guest._read_available()
+            time.sleep(0.2)
+
+        mark = len(guest.seen)
+        guest.type("wm writer")
+        fresh = said("writer: Untitled, 1 page at 125%, page 1 at ", mark, 90)
+        opened = said("wm: window Untitled - Kosmos Write at ", mark, 30)
+
+        if fresh is None or opened is None:
+            check(False, "Write did not open a new document: %r" % fresh)
+        else:
+            wx, wy = (int(v) for v in re.match(r"(\d+),(\d+)", opened).groups())
+            fx, fy = (int(v) for v in re.match(r"(\d+),(\d+)", fresh).groups())
+            time.sleep(1.5)
+
+            def press(*names):
+                for n in names:
+                    guest.sendkey(n)
+                    time.sleep(0.05)
+
+            press(*letters("Hello wordl"), "backspace", "backspace", *letters("ld"))
+            press("ret", *letters("Second line"))
+            press("home", *letters("A "))
+            press("ctrl-z", "ctrl-y")
+            press("end", *(["shift-left"] * 4), *letters("text"))
+            press("up", "end", *letters("!"))
+
+            # A click left of the first line's text, inside the margin: the
+            # caret at its start. The line's baseline is 25 mm and an ascent
+            # down the page, about 103 pixels at 125%.
+            time.sleep(0.5)
+            guest.mouse_to(*R._to_tablet(wx + fx + 60, wy + fy + 98, sw, sh))
+            time.sleep(0.3)
+            guest.mouse_button(True)
+            time.sleep(0.15)
+            guest.mouse_button(False)
+            time.sleep(0.3)
+            press(*letters("Yes "))
+
+            mark = len(guest.seen)
+            press("ctrl-s")
+            saved = said("writer: saved ", mark, 30)
+            check(saved == "/Home/Untitled.write, 2 paragraphs",
+                  "Control-S did not save the typed document: %r" % saved)
+
+            time.sleep(1)
+
+            if os.environ.get("KEEP_TYPED"):
+                tw, th, typed_px = R.parse_ppm(guest.screendump())
+
+                with open(os.environ["KEEP_TYPED"], "wb") as f:
+                    f.write(png(tw, th, typed_px))
+
         # ---- the PDF, off the disk ----
         guest.close()
         pdf = os.path.join(work, "t.pdf")
@@ -258,6 +333,22 @@ def main():
         check(data.startswith(b"%PDF-1.4") and str(len(data)) in (exported or ""),
               "the PDF on the disk is %d bytes and the window said %r"
               % (len(data), exported))
+
+        # The typed document, read here: what the keys and the click meant.
+        typed_file = os.path.join(work, "typed.write")
+
+        try:
+            kfs("get", disk, "/Home/Untitled.write", typed_file)
+
+            with zipfile.ZipFile(typed_file) as z:
+                text = z.read("document").decode("utf-8")
+
+            got = re.findall(r'text = "([^"]*)"', text)
+        except (R.Failure, OSError, KeyError, zipfile.BadZipFile) as e:
+            got = ["could not be read: %s" % e]
+
+        check(got == ["Yes Hello world!", "A Second text"],
+              "the typed document holds %r, not what the keys meant" % got)
 
         picture = os.path.join(work, "t.bmp")
 

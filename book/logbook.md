@@ -857,3 +857,21 @@ library are shared by both now. A list of eight more places that each wrote
 the same few lines is on the roadmap, to be gone through next. Kosmos's own
 PDF viewer is also tested for the first time: it opens a PDF that Kosmos
 Write exported and draws every letter.
+
+## 4 October, the end of the night - you can type in Kosmos Write
+
+**In short:** Kosmos Write is an editor now. Click anywhere on the page and
+type: Return, Backspace and Delete, the arrows, Home and End, selecting with
+Shift or by dragging, copy, cut and paste, undo and redo, and Control-S to
+save. Diego asked for this first so he could test it.
+
+**How it is built.** Following the premise from earlier in the evening,
+almost none of it lives in the app. What typing does to styled text, how a
+paragraph splits, and where the caret is on the page are all in the shared
+kits, ready for Kosmos Present's text boxes and Kosmos Sheets' cells. The
+app decides what each key means.
+
+**Checked the way a person would do it.** A test types into a new document
+through the emulator's keyboard: a mistake, Backspace, Return, Home, undo,
+redo, a selection typed over, a click in the margin. It saves, and the Mac
+reads the file to confirm it says exactly what the keys meant.

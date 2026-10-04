@@ -304,6 +304,79 @@ check(with_text_kb < 2048,
 print(("  a hundred pages: %.0f KB held, %.0f KB as text, %.0f KB both")
       :format(held_kb, text_kb, with_text_kb))
 
+-- 9. **Editing** (`richtext`'s, for Write, Present's boxes and Sheets'
+-- cells): typed in the look before the caret, Return, a range taken out
+-- across paragraphs, the text between two places, a step a character - and
+-- nothing changed in place, so the body before an edit is the undo.
+do
+  local doc = writedoc.check{ format = "kosmos-write", version = 1, body = {
+    { style = "Heading 1", runs = { { text = "Title" } } },
+    { style = "Body", runs = { { text = "plain " }, { text = "bold", weight = "Bold" },
+                               { text = " end" } } },
+  } }
+  local by_name = {}
+  for _, st in ipairs(doc.styles) do by_name[st.name] = st end
+
+  local body = doc.body
+  local before_p2 = body[2]
+
+  -- Typed inside "bold": the bold look, joined into its run.
+  local b2, caret = richtext.type(body, { para = 2, at = 9 }, "XY")
+  check(richtext.plain(b2[2]) == "plain boXYld end" and #b2[2].runs == 3
+        and b2[2].runs[2].text == "boXYld" and b2[2].runs[2].weight == "Bold",
+        "typing inside a bold word was not bold: " .. richtext.plain(b2[2]))
+  check(caret.para == 2 and caret.at == 11, "the caret did not follow what was typed")
+  check(body[2] == before_p2 and richtext.plain(body[2]) == "plain bold end"
+        and b2[1] == body[1],
+        "an edit changed the body it was given, or copied what it did not touch")
+
+  -- At a run's start the caret takes the look before it: after "plain ".
+  local b3 = richtext.type(body, { para = 2, at = 7 }, "Z")
+  check(b3[2].runs[1].text == "plain Z" and b3[2].runs[1].weight == nil,
+        "typing at a bold run's start took the bold look")
+
+  -- Typed with line breaks: new paragraphs in the same style.
+  local b4, c4 = richtext.type(body, { para = 2, at = 7 }, "one\r\ntwo\nthree ")
+  check(#b4 == 4 and richtext.plain(b4[2]) == "plain one"
+        and richtext.plain(b4[3]) == "two"
+        and richtext.plain(b4[4]) == "three bold end"
+        and b4[3].style == "Body" and c4.para == 4 and c4.at == 7,
+        "typing line breaks did not make paragraphs: " .. #b4)
+
+  -- Return at a heading's end: Body after it; in the middle, the same style.
+  local b5, c5 = richtext.split(body, { para = 1, at = 6 }, by_name)
+  check(#b5 == 3 and b5[2].style == "Body" and #b5[2].runs == 0
+        and c5.para == 2 and c5.at == 1,
+        "Return at a heading's end did not give a Body paragraph")
+  local b6 = richtext.split(body, { para = 1, at = 3 }, by_name)
+  check(richtext.plain(b6[1]) == "Ti" and richtext.plain(b6[2]) == "tle"
+        and b6[2].style == "Heading 1",
+        "Return inside a heading did not keep its style for both halves")
+
+  -- A range across paragraphs: the first's style, the last's tail.
+  local b7, c7 = richtext.delete(body, { para = 2, at = 3 }, { para = 1, at = 3 })
+  check(#b7 == 1 and richtext.plain(b7[1]) == "Tiain bold end"
+        and b7[1].style == "Heading 1" and c7.para == 1 and c7.at == 3,
+        "a range across paragraphs was not taken out: "
+        .. (b7[1] and richtext.plain(b7[1]) or "?"))
+  check(richtext.text(body, { para = 1, at = 3 }, { para = 2, at = 6 })
+        == "tle\nplain", "the text between two places is not what is there")
+
+  -- Backspace over an accent is one character, and across paragraphs.
+  local accented = richtext.type(body, { para = 2, at = 1 }, "caf\u{e9}")
+  local s1 = richtext.step(accented, { para = 2, at = 6 }, false)
+  local s2 = richtext.step(accented, { para = 2, at = 1 }, false)
+  local s3 = richtext.step(accented, { para = 1, at = 6 }, true)
+  check(s1.at == 4 and s2.para == 1 and s2.at == 6 and s3.para == 2 and s3.at == 1,
+        "a step is not one character, or does not cross a paragraph's end")
+
+  -- And an edited document is still one `check` keeps as it is.
+  local edited = { format = "kosmos-write", version = 1, styles = doc.styles,
+                   body = b4 }
+  check(same(writedoc.check(edited).body, b4),
+        "an edited body is not what checking it gives back")
+end
+
 if fails > 0 then
   print(("writedoc: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

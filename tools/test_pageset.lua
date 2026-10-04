@@ -456,6 +456,98 @@ do
   check(opens == 1, "a face's file was opened " .. opens .. " times")
 end
 
+-- 13. **A caret on the page** (W4b): the cache sets only what changed;
+-- where a place stands, the place under a point, Up and Down, Home and End.
+do
+  local long = ("word "):rep(40) .. "end"
+  local doc = doc_of{ para("Body", "Hello world"), para("Body", long),
+                      para("Body", ""), para("Body", long, { align = "justify" }) }
+  local cache = pageset.cache()
+
+  measured = 0
+  local set = pageset.set(doc, measure, cache)
+  local first = measured
+  local lines_of_1 = set.pages[1].lines[1]
+
+  measured = 0
+  local again = pageset.set(doc, measure, cache)
+  check(measured == 0 and again.pages[1].lines[1] == lines_of_1,
+        "a set with its cache set an unchanged document again")
+
+  local body2 = richtext.type(doc.body, { para = 2, at = 1 }, "new ")
+  local edited = { format = doc.format, version = doc.version, paper = doc.paper,
+                   margins_mm = doc.margins_mm, header = doc.header,
+                   footer = doc.footer, styles = doc.styles, body = body2 }
+  local set2 = pageset.set(edited, measure, cache)
+  check(set2.pages[1].lines[1] == lines_of_1 and first > 0,
+        "an edit to one paragraph set the others again")
+  check(set2.pages[1].lines[2].pieces[1].text:sub(1, 8) == "new word",
+        "the edited paragraph was not set again")
+
+  -- Where places stand, on the first line and at a wrap.
+  local function at(place) return pageset.locate(set, measure, place) end
+
+  check(near(at({ para = 1, at = 1 }).x_pt, LEFT)
+        and near(at({ para = 1, at = 7 }).x_pt, LEFT + 6 * BODY)
+        and near(at({ para = 1, at = 12 }).x_pt, LEFT + 11 * BODY),
+        "a place on a line does not stand at its characters' advance")
+
+  local second = set.pages[1].lines[3]               -- paragraph 2's second line
+  local here = at({ para = 2, at = second.from })
+
+  check(here.line == second and near(here.x_pt, LEFT)
+        and near(here.baseline_pt, second.baseline_pt),
+        "a place at a wrap does not stand at the start of the next line")
+  check(at({ para = 2, at = second.from - 1 }).line == set.pages[1].lines[2],
+        "the space a wrap dropped does not stand at the end of the line before")
+  check(near(at({ para = 3, at = 1 }).x_pt, LEFT),
+        "an empty paragraph's place is not at its line's start")
+
+  -- A justified line: a place after its first space is that much further.
+  local just = nil
+  for _, l in ipairs(set.pages[1].lines) do
+    if l.para == 4 and l.extra_space_pt > 0 and not just then just = l end
+  end
+  check(just ~= nil and near(at({ para = 4, at = just.from + 5 }).x_pt,
+                             just.x_pt + 5 * BODY + just.extra_space_pt),
+        "a place in a justified line does not count its widened space")
+
+  -- The place under a point: a character's middle decides.
+  local function hit(x, y) return pageset.hit(set, measure, 1, x, y) end
+  local base = set.pages[1].lines[1].baseline_pt
+
+  check(hit(LEFT + 6 * BODY + 1, base).at == 7
+        and hit(LEFT + 6 * BODY - 1, base).at == 7
+        and hit(LEFT + 5 * BODY + 1, base).at == 6,
+        "a point does not find the place nearest it")
+  check(hit(0, base).at == 1 and hit(PAGE_W, base).at == 12
+        and hit(LEFT, 0).para == 1,
+        "a point beyond a line or above the page does not find its end")
+
+  -- Up and Down keep their column; Home and End are the line's.
+  local down, column = pageset.vertical(set, measure, { para = 1, at = 4 }, 1)
+  check(down.para == 2 and near(at(down).x_pt, LEFT + 3 * BODY) and near(column, LEFT + 3 * BODY),
+        "Down did not keep the column")
+  local up = pageset.vertical(set, measure, { para = 1, at = 4 }, -1)
+  check(up.para == 1 and up.at == 4, "Up from the first line moved")
+  -- A selection from the middle of the first line into the second
+  -- paragraph's second line: a rectangle a line, the first from its start
+  -- place, the middle whole, the last to its end place.
+  local rects = pageset.selection(set, measure, { para = 2, at = second.from + 2 },
+                                  { para = 1, at = 7 })
+  check(#rects == 3 and near(rects[1].x_pt, LEFT + 6 * BODY)
+        and near(rects[1].w_pt, 5 * BODY)
+        and near(rects[3].x_pt, LEFT) and near(rects[3].w_pt, 1 * BODY + BODY)
+        and near(rects[2].y_pt, set.pages[1].lines[2].baseline_pt
+                                 - set.pages[1].lines[2].ascent_pt),
+        "a selection's rectangles are not its lines'")
+
+  local home, last = pageset.line_ends(set, measure, { para = 2, at = second.from + 3 })
+  check(home.at == second.from and last.at > second.from
+        and near(at(last).x_pt, second.x_pt + second.width_pt),
+        "Home and End are not the line's ends")
+end
+
 if fails > 0 then
   print(("pageset: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

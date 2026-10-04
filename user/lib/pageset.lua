@@ -150,9 +150,9 @@ local function break_lines(tokens, avail_first, avail, width)
   local lines, line = {}, nil
   local pending = {}          -- spaces since the last word, not yet placed
 
-  local function new_line()
+  local function new_line(from)
     line = { pieces = {}, width_pt = 0, spaces = 0, forced = false,
-             first = #lines == 0 }
+             first = #lines == 0, from = from }
     lines[#lines + 1] = line
     pending = {}
   end
@@ -165,6 +165,9 @@ local function break_lines(tokens, avail_first, avail, width)
   -- before it when that one has the same look and ends where it starts.
   local function place(tok, text, at, w, spaces)
     local last = line.pieces[#line.pieces]
+
+    -- Where the line starts in its paragraph's bytes, for a caret.
+    line.from = line.from or at
 
     if last and last.look == tok.look and last.at + #last.text == at
        and last.x_pt + last.width_pt == line.width_pt then
@@ -208,7 +211,7 @@ local function break_lines(tokens, avail_first, avail, width)
       i = i + 1
     elseif tok.kind == "break" then
       line.forced = true
-      new_line()
+      new_line(tok.at + 1)
       i = i + 1
     elseif tok.kind == "tab" then
       flush()
@@ -223,6 +226,7 @@ local function break_lines(tokens, avail_first, avail, width)
 
       -- An empty piece at the stop, which the next word joins: the tab
       -- itself is drawn as nothing.
+      line.from = line.from or tok.at
       stop = math.min(stop, room())
       line.pieces[#line.pieces + 1] = { text = "", look = tok.look,
         at = tok.at + 1, x_pt = stop, width_pt = 0 }
@@ -273,6 +277,13 @@ local function break_lines(tokens, avail_first, avail, width)
 
       i = j
     end
+  end
+
+  -- A paragraph with nothing in it is a line from its first byte.
+  lines[1].from = lines[1].from or 1
+
+  for _, l in ipairs(lines) do
+    l.from = l.from or 1
   end
 
   return lines
@@ -365,9 +376,19 @@ end
 --                 its bytes start in its paragraph's text
 --     footer    the page number as a piece and its baseline, or nil
 --
-function pageset.set(doc, measure)
-  local looks, look_of = looks_table()
-  local width = widths(measure, looks)
+--
+-- **What a set keeps for the next**, so a keystroke sets one paragraph
+-- rather than the document (W4b): each paragraph's lines, by the paragraph
+-- itself - an edit makes a new paragraph table, and those it did not touch
+-- are the same tables (`richtext`'s editing) - with the looks and the widths
+-- already asked. Made again whenever the column, the styles or the measure
+-- are not the ones it was made for.
+--
+function pageset.cache()
+  return {}
+end
+
+function pageset.set(doc, measure, cache)
   local page_w, page_h = writedoc.page_mm(doc)
   local m = doc.margins_mm
 
@@ -376,6 +397,19 @@ function pageset.set(doc, measure)
   local left = writedoc.pt(m.left)
   local column = page_w - left - writedoc.pt(m.right)
   local top, bottom = writedoc.pt(m.top), page_h - writedoc.pt(m.bottom)
+  local geometry = ("%s:%s"):format(left, column)
+
+  cache = cache or pageset.cache()
+
+  if cache.geometry ~= geometry or cache.measure ~= measure
+     or cache.styles ~= doc.styles then
+    cache.geometry, cache.measure, cache.styles = geometry, measure, doc.styles
+    cache.looks, cache.look_of = looks_table()
+    cache.width = widths(measure, cache.looks)
+    cache.paras = setmetatable({}, { __mode = "k" })
+  end
+
+  local looks, look_of, width = cache.looks, cache.look_of, cache.width
 
   local by_name = {}
   for _, s in ipairs(doc.styles) do by_name[s.name] = s end
@@ -386,23 +420,31 @@ function pageset.set(doc, measure)
   local paras = {}
 
   for n, p in ipairs(doc.body) do
-    local style = by_name[p.style] or doc.styles[1]
-    local layout = richtext.layout(p, style)
-    local indent = writedoc.pt(layout.indent_left_mm)
-                   + writedoc.pt(layout.indent_right_mm)
-    local avail = math.max(1, column - indent)
-    local avail_first = math.max(1, avail - writedoc.pt(layout.indent_first_mm))
-    local lines = break_lines(tokens_of(p, style, look_of), avail_first, avail,
-                              width)
-    local empty = look_of(richtext.look({}, style))
+    local kept = cache.paras[p]
 
-    for k, line in ipairs(lines) do
-      line.para = n
-      line_height(line, looks, measure, empty, layout.spacing_lines)
-      align(line, layout, left, avail_first, avail, k == #lines)
+    if kept then
+      for _, line in ipairs(kept.lines) do line.para = n end
+      paras[n] = kept
+    else
+      local style = by_name[p.style] or doc.styles[1]
+      local layout = richtext.layout(p, style)
+      local indent = writedoc.pt(layout.indent_left_mm)
+                     + writedoc.pt(layout.indent_right_mm)
+      local avail = math.max(1, column - indent)
+      local avail_first = math.max(1, avail - writedoc.pt(layout.indent_first_mm))
+      local lines = break_lines(tokens_of(p, style, look_of), avail_first, avail,
+                                width)
+      local empty = look_of(richtext.look({}, style))
+
+      for k, line in ipairs(lines) do
+        line.para = n
+        line_height(line, looks, measure, empty, layout.spacing_lines)
+        align(line, layout, left, avail_first, avail, k == #lines)
+      end
+
+      paras[n] = { lines = lines, layout = layout }
+      cache.paras[p] = paras[n]
     end
-
-    paras[n] = { lines = lines, layout = layout }
   end
 
   local pages = {}
@@ -520,6 +562,209 @@ function pageset.set(doc, measure)
   end
 
   return { looks = looks, pages = pages }
+end
+
+--------------------------------------------------------------------------
+-- **A caret on a set page** (W4b): where a place stands, the place under a
+-- point, and the lines above and below - for Write's window, a slide's
+-- text box and a cell alike. A place is `richtext`'s: `{ para, at }`.
+--------------------------------------------------------------------------
+
+-- Every line of a set in order, each with the number of its page.
+local function all_lines(set)
+  local out = {}
+
+  for n, page in ipairs(set.pages) do
+    for _, line in ipairs(page.lines) do
+      out[#out + 1] = { page = n, line = line }
+    end
+  end
+
+  return out
+end
+
+-- How far into `piece` the byte `at` is, in points: its prefix's advance,
+-- and a justified line's widened spaces in it.
+local function offset_in(set, measure, piece, at, extra)
+  local prefix = piece.text:sub(1, at - piece.at)
+
+  if prefix == "" then return 0 end
+
+  local spaces = select(2, prefix:gsub(" ", ""))
+
+  return measure.width(set.looks[piece.look], prefix) + spaces * extra
+end
+
+-- Where a line's text ends, in its paragraph's bytes.
+local function line_end(line)
+  local last = line.pieces[#line.pieces]
+  return last and (last.at + #last.text) or line.from
+end
+
+--
+-- **Where `place` stands**: its page, its x and its line's baseline,
+-- ascent and height, in points - the caret drawn from it - and the line
+-- itself. The line is the last of its paragraph that starts at or before
+-- the place, so a caret at a wrap stands at the start of the next line.
+--
+function pageset.locate(set, measure, place)
+  local found
+
+  for _, entry in ipairs(all_lines(set)) do
+    if entry.line.para == place.para and entry.line.from <= place.at then
+      found = entry
+    elseif found and entry.line.para ~= place.para then
+      break
+    end
+  end
+
+  if not found then return nil end
+
+  local line = found.line
+  local x = line.x_pt
+
+  for _, piece in ipairs(line.pieces) do
+    if place.at >= piece.at and place.at <= piece.at + #piece.text then
+      x = piece.x_pt + offset_in(set, measure, piece, place.at,
+                                 line.extra_space_pt)
+      break
+    elseif place.at > piece.at + #piece.text then
+      x = piece.x_pt + piece.width_pt
+    end
+  end
+
+  return { page = found.page, line = line, x_pt = x,
+           baseline_pt = line.baseline_pt, ascent_pt = line.ascent_pt,
+           height_pt = line.height_pt }
+end
+
+--
+-- **The place nearest `x_pt` on `line`**: before the character whose
+-- middle is past it, after the last one, the line's start before the
+-- first.
+--
+function pageset.place_on(set, measure, line, x_pt)
+  local place = { para = line.para, at = line.from }
+
+  for _, piece in ipairs(line.pieces) do
+    if x_pt < piece.x_pt then return place end
+
+    local look = set.looks[piece.look]
+    local pen, at = piece.x_pt, piece.at
+
+    for ch in piece.text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+      local w = measure.width(look, ch)
+                + (ch == " " and line.extra_space_pt or 0)
+
+      if x_pt < pen + w / 2 then return { para = line.para, at = at } end
+
+      pen = pen + w
+      at = at + #ch
+    end
+
+    place = { para = line.para, at = at }
+  end
+
+  return place
+end
+
+--
+-- **The place under a point** of page `page`, in points from its top left:
+-- the line whose height holds it, or the nearest, and the place on it.
+--
+function pageset.hit(set, measure, page, x_pt, y_pt)
+  local lines = set.pages[page] and set.pages[page].lines or {}
+  local best, gap = nil, math.huge
+
+  for _, line in ipairs(lines) do
+    local top = line.baseline_pt - line.ascent_pt
+    local d = 0
+
+    if y_pt < top then d = top - y_pt
+    elseif y_pt > top + line.height_pt then d = y_pt - (top + line.height_pt) end
+
+    if d < gap then best, gap = line, d end
+  end
+
+  if not best then return nil end
+
+  return pageset.place_on(set, measure, best, x_pt)
+end
+
+--
+-- **The line above or below**, at the same x: Up and Down. `x_pt` is the
+-- column a caret keeps as it passes shorter lines; nil means where it is.
+-- The place itself at the document's first or last line.
+--
+function pageset.vertical(set, measure, place, step, x_pt)
+  local here = pageset.locate(set, measure, place)
+
+  if not here then return place end
+
+  local lines = all_lines(set)
+
+  for i, entry in ipairs(lines) do
+    if entry.line == here.line then
+      local other = lines[i + step]
+
+      if not other then return place, x_pt or here.x_pt end
+
+      return pageset.place_on(set, measure, other.line, x_pt or here.x_pt),
+             x_pt or here.x_pt
+    end
+  end
+
+  return place
+end
+
+--
+-- **A selection's rectangles**, line by line, in points: `{ page, x_pt,
+-- y_pt, w_pt, h_pt }` each, from place `a` to place `b` in either order -
+-- the first line from where the selection starts, the last to where it
+-- ends, every line between whole.
+--
+function pageset.selection(set, measure, a, b)
+  if b.para < a.para or (b.para == a.para and b.at < a.at) then a, b = b, a end
+
+  local from = pageset.locate(set, measure, a)
+  local to = pageset.locate(set, measure, b)
+  local out, inside = {}, false
+
+  if not from or not to then return out end
+
+  for _, entry in ipairs(all_lines(set)) do
+    local line = entry.line
+
+    if line == from.line then inside = true end
+
+    if inside then
+      local left = line == from.line and from.x_pt or line.x_pt
+      local right = line == to.line and to.x_pt or (line.x_pt + line.width_pt)
+
+      -- A line wholly selected and empty still shows that it is.
+      if right <= left and line ~= to.line then right = left + 4 end
+
+      if right > left then
+        out[#out + 1] = { page = entry.page, x_pt = left,
+                          y_pt = line.baseline_pt - line.ascent_pt,
+                          w_pt = right - left, h_pt = line.height_pt }
+      end
+    end
+
+    if line == to.line then break end
+  end
+
+  return out
+end
+
+-- **Home and End**: the start and the end of the line a place is on.
+function pageset.line_ends(set, measure, place)
+  local here = pageset.locate(set, measure, place)
+
+  if not here then return place, place end
+
+  return { para = place.para, at = here.line.from },
+         { para = place.para, at = line_end(here.line) }
 end
 
 return pageset

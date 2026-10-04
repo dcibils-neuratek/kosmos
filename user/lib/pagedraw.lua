@@ -60,16 +60,26 @@ end
 
 --
 -- **`page` of `set`, drawn on `surface` at `scale` pixels to the point**,
--- its top left at `x`, `y`: the paper first, then the text. Returns how
+-- its top left at `x`, `y`: the paper first, then `marks` - rectangles in
+-- points with a colour, a selection - then the text over them. Returns how
 -- many glyphs were drawn.
 --
-function Drawer:page(set, page, surface, scale, x, y, paper)
+function Drawer:page(set, page, surface, scale, x, y, paper, marks)
   local w = math.floor(page.width_pt * scale + 0.5)
   local h = math.floor(page.height_pt * scale + 0.5)
   local buckets, order = {}, {}
   local drawn = 0
 
   surface:fill(x, y, w, h, paper or 0xffffffff)
+
+  for _, m in ipairs(marks or {}) do
+    local mx = math.floor(x + m.x_pt * scale)
+    local my = math.floor(y + m.y_pt * scale)
+
+    surface:fill(mx, my, math.max(1, math.floor(x + (m.x_pt + m.w_pt) * scale) - mx),
+                 math.max(1, math.floor(y + (m.y_pt + m.h_pt) * scale) - my),
+                 m.colour)
+  end
 
   local function piece(pc, baseline_pt, extra_pt)
     if pc.text == "" then return end

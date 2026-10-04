@@ -452,6 +452,11 @@ kits under `user/lib/` for Present and Sheets to stand on:
   Export PDF; the page on the screen held line by line to the PDF as macOS
   draws it. Then W4b typing, W4c the Format panel, W4d the Document panel
   and the page thumbnails.
+- **W4b - typing**: *Done, 4 October* (`testing.md` 18.384), before the
+  premise's review because Diego asked to test it: the caret, typing,
+  Return, Backspace and Delete, selection by Shift and by dragging, copy,
+  cut and paste, undo and redo, Control-S. Next in it: a word at a time
+  with Control and the arrows, the document's name in the title bar.
 - **W4 - the window**, from `docs/write.html`: the pages on a dark desk,
   the toolbar, Format and Document switching the panel, View for the
   thumbnails, zoom; typing and choosing styles, on the document page the
