@@ -258,7 +258,7 @@ local function operators(set, page, font_for, notes)
 
     local font = font_for(look)
     local face = font.entry.face
-    local x, y = piece.x_pt, height - baseline
+    local x, y = piece.x_pt, height - baseline - (piece.drop_pt or 0)
     local colour = rgb(look.colour)
     local shown
 
@@ -308,8 +308,13 @@ local function operators(set, page, font_for, notes)
   end
 
   for _, line in ipairs(page.lines) do
+    if line.marker then
+      show(line.marker, set.looks[line.marker.look], line.baseline_pt, 0)
+    end
+
     for _, piece in ipairs(line.pieces) do
-      show(piece, set.looks[piece.look], line.baseline_pt, line.extra_space_pt)
+      show(piece, set.looks[piece.look], line.baseline_pt,
+           piece.cap and 0 or line.extra_space_pt)
     end
   end
 

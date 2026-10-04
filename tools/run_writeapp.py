@@ -423,10 +423,38 @@ def main():
             check(said("writer: thumbnails shown", mark, 10) is not None,
                   "View did not show the page thumbnails")
 
+            # A numbered list (W4e): at the document's end, Numbers from the
+            # Layout part, two items, Return twice to leave it, and a line.
+            press("ctrl-end", "ret")
+
+            if tabs:
+                press_at(tabs[0] + tabs[2] // 4, tabs[1] + tabs[3] // 2)
+
+            parts = control("parts")
+
+            if parts:
+                press_at(parts[0] + parts[2] // 2, parts[1] + parts[3] // 2)
+
+            lists = control("list")
+            mark = len(guest.seen)
+
+            if lists:
+                press_at(lists[0] + 30, lists[1] + lists[3] // 2)
+                listed = re.search(r"writer: menu list at (\d+),(\d+)", guest.seen[mark:])
+
+                if listed:
+                    press_at(int(listed.group(1)) + 40,
+                             int(listed.group(2)) + 4 + 2 * 30 + 15)       # Numbers
+            else:
+                check(False, "the Layout part did not say where its list chooser is")
+
+            press(*letters("Item one"), "ret", *letters("Item two"), "ret", "ret",
+                  *letters("After"))
+
             mark = len(guest.seen)
             press("ctrl-s")
             saved = said("writer: saved ", mark, 30)
-            check(saved == "/Home/Untitled.write, 3 paragraphs",
+            check(saved == "/Home/Untitled.write, 6 paragraphs",
                   "Control-S did not save the typed document: %r" % saved)
 
             time.sleep(1)
@@ -466,13 +494,17 @@ def main():
 
         # The file's keys are sorted, so the body's words come before the
         # header's.
-        check(got == ["Yes ", "Hello world!", "A Second text", "Header words"],
+        check(got == ["Yes ", "Hello world!", "A Second text", "Item one",
+                      "Item two", "After", "Header words"],
               "the typed document holds %r, not what the keys meant" % got)
         check(text.count('name = "Letter"') == 1 and 'text = "Header words"' in text
               and re.search(r"left = 27[,\n]", text) is not None
               and "page_break_before = true" in text,
               "the Document panel's paper, header words and margin, and Add "
               "Page's break, are not in the file")
+        check(text.count('list = "number"') == 2,
+              "the two items are not a numbered list in the file, and the "
+              "line after them out of it: %d" % text.count('list = "number"'))
         check(hello is not None and 'weight = "Bold"' in hello.group(0)
               and "italic = true" in hello.group(0) and heading is not None,
               "the Format panel did not make the words bold and italic and "

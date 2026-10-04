@@ -348,6 +348,12 @@ do
   check(#b5 == 3 and b5[2].style == "Body" and #b5[2].runs == 0
         and c5.para == 2 and c5.at == 1,
         "Return at a heading's end did not give a Body paragraph")
+  local listed = richtext.arrange(body, { para = 2, at = 1 }, { para = 2, at = 1 },
+                                  { list = "bullet" }, by_name)
+  local b8 = richtext.split(listed, { para = 2, at = 15 }, by_name)
+  check(b8[3].list == "bullet" and #b8[3].runs == 0,
+        "Return at a list item's end did not go on with the list")
+
   local b6 = richtext.split(body, { para = 1, at = 3 }, by_name)
   check(richtext.plain(b6[1]) == "Ti" and richtext.plain(b6[2]) == "tle"
         and b6[2].style == "Heading 1",

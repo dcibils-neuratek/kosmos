@@ -709,6 +709,21 @@ local function draw_panel(s)
     end)
 
     y = y + sp.h + 18
+    pk.label(s, x0, y, "Bullets & lists")
+    y = y + 18
+
+    local LISTS = { "none", "bullet", "number" }
+    local LIST_WORDS = { "None", "Bullets", "Numbers" }
+    local li = { x = x0, y = y, w = w0,
+                 text = LIST_WORDS[index_of(LISTS, layout.list) or 1] }
+    pk.chooser(s, li)
+    control("list", li, function()
+      open_menu("list", li.x, li.y + li.h + 4, li.w, LIST_WORDS,
+                index_of(LISTS, layout.list),
+                function(i) apply_para({ list = LISTS[i] }) end)
+    end)
+
+    y = y + li.h + 18
 
     -- The space around a paragraph and its indents, a stepper each.
     local rows = {
@@ -735,6 +750,27 @@ local function draw_panel(s)
       y = y + st.h + 8
     end
   else
+    -- A drop cap, and how many lines deep it is.
+    local capped = layout.drop_cap_lines >= 2
+    local dc = { x = x0, y = y + 4, text = "Drop cap", on = capped }
+    pk.check(s, dc)
+    control("dropcap", dc, function()
+      apply_para({ drop_cap_lines = capped and 0 or 3 })
+    end)
+
+    local deep = { x = x0 + 120, y = y, w = w0 - 120,
+                   text = ("%d lines"):format(capped and layout.drop_cap_lines or 3) }
+    pk.stepper(s, deep)
+    control("caplines", deep, function(cx, cy)
+      local d = pk.step_at(deep, cx, cy)
+      if d and d ~= 0 then
+        apply_para({ drop_cap_lines = math.max(2, math.min(10,
+          (capped and layout.drop_cap_lines or 3) + d)) })
+      end
+    end)
+
+    y = y + deep.h + 16
+
     local kwn = { x = x0, y = y, text = "Keep with the next paragraph",
                   on = layout.keep_with_next }
     pk.check(s, kwn)
@@ -1326,9 +1362,18 @@ function sink:key(c)
   elseif c == 8 or c == 127 then
     back_or_forward(false)
   elseif c == 13 or c == 10 then
-    local body, place = without_selection()
-    body, place = richtext.split(body, place, by_name)
-    edited(body, place, "return")
+    local p = doc.body[caret.para]
+
+    -- **Return on an empty list item ends the list**, as Pages does: the
+    -- way out of a list is the key that went on with it.
+    if not selected() and p.list and p.list ~= "none" and richtext.plain(p) == "" then
+      edited(richtext.arrange(doc.body, caret, caret, { list = "none" }, by_name),
+             caret, "return")
+    else
+      local body, place = without_selection()
+      body, place = richtext.split(body, place, by_name)
+      edited(body, place, "return")
+    end
   elseif c == 9 then
     type_text("\t")
   elseif c == 1 then                                     -- Control-A

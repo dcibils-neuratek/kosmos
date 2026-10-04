@@ -18270,3 +18270,41 @@ field; the left margin stepped up twice to 27 mm; View shows the
 thumbnails; and the file read on the Mac has Letter, the header's words, a
 left margin of 27 and the page break. **Control**: Add Page without its
 break - no second page, and none in the file.
+
+## 18.387 Kosmos Write's lists and drop caps (W4e, first half)
+
+**Lists**: a paragraph's `list`, bullets or numbers, chosen in the Format
+panel's Layout part. Its lines hang 6 mm in from the marker, the first
+line's indent not applied; the marker - a bullet, or its number - is a field
+of the line set again on every pass, since a number depends on the
+paragraphs before it and the cache keeps paragraphs, not their order; the
+caret and a copy never meet it. Numbers count through consecutive numbered
+paragraphs and start again after any other. Return at a list item's end
+goes on with the list (`richtext.split`), and Return on an empty item ends
+it, as Pages does.
+
+**Drop caps**: `drop_cap_lines`, from two to ten, in the More part with a
+stepper. The paragraph's first character is taken out of its first word and
+set as a piece of the first line in that character's look, at a size whose
+capital height - about seven tenths of an em - reaches from the first line's
+capitals to the last line's baseline; it stands lower than its line by the
+lines beside it (`drop_pt`), counts nothing toward the line's height, and
+the lines beside it start past it and a 1.5 mm gap. The caret stands before
+and after it as before any character.
+
+`pageset`'s line breaking takes a room for each line now, and its aligning
+a start and a room for each line - the change that let both arrive without
+special cases inside either.
+
+**Host**: `test_pageset.lua` 64 to 73 - markers counted, restarted and
+bulleted; a list's lines hanging; the numbers moving round an item put in
+above, through the cache; a drop cap at the margin, larger than its text,
+its three lines beside it and the fourth back, the first line's height its
+own, standing down two lines, every piece still its paragraph's bytes, the
+caret before and after it. `test_writedoc.lua` 63 to 64: Return at a list
+item's end goes on with the list.
+
+**`arm-writeapp`, 16 to 17**: at the document's end, Return, Numbers from
+the Layout part, "Item one", Return, "Item two", Return twice, "After" -
+six paragraphs, two of them numbered. **Control**: Return never ending a
+list - seven paragraphs, four numbered.

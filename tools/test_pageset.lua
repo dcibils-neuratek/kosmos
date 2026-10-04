@@ -66,6 +66,9 @@ local COLUMN = PAGE_W - 2 * LEFT
 local BOTTOM = PAGE_H - PT(25)
 local BODY = 11 * 0.5                     -- a Body character's width
 
+-- A piece's size, from its look.
+local function looks_size(set, piece) return set.looks[piece.look].size_pt end
+
 -- Every line of a set, in order, with its page.
 local function each_line(set)
   local out = {}
@@ -579,6 +582,74 @@ do
                               header = { text = "a\nb\27[2J" .. ("x"):rep(300) } }
   check(raw.header.text:sub(1, 6) == "ab[2Jx" and #raw.header.text == 200,
         "a header's words from a file were not cleaned and held to 200 bytes")
+end
+
+-- 15. **Lists and drop caps** (W4e).
+do
+  local LIST = PT(pageset.LIST_MM)
+  local long = ("word "):rep(40) .. "end"
+  local doc = doc_of{
+    para("Body", "one", { list = "number" }), para("Body", "two", { list = "number" }),
+    para("Body", long, { list = "number" }), para("Body", "plain"),
+    para("Body", "again", { list = "number" }), para("Body", "dot", { list = "bullet" }),
+  }
+  local cache = pageset.cache()
+  local set = pageset.set(doc, measure, cache)
+  local markers, starts = {}, {}
+
+  for _, line in ipairs(set.pages[1].lines) do
+    if line.marker then markers[#markers + 1] = line.marker.text end
+  end
+
+  check(table.concat(markers, " ") == "1. 2. 3. 1. \u{2022}",
+        "list markers are not counted, restarted and bulleted: " .. table.concat(markers, " "))
+
+  local third = {}
+  for _, line in ipairs(set.pages[1].lines) do
+    if line.para == 3 then third[#third + 1] = line end
+  end
+
+  check(#third > 1 and near(third[1].marker.x_pt, LEFT)
+        and near(third[1].x_pt, LEFT + LIST) and near(third[2].x_pt, LEFT + LIST),
+        "a list's lines do not hang in from its marker")
+  check(faithful(doc, set))
+
+  -- An item put in at the top: every number after it moves, though the
+  -- paragraphs were set from the cache.
+  local body = richtext.split(doc.body, { para = 1, at = 1 }, nil)
+  local renumbered = pageset.set({ format = doc.format, version = doc.version,
+    paper = doc.paper, margins_mm = doc.margins_mm, header = doc.header,
+    footer = doc.footer, styles = doc.styles, body = body }, measure, cache)
+  local again = {}
+  for _, line in ipairs(renumbered.pages[1].lines) do
+    if line.marker then again[#again + 1] = line.marker.text end
+  end
+  check(again[4] == "4.", "a list was not numbered again around a new item: "
+        .. table.concat(again, " "))
+
+  -- A drop cap three lines tall.
+  local capped = doc_of{ para("Body", ("Words "):rep(60), { drop_cap_lines = 3 }) }
+  local cset = pageset.set(capped, measure)
+  local lines = cset.pages[1].lines
+  local cap = lines[1].pieces[1]
+
+  check(cap.cap and cap.text == "W" and near(cap.x_pt, LEFT)
+        and looks_size(cset, cap) > 11,
+        "the first character is not a drop cap at the margin")
+
+  local beside = LEFT + cap.width_pt + PT(pageset.CAP_GAP_MM)
+
+  check(near(lines[1].pieces[2].x_pt, beside) and near(lines[2].x_pt, beside)
+        and near(lines[3].x_pt, beside) and near(lines[4].x_pt, LEFT),
+        "the cap's three lines are not beside it, or the fourth not back at the margin")
+  check(near(lines[1].height_pt, 11 * 1.2)
+        and near(cap.drop_pt, lines[2].height_pt + lines[3].height_pt),
+        "the cap made its line taller, or does not stand down by two lines")
+  check(faithful(capped, cset))
+  check(near(pageset.locate(cset, measure, { para = 1, at = 1 }).x_pt, LEFT)
+        and near(pageset.locate(cset, measure, { para = 1, at = 2 }).x_pt,
+                 LEFT + cap.width_pt),
+        "the caret does not stand before and after the cap")
 end
 
 if fails > 0 then

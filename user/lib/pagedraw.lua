@@ -89,7 +89,8 @@ function Drawer:page(set, page, surface, scale, x, y, paper, marks)
     local px = math.floor(look.size_pt * scale + 0.5)
     local colour = argb(look.colour)
     local left = x + pc.x_pt * scale
-    local base = y + math.floor(baseline_pt * scale + 0.5)
+    -- A drop cap stands lower than its line, by the lines beside it.
+    local base = y + math.floor((baseline_pt + (pc.drop_pt or 0)) * scale + 0.5)
 
     if px < 4 then
       -- Too small to read: the line's grey, where its words are.
@@ -144,8 +145,11 @@ function Drawer:page(set, page, surface, scale, x, y, paper, marks)
   end
 
   for _, line in ipairs(page.lines) do
+    -- A list's marker, before the line's text.
+    if line.marker then piece(line.marker, line.baseline_pt, 0) end
+
     for _, pc in ipairs(line.pieces) do
-      piece(pc, line.baseline_pt, line.extra_space_pt)
+      piece(pc, line.baseline_pt, pc.cap and 0 or line.extra_space_pt)
     end
   end
 

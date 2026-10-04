@@ -518,6 +518,10 @@ function richtext.split(body, place, by_name)
   if place.at > #plain then
     local style = by_name and by_name[p.style]
     second = { style = style and style.next or p.style, runs = {} }
+
+    -- A list goes on: the next item is in the list too, until Return on an
+    -- empty one ends it (the window's).
+    if p.list and p.list ~= "none" then second.list = p.list end
   else
     second = with_runs(p, slice(p, place.at, #plain + 1))
   end

@@ -143,10 +143,10 @@ end
 -- The lines of one paragraph, each `{ pieces, width_pt, spaces, forced,
 -- first }`: its pieces left to right with `x_pt` from the line's start, how
 -- wide it is, how many spaces stand between its words (for justifying), and
--- whether a line break ended it. `avail_first` and `avail` are the room for
--- the first line and the rest.
+-- whether a line break ended it. `room_of(k)` is the room for line `k` - a
+-- first line's indent, a drop cap's lines beside it.
 --
-local function break_lines(tokens, avail_first, avail, width)
+local function break_lines(tokens, room_of, width)
   local lines, line = {}, nil
   local pending = {}          -- spaces since the last word, not yet placed
 
@@ -158,7 +158,7 @@ local function break_lines(tokens, avail_first, avail, width)
   end
 
   local function room()
-    return line.first and avail_first or avail
+    return room_of(#lines)
   end
 
   -- A piece of text placed at the end of the line, joined to the piece
@@ -303,9 +303,11 @@ local function line_height(line, looks, measure, empty_look, spacing)
   local seen = false
 
   for _, pc in ipairs(line.pieces) do
-    local a, d, g = measure.line(looks[pc.look])
-    asc, desc, gap = math.max(asc, a), math.max(desc, d), math.max(gap, g)
-    seen = true
+    if not pc.cap then
+      local a, d, g = measure.line(looks[pc.look])
+      asc, desc, gap = math.max(asc, a), math.max(desc, d), math.max(gap, g)
+      seen = true
+    end
   end
 
   if not seen then
@@ -322,10 +324,7 @@ end
 -- line and a line a break ended, and says by how much each space grew
 -- (`extra_space_pt`, a PDF's `Tw`).
 --
-local function align(line, layout, left_pt, avail_first, avail, last)
-  local room = line.first and avail_first or avail
-  local start = left_pt + writedoc.pt(layout.indent_left_mm)
-                + (line.first and writedoc.pt(layout.indent_first_mm) or 0)
+local function align(line, layout, start, room, last)
   local slack = math.max(0, room - line.width_pt)
   local shift = 0
 
@@ -357,6 +356,49 @@ local function align(line, layout, left_pt, avail_first, avail, last)
   for _, pc in ipairs(line.pieces) do
     pc.x_pt = line.x_pt + pc.x_pt
   end
+end
+
+--------------------------------------------------------------------------
+-- Lists and drop caps.
+--------------------------------------------------------------------------
+
+-- How far a list's lines stand in from its marker.
+pageset.LIST_MM = 6
+
+-- The room between a drop cap and the lines beside it.
+pageset.CAP_GAP_MM = 1.5
+
+--
+-- **A drop cap's piece**: the paragraph's first character, taken out of its
+-- first word token, in that character's look at a size whose capital
+-- height - about seven tenths of an em - reaches from the first line's
+-- capitals down to the last line's baseline. Nil when the paragraph does
+-- not begin with a word.
+--
+function pageset.drop_cap(tokens, layout, measure, looks, look_of, width)
+  local tok = tokens[1]
+
+  if not tok or tok.kind ~= "word" then return nil end
+
+  local ch = tok.text:match("^[%z\1-\127\194-\244][\128-\191]*")
+  local base = looks[tok.look]
+  local a, d, g = measure.line(base)
+  local pitch = (a + d + g) * layout.spacing_lines
+  local size = base.size_pt + (layout.drop_cap_lines - 1) * pitch / 0.7
+
+  local look = {}
+  for k, v in pairs(base) do look[k] = v end
+  look.size_pt = math.floor(size * 10 + 0.5) / 10
+
+  local cap_look = look_of(look)
+
+  tok.text = tok.text:sub(#ch + 1)
+  tok.at = tok.at + #ch
+
+  if tok.text == "" then table.remove(tokens, 1) end
+
+  return { text = ch, look = cap_look, at = 1, x_pt = 0, cap = true,
+           width_pt = width(cap_look, ch) }
 end
 
 --------------------------------------------------------------------------
@@ -419,6 +461,7 @@ function pageset.set(doc, measure, cache)
   -- every page, so where a line breaks does not depend on where it lands,
   -- and keeping a paragraph with the next needs to know the next.
   local paras = {}
+  local numbered = 0
 
   for n, p in ipairs(doc.body) do
     local kept = cache.paras[p]
@@ -429,22 +472,89 @@ function pageset.set(doc, measure, cache)
     else
       local style = by_name[p.style] or doc.styles[1]
       local layout = richtext.layout(p, style)
-      local indent = writedoc.pt(layout.indent_left_mm)
-                     + writedoc.pt(layout.indent_right_mm)
-      local avail = math.max(1, column - indent)
-      local avail_first = math.max(1, avail - writedoc.pt(layout.indent_first_mm))
-      local lines = break_lines(tokens_of(p, style, look_of), avail_first, avail,
-                                width)
+      local tokens = tokens_of(p, style, look_of)
       local empty = look_of(richtext.look({}, style))
+      local inner = left + writedoc.pt(layout.indent_left_mm)
+      local column_room = math.max(1, column - writedoc.pt(layout.indent_left_mm)
+                                          - writedoc.pt(layout.indent_right_mm))
+
+      -- **A list hangs**: every line in from its marker, the first line's
+      -- indent not applied.
+      local listed = layout.list ~= "none"
+      local hang = listed and writedoc.pt(pageset.LIST_MM) or 0
+      local first_in = listed and 0 or writedoc.pt(layout.indent_first_mm)
+
+      -- **A drop cap**: the first character taken out of the text and set
+      -- as tall as `drop_cap_lines` lines, those lines beside it.
+      local cap = layout.drop_cap_lines >= 2 and pageset.drop_cap(tokens, layout,
+                    measure, looks, look_of, width)
+      local cap_lines = cap and layout.drop_cap_lines or 0
+      local cap_room = cap and (cap.width_pt + writedoc.pt(pageset.CAP_GAP_MM)) or 0
+
+      local function start_of(k)
+        return inner + hang + (k == 1 and first_in or 0)
+               + (k <= cap_lines and cap_room or 0)
+      end
+
+      local function room_of(k)
+        return math.max(1, column_room - hang - (k == 1 and first_in or 0)
+                           - (k <= cap_lines and cap_room or 0))
+      end
+
+      local lines = break_lines(tokens, room_of, width)
 
       for k, line in ipairs(lines) do
         line.para = n
         line_height(line, looks, measure, empty, layout.spacing_lines)
-        align(line, layout, left, avail_first, avail, k == #lines)
+        align(line, layout, start_of(k), room_of(k), k == #lines)
       end
 
-      paras[n] = { lines = lines, layout = layout }
+      if cap then
+        local first = lines[1]
+
+        cap.x_pt = inner + hang
+        cap.drop_pt = 0
+
+        for k = 2, math.min(cap_lines, #lines) do
+          cap.drop_pt = cap.drop_pt + lines[k].height_pt
+        end
+
+        -- With fewer lines than the cap is tall, the lines it would have
+        -- stood beside are counted as the first one's height.
+        for _ = #lines + 1, cap_lines do
+          cap.drop_pt = cap.drop_pt + first.height_pt
+        end
+
+        table.insert(first.pieces, 1, cap)
+        first.from = 1
+      end
+
+      paras[n] = { lines = lines, layout = layout, style = style, inner = inner,
+                   listed = listed }
       cache.paras[p] = paras[n]
+    end
+
+    -- **A list's marker**, set again on every pass: a number depends on the
+    -- paragraphs before it, which the cache cannot know. It is drawn, never
+    -- typed into - the caret and a copy do not meet it.
+    local para = paras[n]
+    local first = para.lines[1]
+
+    if para.listed then
+      if para.layout.list == "number" then
+        numbered = numbered + 1
+      else
+        numbered = 0
+      end
+
+      local look = look_of(richtext.look({}, para.style))
+      local text = para.layout.list == "number" and (numbered .. ".") or "\u{2022}"
+
+      first.marker = { text = text, look = look, x_pt = para.inner,
+                       width_pt = width(look, text) }
+    else
+      numbered = 0
+      first.marker = nil
     end
   end
 
