@@ -161,14 +161,16 @@ static void post(const struct notify_request *req, struct notify_reply *rep)
     rep->entry.id = e->id;
 
     /* Said, so a test can wait for it and a person can read what was said
-     * when the banner has gone. */
+     * when the banner has gone - the title quoted and the sender after it:
+     * `from /Kosmos/Apps/cafesa3d.lua: Render finished` was the shape of a
+     * Lua error, and a reader looking for errors in the log found one. */
     say_begin(&line);
     say_text(&line, "notify: ");
     say_dec(&line, e->id);
-    say_text(&line, " from ");
-    say_text(&line, e->from[0] != '\0' ? e->from : e->name);
-    say_text(&line, (e->flags & NOTIFY_ALERT) ? ", an alert: " : ": ");
+    say_text(&line, " \"");
     say_text(&line, e->title);
+    say_text(&line, (e->flags & NOTIFY_ALERT) ? "\", an alert, from " : "\" from ");
+    say_text(&line, e->from[0] != '\0' ? e->from : e->name);
     say_send(console, &line);
 }
 

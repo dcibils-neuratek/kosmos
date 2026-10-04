@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-03
+Last updated: 2026-10-04
 
 ---
 
@@ -591,6 +591,25 @@ does** (18.346): Linux v6.12's e1000e read from `build/downloads/
 e1000e-v6.12`; no reset first, then its MAC reset, each with a frame to
 itself, and the registers said; `ethernet_pch` in x86-core with a control. **The gate ran 85 of 85 in 10:02** - two seconds over Diego's ten minutes (9:56 before it), the slowest `x86-cafesa3d-2` at 202 s and `x86-core` at 52 s, off the longest path: to bring back under before the next thing lands. **Stick 0.10.205** (`ec1114f`): OVMF 32 checks, handed over for the M700 with `log e1000` to read. **Its log** (18.347): the firmware left the card in good order (its own ring drained, TARC0 already e1000e's), the ME present, and both tries failed with TDH 0 against TDT 1; this driver cleared TCTL's MULR, which e1000e keeps. **Changed**: TCTL read-modify-write, PBA before the reset, WUC cleared, and `SYS_DEV_CONFIG` (65) to say the PCI command and the descriptor-ring status; gate 85/85 in 10:14 (over the budget, to trim). **Then network boot, Diego's ask** (18.348): the loader fetches by TFTP through the firmware's PXE, `make netboot` + `bash tools/netboot-serve.sh` (dnsmasq proxy, Diego's sudo), `x86-netboot` in the gate (OVMF needs `-device virtio-rng-pci` for its network stack). The M700 needs network boot on in its setup, F12, the network entry; the 0.10.205 stick stays in for /Home. **0.10.206 booted on the M700 over the network the same night** ("it booted over network!"); its `log e1000` is next. **It said the I219 sends** - a frame to itself in 13 ms, no reset (18.349) - and got no address: receiving. **0.10.207** (`make netboot`): extended receive descriptors on the I219 as e1000e uses (RFCTL.EXTEN), the firmware's RFCTL and the first five seconds' frames said. Network boot is first in the M700's boot order (Diego), so a restart takes the newest build. Next: the build-boot-test loop (roadmap), the late `/Home` stick, `diagnose`'s nil, and the gate back under ten minutes.
 
+**4 October: notifications, in four steps.** Diego's order: notifications,
+then storage in C, then Kosmos Write. **0.10.227** the server,
+`/Notifications` (`notify.c`, `notifyproto.h`), and **who sent a message
+said by the kernel** - `SYS_SENDER`, and a program's file said once
+(18.367); **0.10.228** banners and the history from the clock, a *banner*
+window that never takes the keys, and the window manager tying a window to
+its process by the kernel's word, which found the startup windows
+mislabelled under the old guess (18.368); **0.10.229** Preferences'
+Notifications (18.369); **0.10.230** the first senders - Cafesa3D's render,
+an application stopped on an error, one the window manager ended, a USB
+device connected or disconnected - and a press on a banner opening a folder
+in Tracker, which had been failing quietly through `open` (18.370).
+`notify Title | line` at the prompt posts one. **Storage in C was already
+done** (1 October) and was offered to Diego as next from a stale line here;
+what is left of storage is the device side - the M700's stick at 32 MB/s -
+and **asked of him which he meant**, with Kosmos Write's four questions.
+**Not pushed**: everything since 0.10.214. The gate is at 10:37 to 10:46,
+over the budget, to bring back.
+
 **3 October, the night: the dock lived with on the M700.** Diego used
 it on the M700 by network boot (`make netboot`, he restarts it) and each
 thing he found took a revision (`testing.md` 18.357 to 18.366): **0.10.217**
@@ -689,8 +708,8 @@ network stack's pools growing with no fixed number; g, an HTTP Kit in C so
 the bytes never become Lua strings; h, SIMD in the browser's pixels,
 profiled first; then e, resizable windows, and d, the redesign; then
 loopback (6zy).
-Then `diskfs` step 4, the Lua server, `kfs.lua` and the drive
-server's own superblock reading removed. Also agreed (29 September), after it: a QEMU
+Then `diskfs` step 4 - **done 1 October** (18.337); this line said it was
+next for three days after, and was read as such on 4 October. Also agreed (29 September), after it: a QEMU
 with virglrenderer for 4h d ("Yes try to do this"), and the M700's GPU
 codec, measurements first (`docs/m700-gpu.md`); 4h b and c, the hardware
 cursor and the screen's size from the device. Waiting on Diego: the M700

@@ -6076,6 +6076,19 @@ local function collect_closing()
       if win.pid then
         sys.kill(win.pid)
       end
+
+      --
+      -- **Said where a person sees it** (`roadmap.md`, *Notifications*): an
+      -- alert, from the system, as the drawing has it. The notification
+      -- server answers at once and holds nothing back, so this call is not a
+      -- wait the desktop can be caught in.
+      --
+      pcall(function()
+        use("/Kosmos/Libraries/notify.lua").post{
+          title = tostring(win.title) .. " stopped answering",
+          body = "It was asked to close and did not, so it was ended.",
+          alert = true }
+      end)
     end
   end
 end

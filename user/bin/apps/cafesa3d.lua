@@ -2663,6 +2663,22 @@ function final.tend()
     print(("cafesa3d: rendered %d samples, %d rays in %.1f s on %d threads"):format(
       passes, job:rays(), final.took, job:workers()))
     final.draw()                  -- the button, Render again now
+
+    --
+    -- **And said**, for whoever is looking at another window while it
+    -- works (`roadmap.md`, *Notifications*; Diego: "cafesa render
+    -- finalized"). Asked of the notification server, which answers at
+    -- once; a machine without one renders all the same.
+    --
+    local took = final.took < 60 and ("%.1f s"):format(final.took)
+                 or ("%d min %d s"):format(final.took // 60, math.floor(final.took % 60))
+
+    pcall(function()
+      use("/Kosmos/Libraries/notify.lua").post{
+        title = "Render finished",
+        body = ("%s, %d by %d, %d samples, in %s."):format(FILE.name, RENDER.w, RENDER.h,
+                                                            passes, took) }
+    end)
   end
 end
 

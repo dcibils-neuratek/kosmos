@@ -160,7 +160,17 @@ end
 -- `names` may map a file to the name its header declares (`kosmos: name`),
 -- which is what the Deskbar's menu already knows.
 --
+-- The system's own programs, which speak for the system rather than as
+-- themselves: an application the window manager ended is the system's news.
+local SYSTEM = { ["/Kosmos/Programs/wm.lua"] = true }
+
+-- And the processes built into the image, by what a person calls them.
+local BUILT_IN = { xhci = "USB", drives = "Drives", diskfs = "Disk", net = "Network",
+                   audio = "Sound", e1000 = "Network" }
+
 function notify.who(entry, names)
+  if SYSTEM[entry.from] then return "System" end
+
   if entry.from ~= "" then
     if names and names[entry.from] then return names[entry.from] end
 
@@ -168,7 +178,7 @@ function notify.who(entry, names)
     return stem:sub(1, 1):upper() .. stem:sub(2)
   end
 
-  local n = entry.name ~= "" and entry.name or "System"
+  local n = BUILT_IN[entry.name] or (entry.name ~= "" and entry.name) or "System"
   return n:sub(1, 1):upper() .. n:sub(2)
 end
 

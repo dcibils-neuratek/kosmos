@@ -636,3 +636,16 @@ under the strip, grouped by application. Next: Preferences' Notifications
 page - Do Not Disturb, how long a banner stays, how many are kept, and a
 switch for each application - and then the first real senders: Cafesa3D's
 renders, downloads, sticks arriving, a program that stopped, Clock's timers.
+
+**Later the same day: the settings, and the first real senders.**
+Preferences has a Notifications page now - Do Not Disturb, how long a banner
+stays, how many are kept, and a switch for each application that has said
+something. And four things say something on their own: Cafesa3D when a
+render finishes, any application that stops on an error, one the window
+manager had to end because it would not close, and any USB device plugged
+in or pulled out. The very first of those caught a fault at once: pressing
+a banner that named a folder had been failing quietly, and the error
+became a notification of its own, "Open stopped". A press now opens a
+folder in Tracker and a file with whatever opens it. Still to come, with
+the features they belong to: downloads (the browser has none yet) and
+Clock's timers.

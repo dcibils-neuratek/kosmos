@@ -18,6 +18,8 @@ One boot at the M700's 1720x1440, driven over Telnet and by QEMU's pointer:
      everything said, Clear all, and Do Not Disturb turned off from it.
   7. Preferences' Notifications lists the application that said something,
      and turned off there, its next one shows no banner.
+  8. The system's news: an application that stops on an error, and one the
+     window manager ends because it would not close, each an alert.
 
 Usage: run_notify.py IMAGE
 """
@@ -61,6 +63,17 @@ TERMINAL = ('local r = fs.send("/Running/wm", { type = "launch", '
 
 DND = ('local ok = fs.write("/Home/Preferences/notifications", { dnd = (args == "on") })\n'
        'print("DND " .. tostring(ok))\n')
+
+# Started from the desktop, as an application is: one that stops on an
+# error, and one that opens a window and never answers it again.
+LAUNCH = ('local r = fs.send("/Running/wm", { type = "launch", program = args })\n'
+          'print("LAUNCH " .. tostring(r and r.ok))\n')
+BAD = 'error("stopped on purpose, for the notifications test")\n'
+STUBBORN = ('local ui = use("/Kosmos/Libraries/ui.lua")\n'
+            'local w = ui.window{ title = "Stubborn", w = 320, h = 140, x = 260, y = 420 }\n'
+            'w:paint()\n'
+            'print("stubborn: open, and never listening")\n'
+            'while true do sys.sleep(1000) end\n')
 
 PREFS = ('local r = fs.send("/Running/wm", { type = "launch", '
          'program = "/Kosmos/Apps/preferences.lua", args = "notifications" })\n'
@@ -123,7 +136,8 @@ def main():
 
         for name, text in (("focus", FOCUS), ("room", ROOM), ("terminal", TERMINAL),
                            ("dnd", DND), ("rules", RULES), ("owners", OWNERS),
-                           ("prefs", PREFS)):
+                           ("prefs", PREFS), ("launch", LAUNCH), ("bad", BAD),
+                           ("stubborn", STUBBORN)):
             session.put(text.encode(), "/Temporary/%s.lua" % name)
 
         width, height, _ = R.parse_ppm(guest.screendump())
@@ -166,7 +180,7 @@ def main():
             ax, ay, _, _ = alert
             click(ax + EDGE + 4, ay + EDGE + 4, width, height)
 
-        said["crossed"] = maybe("notifications: closed 2", "the cross", mark)
+        said["crossed"] = maybe("notifications: closed ", "the cross", mark)
 
         # ---- 4: a press opens what it names ----
         mark = len(guest.seen)
@@ -177,13 +191,14 @@ def main():
             ox, oy, ow, _ = opened
             click(ox + ow // 2, oy + EDGE + 30, width, height)
 
-        said["opened"] = maybe("notifications: opened /Home", "a press on a banner", mark)
+        said["opened"] = maybe("notifications: opened /Home with tracker", "a press on a banner", mark)
+        said["tracker"] = maybe("wm: launched tracker -> true", "Tracker started", mark)
 
         # ---- 5: Do Not Disturb ----
         session.run("/Temporary/dnd.lua on")
         mark = len(guest.seen)
         session.run("notify Download finished | BeOS_Bible.pdf, 2.4 MB")
-        said["held"] = maybe("notifications: 4 held, Do Not Disturb", "Do Not Disturb", mark)
+        said["held"] = maybe("held, Do Not Disturb", "Do Not Disturb", mark)
         time.sleep(1)
         guest._read_available()
         said["no window"] = "wm: window Notifications at " not in guest.seen[mark:]
@@ -192,7 +207,7 @@ def main():
         session.run("/Temporary/dnd.lua off")
         mark = len(guest.seen)
         session.run("notify --alert Still here | An alert, showing when the history opens")
-        said["alert 5"] = maybe("notifications: banner 5, Still here", "an alert before the history", mark)
+        said["alert 5"] = maybe(", Still here", "an alert before the history", mark)
         session.run("/Temporary/dnd.lua on")
 
         mark = len(guest.seen)
@@ -241,7 +256,29 @@ def main():
             session.run("notify After | said after it was turned off")
             said["off held"] = maybe("held, /Kosmos/Programs/notify.lua is off", "held", mark)
 
+        # ---- 8: the system's own news ----
+        mark = len(guest.seen)
+        session.run("/Temporary/launch.lua /Temporary/bad.lua")
+        said["bad"] = maybe('"Bad stopped", an alert, from /Temporary/bad.lua', "a program that stopped", mark)
+
+        mark = len(guest.seen)
+        session.run("/Temporary/launch.lua /Temporary/stubborn.lua")
+        stubborn = maybe("wm: window Stubborn at ", "a window that will not listen", mark)
+        m = re.match(r"(\d+),(\d+) (\d+)x(\d+), a tab (\d+) wide", stubborn or "")
+
+        if m:
+            sx, sy, _, _, tab = (int(v) for v in m.groups())
+            # Its close box: the last of the three at the tab's right end,
+            # 28 in from the frame's edge, the frame 4 out and the tab 26 up.
+            click(sx - 4 + tab - 28 + 9, sy - 26 + 13, width, height)
+
+        said["ended"] = maybe('"Stubborn stopped answering", an alert, from /Kosmos/Programs/wm.lua',
+                              "the window manager ending it", mark)
+
     finally:
+        if os.environ.get("NOTIFY_DEBUG"):
+            guest._read_available()
+            print("\n".join(l for l in guest.seen.splitlines() if "notif" in l or "stopped" in l))
         guest.close()
 
     # ---- what was seen ----
@@ -300,7 +337,9 @@ def main():
     check(said.get("gone") is not None, "the banner did not go by itself")
     check(said.get("alert stayed") is True, "an alert went by itself")
     check(said.get("crossed") is not None, "the alert's cross did not close it")
-    check(said.get("opened") is not None, "a press on a banner did not open what it names")
+    check(said.get("opened") is not None and said.get("tracker") is not None,
+          "a press on a banner did not open the folder it names in Tracker: %r"
+          % ((said.get("opened"), said.get("tracker")),))
     check(said.get("held") is not None and said.get("no window"),
           "Do Not Disturb did not hold the banner: %r" % (said.get("held"),))
     check(said.get("alert 5") is not None and said.get("hidden") is not None
@@ -318,6 +357,10 @@ def main():
           and "/Kosmos/Programs/notify.lua" in (said.get("prefs row") or ""),
           "Preferences' Notifications did not list the application that had said "
           "something: %r" % (said.get("prefs row"),))
+    check(said.get("bad") is not None,
+          "an application that stopped on an error was not said as an alert under its name")
+    check(said.get("ended") is not None,
+          "an application the window manager ended was not said as an alert")
     check(said.get("turned off") is not None and said.get("off held") is not None,
           "an application turned off in Preferences still showed a banner: %r"
           % ((said.get("turned off"), said.get("off held")),))

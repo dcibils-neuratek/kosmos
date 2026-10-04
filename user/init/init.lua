@@ -5143,7 +5143,7 @@ if role == ROLE_INIT then
   do
     local _, err = sys.spawn(ROLE_XHCI,
                              { CONSOLE_EP, BLOCKS_EP, BLOCKS_WRITE_EP,
-                               FRAMES_EP, CAMERA_EP, MIDI_EP },
+                               FRAMES_EP, CAMERA_EP, MIDI_EP, NOTIFY_EP },
                              SPAWN_DEVICES)
 
     if err then
@@ -6058,6 +6058,24 @@ if role == ROLE_RUNNER then
       -- inside the program, three lines away, to see the difference.
       --
       out(path .. ": " .. tostring(e) .. "\n")
+
+      --
+      -- **And said where it is seen** (`roadmap.md`, *Notifications*): an
+      -- application started from the desktop that stops on an error is an
+      -- alert, under its own name - this process is still it - with the
+      -- error's first line. The log has the whole of it.
+      --
+      pcall(function()
+        local attrs = ns.getattr(path)
+        local stem = path:match("([^/]+)%.lua$") or path
+        local name = (attrs and attrs.title and attrs.title ~= "") and attrs.title
+                     or (stem:sub(1, 1):upper() .. stem:sub(2))
+
+        env.use("/Kosmos/Libraries/notify.lua").post{
+          title = name .. " stopped",
+          body = (tostring(e):match("^[^\n]*") or ""):sub(1, 200),
+          alert = true }
+      end)
 
       -- **And ended as a failure.** It ended with code 0 whatever
       -- happened, so whoever collects it - the shell, the IDE, `telnetd`

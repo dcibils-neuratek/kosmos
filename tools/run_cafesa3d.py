@@ -1186,6 +1186,11 @@ def main():
             done = said("cafesa3d: rendered 1 samples", mark, 300)
             check(done is not None, "the one-sample render never finished")
 
+            # **And said** (`roadmap.md`, *Notifications*): the render finished,
+            # as a notification under Cafesa3D's own file.
+            told = said('"Render finished" from /Kosmos/Apps/cafesa3d.lua', mark, 20)
+            check(told is not None, "a finished render was not said as a notification")
+
             m = re.search(r"save (\d+),(\d+)$", buttons)
             saved_png = None
 

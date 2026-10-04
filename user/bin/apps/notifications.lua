@@ -43,6 +43,7 @@ local ui     = use("/Kosmos/Libraries/ui.lua")
 local notify = use("/Kosmos/Libraries/notify.lua")
 local menu   = use("/Kosmos/Libraries/deskbarmenu.lua")
 local clock  = use("/Kosmos/Libraries/clock.lua")
+local types  = use("/Kosmos/Libraries/filetypes.lua")
 local theme  = ui.theme
 
 local PREFS = "/Home/Preferences/notifications"
@@ -96,8 +97,11 @@ local function sender(e)
 
   if attrs and attrs.title and attrs.title ~= "" then names[e.from] = attrs.title end
 
-  got = { name = notify.who(e, names),
-          icon = (attrs and attrs.icon) or (e.from == "" and "System_Kernel") or "App_Generic" }
+  local name = notify.who(e, names)
+
+  got = { name = name,
+          icon = (name == "System" or e.from == "") and "System_Kernel"
+                 or (attrs and attrs.icon) or "App_Generic" }
   known[key] = got
   return got
 end
@@ -118,14 +122,27 @@ local function when(e)
   return ("%02d:%02d"):format(m // 60, m % 60)
 end
 
--- What a press on one does: opens what it names, through `open`, which
--- knows what opens what; or nothing, when it names nothing.
+-- What a press on one does: opens what it names as Tracker would - a
+-- folder in a Tracker window, a file with what opens its type (`filetypes`)
+-- - or nothing, when it names nothing. (It went through `open`, which starts
+-- an application and refused a folder; the first notification it caused was
+-- its own, "Open stopped".)
 local function act(e)
-  if e.open and e.open ~= "" then
-    fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Programs/open.lua",
-                             args = e.open })
-    print("notifications: opened " .. e.open)
+  local path = e.open
+
+  if not path or path == "" then return end
+
+  local attrs = fs.getattr(path)
+  local program = (attrs and attrs.kind == "directory") and "tracker"
+                  or types.opener(path, attrs)
+
+  if not program then
+    print("notifications: nothing opens " .. path)
+    return
   end
+
+  fs.send("/Running/wm", { type = "launch", program = program, args = path })
+  print(("notifications: opened %s with %s"):format(path, program))
 end
 
 -- `text` in lines no wider than `room` in `face`, at most `most` of them,

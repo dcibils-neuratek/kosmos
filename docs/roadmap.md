@@ -114,10 +114,13 @@ unblocks.
 
 **Diego's order, 4 October 2026**: "Then do notifications system", "Then
 finish storage in C", "Then kosmos write" - so **Notifications** (below),
-then **storage at full speed**'s last step, `diskfs` step 4 (the Lua server,
-`kfs.lua` and the drive server's own superblock reading taken out; `docs/
-diskfs.md`), then **Kosmos Write** from its drawing, whose four questions
-are his before its code.
+then storage, then **Kosmos Write** from its drawing, whose four questions
+are his before its code. **Storage in C was already finished** - the disk
+server on 29 September and `diskfs` step 4 on 1 October (`docs/diskfs.md`,
+`testing.md` 18.337) - and was offered to him as still to do from a line in
+`state.md` that had not been brought up to date. What is left of *storage at
+full speed* is speed itself, below: the M700's stick reads 32 MB/s on a USB
+3 port (`make m700`, 3 October). Asked of him which he meant.
 
 **Nothing waits on hardware, and nothing on the desktop waits on a
 server.** Diego, 2 October 2026, after 0.10.203 on the M700 sat with its
@@ -460,6 +463,14 @@ now; Do Not Disturb a switch, its hours later.
    **BUILT on 4 October** (`testing.md` 18.369).
 4. **The first to post**: Cafesa3D's render done, a download done, a stick
    arriving or leaving, a program that stopped, and Clock's timers.
+   **BUILT on 4 October** (`testing.md` 18.370), four of them: Cafesa3D's
+   render, an application stopped on an error, one the window manager
+   ended, and any USB device connected or disconnected (from the driver,
+   which is what sees one come and go). **Still to come with what they
+   belong to**: a download finished, when the browser has downloads; and
+   Clock's timers and reminders, when Clock has them. And a banner's action
+   buttons - "Show", "Open folder" - from the drawing, when a sender has
+   more than one thing to offer.
 
 **A key held down repeats - on a USB keyboard too.** Diego, 3 October
 2026, on the M700: "maintaining pressed backspace does not keep deleting
@@ -965,10 +976,15 @@ next measurement, `/home`'s path through the disk server and kfs, for later -
    has (`CLAUDE.md`, *a server receives exactly what it expects*), and the
    walk in C - the move `CLAUDE.md` says waits for Disk Benchmark to show
    the time is there, which it now does. Its host testing goes with it, as
-   `fat_decode.c` compiles on the Mac. Not started: it is a project of its
-   own, and Diego's order puts 4h next. A smaller step before it, if it is
-   wanted: one walk instead of two while an index exists - `kfs.spelled`
-   finds the node the handler then finds again.
+   `fat_decode.c` compiles on the Mac. **Done**: the disk server in C on
+   `kfs.c`, speaking `diskproto.h`, on 29 September, and the Lua server,
+   `kfs.lua` and the drive server's second reading of the format gone on 1
+   October (`docs/diskfs.md` steps 3 and 4, `testing.md` 18.337).
+   **What is left is the device side**: the
+   M700's stick reads 32 MB/s on a USB 3 port (`make m700`, 3 October) -
+   the USB driver's bulk transfers one at a time and waited on, which is
+   also *Nothing waits on hardware*'s step 2 - and the NVMe driver, the
+   kernel's, polled and 4 KB a call.
 4. **OPEN - for Diego, when a measurement asks**: a device writing straight
    into a client's pages with no IOMMU to fence it.
 

@@ -2011,6 +2011,28 @@ def usb_hotplug(image, check):
             if not ok:
                 break
 
+        #
+        # **And each said where a person sees it** (`roadmap.md`,
+        # *Notifications*): a notification from the USB driver for every
+        # keyboard taken out and every one put back - and none for the
+        # keyboard the machine started with, which is not news.
+        #
+        time.sleep(1.0)
+        heard_all = since(0)
+        watching_at = heard_all.find("xhci: watching for devices plugged in and out")
+        gone_said = re.findall(r'notify: \d+ "QEMU USB Keyboard disconnected" from xhci',
+                               heard_all)
+        came_said = re.findall(r'notify: \d+ "QEMU USB Keyboard connected" from xhci',
+                               heard_all)
+        first = re.search(r'notify: \d+ "', heard_all)
+        first_said = first.start() if first else -1
+
+        check(len(gone_said) == round_ and len(came_said) == round_
+              and (first_said < 0 or first_said > watching_at),
+              "the keyboards taken out and put back were not each said as a "
+              "notification, or the one at boot was: %d out, %d in, for %d "
+              "rounds" % (len(gone_said), len(came_said), round_))
+
         monitor.close()
     finally:
         proc.kill()
@@ -4735,14 +4757,14 @@ def notifications(image, check):
           "history of at least 64: %r"
           % (serving.group(0) if serving else "nothing"))
 
-    check("notify: 1 from /Kosmos/Programs/notify.lua: Hello" in out,
+    check('notify: 1 "Hello" from /Kosmos/Programs/notify.lua' in out,
           "a post from `notify` was not filed under the file it runs")
-    check("notify: 2 from /Kosmos/Programs/notify.lua, an alert: Timer" in out,
+    check('notify: 2 "Timer", an alert, from /Kosmos/Programs/notify.lua' in out,
           "an alert from `notify` was not filed as one, under its file")
 
     check(re.search(r"rename\s+false", out) is not None,
           "a program saying a second file for itself was not refused")
-    check("notify: 3 from /Temporary/forge.lua: Forged" in out
+    check('notify: 3 "Forged" from /Temporary/forge.lua' in out
           and "from /Kosmos/Apps/cafesa3d.lua" not in out,
           "a program that tried to be Cafesa3D was not filed under its own "
           "file: " + next((l.strip() for l in out.splitlines()

@@ -17524,3 +17524,55 @@ written. It is a copy each way now, as a file is, and the same control
 fails 2 of 176 there.
 
 **Its gate: 88 of 88 in 10:46.**
+
+## 18.370 Notifications, step 4: the first to say something
+
+Four senders, each a notification Diego named on 3 October:
+
+- **Cafesa3D, a render finished** - "Render finished", the scene, its size,
+  its samples and how long it took - when the last sample is in.
+- **An application that stopped on an error** - "Groove stopped", an
+  alert, the error's first line under it - said by the runner, which is
+  still that application's process, so it is filed under the application's
+  own file and name. The log has the whole of the error, as before.
+- **An application the window manager ended** - "Stubborn stopped
+  answering", an alert from the system - when a window asked to close by
+  its close box has not gone a second later and its process is ended.
+  `notify.who` gives the window manager's posts as "System", and a process
+  built into the image by what a person calls it (`xhci` is "USB").
+- **A USB device connected or disconnected** - "DataTraveler 3.0
+  connected", its vendor and product under it - from the USB driver, once
+  it is watching, so the keyboard and the mouse a machine starts with do
+  not announce themselves at every boot.
+
+**Two are not here, and why**: a download finished, because the browser
+has no downloads yet; and Clock's timers and reminders, because Clock has
+neither (`roadmap.md`). Each says so when it exists.
+
+**What the first of them found**: a press on a banner went through `open`,
+which starts an *application* - given `/Home` it asked the window manager
+for a program called that, was refused and stopped on an error, and the
+new runner sender said so: "Open stopped". The test's check had read only
+the banner program's own line, "opened /Home", which is what it said it
+did rather than what happened. A press now opens as Tracker does - a
+folder in Tracker, a file with what opens its type - and the test waits for
+the window manager to have started Tracker.
+
+**And the server's line changed shape.** `notify: 7 from
+/Kosmos/Apps/cafesa3d.lua: Render finished` is the shape of a Lua error,
+`file.lua:` - and `run_cafesa3d.py`, which fails if `cafesa3d.lua:` appears
+in the log, failed on it. It is `notify: 7 "Render finished" from
+/Kosmos/Apps/cafesa3d.lua` now, and every test reading it with it.
+
+**Checks**: `run_notify.py`, 20 (two new, step 8: an application stopping
+on an error said as an alert under its name; one ended by the window
+manager said as an alert from the system); `run_x86.py`'s `usb_hotplug`,
+18 (one new: each of eight keyboards taken out and put back said, out and
+in, and nothing said before the driver was watching); `run_cafesa3d.py`
+part 2, 55 (one new: the one-sample render said, under Cafesa3D's file).
+
+**Controls**, in one build, each sender silenced: Cafesa3D's - 1 of 55
+fail, the render not said; the runner's and the window manager's - 2 of 20,
+the two alerts; the USB driver's - 1 of 28, "0 out, 0 in, for 8 rounds".
+
+**Its gate: 88 of 88 in 10:40.**

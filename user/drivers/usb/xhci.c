@@ -73,6 +73,7 @@
 #include "blockproto.h"
 #include "ethproto.h"
 #include "ethring.h"
+#include "notifyproto.h"
 #include "cameraproto.h"
 #include "midiproto.h"
 #include "storage_decode.h"
@@ -6009,6 +6010,79 @@ static bool settled(struct controller *c, unsigned port,
 }
 
 /*
+ * **A device arriving or leaving, said where a person sees it**
+ * (`roadmap.md`, *Notifications*; Diego: "new device connected or
+ * disconnected in usb"): a post to `/Notifications`, titled with what the
+ * device calls itself - "DataTraveler 3.0 connected" - or "A USB device"
+ * when it says nothing, and its vendor and product under it. Only once the
+ * driver is watching, so the keyboard and the mouse a machine starts with
+ * do not announce themselves at every boot.
+ *
+ * A call, as a line to the console is: the notification server answers at
+ * once and asks nobody anything, so it is not a wait the driver can be
+ * caught in.
+ */
+static long notify_endpoint = -1;
+static bool announcing;
+
+static void append(char *dst, size_t max, const char *s)
+{
+    size_t at = strlen(dst);
+
+    while (*s != '\0' && at + 1 < max) {
+        dst[at++] = *s++;
+    }
+
+    dst[at] = '\0';
+}
+
+static void append_hex(char *dst, size_t max, unsigned v, unsigned digits)
+{
+    char text[9];
+    unsigned i;
+
+    if (digits > 8) {
+        digits = 8;
+    }
+
+    for (i = 0; i < digits; i++) {
+        text[i] = "0123456789abcdef"[(v >> (4 * (digits - 1 - i))) & 0xF];
+    }
+
+    text[digits] = '\0';
+    append(dst, max, text);
+}
+
+static void announce(struct controller *c, unsigned slot, bool arrived)
+{
+    struct message out, back;
+    struct notify_request *req = (struct notify_request *)(void *)out.data;
+
+    if (!announcing || notify_endpoint < 0 || slot == 0 || slot == PORT_FAILED
+        || !c->described[slot]) {
+        return;
+    }
+
+    memset(&out, 0, sizeof(out));
+    out.length = (uint32_t)sizeof(*req);
+    req->op = NOTIFY_OP_POST;
+
+    append(req->title, sizeof(req->title),
+           c->name[slot][0] != '\0' ? c->name[slot] : "A USB device");
+    append(req->title, sizeof(req->title),
+           arrived ? " connected" : " disconnected");
+
+    append(req->body, sizeof(req->body), "USB, ");
+    append_hex(req->body, sizeof(req->body), c->vendor[slot], 4);
+    append(req->body, sizeof(req->body), ":");
+    append_hex(req->body, sizeof(req->body), c->product[slot], 4);
+    append(req->body, sizeof(req->body),
+           arrived ? "." : ", taken out.");
+
+    (void)kosmos_call(notify_endpoint, &out, &back);
+}
+
+/*
  * A device on a port: its debounce if it was just plugged in, its reset if it
  * is USB 2, the port's line, a slot and an address, what it says it is - and,
  * if it is a mouse, the mouse. The port keeps its slot, or the fact that a
@@ -6098,6 +6172,7 @@ static void attach(struct controller *c, unsigned port, bool running,
         return;
     }
 
+    announce(c, d.slot, true);
     use_device(c, &d, line);
 }
 
@@ -6141,6 +6216,7 @@ static void detach(struct controller *c, unsigned port, struct say_line *line)
     }
 
     say_send(console, line);
+    announce(c, slot, false);
 
     /*
      * **A mouse stops being read before its slot goes**, so a report the
@@ -8110,7 +8186,8 @@ static long camera_endpoint_now(void)
 }
 
 void xhci_server(long console_cap, long blocks_cap, long writes_cap,
-                 long frames_cap, long camera_cap, long midi_cap)
+                 long frames_cap, long camera_cap, long midi_cap,
+                 long notify_cap)
 {
     struct sysinfo info = { 0 };
     struct dev_info dev;
@@ -8120,6 +8197,7 @@ void xhci_server(long console_cap, long blocks_cap, long writes_cap,
     long asked = 0;
 
     console = console_cap;
+    notify_endpoint = notify_cap;
     blocks_endpoint = blocks_cap;
     writes_endpoint = writes_cap;
     frames_endpoint = frames_cap;
@@ -8188,6 +8266,10 @@ void xhci_server(long console_cap, long blocks_cap, long writes_cap,
     say_begin(&line);
     say_text(&line, "xhci: watching for devices plugged in and out");
     say_send(console, &line);
+
+    /* From here a device arriving or leaving is news (`announce`); what was
+     * plugged in when the machine started is not. */
+    announcing = true;
 
     watch(controllers, index, &line);
 }
