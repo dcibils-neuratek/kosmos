@@ -457,6 +457,14 @@ kits under `user/lib/` for Present and Sheets to stand on:
   Return, Backspace and Delete, selection by Shift and by dragging, copy,
   cut and paste, undo and redo, Control-S. Next in it: a word at a time
   with Control and the arrows, the document's name in the title bar.
+- **W4c - the window as drawn, and the Format panel**: *Done, 4 October*
+  (`testing.md` 18.385). Diego, the same night: "Contienue with the rest of
+  the app", "Let me know when the entire mockup is built" - so the rest of
+  the drawing comes before the premise's review: W4d the Document panel,
+  View's thumbnails and Add Page; W4e lists and drop caps, hyphenation,
+  ligatures and facing pages; W6 the Export list's DOCX; W5 Media's
+  pictures and captions, and tables; W7 text boxes, shapes, charts and
+  comments.
 - **W4 - the window**, from `docs/write.html`: the pages on a dark desk,
   the toolbar, Format and Document switching the panel, View for the
   thumbnails, zoom; typing and choosing styles, on the document page the

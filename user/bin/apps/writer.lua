@@ -5,8 +5,8 @@
 -- kosmos: opens write
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 --
--- Kosmos Write: a document's pages, as they print, typed into
--- (`docs/write.html`, `docs/write.md` W4).
+-- Kosmos Write: a document's pages, as they print, typed into and
+-- formatted (`docs/write.html`, `docs/write.md` W4).
 --
 --   wm writer                     a new document
 --   wm writer:/Home/Letter.write  that one
@@ -21,27 +21,29 @@
 --   Control-A                              everything
 --   Control-C, X, V                        copy, cut, paste (the system's)
 --   Control-Z, Control-Y                   undo, redo
+--   Control-B, Control-U                   bold, underline
 --   Control-S                              save
 --   Control-E                              Export PDF, beside the document
---   the bar's - and +                      zoom
+--
+-- **As drawn** (`docs/write.html`): the tools across the top - View, Zoom
+-- and Add Page; Insert, Table, Chart, Text, Shape, Media and Comment;
+-- Export, Format and Document at the right - the pages on a dark desk, and
+-- the panel Format and Document switch at the right. A tool a step has not
+-- built yet is shown, greyed, and does nothing (`roadmap.md` W4-W7).
 --
 -- **The window orchestrates; the kits do the work** (`CLAUDE.md`'s premise):
--- what an edit does to the text is `richtext`'s, where a line breaks and a
--- caret stands is `pageset`'s, the pixels are `pagedraw`'s, the file is
--- `writedoc`'s and the PDF is `pdf`'s. What is here is what each key and
--- each click means - which is the part that is Kosmos Write's own.
+-- what an edit or a format does to the text is `richtext`'s, where a line
+-- breaks and a caret stands is `pageset`'s, the pixels are `pagedraw`'s,
+-- the controls are `pixelkit`'s, the file is `writedoc`'s and the PDF is
+-- `pdf`'s. What is here is what each key, click and control means.
 --
 -- **Each edit is a new body**, the paragraphs it did not touch the same
 -- tables (`richtext`): so an undo is the body before, kept, and setting the
--- pages again sets only the paragraph that changed (`pageset.cache`).
+-- pages again sets only the paragraphs that changed (`pageset.cache`).
 --
--- **A direct window** (`gfx.md` 19.4), as the PDF viewer is: a page is drawn
--- once into a surface of its own and blitted after that; an edit or a
--- selection draws again the pages on the screen, and the caret is drawn on
--- the window over them, so moving it draws no page at all.
---
--- Not yet: the Format and Document panels (W4c, W4d), a word at a time
--- with Control and the arrows, and a document's own name in the title bar.
+-- **A direct window** (`gfx.md` 19.4): a page is drawn once into a surface
+-- of its own and blitted after that; an edit or a selection draws again the
+-- pages on the screen, and the caret is drawn on the window over them.
 
 local ui        = use("/Kosmos/Libraries/ui.lua")
 local keys      = use("/Kosmos/Libraries/keys.lua")
@@ -52,35 +54,42 @@ local pageset   = use("/Kosmos/Libraries/pageset.lua")
 local faces     = use("/Kosmos/Libraries/faces.lua")
 local pagedraw  = use("/Kosmos/Libraries/pagedraw.lua")
 local pdf       = use("/Kosmos/Libraries/pdf.lua")
+local pk        = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
 
-local W, H = 920, 700
-local BAR = 44                  -- the toolbar, across the top
+local theme = ui.theme
+
+local W, H = 1200, 800
+local TOOLS_H = 64              -- the row of tools across the top
+local PANEL_W = 300             -- Format's and Document's panel, at the right
 local GAP = 24                  -- round each page, on the desk
 
--- The Night look's surfaces (`docs/write.html`): the desk darker than the
--- bar, the bar's buttons raised from it.
+-- The desk is dark whatever the look, as the drawing has it; the chrome is
+-- the look's.
 local DESK   = 0xff121821
-local CHROME = 0xff1e2636
-local RAISED = 0xff2a3446
-local EDGE   = 0xff343f53
-local INK    = 0xffe6eaf2
-local MUTED  = 0xffa3adbf
 local PAPER  = 0xffffffff
 local SHADOW = 0xff0a0e14
 local CARET  = 0xff2a55c9       -- the drawing's accent, on paper
 local CHOSEN = 0xffc9d8f6       -- a selection, under the text
 
--- The zooms a person steps through, as a percentage.
 local ZOOMS = { 50, 75, 100, 125, 150, 200, 300 }
+local SIZES = { 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 30, 36, 48, 64, 72 }
+local SPACINGS = { 1, 1.15, 1.2, 1.5, 2 }
 
--- How many edits are kept to undo.
+-- The text colours a person picks from: the document's inks first.
+local COLOURS = {
+  { "#1b2330", "Ink" }, { "#000000", "Black" }, { "#5b6677", "Slate" },
+  { "#8e959f", "Grey" }, { "#c0392b", "Red" }, { "#d35400", "Orange" },
+  { "#b7950b", "Ochre" }, { "#27ae60", "Green" }, { "#16a085", "Teal" },
+  { "#2a55c9", "Blue" }, { "#8e44ad", "Purple" }, { "#ffffff", "White" },
+}
+
 local UNDO_MOST = 200
 
 local path = args and args:match("^%s*(%S+)")
 local name = path and path:match("([^/]+)$") or "Untitled"
 
 local win, err = ui.window{
-  title = name .. " - Kosmos Write", w = W, h = H, x = 60, y = 40,
+  title = name .. " - Kosmos Write", w = W, h = H, x = 40, y = 30,
   direct = true,
 }
 
@@ -93,7 +102,8 @@ end
 -- The document, set.
 --------------------------------------------------------------------------
 
-local measure = faces.measure(faces.catalogue(gfx.typefaces()), gfx.typeface)
+local catalogue = faces.catalogue(gfx.typefaces())
+local measure = faces.measure(catalogue, gfx.typeface)
 local drawer = pagedraw.new(measure)
 local cache = pageset.cache()
 local doc, said
@@ -117,28 +127,42 @@ local set = pageset.set(doc, measure, cache)
 local zoom = 4                  -- 125%, an index into ZOOMS
 local top = 0                   -- how far down the desk the view is
 
--- The caret, where a selection was started from (nil: none), and the
--- column Up and Down keep.
 local caret = { para = 1, at = 1 }
 local anchor, column = nil, nil
 local dirty = false
+local pending = {}              -- a look chosen with nothing selected, for typing
 
 local undo, redo = {}, {}
-local last_kind = nil           -- consecutive typing is one undo
+local last_kind = nil
 
--- What the pages were drawn from: a page drawn at an older one is drawn
--- again.
-local version = 1
+local version = 1               -- what the pages on screen were drawn from
+
+-- Which panel is open at the right - "text", "document" or nil - and which
+-- of the Text panel's three parts.
+local panel, part = "text", "style"
+
+-- A list open over the window, and what picking from it does.
+local menu = nil
 
 local function scale() return ZOOMS[zoom] / 100 end
+
+--------------------------------------------------------------------------
+-- The desk, and the pages on it.
+--------------------------------------------------------------------------
+
+local function desk()
+  local right = panel and (W - PANEL_W) or W
+  return 0, TOOLS_H, right, H - TOOLS_H
+end
 
 local function page_px(page)
   return math.floor(page.width_pt * scale() + 0.5),
          math.floor(page.height_pt * scale() + 0.5)
 end
 
--- Where page `i` stands on the desk, the desk's top at nought.
+-- Where page `i` stands, in the window, with the desk scrolled.
 local function page_at(i)
+  local dx, dy, dw = desk()
   local y = GAP
 
   for k = 1, i - 1 do
@@ -148,26 +172,21 @@ local function page_at(i)
 
   local w = page_px(set.pages[i])
 
-  return math.max(GAP, (W - w) // 2), y
+  return dx + math.max(GAP, (dw - w) // 2), dy + y - top
 end
 
 local function desk_height()
   local _, y = page_at(#set.pages)
   local _, h = page_px(set.pages[#set.pages])
-  return y + h + GAP
+  return y + top - TOOLS_H + h + GAP
 end
 
---------------------------------------------------------------------------
--- Pages, drawn.
---------------------------------------------------------------------------
-
-local drawn = {}                -- page index -> { surface, zoom, version }
+local drawn = {}
 
 local function selected()
   return anchor and (anchor.para ~= caret.para or anchor.at ~= caret.at)
 end
 
--- The selection's rectangles on page `i`, as `pagedraw` marks.
 local function marks_on(i)
   if not selected() then return nil end
 
@@ -223,70 +242,362 @@ local function forget_far(first, last)
 end
 
 --------------------------------------------------------------------------
--- The bar.
+-- The look at the caret, for the panel.
 --------------------------------------------------------------------------
 
--- Buttons this file draws and hit-tests itself: a direct window owns every
--- pixel, so there is no widget to hand them to.
-local BUTTONS = {
-  { key = "out",    text = "-",          w = 32 },
-  { key = "zoom",   text = "",           w = 64, label = true },
-  { key = "in",     text = "+",          w = 32 },
-  { key = "export", text = "Export PDF", w = 104, right = true },
-  { key = "save",   text = "Save",       w = 64, right = true },
+-- The range a format applies to: the selection, or the caret's paragraph
+-- for a paragraph's fields.
+local function range()
+  if selected() then return anchor, caret end
+  return caret, caret
+end
+
+-- The look the panel shows: the selection's first character's, or what
+-- typing at the caret would be.
+local function shown_look()
+  local place = caret
+
+  if selected() then
+    local a = richtext.before(anchor, caret) and anchor or caret
+    local plain = richtext.plain(doc.body[a.para])
+    place = { para = a.para, at = math.min(a.at + 1, #plain + 1) }
+  end
+
+  local look, layout, style = richtext.look_at(doc.body, place, by_name)
+
+  if not selected() then
+    for k, v in pairs(pending) do look[k] = v end
+  end
+
+  return look, layout, style
+end
+
+--------------------------------------------------------------------------
+-- The tools, across the top.
+--------------------------------------------------------------------------
+
+local TOOLS = {
+  { key = "view",     icon = "sidebar",  text = "View",     later = "W4d" },
+  { key = "zoom",     icon = "zoom",     text = "Zoom" },
+  { key = "addpage",  icon = "new",      text = "Add Page", later = "W4d" },
+  { gap = 14 },
+  { key = "insert",   icon = "insert",   text = "Insert",   later = "W5" },
+  { key = "table",    icon = "table",    text = "Table",    later = "W5" },
+  { key = "chart",    icon = "chart",    text = "Chart",    later = "W7" },
+  { key = "textbox",  icon = "textbox",  text = "Text",     later = "W7" },
+  { key = "shape",    icon = "shape",    text = "Shape",    later = "W7" },
+  { key = "media",    icon = "pictures", text = "Media",    later = "W5" },
+  { key = "comment",  icon = "comment",  text = "Comment",  later = "W7" },
+  { right = true },
+  { key = "export",   icon = "export",   text = "Export" },
+  { key = "format",   icon = "format",   text = "Format" },
+  { key = "document", icon = "page",     text = "Document", later = "W4d" },
 }
 
-do
-  local x = 12
+local function draw_tools(s)
+  s:fill(0, 0, W, TOOLS_H, theme.window)
+  s:fill(0, TOOLS_H - 1, W, 1, theme.line_soft)
 
-  for _, b in ipairs(BUTTONS) do
-    if not b.right then
-      b.x = x
-      x = x + b.w + 6
+  -- The words a tool shows that change: the zoom's percentage.
+  local function word(t)
+    if t.key == "zoom" then return ZOOMS[zoom] .. "%" end
+    return t.text
+  end
+
+  -- Left to right until the gap that pushes the rest to the right edge.
+  local x, right = 12, nil
+
+  for i, t in ipairs(TOOLS) do
+    if t.right then right = i break end
+
+    if t.gap then
+      x = x + t.gap
+    else
+      local b = { x = x, y = 8, icon = t.icon, text = word(t),
+                  disabled = t.later ~= nil }
+      pk.tool(s, b)
+      t.x, t.y, t.w = b.x, b.y, b.w
+      x = x + t.w + 2
     end
   end
 
-  local r = W - 12
+  local rx = W - 12
 
-  for i = #BUTTONS, 1, -1 do
-    local b = BUTTONS[i]
+  for i = #TOOLS, (right or #TOOLS) + 1, -1 do
+    local t = TOOLS[i]
+    local b = { x = 0, y = 8, icon = t.icon, text = word(t),
+                disabled = t.later ~= nil,
+                on = (t.key == "format" and panel == "text")
+                     or (t.key == "document" and panel == "document") }
 
-    if b.right then
-      r = r - b.w
-      b.x = r
-      r = r - 6
-    end
+    b.w = pk.tool_width(word(t))
+    rx = rx - b.w
+    b.x = rx
+    pk.tool(s, b)
+    t.x, t.y, t.w = b.x, b.y, b.w
+    rx = rx - 2
   end
 end
 
-local function draw_bar(s)
-  s:fill(0, 0, W, BAR, CHROME)
-  s:fill(0, BAR - 1, W, 1, EDGE)
+--------------------------------------------------------------------------
+-- The panel at the right.
+--------------------------------------------------------------------------
 
-  for _, b in ipairs(BUTTONS) do
-    local text = b.key == "zoom" and (ZOOMS[zoom] .. "%") or b.text
-    local y, h = 8, BAR - 16
+-- The controls drawn this frame, each `{ box, act }`: a press finds the
+-- one it is on. Rebuilt every frame, since what is shown changes.
+local controls = {}
 
-    if not b.label then
-      s:fill(b.x, y, b.w, h, RAISED)
+-- Once for each panel and part, where each control is - for a harness to
+-- press it by name, as the window manager says where a tab is.
+local said_where = {}
+
+local function control(key, box, act)
+  controls[#controls + 1] = { key = key, box = box, act = act }
+end
+
+local function weight_names(family)
+  local seen, out = {}, {}
+
+  for _, f in ipairs(catalogue.families[family] or {}) do
+    for wname, wn in pairs(faces.WEIGHT) do
+      if wn == f.weight and not seen[wname] then
+        seen[wname] = true
+        out[#out + 1] = { wname, wn }
+      end
     end
-
-    s:text(b.x + (b.w - gfx.measure(text)) // 2, y + (h - 16) // 2, text,
-           b.label and MUTED or INK)
   end
 
-  -- What the document is, and what was last said about it.
-  local note = said or ("%s%s  -  %d page%s"):format(name, dirty and " (edited)" or "",
-                                                      #set.pages,
-                                                      #set.pages == 1 and "" or "s")
-  s:text(BUTTONS[3].x + BUTTONS[3].w + 18, 14, note, MUTED)
+  table.sort(out, function(a, b) return a[2] < b[2] end)
+
+  local names = {}
+  for i, wv in ipairs(out) do names[i] = wv[1] end
+  return #names > 0 and names or { "Regular" }
+end
+
+local function index_of(list, v)
+  for i, x in ipairs(list) do if x == v then return i end end
+end
+
+local function colour_name(c)
+  for _, pair in ipairs(COLOURS) do
+    if pair[1] == c then return pair[2] end
+  end
+  return c
+end
+
+local function argb(c) return 0xff000000 | (tonumber((c or "#000000"):sub(2), 16) or 0) end
+
+local open_menu, apply_char, apply_para, apply_style
+
+local function draw_panel(s)
+  if not panel then return end
+
+  local px = W - PANEL_W
+  local x0, w0 = px + 14, PANEL_W - 28
+  local look, layout, style = shown_look()
+  local y
+
+  s:fill(px, TOOLS_H, PANEL_W, H - TOOLS_H, theme.window)
+  s:fill(px, TOOLS_H, 1, H - TOOLS_H, theme.line_soft)
+
+  -- Text and Document, the panel's two faces.
+  local tabs = { x = x0, y = TOOLS_H + 12, w = w0, accent = true,
+                 items = { { text = "Text" }, { text = "Document" } },
+                 chosen = panel == "text" and 1 or 2 }
+  pk.segments(s, tabs)
+  control("tabs", tabs, function(cx, cy)
+    local i = pk.segment_at(tabs, cx, cy)
+    -- The Document panel is W4d's.
+    if i == 1 then panel = "text" end
+  end)
+
+  y = tabs.y + tabs.h + 16
+
+  if panel ~= "text" then return end
+
+  -- The paragraph style, in a box of its own, its name large.
+  local sbox = { x = x0, y = y, w = w0, h = 46 }
+  s:fill_round(sbox.x, sbox.y, sbox.w, sbox.h, theme.raised, 12)
+  s:text(sbox.x + 12, sbox.y + (sbox.h - gfx.height("title")) // 2, style,
+         theme.text, nil, "title")
+  pk.icon(s, "descending", sbox.x + sbox.w - 26, sbox.y + 15, theme.text_dim)
+  control("style", sbox, function()
+    local names = {}
+    for i, st in ipairs(doc.styles) do names[i] = st.name end
+    open_menu("style", sbox.x, sbox.y + sbox.h + 4, sbox.w, names,
+              index_of(names, style), function(i) apply_style(names[i]) end)
+  end)
+
+  y = sbox.y + sbox.h + 14
+
+  local parts = { x = x0, y = y, w = w0,
+                  items = { { text = "Style" }, { text = "Layout" }, { text = "More" } },
+                  chosen = part == "style" and 1 or part == "layout" and 2 or 3 }
+  pk.segments(s, parts)
+  control("parts", parts, function(cx, cy)
+    local i = pk.segment_at(parts, cx, cy)
+    part = ({ "style", "layout", "more" })[i] or part
+  end)
+
+  y = parts.y + parts.h + 18
+
+  if part == "style" then
+    pk.label(s, x0, y, "Font")
+    y = y + 18
+
+    local fam = { x = x0, y = y, w = w0, text = look.face }
+    pk.chooser(s, fam)
+    control("face", fam, function()
+      open_menu("face", fam.x, fam.y + fam.h + 4, fam.w, catalogue.names,
+                index_of(catalogue.names, look.face),
+                function(i) apply_char({ face = catalogue.names[i] }) end)
+    end)
+
+    y = y + fam.h + 8
+
+    local weights = weight_names(look.face)
+    local wt = { x = x0, y = y, w = math.floor(w0 * 0.55), text = look.weight }
+    pk.chooser(s, wt)
+    control("weight", wt, function()
+      open_menu("weight", wt.x, wt.y + wt.h + 4, wt.w, weights,
+                index_of(weights, look.weight),
+                function(i) apply_char({ weight = weights[i] }) end)
+    end)
+
+    local size = { x = wt.x + wt.w + 8, y = y, w = w0 - wt.w - 8,
+                   text = ("%g pt"):format(look.size_pt) }
+    pk.stepper(s, size)
+    control("size", size, function(cx, cy)
+      local step = pk.step_at(size, cx, cy)
+
+      if step == 0 then
+        local labels = {}
+        for i, v in ipairs(SIZES) do labels[i] = v .. " pt" end
+        open_menu("size", size.x, size.y + size.h + 4, size.w, labels,
+                  index_of(SIZES, look.size_pt),
+                  function(i) apply_char({ size_pt = SIZES[i] }) end)
+      elseif step then
+        apply_char({ size_pt = math.max(1, look.size_pt + step) })
+      end
+    end)
+
+    y = y + size.h + 10
+
+    local bold = (faces.WEIGHT[look.weight] or 400) >= 600
+    local biu = { x = x0, y = y, w = w0,
+                  items = { { icon = "bold" }, { icon = "italic" },
+                            { icon = "underline" }, { icon = "strike" } },
+                  chosen = { bold, look.italic, look.underline, look.strike } }
+    pk.segments(s, biu)
+    control("marks", biu, function(cx, cy)
+      local i = pk.segment_at(biu, cx, cy)
+
+      if i == 1 then apply_char({ weight = bold and "Regular" or "Bold" })
+      elseif i == 2 then apply_char({ italic = not look.italic })
+      elseif i == 3 then apply_char({ underline = not look.underline })
+      elseif i == 4 then apply_char({ strike = not look.strike }) end
+    end)
+
+    y = y + biu.h + 18
+    pk.label(s, x0, y, "Text colour")
+    y = y + 18
+
+    local sw = { x = x0, y = y, w = 40, h = 22, colour = argb(look.colour) }
+    pk.swatch(s, sw)
+    s:text(x0 + 52, y + (22 - gfx.height()) // 2, colour_name(look.colour),
+           theme.text, nil, "ui")
+    local colour_box = { x = x0, y = y, w = w0, h = 22 }
+    control("colour", colour_box, function()
+      local labels, chosen = {}, nil
+      for i, pair in ipairs(COLOURS) do
+        labels[i] = pair[2]
+        if pair[1] == look.colour then chosen = i end
+      end
+      open_menu("colour", x0, y + 26, 160, labels, chosen,
+                function(i) apply_char({ colour = COLOURS[i][1] }) end)
+    end)
+  elseif part == "layout" then
+    pk.label(s, x0, y, "Alignment")
+    y = y + 18
+
+    local aligns = { "left", "center", "right", "justify" }
+    local al = { x = x0, y = y, w = w0,
+                 items = { { icon = "align-left" }, { icon = "align-center" },
+                           { icon = "align-right" }, { icon = "align-justify" } },
+                 chosen = index_of(aligns, layout.align) }
+    pk.segments(s, al)
+    control("align", al, function(cx, cy)
+      local i = pk.segment_at(al, cx, cy)
+      if i then apply_para({ align = aligns[i] }) end
+    end)
+
+    y = y + al.h + 18
+    pk.label(s, x0, y, "Line spacing")
+    y = y + 18
+
+    local sp = { x = x0, y = y, w = w0,
+                 text = ("%g line%s"):format(layout.spacing_lines,
+                                             layout.spacing_lines == 1 and "" or "s") }
+    pk.chooser(s, sp)
+    control("spacing", sp, function()
+      local labels = {}
+      for i, v in ipairs(SPACINGS) do labels[i] = ("%g"):format(v) .. (v == 1 and " line" or " lines") end
+      open_menu("spacing", sp.x, sp.y + sp.h + 4, sp.w, labels,
+                index_of(SPACINGS, layout.spacing_lines),
+                function(i) apply_para({ spacing_lines = SPACINGS[i] }) end)
+    end)
+
+    y = y + sp.h + 18
+
+    -- The space around a paragraph and its indents, a stepper each.
+    local rows = {
+      { "before", "Space before", ("%g pt"):format(layout.before_pt), "before_pt", 2 },
+      { "after", "Space after", ("%g pt"):format(layout.after_pt), "after_pt", 2 },
+      { "first", "First line", ("%g mm"):format(layout.indent_first_mm), "indent_first_mm", 5 },
+      { "left", "Left indent", ("%g mm"):format(layout.indent_left_mm), "indent_left_mm", 5 },
+      { "right", "Right indent", ("%g mm"):format(layout.indent_right_mm), "indent_right_mm", 5 },
+    }
+
+    for _, r in ipairs(rows) do
+      s:text(x0, y + (30 - gfx.height()) // 2, r[2], theme.text_dim, nil, "ui")
+
+      local st = { x = x0 + 120, y = y, w = w0 - 120, text = r[3] }
+      pk.stepper(s, st)
+      control(r[1], st, function(cx, cy)
+        local step = pk.step_at(st, cx, cy)
+        if step and step ~= 0 then
+          apply_para({ [r[4]] = math.max(r[4] == "indent_first_mm" and -200 or 0,
+                                         layout[r[4]] + step * r[5]) })
+        end
+      end)
+
+      y = y + st.h + 8
+    end
+  else
+    local kwn = { x = x0, y = y, text = "Keep with the next paragraph",
+                  on = layout.keep_with_next }
+    pk.check(s, kwn)
+    control("keep", kwn, function()
+      apply_para({ keep_with_next = not layout.keep_with_next })
+    end)
+  end
+
+  local key = panel .. ":" .. part
+
+  if not said_where[key] then
+    said_where[key] = true
+
+    for _, c in ipairs(controls) do
+      local b = c.box
+      print(("writer: control %s at %d,%d %dx%d"):format(c.key, b.x, b.y, b.w, b.h or 0))
+    end
+  end
 end
 
 --------------------------------------------------------------------------
 -- A frame.
 --------------------------------------------------------------------------
 
--- Where the caret is in the window, or nil when it is off the view.
 local function caret_px()
   local here = pageset.locate(set, measure, caret)
 
@@ -294,7 +605,7 @@ local function caret_px()
 
   local px, py = page_at(here.page)
   local x = px + math.floor(here.x_pt * scale() + 0.5)
-  local y = BAR + py - top + math.floor((here.baseline_pt - here.ascent_pt) * scale())
+  local y = py + math.floor((here.baseline_pt - here.ascent_pt) * scale())
   local h = math.max(8, math.floor(here.height_pt * scale() + 0.5))
 
   return x, y, h, here
@@ -305,32 +616,36 @@ local function frame()
 
   if not s then return end
 
-  local view_h = H - BAR
+  local dx, dy, dw, dh = desk()
 
-  s:fill(0, BAR, W, view_h, DESK)
+  s:fill(dx, dy, dw, dh, DESK)
 
   local first, last = nil, nil
 
   for i = 1, #set.pages do
-    local x, y = page_at(i)
+    local x, sy = page_at(i)
     local w, h = page_px(set.pages[i])
-    local sy = BAR + y - top
 
-    if sy < H and sy + h > BAR then
+    if sy < H and sy + h > dy then
       first = first or i
       last = i
 
       local surface = page_surface(i)
+      local vw = math.min(w, dx + dw - x)
 
-      -- A shadow down and to the right, the paper over it.
-      s:fill(x + 3, sy + 3, w, h, SHADOW)
+      -- A shadow down and to the right, inside the desk.
+      local s0, s1 = math.max(dy, sy + 3), math.min(H, sy + 3 + h)
 
-      if surface then
-        local from = math.max(0, BAR - sy)
+      if s1 > s0 then
+        s:fill(x + 3, s0, math.max(0, math.min(w, dx + dw - x - 3)), s1 - s0, SHADOW)
+      end
+
+      if surface and vw > 0 then
+        local from = math.max(0, dy - sy)
         local band = math.min(h - from, H - (sy + from))
 
         if band > 0 then
-          s:blit(surface, 0, from, w, band, x, sy + from)
+          s:blit(surface, 0, from, vw, band, x, sy + from)
         end
       end
     end
@@ -338,27 +653,52 @@ local function frame()
 
   if first then forget_far(first, last) end
 
-  -- The caret, on the window over the page: moving it draws no page.
   local cx, cy, ch = caret_px()
 
-  if cx and cy + ch > BAR and cy < H then
-    local y0 = math.max(BAR, cy)
+  if cx and cy + ch > dy and cy < H and cx < dx + dw then
+    local y0 = math.max(dy, cy)
     s:fill(cx, y0, 2, math.min(cy + ch, H) - y0, CARET)
   end
 
-  draw_bar(s)
+  controls = {}
+  draw_tools(s)
+  draw_panel(s)
+
+  -- What was last said, in the tools' row between the two groups.
+  local note = said or ("%s%s  -  %d page%s"):format(name, dirty and " (edited)" or "",
+                                                      #set.pages,
+                                                      #set.pages == 1 and "" or "s")
+  local from, to = 0, W
+
+  for _, t in ipairs(TOOLS) do
+    if t.right then break end
+    if t.x then from = t.x + t.w end
+  end
+
+  for i = #TOOLS, 1, -1 do
+    if TOOLS[i].right then break end
+    to = TOOLS[i].x or to
+  end
+
+  local room = to - from - 32
+
+  while #note > 1 and gfx.measure(note) > room do note = note:sub(1, -2) end
+
+  if room > 40 then
+    s:text(from + 16, (TOOLS_H - gfx.height()) // 2, note, theme.text_dim, nil, "ui")
+  end
+
+  if menu then pk.menu(s, menu.box) end
+
   win:commit()
 end
 
--- Said when the view changes, for a harness to find the page by and a
--- person reading the log to know what is shown.
 local function report()
   local x, y = page_at(1)
   local w, h = page_px(set.pages[1])
 
   print(("writer: %s, %d page%s at %d%%, page 1 at %d,%d %dx%d"):format(
-    name, #set.pages, #set.pages == 1 and "" or "s", ZOOMS[zoom], x,
-    BAR + y - top, w, h))
+    name, #set.pages, #set.pages == 1 and "" or "s", ZOOMS[zoom], x, y, w, h))
 end
 
 --------------------------------------------------------------------------
@@ -366,17 +706,18 @@ end
 --------------------------------------------------------------------------
 
 local function scroll_to(y)
-  top = math.max(0, math.min(y, desk_height() - (H - BAR)))
+  local _, _, _, dh = desk()
+  top = math.max(0, math.min(y, desk_height() - dh))
 end
 
--- The view moved, if it must, so the caret is in it.
 local function follow()
   local _, cy, ch = caret_px()
+  local _, dy = desk()
 
   if not cy then return end
 
-  if cy < BAR + 8 then
-    scroll_to(top - (BAR + 8 - cy))
+  if cy < dy + 8 then
+    scroll_to(top - (dy + 8 - cy))
   elseif cy + ch > H - 8 then
     scroll_to(top + (cy + ch - (H - 8)))
   end
@@ -387,20 +728,19 @@ local function zoom_to(z)
 
   if z == zoom then return end
 
-  -- The same place on the page stays under the middle of the view.
-  local middle = (top + (H - BAR) / 2) / scale()
+  local _, _, _, dh = desk()
+  local middle = (top + dh / 2) / scale()
 
   zoom = z
-  scroll_to(math.floor(middle * scale() - (H - BAR) / 2))
+  scroll_to(math.floor(middle * scale() - dh / 2))
   frame()
   report()
 end
 
 --------------------------------------------------------------------------
--- Editing.
+-- Editing and formatting.
 --------------------------------------------------------------------------
 
--- The pages set again after an edit or a selection, and drawn again.
 local function changed()
   version = version + 1
   frame()
@@ -408,9 +748,10 @@ end
 
 --
 -- **An edit**: the body before it kept for undo - one entry for a run of
--- typing, one for anything else - the new one set, the caret moved.
+-- typing, one for anything else - the new one set, the caret moved. A
+-- format keeps the selection, so a word made bold can be made italic next.
 --
-local function edited(body, place, kind)
+local function edited(body, place, kind, keep)
   if kind ~= "type" or last_kind ~= "type" then
     undo[#undo + 1] = { body = doc.body, caret = caret }
     if #undo > UNDO_MOST then table.remove(undo, 1) end
@@ -419,7 +760,10 @@ local function edited(body, place, kind)
   redo = {}
   last_kind = kind
   doc.body = body
-  caret, anchor, column = place, nil, nil
+  caret, column = place, nil
+
+  if not keep then anchor = nil end
+
   dirty = true
   said = nil
   set = pageset.set(doc, measure, cache)
@@ -427,17 +771,14 @@ local function edited(body, place, kind)
   changed()
 end
 
--- The selection taken out first, when there is one: what typing over a
--- selection and Backspace on one both begin with.
 local function without_selection()
   if not selected() then return doc.body, caret end
-
   return richtext.delete(doc.body, anchor, caret)
 end
 
 local function type_text(text)
   local body, place = without_selection()
-  body, place = richtext.type(body, place, text)
+  body, place = richtext.type(body, place, text, pending)
   edited(body, place, "type")
 end
 
@@ -456,6 +797,28 @@ local function back_or_forward(forward)
   edited(body, place, "delete")
 end
 
+-- Character fields over the selection, or for what is typed next.
+function apply_char(fields)
+  if selected() then
+    local a, b = range()
+    edited(richtext.format(doc.body, a, b, fields, by_name), caret, "format", true)
+  else
+    for k, v in pairs(fields) do pending[k] = v end
+    frame()
+  end
+end
+
+-- Paragraph fields over the paragraphs the selection or the caret is in.
+function apply_para(fields)
+  local a, b = range()
+  edited(richtext.arrange(doc.body, a, b, fields, by_name), caret, "format", true)
+end
+
+function apply_style(style_name)
+  local a, b = range()
+  edited(richtext.restyle(doc.body, a, b, style_name, by_name), caret, "format", true)
+end
+
 local function swap(from, to)
   local entry = table.remove(from)
 
@@ -470,8 +833,6 @@ local function swap(from, to)
   changed()
 end
 
--- The caret moved, a selection kept or begun with Shift: the pages drawn
--- again only when a selection was or is on them.
 local function move(place, extend, keep_column)
   local had = selected()
 
@@ -479,6 +840,7 @@ local function move(place, extend, keep_column)
 
   caret = place
   last_kind = nil
+  pending = {}
 
   if not keep_column then column = nil end
 
@@ -490,7 +852,6 @@ end
 
 local function save()
   if not path then
-    -- A new document's first save: Untitled, then Untitled 2, and on.
     local n = 1
 
     repeat
@@ -540,15 +901,52 @@ local function export()
 end
 
 --------------------------------------------------------------------------
+-- Menus.
+--------------------------------------------------------------------------
+
+function open_menu(kind, x, y, w, items, chosen, pick)
+  local box = { x = x, y = y, w = w, items = items, chosen = chosen }
+  local h = #items * 30 + 8
+
+  -- Up from its control when it would run off the window's foot.
+  if y + h > H - 4 then box.y = math.max(TOOLS_H, y - h - 40) end
+
+  box.h = h
+  menu = { box = box, pick = pick }
+  print(("writer: menu %s at %d,%d %dx%d, %d items"):format(kind, box.x, box.y,
+                                                           box.w, h, #items))
+  frame()
+end
+
+local TOOL_ACTS = {
+  zoom = function(t)
+    local labels = {}
+    for i, z in ipairs(ZOOMS) do labels[i] = z .. "%" end
+    open_menu("zoom", t.x, TOOLS_H + 2, 120, labels, zoom,
+              function(i) zoom_to(i) end)
+  end,
+  export = function(t)
+    local items = { "Save as .write", "Export PDF" }
+    open_menu("export", math.min(t.x, W - 220), TOOLS_H + 2, 200, items, nil,
+              function(i)
+                if i == 1 then save() else export() end
+              end)
+  end,
+  format = function()
+    panel = (panel == "text") and nil or "text"
+    version = version + 1
+    frame()
+  end,
+}
+
+--------------------------------------------------------------------------
 -- What a person does.
 --------------------------------------------------------------------------
 
 local sink = ui.view{ x = 0, y = 0, w = W, h = H }
 sink.focusable = true
 
--- The bytes of a character not yet whole: a key that types beyond ASCII
--- arrives as its UTF-8, a byte at a time.
-local pending = ""
+local utf8_pending = ""
 
 function sink:wheel(n)
   scroll_to(top - n * 3 * 40)
@@ -560,6 +958,11 @@ function sink:key(c)
   local k, mods = keys.parts(c)
   local shift = (mods & keys.SHIFT) ~= 0
   local ctrl = (mods & keys.CTRL) ~= 0
+
+  if menu then
+    if c == 27 then menu = nil frame() return true end
+    return true
+  end
 
   if k == keys.LEFT or k == keys.RIGHT then
     move(richtext.step(doc.body, caret, k == keys.RIGHT), shift)
@@ -578,7 +981,8 @@ function sink:key(c)
       move(k == keys.HOME and home or finish, shift)
     end
   elseif k == keys.PAGEUP or k == keys.PAGEDOWN then
-    scroll_to(top + (k == keys.PAGEUP and -1 or 1) * (H - BAR - 40))
+    local _, _, _, dh = desk()
+    scroll_to(top + (k == keys.PAGEUP and -1 or 1) * (dh - 40))
     frame()
   elseif k == keys.DELETE and mods == 0 then
     back_or_forward(true)
@@ -597,22 +1001,28 @@ function sink:key(c)
     local last = #doc.body
     caret = { para = last, at = #richtext.plain(doc.body[last]) + 1 }
     changed()
+  elseif c == 2 then                                     -- Control-B
+    local look = shown_look()
+    apply_char({ weight = (faces.WEIGHT[look.weight] or 400) >= 600 and "Regular"
+                          or "Bold" })
+  elseif c == 21 then                                    -- Control-U
+    apply_char({ underline = not shown_look().underline })
   elseif c == 19 then save()                             -- Control-S
   elseif c == 5 then export()                            -- Control-E
   elseif c == 26 then swap(undo, redo)                   -- Control-Z
   elseif c == 25 then swap(redo, undo)                   -- Control-Y
   elseif c >= 32 and c < 127 then
-    pending = ""
+    utf8_pending = ""
     type_text(string.char(c))
   elseif c >= 128 and c < 256 then
-    pending = pending .. string.char(c)
+    utf8_pending = utf8_pending .. string.char(c)
 
-    if utf8.len(pending) then
-      local text = pending
-      pending = ""
+    if utf8.len(utf8_pending) then
+      local text = utf8_pending
+      utf8_pending = ""
       type_text(text)
-    elseif #pending >= 4 then
-      pending = ""
+    elseif #utf8_pending >= 4 then
+      utf8_pending = ""
     end
   else
     return false
@@ -621,11 +1031,6 @@ function sink:key(c)
   return true
 end
 
---
--- **The clipboard**, the system's, from the window manager by way of
--- `window:dispatch_edit` as every editor here has it: the selection's text
--- out, text in where the caret is - over a selection, as typing is.
---
 function sink:edit(kind)
   if kind == "selectall" then
     anchor = { para = 1, at = 1 }
@@ -661,15 +1066,13 @@ function sink:edit(kind)
   return false
 end
 
--- The page and the point on it, in points, under a point of the window.
 local function page_point(x, y)
   for i = 1, #set.pages do
     local px, py = page_at(i)
     local w, h = page_px(set.pages[i])
-    local sy = BAR + py - top
 
-    if y >= sy - GAP // 2 and y < sy + h + GAP // 2 then
-      return i, (x - px) / scale(), (y - sy) / scale()
+    if y >= py - GAP // 2 and y < py + h + GAP // 2 then
+      return i, (x - px) / scale(), (y - py) / scale()
     end
   end
 end
@@ -682,14 +1085,26 @@ function sink:mouse(action, x, y)
     return true
   end
 
-  if action == "press" and y < BAR then
-    for _, b in ipairs(BUTTONS) do
-      if not b.label and x >= b.x and x < b.x + b.w then
-        if b.key == "out" then zoom_to(zoom - 1)
-        elseif b.key == "in" then zoom_to(zoom + 1)
-        elseif b.key == "export" then export()
-        elseif b.key == "save" then save() end
+  if action ~= "press" and not (action == "move" and pressed) then
+    return true
+  end
 
+  if action == "press" and menu then
+    local i = pk.menu_at(menu.box, x, y)
+    local pick = menu.pick
+
+    menu = nil
+
+    if i then pick(i) else frame() end
+
+    return true
+  end
+
+  if action == "press" and y < TOOLS_H then
+    for _, t in ipairs(TOOLS) do
+      if t.key and t.x and not t.later and x >= t.x and x < t.x + t.w then
+        local act = TOOL_ACTS[t.key]
+        if act then act(t) end
         return true
       end
     end
@@ -697,22 +1112,37 @@ function sink:mouse(action, x, y)
     return true
   end
 
-  if action == "press" or (action == "move" and pressed) then
-    local page, px, py = page_point(x, y)
-    local place = page and pageset.hit(set, measure, page, px, py)
-
-    if place then
-      if action == "press" then
-        pressed = true
-        if selected() then version = version + 1 end
-        anchor, caret, column = place, place, nil
-        last_kind = nil
+  if action == "press" and panel and x >= W - PANEL_W then
+    for _, c in ipairs(controls) do
+      if pk.inside(c.box, x, y) then
+        c.act(x, y)
         frame()
-      else
-        caret = place
-        version = version + 1
-        frame()
+        return true
       end
+    end
+
+    return true
+  end
+
+  local dx, _, dw = desk()
+
+  if x >= dx + dw then return true end
+
+  local page, px, py = page_point(x, y)
+  local place = page and pageset.hit(set, measure, page, px, py)
+
+  if place then
+    if action == "press" then
+      pressed = true
+      if selected() then version = version + 1 end
+      anchor, caret, column = place, place, nil
+      last_kind = nil
+      pending = {}
+      frame()
+    else
+      caret = place
+      version = version + 1
+      frame()
     end
   end
 
@@ -722,4 +1152,10 @@ end
 win:add(sink)
 frame()
 report()
+
+do
+  local z = TOOLS[2]
+  print(("writer: tool zoom at %d,%d %dx%d"):format(z.x, z.y, z.w, 48))
+end
+
 win:run()

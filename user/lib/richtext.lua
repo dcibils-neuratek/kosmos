@@ -452,15 +452,18 @@ local function clean(text)
 end
 
 --
--- **`text` typed at `place`**: in the look of what is before the caret, a
--- line break in it starting a new paragraph in the same style. The new body
--- and the caret after what was typed.
+-- **`text` typed at `place`**: in the look of what is before the caret -
+-- with `with` over it, when Bold or a face was chosen with nothing
+-- selected - a line break in it starting a new paragraph in the same style.
+-- The new body and the caret after what was typed.
 --
-function richtext.type(body, place, text)
+function richtext.type(body, place, text, with)
   local out = copy_body(body)
   local p = body[place.para]
   local plain = richtext.plain(p)
   local fields = look_at(p, place.at)
+
+  for k, v in pairs(with or {}) do fields[k] = v end
   local tail = slice(p, place.at, #plain + 1)
   local head = slice(p, 1, place.at)
   local lines = {}
@@ -566,6 +569,103 @@ function richtext.text(body, a, b)
   end
 
   return table.concat(parts, "\n")
+end
+
+--------------------------------------------------------------------------
+-- **Formatting** (W4c, the Format panel): a range's paragraphs given a
+-- style or a paragraph field, a range's characters given a character
+-- field, and the look at a place for the panel to show. Each returns a new
+-- body, and each paragraph it touches is checked again against its style
+-- (`richtext.paragraph`), so a field set to what the style already says is
+-- left out and runs that end up alike are joined.
+--------------------------------------------------------------------------
+
+-- The range's ends in order, and the paragraphs it covers.
+local function ordered(a, b)
+  if richtext.before(b, a) then return b, a end
+  return a, b
+end
+
+--
+-- **A paragraph style** for every paragraph the range touches, their own
+-- paragraph fields given up - choosing Title makes a title - and their runs'
+-- character fields kept.
+--
+function richtext.restyle(body, a, b, name, by_name)
+  a, b = ordered(a, b)
+
+  local out = copy_body(body)
+
+  for n = a.para, b.para do
+    out[n] = richtext.paragraph({ style = name, runs = body[n].runs }, by_name,
+                                body[n].style)
+  end
+
+  return out
+end
+
+--
+-- **Paragraph fields** - alignment, spacing, indents, a list, a drop cap -
+-- for every paragraph the range touches.
+--
+function richtext.arrange(body, a, b, fields, by_name)
+  a, b = ordered(a, b)
+
+  local out = copy_body(body)
+
+  for n = a.para, b.para do
+    local p = {}
+    for k, v in pairs(body[n]) do p[k] = v end
+    for k, v in pairs(fields) do p[k] = v end
+    out[n] = richtext.paragraph(p, by_name, body[n].style)
+  end
+
+  return out
+end
+
+--
+-- **Character fields** for the characters in the range: the runs it cuts
+-- are split where it starts and ends, the fields set on what is inside.
+--
+function richtext.format(body, a, b, fields, by_name)
+  a, b = ordered(a, b)
+
+  local out = copy_body(body)
+
+  for n = a.para, b.para do
+    local p = body[n]
+    local plain = richtext.plain(p)
+    local from = n == a.para and a.at or 1
+    local to = n == b.para and b.at or #plain + 1
+
+    if to > from then
+      local inside = slice(p, from, to)
+
+      for _, r in ipairs(inside) do
+        for k, v in pairs(fields) do r[k] = v end
+      end
+
+      local q = {}
+      for k, v in pairs(p) do q[k] = v end
+      q.runs = concat(slice(p, 1, from), inside, slice(p, to, #plain + 1))
+      out[n] = richtext.paragraph(q, by_name, p.style)
+    end
+  end
+
+  return out
+end
+
+--
+-- **The look at a place**, whole: the paragraph's style, its layout, and
+-- the character look of the text just before the caret - what typing there
+-- would be, and what the Format panel shows.
+--
+function richtext.look_at(body, place, by_name)
+  local p = body[place.para]
+  local style = by_name[p.style] or richtext.PLAIN
+
+  return richtext.look(look_at(p, place.at), style),
+         richtext.layout(p, style), p.style
 end
 
 -- The place one character before or after `place` - across a paragraph's

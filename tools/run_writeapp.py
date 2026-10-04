@@ -223,16 +223,33 @@ def main():
             guest.mouse_button(False)
             time.sleep(0.3)
 
-        mark = len(guest.seen)
-        click(136, 22)                          # the bar's +
-        zoomed = said("writer: t.write, ", mark, 20)
+        # The Zoom tool's list, where the window says it is, and its fifth
+        # item, 150%.
+        def where(line):
+            m = re.match(r"(\d+),(\d+) (\d+)x(\d+)", line or "")
+            return tuple(int(v) for v in m.groups()) if m else None
+
+        tool = where(said("writer: tool zoom at ", 0, 10))
+
+        def zoom_to(item):
+            mark = len(guest.seen)
+            click(tool[0] + tool[2] // 2, tool[1] + 20)
+            box = where(said("writer: menu zoom at ", mark, 10))
+
+            if box is None:
+                return None
+
+            mark = len(guest.seen)
+            click(box[0] + 40, box[1] + 4 + (item - 1) * 30 + 15)
+            return said("writer: t.write, ", mark, 20)
+
+        zoomed = zoom_to(5) if tool else None
         check(zoomed is not None and " at 150%, " in zoomed
               and ("%dx" % round(595.276 * 1.5)) in zoomed,
-              "the bar's + did not zoom to 150%%: %r" % zoomed)
+              "the Zoom tool did not zoom to 150%%: %r" % zoomed)
 
-        mark = len(guest.seen)
-        click(28, 22)                           # the bar's -
-        said("writer: t.write, ", mark, 20)
+        if tool:
+            zoom_to(4)
 
         # ---- Export PDF ----
         mark = len(guest.seen)
@@ -273,6 +290,7 @@ def main():
             time.sleep(0.2)
 
         mark = len(guest.seen)
+        new_window_from = mark
         guest.type("wm writer")
         fresh = said("writer: Untitled, 1 page at 125%, page 1 at ", mark, 90)
         opened = said("wm: window Untitled - Kosmos Write at ", mark, 30)
@@ -307,6 +325,42 @@ def main():
             guest.mouse_button(False)
             time.sleep(0.3)
             press(*letters("Yes "))
+
+            # Formatting (W4c): "Hello world!" selected, made bold by
+            # Control-B and italic by the panel, and its paragraph made a
+            # Heading 1 from the style's list.
+            press("shift-end", "ctrl-b")
+            seen_from = new_window_from
+
+            def control(key):
+                m = re.search(r"writer: control %s at (\d+),(\d+) (\d+)x(\d+)" % key,
+                              guest.seen[seen_from:])
+                return tuple(int(v) for v in m.groups()) if m else None
+
+            def press_at(x, y):
+                guest.mouse_to(*R._to_tablet(wx + x, wy + y, sw, sh))
+                time.sleep(0.3)
+                guest.mouse_button(True)
+                time.sleep(0.15)
+                guest.mouse_button(False)
+                time.sleep(0.4)
+
+            marks = control("marks")
+            style_box = control("style")
+
+            if marks and style_box:
+                # Italic is the second of four.
+                press_at(marks[0] + 3 + (marks[2] - 6) * 3 // 8, marks[1] + marks[3] // 2)
+                mark = len(guest.seen)
+                press_at(style_box[0] + 30, style_box[1] + style_box[3] // 2)
+                styles = re.search(r"writer: menu style at (\d+),(\d+) (\d+)x(\d+)",
+                                   guest.seen[mark:])
+
+                if styles:
+                    sx, sy = int(styles.group(1)), int(styles.group(2))
+                    press_at(sx + 40, sy + 4 + 2 * 30 + 15)      # Heading 1
+            else:
+                check(False, "the Format panel did not say where its controls are")
 
             mark = len(guest.seen)
             press("ctrl-s")
@@ -344,11 +398,17 @@ def main():
                 text = z.read("document").decode("utf-8")
 
             got = re.findall(r'text = "([^"]*)"', text)
+            hello = re.search(r'\{[^{}]*text = "Hello world!"[^{}]*\}', text)
+            heading = re.search(r'style = "Heading 1"', text)
         except (R.Failure, OSError, KeyError, zipfile.BadZipFile) as e:
-            got = ["could not be read: %s" % e]
+            got, hello, heading = ["could not be read: %s" % e], None, None
 
-        check(got == ["Yes Hello world!", "A Second text"],
+        check(got == ["Yes ", "Hello world!", "A Second text"],
               "the typed document holds %r, not what the keys meant" % got)
+        check(hello is not None and 'weight = "Bold"' in hello.group(0)
+              and "italic = true" in hello.group(0) and heading is not None,
+              "the Format panel did not make the words bold and italic and "
+              "the paragraph a Heading 1: %r" % (hello.group(0) if hello else text[:400]))
 
         picture = os.path.join(work, "t.bmp")
 

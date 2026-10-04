@@ -142,6 +142,29 @@ ICONS = {
     # and Preferences' Notifications.
     "moon":       ("moon", None),
     "bell":       ("bell", None),
+
+    # Kosmos Write's toolbar and its Format panel (`docs/write.html`), and
+    # Present's and Sheets' after it. View is `sidebar`, Add Page `new`,
+    # Media `pictures` and a chooser's arrow `descending`, as they are.
+    "zoom":       ("zoom-in", None),
+    "minus":      ("minus", None),
+    "insert":     ("list-plus", None),
+    "table":      ("table", None),
+    "chart":      ("chart-column", None),
+    "textbox":    ("type", None),
+    "shape":      ("shapes", None),
+    "comment":    ("message-square", None),
+    "export":     ("share", None),
+    "format":     ("paintbrush", None),
+    "page":       ("file-text", None),
+    "bold":       ("bold", None),
+    "italic":     ("italic", None),
+    "underline":  ("underline", None),
+    "strike":     ("strikethrough", None),
+    "align-left":    ("text-align-start", None),
+    "align-center":  ("text-align-center", None),
+    "align-right":   ("text-align-end", None),
+    "align-justify": ("text-align-justify", None),
 }
 
 # The ones drawn filled as well as stroked - Lucide's shapes are outlines,

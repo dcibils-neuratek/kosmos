@@ -377,6 +377,67 @@ do
         "an edited body is not what checking it gives back")
 end
 
+-- 10. **Formatting** (W4c): a style, character fields and paragraph fields
+-- over a range, and the look the panel shows.
+do
+  local doc = writedoc.check{ format = "kosmos-write", version = 1, body = {
+    { style = "Body", align = "center", runs = { { text = "one two three" } } },
+    { style = "Body", runs = { { text = "four" } } },
+  } }
+  local by_name = {}
+  for _, st in ipairs(doc.styles) do by_name[st.name] = st end
+  local body = doc.body
+
+  -- Bold on "two", splitting the run where the range starts and ends.
+  local b1 = richtext.format(body, { para = 1, at = 5 }, { para = 1, at = 8 },
+                             { weight = "Bold" }, by_name)
+  check(#b1[1].runs == 3 and b1[1].runs[2].text == "two"
+        and b1[1].runs[2].weight == "Bold" and b1[1].align == "center"
+        and b1[2] == body[2],
+        "bold over a word did not split its run, or lost the paragraph's own")
+
+  -- Bold again on what is bold, then plain: back to one run.
+  local b2 = richtext.format(b1, { para = 1, at = 5 }, { para = 1, at = 8 },
+                             { weight = "Regular" }, by_name)
+  check(#b2[1].runs == 1 and b2[1].runs[1].weight == nil,
+        "a field set back to the style's was kept, or the runs not joined")
+
+  -- Italic across two paragraphs, from the middle of the first.
+  local b3 = richtext.format(body, { para = 2, at = 3 }, { para = 1, at = 9 },
+                             { italic = true }, by_name)
+  check(b3[1].runs[2].text == "three" and b3[1].runs[2].italic
+        and b3[2].runs[1].text == "fo" and b3[2].runs[1].italic
+        and b3[2].runs[2].italic == nil,
+        "italic across two paragraphs did not reach just the range")
+
+  -- A style chosen: the paragraph's own fields given up, its runs' kept.
+  local b4 = richtext.restyle(b1, { para = 1, at = 2 }, { para = 1, at = 2 },
+                              "Heading 1", by_name)
+  check(b4[1].style == "Heading 1" and b4[1].align == nil
+        and b4[1].runs[2].weight == "Bold",
+        "choosing a style kept the paragraph's alignment or lost a run's bold")
+
+  -- Alignment on both paragraphs; the first already centred.
+  local b5 = richtext.arrange(body, { para = 1, at = 1 }, { para = 2, at = 1 },
+                              { align = "right" }, by_name)
+  check(b5[1].align == "right" and b5[2].align == "right",
+        "alignment did not reach every paragraph the range touches")
+  local b6 = richtext.arrange(b5, { para = 1, at = 1 }, { para = 1, at = 1 },
+                              { align = "left" }, by_name)
+  check(b6[1].align == nil, "an alignment equal to the style's was kept")
+
+  -- What the panel shows at a place: the look before the caret.
+  local look, layout, style = richtext.look_at(b1, { para = 1, at = 7 }, by_name)
+  check(look.weight == "Bold" and look.face == "IBM Plex Serif"
+        and layout.align == "center" and style == "Body",
+        "the look at a place is not the text before it's")
+
+  -- Typed with a look chosen and nothing selected.
+  local b7 = richtext.type(body, { para = 2, at = 5 }, "!", { italic = true })
+  check(b7[2].runs[2].text == "!" and b7[2].runs[2].italic,
+        "typing with a chosen look did not take it")
+end
+
 if fails > 0 then
   print(("writedoc: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

@@ -18182,3 +18182,55 @@ with the PDF leaves out of the ink: it stood at the title's start and
 stretched the first line 11 pixels.
 
 **Control**: Control-Y doing nothing - the document holds "Second text".
+
+## 18.385 Kosmos Write as drawn, and its Format panel (W4c)
+
+Diego, 4 October: "Contienue with the rest of the app", and "Let me know
+when the entire mockup is built" - before the premise's review, his order.
+
+**The window as `docs/write.html` draws it**, 1200 by 800: the tools across
+the top - View, Zoom, Add Page; Insert, Table, Chart, Text, Shape, Media,
+Comment; Export, Format, Document at the right - each an icon over its word,
+those a later step builds greyed and doing nothing; the pages on the dark
+desk; the panel at the right with Text and Document, Format's tool lit
+while it is open; what was last said in the tools' row. Zoom is the Zoom
+tool's list; Export's list saves the `.write` or exports the PDF.
+
+**The Format panel's Text side**: the paragraph style in a box of its own,
+its list the document's styles; then Style, Layout and More. **Style**: the
+font's family from what the fonts say they are, its weights, the size by
+its list or a point a press, Bold, Italic, Underline and Strike as four
+segments, the text colour from twelve. **Layout**: the four alignments, the
+line spacing, the space before and after, the three indents. **More**: kept
+with the next paragraph. With a selection a choice formats it; with none,
+a character's look is held for what is typed next, and a paragraph's goes
+to the caret's paragraph. Control-B and Control-U too.
+
+**In the kits, by the premise**: `pixelkit` has the controls every direct
+window can use now - a tool and its width, segments, a chooser, a stepper,
+a box to tick, a swatch, a small label and a list over the window - and 19
+line icons more from Lucide (the alignments, the marks, the tools'), only
+the new ones kept, since a run of `lineicons.py` re-renders 23 of the old a
+shade apart. `richtext` formats: a style over a range's paragraphs, their
+own fields given up and their runs' kept; character fields over the
+characters in a range, the runs split at its ends; paragraph fields over its
+paragraphs; and the look at a place, for the panel. Each paragraph touched
+is checked against its style again, so a field set back to the style's is
+left out and runs alike are joined.
+
+**Host**: `test_writedoc.lua` 55 to 63 - bold over a word splitting its run
+and keeping the paragraph's own alignment, bold taken off leaving one run,
+italic across two paragraphs from the middle of the first, a style chosen
+giving up the alignment and keeping a run's bold, alignment on both
+paragraphs and an alignment equal to the style's left out, the look before
+the caret, and typing with a look chosen.
+
+**`arm-writeapp`, 11 to 13**: zoom by the Zoom tool's list - the window says
+where the tool and each list are, as the window manager says where a tab
+is; and after the typing, Shift-End selects "Hello world!", Control-B makes
+it bold, the panel's Italic makes it italic and the style's list makes its
+paragraph a Heading 1 - the file read on the Mac has the run bold and
+italic in a Heading 1. **Control**: Italic leaving italic as it was - the
+run is bold and not italic.
+
+**Whole gate**: 90 suites in 653 s (10:53), all passing.

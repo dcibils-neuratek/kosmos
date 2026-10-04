@@ -201,6 +201,217 @@ function pixelkit.new(ui)
     end
   end
 
+  --------------------------------------------------------------------------
+  -- **An inspector's controls** (`docs/write.html`): what Kosmos Write's
+  -- toolbar and its Format and Document panels are made of, and Present's
+  -- and Sheets' after it - so here, for every window that draws its own
+  -- pixels, rather than in the first application to want them. Each draws
+  -- itself from a table and gives it its size; where a press lands in one
+  -- is `pk.inside`, or `pk.part` for one with parts.
+  --------------------------------------------------------------------------
+
+  local SMALL                   -- the tools' words, a size under the ui's
+
+  local function small()
+    SMALL = SMALL or ui.sized("ui", math.max(9, (theme.fonts.ui and theme.fonts.ui.px or 13) - 2))
+    return SMALL
+  end
+
+  local function centred(s, text, x, w, y, colour, face)
+    s:text(x + (w - gfx.measure(text, face)) // 2, y, text, colour, nil, face)
+  end
+
+  --
+  -- **A tool**: an icon over its word, as a document window's toolbar has
+  -- them - the raised fill and the accent's icon when it is the one open.
+  -- `b` is `{ x, y, icon, text, on, disabled }`, and gets `w` and `h`.
+  --
+  -- How wide a tool with these words is.
+  function pk.tool_width(text)
+    return math.max(52, gfx.measure(tostring(text or ""), small()) + 16)
+  end
+
+  function pk.tool(s, b)
+    local face = small()
+
+    b.h = b.h or 48
+    b.w = b.w or pk.tool_width(b.text)
+
+    if b.on then s:fill_round(b.x, b.y, b.w, b.h, theme.raised, 10) end
+
+    local ink = b.disabled and theme.mix(theme.window, theme.text_dim, 400)
+                or (b.on and theme.accent or theme.text)
+
+    pk.icon(s, b.icon, b.x + (b.w - ICON) // 2, b.y + 8, ink)
+    centred(s, b.text, b.x, b.w, b.y + 8 + ICON + 6,
+            b.disabled and ink or (b.on and theme.text or theme.text_dim), face)
+  end
+
+  --
+  -- **Segments**: two or more choices in one rounded bar, the chosen one
+  -- raised - a panel's tabs, Bold Italic Underline Strike, the four
+  -- alignments. `b` is `{ x, y, w, items, chosen, h, accent }`: each item
+  -- `{ text }` or `{ icon }`, `chosen` an index, or a set of them
+  -- (`chosen[i]` true) where more than one can be on; `accent` fills the
+  -- chosen one with the accent, as a panel's tabs are.
+  --
+  function pk.segments(s, b)
+    b.h = b.h or 28
+
+    local n = #b.items
+    local cell = (b.w - 6) / n
+
+    s:fill_round(b.x, b.y, b.w, b.h, theme.raised, 9)
+
+    for i, item in ipairs(b.items) do
+      local cx = math.floor(b.x + 3 + (i - 1) * cell)
+      local cw = math.floor(b.x + 3 + i * cell) - cx
+      local on = type(b.chosen) == "table" and b.chosen[i] or b.chosen == i
+
+      if on then
+        s:fill_round(cx, b.y + 3, cw, b.h - 6,
+                     b.accent and theme.accent or theme.line, 7)
+      end
+
+      local ink = on and (b.accent and theme.text_on or theme.text) or theme.text_dim
+
+      if item.icon then
+        pk.icon(s, item.icon, cx + (cw - ICON) // 2, b.y + (b.h - ICON) // 2, ink)
+      else
+        centred(s, item.text, cx, cw, b.y + (b.h - gfx.height()) // 2, ink, "ui")
+      end
+    end
+  end
+
+  -- Which segment a point is on, or nil.
+  function pk.segment_at(b, x, y)
+    if not pk.inside(b, x, y) then return nil end
+    return math.min(#b.items, 1 + math.floor((x - b.x - 3) / ((b.w - 6) / #b.items)))
+  end
+
+  --
+  -- **A chooser**: a value in a well with the arrow that says a list opens
+  -- under it (`pk.menu`). `b` is `{ x, y, w, text, h, face }`.
+  --
+  function pk.chooser(s, b)
+    b.h = b.h or 30
+
+    s:fill_round(b.x, b.y, b.w, b.h, theme.raised, 8)
+
+    local text = tostring(b.text or "")
+    local room = b.w - 34
+
+    while #text > 1 and gfx.measure(text, b.face) > room do text = text:sub(1, -2) end
+
+    s:text(b.x + 10, b.y + (b.h - gfx.height(b.face)) // 2, text, theme.text, nil,
+           b.face or "ui")
+    pk.icon(s, "descending", b.x + b.w - ICON - 8, b.y + (b.h - ICON) // 2,
+            theme.text_dim)
+  end
+
+  --
+  -- **A stepper**: a number with its unit in a well, and minus and plus at
+  -- its right end. `b` is `{ x, y, w, text, h }`; `pk.step_at` says which
+  -- end a press took: -1, 1, or 0 for the number itself.
+  --
+  function pk.stepper(s, b)
+    b.h = b.h or 30
+
+    s:fill_round(b.x, b.y, b.w, b.h, theme.raised, 8)
+    s:text(b.x + 10, b.y + (b.h - gfx.height()) // 2, tostring(b.text or ""),
+           theme.text, nil, "ui")
+
+    local bx = b.x + b.w - 2 * (ICON + 10)
+
+    s:fill(bx, b.y + 6, 1, b.h - 12, theme.line_soft)
+    pk.icon(s, "minus", bx + 5, b.y + (b.h - ICON) // 2, theme.text_dim)
+    pk.icon(s, "plus", bx + ICON + 15, b.y + (b.h - ICON) // 2, theme.text_dim)
+  end
+
+  function pk.step_at(b, x, y)
+    if not pk.inside(b, x, y) then return nil end
+
+    local bx = b.x + b.w - 2 * (ICON + 10)
+
+    if x < bx then return 0 end
+    if x < bx + ICON + 10 then return -1 end
+    return 1
+  end
+
+  --
+  -- **A box to tick**, and its words. `b` is `{ x, y, text, on }`, and gets
+  -- `w` and `h`.
+  --
+  function pk.check(s, b)
+    b.h = b.h or 22
+    b.w = b.w or (16 + 8 + gfx.measure(b.text or ""))
+
+    local by = b.y + (b.h - 16) // 2
+
+    s:fill_round(b.x, by, 16, 16, b.on and theme.accent or theme.line, 4)
+
+    if b.on then pk.icon(s, "check", b.x + 1, by + 1, theme.text_on) end
+
+    s:text(b.x + 24, b.y + (b.h - gfx.height()) // 2, tostring(b.text or ""),
+           theme.text, nil, "ui")
+  end
+
+  --
+  -- **A colour's swatch**, ringed so a white one shows on a light panel.
+  -- `b` is `{ x, y, colour, w, h }`, `colour` 0xAARRGGBB.
+  --
+  function pk.swatch(s, b)
+    b.w, b.h = b.w or 40, b.h or 20
+
+    s:fill_round(b.x - 1, b.y - 1, b.w + 2, b.h + 2, theme.line, 6)
+    s:fill_round(b.x, b.y, b.w, b.h, b.colour, 5)
+  end
+
+  -- A panel's small heading, in the dim colour.
+  function pk.label(s, x, y, text)
+    s:text(x, y, tostring(text), theme.text_dim, nil, small())
+  end
+
+  --
+  -- **A list that opens over the window** - a chooser's, a toolbar menu's:
+  -- each item a line, the chosen one ticked, the one under the pointer
+  -- lifted. `b` is `{ x, y, w, items, chosen, hover }`, each item a string
+  -- or `{ text, face }` - a face being a paragraph style's look - and gets
+  -- its `h`; `pk.menu_at` is the item under a point.
+  --
+  local ROW = 30
+
+  function pk.menu(s, b)
+    b.h = #b.items * ROW + 8
+
+    s:fill_round(b.x + 3, b.y + 4, b.w, b.h, theme.edge_dark or 0xff000000, 10)
+    s:fill_round(b.x, b.y, b.w, b.h, theme.raised, 10)
+    s:frame_round(b.x, b.y, b.w, b.h, theme.line, 10)
+
+    for i, item in ipairs(b.items) do
+      local text = type(item) == "table" and item.text or tostring(item)
+      local face = type(item) == "table" and item.face or "ui"
+      local ry = b.y + 4 + (i - 1) * ROW
+
+      if b.hover == i then
+        s:fill_round(b.x + 4, ry, b.w - 8, ROW, theme.line, 7)
+      end
+
+      if b.chosen == i then
+        pk.icon(s, "check", b.x + 10, ry + (ROW - ICON) // 2, theme.accent)
+      end
+
+      s:text(b.x + 32, ry + (ROW - gfx.height(face)) // 2, text, theme.text, nil,
+             face)
+    end
+  end
+
+  function pk.menu_at(b, x, y)
+    if not pk.inside(b, x, y) then return nil end
+    local i = 1 + (y - b.y - 4) // ROW
+    if i >= 1 and i <= #b.items then return i end
+  end
+
   return pk
 end
 
