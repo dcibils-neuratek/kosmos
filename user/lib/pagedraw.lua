@@ -177,15 +177,48 @@ function Drawer:page(set, page, surface, scale, x, y, paper, marks)
   -- tint and rules, `y` down from the line's top. A rule across or down is
   -- a fill a pixel or more thick, so a hairline stays one at any scale.
   --
+  local function px(xp) return math.floor(x + (xp + shift) * scale + 0.5) end
+  local function py(yp, top) return math.floor(y + (top + yp) * scale + 0.5) end
+
+  -- A polygon filled as triangles from a centre every edge can be seen
+  -- from: a shape's, or an ellipse's at enough points to look round.
+  local function fan(points, cx, cy, top, colour)
+    local ox, oy = px(cx), py(cy, top)
+    local n = #points // 2
+
+    for i = 1, n do
+      local j = i % n + 1
+      surface:triangle(ox, oy, px(points[2 * i - 1]), py(points[2 * i], top),
+                       px(points[2 * j - 1]), py(points[2 * j], top), colour)
+    end
+  end
+
   local function art(a, top)
     if a.kind == "rect" then
-      local ax = math.floor(x + (a.x_pt + shift) * scale + 0.5)
-      local ay = math.floor(y + (top + a.y_pt) * scale + 0.5)
+      local ax = px(a.x_pt)
+      local ay = py(a.y_pt, top)
+      local aw = math.max(1, px(a.x_pt + a.w_pt) - ax)
+      local ah = math.max(1, py(a.y_pt + a.h_pt, top) - ay)
 
-      surface:fill(ax, ay,
-                   math.max(1, math.floor(x + (a.x_pt + a.w_pt + shift) * scale + 0.5) - ax),
-                   math.max(1, math.floor(y + (top + a.y_pt + a.h_pt) * scale + 0.5) - ay),
-                   argb(a.fill))
+      if a.radius_pt then
+        surface:fill_round(ax, ay, aw, ah, argb(a.fill),
+                           math.floor(a.radius_pt * scale + 0.5))
+      else
+        surface:fill(ax, ay, aw, ah, argb(a.fill))
+      end
+    elseif a.kind == "ellipse" then
+      local cx, cy = a.x_pt + a.w_pt / 2, a.y_pt + a.h_pt / 2
+      local points = {}
+
+      for i = 0, 71 do
+        local t = i * math.pi / 36
+        points[#points + 1] = cx + math.cos(t) * a.w_pt / 2
+        points[#points + 1] = cy + math.sin(t) * a.h_pt / 2
+      end
+
+      fan(points, cx, cy, top, argb(a.fill))
+    elseif a.kind == "poly" then
+      fan(a.points, a.cx_pt, a.cy_pt, top, argb(a.fill))
     elseif a.kind == "rule" then
       local thick = math.max(1, math.floor(a.width_pt * scale + 0.5))
       local x1 = math.floor(x + (a.x_pt + shift) * scale + 0.5)

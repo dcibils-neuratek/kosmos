@@ -586,6 +586,49 @@ def main():
                   "the Text box part did not fill the box with Mist")
             press("down", *letters("End"))
 
+            # A shape (W7b): the Shape tool's list, its fifth, a star - and
+            # on the screen a star: the drawing's blue at its middle and the
+            # paper at its box's corner, which a rectangle would have
+            # covered. Then wider from the Shape part, and Down past it.
+            shape_tool = tool("shape")
+            mark = len(guest.seen)
+
+            if shape_tool:
+                press_at(shape_tool[0] + shape_tool[2] // 2, shape_tool[1] + 20)
+                listed = re.search(r"writer: menu shape at (\d+),(\d+)", guest.seen[mark:])
+
+                if listed:
+                    press_at(int(listed.group(1)) + 40, int(listed.group(2)) + 4 + 4 * 30 + 15)
+
+            drawn = said("writer: shape star at paragraph ", mark, 30)
+            box = re.search(r", (\d+)x(\d+) px at (-?\d+),(-?\d+)", drawn or "")
+            check(box is not None, "the Shape tool did not put a star in: %r" % drawn)
+
+            if box:
+                bw, bh, bx, by = (int(v) for v in box.groups())
+                time.sleep(1.0)
+                sw2, sh2, shot = R.parse_ppm(guest.screendump())
+
+                def on_screen(x, y):
+                    i = 3 * ((wy + y) * sw2 + wx + x)
+                    return shot[i], shot[i + 1], shot[i + 2]
+
+                middle = on_screen(bx + bw // 2, by + bh // 2)
+                corner = on_screen(bx + 3, by + 3)
+                check(middle == (0x2a, 0x55, 0xc9) and corner == (0xff, 0xff, 0xff),
+                      "the star on the screen is not blue at its middle on white paper "
+                      "at its corner: %r and %r" % (middle, corner))
+
+            wider = control("shape_width")
+            mark = len(guest.seen)
+
+            if wider:
+                press_at(wider[0] + wider[2] - 12, wider[1] + wider[3] // 2)
+
+            check(said("writer: shape star 45 by 30 mm, #2a55c9", mark, 15) is not None,
+                  "the Shape part's stepper did not make the star wider")
+            press("down", *letters("Fin"))
+
             # Export's list, its third item: Word's DOCX (W6).
             export_tool = tool("export")
             mark = len(guest.seen)
@@ -598,13 +641,13 @@ def main():
                     press_at(int(listed.group(1)) + 40, int(listed.group(2)) + 4 + 2 * 30 + 15)
 
             docx_said = said("writer: exported /Home/Untitled.docx, ", mark, 30)
-            check(docx_said is not None and docx_said.startswith("12 paragraphs"),
+            check(docx_said is not None and docx_said.startswith("14 paragraphs"),
                   "Export's list did not export Word's DOCX: %r" % docx_said)
 
             mark = len(guest.seen)
             press("ctrl-s")
             saved = said("writer: saved ", mark, 30)
-            check(saved == "/Home/Untitled.write, 12 paragraphs",
+            check(saved == "/Home/Untitled.write, 14 paragraphs",
                   "Control-S did not save the typed document: %r" % saved)
 
             time.sleep(1)
@@ -648,6 +691,8 @@ def main():
                   "the table in the file is not four columns with a header row")
             check(re.search(r'box = \{[^{}]*fill = "#eef3fb"', text) is not None,
                   "the text box in the file is not filled with Mist")
+            check(re.search(r'shape = \{[^{}]*kind = "star"[^{}]*width_mm = 45', text) is not None,
+                  "the star in the file is not 45 mm wide")
 
             # Word's DOCX, read here: the table as Word's, its new column.
             word_file = os.path.join(work, "typed.docx")
@@ -669,7 +714,8 @@ def main():
         check(got == ["Yes ", "Hello world!", "A Second text", "Item one",
                       "Item two", "After", "A sea", "Planet", "Moons", "Kind",
                       "Mars", "2", "rock", "Earth", "1", "rock", "Venus!", "0",
-                      "rock", "Done", "Note\\ntwo", "End", "Header words"],
+                      "rock", "Done", "Note\\ntwo", "End", "Fin",
+                      "Header words"],
               "the typed document holds %r, not what the keys meant" % got)
         check(text.count('name = "Letter"') == 1 and 'text = "Header words"' in text
               and re.search(r"left = 27[,\n]", text) is not None

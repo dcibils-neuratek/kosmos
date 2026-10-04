@@ -958,3 +958,23 @@ as a box. Everything tables learned an hour earlier - typing, the caret,
 the PDF, Word - came with it, and all that is new is where the box stands
 and how it looks. In Word it arrives as a one-cell table, so it is still a
 box someone can edit there.
+
+## 4 October, later still - shapes
+
+**In short:** the Shape button offers a rectangle, a rounded rectangle, an
+oval, a triangle, a star and an arrow. Each goes into the document as a
+coloured shape, and the panel changes its kind, its size and its colour.
+
+**How it is built.** The setting describes a shape the way it already
+described a table's lines: a short list of outlines in points. The screen
+fills a polygon as a fan of triangles from its centre, which works as long
+as every corner can be seen from the centre. A test checks exactly that
+for the star, the arrow and the triangle, because a shape that broke the
+rule would spill paint outside itself. The PDF draws the same outlines as
+true curves and lines, and Word gets its own built-in star, oval and
+arrow, so someone can still edit them there.
+
+**Found on the way.** Kosmos's own PDF viewer draws only text and
+pictures, so table lines and shapes in an exported PDF show in macOS's
+Preview but not in Kosmos itself. That is a job for the PDF viewer, and
+it is on the list.

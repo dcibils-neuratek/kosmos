@@ -490,7 +490,11 @@ kits under `user/lib/` for Present and Sheets to stand on:
   - **W7b, a shape**: a rectangle, a rounded one, an oval, a triangle, a
     star or an arrow, filled, drawn by the same `art` a table's rules are -
     on the screen as triangles, in the PDF as paths, in Word as its own
-    preset shapes.
+    preset shapes. *Done, 4 October* (`testing.md` 18.393).
+    **Found on the way**: Kosmos's own PDF reader draws no paths, so a
+    table's rules and a shape Write exports show in Preview and not in PDF
+    View - the PDF Kit's to add, with `re`, `m`, `l`, `c`, `h`, `f` and
+    `S`, which is all Write writes.
   - **W7c, a chart**: a table whose data is drawn as columns, bars, lines
     or a pie, its first row the series and its first column the
     categories; Edit Data shows the table above the chart to type into,

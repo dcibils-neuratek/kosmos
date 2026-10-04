@@ -129,6 +129,21 @@ has(bd, 'w:fill="EEF3FB"', "the box's fill")
 has(bd, '<w:top w:val="single" w:sz="6"', "the box's border")
 has(bd, '<w:top w:val="nil"/>', "a box without a border")
 
+-- **Shapes** (W7b): Word's own preset shapes, filled and unoutlined, each
+-- drawing with an id of its own.
+local sdoc = writedoc.check{ format = "kosmos-write", version = 1, body = {
+  { style = "Body", shape = { kind = "star", width_mm = 40, height_mm = 30, fill = "#d35400" } },
+  { style = "Body", shape = { kind = "arrow", width_mm = 50, height_mm = 20 } } } }
+local sd = docx.parts.document(sdoc)
+
+has(sd, '<a:prstGeom prst="star5">', "a star")
+has(sd, '<a:prstGeom prst="rightArrow">', "an arrow")
+has(sd, '<a:srgbClr val="D35400"/>', "the star's fill")
+has(sd, '<wp:extent cx="1440000" cy="1080000"/>', "40 by 30 mm in EMUs")
+has(sd, '<mc:Choice Requires="wps">', "the wrapper Word writes a shape in")
+check(sd:find('wp:docPr id="1001"', 1, true) and sd:find('wp:docPr id="1002"', 1, true),
+      "two shapes do not have drawings' ids of their own")
+
 if fails > 0 then
   print(("docx: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

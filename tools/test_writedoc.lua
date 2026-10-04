@@ -584,6 +584,31 @@ do
   check(same(round(doc).body, b2), "a text box did not come back from its file")
 end
 
+-- 13. **Shapes** (W7b): a kind this knows, sizes held to their range, a
+-- fill that is a colour or the drawing's blue; a shape goes whole; a style
+-- over one keeps it.
+do
+  local doc = writedoc.new()
+  local by_name = {}
+  for _, st in ipairs(doc.styles) do by_name[st.name] = st end
+
+  local p = richtext.paragraph({ style = "Body", runs = { { text = "words" } },
+    shape = { kind = "star", width_mm = 9000, height_mm = 0, fill = "red" } }, by_name, "Body")
+  check(p.shape and p.shape.width_mm == 1000 and p.shape.height_mm == 1
+        and p.shape.fill == "#2a55c9" and #p.runs == 0,
+        "a shape's sizes or fill were not held, or it kept text")
+  check(richtext.paragraph({ style = "Body", shape = { kind = "blob", width_mm = 5, height_mm = 5 } },
+                           by_name, "Body").shape == nil, "a shape of no kind this knows was kept")
+
+  local body = { { style = "Body", runs = { { text = "one" } } },
+                 richtext.paragraph(richtext.new_shape("oval", "Body"), by_name, "Body"),
+                 { style = "Body", runs = { { text = "two" } } } }
+  local b1 = richtext.delete(body, { para = 1, at = 2 }, { para = 3, at = 2 })
+  check(#b1 == 1 and richtext.plain(b1[1]) == "owo", "a range over a shape did not take it")
+  local b2 = richtext.restyle(body, { para = 1, at = 1 }, { para = 3, at = 1 }, "Caption", by_name)
+  check(b2[2].shape and b2[2].shape.kind == "oval", "a style over a shape lost the shape")
+end
+
 if fails > 0 then
   print(("writedoc: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

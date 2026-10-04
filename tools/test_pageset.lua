@@ -920,6 +920,70 @@ do
         "a box wider than the column, unbordered and unfilled, is not the column's width and bare")
 end
 
+-- 20. **Shapes** (W7b): a shape's paragraph is one line as tall as the
+-- shape, scaled to the column when wider and placed as it aligns, the
+-- shape its `art` - a rectangle, a rounded one, an ellipse, or a polygon
+-- whose every point can be seen from its centre, which is what lets the
+-- screen fill it as triangles from there.
+do
+  local function shape(kind, w, h, fields)
+    local p = { style = "Body", align = "center",
+                shape = { kind = kind, width_mm = w, height_mm = h, fill = "#d35400" } }
+    for k, v in pairs(fields or {}) do p[k] = v end
+    return p
+  end
+
+  local sdoc = doc_of{ shape("star", 40, 30), shape("oval", 400, 100), shape("rounded", 20, 10,
+                       { align = "left" }), shape("arrow", 50, 20), shape("triangle", 30, 30) }
+  local lines = pageset.set(sdoc, measure).pages[1].lines
+
+  local star = lines[1].art[1]
+  check(#lines == 5 and star.kind == "poly" and #star.points == 20 and star.fill == "#d35400"
+        and near(lines[1].x_pt, LEFT + (COLUMN - PT(40)) / 2) and near(lines[1].ascent_pt, PT(30) + 2),
+        "a star is not ten points, centred, as tall as it says")
+  check(near(star.points[1], star.cx_pt) and near(star.points[2], 2)
+        and near(star.cx_pt, lines[1].x_pt + PT(40) / 2),
+        "a star's first point is not at its top centre")
+
+  local oval = lines[2].art[1]
+  check(oval.kind == "ellipse" and near(oval.w_pt, COLUMN) and near(oval.h_pt, COLUMN / 4),
+        "a shape wider than the column was not scaled to it, in proportion")
+
+  local rounded = lines[3].art[1]
+  check(rounded.kind == "rect" and near(rounded.radius_pt, PT(10) * 0.15)
+        and near(rounded.x_pt, LEFT), "a rounded rectangle is not rounded, or not at the left")
+
+  -- **Every point of a polygon is seen from its centre**: no edge between
+  -- the centre and a point crosses the outline, so the fan of triangles is
+  -- the shape.
+  local function crosses(ax, ay, bx, by, cx, cy, dx, dy)
+    local function side(px, py, qx, qy, rx, ry) return (qx - px) * (ry - py) - (qy - py) * (rx - px) end
+    local d1, d2 = side(cx, cy, dx, dy, ax, ay), side(cx, cy, dx, dy, bx, by)
+    local d3, d4 = side(ax, ay, bx, by, cx, cy), side(ax, ay, bx, by, dx, dy)
+    return d1 * d2 < -1e-9 and d3 * d4 < -1e-9
+  end
+
+  local seen = true
+  for _, line in ipairs({ lines[1], lines[4], lines[5] }) do
+    local a = line.art[1]
+    local n = #a.points // 2
+    for i = 1, n do
+      local px, py = a.points[2 * i - 1], a.points[2 * i]
+      for j = 1, n do
+        local k = j % n + 1
+        if crosses(a.cx_pt, a.cy_pt, px, py, a.points[2 * j - 1], a.points[2 * j],
+                   a.points[2 * k - 1], a.points[2 * k]) then
+          seen = false
+        end
+      end
+    end
+  end
+  check(seen, "a shape has a point its centre cannot see; the screen's triangles would spill")
+
+  local here = pageset.locate(pageset.set(sdoc, measure), measure, { para = 4, at = 1 })
+  check(here and near(here.x_pt, lines[4].x_pt), "a caret on a shape does not stand at its left")
+end
+
 if fails > 0 then
   print(("pageset: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

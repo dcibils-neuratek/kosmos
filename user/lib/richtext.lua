@@ -292,6 +292,27 @@ end
 richtext.picture_of = picture_of
 
 --
+-- **A shape** a paragraph is (W7b): one of Pages' plain shapes, its size in
+-- millimetres and the colour it is filled with. Nil when it is not one.
+--
+richtext.SHAPES = { "rectangle", "rounded", "oval", "triangle", "star", "arrow" }
+
+local SHAPE = set_of(richtext.SHAPES)
+
+local function shape_of(t)
+  if type(t) ~= "table" or not SHAPE[t.kind] then return nil end
+
+  local size = number(1, 1000)
+  local w, h = size(t.width_mm), size(t.height_mm)
+
+  if not w or not h then return nil end
+
+  return { kind = t.kind, width_mm = w, height_mm = h, fill = colour(t.fill) or "#2a55c9" }
+end
+
+richtext.shape_of = shape_of
+
+--
 -- **A table** a paragraph is (W5b): rows of cells, each cell a paragraph of
 -- its own - its style, its own fields and its runs, never a picture or a
 -- table - every row as many cells as the table has columns, and whether
@@ -378,6 +399,10 @@ function richtext.paragraph(t, by_name, fallback)
   out.picture = picture_of(t.picture)
 
   if out.picture then return out end
+
+  out.shape = shape_of(t.shape)
+
+  if out.shape then return out end
 
   out.table = table_of(t.table, by_name, style_name)
 
@@ -544,10 +569,10 @@ local function copy_body(body)
   return out
 end
 
--- A paragraph that is a thing rather than text: a picture or a table. It
--- goes whole or not at all.
+-- A paragraph that is a thing rather than text: a picture, a shape or a
+-- table. It goes whole or not at all.
 local function block(p)
-  return p.picture ~= nil or p.table ~= nil
+  return p.picture ~= nil or p.table ~= nil or p.shape ~= nil
 end
 
 richtext.block = block
@@ -864,8 +889,8 @@ function richtext.restyle(body, a, b, name, by_name)
         return richtext.restyle({ cell }, x, y, name, by_name)[1]
       end)
     else
-      out[n] = richtext.paragraph({ style = name, runs = p.runs, picture = p.picture },
-                                  by_name, p.style)
+      out[n] = richtext.paragraph({ style = name, runs = p.runs, picture = p.picture,
+                                    shape = p.shape }, by_name, p.style)
     end
   end
 
@@ -1079,6 +1104,15 @@ function richtext.new_table(rows, columns, style, header)
   end
 
   return { style = style, runs = {}, table = t }
+end
+
+--
+-- **A shape's paragraph**: `kind`, 40 by 30 mm, in the drawing's blue,
+-- centred.
+--
+function richtext.new_shape(kind, style)
+  return { style = style, runs = {}, align = "center",
+           shape = { kind = kind, width_mm = 40, height_mm = 30, fill = "#2a55c9" } }
 end
 
 --

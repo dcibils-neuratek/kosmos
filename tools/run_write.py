@@ -330,6 +330,12 @@ table.insert(body, 5, { style = "Body", table = { columns = 3, header = true, ro
 table.insert(body, 6, { style = "Body", align = "center", table = { columns = 1,
   rows = { { cell("A note\\nin a box") } }, box = { width_mm = 70, fill = "#eef3fb" } } })
 
+-- Shapes (W7b): a star and an oval.
+table.insert(body, 7, { style = "Body", align = "center",
+                        shape = { kind = "star", width_mm = 30, height_mm = 30, fill = "#d35400" } })
+table.insert(body, 8, { style = "Body", align = "center",
+                        shape = { kind = "oval", width_mm = 50, height_mm = 20, fill = "#27ae60" } })
+
 local letter = writedoc.check{ format = "kosmos-write", version = 1, body = body }
 local placed = pageset.set(letter, measure)
 local ok, notes = use("/Kosmos/Libraries/pdf.lua").write("/Home/w.pdf",
@@ -647,6 +653,7 @@ def docx_checks(said, out, disk, work):
             raise Failure("the DOCX does not carry the picture as its PNG, related and drawn")
 
         W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+        z_document = z.read("word/document.xml").decode("utf-8")
         body = ET.fromstring(z.read("word/document.xml")).find(W + "body")
         paras = []
 
@@ -695,6 +702,13 @@ def docx_checks(said, out, disk, work):
             or 'w:w="3969"' not in box_xml.replace("ns0:", "w:") \
             or box.find(".//" + W + "br") is None:
         raise Failure("the DOCX's text box is not a 70 mm table of one cell with its line break")
+
+    # The shapes (W7b): Word's own star and ellipse, in their colours.
+    doc_xml = z_document
+
+    if 'prst="star5"' not in doc_xml or 'prst="ellipse"' not in doc_xml \
+            or 'val="D35400"' not in doc_xml or 'val="27AE60"' not in doc_xml:
+        raise Failure("the DOCX does not draw the star and the oval in their colours")
 
     checks += 1
 
@@ -948,6 +962,16 @@ def pdf_checks(said, out, fonts, disk, work):
     if rules != 3 * 6 or borders != 4 or tints != 2:
         raise Failure("the PDF draws %d rules, %d borders and %d tints for the table "
                       "and the box; wanted 18, 4 and 2" % (rules, borders, tints))
+
+    # The shapes (W7b): a star as one path of ten points, an oval as four
+    # curves, each filled in its colour.
+    stars = re.findall(r"q 0\.827 0\.329 0 rg [-\d.]+ [-\d.]+ m( [-\d.]+ [-\d.]+ l){9} h f Q",
+                       every_ops)
+    ovals = re.findall(r"q 0\.153 0\.682 0\.376 rg [-\d.]+ [-\d.]+ m"
+                       r"( [-\d.]+ [-\d.]+ [-\d.]+ [-\d.]+ [-\d.]+ [-\d.]+ c){4} h f Q", every_ops)
+
+    if len(stars) != 1 or len(ovals) != 1:
+        raise Failure("the PDF draws %d stars and %d ovals; wanted one of each" % (len(stars), len(ovals)))
 
     if not any(p.endswith("[A note]") for p in said("PIECE")) \
             or not any(p.endswith("[in a box]") for p in said("PIECE")):

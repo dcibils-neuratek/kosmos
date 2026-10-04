@@ -84,6 +84,12 @@ local ZOOMS = { 50, 75, 100, 125, 150, 200, 300 }
 local SIZES = { 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 30, 36, 48, 64, 72 }
 local SPACINGS = { 1, 1.15, 1.2, 1.5, 2 }
 
+-- The shapes the Shape tool offers (W7b), in Pages' order.
+local SHAPE_KINDS = {
+  { "rectangle", "Rectangle" }, { "rounded", "Rounded rectangle" }, { "oval", "Oval" },
+  { "triangle", "Triangle" }, { "star", "Star" }, { "arrow", "Arrow" },
+}
+
 -- What a text box may be filled with: nothing, or a pale tint.
 local FILLS = {
   { false, "None" }, { "#eef3fb", "Mist" }, { "#fdf3e1", "Sand" }, { "#e8f6ee", "Mint" },
@@ -391,7 +397,7 @@ local TOOLS = {
   { key = "table",    icon = "table",    text = "Table" },
   { key = "chart",    icon = "chart",    text = "Chart",    later = "W7" },
   { key = "textbox",  icon = "textbox",  text = "Text" },
-  { key = "shape",    icon = "shape",    text = "Shape",    later = "W7" },
+  { key = "shape",    icon = "shape",    text = "Shape" },
   { key = "media",    icon = "pictures", text = "Media" },
   { key = "comment",  icon = "comment",  text = "Comment",  later = "W7" },
   { right = true },
@@ -495,11 +501,12 @@ end
 local function argb(c) return 0xff000000 | (tonumber((c or "#000000"):sub(2), 16) or 0) end
 
 local open_menu, apply_char, apply_para, apply_style, doc_edit, apply_picture
-local reshape, delete_table, table_key, line_break
+local reshape, delete_table, table_key, line_break, apply_shape, insert_shape
+local remove_block
 
 local function say_where()
   local here = doc.body[caret.para]
-  local kind = here and (here.picture and ":picture"
+  local kind = here and (here.picture and ":picture" or here.shape and ":shape"
                          or here.table and (here.table.box and ":box" or ":table")) or ""
   local key = panel == "text" and ("text:" .. part .. kind) or tostring(panel)
 
@@ -734,6 +741,79 @@ local function draw_panel(s)
 
   if panel == "document" then
     draw_document(s, x0, w0, y)
+    say_where(s)
+    return
+  end
+
+  --
+  -- **On a shape** (W7b): which shape, its width and height, its colour,
+  -- and the shape taken out.
+  --
+  if here and here.shape then
+    local sh = here.shape
+
+    pk.label(s, x0, y, "Shape")
+    y = y + 18
+
+    local kind_name = sh.kind
+    for _, k in ipairs(SHAPE_KINDS) do if k[1] == sh.kind then kind_name = k[2] end end
+
+    local kc = { x = x0, y = y, w = w0, text = kind_name }
+    pk.chooser(s, kc)
+    control("shape_kind", kc, function()
+      local labels, chosen = {}, nil
+      for i, k in ipairs(SHAPE_KINDS) do
+        labels[i] = k[2]
+        if k[1] == sh.kind then chosen = i end
+      end
+      open_menu("shape_kind", kc.x, kc.y + kc.h + 4, kc.w, labels, chosen,
+                function(i) apply_shape({ kind = SHAPE_KINDS[i][1] }) end)
+    end)
+
+    y = y + kc.h + 8
+
+    local half = (w0 - 8) // 2
+    local wd = { x = x0, y = y, w = half, text = ("%g mm wide"):format(sh.width_mm) }
+    pk.stepper(s, wd)
+    control("shape_width", wd, function(cx, cy)
+      local d = pk.step_at(wd, cx, cy)
+      if d and d ~= 0 then apply_shape({ width_mm = math.max(5, sh.width_mm + 5 * d) }) end
+    end)
+
+    local ht = { x = x0 + half + 8, y = y, w = w0 - half - 8,
+                 text = ("%g mm high"):format(sh.height_mm) }
+    pk.stepper(s, ht)
+    control("shape_height", ht, function(cx, cy)
+      local d = pk.step_at(ht, cx, cy)
+      if d and d ~= 0 then apply_shape({ height_mm = math.max(5, sh.height_mm + 5 * d) }) end
+    end)
+
+    y = y + 38
+    pk.label(s, x0, y, "Fill")
+    y = y + 18
+
+    local sw = { x = x0, y = y, w = 40, h = 22, colour = argb(sh.fill) }
+    pk.swatch(s, sw)
+    s:text(x0 + 52, y + (22 - gfx.height()) // 2, colour_name(sh.fill), theme.text, nil, "ui")
+    local fill_box = { x = x0, y = y, w = w0, h = 22 }
+    control("shape_fill", fill_box, function()
+      local labels, chosen = {}, nil
+      for i, pair in ipairs(COLOURS) do
+        labels[i] = pair[2]
+        if pair[1] == sh.fill then chosen = i end
+      end
+      open_menu("shape_fill", x0, fill_box.y + 26, 160, labels, chosen,
+                function(i) apply_shape({ fill = COLOURS[i][1] }) end)
+    end)
+
+    y = y + 36
+
+    local del = { x = x0, y = y, text = "Delete shape" }
+    pk.button(s, del)
+    control("shape_delete", del, function()
+      remove_block(caret.para, { para = math.max(1, caret.para - 1), at = 1 })
+    end)
+
     say_where(s)
     return
   end
@@ -1361,9 +1441,12 @@ local function without_selection()
   return richtext.delete(doc.body, anchor, caret)
 end
 
--- A paragraph after the picture the caret is on, for what is typed there.
+-- A paragraph after the picture or shape the caret is on, for what is
+-- typed there.
 local function after_picture(body, place)
-  if body[place.para] and body[place.para].picture then
+  local p = body[place.para]
+
+  if p and (p.picture or p.shape) then
     local out = {}
     for i, p in ipairs(body) do out[i] = p end
     table.insert(out, place.para + 1, { style = writedoc.BODY, runs = {} })
@@ -1373,8 +1456,8 @@ local function after_picture(body, place)
   return body, place
 end
 
--- The picture paragraph `n` taken out.
-local function remove_picture(n, place)
+-- The picture or shape paragraph `n` taken out.
+function remove_block(n, place)
   local out = {}
   for i, p in ipairs(doc.body) do out[i] = p end
   table.remove(out, n)
@@ -1406,13 +1489,16 @@ local function back_or_forward(forward)
 
   local here = doc.body[caret.para]
 
-  if here.picture then
-    remove_picture(caret.para, { para = math.max(1, caret.para - (forward and 0 or 1)), at = 1 })
+  if here.picture or here.shape then
+    remove_block(caret.para, { para = math.max(1, caret.para - (forward and 0 or 1)), at = 1 })
     return
   end
 
-  if not forward and caret.at == 1 and caret.para > 1 and doc.body[caret.para - 1].picture then
-    remove_picture(caret.para - 1, { para = caret.para - 1, at = 1 })
+  local before = caret.para > 1 and doc.body[caret.para - 1]
+
+  if not forward and caret.at == 1 and not caret.row and before
+     and (before.picture or before.shape) then
+    remove_block(caret.para - 1, { para = caret.para - 1, at = 1 })
     return
   end
 
@@ -1452,6 +1538,27 @@ end
 function apply_para(fields)
   local a, b = range()
   edited(richtext.arrange(doc.body, a, b, fields, by_name), caret, "format", true)
+end
+
+-- A shape's kind, size or colour.
+function apply_shape(fields)
+  local here = doc.body[caret.para]
+  local body = {}
+  for i, p in ipairs(doc.body) do body[i] = p end
+
+  local raw = {}
+  for k, v in pairs(here) do raw[k] = v end
+
+  local sh = {}
+  for k, v in pairs(here.shape) do sh[k] = v end
+  for k, v in pairs(fields) do sh[k] = v end
+
+  raw.shape = sh
+  body[caret.para] = richtext.paragraph(raw, by_name, here.style)
+
+  local now = body[caret.para].shape
+  print(("writer: shape %s %g by %g mm, %s"):format(now.kind, now.width_mm, now.height_mm, now.fill))
+  edited(body, caret, "format", true)
 end
 
 -- A picture's width, its height kept in proportion.
@@ -1741,6 +1848,43 @@ local function insert_box()
   edited(body, { para = n, at = 1, row = 1, col = 1 }, "table")
 end
 
+--
+-- **A shape put in** (Shape, W7b): 40 by 30 mm in the drawing's blue,
+-- centred, after the caret's paragraph, the caret on it. The log says
+-- where it is drawn, for a harness to look.
+--
+function insert_shape(kind)
+  local body = {}
+  for i, p in ipairs(doc.body) do body[i] = p end
+
+  local style = by_name[writedoc.BODY] and writedoc.BODY or doc.styles[1].name
+  local n = caret.para + 1
+
+  table.insert(body, n, richtext.paragraph(richtext.new_shape(kind, style), by_name, style))
+
+  if not body[n + 1] then body[n + 1] = { style = style, runs = {} } end
+
+  edited(body, { para = n, at = 1 }, "shape")
+
+  local here = pageset.locate(set, measure, caret)
+  local line = here.line
+  local px, py = page_at(here.page)
+  local sc = scale()
+  local top = line.baseline_pt - line.ascent_pt + 2
+
+  print(("writer: shape %s at paragraph %d, %dx%d px at %d,%d"):format(kind, n,
+    math.floor(line.width_pt * sc + 0.5), math.floor((line.ascent_pt - 2) * sc + 0.5),
+    px + math.floor((line.x_pt + set.pages[here.page].shift_pt) * sc + 0.5),
+    py + math.floor(top * sc + 0.5)))
+end
+
+local function shape_menu(x)
+  local labels = {}
+  for i, k in ipairs(SHAPE_KINDS) do labels[i] = k[2] end
+  open_menu("shape", x, TOOLS_H + 2, 200, labels, nil,
+            function(i) insert_shape(SHAPE_KINDS[i][1]) end)
+end
+
 -- The caret's table with rows, columns or its header changed; the caret
 -- kept in the table.
 function reshape(fields)
@@ -1840,13 +1984,14 @@ local TOOL_ACTS
 TOOL_ACTS = {
   table = function() insert_table() end,
   textbox = function() insert_box() end,
+  shape = function(t) shape_menu(t.x) end,
   --
   -- **Insert**: what goes into the text, in a list - a page break, a table,
-  -- a picture and a text box so far; the rest of the toolbar's middle joins
-  -- it as it is built.
+  -- a picture, a text box and a shape so far; the rest of the toolbar's
+  -- middle joins it as it is built.
   --
   insert = function(t)
-    local items = { "Page Break", "Table", "Picture...", "Text Box" }
+    local items = { "Page Break", "Table", "Picture...", "Text Box", "Shape..." }
     open_menu("insert", t.x, TOOLS_H + 2, 180, items, nil, function(i)
       if i == 1 then
         TOOL_ACTS.addpage()
@@ -1854,8 +1999,10 @@ TOOL_ACTS = {
         insert_table()
       elseif i == 3 then
         choose_picture()
-      else
+      elseif i == 4 then
         insert_box()
+      else
+        shape_menu(t.x)
       end
     end)
   end,

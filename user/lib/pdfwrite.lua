@@ -338,10 +338,57 @@ local function operators(set, page, font_for, notes, image_for)
   -- tint as a filled rectangle and its rules as stroked lines, each in its
   -- own graphics state so its colour and width go no further.
   --
+  -- A point of the setting's - x across, y down from a line's top - as
+  -- the PDF's.
+  local function at(xp, yp, top)
+    return num(xp + shift) .. " " .. num(height - (top + yp))
+  end
+
+  -- Bezier's constant for a quarter of a circle.
+  local K = 0.5523
+
   local function art(a, top)
-    if a.kind == "rect" then
+    if a.kind == "rect" and a.radius_pt then
+      -- Rounded: four sides and four quarter circles, as curves.
+      local x0, y0, x1, y1 = a.x_pt, a.y_pt, a.x_pt + a.w_pt, a.y_pt + a.h_pt
+      local r = a.radius_pt
+      local k = K * r
+
+      out[#out + 1] = table.concat({ "q", rgb(a.fill), "rg",
+        at(x0 + r, y0, top), "m", at(x1 - r, y0, top), "l",
+        at(x1 - r + k, y0, top), at(x1, y0 + r - k, top), at(x1, y0 + r, top), "c",
+        at(x1, y1 - r, top), "l",
+        at(x1, y1 - r + k, top), at(x1 - r + k, y1, top), at(x1 - r, y1, top), "c",
+        at(x0 + r, y1, top), "l",
+        at(x0 + r - k, y1, top), at(x0, y1 - r + k, top), at(x0, y1 - r, top), "c",
+        at(x0, y0 + r, top), "l",
+        at(x0, y0 + r - k, top), at(x0 + r - k, y0, top), at(x0 + r, y0, top), "c",
+        "h f Q" }, " ")
+    elseif a.kind == "rect" then
       out[#out + 1] = ("q %s rg %s %s %s %s re f Q"):format(rgb(a.fill),
         num(a.x_pt + shift), num(height - (top + a.y_pt + a.h_pt)), num(a.w_pt), num(a.h_pt))
+    elseif a.kind == "ellipse" then
+      -- Four curves, a quarter each.
+      local cx, cy = a.x_pt + a.w_pt / 2, a.y_pt + a.h_pt / 2
+      local rx, ry = a.w_pt / 2, a.h_pt / 2
+
+      out[#out + 1] = table.concat({ "q", rgb(a.fill), "rg",
+        at(cx + rx, cy, top), "m",
+        at(cx + rx, cy + K * ry, top), at(cx + K * rx, cy + ry, top), at(cx, cy + ry, top), "c",
+        at(cx - K * rx, cy + ry, top), at(cx - rx, cy + K * ry, top), at(cx - rx, cy, top), "c",
+        at(cx - rx, cy - K * ry, top), at(cx - K * rx, cy - ry, top), at(cx, cy - ry, top), "c",
+        at(cx + K * rx, cy - ry, top), at(cx + rx, cy - K * ry, top), at(cx + rx, cy, top), "c",
+        "h f Q" }, " ")
+    elseif a.kind == "poly" then
+      local parts = { "q", rgb(a.fill), "rg" }
+
+      for i = 1, #a.points, 2 do
+        parts[#parts + 1] = at(a.points[i], a.points[i + 1], top)
+        parts[#parts + 1] = i == 1 and "m" or "l"
+      end
+
+      parts[#parts + 1] = "h f Q"
+      out[#out + 1] = table.concat(parts, " ")
     elseif a.kind == "rule" then
       out[#out + 1] = ("q %s RG %s w %s %s m %s %s l S Q"):format(rgb(a.colour),
         num(a.width_pt), num(a.x_pt + shift), num(height - (top + a.y_pt)),

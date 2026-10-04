@@ -18568,3 +18568,72 @@ box is not as wide as it says, centred".
 **Found too**: two tables that touch are written with an empty paragraph
 between them, since Word would join them, and the suite's list of Word's
 paragraphs now expects it.
+
+## 18.393 Kosmos Write's shapes (W7b)
+
+**The Shape tool's list puts in a shape**: a rectangle, a rounded one, an
+oval, a triangle, a star or an arrow, 40 by 30 mm in the drawing's blue,
+centred, after the caret's paragraph, with the caret on it. Insert's list
+has it too. The Format panel's Shape part has the kind, the width and the
+height as steppers, the fill from the text's colours, and Delete shape.
+Typing on a shape starts a paragraph after it, and Backspace on it or
+just after it takes it out, as with a picture.
+
+**A shape is a paragraph** holding its kind, its size in millimetres and
+its fill (`richtext`, held to its range as a picture's is). It goes whole,
+and a style over it keeps it. `pageset` sets it as one line as tall as the
+shape, scaled to the column when wider and placed as it aligns. **The
+shape is the line's `art`**, made by `pageset.shape_art`:
+- a rectangle;
+- a rectangle with a radius;
+- an ellipse;
+- or a polygon with a centre every one of its points can be seen from.
+
+That centre is what lets the screen fill a shape as a fan of triangles from
+it (`pagedraw`, `gfx`'s `triangle`), and an ellipse as one at 72 points.
+The PDF draws the same `art` as paths: four curves for an ellipse, four
+more for a rounded rectangle's corners, a polygon as one path
+(`pdfwrite`). Word gets its own preset shapes - `star5`, `ellipse`,
+`rightArrow` and the rest - filled and unoutlined, in the
+markup-compatibility wrapper Word writes one in (`docxwrite`).
+
+**Host**: `test_pageset.lua` 111 to 116 check:
+- a star of ten points, centred;
+- its first point at its top's middle;
+- a shape wider than the column scaled to it;
+- a rounded rectangle at the left;
+- **every point of the star, the arrow and the triangle seen from its
+  centre**, edge by edge, so the screen's triangles cannot spill;
+- a caret on a shape.
+
+`test_writedoc.lua` 92 to 95 check:
+- the shape's check;
+- an unknown kind refused;
+- a range taking a shape;
+- a style keeping it.
+
+`test_docx.lua` 38 to 43 check Word's presets, the fill, the size in EMUs,
+the wrapper, and an id of its own for each drawing.
+
+**`arm-write`**: the export suite's document has a star and an oval. Its
+PDF draws the star as one path of ten points in its orange and the oval as
+four curves in its green, and its DOCX has `star5` and `ellipse` in their
+colours.
+
+**`arm-writeapp`**: the Shape tool's star is put in, and the screen is
+read where the log says the star is drawn: the drawing's blue at its
+middle, the white paper at its box's corner, which a rectangle would have
+covered. The panel then makes it 45 mm wide, and the `.write` says so.
+
+**Found**: the panel's Delete shape called a function the window defined
+further down, and the build's check of every name a file reads
+(`luaglobals.py`) refused the image before a suite ran. A helper in the
+suite shadowed one of its own names, and the suite's Python said so on its
+first run.
+
+**Kosmos's PDF reader draws no paths.** A table's rules, a box's border
+and a shape exported by Write show in macOS's Preview and not in Kosmos's
+own PDF View, which draws text and pictures only. That is on the roadmap,
+as the reader's work rather than Write's.
+**Control**: on a copy of the kits, an arrow fanned from a point outside
+its shaft - "a shape has a point its centre cannot see".

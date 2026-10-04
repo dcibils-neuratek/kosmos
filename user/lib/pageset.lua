@@ -414,6 +414,50 @@ pageset.RULE_PT = 0.5
 pageset.RULE = "#a3abb6"
 pageset.HEADER_TINT = "#e9edf2"
 
+--
+-- **A shape's outline as `art`** (W7b), in a box `x`, `y`, `w`, `h` - `y`
+-- down from its line's top: a rectangle, one with rounded corners, an
+-- ellipse, or a polygon of points with a centre every edge can be seen
+-- from, which is what lets the screen fill it as triangles from there and
+-- a PDF as one path.
+--
+local STAR_IN = 0.382                   -- a five-pointed star's inner radius
+
+function pageset.shape_art(kind, x, y, w, h, fill)
+  if kind == "rectangle" then
+    return { kind = "rect", x_pt = x, y_pt = y, w_pt = w, h_pt = h, fill = fill }
+  elseif kind == "rounded" then
+    return { kind = "rect", x_pt = x, y_pt = y, w_pt = w, h_pt = h, fill = fill,
+             radius_pt = math.min(w, h) * 0.15 }
+  elseif kind == "oval" then
+    return { kind = "ellipse", x_pt = x, y_pt = y, w_pt = w, h_pt = h, fill = fill }
+  end
+
+  local points, cx, cy
+
+  if kind == "triangle" then
+    points = { x + w / 2, y, x + w, y + h, x, y + h }
+    cx, cy = x + w / 2, y + h * 2 / 3
+  elseif kind == "star" then
+    points = {}
+    cx, cy = x + w / 2, y + h / 2
+
+    for i = 0, 9 do
+      local a = -math.pi / 2 + i * math.pi / 5
+      local r = i % 2 == 0 and 1 or STAR_IN
+      points[#points + 1] = cx + math.cos(a) * r * w / 2
+      points[#points + 1] = cy + math.sin(a) * r * h / 2
+    end
+  else                                  -- an arrow, pointing right
+    points = { x, y + 0.3 * h, x + 0.6 * w, y + 0.3 * h, x + 0.6 * w, y,
+               x + w, y + 0.5 * h, x + 0.6 * w, y + h, x + 0.6 * w, y + 0.7 * h,
+               x, y + 0.7 * h }
+    cx, cy = x + 0.6 * w, y + 0.5 * h
+  end
+
+  return { kind = "poly", points = points, cx_pt = cx, cy_pt = cy, fill = fill }
+end
+
 -- **A text box's** (W7a): more room round its text, and a darker border.
 pageset.BOX_PAD_PT = 8
 pageset.BOX_RULE_PT = 0.75
@@ -768,6 +812,28 @@ function pageset.set(doc, measure, cache, opts)
       cache.paras[p] = paras[n]
     elseif p.table then
       paras[n] = set_table(p, n)
+      cache.paras[p] = paras[n]
+    elseif p.shape then
+      -- **A shape** (W7b): one line as tall as the shape, scaled down to
+      -- the column when wider, placed as its paragraph aligns, the shape
+      -- its `art`.
+      local style = by_name[p.style] or doc.styles[1]
+      local layout = richtext.layout(p, style)
+      local inner = left + writedoc.pt(layout.indent_left_mm)
+      local room = math.max(1, column - writedoc.pt(layout.indent_left_mm)
+                                   - writedoc.pt(layout.indent_right_mm))
+      local w = writedoc.pt(p.shape.width_mm)
+      local h = writedoc.pt(p.shape.height_mm)
+
+      if w > room then w, h = room, h * room / w end
+
+      local line = { pieces = {}, width_pt = w, spaces = 0, forced = false, first = true,
+                     from = 1, para = n, ascent_pt = h + 2, height_pt = h + 4 }
+
+      align(line, layout, inner, room, true)
+      line.art = { pageset.shape_art(p.shape.kind, line.x_pt, 2, w, h, p.shape.fill) }
+
+      paras[n] = { lines = { line }, layout = layout, style = style, inner = inner }
       cache.paras[p] = paras[n]
     else
       local style = by_name[p.style] or doc.styles[1]

@@ -193,12 +193,38 @@ local function drawing(pic, media)
 end
 
 --
+-- **A shape as Word draws one inline** (W7b): its own preset geometry,
+-- filled, without an outline - in the markup-compatibility wrapper Word
+-- itself writes a shape in.
+--
+local PRESET = { rectangle = "rect", rounded = "roundRect", oval = "ellipse",
+                 triangle = "triangle", star = "star5", arrow = "rightArrow" }
+
+local function shape_xml(shape, id)
+  local cx = math.floor(shape.width_mm * 36000 + 0.5)
+  local cy = math.floor(shape.height_mm * 36000 + 0.5)
+
+  return ('<w:r><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
+    .. 'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">'
+    .. '<mc:Choice Requires="wps"><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
+    .. '<wp:extent cx="%d" cy="%d"/><wp:docPr id="%d" name="Shape %d"/>'
+    .. '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+    .. '<a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">'
+    .. '<wps:wsp><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="%d" cy="%d"/></a:xfrm>'
+    .. '<a:prstGeom prst="%s"><a:avLst/></a:prstGeom>'
+    .. '<a:solidFill><a:srgbClr val="%s"/></a:solidFill><a:ln><a:noFill/></a:ln></wps:spPr>'
+    .. '<wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:inline></w:drawing>'
+    .. '</mc:Choice><mc:Fallback/></mc:AlternateContent></w:r>'):format(
+    cx, cy, id, id, cx, cy, PRESET[shape.kind] or "rect", shape.fill:sub(2):upper())
+end
+
+--
 -- **One paragraph as `w:p`**: its style, what it changes from it, a
 -- picture, its runs. `cell` when it is a table's cell, which has none of
 -- the space round a paragraph - as Write sets one - and, in a header row,
 -- bold text.
 --
-local function paragraph_xml(p, style, media, cell)
+local function paragraph_xml(p, style, media, cell, shape_id)
   local own = {}
   for _, k in ipairs(richtext.PARA_KEYS) do
     if p[k] ~= nil then own[k] = true end
@@ -219,6 +245,8 @@ local function paragraph_xml(p, style, media, cell)
   if p.picture and media[p.picture.name] then
     parts[#parts + 1] = drawing(p.picture, media[p.picture.name])
   end
+
+  if p.shape then parts[#parts + 1] = shape_xml(p.shape, shape_id) end
 
   for _, r in ipairs(p.runs) do
     local only = {}
@@ -329,7 +357,9 @@ local function document_xml(doc, media)
       local after = doc.body[i + 1]
       if not after or after.table then body[#body + 1] = "<w:p/>" end
     else
-      body[#body + 1] = paragraph_xml(p, style, media)
+      -- A drawing's id is the document's to keep unique: a shape's above
+      -- every picture's.
+      body[#body + 1] = paragraph_xml(p, style, media, nil, 1000 + i)
     end
   end
 
