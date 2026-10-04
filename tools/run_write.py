@@ -246,6 +246,14 @@ end
 
 print("NOFACE", gfx.typeface("Nope.ttf"))
 
+-- A PDF's font size is its em: a face drawn by the PDF reader's rasteriser
+-- at 100 px must stand 102 px above its baseline (IBM Plex's ascent is 1025
+-- units of 1000), not 78 (sized so that ascent and descent make 100).
+do
+  local at, len = gfx.typeface("IBMPlexSerif-Regular.ttf"):program()
+  print("DOCFONT", gfx.docfont(at, len, len, 100):metrics().ascent)
+end
+
 local catalogue = faces.catalogue(gfx.typefaces())
 local measure = faces.measure(catalogue, gfx.typeface)
 
@@ -814,6 +822,14 @@ def main():
                 "nil no face called Nope.ttf"):
             raise Failure("a face the image does not carry was not refused "
                           "with why: %r" % said("NOFACE"))
+
+        checks += 1
+
+        # ---- the PDF reader's rasteriser sizes a face by its em ----
+        if said("DOCFONT") != ["102"]:
+            raise Failure("gfx.docfont draws IBM Plex Serif at 100 px with "
+                          "an ascent of %r; a PDF's size is the em, so 102"
+                          % said("DOCFONT"))
 
         checks += 1
 

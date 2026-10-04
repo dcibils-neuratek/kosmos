@@ -249,6 +249,10 @@ SUITES = [
     # modifiers, the window manager and the kit, to `ui.editor` selecting,
     # undoing and saving. The file has to be exactly what the keys meant.
     Suite("arm-editor", ["python3", "tools/run_editor.py", ARM]),
+
+    # Kosmos Write's window (`docs/write.md` W4): the page on the screen held
+    # line by line to the PDF it exports, as macOS draws it.
+    Suite("arm-writeapp", ["python3", "tools/run_writeapp.py", ARM]),
     Suite("x86-editor", ["python3", "tools/run_editor.py", X86], x86=True),
 
     # **Kosmos IDE's window** (`roadmap.md` 6n, step 2): a file opened in

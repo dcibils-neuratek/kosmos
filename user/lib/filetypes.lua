@@ -225,7 +225,7 @@ end
 --
 filetypes.names = {
   lua = "Lua source", txt = "Text", md = "Note", conf = "Settings", log = "Log",
-  pdf = "PDF document", html = "Web page",
+  pdf = "PDF document", html = "Web page", write = "Kosmos Write document",
   png = "Picture", jpg = "Photograph", jpeg = "Photograph",
   mp3 = "Song", wav = "Sound", mp4 = "Film",
   wad = "Doom level", sfc = "Super Nintendo cartridge",
@@ -269,7 +269,7 @@ end
 -- through `choose` rather than a key written by hand.
 --
 filetypes.GROUPS = {
-  { "Documents", { "txt", "md", "pdf", "html", "lua", "conf", "log" } },
+  { "Documents", { "txt", "md", "write", "pdf", "html", "lua", "conf", "log" } },
   { "Pictures", { "png", "jpg", "jpeg" } },
   { "Sound and film", { "mp3", "wav", "mp4" } },
   { "Games", { "wad", "sfc", "smc" } },

@@ -55,6 +55,33 @@ an audio editor or a planet simulation is a weekend rather than a port. The
 four above are how; this is what they are for. `roadmap.md` 4f, 4h and 4i
 are where it is being built.
 
+**Kits, servers and drivers supply; applications orchestrate - a premise.**
+Diego, 4 October 2026: "Kosmos os works as a micro services operating
+systems where kits, services, drivers and servers work to supply with
+functionality to apps", "Apps then orchestrate all this into useful
+productive apps", "So when we are designing apps that have things like music
+pdf video compression 3d etc we need to think whether these kits and things
+are reusable among other apps as much as possible to avoid duplicating code
+that does the same thing" - and "This is a premise", "For kosmos as we
+advance the os development".
+
+So **an application is the thinnest layer there is**: what a person does,
+put together from what the system supplies. Anything an application needs
+that is not about that one application - reading or writing a format,
+decoding, compressing, drawing a page, playing a sound, a 3D scene - is
+supplied by a kit, a server or a driver, and the application uses it. Before
+an application's design is agreed, the question is asked of every piece of
+it: **does another application want this?** If it does or could, it is a kit
+from the start, with one door to it, and the application is its first user.
+And before code is written, the question is asked the other way: **does
+something already supply this?** A second copy of anything - a format's
+reader, a region helper, a widget - is a defect to remove, not a convenience.
+
+This was written the day it was broken: Kosmos Write's PDF writer copied
+`zip.lua`'s region helpers rather than sharing them, and PDF reading and
+writing ended up in three libraries over three kits with no one door
+(`roadmap.md`, *One kit, one door*).
+
 **The target is a Raspberry Pi 5**, and it is chosen to be hard: a fast UI on
 it is a real result rather than a QEMU number.
 

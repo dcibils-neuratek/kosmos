@@ -25,6 +25,10 @@
  *     face:subset(glyphs, dst, cap)
  *                        the font with only those glyphs' outlines, into
  *                        a region: how many bytes (W3b)
+ *     face:place(text, x, baseline, scale, extra, runs)
+ *                        each glyph of a string and where it stands, in
+ *                        pixels, appended to `runs` as `gfx.docfont`'s
+ *                        `draw` takes them; the pen after it (W4)
  *
  * **In the font's own units, unhinted, and unscaled.** `gfx`'s outline
  * fonts measure at a pixel size, rounded per glyph, because they draw on a
@@ -821,6 +825,67 @@ static int l_subset(lua_State *L)
     return 1;
 }
 
+/*
+ * `face:place(text, x, baseline, scale, extra, runs)`: a piece of a set
+ * page made ready to draw (W4). Each character's glyph, the pen's x
+ * rounded to a pixel, and the baseline, appended three numbers at a time to
+ * `runs` - which is what `gfx.docfont`'s `draw` walks - the pen moving by
+ * each glyph's advance times `scale` (pixels a font unit) and by `extra`
+ * more after a space, which is a justified line's widened space. Returns
+ * the pen where it stopped.
+ *
+ * The positions are the setting's, not the screen font's: the pen moves by
+ * the font's own advances, unhinted, exactly as the PDF's does, so a line
+ * on the screen is the line in the PDF. In C because it is the loop over a
+ * page's glyphs, a few thousand of them.
+ */
+static int l_place(lua_State *L)
+{
+    struct face *f = luaL_checkudata(L, 1, FACE_MT);
+    size_t len, i = 0;
+    const unsigned char *s = (const unsigned char *)luaL_checklstring(L, 2, &len);
+    lua_Number x = luaL_checknumber(L, 3);
+    lua_Integer baseline = luaL_checkinteger(L, 4);
+    lua_Number scale = luaL_checknumber(L, 5);
+    lua_Number extra = luaL_checknumber(L, 6);
+    lua_Integer n;
+
+    luaL_checktype(L, 7, LUA_TTABLE);
+    n = (lua_Integer)lua_rawlen(L, 7);
+
+    while (i < len) {
+        unsigned cp = next_char(s, len, &i);
+        int glyph = stbtt_FindGlyphIndex(&f->info, (int)cp);
+        int advance, lsb;
+        lua_Number at = x + 0.5;
+        lua_Integer px = (lua_Integer)at;
+
+        /* Rounded to the nearest pixel: the floor of x + 0.5, a negative
+         * pen included, which a cast alone would round towards nought. */
+        if ((lua_Number)px > at) {
+            px--;
+        }
+
+        stbtt_GetGlyphHMetrics(&f->info, glyph, &advance, &lsb);
+
+        lua_pushinteger(L, glyph);
+        lua_rawseti(L, 7, ++n);
+        lua_pushinteger(L, px);
+        lua_rawseti(L, 7, ++n);
+        lua_pushinteger(L, baseline);
+        lua_rawseti(L, 7, ++n);
+
+        x += (lua_Number)advance * scale;
+
+        if (cp == 32) {
+            x += extra;
+        }
+    }
+
+    lua_pushnumber(L, x);
+    return 1;
+}
+
 /* `face:program()`: the address of the font's bytes, and their length. */
 static int l_program(lua_State *L)
 {
@@ -848,6 +913,7 @@ void kosmos_face_open(lua_State *L)
     lua_pushcfunction(L, l_glyph_advance);
     lua_setfield(L, -2, "glyph_advance");
     lua_pushcfunction(L, l_subset);  lua_setfield(L, -2, "subset");
+    lua_pushcfunction(L, l_place);   lua_setfield(L, -2, "place");
 
     lua_pop(L, 1);
 

@@ -18041,3 +18041,73 @@ and passed again alone:
   it was written.
 
 **Whole gate**, with both: 89 suites in 634 s (10:33), all passing.
+
+## 18.381 The PDF viewer drew every face too small
+
+Found starting Kosmos Write's window (W4), which will draw its pages with
+the PDF reader's rasteriser: `gfx.docfont(at, len, cap, px)` sized a face
+with `stbtt_ScaleForPixelHeight(px)`, which makes the ascent and descent
+*together* `px`. A PDF's font size is the em - `Tf`'s number is how many
+units of text space one em is - so every glyph was drawn smaller than the
+pen moved past it: **IBM Plex at 77%** (1025 above and 275 below an em of
+1000), **Times New Roman at about 90%**, the book the viewer was written
+against. The text sat in the right places, each glyph a little small, and
+nothing measured it.
+
+`docfont.c` scales by the em now (`stbtt_ScaleForMappingEmToPixels`).
+
+**`run_write.py`, 12 to 13, `arm-write`**: IBM Plex Serif opened in
+`gfx.docfont` at 100 px stands **102** px above its baseline - its ascent of
+1025 units on an em of 1000 - and not 78. **Control**: the check run before
+the fix, which said 78.
+
+**And the gate run for this failed `x86-notify`** on a Telnet connection
+that waited forty seconds for a banner: QEMU's forwarded port takes a
+connection before anything in the machine listens, and the suite connected
+once the Deskbar was up, not once the server said it was. `run_notify.py`,
+`run_dock.py` and `run_servers.py` wait for "telnetd: on port" first now.
+
+## 18.382 Kosmos Write's window: the page on the screen is the PDF's (W4a)
+
+**`user/bin/apps/writer.lua`** - `wm writer`, since `write` is `print`'s sibling and every program's - the window's first part (`docs/write.md` W4):
+a document's pages on the dark desk at 125%, zoom in steps from 50% to 300%
+(`-`, `+`, the bar's buttons), scrolling, and **Export PDF** (Control-E, the
+bar) beside the document, the bar saying what was exported and what the
+faces lacked. A direct window: a page is drawn once into a surface at the
+zoom it is shown at and blitted after that; a page far from the view gives
+its pixels back. **`pagedraw.lua`**, a kit: a set page drawn at any scale,
+each glyph at the pen the font's own advances put it - **`face:place`**, in C,
+the same sums the PDF's widths carry - rasterised by the PDF reader's own
+`gfx.docfont`, sized by the em since 18.381, from the image's copy of the
+font; underline and strike-out at the font's positions.
+
+**`tools/run_writeapp.py`, 8, a new suite `arm-writeapp`**, booted with a
+disk: a document made in the machine (a title, a justified paragraph, a
+heading, a line in two looks) opened by `wm writer:`; one A4 page at 125%,
+793 pixels wide; white paper at the corners the window shows; `=` zooms to
+150% and 893 pixels; Control-E exports, and the PDF taken off the disk is the
+size the window said. **Then the page on the screen against the same PDF as
+macOS draws it at the window's size, line by line**: the same seven lines,
+each one's top, bottom, first and last inked pixel within three pixels of
+the other's - two rasterisers that have nothing in common but the setting.
+
+**Found on the way**: without a disk, `/Home` is held in memory by the
+`/Temporary` store - 128 entries of 16 KB, compiled in - and the PDF did not
+fit: "/Home/t.pdf: /Temporary is full", which also names the wrong place. A
+fixed size is the kind of limit `CLAUDE.md` says to grow rather than keep
+(`roadmap.md`, *In memory, no size compiled in*). The suite boots with a
+disk, as Write is used.
+
+**And its name.** It was `write.lua` first, and the whole gate refused it in
+three suites: `write` is `print`'s sibling, a global every program holds, so
+a program by that name could not be started by typing it - the check that
+exists for exactly this, "cannot be run by typing their name". It is `wm
+writer`; the window is still Kosmos Write. And `-- kosmos: opens write` gave
+the File types page a group the drawing does not have, "Other", for a type
+nothing had named: `.write` is a "Kosmos Write document" now, in Documents
+(`filetypes.lua`).
+
+**Control**: justified lines drawn without their widened spaces - "a line on
+the screen is 23 pixels from the PDF's".
+
+**Whole gate**: 90 suites in 646 s (10:45), all passing.

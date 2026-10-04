@@ -256,6 +256,7 @@ def look(guest, telnet, vnc, seen, fails):
                      % (viewer.width, viewer.height, width, height))
 
     # Lent to a program that says it needs the desktop, and to no other.
+    guest.wait_for("telnetd: on port ", "telnetd listening")
     session = connect(telnet)
     session.run("open /Home/reach.lua")
     session.run("open /Home/reach2.lua")
@@ -534,6 +535,7 @@ def main():
     try:
         guest.wait_for("net: an address from DHCP", "a lease")
         guest.wait_for("wm: window", "the desktop")
+        guest.wait_for("telnetd: on port ", "telnetd listening")
 
         session = connect(telnet)
         said["help"] = session.run("help").decode(errors="replace")

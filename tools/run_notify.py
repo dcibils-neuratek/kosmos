@@ -132,6 +132,11 @@ def main():
         guest.wait_for("net: an address from DHCP", "a lease")
         guest.wait_for("notifications: banners from ", "the notifications program")
         guest.wait_for("wm: window Deskbar at ", "the bar")
+        # The server said it listens, before it is asked: QEMU's forwarded
+        # port takes a connection before anything in the machine does, and
+        # under the whole gate's load on 4 October that was forty seconds
+        # of nobody answering (`testing.md` 18.381).
+        guest.wait_for("telnetd: on port ", "telnetd listening")
         session = S.connect(telnet)
 
         for name, text in (("focus", FOCUS), ("room", ROOM), ("terminal", TERMINAL),

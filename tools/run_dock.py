@@ -192,6 +192,7 @@ def main():
     try:
         guest.wait_for("net: an address from DHCP", "a lease")
         guest.wait_for("wm: window Deskbar at ", "the bar")
+        guest.wait_for("telnetd: on port ", "telnetd listening")
         session = S.connect(telnet)
         session.put(LOOK.encode(), "/Temporary/look.lua")
         session.put(ROOM.encode(), "/Temporary/room.lua")

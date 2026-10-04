@@ -537,7 +537,17 @@ static int l_docfont(lua_State *L)
     }
 
     f->px = px;
-    f->scale = stbtt_ScaleForPixelHeight(&f->info, (float)px);
+
+    /*
+     * **`px` is the em**, as a PDF's font size is: a glyph one em across
+     * the design is `px` pixels across. This was `ScaleForPixelHeight`,
+     * which makes the ascent and descent together `px` - the size a screen
+     * font is often given by, and not what `Tf` says - so every face was
+     * drawn smaller than its pen advanced: Times New Roman at 90%, IBM Plex
+     * at 77%, where 1025 and 275 units stand on an em of 1000. Found on 4
+     * October drawing Kosmos Write's PDFs (`testing.md` 18.381).
+     */
+    f->scale = stbtt_ScaleForMappingEmToPixels(&f->info, (float)px);
 
     {
         int a, d, g;

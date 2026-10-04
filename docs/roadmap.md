@@ -447,12 +447,43 @@ kits under `user/lib/` for Present and Sheets to stand on:
   font's (Identity-H already says them), so a subset keeps `glyf` and `loca`
   for the glyphs used and empties the rest - a loop over a font's bytes, in
   C.
+- **W4a - the pages shown**: *Done, 4 October* (`testing.md` 18.382): the
+  window with the document's pages as they print, zoom, scrolling and
+  Export PDF; the page on the screen held line by line to the PDF as macOS
+  draws it. Then W4b typing, W4c the Format panel, W4d the Document panel
+  and the page thumbnails.
 - **W4 - the window**, from `docs/write.html`: the pages on a dark desk,
   the toolbar, Format and Document switching the panel, View for the
   thumbnails, zoom; typing and choosing styles, on the document page the
   kit already has (`ui.md` 16.26).
 - **W5 - a picture with its caption, and a table.**
 - **W6 - DOCX out**: Word's XML parts in a zip.
+
+**In memory, no size compiled in.** `/Temporary` - and `/Home` on a machine
+with no disk, which it holds - is 128 entries of 16 KB each, compiled into
+`ramfs.c`: a PDF of five faces did not fit (`testing.md` 18.382), and the
+refusal said "/Temporary is full" for a file in `/Home`. `CLAUDE.md`'s rule
+is that a pool grows rather than caps; so entries and values grow, out of
+pages the server maps, to a ceiling from the machine's memory, and the
+refusal names the path it was given.
+
+**One kit, one door - the premise applied to what exists.** Diego, 4
+October 2026: kits, servers and drivers supply and applications orchestrate,
+and what more than one application wants is a reusable kit - "This is a
+premise" (`CLAUDE.md`). Two things built today break it and are the first to
+fix, then a review of the rest:
+
+- **PDF behind one door**: `use("/Kosmos/Kits/pdf")` gives `open` (read a
+  file's structure, `pdf.lua`), `render` and `text` (a page drawn or read,
+  `pdfpage.lua`) and `write` (`pdfwrite.lua`), rather than three libraries
+  and a kit that holds only the scanner. Present, Sheets, Text Editor's
+  Print to PDF and the browser's Save as PDF are its next users.
+- **Regions shared**: the region helpers `pdfwrite.lua` copied from
+  `zip.lua` (`region`, `free`, `write_out`) become one library both use.
+- **Then a review of every application** for code that another one has too
+  or could want - formats read and written, media decoded, pictures loaded,
+  lists and panels drawn - each found either moved into a kit or recorded
+  here as the next to move. Done before Kosmos Write's W4 goes further.
 
 **Kosmos Present - slides after Apple's Keynote.** Diego, 4 October 2026:
 "our Kosmos Present presentation software like apple keynote". Slides on

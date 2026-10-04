@@ -813,3 +813,37 @@ identical. The test checks that every letter shown kept its exact shape,
 that nothing else was kept, and that the font's internal checksums are
 right. Kosmos's own reader was the first to notice when, as a deliberate
 experiment, one letter was left out.
+
+## 4 October, late - Kosmos Write gets a window, and a premise
+
+**In short:** Kosmos Write opens a window now. It shows a document's pages
+exactly as they will print, lets you zoom, and exports the PDF with one key.
+Diego also set down a rule for the whole system: apps are built out of
+shared parts, never out of private copies.
+
+**What.** Pages sit on a dark desk. Zoom goes from 50% to 300%, and Export
+PDF writes the file next to the document. You can't type yet; that's the
+next step, followed by the panels for formatting and page setup.
+
+**The claim it is tested against.** What you see on the screen is what
+prints. The test opens a document in the window and takes a picture of the
+screen. It then exports the PDF, has macOS draw that PDF at the same size,
+and compares the two line by line. Every line of text starts, ends and sits
+within three pixels of where the other puts it, and they are two different
+drawing engines.
+
+**A bug found on the way, years old in spirit.** Kosmos's PDF viewer had
+always drawn letters too small: about 90% of their size in the book it was
+first written for, and 77% in IBM Plex. It measured fonts by their total
+height instead of by the "em" that PDF sizes refer to. Nothing had ever
+checked the size of a drawn letter. Now a test does.
+
+**The premise.** Diego: "Kosmos os works as a micro services operating
+systems where kits, services, drivers and servers work to supply with
+functionality to apps. Apps then orchestrate all this into useful
+productive apps." Anything an app needs that another app could want (PDF,
+compression, video, audio, 3D, page drawing) belongs in a shared kit, used
+through one door, and never copied. The same day had already broken it
+twice: the PDF writer copied a helper from the zip library, and reading and
+writing PDF ended up in three places. Both are now first on the roadmap to
+put right, followed by a review of every app for the same thing.
