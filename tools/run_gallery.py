@@ -96,16 +96,35 @@ ABS = 32767
 # server, the command line and the screen, each with its switch - all
 # stopped here, since the picture's machine has no network to serve.
 #
+#
+# **And Kosmos Write** (`docs/write.md`), on a page made in `/Temporary`
+# first by a program the prompt writes and runs - `use` is a program's, not
+# the prompt's: a title, a table and a chart.
+#
 OPEN = ["tracker", "gallery", "music", "preferences", "terminal", "calc",
         "glgears", "machine", "procs", "sysmon", "cube3d",
         "cafesa3d:--rendered", "ide:/Kosmos/Libraries/files.lua",
-        "texteditor:/Temporary/Grooves.md", "groove:--play", "servers"]
+        "texteditor:/Temporary/Grooves.md", "groove:--play", "servers",
+        "writer:/Temporary/Gallery.write"]
 
 # `tile` last, told how many windows to wait for: sixteen applications
 # starting at once under QEMU - seventeen now - do not all open inside the three still
 # seconds it otherwise takes for "done", and on 28 September Groove,
 # maximised, opened after the rest were arranged and lay over all of them.
 OPEN.append("tile:%d" % len(OPEN))
+
+# The program that makes Write's page, on one line: what is typed is
+# entered at its end.
+WRITE = ('local wd = use("/Kosmos/Libraries/writedoc.lua") '
+         'local rt = use("/Kosmos/Libraries/richtext.lua") '
+         'local d = wd.new() '
+         'local function c(t) return { style = "Body", runs = { { text = t } } } end '
+         'd.body = { { style = "Title", runs = { { text = "Kosmos Write" } } }, '
+         'c("Pages as they print: text set by styles, tables, shapes and charts."), '
+         '{ style = "Body", table = { columns = 3, header = true, rows = { '
+         '{ c("Planet"), c("Moons"), c("Day") }, { c("Mars"), c("2"), c("24.6 h") }, '
+         '{ c("Venus"), c("0"), c("2802 h") } } } }, rt.new_chart("column", "Body") } '
+         'print("write" .. "-made", wd.save("/Temporary/Gallery.write", d))')
 
 NOTE = ("# Grooves\\nA drum machine for Kosmos, with **swing** per track "
         "and a pattern saved as `pattern-01.grv`.\\n\\n## Next\\n"
@@ -165,6 +184,11 @@ def main():
                    'fs.write("/Temporary/Grooves.md", "' + NOTE + '") '
                    'print("gallery" .. "-ready")')
         guest.wait_for("gallery-ready", "emptied the login set")
+        guest.type('fs.write("/Temporary/mkwrite.lua", [[' + WRITE + ']]) '
+                   'print("write" .. "-ready")')
+        guest.wait_for("write-ready", "written Write's program")
+        guest.type("run /Temporary/mkwrite.lua")
+        guest.wait_for("write-made", "made Write's page")
         guest.type("wm deskbar," + names)
 
         #

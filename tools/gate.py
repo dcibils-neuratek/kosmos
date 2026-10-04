@@ -651,7 +651,13 @@ def main():
     # sitting idle, not one more guest fighting for the others. This Mac has
     # ten: four fast, six efficient. `roadmap.md` 6zp had asked since 28
     # September; the answer came when the gate stood at 10:01.
-    parser.add_argument("--at-once", type=int, default=7,
+    #
+    # **Eight, measured again** (`testing.md` 18.396): on 4 October the gate
+    # stood at 10:51 at seven, and ran in 9:44 at eight with the suites' own
+    # seconds the same but for one that had grown - 4,229 and 4,290, the
+    # difference Kosmos Write's suite gaining five phases that day. The
+    # eighth slot was capacity, not contention.
+    parser.add_argument("--at-once", type=int, default=8,
                         help="suites at once, before the quiet ones")
     parser.add_argument("--only", default="",
                         help="suites to run, by name, separated by commas")

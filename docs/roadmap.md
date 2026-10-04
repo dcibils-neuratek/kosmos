@@ -516,6 +516,14 @@ kits under `user/lib/` for Present and Sheets to stand on:
 - **W5 - a picture with its caption, and a table.**
 - **W6 - DOCX out**: Word's XML parts in a zip.
 
+**The gate's margin, from the display harness's sleeps.** The gate runs in
+9:44 at eight suites at once (`testing.md` 18.396), sixteen seconds inside
+Diego's ten. The display harness's 426 fixed sleeps are about 680 seconds of
+the gate's 4,290; each that stands in for something the harness can wait
+for - a log line, a window drawn, a prompt - becomes that wait, phase by
+phase, the heaviest first: places, no title bar, clipboard, icon sizes,
+cores, Deskbar focus, camera. Never fewer checks.
+
 **In memory, no size compiled in.** `/Temporary` - and `/Home` on a machine
 with no disk, which it holds - is 128 entries of 16 KB each, compiled into
 `ramfs.c`: a PDF of five faces did not fit (`testing.md` 18.382), and the

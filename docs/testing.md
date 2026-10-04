@@ -18775,3 +18775,27 @@ window suite's list of the file's words now holds the comment's, after the
 body's and before the header's, as the file's sorted keys put them; and
 the commented word in the export suite's document had moved to a later
 page, so its note is looked for on whichever page lists it.
+
+## 18.396 The gate eight at once, back under ten minutes
+
+**The gate had stood at 10:33 to 10:53 for several days**, over Diego's ten
+minutes, while Kosmos Write landed on top of it - which `CLAUDE.md` says is
+the thing to fix before anything else lands. On 4 October it took 10:51:
+90 suites whose own seconds summed to 4,229, seven at a time, so about 604
+seconds, plus 23 for the images and 26 for the two that run alone.
+
+**Measured, not guessed: eight at once.** `--at-once 8` took 9:44 (585 s),
+and the suites' own seconds summed to 4,290. That is the same work: the one
+suite that grew is `arm-writeapp`, 49 to 90 seconds from the five phases
+added that day, and every other suite moved by one to four seconds. So the
+eighth slot was capacity, as the seventh was on 30 September (18.292), and
+it is the default.
+
+**The margin is 16 seconds, which is thin**, and the next lever is
+measured too. The display harness holds 426 fixed sleeps, 338 seconds of
+them as written, each run on both boards - about 680 seconds of the gate's
+4,290. Where a sleep stands in for something the harness could wait for -
+a log line, a window drawn, a prompt - the wait is both faster and steadier
+(`started`'s own comment). The cheap ones were counted first: eight fixed
+sleeps before a wait for the prompt that already waits, 16 seconds a
+board. The rest are phase by phase, and on the roadmap.
