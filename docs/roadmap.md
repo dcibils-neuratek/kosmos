@@ -381,6 +381,34 @@ sheet and the tutorials in the browser. A section path two folders deep
 (`development/Demos/GL Demos`), which the menu's `section` does not take
 yet: one folder under a section is all it reads.
 
+**The menu in five folders**: Applications, System, Development, Demos,
+Preferences (Diego, 3 October: "i see there is some redundancy or
+missplacement of items", "now lets sort all our apps into these 5 folders
+accordingly"). Each application's `section` says which; a sort proposed to
+him the same evening, with the names above, for him to correct.
+
+**About This Machine as a panel of Preferences**, as macOS keeps About in
+System Settings (Diego, 3 October, with a screenshot of it: "we can turn
+the about this machine into a panel into the preferences app to simplify
+apps like macos does"): the machine's picture and name, its processor,
+memory and screens, the system's version, the disks - and This Machine's
+full report behind a button, rather than an application of its own.
+
+**The mouse's speed and the double click's** in Preferences' Mouse panel
+(Diego, 3 October: "i need a mouse pointer speed setting in the mouse
+preferences pane as well as a double click speed setting"). The speed is
+the window manager's - it moves the pointer by what a relative device
+reports, so a multiplier there, with acceleration a question for later;
+the double click's span is the kit's, read by every window from
+`/Home/Preferences`, so a list and a desktop icon agree on what two
+clicks are.
+
+**A window of the system's shortcuts on a key** (Diego, 3 October:
+"pressing º should show a modal window of the shortcuts of the kosmos os").
+`shortcuts` exists and asks the window manager for the list; this binds it
+to a key and shows it modal. º alone is also a character Spanish types
+(1º, nº), so which key - º alone, or Super and º - is his to say.
+
 **Restart and Shut Down wear a picture** in the Kosmos menu, Haiku's
 generic application - the three cubes Doom, Quake and the Super Nintendo
 wear (Diego, 3 October: "shutdown and restart need icons in the launch
