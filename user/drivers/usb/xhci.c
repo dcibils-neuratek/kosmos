@@ -135,7 +135,17 @@
 
 #define IMAN_IP             (1u << 0)                   /* 5.5.2.1 */
 #define IMAN_IE             (1u << 1)
-#define IMOD_ONE_MS         4000u                       /* 5.5.2.2, 250 ns each */
+/*
+ * **Interrupts at least 40 microseconds apart** (5.5.2.2, in 250 ns steps),
+ * as Linux's xHCI driver sets them (`imod_interval`, 40000 ns). This was a
+ * millisecond, and on the M700 that was the stick's speed: a SCSI command
+ * over Bulk-Only is three transfers - the command, the data, the status -
+ * each waited for by its interrupt, so each waited out the millisecond the
+ * one before had started: 3 ms a command, 332 random 4 KB reads a second
+ * and 31.9 MB/s in 124 KB reads on a SuperSpeed link (`testing.md` 18.371).
+ * QEMU does not hold an interrupt back, which is why it never showed.
+ */
+#define IMOD_INTERVAL       160u
 #define ERDP_EHB            (1u << 3)                   /* 5.5.2.3.3 */
 
 /* Extended capabilities: Tables 7-1 and 7-2. */
@@ -168,7 +178,9 @@
 #define TRB_C               (1u << 0)
 #define TRB_TC              (1u << 1)                   /* Link: toggle cycle */
 #define TRB_ISP             (1u << 2)                   /* Normal: short packet */
+#define TRB_CH              (1u << 4)                   /* Normal: chained on */
 #define TRB_IOC             (1u << 5)
+#define TRB_TD_SIZE(n)      ((uint32_t)((n) > 31u ? 31u : (n)) << 17)
 #define TRB_IDT             (1u << 6)                   /* Setup: data inline */
 #define TRB_TYPE(t)         ((uint32_t)(t) << 10)
 #define TRB_TYPE_OF(w)      (((w) >> 10) & 0x3Fu)
@@ -461,6 +473,10 @@ struct stick {
 
     /* Whether a flush it kept has been said yet (USB step 5e). */
     bool          flushed;
+
+    /* Its bulk endpoints' packets, for a chained transfer's TD Size. */
+    unsigned      in_packet;
+    unsigned      out_packet;
 
     /*
      * Whether it has said it does not do SYNCHRONIZE CACHE (10) at all
@@ -1352,7 +1368,7 @@ static bool start(struct controller *c, const struct dev_info *dev,
     c->intid = dev->intid;
     c->irq = kosmos_irq_claim(dev->intid);
 
-    mmio_write32(c->rt + RT_IMOD, IMOD_ONE_MS);
+    mmio_write32(c->rt + RT_IMOD, IMOD_INTERVAL);
     mmio_write32(c->rt + RT_IMAN, IMAN_IE | IMAN_IP);
     mmio_write32(c->op + OP_USBCMD,
                  mmio_read32(c->op + OP_USBCMD) | USBCMD_INTE | USBCMD_RS);
@@ -2585,12 +2601,104 @@ static bool bulk(struct controller *c, unsigned slot, unsigned dci,
 }
 
 /*
+ * **One bulk transfer of any length a stick's buffer holds**, as a chain of
+ * Normal TRBs (4.11.2.1, 6.4.1.1): each over at most 64 KB and never across
+ * a 64 KB boundary (4.11.7.1), all but the last chained on (CH), and only
+ * the last interrupting when it completes. Every one may end it early with a
+ * short IN (ISP), and the event then names the TRB it ended at, so what moved
+ * is what the TRBs before it held and what that one took. TD Size, the
+ * packets left after each TRB (4.11.2.4), as Linux's `xhci_td_remainder`
+ * reckons it, from the endpoint's packet.
+ *
+ * `bulk` above was one TRB, so a read was at most 124 KB - and that one TRB
+ * already crossed a 64 KB boundary, which Intel's controller let pass. On
+ * the M700, with the interrupts 40 microseconds apart, a 124 KB read was
+ * 2 ms of which most was the command around it (`testing.md` 18.371): larger
+ * reads are what is left to take.
+ */
+#define PIECE_MOST          65536u
+#define TD_TRBS_MOST        (BLOCK_TRANSFER_MOST / PIECE_MOST + 2u)
+
+static bool bulk_chain(struct controller *c, unsigned slot, unsigned dci,
+                       struct ring *r, uint64_t bus, unsigned length,
+                       unsigned packet, unsigned *moved, unsigned ms)
+{
+    uint64_t at[TD_TRBS_MOST];
+    unsigned len[TD_TRBS_MOST];
+    unsigned n = 0, off = 0, packets, seen;
+    uint32_t done[4];
+
+    if (length > BLOCK_TRANSFER_MOST || packet == 0u) {
+        return false;
+    }
+
+    packets = (length + packet - 1u) / packet;
+
+    do {
+        uint64_t here = bus + off;
+        unsigned room = PIECE_MOST - (unsigned)(here & (PIECE_MOST - 1u));
+        unsigned piece = length - off < room ? length - off : room;
+        bool last = off + piece >= length;
+        unsigned after = last ? 0u : packets - (off + piece) / packet;
+
+        len[n] = piece;
+        at[n] = ring_push(r, (uint32_t)here, (uint32_t)(here >> 32),
+                          piece | TRB_TD_SIZE(after),
+                          TRB_TYPE(TRB_NORMAL) | TRB_ISP
+                          | (last ? TRB_IOC : TRB_CH));
+        n++;
+        off += piece;
+    } while (off < length);
+
+    mmio_write32(c->doorbells + 4u * slot, dci);
+    c->last_code = 0;
+    *moved = 0;
+
+    for (seen = 0; seen < EVENTS_MAX; seen++) {
+        uint64_t trb;
+        unsigned k, before = 0, left;
+
+        if (!wait_serving(c, ms, done)) {
+            return false;
+        }
+
+        if (TRB_TYPE_OF(done[3]) != TRB_TRANSFER
+            || TRB_SLOT_OF(done[3]) != slot
+            || TRB_ENDPOINT_OF(done[3]) != dci) {
+            continue;
+        }
+
+        trb = ((uint64_t)done[1] << 32) | done[0];
+
+        for (k = 0; k < n && at[k] != trb; k++) {
+            before += len[k];
+        }
+
+        if (k == n) {
+            continue;                   /* an older transfer's, already done */
+        }
+
+        c->last_code = TRB_CODE_OF(done[2]);
+
+        if (c->last_code != CC_SUCCESS && c->last_code != CC_SHORT_PACKET) {
+            return false;
+        }
+
+        left = TRB_LEFT_OF(done[2]);
+        *moved = before + (left < len[k] ? len[k] - left : 0u);
+        return true;
+    }
+
+    return false;
+}
+
+/*
  * **A stick's transfer buffer**: `TRANSFER_PAGES` in one physical run, mapped
  * here and told to the controller by its bus address - the same three calls
  * that give a controller its memory, and the same refusal for a controller
  * that cannot reach above 4 GB when the run is there (xHCI 1.2 5.3.6).
  */
-#define TRANSFER_PAGES      32u         /* 128 KB: BLOCK_TRANSFER_MOST fits */
+#define TRANSFER_PAGES      (BLOCK_TRANSFER_MOST / 4096u)   /* 1 MB */
 
 static bool stick_buffer(const struct controller *c, struct stick *s)
 {
@@ -2705,15 +2813,16 @@ static const char *transact_once(struct controller *c, struct device *d,
     }
 
     if (length > 0u && out) {
-        if (!bulk(c, d->slot, s->out_dci, &s->out, s->transfer_bus, length,
-                  got, STICK_MS) || *got != length) {
+        if (!bulk_chain(c, d->slot, s->out_dci, &s->out, s->transfer_bus,
+                        length, s->out_packet, got, STICK_MS)
+            || *got != length) {
             return named(command, "'s data");
         }
     } else if (length > 0u) {
         memset((void *)s->transfer, 0, length);
 
-        if (!bulk(c, d->slot, s->in_dci, &s->in, s->transfer_bus, length,
-                  got, STICK_MS)) {
+        if (!bulk_chain(c, d->slot, s->in_dci, &s->in, s->transfer_bus,
+                        length, s->in_packet, got, STICK_MS)) {
             return named(command, "'s data");
         }
 
@@ -3260,6 +3369,8 @@ static void use_stick(struct controller *c, struct device *d,
     s->interface = found->storage_interface;
     s->out_dci = 2u * found->bulk_out;
     s->in_dci = 2u * found->bulk_in + 1u;
+    s->out_packet = found->bulk_out_packet;
+    s->in_packet = found->bulk_in_packet;
     last = s->in_dci > s->out_dci ? s->in_dci : s->out_dci;
 
     ring_start(&s->out,

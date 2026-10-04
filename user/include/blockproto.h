@@ -53,13 +53,16 @@
 #define BLOCK_ERR_NO_FLUSH  9u  /* a flush, to a stick that has said it does not do one */
 
 /*
- * **The most one read moves: 124 KB.** A read is one Normal TRB, and a Normal
- * TRB's length is seventeen bits - at most 131,071 bytes (xHCI 1.2 6.4.1.1) -
- * so this is the largest whole number of pages under it, which is also a whole
- * number of 512- and 4096-byte blocks. Chaining TRBs would lift it; that waits
- * for a measurement that says it matters.
+ * **The most one read or write moves: 1 MB.** It was 124 KB, the largest
+ * number of pages one Normal TRB's seventeen-bit length holds (xHCI 1.2
+ * 6.4.1.1), with chaining "waiting for a measurement that says it matters".
+ * The M700 said it on 4 October: a 124 KB read was 2 ms, most of it the
+ * command around the data (`testing.md` 18.371). So a transfer is a chain of
+ * TRBs now (`bulk_chain`, `xhci.c`), and this is what a stick's buffer and a
+ * client's region hold. A whole number of 512- and 4096-byte blocks, and
+ * under READ (10)'s 65,535 of either.
  */
-#define BLOCK_TRANSFER_MOST (31u * 4096u)
+#define BLOCK_TRANSFER_MOST (256u * 4096u)
 
 struct block_request {
     uint32_t op;

@@ -30,7 +30,7 @@ assert(#string.pack(REPLY, 0, 0, 0, 0, 0, "", "") == REPLY_SIZE,
        "blocks: the reply layout does not match blockproto.h")
 
 -- `BLOCK_TRANSFER_MOST`: the most one read moves, and the region's size.
-blocks.TRANSFER_MOST = 31 * 4096
+blocks.TRANSFER_MOST = 256 * 4096
 
 --
 -- An error is a number on the wire and a sentence here, as in `audio.lua`.

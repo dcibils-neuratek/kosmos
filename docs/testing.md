@@ -17576,3 +17576,59 @@ fail, the render not said; the runner's and the window manager's - 2 of 20,
 the two alerts; the USB driver's - 1 of 28, "0 out, 0 in, for 8 rounds".
 
 **Its gate: 88 of 88 in 10:40.**
+
+## 18.371 The stick on the M700: interrupts a millisecond apart, and a read of 1 MB
+
+Diego's "1. Yes" on 4 October - the stick's speed before Kosmos Write. The
+M700's stick, a Kingston DataTraveler 3.0 on a **SuperSpeed** link
+(`log xhci`: "USB 3: a SuperSpeed device", "up to 1024 bytes a packet in
+bursts of 4"), read 31.9 MB/s in 124 KB reads and **332 random 4 KB reads a
+second** - 3 ms a command, where a SuperSpeed stick answers in well under
+one. So the time was not the data.
+
+**The interrupts were held a millisecond apart.** The driver set the
+controller's moderation (`IMOD`, 5.5.2.2) to 4000 steps of 250 ns, and a
+Bulk-Only command is three transfers - its wrapper out, its data, its
+status in - each waited for by its interrupt, so each waited out the
+millisecond the one before had begun. Linux sets 40 microseconds
+(`imod_interval`); so does this now. QEMU does not hold an interrupt back,
+which is why no run under it ever showed this: the same stick under QEMU
+reads 7,600 a second either way.
+
+**And a read is up to 1 MB**, a chain of TRBs (`bulk_chain`): each inside a
+64 KB boundary (4.11.7.1 - the one 124 KB TRB before crossed one, which
+Intel's controller let pass), chained on, only the last interrupting, any
+one able to end it short, and TD Size as Linux reckons it.
+`BLOCK_TRANSFER_MOST` is 1 MB, and so are a stick's buffer, the disk
+server's region and Disk Benchmark's.
+
+**On the M700**, Disk Benchmark, best of one, 3 s a row:
+
+| | before | 40 us apart | and 1 MB reads |
+|---|---|---|---|
+| the stick's blocks, sequential | 31.9 MB/s | 60.6 | 64.5 |
+| the stick's blocks, random 4 KB | 332 IOPS | 1,346 | 1,324 |
+| `/Home`, sequential read | - | 81.3 | 87.9 to 88.7 |
+| `/Home`, sequential write | - | 10.2 | 4.0 to 16.8 |
+
+**What the numbers say, and do not.** The interrupts were the fault: twice
+the reads and four times the small ones, from one number. The 1 MB reads
+moved the blocks' row from 60.6 to 64.5 only, so the size of a read is no
+longer what limits it. `/Home` reads faster than the raw blocks because it
+reads one file over and over, which the stick may serve from its own
+cache; the raw row reads new data each time and is the honest one. The
+writes are the stick's flash: three runs of one build gave 4.0, 16.8 and
+6.5. What is left of a command is about 0.75 ms - its three transfers,
+each an interrupt and a wake - and is next: one wait a command.
+
+**Held**: `run_x86.py`'s `usb_blocks`, 5 (one new) - a megabyte no two
+places share written into the test stick, read in one command of 2048
+blocks through a chain of TRBs, and sampled either side of every 64 KB
+boundary and at the old 124 KB end; `usb_diskbench` says its reads are 1 MB.
+**Control**: every piece after the first pointed 512 bytes on - the check
+fails, naming bytes from the wrong places. What cannot be held under QEMU
+is the moderation itself, since QEMU does not delay an interrupt: that is
+the M700's to say, and it said it above.
+
+**Its gate: 87 of 88**, `x86-usb-1` failing on its own words - it expected
+"in 124 KB reads" - and passing, 63 of 63, once they said 1 MB.

@@ -396,6 +396,43 @@ agreed before any code. Its own pieces in C where they loop over glyphs
 and lines - line breaking, hyphenation, a page's layout - and Lua for
 what a person does.
 
+**Agreed on 4 October**, the drawing's four answers as recommended - Diego:
+"Yes, yes, yes, yes and pdf export is key": **A4** for a new document, Letter
+one choice away in the Document panel; **the core first** - text and its
+styles, pictures with captions, tables, the Document panel, the three files
+- and shapes, charts and comments after; **a `.write` file is a zip** of the
+document and its pictures, as Pages' own is; **DOCX exported first**,
+opened later. **PDF export is the part that matters most**: the PDF Kit
+writing, which it has never done, held to the pages as they are drawn.
+Built after the stick's speed on the M700 (Diego's "1. Yes", the same day).
+
+**And built to be shared.** Diego, the same message: "We will reuse most of
+this technology for our Kosmos Present presentation software like apple
+keynote and Kosmos Sheets which is a apple numbers and excel inspirated
+app". So what Write needs that is not about words on a page is a kit from
+the start rather than inside the application: the document's model and its
+zip file, the PDF writer, pages laid out and drawn, styles, pictures and
+tables placed on a page, the inspector's panels. Write is its first user,
+and the two below its next.
+
+**Kosmos Present - slides after Apple's Keynote.** Diego, 4 October 2026:
+"our Kosmos Present presentation software like apple keynote". Slides on
+Write's pages and its kits - the text and its styles, pictures, tables,
+shapes, the inspector, PDF out - with what a presentation adds: a slide's
+layouts and master, the navigator of slides down the side, presenting full
+screen with the next slide and notes for the person speaking, and
+transitions. Drawn first as an HTML mockup and agreed, as every
+application is; after Write.
+
+**Kosmos Sheets - a spreadsheet after Apple's Numbers and Excel.** Diego, 4
+October 2026: "Kosmos Sheets which is a apple numbers and excel inspirated
+app". Numbers' tables on a free canvas and Excel's grid and formulas:
+cells, formulas and their functions, references across tables and sheets,
+formats for numbers and dates, sorting and filters, charts from a table's
+cells, and PDF and XLSX out. Reusing Write's tables, charts, inspector and
+file kits. Its formula engine in C - a loop over cells - and Lua for what a
+person does. Drawn first and agreed; after Write.
+
 **Notifications.** Diego, 3 October 2026, with a picture of a macOS banner:
 "one of the things we might need is a notifications system in kosmos",
 "apps want to say stuff like a new email arrived, cafesa render finalized,
@@ -985,6 +1022,19 @@ next measurement, `/home`'s path through the disk server and kfs, for later -
    the USB driver's bulk transfers one at a time and waited on, which is
    also *Nothing waits on hardware*'s step 2 - and the NVMe driver, the
    kernel's, polled and 4 KB a call.
+   **Taken on 4 October** (Diego: "1. Yes"; `testing.md` 18.371): the
+   controller held its interrupts a millisecond apart, three to a command -
+   now 40 microseconds, as Linux: 31.9 to 60.6 MB/s and 332 to 1,346 random
+   reads a second, on the M700. And a read of up to 1 MB, a chain of TRBs:
+   64.5. **Next**: one wait a command rather than three (0.75 ms a command
+   is left), then the NVMe driver.
+
+   **And a fault the same log showed**: the M700's mouse, after 2,998
+   seconds, "the mouse's report failed: USB Transaction Error (4); not read
+   again until it is plugged in again" - one error, and the driver gives a
+   mouse up. A transaction error on an interrupt endpoint is to be
+   recovered - the endpoint reset and the report asked for again, as Linux's
+   `usbhid` does - and only a device that keeps failing given up.
 4. **OPEN - for Diego, when a measurement asks**: a device writing straight
    into a client's pages with no IOMMU to fence it.
 

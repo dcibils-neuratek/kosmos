@@ -741,6 +741,9 @@ def usb(image, check):
           % (len(wrote), why))
 
 
+MEGA = 1024 * 1024
+
+
 def usb_blocks(image, check):
     """**USB step 5d: the block protocol, from a program at the prompt.**
 
@@ -762,6 +765,20 @@ def usb_blocks(image, check):
     stick = scratch.path("x86-usb-blocks.img")
     blocks = stick_with_gpt(stick)
 
+    # **A whole megabyte in one read, and the right one** (`testing.md`
+    # 18.371): bytes no two places share, from the second megabyte on, and
+    # a read of 2048 blocks from there - one SCSI command, a chain of TRBs
+    # each inside a 64 KB boundary - sampled either side of every boundary.
+    def pattern(at):
+        return (at * 7 + at // 4096 + at // 65536 * 13) % 251
+
+    with open(stick, "r+b") as f:
+        f.seek(MEGA)
+        f.write(bytes(pattern(MEGA + i) for i in range(MEGA)))
+
+    samples = sorted({0, 1, MEGA - 1} | {k * 65536 + d for k in range(1, 16)
+                                         for d in (-1, 0)} | {126975, 126976})
+
     extra = ("-device", "qemu-xhci,id=usb0",
              "-device", "qemu-xhci,id=usb1",
              "-drive", "file=%s,format=raw,if=none,id=stick" % stick,
@@ -780,7 +797,15 @@ def usb_blocks(image, check):
                       'return (string.unpack("<I4", (fs.raw("/Devices/blocks", '
                       'string.pack("<I4I4I8I4I4", op, 0, 0, 1, r.handle))))) '
                       'end print("refused:", ask(4), ask(6)) r:close()]])',
-                      "/Temporary/refused.lua"),
+                      "/Temporary/refused.lua",
+                      'fs.write("/Temporary/mega.lua", [[local r = '
+                      'use("/Kosmos/Libraries/blocks.lua").open() '
+                      'local b = r:read(0, %d, 2048) local s = {} '
+                      'for _, at in ipairs({%s}) do s[#s + 1] = '
+                      'tostring(b and b:byte(at + 1)) end '
+                      'print("mega:", b and #b, table.concat(s, ",")) r:close()]])'
+                      % (MEGA // 512, ",".join(str(a) for a in samples)),
+                      "/Temporary/mega.lua"),
                extra=extra, after="its backup")
 
     if out is None:
@@ -813,6 +838,13 @@ def usb_blocks(image, check):
     check("past:\tnil\tthat block is past the last" in out,
           "a read of block %d, one past the last, was not refused by the "
           "driver as past the last:\n    %s" % (blocks, shown))
+
+    mega = re.search(r"mega:\t(\d+)\t([0-9,nil]+)", out)
+    wanted = ",".join(str(pattern(MEGA + a)) for a in samples)
+    check(mega is not None and mega.group(1) == str(MEGA) and mega.group(2) == wanted,
+          "a 1 MB read in one command - TRBs chained across sixteen 64 KB "
+          "boundaries - did not bring back the megabyte that is there: %r"
+          % (mega.group(0) if mega else "nothing said"))
 
     # BLOCK_OP_WRITE and BLOCK_OP_FLUSH, each answered BLOCK_ERR_READ_ONLY.
     check("refused:\t7\t7" in out,
@@ -888,8 +920,8 @@ def usb_diskbench(image, check):
           "on /Devices/blocks is waiting for the USB driver's 50 ms deadline: %r"
           % (iops.group(1) if iops else "no", rnd))
 
-    check("in 124 KB reads, the most one USB read moves" in out,
-          "`diskbench` did not say its sequential reads are 124 KB, the most "
+    check("in 1024 KB reads, the most one USB read moves" in out,
+          "`diskbench` did not say its sequential reads are 1 MB, the most "
           "one USB read moves:\n    " + shown)
 
     with open(stick, "rb") as f:
