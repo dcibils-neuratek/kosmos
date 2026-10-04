@@ -4828,6 +4828,95 @@ def notifications(image, check):
           % ((lists[2],) if len(lists) > 2 else ("no third listing",)))
 
 
+def settings_text(image, check):
+    """**Every setting a text file** (`testing.md` 18.373; Diego, 4 October:
+    "Nothing is stored in binary format for settings and preferences").
+
+    A disk with `/Home` on it, and an old setting on it in the binary form
+    every one had until now - `\0KTV` and the serialiser's bytes, as the
+    M700's `appearance` was read back. The machine writes a table, reads the
+    old file and writes it again, and reads one broken by hand and one edited
+    by hand; then the Mac reads the files straight off the disk image: the
+    table is the text a person would write, and the old file has become it.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    lua = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(image))),
+                       "host", "lua")
+    work = scratch.directory("settings-text")
+    disk = os.path.join(work, "disk.img")
+    old = os.path.join(work, "old")
+
+    # { old = "yes!" } as the serialiser wrote it: a table (6), a string (5)
+    # with its length in four bytes, the value the same, and the end (7).
+    with open(old, "wb") as f:
+        f.write(b"\0KTV\x06\x05\x03\x00\x00\x00old\x05\x04\x00\x00\x00yes!\x07")
+
+    made = subprocess.run([lua, os.path.join(here, "kfs.lua"), "create", disk,
+                           "32", old + ":/Home/Preferences/old"],
+                          capture_output=True, text=True)
+
+    if made.returncode != 0:
+        check(False, "kfs.lua could not make the disk: " + (made.stderr or made.stdout).strip())
+        return
+
+    extra = ("-drive", "file=%s,format=raw,if=none,id=nvme0" % disk,
+             "-device", "nvme,drive=nvme0,serial=kosmos")
+
+    out = boot(image, None, 150.0, extra=extra, typed=(
+        'print("WROTE", fs.write("/Home/Preferences/test", { bar = "dock", '
+        'pins = { "tracker", "terminal" }, dock_transparency = 25, shadow = true, '
+        '["two words"] = "a \\"quoted\\" word" }))',
+        'local t = fs.read("/Home/Preferences/test") print("BACK", type(t), t and t.bar, '
+        't and t.pins[2], t and t.dock_transparency, t and t.shadow, t and t["two words"])',
+        'local o = fs.read("/Home/Preferences/old") print("OLD", type(o), o and o.old, '
+        'fs.write("/Home/Preferences/old", o))',
+        'fs.write("/Home/Preferences/broken", "-- kosmos: table\\n{\\n  x = print\\n}\\n") '
+        'print("BROKEN", fs.read("/Home/Preferences/broken"))',
+        'fs.write("/Home/Preferences/byhand", "-- kosmos: table\\n-- edited by hand\\n{ gap = 6 }\\n") '
+        'local h = fs.read("/Home/Preferences/byhand") print("HAND", type(h), h and h.gap)',
+    ))
+
+    if out is None:
+        check(False, "the machine would not boot with /Home on a disk")
+        return
+
+    check("WROTE\ttrue" in out, "a table was not written to /Home: %r"
+          % next((l for l in out.splitlines() if "WROTE" in l), "nothing said"))
+    check('BACK\ttable\tdock\tterminal\t25\ttrue\ta "quoted" word' in out,
+          "a table written to /Home did not come back as it went: %r"
+          % next((l for l in out.splitlines() if "BACK" in l), "nothing said"))
+    check("OLD\ttable\tyes!\ttrue" in out,
+          "a setting in the old binary form was not read, or not written again: %r"
+          % next((l for l in out.splitlines() if "OLD" in l), "nothing said"))
+    check(re.search(r"BROKEN\tnil\t.*not a table Kosmos can read: line 3: "
+                    r"only values are read, not 'print'", out) is not None,
+          "a setting broken by hand was not refused at its line: %r"
+          % next((l for l in out.splitlines() if l.startswith("BROKEN")), "nothing said"))
+    check("HAND\ttable\t6" in out, "a setting edited by hand was not read: %r"
+          % next((l for l in out.splitlines() if "HAND" in l), "nothing said"))
+
+    def off_the_disk(path):
+        got = os.path.join(work, path.replace("/", "_"))
+        r = subprocess.run([lua, os.path.join(here, "kfs.lua"), "get", disk, path, got],
+                           capture_output=True, text=True)
+        return open(got, "rb").read() if r.returncode == 0 and os.path.exists(got) else None
+
+    wanted = ('-- kosmos: table\n{\n  dock_transparency = 25,\n  pins = { "tracker", "terminal" },\n'
+              '  shadow = true,\n  ["two words"] = "a \\"quoted\\" word",\n  bar = "dock",\n}\n')
+    test = off_the_disk("/Home/Preferences/test")
+    check(test is not None and test.decode("utf-8", "replace").startswith("-- kosmos: table\n{\n")
+          and b"\0" not in test and b'  bar = "dock",' in test
+          and b'  pins = { "tracker", "terminal" },' in test
+          and b'  ["two words"] = "a \\"quoted\\" word",' in test,
+          "the setting on the disk is not the text a person would write: %r" % (test,))
+    _ = wanted
+
+    rewritten = off_the_disk("/Home/Preferences/old")
+    check(rewritten == b'-- kosmos: table\n{\n  old = "yes!",\n}\n',
+          "the old binary setting did not become text when it was written again: %r"
+          % (rewritten,))
+
+
 def restart(image, check):
     """`restart` at the prompt restarts the machine, the firmware's way first.
 
@@ -5028,7 +5117,7 @@ def memory(image, check):
 
 
 PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
-    'memory', 'memory_home', 'restart', 'notifications', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
+    'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
 def main():
@@ -5149,6 +5238,10 @@ def main():
     # And what applications have said, and who the kernel says said it.
     if 'notifications' in wanted:
         notifications(image, check)
+
+    # And every setting a text file a person can read.
+    if 'settings_text' in wanted:
+        settings_text(image, check)
 
     # And an Intel Ethernet card on a PCI line, which is the M700's.
     if 'ethernet' in wanted:

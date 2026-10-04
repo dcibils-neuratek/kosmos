@@ -840,7 +840,8 @@ USER_SRCS := user/init/start-$(ARCH).S \
              lua/kosmos/serialize.c \
              $(USER_LIBC) \
              $(LUA_SRCS) \
-             $(GEN)/init_lua.c
+             $(GEN)/init_lua.c \
+             $(GEN)/tabletext_lua.c
 
 # The Lua tests and the Lua benchmarks, each in one image only. Both used to
 # run inside the kernel against a lua_State it carried; they run out here now,
@@ -1618,6 +1619,14 @@ $(UBUILD)/%.S.o: %.S $(UFLAGS_FILE)
 $(GEN)/init_lua.c: user/init/init.lua tools/bin2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/bin2c.py $< init_lua $@
+
+# A table as text and back (`user/init/tabletext.lua`): loaded before the
+# chunk above in every process, as the global `tabletext`, so a table stored
+# in a file is a file a person can read (Diego, 4 October: "I don't like
+# binary files for settings for anything in the system").
+$(GEN)/tabletext_lua.c: user/init/tabletext.lua tools/bin2c.py $(HOSTDIR)/lua.ok
+	@mkdir -p $(dir $@)
+	python3 tools/bin2c.py $< tabletext_lua $@
 
 # The font, from the BDF the author ships to an array with one byte per
 # pixel row. Vendored unmodified for the same reason lua/upstream/ is.
@@ -3942,6 +3951,8 @@ host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000de
 	@# what is pinned and what runs, where each goes, what a press does.
 	$(HOSTDIR)/lua tools/test_dock.lua
 	$(HOSTDIR)/lua tools/test_launchgrid.lua
+	@# A table as text, values only: what a settings file is.
+	$(HOSTDIR)/lua tools/test_tabletext.lua
 	@# The Deskbar's menu, read off a folder tree - what counts as an item,
 	@# what order things come in, how deep a folder may go. The store it
 	@# reads through is a table here, which is the whole reason the reading

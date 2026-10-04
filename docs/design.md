@@ -1090,6 +1090,16 @@ Decided on 27 September 2026 by Diego, once the layout gave every name a capital
 
 **A spelling kept by path is `ramfs`'s**: its table holds whole paths and a query hands them back, so it stores a new file under its directories' existing spelling, and `/Temporary/x` and `/Temporary/X` are one key. The disk kept one too - its index, while one existed, which turned every path into the disk's spelling as it arrived (`kfs.spelled`), a walk of its directories. Since the disk server is C (`docs/diskfs.md` step 3) there is no index to key: a query scans, and spells only the folder it starts from, once, with each answer built from the names as the directories store them.
 
+### 8.3e A table stored in a file is text a person can read
+
+Decided by Diego on 4 October 2026: "Nothing is stored in binary format for settings and preferences", and "I don't like binary files for settings for anything in the system". **It had been**: `fs.write` of a table to `/Home` stored the serialiser's bytes behind a mark, `\0KTV` - a type byte and a four-byte length before each value - so every file in `/Home/Preferences` was binary, its words readable in it and nothing a person could edit (the M700's `appearance`, read back the same day).
+
+**A table is written as Lua's own table syntax** under a first line that says what the file is, `-- kosmos: table`: keys sorted, two spaces in, a short list of plain values on one line, a comment anywhere a space may go. **Read back as values only** (`user/init/tabletext.lua`, loaded before `init.lua` in every process): strings, numbers, true and false, tables of them - no name as a value, no call, no `load`. So a settings file cannot carry a program, and one broken by hand is refused with its line and the word it stopped at - "line 3: only values are read, not 'print'" - by `fs.read`, as an error the caller can show, rather than taking down what read it. Without the first line a file is text, so nothing a person writes is taken for a table by accident.
+
+**Lua's syntax rather than `key = value` lines or JSON**: Lua is the language this system is written for a person in, settings are nested - the dock's pins are a list, the notifications' applications a table of them - and a person who has edited one Lua table has edited them all. **In Lua rather than C**, for `CLAUDE.md`'s reason: a parser of what a person typed is string handling, where an overflow lives, and a settings file is small.
+
+**Where**: a table written to a file under `/Home`, on a disk or, without one, in memory. `/Temporary` keeps the serialiser's packing - what programs hand each other there is not a setting, and its packing is C - and attributes stay the bytes `sys.pack` makes, being a file's metadata inside the filesystem rather than a file. A file in the old form is still read, and is text the next time it is written.
+
 ### 8.4 A large file is mapped, not copied
 
 `read` returning a string is right for a configuration file and wrong for a picture. A 936 KB PNG through `fs.read` gives `not enough memory`, because the string is accumulated on a 2 MB process heap.

@@ -621,6 +621,25 @@ opened under QEMU in Night and in Plex, pictured, the ones in the old
 chrome listed, each moved onto the kit's header, and the pictures kept as
 the check that none goes back.
 
+**A settings kit, for any application to keep its settings.** Diego, 4
+October 2026: "There should be a settings kit that allows an app to store
+and read settings". Each application read and wrote `/Home/Preferences/
+<name>` by hand - its defaults, the read-modify-write that keeps another's
+keys, the folder made if missing - a dozen times over. One kit for it,
+`use("/Kosmos/Libraries/prefs.lua")`: `prefs.open(name, defaults)` gives a
+table whose fields read the setting or its default, and `:set(key, value)`
+or `:set{...}` writes at once, as text (`tabletext`), keeping every key it
+did not touch; a default is stored as nothing, so it follows the
+application; the name is one word and nothing with a `/`, so an application
+reaches its own file under Preferences and nobody else's. Then every
+application that keeps a setting moved onto it - Terminal, Text Editor,
+Music, the IDE, Log View, Browser, Tracker, Clock, the dock, Notifications -
+and Preferences' own `settings.get` and `settings.set` through it. Diego,
+the same minute: "So apps use that kit instead of inventing their own way" -
+**held, not hoped**: a host check fails the build when any application,
+program or library names `/Home/Preferences` itself, the kit being the one
+file allowed to. Next, after settings as text.
+
 **An installed application built for older protocols says so.** Diego, 4
 October 2026, on the M700: "launching doom raises an error and does not
 work". Doom's image was the 0.10.205 stick's, and an installed application
@@ -649,7 +668,8 @@ that takes **values only** - strings, numbers, booleans, nested tables -
 and never runs anything, so a settings file cannot carry code, and one
 broken by hand is refused with where, rather than taking down what reads
 it. A binary file already there is still read, and is text the next time
-it is written. Next, after the stick's one wait and the dock's slider.
+it is written. **Done the same day** (`testing.md` 18.373, `design.md`
+8.3e).
 
 **The dock's transparency, a slider in Appearance.** Diego, 4 October 2026:
 "the new dock needs a transparency setting in appearance so i can make it

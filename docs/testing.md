@@ -17662,3 +17662,54 @@ for eighteen minutes before they were stopped. 0.10.231 stands.
 0.10.205 reading the program store's 0.10.221 protocol. Doom, Quake and the
 Super Nintendo built again and sent over Telnet; Doom at 62 frames a second,
 Quake playing its demo.
+
+## 18.373 Every setting a text file
+
+Diego, 4 October: "Are we making sure all the preferences and settings are
+stored in text based config files under preferences", "Nothing is stored in
+binary format for settings and preferences", "I don't like binary files for
+settings for anything in the system". They were binary: the M700's
+`appearance`, read back over Telnet, began `00 4B 54 56` - `\0KTV` - then a
+type byte and a four-byte length before each word.
+
+**`user/init/tabletext.lua`**, loaded before `init.lua` in every process as
+the global `tabletext` (`main.c`, `tabletext_lua.c`): a table to Lua's own
+syntax under `-- kosmos: table` - keys sorted, two spaces in, a short list
+on one line, a float that reads back as itself - and back, **values only**.
+The namespace writes a table to a file under `/Home` that way, on a disk and
+in memory, and reads one back the same; a file in the old form is still
+read. `/Temporary` and attributes keep the serialiser's packing (`design.md`
+8.3e says why).
+
+**`test_tabletext.lua`, 28, in `host`**: the file a setting is, exactly;
+every kind of value back as it went - integers and floats kept apart, keys
+of every type, quotes, new lines, UTF-8, control bytes, the largest and
+smallest integers; a function, a table holding itself, NaN, infinity, a
+table as a key, a coroutine and forty deep refused with why; a file written
+by hand - comments, block comments, CRLF, single quotes, semicolons, a
+trailing comma, hex - read; and twelve broken or hostile files refused at
+their line - `print`, `os.exit()`, a missing comma, a string or a table that
+does not end, something after the table, `nil`, `return`, a function, no
+first line.
+
+**`run_x86.py`'s `settings_text`, 7, in `x86-storage`**, with `/Home` on an
+NVMe disk made by `kfs.lua` holding a setting in the old form: a table
+written and read back; the old one read and written again; one broken by
+hand refused at line 3; one edited by hand read; and then **the Mac reads
+the files off the disk image**: the table is text with its keys and quotes
+as a person would write them, and the old one has become text.
+
+**Controls**: the reader taking a bare word as a value - 4 of 28 fail on the
+host; the disk's write left as it was - 2 of 7, the bytes off the image
+`\x00KTV\x06\x05...` both times.
+
+**Its gate: 84 of 88 the first time.** `host`: `cglobals` refuses a Lua
+global set from C anywhere but `kosmos_lua_open`, and `tabletext` was set in
+`main.c` - it is loaded there now. `x86-display-3` and `arm-display-3`: the
+harness takes Preferences' first `preferences:` line for its layout, and
+0.10.232's slider said `preferences: dock_transparency, a slider at ...`
+first - **a fault 0.10.232 brought in and its suites did not run**: it
+changed Preferences and was proved by the dock's suite alone. The line is
+`preferences slider: ...` now. `x86-film`, the audio flake of 6zw under a
+loaded gate. **Again, alone, the six: all pass** - `host`, `x86-film` 13,
+`x86-storage` 45, `x86-dock` 46, both `display-3` 104.

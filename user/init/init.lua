@@ -1880,6 +1880,23 @@ local function new_namespace()
 
       if type(value) == "string" then
         text, packed = value, 0
+      elseif type(value) == "table" and rest:sub(1, 6) == "/Home/" then
+        --
+        -- **A table under `/Home` is text**, when `/Home` is in memory as
+        -- when it is on a disk (`tabletext`, and `DISK`'s write below): a
+        -- setting is a file a person can read, wherever it is kept.
+        -- `/Temporary` keeps its values packed - what programs hand each
+        -- other there is not a setting, and its packing is the C one.
+        --
+        local why
+
+        if not tabletext then return nil, "cannot store a table: no table-as-text reader" end
+
+        text, why = tabletext.encode(value)
+
+        if not text then return nil, "cannot store that: " .. tostring(why) end
+
+        packed = 0
       else
         -- Refused is an answer, and the caller's to have: this crashed on
         -- the nil instead, and took the Clock with it.
@@ -1966,6 +1983,32 @@ local function new_namespace()
 
     if op == "read" then
       local bytes = r.blob:sub(1, r.length)
+
+      --
+      -- A table stored as text (`tabletext`): every piece, then read as
+      -- values - here rather than by `ns.read`, for the reason the packed
+      -- one is, below.
+      --
+      if not r.packed and offset == 0 and tabletext and tabletext.is(bytes) then
+        local parts, more, at = { bytes }, r.more, #bytes
+
+        while more do
+          local nxt, err = ram_call(capability,
+                                    ram_pack(code, rest, at, 0, 0, nil, nil, 0))
+
+          if not nxt then return nil, err end
+
+          parts[#parts + 1] = nxt.blob:sub(1, nxt.length)
+          at = at + nxt.length
+          more = nxt.more
+        end
+
+        local value, why = tabletext.decode(table.concat(parts))
+
+        if value == nil then return nil, rest .. " is not a table Kosmos can read: " .. why end
+
+        return { ok = true, value = value }
+      end
 
       if not r.packed then
         -- Text pages the way every other server's does, and `ns.read` above
@@ -2099,8 +2142,9 @@ local function new_namespace()
     "a Kosmos partition past the stick's end",
   }
 
-  -- What marks a file as holding a value rather than bytes: a NUL first, so
-  -- anything reading it as text stops at once.
+  -- What marked a file as holding a value rather than bytes, before a table
+  -- was stored as text (`tabletext`): a NUL first, so anything reading it as
+  -- text stopped at once. Still read, never written.
   local DISK_VALUE_MARK = "\0KTV"
 
   local function disk_error(err, blob, length)
@@ -2288,7 +2332,30 @@ local function new_namespace()
 
       local bytes = r.blob:sub(1, r.length)
 
-      -- A value stored as one comes back as one, whole.
+      --
+      -- A table stored as text comes back as one, whole, read as values -
+      -- and a file broken by hand is refused with its line.
+      --
+      if offset == 0 and tabletext and tabletext.is(bytes) then
+        local parts, more, at = { bytes }, r.more, r.offset
+
+        while more do
+          local n, ne = disk_call(capability, code, rest, at)
+
+          if not n then return nil, ne end
+
+          parts[#parts + 1] = n.blob:sub(1, n.length)
+          more, at = n.more, n.offset
+        end
+
+        local value, why = tabletext.decode(table.concat(parts))
+
+        if value == nil then return nil, rest .. " is not a table Kosmos can read: " .. why end
+
+        return { ok = true, value = value }
+      end
+
+      -- A value stored as one by an older build comes back as one, whole.
       if offset == 0 and bytes:sub(1, #DISK_VALUE_MARK) == DISK_VALUE_MARK then
         local parts, more, at = { bytes }, r.more, r.offset
 
@@ -2325,12 +2392,22 @@ local function new_namespace()
 
       local body = extra.value or ""
 
+      --
+      -- **A table is written as text** (`tabletext`; Diego, 4 October: "I
+      -- don't like binary files for settings for anything in the system"):
+      -- Lua's table syntax under a first line that says so, read back as
+      -- values only. It was `DISK_VALUE_MARK` and the serialiser's bytes,
+      -- which is still read, below, and becomes text the next time it is
+      -- written.
+      --
       if type(body) == "table" then
-        local packed, perr = sys.pack(body)
+        if not tabletext then return nil, "cannot store a table: no table-as-text reader" end
 
-        if not packed then return nil, "cannot store that: " .. tostring(perr) end
+        local text, terr = tabletext.encode(body)
 
-        body = DISK_VALUE_MARK .. packed
+        if not text then return nil, "cannot store that: " .. tostring(terr) end
+
+        body = text
       elseif type(body) ~= "string" then
         body = tostring(body)
       end

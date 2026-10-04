@@ -148,6 +148,10 @@ const char *kosmos_lua_version(void)
     return LUA_RELEASE;
 }
 
+/* A table as text and back (`user/init/tabletext.lua`), compiled in. */
+extern const unsigned char tabletext_lua[];
+extern const unsigned long tabletext_lua_len;
+
 lua_State *kosmos_lua_open(void)
 {
     lua_State *L = lua_newstate(user_alloc, NULL);
@@ -169,6 +173,23 @@ lua_State *kosmos_lua_open(void)
 
     luaL_requiref(L, "gfx", luaopen_gfx, 1);
     lua_pop(L, 1);
+
+    /*
+     * **`tabletext`**: what a table stored in a file is written and read as
+     * (`user/init/tabletext.lua`, values only), for every chunk after it - so
+     * a setting is a file a person can read (Diego, 4 October: "I don't like
+     * binary files for settings for anything in the system"). A state where
+     * it would not load still opens: it stores no table in a file, and says
+     * why when one is asked, so a fault here costs settings and not the
+     * process.
+     */
+    if (luaL_loadbufferx(L, (const char *)tabletext_lua, tabletext_lua_len,
+                         "=tabletext", "t") == LUA_OK
+        && lua_pcall(L, 0, 1, 0) == LUA_OK) {
+        lua_setglobal(L, "tabletext");
+    } else {
+        lua_pop(L, 1);
+    }
 
     /* dofile and loadfile come from luaopen_base and take a path. There is
      * no path to take: what a process reaches is what was mapped into it.

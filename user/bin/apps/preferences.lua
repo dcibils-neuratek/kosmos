@@ -917,7 +917,7 @@ rebuild = function()
         -- A slider's place, in the window's points, for a harness - which
         -- can press and cannot aim.
         if it.kind == "percent" then
-          print(("preferences: %s, a slider at %d,%d, %d wide"):format(
+          print(("preferences slider: %s at %d,%d, %d wide"):format(
                 it.key, SIDE + c.x, c.y + c.h // 2, 200))
         end
       elseif taken > 0 then

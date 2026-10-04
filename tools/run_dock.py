@@ -365,7 +365,7 @@ def main():
         mark = len(guest.seen)
         session.run("/Temporary/prefs.lua")
         prefs = maybe("wm: window Preferences at ", "Preferences", mark)
-        slider = maybe("preferences: dock_transparency, a slider at ", "the slider", mark)
+        slider = maybe("preferences slider: dock_transparency at ", "the slider", mark)
         p_ = re.match(r"(\d+),(\d+)", prefs or "")
         s_ = re.match(r"(\d+),(\d+), (\d+) wide", slider or "")
 

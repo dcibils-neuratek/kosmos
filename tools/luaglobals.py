@@ -49,6 +49,10 @@ ENVIRONMENTS = {
     # The image's own chunks: a fresh state with `sys` and `gfx` opened.
     "default": {"sys", "gfx"},
 
+    # And `init.lua`, which `main.c` hands the table-as-text reader first
+    # (`user/init/tabletext.lua`), as the global `tabletext`.
+    "user/init/": {"sys", "gfx", "tabletext"},
+
     # A program in /bin gets an environment built by the runner.
     #
     # `doom`, `quake` and `snes` used to be listed here, as globals only the
