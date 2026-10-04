@@ -51,6 +51,7 @@
 void kosmos_png_open(lua_State *L);
 void kosmos_jpeg_open(lua_State *L);
 void kosmos_docfont_open(lua_State *L);
+void kosmos_face_open(lua_State *L);
 
 #define SURFACE_MT  "kosmos.surface"
 
@@ -4115,6 +4116,10 @@ int luaopen_gfx(lua_State *L)
      * and hid their own programs from the prompt. They are kits now, in
      * `sys_user.c`'s list: `use("/Kosmos/Kits/doom")`. */
     kosmos_docfont_open(L);
+
+    /* `gfx.faces` and `gfx.face`: the fonts measured as a page is set
+     * (`face.c`, `docs/write.md` W2). */
+    kosmos_face_open(L);
 
     return 1;
 }

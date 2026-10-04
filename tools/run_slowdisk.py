@@ -31,6 +31,7 @@ kilobytes a second. With that:
 Usage: run_slowdisk.py IMAGE
 """
 
+import codecs
 import json
 import os
 import select
@@ -110,6 +111,9 @@ class Machine:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, bufsize=0)
         self.seen = ""
+        # One decoder for the run, as run_disk.py's: a character split
+        # between two reads is kept whole rather than made two marks.
+        self.decoder = codecs.getincrementaldecoder("utf-8")("replace")
 
     def pump(self, seconds, until, since):
         deadline = time.monotonic() + seconds
@@ -122,7 +126,7 @@ class Machine:
 
                 if not chunk:
                     return False
-                self.seen += chunk.decode("utf-8", "replace")
+                self.seen += self.decoder.decode(chunk)
 
             if until in self.seen[since:]:
                 return True

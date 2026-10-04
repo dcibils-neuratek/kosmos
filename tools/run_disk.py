@@ -16,6 +16,7 @@ The disk is made fresh here, so a pass can never be a leftover from a
 previous run - which is the same failure as not having written anything.
 """
 
+import codecs
 import os
 import re
 import select
@@ -88,6 +89,14 @@ def boot(image, disk, commands, boot_timeout=90, each=25, trace=None):
 
     seen = ""
 
+    # **One decoder for the whole run**, which keeps the start of a
+    # character whose end has not arrived yet. Each read was decoded on its
+    # own, so a UTF-8 character split between two reads came out as two
+    # replacement marks - `Caf\ufffd\ufffd` for "Café", found when Kosmos
+    # Write's suite printed a paragraph with accents in it (testing.md
+    # 18.378).
+    decoder = codecs.getincrementaldecoder("utf-8")("replace")
+
     def pump(seconds, until=None, since=0):
         """Read for a while, or until `until` shows up after `since`.
 
@@ -118,7 +127,7 @@ def boot(image, disk, commands, boot_timeout=90, each=25, trace=None):
             if not chunk:
                 return                      # QEMU exited
 
-            seen += chunk.decode("utf-8", "replace")
+            seen += decoder.decode(chunk)
 
             if until is not None and until in seen[since:]:
                 return

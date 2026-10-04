@@ -734,3 +734,42 @@ unit it was in.
 **Next:** W2, setting the paragraphs into lines and the lines onto pages,
 measured exactly as the PDF will be, so the screen and the PDF never
 disagree about where a line breaks.
+
+## 4 October, night - Kosmos Write sets pages
+
+**In short:** Kosmos Write can now lay a document out on pages: paragraphs
+broken into lines, lines placed down the page, pages filled and numbered.
+Still nothing on screen, but this is the part that decides where every word
+of every page goes, for the screen and the PDF alike.
+
+**What.** The setting does what a word processor's does. It breaks lines
+between words, puts lines down the page with the spacing the style asks
+for, and aligns each line left, right, centred or justified. It honours
+indents and tabs. It never leaves one line of a paragraph stranded at the
+bottom of a page or alone at the top of the next. It keeps a heading on the
+same page as what it heads, and numbers the pages.
+
+**Why one setting matters.** If the screen measured text one way and the
+PDF another, a line could break after "the" on screen and after "page" in
+the PDF, and the printout would not be what you saw. So both use the same
+numbers: each letter's width exactly as the font file states it, not
+rounded to screen pixels. Inside the machine those widths come from a small
+new piece of C that reads them from the fonts Kosmos carries. Each font
+also says its own family name and weight, which is how the Font menu will
+list them.
+
+**How it was checked.** On the Mac, the setting was run against a pretend
+font where every letter is half an em wide, so every line's position could
+be worked out by hand: 45 checks. Then a new suite boots Kosmos and has it
+lay out a real paragraph in IBM Plex Serif, while the Mac lays out the same
+paragraph by itself, using its own reading of the same font file. The lines
+broke in exactly the same places, word for word.
+
+**A bug it found that was not Write's.** The paragraph came back from the
+machine with "Café" garbled and "résumé" intact. The test harness had
+decoded the machine's output in chunks, and an accented letter split across
+two chunks became two error marks. It had never been noticed because
+nothing had printed an accent through it before. Fixed in both places that
+had it.
+
+**Next:** W3, the PDF - the part Diego called key.

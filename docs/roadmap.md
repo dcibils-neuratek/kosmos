@@ -427,7 +427,9 @@ kits under `user/lib/` for Present and Sheets to stand on:
   colour on top. A `.write` file is a zip (the Compression Kit) holding the
   document as text (`tabletext`) and its pictures as files. Held on the Mac:
   a document out and back the same.
-- **W2 - pages as they print.** Paragraphs set into lines and lines onto
+- **W2 - pages as they print.** *Done, 4 October* (`testing.md` 18.378):
+  `pageset.lua`, `faces.lua`, and `gfx.faces` / `gfx.face` measuring with
+  the fonts' own advance widths. Paragraphs set into lines and lines onto
   pages - A4 or Letter, upright or on its side, the margins, a header and
   footer, page numbers - by the faces' own measures. Arithmetic, held on the
   Mac with a measure handed in; in C where a measurement says the loop over

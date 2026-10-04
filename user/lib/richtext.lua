@@ -105,14 +105,16 @@ richtext.CHAR = {
 --
 -- **What a paragraph may have**: its Layout tab - alignment, line spacing in
 -- lines, the space before and after it, its three indents, a drop cap so
--- many lines deep, and a list.
+-- many lines deep, and a list - and its More tab's *keep with the next
+-- paragraph*, which is what stops a heading standing alone at the foot of a
+-- page.
 --
 richtext.PARA = {
   align = enum(ALIGN), spacing_lines = number(0.5, 5),
   before_pt = number(0, 500), after_pt = number(0, 500),
   indent_first_mm = number(-200, 200), indent_left_mm = number(0, 200),
   indent_right_mm = number(0, 200), drop_cap_lines = number(0, 10, true),
-  list = enum(LIST),
+  list = enum(LIST), keep_with_next = boolean,
 }
 
 -- Both sets, in one order, so what is written and compared is always the
@@ -136,7 +138,7 @@ richtext.PLAIN = {
   colour = "#000000", underline = false, strike = false,
   align = "left", spacing_lines = 1, before_pt = 0, after_pt = 0,
   indent_first_mm = 0, indent_left_mm = 0, indent_right_mm = 0,
-  drop_cap_lines = 0, list = "none",
+  drop_cap_lines = 0, list = "none", keep_with_next = false,
 }
 
 --------------------------------------------------------------------------

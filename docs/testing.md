@@ -17870,3 +17870,74 @@ can read with `Café` in it as UTF-8, and the picture byte for byte.
 **Controls**: runs never joined - 1 of 44 fail, the join; a run keeping
 every field it arrived with - 3 of 44 fail; the document written after the
 pictures - `WRITE-FIRST` fails in the machine.
+
+## 18.378 Kosmos Write's pages (W2), and a console that split characters
+
+Paragraphs set into lines and lines onto pages (`docs/write.md` W2):
+**`pageset.lua`**, handed its measure; **`faces.lua`**, which picks a look's
+face from what the fonts say they are and measures in points; and
+**`gfx.typefaces` / `gfx.typeface`** (`user/kits/gfx/face.c`), every TrueType face of
+the image by the family, weight class and italic bit the font declares, and
+its advance widths in its own units - unhinted and unscaled, the widths a
+PDF carries, so one setting serves the screen and the PDF alike. A paragraph
+gains `keep_with_next` (the Format panel's More), on for the title and the
+headings.
+
+**`tools/test_pageset.lua`, 45, in `host`**, against a measure whose every
+character is half an em, so each position is worked out by hand: a new
+document's one empty line and its page number; a short paragraph at the
+margin; 120 words broken at spaces, no line wider than the column, the text
+whole with one space dropped at each break, and **greedy** - no line could
+have taken the next line's first word; a 200-character word broken 82, 82,
+36; a line break; a word in two looks never split between them; each look
+listed once; the four alignments, justified lines reaching the margin and
+the last one not widened; a first-line indent, Quote's 10 mm, Body's 1.2
+lines, the space after one paragraph and before the next, none at the head
+of a page; tabs to 36 and 72 points. **Then forty documents of many shapes
+- more than eighty pages between them - for what pagination promises**: every line inside the
+margins, the paragraphs in order, no paragraph leaving one line alone at the
+foot or head of a page, every heading on the page of the first line it
+heads, every page numbered by its place. Letter on its side. And the faces:
+the catalogue's families the fonts' own, an exact face found exactly,
+SemiBold in a family without it the heavier nearest, Medium the lighter, a
+slant never given up for a weight, a slant or a family the machine lacks
+falling back and saying so, the measure the font's units at the size, each
+file opened once. A hundred pages - 94 with this measure - in 89 ms on the
+Mac, the measure asked 114 times.
+
+**`tools/run_write.py`, 5, a new suite, `arm-write`**, the machine against a
+reader of TrueType of its own (`name`, `OS/2`, `head`, `hhea`, `cmap` 4 and
+12, `hmtx`): `gfx.typefaces()` names all 26 of the image's faces as the fonts
+do; four faces' advances for a probe with an accent, a dash and a character
+no Latin face has, and their metrics, equal to the Mac's sums; a face the
+image lacks refused with why; **a paragraph of Body set inside the machine
+breaks into the same six lines, word for word, as this Mac breaks it with
+its own reading of IBM Plex Serif** - a second implementation of the one
+thing a page must agree with a PDF about; and a hundred pages set with the
+real faces, 120 of them, in 1,288 ms under TCG (not a performance number).
+
+**And the harness's own bug it found.** The paragraph came back from the
+machine as `Caf��` where `résumé` was whole: `run_disk.py` decoded each read
+of the console on its own, so a UTF-8 character split between two reads
+became two replacement marks. Nothing had printed an accent through it
+before. It keeps one incremental decoder for the run now, as
+`run_screenshot.py` already did; `run_slowdisk.py` had the same per-read
+decode and has the same fix.
+
+**And the gate found what the two suites could not.** The new functions were
+first `gfx.faces` and `gfx.face`, and `gfx.face` was taken: the screen's
+faces by short name and pixel size, which `ui.lua`, the window manager and
+the browser draw with. Opened after it, the new one replaced it, and the
+whole gate's first run failed six suites at once - `display-3` with "no face
+called arimo in this image" for every face, the browsers waiting on a
+heading that was never drawn. `arm-write` and `host` passed, because neither
+asks for a screen face: which is the reason a change to `gfx` runs the whole
+gate. They are `gfx.typefaces` and `gfx.typeface` now, and `face.c` refuses
+at open a name the table already holds.
+
+**Controls**: one line allowed alone (`LEAST = 1`) - 1 of 45 fail, that
+check; keep-with-next never applied - 1 of 45, that check; `face.c`
+counting one unit too many a character - `arm-write` fails, 12,630 inside
+the machine against 12,602 here.
+
+**Whole gate**, after the rename: 89 suites in 645 s (10:45), all passing.

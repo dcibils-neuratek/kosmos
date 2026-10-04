@@ -23,7 +23,8 @@ where a measurement says a loop over glyphs or bytes is the cost.
 | `richtext.lua` | paragraphs, runs and styles, and their checks | Write's body | Present's text boxes, Sheets' cells |
 | `docfile.lua` | a document file: a zip of the document as text and its pictures | `.write` | `.present`, `.sheets` |
 | `writedoc.lua` | Write's own document: paper, margins, header and footer, a body | Write | - |
-| `pageset` (W2) | paragraphs set into lines, lines onto pages | Write | Present's slides |
+| `pageset.lua` (W2) | paragraphs set into lines, lines onto pages | Write | Present's slides |
+| `faces.lua` (W2), `gfx.typefaces` | which face a look is set in, and its measure in points | Write | both |
 | PDF writer (W3) | pages out as a PDF, faces embedded | Write | both |
 
 ## W1 - the document, as data
@@ -128,42 +129,81 @@ to.
 
 ## W2 - pages as they print
 
-Paragraphs are set into lines and lines onto pages: the paper, its margins,
-a header and a footer, page numbers. **The setting is handed its measure**
-- a function from a face, a size and a string to a width in points - so the
-whole of it runs on the Mac against a fixed measure, and inside the machine
-against the faces' own. A line breaks at a space or after a hyphen, a word
-longer than the line is broken where it must be, `spacing_lines` and the
-face's height give the line's, `before_pt` and `after_pt` stand between
-paragraphs, a paragraph's last line may not stand alone at the top of a page
-(a widow) when two can move together. Hyphenation, ligatures and facing
-pages are the Document panel's switches and come after the rest works.
+*Built 4 October* (`testing.md` 18.378). Paragraphs are set into lines and
+lines onto pages: the paper, its margins, page numbers. **The setting is
+handed its measure** - `width(look, text)` in points and `line(look)`, the
+ascent, descent and gap - so the whole of it runs on the Mac against a
+measure a test can do sums with, and inside the machine against the faces'
+own.
 
-What it produces is the page as a list of placed runs - a face, a size, a
-colour, an x and a baseline in points, the text - and that list is what the
-window draws and what the PDF writer writes. **One setting for both** is the
-point: the PDF cannot disagree with the screen about where a line broke,
-because there is one place a line breaks.
+**The faces' own is their advance widths, unhinted, in the font's units**
+(`user/kits/gfx/face.c`): `gfx.typefaces()` lists every TrueType face the image
+carries as the font names itself - its family, weight class and italic bit -
+and `gfx.typeface(file)` measures with it. `gfx`'s outline fonts measure at a
+pixel size, rounded per glyph, because they draw on a screen; a PDF's widths
+are the font's own, and a page is set once for both. `faces.lua` picks a
+look's face from that catalogue - the family it names, the same slant if
+there is one, the nearest weight, the heavier of two equally near - and a
+family this machine lacks is set in IBM Plex Sans and said to be, so a
+document from elsewhere keeps its face names for the day it goes back.
+
+What the setting does: a line breaks at a space, and a word in two looks is
+still one word; a word longer than a line is broken between characters; a
+line break inside a paragraph; tabs to every half inch; the four alignments,
+justified by widening the spaces as a PDF's `Tw` does; the three indents;
+line spacing; the space before and after a paragraph, and none before at the
+head of a page; **no paragraph leaving one line alone at the foot of a page
+or the head of the next**; a paragraph kept with the next when its style
+says so - the title and the headings, a new paragraph field
+(`keep_with_next`, the Format panel's More) - and a chain of them moving
+together; page numbers, centred, in Caption. Not yet: hyphenation,
+kerning, ligatures, lists and drop caps.
+
+What it produces is the page as a list of placed pieces - a look, an x and
+a baseline in points from the page's top left, the text, and where its
+bytes start in its paragraph - and that list is what the window draws and
+what the PDF writer writes. **One setting for both** is the point: the PDF
+cannot disagree with the screen about where a line broke, because there is
+one place a line breaks.
 
 ## W3 - PDF out
 
 The PDF Kit has only ever read. Writing is simpler than reading - the writer
 chooses every object and never has to forgive anything - and it is the part
-that matters most, so it is held hardest:
+that matters most, so it is held hardest. **`pdfwrite.lua`** writes what
+`pageset` set and nothing else:
 
-- a page per W2 page, `MediaBox` from the paper in points;
-- each face used embedded as a TrueType font program (`FontFile2`), with its
-  widths, so the PDF looks the same on a machine that has never heard of IBM
-  Plex; the text written in WinAnsi, with what WinAnsi cannot say through a
-  `ToUnicode` map so it can be searched and copied;
-- each line one `Tj` at the baseline W2 set;
-- the streams deflated by the Compression Kit, and the bytes made in a
-  region and written from it, never through the interpreter.
+- a page per page set, its `MediaBox` the paper in points;
+- each face the pages use **embedded whole** as a TrueType program
+  (`FontFile2`), with **the widths the setting used** - the font's own
+  advances, so a reader that sets the same string gets the same line - and
+  its descriptor from the font's own tables (`face:descriptor()`: the
+  PostScript name, the box, the italic angle, cap height, underline and
+  strike-out);
+- the text in **WinAnsi**, which every reader knows and maps to Unicode by
+  itself, so the text can be searched and copied; a character WinAnsi
+  cannot say is written `?` and counted, and the count comes back for the
+  window to say;
+- each piece one `Tj` at the baseline the setting chose, a justified
+  line's widened spaces as `Tw`, underline and strike-out as rules at the
+  font's own positions, the page number;
+- the streams deflated by the Compression Kit as zlib - a PDF's
+  `FlateDecode` is the deflate with two bytes before it and an Adler-32
+  after, where a zip's method 8 is the deflate alone, so the kit gained
+  `adler32` - and the whole made in a region and written from it: a font
+  program is deflated from the image's own read-only copy straight into
+  the PDF, and no font byte passes through the interpreter.
 
-**Held by reading it back** with Kosmos's own reader, `pdf.lua` and
-`pdfpage.lua`: the number of pages, their size, and each line's text and
-place against what W2 set. On the Mac first, then the PDF viewer opening it
-inside the machine.
+**Held by reading it back three ways** (`run_write.py`): Kosmos's own reader
+inside the machine - `pdf.lua` opens it and `pdfpage.render` draws every
+page, every glyph, no face refused; this Mac's reading of the file, object by
+object - every offset in the cross-reference table where it says, each piece
+of text at the place and in the words the setting gave it, each face's
+widths the font's own and its program the font's own bytes; and macOS's own
+renderer (`sips`), which has never heard of Kosmos.
+
+Not yet: subsetting - a face is embedded whole, a hundred kilobytes or so
+deflated - characters beyond WinAnsi, kerning, and pictures (W5).
 
 ## Not here yet
 

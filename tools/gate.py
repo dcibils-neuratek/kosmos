@@ -90,6 +90,11 @@ SUITES = [
     # filesystem that is not FAT32 has to answer for.
     Suite("arm-interchange", ["python3", "tools/run_interchange.py", ARM]),
 
+    # Kosmos Write inside the machine (`docs/write.md`): the faces as the
+    # fonts name themselves, their measures, and a paragraph broken where
+    # this Mac breaks it, each held to a reader of the fonts of its own.
+    Suite("arm-write", ["python3", "tools/run_write.py", ARM]),
+
     # Attributes and the queries over them. M7's definition of done was a
     # live query and nothing here ever checked one: `qbench` measures how
     # fast a query is and would not notice it returning the wrong paths,
