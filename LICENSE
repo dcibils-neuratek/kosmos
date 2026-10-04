@@ -100,6 +100,13 @@ Vendored third-party code keeps its own licence, which travels beside it:
       stick's /Home put them in /Home/Fonts with the licence beside
       them, where a process reads one the first time a character needs it
 
+  Hyphenation patterns from the hyph-utf8 package
+      assets/hyphenation/: American English by Gerard D.C. Kuiken, which
+      may be copied with or without changes provided its notice is kept,
+      and Spanish by Javier Bezos and CervanTeX, MIT; each language's terms
+      in the LICENSE file beside it, and where they came from in
+      README.kosmos.md
+
   Lucide's icons, by Lucide Icons and Contributors, ISC
       assets/icons/lucide/, under the LICENSE beside them, which also
       gives the MIT terms of the icons derived from Feather, by Cole

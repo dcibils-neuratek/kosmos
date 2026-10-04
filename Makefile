@@ -2473,8 +2473,12 @@ ASSET_LIST := $(GEN)/assets.list
 NETSURF_SHEETS := runtime/upstream/netsurf/netsurf/resources/default.css \
                   runtime/upstream/netsurf/netsurf/resources/quirks.css
 
+# Liang's hyphenation patterns, each language's beside its licence
+# (`assets/hyphenation/README.kosmos.md`), for Kosmos Write's setting.
+HYPH_FILES := $(sort $(wildcard assets/hyphenation/*.txt))
+
 ASSET_FILES := $(ICON_FILES) $(ICON16_FILES) $(ICON64_FILES) $(LINE_FILES) \
-               $(ART_FILES) $(NETSURF_SHEETS)
+               $(ART_FILES) $(NETSURF_SHEETS) $(HYPH_FILES)
 $(shell mkdir -p $(GEN); [ "$$(cat $(ASSET_LIST) 2>/dev/null)" = '$(ASSET_FILES)' ] \
         || printf '%s' '$(ASSET_FILES)' > $(ASSET_LIST))
 
@@ -2535,6 +2539,7 @@ $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
 	        --prefix=scenes/ $(SCENE_FILES) \
 	        --prefix=tutorial/cafesa3d/ $(TUTORIAL_FILES) \
 	        --prefix=netsurf/ $(NETSURF_SHEETS) \
+	        --prefix=hyphenation/ $(HYPH_FILES) \
 	        --prefix=ca/ $(ROOT_NAMES)
 
 # The outline fonts, embedded the same way.
@@ -4118,7 +4123,8 @@ host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000de
 	@# And LICENSE, read the way the About window reads it: every line of
 	@# it, and every vendored tree named in it - so a library added without
 	@# an entry fails here, by name.
-	$(HOSTDIR)/lua tools/test_licences.lua LICENSE $(wildcard runtime/upstream/*/) lua/upstream/
+	$(HOSTDIR)/lua tools/test_licences.lua LICENSE $(wildcard runtime/upstream/*/) lua/upstream/ \
+	        assets/hyphenation/
 	@# And the line icons: every one the list names rendered at every size,
 	@# white with its coverage, nothing stray, and every name the Lua uses
 	@# among them - `tools/lineicons.py` is run by hand, so nothing else

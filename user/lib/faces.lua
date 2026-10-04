@@ -128,9 +128,11 @@ function faces.measure(catalogue, open)
   end
 
   return {
-    width = function(look, text)
+    -- `ligatures`: f and what follows as one glyph where the face has one,
+    -- as the document's switch says (`face.c`).
+    width = function(look, text, ligatures)
       local f = face_of(look)
-      return f.face:advance(text) * look.size_pt / f.units
+      return f.face:advance(text, ligatures) * look.size_pt / f.units
     end,
 
     -- Ascent and descent as distances, both positive; the gap below.

@@ -221,7 +221,18 @@ local function to_unicode(font)
     out[#out + 1] = ("%d beginbfchar"):format(last - at + 1)
 
     for i = at, last do
-      out[#out + 1] = ("<%04X> <%s>"):format(glyphs[i], utf16(font.used[glyphs[i]]))
+      local is = font.used[glyphs[i]]
+
+      -- A ligature's glyph is the letters it stands for (`face:glyphs`).
+      if type(is) == "string" then
+        local parts = {}
+        for _, u in utf8.codes(is) do parts[#parts + 1] = utf16(u) end
+        is = table.concat(parts)
+      else
+        is = utf16(is)
+      end
+
+      out[#out + 1] = ("<%04X> <%s>"):format(glyphs[i], is)
     end
 
     out[#out + 1] = "endbfchar"
@@ -252,13 +263,14 @@ end
 local function operators(set, page, font_for, notes)
   local out = {}
   local height = page.height_pt
+  local shift = 0               -- a left-hand page's, on facing pages
 
   local function show(piece, look, baseline, extra)
     if piece.text == "" then return end
 
     local font = font_for(look)
     local face = font.entry.face
-    local x, y = piece.x_pt, height - baseline - (piece.drop_pt or 0)
+    local x, y = piece.x_pt + shift, height - baseline - (piece.drop_pt or 0)
     local colour = rgb(look.colour)
     local shown
 
@@ -269,7 +281,7 @@ local function operators(set, page, font_for, notes)
 
       for i = 1, #text do
         if text:byte(i) == 32 then
-          local hex, missing = face:glyphs(text:sub(start, i), font.used)
+          local hex, missing = face:glyphs(text:sub(start, i), font.used, set.ligatures)
           notes.missing = notes.missing + missing
           parts[#parts + 1] = "<" .. hex .. "> " .. step
           start = i + 1
@@ -277,14 +289,14 @@ local function operators(set, page, font_for, notes)
       end
 
       if start <= #text then
-        local hex, missing = face:glyphs(text:sub(start), font.used)
+        local hex, missing = face:glyphs(text:sub(start), font.used, set.ligatures)
         notes.missing = notes.missing + missing
         parts[#parts + 1] = "<" .. hex .. ">"
       end
 
       shown = "[" .. table.concat(parts, " ") .. "] TJ"
     else
-      local hex, missing = face:glyphs(piece.text, font.used)
+      local hex, missing = face:glyphs(piece.text, font.used, set.ligatures)
       notes.missing = notes.missing + missing
       shown = "<" .. hex .. "> Tj"
     end
@@ -307,6 +319,8 @@ local function operators(set, page, font_for, notes)
     end
   end
 
+  shift = page.shift_pt or 0
+
   for _, line in ipairs(page.lines) do
     if line.marker then
       show(line.marker, set.looks[line.marker.look], line.baseline_pt, 0)
@@ -317,6 +331,8 @@ local function operators(set, page, font_for, notes)
            piece.cap and 0 or line.extra_space_pt)
     end
   end
+
+  shift = 0
 
   if page.header then
     show(page.header.piece, set.looks[page.header.piece.look],

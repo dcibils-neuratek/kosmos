@@ -66,6 +66,14 @@ local COLUMN = PAGE_W - 2 * LEFT
 local BOTTOM = PAGE_H - PT(25)
 local BODY = 11 * 0.5                     -- a Body character's width
 
+-- A document like `doc` with another body: an edit's result.
+local function with_body(doc, body)
+  local out = {}
+  for k, v in pairs(doc) do out[k] = v end
+  out.body = body
+  return out
+end
+
 -- A piece's size, from its look.
 local function looks_size(set, piece) return set.looks[piece.look].size_pt end
 
@@ -92,7 +100,7 @@ local function faithful(doc, set)
     local plain = richtext.plain(doc.body[e.line.para])
 
     for _, pc in ipairs(e.line.pieces) do
-      if plain:sub(pc.at, pc.at + #pc.text - 1) ~= pc.text then
+      if not pc.soft and plain:sub(pc.at, pc.at + #pc.text - 1) ~= pc.text then
         return false, ("%q is not paragraph %d's bytes at %d"):format(
           pc.text, e.line.para, pc.at)
       end
@@ -478,9 +486,7 @@ do
         "a set with its cache set an unchanged document again")
 
   local body2 = richtext.type(doc.body, { para = 2, at = 1 }, "new ")
-  local edited = { format = doc.format, version = doc.version, paper = doc.paper,
-                   margins_mm = doc.margins_mm, header = doc.header,
-                   footer = doc.footer, styles = doc.styles, body = body2 }
+  local edited = with_body(doc, body2)
   local set2 = pageset.set(edited, measure, cache)
   check(set2.pages[1].lines[1] == lines_of_1 and first > 0,
         "an edit to one paragraph set the others again")
@@ -617,9 +623,7 @@ do
   -- An item put in at the top: every number after it moves, though the
   -- paragraphs were set from the cache.
   local body = richtext.split(doc.body, { para = 1, at = 1 }, nil)
-  local renumbered = pageset.set({ format = doc.format, version = doc.version,
-    paper = doc.paper, margins_mm = doc.margins_mm, header = doc.header,
-    footer = doc.footer, styles = doc.styles, body = body }, measure, cache)
+  local renumbered = pageset.set(with_body(doc, body), measure, cache)
   local again = {}
   for _, line in ipairs(renumbered.pages[1].lines) do
     if line.marker then again[#again + 1] = line.marker.text end
@@ -650,6 +654,62 @@ do
         and near(pageset.locate(cset, measure, { para = 1, at = 2 }).x_pt,
                  LEFT + cap.width_pt),
         "the caret does not stand before and after the cap")
+end
+
+-- 16. **Hyphenation, ligatures and facing pages** (W4e).
+do
+  local hyphen = dofile("user/lib/hyphen.lua")
+  local function read(name)
+    local f = assert(io.open("assets/hyphenation/" .. name, "rb"))
+    local t = f:read("a")
+    f:close()
+    return t
+  end
+  local en = hyphen.parse(read("hyph-en-us.pat.txt"), read("hyph-en-us.hyp.txt"), 2, 3)
+
+  -- Fifteen four-letter words and "hyphenation": 74 characters, a space and
+  -- eleven more is past the column's 82, and "hyphen-" brings it to 82.
+  local text = ("abcd "):rep(15) .. "hyphenation."
+  local on = doc_of({ para("Body", text) }, { hyphenation = true })
+  local set = pageset.set(on, measure, nil, { hyphenate = en })
+  local l1, l2 = set.pages[1].lines[1], set.pages[1].lines[2]
+  local last = l1.pieces[#l1.pieces]
+
+  check(last.soft and last.text == "-" and text_of(l1):sub(-7) == "hyphen-"
+        and text_of(l2) == "ation.",
+        "a word at the line's end was not broken at its last break that fits: "
+        .. text_of(l1):sub(-10) .. " | " .. text_of(l2))
+  check(faithful(on, set))
+  check(pageset.locate(set, measure, { para = 1, at = l2.from }).line == l2,
+        "the place after a hyphen's break is not at the next line's start")
+
+  local off = doc_of({ para("Body", text) })
+  check(text_of(pageset.set(off, measure, nil, { hyphenate = en }).pages[1].lines[2])
+        == "hyphenation.", "a word was hyphenated with the switch off")
+
+  -- Ligatures: the switch reaches the measure.
+  local asked = {}
+  local recording = {
+    width = function(look, t, lig) asked[#asked + 1] = lig return measure.width(look, t) end,
+    line = measure.line,
+  }
+  pageset.set(doc_of({ para("Body", "office") }, { ligatures = true }), recording)
+  check(#asked > 0 and asked[1] == true, "the ligatures switch did not reach the measure")
+
+  -- Facing pages: a left-hand page's lines stand over by the margins'
+  -- difference, and a place found and a point hit agree across it.
+  local facing = doc_of({ para("Body", "one"), para("Body", "two", { page_break_before = true }) },
+                        { facing = true, margins_mm = { left = 20, right = 40, top = 25, bottom = 25 } })
+  local fset = pageset.set(facing, measure)
+  local shift = PT(40) - PT(20)
+
+  check(fset.pages[1].shift_pt == 0 and near(fset.pages[2].shift_pt, shift),
+        "a left-hand page is not shifted by its margins' difference")
+  local here = pageset.locate(fset, measure, { para = 2, at = 2 })
+  check(near(here.x_pt, PT(20) + shift + BODY),
+        "a place on a left-hand page is not where it is drawn")
+  local back = pageset.hit(fset, measure, 2, here.x_pt + 0.1, here.baseline_pt)
+  check(back.para == 2 and back.at == 2, "a point on a left-hand page did not find its place")
 end
 
 if fails > 0 then

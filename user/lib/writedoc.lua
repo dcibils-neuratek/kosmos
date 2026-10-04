@@ -73,6 +73,10 @@ writedoc.STYLES = {
     next = "Body" },
 }
 
+-- The languages a document may say it is in: those `hyphen.lua` has
+-- patterns for.
+writedoc.LANGUAGES = { ["en-us"] = "English", es = "Spanish" }
+
 -- The style a paragraph wears when it names none this document has.
 writedoc.BODY = "Body"
 
@@ -94,7 +98,7 @@ function writedoc.new()
     margins_mm = { top = 25, bottom = 25, left = 25, right = 25 },
     header = { on = true, from_top_mm = 9, text = "" },
     footer = { on = true, from_bottom_mm = 6, page_numbers = true },
-    facing = false, hyphenation = false, ligatures = true,
+    facing = false, hyphenation = false, ligatures = true, language = "en-us",
     styles = styles,
     body = { { style = writedoc.BODY, runs = {} } },
   }
@@ -206,6 +210,9 @@ function writedoc.check(t)
   doc.facing = flag(t.facing, false)
   doc.hyphenation = flag(t.hyphenation, false)
   doc.ligatures = flag(t.ligatures, true)
+
+  -- The language the text is hyphenated in: one there are patterns for.
+  doc.language = writedoc.LANGUAGES[t.language] and t.language or "en-us"
 
   local by_name
   doc.styles, by_name = richtext.styles(t.styles, writedoc.STYLES)

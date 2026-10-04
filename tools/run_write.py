@@ -322,7 +322,10 @@ local nonspace = 0
 for p, page in ipairs(placed.pages) do
   local function piece(pc, baseline)
     if pc.text ~= "" then
-      nonspace = nonspace + utf8.len((pc.text:gsub("[ %%c]", "")))
+      -- The glyphs the reader will draw: a ligature is one, a space none.
+      local face = measure.face_of(placed.looks[pc.look]).face
+      local hex = face:glyphs(pc.text, nil, placed.ligatures)
+      nonspace = nonspace + #hex // 4 - select(2, pc.text:gsub(" ", ""))
       -- In brackets, so a space at either end survives the console.
       print("PIECE", p, pdfwrite.num(pc.x_pt),
             pdfwrite.num(page.height_pt - baseline), "[" .. pc.text .. "]")
@@ -621,9 +624,14 @@ def pdf_checks(said, out, fonts, disk, work):
         if b"/Length1 %d" % len(subset) not in program:
             raise Failure("%s's program does not say its own length" % base)
 
-        # Every glyph it maps is the glyph its font gives that character.
+        # Every glyph it maps is the glyph its font gives that character -
+        # or, for two or three letters, that ligature's presentation form.
+        LIGS = {"ff": 0xFB00, "fi": 0xFB01, "fl": 0xFB02, "ffi": 0xFB03, "ffl": 0xFB04}
+
         for glyph, ch in unicode.items():
-            if font.cmap.get(ord(ch[0])) != glyph:
+            wanted = LIGS.get(ch) if len(ch) > 1 else ord(ch)
+
+            if font.cmap.get(wanted) != glyph:
                 raise Failure("%s's ToUnicode says glyph %d is %r, and the "
                               "font does not" % (base, glyph, ch))
 

@@ -414,6 +414,26 @@ def main():
             else:
                 check(False, "the Document panel did not say where its controls are")
 
+            # The Document panel's switches (W4e): facing pages, hyphenation,
+            # ligatures off, and Spanish.
+            for key in ("facing", "hyphenation", "ligatures"):
+                box = control(key)
+
+                if box:
+                    press_at(box[0] + 8, box[1] + box[3] // 2)
+                else:
+                    check(False, "the Document panel did not say where %s is" % key)
+
+            language = control("language")
+            mark = len(guest.seen)
+
+            if language:
+                press_at(language[0] + 30, language[1] + language[3] // 2)
+                listed = re.search(r"writer: menu language at (\d+),(\d+)", guest.seen[mark:])
+
+                if listed:
+                    press_at(int(listed.group(1)) + 40, int(listed.group(2)) + 4 + 30 + 15)
+
             view = tool("view")
             mark = len(guest.seen)
 
@@ -502,6 +522,9 @@ def main():
               and "page_break_before = true" in text,
               "the Document panel's paper, header words and margin, and Add "
               "Page's break, are not in the file")
+        check("facing = true" in text and "hyphenation = true" in text
+              and "ligatures = false" in text and 'language = "es"' in text,
+              "the Document panel's switches and language are not in the file")
         check(text.count('list = "number"') == 2,
               "the two items are not a numbered list in the file, and the "
               "line after them out of it: %d" % text.count('list = "number"'))

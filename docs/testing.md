@@ -18308,3 +18308,48 @@ item's end goes on with the list.
 the Layout part, "Item one", Return, "Item two", Return twice, "After" -
 six paragraphs, two of them numbered. **Control**: Return never ending a
 list - seven paragraphs, four numbered.
+
+## 18.388 Kosmos Write's ligatures, hyphenation and facing pages (W4e)
+
+The Document panel's last three switches, each made real rather than
+stored. **Ligatures**: an f and what follows set as one glyph where the face
+has one - ffi, ffl, ff, fi, fl, at their presentation forms in its `cmap`;
+IBM Plex has fi and fl, Space Grotesk all five. One function in `face.c`,
+`next_glyph`, used by `advance`, `glyphs` and `place`, so the measure, the
+screen and the PDF cannot set a ligature one of the others did not; the
+PDF's ToUnicode maps a ligature's glyph to the letters it stands for, so a
+copy says "fi". **Hyphenation**: Liang's algorithm with TeX's patterns,
+**`hyphen.lua`**, a kit; American English and Spanish, vendored from the
+hyph-utf8 package in `assets/hyphenation/` with each language's terms and a
+README of where they came from and their sums, named in `LICENSE`. A word
+that does not fit is broken at the last of its breaks where it and a hyphen
+still do, its punctuation kept out of the lookup; the hyphen is drawn and
+never text. A document says its language, in the Document panel. **Facing
+pages**: a left-hand page's margins the other way round, its lines standing
+over by the difference - a page's `shift_pt`, which what draws and what
+finds a place both add - and the desk shows spreads, the first page alone
+on the right.
+
+**Host**: `test_hyphen.lua`, 13, new - "hy-phen-ation", "com-puter" (two
+letters may not be left after a break in American English), "al-go-rithm",
+"type-set-ting", the exceptions "as-so-ciate", "ta-ble" and "project" over
+the patterns, short words not broken, and Spanish "compu-tado-ra",
+"Es-pa-ña" with a capital, "can-ción", "ven-ta-na". Two of those were
+first written as TeX's printed output and the patterns disagreed; a plain
+Liang in Python over the same file agreed with the patterns, so the
+expectations changed, not the code. `test_pageset.lua` 73 to 81: a word at
+a line's end broken at its last break that fits, the pieces still the
+paragraph's bytes, the place after the break at the next line, no
+hyphenation with the switch off, the ligatures switch reaching the measure,
+a left-hand page shifted by its margins' difference, and a place found and
+a point hit agreeing on it.
+
+**`run_write.py`**: its document now sets "fi" in "fill" as a ligature, so
+its ToUnicode check takes a ligature's letters to their presentation form,
+and the glyphs Kosmos's reader should draw are counted as `face:glyphs`
+gives them. **`arm-writeapp`, 17 to 18**: Facing pages, Hyphenation,
+Ligatures off and Spanish pressed in the Document panel, and all four in
+the file. **Control**: the switches not carried from the checked document -
+"not in the file".
+
+**Whole gate**: 90 suites in 651 s (10:51), all passing.

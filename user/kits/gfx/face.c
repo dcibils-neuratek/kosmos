@@ -15,7 +15,7 @@
  *     face:descriptor()  what a PDF says about a font beside its widths:
  *                        its PostScript name, box, italic angle, cap
  *                        height, underline and strike-out, fixed pitch
- *     face:glyphs(text[, used])
+ *     face:glyphs(text[, used[, ligatures]])
  *                        a UTF-8 string as its glyph numbers, two bytes
  *                        each in hex - what a PDF's Identity-H shows - and
  *                        how many the face has no glyph for; `used[glyph]`
@@ -25,7 +25,7 @@
  *     face:subset(glyphs, dst, cap)
  *                        the font with only those glyphs' outlines, into
  *                        a region: how many bytes (W3b)
- *     face:place(text, x, baseline, scale, extra, runs)
+ *     face:place(text, x, baseline, scale, extra, runs[, ligatures])
  *                        each glyph of a string and where it stands, in
  *                        pixels, appended to `runs` as `gfx.docfont`'s
  *                        `draw` takes them; the pen after it (W4)
@@ -352,20 +352,64 @@ static unsigned next_char(const unsigned char *s, size_t len, size_t *i)
 }
 
 /*
- * `face:advance(text)`: the sum of the characters' advance widths in font
- * units, and how many had no glyph - drawn as the face's missing glyph,
- * whose advance is what is counted for them.
+ * **Ligatures** (W4e): with the document's switch on, an f and what follows
+ * it set as one glyph where the face has one - ffi, ffl, ff, fi, fl, the
+ * longest first, at their Unicode presentation forms, which is how a face
+ * that has them says so in its `cmap`. One place, so the measure, the
+ * screen and the PDF cannot set a ligature one of them did not.
+ */
+static const struct { const char *text; unsigned cp; } LIGATURES[] = {
+    { "ffi", 0xFB03 }, { "ffl", 0xFB04 }, { "ff", 0xFB00 },
+    { "fi", 0xFB01 }, { "fl", 0xFB02 },
+};
+
+/*
+ * The next glyph of a string, and the character it stands for - a
+ * ligature's when `ligatures` and the face has one for the bytes at `*i`.
+ * `*i` moves past every byte the glyph stands for, and `*cp` says which
+ * character - or which ligature's presentation form - it is.
+ */
+static int next_glyph(struct face *f, const unsigned char *s, size_t len,
+                      size_t *i, bool ligatures, unsigned *cp)
+{
+    size_t start = *i, k;
+
+    if (ligatures && s[start] == 'f') {
+        for (k = 0; k < sizeof(LIGATURES) / sizeof(LIGATURES[0]); k++) {
+            size_t n = strlen(LIGATURES[k].text);
+
+            if (start + n <= len && memcmp(s + start, LIGATURES[k].text, n) == 0) {
+                int g = stbtt_FindGlyphIndex(&f->info, (int)LIGATURES[k].cp);
+
+                if (g != 0) {
+                    *i = start + n;
+                    *cp = LIGATURES[k].cp;
+                    return g;
+                }
+            }
+        }
+    }
+
+    *cp = next_char(s, len, i);
+    return stbtt_FindGlyphIndex(&f->info, (int)*cp);
+}
+
+/*
+ * `face:advance(text[, ligatures])`: the sum of the glyphs' advance widths
+ * in font units, and how many characters had no glyph - drawn as the face's
+ * missing glyph, whose advance is what is counted for them.
  */
 static int l_advance(lua_State *L)
 {
     struct face *f = luaL_checkudata(L, 1, FACE_MT);
     size_t len, i = 0;
     const unsigned char *s = (const unsigned char *)luaL_checklstring(L, 2, &len);
+    bool ligatures = lua_toboolean(L, 3);
     lua_Integer total = 0, missing = 0;
 
     while (i < len) {
-        unsigned cp = next_char(s, len, &i);
-        int glyph = stbtt_FindGlyphIndex(&f->info, (int)cp);
+        unsigned cp;
+        int glyph = next_glyph(f, s, len, &i, ligatures, &cp);
         int advance, lsb;
 
         if (glyph == 0) {
@@ -464,6 +508,7 @@ static int l_glyphs(lua_State *L)
     size_t len, i = 0;
     const unsigned char *s = (const unsigned char *)luaL_checklstring(L, 2, &len);
     bool mapping = !lua_isnoneornil(L, 3);
+    bool ligatures = lua_toboolean(L, 4);
     lua_Integer missing = 0;
     luaL_Buffer out;
 
@@ -474,15 +519,24 @@ static int l_glyphs(lua_State *L)
     luaL_buffinit(L, &out);
 
     while (i < len) {
-        unsigned cp = next_char(s, len, &i);
-        int glyph = stbtt_FindGlyphIndex(&f->info, (int)cp);
+        size_t from = i;
+        unsigned cp;
+        int glyph = next_glyph(f, s, len, &i, ligatures, &cp);
         char four[4];
 
         if (glyph == 0) {
             missing++;
         } else if (mapping && lua_rawgeti(L, 3, glyph) == LUA_TNIL) {
             lua_pop(L, 1);
-            lua_pushinteger(L, (lua_Integer)cp);
+
+            /* A ligature's glyph is the letters it stands for, so a copy
+             * out of the PDF says "fi" and not a presentation form. */
+            if (cp >= 0xFB00 && cp <= 0xFB04) {
+                lua_pushlstring(L, (const char *)s + from, i - from);
+            } else {
+                lua_pushinteger(L, (lua_Integer)cp);
+            }
+
             lua_rawseti(L, 3, glyph);
         } else if (mapping) {
             lua_pop(L, 1);
@@ -848,14 +902,16 @@ static int l_place(lua_State *L)
     lua_Integer baseline = luaL_checkinteger(L, 4);
     lua_Number scale = luaL_checknumber(L, 5);
     lua_Number extra = luaL_checknumber(L, 6);
+    bool ligatures;
     lua_Integer n;
 
     luaL_checktype(L, 7, LUA_TTABLE);
+    ligatures = lua_toboolean(L, 8);
     n = (lua_Integer)lua_rawlen(L, 7);
 
     while (i < len) {
-        unsigned cp = next_char(s, len, &i);
-        int glyph = stbtt_FindGlyphIndex(&f->info, (int)cp);
+        unsigned cp;
+        int glyph = next_glyph(f, s, len, &i, ligatures, &cp);
         int advance, lsb;
         lua_Number at = x + 0.5;
         lua_Integer px = (lua_Integer)at;

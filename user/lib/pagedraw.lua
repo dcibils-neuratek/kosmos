@@ -81,6 +81,10 @@ function Drawer:page(set, page, surface, scale, x, y, paper, marks)
                  m.colour)
   end
 
+  -- A left-hand page's lines stand over on facing pages (`pageset`); a
+  -- header and a page number are centred on the page, and do not.
+  local shift = 0
+
   local function piece(pc, baseline_pt, extra_pt)
     if pc.text == "" then return end
 
@@ -88,7 +92,7 @@ function Drawer:page(set, page, surface, scale, x, y, paper, marks)
     local entry = self.measure.face_of(look)
     local px = math.floor(look.size_pt * scale + 0.5)
     local colour = argb(look.colour)
-    local left = x + pc.x_pt * scale
+    local left = x + (pc.x_pt + shift) * scale
     -- A drop cap stands lower than its line, by the lines beside it.
     local base = y + math.floor((baseline_pt + (pc.drop_pt or 0)) * scale + 0.5)
 
@@ -114,7 +118,7 @@ function Drawer:page(set, page, surface, scale, x, y, paper, marks)
     end
 
     entry.face:place(pc.text, left, base, look.size_pt * scale / entry.units,
-                     extra_pt * scale, bucket.runs)
+                     extra_pt * scale, bucket.runs, set.ligatures)
 
     -- Underline and strike-out at the font's own positions, as the PDF's.
     if look.underline or look.strike then
@@ -144,6 +148,8 @@ function Drawer:page(set, page, surface, scale, x, y, paper, marks)
     end
   end
 
+  shift = page.shift_pt or 0
+
   for _, line in ipairs(page.lines) do
     -- A list's marker, before the line's text.
     if line.marker then piece(line.marker, line.baseline_pt, 0) end
@@ -152,6 +158,8 @@ function Drawer:page(set, page, surface, scale, x, y, paper, marks)
       piece(pc, line.baseline_pt, pc.cap and 0 or line.extra_space_pt)
     end
   end
+
+  shift = 0
 
   if page.header then
     piece(page.header.piece, page.header.baseline_pt, 0)

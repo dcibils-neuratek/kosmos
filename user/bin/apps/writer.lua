@@ -55,6 +55,7 @@ local faces     = use("/Kosmos/Libraries/faces.lua")
 local pagedraw  = use("/Kosmos/Libraries/pagedraw.lua")
 local pdf       = use("/Kosmos/Libraries/pdf.lua")
 local pk        = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
+local hyphen    = use("/Kosmos/Libraries/hyphen.lua")
 
 local theme = ui.theme
 
@@ -125,7 +126,14 @@ end
 local by_name = {}
 for _, s in ipairs(doc.styles) do by_name[s.name] = s end
 
-local set = pageset.set(doc, measure, cache)
+-- The pages set again: with the document's language's hyphenation when it
+-- says so (`hyphen.lua`).
+local function setting()
+  return pageset.set(doc, measure, cache,
+                     { hyphenate = doc.hyphenation and hyphen.language(doc.language) or nil })
+end
+
+local set = setting()
 local zoom = 4                  -- 125%, an index into ZOOMS
 local top = 0                   -- how far down the desk the view is
 local across = 0                -- and how far across, when a page is wider
@@ -170,19 +178,52 @@ local function page_px(page)
 end
 
 -- Where page `i` stands, in the window, with the desk scrolled.
+--
+-- **Facing pages show as spreads**, as a book opens: the first page alone
+-- on the right, then each even page on the left of the odd one after it.
+-- Otherwise one page under another.
+--
+local SPREAD_GAP = 4
+
+local function row_of(i)
+  if set.facing then return i // 2 end
+  return i - 1
+end
+
+local function content_width()
+  local w = page_px(set.pages[1])
+  return set.facing and (2 * w + SPREAD_GAP) or w
+end
+
 local function page_at(i)
   local dx, dy, dw = desk()
   local y = GAP
+  local row = row_of(i)
+  local k = 1
 
-  for k = 1, i - 1 do
-    local _, h = page_px(set.pages[k])
-    y = y + h + GAP
+  -- The rows above this page's, each as tall as its tallest page.
+  for r = 0, row - 1 do
+    local tallest = 0
+
+    while set.pages[k] and row_of(k) == r do
+      local _, h = page_px(set.pages[k])
+      tallest = math.max(tallest, h)
+      k = k + 1
+    end
+
+    y = y + tallest + GAP
   end
 
   local w = page_px(set.pages[i])
+  local cw = content_width()
 
-  -- A page wider than the desk scrolls across; a narrower one is centred.
-  local x = (w + 2 * GAP > dw) and (dx + GAP - across) or (dx + (dw - w) // 2)
+  -- What is wider than the desk scrolls across; what is narrower is centred.
+  local left = (cw + 2 * GAP > dw) and (dx + GAP - across) or (dx + (dw - cw) // 2)
+  local x = left
+
+  if set.facing then
+    x = (i % 2 == 0) and left or (left + w + SPREAD_GAP)
+  end
 
   return x, dy + y - top
 end
@@ -544,6 +585,44 @@ local function draw_document(s, x0, w0, y)
   control("page_numbers", pn, function()
     doc_edit("footer", { footer = { on = doc.footer.on, from_bottom_mm = doc.footer.from_bottom_mm,
                                     page_numbers = not doc.footer.page_numbers } })
+  end)
+
+  local lig = { x = x0 + w0 // 2, y = y + 4, text = "Ligatures", on = doc.ligatures }
+  pk.check(s, lig)
+  control("ligatures", lig, function()
+    doc_edit("ligatures", { ligatures = not doc.ligatures })
+  end)
+
+  y = y + 34
+
+  local fc = { x = x0, y = y, text = "Facing pages", on = doc.facing }
+  pk.check(s, fc)
+  control("facing", fc, function()
+    doc_edit("facing", { facing = not doc.facing })
+  end)
+
+  local hy = { x = x0 + w0 // 2, y = y, text = "Hyphenation", on = doc.hyphenation }
+  pk.check(s, hy)
+  control("hyphenation", hy, function()
+    doc_edit("hyphenation", { hyphenation = not doc.hyphenation })
+  end)
+
+  y = y + 30
+
+  -- The language the document is hyphenated in.
+  local tags = { "en-us", "es" }
+  local words = {}
+  for i, t in ipairs(tags) do words[i] = writedoc.LANGUAGES[t] end
+
+  s:text(x0, y + (30 - gfx.height()) // 2, "Language", theme.text_dim, nil, "ui")
+
+  local lang = { x = x0 + 120, y = y, w = w0 - 120,
+                 text = writedoc.LANGUAGES[doc.language] or doc.language }
+  pk.chooser(s, lang)
+  control("language", lang, function()
+    open_menu("language", lang.x, lang.y + lang.h + 4, lang.w, words,
+              index_of(tags, doc.language),
+              function(i) doc_edit("language", { language = tags[i] }) end)
   end)
 end
 
@@ -973,9 +1052,8 @@ local function follow()
 
   if not cy then return end
 
-  -- Across first, when the page is wider than the desk.
-  local w = page_px(set.pages[1])
-  local most = math.max(0, w + 2 * GAP - dw)
+  -- Across first, when the page - or a spread - is wider than the desk.
+  local most = math.max(0, content_width() + 2 * GAP - dw)
 
   if cx > dx + dw - 24 then
     across = math.min(most, across + (cx - (dx + dw - 24)))
@@ -1024,14 +1102,17 @@ end
 -- table no edit changes in place.
 local function snapshot()
   return { body = doc.body, caret = caret, paper = doc.paper,
-           margins_mm = doc.margins_mm, header = doc.header, footer = doc.footer }
+           margins_mm = doc.margins_mm, header = doc.header, footer = doc.footer,
+           facing = doc.facing, hyphenation = doc.hyphenation,
+           ligatures = doc.ligatures, language = doc.language }
 end
 
 -- The pages' count and size, so the log hears when they change.
 local shape = nil
 
 local function report_if_changed()
-  local now = ("%d:%s:%s"):format(#set.pages, set.pages[1].width_pt, set.pages[1].height_pt)
+  local now = ("%d:%s:%s:%s"):format(#set.pages, set.pages[1].width_pt, set.pages[1].height_pt,
+                                     tostring(set.facing))
 
   if now ~= shape then
     shape = now
@@ -1054,7 +1135,7 @@ local function edited(body, place, kind, keep)
 
   dirty = true
   said = nil
-  set = pageset.set(doc, measure, cache)
+  set = setting()
   follow()
   changed()
   report_if_changed()
@@ -1085,9 +1166,11 @@ function doc_edit(kind, fields)
 
   doc.paper, doc.margins_mm = checked.paper, checked.margins_mm
   doc.header, doc.footer = checked.header, checked.footer
+  doc.facing, doc.hyphenation = checked.facing, checked.hyphenation
+  doc.ligatures, doc.language = checked.ligatures, checked.language
   dirty = true
   said = nil
-  set = pageset.set(doc, measure, cache)
+  set = setting()
   changed()
   report_if_changed()
 end
@@ -1149,9 +1232,11 @@ local function swap(from, to)
   doc.body, caret, anchor, column = entry.body, entry.caret, nil, nil
   doc.paper, doc.margins_mm = entry.paper, entry.margins_mm
   doc.header, doc.footer = entry.header, entry.footer
+  doc.facing, doc.hyphenation = entry.facing, entry.hyphenation
+  doc.ligatures, doc.language = entry.ligatures, entry.language
   last_kind = nil
   dirty = true
-  set = pageset.set(doc, measure, cache)
+  set = setting()
   follow()
   changed()
   report_if_changed()
@@ -1559,6 +1644,7 @@ for _, t in ipairs(TOOLS) do
   end
 end
 
-shape = ("%d:%s:%s"):format(#set.pages, set.pages[1].width_pt, set.pages[1].height_pt)
+shape = ("%d:%s:%s:%s"):format(#set.pages, set.pages[1].width_pt, set.pages[1].height_pt,
+                               tostring(set.facing))
 
 win:run()

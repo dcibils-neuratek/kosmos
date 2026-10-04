@@ -116,7 +116,7 @@ end
 -- **The width of `text` in `look`**, asked once: a document says "the" a few
 -- thousand times, and the measure is a call into C inside the machine.
 --
-local function widths(measure, looks)
+local function widths(measure, looks, ligatures)
   local cache = {}
 
   return function(look, text)
@@ -124,7 +124,7 @@ local function widths(measure, looks)
     local w = cache[key]
 
     if not w then
-      w = measure.width(looks[look], text)
+      w = measure.width(looks[look], text, ligatures)
       cache[key] = w
     end
 
@@ -146,7 +146,7 @@ end
 -- whether a line break ended it. `room_of(k)` is the room for line `k` - a
 -- first line's indent, a drop cap's lines beside it.
 --
-local function break_lines(tokens, room_of, width)
+local function break_lines(tokens, room_of, width, hyphenate)
   local lines, line = {}, nil
   local pending = {}          -- spaces since the last word, not yet placed
 
@@ -196,6 +196,31 @@ local function break_lines(tokens, room_of, width)
     return w
   end
 
+  --
+  -- **A word broken with a hyphen** (the Document panel's switch): at the
+  -- last of its breaks where what comes before, and the hyphen, still fit
+  -- - its punctuation kept out of the lookup and on its own side. Nil when
+  -- no break fits.
+  --
+  local function hyphen_split(tok, gap)
+    local lead, core, trail = tok.text:match("^([^%a\128-\255]*)([%a\128-\255]+)(.-)$")
+
+    if not core or core == "" or trail:match("[%a\128-\255]") then return nil end
+
+    local breaks = hyphenate(core)
+    local dash = width(tok.look, "-")
+
+    for k = #breaks, 1, -1 do
+      local head = tok.text:sub(1, #lead + breaks[k])
+      local head_w = width(tok.look, head)
+
+      if line.width_pt + gap + head_w + dash <= room() then
+        return { head = head, head_w = head_w, dash_w = dash,
+                 tail = tok.text:sub(#head + 1) }
+      end
+    end
+  end
+
   new_line()
 
   -- Words that are not separated by a space go together - a word in two
@@ -241,12 +266,26 @@ local function break_lines(tokens, room_of, width)
       end
 
       local gap = pending_width()
+      local split = nil
 
       if #line.pieces > 0 and line.width_pt + gap + box_w > room() then
-        new_line()
+        split = hyphenate and j == i + 1 and hyphen_split(tok, gap)
+        if not split then new_line() end
       end
 
-      if line.width_pt + gap + box_w <= room() or #line.pieces > 0 then
+      if split then
+        -- The head and its hyphen on this line, the tail a word of its own
+        -- for the next: the hyphen is drawn, never text (`soft`).
+        flush()
+        place(tok, split.head, tok.at, split.head_w)
+        line.pieces[#line.pieces + 1] = { text = "-", look = tok.look,
+          at = tok.at + #split.head, x_pt = line.width_pt,
+          width_pt = split.dash_w, soft = true }
+        line.width_pt = line.width_pt + split.dash_w
+        new_line()
+        tokens[i] = { kind = "word", text = split.tail, look = tok.look,
+                      at = tok.at + #split.head }
+      elseif line.width_pt + gap + box_w <= room() or #line.pieces > 0 then
         flush()
 
         for k = i, j - 1 do
@@ -275,7 +314,8 @@ local function break_lines(tokens, room_of, width)
         end
       end
 
-      i = j
+      -- A word split by a hyphen is placed again, its tail, next time round.
+      if not split then i = j end
     end
   end
 
@@ -431,7 +471,12 @@ function pageset.cache()
   return {}
 end
 
-function pageset.set(doc, measure, cache)
+--
+-- `opts.hyphenate`, when the document says to hyphenate, is a function from
+-- a word to where it may break (`hyphen.lua`): handed in, so the setting
+-- stays a sum a test can do on the Mac.
+--
+function pageset.set(doc, measure, cache, opts)
   local page_w, page_h = writedoc.page_mm(doc)
   local m = doc.margins_mm
 
@@ -440,7 +485,9 @@ function pageset.set(doc, measure, cache)
   local left = writedoc.pt(m.left)
   local column = page_w - left - writedoc.pt(m.right)
   local top, bottom = writedoc.pt(m.top), page_h - writedoc.pt(m.bottom)
-  local geometry = ("%s:%s"):format(left, column)
+  local hyphenate = doc.hyphenation and opts and opts.hyphenate or nil
+  local geometry = ("%s:%s:%s:%s:%s"):format(left, column, tostring(doc.ligatures),
+                                          tostring(hyphenate ~= nil), doc.language)
 
   cache = cache or pageset.cache()
 
@@ -448,7 +495,7 @@ function pageset.set(doc, measure, cache)
      or cache.styles ~= doc.styles then
     cache.geometry, cache.measure, cache.styles = geometry, measure, doc.styles
     cache.looks, cache.look_of = looks_table()
-    cache.width = widths(measure, cache.looks)
+    cache.width = widths(measure, cache.looks, doc.ligatures)
     cache.paras = setmetatable({}, { __mode = "k" })
   end
 
@@ -501,7 +548,7 @@ function pageset.set(doc, measure, cache)
                            - (k <= cap_lines and cap_room or 0))
       end
 
-      local lines = break_lines(tokens, room_of, width)
+      local lines = break_lines(tokens, room_of, width, hyphenate)
 
       for k, line in ipairs(lines) do
         line.para = n
@@ -561,9 +608,17 @@ function pageset.set(doc, measure, cache)
   local pages = {}
   local page, y
 
+  -- **Facing pages**: a left-hand page - an even one - has its margins the
+  -- other way round, the inside one at its right, so its lines stand over
+  -- by the difference. Lines are set once for every page; the shift is the
+  -- page's, and what draws or finds a place on it adds it.
+  local mirror = doc.facing and (writedoc.pt(m.right) - writedoc.pt(m.left)) or 0
+
   local function new_page()
-    page = { number = #pages + 1, width_pt = page_w, height_pt = page_h,
-             lines = {} }
+    local number = #pages + 1
+
+    page = { number = number, width_pt = page_w, height_pt = page_h,
+             lines = {}, shift_pt = number % 2 == 0 and mirror or 0 }
     pages[#pages + 1] = page
     y = top
   end
@@ -694,7 +749,8 @@ function pageset.set(doc, measure, cache)
     end
   end
 
-  return { looks = looks, pages = pages }
+  return { looks = looks, pages = pages, ligatures = doc.ligatures,
+           facing = doc.facing }
 end
 
 --------------------------------------------------------------------------
@@ -725,13 +781,17 @@ local function offset_in(set, measure, piece, at, extra)
 
   local spaces = select(2, prefix:gsub(" ", ""))
 
-  return measure.width(set.looks[piece.look], prefix) + spaces * extra
+  return measure.width(set.looks[piece.look], prefix, set.ligatures) + spaces * extra
 end
 
--- Where a line's text ends, in its paragraph's bytes.
+-- Where a line's text ends, in its paragraph's bytes: a hyphen it ends
+-- with is drawn, not text.
 local function line_end(line)
-  local last = line.pieces[#line.pieces]
-  return last and (last.at + #last.text) or line.from
+  for k = #line.pieces, 1, -1 do
+    local p = line.pieces[k]
+    if not p.soft then return p.at + #p.text end
+  end
+  return line.from
 end
 
 --
@@ -757,7 +817,9 @@ function pageset.locate(set, measure, place)
   local x = line.x_pt
 
   for _, piece in ipairs(line.pieces) do
-    if place.at >= piece.at and place.at <= piece.at + #piece.text then
+    if piece.soft then
+      -- A hyphen is not a place.
+    elseif place.at >= piece.at and place.at <= piece.at + #piece.text then
       x = piece.x_pt + offset_in(set, measure, piece, place.at,
                                  line.extra_space_pt)
       break
@@ -766,7 +828,7 @@ function pageset.locate(set, measure, place)
     end
   end
 
-  return { page = found.page, line = line, x_pt = x,
+  return { page = found.page, line = line, x_pt = x + set.pages[found.page].shift_pt,
            baseline_pt = line.baseline_pt, ascent_pt = line.ascent_pt,
            height_pt = line.height_pt }
 end
@@ -780,13 +842,14 @@ function pageset.place_on(set, measure, line, x_pt)
   local place = { para = line.para, at = line.from }
 
   for _, piece in ipairs(line.pieces) do
+    if piece.soft then return place end
     if x_pt < piece.x_pt then return place end
 
     local look = set.looks[piece.look]
     local pen, at = piece.x_pt, piece.at
 
     for ch in piece.text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
-      local w = measure.width(look, ch)
+      local w = measure.width(look, ch, set.ligatures)
                 + (ch == " " and line.extra_space_pt or 0)
 
       if x_pt < pen + w / 2 then return { para = line.para, at = at } end
@@ -821,7 +884,7 @@ function pageset.hit(set, measure, page, x_pt, y_pt)
 
   if not best then return nil end
 
-  return pageset.place_on(set, measure, best, x_pt)
+  return pageset.place_on(set, measure, best, x_pt - set.pages[page].shift_pt)
 end
 
 --
@@ -842,7 +905,8 @@ function pageset.vertical(set, measure, place, step, x_pt)
 
       if not other then return place, x_pt or here.x_pt end
 
-      return pageset.place_on(set, measure, other.line, x_pt or here.x_pt),
+      return pageset.place_on(set, measure, other.line,
+                              (x_pt or here.x_pt) - set.pages[other.page].shift_pt),
              x_pt or here.x_pt
     end
   end
@@ -871,8 +935,9 @@ function pageset.selection(set, measure, a, b)
     if line == from.line then inside = true end
 
     if inside then
-      local left = line == from.line and from.x_pt or line.x_pt
-      local right = line == to.line and to.x_pt or (line.x_pt + line.width_pt)
+      local shift = set.pages[entry.page].shift_pt
+      local left = line == from.line and from.x_pt or (line.x_pt + shift)
+      local right = line == to.line and to.x_pt or (line.x_pt + line.width_pt + shift)
 
       -- A line wholly selected and empty still shows that it is.
       if right <= left and line ~= to.line then right = left + 4 end
