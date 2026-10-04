@@ -276,6 +276,27 @@ watcher under the same lock, so a caller either arrives first and is seen or
 arrives after and finds the watcher blocked and findable. A dying watcher and a
 destroyed endpoint both clear it.
 
+**A server may ask who sent the message it has just received** (4 October
+2026, `SYS_SENDER`): the process, its parent, its name and the file it runs.
+For two years no server needed to know - each answered everybody alike, and
+a reply token was all it held. The notification server was the first that
+must not take a caller's word: a banner says which application is speaking,
+and a person turns one off by that name. The kernel delivered the message,
+so the kernel says where it came from; QNX's `MsgReceive` hands a server
+the same thing. It is noted at the receive, one word in the receiving
+thread, and asked for afterwards - a server that does not care pays that
+word and nothing else.
+
+**And the file a process runs is said once.** A name was always a label a
+process could change, and so was the file beside it - `sys.name(name,
+file)` - which made it worthless as an identity. The runner says the file
+before the program's first line runs, and `SYS_SETNAME` refuses a second
+one. What is still open, and written down rather than claimed: a parent
+builds its child's namespace, so a parent that handed its child a false
+`/Kosmos/Apps` could run its own code under another file's name. The kernel
+does not know files, so closing that is a question for whoever serves
+programs, not for this.
+
 ### 4.3 Capabilities
 
 Each process has a table of them. Syscalls take an index into that table, never a global identifier.

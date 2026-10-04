@@ -305,6 +305,9 @@ struct thread {
         struct endpoint *waiting_on;/* so destroying an endpoint can find us */
         struct endpoint *watching[IPC_WATCH_MAX]; /* whose callers end its sleep */
         int             status;     /* the result handed over on waking */
+        uint32_t        received_from; /* the process the last message
+                                          received came from, 0 the kernel:
+                                          what SYS_SENDER answers about */
     } ipc;
 
     /*

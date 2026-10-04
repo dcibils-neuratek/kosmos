@@ -4691,6 +4691,89 @@ def ethernet_pch(image, check):
               "address:\n    " + out[-500:])
 
 
+def notifications(image, check):
+    """**Notifications, step 1** (`roadmap.md`, *Notifications*): the server,
+    and who sent a post said by the kernel rather than by the post.
+
+    `notify` at the prompt posts a banner and an alert, and the server's log
+    files each under `/Kosmos/Programs/notify.lua` - the file the kernel says
+    the posting process runs (`SYS_SENDER`). A program that tries to say it
+    is Cafesa3D (`sys.name` with a second file) is refused, and its post is
+    filed under its own file. Then the history: walked oldest first, a post
+    with no title refused, kept to two when asked, the newest number
+    reported, and cleared.
+    """
+    forge = ("print('rename', sys.name('forged', '/Kosmos/Apps/cafesa3d.lua')) "
+             "local n = use('/Kosmos/Libraries/notify.lua') "
+             "print('posted', n.post{title='Forged'})")
+    keep = ("local n = use('/Kosmos/Libraries/notify.lua') n.keep(2) "
+            "for i = 1, 3 do n.post{title = 'k' .. i} end "
+            "print('held', select(3, n.next(0)), 'newest', n.newest(), "
+            "'after the newest', n.next(n.newest()))")
+
+    out = boot(image, None, 150.0, typed=(
+        "notify Hello | from the prompt",
+        "notify --alert Timer | The 25 minutes are up",
+        'fs.write("/Temporary/forge.lua", "%s")' % forge,
+        "run /Temporary/forge.lua",
+        "notify --list",
+        "notify | a line and no title",
+        "fs.write(\"/Temporary/keep.lua\", \"%s\")" % keep,
+        "run /Temporary/keep.lua",
+        "notify --list",
+        "notify --clear",
+        "notify --list",
+    ))
+
+    if out is None:
+        check(False, "the machine would not boot for the notifications")
+        return
+
+    serving = re.search(r"notify: serving /Notifications, keeping up to (\d+)", out)
+    check(serving is not None and int(serving.group(1)) >= 64,
+          "the notification server did not say it was serving, with a "
+          "history of at least 64: %r"
+          % (serving.group(0) if serving else "nothing"))
+
+    check("notify: 1 from /Kosmos/Programs/notify.lua: Hello" in out,
+          "a post from `notify` was not filed under the file it runs")
+    check("notify: 2 from /Kosmos/Programs/notify.lua, an alert: Timer" in out,
+          "an alert from `notify` was not filed as one, under its file")
+
+    check(re.search(r"rename\s+false", out) is not None,
+          "a program saying a second file for itself was not refused")
+    check("notify: 3 from /Temporary/forge.lua: Forged" in out
+          and "from /Kosmos/Apps/cafesa3d.lua" not in out,
+          "a program that tried to be Cafesa3D was not filed under its own "
+          "file: " + next((l.strip() for l in out.splitlines()
+                           if "Forged" in l and "notify:" in l), "no post"))
+
+    lists = re.findall(r"((?:\d+  .*\n)*)notify: (\d+) kept", out)
+    first = lists[0] if lists else ("", "")
+    check(first[1] == "3" and "1  Notify  Hello  from the prompt" in first[0]
+          and "2  Notify  [alert] Timer  The 25 minutes are up" in first[0]
+          and "3  Forge  Forged" in first[0],
+          "the history was not the three posts, oldest first: %r" % (first,))
+
+
+    check("notify: a notification needs a title" in out,
+          "a post with no title was not refused")
+
+    held = re.search(r"held\s+(\d+)\s+newest\s+(\d+)\s+after the newest\s+nil", out)
+    check(held is not None and held.group(1) == "2" and held.group(2) == "6",
+          "kept to two, the history did not hold two with 6 the newest and "
+          "nothing after it: %r" % (held.group(0) if held else "nothing said"))
+
+    second = lists[1] if len(lists) > 1 else ("", "")
+    check(second[1] == "2" and "5  Keep  k2" in second[0]
+          and "6  Keep  k3" in second[0],
+          "kept to two, the history was not the last two: %r" % (second,))
+
+    check("notify: cleared" in out and len(lists) > 2 and lists[2][1] == "0",
+          "the history was not empty once cleared: %r"
+          % ((lists[2],) if len(lists) > 2 else ("no third listing",)))
+
+
 def restart(image, check):
     """`restart` at the prompt restarts the machine, the firmware's way first.
 
@@ -4891,7 +4974,7 @@ def memory(image, check):
 
 
 PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
-    'memory', 'memory_home', 'restart', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
+    'memory', 'memory_home', 'restart', 'notifications', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
 def main():
@@ -5008,6 +5091,10 @@ def main():
     # And `restart`, the firmware's way first (18.352).
     if 'restart' in wanted:
         restart(image, check)
+
+    # And what applications have said, and who the kernel says said it.
+    if 'notifications' in wanted:
+        notifications(image, check)
 
     # And an Intel Ethernet card on a PCI line, which is the M700's.
     if 'ethernet' in wanted:

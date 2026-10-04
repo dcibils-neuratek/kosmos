@@ -759,6 +759,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/devices.c \
              user/servers/binfs.c \
              user/servers/appfs.c \
+             user/servers/notify.c \
              user/servers/console.c \
              user/servers/ramfs.c \
              user/servers/net.c \

@@ -4294,9 +4294,11 @@ static bool test_the_share_window_is_recorded(void)
  * two threads while a worker lives and one after, a spinning worker's
  * time charged to the process while it runs and kept once it is collected
  * (checks 16 to 20), the file kept when only the name changes, a bad pointer refused before anything is written, and a
- * control character made printable. Its exit code names the first check
- * that failed. Here, after it has ended: the file it gave last is the one
- * the kernel kept, and nothing is left behind.
+ * second file refused with nothing changed, the name included - the file
+ * is said once, since SYS_SENDER names a process by it. Its exit code names
+ * the first check that failed. Here, after it has ended: the file it gave
+ * is the one the kernel kept, a control character in one is made
+ * printable, and nothing is left behind.
  */
 #define CTEST_TABLE 904UL
 
@@ -4309,7 +4311,7 @@ static bool test_the_table_says_threads_and_file(void)
     size_t pages_before = pmm_free_pages();
     struct process *p;
     unsigned i;
-    bool kept;
+    bool kept, printable;
     int code;
 
     p = process_create("t-table", init_image, (size_t)init_image_len,
@@ -4332,6 +4334,12 @@ static bool test_the_table_says_threads_and_file(void)
 
     code = p->exit_code;
     kept = memcmp(p->from, file, sizeof file) == 0;
+
+    /* And what reaches a screen is printable - here, since a process may
+     * say its file only once and the role said its own. */
+    process_set_from(p, "/bin/a\tb.lua", 12);
+    printable = memcmp(p->from, "/bin/a?b.lua", 13) == 0;
+
     process_reap(p);
 
     if (code != 0) {
@@ -4340,7 +4348,11 @@ static bool test_the_table_says_threads_and_file(void)
         kputs(")\n");
     }
 
-    return code == 0 && kept && process_count() == before
+    if (!printable) {
+        kputs("\n   (a tab in a file was not made printable)\n");
+    }
+
+    return code == 0 && kept && printable && process_count() == before
         && pmm_free_pages() == pages_before;
 }
 

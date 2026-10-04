@@ -804,6 +804,10 @@ struct proc_info;
  * how many. */
 unsigned process_table(struct proc_info *out, unsigned max);
 
+/* One process by its id, for SYS_SENDER: 0, or -1 when there is none. */
+struct sender_info;
+int process_describe(unsigned id, struct sender_info *out);
+
 /* A process says what it is. Truncated to fit and stripped of anything
  * unprintable. */
 void process_set_name(struct process *p, const char *name, size_t len);

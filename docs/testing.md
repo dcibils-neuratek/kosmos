@@ -17394,3 +17394,52 @@ nothing, the drop doing nothing, the release not acting, and the right
 press offering no menu. **8 of 44 fail**: Terminal stays third, Music
 stays, Keep in Dock pins nothing, the file holds nothing while the dock
 shows nine, and the click opens nothing.
+
+## 18.367 Notifications, step 1: the server, and who sent it
+
+Diego's order of 4 October - notifications, then storage in C, then Kosmos
+Write - and the first of the four steps the roadmap now has for the first:
+**`notifyd`** (`user/servers/notify.c`), at `/Notifications`, speaking
+`notifyproto.h` - post, next, remove, clear, keep. A ledger: each post
+numbered, never reused, with the counter when it came and **who sent it as
+the kernel says**. The history grows a chunk of pages at a time to a
+4096th of the machine's memory - 212 on a 512 MB guest, about 3,400 on the
+M700 - and the oldest goes past that, or past what the person keeps.
+
+**Who sent it.** No server had ever been told who called: a reply token
+and whatever the message said. Two kernel changes:
+
+- **`SYS_SENDER`** (66): the process the message a thread last received came
+  from - noted at the receive, one word in the thread, looked up when
+  asked - as a `struct sender_info`: id, parent, name, file.
+  `SYS_ERR_GONE` (-113) when it has ended since.
+- **The file a process runs is said once.** `sys.name(name, file)` could
+  be called again by any program, which would make the file worthless as
+  an identity; `SYS_SETNAME` now refuses a second file before writing
+  anything. The runner says it before the program's first line.
+
+`user/lib/notify.lua` (post, next, all, newest, remove, clear, keep; `age`
+the one place the server's counter becomes seconds; `who` and `key` for
+whatever shows them) and `notify` at the prompt.
+
+**`run_x86.py`'s `notifications`, 10, in `x86-core`**: the server serving
+with at least 64; `notify` posting a banner and an alert, each filed under
+`/Kosmos/Programs/notify.lua`; **a program saying it is Cafesa3D refused,
+and its post filed under `/Temporary/forge.lua`**; the history oldest first;
+a post with no title refused; kept to two, the last two and 6 the newest
+with nothing after it; and cleared. **The kernel suite's process table
+check** (904) now has a second file refused with nothing changed, the name
+included; that a tab in a file is made printable moved into the kernel's
+half, since a process says only one.
+
+**Controls**, in two builds. `SYS_SETNAME` taking a second file, the
+history ignoring what it is told to keep, and clear doing nothing: 6 of 10
+fail - and the forged post is filed as `/Kosmos/Apps/cafesa3d.lua`, which
+is what the rule is for. `SYS_SENDER` describing the asking server instead
+of the sender: 5 of 10 fail, every post filed as `notify`. **A first try
+at the first control did not build** (`limit` unused under `-Werror`) and
+its PASS ran the old image; it was redone.
+
+**Its gate: 87 of 87 in 10:39** - over the ten minutes by 39 seconds, the
+slowest `x86-cafesa3d-2` at 196 s; the budget has been edging past it for
+a week (`roadmap.md`, the gate back under ten minutes).

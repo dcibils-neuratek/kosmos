@@ -442,6 +442,13 @@ static inline long kosmos_proctable(struct proc_info *out, unsigned long max)
     return sys2(SYS_PROCTABLE, (long)(uintptr_t)out, (long)max);
 }
 
+/* Who sent the message this thread last received: 0, `SYS_ERR_GONE` once
+ * it has ended, or `SYS_ERR_NO_CHILD` before anything has come. */
+static inline long kosmos_sender(struct sender_info *out)
+{
+    return sys1(SYS_SENDER, (long)(uintptr_t)out);
+}
+
 /* A profile: `PROFILE_START`, `_READ` up to `max` samples into `out`,
  * `_SYSCALLS` up to `max` syscalls' costs into it, `_LOST` or `_STOP`
  * (`kernel/profile.c`). Only with `SPAWN_PROFILE`. */

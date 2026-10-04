@@ -112,6 +112,13 @@ unblocks.
 
 ### Being built now
 
+**Diego's order, 4 October 2026**: "Then do notifications system", "Then
+finish storage in C", "Then kosmos write" - so **Notifications** (below),
+then **storage at full speed**'s last step, `diskfs` step 4 (the Lua server,
+`kfs.lua` and the drive server's own superblock reading taken out; `docs/
+diskfs.md`), then **Kosmos Write** from its drawing, whose four questions
+are his before its code.
+
 **Nothing waits on hardware, and nothing on the desktop waits on a
 server.** Diego, 2 October 2026, after 0.10.203 on the M700 sat with its
 Deskbar blank for 23 seconds, its menu deaf and a processor at a hundred
@@ -420,6 +427,33 @@ drawing's four answers: the history opened from the clock in the strip;
 two kinds, a banner that goes after five seconds and an alert (a program
 that stopped, a reminder, a timer) that stays until closed; no sound for
 now; Do Not Disturb a switch, its hours later.
+
+**Built in four steps**, each its own revision and test (4 October):
+
+1. **The server, and who sent it.** `notifyd` in C, at `/Notifications`,
+   speaking `notifyproto.h`: post, since (what came after a number), list,
+   dismiss, clear. **Who sent a notification is the kernel's to say, not
+   the message's**: until now a server learned nothing about its caller,
+   and a process could call itself anything with `sys.name`. So the kernel
+   says which process sent the message a server has just received
+   (`SYS_SENDER`), and **the file a process runs is said once** - by the
+   runner, before the program's first line - and refused after, so
+   nothing a program does can make it another's. What is left open, and
+   said: a parent that builds its child a false namespace could run its
+   own code under another file's name; the kernel does not know files.
+   `user/lib/notify.lua`, and `notify` at the prompt to post and list.
+   **BUILT on 4 October** (`testing.md` 18.367).
+2. **Banners and the history**, in the Deskbar, which owns the strip and
+   the clock: it asks the server on its own clock what came since, shows
+   a banner window at the top right that takes a press and never the
+   focus, and opens the history from the clock.
+3. **Preferences' Notifications**: Do Not Disturb, how long a banner
+   stays, how many the history keeps, and a switch for each application
+   that has said something. The rules are applied by what shows them -
+   the server keeps everything it is told, as a ledger, and has no
+   namespace to read a setting from.
+4. **The first to post**: Cafesa3D's render done, a download done, a stick
+   arriving or leaving, a program that stopped, and Clock's timers.
 
 **A key held down repeats - on a USB keyboard too.** Diego, 3 October
 2026, on the M700: "maintaining pressed backspace does not keep deleting

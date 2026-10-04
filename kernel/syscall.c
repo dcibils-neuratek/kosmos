@@ -296,7 +296,48 @@ static long sys_receive(struct process *p, cap_t cap, uintptr_t msg_ptr,
      * simply read.
      */
     *(uint64_t *)sender_ptr = (uint64_t)(uintptr_t)sender;
+
+    /* Where it came from, for SYS_SENDER: noted here, where the sender is
+     * known for certain, rather than worked out later from the token. */
+    {
+        struct thread *me = thread_current();
+
+        if (me != NULL) {
+            me->ipc.received_from = (sender != NULL && sender->process != NULL)
+                                    ? sender->process->id : 0u;
+        }
+    }
+
     return IPC_OK;
+}
+
+/*
+ * Who sent the message this thread last received (SYS_SENDER): the process
+ * noted at the receive, looked up now, so one that has ended since is
+ * `SYS_ERR_GONE` rather than a description of whatever took its slot - ids
+ * are not reused.
+ */
+static long sys_sender(struct process *p, uintptr_t out_ptr)
+{
+    struct thread *me = thread_current();
+    struct sender_info info;
+
+    if (!process_may_write(p, out_ptr, sizeof(info))) {
+        return SYS_ERR_FAULT;
+    }
+
+    if (me == NULL || me->ipc.received_from == 0) {
+        return SYS_ERR_NO_CHILD;
+    }
+
+    memset(&info, 0, sizeof(info));
+
+    if (process_describe(me->ipc.received_from, &info) != 0) {
+        return SYS_ERR_GONE;
+    }
+
+    memcpy((void *)out_ptr, &info, sizeof(info));
+    return 0;
 }
 
 static long sys_reply(struct process *p, uintptr_t sender, uintptr_t msg_ptr)
@@ -1087,6 +1128,18 @@ static long sys_setname(struct process *p, uintptr_t ptr, size_t len,
 
     if (from_len > 0 && !process_may_read(p, from_ptr, from_len)) {
         return SYS_ERR_FAULT;
+    }
+
+    /*
+     * **The file is said once.** The runner says it before the program's
+     * first line runs, and from then on it is what SYS_SENDER tells a server
+     * this process is - the notification server names an application by
+     * it, and a person turns one off by that name. A program that could say
+     * it again could speak as any other, so a second one is refused, and
+     * before anything is written: the name stays as it was too.
+     */
+    if (from_len > 0 && p->from[0] != '\0') {
+        return SYS_ERR_DENIED;
     }
 
     process_set_name(p, (const char *)ptr, len);
@@ -2681,6 +2734,10 @@ void syscall_dispatch(struct syscall_frame *sc)
 
     case SYS_PROCTABLE:
         result = sys_proctable(p, sc->arg[0], (size_t)sc->arg[1]);
+        break;
+
+    case SYS_SENDER:
+        result = sys_sender(p, sc->arg[0]);
         break;
 
     case SYS_WAIT: {

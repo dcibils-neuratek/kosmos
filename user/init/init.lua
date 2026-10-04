@@ -40,6 +40,7 @@ local ROLE_XHCI       = 19 -- drives the USB host controllers, where there are a
 local ROLE_DRIVES     = 20 -- serves /Drives: every volume on every drive, read only
 local ROLE_BACKLIGHT  = 21 -- Intel's backlight PWMs: /Devices/backlight
 local ROLE_E1000      = 22 -- an Intel Ethernet controller, where there is one
+local ROLE_NOTIFY     = 23 -- serves /Notifications: what applications have said
 
 --
 -- **A program's own image** (`docs/elf.md` step 4). A program whose header
@@ -3462,7 +3463,7 @@ local RUNNER_ROLE = ROLE_RUNNER
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap,
-                          midi_cap)
+                          midi_cap, notify_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -3512,6 +3513,13 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   if backlight_cap then
     ns.mount("/Devices/backlight", backlight_cap, nil, "backlight")
   end
+
+  --
+  -- `/Notifications`: what applications have said (`notifyproto.h`). Not
+  -- under `/Devices`, for `/Network`'s reason - it is somebody you ask, not
+  -- a piece of the machine.
+  --
+  if notify_cap then ns.mount("/Notifications", notify_cap, nil, "notify") end
 
   --
   -- `/Network`, not `/Devices/net`, and the distinction is the one the window
@@ -4283,7 +4291,7 @@ query. `find` and `watch` are built on exactly these two calls.
     -- either. Their places are said in the request, as the rest are.
     local caps = { ep, console_cap, ramfs_cap, bin_cap, devices_cap,
                    lib_cap, app_cap, disk_cap, audio_cap, net_cap,
-                   blocks_cap, drives_cap, backlight_cap }
+                   blocks_cap, drives_cap, backlight_cap, notify_cap }
     local camera_at, midi_at = nil, nil
 
     if camera then caps[#caps + 1] = camera; camera_at = #caps - 1 end
@@ -4302,7 +4310,7 @@ query. `find` and `watch` are built on exactly these two calls.
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
-      backlight = 12, camera = camera_at, midi = midi_at,
+      backlight = 12, notify = 13, camera = camera_at, midi = midi_at,
       home_in_memory = home_in_memory or nil,
     })
 
@@ -4991,6 +4999,14 @@ if role == ROLE_INIT then
   --
   local MIDI_EP = sys.endpoint()
 
+  --
+  -- **`/Notifications`** (`roadmap.md`, *Notifications*): what applications
+  -- have said, kept in order with who said it. Mounted for everybody, as
+  -- `/Devices/audio` is and for its reason - any program may have something
+  -- to say, and what the person allows is decided where it is shown.
+  --
+  local NOTIFY_EP = sys.endpoint()
+
   if not LIBFS_EP or not APPFS_EP then
     line("init: no endpoint for the library store or the app registry")
     sys.exit(1)
@@ -5229,6 +5245,10 @@ if role == ROLE_INIT then
   start("the drive server", ROLE_DRIVES,
         { DRIVES_EP, BLOCKS_EP, CONSOLE_EP })
 
+  -- And the notification server, which needs nothing but the console to say
+  -- what it was told: who sent a post is the kernel's to say (`SYS_SENDER`).
+  start("the notification server", ROLE_NOTIFY, { NOTIFY_EP, CONSOLE_EP })
+
   --
   -- And its address, which init asks for or gives because the stack has no
   -- namespace to read a setting from.
@@ -5343,7 +5363,8 @@ if role == ROLE_INIT then
                       -- runner names them by number further down.
                       { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP,
                         APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP, BLOCKS_EP,
-                        DRIVES_EP, BACKLIGHT_EP, CAMERA_EP, MIDI_EP },
+                        DRIVES_EP, BACKLIGHT_EP, CAMERA_EP, MIDI_EP,
+                        NOTIFY_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -5416,7 +5437,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)
   return
 end
 
@@ -5581,6 +5602,7 @@ if role == ROLE_RUNNER then
   end
   if req.camera  then ns.mount("/Devices/camera",  req.camera, nil, "camera") end
   if req.midi    then ns.mount("/Devices/midi",    req.midi, nil, "midi") end
+  if req.notify  then ns.mount("/Notifications",   req.notify, nil, "notify") end
 
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started
@@ -5681,7 +5703,7 @@ if role == ROLE_RUNNER then
     -- after it means something different.
     local caps = { ep, req.console, req.data, req.bin, req.devices,
                    req.lib, req.app, req.disk, req.audio, req.net,
-                   req.blocks, req.drives, req.backlight }
+                   req.blocks, req.drives, req.backlight, req.notify }
     local mounts = {}
 
     --
@@ -5788,7 +5810,7 @@ if role == ROLE_RUNNER then
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
-      backlight = 12, camera = camera_at, midi = midi_at,
+      backlight = 12, notify = 13, camera = camera_at, midi = midi_at,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Inherited rather than decided again. This is a program starting a

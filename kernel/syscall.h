@@ -563,7 +563,27 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  */
 #define SYS_DEV_CONFIG  65  /* (kind, index, offset)  -> the word or error  */
 
-#define SYS_MAX         66
+/*
+ * **Who sent the message this thread last received** (`roadmap.md`,
+ * *Notifications*, step 1): its process's id, parent, name and the file it
+ * runs, into a `struct sender_info`. `SYS_ERR_GONE` when that process has
+ * ended since, and `SYS_ERR_NO_CHILD` when nothing has been received yet -
+ * or what was received came from the kernel itself.
+ *
+ * Until this, a server learned nothing about who asked: a reply token, and
+ * whatever the message said of itself. That was enough while every server
+ * answered everybody alike. The notification server is the first that
+ * must not take the caller's word - a banner says which application is
+ * speaking, and a person turns one off by that name - so the kernel, which
+ * delivered the message, is the one that says where it came from. QNX's
+ * `MsgReceive` hands a server the same thing in its `_msg_info`.
+ *
+ * **Asked for, not delivered with every message**: a server that does not
+ * care pays one word a receive, which is where the kernel notes it.
+ */
+#define SYS_SENDER      66  /* (&sender_info)         -> 0 or error         */
+
+#define SYS_MAX         67
 
 #define PROFILE_START   1u
 #define PROFILE_READ    2u  /* up to `max` samples into `buf`: how many */
@@ -1333,6 +1353,23 @@ struct profile_syscall {
 
 _Static_assert(sizeof(struct profile_syscall) == 16, "a syscall's cost has no padding");
 
+/*
+ * What SYS_SENDER says of the process a message came from: as SYS_PROCTABLE
+ * says it, the parts that identify. `from` is the file it runs, which the
+ * runner says once before the program's first line and nothing can change
+ * after (SYS_SETNAME), and empty for a process built into the image - a
+ * server, a driver, the shell - which runs no file; for those, `name` is
+ * what it is, since only the image's own code gives one.
+ */
+struct sender_info {
+    uint32_t id;
+    uint32_t parent;
+    char     name[16];
+    char     from[128];
+};
+
+_Static_assert(sizeof(struct sender_info) == 152, "a sender is two words and two names");
+
 struct diskinfo {
     uint64_t sectors;
     uint32_t sector_size;
@@ -1355,6 +1392,7 @@ struct diskinfo {
 #define SYS_NO_INTERRUPT  (-110)    /* a timed interrupt wait ran out; not an error */
 #define SYS_ERR_NOT_IMAGE (-111)    /* SYS_SPAWN_IMAGE's bytes are not an image */
 #define SYS_ERR_BUSY      (-112)    /* one at a time, and another has it */
+#define SYS_ERR_GONE      (-113)    /* the process asked about has ended */
 
 /*
  * Everything above is plain preprocessor because user programs written in
@@ -1397,6 +1435,7 @@ static inline void sys_result_codes_are_distinct(long result)
     case SYS_NO_INTERRUPT:
     case SYS_ERR_NOT_IMAGE:
     case SYS_ERR_BUSY:
+    case SYS_ERR_GONE:
     default:
         break;
     }

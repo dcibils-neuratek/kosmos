@@ -221,6 +221,37 @@ unsigned process_table(struct proc_info *out, unsigned max)
     return n;
 }
 
+/*
+ * One process, by its id, as SYS_SENDER reports it: -1 when no process in
+ * use has that id - it has ended and been reaped, which is what a server
+ * asking about a caller that has since gone is told. Read as
+ * `process_table` reads, without a lock: a name and a file are labels set
+ * before the program runs, and a process ending under the copy is told
+ * apart by the id, which is not reused.
+ */
+int process_describe(unsigned id, struct sender_info *out)
+{
+    unsigned i;
+
+    for (i = 0; i < procs_made(); i++) {
+        struct process *p = proc(i);
+
+        if (!p->in_use || p->id != id) {
+            continue;
+        }
+
+        out->id     = p->id;
+        out->parent = p->parent_id;
+        memcpy(out->name, p->name, sizeof(out->name) - 1);
+        out->name[sizeof(out->name) - 1] = '\0';
+        memcpy(out->from, p->from, sizeof(out->from) - 1);
+        out->from[sizeof(out->from) - 1] = '\0';
+        return 0;
+    }
+
+    return -1;
+}
+
 /* A process says what it is. The kernel does not name anything: a spawned
  * child inherits its parent's name, which made every process in the system
  * "init" until this existed. */

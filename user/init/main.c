@@ -88,6 +88,10 @@ void drives_server(long endpoint, long blocks, long console);
 void diskfs_server(long endpoint, long blocks_read, long blocks_write,
                    long devices, long console);
 
+/* /Notifications (`roadmap.md`, *Notifications*): its own endpoint, and the
+ * console's to say what it was told. */
+void notify_server(long endpoint, long console);
+
 #define ROLE_AUDIO    16UL
 #define ROLE_DEVICES   9UL
 #define ROLE_BINFS    11UL
@@ -102,6 +106,7 @@ void diskfs_server(long endpoint, long blocks_read, long blocks_write,
 #define ROLE_DRIVES   20UL
 #define ROLE_BACKLIGHT 21UL
 #define ROLE_DISKFS   15UL
+#define ROLE_NOTIFY   23UL
 
 static void say(const char *s)
 {
@@ -592,20 +597,26 @@ static int table_role(void)
         return 12;
     }
 
-    /* And what reaches a screen is printable. */
-    if (kosmos_setname_from("t-table2", 8, "/bin/a\tb.lua", 12) != 0) {
+    /*
+     * **A second file is refused, and changes nothing - the name included**
+     * (`roadmap.md`, *Notifications*): the file is what SYS_SENDER tells a
+     * server a process is, so a program able to say it again could speak
+     * as any other. (That a file reaching a screen is made printable is
+     * the kernel suite's to check now, since a process says only one.)
+     */
+    if (kosmos_setname_from("t-other", 7, "/bin/other.lua", 14) >= 0) {
         return 13;
     }
 
     row = own_row("t-table2");
 
-    if (row == NULL || strcmp(row->from, "/bin/a?b.lua") != 0) {
+    if (row == NULL || strcmp(row->from, TABLE_FILE) != 0
+        || own_row("t-other") != NULL) {
         return 14;
     }
 
-    /* The file the kernel's suite reads back, once this has ended. */
-    if (kosmos_setname_from("t-table", 7, TABLE_FILE,
-                            strlen(TABLE_FILE)) != 0) {
+    /* The name the kernel's suite finds it by, once this has ended. */
+    if (kosmos_setname("t-table", 7) != 0) {
         return 15;
     }
 
@@ -759,6 +770,11 @@ int main(unsigned long arg)
     if (arg == ROLE_DISKFS) {
         named("diskfs");
         diskfs_server(0, 1, 2, 3, 4);
+    }
+
+    if (arg == ROLE_NOTIFY) {
+        named("notify");
+        notify_server(0, 1);
     }
 
     L = kosmos_lua_open();
