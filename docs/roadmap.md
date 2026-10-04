@@ -516,6 +516,17 @@ kits under `user/lib/` for Present and Sheets to stand on:
 - **W5 - a picture with its caption, and a table.**
 - **W6 - DOCX out**: Word's XML parts in a zip.
 
+**`df` never answers on the M700.** Found 4 October, on 0.10.257 by
+network boot: `kosmos_telnet.py 192.168.1.40 run "df"` had printed nothing
+after ten minutes while `ls /Home/Apps` answered at once beside it. To find
+which filesystem it waits on - the stick's `/Home`, `/Drives` - and make it
+ask without waiting, as *nothing on the desktop waits on a server* says.
+
+**NetSurf's `quirks.css` has no licence beside it.** The build warns that
+`runtime/upstream/netsurf/netsurf/resources/quirks.css`, committed with the
+browser's test page, records no licence where it sits; NetSurf's own
+licence goes beside it, and its line in `LICENSE`.
+
 **The gate's margin, from the display harness's sleeps.** The gate runs in
 9:44 at eight suites at once (`testing.md` 18.396), sixteen seconds inside
 Diego's ten. The display harness's 426 fixed sleeps are about 680 seconds of
