@@ -591,6 +591,35 @@ does** (18.346): Linux v6.12's e1000e read from `build/downloads/
 e1000e-v6.12`; no reset first, then its MAC reset, each with a frame to
 itself, and the registers said; `ethernet_pch` in x86-core with a control. **The gate ran 85 of 85 in 10:02** - two seconds over Diego's ten minutes (9:56 before it), the slowest `x86-cafesa3d-2` at 202 s and `x86-core` at 52 s, off the longest path: to bring back under before the next thing lands. **Stick 0.10.205** (`ec1114f`): OVMF 32 checks, handed over for the M700 with `log e1000` to read. **Its log** (18.347): the firmware left the card in good order (its own ring drained, TARC0 already e1000e's), the ME present, and both tries failed with TDH 0 against TDT 1; this driver cleared TCTL's MULR, which e1000e keeps. **Changed**: TCTL read-modify-write, PBA before the reset, WUC cleared, and `SYS_DEV_CONFIG` (65) to say the PCI command and the descriptor-ring status; gate 85/85 in 10:14 (over the budget, to trim). **Then network boot, Diego's ask** (18.348): the loader fetches by TFTP through the firmware's PXE, `make netboot` + `bash tools/netboot-serve.sh` (dnsmasq proxy, Diego's sudo), `x86-netboot` in the gate (OVMF needs `-device virtio-rng-pci` for its network stack). The M700 needs network boot on in its setup, F12, the network entry; the 0.10.205 stick stays in for /Home. **0.10.206 booted on the M700 over the network the same night** ("it booted over network!"); its `log e1000` is next. **It said the I219 sends** - a frame to itself in 13 ms, no reset (18.349) - and got no address: receiving. **0.10.207** (`make netboot`): extended receive descriptors on the I219 as e1000e uses (RFCTL.EXTEN), the firmware's RFCTL and the first five seconds' frames said. Network boot is first in the M700's boot order (Diego), so a restart takes the newest build. Next: the build-boot-test loop (roadmap), the late `/Home` stick, `diagnose`'s nil, and the gate back under ten minutes.
 
+**4 October, the afternoon and night: the stick, settings as text, a mouse
+that comes back, and Kosmos Write to its PDF.** Each a revision, each gated:
+**0.10.231** the M700's stick twice as fast - IMOD 40 us, reads of 1 MB in
+chained TRBs - 31.9 to 64.5 MB/s, random 332 to about 1,330 IOPS (18.371);
+**0.10.232** the dock's transparency in Appearance; **0.10.233** every table
+stored as text (`tabletext`, values only); **0.10.234** the settings kit,
+`prefs.lua`, every application moved onto it and a build that refuses any
+other way; **0.10.235** every image stamped with its protocols, a stale
+installed application refusing with a sentence (Doom on the M700 had failed
+inside `ui.lua`); **0.10.236** a failed USB report asked for again, five times
+before a device is given up - the M700's mouse had been dropped after one
+Transaction Error (18.376). **Kosmos Write**, as kits for Present and Sheets
+(`docs/write.md`, written first): **0.10.237** W1, the document and its
+`.write` zip, read by Python's zipfile (18.377); **0.10.238** W2, pages set
+with the fonts' own advances (`gfx.typefaces`, `faces.lua`, `pageset.lua`), a
+paragraph broken in the machine word for word where the Mac breaks it - and
+`gfx.face` replaced by mistake, caught by the whole gate (18.378);
+**0.10.239** W3, the PDF: Type 0 faces in Identity-H with ToUnicode, read
+back by Kosmos's reader, by the Mac and by macOS (18.379) - Diego has the
+first one; **0.10.240** W3b, subsets: 664 KB to 56 KB, and two checks that
+waited for a count fixed (18.380). **The M700** runs 0.10.230 with Doom
+open; 0.10.236 is staged by `make netboot`, and on his next restart Doom,
+Quake and the SNES - rebuilt with the stamp in `build/installed/x86_64/` -
+go to `/Home/Apps` by `kosmos_telnet.py put`. **Next: W4, Write's window**,
+from `docs/write.html` - first the pages drawn as they print, zoom and
+Export, then typing, then the panels. **Not pushed**: everything since
+0.10.214; a push is Diego's word. The gate is at 10:33 to 10:46, over the
+ten minutes, to bring back.
+
 **4 October: notifications, in four steps.** Diego's order: notifications,
 then storage in C, then Kosmos Write. **0.10.227** the server,
 `/Notifications` (`notify.c`, `notifyproto.h`), and **who sent a message
