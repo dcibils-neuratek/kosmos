@@ -17203,3 +17203,44 @@ layers key on files' names, which did not change.
 name, and the grid's fifty tiles, 3D Cube to Window Latency, A to Z.
 
 **Its gate: 87 of 87 in 10:13.**
+
+## 18.362 Diego's order, the grid's categories, pages in the menu, Super and º
+
+**His order** ("i want my order"): Applications, System, Development,
+Demos, Preferences - `deskbarmenu.SECTION_ORDER`, applied where sections are
+merged, so the Kosmos menu and the grid's pills follow it alike; a
+person's own folders after, A to Z. `test_deskbarmenu.lua`, 21 checks; its
+control, the order out, the sections A to Z.
+
+**The grid's categories** (Diego: "the app launcher needs a category
+filter", "53 apps all at once which makes find one fairly hard"): pills
+under the search - All, then the menu's folders in that order - one
+chosen showing its folder alone, its folders inside folded in, a search
+working within it, Tab going round. **Tab never reached the grid at
+first**: a window keeps Tab for moving the focus unless what has it says
+`takes_tab`, and the grid had nothing focusable. It is focusable now, takes
+Tab, and handles its keys itself. A fifth row shows cut off at the panel's
+foot, which says there is more without a word. `test_launchgrid.lua`, 45.
+
+**Pages in the menu** (Diego: "launchers that go straight to each page"): a
+`.page` file in `user/pages` - `kosmos: page asset:cheatsheet.html`, its
+name, picture and folder - which `binfs` keeps in the store's `pages/`, out
+of /Kosmos/Apps and /Kosmos/Programs, and makes a launcher starting the
+browser there: the address after the program's name in the launcher's
+data, past a NUL, which the namespace splits into `program` and `args`. No
+field added to the protocol for two launchers. The Cheat Sheet and
+Cafesa3D's tutorial, in Development/Documentation.
+
+**Super and º** (Diego's choice): the shortcuts, modal - `shortcuts
+--modal`, a popup in the middle of the screen that Escape or a press
+outside closes. Bound to 96: the key left of 1, which Kosmos's one keymap
+(`hal/keys.c`, US) reads as the grave accent and Diego's Spanish keyboard
+prints º on, so it is the same key whatever is printed on it.
+
+**`run_dock.py`, 30 checks**: the pills in his order, the Demos pill
+showing Demos alone, Tab stepping to Preferences, Super and º opening the
+shortcuts over everything and Escape closing them. **`run_queries.py`,
+37**: the Cheat Sheet's launcher the browser at `asset:cheatsheet.html`,
+named Cheat Sheet, and About This Machine no longer in Applications.
+
+**Its gate: 87 of 87 in 10:23.** Controls, two builds: the category ignored, "50 of 50"; the binding out, no shortcuts; pages out of `binfs`, no Cheat Sheet launcher; the section order out, A to Z (on the host).

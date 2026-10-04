@@ -19,8 +19,12 @@ grid.W        = 600     -- the panel, as the drawing has it
 grid.H        = 600
 grid.PAD      = 18      -- inside it, all round
 grid.SEARCH_H = 50      -- the search pill
-grid.HEAD_Y   = 78      -- "Every application" and "A to Z"
-grid.TOP      = 104     -- where the first row of tiles starts
+grid.CHIP_Y   = 78      -- the categories' pills
+grid.CHIP_H   = 30
+grid.CHIP_IN  = 14      -- inside a pill, either side of its word
+grid.CHIP_GAP = 8
+grid.HEAD_Y   = 122     -- "Every application" and "A to Z"
+grid.TOP      = 146     -- where the first row of tiles starts
 grid.COLS     = 6
 grid.CELL_H   = 96      -- a tile and its name under it
 grid.TILE     = 52      -- the round tile
@@ -84,18 +88,101 @@ function grid.everything(items)
 end
 
 --
--- **What matches what was typed**: a name that begins with it before one
--- that only contains it, A to Z within each - `launchpad`'s own rule, so
--- `te` offers Terminal above Notes. Case does not matter; nothing fuzzy.
+-- **The categories** (Diego, 3 October: "the app launcher needs a category
+-- filter", "right now we have 53 apps all at once which makes find one
+-- fairly hard"): All, then each of the menu's folders that holds an
+-- application, in `order` - the menu's own, Diego's (`deskbarmenu.lua`'s
+-- `SECTION_ORDER`) - its folders inside folded into it, so the GL demos are
+-- Demos'. `item.section` is the folder at the top of the menu; a folder
+-- `order` does not name comes after, as the items have it.
 --
-function grid.filter(items, typed)
+grid.ALL = "All"
+
+function grid.categories(items, order)
+  local has, out, seen = {}, { grid.ALL }, {}
+
+  for _, item in ipairs(items or {}) do
+    if item.section and item.section ~= "" then has[item.section] = true end
+  end
+
+  for _, s in ipairs(order or {}) do
+    if has[s] and not seen[s] then
+      seen[s] = true
+      out[#out + 1] = s
+    end
+  end
+
+  for _, item in ipairs(items or {}) do
+    local s = item.section
+
+    if s and has[s] and not seen[s] then
+      seen[s] = true
+      out[#out + 1] = s
+    end
+  end
+
+  return out
+end
+
+-- The one after `current`, round to All after the last: what Tab does.
+function grid.next_category(cats, current)
+  for i, c in ipairs(cats or {}) do
+    if c == current then return cats[i % #cats + 1] end
+  end
+
+  return grid.ALL
+end
+
+--
+-- Where each pill is, given how wide its word is in the face that draws it
+-- (`measure`): `{ name, x, w }`, left to right from the panel's margin, as
+-- many as fit in `w` - a pill that would not fit is left out rather than
+-- drawn over the edge, and Tab still reaches it.
+--
+function grid.chips(cats, measure, w)
+  local out, x = {}, grid.PAD
+  local right = (w or grid.W) - grid.PAD
+
+  for _, name in ipairs(cats or {}) do
+    local cw = measure(name) + 2 * grid.CHIP_IN
+
+    if x + cw > right then break end
+
+    out[#out + 1] = { name = name, x = x, w = cw }
+    x = x + cw + grid.CHIP_GAP
+  end
+
+  return out
+end
+
+-- The pill a press at `x, y` landed on, or nil.
+function grid.chip_hit(chips, x, y)
+  if y < grid.CHIP_Y or y >= grid.CHIP_Y + grid.CHIP_H then return nil end
+
+  for _, c in ipairs(chips or {}) do
+    if x >= c.x and x < c.x + c.w then return c.name end
+  end
+
+  return nil
+end
+
+--
+-- **What matches what was typed**, in the category chosen: a name that
+-- begins with it before one that only contains it, A to Z within each -
+-- `launchpad`'s own rule, so `te` offers Terminal above Notes. Case does not
+-- matter; nothing fuzzy. No category, or All, is every one.
+--
+function grid.filter(items, typed, category)
   local want = tostring(typed or ""):lower()
   local starts, contains = {}, {}
+  local only = (category and category ~= grid.ALL) and category or nil
 
   for _, item in ipairs(items or {}) do
     local name = grid.title(item):lower()
 
-    if want == "" or name:sub(1, #want) == want then
+    if only and item.section ~= only then
+      -- Another folder's.
+    elseif want == "" or name:sub(1, #want) == want then
       starts[#starts + 1] = item
     elseif name:find(want, 1, true) then
       contains[#contains + 1] = item

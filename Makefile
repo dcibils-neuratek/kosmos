@@ -2575,10 +2575,18 @@ FORCE:
 # never include. A file name without a space: make cannot hold one.
 THEMES := $(wildcard user/themes/*.theme)
 
-$(GEN)/programs.c: $(BIN_LUA) $(THEMES) tools/progs2c.py $(HOSTDIR)/lua.ok
+# **Pages the menu opens** (`user/pages/*.page`): a launcher in the shipped
+# menu that starts the browser at an address - the cheat sheet, a tutorial -
+# made by `binfs` from the file's lines as an application's is from its
+# header, and kept in `pages/` so neither /Kosmos/Apps nor /Kosmos/Programs
+# lists them.
+PAGES := $(wildcard user/pages/*.page)
+
+$(GEN)/programs.c: $(BIN_LUA) $(THEMES) $(PAGES) tools/progs2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/progs2c.py programs_lua $@ $(BIN_LUA) \
-	    --rooted user/themes themes/ $(THEMES)
+	    --rooted user/themes themes/ $(THEMES) \
+	    --rooted user/pages pages/ $(PAGES)
 
 # The libraries in user/lib/, the same way and for the same reason. A
 # separate store rather than a directory inside /bin, because a program is

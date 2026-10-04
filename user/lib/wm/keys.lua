@@ -322,6 +322,16 @@ return function(ctx)
       what = "This window",
       run = function() handlers.launch{ program = "shortcuts" } end },
 
+    --
+    -- **Super and º** (Diego, 3 October 2026): every shortcut, modal. The
+    -- key left of 1 - º on his Spanish keyboard - which the one keymap Kosmos
+    -- has (`hal/keys.c`, US) reads as the grave accent, so it is bound by
+    -- that: the same key whatever is printed on it.
+    --
+    { key = 96, shown = "Super + º",
+      what = "Every shortcut, over everything until Escape",
+      run = function() handlers.launch{ program = "shortcuts", args = "--modal" } end },
+
     { key = 9, shown = "Super + Tab",
       what = "Go round the open windows",
       run = function() cycle_windows() end },

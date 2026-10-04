@@ -123,9 +123,10 @@ end
 -- The four used to be named in `deskbar.lua` in a chosen order -
 -- applications, system, preferences, demos. A folder cannot express that,
 -- and the trade was taken deliberately: a name somebody can change is worth
--- more than an order they cannot see. Renaming a folder reorders the menu,
--- which is a thing a person can discover; editing a list in a source file
--- is not.
+-- more than an order they cannot see. **Diego took it back on 3 October
+-- 2026** - "i want my order" - when the menu became five folders:
+-- `merge_sections` puts the five in `SECTION_ORDER` first, and only a
+-- person's own folders still follow their names.
 --
 -- A file directly under the root is not a section. A launcher belongs in
 -- one, and one loose in the root has nowhere to appear - so it does not,
@@ -283,6 +284,18 @@ function menu.installed(apps, declared)
 end
 
 -- The same for the sections, which are the two roots' folders.
+--
+-- **The order the sections come in: Diego's** (3 October 2026, "i want my
+-- order"): Applications, System, Development, Demos, Preferences, and any
+-- folder a person made after them, A to Z. `menu.sections` says why the
+-- order was a folder's name until then, and what changed.
+--
+menu.SECTION_ORDER = { "Applications", "System", "Development", "Demos", "Preferences" }
+
+local section_rank = {}
+
+for i, name in ipairs(menu.SECTION_ORDER) do section_rank[name:lower()] = i end
+
 function menu.merge_sections(shipped, home)
   local function as_folders(sections)
     local out = {}
@@ -299,6 +312,15 @@ function menu.merge_sections(shipped, home)
   for _, f in ipairs(menu.merge(as_folders(shipped), as_folders(home))) do
     out[#out + 1] = { name = f.name, path = f.path, items = f.items }
   end
+
+  table.sort(out, function(a, b)
+    local x = section_rank[a.name:lower()] or #menu.SECTION_ORDER + 1
+    local y = section_rank[b.name:lower()] or #menu.SECTION_ORDER + 1
+
+    if x ~= y then return x < y end
+
+    return a.name:lower() < b.name:lower()
+  end)
 
   return out
 end

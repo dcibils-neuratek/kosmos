@@ -1305,6 +1305,13 @@ local function new_namespace()
       --
       local launcher = (trim(kind) == "launcher")
       local starts = launcher and reply:sub(BIN_DATA, BIN_DATA + length - 1)
+      local page = nil
+
+      -- A page's launcher (`user/pages`): the browser, then its address
+      -- after a NUL.
+      if starts and starts:find("\0", 1, true) then
+        starts, page = starts:match("^([^\0]*)\0(.*)$")
+      end
 
       return { ok = true, attrs = {
         size = size,
@@ -1319,7 +1326,7 @@ local function new_namespace()
         title = (trim(title) ~= "") and trim(title) or nil,
         type = launcher and "launcher" or nil,
         program = launcher and ("/Kosmos/Apps/" .. starts) or nil,
-        args = launcher and "" or nil,
+        args = launcher and (page or "") or nil,
         -- The types it opens (`kosmos: opens`), each word lowercased, or
         -- nil when it declares none.
         opens = (function()

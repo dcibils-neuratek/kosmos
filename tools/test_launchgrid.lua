@@ -72,7 +72,7 @@ check(y == grid.TOP, "scrolled a row, the second row is not at the top")
 -- 4. What a press hit.
 local shown = grid.rows_shown(600)
 
-check(shown == 5, "a 600 panel shows " .. shown .. " rows, not 5")
+check(shown == 4, "a 600 panel shows " .. shown .. " rows, not 4 - the pills took one")
 check(grid.hit(20, 0, 600, 600, grid.PAD + 1, grid.TOP + 1) == 1, "a press on the first tile missed it")
 check(grid.hit(20, 0, 600, 600, grid.PAD + cw * 2 + 3, grid.TOP + grid.CELL_H + 3) == 9,
       "a press on the ninth tile missed it")
@@ -101,6 +101,37 @@ check(grid.keep_visible(13, 1, 5) == 1, "a tile on screen moved the rows")
 check(grid.scroll(0, 48, 5, 3) == 3, "three notches did not scroll three rows")
 check(grid.scroll(2, 48, 5, 10) == 3, "the wheel scrolled past the last row (48 is 8 rows, 5 shown)")
 check(grid.scroll(1, 48, 5, -4) == 0, "the wheel scrolled above the first row")
+
+-- 8. The categories: All, then the folders that hold something, in the
+-- menu's order whatever order the applications came in; one chosen keeps
+-- only its own, a search inside it; Tab goes round; the pills from the
+-- margin, those that do not fit left out; a press on one.
+local filed = {
+  { name = "Terminal", program = "/a/terminal.lua", section = "Applications" },
+  { name = "GL Gears", program = "/a/glgears.lua", section = "Demos" },
+  { name = "Plasma", program = "/a/plasma.lua", section = "Demos" },
+  { name = "Process Viewer", program = "/a/procs.lua", section = "System" },
+  { name = "Mine", program = "/a/mine.lua", section = "Games" },
+}
+local cats = grid.categories(filed, { "Applications", "System", "Development", "Demos", "Preferences" })
+
+check(table.concat(cats, ",") == "All,Applications,System,Demos,Games",
+      "the categories were " .. table.concat(cats, ","))
+check(names(grid.filter(filed, "", "Demos")) == "GL Gears,Plasma", "Demos kept " .. names(grid.filter(filed, "", "Demos")))
+check(names(grid.filter(filed, "pl", "Demos")) == "Plasma", "a search inside Demos left Demos")
+check(#grid.filter(filed, "", "All") == 5 and #grid.filter(filed, "") == 5, "All was not everything")
+check(grid.next_category(cats, "Demos") == "Games" and grid.next_category(cats, "Games") == "All",
+      "Tab did not go round the categories")
+
+local chips = grid.chips(cats, function(s) return #s * 8 end, 600)
+
+check(chips[1].name == "All" and chips[1].x == grid.PAD and chips[1].w == 3 * 8 + 2 * grid.CHIP_IN,
+      "the first pill is not All at the margin")
+check(chips[2].x == chips[1].x + chips[1].w + grid.CHIP_GAP, "a pill does not follow the one before")
+check(#grid.chips(cats, function(s) return #s * 40 end, 600) < #cats,
+      "pills that do not fit were drawn over the edge")
+check(grid.chip_hit(chips, chips[3].x + 2, grid.CHIP_Y + 5) == cats[3], "a press on the third pill missed it")
+check(grid.chip_hit(chips, chips[3].x + 2, grid.CHIP_Y - 5) == nil, "a press above the pills hit one")
 
 -- 7. Where the panel goes: centred on the anchor, GAP above it, on the
 -- screen, and shorter when the screen is.

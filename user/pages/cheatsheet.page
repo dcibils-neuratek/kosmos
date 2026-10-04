@@ -1,0 +1,9 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+-- The cheat sheet, a page the browser opens: a launcher in the menu's
+-- Development folder that goes straight to it (Diego, 3 October 2026:
+-- "launchers that go straight to each page"). `binfs` makes the launcher
+-- from these lines, as it makes an application's from its header.
+-- kosmos: page asset:cheatsheet.html
+-- kosmos: name Cheat Sheet
+-- kosmos: icon File_HTML
+-- kosmos: section development/Documentation

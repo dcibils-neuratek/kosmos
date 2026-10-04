@@ -221,15 +221,37 @@ def main():
         guest.wait_for("wm: window Calculator at ", "the Calculator")
         time.sleep(3)                                   # the dock a cell wider
 
-        # A second press on the button closes it, and starts nothing.
+        # A second press on the button closes it, and starts nothing - after
+        # its categories: the pills in Diego's order, Demos pressed, Tab.
         mark = len(guest.seen)
         click(*kosmos_button(), width, height)
-        guest.wait_for_line("launchpad: the grid at ", "the launcher grid again", mark)
+        at_grid = guest.wait_for_line("launchpad: the grid at ", "the launcher grid again", mark)
+        said["pills"] = guest.wait_for_line("launchpad: pills ", "the grid's pills", mark)
         time.sleep(2)
+        gx, gy = (int(v) for v in re.match(r"(\d+),(\d+)", at_grid).groups())
+        pill = re.search(r"Demos (\d+),(\d+) (\d+)x(\d+)", said["pills"])
+
+        if pill:
+            px, py, pw, ph = (int(v) for v in pill.groups())
+            click(gx + px + pw // 2, gy + py + ph // 2, width, height)
+            said["demos"] = guest.wait_for_line("launchpad: Demos, ", "the Demos pill", mark)
+            guest.sendkey("tab")
+            said["tabbed"] = guest.wait_for_line("launchpad: Preferences, ", "Tab to the next pill", mark)
+
         click(*kosmos_button(), width, height)
         time.sleep(3)
         guest._read_available()
         said["second"] = guest.seen[mark:]
+
+        # ---- 3c: Super and the key left of 1 - º on Diego's keyboard ----
+        mark = len(guest.seen)
+        guest.sendkey("meta_l-grave_accent")
+        said["modal"] = guest.wait_for_line("wm: window Shortcuts at ", "the shortcuts, modal", mark)
+        time.sleep(2)
+        guest.sendkey("esc")
+        time.sleep(2)
+        guest._read_available()
+        said["modal closed"] = "wm: closed Shortcuts" in guest.seen[mark:]
 
         # And a press anywhere outside it.
         mark = len(guest.seen)
@@ -426,6 +448,27 @@ def main():
                      "launcher, or opened another: %d grids, closed %s"
                      % (second.count("launchpad: the grid at"), "wm: closed Open" in second))
 
+    order = [p.split(" ")[0] for p in said.get("pills", "").split("; ")]
+
+    if order != ["All", "Applications", "System", "Development", "Demos", "Preferences"]:
+        fails.append("the grid's pills were not All and the five in Diego's order: %r"
+                     % said.get("pills"))
+
+    demos = re.match(r"(\d+)", said.get("demos", ""))
+    every = int(grid.group(5)) if grid else 0
+
+    if not demos or not 0 < int(demos.group(1)) < every:
+        fails.append("the Demos pill did not show Demos alone: %r of %d"
+                     % (said.get("demos"), every))
+
+    if not said.get("tabbed"):
+        fails.append("Tab did not step from Demos to Preferences")
+
+    if not said.get("modal") or not said.get("modal closed"):
+        fails.append("Super and the key left of 1 did not open the shortcuts "
+                     "over everything, or Escape did not close them: %r, closed %s"
+                     % (said.get("modal"), said.get("modal closed")))
+
     if "wm: closed Open" not in said.get("outside", ""):
         fails.append("a press outside the launcher did not close it")
 
@@ -443,7 +486,7 @@ def main():
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:400])
 
-    checks = 26
+    checks = 30
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))
@@ -462,7 +505,9 @@ def main():
           "button's, opening upwards over its button, floating and along the "
           "whole width, Restart and Shut Down in it wearing a picture; the launcher grid above the dock with every "
           "application, the button lit while it is open, a name typed and "
-          "Return opening it, and a second press or one outside closing it; "
+          "Return opening it, its pills in Diego's order, Demos and Tab, and "
+          "a second press or one outside closing it; Super and º opening the "
+          "shortcuts over everything and Escape closing them; "
           "its button lit while it is open and dark once it is dismissed; the "
           "whole width along the foot, giving the gap back; the bar at the "
           "top again with all the room back) - and a 1920x1080 wallpaper "

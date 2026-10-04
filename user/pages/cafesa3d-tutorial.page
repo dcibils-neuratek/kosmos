@@ -1,0 +1,8 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+-- Cafesa3D's tutorial, nine lessons from the interface to rendering, a page
+-- the browser opens: a launcher in the menu's Development folder that goes
+-- straight to it (Diego, 3 October 2026).
+-- kosmos: page asset:tutorial/cafesa3d/index.html
+-- kosmos: name Cafesa3D Tutorial
+-- kosmos: icon Misc_Book
+-- kosmos: section development/Documentation

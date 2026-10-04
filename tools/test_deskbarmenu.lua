@@ -208,8 +208,9 @@ local names = {}
 
 for _, section in ipairs(merged) do names[#names + 1] = section.name end
 
-check(table.concat(names, ",") == "Applications,Demos,Games,System",
-      "the sections are both trees', each once: " .. table.concat(names, ","))
+check(table.concat(names, ",") == "Applications,System,Demos,Games",
+      "the sections are both trees', each once, in Diego's order and a "
+      .. "person's own after: " .. table.concat(names, ","))
 
 local function named(items, name)
   for _, item in ipairs(items or {}) do

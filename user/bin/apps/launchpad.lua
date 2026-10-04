@@ -48,13 +48,16 @@ local W, H = 460, 300
 -- browse by section would have opened the menu instead.
 --
 local function everything()
-  local out = {}
+  local out, order = {}, {}
 
-  local function walk(items)
+  -- Each kept with the folder at the top of the menu it was found under,
+  -- which the grid's categories are (`launchgrid.categories`).
+  local function walk(items, where)
     for _, item in ipairs(items or {}) do
       if item.items then
-        walk(item.items)
+        walk(item.items, where)
       elseif item.program then
+        item.section = where
         out[#out + 1] = item
       end
     end
@@ -74,13 +77,14 @@ local function everything()
     menu.sections(fs, "/Home/Deskbar"))
 
   for _, section in ipairs(sections or {}) do
-    walk(section.items)
+    order[#order + 1] = section.name
+    walk(section.items, section.name)
   end
 
-  return out
+  return out, order
 end
 
-local all = everything()
+local all, section_order = everything()
 local shown = {}
 
 --------------------------------------------------------------------------
@@ -110,6 +114,8 @@ local function grid_mode(ax, ay)
   local apps = grid.everything(all)
   local typed, list, sel, top = "", apps, (#apps > 0) and 1 or nil, 0
   local rows = grid.rows_shown(ph)
+  local cats = grid.categories(apps, section_order)
+  local category = grid.ALL
 
   local win, err = ui.window{ title = "Open", w = pw, h = ph, x = px, y = py,
                               popup = true }
@@ -152,10 +158,18 @@ local function grid_mode(ax, ay)
 
   local function search(text)
     typed = text
-    list = grid.filter(apps, typed)
+    list = grid.filter(apps, typed, category)
     sel = (#list > 0) and 1 or nil
     top = 0
     win.dirty = true
+  end
+
+  -- A category chosen, by its pill or by Tab: the grid that folder's alone,
+  -- what was typed still searching inside it.
+  local function choose(cat)
+    category = cat
+    search(typed)
+    print(("launchpad: %s, %d"):format(category, #list))
   end
 
   local function open(item)
@@ -169,6 +183,17 @@ local function grid_mode(ax, ay)
 
   local SMALL = 12
   local small = ui.sized("ui", SMALL)
+  local PILL = 13
+  local pill_face = ui.sized("ui", PILL)
+  local chips = grid.chips(cats, function(s) return gfx.measure(s, pill_face) end, pw)
+
+  do
+    local said = {}
+
+    for _, c in ipairs(chips) do said[#said + 1] = ("%s %d,%d %dx%d"):format(c.name, c.x, grid.CHIP_Y, c.w, grid.CHIP_H) end
+
+    print("launchpad: pills " .. table.concat(said, "; "))
+  end
 
   -- A name as wide as its cell allows, cut with an ellipsis if not.
   local function fitted(name, room)
@@ -206,18 +231,31 @@ local function grid_mode(ax, ay)
       g:fill(tx + gfx.measure(typed) + 1, sy + 14, 2, sh_ - 28, theme.accent)
     end
 
+    -- The categories: All, then the menu's folders, the chosen one lit.
+    for _, c in ipairs(chips) do
+      local on = (c.name == category)
+      local back = on and theme.accent or theme.raised
+
+      g:fill_round(c.x, grid.CHIP_Y, c.w, grid.CHIP_H, back, grid.CHIP_H // 2)
+      g:text(c.x + grid.CHIP_IN, grid.CHIP_Y + (grid.CHIP_H - gfx.height(pill_face)) // 2, c.name,
+             on and theme.text_on or theme.text, back, "ui", PILL)
+    end
+
     -- What the grid holds, and in what order.
-    local head = (typed == "") and ("Every application, %d"):format(#apps)
-                 or ("%d of %d"):format(#list, #apps)
+    local head = (typed ~= "") and ("%d of %d"):format(#list, #apps)
+                 or (category == grid.ALL) and ("Every application, %d"):format(#apps)
+                 or ("%s, %d"):format(category, #list)
 
     g:text(P + 8, grid.HEAD_Y, head, theme.text_dim, face, "ui", SMALL)
     g:text(self.w - P - 8 - gfx.measure("A to Z", small), grid.HEAD_Y, "A to Z",
            theme.text_dim, face, "ui", SMALL)
 
-    -- The tiles that show: a round tile, its picture, its name under it.
+    -- The tiles that show: a round tile, its picture, its name under it -
+    -- and the row after the last whole one, cut by the panel's edge, which
+    -- says there is more below without anything to say it.
     local tile, chosen = mix(face, 0xffd6e4ff, 26), mix(face, 0xffffffff, 20)
 
-    for i = top * grid.COLS + 1, math.min(#list, (top + rows) * grid.COLS) do
+    for i = top * grid.COLS + 1, math.min(#list, (top + rows + 1) * grid.COLS) do
       local item = list[i]
       local cx, cy, cw, ch = grid.place(i, top, self.w)
       local behind = face
@@ -247,6 +285,13 @@ local function grid_mode(ax, ay)
   function view:mouse(action, x, y)
     if action ~= "press" then return false end
 
+    local cat = grid.chip_hit(chips, x, y)
+
+    if cat then
+      choose(cat)
+      return true
+    end
+
     local i = grid.hit(#list, top, self.w, self.h, x, y)
 
     if i then open(list[i]) end
@@ -261,9 +306,19 @@ local function grid_mode(ax, ay)
 
   local ARROW = { [-1] = "up", [-2] = "down", [-3] = "right", [-4] = "left" }
 
-  function win:on_key(c)
+  --
+  -- The keys are the grid's: it is the one thing in the window, focused,
+  -- and it takes Tab - which a window keeps for moving the focus unless
+  -- what has it says `takes_tab` - to go round the categories.
+  --
+  view.focusable = true
+  view.takes_tab = true
+
+  function view:key(c)
     if c == 27 then
-      self:close()
+      win:close()
+    elseif c == 9 then
+      choose(grid.next_category(cats, category))
     elseif c == 10 or c == 13 then
       open(sel and list[sel])
     elseif c == 8 or c == 127 then
@@ -278,7 +333,7 @@ local function grid_mode(ax, ay)
       return false
     end
 
-    self.dirty = true
+    win.dirty = true
     return true
   end
 

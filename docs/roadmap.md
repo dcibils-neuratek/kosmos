@@ -371,9 +371,13 @@ What the screenshots show, and so what it is to have:
   the top (View, Zoom, Add Page; the things to insert; Format and Document
   on the right), the side panel that Format and Document switch, page
   thumbnails to the left from View;
-- **its own file, and PDF out**: a document saved as Kosmos's own format,
-  and printed to a PDF - which is the PDF Kit writing for the first time,
-  where it has only read.
+- **its own file, and PDF and DOCX out** (Diego, the same evening: "Kosmos
+  Write should be able to export as DOCX as well as PDF. The native format
+  should be .write"): a document saved as a `.write` file, Kosmos's own;
+  exported to PDF - the PDF Kit writing for the first time, where it has
+  only read - and to DOCX, Word's, which is a zip of XML parts (the
+  Compression Kit already makes zips) so that a document goes to somebody
+  without Kosmos.
 
 Built on what exists: the browser's text layout and the TrueType faces for
 setting text, the PDF Kit, `ui.lua`'s widgets for the panels. An
@@ -410,7 +414,22 @@ evening:
   leaving, a download done, a program that died, and Clock's timers and
   reminders, which Clock does not have yet.
 
-Drawn first as `docs/notifications.html`, for Diego to adjust.
+Drawn first as `docs/notifications.html`, for Diego to adjust. **Agreed the
+same evening** - "mockup for notifications is perfect!" - with the
+drawing's four answers: the history opened from the clock in the strip;
+two kinds, a banner that goes after five seconds and an alert (a program
+that stopped, a reminder, a timer) that stays until closed; no sound for
+now; Do Not Disturb a switch, its hours later.
+
+**A key held down repeats - on a USB keyboard too.** Diego, 3 October
+2026, on the M700: "maintaining pressed backspace does not keep deleting
+letters, i need to press and release to delete letter by letter". A USB
+keyboard reports which keys are down and never repeats one; repeating is
+the computer's - and PS/2's keyboards (the ThinkPad's) and QEMU's do it
+themselves, which is why it had never been seen. The USB keyboard's
+driver repeats a held key: after half a second, about thirty a second
+until it is let go, every key but the modifiers. The delay and the rate
+in Preferences' Keyboard later. **A bug, so next after the grid's build.**
 
 **The launcher grid's categories.** Diego, 3 October 2026, with a picture of
 macOS's Applications: "the app launcher needs a category filter so we can
@@ -420,7 +439,8 @@ A row of pills under the search - All, then the menu's five folders - each
 showing that folder's applications, its own folders inside it folded in
 (the GL demos under Demos); the search working within the one chosen; Tab
 and Shift+Tab stepping through them. Its arithmetic in `launchgrid.lua`,
-held on the host, as the rest of the grid's.
+held on the host, as the rest of the grid's. **Done** (`testing.md` 18.362),
+Tab forwards; Shift+Tab not yet.
 
 **The Super+Space launcher in the new look.** Diego, 3 October 2026, with a
 screenshot of macOS's Spotlight: "the super+space app to launch apps should

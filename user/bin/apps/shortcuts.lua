@@ -40,7 +40,27 @@ local ui = use("/Kosmos/Libraries/ui.lua")
 --
 local W, H = 580, 420
 
-local win, err = ui.window{ title = "Shortcuts", w = W, h = H, centre = true }
+--
+-- **Modal, from Super and º** (Diego, 3 October 2026: "pressing º should show
+-- a modal window of the shortcuts of the kosmos os", Super and º his
+-- choice): `--modal`, a popup in the middle of the screen over everything,
+-- closed by Escape or a press anywhere outside it - the window manager's
+-- rule for popups. From the menu or Super and /, a window as before.
+--
+local MODAL = tostring(args or ""):match("%-%-modal") ~= nil
+local spec = { title = "Shortcuts", w = W, h = H, centre = true }
+
+if MODAL then
+  local screen = gfx.screen()
+  local sw, sh = 1920, 1080
+
+  if screen then sw, sh = screen:size() end
+
+  spec = { title = "Shortcuts", w = W, h = H, popup = true,
+           x = (sw - W) // 2, y = (sh - H) // 2 }
+end
+
+local win, err = ui.window(spec)
 
 if not win then
   print("shortcuts: " .. tostring(err))
@@ -117,4 +137,15 @@ function view:draw(g)
 end
 
 win:add(view)
+if MODAL then
+  function win:on_key(c)
+    if c == 27 then
+      self:close()
+      return true
+    end
+
+    return false
+  end
+end
+
 win:run()

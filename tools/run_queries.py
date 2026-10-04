@@ -246,7 +246,12 @@ def main():
             # Each one's name for a person (`kosmos: name`, 3 October): the
             # launcher's title, with the file's name still its own.
             '"[" .. tostring(a("/Kosmos/Deskbar/System/procs").title) .. "]", '
-            '"[" .. tostring(a("/Kosmos/Apps/machine.lua").title) .. "]")',
+            '"[" .. tostring(fs.getattr("/Kosmos/Deskbar/Applications/machine") == nil) .. "]", '
+            '"[" .. tostring(a("/Kosmos/Apps/machine.lua").title) .. "]", '
+            # A page the menu opens (`user/pages`): the browser, at its address.
+            'a("/Kosmos/Deskbar/Development/Documentation/cheatsheet").program, '
+            'a("/Kosmos/Deskbar/Development/Documentation/cheatsheet").args, '
+            '"[" .. tostring(a("/Kosmos/Deskbar/Development/Documentation/cheatsheet").title) .. "]")',
 
             # **A file's time is a date** (`roadmap.md` 6za step b): written
             # to the disk now, its `modified` is the clock's second, give or
@@ -356,7 +361,8 @@ def main():
              "nothing had some"),
             ("K-DESKBAR", "Applications,Demos,Development,Preferences,System launcher "
                           "/Kosmos/Apps/tracker.lua App_Tracker directory "
-                          "launcher true true true [Process Viewer] [About This Machine]",
+                          "launcher true true true [Process Viewer] [true] [About This Machine] "
+                          "/Kosmos/Apps/browser.lua asset:cheatsheet.html [Cheat Sheet]",
              "/Kosmos/Deskbar was not the shipped menu - its five sections, "
              "Tracker a launcher of its own path and picture, GL Demos a "
              "submenu, no Deskbar and no Info, nothing written into it, and "

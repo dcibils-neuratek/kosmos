@@ -280,14 +280,40 @@ static bool is_folder(const char *dir, size_t dlen)
  *
  * False when the application is not in the menu, or its place does not fit.
  */
+/*
+ * **A page the menu opens** (a `.page` file in `user/pages`, 3 October 2026): one in
+ * the store's `pages/` that says `kosmos: page <address>` - the cheat sheet,
+ * a tutorial - which is a launcher starting the browser there. Its name in
+ * the menu is the file's without `pages/` and `.page`.
+ */
+#define PAGES_DIR  "pages/"
+#define PAGE_END   ".page"
+
+static bool is_page(const struct source_entry *e)
+{
+    unsigned long n = 0;
+    size_t nlen = strlen(e->name);
+    size_t dlen = sizeof(PAGES_DIR) - 1, elen = sizeof(PAGE_END) - 1;
+
+    return nlen > dlen + elen && strncmp(e->name, PAGES_DIR, dlen) == 0
+           && strcasecmp(e->name + nlen - elen, PAGE_END) == 0
+           && strchr(e->name + dlen, '/') == NULL
+           && declared(e->text, e->length, "page", &n) != NULL;
+}
+
 static bool menu_path(const struct source_entry *e, char *out, size_t cap)
 {
     unsigned long n = 0;
     const char *section;
     size_t nlen = strlen(e->name);
+    const char *base = e->name;
+    size_t blen = nlen - 4;
     size_t at = 0;
 
-    if (strchr(e->name, '/') != NULL
+    if (is_page(e)) {
+        base = e->name + sizeof(PAGES_DIR) - 1;
+        blen = nlen - (sizeof(PAGES_DIR) - 1) - (sizeof(PAGE_END) - 1);
+    } else if (strchr(e->name, '/') != NULL
         || declared(e->text, e->length, "application", &n) == NULL
         || nlen < 5 || strcasecmp(e->name + nlen - 4, ".lua") != 0
         || strcasecmp(e->name, "deskbar.lua") == 0) {
@@ -307,7 +333,7 @@ static bool menu_path(const struct source_entry *e, char *out, size_t cap)
     }
 
     if (n == 0 || (n == 4 && strncasecmp(section, "none", 4) == 0)
-        || n + 1 + (nlen - 4) + 1 > cap) {
+        || n + 1 + blen + 1 > cap) {
         return false;
     }
 
@@ -319,8 +345,8 @@ static bool menu_path(const struct source_entry *e, char *out, size_t cap)
     }
 
     out[at++] = '/';
-    memcpy(out + at, e->name, nlen - 4);
-    at += nlen - 4;
+    memcpy(out + at, base, blen);
+    at += blen;
     out[at] = '\0';
 
     return true;
@@ -516,6 +542,31 @@ static void fill_launcher(const struct source_entry *e, struct bin_reply *rep)
     s = declared(e->text, e->length, "name", &n);
     copy_word(rep->title, BIN_TITLE_MAX, (s != NULL) ? s : "",
               (s != NULL) ? n : 0);
+
+    /*
+     * A page starts the browser, and its address follows the program's
+     * name after a NUL - in `data`, which has the room, rather than a field
+     * every reply would carry for two launchers. The namespace splits them.
+     */
+    if (is_page(e)) {
+        static const char browser[] = "browser.lua";
+        const char *page = declared(e->text, e->length, "page", &n);
+        size_t plen = (page != NULL) ? n : 0;
+
+        while (plen > 0 && (page[plen - 1] == ' ' || page[plen - 1] == '\r'
+                            || page[plen - 1] == '\t')) {
+            plen--;
+        }
+
+        if (sizeof(browser) + plen > BIN_CHUNK) {
+            plen = BIN_CHUNK - sizeof(browser);
+        }
+
+        memcpy(rep->data, browser, sizeof(browser));      /* with its NUL */
+        memcpy(rep->data + sizeof(browser), page, plen);
+        rep->length = (uint32_t)(sizeof(browser) + plen);
+        return;
+    }
 
     if (len > BIN_CHUNK) {
         len = BIN_CHUNK;
