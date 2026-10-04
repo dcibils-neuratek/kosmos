@@ -366,6 +366,17 @@ struct device {
  */
 struct mouse {
     bool          reading;
+
+    /*
+     * **A report that failed is asked for again** (`roadmap.md`, the
+     * M700's mouse given up after one USB Transaction Error at 2,998 s):
+     * `recover` set by the report's event, the endpoint made usable and the
+     * request sent again by the watch, outside the event's handling;
+     * `failures` in a row, and given up only past `REPORT_RETRIES`.
+     */
+    bool          recover;
+    bool          recovered;
+    unsigned      failures;
     unsigned      port;
     unsigned      dci;                  /* its endpoint's context index, 4.5.1 */
     unsigned      length;               /* a request's buffer: its packet */
@@ -2378,6 +2389,22 @@ static void keyboard_report(struct controller *c, unsigned slot, unsigned got)
     }
 }
 
+/*
+ * How many reports in a row may fail before a device is given up. A cable
+ * that glitches once - the M700's mouse, after 48,726 good reports - is a
+ * report asked for again; a device that fails every time is one that is
+ * going, and its port says so when it has gone.
+ */
+#define REPORT_RETRIES      5u
+#define CC_TRANSACTION      4u
+
+/*
+ * `opt/kosmos/mousefault=once`: the first good report of a mouse taken for
+ * a USB Transaction Error, so `run_x86.py` can watch the recovery under
+ * QEMU, whose mouse never fails one. The driver says when it takes it.
+ */
+static bool mouse_fault;
+
 static void take_report(struct controller *c, const uint32_t *event)
 {
     unsigned slot = TRB_SLOT_OF(event[3]);
@@ -2399,6 +2426,42 @@ static void take_report(struct controller *c, const uint32_t *event)
 
     code = TRB_CODE_OF(event[2]);
     left = TRB_LEFT_OF(event[2]);
+
+    if (mouse_fault && code == CC_SUCCESS && !m->keyboard && !m->pad) {
+        mouse_fault = false;
+        code = CC_TRANSACTION;
+    }
+
+    /*
+     * **Asked for again, rather than given up.** A failure on an interrupt
+     * endpoint halts the controller's side of it, and a Transaction Error is
+     * the bus's, not the device's: the endpoint reset and pointed past the
+     * failed request, and the report asked for again (xHCI 1.2 4.6.8) - by
+     * the watch, `recover_reports`, since the commands that takes wait on the
+     * very ring this event came from.
+     */
+    if (code != CC_SUCCESS && code != CC_SHORT_PACKET
+        && m->failures < REPORT_RETRIES) {
+        m->failures++;
+        m->reading = false;
+        m->recover = true;
+
+        about(&line, c);
+        say_text(&line, " port ");
+        say_dec(&line, m->port);
+        say_text(&line, m->keyboard ? ": the keyboard's report failed: "
+                       : m->pad ? ": the pad's report failed: "
+                       : ": the mouse's report failed: ");
+        say_text(&line, completion_name(code));
+        say_text(&line, " (");
+        say_dec(&line, code);
+        say_text(&line, "); asked for again, ");
+        say_dec(&line, m->failures);
+        say_text(&line, " of ");
+        say_dec(&line, REPORT_RETRIES);
+        say_send(console, &line);
+        return;
+    }
 
     if (code != CC_SUCCESS && code != CC_SHORT_PACKET) {
         bool held = m->buttons != 0;
@@ -2426,9 +2489,22 @@ static void take_report(struct controller *c, const uint32_t *event)
         say_text(&line, completion_name(code));
         say_text(&line, " (");
         say_dec(&line, code);
-        say_text(&line, "); not read again until it is plugged in again");
+        say_text(&line, "); it failed ");
+        say_dec(&line, REPORT_RETRIES);
+        say_text(&line, " times in a row - not read again until it is plugged in again");
         say_send(console, &line);
         return;
+    }
+
+    m->failures = 0;
+
+    if (m->recovered) {
+        m->recovered = false;
+        about(&line, c);
+        say_text(&line, " port ");
+        say_dec(&line, m->port);
+        say_text(&line, ": read again after its report failed");
+        say_send(console, &line);
     }
 
     if (m->keyboard) {
@@ -8220,6 +8296,69 @@ static void serve_midi(struct say_line *line)
  * reports stop coming by interrupt still moves, only badly, and that count
  * is what a photograph can read it from.
  */
+/*
+ * **The reports to be asked for again**, after `take_report` marked them:
+ * the endpoint Stopped if it still runs or Reset if it halted, as
+ * `reset_pipe` does it, then its dequeue pointer set past what failed -
+ * with the cycle bit the next request will carry - and the request sent.
+ * No CLEAR_FEATURE: a Transaction Error is the bus's, and the device's
+ * endpoint never halted. Outside any event's handling, since each command
+ * waits on the ring the events come from.
+ */
+static void recover_reports(struct controller *c, struct say_line *line)
+{
+    unsigned slot;
+
+    for (slot = 1; slot <= DEVICES_MAX; slot++) {
+        struct mouse *m = &c->mouse[slot];
+        struct device d;
+        uint32_t done[4], target;
+        uint64_t next;
+        unsigned state;
+
+        if (!m->recover) {
+            continue;
+        }
+
+        m->recover = false;
+        memset(&d, 0, sizeof(d));
+        d.slot = slot;
+        d.output = (uint32_t *)(c->mem + (PAGE_DEVICES + (slot - 1u) * PAGES_A_DEVICE
+                                          + 1u) * PAGE);
+        target = TRB_ENDPOINT(m->dci) | TRB_SLOT(slot);
+        state = ep_state(c, &d, m->dci);
+
+        if (state == EP_STATE_RUNNING) {
+            (void)command(c, 0, 0, TRB_TYPE(TRB_STOP_ENDPOINT) | target, done);
+            state = ep_state(c, &d, m->dci);
+        }
+
+        if (state == EP_STATE_HALTED) {
+            (void)command(c, 0, 0, TRB_TYPE(TRB_RESET_ENDPOINT) | target, done);
+            state = ep_state(c, &d, m->dci);
+        }
+
+        next = m->ring.bus + (uint64_t)m->ring.enqueue * 16u;
+
+        if ((state != EP_STATE_STOPPED && state != EP_STATE_ERROR)
+            || !command(c, (uint32_t)next | (m->ring.cycle == TRB_C ? 1u : 0u),
+                        (uint32_t)(next >> 32), TRB_TYPE(TRB_SET_DEQUEUE) | target,
+                        done)) {
+            about(line, c);
+            say_text(line, " port ");
+            say_dec(line, m->port);
+            say_text(line, ": its endpoint would not start again; not read until it is "
+                           "plugged in again");
+            say_send(console, line);
+            continue;
+        }
+
+        m->reading = true;
+        m->recovered = true;
+        ask_for_report(c, slot);
+    }
+}
+
 static void watch(struct controller *list, unsigned count,
                   struct say_line *line)
 {
@@ -8281,6 +8420,7 @@ static void watch(struct controller *list, unsigned count,
                 list[i].woken = woke >= 0 && (unsigned long)woke < waited
                                 && owner[woke] == i;
                 service(&list[i], line);
+                recover_reports(&list[i], line);
             }
         }
 
@@ -8381,6 +8521,19 @@ void xhci_server(long console_cap, long blocks_cap, long writes_cap,
     /* From here a device arriving or leaving is news (`announce`); what was
      * plugged in when the machine started is not. */
     announcing = true;
+
+    {
+        char fault[8];
+
+        if (kosmos_boot_option("opt/kosmos/mousefault", fault, sizeof(fault)) == 4
+            && memcmp(fault, "once", 4) == 0) {
+            mouse_fault = true;
+            say_begin(&line);
+            say_text(&line, "xhci: a mouse's first good report is taken for a "
+                            "Transaction Error, as opt/kosmos/mousefault asks");
+            say_send(console, &line);
+        }
+    }
 
     watch(controllers, index, &line);
 }

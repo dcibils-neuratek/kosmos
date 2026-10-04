@@ -415,6 +415,32 @@ zip file, the PDF writer, pages laid out and drawn, styles, pictures and
 tables placed on a page, the inspector's panels. Write is its first user,
 and the two below its next.
 
+**Built in these steps** (4 October), each its own revision and test, the
+kits under `user/lib/` for Present and Sheets to stand on:
+
+- **W1 - the document and its file.** A document as data - its paper,
+  margins, header and footer, its styles (Title, Subtitle, Heading 1 and 2,
+  Body, Caption, Quote), and its paragraphs, each a style and runs of text
+  with their own face, weight, size, bold, italic, underline, strike and
+  colour on top. A `.write` file is a zip (the Compression Kit) holding the
+  document as text (`tabletext`) and its pictures as files. Held on the Mac:
+  a document out and back the same.
+- **W2 - pages as they print.** Paragraphs set into lines and lines onto
+  pages - A4 or Letter, upright or on its side, the margins, a header and
+  footer, page numbers - by the faces' own measures. Arithmetic, held on the
+  Mac with a measure handed in; in C where a measurement says the loop over
+  glyphs is the cost.
+- **W3 - PDF out, the part that matters most.** The PDF Kit writing for the
+  first time: the pages as W2 laid them, the faces embedded, each line where
+  it was set. **Held by reading it back** with Kosmos's own PDF reader - the
+  text and where each line is - and opened in the PDF viewer.
+- **W4 - the window**, from `docs/write.html`: the pages on a dark desk,
+  the toolbar, Format and Document switching the panel, View for the
+  thumbnails, zoom; typing and choosing styles, on the document page the
+  kit already has (`ui.md` 16.26).
+- **W5 - a picture with its caption, and a table.**
+- **W6 - DOCX out**: Word's XML parts in a zip.
+
 **Kosmos Present - slides after Apple's Keynote.** Diego, 4 October 2026:
 "our Kosmos Present presentation software like apple keynote". Slides on
 Write's pages and its kits - the text and its styles, pictures, tables,
@@ -1124,7 +1150,9 @@ next measurement, `/home`'s path through the disk server and kfs, for later -
    again until it is plugged in again" - one error, and the driver gives a
    mouse up. A transaction error on an interrupt endpoint is to be
    recovered - the endpoint reset and the report asked for again, as Linux's
-   `usbhid` does - and only a device that keeps failing given up.
+   `usbhid` does - and only a device that keeps failing given up. **Done the
+   same day** (`testing.md` 18.376): five in a row before a device is
+   given up.
 4. **OPEN - for Diego, when a measurement asks**: a device writing straight
    into a client's pages with no IOMMU to fence it.
 

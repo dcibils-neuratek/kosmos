@@ -17792,3 +17792,32 @@ built into the system and the test image both - "stale.elf ... was not
 refused with the sentence that says so: None".
 
 **Its gate: 88 of 88 in 10:42.**
+
+## 18.376 A USB report that fails is asked for again
+
+The M700's log on 4 October: "the mouse's report failed: USB Transaction
+Error (4); not read again until it is plugged in again" - one error, 2,998
+seconds and 48,726 reports in, and the mouse given up. A Transaction Error
+is the bus's - a glitch on the cable - and the device's endpoint never
+halted; only the controller's side did.
+
+So a failed report - a mouse's, a keyboard's, a pad's - is marked, and the
+driver's watch, outside the event's handling since each command waits on
+the very ring the event came from, makes the endpoint usable again as
+`reset_pipe` does: Stop Endpoint if it still runs, Reset Endpoint if it
+halted, Set TR Dequeue Pointer past the request that failed with the cycle
+bit the next carries; then asks for the report again. No CLEAR_FEATURE: the
+device has nothing to clear. **Given up only after five in a row**, which
+is a device going rather than a glitch - and an unplugged one is seen
+leaving by its port first.
+
+**`run_x86.py`'s `usb_mouse_recovers`, 4, in `x86-usb-2`**: QEMU's mouse
+never fails a report, so `opt/kosmos/mousefault=once` has the driver take
+the first good one for a Transaction Error, and says so; the rest is the
+real recovery - "asked for again, 1 of 5", "read again after its report
+failed", and the next movement the mouse's first report, read. **Control**:
+recovery made never to apply - 3 of 4 fail, the mouse given up. A first try
+at the control did not build (`m->failures < 0u` is an always-false
+comparison `-Werror` refuses) and its PASS ran the old image; it was redone.
+
+**Whole gate**: 88 suites in 642 s (10:41), all passing.

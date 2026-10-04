@@ -649,3 +649,56 @@ became a notification of its own, "Open stopped". A press now opens a
 folder in Tracker and a file with whatever opens it. Still to come, with
 the features they belong to: downloads (the browser has none yet) and
 Clock's timers.
+
+## 4 October, later - a faster stick, settings you can read, and a mouse that comes back
+
+**In short:** six revisions in one afternoon, each small and each something
+Diego had run into. The USB stick on the M700 reads twice as fast. The
+dock's background has a transparency slider. Every setting in the system is
+now a text file a person can open and read. Applications all keep their
+settings through one kit instead of each inventing its own way. An installed
+game built for an older Kosmos now says so instead of failing strangely. And
+a mouse that hiccups on its cable is no longer abandoned.
+
+**The stick (0.10.231).** Measured on the M700, a stick read in a straight
+line went from 31.9 MB/s to 64.5, and small reads in random places from
+about 330 a second to about 1,330. Two changes did it. The USB controller
+had been told to wait up to a millisecond before reporting that work was
+finished; now it waits 40 microseconds. And a read could ask for at most
+64 KB at a time; now it asks for up to 1 MB, chained in the pieces the
+controller needs. Writes stayed at 4 to 17 MB/s, which is the flash itself.
+
+**The dock (0.10.232).** Appearance has a slider from 0% (opaque) to 100%
+(fully see-through) for the dock's background, starting at 25%. The icons
+on it are never faded.
+
+**Settings as text (0.10.233 and 0.10.234).** Diego: "I don't like binary
+files for settings for anything in the system". A table saved to `/Home`
+used to be the serialiser's binary bytes. Now it is Lua's own table syntax
+under a first line that says `-- kosmos: table`. It is read as values only,
+never run, so a settings file cannot carry a program, and one broken by hand
+is refused with the line it broke on. Then the settings kit: an application
+opens its settings by name, reads a setting (its default until someone
+chooses otherwise), and sets one, which is written at once. Every
+application was moved onto it. The build now fails if anything but the kit
+names the preferences folder, so the next application cannot drift back to
+doing it by hand.
+
+**A stale game says so (0.10.235).** Doom, Quake and the Super Nintendo each
+carry their own copy of the system's runtime, so after the system's
+protocols change they must be built again. On the M700, Doom built for an
+older revision failed with "ui.lua:1: unexpected symbol", from deep inside
+the interface kit, which said nothing about the real cause. Every image now
+carries a stamp of the protocols it speaks, and a program whose stamp
+differs is refused with a sentence: built for another Kosmos, build it
+again.
+
+**The mouse (0.10.236).** Measured: on the M700 the mouse stopped after
+2,998 seconds and 48,726 good reports, because one report failed with a USB
+Transaction Error. That is a glitch on the bus, not a fault in the mouse,
+and the driver had given up on the device for good. Now a failed report is
+asked for again: the controller's side of the connection is reset and the
+request sent once more. The device is given up only after five failures in
+a row, which means it is really going. Under QEMU the test pretends one
+report failed and watches the mouse carry on, and with the recovery switched
+off the same test fails.

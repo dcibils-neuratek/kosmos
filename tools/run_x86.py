@@ -2071,6 +2071,58 @@ def usb_hotplug(image, check):
         proc.wait()
 
 
+def usb_mouse_recovers(image, check):
+    """**A mouse's report that fails is asked for again** (`testing.md`
+    18.376; Diego's M700, whose mouse the driver gave up after one USB
+    Transaction Error, 2,998 seconds and 48,726 reports in).
+
+    QEMU's mouse never fails a report, so `opt/kosmos/mousefault=once` has
+    the driver take the first good one for a Transaction Error. What follows
+    is the real recovery: the endpoint stopped, its dequeue pointer set past
+    the request, the report asked for again - and the mouse read again, its
+    movements reaching the pointer, rather than "not read again until it is
+    plugged in again".
+    """
+    machine = PluggedMachine(image, ("-device", "qemu-xhci,id=usb0",
+                                     "-device", "usb-mouse,bus=usb0.0,port=1,id=m0",
+                                     "-fw_cfg", "name=opt/kosmos/mousefault,string=once"))
+
+    try:
+        if not machine.wait_for(0, r"xhci: watching for devices plugged in and out", 90):
+            check(False, "the USB driver never said it was watching")
+            return
+
+        check(machine.wait_for(0, r"taken for a Transaction Error, as opt/kosmos/mousefault asks", 5),
+              "the driver did not say it took the mouse fault option")
+
+        listed = re.search(r"Mouse #(\d+): QEMU HID Mouse", machine.monitor.ask("info mice", quiet=0.3))
+
+        if listed:
+            machine.monitor.ask("mouse_set " + listed.group(1), quiet=0.3)
+
+        mark = machine.mark()
+
+        for i in range(40):
+            machine.monitor.ask("mouse_move %d 0" % (3 if i % 2 == 0 else -3), quiet=0.05)
+
+            if re.search(r"read again after its report failed", machine.since(mark)):
+                break
+
+        said = machine.since(mark)
+        check(re.search(r"port \d+: the mouse's report failed: USB Transaction Error \(4\); "
+                        r"asked for again, 1 of 5", said) is not None,
+              "the failed report was not asked for again: %r"
+              % [l for l in said.splitlines() if "xhci" in l][-4:])
+        check(re.search(r"port \d+: read again after its report failed", said) is not None
+              and re.search(r"the mouse's first report: buttons 0, moved -?3,0", said) is not None,
+              "the mouse was not read again after its report failed: %r"
+              % [l for l in said.splitlines() if "xhci" in l][-4:])
+        check("not read again until it is plugged in again" not in said,
+              "the mouse was given up after one failed report")
+    finally:
+        machine.close()
+
+
 def memdisk(image, check):
     """Boots with a disk the loader handed over, and reads a file off it.
 
@@ -5116,7 +5168,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -5209,6 +5261,8 @@ def main():
     # And a USB mouse moving the pointer a TrackPoint moves. `usb_mouse` says
     # why it goes round its ring twice before it clicks.
     #
+    if 'usb_mouse_recovers' in wanted:
+        usb_mouse_recovers(image, check)
     if 'usb_mouse' in wanted:
         usb_mouse(image, check)
     if 'usb_keyboard' in wanted:
