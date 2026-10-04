@@ -98,9 +98,50 @@ local starting = dock.items({ "music" }, { { starting = true, program = "music",
 check(dock.action(starting) == "wait", "an application starting was asked for again")
 check(dock.action(items[1]) == nil, "the Kosmos button is an application")
 
+-- 6. Arranged by hand: pinning and unpinning, where a drop lands, what a
+-- drop does.
+local function list(t) return table.concat(t, ",") end
+local pins = { "tracker", "terminal", "groove" }
+
+check(list(dock.pin(pins, "music")) == "tracker,terminal,groove,music", "a pin did not go on the end")
+check(list(dock.pin(pins, "music", 1)) == "music,tracker,terminal,groove", "a pin did not go first")
+check(list(dock.pin(pins, "groove", 1)) == "groove,tracker,terminal", "a pin moved was not moved")
+check(list(pins) == "tracker,terminal,groove", "pinning changed the list it was given")
+check(list(dock.unpin(pins, "terminal")) == "tracker,groove", "unpinning did not take it out")
+check(items[2].pinned and not items[6].pinned, "a cell did not say whether it is pinned")
+
+-- items: kosmos, tracker, terminal, groove, separator, logview, sysmon
+-- (laid out above, 60 wide words for Kosmos).
+local tr, te, gr = items[2], items[3], items[4]
+
+check(dock.drop_at(items, tr.x + 2, "groove") == 1, "a drop at the first pin's left half was not first")
+check(dock.drop_at(items, te.x + te.w - 2, "tracker") == 2,
+      "a drop past the middle of the second, dragging the first, was not second")
+check(dock.drop_at(items, items[6].x + 10, "logview") == nil,
+      "a drop among what runs unpinned landed among the pins")
+
+local out, what = dock.drop(pins, items, "groove", tr.x + 2, 10)
+check(what == "moved" and list(out) == "groove,tracker,terminal", "groove dropped first: " .. tostring(what) .. " " .. list(out))
+
+out, what = dock.drop(pins, items, "terminal", te.x + 20, 10)
+check(what == nil and list(out) == list(pins), "a drop back on its own place changed something: " .. tostring(what))
+
+out, what = dock.drop(pins, items, "terminal", te.x + 20, -dock.REMOVE_ABOVE - 5)
+check(what == "removed" and list(out) == "tracker,groove", "an icon let go above the dock was not taken out")
+
+out, what = dock.drop(pins, items, "logview", gr.x + gr.w - 2, 10)
+check(what == "kept" and list(out) == "tracker,terminal,groove,logview", "a running one dropped on the pins was not kept: " .. tostring(what) .. " " .. list(out))
+
+out, what = dock.drop(pins, items, "groove", items[7].x + 10, 10)
+check(what == "unpinned" and list(out) == "tracker,terminal", "a pin dropped after the separator was not let go")
+
+out, what = dock.drop(pins, items, "logview", items[7].x + 10, -dock.REMOVE_ABOVE - 5)
+check(what == nil, "an unpinned one let go above the dock did something")
+
 if fails == 0 then
   print(("PASS: %d checks on the dock's arithmetic (names, the cells for what is pinned "
-         .. "and what runs, where each goes, what a press hit and what it does)."):format(checks))
+         .. "and what runs, where each goes, what a press hit and what it does, and "
+         .. "the dock arranged by hand - pinned, moved, kept, taken out, let go)."):format(checks))
   os.exit(0)
 end
 

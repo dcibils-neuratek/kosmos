@@ -550,7 +550,9 @@ dock does it:
   Remove from Dock; Quit;
 
 each change written to `/Home/Preferences/dock` at once. After the names
-over the icons, below.
+over the icons, below. **Done** (`testing.md` 18.366), with
+`setprop /Running/Deskbar/pin NAME` at a prompt as well, and a pinned icon
+dropped after the separator let go - kept only while it runs.
 
 **Names over the dock's icons, and the dock's numbers in a file.** Diego,
 3 October: "hovering over the icons in the dock app icons should tell the

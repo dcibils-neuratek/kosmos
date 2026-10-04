@@ -541,3 +541,59 @@ the same moment, it reported only the letting go, and the last movement was
 lost to any program that counts moves. It now reports the movement first,
 then the release, and a new 3-second test sends both at once to prove it,
 every time.
+
+## 3 October, late - the dock lived with, on the M700
+
+**In short:** Diego used the new dock on the M700 all evening and every
+thing he noticed was fixed the same night: the wallpaper now fills the
+screen, the launcher opens as a grid of applications over the Kosmos
+button with its five folders as pills, applications go by their real
+names, a held key repeats, the dock names an icon when the pointer rests
+on it, a screenshot is one key away, the Windows key opens the launcher,
+and the dock can be arranged by hand. Ten revisions, 0.10.217 to 0.10.226,
+each with its own test.
+
+**What.** In the order he asked:
+
+- *The wallpaper* was centred and never scaled, so a 5120-pixel picture
+  showed its middle. It now fills the screen by default, resampled once
+  when it is chosen, and Appearance's *Wallpaper size* offers *Centred*.
+- *The menu* opened far from the Kosmos button; the launcher now opens as
+  a grid above it, like Googlebook's, with a search line, six columns, and
+  pills for All, Applications, System, Development, Demos and Preferences -
+  Diego's five folders, in his order. Tab goes from pill to pill.
+- *Names*: `procs` is Process Viewer, `ide` Kosmos IDE, `machine` About
+  This Machine. Each application declares its name beside its icon, and the
+  file's name stays its key.
+- *A held Backspace* deleted one letter. Key repeat had never existed on a
+  USB keyboard - the M700's only kind - and it does now: half a second, then
+  thirty a second.
+- *A name over each dock icon*, as macOS draws it: a dark pill with a
+  small arrow down to the icon.
+- *Screenshots*: Print Screen, Control Alt 1, or Super Shift 3 writes a PNG
+  of the whole screen into Captures, so Diego can send pictures without
+  photographing the monitor.
+- *The Windows key alone* opens the launcher; the numeric keypad types.
+- *The dock arranged by hand*: drag an icon along it to move it, drag it up
+  off the dock to take it out, right-click it for Keep in Dock, Remove from
+  Dock and Quit, and right-click a tile in the launcher for Add to Dock.
+
+**Why these are small and one at a time.** Each was something a person
+using the machine ran into within a minute, and each is the kind of thing
+that decides whether a desktop feels finished. Done one per revision, a
+build that misbehaves on the M700 points at one change.
+
+**What it found underneath.** Switching between the floating and the
+whole-width dock worked once and never again: the program that looks up
+names kept a handle to the Deskbar it had first found, and after the
+Deskbar restarted that handle pointed at nothing. A name looked up on its
+own now drops a dead handle and tries again. And a click in the dock now
+acts when the button is let go rather than pressed, because only then is
+it known whether the press was a click or the start of a drag.
+
+**Visible impact.** The dock test now checks 44 things on a 1720 by 1440
+screen, the M700's, with a USB keyboard so every key goes the M700's way.
+Each new check was proven by breaking what it checks and watching it fail.
+Still to come: the dock's numbers in a file Diego can edit, a Spotlight
+look for Super Space, quick settings, notifications, and every older
+application moved onto the new window chrome.

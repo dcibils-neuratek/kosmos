@@ -17343,3 +17343,54 @@ so did everything that types, which proved nothing about the tap; the tap
 was run again alone.
 
 **Its gate: 87 of 87 in 10:27.**
+
+## 18.366 The dock arranged by hand
+
+Diego, 3 October: "we need a way to move apps around the dock to reorder
+them as the user wants. also how do i add or remove apps from the dock?" -
+which until now was an edit to `/Home/Preferences/dock`'s `pins`. As
+macOS's dock does it:
+
+- **Dragged along the dock** an icon goes where it is let go, the others
+  making room as it moves; the dragged one is drawn faded under the
+  pointer. Six pixels of movement make a press a drag; less, and the
+  release is a click - which is why a click on an icon now acts on the
+  release rather than the press.
+- **Dragged up off the dock**, more than 40 pixels above it, a pinned icon
+  says *Remove from Dock* over itself and is taken out when let go; a
+  running one goes back to its place after the separator. **Dragged left
+  among the pins**, a running one is kept there; a pinned one dropped
+  after the separator is let go.
+- **A right press on an icon**: Show (or Open), Keep in Dock or Remove
+  from Dock, and Quit when it runs. **A right press on a tile** of the
+  launcher grid: Open, and Add to Dock.
+- **From a prompt**: `setprop /Running/Deskbar/pin NAME` keeps one at the
+  end; `/Running/Deskbar/pins` and `cells` say what the dock holds and
+  where each icon is.
+
+Each change is written to `/Home/Preferences/dock` at once. Where a drop
+lands, what it does to the list and what it means - moved, removed, kept,
+let go - is `dock.drop` in `user/lib/dock.lua`, pure arithmetic, held on
+the host.
+
+**`test_dock.lua`, 40** (section 6): `pin` at the end, first, and moving
+one already there, without touching the list it was given; `unpin`; each
+cell saying whether it is pinned; where a drop lands - first, second, or
+past the pins; and what it does - moved, nothing when let go on its own
+place, removed above the dock, kept when a running one is dropped among
+the pins, let go after the separator, and nothing for a running one let
+go above.
+
+**`run_dock.py`, 44** (step 2c): Terminal dragged onto Tracker's place
+goes first; Music dragged up is taken out; a running Calculator kept from
+the second row of its menu; `pin calc` puts it at the end; the file
+`/Home/Preferences/dock` holds what the dock shows; a click on the Calculator's
+icon opens it on the release. Each wait in the step is allowed to come
+to nothing, so a check that fails fails alone rather than stopping those
+after it.
+
+**Controls**: in one build, `save_pins` writing nothing and saying
+nothing, the drop doing nothing, the release not acting, and the right
+press offering no menu. **8 of 44 fail**: Terminal stays third, Music
+stays, Keep in Dock pins nothing, the file holds nothing while the dock
+shows nine, and the click opens nothing.

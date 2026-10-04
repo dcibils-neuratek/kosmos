@@ -58,6 +58,9 @@ end
 --
 function dock.items(pins, running, icon_of)
   local by, order = {}, {}
+  local pinned_name = {}
+
+  for _, name in ipairs(pins or {}) do pinned_name[name] = true end
 
   for _, row in ipairs(running or {}) do
     local name = dock.name(row.program)
@@ -87,7 +90,7 @@ function dock.items(pins, running, icon_of)
 
     return { kind = "app", name = name, windows = rows,
              running = #rows > 0 and not (starting and #rows == 1 and rows[1].starting),
-             starting = starting, front = front,
+             starting = starting, front = front, pinned = pinned_name[name] or nil,
              icon = icon or (icon_of and icon_of(name)) or "App_Generic",
              title = title or name }
   end
@@ -189,6 +192,110 @@ function dock.action(item)
   end
 
   return "wait"
+end
+
+--------------------------------------------------------------------------
+-- **Arranged by hand** (Diego, 3 October 2026: "we need a way to move apps
+-- around the dock to reorder them as the user wants. also how do i add or
+-- remove apps from the dock?"): an icon dragged along the dock lands where
+-- it is let go, dragged up off it is taken out, and a running one kept is
+-- pinned. These are the lists; the Deskbar writes them to
+-- `/Home/Preferences/dock`.
+--------------------------------------------------------------------------
+
+-- How far above the dock an icon has to be let go to be taken out of it.
+dock.REMOVE_ABOVE = 40
+
+-- `pins` with `name` at `at` (1 the first; nil, the end) - moved there if
+-- it was elsewhere in it. A new table; `pins` is not changed.
+function dock.pin(pins, name, at)
+  local out = {}
+
+  for _, n in ipairs(pins or {}) do
+    if n ~= name then out[#out + 1] = n end
+  end
+
+  at = math.max(1, math.min(#out + 1, at or #out + 1))
+  table.insert(out, at, name)
+
+  return out
+end
+
+-- `pins` without `name`. A new table.
+function dock.unpin(pins, name)
+  local out = {}
+
+  for _, n in ipairs(pins or {}) do
+    if n ~= name then out[#out + 1] = n end
+  end
+
+  return out
+end
+
+--
+-- **Where a dragged icon would land**, let go at `x` in the dock: its place
+-- among the pins - one more than the number of pinned cells, other than
+-- itself, whose middle is left of `x` - or nil when `x` is past the last of
+-- them, in the part after the separator, which is what runs unpinned.
+-- `items` laid out (`dock.layout`); `name` the icon being dragged.
+--
+function dock.drop_at(items, x, name)
+  local before, last_right = 0, nil
+
+  for _, it in ipairs(items) do
+    if it.kind == "app" and it.pinned then
+      last_right = it.x + it.w
+
+      if it.name ~= name and it.x + it.w // 2 < x then before = before + 1 end
+    end
+  end
+
+  if last_right and x > last_right + dock.SEP then return nil end
+
+  return before + 1
+end
+
+--
+-- **What letting go of a dragged icon does**, at `x, y` in the dock (`y`
+-- negative above it): the new pins and a word for it -
+--
+--   "removed"   let go well above the dock, and it was pinned;
+--   "moved"     a pinned one to another place among the pins;
+--   "kept"      a running one dropped among the pins - pinned there;
+--   "unpinned"  a pinned one dropped after the separator;
+--
+-- or the pins as they were and nil, for a drop that changes nothing.
+--
+function dock.drop(pins, items, name, x, y)
+  local was = false
+
+  for _, n in ipairs(pins or {}) do
+    if n == name then was = true end
+  end
+
+  if y < -dock.REMOVE_ABOVE then
+    if was then return dock.unpin(pins, name), "removed" end
+
+    return pins, nil
+  end
+
+  local at = dock.drop_at(items, x, name)
+
+  if at then
+    local out = dock.pin(pins, name, at)
+
+    for i, n in ipairs(out) do
+      if n ~= (pins or {})[i] then return out, was and "moved" or "kept" end
+    end
+
+    if #out ~= #(pins or {}) then return out, "kept" end
+
+    return pins, nil
+  end
+
+  if was then return dock.unpin(pins, name), "unpinned" end
+
+  return pins, nil
 end
 
 return dock

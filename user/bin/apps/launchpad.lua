@@ -305,6 +305,33 @@ local function grid_mode(ax, ay)
     return true
   end
 
+  --
+  -- **A tile's right press**: Open, and Add to Dock - the Deskbar's `pin`,
+  -- by the application's name (Diego, 3 October: "how do i add or remove
+  -- apps from the dock?"). Not for a page, which is the browser at an
+  -- address rather than an application of its own.
+  --
+  function view:on_context(x, y)
+    local i = grid.hit(#list, top, self.w, self.h, x, y)
+    local item = i and list[i]
+
+    if not item then return false end
+
+    local rows = { { text = "Open", on_choose = function() open(item) end } }
+    local name = tostring(item.program or ""):match("([^/]+)%.lua$")
+
+    if name and (item.args or "") == "" then
+      rows[#rows + 1] = { text = "Add to Dock", on_choose = function()
+        local ok, why = fs.write("/Running/Deskbar/pin", name)
+
+        print("launchpad: added to the dock " .. name .. (ok and "" or (": " .. tostring(why))))
+      end }
+    end
+
+    win:open_menu(win.origin_x + x, win.origin_y + y, rows)
+    return true
+  end
+
   function view:wheel(n, _, _)
     top = grid.scroll(top, #list, rows, -n)
     return true

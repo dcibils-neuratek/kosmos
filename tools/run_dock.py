@@ -106,6 +106,14 @@ SWITCH = ('local hz = sys.info().tick_hz or 100\n'
           '  sys.sleep(hz * 6)\n'
           'end\n')
 
+# The dock's cells and pins, as the Deskbar says them, and the pins as the
+# file keeps them.
+CELLS = ('print("CELLS " .. tostring(fs.read("/Running/Deskbar/cells")))\n'
+         'print("PINS " .. tostring(fs.read("/Running/Deskbar/pins")))\n'
+         'local f = fs.read("/Home/Preferences/dock")\n'
+         'print("KEPT " .. (type(f) == "table" and type(f.pins) == "table" '
+         'and table.concat(f.pins, ",") or "nothing"))\n')
+
 # Which window has the focus, as the window manager lists them.
 FOCUS = ('local r = use("/Kosmos/Libraries/wmproto.lua").windows()\n'
          'for _, w in ipairs(r and r.windows or {}) do\n'
@@ -213,6 +221,108 @@ def main():
         guest._read_available()
         said["tip gone"] = "wm: closed Deskbar tip" in guest.seen[mark:]
         said["tip over"] = over
+
+        # ---- 2c: the dock arranged by hand ----
+        session.put(CELLS.encode(), "/Temporary/cells.lua")
+
+        def cells():
+            out = session.run("/Temporary/cells.lua").decode(errors="replace")
+            c = re.search(r"CELLS (.*)", out)
+            found = {}
+
+            for part in (c.group(1).split("; ") if c else []):
+                bits = part.split(" ")
+
+                if len(bits) == 3:
+                    found[bits[0]] = (int(bits[1]), int(bits[2]))
+
+            pins_ = re.search(r"PINS (\S*)", out)
+            kept_ = re.search(r"KEPT (\S*)", out)
+            return found, pins_ and pins_.group(1), kept_ and kept_.group(1)
+
+        def dock_now():
+            """Where the dock is now: it is centred again as it grows or
+            shrinks with what is pinned."""
+            time.sleep(1)
+            guest._read_available()
+            return last_dock(guest.seen)
+
+        def maybe(text, what, since):
+            """A line, or None when it never comes - so a check that fails
+            fails alone rather than stopping those after it."""
+            try:
+                return guest.wait_for_line(text, what, since)
+            except Exception:              # noqa: BLE001 - its check says
+                return None
+
+        def drag_from_to(x0, y0, x1, y1):
+            guest.mouse_to(*R._to_tablet(x0, y0, width, height))
+            time.sleep(0.4)
+            guest.mouse_button(True)
+            time.sleep(0.3)
+
+            for k in range(1, 7):
+                guest.mouse_to(*R._to_tablet(x0 + (x1 - x0) * k // 6, y0 + (y1 - y0) * k // 6,
+                                             width, height))
+                time.sleep(0.25)
+
+            time.sleep(0.4)
+            guest.mouse_button(False)
+            time.sleep(1.5)
+
+        found, said["pins before"], _ = cells()
+        dx, dy, dw, dh = said["dock"]
+        mid = dy + dh // 2
+
+        if "terminal" in found and "tracker" in found:
+            mark = len(guest.seen)
+            tx, tw = found["terminal"]
+            rx, _ = found["tracker"]
+            drag_from_to(dx + tx + tw // 2, mid, dx + rx + 4, mid)
+            said["moved"] = maybe("deskbar: moved terminal - the dock is ", "Terminal moved", mark)
+
+        found, _, _ = cells()
+        dx, dy, dw, dh = dock_now()
+
+        if "music" in found:
+            mark = len(guest.seen)
+            mx, mw = found["music"]
+            drag_from_to(dx + mx + mw // 2, mid, dx + mx + mw // 2, dy - 120)
+            said["removed"] = maybe("deskbar: removed music - the dock is ", "Music taken out", mark)
+
+        found, _, _ = cells()
+        dx, dy, dw, dh = dock_now()
+        loose = [n for n in found if n in ("logview", "sysmon", "procs")]
+
+        if loose:
+            mark = len(guest.seen)
+            lx, lw = found[loose[0]]
+            click(dx + lx + lw // 2, mid, width, height, "right")
+            menu = maybe("wm: menu of Deskbar at ", "an icon's menu", mark)
+            m = re.match(r"(\d+),(\d+) (\d+)x(\d+)", menu or "")
+
+            if m:
+                mx_, my_, mw_, mh_ = (int(v) for v in m.groups())
+                click(mx_ + mw_ // 2, my_ + mh_ * 3 // 6, width, height)  # the second of three rows
+                said["kept"] = maybe("deskbar: kept ", "Keep in Dock", mark)
+            said["kept name"] = loose[0]
+
+        mark = len(guest.seen)
+        said["pin"] = session.run("setprop /Running/Deskbar/pin calc").decode(errors="replace")
+        said["pinned"] = maybe("deskbar: kept calc - the dock is ", "calc added", mark)
+        time.sleep(2)
+        found, said["pins after"], said["pins kept"] = cells()
+        dx, dy, dw, dh = dock_now()
+
+        if "calc" in found:
+            mark = len(guest.seen)
+            cx, cw = found["calc"]
+            click(dx + cx + cw // 2, mid, width, height)
+            said["launched"] = maybe("deskbar: the dock launched ", "a click on a pin", mark)
+
+            if said["launched"]:
+                guest.wait_for("wm: window Calculator at ", "the Calculator from the dock")
+            time.sleep(1)
 
         # ---- 3: the Kosmos button and its menu ----
         dx, dy, dw, dh = said["dock"]
@@ -433,6 +543,29 @@ def main():
         fails.append("a maximised window would not end above the dock: room %r, "
                      "dock %r" % (docked, dock))
 
+    if not (said.get("moved") or "").startswith("terminal,tracker,"):
+        fails.append("Terminal dragged before Tracker did not go first: %r (it was %r)"
+                     % (said.get("moved"), said.get("pins before")))
+
+    if "music" in (said.get("removed") or "music"):
+        fails.append("Music dragged up off the dock was not taken out: %r" % said.get("removed"))
+
+    if not (said.get("kept") or "").startswith(str(said.get("kept name")) + " - "):
+        fails.append("Keep in Dock on a running application's menu did not pin it: %r"
+                     % said.get("kept"))
+
+    if not (said.get("pinned") or "").endswith(",calc") or "is now" not in said.get("pin", ""):
+        fails.append("setprop /Running/Deskbar/pin calc did not add it at the end: %r, %r"
+                     % (said.get("pin"), said.get("pinned")))
+
+    if not said.get("pins kept") or said.get("pins kept") != said.get("pins after"):
+        fails.append("the dock's pins were not written to /Home/Preferences/dock: %r kept, %r shown"
+                     % (said.get("pins kept"), said.get("pins after")))
+
+    if (said.get("launched") or "") != "calc":
+        fails.append("a click on a pinned icon did not open it on the release: %r"
+                     % said.get("launched"))
+
     tip = re.match(r"(\d+),(\d+) (\d+)x(\d+)", said.get("tip", ""))
 
     if not tip or not dock or not re.match(r"[A-Z]", said.get("tip name", "")) \
@@ -601,7 +734,7 @@ def main():
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:400])
 
-    checks = 38
+    checks = 44
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))

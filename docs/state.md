@@ -591,6 +591,34 @@ does** (18.346): Linux v6.12's e1000e read from `build/downloads/
 e1000e-v6.12`; no reset first, then its MAC reset, each with a frame to
 itself, and the registers said; `ethernet_pch` in x86-core with a control. **The gate ran 85 of 85 in 10:02** - two seconds over Diego's ten minutes (9:56 before it), the slowest `x86-cafesa3d-2` at 202 s and `x86-core` at 52 s, off the longest path: to bring back under before the next thing lands. **Stick 0.10.205** (`ec1114f`): OVMF 32 checks, handed over for the M700 with `log e1000` to read. **Its log** (18.347): the firmware left the card in good order (its own ring drained, TARC0 already e1000e's), the ME present, and both tries failed with TDH 0 against TDT 1; this driver cleared TCTL's MULR, which e1000e keeps. **Changed**: TCTL read-modify-write, PBA before the reset, WUC cleared, and `SYS_DEV_CONFIG` (65) to say the PCI command and the descriptor-ring status; gate 85/85 in 10:14 (over the budget, to trim). **Then network boot, Diego's ask** (18.348): the loader fetches by TFTP through the firmware's PXE, `make netboot` + `bash tools/netboot-serve.sh` (dnsmasq proxy, Diego's sudo), `x86-netboot` in the gate (OVMF needs `-device virtio-rng-pci` for its network stack). The M700 needs network boot on in its setup, F12, the network entry; the 0.10.205 stick stays in for /Home. **0.10.206 booted on the M700 over the network the same night** ("it booted over network!"); its `log e1000` is next. **It said the I219 sends** - a frame to itself in 13 ms, no reset (18.349) - and got no address: receiving. **0.10.207** (`make netboot`): extended receive descriptors on the I219 as e1000e uses (RFCTL.EXTEN), the firmware's RFCTL and the first five seconds' frames said. Network boot is first in the M700's boot order (Diego), so a restart takes the newest build. Next: the build-boot-test loop (roadmap), the late `/Home` stick, `diagnose`'s nil, and the gate back under ten minutes.
 
+**3 October, the night: the dock lived with on the M700.** Diego used
+it on the M700 by network boot (`make netboot`, he restarts it) and each
+thing he found took a revision (`testing.md` 18.357 to 18.366): **0.10.217**
+the dock; **0.10.218** the wallpaper filling the screen, *Wallpaper size* in
+Appearance; **0.10.219** the menu over the Kosmos button; **0.10.220** the
+launcher as a grid (a *popup* window in wm), the namespace dropping a dead
+`/Running` handle (`forget_if_gone`, which is why the dock switched once),
+half the gap; **0.10.221** applications by their real names (`-- kosmos:
+name`, binproto's `title`) in five folders; **0.10.222** his folder order,
+the grid's category pills, `.page` launchers into the documentation,
+Super+º for the shortcuts; **0.10.223** key repeat on a USB keyboard;
+**0.10.224** a name over each dock icon (a *tip* window), the grid's text
+larger; **0.10.225** screenshots (Print Screen, Control Alt 1, Super Shift
+3, into `/Home/Captures`), the Windows key alone, the keypad; **0.10.226**
+the dock arranged by hand - dragged along, dragged off, right press for
+Keep/Remove/Quit, Add to Dock from a grid tile, `setprop
+/Running/Deskbar/pin NAME`. Files to the M700: `kosmos_telnet.py
+192.168.1.40 put FILE PATH` (his wallpapers went that way). **Not pushed**:
+everything since 0.10.214 waits for his word. **The M700 froze once** while
+he tested, with nothing on screen to say why; a lockup detector that leaves
+a log for the next boot is proposed and waits for his answer (roadmap,
+*Known and unexplained*). **Next, his**: every application's chrome on the
+kit's header (Falling Blocks and the other direct windows), the dock's
+numbers in `/Home/Preferences/dock`, Super Space as Spotlight, quick
+settings, notifications (mockup agreed), Kosmos Write (mockup drawn, four
+questions his), About This Machine as a Preferences panel, pointer and
+double-click speeds.
+
 **3 October, later: `make m700`, Groove, Night and the dock.** **0.10.215**:
 a USB stick's transfers given thirty seconds and its reset five, as Linux's
 `sd.h` and `usb_stor_reset_common` give them, after `make m700`'s first run

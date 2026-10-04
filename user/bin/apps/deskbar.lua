@@ -1772,6 +1772,8 @@ if DOCKED then
                and saved.pins or dock.PINS
   local items = {}
   local wanted_w = nil            -- the dock's width once its cells are known
+  local drag = nil                -- an icon pressed and maybe dragged (`bar:mouse`)
+  local act, save_pins, show_tip_text
 
   local function pinned_icon(name)
     local attrs = programs[name]
@@ -1786,7 +1788,34 @@ if DOCKED then
 
     local width = dock.layout(items, gfx.measure("Kosmos"))
 
-    wanted_w = FLOATING and width or nil
+    -- Not while an icon is dragged: the dock would grow or shrink and move
+    -- under the pointer.
+    wanted_w = (FLOATING and not (drag and drag.at)) and width or nil
+  end
+
+  --
+  -- **The pins, written where they are read** - `/Home/Preferences/dock`,
+  -- beside whatever else is kept there - and the dock laid out again.
+  --
+  function save_pins(new, what, name)
+    pins = new
+
+    local file = fs.read("/Home/Preferences/dock")
+
+    if type(file) ~= "table" then file = {} end
+
+    file.pins = new
+
+    if not fs.getattr("/Home/Preferences") then
+      fs.send("/Home/Preferences", { type = "mkdir" })
+    end
+
+    local ok, why = fs.write("/Home/Preferences/dock", file)
+
+    print(("deskbar: %s %s - the dock is %s%s"):format(what, name, table.concat(new, ","),
+          ok and "" or (", not kept: " .. tostring(why))))
+    lay_out()
+    win.dirty = true
   end
 
   -- A colour at an opacity: the dock's surface is the look's window, a
@@ -1795,6 +1824,23 @@ if DOCKED then
 
   function bar:draw(g)
     lay_out()
+
+    --
+    -- **While an icon is dragged**, the cells as they would be if it were
+    -- let go here (`dock.drop`): the others making room, the dragged one
+    -- drawn faded under the pointer - or gone, held well above the dock,
+    -- where letting go takes it out. The real cells stay `items`: the drop
+    -- is worked out against them.
+    --
+    local shown, dragged = items, nil
+
+    if drag and drag.at then
+      local preview = dock.drop(pins, items, drag.name, drag.at.x, drag.at.y)
+
+      shown = dock.items(preview, running, pinned_icon)
+      dock.layout(shown, gfx.measure("Kosmos"))
+      dragged = drag.name
+    end
 
     g:fill(0, 0, self.w, self.h, 0x00000000)
 
@@ -1814,8 +1860,12 @@ if DOCKED then
     local off = FLOATING and 0 or (self.w - (dock.layout(items, gfx.measure("Kosmos")))) // 2
     local cy = self.h // 2
 
-    for _, it in ipairs(items) do
+    for _, it in ipairs(shown) do
       local x = it.x + off
+
+      if it.kind == "app" and it.name == dragged then
+        goto next_cell                    -- drawn under the pointer, below
+      end
 
       if it.kind == "kosmos" then
         local open = #win.menus > 0 or launcher_open
@@ -1839,6 +1889,13 @@ if DOCKED then
                        it.front and theme.accent or theme.text_dim, 2)
         end
       end
+
+      ::next_cell::
+    end
+
+    if dragged and drag.at.y >= -dock.REMOVE_ABOVE then
+      g:icon(drag.at.x + off - dock.ICON // 2, cy - dock.ICON // 2 - 3,
+             drag.icon .. ".png", dock.ICON, 150)
     end
 
     self.offset = off
@@ -1861,8 +1918,54 @@ if DOCKED then
     win.dirty = true
   end
 
+  --
+  -- **A press on an icon is held until it is let go** (`roadmap.md`, the
+  -- dock arranged by hand): moved more than a few pixels it is a drag, and
+  -- let go it is dropped (`dock.drop`) - moved, kept, taken out, let go of;
+  -- let go where it was pressed it is a click, and does what a click does.
+  -- So a click acts on the release, which is what lets a press become a
+  -- drag without opening what it pressed on.
+  --
+  local DRAG_FROM = 6
+
   function bar:mouse(action, x, y)
-    local _ = y
+    if action == "move" and drag then
+      if not drag.at and math.abs(x - drag.px) <= DRAG_FROM and math.abs(y - drag.py) <= DRAG_FROM then
+        return false
+      end
+
+      if not drag.at then print("deskbar: dragging " .. drag.name) end
+
+      drag.at = { x = x - (self.offset or 0), y = y }
+
+      -- Held above the dock: what letting go there does, said over it.
+      if drag.at.y < -dock.REMOVE_ABOVE and drag.pinned then
+        show_tip_text("Remove from Dock", win.origin_x + x)
+      elseif dock_tip_hide then
+        dock_tip_hide()
+      end
+
+      return true
+    end
+
+    if action == "release" and drag then
+      local d = drag
+
+      drag = nil
+
+      if dock_tip_hide then dock_tip_hide() end
+
+      if d.at then
+        local new, what = dock.drop(pins, items, d.name, d.at.x, d.at.y)
+
+        if what then save_pins(new, what, d.name) end
+
+        return true
+      end
+
+      act(d.item)
+      return true
+    end
 
     if action ~= "press" then return false end
 
@@ -1885,6 +1988,13 @@ if DOCKED then
       return true
     end
 
+    drag = { item = it, name = it.name, icon = it.icon, pinned = it.pinned,
+             px = x, py = y }
+    return true
+  end
+
+  -- What a click on an application's icon does (`dock.action`).
+  function act(it)
     local what, arg = dock.action(it)
 
     if what == "launch" then
@@ -1914,6 +2024,45 @@ if DOCKED then
 
     if it and it.kind == "kosmos" then
       open_kosmos_menu()
+      return true
+    end
+
+    --
+    -- **An application's own menu**, as macOS's dock has: Open, or Show
+    -- when it runs; Keep in Dock or Remove from Dock; Quit when it runs.
+    --
+    if it and it.kind == "app" then
+      local rows = {}
+
+      rows[#rows + 1] = it.running
+        and { text = "Show", on_choose = function()
+                local what, arg = dock.action(it)
+
+                if what == "minimise" then what = "raise" end
+                if what == "raise" then fs.send("/Running/wm", { type = "raise", window = arg }) end
+              end }
+        or { text = "Open", on_choose = function()
+               fs.send("/Running/wm", { type = "launch", program = it.name })
+             end }
+
+      rows[#rows + 1] = it.pinned
+        and { text = "Remove from Dock", on_choose = function()
+                save_pins(dock.unpin(pins, it.name), "removed", it.name)
+              end }
+        or { text = "Keep in Dock", on_choose = function()
+               save_pins(dock.pin(pins, it.name), "kept", it.name)
+             end }
+
+      if it.running then
+        rows[#rows + 1] = { text = "Quit", on_choose = function()
+          for _, w_ in ipairs(it.windows or {}) do
+            if w_.handle then fs.send("/Running/wm", { type = "close", window = w_.handle }) end
+          end
+        end }
+      end
+
+      win:open_menu(win.origin_x + (self.offset or 0) + it.x, win.origin_y - 6, rows, true)
+      print(("deskbar: the menu of %s, %d rows"):format(it.name, #rows))
       return true
     end
 
@@ -1959,22 +2108,34 @@ if DOCKED then
     end
   end
 
+  local show_tip_at
+
   local function show_tip(it)
     if tip and tip_for == it then return end
 
+    show_tip_at(tip_name(it), win.origin_x + (bar.offset or 0) + it.x + it.w // 2, it)
+  end
+
+  -- Any words over the dock, centred on `centre` - "Remove from Dock" over
+  -- an icon held above it.
+  function show_tip_text(text, centre)
+    if tip and tip_for == text then return end
+
+    show_tip_at(text, centre, text)
+  end
+
+  function show_tip_at(name, centre, what)
     hide_tip()
 
-    local name = tip_name(it)
     local w = gfx.measure(name) + 2 * TIP_IN
     local h = TIP_H + TIP_ARROW
-    local centre = win.origin_x + (bar.offset or 0) + it.x + it.w // 2
 
     tip = ui.window{ title = "Deskbar tip", w = w, h = h,
                      x = centre - w // 2, y = win.origin_y - h - 4, tip = true }
 
     if not tip then return end
 
-    tip_for = it
+    tip_for = what
 
     local face = ui.view{ x = 0, y = 0, w = w, h = h }
 
@@ -2007,6 +2168,30 @@ if DOCKED then
 
   wmproto.track(win.handle, true)
   dock_tip_hide = hide_tip
+
+  --
+  -- **What is pinned, and where each cell is**, to read - and `pin` to add
+  -- one at the end: the launcher grid's Add to Dock, and `setprop
+  -- /Running/Deskbar/pin music` by hand.
+  --
+  win:publish("pins", function() return table.concat(pins, ",") end)
+
+  win:publish("pin", function() return "" end, function(v)
+    local name = tostring(v)
+
+    if name ~= "" then save_pins(dock.pin(pins, name), "kept", name) end
+  end)
+
+  win:publish("cells", function()
+    local out = {}
+
+    for _, it in ipairs(items) do
+      out[#out + 1] = ("%s %d %d"):format(it.kind == "app" and it.name or it.kind,
+                                          it.x + (bar.offset or 0), it.w)
+    end
+
+    return table.concat(out, "; ")
+  end)
 
   --
   -- **The strip across the top**: the time and the date at the left, the
