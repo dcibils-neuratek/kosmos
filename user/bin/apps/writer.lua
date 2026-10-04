@@ -24,9 +24,11 @@
 --   Control-B, Control-U                   bold, underline
 --   Control-S                              save
 --   Control-E                              Export PDF, beside the document
+--   Shift-Return                           a line break, in the paragraph
 --   in a table: Tab, Shift-Tab             the next cell - a new row after
 --                                          the last - and the one before
 --               Return                     the cell below, or out of it
+--   in a text box: Return                  a line break
 --
 -- **As drawn** (`docs/write.html`): the tools across the top - View, Zoom
 -- and Add Page; Insert, Table, Chart, Text, Shape, Media and Comment;
@@ -81,6 +83,12 @@ local CHOSEN = 0xffc9d8f6       -- a selection, under the text
 local ZOOMS = { 50, 75, 100, 125, 150, 200, 300 }
 local SIZES = { 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 30, 36, 48, 64, 72 }
 local SPACINGS = { 1, 1.15, 1.2, 1.5, 2 }
+
+-- What a text box may be filled with: nothing, or a pale tint.
+local FILLS = {
+  { false, "None" }, { "#eef3fb", "Mist" }, { "#fdf3e1", "Sand" }, { "#e8f6ee", "Mint" },
+  { "#fde8e8", "Rose" }, { "#f1eafa", "Lilac" }, { "#f2f2f2", "Grey" },
+}
 
 -- The text colours a person picks from: the document's inks first.
 local COLOURS = {
@@ -382,7 +390,7 @@ local TOOLS = {
   { key = "insert",   icon = "insert",   text = "Insert" },
   { key = "table",    icon = "table",    text = "Table" },
   { key = "chart",    icon = "chart",    text = "Chart",    later = "W7" },
-  { key = "textbox",  icon = "textbox",  text = "Text",     later = "W7" },
+  { key = "textbox",  icon = "textbox",  text = "Text" },
   { key = "shape",    icon = "shape",    text = "Shape",    later = "W7" },
   { key = "media",    icon = "pictures", text = "Media" },
   { key = "comment",  icon = "comment",  text = "Comment",  later = "W7" },
@@ -487,11 +495,12 @@ end
 local function argb(c) return 0xff000000 | (tonumber((c or "#000000"):sub(2), 16) or 0) end
 
 local open_menu, apply_char, apply_para, apply_style, doc_edit, apply_picture
-local reshape, delete_table, table_key
+local reshape, delete_table, table_key, line_break
 
 local function say_where()
   local here = doc.body[caret.para]
-  local kind = here and (here.picture and ":picture" or here.table and ":table") or ""
+  local kind = here and (here.picture and ":picture"
+                         or here.table and (here.table.box and ":box" or ":table")) or ""
   local key = panel == "text" and ("text:" .. part .. kind) or tostring(panel)
 
   if not said_where[key] then
@@ -734,7 +743,60 @@ local function draw_panel(s)
   -- first row is a header, and the table taken out - above the text's
   -- part, which works on the cell's text.
   --
-  if here and here.table and caret.row then
+  --
+  -- **In a text box** (W7a): its width, its fill and its border, and the
+  -- box taken out.
+  --
+  if here and here.table and here.table.box and caret.row then
+    local box = here.table.box
+
+    pk.label(s, x0, y, "Text box")
+    y = y + 18
+
+    local half = (w0 - 8) // 2
+    local wd = { x = x0, y = y, w = half, text = ("%g mm wide"):format(box.width_mm) }
+    pk.stepper(s, wd)
+    control("box_width", wd, function(cx, cy)
+      local d = pk.step_at(wd, cx, cy)
+      if d and d ~= 0 then
+        reshape({ box = { width_mm = math.max(10, box.width_mm + 5 * d),
+                          border = box.border, fill = box.fill } })
+      end
+    end)
+
+    local fill_name = "None"
+    for _, f in ipairs(FILLS) do if f[1] == box.fill then fill_name = f[2] end end
+
+    local fc = { x = x0 + half + 8, y = y, w = w0 - half - 8, text = fill_name }
+    pk.chooser(s, fc)
+    control("box_fill", fc, function()
+      local labels, chosen = {}, 1
+      for i, f in ipairs(FILLS) do
+        labels[i] = f[2]
+        if f[1] == (box.fill or false) then chosen = i end
+      end
+      open_menu("fill", fc.x, fc.y + fc.h + 4, fc.w, labels, chosen, function(i)
+        reshape({ box = { width_mm = box.width_mm, border = box.border,
+                          fill = FILLS[i][1] or nil } })
+      end)
+    end)
+
+    y = y + 38
+
+    local bd = { x = x0, y = y + 4, text = "Border", on = box.border }
+    pk.check(s, bd)
+    control("box_border", bd, function()
+      reshape({ box = { width_mm = box.width_mm, border = not box.border, fill = box.fill } })
+    end)
+
+    local del = { x = 0, y = y, text = "Delete box" }
+    del.w = pk.button_width(del.text)
+    del.x = x0 + w0 - del.w
+    pk.button(s, del)
+    control("box_delete", del, function() delete_table() end)
+
+    y = y + 44
+  elseif here and here.table and caret.row then
     local t = here.table
 
     pk.label(s, x0, y, "Table")
@@ -1326,6 +1388,15 @@ local function type_text(text)
   edited(body, place, "type")
 end
 
+-- **A line break** (Shift-Return, and Return in a text box): a new line in
+-- the same paragraph.
+function line_break()
+  local body, place = without_selection()
+  body, place = after_picture(body, place)
+  body, place = richtext.line_break(body, place, pending)
+  edited(body, place, "type")
+end
+
 local function back_or_forward(forward)
   if selected() then
     local body, place = richtext.delete(doc.body, anchor, caret)
@@ -1651,6 +1722,25 @@ local function insert_table()
   edited(body, { para = n, at = 1, row = 1, col = 1 }, "table")
 end
 
+--
+-- **A text box put in** (Text, W7a): 80 mm wide, bordered, centred, after
+-- the caret's paragraph, the caret in it.
+--
+local function insert_box()
+  local body = {}
+  for i, p in ipairs(doc.body) do body[i] = p end
+
+  local style = by_name[writedoc.BODY] and writedoc.BODY or doc.styles[1].name
+  local n = caret.para + 1
+
+  table.insert(body, n, richtext.paragraph(richtext.new_box(style, 80), by_name, style))
+
+  if not body[n + 1] then body[n + 1] = { style = style, runs = {} } end
+
+  print(("writer: text box at paragraph %d"):format(n))
+  edited(body, { para = n, at = 1, row = 1, col = 1 }, "table")
+end
+
 -- The caret's table with rows, columns or its header changed; the caret
 -- kept in the table.
 function reshape(fields)
@@ -1660,13 +1750,20 @@ function reshape(fields)
   local r, c = math.min(caret.row, #t.rows), math.min(caret.col, t.columns)
   local at = math.min(caret.at, #richtext.plain(t.rows[r][c]) + 1)
 
-  print(("writer: table %d by %d"):format(#t.rows, t.columns))
+  if t.box then
+    print(("writer: text box %g mm, %s, %s"):format(t.box.width_mm,
+      t.box.border and "bordered" or "no border", t.box.fill or "no fill"))
+  else
+    print(("writer: table %d by %d"):format(#t.rows, t.columns))
+  end
+
   edited(body, { para = n, at = at, row = r, col = c }, "table")
 end
 
 -- The caret's table taken out, the caret where it stood.
 function delete_table()
   local n = caret.para
+  local here_box = doc.body[n].table.box ~= nil
   local body = {}
   for i, p in ipairs(doc.body) do body[i] = p end
 
@@ -1676,7 +1773,7 @@ function delete_table()
 
   local place = body[n] and richtext.enter(body, n, true) or richtext.enter(body, n - 1, false)
 
-  print("writer: table deleted")
+  print(here_box and "writer: text box deleted" or "writer: table deleted")
   edited(body, place, "table")
 end
 
@@ -1688,6 +1785,17 @@ end
 function table_key(step)
   local n = caret.para
   local t = doc.body[n].table
+
+  -- **A text box is text**: Return breaks its line and Tab is a tab.
+  if t.box then
+    if step == "down" then
+      line_break()
+    elseif step == 1 then
+      type_text("\t")
+    end
+
+    return
+  end
 
   if step == "down" then
     if caret.row < #t.rows then
@@ -1731,20 +1839,23 @@ local TOOL_ACTS
 
 TOOL_ACTS = {
   table = function() insert_table() end,
+  textbox = function() insert_box() end,
   --
-  -- **Insert**: what goes into the text, in a list - a page break, a table
-  -- and a picture so far (W5); the rest of the toolbar's middle joins it as
-  -- it is built.
+  -- **Insert**: what goes into the text, in a list - a page break, a table,
+  -- a picture and a text box so far; the rest of the toolbar's middle joins
+  -- it as it is built.
   --
   insert = function(t)
-    local items = { "Page Break", "Table", "Picture..." }
+    local items = { "Page Break", "Table", "Picture...", "Text Box" }
     open_menu("insert", t.x, TOOLS_H + 2, 180, items, nil, function(i)
       if i == 1 then
         TOOL_ACTS.addpage()
       elseif i == 2 then
         insert_table()
-      else
+      elseif i == 3 then
         choose_picture()
+      else
+        insert_box()
       end
     end)
   end,
@@ -1878,6 +1989,8 @@ function sink:key(c)
     back_or_forward(true)
   elseif k == 9 and caret.row and (mods == 0 or mods == keys.SHIFT) then
     table_key(mods == keys.SHIFT and -1 or 1)
+  elseif (k == 13 or k == 10) and mods == keys.SHIFT then
+    line_break()
   elseif mods ~= 0 then
     return false
   elseif c == 8 or c == 127 then

@@ -251,18 +251,31 @@ local function table_xml(p, style, doc, by_name, media)
   local page_w = writedoc.page_mm(doc)
   local room = page_w - doc.margins_mm.left - doc.margins_mm.right
                - layout.indent_left_mm - layout.indent_right_mm
+  local box = t.box
+  local pad = twips_pt(box and 8 or 4)
+
+  -- **A text box** (W7a) is Word's table of one cell too: as wide as the
+  -- box, placed as its paragraph aligns, shaded with its fill and ruled
+  -- when it has a border.
+  if box then room = math.min(room, box.width_mm) end
+
   local col = math.floor(twips_mm(room) / t.columns)
-  local pad = twips_pt(4)
-  local rule = '<w:%s w:val="single" w:sz="4" w:space="0" w:color="A3ABB6"/>'
+  local rule = box and '<w:%s w:val="single" w:sz="6" w:space="0" w:color="5B6677"/>'
+               or '<w:%s w:val="single" w:sz="4" w:space="0" w:color="A3ABB6"/>'
   local edges = {}
 
   for _, e in ipairs({ "top", "left", "bottom", "right", "insideH", "insideV" }) do
-    edges[#edges + 1] = rule:format(e)
+    edges[#edges + 1] = (box and not box.border) and ('<w:%s w:val="nil"/>'):format(e)
+                        or rule:format(e)
   end
+
+  local JC_TABLE = { center = "center", right = "right" }
+  local placed = box and JC_TABLE[layout.align]
 
   local out = { "<w:tbl><w:tblPr>",
     ('<w:tblW w:w="%d" w:type="dxa"/>'):format(col * t.columns),
-    ('<w:tblInd w:w="%d" w:type="dxa"/>'):format(twips_mm(layout.indent_left_mm)),
+    placed and ('<w:jc w:val="%s"/>'):format(placed) or "",
+    placed and "" or ('<w:tblInd w:w="%d" w:type="dxa"/>'):format(twips_mm(layout.indent_left_mm)),
     "<w:tblBorders>", table.concat(edges), "</w:tblBorders>",
     '<w:tblLayout w:type="fixed"/>',
     ('<w:tblCellMar><w:top w:w="%d" w:type="dxa"/><w:left w:w="%d" w:type="dxa"/>'
@@ -280,8 +293,10 @@ local function table_xml(p, style, doc, by_name, media)
     out[#out + 1] = header and "<w:tr><w:trPr><w:tblHeader/></w:trPr>" or "<w:tr>"
 
     for _, cell in ipairs(row) do
+      local fill = header and "E9EDF2" or box and box.fill and box.fill:sub(2):upper()
+
       out[#out + 1] = ('<w:tc><w:tcPr><w:tcW w:w="%d" w:type="dxa"/>%s</w:tcPr>'):format(col,
-        header and '<w:shd w:val="clear" w:color="auto" w:fill="E9EDF2"/>' or "")
+        fill and ('<w:shd w:val="clear" w:color="auto" w:fill="%s"/>'):format(fill) or "")
       out[#out + 1] = paragraph_xml(cell, by_name[cell.style] or style, media,
                                     header and "header" or "cell")
       out[#out + 1] = "</w:tc>"

@@ -312,6 +312,20 @@ local function cell_of(t, by_name, style_name)
   return richtext.paragraph(raw, by_name, style_name)
 end
 
+--
+-- **A text box** (W7a) is a table of one cell drawn as a box: `box` says
+-- how wide it is, whether it has a border and what it is filled with -
+-- nothing, when it has no `fill`. Placed as its paragraph aligns.
+--
+local function box_of(t)
+  if type(t) ~= "table" then return nil end
+
+  local border = boolean(t.border)
+
+  return { width_mm = number(10, 1000)(t.width_mm) or 80,
+           border = border == nil and true or border, fill = colour(t.fill) }
+end
+
 local function table_of(t, by_name, style_name)
   if type(t) ~= "table" or type(t.rows) ~= "table" then return nil end
 
@@ -319,10 +333,16 @@ local function table_of(t, by_name, style_name)
 
   if not columns then return nil end
 
-  local out = { columns = columns, header = boolean(t.header) or false, rows = {} }
+  local box = box_of(t.box)
+  local most = richtext.TABLE_ROWS
+
+  if box then columns, most = 1, 1 end
+
+  local out = { columns = columns, header = not box and boolean(t.header) or false,
+                rows = {}, box = box }
 
   for _, raw in ipairs(t.rows) do
-    if #out.rows >= richtext.TABLE_ROWS then break end
+    if #out.rows >= most then break end
 
     if type(raw) == "table" then
       local row = {}
@@ -561,7 +581,7 @@ local function in_cell(body, a, b, edit)
 
   local q = {}
   for k, v in pairs(p) do q[k] = v end
-  q.table = { columns = t.columns, header = t.header, rows = rows }
+  q.table = { columns = t.columns, header = t.header, rows = rows, box = t.box }
 
   local out = copy_body(body)
   out[a.para] = q
@@ -630,6 +650,31 @@ function richtext.type(body, place, text, with)
   for i, q in ipairs(new) do table.insert(out, place.para + i - 1, q) end
 
   return out, { para = place.para + #new - 1, at = #lines[#lines] + 1 }
+end
+
+--
+-- **A line broken inside a paragraph** (Shift-Return, and Return in a text
+-- box): a `"\n"` in its text, in the look before the caret. The new body
+-- and the caret after it.
+--
+function richtext.line_break(body, place, with)
+  if place.row then
+    return in_cell(body, place, nil, function(cell, at)
+      return richtext.line_break(cell, at, with)
+    end)
+  end
+
+  local out = copy_body(body)
+  local p = body[place.para]
+  local fields = look_at(p, place.at)
+
+  for k, v in pairs(with or {}) do fields[k] = v end
+  fields.text = "\n"
+
+  out[place.para] = with_runs(p, concat(slice(p, 1, place.at), { fields },
+                                        slice(p, place.at, #richtext.plain(p) + 1)))
+
+  return out, { para = place.para, at = place.at + 1 }
 end
 
 --
@@ -783,7 +828,8 @@ local function each_cell(p, change)
 
   local q = {}
   for k, v in pairs(p) do q[k] = v end
-  q.table = { columns = p.table.columns, header = p.table.header, rows = rows }
+  q.table = { columns = p.table.columns, header = p.table.header, rows = rows,
+              box = p.table.box }
 
   return q
 end
@@ -1036,6 +1082,16 @@ function richtext.new_table(rows, columns, style, header)
 end
 
 --
+-- **A text box's paragraph**: one empty cell in `style`, `width_mm` wide,
+-- bordered, centred.
+--
+function richtext.new_box(style, width_mm)
+  return { style = style, runs = {}, align = "center",
+           table = { columns = 1, header = false, rows = { { empty_cell(style) } },
+                     box = { width_mm = width_mm or 80, border = true } } }
+end
+
+--
 -- **The cell after or before `place`'s** - `step` 1 or -1, row by row - its
 -- text's start going forward and its end going back; nil past the table's
 -- ends.
@@ -1057,8 +1113,9 @@ end
 --
 -- **Table `n` reshaped**: `fields.rows` and `fields.columns` - rows and
 -- columns added at the end, empty, in the table's style, or taken from the
--- end - and `fields.header`, each only when given. Never smaller than one
--- cell, never larger than the checks allow.
+-- end - `fields.header`, and a text box's `fields.box`, each only when
+-- given. Never smaller than one cell, never larger than the checks allow,
+-- and a text box always one cell.
 --
 function richtext.reshape(body, n, fields, by_name)
   local p = body[n]
@@ -1086,7 +1143,8 @@ function richtext.reshape(body, n, fields, by_name)
 
   local q = {}
   for k, v in pairs(p) do q[k] = v end
-  q.table = { columns = columns, header = header, rows = out_rows }
+  q.table = { columns = columns, header = header, rows = out_rows,
+              box = fields.box or t.box }
 
   local out = copy_body(body)
   out[n] = richtext.paragraph(q, by_name, p.style)

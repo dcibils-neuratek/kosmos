@@ -18514,3 +18514,57 @@ The page now takes Tab, and Control-Tab still moves the focus.
 **Controls**, on a copy of the kits: a header row not put again at the head
 of a page - "did not head it with its header row"; an edit in a cell copying
 every row rather than sharing them - "the rest shared".
+
+## 18.392 Kosmos Write's text boxes and line breaks (W7a)
+
+**The Text tool puts in a text box**: 80 mm wide, bordered and centred,
+after the caret's paragraph, with the caret in it. Insert's list has it
+too. Return in a box breaks its line, Tab is a tab, Down at its last line
+leaves it, and **Shift-Return is a line break everywhere**. The Format
+panel's Text box part has the width as a stepper, the fill (None or a pale
+tint), the border as a box to tick, and Delete box.
+
+**A text box is a table of one cell** with a `box` field saying its width,
+its border and its fill (`richtext`), so it is edited, set, found by the
+caret, drawn and exported by the table's code. What differs is held to
+what a box is:
+- one cell, whatever the file says;
+- a width from 10 to 1000 mm;
+- a border unless the box says it has none;
+- set as wide as it says up to the column, where its paragraph aligns it;
+- 8 points of room round its text;
+- a darker rule.
+
+Word gets a one-cell `w:tbl` that is as wide, aligned, shaded and ruled as
+the box (`docxwrite`). A line break is `richtext.line_break`: a `"\n"` in
+the run, never a new paragraph.
+
+**Host**: `test_pageset.lua` 106 to 110 check:
+- the box's width, centring and inner room;
+- its two lines;
+- its fill and its border;
+- a place after the line break, found and hit;
+- an unbordered box wider than the column.
+
+`test_writedoc.lua` 88 to 91 check:
+- the box is held to one cell;
+- a line break in a paragraph and in a box's cell;
+- the round trip.
+
+`test_docx.lua` 34 to 37 check Word's box.
+
+**`arm-write`**: the export suite's document has a filled box with two
+lines. Its PDF draws the four borders and the fill, and both lines are
+among the pieces. Its DOCX has a 70 mm one-cell table with the line
+break. **Found**: a `"\n"` in the suite's own Lua, held in a Python string,
+became a real newline and stopped the program at its start - "lists []".
+
+**`arm-writeapp`**: the Text tool is used, then two lines are typed with
+Return and Mist is chosen from the panel's fill. Down then leaves the box
+for the next line. The `.write` holds `Note\ntwo` and the fill, and the
+DOCX holds two tables.
+**Control**, on a copy of the kits: a box set at the column's width - "a text
+box is not as wide as it says, centred".
+**Found too**: two tables that touch are written with an empty paragraph
+between them, since Word would join them, and the suite's list of Word's
+paragraphs now expects it.

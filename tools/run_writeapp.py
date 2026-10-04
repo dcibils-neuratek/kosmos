@@ -561,6 +561,31 @@ def main():
                   "Tab had made four rows")
             press("ret", *letters("Done"))
 
+            # A text box (W7a): the Text tool, two lines - Return breaks one
+            # in a box - its fill chosen from the panel, Down out of it.
+            text_tool = tool("textbox")
+            mark = len(guest.seen)
+
+            if text_tool:
+                press_at(text_tool[0] + text_tool[2] // 2, text_tool[1] + 20)
+
+            check(said("writer: text box at paragraph ", mark, 30) is not None,
+                  "the Text tool did not put a text box in")
+            press(*letters("Note"), "ret", *letters("two"))
+            fill = control("box_fill")
+            mark = len(guest.seen)
+
+            if fill:
+                press_at(fill[0] + 20, fill[1] + fill[3] // 2)
+                listed = re.search(r"writer: menu fill at (\d+),(\d+)", guest.seen[mark:])
+
+                if listed:
+                    press_at(int(listed.group(1)) + 40, int(listed.group(2)) + 4 + 30 + 15)
+
+            check(said("writer: text box 80 mm, bordered, #eef3fb", mark, 15) is not None,
+                  "the Text box part did not fill the box with Mist")
+            press("down", *letters("End"))
+
             # Export's list, its third item: Word's DOCX (W6).
             export_tool = tool("export")
             mark = len(guest.seen)
@@ -573,13 +598,13 @@ def main():
                     press_at(int(listed.group(1)) + 40, int(listed.group(2)) + 4 + 2 * 30 + 15)
 
             docx_said = said("writer: exported /Home/Untitled.docx, ", mark, 30)
-            check(docx_said is not None and docx_said.startswith("10 paragraphs"),
+            check(docx_said is not None and docx_said.startswith("12 paragraphs"),
                   "Export's list did not export Word's DOCX: %r" % docx_said)
 
             mark = len(guest.seen)
             press("ctrl-s")
             saved = said("writer: saved ", mark, 30)
-            check(saved == "/Home/Untitled.write, 10 paragraphs",
+            check(saved == "/Home/Untitled.write, 12 paragraphs",
                   "Control-S did not save the typed document: %r" % saved)
 
             time.sleep(1)
@@ -621,6 +646,8 @@ def main():
             hello = re.search(r'\{[^{}]*text = "Hello world!"[^{}]*\}', text)
             check("columns = 4" in text and "header = true" in text,
                   "the table in the file is not four columns with a header row")
+            check(re.search(r'box = \{[^{}]*fill = "#eef3fb"', text) is not None,
+                  "the text box in the file is not filled with Mist")
 
             # Word's DOCX, read here: the table as Word's, its new column.
             word_file = os.path.join(work, "typed.docx")
@@ -629,8 +656,8 @@ def main():
             with zipfile.ZipFile(word_file) as z:
                 word = z.read("word/document.xml").decode("utf-8")
 
-            check(word.count("<w:tbl>") == 1 and word.count("<w:gridCol ") == 4
-                  and word.count("<w:tr>") == 4
+            check(word.count("<w:tbl>") == 2 and word.count("<w:gridCol ") == 5
+                  and word.count("<w:tr>") == 5
                   and "Venus!" in word and "<w:tblHeader/>" in word,
                   "the DOCX does not hold the table, four by four with its header")
             heading = re.search(r'style = "Heading 1"', text)
@@ -642,7 +669,7 @@ def main():
         check(got == ["Yes ", "Hello world!", "A Second text", "Item one",
                       "Item two", "After", "A sea", "Planet", "Moons", "Kind",
                       "Mars", "2", "rock", "Earth", "1", "rock", "Venus!", "0",
-                      "rock", "Done", "Header words"],
+                      "rock", "Done", "Note\\ntwo", "End", "Header words"],
               "the typed document holds %r, not what the keys meant" % got)
         check(text.count('name = "Letter"') == 1 and 'text = "Header words"' in text
               and re.search(r"left = 27[,\n]", text) is not None

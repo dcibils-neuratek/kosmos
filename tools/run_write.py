@@ -326,6 +326,10 @@ table.insert(body, 5, { style = "Body", table = { columns = 3, header = true, ro
   { cell("Mars"), cell("2"), cell("24.6 h") },
   { cell("Venus"), cell("0"), cell("2802 h") } } } })
 
+-- A text box (W7a): 70 mm, filled, its words on two lines.
+table.insert(body, 6, { style = "Body", align = "center", table = { columns = 1,
+  rows = { { cell("A note\\nin a box") } }, box = { width_mm = 70, fill = "#eef3fb" } } })
+
 local letter = writedoc.check{ format = "kosmos-write", version = 1, body = body }
 local placed = pageset.set(letter, measure)
 local ok, notes = use("/Kosmos/Libraries/pdf.lua").write("/Home/w.pdf",
@@ -400,9 +404,15 @@ local okd, nd = use("/Kosmos/Libraries/docxwrite.lua").write("/Home/w.docx", let
                                                                pictures = pictures })
 print("DOCX", okd, type(nd) == "table" and nd.bytes or tostring(nd))
 
--- A table is not one of the body's paragraphs in Word's file, but `w:tbl`.
-for _, p in ipairs(letter.body) do
-  if not p.table then print("PARA", "[" .. richtext.plain(p) .. "]") end
+-- A table is not one of the body's paragraphs in Word's file, but `w:tbl` -
+-- and one that touches another table, or ends the body, has an empty
+-- paragraph after it, since Word would join the two.
+for i, p in ipairs(letter.body) do
+  if not p.table then
+    print("PARA", "[" .. richtext.plain(p) .. "]")
+  elseif not letter.body[i + 1] or letter.body[i + 1].table then
+    print("PARA", "[]")
+  end
 end
 '''
 
@@ -676,6 +686,16 @@ def docx_checks(said, out, disk, work):
             or len(tbl.findall(W + "tblGrid/" + W + "gridCol")) != 3:
         raise Failure("the DOCX's table is not the document's: %r" % cells)
 
+    # The text box (W7a): a table of one cell, 70 mm, centred, its line break.
+    boxes = body.findall(W + "tbl")
+    box = boxes[1] if len(boxes) > 1 else None
+    box_xml = ET.tostring(box).decode() if box is not None else ""
+
+    if box is None or len(box.findall(".//" + W + "tc")) != 1 \
+            or 'w:w="3969"' not in box_xml.replace("ns0:", "w:") \
+            or box.find(".//" + W + "br") is None:
+        raise Failure("the DOCX's text box is not a 70 mm table of one cell with its line break")
+
     checks += 1
 
     # macOS reads it as a document: every paragraph's words, in order.
@@ -921,11 +941,17 @@ def pdf_checks(said, out, fonts, disk, work):
     every_ops = "".join(stream_of(objects[ref(o, b"Contents")]).decode("latin-1")
                         for o in page_objs)
     rules = len(re.findall(r"q [\d. ]+ RG 0\.5 w [\d.]+ [\d.]+ m [\d.]+ [\d.]+ l S Q", every_ops))
+    borders = len(re.findall(r"q [\d. ]+ RG 0\.75 w [\d.]+ [\d.]+ m [\d.]+ [\d.]+ l S Q", every_ops))
     tints = len(re.findall(r"q [\d. ]+ rg [\d.]+ [\d.]+ [\d.]+ [\d.]+ re f Q", every_ops))
 
-    if rules != 3 * 6 or tints != 1:
-        raise Failure("the PDF draws %d rules and %d tints for the table; wanted 18 and 1"
-                      % (rules, tints))
+    # And the text box (W7a): its four borders and its fill.
+    if rules != 3 * 6 or borders != 4 or tints != 2:
+        raise Failure("the PDF draws %d rules, %d borders and %d tints for the table "
+                      "and the box; wanted 18, 4 and 2" % (rules, borders, tints))
+
+    if not any(p.endswith("[A note]") for p in said("PIECE")) \
+            or not any(p.endswith("[in a box]") for p in said("PIECE")):
+        raise Failure("the text box's two lines are not among the pieces the PDF shows")
 
     if not any(p.endswith("[Planet]") for p in said("PIECE")):
         raise Failure("the table's header text is not among the pieces the PDF shows")

@@ -875,6 +875,51 @@ do
   check(hit2.row == p2[2].row, "a point on a later page's row did not find that row")
 end
 
+-- 19. **Text boxes** (W7a): a table of one cell, as wide as it says and
+-- placed as its paragraph aligns, with more room round its text, its fill
+-- and its border; a line break in it a line of its own; and a place in it
+-- found and hit as a cell's.
+do
+  local PAD = pageset.BOX_PAD_PT
+  local LINE = (0.8 + 0.2) * 11 * 1.2
+  local raw = richtext.new_box("Body", 60)
+  raw.table.rows[1][1] = { style = "Body", runs = { { text = "Note\nsecond" } } }
+  raw.table.box.fill = "#eef3fb"
+  local bdoc = doc_of{ para("Body", "before"), raw, para("Body", "after") }
+  local set = pageset.set(bdoc, measure)
+  local row = set.pages[1].lines[2]
+  local W60 = PT(60)
+
+  check(row.cells and #row.cells == 1 and near(row.cells[1].width_pt, W60)
+        and near(row.x_pt, LEFT + (COLUMN - W60) / 2),
+        "a text box is not as wide as it says, centred")
+  local lines = row.cells[1].lines
+  check(#lines == 2 and text_of(lines[1]) == "Note" and text_of(lines[2]) == "second"
+        and near(lines[1].pieces[1].x_pt, row.x_pt + PAD)
+        and near(row.height_pt, 2 * LINE + 2 * PAD),
+        "a text box's line break, or the room round its text, is wrong")
+
+  local fills, rules = 0, 0
+  for _, a in ipairs(row.art) do
+    if a.kind == "rect" and a.fill == "#eef3fb" then fills = fills + 1 end
+    if a.kind == "rule" and a.colour == pageset.BOX_RULE then rules = rules + 1 end
+  end
+  check(fills == 1 and rules == 4, "a text box is not filled and bordered as it says")
+
+  local here = pageset.locate(set, measure, { para = 2, at = 6, row = 1, col = 1 })
+  local back = here and pageset.hit(set, measure, 1, here.x_pt + 0.1, here.baseline_pt - 1)
+  check(here and back and back.row == 1 and back.at == 6 and here.line == lines[2],
+        "a place after a box's line break is not on its second line")
+
+  local plain = richtext.new_box("Body", 500)
+  plain.align = "left"
+  plain.table.box.border = false
+  local pset = pageset.set(doc_of{ plain }, measure)
+  local prow = pset.pages[1].lines[1]
+  check(#prow.art == 0 and near(prow.cells[1].width_pt, COLUMN) and near(prow.x_pt, LEFT),
+        "a box wider than the column, unbordered and unfilled, is not the column's width and bare")
+end
+
 if fails > 0 then
   print(("pageset: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

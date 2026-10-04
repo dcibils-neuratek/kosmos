@@ -114,6 +114,21 @@ end
 for _ in td:gmatch("</w:%a+>") do c2 = c2 + 1 end
 check(o2 == c2, ("in a table, %d elements opened and %d closed"):format(o2, c2))
 
+-- **A text box** (W7a): Word's table of one cell, as wide as the box,
+-- centred, shaded with its fill; and one without a border has none.
+local bdoc = writedoc.check{ format = "kosmos-write", version = 1, body = {
+  { style = "Body", align = "center", table = { columns = 1, rows = { { cell("Note") } },
+    box = { width_mm = 60, fill = "#eef3fb" } } },
+  { style = "Body", table = { columns = 1, rows = { { cell("Bare") } },
+    box = { width_mm = 40, border = false } } },
+  { style = "Body", runs = { { text = "after" } } } } }
+local bd = docx.parts.document(bdoc)
+
+has(bd, '<w:tblW w:w="3402" w:type="dxa"/><w:jc w:val="center"/>', "a 60 mm box, centred")
+has(bd, 'w:fill="EEF3FB"', "the box's fill")
+has(bd, '<w:top w:val="single" w:sz="6"', "the box's border")
+has(bd, '<w:top w:val="nil"/>', "a box without a border")
+
 if fails > 0 then
   print(("docx: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

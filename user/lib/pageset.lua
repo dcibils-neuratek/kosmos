@@ -414,6 +414,11 @@ pageset.RULE_PT = 0.5
 pageset.RULE = "#a3abb6"
 pageset.HEADER_TINT = "#e9edf2"
 
+-- **A text box's** (W7a): more room round its text, and a darker border.
+pageset.BOX_PAD_PT = 8
+pageset.BOX_RULE_PT = 0.75
+pageset.BOX_RULE = "#5b6677"
+
 -- The room between a drop cap and the lines beside it.
 pageset.CAP_GAP_MM = 1.5
 
@@ -629,7 +634,9 @@ function pageset.set(doc, measure, cache, opts)
   -- **A table, a line for each row** (W5b): its columns share the room
   -- between its paragraph's indents equally; a row is as tall as its
   -- tallest cell's text and the room round it; each row draws its cells'
-  -- rules, and a header row its tint, under its text.
+  -- rules, and a header row its tint, under its text. **A text box** (W7a)
+  -- is a table of one cell, as wide as it says, filled and bordered as it
+  -- says.
   --
   local function set_table(p, n)
     local style = by_name[p.style] or doc.styles[1]
@@ -638,8 +645,21 @@ function pageset.set(doc, measure, cache, opts)
     local room = math.max(20, column - writedoc.pt(layout.indent_left_mm)
                                  - writedoc.pt(layout.indent_right_mm))
     local t = p.table
+    local box = t.box
+    local pad = box and pageset.BOX_PAD_PT or pageset.CELL_PAD_PT
+
+    -- A text box is as wide as it says, up to the column, and stands
+    -- where its paragraph aligns it.
+    if box then
+      local w = math.min(room, writedoc.pt(box.width_mm))
+
+      if layout.align == "center" then inner = inner + (room - w) / 2
+      elseif layout.align == "right" then inner = inner + room - w end
+
+      room = w
+    end
+
     local width_of = room / t.columns
-    local pad = pageset.CELL_PAD_PT
     local rows = {}
 
     for r, row in ipairs(t.rows) do
@@ -672,26 +692,30 @@ function pageset.set(doc, measure, cache, opts)
       end
 
       local art = {}
+      local tint = header and pageset.HEADER_TINT or box and box.fill
 
-      if header then
+      if tint then
         art[#art + 1] = { kind = "rect", x_pt = inner, y_pt = 0, w_pt = room,
-                          h_pt = height, fill = pageset.HEADER_TINT }
+                          h_pt = height, fill = tint }
       end
 
       local function rule(x, y, x2, y2)
         art[#art + 1] = { kind = "rule", x_pt = x, y_pt = y, x2_pt = x2, y2_pt = y2,
-                          colour = pageset.RULE, width_pt = pageset.RULE_PT }
+                          colour = box and pageset.BOX_RULE or pageset.RULE,
+                          width_pt = box and pageset.BOX_RULE_PT or pageset.RULE_PT }
       end
 
-      rule(inner, 0, inner + room, 0)
-      rule(inner, height, inner + room, height)
+      if not box or box.border then
+        rule(inner, 0, inner + room, 0)
+        rule(inner, height, inner + room, height)
 
-      for c = 0, t.columns do
-        local x = inner + c * width_of
-        rule(x, 0, x, height)
+        for c = 0, t.columns do
+          local x = inner + c * width_of
+          rule(x, 0, x, height)
+        end
       end
 
-      rows[r] = { para = n, row = r, cells = cells, art = art, header = header,
+      rows[r] = { para = n, row = r, cells = cells, art = art, header = header, box = box ~= nil,
                   pieces = {}, x_pt = inner, width_pt = room, from = 1, spaces = 0,
                   extra_space_pt = 0, ascent_pt = height, height_pt = height }
     end

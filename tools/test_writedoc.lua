@@ -549,6 +549,41 @@ do
   check(b10[1].picture and b10[1].style == "Caption", "a style over a picture lost the picture")
 end
 
+-- 12. **Text boxes and line breaks** (W7a): a box is one cell however
+-- many it was given, its width held to its range and its border on unless
+-- it says off; a line break typed is a "\n" in the run, in a paragraph or
+-- in a box's cell, never a new paragraph.
+do
+  local doc = writedoc.new()
+  local by_name = {}
+  for _, st in ipairs(doc.styles) do by_name[st.name] = st end
+
+  local function cell(text) return { style = "Body", runs = { { text = text } } } end
+
+  local p = richtext.paragraph({ style = "Body", table = { columns = 3, header = true,
+    rows = { { cell("a"), cell("b") }, { cell("c") } },
+    box = { width_mm = 5000, fill = "#ABCDEF" } } }, by_name, "Body")
+  check(p.table.box and p.table.columns == 1 and #p.table.rows == 1 and not p.table.header
+        and p.table.box.width_mm == 1000 and p.table.box.border == true
+        and p.table.box.fill == "#abcdef" and richtext.plain(p.table.rows[1][1]) == "a",
+        "a text box is not one cell, its width held and its border on")
+
+  local body = { { style = "Body", runs = { { text = "onetwo" } } } }
+  local b1, at = richtext.line_break(body, { para = 1, at = 4 })
+  check(#b1 == 1 and richtext.plain(b1[1]) == "one\ntwo" and at.at == 5,
+        "a line break made a paragraph, or is not where the caret was")
+
+  local box = { richtext.paragraph(richtext.new_box("Body", 60), by_name, "Body") }
+  local b2, at2 = richtext.type(box, { para = 1, at = 1, row = 1, col = 1 }, "Note")
+  b2, at2 = richtext.line_break(b2, at2)
+  b2, at2 = richtext.type(b2, at2, "more")
+  check(richtext.plain(b2[1].table.rows[1][1]) == "Note\nmore" and at2.row == 1 and at2.at == 10
+        and b2[1].table.box.width_mm == 60,
+        "a line break in a box's cell is not in its text, or the box was lost")
+  doc.body = b2
+  check(same(round(doc).body, b2), "a text box did not come back from its file")
+end
+
 if fails > 0 then
   print(("writedoc: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

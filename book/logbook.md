@@ -945,3 +945,16 @@ worked, and no test had pressed it. The table test was the first to press
 Tab. Two older faults also surfaced and are fixed: choosing a style over a
 range that included a picture lost the picture, and deleting a range that
 ended on a picture left it stuck in the paragraph that remained.
+
+## 4 October, later still - text boxes
+
+**In short:** the Text button puts a box of text into the document, 80 mm
+wide and centred, with a border. Return inside it starts a new line, and
+the panel sets its width, a pale fill and whether it has a border. Shift
+and Return now start a new line inside any paragraph, as in Pages.
+
+**How it is built.** A text box is a table with a single cell that is drawn
+as a box. Everything tables learned an hour earlier - typing, the caret,
+the PDF, Word - came with it, and all that is new is where the box stands
+and how it looks. In Word it arrives as a one-cell table, so it is still a
+box someone can edit there.

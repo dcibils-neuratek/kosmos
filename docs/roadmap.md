@@ -485,7 +485,8 @@ kits under `user/lib/` for Present and Sheets to stand on:
   than a second layout:
   - **W7a, a text box**: a table of one cell drawn as a box, narrower than
     the column and placed as its paragraph aligns, with a fill and a
-    border; Return in it a line break, as Shift-Return becomes everywhere.
+    border; Return in it a line break, as Shift-Return becomes everywhere. *Done, 4 October*
+    (`testing.md` 18.392).
   - **W7b, a shape**: a rectangle, a rounded one, an oval, a triangle, a
     star or an arrow, filled, drawn by the same `art` a table's rules are -
     on the screen as triangles, in the PDF as paths, in Word as its own
