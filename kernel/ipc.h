@@ -352,6 +352,15 @@ struct endpoint *ipc_endpoint_peek(struct thread *t, cap_t index);
 
 int ipc_reply(struct thread *sender, const struct message *msg);
 
+/*
+ * **A reply by token** (`SYS_REPLY`): `ipc_reply` for a process, which
+ * holds a token rather than a thread (`thread_reply_token`). Refused - with
+ * IPC_ERR_NO_PEER, and nothing touched - unless the token names a thread of
+ * the pool still waiting in that very call, and this thread's process is the
+ * one that took the call's message.
+ */
+int ipc_reply_token(uint64_t token, const struct message *msg);
+
 /* For tests and inspection. */
 unsigned ipc_endpoints_in_use(void);
 

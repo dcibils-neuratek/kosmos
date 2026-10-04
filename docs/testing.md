@@ -18799,3 +18799,45 @@ a log line, a window drawn, a prompt - the wait is both faster and steadier
 (`started`'s own comment). The cheap ones were counted first: eight fixed
 sleeps before a wait for the prompt that already waits, 16 seconds a
 board. The rest are phase by phase, and on the roadmap.
+
+## 18.397 A reply token names a call, and a driver maps no RAM (the 0.11 review)
+
+**Found by the review before 0.11**, which read the kernel as it now is
+rather than as it was meant to be. Both had a comment over them saying why
+they were safe, and neither comment was true any more.
+
+**A reply was addressed by a kernel pointer.** `SYS_RECEIVE` handed a
+server the waiting thread's address, and `SYS_REPLY` took the number back
+and used it as a `struct thread *`. The comment said the worst a made-up one
+could do was get `IPC_ERR_NO_PEER`, and promised a capability "at M5". But
+`ipc_reply` read `sender->ipc.waiting_on` before any check. The kernel reaches
+user memory in a system call, since PAN and SMAP are off. So a process could
+point it at a thread and an endpoint built in its own pages, and the kernel
+would have taken a lock, unlinked a list and woken a thread there: a write
+anywhere in the kernel. Any other number was a panic at least.
+
+**Now a token is the thread's slot and which of its calls this is**
+(`thread_reply_token`): the kernel looks the slot up in its own pool,
+bounds-checked, and `ipc_reply_token` refuses - with nothing touched - unless
+that thread is waiting in that very call and the replying process is the one
+that took the call's message. The count is the slot's and never reset, so a
+token from a finished call, or from the slot's last thread, never matches;
+and a late answer can no longer land in the caller's *next* call, which a
+pointer allowed.
+
+**`SYS_DEV_MAP` checked one range of RAM.** `dev_range_ok` refused the range
+holding the kernel, which was all the page allocator held - until it took
+every range the board reports (`pmm.c`). On a PC with memory above the PCI
+hole, a driver could have mapped another process's pages uncached. It now
+refuses every range.
+
+**Tests** (`tests/tests.c`, both boards): a server answers a real call with
+four forgeries first - nought, a slot past the pool's end, an address of its
+own stack, and the right slot with the call before - each refused; then the
+real token, delivered; then the same token again, refused. And the device
+test now refuses every range's first and last page, and allows only past
+the highest. **Control**: the call check taken out - "not ok 100 - ipc: a
+reply token names a call, and nothing forged does".
+**Seen once**: `x86-servers`' first boot timed out in a run of four suites
+side by side, the rest of its failures following from it; alone it passed
+its 27 checks. The full gate before 0.11 is what says whether it recurs.

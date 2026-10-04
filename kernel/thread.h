@@ -125,6 +125,15 @@ struct thread {
 
     enum thread_state state;
     unsigned id;
+
+    /*
+     * Which slot of the pool this is, set when the slot is claimed: what a
+     * reply token names (`thread_reply_token`), so the kernel finds the
+     * thread a reply is for by looking in its own pool - never by trusting
+     * an address a process handed it.
+     */
+    unsigned slot;
+
     char name[THREAD_NAME_MAX];
 
     /* Timer ticks charged to this thread. Only rises; a percentage is the
@@ -308,6 +317,10 @@ struct thread {
         uint32_t        received_from; /* the process the last message
                                           received came from, 0 the kernel:
                                           what SYS_SENDER answers about */
+        uint32_t        call;       /* calls made from this slot: which
+                                       call a reply token answers */
+        const struct process *replier; /* the process that took the call's
+                                          message - the one that may answer */
     } ipc;
 
     /*
@@ -669,6 +682,20 @@ static inline struct thread *thread_current(void)
  * enumerate them, and nothing may hold the pointer across a yield.
  */
 const struct thread *thread_by_index(unsigned i);
+
+/*
+ * **A reply token** (`SYS_RECEIVE`, `SYS_REPLY`): which thread is waiting
+ * for an answer and which of its calls it is waiting in - the slot and the
+ * slot's count of calls, never an address. A process could forge an address
+ * and have the kernel use whatever it pointed at; it can forge a token too,
+ * and the kernel looks the slot up in its own pool and refuses a call that
+ * is not the one waiting.
+ */
+uint64_t thread_reply_token(const struct thread *t);
+
+/* The thread a token names - a slot of the pool, or NULL past its end - and
+ * the call it names, in `*call`. */
+struct thread *thread_of_reply_token(uint64_t token, uint32_t *call);
 unsigned thread_count(void);
 
 #endif /* KERNEL_THREAD_H */

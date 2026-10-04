@@ -2817,6 +2817,106 @@ static bool test_a_server_inherits_its_callers_priority(void)
 }
 
 /*
+ * **A reply token names a call, and nothing made up names one** (0.11).
+ *
+ * `SYS_RECEIVE` handed a process the waiting thread's kernel address and
+ * `SYS_REPLY` took it back and used it: a process that made one up could
+ * have had the kernel take a lock and link a list in pages of its own. A
+ * token is now the thread's slot and which of its calls this is
+ * (`thread_reply_token`), and `ipc_reply_token` looks the slot up in the
+ * kernel's own pool.
+ *
+ * The server here answers a call with every forgery first - nought, a slot
+ * past the pool's end, an address of its own stack, and the right slot with
+ * the call before - each of which must be refused with nothing delivered;
+ * then with the token itself, which must deliver; then with it again, which
+ * must be refused because the call is answered.
+ */
+static cap_t token_cap;
+static volatile int token_forged_ok;     /* forgeries that were not refused */
+static volatile int token_real;          /* the real token's result */
+static volatile int token_again;         /* the real token a second time */
+static volatile bool token_done;
+
+static void token_server(void *arg)
+{
+    struct message msg, reply = { 0 };
+    struct thread *sender;
+    uint64_t token, forged[4];
+    uint32_t local = 0;
+    unsigned i;
+
+    (void)arg;
+
+    if (ipc_receive(token_cap, &msg, &sender, false, 0) != IPC_OK) {
+        token_done = true;
+        thread_exit();
+    }
+
+    token = thread_reply_token(sender);
+    forged[0] = 0;
+    forged[1] = (uint64_t)(thread_slots_made() + 5u) << 32;
+    forged[2] = (uint64_t)(uintptr_t)&local;
+    forged[3] = token - 1u;              /* the same slot, the call before */
+
+    reply.tag = msg.tag + 1;
+
+    for (i = 0; i < 4; i++) {
+        if (ipc_reply_token(forged[i], &reply) != IPC_ERR_NO_PEER) {
+            token_forged_ok++;
+        }
+    }
+
+    token_real = ipc_reply_token(token, &reply);
+    token_again = ipc_reply_token(token, &reply);
+    token_done = true;
+    thread_exit();
+}
+
+static bool test_a_reply_token_names_a_call_and_nothing_forged_does(void)
+{
+    struct message msg = { 0 };
+    struct message reply = { 0 };
+    struct thread *server;
+    cap_t client_cap;
+    unsigned i;
+
+    token_forged_ok = 0;
+    token_real = token_again = 99;
+    token_done = false;
+
+    client_cap = ipc_endpoint_create();
+    if (client_cap < 0) {
+        return false;
+    }
+
+    server = thread_create_suspended("tokens", token_server, NULL);
+    if (server == NULL) {
+        return false;
+    }
+
+    token_cap = ipc_cap_grant(server, client_cap);
+    if (token_cap < 0) {
+        return false;
+    }
+
+    thread_wake(server);
+
+    msg.tag = 41;
+
+    if (ipc_call(client_cap, &msg, &reply) != IPC_OK || reply.tag != 42) {
+        return false;
+    }
+
+    for (i = 0; i < 100000u && !token_done; i++) {
+        thread_yield();
+    }
+
+    return token_done && token_forged_ok == 0 && token_real == IPC_OK
+        && token_again == IPC_ERR_NO_PEER;
+}
+
+/*
  * **A caller ends a sleep that watches its endpoint.**
  *
  * The window manager sleeps in the console server's input wait and collects
@@ -4920,14 +5020,45 @@ static bool test_a_region_larger_than_the_old_cap(void)
  */
 static bool test_a_driver_may_map_devices_and_not_ram(void)
 {
-    struct memrange ram;
-    uintptr_t after, straddle;
+    struct memrange ram, ranges[PMM_RANGES_MAX];
+    uintptr_t after, straddle, end;
+    unsigned n, i;
 
     hal_ram_range(&ram);
+    n = hal_ram_ranges(ranges, PMM_RANGES_MAX);
 
-    /* The first page past RAM, which is not RAM on either machine. */
-    after = (uintptr_t)((ram.base + ram.size + PAGE_SIZE - 1)
-                        & ~(unsigned long)(PAGE_SIZE - 1));
+    /*
+     * **Every range the board has is RAM, not only the kernel's** (0.11):
+     * the check knew the one range the page allocator once held, and a PC
+     * with memory above the PCI hole has more. Each range's first and last
+     * pages are refused.
+     */
+    for (i = 0; i < n; i++) {
+        uintptr_t first = (uintptr_t)((ranges[i].base + PAGE_SIZE - 1)
+                                      & ~(unsigned long)(PAGE_SIZE - 1));
+        uintptr_t last = (uintptr_t)((ranges[i].base + ranges[i].size - 1)
+                                     & ~(unsigned long)(PAGE_SIZE - 1));
+
+        if (ranges[i].size < PAGE_SIZE) {
+            continue;
+        }
+
+        if (dev_range_ok(first, 1) || dev_range_ok(last, 1)) {
+            return false;
+        }
+    }
+
+    /* The first page past all of RAM, which is not RAM on either machine:
+     * past the kernel's range and every other. */
+    end = (uintptr_t)(ram.base + ram.size);
+
+    for (i = 0; i < n; i++) {
+        if ((uintptr_t)(ranges[i].base + ranges[i].size) > end) {
+            end = (uintptr_t)(ranges[i].base + ranges[i].size);
+        }
+    }
+
+    after = (end + PAGE_SIZE - 1) & ~(uintptr_t)(PAGE_SIZE - 1);
 
     /* Two pages ending just past RAM's last one: the first is RAM, so the
      * pair must be refused even though the second would be allowed alone. */
@@ -9639,6 +9770,7 @@ static const struct test tests[] = {
     { "sched: a processor held off is counted", test_held_off_is_counted },
     { "sched: born in the audio band, it runs", test_born_in_the_audio_band },
     { "sched: a server inherits its caller",   test_a_server_inherits_its_callers_priority },
+    { "ipc: a reply token names a call, and nothing forged does", test_a_reply_token_names_a_call_and_nothing_forged_does },
     { "fp: a preemption preserves d0",         test_fp_survives_a_preemption },
 #if defined(__aarch64__)
     { "fp: disarmed until it is wanted",       test_fp_is_disarmed_until_it_is_wanted },

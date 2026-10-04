@@ -1330,6 +1330,10 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
      */
     epflags = spin_lock(&ep->lock);
 
+    /* A call of its own: what a reply token names, so a late answer to the
+     * last call cannot land in this one (`thread_reply_token`). */
+    self->ipc.call++;
+
     receiver = queue_pop(&ep->receivers);
 
     if (receiver != NULL) {
@@ -1343,6 +1347,7 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
          */
         message_deliver(receiver, self, msg, &receiver->ipc.msg);
         receiver->ipc.peer = self;
+        self->ipc.replier = receiver->process;
 
         /*
          * And it runs at this thread's band until it answers.
@@ -1460,6 +1465,7 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
         message_deliver(self, s, &s->ipc.msg, msg);
         *sender = s;
         s->ipc.peer = self;
+        s->ipc.replier = self->process;
 
         /* The other way round: this thread collected a message that was
          * already waiting, so it takes on that sender's band. */
@@ -1701,7 +1707,33 @@ struct endpoint *ipc_endpoint_peek(struct thread *t, cap_t index)
     return resolve(t, index);
 }
 
+static int reply_to(struct thread *sender, const uint32_t *call,
+                    const struct message *msg);
+
 int ipc_reply(struct thread *sender, const struct message *msg)
+{
+    return reply_to(sender, NULL, msg);
+}
+
+int ipc_reply_token(uint64_t token, const struct message *msg)
+{
+    uint32_t call;
+    struct thread *sender = thread_of_reply_token(token, &call);
+
+    if (sender == NULL) {
+        return IPC_ERR_NO_PEER;
+    }
+
+    return reply_to(sender, &call, msg);
+}
+
+/*
+ * The answer delivered: to a thread the kernel found itself - `ipc_receive`
+ * handed it out, or a token named its slot - and, when `call` is given,
+ * only into that call and only from the process that took its message.
+ */
+static int reply_to(struct thread *sender, const uint32_t *call,
+                    const struct message *msg)
 {
     struct endpoint *ep;
 
@@ -1732,6 +1764,15 @@ int ipc_reply(struct thread *sender, const struct message *msg)
          * into a thread that has moved on.
          */
         if (sender->ipc.waiting_on != ep) {
+            spin_unlock(&ep->lock, epflags);
+            return IPC_ERR_NO_PEER;
+        }
+
+        /* And from a token: the call it names, and the process that took
+         * the message - checked under the lock, where they cannot change. */
+        if (call != NULL
+            && (sender->ipc.call != *call
+                || sender->ipc.replier != thread_current()->process)) {
             spin_unlock(&ep->lock, epflags);
             return IPC_ERR_NO_PEER;
         }

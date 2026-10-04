@@ -129,7 +129,8 @@ _Static_assert(DEV_INTEL_ETHERNET == HAL_DEV_INTEL_ETHERNET,
 
 bool dev_range_ok(uintptr_t phys, size_t pages)
 {
-    struct memrange ram;
+    struct memrange ram[PMM_RANGES_MAX + 1];
+    unsigned n, i;
 
     if (pages == 0 || pages > DEV_MAP_PAGES_MAX) {
         return false;
@@ -143,11 +144,21 @@ bool dev_range_ok(uintptr_t phys, size_t pages)
         return false;
     }
 
-    hal_ram_range(&ram);
+    /*
+     * **No RAM, in any range the board has.** It checked only the range
+     * holding the kernel until 0.11 - true when that was all the page
+     * allocator held, and not since it took every range (`pmm.c`): on a PC
+     * with memory above the PCI hole a driver could have mapped pages that
+     * are another process's.
+     */
+    hal_ram_range(&ram[0]);
+    n = 1 + hal_ram_ranges(&ram[1], PMM_RANGES_MAX);
 
-    if (phys < (uintptr_t)ram.base + (uintptr_t)ram.size
-        && (uintptr_t)ram.base < phys + pages * PAGE_SIZE) {
-        return false;
+    for (i = 0; i < n; i++) {
+        if (phys < (uintptr_t)ram[i].base + (uintptr_t)ram[i].size
+            && (uintptr_t)ram[i].base < phys + pages * PAGE_SIZE) {
+            return false;
+        }
     }
 
     return true;
@@ -287,15 +298,13 @@ static long sys_receive(struct process *p, cap_t cap, uintptr_t msg_ptr,
     copy_message_out((struct message *)msg_ptr, &msg);
 
     /*
-     * The sender goes back to the process as a kernel pointer, which is a
-     * leak: a
-     * process learns where a struct thread lives. It is written down rather
-     * than hidden because it is temporary. At M5 a reply is a capability
-     * like everything else, and a process will hold an index into its own
-     * table instead of an address it could never have guessed but can now
-     * simply read.
+     * The sender goes back to the process as a reply token - the slot it
+     * waits in and which of its calls this is (`thread_reply_token`) - and
+     * never as an address. It was a kernel pointer until 0.11, which
+     * `SYS_REPLY` then took back and used: a process that made one up could
+     * have the kernel take locks and link lists in pages of its own.
      */
-    *(uint64_t *)sender_ptr = (uint64_t)(uintptr_t)sender;
+    *(uint64_t *)sender_ptr = sender != NULL ? thread_reply_token(sender) : 0;
 
     /* Where it came from, for SYS_SENDER: noted here, where the sender is
      * known for certain, rather than worked out later from the token. */
@@ -351,16 +360,12 @@ static long sys_reply(struct process *p, uintptr_t sender, uintptr_t msg_ptr)
     copy_message_in(&msg, (const struct message *)msg_ptr);
 
     /*
-     * `sender` is whatever the process passed. ipc_reply checks that it is a
-     * thread actually waiting for a reply, which is what stops a forged
-     * value from doing anything: the worst a process can do with a made-up
-     * pointer is get IPC_ERR_NO_PEER back.
-     *
-     * That is thin, and it is the reason the token becomes a capability at
-     * M5. A value that is only safe because of what the callee checks is
-     * one audit away from not being safe.
+     * `sender` is whatever the process passed, and it is read as a token:
+     * a slot the kernel looks up in its own pool, the call in it, and the
+     * process that took the call - so a made-up one gets IPC_ERR_NO_PEER
+     * and touches nothing (`ipc_reply_token`).
      */
-    return ipc_reply((struct thread *)sender, &msg);
+    return ipc_reply_token((uint64_t)sender, &msg);
 }
 
 /*

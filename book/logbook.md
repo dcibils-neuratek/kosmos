@@ -1019,3 +1019,30 @@ saved file keeps only the comments whose words still exist.
 
 Each was built as a reusable kit with a test that does what a person would
 do, and with a deliberate break to prove that the test would notice.
+
+## 4 October, night - the review before 0.11 finds a hole in the kernel
+
+**In short:** before Kosmos goes to version 0.11, its own rules say the code
+is read again as it now is. That reading found a real security hole in the
+microkernel, and it is fixed and tested.
+
+**What it was.** When a server answers a program's request, the kernel has
+to know which waiting program the answer is for. It used to give the server
+the raw memory address of that program's record inside the kernel, and take
+it back with the answer. A comment said this was safe, because a made-up
+number would simply be refused. It was not. The kernel used the number
+before checking it, so a program could fake a record in its own memory and
+make the kernel write wherever it chose. On a real computer, that is how a
+program takes over the machine.
+
+**What it is now.** The answer carries a ticket instead: which slot in the
+kernel's own list of threads, and which of that thread's requests. The
+kernel looks the slot up itself, checks the request is still the one
+waiting, and checks the answer comes from the program that received it.
+Anything else is refused without being touched. A test now tries four kinds
+of forgery, and a version of the kernel with one check removed fails it.
+
+**And a second one, smaller.** Drivers may map hardware into their memory,
+but never ordinary RAM. The check knew only one stretch of RAM, from when
+the kernel used only one. A PC has several, so that check now covers all of
+them.

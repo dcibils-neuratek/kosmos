@@ -454,6 +454,29 @@ const struct thread *thread_by_index(unsigned i)
     return slot(i);
 }
 
+/*
+ * A reply token: the slot, one up so that nought is never a token, over the
+ * slot's count of calls. The count is the slot's and is never reset, so a
+ * token from a call a slot's last thread made never matches one its next
+ * thread makes.
+ */
+uint64_t thread_reply_token(const struct thread *t)
+{
+    return ((uint64_t)(t->slot + 1u) << 32) | t->ipc.call;
+}
+
+struct thread *thread_of_reply_token(uint64_t token, uint32_t *call)
+{
+    uint64_t at = token >> 32;
+
+    if (at == 0 || at > slots_made()) {
+        return NULL;
+    }
+
+    *call = (uint32_t)token;
+    return slot((unsigned)(at - 1u));
+}
+
 /* Threads that could still run. A dead one is not counted: its slot is
  * reusable and counting it would make the number mean "slots touched"
  * rather than "threads alive". */
@@ -562,6 +585,7 @@ static struct thread *alloc_thread(void)
         for (i = 0; i < made; i++) {
             if (slot(i)->state == THREAD_UNUSED) {
                 slot(i)->state = THREAD_CLAIMED;
+                slot(i)->slot = i;
                 spin_unlock(&threads_lock, flags);
                 return slot(i);
             }
@@ -572,6 +596,7 @@ static struct thread *alloc_thread(void)
             if (slot(i)->state == THREAD_DEAD && !slot(i)->ended
                 && !still_leaving(slot(i))) {
                 slot(i)->state = THREAD_CLAIMED;
+                slot(i)->slot = i;
                 spin_unlock(&threads_lock, flags);
                 return slot(i);
             }
