@@ -434,10 +434,18 @@ kits under `user/lib/` for Present and Sheets to stand on:
   footer, page numbers - by the faces' own measures. Arithmetic, held on the
   Mac with a measure handed in; in C where a measurement says the loop over
   glyphs is the cost.
-- **W3 - PDF out, the part that matters most.** The PDF Kit writing for the
+- **W3 - PDF out, the part that matters most.** *Done, 4 October*
+  (`testing.md` 18.379): `pdfwrite.lua`, Type 0 fonts in Identity-H with
+  ToUnicode, read back by Kosmos's reader, by the Mac and by macOS. The PDF Kit writing for the
   first time: the pages as W2 laid them, the faces embedded, each line where
   it was set. **Held by reading it back** with Kosmos's own PDF reader - the
   text and where each line is - and opened in the PDF viewer.
+- **W3b - subsetting**: a face embedded with only the glyphs a document
+  shows. Whole, a face is about 93 KB deflated, and the three-page test
+  document's seven faces are 652 KB of its 664. The glyph numbers stay the
+  font's (Identity-H already says them), so a subset keeps `glyf` and `loca`
+  for the glyphs used and empties the rest - a loop over a font's bytes, in
+  C.
 - **W4 - the window**, from `docs/write.html`: the pages on a dark desk,
   the toolbar, Format and Document switching the panel, View for the
   thumbnails, zoom; typing and choosing styles, on the document page the

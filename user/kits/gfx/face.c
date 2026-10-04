@@ -11,7 +11,17 @@
  *                        units, and how many of its characters the face
  *                        has no glyph for
  *     face:program()     where the font's bytes are and how many: for the
- *                        PDF writer to embed, which is W3
+ *                        PDF writer to embed (W3)
+ *     face:descriptor()  what a PDF says about a font beside its widths:
+ *                        its PostScript name, box, italic angle, cap
+ *                        height, underline and strike-out, fixed pitch
+ *     face:glyphs(text[, used])
+ *                        a UTF-8 string as its glyph numbers, two bytes
+ *                        each in hex - what a PDF's Identity-H shows - and
+ *                        how many the face has no glyph for; `used[glyph]`
+ *                        given each glyph's character, for its ToUnicode
+ *     face:glyph_advance(glyph)
+ *                        one glyph's advance, for a PDF's widths
  *
  * **In the font's own units, unhinted, and unscaled.** `gfx`'s outline
  * fonts measure at a pixel size, rounded per glyph, because they draw on a
@@ -364,6 +374,141 @@ static int l_advance(lua_State *L)
     return 2;
 }
 
+static int16_t s16(const unsigned char *p)
+{
+    return (int16_t)be16(p);
+}
+
+/*
+ * `face:descriptor()`: what a PDF's `FontDescriptor` says, from the tables
+ * that hold it - `head`'s box, `post`'s italic angle, underline and fixed
+ * pitch, `OS/2`'s cap height and strike-out, and the PostScript name, which
+ * is the font's `BaseFont`. In the font's units; a field whose table is
+ * missing or too old to have it is left out, and the writer supplies what
+ * the specification allows.
+ */
+static int l_descriptor(lua_State *L)
+{
+    struct face *f = luaL_checkudata(L, 1, FACE_MT);
+    const unsigned char *b = f->asset->bytes;
+    uint32_t at, len;
+    char name[64];
+
+    lua_createtable(L, 0, 12);
+
+    if (name_of(&f->info, 6, name, sizeof(name))) {
+        lua_pushstring(L, name);
+        lua_setfield(L, -2, "postscript");
+    }
+
+    if (table_of(f->asset, "head", &at, &len) && len >= 54) {
+        lua_pushinteger(L, s16(b + at + 36)); lua_setfield(L, -2, "xmin");
+        lua_pushinteger(L, s16(b + at + 38)); lua_setfield(L, -2, "ymin");
+        lua_pushinteger(L, s16(b + at + 40)); lua_setfield(L, -2, "xmax");
+        lua_pushinteger(L, s16(b + at + 42)); lua_setfield(L, -2, "ymax");
+    }
+
+    /* italicAngle is a 16.16 fixed-point number of degrees. */
+    if (table_of(f->asset, "post", &at, &len) && len >= 16) {
+        int32_t angle = (int32_t)be32(b + at + 4);
+
+        lua_pushnumber(L, (lua_Number)angle / 65536.0);
+        lua_setfield(L, -2, "italic_angle");
+        lua_pushinteger(L, s16(b + at + 8));
+        lua_setfield(L, -2, "underline_position");
+        lua_pushinteger(L, s16(b + at + 10));
+        lua_setfield(L, -2, "underline_thickness");
+        lua_pushboolean(L, be32(b + at + 12) != 0);
+        lua_setfield(L, -2, "fixed");
+    }
+
+    if (table_of(f->asset, "OS/2", &at, &len) && len >= 30) {
+        lua_pushinteger(L, s16(b + at + 26));
+        lua_setfield(L, -2, "strike_size");
+        lua_pushinteger(L, s16(b + at + 28));
+        lua_setfield(L, -2, "strike_position");
+
+        /* sCapHeight arrived with version 2 of the table. */
+        if (be16(b + at) >= 2 && len >= 90) {
+            lua_pushinteger(L, s16(b + at + 88));
+            lua_setfield(L, -2, "cap_height");
+        }
+    }
+
+    return 1;
+}
+
+/*
+ * `face:glyphs(text[, used])`: each character's glyph as four hex digits,
+ * which is how a PDF's Identity-H string says it, and how many characters
+ * the face has no glyph for (glyph 0, drawn as the face's missing glyph).
+ * When `used` is given, `used[glyph] = character` for each glyph the text
+ * shows - the first character to reach it - which is the PDF's ToUnicode,
+ * the map that lets its text be searched and copied. Glyph 0 is never
+ * mapped: it stands for every character the face lacks, and so for none.
+ *
+ * In C because it is a loop over a document's characters, and it hands
+ * back the hex rather than the bytes so no loop over them is left in Lua.
+ */
+static int l_glyphs(lua_State *L)
+{
+    static const char HEX[] = "0123456789ABCDEF";
+    struct face *f = luaL_checkudata(L, 1, FACE_MT);
+    size_t len, i = 0;
+    const unsigned char *s = (const unsigned char *)luaL_checklstring(L, 2, &len);
+    bool mapping = !lua_isnoneornil(L, 3);
+    lua_Integer missing = 0;
+    luaL_Buffer out;
+
+    if (mapping) {
+        luaL_checktype(L, 3, LUA_TTABLE);
+    }
+
+    luaL_buffinit(L, &out);
+
+    while (i < len) {
+        unsigned cp = next_char(s, len, &i);
+        int glyph = stbtt_FindGlyphIndex(&f->info, (int)cp);
+        char four[4];
+
+        if (glyph == 0) {
+            missing++;
+        } else if (mapping && lua_rawgeti(L, 3, glyph) == LUA_TNIL) {
+            lua_pop(L, 1);
+            lua_pushinteger(L, (lua_Integer)cp);
+            lua_rawseti(L, 3, glyph);
+        } else if (mapping) {
+            lua_pop(L, 1);
+        }
+
+        four[0] = HEX[(glyph >> 12) & 15];
+        four[1] = HEX[(glyph >> 8) & 15];
+        four[2] = HEX[(glyph >> 4) & 15];
+        four[3] = HEX[glyph & 15];
+        luaL_addlstring(&out, four, 4);
+    }
+
+    luaL_pushresult(&out);
+    lua_pushinteger(L, missing);
+    return 2;
+}
+
+/* `face:glyph_advance(glyph)`: one glyph's advance, in the font's units. */
+static int l_glyph_advance(lua_State *L)
+{
+    struct face *f = luaL_checkudata(L, 1, FACE_MT);
+    lua_Integer glyph = luaL_checkinteger(L, 2);
+    int advance, lsb;
+
+    if (glyph < 0 || glyph >= f->info.numGlyphs) {
+        return luaL_error(L, "glyph %d is not in the face", (int)glyph);
+    }
+
+    stbtt_GetGlyphHMetrics(&f->info, (int)glyph, &advance, &lsb);
+    lua_pushinteger(L, advance);
+    return 1;
+}
+
 /* `face:program()`: the address of the font's bytes, and their length. */
 static int l_program(lua_State *L)
 {
@@ -386,6 +531,10 @@ void kosmos_face_open(lua_State *L)
     lua_pushcfunction(L, l_metrics); lua_setfield(L, -2, "metrics");
     lua_pushcfunction(L, l_advance); lua_setfield(L, -2, "advance");
     lua_pushcfunction(L, l_program); lua_setfield(L, -2, "program");
+    lua_pushcfunction(L, l_descriptor); lua_setfield(L, -2, "descriptor");
+    lua_pushcfunction(L, l_glyphs);  lua_setfield(L, -2, "glyphs");
+    lua_pushcfunction(L, l_glyph_advance);
+    lua_setfield(L, -2, "glyph_advance");
 
     lua_pop(L, 1);
 

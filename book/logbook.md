@@ -773,3 +773,35 @@ nothing had printed an accent through it before. Fixed in both places that
 had it.
 
 **Next:** W3, the PDF - the part Diego called key.
+
+## 4 October, night - Kosmos writes its first PDF
+
+**In short:** Kosmos Write can export a PDF, the part Diego called key. A
+document set inside Kosmos comes out as a PDF that Kosmos's own viewer,
+macOS and any other reader open the same way, with the fonts inside it.
+
+**What.** Every font the document uses travels inside the PDF, so it looks
+the same on a computer that has never heard of IBM Plex. Each letter goes
+exactly where the page layout put it, using the same widths. The text stays
+real text: it can be searched and copied out of the PDF.
+
+**A wrong turn worth recording.** The first version wrote its fonts the
+old, simple way, which can only say about two hundred different characters.
+Kosmos's own PDF viewer refused to draw a single letter of it, because it
+only reads the modern way of embedding fonts. That was the viewer being
+right. The writer was changed to the modern form, and gained every
+character a font has along the way.
+
+**How it was checked.** Three readers, none of them the writer. Inside the
+machine, Kosmos's own PDF viewer draws every glyph of every page. On the
+Mac, a test takes the file apart piece by piece: every font is the original
+font file byte for byte, every letter's width matches the font, and every
+piece of text is on the right page at the right spot. Then macOS renders it.
+
+**Visible impact.** A three-page PDF with a bold title, a subtitle,
+headings, and justified text in italic, bold, underline, strike-through,
+red, accents, a euro sign and curly quotes. Diego has a copy.
+
+**Measured, and what is next.** The file is 664 KB, and 652 KB of that is
+fonts: each one is embedded whole, about 93 KB. The next step is to embed
+only the letters a document actually uses, then the Write window itself.

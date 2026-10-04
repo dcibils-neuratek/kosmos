@@ -168,42 +168,50 @@ one place a line breaks.
 
 ## W3 - PDF out
 
-The PDF Kit has only ever read. Writing is simpler than reading - the writer
-chooses every object and never has to forgive anything - and it is the part
-that matters most, so it is held hardest. **`pdfwrite.lua`** writes what
-`pageset` set and nothing else:
+*Built 4 October* (`testing.md` 18.379). The PDF Kit had only ever read.
+Writing is simpler than reading - the writer chooses every object and never
+has to forgive anything - and it is the part that matters most, so it is
+held hardest. **`pdfwrite.lua`** writes what `pageset` set and nothing else:
 
 - a page per page set, its `MediaBox` the paper in points;
 - each face the pages use **embedded whole** as a TrueType program
-  (`FontFile2`), with **the widths the setting used** - the font's own
-  advances, so a reader that sets the same string gets the same line - and
-  its descriptor from the font's own tables (`face:descriptor()`: the
-  PostScript name, the box, the italic angle, cap height, underline and
-  strike-out);
-- the text in **WinAnsi**, which every reader knows and maps to Unicode by
-  itself, so the text can be searched and copied; a character WinAnsi
-  cannot say is written `?` and counted, and the count comes back for the
-  window to say;
-- each piece one `Tj` at the baseline the setting chose, a justified
-  line's widened spaces as `Tw`, underline and strike-out as rules at the
-  font's own positions, the page number;
+  (`FontFile2`) under a **Type 0 font in `Identity-H`** - its text glyph
+  numbers, two bytes each, from `face:glyphs` - so a PDF shows every
+  character its face can draw rather than the two hundred of a single-byte
+  encoding; `/W` the widths the setting used, the font's own advances, for
+  the glyphs shown; a **`ToUnicode`** map saying which character each glyph
+  is, so the text can be searched and copied; its descriptor from the
+  font's own tables (`face:descriptor()`). A character the face lacks is its
+  missing glyph, counted, and the count comes back for the window to say;
+- each piece one show at the baseline the setting chose; a justified
+  line's widened spaces as **`TJ`** steps, since `Tw` applies only to a
+  single-byte space; underline and strike-out as rules at the font's own
+  positions; the page number;
 - the streams deflated by the Compression Kit as zlib - a PDF's
   `FlateDecode` is the deflate with two bytes before it and an Adler-32
   after, where a zip's method 8 is the deflate alone, so the kit gained
   `adler32` - and the whole made in a region and written from it: a font
-  program is deflated from the image's own read-only copy straight into
-  the PDF, and no font byte passes through the interpreter.
+  program is deflated from the image's own read-only copy straight into the
+  PDF, and no font byte passes through the interpreter.
+
+**The first draft wrote single-byte WinAnsi fonts**, and Kosmos's own reader
+drew none of their glyphs: it reads Type 0 fonts, which is what a PDF of
+embedded TrueType is now. The reader was right and the writer out of date,
+so the writer changed - and every character a face has came with it.
 
 **Held by reading it back three ways** (`run_write.py`): Kosmos's own reader
 inside the machine - `pdf.lua` opens it and `pdfpage.render` draws every
-page, every glyph, no face refused; this Mac's reading of the file, object by
-object - every offset in the cross-reference table where it says, each piece
-of text at the place and in the words the setting gave it, each face's
-widths the font's own and its program the font's own bytes; and macOS's own
-renderer (`sips`), which has never heard of Kosmos.
+glyph of every page, no face refused; this Mac's reading of the file, object
+by object - every offset in the cross-reference table where it says, each
+piece of text, read back through its face's `ToUnicode`, at the place and in
+the words the setting gave it, each glyph's width and each mapping the
+font's own, each program the font's own bytes; and macOS's own renderer
+(`sips`), which has never heard of Kosmos.
 
-Not yet: subsetting - a face is embedded whole, a hundred kilobytes or so
-deflated - characters beyond WinAnsi, kerning, and pictures (W5).
+Not yet: **subsetting**, which is the next thing a real document will want -
+a face is embedded whole, about 93 KB deflated, and the suite's three pages
+use seven faces: 652 KB of its 664 are font programs. Then kerning, and
+pictures (W5).
 
 ## Not here yet
 

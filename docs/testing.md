@@ -17941,3 +17941,54 @@ counting one unit too many a character - `arm-write` fails, 12,630 inside
 the machine against 12,602 here.
 
 **Whole gate**, after the rename: 89 suites in 645 s (10:45), all passing.
+
+## 18.379 Kosmos Write's PDF (W3): the PDF Kit writing
+
+The first PDF Kosmos has written (`docs/write.md` W3, Diego: "pdf export is
+key"). **`pdfwrite.lua`** writes what `pageset` set: each face the pages use
+embedded whole (`FontFile2`) under a Type 0 font in `Identity-H`, the text
+as glyph numbers, `/W` the setting's own widths, a `ToUnicode` map, the
+descriptor from the font's tables; justified spaces as `TJ` steps; underline
+and strike-out as rules; zlib streams deflated from regions - a font program
+straight from the image's read-only copy. New in C: `face:glyphs` (text to
+glyph numbers in hex, filling the ToUnicode map as it goes),
+`face:glyph_advance`, `face:descriptor`, and the Compression Kit's
+`adler32`, since `FlateDecode` is zlib and a zip's deflate is not.
+
+**`run_write.py`, 5 to 11, `arm-write`**: a three-page document of every look
+- a title with an em dash, italic, bold, underline, strike-out, red, accents,
+a euro, curly quotes, and one Japanese character no Latin face has -
+written as a PDF inside the machine and read three ways:
+
+- **by Kosmos's own reader, inside the machine**: `pdf.lua` opens it at its
+  three pages and `pdfpage.render` draws every glyph - drawn equal to the
+  characters shown, no face refused;
+- **by this Mac, object by object**: every offset in the cross-reference
+  table at its object; each page A4; each face Type 0 in Identity-H, its
+  embedded program the TTF in `assets/fonts/` byte for byte with its
+  `Length1`, every `/W` width the font's own advance, every `ToUnicode`
+  mapping the glyph the font gives that character; and every piece of text,
+  read back through its face's `ToUnicode`, on the page, at the x and y, and
+  in the words the setting placed it - the Japanese character as the
+  missing glyph, which is also the one character the writer counted;
+- **by macOS** (`sips`), which renders the first page with ink on it.
+
+**The first draft wrote single-byte WinAnsi fonts and Kosmos's reader drew
+none of them** - "0 glyphs of 6430, with 13 faces refused": the reader reads
+Type 0 fonts, as PDFs of embedded TrueType now are. The writer changed, not
+the reader, and gained every character a face has; `Tw` went with it, since
+it widens only a single-byte space, and justified lines step with `TJ`. Two
+of the suite's own mistakes on the way: its ToUnicode reader took the
+codespace range for a mapping, and its console reader stripped a piece's
+trailing space - pieces come back in brackets now.
+
+What it wrote, looked at: the title, subtitle and heading in IBM Plex Sans,
+the body justified in IBM Plex Serif, every look where it should be, the
+page number at the foot - 664 KB, of which 652 KB are seven faces embedded
+whole, which is why subsetting is the next step (`roadmap.md`).
+
+**Controls**: widths one unit wide - "IBMPlexSans-Bold's width for glyph 0
+is 473 in the PDF and 472.000 in the font"; ToUnicode pointing at the next
+glyph - "ToUnicode says glyph 4 is ' ', and the font does not".
+
+**Whole gate**: 89 suites in 647 s (10:46), all passing.

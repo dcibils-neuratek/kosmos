@@ -15,6 +15,13 @@ machine's half against an outside reader:
     greedily, with the same widths - a second implementation of the one
     thing a page must agree with a PDF about.
   * **A hundred pages set**, and how long that took, to the counter.
+  * **W3, the PDF.** A document of three pages written as a PDF inside the
+    machine and read three ways: by Kosmos's own reader there - every page
+    drawn, no face refused - and here, by this file, which takes it apart
+    object by object (every offset in its table where it says, each piece
+    of text where the setting placed it, each face's widths the font's own
+    and its program the font's own bytes), and by macOS, which renders it
+    (`sips`) without having heard of Kosmos.
 
 The reader below is enough of TrueType for that and no more: the table
 directory, `head`, `hhea`, `OS/2`, `name`, `cmap` formats 4 and 12, `hmtx`.
@@ -22,6 +29,7 @@ directory, `head`, `hhea`, `OS/2`, `name`, `cmap` formats 4 and 12, `hmtx`.
 
 import os
 import re
+import zlib
 import shutil
 import struct
 import subprocess
@@ -84,6 +92,7 @@ class Font:
         self.italic = bool(struct.unpack(">H", os2[62:64])[0] & 1)
 
         self.family = self.name(16) or self.name(1)
+        self.ps_name = re.sub(r"[^A-Za-z0-9_-]", "", self.name(6) or "")
         self.cmap = self.read_cmap()
 
         hmtx = self.table("hmtx")
@@ -193,6 +202,11 @@ PARAGRAPH = ("Kosmos Write sets a paragraph once, for the screen and the PDF "
 
 COLUMN_PT = (210 - 2 * 25) * 72 / 25.4
 
+# W3's document: a title with an em dash, and a run with accents, a euro,
+# curly quotes and one character no Latin face has.
+TITLE = "Kosmos Write \u2014 PDF"
+ACCENTS = " - caf\u00e9, \u20ac5, \u201cquoted\u201d, \u6771"
+
 
 def greedy(font, size_pt, text, column):
     """Lines broken at spaces, as many words as fit: the Mac's own."""
@@ -259,7 +273,335 @@ local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local t0 = sys.ticks()
 local pages = pageset.set(book, measure).pages
 print("SET", #pages, (sys.ticks() - t0) * 1000 // hz)
+
+-- W3: a document of every look, written as a PDF.
+local pdfwrite = use("/Kosmos/Libraries/pdfwrite.lua")
+local long = ("Paragraphs fill the page and then the next, and every line "
+              .. "of them stands where the setting put it. "):rep(6)
+local body = {
+  { style = "Title", runs = { { text = %(title)s } } },
+  { style = "Subtitle", runs = { { text = "Three pages, every look" } } },
+  { style = "Heading 1", runs = { { text = "Looks" } } },
+  { style = "Body", align = "justify", runs = {
+      { text = "Plain, " }, { text = "italic", italic = true }, { text = ", " },
+      { text = "bold", weight = "Bold" }, { text = ", " },
+      { text = "underlined", underline = true }, { text = ", " },
+      { text = "struck", strike = true }, { text = ", " },
+      { text = "red", colour = "#c0392b" }, { text = %(accents)s },
+      { text = " " .. long } } },
+}
+
+for i = 1, 14 do
+  body[#body + 1] = { style = i %% 5 == 0 and "Heading 2" or "Body",
+                      runs = { { text = i %% 5 == 0 and ("Part " .. i) or long } } }
+end
+
+local letter = writedoc.check{ format = "kosmos-write", version = 1, body = body }
+local placed = pageset.set(letter, measure)
+local ok, notes = pdfwrite.write("/Home/w.pdf", placed, measure,
+                                 { title = "Kosmos Write" })
+
+print("PDF", ok, type(notes) == "table" and notes.pages, type(notes) == "table" and notes.fonts,
+      type(notes) == "table" and notes.missing, type(notes) == "table" and notes.bytes or notes)
+
+for _, f in ipairs(placed.looks) do
+  local e = measure.face_of(f)
+  print("LOOKFACE", e.file)
+end
+
+local nonspace = 0
+
+for p, page in ipairs(placed.pages) do
+  local function piece(pc, baseline)
+    if pc.text ~= "" then
+      nonspace = nonspace + utf8.len((pc.text:gsub("[ %%c]", "")))
+      -- In brackets, so a space at either end survives the console.
+      print("PIECE", p, pdfwrite.num(pc.x_pt),
+            pdfwrite.num(page.height_pt - baseline), "[" .. pc.text .. "]")
+    end
+  end
+
+  for _, line in ipairs(page.lines) do
+    for _, pc in ipairs(line.pieces) do piece(pc, line.baseline_pt) end
+  end
+
+  if page.footer then piece(page.footer.piece, page.footer.baseline_pt) end
+end
+
+-- And read back by Kosmos's own reader: every page drawn, no face refused.
+local pdf = use("/Kosmos/Libraries/pdf.lua")
+local pdfpage = use("/Kosmos/Libraries/pdfpage.lua")
+local size = fs.getattr("/Home/w.pdf").size
+local buffer = sys.memory(16)
+local source = {
+  size = size,
+  read = function(offset, length)
+    local out, done = {}, 0
+    while done < length do
+      local want = math.min(length - done, 16 * 4096)
+      local got = fs.read_into("/Home/w.pdf", buffer, offset + done, want)
+      if not got or got == 0 then break end
+      out[#out + 1] = sys.region_read(buffer, 0, got)
+      done = done + got
+    end
+    return table.concat(out)
+  end,
+  -- A content stream into the reader's own region, as the viewer gives it.
+  read_into = function(region, offset, length)
+    return fs.read_into("/Home/w.pdf", region, offset, length)
+  end,
+}
+
+local doc, why = pdf.open(source)
+print("READ", doc ~= nil and #doc.pages or tostring(why))
+
+local drawn_all, refused = 0, 0
+
+if doc then
+  local paper = gfx.surface{ w = 600, h = 850 }
+
+  for i = 1, #doc.pages do
+    local page = doc:page(i)
+    local okr, drawn, _, missing = pcall(pdfpage.render, doc, page, paper, 1,
+                                         0xff000000)
+    print("RENDER", i, okr, drawn, missing)
+    drawn_all = drawn_all + (okr and drawn or 0)
+    refused = refused + (okr and missing or 1)
+  end
+end
+
+print("DRAWN", drawn_all, nonspace, refused)
 '''
+
+
+def pdf_objects(data):
+    """Every object of a PDF by its number, through its own cross-reference
+    table - which is the check that the table is right: each offset must be
+    where that object starts."""
+    at = int(re.search(rb"startxref\s+(\d+)\s+%%EOF\s*$", data).group(1))
+
+    if not data[at:].startswith(b"xref"):
+        raise Failure("startxref does not point at the cross-reference table")
+
+    head = re.match(rb"xref\n0 (\d+)\n", data[at:])
+    count = int(head.group(1))
+    rows = data[at + head.end():at + head.end() + 20 * count]
+    objects = {}
+
+    for n in range(1, count):
+        offset = int(rows[20 * n:20 * n + 10])
+
+        if not data[offset:].startswith(b"%d 0 obj" % n):
+            raise Failure("the table says object %d is at %d, and it is not"
+                          % (n, offset))
+
+        objects[n] = data[offset:data.index(b"endobj", offset)]
+
+    return objects
+
+
+def stream_of(obj):
+    """An object's stream, inflated when it says it is deflated."""
+    start = obj.index(b"stream\n") + 7
+    length = int(re.search(rb"/Length (\d+)", obj).group(1))
+    raw = obj[start:start + length]
+
+    if b"/FlateDecode" in obj[:start]:
+        return zlib.decompress(raw)
+
+    return raw
+
+
+def ref(obj, key):
+    """The object number a dictionary's `key` refers to."""
+    return int(re.search(rb"/" + key + rb" \[?(\d+) 0 R", obj).group(1))
+
+
+def pdf_checks(said, out, fonts, disk, work):
+    """W3: the PDF the machine wrote, read three ways."""
+    checks = 0
+    got = said("PDF")
+
+    if not got or not got[-1].startswith("true "):
+        raise Failure("the machine did not write a PDF: %r\n%s"
+                      % (got, out[-900:]))
+
+    _, pages, nfonts, missing, size = got[-1].split()
+    pages, nfonts, missing = int(pages), int(nfonts), int(missing)
+
+    if pages < 3 or missing != 1:
+        raise Failure("the PDF has %d pages and %d characters its faces lack; "
+                      "wanted three or more and one (the Japanese character)"
+                      % (pages, missing))
+
+    checks += 1
+
+    # ---- Kosmos's own reader, inside the machine ----
+    drawn = said("DRAWN")
+
+    if said("READ") != [str(pages)] or not drawn:
+        raise Failure("Kosmos's reader did not open the PDF it wrote: %r"
+                      % said("READ"))
+
+    drawn_all, nonspace, refused = (int(v) for v in drawn[-1].split())
+
+    if refused != 0 or drawn_all != nonspace:
+        raise Failure("Kosmos's reader drew %d glyphs of %d, with %d faces "
+                      "refused: %r" % (drawn_all, nonspace, refused,
+                                       said("RENDER")))
+
+    checks += 1
+
+    # ---- this file's reading of it ----
+    path = os.path.join(work, "w.pdf")
+    kfs("get", disk, "/Home/w.pdf", path)
+
+    with open(path, "rb") as f:
+        data = f.read()
+
+    # `KEEP_PDF=file` keeps a copy, to be looked at by a person.
+    if os.environ.get("KEEP_PDF"):
+        shutil.copyfile(path, os.environ["KEEP_PDF"])
+
+    if str(len(data)) != size or not data.startswith(b"%PDF-1.4\n"):
+        raise Failure("the PDF taken off the disk is %d bytes, and the "
+                      "machine said %s" % (len(data), size))
+
+    objects = pdf_objects(data)
+    checks += 1
+
+    page_objs = [o for n, o in sorted(objects.items()) if b"/Type /Page " in o]
+
+    if len(page_objs) != pages or any(
+            b"/MediaBox [0 0 595.276 841.89]" not in o for o in page_objs):
+        raise Failure("the PDF's pages are not %d A4 pages" % pages)
+
+    # Each face: which file it is, its glyphs' widths, what each glyph is.
+    by_ps = {fonts[f].ps_name: f for f in set(said("LOOKFACE"))}
+    faces = {}
+
+    for name, number in re.findall(rb"/F(\d+) (\d+) 0 R", page_objs[0]):
+        top = objects[int(number)]
+
+        if b"/Subtype /Type0" not in top or b"/Encoding /Identity-H" not in top:
+            raise Failure("face F%s is not a Type 0 font in Identity-H"
+                          % name.decode())
+
+        base = re.search(rb"/BaseFont /(\S+)", top).group(1).decode()
+
+        if base not in by_ps:
+            raise Failure("the PDF embeds %s, which is none of %r"
+                          % (base, sorted(by_ps)))
+
+        file = by_ps[base]
+        font = fonts[file]
+        cid = objects[ref(top, b"DescendantFonts")]
+        cmap = stream_of(objects[ref(top, b"ToUnicode")]).decode("latin-1")
+        chars = "".join(re.findall(r"beginbfchar\n(.*?)endbfchar", cmap,
+                                   re.S))
+        unicode = {int(g, 16): bytes.fromhex(u).decode("utf-16-be")
+                   for g, u in re.findall(r"<([0-9A-F]{4})> <([0-9A-F]+)>",
+                                          chars)}
+
+        # The widths: each glyph's, the font's own advance.
+        w = re.search(rb"/W \[(.*)\] /CIDToGIDMap", cid).group(1).decode()
+
+        for first, run in re.findall(r"(\d+) \[([^\]]*)\]", w):
+            for k, value in enumerate(run.split()):
+                glyph = int(first) + k
+                want = font.advances[min(glyph, font.hmetrics - 1)] * 1000 \
+                    / font.units
+
+                if value != ("%.3f" % want).rstrip("0").rstrip("."):
+                    raise Failure("%s's width for glyph %d is %s in the PDF "
+                                  "and %.3f in the font" % (base, glyph,
+                                                            value, want))
+
+        # The program: the font's own bytes.
+        program = objects[ref(objects[ref(cid, b"FontDescriptor")],
+                              b"FontFile2")]
+
+        with open(os.path.join(FONTS, file), "rb") as f:
+            original = f.read()
+
+        if stream_of(program) != original \
+                or b"/Length1 %d" % len(original) not in program:
+            raise Failure("%s's program in the PDF is not %s byte for byte"
+                          % (base, file))
+
+        # Every glyph it maps is the glyph its font gives that character.
+        for glyph, ch in unicode.items():
+            if font.cmap.get(ord(ch[0])) != glyph:
+                raise Failure("%s's ToUnicode says glyph %d is %r, and the "
+                              "font does not" % (base, glyph, ch))
+
+        faces[name.decode()] = (font, unicode)
+
+    if len(faces) != nfonts or nfonts != len(by_ps):
+        raise Failure("the PDF has %d faces, the machine said %d and used %r"
+                      % (len(faces), nfonts, sorted(by_ps)))
+
+    checks += 1
+
+    # Each piece of text, read back through its face's ToUnicode, where and
+    # as the setting placed it - a character the face lacks is its missing
+    # glyph, read as U+FFFD.
+    shown, wanted = [], []
+
+    for page_no, o in enumerate(page_objs, 1):
+        ops = stream_of(objects[ref(o, b"Contents")]).decode("latin-1")
+
+        for m in re.finditer(r"BT /F(\d+) [\d.]+ Tf [\d. ]+ rg (-?[\d.]+) "
+                             r"(-?[\d.]+) Td (<[0-9A-F]*> Tj|\[[^\]]*\] TJ) ET",
+                             ops):
+            font, unicode = faces[m.group(1)]
+            glyphs = "".join(re.findall(r"<([0-9A-F]*)>", m.group(4)))
+            text = "".join(unicode.get(int(glyphs[i:i + 4], 16), "�")
+                           for i in range(0, len(glyphs), 4))
+            shown.append((page_no, m.group(2), m.group(3), text, font))
+
+    pieces = said("PIECE")
+
+    if len(shown) != len(pieces):
+        raise Failure("the PDF shows %d pieces of text and the setting "
+                      "placed %d" % (len(shown), len(pieces)))
+
+    for (page_no, x, y, text, font), piece in zip(shown, pieces):
+        p, px, py, ptext = piece.split(" ", 3)
+        ptext = ptext[1:-1]
+        ptext = "".join(ch if ord(ch) in font.cmap else "�"
+                        for ch in ptext)
+
+        if (str(page_no), x, y, text) != (p, px, py, ptext):
+            raise Failure("the PDF shows %r on page %d at %s %s, and the "
+                          "setting placed %r on page %s at %s %s"
+                          % (text, page_no, x, y, ptext, p, px, py))
+
+    checks += 1
+
+    # ---- and macOS's own renderer ----
+    picture = os.path.join(work, "w.bmp")
+    done = subprocess.run(["sips", "-s", "format", "bmp", path, "--out",
+                           picture], capture_output=True, text=True)
+
+    if done.returncode != 0 or not os.path.exists(picture):
+        raise Failure("macOS would not render the PDF: " + done.stdout
+                      + done.stderr)
+
+    with open(picture, "rb") as f:
+        bmp = f.read()
+
+    offset = struct.unpack("<I", bmp[10:14])[0]
+    width, height = struct.unpack("<ii", bmp[18:26])
+    inked = sum(1 for i in range(offset + 3, offset + 4 * width * abs(height), 4)
+                if bmp[i] > 128)
+
+    if inked < 5000:
+        raise Failure("macOS rendered the first page with %d inked pixels "
+                      "of %d" % (inked, width * abs(height)))
+
+    checks += 1
+    return checks
 
 
 def lua_string(s):
@@ -287,7 +629,9 @@ def main():
 
         with open(program, "w") as f:
             f.write(PROGRAM % {"probe": lua_string(PROBE),
-                               "paragraph": lua_string(PARAGRAPH)})
+                               "paragraph": lua_string(PARAGRAPH),
+                               "title": lua_string(TITLE),
+                               "accents": lua_string(ACCENTS)})
 
         kfs("create", disk, "32")
         kfs("put", disk, program, "/Home/wsuite.lua")
@@ -377,6 +721,8 @@ def main():
 
         pages, ms = (int(v) for v in got[-1].split())
         checks += 1
+
+        checks += pdf_checks(said, out, fonts, disk, work)
 
         print(f"PASS: {checks} checks on Kosmos Write inside the machine "
               f"({len(fonts)} faces as the fonts name them, a paragraph of "

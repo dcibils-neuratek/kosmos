@@ -144,6 +144,32 @@ static int l_crc32(lua_State *L)
 }
 
 /*
+ * `compress.adler32(src, bytes[, adler]) -> adler`: the Adler-32 a zlib
+ * stream ends with, continued from `adler` when one is given.
+ *
+ * A PDF's `FlateDecode` is a zlib stream - two bytes of header, the
+ * deflate, and this checksum of what was deflated, big-endian - where a
+ * zip's method 8 is the deflate alone (Kosmos Write's PDF, `docs/write.md`
+ * W3). The header and the four bytes are the writer's; the sum over the
+ * bytes is a loop, and here.
+ */
+static int l_adler32(lua_State *L)
+{
+    uintptr_t   src   = (uintptr_t)luaL_checkinteger(L, 1);
+    size_t      bytes = (size_t)luaL_checkinteger(L, 2);
+    lua_Integer sum   = luaL_optinteger(L, 3, 1);
+
+    if (src == 0 && bytes > 0) {
+        return luaL_error(L, "adler32: needs a mapped region");
+    }
+
+    lua_pushinteger(L, (lua_Integer)mz_adler32((mz_ulong)(uint32_t)sum,
+                                               (const unsigned char *)src,
+                                               bytes));
+    return 1;
+}
+
+/*
  * `compress.copy_into(src, dst, bytes)`: bytes from one place in the regions
  * to another, as they are. A zip's stored entry is its file with nothing
  * done to it, and writing one out means putting those bytes at the start of
@@ -171,6 +197,9 @@ void kosmos_compress_deflate(lua_State *L)
 
     lua_pushcfunction(L, l_crc32);
     lua_setfield(L, -2, "crc32");
+
+    lua_pushcfunction(L, l_adler32);
+    lua_setfield(L, -2, "adler32");
 
     lua_pushcfunction(L, l_copy_into);
     lua_setfield(L, -2, "copy_into");
