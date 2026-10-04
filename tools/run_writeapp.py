@@ -471,6 +471,21 @@ def main():
             press(*letters("Item one"), "ret", *letters("Item two"), "ret", "ret",
                   *letters("After"))
 
+            # Export's list, its third item: Word's DOCX (W6).
+            export_tool = tool("export")
+            mark = len(guest.seen)
+
+            if export_tool:
+                press_at(export_tool[0] + export_tool[2] // 2, export_tool[1] + 20)
+                listed = re.search(r"writer: menu export at (\d+),(\d+)", guest.seen[mark:])
+
+                if listed:
+                    press_at(int(listed.group(1)) + 40, int(listed.group(2)) + 4 + 2 * 30 + 15)
+
+            docx_said = said("writer: exported /Home/Untitled.docx, ", mark, 30)
+            check(docx_said is not None and docx_said.startswith("6 paragraphs"),
+                  "Export's list did not export Word's DOCX: %r" % docx_said)
+
             mark = len(guest.seen)
             press("ctrl-s")
             saved = said("writer: saved ", mark, 30)

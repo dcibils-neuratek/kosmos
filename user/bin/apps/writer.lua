@@ -54,6 +54,7 @@ local pageset   = use("/Kosmos/Libraries/pageset.lua")
 local faces     = use("/Kosmos/Libraries/faces.lua")
 local pagedraw  = use("/Kosmos/Libraries/pagedraw.lua")
 local pdf       = use("/Kosmos/Libraries/pdf.lua")
+local docxwrite = use("/Kosmos/Libraries/docxwrite.lua")
 local pk        = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
 local hyphen    = use("/Kosmos/Libraries/hyphen.lua")
 
@@ -1309,6 +1310,25 @@ local function export()
   frame()
 end
 
+-- **Word's DOCX**, beside the document (`docxwrite.lua`, W6): a document
+-- somebody without Kosmos can open and go on editing.
+local function export_docx()
+  local to = path and path:gsub("%.write$", "") .. ".docx" or "/Home/Untitled.docx"
+  local ok, notes = docxwrite.write(to, doc, { title = (name:gsub("%.write$", "")) })
+
+  if ok then
+    said = ("Exported %s  -  %d paragraph%s, %d KB"):format(to:match("([^/]+)$"),
+      notes.paragraphs, notes.paragraphs == 1 and "" or "s", (notes.bytes + 1023) // 1024)
+    print(("writer: exported %s, %d paragraphs, %d bytes"):format(to, notes.paragraphs,
+                                                                 notes.bytes))
+  else
+    said = "Export stopped: " .. tostring(notes)
+    print("writer: export stopped: " .. tostring(notes))
+  end
+
+  frame()
+end
+
 --------------------------------------------------------------------------
 -- Menus.
 --------------------------------------------------------------------------
@@ -1335,10 +1355,10 @@ local TOOL_ACTS = {
               function(i) zoom_to(i) end)
   end,
   export = function(t)
-    local items = { "Save as .write", "Export PDF" }
+    local items = { "Save as .write", "Export PDF", "Export Word (.docx)" }
     open_menu("export", math.min(t.x, W - 220), TOOLS_H + 2, 200, items, nil,
               function(i)
-                if i == 1 then save() else export() end
+                if i == 1 then save() elseif i == 2 then export() else export_docx() end
               end)
   end,
   format = function()

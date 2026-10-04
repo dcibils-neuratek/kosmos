@@ -1,0 +1,88 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+-- Kosmos Write's DOCX on the host (`user/lib/docxwrite.lua`, `docs/write.md`
+-- W6): the parts Word reads, from a document of every look - styles, runs,
+-- alignment, lists, a page break, the section's paper and margins, and
+-- text that would break the XML if it were not escaped.
+
+tabletext = dofile("user/init/tabletext.lua")
+
+local loaded = {}
+
+function use(path)
+  local name = path:match("^/Kosmos/Libraries/(.+)$")
+  assert(name, "no such library here: " .. path)
+  if not loaded[name] then loaded[name] = dofile("user/lib/" .. name) end
+  return loaded[name]
+end
+
+local writedoc = use("/Kosmos/Libraries/writedoc.lua")
+local docx = use("/Kosmos/Libraries/docxwrite.lua")
+
+local checks, fails = 0, 0
+
+local function check(ok, what)
+  if ok then checks = checks + 1 else fails = fails + 1 print("  " .. what) end
+end
+
+local function has(text, want, what)
+  check(text:find(want, 1, true) ~= nil, what .. ": no " .. want)
+end
+
+local doc = writedoc.check{ format = "kosmos-write", version = 1,
+  paper = { name = "Letter", landscape = false },
+  margins_mm = { top = 25, bottom = 25, left = 20, right = 30 },
+  facing = true, hyphenation = true, language = "es",
+  body = {
+    { style = "Title", runs = { { text = "A <title> & more" } } },
+    { style = "Body", align = "justify", runs = {
+      { text = "plain " }, { text = "bold", weight = "Bold" }, { text = " " },
+      { text = "italic", italic = true }, { text = " red", colour = "#c0392b" },
+      { text = " big", size_pt = 14.5 }, { text = "\tafter a tab\nand a break" } } },
+    { style = "Body", list = "number", runs = { { text = "first" } } },
+    { style = "Body", list = "bullet", page_break_before = true, runs = { { text = "dot" } } },
+  } }
+
+local d = docx.parts.document(doc)
+
+has(d, '<w:pStyle w:val="Title"/>', "the title's paragraph style")
+has(d, "A &lt;title&gt; &amp; more", "the title's text escaped")
+has(d, '<w:jc w:val="both"/>', "justified")
+has(d, '<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">bold</w:t></w:r>', "a bold run")
+has(d, "<w:i/>", "an italic run")
+has(d, '<w:color w:val="C0392B"/>', "a red run")
+has(d, '<w:sz w:val="29"/>', "a 14.5 point run, in half points")
+has(d, "<w:tab/>", "a tab")
+has(d, "<w:br/>", "a line break")
+has(d, '<w:numId w:val="2"/>', "a numbered item")
+has(d, '<w:numId w:val="1"/>', "a bulleted item")
+has(d, "<w:pageBreakBefore/>", "a page break before")
+has(d, '<w:pgSz w:w="12240" w:h="15840"/>', "Letter, 8.5 by 11 inches in twentieths of a point")
+has(d, 'w:left="1134"', "a 20 mm left margin")
+has(d, 'w:right="1701"', "a 30 mm right margin")
+
+-- Nothing undeclared reaches the XML: every element opened is closed.
+local opened, closed = 0, 0
+for tag in d:gmatch("<w:%a+[^>]*>") do
+  if tag:sub(-2) ~= "/>" then opened = opened + 1 end
+end
+for _ in d:gmatch("</w:%a+>") do closed = closed + 1 end
+check(opened == closed, ("%d elements opened and %d closed"):format(opened, closed))
+
+local st = docx.parts.styles(doc)
+has(st, '<w:style w:type="paragraph" w:styleId="Body" w:default="1">', "Body as the default style")
+has(st, '<w:style w:type="paragraph" w:styleId="Heading1">', "Heading 1's id")
+has(st, '<w:lang w:val="es-ES"/>', "the document's language")
+has(st, '<w:rFonts w:ascii="IBM Plex Sans"', "a style's face")
+
+local se = docx.parts.settings(doc)
+has(se, "<w:mirrorMargins/>", "facing pages")
+has(se, "<w:autoHyphenation/>", "hyphenation")
+
+has(docx.parts.numbering(doc), '<w:numFmt w:val="decimal"/>', "numbers")
+
+if fails > 0 then
+  print(("docx: %d of %d checks failed"):format(fails, checks + fails))
+  os.exit(1)
+end
+
+print(("docx: %d checks pass"):format(checks))

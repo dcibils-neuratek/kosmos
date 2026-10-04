@@ -29,6 +29,7 @@ directory, `head`, `hhea`, `OS/2`, `name`, `cmap` formats 4 and 12, `hmtx`.
 
 import os
 import re
+import zipfile
 import zlib
 import shutil
 import struct
@@ -230,6 +231,7 @@ PROGRAM = '''
 local faces = use("/Kosmos/Libraries/faces.lua")
 local writedoc = use("/Kosmos/Libraries/writedoc.lua")
 local pageset = use("/Kosmos/Libraries/pageset.lua")
+local richtext = use("/Kosmos/Libraries/richtext.lua")
 
 for _, f in ipairs(gfx.typefaces()) do
   print("FACE", f.file, f.family, f.weight, f.italic)
@@ -363,6 +365,15 @@ if doc then
 end
 
 print("DRAWN", drawn_all, nonspace, refused)
+
+-- W6: the same document as Word's DOCX, and each paragraph's words.
+local okd, nd = use("/Kosmos/Libraries/docxwrite.lua").write("/Home/w.docx", letter,
+                                                             { title = "Kosmos Write" })
+print("DOCX", okd, type(nd) == "table" and nd.bytes or tostring(nd))
+
+for _, p in ipairs(letter.body) do
+  print("PARA", "[" .. richtext.plain(p) .. "]")
+end
 '''
 
 
@@ -508,6 +519,101 @@ def subset_problem(sub, original, shown):
         return "it keeps %d outlines for %d glyphs shown" % (kept, len(shown))
 
     return None
+
+
+def docx_checks(said, out, disk, work):
+    """W6: the document as Word's DOCX, read by Python's XML parser and by
+    macOS's own text system (`textutil`), neither of which has heard of
+    Kosmos."""
+    import xml.etree.ElementTree as ET
+
+    checks = 0
+    got = said("DOCX")
+
+    if not got or not got[-1].startswith("true "):
+        raise Failure("the machine did not write a DOCX: %r\n%s" % (got, out[-900:]))
+
+    wanted = [p[1:-1] for p in said("PARA")]
+    path = os.path.join(work, "w.docx")
+    kfs("get", disk, "/Home/w.docx", path)
+
+    with zipfile.ZipFile(path) as z:
+        names = z.namelist()
+
+        for part in ("[Content_Types].xml", "_rels/.rels", "word/document.xml",
+                     "word/styles.xml", "word/numbering.xml", "word/settings.xml",
+                     "word/_rels/document.xml.rels"):
+            if part not in names:
+                raise Failure("the DOCX has no %s: %r" % (part, names))
+
+        # Every part well-formed, and every one named in the types.
+        types = z.read("[Content_Types].xml").decode()
+
+        for name in names:
+            try:
+                ET.fromstring(z.read(name))
+            except ET.ParseError as e:
+                raise Failure("the DOCX's %s is not well-formed XML: %s" % (name, e))
+
+            if name.endswith(".xml") and not name.startswith("[") \
+                    and ('PartName="/%s"' % name) not in types \
+                    and name.startswith("word/") and "_rels" not in name:
+                raise Failure("the DOCX's %s is not in [Content_Types].xml" % name)
+
+        W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+        body = ET.fromstring(z.read("word/document.xml")).find(W + "body")
+        paras = []
+
+        for p in body.findall(W + "p"):
+            text = []
+
+            for node in p.iter():
+                if node.tag == W + "t":
+                    text.append(node.text or "")
+                elif node.tag == W + "tab":
+                    text.append("\t")
+                elif node.tag == W + "br":
+                    text.append("\n")
+
+            paras.append("".join(text))
+
+    checks += 1
+
+    if paras != wanted:
+        first = next((i for i, (a, b) in enumerate(zip(paras, wanted)) if a != b),
+                     min(len(paras), len(wanted)))
+        raise Failure("the DOCX's paragraphs are not the document's, from %d: %r "
+                      "against %r (%d against %d)" % (first, paras[first:first + 1],
+                                                     wanted[first:first + 1],
+                                                     len(paras), len(wanted)))
+
+    checks += 1
+
+    # macOS reads it as a document: every paragraph's words, in order.
+    done = subprocess.run(["textutil", "-convert", "txt", "-stdout", path],
+                          capture_output=True)
+
+    if done.returncode != 0:
+        raise Failure("macOS would not read the DOCX: " + done.stderr.decode(errors="replace"))
+
+    seen = done.stdout.decode("utf-8", errors="replace")
+    at = 0
+
+    for want in wanted:
+        words = want.split()
+
+        if not words:
+            continue
+
+        found = seen.find(words[0], at)
+
+        if found < 0:
+            raise Failure("macOS's reading of the DOCX lost %r" % want[:60])
+
+        at = found + len(words[0])
+
+    checks += 1
+    return checks
 
 
 def pdf_checks(said, out, fonts, disk, work):
@@ -847,6 +953,7 @@ def main():
         checks += 1
 
         checks += pdf_checks(said, out, fonts, disk, work)
+        checks += docx_checks(said, out, disk, work)
 
         print(f"PASS: {checks} checks on Kosmos Write inside the machine "
               f"({len(fonts)} faces as the fonts name them, a paragraph of "

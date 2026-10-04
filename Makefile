@@ -3990,6 +3990,9 @@ host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000de
 	@# Its pages (W2): lines broken and placed, pages filled without a
 	@# line left alone, and which face a look is set in.
 	$(HOSTDIR)/lua tools/test_pageset.lua
+	@# Its hyphenation (W4e) and its DOCX (W6).
+	$(HOSTDIR)/lua tools/test_hyphen.lua
+	$(HOSTDIR)/lua tools/test_docx.lua
 	@# The Deskbar's menu, read off a folder tree - what counts as an item,
 	@# what order things come in, how deep a folder may go. The store it
 	@# reads through is a table here, which is the whole reason the reading

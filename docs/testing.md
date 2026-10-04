@@ -18353,3 +18353,38 @@ the file. **Control**: the switches not carried from the checked document -
 "not in the file".
 
 **Whole gate**: 90 suites in 651 s (10:51), all passing.
+
+## 18.389 Kosmos Write's DOCX (W6)
+
+**`docxwrite.lua`**, a kit: a document as Word's DOCX - a zip of XML parts,
+each named in `[Content_Types].xml` and joined by relationships: the
+paragraphs in their styles with what they change - alignment, spacing,
+indents, a list, a page break before, kept with the next - and the runs
+with their face, size in half points, bold for SemiBold and more, italic,
+underline, strike-through and colour; tabs and line breaks as Word's own;
+the styles, Body the default; bullets and numbers, hanging 6 mm as the page
+has them; the section's paper, orientation and margins in twentieths of a
+point, a header with its words and a footer with the page number; mirrored
+margins for facing pages, automatic hyphenation and the document's
+language. A drop cap is written as its letter, not raised, and the faces
+travel by name, as a DOCX's do - both said in the file. Export's list in
+the window has "Export Word (.docx)".
+
+**Host**: `test_docx.lua`, 23, new - the title's style and its text escaped,
+justified, a bold run exactly, italic, red, 14.5 points as 29 half points,
+a tab and a line break, numbered and bulleted items, a page break, Letter
+as 12240 by 15840, the margins, every element opened closed, Body the
+default style, Heading 1's id, Spanish, a style's face, mirrored margins,
+hyphenation, decimal numbering. **And `test_hyphen.lua` joins the host
+suite here**: 0.10.247 added it and its gate did not run it, because the
+Makefile's line for it was never written - found adding this one's.
+
+**`arm-write`, 13 to 16**: the PDF suite's document exported as DOCX inside
+the machine, taken off the disk, and read by two readers that have never
+heard of Kosmos: Python's XML parser - every part well-formed, every word
+part in the content types, and each paragraph's text, tabs and breaks
+included, the document's - and **macOS's own text system**, `textutil`,
+which finds every paragraph's words in order. **`arm-writeapp`, 18 to 19**:
+Export's list, its third item, "writer: exported /Home/Untitled.docx, 6
+paragraphs". **Control**: the writer dropping the second paragraph - "17
+against 18", named from the first that differs.

@@ -469,6 +469,8 @@ kits under `user/lib/` for Present and Sheets to stand on:
   (`testing.md` 18.386).
 - **W4e - lists, drop caps, hyphenation, ligatures, facing pages**: *Done,
   4 October* (`testing.md` 18.387, 18.388).
+- **W6 - DOCX out**: *Done, 4 October* (`testing.md` 18.389), before W5 -
+  the drawing's Export list was nearer done than Media and Table.
 - **W4 - the window**, from `docs/write.html`: the pages on a dark desk,
   the toolbar, Format and Document switching the panel, View for the
   thumbnails, zoom; typing and choosing styles, on the document page the
