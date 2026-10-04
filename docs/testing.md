@@ -17992,3 +17992,52 @@ is 473 in the PDF and 472.000 in the font"; ToUnicode pointing at the next
 glyph - "ToUnicode says glyph 4 is ' ', and the font does not".
 
 **Whole gate**: 89 suites in 647 s (10:46), all passing.
+
+## 18.380 Kosmos Write's PDF faces as subsets (W3b)
+
+A face embedded whole was about 93 KB deflated, and 18.379's three pages in
+seven faces were 652 KB of font in a 664 KB PDF. **`face:subset`** (C, in
+`face.c`) makes the font with only the outlines a document shows - glyph 0,
+every glyph shown, every glyph a kept composite is built from - and the
+others emptied, **keeping every glyph's number**, which Identity-H already
+names. It keeps `head` (its `loca` made long and its checksum made again),
+`hhea`, `maxp`, `OS/2`, `hmtx`, `cmap`, `cvt `, `fpgm`, `prep`, `gasp`, and
+`post` cut to its version 3 header; it leaves `GPOS`, `GSUB`, `GDEF`, `name`,
+`DSIG` and `meta` behind. The PDF names each one as a subset: six capitals
+from its glyphs, a plus, and the face's name.
+
+**The same three pages: 664 KB to 56 KB**, the seven programs 652 KB to 44 KB
+(5.3 to 9.0 KB each). Rendered by macOS, page 1 is the same page.
+
+**`run_write.py`, 11 to 12, `arm-write`**: the byte-for-byte check of each
+program became a subset's: every table's checksum and the font's
+`checkSumAdjustment` right; `cmap`, `glyf`, `head`, `hhea`, `hmtx`, `loca`
+and `maxp` there and `GPOS`, `GSUB`, `name` and `DSIG` gone; the units to the
+em and `hmtx` the font's own; as many glyphs as the font, every outline left
+the font's own, every glyph the PDF shows and glyph 0 kept whole, and no more
+than three outlines for each glyph shown; each name tagged; and the PDF
+under 200 KB. Kosmos's reader still draws every glyph, and macOS renders it.
+
+**Controls**: the writer leaves out the first glyph it shows - Kosmos's
+reader catches it first, 6,427 glyphs drawn of 6,430; `face.c`'s checksum
+adjustment one out - "its checkSumAdjustment is wrong".
+
+**And two checks that waited for a count, found by the whole gate.** Its
+first run for this failed two suites that had passed in the two gates before
+and passed again alone:
+
+- **`arm-loader`'s stale image** (mine, 0.10.235) read "run: st" for its
+  sentence. `run_loader.py`'s `typed` took the first line holding what it
+  wanted, and the last piece of the output is a line still arriving until
+  its newline does. It reads whole lines only now - a class fix, every
+  check that types goes through it.
+- **`arm-kernel`'s test 57, "smp: a new thread avoids a loaded core"**,
+  placed its thread on the core it had loaded. The test yielded sixty-four
+  times for its three fillers to reach `thread_block` on that core, and
+  under the gate's load on TCG one had not: the core looked emptier than it
+  was. It waits until all three are seen blocked now, under a two-second
+  deadline. The comment beside the test it copied said its 250 ticks were
+  a quarter of a second; at `TICK_HZ`'s 250 they are a second, and were when
+  it was written.
+
+**Whole gate**, with both: 89 suites in 634 s (10:33), all passing.

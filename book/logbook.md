@@ -805,3 +805,11 @@ red, accents, a euro sign and curly quotes. Diego has a copy.
 **Measured, and what is next.** The file is 664 KB, and 652 KB of that is
 fonts: each one is embedded whole, about 93 KB. The next step is to embed
 only the letters a document actually uses, then the Write window itself.
+
+**Later: the PDF, twelve times smaller.** Each font in the PDF now carries
+only the letters the document actually uses, the way every serious PDF
+producer does it. The same three pages went from 664 KB to 56 KB and look
+identical. The test checks that every letter shown kept its exact shape,
+that nothing else was kept, and that the font's internal checksums are
+right. Kosmos's own reader was the first to notice when, as a deliberate
+experiment, one letter was left out.

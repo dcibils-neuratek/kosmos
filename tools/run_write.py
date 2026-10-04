@@ -417,6 +417,107 @@ def ref(obj, key):
     return int(re.search(rb"/" + key + rb" \[?(\d+) 0 R", obj).group(1))
 
 
+def ttf_tables(data):
+    """A TrueType file's tables: tag -> (offset, length, checksum)."""
+    count = struct.unpack(">H", data[4:6])[0]
+    out = {}
+
+    for i in range(count):
+        tag = data[12 + 16 * i:16 + 16 * i].decode("latin-1")
+        checksum, offset, length = struct.unpack(
+            ">III", data[16 + 16 * i:28 + 16 * i])
+        out[tag] = (offset, length, checksum)
+
+    return out
+
+
+def ttf_sum(data):
+    data = data + b"\0" * (-len(data) % 4)
+    return sum(struct.unpack(">%dI" % (len(data) // 4), data)) & 0xffffffff
+
+
+def outlines(data, tables):
+    """Each glyph's outline bytes, through `loca`."""
+    head_at = tables["head"][0]
+    long_loca = struct.unpack(">h", data[head_at + 50:head_at + 52])[0] != 0
+    count = struct.unpack(">H", data[tables["maxp"][0] + 4:
+                                     tables["maxp"][0] + 6])[0]
+    loca, glyf = tables["loca"][0], tables["glyf"][0]
+
+    if long_loca:
+        offsets = struct.unpack(">%dI" % (count + 1), data[loca:loca + 4 * (count + 1)])
+    else:
+        offsets = [2 * v for v in struct.unpack(">%dH" % (count + 1),
+                                                data[loca:loca + 2 * (count + 1)])]
+
+    return [data[glyf + offsets[g]:glyf + offsets[g + 1]] for g in range(count)]
+
+
+def subset_problem(sub, original, shown):
+    """What is wrong with `sub` as a subset of `original` showing `shown`,
+    or None: the glyphs shown kept as they were, nothing else but the few a
+    composite needs, the widths the same, every checksum right, and the
+    tables a PDF reader never reads gone."""
+    tables, whole = ttf_tables(sub), ttf_tables(original)
+
+    for tag in ("cmap", "glyf", "head", "hhea", "hmtx", "loca", "maxp"):
+        if tag not in tables:
+            return "it has no %s" % tag
+
+    for tag in ("GPOS", "GSUB", "name", "DSIG"):
+        if tag in tables:
+            return "it still has %s" % tag
+
+    for tag, (offset, length, checksum) in tables.items():
+        body = bytearray(sub[offset:offset + length])
+
+        if tag == "head":
+            body[8:12] = b"\0\0\0\0"
+
+        if ttf_sum(bytes(body)) != checksum:
+            return "its %s's checksum is wrong" % tag
+
+    zeroed = bytearray(sub)
+    head = tables["head"][0]
+    adjustment = struct.unpack(">I", sub[head + 8:head + 12])[0]
+    zeroed[head + 8:head + 12] = b"\0\0\0\0"
+
+    if (0xB1B0AFBA - ttf_sum(bytes(zeroed))) & 0xffffffff != adjustment:
+        return "its checkSumAdjustment is wrong"
+
+    if sub[head + 18:head + 20] != original[whole["head"][0] + 18:
+                                            whole["head"][0] + 20]:
+        return "its units to the em changed"
+
+    o, l, _ = whole["hmtx"]
+    so, sl, _ = tables["hmtx"]
+
+    if sub[so:so + sl] != original[o:o + l]:
+        return "its widths (hmtx) changed"
+
+    mine, theirs = outlines(sub, tables), outlines(original, whole)
+
+    if len(mine) != len(theirs):
+        return "it has %d glyphs, and the font %d" % (len(mine), len(theirs))
+
+    kept = 0
+
+    for g, outline in enumerate(mine):
+        if outline:
+            kept += 1
+
+            if outline[:len(theirs[g])] != theirs[g]:
+                return "glyph %d's outline is not the font's" % g
+
+        if (g in shown or g == 0) and len(outline) < len(theirs[g]):
+            return "glyph %d is shown and its outline was dropped" % g
+
+    if kept > 3 * (len(shown) + 1):
+        return "it keeps %d outlines for %d glyphs shown" % (kept, len(shown))
+
+    return None
+
+
 def pdf_checks(said, out, fonts, disk, work):
     """W3: the PDF the machine wrote, read three ways."""
     checks = 0
@@ -487,7 +588,13 @@ def pdf_checks(said, out, fonts, disk, work):
             raise Failure("face F%s is not a Type 0 font in Identity-H"
                           % name.decode())
 
-        base = re.search(rb"/BaseFont /(\S+)", top).group(1).decode()
+        tagged = re.search(rb"/BaseFont /(\S+)", top).group(1).decode()
+
+        # A subset's name: six capitals, a plus, and the face's own.
+        if not re.match(r"[A-Z]{6}\+", tagged):
+            raise Failure("%s is not named as a subset is" % tagged)
+
+        base = tagged[7:]
 
         if base not in by_ps:
             raise Failure("the PDF embeds %s, which is none of %r"
@@ -517,17 +624,13 @@ def pdf_checks(said, out, fonts, disk, work):
                                   "and %.3f in the font" % (base, glyph,
                                                             value, want))
 
-        # The program: the font's own bytes.
+        # The program, held to the font once the glyphs shown are known.
         program = objects[ref(objects[ref(cid, b"FontDescriptor")],
                               b"FontFile2")]
+        subset = stream_of(program)
 
-        with open(os.path.join(FONTS, file), "rb") as f:
-            original = f.read()
-
-        if stream_of(program) != original \
-                or b"/Length1 %d" % len(original) not in program:
-            raise Failure("%s's program in the PDF is not %s byte for byte"
-                          % (base, file))
+        if b"/Length1 %d" % len(subset) not in program:
+            raise Failure("%s's program does not say its own length" % base)
 
         # Every glyph it maps is the glyph its font gives that character.
         for glyph, ch in unicode.items():
@@ -535,7 +638,7 @@ def pdf_checks(said, out, fonts, disk, work):
                 raise Failure("%s's ToUnicode says glyph %d is %r, and the "
                               "font does not" % (base, glyph, ch))
 
-        faces[name.decode()] = (font, unicode)
+        faces[name.decode()] = (font, unicode, subset, file, base, set())
 
     if len(faces) != nfonts or nfonts != len(by_ps):
         raise Failure("the PDF has %d faces, the machine said %d and used %r"
@@ -554,8 +657,10 @@ def pdf_checks(said, out, fonts, disk, work):
         for m in re.finditer(r"BT /F(\d+) [\d.]+ Tf [\d. ]+ rg (-?[\d.]+) "
                              r"(-?[\d.]+) Td (<[0-9A-F]*> Tj|\[[^\]]*\] TJ) ET",
                              ops):
-            font, unicode = faces[m.group(1)]
+            font, unicode, _, _, _, used = faces[m.group(1)]
             glyphs = "".join(re.findall(r"<([0-9A-F]*)>", m.group(4)))
+            used.update(int(glyphs[i:i + 4], 16)
+                        for i in range(0, len(glyphs), 4))
             text = "".join(unicode.get(int(glyphs[i:i + 4], 16), "�")
                            for i in range(0, len(glyphs), 4))
             shown.append((page_no, m.group(2), m.group(3), text, font))
@@ -576,6 +681,20 @@ def pdf_checks(said, out, fonts, disk, work):
             raise Failure("the PDF shows %r on page %d at %s %s, and the "
                           "setting placed %r on page %s at %s %s"
                           % (text, page_no, x, y, ptext, p, px, py))
+
+    checks += 1
+
+    # Each face's subset: what the pages show, and little else.
+    for font, _, subset, file, base, used in faces.values():
+        with open(os.path.join(FONTS, file), "rb") as f:
+            problem = subset_problem(subset, f.read(), used)
+
+        if problem:
+            raise Failure("%s's subset of %s: %s" % (base, file, problem))
+
+    if len(data) > 200 * 1024:
+        raise Failure("the PDF is %d KB; its faces are not subsets"
+                      % (len(data) // 1024))
 
     checks += 1
 

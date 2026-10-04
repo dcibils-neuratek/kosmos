@@ -12,7 +12,7 @@
 -- the PDF is the page on the screen rather than a second opinion of it.
 --
 -- **The faces travel with it, and any character they have.** Each face a
--- document uses is embedded whole as a TrueType program (`FontFile2`) under
+-- document uses is embedded as a TrueType program (`FontFile2`) under
 -- a Type 0 font whose text is glyph numbers - `Identity-H`, two bytes a
 -- glyph - so a PDF shows every character its face can draw rather than the
 -- two hundred of a single-byte encoding. Its widths are the ones the
@@ -35,8 +35,13 @@
 -- it was made in. A `FlateDecode` stream is zlib's - two bytes, the deflate,
 -- an Adler-32 - where a zip's is the deflate alone.
 --
--- What it does not do yet, said: subsetting (a face is embedded whole,
--- about a hundred kilobytes deflated), kerning, pictures (W5).
+-- **Only the glyphs a document shows** (W3b): each face is a subset -
+-- `face:subset`, the font with the other outlines emptied and the tables a
+-- PDF reader never reads left out - named, as a PDF names a subset, with
+-- six letters and a `+` before its name. Whole, a face was about 93 KB
+-- deflated, and three pages in seven faces were 652 KB of font.
+--
+-- What it does not do yet, said: kerning, pictures (W5).
 
 local pdfwrite = {}
 
@@ -163,6 +168,27 @@ local function font_of(entry, n)
     strike_at = d.strike_position or units * 3 // 10,
     strike_th = d.strike_size or units // 20,
   }
+end
+
+--
+-- **A subset's tag**: six capitals from the glyphs it holds, so the same
+-- glyphs of the same face are the same name and different ones are not -
+-- which is what lets a reader tell two subsets of one face apart.
+--
+local function tag_of(glyphs, name)
+  local h = 2166136261
+
+  for i = 1, #name do h = ((h ~ name:byte(i)) * 16777619) & 0xffffffff end
+  for _, g in ipairs(glyphs) do h = ((h ~ g) * 16777619) & 0xffffffff end
+
+  local out = {}
+
+  for i = 1, 6 do
+    out[i] = string.char(65 + h % 26)
+    h = h // 26
+  end
+
+  return table.concat(out)
 end
 
 --
@@ -367,18 +393,25 @@ function pdfwrite.write(path, set, measure, info)
 
   for _, c in ipairs(contents) do room = room + #c + 512 end
 
+  local biggest_program = 1
+
   for _, f in ipairs(fonts) do
     local _, length = f.entry.face:program()
 
-    f.program_length = length
+    f.glyphs = {}
+    for g in pairs(f.used) do f.glyphs[#f.glyphs + 1] = g end
+    table.sort(f.glyphs)
+
+    f.name = tag_of(f.glyphs, f.name) .. "+" .. f.name
     f.widths = widths_of(f)
     f.cmap = to_unicode(f)
     room = room + length + #f.widths + #f.cmap + 4096
-    biggest = math.max(biggest, length, #f.cmap)
+    biggest = math.max(biggest, length + 4096, #f.cmap)
+    biggest_program = math.max(biggest_program, length + 4096)
     biggest_content = math.max(biggest_content, #f.cmap)
   end
 
-  local out, plain, squeezed, why
+  local out, plain, squeezed, program, why
 
   out, why = region(room)
   if not out then return nil, why end
@@ -388,6 +421,11 @@ function pdfwrite.write(path, set, measure, info)
 
   squeezed, why = region(biggest + 1024)
   if not squeezed then free(out, plain) return nil, why end
+
+  -- Where a face's subset is made before it is deflated: no larger than
+  -- the face, a directory's worth aside.
+  program, why = region(biggest_program)
+  if not program then free(out, plain, squeezed) return nil, why end
 
   local at, offsets = 0, {}
 
@@ -480,9 +518,8 @@ function pdfwrite.write(path, set, measure, info)
       .. "/StemV 80 /FontFile2 %d 0 R >>"):format(f.name, f.flags, f.bbox,
       f.italic_angle, f.ascent, f.descent, f.cap_height, n + 3))
 
-    local src = f.entry.face:program()
-    stream(n + 3, src, f.program_length,
-           (" /Length1 %d"):format(f.program_length))
+    local size = f.entry.face:subset(f.glyphs, program.at, program.size)
+    stream(n + 3, program.at, size, (" /Length1 %d"):format(size))
 
     text_stream(n + 4, f.cmap)
   end
@@ -520,7 +557,7 @@ function pdfwrite.write(path, set, measure, info)
     ok, why = written, oops or why
   end
 
-  free(out, plain, squeezed)
+  free(out, plain, squeezed, program)
 
   if not ok then return nil, path .. ": " .. tostring(why) end
 

@@ -440,7 +440,8 @@ kits under `user/lib/` for Present and Sheets to stand on:
   first time: the pages as W2 laid them, the faces embedded, each line where
   it was set. **Held by reading it back** with Kosmos's own PDF reader - the
   text and where each line is - and opened in the PDF viewer.
-- **W3b - subsetting**: a face embedded with only the glyphs a document
+- **W3b - subsetting**: *Done, 4 October* (`testing.md` 18.380): the three
+  pages went from 664 KB to 56 KB. A face embedded with only the glyphs a document
   shows. Whole, a face is about 93 KB deflated, and the three-page test
   document's seven faces are 652 KB of its 664. The glyph numbers stay the
   font's (Identity-H already says them), so a subset keeps `glyf` and `loca`

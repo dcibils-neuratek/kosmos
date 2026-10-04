@@ -662,8 +662,9 @@ static void blocks_with_interrupts_on(void *arg)
     masked_done = true;
 }
 
-/* Until the thread is seen blocked the way asked, or a quarter of a second -
- * yielding, so that on one processor it gets a turn at all. */
+/* Until the thread is seen blocked the way asked, or a second - 250 ticks at
+ * TICK_HZ's 250; this said a quarter, which it never was - yielding, so
+ * that on one processor it gets a turn at all. */
 static bool masked_wait_for(struct thread *t, bool receiving)
 {
     unsigned long start = hal_ticks();
@@ -2564,10 +2565,41 @@ static bool test_placement_avoids_a_loaded_processor(void)
             }
         }
 
-        /* Let each reach `thread_block`: a filler still on its way to its
-         * core is not yet occupying it. */
-        for (i = 0; i < 64; i++) {
-            thread_yield();
+        /*
+         * **Until each has reached `thread_block`**, seen, under a deadline:
+         * a filler still on its way to its core is not yet occupying it.
+         * This was sixty-four yields, which is a count rather than the
+         * thing, and on 4 October, under the whole gate's load on TCG, a
+         * filler on another core had not got there in sixty-four - the
+         * thread being placed went to the core that looked empty, and the
+         * check failed once in three gates.
+         */
+        {
+            unsigned long start = hal_ticks();
+            bool settled = false;
+
+            /* Two seconds, in scheduler ticks. */
+            while (!settled && hal_ticks() - start < 2UL * TICK_HZ) {
+                settled = true;
+
+                for (i = 0; i < 3; i++) {
+                    if (fill[i]->state != THREAD_BLOCKED) {
+                        settled = false;
+                    }
+                }
+
+                thread_yield();
+                cpu_relax();
+            }
+
+            if (!settled) {
+                for (i = 0; i < 3; i++) {
+                    thread_wake(fill[i]);
+                }
+
+                thread_place_across(1);
+                return false;
+            }
         }
 
         placed = thread_create_suspended("placed", short_thread, NULL);

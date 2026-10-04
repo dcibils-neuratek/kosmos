@@ -190,7 +190,10 @@ def main():
             # names `apptest`, was read as its answer again. *Ending in* it,
             # not holding it: `doom` and `quake` answer in lines that name
             # themselves.
-            for line in guest.seen[mark:].split("\n")[1:]:
+            # **Whole lines only**: the last piece is a line still arriving
+            # until its newline does, and on 4 October, under the whole
+            # gate's load, `stale`'s sentence was read as "run: st".
+            for line in guest.seen[mark:].split("\n")[1:-1]:
                 if (want in line and not line.rstrip().endswith(command)
                         and not line.lstrip().startswith("kosmos>")):
                     found = line.strip()

@@ -22,6 +22,9 @@
  *                        given each glyph's character, for its ToUnicode
  *     face:glyph_advance(glyph)
  *                        one glyph's advance, for a PDF's widths
+ *     face:subset(glyphs, dst, cap)
+ *                        the font with only those glyphs' outlines, into
+ *                        a region: how many bytes (W3b)
  *
  * **In the font's own units, unhinted, and unscaled.** `gfx`'s outline
  * fonts measure at a pixel size, rounded per glyph, because they draw on a
@@ -509,6 +512,315 @@ static int l_glyph_advance(lua_State *L)
     return 1;
 }
 
+/*
+ * **A subset of the font: only the outlines a document shows** (W3b).
+ *
+ * A face embedded whole is about 93 KB deflated, and a three-page document
+ * in seven faces was 652 KB of font in a 664 KB PDF. Most of a font is its
+ * outlines (`glyf`) and its positioning (`GPOS`), and a PDF shows a few
+ * dozen of a thousand glyphs and positions them itself.
+ *
+ * **The glyph numbers do not change**: a PDF in Identity-H names glyphs by
+ * the font's own numbers, so the subset keeps every number and empties the
+ * outlines of the ones not shown - `loca` points them at nothing. Glyph 0
+ * is kept, it being what a character the face lacks is drawn as, and so is
+ * every glyph a kept composite is built from.
+ *
+ * Kept: `head` (its `loca` made long, its checksum made again), `hhea`,
+ * `maxp`, `OS/2`, `hmtx`, `cmap`, `cvt `, `fpgm`, `prep` and `gasp` - what a
+ * renderer, hinting or not, may read - and `post` cut to its header, version
+ * 3, without names. Dropped: `GPOS`, `GSUB`, `GDEF`, `name`, `DSIG`, `meta`,
+ * and anything else; a PDF reader uses none of them.
+ */
+
+#define SUBSET_MOST_TABLES 16
+
+/* Composite glyph flags (the `glyf` table, OpenType). */
+#define ARG_1_AND_2_ARE_WORDS     0x0001
+#define WE_HAVE_A_SCALE           0x0008
+#define MORE_COMPONENTS           0x0020
+#define WE_HAVE_AN_X_AND_Y_SCALE  0x0040
+#define WE_HAVE_A_TWO_BY_TWO      0x0080
+
+struct glyphs_of {
+    const unsigned char *glyf, *loca;
+    uint32_t glyf_len, loca_len;
+    unsigned count;
+    bool long_loca;
+};
+
+/* Where glyph `g`'s outline is in `glyf`, and how long; false if `loca`
+ * says something outside the table. */
+static bool outline_of(const struct glyphs_of *t, unsigned g, uint32_t *at,
+                       uint32_t *len)
+{
+    uint32_t a, b;
+
+    if (t->long_loca) {
+        if (4u * (g + 2u) > t->loca_len) return false;
+        a = be32(t->loca + 4 * g);
+        b = be32(t->loca + 4 * g + 4);
+    } else {
+        if (2u * (g + 2u) > t->loca_len) return false;
+        a = 2u * be16(t->loca + 2 * g);
+        b = 2u * be16(t->loca + 2 * g + 2);
+    }
+
+    if (b < a || b > t->glyf_len) return false;
+
+    *at = a;
+    *len = b - a;
+    return true;
+}
+
+/* Glyph `g` kept, and every glyph it is built from, to a depth that no
+ * real font reaches and a hostile one cannot pass. */
+static void keep_glyph(const struct glyphs_of *t, unsigned char *keep,
+                       unsigned g, unsigned depth)
+{
+    uint32_t at, len, p;
+    uint16_t flags;
+
+    if (g >= t->count || depth > 8) return;
+
+    keep[g] = 1;
+
+    if (!outline_of(t, g, &at, &len) || len < 10) return;
+
+    /* A negative number of contours is a composite. */
+    if (s16(t->glyf + at) >= 0) return;
+
+    p = at + 10;
+
+    do {
+        if (p + 4 > at + len) return;
+
+        flags = be16(t->glyf + p);
+        keep_glyph(t, keep, be16(t->glyf + p + 2), depth + 1);
+
+        p += 4 + ((flags & ARG_1_AND_2_ARE_WORDS) ? 4 : 2);
+
+        if (flags & WE_HAVE_A_SCALE) p += 2;
+        else if (flags & WE_HAVE_AN_X_AND_Y_SCALE) p += 4;
+        else if (flags & WE_HAVE_A_TWO_BY_TWO) p += 8;
+    } while (flags & MORE_COMPONENTS);
+}
+
+static uint32_t table_sum(const unsigned char *p, uint32_t len)
+{
+    uint32_t sum = 0, i;
+
+    for (i = 0; i < len; i += 4) {
+        unsigned char w[4] = { 0, 0, 0, 0 };
+        uint32_t k;
+
+        for (k = 0; k < 4 && i + k < len; k++) w[k] = p[i + k];
+
+        sum += be32(w);
+    }
+
+    return sum;
+}
+
+static void put16(unsigned char *p, uint32_t v)
+{
+    p[0] = (unsigned char)(v >> 8);
+    p[1] = (unsigned char)v;
+}
+
+static void put32(unsigned char *p, uint32_t v)
+{
+    p[0] = (unsigned char)(v >> 24);
+    p[1] = (unsigned char)(v >> 16);
+    p[2] = (unsigned char)(v >> 8);
+    p[3] = (unsigned char)v;
+}
+
+/*
+ * `face:subset(glyphs, dst, cap)`: `glyphs` a list of glyph numbers, `dst`
+ * and `cap` a mapped region; the subset's length, or an error when the
+ * region is too small or the font's tables disagree with themselves.
+ */
+static int l_subset(lua_State *L)
+{
+    static const char *const KEEP[] = {
+        "OS/2", "cmap", "cvt ", "fpgm", "gasp", "glyf", "head", "hhea",
+        "hmtx", "loca", "maxp", "post", "prep",
+    };
+    struct face *f = luaL_checkudata(L, 1, FACE_MT);
+    unsigned char *dst = (unsigned char *)(uintptr_t)luaL_checkinteger(L, 3);
+    size_t cap = (size_t)luaL_checkinteger(L, 4);
+    const struct kosmos_font_asset *a = f->asset;
+    struct glyphs_of t;
+    uint32_t at, len, head_at = 0;
+    unsigned char *keep;
+    unsigned n, i, tables = 0;
+    size_t out, dir;
+    lua_Integer k, many;
+
+    luaL_checktype(L, 2, LUA_TTABLE);
+
+    if (dst == NULL) {
+        return luaL_error(L, "face:subset: needs a mapped region");
+    }
+
+    if (!table_of(a, "glyf", &at, &len)) {
+        return luaL_error(L, "face:subset: no glyf");
+    }
+
+    t.glyf = a->bytes + at;
+    t.glyf_len = len;
+
+    if (!table_of(a, "loca", &at, &len)) {
+        return luaL_error(L, "face:subset: no loca");
+    }
+
+    t.loca = a->bytes + at;
+    t.loca_len = len;
+
+    if (!table_of(a, "head", &at, &len) || len < 54) {
+        return luaL_error(L, "face:subset: no head");
+    }
+
+    t.long_loca = s16(a->bytes + at + 50) != 0;
+
+    if (!table_of(a, "maxp", &at, &len) || len < 6) {
+        return luaL_error(L, "face:subset: no maxp");
+    }
+
+    t.count = be16(a->bytes + at + 4);
+
+    /* Which glyphs keep their outlines. */
+    keep = lua_newuserdatauv(L, t.count + 1u, 0);
+    memset(keep, 0, t.count + 1u);
+    keep_glyph(&t, keep, 0, 0);
+
+    many = (lua_Integer)lua_rawlen(L, 2);
+
+    for (k = 1; k <= many; k++) {
+        lua_Integer g = (lua_rawgeti(L, 2, k), lua_tointeger(L, -1));
+
+        lua_pop(L, 1);
+
+        if (g > 0 && g < (lua_Integer)t.count) {
+            keep_glyph(&t, keep, (unsigned)g, 0);
+        }
+    }
+
+    /* The directory, then each table on a four-byte boundary. */
+    for (i = 0; i < sizeof(KEEP) / sizeof(KEEP[0]); i++) {
+        if (table_of(a, KEEP[i], &at, &len)) tables++;
+    }
+
+    dir = 12 + 16 * (size_t)tables;
+    out = dir;
+
+    if (cap < dir) {
+        return luaL_error(L, "face:subset: no room");
+    }
+
+    memset(dst, 0, dir);
+    put32(dst, 0x00010000u);
+    put16(dst + 4, tables);
+
+    {
+        unsigned power = 1, log2 = 0;
+
+        while (power * 2 <= tables) { power *= 2; log2++; }
+
+        put16(dst + 6, power * 16);
+        put16(dst + 8, log2);
+        put16(dst + 10, tables * 16 - power * 16);
+    }
+
+    n = 0;
+
+    for (i = 0; i < sizeof(KEEP) / sizeof(KEEP[0]); i++) {
+        const char *tag = KEEP[i];
+        size_t start = out;
+        unsigned char *record;
+
+        if (!table_of(a, tag, &at, &len)) continue;
+
+        if (strcmp(tag, "glyf") == 0) {
+            unsigned g;
+
+            for (g = 0; g < t.count; g++) {
+                uint32_t gat, glen;
+
+                if (!keep[g] || !outline_of(&t, g, &gat, &glen)) continue;
+
+                if (out + glen + 3 > cap) {
+                    return luaL_error(L, "face:subset: no room");
+                }
+
+                memcpy(dst + out, t.glyf + gat, glen);
+                out += glen;
+
+                while ((out - start) & 3) dst[out++] = 0;
+            }
+        } else if (strcmp(tag, "loca") == 0) {
+            unsigned g;
+            uint32_t pos = 0;
+
+            if (out + 4u * (t.count + 1u) > cap) {
+                return luaL_error(L, "face:subset: no room");
+            }
+
+            for (g = 0; g <= t.count; g++) {
+                uint32_t gat, glen;
+
+                put32(dst + out + 4 * g, pos);
+
+                if (g < t.count && keep[g] && outline_of(&t, g, &gat, &glen)) {
+                    pos += (glen + 3u) & ~3u;
+                }
+            }
+
+            out += 4u * (t.count + 1u);
+        } else if (strcmp(tag, "post") == 0) {
+            /* Version 3: the header, and no glyph names. */
+            if (len < 32 || out + 32 > cap) {
+                return luaL_error(L, "face:subset: post");
+            }
+
+            memcpy(dst + out, a->bytes + at, 32);
+            put32(dst + out, 0x00030000u);
+            out += 32;
+        } else {
+            if (out + len + 3 > cap) {
+                return luaL_error(L, "face:subset: no room");
+            }
+
+            memcpy(dst + out, a->bytes + at, len);
+
+            if (strcmp(tag, "head") == 0) {
+                head_at = (uint32_t)out;
+                put32(dst + out + 8, 0);            /* checkSumAdjustment */
+                put16(dst + out + 50, 1);           /* indexToLocFormat: long */
+            }
+
+            out += len;
+        }
+
+        record = dst + 12 + 16 * n++;
+        memcpy(record, tag, 4);
+        put32(record + 4, table_sum(dst + start, (uint32_t)(out - start)));
+        put32(record + 8, (uint32_t)start);
+        put32(record + 12, (uint32_t)(out - start));
+
+        while (out & 3) dst[out++] = 0;
+    }
+
+    /* The whole font's checksum, as `head` asks: 0xB1B0AFBA less the sum. */
+    if (head_at != 0) {
+        put32(dst + head_at + 8, 0xB1B0AFBAu - table_sum(dst, (uint32_t)out));
+    }
+
+    lua_pushinteger(L, (lua_Integer)out);
+    return 1;
+}
+
 /* `face:program()`: the address of the font's bytes, and their length. */
 static int l_program(lua_State *L)
 {
@@ -535,6 +847,7 @@ void kosmos_face_open(lua_State *L)
     lua_pushcfunction(L, l_glyphs);  lua_setfield(L, -2, "glyphs");
     lua_pushcfunction(L, l_glyph_advance);
     lua_setfield(L, -2, "glyph_advance");
+    lua_pushcfunction(L, l_subset);  lua_setfield(L, -2, "subset");
 
     lua_pop(L, 1);
 

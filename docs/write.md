@@ -208,10 +208,14 @@ the words the setting gave it, each glyph's width and each mapping the
 font's own, each program the font's own bytes; and macOS's own renderer
 (`sips`), which has never heard of Kosmos.
 
-Not yet: **subsetting**, which is the next thing a real document will want -
-a face is embedded whole, about 93 KB deflated, and the suite's three pages
-use seven faces: 652 KB of its 664 are font programs. Then kerning, and
-pictures (W5).
+**Each face is a subset** (W3b, `testing.md` 18.380): `face:subset` keeps
+glyph 0, the glyphs shown and what a composite among them is built from,
+empties every other outline - keeping every glyph's number, which Identity-H
+names - and leaves behind the tables a PDF reader never reads. Whole, a face
+was about 93 KB deflated and the suite's three pages in seven faces were
+664 KB; as subsets they are 56 KB.
+
+Not yet: kerning, and pictures (W5).
 
 ## Not here yet
 
