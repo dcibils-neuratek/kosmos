@@ -4049,6 +4049,14 @@ def usb_keyboard(image, check):
         line.sendall(b"sendkey ret\n")
         time.sleep(0.8)
 
+        # The numeric keypad (Diego's full-size keyboard): x and 1 2 3 off
+        # the pad, and the pad's Enter - the shell says it knows no x123.
+        for key in ("x", "kp_1", "kp_2", "kp_3", "kp_enter"):
+            line.sendall(("sendkey " + key + "\n").encode())
+            time.sleep(0.25)
+
+        time.sleep(0.8)
+
         for key in ("d", "e", "v", "i", "c", "e", "s", "ret"):
             line.sendall(("sendkey " + key + "\n").encode())
             time.sleep(0.25)
@@ -4098,6 +4106,10 @@ def usb_keyboard(image, check):
           "USB keyboard never repeats a key, so `keys.c` has to: half a "
           "second, then about thirty a second (Diego: \"maintaining pressed "
           "backspace does not keep deleting letters\")" % held)
+
+    check("x123" in out,
+          "x, then 1 2 3 and Enter off the numeric keypad, did not arrive as "
+          "x123 - the pad's keys had no characters in `keys.c`")
 
     check("Devices found on this machine" in out,
           "`devices` was typed on the USB keyboard and did not run. The keys "

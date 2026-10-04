@@ -5619,6 +5619,33 @@ end
 -- **`at` is the counter when this read the key**, so a window that plays a
 -- note from it can say how long the sound took (`roadmap.md` 4i).
 --
+--
+-- **A picture of the screen, on a key** (Diego, 3 October 2026: "i need a
+-- way to grab screenshots", "so i can send you screenshots without taking
+-- photos from my mobile"): Print Screen - a full-size keyboard's - and
+-- Control Alt 1, his of 22 September; Super Shift 3 is with the Super
+-- bindings. The key starts `screenshot`, which borrows the screen and saves
+-- it, so this loop never waits on the encoding or the disk. Taken here, so
+-- no window sees the press; Control and 1 type nothing anyway (`keys.c`).
+--
+local KEY_SYSRQ, KEY_1 = 99, 2
+
+local function capture_key(code, down)
+  local held = OUT.chord.held
+  local chord = code == KEY_1 and (held[29] or held[97]) and (held[56] or held[100])
+
+  if code ~= KEY_SYSRQ and not chord then return false end
+
+  if down then
+    handlers.launch{ program = "screenshot" }
+    print("wm: a screenshot asked for")
+  end
+
+  return true
+end
+
+OUT.capture_key = capture_key
+
 local raw_to_focused
 
 do
@@ -6422,7 +6449,8 @@ remote.handlers.key = function(req)
       OUT.chord.super_moved = false
     end
 
-    if not volume_key(code, down) and not machine_keys.take(code, down) then
+    if not volume_key(code, down) and not machine_keys.take(code, down)
+       and not capture_key(code, down) then
       raw_to_focused(code, down)
     end
   end
@@ -6630,7 +6658,8 @@ while OUT.running do
     end
 
     if not volume_key(ev.code, ev.down)
-       and not machine_keys.take(ev.code, ev.down) then
+       and not machine_keys.take(ev.code, ev.down)
+       and not capture_key(ev.code, ev.down) then
       raw_to_focused(ev.code, ev.down)
     end
   end

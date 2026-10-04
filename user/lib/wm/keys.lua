@@ -328,6 +328,10 @@ return function(ctx)
     -- has (`hal/keys.c`, US) reads as the grave accent, so it is bound by
     -- that: the same key whatever is printed on it.
     --
+    { key = 35, shown = "Super + Shift + 3",
+      what = "A picture of the whole screen, into Captures - Print Screen and Control Alt 1 too",
+      run = function() handlers.launch{ program = "screenshot" } end },
+
     { key = 96, shown = "Super + º",
       what = "Every shortcut, over everything until Escape",
       run = function() handlers.launch{ program = "shortcuts", args = "--modal" } end },

@@ -17297,3 +17297,49 @@ moves away. **The first try's focus check printed nothing**: the window
 list comes in pages and the probe read the first; it reads them all now.
 
 **Its gate: 87 of 87 in 10:23.** Controls each alone: the dock's hover out, no tip; the focus taken as the top of the stack, "FOCUS Deskbar tip". After it, the launcher grid's text two points larger (Diego: "the fonts for the app new drawer is too small, lets increase the size by 2pts") - names and heading 14, pills 15, the search the look's 18 and 2 - its own file alone, so `run_dock.py`'s 33 were its test.
+
+## 18.365 Screenshots on a key; the Windows key and the keypad on a USB keyboard
+
+**Screenshots** (Diego, 3 October: "i need a way to grab screenshots", "so
+i can send you screenshots without taking photos from my mobile"): **Print
+Screen** - his keyboard is a full-size Windows one now - **Control Alt 1**,
+his of 22 September, and **Super Shift 3**, macOS's. Each starts
+`screenshot`, a program in the image that `needs desktop`: it borrows the
+screen as `vncd` does (`/Running/wm/remote`, a region the window manager
+fills with the frame as it answers), encodes it with `gfx.encode_png`, and
+writes `/Home/Captures/screenshot-2026-10-04-015847.png`, named by the
+moment where you are. The window manager only starts it - nothing on the
+desktop waits on a server - and takes Print Screen and Control Alt 1 in
+the chain the volume keys are taken in, so no window sees them; Control
+and 1 type nothing anyway. From the Mac: `kosmos_telnet.py ADDRESS get`.
+
+**The Windows key alone** ("super key does not open the kosmos menu"): the
+PS/2 and virtio keyboards have always turned Super pressed and let go with
+nothing between into a tap; the pushed path - a USB keyboard's, the M700's
+only one - never did, so the key did nothing there. `hal/keys.c` does now.
+And with the bar a dock the tap opens the launcher grid, as the dock's
+Kosmos button does, and a second tap closes it.
+
+**The numeric keypad** (a full-size keyboard): `keys.c` had no characters
+for it on any keyboard; its digits, point, operators and Enter now, Num
+Lock taken as on.
+
+**`run_dock.py`, 38**: booted now with a QEMU USB keyboard, so every key it
+sends goes the M700's way, and with a 64 MB disk for `/Home` - without one
+`/Home` is `/Temporary`, which holds 16 KB a file, and the first try said
+"/Temporary is full" for each picture. The Windows key alone opening the
+grid and closing it; each of the three keys saving a picture of the
+1720x1440 screen into Captures; the first read back - its 24 bytes, on
+the machine, since the whole of it over Telnet outran the session under
+emulation - a PNG of that size. **`run_x86.py`'s `usb_keyboard`, 7**: x,
+then 1 2 3 and Enter off the pad, arriving as x123.
+
+**Controls**: Print Screen and Control Alt 1 out of the window manager -
+those two save nothing, and Super Shift 3, which goes the other way, still
+does; the tap out of `keys.c` - "never the grid from Super alone". **The
+keypad's control was written wrong first**: `-1 && keypad_char(code)` is 1
+in C for every key, so every key typed a 1 - the keypad check failed, and
+so did everything that types, which proved nothing about the tap; the tap
+was run again alone.
+
+**Its gate: 87 of 87 in 10:27.**

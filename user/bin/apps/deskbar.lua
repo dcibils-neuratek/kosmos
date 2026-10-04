@@ -503,6 +503,8 @@ local kosmos_at = nil             -- where the dock drew its Kosmos button, in i
 -- then rather than when the grid arrives (`ui.md`, instant feedback).
 --
 local launcher_open = false
+local dock_open_launcher = nil    -- the dock's Kosmos button, pressed (with the dock)
+local launcher_handle = nil       -- its window, while it is open
 local launcher_asked = nil        -- the counter when the button was pressed
 
 local function is_launcher(program)
@@ -771,9 +773,12 @@ local function refresh()
   --
   local launcher = false
 
+  launcher_handle = nil
+
   for _, w_ in ipairs(reply and reply.windows or {}) do
     if is_launcher(w_.program) then
       launcher = true
+      launcher_handle = w_.handle
     elseif not w_.chrome then
       list[#list + 1] = w_
     end
@@ -1083,7 +1088,14 @@ end
 --
 win.on_event = function(_, ev)
   if ev.type == "menu" then
-    open_kosmos_menu()
+    -- With the bar a dock, the Windows key opens what its Kosmos button
+    -- does - the launcher - as Googlebook's launcher key does.
+    if dock_open_launcher then
+      dock_open_launcher()
+    else
+      open_kosmos_menu()
+    end
+
     return true
   end
 
@@ -1833,6 +1845,22 @@ if DOCKED then
     kosmos_at = items[1] and items[1].x + off or nil
   end
 
+  function dock_open_launcher()
+    -- Open already - the Windows key a second time - and so closed: a press
+    -- on the button never gets here then, since the window manager closes a
+    -- popup on a press outside it and goes no further.
+    if launcher_open and launcher_handle then
+      fs.send("/Running/wm", { type = "close", window = launcher_handle })
+      print("deskbar: the launcher closed")
+      return
+    end
+
+    launcher_asked = sys.ticks()
+    fs.send("/Running/wm", { type = "launch", program = "launchpad" })
+    print("deskbar: the launcher asked for")
+    win.dirty = true
+  end
+
   function bar:mouse(action, x, y)
     local _ = y
 
@@ -1853,9 +1881,7 @@ if DOCKED then
     -- right button's (`on_context`).
     --
     if it.kind == "kosmos" then
-      launcher_asked = sys.ticks()
-      fs.send("/Running/wm", { type = "launch", program = "launchpad" })
-      print("deskbar: the launcher asked for")
+      dock_open_launcher()
       return true
     end
 

@@ -98,6 +98,16 @@ static unsigned pushed_chars_head, pushed_chars_tail;
 static bool pushed_shift, pushed_ctrl, pushed_caps, pushed_super;
 
 /*
+ * Whether anything was pressed while Super was held: Super let go with
+ * nothing between is a tap, which opens the menu, and the PS/2 and virtio
+ * keyboards have always said so (`i8042.c`, `input.c`). A USB keyboard's
+ * keys come through here, and here it was never said - so on the M700, whose
+ * only keyboard is USB, the Windows key alone did nothing (Diego, 3 October
+ * 2026: "super key does not open the kosmos menu").
+ */
+static bool pushed_super_used;
+
+/*
  * **A held key repeats** (Diego, 3 October 2026, on the M700: "maintaining
  * pressed backspace does not keep deleting letters"). A USB keyboard says
  * which keys are down and never repeats one - repeating is the computer's,
@@ -187,8 +197,27 @@ static void pushed_typed(unsigned code, bool down)
     case KEY_RIGHTCTRL:   pushed_ctrl = down;  return;
     case KEY_CAPSLOCK:    if (down) { pushed_caps = !pushed_caps; } return;
     case KEY_LEFTMETA:
-    case KEY_RIGHTMETA:   pushed_super = down; return;
+    case KEY_RIGHTMETA:
+        if (down) {
+            pushed_super = true;
+            pushed_super_used = false;
+        } else {
+            char buffer[KEY_SEQUENCE_MAX];
+            bool tapped = pushed_super && !pushed_super_used;
+
+            pushed_super = false;
+
+            if (tapped) {
+                pushed_string(hal_key_super(0, buffer));
+            }
+        }
+
+        return;
     default: break;
+    }
+
+    if (down && pushed_super) {
+        pushed_super_used = true;
     }
 
     if (!down) {
@@ -522,9 +551,44 @@ const char *hal_key_super(int c, char out[KEY_SEQUENCE_MAX])
  * second shift, and control turns a letter into the control character it
  * names.
  */
+/*
+ * **The numeric keypad** (Diego, 3 October 2026, a full-size keyboard on the
+ * M700): its digits, point and operators, and its Enter, which neither table
+ * below had - so a keypad typed nothing, on USB or PS/2. Num Lock taken as on,
+ * which is how a keyboard starts; its other half is the arrows and Home and
+ * End beside it.
+ */
+static int keypad_char(unsigned code)
+{
+    switch (code) {
+    case 71: return '7';            /* KEY_KP7 */
+    case 72: return '8';
+    case 73: return '9';
+    case 74: return '-';            /* KEY_KPMINUS */
+    case 75: return '4';
+    case 76: return '5';
+    case 77: return '6';
+    case 78: return '+';            /* KEY_KPPLUS */
+    case 79: return '1';
+    case 80: return '2';
+    case 81: return '3';
+    case 82: return '0';
+    case 83: return '.';            /* KEY_KPDOT */
+    case 55: return '*';            /* KEY_KPASTERISK */
+    case 98: return '/';            /* KEY_KPSLASH */
+    case 96: return '\n';           /* KEY_KPENTER, as Enter is */
+    default: return -1;
+    }
+}
+
 int hal_key_char(unsigned code, bool shift, bool ctrl, bool caps)
 {
     unsigned char c;
+    int k = keypad_char(code);
+
+    if (k >= 0) {
+        return ctrl ? -1 : k;
+    }
 
     if (code >= 128) {
         return -1;

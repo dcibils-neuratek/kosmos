@@ -7302,6 +7302,10 @@ the Pi", and the Pi is not here yet.
   shortcut in kosmos to grab a screenshot and save it in captures dir?", and
   "go!" to it being built that way - beside the camera's and the recorder's
   files, Tracker's Captures place. Queued after the late `/Home` stick (B).
+  **Done on 3 October** (`testing.md` 18.365), when Diego asked again - "so
+  i can send you screenshots without taking photos from my mobile": Print
+  Screen, Control Alt 1 and Super Shift 3, a `screenshot` program the key
+  starts.
   Most of it is
   here already: the window manager composes every frame into its backbuffer,
   `SUPER_BINDINGS` in `wm.lua` is where a shortcut goes and what the Shortcuts

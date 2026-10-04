@@ -48,11 +48,25 @@ Usage: run_dock.py IMAGE
 import os
 import random
 import re
+import struct
 import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+
+# A disk for /Home, as the M700's stick is one: without it /Home is in
+# /Temporary, which holds 16 KB a file, and a picture of the screen is a
+# megabyte or two. Named before `run_screenshot` is imported, which reads
+# KOSMOS_DISK once, as it loads.
+import scratch                                              # noqa: E402
+import subprocess                                           # noqa: E402
+
+_DISK = os.path.join(scratch.directory("dock"), "disk.img")
+subprocess.run([os.path.join(os.path.dirname(HERE), "build", "host", "lua"),
+                os.path.join(HERE, "kfs.lua"), "create", _DISK, "64"],
+               check=True, capture_output=True, cwd=os.path.dirname(HERE))
+os.environ["KOSMOS_DISK"] = _DISK
 
 import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
@@ -129,9 +143,14 @@ def last_dock(seen):
 
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
+
     telnet, web = random.randint(20000, 40000), random.randint(40001, 60000)
+    # A USB keyboard, which QEMU's keys then go to: the M700's path, where
+    # a key repeats, Super alone is a tap and Print Screen exists.
     guest = S.boot(image, telnet, web,
-                   extra=("-fw_cfg", "name=opt/kosmos/fb,string=1720x1440"))
+                   extra=("-fw_cfg", "name=opt/kosmos/fb,string=1720x1440",
+                          "-device", "qemu-xhci,id=usbk",
+                          "-device", "usb-kbd,bus=usbk.0"))
     fails = []
     said = {}
 
@@ -276,6 +295,17 @@ def main():
         guest._read_available()
         said["modal closed"] = "wm: closed Shortcuts" in guest.seen[mark:]
 
+        # ---- 3d: the Windows key alone, on the USB keyboard ----
+        mark = len(guest.seen)
+        guest.sendkey("meta_l")
+        said["super grid"] = guest.wait_for_line("launchpad: the grid at ", "the grid from Super alone", mark)
+        time.sleep(2)
+        guest.sendkey("meta_l")
+        time.sleep(2)
+        guest._read_available()
+        said["super closed"] = ("deskbar: the launcher closed" in guest.seen[mark:]
+                                and "wm: closed Open" in guest.seen[mark:])
+
         # And a press anywhere outside it.
         mark = len(guest.seen)
         click(*kosmos_button(), width, height)
@@ -329,6 +359,36 @@ def main():
         _, _, at = R.pixel_reader(guest.screendump())
         said["centred"] = at(*corner)
         said["sideways"] = session.run("/Temporary/fit.lua sideways").decode(errors="replace")
+
+        # ---- 6b: a picture of the screen, by Print Screen, Control Alt 1
+        # and Super Shift 3 - each saved into /Home/Captures ----
+        shots = []
+
+        for keys_ in ("print", "ctrl-alt-1", "meta_l-shift-3"):
+            mark = len(guest.seen)
+            guest.sendkey(keys_)
+
+            try:
+                shots.append((keys_, guest.wait_for_line("screenshot: ", "a screenshot by " + keys_, mark)))
+            except Exception:              # noqa: BLE001 - said below
+                shots.append((keys_, None))
+
+            time.sleep(1.2)                # another second, another name
+
+        said["shots"] = shots
+        first = re.match(r"(\S+), (\d+)x(\d+), (\d+) bytes", shots[0][1] or "")
+
+        if first:
+            # Its first 24 bytes, read where it is: the signature, and the
+            # width and height in its IHDR. The whole of it over Telnet is
+            # longer than a session waits under emulation.
+            head = ('local s = fs.read(%r) or ""\n'
+                    'print("PNGHEAD " .. s:sub(1, 24):gsub(".", function(c) '
+                    'return ("%%02x"):format(c:byte()) end))\n' % first.group(1))
+            session.put(head.encode(), "/Temporary/pnghead.lua")
+            out = session.run("/Temporary/pnghead.lua").decode(errors="replace")
+            m = re.search(r"PNGHEAD ([0-9a-f]+)", out)
+            said["png"] = bytes.fromhex(m.group(1)) if m else out.encode()
 
         # ---- 7: one program moving the bar four times ----
         session.put(SWITCH.encode(), "/Temporary/switch.lua")
@@ -510,6 +570,23 @@ def main():
     if "wm: closed Open" not in said.get("outside", ""):
         fails.append("a press outside the launcher did not close it")
 
+    if not said.get("super grid") or not said.get("super closed"):
+        fails.append("the Windows key alone on a USB keyboard did not open the "
+                     "grid and close it again: %r, closed %s"
+                     % (said.get("super grid"), said.get("super closed")))
+
+    for keys_, line in said.get("shots", []):
+        if not line or not re.match(r"/Home/Captures/screenshot-\d{4}-\d\d-\d\d-\d{6}\.png, %dx%d, \d+ bytes"
+                                    % (width, height), line):
+            fails.append("%s did not save a picture of the %dx%d screen into "
+                         "Captures: %r" % (keys_, width, height, line))
+
+    png = said.get("png") or b""
+
+    if png[:8] != b"\x89PNG\r\n\x1a\n" or png[16:24] != struct.pack(">II", width, height):
+        fails.append("the screenshot read back is not a %dx%d PNG: %r"
+                     % (width, height, png[:32]))
+
     took = re.findall(r"SWITCH (\w+) (\w+) (true|false)", said.get("switch", ""))
     moved = re.findall(r"deskbar: again, the bar (\w+) and the dock (\w+)",
                        said.get("switched", ""))
@@ -524,7 +601,7 @@ def main():
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:400])
 
-    checks = 33
+    checks = 38
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))
@@ -544,14 +621,16 @@ def main():
           "button's, opening upwards over its button, floating and along the "
           "whole width, Restart and Shut Down in it wearing a picture; the launcher grid above the dock with every "
           "application, the button lit while it is open, a name typed and "
-          "Return opening it, its pills in Diego's order, Demos and Tab, and "
+          "Return opening it, its pills in Diego's order, Demos and Tab, the "
+          "Windows key alone on a USB keyboard opening and closing it, and "
           "a second press or one outside closing it; Super and º opening the "
           "shortcuts over everything and Escape closing them; "
           "its button lit while it is open and dark once it is dismissed; the "
           "whole width along the foot, giving the gap back; the bar at the "
           "top again with all the room back) - and a 1920x1080 wallpaper "
           "filling the screen, centred leaving the desktop below it, and a "
-          "fit that is neither refused; and one program moving the bar four "
+          "fit that is neither refused; Print Screen, Control Alt 1 and Super "
+          "Shift 3 each saving a PNG of the screen into Captures; and one program moving the bar four "
           "times, heard each time by the Deskbar that started since." % (checks, GAP))
     return 0
 
