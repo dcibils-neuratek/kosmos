@@ -92,6 +92,12 @@ SWITCH = ('local hz = sys.info().tick_hz or 100\n'
           '  sys.sleep(hz * 6)\n'
           'end\n')
 
+# Which window has the focus, as the window manager lists them.
+FOCUS = ('local r = use("/Kosmos/Libraries/wmproto.lua").windows()\n'
+         'for _, w in ipairs(r and r.windows or {}) do\n'
+         '  if w.focused then print("FOCUS " .. tostring(w.title)) end\n'
+         'end\n')
+
 ROOM = ('local r = fs.send("/Running/wm", { type = "workarea" })\n'
         'print(("ROOM %d %d %d %d"):format(r.x, r.y, r.w, r.h))\n')
 
@@ -171,6 +177,23 @@ def main():
         time.sleep(2)
         guest._read_available()
         said["same again"] = "deskbar: again" in guest.seen[mark:]
+
+        # ---- 2b: a name over the icon under the pointer ----
+        session.put(FOCUS.encode(), "/Temporary/focus.lua")
+        dx, dy, dw, dh = said["dock"]
+        over = dx + dw - PAD - 25                 # the last cell, always an application
+        mark = len(guest.seen)
+        guest.mouse_to(*R._to_tablet(over, dy + dh // 2, width, height))
+        said["tip name"] = guest.wait_for_line("deskbar: tip ", "a name over an icon", mark)
+        said["tip"] = guest.wait_for_line("wm: window Deskbar tip at ", "the tip's window", mark)
+        time.sleep(1)
+        said["tip focus"] = session.run("/Temporary/focus.lua").decode(errors="replace")
+        mark = len(guest.seen)
+        guest.mouse_to(*R._to_tablet(width // 2, height // 3, width, height))
+        time.sleep(2)
+        guest._read_available()
+        said["tip gone"] = "wm: closed Deskbar tip" in guest.seen[mark:]
+        said["tip over"] = over
 
         # ---- 3: the Kosmos button and its menu ----
         dx, dy, dw, dh = said["dock"]
@@ -350,6 +373,21 @@ def main():
         fails.append("a maximised window would not end above the dock: room %r, "
                      "dock %r" % (docked, dock))
 
+    tip = re.match(r"(\d+),(\d+) (\d+)x(\d+)", said.get("tip", ""))
+
+    if not tip or not dock or not re.match(r"[A-Z]", said.get("tip name", "")) \
+       or abs(int(tip.group(1)) + int(tip.group(3)) // 2 - said.get("tip over", 0)) > 3 \
+       or int(tip.group(2)) + int(tip.group(4)) > dock[1]:
+        fails.append("no name over the icon under the pointer, centred over it "
+                     "and above the dock: %r at %r, the pointer at %r, dock %r"
+                     % (said.get("tip name"), said.get("tip"), said.get("tip over"), dock))
+
+    if "FOCUS Deskbar tip" in said.get("tip focus", "") or "FOCUS" not in said.get("tip focus", ""):
+        fails.append("the tip took the focus: %r" % said.get("tip focus"))
+
+    if not said.get("tip gone"):
+        fails.append("the tip stayed when the pointer left the dock")
+
     menu = re.match(r"(\d+),(\d+) (\d+)x(\d+)", said.get("menu", ""))
 
     if not menu or not dock or int(menu.group(2)) + int(menu.group(4)) > dock[1]:
@@ -486,7 +524,7 @@ def main():
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:400])
 
-    checks = 30
+    checks = 33
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))
@@ -501,7 +539,8 @@ def main():
           "the write moving the bar answered, and the same place asked "
           "for again starting nothing; the login items opened once; the "
           "strip across the top; the dock centred %d above the edge; a "
-          "maximised window ending above it; the Kosmos menu, the right "
+          "maximised window ending above it; a name over the icon under the "
+          "pointer, centred, not taking the focus, gone when it leaves; the Kosmos menu, the right "
           "button's, opening upwards over its button, floating and along the "
           "whole width, Restart and Shut Down in it wearing a picture; the launcher grid above the dock with every "
           "application, the button lit while it is open, a name typed and "

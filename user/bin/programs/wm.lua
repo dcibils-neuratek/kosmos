@@ -1488,7 +1488,7 @@ local function frame_of(win)
   -- `roadmap.md` 6zj): no tab and no border, so its frame is its page -
   -- rounded, and with its shadow, which the others here do not have.
   if win.kind == "menu" or win.backdrop or win.strip or win.fullscreen
-     or win.headed or win.popup then
+     or win.headed or win.popup or win.tip then
     return win.x, win.y, win.w, win.h
   end
 
@@ -1687,7 +1687,7 @@ OUT.load_keys()
 function OUT.shadowed(win)
   local fx, fy, fw, fh = frame_of(win)
 
-  if win.kind == "menu" or win.backdrop or win.strip or win.fullscreen then
+  if win.kind == "menu" or win.backdrop or win.strip or win.fullscreen or win.tip then
     return fx, fy, fw, fh
   end
 
@@ -2715,7 +2715,13 @@ local compose = use("/Kosmos/Libraries/wm/compose.lua"){
 --------------------------------------------------------------------------
 
 local function focused_window()
-  return windows[#windows]
+  -- Never a tip (`req.tip`), which is shown and nothing else: the window
+  -- under it in the stack keeps the keys.
+  for i = #windows, 1, -1 do
+    if not windows[i].tip then return windows[i] end
+  end
+
+  return nil
 end
 
 --
@@ -3381,7 +3387,7 @@ handlers.open = function(req, who, cap)
   end
 
   if req.kind ~= "menu" and not req.backdrop and req.strip ~= "top"
-     and not req.centre and not req.maximised and not req.popup then
+     and not req.centre and not req.maximised and not req.popup and not req.tip then
     --
     -- **Taken means hidden, not "in the same spot".**
     --
@@ -3407,7 +3413,8 @@ handlers.open = function(req, who, cap)
     -- scenery rather than windows you are being hidden behind.
     local function taken_at(x, y)
       for _, other in ipairs(windows) do
-        if not (other.backdrop or other.strip or other.kind == "menu" or other.popup) then
+        if not (other.backdrop or other.strip or other.kind == "menu" or other.popup
+                or other.tip) then
           local ox = math.min(x + win.w, other.x + other.w) - math.max(x, other.x)
           local oy = math.min(y + win.h, other.y + other.h) - math.max(y, other.y)
 
@@ -3487,7 +3494,8 @@ handlers.open = function(req, who, cap)
       --
       local function slot_ok(x, y)
         for _, other in ipairs(windows) do
-          if not (other.backdrop or other.strip or other.kind == "menu" or other.popup) then
+          if not (other.backdrop or other.strip or other.kind == "menu" or other.popup
+                or other.tip) then
             local ox = math.min(x + win.w, other.x + other.w) - math.max(x, other.x)
             local oy = math.min(y + win.h, other.y + other.h) - math.max(y, other.y)
 
@@ -3702,6 +3710,20 @@ handlers.open = function(req, who, cap)
     win.y = math.min(math.max(tonumber(req.y) or 0, 0), H - h_)
   end
 
+  --
+  -- **A tip** (`ui.window{ tip = true }`): a name over a dock's icon, shown
+  -- and nothing else - never pressed, never focused, never closed by a press
+  -- elsewhere, no frame and no shadow; blended, so what it does not draw is
+  -- the screen (macOS's, which Diego showed: a dark pill and an arrow down
+  -- to the icon). Put where it asked, onto the screen.
+  --
+  if req.tip == true then
+    win.tip = true
+    win.blend = true
+    win.x = math.min(math.max(tonumber(req.x) or 0, 0), W - w_)
+    win.y = math.min(math.max(tonumber(req.y) or 0, 0), H - h_)
+  end
+
   if req.kind == "menu" then
     win.kind = "menu"
     win.owner = tonumber(req.owner)
@@ -3733,7 +3755,7 @@ handlers.open = function(req, who, cap)
 
     print(("wm: menu of %s at %d,%d %dx%d"):format(
           tostring(owner and owner.title), win.x, win.y, win.w, win.h))
-  elseif win.backdrop or win.strip or win.popup then
+  elseif win.backdrop or win.strip or win.popup or win.tip then
     print(("wm: window %s at %d,%d %dx%d"):format(
           tostring(win.title), win.x, win.y, win.w, win.h))
   elseif win.headed then
@@ -4086,11 +4108,14 @@ handlers.windows = function(req)
   local from = math.max(1, math.floor(tonumber(req.from) or 1))
   local last = math.min(#windows, from + WINDOWS_PAGE - 1)
 
+  local front = focused_window()
+
   for i = from, last do
     local win = windows[i]
 
     out[#out + 1] = { handle = win.handle, title = win.title,
-               focused = (i == #windows) or nil,
+               -- The window the keys go to, which is not a tip on top of it.
+               focused = (win == front) or nil,
 
                -- Who to ask about, and how it draws. `procs` shows this:
                -- a window with a shared region owns its own pixels and the
@@ -4106,7 +4131,7 @@ handlers.windows = function(req)
                -- started or can switch to, so it filters on this rather
                -- than on titles - which is what it did for its own window
                -- and does not scale to a second one.
-               chrome = (win.backdrop or win.strip or win.popup) and true or nil,
+               chrome = (win.backdrop or win.strip or win.popup or win.tip) and true or nil,
 
                -- Which *kind* of chrome, because "is there a desktop
                -- already" is a question with an answer only this process
@@ -4273,7 +4298,7 @@ handlers.minimise = function(req)
     return { ok = false, error = "no such window" }
   end
 
-  if win.backdrop or win.strip or win.popup then
+  if win.backdrop or win.strip or win.popup or win.tip then
     return { ok = false, error = "the desktop, the bar and a popup do not minimise" }
   end
 
@@ -5525,7 +5550,7 @@ function resizable(win)
   -- hour earlier and I put it in one place there; this is the other half of
   -- it. A window with no frame has no corner to pull.
   --
-  if win.backdrop or win.strip or win.popup then return false end
+  if win.backdrop or win.strip or win.popup or win.tip then return false end
 
   return win.shared == nil or win.resizes_itself == true
 end
@@ -6035,10 +6060,40 @@ function OUT.popup()
   for i = #windows, 1, -1 do
     local w = windows[i]
 
-    if w.popup and not w.hidden then return w end
+    if w.popup and not w.hidden then return w end   -- a tip is not one
   end
 
   return nil
+end
+
+--
+-- **The pointer over the dock, told to it** (Diego, 3 October: "hovering
+-- over the icons in the dock app icons should tell the name of the app").
+-- A window hears the pointer with no button held only while it has the
+-- focus (`handlers.track`), and the dock never has it - so the dock, if it
+-- asked to track, hears it while the pointer is over it, focus or not, and
+-- one move at -1, -1 when the pointer leaves it.
+--
+function OUT.hover_dock(x, y, skip)
+  for i = #windows, 1, -1 do
+    local d = windows[i]
+
+    if d.strip == "bottom" and d.tracking and d ~= skip then
+      local inside = not d.hidden and x >= d.x and x < d.x + d.w
+                     and y >= d.y and y < d.y + d.h
+
+      if inside then
+        d.hovering = true
+        post(d, { type = "mouse", action = "move", hover = true,
+                  x = x - d.x, y = y - d.y })
+      elseif d.hovering then
+        d.hovering = nil
+        post(d, { type = "mouse", action = "move", hover = true, x = -1, y = -1 })
+      end
+
+      return
+    end
+  end
 end
 
 -- That popup, when a press at `x, y` lands outside it - which closes it.
@@ -6104,7 +6159,7 @@ local function window_at(x, y)
     local win = windows[i]
     local fx, fy, fw, fh = frame_of(win)
 
-    if not win.hidden
+    if not win.hidden and not win.tip
        and x >= fx and x < fx + fw and y >= fy and y < fy + fh
        and not (y < fy + OUT.TAB_H and win.kind ~= "menu" and not win.backdrop
                 and not win.strip and not win.popup and x >= fx + tabs.width(win)) then
@@ -6135,7 +6190,7 @@ end
 --
 function OUT.cast_shadow(win, r)
   if OUT.shadow <= 0 or win.hidden or win.backdrop or win.strip
-     or win.fullscreen or win.kind == "menu" then
+     or win.fullscreen or win.kind == "menu" or win.tip then
     return
   end
 
@@ -6174,7 +6229,7 @@ function OUT.boxes_under(x, y)
   local win = window_at(x, y)
 
   if not win or win.kind == "menu" or win.backdrop or win.strip
-     or win.fullscreen or win.pinned or win.popup then
+     or win.fullscreen or win.pinned or win.popup or win.tip then
     return nil
   end
 

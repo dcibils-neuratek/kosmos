@@ -181,10 +181,16 @@ local function grid_mode(ax, ay)
     win:close()
   end
 
-  local SMALL = 12
+  -- Two points larger than they were drawn first (Diego, 3 October: "the
+  -- fonts for the app new drawer is too small, lets increase the size by
+  -- 2pts"): the names and the heading, the pills, and the search, which is
+  -- the look's own size and two more.
+  local SMALL = 14
   local small = ui.sized("ui", SMALL)
-  local PILL = 13
+  local PILL = 15
   local pill_face = ui.sized("ui", PILL)
+  local SEARCH = (theme.fonts and theme.fonts.ui and tonumber(theme.fonts.ui.px or theme.fonts.ui.size) or 18) + 2
+  local search_face = ui.sized("ui", SEARCH)
   local chips = grid.chips(cats, function(s) return gfx.measure(s, pill_face) end, pw)
 
   do
@@ -218,17 +224,17 @@ local function grid_mode(ax, ay)
     -- the caret where the next letter goes.
     local sx, sy, sw_, sh_ = P, P, self.w - 2 * P, grid.SEARCH_H
     local tx = sx + 18 + 19 + 12
-    local ty = sy + (sh_ - gfx.font.h) // 2
+    local ty = sy + (sh_ - gfx.height(search_face)) // 2
 
     g:fill_round(sx, sy, sw_, sh_, theme.raised, sh_ // 2)
     g:line_icon(sx + 18, sy + (sh_ - 19) // 2, "search", theme.text_dim, 19)
 
     if typed == "" then
-      g:text(tx, ty, "Search applications", theme.text_dim, theme.raised)
+      g:text(tx, ty, "Search applications", theme.text_dim, theme.raised, "ui", SEARCH)
       g:fill(tx - 2, sy + 14, 2, sh_ - 28, theme.accent)
     else
-      g:text(tx, ty, typed, theme.text, theme.raised)
-      g:fill(tx + gfx.measure(typed) + 1, sy + 14, 2, sh_ - 28, theme.accent)
+      g:text(tx, ty, typed, theme.text, theme.raised, "ui", SEARCH)
+      g:fill(tx + gfx.measure(typed, search_face) + 1, sy + 14, 2, sh_ - 28, theme.accent)
     end
 
     -- The categories: All, then the menu's folders, the chosen one lit.

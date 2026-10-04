@@ -17271,3 +17271,29 @@ held for 1.2 seconds (`sendkey x 1200`), and Return - ten or more x's. 6
 checks. **Control**: the repeat never due, two at most.
 
 **Its gate: 86 of 87 in 10:09.** The one was `arm-display-1`: the harness typed a long line of Lua over the serial line and it arrived cut ("unfinished string near <eof>"), on ARM, where nothing pushes keys and the repeat cannot act - 74 of 74 alone after. Load, recorded rather than explained.
+
+## 18.364 The application's name over the dock's icon
+
+**Diego, 3 October**: "the hover tooltip of the name of the app in the dock
+is still missing", with a picture of macOS's: a dark pill, the name in
+white, centred over the icon, a small arrow down to it.
+
+**A tip window** (`ui.window{ tip = true }`): shown and nothing else -
+never hit by a press, never the focus (`focused_window` passes over it, and
+the window list marks as focused what the keys go to rather than what is on
+top), never closed by a press elsewhere, no frame or shadow, blended so
+the arrow's corners are the screen. **The dock hears the pointer**: a
+window hears it with no button held only while it has the focus, and the
+dock never does, so the window manager tells the dock where the pointer is
+while it is over it, focus or not, and one move at -1 when it leaves
+(`OUT.hover_dock`). The Deskbar shows the application's own name
+(`kosmos: name`) - Process Viewer, not the window's Processes - and takes
+it away when the pointer leaves or presses.
+
+**`run_dock.py`, 33**: the pointer over the dock's last icon, no button -
+a tip with a capitalised name, centred over that icon within three pixels,
+above the dock; the focus still a window's; and gone when the pointer
+moves away. **The first try's focus check printed nothing**: the window
+list comes in pages and the probe read the first; it reads them all now.
+
+**Its gate: 87 of 87 in 10:23.** Controls each alone: the dock's hover out, no tip; the focus taken as the top of the stack, "FOCUS Deskbar tip". After it, the launcher grid's text two points larger (Diego: "the fonts for the app new drawer is too small, lets increase the size by 2pts") - names and heading 14, pills 15, the search the look's 18 and 2 - its own file alone, so `run_dock.py`'s 33 were its test.

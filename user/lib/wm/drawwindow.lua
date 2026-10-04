@@ -68,7 +68,7 @@ return function(ctx)
         -- `roadmap.md` 6zj) has no tab or border either - but it is rounded,
         -- which the others are not, and it has the three, drawn over its
         -- header below.
-        local rounded = not (win.backdrop or win.strip or win.fullscreen)
+        local rounded = not (win.backdrop or win.strip or win.fullscreen or win.tip)
         local bare = not rounded or win.headed or win.popup
 
         -- The shadow is drawn before this, by `compose_rect`: it lies

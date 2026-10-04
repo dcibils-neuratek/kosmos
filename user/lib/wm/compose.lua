@@ -47,7 +47,7 @@ return function(ctx)
         local shape, round
 
         if win.kind == "menu" or win.backdrop or win.strip
-           or win.fullscreen then
+           or win.fullscreen or win.tip then
           shape = { { frame_of(win) } }
         elseif win.headed or win.popup then
           -- No tab: its rectangle, and rounded (`roadmap.md` 6zj) - a

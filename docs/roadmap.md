@@ -521,6 +521,18 @@ generic application - the three cubes Doom, Quake and the Super Nintendo
 wear (Diego, 3 October: "shutdown and restart need icons in the launch
 menu", "like the ones used for demos like snes", "a 3 cube").
 
+**Every application in the current look's chrome.** Diego, 3 October 2026,
+on the M700: "a lot of old apps still have the old window chrome, like
+falling blocks and more", "we need to review all apps and make sure they
+use the updated theming engine and style". The likely cause, to be
+confirmed by looking: an application that draws its own pixels has the
+look's title bar only when it asks for a header, and the GL demos and
+Hello Window open their windows without the kit's `ui.window` at all - so
+they keep the window manager's own tab. The review: every application
+opened under QEMU in Night and in Plex, pictured, the ones in the old
+chrome listed, each moved onto the kit's header, and the pictures kept as
+the check that none goes back.
+
 **The dock's own applications, arranged by hand.** Diego, 3 October 2026:
 "we need a way to move apps around the dock to reorder them as the user
 wants. also how do i add or remove apps from the dock?" - which until now
@@ -548,7 +560,9 @@ with macOS's: a dark pill, the name in white, centred over the icon and a
 small arrow down to it. A *tip* window for it - shown and nothing else: no
 press, no focus, blended so the arrow's corners are the screen - and the
 dock told where the pointer is while it is over it, focus or not. The name
-is the application's own (`kosmos: name`), not its window's title. It needs the window
+is the application's own (`kosmos: name`), not its window's title.
+**The names done** (`testing.md` 18.364); the dock's numbers in a file not
+yet. It needs the window
 manager to tell the dock where the pointer is without a button (it tells
 only the focused window, and the dock never has the focus), and a name
 drawn above the dock, outside its own window. And: "Is these settings in a

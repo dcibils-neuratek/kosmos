@@ -5637,6 +5637,10 @@ function ui.window(spec)
     -- menu does not.
     popup = spec.popup or nil,
 
+    -- **A tip**: shown and nothing else - no press, no focus, blended - a
+    -- name over a dock's icon.
+    tip = spec.tip or nil,
+
     --
     -- In the middle of the screen, and asked for rather than computed here.
     --

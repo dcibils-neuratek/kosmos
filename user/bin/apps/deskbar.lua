@@ -1751,8 +1751,10 @@ end
 --------------------------------------------------------------------------
 
 local dock_frame = nil        -- the dock's own work each pass, below
+local dock_tip_hide = nil     -- the name over an icon, taken away
 
 if DOCKED then
+  local wmproto = use("/Kosmos/Libraries/wmproto.lua")
   local saved = fs.read("/Home/Preferences/dock")
   local pins = (type(saved) == "table" and type(saved.pins) == "table")
                and saved.pins or dock.PINS
@@ -1836,6 +1838,8 @@ if DOCKED then
 
     if action ~= "press" then return false end
 
+    if dock_tip_hide then dock_tip_hide() end
+
     local it = dock.hit(items, x - (self.offset or 0))
 
     if not it then return false end
@@ -1898,6 +1902,85 @@ if DOCKED then
   win:publish("anchor", function()
     return ("%d,%d"):format(win.origin_x + win.w // 2, win.origin_y)
   end)
+
+  --
+  -- **A name over the icon under the pointer** (Diego, 3 October: "hovering
+  -- over the icons in the dock app icons should tell the name of the app",
+  -- and a picture of macOS's): a dark pill with the name in white, centred
+  -- over the icon, a small arrow down to it - a *tip* window, which the
+  -- window manager shows and nothing else. The application's own name
+  -- (`kosmos: name`), not its window's title. The window manager tells the
+  -- dock where the pointer is while it is over it, and -1 when it leaves.
+  --
+  local tip, tip_for = nil, nil
+  local TIP_H, TIP_ARROW, TIP_IN = 26, 6, 12
+  local TIP_BACK, TIP_INK = 0xf0202227, 0xffffffff
+
+  local function tip_name(it)
+    local attrs = programs[it.name]
+
+    if attrs and attrs.title and attrs.title ~= "" then return attrs.title end
+
+    local name = tostring(it.title or it.name)
+
+    return name:sub(1, 1):upper() .. name:sub(2)
+  end
+
+  local function hide_tip()
+    if tip then
+      tip:close()
+      tip, tip_for = nil, nil
+    end
+  end
+
+  local function show_tip(it)
+    if tip and tip_for == it then return end
+
+    hide_tip()
+
+    local name = tip_name(it)
+    local w = gfx.measure(name) + 2 * TIP_IN
+    local h = TIP_H + TIP_ARROW
+    local centre = win.origin_x + (bar.offset or 0) + it.x + it.w // 2
+
+    tip = ui.window{ title = "Deskbar tip", w = w, h = h,
+                     x = centre - w // 2, y = win.origin_y - h - 4, tip = true }
+
+    if not tip then return end
+
+    tip_for = it
+
+    local face = ui.view{ x = 0, y = 0, w = w, h = h }
+
+    function face:draw(g)
+      g:fill(0, 0, self.w, self.h, 0x00000000)
+      -- A hairline round it, as the dock has, for a dark window behind.
+      g:fill_round(0, 0, self.w, TIP_H, 0x30ffffff, TIP_H // 2)
+      g:fill_round(1, 1, self.w - 2, TIP_H - 2, TIP_BACK, TIP_H // 2 - 1)
+      g:triangle(self.w // 2 - TIP_ARROW, TIP_H, self.w // 2 + TIP_ARROW, TIP_H,
+                 self.w // 2, TIP_H + TIP_ARROW, TIP_BACK)
+      g:text(TIP_IN, (TIP_H - gfx.font.h) // 2, name, TIP_INK, TIP_BACK)
+    end
+
+    tip:add(face)
+    tip:paint()
+    print("deskbar: tip " .. name)
+  end
+
+  win.on_hover = function(_, x, _)
+    local it = (x >= 0) and dock.hit(items, x - (bar.offset or 0)) or nil
+
+    if it and it.kind == "app" then
+      show_tip(it)
+    else
+      hide_tip()
+    end
+
+    return false
+  end
+
+  wmproto.track(win.handle, true)
+  dock_tip_hide = hide_tip
 
   --
   -- **The strip across the top**: the time and the date at the left, the
@@ -1983,9 +2066,10 @@ if DOCKED then
   -- for the width its cells want, outside its own draw.
   --
   local strip_said = nil
-  local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
   function dock_frame(self)
+    if tip then wmproto.poll(tip.handle, 0) end
+
     if topstrip then
       local reply = wmproto.poll(topstrip.handle, 0)
 

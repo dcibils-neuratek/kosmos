@@ -496,6 +496,9 @@ return function(ctx)
         post(f, { type = "mouse", action = "move", hover = true,
                   x = nx - f.x, y = ny - f.y - strips.below(f) })
       end
+
+      -- And the dock, focused or not (`OUT.hover_dock`).
+      OUT.hover_dock(nx, ny, f)
     end
 
     --------------------------------------------------------------------------
