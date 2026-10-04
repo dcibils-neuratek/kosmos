@@ -15,6 +15,9 @@
 -- never see.
 --
 
+-- The settings kit, as `use` reaches it in a process.
+use = use or function(path) return dofile((path:gsub("^/Kosmos/Libraries/", "user/lib/"))) end
+
 package.path = "user/lib/?.lua;" .. package.path
 
 -- `settings.lua` names `fs.read` as its default, and there is no namespace

@@ -17713,3 +17713,50 @@ changed Preferences and was proved by the dock's suite alone. The line is
 `preferences slider: ...` now. `x86-film`, the audio flake of 6zw under a
 loaded gate. **Again, alone, the six: all pass** - `host`, `x86-film` 13,
 `x86-storage` 45, `x86-dock` 46, both `display-3` 104.
+
+## 18.374 The settings kit, and every application on it
+
+Diego, 4 October: "There should be a settings kit that allows an app to
+store and read settings", "So apps use that kit instead of inventing their
+own way". **`user/lib/prefs.lua`**: `prefs.open(name, defaults)` - a field
+reads the setting or its default, `:set(key, value)` or `:set{...}` writes
+at once and keeps every key it did not touch, `:reset(key)` goes back to
+the default, which is never written; `prefs.read` and `prefs.write` for a
+file kept whole; `prefs.folder(name)` for a folder an application keeps
+files in; `prefs.path(name)` for what must be handed a path. A name is a
+word or `word/word`, never `..`, so nothing reaches past
+`/Home/Preferences`; the files are text (18.373).
+
+**Moved onto it, every one**: Terminal, Log View and Text Editor's text
+size and Tracker's icon size (`textsize`, `iconsize` take a name now), Text
+Editor's wrapping and recent documents, the IDE's project and its text size
+- which lived in `/Home/.ide-text`, outside Preferences altogether, and is
+`ide-text` now - the window manager's appearance, power, keyboard and
+servers, `vncd` and Servers, the Deskbar's appearance and the dock's pins,
+Music's look, Notifications' rules, Startup (the window and its library),
+Network, the clock's zone, the file types' choices, Preferences' own list
+(`settings.lua`, which keeps its rules - a default kept when a row says
+so, keys a choice makes stale - over the kit's whole-file read and write),
+and the browser's folder, history and trusted authorities, through
+`prefs.folder` and `prefs.path`.
+
+**Held, not hoped**: `make host-check` fails when anything in `user/bin`,
+`user/lib` or `user/installed` but `prefs.lua` names `/Home/Preferences`
+outside a comment. **Control**: one line in `hello.lua` reading its own
+file by hand - the build fails, naming the line.
+
+**`test_prefs.lua`, 27, in `host`**: a default until chosen; a choice
+written at once into the folder, made; several at once; a default not
+written, and one set back to it, or to nil, leaving the file; reset;
+another program's keys kept through a set; reload; `all`; a list kept
+whole; seven names that would reach outside refused and `word/word` taken;
+a whole file, a missing one as `{}`, a folder made where it is said, a
+path; a setting named like a method read with `:get`. **What it found in
+itself before anything used it**: `set("text_px", nil)` built `{ text_px =
+nil }`, an empty table, and removed nothing - `test_textsize.lua` caught it
+the first time the kit was under a helper. The helpers' tests, `textsize`
+20, `iconsize` 29, `filetypes` 52, `clock` 6, `settings` 180,
+`browserprefs` 23, `history` 15, `http` 12, given `use` and pointed at the
+kit's places.
+
+**Its gate: 88 of 88 in 10:44.**

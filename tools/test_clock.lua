@@ -16,7 +16,12 @@ fs = {
     return saved
   end,
   write = function(_, value) saved = value return true end,
+  getattr = function() return { kind = "directory" } end,
+  send = function() return { ok = true } end,
 }
+
+-- The settings kit, as `use` reaches it in a process.
+use = use or function(path) return dofile((path:gsub("^/Kosmos/Libraries/", "user/lib/"))) end
 
 local clock = dofile("user/lib/clock.lua")
 

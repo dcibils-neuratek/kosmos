@@ -509,9 +509,8 @@ local W = sw
 -- Appearance's `bar`, the dock floating unless `dock` says the whole
 -- width. `--bar dock` or `--bar top` says so for one start, as a test asks.
 --
-local appearance = fs.read("/Home/Preferences/appearance")
-
-if type(appearance) ~= "table" then appearance = {} end
+local prefs = use("/Kosmos/Libraries/prefs.lua")
+local appearance = prefs.read("appearance")
 
 local asked_bar = tostring(args or ""):match("%-%-bar%s+(%a+)")
 local asked_dock = tostring(args or ""):match("%-%-dock%s+(%a+)")
@@ -1826,9 +1825,8 @@ local dock_tip_hide = nil     -- the name over an icon, taken away
 
 if DOCKED then
   local wmproto = use("/Kosmos/Libraries/wmproto.lua")
-  local saved = fs.read("/Home/Preferences/dock")
-  local pins = (type(saved) == "table" and type(saved.pins) == "table")
-               and saved.pins or dock.PINS
+  local dock_prefs = prefs.open("dock", { pins = dock.PINS })
+  local pins = type(dock_prefs.pins) == "table" and dock_prefs.pins or dock.PINS
   local items = {}
   local wanted_w = nil            -- the dock's width once its cells are known
   local drag = nil                -- an icon pressed and maybe dragged (`bar:mouse`)
@@ -1859,17 +1857,8 @@ if DOCKED then
   function save_pins(new, what, name)
     pins = new
 
-    local file = fs.read("/Home/Preferences/dock")
-
-    if type(file) ~= "table" then file = {} end
-
-    file.pins = new
-
-    if not fs.getattr("/Home/Preferences") then
-      fs.send("/Home/Preferences", { type = "mkdir" })
-    end
-
-    local ok, why = fs.write("/Home/Preferences/dock", file)
+    -- Through the settings kit, which keeps whatever else is in the file.
+    local ok, why = dock_prefs:set("pins", new)
 
     print(("deskbar: %s %s - the dock is %s%s"):format(what, name, table.concat(new, ","),
           ok and "" or (", not kept: " .. tostring(why))))

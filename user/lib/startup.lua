@@ -13,7 +13,8 @@
 --
 local M = {}
 
-M.SETTINGS = "/Home/Preferences/startup"
+-- The settings it is kept in, as the settings kit names them (`prefs.lua`).
+M.NAME = "startup"
 
 --
 -- What a machine that has never been told opens.
@@ -49,9 +50,9 @@ M.DEFAULT = { "tracker", "sysmon", "procs", "logview" }
 -- the default back would be the preferences panel refusing to be used.
 --
 function M.items()
-  local saved = fs.read(M.SETTINGS)
+  local saved = use("/Kosmos/Libraries/prefs.lua").read(M.NAME)
 
-  if type(saved) == "table" and type(saved.items) == "table" then
+  if type(saved.items) == "table" then
     return saved.items, false
   end
 

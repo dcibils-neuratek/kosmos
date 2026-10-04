@@ -50,7 +50,8 @@
 
 local http = {}
 
-http.AUTHORITIES = "/Home/Preferences/Authorities"
+-- The certificates a person trusts, a folder the settings kit keeps.
+http.AUTHORITIES = use("/Kosmos/Libraries/prefs.lua").path("Authorities")
 
 local function trim(text)
   return (tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", ""))

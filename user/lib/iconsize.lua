@@ -61,22 +61,23 @@ local function known(px)
 end
 
 --
--- `path` is the settings file, `key` names the place inside it, and
--- `changed`, if given, is called after a change - the caller's cells are
--- worked out from the size, so something has to recompute them.
+-- `name` is the settings, as the settings kit names them (`prefs.lua`),
+-- `key` names the place inside them, and `changed`, if given, is called
+-- after a change - the caller's cells are worked out from the size, so
+-- something has to recompute them.
 --
-function iconsize.new(path, key, changed)
-  local self = setmetatable({ path = path, key = key, changed = changed },
+function iconsize.new(name, key, changed)
+  local store = use("/Kosmos/Libraries/prefs.lua").open(name)
+  local self = setmetatable({ store = store, key = key, changed = changed },
                             methods)
-  local saved = fs.read(path)
 
   self.px = nil
 
   -- A file edited by hand can say anything, including a size no export
   -- exists for. Anything but one of the three is the default rather than a
   -- picture stretched to a number somebody typed.
-  if type(saved) == "table" and known(saved[key]) then
-    self.px = saved[key]
+  if known(store:get(key)) then
+    self.px = store:get(key)
   end
 
   return self
@@ -99,17 +100,12 @@ function methods:set(px)
 
   self.px = want
 
-  -- Read, change one key, write: the file holds a key for each place.
-  local saved = fs.read(self.path)
-
-  if type(saved) ~= "table" then saved = {} end
-
-  saved[self.key] = self.px
-
-  local ok, why = fs.write(self.path, saved)
+  -- Read, change one key, write - the settings kit's: the file holds a key
+  -- for each place.
+  local ok, why = self.store:set(self.key, self.px)
 
   if not ok then
-    print("iconsize: not saved to " .. self.path .. ": " .. tostring(why))
+    print("iconsize: not saved to " .. self.store:path() .. ": " .. tostring(why))
   end
 
   if self.changed then self.changed() end

@@ -1100,6 +1100,8 @@ Decided by Diego on 4 October 2026: "Nothing is stored in binary format for sett
 
 **Where**: a table written to a file under `/Home`, on a disk or, without one, in memory. `/Temporary` keeps the serialiser's packing - what programs hand each other there is not a setting, and its packing is C - and attributes stay the bytes `sys.pack` makes, being a file's metadata inside the filesystem rather than a file. A file in the old form is still read, and is text the next time it is written.
 
+**And one way to keep one** (the same day; Diego: "There should be a settings kit that allows an app to store and read settings", "So apps use that kit instead of inventing their own way"): `prefs.lua`. An application opens its settings by a name with its defaults beside them, reads a field, and sets one; the kit reads, changes and writes so another program's keys survive, writes no default, and keeps every name inside `/Home/Preferences`. `make host-check` refuses anything but the kit naming that folder, so the next application cannot invent its own way without the build saying so.
+
 ### 8.4 A large file is mapped, not copied
 
 `read` returning a string is right for a configuration file and wrong for a picture. A 936 KB PNG through `fs.read` gives `not enough memory`, because the string is accumulated on a 2 MB process heap.

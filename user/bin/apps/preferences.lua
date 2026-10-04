@@ -668,7 +668,7 @@ local function control_for(it, x, y, changed)
                         if ticked[name] then items[#items + 1] = name end
                       end
 
-                      fs.write(settings.STARTUP, { items = items })
+                      use("/Kosmos/Libraries/prefs.lua").write(settings.STARTUP, { items = items })
                     end }
   end
 
@@ -1023,7 +1023,7 @@ rebuild = function()
           first and (", a choice at %d,%d"):format(
             SIDE + first.x + first.w // 2, first.y + first.h // 2) or ""))
 
-    local words = types.CHOICES .. " - only the choices that differ from "
+    local words = use("/Kosmos/Libraries/prefs.lua").path(types.CHOICES) .. " - only the choices that differ from "
                   .. "the default"
 
     if #groups == 0 then words = "No type is called that." end

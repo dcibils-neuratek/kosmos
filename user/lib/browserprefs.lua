@@ -19,7 +19,8 @@
 
 local prefs = {}
 
-prefs.DIR = "/Home/Preferences/browser"
+-- The browser's own folder, where the settings kit keeps it (`prefs.lua`).
+prefs.DIR = use("/Kosmos/Libraries/prefs.lua").path("browser")
 prefs.FILE = prefs.DIR .. "/settings"
 prefs.TABS = prefs.DIR .. "/tabs"
 

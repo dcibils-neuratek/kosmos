@@ -28,7 +28,7 @@
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 
-local SETTINGS = "/Home/Preferences/startup"
+local prefs = use("/Kosmos/Libraries/prefs.lua")
 
 local W, H = 320, 340
 
@@ -100,7 +100,7 @@ local function save()
     if ticked[name] then items[#items + 1] = name end
   end
 
-  local ok, why = fs.write(SETTINGS, { items = items })
+  local ok, why = prefs.write("startup", { items = items })
 
   if not ok then
     status.text = "not saved: " .. tostring(why)

@@ -206,7 +206,7 @@ local view = ui.view{ x = 0, y = L.head, w = W, h = H - L.head,
 -- until somebody chooses otherwise.
 --
 local textsize = use("/Kosmos/Libraries/textsize.lua")
-local size = textsize.new(ui, "/Home/Preferences/terminal")
+local size = textsize.new(ui, "terminal")
 
 --
 -- The header: where you are, and everything else behind the dots.

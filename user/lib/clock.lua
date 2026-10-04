@@ -21,7 +21,8 @@
 
 local clock = {}
 
-local SETTINGS = "/Home/Preferences/clock"
+-- Kept by the settings kit, as "clock" (`prefs.lua`).
+local function prefs() return use("/Kosmos/Libraries/prefs.lua") end
 
 --
 -- Days since 1970 into a year, month and day.
@@ -69,9 +70,9 @@ clock.FULL_MONTHS = { "January", "February", "March", "April", "May", "June",
 -- clock that would otherwise be wrong until you restarted the desktop.
 --
 function clock.offset()
-  local saved = fs.read(SETTINGS)
+  local saved = prefs().read("clock")
 
-  if type(saved) == "table" and type(saved.offset) == "number" then
+  if type(saved.offset) == "number" then
     return saved.offset
   end
 
@@ -79,7 +80,7 @@ function clock.offset()
 end
 
 function clock.set_offset(minutes)
-  return fs.write(SETTINGS, { offset = minutes })
+  return prefs().open("clock"):set("offset", minutes)
 end
 
 --

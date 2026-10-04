@@ -7,6 +7,9 @@
 -- nobody knows refused for the default, a choice's name, and the open tabs
 -- kept and read back with which was shown.
 
+-- The settings kit, as `use` reaches it in a process.
+use = use or function(path) return dofile((path:gsub("^/Kosmos/Libraries/", "user/lib/"))) end
+
 local prefs = assert(loadfile("user/lib/browserprefs.lua"))()
 
 local failures, checks = 0, 0

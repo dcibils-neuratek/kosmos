@@ -65,19 +65,21 @@ local L = ui.layout
 -- A Lua table written with `fs.write`, like every settings file here.
 --------------------------------------------------------------------------
 
-local SETTINGS = "/Home/Preferences/ide"
+local prefs = use("/Kosmos/Libraries/prefs.lua")
 
 --
 -- **Its text larger and smaller**, as Terminal's and Log View's is: Diego,
 -- 27 September, "we need a way to increase font size like we have in the
 -- terminal app". `/Kosmos/Libraries/textsize.lua`'s steps and its menu, in the dots, and
--- Ctrl = and Ctrl - besides; kept in a file of its own, since `/Home/Preferences/ide`
--- is the project's memory. Every editor asks for the face as it draws.
+-- Ctrl = and Ctrl - besides; kept in settings of its own, `ide-text`, since
+-- `ide` is the project's memory. Every editor asks for the face as it draws.
+-- (It was `/Home/.ide-text`, outside Preferences altogether, until the
+-- settings kit.)
 --
 local textsize = use("/Kosmos/Libraries/textsize.lua")
 local text                    -- declared first: the callback below names it
 
-text = textsize.new(ui, "/Home/.ide-text", function()
+text = textsize.new(ui, "ide-text", function()
   print(("ide: text %d px"):format(text:size()))
 end)
 
@@ -85,8 +87,7 @@ end)
 -- made if it is not there, so the tree has somewhere to stand.
 local FIRST = "/Home/development"
 
-local remembered = fs.read(SETTINGS)
-if type(remembered) ~= "table" then remembered = {} end
+local remembered = prefs.read("ide")
 
 local asked = tostring(args or ""):match("^%s*(%S+)")
 
@@ -203,7 +204,7 @@ local function remember()
 
   for _, f in ipairs(open) do paths[#paths + 1] = f.path end
 
-  fs.write(SETTINGS, { project = project, files = paths,
+  prefs.write("ide", { project = project, files = paths,
                        current = current and current.path or nil })
 end
 

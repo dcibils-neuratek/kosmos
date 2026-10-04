@@ -333,7 +333,7 @@ local function stamp_colour()    return theme.stamp end
 -- filesystem gets the default palette and says nothing about it - the
 -- appearance of the desktop is not a reason to fail to start one.
 --------------------------------------------------------------------------
-local SETTINGS = "/Home/Preferences/appearance"
+local prefs = use("/Kosmos/Libraries/prefs.lua")
 
 --
 -- **The title's shape: a bar across the whole window, and not a setting.**
@@ -520,9 +520,7 @@ end
 local startup_font_why
 
 local function load_appearance()
-  local saved = fs.read(SETTINGS)
-
-  if type(saved) ~= "table" then saved = {} end
+  local saved = prefs.read("appearance")
 
   --
   -- **Whether a window is rounded and whether it casts a shadow, before
@@ -1670,8 +1668,8 @@ end
 OUT.keys = { power = "off", super = "menu" }
 
 function OUT.load_keys()
-  local power = fs.read("/Home/Preferences/power")
-  local keyboard = fs.read("/Home/Preferences/keyboard")
+  local power = prefs.read("power")
+  local keyboard = prefs.read("keyboard")
 
   if type(power) == "table" and power.button then
     OUT.keys.power = power.button
@@ -6551,7 +6549,7 @@ end
 -- hold nothing to show (`remote`, above).
 --
 do
-  local kept = fs.read("/Home/Preferences/servers")
+  local kept = prefs.read("servers")
   local vnc = type(kept) == "table" and kept.vnc
 
   if type(vnc) == "table" and vnc.at_start == true then

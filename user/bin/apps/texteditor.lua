@@ -40,7 +40,7 @@ local files    = use("/Kosmos/Libraries/files.lua")
 
 local L = ui.layout
 
-local SETTINGS  = "/Home/Preferences/texteditor"
+local prefs    = use("/Kosmos/Libraries/prefs.lua")
 local DOCUMENTS = "/Home/Documents"
 local RECENT    = 8          -- documents Open recent remembers
 local FIND_H    = 42         -- the find bar, under the header
@@ -66,19 +66,13 @@ end
 -- A new document is Markdown; one that exists is what its name says.
 local markdown = (path == nil) or markdown_name(path)
 
-local settings = fs.read(SETTINGS)
-
-settings = (type(settings) == "table") and settings or {}
+-- Its settings, through the settings kit (`prefs.lua`): wrapping, and what
+-- was opened lately - beside the text size, which `textsize` keeps there.
+local store = prefs.open("texteditor")
+local settings = { wrap = store.wrap, recent = store.recent }
 
 local function keep_settings()
-  local now = fs.read(SETTINGS)
-
-  now = (type(now) == "table") and now or {}
-  now.wrap = settings.wrap
-  now.recent = settings.recent
-  settings = now
-
-  local ok, why = fs.write(SETTINGS, now)
+  local ok, why = store:set{ wrap = settings.wrap, recent = settings.recent }
 
   if not ok then print("texteditor: settings not kept: " .. tostring(why)) end
 end
@@ -95,7 +89,7 @@ local function remember(p)
   keep_settings()
 end
 
-local size = textsize.new(ui, SETTINGS, nil, "ui")
+local size = textsize.new(ui, "texteditor", nil, "ui")
 
 -- The mono face, when this document asked for it: kept on the document.
 local function asked_mono(p)

@@ -72,16 +72,28 @@ settings.CATEGORIES = {
 }
 
 --
--- The files settings live in, named once so a typo is a missing value rather
--- than a second file nobody reads.
+-- The settings the rows live in, named once so a typo is a missing value
+-- rather than a second file nobody reads - as the settings kit names them
+-- (`prefs.lua`: "appearance" is `/Home/Preferences/appearance`), which is
+-- what reads and writes them for this list as for every application.
 --
-settings.APPEARANCE = "/Home/Preferences/appearance"
-settings.TRACKER    = "/Home/Preferences/tracker"
-settings.CLOCK      = "/Home/Preferences/clock"
-settings.STARTUP    = "/Home/Preferences/startup"
-settings.POWER      = "/Home/Preferences/power"
-settings.KEYBOARD   = "/Home/Preferences/keyboard"
-settings.NOTIFICATIONS = "/Home/Preferences/notifications"
+settings.APPEARANCE = "appearance"
+settings.TRACKER    = "tracker"
+settings.CLOCK      = "clock"
+settings.STARTUP    = "startup"
+settings.POWER      = "power"
+settings.KEYBOARD   = "keyboard"
+settings.NOTIFICATIONS = "notifications"
+
+-- The settings kit's whole-file read and write, by name: what `get` and
+-- `set` use unless a test hands them its own.
+local function kit_read(name)
+  return (use("/Kosmos/Libraries/prefs.lua").read(name))
+end
+
+local function kit_write(name, t)
+  return use("/Kosmos/Libraries/prefs.lua").write(name, t)
+end
 
 --
 -- One setting.
@@ -367,7 +379,7 @@ end
 -- a filesystem; applications call `settings.get(item)` and get `fs.read`.
 --
 function settings.get(it, read)
-  read = read or fs.read
+  read = read or kit_read
 
   -- A row that knows where it is kept - an application's notifications,
   -- which are a key inside a table (`settings.notifiers`).
@@ -401,8 +413,8 @@ end
 -- keeping the same everywhere.
 --
 function settings.set(it, value, read, write)
-  read = read or fs.read
-  write = write or fs.write
+  read = read or kit_read
+  write = write or kit_write
 
   -- A row that knows how it is kept - a file type's choice, made for every
   -- spelling of the type (`filetypes.page`).
@@ -517,8 +529,8 @@ end
 -- filesystem, as `settings.set` is.
 --
 function settings.notifiers(entries, who, key, read, write)
-  read = read or fs.read
-  write = write or fs.write
+  read = read or kit_read
+  write = write or kit_write
 
   local items, seen = {}, {}
 

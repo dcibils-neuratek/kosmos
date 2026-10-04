@@ -26,7 +26,7 @@ local theme = ui.theme
 
 local W, H = 500, 490
 
-local SETTINGS = "/Home/Preferences/network"
+local prefs = use("/Kosmos/Libraries/prefs.lua")
 
 local win, err = ui.window{ title = "Network", w = W, h = H, x = 140, y = 90,
                             header = true }
@@ -120,9 +120,7 @@ end
 -- The settings.
 --------------------------------------------------------------------------
 
-local saved = fs.read(SETTINGS)
-
-if type(saved) ~= "table" then saved = {} end
+local saved = prefs.read("network")
 
 local function field(value)
   return ui.field{ w = 190, text = value or "" }
@@ -230,7 +228,7 @@ function apply(and_save)
     return
   end
 
-  local put, werr = fs.write(SETTINGS, {
+  local put, werr = prefs.write("network", {
     address = address.text:match("^%s*(.-)%s*$"),
     netmask = netmask.text:match("^%s*(.-)%s*$"),
     gateway = gateway.text:match("^%s*(.-)%s*$"),

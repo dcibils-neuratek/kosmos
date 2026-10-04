@@ -284,7 +284,7 @@ local LROW = ui.metrics.row
 --
 local resize_cells
 
-local icons = iconsize.new("/Home/Preferences/tracker",
+local icons = iconsize.new("tracker",
                            backdrop and "desktop_icon_px" or "window_icon_px",
                            function() resize_cells() end)
 

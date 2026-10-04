@@ -46,7 +46,7 @@ local clock  = use("/Kosmos/Libraries/clock.lua")
 local types  = use("/Kosmos/Libraries/filetypes.lua")
 local theme  = ui.theme
 
-local PREFS = "/Home/Preferences/notifications"
+local prefs  = use("/Kosmos/Libraries/prefs.lua")
 local HISTORY = "Notification history"      -- its window's title, and /Running name
 
 local mode = tostring(args or ""):match("^%s*(%S*)")
@@ -58,9 +58,7 @@ local mode = tostring(args or ""):match("^%s*(%S*)")
 -- The person's rules, with the drawing's defaults: banners for five
 -- seconds, two hundred kept, nothing silenced.
 local function rules()
-  local r = fs.read(PREFS)
-
-  if type(r) ~= "table" then r = {} end
+  local r = prefs.read("notifications")
 
   return {
     dnd = r.dnd == true,
@@ -71,15 +69,7 @@ local function rules()
 end
 
 local function save_rule(key, value)
-  local r = fs.read(PREFS)
-
-  if type(r) ~= "table" then r = {} end
-
-  r[key] = value
-
-  if not fs.getattr("/Home/Preferences") then fs.send("/Home/Preferences", { type = "mkdir" }) end
-
-  return fs.write(PREFS, r)
+  return prefs.open("notifications"):set(key, value)
 end
 
 -- An application's name and picture, by the file it runs: what its header

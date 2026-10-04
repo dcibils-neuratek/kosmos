@@ -2738,11 +2738,12 @@ local function load_page(text, post)
 <h1>Trusted authorities</h1>
 <p>A page over HTTPS is shown as Secure when its certificate was signed by one
 of these.</p>
-<h2>Added here, in /Home/Preferences/Authorities</h2>
+<h2>Added here, in %s</h2>
 <ul>%s</ul>
 <h2>Mozilla's %d, as of %s</h2>
 <ul>%s</ul>
-</body></html>]]):format(#own > 0 and table.concat(own) or "<li>None</li>", #rows,
+</body></html>]]):format(escaped(http.AUTHORITIES),
+                      #own > 0 and table.concat(own) or "<li>None</li>", #rows,
                       escaped(as_of or "the build"), table.concat(rows)), 0
     say("the authorities this machine trusts")
 
@@ -4287,7 +4288,7 @@ do
 
     local open_own = button("Open", function()
       if not fs.getattr(http.AUTHORITIES) then
-        fs.send(http.AUTHORITIES, { type = "mkdir" })
+        use("/Kosmos/Libraries/prefs.lua").folder("Authorities")
       end
 
       fs.send("/Running/wm", { type = "launch", program = "tracker",
@@ -4358,7 +4359,7 @@ do
             control = button("Show", function() new_tab(prefs.ROOTS) end) },
           { label = "Added here",
             note = #own > 0 and table.concat(own, ", ")
-                   or "None - a certificate in DER put in /Home/Preferences/Authorities is trusted too",
+                   or ("None - a certificate in DER put in %s is trusted too"):format(http.AUTHORITIES),
             control = open_own },
           { label = "A page with a bad certificate",
             note = "Refused, with the reason and an Open anyway for that tab" } } },

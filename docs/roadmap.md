@@ -638,7 +638,7 @@ and Preferences' own `settings.get` and `settings.set` through it. Diego,
 the same minute: "So apps use that kit instead of inventing their own way" -
 **held, not hoped**: a host check fails the build when any application,
 program or library names `/Home/Preferences` itself, the kit being the one
-file allowed to. Next, after settings as text.
+file allowed to. **Done the same day** (`testing.md` 18.374).
 
 **An installed application built for older protocols says so.** Diego, 4
 October 2026, on the M700: "launching doom raises an error and does not

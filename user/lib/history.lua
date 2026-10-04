@@ -21,7 +21,8 @@
 
 local history = {}
 
-history.DIR = "/Home/Preferences/browser/history"
+-- In the browser's folder, where the settings kit keeps it (`prefs.lua`).
+history.DIR = use("/Kosmos/Libraries/prefs.lua").path("browser/history")
 
 -- A day's name: its date, which sorts as the days do.
 function history.day_of(t)

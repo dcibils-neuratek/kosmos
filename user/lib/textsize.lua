@@ -54,20 +54,22 @@ local function nearest(px)
 end
 
 --
--- `path` is the window's settings file; `changed`, if given, is called
--- after a change. A choice from the window's own menu needs none: the kit
--- paints a window again after any menu choice. `role` is the face being
--- sized, `mono` unless it says otherwise.
+-- `name` is the window's settings, as the settings kit names them
+-- (`prefs.lua`: "terminal" is `/Home/Preferences/terminal`); `changed`, if
+-- given, is called after a change. A choice from the window's own menu
+-- needs none: the kit paints a window again after any menu choice. `role`
+-- is the face being sized, `mono` unless it says otherwise.
 --
-function textsize.new(ui, path, changed, role)
-  local self = setmetatable({ ui = ui, path = path, changed = changed,
+function textsize.new(ui, name, changed, role)
+  local store = use("/Kosmos/Libraries/prefs.lua").open(name)
+  local self = setmetatable({ ui = ui, store = store, changed = changed,
                               role = role or "mono" }, methods)
-  local saved = fs.read(path)
+  local saved = store.text_px
 
   self.px = nil
 
-  if type(saved) == "table" and math.type(saved.text_px) == "integer" then
-    self.px = nearest(saved.text_px)
+  if math.type(saved) == "integer" then
+    self.px = nearest(saved)
   end
 
   return self
@@ -109,16 +111,12 @@ function methods:set(px)
   self.px = want
 
   -- **Into the file, beside whatever else the window keeps there** - Text
-  -- Editor's recent documents - rather than over it.
-  local keep = fs.read(self.path)
-
-  keep = (type(keep) == "table") and keep or {}
-  keep.text_px = self.px
-
-  local ok, why = fs.write(self.path, keep)
+  -- Editor's recent documents - rather than over it: the settings kit reads,
+  -- changes this one key and writes.
+  local ok, why = self.store:set("text_px", self.px)
 
   if not ok then
-    print("textsize: not saved to " .. self.path .. ": " .. tostring(why))
+    print("textsize: not saved to " .. self.store:path() .. ": " .. tostring(why))
   end
 
   if self.changed then self.changed() end

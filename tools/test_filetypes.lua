@@ -11,6 +11,9 @@
 --   build/host/lua tools/test_filetypes.lua user/bin/apps/*.lua \
 --       user/bin/apps/*/*.lua user/bin/programs/*.lua
 
+-- The settings kit, as `use` reaches it in a process.
+use = use or function(path) return dofile((path:gsub("^/Kosmos/Libraries/", "user/lib/"))) end
+
 local types = dofile("user/lib/filetypes.lua")
 
 --
@@ -312,21 +315,24 @@ check(table.concat(film, ",") == "video,play",
       "a film is not opened by Video, then Play - an application before a "
       .. "program: " .. table.concat(film, ","))
 
+-- Where the settings kit keeps the choices (`prefs.lua`).
+local CHOICES_AT = "/Home/Preferences/" .. types.CHOICES
+
 -- A choice, and it is kept only while it differs from the default.
 check(types.choose("mp4", "play") and types.opener("/Home/film.mp4") == "play"
-      and saved[types.CHOICES].mp4 == "play",
+      and saved[CHOICES_AT].mp4 == "play",
       "choosing Play for a film did not make it what opens one")
 check(types.choose("mp4", "video") and types.opener("/Home/film.mp4") == "video"
-      and saved[types.CHOICES].mp4 == nil,
+      and saved[CHOICES_AT].mp4 == nil,
       "choosing the default back did not take the choice out of the file")
 check(not types.choose("mp4", "doom"),
       "Doom was allowed to be what opens a film, which it says nothing of")
 
 -- A choice for a program that no longer opens the type is not followed.
-saved[types.CHOICES] = { mp4 = "gone" }
+saved[CHOICES_AT] = { mp4 = "gone" }
 check(types.opener("/Home/film.mp4") == "video",
       "a choice naming a program that does not open the type was followed")
-saved[types.CHOICES] = nil
+saved[CHOICES_AT] = nil
 
 -- The File types page: the drawing's groups, a row a type - two spellings
 -- of one sharing it - and a choice only where there is one.
@@ -353,8 +359,8 @@ check(by[".mp4"] and by[".mp4"].kind == "choice"
       "a film's row is not a choice of Video, then Play, saying Play can too")
 check(by[".lua"] and by[".lua"].note == "Opening runs it; this is what Edit uses",
       "a Lua file's row does not say that opening one runs it")
-check(by[".mp4"].set("play") and saved[types.CHOICES].mp4 == "play"
-      and by[".mp4"].set("video") and saved[types.CHOICES].mp4 == nil,
+check(by[".mp4"].set("play") and saved[CHOICES_AT].mp4 == "play"
+      and by[".mp4"].set("video") and saved[CHOICES_AT].mp4 == nil,
       "a choice made in the row is not the one kept, or the default not "
       .. "taken back out")
 

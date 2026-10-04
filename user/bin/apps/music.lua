@@ -791,14 +791,14 @@ local function use_look(name)
   look = LOOKS[name] and name or "dark"
   P = LOOKS[look]
 
-  fs.write("/Home/Preferences/music", { look = look })
+  use("/Kosmos/Libraries/prefs.lua").open("music"):set("look", look)
   win:paint()
 end
 
 do
-  local saved = fs.read("/Home/Preferences/music")
+  local saved = use("/Kosmos/Libraries/prefs.lua").read("music")
 
-  if type(saved) == "table" and LOOKS[saved.look] then
+  if LOOKS[saved.look] then
     look = saved.look
     P = LOOKS[look]
   end

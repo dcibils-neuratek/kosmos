@@ -23,7 +23,12 @@ local files = {}
 fs = {
   read = function(path) return files[path] end,
   write = function(path, value) files[path] = value return true end,
+  getattr = function() return { kind = "directory" } end,
+  send = function() return { ok = true } end,
 }
+
+-- The settings kit, as `use` reaches it.
+function use(path) return dofile((path:gsub("^/Kosmos/Libraries/", "user/lib/"))) end
 
 local iconsize = dofile("user/lib/iconsize.lua")
 
@@ -33,7 +38,7 @@ local DESK, WIN = "desktop_icon_px", "window_icon_px"
 do
   files["/Home/Preferences/tracker"] = nil
 
-  local icons = iconsize.new("/Home/Preferences/tracker", DESK)
+  local icons = iconsize.new("tracker", DESK)
 
   check(icons:size() == 32, "with nothing saved the size is " .. icons:size())
   check(icons.px == nil, "with nothing saved a size of its own was kept")
@@ -43,7 +48,7 @@ end
 do
   files["/Home/Preferences/tracker"] = nil
 
-  local icons = iconsize.new("/Home/Preferences/tracker", DESK)
+  local icons = iconsize.new("tracker", DESK)
 
   check(icons:set(64) == true and icons:size() == 64,
         "64 chosen gave " .. icons:size())
@@ -66,8 +71,8 @@ end
 do
   files["/Home/Preferences/tracker"] = nil
 
-  local desk = iconsize.new("/Home/Preferences/tracker", DESK)
-  local win  = iconsize.new("/Home/Preferences/tracker", WIN)
+  local desk = iconsize.new("tracker", DESK)
+  local win  = iconsize.new("tracker", WIN)
 
   desk:set(64)
   win:set(16)
@@ -78,8 +83,8 @@ do
         .. tostring(files["/Home/Preferences/tracker"][WIN]))
 
   -- And read back, which is the claim that survives a restart.
-  check(iconsize.new("/Home/Preferences/tracker", DESK):size() == 64
-        and iconsize.new("/Home/Preferences/tracker", WIN):size() == 16,
+  check(iconsize.new("tracker", DESK):size() == 64
+        and iconsize.new("tracker", WIN):size() == 16,
         "the sizes did not come back")
 end
 
@@ -88,11 +93,11 @@ end
 do
   files["/Home/Preferences/tracker"] = { [DESK] = 48 }
 
-  check(iconsize.new("/Home/Preferences/tracker", DESK):size() == 32,
+  check(iconsize.new("tracker", DESK):size() == 32,
         "48 saved came back as "
-        .. iconsize.new("/Home/Preferences/tracker", DESK):size())
+        .. iconsize.new("tracker", DESK):size())
 
-  local icons = iconsize.new("/Home/Preferences/tracker", DESK)
+  local icons = iconsize.new("tracker", DESK)
 
   check(icons:set(48) == false and icons:size() == 32,
         "48 was accepted from the outside")
@@ -102,7 +107,7 @@ end
 do
   files["/Home/Preferences/tracker"] = nil
 
-  local icons = iconsize.new("/Home/Preferences/tracker", DESK)
+  local icons = iconsize.new("tracker", DESK)
   local items = icons:items()
   local marked = 0
 
@@ -166,7 +171,7 @@ do
   files["/Home/Preferences/tracker"] = nil
 
   local told = 0
-  local icons = iconsize.new("/Home/Preferences/tracker", DESK,
+  local icons = iconsize.new("tracker", DESK,
                              function() told = told + 1 end)
 
   icons:set(64)

@@ -47,7 +47,17 @@ filetypes.STORES = { "/Kosmos/Apps", "/Kosmos/Programs" }   -- then /Home/Apps
 -- Preferences' File types and in Info; Open with in a right click is for
 -- that once and changes nothing.
 --
-filetypes.CHOICES = "/Home/Preferences/filetypes"
+filetypes.CHOICES = "filetypes"           -- as the settings kit names it
+
+-- The settings kit's whole-file read and write: what the choices are kept
+-- with unless a test hands its own.
+local function kit_read(name)
+  return (use("/Kosmos/Libraries/prefs.lua").read(name))
+end
+
+local function kit_write(name, t)
+  return use("/Kosmos/Libraries/prefs.lua").write(name, t)
+end
 
 --
 -- **Which comes first, where two of the applications Kosmos ships open one
@@ -123,9 +133,10 @@ function filetypes.openers(ext, store)
   return filetypes.table(store)[tostring(ext or ""):lower()] or {}
 end
 
--- The choices a person has made, `{ mp4 = "play" }`; `read` is `fs.read`.
+-- The choices a person has made, `{ mp4 = "play" }`; `read` is the
+-- settings kit's.
 function filetypes.choices(read)
-  local saved = (read or fs.read)(filetypes.CHOICES)
+  local saved = (read or kit_read)(filetypes.CHOICES)
 
   return type(saved) == "table" and saved or {}
 end
@@ -136,7 +147,7 @@ end
 -- the program does not open that type.
 --
 function filetypes.choose(ext, program, store, read, write)
-  read, write = read or fs.read, write or fs.write
+  read, write = read or kit_read, write or kit_write
   ext = tostring(ext or ""):lower()
 
   local list = filetypes.openers(ext, store)
@@ -153,10 +164,6 @@ function filetypes.choose(ext, program, store, read, write)
   local saved = filetypes.choices(read)
 
   saved[ext] = (program ~= list[1]) and program or nil
-
-  if not store and not fs.getattr("/Home/Preferences") then
-    fs.send("/Home/Preferences", { type = "mkdir" })
-  end
 
   return write(filetypes.CHOICES, saved)
 end

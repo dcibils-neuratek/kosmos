@@ -37,7 +37,7 @@ local L = ui.layout
 
 local W, H = 760, 600
 local SIDE = 216
-local SETTINGS = "/Home/Preferences/servers"
+local prefs = use("/Kosmos/Libraries/prefs.lua")
 
 local win, err = ui.window{ title = "Servers", w = W, h = H, x = 140, y = 90,
                             header = true }
@@ -74,9 +74,7 @@ local BY_ID = {}
 for _, s in ipairs(SERVERS) do BY_ID[s.id] = s end
 
 -- What is kept: each server's table, with its defaults under what is missing.
-local saved = fs.read(SETTINGS)
-
-saved = type(saved) == "table" and saved or {}
+local saved = prefs.read("servers")
 
 local function config(s)
   local c = type(saved[s.id]) == "table" and saved[s.id] or {}
@@ -90,8 +88,7 @@ local function config(s)
 end
 
 local function keep()
-  fs.send("/Home/Preferences", { type = "mkdir" })
-  fs.write(SETTINGS, saved)
+  prefs.write("servers", saved)
 end
 
 --------------------------------------------------------------------------

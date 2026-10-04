@@ -52,7 +52,7 @@ local words = {}
 for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
 
 local port = tonumber(words[1]) or 5900
-local SETTINGS = "/Home/Preferences/servers"
+local prefs = use("/Kosmos/Libraries/prefs.lua")
 local REMOTE = "/Running/wm/remote"
 
 local function dotted(bytes)
@@ -233,7 +233,7 @@ end
 -- What the Servers window says, read afresh for each viewer: its password,
 -- and whether it may use the keyboard and the pointer.
 local function settings()
-  local all = fs.read(SETTINGS)
+  local all = prefs.read("servers")
   local vnc = type(all) == "table" and type(all.vnc) == "table" and all.vnc or {}
   local p = vnc.password
 

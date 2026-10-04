@@ -3871,6 +3871,19 @@ host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000de
 	    exit 1; \
 	fi
 	@echo "cglobals: no C sets a Lua global outside kosmos_lua_open"
+	@# **Every setting through the settings kit** (Diego, 4 October: "So
+	@# apps use that kit instead of inventing their own way"). Nothing in an
+	@# application, a program or a library names the settings folder but
+	@# `prefs.lua`, which reads and writes it as text for all of them -
+	@# `prefs.open(name, defaults)`, `prefs.folder(name)`. A comment may say it.
+	@if grep -rn '/Home/Preferences' user/bin user/lib user/installed \
+	    | grep -v '^user/lib/prefs.lua:' \
+	    | grep -v '^[^:]*:[0-9]*: *--'; then \
+	    echo "FAIL: a program names /Home/Preferences itself. A setting goes"; \
+	    echo "      through use(\"/Kosmos/Libraries/prefs.lua\"); see design.md 8.3e."; \
+	    exit 1; \
+	fi
+	@echo "prefs: every setting through the settings kit"
 	@# The format, `kfs.c`, on this machine before anything is booted - the
 	@# fastest of these and the one that fails first when the disk layout is
 	@# wrong - plain and through the disk server's cache (`docs/diskfs.md`).
@@ -3953,6 +3966,8 @@ host-check: $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000de
 	$(HOSTDIR)/lua tools/test_launchgrid.lua
 	@# A table as text, values only: what a settings file is.
 	$(HOSTDIR)/lua tools/test_tabletext.lua
+	@# The settings kit every application keeps its settings with.
+	$(HOSTDIR)/lua tools/test_prefs.lua
 	@# The Deskbar's menu, read off a folder tree - what counts as an item,
 	@# what order things come in, how deep a folder may go. The store it
 	@# reads through is a table here, which is the whole reason the reading

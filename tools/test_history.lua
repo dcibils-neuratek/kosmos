@@ -7,6 +7,9 @@
 -- addresses, a hand-edited file read for what it still says, and the days
 -- before the oldest kept let go - or all of them.
 
+-- The settings kit, as `use` reaches it in a process.
+use = use or function(path) return dofile((path:gsub("^/Kosmos/Libraries/", "user/lib/"))) end
+
 local history = assert(loadfile("user/lib/history.lua"))()
 
 local failures, checks = 0, 0

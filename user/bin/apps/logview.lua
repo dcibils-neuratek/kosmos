@@ -208,7 +208,7 @@ view.focusable = true
 -- in `size:face()` at `size:size()`, so a new size rewraps them.
 --
 local textsize = use("/Kosmos/Libraries/textsize.lua")
-local size = textsize.new(ui, "/Home/Preferences/logview")
+local size = textsize.new(ui, "logview")
 
 --
 -- **Following, or held**, which is the one thing about this window a person

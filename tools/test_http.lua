@@ -5,6 +5,9 @@
 -- them (`roadmap.md` 6zz, meta refresh) - DuckDuckGo's, the forms HTML
 -- allows, and what is not one.
 
+-- The settings kit, as `use` reaches it in a process.
+use = use or function(path) return dofile((path:gsub("^/Kosmos/Libraries/", "user/lib/"))) end
+
 local http = assert(loadfile("user/lib/http.lua"))()
 
 local failures, checks = 0, 0
