@@ -614,9 +614,16 @@ first one; **0.10.240** W3b, subsets: 664 KB to 56 KB, and two checks that
 waited for a count fixed (18.380). **The M700** runs 0.10.230 with Doom
 open; 0.10.236 is staged by `make netboot`, and on his next restart Doom,
 Quake and the SNES - rebuilt with the stamp in `build/installed/x86_64/` -
-go to `/Home/Apps` by `kosmos_telnet.py put`. **Next: W4, Write's window**,
-from `docs/write.html` - first the pages drawn as they print, zoom and
-Export, then typing, then the panels. **Not pushed**: everything since
+go to `/Home/Apps` by `kosmos_telnet.py put`. **Then, the same night**: **0.10.241** W4a, Write's window (`wm writer`)
+showing a document's pages as they print, zoom, Export PDF, its page held
+line by line to macOS's rendering of the exported PDF (18.382) - and the PDF
+viewer's glyphs drawn at their size for the first time (18.381); **Diego's
+premise** - kits, servers and drivers supply, applications orchestrate, a
+second copy is a defect - in `CLAUDE.md`; **0.10.242** its first fixes, PDF
+behind one door (`pdf.lua`) and `regions.lua` (18.383). **Next, in order**:
+the review the premise asks for (`roadmap.md`, *One kit, one door*: eight
+places making regions by hand first), then W4b, typing. `/Temporary` and a
+diskless `/Home` are 128 x 16 KB, compiled in - to grow (roadmap). **Not pushed**: everything since
 0.10.214; a push is Diego's word. The gate is at 10:33 to 10:46, over the
 ten minutes, to bring back.
 
