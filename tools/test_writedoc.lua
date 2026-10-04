@@ -646,6 +646,58 @@ do
         "a chart reshaped is no longer a chart")
 end
 
+-- 15. **Comments** (W7d): a mark on the runs a comment is about, which
+-- keeps them apart as a look does and is no style's; typed text under one
+-- only inside it; where each is, across runs, paragraphs and a cell; one
+-- taken away, the runs joined again; and a file holding only the comments
+-- its text refers to.
+do
+  local doc = writedoc.new()
+  local by_name = {}
+  for _, st in ipairs(doc.styles) do by_name[st.name] = st end
+
+  local body = { { style = "Body", runs = { { text = "one two three" } } },
+                 { style = "Body", runs = { { text = "four" } } } }
+  local b1 = richtext.format(body, { para = 1, at = 5 }, { para = 1, at = 8 }, { comment = 7 }, by_name)
+  check(#b1[1].runs == 3 and b1[1].runs[2].text == "two" and b1[1].runs[2].comment == 7,
+        "a comment's mark did not keep its words a run of their own")
+
+  local inside = richtext.type(b1, { para = 1, at = 6 }, "w")
+  local after = richtext.type(b1, { para = 1, at = 8 }, "s")
+  check(inside[1].runs[2].text == "twwo" and after[1].runs[2].text == "two"
+        and after[1].runs[3].text == "s three" and not after[1].runs[3].comment,
+        "typing in a comment's words is not under it, or typing after them is")
+  check(richtext.comment_at(b1, { para = 1, at = 8 }) == 7 and richtext.comment_at(b1, { para = 1, at = 4 }) == nil,
+        "the comment at a place is not the one before the caret")
+
+  local b2 = richtext.format(b1, { para = 1, at = 11 }, { para = 2, at = 3 }, { comment = 8 }, by_name)
+  local ranges = richtext.comment_ranges(b2)
+  check(#ranges == 2 and ranges[1].id == 7 and ranges[1].a.at == 5 and ranges[1].b.at == 8
+        and ranges[2].a.para == 1 and ranges[2].b.para == 2 and ranges[2].b.at == 3,
+        "where the comments are is not from their first words to their last, across paragraphs")
+
+  local b3 = richtext.uncomment(b2, 7)
+  check(#b3[1].runs == 2 and b3[1].runs[1].text == "one two th" and b3[2] == b2[2],
+        "a comment taken away did not join its words with their neighbours again")
+
+  local t = richtext.paragraph(richtext.new_table(1, 2, "Body"), by_name, "Body")
+  local tb = richtext.type({ t }, { para = 1, at = 1, row = 1, col = 2 }, "cell")
+  tb = richtext.format(tb, { para = 1, at = 1, row = 1, col = 2 }, { para = 1, at = 5, row = 1, col = 2 },
+                       { comment = 3 }, by_name)
+  local tr = richtext.comment_ranges(tb)
+  check(#tr == 1 and tr[1].a.row == 1 and tr[1].a.col == 2 and tr[1].b.at == 5,
+        "a comment in a table's cell is not found there")
+
+  doc.body = b2
+  doc.comments = { { id = 7, text = "Is it two?" }, { id = 8, text = "Spans\nlines" },
+                   { id = 9, text = "about nothing" }, { id = 7, text = "again" }, { id = "x" } }
+  local checked = writedoc.check(doc)
+  check(#checked.comments == 2 and checked.comments[1].text == "Is it two?"
+        and checked.comments[2].text == "Spans\nlines",
+        "the file kept a comment nothing refers to, a number twice, or one of no number")
+  check(same(writedoc.check(checked), checked), "a document with comments checked twice is not itself")
+end
+
 if fails > 0 then
   print(("writedoc: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

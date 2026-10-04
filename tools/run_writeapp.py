@@ -690,6 +690,22 @@ def main():
                   "Edit data did not hide the chart's data again")
             press("down", *letters("Last"))
 
+            # A comment (W7d): the word just typed selected, the Comment
+            # tool, its words typed into the panel's field, Return.
+            press("shift-home")
+            comment_tool = tool("comment")
+            mark = len(guest.seen)
+
+            if comment_tool:
+                press_at(comment_tool[0] + comment_tool[2] // 2, comment_tool[1] + 20)
+
+            check(said('writer: comment 1 on "Last"', mark, 30) is not None,
+                  "the Comment tool did not put a comment on the selected word")
+            mark = len(guest.seen)
+            press(*letters("Check this"), "ret")
+            check(said('writer: comment 1 says "Check this"', mark, 15) is not None,
+                  "the comment's words were not typed into its field")
+
             # Export's list, its third item: Word's DOCX (W6).
             export_tool = tool("export")
             mark = len(guest.seen)
@@ -756,6 +772,9 @@ def main():
                   "the star in the file is not 45 mm wide")
             check(re.search(r'chart = \{[^{}]*kind = "bar"', text) is not None,
                   "the chart in the file is not bars")
+            check(re.search(r'\{[^{}]*id = 1,[^{}]*text = "Check this"', text) is not None
+                  and re.search(r'\{[^{}]*comment = 1,[^{}]*text = "Last"', text) is not None,
+                  "the comment and the word it is about are not in the file")
 
             # Word's DOCX, read here: the table as Word's, its new column.
             word_file = os.path.join(work, "typed.docx")
@@ -765,7 +784,7 @@ def main():
                 word = z.read("word/document.xml").decode("utf-8")
 
             check(word.count("<w:tbl>") == 2 and word.count("<w:gridCol ") == 5
-                  and 'r:id="rIdChart1"' in word
+                  and 'r:id="rIdChart1"' in word and '<w:commentRangeStart w:id="1"/>' in word
                   and word.count("<w:tr>") == 5
                   and "Venus!" in word and "<w:tblHeader/>" in word,
                   "the DOCX does not hold the table, four by four with its header")
@@ -780,7 +799,8 @@ def main():
                       "Mars", "2", "rock", "Earth", "1", "rock", "Venus!", "0",
                       "rock", "Done", "Note\\ntwo", "End", "Fin",
                       "2025", "2026", "Spring", "40", "18", "Summer", "20", "26",
-                      "Autumn", "15", "21", "Winter", "9", "14", "Last", "Header words"],
+                      "Autumn", "15", "21", "Winter", "9", "14", "Last", "Check this",
+                      "Header words"],
               "the typed document holds %r, not what the keys meant" % got)
         check(text.count('name = "Letter"') == 1 and 'text = "Header words"' in text
               and re.search(r"left = 27[,\n]", text) is not None

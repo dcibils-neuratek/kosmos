@@ -607,10 +607,58 @@ function pdfwrite.write(path, set, measure, info)
 
   notes.fonts = #fonts
 
+  --
+  -- **Comments as the PDF's own notes** (W7d): a highlight over the words
+  -- each is about, on each page they stand on, its words its `/Contents` -
+  -- which every reader shows as a comment, and prints only when asked.
+  -- `info.comments` is `pageset.comment_marks`'.
+  --
+  local annots, on_page = {}, {}
+
+  for _, c in ipairs(info.comments or {}) do
+    local by_page, pages = {}, {}
+
+    for _, r in ipairs(c.rects) do
+      if not by_page[r.page] then
+        by_page[r.page] = {}
+        pages[#pages + 1] = r.page
+      end
+
+      table.insert(by_page[r.page], r)
+    end
+
+    table.sort(pages)
+
+    for _, pg in ipairs(pages) do
+      local h = set.pages[pg].height_pt
+      local quads, x0, y0, x1, y1 = {}, math.huge, math.huge, -math.huge, -math.huge
+
+      for _, r in ipairs(by_page[pg]) do
+        local left, right = r.x_pt, r.x_pt + r.w_pt
+        local high, low = h - r.y_pt, h - (r.y_pt + r.h_pt)
+
+        quads[#quads + 1] = table.concat({ num(left), num(high), num(right), num(high),
+                                           num(left), num(low), num(right), num(low) }, " ")
+        x0, y0 = math.min(x0, left), math.min(y0, low)
+        x1, y1 = math.max(x1, right), math.max(y1, high)
+      end
+
+      annots[#annots + 1] = ("<< /Type /Annot /Subtype /Highlight /Rect [%s %s %s %s] "
+        .. "/QuadPoints [%s] /Contents %s /T %s /C [1 0.86 0.35] >>"):format(
+        num(x0), num(y0), num(x1), num(y1), table.concat(quads, " "),
+        text_string(c.text), text_string("Kosmos Write"))
+      on_page[pg] = on_page[pg] or {}
+      table.insert(on_page[pg], #annots)
+    end
+  end
+
+  notes.comments = #annots
+
   local room, biggest = 64 * 1024, biggest_content
 
   for _, c in ipairs(contents) do room = room + #c + 512 end
   for _, im in ipairs(images) do room = room + #im.data + 1024 end
+  for _, a in ipairs(annots) do room = room + #a + 64 end
 
   local biggest_program = 1
 
@@ -693,12 +741,14 @@ function pdfwrite.write(path, set, measure, info)
 
   -- Numbers: the catalogue, the page tree, the information; five for each
   -- face - the font, its glyphs' font, its descriptor, its program, its
-  -- ToUnicode - one for each picture, and two for each page.
+  -- ToUnicode - one for each picture, two for each page, and one for each
+  -- comment's note on a page.
   local CATALOG, PAGES, INFO = 1, 2, 3
   local first_font = 4
   local first_image = first_font + 5 * #fonts
   local first_page = first_image + #images
-  local count = first_page + 2 * #set.pages - 1
+  local first_note = first_page + 2 * #set.pages
+  local count = first_note + #annots - 1
 
   put("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
 
@@ -765,13 +815,19 @@ function pdfwrite.write(path, set, measure, info)
   for i, page in ipairs(set.pages) do
     local n = first_page + 2 * (i - 1)
 
+    local refs = {}
+    for _, k in ipairs(on_page[i] or {}) do refs[#refs + 1] = ("%d 0 R"):format(first_note + k - 1) end
+
     object(n, ("<< /Type /Page /Parent %d 0 R /MediaBox [0 0 %s %s] "
-      .. "/Resources %s /Contents %d 0 R >>"):format(PAGES, num(page.width_pt),
-      num(page.height_pt), font_resources, n + 1))
+      .. "/Resources %s /Contents %d 0 R%s >>"):format(PAGES, num(page.width_pt),
+      num(page.height_pt), font_resources, n + 1,
+      #refs > 0 and (" /Annots [" .. table.concat(refs, " ") .. "]") or ""))
 
     text_stream(n + 1, contents[i])
     contents[i] = nil
   end
+
+  for k, a in ipairs(annots) do object(first_note + k - 1, a) end
 
   -- The cross-reference table: twenty bytes an object, the offset of each.
   local xref = at

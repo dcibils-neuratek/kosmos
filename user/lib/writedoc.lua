@@ -101,6 +101,7 @@ function writedoc.new()
     facing = false, hyphenation = false, ligatures = true, language = "en-us",
     styles = styles,
     body = { { style = writedoc.BODY, runs = {} } },
+    comments = {},
   }
 end
 
@@ -233,6 +234,30 @@ function writedoc.check(t)
   -- A page with nothing on it still has a place to type.
   if #doc.body == 0 then
     doc.body[1] = { style = fallback, runs = {} }
+  end
+
+  -- **Comments** (W7d): each a number and its words. One no run refers to
+  -- any more is left behind, so a file holds only what it shows; a number
+  -- said twice is the first one's.
+  local used = {}
+
+  richtext.each_text(doc.body, function(p)
+    for _, r in ipairs(p.runs) do
+      if r.comment then used[r.comment] = true end
+    end
+  end)
+
+  doc.comments = {}
+
+  for _, c in ipairs(type(t.comments) == "table" and t.comments or {}) do
+    if type(c) == "table" and math.type(c.id) == "integer" and used[c.id] then
+      used[c.id] = false
+
+      local words = type(c.text) == "string"
+                    and c.text:gsub("[%z\1-\9\11-\31\127]", ""):sub(1, 2000) or ""
+
+      doc.comments[#doc.comments + 1] = { id = c.id, text = words }
+    end
   end
 
   return doc

@@ -1061,6 +1061,25 @@ do
         "a chart's data stayed shown from the cache")
 end
 
+-- 22. **Comments** (W7d): where a comment stands is where a selection of
+-- its words would - a rectangle on each line - with its words beside it.
+do
+  local cdoc = doc_of{ { style = "Body", runs = { { text = "aaa " }, { text = "bbb", comment = 4 },
+                                                  { text = " ccc" } } } }
+  cdoc.comments = { { id = 4, text = "Why b?" } }
+  local set = pageset.set(cdoc, measure)
+  local marks = pageset.comment_marks(set, measure, cdoc.body, cdoc.comments)
+  check(#marks == 1 and marks[1].id == 4 and marks[1].text == "Why b?" and #marks[1].rects == 1
+        and near(marks[1].rects[1].x_pt, LEFT + 4 * BODY) and near(marks[1].rects[1].w_pt, 3 * BODY),
+        "a comment's mark is not over its words")
+
+  local long = doc_of{ { style = "Body", runs = { { text = ("word "):rep(40), comment = 1 } } } }
+  local lset = pageset.set(long, measure)
+  local lm = pageset.comment_marks(lset, measure, long.body, { { id = 1, text = "" } })
+  check(#lm == 1 and #lm[1].rects == #lset.pages[1].lines,
+        "a comment over several lines is not a rectangle on each")
+end
+
 if fails > 0 then
   print(("pageset: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

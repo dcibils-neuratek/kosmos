@@ -503,7 +503,12 @@ kits under `user/lib/` for Present and Sheets to stand on:
   - **W7d, a comment**: a field on the text it is about, its words in a
     list the document keeps; the text tinted on the screen, the words in
     the Format panel to type into, a note in the PDF and Word's own
-    comments in the DOCX.
+    comments in the DOCX. *Done, 4 October* (`testing.md` 18.395).
+    **With it, the whole of `docs/write.html` is built.** Next in Write,
+    each its own step when its time comes: comments' words beside the page
+    rather than in the panel; columns of their own widths; a picture
+    cropped; text boxes and shapes that float over the page with the text
+    wrapping round them; opening a DOCX; kerning.
 - **W4 - the window**, from `docs/write.html`: the pages on a dark desk,
   the toolbar, Format and Document switching the panel, View for the
   thumbnails, zoom; typing and choosing styles, on the document page the

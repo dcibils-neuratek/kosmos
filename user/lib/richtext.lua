@@ -130,6 +130,18 @@ table.sort(PARA_KEYS)
 richtext.CHAR_KEYS, richtext.PARA_KEYS = CHAR_KEYS, PARA_KEYS
 
 --
+-- **A run's marks that are not its look** (W7d): the comment it is under,
+-- by the comment's number in the document's list. A mark keeps runs apart
+-- as a look does, and is never a style's - a comment is about these words,
+-- not about how words of their kind look.
+--
+richtext.MARK = { comment = number(1, 100000, true) }
+
+local MARK_KEYS = { "comment" }
+
+richtext.MARK_KEYS = MARK_KEYS
+
+--
 -- A style with nothing chosen: what a field of a style falls back to when
 -- the file did not say, so a style is whole even when its file is not.
 --
@@ -233,9 +245,13 @@ local function text_of(v)
   return (v:gsub("[%z\1-\8\11-\31\127]", ""))
 end
 
--- Whether two runs look the same: every character field equal.
+-- Whether two runs look the same: every character field equal, and every
+-- mark.
 local function alike(a, b)
   for _, k in ipairs(CHAR_KEYS) do
+    if a[k] ~= b[k] then return false end
+  end
+  for _, k in ipairs(MARK_KEYS) do
     if a[k] ~= b[k] then return false end
   end
   return true
@@ -261,6 +277,12 @@ function richtext.run(t, style)
     local v = richtext.CHAR[k](t[k])
 
     if v ~= nil and v ~= style[k] then out[k] = v end
+  end
+
+  for _, k in ipairs(MARK_KEYS) do
+    local v = richtext.MARK[k](t[k])
+
+    if v ~= nil then out[k] = v end
   end
 
   return out
@@ -495,11 +517,25 @@ end
 -- them again (`pageset`'s cache is keyed by the paragraph).
 --------------------------------------------------------------------------
 
--- A run's character fields, without its text.
+-- A run's character fields and marks, without its text.
 local function fields_of(run)
   local out = {}
   for _, k in ipairs(CHAR_KEYS) do out[k] = run[k] end
+  for _, k in ipairs(MARK_KEYS) do out[k] = run[k] end
   return out
+end
+
+-- The mark `k` of the text just after byte `at`, or nil.
+local function mark_after(p, at, k)
+  local start = 1
+
+  for _, r in ipairs(p.runs) do
+    local stop = start + #r.text
+
+    if at >= start and at < stop then return r[k] end
+
+    start = stop
+  end
 end
 
 -- A paragraph like `p` - its style and its own fields - with `runs`, those
@@ -658,6 +694,12 @@ function richtext.type(body, place, text, with)
   local fields = look_at(p, place.at)
 
   for k, v in pairs(with or {}) do fields[k] = v end
+
+  -- **What is typed is under a comment only inside one**: at its end, the
+  -- next words are not what the comment was about.
+  if fields.comment and mark_after(p, place.at, "comment") ~= fields.comment then
+    fields.comment = nil
+  end
   local tail = slice(p, place.at, #plain + 1)
   local head = slice(p, 1, place.at)
   local lines = {}
@@ -1180,6 +1222,112 @@ function richtext.chart_data(t)
   end
 
   return { series = series, categories = categories, values = values }
+end
+
+--------------------------------------------------------------------------
+-- **Comments** (W7d): a mark on the runs a comment is about, its number
+-- the document's; these find them, and take one away.
+--------------------------------------------------------------------------
+
+-- Each paragraph of a body that holds text, and the place-maker for it:
+-- a body's own, and each cell of a table in order.
+local function each_text(body, visit)
+  for n, p in ipairs(body) do
+    if p.table then
+      for r, row in ipairs(p.table.rows) do
+        for c, cell in ipairs(row) do
+          visit(cell, function(at) return { para = n, at = at, row = r, col = c } end)
+        end
+      end
+    else
+      visit(p, function(at) return { para = n, at = at } end)
+    end
+  end
+end
+
+richtext.each_text = each_text
+
+--
+-- **The comment at a place**: the one the text just before the caret is
+-- under, or the text just after it at a paragraph's start - what the
+-- Format panel shows.
+--
+function richtext.comment_at(body, place)
+  local p = body[place.para]
+
+  if not p then return nil end
+  if place.row then p = p.table.rows[place.row][place.col] end
+  if not p.runs then return nil end
+
+  return look_at(p, place.at).comment
+end
+
+--
+-- **Where each comment is**: `{ id, a, b }` in the order the comments
+-- begin, from the start of the first words under one to the end of the
+-- last - across runs, paragraphs and cells.
+--
+function richtext.comment_ranges(body)
+  local out, by_id = {}, {}
+
+  each_text(body, function(p, place)
+    local start = 1
+
+    for _, r in ipairs(p.runs or {}) do
+      local stop = start + #r.text
+
+      if r.comment then
+        local range = by_id[r.comment]
+
+        if not range then
+          range = { id = r.comment, a = place(start) }
+          by_id[r.comment] = range
+          out[#out + 1] = range
+        end
+
+        range.b = place(stop)
+      end
+
+      start = stop
+    end
+  end)
+
+  return out
+end
+
+--
+-- **A comment taken away**: its mark off every run that had it, those
+-- runs joined with their neighbours again.
+--
+function richtext.uncomment(body, id)
+  local out = copy_body(body)
+
+  local function clean(p)
+    local hit = false
+    for _, r in ipairs(p.runs or {}) do if r.comment == id then hit = true end end
+
+    if not hit then return p end
+
+    local runs = {}
+    for i, r in ipairs(p.runs) do
+      local copy = fields_of(r)
+      copy.text = r.text
+      if copy.comment == id then copy.comment = nil end
+      runs[i] = copy
+    end
+
+    return with_runs(p, runs)
+  end
+
+  for n, p in ipairs(body) do
+    if p.table then
+      out[n] = each_cell(p, clean)
+    else
+      out[n] = clean(p)
+    end
+  end
+
+  return out
 end
 
 --

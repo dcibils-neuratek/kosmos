@@ -79,6 +79,7 @@ local PAPER  = 0xffffffff
 local SHADOW = 0xff0a0e14
 local CARET  = 0xff2a55c9       -- the drawing's accent, on paper
 local CHOSEN = 0xffc9d8f6       -- a selection, under the text
+local NOTED  = 0xfffbeab2       -- words a comment is about (W7d)
 
 local ZOOMS = { 50, 75, 100, 125, 150, 200, 300 }
 local SIZES = { 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 30, 36, 48, 64, 72 }
@@ -326,19 +327,36 @@ local function selected()
                      or anchor.row ~= caret.row or anchor.col ~= caret.col)
 end
 
-local function marks_on(i)
-  if not selected() then return nil end
+-- Where the comments stand, worked out once for what the pages show.
+local noted = { version = nil, marks = {} }
 
+local function marks_on(i)
   local out = {}
 
-  for _, r in ipairs(pageset.selection(set, measure, anchor, caret)) do
-    if r.page == i then
-      r.colour = CHOSEN
-      out[#out + 1] = r
+  if noted.version ~= version then
+    noted.version = version
+    noted.marks = pageset.comment_marks(set, measure, doc.body, doc.comments)
+  end
+
+  for _, c in ipairs(noted.marks) do
+    for _, r in ipairs(c.rects) do
+      if r.page == i then
+        out[#out + 1] = { page = r.page, x_pt = r.x_pt, y_pt = r.y_pt, w_pt = r.w_pt,
+                          h_pt = r.h_pt, colour = NOTED }
+      end
     end
   end
 
-  return out
+  if selected() then
+    for _, r in ipairs(pageset.selection(set, measure, anchor, caret)) do
+      if r.page == i then
+        r.colour = CHOSEN
+        out[#out + 1] = r
+      end
+    end
+  end
+
+  return #out > 0 and out or nil
 end
 
 local function page_surface(i)
@@ -427,7 +445,7 @@ local TOOLS = {
   { key = "textbox",  icon = "textbox",  text = "Text" },
   { key = "shape",    icon = "shape",    text = "Shape" },
   { key = "media",    icon = "pictures", text = "Media" },
-  { key = "comment",  icon = "comment",  text = "Comment",  later = "W7" },
+  { key = "comment",  icon = "comment",  text = "Comment" },
   { right = true },
   { key = "export",   icon = "export",   text = "Export" },
   { key = "format",   icon = "format",   text = "Format" },
@@ -530,13 +548,14 @@ local function argb(c) return 0xff000000 | (tonumber((c or "#000000"):sub(2), 16
 
 local open_menu, apply_char, apply_para, apply_style, doc_edit, apply_picture
 local reshape, delete_table, table_key, line_break, apply_shape, insert_shape
-local remove_block, toggle_data
+local remove_block, toggle_data, uncomment
 
 local function say_where()
   local here = doc.body[caret.para]
-  local kind = here and (here.picture and ":picture" or here.shape and ":shape"
+  local kind = (panel == "text" and richtext.comment_at(doc.body, caret) and ":comment" or "")
+               .. (here and (here.picture and ":picture" or here.shape and ":shape"
                          or here.table and (here.table.box and ":box"
-                                            or here.table.chart and ":chart" or ":table")) or ""
+                                            or here.table.chart and ":chart" or ":table")) or "")
   local key = panel == "text" and ("text:" .. part .. kind) or tostring(panel)
 
   if not said_where[key] then
@@ -743,6 +762,46 @@ local function draw_panel(s)
   y = tabs.y + tabs.h + 16
 
   local here = doc.body[caret.para]
+
+  --
+  -- **In words a comment is about** (W7d): the comment's words in a field
+  -- to type into, and the comment taken away.
+  --
+  local noted_id = panel == "text" and richtext.comment_at(doc.body, caret)
+
+  if noted_id then
+    local words = ""
+    for _, c in ipairs(doc.comments) do if c.id == noted_id then words = c.text end end
+
+    pk.label(s, x0, y, "Comment")
+    y = y + 18
+
+    local field = { x = x0, y = y, w = w0, h = 30 }
+    pk.field(s, field, focus == "comment")
+
+    local shown = words
+    while #shown > 0 and gfx.measure(shown) > field.w - 20 do shown = shown:sub(2) end
+
+    if shown == "" and focus ~= "comment" then
+      s:text(field.x + 10, field.y + (30 - gfx.height()) // 2, "Type a comment", theme.text_dim, nil, "ui")
+    else
+      s:text(field.x + 10, field.y + (30 - gfx.height()) // 2, shown, theme.text, nil, "ui")
+    end
+
+    if focus == "comment" then
+      s:fill(field.x + 10 + gfx.measure(shown) + 1, field.y + 7, 2, 16, theme.ring)
+    end
+
+    control("comment_text", field, function() focus = "comment" end)
+
+    y = y + 38
+
+    local del = { x = x0, y = y, text = "Delete comment" }
+    pk.button(s, del)
+    control("comment_delete", del, function() uncomment(noted_id) end)
+
+    y = y + 44
+  end
 
   if panel == "text" and here and here.picture then
     local pic = here.picture
@@ -1467,7 +1526,7 @@ end
 -- What an undo puts back: the body and the document's settings, each a
 -- table no edit changes in place.
 local function snapshot()
-  return { body = doc.body, caret = caret, paper = doc.paper,
+  return { body = doc.body, caret = caret, paper = doc.paper, comments = doc.comments,
            margins_mm = doc.margins_mm, header = doc.header, footer = doc.footer,
            facing = doc.facing, hyphenation = doc.hyphenation,
            ligatures = doc.ligatures, language = doc.language }
@@ -1486,7 +1545,7 @@ local function report_if_changed()
   end
 end
 
-local function edited(body, place, kind, keep)
+local function edited(body, place, kind, keep, comments)
   if kind ~= "type" or last_kind ~= "type" then
     undo[#undo + 1] = snapshot()
     if #undo > UNDO_MOST then table.remove(undo, 1) end
@@ -1495,6 +1554,8 @@ local function edited(body, place, kind, keep)
   redo = {}
   last_kind = kind
   doc.body = body
+
+  if comments then doc.comments = comments end
   caret, column = place, nil
 
   if not keep then anchor = nil end
@@ -1515,7 +1576,7 @@ end
 -- header's words typed - is one step to undo.
 --
 function doc_edit(kind, fields)
-  if kind ~= last_kind or kind ~= "header_text" then
+  if kind ~= last_kind or (kind ~= "header_text" and kind ~= "comment_text") then
     undo[#undo + 1] = snapshot()
     if #undo > UNDO_MOST then table.remove(undo, 1) end
   end
@@ -1535,6 +1596,7 @@ function doc_edit(kind, fields)
   doc.header, doc.footer = checked.header, checked.footer
   doc.facing, doc.hyphenation = checked.facing, checked.hyphenation
   doc.ligatures, doc.language = checked.ligatures, checked.language
+  doc.comments = checked.comments
   dirty = true
   said = nil
   set = setting()
@@ -1696,6 +1758,7 @@ local function swap(from, to)
 
   to[#to + 1] = snapshot()
   doc.body, caret, anchor, column = entry.body, entry.caret, nil, nil
+  doc.comments = entry.comments
   doc.paper, doc.margins_mm = entry.paper, entry.margins_mm
   doc.header, doc.footer = entry.header, entry.footer
   doc.facing, doc.hyphenation = entry.facing, entry.hyphenation
@@ -1806,7 +1869,9 @@ end
 local function export()
   local to = path and path:gsub("%.write$", "") .. ".pdf" or "/Home/Untitled.pdf"
   local ok, notes = pdf.write(to, set, measure,
-                              { title = (name:gsub("%.write$", "")), pictures = picture })
+                              { title = (name:gsub("%.write$", "")), pictures = picture,
+                                comments = pageset.comment_marks(set, measure, doc.body,
+                                                                 doc.comments) })
 
   if ok then
     said = ("Exported %s  -  %d page%s, %d KB"):format(to:match("([^/]+)$"),
@@ -2050,6 +2115,65 @@ local function chart_menu(x)
             function(i) insert_chart(CHART_KINDS[i][1]) end)
 end
 
+--
+-- **A comment put in** (Comment, W7d): on the selection - or the word the
+-- caret is in - a number of its own, its words typed into the panel's
+-- field, which has the keyboard.
+--
+local function insert_comment()
+  local a, b = range()
+
+  if not selected() then
+    local p = doc.body[caret.para]
+    local text = richtext.plain(caret.row and p.table.rows[caret.row][caret.col] or p)
+    local from, to = caret.at, caret.at
+
+    while from > 1 and not text:sub(from - 1, from - 1):match("%s") do from = from - 1 end
+    while to <= #text and not text:sub(to, to):match("%s") do to = to + 1 end
+
+    a = { para = caret.para, at = from, row = caret.row, col = caret.col }
+    b = { para = caret.para, at = to, row = caret.row, col = caret.col }
+  end
+
+  if a.para == b.para and a.at == b.at and a.row == b.row and a.col == b.col then
+    said = "Select the words a comment is about"
+    frame()
+    return
+  end
+
+  local id = 0
+  local list = {}
+
+  for i, c in ipairs(doc.comments) do
+    list[i] = c
+    id = math.max(id, c.id)
+  end
+
+  -- A number no run is under: the largest kept, and any the body has.
+  for _, range_ in ipairs(richtext.comment_ranges(doc.body)) do id = math.max(id, range_.id) end
+
+  id = id + 1
+  list[#list + 1] = { id = id, text = "" }
+
+  local body = richtext.format(doc.body, a, b, { comment = id }, by_name)
+
+  panel, focus = "text", "comment"
+  edited(body, caret, "comment", true, list)
+  print(("writer: comment %d on %q"):format(id, richtext.text(doc.body, a, b)))
+end
+
+-- A comment taken away: its mark off the words, its words left behind.
+function uncomment(id)
+  local list = {}
+  for _, c in ipairs(doc.comments) do
+    if c.id ~= id then list[#list + 1] = c end
+  end
+
+  focus = nil
+  print(("writer: comment %d deleted"):format(id))
+  edited(richtext.uncomment(doc.body, id), caret, "comment", true, list)
+end
+
 local function shape_menu(x)
   local labels = {}
   for i, k in ipairs(SHAPE_KINDS) do labels[i] = k[2] end
@@ -2167,6 +2291,7 @@ TOOL_ACTS = {
   textbox = function() insert_box() end,
   shape = function(t) shape_menu(t.x) end,
   chart = function(t) chart_menu(t.x) end,
+  comment = function() insert_comment() end,
   --
   -- **Insert**: what goes into the text, in a list - a page break, a table,
   -- a picture, a text box, a shape and a chart; a comment is about text
@@ -2270,6 +2395,45 @@ function sink:key(c)
 
   if menu then
     if c == 27 then menu = nil frame() return true end
+    return true
+  end
+
+  -- **The comment's words**, typed into its field.
+  if focus == "comment" then
+    local id = richtext.comment_at(doc.body, caret)
+    local list, words = {}, nil
+
+    for i, c in ipairs(doc.comments) do
+      list[i] = { id = c.id, text = c.text }
+      if c.id == id then words = list[i] end
+    end
+
+    if not words or c == 13 or c == 10 or c == 27 or c == 9 then
+      focus = nil
+      last_kind = nil
+
+      if words then print(("writer: comment %d says %q"):format(id, words.text)) end
+
+      frame()
+      return true
+    end
+
+    if c == 8 or c == 127 then
+      local cut = #words.text
+
+      while cut > 1 and words.text:byte(cut) >= 0x80 and words.text:byte(cut) < 0xC0 do
+        cut = cut - 1
+      end
+
+      words.text = words.text:sub(1, cut - 1)
+    elseif c >= 32 and c < 127 then
+      words.text = words.text .. string.char(c)
+    else
+      return true
+    end
+
+    if utf8.len(words.text) then doc_edit("comment_text", { comments = list }) end
+
     return true
   end
 

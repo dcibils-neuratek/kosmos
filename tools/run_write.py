@@ -338,10 +338,19 @@ table.insert(body, 8, { style = "Body", align = "center",
                         shape = { kind = "oval", width_mm = 50, height_mm = 20, fill = "#27ae60" } })
 table.insert(body, 9, richtext.new_chart("column", "Body"))
 
-local letter = writedoc.check{ format = "kosmos-write", version = 1, body = body }
+-- A comment (W7d), on the word "italic" in the looks' paragraph.
+for _, p in ipairs(body) do
+  for _, r in ipairs(p.runs or {}) do
+    if r.text == "italic" then r.comment = 1 end
+  end
+end
+
+local letter = writedoc.check{ format = "kosmos-write", version = 1, body = body,
+                               comments = { { id = 1, text = "Italic enough?" } } }
 local placed = pageset.set(letter, measure)
 local ok, notes = use("/Kosmos/Libraries/pdf.lua").write("/Home/w.pdf",
-  placed, measure, { title = "Kosmos Write", pictures = pictures })
+  placed, measure, { title = "Kosmos Write", pictures = pictures,
+                     comments = pageset.comment_marks(placed, measure, letter.body, letter.comments) })
 
 print("PDF", ok, type(notes) == "table" and notes.pages, type(notes) == "table" and notes.fonts,
       type(notes) == "table" and notes.missing, type(notes) == "table" and notes.bytes or notes)
@@ -663,6 +672,8 @@ def docx_checks(said, out, disk, work):
         z_document = z.read("word/document.xml").decode("utf-8")
         z_chart = z.read("word/charts/chart1.xml").decode("utf-8") \
             if "word/charts/chart1.xml" in names else ""
+        z_comments = z.read("word/comments.xml").decode("utf-8") \
+            if "word/comments.xml" in names else ""
         body = ET.fromstring(z.read("word/document.xml")).find(W + "body")
         paras = []
 
@@ -711,6 +722,11 @@ def docx_checks(said, out, disk, work):
             or 'w:w="3969"' not in box_xml.replace("ns0:", "w:") \
             or box.find(".//" + W + "br") is None:
         raise Failure("the DOCX's text box is not a 70 mm table of one cell with its line break")
+
+    # The comment (W7d): Word's, round the word, its words in its part.
+    if '<w:commentRangeStart w:id="1"/>' not in z_document or "Italic enough?" not in z_comments \
+            or 'Target="comments.xml"' not in rels:
+        raise Failure("the DOCX does not carry the comment round its word, with its words")
 
     # The chart (W7c): a part of its own, related, its numbers in it.
     chart = z_chart
@@ -1000,6 +1016,17 @@ def pdf_checks(said, out, fonts, disk, work):
         raise Failure("the PDF's chart is %d blue and %d orange rectangles, and its words %s; "
                       "wanted five of each, Winter and 30" % (blue, orange,
                                                               "are there" if "[Winter]" in words else "are not"))
+
+    # The comment (W7d): one highlight, over the word, on the one page that
+    # lists it, saying its words - UTF-16 with its byte order mark, as a
+    # PDF's text strings are.
+    highlights = [o for o in objects.values() if b"/Subtype /Highlight" in o]
+    wanted = "<FEFF" + "".join("%04X" % ord(ch) for ch in "Italic enough?") + ">"
+    noting = [o for o in page_objs if b"/Annots [" in o]
+
+    if len(highlights) != 1 or wanted.encode() not in highlights[0] or len(noting) != 1:
+        raise Failure("the PDF does not note the comment once, on its page: %d highlights, "
+                      "%d pages listing notes" % (len(highlights), len(noting)))
 
     if not any(p.endswith("[A note]") for p in said("PIECE")) \
             or not any(p.endswith("[in a box]") for p in said("PIECE")):

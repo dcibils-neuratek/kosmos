@@ -248,7 +248,29 @@ is also where a shape or a chart will draw (W7).
 takes it. Nothing ever leaves half a table, or a picture's paragraph with
 text in it.
 
+## W7 - text boxes, shapes, charts and comments
+
+**Each is a thing in the text**, set in its paragraph's place as a picture
+and a table are, rather than floating over the page. So the setting, the
+caret, the PDF and the DOCX each met one more kind of paragraph rather
+than a second layout:
+- **a text box** is a table of one cell drawn as a box, with a width, a
+  fill and a border;
+- **a shape** is a paragraph whose line's `art` is the shape, a polygon
+  fanned from a centre every point is seen from;
+- **a chart** is a table whose numbers are drawn - its first row the
+  series, its first column the categories - with Edit Data showing the
+  table above it;
+- **a comment** is a mark on the runs it is about, not a look, with its
+  words in a list the document keeps, and only those its text refers to.
+
+What that costs, and it is real: nothing floats, so text does not wrap
+round a shape, and a box cannot sit beside a paragraph. Pages does both.
+They are a layout of their own - a second flow round obstacles - and they
+come after the core, if at all.
+
 ## Not here yet
 
-Text boxes, shapes, charts and comments are W7. Opening a DOCX is later
-than writing one.
+Floating boxes and shapes with text wrapping round them; comments beside
+the page; columns of their own widths; a picture cropped; kerning; opening
+a DOCX, which is later than writing one.

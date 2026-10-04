@@ -1611,6 +1611,29 @@ function pageset.selection(set, measure, a, b)
   return out
 end
 
+--
+-- **Where each comment stands** (W7d): for each comment the body is
+-- marked with, its number, its words from `comments` - the document's
+-- list - and the rectangles its text covers, as a selection's are: what
+-- the window tints and the PDF notes.
+--
+function pageset.comment_marks(set, measure, body, comments)
+  local words = {}
+  for _, c in ipairs(comments or {}) do words[c.id] = c.text end
+
+  local out = {}
+
+  for _, range in ipairs(richtext.comment_ranges(body)) do
+    local rects = pageset.selection(set, measure, range.a, range.b)
+
+    if #rects > 0 then
+      out[#out + 1] = { id = range.id, text = words[range.id] or "", rects = rects }
+    end
+  end
+
+  return out
+end
+
 -- **Home and End**: the start and the end of the line a place is on.
 function pageset.line_ends(set, measure, place)
   local here = pageset.locate(set, measure, place)

@@ -18717,3 +18717,61 @@ draws the chart.
 column chart is not a bar for every number in its series' colour"; in the
 machine, the first run with the chart under the panel - "is not columns in
 its two series' colours", the box's commonest pixels the panel's.
+
+## 18.395 Kosmos Write's comments (W7d)
+
+**The Comment tool puts a comment on the selection**, or on the word the
+caret is in. It gives the comment a number of its own and the keyboard to
+the Format panel's Comment field, at the panel's top whenever the caret is
+in commented words. The words a comment is about are tinted on the page
+under any selection. Return, Escape or Tab leaves the field, and Delete
+comment takes the comment away and leaves its words.
+
+**A comment is a mark on runs**, `comment`, the comment's number in the
+document's list - a mark, not a look (`richtext.MARK`). That has three
+consequences:
+- it keeps its words a run of their own, as a look would;
+- it never reaches a style;
+- it does not split the setting's looks.
+
+What is typed is under a comment only inside one, never at its end.
+`richtext.comment_at` says which comment the caret is in;
+`comment_ranges` says where each comment is, across runs, paragraphs and
+a table's cells; `uncomment` takes a comment off and joins the runs again.
+The document keeps the comments' words, `comments`, and **a file holds
+only the comments its text refers to** (`writedoc.check`).
+`pageset.comment_marks` gives each comment's rectangles - a selection's -
+with its words, for the window's tint and for the PDF. In the PDF each
+comment is a highlight annotation on each page it stands on, with its
+words as `/Contents`: every reader shows it as a comment, and prints it
+only when asked. Word gets its own range round the commented runs, opened
+before the first and closed after the last wherever they are, its
+reference, and `word/comments.xml`.
+
+**Host**: `test_writedoc.lua` 101 to 108 check:
+- the mark keeps its words a run of their own;
+- typing inside is under the comment and typing after is not;
+- the comment at a place;
+- where each comment is, across paragraphs and in a cell;
+- a comment taken away and its runs joined;
+- the file keeping only the comments referred to, and each number once;
+- checking twice gives the same document.
+
+`test_pageset.lua` 129 to 130 check a comment's mark over its words, and a
+rectangle on each line of a long one. `test_docx.lua` 52 to 57 check
+Word's range across two paragraphs, opened once, and the comment's words
+escaped, without the orphan.
+
+**`arm-write`**: the export suite's document has a comment on "italic".
+Its PDF has one highlight on page 1 saying the comment's words, and its
+DOCX has the range and `comments.xml`.
+
+**`arm-writeapp`**: the word just typed is selected, the Comment tool is
+used, and the words are typed into the field. The `.write` holds the
+comment and the word's mark, and the DOCX opens the range.
+**Control**: on a copy of the kits, typed text taking the comment of the
+words before it at their end - "typing after them is". **Found**: the
+window suite's list of the file's words now holds the comment's, after the
+body's and before the header's, as the file's sorted keys put them; and
+the commented word in the export suite's document had moved to a later
+page, so its note is looked for on whichever page lists it.

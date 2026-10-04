@@ -169,6 +169,27 @@ end
 for _ in part:gmatch("</c:%a+>") do c3 = c3 + 1 end
 check(o3 == c3, ("in a chart, %d elements opened and %d closed"):format(o3, c3))
 
+-- **Comments** (W7d): Word's range round the commented runs - across two
+-- paragraphs here - its reference after them, and its words in a part of
+-- their own; a comment nothing refers to is not written.
+local mdoc = writedoc.check{ format = "kosmos-write", version = 1, body = {
+  { style = "Body", runs = { { text = "plain " }, { text = "noted", comment = 5 } } },
+  { style = "Body", runs = { { text = "still", comment = 5 }, { text = " after" } } } },
+  comments = { { id = 5, text = "Two <paragraphs>" } } }
+mdoc.comments[#mdoc.comments + 1] = { id = 6, text = "orphan" }
+local md = docx.parts.document(mdoc)
+
+has(md, '<w:commentRangeStart w:id="5"/><w:r><w:t xml:space="preserve">noted</w:t></w:r>',
+    "the range opened before the first commented run")
+has(md, '<w:t xml:space="preserve">still</w:t></w:r><w:commentRangeEnd w:id="5"/>'
+    .. '<w:r><w:commentReference w:id="5"/></w:r>', "the range closed after the last, in the next paragraph")
+check(select(2, md:gsub("commentRangeStart", "")) == 1, "a comment across two paragraphs was opened twice")
+
+local mc = docx.parts.comments(mdoc)
+has(mc, '<w:comment w:id="5" w:author="Kosmos Write" w:initials="KW">', "the comment")
+has(mc, "Two &lt;paragraphs&gt;", "its words, escaped")
+check(not mc:find("orphan", 1, true), "a comment nothing refers to was written")
+
 if fails > 0 then
   print(("docx: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)

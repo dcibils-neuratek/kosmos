@@ -996,3 +996,26 @@ written inside it, so it is still a chart, and editable, there.
 a two-page spread. The view scrolled only far enough to show the caret at
 the chart's left edge, so the chart itself was hidden under the panel. The
 view now brings the whole object into sight when it fits.
+
+## 4 October, later still - comments, and the whole mockup built
+
+**In short:** select some words and press Comment. The words turn pale
+yellow, and the panel shows a field to type the comment into. Comments
+travel with the document. In the PDF each one is a note that any PDF
+reader shows as a comment. In Word it is Word's own comment, attached to
+the same words.
+
+**How it is built.** A comment is a mark on the words it is about, not
+part of how they look, so it never changes their font or style. Typing
+inside commented words keeps them commented, but typing just after them
+does not, because the next words are not what the comment was about. A
+saved file keeps only the comments whose words still exist.
+
+**With this, every button and panel in the mockup Diego approved,
+`docs/write.html`, does something:**
+- View, Zoom and Add Page;
+- Insert, Table, Chart, Text, Shape, Media and Comment;
+- Export, Format and Document.
+
+Each was built as a reusable kit with a test that does what a person would
+do, and with a deliberate break to prove that the test would notice.

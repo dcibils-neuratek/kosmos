@@ -219,6 +219,33 @@ local function shape_xml(shape, id)
 end
 
 --
+-- **Where each comment begins and ends** (W7d), as the runs themselves:
+-- Word's comment is a range opened before its first run and closed after
+-- its last, wherever they are - in one paragraph, across several, in a
+-- table's cell. Set by `document_xml` for the paragraphs it writes.
+--
+local comment_edges = nil
+
+local function edges_of(doc)
+  local first, last = {}, {}
+
+  richtext.each_text(doc.body, function(p)
+    for _, r in ipairs(p.runs or {}) do
+      if r.comment then
+        if not first[r.comment] then first[r.comment] = r end
+        last[r.comment] = r
+      end
+    end
+  end)
+
+  local starts, ends = {}, {}
+  for id, r in pairs(first) do starts[r] = id end
+  for id, r in pairs(last) do ends[r] = id end
+
+  return { starts = starts, ends = ends, ids = first }
+end
+
+--
 -- **One paragraph as `w:p`**: its style, what it changes from it, a
 -- picture, its runs. `cell` when it is a table's cell, which has none of
 -- the space round a paragraph - as Write sets one - and, in a header row,
@@ -249,6 +276,7 @@ local function paragraph_xml(p, style, media, cell, shape_id)
   if p.shape then parts[#parts + 1] = shape_xml(p.shape, shape_id) end
 
   for _, r in ipairs(p.runs) do
+    local raw = r
     local only = {}
     for _, k in ipairs(richtext.CHAR_KEYS) do
       if r[k] ~= nil then only[k] = true end
@@ -259,7 +287,17 @@ local function paragraph_xml(p, style, media, cell, shape_id)
       only.weight = true
     end
 
+    local opens = comment_edges and comment_edges.starts[raw]
+    local closes = comment_edges and comment_edges.ends[raw]
+
+    if opens then parts[#parts + 1] = ('<w:commentRangeStart w:id="%d"/>'):format(opens) end
+
     parts[#parts + 1] = "<w:r>" .. rpr(r, only) .. run_text(r.text) .. "</w:r>"
+
+    if closes then
+      parts[#parts + 1] = ('<w:commentRangeEnd w:id="%d"/><w:r><w:commentReference w:id="%d"/></w:r>')
+                          :format(closes, closes)
+    end
   end
 
   parts[#parts + 1] = "</w:p>"
@@ -452,6 +490,7 @@ docxwrite.chart_part = chart_part
 
 local function document_xml(doc, media)
   media = media or {}
+  comment_edges = edges_of(doc)
 
   local by_name = {}
   for _, st in ipairs(doc.styles) do by_name[st.name] = st end
@@ -501,8 +540,30 @@ local function document_xml(doc, media)
     twips_mm(m.top), twips_mm(m.right), twips_mm(m.bottom), twips_mm(m.left),
     twips_mm(doc.header.from_top_mm), twips_mm(doc.footer.from_bottom_mm))
 
+  comment_edges = nil
+
   return HEAD .. "<w:document " .. W .. "><w:body>" .. table.concat(body)
          .. sect .. "</w:body></w:document>"
+end
+
+--
+-- **The comments' words** (W7d), each in a paragraph of its own: those the
+-- body refers to, and no other.
+--
+local function comments_xml(doc)
+  local used = edges_of(doc).ids
+  local out = { HEAD, "<w:comments ", W, ">" }
+
+  for _, c in ipairs(doc.comments or {}) do
+    if used[c.id] then
+      out[#out + 1] = ('<w:comment w:id="%d" w:author="Kosmos Write" w:initials="KW">'
+        .. '<w:p><w:r>%s</w:r></w:p></w:comment>'):format(c.id, run_text(c.text))
+    end
+  end
+
+  out[#out + 1] = "</w:comments>"
+
+  return table.concat(out)
 end
 
 local function styles_xml(doc)
@@ -584,6 +645,7 @@ function docxwrite.write(path, doc, info)
   end
 
   local charts = charts_of(doc)
+  local commented = next(edges_of(doc).ids) ~= nil
   local CT = "application/vnd.openxmlformats-officedocument.wordprocessingml"
   local header = doc.header.on and doc.header.text ~= ""
   local footer = doc.footer.on and doc.footer.page_numbers
@@ -613,6 +675,10 @@ function docxwrite.write(path, doc, info)
       .. 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>'):format(k)
   end
 
+  if commented then
+    types[#types + 1] = '<Override PartName="/word/comments.xml" ContentType="' .. CT .. '.comments+xml"/>'
+  end
+
   types[#types + 1] = "</Types>"
 
   local REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/"
@@ -637,6 +703,11 @@ function docxwrite.write(path, doc, info)
   for k = 1, #charts do
     doc_rels[#doc_rels + 1] = ('<Relationship Id="rIdChart%d" Type="%schart" Target="charts/chart%d.xml"/>')
                               :format(k, REL, k)
+  end
+
+  if commented then
+    doc_rels[#doc_rels + 1] = '<Relationship Id="rIdComments" Type="' .. REL
+                              .. 'comments" Target="comments.xml"/>'
   end
 
   doc_rels[#doc_rels + 1] = "</Relationships>"
@@ -666,6 +737,8 @@ function docxwrite.write(path, doc, info)
   for k, p in ipairs(charts) do
     entries[#entries + 1] = { name = ("word/charts/chart%d.xml"):format(k), text = chart_part(p.table) }
   end
+
+  if commented then entries[#entries + 1] = { name = "word/comments.xml", text = comments_xml(doc) } end
   if footer then entries[#entries + 1] = { name = "word/footer1.xml", text = footer_xml() } end
 
   -- The zip when it is written, so the parts can be read on the Mac
@@ -680,7 +753,7 @@ function docxwrite.write(path, doc, info)
 end
 
 -- The parts, without the zip: what the Mac's test reads (`test_docx.lua`).
-docxwrite.parts = { document = document_xml, styles = styles_xml,
+docxwrite.parts = { document = document_xml, styles = styles_xml, comments = comments_xml,
                     numbering = numbering_xml, settings = settings_xml }
 
 return docxwrite
