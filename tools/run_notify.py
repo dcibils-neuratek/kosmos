@@ -16,6 +16,8 @@ One boot at the M700's 1720x1440, driven over Telnet and by QEMU's pointer:
   5. Do Not Disturb holds the banner; the history still has it.
   6. The history, from the clock: an alert showing goes as it opens;
      everything said, Clear all, and Do Not Disturb turned off from it.
+  7. Preferences' Notifications lists the application that said something,
+     and turned off there, its next one shows no banner.
 
 Usage: run_notify.py IMAGE
 """
@@ -59,6 +61,10 @@ TERMINAL = ('local r = fs.send("/Running/wm", { type = "launch", '
 
 DND = ('local ok = fs.write("/Home/Preferences/notifications", { dnd = (args == "on") })\n'
        'print("DND " .. tostring(ok))\n')
+
+PREFS = ('local r = fs.send("/Running/wm", { type = "launch", '
+         'program = "/Kosmos/Apps/preferences.lua", args = "notifications" })\n'
+         'print("PREFS " .. tostring(r and r.ok))\n')
 
 RULES = ('local r = fs.read("/Home/Preferences/notifications")\n'
          'print("RULES dnd=" .. tostring(type(r) == "table" and r.dnd))\n')
@@ -116,7 +122,8 @@ def main():
         session = S.connect(telnet)
 
         for name, text in (("focus", FOCUS), ("room", ROOM), ("terminal", TERMINAL),
-                           ("dnd", DND), ("rules", RULES), ("owners", OWNERS)):
+                           ("dnd", DND), ("rules", RULES), ("owners", OWNERS),
+                           ("prefs", PREFS)):
             session.put(text.encode(), "/Temporary/%s.lua" % name)
 
         width, height, _ = R.parse_ppm(guest.screendump())
@@ -215,6 +222,25 @@ def main():
             click(width // 3, height // 2, width, height)
             said["closed"] = maybe("wm: closed Notification history", "the history closing", mark)
 
+        # ---- 7: an application turned off, in Preferences ----
+        session.run("notify Before | said before it was turned off")
+        mark = len(guest.seen)
+        session.run("/Temporary/prefs.lua")
+        window = maybe("wm: window Preferences at ", "Preferences", mark)
+        row = maybe("preferences: notifications, ", "the Notifications page", mark)
+        said["prefs row"] = row
+        w_ = re.match(r"(\d+),(\d+)", window or "")
+        r_ = re.search(r"/Kosmos/Programs/notify\.lua (\d+),(\d+) on", row or "")
+
+        if w_ and r_:
+            mark = len(guest.seen)
+            click(int(w_.group(1)) + int(r_.group(1)), int(w_.group(2)) + int(r_.group(2)),
+                  width, height)
+            said["turned off"] = maybe("preferences: /Kosmos/Programs/notify.lua notifications off",
+                                       "the switch", mark)
+            session.run("notify After | said after it was turned off")
+            said["off held"] = maybe("held, /Kosmos/Programs/notify.lua is off", "held", mark)
+
     finally:
         guest.close()
 
@@ -288,6 +314,13 @@ def main():
     check(said.get("cleared") is not None and "notify: 0 kept" in (said.get("list") or ""),
           "Clear all did not empty the history: %r" % (said.get("list"),))
     check(said.get("closed") is not None, "a press outside the history did not close it")
+    check(said.get("prefs row") is not None
+          and "/Kosmos/Programs/notify.lua" in (said.get("prefs row") or ""),
+          "Preferences' Notifications did not list the application that had said "
+          "something: %r" % (said.get("prefs row"),))
+    check(said.get("turned off") is not None and said.get("off held") is not None,
+          "an application turned off in Preferences still showed a banner: %r"
+          % ((said.get("turned off"), said.get("off held")),))
 
     if fails:
         print("FAIL: %d of %d checks on notifications on the desktop:"

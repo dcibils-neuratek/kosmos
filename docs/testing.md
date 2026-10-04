@@ -17492,3 +17492,35 @@ and `hide` doing nothing: 4 of 16 - and the first says more than this step:
 **with the guess, the desktop's own windows were already mislabelled** -
 "OWNER Deskbar tracker", "OWNER Monitor logview", three with none - so the
 kernel's answer fixes a fault that was there before any banner.
+
+**Its gate: 88 of 88 in 10:37**, `x86-notify` 45 s of it.
+
+## 18.369 Notifications, step 3: Preferences' Notifications
+
+A page of its own in Preferences, third in the sidebar as the drawing has
+it (`docs/notifications.html`), with Lucide's bell: **Do Not Disturb**, **A
+banner stays** - 3, 5 or 10 seconds - and **Keep in the history** - 50, 200
+or all, told to the server the moment it changes - from `settings.ITEMS`,
+in `/Home/Preferences/notifications`; and **Applications**, a switch for
+every application that has said something, newest first, noted with the
+last thing it said. Those are not in `ITEMS`: they are whoever posted
+(`settings.notifiers`, from the server's history), so a new one brings its
+own; turned off, an application is `off[file] = true` in the same file,
+which `notifications` reads when something arrives. A row may now carry
+its own `get` beside its own `set`.
+
+**`test_settings.lua`, 176** (seven new): two senders make two rows, newest
+first with the last each said; on until turned off; turning one off keeps
+Do Not Disturb and the others already off; turned on, it leaves the list;
+nobody having said anything makes no rows. **`run_notify.py`, 18** (two
+new, step 7): Preferences opened on the page lists `notify` with its switch
+on; pressed off, the next post from it is held - "held,
+/Kosmos/Programs/notify.lua is off" - and shows no banner.
+
+**Control**: the switch's write left out. The desktop test failed 1 of 18 -
+and **the host test passed all of them**: its pretend file handed back the
+live table, so a change made in place was "kept" whether or not it was
+written. It is a copy each way now, as a file is, and the same control
+fails 2 of 176 there.
+
+**Its gate: 88 of 88 in 10:46.**

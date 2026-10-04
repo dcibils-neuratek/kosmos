@@ -457,6 +457,7 @@ now; Do Not Disturb a switch, its hours later.
    that has said something. The rules are applied by what shows them -
    the server keeps everything it is told, as a ledger, and has no
    namespace to read a setting from.
+   **BUILT on 4 October** (`testing.md` 18.369).
 4. **The first to post**: Cafesa3D's render done, a download done, a stick
    arriving or leaving, a program that stopped, and Clock's timers.
 

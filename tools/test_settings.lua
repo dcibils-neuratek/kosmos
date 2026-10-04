@@ -285,6 +285,54 @@ check(settings.name_of(look, "plexnight") == "Plex Night",
 check(settings.name_of(look, "nonsense") == "nonsense",
       "name_of should fall back to the value itself rather than nothing")
 
+--
+-- **Each application that has said something** (`settings.notifiers`,
+-- Preferences' Notifications): newest first, one row a sender, noted with
+-- the last thing it said, on until turned off - and turning one off or on
+-- again keeps what else the file holds, Do Not Disturb and the others off.
+--
+do
+  -- A file, so a copy each way: what was not written was not kept.
+  local function copy(t)
+    if type(t) ~= "table" then return t end
+    local out = {}
+    for k, v in pairs(t) do out[k] = copy(v) end
+    return out
+  end
+
+  local stored = { dnd = true, off = { ["/a/old.lua"] = true } }
+  local file = stored
+  local function read() return copy(stored) end
+  local function write(_, t) stored = copy(t) file = stored return true end
+  local entries = {
+    { from = "/a/groove.lua", name = "groove", title = "First" },
+    { from = "/a/cafesa3d.lua", name = "cafesa3d", title = "Render finished" },
+    { from = "/a/groove.lua", name = "groove", title = "Second" },
+  }
+  local g = settings.notifiers(entries, function(e) return e.name end,
+                               function(e) return e.from end, read, write)
+
+  check(g.name == "Applications" and #g.items == 2,
+        ("two senders made %d rows"):format(#g.items))
+  check(g.items[1].label == "groove" and g.items[1].note == "Last: Second"
+        and g.items[2].label == "cafesa3d",
+        "the applications were not newest first, each with the last it said")
+  check(settings.get(g.items[1], read) == true, "an application nobody turned off was off")
+
+  settings.set(g.items[2], false)
+  check(type(file.off) == "table" and file.off["/a/cafesa3d.lua"] == true
+        and file.off["/a/old.lua"] == true and file.dnd == true,
+        "turning one application off lost what the file held")
+  check(settings.get(g.items[2], read) == false, "an application turned off read as on")
+
+  settings.set(g.items[2], true)
+  check(file.off["/a/cafesa3d.lua"] == nil and file.off["/a/old.lua"] == true,
+        "turning one back on did not take it out of the list, or took another")
+
+  check(#settings.notifiers({}, nil, nil, read, write).items == 0,
+        "nobody having said anything made rows")
+end
+
 if #fails > 0 then
   print(("FAIL: %d of %d checks on the settings list:"):format(#fails, checks))
   for _, f in ipairs(fails) do print("  " .. f) end

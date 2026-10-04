@@ -46,6 +46,14 @@ local settings = {}
 settings.CATEGORIES = {
   { id = "appearance", name = "Appearance",  icon = "appearance" },
   { id = "displays",   name = "Displays",    icon = "display" },
+  --
+  -- **Notifications** (`roadmap.md`, *Notifications*, step 3): Do Not
+  -- Disturb and how long and how many, from `ITEMS`; and a switch for
+  -- every application that has said something, which are not here - they
+  -- are whoever posted (`settings.notifiers`), so a new one brings its own.
+  --
+  { id = "notifications", name = "Notifications", icon = "bell",
+    from_notifications = true },
   { id = "sound",      name = "Sound",       icon = "sound" },
   { id = "power",      name = "Power",       icon = "power", gap_after = true },
   { id = "network",    name = "Network",     icon = "network" },
@@ -73,6 +81,7 @@ settings.CLOCK      = "/Home/Preferences/clock"
 settings.STARTUP    = "/Home/Preferences/startup"
 settings.POWER      = "/Home/Preferences/power"
 settings.KEYBOARD   = "/Home/Preferences/keyboard"
+settings.NOTIFICATIONS = "/Home/Preferences/notifications"
 
 --
 -- One setting.
@@ -221,6 +230,31 @@ settings.ITEMS = {
   item{ category = "displays", group = "Screen",
         label = "Brightness", kind = "brightness" },
 
+  ------------------------------------------------------------ notifications
+  --
+  -- What `notifications` reads when something arrives (`docs/
+  -- notifications.html`, agreed 3 October): the switch, five seconds,
+  -- two hundred kept. How many are kept is told to the server as it
+  -- changes (`preferences.lua`); the rest are read where they are used.
+  --
+  item{ category = "notifications", group = "Notifications",
+        label = "Do Not Disturb",
+        note = "Silences every banner and alert; the history still keeps them",
+        kind = "switch", file = settings.NOTIFICATIONS, key = "dnd",
+        default = false },
+
+  item{ category = "notifications", group = "Notifications",
+        label = "A banner stays", note = "How long one shows before it goes by itself",
+        kind = "choice", file = settings.NOTIFICATIONS, key = "seconds",
+        default = 5,
+        choices = { { 3, "3 seconds" }, { 5, "5 seconds" }, { 10, "10 seconds" } } },
+
+  item{ category = "notifications", group = "Notifications",
+        label = "Keep in the history", note = "The oldest go past it",
+        kind = "choice", file = settings.NOTIFICATIONS, key = "keep",
+        default = 200,
+        choices = { { 50, "50" }, { 200, "200" }, { 0, "All" } } },
+
   -------------------------------------------------------------------- sound
   item{ category = "sound", group = "Output",
         label = "Device", kind = "fact", fact = "sound" },
@@ -323,6 +357,10 @@ end
 --
 function settings.get(it, read)
   read = read or fs.read
+
+  -- A row that knows where it is kept - an application's notifications,
+  -- which are a key inside a table (`settings.notifiers`).
+  if it and it.get then return it.get(read) end
 
   if not it or not it.file or not it.key then return it and it.default end
 
@@ -454,6 +492,61 @@ function settings.wallpapers()
   end
 
   return out
+end
+
+--
+-- **Each application that has said something**, as a group of switches for
+-- Preferences' Notifications page: newest first, each named as the history
+-- names it and noted with the last thing it said, on until it is turned off.
+-- `entries` are the server's (`notify.all`), `who` and `key` notify.lua's
+-- own; kept as `off[key] = true` in `/Home/Preferences/notifications`, which
+-- is what `notifications` reads.
+--
+-- `read` and `write` are passed in so the host can hold this without a
+-- filesystem, as `settings.set` is.
+--
+function settings.notifiers(entries, who, key, read, write)
+  read = read or fs.read
+  write = write or fs.write
+
+  local items, seen = {}, {}
+
+  local function file()
+    local saved = read(settings.NOTIFICATIONS)
+
+    return type(saved) == "table" and saved or {}
+  end
+
+  for i = #(entries or {}), 1, -1 do
+    local e = entries[i]
+    local k = key(e)
+
+    if not seen[k] then
+      seen[k] = true
+
+      items[#items + 1] = {
+        category = "notifications", group = "Applications",
+        label = who(e), note = "Last: " .. tostring(e.title),
+        kind = "switch", sender = k,
+        get = function()
+          local off = file().off
+          return not (type(off) == "table" and off[k] == true)
+        end,
+        set = function(on)
+          local saved = file()
+
+          if type(saved.off) ~= "table" then saved.off = {} end
+
+          saved.off[k] = (not on) and true or nil
+          if next(saved.off) == nil then saved.off = nil end
+
+          return write(settings.NOTIFICATIONS, saved)
+        end,
+      }
+    end
+  end
+
+  return { name = "Applications", items = items }
 end
 
 return settings

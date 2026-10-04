@@ -35,6 +35,7 @@ local hardware = use("/Kosmos/Libraries/hardware.lua")
 local audio = use("/Kosmos/Libraries/audio.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
 local types = use("/Kosmos/Libraries/filetypes.lua")
+local notify = use("/Kosmos/Libraries/notify.lua")
 local backlight_ok, backlight = pcall(use, "/Kosmos/Libraries/backlight.lua")
 local theme = ui.theme
 
@@ -320,6 +321,16 @@ win:add(header)
 
 local APPLY = {
   --
+  -- How many notifications the history keeps, told to the server the moment
+  -- it changes - it is the server that drops the oldest (`notifyproto.h`).
+  --
+  keep = function(n)
+    if notify.keep(tonumber(n) or 0) then return true end
+
+    return false, "the notification server did not answer"
+  end,
+
+  --
   -- A look is a *whole*: the colours the tokens name, and the faces beside
   -- them. Sent exactly as the Appearance panel sends it, because a machine
   -- that kept faces from an older panel should get the look's back the
@@ -512,11 +523,18 @@ local function control_for(it, x, y, changed)
     it = setmetatable({ choices = settings.wallpapers() }, { __index = it })
   end
   if it.kind == "switch" then
-    return ui.switch{ x = x, y = y, on = settings.get(it) == true,
-                      on_change = function(_, on)
-                        if live(it, on) then settings.set(it, on) end
-                        if changed then changed() end
-                      end }
+    local sw = ui.switch{ x = x, y = y, on = settings.get(it) == true,
+                          on_change = function(_, on)
+                            if live(it, on) then settings.set(it, on) end
+                            if it.sender then
+                              print(("preferences: %s notifications %s"):format(
+                                    it.sender, on and "on" or "off"))
+                            end
+                            if changed then changed() end
+                          end }
+
+    sw.sender = it.sender
+    return sw
   end
 
   --
@@ -782,12 +800,13 @@ rebuild = function()
   for i = #page.children, 1, -1 do page.children[i] = nil end
   cards = {}
 
-  local made_by_applications = false
+  local made_by_applications, made_by_notifications = false, false
 
   for _, c in ipairs(settings.CATEGORIES) do
     if c.id == showing then
       header.title = c.name
       made_by_applications = c.from_applications
+      made_by_notifications = c.from_notifications
     end
   end
 
@@ -808,6 +827,13 @@ rebuild = function()
     groups = types.page(nil, nil, filter)
   else
     groups = settings.groups(showing)
+  end
+
+  -- And every application that has said something, a switch each.
+  if made_by_notifications then
+    local apps = settings.notifiers(notify.all(0), notify.who, notify.key)
+
+    if #apps.items > 0 then groups[#groups + 1] = apps end
   end
 
   for gi, group in ipairs(groups) do
@@ -923,6 +949,24 @@ rebuild = function()
   -- says it: only what differs from the default, so a home carried to
   -- another machine takes its choices and nothing else.
   --
+  --
+  -- The applications' switches, where each is in the window's points: for
+  -- a harness, which can press and cannot aim.
+  --
+  if made_by_notifications then
+    local said = {}
+
+    for _, c in ipairs(page.children) do
+      if c.sender then
+        said[#said + 1] = ("%s %d,%d %s"):format(c.sender, SIDE + c.x + c.w // 2,
+                                                 c.y + c.h // 2, c.on and "on" or "off")
+      end
+    end
+
+    print(("preferences: notifications, %d applications%s%s"):format(#said,
+          #said > 0 and ": " or "", table.concat(said, "; ")))
+  end
+
   if made_by_applications then
     --
     -- How many rows, and where the first choice is, in the window's points:
