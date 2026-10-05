@@ -1,0 +1,861 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+# Sharing files over the network, before it is built
+
+Written on 5 October 2026, before any of it is built. Diego, the same day:
+"Add to the roadmap the need for a network file sharing server and client",
+"Perhaps SMB? Samba in Linux for example", and of the drawing, "it great how
+it looks". It is the four things `CLAUDE.md` asks of anything with a window
+(*An app is designed before it is written*; `design.md` 9.7):
+
+- **what a person can do** with it, below;
+- **the mockup**, `docs/sharing.html` - a share open in Tracker, Connect to
+  Server, a server seen and not signed into, a share gone away, and File
+  sharing in the Servers window - drawn and agreed on 5 October;
+- **the architecture**, the rest of this page: every piece and what supplies
+  it, what crosses in a region and what in a message, what is C and what is
+  Lua, the busiest paths with where their time goes, how it is tested, and
+  the order it is built in;
+- **the diagram**, `docs/sharing-architecture.png`, drawn from
+  `docs/sharing-architecture.html`.
+
+**Diego's answers to the mockup's six questions**, 5 October: "yes to all".
+So: a share appears at `/Network/<server>/<share>`; a remembered password
+lives in a **keyring**, a piece of its own; **read-only first**, read-write
+after; **guests off** on both sides; a **Modified** column for shares in
+Tracker; and sharing is set up in the **Servers** window. What is still his
+to decide is collected at the end.
+
+---
+
+## What it does
+
+### In the first version: the client, read-only, by address
+
+- **Connect to Server**, from Tracker's Network group or its menu: an
+  address typed - `192.168.1.38`, `diego-mac` if the router's DNS knows it,
+  `smb://192.168.1.38/Projects`, a port after a colon for a test peer - and
+  the recent ones. **The server answers before the password is asked for**,
+  so a wrong address is said at once; then a name and a password, and the
+  share. The password is asked at each connection until the keyring exists.
+- **A share is a folder**, at `/Network/diego-mac/Projects`: listed, sorted,
+  opened, copied from, by Tracker, the Open window and every program, as
+  `/Home` is - with **nothing new in any of them to read it**. `ls`, `cat`,
+  `cp`, the video player and Music read a share because they read paths.
+- **What a share shows that `/Home` does not**: the globe on the trail,
+  "over the network" beside it, the status line naming the server, the
+  dialect, whether it is signed and encrypted and how fast files are
+  arriving; and the **Modified** column, because a share's server stamps real
+  dates (`disk_node.dated`).
+- **Read only, said as such.** A write, a delete, a rename or a new folder
+  under `/Network` is refused with a sentence - "diego-mac's Projects is open
+  read only" - rather than attempted.
+- **Gone away.** A server that stops answering leaves its folder as it was
+  last listed, greyed, with when it was last heard and when the next try
+  is; nothing spins and no window stops. It comes back by itself.
+- **SMB 2.0.2, 2.1, 3.0, 3.0.2 and 3.1.1**, signed when the server asks and
+  sealed (encrypted) when it insists; sign-in by NTLMv2. **No SMB 1, no
+  guests, no Kerberos.**
+
+### Then, each its own step
+
+- **Remembered passwords**, in the keyring (step N8, after the keyring's own
+  design).
+- **Read-write**: a file written, deleted, renamed, a folder made, a copy
+  into a share from Tracker (N10).
+- **Servers seen on the network**, by mDNS: the Network group lists
+  `diego-mac`, `nas-salon` and the rest without anything typed, and
+  `diego-mac.local` resolves (N11).
+- **The server side, read-only**: folders of `/Home` offered to the Mac's
+  Finder and Windows from the Servers window - who may sign in, which
+  folders and how, who is connected now (N12).
+- **Announced**: this machine in the Mac's Finder under Locations, by mDNS
+  (N13).
+- **The server side, read-write** (N14).
+
+### Not here, and why
+
+- **SMB 1**, the dialect every current system has turned off; with it,
+  NetBIOS browsing.
+- **Guests**, on either side - Diego's answer, and current Windows refuses
+  guest sign-in by default for the same reason.
+- **Kerberos and Active Directory**: there is no domain here to sign in to.
+- **Samba itself**, as a server. It is hundreds of thousands of lines on
+  processes, `fork`, sockets and a Unix file system, which is a POSIX
+  personality (`design.md` 17) and will not be one here.
+- **Watching a share for changes** (SMB's CHANGE_NOTIFY): Tracker asks on its
+  own clock, as it does of `/Home`; a share that changes under a window is
+  seen at the next look.
+
+---
+
+## The architecture
+
+### At a glance
+
+Each piece and what supplies it. *Kept* is used as it is; *changed* gains
+something; *new* is written for this - and, where something else could
+want it, written as a kit or a server of its own from the start. Under each
+new piece, the premise's two questions (`CLAUDE.md`, *Kits, servers and
+drivers supply*): **does another application want this?** and **does
+something already supply it?**
+
+| Piece | What supplies it | |
+|---|---|---|
+| Tracker: the Network group, Connect to Server, the banner, the status line, Modified | `user/bin/apps/tracker.lua` | changed |
+| The Open and Save window's sidebar | `user/lib/sidebar.lua`, used by `panel.lua` | changed |
+| `/Network` holding files | `user/lib/places.lua` - `NOT_FILES` loses `/Network` | changed |
+| File sharing in the Servers window | `user/bin/apps/servers.lua` - a fourth `SERVERS` row | changed (N12) |
+| A share's files, to every program | the namespace (`user/init/init.lua`) - `disk_request`, as `/Home` | **kept** |
+| `/Network` answered by two servers | the namespace's mount of `/Network` | changed |
+| Connecting, a server's state, its shares | **`user/include/shareproto.h`** and `fs.share_*` in the namespace | new |
+| The client: a share as a folder | **`smbfs`**, `user/servers/smbfs.c`, a role of `init.elf` | new |
+| SMB 2 and 3 on the wire | **the SMB Kit**: libsmb2, vendored, and its port | new |
+| MD4, MD5, HMAC-MD5, SHA-512, AES, AES-CMAC, AES-CCM, AES-GCM, SP 800-108 | the Crypto Kit (`user/kits/crypto/`), from BearSSL where BearSSL has it | changed |
+| TCP to port 445 | the network stack (`user/servers/net.c`), `NET_OP_CONNECT`, `tcpring.h` | kept |
+| A name to an address | `NET_OP_RESOLVE` | kept |
+| Randomness | `SYS_ENTROPY`, the Crypto Kit's generator | kept |
+| Remembered passwords | **the keyring**, `user/servers/keyring.c` | new (its own design) |
+| Servers seen; `.local` names; this machine announced | **`mdnsd`**, and datagrams in the stack | new (N11, N13) |
+| The server side | **`smbd`**, `user/servers/smbd.c`, on the SMB Kit | new (N12) |
+| A copy of a large file into `/Home` | `cp --job` and `diskproto.h`'s write in pieces | changed (not sharing's) |
+
+### A share is a disk: `smbfs` speaks `diskproto.h`
+
+**This is the decision the rest stands on.** `/Home` is served by a C server
+speaking a declared shape - `diskproto.h`: a directory's names a page at a
+time, `getattr`'s facts, a read of bytes from an offset into the caller's
+region or a page of the reply, and the writes. The namespace already speaks
+it (`disk_request` in `init.lua`), and Tracker, the Open window, `files.lua`,
+`regions.lua` and every program reach `/Home` through it without knowing it
+is a disk. **An SMB client that speaks the same protocol is reached by all of
+them with no new client code at all**: the namespace mounts it with
+`proto = "disk"` and every `fs.list`, `fs.getattr`, `fs.read` and
+`regions.read_file` already works.
+
+It fits closely, and where it does not the difference is small and said:
+
+| `diskproto.h` | What `smbfs` does for it |
+|---|---|
+| `LIST`: names, a page at a time from `offset` | SMB QUERY_DIRECTORY (`FileIdFullDirectoryInformation`, 64 KB a response), the names sorted once and paged from smbfs's cache |
+| `GETATTR`: `disk_node` | **from the same listing**: QUERY_DIRECTORY carries each entry's size, kind and dates, so a `getattr` after a `list` is answered from smbfs's memory and never reaches the network |
+| `disk_node.modified`, `dated` | the entry's LastWriteTime, FILETIME to seconds since 1970, `dated = 1` - which is what Tracker's Modified column reads |
+| `READ`, `DISK_REGION`: bytes from `offset` into the caller's region | SMB READ, at most the server's `MaxReadSize` each (Samba and the Mac offer at least 1 MB), several in flight inside the server's credits, **straight from the TCP ring into the caller's region** |
+| `READ` without a region: a page of 1 KB | the same, into the reply |
+| `WRITE`, `DELETE`, `RENAME`, `MKDIR`, `SETATTR` | refused while read-only: `DISK_ERR_READ_ONLY` (new); SMB CREATE, WRITE, SET_INFO from N10 |
+| `QUERY` | refused: `DISK_ERR_BAD_OP`. A share has no Kosmos attributes to query |
+| `.super`, `.device`, `.format` | `.super` answers the share's size and free space (SMB QUERY_INFO, `FileFsFullSizeInformation`); `.device` what the share has cost - bytes, requests, round trips; `.format` refused |
+
+**What `diskproto.h` gains, and only this:**
+
+- three errors: `DISK_ERR_READ_ONLY`; `DISK_ERR_AWAY` - "diego-mac is not
+  answering", the name in `u.data` as `DISK_ERR_NO_DISK` carries its why;
+  and `DISK_ERR_DENIED` - the server refused this file to this account;
+- **whether an answer is as it was last heard.** A reply gains a field
+  saying the listing or the facts came from smbfs's memory of a server that
+  is not answering, and the counter tick it last answered at. `/Home`
+  always answers fresh and sets neither. That is the whole of what Tracker
+  needs to draw *Gone away*.
+
+The namespace's words for those errors are the one place the namespace
+changes for reading: `disk_error` says "/Home did not understand that" today,
+and a mount's name goes into its sentences instead.
+
+**Two things a share is not, and why they do not change the decision.**
+SMB is a protocol of handles - CREATE, then READ, then CLOSE - and
+`diskproto.h` is a protocol of paths. smbfs keeps **a handle per file it has
+been asked to read, closed when unused for a few seconds** (and at once when
+the server asks for its lease back), so a program reading a film a megabyte
+at a time opens it once rather than a thousand times. And SMB names are
+case-insensitive and UTF-16 on the wire; smbfs converts at its edge (libsmb2
+does) and the namespace sees UTF-8, as it does everywhere.
+
+### `/Network` is already somebody's
+
+**Found reading the system, and not in the mockup.** `/Network` is the
+network stack's mount today (`init.lua`: `ns.mount("/Network", net_cap, nil,
+"net")`), named so on purpose - "a *card* is a device and the stack is
+someone you ask" - and twenty-eight places in the tree say `"/Network"` to
+reach it: `fs.connect("/Network", ...)` in `http.lua`, `netprogram.lua`,
+`telnet`, `ping`, the Servers window. `places.lua` lists it among the three
+names that are not files.
+
+Diego's answer puts shares at `/Network/diego-mac/Projects`, and the two can
+both be true, because **what the stack is asked and what a share is asked
+never overlap**: the stack answers `netproto.h` - connect, listen, accept,
+poll, ping, resolve, info, config, DHCP - always about `/Network` itself; a
+share answers `diskproto.h` and `shareproto.h`, always about a path under it.
+So:
+
+- **the mount of `/Network` carries two capabilities**: the stack's, which
+  `net_at` takes for every operation of the network kit as now, and
+  smbfs's, which `request` takes for every file operation. About twenty
+  lines in `init.lua`, and no caller of the stack changes;
+- **`/Network` becomes a folder**: `places.NOT_FILES` loses it, and Tracker
+  lists its servers. Its root, listed, is smbfs's answer: the servers
+  connected, the recent ones, and - after N11 - the ones seen;
+- `README.md`'s decision log and the comment beside the mount say why it is
+  two, in the same session the mount changes.
+
+**The alternative**, said so it is weighed rather than forgotten: move the
+stack to a name of its own and give smbfs the whole of `/Network`. It is
+cleaner to explain - one name, one server - and costs twenty-eight call sites
+and a name for the stack that is not `/Network`, which is the name its own
+comment argues for. The split is recommended; it is question 1 below.
+
+### `smbfs`, the client
+
+**A server in C** (`CLAUDE.md`, *Language split*: what runs on behalf of
+another process), a role of `init.elf` started at boot as `diskfs` and
+`drives` are - `ROLE_SMBFS` - and idle until somebody connects. **One
+process for every share on every server**, for `drives.c`'s reason:
+`/Network` is one folder every program has from the moment it starts, and a
+share connected later could never be given a mount of its own in a namespace
+that already exists.
+
+It is handed, at boot: its own endpoint; the stack's capability, as a
+client of it; the console's, so what it says reaches the log; `/Devices`, for
+the clock NTLMv2 puts in its answer and `counter_hz`; and, from N8, the
+keyring's `use` door.
+
+**Its loop, and the one new idea in it.** smbfs has two things to wait on:
+callers on its endpoint, and bytes arriving on each server's TCP ring. The
+kernel has no single wait for both, and none is proposed. Instead, **a waiter
+thread per server connection** (`kosmos_thread_start`, `threads.md` step 3,
+done) blocks in `NET_OP_POLL` on that one connection and, when something
+happens, says so as a *call to smbfs's own endpoint* - a message like any
+caller's. So:
+
+- **every piece of state is touched by one thread**, the main one: libsmb2's
+  context, the caches, the held replies, `malloc`. There is no futex yet
+  (`threads.md` step 5) and `malloc` has no lock (step 7), and nothing here
+  needs either;
+- what the waiter waits for next - reading, or reading and room to write - is
+  in the main thread's answer to its last call, so it never waits on an
+  interest that has gone stale. While the client only reads, what goes out is
+  a hundred bytes a request and the out ring never fills; the case where it
+  does - a WRITE larger than the ring - is held by its own test at N10;
+- the main thread is `kosmos_receive` with a timeout - the next deadline: an
+  ECHO due, a retry due, a held reply's bound - which is what that timeout
+  exists for. Nothing sleeps for nought.
+
+**Nothing on the desktop waits on it.** A caller's request goes out as SMB
+and **smbfs holds the caller's reply** - its sender, as `net.c` holds
+callers parked in `CONNECT` - and goes on answering others; the reply goes
+when the server answers. Three bounds keep a window from waiting on a Mac
+that has gone to sleep:
+
+- **A question about names** - `LIST`, `GETATTR` - is answered from smbfs's
+  memory when it has an answer younger than a couple of seconds, and
+  otherwise held until the server answers *or a bound passes*, after which
+  it is answered from memory marked as last heard, or `DISK_ERR_AWAY` if
+  there is none. **The bound is a quarter of a second to start with**, and
+  N6 measures Tracker with it; it is a number in one place.
+- **Bytes** - `READ` - wait for the server, because a program reading a file
+  wants the file; SMB's own timeout ends the wait, and the reader is a
+  program on its own clock, never Tracker's loop.
+- **Connecting** - `shareproto.h`'s `PROBE` and `CONNECT` - is answered at
+  once, as `NET_CONNECT_AT_ONCE` is, and the window asks `STATUS` on its own
+  clock to draw "192.168.1.38 answered - diego-mac, SMB 3.1.1, signing
+  required" when it is so.
+
+**What it keeps in memory**: per server, its connection, dialect, signing
+and sealing, its name (from NTLM's target information, so a server typed as
+`192.168.1.38` is listed as `diego-mac`), when it last answered, and what is
+owed it; per share, its tree; per folder looked at, its sorted names and each
+name's facts, with when they were heard; per file being read, its handle. A
+fixed ceiling on none of it: tables that grow, as `net.c`'s do (`CLAUDE.md`,
+*the pools grow*), from the machine's memory.
+
+**A server's name in `/Network` is how it calls itself**, which is what the
+mockup draws. Two servers that call themselves the same are told apart by
+their address after the name.
+
+### `shareproto.h`: what is not a file
+
+A few things a share is asked are not file operations, and they are a
+declared shape of their own on smbfs's endpoint - **the same request
+struct**, `struct disk_request`, so smbfs checks one size, with operation
+numbers above `diskproto.h`'s and their own structs in `u.data`:
+
+| Operation | What it carries and answers |
+|---|---|
+| `SHARE_OP_PROBE` | an address and a port; answered at once. The server is asked to NEGOTIATE and nothing more |
+| `SHARE_OP_CONNECT` | an address, a share, a name and - until the keyring - a password; answered at once. SESSION_SETUP and TREE_CONNECT follow |
+| `SHARE_OP_STATUS` | per server: answering or since when, the dialect, signed, sealed, the name it gave, its shares, bytes arriving a second, the next try |
+| `SHARE_OP_SHARES` | a server's shares, through `srvsvc`'s NetShareEnum (libsmb2's `smb2-share-enum.c`), for "choose one once it answers" |
+| `SHARE_OP_DISCONNECT` | a server, or a share of it |
+
+The password crosses once, in one message, as a keystroke does - a one-shot,
+which the rule about streams allows. **smbfs keeps the NT hash** (MD4 of the
+password, which is what NTLMv2 needs and all it needs), never the password,
+and only while connected, so a server that comes back after sleep is signed
+into again without asking. From N8 the message names a keyring entry
+instead, and no password crosses at all.
+
+The namespace gains `fs.share_probe`, `fs.share_connect`, `fs.share_status`,
+`fs.share_list` and `fs.share_disconnect` - each a `string.pack` and an
+unpack, as `disk_call` is - and a `share` program at the prompt uses them
+before any window does.
+
+### The SMB Kit: libsmb2, vendored
+
+**SMB 2 and 3 is not written here from the specification.** The candidate
+the roadmap named is vendored, as BearSSL was for TLS, and it was read for
+this page: Ronnie Sahlberg's **libsmb2**, `github.com/sahlberg/libsmb2`.
+Downloaded on 5 October into this session's scratch folder, nothing in the
+tree: the tag `v6.0.0` (commit `b944462`, 11 December 2024; 256,687 bytes,
+SHA-256 `c65a7a2b...`) and `master` at `51c5910` (3 October 2026; 465,992
+bytes, SHA-256 `ab5398da...`), both from `github.com/sahlberg/libsmb2/
+archive/`.
+
+**What it is, read rather than remembered:**
+
+- **Licence**: the library - `lib/` and `include/` - is **LGPL 2.1 or
+  later**; the examples are BSD-2-Clause; `libdcerpc/`, a separate library
+  in the same repository on `master`, is BSD-2-Clause. It is linked statically
+  into `init.elf`, as everything here is; its notice is kept where it sits
+  and `LICENSE` lists it, which is all the bookkeeping `CLAUDE.md` asks.
+- **Size**: `master`'s `lib/` is **34,566 lines** in 53 C files (26,754
+  without blank lines and comments), and 5,531 of headers. Of those, 4,853
+  are its own cryptography, 1,231 Kerberos, 1,205 the synchronous API and
+  1,615 compatibility shims for twenty platforms. What a Kosmos client
+  keeps is about **25,700**: the protocol (`libsmb2.c` 5,442, `pdu.c`, the
+  commands 9,496), framing (`socket.c` 1,681), NTLMSSP in SPNEGO in ASN.1
+  (3,534), signing, sealing, Unicode, and share enumeration (988). The
+  repository's `libdcerpc/` (26,911 lines) is not needed.
+- **What it needs from the platform**: `malloc` and `free` (217 calls - a
+  PDU is allocated and freed per request); `socket`, `connect`, `setsockopt`
+  and `fcntl` to make a non-blocking TCP connection; `getaddrinfo`;
+  `readv` and `writev`; `poll` only in its synchronous API; `time()` for
+  NTLMv2's timestamp; and randomness. **No threads**: one context is one
+  connection driven from one loop.
+- **Its async model**: the caller owns the loop. `smb2_get_fd` and
+  `smb2_which_events` say what to wait for - `POLLIN`, and `POLLOUT` while
+  it has bytes queued; the caller waits however it likes and calls
+  `smb2_service(smb2, revents)`, which reads and writes what it can without
+  blocking and runs the completion callbacks. Every operation has an
+  `_async` form taking a callback; the synchronous ones are a `poll` loop
+  around them. **This is exactly the shape smbfs's loop wants**: the waiter
+  thread's message is `revents`.
+- **Dialects**: 2.0.2, 2.1, 3.0, 3.0.2 and 3.1.1, any or one pinned
+  (`vers=`). **Signing**: HMAC-SHA256 for 2.x, AES-CMAC for 3.x - not 3.1.1's
+  AES-GMAC. **Encryption**: SMB 3's transform with **AES-128-CCM only** - not
+  GCM, not AES-256. Preauthentication integrity with SHA-512 for 3.1.1.
+  Credits, compounding, `STATUS_PENDING` interim answers, and **zero-copy
+  reads**: `smb2_pread_async` reads a READ's data from the socket straight
+  into the caller's buffer.
+- **Its own cryptography**, all in `lib/`: AES (tiny-AES, table-driven -
+  not constant-time - plus an Apple CommonCrypto path on `master`), AES-128-CCM,
+  MD4, MD5, HMAC-MD5, HMAC, SHA-1, SHA-224/256 and SHA-384/512 (RFC 6234's
+  code), and AES-CMAC inside `smb2-signing.c`.
+- **Randomness**: `master` has one door, `smb2_random_bytes`, for the
+  NTLMv2 client challenge, 3.1.1's salt and the CCM nonce, using
+  `arc4random_buf`, `getrandom` or `/dev/urandom` where the platform has one
+  and **falling back to `random()` seeded with `time() ^ getpid()`** where it
+  does not. `v6.0.0` has only the fallback. That is the door Kosmos patches.
+- **A server side - it has one, which this page was told it did not.**
+  Already in `v6.0.0`, the library parses and builds the server's half of every
+  PDU and runs NEGOTIATE and an NTLMSSP SESSION_SETUP with a callback that
+  authorises a user; the application gives it a table of handlers -
+  `tree_connect_cmd`, `create_cmd`, `read_cmd`, `query_directory_cmd` and the
+  rest - and answers each. `examples/smb2-server-sync.c` (497 lines)
+  simulates a disk of a few files. **It is a framework, not a file server**:
+  shares, files, handles, locks, directory enumeration, the Mac's AAPL
+  extensions - all of it is the application's, and its own README calls the
+  serving loop synchronous ("You could run an async server if you implement
+  the main loop yourself"). About 1,300 lines of `libsmb2.c` on `master`,
+  younger and less used than the client.
+- **Who else stands on it**: VLC's SMB 2 and 3 access module, AMSMB2 under
+  iOS file managers, and ports to the PlayStations, Nintendo's consoles, the
+  Amiga, the ESP32 and the Pico W - which is why its platform layer is
+  already a set of hooks rather than POSIX all the way down.
+
+**Which revision**: `master` at `51c5910`, pinned by commit as the Haiku
+icons and `minih264e` were, not `v6.0.0`: twenty-two months newer, with the
+one randomness door, CANCEL, and `libdcerpc` moved out of the library.
+
+**What the Kosmos port patches**, in `runtime/patches/libsmb2/` with its
+README, the source in `runtime/upstream/libsmb2/` as released - the
+NetSurf arrangement:
+
+1. **A platform, `__KOSMOS__`, in `compat.h` and `compat.c`**, as the PS2,
+   the Pico W and the Switch each are. `t_socket` is an index into smbfs's
+   connections; `socket` and `connect` become `NET_OP_CONNECT` with
+   `NET_CONNECT_AT_ONCE` and the region it hands back; `writev` copies the
+   iovecs into the `out` ring and says `NET_OP_PUSH`; `readv` copies from the
+   `in` ring - **and into the caller's region, for a READ's data**, since
+   that is the buffer libsmb2's zero-copy path was given; `getaddrinfo` is
+   `NET_OP_RESOLVE`, or the four bytes of a typed address. **This is
+   compatibility inside a process** (`design.md` 17.2): those names exist in
+   the SMB Kit's build and nowhere else - no program anywhere is given a
+   `socket()`.
+2. **Randomness**: `smb2_random_bytes` is the Crypto Kit's generator, seeded
+   from `SYS_ENTROPY`, and the `random()` fallback is removed rather than
+   left to be reached.
+3. **Time**: `time()` is the wall clock from `/Devices/clock`, read once and
+   carried forward by the counter.
+4. **Cryptography is the Crypto Kit's** (`CLAUDE.md`, *Encryption is C, all
+   of it*): libsmb2's AES, CCM, MD4, MD5, HMAC-MD5, HMAC and SHA files leave
+   the build, and a file of the SMB Kit's, `smb_crypto.c`, gives their
+   functions' names to the kit's primitives. A second AES in the tree would
+   be a defect (`CLAUDE.md`, the premise), and tiny-AES is not constant-time.
+5. **Out of the build**: Kerberos (`krb5-wrapper.c`), the synchronous API
+   (`sync.c`, which is a `poll` loop), the `NTLM_USER_FILE` path that reads
+   credentials from a file named by an environment variable, and on the
+   server's side `smb2_bind_and_listen` and `smb2_serve_port`, which are
+   `socket`, `bind`, `listen`, `accept` and `select`.
+
+The SMB Kit is `user/kits/smb/`: the patches' other half - the transport
+over `tcpring.h`, `smb_crypto.c`, a `config.h` - and **no Lua door**. It is
+C linked into the processes that speak SMB, smbfs and later smbd, and an
+application never reaches it: an application reaches a share through the
+namespace.
+
+**Does another application want this?** Two servers do, smbfs and smbd, and
+that is why the protocol is a kit rather than inside smbfs: smbd builds its
+answers with the same coders the client reads them with. **Does something
+already supply it?** Nothing in the tree speaks SMB. The TCP connection is
+the stack's, the hashes and ciphers become the Crypto Kit's, and the
+randomness is `SYS_ENTROPY`'s - which is the whole of what the port is.
+
+**Against writing SMB 2 and 3 from MS-SMB2.** The specification is complete
+and public, and a client of the commands Tracker needs - NEGOTIATE with
+3.1.1's contexts, SESSION_SETUP with SPNEGO around NTLMSSP in ASN.1, TREE_CONNECT,
+CREATE, QUERY_DIRECTORY, QUERY_INFO, READ, CLOSE, ECHO, signing, sealing,
+the key derivations, credits and `STATUS_PENDING` - is perhaps eight to ten
+thousand lines here. **What it would not have is the years against real
+servers**: the Mac's server, Samba on a NAS and Windows each read the
+specification a little differently, and every one of those differences is a
+silent bug found only against that server - which is the class of bug this
+project cannot find from the Mac without the machine in question. libsmb2
+has met them. And this page found, reading it, that it already carries the
+server side's coders, which a protocol written here would have to write
+twice. **Vendored, then; written here only where the port is.** What is
+given up is said: 25,700 lines that are not this project's, LGPL, and
+libsmb2's choices - CCM and not GCM, CMAC and not GMAC - until a patch or
+upstream changes them.
+
+### What the Crypto Kit gains
+
+Every primitive held to its own specification's vectors in
+`tools/test_crypto.c`, as the kit's first ones are, **before smbfs uses any of
+them** (N1):
+
+| Primitive | For | From |
+|---|---|---|
+| MD4 (RFC 1320) | the NT hash, MD4 of the password in UTF-16 | new, about a hundred lines; BearSSL has none |
+| MD5, HMAC-MD5 (RFC 1321, 2104) | NTLMv2's proof and its session key | BearSSL's `md5.c`, `hmac` |
+| SHA-512 | 3.1.1's preauthentication hash | BearSSL's `sha2big.c` |
+| AES-128, AES-256 | everything below | BearSSL's `aes_ct64` (constant-time), `aes_x86ni` on a processor with AES-NI |
+| AES-CMAC (RFC 4493) | SMB 3.0 to 3.1.1's signing | new, about sixty lines over AES; BearSSL has none |
+| AES-128-CCM | SMB 3's encryption, the one libsmb2 speaks | BearSSL's `ccm.c` |
+| AES-128-GCM, AES-GMAC | 3.1.1's faster cipher and signing, when the kit offers them (later) | BearSSL's `gcm.c`, `ghash_pclmul` |
+| SP 800-108 KDF, counter mode | SMB 3's signing and sealing keys | new, a loop over the kit's HMAC-SHA256 |
+
+And two worked examples beyond the primitives: **NTLMv2** from MS-NLMP 4.2.4,
+whose published example gives every intermediate value from the password to
+the session key, and **3.1.1's key derivation** from Microsoft's published
+example of a session's preauthentication hash and keys.
+
+BearSSL is already in the tree for TLS (`runtime/upstream/bearssl/`, compiled
+whole), so most of this is giving a primitive that is there a name in the
+kit's header rather than writing it. The Lua door, `crypto_kosmos.c`, gains
+nothing: no program in Lua needs an NT hash.
+
+**Not vectorised yet, and measured first**: BearSSL has no AArch64 AES
+instructions, so on ARM a signed or sealed byte costs `aes_ct64`'s bit-sliced
+rounds. On the M700, an x86 processor with AES-NI, it should not matter.
+Where N4 measures it costing, the kit gains ARMv8's AES instructions as C
+with intrinsics - userland may use them; only the kernel may not.
+
+### The keyring - a piece of its own
+
+**What it is**: a server in C, `user/servers/keyring.c`, holding the secrets
+a person has asked this machine to remember, and handing each only to what
+needs it. A server rather than a kit because a kit runs in its caller's
+process, and the point is that the secret is not in the caller's process.
+**It is not part of sharing**: the browser's sign-ins and mail will want the
+same thing, and the mockup said so (question 2). Sharing is its first user.
+
+**Two doors, as the USB driver has a read endpoint and a write one**:
+
+- **`store`**, given to what a person types a secret into - Connect to
+  Server, later the browser's sign-in: put a secret under a name
+  (`smb://diego-mac`, account `diego`), replace it, forget it. **It cannot
+  read one back.** So Tracker can remember a password and can never show
+  it, or send it anywhere.
+- **`use`**, given to the servers that sign in on a person's behalf - smbfs,
+  later smbd: for SMB, it answers **the NT hash**, which is what NTLMv2
+  needs, and never the password. Whether the keyring should go further and
+  compute NTLMv2's answer itself, so not even the hash leaves it, is for its
+  own design.
+
+**Where its secrets live**: in one file, `/Home/Keyring/keyring`, written
+only by the keyring. **Every program given `/Home` can read that file** -
+there is no per-file permission here, and none is proposed for this - so
+**the encryption is the protection**: each secret sealed with
+**ChaCha20-Poly1305** (the Crypto Kit has both halves, and the kit holds the
+AEAD to RFC 8439's vectors) under a key that is never written down.
+
+**Where the key comes from is the decision**, and it is Diego's at the
+keyring's step:
+
+- **from a keyring password**, asked the first time after a boot that a
+  secret is needed, stretched by a slow function - PBKDF2-HMAC-SHA256 from
+  the kit's HMAC, or a memory-hard one such as Argon2id, which the kit would
+  gain - and held in the keyring's memory until the machine stops. Real
+  protection, and one more thing to type;
+- **from a file beside it**: nothing to type, and it protects nothing from a
+  program that can read `/Home`, which is every program a person runs. Said
+  plainly so that it is not chosen by default;
+- **from the machine** - a TPM's sealed key - when Kosmos drives one, which
+  it does not.
+
+**Its design is a step of its own**, `docs/keyring.md` with its windows drawn
+first - the unlock prompt, and a Keyring page in Preferences listing what is
+remembered with a Forget beside each - before any code. Until it exists,
+Connect to Server asks every time, and its "Remember in this machine's
+keyring" is drawn and greyed.
+
+### mDNS: servers seen, and this machine announced
+
+**What the Network group's list of servers needs**, and Kosmos does not have:
+multicast DNS (RFC 6762) and DNS service discovery (RFC 6763) - a question
+for `_smb._tcp.local` to the group 224.0.0.251 on UDP port 5353, and the
+answers: a name, a host, a port, an address. And for this machine to be in
+the Mac's Finder, the other half: **answering** for `_smb._tcp` and
+`_device-info._tcp` with its own name.
+
+**Does another application want this?** Yes, several: the VNC viewer the
+roadmap wants (`_rfb._tcp` lists the machines to watch), printing
+(`_ipp._tcp`), speakers (`_raop._tcp`), the browser's `.local` names, and
+the Servers window announcing Web, Command line and Screen as well as File
+sharing. **So it is a server of its own**, `mdnsd` in C, with a declared
+shape - browse a type, resolve a `.local` name, announce a service for as
+long as the announcer lives - and smbfs is its first user, not its owner.
+
+**Does something already supply it?** Half. The stack has a DNS resolver
+(`net.c`, unicast, A records), so the DNS message's coding - names,
+compression, records - exists once already; it moves into a file both link,
+as `fat_decode.c` and `drives_decode.c` are shared, rather than being
+written a second time. What does not exist is **a datagram interface**: the
+stack has "UDP as far as DNS and DHCP need it, and no further", and its own
+comment says "When something else wants UDP, the interface it wants will be
+visible". mDNS is that something, with NTP for the clock and a stream of
+sound over the network behind it. So the stack gains datagrams - a port
+bound, a ring of datagrams (`udpring.h` beside `tcpring.h`), a multicast
+group joined with IGMP - and that is a design of its own too, at N11.
+
+**Typed addresses work without any of it**, which is why the client comes
+first: `smb://192.168.1.38/Projects` is TCP to port 445; `diego-mac` works
+through the resolver when the router's DNS knows it; only `diego-mac.local`
+needs mDNS.
+
+### `smbd`, the server side, later
+
+**A server in C** on the SMB Kit, started and stopped from the Servers window
+like `httpd`, `telnetd` and `vncd` - a fourth row in its `SERVERS` table,
+settings in `/Home/Preferences/servers` through the settings kit, its status
+and its log under `/Temporary/smbd` for the window to read, as
+`netprogram.lua` has the others do. Being C, it is a role of `init.elf`
+started through the desktop's launch rather than a Lua program; the window
+does not need to know the difference.
+
+**On libsmb2's server framework**, with its loop replaced by Kosmos's - a
+listener (`NET_OP_LISTEN`, `ACCEPT`) and a waiter thread per connection, as
+smbfs has - and its handlers Kosmos's own: shares are folders of `/Home`,
+and **smbd reaches them as a client of the namespace** - `diskproto.h` to
+`diskfs` - so it serves exactly the folders it was given and nothing else
+(`CLAUDE.md`, *what you were not handed, you cannot reach*). Sign-in is
+NTLMv2 against the one account the Servers window sets, its NT hash kept in
+the keyring; guests off; encryption on when the window says so. The Mac's
+Finder asks things Samba's handlers know and libsmb2's example does not -
+the AAPL create context, `FSCTL_VALIDATE_NEGOTIATE_INFO`, the information
+classes Finder queries, `srvsvc` over `IPC$` to list shares - and each is
+found by testing against the Mac's own client (below), one at a time.
+**Whether the framework holds up is assessed at N12**; if it does not, its
+coders stay and the serving is written here.
+
+### What crosses in a region, and what in a message
+
+**In regions:**
+
+- **a file's bytes from a share**: the TCP ring (`tcpring.h`, the stack's
+  and smbfs's) and the **caller's own region**, mapped by smbfs for the one
+  request and handed back with the reply, as `diskfs`'s `map_region` does.
+  libsmb2's zero-copy READ writes the data from the ring straight into it.
+  **A file's bytes never become a Lua string**: a copy is
+  `regions.read_file` into a region and `regions.write_file` out of it, and
+  the bytes pass from the network to `/Home` without entering an
+  interpreter;
+- **the bytes of every SMB message**, both ways, in the TCP ring - a
+  QUERY_DIRECTORY's 64 KB of names as much as a READ's megabyte;
+- **the poll list** a waiter hands the stack (`struct net_poll_entry`);
+- later, **a file written to a share** from the caller's region, and smbd's
+  answers to the Mac from regions `diskfs` filled.
+
+**In messages:**
+
+- every `diskproto.h` and `shareproto.h` request and reply, each under 2 KB:
+  a page of names, a node's facts, "read a megabyte from here into the region
+  I hand you", "it is done";
+- the stack's operations: `CONNECT`, `PUSH`, `POLL`, `RESOLVE`;
+- **a password, once**, in `SHARE_OP_CONNECT` - a one-shot, as a keystroke
+  is - and later a keyring entry's name instead; the keyring's answer to
+  smbfs, an NT hash of sixteen bytes;
+- the waiter's "something happened on connection 3", a few dozen bytes.
+
+**Nothing recurs here because a clock says so** except the ECHO that keeps a
+connection alive, which is a dozen bytes every minute. A copy is driven by its
+reader, a region at a time.
+
+### What is C and what is Lua
+
+- **C**: smbfs, the SMB Kit and libsmb2, the Crypto Kit's additions, the
+  keyring, and later `mdnsd`, the stack's datagrams and smbd. Each runs on
+  behalf of another process or is a loop over bytes - a cipher, a hash, a
+  parser of a binary protocol - which is the line `CLAUDE.md` draws.
+- **Lua**: Tracker's Network group, Connect to Server, the banner, the status
+  line and the Modified column; `sidebar.lua` for the Open window; `places.lua`;
+  the Servers window's File sharing page; the namespace's mount and its
+  `fs.share_*`; the `share` program. Each decides what is drawn or what is
+  asked, and none touches a file's bytes.
+
+### The busiest paths
+
+Two paths decide whether a share feels like a folder: **copying a 1 GB film
+from the Mac's share in Tracker**, and **listing a folder of 2,000 files**.
+Numbers are the repository's own where it has them, and where it has none
+that is said, with the step that measures it. QEMU's are not performance
+numbers and are given only where they say what a suite will see.
+
+**Copying a 1 GB film** from `/Network/diego-mac/Projects` into `/Home` on the
+M700, the Mac on the same gigabit network:
+
+| | Where | What is known |
+|---|---|---|
+| 1 | Tracker starts a copy job - `cp --job`, as zip and unzip run (`start_job`) - and draws its bar | a process start |
+| 2 | `cp` asks smbfs, through the namespace, to `READ` the next piece into its region | an IPC round trip: **19.0 us** on the M700 (`testing.md`, the M700 suite) |
+| 3 | smbfs splits the piece into SMB READs of the server's `MaxReadSize`, several in flight within its credits, each signed | CMAC per byte: **not measured**; on the M700's AES-NI it should be small |
+| 4 | the Mac sends; frames into the card's ring, the stack's TCP into smbfs's ring | **receive throughput on the M700 has never been measured** |
+| 5 | the waiter wakes smbfs; libsmb2 copies the data from the ring into `cp`'s region, checks the signature | one copy, ring to region |
+| 6 | `cp` writes the region into `/Home` | **19.5 MB/s** - the M700's `/Home` on its stick, written (`testing.md`, the M700 suite) |
+
+**Where the time goes, honestly:**
+
+- **The stack's receive window is the ring**: 16 KB (`TCP_RING_BYTES`, whose
+  comment says the size was never measured against throughput), with no
+  window scaling. TCP moves at most a window a round trip, and the M700's
+  round trip to its router is 0.55 ms - so **at most about 30 MB/s**, and 1 GB
+  in no less than 36 s, before anything else costs anything. A gigabit wire
+  carries about 112 MB/s - the mockup's figure - which needs a window of at
+  least 62 KB at that round trip, and a ring of 256 KB with window scaling
+  (RFC 7323) to keep it full. **That is the stack's work, not sharing's**, and
+  it is wanted by the browser and every download as much.
+- **`/Home` on the M700's stick writes at 19.5 MB/s**, which bounds the copy
+  at about 55 s whatever the network does. On the kernel's disk under QEMU it
+  is 301 MB/s (`testing.md` 18.283), which is QEMU.
+- **Writing 1 GB into `/Home` cannot be done today at all.** `diskproto.h`'s
+  WRITE replaces a file whole from one region, so `files.copy` refuses
+  anything over its 1 MB window (`COPY_MAX`), and a 1 GB region is not a
+  thing to ask a process for. **`/Home` needs a write in pieces** - an offset
+  on `DISK_OP_WRITE`, appending - and `cp` a `--job` mode that copies a
+  region at a time and reports progress for Tracker's bar. Not sharing's
+  either: the Camera's long recordings and any large download need it, and
+  it is not on the roadmap yet.
+- **Playing the film from the share**, rather than copying it, needs none of
+  that: the video player reads at offsets, which works through `READ` as it
+  stands, and at a film's few megabytes a second the window above is ample.
+- **Under QEMU** the one figure there is: the browser fetched a 1.4 MB page
+  from this Mac over plain HTTP in 0.6 s (`testing.md` 18.299), about
+  2.3 MB/s through TCG and slirp. A 64 MB file is the suite's size; a
+  gigabyte is not something to copy under emulation.
+
+**Listing a folder of 2,000 files**, opened in Tracker:
+
+| | Where | What is known |
+|---|---|---|
+| 1 | Tracker: `files.entries` - `fs.list`, then `fs.getattr` for each name | the same code that lists `/Home` |
+| 2 | smbfs: QUERY_DIRECTORY, 64 KB a response - an entry is 80 bytes, its name in UTF-16 and padding to eight, so about 540 names of 20 characters a response: **four round trips** to the Mac, at 0.55 ms each, plus the Mac's own time | the Mac's time: unmeasured |
+| 3 | smbfs sorts the names and keeps each one's facts | microseconds of C |
+| 4 | the namespace pages the names: 1 KB a page, about 48 names of 20 characters - **42 round trips** | 19.0 us each on the M700 |
+| 5 | **2,000 `getattr` round trips**, each answered from smbfs's memory | 19.0 us of IPC each on the M700, plus the namespace's packing; **206 us a request under QEMU** (`testing.md` 18.283) |
+| 6 | Tracker sorts and draws 2,000 rows | unmeasured |
+
+**About 2,050 round trips on this machine's side for four on the network's.**
+On the M700 that is something like 40 to 80 ms; under QEMU about 0.4 s, which
+is what the suite will see. **The network is not where a listing's time
+goes** - the namespace's one-`getattr`-a-name is, and `/Home` pays exactly the
+same today for a folder of 2,000. The fix is shared and is not sharing's: a
+`LIST` that carries each name's `disk_node` beside it, so a page of names is a
+page of facts. `diskfs`, `drives` and smbfs would each answer it, and
+`files.entries` would ask it. Measured at N3 before it is proposed.
+
+### How it is tested, under QEMU first
+
+**The far end is Samba's `smbd`, from Homebrew, run as Diego's user on a high
+port, reached from the guest at 10.0.2.2 through QEMU's user network** - as
+`run_tls.py` serves HTTPS on this Mac at 10.0.2.2 today.
+
+Why Samba, over the alternatives:
+
+- **The Mac's own File Sharing** is the real far end and the one Diego will
+  use - and it is a system setting, his to turn on, so no suite depends on
+  it. It is where N9 is checked by hand, once, with him.
+- **Samba is what a NAS runs**, Synology's included, and it speaks every
+  dialect this page wants - 2.0.2 to 3.1.1, signing, CCM and GCM - each
+  pinned by one line of its configuration (`server min protocol`, `server
+  max protocol`, `server signing = mandatory`, `smb encrypt = required`), so
+  each suite says exactly which conversation it held. And it brings
+  `smbclient`, which the server side needs later as a client that is not
+  Kosmos.
+- **impacket's `smbserver`**, in a scratch virtualenv, needs no Homebrew and
+  runs as a user by construction. But its release, 0.13.1, answers **SMB
+  2.0.2 only** (`smb2Negotiate` sets `SMB2_DIALECT_002` and nothing else);
+  3.1.1 with encryption is on its `master`, unreleased. A peer that cannot
+  sign with CMAC or seal tests none of SMB 3. It is the fallback if Samba
+  will not run as a user.
+
+**It runs as a user.** QEMU's own `-netdev user,smb=` starts `smbd` as the
+invoking user with a configuration it writes into a temporary folder, which
+is the evidence that this works. `tools/smbpeer.py` does the same: a
+configuration in the scratch folder with its own private, lock, state, cache
+and pid directories; `smb ports = 4450`; **`interfaces = 127.0.0.1` and
+`bind interfaces only`**, so nothing on the Mac's network can reach it; a
+passdb of one account; `disable netbios`; guests refused; and shares made
+fresh by the tool - a folder of known files, a folder of 2,000, a 64 MB file
+of known bytes. Slirp maps the guest's 10.0.2.2 to the Mac's loopback, so the
+guest types `smb://10.0.2.2:4450/Projects` and nothing is forwarded.
+
+**What needs Diego**: installing Homebrew's `samba` (4.25.0, with thirteen
+dependencies - GnuTLS, MIT Kerberos, ICU among them), whose size is said
+before it is fetched and checked with `brew deps --tree` against the disk's
+free space - 12 GB free on 5 October. Nothing else on the Mac
+changes: no system setting, no service registered, no root.
+
+**For the server side later**, the other direction: QEMU forwards a port of
+the Mac's loopback to the guest's 445 (`hostfwd=tcp:127.0.0.1:4451-:445`),
+and two clients that are not Kosmos connect - Samba's `smbclient -p 4451`,
+and **the Mac's own `mount_smbfs`**, which a user may run onto a folder of
+their own with no setting changed. That is Apple's SMB client - the code
+behind Finder - talking to Kosmos.
+
+**And mDNS later**: QEMU's user network carries no multicast, so discovery is
+tested on a `-netdev socket,mcast=` segment - two guests, one announcing and
+one browsing, or one guest and a Python peer on the Mac that speaks the
+segment's Ethernet frames.
+
+**Within the budget** (`CLAUDE.md`, five to ten minutes): an `arm-share` and an
+`x86-share` suite, split in halves that run side by side if they pass three
+minutes, each waiting for the thing rather than for a number of seconds, and
+the host checks in `host`. A change to the SMB Kit or smbfs runs those; a
+change to `diskproto.h`, the namespace or the stack runs the whole gate.
+
+### The order to build it in
+
+Each step its own revision and its own test, and the suites green before the
+next. The client, read-only, first.
+
+- **N0 - the peer and the library, on the Mac.** `tools/smbpeer.py` starts
+  Samba as the user and makes its shares; libsmb2 vendored at `51c5910` into
+  `runtime/upstream/libsmb2/` as released, its licence beside it and in
+  `LICENSE`; built for the Mac, its own `smb2-ls-async` and `smb2-cat-async`
+  list the 2,000 and read the 64 MB file against the peer at 2.0.2, 3.0,
+  3.1.1 signed and 3.1.1 sealed. **Proves the peer and the library before
+  either is trusted inside the machine.** Host check, in `host`.
+- **N1 - the Crypto Kit's additions.** MD4, MD5, HMAC-MD5, SHA-512, AES,
+  AES-CMAC, AES-CCM and the SP 800-108 KDF, each to its specification's
+  vectors; NTLMv2 to MS-NLMP 4.2.4's worked
+  example; 3.1.1's keys to Microsoft's published example. `tools/test_crypto.c`,
+  natively and through Rosetta, as now.
+- **N2 - smbfs connects.** The port (`__KOSMOS__`, the ring transport,
+  randomness, time, `smb_crypto.c`), `ROLE_SMBFS` started at boot,
+  `shareproto.h`'s PROBE, CONNECT, STATUS and DISCONNECT, the waiter thread,
+  and the `share` program. In the machine: `share connect
+  smb://10.0.2.2:4450/Projects` with the peer's account answers with the
+  dialect and the server's name; a wrong password is refused in words; an
+  address with nobody on it is "not answering" within its bound. **Controls**:
+  a peer pinned to SMB 1 only is refused, and a peer that is stopped (SIGSTOP)
+  mid-negotiation never stops `share status` answering.
+- **N3 - a share is a folder.** `/Network` mounted twice-over; `LIST`,
+  `GETATTR` from the listing, `READ` into a region and a page, `.super`,
+  `.device`; read-only refusals; `places.lua`. In the machine: the 2,000 names
+  equal the peer's; the 64 MB file's SHA-256 equals the Mac's, read whole and
+  read at a hundred random offsets; dates are the peer's; `ls`, `cat`, `cp`
+  from a share; Tracker opens it. **Measured**: the listing's round trips and
+  time, split by stage, under `-icount`.
+- **N4 - signed and sealed.** Each dialect from 2.0.2 to 3.1.1 pinned in
+  turn; `server signing = mandatory`; `smb encrypt = required` (CCM). **The
+  control that bites**: a proxy on the Mac between the guest and the peer
+  changes one byte of one READ's data, and smbfs refuses the answer rather
+  than handing over the file - signed - and the same byte under sealing is
+  refused by the cipher. The cost of signing and sealing a byte measured,
+  natively on this Mac's cores.
+- **N5 - gone away, and back.** The peer stopped (SIGSTOP) with a folder open:
+  `fs.list` answered from memory within its bound, marked as last heard;
+  a `READ` ends in words after SMB's timeout; the peer continued (SIGCONT)
+  or restarted, and smbfs signs in again by itself, from the NT hash it
+  kept, and the mark goes.
+- **N6 - the windows.** Tracker's Network group, Connect to Server as drawn,
+  the trail's globe, "over the network", the status line, the banner,
+  Modified where `dated` says so; the Open window's sidebar through
+  `sidebar.lua`. Pressed by name in the display harness, as `arm-writeapp`
+  presses Write's; the gallery's screenshot gains a share open. **Tracker
+  measured opening the 2,000** - the bound of N5 held to it.
+- **N7 - on real hardware, by hand.** The M700 against Diego's Mac with File
+  Sharing on - his setting, turned on by him - the 2,000 listed and the film
+  played from the share; the numbers above that say "not measured" measured,
+  receive throughput first.
+- **N8 - the keyring** (after `docs/keyring.md` and its windows are drawn
+  and agreed): `store` and `use`, ChaCha20-Poly1305 as one AEAD to RFC
+  8439's vectors, the file sealed, the unlock; "Remember in
+  this machine's keyring"; smbfs signs in from it. Its own suite: a secret
+  stored, the machine restarted, signed in without asking; `store` cannot
+  read back; the file on disk holds no password in any encoding.
+- **N9 - the 1 GB copy.** Needs the stack's ring sized by measurement and
+  window scaling, `diskproto.h`'s write in pieces, and `cp --job` - each its
+  own step under its own owner, on the roadmap. Then the film copied on the
+  M700, and its time against the wire's and the stick's.
+
+Then, each when its time comes:
+
+- **N10 - read-write**: WRITE from a region at offsets, CREATE, delete, rename,
+  a folder, dates set; the out ring filling held by its own test; Tracker's
+  drag into a share. Held by reading back on the Mac what the guest wrote.
+- **N11 - discovery**: the stack's datagrams (`udpring.h`, IGMP), the DNS
+  message coding shared out of `net.c`, `mdnsd` browsing; the Network group's
+  servers seen; `.local` names. On a multicast segment.
+- **N12 - smbd, read-only**: the Servers window's File sharing page as drawn;
+  `smbclient` and the Mac's `mount_smbfs` through a forwarded port list and
+  read what `/Home` holds; a wrong password and a guest refused. **Needs the
+  M700's TCP send** - today one segment in flight, 1.4 MB/s
+  (`testing.md`, the M700 suite) - which is the stack's item already on the
+  roadmap.
+- **N13 - announced**: `_smb._tcp` and `_device-info._tcp`, and the M700 in
+  Finder's Locations.
+- **N14 - smbd read-write.**
+
+---
+
+## What is Diego's to decide
+
+1. **`/Network` shared by two servers**: the stack keeps every network
+   operation on `/Network`, and smbfs answers every file under it - one
+   mount, two capabilities, no caller of the stack changed. Or the stack
+   moves to a name of its own. *Recommended*: the split.
+2. **libsmb2, vendored from `master` at a pinned commit** rather than SMB
+   written from MS-SMB2 - 25,700 lines that are not ours, LGPL, its cryptography
+   replaced by the Crypto Kit's. *Recommended*: yes.
+3. **Samba from Homebrew as the test peer**, run as the user on port 4450,
+   bound to the loopback; a Homebrew download, its size said first. *Recommended*:
+   yes, with impacket as the fallback.
+4. **The keyring's key**: a keyring password asked once a boot, or a key in a
+   file that protects nothing from a program reading `/Home`. *Recommended*:
+   a password - decided in `docs/keyring.md`, its own step.
+5. **Two things outside sharing that its busiest path needs**, for the
+   roadmap: `/Home`'s write in pieces with `cp --job`, and the stack's receive
+   ring sized by measurement with window scaling. *Recommended*: both on the
+   roadmap now, neither before N9.
+6. **A `LIST` that carries each name's facts**, for `/Home`, `/Drives` and
+   shares alike, if N3's measurement says the 2,000 `getattr` round trips are
+   where a listing's time is. *Recommended*: measure first.

@@ -1,0 +1,396 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Sharing files over the network, and what it stands on, as one picture: the
+  applications on top - Tracker, the Open window, Servers and every program
+  that reads a path - the namespace beneath them, the new servers and kits
+  marked new, the network stack, Nebula, and the machine at the far end. And
+  its two busiest paths drawn through it: copying a 1 GB film from the Mac's
+  share into /Home (C), and listing a folder of 2,000 files (L). Drawn on 5
+  October 2026, before any of it is built; `docs/sharing.md` is the argument
+  and the numbers, and `docs/sharing.html` the windows.
+
+  Rendered to docs/sharing-architecture.png by headless Chrome at twice its
+  size, as docs/stack.png is:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --disable-gpu --screenshot=docs/sharing-architecture.png \
+      --window-size=1800,H --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/sharing-architecture.html
+
+  where H is the page's height, which the script at the end puts in the
+  title; the paths are drawn once the page is laid out, so the screenshot
+  waits for nothing else.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos file sharing architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --user: #e9f4ef; --user-line: #9fd4c1; --user-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --net: #e8f1fb; --net-line: #9fc0e6; --net-ink: #1d4a7a;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --metal: #f1f0eb; --metal-line: #cfcdc4; --metal-ink: #444441;
+
+    /* What each piece is to sharing: new, changed, later, somebody else's. */
+    --new: #2a55c9; --changed: #b7780b; --elsewhere: #6d6a60;
+    /* The two paths drawn through it. */
+    --path-c: #d81b60; --path-l: #00838f;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1800px; background: var(--paper); color: var(--ink); position: relative;
+         font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 44px; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
+  header h1 { font-size: 40px; font-weight: 600; letter-spacing: -0.5px; }
+  header h1 span { color: var(--dim); font-weight: 400; }
+  header p { color: var(--dim); font-size: 16px; text-align: right; }
+
+  .legend { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; font-size: 14px; color: var(--dim); }
+  .legend .k { display: inline-flex; align-items: center; gap: 8px; }
+  .swatch-card { width: 34px; height: 20px; border-radius: 5px; background: #fff; border: 1px solid #cfcdc4; display: inline-block; }
+  .swatch-card.new { border: 2px solid var(--new); }
+  .swatch-card.later { border: 1.5px dashed #a9a69c; opacity: 0.7; }
+  .swatch-card.elsewhere { border: 2px dotted var(--elsewhere); }
+  .pathkey { width: 40px; height: 0; border-top: 4px solid; display: inline-block; border-radius: 2px; }
+
+  .band { display: grid; grid-template-columns: 250px 1fr; gap: 18px; padding: 16px 18px;
+          border-radius: 14px; border: 1px solid; margin-bottom: 10px; }
+  .band .label h2 { font-size: 21px; font-weight: 600; line-height: 1.2; }
+  .band .label p { font-size: 13.5px; margin-top: 6px; }
+  .tag { display: inline-block; font: 500 11.5px/1 "Plex", sans-serif; letter-spacing: 0.6px;
+         padding: 4px 7px; border-radius: 5px; margin-top: 8px; margin-right: 4px; }
+
+  .cards { display: grid; gap: 10px; align-content: start; }
+  .card { position: relative; z-index: 1; background: #fff; border: 1px solid; border-radius: 10px; padding: 10px 12px; }
+  .card h3 { font-size: 15.5px; font-weight: 600; margin-bottom: 3px; padding-right: 70px; }
+  .card h3 code { font-weight: 400; color: var(--dim); font-size: 12.5px; margin-left: 6px; }
+  .card p { font-size: 13.5px; color: var(--ink); }
+  .card p + p { margin-top: 4px; }
+  .card .files { font: 12px/1.5 "Plex Mono", Menlo, monospace; color: var(--dim); margin-top: 4px; }
+  code, .mono { font-family: "Plex Mono", Menlo, monospace; font-size: 0.92em; }
+  .group-title { grid-column: 1 / -1; font: 600 13px "Plex", sans-serif; letter-spacing: 0.8px; text-transform: uppercase; margin: 2px 0 -2px; }
+
+  .user  { background: var(--user); border-color: var(--user-line); }
+  .user  .label h2, .user .label p { color: var(--user-ink); }
+  .user  .card { border-color: var(--user-line); }
+  .user  .group-title { color: var(--user-ink); }
+  .clang { background: var(--c); border-color: var(--c-line); }
+  .clang .label h2, .clang .label p { color: var(--c-ink); }
+  .clang .card { border-color: var(--c-line); }
+  .clang .group-title { color: var(--c-ink); }
+  .netb  { background: var(--net); border-color: var(--net-line); }
+  .netb  .label h2, .netb .label p { color: var(--net-ink); }
+  .netb  .card { border-color: var(--net-line); }
+  .kern  { background: var(--kern); border-color: var(--kern-line); }
+  .kern  .label h2, .kern .label p { color: var(--kern-ink); }
+  .kern  .card { border-color: var(--kern-line); }
+  .metal { background: var(--metal); border-color: var(--metal-line); }
+  .metal .label h2, .metal .label p { color: var(--metal-ink); }
+  .metal .card { border-color: var(--metal-line); }
+
+  .t-lua { background: #cfeee2; color: var(--user-ink); }
+  .t-c   { background: #f7d9bf; color: var(--c-ink); }
+  .t-el0 { background: #ffffff; color: var(--dim); border: 1px solid #d8d6ce; }
+  .t-el1 { background: #ddd8f8; color: var(--kern-ink); }
+
+  .card.new { border: 2px solid var(--new) !important; }
+  .card.later { border: 1.5px dashed #a9a69c !important; background: #f7f6f2; }
+  .card.later h3, .card.later p { color: var(--dim); }
+  .card.elsewhere { border: 2px dotted var(--elsewhere) !important; }
+  .mark { display: inline-block; font: 600 10.5px/1 "Plex", sans-serif; letter-spacing: 0.7px; padding: 3px 6px;
+          border-radius: 4px; color: #fff; vertical-align: 2px; margin-left: 6px; }
+  .mark.new { background: var(--new); }
+  .mark.changed { background: var(--changed); }
+  .mark.later { background: #8d8a80; }
+  .mark.elsewhere { background: var(--elsewhere); }
+  .plus { color: var(--changed); font-weight: 500; }
+  .big h3 { font-size: 19px; }
+
+  .divider { display: grid; grid-template-columns: 250px 1fr; gap: 18px; align-items: center; margin: 16px 0 16px; }
+  .divider .rule { border-top: 2px dashed #a9a69c; }
+  .divider .label { font-weight: 600; font-size: 17px; color: var(--metal-ink); }
+  .divider .what { font-size: 14px; color: var(--dim); margin-top: 8px; }
+
+  /* Where each path passes: a numbered mark at a card's top right. */
+  .stops { position: absolute; right: 8px; top: -11px; display: flex; gap: 4px; z-index: 3; }
+  .stop { width: 30px; height: 22px; border-radius: 11px; display: grid; place-items: center; color: #fff;
+          font: 600 12px/1 "Plex", sans-serif; box-shadow: 0 0 0 2px #fff; }
+  .stop.c { background: var(--path-c); }
+  .stop.l { background: var(--path-l); }
+  /* Under the cards and over the bands: a path shows between the cards it
+     joins, and never over a card's words; the numbered marks are on top. */
+  #paths { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 0; }
+  .group-title, .divider .what, .band .label { position: relative; z-index: 1; }
+
+  .side { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+  .side .card { border-color: #d8d6ce; padding: 14px 16px; }
+  .side .card.cpath { border: 2px solid var(--path-c); }
+  .side .card.lpath { border: 2px solid var(--path-l); }
+  .steps { display: grid; grid-template-columns: 34px 1fr 250px; gap: 6px 10px; margin-top: 8px; font-size: 13.5px; align-items: baseline; }
+  .steps .s { font-weight: 600; }
+  .cpath .steps .s { color: var(--path-c); }
+  .lpath .steps .s { color: var(--path-l); }
+  .steps .ms { color: var(--dim); font-size: 13px; }
+  .steps .ms b { color: var(--ink); font-weight: 600; }
+  .sum { margin-top: 10px; padding-top: 8px; border-top: 1px solid #e4e2da; font-size: 13.5px; }
+  .notes4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
+  .notes4 .card { border-color: #d8d6ce; }
+  footer { margin-top: 18px; color: var(--dim); font-size: 13px; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>File sharing <span>- SMB 2 and 3, before it is built</span></h1>
+  <p>Designed 5 October 2026 · nothing here is built<br>docs/sharing.md · docs/sharing.html</p>
+</header>
+
+<div class="legend">
+  <span class="k"><span class="swatch-card"></span>used as it is</span>
+  <span class="k"><span class="mark changed" style="margin:0">+</span>gains something</span>
+  <span class="k"><span class="swatch-card new"></span>new: a kit or a server of its own where something else could want it</span>
+  <span class="k"><span class="swatch-card later"></span>later step</span>
+  <span class="k"><span class="swatch-card elsewhere"></span>needed by the busiest path, owned elsewhere</span>
+  <span class="k"><span class="pathkey" style="border-color:var(--path-c)"></span><b style="color:var(--path-c)">C</b>&nbsp;copying a 1 GB film from the Mac's share</span>
+  <span class="k"><span class="pathkey" style="border-color:var(--path-l)"></span><b style="color:var(--path-l)">L</b>&nbsp;listing a folder of 2,000 files</span>
+</div>
+
+<!-- ============================ The applications ============================ -->
+<section class="band user">
+  <div class="label">
+    <h2>Applications and programs</h2>
+    <p>Each reaches a share as it reaches <code>/Home</code>: through a path. Only the windows that show a share as one change.</p>
+    <span class="tag t-lua">LUA</span><span class="tag t-el0">EL0</span>
+    <p class="mono">/Kosmos/Apps · /Kosmos/Programs</p>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.6fr 1fr 1fr 1fr">
+    <div class="card big" id="c-tracker"><div class="stops"><span class="stop c">C1</span><span class="stop l">L1</span></div><h3>Tracker <code>tracker.lua</code><span class="mark changed">+</span></h3>
+      <p>Lists a share with <code>files.entries</code>, copies with a job. <span class="plus">+ the Network group, Connect to Server, the globe and "over the network", the status line, the Gone away banner, the Modified column where <code>dated</code> says so</span></p></div>
+    <div class="card"><h3>The Open and Save window <code>panel.lua</code></h3>
+      <p>Nothing of its own: <span class="plus">+ the Network group, through <code>sidebar.lua</code></span></p></div>
+    <div class="card later"><h3>Servers <code>servers.lua</code><span class="mark later">N12</span></h3>
+      <p>A fourth row: File sharing - folders of <code>/Home</code>, who may sign in, who is connected</p></div>
+    <div class="card"><h3>Every program</h3>
+      <p><code>ls</code>, <code>cat</code>, <code>cp</code>, the video player, Music: they read paths, so they read shares. <span class="plus">+ <code>share</code>, at the prompt</span></p></div>
+  </div>
+</section>
+
+<!-- ============================ The namespace ============================ -->
+<section class="band user">
+  <div class="label">
+    <h2>The namespace, and Lua's libraries</h2>
+    <p>A kit each process runs for itself. It already speaks <code>diskproto.h</code> to <code>/Home</code>; a share is the same protocol.</p>
+    <span class="tag t-lua">LUA</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.7fr 1fr 1fr 1fr">
+    <div class="card" id="c-ns"><div class="stops"><span class="stop c">C2</span><span class="stop l">L2</span></div><h3>The namespace <code>init.lua</code></h3>
+      <p><code>disk_request</code>, exactly as for <code>/Home</code>: <code>list</code> a page at a time, <code>getattr</code>, <code>read</code> into a region. <span class="plus">+ <code>/Network</code> mounted with two capabilities - the stack's for <code>netproto.h</code>, smbfs's for files; <code>fs.share_probe</code>, <code>connect</code>, <code>status</code>, <code>list</code>, <code>disconnect</code></span></p></div>
+    <div class="card"><h3>files · regions</h3><p>A listing's entries; a file into a region and out of one - the bytes never in Lua</p></div>
+    <div class="card"><h3>places · sidebar</h3><p><span class="plus">+ <code>/Network</code> holds files; the Network group, for Tracker and the Open window</span></p></div>
+    <div class="card elsewhere"><h3><code>cp --job</code><span class="mark elsewhere">ELSEWHERE</span></h3><p>A copy a region at a time, its progress for Tracker's bar - as zip and unzip run</p></div>
+  </div>
+</section>
+
+<!-- ================================ Servers ================================ -->
+<section class="band clang">
+  <div class="label">
+    <h2>Servers, in C</h2>
+    <p>Someone a program asks, each in a declared shape. smbfs holds a caller's reply and goes on answering: nothing on the desktop waits on a share.</p>
+    <span class="tag t-c">C</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.7fr 1fr 1fr">
+    <div class="card new big" id="c-smbfs"><div class="stops"><span class="stop c">C3</span><span class="stop l">L3</span></div><h3>smbfs <code>/Network/&lt;server&gt;/&lt;share&gt;</code><span class="mark new">NEW · N2</span></h3>
+      <p><b>Speaks <code>diskproto.h</code></b>, so every program reads a share with no new client code; <code>shareproto.h</code> for what is not a file. One process for every share; a role of <code>init.elf</code>.</p>
+      <p>Keeps each folder's names and facts from QUERY_DIRECTORY, so a <code>getattr</code> never reaches the network; a handle per file being read; per server its dialect, signing, the NT hash while connected. A <b>waiter thread</b> per connection turns "bytes arrived" into a message on its own endpoint, so one thread holds every piece of state.</p></div>
+    <div class="card" id="c-diskfs"><div class="stops"><span class="stop c">C8</span></div><h3>diskfs <code>/Home</code></h3>
+      <p>Where a copied film lands, from the same region it arrived in. <span class="plus">+ a write in pieces</span> - today a file is replaced whole, so a copy stops at 1 MB</p>
+      <p class="files">M700's stick: written 19.5 MB/s</p></div>
+    <div class="card new"><h3>keyring<span class="mark new">NEW · N8</span></h3>
+      <p>Its own design first (<code>docs/keyring.md</code>). <code>store</code> for windows - they cannot read back; <code>use</code> for smbfs - an NT hash, never the password. Sealed with ChaCha20-Poly1305 in <code>/Home/Keyring</code></p></div>
+    <div class="card later" style="grid-column: 2 / 3"><h3>mdnsd<span class="mark later">N11</span></h3>
+      <p>Servers seen, <code>.local</code> names, this machine announced. Wanted by the VNC viewer, printing, speakers too</p></div>
+    <div class="card later"><h3>smbd<span class="mark later">N12</span></h3>
+      <p>Folders of <code>/Home</code> to the Mac's Finder, on libsmb2's server framework; a client of <code>diskfs</code> for what it serves</p></div>
+  </div>
+</section>
+
+<!-- ================================ Kits ================================ -->
+<section class="band clang">
+  <div class="label">
+    <h2>Kits, in C</h2>
+    <p>Linked into the process that speaks SMB. No Lua door: an application reaches a share through the namespace, never the protocol.</p>
+    <span class="tag t-c">C</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.7fr 1.3fr">
+    <div class="card new" id="c-smbkit"><div class="stops"><span class="stop c">C4</span><span class="stop l">L4</span></div><h3>The SMB Kit <code>user/kits/smb/ · runtime/upstream/libsmb2</code><span class="mark new">NEW · N0, N2</span></h3>
+      <p><b>libsmb2</b>, vendored at <code>51c5910</code>, LGPL 2.1: SMB 2.0.2 to 3.1.1, NTLMv2 in SPNEGO, HMAC-SHA256 and AES-CMAC signing, AES-128-CCM sealing, credits, zero-copy READ - and the server's coders, for smbd. About 25,700 lines kept of 34,566.</p>
+      <p>The port: a <code>__KOSMOS__</code> platform - its "socket" is a <code>tcpring.h</code> ring, its randomness <code>SYS_ENTROPY</code>, its cryptography the Crypto Kit's. Out: Kerberos, the sync API, its own AES and hashes.</p></div>
+    <div class="card"><h3>Crypto Kit <code>user/kits/crypto/</code><span class="mark changed">+ N1</span></h3>
+      <p>Has SHA-256, HMAC, ChaCha20, Poly1305, X25519. <span class="plus">+ MD4 and AES-CMAC (new); MD5, HMAC-MD5, SHA-512, AES, CCM, GCM (BearSSL's, already in the tree); SP 800-108</span> - each to its specification's vectors, NTLMv2 to MS-NLMP's worked example</p></div>
+  </div>
+</section>
+
+<!-- ============================ The network stack ============================ -->
+<section class="band netb">
+  <div class="label">
+    <h2>The network stack</h2>
+    <p><code>/Network</code>'s first server, and the one smbfs is a client of. A connection's bytes in a region, never a message.</p>
+    <span class="tag t-c">C</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.7fr 1fr 1fr">
+    <div class="card" id="c-net"><div class="stops"><span class="stop c">C5</span><span class="stop l">L5</span></div><h3>net <code>user/servers/net.c</code></h3>
+      <p>TCP to port 445: <code>CONNECT</code> answered at once, <code>PUSH</code>, <code>POLL</code>; <code>RESOLVE</code>. Two 16 KB rings a connection (<code>tcpring.h</code>) - <b>the receive window is the ring</b>, so at most a ring a round trip: about 30 MB/s at the M700's 0.55 ms</p></div>
+    <div class="card elsewhere"><h3>A ring sized by measurement<span class="mark elsewhere">ELSEWHERE</span></h3>
+      <p>256 KB and window scaling (RFC 7323) to fill a gigabit wire; and more than one segment in flight to send faster than 1.4 MB/s - for smbd, the browser, VNC</p></div>
+    <div class="card later"><h3>Datagrams<span class="mark later">N11</span></h3>
+      <p>UDP for whoever asks, a multicast group joined: <code>udpring.h</code>. mDNS first, then NTP and sound over the network</p></div>
+  </div>
+</section>
+
+<!-- =========================== The boundary ============================= -->
+<div class="divider">
+  <div><div class="label">System calls</div></div>
+  <div><div class="rule"></div><div class="what">A message says what to do; a region holds what to do it to. "Read a megabyte from here into the region I hand you" is a message; the megabyte is not.</div></div>
+</div>
+
+<!-- ============================== Nebula ================================ -->
+<section class="band kern">
+  <div class="label">
+    <h2>Nebula</h2>
+    <p>The microkernel: threads, address spaces, IPC and capabilities - and nothing else. Nothing in it changes.</p>
+    <span class="tag t-c">C</span><span class="tag t-el1">EL1</span>
+    <p class="mono">kernel/</p>
+  </div>
+  <div class="cards" style="grid-template-columns: repeat(4, 1fr)">
+    <div class="card" id="c-ipc"><div class="stops"><span class="stop l">L6</span></div><h3>IPC</h3><p>A held reply: smbfs keeps the sender and answers when the server does. 19.0 us a round trip on the M700, 206 us a disk request under QEMU</p><p class="files">ipc.c</p></div>
+    <div class="card" id="c-regions"><div class="stops"><span class="stop c">C7</span></div><h3>Regions</h3><p>The TCP ring, shared by the stack and smbfs; the reader's region, mapped by smbfs for one READ and handed back</p><p class="files">memobj.c sharemap.c</p></div>
+    <div class="card"><h3>Threads</h3><p>The waiter thread per connection (<code>threads.md</code> step 3, done); no futex needed, since only one thread touches state</p><p class="files">thread.c</p></div>
+    <div class="card"><h3>Capabilities</h3><p>smbfs is handed the stack, the console, <code>/Devices</code>, the keyring's <code>use</code>; smbd only the folders it serves</p><p class="files">process.c</p></div>
+  </div>
+</section>
+
+<!-- ============================== The far end ============================== -->
+<section class="band metal">
+  <div class="label">
+    <h2>The far end</h2>
+    <p>Whoever speaks SMB 2 or 3 on port 445. Tested against Samba on this Mac; used against the Mac itself.</p>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.4fr 1fr 1fr 1fr">
+    <div class="card" id="c-mac"><div class="stops"><span class="stop c">C6</span><span class="stop l">L7</span></div><h3>The Mac's File Sharing</h3><p>Diego's setting, turned on by him: where the M700 is checked by hand (N7). Sends READs of its <code>MaxReadSize</code>, signs, and seals when asked</p></div>
+    <div class="card"><h3>Samba, the test peer <code>tools/smbpeer.py</code></h3><p>Homebrew's <code>smbd</code> as the user on 127.0.0.1:4450, reached from the guest at <code>10.0.2.2</code>; every dialect pinned by a line of its configuration</p></div>
+    <div class="card"><h3>A NAS · Windows</h3><p>Samba on a Synology; Windows 10 and 11. SMB 1 and guests refused here as there</p></div>
+    <div class="card later"><h3>The Mac as a client<span class="mark later">N12</span></h3><p><code>mount_smbfs</code> and Samba's <code>smbclient</code> through a forwarded port: Apple's own client talking to smbd</p></div>
+  </div>
+</section>
+
+<!-- =========================== The busiest paths ============================ -->
+<div class="side">
+  <div class="card cpath"><h3 style="padding-right:0">C - copying a 1 GB film from the Mac's share into /Home, on the M700</h3>
+    <div class="steps">
+      <span class="s">C1</span><span>Tracker starts <code>cp --job</code> and draws its bar</span><span class="ms">a process start</span>
+      <span class="s">C2</span><span><code>read</code> the next piece into the job's region</span><span class="ms"><b>19.0 us</b> IPC on the M700</span>
+      <span class="s">C3</span><span>smbfs holds the reply; splits it into READs within the credits</span><span class="ms">microseconds of C</span>
+      <span class="s">C4</span><span>each READ signed, its answer's signature checked</span><span class="ms">AES-CMAC a byte: not measured</span>
+      <span class="s">C5</span><span>the stack: frames to the TCP ring, a window of 16 KB</span><span class="ms"><b>at most ~30 MB/s</b> at 0.55 ms; never measured</span>
+      <span class="s">C6</span><span>the Mac sends the data</span><span class="ms">a gigabit wire: ~112 MB/s</span>
+      <span class="s">C7</span><span>libsmb2 copies ring to region - the one copy - and smbfs replies</span><span class="ms">no byte enters Lua</span>
+      <span class="s">C8</span><span>the region written into <code>/Home</code></span><span class="ms"><b>19.5 MB/s</b>, the M700's stick</span>
+    </div>
+    <p class="sum"><b>About 55 s, and the stick is why</b>; the network's ring alone would allow 36. Writing a gigabyte into <code>/Home</code> needs a write in pieces first - today a copy stops at 1 MB. Playing the film from the share needs neither.</p></div>
+  <div class="card lpath"><h3 style="padding-right:0">L - listing a folder of 2,000 files in Tracker</h3>
+    <div class="steps">
+      <span class="s">L1</span><span><code>files.entries</code>: <code>fs.list</code>, then a <code>getattr</code> a name</span><span class="ms">the code that lists <code>/Home</code></span>
+      <span class="s">L2</span><span>42 pages of names, then 2,000 <code>getattr</code></span><span class="ms">~2,050 requests</span>
+      <span class="s">L3</span><span>smbfs answers every <code>getattr</code> from the listing it kept</span><span class="ms">nothing reaches the network</span>
+      <span class="s">L4</span><span>QUERY_DIRECTORY, 64 KB a response, ~540 names each</span><span class="ms">four requests</span>
+      <span class="s">L5</span><span>the stack carries four answers</span><span class="ms">0.55 ms a round trip</span>
+      <span class="s">L6</span><span>the IPC round trips on this machine's side</span><span class="ms"><b>~40-80 ms</b> M700; <b>~0.4 s</b> QEMU</span>
+      <span class="s">L7</span><span>the Mac reads its folder</span><span class="ms">unmeasured</span>
+    </div>
+    <p class="sum"><b>2,050 round trips here for four on the wire.</b> The network is not where a listing's time goes; one <code>getattr</code> a name is, and <code>/Home</code> pays the same today. A <code>LIST</code> carrying each name's facts would fix both - measured at N3 before it is proposed.</p></div>
+</div>
+
+<div class="notes4">
+  <div class="card"><h3>A share is a disk</h3><p>smbfs speaks <code>diskproto.h</code>, so Tracker, the Open window and every program read a share with no new client code. <code>diskproto.h</code> gains three errors and "as last heard".</p></div>
+  <div class="card"><h3><code>/Network</code>, two servers</h3><p>The stack keeps every network operation; smbfs answers every file under it. One mount, two capabilities - no caller of the stack changes.</p></div>
+  <div class="card"><h3>Nothing waits on a share</h3><p>A question about names is answered within a quarter of a second, from the server or from what was last heard. Connecting is answered at once and asked about on the window's own clock.</p></div>
+  <div class="card"><h3>The order</h3><p class="mono" style="font-size:12.5px">N0 peer, libsmb2 · N1 crypto · N2 connect · N3 a folder · N4 signed, sealed · N5 gone away · N6 windows · N7 M700 · N8 keyring · N9 1 GB · N10 write · N11 mDNS · N12 smbd · N13 announced · N14 smbd writes</p></div>
+</div>
+
+<footer>
+  <span>Kits, servers and drivers supply; applications orchestrate - Diego's premise, 4 October 2026.</span>
+  <span>docs/sharing-architecture.html, drawn from docs/sharing.md</span>
+</footer>
+
+<svg id="paths" xmlns="http://www.w3.org/2000/svg"></svg>
+<script>
+(function () {
+  // Each path through its stops in order, a curve from one mark to the
+  // next, drawn once the page is laid out.
+  var svg = document.getElementById("paths");
+
+  function centre(label) {
+    var body = document.body.getBoundingClientRect();
+    var all = document.querySelectorAll(".stop");
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].textContent === label) {
+        var r = all[i].getBoundingClientRect();
+        return [r.left - body.left + r.width / 2, r.top - body.top + r.height / 2];
+      }
+    }
+    return null;
+  }
+
+  function draw(prefix, count, colour, bend) {
+    var d = "";
+    for (var i = 1; i < count; i++) {
+      var a = centre(prefix + i), b = centre(prefix + (i + 1));
+      if (!a || !b) continue;
+      var dy = b[1] - a[1], dx = b[0] - a[0];
+      // Out sideways and round, so a curve does not run along a card's text.
+      var c1 = [a[0] + bend, a[1] + dy * 0.35], c2 = [b[0] + bend, b[1] - dy * 0.35];
+      if (Math.abs(dy) < 40) { c1 = [a[0] + dx * 0.3, a[1] - 60]; c2 = [b[0] - dx * 0.3, b[1] - 60]; }
+      // A path that climbs back several bands goes round by the right
+      // margin rather than across the cards between.
+      if (dy < -300) {
+        var edge = document.body.scrollWidth - 22;
+        d += "M" + a[0] + "," + a[1] + " C" + edge + "," + a[1] + " " + edge + "," + a[1] + " " + edge + "," + (a[1] - 120) +
+             " L" + edge + "," + (b[1] + 120) + " C" + edge + "," + b[1] + " " + edge + "," + b[1] + " " + b[0] + "," + b[1] + " ";
+        continue;
+      }
+      d += "M" + a[0] + "," + a[1] + " C" + c1[0] + "," + c1[1] + " " + c2[0] + "," + c2[1] + " " + b[0] + "," + b[1] + " ";
+    }
+    var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", d);
+    p.setAttribute("fill", "none");
+    p.setAttribute("stroke", colour);
+    p.setAttribute("stroke-width", "4.5");
+    p.setAttribute("stroke-linecap", "round");
+    p.setAttribute("opacity", "0.9");
+    svg.appendChild(p);
+  }
+
+  function go() {
+    svg.setAttribute("width", document.body.scrollWidth);
+    svg.setAttribute("height", document.body.scrollHeight);
+    var css = getComputedStyle(document.documentElement);
+    draw("C", 8, css.getPropertyValue("--path-c").trim(), 70);
+    draw("L", 7, css.getPropertyValue("--path-l").trim(), -70);
+    document.title = "Kosmos file sharing architecture " + document.body.scrollHeight;
+  }
+
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(go); else go();
+})();
+</script>
+</body>
+</html>

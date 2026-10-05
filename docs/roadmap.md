@@ -1019,6 +1019,17 @@ Assessed, not designed:
   the Servers window - with six questions that are his. **The look AGREED
   the same day** - Diego: "it great how it looks". Next before any code:
   the feature set, the architecture and the diagram, and his six answers.
+  **Answered and DESIGNED the same day** - Diego: "yes to all", "lets
+  start building": `docs/sharing.md`, `docs/sharing-architecture.png`. Shares
+  at `/Network/<server>/<share>` (the stack keeps `/Network`'s operations, a
+  second capability answers its files), read-only first, guests off, a
+  keyring for remembered passwords, Servers for sharing; libsmb2 vendored,
+  pinned by commit; tested against a Homebrew Samba run as the user on
+  port 4450. Steps N0-N9, then read-write, discovery and the server side.
+  **Found by it, and wanted for its 1 GB copy**: `/Home` taking a write in
+  pieces (a copy stops at 1 MB today), and the network stack's 16 KB
+  receive ring sized by measurement, with TCP window scaling (about
+  30 MB/s is its ceiling now).
 
 **A settings kit, for any application to keep its settings.** Diego, 4
 October 2026: "There should be a settings kit that allows an app to store
