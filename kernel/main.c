@@ -278,9 +278,8 @@ void kmain(void)
      * takes a second fault instead. One line, at the top, and the ordering
      * constraint disappears rather than being documented.
      *
-     * `percpu.h` has the rest of it. There is one core, `NR_CPUS` is 1, and
-     * nothing behaves differently: this is `docs/smp.md` step one, done
-     * while it cannot fail.
+     * `percpu.h` has the rest of it. This is core zero's slot; the others
+     * claim theirs as they arrive (`kernel/smp.c`).
      */
     percpu_init(0);
 

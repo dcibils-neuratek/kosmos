@@ -62,12 +62,6 @@ void gic_enable_spi(unsigned intid);
 #define PL061_INTID             39u
 #define PL061_POWER_KEY_LINE    3u
 
-/* One of the input devices has events waiting. `slot` is which window. */
-
-/* The sound device has finished with a period. `slot` is which window. */
-
-/* A frame has arrived, or one has been sent. `slot` is which window. */
-
 /* The interrupt to service, or 1023 when there is none. */
 unsigned gic_acknowledge(void);
 void     gic_end_of_interrupt(unsigned intid);
@@ -77,37 +71,5 @@ void     gic_end_of_interrupt(unsigned intid);
 /* Called by hal_irq_handle when the timer's interrupt arrives. Counts the
  * tick and rearms. */
 void timer_interrupt(void);
-
-/*
- * QEMU's firmware configuration device, which is how this board reaches
- * ramfb. See fwcfg.c: everything about it is big-endian and the register
- * layout on Arm is not the one x86 uses.
- */
-
-#include "fwcfg.h"
-
-/* Looks an item up by name in the file directory. Returns its selector key
- * and its length, both of which the caller needs before it can touch it. */
-
-
-/* Writes an item whole. The DMA interface is the only one that can: writes
- * through the data register were removed in QEMU 2.4. */
-
-/* The nth file the firmware carries, for a server that has to serve what it
- * was not told the name of. False when there is no nth. */
-
-
-/* An item's bytes, into memory the caller provides. */
-
-
-/*
- * The keyboard: virtio-input over virtio-mmio. See input.c.
- *
- * This used to say that input.c *also holds the virtio transport*, on the
- * grounds that there is one virtio device on this board and splitting the
- * transport out before there are two would be inventing an interface
- * against a single caller. There are four - input, block, sound and now the
- * network - and the transport is `virtio.c`.
- */
 
 #endif /* HAL_QEMU_VIRT_H */

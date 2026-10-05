@@ -32,6 +32,10 @@ if not screen then
 end
 
 local hz = fs.read("/Devices/cpu").counter_hz
+
+-- A second in the scheduler's ticks, which is what a sleep is measured in:
+-- the counter measures how long something took, and these are for waiting.
+local tick_hz = fs.read("/Devices/kernel").tick_hz or 250
 local w, h = screen:size()
 local top = h - RESERVED_ROWS * gfx.font.h
 
@@ -75,8 +79,7 @@ while sys.ticks() < until_ do
   -- rather than once per yield: the question is an IPC round trip to the
   -- console, and a hundred a second to answer "no" would cost more than the
   -- drawing does.
-  local next_ = sys.ticks() + hz
-  while sys.ticks() < next_ do sys.yield() end
+  sys.sleep(tick_hz)
 
   if interrupted() then
     -- Give the rows back the way they were found, or the bar stays on

@@ -1317,9 +1317,10 @@ servers in C and one in Lua for the sake of a feature, and that was a
 deliberate trade with a known price: a milestone's permanent test deleted,
 and the one demonstration of §9.1's Lisp Machine property gone with it.
 
-What survives is the *shape*: `serve` still takes a factory rather than a
-table of handlers, so a server's state and its behaviour are still separate
-things. That was reload's mechanism and it is worth keeping on its own.
+What survived it for a while was the *shape*: `serve` took a factory rather
+than a table of handlers, so a server's state and its behaviour stayed
+separate things. `serve` itself went with the last server written in Lua -
+nothing called it once `diskfs` was C, and the review before 0.11 removed it.
 
 **Level 2 is untouched and is the architectural property anyway.** A
 supervisor restarting a dead server, with clients reconnecting through the
@@ -1471,7 +1472,7 @@ The line was crossed the moment `fork`, signals, a global `/`, or a server handi
 `console.c` calls `unlink`, and its `-condebug` log calls `open`, `write` and
 `close`. The tree under `runtime/upstream/quake/` is not modified, so the
 patch is a header included ahead of every Quake file,
-`user/bin/apps/quake/kosmos_quake.h`: `unlink` becomes ISO C's `remove`, and the
+`user/installed/Quake/kosmos_quake.h`: `unlink` becomes ISO C's `remove`, and the
 other three do nothing. Kosmos gained no POSIX name, and everything done to
 the port can be read in one file.
 

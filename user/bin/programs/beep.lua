@@ -7,12 +7,13 @@
 --
 -- Deliberately a *program* and not an application: it makes a noise and
 -- exits, which is what the console is for. What it is really for is being
--- the smallest thing that exercises the whole path - `sys.sound` to the
--- syscall to `hal_snd_write` to the virtqueue - so that when something
--- larger is silent, this says whether the silence starts above or below it.
+-- the smallest thing that exercises the whole path - a stream (`audio.lua`)
+-- through its shared ring to the audio server, and the server to the
+-- device - so that when something larger is silent, this says whether the
+-- silence starts above or below it.
 --
--- It also prints how close it came to the deadline, which is the number
--- `roadmap.md` M11a promises instead of a bound.
+-- It also prints how long the sound took to hand over against how long it
+-- lasts, which says whether the device was setting the pace.
 
 local audio = use("/Kosmos/Libraries/audio.lua")
 
@@ -24,9 +25,7 @@ if fmt.period == 0 then
 end
 
 local RATE     = fmt.rate
-local CHANNELS = fmt.channels
 local PERIOD   = fmt.period                 -- bytes
-local DEPTH    = fmt.periods
 
 --
 -- Through the audio server rather than straight at the device.
@@ -43,30 +42,9 @@ if not out then
   return
 end
 
--- Four bytes a frame: two channels of signed sixteen-bit.
-local FRAME = 2 * CHANNELS
-
 local hz = tonumber((args or ""):match("^%s*(%d+)")) or 440
 local ms = tonumber((args or ""):match("^%s*%d+%s+(%d+)")) or 333
 
---
--- The whole tone, built before any of it is played.
---
--- The first version built *one period* and repeated it, snapping the
--- frequency so a whole number of cycles fitted - otherwise the seam
--- between repeats is a discontinuity, and a discontinuity at the period
--- rate is a buzz louder than the tone. That works and the snapping is
--- useless: a 256-frame period at 44100 Hz has a frequency resolution of
--- 172 Hz, so 440 came out as 517 and there was nothing to be done about it
--- short of a longer period, which is latency.
---
--- Generating the lot up front costs memory - a second of stereo is 176 KB,
--- which is why this refuses to be asked for very long - and buys two
--- things. The pitch is exact, because the phase simply continues. And the
--- arithmetic happens *before* the first sample is due rather than between
--- one period and the next, which is the whole difficulty with audio: the
--- expensive part must not be on the path with the deadline.
---
 --
 -- A seam-free loop, built once and repeated.
 --
@@ -115,35 +93,32 @@ end
 
 local loop = table.concat(sample)
 
--- Enough copies to cover the duration, cut to length.
+-- Enough copies to cover the duration, cut to length - four bytes a frame,
+-- two channels of signed sixteen-bit, as the loop above builds them.
 local want_bytes = ((RATE * ms) // 1000) * 4
 local copies = math.max(1, (want_bytes // #loop) + 1)
 local tone = string.rep(loop, copies):sub(1, want_bytes)
 
 --
--- Out, a period at a time.
+-- Out, a period at a time, into the stream's ring. A ring with no room is
+-- the *good* case: the server has all it can hold, which means this loop is
+-- ahead of the device, and `write` sleeps until there is room again.
 --
--- `sys.sound` returning false is the *good* case: the device has all it can
--- hold, which means this loop is ahead. What matters is the other end -
--- `sys.sound_queued()` reaching zero means nothing was in hand when the
--- device wanted more, and that is a click you can hear. Counting them is
--- the measurement `roadmap.md` M11a promises in place of a bound.
---
-local at, sent, dry, lowest = 1, 0, 0, DEPTH
+local at, sent = 1, 0
 
 --
--- Wall clock, because the dry count is meaningless without it.
+-- Wall clock, because the periods sent say nothing about pace without it.
 --
 -- A device that plays in real time takes a second to play a second, and the
--- loop above spends that second waiting - which is when running dry means
+-- loop below spends that second waiting - which is when running dry means
 -- something. QEMU's `wav` backend does not: it writes whatever arrives as
--- fast as it arrives, so the queue is empty almost always and "ran dry"
--- counts the backend rather than the system.
+-- fast as it arrives, so the queue is empty almost always and a latency
+-- measured there would be the backend's rather than the system's.
 --
 -- So the report says both. If the elapsed time is near the duration, the
--- device paced and the dry count is real; if it is far below, the
--- measurement is of a test rig and should be ignored. An instrument that
--- cannot say whether it was measuring anything is worse than none.
+-- device paced it; if it is far below, the measurement is of a test rig
+-- and should be ignored. An instrument that cannot say whether it was
+-- measuring anything is worse than none.
 --
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local began = sys.ticks()
@@ -203,4 +178,3 @@ if not paced then
         .. " no latency here to measure")
 end
 
-local _ = dry, lowest

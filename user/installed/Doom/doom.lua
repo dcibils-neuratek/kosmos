@@ -94,9 +94,12 @@ end
 -- the WAD is its final megabyte. The check below caught it saying "02_8"
 -- where "IWAD" belongs.
 --
--- So each window lands in a scratch region, comes out as a string, and goes
--- into the big one at the right offset. That is one extra copy per window
--- and it is the honest cost of the protocol as it stands. The alternative
+-- So each window lands in a scratch region and is copied from there into
+-- the big one at the right offset - by `sys.region_copy`, region to region,
+-- so not a byte of it becomes a Lua string. It used to come out as one, a
+-- quarter of a megabyte at a time, under a header saying the WAD does not
+-- pass through Lua. That is one extra copy per window and it is the honest
+-- cost of the protocol as it stands. The alternative
 -- is an `into_offset` in the read request, which is a change to the
 -- filesystem protocol and to every server that implements it - worth doing,
 -- and not worth doing in the middle of getting Doom to boot.
@@ -121,7 +124,13 @@ do
       return
     end
 
-    sys.region_write(wad, done, sys.region_read(scratch, 0, got))
+    local copied, failed = sys.region_copy(wad, done, scratch, 0, got)
+
+    if not copied then
+      print("doom: " .. tostring(failed))
+      return
+    end
+
     done = done + got
   end
 end

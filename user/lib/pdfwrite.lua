@@ -41,7 +41,8 @@
 -- six letters and a `+` before its name. Whole, a face was about 93 KB
 -- deflated, and three pages in seven faces were 652 KB of font.
 --
--- What it does not do yet, said: kerning, pictures (W5).
+-- **Pictures** (W5) are a JPEG as it came or anything else as a PNG's data
+-- (`pdfwrite.image`). What it does not do yet, said: kerning.
 
 local pdfwrite = {}
 

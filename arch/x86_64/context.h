@@ -136,27 +136,6 @@ _Static_assert(offsetof(struct context, kernel_stack) == CTX_KSTACK,
 _Static_assert(offsetof(struct context, fx) == CTX_FX, "CTX_FX");
 _Static_assert(offsetof(struct context, fx) % 16 == 0, "FXSAVE wants 16");
 
-/*
- * There is no XMM state in here yet, and that is a gap rather than a
- * difference.
- *
- * A thread that *calls* this function needs none saved - the ABI already
- * spilled it. A thread stopped by the timer between two instructions does,
- * exactly as on ARM, and for now nothing preempts anything here.
- *
- * When it arrives it takes the shape `arch/aarch64/fp.c` already settled
- * on, because the mechanism exists on both machines: the switch disarms the
- * registers, the first instruction that touches them faults, and the
- * handler moves them from the previous owner to the new one. CR0.TS is the
- * disarm and the fault is vector 7 - the one `trap.c` already calls "device
- * not available", which is what it was named for in 1985. A 512-byte FXSAVE
- * area joins this struct then, along with the owner tracking and the
- * `fp_forget` that keeps a dead thread from being saved into.
- *
- * It is written down rather than half-built: a field nothing reads is
- * indistinguishable from a bug, and the pieces only make sense together.
- */
-
 /* Saves into prev, loads from next, and returns inside next. */
 void context_switch(struct context *prev, struct context *next);
 

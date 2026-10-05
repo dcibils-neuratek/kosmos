@@ -13,9 +13,9 @@
 /*
  * Threads and the scheduler.
  *
- * A fixed pool, statically declared, per CLAUDE.md: there is no dynamic
- * allocator in the kernel and there will not be one. Running out of threads
- * is a `NULL` from `thread_create`, not a growing table.
+ * A pool rather than a heap, per CLAUDE.md: it grows a slab at a time up to
+ * a ceiling derived from the machine's memory, and never gives a slab back.
+ * Running out of threads is a `NULL` from `thread_create`.
  *
  * Scheduling is preemptive. A thread yields, blocks, or is taken off the CPU
  * by the timer when the policy says its turn is over. Blocking is what IPC
@@ -42,9 +42,9 @@
  * when the system had three threads and never revisited. Then forty-eight;
  * then, on 19 September 2026, no number at all.
  *
- * What a slot costs, measured rather than estimated:
+ * What a slot costs:
  *
- *   struct thread   4,208 bytes a slot, used or not: the 2 KB `struct
+ *   struct thread   about 4.3 KB a slot, used or not: the 2 KB `struct
  *                   message` embedded below - a thread's message in flight
  *                   lives on the thread, so the kernel never has to allocate
  *                   one - and a capability table of its own, for when it is
@@ -343,8 +343,8 @@ struct thread {
      * `errno` (`threads.md` step 2). Zero until `SYS_SET_TLS` says
      * otherwise, which is what a kernel thread stays at.
      *
-     * The kernel restores it on every switch, and saves it as well on a
-     * board where user code can write it (`CPU_THREAD_POINTER_IS_USERS`).
+     * A switch loads it when the two threads' values differ and never saves
+     * it: this record is the only one (`thread.c`).
      */
     unsigned long tls;
 
@@ -411,10 +411,11 @@ struct thread {
     unsigned long switches;     /* how many times this thread was resumed */
 };
 
-/* Installs the round-robin policy unless `sched_use` already chose another,
- * then turns the code currently executing into the first thread. Everything that
- * ran before this becomes thread 0, which is the one that boots the system
- * and, once there is nothing left to start, becomes the idle thread. */
+/* Installs the strict-priority policy unless `sched_use` already chose
+ * another, then turns the code currently executing into the first thread.
+ * Everything that ran before this becomes thread 0, which is the one that
+ * boots the system and, once there is nothing left to start, becomes the
+ * idle thread. */
 void thread_init(void);
 
 /* A new thread, ready to run. NULL when the pool is full or there are not
@@ -424,9 +425,8 @@ struct thread *thread_create(const char *name, void (*entry)(void *), void *arg)
 /*
  * The same, on a processor of the caller's choosing.
  *
- * Returns NULL for a processor that has not come up. `thread.c` says why
- * this is the only way a thread crosses a core today, and what has to be
- * finished before every thread does it automatically.
+ * Returns NULL for a processor that has not come up. Every other thread is
+ * placed by `thread_create_suspended`; `thread.c` says who needs this.
  */
 struct thread *thread_create_on(unsigned cpu, const char *name,
                                 void (*entry)(void *), void *arg);
@@ -624,10 +624,10 @@ void thread_time_cpu(unsigned index, uint64_t *user, uint64_t *kernel);
 void thread_set_tick_interval(uint64_t counts);
 uint64_t thread_held_off_cpu(unsigned index);
 
-/* Slots in the pool now, and the most it may grow to (`thread.c`). */
 /* This thread's own pointer, kept and loaded (`SYS_SET_TLS`). */
 void thread_set_tls(unsigned long address);
 
+/* Slots in the pool now, and the most it may grow to (`thread.c`). */
 unsigned thread_slots_made(void);
 unsigned thread_ceiling(void);
 
@@ -678,8 +678,8 @@ static inline struct thread *thread_current(void)
  * recyclable slot as an inhabitant. The two views have to agree, or a caller
  * that uses both sees a system that contradicts itself.
  *
- * For inspection only. This is how `sys.threads` and, at M5, `/proc`
- * enumerate them, and nothing may hold the pointer across a yield.
+ * For inspection only - `tests/tests.c` walks the pool with it - and
+ * nothing may hold the pointer across a yield.
  */
 const struct thread *thread_by_index(unsigned i);
 

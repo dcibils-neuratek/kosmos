@@ -3,9 +3,8 @@
  * /bin: the programs carried inside the image.
  *
  * Read-only by construction - there is no filesystem behind it, only an
- * array the build put in the binary - so `write` is refused rather than
- * unimplemented, and a program's properties cannot change while the system
- * runs.
+ * array the build put in the binary - so `binproto.h` has no `write` to
+ * send it, and a program's properties cannot change while the system runs.
  *
  * **Its one interesting job is deciding what a program is.** A file says so
  * itself, in its opening comment block: `kosmos: application` means it draws

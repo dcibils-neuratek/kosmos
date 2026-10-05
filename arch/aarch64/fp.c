@@ -136,7 +136,7 @@ bool fp_owned_by(const struct thread *t)
     return owner == t;
 }
 
-/* Used at boot and by anything that needs a known state. */
+/* Nobody owns the registers, and FP traps: a known state, for the tests. */
 void fp_reset(void)
 {
     owner = NULL;

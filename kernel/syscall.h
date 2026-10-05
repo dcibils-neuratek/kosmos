@@ -1091,8 +1091,9 @@ struct sysinfo {
     uint32_t pages_total;
     uint32_t pages_free;
 
-    /* The fixed pools, and how full they are. Both halves matter: "3
-     * processes" says nothing without "of 8". */
+    /* The pools, and how full they are: in use, and the ceiling each may
+     * grow to. Both halves matter: "3 processes" says nothing without "of
+     * 8". */
     uint32_t threads_used;
     uint32_t threads_total;
     uint32_t processes_used;    /* running */

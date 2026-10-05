@@ -81,8 +81,6 @@ enum drives_fs {
     FS_KIND_OTHER,
 };
 
-const char *drives_fs_name(enum drives_fs fs);
-
 /*
  * One partition, in the drive's own sectors.
  *

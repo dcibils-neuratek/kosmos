@@ -24,9 +24,6 @@
 -- the menus themselves look and behave exactly like every other one, and
 -- Doom and Quake can have them the same way.
 --
--- One table, because this file's main chunk is near Lua's two hundred
--- locals (the level bar found the limit).
---
 
 return function(ctx)
   local back, theme = ctx.back, ctx.theme

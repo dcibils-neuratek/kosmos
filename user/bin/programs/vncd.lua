@@ -420,7 +420,7 @@ local function close(at, why)
 end
 
 local function open(conn, from)
-  local v = { conn = conn, from = from, since = sys.ticks(), stage = "version",
+  local v = { conn = conn, from = from, stage = "version",
               inb = "", out = {}, queued = 0, format = NATIVE, pending = {},
               input = {}, held = {}, mask = 0, control = false }
 
@@ -589,7 +589,6 @@ local function take(v)
       send(v, string.pack(">I2I2", s.w, s.h) .. format_bytes(NATIVE)
               .. string.pack(">s4", name))
       v.stage = "normal"
-      v.since = sys.ticks()
       note(dotted(v.from) .. "  connected")
       publish()
     else

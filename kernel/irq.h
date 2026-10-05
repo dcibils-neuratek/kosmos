@@ -72,7 +72,7 @@ struct process;
 /*
  * How many lines may be claimed at once.
  *
- * Statically declared, because the kernel has no allocator. Sixteen is far
+ * A table declared once rather than a pool that grows: sixteen is far
  * above the number of devices this system will drive from userland for a
  * long time - xHCI, NVMe, a network adapter and a codec is four - and small
  * enough that the table is a linear scan nobody needs to think about.

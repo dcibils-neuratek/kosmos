@@ -249,7 +249,7 @@ print(("audiolag: worst gap in a tight loop %d us, %d over one period")
 --
 -- How the device drains cannot be sampled from here.
 --
--- It was tried: `sys.sound_queued` is guarded by `owns_audio`, which this
+-- It was tried, through the old `sys.sound_queued` (gone since): guarded by `owns_audio`, which this
 -- process does not have and should not - the device belongs to one server
 -- and that is what makes per-application volume possible at all. A client
 -- asking always reads zero, so the probe measured its own lack of

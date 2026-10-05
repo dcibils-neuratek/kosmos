@@ -13,7 +13,8 @@
 -- in use, and the disk server counts the free ones out of the bitmap, so
 -- that is a real number. (This said the superblock kept a free count. It
 -- never did, and the server's stand-in for one ignored every file.) `/Temporary` is a fixed pool of nodes decided at
--- compile time. `/bin` and `/Kosmos/Libraries` are in the image and cannot grow at all.
+-- compile time. `/Kosmos/Apps`, `/Kosmos/Programs` and `/Kosmos/Libraries`
+-- are in the image and cannot grow at all.
 -- Rather than invent a total for each, this prints what each one is able
 -- to say and leaves the rest blank, which is the honest shape.
 --
@@ -82,9 +83,8 @@ for _, prefix in ipairs(storage) do
   print(("%-14s %8d %10s"):format(prefix, n - 1, files.size(bytes)))
 end
 
--- And the one mount that keeps a real total. Read through whichever disk
--- mount answers, because /Home, /system and /user are three views of one
--- filesystem.
+-- And the one mount that keeps a real total: whichever answers for its
+-- superblock, which is `/Home` when it is on a disk.
 local sb
 
 for _, prefix in ipairs(storage) do

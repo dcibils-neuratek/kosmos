@@ -36,14 +36,15 @@
  * ring - eight periods, 46 ms - was 46 ms on every key.
  *
  * **It starts full and comes down; it does not start shallow and climb** -
- * `depth.h`'s rule, which the audio server follows for the device as well:
- * one fewer for each quarter second in which every wake found two periods
- * still queued, one more at once when a wake finds the ring empty, and that
- * depth a floor never probed below again. The first version kept two and
- * climbed each time the ring ran dry, which ran dry three times in every
- * start under QEMU (`testing.md` 18.262); the second looked for a second
- * before each step, and a note in the first seconds waited behind the whole
- * ring (18.269).
+ * `depth.h`'s rule: one fewer for each quarter second in which every wake
+ * found two periods still queued, one more at once when a wake finds the
+ * ring empty, and that depth a floor never probed below again. The rule is
+ * this kit's alone: the audio server tried it for the device and keeps what
+ * the driver holds instead, because a first gap there is every program's
+ * (`testing.md` 18.276). The first version kept two and climbed each time
+ * the ring ran dry, which ran dry three times in every start under QEMU
+ * (18.262); the second looked for a second before each step, and a note in
+ * the first seconds waited behind the whole ring (18.269).
  *
  * **Three things cross between the two threads, and each one way:**
  *
@@ -149,8 +150,7 @@ static long thread_index = -1;
 static int quit;
 static struct note_path note_path;      /* the audio thread's alone */
 /* The audio thread's alone, set by `start` before there is one. */
-/* How deep the ring is kept: `depth.h`'s rule, which the audio server
- * follows for the device too. */
+/* How deep the ring is kept: `depth.h`'s rule. */
 static struct depth kept = { .kept = 2, .floor = 2, .most = 8, .lowest = UINT32_MAX };
 static bool     in_audio_band;          /* the thread got the band it asked */
 static unsigned long worst_pass;        /* counter ticks between two passes */

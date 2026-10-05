@@ -15,12 +15,10 @@ local text = tostring(args or "")
 local seconds, rest = text:match("^%s*(%d+)%s+(.*)$")
 
 if seconds then
-  local hz = fs.read("/Devices/cpu").counter_hz
-  local until_ = sys.ticks() + hz * tonumber(seconds)
+  -- Asleep, in the scheduler's ticks, which are what a wait is measured in.
+  local tick_hz = fs.read("/Devices/kernel").tick_hz or 250
 
-  while sys.ticks() < until_ do
-    sys.yield()
-  end
+  sys.sleep(tick_hz * tonumber(seconds))
 
   text = rest
 end

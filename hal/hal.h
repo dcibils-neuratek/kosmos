@@ -18,10 +18,9 @@
  * milestone that needed it - the interrupt controller and the timer at M1,
  * the display at M6 - and none of it was written ahead of a caller.
  *
- * It still takes its real shape at M2's second half, once there is a second
- * target to compare against. An interface written against a single target is
- * that target's shape wearing generic names, and everything below is written
- * knowing that.
+ * An interface written against a single target is that target's shape
+ * wearing generic names, so it took its real shape once there was a second
+ * board to hold it against: `pc/` beside `qemu-virt/`.
  */
 
 /* The minimum required to have output. Called before anything else. */
@@ -60,9 +59,9 @@ void hal_putchar(char c);
 
 int hal_getchar(void);
 
-/* Where usable RAM is. One contiguous range is enough for every target so
- * far; a board with holes in its map would need a list, and that is the
- * moment to change this, not before. */
+/* Where usable RAM is: the range the kernel was loaded into, which is the one
+ * the page allocator keeps its bitmap in. `hal_ram_ranges` below is the
+ * whole list, for a board with holes in its map. */
 struct memrange {
     unsigned long base;
     unsigned long size;
@@ -158,9 +157,9 @@ unsigned hal_memory_entries(unsigned *seen);
 /*
  * How many processors this machine has - not how many are being used.
  *
- * `sysinfo.cpus` is the second number and is `NR_CPUS`, which is 1. This is
- * the first, and the gap between them is the honest measure of how far
- * `docs/smp.md` has got.
+ * `sysinfo.cpus` is the second number, `thread_cpu_count()`: how many
+ * processors new threads are spread across, which is every one that arrived
+ * unless `opt/kosmos/smp` asks for fewer. This is the first.
  *
  * Each board answers however it can. AArch64 asks PSCI about processor 0,
  * 1, 2 until the firmware says there is no such thing, which needs no
@@ -168,11 +167,10 @@ unsigned hal_memory_entries(unsigned *seen);
  * `hal/pc/acpi.c` - and falls back to one on a machine whose firmware left
  * no tables.
  *
- * **Counting is not starting on either board.** The PC can say twelve and
- * still schedule on one, because `cpu_on.c` wants a local APIC and
- * `cpu_secondary_entry` wants a trampoline below 1 MB, and neither exists.
- * That gap is the honest measure of how far the port has got, which is
- * exactly what the paragraph above says this number is for.
+ * **Counting is not starting.** `kernel/smp.c` starts the smaller of this
+ * and `NR_CPUS`, each through `hal_cpu_on` - PSCI here, the local APIC and a
+ * trampoline below 1 MB on a PC - and a processor counted can still refuse
+ * to arrive, which is why `smp_online()` is a third number.
  *
  * **A count is the right question on these two machines and the wrong one
  * on the next.** Alder Lake and everything after it are *hybrid*: the
@@ -218,9 +216,8 @@ void hal_irq_init(void);
  *
  * Separate from the two above rather than folded into them because a board
  * can honestly implement one and not the other, which is the same split
- * `hal_cpu_count` and `hal_cpu_on` already make - and `hal/pc/` implements
- * neither, because a PC's per-core interrupt controller is the local APIC
- * and there is no driver for it.
+ * `hal_cpu_count` and `hal_cpu_on` already make. On a PC both are the local
+ * APIC's (`hal/pc/cpu_here.c`).
  */
 void hal_irq_init_here(void);
 void hal_timer_init_here(void);
@@ -241,8 +238,8 @@ void hal_timer_init_here(void);
  * would make four processors slower than one.
  *
  * A board that cannot do this does nothing, and the system still works -
- * more slowly, and only for threads that live on another core. `hal/pc/`
- * is such a board, because a PC's answer is the local APIC.
+ * more slowly, and only for threads that live on another core. A PC sends
+ * it through the local APIC.
  */
 void hal_cpu_wake(unsigned cpu);
 /*
@@ -817,11 +814,6 @@ bool hal_net_init(struct netdev *out);      /* false when there is no card */
 bool hal_net_send(const void *frame, unsigned bytes);
 int  hal_net_recv(void *frame, unsigned max);   /* 0 when nothing waiting */
 
-/* Has a frame arrived since this was last asked? Read-and-clear, the same
- * shape as `hal_snd_dry`: the question is "is there anything", and the
- * frames themselves are in the ring until somebody takes them. */
-bool hal_net_arrived(void);
-
 /* Whether the card came up at boot. Asked rather than re-initialising,
  * because bringing a running device up again is a reset with frames in
  * flight. */
@@ -832,36 +824,16 @@ bool hal_net_present(void);
 bool hal_net_info(struct netdev *out);
 
 /*
- * Is this key down right now?
- *
- * `code` is the keycode the board's keyboard uses, which on this one is
- * Linux's `input-event-codes.h` numbering because that is what virtio-input
- * speaks. Undecoded, like `hal_pointer_poll`'s device units and `sysinfo`'s
- * raw ID registers: this layer says what the hardware said.
- *
- * **This is a departure from what `CLAUDE.md` says about keyboards**, and
- * worth stating rather than sliding past. The rule was that a keyboard is a
- * source of characters and `hal_getchar` is where characters come from, so
- * there was deliberately no second keyboard entry point. That reasoning is
- * still right for characters and it cannot answer this question: "W is
- * still held" is not a character, and no stream of characters expresses it.
- * A key that repeats is not the same as a key that is down - the repeat
- * rate is a setting, and a game walks at whatever rate the frame runs at.
- *
- * The cost is one entry point and a bitmap the driver already had the
- * events for. What it buys is holding a key, which is the whole of moving
- * in a game and half of a modifier in a shortcut.
- */
-bool hal_key_held(unsigned code);
-
-/*
  * The next key transition, oldest first, or false when there are none.
  *
- * The companion to `hal_key_held`, and both are needed. The bitmap answers
- * "is it down now", which is what a game asks once a frame; it cannot
- * answer "it was pressed", because a press and its release inside one frame
- * leave the bitmap as they found it. A key you tap would never appear to
- * have been held.
+ * **This is a departure from what `CLAUDE.md` says about keyboards**, and
+ * worth stating rather than sliding past. A keyboard is a source of
+ * characters and `hal_getchar` is where characters come from - but "W went
+ * down" and "W came up" are not characters, and no stream of characters
+ * expresses holding a key, which is the whole of moving in a game and half
+ * of a modifier in a shortcut. Transitions rather than a state, because a
+ * press and its release can both happen between two looks, and a key that
+ * was tapped must still be seen to have been pressed.
  *
  * `code` is the board's own numbering, undecoded - Linux's
  * `input-event-codes.h` here, because that is what virtio-input speaks.
@@ -875,7 +847,7 @@ bool hal_key_event(unsigned *code, bool *down);
  *
  * Read-only, and deliberately the whole of it. Setting the time is a
  * different operation with a different question behind it - what is
- * authoritative, this machine or the network - and there is no network.
+ * authoritative, this machine or the network - and nothing has asked it yet.
  *
  * A number, not a date. Decoding it into a year and a month is arithmetic
  * with no hardware in it, so it happens above this layer, in Lua, for the

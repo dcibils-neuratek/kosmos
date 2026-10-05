@@ -17,9 +17,6 @@ void web_netsurf_run(void);
  * by NetSurf's own URL code; nil and why when either is not one. */
 int web_netsurf_join(lua_State *L);
 
-/* `web.log()` -> NetSurf's last few kilobytes of log lines, emptied. */
-int web_netsurf_log(lua_State *L);
-
 /* `web.setup(default_css [, quirks_css])` -> true: NetSurf's own default
  * stylesheets, once, before any document is laid out by it. */
 int web_netsurf_setup(lua_State *L);
@@ -68,8 +65,9 @@ void        web_ns_close(struct web_ns_doc *d, lua_State *L);
 
 /*
  * Its forms (`roadmap.md` 6zz j6). A press on the page - what it did:
- * "field" when a text field took the caret, "toggled", "sent" when a form
- * was sent, or NULL where there is no field. A key for the field with the
+ * "field" when a text field took the caret, "toggled", "select" when a
+ * select was pressed and its menu is the browser's to show, "sent" when a
+ * form was sent, or NULL where there is no field. A key for the field with the
  * caret - whether it was taken. A form sent, taken: its address, and for a
  * POST its body and type. And what changed on the page since last asked.
  */

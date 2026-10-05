@@ -38,7 +38,6 @@
 
 #define BIN_OK              0u
 #define BIN_ERR_NO_PROGRAM  1u
-#define BIN_ERR_READ_ONLY   2u    /* it is in the image */
 #define BIN_ERR_BAD_OP      3u
 
 /*

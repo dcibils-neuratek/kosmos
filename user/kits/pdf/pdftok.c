@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * The scanner for a PDF content stream: `sys.pdf_scan`.
+ * The scanner for a PDF content stream: the PDF Kit's `scan`.
  *
  * **Why this is in C, with the number that put it here.** A page of the
  * document this was written against is 13,884 bytes of content stream and
@@ -11,16 +11,17 @@
  *
  * `design.md` 6 draws the line at loops over bytes and this is the
  * definition of one. `CLAUDE.md` says nothing moves to C without a profile
- * that justifies it, and `bench/` has the profile: `pdfbench` prints it,
+ * that justifies it, and `pdfbench` is the profile
+ * (`user/bin/programs/pdfbench.lua`): it prints where a page's time goes,
  * phase by phase, and will say if this ever stops being worth it.
  *
  * **What stays in Lua, and why that is not a compromise.** This says where
  * one token ends and the next begins. It does not know what `Tj` means, or
  * that a text matrix exists, or that a page has lines on it. The
  * interpreter above it walks these tokens and makes every decision, and it
- * is the part that will change as more of PDF is supported - so it is the
- * part that has to stay reloadable. A scanner for a syntax frozen in 1993
- * has nothing to reload.
+ * is the part that will change as more of PDF is supported. That is
+ * structure, which costs about 2% in Lua; finding where a token ends is a
+ * loop over bytes, in a syntax frozen in 1993, and that is the part in C.
  *
  * **Batched, because a crossing is the other cost.** `gfx.md` 19.11 puts a
  * Lua/C crossing at about two thousand pixels of work; one per token would
@@ -173,7 +174,7 @@ static size_t hex_string(lua_State *L, const unsigned char *p,
 }
 
 /*
- * `sys.pdf_scan(address, length, offset, max) -> kinds, values, offset`
+ * `pdfkit.scan(address, length, offset, max) -> kinds, values, offset`
  *
  * Scans up to `max` tokens from `offset` and returns them as two arrays of
  * the same length - a kind per token and a value per token - plus where to
@@ -311,8 +312,8 @@ static int l_pdf_scan(lua_State *L)
  * The scanner and the names for what it returns, and deliberately nothing
  * else: the object layer and the content interpreter above it are Lua, in
  * `/Kosmos/Libraries/pdf.lua` and `/Kosmos/Libraries/pdfpage.lua`, because they are where the
- * decisions live and where the changes will be. This half is a scanner for a
- * syntax that was frozen in 1993 and has nothing to reload.
+ * decisions live and where the changes will be. This half is a loop over
+ * bytes, scanning a syntax that was frozen in 1993.
  */
 void kosmos_pdf_kit(lua_State *L)
 {
@@ -327,6 +328,4 @@ void kosmos_pdf_kit(lua_State *L)
     lua_pushinteger(L, TOK_OPERATOR);    lua_setfield(L, -2, "OPERATOR");
     lua_pushinteger(L, TOK_ARRAY_OPEN);  lua_setfield(L, -2, "ARRAY_OPEN");
     lua_pushinteger(L, TOK_ARRAY_CLOSE); lua_setfield(L, -2, "ARRAY_CLOSE");
-    lua_pushinteger(L, TOK_DICT_OPEN);   lua_setfield(L, -2, "DICT_OPEN");
-    lua_pushinteger(L, TOK_DICT_CLOSE);  lua_setfield(L, -2, "DICT_CLOSE");
 }

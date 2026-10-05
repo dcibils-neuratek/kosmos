@@ -132,8 +132,12 @@ local measure = faces.measure(catalogue, gfx.typeface)
 
 --
 -- **The document's pictures** (W5): each one's bytes, as they came or as
--- the `.write` file holds them, and decoded once when first shown - read
--- from the file only when a page needs them.
+-- the `.write` file holds them - read from the file when it opens, never
+-- inside a paint - and decoded once, when a page first shows it.
+--
+-- **Every picture the file holds is here from the start**, shown or not:
+-- the 0.11 review found a picture put in given the name of one on a page
+-- not yet viewed, which Save then lost.
 --
 local pictures = {}
 
@@ -152,12 +156,6 @@ end
 local function picture(name)
   local p = pictures[name]
 
-  if p == nil and path then
-    local bytes = use("/Kosmos/Libraries/zip.lua").read(path, name, 64 * 1024 * 1024)
-    p = bytes and { bytes = bytes } or false
-    pictures[name] = p
-  end
-
   if not p then return nil end
 
   if p.surface == nil then p.surface = decode(p.bytes) or false end
@@ -173,12 +171,19 @@ local cache = pageset.cache()
 local doc, said
 
 if path then
-  local why
-  doc, why = writedoc.open(path)
+  local held
+  doc, held = writedoc.open(path)
 
   if not doc then
-    said = tostring(why)
+    said = tostring(held)
     doc = writedoc.new()
+  else
+    local zip = use("/Kosmos/Libraries/zip.lua")
+
+    for _, name in ipairs(held or {}) do
+      local bytes = zip.read(path, name, 64 * 1024 * 1024)
+      pictures[name] = bytes and { bytes = bytes } or false
+    end
   end
 else
   doc = writedoc.new()
@@ -1847,9 +1852,12 @@ local function save()
   for _, p in ipairs(doc.body) do
     local name = p.picture and p.picture.name
 
-    if name and not shown[name] and picture(name) then
+    -- Its bytes as they came, whether or not this build can draw them.
+    local held = name and pictures[name]
+
+    if held and not shown[name] then
       shown[name] = true
-      list[#list + 1] = { name = name, bytes = pictures[name].bytes }
+      list[#list + 1] = { name = name, bytes = held.bytes }
     end
   end
 
@@ -1957,6 +1965,7 @@ local function insert_picture(file)
   local n = 1
   local ext = (file:match("%.(%w+)$") or "png"):lower()
 
+  -- A name no picture in the document has - loaded, or held unread.
   while pictures[("pictures/%d.%s"):format(n, ext)] ~= nil do n = n + 1 end
 
   local pname = ("pictures/%d.%s"):format(n, ext)

@@ -207,13 +207,6 @@ static int l_decode_reply(lua_State *L)
     lua_pushboolean(L, rep.moved != 0);           lua_setfield(L, -2, "moved");
     lua_setfield(L, -2, "pointer");
 
-    lua_createtable(L, 0, 4);
-    lua_pushinteger(L, (lua_Integer)rep.bytes);      lua_setfield(L, -2, "bytes");
-    lua_pushinteger(L, (lua_Integer)rep.lines);      lua_setfield(L, -2, "lines");
-    lua_pushinteger(L, (lua_Integer)rep.interrupts); lua_setfield(L, -2, "interrupts");
-    lua_pushinteger(L, (lua_Integer)rep.reloads);    lua_setfield(L, -2, "reloads");
-    lua_setfield(L, -2, "stat");
-
     return 1;
 }
 
@@ -333,17 +326,6 @@ static int l_encode_reply(lua_State *L)
         rep.max_y   = field_u32(L, -1, "max_y", 0);
         rep.buttons = field_u32(L, -1, "buttons", 0);
         rep.moved   = field_u32(L, -1, "moved", 0);
-    }
-
-    lua_pop(L, 1);
-
-    lua_getfield(L, 1, "stat");
-
-    if (lua_istable(L, -1)) {
-        rep.bytes      = field_u32(L, -1, "bytes", 0);
-        rep.lines      = field_u32(L, -1, "lines", 0);
-        rep.interrupts = field_u32(L, -1, "interrupts", 0);
-        rep.reloads    = field_u32(L, -1, "reloads", 0);
     }
 
     lua_pop(L, 1);
@@ -629,7 +611,6 @@ void kosmos_console_kit(lua_State *L)
     set_int(L, "WAIT",    CON_OP_WAIT);
     set_int(L, "POINTER", CON_OP_POINTER);
     set_int(L, "POLL",    CON_OP_POLL);
-    set_int(L, "STAT",    CON_OP_STAT);
 
     set_int(L, "OK",             CON_OK);
     set_int(L, "ERR_BUSY",       CON_ERR_BUSY);

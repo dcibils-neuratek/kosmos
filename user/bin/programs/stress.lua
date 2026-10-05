@@ -23,8 +23,8 @@
 -- None of those is visible in a single pass. All of them are obvious in a
 -- loop that counts.
 --
--- **The counters are the test.** `sys.info` reports every fixed pool the
--- kernel has - regions, endpoints, threads, processes, free pages - so
+-- **The counters are the test.** `sys.info` reports every pool the kernel
+-- has - regions, endpoints, threads, processes, free pages - so
 -- "nothing leaked" is a number rather than an impression. That reporting
 -- was added the day its absence cost two evenings of looking at the
 -- allocator while 117,000 pages sat free.
@@ -138,10 +138,11 @@ for n = 1, rounds do
   -- its own children and so does the window manager; a program that runs
   -- programs has to as well.
   --
-  -- Without this the process table - thirty-two slots - fills at round
-  -- twenty-two and nothing else can start. Which is what this test found on
-  -- its first run, and is exactly the shape of thing it exists for: a
-  -- machine that works perfectly for twenty-one rounds.
+  -- Without this the process table fills and nothing else can start. When
+  -- it was thirty-two slots that was round twenty-two, which is what this
+  -- test found on its first run, and is exactly the shape of thing it exists
+  -- for: a machine that works perfectly for twenty-one rounds. It grows now,
+  -- which moves the round and not the leak.
   --
   -- **Waited for, and not only drained, because the reply is not the end
   -- of the child.** The program has finished when `run` returns; its

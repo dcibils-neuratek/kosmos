@@ -21,8 +21,8 @@
 --
 -- This does not. It is a program at the prompt: it needs the shell, the
 -- console and the keyboard, which are exactly the three things that were
--- still working on a laptop whose desktop was not. Control-C leaves the
--- desktop, this prints what happened while it was up, and the boot log -
+-- still working on a laptop whose desktop was not. Control-W then Q leaves
+-- the desktop, this prints what happened while it was up, and the boot log -
 -- stages one to six included, long since scrolled off the screen - is still
 -- in the ring to be read.
 --

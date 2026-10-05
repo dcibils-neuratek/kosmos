@@ -234,6 +234,26 @@ static inline void *cpu_self(void)
 
 
 /*
+ * Where a newly started core lands.
+ *
+ * An address rather than a symbol, because `kernel/smp.c` hands it to
+ * `hal_cpu_on` and the board is what knows how to start a core - PSCI here,
+ * `INIT`-`SIPI`-`SIPI` on the other machine. **Neither of them knows where
+ * it should land**, which is this side of the split: the board starts a
+ * core, the architecture says what a started core should run.
+ *
+ * A function rather than an `extern char[]` in `smp.c`, because each
+ * architecture's `boot/` names its own landing place - `_secondary_start`
+ * here, `_secondary_start32` on x86-64 - and `smp.c` should name neither.
+ */
+static inline uintptr_t cpu_secondary_entry(void)
+{
+    extern char _secondary_start[];     /* boot/start.S */
+
+    return (uintptr_t)_secondary_start;
+}
+
+/*
  * A hint that this core is spinning and the other one should get on with
  * it.
  *
@@ -243,27 +263,6 @@ static inline void *cpu_self(void)
  * power. Neither is a barrier and neither orders anything - the loop still
  * needs whatever it needed.
  */
-/*
- * Where a newly started core lands, or 0 if this architecture has nowhere
- * to put one yet.
- *
- * An address rather than a symbol, because `kernel/smp.c` hands it to
- * `hal_cpu_on` and the board is what knows how to start a core - PSCI here,
- * `INIT`-`SIPI`-`SIPI` on the other machine. **Neither of them knows where
- * it should land**, which is this side of the split: the board starts a
- * core, the architecture says what a started core should run.
- *
- * `static inline` so the x86-64 twin - which answers 0 - generates no
- * reference to a symbol its `boot/` does not define. That is the whole
- * reason this is a function and not an `extern char[]` in `smp.c`.
- */
-static inline uintptr_t cpu_secondary_entry(void)
-{
-    extern char _secondary_start[];     /* boot/start.S */
-
-    return (uintptr_t)_secondary_start;
-}
-
 static inline void cpu_relax(void)
 {
     __asm__ volatile("yield" ::: "memory");
@@ -350,6 +349,29 @@ static inline void cpu_lock_release(volatile unsigned *word)
 }
 
 /*
+ * **The thread's own pointer, which user code reads and the kernel keeps.**
+ *
+ * `TPIDR_EL0` is the register AArch64 sets aside for it. It is writable at
+ * EL0 too, and the kernel does not save it: the thread's record is what a
+ * switch loads, and only when two threads' values differ (`thread.c`,
+ * `threads.md` step 2). x86's FS base cannot be written from user mode at
+ * all, so a program that relied on writing its own would work on one board
+ * and not the other.
+ */
+static inline unsigned long cpu_thread_pointer(void)
+{
+    unsigned long value;
+
+    __asm__ volatile("mrs %0, tpidr_el0" : "=r"(value));
+    return value;
+}
+
+static inline void cpu_set_thread_pointer(unsigned long value)
+{
+    __asm__ volatile("msr tpidr_el0, %0" :: "r"(value));
+}
+
+/*
  * The two halves of handing a structure to another processor.
  *
  * **`volatile` is not a barrier**, and that is the bug these exist to fix.
@@ -374,32 +396,6 @@ static inline void cpu_lock_release(volatile unsigned *word)
  * A pair, always. A release with no matching acquire orders one side of a
  * conversation, which is worth nothing.
  */
-/*
- * **The thread's own pointer, which user code reads and the kernel keeps.**
- *
- * `TPIDR_EL0` is the register AArch64 sets aside for it, readable *and
- * writable* at EL0 - so a program may change its own, and the kernel saves
- * it on the way out of a thread as well as restoring it on the way in.
- * x86's answer, the FS base, cannot be written from user mode unless the
- * kernel allows it, so that board only restores; the asymmetry is the
- * hardware's, which is what `arch/` is for (`threads.md` step 2).
- */
-static inline unsigned long cpu_thread_pointer(void)
-{
-    unsigned long value;
-
-    __asm__ volatile("mrs %0, tpidr_el0" : "=r"(value));
-    return value;
-}
-
-static inline void cpu_set_thread_pointer(unsigned long value)
-{
-    __asm__ volatile("msr tpidr_el0, %0" :: "r"(value));
-}
-
-/* Whether user code can write it, and so whether a switch must save it. */
-#define CPU_THREAD_POINTER_IS_USERS 1
-
 static inline void cpu_publish(void)
 {
     __asm__ volatile("dmb ishst" ::: "memory");

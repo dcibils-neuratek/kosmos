@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * /Network: Ethernet, ARP, IPv4 and ICMP echo.
+ * /Network: Ethernet, ARP, IPv4, ICMP echo, UDP, TCP, DNS and DHCP.
  *
  * The one process that holds the card. `SPAWN_NET` is the disk's grant
  * pointed outwards - whoever can put a raw frame on a wire can claim any
@@ -13,26 +13,36 @@
  * look like a frame path, and it was a period path, which is a frame path
  * with a different clock. A stack is not going to be the third case.
  *
- * **TCP, and the half of it a client needs.** This end connects out; there
- * is no LISTEN, no SYN_RECEIVED and no simultaneous open, because telnet and
- * SSH ask and a server answers. What is here is the path a client takes
- * through RFC 793's diagram - SYN_SENT, ESTABLISHED, and a close from either
- * side - with one retransmission timer and a window that is the ring's free
- * space rather than a number this end made up.
+ * **TCP, both ways.** This end connects out - SYN_SENT, ESTABLISHED, and a
+ * close from either side - and, since the HTTP server, listens: LISTEN and
+ * SYN_RECEIVED hand a caller a connection it did not ask for. What is not
+ * here is CLOSING and simultaneous open, which nothing does on purpose (the
+ * states are below). One segment in flight on a retransmission timer, and a
+ * window that is the ring's free space rather than a number this end made
+ * up.
+ *
+ * **UDP as far as DNS and DHCP need it, and no further**: a resolver that
+ * sends a question and recognises its answer, and a client that asks for an
+ * address and keeps its lease. There are no UDP sockets, because nothing has
+ * asked for one.
  *
  * **A connection's bytes never travel in a message.** `tcpring.h` is the
  * region both sides hold, and that decision was written down before a byte
  * moved rather than after somebody found a message worked for the first ten
  * kilobytes. The audio server is what the rule was learned from.
  *
- * **Fixed pools, no allocator**, the same as every other server here. Eight
- * echoes in flight, sixteen ARP entries, four connections. Running out is an
- * error at a known limit rather than a failure at an unknown one.
+ * **Its tables grow**, as the kernel's pools do: the connections, the echoes
+ * in flight, the names being looked up and the programs parked in a poll are
+ * slabs from `calloc` (`table_grow`), never moved and never given back, up
+ * to a ceiling from the machine's memory. Running out is still a refusal at
+ * a number, but the machine decides the number. The ARP cache is the one
+ * table that stays fixed, at sixteen entries.
  *
- * **Written against RFC 791, 792, 793 and 826 from knowledge**, so the field
- * offsets are the part to distrust. What establishes them is a reply coming
- * back from a real host: a wrong offset produces no answer at all rather
- * than a wrong one, because the far end is checking the same fields.
+ * **Written against RFC 768, 791, 792, 793, 826 and 2131 from knowledge**,
+ * so the field offsets are the part to distrust. What establishes them is a
+ * reply coming back from a real host: a wrong offset produces no answer at
+ * all rather than a wrong one, because the far end is checking the same
+ * fields.
  */
 
 #include <stdbool.h>
@@ -2093,7 +2103,6 @@ static void hand_over(struct conn *c)
     memset(&reply, 0, sizeof(reply));
     reply.status     = NET_OK;
     reply.handle     = c->handle;
-    reply.ring_bytes = TCP_RING_BYTES;
     reply.state      = NET_TCP_OPEN;
     reply.from       = c->remote;
 
@@ -2393,7 +2402,6 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         memset(&reply, 0, sizeof(reply));
         reply.status     = NET_OK;
         reply.handle     = c->handle;
-        reply.ring_bytes = TCP_RING_BYTES;
         reply.state      = NET_TCP_OPEN;
 
         {
@@ -3085,7 +3093,6 @@ static void serve(const struct message *msg, uint64_t sender)
             memset(&reply, 0, sizeof(reply));
             reply.status     = NET_OK;
             reply.handle     = c->handle;
-            reply.ring_bytes = TCP_RING_BYTES;
             reply.state      = NET_TCP_OPENING;
 
             memset(&msg, 0, sizeof(msg));

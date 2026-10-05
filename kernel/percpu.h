@@ -34,8 +34,9 @@
  */
 
 /*
- * Four, which is how many `struct percpu` slots exist - **not how many are
- * given work**, which is `thread_cpu_count` and is one by default.
+ * How many `struct percpu` slots exist - **not how many are given work**,
+ * which is `thread_cpu_count`: every core that arrived, unless
+ * `opt/kosmos/smp` asks for fewer.
  *
  * It was 1 while nothing could start a second core. `smp.c` can now, and a
  * core that arrives needs somewhere to put itself, so the slots have to
@@ -127,7 +128,15 @@ struct percpu {
     unsigned char time_side;    /* which of the two the time since the mark is */
 
     /*
-     * A switch is owed on the way out of the current exception.
+     * A switch is owed on the way out of the current exception: set by
+     * `thread_tick` inside the interrupt handler, acted on by
+     * `thread_preempt_if_needed` in the vector's epilogue.
+     *
+     * The two are separate because the handler is the wrong place to switch
+     * and the epilogue is the wrong place to make a policy decision.
+     * Splitting them is what lets the decision be a C function the policy
+     * owns and the switch be four instructions of assembly at a point where
+     * the stack is known.
      *
      * Per-CPU because it is a statement about *this* core's return path.
      * `smp.md` listed six things that have to move and missed this one; it
@@ -175,10 +184,8 @@ struct percpu {
  * No entry path is touched at all, which is why this is done here first.
  *
  * **x86-64 has one `GS` shared between ring 3 and ring 0**, so the same
- * trick needs `swapgs` at every entry and every exit - real surgery on
- * `vectors.S` and `user.S`, and work that belongs with x86's second core
- * rather than before it. Until then that board answers from `cpus[0]`,
- * which is correct for one processor and says so.
+ * trick needs `swapgs` at every entry and every exit, which `vectors.S` and
+ * `user.S` do; `cpu_self` is then one load through `GS`.
  *
  * **Inline** (`testing.md` 18.343): it was a function in `thread.c`, so
  * every other file - every lock, every IPC - paid a call and a return to

@@ -9,7 +9,7 @@
  * a picture, to ask how wide a content is, to make a scrollbar, to measure
  * a word. This file is that browser, as much of it as the layout reaches.
  *
- * Three kinds of answer, and each says which it is:
+ * Four kinds of answer, and each says which it is:
  *
  *   - **The platform's**, the two tables every NetSurf front end provides:
  *     `misc.schedule`, which runs work later - here, when the caller drains
@@ -19,19 +19,21 @@
  *     system does not have and does not want (`stat`, `scandir`, `uname`),
  *     and `idna.c`, which needs a Unicode library that is not here.
  *   - **Stand-ins**, for what a browser without scripts does not do yet:
- *     scrollbars inside a page, the page's text selection, visited links,
- *     a select's menu. Each does nothing and says so, so that what the
- *     layout does with its answer is what it does with a browser that has
- *     none of those - which is a case its authors handle.
+ *     scrollbars inside a page, the page's text selection, visited links.
+ *     Each does nothing and says so, so that what the layout does with its
+ *     answer is what it does with a browser that has none of those - which
+ *     is a case its authors handle.
  *   - **Forms**, since j6: NetSurf's own form and text-area code, and the
  *     browser's half of it here - the caret, what to draw again, what a
- *     click and a key do to a field, and a form sent kept for Lua to fetch.
+ *     click and a key do to a field, a select's menu, which the browser
+ *     draws and answers through NetSurf's own code, and a form sent kept for
+ *     Lua to fetch.
  *
- * **j1** (`roadmap.md` 6zz j1): enough for it all to link. Nothing calls it
- * yet; j2 gives the text real faces and j3 drives a document through it.
+ * **j1** (`roadmap.md` 6zz j1) was enough for it all to link; j2 gave the
+ * text real faces and j3 drove a document through it, which is what the
+ * browser lays every page out with now.
  */
 
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -423,66 +425,17 @@ struct netsurf_table *guit = &netsurf_table;
  *------------------------------------------------------------------------*/
 
 /*
- * NetSurf's log, kept: its last few kilobytes of lines - where, and what -
- * in a ring that drops the oldest, read and emptied by `web.log()`. The
- * layout says why it gave up here and nowhere else, and a browser that
- * cannot say why a page would not lay out is one nobody can mend.
+ * NetSurf's log, said nowhere. It was kept, its last few kilobytes in a ring
+ * for `web.log()` to read and empty, and nothing ever read it: every line
+ * NetSurf logged was formatted into a buffer nobody looked at.
  */
-#define LOG_KEPT 4096
-
-static char log_ring[LOG_KEPT];
-static size_t log_at, log_len;
-
-static void log_put(const char *s, size_t n)
-{
-    size_t i;
-
-    for (i = 0; i < n; i++) {
-        log_ring[(log_at + log_len) % LOG_KEPT] = s[i];
-
-        if (log_len < LOG_KEPT) {
-            log_len++;
-        } else {
-            log_at = (log_at + 1) % LOG_KEPT;
-        }
-    }
-}
-
 void nslog_log(const char *file, const char *func, int ln,
                const char *format, ...)
 {
-    char line[256];
-    const char *name = strrchr(file, '/');
-    va_list ap;
-    int n;
-
-    n = snprintf(line, sizeof(line), "%s:%d %s: ", name ? name + 1 : file,
-                 ln, func);
-
-    if (n > 0 && (size_t)n < sizeof(line)) {
-        va_start(ap, format);
-        (void)vsnprintf(line + n, sizeof(line) - (size_t)n, format, ap);
-        va_end(ap);
-    }
-
-    log_put(line, strlen(line));
-    log_put("\n", 1);
-}
-
-int web_netsurf_log(lua_State *L)
-{
-    luaL_Buffer b;
-    size_t i;
-
-    luaL_buffinit(L, &b);
-
-    for (i = 0; i < log_len; i++) {
-        luaL_addchar(&b, log_ring[(log_at + i) % LOG_KEPT]);
-    }
-
-    luaL_pushresult(&b);
-    log_at = log_len = 0;
-    return 1;
+    (void)file;
+    (void)func;
+    (void)ln;
+    (void)format;
 }
 
 /* Its filter, which the option table sets when options change: there is

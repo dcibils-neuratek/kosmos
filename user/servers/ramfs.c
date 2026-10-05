@@ -104,8 +104,6 @@ struct watcher {
 
 static struct watcher watchers[WATCHERS];
 
-static uint32_t writes;
-
 /*------------------------------------------------------------------------
  * Small string work, spelled out because there is no libc worth the name.
  *----------------------------------------------------------------------*/
@@ -741,7 +739,6 @@ static void answer(const struct message *msg, uint64_t sender)
             (void)set_attr(n, &size);
         }
 
-        writes++;
         notify();
         break;
     }
@@ -991,15 +988,6 @@ static void answer(const struct message *msg, uint64_t sender)
         break;
     }
 
-    case RAM_OP_WATCHERS:
-        for (i = 0; i < WATCHERS; i++) {
-            if (watchers[i].used) {
-                rep.count++;
-            }
-        }
-
-        break;
-
     default:
         fail(sender, RAM_ERR_BAD_OP);
         return;
@@ -1015,7 +1003,6 @@ void ramfs_server(long endpoint)
     if (at < 0) {
         /* Without a store there is no /Temporary, and a server that ran anyway
          * would answer every write with success and hold nothing. */
-        kosmos_write("ramfs: no memory for the store\n", 31);
         return;
     }
 

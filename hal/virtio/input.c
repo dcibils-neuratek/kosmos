@@ -21,20 +21,14 @@
  * event structure likewise from virtio_ids.h, virtio_config.h,
  * virtio_ring.h and virtio_input.h.
  *
- * **Polled, not interrupt-driven.** The UART is polled too, and the console
- * server already yields between polls, so a key waiting in the used ring is
- * found on the same schedule a character in the UART is. `roadmap.md` wants
- * input on a highest-priority thread eventually, and that is the point at
- * which the interrupt matters; wiring one now would add a GIC route and a
- * handler to solve a problem the system does not have yet.
+ * **Woken by the interrupt, read by whoever asks.** The device's interrupt
+ * only says that something arrived, and wakes a thread asleep for input
+ * (`virtio_input_interrupt`); the events stay in the used ring until
+ * `keyboard_getchar` or `hal_pointer_poll` drains them, in a thread, so the
+ * keymap and the cursor are never touched from a handler.
  *
- * **And the next device is nearly free.** Everything above the last two
- * functions is the transport, and virtio-gpu is the same transport with a
- * different device id and different commands - which is where a real
- * dirty-rectangle flush and a vblank come from. The transport is not split
- * into its own file yet, because there is one device: splitting it now would
- * be inventing an interface against a single caller, which is the mistake
- * `hal.md` spends a page warning about. It comes out when the GPU arrives.
+ * The transport - the register map, the handshake and the queues - is
+ * `virtio.h`'s, shared with the disk, the network, the sound and the GPU.
  */
 
 #include <stdbool.h>
@@ -224,28 +218,13 @@ static struct {
 } cursor;
 
 /*
- * Which keys are down, one bit per keycode.
+ * The key transitions, in order.
  *
- * Four words covers the 128 codes this keymap knows, which is the same
- * bound the decode loop already enforces (`event.code >= 128` is skipped).
- * A bitmap rather than a queue on purpose: what a caller wants to know is
- * whether a key is held *now*, and a queue of transitions answers that only
- * if you have consumed every one of them in order - which the console, the
- * window manager and an application cannot all do at once.
- */
-static uint32_t held[4];
-
-/*
- * And the transitions, in order.
- *
- * The bitmap answers "is W down now", which is what a game asks once a
- * frame. It cannot answer "the menu key was pressed", because a press and
- * its release inside one frame leave the bitmap exactly as it found it -
- * and a key you tap is a key that never appears to have been held.
- *
- * So both: the bitmap for state, this for events. They are filled on the
- * same pass through the same virtqueue, so there is no second reader and
- * nothing can see one and miss the other.
+ * Transitions rather than which keys are down, because a press and its
+ * release can both arrive between two looks, and a key that was tapped must
+ * still be seen to have been pressed. Filled on the same pass through the
+ * virtqueue as the characters, so there is no second reader and nothing can
+ * see one and miss the other.
  *
  * Sixty-four is four frames of frantic typing. Full, the *oldest* goes: a
  * lost press is an action you did not take, and a lost release is a key
@@ -285,16 +264,6 @@ bool virtio_key_event(unsigned *code, bool *down)
 
     return true;
 }
-
-bool virtio_key_held(unsigned code)
-{
-    if (code >= 128) {
-        return false;
-    }
-
-    return (held[code >> 5] & (1u << (code & 31))) != 0;
-}
-
 
 /* Hands descriptor `i` back to the device as somewhere to put an event. */
 static void offer(struct vinput *v, unsigned i)
@@ -754,13 +723,10 @@ static int keyboard_getchar_locked(void)
          * mid-loop. Putting this first is what makes the two streams agree:
          * every transition the device reported is here, whatever the
          * character half decided to do with it.
+         *
+         * value 2 is auto-repeat, which is not a transition: the key was
+         * already down and still is.
          */
-        held[event.code >> 5] = (event.value != 0)
-            ? (held[event.code >> 5] |  (1u << (event.code & 31)))
-            : (held[event.code >> 5] & ~(1u << (event.code & 31)));
-
-        /* value 2 is auto-repeat, which is not a transition: the key was
-         * already down and still is. */
         if (event.value != 2) {
             keyq_put(event.code, event.value != 0);
         }

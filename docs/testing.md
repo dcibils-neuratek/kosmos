@@ -18841,3 +18841,65 @@ reply token names a call, and nothing forged does".
 **Seen once**: `x86-servers`' first boot timed out in a run of four suites
 side by side, the rest of its failures following from it; alone it passed
 its 27 checks. The full gate before 0.11 is what says whether it recurs.
+
+## 18.398 The review before 0.11
+
+**`CLAUDE.md` asks for the code to be read again before a minor version** -
+the files changed since the last one, as they are now, for what has no reason
+to exist any more. Since 0.10.0 that was 707 files and about 215,000 lines of
+the system's own code. Six reviewers read it side by side - the kernel and
+the boards, the servers and drivers and init, the C kits, the Lua libraries,
+the programs, the applications - each finding to come with the search that
+proved it. About 150 came back. Five agents made the changes on parts of the
+tree that do not overlap, and none built or committed; the full gate below
+is what proves them.
+
+**Bugs it found, fixed:**
+- **the reply token** and **device mapping of RAM** in the kernel (18.397);
+- `kits`, `pdfinfo` and `pdfbench` indexed their argument string as a
+  table and ignored what was typed;
+- the Network window's Apply passed no name server, which switched name
+  resolution off until the next boot, under a note saying there was no
+  resolver;
+- Kosmos Write could name a new picture as one in the file on a page not yet
+  viewed, which Save then lost; it now reads a document's pictures when it
+  opens, never in a paint;
+- Cafesa3D's move and handle drag kept an undo step without marking the
+  scene unsaved;
+- Tracker's cut and paste copied and deleted - failing over a megabyte where
+  a drag moved - and named a second copy `notes.txt (2)`;
+- `/Drives` reported a failed read as a damaged filesystem;
+- the libc's `qsort` was an insertion sort, so a directory listing of
+  thousands of names and a mesh's edges sorted in quadratic time: heapsort;
+- `httpd` refused a thirteenth connection under a comment saying nothing
+  bounds it;
+- `tile` moved the Deskbar's strip, skipping only a window titled
+  "Deskbar";
+- `htop`, `monitor`, `tile`, `say` and `edit` spun on the counter to wait,
+  where `sys.sleep` waits;
+- the window manager built a trace string on every poll with tracing off;
+- the browser drew and committed twice for a wheel notch, a key in a page
+  and a menu choice, and its star showed the state before a click;
+- the Deskbar's dock waited for an application to start before its click
+  returned;
+- Processes called an installed application - Doom - a program;
+- PDF View timed its pages by QEMU's counter rate on every machine.
+
+**Removed, because nothing used them**: a dozen `sys.*` bindings the Lua
+servers left behind, `serve()`, the namespace's write path for a Lua disk
+server, the console's `STAT`, `/Temporary`'s `watchers`, the Ethernet
+drivers' `INFO`, the network protocol's `REPLY` and an unread field, the
+kernel's held-key bitmaps, an fw_cfg file server's helpers, an MCFG parser,
+error codes nothing produces, the GL Kit's OpenGL 1.x binding (the demos are
+TinyGL's own C), `docfont`'s counters, `runtime/libc/misc.c` from the test
+kernel, and a tool's cache committed into `kernel/`. **Corrected**: comments
+the code had moved past - lazy FP described as before it, a single processor
+in the present tense, pools called fixed that grow, `/bin` named where
+`/Kosmos/Apps` is, hot reload given as a reason, and a `ps` line telling the
+person the kernel has no allocator.
+
+**Left, and written down** (`roadmap.md`): every second copy the review found,
+which is step 3 after 0.11; the browser and the windows that ask a server
+while they draw; `diskfs` waiting inside a request for a late stick - the
+likeliest reason `df` never answers on the M700; the Crypto Kit's second copy
+of BearSSL, Diego's to decide; the fixed table of interrupt claims.

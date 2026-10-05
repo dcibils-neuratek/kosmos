@@ -1558,9 +1558,6 @@ static void about(struct eth_reply *rep)
 {
     rep->present = 1;
     rep->mtu = 1514;
-    rep->link = card.link.up ? 1u : 0u;
-    rep->sent = (uint32_t)card.sent;
-    rep->received = (uint32_t)card.received;
     memcpy(rep->mac, card.mac, sizeof(rep->mac));
 }
 
@@ -1621,10 +1618,6 @@ static void answer(const struct message *msg, uint64_t sender, long cap,
             }
 
             drain_out();
-            about(&rep);
-            break;
-
-        case ETH_OP_INFO:
             about(&rep);
             break;
 

@@ -2,8 +2,8 @@
 /*
  * The console: the one process that may touch the keyboard and the wire.
  *
- * `sys.write`, `sys.getchar`, `sys.key_event`, `sys.pointer` and
- * `sys.wait_input` are refused to every other process, and that is what
+ * `kosmos_write`, `kosmos_getchar`, `kosmos_key_event`, `kosmos_pointer`
+ * and `kosmos_wait_input` are refused to every other process, and that is what
  * makes this a server rather than a convention - a client cannot decide to
  * print directly, because the machine will not let it. Everything the system
  * says and everything a person types crosses this loop.
@@ -67,8 +67,6 @@ static char     line[CON_TEXT_MAX];
 static unsigned line_len;
 static bool     reading;
 static uint64_t reader;
-
-static uint32_t n_bytes, n_lines, n_interrupts;
 
 
 /*
@@ -342,7 +340,6 @@ static void edit(void)
 
         if (c == '\n' || c == '\r') {
             put("\n", 1, 0);
-            n_lines++;
             deliver();
             return;
         }
@@ -352,7 +349,6 @@ static void edit(void)
              * blank line rather than an error, which is what a shell wants:
              * print a fresh prompt and carry on. */
             put("^C\n", 3, 0);
-            n_interrupts++;
             line_len = 0;
             recall = 0;
             deliver();
@@ -402,10 +398,6 @@ static void drain_keys(struct con_reply *rep)
 
         if (c < 0) {
             return;
-        }
-
-        if (c == 3) {
-            n_interrupts++;
         }
 
         rep->keys[rep->nkeys++] = (uint8_t)c;
@@ -560,7 +552,6 @@ static void answer(const struct message *msg, uint64_t sender)
     case CON_OP_WRITE: {
         uint32_t n = (req.length > CON_TEXT_MAX) ? CON_TEXT_MAX : req.length;
 
-        n_bytes += n;
         put(req.text, n, req.colour);
         break;
     }
@@ -731,7 +722,6 @@ static void answer(const struct message *msg, uint64_t sender)
 
             if ((c & 0xff) == 3) {
                 rep.seen = 1;
-                n_interrupts++;
             } else {
                 stash((uint8_t)(c & 0xff));
             }
@@ -750,12 +740,6 @@ static void answer(const struct message *msg, uint64_t sender)
         }
 
         watched = (long)msg->cap_plus_one - 1;
-        break;
-
-    case CON_OP_STAT:
-        rep.bytes      = n_bytes;
-        rep.lines      = n_lines;
-        rep.interrupts = n_interrupts;
         break;
 
     default:

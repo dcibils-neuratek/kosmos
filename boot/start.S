@@ -80,23 +80,15 @@ drop_to_el1:
 
 at_el1:
     /*
-     * Let EL1 touch the FP and SIMD registers.
+     * Trap the FP and SIMD registers, at EL1 and EL0 alike.
      *
-     * CPACR_EL1.FPEN resets to 0b00, which traps every FP and SIMD access at
-     * EL0 and EL1 alike, and the trap arrives as EC 0x07 with no hint of
-     * what it means. The kernel's own C is built -mgeneral-regs-only and
-     * never emits one, but two things here do:
-     *
-     *   - setjmp and longjmp save and restore d8 to d15, because AAPCS64
-     *     makes them callee-saved and Lua raises every error through them.
-     *   - Lua's numbers are doubles, so from M2 the interpreter is full of
-     *     them.
-     *
-     * The consequence to keep in view: from M3 there is a context switch,
-     * and it does not save FP state. As long as Lua stays on one thread that
-     * is fine. The moment it does not, this needs lazy FP save, which the
-     * roadmap already schedules at M10 for Doom and which will be needed
-     * sooner.
+     * CPACR_EL1.FPEN = 0b00 traps every FP and SIMD access at both levels,
+     * as EC 0x07, and that is lazy FP save armed from the first instruction.
+     * The kernel's own C is built -mgeneral-regs-only and never emits one;
+     * the first thing that does - Lua, whose numbers are doubles, or setjmp
+     * and longjmp saving d8 to d15 - faults into `arch/aarch64/fp.c`, which
+     * hands it the registers. Every context switch disarms them again
+     * (`switch.S`).
      */
     mov     x0, #(0 << 20)          /* CPACR_EL1.FPEN = 0b00: trap both, lazily */
     msr     cpacr_el1, x0

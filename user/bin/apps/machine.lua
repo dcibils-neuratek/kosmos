@@ -227,7 +227,7 @@ end
 head("Input")
 
 if keyb then
-  row("Keyboard", keyb.transport or "present")
+  row("Keyboard", "present")
 else
   absent("Keyboard", "none; input comes over the serial line")
 end

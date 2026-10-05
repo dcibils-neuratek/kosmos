@@ -40,7 +40,6 @@ for n = 1, 12 do keys.F[n] = -10 - n end
 keys.SHIFT, keys.ALT, keys.CTRL, keys.SUPER = 1, 2, 4, 8
 
 keys.TAB, keys.ENTER, keys.ESCAPE, keys.SPACE = 9, 13, 27, 32
-keys.BACKSPACE = 8
 
 local STEP = 1024
 

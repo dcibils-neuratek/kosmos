@@ -39,9 +39,10 @@ local theme = {}
 theme.palettes = {}
 
 -- Dark: what Kosmos looked like first, and still what the kit starts with.
--- A desktop with nothing saved is BeOS - the window manager applies it, in
--- `default_appearance` - and the display harness names this one, because its
--- colours are the ones that harness looks for.
+-- A desktop with nothing saved is not this but the first look `themes.lua`
+-- offers, Endeavour, which the window manager reads over this one and
+-- applies in `default_appearance`. The display harness names this one,
+-- because its colours are the ones that harness looks for.
 theme.palettes.dark = {
   name      = "dark",
 
@@ -253,9 +254,10 @@ theme.tokens = {
   -- kit, and the window manager's own boxes.
   --
   -- It is a *look's* property rather than a setting, because it is not a
-  -- preference about bevels: it is what makes Endeavour Endeavour. Plex,
-  -- Classic and Studio are dimensional on purpose and a flat one of those
-  -- would be a fourth thing nobody designed (`ui.md` 16.8b).
+  -- preference about bevels: it is part of what a look is. Endeavour, Plex
+  -- and Night say it; Plex Night, Classic and Studio are dimensional on
+  -- purpose, and a flat one of those would be a look nobody designed
+  -- (`ui.md` 16.8b).
   --
   "flat",
 
@@ -588,24 +590,6 @@ function theme.apply(palette)
   return theme
 end
 
---
--- A colour `k` per cent of the way to white, or to black when `k` is
--- negative. What a scrollbar's grip is drawn in - the tab's colour lit and
--- shaded - by the kit and by the browser, which draws its own.
---
-function theme.toward(c, k)
-  local r, g, b = (c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff
-
-  if k >= 0 then
-    r, g, b = r + (255 - r) * k // 100, g + (255 - g) * k // 100,
-              b + (255 - b) * k // 100
-  else
-    r, g, b = r + r * k // 100, g + g * k // 100, b + b * k // 100
-  end
-
-  return 0xff000000 | (r << 16) | (g << 8) | b
-end
-
 -- Whatever a caller hands over on top of a palette: the desktop colour is
 -- chosen separately from the palette it sits with, so a light theme with a
 -- dark desktop is a thing somebody can have.
@@ -856,10 +840,10 @@ theme.fonts = {
 }
 
 --
--- **These are the four looks' faces** (`roadmap.md` 5y): every look names
--- the same five, so the kit's own defaults are that set rather than a
--- sixth one of their own - a machine nobody has set up and a machine in
--- Plex draw the same words.
+-- **These are the looks' faces** (`roadmap.md` 5y): every look names the
+-- same six, so the kit's own defaults are that set rather than one of
+-- their own - a machine nobody has set up and a machine in Plex draw the
+-- same words.
 --
 
 -- The same, kept as they ship and never changed: `theme.fonts` is what is

@@ -74,17 +74,6 @@ static inline long kosmos_getchar(void)
 }
 
 /*
- * The next key transition, or SYS_NO_INPUT when there is none.
- *
- * The companion to `kosmos_getchar`, and gated the same way: only the
- * process that owns the console may ask, because a process that can watch
- * every key is a keylogger. Everything else asks the console server.
- */
-/*
- * Stop the machine (0) or start it again (1). Does not return when it
- * works, so a return is a refusal - see SYS_POWER.
- */
-/*
  * One period of PCM: 44100 Hz, stereo, signed sixteen-bit little-endian.
  *
  * 0 when it was taken, SYS_NO_INPUT when the queue is full - which is a
@@ -124,11 +113,22 @@ static inline long kosmos_snd_queued(void)
     return sys0(SYS_SND_QUEUED);
 }
 
+/*
+ * Stop the machine (0) or start it again (1). Does not return when it
+ * works, so a return is a refusal - see SYS_POWER.
+ */
 static inline long kosmos_power(unsigned long what)
 {
     return sys1(SYS_POWER, (long)what);
 }
 
+/*
+ * The next key transition, or SYS_NO_INPUT when there is none.
+ *
+ * The companion to `kosmos_getchar`, and gated the same way: only the
+ * process that owns the console may ask, because a process that can watch
+ * every key is a keylogger. Everything else asks the console server.
+ */
 static inline long kosmos_key_event(unsigned *code, unsigned *down)
 {
     return sys2(SYS_KEY_EVENT, (long)(uintptr_t)code, (long)(uintptr_t)down);
@@ -168,14 +168,13 @@ static inline long kosmos_spawn_image(const struct spawn_image *req)
 }
 
 /*
- * Blocks until any child ends, and returns its exit code. Negative when
- * there are no children left to wait for.
+ * Blocks until any child ends, and puts its id and exit code into `out` and
+ * answers 0 - or `SYS_ERR_NO_CHILD` when there are no children left to wait
+ * for. See `struct wait_result`.
  *
  * `nonblocking` returns SYS_NO_CHILD_READY instead of waiting when children
  * exist but none has exited - which is what draining them looks like.
  */
-/* A child that has ended: its id and exit code into `out`, and 0 - or
- * `SYS_NO_CHILD_READY`, or `SYS_ERR_NO_CHILD`. See `struct wait_result`. */
 static inline long kosmos_wait(struct wait_result *out, int nonblocking)
 {
     return sys2(SYS_WAIT, (long)(uintptr_t)out, nonblocking ? 1 : 0);
@@ -323,13 +322,15 @@ static inline long kosmos_irq_wait_any(const long *caps, unsigned long count,
 }
 
 /*
- * Pages of this process's own, for the things that do not fit on its heap.
+ * Pages of this process's own, for the things that do not belong on its heap.
  *
- * The heap is 2 MB and deliberately so; a full-screen surface is 3.2 MB.
- * These come straight from the kernel, zeroed, mapped only here, and are
- * returned when this process exits whether or not it remembers to unmap
- * them. Negative on refusal - there is a per-process budget, because one
- * process asking for everything is the failure this stops.
+ * The heap starts at 2 MB and grows an arena at a time (`USER_HEAP_PAGES`
+ * below, `runtime/libc/malloc.c`), but a surface is megabytes of pixels that
+ * want pages of their own rather than a share of an arena. These come
+ * straight from the kernel, zeroed, mapped only here, and are returned when
+ * this process exits whether or not it remembers to unmap them. Negative on
+ * refusal: what bounds a mapping is the process's window of addresses and
+ * what the machine can spare (`kernel/process.h`), not a number per process.
  */
 static inline long kosmos_map(unsigned long pages)
 {
@@ -360,12 +361,6 @@ static inline long kosmos_setname_from(const char *name, unsigned long len,
 }
 
 /*
- * **Where this thread's own data is**, which the hardware hands back at
- * `%fs:0` on x86 and in `TPIDR_EL0` on AArch64 (`threads.md` step 2). The
- * libc calls this once as a process starts, and every thread will call it as
- * it starts; the first thing in the block is `errno`.
- */
-/*
  * **A driver saying a frame arrived**, for the process that holds the wire.
  *
  * The kernel's virtio driver wakes the stack from its own interrupt handler;
@@ -377,6 +372,14 @@ static inline long kosmos_net_wake(void)
     return sys0(SYS_NET_WAKE);
 }
 
+/*
+ * **Where this thread's own data is**, which the hardware hands back at
+ * `%fs:0` on x86 and in `TPIDR_EL0` on AArch64 (`threads.md` step 2). The
+ * kernel makes a block and points the register at it before a thread runs
+ * (`USER_TBLOCK` in `process.h`), so nothing has to call this; it is for a
+ * program that wants a larger block of its own. The first thing in the
+ * block is `errno`.
+ */
 static inline long kosmos_set_tls(void *block)
 {
     return sys1(SYS_SET_TLS, (long)(uintptr_t)block);
@@ -477,7 +480,7 @@ static inline long kosmos_entropy(void *out, unsigned long len)
  * layout would be read as a disagreement about the contents. The two are one
  * definition written twice, which is the sort of thing that should be
  * checked rather than trusted - there is a _Static_assert on the size in
- * user/lib/sys_user.c.
+ * user/init/sys_user.c.
  */
 #define MSG_BYTES   2048
 
@@ -834,6 +837,5 @@ static inline long kosmos_reply(uint64_t sender, const struct message *msg)
 #endif
 
 #define USER_HEAP_SIZE  ((unsigned long)USER_HEAP_PAGES * 4096UL)
-#define USER_STACK_END  (USER_TEXT + 0x02E00000UL)   /* kernel/process.h */
 
 #endif /* KOSMOS_H */

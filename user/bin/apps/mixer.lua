@@ -10,8 +10,8 @@
 -- One row per open stream, plus a master at the top. Drag a fader; the
 -- switch at a stream's end is on while it is heard.
 --
--- **The meter is the interesting part and it costs nothing.** `sys.mix`
--- already touches every sample to sum them, so the loudest one it saw is
+-- **The meter is the interesting part and it costs nothing.** The audio
+-- server's mix already touches every sample to sum them, so the loudest one it saw is
 -- free on the way past - and it is measured *before* the gain, which is
 -- what makes it answer "who is sending audio" rather than "how loud is it".
 -- A muted stream still shows a moving meter, which is the whole point when

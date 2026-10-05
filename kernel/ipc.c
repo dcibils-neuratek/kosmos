@@ -141,14 +141,6 @@ unsigned ipc_endpoints_total(void)
 }
 
 /*
- * Single core and cooperative, so none of the queue surgery below can be
- * interrupted by anything that also touches it: the only interrupt handler
- * that exists counts timer ticks. When an interrupt can wake a thread, or
- * when SMP arrives at M6, every function here needs the endpoint locked for
- * the whole operation. Marked rather than left to be discovered.
- */
-
-/*
  * Copies a message, and only as much of it as there is.
  *
  * A round trip moves a message five times: into the sender's slot, across to
@@ -486,11 +478,6 @@ static unsigned table_slots(const struct captable *c)
     return (unsigned)(CAPS_INLINE + c->chunks * CAPS_PER_CHUNK);
 }
 
-/*
- * Slot `index`, or NULL when this table has no such slot - which is the whole
- * of the bounds check, since a table's size is no longer a constant anybody
- * can compare against. The lock is held by the caller.
- */
 /*
  * Slot `index`, or NULL when this table has no such slot - which is the whole
  * of the bounds check, since a table's size is no longer a constant anybody

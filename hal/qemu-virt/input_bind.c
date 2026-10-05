@@ -36,8 +36,6 @@ bool hal_key_event(unsigned *code, bool *down)
     return virtio_key_event(code, down) || keys_pushed_event(code, down);
 }
 
-bool hal_key_held(unsigned code) { return virtio_key_held(code); }
-
 bool hal_pointer_init(void)      { return virtio_pointer_init(); }
 
 bool hal_pointer_poll(struct pointer_state *out)

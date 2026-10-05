@@ -11,7 +11,6 @@ bool i8042_keyboard_init(void);
 int  i8042_getchar(void);
 bool i8042_present(void);
 bool i8042_key_event(unsigned *code, bool *down);
-bool i8042_key_held(unsigned code);
 
 bool i8042_pointer_init(void);
 

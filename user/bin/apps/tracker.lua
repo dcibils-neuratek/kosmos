@@ -2306,45 +2306,47 @@ local function do_paste()
     return
   end
 
-  local done, bytes = 0, 0
+  local done, bytes, moving = 0, 0, cut_from
 
   for _, from in ipairs(clipboard) do
     local name = from:match("([^/]+)$") or "copy"
-    local to = files.join(where, name)
 
-    -- Pasting into the directory a file came from would otherwise ask the
-    -- filesystem to copy a file onto itself, which is a truncation.
-    local n = 2
-
-    while fs.getattr(to) do
-      to = files.join(where, ("%s (%d)"):format(name, n))
-      n = n + 1
+    if moving and files.parent(from) == where then
+      -- Cut and pasted where it already is: nothing to do.
+      goto next
     end
 
-    local put, why = files.copy(from, to)
+    do
+      -- **A name not taken here** - `notes 2.txt`, the extension kept at
+      -- the end (`files.free_name`), as a drop and New folder name things -
+      -- so pasting into the folder a file came from never copies a file
+      -- onto itself.
+      local to = files.join(where, files.free_name(where, name))
+      local put, why
 
-    if not put then
-      show(where)
-      status.text = ("pasted %d, then %s: %s"):format(done, name,
-                                                      tostring(why))
-      return
-    end
-
-    done = done + 1
-    bytes = bytes + put
-
-    if cut_from then
-      -- A move is a copy and then a delete, and the delete only happens
-      -- once the copy has actually landed. Cutting a file and losing it
-      -- because the destination was full is the one failure a file manager
-      -- must not have.
-      local gone, gwhy = fs.send(from, { type = "delete" })
-
-      if not gone then
-        status.text = ("copied %s but could not remove the original: %s")
-                      :format(name, tostring(gwhy))
+      if moving then
+        -- **A cut is a move** (`files.move`): a rename where both ends are
+        -- one filesystem, and a copy and then a delete only across two -
+        -- the delete only once the copy has landed. It was always a copy
+        -- and a delete here, which failed for a file over a megabyte that
+        -- a drag moved.
+        put, why = files.move(from, to)
+        if put then put = (fs.getattr(to) or {}).size or 0 end
+      else
+        put, why = files.copy(from, to)
       end
+
+      if not put then
+        show(where)
+        status.text = ("pasted %d, then %s: %s"):format(done, name, tostring(why))
+        return
+      end
+
+      done = done + 1
+      bytes = bytes + put
     end
+
+    ::next::
   end
 
   local only = (done == 1)
@@ -2352,12 +2354,13 @@ local function do_paste()
 
   -- A cut is spent once it is pasted. A copy is not: pasting the same
   -- things into three directories is a thing people do.
-  if cut_from then clipboard, cut_from = nil, false end
+  if moving then clipboard, cut_from = nil, false end
 
   show(where)
   status.text = only and ("%s %s, %d bytes"):format(
-                           cut_from and "moved" or "pasted", only, bytes)
-                or ("pasted %d items, %d bytes"):format(done, bytes)
+                           moving and "moved" or "pasted", only, bytes)
+                or ("%s %d items, %d bytes"):format(moving and "moved" or "pasted",
+                                                    done, bytes)
 end
 
 --
@@ -2483,11 +2486,11 @@ local function run_query(text)
   -- Nothing found is the ordinary answer today, and saying why is better
   -- than an empty window.
   --
-  -- The index is over attributes and **nothing in this system writes one
-  -- yet**: `filetypes.kind_of` already prefers `attrs.type` over the
-  -- extension and no file has ever had it set. `attr` at the prompt can set
-  -- one; a panel here that shows and edits them is what would make queries
-  -- mean something, and it is the next thing this window wants.
+  -- The index is over attributes, and few files carry one: launchers and
+  -- favorites write `type`, which `filetypes.kind_of` prefers over the
+  -- extension, and `attr` at the prompt sets any. A panel here that shows
+  -- and edits them is what would make queries mean more, and it is the next
+  -- thing this window wants.
   --
   if #rows_out == 0 then
     status.text = ("nothing here carries %s = %s"):format(field, value)

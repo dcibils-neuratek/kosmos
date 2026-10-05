@@ -128,11 +128,6 @@ do
   prefs.write(s)
 end
 
-check(prefs.name_of("history_days", 90) == "90 days"
-      and prefs.name_of("zoom", 125) == "125%, larger"
-      and prefs.name_of("search", "google") == "Google",
-      "a choice called what it is")
-
 do
   check(select("#", prefs.tabs()) == 2 and #prefs.tabs() == 0,
         "no tabs kept is an empty list")

@@ -16,8 +16,8 @@
 -- round trip - which is precisely the yield this program exists not to do.
 --
 -- So it is the counterexample. `monitor` and `htop` stop when you ask; this
--- one runs its ten seconds. Stopping it would need a way to end a process
--- from outside, which the kernel does not have.
+-- one runs its ten seconds, or until it is ended from outside - `kill`, or
+-- Processes, which is the kernel ending it rather than it agreeing to stop.
 
 --
 -- **First: get out of the compositor's band.**

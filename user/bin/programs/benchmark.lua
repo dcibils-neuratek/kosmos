@@ -8,10 +8,10 @@
 -- *started*, not finished, so it comes back to the prompt immediately
 -- while they run. Watch with `htop 5` or `monitor watch`.
 --
--- It is a program, in /bin, launching other programs in /bin. Nothing
--- about that is special-cased anywhere: `run` is a function this process
--- was handed by whoever started it, and it can pass on no more than it
--- holds.
+-- It is a program, in /Kosmos/Programs, launching other programs there.
+-- Nothing about that is special-cased anywhere: `run` is a function this
+-- process was handed by whoever started it, and it can pass on no more than
+-- it holds.
 
 local n = tonumber(args) or 1
 

@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * Flate, for whoever asks: `sys.inflate(bytes) -> string`.
+ * Flate, for whoever asks: `compress.inflate(bytes) -> string`.
  *
  * `png.c` has inflated its own image data since M6, because a PNG's pixels
  * arrive compressed and a decoder that cannot decompress them is not a
@@ -42,11 +42,8 @@
  * discovered as "not enough memory" three frames up with nothing naming the
  * cause.
  *
- * The way past it is the one already taken for large files: inflate into a
- * shared region the caller owns and hand back a capability, not bytes. That
- * is `read(fd, buf, n)` with a decoder in front of it, and it is worth
- * building the day something needs it. A page's content stream is a few
- * kilobytes; nothing yet does.
+ * The way past it is `inflate_into`, below: into a region the caller
+ * already owns, with no Lua string at either end.
  */
 #define INFLATE_MAX (1024u * 1024u)
 
@@ -156,7 +153,7 @@ static int l_inflate(lua_State *L)
 }
 
 /*
- * `sys.inflate_into(src, src_bytes, dst, dst_bytes) -> written`
+ * `compress.inflate_into(src, src_bytes, dst, dst_bytes [, raw]) -> written`
  *
  * The same inflate with no Lua string at either end.
  *
@@ -233,7 +230,7 @@ static int l_inflate_into(lua_State *L)
 }
 
 /*
- * `sys.inflated_size(src, src_bytes) -> bytes`
+ * `compress.inflated_size(src, src_bytes) -> bytes`
  *
  * How big the result will be, without producing it. A caller needs this to
  * know whether the region it has is large enough, and asking costs the

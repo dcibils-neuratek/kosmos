@@ -1,7 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- What is on the disk.
 --
--- Reads `/disk/super`, which is served by the one process holding the block
+-- Reads `/Home/.super`, which is served by the one process holding the block
 -- device. This program has no access to sectors at all - it asks, like
 -- everything else, and would get the same answer through the same path if
 -- the disk were on another machine.

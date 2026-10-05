@@ -180,16 +180,6 @@ static int l_demo_key(lua_State *L)
     return 0;
 }
 
-static int l_demo_reshape(lua_State *L)
-{
-    if (current != NULL) {
-        current->reshape((int)luaL_checkinteger(L, 1),
-                         (int)luaL_checkinteger(L, 2));
-    }
-
-    return 0;
-}
-
 void kosmos_gl_demos(lua_State *L)
 {
     static const luaL_Reg api[] = {
@@ -197,7 +187,6 @@ void kosmos_gl_demos(lua_State *L)
         { "start",   l_start },
         { "frame",   l_frame },
         { "key",     l_demo_key },
-        { "reshape", l_demo_reshape },
         { NULL, NULL }
     };
 

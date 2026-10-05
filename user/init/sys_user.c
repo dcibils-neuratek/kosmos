@@ -121,80 +121,6 @@ static int l_write(lua_State *L)
     return 1;
 }
 
-static int l_getchar(lua_State *L)
-{
-    long c = kosmos_getchar();
-
-    if (c < 0) {
-        lua_pushnil(L);         /* nothing waiting, which is not an error */
-        return 1;
-    }
-
-    lua_pushinteger(L, (lua_Integer)c);
-    return 1;
-}
-
-/*
- * `sys.key_event()` - the next key transition, or nil.
- *
- * Returns the board's keycode and whether it went down. Two values, because
- * they are two facts.
- *
- * The other half of `sys.getchar`, and needed because a character cannot
- * say that a key is *still* held: a stream of them is a stream of meanings,
- * and holding a direction in a game is a question about the key itself.
- */
-/*
- * `sys.power("off")` or `sys.power("restart")`.
- *
- * Words rather than numbers, because these are the two things in this
- * system that cannot be undone by trying again, and `sys.power(1)` is one
- * typo away from `sys.power(0)`.
- */
-/*
- * `sys.sound(pcm)` - one period of samples, as a string.
- *
- * A Lua string because that is what a Lua caller has, and because a period
- * is a kilobyte: the cost of it being a string rather than a region is one
- * copy of 1024 bytes every five milliseconds, which is not the thing that
- * will be too slow here. When something wants to hand over more than that
- * at a time - a whole track from a decoder - the answer is a region and a
- * different call, not this one made cleverer.
- *
- * Returns true when it was taken, false when the device is still busy with
- * what it has. False is the ordinary case for a caller that is ahead, and
- * is not an error.
- */
-static int l_sound(lua_State *L)
-{
-    size_t len;
-    const char *pcm = luaL_checklstring(L, 1, &len);
-    long status;
-
-    /*
-     * The size is not checked here.
-     *
-     * A period's length is the *board's* fact - `hal.h` fixes it and the
-     * kernel enforces it - and repeating the number in userland would be
-     * two copies of one thing that agree until somebody changes a driver.
-     * `sys.info().audio_period` is how a caller learns it; this just passes
-     * the bytes down and reports what came back.
-     */
-    status = kosmos_snd_write(pcm, (unsigned long)len);
-
-    if (status == SYS_ERR_DENIED) {
-        return luaL_error(L, "this process may not play sound");
-    }
-
-    if (status == SYS_ERR_FAULT) {
-        return luaL_error(L, "%d bytes is not one period", (int)len);
-    }
-
-    lua_pushboolean(L, status == 0);
-
-    return 1;
-}
-
 /*
  * `sys.net()` - what card this machine has, or nil.
  *
@@ -211,8 +137,7 @@ static int l_net(lua_State *L)
 
     /*
      * **Nil rather than an error when this process was not granted the
-     * card**, which is `sys.screen`'s answer to the same question and not
-     * `sys.sound`'s.
+     * card**, which is `sys.screen`'s answer to the same question.
      *
      * The difference is what the caller is doing. Asking *whether I have a
      * card* is a question every program may ask, and for one that was not
@@ -244,7 +169,7 @@ static int l_net(lua_State *L)
  *
  * True when the card took it, false when its ring is full - which is a fact
  * about a busy card rather than an error, the same distinction
- * `sys.sound` draws.
+ * `sys.ring_put` draws.
  */
 static int l_net_send(lua_State *L)
 {
@@ -295,49 +220,6 @@ static int l_net_recv(lua_State *L)
     return 1;
 }
 
-/*
- * `sys.sound_queued()` - periods the device has not finished with.
- *
- * The deadline as a number, which `roadmap.md` M11a promises instead of a
- * bound. Zero means it has run dry and the next sound has a click in it.
- */
-/*
- * `sys.mix(streams)` - sum several streams into one period and play it.
- *
- * `streams` is an array of `{ pcm = <string>, left = 0..256, right = 0..256 }`
- * and this is the only place in the system where more than one sound
- * exists at once. It returns whether the device took the result, and writes
- * a `peak` back into each entry.
- *
- *--------------------------------------------------------------------------
- * Why the mixing is here and not in Lua.
- *
- * It is a loop over samples - 512 of them per period, per stream - and
- * `gfx.md` 19.2's arithmetic applies unchanged: twenty to fifty nanoseconds
- * an iteration in Lua, against a period that has to be ready every 5.8
- * milliseconds. Four streams would be two thousand iterations a period and
- * most of the budget spent on the interpreter.
- *
- * The other reason is garbage. A Lua mixer builds a new 1 KB string per
- * period, which at 172 periods a second is 176 KB a second of allocation on
- * the one path in this system with a hard deadline - and `CLAUDE.md` is
- * explicit that what decides a server is `gc_pause_max`, not throughput.
- * This allocates nothing: the accumulator is static and the result goes
- * straight to the device.
- *
- *--------------------------------------------------------------------------
- * Gain is an integer, 256 for unity.
- *
- * Not a float, and not because floats are unavailable - this is EL0 and may
- * use them. Because `(sample * gain) >> 8` is exact, and a volume control
- * that is exact at unity is a volume control that cannot quietly attenuate
- * a stream nobody asked it to touch.
- *
- * The peak is measured *before* gain, which is the question the meter is
- * actually answering: which application is sending audio. A muted stream
- * that is still playing should show it, or the meter has become a second
- * volume display.
- */
 /*--------------------------------------------------------------------------
  * Audio rings: a stream of samples in memory two processes share.
  *
@@ -424,28 +306,6 @@ static int l_ring_create(lua_State *L)
     return 2;
 }
 
-/* `sys.ring_map(cap)` -> address, for the server side. */
-static int l_ring_map(lua_State *L)
-{
-    long at = kosmos_mem_map((long)luaL_checkinteger(L, 1));
-    struct audio_ring *r;
-
-    if (at < 0) {
-        return fail(L, at);
-    }
-
-    r = (struct audio_ring *)(uintptr_t)at;
-
-    if (!audio_ring_valid(r)) {
-        lua_pushnil(L);
-        lua_pushstring(L, "not an audio ring");
-        return 2;
-    }
-
-    lua_pushinteger(L, (lua_Integer)at);
-    return 1;
-}
-
 /* How many periods are waiting, and how many slots are free. */
 static int l_ring_ready(lua_State *L)
 {
@@ -488,10 +348,11 @@ static int l_ring_position(lua_State *L)
 /*
  * `sys.ring_put(at, bytes)` -> true, or false when the ring is full.
  *
- * One period from a Lua string, for sources that generate their samples in
- * Lua - a test tone, a beep. **Not the path a file takes**: `sys.pcm` writes
- * into the ring directly, because a string here would be exactly the
- * allocation this whole design exists to remove.
+ * One period from a Lua string, which is how every source in Lua hands its
+ * samples over: a test tone or a beep made in Lua, and a file's or a film's
+ * once `sys.pcm` has put them in this machine's format (`media.lua`,
+ * `video.lua`). That is a string a period on the client's side; the server
+ * reads the ring and allocates nothing.
  */
 static int l_ring_put(lua_State *L)
 {
@@ -529,297 +390,6 @@ static int l_ring_put(lua_State *L)
 
     lua_pushboolean(L, 1);
     return 1;
-}
-
-/*
- * `sys.mix(list)` - one period out of the device, summed from the rings.
- *
- * Each entry is `{ ring = <address>, left = <gain>, right = <gain> }` and
- * gets a `peak` written back. An entry whose ring has nothing ready is
- * skipped rather than waited for: a stream that has fallen behind must not
- * take the others down with it.
- *
- * **It used to take the samples as Lua strings**, one per stream per period,
- * which meant the collector ran inside the mix. Now the only thing crossing
- * the boundary is an address and two integers, and the samples are read from
- * where the client left them.
- *
- * The peak is taken *before* the gain, deliberately: it answers "who is
- * making a noise" rather than "how loud is it", so a muted stream still
- * shows a moving meter - which is the whole point when you are hunting for
- * the program that will not shut up.
- */
-static int l_mix(lua_State *L)
-{
-    static int32_t acc[HAL_SND_PERIOD_BYTES_MAX / 2];
-    unsigned mixed = 0;
-    unsigned samples = 0;
-    lua_Integer n, i;
-    unsigned k;
-
-    luaL_checktype(L, 1, LUA_TTABLE);
-    n = (lua_Integer)lua_rawlen(L, 1);
-
-    memset(acc, 0, sizeof(acc));
-
-    for (i = 1; i <= n; i++) {
-        struct audio_ring *r;
-        const int16_t *in;
-        long left = 256, right = 256;
-        int32_t peak = 0;
-        unsigned count;
-
-        lua_rawgeti(L, 1, i);
-
-        if (!lua_istable(L, -1)) {
-            lua_pop(L, 1);
-            continue;
-        }
-
-        lua_getfield(L, -1, "ring");
-        r = (struct audio_ring *)(uintptr_t)lua_tointeger(L, -1);
-        lua_pop(L, 1);
-
-        lua_getfield(L, -1, "left");
-        if (lua_isnumber(L, -1)) { left = (long)lua_tointeger(L, -1); }
-        lua_pop(L, 1);
-
-        lua_getfield(L, -1, "right");
-        if (lua_isnumber(L, -1)) { right = (long)lua_tointeger(L, -1); }
-        lua_pop(L, 1);
-
-        if (!audio_ring_valid(r)) {
-            lua_pop(L, 1);
-            continue;
-        }
-
-        /* Acquire: having seen this index, the samples behind it are there. */
-        if (audio_ring_acquire(&r->write) - r->read == 0) {
-            lua_pushinteger(L, 0);
-            lua_setfield(L, -2, "peak");
-            lua_pop(L, 1);
-            continue;                   /* nothing ready; not this one's turn */
-        }
-
-        in = (const int16_t *)(const void *)audio_ring_slot(r, r->read);
-        count = r->period_bytes / 2;
-
-        if (count > sizeof(acc) / sizeof(acc[0])) {
-            count = (unsigned)(sizeof(acc) / sizeof(acc[0]));
-        }
-
-        if (count > samples) {
-            samples = count;
-        }
-
-        for (k = 0; k < count; k++) {
-            int32_t v = in[k];
-            int32_t mag = (v < 0) ? -v : v;
-
-            if (mag > peak) {
-                peak = mag;
-            }
-
-            /* Even samples are the left channel, odd the right: that is what
-             * interleaved stereo means and it is the only place the balance
-             * can be applied. */
-            acc[k] += (v * (int32_t)((k & 1u) ? right : left)) >> 8;
-        }
-
-        audio_ring_consumed(r, r->read + 1);
-        mixed++;
-
-        lua_pushinteger(L, (lua_Integer)peak);
-        lua_setfield(L, -2, "peak");
-        lua_pop(L, 1);                  /* the entry */
-    }
-
-    if (mixed == 0 || samples == 0) {
-        lua_pushboolean(L, 0);
-        return 1;
-    }
-
-    /*
-     * Clipped rather than wrapped.
-     *
-     * Two streams at full scale sum past what sixteen bits hold, and the
-     * difference between the two answers is the difference between a loud
-     * moment and a bang: wrapping turns a peak into the opposite sign, which
-     * is the worst noise a mixer can make.
-     */
-    {
-        static int16_t out[HAL_SND_PERIOD_BYTES_MAX / 2];
-
-        for (k = 0; k < samples; k++) {
-            int32_t v = acc[k];
-
-            if (v > 32767)  { v = 32767; }
-            if (v < -32768) { v = -32768; }
-
-            out[k] = (int16_t)v;
-        }
-
-        lua_pushboolean(L,
-            kosmos_snd_write(out, (unsigned long)samples * 2) == 0);
-    }
-
-    return 1;
-}
-
-/*
- * One frame of somebody else's audio, interpolated, as this board's.
- *
- * Pulled out of `l_pcm` so that the ring path and the string path cannot
- * drift apart - they are the same arithmetic and there is no version of
- * this system where it is right for them to disagree.
- */
-static void pcm_frame(const unsigned char *in, long at, double frac,
-                      long channels, long bits, long in_frame_bytes,
-                      int16_t *out_l, int16_t *out_r)
-{
-    int32_t l0, r0, l1, r1;
-    const unsigned char *a = in + at * in_frame_bytes;
-    const unsigned char *b = a + in_frame_bytes;
-
-    if (bits == 8) {
-        /* Unsigned, centred on 128, which is what an 8-bit WAV is. */
-        l0 = ((int32_t)a[0] - 128) << 8;
-        r0 = (channels == 2) ? (((int32_t)a[1] - 128) << 8) : l0;
-        l1 = ((int32_t)b[0] - 128) << 8;
-        r1 = (channels == 2) ? (((int32_t)b[1] - 128) << 8) : l1;
-    } else {
-        /* Little endian, read a byte at a time: nothing promises the source
-         * is two-byte aligned. */
-        l0 = (int16_t)(a[0] | (a[1] << 8));
-        r0 = (channels == 2) ? (int16_t)(a[2] | (a[3] << 8)) : l0;
-        l1 = (int16_t)(b[0] | (b[1] << 8));
-        r1 = (channels == 2) ? (int16_t)(b[2] | (b[3] << 8)) : l1;
-    }
-
-    *out_l = (int16_t)(l0 + (l1 - l0) * frac);
-    *out_r = (int16_t)(r0 + (r1 - r0) * frac);
-}
-
-/*
- * `sys.pcm_into(src, src_len, ring, rate, channels, bits, phase, partial)`
- *   -> periods, consumed_bytes, phase, partial
- *
- * **The path a file actually takes, and the reason this refactor exists.**
- * Source bytes are in a region the filesystem read into; the output goes
- * straight into the ring the audio server reads from. No Lua string is
- * created at either end, so a minute of music allocates nothing and the
- * collector has no reason to run inside the deadline.
- *
- * `partial` is how many frames of the current slot are already written, and
- * it is the piece that makes this work without a staging buffer: the frames
- * go directly into the slot at `write`, which the server cannot be looking
- * at, because it never reads past the index this has not advanced yet. A
- * slot is published only when it is full, so the server never sees a period
- * that is half a period.
- *
- * The caller carries `partial` for the same reason it carries `phase` -
- * there are several streams and this function has no idea which one it is
- * working on.
- */
-static int l_pcm_into(lua_State *L)
-{
-    const unsigned char *in =
-        (const unsigned char *)(uintptr_t)luaL_checkinteger(L, 1);
-    size_t len = (size_t)luaL_checkinteger(L, 2);
-    struct audio_ring *r =
-        (struct audio_ring *)(uintptr_t)luaL_checkinteger(L, 3);
-    long rate = (long)luaL_checkinteger(L, 4);
-    long channels = (long)luaL_checkinteger(L, 5);
-    long bits = (long)luaL_checkinteger(L, 6);
-    double phase = (double)luaL_optnumber(L, 7, 0.0);
-    long partial = (long)luaL_optinteger(L, 8, 0);
-
-    long in_frame_bytes = channels * (bits / 8);
-    long in_frames, period_frames, written = 0;
-    double step;
-
-    if (rate <= 0 || (channels != 1 && channels != 2)
-        || (bits != 8 && bits != 16)) {
-        return luaL_error(L, "pcm_into: %d Hz, %d channels, %d bits is not a "
-                             "format this understands", (int)rate,
-                          (int)channels, (int)bits);
-    }
-
-    if (!audio_ring_valid(r) || in == NULL) {
-        lua_pushinteger(L, 0);
-        lua_pushinteger(L, 0);
-        lua_pushnumber(L, (lua_Number)phase);
-        lua_pushinteger(L, (lua_Integer)partial);
-        return 4;
-    }
-
-    period_frames = (long)(r->period_bytes / 4);
-    in_frames = (long)(len / (size_t)in_frame_bytes);
-    step = (double)rate / (double)HAL_SND_RATE;
-
-    if (partial < 0 || partial >= period_frames) {
-        partial = 0;
-    }
-
-    while (audio_ring_space(r) > 0) {
-        int16_t *slot = (int16_t *)(void *)audio_ring_slot(r, r->write);
-        int ran_out = 0;
-
-        while (partial < period_frames) {
-            long at = (long)phase;
-
-            /* The last frame has no neighbour to interpolate towards, so it
-             * is where this piece stops - and the caller sends the rest next
-             * time with the phase that got us here. */
-            if (at + 1 >= in_frames) {
-                ran_out = 1;
-                break;
-            }
-
-            pcm_frame(in, at, phase - (double)at, channels, bits,
-                      in_frame_bytes,
-                      &slot[partial * 2], &slot[partial * 2 + 1]);
-
-            partial++;
-            phase += step;
-        }
-
-        if (partial < period_frames) {
-            /* A slot with a hole in it is not published. What is in it stays
-             * there and `partial` says where to carry on. */
-            break;
-        }
-
-        audio_ring_publish(r, r->write + 1);
-        partial = 0;
-        written++;
-
-        if (ran_out) {
-            break;
-        }
-    }
-
-    /*
-     * How much of the input is finished with: everything up to the frame the
-     * phase now sits in, not including it, because the next piece has to
-     * interpolate from it. The caller drops that many bytes and keeps the
-     * rest, and the phase comes back reduced by the same amount so the two
-     * agree.
-     */
-    {
-        long consumed = (long)phase;
-
-        if (consumed > in_frames) {
-            consumed = in_frames;
-        }
-
-        lua_pushinteger(L, (lua_Integer)written);
-        lua_pushinteger(L, (lua_Integer)(consumed * in_frame_bytes));
-        lua_pushnumber(L, (lua_Number)(phase - (double)consumed));
-        lua_pushinteger(L, (lua_Integer)partial);
-    }
-
-    return 4;
 }
 
 /*
@@ -877,7 +447,7 @@ static int l_pcm(lua_State *L)
     static int16_t out[HAL_SND_PERIOD_BYTES_MAX / 2];
 
     long in_frame_bytes = channels * (bits / 8);
-    long in_frames, out_frames = 0, i;
+    long in_frames, out_frames = 0;
     double step;
 
     if (rate <= 0 || (channels != 1 && channels != 2)
@@ -974,24 +544,16 @@ static int l_pcm(lua_State *L)
         lua_pushnumber(L, (lua_Number)phase);
     }
 
-    for (i = 0; i < 0; i++) { }        /* keeps -Wunused-but-set quiet */
-
     return 3;
 }
 
-static int l_sound_queued(lua_State *L)
-{
-    long n = kosmos_snd_queued();
-
-    if (n < 0) {
-        return 0;
-    }
-
-    lua_pushinteger(L, (lua_Integer)n);
-
-    return 1;
-}
-
+/*
+ * `sys.power("off")` or `sys.power("restart")`.
+ *
+ * Words rather than numbers, because these are the two things in this
+ * system that cannot be undone by trying again, and `sys.power(1)` is one
+ * typo away from `sys.power(0)`.
+ */
 static int l_power(lua_State *L)
 {
     const char *what = luaL_checkstring(L, 1);
@@ -1010,21 +572,6 @@ static int l_power(lua_State *L)
     lua_pushstring(L, (kosmos_power(which) == SYS_ERR_DENIED)
                       ? "this process may not power the machine"
                       : "the firmware would not");
-
-    return 2;
-}
-
-static int l_key_event(lua_State *L)
-{
-    unsigned code = 0, down = 0;
-    long status = kosmos_key_event(&code, &down);
-
-    if (status != 0) {
-        return 0;
-    }
-
-    lua_pushinteger(L, (lua_Integer)code);
-    lua_pushboolean(L, down != 0);
 
     return 2;
 }
@@ -1891,33 +1438,12 @@ static int l_asset(lua_State *L)
 }
 
 /*
- * `sys.log([bytes])` - what this machine has printed, most recent last.
- *
- * The kernel keeps a ring of everything that went through `kputc`, which is
- * its own output *and* every process's, because a process prints by asking
- * the console server and the console server calls `sys.write`. One place,
- * in order, which is what the serial line has and the screen does not.
- */
-/*
  * `sys.disk()` - what block device there is, if any.
- * `sys.disk_read(sector, bytes)` - those bytes, as a string.
- * `sys.disk_write(sector, string)` - it, at that sector.
  *
- * Bytes as a Lua string rather than a surface or a userdata, because a
- * filesystem block is kilobytes and its contents are structure, not pixels
- * - `string.unpack` is exactly the right tool for reading a superblock and
- * is already here. The rule in `gfx.md` is about pixel *loops*; there is no
- * loop here, and a 4 KB string on a 2 MB heap is nothing.
- *
- * A large *file* is a different question and gets a different answer - a
- * mapped region, see design.md 8.4 - because that is megabytes.
+ * Only the question. The bytes are the disk server's, which is C and reads
+ * them with the syscalls directly (`user/servers/diskfs.c`); what a Lua
+ * caller wants to know is whether there is a disk to ask for and how big.
  */
-/* The most one call moves, which is what the kernel's bounce buffer holds:
- * 124 KB since storage at full speed, step 3. `sys.disk()` passes on the
- * kernel's own number as `most`; this is only the ceiling a Lua buffer is
- * sized against. */
-#define DISK_MAX_READ  (31 * 4096)
-
 static int l_disk(lua_State *L)
 {
     struct diskinfo info;
@@ -1940,53 +1466,6 @@ static int l_disk(lua_State *L)
     lua_pushinteger(L, (lua_Integer)(info.most != 0 ? info.most : 4096));
     lua_setfield(L, -2, "most");
 
-    return 1;
-}
-
-static int l_disk_read(lua_State *L)
-{
-    lua_Integer sector = luaL_checkinteger(L, 1);
-    lua_Integer bytes  = luaL_checkinteger(L, 2);
-    luaL_Buffer b;
-    char *out;
-    long got;
-
-    if (bytes <= 0 || bytes > DISK_MAX_READ) {
-        return fail(L, SYS_ERR_FAULT);
-    }
-
-    out = luaL_buffinitsize(L, &b, (size_t)bytes);
-    got = kosmos_disk_read((unsigned long)sector, out, (unsigned long)bytes);
-
-    if (got < 0) {
-        luaL_pushresultsize(&b, 0);
-        lua_pop(L, 1);
-        return fail(L, got);
-    }
-
-    luaL_pushresultsize(&b, (size_t)got);
-    return 1;
-}
-
-static int l_disk_write(lua_State *L)
-{
-    lua_Integer sector = luaL_checkinteger(L, 1);
-    size_t len;
-    const char *data = luaL_checklstring(L, 2, &len);
-    long wrote;
-
-    if (len == 0 || len > DISK_MAX_READ) {
-        return fail(L, SYS_ERR_FAULT);
-    }
-
-    wrote = kosmos_disk_write((unsigned long)sector, data,
-                              (unsigned long)len);
-
-    if (wrote < 0) {
-        return fail(L, wrote);
-    }
-
-    lua_pushinteger(L, wrote);
     return 1;
 }
 
@@ -2568,98 +2047,6 @@ static int l_elf_plan(lua_State *L)
     return 1;
 }
 
-/*
- * `sys.disk_read_into(sector, bytes, cap, at)` - those bytes, into a region.
- * `sys.disk_write_from(sector, cap, at, bytes)` - and to the disk from one.
- *
- * **A file's bytes never become a Lua string** (storage at full speed, step
- * 3). `disk_read` made one per call, kfs cut and joined them into another,
- * and the disk server copied that into the caller's region: three copies of
- * every byte, and 124 KB of garbage a call for the collector of a process
- * everybody's files go through. The kernel's copy out of its bounce buffer
- * lands in the caller's pages here - the only copy this process makes - and
- * kfs still decides which blocks, because that is structure and not bytes.
- *
- * The region is checked against its real size, as `region_write` checks it,
- * and the kernel checks the pages are this process's to write.
- */
-static bool disk_span(lua_State *L, long cap, lua_Integer at, lua_Integer bytes,
-                      uintptr_t *where)
-{
-    uintptr_t base;
-    size_t size;
-
-    if (!region_of(cap, &base, &size)) {
-        lua_pushnil(L);
-        lua_pushfstring(L, "that is not a region this process can map: %s", region_fail);
-        return false;
-    }
-
-    if (at < 0 || (size_t)at > size || (size_t)bytes > size - (size_t)at) {
-        lua_pushnil(L);
-        lua_pushstring(L, "that would go past the end of the region");
-        return false;
-    }
-
-    *where = base + (uintptr_t)at;
-    return true;
-}
-
-static int l_disk_read_into(lua_State *L)
-{
-    lua_Integer sector = luaL_checkinteger(L, 1);
-    lua_Integer bytes = luaL_checkinteger(L, 2);
-    long cap = (long)luaL_checkinteger(L, 3);
-    lua_Integer at = luaL_checkinteger(L, 4);
-    uintptr_t where;
-    long got;
-
-    if (bytes <= 0 || bytes > DISK_MAX_READ) {
-        return fail(L, SYS_ERR_FAULT);
-    }
-
-    if (!disk_span(L, cap, at, bytes, &where)) {
-        return 2;
-    }
-
-    got = kosmos_disk_read((unsigned long)sector, (void *)where, (unsigned long)bytes);
-
-    if (got < 0) {
-        return fail(L, got);
-    }
-
-    lua_pushinteger(L, got);
-    return 1;
-}
-
-static int l_disk_write_from(lua_State *L)
-{
-    lua_Integer sector = luaL_checkinteger(L, 1);
-    long cap = (long)luaL_checkinteger(L, 2);
-    lua_Integer at = luaL_checkinteger(L, 3);
-    lua_Integer bytes = luaL_checkinteger(L, 4);
-    uintptr_t where;
-    long wrote;
-
-    if (bytes <= 0 || bytes > DISK_MAX_READ) {
-        return fail(L, SYS_ERR_FAULT);
-    }
-
-    if (!disk_span(L, cap, at, bytes, &where)) {
-        return 2;
-    }
-
-    wrote = kosmos_disk_write((unsigned long)sector, (const void *)where,
-                              (unsigned long)bytes);
-
-    if (wrote < 0) {
-        return fail(L, wrote);
-    }
-
-    lua_pushinteger(L, wrote);
-    return 1;
-}
-
 static int l_region_copy(lua_State *L)
 {
     long to = (long)luaL_checkinteger(L, 1);
@@ -2844,6 +2231,14 @@ static int l_firmware(lua_State *L)
     return 1;
 }
 
+/*
+ * `sys.log([bytes])` - what this machine has printed, most recent last.
+ *
+ * The kernel keeps a ring of everything that went through `kputc`, which is
+ * its own output *and* every process's, because a process prints by asking
+ * the console server and the console server calls `sys.write`. One place,
+ * in order, which is what the serial line has and the screen does not.
+ */
 static int l_log(lua_State *L)
 {
     luaL_Buffer b;
@@ -2949,41 +2344,6 @@ static int l_kill(lua_State *L)
  * It answers about *this* process, because that is the only thing the
  * kernel will tell anyone: the screen is held, not observed.
  */
-/*
- * `sys.fnv1a(bytes, [seed])` - a checksum over a string, in C.
- *
- * Here for one reason, and the number is the reason. The filesystem's
- * journal checksums every block of a transaction, and written in Lua that
- * loop cost more than everything else the journal does put together:
- * creating a file went from 21 to 14 a second when the journal landed, and
- * 20.5 of those 21 came back the moment the checksum was stubbed out. The
- * double write a journal exists to do costs about two percent. Hashing
- * four kilobytes a byte at a time through the interpreter cost thirty.
- *
- * This is the rule in CLAUDE.md working exactly as written: a loop over
- * bytes goes to C, *after* a measurement says so and not before. It is the
- * same argument as the pixel loop, one layer down - Lua decides what to
- * checksum and when, and the walk over the bytes happens here.
- *
- * FNV-1a, 32-bit. Not cryptographic and not trying to be: what it has to
- * catch is half a block arriving, not somebody forging one.
- */
-static int l_fnv1a(lua_State *L)
-{
-    size_t len;
-    const char *bytes = luaL_checklstring(L, 1, &len);
-    uint32_t h = (uint32_t)luaL_optinteger(L, 2, 0x811c9dc5u);
-    size_t i;
-
-    for (i = 0; i < len; i++) {
-        h ^= (uint32_t)(unsigned char)bytes[i];
-        h *= 16777619u;
-    }
-
-    lua_pushinteger(L, (lua_Integer)h);
-    return 1;
-}
-
 static int l_screen_info(lua_State *L)
 {
     struct screen_info info;
@@ -3226,8 +2586,9 @@ void kosmos_aac_kit(lua_State *L);
 /*
  * `own`: **an application's own C, in its own image** (`docs/elf.md` step
  * 5), reached as `use("doom.elf")` and never as `/Kosmos/Kits/doom` -
- * "/Kosmos/Kits holds only what Kosmos ships". Quake and the Super Nintendo
- * are still in the system's image and still kits, until they move too.
+ * "/Kosmos/Kits holds only what Kosmos ships". Doom, Quake and the Super
+ * Nintendo are all of that shape now: applications installed in
+ * `/Home/Apps`, each with an image of its own that `make apps` links.
  */
 static const struct {
     const char *name;
@@ -3252,10 +2613,9 @@ static const struct {
 #ifdef KOSMOS_WEB
     { "web",      kosmos_web_kit, 0 },
 #endif
-    /* Doom in its own image, `apps/doom.elf`; the Super Nintendo where
-     * `FULL=1` and Quake where `MEGA=1` link them into the system's.
-     * runtime/upstream/doom's README says what Doom makes of an image's
-     * licence. */
+    /* Each in its own image - `doom.elf`, `quake.elf`, `snes.elf` - and in
+     * none of the system's. runtime/upstream/doom's README says what Doom
+     * makes of an image's licence. */
     { "doom",     kosmos_doom_kit, 1 },
     { "quake",    kosmos_quake_kit, 1 },
     { "snes",     kosmos_snes_kit, 1 },
@@ -3317,13 +2677,8 @@ static int l_kit_names(lua_State *L)
 
 static const luaL_Reg sys_functions[] = {
     { "write",    l_write },
-    { "key_event",  l_key_event },
     { "power",       l_power },
-    { "sound",       l_sound },
-    { "sound_queued", l_sound_queued },
-    { "mix",         l_mix },
     { "pcm",         l_pcm },
-    { "getchar",  l_getchar },
     { "spawn",    l_spawn },
     { "spawn_image", l_spawn_image },
     { "elf_plan", l_elf_plan },
@@ -3333,12 +2688,10 @@ static const luaL_Reg sys_functions[] = {
     { "yield",    l_yield },
     { "budget",   l_budget },
     { "ring_create", l_ring_create },
-    { "ring_map",    l_ring_map },
     { "ring_ready",  l_ring_ready },
     { "ring_space",  l_ring_space },
     { "ring_position", l_ring_position },
     { "ring_put",    l_ring_put },
-    { "pcm_into",    l_pcm_into },
     { "sleep",    l_sleep },
     { "ticks",    l_ticks },
     { "info",     l_info },
@@ -3361,10 +2714,6 @@ static const luaL_Reg sys_functions[] = {
     { "net",         l_net },
     { "net_send",    l_net_send },
     { "net_recv",    l_net_recv },
-    { "disk_read",   l_disk_read },
-    { "disk_write",  l_disk_write },
-    { "disk_read_into",  l_disk_read_into },
-    { "disk_write_from", l_disk_write_from },
     { "boot",     l_boot_option },
     { "log",      l_log },
     { "firmware", l_firmware },
@@ -3372,7 +2721,6 @@ static const luaL_Reg sys_functions[] = {
     { "build",    l_build },
     { "wait_input", l_wait_input },
     { "kill",     l_kill },
-    { "fnv1a",       l_fnv1a },
     { "screen",      l_screen_info },
     { "screen_take", l_screen_take },
     { "programs", l_programs },

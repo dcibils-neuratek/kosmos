@@ -404,8 +404,8 @@ struct addrspace {
     bool      in_use;
 };
 
-/* A fixed pool, like everything else in the kernel. Running out is a NULL
- * from as_create rather than a table that grows. */
+/* A pool that grows a slab at a time up to the ceiling `as_pool_init` was
+ * given, like every pool in the kernel; past it, as_create answers NULL. */
 static struct pool spaces;
 
 static struct addrspace *space(unsigned i)

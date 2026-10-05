@@ -8,9 +8,9 @@
 --
 --   wm network
 --
--- The card, the addresses, and a way to try them. `Appearance` is the model:
--- a settings window that writes a file and tells the thing that cares, so
--- the change takes effect now *and* survives a reboot.
+-- The card, the addresses, and a way to try them: a settings window that
+-- writes a file and tells the thing that cares, so the change takes effect
+-- now *and* survives a reboot.
 --
 -- **The device list is one row long and that is not a placeholder.** This
 -- machine has one network card, `hal_net_init` takes the first one it finds,
@@ -134,17 +134,10 @@ local gateway = field(dotted(info and info.gateway) ~= ""
                       and dotted(info.gateway) or (saved.gateway or ""))
 
 --
--- DNS, and it is worth being straight about it.
---
--- **Nothing on this machine resolves a name yet.** There is no resolver, so
--- this setting is remembered and used by nothing: `ping` and `fetch` take
--- four numbers and say so. It is here because a network settings window
--- without a DNS field is a window somebody will look for one in - and
--- because the value is what a resolver will need on the day there is one.
---
--- Saying that in the interface rather than only in this comment is the
--- point. A field that quietly does nothing is worse than no field - so it
--- is the row's note, in the words a note is drawn in.
+-- **The name server**: the stack resolves names through it (`NET_OP_RESOLVE`),
+-- and init applies the saved one at boot. Apply hands it to the stack with
+-- the rest - until 0.11 it did not, and Apply switched name resolution off
+-- until the next boot, under a note that said there was no resolver.
 --
 local dns = field(saved.dns or "10.0.2.3")
 
@@ -169,8 +162,7 @@ local cards = ui.cards{
         { label = "Address", control = address },
         { label = "Netmask", control = netmask },
         { label = "Gateway", control = gateway },
-        { label = "DNS", note = "no resolver yet - remembered only",
-          control = dns } } },
+        { label = "DNS", control = dns } } },
   },
 }
 
@@ -191,30 +183,31 @@ win:add(cards)
 local function collect()
   local a, m, g = to_bytes(address.text), to_bytes(netmask.text),
                   to_bytes(gateway.text)
+  local d = to_bytes(dns.text)
 
   if not a then return nil, "the address is not four numbers and three dots" end
   if not m then return nil, "the netmask is not four numbers and three dots" end
   if not g then return nil, "the gateway is not four numbers and three dots" end
+  if not d then return nil, "the name server is not four numbers and three dots" end
 
-  return a, m, g
+  return a, m, g, d
 end
 
 --
 -- Apply, and then save.
 --
 -- In that order, and it matters: a setting that could not be applied should
--- not be the one the machine boots with next time. `Appearance` writes its
--- file the same way round and for the same reason.
+-- not be the one the machine boots with next time.
 --
 function apply(and_save)
-  local a, m, g = collect()
+  local a, m, g, d = collect()
 
   if not a then
     status.text = m
     return
   end
 
-  local ok, why = fs.net_configure("/Network", a, m, g)
+  local ok, why = fs.net_configure("/Network", a, m, g, d)
 
   if not ok then
     status.text = "the stack refused it: " .. tostring(why)

@@ -282,7 +282,7 @@ void trap_handler(unsigned index, struct trapframe *tf)
     /*
      * An IRQ. Vector 1, because the kernel runs on SP_EL0: an exception
      * taken while SPSel is 0 lands in the "current EL, SP_EL0" quarter.
-     * Vector 9 joins it when userland arrives at M4.
+     * An IRQ taken at EL0 is vector 9, served below.
      */
     if (index == 1) {
         bool tick = hal_irq_handle();

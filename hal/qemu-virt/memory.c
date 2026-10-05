@@ -18,9 +18,10 @@
  * first write to one is a fault a long way from the cause.
  *
  * The honest answer is the device tree: QEMU leaves a DTB at the base of RAM
- * with the real size in it. Parsing it is a few hundred lines and it is also
- * how the Pi's memory map gets discovered rather than guessed, so it arrives
- * with the second target at M2 and this constant goes away then.
+ * with the real size in it. Parsing it is a few hundred lines, and it is also
+ * how a Pi's memory map would be discovered rather than guessed - so it
+ * belongs to the day that board arrives, and until then this constant is the
+ * answer.
  */
 #define RAM_SIZE    (512UL * 1024 * 1024)
 

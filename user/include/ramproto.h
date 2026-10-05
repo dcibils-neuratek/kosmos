@@ -32,7 +32,6 @@
 #define RAM_OP_SETATTR   5u
 #define RAM_OP_QUERY     6u
 #define RAM_OP_WATCH     7u
-#define RAM_OP_WATCHERS  8u
 
 /*
  * The three that make this a filesystem rather than a place to publish.

@@ -62,12 +62,12 @@ unsigned thread_ceiling(void)
 }
 
 /*
- * This processor's own state, and the one slot there is.
+ * Each processor's own state, a slot per core.
  *
- * `NR_CPUS` is 1 and `percpu_init` claims entry zero at boot. Everything
- * that was a file-scope global here and is really a property of *a core*
- * lives in it now - `kernel/percpu.h` says which and why, and says what it
- * costs to have had them here.
+ * `percpu_init` claims entry zero at boot and each secondary claims its own
+ * as it arrives. Everything that was a file-scope global here and is really
+ * a property of *a core* lives in it now - `kernel/percpu.h` says which and
+ * why, and says what it costs to have had them here.
  */
 static struct percpu cpus[NR_CPUS];
 
@@ -239,18 +239,6 @@ static unsigned place_new_thread(void)
 
     return best;
 }
-
-/*
- * Set by thread_tick inside the interrupt handler, acted on by
- * thread_preempt_if_needed in the vector's epilogue.
- *
- * The two are separate because the handler is the wrong place to switch and
- * the epilogue is the wrong place to make a policy decision. Splitting them
- * is what lets the decision be a C function the policy owns and the switch be
- * four instructions of assembly at a point where the stack is known.
- */
-/* Per core: it is a statement about *this* core's return path. `smp.md`
- * listed six things that had to move and missed this one. */
 
 /* The effective band, worked out in one place; see below. */
 static void refresh_effective(struct thread *t);
@@ -675,7 +663,7 @@ void thread_init(void)
               THREAD_BOOT_SLOTS, NULL);
     t = slot(0);
 
-    /* Round robin unless a test or a boot option already chose otherwise. */
+    /* Strict priority, unless a test or a boot option already chose another. */
     if (policy == NULL) {
         sched_use(&sched_priority);
     }
@@ -936,9 +924,10 @@ struct thread *thread_create(const char *name, void (*entry)(void *), void *arg)
 /*
  * A thread that runs on a processor of the caller's choosing.
  *
- * **The only way anything crosses a core today**, and it exists because the
- * alternative - spreading every new thread automatically - has one thing
- * left in its way, which `thread_cpu_count` names.
+ * `thread_create_suspended` already homes every new thread on the least busy
+ * of `thread_cpu_count` cores (`place_new_thread`). This is for a caller that
+ * must say which: a test that asks about one core, or about crossing to
+ * another, and cannot leave that to placement.
  *
  * The home is set between creating and waking, which is the only window
  * where it can be: before creation there is no thread, and after waking it
@@ -1162,7 +1151,7 @@ static void switch_to(struct thread *next)
  *
  * Sampled rather than accumulated: at every timer tick, whichever thread was
  * running gets the tick charged to it - to `idle` if it was the one that has
- * nothing to do, and to `busy` otherwise. A hundred samples a second is
+ * nothing to do, and to `busy` otherwise. `TICK_HZ` samples a second is
  * plenty to say what fraction of the time the machine is working, and it
  * costs one comparison on the interrupt path.
  *
@@ -1920,12 +1909,12 @@ void thread_block(void)
 /*
  * Sleeping, and waking the sleepers.
  *
- * A deadline on the thread and a scan on the tick, rather than a sorted
- * queue: there are forty-eight slots, the scan is forty-eight comparisons a
- * hundred times a second, and a sorted structure would be more code to get
- * wrong than the thing it saves. If the pool ever grows enough for this to
- * matter, `sched.key` is already there for a deadline-ordered queue and this
- * is the function to replace.
+ * A deadline on the thread and a scan on core zero's tick, rather than a
+ * sorted queue: the scan is one comparison for every slot the pool has made,
+ * `TICK_HZ` times a second, and a sorted structure would be more code to get
+ * wrong than the thing it saves. The pool grows, so if the scan ever shows in
+ * a profile, `sched.key` is already there for a deadline-ordered queue and
+ * `thread_wake_sleepers` is the function to replace.
  */
 /*
  * How fast the counter counts, asked once.

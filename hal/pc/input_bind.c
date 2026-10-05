@@ -62,8 +62,6 @@ bool hal_key_event(unsigned *code, bool *down)
         || keys_pushed_event(code, down);
 }
 
-bool hal_key_held(unsigned code) { return i8042_key_held(code); }
-
 /*
  * **virtio if this machine has one, and its relative devices if it does
  * not.**

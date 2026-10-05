@@ -572,20 +572,6 @@ int process_thread_create(struct process *p, unsigned long entry,
     return (int)index;
 }
 
-/* A thread of `p` by the index it was given, or NULL. */
-struct thread *process_thread_at(struct process *p, unsigned index)
-{
-    unsigned long flags = spin_lock(&processes_lock);
-    struct thread *t = p->threads;
-
-    while (t != NULL && t->index != index) {
-        t = t->sibling;
-    }
-
-    spin_unlock(&processes_lock, flags);
-    return t;
-}
-
 /*
  * A thread of `p` that has ended: off the list, its stack given back, and
  * whoever was waiting for it woken with its code.

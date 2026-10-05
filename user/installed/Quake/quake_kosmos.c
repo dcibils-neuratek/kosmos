@@ -6,7 +6,8 @@
  * Quake, byte for byte and GPL; this file is the platform under it, written
  * in place of the SDL one upstream ships, and the one place the two
  * vocabularies meet. `runtime/upstream/quake/README.kosmos.md` is the
- * account, including why the whole thing is behind `make QUAKE=1`.
+ * account. The two are linked into `quake.elf`, an application's own image
+ * in `/Home/Apps/Quake` (`make apps`), and no system image carries either.
  *
  * What the engine asks for, and what it gets:
  *
@@ -873,11 +874,12 @@ static const luaL_Reg quake_lib[] = {
 };
 
 /*
- * The kit, `use("/Kosmos/Kits/quake")`. The window's size rides along, so the Lua
- * side does not carry the number.
+ * The table `quake.lua` reaches as `use("quake.elf")` - the image it runs in,
+ * by its file. The window's size rides along, so the Lua side does not carry
+ * the number.
  *
- * Not a global, which it was: a global named `quake` hid `/Kosmos/Apps/quake.lua`
- * from the prompt. `snes_kosmos.c` has the longer account.
+ * Not a global, which it was: a global named `quake` hid `quake.lua`, in
+ * `/Home/Apps/Quake`, from the prompt. `snes_kosmos.c` has the longer account.
  */
 void kosmos_quake_kit(lua_State *L)
 {

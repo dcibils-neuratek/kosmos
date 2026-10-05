@@ -51,7 +51,6 @@
 
 #define NET_OP_INFO      1u       /* what this stack is, and its addresses */
 #define NET_OP_PING      2u       /* send one echo request */
-#define NET_OP_REPLY     3u       /* collect whatever has come back */
 #define NET_OP_CONFIG    4u       /* set the addresses */
 
 /*
@@ -200,7 +199,6 @@
  * connection's end names nothing, rather than whichever took the slot next.
  */
 #define NET_HANDLE_SLOT(h)  ((uint32_t)(h))
-#define NET_HANDLE_GEN(h)   ((uint32_t)((uint64_t)(h) >> 32))
 
 /*
  * **What `NET_OP_POLL` waits on: a list in a region the caller owns.**
@@ -310,7 +308,6 @@ struct net_reply {
     uint32_t status;
     uint32_t seq;
     uint64_t handle;                /* the connection this is about */
-    uint32_t ring_bytes;            /* capacity of each direction */
     uint32_t state;                 /* NET_TCP_*, for a connection */
 
     /* For NET_OP_POLL: how many of the entries have something to say. */

@@ -81,9 +81,10 @@ static void put(struct dev_reply *r, const char *name, uint64_t number,
     size_t n;
 
     if (r->count >= DEV_FIELDS) {
-        return;                     /* silently dropped would be a lie; see
-                                     * the assert in devproto.h - this is the
-                                     * runtime half of the same guard */
+        return;                     /* full, and the field is dropped:
+                                     * `DEV_FIELDS` is sized to the largest
+                                     * node, so only a node that has outgrown
+                                     * the header gets here */
     }
 
     f = &r->field[r->count++];
@@ -429,20 +430,6 @@ static bool node_read(const char *want, const struct sysinfo *i,
     }
 
     /*
-     * The transport is deliberately not named, and it used to be:
-     * "virtio-input over virtio-mmio", on a PC where it is virtio-pci. The
-     * fifth string in this system to describe one board's hardware on
-     * both, after the boot log's PL011, /Devices/console's copy of it, EL0 in
-     * `procs`, and "on AArch64" in `about`.
-     *
-     * Nothing here knows which bus it is. `sysinfo` carries `has_keyboard`
-     * and not how it was found, and inventing a field to carry a string
-     * this node is the only reader of would be the wrong trade. What is
-     * true on both machines is the driver and how it is read, so that is
-     * what it says - and `sys.build().platform` already names the board
-     * for anyone who wants it.
-     */
-    /*
      * The battery, when the board reads one: its charge, and which way it
      * is going, in the words a bar shows. Absent from the listing and
      * unreadable otherwise, as a screen is on a board without one.
@@ -459,8 +446,20 @@ static bool node_read(const char *want, const struct sysinfo *i,
         return true;
     }
 
+    /*
+     * A keyboard, when the board found one - and nothing more about it.
+     *
+     * It said `transport = "virtio-input, polled"` on every board, after an
+     * earlier "virtio-input over virtio-mmio" had been dropped for being
+     * wrong on a PC: and that was wrong too, on a PC whose keyboard is the
+     * i8042 and on `qemu-virt`, where virtio-input is read on its interrupt.
+     * Nothing here knows what the keyboard is. `sysinfo` carries
+     * `has_keyboard` and not how it was found, and inventing a field to
+     * carry a string this node is the only reader of would be the wrong
+     * trade. So the node being there is the answer, and
+     * `sys.build().platform` names the board for anyone who wants more.
+     */
     if (strcasecmp(want, "keyboard") == 0 && i->has_keyboard != 0) {
-        put_text(r, "transport", "virtio-input, polled");
         return true;
     }
 

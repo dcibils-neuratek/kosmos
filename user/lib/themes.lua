@@ -12,14 +12,15 @@
 -- open and read; `themes.plex` still gives the text, read from its file the
 -- first time it is asked for.
 --
--- **Four looks, and nothing else to choose** (`roadmap.md` 5y). Diego, 22
+-- **Six looks, and nothing else to choose** (`roadmap.md` 5y). Diego, 22
 -- September 2026: "Too many config options make the system vulnerable to
 -- changes and complicated", and "Let's just make 3 or 4 good design options
 -- in colors and fonts and stick to those". Each is a whole - its colours,
--- its faces, its Deskbar - designed together in `docs/looks.html` and
--- approved there: "Those 4 looks are great". Somebody picks a look, not its
--- parts. They share their faces, IBM Plex at the sizes the fixed layout
--- holds, and differ in colour.
+-- its faces, its Deskbar - designed together and approved: Plex, Plex
+-- Night, Classic and Studio in `docs/looks.html` ("Those 4 looks are
+-- great"), Endeavour on 23 September and Night on 3 October, each in its
+-- own file. Somebody picks a look, not its parts. They share their faces,
+-- IBM Plex at the sizes the fixed layout holds, and differ in colour.
 --
 -- The four this file held before - Photon, BeOS, Platinum, IRIX, each a
 -- system that solved `ui.md` 16.8b's dimensional look its own way - gave

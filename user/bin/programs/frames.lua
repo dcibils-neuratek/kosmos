@@ -224,11 +224,13 @@ print(string.format("frames: measuring for %g seconds; use the desktop.",
 --
 -- One blocking call, and the window manager answers it when the time is up.
 --
--- This program cannot sleep for itself. `sys.wait_input` is the only timed
--- sleep there is and the kernel refuses it to anything that does not own
--- the console - which the window manager does, and must, because input has
--- one reader. The first version of this ignored that refusal, returned
--- instantly, and measured two passes while reporting six seconds.
+-- `sys.sleep` would do for the waiting, and this is still one call: the
+-- window manager starts and stops the measurement on its own passes, so what
+-- is measured is the time asked for, with no round trip at either end of
+-- it. The first version of this waited in `sys.wait_input`, which is
+-- refused to anything that does not own the console - the window manager
+-- does, and must, because input has one reader - so it returned instantly
+-- and measured two passes while reporting six seconds.
 --
 -- Spinning instead would have been worse than wrong. `wm` charges wall
 -- clock to whichever stage it is in, so a program burning processor beside

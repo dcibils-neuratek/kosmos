@@ -28,14 +28,15 @@
 --
 -- And there are no colour bars along the bottom, because `conproto.h`
 -- carries text and nothing else - a console `write` is bytes, with no
--- attribute beside them. That row is the kernel's fixed pools instead,
--- which is a better use of it than sixteen squares: with no allocator
--- anywhere in the kernel, every one of those is an array declared at
--- compile time, and how full they are is the one number this system wants
--- somebody to have seen. Every resource bug it has had was a pool filling
--- up - capability slots gone on the sixteenth read, a region per font per
--- size, the process table full at round twenty-two - and each of them was
--- found by looking at exactly this line after using the machine.
+-- attribute beside them. That row is the kernel's pools instead, which is a
+-- better use of it than sixteen squares: the kernel keeps its objects in
+-- pools rather than on a heap, and how full they are is the one number this
+-- system wants somebody to have seen. Every resource bug it has had was a
+-- pool filling up - capability slots gone on the sixteenth read, a region
+-- per font per size, the process table full at round twenty-two - and each
+-- of them was found by looking at exactly this line after using the
+-- machine. The pools grow now, and that has not made the line less worth
+-- reading: one that only ever grows is something not being given back.
 
 --------------------------------------------------------------------------
 -- The banner.
@@ -315,13 +316,6 @@ row("Programs", ("%d applications, %d programs"):format(#(fs.list("/Kosmos/Apps"
                                                      #(fs.list("/Kosmos/Programs") or {})))
 
 --------------------------------------------------------------------------
--- The mark and the column, side by side.
---
--- Whichever runs out first is padded, which is what lets the two be edited
--- independently: adding a field does not mean redrawing the art.
---------------------------------------------------------------------------
-
---------------------------------------------------------------------------
 -- The banner, then the machine.
 --
 -- Stacked rather than side by side, because the art is fifty columns wide
@@ -372,11 +366,13 @@ end
 --------------------------------------------------------------------------
 -- Where neofetch puts its colours.
 --
--- Fixed pools, because the kernel has no allocator: every one of these is
--- an array declared at compile time, so running out is an error at a known
--- limit rather than a failure at an unknown one. Seeing them here is how
--- you notice a program that did not give something back - which is what
--- `make stress` exists to provoke and what this line exists to show.
+-- The kernel's pools, because its objects live in pools and never on a
+-- heap: each grows by a slab when it is full, up to a ceiling the machine's
+-- memory sets, and never gives one back - so running out is a refusal at a
+-- known limit rather than a failure at an unknown one, and the second
+-- number beside each is that limit. Seeing them here is how you notice a
+-- program that did not give something back - which is what `make stress`
+-- exists to provoke and what this line exists to show.
 --
 -- `regions` comes from `sysinfo` rather than from `/Devices/kernel`, which
 -- does not carry it. It is the one most worth watching: a region is what

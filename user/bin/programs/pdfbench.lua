@@ -22,8 +22,11 @@ local pdfpage  = use("/Kosmos/Libraries/pdfpage.lua")
 local compress = use("/Kosmos/Kits/compress")
 local pdfkit   = use("/Kosmos/Kits/pdf")
 
-local path   = args[1] or "/Home/odyssey.pdf"
-local wanted = tonumber(args[2]) or 3
+local words = {}
+for w in args:gmatch("%S+") do words[#words + 1] = w end
+
+local path   = words[1] or "/Home/odyssey.pdf"
+local wanted = tonumber(words[2]) or 3
 
 local attrs = fs.getattr(path)
 if not attrs then print("pdfbench: no such file: " .. path) return end

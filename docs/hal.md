@@ -480,7 +480,6 @@ unsigned long hal_ticks_on(unsigned cpu);
 bool     hal_net_init(struct netdev *out);   // false when there is no card
 bool     hal_net_send(const void *frame, unsigned bytes);
 int      hal_net_recv(void *frame, unsigned max);   // 0 when nothing waiting
-bool     hal_net_arrived(void);
 bool     hal_net_present(void);
 bool     hal_net_info(struct netdev *out);
 ```

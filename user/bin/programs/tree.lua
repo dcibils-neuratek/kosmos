@@ -8,8 +8,8 @@
 -- root is a list of mounts is the fastest way to see what there actually is.
 --
 -- **Depth is capped**, because a namespace is not guaranteed to be a tree:
--- one disk is mounted at three places here, and a mount inside itself would
--- walk for as long as you let it. Twelve is deeper than anything real and
+-- nothing stops a server answering for itself below itself, and a mount
+-- inside itself would walk for as long as you let it. Twelve is deeper than anything real and
 -- shallow enough to end.
 
 local files = use("/Kosmos/Libraries/files.lua")

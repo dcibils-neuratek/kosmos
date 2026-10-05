@@ -62,17 +62,18 @@
 /*
  * Sixteen kilobytes each way.
  *
- * Bigger than a window needs to be for a line protocol and small enough that
- * four connections are 128 KB. What decides it properly is a measurement of
- * throughput against window size, and there is nothing to measure yet;
- * `roadmap.md` M12 is where that argument belongs.
+ * Bigger than a window needs to be for a line protocol, and small enough
+ * that a connection costs a 36 KB region, which is what the stack counts
+ * against the machine's memory as its tables grow (`netproto.h`). What
+ * decides it properly is a measurement of throughput against window size,
+ * and that has not been taken.
  */
 #define TCP_RING_BYTES   16384u
 
 /* The data starts a page in, so the indices never share a cache line with
- * the bytes. One core makes that free; two make it the difference between a
- * ring and a ping-pong of invalidations, and `CLAUDE.md` asks for SMP-ready
- * now. */
+ * the bytes. The machine runs on every core it has, and with the two sides
+ * on different cores that is the difference between a ring and a ping-pong
+ * of invalidations. */
 #define TCP_RING_DATA    4096u
 
 struct tcp_ring {

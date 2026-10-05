@@ -16,11 +16,12 @@
 -- and 8, which it used to be, was under half a pixel. That is measured on
 -- the machine this was written for, and it is why the default moved.
 --
--- **It does not survive a restart, and that is not laziness.** A setting
--- belongs in a file, `/Home` is the place for one, and on a machine with no
--- disk `/Home` does not outlive the power. Writing it there would be a
--- preference that silently forgets - worse than one you type, because you
--- would stop expecting to. When there is a disk this grows two lines.
+-- **It does not survive a restart.** A setting belongs in a file, and
+-- `/Home/Preferences` is where the others are kept (`prefs.lua`). This was
+-- written when `/Home` did not outlive the power, and a preference written
+-- there would have silently forgotten - worse than one you type, because you
+-- would stop expecting to. It does outlive it now, and keeping this one is
+-- the two lines nobody has written yet.
 --
 -- A board whose pointer is *absolute* - a tablet under emulation - answers
 -- zero: it reports where it is rather than how far it moved, and there is

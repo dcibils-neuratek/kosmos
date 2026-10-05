@@ -11,7 +11,7 @@
 -- super enjoyable", "and so the user that creates app don't reinvent the
 -- wheel every time". So the measure of this file is how short the
 -- application on top of it is, and a player that opens a window and plays a
--- film is fifteen lines (`user/bin/play.lua`).
+-- film is fifteen lines (`user/bin/programs/play.lua`).
 --
 -- **Which decoder is behind it is not a fact its user should have to
 -- know** (`CLAUDE.md`, on kits). It decoded Motion JPEG first, because
@@ -51,18 +51,6 @@ film.__index = film
 local READ = 4 * 1024 * 1024
 
 --
--- **The decoders, by the sample entry that names them.**
---
--- A table rather than a chain of ifs, because this is the list that grows:
--- `avc1` joins it with libavcodec, and whoever adds it should have to write
--- one line here and one decoder, not find every place a codec is named.
---
--- `mp4v` is what ffmpeg writes for Motion JPEG in an MP4; `jpeg` and `mjpa`
--- are what QuickTime writes for the same thing. All three are a sequence of
--- ordinary JPEG images, one to a sample, which is why this kit can exist
--- before a video decoder does.
---
---
 -- **A frame is an address and a length, never a Lua string.**
 --
 -- `gfx.jpeg` has taken `(at, length)` since the window manager needed it
@@ -93,6 +81,19 @@ local MOTION_JPEG = { name = "Motion JPEG", frame = jpeg_frame }
 --
 local H264 = { name = "H.264", stateful = true }
 
+--
+-- **The decoders, by the sample entry that names them.**
+--
+-- A table rather than a chain of ifs, because this is the list that grows:
+-- whoever adds a codec should have to write one line here and one decoder,
+-- not find every place a codec is named. `avc1` and `avc3` joined it that
+-- way, with FFmpeg's decoder.
+--
+-- `jpeg` and `mjpa` are what QuickTime writes for Motion JPEG: a sequence
+-- of ordinary JPEG images, one to a sample, which is why this kit could
+-- exist before a video decoder did. `mp4v` is not here, because it names
+-- no codec of its own - `decoder_for` below reads the one it carries.
+--
 local decoders = {
   -- QuickTime's two names for a track of JPEGs, which say so themselves.
   jpeg = MOTION_JPEG,

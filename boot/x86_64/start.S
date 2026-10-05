@@ -219,9 +219,8 @@ _start:
      *
      * Multiboot 1 leaves 0x2BADB002 and Multiboot 2 leaves 0x36D76289, and
      * the information structures they point `ebx` at have nothing in common
-     * beyond both starting with a length. Parked in edi alongside the
-     * pointer so that one branch in C decides, rather than two paths of
-     * assembly.
+     * beyond both starting with a length. Both are kept for one branch in C
+     * to decide, rather than two paths of assembly.
      */
 
     /* Multiboot leaves the information structure in ebx. Parked in esi,

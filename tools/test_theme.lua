@@ -10,7 +10,7 @@
 --   every face it names is a file in `assets/fonts/`, by the rule `gfx.c`'s
 --   `font_asset` resolves names with - so a theme cannot name a face the
 --   image does not carry and fall back to the bitmap in silence;
---   the four looks (`docs/looks.html`) each name the faces the kit ships
+--   every look (`docs/looks.html`) names the faces the kit ships
 --   with and paint words that can be read on their windows and Deskbar;
 --   Plex is the colours and faces `docs/plex.html` lists, value for value;
 --   a line that is not a face and a size is told, and a role a file leaves
@@ -99,7 +99,7 @@ for _, name in ipairs(themes.order) do
   end
 end
 
--- 2. The four looks (`docs/looks.html`, roadmap 5y): each names the faces
+-- 2. The looks (`docs/looks.html`, roadmap 5y): each names the faces
 -- the kit ships with, so a look changes colour and never the words' size -
 -- and each paints a Deskbar whose words can be read on it.
 local function luminance(c)
@@ -298,20 +298,7 @@ do
         "a theme naming a Deskbar colour was told: " .. table.concat(said, "; "))
 end
 
--- 6. `theme.toward`, the tab's colour lit and shaded for a scrollbar's
--- grip: the numbers the display harness looks for on the gallery's thumb.
-do
-  check(theme.toward(0xffffc700, 55) == 0xffffe58c,
-        ("yellow lit by 55 is %08x, not ffffe58c"):format(
-          theme.toward(0xffffc700, 55)))
-  check(theme.toward(0xffffc700, -35) == 0xffa58100,
-        ("yellow shaded by 35 is %08x, not ffa58100"):format(
-          theme.toward(0xffffc700, -35)))
-  check(theme.toward(0xff123456, 0) == 0xff123456,
-        "a colour moved by nothing changed")
-end
-
--- 7. A window's corner and shadow, a look's own since Night (`roadmap.md`, a
+-- 6. A window's corner and shadow, a look's own since Night (`roadmap.md`, a
 -- dock at the bottom): Night's 18 and 24, every other look the 10 and 14
 -- they all had, `theme.apply` putting them in force and the next look
 -- putting them back, and a value that is not a number of points told.
@@ -349,8 +336,8 @@ end
 
 if fails == 0 then
   print(("PASS: %d checks on the themes that ship (every face carried, the "
-         .. "four looks sharing their faces, legible and fitting the fixed layout, Plex as docs/plex.html has it, a bad "
-         .. "line told, a palette applied without its faces, a grip's shades, and a look's own corner and shadow)."):format(checks))
+         .. "the looks sharing their faces, legible and fitting the fixed layout, Plex as docs/plex.html has it, a bad "
+         .. "line told, a palette applied without its faces, and a look's own corner and shadow)."):format(checks))
   os.exit(0)
 end
 

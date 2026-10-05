@@ -2,10 +2,11 @@
 /*
  * The MP3 Kit: bytes in, sixteen-bit PCM out.
  *
- * A finished algorithm, which is the case `CLAUDE.md` says belongs in C
- * without a profile to justify it. MP3 is not going to change: there is
- * nothing here to reload, so the cost of C is zero and the speed is free.
- * The same argument put DEFLATE and the PDF scanner in kits.
+ * A loop over bytes and samples - a bit reader, a Huffman decode and a
+ * filter bank for every granule - which is the case `CLAUDE.md` says
+ * belongs in C without a profile to justify it, and a finished algorithm:
+ * MP3 is not going to change underneath it. The same argument put DEFLATE
+ * and the PDF scanner in kits.
  *
  * **It decodes and it does not play.** `music` still owns the loop, still
  * reads its own window of the file, still resamples through `sys.pcm` and
@@ -342,9 +343,4 @@ void kosmos_mp3_kit(lua_State *L)
     lua_pop(L, 1);
 
     luaL_newlib(L, api);
-
-    /* What one call can produce, so a caller can size a buffer rather than
-     * discover the number. */
-    lua_pushinteger(L, MINIMP3_MAX_SAMPLES_PER_FRAME * 2);
-    lua_setfield(L, -2, "FRAME_MAX");
 }

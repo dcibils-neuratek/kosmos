@@ -335,7 +335,7 @@ end
 -- **A File menu**, Diego's on 18 September: "we should add a menu to that
 -- app as well to open roms and exit the app". The window draws its own
 -- pixels, so the window manager draws the menu bar above them and the kit
--- opens the menus (`window:direct_event`, `strips` in `wm.lua`).
+-- opens the menus (`window:direct_event`, `/Kosmos/Libraries/wm/strips.lua`).
 --
 -- **Open ROM... starts another Super Nintendo** on the chosen file, at the
 -- same scale, and closes this one, rather than putting a second ROM into a

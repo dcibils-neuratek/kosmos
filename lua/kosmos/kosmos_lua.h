@@ -129,13 +129,4 @@ struct lua_State;
  * open. NULL when the heap could not satisfy it. */
 struct lua_State *kosmos_lua_open(void);
 
-/* Loads and runs a chunk of source, text only. Returns a LUA_* status. */
-int kosmos_lua_dostring(struct lua_State *L, const char *chunkname,
-                        const char *src);
-
-/* "Lua 5.4.8". A function rather than the LUA_RELEASE macro, so a caller can
- * print it without including lua.h and inheriting all of Lua's configuration
- * along with it. */
-const char *kosmos_lua_version(void);
-
 #endif /* KOSMOS_LUA_H */

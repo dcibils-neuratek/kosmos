@@ -7,14 +7,12 @@
 /*
  * The freestanding C library, such as it is.
  *
- * Two audiences share it for now, because at M2 there is only one address
- * space: the kernel, and Lua compiled into the same image. `design.md` §17.3
- * lists what Lua needs and this is that list, nothing more. Functions get
- * added when a link error asks for one, never in anticipation.
- *
- * At M4, when Lua moves to EL0, the kernel takes its own copy back and this
- * becomes what the design calls it: the libc that lives inside a process,
- * whose I/O resolves against that process's namespace and nowhere else.
+ * Two audiences share this header. The kernel links `string.c` and nothing
+ * else of the library; a process links the whole of it (`USER_LIBC` in the
+ * Makefile), and that is what the design calls it: the libc that lives
+ * inside a process, whose I/O resolves against that process's namespace and
+ * nowhere else. Functions get added when a link error asks for one, never
+ * in anticipation.
  *
  * memcpy and memset are not optional even if nothing calls them by name.
  * GCC recognises a zeroing loop or a struct copy and emits a call, and

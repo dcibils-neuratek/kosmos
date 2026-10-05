@@ -9,19 +9,16 @@
  *
  *   x19 to x28    the callee-saved general registers
  *   x29, x30      frame pointer and link register
- *   d8 to d15     the callee-saved halves of the FP registers
- *   v0 to v31     and then all of them, plus fpcr and fpsr, because this is
- *                 also where a *preempted* thread is switched away
  *
- * The FP half is not optional and this is where it comes due. The kernel's
- * own C is built -mgeneral-regs-only and never touches them, but Lua runs on
- * a thread and its numbers are doubles. Switching away from a thread with a
- * live d8 and not saving it would corrupt a value with no trace of where it
- * happened.
+ * **No FP or SIMD register is saved here.** A preempted thread can hold live
+ * ones - Lua's numbers are doubles - but they move lazily: the epilogue
+ * disarms FP, and the first floating-point instruction after the switch
+ * traps into `fp.c`, which saves the previous owner's registers and loads
+ * the new owner's. The body below says why that is correct and cheaper.
  *
  * Two stacks move, not one. The thread runs on SP_EL0 and its exceptions are
  * taken on SP_EL1, so both belong to the thread and both are switched here.
- * That is what makes preemption possible later: when the switch happens
+ * That is what makes preemption possible: when the switch happens
  * inside an interrupt handler, the incoming thread's exception stack already
  * holds the frame its own interrupt built, and the handler's epilogue pops
  * that one.
@@ -127,7 +124,7 @@ context_switch:
     ldp     x29, x30, [x1, #CTX_X29]
 
     /*
-     * FP off for EL0, for whichever thread is about to run.
+     * FP off, for whichever thread is about to run.
      *
      * 0b00 in CPACR_EL1.FPEN traps both levels, and both is the answer
      * rather than EL0 alone.

@@ -1,10 +1,12 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * init: the first Lua process.
+ * init: the image every process runs, and the first process.
  *
- * It sets up the heap the kernel mapped for it, opens a lua_State, and runs
- * a chunk built into the image. There is no filesystem to load one from
- * until M8, and no namespace to ask until M5.
+ * It sets up the heap the kernel mapped for it and looks at the word it was
+ * started with. A role that is a server or a driver - C, every one of them -
+ * starts serving before Lua is opened at all; anything else opens a
+ * lua_State and runs `init.lua`, which is built into the image, with that
+ * word as its `...`: the first process, the shell, a program.
  */
 
 #include <stddef.h>
@@ -689,8 +691,8 @@ int main(unsigned long arg)
      * Before Lua, and it never comes back.
      *
      * The capability table a spawned process is handed puts its own
-     * endpoint first, which is the same arrangement every Lua server here
-     * relies on - this one just does not need a chunk loaded to find it.
+     * endpoint first, which is the arrangement every server here relies on
+     * - and none of them needs a chunk loaded to find it.
      */
     /*
      * Each of these says what it is before it starts serving.

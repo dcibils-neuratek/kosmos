@@ -227,8 +227,8 @@ static void split(struct block *b, size_t want)
  *
  * A page at a time would be correct and would mean a syscall, a fresh
  * arena and a block that cannot merge with anything, over and over. This is
- * 256 KB, which is small against the 48 MB a process may map and large
- * enough that a program growing steadily asks rarely.
+ * 256 KB, which is small against what a process may map and large enough
+ * that a program growing steadily asks rarely.
  */
 #define GROW_PAGES  64u
 
@@ -244,7 +244,7 @@ static void split(struct block *b, size_t want)
  *
  * This is what the fixed 2 MB heap used to be instead of. `USER_HEAP_PAGES`
  * is a compile-time answer to a runtime question, which is why `make DOOM=1`
- * exists at all - Doom wanted a 5 MB zone and the only way to give it one
+ * once existed - Doom wanted a 5 MB zone and the only way to give it one
  * was to rebuild the system with a different `-D`. A program that needs
  * memory can now ask for it, and one that does not never pays for it.
  */

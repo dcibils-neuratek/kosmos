@@ -2944,14 +2944,22 @@ local function rebuild(snap)
   end
 end
 
--- Called before a change, with what it is called.
-function will(label)          -- the `local will` declared above sync
-  undo[#undo + 1] = snapshot(label)
+-- **A change kept for Undo**, and the scene marked unsaved with it: one
+-- place for both, because a second copy - a move's - kept the step and not
+-- the mark, and a moved object never showed "Unsaved changes" (the 0.11
+-- review).
+local function push_undo(snap)
+  undo[#undo + 1] = snap
   FILE.changed, FILE.said = true, nil
 
   if #undo > 64 then table.remove(undo, 1) end
 
   redo = {}
+end
+
+-- Called before a change, with what it is called.
+function will(label)          -- the `local will` declared above sync
+  push_undo(snapshot(label))
 end
 
 local function undo_last()
@@ -4131,9 +4139,7 @@ local function finish(keep)
     return
   end
 
-  undo[#undo + 1] = m.snap
-  if #undo > 64 then table.remove(undo, 1) end
-  redo = {}
+  push_undo(m.snap)
 
   if m.op == "grab" then
     print(("cafesa3d: moved %s to %s %s %s"):format(t.name, fmt(t.loc[1], 2), fmt(t.loc[2], 2),

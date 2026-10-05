@@ -80,17 +80,6 @@ static void copy_message_out(struct message *dst, const struct message *src)
 #define WRITE_MAX   4096
 
 /*
- * `colour` is 0xAARRGGBB, and zero means "whatever the console is already
- * using" - so a caller with no opinion passes nothing new and nothing about
- * its output changes. It is a third argument rather than a mode because the
- * console has several writers; `console.h` has the argument in full.
- *
- * **Every caller must pass three registers**, including the ones that do not
- * care, because an unset register holds whatever the caller left in it. That
- * is why `kosmos_write` uses `sys3` with an explicit zero and why the four
- * assembly test programs zero it by hand.
- */
-/*
  * **Is this a range a driver may be handed?**
  *
  * Lifted out of `SYS_DEV_MAP` so it can be asked a question without a
@@ -195,6 +184,17 @@ static size_t map_budget(const struct process *p)
     return (USER_MAP_END - USER_MAP_VA) / PAGE_SIZE;
 }
 
+/*
+ * `colour` is 0xAARRGGBB, and zero means "whatever the console is already
+ * using" - so a caller with no opinion passes nothing new and nothing about
+ * its output changes. It is a third argument rather than a mode because the
+ * console has several writers; `console.h` has the argument in full.
+ *
+ * **Every caller must pass three registers**, including the ones that do not
+ * care, because an unset register holds whatever the caller left in it. That
+ * is why `kosmos_write` uses `sys3` with an explicit zero and why the four
+ * assembly test programs zero it by hand.
+ */
 static long sys_write(struct process *p, uintptr_t ptr, size_t len,
                       unsigned long colour)
 {
@@ -784,17 +784,7 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
         info.busy_ticks = busy;
 
         /*
-         * And the split. `CPUS_MAX` is the room in the struct.
-         *
-         * The bound is `thread_cpu_count()` and not `info.cpus`, which is
-         * the same number and is **assigned seventy lines below this** -
-         * so reading it here bounded the loop by zero, `cpu[]` stayed as
-         * `memset` left it, and every core reported 0% busy with two
-         * spinners running. Found by the program written to show it, which
-         * is what an instrument is for.
-         */
-        /*
-         * And the bound is `smp_online`, not `thread_cpu_count`.
+         * And the split, bounded by `smp_online`, not `thread_cpu_count`.
          *
          * They are different questions and this is the one that has an
          * answer per core: `smp_online` counts processors running kernel

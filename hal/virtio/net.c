@@ -145,9 +145,6 @@ static struct {
     unsigned tx_next;               /* which transmit buffer to fill next */
 
     uint8_t  mac[6];
-
-    /* Set by the interrupt, cleared by whoever asks. See `hal_net_arrived`. */
-    volatile bool arrived;
 } net;
 
 /*
@@ -409,15 +406,6 @@ bool hal_net_info(struct netdev *out)
     return true;
 }
 
-bool hal_net_arrived(void)
-{
-    bool was = net.arrived;
-
-    net.arrived = false;
-
-    return was;
-}
-
 static void net_interrupt_locked(unsigned slot)
 {
     if (!net.present || net.dev.slot != slot) {
@@ -439,10 +427,8 @@ static void net_interrupt_locked(unsigned slot)
         return;
     }
 
-    net.arrived = true;
-
-    /* And whoever is waiting for one. The card said so, rather than the
-     * stack asking at a rate somebody picked. */
+    /* A frame arrived, so whoever is waiting for one is woken. The card said
+     * so, rather than the stack asking at a rate somebody picked. */
     process_wake_net();
 }
 

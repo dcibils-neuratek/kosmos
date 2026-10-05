@@ -12,9 +12,9 @@
  * Addresses from the device tree of `-M virt,gic-version=3`: distributor at
  * 0x08000000, redistributors starting at 0x080a0000.
  *
- * Only what a single core needs to take one PPI. No SPIs, no SGIs, no
- * affinity routing, no priority masking beyond letting everything through.
- * All of that arrives when there is a second interrupt source.
+ * The timer's PPI on every core, through each core's own redistributor; the
+ * SPIs the devices raise (`gic_enable_spi`); and an SGI to wake another core
+ * (`hal_cpu_wake`). No priority masking beyond letting everything through.
  */
 
 #include <stdint.h>

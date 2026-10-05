@@ -10,9 +10,9 @@
  * - and a JPEG decoder has the shape of one: a loop over bytes, small and
  * bounded, exactly where C buys something. It was nearly written as one.
  *
- * What decided it was the caller. `picture_from_file` in the window manager
- * opens a picture; it should not have to know that one format lives on the
- * `gfx` table and another behind a `use`. A person adding a wallpaper is not
+ * What decided it was the caller. `decoder_for` in the window manager
+ * chooses how a picture is opened; it should not have to know that one
+ * format lives on the `gfx` table and another behind a `use`. A person adding a wallpaper is not
  * choosing a decoder, and the code that opens it should not read as though
  * they were. PNG has been `gfx.png` since it arrived, so JPEG is `gfx.jpeg`
  * and the two sit together where somebody looking for "how do I open a

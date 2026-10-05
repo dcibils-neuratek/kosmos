@@ -9,8 +9,8 @@
  * **No AML, and that is the line.** The tables this reads are fixed-layout
  * structures a C compiler can describe. `\_SB` and the rest of the
  * namespace is a bytecode language with its own interpreter, and nothing
- * here needs it: the processor count, the interrupt controllers and where
- * PCIe's configuration space lives are all in tables, not in methods.
+ * here needs it: the processor count and the interrupt controllers are in
+ * tables, not in methods.
  */
 #ifndef KOSMOS_HAL_PC_ACPI_H
 #define KOSMOS_HAL_PC_ACPI_H
@@ -21,7 +21,7 @@
 /*
  * Finds the tables and reads the ones that matter. False when there are
  * none, which is not an error: a machine booted without ACPI is a machine
- * with one processor and no ECAM, and everything below says so.
+ * with one processor, and everything below says so.
  */
 bool acpi_init(void);
 
@@ -68,16 +68,6 @@ struct acpi_override {
 };
 
 unsigned acpi_overrides(struct acpi_override *out, unsigned max);
-
-/*
- * PCIe configuration space, from MCFG, or 0 when the firmware did not say.
- *
- * The difference this makes is not speed. Port 0xCF8 reaches 256 bytes of
- * configuration space per function; ECAM reaches 4096, and everything PCIe
- * added - capabilities that say what a link can do, and where MSI-X tables
- * live - is above the first 256.
- */
-uint64_t acpi_ecam_base(void);
 
 /*
  * What the FADT and the ECDT say about the machine's events, for `ec.c`,

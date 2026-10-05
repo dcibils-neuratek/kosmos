@@ -7,7 +7,7 @@
 --
 -- **Two facts the kernel reports, and one a file declares** (`roadmap.md`
 -- 6g). Diego, 24 September: "isnt the e1000 a driver, not a server? i see it
--- as a server in the process viewer". Processes took a kind from a `/bin`
+-- as a server in the process viewer". Processes took a kind from a program
 -- file of the same name and called everything else a server, under a note
 -- that every driver lived in the kernel - untrue since the power button's.
 -- And the drives *server* read "app", after the Drives app it shares a name
@@ -22,18 +22,20 @@
 --   - **A server is what init started** (`proc_info.parent`, 1): the
 --     system's own, kept for the life of the machine. The shell is init's
 --     too, and is a program.
---   - **Everything else was launched**, and its file in `/bin` says what it
---     is in its header: `app`, `program`, or `server`. Something launched
---     from a file outside `/bin` is a program.
+--   - **Everything else was launched**, and its file in `/Kosmos/Apps` or
+--     `/Kosmos/Programs` says what it is in its header: `app`, `program`,
+--     or `server`. Something launched from a file outside them is a
+--     program.
 
 local prockind = {}
 
 prockind.INIT    = 1         -- the first process's id
 prockind.DEVICES = 16        -- `proc_info.owns`: device authority
 
--- `p` is a row of `sys.processes()`. `from_bin` maps a file in `/bin`, less
--- its `.lua`, to the kind its header declares.
-function prockind.of(p, from_bin)
+-- `p` is a row of `sys.processes()`. `declared` maps a file's name in
+-- `/Kosmos/Apps` and `/Kosmos/Programs`, less its `.lua`, to the kind its
+-- header declares; Processes reads the two folders once and hands it over.
+function prockind.of(p, declared)
   if p.name == "shell" then return "program" end
 
   if p.id == prockind.INIT then return "server" end
@@ -42,7 +44,7 @@ function prockind.of(p, from_bin)
 
   if p.parent == prockind.INIT then return "server" end
 
-  return (from_bin or {})[p.name] or "program"
+  return (declared or {})[p.name] or "program"
 end
 
 return prockind

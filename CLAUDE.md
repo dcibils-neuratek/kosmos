@@ -662,10 +662,10 @@ converted in September 2026 knowing the price: `ROLE_RELOAD` deleted, and
 `help("demos")`'s watchable reload with it.
 
 **Do not describe this as a tiebreaker any more.** `fs.reload` does not
-exist, `serve` has no reload branch, and nothing in the running system can
-have its code replaced. `design.md` §10 is the record. What survives is the
-shape - `serve` still takes a factory, so state and behaviour are separate -
-and level 2, where a supervisor restarts a server that *died*, which never
+exist, and nothing in the running system can have its code replaced.
+`design.md` §10 is the record. `serve`, the Lua loop that kept a server's
+state and behaviour apart, went with the last Lua server. What survives is
+level 2, where a supervisor restarts a server that *died*, which never
 depended on the language anything was written in.
 
 **What keeps a policy server in Lua, then, is the shape of its bug.** A Lua

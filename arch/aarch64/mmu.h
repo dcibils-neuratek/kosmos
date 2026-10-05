@@ -200,10 +200,8 @@ uint64_t *mmu_page_entry(uintptr_t va);
  * Address spaces.
  *
  * A space is a page table root and the mappings hanging off it. Creating
- * one, adding pages to it, and switching to it is what a process will be
- * built out of at M4; until there is something to run at EL0 it is a
- * mechanism with tests and no users, which is the honest state to leave it
- * in rather than pretending otherwise.
+ * one, adding pages to it, and switching to it is what a process is built
+ * out of.
  *
  * **Every space contains the kernel.** There is no TTBR1 split yet: the
  * kernel is identity mapped through TTBR0 like everything else, so a space
@@ -216,15 +214,12 @@ uint64_t *mmu_page_entry(uintptr_t va);
  * describes would edit the kernel's map through the shared table, in every
  * space at once. The split is enforced rather than documented.
  *
- * At M4 this is replaced by the real arrangement, where the kernel lives in
- * TTBR1 at the top of the address space and TTBR0 belongs entirely to the
- * process. Then a space contains no kernel at all, which is the point.
+ * The other arrangement - the kernel in TTBR1 at the top of the address
+ * space, TTBR0 entirely the process's, and a space with no kernel in it -
+ * has not been built: `mmu.c` sets `TCR_EL1.EPD1`, so nothing walks through
+ * TTBR1 at all.
  */
 
-/*
- * Where a space may map things: level 1 slot 2 upwards. The kernel occupies
- * slots 0 and 1, being devices below 1 GB and RAM from 1 to 2 GB.
- */
 /*
  * Address spaces in use, and how many there can be. Exposed because a pool
  * that nothing counts is a limit nobody can find: this one was the real
@@ -236,6 +231,10 @@ unsigned as_total(void);
 /* The pool's ceiling and first slabs, from the kernel's process pool. */
 void as_pool_init(unsigned ceiling, unsigned boot);
 
+/*
+ * Where a space may map things: level 1 slot 2 upwards. The kernel occupies
+ * slots 0 and 1, being devices below 1 GB and RAM from 1 to 2 GB.
+ */
 #define USER_VA_BASE    0x80000000UL
 #define USER_VA_END     (512UL * 1024 * 1024 * 1024)    /* a 39-bit VA */
 
@@ -249,8 +248,9 @@ struct addrspace *as_create(void);
  * only borrowed. Switching to a destroyed space is not detected, so do not. */
 void as_destroy(struct addrspace *as);
 
-/* Maps `pages` pages. Fails on a virtual address outside the user region,
- * on a misaligned address, or when there are no pages for the tables. */
+/* Maps `pages` pages. Fails on a virtual address outside the user region
+ * or a misaligned one; running out of pages for the tables is a panic in
+ * `alloc_table`, not a result. */
 int as_map(struct addrspace *as, uintptr_t va, uintptr_t pa, size_t pages,
            uint64_t attrs);
 
@@ -289,13 +289,9 @@ bool mmu_entry_matches_framebuffer(uint64_t entry);
 uintptr_t as_page_phys(struct addrspace *as, uintptr_t va);
 bool as_user_may(struct addrspace *as, uintptr_t va, bool need_write);
 
-/* The physical address behind a mapped virtual one, or zero. For handing a
- * device a pointer into a process's memory. */
-
 #define AS_OK           0
 #define AS_ERR_RANGE   (-1)     /* outside the user region */
 #define AS_ERR_ALIGN   (-2)     /* not page aligned */
-#define AS_ERR_NOMEM   (-3)
 
 
 /* One line for the boot log, because `kernel/main.c` printed a string

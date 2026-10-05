@@ -466,8 +466,9 @@ struct addrspace *as_create(void);
  * only borrowed. Switching to a destroyed space is not detected, so do not. */
 void as_destroy(struct addrspace *as);
 
-/* Maps `pages` pages. Fails on a virtual address outside the user region,
- * on a misaligned address, or when there are no pages for the tables. */
+/* Maps `pages` pages. Fails on a virtual address outside the user region
+ * or a misaligned one; running out of pages for the tables is a panic in
+ * `alloc_table`, not a result. */
 int as_map(struct addrspace *as, uintptr_t va, uintptr_t pa, size_t pages,
            uint64_t attrs);
 
@@ -512,7 +513,6 @@ bool as_user_may(struct addrspace *as, uintptr_t va, bool need_write);
 #define AS_OK           0
 #define AS_ERR_RANGE   (-1)     /* outside the user region */
 #define AS_ERR_ALIGN   (-2)     /* not page aligned */
-#define AS_ERR_NOMEM   (-3)
 
 
 /* One line for the boot log, because `kernel/main.c` printed a string

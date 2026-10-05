@@ -100,15 +100,13 @@ static void *user_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
 }
 
 /*
- * Which libraries exist in here.
+ * Which of Lua's own libraries exist in here.
  *
- * The same list the kernel's copy opens and for the same reasons
- * (`design.md` §5.3): no io or os, because there is no global tree and no
- * clock; no package, which wants dlopen; no debug, which breaks every
- * abstraction the capability model will rest on.
- *
- * At M5 this stops being a list in a C file and becomes what the process's
- * namespace contains, which is where the design puts it.
+ * `design.md` §5.3 says which and why: no io or os, because there is no
+ * global tree and no clock; no package, which wants dlopen; no debug, which
+ * breaks every abstraction the capability model rests on. Everything else a
+ * process has - a kit, a library - it reaches through its namespace with
+ * `use`, and only if it was handed it.
  */
 static const luaL_Reg libs[] = {
     { LUA_GNAME,       luaopen_base      },
@@ -120,7 +118,7 @@ static const luaL_Reg libs[] = {
     { NULL, NULL }
 };
 
-/* Registered by user/lib/sys_user.c. */
+/* Registered by `user/init/sys_user.c` and `user/kits/gfx/gfx.c`. */
 int luaopen_sys(lua_State *L);
 int luaopen_gfx(lua_State *L);
 
@@ -141,11 +139,6 @@ static int at_panic(lua_State *L)
      */
     kosmos_exit(70);
     return 0;
-}
-
-const char *kosmos_lua_version(void)
-{
-    return LUA_RELEASE;
 }
 
 /* A table as text and back (`user/init/tabletext.lua`), compiled in. */
@@ -192,23 +185,12 @@ lua_State *kosmos_lua_open(void)
     }
 
     /* dofile and loadfile come from luaopen_base and take a path. There is
-     * no path to take: what a process reaches is what was mapped into it.
-     * See the kernel's copy for the longer version of this argument. */
+     * no path to take: what a process reaches is what was mapped into it,
+     * and what it reads from its namespace it loads with `load`. */
     lua_pushnil(L);
     lua_setglobal(L, "dofile");
     lua_pushnil(L);
     lua_setglobal(L, "loadfile");
 
     return L;
-}
-
-int kosmos_lua_dostring(lua_State *L, const char *chunkname, const char *src)
-{
-    int status = luaL_loadbufferx(L, src, strlen(src), chunkname, "t");
-
-    if (status == LUA_OK) {
-        status = lua_pcall(L, 0, LUA_MULTRET, 0);
-    }
-
-    return status;
 }

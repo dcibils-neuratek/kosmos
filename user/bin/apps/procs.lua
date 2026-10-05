@@ -87,15 +87,16 @@ end
 
 --------------------------------------------------------------------------
 -- What kind of thing each process is: `/Kosmos/Libraries/prockind.lua` decides, from
--- device authority, who started it, and what its file in `/bin` declares -
--- and says why it is those three and not a name.
+-- device authority, who started it, and what its file declares - in
+-- `/Kosmos/Apps`, `/Kosmos/Programs` or `/Home/Apps` - and says why it is
+-- those three and not a name.
 --------------------------------------------------------------------------
 
 local prockind = use("/Kosmos/Libraries/prockind.lua")
 
--- Asked once. `/bin` does not change while this runs, and a round trip
--- per row per second for an answer that never moves would be a lot of
--- messages to learn the same thing.
+-- Asked once. What is installed does not change while this runs, and a
+-- round trip per row per second for an answer that never moves would be a
+-- lot of messages to learn the same thing.
 local from_bin = {}
 
 do
@@ -107,6 +108,13 @@ do
       from_bin[(file:gsub("%.lua$", ""))] =
         (kind == "application") and "app" or kind or "program"
     end
+  end
+
+  -- **And the applications installed in /Home/Apps** (`filetypes`, which
+  -- knows what one is): read only the image's folders until 0.11, and an
+  -- installed application - Doom - was called a program.
+  for _, app in ipairs(use("/Kosmos/Libraries/filetypes.lua").installed()) do
+    from_bin[app.name] = "app"
   end
 end
 
@@ -139,7 +147,7 @@ local video = {}
 --
 -- The scheduling bands, by name.
 --
--- `sched.h` names five of eight and says anything unnamed is NORMAL. A
+-- `sched.h` names six of eight and says anything unnamed is NORMAL. A
 -- number in a column would be a number a person has to go and look up, and
 -- the whole reason to show it is that the bands are the thing the scheduler
 -- app changes and nothing showed what it had done.

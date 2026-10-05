@@ -16,8 +16,9 @@
 -- because it depended on the stacking order, and the stacking order is a
 -- race between applications reaching `ui.window`.
 --
--- The Deskbar is left alone. It puts itself in the corner a window is least
--- likely to want, and moving it into the grid would be moving the one thing
+-- Chrome is left alone - the desktop, the Deskbar's strip or dock, a popup -
+-- which the window manager marks as such (`chrome`): none of it is a window
+-- anybody opened, and moving it into the grid would be moving the one thing
 -- that was already where it belonged.
 
 --
@@ -48,7 +49,7 @@ local function counted(windows)
   local n = 0
 
   for _, w in ipairs(windows) do
-    if not w.chrome and w.title ~= "Deskbar" then n = n + 1 end
+    if not w.chrome then n = n + 1 end
   end
 
   return n
@@ -56,6 +57,7 @@ end
 
 local function settled()
   local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+  local tick_hz = (fs.read("/Devices/kernel") or {}).tick_hz or 250
   local last, steady = -1, 0
   local giveup = sys.ticks() + hz * (wanted and 120 or 30)
 
@@ -79,8 +81,7 @@ local function settled()
 
     -- A second between looks, which is long enough for an application to
     -- get from `run` to its first window and short enough not to be felt.
-    local until_ = sys.ticks() + hz
-    while sys.ticks() < until_ do sys.yield() end
+    sys.sleep(tick_hz)
   end
 
   return nil
@@ -104,7 +105,7 @@ local H = screen.height or 768
 local wins = {}
 
 for _, w in ipairs(reply.windows) do
-  if w.title ~= "Deskbar" then wins[#wins + 1] = w end
+  if not w.chrome then wins[#wins + 1] = w end
 end
 
 table.sort(wins, function(a, b) return a.handle < b.handle end)
@@ -129,9 +130,10 @@ local function grid_for(cells)
   return math.ceil(cells / down), down
 end
 
--- The Deskbar's own corner is out of bounds: it is 210 wide with a margin,
--- and a window placed under it is a window you cannot read.
-local usable_w, usable_h = W - 240, H - 60
+-- A margin of thirty either side, and sixty at the top. The Deskbar was a
+-- panel in the top right corner and took 240 of the width; it is a strip or
+-- a dock now, which is chrome and not in the grid.
+local usable_w, usable_h = W - 60, H - 60
 local across, down = grid_for(#wins)
 local big, cells = {}, 0
 

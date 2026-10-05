@@ -9,7 +9,7 @@
 -- accident.
 --
 -- The formatting itself happens in the disk server, not here: this program
--- cannot reach a sector. It writes to `/disk/format`, and the confirmation
+-- cannot reach a sector. It writes to `/Home/.format`, and the confirmation
 -- travels with the request, so the check lives at the boundary rather than
 -- in the habits of one caller.
 

@@ -355,7 +355,7 @@ ifdef TEST
   SRCS      += user/hello-$(ARCH).S user/faulty-$(ARCH).S user/pointer-$(ARCH).S
   # The libc the kernel no longer links, because the unit tests for it are
   # here and they call it directly. The shipping image needs none of it.
-  SRCS      += runtime/libc/malloc.c runtime/libc/misc.c \
+  SRCS      += runtime/libc/malloc.c \
                runtime/libc/math.c runtime/libc/snprintf.c \
                runtime/libc/strtod.c
   TESTDEFS  := -DKOSMOS_TEST -Itests
@@ -419,9 +419,10 @@ CFLAGS := $(CFLAGS_BASE) -mgeneral-regs-only
 
 # The exceptions, and why there are any.
 #
-# -mgeneral-regs-only exists because the kernel does not save FP/SIMD on a
-# context switch, so a float anywhere in it is a bug waiting for M3. That
-# reasoning covers kernel/, arch/ and hal/, and it still does.
+# -mgeneral-regs-only exists because the kernel may not touch an FP or SIMD
+# register at all: lazy FP save (`arch/*/fp.c`) disarms them on a switch and
+# serves the first use with a trap, which a kernel thread must never take.
+# That reasoning covers kernel/, arch/ and hal/, and it still does.
 #
 # It cannot cover code whose entire job is floating point. math.c decomposes
 # doubles and snprintf.c turns them into digits, and from the next commit Lua
@@ -3382,7 +3383,7 @@ ifdef TEST
   # directly.
   X86_SRCS += tests/tests.c \
               user/hello-x86_64.S user/faulty-x86_64.S user/pointer-x86_64.S \
-              runtime/libc/malloc.c runtime/libc/misc.c \
+              runtime/libc/malloc.c \
               runtime/libc/math.c runtime/libc/snprintf.c \
               runtime/libc/strtod.c
 

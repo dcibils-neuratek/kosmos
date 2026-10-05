@@ -6,18 +6,19 @@
 -- opinion and a `.md` opening in the editor from one and the reader from
 -- another.
 --
--- **By extension, and that is the temporary half.** BeOS did this properly:
--- a file's *type* was an attribute of the file, set when it was written and
--- travelling with it, and a separate table mapped a type to its preferred
--- application. A name is a much weaker thing to ask - renaming a file
--- changes what opens it, and a file with no extension has no type at all.
+-- **By the type attribute first, and by extension after.** BeOS did this
+-- properly: a file's *type* was an attribute of the file, set when it was
+-- written and travelling with it, and a separate table mapped a type to its
+-- preferred application. A name is a much weaker thing to ask - renaming a
+-- file changes what opens it, and a file with no extension has no type at
+-- all.
 --
--- The machinery for the real version half exists. `kfs`'s inode carries an
--- `attrs` block that nothing writes yet, and the ramfs has typed attributes
--- already; when the disk grows attributes, `kind_of` reads the type
--- attribute first and falls back to the extension for files that were
--- written before anything set one. That fallback is why this is worth
--- building now rather than waiting.
+-- The disk and the ramfs both keep attributes, and `kind_of` reads `type`
+-- before it looks at a name. Some files are written with one: a launcher
+-- says `launcher` (`launcher` at the prompt, the launcher editor, Tracker's
+-- drives) and a favorite says `favorite` (`favorites.lua`). A picture, a
+-- document or a film is still written without one, and the extension is
+-- what answers for those.
 
 local filetypes = {}
 
@@ -171,9 +172,9 @@ end
 -- What a path is, as a type name rather than a program.
 function filetypes.kind_of(path, attrs)
   -- The attribute wins when there is one, because it was set by whoever
-  -- wrote the file and a name is only a guess about it. Nothing writes one
-  -- yet; this is the branch that will matter and it is here so that adding
-  -- attributes to the disk does not mean revisiting every caller.
+  -- wrote the file and a name is only a guess about it. Launchers and
+  -- favorites are written with one; most files are not yet, and fall
+  -- through to their extension below.
   if attrs and attrs.type then return attrs.type end
 
   --

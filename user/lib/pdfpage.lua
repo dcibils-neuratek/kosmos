@@ -9,8 +9,8 @@
 -- **Why the interpreter is Lua.** It is a loop, but it is a loop over
 -- *decisions* - push an operand, match an operator, multiply two matrices -
 -- and `design.md` 6 puts those here. The loops over *bytes* it depends on
--- are already C and were already written: `sys.inflate` for the stream and
--- the rasteriser for the glyphs. If a page turns out to be slow the honest
+-- are already C and were already written: the Compression Kit's
+-- `compress.inflate_into` for the stream and the rasteriser for the glyphs. If a page turns out to be slow the honest
 -- next step is to measure which of the three it is in, not to assume.
 --
 -- **What a PDF calls text is not characters.** With `Identity-H`, which is
@@ -249,8 +249,8 @@ local function program_of(doc, font)
   --
   -- `raw` is scratch: the stream lands in it, is inflated out of it, and is
   -- never wanted again - only `out` is kept. It was never released, so every
-  -- font that loaded cost a capability for the life of the process, and a
-  -- thread gets thirty-two.
+  -- font that loaded kept its compressed copy, and a capability naming it,
+  -- for the life of the process.
   --
   -- Not on the path above this, where the stream was not compressed and
   -- `raw_at` *is* the program.
@@ -542,10 +542,13 @@ function pdfpage.render(doc, page, surface, scale, colour)
   -- is wrong.**
   --
   -- A program is a region, and `sys.memory` hands back a capability index
-  -- out of the thirty-two a thread gets. Allocating one per face *per page*
-  -- ran the process out of capability slots: on a 254-page book, page 13
-  -- lost two faces and page 23 lost three. So programs are made once per
-  -- face and reused, which is bounded by how many faces a document has.
+  -- into the process's table. Allocating one per face *per page* ran the
+  -- process out of capability slots while that table was thirty-two: on a
+  -- 254-page book, page 13 lost two faces and page 23 lost three. The table
+  -- grows now, a page of slots at a time, and a region per face per page
+  -- would still be memory spent again on every page turned. So programs are
+  -- made once per face and reused, which is bounded by how many faces a
+  -- document has.
   --
   -- A rasteriser is a `docfont` - a userdata with a `__gc`, holding a glyph
   -- cache on the Lua heap - and caching *those* for the document's life was

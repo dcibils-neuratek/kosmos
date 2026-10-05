@@ -5,8 +5,8 @@
 -- text face (`roadmap.md` 6zs).
 --
 --   local textsize = use("/Kosmos/Libraries/textsize.lua")
---   local size = textsize.new(ui, "/Home/Preferences/terminal")
---   local size = textsize.new(ui, "/Home/Preferences/texteditor", nil, "ui")
+--   local size = textsize.new(ui, "terminal")
+--   local size = textsize.new(ui, "texteditor", nil, "ui")
 --   size:face()                   -- the face to measure and draw with
 --   size:size()                   -- its size, to hand `g:text`
 --   size:items()                  -- the menu, built at the press
@@ -37,7 +37,7 @@
 local textsize = {}
 
 -- The steps, in pixels at 100 per cent. Eight, and the kit's pool of faces
--- by size is eight: every step but the role's own fits at once.
+-- by size is sixty-four: every step fits at once, with room to spare.
 textsize.STEPS = { 12, 14, 16, 18, 20, 24, 28, 32 }
 
 local methods = {}

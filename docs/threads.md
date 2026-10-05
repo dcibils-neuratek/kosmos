@@ -104,7 +104,7 @@ more of the kernel says "one thread" than the single pointer suggests.
 8. **The user side keeps nothing per thread.** Neither `TPIDR_EL0` nor x86's
    FS base is saved on a switch - they appear nowhere in the tree. `errno`
    is one static int, "one of it because there is one thread"
-   (`runtime/libc/misc.c` 14-30), and `malloc` works on globals with no lock
+   (`runtime/libc/misc.c` 14-30, since deleted), and `malloc` works on globals with no lock
    (`runtime/libc/malloc.c` 94-97).
 
 9. **IPC is already per thread**, which is the biggest piece that does not

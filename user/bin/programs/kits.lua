@@ -14,7 +14,7 @@
 -- Kit, Translation Kit. `docs/beos.md` explains what this system takes from
 -- there and what it leaves.
 
-local which = args[1]
+local which = args:match("^%s*(%S+)")
 
 if not which then
   local names = sys.kit_names()

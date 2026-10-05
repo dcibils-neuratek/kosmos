@@ -5,12 +5,12 @@
  * Almost none of this is board specific: CNTFRQ_EL0, CNTP_TVAL_EL0 and
  * CNTP_CTL_EL0 are architectural and identical on every ARMv8-A part. What
  * belongs to the board is which interrupt the timer is wired to, which is why
- * this lives in hal/ for now.
+ * this lives in hal/.
  *
- * When the second target lands at M2 this file will be a near copy of the
- * Pi's, and that is the signal to split it: the system registers move to
- * arch/aarch64/ and only the INTID stays here. Doing that split now, with a
- * single target, would be inventing the boundary instead of finding it.
+ * A second AArch64 board - a Pi - would make this file a near copy of its
+ * own, and that is the signal to split it: the system registers move to
+ * arch/aarch64/ and only the INTID stays here. With one AArch64 board,
+ * splitting it would be inventing the boundary instead of finding it.
  *
  * The EL1 physical timer is used rather than the virtual one: the kernel
  * runs at EL1 with nothing above it, so CNTP is the one that belongs to us.

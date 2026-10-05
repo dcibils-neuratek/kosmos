@@ -152,13 +152,12 @@ const char *pc_loader_cmdline(void)
 }
 
 /*
- * And the part of it the line above puts out of reach.
+ * Usable memory above one megabyte that `ranges` had no room for, which
+ * `hal_ram_ranges` therefore never offers and `hal_ram_capped` reports.
  *
- * Kept separately because "the machine has more than the kernel uses" is
- * true on every PC and means nothing: the first usable region is the 640 KB
- * under the BIOS data area, and not choosing it is the scan working. What
- * is worth reporting is memory lost to the *address space* rather than to
- * the choice, and that is only ever what sits past the line.
+ * Not "the machine has more than the kernel uses", which is true on every
+ * PC and means nothing: the first usable region is the 640 KB under the
+ * BIOS data area, and leaving it alone is the scan working.
  */
 static unsigned long beyond;
 
@@ -194,8 +193,8 @@ static uint64_t loader_efi_system;
  * **This is the entire reason `boot/x86_64/start.S` carries a second
  * header.** A BIOS leaves the pointer somewhere a scan can find it; UEFI
  * passes it to the loader and leaves nothing behind, so a kernel that only
- * scans finds no ACPI on a UEFI machine - no processor count, no ECAM, and
- * no local APIC. Multiboot 1 has no tag for it and Multiboot 2 has two.
+ * scans finds no ACPI on a UEFI machine - no processor count and no local
+ * APIC. Multiboot 1 has no tag for it and Multiboot 2 has two.
  */
 const void *pc_loader_rsdp(void)
 {
@@ -381,32 +380,6 @@ whole += length;
         low_region_count++;
     }
 
-        /*
-         * **The range the kernel was loaded into, whole.**
-         *
-         * This used to clip every range at `DEVICE_WINDOW_BASE` before
-         * comparing them, because RAM was identity mapped and a
-         * process's space begins at `USER_VA_BASE`, so nothing past
-         * that line had anywhere to live. That is what put a machine
-         * with eight gigabytes on 767 megabytes of them. Since
-         * `roadmap.md` 5zd-d the kernel reaches memory through a window
-         * in its own half of the address space (`mmu.h`,
-         * `PHYS_WINDOW_BASE`) and the line is gone.
-         *
-         * **What replaces it is the requirement `pmm_place` actually
-         * has**, stated directly instead of approximated: the bitmap
-         * goes after the kernel image, so the range has to be the one
-         * the image is in. A PC with four gigabytes or more does not
-         * have one block of memory - the PCI hole splits it, a piece
-         * below and a larger piece above four gigabytes - and picking
-         * "the largest" would pick the piece the kernel is not in.
-         * `pmm_init` would then say `the kernel image does not fit in
-         * RAM`, and be exactly right.
-         *
-         * So the memory above the hole is counted as `beyond` and not
-         * used yet. Using it needs a page allocator that can hold more
-         * than one range, which is `roadmap.md` 5zd-d step four.
-         */
         /*
          * **Recorded whether or not it is the one the kernel is in.** The
          * allocator manages all of them since `roadmap.md` 5zd-d step four;
@@ -728,20 +701,13 @@ unsigned hal_ram_ranges(struct memrange *out, unsigned max)
  * the whole reason this exists.**
  *
  * It used to be 768 megabytes on every machine, because RAM was identity
- * mapped below the region processes are given. That is gone: the kernel
- * reaches memory through a window in its own half of the address space
- * (`arch/x86_64/mmu.h`, `PHYS_WINDOW_BASE`), and the range holding the
- * kernel is now adopted whole - 2046 megabytes where QEMU gives four
- * gigabytes, against 767 before.
+ * mapped below the region processes are given; then the piece above the
+ * PCI hole, because the page allocator held one range. Both are gone: the
+ * kernel reaches memory through a window in its own half of the address
+ * space (`arch/x86_64/mmu.h`, `PHYS_WINDOW_BASE`), and `pmm` manages every
+ * range `hal_ram_ranges` gives it (`roadmap.md` 5zd-d).
  *
- * **What is left is a different limit and it is worth not confusing with
- * the old one.** A PC with four gigabytes or more does not have one block
- * of memory: the PCI hole splits it, a piece below and a larger piece
- * above four gigabytes. The page allocator holds one range - one base, one
- * bitmap - so the piece the kernel is not in is counted here and not used.
- * Lifting that is `roadmap.md` 5zd-d step four, and it is a change to
- * `pmm` rather than to the address space.
- *
+ * What is left is `beyond`: ranges past the `RANGES_MAX` this board keeps.
  * A number that is quietly a fraction of the truth is exactly the kind of
  * thing that has to be printed rather than discovered.
  */

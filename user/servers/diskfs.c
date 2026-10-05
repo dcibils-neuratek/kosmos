@@ -2,8 +2,8 @@
 /*
  * /Home: the disk server, in C (`docs/diskfs.md` step 3).
  *
- * What `diskfs_handlers` in `init.lua` answered, the same way, on `kfs.c` and
- * speaking `diskproto.h`: a directory's names a page at a time, a file's
+ * What the Lua disk server's `diskfs_handlers` answered, the same way, on
+ * `kfs.c` and speaking `diskproto.h`: a directory's names a page at a time, a file's
  * bytes into the caller's region or a page in the reply, a file written
  * from a region or from the request, removals, renames, folders,
  * attributes, queries, and the disk itself - `.super`, `.device` and
@@ -25,6 +25,12 @@
  * filesystem's two megabytes, the cache, the buffers - rather than static:
  * `init.elf` is one image every process runs, and a static array here would
  * be carried by all of them.
+ *
+ * **Where a comment here says the Lua server has the reasoning**, it is
+ * `init.lua` as it was when `docs/diskfs.md` step 4 removed that server -
+ * `git show ef8617ba^:user/init/init.lua` - whose comments are the
+ * long-form argument for each of these parts, as `kfs.h` says of `kfs.lua`.
+ * They are not repeated here.
  */
 
 #include <stdbool.h>
@@ -46,7 +52,7 @@
 void diskfs_server(long endpoint, long blocks_read, long blocks_write,
                    long devices, long console);
 
-/* The names a Kosmos disk keeps for itself (`init.lua`'s RESERVED). */
+/* The names a Kosmos disk keeps for itself (the Lua server's `RESERVED`). */
 static const char *const RESERVED[] = { ".super", ".format", ".device" };
 
 /* The type a Kosmos partition has in a stick's GPT (`tools/mkusb_image.py`). */
@@ -149,7 +155,7 @@ static void put_text(char *field, size_t size, const char *text)
 
 /*
  * ------------------------------------------------------------------------
- * The date a write is stamped with (`init.lua`'s `stamp`, `roadmap.md` 6za
+ * The date a write is stamped with (the Lua server's `stamp`, `roadmap.md` 6za
  * step b): `/Devices/clock`'s epoch and how many writes this second has
  * seen, or the counter when there is no clock - the order kept, and no
  * date claimed.
@@ -210,7 +216,7 @@ static uint64_t stamp(void)
 /*
  * ------------------------------------------------------------------------
  * The device: the kernel's disk, or a stick's Kosmos partition behind the
- * USB driver (`init.lua`'s `stick_home`), with what each costs counted.
+ * USB driver (the Lua server's `stick_home`), with what each costs counted.
  * ------------------------------------------------------------------------
  */
 
@@ -450,7 +456,7 @@ stopped:
 /*
  * Looked for on each request until it is found, and waited for once: nothing
  * makes init wait for the USB driver, and naming a stick takes seconds on the
- * ThinkPad (`init.lua` has the whole account).
+ * ThinkPad (the Lua server's `stick_home` has the whole account).
  */
 static bool stick_found(void)
 {
@@ -569,7 +575,8 @@ static int device_write(void *ctx, uint32_t block, uint32_t count, const void *f
         /*
          * The journal's header is the commit, and a stick holds writes in a
          * cache of its own: asked to write it out every time, and the
-         * driver remembers a stick that has said it cannot (`init.lua`).
+         * driver remembers a stick that has said it cannot (the Lua server
+         * has why).
          */
         if (r == 0 && le32(from) == KFS_J_MAGIC) {
             struct block_reply f;
@@ -1113,7 +1120,8 @@ static void op_setattr(const struct disk_request *rq, struct disk_reply *rp)
         return;
     }
 
-    /* Refused whole, and before anything is written (`init.lua` has why). */
+    /* Refused whole, and before anything is written (the Lua server has
+     * why). */
     for (uint32_t i = 0; i < A->terms.count; i++) {
         const struct packflat_value *k = &A->terms.key[i];
 

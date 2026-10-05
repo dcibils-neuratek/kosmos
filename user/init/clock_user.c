@@ -2,9 +2,6 @@
 /*
  * What time it is, for a process: `time()`.
  *
- * `runtime/libc/misc.c` has a `time` too and the user image does not compile
- * that file - it is the kernel side's.
- *
  * `sysinfo.epoch` is seconds since 1970 from the board's clock, and zero on a
  * machine that has none. Zero stays the answer there rather than a number
  * counted from boot: a caller can tell "this machine does not know" from a

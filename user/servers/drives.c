@@ -670,6 +670,7 @@ struct dirwalk {
     uint32_t left;              /* root16: how many are left */
     bool     done;
     bool     damaged;
+    bool     unread;            /* the drive would not read a sector */
 };
 
 /*
@@ -693,7 +694,7 @@ static bool chain_step(struct dirwalk *w)
 
     /* The FAT read, deliberately before the caller's next directory read. */
     if (!read_sectors(w->v->unit, w->v->first + sector, 1u)) {
-        w->damaged = true;
+        w->unread = true;
         return false;
     }
 
@@ -740,12 +741,12 @@ static void walk_start(struct dirwalk *w, const struct volume *v,
 }
 
 /* The next sector of the directory, read into the region. False at the end,
- * and `w->damaged` says whether that end was an orderly one. */
+ * and `walk_error` says whether that end was an orderly one. */
 static bool walk_next(struct dirwalk *w, unsigned long *steps)
 {
     const struct volume *v = w->v;
 
-    if (w->done || w->damaged) {
+    if (w->done || w->damaged || w->unread) {
         return false;
     }
 
@@ -763,7 +764,7 @@ static bool walk_next(struct dirwalk *w, unsigned long *steps)
         }
 
         if (!read_sectors(v->unit, v->first + w->sector, 1u)) {
-            w->damaged = true;
+            w->unread = true;
             return false;
         }
 
@@ -781,12 +782,29 @@ static bool walk_next(struct dirwalk *w, unsigned long *steps)
     if (!read_sectors(v->unit,
                       v->first + fat_cluster_sector(&v->fat, w->cluster)
                       + w->in_cluster, 1u)) {
-        w->damaged = true;
+        w->unread = true;
         return false;
     }
 
     w->in_cluster++;
     return true;
+}
+
+/*
+ * Why a walk stopped, when it was not the directory's own end.
+ *
+ * **A drive that would not read is not a damaged volume**, and this said it
+ * was: every failed read set `damaged`, so a stick pulled out half way
+ * through a listing reported its filesystem broken. The two are different
+ * things to do something about - plug it back in, or repair it.
+ */
+static uint32_t walk_error(const struct dirwalk *w)
+{
+    if (w->unread) {
+        return DRIVES_ERR_DEVICE;
+    }
+
+    return w->damaged ? DRIVES_ERR_DAMAGED : DRIVES_OK;
 }
 
 /*
@@ -798,7 +816,7 @@ static bool walk_next(struct dirwalk *w, unsigned long *steps)
  */
 static bool dir_find(const struct volume *v, uint32_t cluster, bool root,
                      const char *name, unsigned name_len,
-                     struct fat_dirent *out, bool *damaged)
+                     struct fat_dirent *out, uint32_t *why)
 {
     struct dirwalk w;
     struct fat_names names;
@@ -828,7 +846,7 @@ static bool dir_find(const struct volume *v, uint32_t cluster, bool root,
                                                  &names, &e);
 
             if (step == FAT_STEP_END) {
-                *damaged = w.damaged;
+                *why = walk_error(&w);
                 return false;
             }
 
@@ -839,13 +857,13 @@ static bool dir_find(const struct volume *v, uint32_t cluster, bool root,
             if (fat_name_matches(want, e.name)
                 || fat_name_matches(want, e.short_name)) {
                 *out = e;       /* copied before the region is touched again */
-                *damaged = false;
+                *why = DRIVES_OK;
                 return true;
             }
         }
     }
 
-    *damaged = w.damaged;
+    *why = walk_error(&w);
     return false;
 }
 
@@ -868,7 +886,7 @@ static bool resolve_in(const struct volume *v, const char *rest,
     while (*rest != '\0') {
         unsigned n = 0;
         struct fat_dirent e;
-        bool damaged = false;
+        uint32_t why = DRIVES_OK;
 
         while (rest[n] != '\0' && rest[n] != '/') {
             n++;
@@ -879,8 +897,8 @@ static bool resolve_in(const struct volume *v, const char *rest,
             continue;
         }
 
-        if (!dir_find(v, cluster, root, rest, n, &e, &damaged)) {
-            *code = damaged ? DRIVES_ERR_DAMAGED : DRIVES_ERR_NO_PATH;
+        if (!dir_find(v, cluster, root, rest, n, &e, &why)) {
+            *code = (why != DRIVES_OK) ? why : DRIVES_ERR_NO_PATH;
             return false;
         }
 
@@ -1005,8 +1023,8 @@ static void answer_list(uint64_t sender, const struct volume *v,
         }
     }
 
-    if (w.damaged) {
-        fail(sender, DRIVES_ERR_DAMAGED);
+    if (walk_error(&w) != DRIVES_OK) {
+        fail(sender, walk_error(&w));
         return;
     }
 
@@ -1066,8 +1084,8 @@ static void answer_read(uint64_t sender, const struct volume *v,
         took += n;
     }
 
-    if (w.damaged) {
-        fail(sender, DRIVES_ERR_DAMAGED);
+    if (walk_error(&w) != DRIVES_OK) {
+        fail(sender, walk_error(&w));
         return;
     }
 

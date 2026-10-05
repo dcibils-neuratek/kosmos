@@ -39,16 +39,6 @@ local stream = {}
 stream.__index = stream
 
 --
--- Returns whether the server took it, and *why not* when it did not.
---
--- The second value matters more than it looks. `play` returning false has
--- two meanings - the stream is full, which is normal and means wait, and
--- the message did not arrive, which is a bug - and a caller that cannot
--- tell them apart yields for ever on the second one. That is exactly what
--- happened: two tones sat in the Mixer at "idle" while `beep` spun,
--- because a failed send and a full queue looked identical.
---
---
 -- Hand over one period.
 --
 -- **Nothing is sent.** The samples go into the ring this stream opened

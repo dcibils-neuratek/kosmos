@@ -7,13 +7,15 @@
 --   pk.iconbutton(s, { x = 10, y = 10, icon = "back" })
 --   pk.button(s, { x = W - 90, y = 7, text = "Open", go = true })
 --
--- **For a window that draws its own pixels** (`gfx.md` 19.4) - the browser,
--- the PDF viewer, Paint, System Benchmark. Those own every pixel they show,
--- so they cannot be handed `ui.header` or a `ui.button`: a widget is a list
--- of commands the window manager draws, and a direct window sends none.
--- They drew their own chrome, each its own way, and on 24 September that
--- was four windows with bars of word buttons and bevels beside a desktop
--- whose every other window had the drawings' header (`roadmap.md` 5zs).
+-- **For a window that draws its own pixels** (`gfx.md` 19.4) - Camera,
+-- Cafesa3D and Kosmos Write. Such a window owns every pixel it shows, so it
+-- cannot be handed `ui.header` or a `ui.button`: a widget is a list of
+-- commands the window manager draws, and a direct window sends none. Each
+-- drew its own chrome its own way, and on 24 September that was four
+-- windows - the browser, the PDF viewer, Paint and System Benchmark - with
+-- bars of word buttons and bevels beside a desktop whose every other window
+-- had the drawings' header (`roadmap.md` 5zs). This was written for those
+-- four; none of them draws with it today.
 --
 -- So this is the same header and the same controls, at the same numbers
 -- (`ui.layout`, `docs/apps.html`), drawn with a surface's own primitives.

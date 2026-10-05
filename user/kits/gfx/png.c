@@ -28,15 +28,16 @@
  *--------------------------------------------------------------------------
  * What it handles, and what it refuses.
  *
- * Eight bits a channel, colour types 2 (RGB), 6 (RGBA) and 0 (greyscale),
- * no interlace. That covers what an encoder produces by default and what a
- * screenshot or a photograph is.
+ * Eight bits a channel, colour types 2 (RGB), 6 (RGBA), 0 (greyscale) and
+ * 3 (a palette, with its transparency), no interlace. That covers what an
+ * encoder produces by default, what a screenshot or a photograph is, and a
+ * field of one colour, which every tool writes with a palette.
  *
- * It refuses the rest - sixteen-bit channels, palettes, Adam7 interlacing -
- * by saying which one it found, rather than by producing an image that is
- * subtly wrong. A decoder that half-supports a format is worse than one
- * that does not, because the failure arrives as a picture that looks like
- * somebody's bug.
+ * It refuses the rest - channels of other than eight bits, grey with alpha,
+ * Adam7 interlacing - by saying which one it found, rather than by
+ * producing an image that is subtly wrong. A decoder that half-supports a
+ * format is worse than one that does not, because the failure arrives as a
+ * picture that looks like somebody's bug.
  *
  *--------------------------------------------------------------------------
  * Memory.

@@ -1,19 +1,23 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * The USB host controllers - steps one to three of the USB stack.
+ * The USB host controllers, and every USB device this system drives.
  *
- * `docs/usb.md` builds USB in steps that each end in something visible:
- * controllers up, enumeration, a mouse, bulk transfers, mass storage,
- * Ethernet. This is the first three. For every xHCI controller the board
- * reports it maps the registers, takes the controller from the firmware if
- * the firmware held it, halts and resets it, and reads which ports have
- * something plugged in - step one. Then it gives the controller its rings and
- * its interrupter, starts it, proves the command ring and the event ring with
- * a No-Op, resets each USB 2 port that has a device, gives every device a
- * slot and an address, and reads its descriptors: what it is and who made it
- * - step two. **And a device that is a mouse is read**: its configuration
- * chosen, its interrupt endpoint given a ring, the boot protocol asked for,
- * and each report it sends handed to the pointer - step three.
+ * `docs/usb.md` builds USB in steps that each end in something visible, and
+ * this file is all of them: controllers up, enumeration, a mouse and a
+ * keyboard, bulk transfers, mass storage, game controllers, Ethernet, a
+ * camera and MIDI. For every xHCI controller the board reports it maps the
+ * registers, takes the controller from the firmware if the firmware held it,
+ * halts and resets it, and reads which ports have something plugged in -
+ * step one. Then it gives the controller its rings and its interrupter,
+ * starts it, proves the command ring and the event ring with a No-Op, resets
+ * each USB 2 port that has a device, gives every device a slot and an
+ * address, and reads its descriptors: what it is and who made it - step two.
+ * **And from there a device is driven as what it is**: a mouse's and a
+ * keyboard's reports handed to the pointer and the keys, a pad's turned into
+ * keys, a stick's blocks served to `/Devices/blocks`, an adapter's frames
+ * carried for the network stack (`ethproto.h`), and a camera's pictures and
+ * a MIDI device's events served as `/Devices/camera` and `/Devices/midi` -
+ * each with its own section in `usb.md`.
  *
  * **Then it stays, and watches.** A device plugged in is reset, addressed and
  * named as the ones found at boot were, and one pulled out has its slot given
@@ -551,8 +555,6 @@ struct ether {
     uintptr_t     frames;               /* mapped here, or 0 for none */
     uint64_t      frames_bus;
     bool          receiving;            /* a read is out on the bulk IN */
-    unsigned long received;
-    unsigned long sent;
     unsigned long dropped;              /* arrived with the stack's ring full */
     unsigned      said_frames;          /* of those, written down */
 
@@ -3688,7 +3690,6 @@ static bool ether_send(struct controller *c, unsigned slot,
         }
     }
 
-    e->sent++;
     return true;
 }
 
@@ -3746,8 +3747,6 @@ static void take_frame(struct controller *c, const uint32_t *event)
 
     /* A zero-length packet is the end of the one before it, not a frame. */
     if (got >= 14u) {
-        e->received++;
-
         /*
          * **To the stack, if it is holding this adapter** - into its ring
          * and a wake, which is all the driver does with a frame from here
@@ -7149,9 +7148,6 @@ static void eth_about(struct eth_reply *rep, const struct ether *e)
 {
     rep->present = 1;
     rep->mtu = e->max_segment;
-    rep->link = (e->link_said && e->link) ? 1u : 0u;
-    rep->sent = (uint32_t)e->sent;
-    rep->received = (uint32_t)e->received;
     memcpy(rep->mac, e->mac, sizeof(rep->mac));
 }
 
@@ -7264,10 +7260,6 @@ static void eth_answer(const struct message *msg, uint64_t sender, long cap,
             eth_drain_out(frames_on, frames_slot,
                           &frames_on->ether[frames_slot],
                           frames_on->ether[frames_slot].out_packet);
-            eth_about(&rep, e);
-            break;
-
-        case ETH_OP_INFO:
             eth_about(&rep, e);
             break;
 

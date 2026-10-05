@@ -678,7 +678,7 @@ local function start()
   -- a name shared is not a relation.
   if under(f.path, "/Kosmos/Libraries") then
     say(('%s is a library: running it only builds what it gives whoever uses it, '
-         .. 'with use("%s") - applications and programs are in /bin')
+         .. 'with use("%s") - applications are in /Kosmos/Apps and programs in /Kosmos/Programs')
         :format(base(f.path), f.path), theme.text_dim)
   end
 

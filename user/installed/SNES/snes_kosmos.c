@@ -72,7 +72,7 @@ static bool     loaded;
  * The core hands back one console frame's worth of samples at whatever rate
  * it is asked for, and they go straight into the audio server's ring from
  * here - `CLAUDE.md`'s rule that a stream never travels as a message, and
- * `sys.pcm_into`'s way of keeping it. Frames are written into the slot at
+ * the audio ring's way of keeping it. Frames are written into the slot at
  * `write`, which the server cannot be reading, because it never reads an
  * index this side has not published; and a slot is published only once it is
  * full. No Lua string exists at either end, so a minute of sound allocates
@@ -500,7 +500,8 @@ static const char *const button_names[12] = {
 };
 
 /*
- * The kit: `use("/Kosmos/Kits/snes")`, built when it is asked for.
+ * The table `snes.lua` reaches as `use("snes.elf")` - the image it runs in,
+ * by its file - built when it is asked for.
  *
  * It was a global called `snes`, set in every Lua state, and a global with a
  * program's name hides the program: the shell sends a word that names

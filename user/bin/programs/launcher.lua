@@ -11,7 +11,7 @@
 -- and all. Opening a launcher in Tracker asks the window manager to start
 -- that program with those arguments, which is exactly what choosing it in
 -- the Deskbar does, so a launcher can start nothing the Deskbar cannot -
--- including a Lua file that is nowhere near `/bin`.
+-- including a Lua file that is nowhere near `/Kosmos/Apps`.
 --
 -- The picture is the program's own, when its header declares one, and
 -- `--icon` picks another: an asset from `assets/icons/` without its `.png`.

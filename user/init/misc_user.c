@@ -65,11 +65,10 @@ char *setlocale(int category, const char *locale)
 }
 
 /*
- * Here rather than in `runtime/libc/misc.c`, which is the *kernel* side's.
- *
- * The link error said so: these went into that file first and the user
- * image would not link, because it does not compile it. `USER_LIBC` names
- * what a process gets, and this file is the userland half of the pair.
+ * The only copies there are. The kernel has no errno, no locale and no
+ * use for either, so these live with the process that has: `USER_LIBC`
+ * names what a process gets, and this file is the part of it that differs
+ * inside one.
  */
 
 /*
@@ -245,9 +244,8 @@ float logf(float x)
  *
  * The kernel charges scheduler ticks to each process (`proc_info.ticks`),
  * but a process has no way to find its own row, and wall time since boot
- * would be a plausible wrong answer - the thing `runtime/libc/misc.c`'s
- * version refuses to give. So this is the standard's own word for "not
- * available" (C11 7.27.2.1), and a caller that checks for it is right.
+ * would be a plausible wrong answer. So this is the standard's own word for
+ * "not available" (C11 7.27.2.1), and a caller that checks for it is right.
  *
  * Linked because FFmpeg's `av_get_random_seed` mixes it into a seed, and
  * that function waits for the value to move: it is reached only from the
@@ -284,40 +282,85 @@ char *getenv(const char *name)
 }
 
 /*
- * Insertion sort.
+ * Heapsort, under the standard's name.
  *
- * `qsort` is the name in the standard and this is not quicksort, which is
- * worth saying rather than hiding: the arrays it is asked to sort here are
- * tens of elements, insertion sort has no recursion and no stack, and the
- * kernel is not the only place in this system where an unbounded stack is a
- * problem. If something ever sorts a large array through this, the profile
- * will say so and the answer will be to write the better algorithm then.
+ * `qsort` is what the standard calls it and this is not quicksort, which is
+ * worth saying rather than hiding. It was an insertion sort, chosen because
+ * the arrays sorted here were tens of elements - and then the disk server
+ * came to sort a directory listing of up to `NAMES_MAX` names through it
+ * (`diskfs.c`), and the 3D kit every edge of a mesh (`k3d_mesh.c`), and
+ * both were quadratic. Heapsort is O(n log n) in the worst case and not
+ * only on average, and it keeps what the insertion sort was chosen for: no
+ * recursion, so no stack that grows with the input, and no allocation.
+ *
+ * Not stable, which the standard does not ask of `qsort` either: two
+ * elements that compare equal may come out in either order.
  */
+
+/* Two elements exchanged a piece at a time, because the element size is a
+ * runtime value and there is no temporary that is always big enough. */
+static void sort_swap(unsigned char *a, unsigned char *b, size_t size)
+{
+    unsigned char t[64];
+
+    while (size > 0) {
+        size_t n = (size < sizeof(t)) ? size : sizeof(t);
+
+        memcpy(t, a, n);
+        memcpy(a, b, n);
+        memcpy(b, t, n);
+
+        a += n;
+        b += n;
+        size -= n;
+    }
+}
+
+/*
+ * The element at `root` moved down until neither child is larger, in a heap
+ * of the first `count` elements. A node has a child exactly when it is below
+ * `count / 2`, which is the test that also keeps `2 * root + 1` from
+ * overflowing.
+ */
+static void sort_sift(unsigned char *a, size_t root, size_t count,
+                      size_t size, int (*compare)(const void *, const void *))
+{
+    while (root < count / 2) {
+        size_t child = 2 * root + 1;
+
+        if (child + 1 < count
+            && compare(a + child * size, a + (child + 1) * size) < 0) {
+            child++;
+        }
+
+        if (compare(a + root * size, a + child * size) >= 0) {
+            return;
+        }
+
+        sort_swap(a + root * size, a + child * size, size);
+        root = child;
+    }
+}
+
 void qsort(void *base, size_t count, size_t size,
            int (*compare)(const void *, const void *))
 {
     unsigned char *a = base;
-    size_t i, j;
+    size_t i;
 
-    for (i = 1; i < count; i++) {
-        for (j = i; j > 0; j--) {
-            unsigned char *lhs = a + (j - 1) * size;
-            unsigned char *rhs = a + j * size;
-            size_t k;
+    if (count < 2 || size == 0) {
+        return;
+    }
 
-            if (compare(lhs, rhs) <= 0) {
-                break;
-            }
+    /* The heap, built from the last parent up to the root. */
+    for (i = count / 2; i > 0; i--) {
+        sort_sift(a, i - 1, count, size, compare);
+    }
 
-            /* Swapped a byte at a time, because the element size is a
-             * runtime value and there is no temporary big enough for it. */
-            for (k = 0; k < size; k++) {
-                unsigned char t = lhs[k];
-
-                lhs[k] = rhs[k];
-                rhs[k] = t;
-            }
-        }
+    /* The largest to the end, and the heap rebuilt over what is left. */
+    for (i = count - 1; i > 0; i--) {
+        sort_swap(a, a + i * size, size);
+        sort_sift(a, 0, i, size, compare);
     }
 }
 
@@ -327,9 +370,9 @@ void qsort(void *base, size_t count, size_t size,
  * way. Nothing here had needed it before, so `stdlib.h` did not declare it
  * and the port found out at link time.
  *
- * Unlike `qsort` above this is the real algorithm rather than the simple
- * one, because a binary search *is* the simple one - there is no cheaper
- * version to start with.
+ * It was the real algorithm from the start, while `qsort` above began as
+ * the simple one, because a binary search *is* the simple one - there is no
+ * cheaper version to start with.
  */
 void *bsearch(const void *key, const void *base, size_t count, size_t size,
               int (*compare)(const void *, const void *))
@@ -458,15 +501,15 @@ double atof(const char *s)
  * conforming implementation may produce, and nobody has to wonder whether
  * this one is unusual.
  *
- * **Here rather than in `runtime/libc/misc.c`**, which is the *kernel's*
- * half of the libc: the userland links `user/lib/misc_user.c` and the
- * kernel has no business with a random number generator - `CLAUDE.md` is
- * clear about what belongs in there and this is not on the list.
+ * **Here, in the userland's half of the libc**, because the kernel has no
+ * business with a random number generator - `CLAUDE.md` is clear about
+ * what belongs in there and this is not on the list.
  *
  * **It is not for anything that must not be guessed.** Sixteen bits of
  * output from a thirty-two bit state, entirely determined by the seed:
- * `crypto.c` is where randomness with a requirement on it lives. This is
- * for a debug overlay picking a colour, which is what asked for it.
+ * `crypto.c` is where randomness with a requirement on it lives. A debug
+ * overlay picking a colour is what asked for it, and Quake's particles are
+ * what use it now.
  */
 static unsigned long rand_state = 1;
 

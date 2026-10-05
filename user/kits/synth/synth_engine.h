@@ -116,9 +116,8 @@ enum { MIX_VOL, MIX_PAN, MIX_SENDA, MIX_SENDB, MIX_DUCK, SYNTH_MIX };
  */
 bool synth_target_parse(const char *name, struct synth_target *out);
 
-/* A value between 0 and 1 as the target's own, and back. */
+/* A value between 0 and 1 as the target's own. */
 double synth_from_norm(const struct synth_target *t, double n);
-double synth_to_norm(const struct synth_target *t, double v);
 
 /* Where in the song a target's value lives, or NULL. */
 double *synth_target_value(struct synth_song *song, const struct synth_target *t);

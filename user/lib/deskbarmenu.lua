@@ -28,30 +28,6 @@
 local menu = {}
 
 --
--- One folder's rows: its subfolders, then its launchers, each sorted.
---
--- **Submenus first**, which is what the Deskbar did when sections lived in
--- program headers and the reason has not changed: a submenu is a heavier
--- thing to open than an item is to click, so the few that need one should
--- not be hunted for among the many that do not.
---
--- **Only `kind == "launcher"` counts.** Anything else somebody keeps in
--- these folders - a note, a picture, a folder of their own - is their
--- business, and a menu that listed it would be guessing at what they meant.
---
--- `depth` is a guard rather than a feature. A directory tree can contain a
--- cycle the moment anything can link, and a menu that recurses for ever is
--- a desktop that does not come up; twelve is far past any menu worth
--- having.
---
---
--- `exists`, when given, answers whether a launcher's program is still
--- there: a launcher to a program `/bin` no longer has is not shown. It was
--- - Appearance's, on every machine seeded before it folded into
--- Preferences (`roadmap.md` 5zp) - and it opened nothing. The file stays;
--- it is the person's, and a program can come back.
---
---
 -- **What a row says, and the order rows come in**: an application's name
 -- for a person when it declares one (`kosmos: name`, `title` here), else
 -- the launcher's own name - and sorted by what is shown, ignoring case, so
@@ -69,6 +45,29 @@ local function by_shown(a, b)
   return tostring(a.name) < tostring(b.name)
 end
 
+--
+-- One folder's rows: its subfolders, then its launchers, each sorted.
+--
+-- **Submenus first**, which is what the Deskbar did when sections lived in
+-- program headers and the reason has not changed: a submenu is a heavier
+-- thing to open than an item is to click, so the few that need one should
+-- not be hunted for among the many that do not.
+--
+-- **Only `kind == "launcher"` counts.** Anything else somebody keeps in
+-- these folders - a note, a picture, a folder of their own - is their
+-- business, and a menu that listed it would be guessing at what they meant.
+--
+-- `depth` is a guard rather than a feature. A directory tree can contain a
+-- cycle the moment anything can link, and a menu that recurses for ever is
+-- a desktop that does not come up; twelve is far past any menu worth
+-- having.
+--
+-- `exists`, when given, answers whether a launcher's program is still
+-- there: a launcher to a program the system no longer has is not shown. It
+-- was - Appearance's, on every machine seeded before it folded into
+-- Preferences (`roadmap.md` 5zp) - and it opened nothing. The file stays;
+-- it is the person's, and a program can come back.
+--
 function menu.read(store, path, depth, exists)
   depth = depth or 12
 

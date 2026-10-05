@@ -32,19 +32,6 @@ static uint64_t le64(const uint8_t *p)
     return (uint64_t)le32(p) | ((uint64_t)le32(p + 4) << 32);
 }
 
-const char *drives_fs_name(enum drives_fs fs)
-{
-    switch (fs) {
-    case FS_KIND_FAT16: return "FAT16";
-    case FS_KIND_FAT32: return "FAT32";
-    case FS_KIND_KFS:   return "kfs";
-    case FS_KIND_OTHER: return "unknown";
-    case FS_KIND_NONE:  break;
-    }
-
-    return "none";
-}
-
 /*
  * The MBR's signature, which is the same two bytes a FAT boot sector ends
  * with - so this says "there is a table here", never "this is not a FAT
@@ -137,8 +124,8 @@ bool gpt_entry_array(const uint8_t *header, unsigned size, unsigned most_bytes,
     }
 
     /* PartitionEntryLBA at 72, NumberOfPartitionEntries at 80,
-     * SizeOfPartitionEntry at 84 - the same fields `init.lua`'s Lua walk
-     * reads at 73, 81 and 85, one-based. */
+     * SizeOfPartitionEntry at 84 - the same fields the Lua walk in
+     * `user/bin/programs/sticks.lua` reads at 73, 81 and 85, one-based. */
     where = le64(header + 72);
     entries = le32(header + 80);
     each = le32(header + 84);

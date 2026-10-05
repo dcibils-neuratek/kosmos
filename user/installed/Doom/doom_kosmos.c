@@ -4,8 +4,9 @@
  *
  * The half of the port that is ours. `runtime/upstream/doom/` is id's source, byte for
  * byte and GPLv2; this file is the platform underneath it and is the only
- * place the two vocabularies meet. See `runtime/upstream/doom/README.md` for why the
- * whole thing is a build option - on in `FULL=1`, the default - and what it
+ * place the two vocabularies meet. The two are linked into `doom.elf`, an
+ * application's own image in `/Home/Apps/Doom` (`make apps`), and no system
+ * image carries either; `runtime/upstream/doom/README.md` says what that
  * makes of an image's licence.
  *
  *--------------------------------------------------------------------------
@@ -281,13 +282,14 @@ static int running;
  * `USER_HEAP_PAGES` is 512, so the Lua heap is two megabytes and the
  * smallest real IWAD is four. A WAD simply cannot be a Lua value here. What
  * it can be is a *region*: pages taken from the page allocator, outside the
- * heap, which `fs.read_into` fills straight from the disk server without
- * the bytes ever passing through Lua at all.
+ * heap, which `fs.read_into` fills from the disk server a window at a time,
+ * through a scratch region `sys.region_copy` moves each window out of,
+ * without the bytes ever passing through Lua at all.
  *
  * So the Lua side maps a region and hands over the address, and Doom reads
- * it where it lies through `wad_file_t.mapped`. Four megabytes, read once,
- * copied never - and the limit that forced it turned out to be pointing at
- * the better design, which is usually what a limit like that is doing.
+ * it where it lies through `wad_file_t.mapped`. Four megabytes, read once and
+ * never copied again - and the limit that forced it turned out to be pointing
+ * at the better design, which is usually what a limit like that is doing.
  *
  * The caller must keep the region alive for as long as Doom runs. It does:
  * the application holds the capability for its own lifetime, and when it
@@ -470,12 +472,12 @@ static const luaL_Reg doom_lib[] = {
 };
 
 /*
- * The kit, `use("/Kosmos/Kits/doom")`, and the size Doom renders at, so the Lua side
- * can make a window that fits without either of them carrying the other's
- * number.
+ * The table `doom.lua` reaches as `use("doom.elf")` - the image it runs in,
+ * by its file - and the size Doom renders at, so the Lua side can make a
+ * window that fits without either of them carrying the other's number.
  *
- * Not a global, which it was: a global named `doom` hid `/Kosmos/Apps/doom.lua` from
- * the prompt. `snes_kosmos.c` has the longer account.
+ * Not a global, which it was: a global named `doom` hid `doom.lua`, in
+ * `/Home/Apps/Doom`, from the prompt. `snes_kosmos.c` has the longer account.
  */
 void kosmos_doom_kit(lua_State *L)
 {

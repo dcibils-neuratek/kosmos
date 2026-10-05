@@ -84,6 +84,11 @@ local top, zoom = 0, 1.0
 local said = "no document"
 local render_ms, glyph_count = 0, 0
 
+-- The counter's ticks in a millisecond, read once: the counter runs at
+-- 62.5 MHz under QEMU's emulation and in gigahertz on a PC, so a constant
+-- would be one machine's number.
+local PER_MS = math.max(1, ((fs.read("/Devices/cpu") or {}).counter_hz or 62500000) // 1000)
+
 --------------------------------------------------------------------------
 -- Drawing.
 --------------------------------------------------------------------------
@@ -194,7 +199,7 @@ local function show(n)
   local started = sys.ticks()
   local ok, drawn, _, missing = pcall(pdf.render, doc, page, paper,
                                       scale, INK)
-  render_ms = (sys.ticks() - started) // 62500
+  render_ms = (sys.ticks() - started) // PER_MS
 
   if not ok then
     said = ("page %d: %s"):format(n, tostring(drawn))

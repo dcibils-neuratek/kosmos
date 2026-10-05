@@ -18,12 +18,11 @@
  *
  * The third, §19.2: **Lua decides what to draw, C draws it.** A Lua loop
  * costs 20-50ns an iteration, which is fine for the thousand pixels of a
- * line and unworkable for the two million of a full-screen filter. The
- * primitive set is therefore small and composable and is not meant to grow
- * much: fill, span, blit, blend, get, set. `map`, the escape hatch that
- * applies a Lua function per pixel, is M7 and is deliberately slow - if
- * something using it needs to be fast, that is the signal it has earned its
- * own primitive.
+ * line and unworkable for the two million of a full-screen filter. So every
+ * loop over pixels is a primitive here - fill, span, blit, blend, get, set
+ * and the rest of `surface_methods` - and there is no way to run a Lua
+ * function per pixel: a drawing that would want one has earned a primitive
+ * of its own.
  *
  * Colour in Lua is always logical 0xAARRGGBB. Surfaces are always that
  * format, whatever the screen is; §19.3 says conversion to the device format
@@ -124,8 +123,10 @@ static struct surface *check_surface(lua_State *L, int index)
  * would be making the mistake `gfx.md` 19.3 names, with the right value in
  * its hand.
  *
- * It exists for Doom, which renders into a buffer of its own and needs the
- * result copied in. Nothing in Lua can reach it.
+ * It began with Doom, which renders into a buffer of its own and needs the
+ * result copied in; Quake, the Super Nintendo, the Game Kit, the 3D Kit and
+ * the browser's SVG drawing reach a surface's pixels through it the same
+ * way. Nothing in Lua can reach it.
  */
 uint32_t *kosmos_surface_pixels(lua_State *L, int index,
                                 unsigned *w, unsigned *h, unsigned *pitch)
@@ -1048,7 +1049,7 @@ static int l_shadow(lua_State *L)
  *
  * A filled rectangle with rounded corners, blended at the edge.
  *
- * The same geometry that rounds a window (`round_cover`), one level down:
+ * The same geometry that rounds a window (`gfx_round_cover`), one level down:
  * there it decides which of two pictures a pixel comes from, here it decides
  * how much of a colour goes onto what is already there. A button drawn this
  * way sits on whatever is behind it without knowing what that is, which is
@@ -1538,14 +1539,14 @@ struct glyph {
 static int font_table_ref = LUA_NOREF;
 
 /*
- * Three fonts, not one.
+ * Fonts by role, not one font.
  *
  * A titlebar, a paragraph and a terminal want different faces, and a
- * terminal's *must* be fixed-width whatever the other two are - so one
- * setting for all text was always going to be wrong the moment a
- * proportional face existed. Roles rather than a font per widget: three is
- * the number of decisions somebody actually has, and a fourth can be added
- * the day something needs one.
+ * terminal's *must* be fixed-width whatever the others are - so one setting
+ * for all text was always going to be wrong the moment a proportional face
+ * existed. Roles rather than a font per widget: a role is a decision
+ * somebody actually has, and one is added the day something needs it, which
+ * is how there came to be the six below.
  *
  * ROLE_UI is what everything draws with unless it says otherwise, which
  * keeps every existing `text` call working.
@@ -1859,43 +1860,34 @@ static unsigned utf8_next(const char *str, size_t len, size_t *at)
  *
  * The first `ROLE_COUNT` are the desktop's roles and are what every widget
  * draws with. The rest are asked for by *name and size* through
- * `gfx.face`, because a page is not four faces: a heading, a paragraph and
- * a quotation differ in size on the same screen, and layout needs all of
- * them at once rather than one at a time.
+ * `gfx.face`, because a page is not a handful of faces: a heading, a
+ * paragraph and a quotation differ in size on the same screen, and layout
+ * needs all of them at once rather than one at a time.
  *
- * Twelve, fixed, and nothing is evicted. A face costs its 95 eager ASCII
- * glyphs plus whatever the page reaches for, so a dozen is tens of
- * kilobytes rather than hundreds; when they run out `gfx.face` says so and
- * the caller uses one it already has. Fixed pools with an honest refusal
- * are what this system does everywhere.
+ * **The sized pool grows, as every pool here does now** (28 September,
+ * `roadmap.md` 6zs). A sized face is made the first time it is asked for,
+ * so a process pays for the faces it uses - 95 eager ASCII glyphs each,
+ * plus whatever the page reaches for - and a slot is a pointer until then.
+ * Sixty-four is the ceiling and nothing is evicted: past it `gfx.face` says
+ * so and the caller uses a face it already has. It was eight, fixed, which
+ * was enough while a window asked for a size or two; Text Editor's Markdown
+ * asks for a bold, an italic, a bold italic, the code face and two heading
+ * sizes at once, and the window manager cuts every window's faces from one
+ * pool - so eight would have been Text Editor's, and the IDE's and the
+ * Terminal's sizes would have fallen back to the role's.
  *
- * **A face is addressed by an index into this array**, which is what lets
- * `measure`, `height` and drawing take either a role name or a face - they
- * were already taking an index, and a role is just one of the first four.
- */
-/*
- * **The sized pool is eight, whatever the roles come to.**
+ * **The roles are counted apart from it**, as a sum, so a new role costs a
+ * slot of its own rather than one of these. This was a flat twelve with
+ * four roles, and the day a fifth arrived (`heading`, 20 September) the
+ * slots left for sizes silently went from eight to seven: `gfx.face`
+ * answered "no room for another face" exactly as it does when a program
+ * really has asked for too many, and the display suite found it as two
+ * faces that would not load.
  *
- * This was a flat 12 with four roles, so the eight slots a caller can ask
- * for by size were what happened to be left over - and the day a fifth role
- * arrived (`heading`, 20 September) they silently became seven. Nothing
- * said so: `gfx.face` answers "no room for another face" exactly as it does
- * when a program really has asked for nine sizes, and the display suite
- * found it as two faces that would not load.
- *
- * Written as a sum so that the next role costs a slot of its own rather
- * than one of these.
- */
-/*
- * **And it grows, as every pool here does now** (28 September, `roadmap.md`
- * 6zs). Eight was enough while a window asked for a size or two; Text
- * Editor's Markdown asks for a bold, an italic, a bold italic, the code
- * face and two heading sizes at once, and the window manager cuts every
- * window's faces from one pool - so eight would have been Text Editor's,
- * and the IDE's and the Terminal's sizes would have fallen back to the
- * role's. A sized face is made the first time it is asked for, so a
- * process pays for the faces it uses; sixty-four is the ceiling, and it is
- * pointers until then.
+ * **A face is addressed by an index** - the roles first, then the sized
+ * pool (`face_slot`) - which is what lets `measure`, `height` and drawing
+ * take either a role name or a face: they were already taking an index,
+ * and a role is just one of the first `ROLE_COUNT`.
  */
 #define FACES_SIZED 64
 #define FACES_MAX   (ROLE_COUNT + FACES_SIZED)
@@ -3732,27 +3724,6 @@ static const luaL_Reg surface_methods[] = {
 };
 
 /*
- * The screen, as a surface.
- *
- * Not owned and never freed: these are the board's pages, mapped into this
- * process because it was handed the device. `free` is a no-op on it and the
- * finalizer leaves it alone, because releasing them would mean unmapping the
- * display out from under whatever draws next.
- *
- * It is the one surface that does not have the canonical pitch. The board
- * chose 4160 bytes for a 1024-pixel row, and that number arrives here and is
- * used; nothing recomputes it. `gfx.md` §19.3's rule that only the app
- * server's backbuffer knows the device's real format is exactly this - and
- * the conversion it talks about is the identity today, because XRGB8888 and
- * the canonical 0xAARRGGBB have the same bytes and the display ignores the
- * top one. When a board arrives whose format differs, this is the function
- * that grows a conversion and nothing above it changes.
- *
- * nil rather than an error when this process does not hold the screen: a
- * program asking whether it has one is asking a reasonable question, and
- * every process but one gets no.
- */
-/*
  * `gfx.wrap{ at = address, w = , h = }` - a surface over memory somebody
  * else also has.
  *
@@ -3890,6 +3861,27 @@ static int l_encode_png(lua_State *L)
     return 1;
 }
 
+/*
+ * The screen, as a surface.
+ *
+ * Not owned and never freed: these are the board's pages, mapped into this
+ * process because it was handed the device. `free` is a no-op on it and the
+ * finalizer leaves it alone, because releasing them would mean unmapping the
+ * display out from under whatever draws next.
+ *
+ * It is the one surface that does not have the canonical pitch. The board
+ * chose 4160 bytes for a 1024-pixel row, and that number arrives here and is
+ * used; nothing recomputes it. `gfx.md` §19.3's rule that only the app
+ * server's backbuffer knows the device's real format is exactly this - and
+ * the conversion it talks about is the identity today, because XRGB8888 and
+ * the canonical 0xAARRGGBB have the same bytes and the display ignores the
+ * top one. When a board arrives whose format differs, this is the function
+ * that grows a conversion and nothing above it changes.
+ *
+ * nil rather than an error when this process does not hold the screen: a
+ * program asking whether it has one is asking a reasonable question, and
+ * every process but one gets no.
+ */
 static int l_screen(lua_State *L)
 {
     struct screen_info info;
@@ -4113,12 +4105,12 @@ int luaopen_gfx(lua_State *L)
     kosmos_jpeg_open(L);
 
     /* Doom, Quake and the Super Nintendo were opened here too, as globals,
-     * and hid their own programs from the prompt. They are kits now, in
-     * `sys_user.c`'s list: `use("/Kosmos/Kits/doom")`. */
+     * and hid their own programs from the prompt. Each is an application
+     * now, with its C in an image of its own: `use("doom.elf")`. */
     kosmos_docfont_open(L);
 
-    /* `gfx.faces` and `gfx.face`: the fonts measured as a page is set
-     * (`face.c`, `docs/write.md` W2). */
+    /* `gfx.typefaces` and `gfx.typeface`: the fonts measured as a page is
+     * set (`face.c`, `docs/write.md` W2). */
     kosmos_face_open(L);
 
     return 1;

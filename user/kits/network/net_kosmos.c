@@ -113,12 +113,12 @@ static int failed(lua_State *L, uint32_t status)
 /*
  * One exchange with the stack, in C.
  *
- * The reply comes back into the caller's table rather than a fresh one, the
- * same trick `con.wait` uses and for the same reason: `frames` found that a
- * request going out through `sys.call_raw` costs a Lua string each way plus
- * the tables to hold it, and a program that pings once a second does not
- * care - but a program that reads a stream would. The habit is worth having
- * before there is a stream.
+ * The request and the reply are structs on this stack and never Lua
+ * strings: `frames` found that a request going out through `sys.call_raw`
+ * costs a Lua string each way. What a caller is handed is still a fresh
+ * table where it is handed one - `l_info` and `l_ping` make theirs - since
+ * these are calls made when somebody types, and a connection's bytes go
+ * through its ring rather than through here.
  */
 static long exchange(lua_State *L, long cap, const struct net_request *req,
                      struct net_reply *out)
@@ -184,14 +184,11 @@ static int l_info(lua_State *L)
     push_addr(L, &rep.dns);
     lua_setfield(L, -2, "dns");
 
-    /* How the address was come by, as a word, and a lease's length. */
+    /* How the address was come by, as a word. */
     lua_pushstring(L, rep.addressed_by == NET_ADDRESS_GIVEN  ? "given"
                     : rep.addressed_by == NET_ADDRESS_ASKING ? "asking"
                     : rep.addressed_by == NET_ADDRESS_LEASED ? "dhcp" : "none");
     lua_setfield(L, -2, "addressed_by");
-    set_int(L, "lease_seconds", (lua_Integer)rep.lease_seconds);
-    push_addr(L, &rep.lease_from);
-    lua_setfield(L, -2, "lease_from");
 
     return 1;
 }
@@ -217,7 +214,6 @@ static int l_dhcp(lua_State *L)
     return 1;
 }
 
-/* `net.configure(cap, address, netmask, gateway [, dns])` */
 /*
  * `net.resolve(cap, name [, ticks])` - a name, as four numbers.
  *
@@ -253,6 +249,7 @@ static int l_resolve(lua_State *L)
     return 1;
 }
 
+/* `net.configure(cap, address, netmask, gateway [, dns])` */
 static int l_configure(lua_State *L)
 {
     long cap = (long)luaL_checkinteger(L, 1);
@@ -985,16 +982,4 @@ void kosmos_net_kit(lua_State *L)
     lua_pop(L, 1);
 
     luaL_newlib(L, api);
-
-    /* The reasons a call can fail, by name, so a caller writes
-     * `net.ERR_UNREACHABLE` rather than remembering that it is 4. */
-    set_int(L, "OK",              NET_OK);
-    set_int(L, "ERR_BAD_OP",      NET_ERR_BAD_OP);
-    set_int(L, "ERR_NO_CARD",     NET_ERR_NO_CARD);
-    set_int(L, "ERR_NO_ROUTE",    NET_ERR_NO_ROUTE);
-    set_int(L, "ERR_UNREACHABLE", NET_ERR_UNREACHABLE);
-    set_int(L, "ERR_FULL",        NET_ERR_FULL);
-    set_int(L, "ERR_BAD_ADDRESS", NET_ERR_BAD_ADDRESS);
-
-    set_int(L, "PAYLOAD_MAX", NET_PAYLOAD_MAX);
 }

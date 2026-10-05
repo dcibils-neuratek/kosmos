@@ -368,10 +368,10 @@ static unsigned glyph_index(unsigned cp)
  * write-only from here, which is what the memory type it is mapped with is
  * good at.
  *
- * Twelve bytes a cell and a fixed ceiling, because `CLAUDE.md` is clear
- * that the kernel has no allocator: 256 by 96 covers 2048x1536 at this
- * glyph size, and `console_attach_screen` clamps a larger screen to it
- * rather than writing past the end.
+ * Twelve bytes a cell and a fixed ceiling, in `.bss`, because the console
+ * draws from before there is a page allocator to ask (`hal_fb_early`): 256
+ * by 96 covers 2048x1536 at this glyph size, and `console_attach_screen`
+ * clamps a larger screen to it rather than writing past the end.
  */
 #define CELL_COLS   256u
 #define CELL_ROWS    96u
@@ -703,10 +703,10 @@ void console_attach_screen(const struct fb *fb, const char *title)
     rows = fb->height / GLYPH_H;
 
     /*
-     * Clamped to the grid, because the grid is a fixed array and this
-     * kernel has no allocator to grow one with. A screen wider than 2048
-     * loses the columns past it rather than writing past the end of
-     * `cells`, which is the failure worth having.
+     * Clamped to the grid, because the grid is a fixed array - it has to
+     * exist before the page allocator does. A screen wider than 2048 loses
+     * the columns past it rather than writing past the end of `cells`,
+     * which is the failure worth having.
      */
     if (cols > CELL_COLS) {
         cols = CELL_COLS;

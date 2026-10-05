@@ -1,8 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- ls: what is under a path.
 --
---   ls            where you are
---   ls /bin       somewhere else
+--   ls                     where you are
+--   ls /Kosmos/Programs    somewhere else
 --
 -- A listing is what the server said plus whatever is mounted below the
 -- path, and only the namespace knows the second half - which is what makes

@@ -8,11 +8,13 @@
  * What you may ask the audio server, written down.
  *
  * **The first protocol in Kosmos that is a definition rather than a
- * convention.** Every other server takes a serialised Lua table: any shape
- * of message is accepted, nothing declares what the shapes are, and the
- * only account of an operation is the code that happens to read it. That is
- * comfortable to write and it means a server cannot be written in anything
- * but Lua, because reading the message needs a `lua_State` to unpack into.
+ * convention.** When it was written every other server took a serialised
+ * Lua table: any shape of message was accepted, nothing declared what the
+ * shapes were, and the only account of an operation was the code that
+ * happened to read it. That was comfortable to write and it meant a server
+ * could not be written in anything but Lua, because reading the message
+ * needed a `lua_State` to unpack into. Every system server speaks a header
+ * like this one now, `/Home` the last of them.
  *
  * `CLAUDE.md` now says the layer decides the language and a server is C. So
  * the message has to be something C can read, and this is it: fixed fields,

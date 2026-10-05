@@ -175,13 +175,6 @@ double synth_from_norm(const struct synth_target *t, double n)
     return v;
 }
 
-double synth_to_norm(const struct synth_target *t, double v)
-{
-    if (t->exp) return log(v / t->min) / log(t->max / t->min);
-
-    return (v - t->min) / (t->max - t->min);
-}
-
 double *synth_target_value(struct synth_song *song, const struct synth_target *t)
 {
     if (t->kind == TARGET_FX) return &song->fx[t->index];

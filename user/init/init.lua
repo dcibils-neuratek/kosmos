@@ -32,7 +32,7 @@ local ROLE_BINFS     = 11 -- serves /bin: the programs carried in the image
 local ROLE_RUNNER    = 12 -- runs one program, in an address space of its own
 local ROLE_LIBFS     = 13 -- serves /Kosmos/Libraries: the libraries carried in the image
 local ROLE_APPFS     = 14 -- serves /Running: what each running program exposes
-local ROLE_DISKFS    = 15 -- serves /disk: the block device, and only it
+local ROLE_DISKFS    = 15 -- serves /Home: the block device, and only it
 local ROLE_AUDIO     = 16 -- serves /Devices/audio: the one process that may play
 local ROLE_NET       = 17 -- serves /Network: the one process that holds the card
 local ROLE_POWERBUTTON = 18 -- drives the power key, where there is one
@@ -398,136 +398,23 @@ end
 -- rather than "47200\n" for whoever asked to parse.
 --
 -- **What carries those verbs depends on who answers**, and that is the
--- change this file has been through. Six servers are C and take a *declared
--- struct*: `/Devices`, `/bin`, `/Kosmos/Libraries`, `/Running`, `/Devices/console` and `/Temporary`, each
--- with a header in `user/include/` that both sides compile against. A mount
--- names which, and `request` below branches on it.
+-- change this file has been through. Every system server is C and takes a
+-- *declared struct* - `/Devices`, `/Kosmos`, `/Running`, `/Temporary`,
+-- `/Home` and the rest - each with a header in `user/include/` that both
+-- sides compile against. A mount names which, and `request` below branches
+-- on it.
 --
--- Everything else still sends a table with a `type`, and design.md 14 makes
--- that field mandatory: with no static types, a message that does not say
--- what it is becomes a silent nil three layers down. `diskfs` is the last
--- server that speaks this way; the window manager and application scripting
--- also do, and always will - their vocabularies are open, which is exactly
--- when a table is right.
+-- Only applications' own names in `/Running` still take a table with a
+-- `type`, and design.md 14 makes that field mandatory: with no static
+-- types, a message that does not say what it is becomes a silent nil three
+-- layers down. The window manager and application scripting speak this way
+-- and always will - their vocabularies are open, which is exactly when a
+-- table is right.
 --
 -- The two are not a compromise between them. A struct is for a boundary
 -- where the shape is agreed and a caller being wrong should be impossible to
 -- express; a table is for one where the shape is the caller's to choose.
 --------------------------------------------------------------------------
-
---------------------------------------------------------------------------
--- A server: receive, dispatch, reply, repeat.
---
--- Each request runs in a coroutine. That buys error isolation - a handler
--- that raises kills its own request and not the server - and it is the
--- shape design.md 4.5 wants: every `receive` is a yield, so server code is
--- written sequentially over synchronous IPC instead of as a state machine.
---
--- **This used to reload too, and no longer does.** `serve` took a factory
--- rather than a table of handlers so that behaviour could be replaced while
--- state survived, and that worked: M5's definition of done was a server's
--- code being swapped mid-conversation with a client. It went when ramfs
--- became C, because ramfs was the last server this ran and there is nothing
--- left to reload. `design.md` records the decision.
---
--- The factory is kept, even with one caller and nothing to replace. It costs
--- a line and it is the shape that makes the state and the behaviour separate
--- things, which is worth having whether or not anything swaps them.
---------------------------------------------------------------------------
-
---
--- Three things this used to have, and no longer needs. All of them were
--- built for servers that are C now, and each solves its problem natively
--- there rather than needing the loop's help:
---
---   `DEFER`, a sentinel a handler returned when it was not answering yet.
---   ramfs's `watch` was the only thing that returned it; `ramfs.c` keeps the
---   sender in a slot and replies from `notify`.
---
---   `state.pump`, which let a blocked handler answer other callers while it
---   waited. The console's `read` was the only caller: it blocked inside the
---   handler until somebody typed a line, and while blocked it answered
---   nobody. `console.c` does not block at all - it records who asked and
---   replies from its own loop.
---
---   `manual`, which handed the loop back so the audio server could drive
---   its own: the device wants a period every 5.8 ms and no message says so.
---   `audio.c` has its own loop by construction.
---
--- Removed in the review before 0.8 rather than kept in case. Each was six
--- lines and is in the history; what none of them had any more was a caller.
---
-local function serve(endpoint, state, make_handlers)
-  local handlers = make_handlers(state)
-
-  --
-  -- One request, answered. Pulled out of the loop below because a handler
-  -- that has to wait needs to be able to do this too - see `state.pump`.
-  --
-  -- `cap` is a capability that came *with* the request, at whatever index
-  -- the kernel put it in this process's table. Most handlers ignore it; the
-  -- registry below is the one that needs it, because registering is exactly
-  -- handing over an endpoint.
-  local function answer(request, sender, cap)
-    local reply
-
-    do
-      local handler = handlers[request.type]
-
-      if not handler then
-        reply = { ok = false, error = "no such operation: " ..
-                  tostring(request.type) }
-      else
-        local co = coroutine.create(handler)
-        local ok, result = coroutine.resume(co, request, sender, cap)
-
-        if not ok then
-          -- A handler that raised. The client is told, and the server keeps
-          -- serving, which is the entire reason each request gets its own
-          -- coroutine rather than being called directly.
-          reply = { ok = false, error = tostring(result) }
-        else
-          reply = result
-        end
-      end
-    end
-
-    --
-    -- A reply that will not fit is still a reply.
-    --
-    -- `sys.reply` raises when the value does not serialise, and this call is
-    -- outside the coroutine that isolates a handler - so a handler returning
-    -- something too large took the whole server down. That is exactly what
-    -- happened the first time /bin was asked for a program bigger than a
-    -- message: the program store died, and the client saw only that its
-    -- request never came back.
-    --
-    -- Now the failure reaches whoever asked, which is the one place that can
-    -- do anything about it.
-    -- A reply may carry a capability. `send_cap` is taken out rather than
-    -- serialised: the number in it is an index in *this* process's table
-    -- and would mean something else entirely in the caller's.
-    local passing = nil
-
-    if type(reply) == "table" and reply.send_cap then
-      passing = reply.send_cap
-      reply.send_cap = nil
-    end
-
-    local sent = pcall(sys.reply, sender, reply, passing)
-
-    if not sent then
-      pcall(sys.reply, sender,
-            { ok = false, error = "the answer does not fit in a message" })
-    end
-  end
-
-  while true do
-    local request, sender, cap = sys.receive(endpoint)
-    if not request then return end          -- the endpoint went away
-    answer(request, sender, cap)
-  end
-end
 
 --------------------------------------------------------------------------
 -- /Temporary is `user/servers/ramfs.c`, and `main.c` dispatches role 1 to it
@@ -745,11 +632,11 @@ local function new_namespace()
 
         if rest == "" then rest = "/" end
 
-        -- A mount may name a *subtree* of what the server holds, so one
-        -- disk can appear at three places without three servers. `/system`
-        -- and `/Home` are both the same filesystem, at `/system` and
-        -- `/Home` inside it - which is what makes the layout in
-        -- `layout.md` possible with one disk and one server.
+        -- A mount may name a *subtree* of what the server holds: `/Home`
+        -- is the disk's `/Home` folder rather than the whole of it, and
+        -- one disk could appear at several places without several
+        -- servers - which is what made the layout in `layout.md` possible
+        -- with one disk and one server.
         --
         -- Prepended here rather than by the server, because the server has
         -- no idea what anybody mounted it as and should not: it answers
@@ -974,16 +861,16 @@ local function new_namespace()
   --------------------------------------------------------------------------
   -- Servers that speak a struct rather than a table.
   --
-  -- **This is the migration showing through, and it is meant to be visible
-  -- rather than hidden.** A mount says which protocol the server on the
-  -- other side speaks, and this kit packs accordingly. Every mount without
-  -- one speaks tables, which is all of them but `/Devices` today.
+  -- **Every system server does, since `/Home` moved on 29 September.** A
+  -- mount says which protocol the server on the other side speaks, and this
+  -- kit packs accordingly. The only mounts without one are applications'
+  -- own names in `/Running`, which take tables and always will: what a
+  -- window answers is the application's to choose, which is exactly when a
+  -- table is right.
   --
   -- It lives here because this is the client half of the boundary: the
   -- namespace is the kit that knows how to talk to servers, so knowing that
-  -- one of them wants 24 bytes of struct is exactly its business. When the
-  -- last server has moved, the branch and the flag both go and `request`
-  -- becomes one path again.
+  -- one of them wants 24 bytes of struct is exactly its business.
   --
   -- The layouts mirror `user/include/devproto.h`, which is the second and
   -- last place they are written. The asserts below are what stands in for
@@ -1231,7 +1118,6 @@ local function new_namespace()
   local BIN_OPS = { list = 1, read = 2, getattr = 3 }
   local BIN_ERRORS = {
     [1] = "no such program",
-    [2] = "this is in the image and cannot be written",
     [3] = "the /bin server did not understand that",
   }
 
@@ -1439,7 +1325,7 @@ local function new_namespace()
       if CON then
         CON_OPS = { write = CON.WRITE, read = CON.READ, keys = CON.KEYS,
                     wait = CON.WAIT, pointer = CON.POINTER,
-                    poll = CON.POLL, stat = CON.STAT }
+                    poll = CON.POLL }
       end
     end
 
@@ -1682,7 +1568,6 @@ local function new_namespace()
     if op == "keys"    then return { ok = true, value = rep.keys } end
     if op == "poll"    then return { ok = true, value = rep.seen } end
     if op == "pointer" then return { ok = true, value = rep.pointer } end
-    if op == "stat"    then return { ok = true, value = rep.stat } end
 
     if op == "wait" then
       return { ok = true, value = { keys = rep.keys, events = rep.events,
@@ -1713,7 +1598,7 @@ local function new_namespace()
          "namespace: the /Temporary reply layout does not match ramproto.h")
 
   local RAM_OPS = { list = 1, read = 2, write = 3, getattr = 4,
-                    setattr = 5, query = 6, watch = 7, watchers = 8,
+                    setattr = 5, query = 6, watch = 7,
                     delete = 9, rename = 10, mkdir = 11 }
 
   local RAM_ERRORS = {
@@ -2051,10 +1936,6 @@ local function new_namespace()
     if op == "query" then
       return { ok = true, paths = ram_entries(r.blob, r.count),
                more = r.more }
-    end
-
-    if op == "watchers" then
-      return { ok = true, value = r.count }
     end
 
     return { ok = true }
@@ -2522,17 +2403,6 @@ local function new_namespace()
   end
 
   --
-  -- How much of a value still goes inside the message.
-  --
-  -- A message is 2048 bytes and the request is a table - a type, a path, and
-  -- the value - so the value cannot have all of it. A thousand is well under
-  -- whatever the framing costs and needs no arithmetic that would have to
-  -- track the serialiser; being conservative here costs one region on a
-  -- write between a kilobyte and two, and being wrong costs an exception.
-  --
-  local INLINE_MAX = 1024
-
-  --
   -- **`/Kosmos/Kits`, answered here.** A kit is C in this process's own
   -- image, so no server holds it and nothing needs asking: the folder lists
   -- the kits this image has, each one a thing to `use` and never a file to
@@ -2611,8 +2481,9 @@ local function new_namespace()
     --
     -- **Every other protocol is a declared shape, and a table is not one.**
     --
-    -- A mount with no protocol is a server that takes tables - the disk, an
-    -- application's `/Running` name. A mount that names one is a C server with a
+    -- A mount with no protocol is an application's own name in `/Running`,
+    -- which takes tables, and nothing else does: every system server speaks a
+    -- declared shape. A mount that names one is a C server with a
     -- struct of its own, reached through its kit (`fs.raw`, the network
     -- kit), and a table sent to it is answered as though it were that
     -- struct. That is what happened on 19 September: `find` asks every
@@ -2637,61 +2508,6 @@ local function new_namespace()
     if mine then
       if not mine.ok then return nil, mine.error end
       return mine
-    end
-
-    --
-    -- A value too big for a message goes through a region instead.
-    --
-    -- **`fs.write` used to raise here**, and only on some mounts. The
-    -- namespace splits a long write for `/Temporary` - `ram_request` does it, a
-    -- piece per message - and diskfs cannot be written that way at all: its
-    -- `write` takes no offset and hands the whole body to `kfs.store`, so
-    -- there is nothing to append to. Everything above about two kilobytes
-    -- reached `sys.call` and came back as `value does not fit in a message`,
-    -- which is not even a returned error - it is an exception out of the
-    -- serialiser, thrown by a call whose failures are otherwise values.
-    --
-    -- So the same line worked on one mount, failed with a sentence on
-    -- another, and threw on a third. That difference is exactly what a
-    -- namespace exists to hide.
-    --
-    -- The route was already here. `write_from` puts the bytes in pages the
-    -- caller owns and sends the region, which is what `files.copy` uses and
-    -- what diskfs implemented for this reason - its own comment says a
-    -- filesystem you cannot write a large file to "works until you use it".
-    -- `fs.write` simply never reached for it.
-    --
-    -- **Strings only.** The region carries bytes, so a packed table sent
-    -- this way would come back a string and break the promise in
-    -- `help("fs")` that you get back the table you wrote. A large table
-    -- still fails, and fails loudly, which is better than reading back
-    -- wrong.
-    --
-    if op == "write" and type(req.value) == "string"
-       and #req.value > INLINE_MAX then
-      local region = sys.memory((#req.value + 4095) // 4096)
-
-      if region then
-        -- Sized to the value and given back afterwards, rather than a
-        -- buffer kept for ever: a write this large is occasional, and the
-        -- pages are worth more to everything else in between.
-        sys.region_write(region, 0, req.value)
-
-        local big = { type = op, path = rest, from = true,
-                      bytes = #req.value }
-        local reply, err = sys.call(capability, big, region)
-
-        sys.release(region)
-
-        if not reply and not again and forget_if_gone(path, err) then
-          return request(op, path, extra, pass, true)
-        end
-
-        if not reply then return nil, err end
-        if not reply.ok then return nil, reply.error end
-
-        return reply
-      end
     end
 
     local reply, err = sys.call(capability, req, pass)
@@ -3016,11 +2832,6 @@ local function new_namespace()
     return r and r.attrs, e
   end
 
-  function ns.stat(path)
-    local r, e = request("stat", path)
-    return r and r.value, e
-  end
-
   -- Was the interrupt key pressed? Only the console answers this, and only
   -- because it is the one process allowed to read the keyboard.
   --
@@ -3036,10 +2847,9 @@ local function new_namespace()
   --
   -- **A mount may name a subtree, and then the prefix is not the whole of
   -- it.** `match` maps `/Home/doc.pdf` onto `/Home/doc.pdf` in the server -
-  -- prefix `/Home`, root `/Home` - because one disk appears at `/system`,
-  -- `/user` and `/Home` with one server behind all three. Coming back, the
-  -- root has to come off before the prefix goes on, or the answer is
-  -- `/Home/home/doc.pdf`.
+  -- prefix `/Home`, root `/Home` - because the disk is mounted by its
+  -- `/Home` folder rather than whole. Coming back, the root has to come off
+  -- before the prefix goes on, or the answer is `/Home/home/doc.pdf`.
   --
   -- Which is exactly what `find /Home kind=book` returned, for as long as
   -- the disk has been able to answer a query. It went unnoticed because
@@ -3396,10 +3206,10 @@ end
 --------------------------------------------------------------------------
 -- The console server.
 --
--- It owns the serial port, and it is the only process that does: `sys.write`
--- and `sys.getchar` are refused to everything else. That is what makes this
--- a server rather than a convention - a client cannot decide to print
--- directly, because the machine will not let it.
+-- It owns the serial port, and it is the only process that does: writing
+-- to it and reading the keyboard are refused to everything else. That is
+-- what makes this a server rather than a convention - a client cannot
+-- decide to print directly, because the machine will not let it.
 --
 -- It serves three operations at one path. `write` puts a string; `read`
 -- waits for a line, echoing as it goes, which is where the line editing
@@ -3407,7 +3217,7 @@ end
 -- one, and that blocking is free: synchronous IPC already parks the caller.
 --
 -- `poll` is the odd one, and it is here because this is the only process
--- that may call `sys.getchar`. A program that runs for a while - a status
+-- that may read the keyboard. A program that runs for a while - a status
 -- bar, a benchmark - has no other way to find out that Control-C was
 -- pressed, because the keyboard is not its to read. So it asks.
 --
@@ -3968,10 +3778,9 @@ described properly without the kernel changing.
 
 The status bar:
 
-  monitor        draw it once, along the bottom of the screen
-  monitor on     redraw it after every command
-  monitor watch  keep redrawing for a while (blocks the prompt)
-  monitor off
+  monitor        along the bottom of the screen, for ten minutes
+  monitor 30     for thirty seconds; Control-C stops either sooner
+  monitor &      the same, drawing on while you use the prompt
 
 It draws in the rows the kernel console reserves for its boot progress
 bar and never scrolls text through. Two writers on one framebuffer with
@@ -4020,9 +3829,8 @@ A gradient, 256 fills, each a C pixel loop:
 
 Make the machine busy and watch it:
 
-  monitor on         a status bar along the bottom of the screen
+  monitor &          a status bar along the bottom of the screen
   benchmark 4        four processes spinning for ten seconds (or `spin 4`)
-  monitor watch      redraw it live while they run
 
 `benchmark` spawns processes that deliberately do not yield, so the scheduler
 has to preempt them - which is what makes the meter read what a real
@@ -4047,22 +3855,6 @@ Attributes, and a query that finds by them rather than by name:
 BeOS's idea: the filesystem is a database, and a folder is a saved
 query. `find` and `watch` are built on exactly these two calls.
 ]=]
-
-  --------------------------------------------------------------------------
-  -- The status bar.
-  --
-  -- Drawn into the rows at the bottom of the screen that the kernel console
-  -- reserves for its progress bar and never scrolls text through - see
-  -- RESERVED_ROWS in kernel/console.c. Two writers on one framebuffer with
-  -- no compositor works here only because the regions are disjoint by
-  -- construction, and that is exactly the arrangement a compositor exists to
-  -- stop needing. It is honest for a status line and would not be for
-  -- anything that moved.
-  --------------------------------------------------------------------------
-  -- Matches RESERVED_ROWS in kernel/console.c: the rows at the bottom that
-  -- text never scrolls through. Two, so the bar is a single line of text
-  -- with a rule above it rather than a band.
-  local RESERVED_ROWS = 2
 
   --
   -- Usage is the difference between two readings, never one.
@@ -4183,28 +3975,6 @@ query. `find` and `watch` are built on exactly these two calls.
     end
 
     return "/" .. table.concat(parts, "/")
-  end
-
-  -- A value, printed so a person can read it. Tables are what servers
-  -- return, so this has to handle them rather than saying "table: 0x...".
-  local function show(value, indent)
-    indent = indent or ""
-
-    if type(value) ~= "table" then
-      return tostring(value)
-    end
-
-    local keys = {}
-    for k in pairs(value) do keys[#keys + 1] = k end
-    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
-
-    local parts = {}
-    for _, k in ipairs(keys) do
-      parts[#parts + 1] = string.format("%s  %s = %s", indent, tostring(k),
-                                        show(value[k], indent .. "  "))
-    end
-
-    return "{\n" .. table.concat(parts, "\n") .. "\n" .. indent .. "}"
   end
 
   commands.pwd = function()
@@ -4469,7 +4239,7 @@ query. `find` and `watch` are built on exactly these two calls.
       elseif name == "screen" then
         summary = string.format("%dx%d, %d bytes a row", d.width, d.height, d.pitch)
       elseif name == "keyboard" then
-        summary = d.transport
+        summary = "present"
       elseif name == "timer" then
         summary = string.format("%d Hz tick, %d MHz counter",
           d.hz, d.counter_hz // 1000000)
@@ -4588,8 +4358,10 @@ query. `find` and `watch` are built on exactly these two calls.
       out("           so the first `ps` only starts the clock\n")
     end
 
-    out("\nFixed pools, because the kernel has no allocator: running out\n")
-    out("is an error at a known limit rather than a failure at an unknown one.\n")
+    out("\nPools, because the kernel keeps its objects in no heap. They grow a\n")
+    out("slab at a time up to a ceiling set from this machine's memory, and\n")
+    out("running out is an error at a known limit rather than a failure at an\n")
+    out("unknown one.\n")
   end
 
   commands.alias = function(arg)
@@ -5424,12 +5196,12 @@ if role == ROLE_INIT then
   -- The shell gets both endpoints, in the order it expects them, and the
   -- screen.
   --
-  -- Temporary, and it is worth saying why rather than leaving it to look
-  -- like the design. The screen belongs to whichever process composes, and
-  -- that will be the app server. There is no app server yet, so it goes to
-  -- the shell - which means `gfx.screen()` works at the prompt and a person
-  -- can draw. When the app server arrives this line hands it there instead
-  -- and nothing else about the mechanism changes: init decides, the same way
+  -- The screen belongs to whichever process composes, which is the
+  -- window manager - and the shell is what starts it, by the ordinary
+  -- command path (`opt/kosmos/boot`, `string=wm`), so the shell holds the
+  -- screen in order to pass it on: the kernel refuses a flag the parent
+  -- does not hold. It also means `gfx.screen()` works at the prompt before
+  -- there is a desktop, and a person can draw. init decides, the same way
   -- it already decides who gets the console.
   --
   -- It does *not* get the console: it prints by asking the console server,

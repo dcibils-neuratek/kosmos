@@ -4,7 +4,8 @@
 --   build/host/lua tools/test_prockind.lua
 --
 -- `/Kosmos/Libraries/prockind.lua` over rows shaped as `sys.processes()` gives them, and
--- a `/bin` with the Drives app in it - the name the drives server shares.
+-- a folder of applications with the Drives app in it - the name the drives
+-- server shares.
 
 local prockind = dofile("user/lib/prockind.lua")
 
@@ -55,5 +56,5 @@ if failed > 0 then
 end
 
 print(("PASS: %d checks on what kind of thing a process is (a driver by its "
-       .. "device authority, a server by init starting it, the rest by /bin)")
+       .. "device authority, a server by init starting it, the rest by what their file declares)")
       :format(passed))

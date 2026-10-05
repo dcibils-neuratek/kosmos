@@ -20,7 +20,6 @@ bool virtio_keyboard_init(void);
 int  virtio_keyboard_getchar(void);
 bool virtio_keyboard_present(void);
 bool virtio_key_event(unsigned *code, bool *down);
-bool virtio_key_held(unsigned code);
 
 bool virtio_pointer_init(void);
 bool virtio_pointer_poll(struct pointer_state *out);

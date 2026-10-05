@@ -37,11 +37,6 @@ struct entry {
 
 static struct entry apps[APP_MAX];
 
-/* Registration order, so a listing is the order things started rather than
- * whatever the table happened to hold. Sorted by the caller if it wants
- * alphabetical; this keeps the fact it has. */
-static unsigned registered;
-
 static struct entry *find(const char *name)
 {
     unsigned i;
@@ -196,7 +191,6 @@ static void answer(const struct message *in, uint64_t sender, long cap)
         apps[i].in_use = true;
         apps[i].cap = cap;
         copy_name(apps[i].name, name);
-        registered++;
 
         copy_name(rep->name, name);
         break;

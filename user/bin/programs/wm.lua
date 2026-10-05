@@ -26,13 +26,14 @@
 -- The window manager: windows, decoration, stacking, focus, and the
 -- compositor underneath them.
 --
---   wm                    the Deskbar, and nothing else yet
+--   wm                    a desktop: the notifications, the backdrop and
+--                         the Deskbar
 --   wm hello-win          start /Kosmos/Apps/hello-win.lua in a window
 --   wm hello-win,stuck    two applications, one of which hangs
 --   wm gallery,setprop:/Running/gallery/title=hello
 --                         and one that changes the other's title
 --
--- Control-C gives the screen back to the shell.
+-- Control-W then Q gives the screen back to the shell.
 --
 --------------------------------------------------------------------------
 -- Why this is a separate process from the applications it draws.
@@ -93,13 +94,10 @@ local theme = use("/Kosmos/Libraries/theme.lua")
 
 
 --
--- **A window's outside, in one table rather than two names.**
+-- **A window's outside, in one table.**
 --
 -- `corner` is how far its corners are rounded and `shadow` how far its soft
 -- edge reaches; both are points and both are rescaled with everything else.
--- One table because this file is within a handful of Lua's two hundred
--- locals - adding two names cost more than adding two fields, which is a
--- silly reason and a real one.
 --
 --
 -- **The shadow starts off and the corner starts on.**
@@ -230,7 +228,7 @@ OUT.TITLE_IN   = 18
 --
 -- The sizing grip, bottom right, and how far into the window it reaches.
 --
--- The border is two pixels, which is a fine thing to look at and an
+-- The border is four points, which is a fine thing to look at and an
 -- impossible thing to hit: a target that thin is a target you miss. So the
 -- grip claims a square of the window's own bottom-right corner, which is
 -- what every desktop that has ever had one does, and for the same reason.
@@ -245,9 +243,7 @@ OUT.RUN        = OUT.BOX_W * 2 + OUT.BOX    -- the three, end to end
 
 -- Nothing may be resized smaller than `scale.MIN_W` by `scale.MIN_H`, 120 by
 -- 60 at 100 per cent. Below it a window is all decoration and no window.
--- They live in `scale`, below, since it rewrites them - and because this
--- chunk is at Lua's limit of locals, so the table had to cost no more
--- names than it brought.
+-- They live in `scale`, below, since it rewrites them.
 
 --
 -- **The scale** (`ui.md` 16.18, `roadmap.md` 5z): how many of the
@@ -353,8 +349,6 @@ local prefs = use("/Kosmos/Libraries/prefs.lua")
 -- things that need its shape - the compositor cutting it out of what is
 -- behind, the pointer finding what is under it, and the paint staying
 -- inside it - and the two now make the frame's rectangle.
---
--- One table, because the main chunk is at Lua's limit of locals.
 --
 local tabs = {}
 
@@ -560,9 +554,6 @@ local function load_appearance()
   -- wallpapers and other things upon restarting"; the wallpaper was 18.133,
   -- and this was the other thing (`testing.md` 18.135).
   --
-  -- Here rather than at the top of the file, whose locals are at Lua's
-  -- limit of two hundred.
-  --
   local function find_theme(name)
     if type(name) ~= "string" then return nil, "no name" end
     if theme.palettes[name] then return theme.palettes[name] end
@@ -719,8 +710,7 @@ end
 -- is a file, read into pages as above; any other name is carried in the
 -- image and handed over by `sys.asset` - the icons, the test pictures, and
 -- in a `FULL=1` image the desktop's own wallpapers, `wallpaper/<file>`. One
--- function for both, because the two had drifted once already, and because
--- this file is at Lua's two hundred locals and a second would not load.
+-- function for both, because the two had drifted once already.
 --
 local function picture_from(path)
   local decode, suffix = decoder_for(path)
@@ -993,17 +983,13 @@ local function trace_us()
 end
 
 --
--- **A poll and its answer get their own budget, and they have to.**
+-- **A poll and its answer, on the record for as long as `trace` is on.**
 --
--- `step` stops at pass forty, which on a healthy desktop is about a third
--- of a second - and an application asks to be woken in a quarter of a
--- second to a second, so almost every *answer* falls outside that window.
--- Measured: forty passes caught five polls and one answer, which would have
--- said nothing at all about whether the answers were arriving.
---
--- Sixty lines rather than a pass count, so both halves of several seconds
--- of conversation are on the record however slowly the passes are going -
--- which on the machine this is for is the whole question.
+-- An application asks to be woken in a quarter of a second to a second, so
+-- the two halves of a conversation are many passes apart. When this was
+-- bounded at forty passes it caught five polls and one answer, which said
+-- nothing at all about whether the answers were arriving. So it has no
+-- bound, for the reason `step` has none: the kernel's ring is.
 --
 --
 -- **Recorded here, printed at the top of the next pass, and the difference
@@ -1022,7 +1008,6 @@ end
 -- about servers on a deadline: the cost of a round trip is not the
 -- microseconds it takes, it is where in the loop you spend them.
 --
-local said = 0
 local queued = {}
 
 --
@@ -1055,25 +1040,21 @@ local function replied(ok, err, what)
 end
 
 --
--- **Bounded by passes as well as by count, and the pass bound is the one
--- that matters.**
+-- **Only while `trace` is on, and the reason is a measurement.**
 --
--- Sixty lines alone kept this printing for several seconds on a healthy
--- desktop - long enough to still be going during a drag, and a compositor
--- that does a round trip to another process while a window is being dragged
--- loses the drag. Measured: the display harness failed at the same
--- coordinates twice with these lines on and passed with them off, and
--- queueing them changed nothing, which is what says the cost is *when* they
--- happen rather than where.
+-- These lines once printed on every desktop, sixty of them, and that kept
+-- them going for several seconds - long enough to still be going during a
+-- drag, and a compositor that does a round trip to another process while a
+-- window is being dragged loses the drag. Measured: the display harness
+-- failed at the same coordinates twice with these lines on and passed with
+-- them off, and queueing them changed nothing, which is what says the cost
+-- is *when* they happen rather than where.
 --
--- Forty passes is a third of a second here and a long time on a machine
--- whose desktop is in trouble - which is the machine this exists for. A
--- healthy desktop gives up a poll or two of detail nobody needed; a
--- crawling one fills the budget with exactly the conversation in question.
+-- So a note is opt-in, as `step` is, and a caller formats its line under
+-- `TRACE` too: a desktop with the trace off builds no string for it.
 --
 local function note(what)
   if TRACE then
-    said = said + 1
     queued[#queued + 1] = what
   end
 end
@@ -1388,9 +1369,9 @@ end
 -- mechanism the filesystem uses for a live query, and for the same reason:
 -- waiting is not the same as asking repeatedly.
 --
--- This process still spins, because it polls a keyboard and a tablet that
--- have no interrupt wired up yet. One spinner instead of one per window is
--- the whole of what this buys, and it is most of it.
+-- This process blocks too: each pass sleeps in `fs.wait_input` until a key
+-- or the pointer arrives or the soonest deadline is due, so a desktop with
+-- nothing happening has nothing runnable at all.
 --------------------------------------------------------------------------
 
 local DEFER = { "deferred" }
@@ -1437,9 +1418,10 @@ local function in_counter(ticks)
   return ticks * counter_per_tick()
 end
 
--- How long a poll waits when the caller does not say. Long enough to be a
--- block rather than a poll, short enough that a bug here shows up as a
--- sluggish window rather than a dead one.
+-- How long a poll waits when the caller does not say: not at all. It is
+-- answered on the next pass with whatever there is, which is what
+-- `wmproto.poll` sends when it is given no wait - a window that wants to
+-- block says for how long.
 local POLL_DEFAULT = 0
 local next_handle = 1
 local damage = {}
@@ -1721,13 +1703,6 @@ local function damage_outline(o)
 end
 
 --
--- Where the first of the three boxes starts; `OUT.SLOT` says which is where.
---
--- One function rather than the same arithmetic in the compositor and in the
--- pointer, because those two agreeing by coincidence is how a control ends
--- up drawn in one place and clickable in another.
---
---
 -- How far down the screen an ordinary window may start.
 --
 -- `TAB_H` on its own, until something claims a strip across the top. A
@@ -1901,6 +1876,13 @@ function OUT.rehead(win)
         now and "has its header for a title bar" or "wears a title bar"))
 end
 
+--
+-- Where the first of the three boxes starts; `OUT.SLOT` says which is where.
+--
+-- One function rather than the same arithmetic in the compositor and in the
+-- pointer, because those two agreeing by coincidence is how a control ends
+-- up drawn in one place and clickable in another.
+--
 local function boxes_x(win)
   local fx = frame_of(win)
 
@@ -2144,8 +2126,7 @@ end
 
 -- The commands a window sends, drawn: `/Kosmos/Libraries/paint.lua`, shared with
 -- `ui.paint_view` so a widget looks the same in a window that owns its
--- pixels as in one that sends drawing. Used where it is made rather than
--- held in a local of its own: this file is at Lua's two hundred.
+-- pixels as in one that sends drawing.
 local ops = use("/Kosmos/Libraries/paint.lua").new(picture_named, sized)
 
 --------------------------------------------------------------------------
@@ -2220,8 +2201,6 @@ PT.dragging = nil          -- { win, dx, dy } while a title bar is held
 -- release when no letter came between, and a click is not a letter; so a
 -- move marks the Super held for it, and that Super's tap is let go by.
 --
--- In `OUT` rather than three locals of its own: this file's main chunk is
--- at Lua's two hundred.
 OUT.chord = { held = {}, super_moved = false }
 
 function OUT.chord.move_held()
@@ -2324,9 +2303,6 @@ local BADGE_PAD = 4
 
 local P = use("/Kosmos/Libraries/wm/profile.lua")
 
--- Into the backbuffer, clipped by the surface primitives like anything
--- else. A run of identical pixels at a time rather than one fill per pixel:
--- the arrow is ten columns wide and mostly runs.
 --
 -- A raised control, drawn straight onto the backbuffer.
 --
@@ -2390,6 +2366,11 @@ local function cursor_size()
          math.max(CURSOR_H, BADGE_DY + bh)
 end
 
+--
+-- Into the backbuffer, clipped by the surface primitives like anything
+-- else. A run of identical pixels at a time rather than one fill per pixel:
+-- the arrow is ten columns wide and mostly runs.
+--
 local function draw_cursor()
   for row = 0, OUT.hw_cursor and -1 or CURSOR_H - 1 do
     local line = CURSOR[row + 1]
@@ -2467,9 +2448,12 @@ end
 --------------------------------------------------------------------------
 -- Compositing.
 --
--- One rectangle at a time: desktop, then every window that overlaps it,
--- back to front, then the copy out. Windows are opaque, so there is no
--- blending between them and the order is the whole of the occlusion.
+-- One rectangle at a time: what each window shows of it, worked out front
+-- to back; the desktop where no window reaches; the windows back to front;
+-- then the copy out. A window cuts away what is behind it except where it
+-- is blended - the backdrop, a strip that asked to be, a rounded corner and
+-- a shadow. The passes are `/Kosmos/Libraries/wm/compose.lua`, below; what
+-- is here are the pieces it draws with.
 --------------------------------------------------------------------------
 
 --
@@ -2557,74 +2541,6 @@ local draw_window = use("/Kosmos/Libraries/wm/drawwindow.lua"){
   title_colour = title_colour,
 }
 
---
--- `a` with `b` cut out of it, appended to `out` as up to four rectangles.
---
--- The pieces are taken in bands - above, below, then left and right of what
--- is left - so they never overlap. Overlapping pieces would be drawn twice,
--- which is what this whole exercise exists to stop.
---
-local function subtract_into(out, a, bx0, by0, bx1, by1)
-  local ax1, ay1 = a.x + a.w, a.y + a.h
-
-  if by0 > a.y then
-    out[#out + 1] = { x = a.x, y = a.y, w = a.w, h = by0 - a.y }
-  end
-
-  if by1 < ay1 then
-    out[#out + 1] = { x = a.x, y = by1, w = a.w, h = ay1 - by1 }
-  end
-
-  local y0 = (by0 > a.y) and by0 or a.y
-  local y1 = (by1 < ay1) and by1 or ay1
-
-  if y1 > y0 then
-    if bx0 > a.x then
-      out[#out + 1] = { x = a.x, y = y0, w = bx0 - a.x, h = y1 - y0 }
-    end
-
-    if bx1 < ax1 then
-      out[#out + 1] = { x = bx1, y = y0, w = ax1 - bx1, h = y1 - y0 }
-    end
-  end
-end
-
---
--- Everything that is visible in one damage rectangle, and nothing that is
--- not.
---
--- **This used to be a painter's algorithm with nothing taken out of it.**
--- The comment it replaces said so plainly - "windows are opaque, so there
--- is no blending between them and the order is the whole of the occlusion"
--- - and the order *is* enough to make the picture right. It is not enough
--- to make it cheap: a window completely behind another was blitted in full
--- and then painted over, and so was the wallpaper underneath both.
---
--- What that costs is not theoretical. Six Doom windows and four cubes, all
--- animating and heavily overlapped: the compositor took 17% of four
--- processors while each Doom took one or two. The compositor's cost scales
--- with window *area*, not with how hard anything is working, so it grows
--- fastest exactly when the machine is busiest - and most of that area was
--- pixels nobody would ever see.
---
--- So: two passes. The first walks **front to back** and works out which
--- pieces of the rectangle each window actually shows, cutting away what the
--- windows above it cover. The second draws **back to front**, as before.
---
--- The order of the two matters and is not interchangeable. Culling has to
--- be front to back, because occlusion accumulates downwards. Drawing has to
--- be back to front, because not every primitive here clips to the rectangle
--- it was given - the title text does not - and back to front is what makes
--- that harmless: whatever a lower window paints outside its piece, a higher
--- one paints over. Drawing front to back with the same culling would be
--- faster still and would need every primitive audited first.
---
--- Each window is drawn once, clipped to the *bounding box* of its visible
--- pieces rather than once per piece. A window split into an L is then still
--- redrawing a little of what is hidden, which is the cheap ninety per cent
--- of this: the expensive case is a window that is entirely hidden, and that
--- one is skipped outright.
---
 --------------------------------------------------------------------------
 -- The level bar - `/Kosmos/Libraries/wm/osd.lua`, the volume and the
 -- brightness shown over everything (`roadmap.md` 6zn).
@@ -2710,7 +2626,6 @@ local compose = use("/Kosmos/Libraries/wm/compose.lua"){
   menus = menus,
   osd = osd,
   screen = screen,
-  subtract_into = subtract_into,
   tabs = tabs,
   windows = windows,
 }
@@ -3414,8 +3329,9 @@ handlers.open = function(req, who, cap)
     -- construction, so counting it would make every position on the machine
     -- "taken" and this whole search a no-op that quietly fell through to the
     -- cascade - which is exactly what it did the first time it ran. The
-    -- same flags `focusable` already uses, for the same reason: these are
-    -- scenery rather than windows you are being hidden behind.
+    -- same flags the window cycle uses (`wm/keys.lua`), for the same
+    -- reason: these are scenery rather than windows you are being hidden
+    -- behind.
     local function taken_at(x, y)
       for _, other in ipairs(windows) do
         if not (other.backdrop or other.strip or other.kind == "menu" or other.popup
@@ -3427,11 +3343,11 @@ handlers.open = function(req, who, cap)
           -- **Only the new window, and deliberately not the other one.**
           --
           -- Asking "would either be buried" reads better and is wrong: the
-          -- Deskbar is 210x266, so *any* large window covers more than half
-          -- of it, and every window on the machine started jumping into a
-          -- quarter to avoid a panel it is perfectly entitled to overlap.
-          -- That moved windows the display harness clicks on, which is how
-          -- it was caught.
+          -- Deskbar was then a 210x266 panel, so *any* large window covered
+          -- more than half of it, and every window on the machine started
+          -- jumping into a quarter to avoid a panel it was perfectly
+          -- entitled to overlap. That moved windows the display harness
+          -- clicks on, which is how it was caught.
           --
           -- The case symmetry was meant to fix - a large window landing
           -- exactly on a small one - is handled where it belongs, in the
@@ -3470,9 +3386,10 @@ handlers.open = function(req, who, cap)
       -- already is. So the free quarters are tried first and the cascade is
       -- what happens when they are used up.
       --
-      -- Bottom-left before top-right on purpose: the Deskbar lives in the
-      -- top right corner, so that quarter is the one most likely to be
-      -- spoken for and is therefore the last offered.
+      -- Bottom-left before top-right, which was on purpose while the
+      -- Deskbar was a panel in the top right corner and that quarter the
+      -- one most likely to be spoken for. It is a strip or a dock now, which
+      -- no search here counts, and the order is what it was.
       --
       local top = top_limit()
       local midx = OUT.BORDER + (W - OUT.BORDER * 2) // 2
@@ -3492,10 +3409,10 @@ handlers.open = function(req, who, cap)
       -- and plainly wrong on a screen.
       --
       -- This was a test of whether the *quarter* was occupied, which is
-      -- simpler and threw away a quarter of the screen: the Deskbar is a
-      -- 210x266 panel in the top right, and counting it as the owner of
-      -- that whole quarter sent every window that would have fitted beside
-      -- it into the cascade instead.
+      -- simpler and threw away a quarter of the screen: the Deskbar was
+      -- then a 210x266 panel in the top right, and counting it as the owner
+      -- of that whole quarter sent every window that would have fitted
+      -- beside it into the cascade instead.
       --
       local function slot_ok(x, y)
         for _, other in ipairs(windows) do
@@ -3545,31 +3462,6 @@ handlers.open = function(req, who, cap)
       end
     end
   end
-
-  --
-  -- A menu rather than a window, and the difference is only in where it is
-  -- kept: no decoration, above everything, placed exactly where it was
-  -- asked for rather than clamped into the workspace, and it never takes
-  -- the focus.
-  --
-  -- `owner` is the window it belongs to. Its events go to that window's
-  -- queue, so an application polls one handle and gets everything - which
-  -- is what keeps `ui.window`'s loop a loop rather than two.
-  --
-  --
-  -- A window that is part of the desktop rather than a thing running on it.
-  --
-  -- The Deskbar is the only one. It has no close box, no minimise and no
-  -- maximise, and the reason is not tidiness: it is *how you get a window
-  -- back*. Minimising it hid the one thing that restores hidden windows,
-  -- and closing it took away the only way to start anything. Neither had a
-  -- way back short of Control-C.
-  --
-  -- BeOS's Deskbar had none of those controls either, for the same reason.
-  -- A control that must never be pressed should not be drawn, which is the
-  -- same argument as not drawing a grip on a window that cannot resize.
-  --
-  win.pinned = req.pinned and true or nil
 
   --
   -- Whether anything may be dropped on it, which decides one thing only:
@@ -3624,6 +3516,16 @@ handlers.open = function(req, who, cap)
   -- knows all three already.
   --
   -- So the compositor gains no knowledge, only a place to put a window.
+  --
+  -- **Pinned, as the strips below are**: part of the desktop rather than a
+  -- thing running on it, so no close box, no minimise and no maximise -
+  -- and never by asking, since an application's window is not scenery. The
+  -- reason is not tidiness: the Deskbar is *how you get a window back*.
+  -- Minimising it hid the one thing that restores hidden windows, and
+  -- closing it took away the only way to start anything. BeOS's Deskbar
+  -- had none of those controls either, for the same reason. A control
+  -- that must never be pressed should not be drawn, which is the same
+  -- argument as not drawing a grip on a window that cannot resize.
   --
   if req.backdrop then
     win.backdrop = true
@@ -3746,6 +3648,16 @@ handlers.open = function(req, who, cap)
     win.y = math.min(math.max(tonumber(req.y) or 0, 0), H - h_)
   end
 
+  --
+  -- A menu rather than a window, and the difference is only in where it is
+  -- kept: no decoration, above everything, placed exactly where it was
+  -- asked for rather than clamped into the workspace, and it never takes
+  -- the focus.
+  --
+  -- `owner` is the window it belongs to. Its events go to that window's
+  -- queue, so an application polls one handle and gets everything - which
+  -- is what keeps `ui.window`'s loop a loop rather than two.
+  --
   if req.kind == "menu" then
     win.kind = "menu"
     win.owner = tonumber(req.owner)
@@ -4172,9 +4084,10 @@ handlers.windows = function(req)
 
                -- What was started to make it, as a path. The Deskbar puts a
                -- button on the bar per window and draws the application's
-               -- own picture on it, which it finds by asking `/bin` about
-               -- this - a title could not say, because a title is whatever
-               -- the application feels like calling itself today.
+               -- own picture on it, which it finds by asking this path's
+               -- attributes for the icon its header declares - a title could
+               -- not say, because a title is whatever the application feels
+               -- like calling itself today.
                program = win.program,
 
                -- And whether it is minimised, which the bar needs for two
@@ -4296,7 +4209,10 @@ local function tell_watchers()
 
   if top ~= told_focus then
     told_focus = top
-    note(("focus %s at %dus"):format(tostring(top and top.title), trace_us()))
+
+    if TRACE then
+      note(("focus %s at %dus"):format(tostring(top and top.title), trace_us()))
+    end
   end
 
   if not changed then return end
@@ -4479,9 +4395,11 @@ local MIMES = { ["image/png"] = gfx.png, ["image/jpeg"] = gfx.jpeg }
 handlers.picture = function(req, who, cap)
   --
   -- Let go of the capability on every path out, not only the happy one.
-  -- Sixteen is all a thread gets, and a server that keeps them answers
-  -- sixteen requests and refuses every one after - which is what a PDF read
-  -- in small windows found on its fifteenth read (`init.lua`).
+  -- A capability kept is a slot in this process's table for as long as the
+  -- desktop runs. The table grows now, but a slot per picture handed over
+  -- is still a leak, and when the table was sixteen slots a server that kept
+  -- them refused every request after the sixteenth - which is what a PDF
+  -- read in small windows found on its fifteenth read (`init.lua`).
   --
   local function done(answer)
     if cap and cap >= 0 then sys.release(cap) end
@@ -4651,6 +4569,10 @@ handlers.retitle = function(req)
   return { ok = true }
 end
 
+-- How many pixels of a window stay on the screen however far it is pushed,
+-- by a drag or by a new scale (`move_window` says why).
+local KEEP = 48
+
 --
 -- **A window put somewhere, in the screen's pixels.** The drag and the
 -- keyboard's Control-W arrows call this; an application's `move` asks in
@@ -4678,8 +4600,6 @@ function move_window(win, x, y, quiet)
   -- What must not happen is losing it. So the tab may not go above the top -
   -- it is the only handle - and KEEP pixels of the window stay on screen in
   -- every other direction, which is always enough of the tab to catch.
-  local KEEP = 48
-
   win.x = math.min(math.max(x, KEEP - win.w), W - KEEP)
   win.y = math.min(math.max(y, OUT.top_of(win)), H - KEEP)
   damage_window(win)
@@ -4960,13 +4880,9 @@ handlers.poll = function(req, who)
   -- frozen desktop those look identical. `wait` is in *scheduler* ticks
   -- here, so a number in the millions is the unit bug this file has been
   -- bitten by twice and the log would say so at a glance.
-  note(("poll %s wait=%s"):format(tostring(win.title), tostring(wait)))
-
-  -- Always on and bounded, with the arithmetic spelled out. `wait` is
-  -- scheduler ticks and the deadline is the counter, and the whole reason
-  -- this line prints both is that the conversion between them has been
-  -- wrong twice in this file's history - in a way that reads as a desktop
-  -- that never redraws rather than as a number.
+  if TRACE then
+    note(("poll %s wait=%s"):format(tostring(win.title), tostring(wait)))
+  end
 
   waiting[#waiting + 1] = {
     who = who, win = win, deadline = sys.ticks() + in_counter(wait),
@@ -5074,10 +4990,6 @@ local function answer_waiting()
   local now = sys.ticks()
   local still = {}
 
-  -- How many are queued and how far the soonest one still is. If replies
-  -- are going out this says nothing interesting; if they are not, it says
-  -- whether the deadline is approaching or standing still.
-
   for _, w in ipairs(waiting) do
     if by_handle[w.win.handle] == nil then
       -- Its window closed underneath it. An empty answer, so the
@@ -5086,8 +4998,11 @@ local function answer_waiting()
       replied(pcall(sys.reply, w.who, { ok = true, events = {} }),
               nil, "a closed window")
     elseif #w.win.events > 0 or now >= w.deadline then
-      note(("answer %s %s"):format(tostring(w.win.title),
-           #w.win.events > 0 and "events" or "due"))
+      if TRACE then
+        note(("answer %s %s"):format(tostring(w.win.title),
+             #w.win.events > 0 and "events" or "due"))
+      end
+
       do
         local ok, err = pcall(sys.reply, w.who, events_for(w.win))
         replied(ok, err, w.win.title)
@@ -5338,7 +5253,6 @@ end
 --
 function scale.rescale(pct)
   local old = scale.pct
-  local KEEP = 48
 
   scale.pct = pct
   scale.chrome()
@@ -5862,29 +5776,6 @@ function machine_keys.take(code, down)
 end
 
 --------------------------------------------------------------------------
--- Input.
---
--- `ui.md` 16.7: input is never behind anything else. Here that is not a
--- thread priority but the shape of the loop - keys are read every pass,
--- before any application is served, and nothing in this loop can block.
---
--- Until there is a pointer device the keyboard does the dragging:
---
---   the pointer               click to raise, drag a title bar to move
---   Control-W then an arrow    move the focused window
---   Control-W then Tab         focus the next window
---   Control-W then Control-W   a literal Control-W to the application
---   Control-C                  give the screen back
---
--- Everything else belongs to the application. See `prefixed` below for why
--- there is a prefix key at all rather than a handful of reserved ones.
---
--- Arrows arrive as three bytes - escape, [, then A to D - which is the one
--- piece of terminal grammar this has to know, and it knows it here rather
--- than in the console because the console has no idea what a window is.
---------------------------------------------------------------------------
-
---------------------------------------------------------------------------
 -- Closing, and ending what will not close.
 --
 -- Two steps, because they are two different things. Asking a window to
@@ -6091,7 +5982,6 @@ local function collect_closing()
   end
 end
 
--- Which window is under a point, front to back, decoration included.
 --
 -- The menu under a point, if any. Front to back, like windows.
 --
@@ -6107,22 +5997,6 @@ local function menu_at(x, y)
   return nil
 end
 
---
--- Every menu, gone.
---
--- Called when a press lands outside them, when the owner is raised away,
--- and when the owner dies. It goes through `handlers.close` rather than
--- deleting the record, so a menu leaves by the same path a window leaves
--- by - which is the reason for building a menu as a window in the first
--- place and would be wasted by tearing one down by hand here.
---
---
--- **And the owner is told which went** (`menus_gone`): it keeps a list of
--- what it has open, and a list nobody corrected is a Kosmos button that
--- stayed lit after its menu was dismissed - the dock's, 3 October. The
--- handles rather than "all of them", so a menu the owner opened after this
--- and before reading it is not forgotten with them.
---
 --
 -- The popup on the screen, if there is one: the frontmost, since a press
 -- outside it closes it and the next one closes the next.
@@ -6178,6 +6052,22 @@ function OUT.popup_outside(x, y)
   return nil
 end
 
+--
+-- Every menu, gone.
+--
+-- Called when a press lands outside them, when the owner is raised away,
+-- and when the owner dies. It goes through `handlers.close` rather than
+-- deleting the record, so a menu leaves by the same path a window leaves
+-- by - which is the reason for building a menu as a window in the first
+-- place and would be wasted by tearing one down by hand here.
+--
+--
+-- **And the owner is told which went** (`menus_gone`): it keeps a list of
+-- what it has open, and a list nobody corrected is a Kosmos button that
+-- stayed lit after its menu was dismissed - the dock's, 3 October. The
+-- handles rather than "all of them", so a menu the owner opened after this
+-- and before reading it is not forgotten with them.
+--
 local function dismiss_menus(owner_handle)
   local n = #menus
   local gone = {}
@@ -6251,8 +6141,6 @@ local function window_at(x, y)
   return nil
 end
 
--- The window whose title-bar three the pointer is over (`OUT.light`).
--- Here rather than beside them because it asks `window_at`, which is here.
 --
 -- **A window's shadow, in the rectangle being composed**, drawn just before
 -- the window itself so everything above it paints over it.
@@ -6306,6 +6194,8 @@ function OUT.wheel_target(x, y)
   return win
 end
 
+-- The window whose title-bar three the pointer is over (`OUT.light`).
+-- Here rather than beside them because it asks `window_at`, which is here.
 function OUT.boxes_under(x, y)
   local win = window_at(x, y)
 
@@ -6324,10 +6214,8 @@ function OUT.boxes_under(x, y)
 end
 
 --
--- The pointer's own bookkeeping, and it is one table rather than three
--- names for a reason the compiler gives: **this chunk is at Lua's limit of
--- 200 locals**, and adding even one more makes the file refuse to parse -
--- reporting the overflow at whatever innocent line happens to be last.
+-- The pointer's own bookkeeping, shared with the pointer's pass in
+-- `/Kosmos/Libraries/wm/pointer.lua`, which counts its transitions in it.
 --
 --   said     how many button transitions have been logged (bounded)
 --   replay   the one table every replayed transition is written through,
@@ -6421,8 +6309,6 @@ local key = use("/Kosmos/Libraries/wm/keys.lua"){
 -- what it wants, so what they start is what they started before.
 --
 local wanted = tostring(args or ""):match("^%s*(.-)%s*$")
-
-if wanted == "" then wanted = "notifications,desktop,deskbar" end
 
 --
 -- `trace` first, so it is a setting rather than a program: it has to be out
@@ -6822,10 +6708,6 @@ while OUT.running do
     for _, c in ipairs(input.clicks or {}) do
       -- One table, reused: a click is rare, but a table per click per pass
       -- on the frame path is the habit this loop cannot afford.
-      --
-      -- Written through `pointer_log.replay` rather than a local of its own
-      -- because this chunk has no room for one - Lua allows 200 and this
-      -- file uses them all.
       pointer_log.replay.x = c.x
       pointer_log.replay.y = c.y
       pointer_log.replay.buttons = c.buttons

@@ -6,6 +6,38 @@
 -- in place at the end of a pass, since `add_damage` holds the same one.
 --
 
+--
+-- `a` with `b` cut out of it, appended to `out` as up to four rectangles.
+--
+-- The pieces are taken in bands - above, below, then left and right of what
+-- is left - so they never overlap. Overlapping pieces would be drawn twice,
+-- which is what this whole exercise exists to stop.
+--
+local function subtract_into(out, a, bx0, by0, bx1, by1)
+  local ax1, ay1 = a.x + a.w, a.y + a.h
+
+  if by0 > a.y then
+    out[#out + 1] = { x = a.x, y = a.y, w = a.w, h = by0 - a.y }
+  end
+
+  if by1 < ay1 then
+    out[#out + 1] = { x = a.x, y = by1, w = a.w, h = ay1 - by1 }
+  end
+
+  local y0 = (by0 > a.y) and by0 or a.y
+  local y1 = (by1 < ay1) and by1 or ay1
+
+  if y1 > y0 then
+    if bx0 > a.x then
+      out[#out + 1] = { x = a.x, y = y0, w = bx0 - a.x, h = y1 - y0 }
+    end
+
+    if bx1 < ax1 then
+      out[#out + 1] = { x = bx1, y = y0, w = ax1 - bx1, h = y1 - y0 }
+    end
+  end
+end
+
 return function(ctx)
   local OUT, OUTLINE, P, PT =
     ctx.OUT, ctx.OUTLINE, ctx.P, ctx.PT
@@ -14,11 +46,47 @@ return function(ctx)
   local mirror = ctx.mirror
   local draw_window, focused_colour, frame_of, menus =
     ctx.draw_window, ctx.focused_colour, ctx.frame_of, ctx.menus
-  local osd, screen, subtract_into, tabs =
-    ctx.osd, ctx.screen, ctx.subtract_into, ctx.tabs
+  local osd, screen, tabs =
+    ctx.osd, ctx.screen, ctx.tabs
   local windows =
     ctx.windows
 
+  --
+  -- Everything that is visible in one damage rectangle, and nothing that is
+  -- not.
+  --
+  -- **This used to be a painter's algorithm with nothing taken out of it.**
+  -- The comment it replaces said so plainly - "windows are opaque, so there
+  -- is no blending between them and the order is the whole of the occlusion"
+  -- - and the order *is* enough to make the picture right. It is not enough
+  -- to make it cheap: a window completely behind another was blitted in full
+  -- and then painted over, and so was the wallpaper underneath both.
+  --
+  -- What that costs is not theoretical. Six Doom windows and four cubes, all
+  -- animating and heavily overlapped: the compositor took 17% of four
+  -- processors while each Doom took one or two. The compositor's cost scales
+  -- with window *area*, not with how hard anything is working, so it grows
+  -- fastest exactly when the machine is busiest - and most of that area was
+  -- pixels nobody would ever see.
+  --
+  -- So: two passes. The first walks **front to back** and works out which
+  -- pieces of the rectangle each window actually shows, cutting away what the
+  -- windows above it cover. The second draws **back to front**, as before.
+  --
+  -- The order of the two matters and is not interchangeable. Culling has to
+  -- be front to back, because occlusion accumulates downwards. Drawing has to
+  -- be back to front, because not every primitive here clips to the rectangle
+  -- it was given - the title text does not - and back to front is what makes
+  -- that harmless: whatever a lower window paints outside its piece, a higher
+  -- one paints over. Drawing front to back with the same culling would be
+  -- faster still and would need every primitive audited first.
+  --
+  -- Each window is drawn once, clipped to the *bounding box* of its visible
+  -- pieces rather than once per piece. A window split into an L is then still
+  -- redrawing a little of what is hidden, which is the cheap ninety per cent
+  -- of this: the expensive case is a window that is entirely hidden, and that
+  -- one is skipped outright.
+  --
   local function compose_rect(r)
     --
     -- What each window still shows, and what is left for the desktop.

@@ -16,8 +16,8 @@ struct addrspace;
 struct thread;
 
 /*
- * A process: an address space, a thread running unprivileged in it, and the
- * capabilities it was handed.
+ * A process: an address space, the threads running unprivileged in it, and
+ * the capabilities it was handed.
  *
  * `design.md` §2's isolation comes from the hardware, not from the language.
  * A process runs at the unprivileged level with its own page table root,
@@ -31,8 +31,8 @@ struct thread;
  * `cpu_current_el` is where the two are reconciled, and it reports the
  * kernel as 1 on both.
  *
- * One thread per process for now. Several is a scheduler question rather
- * than a new mechanism, and nothing needs it yet.
+ * It begins with one thread, and `SYS_THREAD_CREATE` - `process_thread_create`
+ * below - gives it more, sharing its space and its capability table.
  */
 
 /*
@@ -44,8 +44,8 @@ struct thread;
  * looked at. Thirty-two leaves room to run out of something more interesting
  * than slots.
  *
- * The cost is not the slot, which is 1.4 KB in a slab. It is what a process
- * is made of, and that is charged only when one exists:
+ * The cost is not the slot, which is about 1.6 KB in a slab. It is what a
+ * process is made of, and that is charged only when one exists:
  *
  *   image     its writable half, copied. The code is mapped where it lies -
  *             the system's image, the same pages in every process - or, for
@@ -53,13 +53,13 @@ struct thread;
  *   heap      2 MB, fixed, because `design.md` §5.2 wants a bounded one: a
  *             small heap collects quickly and the maximum GC pause is what
  *             decides whether the system stutters.
- *   stack     64 KB.
+ *   stack     256 KB (`USER_STACK_PAGES`).
  *
- * So roughly 2.3 MB a process, and it is the heap that dominates - which is
+ * So roughly 2.5 MB a process, and it is the heap that dominates - which is
  * the same 2 MB that stops a full-screen surface fitting in one.
  *
  * **There is no number of processes any more** (`threads.md` step 1b): the
- * pool grows, a slot for every `PROCESS_RAM_EACH` of memory, and at 2.3 MB a
+ * pool grows, a slot for every `PROCESS_RAM_EACH` of memory, and at 2.5 MB a
  * process the memory runs out before the slots - it is the machine that says
  * no. Address spaces grow with it (`mmu.c`), to the same ceiling and a few
  * over, since there must never be fewer spaces than processes.
@@ -765,13 +765,6 @@ int process_kill_any(unsigned id);
 bool process_should_die(void);
 
 /*
- * Discards a process that was created and never started.
- *
- * The counterpart to process_exit, for the caller cleaning up after
- * something that has not run: it frees the same memory without ending
- * anybody's thread.
- */
-/*
  * **Threads of a process that is already running** (`threads.md` step 3).
  *
  * `process_thread_create` makes one at `entry` with `arg` and its own stack,
@@ -783,8 +776,14 @@ int  process_thread_create(struct process *p, unsigned long entry,
                            unsigned long arg, bool audio);
 void process_thread_ended(struct process *p, struct thread *t, int code);
 int  process_thread_wait(struct process *p, unsigned index);
-struct thread *process_thread_at(struct process *p, unsigned index);
 
+/*
+ * Discards a process that was created and never started.
+ *
+ * The counterpart to process_exit, for the caller cleaning up after
+ * something that has not run: it frees the same memory without ending
+ * anybody's thread.
+ */
 void process_abandon(struct process *p);
 
 /* Releases an exited process's slot. Until this, `exited` and `exit_code`

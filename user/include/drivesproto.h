@@ -51,7 +51,8 @@
 #define DRIVES_ERR_DEVICE      4u  /* the drive would not read */
 #define DRIVES_ERR_UNREADABLE  5u  /* a volume whose filesystem this cannot
                                     * read: NTFS, ext4, exFAT until 6f - and
-                                    * kfs, whose reader is Lua */
+                                    * kfs, which this lists and leaves to
+                                    * `/Home` */
 #define DRIVES_ERR_DAMAGED     6u  /* a chain that leads nowhere, or a
                                     * directory that does not end */
 
@@ -62,8 +63,8 @@
  *
  * `DRIVES_NAME_BYTES` is repeated from `drives_decode.h` rather than
  * included from it, because this header is compiled by clients that have no
- * business knowing how a partition table is read. The `_Static_assert` at the
- * foot of `drives.c` holds the two together.
+ * business knowing how a partition table is read. The `_Static_assert` near
+ * the top of `drives.c` holds the two together.
  */
 #define DRIVES_PATH_MAX      256u
 #define DRIVES_NAME_BYTES     64u

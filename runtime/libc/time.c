@@ -2,7 +2,7 @@
 /*
  * Broken-down time: the arithmetic half of <time.h>.
  *
- * There is still no clock in here. `time()` is in `user/init/misc_user.c`
+ * There is still no clock in here. `time()` is in `user/init/clock_user.c`
  * and reads the board's; this file only answers which date and hour a
  * count of seconds names, and which count a date names - which needs no
  * clock at all, only the calendar.

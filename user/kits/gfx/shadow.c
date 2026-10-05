@@ -157,7 +157,7 @@ void gfx_darken_span(uint32_t *p, long n, uint32_t keep)
  * unsable because of the slowness when dragging windows".
  *
  * Now the falloff is a table of `spread` entries made once per call, the
- * rows above and below the window are one amount each (`darken_span`), the
+ * rows above and below the window are one amount each (`gfx_darken_span`), the
  * sides are a column of amounts, and the corner test is asked only in the
  * four corner squares, where the rounding is. The picture is the same: the
  * distance is to the nearest edge, the diagonal at a corner, and the fall

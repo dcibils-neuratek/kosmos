@@ -16,8 +16,8 @@
 --
 -- Everything above the kernel here is Lua, and Lua is text, and until now
 -- the only way to change any of it was to edit a file on a build machine
--- and make a new image. A system whose whole design rests on being able to
--- replace a running server cannot be one you have to reboot to type into.
+-- and make a new image. A system meant to run the Lua it is written in
+-- cannot be one you have to rebuild to type into.
 --
 -- It is a plain array of lines and a cursor. No undo, no selection, no
 -- syntax colouring yet - each of those is worth having and none of them is
@@ -296,8 +296,11 @@ local function key(c)
 end
 
 --------------------------------------------------------------------------
--- The loop. Redraw only when something changed, so an idle editor costs a
--- yield and one call to the console rather than a full-screen compose.
+-- The loop. Redraw only when something changed, and when nothing did,
+-- asleep for a scheduler tick before asking again - not a yield, which is a
+-- spin dressed as a wait. Not `fs.wait_input` either: the console answers
+-- nobody while it sleeps in one, and an editor idling there would hold up
+-- every other program printing.
 --------------------------------------------------------------------------
 
 draw()
@@ -313,9 +316,9 @@ while running do
 
     clamp()
     draw()
+  else
+    sys.sleep(1)
   end
-
-  sys.yield()
 end
 
 sys.screen_take(false)

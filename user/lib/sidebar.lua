@@ -57,11 +57,11 @@ end
 -- `/Devices/audio` are mounts and already appear inside `/Devices`; offering them
 -- again would be a pane that disagrees with the tree underneath it.
 --
--- **A mount that cannot be listed is not offered.** `/Network` is a protocol
--- rather than a tree and answers a listing with an error, and so does the
--- disk on a machine that has none. Asking is the only way to tell them
--- apart - nothing on a mount says "browsable" - and a root that did
--- nothing when clicked would be worse than one that is not there.
+-- **A mount that holds no files is not offered.** `/Running`, `/Devices`
+-- and `/Network` are for programs - one finds another there, or reaches
+-- the machine's devices, or speaks a protocol - and `places.holds_files`
+-- names them (`places.lua`). The mount is not asked whether it answers a
+-- listing; the loop below says what asking once cost.
 --
 -- The order is the namespace's own, which is alphabetical. That is a
 -- deliberate non-choice: any order picked here is one more thing to edit
@@ -103,10 +103,11 @@ local function mount_roots()
     -- from a hung window manager, and it was a sidebar asking a question it
     -- did not need the answer to.
     --
-    -- So it does not ask. Every mount is shown, and one that cannot be
-    -- listed shows empty when it is opened - which is the right place to
-    -- find that out, because by then a person has asked for it and is
-    -- waiting for one directory rather than for the machine to start.
+    -- So it does not ask. Every mount that holds files is shown, and one
+    -- that cannot be listed shows empty when it is opened - which is the
+    -- right place to find that out, because by then a person has asked for
+    -- it and is waiting for one directory rather than for the machine to
+    -- start.
     --
     -- The deeper fault is still open: a filesystem call that takes eighteen
     -- seconds to fail is a bug wherever it lives, and this only stops the
@@ -129,9 +130,12 @@ end
 -- select: a heading names a set of places and is not one itself, so clicking
 -- it neither highlights nor navigates.
 --
--- **The design's list, not a guess at one.** `drives.html` folds away
--- `bin, lib, app, dev, net, ramfs`, and that is what System holds. An
--- earlier version here was a set literal of my own invention: it swallowed
+-- **The design's list, not a guess at one.** `drives.html` folds away the
+-- system's own mounts, drawn as `bin, lib, app, dev, net, ramfs` before
+-- the namespace took its present names; what holds files of those is
+-- `/Kosmos` now, with the applications, programs, libraries and kits, and
+-- `/Temporary`, the ramfs - and that is what System holds. An earlier
+-- version here was a set literal of my own invention: it swallowed
 -- `/system` and `/user` as well, so Places was left holding `user` - which
 -- the drawing never mentions - and no `Desktop`, which it does.
 --
@@ -143,20 +147,6 @@ local SYSTEM_MOUNTS = {
   ["/Kosmos"] = true, ["/Temporary"] = true,
 }
 
---
--- **The drives, asked for only when the group is opened.**
---
--- `mount_roots` above records what probing mounts at startup once cost: 18.4
--- seconds on a laptop with no network card, with the whole desktop looking
--- hung, because Tracker *is* the desktop. Asking `/Drives` what is plugged
--- in is the same shape of question one mount further along, so it is asked
--- here - inside `children`, which `ui.tree` calls when somebody opens the
--- group - and never on the way to a first frame.
---
--- `fs.volumes` rather than a listing, because a listing gives names and then
--- costs a `getattr` for each one; this returns the filesystem, the size and
--- how much is free in a single call, which is what the rows want.
---
 sidebar.subdirs = subdirs
 
 -- A volume's name where a person reads it, and where it opens: the one that
@@ -182,6 +172,20 @@ function sidebar.new()
     return volumes_seen
   end
 
+  --
+  -- **The drives, asked for only when the group is opened.**
+  --
+  -- `mount_roots` above records what probing mounts at startup once cost:
+  -- 18.4 seconds on a laptop with no network card, with the whole desktop
+  -- looking hung, because Tracker *is* the desktop. Asking `/Drives` what is
+  -- plugged in is the same shape of question one mount further along, so it
+  -- is asked here - inside `children`, which `ui.tree` calls when somebody
+  -- opens the group - and never on the way to a first frame.
+  --
+  -- `fs.volumes` rather than a listing, because a listing gives names and
+  -- then costs a `getattr` for each one; this returns the filesystem, the
+  -- size and how much is free in a single call, which is what the rows want.
+  --
   local function drive_rows()
     local out = {}
     local volumes = volumes_now()

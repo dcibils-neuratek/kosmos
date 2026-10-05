@@ -24,7 +24,4 @@ void user_init(void);
  * is what it means on this machine.
  */
 
-/* What `syscall` ends up calling. Provided above `arch/`. */
-uint64_t x86_syscall(uint64_t op, uint64_t arg);
-
 #endif /* ARCH_X86_64_USER_H */

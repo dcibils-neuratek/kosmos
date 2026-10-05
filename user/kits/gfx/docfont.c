@@ -2,9 +2,9 @@
 /*
  * Fonts that arrive inside a document, and drawing a page of them at once.
  *
- * `gfx`'s own outline fonts are the three the system ships, cached by
- * codepoint from 32 to 126, loaded from the image. A PDF's fonts are none of
- * those things: they come as bytes inside the file, they are addressed by
+ * `gfx`'s own outline fonts are the faces the system sets its text in,
+ * addressed by codepoint, with 32 to 126 rasterised as each one loads. A
+ * PDF's fonts are none of those things: they come as bytes inside the file, they are addressed by
  * *glyph index* rather than by character, and a page uses about a hundred of
  * the several thousand a face contains.
  *
@@ -95,10 +95,8 @@ struct docfont {
     const unsigned char *bytes;
     float          scale;
     int            px;
-    int            ascent, descent, line_gap;
+    int            ascent, descent;
     struct cached  cache[CACHE_SLOTS];
-    unsigned       rasterised;   /* how many went through stb_truetype */
-    unsigned       drawn;        /* how many were put on a surface */
 };
 
 /*
@@ -202,8 +200,6 @@ static struct cached *glyph_of(struct docfont *f, int glyph)
     c->yoff = yoff;
     c->coverage = NULL;
     c->pages = 0;
-
-    f->rasterised++;
 
     if (bitmap == NULL || w <= 0 || h <= 0) {
         /* A space, or a glyph with no outline. Cached as blank so it is not
@@ -314,13 +310,11 @@ static int l_draw(lua_State *L)
         drawn++;
     }
 
-    f->drawn += drawn;
-
     lua_pushinteger(L, (lua_Integer)drawn);
     return 1;
 }
 
-/* `font:metrics()` - ascent, descent and line gap, in pixels at this size. */
+/* `font:metrics()` - ascent and descent in pixels, and the size. */
 static int l_metrics(lua_State *L)
 {
     struct docfont *f = check_font(L, 1);
@@ -328,26 +322,7 @@ static int l_metrics(lua_State *L)
     lua_newtable(L);
     lua_pushinteger(L, f->ascent);   lua_setfield(L, -2, "ascent");
     lua_pushinteger(L, -f->descent); lua_setfield(L, -2, "descent");
-    lua_pushinteger(L, f->line_gap); lua_setfield(L, -2, "line_gap");
     lua_pushinteger(L, f->px);       lua_setfield(L, -2, "px");
-    return 1;
-}
-
-/*
- * `font:stats()` - how many glyphs were rasterised against how many drawn.
- *
- * The whole justification for the cache is the ratio between these two, and
- * a number nobody can read is a claim rather than a measurement.
- */
-static int l_stats(lua_State *L)
-{
-    struct docfont *f = check_font(L, 1);
-
-    lua_newtable(L);
-    lua_pushinteger(L, (lua_Integer)f->rasterised);
-    lua_setfield(L, -2, "rasterised");
-    lua_pushinteger(L, (lua_Integer)f->drawn);
-    lua_setfield(L, -2, "drawn");
     return 1;
 }
 
@@ -369,25 +344,6 @@ static int l_gc(lua_State *L)
     }
 
     return 0;
-}
-
-/*
- * `gfx.docfont(address, length, capacity, px)` - a font out of a document.
- *
- * `capacity` is how much room the region has, because a subset font may
- * need four bytes appended; see `ensure_cmap`.
- *
- * The address is a mapped region holding the font program, and it must stay
- * mapped and unchanged for as long as the font is used: `stb_truetype`
- * reads from it on every glyph rather than taking a copy. That is why this
- * takes an address rather than a string - a 400 KB font program as a Lua
- * string is 400 KB of a 2 MB heap, for bytes nothing in Lua will ever look
- * at.
- */
-static inline uint32_t be32(const unsigned char *p)
-{
-    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16)
-         | ((uint32_t)p[2] << 8)  | (uint32_t)p[3];
 }
 
 static inline void put32(unsigned char *p, uint32_t v)
@@ -415,11 +371,11 @@ static inline void put32(unsigned char *p, uint32_t v)
  * a ten-byte format 6 subtable that maps nothing.
  *
  * Rather than modify `stb_truetype.h`, which is vendored and stays as its
- * author released it, this edits *our copy of the input*: four zero bytes
- * appended - a cmap header declaring no encodings - and one directory entry
- * repointed at them. The entry taken is `post`, which carries glyph names
- * and PostScript metadata and is not read by the rasteriser; `OS/2` and
- * `name` are the fallbacks for the same reason.
+ * author released it, this edits *our copy of the input*: those twenty-two
+ * bytes appended, and one directory entry repointed at them. The entry
+ * taken is `post`, which carries glyph names and PostScript metadata and is
+ * not read by the rasteriser; `OS/2` and `name` are the fallbacks for the
+ * same reason.
  *
  * The font's checksums are wrong afterwards. Nothing checks them.
  */
@@ -490,6 +446,19 @@ static bool ensure_cmap(unsigned char *data, size_t len, size_t cap,
     return false;
 }
 
+/*
+ * `gfx.docfont(address, length, capacity, px)` - a font out of a document.
+ *
+ * `capacity` is how much room the region has, because a subset font may
+ * need twenty-two bytes appended; see `ensure_cmap`.
+ *
+ * The address is a mapped region holding the font program, and it must stay
+ * mapped and unchanged for as long as the font is used: `stb_truetype`
+ * reads from it on every glyph rather than taking a copy. That is why this
+ * takes an address rather than a string - a 400 KB font program as a Lua
+ * string is 400 KB of a 2 MB heap, for bytes nothing in Lua will ever look
+ * at.
+ */
 static int l_docfont(lua_State *L)
 {
     uintptr_t at  = (uintptr_t)luaL_checkinteger(L, 1);
@@ -511,8 +480,6 @@ static int l_docfont(lua_State *L)
         return luaL_error(L,
             "gfx.docfont: no cmap and nowhere to synthesise one");
     }
-
-    (void)be32;
 
     if (px < 4 || px > 256) {
         return luaL_error(L, "gfx.docfont: %d px is outside 4..256", px);
@@ -550,13 +517,12 @@ static int l_docfont(lua_State *L)
     f->scale = stbtt_ScaleForMappingEmToPixels(&f->info, (float)px);
 
     {
-        int a, d, g;
+        int a, d;
 
-        stbtt_GetFontVMetrics(&f->info, &a, &d, &g);
+        stbtt_GetFontVMetrics(&f->info, &a, &d, NULL);
 
         f->ascent   = (int)((float)a * f->scale);
         f->descent  = (int)((float)d * f->scale);
-        f->line_gap = (int)((float)g * f->scale);
     }
 
     luaL_getmetatable(L, DOCFONT_MT);
@@ -577,7 +543,6 @@ void kosmos_docfont_open(lua_State *L)
 
     lua_pushcfunction(L, l_draw);    lua_setfield(L, -2, "draw");
     lua_pushcfunction(L, l_metrics); lua_setfield(L, -2, "metrics");
-    lua_pushcfunction(L, l_stats);   lua_setfield(L, -2, "stats");
     lua_pushcfunction(L, l_free);    lua_setfield(L, -2, "free");
     lua_pushcfunction(L, l_gc);      lua_setfield(L, -2, "__gc");
 

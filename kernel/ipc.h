@@ -42,17 +42,18 @@ struct process;
  * becomes a silent nil three layers down. The kernel does not interpret it,
  * it only insists it is there.
  *
- * The bytes are a serialised Lua value, and **the kernel has no opinion
- * about that at all**. It copies them. That is what makes `design.md` §1's
- * thesis affordable: the protocol between servers can be the data model of
- * the language precisely because the thing in the middle does not need to
- * understand it. An IDL would have to.
+ * The bytes are the two ends' business, and **the kernel has no opinion
+ * about them at all**. It copies them. Every system server speaks a declared
+ * shape - a fixed struct in a header both sides compile against, the
+ * `...proto.h` files in `user/include/` - and an application's own name in
+ * `/Running` still takes a serialised Lua table. The thing in the middle
+ * understands neither, which is why a protocol can change without it.
  *
- * 2 KB. A namespace read or a drawing command is tens of bytes, and 512 was
- * enough for those and not for the thing that turned out to matter: hot
- * reload sends a server's source, and a server is more than 512 bytes of
- * Lua. Anything genuinely large still wants shared memory rather than a
- * copy, and `gfx.md` §19.4 designs that path separately.
+ * 2 KB. A namespace read or a drawing command is tens of bytes, but a
+ * console request is about a kilobyte, and a reply that lists a directory
+ * a page at a time wants the room. Anything genuinely large wants shared
+ * memory rather than a copy, and a stream of data always does: a message
+ * says what to do, and a region holds what to do it to.
  *
  * The size costs memory rather than time, because only `length` bytes are
  * ever copied. What it does cost is stack: a syscall holding two of these
@@ -117,8 +118,6 @@ static inline cap_t message_get_cap(const struct message *m)
 #define IPC_ERR_GONE       (-2)     /* the endpoint was destroyed while waiting */
 #define IPC_ERR_NO_PEER    (-3)     /* replying to a thread that is not waiting */
 #define IPC_ERR_NO_SPACE   (-4)     /* out of endpoints, or out of capability slots */
-#define IPC_ERR_TOO_BIG    (-5)     /* the value does not fit in a message */
-#define IPC_ERR_BAD_VALUE  (-6)     /* a value that cannot cross a boundary */
 #define IPC_NO_MESSAGE     (-7)     /* nobody was waiting, and blocking was refused */
 
 /*
@@ -260,11 +259,11 @@ struct irq_line *ipc_resolve_irq(struct thread *t, cap_t index);
 cap_t ipc_install_irq(struct thread *t, struct irq_line *line);
 cap_t ipc_install_memory(struct thread *t, struct memobj *m);
 
-/* Drops everything a thread holds. Only memory needs it - an endpoint
- * capability going stale is harmless, a region's pages are not. */
 /* One capability back. Dropping is not destroying: see ipc.c. */
 int  ipc_cap_drop(struct thread *t, cap_t index);
 
+/* Drops everything a table holds. Only memory needs it - an endpoint
+ * capability going stale is harmless, a region's pages are not. */
 void ipc_caps_release(struct captable *c);
 
 /*
@@ -321,7 +320,6 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply);
 int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
                 bool nonblocking, unsigned long timeout);
 
-/* Answer a sender obtained from ipc_receive, unblocking it. */
 /*
  * Sleep until a caller arrives on `index`, `ticks` scheduler ticks pass, or -
  * with `or_input` - input arrives. Collects nothing; see ipc.c.
@@ -350,6 +348,7 @@ void ipc_endpoint_unwatch(struct endpoint *ep, struct thread *t,
  */
 struct endpoint *ipc_endpoint_peek(struct thread *t, cap_t index);
 
+/* Answer a sender obtained from ipc_receive, unblocking it. */
 int ipc_reply(struct thread *sender, const struct message *msg);
 
 /*

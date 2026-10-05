@@ -2054,7 +2054,9 @@ if DOCKED then
     local what, arg = dock.action(it)
 
     if what == "launch" then
-      fs.send("/Running/wm", { type = "launch", program = arg })
+      -- Without waiting for it to start, as the bar's own launch does: a
+      -- click on the dock waited for the application until 0.11.
+      fs.send("/Running/wm", { type = "launch", program = arg, wait = false })
       print("deskbar: the dock launched " .. arg)
     elseif what == "raise" or what == "minimise" then
       -- Drawn on this press from what is known, as the bar's buttons are.

@@ -633,11 +633,6 @@ unsigned apic_id(void)
     return apic.id;
 }
 
-bool apic_present(void)
-{
-    return apic.present;
-}
-
 const char *apic_describe(void)
 {
     return description;

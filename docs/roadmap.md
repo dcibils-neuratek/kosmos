@@ -516,6 +516,52 @@ kits under `user/lib/` for Present and Sheets to stand on:
 - **W5 - a picture with its caption, and a table.**
 - **W6 - DOCX out**: Word's XML parts in a zip.
 
+**A late stick waits inside a request.** `diskfs`'s `stick_found` sleeps up to
+20 seconds inside a request for the stick that holds `/Home` - against *nothing
+waits on hardware* - and is the likeliest reason `df` never answers on the
+M700 (found by the review before 0.11). It answers what it has and mounts the
+stick when it arrives.
+
+**The browser waits where nothing may.** Found by the review before 0.11:
+`paint_band` fetches a band's pictures synchronously, so a scroll, a resize or
+a zoom can stop the window until the network answers; the history search
+reads every day's file on every keystroke; the Home page and user-agent fields
+write their setting on every keystroke; Settings lists the authorities and
+counts the cache on every resize; and a page's form fields do not reach the
+desktop's clipboard. Each to draw what it has and fetch, read and write on its
+own clock.
+
+**Windows that ask a server while they draw, and draw for nothing.** Found
+by the review before 0.11, beside the browser's (above), each against *nothing
+on the desktop waits on a server* or an idle desktop being idle:
+Preferences reads a dozen facts - the network stack's among them, the call
+behind the M700's 23-second Deskbar - on every sidebar click, wheel tick and
+Find keystroke; Servers does the same on a click; Music decodes covers inside
+its list's paint and before a click's highlight, and its `status` is written
+and never drawn; `clock.now`/`clock.at` read the settings file inside paints
+(Info, every tick while counting; Notifications, every row); Paint commits its
+palette 250 times a second when idle, System Benchmark the whole window every
+pass once scored, and Cafesa3D the whole window for each batch of render
+tiles; the Deskbar, Drives and Preferences repaint whole every second through
+a `tick` that changed nothing; Tracker's desktop asks `/Drives` before its
+first frame; the IDE's Find walks four trees on the first key and again after
+an empty field. And the smaller copies to fold in with step 3: `ui.fitted`
+re-written by hand eight times (most cutting inside a UTF-8 character), the
+Deskbar's three-layer menu again in the launcher pad without its check,
+Startup Apps and Date & Time as whole applications Preferences now is,
+thousands separators, `m:ss`, dotted quads and pixel word-wrap written three
+or four times each, Cafesa3D's Euler matrices copied out of `scenefile`, and
+a dozen unused locals.
+
+**`IRQ_LINES_MAX` is a fixed 16.** The interrupt claims a process may hold
+are a table that does not grow - against *the pools grow*. Diego's call
+whether claims are a pool.
+
+**Tracker's paste has no suite.** Fixed in the review before 0.11 - a cut is
+`files.move`, and a copy is named as `files.free_name` names - with nothing
+that pastes; the display harness's Tracker phases want a copy, a cut and a
+paste into the same folder.
+
 **`df` never answers on the M700.** Found 4 October, on 0.10.257 by
 network boot: `kosmos_telnet.py 192.168.1.40 run "df"` had printed nothing
 after ten minutes while `ls /Home/Apps` answered at once beside it. To find
@@ -567,6 +613,64 @@ fix, then a review of the rest:
   or could want - formats read and written, media decoded, pictures loaded,
   lists and panels drawn - each found either moved into a kit or recorded
   here as the next to move. Done before Kosmos Write's W4 goes further.
+- **The review before 0.11 found them** (4 October; six reviewers over the
+  kernel, the servers and drivers, the kits, the libraries, the programs and
+  the applications, each finding checked by a search of the whole tree).
+  What it found that is a second copy - this step's work list, Diego's step
+  3, after 0.11:
+  - **Regions by hand** beside `regions.lua`: `pdfpage.lua` (three places),
+    `video.lua` (two), `camera.lua` (two), `midi.lua`, `ui.lua`'s
+    `direct_region`, `groove/engine.lua`'s export, `files.copy`; and in the
+    programs `wm.lua`, `pdfbench.lua`, `screenshot.lua`, `vncd.lua`, and
+    string-to-file in `log`, `diagnose`, `acpi`, `telnetd`. `wm.lua`'s and
+    `pdfbench`'s read loops would also overwrite on a second pass, since
+    `read_into` writes at the region's start. Doom, Quake and the Super
+    Nintendo each carry the same 256 KB-window loader: one
+    `regions.read_whole`.
+  - **A folder and its parents**, six times: `browserprefs`, `history`,
+    `favorites` (identical), `httpcache`, `zip`, `launcheredit` - one
+    `files` function, and `prefs.folder` for the browser's.
+  - **The surface's layout** copied into four kits (`gl_kosmos.c`, `png.c`,
+    `jpeg.c`, `docfont.c`) and `kosmos_surface_pixels` declared in seven
+    files, against `gfx_draw.h`'s own rule; `gl.blit` and `docfont:draw`
+    skip the freed-parent check. One constructor and one door in
+    `gfx_draw.h`.
+  - **The glyph blend**: `docfont.c` lays coverage a pixel at a time with
+    different rounding where `gfx_cover_row` does it in vector lanes, held
+    by `test_rows`; `k3d_raster.c` has a third.
+  - **Two inflaters** in the Compression Kit: `puff` (inflate, PNG) and
+    `tinfl` (gzip). One.
+  - **base64** in the 3D Kit's C and again as a Lua byte loop in `telnetd`:
+    one, in a general kit.
+  - **Byte-order and page-mapping helpers** in four to five kits each, and
+    three GPT readers (`diskfs.c`, `drives_decode.c`, `storage_decode.c`).
+  - **Two Markdown readers** (`markdown.lua` for Reader, `mdstyle` and
+    `docview` for Text Editor); two size formatters (`drivelist`, `files`);
+    the calendar split between `clock` and `httpcache`; Groove saving
+    projects as Lua to `load` rather than `tabletext`; UTF-8 stepping in
+    `json`, `tags`, `ui`, `notify`, `longmenu`, `favorites`, `browser`;
+    `ui.draw_scrollbar`/`ui.scrollbar`, one function under two names;
+    `pagedraw`'s `argb` again in `writer`; the decode-and-feed loop in
+    `media.lua` and `video.lua`.
+  - **The network programs' scaffolding**: `dotted()` in six files,
+    `neighbour()` byte-identical in `telnetd` and `vncd`, `address()` in two,
+    and the status-and-`/Running` loop in `httpd`, `telnetd` and `vncd`;
+    `files.abs`, `files.join` and `files.remove` re-derived in `telnetd`,
+    `ls`, `cat` and `rm`; `meter()` in `monitor` and `htop`; the screen-watch
+    handshake by hand in `screenshot` and `vncd`; the dated-name stamp in
+    three; `/Devices/cpu` read three times in `wm.lua`.
+  - **The browser's**: its scrollbar (the kit's, by `ui.paint_view` now), a
+    second URL resolver that does not collapse `..` (redirects follow it),
+    the markup escaper `docxwrite` has too, header lookups `httpcache`
+    already does, the authorities list `http.lua` trusts differently, and
+    `resolve_url`/`sheet_from` copied between `web_kosmos.c` and
+    `web_style.c` - and `web_paint.c`, `web_style.c` and `web_select.c` as a
+    second engine beside NetSurf's, which this roadmap already says retires.
+- **And one decision, Diego's**: the Crypto Kit's SHA-256, HMAC, ChaCha20,
+  Poly1305 and X25519 are a second copy of BearSSL's, which every image links
+  whole, and nothing in the running system calls them - TLS seeds BearSSL
+  from the kernel's entropy itself. One door: the Crypto Kit as the door
+  onto BearSSL, keeping DES and the generator - or the reverse.
 
 **Kosmos Present - slides after Apple's Keynote.** Diego, 4 October 2026:
 "our Kosmos Present presentation software like apple keynote". Slides on

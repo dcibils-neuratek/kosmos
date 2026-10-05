@@ -20,13 +20,14 @@
 -- **HTTP/1.0 with `Connection: close`.** 1.1 would mean keeping the
 -- connection open and then knowing when a request ended, which is
 -- `Content-Length` on the way *in* and a state machine to go with it. Closing
--- after each answer is slower and is one thing to get right; `fetch` on this
--- machine speaks the same version for the same reason.
+-- after each answer is slower and is one thing to get right. `fetch` speaks
+-- 1.1 since 30 September (`http.lua`), and an answer in 1.0 with the
+-- connection closed is one every 1.1 client understands.
 --
--- **Several at a time, without threads.** This system has none - there is no
--- thread syscall, and a process has one `lua_State`, so two threads inside
--- it would want a lock around the whole interpreter and would take turns
--- anyway. What it has instead is what nginx has: **one process, an event
+-- **Several at a time, without threads.** A process may have several now
+-- (`SYS_THREAD_CREATE`, `docs/threads.md`), but this one is Lua and has one
+-- `lua_State`, so two threads inside it would want a lock around the whole
+-- interpreter and would take turns anyway. What it has instead is what nginx has: **one process, an event
 -- loop, and a coroutine per connection**, resumed when that connection has
 -- something. `fs.poll` is what makes it possible and is the `select` this
 -- system had wanted six separate times.
@@ -413,7 +414,7 @@ while true do
   -- because a connection waiting to be accepted is a client that has already
   -- been waiting longer than one being read from.
   --
-  if arrived and #live < 12 then
+  if arrived then
     -- With a deadline, because `poll` saying somebody arrived and this
     -- message reaching the stack are two moments, and a reset in between
     -- would otherwise park this loop for good.

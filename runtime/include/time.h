@@ -5,11 +5,14 @@
 #include <stddef.h>
 
 /*
- * Enough of <time.h> for the headers that include it to compile.
+ * <time.h>, as much of it as a process uses.
  *
- * There is no wall clock in Kosmos and there will not be one in the kernel:
- * time is a resource a process reaches through its namespace, at /Devices/clock,
- * which is why even the clock is a capability in `design.md` §9.2.
+ * The kernel keeps no wall clock and there will not be one in it: the board
+ * keeps the time, the kernel hands it on in `sysinfo`, and a process reads
+ * it at `/Devices/clock` - which is why even the clock is a capability in
+ * `design.md` §9.2. `time()` is that number (`user/init/clock_user.c`), and
+ * zero on a machine with no clock; `clock()` is -1, because a process is
+ * not told its own processor time (`user/init/misc_user.c`).
  *
  * Lua wants time() only to seed its hash randomisation, and that seed is
  * overridden in the Kosmos build to use the counter instead.

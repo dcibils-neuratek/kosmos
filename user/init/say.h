@@ -13,10 +13,11 @@
  * process to need them: two copies of a request builder are two places a
  * change to `conproto.h` has to reach.
  *
- * **It is in `user/lib/` and not with the drivers**, although four of its
- * five callers are drivers. `drives` is the fifth and is a server, so what
- * this serves is not "a driver" but any process that was given the console's
- * endpoint rather than the console - which is the shape of a library.
+ * **It is in `user/init/` and not with the drivers**, although four of its
+ * eight callers are drivers. The other four - `drives`, `notify`, `net` and
+ * `diskfs` - are servers, so what this serves is not "a driver" but any
+ * process that was given the console's endpoint rather than the console,
+ * and `user/init/` is where the code every process's image carries lives.
  *
  * A line is built in a fixed buffer - a server has no formatted-print
  * library - and sent in one request, so it cannot arrive in pieces with

@@ -39,7 +39,6 @@
 #define DEV_NAME_MAX    20u       /* a field's name, or a node's */
 #define DEV_TEXT_MAX    32u       /* a field's value, when it is words */
 #define DEV_FIELDS      24u       /* the most any one node holds */
-#define DEV_NODES       12u       /* the most `list` can name */
 
 #define DEV_KIND_NUMBER  0u
 #define DEV_KIND_TEXT    1u

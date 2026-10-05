@@ -14,7 +14,7 @@
 --
 --   * the object layer, against a real document on a real disk,
 --   * `fs.read_into`, which is how anything bigger than a message crosses,
---   * `sys.inflate`, which is new and has never run.
+--   * the Compress Kit's `inflate`, on a stream from a real document.
 --
 -- Any of the three failing says so plainly rather than showing an empty
 -- window and leaving which layer broke to be guessed at.
@@ -22,7 +22,7 @@
 local pdf      = use("/Kosmos/Libraries/pdf.lua")
 local compress = use("/Kosmos/Kits/compress")
 
-local path = args[1] or "/Home/odyssey.pdf"
+local path = args:match("^%s*(%S+)") or "/Home/odyssey.pdf"
 
 -- A file read a window at a time - sixteen pages, the biggest single read
 -- - through the PDF Kit's door, `pdf.file`. This program built its own
@@ -92,7 +92,7 @@ for _, name in ipairs(names) do
 end
 
 --------------------------------------------------------------------------
--- And the part that has never run: the content stream, decompressed.
+-- And the content stream, decompressed by the Compress Kit.
 --------------------------------------------------------------------------
 
 local offset, length, filter = doc:stream_range(page.dict.Contents)

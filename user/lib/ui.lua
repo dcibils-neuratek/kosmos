@@ -23,13 +23,6 @@
 -- window's drawing can be logged, replayed, or inspected from the shell.
 -- BeOS could do none of that: it handed the application a pointer into the
 -- app_server's buffer with a lock around it.
---
--- No pointer device exists yet, so this is keyboard-driven throughout: Tab
--- moves the focus, Enter and Space activate. That is not a placeholder to
--- be thrown away - a UI that cannot be driven from the keyboard is a UI
--- that has decided some people should not use it - and the pointer, when it
--- arrives, sets focus and clicks the thing under it, which is two lines
--- against the same model.
 --------------------------------------------------------------------------
 
 local theme = use("/Kosmos/Libraries/theme.lua")
@@ -83,6 +76,8 @@ local function ui_per_tick()
   return cached_per_tick
 end
 
+-- The cell `gfx.font` gave when this file loaded. `ui.text` is the one
+-- widget that still wraps and steps by it; every other asks `gfx.height()`.
 local GW, GH = gfx.font.w, gfx.font.h
 
 --
@@ -622,8 +617,9 @@ local CONTROL_R = 7
 --
 -- Diego, 23 September 2026: "the endeavor theme uses flat shading and our
 -- theme uses bevels in the deskbar and else, lets use flat shading like the
--- mockups". `theme.flat` is a look's own property (`theme.lua`), so the
--- four dimensional looks are untouched and Endeavour is one line.
+-- mockups". `theme.flat` is a look's own property (`theme.lua`), so
+-- Endeavour, Plex and Night are one line each and the three dimensional
+-- looks - Plex Night, Classic and Studio - are untouched.
 --
 -- One rule for both: raised and sunken are the same rectangle in a flat
 -- look, because the whole idea of the two is *light*, and a surface with no
@@ -2524,7 +2520,7 @@ function ui.trail(spec)
   local v = ui.view(spec)
   local SEPARATOR = " > "
 
-  v.h = v.h > 0 and v.h or GH
+  v.h = v.h > 0 and v.h or gfx.height()
   v.text = v.text or "/"
 
   local function parts_of(path)
@@ -5276,7 +5272,7 @@ window.__index = window
 -- anywhere - the compositor owns the pixels, so the window stays exactly as
 -- it was.
 --
--- 1400 of the 2048 leaves room for the message's own keys and the
+-- 1200 of the 2048 leaves room for the message's own keys and the
 -- serialiser's framing. The estimate below is deliberately generous for the
 -- same reason: being wrong in the cheap direction costs an extra message,
 -- and being wrong in the other direction costs the application.
@@ -5438,15 +5434,6 @@ local function apply_fonts(fonts)
 end
 
 --
--- **A role's font at a size of its own.**
---
--- `gfx.face` keeps a pool of seven beyond the five roles and answers `nil,
--- "no room for another face"` rather than throwing one out - so a size that
--- cannot be served falls back to the role itself, which draws at the
--- desktop's size rather than in the bitmap font. Remembered per role and
--- size, and forgotten when the fonts change.
---
---
 -- **A view drawn into a surface**, for a window whose pixels its program
 -- draws: the same commands a kit window sends the window manager, made the
 -- same way and replayed by `/Kosmos/Libraries/paint.lua`, which is the window manager's
@@ -5494,6 +5481,14 @@ do
   end
 end
 
+--
+-- **A role's font at a size of its own.**
+--
+-- `gfx.face` keeps a pool of sixty-four beyond the six roles and answers
+-- `nil, "no room for another face"` rather than throwing one out - so a size
+-- that cannot be served falls back to the role itself, which draws at the
+-- desktop's size rather than in the bitmap font. Remembered per role and
+-- size, and forgotten when the fonts change.
 --
 -- **And a weight or a slant of it**: `variant` is `bold`, `italic` or
 -- `bolditalic`, the role's font with that ending - `ibmplexsans-bold` -
@@ -5588,11 +5583,6 @@ function ui.window(spec)
     -- The file this process runs, as its runner kept it: what the Deskbar
     -- reads the window's picture from (`-- kosmos: icon`).
     program = sys.program,
-
-    -- Part of the desktop rather than something running on it: no close
-    -- box, no minimise, no maximise. The Deskbar is the only one, because
-    -- it is how a hidden window comes back and how anything is started.
-    pinned = spec.pinned or nil,
 
     -- The window everything else sits on: undecorated, screen-sized, at the
     -- bottom of the stack and never raised. The desktop is one of these.
@@ -5851,10 +5841,6 @@ function ui.window(spec)
 end
 
 --
--- A property. `set` may be nil, and then it is read-only - which is the
--- honest answer for `width` while windows cannot be resized.
---
---
 -- The buffer to draw into, for a window opened with `direct = true`.
 --
 -- Never the one being shown. Asking for it again after a `commit` gives the
@@ -5931,6 +5917,11 @@ function window:take_size(w, h)
   return true
 end
 
+--
+-- A property. `set` may be nil, and then it is read-only - as `width` and
+-- `height` are: a window changes size through `window:resize`, which the
+-- window manager answers, rather than by having a number written to it.
+--
 function window:publish(name, get, set)
   self.properties[name] = { get = get, set = set }
 end
@@ -6077,7 +6068,7 @@ function window:add(child)
     self.ticking = self.ticking or {}
     self.ticking[#self.ticking + 1] = child
 
-    -- Half a second, in counter ticks. Read the first time a window has
+    -- A second, in counter ticks. Read the first time a window has
     -- anything that ticks at all, so an ordinary window never asks /Devices/cpu
     -- a question it has no use for. Without this the default was "every
     -- pass", which is a full repaint per yield and would drown the window

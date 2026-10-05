@@ -1,9 +1,9 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- htop: what this machine is doing, in layers.
 --
--- A program, in /bin, running in an address space of its own. It reads
--- /Devices through its own namespace - the same list/read protocol the
--- filesystem answers - and asks the kernel only for the process table.
+-- A program, in /Kosmos/Programs, running in an address space of its own.
+-- It reads /Devices through its own namespace - the same list/read protocol
+-- the filesystem answers - and asks the kernel only for the process table.
 --
 -- What is worth seeing about Kosmos is not that there are five processes.
 -- It is that there are two layers, that the lower one is twenty kilobytes
@@ -12,23 +12,37 @@
 -- nothing else. So the columns are CAPS and OWNS, and EL1 gets a box.
 
 --
--- The four that were missing said `app`, which is what an unknown name gets.
+-- What kind of thing each process is - a driver, a server, an app or a
+-- program - as Processes says it: `/Kosmos/Libraries/prockind.lua` decides,
+-- from device authority, who started it, and what its file declares. This
+-- kept a table of names of its own, which every new server had to be added
+-- to and which called anything it did not know an app.
 --
--- Not because anything classified them wrongly: they were spawned as C
--- servers and never called `sys.name`, so they were all called `init` and
--- there was nothing here to look up. Naming them showed the gap.
---
-local LAYER = {
-  init = "supervisor", console = "server", ramfs  = "server",
-  binfs = "server",    devices = "server", libfs  = "server",
-  appfs = "server",    diskfs  = "server", audio  = "server",
-  shell = "shell",     burn    = "app",    run    = "runner",
-}
+local prockind = use("/Kosmos/Libraries/prockind.lua")
+
+-- What each file in the image's two folders declares, and the
+-- applications installed in `/Home/Apps`, asked once: none of it changes
+-- while this runs.
+local declared = {}
+
+for _, dir in ipairs({ "/Kosmos/Apps", "/Kosmos/Programs" }) do
+  for _, file in ipairs(fs.list(dir) or {}) do
+    local attrs = fs.getattr(dir .. "/" .. file)
+    local kind  = attrs and attrs.kind
+
+    declared[(file:gsub("%.lua$", ""))] =
+      (kind == "application") and "app" or kind or "program"
+  end
+end
+
+for _, app in ipairs(use("/Kosmos/Libraries/filetypes.lua").installed()) do
+  declared[app.name] = "app"
+end
 
 local STATE = { [0] = "unused", "ready", "running", "blocked", "dead" }
 
 --
--- The scheduling bands, by name. `sched.h` names five of eight and says
+-- The scheduling bands, by name. `sched.h` names six of eight and says
 -- anything unnamed is NORMAL.
 --
 -- Shown because the band is the thing that decides who runs when the machine
@@ -60,11 +74,12 @@ local function sample()
   return { idle = k.idle_ticks, busy = k.busy_ticks, procs = by_pid }
 end
 
--- Returns false if Control-C was pressed while waiting, so the caller can
--- stop between rounds rather than only between screens.
+-- Asleep for `ticks` scheduler ticks, rather than yielding until the
+-- counter passes a number - which is a spin dressed as a wait. Returns false
+-- if Control-C was pressed while waiting, so the caller can stop between
+-- rounds rather than only between screens.
 local function pause(ticks)
-  local until_ = sys.ticks() + ticks
-  while sys.ticks() < until_ do sys.yield() end
+  sys.sleep(ticks)
   return not interrupted()
 end
 
@@ -100,7 +115,7 @@ local function report(before, after)
   print("")
   print("  USER    every process, in an address space of its own")
   print("")
-  print("   PID  NAME       LAYER       BAND      CPU%  CAPS  OWNS            STATE")
+  print("   PID  NAME       KIND        BAND      CPU%  CAPS  OWNS            STATE")
 
   for _, p in ipairs(sys.processes()) do
     local was = before.procs[p.id] or p.ticks
@@ -111,7 +126,7 @@ local function report(before, after)
     if p.owns & 2 ~= 0 then owns[#owns + 1] = "screen" end
 
     print(("  %4d  %-10s %-11s %-8s %3d%%  %4d  %-15s %s"):format(
-          p.id, p.name, LAYER[p.name] or "app",
+          p.id, p.name, prockind.of(p, declared),
           BANDS[p.priority] or tostring(p.priority),
           share, p.caps,
           #owns > 0 and table.concat(owns, "+") or "-",
@@ -120,13 +135,16 @@ local function report(before, after)
 end
 
 local rounds = tonumber(args) or 1
-local hz = fs.read("/Devices/cpu").counter_hz
+
+-- Half a second, in the scheduler's ticks - asked of the kernel, since the
+-- rate is the board's and not this program's to assume.
+local half = math.max(1, (fs.read("/Devices/kernel").tick_hz or 250) // 2)
 
 for i = 1, rounds do
   local before = sample()
 
-  if not pause(hz // 2) then break end
+  if not pause(half) then break end
   report(before, sample())
 
-  if i < rounds and not pause(hz // 2) then break end
+  if i < rounds and not pause(half) then break end
 end

@@ -18,7 +18,8 @@
  * At this scale the cost of scanning is irrelevant next to that.
  *
  * There is no allocator of arbitrary sizes here and there will not be one in
- * the kernel. Fixed-size pools and whole pages, per CLAUDE.md.
+ * the kernel: whole pages, and kernel objects in pools that grow a slab of
+ * pages at a time - no heap for kernel objects, per CLAUDE.md.
  */
 
 /* How many usable ranges the allocator will ask the board for. A PC's map

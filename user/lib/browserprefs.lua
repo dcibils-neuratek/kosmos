@@ -159,15 +159,6 @@ function prefs.write(t, file)
   return fs.write(file, out) and true or false
 end
 
--- What a choice is called: "30 days" for 30.
-function prefs.name_of(key, value)
-  for _, c in ipairs(prefs.CHOICES[key] or {}) do
-    if c[1] == value then return c[2] end
-  end
-
-  return tostring(value)
-end
-
 --
 -- **The tabs that are open**, their addresses in order and which is shown,
 -- kept as they change, for the next time the browser opens when Settings

@@ -239,30 +239,6 @@ static bool caps;
 static bool super;
 static bool super_used;
 
-/*
- * Characters waiting to come out of `keyboard_getchar`.
- *
- * One key can be several characters: an arrow becomes the escape sequence a
- * terminal would have sent, which is the same choice `hal/virtio/input.c`
- * makes and for the same reason - one input language above this layer.
- */
-static char     pending[KEY_SEQUENCE_MAX];
-static unsigned pending_len;
-static unsigned pending_at;
-
-static void queue_sequence(const char *s)
-{
-    unsigned n = 0;
-
-    while (s[n] != '\0' && n < sizeof(pending)) {
-        pending[n] = s[n];
-        n++;
-    }
-
-    pending_len = n;
-    pending_at = 0;
-}
-
 /* Characters, for the console. A ring, so a burst is not lost. */
 #define CHARS 32
 
@@ -282,6 +258,22 @@ static void put_char(int c)
 }
 
 /*
+ * One key's characters, into the same ring.
+ *
+ * One key can be several characters: an arrow becomes the escape sequence a
+ * terminal would have sent, which is the same choice `hal/virtio/input.c`
+ * makes and for the same reason - one input language above this layer.
+ */
+static void put_sequence(const char *s)
+{
+    unsigned n;
+
+    for (n = 0; n < KEY_SEQUENCE_MAX && s[n] != '\0'; n++) {
+        put_char((unsigned char)s[n]);
+    }
+}
+
+/*
  * Key transitions, for whoever wants keys rather than characters.
  *
  * The window manager holds Control-W and wants to know a key went down
@@ -292,19 +284,10 @@ static void put_char(int c)
 
 static struct { uint8_t code; uint8_t down; } keyq[KEYQ];
 static unsigned keyq_head, keyq_tail;
-static uint32_t held[4];
 
 static void key_transition(unsigned code, bool down)
 {
     unsigned next = (keyq_head + 1) % KEYQ;
-
-    if (code < 128) {
-        if (down) {
-            held[code >> 5] |= (1u << (code & 31));
-        } else {
-            held[code >> 5] &= ~(1u << (code & 31));
-        }
-    }
 
     /*
      * **Full means drop the oldest, and it used to mean drop the newest.**
@@ -558,13 +541,7 @@ static void kbd_byte(uint8_t b)
              * combination has already been sent and this release says
              * nothing. */
             if (super && !super_used) {
-                queue_sequence(hal_key_super(0, buffer));
-
-                for (c = 0; c < (int)pending_len; c++) {
-                    put_char((unsigned char)pending[c]);
-                }
-
-                pending_len = 0;
+                put_sequence(hal_key_super(0, buffer));
             }
 
             super = false;
@@ -581,15 +558,7 @@ static void kbd_byte(uint8_t b)
     sequence = hal_key_sequence(code, shift, ctrl, buffer);
 
     if (sequence != NULL) {
-        unsigned i;
-
-        queue_sequence(sequence);
-
-        for (i = 0; i < pending_len; i++) {
-            put_char((unsigned char)pending[i]);
-        }
-
-        pending_len = 0;
+        put_sequence(sequence);
         return;
     }
 
@@ -605,16 +574,8 @@ static void kbd_byte(uint8_t b)
      * as used so the eventual release does not also open the menu.
      */
     if (super) {
-        unsigned i;
-
         super_used = true;
-        queue_sequence(hal_key_super(c, buffer));
-
-        for (i = 0; i < pending_len; i++) {
-            put_char((unsigned char)pending[i]);
-        }
-
-        pending_len = 0;
+        put_sequence(hal_key_super(c, buffer));
         return;
     }
 
@@ -924,15 +885,6 @@ static bool key_event_unlocked(unsigned *code, bool *down)
     keyq_tail = (keyq_tail + 1) % KEYQ;
 
     return true;
-}
-
-bool i8042_key_held(unsigned code)
-{
-    if (code >= 128) {
-        return false;
-    }
-
-    return (held[code >> 5] & (1u << (code & 31))) != 0;
 }
 
 /*

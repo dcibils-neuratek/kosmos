@@ -102,13 +102,6 @@ void kwrite_colour(const char *s, unsigned long len, unsigned long colour);
 void console_progress(unsigned done, unsigned total);
 
 /*
- * Blinks the cursor. Called from the timer tick, because it is the one thing
- * on the screen that has to change without anybody printing.
- *
- * A no-op with no screen, and cheap enough for the interrupt path: it counts
- * to twenty-five and, twice a second, fills one 8x16 cell.
- */
-/*
  * Whether this console may draw on the screen.
  *
  * A compositor takes it; the console falls back to the serial line, which
@@ -119,15 +112,8 @@ void console_screen_suspend(void);
 void console_screen_resume(void);
 
 /*
- * The most recent bytes this console printed, into a caller's buffer.
- *
- * Everything goes through `kputc`, including every process's output - a
- * process prints by asking the console server and the console server calls
- * `sys.write` - so this is one place with all of it, in order.
- */
-/*
- * How much that ring holds, and therefore the most `console_log` can ever
- * return.
+ * How much the ring of everything printed holds, and therefore the most
+ * `console_log` below can ever return.
  *
  * **A quarter of a megabyte, and it earned every doubling.** It was 16 KB,
  * which did not hold one boot; then 64 KB, which held a boot and about
@@ -140,11 +126,25 @@ void console_screen_resume(void);
  */
 #define CONSOLE_LOG_BYTES 262144
 
+/*
+ * The most recent bytes this console printed, into a caller's buffer.
+ *
+ * Everything goes through `kputc`, including every process's output - a
+ * process prints by asking the console server and the console server calls
+ * `sys.write` - so this is one place with all of it, in order.
+ */
 size_t console_log(char *out, size_t max);
 
 /* The counter's reading at the log's zero; 0 before the first stamp. */
 uint64_t console_log_origin(void);
 
+/*
+ * Blinks the cursor. Called from the timer tick, because it is the one thing
+ * on the screen that has to change without anybody printing.
+ *
+ * A no-op with no screen, and cheap enough for the interrupt path: it counts
+ * ticks and, four times a second, fills or clears one 8x16 cell.
+ */
 void console_tick(void);
 
 #endif /* KERNEL_CONSOLE_H */

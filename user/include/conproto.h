@@ -29,7 +29,6 @@
 #define CON_OP_WAIT     4u
 #define CON_OP_POINTER  5u
 #define CON_OP_POLL     6u
-#define CON_OP_STAT     7u
 
 /*
  * **Watch the endpoint sent with this request while `CON_OP_WAIT` sleeps.**
@@ -168,9 +167,6 @@ struct con_reply {
     /* What the buttons did since the last `wait`, in order, and how many
      * did not fit anywhere along the way. */
     uint32_t nclicks, clicks_lost;
-
-    /* stat */
-    uint32_t bytes, lines, interrupts, reloads;
 
     uint8_t          keys[CON_KEYS_MAX];
     struct con_key   events[CON_EVENTS_MAX];

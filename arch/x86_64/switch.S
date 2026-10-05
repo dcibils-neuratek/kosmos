@@ -10,13 +10,11 @@
  *   rsp                  the thread's stack
  *   rflags               and with it the interrupt mask and DF
  *
- * **No floating point here, and unlike the ARM side that is not a lazy
- * scheme - it is the ABI.** Every XMM register is caller-saved on AMD64, so
- * a thread that called this function has nothing left in them worth
- * keeping. AAPCS64 preserves d8-d15 across a call, which is why the ARM
- * switch has to have an answer for FP and this one does not. The answer
- * both of them will need is for *preempted* threads, and `context.h` says
- * what shape it takes when it arrives.
+ * **And the floating-point file, eagerly**: `fxsave` and `fxrstor` around
+ * every switch. A thread that called this function needs none of it - every
+ * XMM register is caller-saved on AMD64 - but a thread preempted between two
+ * instructions does, and `context.h` says why it is eager here where the
+ * ARM side is lazy.
  *
  * One stack moves, not two. AArch64 has SP_EL0 and SP_EL1 and a thread owns
  * both, so its switch exchanges a pair and has to record which was

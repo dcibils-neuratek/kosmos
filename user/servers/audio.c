@@ -31,7 +31,7 @@
 #include "audioproto.h"
 #include "syscall.h"
 
-#define STREAM_MAX  8u          /* one more than AUDIO_LIST_MAX would show */
+#define STREAM_MAX  8u          /* AUDIO_LIST_MAX, so `streams` shows them all */
 
 struct stream {
     bool               open;

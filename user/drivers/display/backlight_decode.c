@@ -6,6 +6,10 @@
 
 #include "backlight_decode.h"
 
+/* Relative rather than through `-I`, because the host's test of this file
+ * (`tools/test_backlightdecode.c`) compiles it with no include path. */
+#include "../../include/backlightproto.h"
+
 #define CONTROL_ENABLE    (1u << 31)
 #define CONTROL_POLARITY  (1u << 29)
 
@@ -81,8 +85,8 @@ unsigned backlight_level(const struct backlight_controller *c)
         return 0;
     }
 
-    return (unsigned)(((uint64_t)c->on_time * 256u + c->period / 2u)
-                      / c->period);
+    return (unsigned)(((uint64_t)c->on_time * BACKLIGHT_LEVEL_FULL
+                       + c->period / 2u) / c->period);
 }
 
 bool backlight_on_time_for(const struct backlight_controller *c,
@@ -100,10 +104,11 @@ bool backlight_on_time_for(const struct backlight_controller *c,
         level = floor;
     }
 
-    if (level > 256u) {
-        level = 256u;
+    if (level > BACKLIGHT_LEVEL_FULL) {
+        level = BACKLIGHT_LEVEL_FULL;
     }
 
-    *on_time = (uint32_t)(((uint64_t)c->period * level + 128u) / 256u);
+    *on_time = (uint32_t)(((uint64_t)c->period * level
+                           + BACKLIGHT_LEVEL_FULL / 2u) / BACKLIGHT_LEVEL_FULL);
     return true;
 }

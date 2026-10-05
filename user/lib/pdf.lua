@@ -11,8 +11,8 @@
 -- (`design.md` 5.2) and the document this was written against is 1.6 MB, so
 -- reading it into a string is not a tight fit, it is an impossibility with
 -- nothing left over to parse it with. Everything here goes through
--- `source.read(offset, length)`, which is `kfs.read_range` inside the
--- machine and a seek and a read outside it. A PDF is the file type that
+-- `source.read(offset, length)`, which is `pdf.file` over `fs.read_into`
+-- inside the machine and a seek and a read outside it. A PDF is the file type that
 -- *wants* this: the cross-reference table exists precisely so a reader can
 -- jump to object 431 without walking the 430 in front of it.
 --

@@ -40,12 +40,6 @@ bool fwcfg_present(void);
 /* An item by name, from the file directory. */
 bool fwcfg_find(const char *name, uint16_t *select, uint32_t *size);
 
-/* The nth item, by position rather than by name - which is what a file
- * server wants, since its whole point is serving files nobody compiled a
- * name for. */
-bool fwcfg_entry(unsigned index, char *name, size_t name_len,
-                 uint16_t *select, uint32_t *size);
-
 /* An item's bytes, into memory the caller provides. */
 bool fwcfg_read(uint16_t select, void *buffer, uint32_t length);
 

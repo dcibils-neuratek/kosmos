@@ -7,11 +7,12 @@
 /*
  * The heap here is not the kernel's.
  *
- * CLAUDE.md forbids a dynamic allocator in the kernel, and that stands: the
- * kernel's own state lives in fixed-size pools. This is Lua's heap, a region
- * of pages taken once from the page allocator and sub-divided inside itself,
- * which is what `design.md` §5.2 means by "one lua_State per process, with a
- * heap limit".
+ * The kernel keeps its own objects in pools and never on a heap, and that
+ * stands (`CLAUDE.md`). This is a process's heap - Lua's, and every C
+ * library's the process links - an arena of pages from the kernel,
+ * sub-divided inside itself, and another arena asked for when that one is
+ * full (`runtime/libc/malloc.c`): `design.md` §5.2's one `lua_State` per
+ * process, with a heap of its own.
  *
  * Nothing in kernel/, arch/ or hal/ may call these. Lua may, because Lua
  * cannot be given whole pages: it allocates a table header at a time.
@@ -81,9 +82,9 @@ void   arc4random_buf(void *buf, size_t n);
  * The standard pseudo-random pair.
  *
  * Here rather than in a port's shim because they are C, not SDL: the first
- * caller was Lite XL's `rencache.c`, which reaches them through `<SDL.h>`
- * the way every SDL program does, but the next one will reach them through
- * `<stdlib.h>` like everybody else.
+ * caller was Lite XL's `rencache.c`, which reached them through `<SDL.h>`
+ * and has since left the tree, and Quake reaches them through `<stdlib.h>`
+ * like everybody else - its particles and its monsters' wandering.
  *
  * Not for anything that must not be guessed. `crypto.c` is where randomness
  * with a requirement on it lives; this is the one from the C standard, and

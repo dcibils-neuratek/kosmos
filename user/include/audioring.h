@@ -70,9 +70,10 @@
  * Samples start a page in.
  *
  * Not for alignment - the region is page-aligned anyway - but so that the
- * two indices never share a cache line with the samples. One core today
- * makes that free; two cores make it the difference between a ring and a
- * ping-pong of invalidations, and `CLAUDE.md` asks for SMP-ready now.
+ * two indices never share a cache line with the samples. The machine runs
+ * on every core it has, and with the client and the server on different
+ * cores that is the difference between a ring and a ping-pong of
+ * invalidations.
  */
 #define AUDIO_RING_DATA    4096u
 

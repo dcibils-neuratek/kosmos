@@ -36,20 +36,22 @@
 -- desktop chose, which is right for a dialog and hopeless for a document
 -- that wants a heading at 28 pixels and a paragraph at 16.
 --
--- So this process owns its pixels. `web_paint.c` lays the document out
--- once and paints a band of it, three screens tall, around where it is
--- read; a frame is one blit of the view out of that band. Scrolling inside
--- the band re-runs nothing, and scrolling out of it paints the next band -
--- the runs already laid out, drawn again, with no layout and no line
--- breaking - which is how a page as long as the web's is drawn wherever it
--- is read (`roadmap.md` 6zz j).
+-- So this process owns its pixels. NetSurf's layout (`web_netsurf.c`) lays
+-- the document out once and paints a band of it, three screens tall, around
+-- where it is read; a frame is one blit of the view out of that band.
+-- Scrolling inside the band re-runs nothing, and scrolling out of it paints
+-- the next band - the boxes already laid out, drawn again, with no layout
+-- and no line breaking - which is how a page as long as the web's is drawn
+-- wherever it is read (`roadmap.md` 6zz j). A page NetSurf could not lay
+-- out is laid out by `web_paint.c` instead.
 --
--- What it costs is that there are no widgets. A direct window owns every
--- pixel, so a button would have nothing to draw into: the chrome here is
--- rectangles this file knows the position of, and a click is a comparison
--- against them. That is the trade the mode makes, and it is the reason the
--- chrome is deliberately small - back, forward, reload, home, an address
--- and a status line, which is NetSurf's own row and nothing more.
+-- What it costs is that the kit draws nothing here. A direct window owns
+-- every pixel, so the kit's widgets - the tabs, the header, the favorites,
+-- Settings - are painted into this window's own surface by `frame`, and
+-- the kit only routes the events to them. That is the trade the mode
+-- makes, and it is the reason the chrome is deliberately small - back,
+-- forward, reload, home, an address and a status line, which is NetSurf's
+-- own row, with the tabs above it.
 --
 -- **It needs nothing running anywhere to be tried.** `wm browser` opens on
 -- a page compiled into this file, parsed and painted by the same engine a
@@ -187,8 +189,9 @@ end
 --
 -- **NetSurf's layout** (`roadmap.md` 6zz j): the page laid out and drawn by
 -- the engine NetSurf wrote for exactly these libraries, set up once with its
--- own default stylesheets. Without them - an image built before they were
--- carried - the pages are laid out by `web_paint.c`, as they were.
+-- own default stylesheets, which the image carries beside the kit. A page
+-- NetSurf could not lay out is laid out by `web_paint.c`, and the status
+-- line says why (`lay_out`, below).
 --
 local NS
 
@@ -314,19 +317,23 @@ local START = [[
 <html><head><meta charset="utf-8"><title>Kosmos</title></head><body>
 <h1>Kosmos</h1>
 <p>This page is inside the image. Nothing was fetched to show it and
-nothing needs to be running anywhere - it is parsed by hubbub, walked
-through libdom and painted by <code>web_paint.c</code>, which is the whole
-engine, so if you can read this then the engine works.</p>
+nothing needs to be running anywhere - it is parsed by hubbub into libdom,
+styled by libcss, and laid out and drawn by NetSurf's own layout engine,
+exactly as a fetched page is, so if you can read this then the engine
+works.</p>
 
 <h2>What it can do</h2>
 <ul>
-  <li>Headings that step down, with a rule under the big two.</li>
+  <li>Stylesheets, cascade and all: margins, widths, floats, tables and
+      flex, laid out by NetSurf.</li>
   <li><strong>Bold</strong>, <em>italic</em> and <code>monospace</code>
       inside a sentence, sharing one baseline.</li>
-  <li>Lists with markers, quotations, and <code>pre</code> that keeps its
-      spaces.</li>
-  <li>Links you can click. Accented Latin: naive becomes na&iuml;ve,
-      Angstrom becomes &Aring;ngstr&ouml;m.</li>
+  <li>Pictures in their boxes - PNG, JPEG and SVG.</li>
+  <li>Forms: text fields, check boxes and menus, sent as a link is followed
+      or posted.</li>
+  <li>Links you can click, in tabs, with favorites and a history. Accented
+      Latin: naive becomes na&iuml;ve, Angstrom becomes
+      &Aring;ngstr&ouml;m.</li>
 </ul>
 
 <h2>Somewhere to go</h2>
@@ -346,14 +353,10 @@ will not answer.</p>
 <ul>
   <li><strong>No HTTP/2, no cookies, no JavaScript.</strong> https works,
       TLS 1.2 through BearSSL, checked against Mozilla's roots.</li>
-  <li><strong>Half a cascade.</strong> Colours, faces and sizes are the
-      stylesheet's; margins, widths and floats are parsed and not used.</li>
-  <li>Pictures, PNG and JPEG, each on a line of its own; no forms, no box
-      model.</li>
 </ul>
 
 <blockquote>A word is where a font change, a link's hit rectangle and a
-selection all attach. That is why layout keeps its runs.</blockquote>
+selection all attach.</blockquote>
 </body></html>
 ]]
 
@@ -932,8 +935,6 @@ do
 
   function tab_view(t)
     local v = ui.view{ x = 0, y = 0, w = TAB_MOST, h = TABS }
-
-    v.tab = t
 
     -- Its cross: on the shown tab always, and on the others while they are
     -- wide enough to say what they are as well.
@@ -1684,23 +1685,6 @@ local function lay_out(doc)
   return current.content_h
 end
 
---------------------------------------------------------------------------
--- One load: connect, ask, read until the far end hangs up, parse, lay out.
---
--- The read loop is `fetch`'s, including the read *after* the loop: a close
--- and the last bytes can arrive in the same segment, and stopping at
--- `closed` would lose them.
---------------------------------------------------------------------------
-
---
--- One document off the network, following redirects.
---
--- Returns the body, or nil having said why. Redirects are followed because
--- without them the internet is unreachable in practice rather than in
--- theory: `188.184.67.127/` is a 301 to a path, and a browser that stops
--- there fetches twenty-one bytes and paints an empty page, which is what
--- this did. Bounded, because a pair of pages can point at each other.
---
 --
 -- A page refused for its certificate, as a page of its own.
 --
@@ -1967,8 +1951,6 @@ local function fetch(text, page, post)
       if page then
         current.here = next_at
         current.address.text = next_at
-        current.address.caret = #next_at
-        current.address.from = 0
       end
     else
       -- The charset the server said the page is in, which the parser holds
@@ -2023,7 +2005,7 @@ end
 
 --------------------------------------------------------------------------
 -- Pictures: fetched from wherever their address says, decoded by `gfx`,
--- and stretched into the boxes `web_paint.c` left for them.
+-- and stretched into the boxes the layout left for them.
 --------------------------------------------------------------------------
 
 -- A picture's bytes, from the three places a page itself comes from.
@@ -2674,8 +2656,6 @@ local function load_page(text, post)
   --
   current.here = text
   current.address.text = (text == NEWTAB or text == prefs.PAGE) and "" or text
-  current.address.caret = #current.address.text
-  current.address.from = 0
 
   local body, fetched_ms, how
 
@@ -3052,7 +3032,7 @@ stop_loading = function(why)
     local shown = (b.here == nil or b.here == NEWTAB or b.here == prefs.PAGE) and ""
                   or b.here
 
-    current.address.text, current.address.caret, current.address.from = shown, #shown, 0
+    current.address.text = shown
     say("stopped")
   end
 
@@ -3234,10 +3214,13 @@ end
 -- Events.
 --
 -- A direct window draws its own pixels, so `window:paint` has nothing to
--- send and returns early - but the event loop is still the kit's, and it
--- routes keys and clicks through the view tree. So there is one view here,
--- the size of the window, and it never draws: it exists to be the thing
--- events arrive at.
+-- send and calls `on_paint` - this window's `frame` - instead; but the
+-- event loop is still the kit's, and it routes keys and clicks through the
+-- view tree. So the page is a view the size of the window, `sink`, which
+-- never draws: it exists to be the thing events arrive at, under the tabs,
+-- the header, the favorites, the sidebar and Settings, which `frame`
+-- paints. A handler answers whether anything changed, and the kit repaints
+-- when one did.
 --------------------------------------------------------------------------
 
 --
@@ -3346,9 +3329,13 @@ sink.focusable = true
 -- The wheel: three lines of the page a notch - forty pixels each, as an
 -- arrow moves it - away from the person up (`roadmap.md` 5zv).
 --
+-- **Whether the page moved is the answer**, and the kit repaints on it
+-- (`on_paint`, below). This drew the frame itself and then answered true,
+-- so every notch was drawn and committed twice - and a notch at either end
+-- of the page, which moves nothing, was drawn for nothing.
+--
 function sink:wheel(n)
-  if scroll_by(-n * 3 * 40) then frame() end
-  return true
+  return scroll_by(-n * 3 * 40)
 end
 
 function sink:key(c)
@@ -3357,7 +3344,6 @@ function sink:key(c)
   if current.ns_doc and current.doc and current.doc:ns_focused()
      and current.doc:ns_key(c) then
     form_changed()
-    frame()
     return true
   end
 
@@ -3421,9 +3407,9 @@ local function scrollbar_drag(y)
   local _, th = thumb()
   local room = track - th
 
-  if room <= 0 then return end
+  if room <= 0 then return false end
 
-  scroll_to(((y - dragging - VIEW_Y - 2) * reach()) // room)
+  return scroll_to(((y - dragging - VIEW_Y - 2) * reach()) // room)
 end
 
 --
@@ -3454,14 +3440,17 @@ do
   end
 end
 
+-- How tall the screen is, which a long menu is cut to fit: asked once, as
+-- the window opens, and not of the device server on every press.
+local screen_h = (fs.read("/Devices/screen") or {}).height or 768
+
 local function select_menu()
   local s = current.doc and current.doc:ns_select()
 
   if not s or #s.options == 0 then return end
 
   local row = ui.theme.metrics.row
-  local screen = fs.read("/Devices/screen") or {}
-  local fit = math.max(4, (screen.height or 768) // row - 2)
+  local fit = math.max(4, screen_h // row - 2)
   local doc, items = current.doc, {}
 
   for i, o in ipairs(s.options) do
@@ -3477,8 +3466,9 @@ local function select_menu()
 
       print(("browser: chose \"%s\", option %d of %d")
             :format(table.concat(held, ", "), i, #s.options))
+
+      -- Drawn by the kit, which repaints after a choice (`on_paint`).
       form_changed()
-      frame()
     end }
   end
 
@@ -3598,6 +3588,13 @@ local function breakdown(x)
 end
 
 function sink:mouse(action, x, y)
+  -- A move arrives only while a button is held, and only a held thumb does
+  -- anything with it: a frame for every move of a press on the page was a
+  -- frame drawn for nothing. Drawn when the page moved, then.
+  if action == "move" then
+    return dragging ~= nil and scrollbar_drag(y)
+  end
+
   if action == "press" then
     if y >= VIEW_Y and y < VIEW_Y + VIEW_H and x >= W - SBAR then
       scrollbar_press(y)
@@ -3607,8 +3604,6 @@ function sink:mouse(action, x, y)
            and x >= W - 10 - gfx.measure(current.timing) then
       breakdown(x)
     end
-  elseif action == "move" then
-    if dragging then scrollbar_drag(y) end
   elseif action == "release" then
     dragging = nil
   end
@@ -3819,7 +3814,7 @@ local function blank_tab()
               pictures = {}, kept_bytes = 0,
               ns_doc = false, ns_tried = {}, ns_svgs = {}, ns_raster = {},
               said = "", timing = "", anyway = {},
-              address = { text = "", caret = 0, from = 0 },
+              address = { text = "" },
               back = {}, forward = {}, laid_ms = 0, painted_ms = 0,
               pictures_ms = 0, ahead = {}, ahead_bytes = 0 }
 
@@ -4023,18 +4018,26 @@ end
 -- favorite, at the end of the folder, or not one any more, wherever it was
 -- kept.
 --
+-- **The star's new state is set before anything is said**, because saying
+-- draws a frame: it painted the old state until the folder had been read
+-- again, which is a star that disagrees with the press that changed it.
+--
 toggle_favorite = function()
   if current.here == nil or current.here == NEWTAB then return end
 
-  if kept[current.here] then
+  local was = kept[current.here]
+
+  if was then
     local n = favorites.remove(current.here)
 
+    kept[current.here] = nil
     say("not a favorite any more")
     print(("browser: %s is not a favorite, %d removed"):format(current.here, n))
   else
     local path, why = favorites.add(current.here, current.title)
 
     if path then
+      kept[current.here] = path
       say("a favorite, in " .. path)
       print(("browser: a favorite, %s, of %s"):format(path, current.here))
     else
@@ -4042,7 +4045,9 @@ toggle_favorite = function()
     end
   end
 
-  read_favorites()
+  -- Read back, which is what the star says from then on. A folder that
+  -- did not change is a press that changed nothing, and the star goes back.
+  if not read_favorites() then kept[current.here] = was end
 end
 
 toggle_side = function()
@@ -4197,18 +4202,9 @@ local function prune_history()
 end
 
 do
-  -- Where a view is in the window, walking up through what holds it.
-  local function in_window(v)
-    local x, y, at = v.x, v.y, v.parent
-
-    while at do x, y, at = x + (at.x or 0), y + (at.y or 0), at.parent end
-
-    return x, y
-  end
-
   -- A menu under a button, on the screen (`open_menu`'s coordinates).
   local function menu_under(v, items)
-    local x, y = in_window(v)
+    local x, y = v:in_window()
 
     win:open_menu((win.origin_x or 0) + x, (win.origin_y or 0) + y + v.h, items)
   end
@@ -4258,9 +4254,8 @@ do
     local clear = button("Clear...", function(b)
       menu_under(b, { { text = "Clear every page visited, from every tab",
                         on_choose = function()
-                          local days = #history.days()
+                          local days = history.clear()
 
-                          history.clear()
                           say("history cleared")
                           print(("browser: history cleared, %d days"):format(days))
 
@@ -4395,7 +4390,7 @@ do
     -- Said, for whoever drives the page from outside: where its controls
     -- are in the window.
     local function at(v)
-      local x, y = in_window(v)
+      local x, y = v:in_window()
 
       return ("%d,%d"):format(x + v.w // 2, y + v.h // 2)
     end

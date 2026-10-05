@@ -2,10 +2,10 @@
 /*
  * Reading the firmware's tables, without an interpreter.
  *
- * Three facts come out of here and each replaces a guess this board was
- * making: how many processors there are, where the interrupt controllers
- * live, and where PCIe keeps its configuration space. `hal/pc/cpus.c`
- * answered "one, because nothing here has asked" and this is the asking.
+ * The first two facts to come out of here each replaced a guess this board
+ * was making: how many processors there are, and where the interrupt
+ * controllers live. `hal/pc/cpus.c` answered "one, because nothing here has
+ * asked" and this is the asking.
  *
  * **Everything is checksummed before it is believed.** A table is a
  * structure at an address the firmware chose, in memory this kernel does
@@ -88,14 +88,6 @@ struct madt {
 #define LAPIC_ENABLED   0x1u
 #define LAPIC_ONLINE    0x2u        /* can be brought up, if not already */
 
-struct mcfg_entry {
-    uint64_t base;
-    uint16_t segment;
-    uint8_t  start_bus;
-    uint8_t  end_bus;
-    uint32_t reserved;
-} __attribute__((packed));
-
 static bool     found;
 static unsigned cpus;
 
@@ -106,7 +98,6 @@ static unsigned cpus;
 static uint32_t cpu_ids[CPU_IDS_MAX];
 static uint64_t lapic;
 static uint64_t ioapic;
-static uint64_t ecam;
 
 /*
  * Sixteen is every ISA line there is, so a table that size cannot overflow
@@ -447,21 +438,6 @@ static void read_madt(const struct madt *m)
     }
 }
 
-static void read_mcfg(const struct sdt *table)
-{
-    const uint8_t *at = (const uint8_t *)table + sizeof(*table) + 8;
-    const uint8_t *end = (const uint8_t *)table + table->length;
-
-    /* The first segment group is the one this kernel can use; a machine
-     * with more than one is a machine this does not have. */
-    if (at + sizeof(struct mcfg_entry) <= end) {
-        struct mcfg_entry entry;
-
-        memcpy(&entry, at, sizeof(entry));
-        ecam = entry.base;
-    }
-}
-
 /*
  * A table of AML, kept if it is one: in reach, whole, and summing to zero.
  * A DSDT that fails is dropped exactly as the walk drops any other table.
@@ -623,8 +599,6 @@ static void walk(uintptr_t address, bool wide)
 
         if (signature_is(table->signature, "APIC", 4)) {
             read_madt((const struct madt *)table);
-        } else if (signature_is(table->signature, "MCFG", 4)) {
-            read_mcfg(table);
         } else if (signature_is(table->signature, "FACP", 4)) {
             read_fadt(table);
         } else if (signature_is(table->signature, "SSDT", 4)) {
@@ -715,11 +689,6 @@ unsigned acpi_overrides(struct acpi_override *out, unsigned max)
     }
 
     return i;
-}
-
-uint64_t acpi_ecam_base(void)
-{
-    return ecam;
 }
 
 /*

@@ -3,9 +3,10 @@
 --
 --   which grep
 --
--- A name at the prompt becomes `/bin/<name>.lua`, and this is that rule
--- said out loud plus the one question worth asking about it: does the
--- namespace answer for it.
+-- A name at the prompt becomes `/Kosmos/Apps/<name>.lua` or
+-- `/Kosmos/Programs/<name>.lua`, or an installed application's in
+-- `/Home/Apps` (`fs.program`), and this is that rule said out loud plus the
+-- one question worth asking about it: does the namespace answer for it.
 --
 -- **It cannot see the shell's own words.** `cd`, `pwd` and `help` are the
 -- shell's, held in a table inside that process, and nothing outside can

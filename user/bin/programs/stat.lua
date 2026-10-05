@@ -2,7 +2,7 @@
 -- stat: what a node is, in one answer.
 --
 --   stat notes.txt
---   stat /bin
+--   stat /Kosmos/Programs
 --
 -- `getattr` is one round trip and returns everything the server is willing
 -- to say, so this is that reply laid out rather than a series of questions.
