@@ -2256,6 +2256,23 @@ $(HOSTDIR)/test_ramstore: tools/test_ramstore.c user/servers/ramstore.c \
 	        -Iuser/include -Iuser/servers -o $@ \
 	        tools/test_ramstore.c user/servers/ramstore.c
 
+#
+# libsmb2 on this Mac (`docs/sharing.md` N0): its own `smb2-ls-async` and
+# `smb2-cat-async`, built from the vendored tree as released with the
+# `config.h` its cmake would have made, for `tools/test_smbpeer.py` to hold
+# to Samba run as the user. Its Kerberos and Apple AES are left out, as the
+# port leaves them.
+#
+LIBSMB2 := runtime/upstream/libsmb2
+LIBSMB2_HOST_SRCS := $(filter-out $(LIBSMB2)/lib/aes_apple.c $(LIBSMB2)/lib/krb5-wrapper.c,$(wildcard $(LIBSMB2)/lib/*.c))
+
+$(HOSTDIR)/libsmb2/%: $(LIBSMB2)/examples/%.c $(LIBSMB2_HOST_SRCS) tools/libsmb2_mac_config.h
+	@mkdir -p $(dir $@)
+	@cp tools/libsmb2_mac_config.h $(dir $@)config.h
+	$(HOST_CC) -O2 -w -DHAVE_CONFIG_H '-D_U_=__attribute__((unused))' \
+	        -I$(dir $@) -I$(LIBSMB2)/include -I$(LIBSMB2)/include/smb2 \
+	        -I$(LIBSMB2)/lib $(LIBSMB2_HOST_SRCS) $< -o $@
+
 $(HOSTDIR)/test_drivesdecode: tools/test_drivesdecode.c \
 	        user/servers/drives_decode.c user/servers/drives_decode.h \
 	        user/servers/fat_decode.c user/servers/fat_decode.h \
@@ -3886,7 +3903,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
+host-check: $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -3940,6 +3957,10 @@ host-check: $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypt
 	$(HOSTDIR)/lua tools/test_files.lua
 	$(HOSTDIR)/lua tools/test_text.lua
 	$(HOSTDIR)/lua tools/test_ipv4.lua
+	@# libsmb2, as vendored, against Samba run as the user on this Mac, at
+	@# every dialect sharing will speak (`docs/sharing.md` N0); a skip that
+	@# says so where Homebrew's Samba is not installed.
+	python3 tools/test_smbpeer.py $(HOSTDIR)/libsmb2
 	$(HOSTDIR)/test_diskcache
 	@# And what an audio file says about itself - ID3v2, ID3v1 and a WAV's
 	@# INFO - read through the same tags.lua Music uses, on this machine.

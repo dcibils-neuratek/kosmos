@@ -19088,3 +19088,25 @@ from 1200x800, and Write says it is 900x700 with its last tool ending at
 888 - 12 in from the new edge, laid out from the new width. 42 checks.
 **The control**: without `resizable`, the window manager gives no grip and
 the check fails, 1 of 42.
+
+## 18.405 SMB: the peer and the library, on the Mac (sharing N0)
+
+`docs/sharing.md` step N0, before either is trusted inside the machine.
+**The peer** is `tools/smbpeer.py`: Homebrew's Samba 4.25.0 run as the user
+on 127.0.0.1:4450 with every file under `build/smbpeer/` - no administrator
+and no setting of the Mac's - serving `Projects`: 2,000 small files, a 64 MB
+file of known bytes and a folder in a folder, to a test account whose
+password is made there. `--dialect`, `--sign` and `--seal` pin what it
+speaks. **The library** is libsmb2 at `51c5910`, vendored as released in
+`runtime/upstream/libsmb2/` (LGPL 2.1+, in `LICENSE`'s copyleft list), built
+for the Mac by the Makefile with `tools/libsmb2_mac_config.h`.
+
+**`tools/test_smbpeer.py`, in the host suite, 9 checks in 5 s**: at SMB
+2.0.2, 3.0, 3.1.1 signed and 3.1.1 sealed, libsmb2's `smb2-ls-async` lists
+all 2,000 names and `smb2-cat-async` reads the 64 MB file with the Mac's own
+SHA-256 of it; and **the control**, the right server with the wrong
+password, lists nothing. Without Homebrew's Samba it is a skip that says so.
+
+**Found on the way**: smbd told not to make a process group of its own
+signals the caller's when it stops - the shell running the test went with
+it. The peer is started in a session of its own.

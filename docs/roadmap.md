@@ -1026,6 +1026,8 @@ Assessed, not designed:
   keyring for remembered passwords, Servers for sharing; libsmb2 vendored,
   pinned by commit; tested against a Homebrew Samba run as the user on
   port 4450. Steps N0-N9, then read-write, discovery and the server side.
+  **N0 DONE on 5 October** (`testing.md` 18.405): the peer and libsmb2,
+  every dialect, on the Mac. **Next: N1**, the Crypto Kit's additions.
   **Found by it, and wanted for its 1 GB copy**: `/Home` taking a write in
   pieces (a copy stops at 1 MB today), and the network stack's 16 KB
   receive ring sized by measurement, with TCP window scaling (about
