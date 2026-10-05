@@ -18965,3 +18965,17 @@ write was refused as "/Temporary is full 16384" - and a write the store
 refuses (its root) coming back as false and a sentence rather than raised.
 The namespace's sentence for a full store names the path: "no room for
 /Home/song.flac in memory".
+
+## 18.401 The Open and Save windows start the keys where the work is
+
+Found building Kosmos Write's pictures (W5a): the Open window's list did
+not have the keyboard as it opened, so Return opened nothing until
+something was clicked - in every application, since the panel is shared.
+`panel.lua` now gives the list the keys when opening and the name when
+saving, and Return in the name saves.
+
+**The check**, in the display harness's *panel* phase: the Open window
+again, answered with Down and Return and no click - `b.sfc`, the file after
+the folder in the first row - and the Save window answered by typing onto
+the offered name and Return, handing over `/Home/picktest/notes`. The phase
+went from three checks to five.

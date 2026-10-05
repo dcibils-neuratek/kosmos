@@ -1137,3 +1137,14 @@ can be tested on the Mac without booting Kosmos: five hundred files, a
 300 KB file, the limit refusing, memory coming back, forty programs
 waiting on it at once. 33 checks, and each of three deliberately broken
 versions fails them.
+
+## 5 October - the Open window listens to the keyboard
+
+**In short:** when an Open or Save window appears, the keyboard now works
+in it straight away. Before, Return did nothing until something was
+clicked.
+
+Every application shares the same Open and Save windows, so this was true
+everywhere. Now the arrow keys and Return choose a file the moment Open
+appears, and in Save you can type the name and press Return. The display
+test opens both and answers them with the keyboard alone.

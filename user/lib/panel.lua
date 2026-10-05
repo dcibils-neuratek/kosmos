@@ -18,6 +18,12 @@
 -- entered and a file chosen - as in Tracker and its sidebar (`ui.md`
 -- 16.8c). The button at the bottom right does the same to the selection.
 --
+-- **The keyboard is where the panel's work is, from the moment it opens**:
+-- on the list when opening, so the arrows and Return choose without a
+-- click first; on the name when saving, so typing names the file and
+-- Return saves it. The first thing added - the trail - had it until 4
+-- October 2026, and Return did nothing until something was clicked.
+--
 --   panel.open{ start = "/Home/roms/snes", title = "Open ROM",
 --               filter = function(name) return name:match("%.sfc$") end,
 --               on_choose = function(path) ... end }
@@ -167,27 +173,32 @@ local function open(spec, mode)
   local bx = W - 12 - 96
 
   if mode == "save" then
+    -- The name typed, saved where the list is - by the button, or by
+    -- Return in the name.
+    local function save()
+      local chosen = tostring(name.text or ""):match("^%s*(.-)%s*$")
+
+      if chosen == "" then
+        status.text = "a name is needed"
+        return
+      end
+
+      if chosen:find("/") then
+        status.text = "a name, not a path - use the list to choose where"
+        return
+      end
+
+      finish(files.join(where, chosen))
+    end
+
     name = ui.field{ x = 12, y = H - FOOT + 10, w = W - 24 - 2 * 104, h = 24,
-                     text = spec.name or "untitled" }
+                     text = spec.name or "untitled",
+                     on_enter = function() save() end }
     win:add(name)
 
     win:add(ui.button{
       x = bx, y = H - FOOT + 10, w = 96, h = 24, text = "Save",
-      on_click = function()
-        local chosen = tostring(name.text or ""):match("^%s*(.-)%s*$")
-
-        if chosen == "" then
-          status.text = "a name is needed"
-          return
-        end
-
-        if chosen:find("/") then
-          status.text = "a name, not a path - use the list to choose where"
-          return
-        end
-
-        finish(files.join(where, chosen))
-      end,
+      on_click = function() save() end,
     })
   else
     win:add(ui.button{
@@ -207,6 +218,7 @@ local function open(spec, mode)
 
   win:add(status)
   show(where)
+  win:focus_on(mode == "save" and name or listing)
 
   return win
 end

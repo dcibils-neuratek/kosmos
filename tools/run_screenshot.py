@@ -9482,7 +9482,67 @@ def check_panel(guest):
             "the Open window handed over the wrong path, wanted "
             "/Home/picktest/b.sfc: " + chose.group(0))
 
-    return 3
+    #
+    # **The keyboard where the work is, as the panel opens** (4 October
+    # 2026): the Open window again, answered with Down and Return and no
+    # click - the list has the keys from the start, and Down from the
+    # folder in the first row is `b.sfc`; then the Save window, answered by
+    # typing onto the offered name and Return.
+    #
+    keyed = (
+        "local panel = use('/Kosmos/Libraries/panel.lua') "
+        "local w = panel.open{ title = 'Keys', start = '/Home/picktest', "
+        "x = 300, y = 200, "
+        "filter = function(n) return n:match('%.sfc$') ~= nil end, "
+        "on_choose = function(p) print('key' .. 'ed ' .. p) end } "
+        "if w then w:run() end"
+    )
+    saved = (
+        "local panel = use('/Kosmos/Libraries/panel.lua') "
+        "local w = panel.save{ title = 'Keep', start = '/Home/picktest', "
+        "name = 'note', x = 300, y = 200, "
+        "on_choose = function(p) print('sav' .. 'ed ' .. p) end } "
+        "if w then w:run() end"
+    )
+    guest.type("fs.write('/Temporary/keys.lua', %r)" % keyed)
+    guest.type("fs.write('/Temporary/keep.lua', %r)" % saved)
+
+    for script, title, keys, said, wanted in (
+            ("/Temporary/keys.lua", "Keys", ["down", "ret"], "keyed ",
+             "/Home/picktest/b.sfc"),
+            ("/Temporary/keep.lua", "Keep", ["s", "ret"], "saved ",
+             "/Home/picktest/notes")):
+        mark = len(guest.seen)
+        guest.type("wm " + script)
+        guest.wait_for_line("wm: window %s at " % title,
+                            "the %s window to open" % title, mark)
+        time.sleep(1.5)
+
+        for k in keys:
+            guest.sendkey(k)
+            time.sleep(0.3)
+
+        got = guest.wait_for_line(said, "the %s window to hand over a path by "
+                                  "the keyboard alone" % title, mark)
+
+        back = len(guest.seen)
+        guest.proc.stdin.write(STOP_DESKTOP)
+        guest.proc.stdin.flush()
+
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            guest._read_available()
+            if PROMPT in guest.seen[back:]:
+                break
+            time.sleep(0.3)
+
+        if got.strip() != wanted:
+            raise Failure(
+                "the %s window, answered by the keyboard alone, handed over "
+                "%r, wanted %s - the keys did not start where the work is"
+                % (title, got, wanted))
+
+    return 5
 
 
 def check_places(guest):
@@ -11766,7 +11826,7 @@ def main():
           f"{places_checks} on a place made by a drop, opened by a click "
           f"and unpinned from its right click's menu, a folder pinned from "
           f"its own and Info counting the folder shown, "
-          f"{panel_checks} on the Open window's filter, its one click that "
+          f"{panel_checks} on the Open window's filter, the keys starting in its list and in the Save window's name, its one click that "
           f"only selects and its second that hands over the path, "
           f"{clip_checks} on copying text from one application into "
           f"another and on This Machine's report following its window, "

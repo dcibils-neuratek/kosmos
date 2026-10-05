@@ -474,7 +474,9 @@ kits under `user/lib/` for Present and Sheets to stand on:
 - **W5a - pictures and captions**: *Done, 4 October* (`testing.md` 18.390).
   **Found on the way**: the Open panel's list does not have the keyboard as
   it opens, so Return does not open its first entry - every application's,
-  since the panel is shared.
+  since the panel is shared. **Fixed on 5 October** (`testing.md` 18.401):
+  the keys start on the list when opening and on the name when saving, and
+  Return in the name saves.
 - **W5b - tables, and Insert's list**: *Done, 4 October* (`testing.md`
   18.391). Next in it: columns of their own widths, dragged at a rule;
   cells joined; tabbed text pasted into cells. Next, W7.
