@@ -905,6 +905,31 @@ a window, as *app or program* above has it - starts as an HTML mockup of its
 windows in `docs/`, beside `drives.html`, shown to Diego and changed until he
 agrees; the code follows the page. A program at the prompt needs none.
 
+**And an app is designed before it is written, not only drawn.** Diego, 5
+October 2026: "Every new app needs feature set, an HTML mockup, an
+architecture document and diagram (png) before coding. This is to make sure
+the app reuses kits, services and servers the most optimal and the most
+performant way". So a new application has four things in `docs/`, shown to
+Diego and agreed, before any of its code:
+
+- **its feature set**: what a person can do with it, listed, as the first
+  part of `docs/<app>.md`;
+- **its mockup**: `docs/<app>.html`, as above;
+- **its architecture**: the rest of `docs/<app>.md`. Every piece of the
+  application and what supplies it - an existing kit, server or driver by
+  name, or a new kit where another application could want it (the premise
+  under *What this is aiming at*); which data travels in a region and which
+  in a message; what is C and what is Lua; and its busiest path, with where
+  the time goes on it;
+- **its diagram**: `docs/<app>-architecture.png`, rendered from
+  `docs/<app>-architecture.html` as `stack.png` is from `stack.html` - the
+  application on top, what it stands on beneath, and what is new marked.
+
+The mockup says what the application looks like; the other three say what
+it is made of, and they are where a second copy is caught before it is
+written. Kosmos Write's PDF writer copied `zip.lua`'s region helpers because
+no document asked what already supplied them.
+
 **The tests take five to ten minutes, never more.** Diego, 18 September
 2026, after a gate that ran for forty: "i dont want 40 minutes tests any
 more, 5 to 10 minutes max from now on so make sure the tests are built

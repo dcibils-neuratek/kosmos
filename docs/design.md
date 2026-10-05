@@ -1276,7 +1276,34 @@ The full design of the UI kit and window manager is in [ui.md](ui.md). Summary: 
 
 The consistency rule: **an app does not draw UI primitives.** The kit lives in `/Kosmos/Libraries/ui` and is resolved by namespace, and the visual tokens are in `/system/ui/theme`. Editing `button.lua` changes every app the next time one starts - it used to say "instantly", which was written when servers reloaded and was never true of a *library* anyway: `use` caches what it loaded, and an application holds the table it was given.
 
-### 9.7 The first app
+### 9.7 An application is designed before it is written
+
+Diego, 5 October 2026: "Every new app needs feature set, an HTML mockup, an
+architecture document and diagram (png) before coding. This is to make sure
+the app reuses kits, services and servers the most optimal and the most
+performant way". It is the premise of §9.1's last paragraph made into a
+step: an application stands on what Kosmos shares and brings only what is
+its own, and the way to know which is which is to write it down before
+there is code to defend.
+
+So four things, in `docs/`, agreed before the first line: the **feature
+set** and the **architecture** as the two parts of `docs/<app>.md`, the
+**mockup** as `docs/<app>.html`, and a **diagram** as
+`docs/<app>-architecture.png`, rendered from an HTML page beside it. The
+architecture names, for every piece, what supplies it - an existing kit,
+server or driver, or a new kit because another application could want it -
+and says which data crosses in a region and which in a message, what is C
+and what Lua, and where the time goes on the application's busiest path.
+That last is the "most performant" half of the request: the cheapest place
+to move a loop into C, or a payload into a region, is a document.
+
+**Why not after.** Kosmos Write was drawn and then built, and its PDF
+writer copied `zip.lua`'s region helpers; PDF reading and writing ended up
+in three libraries over three kits. The mockup was right and the
+application was wrong underneath it, because nothing written before the
+code asked what already existed.
+
+### 9.8 The first app
 
 **The inspector.** A window that lists processes and their namespaces, and lets you open a REPL against any live server.
 

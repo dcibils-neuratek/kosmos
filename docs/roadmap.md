@@ -901,6 +901,39 @@ and no GCC vector types, so the kits that want every cycle - GL, video -
 stay GCC's in the image, and an application's own C is still far faster
 than its Lua.
 
+**WANTED, not scheduled - a CD and DVD player.** Diego, 5 October 2026:
+"Add to the roadmap a cd and DVD player". Assessed, not designed; under the
+premise (`CLAUDE.md`) almost all of it is supply, and the player is the
+thin end:
+- **The drive.** The ThinkPad has none, so the likely drive is a USB one:
+  mass storage over Bulk-Only, the transport `/Home` on a stick already uses
+  (`docs/usb.md` step 5), with SCSI's MMC commands on top. The storage
+  driver takes a peripheral of type 00h, a disk, today; a drive says 05h,
+  holds 2048-byte blocks, and wants READ TOC for a disc's tracks, READ CD
+  for audio - 2352-byte sectors with no filesystem at all - and an answer
+  for a tray with nothing in it.
+- **The filesystems, read only, in `/Drives`**: ISO 9660 with Joliet for a
+  data CD, UDF for a DVD, beside FAT32 and exFAT (6a-6f) and in the same
+  decoder, so Tracker opens a disc as it opens a stick.
+- **A CD's sound** is already 44.1 kHz, 16-bit stereo: sectors read into a
+  region and fed to the audio stream's ring, never a message per period.
+- **A DVD's film** is MPEG-2 video with AC-3 or MPEG audio, in VOB files.
+  FFmpeg has both decoders and the demuxer that reads a VOB, so the Video
+  app's FFmpeg kit (4e) grows by two. Most bought DVDs are encrypted with
+  CSS, which libdvdcss reads (GPL, which is fine here). A DVD's menus are a
+  small virtual machine in its IFO files, libdvdnav's work - after the film
+  plays, not before.
+- **Which application** is Diego's to choose: Music playing a CD's tracks
+  and Video a DVD's film, since both players exist and a disc is a source,
+  or a player of its own built on the same kits. Either way it is designed
+  before it is written - feature set, mockup, architecture and diagram
+  (`CLAUDE.md`, `design.md` 9.7).
+- **Tested in QEMU first** (simulate, don't wait): `usb-bot` with a
+  `scsi-cd` behind it serves an ISO as a data disc, so the drive, the
+  filesystems and a DVD's film can all be built and held by a suite here.
+  QEMU cannot hold an audio track, so CD audio is held by a host test on
+  sectors captured from a real disc, and heard on a real drive.
+
 **A settings kit, for any application to keep its settings.** Diego, 4
 October 2026: "There should be a settings kit that allows an app to store
 and read settings". Each application read and wrote `/Home/Preferences/
