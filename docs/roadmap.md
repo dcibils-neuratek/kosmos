@@ -1013,7 +1013,10 @@ Assessed, not designed:
 - **The windows** - a share in Tracker's sidebar, "Connect to Server",
   what is shared and to whom in Preferences or Servers - designed before
   they are written: feature set, mockup, architecture and diagram
-  (`CLAUDE.md`).
+  (`CLAUDE.md`). **The mockup DRAWN on 5 October, for Diego to change**:
+  `docs/sharing.html` - Tracker with a share open, Connect to Server, a
+  server seen and not signed into, a share gone away, and File sharing in
+  the Servers window - with six questions that are his.
 
 **A settings kit, for any application to keep its settings.** Diego, 4
 October 2026: "There should be a settings kit that allows an app to store
