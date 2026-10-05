@@ -941,10 +941,16 @@ for both ARM64 and x86-64, in milliseconds. Its code is two or three times
 slower than GCC's and has no vector types, so the kits that want every
 cycle stay built on the Mac with GCC, which keeps building Kosmos itself.
 **Order**: after network sharing's client steps; designed first with the
-four documents (`CLAUDE.md`). **Diego's to decide when it is designed**:
-memory a process writes code into and then runs - writable, then
-executable, never both - which running a build at once needs; without it
-TinyCC writes an ELF and Kosmos starts it as a program of its own. What
+four documents (`CLAUDE.md`). **Decided by Diego the same day**: "Tinycc
+writes a program file and kosmos starts separately". No process writes code
+and then runs it - the kernel keeps never allowing it - so a build is an
+ELF on the disk, started as a program of its own, as `doom.elf` is. What it
+means for the design: a C program links against what Kosmos's C needs (the
+libc, the system calls, the Lua runtime only if it embeds Lua), which the
+image must carry for TinyCC to link with; and a C kit used from a Lua
+application - `use("myapp.c")` - is a program image the application
+starts, not code loaded into it, so that door is the design's to work
+out. What
 follows is the assessment of 4 October.
 
 **ASKED, for the future - C compiled inside Kosmos, for the IDE's hybrid
