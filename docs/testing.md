@@ -18903,3 +18903,29 @@ which is step 3 after 0.11; the browser and the windows that ask a server
 while they draw; `diskfs` waiting inside a request for a late stick - the
 likeliest reason `df` never answers on the M700; the Crypto Kit's second copy
 of BearSSL, Diego's to decide; the fixed table of interrupt claims.
+
+## 18.399 Kosmos Write's header is its title bar
+
+Diego, 4 October 2026, of Write in Plex: "why is kosmos write using the old
+window chrome style instead of the new no border one?" It opened `direct =
+true` and offered no header, and a window that draws its own pixels keeps
+the window manager's bar in every look unless it offers one (`ui.md` 16.25).
+So it wore Classic's idea of a title bar in a look that has none. It offers
+a header now; in Plex and Plex Night it draws `pk.header` across its top with
+its name and the document's, the window manager puts the three at its right
+end, a press on it moves the window, and the tools, the desk, the panel and
+the menus start 46 lower. In a look with bars nothing moves.
+
+**The check** is in the display harness's *no title bar* phase
+(`check_no_title_bar`, `arm-display-3` and `x86-display-3`), beside
+Processes, Log View and the Terminal: Write opened in Plex says its header is
+its title bar, the three are placed 12 in from its right and centred in the
+46, and its View tool is at 12,54 - 8 under the band rather than 8 under the
+window's top. `arm-writeapp` runs in the harness's own look, which keeps
+the bars, and proves the layout without a band is the one it was.
+
+**The control**: `arm-display-3` with `writer.lua` as it was, which offers
+no header - the phase fails, the window manager never placing the three in
+Write ("the guest never the three to be placed in Untitled - Kosmos Write's
+header within 30.0s"). With the fix: `arm-display-3`, `x86-display-3` and
+`arm-writeapp` pass, 107, 107 and 41 checks, in 3:28.

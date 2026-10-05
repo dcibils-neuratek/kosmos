@@ -876,7 +876,11 @@ Hello Window open their windows without the kit's `ui.window` at all - so
 they keep the window manager's own tab. The review: every application
 opened under QEMU in Night and in Plex, pictured, the ones in the old
 chrome listed, each moved onto the kit's header, and the pictures kept as
-the check that none goes back.
+the check that none goes back. **Kosmos Write DONE on 5 October** - Diego:
+"why is kosmos write using the old window chrome style instead of the new no
+border one?" - the second window that draws its own pixels to offer a
+header, after Groove (`ui.md` 16.25, `testing.md` 18.399); the review of the
+rest is still to do.
 
 **ASKED, for the future - C compiled inside Kosmos, for the IDE's hybrid
 applications.** Diego, 4 October 2026: "how hard is to compile a c program

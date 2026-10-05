@@ -4168,8 +4168,9 @@ def check_no_title_bar(guest):
     Then the rest (step 2): Preferences opened in the harness's look, with
     its tab, choosing Plex - the tab goes and the three are placed, which is
     a change of look reaching an open window - and dragged by its sidebar's
-    head; and Processes, Log View and the Terminal opened in Plex, each with
-    its header as its title bar and the three in place, beside the
+    head; and Processes, Log View, the Terminal and Kosmos Write opened in
+    Plex, each with its header as its title bar and the three in place -
+    Write's tools under its band rather than at the top - beside the
     Calculator, which has no header and keeps its tab.
 
     And the control: the same Tracker in the harness's own look, which
@@ -4417,23 +4418,34 @@ def check_no_title_bar(guest):
         guest.wait_for("nochrome-look", "put the harness's appearance back")
 
     #
-    # **Every window with a header, in Plex** - three more - **and one
+    # **Every window with a header, in Plex** - four more - **and one
     # without keeps its tab**: the Calculator has no header of the kit's to
-    # hold the three or to be taken hold of.
+    # hold the three or to be taken hold of. Kosmos Write draws its own
+    # pixels and wore the window manager's bar in every look until 4
+    # October 2026, when Diego asked why: it offers a header now, draws the
+    # kit's across its top and its tools below it.
     #
     guest.type(appearance('palette = "plex"') + ' print("nochrome" .. "-all")')
     guest.wait_for("nochrome-all", "save Plex for the window manager")
 
     try:
         mark = len(guest.seen)
-        guest.type("wm procs,logview,terminal,calc")
+        guest.type("wm procs,logview,terminal,calc,writer")
 
-        for title in ("Processes", "Log", "Terminal"):
+        for title in ("Processes", "Log", "Terminal", "Untitled - Kosmos Write"):
             line, _, _, _, _ = placed(title, mark)
 
             if "its header the title bar" not in line:
                 raise Failure("%s opened in Plex wearing a title bar: %r"
                               % (title, line))
+
+        # Write's first tool, under the band: 46 for the header and 8 in.
+        tool = guest.wait_for_line("writer: tool view at ",
+                                   "Write to say where its tools are", mark)
+
+        if not tool.startswith("12,54 "):
+            raise Failure("Write's View tool is at %s in Plex - wanted 12,54, "
+                          "under the header's band" % tool)
 
         line = guest.wait_for_line("wm: window Calculator at ",
                                    "the Calculator to open", mark)
@@ -4446,7 +4458,7 @@ def check_no_title_bar(guest):
         guest.type(appearance() + ' print("nochrome" .. "-done")')
         guest.wait_for("nochrome-done", "put the harness's appearance back")
 
-    return 22
+    return 25
 
 
 def check_direct_menu(guest):

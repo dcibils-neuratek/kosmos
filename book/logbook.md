@@ -1081,3 +1081,29 @@ minutes, before 0.11 was made.
 Diego's premise is that a second copy is a defect, and those copies are
 the next job. They are written down on the roadmap as a list, so nothing
 found is forgotten.
+
+## 5 October - Kosmos Write loses its old title bar
+
+**In short:** in the looks with no title bars, Plex and Plex Night, Kosmos
+Write still had one. It now draws its own header strip like the other
+windows, with the close, minimise and maximise buttons in it.
+
+**What.** Kosmos has looks where windows have no bar above them: the top
+strip of the window itself is the title bar, and the window manager puts the
+three buttons at its right end. A window gets that only if it says it has a
+strip of its own. Kosmos Write draws every pixel itself, for the pages, and
+it never said so, so the window manager kept giving it the old bar.
+
+**Why it matters.** A look should be the same everywhere. One window in the
+old style stands out, and it was the newest application on the system.
+
+**What you see.** In Plex and Plex Night, Write's top strip shows "Kosmos
+Write" and the document's name, with the three buttons at the right.
+Dragging the strip moves the window, and a double click maximises it. The
+tools sit under it. In the looks that keep title bars nothing changes. Write
+also redraws when the look changes, which it had not done at all before: it
+used to keep the old colours until you next typed or clicked.
+
+**How it is checked.** The display test already opened several windows in
+Plex and checked that each one's buttons land in its own strip. Write is now
+one of them, with a check that its tools moved under the strip.

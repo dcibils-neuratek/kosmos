@@ -1749,6 +1749,18 @@ said such a window "has no header of the kit's" and so could not; what it
 lacked was a header the *kit* drew, and the protocol never needed one - the
 window manager draws the three over any window's pixels.
 
+**Kosmos Write is the second** (5 October 2026). Diego, of the window in
+Plex: "why is kosmos write using the old window chrome style instead of the
+new no border one?" - because it opened `direct = true` and nothing more,
+so it wore the window manager's bar in every look. It offers a header now,
+and where the look takes the bars off it draws the kit's own across its
+top - `pk.header`, `pixelkit.lua`, 46 high, its name and the document's -
+places the three at its right end and takes hold on a press there; its
+tools, desk, panel and menus start under it. Where the look keeps the bars
+there is no band and nothing else moves. It also draws again when the look
+changes (`on_paint`), which it had not done at all: a window that draws its
+own pixels is told and has to answer.
+
 **The window manager draws the three; the header only leaves room.** At
 the header's right end, 12 in and 10 after its last control; the header
 says where, once and again only when it moves. They are the tab's three,

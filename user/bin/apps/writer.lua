@@ -115,12 +115,47 @@ local name = path and path:match("([^/]+)$") or "Untitled"
 
 local win, err = ui.window{
   title = name .. " - Kosmos Write", w = W, h = H, x = 40, y = 30,
-  direct = true,
+  direct = true, header = true,
 }
 
 if not win then
   print("writer: " .. tostring(err))
   return
+end
+
+--
+-- **The title band, where the look has no title bars** (`roadmap.md` 6zj,
+-- and the drawing's): Write offers a header, so in Plex and Plex Night the
+-- window manager puts no bar above it and Write draws the kit's header
+-- across its top - its name, and the document's - with the three at its
+-- right end and a press on it moving the window. Where the look keeps the
+-- bars, the window manager's is the title and there is no band. It opened
+-- without one until 4 October 2026, so it wore the old bar in every look.
+--
+local function head_h() return win.headed and ui.layout.head or 0 end
+
+-- Where the tools' row ends and the desk, the panel and the thumbnails
+-- begin.
+local function work_top() return head_h() + TOOLS_H end
+
+-- The three, at the band's right end: said again only when where changes.
+local lights_said = nil
+
+local function place_lights()
+  local l = win.headed and win.lights or nil
+
+  if not l then
+    lights_said = nil
+    return
+  end
+
+  local x = W - ui.layout.lights_in - l.w
+  local y = (ui.layout.head - 1 - l.h) // 2
+
+  if lights_said == x * 65536 + y then return end
+
+  lights_said = x * 65536 + y
+  fs.send("/Running/wm", { type = "lights", window = win.handle, x = x, y = y })
 end
 
 --------------------------------------------------------------------------
@@ -260,7 +295,8 @@ local function scale() return ZOOMS[zoom] / 100 end
 local function desk()
   local left = thumbs and THUMBS_W or 0
   local right = panel and (W - PANEL_W) or W
-  return left, TOOLS_H, right - left, H - TOOLS_H
+  local y = work_top()
+  return left, y, right - left, H - y
 end
 
 local function page_px(page)
@@ -322,7 +358,7 @@ end
 local function desk_height()
   local _, y = page_at(#set.pages)
   local _, h = page_px(set.pages[#set.pages])
-  return y + top - TOOLS_H + h + GAP
+  return y + top - work_top() + h + GAP
 end
 
 local drawn = {}
@@ -458,8 +494,15 @@ local TOOLS = {
 }
 
 local function draw_tools(s)
-  s:fill(0, 0, W, TOOLS_H, theme.window)
-  s:fill(0, TOOLS_H - 1, W, 1, theme.line_soft)
+  local y0 = head_h()
+
+  if y0 > 0 then
+    pk.header(s, 0, 0, W, "Kosmos Write", name,
+              W - ui.layout.lights_in - (win.lights and win.lights.w or 0) - 12)
+  end
+
+  s:fill(0, y0, W, TOOLS_H, theme.window)
+  s:fill(0, y0 + TOOLS_H - 1, W, 1, theme.line_soft)
 
   -- The words a tool shows that change: the zoom's percentage.
   local function word(t)
@@ -476,7 +519,7 @@ local function draw_tools(s)
     if t.gap then
       x = x + t.gap
     else
-      local b = { x = x, y = 8, icon = t.icon, text = word(t),
+      local b = { x = x, y = y0 + 8, icon = t.icon, text = word(t),
                   disabled = t.later ~= nil }
       b.on = t.key == "view" and thumbs
       pk.tool(s, b)
@@ -489,7 +532,7 @@ local function draw_tools(s)
 
   for i = #TOOLS, (right or #TOOLS) + 1, -1 do
     local t = TOOLS[i]
-    local b = { x = 0, y = 8, icon = t.icon, text = word(t),
+    local b = { x = 0, y = y0 + 8, icon = t.icon, text = word(t),
                 disabled = t.later ~= nil,
                 on = (t.key == "format" and panel == "text")
                      or (t.key == "document" and panel == "document") }
@@ -751,11 +794,13 @@ local function draw_panel(s)
   local look, layout, style = shown_look()
   local y
 
-  s:fill(px, TOOLS_H, PANEL_W, H - TOOLS_H, theme.window)
-  s:fill(px, TOOLS_H, 1, H - TOOLS_H, theme.line_soft)
+  local wt = work_top()
+
+  s:fill(px, wt, PANEL_W, H - wt, theme.window)
+  s:fill(px, wt, 1, H - wt, theme.line_soft)
 
   -- Text and Document, the panel's two faces.
-  local tabs = { x = x0, y = TOOLS_H + 12, w = w0, accent = true,
+  local tabs = { x = x0, y = wt + 12, w = w0, accent = true,
                  items = { { text = "Text" }, { text = "Document" } },
                  chosen = panel == "text" and 1 or 2 }
   pk.segments(s, tabs)
@@ -1307,11 +1352,13 @@ local function draw_thumbs(s)
 
   if not thumbs then return end
 
-  s:fill(0, TOOLS_H, THUMBS_W, H - TOOLS_H, theme.window)
-  s:fill(THUMBS_W - 1, TOOLS_H, 1, H - TOOLS_H, theme.line_soft)
+  local wt = work_top()
+
+  s:fill(0, wt, THUMBS_W, H - wt, theme.window)
+  s:fill(THUMBS_W - 1, wt, 1, H - wt, theme.line_soft)
 
   local current = caret_page()
-  local y = TOOLS_H + 14
+  local y = wt + 14
 
   for i, page in ipairs(set.pages) do
     local sc = THUMB_W / page.width_pt
@@ -1366,6 +1413,9 @@ local function caret_px()
 
   return x, y, h, here
 end
+
+-- The look the last frame was drawn in, to know when it changed.
+local drawn_in = nil
 
 local function frame()
   local s = win:surface()
@@ -1445,12 +1495,29 @@ local function frame()
   while #note > 1 and gfx.measure(note) > room do note = note:sub(1, -2) end
 
   if room > 40 then
-    s:text(from + 16, (TOOLS_H - gfx.height()) // 2, note, theme.text_dim, nil, "ui")
+    s:text(from + 16, head_h() + (TOOLS_H - gfx.height()) // 2, note, theme.text_dim, nil, "ui")
   end
 
   if menu then pk.menu(s, menu.box) end
 
+  drawn_in = { headed = win.headed, window = theme.window, text = theme.text }
   win:commit()
+  place_lights()
+end
+
+--
+-- **A look changed** - its colours, or whether windows have title bars -
+-- which the kit has already taken in, and which Write has to draw again
+-- for: it draws everything else the moment it happens, so the kit's call
+-- after each event would be a second frame for nothing.
+--
+win.on_paint = function()
+  local d = drawn_in
+
+  if not d or d.headed ~= win.headed or d.window ~= theme.window
+     or d.text ~= theme.text then
+    frame()
+  end
 end
 
 local function report()
@@ -1930,7 +1997,7 @@ function open_menu(kind, x, y, w, items, chosen, pick)
   local h = #items * 30 + 8
 
   -- Up from its control when it would run off the window's foot.
-  if y + h > H - 4 then box.y = math.max(TOOLS_H, y - h - 40) end
+  if y + h > H - 4 then box.y = math.max(work_top(), y - h - 40) end
 
   box.h = h
   menu = { box = box, pick = pick }
@@ -2121,7 +2188,7 @@ end
 local function chart_menu(x)
   local labels = {}
   for i, k in ipairs(CHART_KINDS) do labels[i] = k[2] end
-  open_menu("chart", x, TOOLS_H + 2, 160, labels, nil,
+  open_menu("chart", x, work_top() + 2, 160, labels, nil,
             function(i) insert_chart(CHART_KINDS[i][1]) end)
 end
 
@@ -2187,7 +2254,7 @@ end
 local function shape_menu(x)
   local labels = {}
   for i, k in ipairs(SHAPE_KINDS) do labels[i] = k[2] end
-  open_menu("shape", x, TOOLS_H + 2, 200, labels, nil,
+  open_menu("shape", x, work_top() + 2, 200, labels, nil,
             function(i) insert_shape(SHAPE_KINDS[i][1]) end)
 end
 
@@ -2309,7 +2376,7 @@ TOOL_ACTS = {
   --
   insert = function(t)
     local items = { "Page Break", "Table", "Picture...", "Text Box", "Shape...", "Chart..." }
-    open_menu("insert", t.x, TOOLS_H + 2, 180, items, nil, function(i)
+    open_menu("insert", t.x, work_top() + 2, 180, items, nil, function(i)
       if i == 1 then
         TOOL_ACTS.addpage()
       elseif i == 2 then
@@ -2329,12 +2396,12 @@ TOOL_ACTS = {
   zoom = function(t)
     local labels = {}
     for i, z in ipairs(ZOOMS) do labels[i] = z .. "%" end
-    open_menu("zoom", t.x, TOOLS_H + 2, 120, labels, zoom,
+    open_menu("zoom", t.x, work_top() + 2, 120, labels, zoom,
               function(i) zoom_to(i) end)
   end,
   export = function(t)
     local items = { "Save as .write", "Export PDF", "Export Word (.docx)" }
-    open_menu("export", math.min(t.x, W - 220), TOOLS_H + 2, 200, items, nil,
+    open_menu("export", math.min(t.x, W - 220), work_top() + 2, 200, items, nil,
               function(i)
                 if i == 1 then save() elseif i == 2 then export() else export_docx() end
               end)
@@ -2628,7 +2695,7 @@ function sink:mouse(action, x, y)
     for _, b in ipairs(thumb_boxes) do
       if pk.inside(b, x, y) then
         local _, py = page_at(b.page)
-        scroll_to(top + (py - TOOLS_H) - GAP)
+        scroll_to(top + (py - work_top()) - GAP)
         frame()
         return true
       end
@@ -2637,7 +2704,12 @@ function sink:mouse(action, x, y)
     return true
   end
 
-  if action == "press" and y < TOOLS_H then
+  if action == "press" and y < head_h() then
+    win:take_hold(x, y)
+    return true
+  end
+
+  if action == "press" and y < work_top() then
     for _, t in ipairs(TOOLS) do
       if t.key and t.x and not t.later and x >= t.x and x < t.x + t.w then
         local act = TOOL_ACTS[t.key]
