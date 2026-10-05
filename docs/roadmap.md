@@ -1016,7 +1016,9 @@ Assessed, not designed:
   (`CLAUDE.md`). **The mockup DRAWN on 5 October, for Diego to change**:
   `docs/sharing.html` - Tracker with a share open, Connect to Server, a
   server seen and not signed into, a share gone away, and File sharing in
-  the Servers window - with six questions that are his.
+  the Servers window - with six questions that are his. **The look AGREED
+  the same day** - Diego: "it great how it looks". Next before any code:
+  the feature set, the architecture and the diagram, and his six answers.
 
 **A settings kit, for any application to keep its settings.** Diego, 4
 October 2026: "There should be a settings kit that allows an app to store
