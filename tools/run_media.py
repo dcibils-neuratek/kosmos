@@ -1069,8 +1069,9 @@ def main():
     # library does not decode a thousand covers to show ten; `media.cover`
     # is the other half, for the one song being played. The bytes go into a
     # region and the region to the window manager with a name, because the
-    # picture is data and the message is control - and because `/Temporary` caps
-    # a file at 16 KB where a cover is hundreds.
+    # picture is data and the message is control - and because a copy through
+    # a file would be a file nobody asked for, where `/Temporary` capped one at
+    # 16 KB until 5 October and a cover is hundreds.
     #
     # The picture is one colour this file chose, so finding that colour on
     # screen says the cover arrived rather than that something did.

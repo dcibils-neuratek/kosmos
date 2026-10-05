@@ -1606,7 +1606,7 @@ local function new_namespace()
     [2] = "not a directory",
     [3] = "not readable",
     [4] = "/Temporary did not understand that",
-    [5] = "/Temporary is full",
+    -- [5], full, names the path it was given: see `ram_call`.
     [6] = "too many attributes on one node",
     [7] = "the directory is not empty",
     [8] = "it is already there",
@@ -1687,13 +1687,23 @@ local function new_namespace()
     return out
   end
 
-  local function ram_call(capability, bytes)
+  --
+  -- `shown` is the path as the caller gave it, for a refusal to name. **A
+  -- full store says which file did not fit**: it said "/Temporary is full"
+  -- for a file in `/Home`, which on a machine with no disk is this store
+  -- too - true of the server and wrong for the person reading it.
+  --
+  local function ram_call(capability, shown, bytes)
     local raw, why = sys.call_raw(capability, bytes)
 
     if not raw then return nil, tostring(why) end
     if #raw < 1044 then return nil, "a /Temporary reply of the wrong size" end
 
     local err, more, count, length, packed, blob = string.unpack(RAM_REPLY, raw)
+
+    if err == 5 then
+      return nil, ("no room for %s in memory"):format(tostring(shown))
+    end
 
     if err ~= 0 then
       return nil, RAM_ERRORS[err] or ("/Temporary error " .. tostring(err))
@@ -1703,8 +1713,10 @@ local function new_namespace()
              packed = packed ~= 0, blob = blob }
   end
 
-  local function ram_request(capability, op, rest, extra, pass)
+  local function ram_request(capability, op, rest, extra, pass, shown)
     local code = RAM_OPS[op]
+
+    shown = shown or rest
 
     if not code then
       return nil, "no such operation: " .. tostring(op)
@@ -1723,7 +1735,7 @@ local function new_namespace()
     --
     if op == "delete" or op == "mkdir" or op == "rename" then
       local to = (op == "rename") and tostring(extra.to or "") or ""
-      local _, err = ram_call(capability,
+      local _, err = ram_call(capability, shown,
                               ram_pack(code, rest, 0, #to, 0, nil, to))
 
       if err then return nil, err end
@@ -1798,7 +1810,7 @@ local function new_namespace()
 
       repeat
         local piece = text:sub(at + 1, at + RAM_DATA_MAX)
-        local _, err = ram_call(capability,
+        local _, err = ram_call(capability, shown,
                                 ram_pack(code, rest, at, #piece, 0, nil,
                                          piece, packed))
 
@@ -1812,7 +1824,7 @@ local function new_namespace()
 
     if op == "setattr" then
       local _, n = pack_attrs(extra.attrs)
-      local _, err = ram_call(capability,
+      local _, err = ram_call(capability, shown,
                               ram_pack(code, rest, 0, 0, n, extra.attrs))
 
       if err then return nil, err end
@@ -1837,7 +1849,7 @@ local function new_namespace()
       end
 
       local _, nwhere = pack_attrs(extra.where)
-      local r, err = ram_call(capability,
+      local r, err = ram_call(capability, shown,
                               ram_pack(code, rest, nwhere, 0,
                                        math.min(#(extra.known or {}),
                                                 RAM_ENTRIES_MAX),
@@ -1855,7 +1867,7 @@ local function new_namespace()
       nterms = select(2, pack_attrs(extra.where))
     end
 
-    local r, err = ram_call(capability,
+    local r, err = ram_call(capability, shown,
                             ram_pack(code, rest, offset, 0, nterms,
                                      (op == "query") and extra.where or nil))
 
@@ -1878,7 +1890,7 @@ local function new_namespace()
         local parts, more, at = { bytes }, r.more, #bytes
 
         while more do
-          local nxt, err = ram_call(capability,
+          local nxt, err = ram_call(capability, shown,
                                     ram_pack(code, rest, at, 0, 0, nil, nil, 0))
 
           if not nxt then return nil, err end
@@ -1916,7 +1928,7 @@ local function new_namespace()
       local parts, more, at = { bytes }, r.more, #bytes
 
       while more do
-        local nxt, err = ram_call(capability,
+        local nxt, err = ram_call(capability, shown,
                                   ram_pack(code, rest, at, 0, 0, nil, nil, 0))
 
         if not nxt then return nil, err end
@@ -2451,7 +2463,7 @@ local function new_namespace()
     end
 
     if proto == "ram" then
-      return ram_request(capability, op, rest, extra, pass)
+      return ram_request(capability, op, rest, extra, pass, path)
     end
 
     if proto == "disk" then
@@ -2960,18 +2972,6 @@ local function new_namespace()
     --
     -- A server with a declared protocol does not take arbitrary tables.
     --
-    -- `send` is the generic escape hatch - whatever you put in the table
-    -- reaches the server - and that is exactly what a struct server must
-    -- not be given. Refused here, with a sentence, because the alternative
-    -- is what happened the first time: a `send` to a path under `/Devices` that
-    -- named nothing was answered by the C devices server, its struct reply
-    -- was unpacked as a Lua value, and the caller crashed indexing a
-    -- number. Before the conversion the same mistake produced "no such
-    -- device", which is the behaviour to keep.
-    --
-    --
-    -- A server with a declared protocol does not take arbitrary tables.
-    --
     -- `send` is the generic escape hatch - whatever is in the table reaches
     -- the server - and that is exactly what a struct server must not be
     -- handed. Where the protocol has an operation for what was asked, this
@@ -3013,11 +3013,11 @@ local function new_namespace()
           return nil, "a rename cannot cross a mount"
         end
 
-        return ram_request(capability, op, rest, { to = elsewhere })
+        return ram_request(capability, op, rest, { to = elsewhere }, nil, path)
       end
 
       if op == "mkdir" or op == "delete" then
-        return ram_request(capability, op, rest)
+        return ram_request(capability, op, rest, nil, nil, path)
       end
     end
 

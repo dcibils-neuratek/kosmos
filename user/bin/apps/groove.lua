@@ -120,9 +120,9 @@ app.load()
 -- Groove asked for at that size, and this window closed once the window
 -- manager has said yes - not before, so a refused start leaves the song on
 -- the screen and a line saying why. As Video does for its sizes.
--- In Groove's own folder, where its project is, and taken away once read:
--- `/Temporary` keeps 16 KB a file and a song is more (`roadmap.md` 6zh).
--- `/Temporary` all the same on a machine with no disk to put it on.
+-- In Groove's own folder, where its project is, and taken away once read;
+-- `/Temporary` on a machine with no disk to put it on. (It kept 16 KB a
+-- file until 5 October 2026, which is why the folder came first.)
 local CARRIES = { "/Home/Documents/Groove/.carried.groove", "/Temporary/groove-carried.groove" }
 
 local function again(size)

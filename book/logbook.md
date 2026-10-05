@@ -1107,3 +1107,33 @@ used to keep the old colours until you next typed or clicked.
 **How it is checked.** The display test already opened several windows in
 Plex and checked that each one's buttons land in its own strip. Write is now
 one of them, with a check that its tools moved under the strip.
+
+## 5 October - /Temporary stops running out of room
+
+**In short:** the place Kosmos keeps files in memory, `/Temporary`, could
+hold only 128 files of 16 KB each. It now holds as many as fit in half of
+the machine's memory, and gives memory back when a file is deleted.
+
+**What.** `/Temporary` is a filesystem in memory. On a computer without a
+disk, the person's own folder, `/Home`, lives there too. Its limits were
+fixed numbers chosen for the first, small test machine: 128 files, none
+larger than 16 KB. A PDF with five fonts did not fit, nor a song, nor a
+21 KB program the code editor wanted to run from there.
+
+**Why it was like that, and what replaced it.** A fixed size has one good
+property: when it is full, it says so cleanly, at a known moment. That
+property is kept. The store now grows as files arrive, but everything it
+holds is counted against one limit, half of the machine's memory, decided
+once when it starts. Past the limit a write is refused and nothing is left
+half done. When a file is deleted its memory goes back.
+
+**What you see.** Bigger files work in `/Temporary`, and in `/Home` on a
+machine with no disk. When memory really is full, the message names the
+file: "no room for /Home/song.flac in memory", where it used to say
+"/Temporary is full" even for a file in `/Home`.
+
+**How it is checked.** The store's logic was moved into its own file so it
+can be tested on the Mac without booting Kosmos: five hundred files, a
+300 KB file, the limit refusing, memory coming back, forty programs
+waiting on it at once. 33 checks, and each of three deliberately broken
+versions fails them.

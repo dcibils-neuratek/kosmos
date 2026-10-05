@@ -18929,3 +18929,39 @@ no header - the phase fails, the window manager never placing the three in
 Write ("the guest never the three to be placed in Untitled - Kosmos Write's
 header within 30.0s"). With the fix: `arm-display-3`, `x86-display-3` and
 `arm-writeapp` pass, 107, 107 and 41 checks, in 3:28.
+
+## 18.400 /Temporary grows, to half of the machine (step 4 after 0.11)
+
+`/Temporary` - and `/Home` on a machine with no disk - was 128 entries of
+16 KB each, compiled into `ramfs.c`. It grows now (`design.md` 8.3f): an
+entry, its value and a parked watch from the server's heap, given back when
+deleted, all counted against a ceiling of half the pages the kernel
+manages. The store's logic moved into `user/servers/ramstore.c`, apart from
+the receiving and replying, so the host can drive it with the requests the
+namespace sends.
+
+**`tools/test_ramstore.c`, in the host suite, 33 checks**: five hundred
+files, listed in order four at a time and read back, then all deleted with
+nothing held after; a value of 300 KB written a message at a time and read
+back byte for byte, its `size` saying 307200; a gap written past the end
+reading as zeros rather than as the bytes written before it; a store of
+256 KB filled with files of 8 KB until it refuses as full, staying under its
+ceiling, keeping what it held readable, leaving no empty file behind for a
+write that cannot fit, and taking a file of the same size again once two are
+deleted; a 2 MB value written again from the start giving its room back,
+and a 10 KB one keeping it; forty watches parked at once, all forty
+answered by one `setattr`, each to the sender that asked, holding nothing
+after; a folder renamed with what is in it; and an offset near the top of
+32 bits refused rather than wrapped.
+
+**The controls**, each a copy of `ramstore.c` with one thing taken out:
+without the gap's zeroing, 1 check fails ("the gap reads as zeros"); with
+`room_for` always yes, 4 (the ceiling never refuses); without forgetting the
+file a refused write made, 1 (the hostile offset leaves an entry behind).
+
+**In the guest**, `run_interchange.py`: a file of 150,000 bytes written to
+`/Temporary` and read back whole - this check used to be that the same
+write was refused as "/Temporary is full 16384" - and a write the store
+refuses (its root) coming back as false and a sentence rather than raised.
+The namespace's sentence for a full store names the path: "no room for
+/Home/song.flac in memory".

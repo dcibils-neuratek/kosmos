@@ -242,13 +242,23 @@ print("WRITE-BADNAME", ok, fs.getattr("/Home/bad.write") == nil,
             'print("GUEST" .. "-BIG", ok, tostring(err), '
             '#(back or ""), back == big)',
             #
-            # And the ceiling that is real, which must be a value and not an
-            # exception. `/Temporary` is a fixed pool - 16 KB a file - so this
-            # cannot succeed; what it must not do is throw.
+            # And `/Temporary` holds it too: it was a fixed pool of 16 KB a
+            # file until 5 October 2026, and grows now, to a ceiling of half
+            # the machine (`ramstore.c`, held by `tools/test_ramstore.c`).
             #
-            'local ok, err = fs.write("/Temporary/big", string.rep("z", 150000)) '
-            'print("GUEST" .. "-RAM", ok, tostring(err), '
-            '#(fs.read("/Temporary/big") or ""))',
+            'local big = string.rep("z", 150000) '
+            'local ok, err = fs.write("/Temporary/big", big) '
+            'local back = fs.read("/Temporary/big") '
+            'print("GUEST" .. "-RAM", ok, tostring(err), #(back or ""), '
+            'back == big)',
+            #
+            # And a refusal from it is a value and not an exception: the
+            # store's root is not a file. This was the full store's check,
+            # and a full store is the host test's to reach now - half of a
+            # machine is not something a suite fills in its minutes.
+            #
+            'local ok, err = fs.write("/Temporary", "x") '
+            'print("GUEST" .. "-RAMNO", ok, tostring(err))',
             #
             # And more large writes than a thread has capability slots.
             #
@@ -346,11 +356,20 @@ print("WRITE-BADNAME", ok, fs.getattr("/Home/bad.write") == nil,
 
         checks += 1
 
-        # ---- and a ceiling that is a value rather than an exception ----
-        if "GUEST-RAM false /Temporary is full 16384" not in flat:
+        # ---- /Temporary past what it held, and a refusal as a value ----
+        if "GUEST-RAM true nil 150000 true" not in flat:
             raise Failure(
-                "a write past what /Temporary holds should come back as false "
-                "and a sentence, not as a raise.\n" + out[-900:]
+                "/Temporary did not hold a file of 150,000 bytes and give it "
+                "back whole - it held 16 KB a file until 5 October.\n"
+                + out[-900:]
+            )
+
+        checks += 1
+
+        if not re.search(r"GUEST-RAMNO (false|nil) \S", flat):
+            raise Failure(
+                "a write /Temporary refuses should come back as false and a "
+                "sentence, not as a raise.\n" + out[-900:]
             )
 
         checks += 1

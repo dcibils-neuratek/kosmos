@@ -637,10 +637,10 @@ local header = ui.header{
 -- copy is written to `/Home/.ide-run` under its own name and run from
 -- there, in its own folder, with the copy's path turned back into the
 -- file's in everything it says - so an error names the line in the file
--- you are looking at. The copy was in `/Temporary`, whose files hold 16 KB -
--- it keeps replicants' state, not programs - and `bench.lua` would not run
--- at all: "ramfs is full" (Diego, 27 September). `/Home` is the disk on a
--- real machine, and memory only on one that has none.
+-- you are looking at. The copy was in `/Temporary`, whose files held 16 KB
+-- then - it keeps replicants' state, not programs - and `bench.lua` would
+-- not run at all: "ramfs is full" (Diego, 27 September). `/Home` is the disk
+-- on a real machine, and memory only on one that has none.
 --------------------------------------------------------------------------
 
 local con = use("/Kosmos/Kits/console")

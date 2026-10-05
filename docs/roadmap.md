@@ -587,7 +587,13 @@ with no disk, which it holds - is 128 entries of 16 KB each, compiled into
 refusal said "/Temporary is full" for a file in `/Home`. `CLAUDE.md`'s rule
 is that a pool grows rather than caps; so entries and values grow, out of
 pages the server maps, to a ceiling from the machine's memory, and the
-refusal names the path it was given.
+refusal names the path it was given. **DONE on 5 October** (`testing.md`
+18.400, `design.md` 8.3f): entries, values and parked watches from the
+server's heap, given back when deleted, against a ceiling of half the
+machine; "no room for /Home/x in memory". The store is `ramstore.c` now,
+held on the host. What is left: a write still crosses a kilobyte a message,
+and a region the server takes, as the disk's does, waits for a measurement
+that asks for it.
 
 **One kit, one door - the premise applied to what exists.** Diego, 4
 October 2026: kits, servers and drivers supply and applications orchestrate,

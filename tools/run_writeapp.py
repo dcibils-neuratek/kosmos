@@ -7,8 +7,9 @@ A document is made in the machine and opened in Write; the window is looked
 at, zoomed, and exported to PDF with Control-E; the PDF is taken off the
 machine's disk on this Mac, and macOS renders it (`sips`) at the size the
 window showed the page. **With a disk**, as Write is used: without one,
-`/Home` is held in memory, where a file may be no larger than 16 KB, and a
-PDF of five faces is not (`roadmap.md`, *In memory, no size compiled in*). Then the two pictures are compared **line by line**: the
+`/Home` is held in memory, where a file could be no larger than 16 KB until
+5 October 2026, and a PDF of five faces is not (`roadmap.md`, *In memory, no
+size compiled in*). Then the two pictures are compared **line by line**: the
 same lines of text, each starting, ending and standing where the other's
 does, to a couple of pixels - which is what one setting for the screen and
 the PDF promises, and what a screen set with a screen font's rounded widths

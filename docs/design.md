@@ -1102,6 +1102,18 @@ Decided by Diego on 4 October 2026: "Nothing is stored in binary format for sett
 
 **And one way to keep one** (the same day; Diego: "There should be a settings kit that allows an app to store and read settings", "So apps use that kit instead of inventing their own way"): `prefs.lua`. An application opens its settings by a name with its defaults beside them, reads a field, and sets one; the kit reads, changes and writes so another program's keys survive, writes no default, and keeps every name inside `/Home/Preferences`. `make host-check` refuses anything but the kit naming that folder, so the next application cannot invent its own way without the build saying so.
 
+### 8.3f The memory store grows, to half of the machine
+
+`/Temporary` - and `/Home` on a machine with no disk - was 128 entries of 16 KB each, compiled into `ramfs.c` and mapped once at the start. That was the kernel's argument applied to a server: memory decided before anything runs, so a full store is a refusal at a known limit rather than a failure at an unknown one. The limit it chose was the first machine's. A PDF of five faces did not fit, a song never could, a 21 KB program could not be run from a copy there, and the refusal said "/Temporary is full" for a file in `/Home` (`roadmap.md`, *In memory, no size compiled in*).
+
+**So it grows, and the argument is kept by a ceiling instead of by the sizes** (5 October 2026). An entry, its value and a parked watch each take memory as they are needed and give it back when they are deleted, and everything held is counted against one number - half of the pages the kernel manages, as Linux's tmpfs takes half by default - asked for once when the server starts, so a write is never taken at one moment and refused the next because the free pages moved. Past the ceiling a write is refused and changes nothing it was given, and a file it would have made is not left behind; the namespace says which file did not fit ("no room for /Home/song.flac in memory").
+
+**The heap, not a mapping per value.** The kernel never reuses an address it mapped (`kernel/process.h`): a process's mappings walk upward through four gigabytes of addresses for as long as it lives. A value given fresh pages on every write - a status file rewritten each second - would walk the server out of its addresses in days while holding a few kilobytes. `malloc` keeps what is freed and hands it out again, so the addresses used follow the most ever held, not the number of writes. A value of a megabyte or more written again from the start gives its room back; a smaller one keeps it for the next writer, which is the status file's case and costs it no copy.
+
+**What it is not, yet: a store whose data travels in regions.** A write is still a kilobyte a message, which is fine for what `/Temporary` holds and slow for a song. `write_from` reads the caller's region into a string in the namespace and sends it on in pieces; a region taken by the server, as the disk's is, is the next step if a measurement asks for it.
+
+The store's logic is `user/servers/ramstore.c`, apart from the receiving and replying in `ramfs.c`, so the host holds it to all of this without a machine (`tools/test_ramstore.c`), as `kfs.c` is held.
+
 ### 8.4 A large file is mapped, not copied
 
 `read` returning a string is right for a configuration file and wrong for a picture. A 936 KB PNG through `fs.read` gives `not enough memory`, because the string is accumulated on a 2 MB process heap.

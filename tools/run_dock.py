@@ -55,9 +55,9 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-# A disk for /Home, as the M700's stick is one: without it /Home is in
-# /Temporary, which holds 16 KB a file, and a picture of the screen is a
-# megabyte or two. Named before `run_screenshot` is imported, which reads
+# A disk for /Home, as the M700's stick is one: without it /Home is held in
+# memory, which held 16 KB a file until 5 October 2026 - and a picture of
+# the screen is a megabyte or two. Named before `run_screenshot` is imported, which reads
 # KOSMOS_DISK once, as it loads.
 import scratch                                              # noqa: E402
 import subprocess                                           # noqa: E402
