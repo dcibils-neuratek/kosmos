@@ -981,6 +981,40 @@ thin end:
   QEMU cannot hold an audio track, so CD audio is held by a host test on
   sectors captured from a real disc, and heard on a real drive.
 
+**WANTED, not scheduled - sharing files over the network, both ways.**
+Diego, 5 October 2026: "Add to the roadmap the need for a network file
+sharing server and client", "Perhaps SMB? Samba in Linux for example".
+Assessed, not designed:
+- **SMB, version 2 and 3, and only those.** It is what the Mac's Finder,
+  Windows and every NAS speak without anything installed, so a share on any
+  of them opens here and a folder here opens there. SMB 1 is left out: it
+  is the old, insecure dialect every current system has turned off.
+- **The client first**: a share mounted into the namespace - under
+  `/Network`, or beside the sticks in `/Drives` - so Tracker, the Open
+  window and every program reach it as they reach a disk. A server in C,
+  speaking a declared shape as `diskfs` does, over the network stack's TCP
+  to port 445. The candidate to vendor is **libsmb2** (Ronnie Sahlberg, C,
+  SMB2/3 with signing and encryption, small, made to be ported), rather
+  than writing the protocol from its specification.
+- **The server second**: folders of `/Home` offered to the Mac and others.
+  **Samba itself does not fit**: it is hundreds of thousands of lines built
+  on POSIX - processes, `fork`, sockets, a Unix file system - which Kosmos
+  does not have and will not (`design.md` 17). A small SMB2/3 server of
+  Kosmos's own, a few dialects and the commands Finder and Windows use,
+  is the honest size of it.
+- **What it needs from the rest**: sign-in, NTLMv2 at least, and SMB 3's
+  signing and encryption (AES-CMAC, AES-CCM/GCM) in the Crypto Kit, in C;
+  file data through regions, never through Lua strings (*control by
+  message, data by shared memory*); and nothing on the desktop waiting on
+  a slow share - the server holds a caller's reply and goes on answering
+  (*nothing waits on hardware*).
+- **Under QEMU first** (simulate, don't wait): the Mac's own File Sharing
+  and its `smbd` as the far end, through QEMU's network.
+- **The windows** - a share in Tracker's sidebar, "Connect to Server",
+  what is shared and to whom in Preferences or Servers - designed before
+  they are written: feature set, mockup, architecture and diagram
+  (`CLAUDE.md`).
+
 **A settings kit, for any application to keep its settings.** Diego, 4
 October 2026: "There should be a settings kit that allows an app to store
 and read settings". Each application read and wrote `/Home/Preferences/
