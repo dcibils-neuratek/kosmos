@@ -13,8 +13,10 @@
 --   kit, is checked to be the same number in both;
 -- - the two demo songs build, and play: sound, in song mode, as long as
 --   their chains say;
--- - a project saved and read back is the same song, and a file that is not
---   one - or is bytecode - is refused;
+-- - a project saved is a table kept as text and read back the same song;
+--   one in the old `return { ... }` form is still read, as values and never
+--   run; and a file that is not one - a number, bytecode, a name, a call -
+--   is refused;
 -- - a lane's resting value is kept and given back when the lane goes;
 -- - **MIDI** (`roadmap.md` 6zg): ports named as PulseMusic matched them,
 --   events handed on in its words, and the Launchkey put in its DAW mode,
@@ -168,20 +170,92 @@ for _, name in ipairs({ "techno", "house" }) do
 end
 
 ---------------------------------------------------------------- projects
+-- A project is kept as every table a program keeps is (`design.md` 8.3e):
+-- written, it is text a person can read under `-- kosmos: table`; read, it
+-- is values and nothing is run. The `fs` here keeps a table as `/Home`
+-- does, through the same reader every process is born with.
+tabletext = tabletext or dofile("user/init/tabletext.lua")
+
+local disk = {}
+
+fs = {
+  write = function(path, value)
+    if type(value) == "table" then
+      local text, why = tabletext.encode(value)
+      if not text then return nil, why end
+      value = text
+    end
+    disk[path] = value
+    return true
+  end,
+  read = function(path)
+    local text = disk[path]
+    if text == nil then return nil, "no such file" end
+    if tabletext.is(text) then return tabletext.decode(text) end
+    return text
+  end,
+  getattr = function(path) return disk[path] ~= nil and { kind = "file" } or nil end,
+}
+
 local song = Demos.house()
 song.chain[2].auto = { ["t3.p.cut"] = { [1] = 0.25, [9] = 0.75 } }
 song.autoBase = { ["t3.p.cut"] = 0.5 }
 
-local text = E.serialize(song)
-local back, why = E.parse("return " .. text, "house")
+local PROJECT = "/Home/Documents/Groove/Project.groove"
+local want = tabletext.encode(song)
+
+E.song = song
+check(E.save(PROJECT), "a project was not saved")
+check(tabletext.is(disk[PROJECT]), "a project was not written as a table kept as text")
+
+local back, why = E.project(fs.read(PROJECT))
 
 check(back ~= nil, "a saved project did not read back: " .. tostring(why))
-check(back and E.serialize(back) == text, "a saved project read back as a different song")
+check(back and tabletext.encode(back) == want, "a saved project read back as a different song")
+check(E.load(PROJECT) == true, "a saved project did not load")
+check(select(2, E.load("/Home/nothing.groove")) == "no saved project yet",
+      "a project that is not there is not said to be not there")
 
-check(E.parse("return 1") == nil, "a file returning a number was taken for a project")
-check(E.parse("return { tracks = { {} } }") == nil, "a project with one track was taken")
-check(E.parse(string.dump(function() return {} end)) == nil, "bytecode was taken for a project")
-check(E.parse("return { tracks = os }") == nil, "a project reached outside its own world")
+-- **The old form**, `return { ... }`, as PulseMusic and Groove wrote it until
+-- 5 October 2026 - made here as they made it - still read, as values. Held
+-- to the old form's own precision: it wrote numbers with `tostring`.
+local function old_form(v)
+  local t = type(v)
+  if t == "table" then
+    local keys = {}
+    for k in pairs(v) do keys[#keys + 1] = k end
+    table.sort(keys, function(a, b)
+      if type(a) == type(b) then return a < b end
+      return type(a) == "number"
+    end)
+    local out = {}
+    for _, k in ipairs(keys) do
+      local ks = type(k) == "number" and ("[" .. k .. "]") or ("[" .. string.format("%q", k) .. "]")
+      out[#out + 1] = ks .. "=" .. old_form(v[k])
+    end
+    return "{" .. table.concat(out, ",") .. "}"
+  elseif t == "string" then return string.format("%q", v)
+  else return tostring(v) end
+end
+
+disk["/Home/old.groove"] = "return " .. old_form(song)
+back, why = E.project(fs.read("/Home/old.groove"))
+
+check(back ~= nil, "an old project did not read: " .. tostring(why))
+check(back and old_form(back) == old_form(song), "an old project read as a different song")
+
+-- And what is not a project, refused - nothing in any of them run: a loop
+-- that never ends is refused at once.
+check(E.project("return 1") == nil, "a file returning a number was taken for a project")
+check(E.project("return { tracks = { {} } }") == nil, "a project with one track was taken")
+check(E.project(string.dump(function() return {} end)) == nil, "bytecode was taken for a project")
+check(E.project("return { tracks = os }") == nil, "a project reached outside its own world")
+check(E.project({ bpm = 120 }) == nil, "a table with no tracks was taken for a project")
+
+back, why = E.project("return {\n  tracks = (function() while true do end end)(),\n}")
+
+check(back == nil and tostring(why):find("line 2", 1, true) ~= nil,
+      "a project that is a program was not refused with its line: " .. tostring(why))
 
 ---------------------------------------------------------------- automation
 E.setSong(Demos.techno())
@@ -260,5 +334,6 @@ if failed > 0 then
 end
 
 print(("PASS: %d checks on Groove's Lua (every knob and drum the same in presets.lua and the kit, "
-       .. "both demos playing their length, a project saved and read back, three files refused, "
+       .. "both demos playing their length, a project saved as text and read back as values, "
+       .. "the old form still read and never run, six things that are not a project refused, "
        .. "a lane's resting value, MIDI ports and the Launchkey's DAW mode)"):format(passed))

@@ -550,20 +550,14 @@ function zip.extract(spec)
 
   if not out then free(whole) return nil, why end
 
+  -- Each folder asked for once, however many files land in it; made, and
+  -- the ones above it, by the file library.
   local made = {}
 
   local function folder(path)
-    if made[path] or fs.getattr(path) then made[path] = true return true end
+    if made[path] then return true end
 
-    local up = files.parent(path)
-
-    if up ~= path and not made[up] and not fs.getattr(up) then
-      local ok, oops = folder(up)
-
-      if not ok then return nil, oops end
-    end
-
-    local ok, oops = fs.send(path, { type = "mkdir" })
+    local ok, oops = files.make_folder(path)
 
     if ok then made[path] = true end
 

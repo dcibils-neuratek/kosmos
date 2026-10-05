@@ -256,11 +256,8 @@ local function play_or_pause()
   if film:playing() then film:pause() else film:play() end
 end
 
-local function clock(seconds)
-  local whole = math.floor(seconds)
-
-  return ("%d:%02d"):format(whole // 60, whole % 60)
-end
+-- 3:07, as every player writes a time (`clock.duration`).
+local clock = use("/Kosmos/Libraries/clock.lua").duration
 
 --
 -- Starting again at another size, with the moment carried over. The window

@@ -279,12 +279,10 @@ local driven, undriven = hardware.network(sys.bus())
 if driven[1] or (info.net_mtu or 0) > 0 then
   local card    = driven[1] and driven[1].name or "a card the bus did not list"
   local address = net and net.card and net.address
+  local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
 
-  if type(address) == "string" and #address == 4
-     and address ~= "\0\0\0\0" then
-    local a, b, c, d = address:byte(1, 4)
-
-    row("Network", ("%s at %d.%d.%d.%d%s"):format(card, a, b, c, d,
+  if ipv4.given(address) then
+    row("Network", ("%s at %s%s"):format(card, ipv4.text(address),
         net.addressed_by == "dhcp" and ", from DHCP" or ""))
   elseif net and net.card and net.addressed_by == "asking" then
     -- DHCP, and no answer yet: the banner at boot usually comes first.
@@ -305,9 +303,9 @@ end
 --
 -- What there is to type, counted with one call and not with eighty-five.
 --
--- `startup` tells an application from a program by asking `getattr` about
--- each file, and it is right to: it is a window somebody opened, once. This
--- runs every time a Terminal opens, and a round trip per file to split one
+-- Preferences' Startup page tells an application from a program by asking
+-- `getattr` about each file, and it is right to: it is a page somebody
+-- opened, once. This runs every time a Terminal opens, and a round trip per file to split one
 -- number into two would be eighty-five of them to save a reader four words.
 -- Responsiveness is a design goal rather than a later optimisation, and a
 -- banner is exactly the kind of thing that quietly stops obeying it.

@@ -106,7 +106,23 @@ local function from_gltf_matrix(G)
            g(2, 1),  -g(2, 3),  g(2, 2) }
 end
 
--- Rz Ry Rx to Euler degrees, as the app reads a turn back.
+--
+-- **A turn, both ways**: Euler degrees as Cafesa3D keeps them - X, then Y,
+-- then Z, so Rz Ry Rx, row by row - and back. Cafesa3D turns a thing with
+-- these too, a rotate by the mouse being a matrix multiplied in and read
+-- back as degrees; it had its own copies, which agreed with these only
+-- because nobody had changed either.
+--
+local function euler_matrix(r)
+  local x, y, z = math.rad(r[1]), math.rad(r[2]), math.rad(r[3])
+  local cx, sx, cy, sy, cz, sz = math.cos(x), math.sin(x), math.cos(y), math.sin(y),
+                                 math.cos(z), math.sin(z)
+
+  return { cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx,
+           sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx,
+           -sy,     cy * sx,                cy * cx }
+end
+
 local function matrix_euler(R)
   local y = math.asin(math.max(-1, math.min(1, -R[7])))
   local x, z
@@ -119,6 +135,9 @@ local function matrix_euler(R)
 
   return { math.deg(x), math.deg(y), math.deg(z) }
 end
+
+scenefile.euler_matrix = euler_matrix
+scenefile.matrix_euler = matrix_euler
 
 -- A node's place, turn and size from its glTF transform alone.
 function scenefile.transform(node)
@@ -593,12 +612,10 @@ function scenefile.from_gltf(doc, has_bin)
       local target = vec3(own.target, -1e6, 1e6)
 
       if not target then
-        local ax, ay, az = math.rad(rot[1]), math.rad(rot[2]), math.rad(rot[3])
-        local cx, sx, cy, sy = math.cos(ax), math.sin(ax), math.cos(ay), math.sin(ay)
-        local cz, sz = math.cos(az), math.sin(az)
         -- Its -Z here is glTF's -Z turned: the third column of R, negated
         -- and taken through (x, -z, y) - which is here's +Y column.
-        local col = { cz * sy * sx - sz * cx, sz * sy * sx + cz * cx, cy * sx }
+        local R = euler_matrix(rot)
+        local col = { R[2], R[5], R[8] }
 
         target = { loc[1] + col[1] * 10, loc[2] + col[2] * 10, loc[3] + col[3] * 10 }
       end
@@ -782,17 +799,6 @@ local function linear(c)
   end
 
   return out
-end
-
--- Rz Ry Rx from Euler degrees: the turn `matrix_euler` reads back.
-local function euler_matrix(r)
-  local x, y, z = math.rad(r[1]), math.rad(r[2]), math.rad(r[3])
-  local cx, sx, cy, sy, cz, sz = math.cos(x), math.sin(x), math.cos(y), math.sin(y),
-                                 math.cos(z), math.sin(z)
-
-  return { cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx,
-           sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx,
-           -sy,     cy * sx,                cy * cx }
 end
 
 -- G = C R C^T, the inverse of `from_gltf_matrix`.

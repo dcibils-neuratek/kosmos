@@ -17,79 +17,108 @@
 -- `{ kind, text, level }`, which the viewer lays out. Keeping the parser
 -- free of any idea of a font or a width is what lets the same output be
 -- re-wrapped when a window is resized.
+--
+-- **What a line is, is `mdstyle.lua`'s to say** - the one reader of
+-- Markdown, which Text Editor styles a line with as it is written. This
+-- had a reader of its own, patterns that agreed with that one on most
+-- lines and not on all: it took emphasis out of a code span, and
+-- `2 * 3 * 4` lost its asterisks. Now it asks, and keeps only what Reader
+-- needs on top: lines joined into paragraphs, items and quotations, and
+-- the marks left out.
+
+local md = use("/Kosmos/Libraries/mdstyle.lua")
 
 local markdown = {}
 
-local function inline(text)
-  -- Backtick spans become a marker the renderer understands, and the two
-  -- emphasis forms are stripped rather than rendered: this font has one
-  -- weight, so **bold** can only be a lie about what is on screen. The
-  -- asterisks going away is the honest version.
-  text = text:gsub("%*%*(.-)%*%*", "%1")
-  text = text:gsub("%_%_(.-)%_%_", "%1")
-  text = text:gsub("%*(.-)%*", "%1")
+--
+-- The words of `s` from byte `from`, as Reader shows them: the marks that
+-- make bold and italic taken out, since this font has one weight and
+-- **bold** can only be a lie about what is on screen - the asterisks going
+-- away is the honest version. A code span keeps its backticks and a link
+-- its brackets, which say something the face cannot.
+--
+local function words(s, from)
+  local out = {}
 
-  return text
+  for _, span in ipairs(md.inline(s, from)) do
+    local text = s:sub(span[1], span[2])
+
+    if span[3] == "mark" then text = text:gsub("[*_]", "") end
+
+    out[#out + 1] = text
+  end
+
+  return table.concat(out)
 end
 
+-- The block each kind of line starts; a list's three kinds are one here.
+local ITEM = { item = true, number = true, check = true }
+
+--
+-- **A paragraph, an item or a quotation goes on until a line says
+-- otherwise**: a plain line under an item is more of the item, and quoted
+-- lines one after another are one quotation - CommonMark's lazy
+-- continuation. Each line was a block of its own, so an item's second line
+-- was a paragraph after a gap, and bold that began on one line and ended on
+-- the next was two stray marks once the marks were read rather than
+-- guessed at.
+--
 function markdown.parse(source)
   local blocks = {}
-  local paragraph = {}
+  local open = nil          -- { kind, parts }: the block still being written
 
   local function flush()
-    if #paragraph > 0 then
-      blocks[#blocks + 1] = { kind = "para",
-                              text = inline(table.concat(paragraph, " ")) }
-      paragraph = {}
+    if open then
+      blocks[#blocks + 1] = { kind = open.kind,
+                              text = words(table.concat(open.parts, " "), 1) }
+      open = nil
     end
+  end
+
+  local function start(kind, text)
+    flush()
+    open = { kind = kind, parts = { text } }
   end
 
   local in_code = false
   local code = {}
 
   for line in (tostring(source) .. "\n"):gmatch("([^\n]*)\n") do
-    if in_code then
-      if line:match("^%s*```") then
-        blocks[#blocks + 1] = { kind = "code",
-                                text = table.concat(code, "\n") }
-        code, in_code = {}, false
+    local info, after = md.line(line, in_code)
+    local kind = info.kind
+
+    if kind == "fence" then
+      if in_code then
+        blocks[#blocks + 1] = { kind = "code", text = table.concat(code, "\n") }
+        code = {}
       else
-        code[#code + 1] = line
+        flush()
       end
-    elseif line:match("^%s*```") then
+    elseif kind == "code" then
+      code[#code + 1] = line
+    elseif kind == "blank" then
       flush()
-      in_code = true
-    elseif line:match("^%s*$") then
-      flush()
-    elseif line:match("^%s*[-*_][-*_%s]*$") and #line:gsub("%s", "") >= 3 then
+    elseif kind == "rule" then
       flush()
       blocks[#blocks + 1] = { kind = "rule" }
+    elseif kind:match("^h%d$") then
+      flush()
+      blocks[#blocks + 1] = { kind = "heading", level = #line:match("^#+"),
+                              text = words(line, info.hang + 1) }
+    elseif ITEM[kind] then
+      -- A checklist's box stays in its words: `[ ] swing`, `[x] done`.
+      start("item", line:sub(kind == "check" and info.box - 1 or info.hang + 1))
+    elseif kind == "quote" and open and open.kind == "quote" then
+      open.parts[#open.parts + 1] = line:sub(info.hang + 1)
+    elseif kind == "quote" then
+      start("quote", line:sub(info.hang + 1))
+    elseif open then
+      open.parts[#open.parts + 1] = line:match("^%s*(.-)%s*$")
     else
-      local hashes, rest = line:match("^(#+)%s+(.*)$")
-
-      if hashes then
-        flush()
-        blocks[#blocks + 1] = { kind = "heading", level = #hashes,
-                                text = inline(rest) }
-      else
-        local bullet = line:match("^%s*[-*+]%s+(.*)$")
-        local number = line:match("^%s*%d+%.%s+(.*)$")
-
-        if bullet or number then
-          flush()
-          blocks[#blocks + 1] = { kind = "item", text = inline(bullet or number) }
-        else
-          local quote = line:match("^%s*>%s?(.*)$")
-
-          if quote then
-            flush()
-            blocks[#blocks + 1] = { kind = "quote", text = inline(quote) }
-          else
-            paragraph[#paragraph + 1] = line:match("^%s*(.-)%s*$")
-          end
-        end
-      end
+      start("para", line:match("^%s*(.-)%s*$"))
     end
+
+    in_code = after
   end
 
   flush()

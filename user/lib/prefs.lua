@@ -62,13 +62,13 @@ function prefs.path(name)
   return prefs.DIR .. "/" .. checked(name, 2)
 end
 
--- The folder made, and the one under it.
+-- The folder made, and every one above it, by the file library's one way
+-- of doing that (`files.make_folder`). It made `/Home/Preferences` and the
+-- folder asked for, and not one between: `browser/history` on a disk with
+-- no `browser` was a mkdir the filesystem refused. Reached when a file is
+-- first written, so a program that only reads its settings does not load it.
 local function ensure(dir)
-  if not fs.getattr(prefs.DIR) then fs.send(prefs.DIR, { type = "mkdir" }) end
-
-  if dir ~= prefs.DIR and not fs.getattr(dir) then fs.send(dir, { type = "mkdir" }) end
-
-  return fs.getattr(dir) ~= nil
+  return use("/Kosmos/Libraries/files.lua").make_folder(dir) == true
 end
 
 -- A folder an application keeps files of its own in - the browser's

@@ -44,69 +44,33 @@ for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
 local port = tonumber(words[1]) or 80
 local root = words[2] or "/Home/www"
 
-local function dotted(bytes)
-  if type(bytes) ~= "string" or #bytes ~= 4 then return "?" end
-
-  return ("%d.%d.%d.%d"):format(bytes:byte(1, 4))
-end
-
-local info = fs.net_info("/Network")
-
-if not info or not info.card then
-  print("httpd: this machine has no network card")
-  return
-end
+local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
 
 --------------------------------------------------------------------------
 -- What this server is doing, where something else can read it.
 --
--- **In `/Temporary` rather than printed, because a manager cannot read a
--- console.** The desktop launches this as a process of its own and its
--- output goes wherever that process's console goes, which is not a window.
--- So the state and the log are *written*, and the Servers window reads them
--- (`servers.lua`, which took the Web Server window's place) - the
--- same arrangement any service manager has with any service, and the reason
--- daemons have log files rather than shouting.
---
--- `/Temporary` and not `/Home`: ramfs is always there, a disk is not, and a log
--- that vanishes when the machine stops is the right lifetime for a log
--- about what the machine did while it was running.
+-- **Written to `/Temporary/httpd` rather than only printed, because a
+-- manager cannot read a console** - the state, and the last forty lines of
+-- a log, which the Servers window reads. That arrangement began here and is
+-- `netprogram.lua` now, which `telnetd` and `vncd` begin with too, with the
+-- card and the port listened on. Any address may ask for a page: unlike a
+-- command line or the screen, a page is what this is for.
 --------------------------------------------------------------------------
 
-local STATUS = "/Temporary/httpd/status"
-local LOG    = "/Temporary/httpd/log"
+local net = use("/Kosmos/Libraries/netprogram.lua").open{ name = "httpd", port = port }
 
---
--- The last forty lines and no more.
---
--- Bounded because appending means reading the whole thing back, adding to
--- it and writing it out - which is quadratic, and a server that has answered
--- ten thousand requests would spend its time rewriting its own diary. Forty
--- is what fits in a window.
---
-local LOG_LINES = 40
-local log = {}
+if not net then return end
 
 local served, refused = 0, 0
 
-local function note(line)
-  log[#log + 1] = line
-
-  while #log > LOG_LINES do table.remove(log, 1) end
-
-  print(line)
-  fs.write(LOG, log)
-end
-
 local function publish(state)
-  fs.write(STATUS, {
+  net:publish{
     state   = state,
-    port    = port,
     root    = root,
-    address = dotted(info.address),
+    address = ipv4.text(net.info.address),
     served  = served,
     refused = refused,
-  })
+  }
 end
 
 --
@@ -276,14 +240,7 @@ end
 
 --------------------------------------------------------------------------
 
-local listener, why = fs.listen("/Network", port)
-
-if not listener then
-  print("httpd: could not listen on port " .. port .. ": " .. tostring(why))
-  return
-end
-
-note(("serving %s on %s port %d"):format(root, dotted(info.address), port))
+net:note(("serving %s on %s port %d"):format(root, ipv4.text(net.info.address), port))
 print("Control-C to stop.")
 publish("running")
 
@@ -345,7 +302,7 @@ local function serve(conn, from)
     -- facts and a log that conflates them hides the interesting one.
     refused = refused + 1
     respond(conn, 403, "text/plain", "that path is not allowed\n")
-    note(("%s  %s %s -> 403"):format(dotted(from), method, target))
+    net:note(("%s  %s %s -> 403"):format(ipv4.text(from), method, target))
     return
   end
 
@@ -356,7 +313,7 @@ local function serve(conn, from)
     respond(conn, 404, "text/html",
             "<html><body><h1>404</h1><p>" .. target
             .. " is not here.</p></body></html>\n")
-    note(("%s  %s %s -> 404"):format(dotted(from), method, target))
+    net:note(("%s  %s %s -> 404"):format(ipv4.text(from), method, target))
     return
   end
 
@@ -365,8 +322,8 @@ local function serve(conn, from)
   served = served + 1
   respond_file(conn, path, content_type(path), attrs.size or 0,
                method ~= "HEAD")
-  note(("%s  %s %s -> 200, %d bytes"):format(dotted(from), method, target,
-                                             attrs.size or 0))
+  net:note(("%s  %s %s -> 200, %d bytes"):format(ipv4.text(from), method, target,
+                                                 attrs.size or 0))
 end
 
 --------------------------------------------------------------------------
@@ -402,10 +359,10 @@ while true do
     end
   end
 
-  local ready, arrived = fs.poll("/Network", reading, writing, listener, 25)
+  local ready, arrived = fs.poll("/Network", reading, writing, net.listener, 25)
 
   if not ready then
-    note("httpd: poll: " .. tostring(arrived))
+    net:note("poll: " .. tostring(arrived))
     break
   end
 
@@ -418,7 +375,7 @@ while true do
     -- With a deadline, because `poll` saying somebody arrived and this
     -- message reaching the stack are two moments, and a reset in between
     -- would otherwise park this loop for good.
-    local conn, from = fs.accept("/Network", listener, 25)
+    local conn, from = net:accept(25)
 
     if conn then
       -- Waiting to read, because that is where `serve` begins: on a
@@ -451,7 +408,7 @@ while true do
           -- A conversation that raised takes itself down and nothing else.
           -- That is the point of one coroutine each: this server has no
           -- shared state a broken request could leave wrong.
-          note(("%s  error: %s"):format(dotted(entry.from), tostring(word)))
+          net:note(("%s  error: %s"):format(ipv4.text(entry.from), tostring(word)))
         end
 
         if not ok or coroutine.status(entry.run) == "dead" then
@@ -466,7 +423,7 @@ while true do
   end
 
   if fs.interrupted and fs.interrupted("/Devices/console") then
-    note("stopping")
+    net:note("stopping")
     break
   end
 end

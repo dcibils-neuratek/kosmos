@@ -52,6 +52,7 @@
 #include <string.h>
 
 #include "kosmos.h"
+#include "bytes.h"
 #include "ethproto.h"
 #include "ethring.h"
 #include "netproto.h"
@@ -546,19 +547,10 @@ static void *claim_used(struct table *t)
 }
 
 /*------------------------------------------------------------------------
- * Numbers on the wire.
+ * Numbers on the wire: big-endian, network order, and read and written by
+ * `bytes.h`'s `get_be16`, `put_be16`, `get_be32` and `put_be32`, which
+ * this file had copies of.
  *----------------------------------------------------------------------*/
-
-static void put16(uint8_t *at, uint16_t v)
-{
-    at[0] = (uint8_t)(v >> 8);
-    at[1] = (uint8_t)v;
-}
-
-static uint16_t get16(const uint8_t *at)
-{
-    return (uint16_t)((uint16_t)at[0] << 8 | at[1]);
-}
 
 /*
  * The one's-complement checksum RFC 1071 describes, and the two things
@@ -579,7 +571,7 @@ static uint16_t checksum(const uint8_t *data, unsigned length)
     unsigned i;
 
     for (i = 0; i + 1 < length; i += 2) {
-        sum += get16(data + i);
+        sum += get_be16(data + i);
     }
 
     if ((length & 1u) != 0) {
@@ -813,7 +805,7 @@ static bool send_frame(const uint8_t *dst, uint16_t type,
 
     memcpy(net.frame + ETH_DST, dst, 6);
     memcpy(net.frame + ETH_SRC, net.mac, 6);
-    put16(net.frame + ETH_TYPE, type);
+    put_be16(net.frame + ETH_TYPE, type);
     memcpy(net.frame + ETH_HEADER, body, length);
 
     if (wire.attached) {
@@ -847,11 +839,11 @@ static bool arp_ask(const struct net_addr *ip)
 
     memset(body, 0, sizeof(body));
 
-    put16(body + ARP_HTYPE, 1);             /* Ethernet */
-    put16(body + ARP_PTYPE, ETHERTYPE_IP);
+    put_be16(body + ARP_HTYPE, 1);             /* Ethernet */
+    put_be16(body + ARP_PTYPE, ETHERTYPE_IP);
     body[ARP_HLEN] = 6;
     body[ARP_PLEN] = 4;
-    put16(body + ARP_OP, ARP_REQUEST);
+    put_be16(body + ARP_OP, ARP_REQUEST);
 
     memcpy(body + ARP_SHA, net.mac, 6);
     memcpy(body + ARP_SPA, net.address.byte, 4);
@@ -869,7 +861,7 @@ static void arp_receive(const uint8_t *body, unsigned length)
         return;
     }
 
-    if (get16(body + ARP_PTYPE) != ETHERTYPE_IP
+    if (get_be16(body + ARP_PTYPE) != ETHERTYPE_IP
         || body[ARP_HLEN] != 6 || body[ARP_PLEN] != 4) {
         return;                     /* not a pair this stack speaks */
     }
@@ -884,17 +876,17 @@ static void arp_receive(const uint8_t *body, unsigned length)
      * replies to ARP is a host nothing can send to, so it can ping out and
      * nothing can ping in - which looks like a firewall rather than a bug.
      */
-    if (get16(body + ARP_OP) == ARP_REQUEST && net.configured
+    if (get_be16(body + ARP_OP) == ARP_REQUEST && net.configured
         && memcmp(body + ARP_TPA, net.address.byte, 4) == 0) {
         uint8_t reply[ARP_LENGTH];
 
         memset(reply, 0, sizeof(reply));
 
-        put16(reply + ARP_HTYPE, 1);
-        put16(reply + ARP_PTYPE, ETHERTYPE_IP);
+        put_be16(reply + ARP_HTYPE, 1);
+        put_be16(reply + ARP_PTYPE, ETHERTYPE_IP);
         reply[ARP_HLEN] = 6;
         reply[ARP_PLEN] = 4;
-        put16(reply + ARP_OP, ARP_REPLY);
+        put_be16(reply + ARP_OP, ARP_REPLY);
 
         memcpy(reply + ARP_SHA, net.mac, 6);
         memcpy(reply + ARP_SPA, net.address.byte, 4);
@@ -982,9 +974,9 @@ static bool send_ip(const struct net_addr *to, uint8_t protocol,
 
     packet[IP_VER_IHL] = 0x45;      /* version 4, twenty-byte header */
     packet[IP_TOS]     = 0;
-    put16(packet + IP_LENGTH, (uint16_t)(IP_HEADER + length));
-    put16(packet + IP_ID, net.next_id++);
-    put16(packet + IP_FLAGS, 0x4000u);   /* don't fragment, offset zero */
+    put_be16(packet + IP_LENGTH, (uint16_t)(IP_HEADER + length));
+    put_be16(packet + IP_ID, net.next_id++);
+    put_be16(packet + IP_FLAGS, 0x4000u);   /* don't fragment, offset zero */
     packet[IP_TTL]     = 64;
     packet[IP_PROTO]   = protocol;
 
@@ -994,7 +986,7 @@ static bool send_ip(const struct net_addr *to, uint8_t protocol,
     /* Over the header only, and with the field itself zero - which it is,
      * from the memset. IPv4's checksum does not cover the payload; ICMP's
      * covers its own. */
-    put16(packet + IP_CHECKSUM, checksum(packet, IP_HEADER));
+    put_be16(packet + IP_CHECKSUM, checksum(packet, IP_HEADER));
 
     memcpy(packet + IP_HEADER, body, length);
 
@@ -1072,16 +1064,16 @@ static void icmp_receive(const uint8_t *packet, unsigned length,
 
         memcpy(reply, icmp, icmp_len);
         reply[ICMP_TYPE] = ICMP_ECHO_REPLY;
-        put16(reply + ICMP_CHECKSUM, 0);
-        put16(reply + ICMP_CHECKSUM, checksum(reply, icmp_len));
+        put_be16(reply + ICMP_CHECKSUM, 0);
+        put_be16(reply + ICMP_CHECKSUM, checksum(reply, icmp_len));
 
         (void)send_ip(from, IP_PROTO_ICMP, reply, icmp_len);
         return;
     }
 
     if (icmp[ICMP_TYPE] == ICMP_ECHO_REPLY) {
-        struct pending *p = pending_find(get16(icmp + ICMP_ID),
-                                         get16(icmp + ICMP_SEQ));
+        struct pending *p = pending_find(get_be16(icmp + ICMP_ID),
+                                         get_be16(icmp + ICMP_SEQ));
         struct net_reply reply;
         unsigned payload;
 
@@ -1145,7 +1137,7 @@ static void ip_receive(const uint8_t *packet, unsigned length)
         return;
     }
 
-    total = get16(packet + IP_LENGTH);
+    total = get_be16(packet + IP_LENGTH);
 
     if (total > length || total < IP_HEADER) {
         return;                     /* the frame is shorter than it claims */
@@ -1158,7 +1150,7 @@ static void ip_receive(const uint8_t *packet, unsigned length)
      * wrong. Nothing here sends the don't-fragment bit clear, and an echo
      * is sixty-four bytes.
      */
-    if ((get16(packet + IP_FLAGS) & 0x3fffu) != 0) {
+    if ((get_be16(packet + IP_FLAGS) & 0x3fffu) != 0) {
         return;
     }
 
@@ -1236,10 +1228,10 @@ static bool udp_send(const struct net_addr *to, uint16_t from_port,
         return false;
     }
 
-    put16(datagram + UDP_SRC, from_port);
-    put16(datagram + UDP_DST, to_port);
-    put16(datagram + UDP_LEN, (uint16_t)total);
-    put16(datagram + UDP_SUM, 0);
+    put_be16(datagram + UDP_SRC, from_port);
+    put_be16(datagram + UDP_DST, to_port);
+    put_be16(datagram + UDP_LEN, (uint16_t)total);
+    put_be16(datagram + UDP_SUM, 0);
     memcpy(datagram + UDP_HEADER, body, length);
 
     /*
@@ -1251,15 +1243,15 @@ static bool udp_send(const struct net_addr *to, uint16_t from_port,
      * a reason the other end never mentions.
      */
     for (i = 0; i < 4; i += 2) {
-        sum += get16(net.address.byte + i);
-        sum += get16(to->byte + i);
+        sum += get_be16(net.address.byte + i);
+        sum += get_be16(to->byte + i);
     }
 
     sum += IP_PROTO_UDP;
     sum += total;
 
     for (i = 0; i + 1 < total; i += 2) {
-        sum += get16(datagram + i);
+        sum += get_be16(datagram + i);
     }
 
     if (total & 1) {
@@ -1275,7 +1267,7 @@ static bool udp_send(const struct net_addr *to, uint16_t from_port,
     /* Zero means "not computed", so a checksum that lands on zero is sent
      * as all ones - which is the same value in one's complement and the
      * one case RFC 768 spells out. */
-    put16(datagram + UDP_SUM, (uint16_t)(sum == 0 ? 0xffff : sum));
+    put_be16(datagram + UDP_SUM, (uint16_t)(sum == 0 ? 0xffff : sum));
 
     return send_ip(to, IP_PROTO_UDP, datagram, total);
 }
@@ -1347,12 +1339,12 @@ static bool dns_ask(const char *name, unsigned len, uint16_t id)
     uint8_t query[12 + 256];
     unsigned at;
 
-    put16(query + 0, id);
-    put16(query + 2, 0x0100u);      /* recursion desired */
-    put16(query + 4, 1);            /* one question */
-    put16(query + 6, 0);
-    put16(query + 8, 0);
-    put16(query + 10, 0);
+    put_be16(query + 0, id);
+    put_be16(query + 2, 0x0100u);      /* recursion desired */
+    put_be16(query + 4, 1);            /* one question */
+    put_be16(query + 6, 0);
+    put_be16(query + 8, 0);
+    put_be16(query + 10, 0);
 
     at = dns_name(query + 12, sizeof(query) - 12 - 4, name, len);
 
@@ -1362,8 +1354,8 @@ static bool dns_ask(const char *name, unsigned len, uint16_t id)
 
     at += 12;
 
-    put16(query + at, 1); at += 2;  /* type A */
-    put16(query + at, 1); at += 2;  /* class IN */
+    put_be16(query + at, 1); at += 2;  /* type A */
+    put_be16(query + at, 1); at += 2;  /* class IN */
 
     return udp_send(&net.dns, DNS_FROM, DNS_PORT, query, at);
 }
@@ -1409,7 +1401,7 @@ static void dns_receive(const uint8_t *msg, unsigned len)
         return;
     }
 
-    a = asking_find(get16(msg + 0));
+    a = asking_find(get_be16(msg + 0));
 
     if (a == NULL) {
         return;                     /* not ours, or already answered */
@@ -1427,8 +1419,8 @@ static void dns_receive(const uint8_t *msg, unsigned len)
         return;
     }
 
-    questions = get16(msg + 4);
-    answers   = get16(msg + 6);
+    questions = get_be16(msg + 4);
+    answers   = get_be16(msg + 6);
     at = 12;
 
     for (i = 0; i < questions && at < len; i++) {
@@ -1444,8 +1436,8 @@ static void dns_receive(const uint8_t *msg, unsigned len)
             break;
         }
 
-        type   = get16(msg + at);
-        length = get16(msg + at + 8);
+        type   = get_be16(msg + at);
+        length = get_be16(msg + at + 8);
         at += 10;
 
         if (at + length > len) {
@@ -1480,20 +1472,20 @@ static void udp_receive(const uint8_t *packet, unsigned total)
         return;
     }
 
-    length = get16(udp + UDP_LEN);
+    length = get_be16(udp + UDP_LEN);
 
     if (length < UDP_HEADER || header + length > total) {
         return;
     }
 
     /* The two ports this stack listens on: DNS's answers, and DHCP's. */
-    if (get16(udp + UDP_DST) == DHCP_CLIENT_PORT
-        && get16(udp + UDP_SRC) == DHCP_SERVER_PORT) {
+    if (get_be16(udp + UDP_DST) == DHCP_CLIENT_PORT
+        && get_be16(udp + UDP_SRC) == DHCP_SERVER_PORT) {
         dhcp_receive(udp + UDP_HEADER, length - UDP_HEADER);
         return;
     }
 
-    if (get16(udp + UDP_DST) != DNS_FROM) {
+    if (get_be16(udp + UDP_DST) != DNS_FROM) {
         return;
     }
 
@@ -1503,20 +1495,6 @@ static void udp_receive(const uint8_t *packet, unsigned total)
 /*------------------------------------------------------------------------
  * TCP.
  *----------------------------------------------------------------------*/
-
-static uint32_t get32(const uint8_t *at)
-{
-    return ((uint32_t)at[0] << 24) | ((uint32_t)at[1] << 16)
-         | ((uint32_t)at[2] << 8)  | (uint32_t)at[3];
-}
-
-static void put32(uint8_t *at, uint32_t v)
-{
-    at[0] = (uint8_t)(v >> 24);
-    at[1] = (uint8_t)(v >> 16);
-    at[2] = (uint8_t)(v >> 8);
-    at[3] = (uint8_t)v;
-}
 
 /*
  * Is `a` at or after `b`, in sequence space?
@@ -1577,8 +1555,8 @@ static bool dhcp_send(unsigned type)
     m[0] = 1;                       /* a request */
     m[1] = 1;                       /* Ethernet */
     m[2] = 6;                       /* its addresses' length */
-    put32(m + 4, net.dhcp.xid);
-    put16(m + 10, 0x8000u);         /* answer to everybody: see above */
+    put_be32(m + 4, net.dhcp.xid);
+    put_be16(m + 10, 0x8000u);         /* answer to everybody: see above */
 
     /* Renewing, the address being renewed; otherwise there is none. */
     if (net.dhcp.stage == DHCP_RENEWING) {
@@ -1586,7 +1564,7 @@ static bool dhcp_send(unsigned type)
     }
 
     memcpy(m + 28, net.mac, 6);
-    put32(m + DHCP_FIXED, DHCP_COOKIE);
+    put_be32(m + DHCP_FIXED, DHCP_COOKIE);
     n = DHCP_FIXED + 4;
 
     m[n++] = 53;                    /* which message this is */
@@ -1718,8 +1696,8 @@ static void dhcp_receive(const uint8_t *m, unsigned length)
     struct say_line line;
 
     if (!net.dhcp.on || length < DHCP_FIXED + 4 || m[0] != 2
-        || get32(m + 4) != net.dhcp.xid || memcmp(m + 28, net.mac, 6) != 0
-        || get32(m + DHCP_FIXED) != DHCP_COOKIE) {
+        || get_be32(m + 4) != net.dhcp.xid || memcmp(m + 28, net.mac, 6) != 0
+        || get_be32(m + DHCP_FIXED) != DHCP_COOKIE) {
         return;
     }
 
@@ -1752,7 +1730,7 @@ static void dhcp_receive(const uint8_t *m, unsigned length)
         } else if (code == 6 && len >= 4) {
             memcpy(dns.byte, m + i + 2, 4);
         } else if (code == 51 && len == 4) {
-            lease = get32(m + i + 2);
+            lease = get_be32(m + i + 2);
         } else if (code == 54 && len == 4) {
             memcpy(server.byte, m + i + 2, 4);
         }
@@ -1856,7 +1834,7 @@ static uint16_t tcp_checksum(const struct net_addr *src,
     sum += length;
 
     for (i = 0; i + 1 < length; i += 2) {
-        sum += get16(segment + i);
+        sum += get_be16(segment + i);
     }
 
     if ((length & 1u) != 0) {
@@ -1963,20 +1941,20 @@ static bool tcp_send(struct conn *c, uint32_t flags, uint32_t seq,
 
     memset(segment, 0, TCP_HEADER + 4);
 
-    put16(segment + TCP_SPORT, c->local_port);
-    put16(segment + TCP_DPORT, c->remote_port);
-    put32(segment + TCP_SEQ, seq);
-    put32(segment + TCP_ACK, c->rcv_nxt);
+    put_be16(segment + TCP_SPORT, c->local_port);
+    put_be16(segment + TCP_DPORT, c->remote_port);
+    put_be32(segment + TCP_SEQ, seq);
+    put_be32(segment + TCP_ACK, c->rcv_nxt);
     segment[TCP_FLAGS] = (uint8_t)flags;
     c->advertised = window_of(c);
-    put16(segment + TCP_WINDOW, c->advertised);
+    put_be16(segment + TCP_WINDOW, c->advertised);
 
     if ((flags & TCP_SYN) != 0) {
         /* Kind 2, length 4, then the value: 1460, which is the MTU less an
          * IP header and a TCP header. */
         segment[TCP_HEADER + 0] = 2;
         segment[TCP_HEADER + 1] = 4;
-        put16(segment + TCP_HEADER + 2, 1460);
+        put_be16(segment + TCP_HEADER + 2, 1460);
         header = TCP_HEADER + 4;
     }
 
@@ -1989,8 +1967,8 @@ static bool tcp_send(struct conn *c, uint32_t flags, uint32_t seq,
         memcpy(segment + header, data, length);
     }
 
-    put16(segment + TCP_CHECKSUM, 0);
-    put16(segment + TCP_CHECKSUM,
+    put_be16(segment + TCP_CHECKSUM, 0);
+    put_be16(segment + TCP_CHECKSUM,
           tcp_checksum(&net.address, &c->remote, segment, header + length));
 
     return send_ip(&c->remote, IP_PROTO_TCP, segment, header + length);
@@ -2239,8 +2217,8 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
     }
 
     flags   = tcp[TCP_FLAGS];
-    seq     = get32(tcp + TCP_SEQ);
-    ack     = get32(tcp + TCP_ACK);
+    seq     = get_be32(tcp + TCP_SEQ);
+    ack     = get_be32(tcp + TCP_ACK);
     payload = tcp_len - header;
 
     /*
@@ -2254,8 +2232,8 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
 
         if (k->state != ST_FREE && k->state != ST_DEAD
             && k->state != ST_LISTEN
-            && k->local_port == get16(tcp + TCP_DPORT)
-            && k->remote_port == get16(tcp + TCP_SPORT)
+            && k->local_port == get_be16(tcp + TCP_DPORT)
+            && k->remote_port == get_be16(tcp + TCP_SPORT)
             && same_addr(&k->remote, from)) {
             c = k;
             break;
@@ -2274,7 +2252,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
 
         for (i = 0; i < conn_count(); i++) {
             if (conn_slot(i)->state == ST_LISTEN
-                && conn_slot(i)->local_port == get16(tcp + TCP_DPORT)) {
+                && conn_slot(i)->local_port == get_be16(tcp + TCP_DPORT)) {
                 listener = conn_slot(i);
                 break;
             }
@@ -2330,12 +2308,12 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         made->ring->bytes = TCP_RING_BYTES;
 
         made->local_port    = listener->local_port;
-        made->remote_port   = get16(tcp + TCP_SPORT);
+        made->remote_port   = get_be16(tcp + TCP_SPORT);
         made->remote        = *from;
         made->rcv_nxt       = seq + 1;      /* their SYN takes one */
         made->snd_una       = net.next_seq;
         made->snd_nxt       = net.next_seq;
-        made->peer_window   = get16(tcp + TCP_WINDOW);
+        made->peer_window   = get_be16(tcp + TCP_WINDOW);
         made->state         = ST_SYN_RCVD;
         made->from_listener = (int)listener->slot;
         made->sent_at       = kosmos_ticks();
@@ -2394,7 +2372,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
          * acknowledges everything one short for ever. */
         c->rcv_nxt = seq + 1;
         c->snd_una = ack;
-        c->peer_window = get16(tcp + TCP_WINDOW);
+        c->peer_window = get_be16(tcp + TCP_WINDOW);
         c->state = ST_OPEN;
 
         (void)tcp_send(c, TCP_ACK_FLAG, c->snd_nxt, NULL, 0);
@@ -2466,7 +2444,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         }
     }
 
-    c->peer_window = get16(tcp + TCP_WINDOW);
+    c->peer_window = get_be16(tcp + TCP_WINDOW);
 
     /*
      * Data, but only if it is the next byte expected.
@@ -2692,7 +2670,7 @@ static void drain(void)
             return;
         }
 
-        type = get16(net.frame + ETH_TYPE);
+        type = get_be16(net.frame + ETH_TYPE);
 
         if (type == ETHERTYPE_ARP) {
             arp_receive(net.frame + ETH_HEADER,
@@ -2964,14 +2942,14 @@ static void serve(const struct message *msg, uint64_t sender)
         memset(echo, 0, ICMP_HEADER);
         echo[ICMP_TYPE] = ICMP_ECHO_REQUEST;
         echo[ICMP_CODE] = 0;
-        put16(echo + ICMP_ID, net.next_id);
-        put16(echo + ICMP_SEQ, (uint16_t)req.seq);
+        put_be16(echo + ICMP_ID, net.next_id);
+        put_be16(echo + ICMP_SEQ, (uint16_t)req.seq);
         memcpy(echo + ICMP_HEADER, req.payload, length);
 
         /* Over the whole message, header and payload, with the field zero.
          * ICMP has no pseudo-header, which is the one thing that makes it
          * simpler than everything above it. */
-        put16(echo + ICMP_CHECKSUM,
+        put_be16(echo + ICMP_CHECKSUM,
               checksum(echo, ICMP_HEADER + length));
 
         p->used    = true;

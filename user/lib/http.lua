@@ -91,20 +91,19 @@ function http.split(text)
            port = tonumber(port) or (scheme == "https" and 443 or 80) }
 end
 
--- Four numbers under 256, as the four bytes the Network Kit takes; nil for a
--- name, and nil and why for four numbers that are not an address.
+-- Four numbers under 256, as the four bytes the Network Kit takes
+-- (`ipv4.bytes`); nil for a name, and nil and why for four numbers that are
+-- not an address.
+local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
+
 local function numbers(host)
-  local a, b, c, d = tostring(host):match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+  if not tostring(host):match("^%d+%.%d+%.%d+%.%d+$") then return nil end
 
-  if not a then return nil end
+  local bytes = ipv4.bytes(host)
 
-  a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
+  if not bytes then return nil, "those are not four numbers under 256" end
 
-  if a > 255 or b > 255 or c > 255 or d > 255 then
-    return nil, "those are not four numbers under 256"
-  end
-
-  return string.char(a, b, c, d)
+  return bytes
 end
 
 --

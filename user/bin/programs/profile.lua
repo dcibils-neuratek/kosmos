@@ -68,9 +68,7 @@ local function destination()
   if not name then
     local t = clock.now()
 
-    name = t and ("%04d-%02d-%02d-%02d%02d%02d"):format(t.year, t.month, t.day,
-                                                      t.hour, t.min, t.sec)
-               or ("profile-%d"):format(sys.ticks())
+    name = t and clock.stamp(t) or ("profile-%d"):format(sys.ticks())
   end
 
   if not name:find("%.kprof$") then name = name .. ".kprof" end

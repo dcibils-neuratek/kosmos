@@ -8,6 +8,10 @@
 
 #include <string.h>
 
+/* `user/include/bytes.h`, by its path from here: the host test compiles this
+ * file with no include path for it. USB is little-endian throughout. */
+#include "../../include/bytes.h"
+
 /* Descriptor types (USB 2.0 9.4, USB Audio 1.0 A.4). */
 #define DESC_CONFIGURATION  0x02
 #define DESC_INTERFACE      0x04
@@ -23,11 +27,6 @@
 #define MIDI_IN_JACK        0x02
 #define MIDI_OUT_JACK       0x03
 #define MS_GENERAL          0x01
-
-static uint16_t le16(const uint8_t *p)
-{
-    return (uint16_t)(p[0] | (p[1] << 8));
-}
 
 /*
  * The walk. A MIDIStreaming interface declares its jacks (6.1.2.2, 6.1.2.3)
@@ -109,12 +108,12 @@ void midi_decode_config(const uint8_t *bytes, unsigned length,
             if (d[2] & 0x80) {
                 if (!out->in_endpoint) {
                     out->in_endpoint = d[2] & 0x0F;
-                    out->in_packet = le16(d + 4) & 0x7FF;
+                    out->in_packet = get_le16(d + 4) & 0x7FF;
                     last = 1;
                 }
             } else if (!out->out_endpoint) {
                 out->out_endpoint = d[2] & 0x0F;
-                out->out_packet = le16(d + 4) & 0x7FF;
+                out->out_packet = get_le16(d + 4) & 0x7FF;
                 last = 2;
             }
             break;

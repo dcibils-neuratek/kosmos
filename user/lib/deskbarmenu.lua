@@ -340,6 +340,79 @@ local function short_of(program)
   return short
 end
 
+--------------------------------------------------------------------------
+-- **The menu as the Deskbar shows it, for whoever shows it** (`roadmap.md`,
+-- *One kit, one door*): the Deskbar's menu, and the launcher pad's grid and
+-- list, which are the same applications laid out another way.
+--
+-- The launcher pad read the three layers itself and without the Deskbar's
+-- check, so a person's launcher to an application the system no longer has
+-- - Appearance's, from before it folded into Preferences - was a tile there
+-- that opened nothing, while the Deskbar beside it had taken it out.
+--------------------------------------------------------------------------
+
+-- The two roots: the menu as it ships, and the person's own.
+menu.SHIPPED = "/Kosmos/Deskbar"
+menu.HOME = "/Home/Deskbar"
+
+--
+-- **What `/Kosmos/Apps` can start**, by short name - each application's
+-- attributes, as the store gives them. Not the Deskbar, which is not
+-- something you start, and not `section none`: a window something else
+-- opens with a file in it - Info - which has nothing to show opened on its
+-- own from a menu.
+--
+function menu.programs(store, root)
+  local out = {}
+
+  root = root or "/Kosmos/Apps"
+
+  for _, file in ipairs(store.list(root) or {}) do
+    local attrs = store.getattr(root .. "/" .. file)
+
+    if attrs and attrs.kind == "application" then
+      local short = file:gsub("%.lua$", "")
+
+      if short ~= "deskbar" and attrs.section ~= "none" then
+        out[short] = attrs
+      end
+    end
+  end
+
+  return out
+end
+
+--
+-- **Whether a launcher's program is still there**, as `menu.read`'s
+-- `exists` asks it: a launcher to one of `/Kosmos/Apps`'s, by any of the
+-- three names `short_of` reads, is shown when `programs` has it; a launcher
+-- that names no program at all is not; and a path anywhere else is
+-- somebody's own, and trusted.
+--
+function menu.present(programs)
+  return function(program)
+    if program == "" then return false end
+
+    local short = short_of(program)
+
+    if short then return programs[short] ~= nil end
+
+    return true
+  end
+end
+
+--
+-- **Three layers**: the menu that ships, the applications installed in
+-- `/Home/Apps` (`docs/elf.md` step 5) beside it - `installed` is
+-- `menu.installed`'s sections - and the person's own on top; each launcher
+-- shown only while `exists` says its program is there.
+--
+function menu.layers(store, installed, exists)
+  return menu.merge_sections(
+    menu.merge_sections(menu.sections(store, menu.SHIPPED, exists), installed),
+    menu.sections(store, menu.HOME, exists))
+end
+
 --
 -- **What the seed left in a person's menu, to go to the Trash once**
 -- (`roadmap.md` 6zd). Until 28 September the Deskbar copied a launcher for

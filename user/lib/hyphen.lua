@@ -44,7 +44,7 @@ local LOWER = {
 local function letters(word)
   local out = {}
 
-  for ch in word:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+  for ch in word:gmatch(utf8.charpattern) do
     out[#out + 1] = LOWER[ch] or ch:lower()
   end
 
@@ -66,7 +66,7 @@ function hyphen.parse(patterns, exceptions, left, right)
     if word then
       local chars, digits = {}, { 0 }
 
-      for ch in word:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+      for ch in word:gmatch(utf8.charpattern) do
         if ch:match("^%d$") then
           digits[#digits] = tonumber(ch)
         else
@@ -88,7 +88,7 @@ function hyphen.parse(patterns, exceptions, left, right)
     if written then
       local breaks, at = {}, 0
 
-      for ch in written:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+      for ch in written:gmatch(utf8.charpattern) do
         if ch == "-" then
           breaks[#breaks + 1] = at
         else
@@ -150,7 +150,7 @@ function hyphen.parse(patterns, exceptions, left, right)
     local out, bytes = {}, 0
     local sizes = {}
 
-    for ch in word:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+    for ch in word:gmatch(utf8.charpattern) do
       sizes[#sizes + 1] = #ch
     end
 

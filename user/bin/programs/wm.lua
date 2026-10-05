@@ -1402,10 +1402,9 @@ local per_tick
 
 function counter_per_tick()
   if not per_tick then
-    local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
     local rate = (sys.info() or {}).tick_hz or 100
 
-    per_tick = math.max(1, hz // rate)
+    per_tick = math.max(1, COUNTER_HZ // rate)
   end
 
   return per_tick
@@ -5791,19 +5790,13 @@ end
 -- nothing else may.
 --------------------------------------------------------------------------
 
-OUT.close_grace = 0
+OUT.close_grace = COUNTER_HZ               -- a second, in counter units
 
 --
 -- How long a window may say nothing before this asks whether it is still
 -- alive. Five seconds, in counter units.
 --
-local silent_grace = 0
-
-do
-  local cpu = fs.read("/Devices/cpu")
-  OUT.close_grace  = (cpu and cpu.counter_hz or 62500000)
-  silent_grace = OUT.close_grace * 5
-end
+local silent_grace = OUT.close_grace * 5
 
 --------------------------------------------------------------------------
 -- Ending an application, on somebody else's behalf.

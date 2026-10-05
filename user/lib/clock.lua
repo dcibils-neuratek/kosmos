@@ -54,6 +54,24 @@ local function civil(days)
   return y, m, d
 end
 
+--
+-- **And back: a year, month and day into days since 1970** - Hinnant's
+-- `days_from_civil`, the same shifted era the other way. For a date that
+-- arrives as words rather than as a count, an HTTP `Date` or `Expires`
+-- (`httpcache.lua`), which kept its own copy until the review before 0.11
+-- found the calendar in two halves in two files.
+--
+function clock.days(y, m, d)
+  y = m <= 2 and y - 1 or y
+
+  local era = (y >= 0 and y or y - 399) // 400
+  local yoe = y - era * 400
+  local doy = (153 * (m + (m > 2 and -3 or 9)) + 2) // 5 + d - 1
+  local doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
+
+  return era * 146097 + doe - 719468
+end
+
 clock.DAYS = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }
 clock.MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
@@ -86,8 +104,9 @@ end
 --
 -- **The offsets anybody lives at**, in minutes east of UTC: every whole hour
 -- from -12 to +14, and the half and quarter hours places actually keep -
--- Newfoundland, India, Nepal, the Chathams. One list, read by the Date &
--- Time window and by Preferences, so the two offer the same places.
+-- Newfoundland, India, Nepal, the Chathams. One list, read by Preferences'
+-- Date & Time page - which a window of its own read too until 5 October
+-- 2026, when it went for being the page twice.
 --
 clock.OFFSETS = {
   -720, -660, -600, -570, -540, -480, -420, -360, -300, -240, -210, -180,
@@ -170,6 +189,39 @@ function clock.date_string(now)
 
   return ("%s %d %s"):format(clock.DAYS[now.weekday + 1], now.day,
                              clock.MONTHS[now.month])
+end
+
+--
+-- **A moment in the name of a file a program saves**: 2026-10-05-142301.
+-- No spaces, so a prompt can name it, and it sorts as the moments do.
+-- `screenshot`, `profile` and Disk Benchmark each wrote it out themselves.
+--
+function clock.stamp(t)
+  return ("%04d-%02d-%02d-%02d%02d%02d"):format(t.year, t.month, t.day,
+                                               t.hour, t.min, t.sec)
+end
+
+--
+-- **And in the name of one a person keeps**: 2026-10-05 14.23, to the
+-- minute and with a dot where a colon may not go - a recording's, an
+-- export's - and a number after it for a second one in the same minute,
+-- which is `files.free_name`'s to add.
+--
+function clock.minute_stamp(t)
+  return ("%04d-%02d-%02d %02d.%02d"):format(t.year, t.month, t.day,
+                                            t.hour, t.min)
+end
+
+--
+-- **How long something lasts, as a player shows it**: 3:07 - minutes, and
+-- the seconds in two digits. An hour is 60:00 rather than 1:00:00, as a
+-- song's length and a film's place have always been written here. Music,
+-- Video, the camera's recording and Groove's song each had a copy.
+--
+function clock.duration(seconds)
+  local whole = math.floor(tonumber(seconds) or 0)
+
+  return ("%d:%02d"):format(whole // 60, whole % 60)
 end
 
 return clock

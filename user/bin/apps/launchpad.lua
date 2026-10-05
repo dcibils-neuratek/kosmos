@@ -64,17 +64,17 @@ local function everything()
   end
 
   --
-  -- **The menu as the Deskbar shows it**: what ships in `/Kosmos/Deskbar`,
-  -- the applications installed in `/Home/Apps`, and the person's own in
-  -- `/Home/Deskbar` over both. This read the last alone, which held nothing
-  -- on a machine whose person had not added to the menu - so the grid, the
-  -- first thing to show the count, said "Every application, 0".
+  -- **The menu as the Deskbar shows it** (`deskbarmenu.layers`): what ships
+  -- in `/Kosmos/Deskbar`, the applications installed in `/Home/Apps`, and
+  -- the person's own in `/Home/Deskbar` over both - and only the launchers
+  -- whose programs are still there, as the Deskbar shows them. This read
+  -- the last alone, which held nothing on a machine whose person had not
+  -- added to the menu - so the grid, the first thing to show the count, said
+  -- "Every application, 0" - and then all three without that check.
   --
   local types = use("/Kosmos/Libraries/filetypes.lua")
-  local sections = menu.merge_sections(
-    menu.merge_sections(menu.sections(fs, "/Kosmos/Deskbar"),
-                        menu.installed(types.installed(fs), types.declared)),
-    menu.sections(fs, "/Home/Deskbar"))
+  local sections = menu.layers(fs, menu.installed(types.installed(fs), types.declared),
+                               menu.present(menu.programs(fs)))
 
   for _, section in ipairs(sections or {}) do
     order[#order + 1] = section.name
@@ -201,17 +201,6 @@ local function grid_mode(ax, ay)
     print("launchpad: pills " .. table.concat(said, "; "))
   end
 
-  -- A name as wide as its cell allows, cut with an ellipsis if not.
-  local function fitted(name, room)
-    if gfx.measure(name, small) <= room then return name end
-
-    while #name > 1 and gfx.measure(name .. "...", small) > room do
-      name = name:sub(1, -2)
-    end
-
-    return name .. "..."
-  end
-
   local view = ui.view{ x = 0, y = 0, w = pw, h = ph }
 
   function view:draw(g)
@@ -277,7 +266,8 @@ local function grid_mode(ax, ay)
       g:icon(x0 + (grid.TILE - grid.ICON) // 2, cy + 6 + (grid.TILE - grid.ICON) // 2,
              picture(item) .. ".png", grid.ICON)
 
-      local name = fitted(grid.title(item), cw - 8)
+      -- A name as wide as its cell allows, cut with an ellipsis if not.
+      local name = ui.fitted(grid.title(item), cw - 8, small)
 
       g:text(cx + (cw - gfx.measure(name, small)) // 2, cy + 6 + grid.TILE + 6, name,
              theme.text, behind, "ui", SMALL)

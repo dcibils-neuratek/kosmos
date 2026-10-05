@@ -36,18 +36,6 @@ local MAX_DEPTH = 100
 local ESCAPES = { ['"'] = '"', ["\\"] = "\\", ["/"] = "/", b = "\b", f = "\f",
                   n = "\n", r = "\r", t = "\t" }
 
--- A code point as UTF-8.
-local function utf8_of(cp)
-  if cp < 0x80 then return string.char(cp) end
-  if cp < 0x800 then return string.char(0xc0 | (cp >> 6), 0x80 | (cp & 0x3f)) end
-  if cp < 0x10000 then
-    return string.char(0xe0 | (cp >> 12), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f))
-  end
-
-  return string.char(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f),
-                     0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f))
-end
-
 function json.decode(text)
   if type(text) ~= "string" then return nil, "not text" end
 
@@ -118,7 +106,7 @@ function json.decode(text)
             fail("half of a surrogate pair", j)
           end
 
-          out[#out + 1] = utf8_of(cp)
+          out[#out + 1] = utf8.char(cp)      -- as UTF-8, by Lua's own
         else
           fail("an unknown escape \\" .. e, j)
         end

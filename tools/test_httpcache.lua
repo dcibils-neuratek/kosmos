@@ -9,6 +9,9 @@
 -- refused over a certificate that did not check out, the least lately used
 -- let go first, and emptied.
 
+-- The file library and the clock, as `use` reaches them in a process.
+use = use or function(path) return dofile((path:gsub("^/Kosmos/Libraries/", "user/lib/"))) end
+
 local cache = assert(loadfile("user/lib/httpcache.lua"))()
 
 local failures, checks = 0, 0
@@ -195,6 +198,9 @@ end
 
 function fs.send(path, msg)
   if msg.type == "mkdir" then
+    -- One folder, in one that is there, as a filesystem makes them.
+    if not dirs[path:match("^(.*)/[^/]+$")] then return nil, "no such folder" end
+
     dirs[path] = true
   elseif msg.type == "delete" then
     files[path] = nil

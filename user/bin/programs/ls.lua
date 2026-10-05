@@ -10,11 +10,10 @@
 -- for it, and it is a directory made entirely of mount points.
 
 local types = use("/Kosmos/Libraries/filetypes.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
-local name = args:match("^%s*(%S+)")
-local path = name and (name:sub(1, 1) == "/" and name
-                       or ((cwd == "/" and "/" or cwd .. "/") .. name))
-                  or cwd
+-- Where you are when nothing is named; `..` walked, as the prompt walks it.
+local path = files.abs(args:match("^%s*(%S+)"), cwd)
 
 local entries, err = fs.list(path)
 
@@ -43,8 +42,7 @@ end
 local out = {}
 
 for _, entry in ipairs(entries) do
-  local child = (path == "/" and "/" or path .. "/") .. entry
-  local attrs = fs.getattr(child)
+  local attrs = fs.getattr(files.join(path, entry))
 
   -- A directory says so rather than reporting the size of the entries it
   -- happens to hold. That number is true and it is not what anybody asking

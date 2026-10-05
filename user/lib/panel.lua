@@ -50,8 +50,8 @@ local SIDE_W = 190
 local TOP    = 34                     -- the trail above, the panes below
 local FOOT   = 72                     -- the name, the buttons, the status
 
--- A name cut to fit its column (`ui.fitted`, which began here).
-local function fitted(text, room) return ui.fitted(text, room) end
+-- A name cut to fit its column - `ui.fitted`, which began here.
+local fitted = ui.fitted
 
 local function open(spec, mode)
   local win, err = ui.window{

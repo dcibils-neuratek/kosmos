@@ -43,6 +43,10 @@
 #include "ethring.h"
 #include "e1000_decode.h"
 
+/* A descriptor's fields and the address registers are little-endian: the
+ * one copy of how those are written (`user/include/bytes.h`). */
+#include "bytes.h"
+
 /*------------------------------------------------------------------ registers
  *
  * Offsets into the first BAR, from Intel's own manuals for this family
@@ -280,21 +284,6 @@ static uint8_t *tx_desc(unsigned i)
     return (uint8_t *)(card.mem + TX_DESC_AT + i * E1000_DESC_BYTES);
 }
 
-static void put64(uint8_t *at, uint64_t v)
-{
-    unsigned i;
-
-    for (i = 0; i < 8u; i++) {
-        at[i] = (uint8_t)(v >> (8u * i));
-    }
-}
-
-static void put16(uint8_t *at, uint16_t v)
-{
-    at[0] = (uint8_t)v;
-    at[1] = (uint8_t)(v >> 8);
-}
-
 /*
  * **The card and this end must agree about memory that is not registers.**
  *
@@ -425,7 +414,7 @@ static void rings_start(void)
     memset((void *)card.mem, 0, REGION_BYTES);
 
     for (i = 0; i < RING_SLOTS; i++) {
-        put64(rx_desc(i), card.bus + RX_FRAMES_AT + i * FRAME_SLOT);
+        put_le64(rx_desc(i), card.bus + RX_FRAMES_AT + i * FRAME_SLOT);
     }
 
     RING_BARRIER();
@@ -916,11 +905,8 @@ static void mac_restore(void)
         return;
     }
 
-    reg_write(REG_RAL0, (uint32_t)card.mac[0] | ((uint32_t)card.mac[1] << 8)
-                        | ((uint32_t)card.mac[2] << 16)
-                        | ((uint32_t)card.mac[3] << 24));
-    reg_write(REG_RAH0, (uint32_t)card.mac[4] | ((uint32_t)card.mac[5] << 8)
-                        | RAH_AV);
+    reg_write(REG_RAL0, get_le32(card.mac));
+    reg_write(REG_RAH0, get_le16(card.mac + 4) | RAH_AV);
 }
 
 static void pch_start(void)
@@ -1209,8 +1195,8 @@ static bool send_frame(const uint8_t *frame, unsigned length)
            frame, length);
 
     memset(desc, 0, E1000_DESC_BYTES);
-    put64(desc, card.bus + TX_FRAMES_AT + slot * FRAME_SLOT);
-    put16(desc + 8, (uint16_t)length);
+    put_le64(desc, card.bus + TX_FRAMES_AT + slot * FRAME_SLOT);
+    put_le16(desc + 8, (uint16_t)length);
     desc[11] = TX_CMD_EOP | TX_CMD_IFCS | TX_CMD_RS;
 
     RING_BARRIER();
@@ -1354,7 +1340,7 @@ static void take_frames(void)
 
         /* Given back to the card, empty, and the tail follows. */
         memset(desc, 0, E1000_DESC_BYTES);
-        put64(desc, card.bus + RX_FRAMES_AT + card.rx_next * FRAME_SLOT);
+        put_le64(desc, card.bus + RX_FRAMES_AT + card.rx_next * FRAME_SLOT);
         RING_BARRIER();
         reg_write(REG_RDT, card.rx_next);
         card.rx_next = (card.rx_next + 1u) % RING_SLOTS;

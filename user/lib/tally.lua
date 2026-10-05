@@ -27,9 +27,7 @@ local tally = {}
 local methods = {}
 methods.__index = methods
 
-local function join(dir, name)
-  return (dir == "/") and ("/" .. name) or (dir .. "/" .. name)
-end
+local join = use("/Kosmos/Libraries/files.lua").join
 
 function tally.new(store, paths)
   local self = setmetatable({

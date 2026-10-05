@@ -326,6 +326,53 @@ check(prefs and #prefs.items == 0,
 check(#shown[1].items == 2,
       "and the launchers whose programs are there still are")
 
+--------------------------------------------------------------------------
+-- The three layers as one door (`roadmap.md`, *One kit, one door*): the
+-- Deskbar and the launcher pad both read `layers`, so a launcher to an
+-- application that is gone is out of both - the pad had no such check.
+--------------------------------------------------------------------------
+
+local machine = store_of({
+  ["/Kosmos/Apps/tracker.lua"] = { kind = "application" },
+  ["/Kosmos/Apps/calc.lua"] = { kind = "application" },
+  ["/Kosmos/Apps/deskbar.lua"] = { kind = "application" },
+  ["/Kosmos/Apps/info.lua"] = { kind = "application", section = "none" },
+  ["/Kosmos/Apps/notes.txt"] = { kind = "file" },
+  ["/Kosmos/Deskbar"] = DIR,
+  ["/Kosmos/Deskbar/Applications"] = DIR,
+  ["/Kosmos/Deskbar/Applications/tracker"] = launcher("tracker.lua", ""),
+  ["/Kosmos/Deskbar/Applications/calc"] = launcher("/Kosmos/Apps/calc.lua", ""),
+  ["/Home/Deskbar"] = DIR,
+  ["/Home/Deskbar/Preferences"] = DIR,
+  -- Gone from the system since it was made: a person's own launcher to an
+  -- application that folded into Preferences, by each name a launcher has
+  -- used for one.
+  ["/Home/Deskbar/Preferences/datetime"] = launcher("/Kosmos/Apps/datetime.lua", ""),
+  ["/Home/Deskbar/Preferences/startup"] = launcher("/bin/startup.lua", ""),
+  ["/Home/Deskbar/Preferences/appearance"] = launcher("appearance", ""),
+  ["/Home/Deskbar/Preferences/nothing"] = launcher("", ""),
+  -- Somebody's own program, outside the system's, which is trusted.
+  ["/Home/Deskbar/Preferences/mine"] = launcher("/Home/mine.lua", ""),
+})
+
+local programs = menu.programs(machine)
+
+check(programs.tracker and programs.calc and not programs.deskbar
+      and not programs.info and not programs.notes,
+      "what /Kosmos/Apps can start is its applications, less the Deskbar and "
+      .. "`section none`")
+
+local layered = menu.layers(machine, menu.installed({}, said),
+                            menu.present(programs))
+local apps_l = named(layered, "Applications")
+local prefs_l = named(layered, "Preferences")
+
+check(apps_l and #apps_l.items == 2,
+      "the menu that ships is in the layers, both of its launchers")
+check(prefs_l and #prefs_l.items == 1 and prefs_l.items[1].name == "mine",
+      "a launcher to an application that is gone is out of the layers, by "
+      .. "any of its names, and one with no program; a person's own stays")
+
 if failed == 0 then
   print(("PASS: %d checks on the Deskbar's menu as it is read off the disk, "
          .. "on this machine."):format(checks))

@@ -43,17 +43,14 @@ local ERRORS = {
   [4] = "the notification server has no room",
 }
 
--- `s` cut to fit `n` bytes, at a character: a UTF-8 sequence's later bytes
--- are 10xxxxxx, so the cut steps back over them to the one that starts it.
+-- `s` cut to fit under `n` bytes, at a character: before the one whose
+-- bytes reach the `n`th, which `utf8.offset` finds by stepping back to
+-- where it starts.
 local function fit(s, n)
   s = tostring(s or "")
   if #s < n then return s end
 
-  local cut = n - 1
-
-  while cut > 0 and (s:byte(cut + 1) or 0) & 0xC0 == 0x80 do cut = cut - 1 end
-
-  return s:sub(1, cut)
+  return s:sub(1, utf8.offset(s, 0, n) - 1)
 end
 
 local function text(s)

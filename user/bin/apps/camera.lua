@@ -97,31 +97,20 @@ end
 --------------------------------------------------------------------------
 
 local clock = use("/Kosmos/Libraries/clock.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 local VIDEOS = "/Home/Captures"
 
--- A size as a person reads it: KB under a megabyte, where "0.0 MB" read as
--- nothing kept - the test pattern is five kilobytes a second.
-local function amount(bytes)
-  if bytes < 1000 * 1000 then
-    return ("%d KB"):format((bytes + 999) // 1000)
-  end
+-- A size as a person reads it, as Tracker writes one: 21.8 KB, not "0.0 MB"
+-- for nothing kept - the test pattern is five kilobytes a second.
+local amount = files.size
 
-  return ("%.1f MB"):format(bytes / 1e6)
-end
-
+-- 2026-10-05 14.23.mp4, and " 2" for a second one in the same minute
+-- rather than the first one gone.
 local function recording_name()
   local now = clock.now()
-  local base = now and ("%04d-%02d-%02d %02d.%02d"):format(now.year,
-                 now.month, now.day, now.hour, now.min) or "recording"
-  local name, n = base .. ".mp4", 1
+  local base = now and clock.minute_stamp(now) or "recording"
 
-  -- A second recording in the same minute is " 2", not the first one gone.
-  while fs.getattr(VIDEOS .. "/" .. name) do
-    n = n + 1
-    name = ("%s %d.mp4"):format(base, n)
-  end
-
-  return name
+  return files.free_name(VIDEOS, base .. ".mp4") or (base .. ".mp4")
 end
 
 local function stop_recording()
@@ -360,7 +349,7 @@ local function draw_picture(s)
   -- dark pill in the picture's corner.
   if recording then
     local secs = (sys.ticks() - recording.started) // counter_hz
-    local t = ("%d:%02d"):format(secs // 60, secs % 60)
+    local t = clock.duration(secs)
     local bw = 10 + 8 + gfx.measure(t) + 20
 
     s:fill_round(x + 12, y + 12, bw, 28, 0xff1b1c20, 14)

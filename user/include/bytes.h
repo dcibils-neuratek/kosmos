@@ -14,7 +14,11 @@
  * These were written out again in each file that needed them - `be32` three
  * times, `le32` twice, a big-endian `put32` twice and a little-endian one
  * once - and this is the one copy (`CLAUDE.md`, *Kits, servers and drivers
- * supply*).
+ * supply*). The review before 0.11 found six more files with their own -
+ * the FAT reader, the disk's format, the network stack, the Intel card,
+ * a camera's and a MIDI device's decoders - and they read and write here
+ * too: kfs's 64-bit fields and the card's descriptor addresses are what
+ * `put_le64` is for.
  */
 
 #include <stdint.h>
@@ -58,6 +62,12 @@ static inline void put_le32(uint8_t *p, uint32_t v)
     p[1] = (uint8_t)(v >> 8);
     p[2] = (uint8_t)(v >> 16);
     p[3] = (uint8_t)(v >> 24);
+}
+
+static inline void put_le64(uint8_t *p, uint64_t v)
+{
+    put_le32(p, (uint32_t)v);
+    put_le32(p + 4, (uint32_t)(v >> 32));
 }
 
 static inline void put_be16(uint8_t *p, uint16_t v)

@@ -39,11 +39,8 @@ local tick_hz = fs.read("/Devices/kernel").tick_hz or 250
 local w, h = screen:size()
 local top = h - RESERVED_ROWS * gfx.font.h
 
-local function meter(pct, width)
-  local filled = (pct * width) // 100
-  if filled > width then filled = width end
-  return "[" .. ("|"):rep(filled) .. ("."):rep(width - filled) .. "]"
-end
+-- A share as a bar of characters, as `htop` draws one (`text.lua`).
+local meter = use("/Kosmos/Libraries/text.lua").meter
 
 -- Usage is the difference between two readings, never one: a single
 -- reading says what fraction of all time since boot was busy, which after

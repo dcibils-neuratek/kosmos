@@ -23,6 +23,9 @@
 
 local favorites = {}
 
+-- The folder made, and the ones above it, by the file library.
+local files = use("/Kosmos/Libraries/files.lua")
+
 favorites.DIR = "/Home/Favorites"
 favorites.TYPE = "favorite"
 
@@ -123,20 +126,6 @@ function favorites.all(dir, into)
   return into
 end
 
-local function made(dir)
-  if fs.getattr(dir) then return true end
-
-  local at = ""
-
-  for part in dir:gmatch("[^/]+") do
-    at = at .. "/" .. part
-
-    if not fs.getattr(at) then fs.send(at, { type = "mkdir" }) end
-  end
-
-  return fs.getattr(dir) ~= nil
-end
-
 --
 -- **A page made a favorite**, at the end of the folder: its file, or nil and
 -- why. One already kept is that one rather than a second. A name taken by
@@ -150,7 +139,7 @@ function favorites.add(address, title, dir, at)
     return nil, "there is no address to keep"
   end
 
-  if not made(dir) then return nil, ("%s could not be made"):format(dir) end
+  if not files.make_folder(dir) then return nil, ("%s could not be made"):format(dir) end
 
   local list = favorites.read(dir)
   local top = 0

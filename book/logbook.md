@@ -1183,3 +1183,28 @@ leak only came to light because the copies were being merged.
 **How it is checked.** The whole test run, all 90 suites, passed. A new
 test holds the shared-memory library to putting every piece of a file in
 its right place, and fails against the old loops' mistake.
+
+## 5 October - one copy of each thing, the second half
+
+**In short:** the rest of the duplicated pieces the review found are now
+one each. Two small applications went away because Preferences already
+does what they did.
+
+**What.** Mostly small helpers that many programs had written for
+themselves: cutting a name to fit with "...", wrapping words, stepping
+through letters that take more than one byte, writing a file size, a
+number with thousands commas, a time as 3:07, a date in a file's name, a
+network address. Each lives in one place now and everything uses it. The
+three network programs - the web server, the remote command line and the
+remote screen - shared a page of start-up code each had copied; it is one
+library. Groove now saves songs as readable text like every other file of
+settings, instead of as a small program it had to run to read back.
+
+**What you see.** Names that did not fit used to be cut off in the middle,
+sometimes in the middle of a letter; they now end in "...". The separate
+Startup Apps and Date & Time windows are gone: Preferences has the same
+pages, and those two windows were second copies of them.
+
+**Why it matters.** The cutting helpers were the clearest case: most of the
+dozen copies could cut a letter like "é" in half and print a broken
+character. Fixed once, it is fixed everywhere.

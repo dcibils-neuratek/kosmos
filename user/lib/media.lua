@@ -56,6 +56,72 @@ local READ = 32768
 --
 local FEED_MAX = 16
 
+--
+-- **Sound to its stream, wherever it came from** (`roadmap.md`, *One kit,
+-- one door*): what a song and a film both do once there are samples -
+-- convert them to what the device takes (`sys.pcm`) a few periods at a
+-- time, and hand over as many periods as the server will take and never
+-- more than `most`. It was the same loop twice, here and in `video.lua`,
+-- around two sources; the sources are what differ, so they are what each
+-- side keeps.
+--
+-- `f` is the player: its `stream` and the device's `fmt`; `decoded`, the
+-- source's samples not yet converted, at its `rate`, in `channels` of
+-- `bits`; `pending`, converted and not yet taken; `phase`, the resampler's;
+-- and `frames_out`, how many frames have been converted for the device,
+-- which `run_film.py` reads. `fill(f)` is the source: it tops `decoded` up
+-- and says whether the input has ended - true once all of it is in
+-- `decoded` - or nil when nothing more can go this time.
+--
+-- Returns how many periods went; then the server's word when it refused
+-- one - "full" is it being ahead, anything else is an error - and true when
+-- what was left would not convert to anything.
+--
+function media.feed(f, most, fill)
+  local period = f.fmt.period
+  local fed = 0
+
+  for _ = 1, most do
+    if #f.pending == 0 then
+      local last = fill(f)
+
+      if last == nil then return fed end
+
+      --
+      -- The end of the input is the end, said to `sys.pcm` so the final
+      -- frame comes out rather than waiting for a neighbour that never
+      -- comes - and one frame is then enough to convert, where two are
+      -- needed while there is more to come. The last sample of every song
+      -- and every film went unplayed until both halves were here
+      -- (`testing.md` 18.185).
+      --
+      if f.rate == 0
+         or #f.decoded < f.channels * (f.bits // 8) * (last and 1 or 2) then
+        return fed
+      end
+
+      local pcm, used
+      pcm, used, f.phase = sys.pcm(f.decoded, f.rate, f.channels, f.bits,
+                                   f.phase, period * 4, last)
+
+      if used == 0 or #pcm == 0 then return fed, nil, true end
+
+      f.decoded = f.decoded:sub(used + 1)
+      f.pending = pcm
+      f.frames_out = (f.frames_out or 0) + #pcm // 4
+    end
+
+    local took, why = f.stream:play(f.pending:sub(1, period))
+
+    if not took then return fed, tostring(why) end
+
+    f.pending = f.pending:sub(period + 1)
+    fed = fed + 1
+  end
+
+  return fed
+end
+
 local player = {}
 player.__index = player
 
@@ -66,9 +132,51 @@ player.__index = player
 local function restart(p, at)
   p.at = at
   p.last = p.info.offset + p.info.bytes
-  p.carry, p.samples, p.pending, p.phase = "", "", "", 0.0
+  p.carry, p.decoded, p.pending, p.phase = "", "", "", 0.0
 
   if p.decoder then p.decoder:reset() end
+end
+
+--
+-- **A song's source** for `media.feed`: the file a window at a time, into
+-- the decoder when it has one - an MP3's - and straight into `decoded` when
+-- its bytes are samples already, a WAV's. `carry` is what the decoder has
+-- not taken yet.
+--
+local function from_file(p)
+  local waiting = p.decoder and p.carry or p.decoded
+
+  if p.at < p.last and #waiting < READ then
+    local n = fs.read_into(p.path, p.page, p.at, math.min(READ, p.last - p.at))
+
+    if not n or n == 0 then
+      p.at = p.last
+      return nil
+    end
+
+    local got = sys.region_read(p.page, 0, n)
+
+    if p.decoder then p.carry = p.carry .. got else p.decoded = p.decoded .. got end
+
+    p.at = p.at + n
+  end
+
+  if p.decoder and #p.decoded < p.fmt.period * 4 and #p.carry > 0 then
+    local pcm, used = p.decoder:decode(p.carry, p.fmt.period * 8)
+
+    if used == 0 then
+      -- Not a whole frame yet. If the file is finished there will never
+      -- be one, so stop rather than spin on the same bytes.
+      if p.at >= p.last then p.carry = "" end
+      return nil
+    end
+
+    p.decoded = p.decoded .. pcm
+    p.carry = p.carry:sub(used + 1)
+  end
+
+  -- Everything read, and nothing the decoder could still make a frame of.
+  return p.at >= p.last and (not p.decoder or #p.carry < p.info.frame * 2)
 end
 
 --
@@ -181,6 +289,7 @@ function media.open(path, options)
   local p = setmetatable({
     path = path, name = name, info = info, fmt = fmt, page = page,
     stream = stream, decoder = decoder, playing = false, base = 0,
+    rate = info.rate, channels = info.channels, bits = info.bits,
   }, player)
 
   restart(p, info.offset)
@@ -204,89 +313,13 @@ end
 function player:tick()
   if not self.stream or not self.playing then return 0 end
 
-  local fmt, info = self.fmt, self.info
-  local fed = 0
+  local fed, why = media.feed(self, FEED_MAX, from_file)
 
-  for _ = 1, FEED_MAX do
-    if #self.pending == 0 then
-      if self.at < self.last and #self.carry < READ then
-        local n = fs.read_into(self.path, self.page, self.at,
-                               math.min(READ, self.last - self.at))
-
-        if not n or n == 0 then
-          self.at = self.last
-          break
-        end
-
-        self.carry = self.carry .. sys.region_read(self.page, 0, n)
-        self.at = self.at + n
-      end
-
-      --
-      -- Decode, for a format that needs it. A WAV's bytes are already samples
-      -- and go straight through.
-      --
-      if self.decoder then
-        if #self.samples < fmt.period * 4 and #self.carry > 0 then
-          local pcm, used = self.decoder:decode(self.carry, fmt.period * 8)
-
-          if used == 0 then
-            -- Not a whole frame yet. If the file is finished there will never
-            -- be one, so stop rather than spin on the same bytes.
-            if self.at >= self.last then self.carry = "" end
-            break
-          end
-
-          self.samples = self.samples .. pcm
-          self.carry = self.carry:sub(used + 1)
-        end
-      else
-        self.samples, self.carry = self.carry, ""
-      end
-
-      --
-      -- The end of the file is the end of the input: everything read, and
-      -- nothing left to decode. Said to `sys.pcm`, so the final frame is
-      -- played rather than held for a neighbour that never comes - and one
-      -- frame is then enough to convert, where two are needed while there
-      -- is more to come. The last sample of every song went unplayed until
-      -- `run_film.py` heard a film's go missing.
-      --
-      local last = self.at >= self.last
-                   and (not self.decoder or #self.carry < self.info.frame * 2)
-      local frame_bytes = info.channels * (info.bits // 8)
-
-      if #self.samples < frame_bytes * (last and 1 or 2) then break end
-
-      local pcm, used
-      pcm, used, self.phase = sys.pcm(self.samples, info.rate, info.channels,
-                                      info.bits, self.phase, fmt.period * 4,
-                                      last)
-
-      if used == 0 or #pcm == 0 then break end
-
-      self.samples = self.samples:sub(used + 1)
-
-      -- What the resampler did not take goes back, so a WAV keeps its one
-      -- buffer and the next turn reads on from where this one stopped.
-      if not self.decoder then self.carry, self.samples = self.samples, "" end
-
-      self.pending = pcm
-    end
-
-    local took, why = self.stream:play(self.pending:sub(1, fmt.period))
-
-    if not took then
-      if why ~= "full" then
-        self.error = tostring(why)
-        self.playing = false
-      end
-
-      return fed                  -- the server is ahead; come back next tick
-    end
-
-    self.pending = self.pending:sub(fmt.period + 1)
-    fed = fed + 1
+  -- "full" is the server ahead, to come back to next tick; anything else
+  -- stops the song where it is, and says why.
+  if why and why ~= "full" then
+    self.error = why
+    self.playing = false
   end
 
   return fed
@@ -386,8 +419,11 @@ end
 function player:finished()
   if not self.stream then return false end
 
+  -- What is still to convert: the decoder's bytes, or a WAV's samples.
+  local waiting = self.decoder and self.carry or self.decoded
+
   return self.at >= self.last and #self.pending == 0
-         and #self.carry < self.info.frame * 2
+         and #waiting < self.info.frame * 2
          and self.stream:queued() == 0
 end
 

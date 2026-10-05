@@ -1094,11 +1094,7 @@ function richtext.step(body, place, forward)
 
   if forward then
     if place.at <= #plain then
-      local i = place.at + 1
-      while i <= #plain and plain:byte(i) >= 0x80 and plain:byte(i) < 0xC0 do
-        i = i + 1
-      end
-      return { para = place.para, at = i }
+      return { para = place.para, at = utf8.offset(plain, 2, place.at) or #plain + 1 }
     end
 
     if body[place.para + 1] then return richtext.enter(body, place.para + 1, true) end
@@ -1107,11 +1103,7 @@ function richtext.step(body, place, forward)
   end
 
   if place.at > 1 then
-    local i = place.at - 1
-    while i > 1 and plain:byte(i) >= 0x80 and plain:byte(i) < 0xC0 do
-      i = i - 1
-    end
-    return { para = place.para, at = i }
+    return { para = place.para, at = utf8.offset(plain, -1, place.at) or 1 }
   end
 
   if place.para > 1 then

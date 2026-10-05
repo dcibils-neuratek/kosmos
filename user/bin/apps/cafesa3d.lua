@@ -466,7 +466,6 @@ local world = { zenith = 0x6d90c6, horizon = 0xdfe6ef, strength = 0.9 }
 local WORLD = { name = "the world" }        -- what a sky's fields say they are of
 
 local tab = "object"
-local drawn_triangles = 0
 local VIEW_NAME = "User Perspective"
 local view_name = VIEW_NAME
 
@@ -1171,7 +1170,7 @@ local function make_handles()
 
   if tool ~= "move" and not t.id then return end
 
-  local r, u, f = axes()
+  local _, _, f = axes()
   local e, c = eye(), t.loc
   local depth = (c[1] - e[1]) * f[1] + (c[2] - e[2]) * f[2] + (c[3] - e[3]) * f[3]
 
@@ -1296,7 +1295,7 @@ local function draw_view(s)
     -- what shows under tiles not yet traced, and what a click picks from,
     -- and neither changes until the eye or the scene does.
     if not shade.job or render_key() ~= shade.key then
-      drawn_triangles = view:draw(scene, s, VX, VY, { mode = "solid", selected = 0, grid = false })
+      view:draw(scene, s, VX, VY, { mode = "solid", selected = 0, grid = false })
       shade.start(s)
     end
 
@@ -1306,7 +1305,7 @@ local function draw_view(s)
     end
   else
     shade.stop()
-    drawn_triangles = view:draw(scene, s, VX, VY, {
+    view:draw(scene, s, VX, VY, {
       mode = shading == "wire" and "wire" or "solid",
       selected = selected and selected.id or 0,
       grid = true,
@@ -1326,7 +1325,7 @@ local function draw_view(s)
   draw_gizmo(s)
 
   if modal and modal.axis then
-    local a, p = AXES[modal.axis], modal.loc0
+    local p = modal.loc0
     local planes = modal.plane and { modal.axis % 3 + 1, (modal.axis + 1) % 3 + 1 }
                    or { modal.axis }
 
@@ -1732,24 +1731,8 @@ local function heading(s, x, y, text, glyph, colour)
 end
 
 local function note(s, x, y, w, text)
-  local words, lineb = {}, ""
-
-  for word in text:gmatch("%S+") do words[#words + 1] = word end
-
-  for _, word in ipairs(words) do
-    local try = lineb == "" and word or (lineb .. " " .. word)
-
-    if gfx.measure(try, small) > w then
-      s:text(x, y, lineb, theme.text_dim, nil, small)
-      y = y + gfx.height(small) + 3
-      lineb = word
-    else
-      lineb = try
-    end
-  end
-
-  if lineb ~= "" then
-    s:text(x, y, lineb, theme.text_dim, nil, small)
+  for _, line in ipairs(ui.wrapped(text, w, small)) do
+    s:text(x, y, line, theme.text_dim, nil, small)
     y = y + gfx.height(small) + 3
   end
 
@@ -1760,8 +1743,6 @@ local KIND_NAME = { box = "Cube", sphere = "UV Sphere", cylinder = "Cylinder",
                     plane = "Plane", light = "Point light", camera = "Camera",
                     ico = "Ico Sphere", cone = "Cone", torus = "Torus", grid = "Grid",
                     mesh = "Mesh" }
-
-local function hexcolour(c) return ("#%06x"):format(c & 0xffffff) end
 
 local function draw_props(s)
   local x0 = SX + TABS_W
@@ -2059,12 +2040,7 @@ function SCRIPT.draw(s)
 
   -- The name in what is left, cut to fit it.
   local nx = x0 + 12 + gfx.measure("SCRIPT", tiny) + 8
-  local name = SCRIPT.name
-
-  if gfx.measure(name) > bx - 8 - nx then
-    while #name > 1 and gfx.measure(name .. "...") > bx - 8 - nx do name = name:sub(1, -2) end
-    name = name .. "..."
-  end
+  local name = ui.fitted(SCRIPT.name, bx - 8 - nx, "ui")
 
   s:text(nx, y0 + (PANEL_T - 1 - gfx.height()) // 2, name, theme.text, nil, "ui")
 
@@ -3980,29 +3956,9 @@ local function along(x, y, p0, a)
   return (b * vdot(d, w) - c * vdot(a, w)) / den
 end
 
--- Turning, as the kit does it: X, then Y, then Z - Rz Ry Rx, row by row.
-local function euler_matrix(rot)
-  local ax, ay, az = math.rad(rot[1]), math.rad(rot[2]), math.rad(rot[3])
-  local cx, sx, cy, sy = math.cos(ax), math.sin(ax), math.cos(ay), math.sin(ay)
-  local cz, sz = math.cos(az), math.sin(az)
-
-  return { cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx,
-           sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx,
-           -sy,     cy * sx,                cy * cx }
-end
-
-local function matrix_euler(R)
-  local y = math.asin(math.max(-1, math.min(1, -R[7])))
-  local x, z
-
-  if math.abs(math.cos(y)) > 1e-6 then
-    x, z = math.atan(R[8], R[9]), math.atan(R[4], R[1])
-  else
-    x, z = 0, math.atan(-R[2], R[5])
-  end
-
-  return { math.deg(x), math.deg(y), math.deg(z) }
-end
+-- Turning, as the kit does it: X, then Y, then Z - Rz Ry Rx, row by row -
+-- and back to degrees, as the scene's file reads and writes a turn.
+local euler_matrix, matrix_euler = scenefile.euler_matrix, scenefile.matrix_euler
 
 -- A turn of `ang` about the unit axis `a`, by the right hand.
 local function axis_angle(a, ang)

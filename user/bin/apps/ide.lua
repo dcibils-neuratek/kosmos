@@ -1131,26 +1131,6 @@ local suggest = ui.view{ x = 0, y = 0, w = LIST_W + DOC_W, h = SUGGEST_ROWS * SU
 suggest.hidden = true
 suggest.items, suggest.on, suggest.first, suggest.prefix = {}, 1, 1, ""
 
--- Words that fit `w` pixels a line, as many lines as there are.
-local function wrap(text, w, face)
-  local lines, line = {}, ""
-
-  for word in text:gmatch("%S+") do
-    local try = (line == "") and word or (line .. " " .. word)
-
-    if gfx.measure(try, face) <= w or line == "" then
-      line = try
-    else
-      lines[#lines + 1] = line
-      line = word
-    end
-  end
-
-  if line ~= "" then lines[#lines + 1] = line end
-
-  return lines
-end
-
 function suggest:draw(g)
   local colours = ui.code_colours()
   local rows = math.min(#self.items, SUGGEST_ROWS)
@@ -1189,10 +1169,10 @@ function suggest:draw(g)
 
   if e then
     local x, y = LIST_W + 12, 8
-    local sig = wrap(e.signature or e.name, DOC_W - 24, "mono")
-
-    for i = 1, math.min(2, #sig) do
-      g:text(x, y, sig[i], theme.text, nil, "mono")
+    -- Two lines of how it is called at the most, the second cut when there
+    -- is more; and under it the words, as many lines as fit.
+    for _, line in ipairs(ui.wrapped(e.signature or e.name, DOC_W - 24, "mono", 2)) do
+      g:text(x, y, line, theme.text, nil, "mono")
       y = y + gfx.height("mono")
     end
 
@@ -1202,7 +1182,7 @@ function suggest:draw(g)
                   or "Nothing is written above it in its source."
 
     for _, para in ipairs({ words:match("^(.-)\n\n") or words }) do
-      for _, line in ipairs(wrap(para:gsub("\n", " "), DOC_W - 24, "ui")) do
+      for _, line in ipairs(ui.wrapped(para:gsub("\n", " "), DOC_W - 24, "ui")) do
         if y + fh > h - 4 then break end
         g:text(x, y, line, theme.text_dim, nil, "ui")
         y = y + fh + 2
@@ -1470,17 +1450,6 @@ local function matching(typed)
   return items
 end
 
--- `s`, cut at its end - or with `from_left`, its start - to `room` pixels.
-local function cut(s, room, face, from_left)
-  if gfx.measure(s, face) <= room then return s end
-
-  while #s > 1 and gfx.measure("..." .. s, face) > room do
-    s = from_left and s:sub(2) or s:sub(1, -2)
-  end
-
-  return from_left and ("..." .. s) or (s .. "...")
-end
-
 function found:draw(g)
   local colours = ui.code_colours()
   local fh, mh = gfx.height("ui"), gfx.height("mono")
@@ -1492,7 +1461,7 @@ function found:draw(g)
   g:fill_round(1, 1, self.w - 2, self.h - 2, theme.sunken, 7)
 
   if n == 0 then
-    g:text(12, 4 + (FIND_ROW - fh) // 2, cut(("no file's name has %s in it"):format(find.text),
+    g:text(12, 4 + (FIND_ROW - fh) // 2, ui.fitted(("no file's name has %s in it"):format(find.text),
            self.w - 24, "ui"), theme.text_dim, nil, "ui")
   end
 
@@ -1513,7 +1482,7 @@ function found:draw(g)
     for part, piece in ipairs({ e.name:sub(1, e.at - 1), e.name:sub(e.at, e.at + typed - 1),
                                 e.name:sub(e.at + typed) }) do
       if piece ~= "" and room > 0 then
-        local shown = cut(piece, room, "mono")
+        local shown = ui.fitted(piece, room, "mono")
 
         g:text(x, my, shown, (part == 2) and theme.accent or theme.text, nil, "mono")
         x = x + gfx.measure(shown, "mono")
@@ -1521,7 +1490,7 @@ function found:draw(g)
       end
     end
 
-    g:text(FIND_IN, my, cut(e.dir, self.w - 24 - FIND_KIND - FIND_IN, "mono", true),
+    g:text(FIND_IN, my, ui.fitted(e.dir, self.w - 24 - FIND_KIND - FIND_IN, "mono", true),
            theme.text_dim, nil, "mono")
     g:text(self.w - 12 - gfx.measure(e.kind, "ui"), y + (FIND_ROW - fh) // 2, e.kind,
            theme.text_dim, nil, "ui")

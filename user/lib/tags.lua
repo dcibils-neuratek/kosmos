@@ -42,59 +42,21 @@ local UNSYNC_MOST = 256 * 1024
 -- Text.
 --------------------------------------------------------------------------
 
-local function utf8_of(u)
-  if u < 0x80 then return string.char(u) end
-
-  if u < 0x800 then
-    return string.char(0xC0 | (u >> 6), 0x80 | (u & 0x3F))
-  end
-
-  if u < 0x10000 then
-    return string.char(0xE0 | (u >> 12), 0x80 | ((u >> 6) & 0x3F),
-                       0x80 | (u & 0x3F))
-  end
-
-  return string.char(0xF0 | (u >> 18), 0x80 | ((u >> 12) & 0x3F),
-                     0x80 | ((u >> 6) & 0x3F), 0x80 | (u & 0x3F))
-end
-
--- Whether a string is already UTF-8, as many taggers write into fields the
--- format says are Latin-1.
-local function valid_utf8(s)
-  local i, n = 1, #s
-
-  while i <= n do
-    local c = s:byte(i)
-    local more
-
-    if c < 0x80 then more = 0
-    elseif c >= 0xC2 and c <= 0xDF then more = 1
-    elseif c >= 0xE0 and c <= 0xEF then more = 2
-    elseif c >= 0xF0 and c <= 0xF4 then more = 3
-    else return false end
-
-    for j = 1, more do
-      local d = s:byte(i + j)
-
-      if not d or d < 0x80 or d > 0xBF then return false end
-    end
-
-    i = i + more + 1
-  end
-
-  return true
-end
-
+--
 -- Latin-1 as UTF-8 - unless it already was UTF-8, which is what it usually
--- turns out to be when a byte above 127 appears.
+-- turns out to be when a byte above 127 appears: many taggers write UTF-8
+-- into fields the format says are Latin-1. A Latin-1 byte is its own code
+-- point.
+--
+-- **UTF-8 is Lua's own `utf8` here**, both ways: `utf8.char` writes a code
+-- point, and `utf8.len` is nil for bytes that are not UTF-8 - strictly, so a
+-- surrogate or a character spelt long is not taken for it, where the check
+-- written out by hand that this was let both through.
+--
 local function single_byte(s)
-  if valid_utf8(s) then return s end
+  if utf8.len(s) then return s end
 
-  return (s:gsub("[\128-\255]", function(c)
-    local b = c:byte()
-
-    return string.char(0xC0 | (b >> 6), 0x80 | (b & 0x3F))
-  end))
+  return (s:gsub("[\128-\255]", function(c) return utf8.char(c:byte()) end))
 end
 
 -- UTF-16, with a byte order mark or in the order given, as UTF-8; a
@@ -135,7 +97,7 @@ local function utf16(s, big)
       u = 0xFFFD
     end
 
-    out[#out + 1] = utf8_of(u)
+    out[#out + 1] = utf8.char(u)
   end
 
   return table.concat(out)

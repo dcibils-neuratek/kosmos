@@ -365,8 +365,7 @@ function diskbench.save(result)
   local name
 
   if t then
-    name = ("%04d-%02d-%02d-%02d%02d%02d"):format(t.year, t.month, t.day,
-                                                 t.hour, t.min, t.sec)
+    name = clock.stamp(t)
   else
     name = ("run-%d"):format(sys.ticks())
   end

@@ -53,30 +53,22 @@ for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
 
 local port = tonumber(words[1]) or 5900
 local prefs = use("/Kosmos/Libraries/prefs.lua")
-local regions = use("/Kosmos/Libraries/regions.lua")
-local REMOTE = "/Running/wm/remote"
+local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
-local function dotted(bytes)
-  if type(bytes) ~= "string" or #bytes ~= 4 then return "?" end
+--
+-- What every program that serves the network begins with, from
+-- `netprogram.lua`, as `telnetd` begins: a card, the port, its folder in
+-- `/Temporary` for the Servers window, a name in `/Running` for that
+-- window's Disconnect, and only this machine's own subnet let in.
+--
+local net = use("/Kosmos/Libraries/netprogram.lua").open{
+  name = "vncd", port = port, named = true, neighbours = true,
+}
 
-  return ("%d.%d.%d.%d"):format(bytes:byte(1, 4))
-end
+if not net then return end
 
-local info = fs.net_info("/Network")
-
-if not info or not info.card then
-  print("vncd: this machine has no network card")
-  return
-end
-
-local listener, why = fs.listen("/Network", port)
-
-if not listener then
-  print("vncd: could not listen on port " .. port .. ": " .. tostring(why))
-  return
-end
-
-print(("vncd: on port %d, at %s"):format(port, dotted(info.address)))
+print(("vncd: on port %d, at %s"):format(port, net:address()))
 
 -- **Keys and the pointer lent by the boot command line** (`roadmap.md`,
 -- build, boot and test the M700 in a loop; Diego, 3 October, choosing it
@@ -93,128 +85,55 @@ if LENT_BY_BOOT then
   print("vncd: keys and the pointer lent to every viewer, as opt/kosmos/vnc asks")
 end
 
--- A name in `/Running`, for the Servers window's Disconnect, as `telnetd`
--- has one.
-local control = sys.endpoint()
-
-if control then
-  fs.send("/Running", { type = "register", name = "vncd" }, control)
-end
-
-local COUNTER_HZ = math.max(1, ((fs.read("/Devices/cpu") or {}).counter_hz or 1))
 local TICK_HZ = (sys.info() or {}).tick_hz or 250
 
 --------------------------------------------------------------------------
--- Who may connect: this machine's own subnet, as `telnetd` has it.
---------------------------------------------------------------------------
-
-local function neighbour(from)
-  local now = fs.net_info("/Network") or info
-  local mine, mask = now.address, now.netmask
-
-  if type(from) ~= "string" or #from ~= 4 or type(mine) ~= "string"
-     or type(mask) ~= "string" or #mine ~= 4 or #mask ~= 4 then
-    return false
-  end
-
-  for i = 1, 4 do
-    if (from:byte(i) & mask:byte(i)) ~= (mine:byte(i) & mask:byte(i)) then
-      return false
-    end
-  end
-
-  return true
-end
-
---------------------------------------------------------------------------
 -- What the Servers window reads: `/Temporary/vncd`, as `httpd` and
--- `telnetd` keep theirs.
+-- `telnetd` keep theirs, through the same library.
 --------------------------------------------------------------------------
 
-local STATUS = "/Temporary/vncd/status"
-local LOG = "/Temporary/vncd/log"
-local LOG_LINES = 40
-local lines_said = {}
 local viewers = {}
-
-fs.send("/Temporary/vncd", { type = "mkdir" })
 
 local function publish()
   local list = {}
 
   for _, v in ipairs(viewers) do
     if v.stage == "normal" then
-      list[#list + 1] = { from = dotted(v.from), bpp = v.format.bpp }
+      list[#list + 1] = { from = ipv4.text(v.from), bpp = v.format.bpp }
     end
   end
 
-  fs.write(STATUS, { state = "running", port = port, viewers = list })
-end
-
-local function note(text)
-  lines_said[#lines_said + 1] = ("%5ds  %s"):format(sys.ticks() // COUNTER_HZ, text)
-
-  while #lines_said > LOG_LINES do table.remove(lines_said, 1) end
-
-  fs.write(LOG, lines_said)
-  print("vncd: " .. text)
+  net:publish{ viewers = list }
 end
 
 --------------------------------------------------------------------------
--- The screen, as the window manager hands it over.
+-- The screen, as the window manager hands it over (`wmproto.lua`, as
+-- `screenshot` asks for it).
 --------------------------------------------------------------------------
 
 local screen = nil        -- { w, h, cap, surface, watching }
 
 local function watch()
   if not screen then
-    local size = fs.send(REMOTE, { type = "watch" })
+    local why, lent
 
-    if type(size) ~= "table" or not size.w then
-      return nil, "the desktop did not lend its screen - this is started from "
-                  .. "the desktop: the Servers window, or open vncd"
+    screen, why, lent = wmproto.screen()
+
+    if not screen and not lent then
+      return nil, why .. " - this is started from the desktop: the Servers "
+                  .. "window, or open vncd"
     end
 
-    local copy = regions.make(size.bytes)
-
-    if not copy then return nil, "no memory for a copy of the screen" end
-
-    screen = { w = size.w, h = size.h, cap = copy.cap,
-               surface = gfx.wrap{ at = copy.at, w = size.w, h = size.h } }
+    if not screen then return nil, why end
   end
 
   if not screen.watching then
-    local r = fs.send(REMOTE, { type = "watch" }, screen.cap)
+    local ok, why = wmproto.watch(screen)
 
-    if type(r) ~= "table" or not r.ok then
-      return nil, "the desktop would not share its screen: "
-                  .. tostring(type(r) == "table" and r.error or r)
-    end
-
-    screen.watching = true
+    if not ok then return nil, why end
   end
 
   return screen
-end
-
--- The rectangles that changed since last asked, as `x, y, w, h` lists; nil
--- when the window manager has let the region go.
-local function changed()
-  local r = fs.send(REMOTE, { type = "watched" })
-
-  if type(r) ~= "table" or not r.ok or type(r.rects) ~= "string" then
-    screen.watching = false
-    return nil
-  end
-
-  local list = {}
-
-  for at = 1, #r.rects - 7, 8 do
-    local x, y, w, h = string.unpack(">I2I2I2I2", r.rects, at)
-    list[#list + 1] = { x, y, w, h }
-  end
-
-  return list
 end
 
 --------------------------------------------------------------------------
@@ -411,7 +330,7 @@ local function close(at, why)
   local v = viewers[at]
 
   if v.stage == "normal" then
-    note(dotted(v.from) .. "  " .. (why or "left"))
+    net:note(ipv4.text(v.from) .. "  " .. (why or "left"))
   end
 
   v.conn:close()
@@ -426,6 +345,22 @@ local function open(conn, from)
 
   viewers[#viewers + 1] = v
   send(v, "RFB 003.003\n")
+end
+
+-- A Disconnect from the Servers window: that address's viewers dropped,
+-- whatever they were still owed.
+local function disconnect(from)
+  local ended = 0
+
+  for _, v in ipairs(viewers) do
+    if ipv4.text(v.from) == from then
+      v.leaving = "disconnected from this machine"
+      v.out, v.queued, v.job = {}, 0, nil
+      ended = ended + 1
+    end
+  end
+
+  return ended
 end
 
 -- A rectangle list kept short: past sixty-four, one rectangle round them.
@@ -542,7 +477,7 @@ local function take(v)
       v.control = control
 
       if pass and not challenge() then
-        note(dotted(v.from) .. "  refused: a password is kept and this machine "
+        net:note(ipv4.text(v.from) .. "  refused: a password is kept and this machine "
              .. "has no randomness to ask it with")
         send(v, string.pack(">I4", 0) .. string.pack(">s4", "no randomness for a challenge"))
         return false, "no randomness"
@@ -566,7 +501,7 @@ local function take(v)
 
       if answer ~= v.expect then
         send(v, string.pack(">I4", 1))
-        note(dotted(v.from) .. "  refused, the wrong password")
+        net:note(ipv4.text(v.from) .. "  refused, the wrong password")
         return false, "the wrong password"
       end
 
@@ -580,16 +515,16 @@ local function take(v)
       local s, err = watch()
 
       if not s then
-        note(dotted(v.from) .. "  refused: " .. err)
+        net:note(ipv4.text(v.from) .. "  refused: " .. err)
         return false, err
       end
 
-      local name = "Kosmos at " .. dotted((fs.net_info("/Network") or info).address)
+      local name = "Kosmos at " .. net:address()
 
       send(v, string.pack(">I2I2", s.w, s.h) .. format_bytes(NATIVE)
               .. string.pack(">s4", name))
       v.stage = "normal"
-      note(dotted(v.from) .. "  connected")
+      net:note(ipv4.text(v.from) .. "  connected")
       publish()
     else
       if #inb < 1 then return true end
@@ -701,7 +636,7 @@ while true do
     if v.want then eager = true end
   end
 
-  local ready, arrived = fs.poll("/Network", reading, writing, listener,
+  local ready, arrived = fs.poll("/Network", reading, writing, net.listener,
                                  eager and EAGER or IDLE)
 
   if not ready then
@@ -709,15 +644,11 @@ while true do
     break
   end
 
+  -- A viewer, from this network; anybody else was turned away.
   if arrived then
-    local conn, from = fs.accept("/Network", listener, 1)
+    local conn, from = net:accept(1)
 
-    if conn and not neighbour(from) then
-      note(dotted(from) .. "  refused, not on this network")
-      conn:close()
-    elseif conn then
-      open(conn, from)
-    end
+    if conn then open(conn, from) end
   end
 
   -- What changed on the screen, to everybody who has seen it. **This is
@@ -732,12 +663,12 @@ while true do
   end
 
   if anybody and screen then
-    local list = screen.watching and changed()
+    local list = screen.watching and wmproto.watched(screen)
 
     if not list then
       -- Let go while nobody asked; watched again, and the whole screen
       -- comes with it.
-      if watch() then list = changed() end
+      if watch() then list = wmproto.watched(screen) end
     end
 
     for _, r in ipairs(list or {}) do
@@ -760,7 +691,7 @@ while true do
 
     -- What the viewer did, to the desktop, in the order it did it.
     for i = 1, #v.input do
-      fs.send(REMOTE, v.input[i])
+      fs.send(wmproto.REMOTE, v.input[i])
       v.input[i] = nil
     end
 
@@ -795,25 +726,7 @@ while true do
   end
 
   -- A request from the Servers window: end an address's viewers.
-  while control do
-    local req, who = sys.receive(control, true)
-
-    if not req then break end
-
-    local ended = 0
-
-    if type(req) == "table" and req.type == "disconnect" then
-      for _, v in ipairs(viewers) do
-        if dotted(v.from) == tostring(req.from) then
-          v.leaving = "disconnected from this machine"
-          v.out, v.queued, v.job = {}, 0, nil
-          ended = ended + 1
-        end
-      end
-    end
-
-    pcall(sys.reply, who, { ok = ended > 0, ended = ended })
-  end
+  net:disconnects(disconnect)
 end
 
 for at = #viewers, 1, -1 do close(at) end

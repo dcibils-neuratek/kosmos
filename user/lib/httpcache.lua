@@ -52,25 +52,20 @@ local cache = {}
 
 local DAY = 86400
 
+-- The folder made by the file library, and the calendar is the clock's:
+-- each was a copy of its own here.
+local files = use("/Kosmos/Libraries/files.lua")
+local clock = use("/Kosmos/Libraries/clock.lua")
+
 --------------------------------------------------------------------------
 -- HTTP's dates: "Sun, 06 Nov 1994 08:49:37 GMT", which servers send, and
 -- the two older forms a reader must still take (RFC 9110 5.6.7).
 --------------------------------------------------------------------------
 
-local MONTHS = { jan = 1, feb = 2, mar = 3, apr = 4, may = 5, jun = 6,
-                 jul = 7, aug = 8, sep = 9, oct = 10, nov = 11, dec = 12 }
+-- A month by the three letters `clock.MONTHS` writes it in, in any case.
+local MONTHS = {}
 
--- Days from 1 January 1970 to a date: Howard Hinnant's `days_from_civil`.
-local function days(y, m, d)
-  y = m <= 2 and y - 1 or y
-
-  local era = (y >= 0 and y or y - 399) // 400
-  local yoe = y - era * 400
-  local doy = (153 * (m + (m > 2 and -3 or 9)) + 2) // 5 + d - 1
-  local doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
-
-  return era * 146097 + doe - 719468
-end
+for i, name in ipairs(clock.MONTHS) do MONTHS[name:lower()] = i end
 
 -- Seconds since 1970 for an HTTP date, or nil for one that is not.
 function cache.date(text)
@@ -98,7 +93,7 @@ function cache.date(text)
 
   if not month then return nil end
 
-  return days(tonumber(y), month, tonumber(d)) * DAY
+  return clock.days(tonumber(y), month, tonumber(d)) * DAY
          + tonumber(hh) * 3600 + tonumber(mm) * 60 + tonumber(ss)
 end
 
@@ -267,15 +262,7 @@ end
 function Store:make()
   if self.made then return true end
 
-  local at = ""
-
-  for part in self.dir:gmatch("[^/]+") do
-    at = at .. "/" .. part
-
-    if not fs.getattr(at) then fs.send(at, { type = "mkdir" }) end
-  end
-
-  self.made = fs.getattr(self.dir) ~= nil
+  self.made = files.make_folder(self.dir) == true
   return self.made
 end
 

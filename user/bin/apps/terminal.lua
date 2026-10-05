@@ -42,6 +42,7 @@
 --------------------------------------------------------------------------
 
 local ui = use("/Kosmos/Libraries/ui.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 -- Where this window is. A shell's working directory belongs to the shell,
 -- never to a server: a server is always told a whole path and knows nothing
@@ -337,16 +338,10 @@ local function launch(text)
   -- The rest are here for the same reason: they are about where you are,
   -- which is a fact this window owns.
   --------------------------------------------------------------------------
+  -- A path typed, from where this window is: `files.abs`, which takes `.`
+  -- and `..` anywhere in it, where this took them only alone.
   local function resolve(p)
-    if not p or p == "" then return cwd end
-    if p:sub(1, 1) == "/" then return p end
-    if p == "." then return cwd end
-
-    if p == ".." then
-      return cwd:match("^(.*)/[^/]+$") or "/"
-    end
-
-    return (cwd == "/" and "/" or cwd .. "/") .. p
+    return files.abs(p, cwd)
   end
 
   if name == "cd" then

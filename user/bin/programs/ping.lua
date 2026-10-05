@@ -22,35 +22,20 @@
 -- times wrong on the other.
 
 --
--- An address, from four numbers to four bytes.
+-- An address, between four numbers and four bytes.
 --
--- Written here rather than in the kit because text is a *presentation*: the
--- protocol carries four bytes in the order they go on the wire, and how a
--- person writes them is this program's business. The same division `gfx`
--- draws by taking a colour and not a colour name.
+-- Not in the kit, because text is a *presentation*: the protocol carries
+-- four bytes in the order they go on the wire, and how a person writes them
+-- is the program's business. The same division `gfx` draws by taking a
+-- colour and not a colour name. Every program that writes one shares
+-- `ipv4.lua` for it, which began as this file's.
 --
-local function address(text)
-  local a, b, c, d = tostring(text or ""):match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
-
-  if not a then return nil end
-
-  a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
-
-  if a > 255 or b > 255 or c > 255 or d > 255 then return nil end
-
-  return string.char(a, b, c, d)
-end
+local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
 
 -- The two refusals worth telling apart, by the numbers `netproto.h` gives
 -- them. Named here rather than reached through the kit, because this program
 -- does not load the kit - the namespace does.
 local ERR_NO_ROUTE, ERR_UNREACHABLE = 3, 4
-
-local function dotted(bytes)
-  if type(bytes) ~= "string" or #bytes ~= 4 then return "?" end
-
-  return ("%d.%d.%d.%d"):format(bytes:byte(1, 4))
-end
 
 --------------------------------------------------------------------------
 
@@ -86,10 +71,10 @@ local words = {}
 
 for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
 
-local target = words[1] and address(words[1]) or info.gateway
+local target = words[1] and ipv4.bytes(words[1]) or info.gateway
 local count = tonumber(words[2] or words[1]) or 4
 
-if words[1] and not address(words[1]) and not tonumber(words[1]) then
+if words[1] and not ipv4.bytes(words[1]) and not tonumber(words[1]) then
   print("ping: " .. words[1] .. " is not an address this understands")
   print("      four numbers and three dots. `host " .. words[1]
         .. "` looks a name up.")
@@ -107,8 +92,8 @@ end
 --
 local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
-print(("PING %s from %s, 56 bytes"):format(dotted(target),
-                                           dotted(info.address)))
+print(("PING %s from %s, 56 bytes"):format(ipv4.text(target),
+                                           ipv4.text(info.address)))
 
 --
 -- Fifty-six bytes, which is what every other ping sends.
@@ -140,7 +125,7 @@ for seq = 1, count do
     worst = (not worst or us > worst) and us or worst
 
     print(("%d bytes from %s: seq=%d ttl=%d time=%d.%03d ms")
-          :format(reply.bytes + 8, dotted(reply.from), reply.seq,
+          :format(reply.bytes + 8, ipv4.text(reply.from), reply.seq,
                   reply.ttl, us // 1000, us % 1000))
   elseif err == ERR_UNREACHABLE then
     print(("seq=%d: no answer"):format(seq))
@@ -157,7 +142,7 @@ for seq = 1, count do
 end
 
 print("")
-print(("--- %s ping statistics ---"):format(dotted(target)))
+print(("--- %s ping statistics ---"):format(ipv4.text(target)))
 print(("%d sent, %d received, %d%% lost")
       :format(sent, got, (sent > 0) and ((sent - got) * 100 // sent) or 0))
 

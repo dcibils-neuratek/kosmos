@@ -51,7 +51,13 @@ function fs.write(path, data)
 end
 
 function fs.send(path, msg)
-  if msg.type == "mkdir" then dirs[path] = true end
+  -- One folder, in one that is there, as a filesystem makes them.
+  if msg.type == "mkdir" then
+    if not dirs[path:match("^(.*)/[^/]+$")] then return nil, "no such folder" end
+
+    dirs[path] = true
+  end
+
   return true
 end
 

@@ -1833,8 +1833,9 @@ replaced one at a time or all as one step to undo.
 **`ui.segments`** is two or three words in one box with one chosen - Text
 Editor's `Text | Markdown`: the dropdown's box divided by its rule, the
 chosen word on a quiet fill in the text's colour and the others dim.
-`ui.draw_scrollbar` is the kit's pill, exported for a view that scrolls by
-something other than rows.
+`ui.scrollbar` is the kit's pill, exported for a view that scrolls by
+something other than rows (it was also `ui.draw_scrollbar` until 5 October
+2026, one function under two names).
 
 **Styled, with `style = mdstyle.line`** (6zs step 2): a line is read as a
 kind - a heading, an item, a checklist item, a quotation, code - with the

@@ -27,27 +27,13 @@ local function trimmed(s)
 end
 
 --
--- A size the way a person reads one: gigabytes with a decimal past one, and
--- megabytes below. Powers of 1024, as `df` and Tracker count.
---
-function drivelist.size(bytes)
-  bytes = bytes or 0
-
-  if bytes >= 1024 * 1024 * 1024 then
-    return ("%.1f GB"):format(bytes / (1024 * 1024 * 1024))
-  end
-
-  if bytes >= 1024 * 1024 then
-    return ("%d MB"):format(bytes // (1024 * 1024))
-  end
-
-  return ("%d KB"):format((bytes + 1023) // 1024)
-end
-
---
 -- The drives, sticks first by the number the USB driver gave them, then the
 -- machine's own. Each is { kind, name, bytes, unit, volumes, unclaimed },
 -- `volumes` in partition order, `unclaimed` what no volume accounts for.
+--
+-- In bytes, said to a person by `files.size` as every size is. This had a
+-- second way of saying one, a decimal past a gigabyte where that one has a
+-- decimal under ten.
 --
 function drivelist.drives()
   local out = {}

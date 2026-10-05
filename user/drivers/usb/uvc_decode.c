@@ -8,6 +8,10 @@
 
 #include <string.h>
 
+/* `user/include/bytes.h`, by its path from here: the host test compiles this
+ * file with no include path for it. USB is little-endian throughout. */
+#include "../../include/bytes.h"
+
 /* Descriptor types (USB 2.0 9.4, UVC 1.1 A.4). */
 #define DESC_CONFIGURATION  0x02
 #define DESC_INTERFACE      0x04
@@ -36,31 +40,6 @@ static const uint8_t YUY2[16] = {
     0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
 };
 
-static uint16_t le16(const uint8_t *p)
-{
-    return (uint16_t)(p[0] | (p[1] << 8));
-}
-
-static uint32_t le32(const uint8_t *p)
-{
-    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16)
-         | ((uint32_t)p[3] << 24);
-}
-
-static void put16(uint8_t *p, uint16_t v)
-{
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-}
-
-static void put32(uint8_t *p, uint32_t v)
-{
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-    p[2] = (uint8_t)(v >> 16);
-    p[3] = (uint8_t)(v >> 24);
-}
-
 /*
  * A frame descriptor, uncompressed or MJPEG - the two lay out the same as
  * far as this reads (UVC 1.1 Payload Uncompressed 3.1.2, Payload MJPEG
@@ -87,24 +66,24 @@ static void add_frame(struct uvc_camera *out, const uint8_t *d,
     f->format    = format;
     f->frame     = d[3];
     f->pixels    = pixels;
-    f->width     = le16(d + 5);
-    f->height    = le16(d + 7);
-    f->max_bytes = le32(d + 17);
-    f->interval  = le32(d + 21);
+    f->width     = get_le16(d + 5);
+    f->height    = get_le16(d + 7);
+    f->max_bytes = get_le32(d + 17);
+    f->interval  = get_le32(d + 21);
     f->fastest   = f->interval;
 
     kinds = d[25];
 
     if (kinds == 0) {
         /* Continuous: minimum, maximum, step. The minimum is the fastest. */
-        if (length >= 38 && le32(d + 26) != 0) {
-            f->fastest = le32(d + 26);
+        if (length >= 38 && get_le32(d + 26) != 0) {
+            f->fastest = get_le32(d + 26);
         }
         return;
     }
 
     for (k = 0; k < kinds && 26 + 4 * k + 4 <= length; k++) {
-        uint32_t t = le32(d + 26 + 4 * k);
+        uint32_t t = get_le32(d + 26 + 4 * k);
 
         if (t != 0 && t < f->fastest) {
             f->fastest = t;
@@ -179,7 +158,7 @@ void uvc_decode_config(const uint8_t *bytes, unsigned length,
             }
 
             if (in_control && d[2] == VC_HEADER && len >= 5) {
-                out->uvc = le16(d + 3);
+                out->uvc = get_le16(d + 3);
             } else if (in_streaming) {
                 switch (d[2]) {
                 case VS_FORMAT_UNCOMPRESSED:
@@ -222,7 +201,7 @@ void uvc_decode_config(const uint8_t *bytes, unsigned length,
 
         case DESC_ENDPOINT:
             if (in_streaming && len >= 7 && (d[2] & 0x80) != 0) {
-                uint16_t mps = le16(d + 4);
+                uint16_t mps = get_le16(d + 4);
                 unsigned type = d[3] & 3;
 
                 if (type == 1) {        /* isochronous */
@@ -349,15 +328,15 @@ void uvc_encode_probe(const struct uvc_probe *p, uint8_t *out,
         return;
     }
 
-    put16(out + 0, p->hint);
+    put_le16(out + 0, p->hint);
     out[2] = p->format;
     out[3] = p->frame;
-    put32(out + 4, p->interval);
-    put32(out + 18, p->max_frame);
-    put32(out + 22, p->max_payload);
+    put_le32(out + 4, p->interval);
+    put_le32(out + 18, p->max_frame);
+    put_le32(out + 22, p->max_payload);
 
     if (length >= 30) {
-        put32(out + 26, p->clock);
+        put_le32(out + 26, p->clock);
     }
 }
 
@@ -368,13 +347,13 @@ bool uvc_decode_probe(const uint8_t *bytes, unsigned length,
         return false;
     }
 
-    p->hint        = le16(bytes + 0);
+    p->hint        = get_le16(bytes + 0);
     p->format      = bytes[2];
     p->frame       = bytes[3];
-    p->interval    = le32(bytes + 4);
-    p->max_frame   = le32(bytes + 18);
-    p->max_payload = le32(bytes + 22);
-    p->clock       = length >= 30 ? le32(bytes + 26) : 0;
+    p->interval    = get_le32(bytes + 4);
+    p->max_frame   = get_le32(bytes + 18);
+    p->max_payload = get_le32(bytes + 22);
+    p->clock       = length >= 30 ? get_le32(bytes + 26) : 0;
 
     return true;
 }

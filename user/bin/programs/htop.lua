@@ -51,11 +51,8 @@ local STATE = { [0] = "unused", "ready", "running", "blocked", "dead" }
 --
 local BANDS = { [0] = "idle", "low", "normal", "display", "audio", "input" }
 
-local function meter(pct, width)
-  local filled = (pct * width) // 100
-  if filled > width then filled = width end
-  return "[" .. ("|"):rep(filled) .. ("."):rep(width - filled) .. "]"
-end
+-- A share as a bar of characters, as `monitor` draws one (`text.lua`).
+local meter = use("/Kosmos/Libraries/text.lua").meter
 
 -- Two samples, because a percentage is the difference between them.
 --

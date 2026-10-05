@@ -945,7 +945,7 @@ function docview.new(ui, spec)
       end
     end
 
-    self.bar = ui.draw_scrollbar(g, self.w, self.h, total, self.h, self.scroll + 1)
+    self.bar = ui.scrollbar(g, self.w, self.h, total, self.h, self.scroll + 1)
   end
 
   --------------------------------------------------------------------------

@@ -87,10 +87,6 @@ local FOOT_H    = 26               -- the status line, when there is one
 --
 local SIDE_W = 200
 
--- Nothing is offset by a menu bar any more. Kept as a name rather than
--- deleted at thirty call sites, and zero because there is no bar.
-local BAR_H = 0
-
 --
 -- `wm tracker:/bin icons` - a path, then the words that change how it opens.
 --
@@ -164,13 +160,9 @@ if backdrop then
   --
   where = "/Home/Desktop"
 
-  if not fs.getattr(where) then
-    local ok, why = fs.send(where, { type = "mkdir" })
+  local made, why = files.make_folder(where)
 
-    if not ok then
-      print("tracker: no desktop folder: " .. tostring(why))
-    end
-  end
+  if not made then print("tracker: no desktop folder: " .. tostring(why)) end
 
   --
   -- Three things the desktop always has, put back whenever they are missing.
@@ -211,11 +203,9 @@ if backdrop then
     if not ok then print("tracker: no Drive: " .. tostring(why)) end
   end
 
-  if not fs.getattr(files.TRASH) then
-    local ok, why = fs.send(files.TRASH, { type = "mkdir" })
+  made, why = files.make_folder(files.TRASH)
 
-    if not ok then print("tracker: no Trash: " .. tostring(why)) end
-  end
+  if not made then print("tracker: no Trash: " .. tostring(why)) end
 end
 
 --
@@ -225,13 +215,9 @@ end
 -- once somebody thinks to make it is a folder nobody makes.
 --
 for _, p in ipairs(placelib.STANDARD) do
-  if not fs.getattr(p.path) then
-    local ok, why = fs.send(p.path, { type = "mkdir" })
+  local made, why = files.make_folder(p.path)
 
-    if not ok then
-      print(("tracker: no %s: %s"):format(p.name, tostring(why)))
-    end
-  end
+  if not made then print(("tracker: no %s: %s"):format(p.name, tostring(why))) end
 end
 
 local win, err = ui.window{
@@ -590,14 +576,8 @@ local job_words = ui.label{ x = 0, y = H - FOOT_H + 4, w = 280, text = "",
 local stop_button = ui.button{ text = "Stop", h = FOOT_H - 4, hidden = true,
                                follow = { "right", "bottom" } }
 
--- A count as the drawing writes one: 1,204.
-local function grouped(n)
-  local out, more = tostring(math.floor(tonumber(n) or 0)), 0
-
-  repeat out, more = out:gsub("^(%d+)(%d%d%d)", "%1,%2") until more == 0
-
-  return out
-end
+-- A count as the drawing writes one: 1,204 (`text.lua`).
+local grouped = use("/Kosmos/Libraries/text.lua").grouped
 
 -- The foot's parts after the words that say what is happening.
 local function place_job()
@@ -2760,9 +2740,7 @@ end
 -- places are listed as they were pinned. What a drop and a Pin share.
 --
 local function write_place(name, attrs)
-  if not fs.getattr(placelib.DIR) then
-    fs.send(placelib.DIR, { type = "mkdir" })
-  end
+  files.make_folder(placelib.DIR)
 
   attrs.order = placelib.next_order(placelib.read(fs))
 

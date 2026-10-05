@@ -27,7 +27,7 @@
 -- Tracker shows for what it is and whose deletion brings the item back.
 
 local ui = use("/Kosmos/Libraries/ui.lua")
-local theme = ui.theme
+local files = use("/Kosmos/Libraries/files.lua")
 
 local path = tostring(args or ""):match("^%s*(%S+)")
 
@@ -74,19 +74,7 @@ end
 
 -- Its folders, made as they are needed: `/Home/Deskbar/Demos/GLDemos`.
 local function make_room(p)
-  local at = ""
-
-  for part in p:match("^(.*)/[^/]+$"):gmatch("[^/]+") do
-    at = at .. "/" .. part
-
-    if not fs.getattr(at) then
-      local ok, why = fs.send(at, { type = "mkdir" })
-
-      if not ok then return nil, why end
-    end
-  end
-
-  return true
+  return files.make_folder(files.parent(p))
 end
 
 --
@@ -312,7 +300,6 @@ function hide()
   local ok, why = make_room(mine)
 
   if ok and fs.getattr(mine) then
-    local files = use("/Kosmos/Libraries/files.lua")
     local kept = files.free_name(files.TRASH, name)
 
     ok, why = kept and files.move(mine, files.join(files.TRASH, kept))

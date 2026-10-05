@@ -38,6 +38,10 @@
 local mp4 = use("/Kosmos/Libraries/mp4.lua")
 local audio = use("/Kosmos/Libraries/audio.lua")
 local regions = use("/Kosmos/Libraries/regions.lua")
+-- The feeding of a stream (`media.feed`), which a film's sound shares with
+-- a song's. `media.lua` loads this file only once a film is opened, so it
+-- is loaded by then and this is the same one - `use` keeps one a process.
+local media = use("/Kosmos/Libraries/media.lua")
 
 local video = {}
 
@@ -299,7 +303,7 @@ local function open_voice(path, track, name)
     decode = decode, reset_decoder = reset, close_decoder = close,
     samples = track.samples or {}, scale = track.timescale or 1,
     next = 1, run_first = 0, run_last = -1, run_at = 0,
-    decoded = "", pending = "", phase = 0.0, rate = 0, channels = 0,
+    decoded = "", pending = "", phase = 0.0, rate = 0, channels = 0, bits = 16,
     base = 0, gain = nil, frames_out = 0, frames_in = 0,
   }, voice)
 end
@@ -375,96 +379,68 @@ function voice:sample_at(i)
 end
 
 --
--- Hand over what the server will take, and not a period more - `media.lua`'s
--- `tick`, over a film's frames instead of a file's bytes.
+-- **A film's source** for `media.feed`: its sound's frames, decoded one at a
+-- time out of the read buffer until there are a few periods of them. True
+-- once the track's last frame is in `decoded`; nil when the track is over
+-- and nothing of it is left to convert.
 --
-function voice:feed()
-  local stream, fmt = self.stream, self.fmt
+function voice:fill()
+  while #self.decoded < self.fmt.period * 4 and self.next <= #self.samples do
+    local at, n, offset = self:sample_at(self.next)
 
-  if not stream then return 0 end
-
-  local fed = 0
-
-  for _ = 1, FEED_MAX do
-    if #self.pending == 0 then
-      -- Enough decoded to make a few periods of, or the end.
-      while #self.decoded < fmt.period * 4 and self.next <= #self.samples do
-        local at, n, offset = self:sample_at(self.next)
-
-        if not at then
-          self.error = tostring(n)
-          self.next = #self.samples + 1
-          break
-        end
-
-        local bytes = nil
-
-        if self.track.object ~= 0x40 then
-          bytes = sys.region_read(self.page.cap, offset, n)
-        end
-
-        local pcm, rate, channels = self.decode(at, n, bytes)
-
-        self.next = self.next + 1
-
-        --
-        -- A frame that will not decode is passed over, as a damaged
-        -- picture is: a click in the sound, not the end of it.
-        --
-        if pcm and #pcm > 0 then
-          self.decoded = self.decoded .. pcm
-          self.rate, self.channels = rate, channels
-          self.frames_in = self.frames_in + #pcm // (2 * channels)
-        elseif not pcm then
-          self.error = tostring(rate)
-        end
-      end
-
-      if self.next > #self.samples and #self.decoded < 4 then
-        self.fed_all = true
-        break
-      end
-
-      --
-      -- The end of the track is the end of the input, so its final frame
-      -- comes out rather than waiting for a neighbour (`sys.pcm`'s `last`)
-      -- - and one frame is then enough to convert, where two are needed
-      -- while there is more to come. Both halves were missing: the last
-      -- sample of a film never played (`testing.md` 18.185).
-      --
-      local last = self.next > #self.samples
-
-      if self.rate == 0
-         or #self.decoded < self.channels * 2 * (last and 1 or 2) then
-        break
-      end
-
-      local pcm, used
-      pcm, used, self.phase = sys.pcm(self.decoded, self.rate, self.channels,
-                                      16, self.phase, fmt.period * 4, last)
-
-      if used == 0 or #pcm == 0 then
-        if self.next > #self.samples then
-          self.fed_all = true
-          self.decoded = ""
-        end
-        break
-      end
-
-      self.decoded = self.decoded:sub(used + 1)
-      self.pending = pcm
-      self.frames_out = self.frames_out + #pcm // 4
-    end
-
-    local took, why = stream:play(self.pending:sub(1, fmt.period))
-
-    if not took then
-      if why ~= "full" then self.error = tostring(why) end
+    if not at then
+      self.error = tostring(n)
+      self.next = #self.samples + 1
       break
     end
 
-    self.pending = self.pending:sub(fmt.period + 1)
-    fed = fed + 1
+    local bytes = nil
+
+    if self.track.object ~= 0x40 then
+      bytes = sys.region_read(self.page.cap, offset, n)
+    end
+
+    local pcm, rate, channels = self.decode(at, n, bytes)
+
+    self.next = self.next + 1
+
+    --
+    -- A frame that will not decode is passed over, as a damaged picture
+    -- is: a click in the sound, not the end of it.
+    --
+    if pcm and #pcm > 0 then
+      self.decoded = self.decoded .. pcm
+      self.rate, self.channels = rate, channels
+      self.frames_in = self.frames_in + #pcm // (2 * channels)
+    elseif not pcm then
+      self.error = tostring(rate)
+    end
+  end
+
+  if self.next > #self.samples and #self.decoded < 4 then
+    self.fed_all = true
+    return nil
+  end
+
+  return self.next > #self.samples
+end
+
+--
+-- Hand over what the server will take, and not a period more - the same
+-- `media.feed` a song is played by, over a film's frames instead of a
+-- file's bytes.
+--
+function voice:feed()
+  if not self.stream then return 0 end
+
+  local fed, why, dry = media.feed(self, FEED_MAX, voice.fill)
+
+  if why and why ~= "full" then self.error = why end
+
+  -- Nothing left would convert, at the end of the track: it is all out.
+  if dry and self.next > #self.samples then
+    self.fed_all = true
+    self.decoded = ""
   end
 
   return fed
@@ -1127,7 +1103,7 @@ function film:pointer(px, py, x, y, w, h)
   if not self.debuginfo then return false end
 
   x, y = x or 0, y or 0
-  w, h = w or self.width, h or self.height
+  w = w or self.width          -- the badge is in the top right; `h` is not needed
 
   local bx, by = x + w - 8 - BADGE // 2, y + 8 + BADGE // 2
   local dx, dy = px - bx, py - by

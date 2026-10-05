@@ -21,13 +21,14 @@
 -- exactly one way a change reaches the sound.
 --
 -- The rest is PulseMusic's, unchanged in meaning: the song model, the
--- automation lanes and their resting values, saving and loading.
+-- automation lanes and their resting values, saving and loading - a project
+-- kept as every table is now, and PulseMusic's form still read.
 
 local P = use("/Kosmos/Libraries/groove/presets.lua")
 local synth = use("/Kosmos/Kits/synth")
 
 local E = {}
-local floor, min, max = math.floor, math.min, math.max
+local floor, max = math.floor, math.max
 
 E.NT, E.NS, E.SR = 8, 8, 44100
 
@@ -444,38 +445,61 @@ function E.export(path)
 end
 
 ---------------------------------------------------------------- persistence
-local function ser(v)
-  local t = type(v)
-  if t == "table" then
-    local keys = {}
-    for k in pairs(v) do keys[#keys + 1] = k end
-    table.sort(keys, function(a, b)
-      if type(a) == type(b) then return a < b end
-      return type(a) == "number"
-    end)
-    local out = {}
-    for _, k in ipairs(keys) do
-      local ks = type(k) == "number" and ("[" .. k .. "]") or ("[" .. string.format("%q", k) .. "]")
-      out[#out + 1] = ks .. "=" .. ser(v[k])
-    end
-    return "{" .. table.concat(out, ",") .. "}"
-  elseif t == "string" then return string.format("%q", v)
-  else return tostring(v) end
-end
-
-E.serialize = ser
-
+--
+-- **A project is a table, kept as every table a program keeps is**
+-- (`design.md` 8.3e): `fs.write` writes it as Lua's table syntax under
+-- `-- kosmos: table`, and `fs.read` reads it back as values only. It was
+-- PulseMusic's `return { ... }`, written out here and read by handing it to
+-- `load` - a project file was a program, which is what 8.3e says a file a
+-- person keeps may not be.
+--
 function E.save(path)
-  return fs.write(path, "return " .. ser(E.song))
+  return fs.write(path, E.song)
 end
 
--- A project PulseMusic saved reads here too: the same `return { ... }`,
--- run with nothing in its world, as text and never as bytecode.
-function E.parse(src, name)
-  local chunk, err = load(src, name or "project", "t", {})
-  if not chunk then return nil, err end
-  local ok, song = pcall(chunk)
-  if not ok or type(song) ~= "table" or type(song.tracks) ~= "table" then
+--
+-- **A project in the old form** - `return { ... }`, as PulseMusic wrote it
+-- and Groove did until 5 October 2026 - read the same way: the table after
+-- `return`, as values, and never run. That form was only ever values, so a
+-- project saved by either still opens; one that is more than values - a
+-- name, a call - is refused with the line it stopped at.
+--
+local function old_form(text)
+  local body = text:match("^%s*return(.*)$")
+
+  if not body then return nil, "not a Groove project" end
+
+  local song, why = tabletext.decode(tabletext.MARK .. "\n" .. body)
+
+  if not song then
+    -- The mark is a line of its own here and not in the file.
+    local line, what = tostring(why):match("^line (%d+): (.*)$")
+
+    return nil, ("an older Groove project that is more than values, and is "
+                 .. "not run to be read: line %s, %s"):format(line and (tonumber(line) - 1)
+                                                               or "?", what or why)
+  end
+
+  return song
+end
+
+--
+-- **What `fs.read` gave, as a song**: a table - the form a project is
+-- written in - or the text of an old one; nil and why for anything else.
+-- Every track is there, and what a song may leave out is filled in.
+--
+function E.project(got)
+  local song = got
+
+  if type(got) == "string" then
+    local why
+
+    song, why = old_form(got)
+
+    if not song then return nil, why end
+  end
+
+  if type(song) ~= "table" or type(song.tracks) ~= "table" then
     return nil, "not a Groove project"
   end
   for i = 1, E.NT do
@@ -489,9 +513,10 @@ function E.parse(src, name)
 end
 
 function E.load(path)
-  local src = fs.read(path)
-  if type(src) ~= "string" then return false, "no saved project yet" end
-  local song, err = E.parse(src, path)
+  if not fs.getattr(path) then return false, "no saved project yet" end
+  local got, why = fs.read(path)
+  if got == nil then return false, tostring(why) end
+  local song, err = E.project(got)
   if not song then return false, err end
   E.setSong(song)
   return true

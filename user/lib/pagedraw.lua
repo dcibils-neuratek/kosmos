@@ -28,11 +28,14 @@ local pagedraw = {}
 local Drawer = {}
 Drawer.__index = Drawer
 
--- `#rrggbb` as the surface's 0xAARRGGBB.
+-- `#rrggbb` as the surface's 0xAARRGGBB - and Kosmos Write's, whose
+-- swatches show a document's colours as the page draws them.
 local function argb(colour)
   local n = tonumber((colour or "#000000"):sub(2), 16) or 0
   return 0xff000000 | n
 end
+
+pagedraw.argb = argb
 
 --
 -- `pictures(name)`, when a document has pictures (W5), gives a picture's

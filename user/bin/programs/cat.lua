@@ -16,9 +16,8 @@ local name = args:match("^%s*(%S+)")
 
 -- Relative to where the caller was, which arrives with the request. The
 -- working directory is the shell's idea; a server is always told a whole
--- path and knows nothing about it.
-local path = name and (name:sub(1, 1) == "/" and name
-                       or ((cwd == "/" and "/" or cwd .. "/") .. name))
+-- path and knows nothing about it (`files.abs`).
+local path = name and use("/Kosmos/Libraries/files.lua").abs(name, cwd)
 
 if not path then
   print("usage: cat <path>")

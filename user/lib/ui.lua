@@ -324,7 +324,7 @@ function gc:text(x, y, s, color, bg, role, px)
   --
   if ax < self.cx then
     local want = self.cx - ax
-    local bytes, wide = fits(s, face, want)
+    local bytes = fits(s, face, want)
 
     if bytes == nil then
       -- Not valid UTF-8, which a browser will hand over on purpose. The
@@ -772,10 +772,20 @@ end
 
 ui.SCROLL_W = SCROLL_W
 
--- The pill itself, for a view that scrolls by something other than rows -
--- Text Editor's page, in pixels (`/Kosmos/Libraries/docview.lua`). The
--- same numbers `ui.scrollbar_mouse` takes, so the two agree.
-ui.draw_scrollbar = draw_scrollbar
+--
+-- **The pill, for a view of its own**: `ui.scrollbar(g, w, h, total, shown,
+-- top)` draws it and says whether there was one to draw, and
+-- `ui.scrollbar_mouse` below takes the same numbers, so the two agree - for
+-- a list that scrolls by rows (Processes, Log View) and for a view that
+-- scrolls by something else, the browser's page and Text Editor's in
+-- pixels.
+--
+-- **One function, which had two names** until 5 October 2026: `ui.scrollbar`
+-- and `ui.draw_scrollbar`, given out in two places for the same thing, so a
+-- reader met both and could not tell they were one. `ui.scrollbar` is its
+-- name, beside `ui.scrollbar_mouse`.
+--
+ui.scrollbar = draw_scrollbar
 
 --
 -- The whole interaction, in one place.
@@ -855,8 +865,6 @@ function ui.scrollbar_mouse(w_, action, x, y, w, h, total, shown, top)
 
   return top
 end
-
-ui.scrollbar = draw_scrollbar
 
 --------------------------------------------------------------------------
 -- A processor meter, drawn the way BeOS drew one.
@@ -2197,32 +2205,30 @@ end
 -- of a long address does not shuffle what is shown, and walked back again
 -- when the text gets shorter. On character boundaries, never inside one.
 --
-local function field_next(text, i)
-  i = i + 1
-
-  while i <= #text and (text:byte(i) & 0xC0) == 0x80 do i = i + 1 end
-
-  return i
+-- Where the character after the one at `i` starts, and the one before it:
+-- backwards is Lua's own `utf8.offset`, which never refuses; forwards it
+-- would refuse to start inside a character, and a field can be handed
+-- bytes that are not UTF-8 - so forwards is the next byte that does not
+-- continue one, which is the same question asked of the bytes themselves.
+--
+local function char_after(text, i)
+  return text:find("[^\128-\191]", i + 1) or #text + 1
 end
 
-local function field_prev(text, i)
-  i = i - 1
-
-  while i > 1 and (text:byte(i) & 0xC0) == 0x80 do i = i - 1 end
-
-  return i
+local function char_before(text, i)
+  return (i > 1) and utf8.offset(text, 0, i - 1) or 0
 end
 
 local function field_from(self, room)
   local text, caret = self.text, self.caret
   local from = math.max(1, math.min(self.from or 1, caret))
 
-  while from > 1 and gfx.measure(text:sub(field_prev(text, from), caret - 1)) <= room do
-    from = field_prev(text, from)
+  while from > 1 and gfx.measure(text:sub(char_before(text, from), caret - 1)) <= room do
+    from = char_before(text, from)
   end
 
   while from < caret and gfx.measure(text:sub(from, caret - 1)) > room do
-    from = field_next(text, from)
+    from = char_after(text, from)
   end
 
   self.from = from
@@ -2378,11 +2384,14 @@ function ui.field(spec)
       end
     end
 
+    -- A character, not a byte: a paste can put UTF-8 in a field, and
+    -- taking one byte of `é` left half of it behind to draw as rubbish.
     if c == 8 or c == 127 then
       if self.caret > 1 then
-        self.text = self.text:sub(1, self.caret - 2)
-                    .. self.text:sub(self.caret)
-        self.caret = self.caret - 1
+        local at = char_before(self.text, self.caret)
+
+        self.text = self.text:sub(1, at - 1) .. self.text:sub(self.caret)
+        self.caret = at
         changed(self)
       end
       return true
@@ -2482,7 +2491,7 @@ function ui.field(spec)
       local at = from
 
       while at <= #self.text do
-        local after = field_next(self.text, at)
+        local after = char_after(self.text, at)
         local left = gfx.measure(self.text:sub(from, at - 1))
         local right = gfx.measure(self.text:sub(from, after - 1))
 
@@ -3248,12 +3257,8 @@ function ui.header(spec)
       --
       local room = (self.room or self.w) - x
 
-      if gfx.measure(sub) > room then
-        local n = fits(sub, nil, room - gfx.measure("..."))
-        sub = n and (sub:sub(1, n) .. "...") or ""
-      end
-
-      g:text(x, (L.head - 1 - gfx.height()) // 2, sub, theme.text_dim)
+      g:text(x, (L.head - 1 - gfx.height()) // 2, ui.fitted(sub, room),
+             theme.text_dim)
     end
   end
 
@@ -3328,24 +3333,101 @@ end
 -- **Words cut to fit `room`**, ending in `...` when they were cut - never in
 -- the middle of a UTF-8 character, because a FAT long name arrives as UTF-8
 -- and half a character draws as rubbish. `role` is the face they are drawn
--- in. From `panel.lua`, where it began, for Info's paths as well.
+-- in, a role's name or a face `ui.sized` gave: a window that draws its own
+-- pixels with `s:text` in a face measures in it here, and fits. From
+-- `panel.lua`, where it began, for Info's paths as well.
 --
-function ui.fitted(text, room, role)
+-- `keep_end` cuts at the start instead, `...` first: the end of a path is
+-- the file's own name, which is the part somebody is reading the column for.
+--
+-- **The one way words are cut to a width** (`roadmap.md`, *One kit, one
+-- door*). It was written again by hand in eight places - the browser's
+-- tabs and status line, Cafesa3D's script, the Deskbar's buttons, the
+-- launcher pad, Processes, the IDE, Kosmos Write, the pixel kit - and most
+-- of those cut a byte at a time, which is inside a character as often as
+-- not.
+--
+-- Cut by `fits`'s halving where the words are UTF-8, so a long address
+-- costs a handful of measurements rather than one per character; words
+-- that are not UTF-8, which a browser hands over on purpose, a character
+-- at a time from the end, where `utf8.offset` says each starts. This used
+-- to take a byte and then the whole character before it as well when that
+-- one was more than a byte, so a name could lose a letter it had room for.
+--
+function ui.fitted(text, room, role, keep_end)
   text = tostring(text or "")
 
-  if gfx.measure(text, role) <= room then return text end
+  if text == "" or gfx.measure(text, role) <= room then return text end
 
-  while #text > 1 and gfx.measure(text .. "...", role) > room do
-    text = text:sub(1, -2)
+  local budget = room - gfx.measure("...", role)
 
-    while #text > 1 and text:byte(-1) >= 0x80 and text:byte(-1) < 0xC0 do
-      text = text:sub(1, -2)
+  if keep_end then
+    local from = 1
+
+    while from <= #text and gfx.measure(text:sub(from), role) > budget do
+      from = char_after(text, from)
     end
 
-    if #text > 0 and text:byte(-1) >= 0xC0 then text = text:sub(1, -2) end
+    return "..." .. text:sub(from)
   end
 
-  return text .. "..."
+  local bytes = fits(text, role, budget)
+
+  if not bytes then
+    bytes = #text
+
+    while bytes > 0 and gfx.measure(text:sub(1, bytes), role) > budget do
+      bytes = utf8.offset(text, 0, bytes) - 1
+    end
+  end
+
+  -- Not "three ...": a cut that lands after a word ends at the word.
+  return (text:sub(1, bytes):gsub("%s+$", "")) .. "..."
+end
+
+--
+-- **Words in lines no wider than `room`**, broken where they have spaces -
+-- a note under a card, a notification's body, the help beside a
+-- suggestion. A word wider than a line on its own is a line of its own,
+-- `ui.fitted` to it rather than running on past the edge. With `most`, at
+-- most that many lines, the last cut with `...` when there was more.
+--
+-- One function for what Notifications, the IDE, Cafesa3D and `ui.cards`
+-- each wrote for themselves, the same loop four times - and About counted
+-- characters for it - where Cafesa3D's left a blank line when its first word
+-- was the wide one.
+--
+-- A list of strings; none when there are no words.
+--
+function ui.wrapped(text, room, role, most)
+  local lines, line = {}, ""
+
+  for word in tostring(text or ""):gmatch("%S+") do
+    local try = (line == "") and word or (line .. " " .. word)
+
+    if line == "" or gfx.measure(try, role) <= room then
+      line = try
+    else
+      lines[#lines + 1] = line
+      line = word
+    end
+  end
+
+  if line ~= "" then lines[#lines + 1] = line end
+
+  if most and #lines > most then
+    local more = lines[most] .. " " .. lines[most + 1]
+
+    for i = #lines, most, -1 do lines[i] = nil end
+
+    lines[most] = ui.fitted(more, room, role)
+  end
+
+  for i, l in ipairs(lines) do
+    if gfx.measure(l, role) > room then lines[i] = ui.fitted(l, room, role) end
+  end
+
+  return lines
 end
 
 --
@@ -3482,30 +3564,13 @@ function ui.cards(spec)
     -- it did is the kind of thing this widget exists to prevent.
     --
     if self.foot and self.foot ~= "" then
-      local line, ly = "", y + 10
-      local step = gfx.height() + 3
+      local ly = y + 10
 
-      local function flush()
-        if line ~= "" then
-          self:add(ui.label{ x = cx + 3, y = ly, w = width - 3, text = line,
-                             color = theme.text_dim, role = "ui" })
-          ly = ly + step
-          line = ""
-        end
+      for _, line in ipairs(ui.wrapped(self.foot, width - 3, "ui")) do
+        self:add(ui.label{ x = cx + 3, y = ly, w = width - 3, text = line,
+                           color = theme.text_dim, role = "ui" })
+        ly = ly + gfx.height() + 3
       end
-
-      for word in tostring(self.foot):gmatch("%S+") do
-        local try = (line == "") and word or (line .. " " .. word)
-
-        if line ~= "" and gfx.measure(try) > width - 3 then
-          flush()
-          line = word
-        else
-          line = try
-        end
-      end
-
-      flush()
     end
 
     self.built_w = self.w

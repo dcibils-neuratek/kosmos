@@ -182,7 +182,6 @@ end
 local player, cover_name
 local folded = false
 local shuffled, repeating = false, false
-local status = trouble or "nothing loaded"
 
 local function unload()
   if player then player:close() end
@@ -233,7 +232,6 @@ end
 -- and the pacing is written where the tick loop is.
 --
 local pace
-local bar
 
 local function load(i)
   local t = tracks[i]
@@ -244,12 +242,12 @@ local function load(i)
 
   local p, why = media.open(FOLDER .. "/" .. t.file)
 
-  if not p then status = tostring(why) return end
+  -- Said where `trouble` is said. It was kept in a `status` nothing drew.
+  if not p then print("music: " .. t.file .. ": " .. tostring(why)) return end
 
   player = p
   chosen = i
   cover_for(i)
-  status = nil
   player:play()
 
   -- **Awake often enough to feed the server.** Without this the window went
@@ -332,11 +330,6 @@ local function draw_queue(g, x, y, s, colour)
   end
 end
 
-local function draw_mini(g, x, y, s, colour)
-  g:frame(x, y, s, s * 0.8, colour)
-  g:fill(x + 2, y + s * 0.5, s - 4, s * 0.3 - 2, colour)
-end
-
 --------------------------------------------------------------------------
 -- What is playing, across the top.
 --------------------------------------------------------------------------
@@ -361,11 +354,8 @@ local function right_of(width, s)
   return width - PAD - (math.ceil(wide / cell) + 1) * cell
 end
 
-local function clock(secs)
-  local whole = math.floor(secs or 0)
-
-  return ("%d:%02d"):format(whole // 60, whole % 60)
-end
+-- A song's place and length as a player shows them, 3:07 (`clock.lua`).
+local duration = use("/Kosmos/Libraries/clock.lua").duration
 
 local now = ui.view{ x = 0, y = 0, w = W, h = SEEK_Y + 12 }
 
@@ -432,9 +422,9 @@ function now:draw(g)
   local at = player and player:position() or 0
   local total = (info and info.seconds) or 0
 
-  g:text(PAD, TIMES_Y + 4, clock(at), P.dim)
+  g:text(PAD, TIMES_Y + 4, duration(at), P.dim)
 
-  local remaining = "-" .. clock(math.max(0, total - at))
+  local remaining = "-" .. duration(math.max(0, total - at))
 
   g:text(right_of(self.w, remaining), TIMES_Y + 4, remaining, P.dim)
 
@@ -685,7 +675,7 @@ function ticker:tick()
   player:tick()
 
   if player.error then
-    status = player.error
+    print("music: " .. tostring(player.error))
     unload()
     pace()
     win:paint()
@@ -751,12 +741,9 @@ local function relayout(w, h)
   W, H = w, h
   folded = h <= MINI_H + 8
 
-  local top = (bar and not folded) and bar.h or 0
-
-  if bar then
-    bar.w = w
-    bar.h = folded and 0 or (bar.natural_h or bar.h)
-  end
+  -- Nothing sits above what is playing. A bar did once, and the name it
+  -- was kept by had not been given anything since.
+  local top = 0
 
   now.y = top
   now.w = w
@@ -840,6 +827,6 @@ relayout(W, H)
 
 if tracks[chosen] then cover_for(chosen) end
 
-if audio.format().period == 0 then status = "this machine has no sound device" end
+if audio.format().period == 0 then print("music: this machine has no sound device") end
 
 win:run()

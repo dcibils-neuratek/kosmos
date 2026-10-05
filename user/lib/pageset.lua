@@ -137,7 +137,7 @@ end
 -- UTF-8 characters of a string, for breaking a word too long for a line.
 local function chars(s)
   local out = {}
-  for ch in s:gmatch("[%z\1-\127\194-\244][\128-\191]*") do out[#out + 1] = ch end
+  for ch in s:gmatch(utf8.charpattern) do out[#out + 1] = ch end
   return out
 end
 
@@ -678,7 +678,7 @@ function pageset.drop_cap(tokens, layout, measure, looks, look_of, width)
 
   if not tok or tok.kind ~= "word" then return nil end
 
-  local ch = tok.text:match("^[%z\1-\127\194-\244][\128-\191]*")
+  local ch = tok.text:match("^" .. utf8.charpattern)
   local base = looks[tok.look]
   local a, d, g = measure.line(base)
   local pitch = (a + d + g) * layout.spacing_lines
@@ -1436,7 +1436,7 @@ function pageset.place_on(set, measure, line, x_pt)
     local look = set.looks[piece.look]
     local pen, at = piece.x_pt, piece.at
 
-    for ch in piece.text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+    for ch in piece.text:gmatch(utf8.charpattern) do
       local w = measure.width(look, ch, set.ligatures)
                 + (ch == " " and line.extra_space_pt or 0)
 

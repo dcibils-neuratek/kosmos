@@ -17,6 +17,7 @@
 -- that something exists is not being able to reach it.
 
 local ui = use("/Kosmos/Libraries/ui.lua")
+local duration = use("/Kosmos/Libraries/clock.lua").duration   -- up 12:34
 -- The *kit's* palette, not a copy of it.
 --
 -- `use` runs the chunk again and hands back a different table, and only the
@@ -261,24 +262,6 @@ local function columns(room)
   end
 end
 
-local function fitted(text, w)
-  text = tostring(text or "")
-
-  while #text > 1 and gfx.measure(text) > w do text = text:sub(1, -2) end
-
-  return text
-end
-
--- The same, cut from the front: the end of a path is the file's own name,
--- which is the part somebody is reading the column for.
-local function fitted_tail(text, w)
-  if gfx.measure(text) <= w then return text end
-
-  while #text > 1 and gfx.measure("..." .. text) > w do text = text:sub(2) end
-
-  return "..." .. text
-end
-
 --
 -- What each column sorts by, and nil for a row with nothing there - an
 -- application without a window has no `draws`, the kernel no memory of its
@@ -469,13 +452,15 @@ function table_view:draw(g)
     local wy = y + (ROW - gfx.height()) // 2
 
     g:text(col.id.x, wy, tostring(r.id), dim, bg)
-    g:text(col.name.x, wy, fitted(r.name, col.name.cw),
+    g:text(col.name.x, wy, ui.fitted(r.name, col.name.cw),
            r.exited and theme.text_dim or fg, bg)
 
     -- Where it came from, or that it came with the image. The kernel's own
-    -- row is neither and says nothing.
+    -- row is neither and says nothing. Cut from the front: the end of a
+    -- path is the file's own name, which is the part somebody is reading
+    -- the column for.
     if r.from then
-      g:text(col.file.x, wy, fitted_tail(r.from, col.file.cw), dim, bg)
+      g:text(col.file.x, wy, ui.fitted(r.from, col.file.cw, nil, true), dim, bg)
     elseif not r.synthetic then
       g:text(col.file.x, wy, "built in", dim, bg)
     end
@@ -1006,11 +991,11 @@ function sampler:tick()
   -- the new windows use (`docs/desktop.html`).
   --
   summary = ("%d processes · %d threads (%d in the kernel) · "
-             .. "%d space%s · up %d:%02d")
+             .. "%d space%s · up %s")
             :format(totals.procs, totals.threads, totals.kernel,
                     totals_state.spaces,
                     (totals_state.spaces == 1) and "" or "s",
-                    up // 60, up % 60)
+                    duration(up))
 
   if said and sys.ticks() - said_at > 4 * counter_hz then said = nil end
 

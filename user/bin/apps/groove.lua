@@ -126,8 +126,7 @@ app.load()
 local CARRIES = { "/Home/Documents/Groove/.carried.groove", "/Temporary/groove-carried.groove" }
 
 local function again(size)
-  fs.send("/Home/Documents", { type = "mkdir" })
-  fs.send("/Home/Documents/Groove", { type = "mkdir" })
+  use("/Kosmos/Libraries/files.lua").make_folder("/Home/Documents/Groove")
 
   local ok, why, CARRY
   local said = {}

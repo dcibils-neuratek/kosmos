@@ -20,6 +20,7 @@
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local drivelist = use("/Kosmos/Libraries/drivelist.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 --
 -- **The drawings' page** (`docs/apps.html`, `roadmap.md` 5zp): a header
@@ -101,7 +102,7 @@ local drive_rows = ui.view{
 
       cell(g, DRIVE_COLS[1][2], y, d.name)
       cell(g, DRIVE_COLS[2][2], y, d.kind, "text_dim")
-      cell(g, DRIVE_COLS[3][2], y, drivelist.size(d.bytes))
+      cell(g, DRIVE_COLS[3][2], y, files.size(d.bytes))
     end
   end,
 
@@ -133,13 +134,13 @@ local map = ui.view{
 
     for i, v in ipairs(d.volumes) do
       pieces[#pieces + 1] = { text = drivelist.label(v), sub = v.filesystem .. " · "
-                              .. drivelist.size(v.bytes), volume = i }
+                              .. files.size(v.bytes), volume = i }
     end
 
     if (d.unclaimed or 0) > 1024 * 1024 then
       pieces[#pieces + 1] = {
         text = d.internal and "Not read yet" or "Free or unread",
-        sub = drivelist.size(d.unclaimed), free = true,
+        sub = files.size(d.unclaimed), free = true,
       }
     end
 
@@ -219,8 +220,8 @@ local part_rows = ui.view{
       cell(g, PART_COLS[1][2], y, tostring((v.partition or 0) + 1), "text_dim")
       cell(g, PART_COLS[2][2], y, drivelist.label(v))
       cell(g, PART_COLS[3][2], y, v.filesystem, "text_dim")
-      cell(g, PART_COLS[4][2], y, drivelist.size(v.bytes))
-      cell(g, PART_COLS[5][2], y, v.free_exact and drivelist.size(used) or "-")
+      cell(g, PART_COLS[4][2], y, files.size(v.bytes))
+      cell(g, PART_COLS[5][2], y, v.free_exact and files.size(used) or "-")
       cell(g, PART_COLS[6][2], y,
            drivelist.opens(v) and drivelist.path(v) or "not opened",
            drivelist.opens(v) and "text" or "text_dim")
@@ -325,7 +326,7 @@ print(("drives: %d drive(s): %s"):format(#drives, (function()
   local names = {}
   for _, d in ipairs(drives) do
     names[#names + 1] = ("%s, %s, %d volume(s)"):format(d.name,
-                                                         drivelist.size(d.bytes),
+                                                         files.size(d.bytes),
                                                          #d.volumes)
   end
   return #names > 0 and table.concat(names, "; ") or "none"

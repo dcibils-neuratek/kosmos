@@ -38,6 +38,7 @@ local L = ui.layout
 local W, H = 760, 600
 local SIDE = 216
 local prefs = use("/Kosmos/Libraries/prefs.lua")
+local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
 
 local win, err = ui.window{ title = "Servers", w = W, h = H, x = 140, y = 90,
                             header = true }
@@ -109,9 +110,7 @@ local function address()
   local net = fs.net_info("/Network")
   local a = net and net.address
 
-  if type(a) == "string" and #a == 4 and a ~= "\0\0\0\0" then
-    return ("%d.%d.%d.%d"):format(a:byte(1, 4)), net
-  end
+  if ipv4.given(a) then return ipv4.text(a), net end
 
   return nil, net
 end

@@ -572,26 +572,6 @@ local loading
 --
 local AGENT = prefs.agent(setting, (sys.build and sys.build() or {}).version)
 
--- Text a character shorter, never inside one; and text cut to a width with
--- an ellipsis - a tab's title, a favorite's name, the status line.
-local function shorter(text)
-  local n = #text
-
-  while n > 0 and (text:byte(n) & 0xC0) == 0x80 do n = n - 1 end
-
-  return text:sub(1, n - 1)
-end
-
-local function cut_to(text, room)
-  if gfx.measure(text) <= room then return text end
-
-  while text ~= "" and gfx.measure(text .. "...") > room do
-    text = shorter(text)
-  end
-
-  return text .. "..."
-end
-
 --------------------------------------------------------------------------
 -- **The header, in the kit's own widgets** (`roadmap.md` 6zz d1, as
 -- `docs/browser.html` draws it).
@@ -740,12 +720,12 @@ do
     local hw = gfx.measure(host, "label")
 
     if hw > room then
-      host = cut_to(host, room)
+      host = ui.fitted(host, room, "label")
       hw, rest = gfx.measure(host, "label"), ""
     end
 
     g:text(x, (h - gfx.height("label")) // 2, host, theme.text, nil, "label")
-    g:text(x + hw, (h - gfx.height()) // 2, cut_to(rest, room - hw), theme.text_dim)
+    g:text(x + hw, (h - gfx.height()) // 2, ui.fitted(rest, room - hw), theme.text_dim)
   end
 end
 
@@ -813,16 +793,7 @@ local function status_text()
 
   local right = (current.timing ~= "" and setting.costs)
                 and gfx.measure(current.timing) + 20 or 0
-  local room = W - 20 - right
-  local text = left
-
-  if gfx.measure(text) > room then
-    while text ~= "" and gfx.measure(text .. "...") > room do
-      text = shorter(text)
-    end
-
-    text = text .. "..."
-  end
+  local text = ui.fitted(left, W - 20 - right)
 
   status_for, status_cut = key, text
   return text
@@ -906,10 +877,6 @@ do
   end
 end
 
-local function favicon(t)
-  return favicon_of(t.going or tab_at(t))
-end
-
 -- A favicon drawn: its square and its letter, `size` pixels.
 local function draw_favicon(g, x, y, size, at)
   local letter, ground = favicon_of(at)
@@ -987,7 +954,7 @@ do
       local cross = crossed(self)
       local room = self.w - 32 - (cross and 26 or 10)
 
-      g:text(32, top + (h - gfx.height()) // 2, cut_to(tab_name(t), room),
+      g:text(32, top + (h - gfx.height()) // 2, ui.fitted(tab_name(t), room),
              on and theme.text or theme.text_dim)
 
       if cross then
@@ -1130,7 +1097,7 @@ do
   local BAR_NAME = 150                     -- the widest a name on the bar is drawn
 
   local function bar_item(e)
-    local name = cut_to(e.name, BAR_NAME)
+    local name = ui.fitted(e.name, BAR_NAME)
     local v = ui.view{ x = 0, y = 3, w = 8 + 14 + 6 + gfx.measure(name) + 8,
                        h = FAVS - 7 }
 
@@ -1413,7 +1380,7 @@ end
 
 --
 -- **The kit's scrollbar**, one in every application (`roadmap.md` 6u: "Let's
--- just have 1 scrollbars style go all the os", "pill"): `ui.draw_scrollbar`
+-- just have 1 scrollbars style go all the os", "pill"): `ui.scrollbar`
 -- draws the pill and `ui.scrollbar_mouse` answers a press, a drag and a
 -- release, in pixels here as Text Editor's page does (`docview.lua`) - the
 -- page is `content_h` tall, `VIEW_H` of it shows, and the kit's `top` is
@@ -1430,7 +1397,7 @@ local scrollbar = { x = 0, y = 0, w = SBAR, h = 0 }
 
 function scrollbar:paint(g)
   g:fill(0, 0, self.w, self.h, theme.sunken)
-  ui.draw_scrollbar(g, self.w, self.h, current.content_h, VIEW_H, current.top + 1)
+  ui.scrollbar(g, self.w, self.h, current.content_h, VIEW_H, current.top + 1)
 end
 
 local function draw_scrollbar(s)

@@ -26,11 +26,15 @@ end
 -- A path as typed, made absolute against where the caller is.
 --
 -- Every command that takes a path needs this, and each one was writing the
--- same three lines out again - `ls` and `cat` still have their own copy. A
--- name is relative unless it starts with a slash, and `cwd` is the shell's
--- idea of where you are: servers know nothing about it, which is why it
--- travels with the request rather than being asked for.
+-- same three lines out again - `ls`, `cat`, `open` and telnet's sessions
+-- each had their own. A name is relative unless it starts with a slash, and
+-- `cwd` is the shell's idea of where you are: servers know nothing about
+-- it, which is why it travels with the request rather than being asked for.
 --
+-- **`.` and `..` are walked here**, as the prompt walks them, because
+-- neither the namespace nor a server does: `cat ../notes` went out as
+-- `/Home/x/../notes`, which the disk refuses - "a path may not contain .
+-- or ..". A `..` at the root stays at the root.
 --
 -- In its mounts' own spelling, when the namespace can say it (`roadmap.md`
 -- 6s): `/home/x` typed is `/Home/x`, so a path somebody typed compares
@@ -49,6 +53,18 @@ function files.abs(name, where)
     path = (where == "/" and "/" or where .. "/") .. name
   end
 
+  local parts = {}
+
+  for part in path:gmatch("[^/]+") do
+    if part == ".." then
+      parts[#parts] = nil
+    elseif part ~= "." then
+      parts[#parts + 1] = part
+    end
+  end
+
+  path = "/" .. table.concat(parts, "/")
+
   return fs.canonical and fs.canonical(path) or path
 end
 
@@ -56,6 +72,33 @@ function files.join(dir, name)
   if dir == "/" then return "/" .. name end
 
   return (dir:gsub("/$", "")) .. "/" .. name
+end
+
+--
+-- **A folder, and every folder above it that is missing**: true, or nil
+-- and why. A filesystem's `mkdir` makes one folder in one that exists, so
+-- a first history, a first favorite, a cache, a zip's tree and a launcher
+-- under `/Home/Deskbar/Demos/GLDemos` each walked up for itself - six
+-- copies, here now. One that is there already, a file or a folder, is left
+-- as it is; what is written into it next says whether it could be.
+--
+function files.make_folder(path)
+  if fs.getattr(path) then return true end
+
+  local up = files.parent(path)
+
+  if up ~= path then
+    local ok, why = files.make_folder(up)
+
+    if not ok then return nil, why end
+  end
+
+  local ok, why = fs.send(path, { type = "mkdir" })
+
+  -- Somebody else's mkdir between the look and this one is a folder too.
+  if not ok and not fs.getattr(path) then return nil, path .. ": " .. tostring(why) end
+
+  return true
 end
 
 -- What is in a directory: name, kind and size, directories first and each
@@ -340,20 +383,33 @@ end
 --
 -- The walk is here because a filesystem's `delete` takes one node and
 -- refuses a directory with anything in it, which is right for a server and
--- is why `rm -r` walks too.
+-- is why `rm -r` asks this to walk for it.
+--
+-- True and how many things went, or nil, why, and how many went before it
+-- stopped - which `rm` says, since a walk that stops halfway has still
+-- removed what it removed. Depth first, and the first refusal ends it: the
+-- reason one delete failed is almost always the reason the next would.
 --
 function files.remove(path)
   local attrs = fs.getattr(path)
+  local gone = 0
 
   if attrs and attrs.kind == "directory" then
     for _, name in ipairs(fs.list(path) or {}) do
-      local ok, why = files.remove(files.join(path, name))
+      local ok, said, before = files.remove(files.join(path, name))
 
-      if not ok then return nil, why end
+      -- `said` is how many went, or why not.
+      if not ok then return nil, said, gone + before end
+
+      gone = gone + said
     end
   end
 
-  return fs.send(path, { type = "delete" })
+  local ok, why = fs.send(path, { type = "delete" })
+
+  if not ok then return nil, tostring(why), gone end
+
+  return true, gone + 1
 end
 
 --------------------------------------------------------------------------

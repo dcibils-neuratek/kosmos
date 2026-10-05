@@ -19,6 +19,9 @@
 
 local prefs = {}
 
+-- Its folder made, and the ones above it, by the file library.
+local files = use("/Kosmos/Libraries/files.lua")
+
 -- The browser's own folder, where the settings kit keeps it (`prefs.lua`).
 prefs.DIR = use("/Kosmos/Libraries/prefs.lua").path("browser")
 prefs.FILE = prefs.DIR .. "/settings"
@@ -84,20 +87,6 @@ function prefs.agent(t, version)
   return (AGENTS[t.agent] or AGENTS.lynx):format(version or "0")
 end
 
-local function made(dir)
-  if fs.getattr(dir) then return true end
-
-  local at = ""
-
-  for part in dir:gmatch("[^/]+") do
-    at = at .. "/" .. part
-
-    if not fs.getattr(at) then fs.send(at, { type = "mkdir" }) end
-  end
-
-  return fs.getattr(dir) ~= nil
-end
-
 local function valid(key, value)
   local default = prefs.DEFAULTS[key]
 
@@ -146,7 +135,7 @@ end
 function prefs.write(t, file)
   file = file or prefs.FILE
 
-  if not made(file:match("^(.*)/[^/]+$")) then return false end
+  if not files.make_folder(files.parent(file)) then return false end
 
   local out = {}
 
@@ -167,7 +156,7 @@ end
 function prefs.save_tabs(addresses, shown, file)
   file = file or prefs.TABS
 
-  if not made(file:match("^(.*)/[^/]+$")) then return false end
+  if not files.make_folder(files.parent(file)) then return false end
 
   local list = {}
 

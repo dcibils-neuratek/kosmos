@@ -93,16 +93,7 @@ local counting = (not one) or folder
 local count = counting and tally.new(fs, paths) or nil
 
 -- A count as the drawing writes it: 2,007,961,344 bytes, 1,204 files.
-local function grouped(n)
-  local out = tostring(math.floor(tonumber(n) or 0))
-  local more
-
-  repeat
-    out, more = out:gsub("^(%d+)(%d%d%d)", "%1,%2")
-  until more == 0
-
-  return out
-end
+local grouped = use("/Kosmos/Libraries/text.lua").grouped
 
 local function plural(n, word)
   return ("%s %s%s"):format(grouped(n), word, n == 1 and "" or "s")

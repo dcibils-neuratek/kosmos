@@ -592,7 +592,8 @@ local function colour_name(c)
   return c
 end
 
-local function argb(c) return 0xff000000 | (tonumber((c or "#000000"):sub(2), 16) or 0) end
+-- `#rrggbb` as a surface's 0xAARRGGBB, as the page is drawn with it.
+local argb = pagedraw.argb
 
 local open_menu, apply_char, apply_para, apply_style, doc_edit, apply_picture
 local reshape, delete_table, table_key, line_break, apply_shape, insert_shape
@@ -712,10 +713,8 @@ local function draw_document(s, x0, w0, y)
   local field = { x = x0 + 120, y = y, w = w0 - 120, h = 30 }
   pk.field(s, field, focus == "header")
 
-  local words = doc.header.text
-  local room = field.w - 20
-
-  while #words > 0 and gfx.measure(words) > room do words = words:sub(2) end
+  -- Its end, where the caret is, with `...` before it when the start is cut.
+  local words = ui.fitted(doc.header.text, field.w - 20, "ui", true)
 
   s:text(field.x + 10, field.y + (30 - gfx.height()) // 2, words, theme.text, nil, "ui")
 
@@ -829,8 +828,7 @@ local function draw_panel(s)
     local field = { x = x0, y = y, w = w0, h = 30 }
     pk.field(s, field, focus == "comment")
 
-    local shown = words
-    while #shown > 0 and gfx.measure(shown) > field.w - 20 do shown = shown:sub(2) end
+    local shown = ui.fitted(words, field.w - 20, "ui", true)
 
     if shown == "" and focus ~= "comment" then
       s:text(field.x + 10, field.y + (30 - gfx.height()) // 2, "Type a comment", theme.text_dim, nil, "ui")
@@ -1492,7 +1490,7 @@ local function frame()
 
   local room = to - from - 32
 
-  while #note > 1 and gfx.measure(note) > room do note = note:sub(1, -2) end
+  note = ui.fitted(note, room, "ui")
 
   if room > 40 then
     s:text(from + 16, head_h() + (TOOLS_H - gfx.height()) // 2, note, theme.text_dim, nil, "ui")
@@ -2496,13 +2494,10 @@ function sink:key(c)
     end
 
     if c == 8 or c == 127 then
-      local cut = #words.text
-
-      while cut > 1 and words.text:byte(cut) >= 0x80 and words.text:byte(cut) < 0xC0 do
-        cut = cut - 1
+      -- The last character, whatever it is in bytes.
+      if #words.text > 0 then
+        words.text = words.text:sub(1, utf8.offset(words.text, 0, #words.text) - 1)
       end
-
-      words.text = words.text:sub(1, cut - 1)
     elseif c >= 32 and c < 127 then
       words.text = words.text .. string.char(c)
     else
@@ -2523,12 +2518,8 @@ function sink:key(c)
       frame()
     elseif c == 8 or c == 127 then
       if #text > 0 then
-        local cut = #text
-
-        while cut > 1 and text:byte(cut) >= 0x80 and text:byte(cut) < 0xC0 do cut = cut - 1 end
-
         doc_edit("header_text", { header = { on = doc.header.on, from_top_mm = doc.header.from_top_mm,
-                                             text = text:sub(1, cut - 1) } })
+                                             text = text:sub(1, utf8.offset(text, 0, #text) - 1) } })
       end
     elseif c >= 32 and c < 127 then
       doc_edit("header_text", { header = { on = doc.header.on, from_top_mm = doc.header.from_top_mm,
@@ -2655,7 +2646,7 @@ end
 local function page_point(x, y)
   for i = 1, #set.pages do
     local px, py = page_at(i)
-    local w, h = page_px(set.pages[i])
+    local _, h = page_px(set.pages[i])
 
     if y >= py - GAP // 2 and y < py + h + GAP // 2 then
       return i, (x - px) / scale(), (y - py) / scale()

@@ -21,6 +21,9 @@
 
 local history = {}
 
+-- Its folder made, and the ones above it, by the file library.
+local files = use("/Kosmos/Libraries/files.lua")
+
 -- In the browser's folder, where the settings kit keeps it (`prefs.lua`).
 history.DIR = use("/Kosmos/Libraries/prefs.lua").path("browser/history")
 
@@ -31,20 +34,6 @@ end
 
 local function is_day(name)
   return name:match("^%d%d%d%d%-%d%d%-%d%d$") ~= nil
-end
-
-local function made(dir)
-  if fs.getattr(dir) then return true end
-
-  local at = ""
-
-  for part in dir:gmatch("[^/]+") do
-    at = at .. "/" .. part
-
-    if not fs.getattr(at) then fs.send(at, { type = "mkdir" }) end
-  end
-
-  return fs.getattr(dir) ~= nil
 end
 
 -- The days there are, newest first.
@@ -90,7 +79,7 @@ function history.record(address, title, now, dir)
     return false
   end
 
-  if not made(dir) then return false end
+  if not files.make_folder(dir) then return false end
 
   local name = history.day_of(now)
   local list = history.day(name, dir)

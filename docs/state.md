@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-04 (0.11.0)
+Last updated: 2026-10-05 (0.11.5)
 
 ---
 
@@ -626,6 +626,34 @@ places making regions by hand first), then W4b, typing. `/Temporary` and a
 diskless `/Home` are 128 x 16 KB, compiled in - to grow (roadmap). **Not pushed**: everything since
 0.10.214; a push is Diego's word. The gate is at 10:33 to 10:46, over the
 ten minutes, to bring back.
+
+**5 October: steps 3 and 4, the Open panel, and Present and Sheets
+designed.** Diego's order of the 4th, carried through, and his three
+requests of the day:
+- **0.11.1** (18.399): Kosmos Write's header is its title bar - "why is
+  kosmos write using the old window chrome style instead of the new no
+  border one?" It never offered a header. The review of every other
+  application in the old chrome is still the roadmap's.
+- **An application is designed before it is written** (`CLAUDE.md`,
+  `design.md` 9.7): Diego, "Every new app needs feature set, an HTML mockup,
+  an architecture document and diagram (png) before coding". And **a CD and
+  DVD player** on the roadmap, assessed, not designed.
+- **0.11.2** (18.400): `/Temporary` grows to half of the machine;
+  `ramstore.c` held on the host. **0.11.3** (18.401): the Open and Save
+  windows take the keys as they open. **0.11.4** (18.402): step 3's first
+  half - regions, the kits' C, the browser's - and **a mapped region given
+  back**, which `sys.release` never did. **0.11.5** (18.403): the second
+  half - the Lua helpers, Startup Apps and Date & Time removed as
+  Preferences' pages, `bytes.h` through the C.
+- **Kosmos Present and Kosmos Sheets designed**, for Diego to agree:
+  `docs/present.md`/`.html`/`-architecture.png`, `docs/sheets.*`. Both
+  start by moving Write's caret, Format panel, page desk, tools row, Office
+  package and charts into kits; the decisions that are his are listed in
+  each - Sheets' arithmetic first.
+- **Not pushed**: 0.11.1 to 0.11.5 and three docs commits. A push is
+  Diego's word. **Waiting on Diego**: the M700 on 0.10.257, and the two
+  designs. **Next**: whatever he says of the designs; then the review of the
+  old chrome, and the launcher with an argument.
 
 **4 October, night: 0.11.** Diego's order after the mockup: the gate under
 ten minutes and a push, the M700 on the new build, 0.11, then step 3 (the

@@ -19,14 +19,6 @@
 local ui = use("/Kosmos/Libraries/ui.lua")
 local licences = use("/Kosmos/Libraries/licences.lua")
 local hardware = use("/Kosmos/Libraries/hardware.lua")
--- The *kit's* palette, not a copy of it.
---
--- `use` runs the chunk again and hands back a different table, and only the
--- one `ui.lua` holds is the one it mutates when the desktop changes theme.
--- An application that loaded its own kept the colours it started with while
--- every widget around it changed - which is exactly what Monitor, Processes,
--- Photo and the Terminal did.
-local theme = ui.theme
 
 local W, H = 620, 420
 
@@ -88,29 +80,19 @@ local y = 82
 -- `Running:` and `Memory:` - is one line, and it is the first line that is
 -- kept in `facts`.
 --
-local COLUMN = (270 - 16 - 12) // gfx.font.w
-
-local function lines_of(text)
-  local out, line = {}, ""
-
-  for word in tostring(text):gmatch("%S+") do
-    if line ~= "" and #line + 1 + #word > COLUMN then
-      out[#out + 1] = line
-      line = word
-    else
-      line = (line == "") and word or (line .. " " .. word)
-    end
-  end
-
-  out[#out + 1] = line
-
-  return out
-end
+-- Broken where the words are measured to end (`ui.wrapped`), not after a
+-- count of characters: a count is a width only in a face whose every
+-- glyph is one, and the desktop's is proportional.
+--
+local COLUMN_W = 270 - 16 - 12
 
 local function fact(label, value)
   win:add(ui.label{ x = 16, y = y, text = label, color = "text" })
 
-  local lines = lines_of(value)
+  local lines = ui.wrapped(value, COLUMN_W)
+
+  -- A value with no words is still a line, to be written into later.
+  if #lines == 0 then lines[1] = "" end
 
   for i, text in ipairs(lines) do
     local v = ui.label{ x = 16, y = y + 16 * i, text = text,

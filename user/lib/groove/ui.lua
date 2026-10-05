@@ -334,12 +334,11 @@ function U.hline(x0, x1, y, c, a) U.rect(x0, y, x1 - x0, 1, c, 0, a) end
 function U.circle(x, y, r) S:disc(floor(x + 0.5), floor(y + 0.5), floor(r + 0.5), cur, true) end
 
 -- `printf`'s `w` and `align` place one line in a box; a line longer than
--- `clip` is cut to it, which is what LÖVE's scissor did for a clip's name.
+-- `clip` is fitted to it (`ui.fitted`, with "..."), where LÖVE's scissor
+-- cut a clip's name - and this cut it a byte at a time, inside a character.
 function U.text(s, x, y, c, f, w, align, clip)
   f = f or U.fM
-  if clip then
-    while #s > 1 and f:getWidth(s) > clip do s = s:sub(1, -2) end
-  end
+  if clip then s = ui.fitted(s, clip, f.face) end
   if w then
     local tw = f:getWidth(s)
     if align == "right" then x = x + w - tw

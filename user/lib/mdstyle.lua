@@ -98,7 +98,12 @@ local function styled(s, from)
     at = e + 1
   end
 
-  -- **Bold**, then *italic*, each only over bytes nothing has claimed.
+  -- **Bold**, then *italic*, their marks only on bytes nothing has claimed.
+  -- What is between them may be code or a link - two stars round a code
+  -- span, as the docs write a name they mean, are bold code, as one star
+  -- round it was already italic code - and the closing pair is the next
+  -- one outside them. Bold used to ask for every byte between to be free,
+  -- and such a name read as a stray star and an italic one.
   local function pairs_of(open, flag)
     local len = #open
     local i = from
@@ -110,12 +115,14 @@ local function styled(s, from)
 
       local b = s:find(open, a + len + 1, true)
 
+      while b and not free(b, b + len - 1) do b = s:find(open, b + 1, true) end
+
       if not b then return end
 
       local inner_a, inner_b = a + len, b - 1
       local first = s:sub(inner_a, inner_a)
 
-      if first ~= " " and free(a, b + len - 1) then
+      if first ~= " " and free(a, a + len - 1) then
         for k = a, a + len - 1 do style[k] = "mark" end
         for k = b, b + len - 1 do style[k] = "mark" end
         for k = inner_a, inner_b do flag[k] = true end

@@ -19027,3 +19027,51 @@ through `fs.write`, a region that will not map is given back - against a
 `sys` and an `fs` that keep regions as strings. **Control**: `fill` copying
 every window to the start fails 2. `test_gunzip` gained 8 checks of plain
 deflate, now 1553; `test_drivesdecode` checks a partition's type GUID.
+
+## 18.403 Second copies, the second half (step 3 after 0.11)
+
+The Lua helpers the review before 0.11 found written several times, and the
+byte-order helpers left in the C (`roadmap.md`, *One kit, one door*):
+
+- **Text and the kit**: `ui.fitted` for every hand-written cut to a width
+  (a dozen, most cutting inside a character, Groove's a byte at a time) -
+  and it drops no more than it must; `ui.wrapped` for pixel word-wrap
+  (Notifications, the IDE, Cafesa3D, cards, About); Lua's own `utf8` for
+  stepping through characters in `json`, `tags`, `notify`, `longmenu`, the
+  kit, the browser, Write, `richtext`, `hyphen`, `pageset` and `pdfwrite`;
+  `ui.scrollbar` the one name of the scrollbar; `pagedraw.argb` for Write.
+- **Applications**: one Deskbar menu builder (`deskbarmenu.lua`) for the
+  Deskbar and the launcher pad, which gains the check that a launcher's
+  program still exists; **Startup Apps and Date & Time removed**, being
+  Preferences' Startup and Date & Time pages a second time
+  (`wm preferences:startup`, `wm preferences:datetime`); one decode-and-feed
+  loop for a song and a film's sound (`media.feed`); Cafesa3D's Euler
+  matrices from `scenefile`.
+- **Files and formats**: `files.make_folder` for the six folder-makers (and
+  `prefs.folder`, which made `browser/history` without `browser` on a fresh
+  disk); one Markdown reader, `mdstyle`, under Reader and Text Editor;
+  `files.size`, `text.grouped`, `clock.duration`, `clock.stamp` and
+  `clock.minute_stamp`, and `ipv4.lua`, for the formatters written three to
+  eight times; `clock.days` under the web cache's dates; `files.abs`,
+  `files.join` and `files.remove` for `telnetd`, `ls`, `cat`, `rm`, the
+  Terminal and `tally`; Groove's projects as text read as values
+  (`design.md` 8.3e).
+- **Programs**: `netprogram.lua` - the card, the listener, the folder,
+  status and log, the name in `/Running`, the neighbour check, Disconnect -
+  for `httpd`, `telnetd` and `vncd`; `text.meter` for `monitor` and `htop`;
+  `wmproto.screen`, `watch` and `watched` for `screenshot` and `vncd`;
+  `/Devices/cpu` read once in the window manager.
+- **C**: `bytes.h` in `fat_decode.c`, `kfs.c`, `net.c`, the UVC and MIDI
+  decoders and the Intel card's driver and decoder.
+
+**New host checks**: `tools/test_files.lua`, 15 (a path made whole with
+`..` walked and the root kept, a folder and every one above it, a tree
+removed with what went counted); `tools/test_text.lua`, 14 (thousands
+marked, a share as a bar, lines); `tools/test_ipv4.lua`, 28 (four bytes and
+four numbers both ways, a neighbour by the mask, a listener waited for, its
+folder, log and status, a name in `/Running`, outsiders turned away and a
+Disconnect answered); `test_groove` gained the save as text, the old form
+read without running it and six refusals, now 406; `test_deskbarmenu`
+gained the pad's check. The tests every changed library already had -
+pageset 130, writedoc 108, docx 57, docview 50, tally 7, and the decoders'
+C - pass unchanged.

@@ -88,9 +88,7 @@ local notify = use("/Kosmos/Libraries/notify.lua")
 local theme = ui.theme
 
 local screen = gfx.screen()
-local sw, sh = 1024, 768
-
-if screen then sw, sh = screen:size() end
+local sw = screen and (screen:size()) or 1024
 
 
 --------------------------------------------------------------------------
@@ -131,35 +129,17 @@ if screen then sw, sh = screen:size() end
 -- Tracker can open it and a launcher can be made from there.
 --------------------------------------------------------------------------
 
-local DESKBAR = "/Home/Deskbar"
-local SHIPPED = "/Kosmos/Deskbar"
+local DESKBAR = menudata.HOME
 
 --
--- What `/bin` can start, which is a different question from what the menu
--- lists and is still worth asking.
+-- What `/Kosmos/Apps` can start, which is a different question from what
+-- the menu lists and is still worth asking (`deskbarmenu.programs`).
 --
 -- Startup items name a *program*, and are checked against this rather than
 -- against the menu: "open this at login" and "show this in the menu" are
 -- two choices, and an item can reasonably be one without the other.
 --
-local programs = {}
-
-do
-  for _, file in ipairs(fs.list("/Kosmos/Apps") or {}) do
-    local attrs = fs.getattr("/Kosmos/Apps/" .. file)
-
-    if attrs and attrs.kind == "application" then
-      local short = file:gsub("%.lua$", "")
-
-      -- The Deskbar does not list itself. It is not something you start.
-      -- `section none`: a window something else opens with a file in it -
-      -- Info - which has nothing to show opened on its own from a menu.
-      if short ~= "deskbar" and attrs.section ~= "none" then
-        programs[short] = attrs
-      end
-    end
-  end
-end
+local programs = menudata.programs(fs)
 
 --
 -- **What the seed left, to the Trash once** (`roadmap.md` 6zd).
@@ -193,11 +173,21 @@ local function retire_seed()
     if not fs.getattr(dir) then fs.send(dir, { type = "mkdir" }) end
   end
 
+  -- Into the Trash under a name free there. Written out because `name and
+  -- files.move(...)` keeps only the first of `move`'s answers, so the reason
+  -- a launcher stayed was always printed as nil.
+  local function to_trash(path)
+    local name, why = files.free_name(files.TRASH, path:match("([^/]+)$"))
+
+    if not name then return false, why end
+
+    return files.move(path, files.join(files.TRASH, name))
+  end
+
   local moved = 0
 
   for _, path in ipairs(menudata.seed_leftovers(fs, DESKBAR, seeded)) do
-    local name = files.free_name(files.TRASH, path:match("([^/]+)$"))
-    local ok, why = name and files.move(path, files.join(files.TRASH, name))
+    local ok, why = to_trash(path)
 
     if ok then
       moved = moved + 1
@@ -206,8 +196,7 @@ local function retire_seed()
     end
   end
 
-  local name = files.free_name(files.TRASH, ".seeded")
-  local ok, why = name and files.move(SEEDED, files.join(files.TRASH, name))
+  local ok, why = to_trash(SEEDED)
 
   if not ok then
     print("deskbar: the seed's record stayed: " .. tostring(why))
@@ -244,33 +233,18 @@ end
 local sections = {}
 
 --
--- A launcher to a program that is gone is not shown: `programs` is what
--- `/Kosmos/Apps` declared at the start, and a path outside it is somebody's
--- own and trusted. `/bin/<name>.lua` is how a launcher made before 27
--- September says the same (`ns.program` starts it from its new place).
---
-local function exists(program)
-  local short = program:match("^/[Kk][Oo][Ss][Mm][Oo][Ss]/[Aa][Pp][Pp][Ss]/([^/]+)%.lua$")
-                or program:match("^/[Bb][Ii][Nn]/([^/]+)%.lua$")
-
-  if short then return programs[short] ~= nil end
-  if not program:find("/", 1, true) then
-    return programs[(program:gsub("%.lua$", ""))] ~= nil
-  end
-
-  return true
-end
-
---
 -- Three layers: the menu that ships, the applications installed in
--- `/Home/Apps` (`docs/elf.md` step 5) beside it, and the person's own on top.
+-- `/Home/Apps` (`docs/elf.md` step 5) beside it, and the person's own on
+-- top - `deskbarmenu.layers`, which the launcher pad reads too. A launcher
+-- to a program that is gone is not shown: `programs` is what `/Kosmos/Apps`
+-- declared at the start, and a path outside it is somebody's own and
+-- trusted. `/bin/<name>.lua` is how a launcher made before 27 September
+-- says the same (`ns.program` starts it from its new place).
 --
 local function read_sections()
-  local installed = menudata.installed(types.installed(fs), types.declared)
-
-  sections = menudata.merge_sections(
-    menudata.merge_sections(menudata.sections(fs, SHIPPED, exists), installed),
-    menudata.sections(fs, DESKBAR, exists))
+  sections = menudata.layers(fs,
+                             menudata.installed(types.installed(fs), types.declared),
+                             menudata.present(programs))
 end
 
 retire_seed()
@@ -1666,9 +1640,10 @@ function bar:draw(g)
     end
 
     --
-    -- The title, cut to what is left. `gfx.measure` rather than a character
-    -- count, because the font is proportional and a count would cut "Web
-    -- browser" and "MMMMMMMMMM" in the same place.
+    -- The title, cut to what is left, with `...` where it was cut. Measured
+    -- rather than counted, because the font is proportional and a count
+    -- would cut "Web browser" and "MMMMMMMMMM" in the same place - which is
+    -- `ui.fitted`, and this cut a byte at a time before it was.
     --
     local room = s.w - ICON - 12
     local text = tostring(w_.title or "")
@@ -1684,11 +1659,7 @@ function bar:draw(g)
     end
 
     if room >= gfx.font.w then
-      while #text > 1 and gfx.measure(text) > room do
-        text = text:sub(1, #text - 1)
-      end
-
-      g:text(s.x + ICON + 8, ty, text, ink)
+      g:text(s.x + ICON + 8, ty, ui.fitted(text, room), ink)
     end
   end
 end
@@ -2382,8 +2353,8 @@ win:add(bar)
 --------------------------------------------------------------------------
 -- Startup items.
 --
--- What `/bin/startup` ticked, opened once, here, after the Deskbar's own
--- window exists.
+-- What Preferences' Startup page ticked, opened once, here, after the
+-- Deskbar's own window exists.
 --
 -- **Here rather than anywhere earlier on the boot path**, and that is the
 -- whole point of the feature living in this file. `init.lua` runs one

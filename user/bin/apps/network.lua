@@ -22,7 +22,6 @@
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local hardware = use("/Kosmos/Libraries/hardware.lua")
-local theme = ui.theme
 
 local W, H = 500, 490
 
@@ -40,28 +39,13 @@ end
 -- Addresses, between four bytes and four numbers.
 --
 -- The protocol carries bytes in the order they go on the wire; a person
--- writes them with dots. The conversion lives here for the reason `ping`
--- gives: text is a presentation, and a stack that parsed dotted quads would
--- be deciding how somebody else writes an address.
+-- writes them with dots. The conversion is a program's, not the stack's,
+-- for the reason `ping` gives: text is a presentation, and a stack that
+-- parsed dotted quads would be deciding how somebody else writes an
+-- address. Every program that writes one shares `ipv4.lua` for it.
 --------------------------------------------------------------------------
 
-local function to_bytes(text)
-  local a, b, c, d = tostring(text or ""):match("^%s*(%d+)%.(%d+)%.(%d+)%.(%d+)%s*$")
-
-  if not a then return nil end
-
-  a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
-
-  if a > 255 or b > 255 or c > 255 or d > 255 then return nil end
-
-  return string.char(a, b, c, d)
-end
-
-local function dotted(bytes)
-  if type(bytes) ~= "string" or #bytes ~= 4 then return "" end
-
-  return ("%d.%d.%d.%d"):format(bytes:byte(1, 4))
-end
+local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
 
 local function mac_text(bytes)
   if type(bytes) ~= "string" or #bytes ~= 6 then return "unknown" end
@@ -126,12 +110,10 @@ local function field(value)
   return ui.field{ w = 190, text = value or "" }
 end
 
-local address = field(dotted(info and info.address) ~= ""
-                      and dotted(info.address) or (saved.address or ""))
-local netmask = field(dotted(info and info.netmask) ~= ""
-                      and dotted(info.netmask) or (saved.netmask or ""))
-local gateway = field(dotted(info and info.gateway) ~= ""
-                      and dotted(info.gateway) or (saved.gateway or ""))
+-- What the stack has, and what was saved when it has none.
+local address = field(ipv4.text(info and info.address, saved.address or ""))
+local netmask = field(ipv4.text(info and info.netmask, saved.netmask or ""))
+local gateway = field(ipv4.text(info and info.gateway, saved.gateway or ""))
 
 --
 -- **The name server**: the stack resolves names through it (`NET_OP_RESOLVE`),
@@ -181,9 +163,9 @@ win:add(cards)
 --------------------------------------------------------------------------
 
 local function collect()
-  local a, m, g = to_bytes(address.text), to_bytes(netmask.text),
-                  to_bytes(gateway.text)
-  local d = to_bytes(dns.text)
+  local a, m, g = ipv4.bytes(address.text), ipv4.bytes(netmask.text),
+                  ipv4.bytes(gateway.text)
+  local d = ipv4.bytes(dns.text)
 
   if not a then return nil, "the address is not four numbers and three dots" end
   if not m then return nil, "the netmask is not four numbers and three dots" end
@@ -240,7 +222,7 @@ end
 -- settings window with no way to test the setting sends people to a prompt.
 --
 local function test_gateway()
-  local a = to_bytes(gateway.text)
+  local a = ipv4.bytes(gateway.text)
 
   if not a then
     status.text = "the gateway is not an address"

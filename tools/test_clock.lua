@@ -65,9 +65,34 @@ check(clock.now().epoch == SEPT27 and clock.now().hour == 15,
 check(clock.long_string(nil) == "no clock",
       "no moment says so rather than drawing a date")
 
+-- The calendar both ways: a date into days and back, over leap days, the
+-- turn of a century that is not a leap year and one that is, and before
+-- 1970 - what `httpcache.lua` reads an HTTP date with.
+clock.set_offset(0)
+
+for _, d in ipairs({ { 1970, 1, 1 }, { 1994, 11, 6 }, { 2000, 2, 29 }, { 2100, 3, 1 },
+                     { 2026, 12, 31 }, { 1969, 12, 31 }, { 1900, 2, 28 } }) do
+  local back = clock.at(clock.days(d[1], d[2], d[3]) * 86400)
+
+  check(back.year == d[1] and back.month == d[2] and back.day == d[3],
+        ("%d-%d-%d into days and back is %d-%d-%d"):format(d[1], d[2], d[3],
+                                                           back.year, back.month, back.day))
+end
+
+check(clock.days(1994, 11, 6) == 784111777 // 86400, "6 November 1994 is day 9075")
+
+-- The names a moment gives a file, and a length of time.
+check(clock.stamp(t) == "2026-09-27-180000", "the stamp a program saves with: " .. clock.stamp(t))
+check(clock.minute_stamp(clock.at(SEPT27 + 7 * 60 + 9)) == "2026-09-27 18.07",
+      "the stamp a person is given: " .. clock.minute_stamp(clock.at(SEPT27 + 7 * 60 + 9)))
+check(clock.duration(187.9) == "3:07" and clock.duration(0) == "0:00"
+      and clock.duration(3600) == "60:00" and clock.duration(nil) == "0:00",
+      "a length as a player shows it: " .. clock.duration(187.9))
+
 if failed == 0 then
   print(("PASS: %d checks on the local time of a moment (UTC and west of "
-         .. "it, across midnight, now, and none)."):format(checks))
+         .. "it, across midnight, now, and none; the calendar both ways, the "
+         .. "stamps in a file's name, and a length of time)."):format(checks))
 else
   print(("FAIL: %d of %d checks"):format(failed, checks))
   os.exit(1)

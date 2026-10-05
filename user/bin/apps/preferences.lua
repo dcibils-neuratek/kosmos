@@ -613,7 +613,10 @@ local function control_for(it, x, y, changed)
 
   --
   -- **The time zone, as a stepper**: thirty-seven offsets are a menu taller
-  -- than the screen, so a choice among them is a step either way.
+  -- than the screen, so a choice among them is a step either way. Date &
+  -- Time's page is the only place it is set since Date & Time, a window
+  -- that listed the same offsets, went on 5 October (`roadmap.md`, *One
+  -- kit, one door*); `wm preferences:datetime` opens it.
   --
   if it.kind == "stepper" then
     local choices = {}
@@ -626,28 +629,36 @@ local function control_for(it, x, y, changed)
                        value = settings.get(it) or 0,
                        on_change = function(_, v)
                          -- The clock's row reads the time again on its next
-                         -- tick, with the new offset.
-                         settings.set(it, v)
+                         -- tick, with the new offset. A refusal reaches the
+                         -- log, as it reached Date & Time's own window when
+                         -- that was where this was set.
+                         local ok, why = settings.set(it, v)
+
+                         if not ok then
+                           print("preferences: the time zone was not kept: "
+                                 .. tostring(why))
+                         end
                          if changed then changed() end
                        end }
   end
 
   --
-  -- **What opens with the desktop**, as the Startup window lists it: every
-  -- application, ticked or not, eight rows showing and the rest a scroll
-  -- away, across the whole card.
+  -- **What opens with the desktop**: every application, ticked or not,
+  -- eight rows showing and the rest a scroll away, across the whole card.
+  -- This page is the only place it is chosen since Startup Apps, a window
+  -- that did the same, went on 5 October (`roadmap.md`, *One kit, one
+  -- door*); `wm preferences:startup` opens it.
+  --
+  -- What the Deskbar can start, from where the Deskbar reads it
+  -- (`deskbarmenu.programs`): a list that offered an application the
+  -- Deskbar will not open at login - one with `section none`, as Info is -
+  -- was a tick that did nothing.
   --
   if it.kind == "startup" then
     local names, ticked = {}, {}
 
-    for _, file in ipairs(fs.list("/Kosmos/Apps") or {}) do
-      local attrs = fs.getattr("/Kosmos/Apps/" .. file)
-
-      if attrs and attrs.kind == "application" then
-        local short = file:gsub("%.lua$", "")
-
-        if short ~= "deskbar" then names[#names + 1] = short end
-      end
+    for short in pairs(use("/Kosmos/Libraries/deskbarmenu.lua").programs(fs)) do
+      names[#names + 1] = short
     end
 
     table.sort(names)
@@ -668,7 +679,15 @@ local function control_for(it, x, y, changed)
                         if ticked[name] then items[#items + 1] = name end
                       end
 
-                      use("/Kosmos/Libraries/prefs.lua").write(settings.STARTUP, { items = items })
+                      local ok, why = use("/Kosmos/Libraries/prefs.lua").write(
+                        settings.STARTUP, { items = items })
+
+                      -- A refusal reaches the log, as it reached Startup
+                      -- Apps' own window when that was where this was set.
+                      if not ok then
+                        print("preferences: what opens with the desktop was "
+                              .. "not kept: " .. tostring(why))
+                      end
                     end }
   end
 
@@ -749,17 +768,13 @@ local function facts()
   local driven = hardware.network(sys.bus())
   local net = fs.net_info and fs.net_info("/Network") or nil
 
-  local function dotted(a)
-    if type(a) == "string" and #a == 4 and a ~= "\0\0\0\0" then
-      return ("%d.%d.%d.%d"):format(a:byte(1, 4))
-    end
-
-    return nil
-  end
+  -- An address as a person writes it, or "none" for one not given yet.
+  local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
+  local card = net and net.card
 
   out.net_card = driven[1] and driven[1].name or "No card found"
-  out.net_address = net and net.card and dotted(net.address) or "none"
-  out.net_gateway = net and net.card and dotted(net.gateway) or "none"
+  out.net_address = card and ipv4.given(net.address) and ipv4.text(net.address) or "none"
+  out.net_gateway = card and ipv4.given(net.gateway) and ipv4.text(net.gateway) or "none"
 
   return out
 end

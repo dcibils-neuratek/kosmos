@@ -83,7 +83,7 @@ end
 local function text_string(s)
   local out = { "<FEFF" }
 
-  for ch in s:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+  for ch in s:gmatch(utf8.charpattern) do
     local ok, u = pcall(utf8.codepoint, ch)
     if ok then out[#out + 1] = utf16(u) end
   end

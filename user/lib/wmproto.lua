@@ -150,4 +150,78 @@ function wmproto.paste()
   return r.text or ""
 end
 
+--------------------------------------------------------------------------
+-- **The screen, lent** (`wm.lua`, `remote`): `/Running/wm/remote`, which
+-- the window manager mounts only in a program it launches whose header says
+-- `kosmos: needs desktop`. The window manager owns every pixel, so the
+-- screen is asked of it, never read from the framebuffer: a region of this
+-- process the screen's size, handed over, and filled with each frame as it
+-- is composed. `screenshot` and `vncd` each made that handshake by hand.
+--------------------------------------------------------------------------
+
+wmproto.REMOTE = "/Running/wm/remote"
+
+--
+-- A copy of the screen, not yet watched: `{ w, h, cap, at, surface }` -
+-- `surface` the region's pixels to read - or nil, why, and whether the
+-- desktop lent its screen at all, which is when a caller has something to
+-- add about where it must be started from. The window manager says the
+-- size first, and the region is made to it.
+--
+function wmproto.screen()
+  local size = fs.send(wmproto.REMOTE, { type = "watch" })
+
+  if type(size) ~= "table" or not size.w then
+    return nil, "the desktop did not lend its screen", false
+  end
+
+  local copy, why = use("/Kosmos/Libraries/regions.lua").make(size.bytes)
+
+  if not copy then return nil, "no memory for a copy of the screen: " .. tostring(why), true end
+
+  return { w = size.w, h = size.h, cap = copy.cap, at = copy.at, watching = false,
+           surface = gfx.wrap{ at = copy.at, w = size.w, h = size.h } }
+end
+
+--
+-- **Watched**: the copy handed to the window manager, which fills it whole
+-- at once and then with every frame. True, or nil and why. It lets the copy
+-- go by itself when nobody has asked `watched` for five seconds, and then
+-- this is asked again with the same copy.
+--
+function wmproto.watch(screen)
+  local r = fs.send(wmproto.REMOTE, { type = "watch" }, screen.cap)
+
+  if type(r) ~= "table" or not r.ok then
+    return nil, "the desktop would not share its screen: "
+                .. tostring(type(r) == "table" and r.error or r)
+  end
+
+  screen.watching = true
+  return true
+end
+
+--
+-- The rectangles that changed since last asked, each `{ x, y, w, h }`; nil
+-- when the window manager has let the copy go, which `screen.watching`
+-- then says too.
+--
+function wmproto.watched(screen)
+  local r = fs.send(wmproto.REMOTE, { type = "watched" })
+
+  if type(r) ~= "table" or not r.ok or type(r.rects) ~= "string" then
+    screen.watching = false
+    return nil
+  end
+
+  local list = {}
+
+  for at = 1, #r.rects - 7, 8 do
+    local x, y, w, h = string.unpack(">I2I2I2I2", r.rects, at)
+    list[#list + 1] = { x, y, w, h }
+  end
+
+  return list
+end
+
 return wmproto

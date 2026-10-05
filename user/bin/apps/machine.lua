@@ -109,11 +109,8 @@ local function absent(what, why)
   row(what, why)
 end
 
-local function commas(n)
-  local s = tostring(math.floor(n or 0))
-  local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
-  return (out:gsub("^,", ""))
-end
+-- 1,234,567, as every count is written (`text.grouped`).
+local commas = use("/Kosmos/Libraries/text.lua").grouped
 
 --------------------------------------------------------------------------
 

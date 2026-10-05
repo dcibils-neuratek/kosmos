@@ -21,49 +21,44 @@
 -- manager fills with the frame as it answers. It lets the copy go by itself
 -- five seconds after nobody asks.
 
-local REMOTE = "/Running/wm/remote"
 local clock = use("/Kosmos/Libraries/clock.lua")
-local regions = use("/Kosmos/Libraries/regions.lua")
+local files = use("/Kosmos/Libraries/files.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 
-local size = fs.send(REMOTE, { type = "watch" })
+-- The screen asked for as `vncd` asks for it (`wmproto.lua`): its size,
+-- a region that size, and the region handed over and filled.
+local screen, why, lent = wmproto.screen()
 
-if type(size) ~= "table" or not size.w then
-  print("screenshot: the desktop did not lend its screen - the desktop has to be running")
+if not screen then
+  print("screenshot: " .. why .. (lent and "" or " - the desktop has to be running"))
   return
 end
 
-local copy = regions.make(size.bytes)
+local lent
 
-if not copy then
-  print("screenshot: no memory for a picture of the screen")
+lent, why = wmproto.watch(screen)
+
+if not lent then
+  print("screenshot: " .. why)
   return
 end
 
-local lent = fs.send(REMOTE, { type = "watch" }, copy.cap)
-
-if type(lent) ~= "table" or not lent.ok then
-  print("screenshot: the desktop would not share its screen: "
-        .. tostring(type(lent) == "table" and lent.error or lent))
-  return
-end
-
-local picture = gfx.wrap{ at = copy.at, w = size.w, h = size.h }
-local png = gfx.encode_png(picture)
+local png = gfx.encode_png(screen.surface)
 
 local t = clock.now()
-local stamp = t and ("%04d-%02d-%02d-%02d%02d%02d"):format(t.year, t.month, t.day,
-                                                           t.hour, t.min, t.sec)
-              or tostring(sys.ticks())
+local stamp = t and clock.stamp(t) or tostring(sys.ticks())
 local folder = "/Home/Captures"
 
-if not fs.getattr(folder) then fs.send(folder, { type = "mkdir" }) end
+files.make_folder(folder)
 
 local path = folder .. "/screenshot-" .. stamp .. ".png"
-local ok, why = fs.write(path, png)
+local ok
+
+ok, why = fs.write(path, png)
 
 if not ok then
   print("screenshot: " .. path .. " was not written: " .. tostring(why))
   return
 end
 
-print(("screenshot: %s, %dx%d, %d bytes"):format(path, size.w, size.h, #png))
+print(("screenshot: %s, %dx%d, %d bytes"):format(path, screen.w, screen.h, #png))

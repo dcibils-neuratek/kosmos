@@ -41,7 +41,6 @@
 
 local ui     = use("/Kosmos/Libraries/ui.lua")
 local notify = use("/Kosmos/Libraries/notify.lua")
-local menu   = use("/Kosmos/Libraries/deskbarmenu.lua")
 local clock  = use("/Kosmos/Libraries/clock.lua")
 local types  = use("/Kosmos/Libraries/filetypes.lua")
 local theme  = ui.theme
@@ -135,37 +134,6 @@ local function act(e)
   print(("notifications: opened %s with %s"):format(path, program))
 end
 
--- `text` in lines no wider than `room` in `face`, at most `most` of them,
--- the last cut with an ellipsis when there was more.
-local function wrap(text, room, face, most)
-  local lines, line = {}, ""
-
-  for word in tostring(text or ""):gmatch("%S+") do
-    local try = (line == "") and word or (line .. " " .. word)
-
-    if gfx.measure(try, face) <= room or line == "" then
-      line = try
-    else
-      lines[#lines + 1] = line
-      line = word
-    end
-  end
-
-  if line ~= "" then lines[#lines + 1] = line end
-
-  if #lines > most then
-    local cut = { table.unpack(lines, 1, most) }
-    cut[most] = ui.fitted(cut[most] .. " " .. lines[most + 1], room, face)
-    return cut
-  end
-
-  for i, l in ipairs(lines) do
-    if gfx.measure(l, face) > room then lines[i] = ui.fitted(l, room, face) end
-  end
-
-  return lines
-end
-
 local SMALL = ui.sized("ui", 13)
 local BODY  = ui.sized("ui", 14)
 local TITLE = ui.sized("ui", 15, "bold")
@@ -197,7 +165,7 @@ local R       = 20
 
 local function card_h(e)
   local text_w = CARD_W - 2 * PAD_X - ICON - 12
-  local lines = (e.body ~= "") and #wrap(e.body, text_w, BODY, 2) or 0
+  local lines = (e.body ~= "") and #ui.wrapped(e.body, text_w, BODY, 2) or 0
 
   return PAD_Y + gfx.height(SMALL) + 2 + gfx.height(TITLE)
          + lines * (gfx.height(BODY) + 2) + PAD_Y
@@ -227,7 +195,7 @@ local function draw_card(g, x, y, e, p, back)
   ty = ty + gfx.height(TITLE)
 
   if e.body ~= "" then
-    for _, line in ipairs(wrap(e.body, text_w, BODY, 2)) do
+    for _, line in ipairs(ui.wrapped(e.body, text_w, BODY, 2)) do
       g:text(text_x, ty, line, p.muted, p.card, BODY)
       ty = ty + gfx.height(BODY) + 2
     end
@@ -566,7 +534,7 @@ local function history()
       local rows = {}
 
       for _, e in ipairs(gr.items) do
-        local lines = (e.body ~= "") and wrap(e.body, ITEM_W, BODY, 2) or {}
+        local lines = (e.body ~= "") and ui.wrapped(e.body, ITEM_W, BODY, 2) or {}
         local rh = 6 + gfx.height(TITLE) + #lines * (gfx.height(BODY) + 1) + 6
 
         rows[#rows + 1] = { e = e, lines = lines, h = rh }

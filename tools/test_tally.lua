@@ -9,6 +9,9 @@
 --
 --   build/host/lua tools/test_tally.lua
 
+-- `use`, as Kosmos resolves a library, for the one `tally` asks for.
+use = use or function(path) return dofile((path:gsub("^/Kosmos/Libraries/", "user/lib/"))) end
+
 local tally = dofile("user/lib/tally.lua")
 
 local checks, failed = 0, 0

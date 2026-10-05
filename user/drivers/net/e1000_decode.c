@@ -7,6 +7,10 @@
 
 #include "e1000_decode.h"
 
+/* `user/include/bytes.h`, by its path from here: the host test compiles this
+ * file with no include path for it. A descriptor is little-endian. */
+#include "../../include/bytes.h"
+
 /* STATUS, and the two bits that carry the speed (13.4.2). */
 #define STATUS_FD           (1u << 0)
 #define STATUS_LU           (1u << 1)
@@ -104,8 +108,7 @@ void e1000_decode_rx(const uint8_t *desc, struct e1000_rx *out)
     out->done = true;
     out->end = (desc[RX_STATUS_AT] & RX_STATUS_EOP) != 0;
     out->error = (desc[RX_ERRORS_AT] & RX_ERROR_BAD) != 0;
-    out->length = (unsigned)desc[RX_LENGTH_AT]
-                | ((unsigned)desc[RX_LENGTH_AT + 1u] << 8);
+    out->length = get_le16(desc + RX_LENGTH_AT);
 }
 
 /* `e1000e`'s: CE, SE, SEQ, CXE and RXE in the extended status word. */
@@ -125,8 +128,7 @@ void e1000_decode_rx_ext(const uint8_t *desc, struct e1000_rx *out)
         return;
     }
 
-    status = (uint32_t)desc[8] | ((uint32_t)desc[9] << 8)
-           | ((uint32_t)desc[10] << 16) | ((uint32_t)desc[11] << 24);
+    status = get_le32(desc + 8);
 
     if ((status & RX_STATUS_DD) == 0) {
         return;
@@ -135,7 +137,7 @@ void e1000_decode_rx_ext(const uint8_t *desc, struct e1000_rx *out)
     out->done = true;
     out->end = (status & RX_STATUS_EOP) != 0;
     out->error = (status & RXDEXT_FRAME_ERRORS) != 0;
-    out->length = (unsigned)desc[12] | ((unsigned)desc[13] << 8);
+    out->length = get_le16(desc + 12);
 }
 
 bool e1000_decode_tx_done(const uint8_t *desc)

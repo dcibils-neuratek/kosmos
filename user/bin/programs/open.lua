@@ -23,7 +23,7 @@ end
 
 -- A path from where this was typed, or a name the window manager finds.
 if program:sub(1, 1) ~= "/" and (program:find("/", 1, true) or program:match("%.lua$")) then
-  program = (cwd == "/" and "" or cwd) .. "/" .. program
+  program = use("/Kosmos/Libraries/files.lua").abs(program, cwd)
 end
 
 if not fs.getattr("/Running/wm") then

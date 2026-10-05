@@ -3,7 +3,7 @@
 -- What opens when the desktop does, read by the two programs that care.
 --
 -- **A module rather than the same four lines in both**, and the reason is
--- what happens when they drift. `startup.lua` draws the panel of tick
+-- what happens when they drift. Preferences' Startup page draws the tick
 -- boxes; `deskbar.lua` opens what is ticked. If one of them decided on a
 -- default and the other did not, the desktop would come up with three
 -- windows on it and the panel would show nothing ticked - which is not a

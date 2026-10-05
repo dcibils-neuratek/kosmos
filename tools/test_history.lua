@@ -70,7 +70,11 @@ function fs.list(dir)
 end
 
 function fs.send(path, msg)
-  if msg.type == "mkdir" then dirs[path] = true
+  -- One folder, in one that is there, as a filesystem makes them.
+  if msg.type == "mkdir" then
+    if not dirs[path:match("^(.*)/[^/]+$")] then return nil, "no such folder" end
+
+    dirs[path] = true
   elseif msg.type == "delete" then files[path] = nil end
 
   return true

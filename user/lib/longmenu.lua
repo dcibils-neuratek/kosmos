@@ -24,12 +24,9 @@ local function short(text)
 
   if #text <= 24 then return text end
 
-  -- At a character's start, never inside one's UTF-8.
-  local cut = 24
-
-  while cut > 1 and (text:byte(cut + 1) or 0) & 0xC0 == 0x80 do cut = cut - 1 end
-
-  return text:sub(1, cut) .. "..."
+  -- At most 24 bytes, cut before a character rather than inside one: before
+  -- the one the 25th byte is part of, wherever `utf8.offset` finds it starts.
+  return text:sub(1, utf8.offset(text, 0, 25) - 1) .. "..."
 end
 
 function longmenu.grouped(items, fit)

@@ -3933,6 +3933,13 @@ host-check: $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypt
 	@# region, whose windows land each at its own offset (5 October 2026).
 	$(HOSTDIR)/test_ramstore
 	$(HOSTDIR)/lua tools/test_regions.lua
+	@# The paths, text and addresses every program shares, one copy of each
+	@# since the second half of the review's second copies (5 October 2026):
+	@# a path made whole and a folder with its parents; thousands, a bar and
+	@# lines; an address both ways and a network program's scaffolding.
+	$(HOSTDIR)/lua tools/test_files.lua
+	$(HOSTDIR)/lua tools/test_text.lua
+	$(HOSTDIR)/lua tools/test_ipv4.lua
 	$(HOSTDIR)/test_diskcache
 	@# And what an audio file says about itself - ID3v2, ID3v1 and a WAV's
 	@# INFO - read through the same tags.lua Music uses, on this machine.

@@ -9,16 +9,10 @@
 
 #include "fat_decode.h"
 
-static uint32_t le16(const uint8_t *p)
-{
-    return (uint32_t)p[0] | ((uint32_t)p[1] << 8);
-}
-
-static uint32_t le32(const uint8_t *p)
-{
-    return (uint32_t)p[0] | ((uint32_t)p[1] << 8)
-         | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-}
+/* `user/include/bytes.h`, by its path from here: the host test and `fatls`
+ * compile this file with no include path for it. FAT is little-endian
+ * throughout. */
+#include "../include/bytes.h"
 
 static bool refused(const char **why, const char *text)
 {
@@ -91,7 +85,7 @@ bool fat_volume_from(const uint8_t *s, unsigned size, struct fat_volume *out,
         return refused(why, "no jump at byte 0, so not a FAT boot sector");
     }
 
-    out->bytes_per_sector = le16(s + 11);
+    out->bytes_per_sector = get_le16(s + 11);
 
     if (out->bytes_per_sector != 512u && out->bytes_per_sector != 1024u
         && out->bytes_per_sector != 2048u && out->bytes_per_sector != 4096u) {
@@ -115,12 +109,12 @@ bool fat_volume_from(const uint8_t *s, unsigned size, struct fat_volume *out,
         return refused(why, "a cluster over 64 KB");
     }
 
-    out->reserved_sectors = le16(s + 14);
+    out->reserved_sectors = get_le16(s + 14);
     out->fats = s[16];
-    out->root_entries = le16(s + 17);
-    total16 = le16(s + 19);
-    fat16 = le16(s + 22);
-    total32 = le32(s + 32);
+    out->root_entries = get_le16(s + 17);
+    total16 = get_le16(s + 19);
+    fat16 = get_le16(s + 22);
+    total32 = get_le32(s + 32);
 
     if (out->reserved_sectors == 0u) {
         return refused(why, "BPB_RsvdSecCnt is 0");
@@ -137,7 +131,7 @@ bool fat_volume_from(const uint8_t *s, unsigned size, struct fat_volume *out,
     }
 
     /* BPB_FATSz32 exists only when BPB_FATSz16 is 0; before that, offset 36 is FAT16's BS_DrvNum. */
-    fat32 = (fat16 == 0u) ? le32(s + 36) : 0u;
+    fat32 = (fat16 == 0u) ? get_le32(s + 36) : 0u;
     out->fat_sectors = (fat16 != 0u) ? fat16 : fat32;
 
     if (out->fat_sectors == 0u) {
@@ -191,7 +185,7 @@ bool fat_volume_from(const uint8_t *s, unsigned size, struct fat_volume *out,
         if (s[38] == 0x29u) {
             trimmed(s + 43, 11u, out->label);
             /* BS_VolID, just before the label: the volume's own serial. */
-            out->serial = le32(s + 39);
+            out->serial = get_le32(s + 39);
             out->has_serial = true;
         }
     } else {
@@ -205,11 +199,11 @@ bool fat_volume_from(const uint8_t *s, unsigned size, struct fat_volume *out,
          * if it does not contain a version number that was defined at the
          * time the driver was written", which is 0:0.
          */
-        if (le16(s + 42) != 0u) {
+        if (get_le16(s + 42) != 0u) {
             return refused(why, "a FAT32 version newer than 0.0");
         }
 
-        out->root_cluster = le32(s + 44);
+        out->root_cluster = get_le32(s + 44);
 
         if (out->root_cluster < 2u || out->root_cluster > out->clusters + 1u) {
             return refused(why, "BPB_RootClus is not one of the volume's clusters");
@@ -223,7 +217,7 @@ bool fat_volume_from(const uint8_t *s, unsigned size, struct fat_volume *out,
         if (s[66] == 0x29u) {
             trimmed(s + 71, 11u, out->label);
             /* BS_VolID, just before the label: the volume's own serial. */
-            out->serial = le32(s + 67);
+            out->serial = get_le32(s + 67);
             out->has_serial = true;
         }
     }
@@ -260,7 +254,7 @@ enum fat_link fat_link_at(const struct fat_volume *v, const uint8_t *at,
 
     if (v->kind == FAT_32) {
         /* "A FAT32 FAT entry is actually only a 28-bit entry." */
-        value = le32(at) & 0x0FFFFFFFu;
+        value = get_le32(at) & 0x0FFFFFFFu;
 
         if (value >= 0x0FFFFFF8u) {
             return FAT_LINK_END;
@@ -271,7 +265,7 @@ enum fat_link fat_link_at(const struct fat_volume *v, const uint8_t *at,
             return FAT_LINK_BAD;
         }
     } else {
-        value = le16(at);
+        value = get_le16(at);
 
         if (value >= 0xFFF8u) {
             return FAT_LINK_END;
@@ -438,15 +432,15 @@ enum fat_step fat_dirent_step(const struct fat_volume *v, const uint8_t *e,
         first = (unsigned)(names->expect - 1u) * 13u;
 
         for (unsigned i = 0; i < 5u; i++) {
-            names->units[first + i] = (uint16_t)le16(e + 1 + 2 * i);
+            names->units[first + i] = get_le16(e + 1 + 2 * i);
         }
 
         for (unsigned i = 0; i < 6u; i++) {
-            names->units[first + 5u + i] = (uint16_t)le16(e + 14 + 2 * i);
+            names->units[first + 5u + i] = get_le16(e + 14 + 2 * i);
         }
 
         for (unsigned i = 0; i < 2u; i++) {
-            names->units[first + 11u + i] = (uint16_t)le16(e + 28 + 2 * i);
+            names->units[first + 11u + i] = get_le16(e + 28 + 2 * i);
         }
 
         names->expect--;
@@ -496,15 +490,15 @@ enum fat_step fat_dirent_step(const struct fat_volume *v, const uint8_t *e,
 
     out->attributes = attr;
     out->directory = (attr & FAT_ATTR_DIRECTORY) != 0u;
-    out->size = le32(e + 28);
-    out->write_time = (uint16_t)le16(e + 22);
-    out->write_date = (uint16_t)le16(e + 24);
+    out->size = get_le32(e + 28);
+    out->write_time = get_le16(e + 22);
+    out->write_date = get_le16(e + 24);
 
     /* DIR_FstClusHI is "always 0 for a FAT12 or FAT16 volume". */
-    out->first_cluster = le16(e + 26);
+    out->first_cluster = get_le16(e + 26);
 
     if (v->kind == FAT_32) {
-        out->first_cluster |= le16(e + 20) << 16;
+        out->first_cluster |= (uint32_t)get_le16(e + 20) << 16;
     }
 
     /* A long name counts only when every piece came, in order, for this short name. */

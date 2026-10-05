@@ -15,6 +15,11 @@
 
 #include <string.h>
 
+/* `user/include/bytes.h`, by its path from here: the host's builds of this
+ * file - `build/host/lua`'s and the drive server's test - name no include
+ * path for it. */
+#include "../include/bytes.h"
+
 const char *kfs_why(int status)
 {
     switch (status) {
@@ -52,32 +57,8 @@ const char *kfs_why(int status)
     }
 }
 
-/* Little-endian, as everything on the disk is. */
-static uint32_t get32(const uint8_t *p)
-{
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16
-           | (uint32_t)p[3] << 24;
-}
-
-static uint64_t get64(const uint8_t *p)
-{
-    return (uint64_t)get32(p) | (uint64_t)get32(p + 4) << 32;
-}
-
-static void put32(uint8_t *p, uint32_t v)
-{
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-    p[2] = (uint8_t)(v >> 16);
-    p[3] = (uint8_t)(v >> 24);
-}
-
-static void put64(uint8_t *p, uint64_t v)
-{
-    put32(p, (uint32_t)v);
-    put32(p + 4, (uint32_t)(v >> 32));
-}
-
+/* Little-endian, as everything on the disk is: `bytes.h`'s `get_le32`,
+ * `get_le64`, `put_le32` and `put_le64`, which this file had copies of. */
 static uint64_t min64(uint64_t a, uint64_t b)
 {
     return a < b ? a : b;
@@ -102,17 +83,17 @@ void kfs_init(struct kfs *k, const struct kfs_disk *disk)
 static void pack_super(uint8_t *block, const struct kfs_super *sb)
 {
     memset(block, 0, KFS_BLOCK);
-    put32(block + 0, sb->magic);
-    put32(block + 4, sb->version);
-    put32(block + 8, sb->block_size);
-    put32(block + 12, sb->blocks);
-    put32(block + 16, sb->bitmap_at);
-    put32(block + 20, sb->bitmap_blocks);
-    put32(block + 24, sb->inodes_at);
-    put32(block + 28, sb->inode_count);
-    put32(block + 32, sb->journal_at);
-    put32(block + 36, sb->data_at);
-    put64(block + 40, sb->created);
+    put_le32(block + 0, sb->magic);
+    put_le32(block + 4, sb->version);
+    put_le32(block + 8, sb->block_size);
+    put_le32(block + 12, sb->blocks);
+    put_le32(block + 16, sb->bitmap_at);
+    put_le32(block + 20, sb->bitmap_blocks);
+    put_le32(block + 24, sb->inodes_at);
+    put_le32(block + 28, sb->inode_count);
+    put_le32(block + 32, sb->journal_at);
+    put_le32(block + 36, sb->data_at);
+    put_le64(block + 40, sb->created);
 }
 
 /*
@@ -126,17 +107,17 @@ static int unpack_super(const uint8_t *block, struct kfs_super *sb)
 {
     uint64_t inode_blocks;
 
-    sb->magic = get32(block + 0);
-    sb->version = get32(block + 4);
-    sb->block_size = get32(block + 8);
-    sb->blocks = get32(block + 12);
-    sb->bitmap_at = get32(block + 16);
-    sb->bitmap_blocks = get32(block + 20);
-    sb->inodes_at = get32(block + 24);
-    sb->inode_count = get32(block + 28);
-    sb->journal_at = get32(block + 32);
-    sb->data_at = get32(block + 36);
-    sb->created = get64(block + 40);
+    sb->magic = get_le32(block + 0);
+    sb->version = get_le32(block + 4);
+    sb->block_size = get_le32(block + 8);
+    sb->blocks = get_le32(block + 12);
+    sb->bitmap_at = get_le32(block + 16);
+    sb->bitmap_blocks = get_le32(block + 20);
+    sb->inodes_at = get_le32(block + 24);
+    sb->inode_count = get_le32(block + 28);
+    sb->journal_at = get_le32(block + 32);
+    sb->data_at = get_le32(block + 36);
+    sb->created = get_le64(block + 40);
 
     if (sb->magic != KFS_MAGIC) {
         return KFS_E_NOT_KFS;
@@ -178,35 +159,35 @@ static int unpack_super(const uint8_t *block, struct kfs_super *sb)
 static void pack_inode(uint8_t *p, const struct kfs_inode *node)
 {
     memset(p, 0, KFS_INODE_SIZE);
-    put32(p + 0, node->kind);
-    put32(p + 4, node->links);
-    put64(p + 8, node->size);
-    put64(p + 16, node->mtime);
-    put32(p + 24, node->attrs);
-    put32(p + 28, node->extents);
+    put_le32(p + 0, node->kind);
+    put_le32(p + 4, node->links);
+    put_le64(p + 8, node->size);
+    put_le64(p + 16, node->mtime);
+    put_le32(p + 24, node->attrs);
+    put_le32(p + 28, node->extents);
 
     for (uint32_t i = 0; i < node->extents && i < KFS_EXTENTS; i++) {
-        put32(p + 32 + i * 8, node->extent[i].start);
-        put32(p + 36 + i * 8, node->extent[i].count);
+        put_le32(p + 32 + i * 8, node->extent[i].start);
+        put_le32(p + 36 + i * 8, node->extent[i].count);
     }
 }
 
 static int unpack_inode(const uint8_t *p, struct kfs_inode *node)
 {
-    node->kind = get32(p + 0);
-    node->links = get32(p + 4);
-    node->size = get64(p + 8);
-    node->mtime = get64(p + 16);
-    node->attrs = get32(p + 24);
-    node->extents = get32(p + 28);
+    node->kind = get_le32(p + 0);
+    node->links = get_le32(p + 4);
+    node->size = get_le64(p + 8);
+    node->mtime = get_le64(p + 16);
+    node->attrs = get_le32(p + 24);
+    node->extents = get_le32(p + 28);
 
     if (node->extents > KFS_EXTENTS) {
         return KFS_E_BAD_INODE;
     }
 
     for (uint32_t i = 0; i < node->extents; i++) {
-        node->extent[i].start = get32(p + 32 + i * 8);
-        node->extent[i].count = get32(p + 36 + i * 8);
+        node->extent[i].start = get_le32(p + 32 + i * 8);
+        node->extent[i].count = get_le32(p + 36 + i * 8);
     }
 
     return KFS_OK;
@@ -418,11 +399,11 @@ static void pack_header(uint8_t *block, uint32_t state, uint32_t count,
                         uint32_t sum)
 {
     memset(block, 0, KFS_BLOCK);
-    put32(block + 0, KFS_J_MAGIC);
-    put32(block + 4, state);
-    put32(block + 8, count);
-    put32(block + 12, sum);
-    put64(block + 16, 0);
+    put_le32(block + 0, KFS_J_MAGIC);
+    put_le32(block + 4, state);
+    put_le32(block + 8, count);
+    put_le32(block + 12, sum);
+    put_le64(block + 16, 0);
 }
 
 int kfs_commit(struct kfs *k, const struct kfs_super *sb, bool stop_after_commit)
@@ -452,7 +433,7 @@ int kfs_commit(struct kfs *k, const struct kfs_super *sb, bool stop_after_commit
     memset(k->journal[0], 0, KFS_BLOCK);
 
     for (uint32_t i = 0; i < count; i++) {
-        put32(k->journal[0] + i * 4, k->held_at[i]);
+        put_le32(k->journal[0] + i * 4, k->held_at[i]);
     }
 
     sum = fnv1a(0x811c9dc5u, k->journal[0], (size_t)count * 4);
@@ -548,11 +529,11 @@ int kfs_recover(struct kfs *k, const struct kfs_super *sb, uint32_t *replayed)
         return r;
     }
 
-    state = get32(k->head + 4);
-    count = get32(k->head + 8);
-    sum = get32(k->head + 12);
+    state = get_le32(k->head + 4);
+    count = get_le32(k->head + 8);
+    sum = get_le32(k->head + 12);
 
-    if (get32(k->head) != KFS_J_MAGIC || state != KFS_J_COMMITTED) {
+    if (get_le32(k->head) != KFS_J_MAGIC || state != KFS_J_COMMITTED) {
         return KFS_OK;
     }
 
@@ -581,7 +562,7 @@ int kfs_recover(struct kfs *k, const struct kfs_super *sb, uint32_t *replayed)
     }
 
     for (uint32_t i = 1; i <= count; i++) {
-        r = disk_write(k, get32(k->journal[0] + (i - 1) * 4), 1, k->journal[i]);
+        r = disk_write(k, get_le32(k->journal[0] + (i - 1) * 4), 1, k->journal[i]);
 
         if (r != KFS_OK) {
             return r;
@@ -1144,7 +1125,7 @@ int kfs_open_dir(struct kfs *k, const struct kfs_super *sb,
             return KFS_E_BAD_DIR;
         }
 
-        if (get32(k->dir + in) != 0) {
+        if (get_le32(k->dir + in) != 0) {
             if (out != in) {
                 memmove(k->dir + out, k->dir + in, ENTRY_HEAD + n);
             }
@@ -1166,7 +1147,7 @@ bool kfs_dir_next(const struct kfs *k, uint32_t *pos, uint32_t *inode,
         return false;
     }
 
-    *inode = get32(k->dir + *pos);
+    *inode = get_le32(k->dir + *pos);
     *name_len = k->dir[*pos + 4];
     *name = (const char *)k->dir + *pos + ENTRY_HEAD;
     *pos += ENTRY_HEAD + *name_len;
@@ -1207,7 +1188,7 @@ static int dir_append(struct kfs *k, uint32_t inode, const char *name, size_t le
         return KFS_E_DIR_BIG;
     }
 
-    put32(k->dir + k->dir_len, inode);
+    put_le32(k->dir + k->dir_len, inode);
     k->dir[k->dir_len + 4] = (uint8_t)len;
     memcpy(k->dir + k->dir_len + ENTRY_HEAD, name, len);
     k->dir_len += (uint32_t)(ENTRY_HEAD + len);
@@ -1466,7 +1447,7 @@ int kfs_read_attrs(struct kfs *k, const struct kfs_super *sb,
         return r;
     }
 
-    n = get32(k->part);
+    n = get_le32(k->part);
 
     if (n == 0 || n > KFS_BLOCK - 4) {
         return KFS_E_NOT_ATTRS;
@@ -1512,7 +1493,7 @@ int kfs_write_attrs(struct kfs *k, const struct kfs_super *sb, uint32_t number,
 
     /* The block before the inode, for `kfs.lua`'s reason. */
     memset(k->part, 0, KFS_BLOCK);
-    put32(k->part, len);
+    put_le32(k->part, len);
     memcpy(k->part + 4, bytes, len);
     r = put_block(k, block, k->part);
 
@@ -1550,7 +1531,7 @@ static int link(struct kfs *k, const struct kfs_super *sb, uint32_t dir_number,
     }
 
     if (dir_find(k, name, len, false, &at, &was)) {
-        put32(k->dir + at, inode);
+        put_le32(k->dir + at, inode);
     } else {
         r = dir_append(k, inode, name, len);
 

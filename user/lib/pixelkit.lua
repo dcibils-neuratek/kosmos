@@ -86,15 +86,7 @@ function pixelkit.new(ui)
     sub = tostring(sub or "")
 
     if sub ~= "" then
-      local limit = (room or (x + w)) - L.head_edge - tx
-
-      if gfx.measure(sub) > limit then
-        while #sub > 0 and gfx.measure(sub .. "...") > limit do
-          sub = sub:sub(1, -2)
-        end
-
-        sub = (sub ~= "") and (sub .. "...") or ""
-      end
+      sub = ui.fitted(sub, (room or (x + w)) - L.head_edge - tx, "ui")
 
       s:text(tx, y + (L.head - 1 - gfx.height()) // 2, sub, theme.text_dim,
              nil, "ui")
@@ -300,10 +292,7 @@ function pixelkit.new(ui)
 
     s:fill_round(b.x, b.y, b.w, b.h, theme.raised, 8)
 
-    local text = tostring(b.text or "")
-    local room = b.w - 34
-
-    while #text > 1 and gfx.measure(text, b.face) > room do text = text:sub(1, -2) end
+    local text = ui.fitted(b.text, b.w - 34, b.face)
 
     s:text(b.x + 10, b.y + (b.h - gfx.height(b.face)) // 2, text, theme.text, nil,
            b.face or "ui")

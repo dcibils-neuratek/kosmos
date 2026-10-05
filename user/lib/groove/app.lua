@@ -29,6 +29,7 @@ local Demos = use("/Kosmos/Libraries/groove/demos.lua")
 local Midi = use("/Kosmos/Libraries/groove/midiport.lua")
 local LK = use("/Kosmos/Libraries/groove/launchkey.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 local app = {}
 local C = U.C
@@ -136,16 +137,13 @@ local function autoRecordTick()
 end
 
 ---------------------------------------------------------------- export
+-- "Groove 2026-10-05 14.23.wav", and " 2" after it for a second in the
+-- same minute - the moment as `clock` writes it in a name, and the number
+-- as `files.free_name` adds one.
 local function exportName()
   local t = clock.now()
-  local base = t and ("Groove %04d-%02d-%02d %02d.%02d"):format(t.year, t.month, t.day, t.hour, t.min)
-               or "Groove"
-  local name, n = base .. ".wav", 1
-  while fs.getattr(MUSIC .. "/" .. name) do
-    n = n + 1
-    name = ("%s %d.wav"):format(base, n)
-  end
-  return name
+  local name = (t and ("Groove " .. clock.minute_stamp(t)) or "Groove") .. ".wav"
+  return files.free_name(MUSIC, name) or name
 end
 
 ---------------------------------------------------------------- lifetime
@@ -161,7 +159,7 @@ end
 function app.update(dt, counter_hz)
   if exportState == "go" then
     exportState = nil
-    fs.send(MUSIC, { type = "mkdir" })
+    files.make_folder(MUSIC)
     local name = exportName()
     local ok, res = pcall(E.export, MUSIC .. "/" .. name)
     if ok then say(string.format("Exported %s (%.0fs) to %s", name, res, MUSIC))
@@ -413,10 +411,9 @@ local function drawTop()
 end
 
 function app.save()
-  -- A level at a time: a new disk has no `/Home/Documents` yet, and making
-  -- a folder does not make the one it is in.
-  fs.send("/Home/Documents", { type = "mkdir" })
-  fs.send(DIR, { type = "mkdir" })
+  -- A new disk has no `/Home/Documents` yet, and making a folder does not
+  -- make the one it is in: `files.make_folder` makes both.
+  files.make_folder(DIR)
   local ok, err = E.save(PROJECT)
   say(ok and ("Saved to " .. PROJECT) or ("Save failed: " .. tostring(err)))
 end
@@ -580,7 +577,7 @@ local function drawSongPanel()
   U.rect(x + 2, y + 2, w - 4, h - 4, C.panel, 4)
   U.text("SONG ARRANGEMENT", x + 12, y + 9, C.text, U.fS)
   local secs, bars = E.songSeconds()
-  U.text(string.format("%d bars  %d:%02d", bars, floor(secs / 60), floor(secs % 60)), x, y + 9, C.dim, U.fS, w - 12, "right")
+  U.text(string.format("%d bars  %s", bars, clock.duration(secs)), x, y + 9, C.dim, U.fS, w - 12, "right")
   local chain = E.song.chain
   local ly, lh, rowH = y + 30, h - 30 - 92, 24
   local visible = floor(lh / rowH)

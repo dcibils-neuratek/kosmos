@@ -37,11 +37,8 @@ local ERRORS = {
   [12] = "no such name",
 }
 
-local function dotted(bytes)
-  if type(bytes) ~= "string" or #bytes ~= 4 then return "?" end
-
-  return ("%d.%d.%d.%d"):format(bytes:byte(1, 4))
-end
+-- An address as a person writes it, and back (`ipv4.lua`).
+local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
 
 --------------------------------------------------------------------------
 
@@ -84,9 +81,9 @@ end
 -- Not a shortcut: it is the correct answer, and it is what stops
 -- `host 10.0.2.2` from failing on a machine whose resolver is wrong. The
 -- same courtesy every resolver library extends, and the reason the check is
--- four numbers and three dots rather than "does it contain a dot".
+-- four numbers under 256 and three dots rather than "does it contain a dot".
 --
-if name:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$") then
+if ipv4.bytes(name) then
   print(name .. " is an address already")
   return
 end
@@ -109,4 +106,4 @@ if not address then
   return
 end
 
-print(name .. " is " .. dotted(address))
+print(name .. " is " .. ipv4.text(address))

@@ -41,6 +41,8 @@
 local con = use("/Kosmos/Kits/console")
 local regions = use("/Kosmos/Libraries/regions.lua")
 local compress = use("/Kosmos/Kits/compress")   -- base64, for `get` and `put`
+local files = use("/Kosmos/Libraries/files.lua")
+local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
 
 local words = {}
 
@@ -48,90 +50,23 @@ for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
 
 local port = tonumber(words[1]) or 23
 
-local function dotted(bytes)
-  if type(bytes) ~= "string" or #bytes ~= 4 then return "?" end
-
-  return ("%d.%d.%d.%d"):format(bytes:byte(1, 4))
-end
-
-local info = fs.net_info("/Network")
-
-if not info or not info.card then
-  print("telnetd: this machine has no network card")
-  return
-end
-
 --
--- **Waiting for an address, rather than leaving** (`testing.md` 18.352). A
--- stick and a network boot both start this before DHCP has answered, and
--- with no address the stack refuses to listen - so on the M700 it said
--- "could not listen on port 23: 3" and was gone a second after it started,
--- and the Mac had nothing to reach once the lease came. So a refusal while
--- the machine has no address is waited out, a second at a time, said once;
--- any other refusal is said and ends it as before.
+-- **What every program that serves the network begins with**, from
+-- `netprogram.lua`: a card, the port listened on - **waiting for an
+-- address rather than leaving** (`testing.md` 18.352), since a stick and a
+-- network boot both start this before DHCP has answered - its folder in
+-- `/Temporary` for the Servers window, a name in `/Running` for that
+-- window's Disconnect, and only this machine's own subnet let in.
 --
-local tick_hz = (sys.info() or {}).tick_hz or 250
-local listener, why = fs.listen("/Network", port)
-local waited = false
+local net = use("/Kosmos/Libraries/netprogram.lua").open{
+  name = "telnetd", port = port, wait = true, named = true, neighbours = true,
+}
 
-while not listener do
-  info = fs.net_info("/Network") or info
-
-  local addressed = type(info.address) == "string" and info.address ~= "\0\0\0\0"
-
-  if addressed then
-    print("telnetd: could not listen on port " .. port .. ": " .. tostring(why))
-    return
-  end
-
-  if not waited then
-    print(("telnetd: waiting for an address to listen on port %d"):format(port))
-    waited = true
-  end
-
-  sys.sleep(tick_hz)
-  listener, why = fs.listen("/Network", port)
-end
-
-info = fs.net_info("/Network") or info
+if not net then return end
 
 -- The address is DHCP's, and may change; asked again whenever somebody
 -- connects.
-print(("telnetd: on port %d, at %s"):format(port, dotted(info.address)))
-
---
--- **A name in `/Running`, for the Servers window's Disconnect**: a request
--- `{ type = "disconnect", from = "<address>" }` on it ends that address's
--- sessions. Tables, since this is a program's own name rather than a
--- server's wire (`CLAUDE.md`, a declared shape).
---
-local control = sys.endpoint()
-
-if control then
-  fs.send("/Running", { type = "register", name = "telnetd" }, control)
-end
-
---------------------------------------------------------------------------
--- Who may connect: this machine's own subnet, and nobody else.
---------------------------------------------------------------------------
-
-local function neighbour(from)
-  local now = fs.net_info("/Network") or info
-  local mine, mask = now.address, now.netmask
-
-  if type(from) ~= "string" or #from ~= 4 or type(mine) ~= "string"
-     or type(mask) ~= "string" or #mine ~= 4 or #mask ~= 4 then
-    return false
-  end
-
-  for i = 1, 4 do
-    if (from:byte(i) & mask:byte(i)) ~= (mine:byte(i) & mask:byte(i)) then
-      return false
-    end
-  end
-
-  return true
-end
+print(("telnetd: on port %d, at %s"):format(port, net:address()))
 
 --------------------------------------------------------------------------
 -- The sessions: one connection each, and each its own console.
@@ -149,36 +84,18 @@ local sessions = {}
 -- What the Servers window reads (`user/bin/apps/servers.lua`): the state and
 -- the sessions under `/Temporary/telnetd`, and its last lines - written when
 -- they change, since this does not know a window is watching. The same
--- arrangement `httpd` has with it.
+-- arrangement `httpd` has with it, and the same library keeps it.
 --------------------------------------------------------------------------
-
-local STATUS = "/Temporary/telnetd/status"
-local LOG = "/Temporary/telnetd/log"
-local LOG_LINES = 40
-local lines_said = {}
-
-fs.send("/Temporary/telnetd", { type = "mkdir" })
 
 local function publish()
   local list = {}
 
   for _, s in ipairs(sessions) do
-    list[#list + 1] = { from = dotted(s.from), cwd = s.cwd,
+    list[#list + 1] = { from = ipv4.text(s.from), cwd = s.cwd,
                         running = s.running_name }
   end
 
-  fs.write(STATUS, { state = "running", port = port, sessions = list })
-end
-
-local function note(text)
-  local clock = sys.ticks() // math.max(1, ((fs.read("/Devices/cpu") or {}).counter_hz or 1))
-
-  lines_said[#lines_said + 1] = ("%5ds  %s"):format(clock, text)
-
-  while #lines_said > LOG_LINES do table.remove(lines_said, 1) end
-
-  fs.write(LOG, lines_said)
-  print("telnetd: " .. text)
+  net:publish{ sessions = list }
 end
 
 local function send(s, text)
@@ -313,24 +230,6 @@ end
 -- is not given back, and each one it grew past was never given back.
 --------------------------------------------------------------------------
 
-local function folders_for(path)
-  local at = 1
-
-  while true do
-    local slash = path:find("/", at + 1, true)
-
-    if not slash then return end
-
-    local folder = path:sub(1, slash - 1)
-
-    if folder ~= "" and not fs.getattr(folder) then
-      fs.send(folder, { type = "mkdir" })
-    end
-
-    at = slash
-  end
-end
-
 local function put_done(s)
   local p = s.receiving
 
@@ -349,7 +248,7 @@ local function put_done(s)
     return
   end
 
-  folders_for(p.path)
+  files.make_folder(files.parent(p.path))
 
   local wrote, why = regions.write_string(p.path, bytes)
 
@@ -364,27 +263,8 @@ end
 -- A line typed: a word this process answers, or a program.
 --------------------------------------------------------------------------
 
-local function tidy(path)
-  local parts = {}
-
-  for part in path:gmatch("[^/]+") do
-    if part == ".." then
-      parts[#parts] = nil
-    elseif part ~= "." then
-      parts[#parts + 1] = part
-    end
-  end
-
-  return "/" .. table.concat(parts, "/")
-end
-
-local function resolve(s, p)
-  if not p or p == "" then return s.cwd end
-  if p:sub(1, 1) == "/" then return tidy(p) end
-
-  return tidy(s.cwd .. "/" .. p)
-end
-
+-- A path typed in a session is from where that session is, made whole by
+-- `files.abs` - which walks `.` and `..` as this once did for itself.
 local function launch(s, text)
   local name, rest = text:match("^%s*(%S+)%s*(.-)%s*$")
 
@@ -397,10 +277,10 @@ local function launch(s, text)
   end
 
   if name == "cd" then
-    local target = resolve(s, rest)
+    local target = files.abs(rest, s.cwd)
 
     if fs.list(target) then
-      s.cwd = fs.canonical and fs.canonical(target) or target
+      s.cwd = target
     else
       send(s, "cd: " .. target .. ": not a folder\n")
     end
@@ -429,7 +309,7 @@ local function launch(s, text)
   end
 
   if name == "get" then
-    get(s, resolve(s, rest))
+    get(s, files.abs(rest, s.cwd))
     return prompt(s)
   end
 
@@ -442,14 +322,14 @@ local function launch(s, text)
     end
 
     -- The lines that follow are the file's, until END.
-    s.receiving = { path = resolve(s, where), size = tonumber(size), parts = {} }
+    s.receiving = { path = files.abs(where, s.cwd), size = tonumber(size), parts = {} }
     return
   end
 
   local path
 
   if name:match("%.lua$") or name:find("/", 1, true) then
-    path = resolve(s, name)
+    path = files.abs(name, s.cwd)
   else
     path = fs.program(name)
   end
@@ -468,7 +348,7 @@ local function launch(s, text)
   if ok then
     s.child = id
     s.running_name = name
-    note(dotted(s.from) .. "  " .. text:match("^%s*(.-)%s*$"))
+    net:note(ipv4.text(s.from) .. "  " .. text:match("^%s*(.-)%s*$"))
     publish()
   else
     send(s, name .. ": " .. tostring(err) .. "\n")
@@ -528,7 +408,7 @@ local function open(conn, from)
   end
 
   sessions[#sessions + 1] = s
-  note(dotted(from) .. "  connected")
+  net:note(ipv4.text(from) .. "  connected")
   publish()
 
   -- What machine this is, as a Terminal starts; the prompt comes when it ends.
@@ -541,8 +421,24 @@ local function close(at)
   s.conn:close()
   sys.destroy(s.ep)
   table.remove(sessions, at)
-  note(dotted(s.from) .. "  gone")
+  net:note(ipv4.text(s.from) .. "  gone")
   publish()
+end
+
+-- A Disconnect from the Servers window: that address's sessions told, and
+-- ended once what they were told has gone.
+local function disconnect(from)
+  local ended = 0
+
+  for _, s in ipairs(sessions) do
+    if ipv4.text(s.from) == from then
+      s.out = s.out .. "\r\ndisconnected from this machine\r\n"
+      s.leaving = true
+      ended = ended + 1
+    end
+  end
+
+  return ended
 end
 
 --------------------------------------------------------------------------
@@ -561,7 +457,7 @@ while true do
 
   -- A child's output arrives on its console, which the network cannot wake
   -- this for: a tick while one runs, a tenth of a second otherwise.
-  local ready, arrived = fs.poll("/Network", reading, writing, listener,
+  local ready, arrived = fs.poll("/Network", reading, writing, net.listener,
                                  running and 1 or 25)
 
   if not ready then
@@ -569,15 +465,11 @@ while true do
     break
   end
 
+  -- Somebody new, from this network; anybody else was turned away.
   if arrived then
-    local conn, from = fs.accept("/Network", listener, 1)
+    local conn, from = net:accept(1)
 
-    if conn and not neighbour(from) then
-      note(dotted(from) .. "  refused, not on this network")
-      conn:close()
-    elseif conn then
-      open(conn, from)
-    end
+    if conn then open(conn, from) end
   end
 
   for at = #sessions, 1, -1 do
@@ -628,25 +520,7 @@ while true do
   end
 
   -- A request from the Servers window: end an address's sessions.
-  while control do
-    local req, who = sys.receive(control, true)
-
-    if not req then break end
-
-    local ended = 0
-
-    if type(req) == "table" and req.type == "disconnect" then
-      for at = #sessions, 1, -1 do
-        if dotted(sessions[at].from) == tostring(req.from) then
-          sessions[at].out = sessions[at].out .. "\r\ndisconnected from this machine\r\n"
-          sessions[at].leaving = true
-          ended = ended + 1
-        end
-      end
-    end
-
-    pcall(sys.reply, who, { ok = ended > 0, ended = ended })
-  end
+  net:disconnects(disconnect)
 
   -- Whichever child ended, the session it was running in has a prompt.
   local id, code = sys.wait(true)

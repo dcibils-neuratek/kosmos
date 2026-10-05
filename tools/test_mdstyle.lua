@@ -73,6 +73,10 @@ is("2 * 3 * 4", "para", 0, "2 * 3 * 4",
    "a star with a space after it is arithmetic, as CommonMark has it")
 is("a * b", "para", 0, "a * b", "a star with nothing to close it is a star")
 is("## A **big** one", "h2", 3, "A |mark:**|bold:big|mark:**| one", "bold in a heading")
+is("it gained **`index`** for", "para", 0, "it gained |mark:**`|code:index|mark:`**| for",
+   "bold round a code span is bold code, not a star and an italic")
+is("**a `x**y` b**", "para", 0, "mark:**|bold:a |mark:`|code:x**y|mark:`|bold: b|mark:**",
+   "a pair of stars inside code closes nothing")
 
 -- Fenced code: the fence is a mark, what is inside is code and nothing else.
 local fence, open = md.line("```lua", false)
@@ -115,6 +119,60 @@ for _, s in ipairs({ "a **b** *c* `d` [e](f) g", "## x", "- [ ] **y** z",
         ("the spans of %q are its bytes, each once"):format(s))
 end
 
+-- And as Reader reads it (`markdown.lua`), which asks this reader what each
+-- line is and keeps only the blocks: the marks of bold and italic left out,
+-- code as it is, and a list item's lines and a quotation's taken together.
+use = use or function(path)
+  if path == "/Kosmos/Libraries/mdstyle.lua" then return md end
+  error("test_mdstyle: nothing here answers " .. path)
+end
+
+local markdown = assert(loadfile("user/lib/markdown.lua"))()
+local blocks = markdown.parse(table.concat({
+  "# A **big** title",
+  "",
+  "Words with **bold**, *italic* and `x * y` in code,",
+  "and **bold across",
+  "two lines**.",
+  "",
+  "- an item that goes",
+  "  on, with *emphasis*",
+  "- [x] done",
+  "1) first",
+  "> a quotation",
+  "> in two lines",
+  "",
+  "---",
+  "```",
+  "local a = **b**",
+  "```",
+  "it gained **`index`** for",
+}, "\n"))
+
+local want = {
+  { "heading", "A big title" },
+  { "para", "Words with bold, italic and `x * y` in code, and bold across two lines." },
+  { "item", "an item that goes on, with emphasis" },
+  { "item", "[x] done" },
+  { "item", "first" },
+  { "quote", "a quotation in two lines" },
+  { "rule" },
+  { "code", "local a = **b**" },
+  { "para", "it gained `index` for" },
+}
+
+check(#blocks == #want, ("Reader read %d blocks, not %d"):format(#blocks, #want))
+
+for i, w in ipairs(want) do
+  local b = blocks[i] or {}
+
+  check(b.kind == w[1] and (w[2] == nil or b.text == w[2]),
+        ("Reader's block %d is %s %q, not %s %q"):format(i, tostring(b.kind), tostring(b.text),
+                                                          w[1], tostring(w[2])))
+end
+
+check(blocks[1] and blocks[1].level == 1, "a heading keeps its level for Reader")
+
 if failed > 0 then
   print(("FAIL: %d of %d checks on Markdown as it is written"):format(failed, passed + failed))
   os.exit(1)
@@ -122,4 +180,5 @@ end
 
 print(("PASS: %d checks on Markdown as it is written (headings, bullets, numbers, "
        .. "checklists, quotations, rules and fences; bold, italic, code and links "
-       .. "inside a line; what Return starts; every byte in one span)"):format(passed))
+       .. "inside a line; what Return starts; every byte in one span) and as "
+       .. "Reader reads it, through the same reader"):format(passed))

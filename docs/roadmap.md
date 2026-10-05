@@ -627,8 +627,17 @@ fix, then a review of the rest:
   What it found that is a second copy - this step's work list, Diego's step
   3, after 0.11. **The first half DONE on 5 October** (`testing.md` 18.402):
   regions, the kits' C and the browser's, below - with a leak it found on
-  the way, every mapped region kept until its process ended. The second
-  half, the Lua helpers, is next:
+  the way, every mapped region kept until its process ended. **The second
+  half DONE the same day** (`testing.md` 18.403): the Lua helpers, below,
+  with Startup Apps and Date & Time gone for being Preferences' pages, and
+  the byte-order helpers in the rest of the C. Left, with their reasons:
+  `solar/app.lua`'s number formatter (a portable module loaded with
+  `require`, which cannot reach Kosmos's libraries) and `docview`'s
+  character steppers (tested helpers that tolerate a position inside a
+  character, which Lua's `utf8.offset` raises at). **Wanted**: a launcher
+  that opens an application with an argument - Preferences at its Startup
+  or Date & Time page from the Deskbar's menu - which needs `binfs` to keep
+  one, as a `.page` file keeps the browser's:
   - **Regions by hand** beside `regions.lua`: `pdfpage.lua` (three places),
     `video.lua` (two), `camera.lua` (two), `midi.lua`, `ui.lua`'s
     `direct_region`, `groove/engine.lua`'s export, `files.copy`; and in the

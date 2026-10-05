@@ -21,19 +21,8 @@ local words = {}
 
 for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
 
-local function address(text)
-  local a, b, c, d = tostring(text or ""):match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
-
-  if not a then return nil end
-
-  a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
-
-  if a > 255 or b > 255 or c > 255 or d > 255 then return nil end
-
-  return string.char(a, b, c, d)
-end
-
-local where = address(words[1])
+-- Four numbers and three dots, as the four bytes the stack takes (`ipv4.lua`).
+local where = use("/Kosmos/Libraries/ipv4.lua").bytes(words[1])
 local port = tonumber(words[2]) or 23
 
 if not where then

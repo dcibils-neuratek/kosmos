@@ -27,19 +27,20 @@
 --
 -- **One desktop, and this is where that is decided.**
 --
--- `wm` starts this by itself, and the Startup panel lists it as well - it
--- lists every application in `/bin` and this is one. Both are right and
--- together they would open a second backdrop behind the first: two Trackers
--- drawing the same folder, one of them invisible for ever, and a drop
--- landing on whichever the compositor happened to hit first.
+-- `wm` starts this by itself, and anything else can start it again - a
+-- launcher, or `wm desktop` at the prompt; the Startup panel listed it too,
+-- when it listed every application. Each is right on its own, and together
+-- they would open a second backdrop behind the first: two Trackers drawing
+-- the same folder, one of them invisible for ever, and a drop landing on
+-- whichever the compositor happened to hit first.
 --
 -- So it asks. The window manager is the only process that knows what is on
 -- screen, and it now says which window is the backdrop rather than only
 -- that it is chrome - the strip is chrome too.
 --
--- Refused with a sentence rather than silently exiting: somebody who ticked
--- this in Startup should be told that the desktop was already there, not
--- left wondering whether the tick did anything.
+-- Refused with a sentence rather than silently exiting: somebody who
+-- started it again should be told that the desktop was already there, not
+-- left wondering whether what they did did anything.
 --
 local seen = use("/Kosmos/Libraries/wmproto.lua").windows()
 

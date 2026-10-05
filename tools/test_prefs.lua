@@ -31,13 +31,22 @@ fs = {
     if files[path] ~= nil then return { kind = "file" } end
     return nil
   end,
+  -- One folder, in one that is there, as a filesystem makes them: a kit
+  -- that made `browser/history` without `browser` is refused here too.
   send = function(path, req)
-    if req.type == "mkdir" then dirs[path] = true return { ok = true } end
+    if req.type == "mkdir" then
+      if not dirs[path:match("^(.*)/[^/]+$")] then return nil, "no such folder" end
+      dirs[path] = true
+      return { ok = true }
+    end
     return nil, "not here"
   end,
 }
 
 dirs["/Home"] = true
+
+-- The file library the kit makes its folders with, as `use` reaches it.
+use = use or function(path) return dofile((path:gsub("^/Kosmos/Libraries/", "user/lib/"))) end
 
 local prefs = dofile("user/lib/prefs.lua")
 
@@ -102,7 +111,8 @@ check(prefs.write("filetypes", { mp4 = "play" }) == true
       and prefs.read("filetypes").mp4 == "play", "a whole table was not kept and read")
 check(next((prefs.read("nothing"))) == nil, "a file that is not there did not read as {}")
 check(prefs.folder("browser/history") == "/Home/Preferences/browser/history"
-      and dirs["/Home/Preferences/browser/history"], "a folder was not made where it is said to be")
+      and dirs["/Home/Preferences/browser"] and dirs["/Home/Preferences/browser/history"],
+      "a folder was not made where it is said to be, with the one above it")
 check(prefs.path("Authorities") == "/Home/Preferences/Authorities", "a path was not under Preferences")
 
 -- 7. A method's name is read with :get.
