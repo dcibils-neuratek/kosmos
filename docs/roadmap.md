@@ -690,7 +690,13 @@ shapes, the inspector, PDF out - with what a presentation adds: a slide's
 layouts and master, the navigator of slides down the side, presenting full
 screen with the next slide and notes for the person speaking, and
 transitions. Drawn first as an HTML mockup and agreed, as every
-application is; after Write.
+application is; after Write. **DESIGNED on 5 October, for Diego to agree**,
+the first application under the four-document rule (`CLAUDE.md`): the
+feature set and the architecture in `docs/present.md`, the mockup in
+`docs/present.html`, the diagram in `docs/present-architecture.png`. Its
+step P0 moves Write's caret, Format panel, page desk, tools row and Office
+package into kits (`textedit`, `inspector`, `pagedesk`, `pk.toolbar`,
+`ooxml`, `chart`) before any of Present is written; nine decisions are his.
 
 **Kosmos Sheets - a spreadsheet after Apple's Numbers and Excel.** Diego, 4
 October 2026: "Kosmos Sheets which is a apple numbers and excel inspirated
@@ -699,7 +705,12 @@ cells, formulas and their functions, references across tables and sheets,
 formats for numbers and dates, sorting and filters, charts from a table's
 cells, and PDF and XLSX out. Reusing Write's tables, charts, inspector and
 file kits. Its formula engine in C - a loop over cells - and Lua for what a
-person does. Drawn first and agreed; after Write.
+person does. Drawn first and agreed; after Write. **DESIGNED on 5 October,
+for Diego to agree**: `docs/sheets.md`, `docs/sheets.html`,
+`docs/sheets-architecture.png`. The Cells Kit in C holds every cell, parses,
+recalculates and paints the grid; the XML Kit is the browser's expat for
+every image; `chart.lua` is one door for charts with Write and Present;
+eight decisions are his, the arithmetic first.
 
 **Notifications.** Diego, 3 October 2026, with a picture of a macOS banner:
 "one of the things we might need is a notifications system in kosmos",

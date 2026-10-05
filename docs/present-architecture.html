@@ -1,0 +1,398 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Kosmos Present, and what it stands on, as one picture: the application on
+  top, the kits and libraries it uses beneath it - Kosmos Write's as they
+  are, the pieces that move out of Write, the ones that are new - the
+  processes it speaks to, Nebula, and the machines. And its two busiest
+  paths drawn through it: one frame of a transition while presenting (T),
+  and one key typed into a box while editing (K). Drawn on 5 October 2026,
+  before any of it is built, as `CLAUDE.md` asks of a new application;
+  `docs/present.md` is the argument and the numbers.
+
+  Rendered to docs/present-architecture.png by headless Chrome at twice its
+  size, as docs/stack.png is:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --screenshot=docs/present-architecture.png --window-size=1800,H \
+      --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/present-architecture.html
+
+  where H is the page's height; the paths are drawn by the script at the
+  end once the page is laid out, so the screenshot waits for nothing else.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Present architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --user: #e9f4ef; --user-line: #9fd4c1; --user-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --metal: #f1f0eb; --metal-line: #cfcdc4; --metal-ink: #444441;
+
+    /* What each piece is to Present: new, moved out of Write, changed. */
+    --new: #2a55c9; --moved: #8a4fc4; --changed: #b7780b;
+    /* The two paths drawn through it. */
+    --path-t: #d81b60; --path-k: #00838f;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1800px; background: var(--paper); color: var(--ink); position: relative;
+         font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 44px; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
+  header h1 { font-size: 40px; font-weight: 600; letter-spacing: -0.5px; }
+  header h1 span { color: var(--dim); font-weight: 400; }
+  header p { color: var(--dim); font-size: 16px; text-align: right; }
+
+  .legend { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; font-size: 14px; color: var(--dim); }
+  .legend .k { display: inline-flex; align-items: center; gap: 8px; }
+  .swatch-card { width: 34px; height: 20px; border-radius: 5px; background: #fff; border: 1px solid #cfcdc4; display: inline-block; }
+  .swatch-card.new { border: 2px solid var(--new); }
+  .swatch-card.moved { border: 2px dashed var(--moved); }
+  .swatch-card.later { border: 1.5px dashed #a9a69c; opacity: 0.7; }
+  .pathkey { width: 40px; height: 0; border-top: 4px solid; display: inline-block; border-radius: 2px; }
+
+  .band { display: grid; grid-template-columns: 250px 1fr; gap: 18px; padding: 16px 18px;
+          border-radius: 14px; border: 1px solid; margin-bottom: 10px; }
+  .band .label h2 { font-size: 21px; font-weight: 600; line-height: 1.2; }
+  .band .label p { font-size: 13.5px; margin-top: 6px; }
+  .tag { display: inline-block; font: 500 11.5px/1 "Plex", sans-serif; letter-spacing: 0.6px;
+         padding: 4px 7px; border-radius: 5px; margin-top: 8px; margin-right: 4px; }
+
+  .cards { display: grid; gap: 10px; }
+  .card { position: relative; z-index: 1; background: #fff; border: 1px solid; border-radius: 10px; padding: 10px 12px; }
+  .card h3 { font-size: 15.5px; font-weight: 600; margin-bottom: 3px; padding-right: 64px; }
+  .card h3 code { font-weight: 400; color: var(--dim); font-size: 12.5px; margin-left: 6px; }
+  .card p { font-size: 13.5px; color: var(--ink); }
+  .card .files { font: 12px/1.5 "Plex Mono", Menlo, monospace; color: var(--dim); margin-top: 4px; }
+  code, .mono { font-family: "Plex Mono", Menlo, monospace; font-size: 0.92em; }
+  .group-title { grid-column: 1 / -1; font: 600 13px "Plex", sans-serif; letter-spacing: 0.8px; text-transform: uppercase; margin: 2px 0 -2px; }
+
+  .user  { background: var(--user); border-color: var(--user-line); }
+  .user  .label h2, .user .label p { color: var(--user-ink); }
+  .user  .card { border-color: var(--user-line); }
+  .user  .group-title { color: var(--user-ink); }
+  .clang { background: var(--c); border-color: var(--c-line); }
+  .clang .label h2, .clang .label p { color: var(--c-ink); }
+  .clang .card { border-color: var(--c-line); }
+  .kern  { background: var(--kern); border-color: var(--kern-line); }
+  .kern  .label h2, .kern .label p { color: var(--kern-ink); }
+  .kern  .card { border-color: var(--kern-line); }
+  .metal { background: var(--metal); border-color: var(--metal-line); }
+  .metal .label h2, .metal .label p { color: var(--metal-ink); }
+  .metal .card { border-color: var(--metal-line); }
+
+  .t-lua { background: #cfeee2; color: var(--user-ink); }
+  .t-c   { background: #f7d9bf; color: var(--c-ink); }
+  .t-el0 { background: #ffffff; color: var(--dim); border: 1px solid #d8d6ce; }
+  .t-el1 { background: #ddd8f8; color: var(--kern-ink); }
+
+  /* What a piece is to Present, on its card. */
+  .card.new { border: 2px solid var(--new) !important; }
+  .card.moved { border: 2px dashed var(--moved) !important; }
+  .card.later { border: 1.5px dashed #a9a69c !important; background: rgba(255,255,255,0.55); }
+  .card.later h3, .card.later p { color: var(--dim); }
+  .mark { display: inline-block; font: 600 10.5px/1 "Plex", sans-serif; letter-spacing: 0.7px; padding: 3px 6px;
+          border-radius: 4px; color: #fff; vertical-align: 2px; margin-left: 6px; }
+  .mark.new { background: var(--new); }
+  .mark.moved { background: var(--moved); }
+  .mark.changed { background: var(--changed); }
+  .mark.later { background: #8d8a80; }
+  .plus { color: var(--changed); font-weight: 500; }
+  .app h3 { font-size: 22px; }
+  .app p { font-size: 14.5px; }
+
+  .divider { display: grid; grid-template-columns: 250px 1fr; gap: 18px; align-items: center; margin: 16px 0 16px; }
+  .divider .rule { border-top: 2px dashed #a9a69c; }
+  .divider .label { font-weight: 600; font-size: 17px; color: var(--metal-ink); }
+  .divider .what { font-size: 14px; color: var(--dim); margin-top: 8px; }
+
+  /* Where each path passes: a numbered mark at a card's top right. */
+  .stops { position: absolute; right: 8px; top: -11px; display: flex; gap: 4px; z-index: 3; }
+  .stop { width: 30px; height: 22px; border-radius: 11px; display: grid; place-items: center; color: #fff;
+          font: 600 12px/1 "Plex", sans-serif; box-shadow: 0 0 0 2px #fff; }
+  .stop.t { background: var(--path-t); }
+  .stop.k { background: var(--path-k); }
+  /* Under the cards and over the bands: a path shows between the cards it
+     joins, and never over a card's words; the numbered marks are on top. */
+  #paths { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 0; }
+  .group-title, .divider .what, .band .label { position: relative; z-index: 1; }
+
+  .side { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+  .side .card { border-color: #d8d6ce; padding: 14px 16px; }
+  .side .card.tpath { border: 2px solid var(--path-t); }
+  .side .card.kpath { border: 2px solid var(--path-k); }
+  .steps { display: grid; grid-template-columns: 34px 1fr 230px; gap: 6px 10px; margin-top: 8px; font-size: 13.5px; align-items: baseline; }
+  .steps .s { font-weight: 600; }
+  .tpath .steps .s { color: var(--path-t); }
+  .kpath .steps .s { color: var(--path-k); }
+  .steps .ms { color: var(--dim); font-size: 13px; }
+  .steps .ms b { color: var(--ink); font-weight: 600; }
+  .sum { margin-top: 10px; padding-top: 8px; border-top: 1px solid #e4e2da; font-size: 13.5px; }
+  .notes4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
+  .notes4 .card { border-color: #d8d6ce; }
+  footer { margin-top: 18px; color: var(--dim); font-size: 13px; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Kosmos Present <span>- what it is made of, before it is built</span></h1>
+  <p>Designed 5 October 2026 · nothing here is built<br>docs/present.md · docs/present.html</p>
+</header>
+
+<div class="legend">
+  <span class="k"><span class="swatch-card"></span>a kit used as it is</span>
+  <span class="k"><span class="mark changed" style="margin:0">+</span>a kit that gains one thing</span>
+  <span class="k"><span class="swatch-card moved"></span>moved out of Kosmos Write, for both</span>
+  <span class="k"><span class="swatch-card new"></span>new, a kit where another application could want it</span>
+  <span class="k"><span class="swatch-card later"></span>later</span>
+  <span class="k"><span class="pathkey" style="border-color:var(--path-t)"></span><b style="color:var(--path-t)">T</b>&nbsp;one frame of a transition, presenting</span>
+  <span class="k"><span class="pathkey" style="border-color:var(--path-k)"></span><b style="color:var(--path-k)">K</b>&nbsp;one key typed into a box, editing</span>
+</div>
+
+<!-- ============================ The application ============================ -->
+<section class="band user">
+  <div class="label">
+    <h2>The application</h2>
+    <p>The thinnest layer: what a person does, put together from what the kits supply.</p>
+    <span class="tag t-lua">LUA</span><span class="tag t-el0">EL0</span>
+    <p class="mono">/Kosmos/Apps</p>
+  </div>
+  <div class="cards" style="grid-template-columns: 2.2fr 1fr 1fr">
+    <div class="card new app"><h3>Kosmos Present <code>user/bin/apps/present.lua</code><span class="mark new">NEW</span></h3>
+      <p>The title band and the tools; the navigator; the slide on the desk and its notes; the Format panel's Slide, Text, Arrange and Animate, and Document; Play. Two windows in one process - editing, and full screen run as the Open window runs - and the deck never leaves it.</p></div>
+    <div class="card"><h3>Kosmos Write <code>writer.lua</code></h3>
+      <p>Moved onto the same kits first (step P0), its suites the proof that nothing changed.</p></div>
+    <div class="card later"><h3>Kosmos Sheets <code>docs/sheets.*</code></h3>
+      <p>Designed beside this: ooxml, inspector, textedit, canvas and pagedesk named the same in both.</p></div>
+  </div>
+</section>
+
+<!-- ============================ Libraries ============================ -->
+<section class="band user">
+  <div class="label">
+    <h2>Kits and libraries, in Lua</h2>
+    <p>Code Present runs in its own process: <code>use("/Kosmos/Libraries/...")</code>. What a key, a press or a frame means; never a pixel.</p>
+    <span class="tag t-lua">LUA</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: repeat(5, 1fr)">
+    <div class="group-title">New</div>
+    <div class="card new"><h3>presentdoc<span class="mark new">NEW</span></h3><p>The deck as data and its check: size in points, styles, the layouts it carries, slides, notes, transitions. Present's own, as writedoc is Write's</p></div>
+    <div class="card new" id="c-canvas"><h3>canvas<span class="mark new">NEW</span></h3><p>Things placed: the one under a point, eight handles, moved and sized, snapped to guides, front and back. Sheets' canvas next</p></div>
+    <div class="card new" id="c-transition"><div class="stops"><span class="stop t">T1</span></div><h3>transition<span class="mark new">NEW</span></h3><p>Two slides and a moment: from the counter, positions and an alpha - six kinds, at most three gfx calls a frame</p></div>
+    <div class="card new"><h3>pptxwrite<span class="mark new">NEW</span></h3><p>PresentationML: slides, layouts, a master, a theme, notes, <code>p:transition</code></p></div>
+    <div class="card" style="border-style:dashed"><h3>present.lua's own</h3><p>Slide, Arrange, Animate and Document parts, through <code>ins:control</code> - kits when a second application wants one</p></div>
+
+    <div class="group-title" style="color:var(--moved)">Moved out of Kosmos Write</div>
+    <div class="card moved" id="c-textedit"><div class="stops"><span class="stop k">K2</span></div><h3>textedit<span class="mark moved">MOVED</span></h3><p>A body with a caret: typing, selection, copy and paste, undo - <code>edited</code>, <code>move</code>, <code>type_text</code> and <code>sink:key</code>'s text half</p></div>
+    <div class="card moved"><h3>inspector<span class="mark moved">MOVED</span></h3><p>The Format panel's parts: text, shape, picture, table, chart; its controls and menus - <code>draw_panel</code></p></div>
+    <div class="card moved"><h3>pagedesk<span class="mark moved">MOVED</span></h3><p>Pages on a desk: placed, cached by version and zoom, scrolled, fitted; their thumbnails - the navigator</p></div>
+    <div class="card moved"><h3>pk.toolbar<span class="mark moved">MOVED</span></h3><p>The row of tools in <code>pixelkit</code>: laid out, and the one under a press - <code>draw_tools</code></p></div>
+    <div class="card moved"><h3>ooxml<span class="mark moved">MOVED</span></h3><p>Out of <code>docxwrite</code>: the package, EMU, DrawingML shapes and pictures, a text body. DOCX, PPTX, XLSX. Charts are <code>chart.lua</code>'s</p></div>
+
+    <div class="group-title">Kosmos Write's, used as they are or gaining one thing</div>
+    <div class="card"><h3>richtext</h3><p>Every word: paragraphs, runs, styles, and each edit a new body</p></div>
+    <div class="card" id="c-pageset"><div class="stops"><span class="stop k">K3</span></div><h3>pageset</h3><p>One setting for screen and PDF. <span class="plus">+ <code>frame</code>: a body in a box, never broken; shared looks</span></p></div>
+    <div class="card" id="c-pagedraw"><div class="stops"><span class="stop k">K4</span></div><h3>pagedraw</h3><p>A set page drawn at any scale. <span class="plus">+ <code>page.frames</code> at their places; a picture scaled once a size</span></p></div>
+    <div class="card"><h3>pdf · pdfwrite</h3><p>The PDF Kit's one door. <span class="plus">+ each frame inside <code>q ... cm ... Q</code></span></p></div>
+    <div class="card"><h3>docfile · zip · regions</h3><p><code>.present</code> as <code>.write</code> is. <span class="plus">+ an entry into a region; one copied as stored</span></p></div>
+    <div class="card"><h3>faces · hyphen</h3><p>A look's face and its measure in points; where a word breaks</p></div>
+    <div class="card"><h3>Write's six things</h3><p><code>new_shape</code> <code>new_table</code> <code>new_box</code> <code>new_chart</code> <code>shape_art</code>, a chart's plan from <code>chart.lua</code> (moved, with Sheets) - each a frame's one paragraph</p></div>
+    <div class="card"><h3>docxwrite · markup</h3><p>Word's XML, on <code>ooxml</code> now; text made safe for XML</p></div>
+    <div class="card" id="c-ui"><h3>ui · pixelkit · panel</h3><p>A direct window, its header, <code>fullscreen</code>; the controls; the Open window</p></div>
+    <div class="card"><h3>wmproto · keys · theme</h3><p>The clipboard; keys; the look's colours</p></div>
+  </div>
+</section>
+
+<!-- ================================ Kits ================================ -->
+<section class="band clang">
+  <div class="label">
+    <h2>Kits, in C</h2>
+    <p>C that runs in Present's own process, reached as a library is. Every loop over pixels, glyphs and bytes. <b>Nothing new here in the first version.</b></p>
+    <span class="tag t-c">C</span><span class="tag t-el0">EL0</span>
+    <p class="mono">/Kosmos/Kits</p>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.6fr 1.2fr 1fr 1fr">
+    <div class="card" id="c-gfx"><div class="stops"><span class="stop t">T2</span><span class="stop t">T3</span><span class="stop k">K5</span></div><h3>gfx <code>gfx.c</code></h3>
+      <p><code>blit</code> (memcpy a row), <code>blend</code> (source-over four pixels at a time, a global alpha), <code>fill</code>, <code>stretch</code>, <code>triangle</code>, <code>fill_round</code> - over surfaces, never Lua tables</p>
+      <p class="files">M700: blit 4,250 Mpx/s, fill 4,914 · blend at an alpha 1,293-1,546 on this Mac</p></div>
+    <div class="card"><h3>gfx: glyphs and faces <code>docfont.c face.c</code></h3>
+      <p>Glyphs rasterised from the image's own font, once a size; advances, placing, glyph numbers, subsets for a PDF</p></div>
+    <div class="card"><h3>gfx: pictures <code>png.c jpeg.c</code></h3>
+      <p>Decoded from a region's address, never a Lua string; <code>encode_png</code> for a deck's preview</p></div>
+    <div class="card"><h3>compress</h3>
+      <p>Deflate, inflate, CRC-32, Adler-32 - the <code>.present</code>, the PDF's streams, the PPTX</p></div>
+    <div class="card later" style="grid-column: 1 / 3"><h3>gfx <code>mix</code><span class="mark later">NOT PROPOSED</span></h3>
+      <p>A cross-fade in one pass rather than a blit and a blend - only if the M700's measurement says two passes do not fit</p></div>
+    <div class="card later" style="grid-column: 3 / 5"><h3><code>stretch</code> in vector lanes<span class="mark later">LATER</span></h3>
+      <p>The scaled path is a pixel at a time: measured first, then Zoom, Cube and Magic Move</p></div>
+  </div>
+</section>
+
+<!-- =========================== The first processes ========================== -->
+<section class="band user">
+  <div class="label">
+    <h2>The window manager</h2>
+    <p>Someone Present asks, under <code>/Running/wm</code>. The pixels in gfx's C, the policy in Lua.</p>
+    <span class="tag t-lua">LUA</span><span class="tag t-c">C</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: 1fr 1fr 1fr">
+    <div class="card" id="c-wm"><div class="stops"><span class="stop k">K1</span><span class="stop t">T5</span></div><h3>wm <code>/Running/wm</code></h3>
+      <p><code>open</code> with the region's capability, <code>fullscreen</code>; <code>poll</code> and its events; <code>commit</code> - which buffer is live and what changed; <code>lights</code>; the clipboard</p></div>
+    <div class="card"><h3>Composing <code>wm/compose.lua · drawwindow.lua</code></h3>
+      <p>A full-screen window is a <code>blit</code> into the frame, then the frame to the screen and <code>flush</code>. Under QEMU, 42 ns a pixel</p></div>
+    <div class="card later"><h3>Two screens<span class="mark later">LATER</span></h3>
+      <p>The presenter's view on one and the slide on the other: the board's second scanout, wm composing two, a window full screen on the second. Present its first user</p></div>
+  </div>
+</section>
+
+<!-- ============================== Servers =============================== -->
+<section class="band clang">
+  <div class="label">
+    <h2>Servers</h2>
+    <p>Someone Present asks, each in a declared shape.</p>
+    <span class="tag t-c">C</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: repeat(4, 1fr)">
+    <div class="card"><h3>diskfs <code>/Home</code></h3><p>A deck, a PDF, a PPTX: made whole in regions and written in one request - one journalled transaction</p></div>
+    <div class="card"><h3>binfs <code>/Kosmos</code></h3><p>The fonts, read where they lie and never copied; the line icons; the libraries</p></div>
+    <div class="card"><h3>devices <code>/Devices</code></h3><p>The screen's size, for the full-screen window; <code>counter_hz</code>, for the transition's clock - read once</p></div>
+    <div class="card later"><h3>audio <code>/Devices/audio</code><span class="mark later">LATER</span></h3><p>A sound or a film on a slide, through a shared ring. Transitions make none</p></div>
+  </div>
+</section>
+
+<!-- =========================== The boundary ============================= -->
+<div class="divider">
+  <div><div class="label">System calls</div></div>
+  <div><div class="rule"></div><div class="what">A message says what to do; a region holds what to do it to. A frame's pixels never cross as a message: the commit names the buffer.</div></div>
+</div>
+
+<!-- ============================== Nebula ================================ -->
+<section class="band kern">
+  <div class="label">
+    <h2>Nebula</h2>
+    <p>The microkernel: threads, address spaces, IPC and capabilities - and nothing else.</p>
+    <span class="tag t-c">C</span><span class="tag t-el1">EL1</span>
+    <p class="mono">kernel/</p>
+  </div>
+  <div class="cards" style="grid-template-columns: repeat(4, 1fr)">
+    <div class="card" id="c-ipc"><div class="stops"><span class="stop t">T4</span><span class="stop k">K6</span></div><h3>IPC</h3><p><code>commit</code> and <code>poll</code>, a few dozen bytes each - answered in 0.31 ms</p><p class="files">ipc.c</p></div>
+    <div class="card"><h3>Regions</h3><p>The windows' two buffers each, shared with wm; a file's bytes; a picture inflated and decoded in place</p><p class="files">memobj.c sharemap.c</p></div>
+    <div class="card"><h3>Capabilities</h3><p>A region handed to wm by index; what Present was not given, it cannot reach</p><p class="files">process.c</p></div>
+    <div class="card"><h3>Threads</h3><p>One thread draws and answers; drawing the next slide is the first work for a Lua worker (<code>threads.md</code> step 8)</p><p class="files">thread.c sched_prio.c</p></div>
+  </div>
+</section>
+
+<!-- ============================== Hardware ============================== -->
+<section class="band metal">
+  <div class="label">
+    <h2>Where it is measured</h2>
+    <p>QEMU detects a regression; real cores say whether it is fast.</p>
+  </div>
+  <div class="cards" style="grid-template-columns: repeat(4, 1fr)">
+    <div class="card"><h3>QEMU virt</h3><p>The suites: TCG composes at 42 ns a pixel, so a transition shows about ten frames a second there - not a performance number</p></div>
+    <div class="card" id="c-m700"><div class="stops"><span class="stop t">T6</span></div><h3>ThinkCentre M700</h3><p>Where a transition frame is measured (P5); the frame copied to its framebuffer is not measured yet (<code>m700-2d.md</code> step 1)</p></div>
+    <div class="card"><h3>ThinkPad T14</h3><p>The machine a talk would be given from</p></div>
+    <div class="card"><h3>3440 × 1440 and 4K</h3><p>A 16:9 slide on the ultrawide is 3.7 Mpx a frame, at 4K 8.3 - both still inside 16.7 ms</p></div>
+  </div>
+</section>
+
+<!-- =========================== The busiest paths ============================ -->
+<div class="side">
+  <div class="card tpath"><h3 style="padding-right:0">T - one frame of a Dissolve, presenting at 1920 × 1080 (2,073,600 pixels)</h3>
+    <div class="steps">
+      <span class="s">T1</span><span><code>transition.lua</code>: the counter read, an alpha and positions</span><span class="ms">microseconds of Lua</span>
+      <span class="s">T2</span><span><code>blit</code> the old slide into the window's buffer</span><span class="ms"><b>0.49 ms</b> at the M700's blit</span>
+      <span class="s">T3</span><span><code>blend</code> the new slide over it at that alpha</span><span class="ms"><b>1.3-1.6 ms</b>, this Mac's cores; M700 unmeasured</span>
+      <span class="s">T4</span><span><code>commit</code>: buffer 2 is live, this rectangle</span><span class="ms"><b>0.31 ms</b> round trip</span>
+      <span class="s">T5</span><span>wm copies the full-screen window into its frame</span><span class="ms"><b>0.49 ms</b>, a blit</span>
+      <span class="s">T6</span><span>the frame to the screen, and flushed</span><span class="ms">not measured on real hardware</span>
+    </div>
+    <p class="sum"><b>About 3 ms of a 16.7 ms frame</b> before T6. Push, Wipe, Move In and Reveal touch the screen once and are about half. Not on the path: setting, rasterising, scaling a picture, the disk, a payload of pixels - the next slide was drawn while this one was shown.</p></div>
+  <div class="card kpath"><h3 style="padding-right:0">K - one key typed into a box on a slide, editing</h3>
+    <div class="steps">
+      <span class="s">K1</span><span><code>poll</code> answers with the key</span><span class="ms"><b>0.31 ms</b> round trip</span>
+      <span class="s">K2</span><span><code>textedit</code>: <code>richtext.type</code> makes a new body of the box's paragraphs</span><span class="ms">unmeasured; a handful of paragraphs</span>
+      <span class="s">K3</span><span><code>pageset.frame</code>: the changed paragraph set, the rest cached</span><span class="ms">100 pages in <b>89 ms</b> of Lua on this Mac</span>
+      <span class="s">K4</span><span><code>pagedraw</code>: the slide drawn again at the desk's size</span><span class="ms">unmeasured</span>
+      <span class="s">K5</span><span>fills, kept pictures blitted, glyphs a face and size at a time</span><span class="ms">unmeasured</span>
+      <span class="s">K6</span><span><code>commit</code> of what changed - the slide, the caret, the panel if its look did</span><span class="ms"><b>0.31 ms</b></span>
+    </div>
+    <p class="sum"><b>Nothing here has been measured in Write either</b>, which draws its whole window on every key. Step P4 measures a keystroke in Write first, by stage and by what each allocates, and holds Present's to it - Groove went from 72 ms to 10.1 a frame by drawing only what changed.</p></div>
+</div>
+
+<div class="notes4">
+  <div class="card"><h3>A slide is a page of frames</h3><p>Every thing on a slide is a small Write document set in its box by <code>pageset</code>; the slide is a page whose content is its frames, each at its place.</p></div>
+  <div class="card"><h3>Lua decides, C draws</h3><p>A transition is positions and an alpha in Lua and two million pixels in C; each call writes three orders past the two thousand a crossing needs.</p></div>
+  <div class="card"><h3>Pictures never become strings</h3><p>Inflated into a region, decoded from it, kept scaled at the sizes shown, copied into a saved deck as stored.</p></div>
+  <div class="card"><h3>The order</h3><p class="mono" style="font-size:12.5px">P0 Write's pieces out · P1 the deck · P2 a slide set · P3 PDF · P4 the window · P5 presenting · P6 the six things · P7 PPTX</p></div>
+</div>
+
+<footer>
+  <span>Kits, servers and drivers supply; applications orchestrate - Diego's premise, 4 October 2026.</span>
+  <span>docs/present-architecture.html, drawn from docs/present.md</span>
+</footer>
+
+<svg id="paths" xmlns="http://www.w3.org/2000/svg"></svg>
+<script>
+(function () {
+  // Each path through its stops in order, a curve from one mark to the
+  // next, drawn once the page is laid out.
+  var svg = document.getElementById("paths");
+
+  function centre(label) {
+    var body = document.body.getBoundingClientRect();
+    var all = document.querySelectorAll(".stop");
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].textContent === label) {
+        var r = all[i].getBoundingClientRect();
+        return [r.left - body.left + r.width / 2, r.top - body.top + r.height / 2];
+      }
+    }
+    return null;
+  }
+
+  function draw(prefix, count, colour, bend) {
+    var d = "";
+    for (var i = 1; i < count; i++) {
+      var a = centre(prefix + i), b = centre(prefix + (i + 1));
+      if (!a || !b) continue;
+      var dy = b[1] - a[1], dx = b[0] - a[0];
+      // Out sideways and round, so a curve does not run along a card's text.
+      var c1 = [a[0] + bend, a[1] + dy * 0.35], c2 = [b[0] + bend, b[1] - dy * 0.35];
+      if (Math.abs(dy) < 40) { c1 = [a[0] + dx * 0.3, a[1] - 60]; c2 = [b[0] - dx * 0.3, b[1] - 60]; }
+      d += "M" + a[0] + "," + a[1] + " C" + c1[0] + "," + c1[1] + " " + c2[0] + "," + c2[1] + " " + b[0] + "," + b[1] + " ";
+    }
+    var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", d);
+    p.setAttribute("fill", "none");
+    p.setAttribute("stroke", colour);
+    p.setAttribute("stroke-width", "4.5");
+    p.setAttribute("stroke-linecap", "round");
+    p.setAttribute("opacity", "0.9");
+    svg.appendChild(p);
+  }
+
+  function go() {
+    svg.setAttribute("width", document.body.scrollWidth);
+    svg.setAttribute("height", document.body.scrollHeight);
+    draw("T", 6, getComputedStyle(document.documentElement).getPropertyValue("--path-t").trim(), 70);
+    draw("K", 6, getComputedStyle(document.documentElement).getPropertyValue("--path-k").trim(), -70);
+    document.title = "Kosmos Present architecture " + document.body.scrollHeight;
+  }
+
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(go); else go();
+})();
+</script>
+</body>
+</html>

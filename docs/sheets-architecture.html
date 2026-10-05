@@ -1,0 +1,350 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<!--
+  Kosmos Sheets and what it stands on, as one picture, in docs/stack.html's
+  colours: the application on top, the libraries and kits beneath it - what
+  exists plainly, what is new marked new, what moves out of Kosmos Write
+  marked moved - the window manager and the servers it reaches, Nebula at
+  the bottom, and the busiest path drawn through them as numbered steps.
+  Rendered to docs/sheets-architecture.png by headless Chrome at twice its
+  size, as stack.png is:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --screenshot=docs/sheets-architecture.png --window-size=1800,H \
+      --hide-scrollbars --force-device-scale-factor=2 \
+      file://$PWD/docs/sheets-architecture.html
+
+  with H the page's height. Drawn on 5 October 2026, before any of it is
+  built, under that day's rule (CLAUDE.md, *And an app is designed before it
+  is written*). The argument for every box is docs/sheets.md; the window is
+  docs/sheets.html. The names are the tree's where a thing exists, and
+  Present's (docs/present.md) where the two designs share one.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Sheets architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --user: #e9f4ef; --user-line: #9fd4c1; --user-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --metal: #f1f0eb; --metal-line: #cfcdc4; --metal-ink: #444441;
+    --new: #2a55c9; --moved: #b9770e; --moved-bg: #f8e3c0; --moved-ink: #6b4005;
+    --path: #c0392b; --path-bg: #fdf0ee; --path-line: #eab3ab;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1800px; background: var(--paper); color: var(--ink);
+         font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 44px; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
+  header h1 { font-size: 40px; font-weight: 600; letter-spacing: -0.5px; }
+  header h1 span { color: var(--dim); font-weight: 400; }
+  header p { color: var(--dim); font-size: 16px; text-align: right; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: center; margin-bottom: 22px;
+            font-size: 14px; color: var(--dim); }
+  .legend .k { display: inline-flex; align-items: center; gap: 8px; }
+  .legend .box { width: 34px; height: 20px; border-radius: 5px; background: #fff; border: 1px solid #c9c6bc; }
+  .legend .box.n { border: 2px solid var(--new); }
+  .legend .box.m { border: 2px dashed var(--moved); }
+
+  .band { display: grid; grid-template-columns: 250px 1fr; gap: 18px; padding: 16px 18px;
+          border-radius: 14px; border: 1px solid; margin-bottom: 10px; }
+  .band .label h2 { font-size: 21px; font-weight: 600; line-height: 1.2; }
+  .band .label p { font-size: 13.5px; margin-top: 6px; }
+  .tag { display: inline-block; font: 500 11.5px/1 "Plex", sans-serif; letter-spacing: 0.6px;
+         padding: 4px 7px; border-radius: 5px; margin-top: 8px; margin-right: 4px; }
+
+  .cards { display: grid; gap: 10px; }
+  .card { position: relative; background: #fff; border: 1px solid; border-radius: 10px; padding: 10px 12px; }
+  .card h3 { font-size: 15.5px; font-weight: 600; margin-bottom: 3px; padding-right: 64px; }
+  .card h3 code { font-weight: 400; color: var(--dim); font-size: 12.5px; margin-left: 6px; }
+  .card p { font-size: 13.5px; color: var(--ink); }
+  .card .files { font: 12px/1.5 "Plex Mono", Menlo, monospace; color: var(--dim); margin-top: 4px; }
+  .card ul { font-size: 13.5px; padding-left: 17px; margin-top: 4px; }
+  .card ul li { margin: 1px 0; }
+  code, .mono { font-family: "Plex Mono", Menlo, monospace; font-size: 0.92em; }
+
+  .user  { background: var(--user); border-color: var(--user-line); }
+  .user  .label h2, .user .label p { color: var(--user-ink); }
+  .user  .card { border-color: var(--user-line); }
+  .clang { background: var(--c); border-color: var(--c-line); }
+  .clang .label h2, .clang .label p { color: var(--c-ink); }
+  .clang .card { border-color: var(--c-line); }
+  .kern  { background: var(--kern); border-color: var(--kern-line); }
+  .kern  .label h2, .kern .label p { color: var(--kern-ink); }
+  .kern  .card { border-color: var(--kern-line); }
+
+  .t-lua { background: #cfeee2; color: var(--user-ink); }
+  .t-c   { background: #f7d9bf; color: var(--c-ink); }
+  .t-el0 { background: #ffffff; color: var(--dim); border: 1px solid #d8d6ce; }
+  .t-el1 { background: #ddd8f8; color: var(--kern-ink); }
+
+  /* What is new, what moves out of Write, what grows. */
+  .card.new { border: 2px solid var(--new) !important; }
+  .card.moved { border: 2px dashed var(--moved) !important; }
+  .mark { position: absolute; top: 9px; right: 10px; display: flex; gap: 4px; }
+  .mark span { font: 600 10.5px/1 "Plex", sans-serif; letter-spacing: 0.5px; padding: 4px 6px; border-radius: 4px; }
+  .m-new { background: var(--new); color: #fff; }
+  .m-moved { background: var(--moved-bg); color: var(--moved-ink); }
+  .m-grows { background: #ecebe5; color: var(--metal-ink); }
+  .m-step { background: #fff; color: var(--dim); border: 1px solid #d8d6ce; font-family: "Plex Mono", monospace !important; }
+  .card.plain { padding: 8px 12px; }
+  .card.plain h3 { font-size: 14.5px; margin-bottom: 1px; }
+  .card.plain p { font-size: 12.5px; color: var(--dim); }
+
+  /* The busiest path: a red number on each box it passes through. */
+  .b { position: absolute; top: -11px; width: 24px; height: 24px; border-radius: 50%; background: var(--path);
+       color: #fff; font: 600 13px/24px "Plex", sans-serif; text-align: center; box-shadow: 0 0 0 3px var(--paper); }
+  .b.l1 { left: 10px; } .b.l2 { left: 38px; } .b.l3 { left: 66px; }
+  /* A box the path passes through keeps its numbers clear of its heading. */
+  .card.onpath { padding-top: 22px; }
+  .card.onpath .mark { top: 20px; }
+
+  .divider { display: grid; grid-template-columns: 250px 1fr; gap: 18px; align-items: center; margin: 16px 0 16px; }
+  .divider .rule { border-top: 2px dashed #a9a69c; }
+  .divider .label { font-weight: 600; font-size: 17px; color: var(--metal-ink); }
+  .divider .what { font-size: 14px; color: var(--dim); margin-top: 8px; }
+
+  .path { background: var(--path-bg); border: 1px solid var(--path-line); border-radius: 14px; padding: 16px 18px; margin: 18px 0 10px; }
+  .path .head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+  .path .head h2 { font-size: 21px; font-weight: 600; color: #7d2118; }
+  .path .head p { font-size: 14px; color: #7d2118; }
+  .steps { display: grid; gap: 0; align-items: stretch; }
+  .step { position: relative; background: #fff; border: 1px solid var(--path-line); border-radius: 10px; padding: 14px 12px 10px; margin-right: 26px; }
+  .step:last-child { margin-right: 0; }
+  .step:not(:last-child)::after { content: "\2192"; position: absolute; right: -22px; top: 50%; transform: translateY(-50%);
+                                  font: 600 20px/1 "Plex", sans-serif; color: var(--path); }
+  .step .b { left: 10px; right: auto; }
+  .step h4 { font-size: 14.5px; font-weight: 600; margin: 4px 0 3px; }
+  .step p { font-size: 12.5px; }
+  .step .n { margin-top: 6px; font-size: 12px; color: #7d2118; }
+  .step .n b { font-weight: 600; }
+  .step .unk { color: var(--path); font-weight: 600; }
+  .notpath { margin-top: 12px; font-size: 13.5px; color: #7d2118; }
+  .notpath b { font-weight: 600; }
+  .path h3 { font-size: 16px; font-weight: 600; color: #7d2118; margin: 18px 0 10px; }
+
+  .side { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 18px; }
+  .side .card { border-color: #d8d6ce; }
+  .side .card h3 { padding-right: 0; }
+  footer { margin-top: 18px; color: var(--dim); font-size: 13px; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Kosmos Sheets <span>- what it stands on, and what is new</span></h1>
+  <p>Designed 5 October 2026 · nothing built yet<br>The argument for each box: docs/sheets.md</p>
+</header>
+
+<div class="legend">
+  <span class="k"><span class="box n"></span>new code</span>
+  <span class="k"><span class="box m"></span>moved out of Kosmos Write, shared from then on</span>
+  <span class="k"><span class="mark" style="position:static"><span class="m-grows">GROWS</span></span>an existing kit gains one thing</span>
+  <span class="k"><span class="box"></span>used as it is</span>
+  <span class="k"><span class="mark" style="position:static"><span class="m-step">S3</span></span>the step that builds it</span>
+  <span class="k"><span style="position:relative;display:inline-block;width:24px;height:24px"><span class="b" style="top:0;left:0">1</span></span>the busiest path, step by step (below)</span>
+</div>
+
+<!-- ============================ Application ============================= -->
+<section class="band user">
+  <div class="label">
+    <h2>Application</h2>
+    <p>The thinnest layer: what a person does, put together from what the kits supply.</p>
+    <span class="tag t-lua">LUA</span><span class="tag t-el0">EL0</span>
+    <p class="mono">/Kosmos/Apps/sheets.lua</p>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.6fr 1fr 1fr">
+    <div class="card new onpath"><span class="mark"><span class="m-new">NEW</span><span class="m-step">S3</span></span><span class="b l1">1</span><span class="b l2">5</span>
+      <h3>Kosmos Sheets <code>user/bin/apps/sheets.lua</code></h3>
+      <p>A direct window: the tools, the sheets' tabs, the formula bar, the canvas and the panel that Format, Organize and Document switch. What each key and press means, and which call into the kit it becomes - one call for each thing a person did.</p>
+      <p class="files">wm sheets · opens .sheets .csv .xlsx · Export: .sheets .pdf .xlsx .csv</p></div>
+    <div class="card"><h3>What it holds</h3>
+      <p>The document's structure, from <code>sheetsdoc</code>; one list of undo steps saying which are the kit's and which the canvas's; the formula being typed, in a <code>textbuf</code>; a view's dozen numbers for each table on the screen.</p></div>
+    <div class="card"><h3>What it never holds</h3>
+      <p>A cell, a column or a table. One cell comes back into a reused table for the formula bar; a chart's series comes back reduced to its width in points. The grid is never a Lua value.</p></div>
+  </div>
+</section>
+
+<!-- ============================== Libraries ============================= -->
+<section class="band user">
+  <div class="label">
+    <h2>Libraries</h2>
+    <p>Code you run, in your own process: <code>use("/Kosmos/Libraries/...")</code>. Structure and decisions - a few dozen things a frame, none of them a cell.</p>
+    <span class="tag t-lua">LUA</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: repeat(5, 1fr)">
+    <div class="card new"><span class="mark"><span class="m-new">NEW</span><span class="m-step">S2</span></span>
+      <h3>sheetsdoc</h3><p>The document: sheets, what stands on each and where, tables' names, widths, looks, filters; charts and their ranges; styles; print setup. Read as somebody else's file, as <code>writedoc.check</code> reads Write's.</p></div>
+    <div class="card new"><span class="mark"><span class="m-new">NEW</span><span class="m-step">S4</span></span>
+      <h3>canvas</h3><p>Things placed in points: chosen, moved, sized by eight handles, snapped, ordered. Rectangles only - so a table on a sheet and a picture on a slide share it. Shared with Present.</p></div>
+    <div class="card new"><span class="mark"><span class="m-new">NEW</span><span class="m-step">S9</span></span>
+      <h3>xlsx</h3><p>SpreadsheetML: the workbook, the styles, a drawing for each chart. The worksheets and shared strings come from the Cells Kit, already bytes in a region.</p></div>
+    <div class="card moved onpath"><span class="mark"><span class="m-moved">MOVED</span><span class="m-step">S0</span></span><span class="b l1">5</span>
+      <h3>chart</h3><p>Out of <code>pageset.chart_plan</code> and <code>docxwrite.chart_part</code>: kinds, the one colour list (written twice today), the picture as <code>art</code>, the DrawingML part with references. Area and scatter added.</p></div>
+    <div class="card moved"><span class="mark"><span class="m-moved">MOVED</span><span class="m-step">S0</span></span>
+      <h3>ooxml</h3><p>Out of <code>docxwrite.lua</code>: content types, relationships, core properties, EMU. One package under DOCX, PPTX and XLSX. Present's P0.</p></div>
+    <div class="card moved onpath"><span class="mark"><span class="m-moved">MOVED</span><span class="m-step">S0</span></span><span class="b l1">5</span>
+      <h3>inspector</h3><p>Out of <code>writer.lua</code>'s <code>draw_panel</code>: rows of controls, their places, a press found, the names a harness presses by. <code>ins:text</code> for a cell's look; <code>ins:arrange</code> moves in.</p></div>
+    <div class="card moved"><span class="mark"><span class="m-moved">MOVED</span><span class="m-step">S0</span></span>
+      <h3>textedit</h3><p>Out of <code>writer.lua</code>: a body of text with a caret, typed and undone. A text box's words on a sheet. Present's P0.</p></div>
+    <div class="card moved"><span class="mark"><span class="m-moved">MOVED</span><span class="m-grows">GROWS</span></span>
+      <h3>pixelkit</h3><p><code>pk.toolbar</code> out of <code>writer.lua</code>'s <code>draw_tools</code>; <code>pk.tabs</code> new, at <code>ui.tabs</code>' numbers, for the sheets' tabs. Every other control as it is.</p></div>
+    <div class="card"><span class="mark"><span class="m-grows">GROWS</span><span class="m-step">S2</span></span>
+      <h3>zip</h3><p>An entry written from a region; <code>zip.read_region</code> (Present's). The cells go to the deflater and the disk without being a string.</p></div>
+    <div class="card"><span class="mark"><span class="m-grows">GROWS</span></span>
+      <h3>pageset · pagedraw · pdfwrite</h3><p>Present's frames - a body set in a box, a page of placed boxes - and a scale on a frame, to fit a sheet to the paper's width.</p></div>
+    <div class="card plain"><h3>ui</h3><p>direct window, <code>surface</code>, <code>commit</code></p></div>
+    <div class="card plain"><h3>keys · wmproto</h3><p>keys; copy and paste, 1,900 bytes</p></div>
+    <div class="card plain"><h3>textbuf</h3><p>the formula being typed: one line, a caret, undo</p></div>
+    <div class="card plain"><h3>richtext · faces</h3><p>a text box's paragraphs; a cell style's look; faces measured for the PDF</p></div>
+    <div class="card plain"><h3>pdf · docfile · regions · clock</h3><p>PDF's door; the <code>.sheets</code> zip; regions; today's date for <code>TODAY()</code></p></div>
+  </div>
+</section>
+
+<!-- ================================ Kits ================================ -->
+<section class="band clang">
+  <div class="label">
+    <h2>Kits</h2>
+    <p>C you run in your own process, reached as a library is: <code>use("/Kosmos/Kits/cells")</code>. Every loop over cells or bytes is here.</p>
+    <span class="tag t-c">C</span><span class="tag t-el0">EL0</span>
+    <p class="mono">/Kosmos/Kits</p>
+  </div>
+  <div class="cards" style="grid-template-columns: 2.3fr 1fr 1fr">
+    <div class="card new onpath" style="grid-row: span 2"><span class="mark"><span class="m-new">NEW</span><span class="m-step">S1</span></span><span class="b l1">2</span><span class="b l2">3</span><span class="b l3">4</span>
+      <h3>The Cells Kit - the formula engine <code>user/kits/cells/</code></h3>
+      <ul>
+        <li><b>The store</b>: a table is columns of blocks of 1,024 cells, 16 bytes a cell, in pages of this process's own - 600,000 cells are 9.6 MB the collector never sees. Strings once, in a pool; a formula filled down is one formula.</li>
+        <li><b>One grammar, one parser</b>: what is typed, the editor's colours, an XLSX's formulas and the file's - Excel's syntax, <code>Costs!E7</code> naming a table; a file holds text, never compiled bytes.</li>
+        <li><b>The graph and the order</b>: who reads whom, a range one entry per block; a change marks its dependents; Kahn's order over the dirty set alone; a cycle is <code>#CYCLE!</code>; a recalculation stops when its budget is spent.</li>
+        <li><b>Evaluating</b>: postfix bytecode, about eighty functions by Excel's names, errors as values, doubles compared at fifteen digits, dates as Excel's serial days.</li>
+        <li><b>Formats, sort, filter</b>: a value as its format shows it, Excel's codes at the XLSX's door; rows sorted and hidden in C.</li>
+        <li><b>Files</b>: the <code>.sheets</code> cells, CSV, an XLSX's worksheets and shared strings - into and out of regions.</li>
+        <li><b>The grid painted</b>: the visible cells of a table in one call, through <code>gfx_draw.h</code>; the first row found by block totals, so row 100,000 costs what row 10 does.</li>
+      </ul>
+      <p class="files">cells.h cells_store.c cells_input.c cells_parse.c cells_graph.c cells_eval.c cells_fn.c cells_format.c cells_order.c cells_io.c cells_draw.c cells_kosmos.c · tools/test_cells.c on the Mac</p></div>
+    <div class="card moved"><span class="mark"><span class="m-moved">MOVED</span><span class="m-step">S11</span></span>
+      <h3>The XML Kit <code>user/kits/xml/</code></h3>
+      <p>Expat 2.8.5, in the tree already and built today only into the browser's images: one copy, in every image. <code>xml.tree</code> for small parts; events in C for the Cells Kit's worksheets. Then a DOCX and a PPTX opened; libdom's binding on the same copy.</p></div>
+    <div class="card onpath"><span class="b l1">4</span>
+      <h3>gfx</h3>
+      <p>What it lends another kit that draws: <code>gfx_surface_check</code>, <code>gfx_draw_fill</code>, <code>gfx_draw_text</code>, <code>gfx_draw_measure</code>. And <code>gfx.face</code>, <code>docfont</code>, <code>png</code>, <code>jpeg</code>, <code>face:subset</code>.</p></div>
+    <div class="card">
+      <h3>compress</h3><p>Deflate and inflate from regions, CRC-32 and Adler-32: the <code>.sheets</code> and XLSX zips, a PDF's streams.</p></div>
+    <div class="card">
+      <h3>pdf</h3><p>The PDF Kit's scanner: the PDF out read back by Kosmos's own reader, as Write's is held.</p></div>
+  </div>
+</section>
+
+<!-- =========================== The first processes ====================== -->
+<section class="band user">
+  <div class="label">
+    <h2>The first processes</h2>
+    <p>Every process is born with what init gives it.</p>
+    <span class="tag t-lua">LUA</span><span class="tag t-c">C</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.4fr 1fr">
+    <div class="card onpath"><span class="b l1">1</span><span class="b l2">6</span>
+      <h3>wm <code>/Running/wm</code></h3>
+      <p>The window's events; <code>commit</code> - which of its two buffers is live and the rectangle that changed - answered in 0.31 ms; the composing of that rectangle; the clipboard, at most 1,900 bytes.</p></div>
+    <div class="card">
+      <h3>init <code>user/init</code></h3>
+      <p>The namespace and <code>sys.kit</code>: <code>kits[]</code> in <code>sys_user.c</code> gains <code>{ "cells", kosmos_cells_kit }</code> and <code>{ "xml", kosmos_xml_kit }</code>.</p></div>
+  </div>
+</section>
+
+<!-- ============================== Servers =============================== -->
+<section class="band clang">
+  <div class="label">
+    <h2>Servers</h2>
+    <p>Someone you ask. <b>No new server, no new protocol</b>: Sheets reaches the ones every application reaches.</p>
+    <span class="tag t-c">C</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: repeat(5, 1fr)">
+    <div class="card"><h3>diskfs <code>/Home</code></h3><p>A save is one write from a region: one journalled transaction, the old book or the new one</p></div>
+    <div class="card"><h3>ramfs <code>/Temporary</code></h3><p>Files in memory, and <code>/Home</code> on a machine with no disk</p></div>
+    <div class="card"><h3>binfs <code>/Kosmos</code></h3><p>The libraries, and the faces a PDF embeds</p></div>
+    <div class="card"><h3>drives <code>/Drives</code></h3><p>A CSV or an XLSX on a stick, read only</p></div>
+    <div class="card"><h3>devices <code>/Devices/clock</code></h3><p>The time, for <code>TODAY()</code> and <code>NOW()</code>, when a book opens</p></div>
+  </div>
+</section>
+
+<!-- =========================== The boundary ============================= -->
+<div class="divider">
+  <div><div class="label">System calls</div></div>
+  <div>
+    <div class="rule"></div>
+    <div class="what">What Sheets sends across: a commit and its reply · the window's region, handed over once · a file read into a region and written from one · pages for the cells' blocks (<code>kosmos_map_bytes</code>), never shared and never copied. No call is made per cell.</div>
+  </div>
+</div>
+
+<!-- ============================== Nebula ================================ -->
+<section class="band kern">
+  <div class="label">
+    <h2>Nebula</h2>
+    <p>Threads, address spaces, IPC and capabilities - nothing else.</p>
+    <span class="tag t-c">C</span><span class="tag t-el1">EL1</span>
+  </div>
+  <div class="cards" style="grid-template-columns: repeat(4, 1fr)">
+    <div class="card"><h3>Memory</h3><p>Pages for the cells, the window's two buffers, a file's region</p></div>
+    <div class="card"><h3>IPC</h3><p>The commit, a file's requests: what to do, never the bytes</p></div>
+    <div class="card"><h3>Threads</h3><p>One, the window's: a recalculation in slices between frames; a thread of its own only if a measurement asks</p></div>
+    <div class="card"><h3>Capabilities</h3><p>The window's region, a file's region - by index into Sheets' own table</p></div>
+  </div>
+</section>
+
+<!-- ============================ The busiest path ======================== -->
+<section class="path">
+  <div class="head">
+    <h2>The busiest path - one cell changed, 10,000 depend on it</h2>
+    <p>The budget: one frame, 16.7 ms, on real cores · numbers are the repository's; red where there is none yet</p>
+  </div>
+  <div class="steps" style="grid-template-columns: repeat(6, 1fr)">
+    <div class="step"><span class="b">1</span><h4>The key arrives</h4><p><code>wm</code> to the window, a message; Return ends the edit of <code>Sales!B2</code>.</p>
+      <p class="n">round trip <b>0.31 ms</b> (gfx.md 19.4); an IPC on the M700 <b>19 us</b></p></div>
+    <div class="step"><span class="b">2</span><h4><code>book:set</code></h4><p>One crossing: "4500" recognised, the old content kept for undo, stored, 10,000 dependents marked.</p>
+      <p class="n">a crossing <b>~9 us</b> under QEMU (gfx.md 19.11); <span class="unk">the marking: S1 times it</span></p></div>
+    <div class="step"><span class="b">3</span><h4><code>book:recalc(budget)</code></h4><p>One crossing: Kahn's order over the dirty set, 10,000 compiled formulas, the tables whose shown cells moved.</p>
+      <p class="n"><span class="unk">not measured: S1 times it natively</span>; sliced if over about 4 ms, so the frame is kept</p></div>
+    <div class="step"><span class="b">4</span><h4><code>book:draw</code></h4><p>One crossing a table: about 300 cells formatted on the stack and set with <code>gfx_draw_text</code>.</p>
+      <p class="n">the ground <b>0.13 ms</b> at the M700's fill, 4,914 Mpx/s; <span class="unk">the glyphs: S3 measures</span></p></div>
+    <div class="step"><span class="b">5</span><h4>The rest, in Lua</h4><p>A chart whose range moved planned again; the formula bar, the choice's outline, the panel if it changed.</p>
+      <p class="n">a few dozen calls, the same for any size of sheet; <span class="unk">Write's frame never timed</span></p></div>
+    <div class="step"><span class="b">6</span><h4><code>win:commit</code></h4><p>A message naming the buffer and the rectangle; the window manager composes it.</p>
+      <p class="n"><b>0.31 ms</b>; opaque pixels <b>9,865 Mpx/s</b> on this Mac's cores (gfx.md 19.14); 42 ns a pixel under QEMU</p></div>
+  </div>
+  <p class="notpath"><b>Not on the path, by construction</b>: a Lua table per cell - C over Lua values measured at 0.56 times the interpreter (testing.md 18.128) · a string per cell · a message per cell · a crossing per cell, which would be 10,000 x 9 us = <b>90 ms under QEMU</b> before any arithmetic.</p>
+
+  <h3>Scrolling 100,000 rows</h3>
+  <div class="steps" style="grid-template-columns: repeat(4, 1fr)">
+    <div class="step"><span class="b">1</span><h4>The wheel</h4><p>An event; the view's offset moved, in Lua.</p><p class="n">round trip <b>0.31 ms</b></p></div>
+    <div class="step"><span class="b">4</span><h4><code>book:draw</code></h4><p>The first row found by the blocks' totals, the rows after it walked, the frozen header drawn over them.</p><p class="n">independent of the table's size; <span class="unk">glyphs: S3</span></p></div>
+    <div class="step"><span class="b">5</span><h4>Things blitted</h4><p>Charts, text boxes and pictures from the surfaces they were drawn into once.</p><p class="n">the M700 blits <b>4,250 Mpx/s</b> (testing.md 18.354)</p></div>
+    <div class="step"><span class="b">6</span><h4><code>commit</code></h4><p>The canvas's rectangle.</p><p class="n">nearest measured: the browser's scroll frame under hvf, <b>5.7 ms</b> - blit 2.8, commit 2.8, 1.02 KB a frame (state.md)</p></div>
+  </div>
+</section>
+
+<!-- =========================== The rules it keeps ======================= -->
+<div class="side">
+  <div class="card"><h3>A cell is never a Lua value</h3><p>Moving a loop to C is worth nothing until the data it walks stops being a Lua value. So the cells live in the kit from its first line, and Lua sees one at a time.</p></div>
+  <div class="card"><h3>One grammar, never bytecode in a file</h3><p>Typing, the editor's colours, the <code>.sheets</code> file and an XLSX go through one parser. A file holds a formula's text, checked like anything typed.</p></div>
+  <div class="card"><h3>A reference names a table</h3><p><code>Costs!E7</code>: unique in the document, unaffected by moving between sheets, and the worksheet's name when it goes to Excel - so nothing is renamed.</p></div>
+  <div class="card"><h3>A region holds the bytes</h3><p>The window's pixels, the cells, and every file in or out. Messages carry the commit, a file's request, the time, and the clipboard's 1,900 bytes.</p></div>
+</div>
+
+<footer>
+  <span>Kits, servers and drivers supply; applications orchestrate - Diego's premise, 4 October 2026.</span>
+  <span>docs/sheets-architecture.html, rendered to docs/sheets-architecture.png</span>
+</footer>
+
+</body>
+</html>

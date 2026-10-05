@@ -18980,6 +18980,11 @@ the folder in the first row - and the Save window answered by typing onto
 the offered name and Return, handing over `/Home/picktest/notes`. The phase
 went from three checks to five.
 
+**The control**: `arm-display-3` with `panel.lua` as it was fails the
+phase - "the guest never the Keys window to hand over a path by the
+keyboard alone within 30.0s" - since Down and Return reach a list that does
+not have the keys.
+
 ## 18.402 Second copies, the first half (step 3 after 0.11)
 
 The review before 0.11 listed every second copy it found (`roadmap.md`, *One

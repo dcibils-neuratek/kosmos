@@ -1,0 +1,683 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Kosmos Sheets, drawn before any of it is built.
+
+  Diego, 4 October 2026: "Kosmos Sheets which is a apple numbers and excel
+  inspirated app"; and of Kosmos Write's kits the same day, "We will reuse
+  most of this technology for our Kosmos Present presentation software ...
+  and Kosmos Sheets". The roadmap's entry: Numbers' tables on a free canvas
+  and Excel's grid and formulas, references across tables and sheets,
+  formats for numbers and dates, sorting and filters, charts from a table's
+  cells, and PDF and XLSX out.
+
+  Nothing here is built. The window is drawn at 1280 by 820 in the Night
+  look, as docs/write.html draws Kosmos Write's, and scaled to the page; the
+  pictures in its Export list are the Haiku icons Kosmos ships
+  (assets/icons/64x64, MIT, their licence beside them), and its own icon is
+  drawn here, since none of those fifty is a spreadsheet. What it stands on
+  is docs/sheets.md, drawn in docs/sheets-architecture.png.
+
+  The numbers are a small roastery's third quarter, and they add up: every
+  total is the sum of what is above it or beside it, and the margins are
+  the profit over the sales.
+-->
+<title>Kosmos Sheets</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --accent: #2a55c9; --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* The look itself, which is dark whatever the page is: Googlebook's
+       night surfaces, a blue-grey a little lifted from black, its pale
+       blue accent and the dark ink that sits on it. */
+    --d-wall: #070b14;
+    --d-surface: rgba(30, 38, 54, 0.94);
+    --d-surface-solid: #1e2636;
+    --d-raised: #2a3446;
+    --d-raised-2: #343f53;
+    --d-line: rgba(255, 255, 255, 0.08);
+    --d-ink: #e6eaf2;
+    --d-muted: #a3adbf;
+    --d-accent: #a8c7fa;
+    --d-accent-ink: #0a1b38;
+    --d-panel: #1a2130;
+
+    /* The canvas is paper whatever the look, as Write's page is: what is
+       on it is what prints. The table's tint and rules are Write's
+       (`pageset.HEADER_TINT`, `pageset.RULE`), so a table looks the same in
+       both; the series' colours are the chart kit's one list. */
+    --paper: #ffffff;
+    --p-ink: #1b2330;
+    --p-muted: #5b6677;
+    --head-tint: #e9edf2;
+    --foot-tint: #f3f5f8;
+    --rule-strong: #a3abb6;
+    --rule-soft: #d5dae1;
+    --sel: #2a55c9;
+    --ref-a: #2a55c9;
+    --ref-b: #d35400;
+    --series-1: #2a55c9;
+    --series-2: #d35400;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+      --rule: #283241; --accent: #85a8ff; --card: #171e28;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+    --rule: #283241; --accent: #85a8ff; --card: #171e28;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 1100px; margin: 0 auto; padding: 44px 16px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 42px)/1.1 var(--display); margin: 0 0 12px; text-wrap: balance; }
+  h2 { font: 600 24px/1.2 var(--display); margin: 48px 0 10px; text-wrap: balance; }
+  p, li { max-width: 70ch; }
+  p { margin: 0 0 12px; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 66ch; }
+  code { font: 0.88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+  .said { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; color: var(--muted); font-style: italic; margin: 16px 0; }
+
+  /* The controls above the picture: which panel, and what is open. */
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin: 22px 0 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; background: var(--card); }
+  .seg button { font: 500 14px var(--body); color: var(--ink); background: none; border: 0; padding: 7px 16px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .seg button:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .chip { font: 500 14px var(--body); color: var(--ink); background: var(--card); border: 1px solid var(--rule); border-radius: 999px; padding: 7px 14px; cursor: pointer; }
+  .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  .label { font: 500 13px var(--mono); color: var(--muted); letter-spacing: 0.02em; }
+  .hint { font-size: 14px; color: var(--muted); margin: 0 0 10px; }
+
+  /* The window: 1280 by 820, scaled to whatever width the page has. */
+  .frame { width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--rule); background: #000; }
+  .stage { position: relative; width: 1280px; height: 820px; transform-origin: 0 0; }
+  .shell { position: relative; overflow: hidden; }
+
+  /* Title band, tools, the sheets' tabs, the formula bar, then the canvas
+     and the panel. */
+  .wapp { position: absolute; inset: 0; background: var(--d-surface-solid); display: grid;
+         grid-template-rows: 40px 62px 34px 40px 1fr; color: var(--d-ink); font: 14px/1.4 var(--body); }
+  .tbar { display: flex; align-items: center; gap: 10px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--d-line); }
+  .tbar svg { width: 22px; height: 22px; flex: none; }
+  .tbar .name { font: 500 14.5px var(--body); } .tbar .file { color: var(--d-muted); }
+  .three { margin-left: auto; display: flex; gap: 2px; }
+  .three span { width: 36px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: var(--d-ink); font-size: 15px; }
+  .three span:hover { background: rgba(255, 255, 255, 0.08); }
+
+  .tools { display: flex; align-items: center; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--d-line); }
+  .tool { display: grid; justify-items: center; gap: 3px; padding: 6px 9px; border-radius: 10px; color: var(--d-muted); font-size: 11.5px; min-width: 52px; cursor: pointer; }
+  .tool .g { width: 26px; height: 22px; border-radius: 6px; display: grid; place-items: center; color: var(--d-ink); font-size: 15px; }
+  .tool:hover { background: rgba(255, 255, 255, 0.07); }
+  .tool.on { background: var(--d-raised); color: var(--d-ink); }
+  .tool.on .g { color: var(--d-accent); }
+  .zoom { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 8px; background: var(--d-raised); color: var(--d-ink); font-size: 12.5px; }
+  .gapx { flex: 1; }
+  .note { flex: 1; text-align: center; color: var(--d-muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; }
+
+  /* The sheets' tabs, at ui.tabs' numbers: words with a rule after each,
+     the chosen one on the panel's colour with the accent two pixels deep
+     along its foot. */
+  .stabs { display: flex; align-items: stretch; border-bottom: 1px solid var(--d-line); padding-left: 8px; }
+  .stab { display: flex; align-items: center; padding: 0 16px; color: var(--d-muted); font-size: 13px; border-right: 1px solid var(--d-line); cursor: pointer; }
+  .stab.on { background: var(--d-panel); color: var(--d-ink); box-shadow: inset 0 -2px 0 var(--d-accent); font-weight: 500; }
+  .stab.add { color: var(--d-ink); font-size: 16px; padding: 0 14px; }
+
+  /* The formula bar: the chosen cell's name, fx, and its formula. */
+  .fbar { display: grid; grid-template-columns: 132px 30px 1fr auto; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--d-line); }
+  .nbox { padding: 4px 10px; border-radius: 8px; background: var(--d-raised); font-size: 12.5px; white-space: nowrap; }
+  .nbox b { font-weight: 600; }
+  .fx { color: var(--d-muted); font: italic 600 14px var(--body); text-align: center; }
+  .ftext { padding: 4px 12px; border-radius: 8px; background: var(--d-raised); font: 13px var(--mono); white-space: nowrap; overflow: hidden; }
+  .ftext .r1 { color: #c3d4ff; background: rgba(42, 85, 201, 0.45); border-radius: 4px; padding: 0 3px; }
+  .ftext .r2 { color: #ffd9bf; background: rgba(211, 84, 0, 0.45); border-radius: 4px; padding: 0 3px; }
+  .ftext .caret { display: inline-block; width: 1.5px; height: 15px; background: var(--d-accent); vertical-align: -3px; margin-left: 1px; }
+  .fok { display: none; gap: 4px; }
+  .fok span { width: 26px; height: 24px; border-radius: 7px; background: var(--d-raised); display: grid; place-items: center; font-size: 13px; }
+  .fok span.ok { background: var(--d-accent); color: var(--d-accent-ink); }
+
+  .work { display: grid; grid-template-columns: 1fr 300px; min-height: 0; }
+
+  /* The canvas: paper, and what stands on it where it was put. */
+  .canvas { position: relative; background: var(--paper); color: var(--p-ink); overflow: hidden; font: 12px/1 var(--body); }
+  .ttl { position: absolute; left: 28px; top: 16px; font: 700 22px/1.2 var(--body); letter-spacing: -0.2px; }
+  .sub { position: absolute; left: 28px; top: 46px; font: 12.5px/1.2 var(--body); color: var(--p-muted); }
+  .tname { position: absolute; font: 600 12.5px/1 var(--body); color: var(--p-ink); }
+  .tname .flt { display: none; font-weight: 500; color: var(--sel); margin-left: 6px; }
+  .tbl { position: absolute; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }
+  .tbl td { height: 24px; padding: 0 6px; border: 1px solid var(--rule-soft); white-space: nowrap; overflow: hidden; text-align: right; position: relative; }
+  .tbl td:first-child { text-align: left; font-weight: 600; }
+  .tbl tr.h td { background: var(--head-tint); font-weight: 600; height: 26px; border-bottom: 1px solid var(--rule-strong); }
+  .tbl tr.h td:first-child { color: var(--p-muted); }
+  .tbl tr.f td { background: var(--foot-tint); font-weight: 600; border-top: 1px solid var(--rule-strong); }
+  .tbl tr td:first-child { border-right: 1px solid var(--rule-strong); }
+  .tbl { box-shadow: 0 0 0 1px var(--rule-strong); }
+  .tbl td.chosen { box-shadow: inset 0 0 0 2px var(--sel); }
+  .tbl td.chosen::after { content: ""; position: absolute; right: -4px; bottom: -4px; width: 7px; height: 7px; background: #fff; border: 1.5px solid var(--sel); border-radius: 2px; z-index: 2; }
+  .tbl td.refa { box-shadow: inset 0 0 0 2px var(--ref-a); background: rgba(42, 85, 201, 0.10) !important; }
+  .tbl td.refb { box-shadow: inset 0 0 0 2px var(--ref-b); background: rgba(211, 84, 0, 0.10) !important; }
+  /* A cell being edited grows over its neighbours to show what is typed. */
+  .tbl td.e4 { overflow: visible; }
+  .cell-edit { font: 11.5px var(--mono); color: var(--p-ink); }
+  .cell-edit .r1 { color: var(--ref-a); font-weight: 500; } .cell-edit .r2 { color: var(--ref-b); font-weight: 500; }
+  .cell-edit .caret { display: inline-block; width: 1.5px; height: 13px; background: var(--sel); vertical-align: -2px; margin-left: 1px; }
+  .st-edit td.e4 .cell-edit { display: flex; align-items: center; position: absolute; right: -1px; top: -1px; bottom: -1px;
+    padding: 0 6px; background: #fff; border: 2px solid var(--sel); white-space: nowrap; z-index: 3;
+    box-shadow: 0 4px 14px rgba(27, 35, 48, 0.18); }
+  .tbl td .err { color: #c0392b; }
+
+  /* A chosen table's reference tabs: its letters above, its rows' numbers
+     at its left, as Numbers shows them. */
+  .rt { position: absolute; display: none; font: 500 10.5px/1 var(--body); color: #6b7684; }
+  .rt.cols { display: none; height: 16px; }
+  .rt.cols span { position: absolute; top: 0; height: 16px; display: grid; place-items: center; background: #eef1f5; border: 1px solid #dfe3e9; border-bottom: 0; border-radius: 4px 4px 0 0; }
+  .rt.rows span { position: absolute; left: 0; width: 20px; display: grid; place-items: center; background: #eef1f5; border: 1px solid #dfe3e9; border-right: 0; border-radius: 4px 0 0 4px; }
+  .rt span.on { background: #c9d8f6; color: #1b3f9e; }
+  .rt.rows .gap { background: transparent; border: 0; height: 4px; }
+  .rt.rows .gap::before { content: ""; width: 14px; height: 2px; background: var(--sel); border-radius: 1px; }
+
+  .chart { position: absolute; background: #fff; }
+  .chart .ct { font: 600 12.5px/1 var(--body); }
+  .tbox { position: absolute; font: 12.5px/1.5 var(--body); color: var(--p-ink); }
+  .tbox b { font-weight: 600; }
+
+  .foot { position: absolute; left: 0; right: 0; bottom: 0; height: 28px; background: #f5f6f8; border-top: 1px solid #e1e5ea; display: flex; align-items: center; gap: 18px; padding: 0 14px; font: 12px/1 var(--body); color: var(--p-muted); }
+  .foot b { color: var(--p-ink); font-weight: 600; margin-left: 5px; font-variant-numeric: tabular-nums; }
+  .foot .where { color: var(--p-ink); font-weight: 600; margin-right: auto; }
+  .foot .alt { display: none; }
+
+  /* The panel: Format, Organize and Document switch it, and each has its
+     parts across the top. */
+  .insp { border-left: 1px solid var(--d-line); background: var(--d-panel); display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+  .ptabs { display: none; gap: 6px; padding: 10px 12px; }
+  .ptabs.on { display: flex; }
+  .ptabs span { flex: 1; text-align: center; padding: 5px 0; border-radius: 9px; color: var(--d-muted); font-size: 13px; cursor: pointer; }
+  .ptabs span.on { background: var(--d-accent); color: var(--d-accent-ink); font-weight: 600; }
+  .panels { min-height: 0; overflow: hidden; }
+  .panel { overflow: hidden; padding: 4px 14px 14px; display: none; align-content: start; gap: 11px; }
+  .panel.on { display: grid; }
+  .segs { display: flex; background: var(--d-raised); border-radius: 9px; padding: 3px; }
+  .segs span { flex: 1; text-align: center; padding: 3px 0; border-radius: 7px; font-size: 12.5px; color: var(--d-muted); cursor: pointer; }
+  .segs span.on { background: var(--d-raised-2); color: var(--d-ink); }
+  .lbl { color: var(--d-muted); font-size: 12px; margin-bottom: -5px; }
+  .field { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border-radius: 8px; background: var(--d-raised); font-size: 13px; }
+  .field .v { font-variant-numeric: tabular-nums; }
+  .row2 { display: grid; grid-template-columns: 1fr 86px; gap: 8px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .bius { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .bius span { text-align: center; padding: 4px 0; border-radius: 7px; background: var(--d-raised); font: 600 13px var(--body); }
+  .bius span.on { background: var(--d-accent); color: var(--d-accent-ink); }
+  .align { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .align span { text-align: center; padding: 5px 0; border-radius: 7px; background: var(--d-raised); font-size: 13px; }
+  .align span.on { background: var(--d-accent); color: var(--d-accent-ink); }
+  .swatch { width: 40px; height: 18px; border-radius: 5px; background: #1b2330; box-shadow: 0 0 0 1px var(--d-line); }
+  .swatch.none { background: repeating-linear-gradient(135deg, #3b4559 0 4px, #2a3446 4px 8px); }
+  .line2 { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+  .chk { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+  .chk i { width: 16px; height: 16px; border-radius: 4px; background: var(--d-raised-2); display: inline-grid; place-items: center; font-style: normal; font-size: 11px; }
+  .chk i.on { background: var(--d-accent); color: var(--d-accent-ink); }
+  .stepper { display: inline-flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 8px; background: var(--d-raised); font-size: 12.5px; }
+  .stepper em { font-style: normal; color: var(--d-muted); }
+  .nums { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+  .num { display: grid; gap: 2px; justify-items: center; font-size: 11.5px; color: var(--d-muted); }
+  .num span { width: 100%; text-align: right; padding: 4px 8px; border-radius: 7px; background: var(--d-raised); color: var(--d-ink); font-size: 12.5px; }
+  .btn { text-align: center; padding: 6px 10px; border-radius: 9px; background: var(--d-raised); font-size: 13px; }
+  .btn.later { color: var(--d-muted); border: 1px dashed #4a5468; background: none; }
+  .small { font-size: 11.5px; color: var(--d-muted); line-height: 1.45; }
+  .toggle { width: 40px; height: 22px; border-radius: 999px; background: var(--d-accent); position: relative; }
+  .toggle::after { content: ""; position: absolute; right: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--d-accent-ink); }
+  .rule { background: var(--d-raised); border-radius: 12px; padding: 10px; display: grid; gap: 7px; }
+  .rule .field { background: var(--d-raised-2); }
+  .looks6 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .lk { height: 46px; border-radius: 8px; background: #fff; position: relative; overflow: hidden; border: 2px solid transparent; }
+  .lk.on { border-color: var(--d-accent); }
+  .lk i { position: absolute; left: 0; right: 0; height: 8px; }
+  .lk b { position: absolute; top: 0; bottom: 0; left: 0; width: 12px; }
+  .orient { display: flex; gap: 14px; justify-content: center; }
+  .orient div { background: #fff; border-radius: 2px; box-shadow: 0 0 0 2px transparent; }
+  .orient .on { box-shadow: 0 0 0 2px var(--d-accent); }
+
+  /* Export's list, under its tool. */
+  .export { position: absolute; right: 222px; top: 98px; width: 236px; display: none; padding: 6px; border-radius: 14px; z-index: 5;
+            background: var(--d-surface); box-shadow: 0 18px 44px rgba(0,0,0,0.55), 0 0 0 1px var(--d-line); }
+  .show-export .export { display: grid; }
+  .export div { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; }
+  .export div:hover, .export div.on { background: var(--d-raised); }
+  .export img, .export svg { width: 24px; height: 24px; }
+  .export small { margin-left: auto; color: var(--d-muted); }
+
+  /* The second state: a formula being edited, each reference in its
+     colour in the bar, in the cell, and round the cells it names. */
+  .fx-edit, .cell-edit { display: none; }
+  .st-edit .fx-plain, .st-edit .cell-plain { display: none; }
+  .st-edit .fx-edit, .st-edit .cell-edit { display: inline; }
+  .st-edit .fok { display: inline-flex; }
+  .st-edit .nbox { box-shadow: 0 0 0 1px var(--d-accent); }
+  .st-edit td.e4 { box-shadow: inset 0 0 0 2px var(--sel); }
+  .st-edit td.e4::after { display: none; }
+  .st-edit td.ref-s { box-shadow: inset 0 0 0 2px var(--ref-a); background: rgba(42, 85, 201, 0.10) !important; }
+  .st-edit td.ref-c { box-shadow: inset 0 0 0 2px var(--ref-b); background: rgba(211, 84, 0, 0.10) !important; }
+  .st-edit .foot .main, .st-filter .foot .main { display: none; }
+  .st-edit .foot .alt.edit { display: flex; }
+  .st-filter .foot .alt.filter { display: flex; }
+
+  /* The third: Organize's filter on Sales, its two rows hidden. */
+  .st-filter tr.hid { display: none; }
+  .st-filter .tname .flt { display: inline; }
+  .st-filter .rt.sum { display: none !important; }
+  .st-filter .rt.sal { display: block; }
+  .st-filter td.e4 { box-shadow: none; }
+  .st-filter td.e4::after { display: none; }
+  .st-filter td.e7 { box-shadow: inset 0 0 0 2px var(--sel); }
+  .st-filter td.e7::after { content: ""; position: absolute; right: -4px; bottom: -4px; width: 7px; height: 7px; background: #fff; border: 1.5px solid var(--sel); border-radius: 2px; z-index: 2; }
+  .fx-filter { display: none; }
+  .st-filter .fx-plain, .st-filter .nb-plain { display: none; }
+  .st-filter .fx-filter, .st-filter .nb-filter { display: inline; }
+  .nb-filter { display: none; }
+  .rt.sum { display: block; }
+
+  .decide { display: grid; gap: 14px; margin-top: 12px; }
+  .q { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 18px; }
+  .q h3 { margin: 0 0 6px; font: 600 17px var(--body); }
+  .q .rec { color: var(--muted); }
+  .q .rec b { color: var(--ink); }
+  ul.feats { padding-left: 20px; } ul.feats li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Kosmos Sheets</h1>
+  <p class="lede">A spreadsheet after Apple's Numbers and Excel: sheets as tabs, each a canvas on which tables, charts and
+  text stand where they were put; inside a table, Excel's formula bar, grammar and functions. It saves its own
+  <code>.sheets</code> files, reads and writes CSV and Excel's XLSX, and exports PDF.</p>
+  <p class="said">"Kosmos Sheets which is a apple numbers and excel inspirated app" - Diego, 4 October 2026</p>
+
+  <div class="controls" role="group" aria-label="What the window shows">
+    <span class="label">PANEL</span>
+    <div class="seg">
+      <button type="button" data-panel="format" aria-pressed="true">Format</button>
+      <button type="button" data-panel="organize" aria-pressed="false">Organize</button>
+      <button type="button" data-panel="document" aria-pressed="false">Document</button>
+    </div>
+    <button type="button" class="chip" id="editbtn" aria-pressed="false">Edit a formula</button>
+    <button type="button" class="chip" id="exportbtn" aria-pressed="false">Export menu</button>
+  </div>
+  <p class="hint">Edit a formula: Summary's quarter's profit, its two references in their colours in the bar and round the
+  cells they name in the other tables. Organize: a filter on Sales, two of its rows hidden. The panel's own parts can be
+  pressed too.</p>
+
+  <div class="frame"><div class="shell" id="shell"><div class="stage" id="stage"><div class="wapp" id="app">
+    <div class="tbar">
+      <svg viewBox="0 0 22 22" aria-hidden="true"><rect x="2" y="1.5" width="18" height="19" rx="3" fill="#2f9e6e"/><rect x="4.5" y="5" width="13" height="13" rx="1" fill="#e9f7f0"/><path d="M4.5 9.3h13M4.5 13.6h13M9 5v13M13.3 5v13" stroke="#2f9e6e" stroke-width="1.1"/><rect x="4.5" y="5" width="13" height="4.3" fill="#bfe6d3"/></svg>
+      <span class="name">Kosmos Sheets</span><span class="file">Southside Q3 2026.sheets</span>
+      <span class="three"><span>&#8212;</span><span>&#9633;</span><span>&#10005;</span></span></div>
+    <div class="tools">
+      <div class="tool"><span class="g">&#9707;</span>View</div>
+      <div class="tool"><span class="zoom">100% &#9662;</span>Zoom</div>
+      <div class="tool"><span class="g">&#931;</span>Formula</div>
+      <div class="note">Southside Q3 2026 - 3 sheets</div>
+      <div class="tool"><span class="g">&#8801;</span>Insert</div>
+      <div class="tool"><span class="g">&#9638;</span>Table</div>
+      <div class="tool"><span class="g">&#9684;</span>Chart</div>
+      <div class="tool"><span class="g">T</span>Text</div>
+      <div class="tool"><span class="g">&#9671;</span>Shape</div>
+      <div class="tool"><span class="g">&#9635;</span>Media</div>
+      <div class="tool"><span class="g">&#9993;</span>Comment</div>
+      <div class="gapx"></div>
+      <div class="tool" id="exporttool"><span class="g">&#8682;</span>Export</div>
+      <div class="tool on" data-tool="format"><span class="g">&#10002;</span>Format</div>
+      <div class="tool" data-tool="organize"><span class="g">&#8645;</span>Organize</div>
+      <div class="tool" data-tool="document"><span class="g">&#9636;</span>Document</div>
+    </div>
+    <div class="stabs">
+      <div class="stab on">Q3 2026</div><div class="stab">Monthly detail</div><div class="stab">Assumptions</div><div class="stab add">+</div>
+    </div>
+    <div class="fbar">
+      <span class="nbox"><span class="nb-plain"><b>Summary</b> &#160;E4</span><span class="nb-filter"><b>Sales</b> &#160;E7</span></span>
+      <span class="fx">fx</span>
+      <span class="ftext"><span class="fx-plain">=Sales!E7-Costs!E7</span><span class="fx-edit">=<span class="r1">Sales!E7</span>-<span class="r2">Costs!E7</span><span class="caret"></span></span><span class="fx-filter">=SUM(E2:E6)</span></span>
+      <span class="fok"><span>&#10005;</span><span class="ok">&#10003;</span></span>
+    </div>
+    <div class="work">
+      <div class="canvas">
+        <div class="ttl">Third quarter, 2026</div>
+        <div class="sub">Southside Roasters - sales and costs, July to September</div>
+
+        <!-- Sales: currency, two places. Every total adds up. -->
+        <div class="tname" style="left:28px;top:70px">Sales<span class="flt">&#9207; filtered: Quarter over $5,000</span></div>
+        <div class="rt cols sal" style="left:28px;top:84px;width:484px">
+          <span style="left:0;width:150px">A</span><span style="left:150px;width:82px">B</span><span style="left:232px;width:82px">C</span><span style="left:314px;width:82px">D</span><span class="on" style="left:396px;width:88px">E</span></div>
+        <div class="rt rows sal" style="left:6px;top:100px;width:22px">
+          <span style="top:0;height:27px">1</span><span style="top:27px;height:25px">2</span><span style="top:52px;height:25px">3</span><span class="gap" style="top:75px"></span><span style="top:77px;height:25px">5</span><span class="gap" style="top:100px"></span><span class="on" style="top:102px;height:26px">7</span></div>
+        <table class="tbl" style="left:28px;top:100px;width:484px">
+          <colgroup><col style="width:150px"><col style="width:82px"><col style="width:82px"><col style="width:82px"><col style="width:88px"></colgroup>
+          <tr class="h"><td>Product</td><td>July</td><td>August</td><td>September</td><td>Quarter</td></tr>
+          <tr><td>Espresso beans, 1 kg</td><td>$4,180.00</td><td>$4,420.00</td><td>$4,960.00</td><td>$13,560.00</td></tr>
+          <tr><td>Filter beans, 500 g</td><td>$2,350.00</td><td>$2,210.00</td><td>$2,640.00</td><td>$7,200.00</td></tr>
+          <tr class="hid"><td>Cold brew, 1 L</td><td>$1,120.00</td><td>$1,480.00</td><td>$1,930.00</td><td>$4,530.00</td></tr>
+          <tr><td>Coffee bar</td><td>$6,240.00</td><td>$6,015.00</td><td>$6,575.00</td><td>$18,830.00</td></tr>
+          <tr class="hid"><td>Workshops</td><td>$600.00</td><td>$900.00</td><td>$750.00</td><td>$2,250.00</td></tr>
+          <tr class="f"><td>Total</td><td>$14,490.00</td><td>$15,025.00</td><td>$16,855.00</td><td class="ref-s e7">$46,370.00</td></tr>
+        </table>
+
+        <!-- Costs. -->
+        <div class="tname" style="left:28px;top:300px">Costs</div>
+        <table class="tbl" style="left:28px;top:330px;width:484px">
+          <colgroup><col style="width:150px"><col style="width:82px"><col style="width:82px"><col style="width:82px"><col style="width:88px"></colgroup>
+          <tr class="h"><td>Cost</td><td>July</td><td>August</td><td>September</td><td>Quarter</td></tr>
+          <tr><td>Green coffee</td><td>$3,640.00</td><td>$3,810.00</td><td>$4,290.00</td><td>$11,740.00</td></tr>
+          <tr><td>Rent</td><td>$2,200.00</td><td>$2,200.00</td><td>$2,200.00</td><td>$6,600.00</td></tr>
+          <tr><td>Wages</td><td>$4,800.00</td><td>$4,800.00</td><td>$5,150.00</td><td>$14,750.00</td></tr>
+          <tr><td>Milk and cups</td><td>$610.00</td><td>$585.00</td><td>$655.00</td><td>$1,850.00</td></tr>
+          <tr><td>Power and gas</td><td>$395.00</td><td>$410.00</td><td>$380.00</td><td>$1,185.00</td></tr>
+          <tr class="f"><td>Total</td><td>$11,645.00</td><td>$11,805.00</td><td>$12,675.00</td><td class="ref-c">$36,125.00</td></tr>
+        </table>
+
+        <!-- Summary: references across tables, currency without places, and
+             a percentage. Chosen, so its reference tabs show. -->
+        <div class="tname" style="left:550px;top:70px">Summary</div>
+        <div class="rt cols sum" style="left:550px;top:84px;width:396px">
+          <span style="left:0;width:76px">A</span><span style="left:76px;width:80px">B</span><span style="left:156px;width:80px">C</span><span style="left:236px;width:80px">D</span><span class="on" style="left:316px;width:80px">E</span></div>
+        <div class="rt rows sum" style="left:528px;top:100px;width:22px">
+          <span style="top:0;height:27px">1</span><span style="top:27px;height:25px">2</span><span style="top:52px;height:25px">3</span><span class="on" style="top:77px;height:25px">4</span><span style="top:102px;height:25px">5</span></div>
+        <table class="tbl" style="left:550px;top:100px;width:396px">
+          <colgroup><col style="width:76px"><col style="width:80px"><col style="width:80px"><col style="width:80px"><col style="width:80px"></colgroup>
+          <tr class="h"><td></td><td>July</td><td>August</td><td>September</td><td>Quarter</td></tr>
+          <tr><td>Sales</td><td>$14,490</td><td>$15,025</td><td>$16,855</td><td>$46,370</td></tr>
+          <tr><td>Costs</td><td>$11,645</td><td>$11,805</td><td>$12,675</td><td>$36,125</td></tr>
+          <tr><td>Profit</td><td>$2,845</td><td>$3,220</td><td>$4,180</td><td class="chosen e4"><span class="cell-plain">$10,245</span><span class="cell-edit">=<span class="r1">Sales!E7</span>-<span class="r2">Costs!E7</span><span class="caret"></span></span></td></tr>
+          <tr><td>Margin</td><td>19.6%</td><td>21.4%</td><td>24.8%</td><td>22.1%</td></tr>
+        </table>
+
+        <!-- A chart of Summary's first two rows: live, so a number typed in
+             Sales moves its column. Drawn as chart_plan draws one: the
+             legend across the top, gridlines at a step a person reads. -->
+        <div class="chart" style="left:550px;top:250px;width:396px;height:236px">
+          <svg width="396" height="236" viewBox="0 0 396 236" font-family="IBM Plex Sans, system-ui, sans-serif" font-size="10.5" fill="#5b6677">
+            <text x="0" y="13" font-size="12.5" font-weight="600" fill="#1b2330">Sales and costs by month</text>
+            <rect x="0" y="27" width="9" height="9" fill="#2a55c9"/><text x="13" y="35">Sales</text>
+            <rect x="52" y="27" width="9" height="9" fill="#d35400"/><text x="65" y="35">Costs</text>
+            <g stroke="#d5dae1" stroke-width="1">
+              <line x1="48" y1="56" x2="384" y2="56"/><line x1="48" y1="93.5" x2="384" y2="93.5"/>
+              <line x1="48" y1="131" x2="384" y2="131"/><line x1="48" y1="168.5" x2="384" y2="168.5"/>
+            </g>
+            <g text-anchor="end"><text x="43" y="59.5">$20,000</text><text x="43" y="97">$15,000</text><text x="43" y="134.5">$10,000</text><text x="43" y="172">$5,000</text><text x="43" y="209.5">$0</text></g>
+            <rect x="64.8" y="97.3" width="39.2" height="108.7" fill="#2a55c9"/>
+            <rect x="104" y="118.7" width="39.2" height="87.3" fill="#d35400"/>
+            <rect x="176.8" y="93.3" width="39.2" height="112.7" fill="#2a55c9"/>
+            <rect x="216" y="117.5" width="39.2" height="88.5" fill="#d35400"/>
+            <rect x="288.8" y="79.6" width="39.2" height="126.4" fill="#2a55c9"/>
+            <rect x="328" y="110.9" width="39.2" height="95.1" fill="#d35400"/>
+            <line x1="48" y1="206" x2="384" y2="206" stroke="#8e959f" stroke-width="1.2"/>
+            <g text-anchor="middle"><text x="104" y="222">July</text><text x="216" y="222">August</text><text x="328" y="222">September</text></g>
+          </svg>
+        </div>
+
+        <!-- A text box, set by pageset as a frame. -->
+        <div class="tbox" style="left:550px;top:504px;width:396px">
+          <b>September was the quarter's best month.</b> The margin rose every month, from 19.6% to 24.8%, and
+          cold brew sold 72% more than in July.
+        </div>
+
+        <!-- The foot: what is chosen, summed without a formula. -->
+        <div class="foot">
+          <span class="main where">Summary E4</span>
+          <span class="main">SUM<b>$10,245</b></span><span class="main">AVERAGE<b>$10,245</b></span>
+          <span class="main">MIN<b>$10,245</b></span><span class="main">MAX<b>$10,245</b></span><span class="main">COUNT<b>1</b></span>
+          <span class="alt edit" style="gap:18px;width:100%"><span class="where">Editing Summary E4</span><span>Return or Tab to finish, Escape to leave it as it was</span></span>
+          <span class="alt filter" style="gap:18px;width:100%"><span class="where">Sales E7</span><span>3 of 5 rows shown</span><span>SUM<b>$46,370.00</b></span><span>COUNT<b>1</b></span></span>
+        </div>
+      </div>
+
+      <div class="insp">
+        <div>
+          <div class="ptabs on" data-ptabs="format"><span data-part="f-table">Table</span><span class="on" data-part="f-cell">Cell</span><span data-part="f-text">Text</span><span data-part="f-arrange">Arrange</span></div>
+          <div class="ptabs" data-ptabs="organize"><span data-part="o-sort">Sort</span><span class="on" data-part="o-filter">Filter</span></div>
+          <div class="ptabs" data-ptabs="document"><span class="on" data-part="d-doc">Document</span><span data-part="d-sheet">Sheet</span></div>
+        </div>
+        <div class="panels">
+          <!-- Format, Table -->
+          <div class="panel" id="f-table">
+            <div class="lbl">Table look</div>
+            <div class="looks6">
+              <div class="lk on"><i style="top:0;background:#e9edf2"></i><b style="background:#f3f5f8"></b></div>
+              <div class="lk"><i style="top:0;background:#2a55c9"></i></div>
+              <div class="lk"><i style="top:0;background:#27ae60"></i><i style="top:24px;background:#eef8f2"></i></div>
+              <div class="lk"><i style="top:0;background:#1b2330"></i></div>
+              <div class="lk"><i style="top:0;background:#d35400"></i><b style="background:#fdf3e1"></b></div>
+              <div class="lk"><i style="top:0;background:#f2f2f2"></i><i style="top:16px;background:#f7f7f7"></i><i style="top:32px;background:#f7f7f7"></i></div>
+            </div>
+            <div class="lbl">Headers and footer</div>
+            <div class="row3">
+              <span class="stepper"><em>&#9636;</em>1 &#8693;</span><span class="stepper"><em>&#9707;</em>1 &#8693;</span><span class="stepper"><em>&#9637;</em>0 &#8693;</span>
+            </div>
+            <div class="small">Header rows, header columns, footer rows. Header rows and columns stay in view while the table scrolls.</div>
+            <div class="line2"><span class="chk"><i class="on">&#10003;</i>Table name</span><span class="chk"><i class="on">&#10003;</i>Outline</span></div>
+            <div class="lbl">Gridlines</div>
+            <div class="line2"><span class="chk"><i class="on">&#10003;</i>Across</span><span class="chk"><i class="on">&#10003;</i>Down</span><span class="chk"><i></i>Alternate rows</span></div>
+            <div class="lbl">Rows and columns</div>
+            <div class="nums"><div class="num"><span>20 pt</span>Row height</div><div class="num"><span>60 pt</span>Column width</div></div>
+            <div class="line2">Table font size <span class="stepper">10 pt &#8693;</span></div>
+          </div>
+          <!-- Format, Cell -->
+          <div class="panel on" id="f-cell">
+            <div class="lbl">Data format</div>
+            <div class="field">Currency <span>&#9662;</span></div>
+            <div class="line2">Decimal places <span class="stepper">0 &#8693;</span></div>
+            <div class="line2"><span class="chk"><i class="on">&#10003;</i>Thousands separator</span></div>
+            <div class="line2"><span class="chk"><i></i>Accounting style</span></div>
+            <div class="lbl">Negative numbers</div>
+            <div class="field"><span class="v">-$1,234</span> <span>&#9662;</span></div>
+            <div class="lbl">Currency</div>
+            <div class="field">Dollar ($) <span>&#9662;</span></div>
+            <div class="small">Shown: <b style="color:var(--d-ink)">$10,245</b>. Kept: 10245, a double; compared at fifteen digits.</div>
+            <div class="line2">Fill <span class="swatch none"></span></div>
+            <div class="btn later">Highlight cells by rules - later</div>
+          </div>
+          <!-- Format, Text -->
+          <div class="panel" id="f-text">
+            <div class="lbl">Font</div>
+            <div class="field">IBM Plex Sans <span>&#9662;</span></div>
+            <div class="row2"><div class="field">Regular <span>&#9662;</span></div><div class="field">10 pt <span>&#8693;</span></div></div>
+            <div class="bius"><span>B</span><span><i>I</i></span><span><u>U</u></span><span><s>S</s></span></div>
+            <div class="line2">Text colour <span class="swatch"></span></div>
+            <div class="lbl">Across</div>
+            <div class="align"><span>&#8676;</span><span>&#8596;</span><span>&#8677;</span><span class="on">Auto</span></div>
+            <div class="lbl">Down</div>
+            <div class="align" style="grid-template-columns:repeat(3,1fr)"><span>Top</span><span class="on">Middle</span><span>Bottom</span></div>
+            <div class="line2"><span class="chk"><i></i>Wrap text in cell</span><span class="small">later</span></div>
+          </div>
+          <!-- Format, Arrange -->
+          <div class="panel" id="f-arrange">
+            <div class="lbl">Summary, on Q3 2026</div>
+            <div class="nums"><div class="num"><span>412 pt</span>X</div><div class="num"><span>75 pt</span>Y</div>
+              <div class="num"><span>297 pt</span>Width</div><div class="num"><span>95 pt</span>Height</div></div>
+            <div class="row3" style="grid-template-columns:1fr 1fr"><div class="btn">Back</div><div class="btn">Front</div></div>
+            <div class="row3" style="grid-template-columns:1fr 1fr"><div class="btn">Backward</div><div class="btn">Forward</div></div>
+            <div class="lbl">Align with what is chosen</div>
+            <div class="align" style="grid-template-columns:repeat(6,1fr)"><span>&#8676;</span><span>&#8596;</span><span>&#8677;</span><span>&#8673;</span><span>&#8597;</span><span>&#8675;</span></div>
+            <div class="line2"><span class="chk"><i></i>Locked</span></div>
+            <div class="small">Things on a sheet snap to each other's edges and middles while they are dragged.</div>
+          </div>
+          <!-- Organize, Sort -->
+          <div class="panel" id="o-sort">
+            <div class="line2">Sort <span class="field" style="width:150px">Entire table &#9662;</span></div>
+            <div class="rule">
+              <div class="field">Quarter <span>&#9662;</span></div>
+              <div class="field">Highest first <span>&#9662;</span></div>
+            </div>
+            <div class="btn">Add a column</div>
+            <div class="btn" style="background:var(--d-accent);color:var(--d-accent-ink);font-weight:600">Sort now</div>
+            <div class="small">Header and footer rows stay where they are. A reference to a sorted row follows the row, as in Numbers.</div>
+          </div>
+          <!-- Organize, Filter -->
+          <div class="panel" id="o-filter">
+            <div class="line2">Filters for <span class="field" style="width:130px">Sales &#9662;</span></div>
+            <div class="line2">Filters on <span class="toggle"></span></div>
+            <div class="rule">
+              <div class="field">Quarter <span>&#9662;</span></div>
+              <div class="field">is greater than <span>&#9662;</span></div>
+              <div class="field"><span class="v">$5,000.00</span><span>&#10005;</span></div>
+            </div>
+            <div class="line2">Show rows that match <span class="field" style="width:96px">All &#9662;</span></div>
+            <div class="btn">Add a filter</div>
+            <div class="small">Two rows hidden: Cold brew, Workshops. The footer's total still counts them, as SUM does in Numbers and Excel.</div>
+          </div>
+          <!-- Document, Document -->
+          <div class="panel" id="d-doc">
+            <div class="lbl">Paper</div>
+            <div class="field">A4, 210 by 297 mm <span>&#9662;</span></div>
+            <div class="orient"><div style="width:46px;height:64px"></div><div class="on" style="width:64px;height:46px;margin-top:18px"></div></div>
+            <div class="line2"><span class="chk"><i class="on">&#10003;</i>Fit to page width</span></div>
+            <div class="line2"><span class="chk"><i class="on">&#10003;</i>Header</span><span class="chk"><i class="on">&#10003;</i>Footer</span></div>
+            <div class="lbl">Margins</div>
+            <div class="nums"><div class="num"><span>15 mm</span>Top</div><div class="num"><span>15 mm</span>Bottom</div>
+              <div class="num"><span>15 mm</span>Left</div><div class="num"><span>15 mm</span>Right</div></div>
+            <span class="chk"><i class="on">&#10003;</i>Page numbers</span>
+            <div class="small">A sheet as printed is its canvas laid on pages; a table's header row heads every page it runs on to.</div>
+          </div>
+          <!-- Document, Sheet -->
+          <div class="panel" id="d-sheet">
+            <div class="lbl">Sheet name</div>
+            <div class="field">Q3 2026</div>
+            <div class="lbl">On it</div>
+            <div class="field">3 tables, 1 chart, 1 text box</div>
+            <div class="line2"><span class="chk"><i class="on">&#10003;</i>Print this sheet</span></div>
+            <div class="btn">Duplicate sheet</div>
+            <div class="btn">Delete sheet</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="export">
+      <div class="on"><svg viewBox="0 0 22 22" aria-hidden="true"><rect x="2" y="1.5" width="18" height="19" rx="3" fill="#2f9e6e"/><rect x="4.5" y="5" width="13" height="13" rx="1" fill="#e9f7f0"/><path d="M4.5 9.3h13M4.5 13.6h13M9 5v13M13.3 5v13" stroke="#2f9e6e" stroke-width="1.1"/><rect x="4.5" y="5" width="13" height="4.3" fill="#bfe6d3"/></svg>Save<small>.sheets</small></div>
+      <div><img src="data:image/png;base64,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" alt="">Export PDF<small>.pdf</small></div>
+      <div><img src="data:image/png;base64,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" alt="">Export Excel<small>.xlsx</small></div>
+      <div><img src="data:image/png;base64,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" alt="">Export CSV<small>.csv</small></div>
+    </div>
+  </div></div></div></div>
+
+  <h2>What it does, first</h2>
+  <ul class="feats">
+    <li><b>Sheets and their canvas</b>: sheets as tabs; on each, tables, charts, text boxes, shapes and pictures placed
+    with the pointer, moved, sized, brought forward and sent back, snapped to each other's edges.</li>
+    <li><b>Tables</b>: header rows and columns that stay in view while a long table scrolls, footer rows for totals, a
+    name, six looks, gridlines - and no row or column count compiled in. 100,000 rows scroll as 10 do.</li>
+    <li><b>Formulas</b>: Excel's grammar and about eighty of its functions; references relative and absolute; references
+    to another table by its name (<code>Costs!E7</code>), on this sheet or another; errors as values; each reference in
+    its colour while it is typed, outlined on the canvas; quick sums from the tools' Formula, and the foot summing
+    whatever is chosen.</li>
+    <li><b>Formats</b>: Automatic, Number, Currency, Percentage, Scientific, Text, Date and Time - the Format panel's
+    Cell; a cell's face, size, colour, fill and alignment - its Text, as Write's.</li>
+    <li><b>Sort and filter</b>: Organize's two parts, by one or more columns and by rules.</li>
+    <li><b>Charts from cells</b>: column, bar, line, pie, area and scatter, drawn again when a number they read changes.</li>
+    <li><b>Files</b>: <code>.sheets</code>, its own; CSV in and out; Excel's XLSX out and in; PDF out, fitted to the
+    page's width - from Export.</li>
+  </ul>
+
+  <h2>What is yours to decide</h2>
+  <div class="decide">
+    <div class="q"><h3>1. The arithmetic</h3>
+      <p>Binary doubles, as Excel and Numbers keep them - what is shown and what is compared rounded to fifteen digits,
+      <code>ROUND</code> for an exact cent - or decimal arithmetic, exact in cents and different from the Excel a sheet
+      is exported to.</p>
+      <p class="rec"><b>Doubles</b>: every function is defined over them, an XLSX holds them, and a number computes the
+      same at both ends.</p></div>
+    <div class="q"><h3>2. How a reference names another table</h3>
+      <p><code>Costs!E7</code>, a table's name unique in the document - or Numbers' <code>Q3 2026::Costs::E7</code>.</p>
+      <p class="rec"><b>The table's name</b>: a table moves between sheets without breaking a formula, and each table
+      becomes an Excel worksheet of the same name, so nothing is renamed.</p></div>
+    <div class="q"><h3>3. Opening Excel's files</h3>
+      <p>XLSX out only, as asked, or in as well, in the first version.</p>
+      <p class="rec"><b>In as well, after out</b>: a worksheet's cells are not a page's layout, and people's
+      spreadsheets arrive as XLSX.</p></div>
+    <div class="q"><h3>4. How numbers and dates are written</h3>
+      <p>1,234.56 and day first (<code>5 October 2026</code>) to begin with, the document recording it - or the decimal
+      comma from the first day.</p>
+      <p class="rec"><b>The point and day first, recorded</b>, so that a region chosen later is a setting rather than a
+      format change.</p></div>
+    <div class="q"><h3>5. The clipboard</h3>
+      <p>It holds 1,900 bytes, which a range of cells soon outgrows: within Sheets nothing is lost, to another
+      application the text is cut short and said to be. A clipboard in a region is the window manager's change.</p>
+      <p class="rec"><b>Later, as its own step</b>: every application gains from it.</p></div>
+    <div class="q"><h3>6. The icon</h3>
+      <p>None of the fifty Haiku icons Kosmos carries is a spreadsheet; the one above is drawn for this page.</p>
+      <p class="rec"><b>One more from Haiku's artwork</b>, if it has one, as the others came.</p></div>
+  </div>
+</main>
+<script>
+(function () {
+  var shell = document.getElementById("shell"), stage = document.getElementById("stage"), app = document.getElementById("app");
+  function fit() {
+    var s = shell.clientWidth / 1280;
+    stage.style.transform = "scale(" + s + ")";
+    shell.style.height = (820 * s) + "px";
+  }
+  window.addEventListener("resize", fit); fit();
+
+  var FIRST = { format: "f-cell", organize: "o-filter", document: "d-doc" };
+  var shown = { format: "f-cell", organize: "o-filter", document: "d-doc" };
+  var panel = "format";
+  var panelBtns = document.querySelectorAll("[data-panel]");
+  var editBtn = document.getElementById("editbtn");
+
+  function part(id) {
+    document.querySelectorAll(".panel").forEach(function (p) { p.classList.toggle("on", p.id === id); });
+    document.querySelectorAll("[data-part]").forEach(function (t) { t.classList.toggle("on", t.dataset.part === id); });
+  }
+  function show(which) {
+    panel = which;
+    document.querySelectorAll("[data-ptabs]").forEach(function (t) { t.classList.toggle("on", t.dataset.ptabs === which); });
+    document.querySelectorAll("[data-tool]").forEach(function (t) { t.classList.toggle("on", t.dataset.tool === which); });
+    panelBtns.forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.panel === which)); });
+    part(shown[which]);
+    // Organize shows its filter on Sales; editing a formula and a filter
+    // are not drawn at once.
+    app.classList.toggle("st-filter", which === "organize");
+    if (which === "organize") { app.classList.remove("st-edit"); editBtn.setAttribute("aria-pressed", "false"); }
+  }
+  panelBtns.forEach(function (b) { b.addEventListener("click", function () { show(b.dataset.panel); }); });
+  document.querySelectorAll("[data-tool]").forEach(function (t) {
+    t.addEventListener("click", function () { show(t.dataset.tool); });
+  });
+  document.querySelectorAll("[data-part]").forEach(function (t) {
+    t.addEventListener("click", function () {
+      var id = t.dataset.part;
+      if (!document.getElementById(id)) return;
+      shown[panel] = id;
+      part(id);
+    });
+  });
+  editBtn.addEventListener("click", function () {
+    var on = !app.classList.contains("st-edit");
+    if (on && panel === "organize") show("format");
+    app.classList.toggle("st-edit", on);
+    editBtn.setAttribute("aria-pressed", String(on));
+  });
+  function toggleExport() {
+    var on = !app.classList.contains("show-export");
+    app.classList.toggle("show-export", on);
+    document.getElementById("exportbtn").setAttribute("aria-pressed", String(on));
+  }
+  document.getElementById("exportbtn").addEventListener("click", toggleExport);
+  document.getElementById("exporttool").addEventListener("click", toggleExport);
+  show("format");
+})();
+</script>
+</body>
+</html>

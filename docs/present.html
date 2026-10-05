@@ -1,0 +1,718 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Kosmos Present, drawn before any of it is built.
+
+  Diego, 4 October 2026: "our Kosmos Present presentation software like
+  apple keynote" - slides on Kosmos Write's pages and its kits, with what a
+  presentation adds: a slide's layouts and master, the navigator of slides
+  down the side, presenting full screen with the next slide and notes for
+  the person speaking, and transitions (`roadmap.md`, Kosmos Present).
+
+  Nothing here is built. The editing window is drawn at 1280 by 820 in the
+  Night look, as Kosmos Write's is (`docs/write.html`), and the slide shown
+  full screen and the presenter's view at 1920 by 1080; each is scaled to
+  the page. The slides are a short talk about Kosmos, its numbers the ones
+  the repository measured. The pictures are the Haiku icons Kosmos ships
+  (assets/icons/64x64, MIT, their licence beside them) and a screenshot from
+  docs/screenshots. What stands under it is docs/present.md, and its diagram
+  docs/present-architecture.png.
+-->
+<title>Kosmos Present</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --accent: #2a55c9; --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* The look itself, which is dark whatever the page is: Googlebook's
+       night surfaces, a blue-grey a little lifted from black, its pale
+       blue accent and the dark ink that sits on it - Write's, exactly. */
+    --d-wall: #070b14;
+    --d-surface: rgba(30, 38, 54, 0.94);
+    --d-surface-solid: #1e2636;
+    --d-raised: #2a3446;
+    --d-raised-2: #343f53;
+    --d-line: rgba(255, 255, 255, 0.08);
+    --d-ink: #e6eaf2;
+    --d-muted: #a3adbf;
+    --d-accent: #a8c7fa;
+    --d-accent-ink: #0a1b38;
+
+    /* The Night theme's slides: the desktop's blue, deepened. */
+    --s-ink: #e6eaf2; --s-body: #c9d2e3; --s-dim: #8e9bb3; --s-accent: #a8c7fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+      --rule: #283241; --accent: #85a8ff; --card: #171e28;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+    --rule: #283241; --accent: #85a8ff; --card: #171e28;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 1100px; margin: 0 auto; padding: 44px 16px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 42px)/1.1 var(--display); margin: 0 0 12px; text-wrap: balance; }
+  h2 { font: 600 24px/1.2 var(--display); margin: 48px 0 10px; text-wrap: balance; }
+  p, li { max-width: 70ch; }
+  p { margin: 0 0 12px; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 66ch; }
+  code { font: 0.88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+  .said { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; color: var(--muted); font-style: italic; margin: 16px 0; }
+
+  /* The controls above the picture: which view, which panel, what is open. */
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin: 22px 0 12px; }
+  .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--rule); border-radius: 18px; overflow: hidden; background: var(--card); }
+  .seg button { font: 500 14px var(--body); color: var(--ink); background: none; border: 0; padding: 7px 14px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .seg button:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .chip { font: 500 14px var(--body); color: var(--ink); background: var(--card); border: 1px solid var(--rule); border-radius: 999px; padding: 7px 14px; cursor: pointer; }
+  .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  .chip[hidden] { display: none; }
+  .label { font: 500 13px var(--mono); color: var(--muted); letter-spacing: 0.02em; }
+  .group-c { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; max-width: 100%; }
+  .group-c .seg { max-width: 100%; }
+
+  /* The picture: a stage at the window's or the screen's size, scaled to
+     whatever width the page has. */
+  .frame { width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--rule); background: #000; }
+  .shell { position: relative; overflow: hidden; }
+  .stage { position: relative; transform-origin: 0 0; }
+  .view { position: absolute; inset: 0; display: none; }
+  .view.on { display: block; }
+  .caption { color: var(--muted); font-size: 14px; margin: 8px 2px 0; }
+
+  /* ---------------- The editing window ---------------- */
+  .wapp { background: var(--d-surface-solid); display: grid; grid-template-rows: 40px 62px 1fr;
+          color: var(--d-ink); font: 14px/1.4 var(--body); }
+  .wapp.on { display: grid; }
+  .tbar { display: flex; align-items: center; gap: 10px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--d-line); }
+  .tbar img { width: 22px; height: 22px; }
+  .tbar .name { font: 500 14.5px var(--body); } .tbar .file { color: var(--d-muted); }
+  .three { margin-left: auto; display: flex; gap: 2px; }
+  .three span { width: 36px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: var(--d-ink); font-size: 15px; }
+  .tools { display: flex; align-items: center; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--d-line); }
+  .tool { display: grid; justify-items: center; gap: 3px; padding: 6px 8px; border-radius: 10px; color: var(--d-muted); font-size: 11.5px; min-width: 50px; cursor: pointer; }
+  .tool .g { width: 26px; height: 22px; border-radius: 6px; display: grid; place-items: center; color: var(--d-ink); font-size: 15px; }
+  .tool:hover { background: rgba(255, 255, 255, 0.07); }
+  .tool.on { background: var(--d-raised); color: var(--d-ink); }
+  .tool.on .g { color: var(--d-accent); }
+  .tool.play .g { background: var(--d-accent); color: var(--d-accent-ink); width: 34px; border-radius: 999px; }
+  .zoom { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 8px; background: var(--d-raised); color: var(--d-ink); font-size: 12.5px; }
+  .gapx { flex: 1; }
+  .work { display: grid; grid-template-columns: 196px 1fr 300px; min-height: 0; }
+  .hide-nav .work { grid-template-columns: 0 1fr 300px; }
+
+  /* The navigator: the slides down the side, each with its number. */
+  .nav { overflow: hidden; background: #141a26; border-right: 1px solid var(--d-line); padding: 12px 10px 12px 0; display: grid; align-content: start; gap: 12px; }
+  .nrow { display: grid; grid-template-columns: 24px 160px; align-items: start; gap: 4px; }
+  .nrow .n { text-align: right; color: var(--d-muted); font-size: 11.5px; padding-top: 2px; }
+  .nrow .th { border-radius: 4px; box-shadow: 0 0 0 1px rgba(255,255,255,0.10); overflow: hidden; }
+  .nrow.on .th { box-shadow: 0 0 0 3px var(--d-accent); }
+  .nrow.on .n { color: var(--d-accent); font-weight: 600; }
+  .nrow.skip .th { height: 14px !important; opacity: 0.5; }
+
+  /* The desk: the slide, and the notes under it. */
+  .deskw { background: #0d1119; overflow: hidden; position: relative; }
+  .deskw .slot { position: absolute; left: 30px; top: 22px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); }
+  .notes { position: absolute; left: 0; right: 0; top: 446px; bottom: 0; background: #141a26; border-top: 1px solid var(--d-line); padding: 12px 30px; }
+  .notes .h { display: flex; justify-content: space-between; color: var(--d-muted); font-size: 12px; margin-bottom: 6px; }
+  .notes p { font: 15px/1.5 var(--body); color: #d6dcea; margin: 0 0 8px; max-width: none; }
+  .notes .caret { display: inline-block; width: 1.5px; height: 1.05em; background: var(--d-accent); vertical-align: -2px; }
+
+  /* The inspector at the right: its four parts, or the Document. */
+  .insp { border-left: 1px solid var(--d-line); background: #1a2130; display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+  .tabs { display: flex; gap: 4px; padding: 10px 12px; }
+  .tabs span { flex: 1; text-align: center; padding: 5px 0; border-radius: 9px; color: var(--d-muted); font-size: 12.5px; cursor: pointer; }
+  .tabs span.on { background: var(--d-accent); color: var(--d-accent-ink); font-weight: 600; }
+  .tabs .title { flex: 1; text-align: left; padding: 5px 4px; font: 600 15px var(--body); color: var(--d-ink); cursor: default; }
+  .panel { overflow: hidden; padding: 4px 14px 14px; display: none; align-content: start; gap: 11px; }
+  .panel.on { display: grid; }
+  .style { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-radius: 12px; background: var(--d-raised); }
+  .style b { font: 700 22px var(--body); }
+  .segs { display: flex; background: var(--d-raised); border-radius: 9px; padding: 3px; }
+  .segs span { flex: 1; text-align: center; padding: 3px 0; border-radius: 7px; font-size: 12.5px; color: var(--d-muted); }
+  .segs span.on { background: var(--d-raised-2); color: var(--d-ink); }
+  .lbl { color: var(--d-muted); font-size: 12px; margin-bottom: -5px; }
+  .field { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border-radius: 8px; background: var(--d-raised); font-size: 13px; }
+  .row2 { display: grid; grid-template-columns: 1fr 86px; gap: 8px; }
+  .bius { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .bius span { text-align: center; padding: 4px 0; border-radius: 7px; background: var(--d-raised); font: 600 13px var(--body); }
+  .bius span.on { background: var(--d-accent); color: var(--d-accent-ink); }
+  .align { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .align.three-up { grid-template-columns: repeat(3, 1fr); }
+  .align span { text-align: center; padding: 5px 0; border-radius: 7px; background: var(--d-raised); font-size: 13px; }
+  .align span.on { background: var(--d-accent); color: var(--d-accent-ink); }
+  .swatch { width: 40px; height: 18px; border-radius: 5px; box-shadow: 0 0 0 1px var(--d-line); display: inline-block; }
+  .line2 { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+  .chk { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+  .chk i { width: 16px; height: 16px; border-radius: 4px; background: var(--d-raised-2); display: inline-grid; place-items: center; font-style: normal; font-size: 11px; }
+  .chk i.on { background: var(--d-accent); color: var(--d-accent-ink); }
+  .nums { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+  .num { display: grid; gap: 2px; justify-items: center; font-size: 11.5px; color: var(--d-muted); }
+  .num span { width: 100%; text-align: right; padding: 4px 8px; border-radius: 7px; background: var(--d-raised); color: var(--d-ink); font-size: 12.5px; }
+  .checks3 { display: flex; justify-content: space-between; }
+  .later { opacity: 0.45; }
+  .note { color: var(--d-muted); font-size: 12px; line-height: 1.4; }
+  .btn { justify-self: start; padding: 5px 12px; border-radius: 8px; background: var(--d-raised); font-size: 12.5px; }
+
+  .layouts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .lay { display: flex; align-items: center; gap: 8px; padding: 4px; border-radius: 8px; font-size: 11.5px; color: var(--d-muted); border: 2px solid transparent; }
+  .lay.on { border-color: var(--d-accent); color: var(--d-ink); }
+  .lay .m { width: 50px; height: 28px; flex: none; border-radius: 3px; position: relative; overflow: hidden;
+            background: linear-gradient(155deg, #0a1428, #173f7c); }
+  .lay .m i { position: absolute; background: #c9d2e3; border-radius: 1px; }
+  .bgs { display: flex; gap: 8px; align-items: center; }
+  .bgs span { width: 34px; height: 22px; border-radius: 6px; box-shadow: 0 0 0 1px var(--d-line); }
+  .bgs span.on { box-shadow: 0 0 0 2px var(--d-accent); }
+  .tprev { display: flex; gap: 6px; align-items: center; justify-content: center; padding: 8px; border-radius: 10px; background: var(--d-raised); }
+  .tprev .a, .tprev .b { width: 82px; height: 46px; border-radius: 3px; }
+  .tprev .a { background: linear-gradient(155deg, #0a1428, #173f7c); }
+  .tprev .b { background: linear-gradient(155deg, #1d2f55, #2a55c9); }
+  .tprev .arr { color: var(--d-accent); font-size: 16px; }
+  .themes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .theme { border-radius: 12px; padding: 7px; background: var(--d-raised-2); border: 2px solid transparent; font-size: 12.5px; text-align: center; }
+  .theme.on { border-color: var(--d-accent); }
+  .theme .sw { height: 46px; border-radius: 6px; margin-bottom: 5px; position: relative; }
+  .theme .sw i { position: absolute; left: 10%; height: 4px; border-radius: 2px; }
+
+  .export { position: absolute; right: 318px; top: 98px; width: 236px; display: none; padding: 6px; border-radius: 14px;
+            background: var(--d-surface); box-shadow: 0 18px 44px rgba(0,0,0,0.55), 0 0 0 1px var(--d-line); z-index: 5; }
+  .show-export .export { display: grid; }
+  .export div { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; }
+  .export div:hover, .export div.on { background: var(--d-raised); }
+  .export img { width: 24px; height: 24px; }
+  .export small { margin-left: auto; color: var(--d-muted); }
+
+  /* ---------------- The slides ---------------- */
+  /* A slide is 960 by 540 points; each place it is shown is the same slide
+     scaled, as Present draws it once a size. */
+  .mount { position: relative; overflow: hidden; }
+  .mount > .slide { transform-origin: 0 0; }
+  .slide { position: absolute; left: 0; top: 0; width: 960px; height: 540px; overflow: hidden; color: var(--s-ink);
+           font-family: "IBM Plex Sans", system-ui, sans-serif;
+           background:
+             radial-gradient(520px 320px at 97% 4%, rgba(255, 160, 70, 0.22), transparent 70%),
+             radial-gradient(620px 420px at 102% 104%, rgba(57, 208, 255, 0.12), transparent 70%),
+             linear-gradient(155deg, #0a1428 0%, #0f2550 58%, #173f7c 100%); }
+  .slide .p { position: absolute; }
+  .slide h3 { margin: 0; font: 600 46px/1.12 "IBM Plex Sans", sans-serif; letter-spacing: -0.4px; color: var(--s-ink); }
+  .slide ul { margin: 0; padding: 0; list-style: none; }
+  .slide li { position: relative; padding-left: 34px; font: 400 27px/1.32 "IBM Plex Sans", sans-serif; color: var(--s-body); margin-bottom: 16px; max-width: none; }
+  .slide li::before { content: ""; position: absolute; left: 4px; top: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--s-accent); }
+  .slide li b { color: var(--s-ink); font-weight: 600; }
+  .slide .sn { position: absolute; right: 36px; bottom: 22px; font: 400 15px "IBM Plex Sans", sans-serif; color: var(--s-dim); }
+  .slide .desk-only { display: none; }
+  .deskw .slide .desk-only { display: block; }
+  .deskw .slide span.desk-only { display: inline-block; }
+  .sel { position: absolute; outline: 1.5px solid #a8c7fa; outline-offset: 6px; }
+  .sel .h { position: absolute; width: 11px; height: 11px; background: #fff; border: 1.5px solid #2a55c9; border-radius: 2px; }
+  .guide { position: absolute; border-left: 1.5px dashed #f6d860; }
+  .tcaret { display: inline-block; width: 2px; height: 30px; background: #fff; vertical-align: -6px; margin-left: 1px; }
+
+  /* ---------------- Full screen ---------------- */
+  .screen { background: #000; }
+  .screen .slot { position: absolute; left: 0; top: 0; overflow: hidden; }
+  .screen .incoming { position: absolute; left: 1920px; top: 0; }
+  .pushing .outgoing, .pushing .incoming { transition: transform 0.8s cubic-bezier(0.45, 0, 0.25, 1); transform: translateX(-1920px); }
+  .hint { position: absolute; right: 26px; bottom: 22px; padding: 8px 14px; border-radius: 10px; background: rgba(0,0,0,0.55);
+          color: rgba(255,255,255,0.8); font: 500 20px var(--body); }
+
+  /* ---------------- The presenter's view ---------------- */
+  .pview { background: #07090e; color: #e6eaf2; font-family: var(--body); }
+  .pbar { position: absolute; left: 0; right: 0; top: 0; height: 84px; display: flex; align-items: center; gap: 28px; padding: 0 40px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .ready { display: flex; align-items: center; gap: 12px; font: 600 22px var(--body); color: #4fd1a5; }
+  .ready i { width: 120px; height: 10px; border-radius: 5px; background: #4fd1a5; display: inline-block; }
+  .pbar .clock { margin-left: auto; font: 500 40px var(--mono); letter-spacing: 1px; }
+  .pbar .el { font: 500 40px var(--mono); color: #a8c7fa; }
+  .pbar small { display: block; font: 500 14px var(--body); color: #8e9bb3; letter-spacing: 0.06em; text-transform: uppercase; }
+  .pbar .of { font: 600 26px var(--body); }
+  .pcur { position: absolute; left: 40px; top: 124px; }
+  .pnext { position: absolute; left: 1380px; top: 156px; }
+  .plbl { position: absolute; font: 600 18px var(--body); color: #8e9bb3; letter-spacing: 0.08em; text-transform: uppercase; }
+  .pnotes { position: absolute; left: 1380px; top: 498px; width: 500px; bottom: 96px; overflow: hidden; }
+  .pnotes p { font: 400 28px/1.42 var(--body); color: #f1f3f8; margin: 0 0 14px; max-width: none; }
+  .pkeys { position: absolute; left: 40px; right: 40px; bottom: 30px; display: flex; gap: 34px; font: 500 19px var(--body); color: #8e9bb3; }
+  .pkeys b { color: #e6eaf2; font-weight: 600; margin-right: 6px; }
+
+  .decide { display: grid; gap: 14px; margin-top: 12px; }
+  .q { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 18px; }
+  .q h3 { margin: 0 0 6px; font: 600 17px var(--body); }
+  .q .rec { color: var(--muted); }
+  .q .rec b { color: var(--ink); }
+  ul.feats { padding-left: 20px; } ul.feats li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Kosmos Present</h1>
+  <p class="lede">Slides after Apple's Keynote, on Kosmos Write's pages and kits: a deck from a theme and its
+  layouts, the slides down the side, things placed on a slide where they are put, presenting full screen
+  with the next slide and the notes for the person speaking, and transitions. It saves its own
+  <code>.present</code> files and exports PDF and PowerPoint's PPTX.</p>
+  <p class="said">"our Kosmos Present presentation software like apple keynote" - Diego, 4 October 2026</p>
+
+  <div class="controls" role="group" aria-label="What the picture shows">
+    <div class="group-c">
+      <span class="label">VIEW</span>
+      <div class="seg">
+        <button type="button" data-view="edit" aria-pressed="true">Editing</button>
+        <button type="button" data-view="play" aria-pressed="false">Full screen</button>
+        <button type="button" data-view="presenter" aria-pressed="false">Presenter's view</button>
+      </div>
+    </div>
+    <div class="group-c">
+      <span class="label">PANEL</span>
+      <div class="seg">
+        <button type="button" data-panel="slide" aria-pressed="false">Slide</button>
+        <button type="button" data-panel="text" aria-pressed="true">Text</button>
+        <button type="button" data-panel="arrange" aria-pressed="false">Arrange</button>
+        <button type="button" data-panel="animate" aria-pressed="false">Animate</button>
+        <button type="button" data-panel="document" aria-pressed="false">Document</button>
+      </div>
+    </div>
+    <button type="button" class="chip" id="navbtn" aria-pressed="true">Navigator</button>
+    <button type="button" class="chip" id="exportbtn" aria-pressed="false">Export menu</button>
+    <button type="button" class="chip" id="pushbtn" aria-pressed="false" hidden>Play the transition</button>
+  </div>
+
+  <div class="frame"><div class="shell" id="shell"><div class="stage" id="stage">
+
+    <!-- ======================= The editing window ======================= -->
+    <div class="view wapp on" id="v-edit">
+      <div class="tbar"><img src="data:image/png;base64,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" alt=""><span class="name">Kosmos Present</span><span class="file">Kosmos, a talk.present</span>
+        <span class="three"><span>&#8212;</span><span>&#9633;</span><span>&#10005;</span></span></div>
+      <div class="tools">
+        <div class="tool on" id="viewtool"><span class="g">&#9707;</span>View</div>
+        <div class="tool"><span class="zoom">Fit &#9662;</span>Zoom</div>
+        <div class="tool"><span class="g">&#8862;</span>Add Slide</div>
+        <div class="tool play" id="playtool"><span class="g">&#9654;</span>Play</div>
+        <div class="gapx"></div>
+        <div class="tool"><span class="g">&#9638;</span>Table</div>
+        <div class="tool"><span class="g">&#9684;</span>Chart</div>
+        <div class="tool"><span class="g">T</span>Text</div>
+        <div class="tool"><span class="g">&#9671;</span>Shape</div>
+        <div class="tool"><span class="g">&#9635;</span>Media</div>
+        <div class="tool"><span class="g">&#9993;</span>Comment</div>
+        <div class="gapx"></div>
+        <div class="tool" id="exporttool"><span class="g">&#8682;</span>Export</div>
+        <div class="tool on" data-tool="format"><span class="g">&#10002;</span>Format</div>
+        <div class="tool" data-tool="animate"><span class="g">&#10022;</span>Animate</div>
+        <div class="tool" data-tool="document"><span class="g">&#9636;</span>Document</div>
+      </div>
+      <div class="work">
+        <div class="nav" id="nav"></div>
+        <div class="deskw">
+          <div class="slot" id="deskslot"></div>
+          <div class="notes">
+            <div class="h"><span>Notes for the person speaking</span><span>slide 4 of 8</span></div>
+            <p>Diego's words of 4 October first: kits, servers and drivers supply; applications orchestrate - "This is a premise".</p>
+            <p>Then the example of the day it was broken: Write's PDF writer copied the zip's region helpers. Ask the two questions slowly.<span class="caret"></span></p>
+          </div>
+        </div>
+        <div class="insp">
+          <div class="tabs" id="tabs">
+            <span data-tab="slide">Slide</span><span class="on" data-tab="text">Text</span><span data-tab="arrange">Arrange</span><span data-tab="animate">Animate</span>
+          </div>
+          <div class="tabs" id="doctitle" style="display:none"><span class="title">Document</span></div>
+          <div>
+          <!-- Slide: its layout, what it shows, its background. -->
+          <div class="panel" id="p-slide">
+            <div class="lbl">Layout</div>
+            <div class="layouts">
+              <div class="lay"><span class="m"><i style="left:8px;top:9px;width:30px;height:5px"></i><i style="left:8px;top:17px;width:20px;height:2px;background:#8e9bb3"></i></span>Title</div>
+              <div class="lay"><span class="m"><i style="left:8px;top:8px;width:26px;height:4px"></i><i style="left:8px;top:15px;width:34px;height:3px;background:#8e9bb3"></i></span>Title &amp; Subtitle</div>
+              <div class="lay on"><span class="m"><i style="left:5px;top:4px;width:28px;height:4px"></i><i style="left:5px;top:11px;width:36px;height:2px;background:#8e9bb3"></i><i style="left:5px;top:16px;width:32px;height:2px;background:#8e9bb3"></i><i style="left:5px;top:21px;width:34px;height:2px;background:#8e9bb3"></i></span>Title &amp; Bullets</div>
+              <div class="lay"><span class="m"><i style="left:5px;top:12px;width:26px;height:4px"></i><i style="left:0;top:22px;width:50px;height:1px;background:#a8c7fa"></i></span>Section</div>
+              <div class="lay"><span class="m"><i style="left:9px;top:11px;width:32px;height:4px"></i><i style="left:14px;top:18px;width:22px;height:2px;background:#a8c7fa"></i></span>Statement</div>
+              <div class="lay"><span class="m"><i style="left:15px;top:6px;width:20px;height:11px;background:#a8c7fa"></i><i style="left:10px;top:20px;width:30px;height:2px;background:#8e9bb3"></i></span>Big Fact</div>
+              <div class="lay"><span class="m"><i style="left:5px;top:3px;width:20px;height:3px"></i><i style="left:8px;top:8px;width:34px;height:17px;background:linear-gradient(115deg,#d9cbb0,#2f3d36)"></i></span>Photo</div>
+              <div class="lay"><span class="m"></span>Blank</div>
+            </div>
+            <div class="lbl">Shows</div>
+            <div class="checks3"><span class="chk"><i class="on">&#10003;</i>Title</span><span class="chk"><i class="on">&#10003;</i>Body</span><span class="chk"><i class="on">&#10003;</i>Number</span></div>
+            <div class="lbl">Background</div>
+            <div class="bgs">
+              <span class="on" style="background:linear-gradient(155deg,#0a1428,#173f7c)"></span>
+              <span style="background:#0d1119"></span>
+              <span style="background:#f6f4ee"></span>
+              <span style="background:#2a55c9"></span>
+              <span class="field" style="width:auto;height:auto;box-shadow:none;margin-left:auto">Picture&#8230;</span>
+            </div>
+            <span class="chk"><i></i>Skip this slide when presenting</span>
+            <div class="btn">Put things back where the layout has them</div>
+            <div class="note">The layout is the deck's own, copied from the Night theme when the deck was made.</div>
+          </div>
+
+          <!-- Text: Kosmos Write's panel, from the inspector kit. -->
+          <div class="panel on" id="p-text">
+            <div class="style"><b>Bullets</b><span>&#9662;</span></div>
+            <div class="segs"><span class="on">Style</span><span>Layout</span><span>More</span></div>
+            <div class="lbl">Font</div>
+            <div class="field">IBM Plex Sans <span>&#9662;</span></div>
+            <div class="row2"><div class="field">Regular <span>&#9662;</span></div><div class="field">27 pt <span>&#8693;</span></div></div>
+            <div class="bius"><span>B</span><span><i>I</i></span><span><u>U</u></span><span><s>S</s></span></div>
+            <div class="line2">Text colour <span><span class="swatch" style="background:#c9d2e3"></span></span></div>
+            <div class="lbl">Alignment</div>
+            <div class="align"><span class="on">&#8676;</span><span>&#8596;</span><span>&#8677;</span><span>&#8801;</span></div>
+            <div class="lbl">In the box</div>
+            <div class="segs"><span class="on">Top</span><span>Middle</span><span>Bottom</span></div>
+            <div class="line2">Spacing <span class="field" style="width:120px">1.15 lines &#9662;</span></div>
+            <div class="line2">Bullets &amp; lists <span class="field" style="width:120px">Bullets &#9662;</span></div>
+          </div>
+
+          <!-- Arrange: where a thing is and how large, in points. -->
+          <div class="panel" id="p-arrange">
+            <div class="lbl">Position</div>
+            <div class="nums"><div class="num"><span>64 pt</span>Across</div><div class="num"><span>156 pt</span>Down</div></div>
+            <div class="lbl">Size</div>
+            <div class="nums"><div class="num"><span>560 pt</span>Width</div><div class="num"><span>300 pt</span>Height</div></div>
+            <span class="chk"><i></i>Keep its proportions</span>
+            <div class="lbl">Front and back</div>
+            <div class="segs"><span>Back</span><span>Backward</span><span>Forward</span><span>Front</span></div>
+            <div class="lbl">Aligned to the slide</div>
+            <div class="align three-up"><span class="on">&#8676;</span><span>&#8596;</span><span>&#8677;</span></div>
+            <div class="align three-up"><span>&#10514;</span><span>&#8597;</span><span>&#10515;</span></div>
+            <div class="note">Snapped to the slide's middle and edges, and to the other things' - the dashed line on the slide.</div>
+            <div class="note later">Later: turned at an angle, grouped, locked.</div>
+          </div>
+
+          <!-- Animate: the transition into this slide; builds later. -->
+          <div class="panel" id="p-animate">
+            <div class="lbl">Transition into this slide</div>
+            <div class="field">Push <span>&#9662;</span></div>
+            <div class="tprev"><span class="a"></span><span class="arr">&#10230;</span><span class="b"></span></div>
+            <div class="lbl">Direction</div>
+            <div class="align"><span class="on">&#8592;</span><span>&#8594;</span><span>&#8593;</span><span>&#8595;</span></div>
+            <div class="line2">Length <span class="field" style="width:120px">0.8 s &#8693;</span></div>
+            <div class="lbl">Starts</div>
+            <div class="segs"><span class="on">On a press</span><span>After a time</span></div>
+            <div class="note">Dissolve, Push, Wipe, Move In, Reveal, Fade Through Colour.</div>
+            <div class="lbl later">Builds</div>
+            <div class="segs later"><span>Build In</span><span>Action</span><span>Build Out</span></div>
+            <div class="note later">Things arriving one at a time - later, each its own step.</div>
+          </div>
+
+          <!-- Document: the deck's shape, its theme, the show. -->
+          <div class="panel" id="p-document">
+            <div class="lbl">Slide size</div>
+            <div class="segs"><span class="on">Wide, 16:9</span><span>Standard, 4:3</span></div>
+            <div class="note">960 by 540 points - PowerPoint's widescreen, so a PPTX says the same size.</div>
+            <div class="lbl">Theme</div>
+            <div class="themes">
+              <div class="theme on"><div class="sw" style="background:linear-gradient(155deg,#0a1428,#173f7c)"><i style="top:14px;width:60%;background:#e6eaf2"></i><i style="top:26px;width:40%;background:#a8c7fa"></i></div>Night</div>
+              <div class="theme"><div class="sw" style="background:#f6f4ee"><i style="top:14px;width:60%;background:#1b2330"></i><i style="top:26px;width:40%;background:#2a55c9"></i></div>Paper</div>
+            </div>
+            <div class="lbl">The show</div>
+            <span class="chk"><i></i>Loop the show</span>
+            <span class="chk"><i class="on">&#10003;</i>Notes under the slide</span>
+            <span class="chk"><i class="on">&#10003;</i>Start in the presenter's view</span>
+            <div class="line2">Language <span class="field" style="width:120px">English &#9662;</span></div>
+          </div>
+          </div>
+        </div>
+      </div>
+      <div class="export">
+        <div class="on"><img src="data:image/png;base64,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" alt="">Save<small>.present</small></div>
+        <div><img src="data:image/png;base64,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" alt="">Export PDF<small>.pdf</small></div>
+        <div><img src="data:image/png;base64,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" alt="">Export PowerPoint<small>.pptx</small></div>
+      </div>
+    </div>
+
+    <!-- ======================= Full screen ======================= -->
+    <div class="view screen" id="v-play">
+      <div class="slot outgoing" id="playslot"></div>
+      <div class="slot incoming" id="nextslot"></div>
+    </div>
+
+    <!-- ======================= The presenter's view ======================= -->
+    <div class="view pview" id="v-presenter">
+      <div class="pbar">
+        <div class="ready"><i></i>Ready</div>
+        <div><small>Slide</small><span class="of">4 of 8</span></div>
+        <div class="clock"><small>Time</small>10:42</div>
+        <div class="el"><small>Since the start</small>07:31</div>
+      </div>
+      <div class="plbl" style="left:40px;top:98px">Now</div>
+      <div class="pcur" id="pcur"></div>
+      <div class="plbl" style="left:1380px;top:120px">Next</div>
+      <div class="pnext" id="pnext"></div>
+      <div class="plbl" style="left:1380px;top:462px">Notes</div>
+      <div class="pnotes">
+        <p>Diego's words of 4 October first: kits, servers and drivers supply; applications orchestrate - "This is a premise".</p>
+        <p>Then the example of the day it was broken: Write's PDF writer copied the zip's region helpers. Ask the two questions slowly.</p>
+      </div>
+      <div class="pkeys"><span><b>Space</b>on</span><span><b>&#8592;</b>back</span><span><b>4 Return</b>a slide by its number</span><span><b>B</b>black</span><span><b>P</b>the audience's view</span><span><b>Esc</b>the end</span></div>
+    </div>
+
+  </div></div></div>
+  <p class="caption" id="caption">The editing window: the slides down the side, the chosen one on the desk with its notes under it, and the Format panel's Text part for the body it holds.</p>
+
+  <!-- The slides themselves, once each; every place above shows a copy at its size. -->
+  <div id="slides" hidden>
+    <!-- 1 Title -->
+    <div class="slide">
+      <div class="p" style="left:586px;top:100px;width:340px;height:340px;border-radius:50%;
+           background:conic-gradient(from 200deg, #091226, #12306e, #1f6fd1, #39d0ff, #f6e36b, #ff8a3d, #091226);
+           -webkit-mask:radial-gradient(circle, transparent 55%, #000 56%);mask:radial-gradient(circle, transparent 55%, #000 56%);opacity:0.9"></div>
+      <div class="p" style="left:72px;top:150px;font:500 18px 'IBM Plex Mono',monospace;letter-spacing:3px;color:#a8c7fa">KOSMOS 0.11</div>
+      <div class="p" style="left:66px;top:178px;font:600 124px/1 'IBM Plex Sans',sans-serif;letter-spacing:-3px">Kosmos</div>
+      <div class="p" style="left:72px;top:330px;font:400 36px 'IBM Plex Sans',sans-serif;color:#c9d2e3">A fast desktop on a microkernel</div>
+      <div class="p" style="left:72px;top:440px;font:400 20px 'IBM Plex Sans',sans-serif;color:#8e9bb3">Diego Cibils &#183; October 2026</div>
+    </div>
+    <!-- 2 Title & Bullets -->
+    <div class="slide">
+      <div class="p" style="left:64px;top:48px;width:832px"><h3>Two names, and they are not interchangeable</h3></div>
+      <div class="p" style="left:64px;top:176px;width:832px"><ul>
+        <li><b>Nebula</b> is the microkernel: threads, address spaces, IPC and capabilities - and nothing else</li>
+        <li><b>Kosmos</b> is the system on it: the servers, the namespace, the desktop, the applications</li>
+        <li>64-bit only: AArch64 today, x86-64 beside it</li></ul></div>
+      <div class="sn">2</div>
+    </div>
+    <!-- 3 Statement -->
+    <div class="slide">
+      <div class="p" style="left:0;right:0;top:132px;text-align:center;font:600 68px/1.12 'IBM Plex Sans',sans-serif;letter-spacing:-1px">Fast. Responsive.<br>Secure. Scalable.</div>
+      <div class="p" style="left:0;right:0;top:330px;text-align:center;font:400 28px 'IBM Plex Sans',sans-serif;color:#a8c7fa">In that order, when two of them disagree.</div>
+      <div class="sn">3</div>
+    </div>
+    <!-- 4 Title & Bullets, with a text box filled - the slide being edited -->
+    <div class="slide">
+      <div class="p" style="left:64px;top:48px;width:832px"><h3>Kits supply, applications orchestrate</h3></div>
+      <div class="p" style="left:64px;top:156px;width:560px;height:300px"><ul>
+        <li>A kit is code you run; a server is someone you ask</li>
+        <li>Does another application want this? Then it is a kit<span class="tcaret desk-only"></span></li>
+        <li>Does something already supply it? Then it is used, not copied</li></ul></div>
+      <div class="p" style="left:672px;top:186px;width:224px;height:224px;border-radius:26px;background:#2a55c9;display:grid;place-items:center;text-align:center;font:600 31px/1.18 'IBM Plex Sans',sans-serif;color:#fff">One kit,<br>one door</div>
+      <div class="sel desk-only" style="left:64px;top:156px;width:560px;height:300px">
+        <span class="h" style="left:-12px;top:-12px"></span><span class="h" style="left:274px;top:-12px"></span><span class="h" style="right:-12px;top:-12px"></span>
+        <span class="h" style="left:-12px;top:144px"></span><span class="h" style="right:-12px;top:144px"></span>
+        <span class="h" style="left:-12px;bottom:-12px"></span><span class="h" style="left:274px;bottom:-12px"></span><span class="h" style="right:-12px;bottom:-12px"></span>
+      </div>
+      <div class="guide desk-only" style="left:63px;top:20px;height:500px"></div>
+      <div class="sn">4</div>
+    </div>
+    <!-- 5 Big Fact -->
+    <div class="slide">
+      <div class="p" style="left:0;right:0;top:92px;text-align:center;font:600 216px/1 'IBM Plex Sans',sans-serif;letter-spacing:-6px;color:#a8c7fa">110&#215;</div>
+      <div class="p" style="left:120px;right:120px;top:350px;text-align:center;font:400 29px/1.35 'IBM Plex Sans',sans-serif;color:#c9d2e3">The PDF scanner, moved from Lua to C: a page in 538&nbsp;ms became a page in 4.7&nbsp;ms</div>
+      <div class="sn">5</div>
+    </div>
+    <!-- 6 Photo -->
+    <div class="slide">
+      <div class="p" style="left:64px;top:30px"><h3 style="font-size:34px">The desktop on 4 October</h3></div>
+      <div class="p" style="left:128px;top:92px;width:704px;height:396px;border-radius:4px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,0.5);
+           background:#1d2a44 url('screenshots/2026-10-04-2145-4676e2fd.png') center/cover no-repeat"></div>
+      <div class="p" style="left:128px;top:500px;font:italic 400 17px 'IBM Plex Sans',sans-serif;color:#8e9bb3">Eighteen applications at once, at 1920 by 1080 - the picture every push carries</div>
+      <div class="sn">6</div>
+    </div>
+    <!-- 7 Chart -->
+    <div class="slide">
+      <div class="p" style="left:64px;top:48px;width:832px"><h3>Where a busy frame goes</h3></div>
+      <div class="p" style="left:64px;top:158px;width:832px;font:400 22px 'IBM Plex Sans',sans-serif;color:#c9d2e3">
+        <div style="display:grid;grid-template-columns:260px 1fr 90px;align-items:center;row-gap:26px">
+          <span>Composing, in C</span><span style="height:38px;width:84.7%;background:#a8c7fa;border-radius:4px"></span><span style="text-align:right;color:#e6eaf2">84.7%</span>
+          <span>Applications' requests</span><span style="height:38px;width:10.2%;background:#5b86d6;border-radius:4px"></span><span style="text-align:right;color:#e6eaf2">10.2%</span>
+          <span>Answering polls</span><span style="height:38px;width:3.5%;background:#5b86d6;border-radius:4px"></span><span style="text-align:right;color:#e6eaf2">3.5%</span>
+          <span>Keys, the pointer</span><span style="height:38px;width:1.3%;background:#5b86d6;border-radius:4px"></span><span style="text-align:right;color:#e6eaf2">1.3%</span>
+        </div>
+      </div>
+      <div class="p" style="left:64px;top:470px;width:780px;font:italic 400 18px 'IBM Plex Sans',sans-serif;color:#8e9bb3">The window manager's own profile: the pixels are C already, so its Lua stayed Lua</div>
+      <div class="sn">7</div>
+    </div>
+    <!-- 8 Closing -->
+    <div class="slide">
+      <div class="p" style="left:64px;top:170px;font:600 84px/1 'IBM Plex Sans',sans-serif;letter-spacing:-2px">Kosmos Present</div>
+      <div class="p" style="left:68px;top:280px;width:760px;font:400 29px/1.35 'IBM Plex Sans',sans-serif;color:#c9d2e3">Slides on Kosmos Write's kits. Nothing here is built yet.</div>
+      <div class="p" style="left:68px;top:400px;font:400 18px 'IBM Plex Mono',monospace;color:#8e9bb3">docs/present.md &#183; docs/present.html</div>
+      <div class="sn">8</div>
+    </div>
+  </div>
+
+  <h2>What it does, first</h2>
+  <ul class="feats">
+    <li><b>A deck from a theme</b>: Night or Paper, each its styles, its backgrounds and eight layouts - Title,
+    Title &amp; Subtitle, Title &amp; Bullets, Section, Statement, Big Fact, Photo, Blank. A deck carries its
+    layouts in its file.</li>
+    <li><b>The navigator</b>: the slides down the side, numbered; a slide added after the chosen one with its
+    layout, duplicated, deleted, dragged to a new place, or skipped.</li>
+    <li><b>A slide on the desk</b>, fitted or at a zoom, its notes under it; things on it chosen, moved by
+    dragging, sized by their eight handles, snapped to the slide's middle and edges and to each other.</li>
+    <li><b>Kosmos Write's six things</b>, each the same thing it is in Write: text, pictures, shapes, tables,
+    charts, comments - the tools' middle.</li>
+    <li><b>The Format panel</b>: Slide (its layout, what it shows, its background), Text (Write's, and top,
+    middle or bottom in the box), Arrange (place and size in points, front and back, aligned to the slide),
+    Animate (the transition into the slide); and Document (16:9 or 4:3, the theme, the show).</li>
+    <li><b>Presenting</b>: full screen from the chosen slide; on with Space or a press, back with the left
+    arrow, a slide by its number, black with B, the end with Escape. <b>The presenter's view</b> - the slide,
+    the next one, the notes, the time and the time since the start, and a bar green when the next slide is
+    ready - swapped with the audience's by P, on one screen until Kosmos drives two.</li>
+    <li><b>Transitions</b>: Dissolve, Push, Wipe, Move In, Reveal, Fade Through Colour, with a direction and
+    a length, on a press or after a time. Builds, Magic Move and the ones that turn come later.</li>
+    <li><b>Files</b>: <code>.present</code>, its own, a zip as <code>.write</code> is; PDF, a page a slide;
+    PowerPoint's PPTX.</li>
+  </ul>
+
+  <h2>What is yours to decide</h2>
+  <div class="decide">
+    <div class="q"><h3>1. Write's pieces out into kits first</h3>
+      <p>The caret and typing, the Format panel's parts, the pages on a desk and the tools row move out of
+      <code>writer.lua</code> - and Office's package and charts out of <code>docxwrite.lua</code> - with Write
+      moved onto them before Present has a line of its own.</p>
+      <p class="rec"><b>Yes</b>: the premise applied before a second copy rather than after, and Write's suites
+      say whether anything changed.</p></div>
+    <div class="q"><h3>2. What a slide is</h3>
+      <p>A page of frames: each thing on a slide a small Write document set in its box. Text wraps at a box's
+      width, and a long title runs past its box until shrinking to fit comes.</p>
+      <p class="rec"><b>Yes</b>, rather than a second layout engine beside Write's.</p></div>
+    <div class="q"><h3>3. The slide's size</h3>
+      <p>16:9 at 960 by 540 points, PowerPoint's widescreen, or Keynote's 1920 by 1080.</p>
+      <p class="rec"><b>960 by 540 points</b>, with 4:3 one choice away: the same slide, said in a PDF's and a
+      PPTX's own unit.</p></div>
+    <div class="q"><h3>4. What the first version holds</h3>
+      <p>Transitions and builds together, or transitions first.</p>
+      <p class="rec"><b>Transitions first</b>, the six that copy and blend; builds, and the transitions that
+      scale or turn, after the scaled blit is measured.</p></div>
+    <div class="q"><h3>5. The presenter's view</h3>
+      <p>On the same screen, swapped with the slide by a key, until Kosmos drives a second screen.</p>
+      <p class="rec"><b>Yes</b>, and the second screen written into the roadmap now, with Present as its
+      first user.</p></div>
+    <div class="q"><h3>6. PPTX in the first version or after it</h3>
+      <p class="rec"><b>After PDF</b>, as Write's DOCX came after its PDF.</p></div>
+  </div>
+</main>
+<script>
+(function () {
+  var shell = document.getElementById("shell"), stage = document.getElementById("stage");
+  var edit = document.getElementById("v-edit");
+  var sizes = { edit: [1280, 820], play: [1920, 1080], presenter: [1920, 1080] };
+  var captions = {
+    edit: "The editing window: the slides down the side, the chosen one on the desk with its notes under it, and the Format panel's part for what is chosen.",
+    play: "Full screen: the slide at the screen's size, the next one already drawn. Play the transition to see a Push, composed each frame from the two slides.",
+    presenter: "The presenter's view, on the same screen and swapped with the slide by P: the slide, the next one, the notes, the time, and a bar that is green when the next slide is ready."
+  };
+  var view = "edit";
+  var slides = document.querySelectorAll("#slides .slide");
+
+  // A slide at a size: a copy of the one slide, scaled, in a box that size.
+  function mount(into, n, scale) {
+    var box = document.createElement("div");
+    box.className = "mount";
+    box.style.width = Math.round(960 * scale) + "px";
+    box.style.height = Math.round(540 * scale) + "px";
+    var copy = slides[n - 1].cloneNode(true);
+    copy.style.transform = "scale(" + scale + ")";
+    box.appendChild(copy);
+    into.appendChild(box);
+    return box;
+  }
+
+  var nav = document.getElementById("nav");
+  for (var i = 1; i <= slides.length; i++) {
+    var row = document.createElement("div");
+    row.className = "nrow" + (i === 4 ? " on" : "");
+    var n = document.createElement("span");
+    n.className = "n"; n.textContent = i;
+    var th = document.createElement("div");
+    th.className = "th";
+    row.appendChild(n); row.appendChild(th);
+    nav.appendChild(row);
+    mount(th, i, 160 / 960);
+  }
+  mount(document.getElementById("deskslot"), 4, 0.75);
+  mount(document.getElementById("playslot"), 4, 2);
+  mount(document.getElementById("nextslot"), 5, 2);
+  mount(document.getElementById("pcur"), 4, 1300 / 960);
+  mount(document.getElementById("pnext"), 5, 500 / 960);
+
+  function fit() {
+    var w = sizes[view][0], h = sizes[view][1];
+    var s = shell.clientWidth / w;
+    stage.style.width = w + "px"; stage.style.height = h + "px";
+    stage.style.transform = "scale(" + s + ")";
+    shell.style.height = (h * s) + "px";
+  }
+  window.addEventListener("resize", fit);
+
+  function show(which) {
+    view = which;
+    document.querySelectorAll(".view").forEach(function (v) { v.classList.toggle("on", v.id === "v-" + which); });
+    document.querySelectorAll("[data-view]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.view === which)); });
+    document.getElementById("pushbtn").hidden = which !== "play";
+    document.getElementById("caption").textContent = captions[which];
+    fit();
+  }
+  document.querySelectorAll("[data-view]").forEach(function (b) { b.addEventListener("click", function () { show(b.dataset.view); }); });
+  document.getElementById("playtool").addEventListener("click", function () { show("play"); });
+
+  // The panel: Slide, Text, Arrange and Animate are the Format panel's
+  // parts; Document is a panel of its own, as in Write.
+  function panel(which) {
+    ["slide", "text", "arrange", "animate", "document"].forEach(function (p) {
+      document.getElementById("p-" + p).classList.toggle("on", p === which);
+    });
+    var doc = which === "document";
+    document.getElementById("tabs").style.display = doc ? "none" : "flex";
+    document.getElementById("doctitle").style.display = doc ? "flex" : "none";
+    document.querySelectorAll("[data-tab]").forEach(function (t) { t.classList.toggle("on", t.dataset.tab === which); });
+    document.querySelectorAll("[data-tool]").forEach(function (t) {
+      var on = (t.dataset.tool === "document" && doc) || (t.dataset.tool === "animate" && which === "animate")
+               || (t.dataset.tool === "format" && !doc && which !== "animate");
+      t.classList.toggle("on", on);
+    });
+    document.querySelectorAll("[data-panel]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.panel === which)); });
+    if (view !== "edit") show("edit");
+  }
+  document.querySelectorAll("[data-panel]").forEach(function (b) { b.addEventListener("click", function () { panel(b.dataset.panel); }); });
+  document.querySelectorAll("[data-tab]").forEach(function (t) { t.addEventListener("click", function () { panel(t.dataset.tab); }); });
+  document.querySelectorAll("[data-tool]").forEach(function (t) {
+    t.addEventListener("click", function () { panel(t.dataset.tool === "format" ? "text" : t.dataset.tool); });
+  });
+
+  function toggle(cls, btn) {
+    var on = !edit.classList.contains(cls);
+    edit.classList.toggle(cls, on);
+    document.getElementById(btn).setAttribute("aria-pressed", String(cls === "hide-nav" ? !on : on));
+    if (view !== "edit") show("edit");
+  }
+  document.getElementById("navbtn").addEventListener("click", function () { toggle("hide-nav", "navbtn"); });
+  document.getElementById("viewtool").addEventListener("click", function () {
+    toggle("hide-nav", "navbtn");
+    document.getElementById("viewtool").classList.toggle("on", !edit.classList.contains("hide-nav"));
+  });
+  document.getElementById("exportbtn").addEventListener("click", function () { toggle("show-export", "exportbtn"); });
+  document.getElementById("exporttool").addEventListener("click", function () { toggle("show-export", "exportbtn"); });
+
+  // Push: the old slide out to the left and the new one in after it, 0.8 s,
+  // then back to where it began so it can be watched again.
+  var play = document.getElementById("v-play"), busy = false;
+  document.getElementById("pushbtn").addEventListener("click", function () {
+    if (busy) return;
+    busy = true;
+    document.getElementById("pushbtn").setAttribute("aria-pressed", "true");
+    play.classList.add("pushing");
+    setTimeout(function () {
+      play.classList.remove("pushing");
+      document.getElementById("pushbtn").setAttribute("aria-pressed", "false");
+      busy = false;
+    }, 2000);
+  });
+
+  fit();
+})();
+</script>
+</body>
+</html>
