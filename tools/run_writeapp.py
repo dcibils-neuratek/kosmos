@@ -728,6 +728,28 @@ def main():
             check(saved == "/Home/Untitled.write, 16 paragraphs",
                   "Control-S did not save the typed document: %r" % saved)
 
+            # **Resized, as the browser is** (Diego, 5 October: "I need to be
+            # able to resizse the window like we do with the browsser"): the
+            # grip, the window's bottom right corner, dragged 300 left and
+            # 100 up - Write takes 900x700 and lays its tools out to it, the
+            # last one ending 12 in from the new right edge.
+            mark = len(guest.seen)
+            gx, gy = wx + 1200 - 6, wy + 800 - 6
+            guest.mouse_to(*R._to_tablet(gx, gy, sw, sh))
+            time.sleep(0.4)
+            guest.mouse_button(True)
+            time.sleep(0.3)
+
+            for step in range(1, 6):
+                guest.mouse_to(*R._to_tablet(gx - 60 * step, gy - 20 * step, sw, sh))
+                time.sleep(0.15)
+
+            guest.mouse_button(False)
+            resized = said("writer: resized to ", mark, 30)
+            check(resized == "900x700, the tools ending at 888",
+                  "the grip dragged 300 left and 100 up did not resize Write to "
+                  "900x700 with its tools laid out to it: %r" % resized)
+
             time.sleep(1)
 
             if os.environ.get("KEEP_TYPED"):

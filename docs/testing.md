@@ -19075,3 +19075,16 @@ read without running it and six refusals, now 406; `test_deskbarmenu`
 gained the pad's check. The tests every changed library already had -
 pageset 130, writedoc 108, docx 57, docview 50, tally 7, and the decoders'
 C - pass unchanged.
+
+## 18.404 Kosmos Write's window resizes
+
+Diego, 5 October 2026: "I need to be able to resizse the window like we do
+with the browsser". Write asks for a resizable window; on a new size it
+takes `W` and `H`, places the three again, keeps its scroll inside the new
+desk and draws a frame at once.
+
+**The check**, in `run_writeapp.py`: the grip dragged 300 left and 100 up
+from 1200x800, and Write says it is 900x700 with its last tool ending at
+888 - 12 in from the new edge, laid out from the new width. 42 checks.
+**The control**: without `resizable`, the window manager gives no grip and
+the check fails, 1 of 42.

@@ -115,7 +115,7 @@ local name = path and path:match("([^/]+)$") or "Untitled"
 
 local win, err = ui.window{
   title = name .. " - Kosmos Write", w = W, h = H, x = 40, y = 30,
-  direct = true, header = true,
+  direct = true, header = true, resizable = true,
 }
 
 if not win then
@@ -2749,6 +2749,31 @@ function sink:mouse(action, x, y)
   end
 
   return true
+end
+
+--
+-- **A new size** (Diego, 5 October 2026: "I need to be able to resizse the
+-- window like we do with the browsser"): the kit has already given the
+-- window buffers that size (6zz e), and everything here reads `W` and `H`
+-- when it draws, so taking the size is the whole of it - the three placed
+-- again, the scroll held inside the new desk, and a frame now, since the
+-- kit's own repaint after a resize is one this window does not draw.
+--
+win.on_resize = function(_, w, h)
+  W, H = w, h
+  sink.w, sink.h = w, h
+  lights_said = nil
+  menu = nil
+  across = math.max(0, math.min(across, content_width() + 2 * GAP - select(3, desk())))
+  scroll_to(top)
+  frame()
+
+  -- Said with where the last tool now ends, which is laid out from `W`: a
+  -- window that took the size and drew at the old one would say so.
+  local last = TOOLS[#TOOLS]
+
+  print(("writer: resized to %dx%d, the tools ending at %d"):format(
+        W, H, (last.x or 0) + (last.w or 0)))
 end
 
 win:add(sink)

@@ -913,6 +913,12 @@ border one?" - the second window that draws its own pixels to offer a
 header, after Groove (`ui.md` 16.25, `testing.md` 18.399); the review of the
 rest is still to do.
 
+**Kosmos Write's window resizable, as the browser's is.** Diego, 5 October
+2026: "kosmos write works fine", "I need to be able to resizse the window
+like we do with the browsser". A window that draws its own pixels resizes
+since 6zz e; Write never asked to. It asks now, takes the new size, keeps
+its scroll inside the new desk and draws at once (`testing.md` 18.404).
+
 **ASKED, for the future - C compiled inside Kosmos, for the IDE's hybrid
 applications.** Diego, 4 October 2026: "how hard is to compile a c program
 within kosmos? I want to see if we can extend our kosmos ide to build hybrid
