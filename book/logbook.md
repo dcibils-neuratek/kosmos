@@ -1046,3 +1046,38 @@ of forgery, and a version of the kernel with one check removed fails it.
 but never ordinary RAM. The check knew only one stretch of RAM, from when
 the kernel used only one. A PC has several, so that check now covers all of
 them.
+
+## 4 October, late night - Kosmos 0.11
+
+**In short:** Kosmos is now version 0.11. The step from 0.10 marks two
+things: Kosmos Write, a full word processor built over one long day, and
+a careful re-reading of the whole system before the version number moved.
+
+**Why a re-reading.** Kosmos's own rules say that before a new minor
+version, the code is read again as it now is, not as it was meant to be.
+Software gathers leftovers: code for ideas that were replaced, and comments
+that were true once and are not any more. Since 0.10.0 about 215,000 lines
+had changed. Six reviewers read them in parallel, each one required to
+prove every finding with a search of the whole tree.
+
+**What it found.** About 150 things.
+- **A security hole in the microkernel**, now closed and tested: a program
+  could have tricked the kernel into writing wherever it liked.
+- **About fifteen real bugs**, most of them small, but some a person would
+  hit:
+  - the Network settings window turned off name lookups whenever Apply was
+    pressed;
+  - Kosmos Write could lose a picture when saving;
+  - Tracker could not cut and paste a file larger than a megabyte;
+  - sorting a big folder took time that grew with the square of its size.
+- **Unused code**, about two thousand lines in all, mostly left behind
+  when the system servers moved from Lua to C one by one.
+- **Many comments** that described the machine as it was months ago.
+
+Every change ran through the full test run, all 90 suites in under ten
+minutes, before 0.11 was made.
+
+**What it left for next.** Every place where the same code is written twice.
+Diego's premise is that a second copy is a defect, and those copies are
+the next job. They are written down on the roadmap as a list, so nothing
+found is forgotten.

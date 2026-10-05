@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-04
+Last updated: 2026-10-04 (0.11.0)
 
 ---
 
@@ -626,6 +626,25 @@ places making regions by hand first), then W4b, typing. `/Temporary` and a
 diskless `/Home` are 128 x 16 KB, compiled in - to grow (roadmap). **Not pushed**: everything since
 0.10.214; a push is Diego's word. The gate is at 10:33 to 10:46, over the
 ten minutes, to bring back.
+
+**4 October, night: 0.11.** Diego's order after the mockup: the gate under
+ten minutes and a push, the M700 on the new build, 0.11, then step 3 (the
+premise's review: second copies), step 4 (`ramfs` growing), the Open panel's
+keys, and the Present and Sheets mockups.
+- **The gate**: 9:37 at eight suites at once, measured against seven
+  (18.396); 0.10.256 pushed with Write in its picture.
+- **The M700**: 0.10.257 by network boot, Doom, Quake and the Super Nintendo
+  rebuilt for its protocols; `df` never answers there - likely `diskfs`
+  waiting inside a request for a late stick (roadmap).
+- **The review before 0.11** (18.397, 18.398): six reviewers, about 150
+  findings; the reply token and device-mapping holes in the kernel
+  (0.10.258), fifteen bugs, two thousand lines removed (0.10.259); every
+  second copy is step 3's list in the roadmap's *One kit, one door*.
+- **0.11.0** pushed after `make prepush`. **Next**: step 3, then step 4,
+  then the Open panel (drafted in the scratchpad's `panel_fix.py`: the
+  list takes the keys as it opens, the Save name takes them and Return
+  saves, with the display harness checking both), then the mockups.
+- `docs/stack.png` (and `.html`): every module, drawn for Diego.
 
 **4 October, late: the whole of Kosmos Write's mockup built.** Diego asked
 for typing first ("so I can test it"), then "Contienue with the rest of the
