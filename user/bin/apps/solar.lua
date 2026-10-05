@@ -495,7 +495,9 @@ end
 local BIGGEST = 2 * 1024 * 1024         -- earth.ppm is 1.5 MB; none is larger
 
 local function reader()
-  local page = sys.memory(BIGGEST // 4096)
+  -- `regions.lua`'s, and not mapped: nothing here reads it but
+  -- `region_read`, which needs no address.
+  local page = use_("/Kosmos/Libraries/regions.lua").unmapped(BIGGEST)
 
   if not page then
     print("solar: no room for a read buffer, so no textures")
@@ -514,11 +516,11 @@ local function reader()
 
       if want > BIGGEST then want = BIGGEST end
 
-      local got = fs.read_into(path, page, at, want)
+      local got = fs.read_into(path, page.cap, at, want)
 
       if not got or got == 0 then break end
 
-      pieces[#pieces + 1] = sys.region_read(page, 0, got)
+      pieces[#pieces + 1] = sys.region_read(page.cap, 0, got)
       at = at + got
     end
 

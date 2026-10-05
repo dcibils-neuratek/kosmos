@@ -99,13 +99,9 @@ static inline v3 norm(v3 a)
     return l > 0 ? mul(a, 1.0f / l) : a;
 }
 static inline v3 from(const float *p) { return V(p[0], p[1], p[2]); }
-static inline float lo2(float a, float b) { return a < b ? a : b; }
-static inline float hi2(float a, float b) { return a > b ? a : b; }
 
-/* The libc has these for doubles only. */
+/* The libc has this for doubles only; `sn` and `cs` are `k3d.h`'s. */
 static inline float pw(float a, float b) { return (float)pow((double)a, (double)b); }
-static inline float cs(float a) { return (float)cos((double)a); }
-static inline float sn(float a) { return (float)sin((double)a); }
 
 /*--------------------------------------------------------------------------
  * Random numbers: PCG, seeded from where a sample is and never from who

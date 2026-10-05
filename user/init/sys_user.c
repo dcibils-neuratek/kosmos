@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "lua.h"
@@ -1480,6 +1481,9 @@ static int l_disk(lua_State *L)
  * with - `gfx.wrap` turns it into a surface, and every pixel that touches
  * it does so from C.
  */
+static bool region_of(long cap, uintptr_t *at, size_t *bytes);
+static const char *region_fail;
+
 static int l_memory(lua_State *L)
 {
     long cap = kosmos_mem_create((unsigned long)luaL_checkinteger(L, 1));
@@ -1492,12 +1496,27 @@ static int l_memory(lua_State *L)
     return 1;
 }
 
+/*
+ * Through `region_of`, so the mapping is remembered with every other one and
+ * `sys.release` takes it down. **It called the kernel itself until 5 October
+ * 2026**, and nothing recorded the address: a mapping holds its region
+ * (`sharemap.h`), so a region mapped here and released kept its pages and its
+ * addresses until the process ended - the window manager's, for every
+ * picture, wallpaper and window surface it was ever handed. Found by the
+ * review of second copies, moving every hand-made region onto `regions.lua`,
+ * whose `free` said it gave the pages back and did not. Asked twice, it
+ * answers the same address, where it used to map the region a second time.
+ */
 static int l_memory_map(lua_State *L)
 {
-    long at = kosmos_mem_map((long)luaL_checkinteger(L, 1));
+    long cap = (long)luaL_checkinteger(L, 1);
+    uintptr_t at;
+    size_t bytes;
 
-    if (at < 0) {
-        return fail(L, at);
+    if (!region_of(cap, &at, &bytes)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "could not map that region: %s", region_fail);
+        return 2;
     }
 
     lua_pushinteger(L, (lua_Integer)at);
@@ -1519,16 +1538,20 @@ static int l_memory_map(lua_State *L)
  * back the same address twice - so mapping a region on each access would
  * walk through four gigabytes of address space and then stop working.
  * Mapped once here, on first use, and kept.
+ *
+ * **As many as the process maps**: the table was 256 and fixed, and a
+ * window manager holds two surfaces a window and a picture a wallpaper, so
+ * it grows by doubling - from the process's own heap, never given back,
+ * as the kernel's pools grow.
  */
-#define MAPPED_MAX 256
-
-static struct {
+struct mapping {
     long      cap;
     uintptr_t at;
     size_t    bytes;
-} mapped[MAPPED_MAX];
+};
 
-static unsigned mapped_count;
+static struct mapping *mapped;
+static unsigned mapped_count, mapped_room;
 
 static const char *region_fail = "?";
 
@@ -1546,9 +1569,18 @@ static bool region_of(long cap, uintptr_t *at, size_t *bytes)
         }
     }
 
-    if (mapped_count == MAPPED_MAX) {
-        region_fail = "the mapping table is full";
-        return false;
+    if (mapped_count == mapped_room) {
+        unsigned want = (mapped_room == 0) ? 64u : mapped_room * 2u;
+        struct mapping *grown = (want > mapped_room)
+            ? realloc(mapped, (size_t)want * sizeof(*mapped)) : NULL;
+
+        if (grown == NULL) {
+            region_fail = "no memory to remember another mapping";
+            return false;
+        }
+
+        mapped = grown;
+        mapped_room = want;
     }
 
     pages = kosmos_mem_size(cap);

@@ -98,6 +98,7 @@
 
 #include "kits/gfx/gfx_draw.h"
 #include "web_netsurf.h"
+#include "web_select.h"
 
 /*--------------------------------------------------------------------------
  * Once, before anything of NetSurf's runs: its interned names, which its
@@ -122,8 +123,11 @@ static bool netsurf_ready(void)
  * `web.join(base, href)`, the first of NetSurf's code the browser uses
  * (`roadmap.md` 6zz j1): a link resolved against its page as NetSurf
  * resolves one - `..` and `.` taken out, a scheme-relative `//host` given
- * the page's scheme, a fragment kept. `browser.lua`'s `resolve` does it in
- * Lua; this is the one NetSurf's layout will hand the pictures it asks for.
+ * the page's scheme, a fragment kept. It is the browser's only join:
+ * `browser.lua`'s `resolve` is this and a check on the scheme, for a
+ * redirect, a refresh, and a page `web_paint.c` laid out, and NetSurf's
+ * layout joins its own links and pictures the same way. `resolve` did the
+ * arithmetic in Lua until 4 October, without collapsing `..`.
  */
 int web_netsurf_join(lua_State *L)
 {
@@ -2280,10 +2284,8 @@ static void page_sheets(struct web_ns_doc *d)
 
     while (at != NULL) {
         dom_node *next = NULL;
-        dom_node_type type;
 
-        if (dom_node_get_node_type(at, &type) == DOM_NO_ERR
-            && type == DOM_ELEMENT_NODE) {
+        if (web_is_element(at)) {
             dom_string *tag = NULL;
 
             if (dom_node_get_node_name(at, &tag) == DOM_NO_ERR
@@ -3062,7 +3064,7 @@ bool web_ns_picture(struct web_ns_doc *d, lua_State *L, size_t k, int width,
         luaL_unref(L, LUA_REGISTRYINDEX, o->ref);
     }
 
-    o->pic = luaL_checkudata(L, -1, "kosmos.surface");
+    o->pic = gfx_surface_check(L, -1);
     o->ref = luaL_ref(L, LUA_REGISTRYINDEX);
     o->width = width;
     o->height = height;

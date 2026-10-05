@@ -31,6 +31,7 @@
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
+local regions = use("/Kosmos/Libraries/regions.lua")
 
 -- The engine this program's own image carries, reached by its file; not a
 -- global, for the reason `snes.lua` gives, and not a kit, since it is Doom's.
@@ -64,28 +65,9 @@ if size < 12 then
 end
 
 --
--- The WAD, in a region of its own.
---
--- One page more than it needs, because a partial last page is still a whole
--- page and asking for the exact byte count would round down.
---
-local pages = (size + 4095) // 4096
-local wad = sys.memory(pages)
-
-if not wad then
-  print(("doom: no room for %d KB of WAD"):format(size // 1024))
-  return
-end
-
-local at = sys.memory_map(wad)
-
-if not at then
-  print("doom: the WAD region would not map")
-  return
-end
-
---
--- Into the region, a window at a time, through a scratch region.
+-- The WAD, in a region of its own, a window at a time through a scratch
+-- region - `regions.read_whole`, which Quake's pak and the Super
+-- Nintendo's ROM come in by too.
 --
 -- `fs.read_into(path, region, offset, bytes)` takes a *file* offset and
 -- always writes at the start of the region: there is no region offset in
@@ -96,44 +78,24 @@ end
 --
 -- So each window lands in a scratch region and is copied from there into
 -- the big one at the right offset - by `sys.region_copy`, region to region,
--- so not a byte of it becomes a Lua string. It used to come out as one, a
--- quarter of a megabyte at a time, under a header saying the WAD does not
--- pass through Lua. That is one extra copy per window and it is the honest
--- cost of the protocol as it stands. The alternative
--- is an `into_offset` in the read request, which is a change to the
--- filesystem protocol and to every server that implements it - worth doing,
--- and not worth doing in the middle of getting Doom to boot.
+-- so not a byte of it becomes a Lua string. That is one extra copy per
+-- window and it is the honest cost of the protocol as it stands. The
+-- alternative is an `into_offset` in the read request, which is a change
+-- to the filesystem protocol and to every server that implements it -
+-- worth doing, and not worth doing in the middle of getting Doom to boot.
 --
-do
-  local WINDOW = 256 * 1024
-  local scratch = sys.memory(WINDOW // 4096)
+-- This file had the loop, and Quake's and the Super Nintendo's each had a
+-- copy of it - two of them still making a Lua string of every window,
+-- after this one had stopped. One copy now, in `regions.lua`.
+--
+local wad, why = regions.read_whole(path)
 
-  if not scratch then
-    print("doom: no room for a staging window")
-    return
-  end
-
-  local done = 0
-
-  while done < size do
-    local want = math.min(WINDOW, size - done)
-    local got = fs.read_into(path, scratch, done, want)
-
-    if not got or got == 0 then
-      print(("doom: %s stopped after %d of %d bytes"):format(path, done, size))
-      return
-    end
-
-    local copied, failed = sys.region_copy(wad, done, scratch, 0, got)
-
-    if not copied then
-      print("doom: " .. tostring(failed))
-      return
-    end
-
-    done = done + got
-  end
+if not wad then
+  print("doom: " .. tostring(why))
+  return
 end
+
+local at = wad.at
 
 --
 -- Is it actually a WAD?
@@ -145,7 +107,7 @@ end
 -- bytes arrived and anything after this is Doom's business.
 --
 do
-  local magic = sys.region_read(wad, 0, 4)
+  local magic = sys.region_read(wad.cap, 0, 4)
 
   if magic ~= "IWAD" and magic ~= "PWAD" then
     print(("doom: %s starts %q, not IWAD - the read did not land")

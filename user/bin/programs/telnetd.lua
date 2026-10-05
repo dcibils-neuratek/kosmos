@@ -39,6 +39,8 @@
 -- this one. `kosmos_telnet.py get` undoes it; `put` is the other way.
 
 local con = use("/Kosmos/Kits/console")
+local regions = use("/Kosmos/Libraries/regions.lua")
+local compress = use("/Kosmos/Kits/compress")   -- base64, for `get` and `put`
 
 local words = {}
 
@@ -244,30 +246,14 @@ local function take(s, bytes)
 end
 
 --------------------------------------------------------------------------
--- A file, as base64 - `get`.
+-- A file, as base64 - `get`. The encoding is the Compression Kit's, in C,
+-- since 5 October 2026; this was a loop over bytes in Lua, a second copy
+-- of the one Cafesa3D had in the 3D Kit.
 --------------------------------------------------------------------------
 
-local ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-local SYMBOL = {}
-
-for k = 0, 63 do SYMBOL[k] = ALPHABET:sub(k + 1, k + 1) end
-
-local function base64(bytes)
-  local out = {}
-
-  for at = 1, #bytes, 3 do
-    local a, b, c = bytes:byte(at, at + 2)
-    local n = (a << 16) | ((b or 0) << 8) | (c or 0)
-
-    out[#out + 1] = SYMBOL[(n >> 18) & 63] .. SYMBOL[(n >> 12) & 63]
-                    .. (b and SYMBOL[(n >> 6) & 63] or "=")
-                    .. (c and SYMBOL[n & 63] or "=")
-  end
-
-  return table.concat(out)
-end
-
-local WINDOW = 57 * 1024            -- a window of the file, a line in 57 bytes
+-- A window of the file: a line is 57 bytes, and three to a group, so no
+-- window but the last ends in padding.
+local WINDOW = 57 * 1024
 
 -- One, kept: a region is not given back, so one a `get` would be a leak.
 local window = nil
@@ -302,7 +288,7 @@ local function get(s, path)
       return
     end
 
-    local text = base64(sys.region_read(region, 0, want))
+    local text = compress.base64(sys.region_read(region, 0, want))
 
     for at = 1, #text, 76 do
       s.out = s.out .. text:sub(at, at + 75) .. "\r\n"
@@ -321,37 +307,11 @@ end
 -- saying `END`: so a Lua application written on the Mac lands in `/Home/Apps`
 -- and runs (`roadmap.md`, remote; Diego: "We could also even write Lua apps
 -- in the Mac and push them to the m700"). The folders on the way are made.
--- Written whole, from a region, as a file is written here; the region is
--- kept and grown when a larger file comes, since one is not given back.
+-- Written whole, from a region, as a file is written here - one the file's
+-- size, made for it and given back after (`regions.write_string`). It was
+-- one kept and grown when a larger file came, on the belief that a region
+-- is not given back, and each one it grew past was never given back.
 --------------------------------------------------------------------------
-
-local VALUE = {}
-
-for k = 0, 63 do VALUE[ALPHABET:byte(k + 1)] = k end
-
-local function unbase64(text)
-  local out = {}
-  local n, bits = 0, 0
-
-  for at = 1, #text do
-    local v = VALUE[text:byte(at)]
-
-    if v then
-      n = (n << 6) | v
-      bits = bits + 6
-
-      if bits >= 8 then
-        bits = bits - 8
-        out[#out + 1] = string.char((n >> bits) & 255)
-        n = n & ((1 << bits) - 1)
-      end
-    end
-  end
-
-  return table.concat(out)
-end
-
-local incoming, incoming_pages = nil, 0
 
 local function folders_for(path)
   local at = 1
@@ -373,32 +333,25 @@ end
 
 local function put_done(s)
   local p = s.receiving
-  local bytes = unbase64(table.concat(p.parts))
 
   s.receiving = nil
+
+  -- Refused rather than raised: a line that is not base64 says where.
+  local decoded, bytes = pcall(compress.unbase64, table.concat(p.parts))
+
+  if not decoded then
+    send(s, "put: " .. p.path .. ": " .. tostring(bytes) .. "\n")
+    return
+  end
 
   if #bytes ~= p.size then
     send(s, ("put: %s: %d bytes arrived of %d; not written\n"):format(p.path, #bytes, p.size))
     return
   end
 
-  local pages = #bytes // 4096 + 1
-
-  if pages > incoming_pages then
-    incoming, incoming_pages = sys.memory(pages), pages
-  end
-
-  if not incoming then
-    incoming_pages = 0
-    send(s, "put: no room for " .. #bytes .. " bytes\n")
-    return
-  end
-
-  if #bytes > 0 then sys.region_write(incoming, 0, bytes) end
-
   folders_for(p.path)
 
-  local wrote, why = fs.write_from(p.path, incoming, #bytes)
+  local wrote, why = regions.write_string(p.path, bytes)
 
   if wrote then
     send(s, ("put: %s, %d bytes\n"):format(p.path, #bytes))

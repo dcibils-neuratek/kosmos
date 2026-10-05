@@ -27,9 +27,6 @@
 
 #define NEAR 0.05f
 
-static float lo2(float a, float b) { return a < b ? a : b; }
-static float hi2(float a, float b) { return a > b ? a : b; }
-
 static float dot3(const float a[3], const float b[3])
 {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];

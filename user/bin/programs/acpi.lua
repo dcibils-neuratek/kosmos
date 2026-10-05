@@ -85,20 +85,11 @@ end
 
 -- Through pages rather than a message, as `diagnose` writes: a table is
 -- tens or hundreds of kilobytes, and a message holds two.
+local regions = use("/Kosmos/Libraries/regions.lua")
+
 for _, t in ipairs(tables) do
   local path = DIR .. "/" .. t.name .. ".aml"
-  local buf = sys.memory((#t.bytes + 4095) // 4096)
-
-  if not buf then
-    print(("acpi: no memory for %d bytes"):format(#t.bytes))
-    return
-  end
-
-  sys.region_write(buf, 0, t.bytes)
-
-  local wrote, err = fs.write_from(path, buf, #t.bytes)
-
-  sys.release(buf)
+  local wrote, err = regions.write_string(path, t.bytes)
 
   if not wrote then
     print("acpi: " .. path .. ": " .. tostring(err))

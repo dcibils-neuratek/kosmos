@@ -44,7 +44,10 @@
 #include "lua.h"
 #include "lauxlib.h"
 
+#include "bytes.h"
 #include "kosmos.h"
+#include "gfx_draw.h"
+#include "rows.h"
 
 #include "stb_truetype.h"
 
@@ -99,44 +102,9 @@ struct docfont {
     struct cached  cache[CACHE_SLOTS];
 };
 
-/*
- * The surface, as `gfx.c` lays it out.
- *
- * Repeated here rather than shared through a header, exactly as
- * `struct message` is repeated between the kernel and userland: two files
- * that must agree, and a static assert would be better than a comment the
- * day this moves. It is checked by metatable name, so a mismatch is a
- * refusal rather than a wrong pointer.
- */
-struct surface_ref {
-    uint32_t *pixels;
-    unsigned  width;
-    unsigned  height;
-    unsigned  pitch;
-};
-
 static struct docfont *check_font(lua_State *L, int index)
 {
     return luaL_checkudata(L, index, DOCFONT_MT);
-}
-
-static void *map_bytes(size_t bytes, size_t *pages_out)
-{
-    size_t pages = (bytes + KOSMOS_PAGE_SIZE - 1) / KOSMOS_PAGE_SIZE;
-    long   mapped;
-
-    if (pages == 0) {
-        pages = 1;
-    }
-
-    mapped = kosmos_map(pages);
-
-    if (mapped < 0) {
-        return NULL;
-    }
-
-    *pages_out = pages;
-    return (void *)(uintptr_t)mapped;
 }
 
 static void cache_clear(struct docfont *f)
@@ -213,7 +181,7 @@ static struct cached *glyph_of(struct docfont *f, int glyph)
     {
         size_t need = (size_t)w * (size_t)h;
         size_t pages = 0;
-        unsigned char *own = map_bytes(need, &pages);
+        unsigned char *own = kosmos_map_bytes(need, &pages);
 
         if (own != NULL) {
             memcpy(own, bitmap, need);
@@ -224,18 +192,6 @@ static struct cached *glyph_of(struct docfont *f, int glyph)
 
     stbtt_FreeBitmap(bitmap, NULL);
     return c;
-}
-
-/* Coverage over a colour, the same blend `gfx.c` uses for its own glyphs. */
-static inline uint32_t mix(uint32_t dst, uint32_t src, unsigned a)
-{
-    unsigned inv = 255u - a;
-
-    unsigned r = (((src >> 16) & 0xff) * a + ((dst >> 16) & 0xff) * inv) / 255u;
-    unsigned g = (((src >>  8) & 0xff) * a + ((dst >>  8) & 0xff) * inv) / 255u;
-    unsigned b = (((src      ) & 0xff) * a + ((dst      ) & 0xff) * inv) / 255u;
-
-    return 0xff000000u | (r << 16) | (g << 8) | b;
 }
 
 /*
@@ -253,7 +209,11 @@ static inline uint32_t mix(uint32_t dst, uint32_t src, unsigned a)
 static int l_draw(lua_State *L)
 {
     struct docfont *f = check_font(L, 1);
-    struct surface_ref *s = luaL_checkudata(L, 2, "kosmos.surface");
+    unsigned width = 0, height = 0, pitch = 0;
+
+    /* Through `gfx`'s door, which refuses a freed surface or a view of
+     * one, rather than a copy of its struct that would have to agree. */
+    uint32_t *pixels = kosmos_surface_pixels(L, 2, &width, &height, &pitch);
     uint32_t colour = (uint32_t)luaL_checkinteger(L, 3);
     lua_Integer n;
     lua_Integer i;
@@ -261,15 +221,12 @@ static int l_draw(lua_State *L)
 
     luaL_checktype(L, 4, LUA_TTABLE);
 
-    if (s->pixels == NULL) {
-        return luaL_error(L, "docfont:draw: that surface has been freed");
-    }
-
     n = (lua_Integer)lua_rawlen(L, 4);
 
     for (i = 1; i + 2 <= n; i += 3) {
         struct cached *c;
-        int glyph, ox, oy, gx, gy;
+        int glyph, ox, oy, gy;
+        long left, from, to;
 
         lua_rawgeti(L, 4, i);
         glyph = (int)lua_tointeger(L, -1);
@@ -285,26 +242,33 @@ static int l_draw(lua_State *L)
             continue;               /* a space, or no outline */
         }
 
+        /* Clipped once a glyph, at its left and right. */
+        left = (long)ox + c->xoff;
+        from = left < 0 ? -left : 0;
+        to = left + c->w > (long)width ? (long)width - left : c->w;
+
+        if (from >= to) {
+            continue;
+        }
+
+        /*
+         * A row at a time, laid over what is there four pixels at once by
+         * `gfx_cover_row` - the blend `gfx.c` sets its own text with, held
+         * to the scalar loop by `tools/test_rows.c`. This had its own,
+         * which rounded down where that rounds to nearest, so a PDF's
+         * text and the system's came out a shade apart.
+         */
         for (gy = 0; gy < c->h; gy++) {
             long py = (long)oy + c->yoff + gy;
-            uint32_t *row;
 
-            if (py < 0 || py >= (long)s->height) {
+            if (py < 0 || py >= (long)height) {
                 continue;
             }
 
-            row = (uint32_t *)((char *)s->pixels + (size_t)py * s->pitch);
-
-            for (gx = 0; gx < c->w; gx++) {
-                long px = (long)ox + c->xoff + gx;
-                unsigned a = c->coverage[gy * c->w + gx];
-
-                if (px < 0 || px >= (long)s->width || a == 0) {
-                    continue;
-                }
-
-                row[px] = (a == 255) ? colour : mix(row[px], colour, a);
-            }
+            gfx_cover_row((uint32_t *)((uint8_t *)pixels + (size_t)py * pitch)
+                          + (left + from),
+                          c->coverage + (size_t)gy * (size_t)c->w + from,
+                          to - from, colour, true);
         }
 
         drawn++;
@@ -344,12 +308,6 @@ static int l_gc(lua_State *L)
     }
 
     return 0;
-}
-
-static inline void put32(unsigned char *p, uint32_t v)
-{
-    p[0] = (unsigned char)(v >> 24); p[1] = (unsigned char)(v >> 16);
-    p[2] = (unsigned char)(v >> 8);  p[3] = (unsigned char)v;
 }
 
 /*
@@ -425,7 +383,7 @@ static bool ensure_cmap(unsigned char *data, size_t len, size_t cap,
 
                 c[4] = 0; c[5] = 3;             /* platform 3, Microsoft */
                 c[6] = 0; c[7] = 1;             /* encoding 1, Unicode BMP */
-                put32(c + 8, 12u);              /* subtable, from cmap start */
+                put_be32(c + 8, 12u);           /* subtable, from cmap start */
 
                 c[12] = 0; c[13] = 6;           /* format 6 */
                 c[14] = 0; c[15] = 10;          /* its length */
@@ -435,8 +393,8 @@ static bool ensure_cmap(unsigned char *data, size_t len, size_t cap,
             }
 
             memcpy(entry, "cmap", 4);
-            put32(entry + 8, (uint32_t)len);    /* offset */
-            put32(entry + 12, 22u);             /* length */
+            put_be32(entry + 8, (uint32_t)len); /* offset */
+            put_be32(entry + 12, 22u);          /* length */
 
             *out_len = len + 22;
             return true;
@@ -534,8 +492,8 @@ static int l_docfont(lua_State *L)
 void kosmos_docfont_open(lua_State *L)
 {
     /* Into the `gfx` table, which is on the stack: this draws onto a
-     * surface and has to know what one is, which is what keeps it here
-     * rather than in a kit of its own. */
+     * surface, with `gfx`'s blend, which is what keeps it here rather than
+     * in a kit of its own. */
     luaL_newmetatable(L, DOCFONT_MT);
 
     lua_pushvalue(L, -1);

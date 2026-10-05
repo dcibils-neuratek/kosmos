@@ -22,7 +22,7 @@
 -- buffer is in the file as a `data:` URI and whose mesh is triangles: each
 -- becomes a `mesh` thing naming a buffer and where in it its points and
 -- indices are. The buffers stay base64, in `scene.buffers`, for whoever has
--- a decoder in C to decode once (`k3.unbase64`); a mesh whose accessors say
+-- a decoder in C to decode once (`compress.unbase64`); a mesh whose accessors say
 -- more than its buffer holds is skipped, as any other lie would be. A
 -- material's texture - which glTF has no word for - comes from its
 -- `extras.cafesa3d`, held to the ranges the kit holds it to.
@@ -744,7 +744,7 @@ end
 -- glTF reader too.
 --
 --   local doc = scenefile.to_gltf({ name = ..., things = ..., world = ... },
---                                 { base64 = k3.base64, bounds = k3.bounds })
+--                                 { base64 = compress.base64, bounds = k3.bounds })
 --   fs.write(path, json.encode(doc))
 --
 -- **The same file the samples are**, so there is one reader and it is
@@ -761,8 +761,9 @@ end
 -- one buffer carried in the file as base64. A mesh copied with Shift D
 -- shares its bytes with the original, and is written once.
 --
--- `codec` holds the two loops over bytes, which in Kosmos are the 3D Kit's
--- (`k3.base64`, `k3.bounds`) and on the host a test's own.
+-- `codec` holds the two loops over bytes, which in Kosmos are the
+-- Compression Kit's `base64` and the 3D Kit's `bounds`, and on the host a
+-- test's own.
 --------------------------------------------------------------------------
 
 -- Cafesa3D to glTF: (x, y, z) here is (x, z, -y) there.

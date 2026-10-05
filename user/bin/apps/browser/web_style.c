@@ -70,10 +70,17 @@ struct web_style {
 };
 
 /*
- * A relative URL resolved against nothing, because nothing here loads a
- * second file. libcss will not create a sheet without the callback even for
- * one that imports nothing, and this is exactly the piece that becomes real
- * when `@import` does.
+ * A relative URL handed straight back, because nothing that uses these
+ * sheets loads a second file: they say how a page's text looks to
+ * `web_paint.c`, which follows no `@import` and draws no `url()`. libcss
+ * will not create a sheet without the callback even for one that imports
+ * nothing.
+ *
+ * The sheets a page is laid out with are not these. They are NetSurf's
+ * (`web_netsurf.c`, `sheet_of`), made against the page's address, whose
+ * `url()`s and `@import`s NetSurf's own resolver joins to it - which is
+ * where `@import` became real, and this comment said for a while that it
+ * would become real here.
  */
 static css_error resolve_url(void *pw, const char *base,
                              lwc_string *rel, lwc_string **abs)
@@ -86,7 +93,12 @@ static css_error resolve_url(void *pw, const char *base,
     return CSS_OK;
 }
 
-static css_stylesheet *sheet_from(const char *text, size_t len, bool ua)
+/*
+ * One sheet from text, parsed and finished, or NULL: the user-agent sheet
+ * and a document's `<style>`s here, and `web.stylesheet` and `web.style`'s
+ * probes (`web_kosmos.c`), which had a copy of their own.
+ */
+css_stylesheet *web_style_sheet(const char *text, size_t len)
 {
     css_stylesheet_params params;
     css_stylesheet *sheet = NULL;
@@ -100,8 +112,6 @@ static css_stylesheet *sheet_from(const char *text, size_t len, bool ua)
     params.url            = "";
     params.title          = NULL;
     params.resolve        = resolve_url;
-
-    (void)ua;
 
     if (css_stylesheet_create(&params, &sheet) != CSS_OK) {
         return NULL;
@@ -133,7 +143,7 @@ static bool add_sheet(struct web_style *s, const char *text, size_t len,
         return false;
     }
 
-    sheet = sheet_from(text, len, origin == CSS_ORIGIN_UA);
+    sheet = web_style_sheet(text, len);
 
     if (sheet == NULL) {
         return false;

@@ -24,11 +24,6 @@
 
 #define PI 3.14159265358979323846f
 
-/* In double and cast: Kosmos's C library has the double forms, and these
- * run when a shape is built, never once a pixel. */
-static float sn(float a) { return (float)sin((double)a); }
-static float cs(float a) { return (float)cos((double)a); }
-
 void k3d_scene_init(struct k3d_scene *s)
 {
     s->obj = NULL;

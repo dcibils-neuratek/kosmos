@@ -61,48 +61,8 @@
 #include "lauxlib.h"
 
 #include "kosmos.h"
+#include "gfx_draw.h"
 #include "stb_image.h"
-
-/* Must match gfx.c and png.c. A surface created here is freed by gfx.c's
- * finaliser, so all three have to agree about what one is. */
-#define SURFACE_MT  "kosmos.surface"
-#define ROW_ALIGN   64
-
-struct surface {
-    uint32_t *pixels;
-    unsigned  width;
-    unsigned  height;
-    unsigned  pitch;
-    size_t    bytes;
-    size_t    pages;
-    bool      owned;
-};
-
-/*
- * Pages, for something too big for the heap. The same helper `png.c` has,
- * and duplicated rather than shared for the reason the two files are
- * separate at all: this one is a binding around somebody else's decoder and
- * that one is a decoder, and a header holding four lines so that they can
- * agree about `kosmos_map` would be a dependency for nothing.
- */
-static void *map_pages(size_t bytes, size_t *pages_out)
-{
-    size_t pages = (bytes + KOSMOS_PAGE_SIZE - 1) / KOSMOS_PAGE_SIZE;
-    long mapped;
-
-    if (pages == 0) {
-        pages = 1;
-    }
-
-    mapped = kosmos_map(pages);
-
-    if (mapped < 0) {
-        return NULL;
-    }
-
-    *pages_out = pages;
-    return (void *)(uintptr_t)mapped;
-}
 
 /*
  * The bytes, either as a Lua string or as an address and a length.
@@ -121,9 +81,9 @@ static int l_jpeg(lua_State *L)
     int width = 0, height = 0, channels = 0;
     unsigned char *rgba = NULL;
 
-    struct surface *s;
     uint32_t *pixels;
-    size_t pitch, bytes, pages;
+    unsigned pitch = 0;
+    size_t pages = 0;
     int y, x;
 
     if (lua_type(L, 1) == LUA_TNUMBER) {
@@ -160,10 +120,8 @@ static int l_jpeg(lua_State *L)
         return luaL_error(L, "jpeg: larger than this system will decode");
     }
 
-    /* And now a surface, exactly as gfx.surface makes one. */
-    pitch = (((size_t)width * 4) + (ROW_ALIGN - 1)) & ~(size_t)(ROW_ALIGN - 1);
-    bytes = pitch * (size_t)height;
-    pixels = map_pages(bytes, &pages);
+    /* And now a surface's pixels, exactly as gfx.surface maps them. */
+    pixels = gfx_surface_map((unsigned)width, (unsigned)height, &pitch, &pages);
 
     if (pixels == NULL) {
         stbi_image_free(rgba);
@@ -192,23 +150,8 @@ static int l_jpeg(lua_State *L)
 
     stbi_image_free(rgba);
 
-    s = lua_newuserdatauv(L, sizeof(*s), 0);
-    memset(s, 0, sizeof(*s));
-    s->pixels = pixels;
-    s->width  = (unsigned)width;
-    s->height = (unsigned)height;
-    s->pitch  = (unsigned)pitch;
-    s->bytes  = bytes;
-    s->pages  = pages;
-    s->owned  = true;
-
-    luaL_setmetatable(L, SURFACE_MT);
-
-    /* The collector sees a small userdata and megabytes behind it. Telling
-     * it the real size is what makes the finaliser something other than
-     * theoretical - gfx.md 19.6. */
-    lua_gc(L, LUA_GCSTEP, (int)(bytes / 1024));
-
+    /* Made by `gfx.c`, which is the only file that knows what one is. */
+    gfx_surface_new(L, pixels, (unsigned)width, (unsigned)height, pitch, pages);
     return 1;
 }
 

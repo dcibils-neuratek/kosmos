@@ -54,14 +54,9 @@
 #include "lua.h"
 #include "lauxlib.h"
 
-/*
- * The one door into a surface from outside `gfx.c`, which exists already:
- * it was exported for Doom, which renders into a buffer of its own and
- * needs the result copied in. A second way in would be a second thing to
- * keep in step with the struct.
- */
-uint32_t *kosmos_surface_pixels(lua_State *L, int index,
-                                unsigned *w, unsigned *h, unsigned *pitch);
+/* The one door into a surface from outside `gfx.c`:
+ * `kosmos_surface_pixels`. */
+#include "kits/gfx/gfx_draw.h"
 
 #define SOFT_MT "kosmos.game.soft"
 

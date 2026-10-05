@@ -5528,25 +5528,19 @@ end
 -- and handed to the window manager as a capability. The region, and the
 -- capability, which the window keeps so it can let the region go: when it
 -- closes, and when it is resized and a region of the new size replaces it
--- (`roadmap.md` 6zz e).
+-- (`roadmap.md` 6zz e). Made by `regions.lua`, as every region is.
 --
+local regions = use("/Kosmos/Libraries/regions.lua")
+
 local function direct_region(w, h)
   local bytes = gfx.bytes(w, h)
-  local pages = (bytes * 2 + 4095) // 4096
-  local cap = sys.memory(pages)
+  local made = regions.make(bytes * 2)
 
-  if not cap then return nil, nil end
+  if not made then return nil, nil end
 
-  local at = sys.memory_map(cap)
-
-  if not at then
-    sys.release(cap)
-    return nil, nil
-  end
-
-  return { [1] = gfx.wrap{ at = at, w = w, h = h },
-           [2] = gfx.wrap{ at = at + bytes, w = w, h = h },
-           draw_into = 2 }, cap
+  return { [1] = gfx.wrap{ at = made.at, w = w, h = h },
+           [2] = gfx.wrap{ at = made.at + bytes, w = w, h = h },
+           draw_into = 2 }, made.cap
 end
 
 
@@ -5697,6 +5691,10 @@ function ui.window(spec)
   }, shared_cap)
 
   if not reply then
+    -- The region asked for with it, given back: a window that did not open
+    -- has no pixels to keep.
+    if shared_cap then sys.release(shared_cap) end
+
     return nil, err
   end
 

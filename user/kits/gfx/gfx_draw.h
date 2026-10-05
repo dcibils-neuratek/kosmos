@@ -15,18 +15,54 @@
  * about two thousand pixels of work. So the web kit paints its own surface,
  * in C, the way `docfont.c` paints a page of a PDF.
  *
- * **The surface is opaque here on purpose.** `docfont.c` had to repeat
- * `struct surface`'s first four fields to reach the pixels, with a comment
- * admitting that two files must now agree and a static assert would be
- * better. Passing the pointer through untouched means there is nothing to
- * agree about: the caller gets it from `luaL_checkudata(L, n,
- * "kosmos.surface")`, hands it back, and only `gfx.c` ever knows the shape.
+ * **The surface is opaque here on purpose, and this is the one door to
+ * it.** `struct surface` was once written out again in four other files -
+ * the GL Kit, `png.c`, `jpeg.c` and `docfont.c` - with comments admitting
+ * that the copies must agree, and the two of those that drew into one
+ * checked that it had not been freed but not that a view's parent had not.
+ * Now only `gfx.c` knows the shape: a kit that draws is handed the pixels by
+ * `kosmos_surface_pixels`, or the surface for the calls below by
+ * `gfx_surface_check`, both of which check; and a kit that decodes a
+ * picture hands its pixels to `gfx_surface_new`, which makes the surface.
  *
  * A face is the number `gfx.face(name, px)` returns, or one of the four
  * roles - they are the same array.
  */
 
 struct surface;
+struct lua_State;
+
+/*
+ * The surface at `index` on the stack: its pixels, and its width, height
+ * and pitch through whichever of the three are not NULL. A Lua error, not a
+ * pointer, for anything that is not a live surface - one freed, or a view
+ * of one that was. The pitch comes with the pointer because the pitch is
+ * almost never `width * 4` (`gfx.md` 19.3).
+ */
+uint32_t *kosmos_surface_pixels(struct lua_State *L, int index,
+                                unsigned *width, unsigned *height,
+                                unsigned *pitch);
+
+/* The same surface, held to the same checks, as the pointer the
+ * `gfx_draw_*` calls below take. */
+struct surface *gfx_surface_check(struct lua_State *L, int index);
+
+/*
+ * Pages for a `width` by `height` surface, zeroed, rows at the pitch every
+ * surface `gfx` makes has: what `gfx.surface` asks the kernel for, for a
+ * decoder that fills the pixels before the surface exists. NULL when the
+ * kernel refused, with nothing to hand back. Both sides must be 1 to 16384.
+ */
+uint32_t *gfx_surface_map(unsigned width, unsigned height, unsigned *pitch,
+                          size_t *pages);
+
+/*
+ * A surface over `pixels`, pushed onto the stack. `pages` is how many of
+ * them it owns and hands back when it is freed or collected - what
+ * `gfx_surface_map` said - and 0 for pixels that are somebody else's.
+ */
+void gfx_surface_new(struct lua_State *L, uint32_t *pixels, unsigned width,
+                     unsigned height, unsigned pitch, size_t pages);
 
 void gfx_draw_fill(struct surface *s, long x, long y, long w, long h,
                    uint32_t colour);
@@ -77,7 +113,6 @@ void gfx_draw_i420(struct surface *s, const uint8_t *const plane[3],
  * arrived, or is not on the disk and the next one will be wanted - and what
  * was measured without it should be measured again.
  */
-struct lua_State;
 bool gfx_fonts_load(struct lua_State *L);
 
 #endif /* KOSMOS_GFX_DRAW_H */

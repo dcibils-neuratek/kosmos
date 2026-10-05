@@ -47,6 +47,7 @@
 
 #include "kits/gfx/gfx_draw.h"
 #include "web_paint.h"
+#include "web_select.h"
 #include "web_style.h"
 
 /*
@@ -294,15 +295,6 @@ static void push_rect(struct web_page *p, int x, int y, int w, int h,
 /*--------------------------------------------------------------------------
  * Tags.
  *------------------------------------------------------------------------*/
-
-static bool is_element(dom_node *node)
-{
-    dom_node_type type;
-
-    return node != NULL
-        && dom_node_get_node_type(node, &type) == DOM_NO_ERR
-        && type == DOM_ELEMENT_NODE;
-}
 
 /* The node's name, lowercased into `out`. libdom answers in uppercase for
  * HTML and every comparison here is against a lowercase literal. */
@@ -1009,7 +1001,7 @@ static bool layout_blocks(struct web_page *p, dom_node *node, int depth)
     while (child != NULL) {
         dom_node *next = NULL;
 
-        if (is_element(child)) {
+        if (web_is_element(child)) {
             char tag[16];
 
             (void)tag_of(child, tag, sizeof(tag));

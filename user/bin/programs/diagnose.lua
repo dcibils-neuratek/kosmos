@@ -211,21 +211,11 @@ say(((sys.log(262144) or ""):gsub("\r", "")))
 -- Through pages rather than a message, as `log save` does: the log alone is
 -- a quarter of a megabyte, and a message holds two kilobytes.
 --
+local regions = use("/Kosmos/Libraries/regions.lua")
 local name = args:match("^%s*(%S+)") or "diagnose.txt"
 local path = name:sub(1, 1) == "/" and name or ("/Home/" .. name)
 local body = table.concat(lines, "\n")
-local buf = sys.memory((#body + 4095) // 4096)
-
-if not buf then
-  print(("diagnose: no memory for %d bytes"):format(#body))
-  return
-end
-
-sys.region_write(buf, 0, body)
-
-local wrote, err = fs.write_from(path, buf, #body)
-
-sys.release(buf)
+local wrote, err = regions.write_string(path, body)
 
 if not wrote then
   print("diagnose: " .. path .. ": " .. tostring(err))

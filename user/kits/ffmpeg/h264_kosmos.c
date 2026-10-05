@@ -36,7 +36,6 @@
 #include "h264_core.h"
 
 #define H264_MT    "kosmos.h264"
-#define SURFACE_MT "kosmos.surface"
 
 struct decoder {
     struct h264 *d;
@@ -106,7 +105,7 @@ static int l_send(lua_State *L)
 static int l_picture(lua_State *L)
 {
     struct decoder *dec = check(L);
-    struct surface *s = (struct surface *)luaL_checkudata(L, 2, SURFACE_MT);
+    struct surface *s = gfx_surface_check(L, 2);       /* not one freed */
     struct h264_picture p;
 
     switch (h264_receive(dec->d, &p)) {

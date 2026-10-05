@@ -421,23 +421,24 @@ end
 -- The song as a WAV, rendered by the kit on an engine of its own into a
 -- region of this process's, and written whole with `write_from` - which
 -- takes a file of any size, where a Lua string of a four-minute song would
--- be forty megabytes through the interpreter. Answers the seconds.
+-- be forty megabytes through the interpreter. Answers the seconds. The
+-- region is `regions.lua`'s, as every region is - asked for here rather
+-- than when the engine loads, so `tools/test_groove.lua`, which loads the
+-- engine on the Mac and answers only the names Groove reaches, need not
+-- know of it.
 --
-local PAGE = 4096
-
 function E.export(path)
+  local regions = use("/Kosmos/Libraries/regions.lua")
   local secs = E.songSeconds()
   local bytes = 44 + floor((secs + 5) * E.SR) * 4 + 4 * 1024 * 2
-  local cap, why = sys.memory((bytes + PAGE - 1) // PAGE)
-  if not cap then error("no memory to render into: " .. tostring(why)) end
-  local at = sys.memory_map(cap)
-  if not at then sys.release(cap); error("a region that could not be mapped") end
+  local out, why = regions.make(bytes)
+  if not out then error("no memory to render into: " .. tostring(why)) end
 
-  local ok, len, seconds = pcall(synth.export, E.song, at, bytes)
-  if not ok then sys.release(cap); error(len) end
+  local ok, len, seconds = pcall(synth.export, E.song, out.at, bytes)
+  if not ok then regions.free(out); error(len) end
 
-  local wrote, werr = fs.write_from(path, cap, len)
-  sys.release(cap)
+  local wrote, werr = fs.write_from(path, out.cap, len)
+  regions.free(out)
   if wrote ~= len then error("the file could not be written: " .. tostring(werr)) end
   return seconds
 end

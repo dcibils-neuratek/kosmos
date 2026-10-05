@@ -65,23 +65,14 @@ end
 --
 -- Through pages rather than a message: a message holds two kilobytes and the
 -- ring a quarter of a megabyte, so the bytes go in a region and the request
--- says only where (`fs.write_from`).
+-- says only where - `regions.write_string`, which `diagnose`, `acpi` and
+-- telnet's `put` write through as well.
 --
 if want == "save" then
+  local regions = use("/Kosmos/Libraries/regions.lua")
   local name = args:match("^%s*save%s+(%S+)") or "log.txt"
   local path = name:sub(1, 1) == "/" and name or ("/Home/" .. name)
-  local buf = sys.memory((#text + 4095) // 4096)
-
-  if not buf then
-    print(("log: no memory for %d bytes"):format(#text))
-    return
-  end
-
-  sys.region_write(buf, 0, text)
-
-  local wrote, err = fs.write_from(path, buf, #text)
-
-  sys.release(buf)
+  local wrote, err = regions.write_string(path, text)
 
   if not wrote then
     print("log: " .. path .. ": " .. tostring(err))

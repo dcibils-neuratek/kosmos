@@ -211,20 +211,37 @@ local function lookup(host, wait_ticks, hz)
 end
 
 --
--- The certificates this machine's person has said to trust, as DER.
+-- The certificates this machine's person has said to trust: each file in
+-- `http.AUTHORITIES` named `.der` or `.cer` that is not empty. As DER, for
+-- the handshake; and by name, for whoever shows what is trusted - the
+-- browser's Settings and its page of authorities, which listed every file
+-- in the folder as trusted, whatever it was. One walk for both, so what is
+-- shown is what is trusted.
 --
-function http.authorities()
-  local out = {}
+local function trusted()
+  local ders, names = {}, {}
 
   for _, name in ipairs(fs.list(http.AUTHORITIES) or {}) do
     if name:match("%.[Dd][Ee][Rr]$") or name:match("%.[Cc][Ee][Rr]$") then
       local der = fs.read(http.AUTHORITIES .. "/" .. name)
 
-      if type(der) == "string" and der ~= "" then out[#out + 1] = der end
+      if type(der) == "string" and der ~= "" then
+        ders[#ders + 1], names[#names + 1] = der, name
+      end
     end
   end
 
-  return out
+  return ders, names
+end
+
+function http.authorities()
+  return (trusted())
+end
+
+function http.authority_names()
+  local _, names = trusted()
+
+  return names
 end
 
 --

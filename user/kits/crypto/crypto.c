@@ -51,6 +51,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "bytes.h"
 #include "crypto.h"
 
 /*------------------------------------------------------------------------
@@ -283,12 +284,6 @@ static uint32_t rol(uint32_t x, unsigned n)
         c += d; b ^= c; b = rol(b, 7);                  \
     } while (0)
 
-static uint32_t le32(const uint8_t *p)
-{
-    return (uint32_t)p[0] | ((uint32_t)p[1] << 8)
-         | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-}
-
 void chacha20_block(const uint8_t key[32], uint32_t counter,
                     const uint8_t nonce[12], uint8_t out[64])
 {
@@ -305,13 +300,13 @@ void chacha20_block(const uint8_t key[32], uint32_t counter,
     s[0] = C[0]; s[1] = C[1]; s[2] = C[2]; s[3] = C[3];
 
     for (i = 0; i < 8; i++) {
-        s[4 + i] = le32(key + i * 4);
+        s[4 + i] = get_le32(key + i * 4);
     }
 
     s[12] = counter;
 
     for (i = 0; i < 3; i++) {
-        s[13 + i] = le32(nonce + i * 4);
+        s[13 + i] = get_le32(nonce + i * 4);
     }
 
     memcpy(x, s, sizeof(x));
@@ -396,10 +391,10 @@ static void poly1305_init(struct poly1305 *p, const uint8_t key[32])
     /* `r` is clamped: some bits are cleared so that the products below
      * cannot overflow the limb arithmetic. The constants are the
      * specification's and are not a choice. */
-    uint32_t t0 = le32(key);
-    uint32_t t1 = le32(key + 4);
-    uint32_t t2 = le32(key + 8);
-    uint32_t t3 = le32(key + 12);
+    uint32_t t0 = get_le32(key);
+    uint32_t t1 = get_le32(key + 4);
+    uint32_t t2 = get_le32(key + 8);
+    uint32_t t3 = get_le32(key + 12);
     unsigned i;
 
     p->r[0] = t0 & 0x3ffffffu;
@@ -413,7 +408,7 @@ static void poly1305_init(struct poly1305 *p, const uint8_t key[32])
     }
 
     for (i = 0; i < 4; i++) {
-        p->pad[i] = le32(key + 16 + i * 4);
+        p->pad[i] = get_le32(key + 16 + i * 4);
     }
 
     p->held = 0;
@@ -424,8 +419,8 @@ static void poly1305_block(struct poly1305 *p, const uint8_t *m, uint32_t high)
     uint32_t r0 = p->r[0], r1 = p->r[1], r2 = p->r[2];
     uint32_t r3 = p->r[3], r4 = p->r[4];
     uint32_t s1 = r1 * 5u, s2 = r2 * 5u, s3 = r3 * 5u, s4 = r4 * 5u;
-    uint32_t t0 = le32(m), t1 = le32(m + 4);
-    uint32_t t2 = le32(m + 8), t3 = le32(m + 12);
+    uint32_t t0 = get_le32(m), t1 = get_le32(m + 4);
+    uint32_t t2 = get_le32(m + 8), t3 = get_le32(m + 12);
     uint64_t d0, d1, d2, d3, d4;
     uint32_t c;
 

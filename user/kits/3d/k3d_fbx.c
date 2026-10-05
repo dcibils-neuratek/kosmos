@@ -150,23 +150,6 @@ static void material_of(const ufbx_material *m, struct k3d_fbx_material *out)
                : p->opacity.has_value ? 1 - value(&p->opacity, 1) : 0;
 }
 
-static bool grow(void **items, size_t *cap, size_t want, size_t size)
-{
-    size_t next = *cap ? *cap * 2 : 16;
-    void *bigger;
-
-    if (want <= *cap) return true;
-    if (next < want) next = want;
-
-    bigger = realloc(*items, next * size);
-
-    if (bigger == NULL) return false;
-
-    *items = bigger;
-    *cap = next;
-    return true;
-}
-
 /*
  * One part: the faces of `part` in `mesh`, as `node` shows them. `local`
  * and `stamp` are one slot a vertex of the mesh, reused across parts - a
@@ -188,7 +171,7 @@ static const char *part_of(const ufbx_node *node, const ufbx_mesh *mesh,
 
         if (ntri + n > MAX_TRIS) return "a part with more triangles than one mesh may have";
 
-        if (!grow((void **)&out->soup.tri, &cap_tri, (size_t)(ntri + n) * 3, sizeof(uint32_t))) {
+        if (!k3d_grow((void **)&out->soup.tri, &cap_tri, (size_t)(ntri + n) * 3, sizeof(uint32_t))) {
             return "not enough memory to read it";
         }
 
@@ -201,7 +184,7 @@ static const char *part_of(const ufbx_node *node, const ufbx_mesh *mesh,
 
                 if (npos == MAX_POINTS) return "a part with more points than one mesh may have";
 
-                if (!grow((void **)&out->soup.pos, &cap_pos, (size_t)(npos + 1) * 3,
+                if (!k3d_grow((void **)&out->soup.pos, &cap_pos, (size_t)(npos + 1) * 3,
                           sizeof(float))) {
                     return "not enough memory to read it";
                 }
@@ -296,7 +279,7 @@ const char *k3d_fbx_read(const unsigned char *bytes, size_t len, struct k3d_fbx 
 
             if (part->num_triangles == 0) continue;
 
-            if (!grow((void **)&out->parts, &cap_parts, out->nparts + 1, sizeof(*out->parts))) {
+            if (!k3d_grow((void **)&out->parts, &cap_parts, out->nparts + 1, sizeof(*out->parts))) {
                 why = "not enough memory to read it";
                 break;
             }

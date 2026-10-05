@@ -28,6 +28,8 @@
 #include "lua.h"
 #include "lauxlib.h"
 
+#include "bytes.h"
+
 /*
  * Sixteen-bit output, which is the default and is what the device takes.
  * Saying so out loud because `MINIMP3_FLOAT_OUTPUT` is one define away and
@@ -167,12 +169,6 @@ static int l_decode(lua_State *L)
  * 4786800 bytes, the file less its ID3 tag, give 194.377 s, which is what
  * macOS says too.
  */
-static uint32_t be32(const uint8_t *p)
-{
-    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16)
-           | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
-}
-
 static bool vbr_header(const uint8_t *frame, size_t frame_bytes,
                        uint32_t *frames, uint32_t *bytes, bool *variable)
 {
@@ -191,7 +187,7 @@ static bool vbr_header(const uint8_t *frame, size_t frame_bytes,
 
     /* "Info" is what LAME writes for a constant bitrate, "Xing" otherwise. */
     *variable = memcmp(frame + at, "Xing", 4) == 0;
-    flags = be32(frame + at + 4u);
+    flags = get_be32(frame + at + 4u);
     at += 8u;
     *frames = 0;
     *bytes = 0;
@@ -201,12 +197,12 @@ static bool vbr_header(const uint8_t *frame, size_t frame_bytes,
             return false;
         }
 
-        *frames = be32(frame + at);
+        *frames = get_be32(frame + at);
         at += 4u;
     }
 
     if ((flags & 2u) != 0 && at + 4u <= frame_bytes) {
-        *bytes = be32(frame + at);
+        *bytes = get_be32(frame + at);
     }
 
     return *frames != 0;

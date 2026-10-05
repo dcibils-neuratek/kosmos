@@ -16,21 +16,9 @@
 #include "drives_decode.h"
 #include "drivers/usb/storage_decode.h"
 
-static uint16_t le16(const uint8_t *p)
-{
-    return (uint16_t)((uint32_t)p[0] | ((uint32_t)p[1] << 8));
-}
-
-static uint32_t le32(const uint8_t *p)
-{
-    return (uint32_t)p[0] | ((uint32_t)p[1] << 8)
-           | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-}
-
-static uint64_t le64(const uint8_t *p)
-{
-    return (uint64_t)le32(p) | ((uint64_t)le32(p + 4) << 32);
-}
+/* `user/include/bytes.h`, by its path from here, which the host test's
+ * include path reaches as well as the image's. */
+#include "../include/bytes.h"
 
 /*
  * The MBR's signature, which is the same two bytes a FAT boot sector ends
@@ -54,7 +42,7 @@ bool mbr_is_protective(const uint8_t *sector, unsigned size)
     for (i = 0; i < MBR_ENTRIES; i++) {
         const uint8_t *e = sector + MBR_TABLE_AT + i * MBR_ENTRY_BYTES;
 
-        if (le32(e + 12) == 0u) {
+        if (get_le32(e + 12) == 0u) {
             continue;           /* no sectors: an empty slot */
         }
 
@@ -89,8 +77,8 @@ unsigned mbr_partitions(const uint8_t *sector, unsigned size,
 
     for (i = 0; i < MBR_ENTRIES && found < most; i++) {
         const uint8_t *e = sector + MBR_TABLE_AT + i * MBR_ENTRY_BYTES;
-        uint32_t first = le32(e + 8);
-        uint32_t sectors = le32(e + 12);
+        uint32_t first = get_le32(e + 8);
+        uint32_t sectors = get_le32(e + 12);
 
         /* An entry of no sectors is an empty slot however its other fields
          * read, which is the one thing every partition table agrees on. */
@@ -106,11 +94,31 @@ unsigned mbr_partitions(const uint8_t *sector, unsigned size,
 
         for (unsigned b = 0; b < 16u; b++) {
             out[found].guid[b] = 0u;
+            out[found].type_guid[b] = 0u;
         }
         found++;
     }
 
     return found;
+}
+
+void drives_guid_text(const uint8_t guid[16], char out[37])
+{
+    static const char hex[] = "0123456789ABCDEF";
+    static const unsigned order[16] = { 3, 2, 1, 0, 5, 4, 7, 6,
+                                        8, 9, 10, 11, 12, 13, 14, 15 };
+    unsigned i, at = 0;
+
+    for (i = 0; i < 16u; i++) {
+        if (i == 4u || i == 6u || i == 8u || i == 10u) {
+            out[at++] = '-';
+        }
+
+        out[at++] = hex[guid[order[i]] >> 4];
+        out[at++] = hex[guid[order[i]] & 15u];
+    }
+
+    out[at] = '\0';
 }
 
 bool gpt_entry_array(const uint8_t *header, unsigned size, unsigned most_bytes,
@@ -126,9 +134,9 @@ bool gpt_entry_array(const uint8_t *header, unsigned size, unsigned most_bytes,
     /* PartitionEntryLBA at 72, NumberOfPartitionEntries at 80,
      * SizeOfPartitionEntry at 84 - the same fields the Lua walk in
      * `user/bin/programs/sticks.lua` reads at 73, 81 and 85, one-based. */
-    where = le64(header + 72);
-    entries = le32(header + 80);
-    each = le32(header + 84);
+    where = get_le64(header + 72);
+    entries = get_le32(header + 80);
+    each = get_le32(header + 84);
 
     /*
      * Held to something sane before it becomes a length to read. A header is
@@ -201,8 +209,8 @@ unsigned gpt_partitions(const uint8_t *entries, unsigned bytes,
         }
 
         /* StartingLBA at 32, EndingLBA at 40, and the end is inclusive. */
-        first = le64(e + 32);
-        last = le64(e + 40);
+        first = get_le64(e + 32);
+        last = get_le64(e + 40);
 
         if (last < first) {
             continue;           /* a backwards partition is not one */
@@ -213,8 +221,10 @@ unsigned gpt_partitions(const uint8_t *entries, unsigned bytes,
         out[found].type = 0u;
         out[found].gpt = true;
 
-        /* UniquePartitionGUID at 16, beside the type GUID (UEFI 5.3.3). */
+        /* PartitionTypeGUID at 0 and UniquePartitionGUID at 16 (UEFI
+         * 5.3.3). */
         for (unsigned b = 0; b < 16u; b++) {
+            out[found].type_guid[b] = e[b];
             out[found].guid[b] = e[16 + b];
         }
 
@@ -234,7 +244,7 @@ uint32_t fat_fsinfo_sector(const uint8_t *boot, unsigned size,
         return 0u;
     }
 
-    return le16(boot + 48);
+    return get_le16(boot + 48);
 }
 
 bool fat_fsinfo_from(const uint8_t *sector, unsigned size,
@@ -248,17 +258,17 @@ bool fat_fsinfo_from(const uint8_t *sector, unsigned size,
 
     /* All three signatures, because two of them sit in a sector that is
      * otherwise reserved and zero - so one alone would match a blank. */
-    if (le32(sector) != FAT_FSINFO_LEAD
-        || le32(sector + 484) != FAT_FSINFO_STRUCT
-        || le32(sector + 508) != FAT_FSINFO_TRAIL) {
+    if (get_le32(sector) != FAT_FSINFO_LEAD
+        || get_le32(sector + 484) != FAT_FSINFO_STRUCT
+        || get_le32(sector + 508) != FAT_FSINFO_TRAIL) {
         return false;
     }
 
-    free_count = le32(sector + 488);
+    free_count = get_le32(sector + 488);
 
     if (out != NULL) {
         out->free_clusters = free_count;
-        out->next_free = le32(sector + 492);
+        out->next_free = get_le32(sector + 492);
         out->free_known = free_count != FAT_FSINFO_UNKNOWN;
     }
 

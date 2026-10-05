@@ -37,6 +37,7 @@
 --
 local mp4 = use("/Kosmos/Libraries/mp4.lua")
 local audio = use("/Kosmos/Libraries/audio.lua")
+local regions = use("/Kosmos/Libraries/regions.lua")
 
 local video = {}
 
@@ -285,7 +286,7 @@ local function open_voice(path, track, name)
 
   if not decode then return nil, reset end
 
-  local page = sys.memory(SOUND_READ // 4096)
+  local page = regions.make(SOUND_READ)
 
   if not page then
     close()
@@ -294,7 +295,7 @@ local function open_voice(path, track, name)
 
   return setmetatable({
     path = path, track = track, name = name, fmt = fmt, page = page,
-    mapped = sys.memory_map(page),
+    mapped = page.at,
     decode = decode, reset_decoder = reset, close_decoder = close,
     samples = track.samples or {}, scale = track.timescale or 1,
     next = 1, run_first = 0, run_last = -1, run_at = 0,
@@ -361,7 +362,7 @@ function voice:sample_at(i)
 
     if bytes > SOUND_READ then return nil, "a sound frame larger than the read buffer" end
 
-    local got = fs.read_into(self.path, self.page, first.at, bytes)
+    local got = fs.read_into(self.path, self.page.cap, first.at, bytes)
 
     if not got or got < bytes then return nil, "the film stopped being readable" end
 
@@ -399,7 +400,7 @@ function voice:feed()
         local bytes = nil
 
         if self.track.object ~= 0x40 then
-          bytes = sys.region_read(self.page, offset, n)
+          bytes = sys.region_read(self.page.cap, offset, n)
         end
 
         local pcm, rate, channels = self.decode(at, n, bytes)
@@ -495,7 +496,7 @@ end
 
 function voice:close()
   if self.stream then self.stream:close() self.stream = nil end
-  if self.page then sys.release(self.page) self.page = nil end
+  if self.page then regions.free(self.page) self.page = nil end
 
   self.close_decoder()
 end
@@ -521,7 +522,7 @@ end
 function video.open(path, options)
   options = options or {}
 
-  local page = sys.memory(READ // 4096)
+  local page = regions.make(READ)
 
   if not page then return nil, "no memory for a read buffer" end
 
@@ -531,7 +532,7 @@ function video.open(path, options)
   -- that tries a folder of files never sees again.
   --
   local function refuse(why)
-    sys.release(page)
+    regions.free(page)
     return nil, why
   end
 
@@ -548,20 +549,20 @@ function video.open(path, options)
   -- Lua, once, and Lua is what it parses with. `frame_at` gives the
   -- *address* the bytes landed at, for a decoder that is C.
   --
-  local mapped = sys.memory_map(page)
+  local mapped = page.at
 
   local function read_at(off, n)
-    local got = fs.read_into(path, page, off, n)
+    local got = fs.read_into(path, page.cap, off, n)
 
     if not got or got == 0 then return nil end
 
-    return sys.region_read(page, 0, got)
+    return sys.region_read(page.cap, 0, got)
   end
 
   local function frame_at(off, n)
     if n > READ then return nil, "a frame larger than the read buffer" end
 
-    local got = fs.read_into(path, page, off, n)
+    local got = fs.read_into(path, page.cap, off, n)
 
     if not got or got == 0 then return nil, "the film stopped being readable" end
 
@@ -1302,7 +1303,7 @@ function film:close()
   if self.picture then self.picture:free() self.picture = nil end
   if self.spare then self.spare:free() self.spare = nil end
   if self.stream then self.stream:close() self.stream = nil end
-  if self.page then sys.release(self.page) self.page = nil end
+  if self.page then regions.free(self.page) self.page = nil end
 
   self.track, self.movie, self.shown = nil, nil, nil
 end

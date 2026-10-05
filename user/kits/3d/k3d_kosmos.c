@@ -53,6 +53,7 @@
 
 #include "kosmos.h"
 #include "k3d.h"
+#include "kits/gfx/gfx_draw.h"      /* kosmos_surface_pixels */
 
 #define SCENE_MT  "kosmos.3d.scene"
 #define VIEW_MT   "kosmos.3d.view"
@@ -60,9 +61,6 @@
 
 #define WORKERS_MAX 64
 #define WORKER_BAND 1           /* SCHED_PRIO_LOW, `kernel/sched.h` */
-
-uint32_t *kosmos_surface_pixels(lua_State *L, int index,
-                                unsigned *w, unsigned *h, unsigned *pitch);
 
 static struct k3d_scene *check_scene(lua_State *L, int index)
 {
@@ -924,96 +922,6 @@ static int l_render(lua_State *L)
 }
 
 /*
- * `k3.unbase64(text)` - the bytes a glTF file's `data:` URI carries, which
- * is how a scene file keeps its meshes. A loop over bytes, so here rather
- * than in Lua; anything that is not base64 is refused rather than skipped.
- */
-static int l_unbase64(lua_State *L)
-{
-    size_t len, i;
-    const unsigned char *in = (const unsigned char *)luaL_checklstring(L, 1, &len);
-    luaL_Buffer b;
-    uint32_t acc = 0;
-    int bits = 0;
-
-    luaL_buffinit(L, &b);
-
-    for (i = 0; i < len; i++) {
-        unsigned c = in[i], v;
-
-        if (c >= 'A' && c <= 'Z') {
-            v = c - 'A';
-        } else if (c >= 'a' && c <= 'z') {
-            v = c - 'a' + 26;
-        } else if (c >= '0' && c <= '9') {
-            v = c - '0' + 52;
-        } else if (c == '+') {
-            v = 62;
-        } else if (c == '/') {
-            v = 63;
-        } else if (c == '=') {
-            break;
-        } else {
-            return luaL_error(L, "not base64 at byte %d", (int)i);
-        }
-
-        acc = (acc << 6) | v;
-        bits += 6;
-
-        if (bits >= 8) {
-            bits -= 8;
-            luaL_addchar(&b, (char)((acc >> bits) & 0xff));
-        }
-    }
-
-    luaL_pushresult(&b);
-    return 1;
-}
-
-/*
- * `k3.base64(bytes)` - the other way, for saving: a mesh's points and
- * triangles as the text of a `data:` URI, padded with `=` as the
- * standard says, so any program's reader takes it.
- */
-static int l_base64(lua_State *L)
-{
-    static const char digits[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    size_t len, i;
-    const unsigned char *in = (const unsigned char *)luaL_checklstring(L, 1, &len);
-    luaL_Buffer b;
-
-    luaL_buffinit(L, &b);
-
-    for (i = 0; i + 2 < len; i += 3) {
-        uint32_t v = (uint32_t)in[i] << 16 | (uint32_t)in[i + 1] << 8 | in[i + 2];
-
-        luaL_addchar(&b, digits[v >> 18]);
-        luaL_addchar(&b, digits[(v >> 12) & 63]);
-        luaL_addchar(&b, digits[(v >> 6) & 63]);
-        luaL_addchar(&b, digits[v & 63]);
-    }
-
-    if (len - i == 1) {
-        uint32_t v = (uint32_t)in[i] << 16;
-
-        luaL_addchar(&b, digits[v >> 18]);
-        luaL_addchar(&b, digits[(v >> 12) & 63]);
-        luaL_addstring(&b, "==");
-    } else if (len - i == 2) {
-        uint32_t v = (uint32_t)in[i] << 16 | (uint32_t)in[i + 1] << 8;
-
-        luaL_addchar(&b, digits[v >> 18]);
-        luaL_addchar(&b, digits[(v >> 12) & 63]);
-        luaL_addchar(&b, digits[(v >> 6) & 63]);
-        luaL_addchar(&b, '=');
-    }
-
-    luaL_pushresult(&b);
-    return 1;
-}
-
-/*
  * `k3.bounds(points)` -> min x, y, z, max x, y, z of a mesh's points, three
  * little-endian floats each, as a file keeps them. glTF requires them of a
  * mesh's positions, and they are a loop over every point.
@@ -1466,8 +1374,6 @@ void kosmos_3d_kit(lua_State *L)
         { "scene",  l_scene },
         { "view",   l_view },
         { "render", l_render },
-        { "unbase64", l_unbase64 },
-        { "base64", l_base64 },
         { "bounds", l_bounds },
         { "gather", l_gather },
         { "sequence", l_sequence },

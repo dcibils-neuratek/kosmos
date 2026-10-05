@@ -95,6 +95,7 @@ struct drives_part {
     bool     gpt;               /* which table it came out of */
     bool     has_guid;          /* only a GPT partition has one */
     uint8_t  guid[16];          /* UniquePartitionGUID, as on disk */
+    uint8_t  type_guid[16];     /* PartitionTypeGUID, as on disk; GPT only */
 };
 
 /*
@@ -121,11 +122,21 @@ bool mbr_is_protective(const uint8_t *sector, unsigned size);
  * The partitions a GPT's entry array names. `entries` is `bytes` of it,
  * `entry_size` and `count` from the header - both are the header's word and
  * are held to something sane here. An entry whose type GUID is all zeroes is
- * unused and skipped.
+ * unused and skipped; the others carry it, so a caller looking for one kind
+ * of partition - `diskfs` for Kosmos's own - reads the table here rather
+ * than a second time.
  */
 unsigned gpt_partitions(const uint8_t *entries, unsigned bytes,
                         unsigned entry_size, unsigned count,
                         struct drives_part *out, unsigned most);
+
+/*
+ * A GUID as it is written out - `8A9DC8A8-83CF-4F7F-962B-43157A68F14A` - from
+ * its sixteen bytes as a GPT keeps them: the first three fields
+ * little-endian, the last two as they are, upper-case hex. `out` holds 36
+ * characters and a terminator.
+ */
+void drives_guid_text(const uint8_t guid[16], char out[37]);
 
 /*
  * Where a GPT header says its entry array is, and how it is shaped. False for

@@ -21,6 +21,7 @@ local pdf      = use("/Kosmos/Libraries/pdf.lua")
 local pdfpage  = use("/Kosmos/Libraries/pdfpage.lua")
 local compress = use("/Kosmos/Kits/compress")
 local pdfkit   = use("/Kosmos/Kits/pdf")
+local regions  = use("/Kosmos/Libraries/regions.lua")
 
 local words = {}
 for w in args:gmatch("%S+") do words[#words + 1] = w end
@@ -34,10 +35,13 @@ if not attrs then print("pdfbench: no such file: " .. path) return end
 -- Two regions: the compressed bytes land in one, the inflated in the other.
 local RAW_PAGES, OUT_PAGES = 16, 64
 
-local raw_cap = sys.memory(RAW_PAGES)
-local out_cap = sys.memory(OUT_PAGES)
-local raw_at  = sys.memory_map(raw_cap)
-local out_at  = sys.memory_map(out_cap)
+local stream, why1 = regions.make(RAW_PAGES * regions.PAGE)
+local inflated, why2 = regions.make(OUT_PAGES * regions.PAGE)
+
+if not stream or not inflated then
+  print("pdfbench: " .. tostring(why1 or why2))
+  return
+end
 
 -- The file through the PDF Kit's door, `pdf.file`, a window as large as
 -- the raw region; the raw region itself is this program's, for timing a
@@ -75,15 +79,12 @@ local raw = time("read, into a Lua string", function ()
   return source.read(offset, length)
 end)
 
--- 2. and into a region, with no string anywhere
+-- 2. and into a region, with no string anywhere: one read, because a
+-- second would land at the region's start, over the first
+-- (`regions.fill`). Not `regions.read_file`, which reads from the file's
+-- start and would time a string where the server has no pages to give.
 time("read, into a region", function ()
-  local done = 0
-  while done < length do
-    local got = fs.read_into(path, raw_cap, offset + done, length - done)
-    if not got or got == 0 then break end
-    done = done + got
-  end
-  return done
+  return fs.read_into(path, stream.cap, offset, length)
 end)
 
 -- 3. inflate, both ways
@@ -92,7 +93,7 @@ local plain = time("inflate, string to string", function ()
 end)
 
 local size = time("inflate, region to region", function ()
-  return compress.inflate_into(raw_at, length, out_at, OUT_PAGES * 4096)
+  return compress.inflate_into(stream.at, length, inflated.at, inflated.size)
 end)
 
 print(("  %-34s %d -> %d bytes"):format("(inflated)", length, #plain))
@@ -120,7 +121,7 @@ print(("  %-34s %d"):format("(tokens)", counted))
 local scanned = time("scan in C, over the region", function ()
   local n, offset = 0, 0
   while true do
-    local kinds, _, next_at = pdfkit.scan(out_at, size, offset, 1024)
+    local kinds, _, next_at = pdfkit.scan(inflated.at, size, offset, 1024)
     if #kinds == 0 then break end
     n = n + #kinds
     offset = next_at
@@ -142,7 +143,7 @@ end
 local shows = 0
 time("scan + interpret", function ()
   shows = 0
-  pdfpage.walk(out_at, size, fonts, function () shows = shows + 1 end)
+  pdfpage.walk(inflated.at, size, fonts, function () shows = shows + 1 end)
 end)
 
 print(("  %-34s %d"):format("(shows)", shows))

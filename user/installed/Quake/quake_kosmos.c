@@ -57,9 +57,9 @@
 #include "lua.h"
 #include "lauxlib.h"
 
-/* From `gfx.c`, the one file allowed to know how a surface is laid out. */
-uint32_t *kosmos_surface_pixels(lua_State *L, int index,
-                                unsigned *w, unsigned *h, unsigned *pitch);
+/* `kosmos_surface_pixels`, from `gfx.c`, the one file allowed to know how a
+ * surface is laid out. */
+#include "kits/gfx/gfx_draw.h"
 
 /* The ring `printf` spills into for a process without the console. */
 size_t kosmos_spill_drain(char *out, size_t max);

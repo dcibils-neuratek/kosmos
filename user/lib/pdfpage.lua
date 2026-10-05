@@ -26,6 +26,7 @@ local pdfpage = {}
 local pdf      = use("/Kosmos/Libraries/pdf.lua")
 local compress = use("/Kosmos/Kits/compress")
 local pdfkit   = use("/Kosmos/Kits/pdf")
+local regions  = use("/Kosmos/Libraries/regions.lua")
 
 --------------------------------------------------------------------------
 -- Matrices.
@@ -178,10 +179,6 @@ end
 -- the compressed length is known from the object, and `inflated_size` asks
 -- the decompressor how big the answer will be without producing it.
 --
-local function pages_for(bytes)
-  return (bytes + 4095) // 4096
-end
-
 local function program_of(doc, font)
   if font.program ~= nil then
     return font.program or nil
@@ -193,56 +190,49 @@ local function program_of(doc, font)
 
   if not offset then return nil end
 
-  local raw = sys.memory(pages_for(length))
+  local raw = regions.make(length)
 
   if not raw then
     return nil
   end
 
-  local raw_at = sys.memory_map(raw)
-  local done = 0
-
-  while done < length do
-    local got = doc.source.read_into(raw, offset + done, length - done)
-    if not got or got == 0 then break end
-    done = done + got
-  end
-
-  if done ~= length then
-    sys.release(raw)
+  --
+  -- **One read, of the whole stream.** This was a loop that asked again
+  -- for what was left, and `read_into` writes at the start of the region
+  -- whatever offset it reads the file from - so a second pass would have
+  -- put the stream's tail over its head and said it had all of it
+  -- (`regions.fill` has the account). A short read is now a font that does
+  -- not load, rather than one that loads wrong.
+  --
+  if doc.source.read_into(raw.cap, offset, length) ~= length then
+    regions.free(raw)
     return nil
   end
 
   if filter[1] ~= "FlateDecode" then
-    font.program = { at = raw_at, size = length,
-                     cap = pages_for(length) * 4096 }
+    font.program = { at = raw.at, size = length, cap = raw.size }
     return font.program
   end
 
   -- Room over the top, because a subset font has no `cmap` and a minimal
   -- one is synthesised on the end of it; see `ensure_cmap` in docfont.c.
-  local sized, want = pcall(compress.inflated_size, raw_at, length)
+  local sized, want = pcall(compress.inflated_size, raw.at, length)
 
   if not sized then
-    sys.release(raw)
+    regions.free(raw)
     return nil
   end
 
-  want = want + 32
-
-  local out = sys.memory(pages_for(want))
+  local out = regions.make(want + 32)
 
   if not out then
-    sys.release(raw)
+    regions.free(raw)
     return nil
   end
 
-  local out_at = sys.memory_map(out)
-  local cap    = pages_for(want) * 4096
-
-  font.program = { at = out_at,
-                   size = compress.inflate_into(raw_at, length, out_at, cap),
-                   cap = cap }
+  font.program = { at = out.at,
+                   size = compress.inflate_into(raw.at, length, out.at, out.size),
+                   cap = out.size }
 
   --
   -- The compressed copy, given back.
@@ -253,9 +243,9 @@ local function program_of(doc, font)
   -- for the life of the process.
   --
   -- Not on the path above this, where the stream was not compressed and
-  -- `raw_at` *is* the program.
+  -- `raw` *is* the program.
   --
-  sys.release(raw)
+  regions.free(raw)
 
   return font.program
 end
@@ -408,16 +398,19 @@ local RAW_PAGES, OUT_PAGES = 16, 32
 
 local buffers
 
-local function regions()
+local function page_buffers()
   if not buffers then
-    local raw, why1 = sys.memory(RAW_PAGES)
-    local out, why2 = sys.memory(OUT_PAGES)
+    local raw, why1 = regions.make(RAW_PAGES * regions.PAGE)
+    local out, why2 = regions.make(OUT_PAGES * regions.PAGE)
 
     if not raw or not out then
+      regions.free(raw, out)
+
       -- Named, because "could not allocate" is the same sentence whether
       -- the machine is out of memory or this process is out of capability
       -- slots, and those are entirely different problems. Telling them
-      -- apart took an evening once.
+      -- apart took an evening once - which is why `regions.make` carries
+      -- the kernel's reason in its own.
       local i = sys.info() or {}
 
       print(("pdfpage: page buffers: %s / %s (regions %s/%s, pages free %s)")
@@ -428,9 +421,9 @@ local function regions()
     end
 
     buffers = {
-      raw = raw, out = out,
-      raw_at = sys.memory_map(raw), out_at = sys.memory_map(out),
-      raw_max = RAW_PAGES * 4096, out_max = OUT_PAGES * 4096,
+      raw = raw.cap, out = out.cap,
+      raw_at = raw.at, out_at = out.at,
+      raw_max = raw.size, out_max = out.size,
     }
   end
 
@@ -459,19 +452,15 @@ function pdfpage.render(doc, page, surface, scale, colour)
   local offset, length, filter = doc:stream_range(page.dict.Contents)
   if not offset then return 0, 0 end
 
-  local b = regions()
+  local b = page_buffers()
   if not b then error("pdfpage: no memory for the page buffers") end
   if length > b.raw_max then
     error(("pdfpage: a %d byte stream needs a bigger buffer"):format(length))
   end
 
-  local done = 0
-
-  while done < length do
-    local got = doc.source.read_into(b.raw, offset + done, length - done)
-    if not got or got == 0 then break end
-    done = done + got
-  end
+  -- One read, as a font program's is (`program_of`): a second would land
+  -- over the first.
+  local done = doc.source.read_into(b.raw, offset, length) or 0
 
   if done ~= length then
     error(("pdfpage: read %d bytes of %d"):format(done, length))

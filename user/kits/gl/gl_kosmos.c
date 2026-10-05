@@ -30,27 +30,14 @@
 #include "lua.h"
 #include "lauxlib.h"
 
+#include "kits/gfx/gfx_draw.h"
+
 #include <GL/gl.h>
 #include <GL/ostinygl.h>
 
 void kosmos_gl_demos(lua_State *L);
 
 #define GL_CONTEXT_MT  "kosmos.gl.context"
-#define SURFACE_MT     "kosmos.surface"
-
-/* gfx.c's, and the one place outside it that needs to know the shape. It is
- * duplicated rather than shared because a header for one struct read by one
- * other file is more ceremony than the risk deserves - and the risk is
- * bounded: both are in this binary and a mismatch is a build away. */
-struct surface {
-    uint32_t *pixels;
-    unsigned  width;
-    unsigned  height;
-    unsigned  pitch;
-    size_t    bytes;
-    size_t    pages;
-    bool      owned;
-};
 
 struct glctx {
     ostgl_context_t *ctx;
@@ -159,20 +146,19 @@ static int l_close(lua_State *L)
  *
  * Row by row and clipped, because the two have different ideas about how far
  * apart their rows are and only one of them is allowed to be right about a
- * Kosmos surface.
+ * Kosmos surface. The surface through `gfx`'s door, which refuses one that
+ * was freed or a view of one, and hands back the pitch with the pixels.
  */
 static int l_blit(lua_State *L)
 {
     struct glctx *g = check_ctx(L, 1);
-    struct surface *s = luaL_checkudata(L, 2, SURFACE_MT);
+    unsigned sw = 0, sh = 0, pitch = 0;
+    uint32_t *pixels = kosmos_surface_pixels(L, 2, &sw, &sh, &pitch);
     long dx = (long)luaL_optinteger(L, 3, 0);
     long dy = (long)luaL_optinteger(L, 4, 0);
+    long from, to;
     const uint32_t *src;
     long y;
-
-    if (s->pixels == NULL) {
-        return luaL_error(L, "that surface has been freed");
-    }
 
     src = (const uint32_t *)ostgl_convert_framebuffer(g->ctx);
 
@@ -180,26 +166,27 @@ static int l_blit(lua_State *L)
         return 0;
     }
 
+    /* The columns of the frame that land on the surface: clipped at both
+     * edges, so a frame placed partly off the left is not written before
+     * the row it belongs to. */
+    from = dx < 0 ? -dx : 0;
+    to = dx + g->width > (long)sw ? (long)sw - dx : g->width;
+
+    if (from >= to) {
+        return 0;
+    }
+
     for (y = 0; y < g->height; y++) {
         long ty = dy + y;
-        long width = g->width;
         uint32_t *dst;
 
-        if (ty < 0 || ty >= (long)s->height) {
+        if (ty < 0 || ty >= (long)sh) {
             continue;
         }
 
-        if (dx + width > (long)s->width) {
-            width = (long)s->width - dx;
-        }
-
-        if (width <= 0) {
-            continue;
-        }
-
-        dst = (uint32_t *)(void *)((uint8_t *)s->pixels + (size_t)ty * s->pitch);
-        memcpy(dst + dx, src + (size_t)y * g->width,
-               (size_t)width * sizeof(uint32_t));
+        dst = (uint32_t *)(void *)((uint8_t *)pixels + (size_t)ty * pitch);
+        memcpy(dst + dx + from, src + (size_t)y * g->width + from,
+               (size_t)(to - from) * sizeof(uint32_t));
     }
 
     return 0;

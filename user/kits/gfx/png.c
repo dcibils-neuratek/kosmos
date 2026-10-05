@@ -45,11 +45,15 @@
  * Two large buffers, and neither can come from the heap: a process's heap is
  * 2 MB by design, and a 1280x853 image needs about four and a half megabytes
  * for its pixels and as much again for the inflated rows. Both come from
- * `kosmos_map`, which is where `gfx.surface` gets its pixels and for the
- * same reason.
+ * `kosmos_map`: the pixels through `gfx_surface_map`, which is where
+ * `gfx.surface` gets its own, and the rows beside them.
  *
  * The inflated buffer is handed back before this returns. Only the surface
- * survives, and that is the Lua object's to free.
+ * survives - made by `gfx_surface_new`, so `gfx.c` is still the only file
+ * that knows what one is - and that is the Lua object's to free.
+ *
+ * The inflating is the Compression Kit's inflater (`gzip.h`), the one a PDF's
+ * streams and a web page's gzip go through too.
  */
 
 #include <stdbool.h>
@@ -60,52 +64,10 @@
 #include "lua.h"
 #include "lauxlib.h"
 
+#include "bytes.h"
 #include "kosmos.h"
-#include "puff.h"
-
-/* Must match gfx.c. A surface created here is freed by gfx.c's finaliser, so
- * the two have to agree about what one is. */
-#define SURFACE_MT  "kosmos.surface"
-#define ROW_ALIGN   64
-
-struct surface {
-    uint32_t *pixels;
-    unsigned  width;
-    unsigned  height;
-    unsigned  pitch;
-    size_t    bytes;
-    size_t    pages;
-    bool      owned;
-};
-
-static uint32_t be32(const unsigned char *p)
-{
-    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16)
-         | ((uint32_t)p[2] << 8)  | (uint32_t)p[3];
-}
-
-/*
- * Pages, for something too big for the heap. Returns NULL rather than
- * raising: the caller has other things mapped and has to hand them back.
- */
-static void *map_pages(size_t bytes, size_t *pages_out)
-{
-    size_t pages = (bytes + KOSMOS_PAGE_SIZE - 1) / KOSMOS_PAGE_SIZE;
-    long mapped;
-
-    if (pages == 0) {
-        pages = 1;
-    }
-
-    mapped = kosmos_map(pages);
-
-    if (mapped < 0) {
-        return NULL;
-    }
-
-    *pages_out = pages;
-    return (void *)(uintptr_t)mapped;
-}
+#include "gfx_draw.h"
+#include "kits/compress/gzip.h"
 
 /*
  * The Paeth predictor, from the PNG specification, unchanged.
@@ -408,7 +370,7 @@ static int l_png(lua_State *L)
 
     unsigned char *rows = NULL;
     size_t rows_pages = 0;
-    unsigned long rows_len = 0;
+    size_t rows_len = 0;
 
     /* The palette and its transparency, for colour type 3. On the stack
      * because the format bounds both: 256 entries, and no more. */
@@ -416,9 +378,10 @@ static int l_png(lua_State *L)
     unsigned char trns[256];
     unsigned plte_n = 0, trns_n = 0;
 
-    struct surface *s;
+    struct gunzip_work *inflater;
     uint32_t *pixels;
-    size_t pitch, bytes, pages;
+    unsigned pitch = 0;
+    size_t pages = 0, got = 0;
     size_t at;
     unsigned y, x;
     const char *why = NULL;
@@ -436,7 +399,7 @@ static int l_png(lua_State *L)
     at = 8;
 
     while (at + 8 <= length) {
-        uint32_t size = be32(data + at);
+        uint32_t size = get_be32(data + at);
         const unsigned char *type = data + at + 4;
         const unsigned char *body = data + at + 8;
 
@@ -451,8 +414,8 @@ static int l_png(lua_State *L)
                 goto done;
             }
 
-            width     = be32(body);
-            height    = be32(body + 4);
+            width     = get_be32(body);
+            height    = get_be32(body + 4);
             depth     = body[8];
             colour    = body[9];
             interlace = body[12];
@@ -489,7 +452,7 @@ static int l_png(lua_State *L)
              * Sized once, from the file, because the total cannot exceed it.
              */
             if (idat == NULL) {
-                idat = map_pages(length, &idat_pages);
+                idat = kosmos_map_bytes(length, &idat_pages);
 
                 if (idat == NULL) {
                     why = "no room to gather the compressed data";
@@ -559,7 +522,8 @@ static int l_png(lua_State *L)
         goto done;
     }
 
-    if (idat == NULL) {
+    /* Its two bytes of zlib header, at the least, before any deflate. */
+    if (idat == NULL || idat_len < 2) {
         why = "no image data";
         goto done;
     }
@@ -572,20 +536,33 @@ static int l_png(lua_State *L)
      * height. Getting that wrong gives an inflate that succeeds and an image
      * that walks diagonally, which is a memorable afternoon.
      */
-    rows_len = (unsigned long)((stride + 1) * height);
-    rows = map_pages(rows_len, &rows_pages);
+    rows_len = (stride + 1) * height;
+    rows = kosmos_map_bytes(rows_len, &rows_pages);
+    inflater = kosmos_inflater();
 
-    if (rows == NULL) {
+    if (rows == NULL || inflater == NULL) {
         why = "no room for the decoded rows";
         goto done;
     }
 
-    if (puff(rows, &rows_len, idat + 2, &(unsigned long){ idat_len - 2 }) != 0) {
+    /*
+     * The zlib stream's two bytes of header off, and the deflate inflated
+     * into exactly the room the header says the rows take: a stream that
+     * wants more is refused there rather than written past the end.
+     */
+    switch (kosmos_inflate(idat + 2, idat_len - 2, inflater, rows, rows_len,
+                           &got)) {
+    case GUNZIP_WHOLE:
+        break;
+    case GUNZIP_REFUSED:
+        why = "the image is a different size than its header says";
+        goto done;
+    default:
         why = "the compressed data would not inflate";
         goto done;
     }
 
-    if (rows_len != (unsigned long)((stride + 1) * height)) {
+    if (got != rows_len) {
         why = "the image is a different size than its header says";
         goto done;
     }
@@ -595,10 +572,8 @@ static int l_png(lua_State *L)
         goto done;
     }
 
-    /* And now a surface, exactly as gfx.surface makes one. */
-    pitch = (((size_t)width * 4) + (ROW_ALIGN - 1)) & ~(size_t)(ROW_ALIGN - 1);
-    bytes = pitch * height;
-    pixels = map_pages(bytes, &pages);
+    /* And now a surface's pixels, exactly as gfx.surface maps them. */
+    pixels = gfx_surface_map((unsigned)width, (unsigned)height, &pitch, &pages);
 
     if (pixels == NULL) {
         why = "no room for the picture";
@@ -649,23 +624,7 @@ static int l_png(lua_State *L)
     kosmos_unmap((uintptr_t)rows, rows_pages);
     kosmos_unmap((uintptr_t)idat, idat_pages);
 
-    s = lua_newuserdatauv(L, sizeof(*s), 0);
-    memset(s, 0, sizeof(*s));
-    s->pixels = pixels;
-    s->width  = (unsigned)width;
-    s->height = (unsigned)height;
-    s->pitch  = (unsigned)pitch;
-    s->bytes  = bytes;
-    s->pages  = pages;
-    s->owned  = true;
-
-    luaL_setmetatable(L, SURFACE_MT);
-
-    /* The collector sees a small userdata and megabytes behind it. Telling
-     * it the real size is what makes the finaliser something other than
-     * theoretical - gfx.md 19.6. */
-    lua_gc(L, LUA_GCSTEP, (int)(bytes / 1024));
-
+    gfx_surface_new(L, pixels, (unsigned)width, (unsigned)height, pitch, pages);
     return 1;
 
 done:

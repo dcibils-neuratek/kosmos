@@ -147,6 +147,14 @@ static const unsigned char unique_guid[16] = {
     0xA3, 0x59, 0x1D, 0x3F, 0xD2, 0xB0, 0x45, 0xD8,
 };
 
+/* Kosmos's own partition type as a GPT keeps it - `8A9DC8A8-83CF-4F7F-962B-
+ * 43157A68F14A`, the first three fields little-endian - which is what
+ * `diskfs` looks for on a stick (`tools/mkusb_image.py`). */
+static const unsigned char kosmos_type[16] = {
+    0xA8, 0xC8, 0x9D, 0x8A, 0xCF, 0x83, 0x7F, 0x4F,
+    0x96, 0x2B, 0x43, 0x15, 0x7A, 0x68, 0xF1, 0x4A,
+};
+
 static void test_gpt(void)
 {
     unsigned char header[512];
@@ -154,6 +162,7 @@ static void test_gpt(void)
     struct drives_part parts[DRIVES_PARTS_MAX];
     uint64_t at = 0;
     unsigned each = 0, count = 0, n;
+    char text[37];
 
     memset(header, 0, sizeof(header));
     memcpy(header, "EFI PART", 8);
@@ -184,7 +193,7 @@ static void test_gpt(void)
     /* Entry 0: used, sectors 2048 to 4095 inclusive, and a unique GUID of
      * sixteen different bytes, so one read from the wrong offset cannot
      * match it by coincidence. */
-    entries[0] = 0xA2u;                 /* a non-zero type GUID */
+    memcpy(entries, kosmos_type, sizeof(kosmos_type));
     memcpy(entries + 16, unique_guid, sizeof(unique_guid));
     put64(entries + 32, 2048u);
     put64(entries + 40, 4095u);
@@ -216,6 +225,18 @@ static void test_gpt(void)
     check(n == 2 && parts[0].has_guid
           && memcmp(parts[0].guid, unique_guid, 16) == 0,
           "a GPT partition carries its UniquePartitionGUID, bytes 16 to 31");
+    check(n == 2 && memcmp(parts[0].type_guid, kosmos_type, 16) == 0
+          && parts[1].type_guid[0] == 0xA2u,
+          "a GPT partition carries its PartitionTypeGUID, bytes 0 to 15");
+
+    /* Written out as a person and `diskfs` read one: the first three
+     * fields turned round, upper-case, the dashes where they go. */
+    drives_guid_text(parts[0].type_guid, text);
+    check(strcmp(text, "8A9DC8A8-83CF-4F7F-962B-43157A68F14A") == 0,
+          "a type GUID is written out as the specification spells it");
+    drives_guid_text(unique_guid, text);
+    check(strcmp(text, "BA231D95-9576-4349-A359-1D3FD2B045D8") == 0,
+          "a unique GUID is written out the same way");
 
     /* The header may claim more entries than the bytes really given. */
     n = gpt_partitions(entries, 256u, 128u, 4u, parts, DRIVES_PARTS_MAX);

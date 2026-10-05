@@ -67,15 +67,106 @@ void kosmos_face_open(lua_State *L);
  */
 #define ROW_ALIGN   64
 
+/*
+ * A surface, and the only definition of one. Every other kit reaches it
+ * through `gfx_draw.h`: `kosmos_surface_pixels` to draw into one and
+ * `gfx_surface_new` to make one, so nothing else has to agree with this.
+ */
 struct surface {
     uint32_t *pixels;       /* NULL once freed; every method checks */
     unsigned  width;
     unsigned  height;
     unsigned  pitch;        /* bytes per row, never assume width * 4 */
-    size_t    bytes;        /* what was mapped, for the GC accounting */
     size_t    pages;        /* what to hand back; 0 for the screen */
     bool      owned;        /* false for the screen: not ours to free */
 };
+
+/* The pitch every surface made here has: `width` pixels, a cache line's
+ * multiple. The one place it is worked out. */
+static unsigned surface_pitch(unsigned long width)
+{
+    return (unsigned)((width * 4u + (ROW_ALIGN - 1u))
+                      & ~(unsigned long)(ROW_ALIGN - 1u));
+}
+
+/*
+ * A surface over `pixels`, on the stack: `pages` of them owned, or none.
+ * `user_values` is 1 for a view, whose parent is kept there.
+ */
+static struct surface *push_surface(lua_State *L, uint32_t *pixels,
+                                    unsigned width, unsigned height,
+                                    unsigned pitch, size_t pages,
+                                    int user_values)
+{
+    struct surface *s = lua_newuserdatauv(L, sizeof(*s), user_values);
+
+    memset(s, 0, sizeof(*s));
+    s->pixels = pixels;
+    s->width  = width;
+    s->height = height;
+    s->pitch  = pitch;
+    s->pages  = pages;
+    s->owned  = pages != 0;
+
+    luaL_setmetatable(L, SURFACE_MT);
+
+    /*
+     * `gfx.md` §19.6: the collector sees a forty-byte userdata and feels no
+     * pressure from the megabytes behind it, so a program can run the
+     * machine out of memory while `collectgarbage("count")` reports that the
+     * heap is nearly empty. Telling it the real size is what makes the
+     * finalizer something other than theoretical.
+     */
+    if (s->owned) {
+        lua_gc(L, LUA_GCSTEP, (int)(((size_t)pitch * height) / 1024));
+    }
+
+    return s;
+}
+
+/* `gfx_draw.h`. */
+void gfx_surface_new(lua_State *L, uint32_t *pixels, unsigned width,
+                     unsigned height, unsigned pitch, size_t pages)
+{
+    (void)push_surface(L, pixels, width, height, pitch, pages, 0);
+}
+
+/*
+ * `gfx_draw.h`: pages from the kernel, not the heap.
+ *
+ * The heap is 2 MB and deliberately so: `design.md` §5.2 wants collections
+ * short, and the maximum GC pause is what decides whether the system
+ * stutters. A full-screen surface is 3.2 MB and a compositor's backbuffer is
+ * full-screen by definition, so putting pixels there would mean choosing
+ * between a heap too big to collect quickly and a compositor that cannot
+ * exist.
+ *
+ * They also do not belong there for a second reason: the collector would be
+ * walking around several megabytes it can neither move nor look inside, and
+ * every collection would be that much slower for nothing.
+ */
+uint32_t *gfx_surface_map(unsigned width, unsigned height, unsigned *pitch,
+                          size_t *pages)
+{
+    unsigned p;
+    void *pixels;
+
+    /* Bounded so the multiplication cannot overflow before the mapping gets
+     * a chance to fail. Far above anything this system will ask for and far
+     * below where size_t wraps. */
+    if (width == 0 || height == 0 || width > 16384 || height > 16384) {
+        return NULL;
+    }
+
+    p = surface_pitch(width);
+    pixels = kosmos_map_bytes((size_t)p * height, pages);   /* zeroed */
+
+    if (pixels != NULL) {
+        *pitch = p;
+    }
+
+    return pixels;
+}
 
 static struct surface *check_surface(lua_State *L, int index)
 {
@@ -92,12 +183,10 @@ static struct surface *check_surface(lua_State *L, int index)
 
     /*
      * **And a view's parent** (`view` below): the surface it looks into,
-     * kept as its user value - which also keeps it from being collected.
-     * Freed under the view, its pixels are gone and the view's with them,
-     * so the same rule holds: an error, not a crash. A user value rather
-     * than a field, because four other kits keep a copy of this struct and
-     * two of them make surfaces; a field here would be read past the end of
-     * theirs.
+     * kept as its user value - which is also what keeps it from being
+     * collected while the view lives. Freed under the view, its pixels are
+     * gone and the view's with them, so the same rule holds: an error, not
+     * a crash.
      */
     index = lua_absindex(L, index);
 
@@ -124,9 +213,11 @@ static struct surface *check_surface(lua_State *L, int index)
  * its hand.
  *
  * It began with Doom, which renders into a buffer of its own and needs the
- * result copied in; Quake, the Super Nintendo, the Game Kit, the 3D Kit and
- * the browser's SVG drawing reach a surface's pixels through it the same
- * way. Nothing in Lua can reach it.
+ * result copied in; Quake, the Super Nintendo, the Game Kit, the 3D Kit, the
+ * GL Kit, a document's fonts and the browser's SVG drawing reach a
+ * surface's pixels through it the same way, declared once in `gfx_draw.h`.
+ * It is `check_surface`, so none of them can be handed a freed one. Nothing
+ * in Lua can reach it.
  */
 uint32_t *kosmos_surface_pixels(lua_State *L, int index,
                                 unsigned *w, unsigned *h, unsigned *pitch)
@@ -138,6 +229,13 @@ uint32_t *kosmos_surface_pixels(lua_State *L, int index,
     if (pitch != NULL) { *pitch = s->pitch; }
 
     return s->pixels;
+}
+
+/* `gfx_draw.h`: the surface itself, for a kit that draws with the
+ * `gfx_draw_*` calls, through the same check. */
+struct surface *gfx_surface_check(lua_State *L, int index)
+{
+    return check_surface(L, index);
 }
 
 /* The start of a row. The one place row arithmetic happens. */
@@ -415,12 +513,9 @@ static int l_new(lua_State *L)
 {
     lua_Integer width;
     lua_Integer height;
-    struct surface *s;
-    unsigned pitch;
-    size_t bytes;
-    size_t pages;
-    long mapped;
-    void *pixels;
+    unsigned pitch = 0;
+    size_t pages = 0;
+    uint32_t *pixels;
 
     /*
      * A table rather than two arguments, as `gfx.md` writes it:
@@ -440,62 +535,23 @@ static int l_new(lua_State *L)
         return luaL_error(L, "a surface needs a positive width and height");
     }
 
-    /* Bounded so the multiplication below cannot overflow before the
-     * allocation gets a chance to fail. Far above anything this system will
-     * ask for and far below where size_t wraps. */
     if (width > 16384 || height > 16384) {
         return luaL_error(L, "that surface is larger than this system allows");
     }
 
-    pitch = (unsigned)(((width * 4) + (ROW_ALIGN - 1)) & ~(long)(ROW_ALIGN - 1));
-    bytes = (size_t)pitch * (size_t)height;
+    pixels = gfx_surface_map((unsigned)width, (unsigned)height, &pitch, &pages);
 
-    /*
-     * Pages from the kernel, not the heap.
-     *
-     * The heap is 2 MB and deliberately so: `design.md` §5.2 wants
-     * collections short, and the maximum GC pause is what decides whether
-     * the system stutters. A full-screen surface is 3.2 MB and a
-     * compositor's backbuffer is full-screen by definition, so putting
-     * pixels there would mean choosing between a heap too big to collect
-     * quickly and a compositor that cannot exist.
-     *
-     * They also do not belong there for a second reason: the collector would
-     * be walking around several megabytes it can neither move nor look
-     * inside, and every collection would be that much slower for nothing.
-     */
-    pages = (bytes + KOSMOS_PAGE_SIZE - 1) / KOSMOS_PAGE_SIZE;
-    mapped = kosmos_map(pages);
+    if (pixels == NULL) {
+        size_t bytes = (size_t)surface_pitch((unsigned long)width)
+                       * (size_t)height;
 
-    if (mapped < 0) {
         return luaL_error(L,
             "no room for a %dx%d surface (%d KB): the kernel refused %d pages",
-            (int)width, (int)height, (int)(bytes / 1024), (int)pages);
+            (int)width, (int)height, (int)(bytes / 1024),
+            (int)((bytes + KOSMOS_PAGE_SIZE - 1) / KOSMOS_PAGE_SIZE));
     }
 
-    pixels = (void *)(uintptr_t)mapped;      /* the kernel zeroed it */
-
-    s = lua_newuserdatauv(L, sizeof(*s), 0);
-    memset(s, 0, sizeof(*s));
-    s->pixels = pixels;
-    s->width  = (unsigned)width;
-    s->height = (unsigned)height;
-    s->pitch  = pitch;
-    s->bytes  = bytes;
-    s->pages  = pages;
-    s->owned  = true;
-
-    luaL_setmetatable(L, SURFACE_MT);
-
-    /*
-     * `gfx.md` §19.6: the collector sees a forty-byte userdata and feels no
-     * pressure from the megabytes behind it, so a program can run the
-     * machine out of memory while `collectgarbage("count")` reports that the
-     * heap is nearly empty. Telling it the real size is what makes the
-     * finalizer below something other than theoretical.
-     */
-    lua_gc(L, LUA_GCSTEP, (int)(bytes / 1024));
-
+    gfx_surface_new(L, pixels, (unsigned)width, (unsigned)height, pitch, pages);
     return 1;
 }
 
@@ -3531,22 +3587,14 @@ static int l_view(lua_State *L)
     long y = (long)luaL_checkinteger(L, 3);
     long w = (long)luaL_checkinteger(L, 4);
     long h = (long)luaL_checkinteger(L, 5);
-    struct surface *v;
 
     if (!clip(s, &x, &y, &w, &h, NULL, NULL)) {
         lua_pushnil(L);
         return 1;
     }
 
-    v = lua_newuserdatauv(L, sizeof(*v), 1);
-    memset(v, 0, sizeof(*v));
-    v->pixels = row_of(s, (unsigned)y) + x;
-    v->width  = (unsigned)w;
-    v->height = (unsigned)h;
-    v->pitch  = s->pitch;
-    v->bytes  = 0;
-    v->pages  = 0;
-    v->owned  = false;
+    (void)push_surface(L, row_of(s, (unsigned)y) + x, (unsigned)w,
+                       (unsigned)h, s->pitch, 0, 1);
 
     if (lua_getiuservalue(L, 1, 1) != LUA_TUSERDATA) {
         lua_pop(L, 1);
@@ -3554,7 +3602,6 @@ static int l_view(lua_State *L)
     }
 
     lua_setiuservalue(L, -2, 1);
-    luaL_setmetatable(L, SURFACE_MT);
     return 1;
 }
 
@@ -3746,8 +3793,6 @@ static const luaL_Reg surface_methods[] = {
 static int l_wrap(lua_State *L)
 {
     lua_Integer at, width, height;
-    struct surface *s;
-    unsigned pitch;
 
     luaL_checktype(L, 1, LUA_TTABLE);
 
@@ -3770,21 +3815,11 @@ static int l_wrap(lua_State *L)
     /*
      * The same padded pitch a created surface gets, so that a wrapped one
      * and an allocated one are the same shape and a caller cannot tell them
-     * apart - which is what lets the compositor treat both alike.
+     * apart - which is what lets the compositor treat both alike. No pages:
+     * they are the region's, not ours.
      */
-    pitch = (unsigned)(((width * 4) + (ROW_ALIGN - 1)) & ~(long)(ROW_ALIGN - 1));
-
-    s = lua_newuserdatauv(L, sizeof(*s), 0);
-    memset(s, 0, sizeof(*s));
-    s->pixels = (uint32_t *)(uintptr_t)at;
-    s->width  = (unsigned)width;
-    s->height = (unsigned)height;
-    s->pitch  = pitch;
-    s->bytes  = (size_t)pitch * (size_t)height;
-    s->pages  = 0;
-    s->owned  = false;          /* the region's, not ours */
-
-    luaL_setmetatable(L, SURFACE_MT);
+    gfx_surface_new(L, (uint32_t *)(uintptr_t)at, (unsigned)width,
+                    (unsigned)height, surface_pitch((unsigned long)width), 0);
     return 1;
 }
 
@@ -3800,15 +3835,13 @@ static int l_surface_bytes(lua_State *L)
 {
     lua_Integer width = luaL_checkinteger(L, 1);
     lua_Integer height = luaL_checkinteger(L, 2);
-    unsigned pitch;
 
     if (width <= 0 || height <= 0) {
         return luaL_error(L, "a surface needs a positive width and height");
     }
 
-    pitch = (unsigned)(((width * 4) + (ROW_ALIGN - 1)) & ~(long)(ROW_ALIGN - 1));
-
-    lua_pushinteger(L, (lua_Integer)((size_t)pitch * (size_t)height));
+    lua_pushinteger(L, (lua_Integer)((size_t)surface_pitch((unsigned long)width)
+                                     * (size_t)height));
     return 1;
 }
 
@@ -3885,7 +3918,6 @@ static int l_encode_png(lua_State *L)
 static int l_screen(lua_State *L)
 {
     struct screen_info info;
-    struct surface *s;
 
     if (kosmos_screen(&info) < 0) {
         lua_pushnil(L);
@@ -3893,18 +3925,8 @@ static int l_screen(lua_State *L)
         return 2;
     }
 
-    s = lua_newuserdatauv(L, sizeof(*s), 0);
-    memset(s, 0, sizeof(*s));
-    s->pixels = (uint32_t *)(uintptr_t)info.address;
-    screen_pixels = s->pixels;
-    s->width  = info.width;
-    s->height = info.height;
-    s->pitch  = info.pitch;
-    s->bytes  = 0;
-    s->pages  = 0;
-    s->owned  = false;
-
-    luaL_setmetatable(L, SURFACE_MT);
+    screen_pixels = (uint32_t *)(uintptr_t)info.address;
+    gfx_surface_new(L, screen_pixels, info.width, info.height, info.pitch, 0);
     return 1;
 }
 

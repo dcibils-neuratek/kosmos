@@ -178,8 +178,9 @@ end
 -- rather than one that half did.
 --------------------------------------------------------------------------
 
-local COPY_PAGES = 256                    -- 1 MB
-local COPY_MAX = COPY_PAGES * 4096
+local regions = use("/Kosmos/Libraries/regions.lua")
+
+local COPY_MAX = 1024 * 1024
 
 local buffer                              -- allocated on the first copy
 
@@ -199,10 +200,11 @@ function files.copy(from, to)
                 :format(from, size // 1024, COPY_MAX // 1024)
   end
 
-  -- Allocated once and kept. A file manager copies more than one thing, and
-  -- a region per copy is a region per copy that nothing gives back.
+  -- Allocated once and kept: a file manager copies more than one thing, and
+  -- one region serves every copy. Not mapped, since no byte of it is
+  -- touched here - only the servers' and `regions.lua`'s.
   if not buffer then
-    buffer = sys.memory(COPY_PAGES)
+    buffer = regions.unmapped(COPY_MAX)
 
     if not buffer then return nil, "no memory for a copy buffer" end
   end
@@ -220,29 +222,19 @@ function files.copy(from, to)
   -- So: the efficient way when it is available, and the ordinary way when
   -- it is not. The ordinary way puts the file through this process's heap,
   -- which is what the region exists to avoid - hence the same size limit
-  -- applying to both.
+  -- applying to both. Both halves are `regions.lua`'s, which began as this
+  -- function's and is now every library's: a file into a region and a
+  -- region into a file, each the efficient way first.
   --
-  local got = fs.read_into(from, buffer, 0, size)
+  local got = regions.read_file(from, buffer, size)
 
-  if got then
-    local put, why = fs.write_from(to, buffer, got)
+  if not got then return nil, from .. ": could not be read" end
 
-    if not put then return nil, to .. ": " .. tostring(why) end
+  local put, why = regions.write_file(to, buffer, got)
 
-    return put
-  end
+  if not put then return nil, to .. ": " .. tostring(why) end
 
-  local data = fs.read(from)
-
-  if type(data) ~= "string" then
-    return nil, from .. ": could not be read"
-  end
-
-  local ok, why = fs.write(to, data)
-
-  if not ok then return nil, to .. ": " .. tostring(why) end
-
-  return #data
+  return put
 end
 
 --------------------------------------------------------------------------

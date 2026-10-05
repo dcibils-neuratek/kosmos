@@ -812,6 +812,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/compress/inflate.c \
              user/kits/compress/deflate.c \
              user/kits/compress/gzip.c \
+             user/kits/compress/base64.c \
              user/kits/synth/synth_dsp.c \
              user/kits/synth/synth_engine.c \
              user/kits/synth/synth_lua.c \
@@ -825,7 +826,6 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/record/record_h264.c \
              user/kits/record/record_mp4.c \
              $(MUSL_SRCS) \
-             runtime/upstream/puff/puff.c \
              runtime/upstream/miniz/miniz.c \
              $(BEARSSL_SRCS) \
              user/kits/tls/tls_kosmos.c \
@@ -1186,8 +1186,10 @@ USER_DEPS := $(USER_OBJS:.o=.d)
 # allocator. On every userland file, since `miniz.h` reads them wherever it
 # is included and the kit that includes it has to agree with the file that
 # defines it. The inflater, `tinfl`, is gzip's (`user/kits/compress/gzip.c`)
-# since 30 September; it was left out while `puff` was the only one wanted,
-# and leaving it out took the archive code with it - which is now said here.
+# since 30 September and the only one since 5 October, when `puff` - zlib's
+# small inflater, which PNG and `inflate` used - left the tree; it was left
+# out while `puff` was the one wanted, and leaving it out took the archive
+# code with it - which is now said here.
 MINIZ_FLAGS := -DMINIZ_NO_STDIO -DMINIZ_NO_TIME \
                -DMINIZ_NO_ZLIB_COMPATIBLE_NAMES -DMINIZ_NO_MALLOC \
                -DMINIZ_NO_ARCHIVE_APIS
@@ -1195,7 +1197,7 @@ MINIZ_FLAGS := -DMINIZ_NO_STDIO -DMINIZ_NO_TIME \
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
 UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(WEB),-DKOSMOS_WEB) $(if $(FFMPEG),-DKOSMOS_FFMPEG) -DKOSMOS_USER \
-           -Iruntime/upstream/puff -Iruntime/upstream/stb \
+           -Iruntime/upstream/stb \
            -Iruntime/upstream/miniz $(MINIZ_FLAGS) \
            -Iruntime/upstream/minimp3 \
            -Iruntime/upstream/minih264 -Iruntime/upstream/minimp4 \
@@ -3927,8 +3929,10 @@ host-check: $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypt
 	@# The disk server's reader of `sys.pack`'s tables, held to the
 	@# serialiser itself (step 3).
 	$(HOSTDIR)/lua tools/test_packflat.lua
-	@# /Temporary's store, which grows to a ceiling (5 October 2026).
+	@# /Temporary's store, which grows to a ceiling, and the one door to a
+	@# region, whose windows land each at its own offset (5 October 2026).
 	$(HOSTDIR)/test_ramstore
+	$(HOSTDIR)/lua tools/test_regions.lua
 	$(HOSTDIR)/test_diskcache
 	@# And what an audio file says about itself - ID3v2, ID3v1 and a WAV's
 	@# INFO - read through the same tags.lua Music uses, on this machine.

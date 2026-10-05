@@ -39,6 +39,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bytes.h"
 #include "kosmos.h"
 #include "blockproto.h"
 #include "devproto.h"
@@ -46,6 +47,8 @@
 
 #include "../init/say.h"
 #include "diskcache.h"
+#include "drives_decode.h"
+#include "drivers/usb/storage_decode.h"
 #include "kfs.h"
 #include "packflat.h"
 
@@ -274,43 +277,15 @@ static bool ask(long endpoint, uint32_t op, uint32_t unit, uint64_t lba,
     return out->error == BLOCK_OK;
 }
 
-/* A GUID as it is written out: its first three fields little-endian. */
-static void guid_text(const uint8_t *g, char out[37])
-{
-    static const char hex[] = "0123456789ABCDEF";
-    static const int order[16] = { 3, 2, 1, 0, 5, 4, 7, 6, 8, 9, 10, 11, 12, 13, 14, 15 };
-    int at = 0;
-
-    for (int i = 0; i < 16; i++) {
-        if (i == 4 || i == 6 || i == 8 || i == 10) {
-            out[at++] = '-';
-        }
-
-        out[at++] = hex[g[order[i]] >> 4];
-        out[at++] = hex[g[order[i]] & 15];
-    }
-
-    out[at] = '\0';
-}
-
-static uint64_t le64(const uint8_t *p)
-{
-    uint64_t v = 0;
-
-    for (int i = 7; i >= 0; i--) {
-        v = v << 8 | p[i];
-    }
-
-    return v;
-}
-
-static uint32_t le32(const uint8_t *p)
-{
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16
-           | (uint32_t)p[3] << 24;
-}
-
-/* The first Kosmos partition on a ready stick; how far each look got. */
+/*
+ * The first Kosmos partition on a ready stick; how far each look got.
+ *
+ * The stick's GPT is read by the decoders the drive server reads every
+ * drive's with - `gpt_header_at` holds the header to its CRC and its place,
+ * `gpt_entry_array` says where the entries are and refuses an array too
+ * large to read at once, and `gpt_partitions` names each used entry with
+ * both its GUIDs - rather than by a third reading of the same bytes here.
+ */
 static bool look(void)
 {
     struct block_reply r;
@@ -367,8 +342,10 @@ static bool look(void)
 
     for (uint32_t u = 0; u < units; u++) {
         struct block_reply info;
-        uint64_t entries_at;
-        uint32_t count, size, need;
+        struct drives_part parts[DRIVES_PARTS_MAX];
+        uint64_t entries_at = 0;
+        unsigned count = 0, size = 0, found;
+        uint32_t need;
 
         if (!ask(blocks_read, BLOCK_OP_INFO, u, 0, 0, -1, &info, &error)) {
             REACHED(4);
@@ -385,16 +362,14 @@ static bool look(void)
             continue;
         }
 
-        entries_at = le64(stick.at + 72);
-        count = le32(stick.at + 80);
-        size = le32(stick.at + 84);
-        need = (uint32_t)(((uint64_t)count * size + SECTOR - 1) / SECTOR);
-
-        if (memcmp(stick.at, "EFI PART", 8) != 0 || size < 128 || need < 1
-            || (uint64_t)need * SECTOR > STICK_MOST) {
+        if (!gpt_header_at(stick.at, SECTOR, 1u)
+            || !gpt_entry_array(stick.at, SECTOR, STICK_MOST, &entries_at,
+                                &size, &count)) {
             REACHED(7);
             continue;
         }
+
+        need = (uint32_t)(((uint64_t)count * size + SECTOR - 1) / SECTOR);
 
         if (!ask(blocks_read, BLOCK_OP_READ, u, entries_at, need, -1, &r, &error)) {
             REACHED(8);
@@ -403,24 +378,26 @@ static bool look(void)
 
         REACHED(9);
 
-        for (uint32_t i = 0; i < count; i++) {
-            const uint8_t *entry = stick.at + (size_t)i * size;
-            char type[37], own[37];
-            uint64_t lo, hi;
+        /* Used entries only, each ending where it starts or after. */
+        found = gpt_partitions(stick.at, need * SECTOR, size, count, parts,
+                               DRIVES_PARTS_MAX);
 
-            guid_text(entry, type);
+        for (unsigned i = 0; i < found; i++) {
+            char type[37], own[37];
+            uint64_t lo = parts[i].first;
+            uint64_t hi = parts[i].first + parts[i].sectors - 1u;
+
+            drives_guid_text(parts[i].type_guid, type);
 
             if (strcmp(type, KOSMOS_PARTITION) != 0) {
                 continue;
             }
 
-            guid_text(entry + 16, own);
-            lo = le64(entry + 32);
-            hi = le64(entry + 40);
+            drives_guid_text(parts[i].guid, own);
 
             if (stick.have_wanted && strcmp(own, stick.wanted) != 0) {
                 REACHED(10);
-            } else if (hi >= lo && hi < info.blocks) {
+            } else if (hi < info.blocks) {
                 struct say_line line;
 
                 stick.unit = u;
@@ -578,7 +555,7 @@ static int device_write(void *ctx, uint32_t block, uint32_t count, const void *f
          * driver remembers a stick that has said it cannot (the Lua server
          * has why).
          */
-        if (r == 0 && le32(from) == KFS_J_MAGIC) {
+        if (r == 0 && get_le32(from) == KFS_J_MAGIC) {
             struct block_reply f;
             uint32_t error;
 

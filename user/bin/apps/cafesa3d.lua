@@ -31,6 +31,7 @@ local theme = ui.theme
 local pk = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 local k3 = use("/Kosmos/Kits/3d")
+local compress = use("/Kosmos/Kits/compress")   -- base64, for a glTF's buffers
 local json = use("/Kosmos/Libraries/json.lua")
 local scenefile = use("/Kosmos/Libraries/scenefile.lua")
 local game = use("/Kosmos/Kits/game")
@@ -3455,7 +3456,7 @@ function SAMPLES.read(bytes, dir)
 
   for i, b in pairs(loaded.buffers or {}) do
     if b.base64 then
-      buffers[i] = k3.unbase64(b.base64)
+      buffers[i] = compress.unbase64(b.base64)
     elseif b.bin then
       buffers[i] = bin
     elseif b.file and dir then
@@ -3620,7 +3621,7 @@ function FILE.write(path)
   local ok, text = pcall(function()
     return json.encode(scenefile.to_gltf({ name = FILE.title, things = things, world = world,
                                            render = RENDER, script = SCRIPT.saved_form() },
-                                         { base64 = k3.base64, bounds = k3.bounds }))
+                                         { base64 = compress.base64, bounds = k3.bounds }))
   end)
   local done, why = false, text
 

@@ -473,6 +473,31 @@ static inline long kosmos_entropy(void *out, unsigned long len)
 #define KOSMOS_PAGE_SIZE    4096UL
 
 /*
+ * `kosmos_map` for `bytes` rather than pages: rounded up and at least one,
+ * with how many through `pages_out` for the unmap that hands them back. NULL
+ * rather than an error on refusal, since a caller usually has other things
+ * mapped to give back first. The one copy: five kits had one each.
+ */
+static inline void *kosmos_map_bytes(size_t bytes, size_t *pages_out)
+{
+    size_t pages = (bytes + KOSMOS_PAGE_SIZE - 1) / KOSMOS_PAGE_SIZE;
+    long mapped;
+
+    if (pages == 0) {
+        pages = 1;
+    }
+
+    mapped = kosmos_map(pages);
+
+    if (mapped < 0) {
+        return NULL;
+    }
+
+    *pages_out = pages;
+    return (void *)(uintptr_t)mapped;
+}
+
+/*
  * The message the kernel moves.
  *
  * Has to match kernel/ipc.h byte for byte: the syscall copies

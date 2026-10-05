@@ -56,13 +56,9 @@
 void doomgeneric_Create(int argc, char **argv);
 void doomgeneric_Tick(void);
 
-/*
- * A surface's pixels, from `gfx.c`, which is the only file allowed to know
- * how a surface is laid out. Declared here the way `gfx.c` declares
- * `kosmos_png_open`: one line, next to the thing that needs it.
- */
-uint32_t *kosmos_surface_pixels(lua_State *L, int index,
-                                unsigned *w, unsigned *h, unsigned *pitch);
+/* A surface's pixels, from `gfx.c`, which is the only file allowed to know
+ * how a surface is laid out: `kosmos_surface_pixels`. */
+#include "kits/gfx/gfx_draw.h"
 
 /*--------------------------------------------------------------------------
  * The WAD, in memory.

@@ -53,6 +53,7 @@ for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
 
 local port = tonumber(words[1]) or 5900
 local prefs = use("/Kosmos/Libraries/prefs.lua")
+local regions = use("/Kosmos/Libraries/regions.lua")
 local REMOTE = "/Running/wm/remote"
 
 local function dotted(bytes)
@@ -174,13 +175,12 @@ local function watch()
                   .. "the desktop: the Servers window, or open vncd"
     end
 
-    local cap = sys.memory((size.bytes + 4095) // 4096)
-    local at = cap and sys.memory_map(cap)
+    local copy = regions.make(size.bytes)
 
-    if not at then return nil, "no memory for a copy of the screen" end
+    if not copy then return nil, "no memory for a copy of the screen" end
 
-    screen = { w = size.w, h = size.h, cap = cap,
-               surface = gfx.wrap{ at = at, w = size.w, h = size.h } }
+    screen = { w = size.w, h = size.h, cap = copy.cap,
+               surface = gfx.wrap{ at = copy.at, w = size.w, h = size.h } }
   end
 
   if not screen.watching then

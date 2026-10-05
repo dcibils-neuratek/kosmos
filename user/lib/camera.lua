@@ -20,6 +20,8 @@
 
 local camera = {}
 
+local regions = use("/Kosmos/Libraries/regions.lua")
+
 -- struct camera_request: op, camera, size, handle
 local REQUEST  = "<I4I4I4I4"
 local REQ_SIZE = 16
@@ -42,7 +44,6 @@ local SOURCES   = { [1] = "usb", [2] = "pattern" }
 -- The region: a page of header, then three frames (`cameraproto.h`).
 local RING_DATA = 4096
 local SLOTS     = 3
-local PAGE      = 4096
 
 local OP = { list = 1, open = 2, close = 3 }
 
@@ -173,31 +174,23 @@ stream.__index = stream
 -- enough for three of its frames, mapped here and handed to the driver.
 --
 function camera.open(which, size)
-  local pages = (RING_DATA + SLOTS * size.slot_bytes + PAGE - 1) // PAGE
-  local cap, why = sys.memory(pages)
+  local ring, why = regions.make(RING_DATA + SLOTS * size.slot_bytes)
 
-  if not cap then
+  if not ring then
     return nil, "no memory for the camera's frames: " .. tostring(why)
   end
 
-  local at = sys.memory_map(cap)
-
-  if not at then
-    sys.release(cap)
-    return nil, "the camera's frames could not be mapped"
-  end
-
-  local reply, err = ask(OP.open, which, size.index, cap)
+  local reply, err = ask(OP.open, which, size.index, ring.cap)
 
   if not reply then
-    sys.release(cap)
+    regions.free(ring)
     return nil, err
   end
 
   local handle = #reply >= HANDLE_AT + 3
                  and string.unpack("<I4", reply, HANDLE_AT) or 0
 
-  return setmetatable({ cap = cap, at = at, width = size.width,
+  return setmetatable({ ring = ring, at = ring.at, width = size.width,
                         height = size.height, size = size, which = which,
                         handle = handle, last = 0, frames = 0 }, stream)
 end
@@ -227,7 +220,7 @@ function stream:close()
 
   self.closed = true
   ask(OP.close, 0, 0, nil, self.handle)
-  sys.release(self.cap)
+  regions.free(self.ring)
 end
 
 --------------------------------------------------------------------------
@@ -246,27 +239,13 @@ end
 -- it stops and is kept.
 --------------------------------------------------------------------------
 
-local function region(bytes)
-  local cap, why = sys.memory((bytes + PAGE - 1) // PAGE)
-
-  if not cap then return nil, why end
-
-  local at = sys.memory_map(cap)
-
-  if not at then
-    sys.release(cap)
-    return nil, "a region that could not be mapped"
-  end
-
-  return cap, at
-end
-
--- As much of `want` as the machine will give, halving down to `least`.
+-- As much of `want` as the machine will give, halving down to `least`: the
+-- region, and how much of it the recording may fill.
 local function largest(want, least)
   while want >= least do
-    local cap, at = region(want)
+    local r = regions.make(want)
 
-    if cap then return cap, at, want end
+    if r then return r, want end
 
     want = want // 2
   end
@@ -287,34 +266,33 @@ function stream:record_start()
 
   if not work_bytes then return nil, why end
 
-  local wcap, wat = region(work_bytes)
+  local work, wwhy = regions.make(work_bytes)
 
-  if not wcap then
-    return nil, "no memory for the encoder: " .. tostring(wat)
+  if not work then
+    return nil, "no memory for the encoder: " .. tostring(wwhy)
   end
 
   local mem = fs.read("/Devices/memory")
   local free_mb = type(mem) == "table" and tonumber(mem.free_mb) or 64
   local want = math.max(16, math.min(256, free_mb // 4)) * 1024 * 1024
-  local ocap, oat, out_bytes = largest(want, 8 * 1024 * 1024)
+  local out, out_bytes = largest(want, 8 * 1024 * 1024)
 
-  if not ocap then
-    sys.release(wcap)
+  if not out then
+    regions.free(work)
     return nil, "no memory for the recording"
   end
 
-  local r, rwhy = kit.open{ work = wat, work_bytes = work_bytes,
-                            out = oat, out_bytes = out_bytes,
+  local r, rwhy = kit.open{ work = work.at, work_bytes = work_bytes,
+                            out = out.at, out_bytes = out_bytes,
                             width = self.width, height = self.height,
                             fps = self.size.fps or 30 }
 
   if not r then
-    sys.release(wcap)
-    sys.release(ocap)
+    regions.free(work, out)
     return nil, rwhy
   end
 
-  self.recording = { r = r, wcap = wcap, ocap = ocap, out_bytes = out_bytes,
+  self.recording = { r = r, work = work, out = out, out_bytes = out_bytes,
                      last = 0, started = sys.ticks() }
   return true
 end
@@ -357,11 +335,10 @@ function stream:record_stop(path)
   local wrote, werr = nil, nil
 
   if bytes and path then
-    wrote, werr = fs.write_from(path, rec.ocap, bytes)
+    wrote, werr = fs.write_from(path, rec.out.cap, bytes)
   end
 
-  sys.release(rec.wcap)
-  sys.release(rec.ocap)
+  regions.free(rec.work, rec.out)
 
   if not bytes then return nil, why end
   if not path then return bytes end

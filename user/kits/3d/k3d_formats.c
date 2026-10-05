@@ -39,19 +39,19 @@ void k3d_soup_free(struct k3d_soup *s)
     s->npos = s->ntri = 0;
 }
 
-static bool grow(void **items, uint32_t *cap, uint32_t want, size_t size)
+bool k3d_grow(void **items, size_t *cap, size_t want, size_t size)
 {
-    uint32_t next = *cap ? *cap : 256;
+    size_t next = *cap ? *cap : 256;
     void *bigger;
 
     if (want <= *cap) return true;
 
     while (next < want) {
-        if (next > (1u << 30)) return false;
+        if (next > ((size_t)1 << 30)) return false;
         next *= 2;
     }
 
-    bigger = realloc(*items, (size_t)next * size);
+    bigger = realloc(*items, next * size);
 
     if (bigger == NULL) return false;
 
@@ -68,7 +68,7 @@ static bool grow(void **items, uint32_t *cap, uint32_t want, size_t size)
 struct weld {
     uint32_t *slot;             /* point + 1, or 0 for empty */
     uint32_t  mask;
-    uint32_t  cap;              /* of the soup's points, in points */
+    size_t    cap;              /* of the soup's points, in points */
 };
 
 static uint32_t hash3f(const float p[3])
@@ -99,7 +99,7 @@ static uint32_t weld_point(struct weld *w, struct k3d_soup *s, const float p[3])
         i = (i + 1) & w->mask;
     }
 
-    if (s->npos >= MAX_POINTS || !grow((void **)&s->pos, &w->cap, s->npos + 1, 12)) {
+    if (s->npos >= MAX_POINTS || !k3d_grow((void **)&s->pos, &w->cap, s->npos + 1, 12)) {
         return UINT32_MAX;
     }
 
@@ -138,7 +138,7 @@ static bool finite3(const float p[3])
  * welded into one - are dropped, which STL exporters write more of than
  * anyone would guess and which draw nothing.
  */
-static const char *put_triangle(struct weld *w, struct k3d_soup *s, uint32_t *tcap,
+static const char *put_triangle(struct weld *w, struct k3d_soup *s, size_t *tcap,
                                 float c[3][3])
 {
     uint32_t v[3];
@@ -154,7 +154,7 @@ static const char *put_triangle(struct weld *w, struct k3d_soup *s, uint32_t *tc
 
     if (v[0] == v[1] || v[1] == v[2] || v[0] == v[2]) return NULL;
 
-    if (s->ntri >= MAX_TRIS || !grow((void **)&s->tri, tcap, (s->ntri + 1) * 3, 4)) {
+    if (s->ntri >= MAX_TRIS || !k3d_grow((void **)&s->tri, tcap, (s->ntri + 1) * 3, 4)) {
         return "more triangles than a model may have";
     }
 
@@ -237,7 +237,7 @@ static const char *stl_text(const char *text, size_t len, struct k3d_soup *s)
 {
     const char *at = text, *end = text + len, *line, *stop, *why;
     struct weld w;
-    uint32_t tcap = 0;
+    size_t tcap = 0;
     float c[3][3];
     int corner = 0;
 
@@ -273,7 +273,8 @@ static const char *stl_text(const char *text, size_t len, struct k3d_soup *s)
 
 const char *k3d_stl_read(const unsigned char *bytes, size_t len, struct k3d_soup *out)
 {
-    uint32_t n, t, tcap = 0;
+    uint32_t n, t;
+    size_t tcap = 0;
     struct weld w;
     const char *why;
 
@@ -438,10 +439,11 @@ const char *k3d_obj_read(const char *text, size_t len, struct k3d_obj *out)
 {
     const char *at = text, *end = text + len, *line, *stop, *why = NULL;
     float *pos = NULL;
-    uint32_t npos = 0, poscap = 0;
-    uint32_t *faces = NULL, nfaces = 0, facecap = 0;    /* global corner indices */
+    uint32_t npos = 0;
+    size_t poscap = 0, facecap = 0, partcap = 0;
+    uint32_t *faces = NULL, nfaces = 0;                 /* global corner indices */
     struct part { char name[64], material[64]; uint32_t first, count; } *parts = NULL;
-    uint32_t nparts = 0, partcap = 0;
+    uint32_t nparts = 0;
     char name[64] = "Object", material[64] = "";
     int32_t *local = NULL;
     size_t i;
@@ -462,7 +464,7 @@ const char *k3d_obj_read(const char *text, size_t len, struct k3d_obj *out)
                 break;
             }
 
-            if (npos >= MAX_POINTS || !grow((void **)&pos, &poscap, (npos + 1) * 3, 4)) {
+            if (npos >= MAX_POINTS || !k3d_grow((void **)&pos, &poscap, (npos + 1) * 3, 4)) {
                 why = "more points than a model may have";
                 break;
             }
@@ -490,7 +492,7 @@ const char *k3d_obj_read(const char *text, size_t len, struct k3d_obj *out)
             /* A new part when the name or the material changed. */
             if (nparts == 0 || strcmp(parts[nparts - 1].name, name) != 0
                 || strcmp(parts[nparts - 1].material, material) != 0) {
-                if (!grow((void **)&parts, &partcap, nparts + 1, sizeof(*parts))) {
+                if (!k3d_grow((void **)&parts, &partcap, nparts + 1, sizeof(*parts))) {
                     why = "no memory to read it";
                     break;
                 }
@@ -536,7 +538,7 @@ const char *k3d_obj_read(const char *text, size_t len, struct k3d_obj *out)
 
                 if (k == 3) {
                     if (nfaces >= MAX_TRIS
-                        || !grow((void **)&faces, &facecap, (nfaces + 1) * 3, 4)) {
+                        || !k3d_grow((void **)&faces, &facecap, (nfaces + 1) * 3, 4)) {
                         why = "more triangles than a model may have";
                         break;
                     }
@@ -564,7 +566,8 @@ const char *k3d_obj_read(const char *text, size_t len, struct k3d_obj *out)
     for (i = 0; !why && i < nparts; i++) {
         struct k3d_obj_part *op = &out->parts[out->nparts];
         struct k3d_soup *s = &op->soup;
-        uint32_t t, cap = 0, used = 0;
+        uint32_t t, used = 0;
+        size_t cap = 0;
 
         if (parts[i].count == 0) continue;
 
@@ -583,7 +586,7 @@ const char *k3d_obj_read(const char *text, size_t len, struct k3d_obj *out)
             uint32_t g = faces[parts[i].first * 3 + t];
 
             if (local[g] < 0) {
-                if (!grow((void **)&s->pos, &cap, (used + 1) * 3, 4)) {
+                if (!k3d_grow((void **)&s->pos, &cap, (used + 1) * 3, 4)) {
                     why = "no memory to read it";
                     break;
                 }

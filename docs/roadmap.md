@@ -625,7 +625,10 @@ fix, then a review of the rest:
   kernel, the servers and drivers, the kits, the libraries, the programs and
   the applications, each finding checked by a search of the whole tree).
   What it found that is a second copy - this step's work list, Diego's step
-  3, after 0.11:
+  3, after 0.11. **The first half DONE on 5 October** (`testing.md` 18.402):
+  regions, the kits' C and the browser's, below - with a leak it found on
+  the way, every mapped region kept until its process ended. The second
+  half, the Lua helpers, is next:
   - **Regions by hand** beside `regions.lua`: `pdfpage.lua` (three places),
     `video.lua` (two), `camera.lua` (two), `midi.lua`, `ui.lua`'s
     `direct_region`, `groove/engine.lua`'s export, `files.copy`; and in the
@@ -7371,6 +7374,17 @@ the Pi", and the Pi is not here yet.
 
 ### The browser
 
+- **FOUND on 5 October - a page from the network can link to a file on
+  this machine.** Found by the review of second copies (step 3 after 0.11):
+  the browser's `resolve` now refuses a scheme other than the page's own,
+  http, https and `asset:`, and a redirect, a refresh, a picture and a link
+  on a page `web_paint.c` laid out all go through it - but a link on a page
+  NetSurf lays out goes through `from_ns` alone, so a remote page can lead
+  to a `file:` address. Routing those through `resolve` would refuse the new
+  tab's own links to local files, which are pages Kosmos made; so the rule
+  wanted is by where the page came from - a page from the network may not
+  open one from this machine - and it is checked where the link is
+  followed, for both engines at once.
 - **JavaScript, later.** Diego, 30 September, told there is none - NetSurf's
   libraries here parse `<script>` into the document and nothing runs it:
   "yes add it for later". After the browser is fast and redrawn (6zz). The

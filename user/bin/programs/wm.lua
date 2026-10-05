@@ -712,6 +712,13 @@ end
 -- in a `FULL=1` image the desktop's own wallpapers, `wallpaper/<file>`. One
 -- function for both, because the two had drifted once already.
 --
+-- The pages are `regions.lua`'s, and so is the read: one of the whole file,
+-- through a string where the filesystem hands over no pages. It was a loop
+-- asking again for what was left, which `fs.read_into` would have written
+-- over the start of the region rather than after what came first.
+--
+local regions = use("/Kosmos/Libraries/regions.lua")
+
 local function picture_from(path)
   local decode, suffix = decoder_for(path)
 
@@ -739,33 +746,23 @@ local function picture_from(path)
     return nil, "cannot read " .. tostring(path)
   end
 
-  local pages = (size + 4095) // 4096
-  local region = sys.memory(pages)
+  local region = regions.make(size)
 
   if not region then
     return nil, "no memory for a picture that size"
   end
 
-  local at = sys.memory_map(region)
-  local done = 0
-
-  while done < size do
-    local got = fs.read_into(path, region, done, size - done)
-
-    if not got or got == 0 then break end
-
-    done = done + got
-  end
+  local done = regions.read_file(path, region, size) or 0
 
   if done ~= size then
-    sys.release(region)
+    regions.free(region)
     return nil, "could only read " .. done .. " of " .. size .. " bytes"
   end
 
-  local ok, made = pcall(decode, at, size)
+  local ok, made = pcall(decode, region.at, size)
 
   -- The compressed copy is scratch: the surface holds the pixels now.
-  sys.release(region)
+  regions.free(region)
 
   if not ok or not made then
     -- `made` is the decoder's own sentence when the call raised, which is
@@ -4383,9 +4380,8 @@ end
 -- and `picture_from` already maps and decodes - the only new part is
 -- taking the caller's pages instead of opening a file. **Control by message,
 -- data by shared memory**, which is the system's rule rather than an exception
--- here, and it keeps working where a copy through a file would not: `/Home` is
--- not always a disk, and `/Temporary` caps a file at 16 KB where a cover is
--- hundreds.
+-- here, and it needs no file nobody asked for: a cover is the song's, not a
+-- thing to keep in `/Temporary` or `/Home`.
 --
 -- **The name carries the track**, because the cache is keyed by name: one
 -- fixed name would hand every song the first song's picture.

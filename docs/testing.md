@@ -18979,3 +18979,46 @@ again, answered with Down and Return and no click - `b.sfc`, the file after
 the folder in the first row - and the Save window answered by typing onto
 the offered name and Return, handing over `/Home/picktest/notes`. The phase
 went from three checks to five.
+
+## 18.402 Second copies, the first half (step 3 after 0.11)
+
+The review before 0.11 listed every second copy it found (`roadmap.md`, *One
+kit, one door*). This is the half that is regions, the kits' C and the
+browser; the Lua helpers written several times are the second half.
+
+- **Regions by hand onto `regions.lua`**: the PDF reader's pages and fonts,
+  video, the camera's ring, MIDI, a direct window's surfaces, Groove's
+  export, `files.copy`, the wallpaper, `pdfbench`, `screenshot`, `vncd`,
+  `log`, `diagnose`, `acpi`, telnet's `put`, Solar System's textures, and
+  Doom's, Quake's and the Super Nintendo's loaders as one
+  `regions.read_whole`. The window manager's wallpaper and `pdfbench` read
+  in a loop that would have written each window over the last, since
+  `read_into` writes at the region's start; they read once now.
+- **A mapped region was never given back.** `sys.memory_map` went to the
+  kernel without a record, and a mapping holds its region, so `sys.release`
+  dropped the capability and the pages stayed - the window manager's for
+  every picture, wallpaper and window surface it was handed. Every mapping
+  is now remembered and taken down on release, and the table of them grows
+  where it stopped at 256.
+- **The kits' C**: one door to a surface (`gfx_surface_new`,
+  `gfx_surface_check`, `kosmos_surface_pixels` in `gfx_draw.h`; four struct
+  copies and seven re-declarations gone; `gl.blit` and `docfont:draw` and
+  the browser's four surfaces now refused when freed); `docfont`'s glyph
+  blend onto `gfx_cover_row`; one inflater, `tinfl`, with `puff` out of the
+  tree; base64 in the Compression Kit, for Cafesa3D and telnet both; the
+  byte-order and page-mapping helpers in `bytes.h` and `kosmos_map_bytes`;
+  one GPT reader, `drives_decode.c`'s, for `diskfs` as well.
+- **The browser's**: the kit's scrollbar, one URL resolver (which collapses
+  `..`, and refuses a scheme other than the page's own, http, https and
+  `asset:`), one stylesheet maker and element test in its C, one markup
+  escaper (`markup.lua`) shared with Write's DOCX, header lookups through
+  `httpcache.headers`, and the authorities listed as `http.lua` trusts them.
+
+**New host checks**: `tools/test_regions.lua`, 13 - a file of 200 KB read a
+window at a time lands each window at its own offset, begins "IWAD" rather
+than with its last window, keeps no scratch region, a file with no pages to
+hand over is read through a string, a string is written through pages and
+through `fs.write`, a region that will not map is given back - against a
+`sys` and an `fs` that keep regions as strings. **Control**: `fill` copying
+every window to the start fails 2. `test_gunzip` gained 8 checks of plain
+deflate, now 1553; `test_drivesdecode` checks a partition's type GUID.

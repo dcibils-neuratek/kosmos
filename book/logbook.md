@@ -1148,3 +1148,38 @@ Every application shares the same Open and Save windows, so this was true
 everywhere. Now the arrow keys and Return choose a file the moment Open
 appears, and in Save you can type the name and press Return. The display
 test opens both and answers them with the keyboard alone.
+
+## 5 October - one copy of each thing, the first half
+
+**In short:** Kosmos's rule is that a piece of work is done in one place
+and everything that needs it uses that place. A review found dozens of
+pieces written twice or more. The first half of them are now one.
+
+**What.** Three groups:
+- **Shared memory.** Many programs set up a block of shared memory by hand,
+  the same four lines each time. They all use one library now. Three of the
+  hand-written copies, in Doom, Quake and the Super Nintendo, were the same
+  file loader, and two others had a bug waiting: they would have written a
+  file's second piece over its first.
+- **The C kits.** Pictures had their layout copied into four kits. There
+  were two decompressors where one does the job, so one left. Base64, the
+  encoding that sends a file as text, was written once in C for 3D files
+  and again in slow Lua for the remote command line. Several small helpers
+  were copied up to five times. Each is one now.
+- **The browser.** It had its own scrollbar, its own way of joining web
+  addresses (which got `..` wrong), and its own copies of other helpers.
+  It uses the shared ones now.
+
+**What it found on the way.** A leak. When a program was done with a block
+of shared memory and gave it back, the memory was not actually freed until
+the program quit. The window manager never quits, and every picture,
+wallpaper and window it was ever shown stayed in memory. Fixed: giving a
+block back now frees it.
+
+**Why it matters.** Two copies drift apart, and a bug fixed in one stays in
+the other. Each copy removed is one less place for that to happen, and the
+leak only came to light because the copies were being merged.
+
+**How it is checked.** The whole test run, all 90 suites, passed. A new
+test holds the shared-memory library to putting every piece of a file in
+its right place, and fails against the old loops' mistake.

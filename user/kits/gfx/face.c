@@ -60,6 +60,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 
+#include "bytes.h"
 #include "stb_truetype.h"
 
 struct kosmos_font_asset {
@@ -78,17 +79,6 @@ struct face {
     int                             units;      /* to the em */
 };
 
-static uint16_t be16(const unsigned char *p)
-{
-    return (uint16_t)((p[0] << 8) | p[1]);
-}
-
-static uint32_t be32(const unsigned char *p)
-{
-    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16)
-           | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
-}
-
 /*
  * A table of the font: where it starts and how long it is, inside the
  * font's bytes, or false. The image's fonts are trusted, and each offset
@@ -104,7 +94,7 @@ static bool table_of(const struct kosmos_font_asset *a, const char *tag,
         return false;
     }
 
-    n = be16(a->bytes + 4);
+    n = get_be16(a->bytes + 4);
 
     if (12u + 16u * n > a->length) {
         return false;
@@ -114,7 +104,7 @@ static bool table_of(const struct kosmos_font_asset *a, const char *tag,
         const unsigned char *r = a->bytes + 12 + 16 * i;
 
         if (memcmp(r, tag, 4) == 0) {
-            uint32_t o = be32(r + 8), l = be32(r + 12);
+            uint32_t o = get_be32(r + 8), l = get_be32(r + 12);
 
             if (o > a->length || l > a->length - o) {
                 return false;
@@ -221,8 +211,8 @@ static int l_faces(lua_State *L)
 
         /* usWeightClass at 4, fsSelection at 62 - bit 0 is ITALIC. */
         if (table_of(a, "OS/2", &at, &len) && len >= 64) {
-            weight = be16(a->bytes + at + 4);
-            italic = (be16(a->bytes + at + 62) & 1u) != 0;
+            weight = get_be16(a->bytes + at + 4);
+            italic = (get_be16(a->bytes + at + 62) & 1u) != 0;
         }
 
         lua_createtable(L, 0, 4);
@@ -267,7 +257,7 @@ static int l_face(lua_State *L)
             return luaL_error(L, "gfx.typeface: %s is not a TrueType font", want);
         }
 
-        f->units = be16(a->bytes + at + 18);
+        f->units = get_be16(a->bytes + at + 18);
 
         if (f->units < 16 || f->units > 16384) {
             return luaL_error(L, "gfx.typeface: %s has %d units to the em", want,
@@ -427,7 +417,7 @@ static int l_advance(lua_State *L)
 
 static int16_t s16(const unsigned char *p)
 {
-    return (int16_t)be16(p);
+    return (int16_t)get_be16(p);
 }
 
 /*
@@ -461,7 +451,7 @@ static int l_descriptor(lua_State *L)
 
     /* italicAngle is a 16.16 fixed-point number of degrees. */
     if (table_of(f->asset, "post", &at, &len) && len >= 16) {
-        int32_t angle = (int32_t)be32(b + at + 4);
+        int32_t angle = (int32_t)get_be32(b + at + 4);
 
         lua_pushnumber(L, (lua_Number)angle / 65536.0);
         lua_setfield(L, -2, "italic_angle");
@@ -469,7 +459,7 @@ static int l_descriptor(lua_State *L)
         lua_setfield(L, -2, "underline_position");
         lua_pushinteger(L, s16(b + at + 10));
         lua_setfield(L, -2, "underline_thickness");
-        lua_pushboolean(L, be32(b + at + 12) != 0);
+        lua_pushboolean(L, get_be32(b + at + 12) != 0);
         lua_setfield(L, -2, "fixed");
     }
 
@@ -480,7 +470,7 @@ static int l_descriptor(lua_State *L)
         lua_setfield(L, -2, "strike_position");
 
         /* sCapHeight arrived with version 2 of the table. */
-        if (be16(b + at) >= 2 && len >= 90) {
+        if (get_be16(b + at) >= 2 && len >= 90) {
             lua_pushinteger(L, s16(b + at + 88));
             lua_setfield(L, -2, "cap_height");
         }
@@ -616,12 +606,12 @@ static bool outline_of(const struct glyphs_of *t, unsigned g, uint32_t *at,
 
     if (t->long_loca) {
         if (4u * (g + 2u) > t->loca_len) return false;
-        a = be32(t->loca + 4 * g);
-        b = be32(t->loca + 4 * g + 4);
+        a = get_be32(t->loca + 4 * g);
+        b = get_be32(t->loca + 4 * g + 4);
     } else {
         if (2u * (g + 2u) > t->loca_len) return false;
-        a = 2u * be16(t->loca + 2 * g);
-        b = 2u * be16(t->loca + 2 * g + 2);
+        a = 2u * get_be16(t->loca + 2 * g);
+        b = 2u * get_be16(t->loca + 2 * g + 2);
     }
 
     if (b < a || b > t->glyf_len) return false;
@@ -653,8 +643,8 @@ static void keep_glyph(const struct glyphs_of *t, unsigned char *keep,
     do {
         if (p + 4 > at + len) return;
 
-        flags = be16(t->glyf + p);
-        keep_glyph(t, keep, be16(t->glyf + p + 2), depth + 1);
+        flags = get_be16(t->glyf + p);
+        keep_glyph(t, keep, get_be16(t->glyf + p + 2), depth + 1);
 
         p += 4 + ((flags & ARG_1_AND_2_ARE_WORDS) ? 4 : 2);
 
@@ -674,24 +664,10 @@ static uint32_t table_sum(const unsigned char *p, uint32_t len)
 
         for (k = 0; k < 4 && i + k < len; k++) w[k] = p[i + k];
 
-        sum += be32(w);
+        sum += get_be32(w);
     }
 
     return sum;
-}
-
-static void put16(unsigned char *p, uint32_t v)
-{
-    p[0] = (unsigned char)(v >> 8);
-    p[1] = (unsigned char)v;
-}
-
-static void put32(unsigned char *p, uint32_t v)
-{
-    p[0] = (unsigned char)(v >> 24);
-    p[1] = (unsigned char)(v >> 16);
-    p[2] = (unsigned char)(v >> 8);
-    p[3] = (unsigned char)v;
 }
 
 /*
@@ -746,7 +722,7 @@ static int l_subset(lua_State *L)
         return luaL_error(L, "face:subset: no maxp");
     }
 
-    t.count = be16(a->bytes + at + 4);
+    t.count = get_be16(a->bytes + at + 4);
 
     /* Which glyphs keep their outlines. */
     keep = lua_newuserdatauv(L, t.count + 1u, 0);
@@ -778,17 +754,17 @@ static int l_subset(lua_State *L)
     }
 
     memset(dst, 0, dir);
-    put32(dst, 0x00010000u);
-    put16(dst + 4, tables);
+    put_be32(dst, 0x00010000u);
+    put_be16(dst + 4, tables);
 
     {
         unsigned power = 1, log2 = 0;
 
         while (power * 2 <= tables) { power *= 2; log2++; }
 
-        put16(dst + 6, power * 16);
-        put16(dst + 8, log2);
-        put16(dst + 10, tables * 16 - power * 16);
+        put_be16(dst + 6, power * 16);
+        put_be16(dst + 8, log2);
+        put_be16(dst + 10, tables * 16 - power * 16);
     }
 
     n = 0;
@@ -828,7 +804,7 @@ static int l_subset(lua_State *L)
             for (g = 0; g <= t.count; g++) {
                 uint32_t gat, glen;
 
-                put32(dst + out + 4 * g, pos);
+                put_be32(dst + out + 4 * g, pos);
 
                 if (g < t.count && keep[g] && outline_of(&t, g, &gat, &glen)) {
                     pos += (glen + 3u) & ~3u;
@@ -843,7 +819,7 @@ static int l_subset(lua_State *L)
             }
 
             memcpy(dst + out, a->bytes + at, 32);
-            put32(dst + out, 0x00030000u);
+            put_be32(dst + out, 0x00030000u);
             out += 32;
         } else {
             if (out + len + 3 > cap) {
@@ -854,8 +830,8 @@ static int l_subset(lua_State *L)
 
             if (strcmp(tag, "head") == 0) {
                 head_at = (uint32_t)out;
-                put32(dst + out + 8, 0);            /* checkSumAdjustment */
-                put16(dst + out + 50, 1);           /* indexToLocFormat: long */
+                put_be32(dst + out + 8, 0);         /* checkSumAdjustment */
+                put_be16(dst + out + 50, 1);        /* indexToLocFormat: long */
             }
 
             out += len;
@@ -863,16 +839,17 @@ static int l_subset(lua_State *L)
 
         record = dst + 12 + 16 * n++;
         memcpy(record, tag, 4);
-        put32(record + 4, table_sum(dst + start, (uint32_t)(out - start)));
-        put32(record + 8, (uint32_t)start);
-        put32(record + 12, (uint32_t)(out - start));
+        put_be32(record + 4, table_sum(dst + start, (uint32_t)(out - start)));
+        put_be32(record + 8, (uint32_t)start);
+        put_be32(record + 12, (uint32_t)(out - start));
 
         while (out & 3) dst[out++] = 0;
     }
 
     /* The whole font's checksum, as `head` asks: 0xB1B0AFBA less the sum. */
     if (head_at != 0) {
-        put32(dst + head_at + 8, 0xB1B0AFBAu - table_sum(dst, (uint32_t)out));
+        put_be32(dst + head_at + 8,
+                 0xB1B0AFBAu - table_sum(dst, (uint32_t)out));
     }
 
     lua_pushinteger(L, (lua_Integer)out);

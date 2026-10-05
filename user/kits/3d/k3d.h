@@ -25,9 +25,21 @@
 #ifndef K3D_H
 #define K3D_H
 
+#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
+/*
+ * The small arithmetic every file of the kit reaches for: the lesser and
+ * greater of two floats, and sine and cosine in float - in double and cast,
+ * since Kosmos's C library has the double forms only. Here once, where the
+ * rasteriser, the tracer, the textures and the shapes each had their own.
+ */
+static inline float lo2(float a, float b) { return a < b ? a : b; }
+static inline float hi2(float a, float b) { return a > b ? a : b; }
+static inline float sn(float a) { return (float)sin((double)a); }
+static inline float cs(float a) { return (float)cos((double)a); }
 
 /* The shapes a scene is made of, as Blender's Add menu names them. */
 enum k3d_kind {
@@ -343,6 +355,16 @@ struct k3d_soup {               /* points, three floats each, and triangles */
 };
 
 void k3d_soup_free(struct k3d_soup *s);
+
+/*
+ * `*items`, each `size` bytes, given room for at least `want`: nothing when
+ * there is room already, and otherwise doubled from 256 until there is, so a
+ * list built an item at a time is copied a handful of times rather than once
+ * an item. False, with `*items` and `*cap` as they were, when `realloc`
+ * refuses or the count would pass 2^30. `k3d_formats.c`'s, and the FBX
+ * reader's too, which had its own.
+ */
+bool k3d_grow(void **items, size_t *cap, size_t want, size_t size);
 
 /* STL, binary or text. A corner at exactly the place of another is the
  * same point, so a surface is joined and can be drawn round. Points as the

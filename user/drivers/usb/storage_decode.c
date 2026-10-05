@@ -15,35 +15,14 @@
 
 #include "storage_decode.h"
 
+/* `user/include/bytes.h`, by its path from here: the host test compiles this
+ * file with nothing on its include path. */
+#include "../../include/bytes.h"
+
 #define CBW_SIGNATURE   0x43425355u
 #define CSW_SIGNATURE   0x53425355u
 #define CBW_DATA_IN     0x80u           /* bmCBWFlags, bit 7 */
 #define CBW_BLOCK       15u             /* where CBWCB begins */
-
-static void put32le(uint8_t *at, uint32_t value)
-{
-    at[0] = (uint8_t)value;
-    at[1] = (uint8_t)(value >> 8);
-    at[2] = (uint8_t)(value >> 16);
-    at[3] = (uint8_t)(value >> 24);
-}
-
-static uint32_t get32le(const uint8_t *at)
-{
-    return at[0] | (uint32_t)at[1] << 8 | (uint32_t)at[2] << 16
-         | (uint32_t)at[3] << 24;
-}
-
-static uint64_t get64le(const uint8_t *at)
-{
-    return get32le(at) | (uint64_t)get32le(at + 4) << 32;
-}
-
-static uint32_t get32be(const uint8_t *at)
-{
-    return (uint32_t)at[0] << 24 | (uint32_t)at[1] << 16
-         | (uint32_t)at[2] << 8 | at[3];
-}
 
 bool bot_wrap(uint8_t *cbw, uint32_t tag, uint32_t length, bool in,
               uint8_t lun, const uint8_t *cdb, unsigned cdb_length)
@@ -53,9 +32,9 @@ bool bot_wrap(uint8_t *cbw, uint32_t tag, uint32_t length, bool in,
     }
 
     memset(cbw, 0, BOT_CBW_LENGTH);
-    put32le(cbw, CBW_SIGNATURE);
-    put32le(cbw + 4, tag);
-    put32le(cbw + 8, length);
+    put_le32(cbw, CBW_SIGNATURE);
+    put_le32(cbw + 4, tag);
+    put_le32(cbw + 8, length);
     cbw[12] = in ? CBW_DATA_IN : 0u;    /* ignored when the length is 0 */
     cbw[13] = lun;
     cbw[14] = (uint8_t)cdb_length;
@@ -74,12 +53,12 @@ enum bot_status bot_status_of(const uint8_t *csw, unsigned got, uint32_t tag,
 {
     *residue = 0;
 
-    if (got != BOT_CSW_LENGTH || get32le(csw) != CSW_SIGNATURE
-        || get32le(csw + 4) != tag) {
+    if (got != BOT_CSW_LENGTH || get_le32(csw) != CSW_SIGNATURE
+        || get_le32(csw + 4) != tag) {
         return BOT_NOT_VALID;
     }
 
-    *residue = get32le(csw + 8);
+    *residue = get_le32(csw + 8);
 
     switch (csw[12]) {
     case 0x00u:
@@ -172,8 +151,8 @@ bool scsi_capacity_10(const uint8_t *data, unsigned got,
         return false;
     }
 
-    last = get32be(data);
-    out->block_size = get32be(data + 4);
+    last = get_be32(data);
+    out->block_size = get_be32(data + 4);
 
     if (out->block_size == 0) {
         return false;
@@ -299,7 +278,7 @@ bool gpt_header_at(const uint8_t *block, unsigned size, uint64_t lba)
         return false;
     }
 
-    length = get32le(block + 12);
+    length = get_le32(block + 12);
 
     if (length < GPT_HEADER_LEAST || length > size) {
         return false;
@@ -309,5 +288,5 @@ bool gpt_header_at(const uint8_t *block, unsigned size, uint64_t lba)
     crc = storage_crc32(crc, zero, 4u);
     crc = storage_crc32(crc, block + 20, length - 20u);
 
-    return crc == get32le(block + 16) && get64le(block + 24) == lba;
+    return crc == get_le32(block + 16) && get_le64(block + 24) == lba;
 }

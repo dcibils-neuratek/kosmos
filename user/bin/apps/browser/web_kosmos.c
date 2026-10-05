@@ -32,9 +32,11 @@
 #include <libcss/unit.h>
 
 #include "web_select.h"
+#include "web_style.h"
 #include "web_paint.h"
 #include "web_netsurf.h"
 #include "web_svg.h"
+#include "kits/gfx/gfx_draw.h"
 
 #define DOC_HANDLE  "kosmos.dom"
 
@@ -658,7 +660,7 @@ static int l_render(lua_State *L)
 {
     struct doc *d = checkdoc(L);
     struct surface *s = lua_isnoneornil(L, 2)
-                        ? NULL : luaL_checkudata(L, 2, "kosmos.surface");
+                        ? NULL : gfx_surface_check(L, 2);
     int width = (int)luaL_checkinteger(L, 3);
 
     /* Required with a surface and meaningless without one. Defaulted, it
@@ -925,7 +927,7 @@ static int l_ns_picture(lua_State *L)
     int width = (int)luaL_checkinteger(L, 4);
     int height = (int)luaL_checkinteger(L, 5);
 
-    luaL_checkudata(L, 3, "kosmos.surface");
+    (void)gfx_surface_check(L, 3);
     lua_pushvalue(L, 3);
     lua_pushboolean(L, d->ns != NULL && k >= 1
                        && web_ns_picture(d->ns, L, (size_t)(k - 1), width,
@@ -939,7 +941,7 @@ static int l_ns_picture(lua_State *L)
 static int l_ns_paint(lua_State *L)
 {
     struct doc *d = checkdoc(L);
-    struct surface *s = luaL_checkudata(L, 2, "kosmos.surface");
+    struct surface *s = gfx_surface_check(L, 2);
     int width = (int)luaL_checkinteger(L, 3);
     int height = (int)luaL_checkinteger(L, 4);
     long from = (long)luaL_optinteger(L, 5, 0);
@@ -1157,62 +1159,6 @@ static int l_close(lua_State *L)
 }
 
 /*
- * A stylesheet needs somewhere to resolve a relative URL to, and libcss will
- * not create one without the callback even for a sheet that imports nothing.
- *
- * This hands the relative reference straight back. That is honest for what
- * this does today - parse a sheet and say whether it was understood - and
- * it is exactly the piece that has to become real when `@import` does.
- */
-static css_error resolve_url(void *pw, const char *base,
-                             lwc_string *rel, lwc_string **abs)
-{
-    (void)pw;
-    (void)base;
-
-    *abs = lwc_string_ref(rel);
-    return CSS_OK;
-}
-
-/* One sheet, parsed and finished, or NULL. Shared by `stylesheet` and the
- * selection below, which needs exactly the same thing. */
-static css_stylesheet *sheet_from(const char *text, size_t len)
-{
-    css_stylesheet_params params;
-    css_stylesheet *sheet = NULL;
-    css_error error;
-
-    memset(&params, 0, sizeof(params));
-
-    params.params_version = CSS_STYLESHEET_PARAMS_VERSION_1;
-    params.level          = CSS_LEVEL_DEFAULT;
-    params.charset        = NULL;
-    params.url            = "";
-    params.title          = NULL;
-    params.resolve        = resolve_url;
-
-    if (css_stylesheet_create(&params, &sheet) != CSS_OK) {
-        return NULL;
-    }
-
-    error = css_stylesheet_append_data(sheet, (const uint8_t *)text, len);
-
-    /* CSS_NEEDDATA is what "keep going" looks like and is not a failure:
-     * the parser says so after every chunk that did not end the sheet. */
-    if (error != CSS_OK && error != CSS_NEEDDATA) {
-        css_stylesheet_destroy(sheet);
-        return NULL;
-    }
-
-    if (css_stylesheet_data_done(sheet) != CSS_OK) {
-        css_stylesheet_destroy(sheet);
-        return NULL;
-    }
-
-    return sheet;
-}
-
-/*
  * style(css, tag) -> the computed colour of the first such element.
  *
  * **The smallest thing that is evidence for the cascade.** Getting a colour
@@ -1244,7 +1190,7 @@ static int l_style(lua_State *L)
         return 2;
     }
 
-    sheet = sheet_from(css, csslen);
+    sheet = web_style_sheet(css, csslen);
 
     if (sheet == NULL) {
         lua_pushnil(L);
@@ -1377,7 +1323,7 @@ static int l_stylesheet(lua_State *L)
 {
     size_t len = 0;
     const char *text = luaL_checklstring(L, 1, &len);
-    css_stylesheet *sheet = sheet_from(text, len);
+    css_stylesheet *sheet = web_style_sheet(text, len);
 
     if (sheet == NULL) {
         lua_pushnil(L);

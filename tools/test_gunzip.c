@@ -12,6 +12,9 @@
  * **And each of those read as it arrives** (`roadmap.md` 6zz l1): the
  * stream form fed the same bytes a byte at a time and in pieces of several
  * sizes, held to the whole form's answer and bytes every time.
+ *
+ * **And plain DEFLATE with nothing around it**, which the same inflater
+ * reads for the Compression Kit's `inflate` and for PNG.
  */
 
 #include <stdio.h>
@@ -418,6 +421,61 @@ int main(void)
           "the stream stopped at 100000: %s, %zu bytes", kosmos_gunzip_said(r), s.n);
     free(s.bytes);
     checks += 2;
+
+    /*
+     * **Plain DEFLATE** (`kosmos_inflate`, `kosmos_inflated_size`): the same
+     * inflater with no member around it - a PDF's stream, a PNG's rows, a
+     * zip's entry - since `puff` stopped being a second one. The megabyte
+     * deflated raw: measured, inflated into exactly its room, stopped one
+     * byte short with the room filled, cut short and corrupted refused; and
+     * the deflate inside Python's member, which is somebody else's.
+     */
+    {
+        static uint8_t raw[1 << 21], back[1 << 20], plain[16384];
+        size_t raw_len = deflate_raw(text, sizeof(text), raw, sizeof(raw));
+        size_t size = 0, out = 0;
+
+        r = kosmos_inflated_size(raw, raw_len, &work, &size);
+        CHECK(r == GUNZIP_WHOLE && size == sizeof(text),
+              "plain: measured %zu bytes of %zu: %s", size, sizeof(text),
+              kosmos_gunzip_said(r));
+
+        r = kosmos_inflate(raw, raw_len, &work, back, sizeof(back), &out);
+        CHECK(r == GUNZIP_WHOLE && out == sizeof(text)
+              && memcmp(back, text, out) == 0,
+              "plain: %s, %zu bytes, or different ones", kosmos_gunzip_said(r), out);
+
+        memset(back, 0, sizeof(back));
+        r = kosmos_inflate(raw, raw_len, &work, back, sizeof(back) - 1, &out);
+        CHECK(r == GUNZIP_REFUSED && out == sizeof(back) - 1
+              && memcmp(back, text, out) == 0,
+              "plain, a byte short: %s, %zu bytes", kosmos_gunzip_said(r), out);
+
+        r = kosmos_inflate(raw, raw_len / 2, &work, back, sizeof(back), &out);
+        CHECK(r == GUNZIP_SHORT && out < sizeof(text)
+              && memcmp(back, text, out) == 0,
+              "plain, cut in half: %s, %zu bytes", kosmos_gunzip_said(r), out);
+        r = kosmos_inflated_size(raw, raw_len / 2, &work, &size);
+        CHECK(r == GUNZIP_SHORT, "plain, measured cut in half: %s",
+              kosmos_gunzip_said(r));
+
+        memset(raw, 0xff, 200);
+        r = kosmos_inflate(raw, 200, &work, back, sizeof(back), &out);
+        CHECK(r == GUNZIP_BAD_DATA, "plain, 0xff: %s", kosmos_gunzip_said(r));
+        r = kosmos_inflated_size(raw, 200, &work, &size);
+        CHECK(r == GUNZIP_BAD_DATA, "plain, 0xff measured: %s",
+              kosmos_gunzip_said(r));
+
+        /* Python's member: ten bytes, "page.html" and its nought, the
+         * deflate, and the eight of the trailer. */
+        n = python_text(plain);
+        r = kosmos_inflate(python_gz + 20, sizeof(python_gz) - 28, &work, back,
+                           sizeof(back), &out);
+        CHECK(r == GUNZIP_WHOLE && out == n && memcmp(back, plain, n) == 0,
+              "plain, Python's deflate: %s, %zu bytes of %zu",
+              kosmos_gunzip_said(r), out, n);
+        checks += 8;
+    }
 
     checks += stream_checks;
 

@@ -10,13 +10,15 @@
  * (`docs/rightclick.html`, answer 4): `tdefl`, the deflater at the heart of
  * miniz, which `runtime/upstream/miniz/` carries as released.
  *
- * **Only the deflater is used.** miniz reads and writes whole zip archives
- * too, but through `malloc` and `stdio`, and neither is how this system
- * moves a file: a file's bytes are read into a region (`fs.read_into`) and
- * written from one (`fs.write_from`), and a process's heap is 2 MB. So miniz
- * is built with no stdio, no time, no archive code and no allocator, and
- * `tdefl` is run over two regions the caller mapped, with its own state in
- * pages of this process's - about 320 KB, mapped the first time and kept.
+ * **Of miniz, the deflater is used here and the inflater, `tinfl`, in
+ * `gzip.c`** - the kit's only inflater, for gzip, zlib, PNG, PDF and zip
+ * alike. miniz reads and writes whole zip archives too, but through
+ * `malloc` and `stdio`, and neither is how this system moves a file: a
+ * file's bytes are read into a region (`fs.read_into`) and written from one
+ * (`fs.write_from`), and a process's heap is 2 MB. So miniz is built with
+ * no stdio, no time, no archive code and no allocator, and `tdefl` is run
+ * over two regions the caller mapped, with its own state in pages of this
+ * process's - about 320 KB, mapped the first time and kept.
  * The zip's structure - its headers and its directory - is `zip.lua`'s: a
  * few dozen bytes an entry, and a decision about each, which is Lua's side
  * of the line.
@@ -45,13 +47,9 @@ static tdefl_compressor *state;
 static tdefl_compressor *deflater(void)
 {
     if (state == NULL) {
-        size_t pages = (sizeof(tdefl_compressor) + KOSMOS_PAGE_SIZE - 1)
-                       / KOSMOS_PAGE_SIZE;
-        long mapped = kosmos_map(pages);
+        size_t pages = 0;
 
-        if (mapped >= 0) {
-            state = (tdefl_compressor *)(uintptr_t)mapped;
-        }
+        state = kosmos_map_bytes(sizeof(tdefl_compressor), &pages);
     }
 
     return state;

@@ -35,6 +35,7 @@ local ui = use("/Kosmos/Libraries/ui.lua")
 local panel = use("/Kosmos/Libraries/panel.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 local audio = use("/Kosmos/Libraries/audio.lua")
+local regions = use("/Kosmos/Libraries/regions.lua")
 
 --
 -- The core is in this program's own image, `snes.elf` beside it in
@@ -143,60 +144,22 @@ if not attrs then
   return
 end
 
-local size = attrs.size or 0
-
 --
 -- A file into a region, a window at a time through a scratch region - for
 -- the reason `doom.lua` gives: `fs.read_into` has no offset into the region
--- it fills. The ROM comes in this way, and so do the saves below.
+-- it fills. The ROM comes in this way, by `regions.read_whole`, and the
+-- saves below by `regions.fill`, the same loop into a region already made.
+-- This file had its own copy of it, which made a Lua string of every window.
 --
-local WINDOW = 256 * 1024
-local scratch = sys.memory(WINDOW // 4096)
-
-if not scratch then
-  print("snes: no room for a staging window")
-  return
-end
-
-local function read_file(file, bytes, region)
-  local done = 0
-
-  while done < bytes do
-    local got = fs.read_into(file, scratch, done, math.min(WINDOW, bytes - done))
-
-    if not got or got == 0 then
-      return nil, ("%s stopped after %d of %d bytes"):format(file, done, bytes)
-    end
-
-    sys.region_write(region, done, sys.region_read(scratch, 0, got))
-    done = done + got
-  end
-
-  return true
-end
-
-local rom = sys.memory((size + 4095) // 4096)
+local size = attrs.size or 0
+local rom, oops = regions.read_whole(path)
 
 if not rom then
-  print(("snes: no room for %d KB of ROM"):format(size // 1024))
+  print("snes: " .. tostring(oops))
   return
 end
 
-local at = sys.memory_map(rom)
-
-if not at then
-  print("snes: the ROM region would not map")
-  return
-end
-
-do
-  local ok, oops = read_file(path, size, rom)
-
-  if not ok then
-    print("snes: " .. oops)
-    return
-  end
-end
+local at = rom.at
 
 -- What the core printed, onto this program's console. See `doom.lua`.
 local function drained()
@@ -243,15 +206,15 @@ local title = path:match("([^/]+)$"):gsub("%.%w+$", "")
 -- new one reads what this one has just written. A console killed from
 -- Processes is not kept; it never got the chance.
 --
--- Through one region, as big as a state, held for the whole run: a region
--- here is not given back until the process ends, so one is made and used
--- for every read and write.
+-- Through one region, as big as a state, held for the whole run: a mapped
+-- region keeps its pages until the process ends (`regions.free` says why),
+-- so one is made and used for every read and write.
 --
 local base = path:gsub("%.%w+$", "")
 local SRM, STATE = base .. ".srm", base .. ".state"
 local state_bytes = snes.size("state")
-local keep = sys.memory((state_bytes + 4095) // 4096)
-local keep_at = keep and sys.memory_map(keep)
+local keep = regions.make(state_bytes)
+local keep_at = keep and keep.at
 local kept_at                           -- the frame last kept, or read
 
 -- "loaded" and its size, "refused" and why, or nil when there is none.
@@ -264,7 +227,7 @@ local function read_kept(file, kind)
     return "refused", "larger than anything this cartridge keeps"
   end
 
-  local ok, oops = read_file(file, attrs.size, keep)
+  local ok, oops = regions.fill(file, keep, attrs.size)
 
   if not ok then return "refused", oops end
 
@@ -311,7 +274,7 @@ local function keep_game()
 
   if snes.size("battery") > 0 then
     local n, why = snes.save("battery", keep_at, state_bytes)
-    local ok, oops = n and fs.write_from(SRM, keep, n)
+    local ok, oops = n and fs.write_from(SRM, keep.cap, n)
 
     cart = ok and (", and the cartridge's own save of %d KB"):format(n // 1024)
            or ("; the cartridge's save was not written: "
@@ -319,7 +282,7 @@ local function keep_game()
   end
 
   local n, why = snes.save("state", keep_at, state_bytes)
-  local ok, oops = n and fs.write_from(STATE, keep, n)
+  local ok, oops = n and fs.write_from(STATE, keep.cap, n)
 
   if ok then
     kept_at = frame

@@ -81,6 +81,7 @@ local httpcache = use("/Kosmos/Libraries/httpcache.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
 local favorites = use("/Kosmos/Libraries/favorites.lua")
 local history = use("/Kosmos/Libraries/history.lua")
+local markup = use("/Kosmos/Libraries/markup.lua")
 local prefs = use("/Kosmos/Libraries/browserprefs.lua")
 
 --
@@ -243,56 +244,80 @@ end
 --------------------------------------------------------------------------
 
 --
--- A link's address, against the page it was found on.
+-- An address as NetSurf takes one, and one it gives back as this browser
+-- writes it. NetSurf joins links by the rules for URLs, so a file of this
+-- machine's goes to it as a `file:` URL; what comes back loses `http://`,
+-- which the address bar has never shown, and `file://` becomes the path.
 --
--- Enough of RFC 3986 to follow a link and no more: a scheme this browser
--- does not speak is refused by name rather than attempted, an absolute path
--- keeps the host, and a relative one is taken from the directory the page
--- came from - each keeping the page's scheme, so a link on an `https` page
--- stays `https`. `..` is not collapsed, which a real resolver does and which
--- no page here has needed yet.
+local ns_address
+
+do
+  local KNOWN = { http = true, https = true, asset = true, about = true,
+                  file = true, kosmos = true }
+
+  function ns_address(text)
+    if text == nil then return nil end
+    if text:sub(1, 1) == "/" then return "file://" .. text end
+
+    local scheme = text:match("^(%a[%w+.%-]*):")
+
+    -- An address the bar keeps without its scheme is http's - and a host
+    -- with a port looks like a scheme to the pattern, so only the ones this
+    -- browser speaks count as one.
+    if scheme and KNOWN[scheme:lower()] then return text end
+
+    return "http://" .. text
+  end
+end
+
+local function from_ns(url)
+  if url == nil then return nil end
+  if url:match("^file:///") then return url:sub(8) end
+  if url:lower():match("^http://") then return url:sub(8) end
+
+  return url
+end
+
 --
+-- A link's address, against the page it was found on: a link on a page
+-- `web_paint.c` laid out, a picture's on one, a redirect's and a refresh's.
+--
+-- **Joined by NetSurf** (`web.join`): the rules for URLs - `..` and `.`
+-- taken out, a `//host` given the page's scheme, a fragment kept - which
+-- are how NetSurf's layout joins every link and picture on a page it laid
+-- out, so an address means one thing here whichever path found it. This
+-- did the arithmetic itself until 4 October: a second resolver, which did
+-- not collapse `..`, and which every redirect went through.
+--
+-- What is left here is what this browser will go to: http and https, an
+-- asset of this image, and the page's own scheme - a file's links are
+-- files. Anything else is refused by name rather than attempted, so a
+-- server cannot send this browser to a file on this machine.
+--
+local SPOKEN = { http = true, https = true, asset = true }
+
+local function scheme_of(url)
+  return (url:match("^(%a[%w+.%-]*):") or ""):lower()
+end
+
 local function resolve(base, href)
-  href = tostring(href or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  href = tostring(href or ""):match("^%s*(.-)%s*$")
 
   if href == "" then return nil, "that link has no address" end
+  if not (web and web.join) then return nil, "this image has no web kit" end
 
-  -- A fragment names a place in this page, and nothing here scrolls to an
-  -- element yet.
-  if href:sub(1, 1) == "#" then
-    return nil, "that link points into this page, and there is no anchor yet"
+  local page = ns_address(base or "")
+  local whole, why = web.join(page, href)
+
+  if not whole then return nil, why end
+
+  local scheme = scheme_of(whole)
+
+  if not SPOKEN[scheme] and scheme ~= scheme_of(page) then
+    return nil, ("this browser speaks http and https, not %s"):format(scheme)
   end
 
-  local scheme = href:match("^(%a[%w+.%-]*):")
-
-  if scheme then
-    scheme = scheme:lower()
-
-    if scheme == "asset" then return href end
-
-    if scheme ~= "http" and scheme ~= "https" then
-      return nil, ("this browser speaks http and https, not %s"):format(scheme)
-    end
-
-    local rest = href:gsub("^%a[%w+.%-]*:", ""):gsub("^//", "")
-
-    return (scheme == "https" and "https://" or "") .. rest
-  end
-
-  -- The page's own scheme, kept for whatever it links to.
-  local prefix, rest = base:match("^(%a[%w+.%-]*://)(.*)$")
-
-  if not prefix then prefix, rest = "", base end
-
-  if prefix:lower() == "http://" then prefix = "" end
-
-  if href:sub(1, 2) == "//" then return prefix .. href:sub(3) end
-
-  local host = rest:match("^([^/]+)") or rest
-
-  if href:sub(1, 1) == "/" then return prefix .. host .. href end
-
-  return prefix .. ((rest:match("^(.*/)") or (host .. "/")) .. href)
+  return from_ns(whole)
 end
 
 --------------------------------------------------------------------------
@@ -546,8 +571,6 @@ local loading
 -- (`browserprefs.lua`). Changed in Settings, it is changed here.
 --
 local AGENT = prefs.agent(setting, (sys.build and sys.build() or {}).version)
-
-local dragging               -- the scrollbar thumb, while it is held
 
 -- Text a character shorter, never inside one; and text cut to a width with
 -- an ellipsis - a tab's title, a favorite's name, the status line.
@@ -1388,38 +1411,31 @@ local function reach()
   return math.max(0, current.content_h - VIEW_H)
 end
 
--- The track the kit's pill runs in (`ui.lua`, `thumb_of`): two pixels in
--- at each end, and a thumb never shorter than sixteen.
-local function thumb()
-  local track = VIEW_H - 4
-  local shown = current.content_h
-  local last  = reach()
+--
+-- **The kit's scrollbar**, one in every application (`roadmap.md` 6u: "Let's
+-- just have 1 scrollbars style go all the os", "pill"): `ui.draw_scrollbar`
+-- draws the pill and `ui.scrollbar_mouse` answers a press, a drag and a
+-- release, in pixels here as Text Editor's page does (`docview.lua`) - the
+-- page is `content_h` tall, `VIEW_H` of it shows, and the kit's `top` is
+-- one more than `current.top`, since its lists count from one.
+--
+-- It is painted into these pixels with `ui.paint_view`, as the tabs and the
+-- header are. This file drew a copy of the pill with the kit's numbers and
+-- dragged it with arithmetic of its own, from when a window that owns its
+-- pixels could not call the kit's drawing at all.
+--
+-- The column it stands in, which is not a view in the window: the sink
+-- below routes the pointer to it, and its drag is kept on it (`bar_drag`).
+local scrollbar = { x = 0, y = 0, w = SBAR, h = 0 }
 
-  if track < 8 or shown <= VIEW_H then
-    return nil, track                     -- nothing to scroll: no pill
-  end
-
-  local h = math.max(16, (track * VIEW_H) // shown)
-  local y = VIEW_Y + 2 + ((track - h) * current.top) // last
-
-  return y, h
+function scrollbar:paint(g)
+  g:fill(0, 0, self.w, self.h, theme.sunken)
+  ui.draw_scrollbar(g, self.w, self.h, current.content_h, VIEW_H, current.top + 1)
 end
 
---
--- **The kit's pill**, in the kit's colour, over the list's own ground - one
--- scrollbar in every application (`roadmap.md` 6u: "Let's just have 1
--- scrollbars style go all the os", "pill"). This page is drawn into a
--- surface of the browser's own, so it cannot call the kit's; it draws the
--- same thing, and the arrow buttons it had went with every other one.
---
 local function draw_scrollbar(s)
-  local ty, th = thumb()
-
-  s:fill(W - SBAR, VIEW_Y, SBAR, VIEW_H, theme.sunken)
-
-  if ty then
-    s:fill_round(W - 5 - 6, ty, 6, th, theme.mix(theme.sunken, theme.text_dim, 450), 3)
-  end
+  scrollbar.h = VIEW_H
+  ui.paint_view(scrollbar, s, W - SBAR, VIEW_Y)
 end
 
 --------------------------------------------------------------------------
@@ -1568,41 +1584,6 @@ end
 -- Wikipedia it was nearly all of it (`roadmap.md` 6zz h). `current.pictures_ms`.
 
 --
--- An address as NetSurf takes one, and one it gives back as this browser
--- writes it. NetSurf joins links by the rules for URLs, so a file of this
--- machine's goes to it as a `file:` URL; what comes back loses `http://`,
--- which the address bar has never shown, and `file://` becomes the path.
---
-local ns_address
-
-do
-  local KNOWN = { http = true, https = true, asset = true, about = true,
-                  file = true, kosmos = true }
-
-  function ns_address(text)
-    if text == nil then return nil end
-    if text:sub(1, 1) == "/" then return "file://" .. text end
-
-    local scheme = text:match("^(%a[%w+.%-]*):")
-
-    -- An address the bar keeps without its scheme is http's - and a host
-    -- with a port looks like a scheme to the pattern, so only the ones this
-    -- browser speaks count as one.
-    if scheme and KNOWN[scheme:lower()] then return text end
-
-    return "http://" .. text
-  end
-end
-
-local function from_ns(url)
-  if url == nil then return nil end
-  if url:match("^file:///") then return url:sub(8) end
-  if url:lower():match("^http://") then return url:sub(8) end
-
-  return url
-end
-
---
 -- Which face draws the page's Han ideographs - Japanese, Korean, or
 -- Simplified or Traditional Chinese - from the language it says it is in,
 -- before it is laid out (`gfx.font_prefer`, `roadmap.md` 6zz j5). The faces
@@ -1693,11 +1674,6 @@ end
 -- (`kosmos:back`, `kosmos:anyway`), which a click answers rather than
 -- fetches. The words are `docs/browser.html`'s.
 --
-local function escaped(text)
-  return (tostring(text):gsub("[&<>\"]", { ["&"] = "&amp;", ["<"] = "&lt;",
-                                           [">"] = "&gt;", ['"'] = "&quot;" }))
-end
-
 local function refused_page(text, reason)
   local why = tostring(reason):gsub("^the certificate", "its certificate")
 
@@ -1711,7 +1687,7 @@ instead, so nothing was sent to it.</p>
 <p><a href="kosmos:anyway">Open anyway</a></p>
 <p>Open anyway loads it for this tab only; it says Not secure for as long
 as it is open, and nothing is remembered.</p>
-</body></html>]]):format(escaped(why), escaped(text))
+</body></html>]]):format(markup.escape(why), markup.escape(text))
 end
 
 --
@@ -1730,8 +1706,9 @@ local function newtab_page()
 
       tiles[#tiles + 1] = ('<a class="tile" href="%s"><span class="fav" '
                            .. 'style="background: #%06x">%s</span>%s</a>')
-                          :format(escaped(ns_address(e.address)), ground & 0xffffff,
-                                  escaped(letter), escaped(e.name))
+                          :format(markup.escape(ns_address(e.address)),
+                                  ground & 0xffffff,
+                                  markup.escape(letter), markup.escape(e.name))
     end
   end
 
@@ -1742,11 +1719,12 @@ local function newtab_page()
     local when = day_words(l.day)
 
     rows[#rows + 1] = ('<p class="it"><a href="%s">%s</a> <small>%s, %s</small></p>')
-                      :format(escaped(ns_address(l.address)),
-                              escaped(l.title ~= "" and l.title or l.address),
-                              escaped(host ~= "" and host or l.address),
-                              escaped(when == "Today" and l.time
-                                      or when == "Yesterday" and "yesterday" or when))
+                      :format(markup.escape(ns_address(l.address)),
+                              markup.escape(l.title ~= "" and l.title or l.address),
+                              markup.escape(host ~= "" and host or l.address),
+                              markup.escape(when == "Today" and l.time
+                                            or when == "Yesterday" and "yesterday"
+                                            or when))
   end
 
   if #rows == 0 then
@@ -1802,12 +1780,15 @@ local function loading_words()
   return ("Loading %s - %d KB so far"):format(loading.host, kb(loading.got))
 end
 
--- The charset the server said a page is in, from its head: the parser
+-- The charset the server said a page is in, from its head's Content-Type
+-- (`httpcache.headers`, every field by its name in lower case): the parser
 -- holds to it over anything the page says of itself (`roadmap.md` 6zz j7).
+-- Spelt as the server spelt it, since the page's forms are sent in it too.
 local function charset_of(head)
-  return head:match("\r\n[Cc][Oo][Nn][Tt][Ee][Nn][Tt]%-[Tt][Yy][Pp][Ee]:"
-                    .. "[^\r\n]-[Cc][Hh][Aa][Rr][Ss][Ee][Tt]%s*=%s*\"?"
-                    .. "([%w%-_:%.]+)")
+  local kind = httpcache.headers(head)["content-type"] or ""
+  local _, stop = kind:lower():find("charset%s*=%s*\"?")
+
+  return stop and kind:match("^[%w%-_:%.]+", stop + 1)
 end
 
 local function fetch(text, page, post)
@@ -1927,7 +1908,7 @@ local function fetch(text, page, post)
     local status, head, body = http.parse(reply)
 
     if status >= 300 and status < 400 then
-      local to = head:match("\r\n[Ll][Oo][Cc][Aa][Tt][Ii][Oo][Nn]:%s*([^\r\n]+)")
+      local to = httpcache.headers(head).location
 
       if not to then
         tell(("it answered %d and said nowhere to go"):format(status))
@@ -2640,6 +2621,33 @@ local function fetch_sheets(d)
   return n + imported
 end
 
+--
+-- **Mozilla's roots, as the build read their names** (`ca/roots.txt`): the
+-- names, and the date of the bundle - its "as of" line. Read once, for
+-- Settings' count and the page that lists them, which each read it apart.
+--
+local mozilla_roots
+
+do
+  local names, as_of
+
+  function mozilla_roots()
+    if not names then
+      names = {}
+
+      for line in (sys.asset("ca/roots.txt") or ""):gmatch("[^\n]+") do
+        if not as_of and line:match("^as of ") then
+          as_of = line:sub(7)
+        else
+          names[#names + 1] = line
+        end
+      end
+    end
+
+    return names, as_of
+  end
+end
+
 local function load_page(text, post)
   if web == nil then
     say("this image has no web kit - build it with `make WEB=1`")
@@ -2693,24 +2701,19 @@ local function load_page(text, post)
   elseif text == prefs.ROOTS then
     --
     -- **The authorities this machine trusts**, Settings' Show: the names
-    -- the build read out of Mozilla's bundle (`ca/roots.txt`), and the
-    -- ones a person added in `/Home/Preferences/Authorities`.
+    -- the build read out of Mozilla's bundle (`mozilla_roots`), and the
+    -- ones a person added in `/Home/Preferences/Authorities` that `http`
+    -- trusts - a certificate in DER, not whatever else is in the folder.
     --
-    local names = sys.asset("ca/roots.txt") or ""
-    local rows, as_of = {}, nil
+    local roots, as_of = mozilla_roots()
+    local rows, own = {}, {}
 
-    for line in names:gmatch("[^\n]+") do
-      if not as_of and line:match("^as of ") then
-        as_of = line:sub(7)
-      else
-        rows[#rows + 1] = "<li>" .. escaped(line) .. "</li>"
-      end
+    for i, name in ipairs(roots) do
+      rows[i] = "<li>" .. markup.escape(name) .. "</li>"
     end
 
-    local own = {}
-
-    for _, name in ipairs(fs.list(http.AUTHORITIES) or {}) do
-      own[#own + 1] = "<li>" .. escaped(name) .. "</li>"
+    for i, name in ipairs(http.authority_names()) do
+      own[i] = "<li>" .. markup.escape(name) .. "</li>"
     end
 
     body, fetched_ms = ([[<!doctype html>
@@ -2722,9 +2725,9 @@ of these.</p>
 <ul>%s</ul>
 <h2>Mozilla's %d, as of %s</h2>
 <ul>%s</ul>
-</body></html>]]):format(escaped(http.AUTHORITIES),
+</body></html>]]):format(markup.escape(http.AUTHORITIES),
                       #own > 0 and table.concat(own) or "<li>None</li>", #rows,
-                      escaped(as_of or "the build"), table.concat(rows)), 0
+                      markup.escape(as_of or "the build"), table.concat(rows)), 0
     say("the authorities this machine trusts")
 
   elseif text:match("^asset:") then
@@ -2976,9 +2979,10 @@ local function refresh_of(text)
       if seconds then
         if not to then return seconds, text end
 
-        local whole = current.ns_doc and web.join and web.join(ns_address(text), to)
+        -- Somewhere this browser will not go is not gone to.
+        local whole = resolve(text, to)
 
-        return seconds, whole and from_ns(whole) or resolve(text, to) or to
+        if whole then return seconds, whole end
       end
     end
   end
@@ -3381,35 +3385,20 @@ function sink:key(c)
   return true
 end
 
-local function scrollbar_press(y)
-  local ty, th = thumb()
-
-  if not ty then
-    return
-  elseif y < ty then
-    scroll_by(-(VIEW_H - gfx.height() * 2))
-  elseif y >= ty + th then
-    scroll_by(VIEW_H - gfx.height() * 2)
-  else
-    dragging = y - ty
-  end
-end
-
 --
--- The thumb, while it is held.
+-- The pointer, offered to the scrollbar first (`scrollbar`, above): the kit's
+-- `ui.scrollbar_mouse` decides whether it is the bar's - a press in its
+-- column, or any move and the release while its thumb is held, wherever
+-- the pointer has got to - and answers where the page goes, its `top`
+-- counted from one. A press above or below the thumb is a screen; a drag
+-- moves the page by how far the pointer moved, so what is under the
+-- pointer stays under it. Nil when the event is not the bar's.
 --
--- The pointer's offset *into* the thumb is remembered at the press, so the
--- page does not jump the moment the drag starts: what is under the pointer
--- stays under it, which is the one thing a scrollbar has to get right.
---
-local function scrollbar_drag(y)
-  local track = VIEW_H - 4
-  local _, th = thumb()
-  local room = track - th
+local function scrollbar_mouse(action, x, y)
+  if action == "press" and (y < VIEW_Y or y >= VIEW_Y + VIEW_H) then return nil end
 
-  if room <= 0 then return false end
-
-  return scroll_to(((y - dragging - VIEW_Y - 2) * reach()) // room)
+  return ui.scrollbar_mouse(scrollbar, action, x, y - VIEW_Y, W, VIEW_H,
+                            current.content_h, VIEW_H, current.top + 1)
 end
 
 --
@@ -3534,17 +3523,16 @@ local function page_press(x, y)
   local where, why
 
   if current.ns_doc then
-    -- Whole already: NetSurf joined it to the page as it laid the page
-    -- out. A link into this page - `#top` - has nowhere to go yet.
+    -- Whole already: NetSurf joined it to the page as it laid the page out.
     where = from_ns(href)
-
-    if where:find("#", 1, true)
-       and where:gsub("#.*$", "")
-           == tostring(current.here or ""):gsub("#.*$", "") then
-      where, why = nil, "that link points into this page, and there is no anchor yet"
-    end
   else
     where, why = resolve(current.here or current.address.text, href)
+  end
+
+  -- A link into this page - `#top` - has nowhere to go yet.
+  if where and where:find("#", 1, true)
+     and where:gsub("#.*$", "") == tostring(current.here or ""):gsub("#.*$", "") then
+    where, why = nil, "that link points into this page, and there is no anchor yet"
   end
 
   if not where then
@@ -3588,24 +3576,25 @@ local function breakdown(x)
 end
 
 function sink:mouse(action, x, y)
+  local to = scrollbar_mouse(action, x, y)
+
   -- A move arrives only while a button is held, and only a held thumb does
   -- anything with it: a frame for every move of a press on the page was a
   -- frame drawn for nothing. Drawn when the page moved, then.
   if action == "move" then
-    return dragging ~= nil and scrollbar_drag(y)
+    return to ~= nil and scroll_to(to - 1)
   end
 
-  if action == "press" then
-    if y >= VIEW_Y and y < VIEW_Y + VIEW_H and x >= W - SBAR then
-      scrollbar_press(y)
-    elseif y >= VIEW_Y and y < VIEW_Y + VIEW_H and x >= VIEW_X then
+  if to then
+    scroll_to(to - 1)
+  elseif action == "press" then
+    -- The bar's column with nothing to scroll is nobody's.
+    if y >= VIEW_Y and y < VIEW_Y + VIEW_H and x >= VIEW_X and x < W - SBAR then
       page_press(x, y)
     elseif current.timing ~= "" and setting.costs
            and x >= W - 10 - gfx.measure(current.timing) then
       breakdown(x)
     end
-  elseif action == "release" then
-    dragging = nil
   end
 
   -- Taken, so the kit repaints: `on_paint`, below.
@@ -3805,7 +3794,8 @@ end
 
 local function unstow()
   -- What belongs to the moment rather than the page.
-  pointing, band_ms, dragging, status_for = nil, nil, nil, nil
+  pointing, band_ms, status_for = nil, nil, nil
+  scrollbar.bar_drag = nil          -- its thumb, if it was held
 end
 
 -- A tab with nothing in it yet.
@@ -4264,12 +4254,7 @@ do
     end)
 
     -- Mozilla's roots, as the build read their names, and the date.
-    local roots = sys.asset("ca/roots.txt") or ""
-    local count, as_of = 0, nil
-
-    for line in roots:gmatch("[^\n]+") do
-      if not as_of and line:match("^as of ") then as_of = line:sub(7) else count = count + 1 end
-    end
+    local roots, as_of = mozilla_roots()
 
     -- "Fri Sep 25 03:12:01 2026 GMT", as curl writes it, as a person would.
     local mon, day, year = tostring(as_of):match("^%a+ (%a+) +(%d+) [%d:]+ (%d+)")
@@ -4278,7 +4263,7 @@ do
       if m == mon then as_of = ("%d %s %s"):format(tonumber(day), clock.FULL_MONTHS[i], year) end
     end
 
-    local own = fs.list(http.AUTHORITIES) or {}
+    local own = http.authority_names()
     local kept = fs.list(CACHE.dir) or {}
 
     local open_own = button("Open", function()
@@ -4350,7 +4335,7 @@ do
             control = clear } } },
       { name = "Security", rows = {
           { label = "Trusted authorities",
-            note = ("Mozilla's %d, as of %s"):format(count, as_of or "the build"),
+            note = ("Mozilla's %d, as of %s"):format(#roots, as_of or "the build"),
             control = button("Show", function() new_tab(prefs.ROOTS) end) },
           { label = "Added here",
             note = #own > 0 and table.concat(own, ", ")

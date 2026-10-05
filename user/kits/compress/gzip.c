@@ -22,8 +22,14 @@
  * again. So nothing here knows or trusts how long the result will be -
  * the length in the trailer is checked, never used to size anything - and
  * the caller decides where the bytes go and when there are too many.
- * `puff`, which `inflate` uses, decodes a stream twice to learn its size and
- * is the slow reference inflater its name says it is.
+ *
+ * **And plain DEFLATE, with nothing around it**, is this file's too: a zlib
+ * stream's body, a PDF's FlateDecode, a PNG's image data, a zip's entry -
+ * `kosmos_inflate` and `kosmos_inflated_size` below, which `inflate.c` and
+ * `png.c` call. There was a second inflater for those, `puff`, which
+ * decoded every stream twice to learn its size first; one inflater is one
+ * set of bugs, and `tinfl` writes straight into the caller's region in one
+ * pass.
  *
  * No Lua in this file, so `tools/test_gunzip.c` compiles it on the Mac and
  * holds it to what Python's `gzip` writes.
@@ -32,6 +38,10 @@
 #include "gzip.h"
 
 #include <string.h>
+
+/* `user/include/bytes.h`, by its path from here: the host test compiles
+ * this file with only the kit's own directory and miniz's on its path. */
+#include "../../include/bytes.h"
 
 /*
  * The header's length, from its flags; 0 when the bytes end inside it, and
@@ -78,10 +88,64 @@ static size_t header(const uint8_t *p, size_t n)
     return at <= n ? at : 0;
 }
 
-static uint32_t le32(const uint8_t *p)
+/*
+ * One raw DEFLATE stream from `src + *at`, through the window: each stretch
+ * of output put as it comes when there is a `put`, added to `*crc` when
+ * there is one, and counted in `*out`. `*at` is left after the stream's last
+ * byte. `GUNZIP_WHOLE`, or how it stopped.
+ *
+ * Run the way miniz's own `tinfl_decompress_mem_to_callback` runs it: no
+ * flags - raw deflate, every byte there is already here - and a window that
+ * wraps, so nothing here knows or trusts how long the result will be.
+ */
+static int through_window(struct gunzip_work *work, const uint8_t *src,
+                          size_t len, size_t *at, gunzip_put put, void *user,
+                          mz_ulong *crc, size_t *out)
 {
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16
-           | (uint32_t)p[3] << 24;
+    size_t window_at = 0;
+
+    tinfl_init(&work->inflater);
+
+    for (;;) {
+        size_t in = len - *at;
+        size_t room = TINFL_LZ_DICT_SIZE - window_at;
+        tinfl_status status;
+
+        status = tinfl_decompress(&work->inflater, src + *at, &in,
+                                  work->window, work->window + window_at,
+                                  &room, 0);
+        *at += in;
+
+        if (room > 0) {
+            if (crc != NULL) {
+                *crc = mz_crc32(*crc, work->window + window_at, room);
+            }
+
+            *out += room;
+
+            if (put != NULL && !put(user, work->window + window_at, room)) {
+                return GUNZIP_REFUSED;
+            }
+        }
+
+        window_at = (window_at + room) & (TINFL_LZ_DICT_SIZE - 1);
+
+        if (status == TINFL_STATUS_DONE) {
+            return GUNZIP_WHOLE;
+        }
+
+        if (status == TINFL_STATUS_HAS_MORE_OUTPUT) {
+            continue;
+        }
+
+        /* It wanted more than there was: a reply cut off. */
+        if (status == TINFL_STATUS_NEEDS_MORE_INPUT
+            || status == TINFL_STATUS_FAILED_CANNOT_MAKE_PROGRESS) {
+            return GUNZIP_SHORT;
+        }
+
+        return GUNZIP_BAD_DATA;
+    }
 }
 
 int kosmos_gunzip(const uint8_t *src, size_t len, struct gunzip_work *work,
@@ -93,8 +157,9 @@ int kosmos_gunzip(const uint8_t *src, size_t len, struct gunzip_work *work,
     *out = 0;
 
     for (;;) {
-        size_t h, window_at = 0, member_out = 0;
+        size_t h, member_out = 0;
         mz_ulong crc = MZ_CRC32_INIT;
+        int r;
 
         /*
          * Another member, or the end. Bytes after the last member that are
@@ -117,55 +182,19 @@ int kosmos_gunzip(const uint8_t *src, size_t len, struct gunzip_work *work,
         }
 
         at += h;
-        tinfl_init(&work->inflater);
+        r = through_window(work, src, len, &at, put, user, &crc, &member_out);
+        *out += member_out;
 
-        for (;;) {
-            size_t in = len - at;
-            size_t room = TINFL_LZ_DICT_SIZE - window_at;
-            tinfl_status status;
-
-            /* No flags: raw deflate, every byte there is already here, and
-             * a window that wraps. */
-            status = tinfl_decompress(&work->inflater, src + at, &in,
-                                      work->window, work->window + window_at,
-                                      &room, 0);
-            at += in;
-
-            if (room > 0) {
-                crc = mz_crc32(crc, work->window + window_at, room);
-                member_out += room;
-                *out += room;
-
-                if (!put(user, work->window + window_at, room)) {
-                    return GUNZIP_REFUSED;
-                }
-            }
-
-            window_at = (window_at + room) & (TINFL_LZ_DICT_SIZE - 1);
-
-            if (status == TINFL_STATUS_DONE) {
-                break;
-            }
-
-            if (status == TINFL_STATUS_HAS_MORE_OUTPUT) {
-                continue;
-            }
-
-            /* It wanted more than there was: a reply cut off. */
-            if (status == TINFL_STATUS_NEEDS_MORE_INPUT
-                || status == TINFL_STATUS_FAILED_CANNOT_MAKE_PROGRESS) {
-                return GUNZIP_SHORT;
-            }
-
-            return GUNZIP_BAD_DATA;
+        if (r != GUNZIP_WHOLE) {
+            return r;
         }
 
         if (len - at < 8) {
             return GUNZIP_SHORT;
         }
 
-        if (le32(src + at) != (uint32_t)crc
-            || le32(src + at + 4) != (uint32_t)member_out) {
+        if (get_le32(src + at) != (uint32_t)crc
+            || get_le32(src + at + 4) != (uint32_t)member_out) {
             return GUNZIP_BAD_CHECK;
         }
 
@@ -365,8 +394,8 @@ int kosmos_gunzip_feed(struct gunzip_stream *s, const uint8_t *src, size_t len,
             at++;
 
             if (s->have == 8) {
-                if (le32(s->trailer) != (uint32_t)s->crc
-                    || le32(s->trailer + 4) != s->member_out) {
+                if (get_le32(s->trailer) != (uint32_t)s->crc
+                    || get_le32(s->trailer + 4) != s->member_out) {
                     s->state = AT_FAILED;
                     s->result = GUNZIP_BAD_CHECK;
                     return s->result;
@@ -466,6 +495,50 @@ int kosmos_gunzip_end(struct gunzip_stream *s)
     }
 
     return GUNZIP_SHORT;
+}
+
+/*
+ * **Plain DEFLATE** (`gzip.h`): into the caller's `cap` bytes in one pass,
+ * the output being its own window - which is what
+ * `TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF` says, and why a stream that
+ * reaches back before `dst` is refused by `tinfl` rather than read from
+ * somewhere else. More than `cap` stops at `cap`, as `GUNZIP_REFUSED`.
+ */
+int kosmos_inflate(const uint8_t *src, size_t len, struct gunzip_work *work,
+                   uint8_t *dst, size_t cap, size_t *out)
+{
+    size_t in = len, room = cap;
+    tinfl_status status;
+
+    tinfl_init(&work->inflater);
+    status = tinfl_decompress(&work->inflater, src, &in, dst, dst, &room,
+                              TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+    *out = room;
+
+    if (status == TINFL_STATUS_DONE) {
+        return GUNZIP_WHOLE;
+    }
+
+    if (status == TINFL_STATUS_HAS_MORE_OUTPUT) {
+        return GUNZIP_REFUSED;
+    }
+
+    if (status == TINFL_STATUS_NEEDS_MORE_INPUT
+        || status == TINFL_STATUS_FAILED_CANNOT_MAKE_PROGRESS) {
+        return GUNZIP_SHORT;
+    }
+
+    return GUNZIP_BAD_DATA;
+}
+
+/* How long it would be: the same decode through the window, kept nowhere. */
+int kosmos_inflated_size(const uint8_t *src, size_t len,
+                         struct gunzip_work *work, size_t *size)
+{
+    size_t at = 0;
+
+    *size = 0;
+    return through_window(work, src, len, &at, NULL, NULL, NULL, size);
 }
 
 const char *kosmos_gunzip_said(int result)

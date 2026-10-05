@@ -143,8 +143,9 @@ static css_error name_of(dom_node *node, lwc_string **out)
     return CSS_OK;
 }
 
-/* Is this node an element? Text and comments are asked about too. */
-static bool is_element(dom_node *node)
+/* Is this node an element? Text and comments are asked about too - here,
+ * and by `web_paint.c` as it walks a document (`web_select.h`). */
+bool web_is_element(dom_node *node)
 {
     dom_node_type type;
 
@@ -157,7 +158,7 @@ static dom_string *attr_of(dom_node *node, dom_string *name)
 {
     dom_string *value = NULL;
 
-    if (!is_element(node)) {
+    if (!web_is_element(node)) {
         return NULL;
     }
 
@@ -177,7 +178,7 @@ static dom_node *previous_element(dom_node *node)
         return NULL;
     }
 
-    while (at != NULL && !is_element(at)) {
+    while (at != NULL && !web_is_element(at)) {
         dom_node *before = NULL;
 
         (void)dom_node_get_previous_sibling(at, &before);
@@ -222,7 +223,7 @@ static css_error h_node_classes(void *pw, void *node,
     *classes = NULL;
     *n_classes = 0;
 
-    if (!is_element(node)) {
+    if (!web_is_element(node)) {
         return CSS_OK;
     }
 
@@ -258,7 +259,7 @@ static bool named(dom_node *node, const css_qname *qname)
     lwc_string *name = NULL;
     bool same = false;
 
-    if (!is_element(node) || name_of(node, &name) != CSS_OK) {
+    if (!web_is_element(node) || name_of(node, &name) != CSS_OK) {
         return false;
     }
 
@@ -289,7 +290,7 @@ static css_error h_named_ancestor_node(void *pw, void *node,
         dom_node_unref(at);
         at = up;
 
-        if (!is_element(at)) {
+        if (!web_is_element(at)) {
             dom_node_unref(at);
             return CSS_OK;
         }
@@ -314,7 +315,7 @@ static css_error h_named_parent_node(void *pw, void *node,
         return CSS_OK;
     }
 
-    if (is_element(up) && named(up, qname)) {
+    if (web_is_element(up) && named(up, qname)) {
         *parent = up;
     }
 
@@ -376,7 +377,7 @@ static css_error h_parent_node(void *pw, void *node, void **parent)
     *parent = NULL;
 
     if (dom_node_get_parent_node(node, &up) == DOM_NO_ERR && up != NULL) {
-        if (is_element(up)) {
+        if (web_is_element(up)) {
             *parent = up;
         }
 
@@ -433,7 +434,7 @@ static css_error h_node_has_class(void *pw, void *node,
     (void)pw;
     *match = false;
 
-    if (!is_element(node)) {
+    if (!web_is_element(node)) {
         return CSS_OK;
     }
 
@@ -666,7 +667,7 @@ static css_error h_node_is_root(void *pw, void *node, bool *match)
     *match = false;
 
     if (dom_node_get_parent_node(node, &up) == DOM_NO_ERR && up != NULL) {
-        *match = !is_element(up);       /* the document is not an element */
+        *match = !web_is_element(up);       /* the document is not an element */
         dom_node_unref(up);
     } else {
         *match = true;
@@ -707,7 +708,7 @@ static css_error h_node_count_siblings(void *pw, void *node, bool same_name,
     while (at != NULL) {
         dom_node *step = NULL;
 
-        if (is_element(at)) {
+        if (web_is_element(at)) {
             bool same = true;
 
             if (same_name) {

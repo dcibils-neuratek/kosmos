@@ -25,6 +25,7 @@
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
+local regions = use("/Kosmos/Libraries/regions.lua")
 
 -- The engine this program's own image carries, reached by its file.
 local have, quake = pcall(use, "quake.elf")
@@ -56,50 +57,22 @@ end
 
 --
 -- The pak, in a region of its own, a window at a time through a scratch
--- region - for the reason `doom.lua` gives: `fs.read_into` has no offset
--- into the region it fills.
+-- region - `regions.read_whole`, for the reason `doom.lua` gives:
+-- `fs.read_into` has no offset into the region it fills. Region to region,
+-- where this copy of the loop made a Lua string of every window.
 --
-local pak = sys.memory((size + 4095) // 4096)
+local pak, oops = regions.read_whole(path)
 
 if not pak then
-  print(("quake: no room for %d KB of pak"):format(size // 1024))
+  print("quake: " .. tostring(oops))
   return
 end
 
-local at = sys.memory_map(pak)
-
-if not at then
-  print("quake: the pak region would not map")
-  return
-end
-
-do
-  local WINDOW = 256 * 1024
-  local scratch = sys.memory(WINDOW // 4096)
-
-  if not scratch then
-    print("quake: no room for a staging window")
-    return
-  end
-
-  local done = 0
-
-  while done < size do
-    local got = fs.read_into(path, scratch, done, math.min(WINDOW, size - done))
-
-    if not got or got == 0 then
-      print(("quake: %s stopped after %d of %d bytes"):format(path, done, size))
-      return
-    end
-
-    sys.region_write(pak, done, sys.region_read(scratch, 0, got))
-    done = done + got
-  end
-end
+local at = pak.at
 
 -- A pak starts with "PACK". Checked here, because what goes wrong on this
 -- system is the transfer, and Quake's own complaint would be about the file.
-if sys.region_read(pak, 0, 4) ~= "PACK" then
+if sys.region_read(pak.cap, 0, 4) ~= "PACK" then
   print(("quake: %s does not start with PACK - the read did not land"):format(path))
   return
 end

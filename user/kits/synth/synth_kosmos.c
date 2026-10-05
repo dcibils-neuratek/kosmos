@@ -71,6 +71,7 @@
 #include "lauxlib.h"
 
 #include "audioring.h"
+#include "bytes.h"
 #include "depth.h"
 #include "kosmos.h"
 #include "midiproto.h"
@@ -1018,20 +1019,6 @@ struct exporter {
     double l[SYNTH_BLOCK], r[SYNTH_BLOCK];
 };
 
-static void put32(uint8_t *p, uint32_t v)
-{
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-    p[2] = (uint8_t)(v >> 16);
-    p[3] = (uint8_t)(v >> 24);
-}
-
-static void put16(uint8_t *p, uint16_t v)
-{
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-}
-
 static int l_export(lua_State *L)
 {
     uintptr_t at = (uintptr_t)luaL_checkinteger(L, 2);
@@ -1093,17 +1080,17 @@ static int l_export(lua_State *L)
     uint32_t bytes = (uint32_t)frames * 4u;
 
     memcpy(out, "RIFF", 4);
-    put32(out + 4, 36u + bytes);
+    put_le32(out + 4, 36u + bytes);
     memcpy(out + 8, "WAVEfmt ", 8);
-    put32(out + 16, 16);
-    put16(out + 20, 1);                             /* PCM */
-    put16(out + 22, 2);                             /* stereo */
-    put32(out + 24, SYNTH_RATE);
-    put32(out + 28, SYNTH_RATE * 4);
-    put16(out + 32, 4);
-    put16(out + 34, 16);
+    put_le32(out + 16, 16);
+    put_le16(out + 20, 1);                          /* PCM */
+    put_le16(out + 22, 2);                          /* stereo */
+    put_le32(out + 24, SYNTH_RATE);
+    put_le32(out + 28, SYNTH_RATE * 4);
+    put_le16(out + 32, 4);
+    put_le16(out + 34, 16);
     memcpy(out + 36, "data", 4);
-    put32(out + 40, bytes);
+    put_le32(out + 40, bytes);
 
     lua_pushinteger(L, 44 + (lua_Integer)bytes);
     lua_pushnumber(L, (double)frames / SYNTH_RATE);

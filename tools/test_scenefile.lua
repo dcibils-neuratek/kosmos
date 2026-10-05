@@ -81,7 +81,7 @@ end
 
 local expect = { house = { 202, "House" }, car = { 76, "Car" }, plane = { 106, "Plane" } }
 
--- base64, by hand, for the host: the app decodes with `k3.unbase64`, in C.
+-- base64, by hand, for the host: the app decodes with `compress.unbase64`, in C.
 local B64 = {}
 
 for i = 1, 64 do

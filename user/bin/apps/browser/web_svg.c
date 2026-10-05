@@ -32,8 +32,7 @@
 #include "web_svg.h"
 
 /* The one door into a surface from outside `gfx.c`, as `gamesoft.c` has it. */
-uint32_t *kosmos_surface_pixels(lua_State *L, int index,
-                                unsigned *w, unsigned *h, unsigned *pitch);
+#include "kits/gfx/gfx_draw.h"
 
 /* What a shape is drawn through: a fill's edges as they are, a stroke's as
  * a quadrilateral round each, both scaled to the picture. */

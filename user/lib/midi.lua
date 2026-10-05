@@ -35,6 +35,8 @@
 
 local midi = {}
 
+local regions = use("/Kosmos/Libraries/regions.lua")
+
 -- struct midi_request: op, index, device, handle, cable, length, reserved, bytes
 local REQUEST  = "<I4I4I4I4BBc6c40"
 local SEND_MAX = 40
@@ -201,23 +203,16 @@ end
 -- program's, handed to the driver, which writes each event into it.
 --
 function midi.open(id)
-  local cap, why = sys.memory(1)
+  local page, why = regions.make(regions.PAGE)
 
-  if not cap then
+  if not page then
     return nil, "no memory for the MIDI events: " .. tostring(why)
   end
 
-  local at = sys.memory_map(cap)
-
-  if not at then
-    sys.release(cap)
-    return nil, "the MIDI events' page could not be mapped"
-  end
-
-  local reply, err = ask(OP.open, { device = id or EVERY }, cap)
+  local reply, err = ask(OP.open, { device = id or EVERY }, page.cap)
 
   if not reply then
-    sys.release(cap)
+    regions.free(page)
     return nil, err
   end
 
@@ -227,8 +222,8 @@ function midi.open(id)
   -- to read it itself - the Synth Kit takes a keyboard's notes that way
   -- (`synth.listen`). What reads it writes its `read`, and so a stream
   -- handed to C is not read here as well.
-  return setmetatable({ cap = cap, handle = handle, device = id, read = 0,
-                        lost = 0, at = at }, stream)
+  return setmetatable({ page = page, cap = page.cap, handle = handle,
+                        device = id, read = 0, lost = 0, at = page.at }, stream)
 end
 
 --
@@ -282,7 +277,7 @@ function stream:close()
 
   self.closed = true
   ask(OP.close, { handle = self.handle })
-  sys.release(self.cap)
+  regions.free(self.page)
 end
 
 return midi

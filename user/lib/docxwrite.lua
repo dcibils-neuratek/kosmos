@@ -33,6 +33,7 @@
 
 local docxwrite = {}
 
+local markup = use("/Kosmos/Libraries/markup.lua")
 local richtext = use("/Kosmos/Libraries/richtext.lua")
 local writedoc = use("/Kosmos/Libraries/writedoc.lua")
 
@@ -40,15 +41,10 @@ local writedoc = use("/Kosmos/Libraries/writedoc.lua")
 -- XML.
 --------------------------------------------------------------------------
 
-local ESCAPE = { ["&"] = "&amp;", ["<"] = "&lt;", [">"] = "&gt;", ['"'] = "&quot;" }
-
--- Text as XML may hold it: the five that mean something escaped, and the
--- bytes below a space XML 1.0 does not allow dropped.
-function docxwrite.escape(s)
-  return (tostring(s):gsub("[%z\1-\8\11\12\14-\31]", ""):gsub('[&<>"]', ESCAPE))
-end
-
-local esc = docxwrite.escape
+-- Text as XML may hold it: the four that mean something escaped, and the
+-- bytes below a space XML 1.0 does not allow dropped - `markup.lua`'s,
+-- which the browser's own pages use too. It was this file's until 4 October.
+local esc = markup.escape
 
 local HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 local W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '

@@ -3,6 +3,7 @@
 #define KOSMOS_WEB_STYLE_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /*
@@ -35,5 +36,16 @@ void web_style_close(struct web_style *s);
 /* What `element` computes to. False when nothing came back, and `out` is
  * left alone - the caller keeps whatever it inherited. */
 bool web_style_of(struct web_style *s, void *element, struct web_look *out);
+
+/*
+ * One stylesheet from text, parsed and finished, or NULL - libcss's
+ * `css_stylesheet`, by its struct name so this header need not include
+ * libcss. Its relative URLs are not resolved: these sheets style
+ * `web_paint.c`'s text, and the ones a page is laid out with are NetSurf's
+ * (`web_netsurf.c`). The caller destroys it.
+ */
+struct css_stylesheet;
+
+struct css_stylesheet *web_style_sheet(const char *text, size_t len);
 
 #endif /* KOSMOS_WEB_STYLE_H */

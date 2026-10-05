@@ -23,6 +23,7 @@
 
 local REMOTE = "/Running/wm/remote"
 local clock = use("/Kosmos/Libraries/clock.lua")
+local regions = use("/Kosmos/Libraries/regions.lua")
 
 local size = fs.send(REMOTE, { type = "watch" })
 
@@ -31,15 +32,14 @@ if type(size) ~= "table" or not size.w then
   return
 end
 
-local cap = sys.memory((size.bytes + 4095) // 4096)
-local at = cap and sys.memory_map(cap)
+local copy = regions.make(size.bytes)
 
-if not at then
+if not copy then
   print("screenshot: no memory for a picture of the screen")
   return
 end
 
-local lent = fs.send(REMOTE, { type = "watch" }, cap)
+local lent = fs.send(REMOTE, { type = "watch" }, copy.cap)
 
 if type(lent) ~= "table" or not lent.ok then
   print("screenshot: the desktop would not share its screen: "
@@ -47,7 +47,7 @@ if type(lent) ~= "table" or not lent.ok then
   return
 end
 
-local picture = gfx.wrap{ at = at, w = size.w, h = size.h }
+local picture = gfx.wrap{ at = copy.at, w = size.w, h = size.h }
 local png = gfx.encode_png(picture)
 
 local t = clock.now()

@@ -24,8 +24,6 @@
 
 #include "k3d.h"
 
-static inline float lo2(float a, float b) { return a < b ? a : b; }
-static inline float hi2(float a, float b) { return a > b ? a : b; }
 static inline float clamp01(float x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
 static inline float flr(float x) { return (float)floor((double)x); }
 static inline float frac(float x) { return x - flr(x); }
