@@ -913,6 +913,16 @@ border one?" - the second window that draws its own pixels to offer a
 header, after Groove (`ui.md` 16.25, `testing.md` 18.399); the review of the
 rest is still to do.
 
+**FOUND on 5 October - the M700 restarted over Telnet comes up with no
+screen.** Twice in a row (0.11.6, 0.11.7) `kosmos_telnet.py restart` brought
+the machine back on the network with the kernel saying "display: none
+attached": the loader was handed no framebuffer, and the window manager,
+given no screen, ended. Nothing on the display path changed since 0.10.257,
+which showed a desktop. Likeliest: a warm restart leaves the firmware not
+setting the display up again, where a power-on does - to be confirmed by a
+power-on of the same build, and then the restart made a full reset (the
+ACPI reset register, or a cold reset through port 0xCF9) if that is it.
+
 **Kosmos Write's window resizable, as the browser's is.** Diego, 5 October
 2026: "kosmos write works fine", "I need to be able to resizse the window
 like we do with the browsser". A window that draws its own pixels resizes
