@@ -1051,7 +1051,8 @@ Assessed, not designed:
   pinned by commit; tested against a Homebrew Samba run as the user on
   port 4450. Steps N0-N9, then read-write, discovery and the server side.
   **N0 DONE on 5 October** (`testing.md` 18.405): the peer and libsmb2,
-  every dialect, on the Mac. **Next: N1**, the Crypto Kit's additions.
+  every dialect, on the Mac. **N1 DONE the same day** (18.406): MD4, AES-CMAC
+  and the SP 800-108 KDF on BearSSL. **Next: N2**, `smbfs` connects.
   **Found by it, and wanted for its 1 GB copy**: `/Home` taking a write in
   pieces (a copy stops at 1 MB today), and the network stack's 16 KB
   receive ring sized by measurement, with TCP window scaling (about

@@ -19110,3 +19110,25 @@ password, lists nothing. Without Homebrew's Samba it is a skip that says so.
 **Found on the way**: smbd told not to make a process group of its own
 signals the caller's when it stops - the shell running the test went with
 it. The peer is started in a session of its own.
+
+## 18.406 What SMB's sign-in, signing and sealing stand on (sharing N1)
+
+`docs/sharing.md` step N1, with no third copy of anything: MD5, HMAC,
+SHA-256, AES and CCM are BearSSL's, called directly. New in
+`user/kits/crypto/`, declared in `user/include/crypto.h`: `crypto_md4` (RFC
+1320, the NT hash), `crypto_aes_cmac` (RFC 4493, SMB 3.0's signing, over
+BearSSL's CBC-MAC), `crypto_kdf_ctr_hmac_sha256` (SP 800-108, SMB 3's keys),
+and `crypto_aes_ctrcbc`, the one place AES is chosen - AES-NI where the
+processor has it, else BearSSL's constant-time `aes_ct64`, never the table.
+
+**`tools/test_crypto.c`**, 53 checks natively and 58 through Rosetta, where
+AES-NI is there: MD4's seven RFC 1320 vectors; CMAC's four RFC 4493
+examples; NTOWFv1 and NTOWFv2 from MS-NLMP 4.2.2.1.2 and 4.2.4.1.1; a real
+sign-in's NT hash and NTOWFv2 and SMB 3.0's and 3.1.1's five keys each, from
+Microsoft's "the anatomy of signing and cryptographic keys"; HMAC-MD5, RFC
+2202's first two; AES-128-CCM, RFC 3610's first packet sealed, opened and
+refused with one header bit changed, on both AES paths. **Controls**, each a
+copy with one thing wrong: CMAC's reduction constant, its second subkey not
+doubled, a bit set in every doubling, an MD4 round constant, the KDF
+without its separator - every one caught. The full gate passed, 90 suites
+in 9:58.

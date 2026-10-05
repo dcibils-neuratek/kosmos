@@ -25,11 +25,25 @@
  *   DES           FIPS 46's worked example (key 133457799BBCDFF1), a VNC
  *                 challenge answered under "Kosmos" as OpenSSL answers it,
  *                 and 1,024 blocks under four keys, as OpenSSL ciphers them
+ *
+ * And what SMB 2/3 needs (`docs/sharing.md`, N1), the kit's and BearSSL's:
+ *
+ *   MD4           RFC 1320 A.5, all seven
+ *   NTLM          MS-NLMP 4.2.2.1.2's NTOWFv1 and 4.2.4.1.1's NTOWFv2, and
+ *                 the NT hash and NTOWFv2 of the sign-in in Microsoft's
+ *                 "the anatomy of signing and cryptographic keys"
+ *   HMAC-MD5      RFC 2202 cases 1 and 2 (BearSSL's)
+ *   AES-CMAC      RFC 4493 section 4's four examples
+ *   SP 800-108    that blog's SMB 3.0 and 3.1.1 key derivations, both
+ *                 channels, and two blocks against the kit's own HMAC
+ *   AES-128-CCM   RFC 3610 packet vector 1 (BearSSL's), on each AES
  */
 
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+#include <bearssl.h>
 
 #include "crypto.h"
 
@@ -411,6 +425,333 @@ static void check_drbg(void)
     same("its next 16, under the key the first left", got, want, 16);
 }
 
+/*------------------------------------------------------------------------
+ * What SMB 2/3 needs (`docs/sharing.md`, N1): MD4, AES-CMAC and the
+ * SP 800-108 KDF written in the kit, and the BearSSL pieces SMB's sign-in
+ * and sealing stand on, composed as SMB composes them. Each vector below
+ * was cut out of its source's text by a script, not retyped.
+ *----------------------------------------------------------------------*/
+
+static void hmac_md5(const void *key, size_t key_bytes,
+                     const void *data, size_t bytes, uint8_t out[16])
+{
+    br_hmac_key_context kc;
+    br_hmac_context hc;
+
+    br_hmac_key_init(&kc, &br_md5_vtable, key, key_bytes);
+    br_hmac_init(&hc, &kc, 0);
+    br_hmac_update(&hc, data, bytes);
+    br_hmac_out(&hc, out);
+}
+
+/* ASCII to UTF-16LE, as NTLM wants every string it hashes. */
+static size_t utf16(const char *s, uint8_t *out)
+{
+    size_t n = 0;
+
+    while (*s) {
+        out[n++] = (uint8_t)*s++;
+        out[n++] = 0;
+    }
+    return n;
+}
+
+/* RFC 1320 A.5, all seven. */
+static void check_md4(void)
+{
+    static const char *const in[7] = {
+        "", "a", "abc", "message digest", "abcdefghijklmnopqrstuvwxyz",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+        ("1234567890123456789012345678901234567890"
+         "1234567890123456789012345678901234567890"),
+    };
+    static const char *const want_hex[7] = {
+        "31d6cfe0d16ae931b73c59d7e0c089c0",
+        "bde52cb31de33e46245e05fbdbd6fb24",
+        "a448017aaf21d8525fc10ae87aa6729d",
+        "d9130a8164549fe818874806e1c7014b",
+        "d79e1c308aa5bbcdeea8ed63df412da9",
+        "043f8582f241db351ce627e153e7f0e4",
+        "e33b4ddc9c38f2199c3e7b164fcc0536",
+    };
+    uint8_t got[16], want[16];
+    char what[64];
+    unsigned i;
+
+    for (i = 0; i < 7; i++) {
+        crypto_md4(in[i], strlen(in[i]), got);
+        unhex(want_hex[i], want);
+        snprintf(what, sizeof what, "md4, RFC 1320 A.5 vector %u", i + 1);
+        same(what, got, want, 16);
+    }
+}
+
+/*
+ * NTLM's sign-in, as far as it is this kit's: the NT hash is MD4 of the
+ * password in UTF-16 (NTOWFv1), and NTOWFv2 is HMAC-MD5 under it of the
+ * user's name upper-cased and the domain, in UTF-16 - MD4 written here,
+ * HMAC and MD5 BearSSL's. The rest of NTLMv2 is libsmb2's.
+ *
+ *   MS-NLMP 4.2.2.1.2 and 4.2.4.1.1, user "User", domain "Domain",
+ *   password "Password":
+ *     NTOWFv1 a4 f4 9c 40 65 10 bd ca b6 82 4e e7 c3 0f d8 52
+ *     NTOWFv2 0c 86 8a 40 3b fd 7a 93 a3 00 1e f2 2e f0 2e 3f
+ *   Microsoft's Open Specifications blog, "SMB 2 and SMB 3 security in
+ *   Windows 10: the anatomy of signing and cryptographic keys", the NTLMv2
+ *   SessionKey example: "Password01!", ADMINISTRATOR, SUT311:
+ *     NtHash 7C4FE5EADA682714A036E39378362BAB
+ *     NTOWFv2 AEE3959B44A815F1EB28C9511B4F533B
+ */
+static void check_ntlm(void)
+{
+    uint8_t pass[64], who[64], nt[16], got[16], want[16];
+    size_t p, w;
+
+    p = utf16("Password", pass);
+    crypto_md4(pass, p, nt);
+    unhex("a4f49c406510bdcab6824ee7c30fd852", want);
+    same("NTOWFv1, MS-NLMP 4.2.2.1.2", nt, want, 16);
+
+    w = utf16("USERDomain", who);
+    hmac_md5(nt, 16, who, w, got);
+    unhex("0c868a403bfd7a93a3001ef22ef02e3f", want);
+    same("NTOWFv2, MS-NLMP 4.2.4.1.1 (MD4, then BearSSL's HMAC-MD5)", got, want, 16);
+
+    p = utf16("Password01!", pass);
+    crypto_md4(pass, p, nt);
+    unhex("7C4FE5EADA682714A036E39378362BAB", want);
+    same("the NT hash of Microsoft's SMB 3.1.1 sign-in", nt, want, 16);
+
+    w = utf16("ADMINISTRATORSUT311", who);
+    hmac_md5(nt, 16, who, w, got);
+    unhex("AEE3959B44A815F1EB28C9511B4F533B", want);
+    same("its NTOWFv2", got, want, 16);
+}
+
+/* RFC 2202's first two, so a broken HMAC-MD5 is named as that rather than
+ * as NTLM. */
+static void check_hmac_md5(void)
+{
+    uint8_t key[16], got[16], want[16];
+
+    memset(key, 0x0b, 16);
+    hmac_md5(key, 16, "Hi There", 8, got);
+    unhex("9294727a3638bb1c13f48ef8158bfc9d", want);
+    same("hmac-md5 (BearSSL's), RFC 2202 case 1", got, want, 16);
+
+    hmac_md5("Jefe", 4, "what do ya want for nothing?", 28, got);
+    unhex("750c783e6ab0b503eaa86e310a5db738", want);
+    same("hmac-md5 (BearSSL's), RFC 2202 case 2", got, want, 16);
+}
+
+/* RFC 4493 4, all four: an empty message, one whole block, a partial last
+ * block, and four whole blocks. The subkeys are not exposed, so a wrong K1
+ * fails examples 2 and 4 and a wrong K2 fails 1 and 3. */
+static void check_cmac(void)
+{
+    static const char msg_hex[] =
+        "6bc1bee22e409f96e93d7e117393172a"
+        "ae2d8a571e03ac9c9eb76fac45af8e51"
+        "30c81c46a35ce411e5fbc1191a0a52ef"
+        "f69f2445df4f9b17ad2b417be66c3710";
+    static const struct { size_t len; const char *mac; } ex[4] = {
+        {  0, "bb1d6929e95937287fa37d129b756746" },
+        { 16, "070a16b46b4d4144f79bdd9dd04a287c" },
+        { 40, "dfa66747de9ae63030ca32611497c827" },
+        { 64, "51f0bebf7e3b9d92fc49741779363cfe" },
+    };
+    uint8_t key[16], msg[64], got[16], want[16];
+    char what[64];
+    unsigned i;
+
+    unhex("2b7e151628aed2a6abf7158809cf4f3c", key);
+    unhex(msg_hex, msg);
+
+    for (i = 0; i < 4; i++) {
+        crypto_aes_cmac(key, 16, msg, ex[i].len, got);
+        unhex(ex[i].mac, want);
+        snprintf(what, sizeof what, "aes-cmac, RFC 4493 example %u (len %u)",
+                 i + 1, (unsigned)ex[i].len);
+        same(what, got, want, 16);
+    }
+}
+
+/*
+ * SMB 3's keys, from Microsoft's Open Specifications blog, "SMB 2 and SMB 3
+ * security in Windows 10: the anatomy of signing and cryptographic keys",
+ * Appendix: Key derivation examples - both channels of each, so two
+ * session keys under each set of labels. Labels and contexts as MS-SMB2
+ * 3.2.5.3.1 gives them, terminating NULs included.
+ *
+ *   3.0, first channel, SessionKey 0x7CD451825D0450D235424E44BA6E78CC:
+ *     SigningKey     0x0B7E9C5CAC36C0F6EA9AB275298CEDCE
+ *     EncryptionKey  0xFAD27796665B313EBB578F388632B4F7
+ *     DecryptionKey  0xB0F0427F7CEB416D1D9DCC0CD4F99447
+ *     ApplicationKey 0xBB23A4575AA26C721AF525AF15A87B4F
+ *   3.0, second channel, SessionKey 0x4E01A2B313BCF660CC250BEF021AEDE6:
+ *     SigningKey     0xBA1A17DBBFEC349BCA105563D598952F
+ *   3.1.1, first channel, SessionKey 0x270E1BA896585EEB7AF3472D3B4C75A7,
+ *   preauthIntegrityHashValue 0DD13628...BCE3C6C01:
+ *     SigningKey     0x73FE7A9A77BEF0BDE49C650D8CCB5F76
+ *     EncryptionKey  0x629BCBC54422A0F572B97F45989B6073
+ *     DecryptionKey  0xE2AF0DCEFAC68DA71A0DFBD0D1350D74
+ *     ApplicationKey 0x6D7AD7954E9EC61E907B4D473DC178FF
+ *   3.1.1, second channel, SessionKey 0x84B9DBB730116A8FA6E9889555C265F9,
+ *   preauthIntegrityHashValue EA3BF912...389026F6C:
+ *     SigningKey     0xC962BCA1A9DD1697B030644199705431
+ *
+ * "EncryptionKey" there is the client's: the 3.0 one is "ServerIn " and
+ * the 3.1.1 one "SMBC2SCipherKey".
+ */
+static void kdf_check(const char *what, const char *session_hex,
+                      const char *label, size_t label_bytes,
+                      const void *context, size_t context_bytes,
+                      const char *want_hex)
+{
+    uint8_t ki[16], got[16], want[16];
+
+    unhex(session_hex, ki);
+    unhex(want_hex, want);
+    crypto_kdf_ctr_hmac_sha256(ki, 16, label, label_bytes,
+                               context, context_bytes, got, 16);
+    same(what, got, want, 16);
+}
+
+#define LIT(s) s, sizeof(s)            /* the bytes and the NUL */
+
+static void check_kdf(void)
+{
+    static const char s30a[] = "7CD451825D0450D235424E44BA6E78CC";
+    static const char s30b[] = "4E01A2B313BCF660CC250BEF021AEDE6";
+    static const char s311a[] = "270E1BA896585EEB7AF3472D3B4C75A7";
+    static const char s311b[] = "84B9DBB730116A8FA6E9889555C265F9";
+    uint8_t ha[64], hb[64], big[48];
+
+    unhex("0DD13628CC3ED218EF9DF9772D436D0887AB9814BFAE63A80AA845F36909DB79"
+          "28622DDDAD522D9751640A459762C5A9D6BB084CBB3CE6BDADEF5D5BCE3C6C01", ha);
+    unhex("EA3BF912B11CBFEC5B1889E8209614218687F82FA5294521AD3063425E49E88A"
+          "10BD022124CE25123BC9111F52D9566BA88BF46344E6063DC5E3FF0389026F6C", hb);
+
+    kdf_check("smb 3.0 SigningKey", s30a, LIT("SMB2AESCMAC"), LIT("SmbSign"),
+              "0B7E9C5CAC36C0F6EA9AB275298CEDCE");
+    kdf_check("smb 3.0 EncryptionKey (client)", s30a, LIT("SMB2AESCCM"),
+              LIT("ServerIn "), "FAD27796665B313EBB578F388632B4F7");
+    kdf_check("smb 3.0 DecryptionKey (client)", s30a, LIT("SMB2AESCCM"),
+              LIT("ServerOut"), "B0F0427F7CEB416D1D9DCC0CD4F99447");
+    kdf_check("smb 3.0 ApplicationKey", s30a, LIT("SMB2APP"), LIT("SmbRpc"),
+              "BB23A4575AA26C721AF525AF15A87B4F");
+    kdf_check("smb 3.0 SigningKey, second channel", s30b, LIT("SMB2AESCMAC"),
+              LIT("SmbSign"), "BA1A17DBBFEC349BCA105563D598952F");
+
+    kdf_check("smb 3.1.1 SigningKey", s311a, LIT("SMBSigningKey"), ha, 64,
+              "73FE7A9A77BEF0BDE49C650D8CCB5F76");
+    kdf_check("smb 3.1.1 EncryptionKey (client)", s311a, LIT("SMBC2SCipherKey"),
+              ha, 64, "629BCBC54422A0F572B97F45989B6073");
+    kdf_check("smb 3.1.1 DecryptionKey (client)", s311a, LIT("SMBS2CCipherKey"),
+              ha, 64, "E2AF0DCEFAC68DA71A0DFBD0D1350D74");
+    kdf_check("smb 3.1.1 ApplicationKey", s311a, LIT("SMBAppKey"), ha, 64,
+              "6D7AD7954E9EC61E907B4D473DC178FF");
+    kdf_check("smb 3.1.1 SigningKey, second channel", s311b, LIT("SMBSigningKey"),
+              hb, 64, "C962BCA1A9DD1697B030644199705431");
+
+    /*
+     * More than one block, which no SMB vector asks for: 48 bytes are
+     * HMAC(Ki, [1] || Label || 0 || Context || [384]) and the first 16 of
+     * the same with [2] - held to the kit's own HMAC-SHA256 in `crypto.c`,
+     * which is not BearSSL's, so neither can agree with a mistake of the
+     * other's.
+     */
+    {
+        static const uint8_t tail[] = "SMB2AESCMAC\0\0SmbSign\0\0\0\x01\x80";
+        uint8_t ki[16], in[4 + sizeof(tail) - 1], want[64];
+
+        unhex(s30a, ki);
+        crypto_kdf_ctr_hmac_sha256(ki, 16, LIT("SMB2AESCMAC"), LIT("SmbSign"), big, 48);
+
+        memcpy(in + 4, tail, sizeof(tail) - 1);
+        in[0] = in[1] = in[2] = 0;
+        in[3] = 1;
+        hmac_sha256(ki, 16, in, sizeof in, want);
+        in[3] = 2;
+        hmac_sha256(ki, 16, in, sizeof in, want + 32);
+        same("the KDF over two blocks, L = 384, against the kit's own HMAC",
+             big, want, 48);
+    }
+}
+
+/*
+ * AES-128-CCM, BearSSL's, over the kit's choice of AES: RFC 3610's packet
+ * vector 1 (13-byte nonce, 8 bytes of header, an 8-byte tag), sealed,
+ * opened, and refused with one bit of it changed - through `aes_ct64`,
+ * and through AES-NI as well where the processor has it.
+ */
+static void ccm_with(const char *name, const br_block_ctrcbc_class *vt)
+{
+    br_aes_gen_ctrcbc_keys aes;
+    br_ccm_context cc;
+    uint8_t key[16], nonce[13], packet[31], want[39], tag[8];
+    char what[96];
+    int bad;
+
+    unhex("C0C1C2C3C4C5C6C7C8C9CACBCCCDCECF", key);
+    unhex("00000003020100A0A1A2A3A4A5", nonce);
+    unhex("000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E", packet);
+    unhex("0001020304050607588C979A61C663D2F066D0C2C0F989806D5F6B61DAC38417"
+          "E8D12CFDF926E0", want);
+
+    vt->init(&aes.vtable, key, 16);
+    br_ccm_init(&cc, &aes.vtable);
+    br_ccm_reset(&cc, nonce, 13, 8, 23, 8);
+    br_ccm_aad_inject(&cc, packet, 8);
+    br_ccm_flip(&cc);
+    br_ccm_run(&cc, 1, packet + 8, 23);
+    br_ccm_get_tag(&cc, tag);
+    snprintf(what, sizeof what, "aes-128-ccm sealed, RFC 3610 vector 1 (%s)", name);
+    same(what, packet + 8, want + 8, 23);
+    snprintf(what, sizeof what, "aes-128-ccm tag, RFC 3610 vector 1 (%s)", name);
+    same(what, tag, want + 31, 8);
+
+    br_ccm_reset(&cc, nonce, 13, 8, 23, 8);
+    br_ccm_aad_inject(&cc, want, 8);
+    br_ccm_flip(&cc);
+    br_ccm_run(&cc, 0, packet + 8, 23);
+    checks++;
+    if (!br_ccm_check_tag(&cc, want + 31)) {
+        failures++;
+        printf("FAIL: aes-128-ccm refused its own vector (%s)\n", name);
+    }
+    unhex("000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E", want);
+    snprintf(what, sizeof what, "aes-128-ccm opened (%s)", name);
+    same(what, packet + 8, want + 8, 23);
+
+    /* One bit of the header changed: the tag must not check. */
+    unhex("0001020304050607588C979A61C663D2F066D0C2C0F989806D5F6B61DAC38417"
+          "E8D12CFDF926E0", want);
+    want[3] ^= 0x10;
+    br_ccm_reset(&cc, nonce, 13, 8, 23, 8);
+    br_ccm_aad_inject(&cc, want, 8);
+    br_ccm_flip(&cc);
+    br_ccm_run(&cc, 0, want + 8, 23);
+    bad = br_ccm_check_tag(&cc, want + 31);
+    checks++;
+    if (bad) {
+        failures++;
+        printf("FAIL: aes-128-ccm accepted a changed header (%s)\n", name);
+    }
+}
+
+static const char *aes_used;
+
+static void check_ccm(void)
+{
+    const br_block_ctrcbc_class *ni = br_aes_x86ni_ctrcbc_get_vtable();
+
+    ccm_with("aes_ct64", &br_aes_ct64_ctrcbc_vtable);
+    if (ni != NULL) ccm_with("aes_x86ni", ni);
+
+    aes_used = crypto_aes_ctrcbc() == ni ? "AES-NI" : "aes_ct64";
+}
+
 int main(void)
 {
     check_sha256();
@@ -419,6 +760,12 @@ int main(void)
     check_x25519();
     check_des();
     check_drbg();
+    check_md4();
+    check_hmac_md5();
+    check_ntlm();
+    check_cmac();
+    check_kdf();
+    check_ccm();
 
     if (failures) {
         printf("FAIL: %d of %d checks on the Crypto Kit's primitives\n",
@@ -428,6 +775,8 @@ int main(void)
 
     printf("PASS: %d checks on the Crypto Kit's primitives against their "
            "specifications' vectors (SHA-256, HMAC-SHA-256, ChaCha20, "
-           "Poly1305, X25519, DES, and the generator)\n", checks);
+           "Poly1305, X25519, DES, the generator, and SMB's MD4, NTLM, "
+           "HMAC-MD5, AES-CMAC, SP 800-108 KDF and AES-CCM - AES by %s)\n",
+           checks, aes_used);
     return 0;
 }
