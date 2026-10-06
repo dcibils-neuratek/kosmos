@@ -1059,6 +1059,51 @@ not designed:
   feature set, the mockup, the architecture and the diagram - with no
   real person's places in the mockup.
 
+**WANTED, after Maps - Kosmos Mail, a native mail client.** Diego, 6
+October 2026, with a picture of Apple's Mail: "after that, i want a native
+mail client", "We can reuse a lot of what we did for kosmos write for the
+reading and writing email component", "the client should be able to
+connect to imap, pop3 and google accounts (google first) as its my
+personal email", "Kosmos Email should publish notifications upon
+receiving emails". Assessed, not designed:
+- **The window, after Apple's Mail**: mailboxes down the side (Inbox,
+  Sent, Drafts, Archive, Trash, each account's folders), the message list
+  with sender, subject, date and a first line, unread marks and flags, and
+  the message beside it; reply, reply all, forward, archive, delete, move,
+  flag, search. A native window, as Write is.
+- **Google first**, and it decides the sign-in. Gmail speaks IMAP and SMTP,
+  and refuses an account's own password from an application: it takes an
+  **app password** (sixteen characters made in the Google account, which
+  needs two-step verification) or **OAuth 2** with XOAUTH2. An app
+  password is the first step - kept in the keyring, typed once. OAuth, the
+  way Google prefers, needs a client registered with Google and a sign-in
+  page opened for the person, which Google will not let an embedded
+  browser show; it is a later step with its own design. Then IMAP and
+  POP3 accounts of any provider, and SMTP to send.
+- **What it stands on, as kits and servers**: IMAP with IDLE (the server
+  says when mail arrives, nothing polls), POP3 and SMTP in C over the
+  network stack and the TLS Kit (IMAPS 993, SMTP 465/587 with STARTTLS);
+  MIME read in C - multipart, base64 (the Compression Kit's), quoted-
+  printable, headers' encoded words, character sets - a **Mail Kit** any
+  application that sends or reads a message could use; messages kept
+  under `/Home` for reading with no network; passwords in the **keyring**
+  (step N8's, designed now); **notifications** posted through
+  `/Notifications` when mail arrives, as Diego asks, with the Do Not
+  Disturb and per-application settings it already has.
+- **Writing a message is Write's**: `richtext.lua`'s paragraphs, runs and
+  styles, the caret and typing (`textedit.lua`, moved out of Write for
+  Present and Sheets), pictures as attachments - sent as HTML with a
+  plain-text part.
+- **Reading one is the honest question.** Plain text and simple HTML are
+  Write's to set; most mail is HTML made for a browser, with tables,
+  styles and remote pictures. The choices: the browser's NetSurf engine as
+  a kit for a message's HTML - reused rather than a third engine, with
+  scripts off and remote pictures not fetched until asked, which is what
+  a mail client owes its reader's privacy - or Write's setting with the
+  HTML simplified to what it draws. The design settles it.
+- **Designed before it is written**, the four documents, with made-up
+  messages in the mockup - never a real mailbox.
+
 **WANTED, not scheduled - sharing files over the network, both ways.**
 Diego, 5 October 2026: "Add to the roadmap the need for a network file
 sharing server and client", "Perhaps SMB? Samba in Linux for example".
