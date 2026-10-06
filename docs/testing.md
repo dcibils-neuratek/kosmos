@@ -19443,3 +19443,154 @@ about 62; `make test ONLY=host,arm-kernel,arm-headless,arm-share,x86-share,
 arm-share-2,x86-share-2,arm-share-3,x86-share-3`: 9 suites in 81 s, all
 passing, both new ones 57 s. The namespace and `diskproto.h` changed, so
 `arm-display-1,x86-display-1` too: both passing, 2:26.
+
+## 18.410 The gate under ten minutes again: sharing's suites, and x86-64's card that never interrupted
+
+`roadmap.md`, *FOUND on 5 October - the gate at 10:10*. Measured first: the
+whole gate on 6 October, before anything changed, **96 suites in 620 s
+(10:20)**, every one passing. The gate is bound by its slots rather than by
+its longest suite - the suites' own seconds add to 4,623, an eighth of that
+is 578, and the images (19 s) and the two suites that run alone (25 s) make
+the rest - so a second taken off any suite is an eighth of a second off the
+gate, and the six share suites were 313 of those seconds: `arm-share-3`
+128, `x86-share-3` 56, `x86-share-2` 54, `arm-share-2` 36, `x86-share` 20,
+`arm-share` 19.
+
+**Where they went**, read from their own logs:
+
+- **`arm-share-3`'s measure**: eight megabytes from each of five peers, read
+  twice - 80 MB, at about a megabyte a second beside seven other machines.
+  The measure asserts nothing of its times, and 18.409 already says that
+  under load they say nothing; its one check is that the bytes are this
+  Mac's.
+- **x86-64's network**, at 0.14 MB/s (18.408): most of `x86-share-2`'s and
+  `x86-share-3`'s minutes were waiting for 4 MB and 5 MB to arrive.
+- **Three machines a board** where two would do, each booting and starting
+  peers of its own, and **sleeps**: twelve seconds in each first part for a
+  stopped peer's bound to pass, five and a half in each second part.
+
+**What changed, and no check went:**
+
+- **Parts 1 and 3 are one machine** (`run_share.py`, its first part;
+  `arm-share`, `x86-share`): N2's checks are asked of N4's own peers - the
+  matrix's 3.1.1 signed and 3.1.1 sealed, reached directly rather than
+  through their relays - and a tenth peer of SMB 1 alone, all ten started
+  at once. The stopped-mid-negotiation control pauses the SMB 1 peer - as
+  silent stopped as any - and its ten-second bound passes while the matrix,
+  the control that bites and the measure are read, rather than in a sleep;
+  the suite sleeps only what is left of it, which in the gate was nothing.
+  `arm-share-3` and `x86-share-3` are gone from the gate, their 56 checks
+  in the first part's 69 with N2's 13.
+- **The reads are sized to what they prove**, and the sizes the tables were
+  measured at are `--measure`, run alone: the file read whole is 16 MB in
+  the gate - sixteen READs, two in flight, the pair refilled fourteen
+  times - and 64 MB with `--measure`; the measure reads a megabyte from
+  each of the five, once, its bytes held to this Mac's as before, and
+  eight megabytes twice with `--measure`.
+- **x86-64's card interrupts.** The cause of 0.14 MB/s, looked for at last:
+  the stack's receive loop wakes on the card's interrupt or on its own
+  deadline, a tenth of a second (`net.c`), and 16 KB of TCP window a tenth
+  of a second is 0.16 MB/s. Shown by experiment before it was explained: a
+  scratch build with that deadline at two ticks read the 2 MB in 1.7 s
+  rather than 14.1. **The card never interrupted**: virtio-net-pci has MSI-X
+  and no MSI, so `pci_enable` switched it to MSI-X and wrote entry 0 - and a
+  virtio queue raises an MSI-X message only through the vector the driver
+  gives it in `queue_msix_vector` (virtio 1.1 4.1.4.3, between
+  `queue_size` and `queue_enable`), which is NO_VECTOR after a reset and
+  which nothing wrote. `virtio_queue_attach` now gives every queue vector 0
+  (`hal/pc/virtio.c`); a device on its line does not use the register. The
+  same 2 MB: **93 ms, 21.5 MB/s - 150 times as fast**, and the x86-64
+  suites read what the ARM ones do. Every virtio device on x86-64 had been
+  the same - sound, input, the disk - and the gate passed with all of them
+  interrupting.
+- **N5 went in the second part**, and its waits overlap: the read left
+  running when the peer stops takes its ten seconds while the two `ls`
+  take their five (18.411).
+- **Found on the way**: the first part's peers were named `arm-share-0` to
+  `-8`, and index 2 is `arm-share-2` - the second part's own peer. Run side
+  by side, one `start` stopped the other's smbd, which then refused to
+  start because the first was "already running". And `smbpeer.py stop`
+  waited for smbd's pid file to go, which smbd removes before it has gone,
+  so a `start` straight after a `stop` - N5 restarts its peer - could meet
+  the old one; `stop` now ends the whole process group and waits for the
+  process itself, and `start` returns when the port takes a connection
+  rather than when a pid file is written. The matrix's peers are `-m0` to
+  `-m8`.
+
+**After**, the whole gate on 6 October: **94 suites in 595 s (9:55)**, every
+one passing, N5 included. The suites' seconds 4,623 to 4,388; the share
+suites 313 to 118 - `arm-share-2` 41, `arm-share` 29, `x86-share-2` 32,
+`x86-share` 16 - and the x86-64 card besides: `x86-network` 59 to 35,
+`x86-browser-1` and `-2` 148 and 146 to 138 and 136, `x86-telnetd` 33 to
+24. Alone, the four share suites take 102 s where the six took 185. The
+floor is where it was - `x86-cafesa3d-2` 201 s, `arm-display-3` 190 - and
+the slots are what to watch: an eighth of a second for every second added.
+
+## 18.411 Gone away, and back (sharing N5)
+
+`docs/sharing.md` step N5. **smbfs keeps a server that stops answering.** A
+connected server asked something - a listing, a read, an open, an ECHO -
+that says nothing at all for ten seconds (`AWAY_SECONDS`, the bound a
+connect has), or whose connection closes, is away: what was held of it is
+answered at once - a read in words, "MACPEER is not answering", and a
+folder from memory, marked as last heard - and its record is kept with its
+folders, its name and the NT hash, which is all NTLMv2 needs. It is tried
+again on smbfs's own clock, two seconds after, then four, eight, up to a
+minute (`RETRY_FIRST_SECONDS`, `RETRY_MOST_SECONDS`); a try that answers
+signs in and connects the share again - a new connection, a new session, a
+new tree, new handles - without anybody asked; a try refused for the
+account ends the tries. While away, every answer about names is from memory
+and marked, however recent, and a READ is refused at once. A connected
+server nobody asks anything is sent an ECHO once a minute, so one gone to
+sleep is noticed by itself. **`shareproto.h`** gains `SHARE_OP_RETRY` (Try
+now) and, in the 336 bytes `struct share_server` already was, `trying`,
+`sign_ins` and `next_try_ms`; `share status` says "away  MACPEER is not
+answering - nothing heard from it for 10 seconds  since 0.1 s, next try in
+2 s", and "signed in 2 times" once back; `share retry` is Try now;
+`share disconnect` forgets a server that is away, its hash with it, and
+nothing tries it again. A server never connected, refused, or whose answer
+arrived changed (18.409) is not tried by itself.
+
+**`run_share.py --part 2`, `arm-share-2` and `x86-share-2`, 14 checks more,
+33 in all** (41 s and 32 s in the gate, 36 and 32 alone), on the second
+part's own peer once the folder checks have run:
+
+- **Stopped** (SIGSTOP, every process of it) with the folder open: a read
+  of `big.bin` left running (`&`) ends nil after 10.0 s, "MACPEER is not
+  answering", while the folder heard before is answered from memory, marked,
+  in 0.4-0.5 s and `inside`, never listed, is "not answering" after its five;
+  `share status` says away since 0.1 s, next try in 2 s; at once, the
+  share's folder from memory with `last_heard_ms` (13 s) and a read refused
+  in words, each in under a millisecond of smbfs's.
+- **Continued** (SIGCONT) before the first try: signed in again by itself
+  1.8 s later, `sign_ins` 2, nothing typed; the folder fresh, unmarked; 256
+  KB of `big.bin` this Mac's bytes.
+- **Stopped outright** - every process ended, so the connection closes: away
+  at once, "it closed the connection"; the next tries planned at 2, 4 and 8
+  seconds, each failing at once as "nothing at 10.0.2.2:4462 took the
+  connection".
+- **Restarted**: `share retry` signs in at once - a new session and a new
+  tree, since the restarted smbd has never heard of the old ones - `sign_ins`
+  3, and the 256 KB read again, this Mac's bytes.
+- **Let go while away**: stopped again, `share disconnect` "let go", `share
+  status` "nothing has been asked of any server" then and three seconds
+  later - its peer restarted inside the two seconds a try would have come
+  at - and `/Network` empty. Connected again with the password, and Tracker
+  opens the share as before.
+
+**The control bites**, run in a scratch build and not committed: with the
+next try planned an hour away rather than two seconds - no try by itself -
+7 of 33 fail: the continued peer is still away after 30 s, "next try in
+3570 s"; the read after it "MACPEER is not answering"; the folder still as
+last heard; and the second half's away state is never left either. `share
+retry` still signed in from the hash - Try now does not depend on the
+clock. The backoff's cap is the one thing not watched in a suite: reaching
+60 s means waiting 62 s of tries, and the minute is one comparison in
+`gone_and_back`.
+
+**Departures from the design, each in `sharing.md`**: a READ from a silent
+server ends at ten seconds of silence, not at SMB's thirty-second timeout,
+which is left for one request a server otherwise answering never answers;
+and the ECHO is sent only when nothing else has been asked for a minute.
+`make test ONLY=arm-share,x86-share,arm-share-2,x86-share-2`: 4 suites in
+48 s. `arm-display-1` and `x86-display-1`: both passing, 2:25.

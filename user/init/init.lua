@@ -2115,9 +2115,10 @@ local function new_namespace()
   -- `share_status` - asked on the caller's own clock - says how it went.
   --------------------------------------------------------------------------
 
-  local SHARE_OP = { probe = 64, connect = 65, status = 66, disconnect = 68 }
+  local SHARE_OP = { probe = 64, connect = 65, status = 66, disconnect = 68,
+                     retry = 69 }
   local SHARE_ASK = "<c48c40c32c256"
-  local SHARE_SERVER = "<c48c40c40c32c152I4I2BBI4I4I8"
+  local SHARE_SERVER = "<c48c40c40c32c152I4I2BBBBI2I4I8"
   local SHARE_SERVER_BYTES = 336
   local SHARE_STATES = { "asking", "answered", "connected", "refused", "away" }
   local SHARE_DIALECTS = { [0x0202] = "2.0.2", [0x0210] = "2.1", [0x0300] = "3.0",
@@ -2199,6 +2200,15 @@ local function new_namespace()
     return true
   end
 
+  -- Try now (step N5): a server that is away, signed into again at once
+  -- from what smbfs kept. Begun, and answered at once.
+  function ns.share_retry(address)
+    local r, why = share_call("retry", { address = address })
+
+    if not r then return nil, why end
+    return true
+  end
+
   -- What each server asked for is doing: a list, each a table.
   function ns.share_status()
     local list, offset = {}, 0
@@ -2211,7 +2221,8 @@ local function new_namespace()
       for i = 1, r.count do
         local at = (i - 1) * SHARE_SERVER_BYTES + 1
         local address, name, share, account, why_, state, dialect, signing,
-              sealing, probe, _, ms = string.unpack(SHARE_SERVER, r.blob, at)
+              sealing, probe, trying, sign_ins, next_try_ms, ms =
+          string.unpack(SHARE_SERVER, r.blob, at)
 
         list[#list + 1] = {
           address = trim(address), name = trim(name), share = trim(share),
@@ -2219,6 +2230,7 @@ local function new_namespace()
           state = SHARE_STATES[state] or "unknown",
           dialect = SHARE_DIALECTS[dialect], signing = signing ~= 0,
           sealing = sealing ~= 0, probe = probe ~= 0, in_state_ms = ms,
+          trying = trying ~= 0, sign_ins = sign_ins, next_try_ms = next_try_ms,
         }
       end
 

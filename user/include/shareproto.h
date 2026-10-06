@@ -29,6 +29,7 @@
 #define SHARE_OP_STATUS      66u    /* what each server is doing, a page from `offset` */
 /* 67 is `SHARE_OP_SHARES`, a server's shares through `srvsvc` - step N3. */
 #define SHARE_OP_DISCONNECT  68u    /* let a server go, and forget it */
+#define SHARE_OP_RETRY       69u    /* Try now: a server away, signed into again now */
 
 /*
  * **smbfs's own threads, and nobody else.** A waiter - one a server
@@ -56,6 +57,18 @@ struct share_ask {
     char password[SHARE_SECRET_MAX];
 };
 
+/*
+ * **Gone away, and back** (step N5). A server whose share was connected and
+ * that stops answering - asked something and silent for ten seconds, or its
+ * connection closed - is `AWAY`, and smbfs keeps it: its folders as last
+ * listed, the NT hash, and a try planned, two seconds after, then four, and
+ * so on up to a minute. A try that answers signs in again and connects the
+ * share - a new session and a new tree - without anybody asked; one refused
+ * for the account stops the tries. `RETRY` is Try now. A server never
+ * connected, refused, or whose answer arrived changed (`DISK_ERR_ALTERED`)
+ * is not tried again by itself.
+ */
+
 /* What a server is doing. */
 #define SHARE_STATE_ASKING     1u   /* looked up, connected to, signed into: under way */
 #define SHARE_STATE_ANSWERED   2u   /* a PROBE: it answered NEGOTIATE */
@@ -75,9 +88,11 @@ struct share_server {
     uint16_t dialect;                       /* 0x0202 ... 0x0311, once negotiated */
     uint8_t  signing;                       /* every message signed */
     uint8_t  sealing;                       /* every message encrypted */
-    uint32_t probe;                         /* asked only whether it answers */
-    uint32_t reserved;
-    uint64_t in_state_ms;                   /* how long it has been so */
+    uint8_t  probe;                         /* asked only whether it answers */
+    uint8_t  trying;                        /* away, and being signed into again now */
+    uint16_t sign_ins;                      /* times signed in: 2 and more, again by itself */
+    uint32_t next_try_ms;                   /* away: when it is tried again; 0, no try planned */
+    uint64_t in_state_ms;                   /* how long it has been so: away since */
 };
 
 #define SHARE_PER_PAGE  (DISK_DATA_MAX / sizeof(struct share_server))
@@ -92,6 +107,7 @@ struct share_server {
 #define SHARE_ERR_ALREADY    66u    /* CONNECT to a server already connected */
 #define SHARE_ERR_ACCOUNT    67u    /* no account: guests are not let in */
 #define SHARE_ERR_NO_MEMORY  68u
+#define SHARE_ERR_NOT_KEPT   69u    /* RETRY of a server not kept to sign into again */
 
 _Static_assert(sizeof(struct share_ask) <= DISK_DATA_MAX,
                "what a share is asked fits where a page of bytes does");

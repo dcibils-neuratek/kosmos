@@ -48,6 +48,18 @@
  * Kit's - forgets the password, and hands libsmb2 the hash in the form it
  * takes for one ("ntlm:" and 32 hex digits). NTLMv2 needs the hash and only
  * the hash.
+ *
+ * **Gone away, and back** (N5). A connected server asked something that says
+ * nothing for `AWAY_SECONDS`, or whose connection closes, is away: what was
+ * held of it is answered - a read in words, a folder from memory marked as
+ * last heard - and its record is kept, with the NT hash, which is all a
+ * sign-in needs. It is tried again on smbfs's own clock, two seconds after,
+ * then four, eight, up to a minute; a try that answers signs in and
+ * connects the share again - a new session, a new tree, new handles - and
+ * nobody is asked anything. A try the server refuses for the account ends
+ * the tries, and so does DISCONNECT, which forgets the hash with the rest.
+ * RETRY is Try now. A connected server nobody is asking anything is sent an
+ * ECHO once a minute, so one that has gone to sleep is noticed by itself.
  */
 
 #include <errno.h>
@@ -117,9 +129,26 @@
  * opens it once). */
 #define HANDLE_IDLE_SECONDS  5u
 
-/* SMB's own bound on a request, after which it ends in words - what ends a
- * READ from a server that has stopped (step N5 holds it to a test). */
+/* SMB's own bound on a request, after which it ends in words. A server that
+ * says nothing at all is away sooner, at `AWAY_SECONDS`; this is the bound on
+ * one request a server that is otherwise answering never answers. */
 #define SMB_TIMEOUT_SECONDS 30
+
+/*
+ * **Gone away, and back** (`docs/sharing.md` step N5), each a number in one
+ * place. A connected server asked something - a listing, a read, an open,
+ * an ECHO - that has said nothing at all for `AWAY_SECONDS` is away: the
+ * bound a connect is given, since it is the same question, whether there is
+ * anybody there. Silence, not a request's age, as `SILENT_MS` is: a
+ * megabyte arriving slowly is a server answering. Then a try after
+ * `RETRY_FIRST_SECONDS`, each wait twice the last, never more than
+ * `RETRY_MOST_SECONDS`; and an ECHO once `ECHO_SECONDS` have passed with
+ * nothing asked or heard.
+ */
+#define AWAY_SECONDS         ANSWER_SECONDS
+#define RETRY_FIRST_SECONDS  2u
+#define RETRY_MOST_SECONDS  60u
+#define ECHO_SECONDS        60u
 
 /* READs in flight for one caller, and the most each asks for. */
 #define READS_IN_FLIGHT      2u
@@ -130,7 +159,7 @@
  * reply's signature and opens every sealed one, and when either does not
  * hold it stops reading the connection and says so in a sentence - there
  * is no number for it. These are its sentences (`socket.c`, `libsmb2.c`,
- * `smb3-seal.c` at the pinned commit), and `tools/run_share.py --part 3`
+ * `smb3-seal.c` at the pinned commit), and `tools/run_share.py`'s first part
  * holds them to a relay that changes one byte: a library that rewords them
  * fails that suite rather than turning a forged answer into "not
  * answering".
@@ -226,6 +255,16 @@ struct server {
     /* An answer that arrived changed (step N4): ALTERED_SIGNED or
      * ALTERED_SEALED, and the connection ended for it. */
     uint32_t altered;
+
+    /* Gone away, and back (N5). */
+    bool     waiting;               /* something asked of it is unanswered */
+    uint64_t asked_at;              /* counter ticks: since when */
+    bool     echoing;               /* an ECHO in flight */
+    bool     retrying;              /* a try under way: connecting, signing in */
+    uint64_t try_deadline;          /* counter ticks: when that try has failed */
+    uint64_t next_try;              /* counter ticks; 0 is no try planned */
+    unsigned backoff;               /* seconds the last wait was; 0 while connected */
+    uint64_t sent_before;           /* SMB requests of connections now closed */
 };
 
 /*
@@ -340,6 +379,44 @@ static void become(struct server *s, uint32_t state, const char *why)
     }
 }
 
+/*
+ * A server kept to be signed into again (N5): its share was connected, it is
+ * away, and nothing ended it for good - not DISCONNECT, not a refusal of the
+ * account, not an answer that arrived changed.
+ */
+static bool retryable(const struct server *s)
+{
+    return !s->forgotten && !s->probe && s->was_connected && s->altered == 0
+           && s->pub.state == SHARE_STATE_AWAY;
+}
+
+/* Something asked of a connected server: its silence is counted from now,
+ * unless something asked before is still unanswered. */
+static void note_asked(struct server *s)
+{
+    if (!s->waiting) {
+        s->waiting = true;
+        s->asked_at = kosmos_ticks();
+    }
+}
+
+/* Away, and why, as STATUS and every refusal say it: "MACPEER is not
+ * answering - it closed the connection". A try that fails changes only the
+ * why - the server has been away since it went, not since the last try. */
+static void away_because(struct server *s, const char *reason, bool went)
+{
+    char why[SHARE_WHY_MAX];
+
+    snprintf(why, sizeof(why), "%s is not answering - %s", s->pub.name[0] != '\0'
+             ? s->pub.name : s->pub.address, reason);
+
+    if (went) {
+        become(s, SHARE_STATE_AWAY, why);
+    } else {
+        copy(s->pub.why, sizeof(s->pub.why), why);
+    }
+}
+
 static const char *dialect_text(uint16_t d)
 {
     switch (d) {
@@ -416,6 +493,7 @@ static void tell(const struct server *s)
             say_text(&line, s->pub.share);
             say_text(&line, " as ");
             say_text(&line, s->pub.account);
+            say_text(&line, s->pub.sign_ins > 1 ? ", signed in again" : "");
         }
         break;
     default:
@@ -532,10 +610,25 @@ static void server_close(struct server *s)
         }
 
         s->closing = true;
-        s->cost.requests = s->smb2->message_id;
+        s->sent_before += s->smb2->message_id;
         close_handles(s);
         smb2_destroy_context(s->smb2);
         s->smb2 = NULL;
+
+        /* A listing that was out is over with the connection, whether or
+         * not libsmb2 called back for it: the next is asked of the next
+         * connection (N5). */
+        {
+            struct folder *f;
+
+            for (f = s->folders; f != NULL; f = f->next) {
+                if (f->asking) {
+                    f->asking = false;
+                    f->failed = -ENETRESET;
+                    f->nt = SMB2_STATUS_SHUTDOWN;
+                }
+            }
+        }
     }
 
     __atomic_store_n(&s->want, 0u, __ATOMIC_RELEASE);
@@ -544,6 +637,18 @@ static void server_close(struct server *s)
     /* What was asked of it ends now: a read in words, a question about
      * names from memory as last heard (the sweep answers both). */
     fail_held(s);
+
+    /* A try that ended is over, and the next is planned by `deadlines`, a
+     * wait twice as long (N5). */
+    s->waiting = false;
+    s->echoing = false;
+    s->retrying = false;
+    s->next_try = 0;
+
+    /* And the NT hash forgotten once nothing will sign in with it. */
+    if (!retryable(s)) {
+        memset(s->hash, 0, sizeof(s->hash));
+    }
 }
 
 /*------------------------------------------------------------------------
@@ -552,11 +657,12 @@ static void server_close(struct server *s)
 
 static void refused_or_away(struct server *s, int status)
 {
-    char why[SHARE_WHY_MAX];
+    char why[SHARE_WHY_MAX], reason[SHARE_WHY_MAX];
     uint32_t nt = s->smb2 != NULL ? (uint32_t)smb2_get_nterror(s->smb2) : 0;
     struct smb_link link;
     bool linked = s->smb2 != NULL && smb_kit_link(smb2_get_fd(s->smb2), &link);
     uint32_t state = SHARE_STATE_REFUSED;
+    bool for_good = true;           /* the server said no: a try changes nothing */
 
     (void)status;
 
@@ -582,23 +688,43 @@ static void refused_or_away(struct server *s, int status)
         /* Nothing on the far end took a byte: nobody there. */
         snprintf(why, sizeof(why), "nothing at %s took the connection",
                  s->pub.address);
+        snprintf(reason, sizeof(reason), "nothing at %s took the connection",
+                 s->pub.address);
         state = SHARE_STATE_AWAY;
+        for_good = false;
     } else if (!linked && smb_kit_last_refusal() != NET_OK) {
         snprintf(why, sizeof(why), "%s could not be reached (the network "
                  "said %u)", s->pub.address, (unsigned)smb_kit_last_refusal());
+        snprintf(reason, sizeof(reason), "it could not be reached (the "
+                 "network said %u)", (unsigned)smb_kit_last_refusal());
         state = SHARE_STATE_AWAY;
+        for_good = false;
     } else if (linked && link.received == 0) {
         /* It took the connection, heard NEGOTIATE in SMB 2's form, and hung
          * up without a word: a server of SMB 1, which this machine does not
-         * speak (`docs/sharing.md`, *Not here, and why*). */
+         * speak (`docs/sharing.md`, *Not here, and why*). Or, on a try, a
+         * server still starting - which is a reason to try again. */
         snprintf(why, sizeof(why), "%s took the connection and hung up "
                  "without answering: it does not speak SMB 2 or 3",
                  s->pub.address);
+        snprintf(reason, sizeof(reason), "it took the connection and hung up");
+        for_good = false;
     } else {
         const char *said = s->smb2 != NULL ? smb2_get_error(s->smb2) : "";
 
         snprintf(why, sizeof(why), "%s: %s", named(s),
                  said != NULL && said[0] != '\0' ? said : "it stopped answering");
+        snprintf(reason, sizeof(reason), "%s",
+                 said != NULL && said[0] != '\0' ? said : "it stopped answering");
+        for_good = false;
+    }
+
+    /* A try at a server that went away: still away, and why this try did
+     * not answer - unless the server said no to the account, which no
+     * number of tries changes. */
+    if (s->retrying && !for_good) {
+        away_because(s, reason, false);
+        return;
     }
 
     become(s, state, why);
@@ -641,6 +767,13 @@ static void connected(struct smb2_context *smb2, int status, void *data,
         become(s, SHARE_STATE_CONNECTED, NULL);
         s->was_connected = true;
         s->heard = kosmos_ticks();
+        s->pub.sign_ins++;
+
+        /* Back, if it had gone (N5): the tries are over, and the next time
+         * it goes they start again from the first. */
+        s->retrying = false;
+        s->next_try = 0;
+        s->backoff = 0;
 
         /* From here a request the server never answers ends in words after
          * SMB's own bound; the loop services libsmb2 once a second while
@@ -768,13 +901,13 @@ static void settle(struct server *s, int serviced)
     if (serviced < 0 && s->pub.state == SHARE_STATE_CONNECTED) {
         uint32_t how = altered_how(s->smb2);
 
-        /* A connected server that hung up: away, until step N5 signs in
-         * again by itself. Or one whose answer arrived changed, which is
-         * said as that, and is not signed in again by itself. */
+        /* A connected server that hung up: away, and tried again on
+         * smbfs's own clock (N5). Or one whose answer arrived changed,
+         * which is said as that, and is not signed in again by itself. */
         if (how != 0) {
             became_altered(s, how);
         } else {
-            become(s, SHARE_STATE_AWAY, "the server closed the connection");
+            away_because(s, "it closed the connection", true);
         }
 
         tell(s);
@@ -826,8 +959,12 @@ static void start_smb(struct server *s)
                                       s->pub.account, connected, s);
     }
 
-    /* The hash is libsmb2's to keep while connected; this copy goes. */
-    memset(s->hash, 0, sizeof(s->hash));
+    /*
+     * **The hash is kept** while the server may be signed into again (N5):
+     * a server that comes back after sleep is signed into from it, without
+     * asking anybody. `server_close` forgets it once nothing will try - a
+     * server never connected, refused, changed on the way, or let go.
+     */
 
     if (rc < 0) {
         s->settled = true;
@@ -958,6 +1095,12 @@ static bool waiter_start(struct server *s)
 {
     long at;
 
+    /* A server signed into again keeps the page its first waiter polled
+     * through (N5); only its thread is new. */
+    if (s->poll_set != NULL) {
+        goto thread;
+    }
+
     s->poll_region = kosmos_mem_create(1);
 
     if (s->poll_region < 0) {
@@ -973,6 +1116,8 @@ static bool waiter_start(struct server *s)
     }
 
     s->poll_set = (struct net_poll_entry *)(uintptr_t)at;
+
+thread:
     s->thread = kosmos_thread_start(waiter_main, (unsigned long)(uintptr_t)s);
 
     if (s->thread < 0) {
@@ -1002,7 +1147,13 @@ static uint32_t from_waiter(struct server *s, uint32_t said, uint32_t what,
             snprintf(why, sizeof(why), "no address for %s (the network said %u)",
                      s->host, (unsigned)what);
             s->settled = true;
-            become(s, SHARE_STATE_AWAY, why);
+
+            if (s->retrying) {
+                away_because(s, why, false);
+            } else {
+                become(s, SHARE_STATE_AWAY, why);
+            }
+
             tell(s);
             server_close(s);
             return 1;
@@ -1121,6 +1272,48 @@ static bool nt_hash(const char *password, char out[40])
     return true;
 }
 
+/* The conversation begun - a name looked up first, by the waiter, if the
+ * address is one - for a CONNECT or PROBE, and for a try (N5). */
+static void begin(struct server *s)
+{
+    if (!s->by_name) {
+        start_smb(s);
+    }
+
+    /* The waiter, for the connection or for the name before it. */
+    if ((s->smb2 != NULL || s->by_name) && !waiter_start(s)) {
+        s->settled = true;
+
+        if (s->retrying) {
+            away_because(s, "no thread to wait for it with", false);
+        } else {
+            become(s, SHARE_STATE_REFUSED, "no thread to wait for it with");
+        }
+
+        server_close(s);
+    }
+}
+
+/*
+ * **A try** (N5): the same conversation as the first CONNECT - NEGOTIATE,
+ * SESSION_SETUP from the NT hash kept, TREE_CONNECT - on a new connection,
+ * so a new session and a new tree; the server's record, its folders and
+ * its name stay as they were, and it stays away until the try answers.
+ */
+static void retry(struct server *s)
+{
+    s->retrying = true;
+    s->settled = false;
+    s->closing = false;
+    s->next_try = 0;
+    s->received = 0;
+    s->try_deadline = kosmos_ticks() + ANSWER_SECONDS * counter_hz;
+    __atomic_store_n(&s->want, 0u, __ATOMIC_RELEASE);
+    __atomic_store_n(&s->handle, 0u, __ATOMIC_RELEASE);
+    __atomic_store_n(&s->stop, 0u, __ATOMIC_RELEASE);
+    begin(s);
+}
+
 static void ask_server(struct disk_request *req, struct disk_reply *rep,
                        bool probe)
 {
@@ -1216,17 +1409,9 @@ static void ask_server(struct disk_request *req, struct disk_reply *rep,
             snprintf(s->target + n, sizeof(s->target) - n, ":%u",
                      (unsigned)port);
         }
-
-        start_smb(s);
     }
 
-    /* The waiter, for the connection or for the name before it. */
-    if ((s->smb2 != NULL || by_name) && !waiter_start(s)) {
-        s->settled = true;
-        become(s, SHARE_STATE_REFUSED, "no thread to wait for it with");
-        server_close(s);
-    }
-
+    begin(s);
     rep->error = DISK_OK;
 }
 
@@ -1249,6 +1434,16 @@ static void status_page(const struct disk_request *req, struct disk_reply *rep)
 
         out[n] = s->pub;
         out[n].in_state_ms = (now - s->since) * 1000u / counter_hz;
+
+        /* Away (N5): trying now, or when the next try is. */
+        if (retryable(s)) {
+            bool due = s->next_try != 0 && s->next_try <= now;
+
+            out[n].trying = (s->retrying || due) ? 1u : 0u;
+            out[n].next_try_ms = (!s->retrying && s->next_try > now)
+                ? (uint32_t)((s->next_try - now) * 1000u / counter_hz) : 0u;
+        }
+
         n++;
     }
 
@@ -1262,6 +1457,45 @@ static void status_page(const struct disk_request *req, struct disk_reply *rep)
             break;
         }
     }
+}
+
+/*
+ * **Try now** (N5): a server away is tried at once rather than when its wait
+ * runs out - as soon as the last try's waiter has gone, which `deadlines`
+ * sees. Answered at once, as CONNECT is; STATUS says how it went.
+ */
+static void retry_now(struct disk_request *req, struct disk_reply *rep)
+{
+    struct share_ask *ask = (struct share_ask *)(void *)req->u.data;
+    char address[SHARE_ADDRESS_MAX];
+    struct server *s;
+
+    field(address, sizeof(address), ask->address, sizeof(ask->address));
+    s = server_find(address);
+
+    if (s == NULL) {
+        refuse(rep, SHARE_ERR_UNKNOWN, "nothing was asked of that server");
+        return;
+    }
+
+    if (s->pub.state == SHARE_STATE_CONNECTED) {
+        refuse(rep, SHARE_ERR_ALREADY, "already connected to it");
+        return;
+    }
+
+    if (s->retrying) {
+        refuse(rep, SHARE_ERR_ALREADY, "already trying it");
+        return;
+    }
+
+    if (!retryable(s)) {
+        refuse(rep, SHARE_ERR_NOT_KEPT, "it is not kept to sign into again: "
+               "connect to it, with the password");
+        return;
+    }
+
+    s->next_try = kosmos_ticks();
+    rep->error = DISK_OK;
 }
 
 static void disconnect(struct disk_request *req, struct disk_reply *rep)
@@ -1645,6 +1879,7 @@ static bool folder_ask(struct folder *f)
         return false;
     }
 
+    note_asked(s);
     f->asking = true;
     s->cost.listings++;
     s->cost.cache_misses++;
@@ -2029,6 +2264,7 @@ static bool piece_send(struct held *h, uint64_t offset, uint32_t count)
         return false;
     }
 
+    note_asked(s);
     h->in_flight++;
     s->cost.reads++;
     return true;
@@ -2151,6 +2387,8 @@ static struct handle *handle_get(struct server *s, const char *path)
         free(f);
         return NULL;
     }
+
+    note_asked(s);
 
     f->next = s->handles;
     s->handles = f;
@@ -2339,6 +2577,7 @@ static bool names_op(const struct disk_request *rq, const struct where *w,
     struct folder *f;
     uint64_t now = kosmos_ticks();
     struct held *h;
+    bool here;
 
     /* The share itself is a folder, and that needs no asking. */
     if (rq->op == DISK_OP_GETATTR && w->inside[0] == '\0') {
@@ -2355,11 +2594,17 @@ static bool names_op(const struct disk_request *rq, const struct where *w,
         return false;
     }
 
-    /* Heard a moment ago - or the next page of a listing being read. */
-    if (f->known && (now - f->heard < ticks_of_ms(FRESH_MS)
+    /*
+     * Heard a moment ago - or the next page of a listing being read. From a
+     * server that is away (N5), memory is all there is, and every answer
+     * from it says so, however recent; the server is not asked.
+     */
+    here = s->smb2 != NULL && !s->closing && s->pub.state == SHARE_STATE_CONNECTED;
+
+    if (f->known && ((here && now - f->heard < ticks_of_ms(FRESH_MS))
                      || (rq->op == DISK_OP_LIST && rq->offset > 0))) {
         s->cost.cache_hits++;
-        names_from(s, rq, w, f, false, rp);
+        names_from(s, rq, w, f, !here, rp);
         return false;
     }
 
@@ -2552,8 +2797,8 @@ static bool files_op(const struct disk_request *rq, uint64_t sender, long *cap,
 
     case DISK_OP_DEVICE:
         rp->u.device = w.s->cost;
-        rp->u.device.requests = w.s->smb2 != NULL ? w.s->smb2->message_id
-                                                   : w.s->cost.requests;
+        rp->u.device.requests = w.s->sent_before
+                                + (w.s->smb2 != NULL ? w.s->smb2->message_id : 0);
         return false;
 
     case DISK_OP_SUPER: {
@@ -2574,6 +2819,8 @@ static bool files_op(const struct disk_request *rq, uint64_t sender, long *cap,
 
         if (smb2_statvfs_async(w.s->smb2, "", &h->vfs, supered, h) < 0) {
             h->failed = -EIO;
+        } else {
+            note_asked(w.s);
         }
 
         settle(w.s, 0);
@@ -2627,6 +2874,10 @@ static void answer(struct message *msg, uint64_t sender)
 
     case SHARE_OP_DISCONNECT:
         disconnect(&req, rep);
+        break;
+
+    case SHARE_OP_RETRY:
+        retry_now(&req, rep);
         break;
 
     case SHARE_OP_WAITER: {
@@ -2696,6 +2947,10 @@ static bool busy(const struct server *s)
     const struct folder *f;
     const struct held *h;
 
+    if (s->echoing) {
+        return true;
+    }
+
     for (f = s->folders; f != NULL; f = f->next) {
         if (f->asking) {
             return true;
@@ -2709,6 +2964,88 @@ static bool busy(const struct server *s)
     }
 
     return false;
+}
+
+static void echoed(struct smb2_context *smb2, int status, void *data,
+                   void *private_data)
+{
+    struct server *s = private_data;
+
+    (void)smb2; (void)status; (void)data;
+    s->echoing = false;             /* what it answered, `settle` heard */
+}
+
+/*
+ * **Gone away, and back** (N5), on smbfs's clock: a connected server asked
+ * something and silent for `AWAY_SECONDS` is away; one nobody has asked
+ * anything for a minute is sent an ECHO, so that is noticed too; a server
+ * away has its next try planned, each wait twice the last up to a minute,
+ * and tried when it comes; and a try that has not answered within the
+ * bound a connect has is a try that failed.
+ */
+static void gone_and_back(struct server *s, uint64_t now)
+{
+    if (s->pub.state == SHARE_STATE_CONNECTED && s->smb2 != NULL && !s->closing) {
+        uint64_t from;
+
+        if (!busy(s)) {
+            s->waiting = false;
+        }
+
+        from = s->heard > s->asked_at ? s->heard : s->asked_at;
+
+        if (s->waiting && now - from >= AWAY_SECONDS * counter_hz) {
+            char reason[64];
+
+            snprintf(reason, sizeof(reason), "nothing heard from it for %u seconds",
+                     AWAY_SECONDS);
+            away_because(s, reason, true);
+            tell(s);
+            server_close(s);
+            return;
+        }
+
+        if (!busy(s) && now - s->heard >= ECHO_SECONDS * counter_hz
+            && smb2_echo_async(s->smb2, echoed, s) == 0) {
+            s->echoing = true;
+            note_asked(s);
+            settle(s, 0);
+        }
+
+        return;
+    }
+
+    if (s->retrying) {
+        if (now >= s->try_deadline) {
+            struct smb_link link;
+            bool took = s->smb2 != NULL
+                        && smb_kit_link(smb2_get_fd(s->smb2), &link) && link.taken;
+            char reason[96];
+
+            snprintf(reason, sizeof(reason), took
+                     ? "it took the connection and did not answer within %u seconds"
+                     : "it did not answer within %u seconds", ANSWER_SECONDS);
+            s->settled = true;
+            away_because(s, reason, false);
+            tell(s);
+            server_close(s);
+        }
+
+        return;
+    }
+
+    if (!retryable(s)) {
+        return;
+    }
+
+    if (s->next_try == 0) {
+        s->backoff = s->backoff == 0 ? RETRY_FIRST_SECONDS
+                     : (s->backoff * 2u > RETRY_MOST_SECONDS ? RETRY_MOST_SECONDS
+                                                             : s->backoff * 2u);
+        s->next_try = now + (uint64_t)s->backoff * counter_hz;
+    } else if (now >= s->next_try && s->thread < 0 && s->smb2 == NULL) {
+        retry(s);
+    }
 }
 
 /* Every server still asking whose time is up. */
@@ -2735,6 +3072,12 @@ static void deadlines(void)
             become(s, SHARE_STATE_AWAY, why);
             tell(s);
             server_close(s);
+        }
+    }
+
+    for (i = 0; i < server_count; i++) {
+        if (!servers[i]->forgotten && !servers[i]->probe) {
+            gone_and_back(servers[i], now);
         }
     }
 
@@ -2780,8 +3123,31 @@ static unsigned long next_wait(void)
             soonest = d;
         }
 
+        /* N5: a try that may have failed, and the next one planned - once
+         * the last try's waiter has gone, which wakes this loop itself. */
+        if (s->retrying) {
+            d = s->try_deadline;
+
+            if (soonest == 0 || d < soonest) soonest = d;
+        } else if (retryable(s) && s->next_try == 0) {
+            soonest = now;                  /* its next try is still to plan */
+        } else if (retryable(s) && s->thread < 0) {
+            d = s->next_try;
+
+            if (soonest == 0 || d < soonest) soonest = d;
+        }
+
         if (s->smb2 == NULL || s->closing) {
             continue;
+        }
+
+        if (s->pub.state == SHARE_STATE_CONNECTED) {
+            uint64_t from = s->heard > s->asked_at ? s->heard : s->asked_at;
+
+            d = s->waiting ? from + AWAY_SECONDS * counter_hz
+                           : s->heard + ECHO_SECONDS * counter_hz;
+
+            if (soonest == 0 || d < soonest) soonest = d;
         }
 
         if (busy(s)) {

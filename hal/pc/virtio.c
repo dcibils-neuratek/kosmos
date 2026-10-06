@@ -63,6 +63,7 @@
 #define COMMON_DEVICE_STATUS        0x14
 #define COMMON_QUEUE_SELECT         0x16
 #define COMMON_QUEUE_SIZE           0x18
+#define COMMON_QUEUE_MSIX_VECTOR    0x1A
 #define COMMON_QUEUE_ENABLE         0x1C
 #define COMMON_QUEUE_NOTIFY_OFF     0x1E
 #define COMMON_QUEUE_DESC           0x20
@@ -322,6 +323,24 @@ bool virtio_queue_attach(const struct virtio_device *dev, unsigned index,
     }
 
     write16(dev->base + COMMON_QUEUE_SIZE, (uint16_t)size);
+
+    /*
+     * **Which MSI-X message the queue raises: entry 0**, the one `pci.c`'s
+     * `msix_enable` writes (`dev->slot` is its number). virtio 1.1 4.1.4.3,
+     * `queue_msix_vector`, between `queue_size` and `queue_enable`; its
+     * value after reset is NO_VECTOR (0xFFFF), and a queue with no vector
+     * raises nothing at all once MSI-X is on.
+     *
+     * Found on 6 October 2026 (`testing.md` 18.410): virtio-net-pci has
+     * MSI-X and no MSI, so `pci_enable` switched it to MSI-X and no queue
+     * was ever given a vector. The card never interrupted, and the stack
+     * read its frames only when its own tenth-of-a-second deadline came
+     * round - 16 KB of TCP window a deadline, 0.14 MB/s, which `sharing.md`
+     * had on the roadmap as x86-64's network being ten times slower than
+     * ARM's. On a device left on its line the register is not used, so
+     * writing it costs nothing there.
+     */
+    write16(dev->base + COMMON_QUEUE_MSIX_VECTOR, 0);
 
     /* The kernel is identity mapped, so a pointer into the driver's own
      * storage is already the physical address the device needs - the same

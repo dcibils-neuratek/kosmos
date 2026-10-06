@@ -929,7 +929,14 @@ gate went from 9:49 to 10:10 at 96 suites. Under Diego's rule (`CLAUDE.md`,
 *The tests take five to ten minutes*) this is the thing to fix before more
 is added: the share suites' Samba peers start once per suite and could be
 shared, and `x86-share-3`, at a minute alone, is paced by the x86 board's
-slow emulated network - which is its own roadmap item.
+slow emulated network - which is its own roadmap item. **FIXED on 6
+October** (`testing.md` 18.410): measured at 10:20 before, **9:55 after**, 94
+suites, N5's checks included and no check dropped - N2 and N4 one machine
+on ten peers started once, N3 and N5 one, the stopped peer's bound passing
+while the matrix reads, the reads sized to what they prove with the
+measured sizes kept as `--measure`, and x86-64's virtio card made to
+interrupt (150 times the throughput); the share suites 313 s of the
+gate's slots to 118.
 
 **Kosmos Write's window resizable, as the browser's is.** Diego, 5 October
 2026: "kosmos write works fine", "I need to be able to resizse the window
@@ -1070,15 +1077,24 @@ Assessed, not designed:
   on the way - HMAC, CMAC and CCM - refused in words with nothing handed
   over; and libsmb2's `smb2-signing.c` replaced through the build by the
   kit's CMAC, keyed once (34.6 to 14.3 ms a signed megabyte on an ARM
-  core, 4.6 to 0.8 with AES-NI). **Next: N5**, gone away and back.
+  core, 4.6 to 0.8 with AES-NI). **N5 DONE on 6 October** (18.411): gone
+  away and back - a server silent for ten seconds with something asked, or
+  whose connection closed, is away; a read in flight ends in words, a
+  folder is answered from memory marked as last heard; tried again at 2,
+  4, 8 seconds up to a minute and signed into again by itself from the NT
+  hash kept - a new session and tree; `share retry` is Try now, `share
+  status` says when the next try is, `share disconnect` forgets one away.
+  **Next: N6**, the windows.
   **Wanted, found by N4**: ARMv8's AES instructions in the Crypto Kit -
   CMAC and CCM are then most of what a signed or sealed megabyte costs on
   ARM (`sharing.md`, *What the Crypto Kit gains*); and libsmb2 offers only
   CCM, so 3.1.1's GCM and GMAC wait for upstream or a step of their own.
   **Found by N3**: x86-64's network
   receives about 0.14 MB/s under QEMU, ten times slower than ARM's (2 MB by
-  `fetch`: 13.2 s against 1.2), cause not looked for - the stack's or the
-  card's; and a `LIST` carrying each name's facts is worth building for
+  `fetch`: 13.2 s against 1.2) - **FIXED on 6 October** (`testing.md`
+  18.410): the card was on MSI-X with no queue given a vector, so it never
+  interrupted and the stack read frames on its tenth-of-a-second deadline;
+  the same 2 MB now in 93 ms; and a `LIST` carrying each name's facts is worth building for
   `/Home`, `/Drives` and shares (`sharing.md` question 6). **Found**:
   a password typed at the prompt is shown as it is typed - the console has
   no unechoed read yet, to add before the windows (N6).

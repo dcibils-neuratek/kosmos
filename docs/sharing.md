@@ -310,8 +310,13 @@ that has gone to sleep:
   seconds (`SMB_TIMEOUT_SECONDS`), armed once the share is connected, the
   loop servicing libsmb2 once a second while anything is in flight - which
   is how libsmb2's timeout runs; a held listing was seen ending at it, with
-  the bound set long as a control. The reply that arrives after a request
-  has timed out is N5's to hold to a test.
+  the bound set long as a control. **As built (N5)**: a server that says
+  nothing at all for ten seconds with something asked of it
+  (`AWAY_SECONDS`, the bound a connect has) is away, and a READ held for
+  it ends then, in words - "MACPEER is not answering" - rather than at the
+  thirty seconds, which are left for the one request a server otherwise
+  answering never answers. Silence, as the bound on names is: a megabyte
+  arriving slowly is a server answering.
 - **Connecting** - `shareproto.h`'s `PROBE` and `CONNECT` - is answered at
   once, as `NET_CONNECT_AT_ONCE` is, and the window asks `STATUS` on its own
   clock to draw "192.168.1.38 answered - diego-mac, SMB 3.1.1, signing
@@ -372,6 +377,13 @@ request it came in is zeroed once read. The `share` program reads it at the
 prompt, **shown as it is typed** - the console has no way yet to read a
 line without echoing it - and Connect to Server's field (N6) and the
 keyring (N8) are where it stops being typed there.
+
+**And N5's** (`testing.md` 18.411): `SHARE_OP_RETRY`, the mockup's Try
+now, answered at once as CONNECT is; and in STATUS's record, in the 336
+bytes it already was, `trying`, `sign_ins` - 2 and more is signed in again
+- and `next_try_ms`, when an away server is tried next, with `in_state_ms`
+saying since when it has been away. DISCONNECT forgets a server that is
+away as it does one that is connected.
 
 **What N2 built of it** (`user/include/shareproto.h`): PROBE, CONNECT and
 DISCONNECT carry `struct share_ask` - an address with its port, a share, an
@@ -878,8 +890,12 @@ MB through smbfs in 27.8 s, and 2 MB through `fetch` over plain HTTP in
 13.2 s against 1.2 s on ARM - so it is the stack's and the emulated card's
 on that board, not SMB's, and the x86-64 suite reads the file's first 4 MB
 whole rather than 64. **Found**, for the roadmap beside the stack's receive
-window: x86-64's receive under QEMU, ten times slower than ARM's, its
-cause not yet looked for.
+window: x86-64's receive under QEMU, ten times slower than ARM's. **Its
+cause found and fixed on 6 October** (`testing.md` 18.410): the card never
+interrupted - virtio-net-pci was switched to MSI-X and no queue was given
+a vector - so the stack read its frames on its own tenth-of-a-second
+deadline. The same 2 MB now arrive in 93 ms, and both boards' suites read
+the same.
 
 ### How it is tested, under QEMU first
 
@@ -938,7 +954,11 @@ segment's Ethernet frames.
 **Within the budget** (`CLAUDE.md`, five to ten minutes): an `arm-share` and an
 `x86-share` suite, split in halves that run side by side if they pass three
 minutes, each waiting for the thing rather than for a number of seconds, and
-the host checks in `host`. A change to the SMB Kit or smbfs runs those; a
+the host checks in `host`. **As it stands since 6 October** (`testing.md`
+18.410): two suites a board - `arm-share` (N2 and N4, one machine, ten
+peers) and `arm-share-2` (N3 and N5), and the same for x86-64 - 118 s of
+the gate's slots where six suites had taken 313; the reads in them sized to
+what they prove, and the sizes the tables were measured at `--measure`. A change to the SMB Kit or smbfs runs those; a
 change to `diskproto.h`, the namespace or the stack runs the whole gate.
 
 ### The order to build it in
@@ -987,7 +1007,9 @@ next. The client, read-only, first.
   controls the peer stopped whole and a READ asking one byte further on;
   x86-64 reads the big file's first 4 MB, its network being slow under
   QEMU (above); measured under
-  TCG rather than `-icount` (above). Departures, each said where it
+  TCG rather than `-icount` (above); since 6 October 16 MB whole on both
+  boards in the gate and 64 MB with `--measure` (`testing.md` 18.410).
+  Departures, each said where it
   belongs: the bound is on silence; `heard_ms` rather than a tick; one
   share a server and `SHARE_OP_SHARES` left for N6; Tracker held to opening
   the share by the line it prints, its picture N6's.
@@ -998,7 +1020,9 @@ next. The client, read-only, first.
   than handing over the file - signed - and the same byte under sealing is
   refused by the cipher. The cost of signing and sealing a byte measured,
   natively on this Mac's cores. **Built on 5 October** (`testing.md`
-  18.409): `run_share.py --part 3`, `arm-share-3` and `x86-share-3`, on
+  18.409): `run_share.py --part 3`, `arm-share-3` and `x86-share-3` (since
+  6 October the first part's second half, in `arm-share` and `x86-share`,
+  `testing.md` 18.410), on
   nine peers at once, each pinned (`smbpeer.py --instance`), every one
   reached through `tools/smbrelay.py` - a relay that watches what crosses,
   so `share status`'s dialect, signed and sealed are held to the wire's
@@ -1019,7 +1043,21 @@ next. The client, read-only, first.
   `fs.list` answered from memory within its bound, marked as last heard;
   a `READ` ends in words after SMB's timeout; the peer continued (SIGCONT)
   or restarted, and smbfs signs in again by itself, from the NT hash it
-  kept, and the mark goes.
+  kept, and the mark goes. **Built on 6 October** (`testing.md` 18.411), in
+  `run_share.py --part 2` (now `arm-share-2` and `x86-share-2`, 33 checks):
+  away after ten seconds of silence with something asked, or at once when
+  the connection closes - a read in flight ended in words at 10.0 s, a
+  folder from memory marked, a read meanwhile refused at once; tries at 2,
+  4, 8 seconds and up to a minute; continued, signed in again by itself
+  1.8 s later; restarted, `share retry` (Try now) signing in at once, a new
+  session and tree; `share status` saying "since ..., next try in N s";
+  `share disconnect` forgetting a server away, and nothing trying it again.
+  The control: no try by itself in a scratch build, and the read after the
+  return fails. Departures: the ten seconds rather than SMB's thirty (*Bytes*
+  above), and an ECHO once a minute when nothing else is asked, so a server
+  gone to sleep is noticed by itself. **And the gate's sharing suites
+  rearranged first** (18.410): N2 and N4 one machine, N3 and N5 one, both
+  boards reading alike once x86-64's card interrupted.
 - **N6 - the windows.** Tracker's Network group, Connect to Server as drawn,
   the trail's globe, "over the network", the status line, the banner,
   Modified where `dated` says so; the Open window's sidebar through

@@ -28,7 +28,7 @@ repository.
 **The dialect** is pinned with `--dialect` (2.0.2, 2.1, 3.0, 3.0.2,
 3.1.1), signing made mandatory with `--sign` and encryption required with
 `--seal`: step N4's matrix is this script run once for each, nine peers at
-once on nine ports (`run_share.py --part 3`). `--dialect 1.0` pins SMB 1
+once on nine ports (`run_share.py`, its first part). `--dialect 1.0` pins SMB 1
 alone (Samba's `NT1`), which nothing here speaks: the control a client is
 held to when it says it refuses SMB 1 (step N2).
 
@@ -232,24 +232,75 @@ def signal_peer(sig):
     return pid
 
 
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
 def stop():
+    """The peer and every connection it serves, ended - and waited for.
+
+    **Waited for by its process, not its pid file** (`testing.md` 18.411):
+    smbd removes the file before it has finished going, so a `start` right
+    after a `stop` - which N5's suite does, a server restarted - met the
+    old one still running, and refused to start ("smbd is already
+    running"). And every process of it, so a connection it was serving
+    closes as a machine that went away closes it."""
     pid = running()
 
-    if pid:
+    if not pid:
+        return None
+
+    try:
+        group = os.getpgid(pid)
+    except OSError:
+        group = None
+
+    def everyone(sig):
         try:
-            signal_peer(signal.SIGCONT)         # a paused one cannot hear TERM
+            if group is not None and group != os.getpgrp():
+                os.killpg(group, sig)
+            else:
+                os.kill(pid, sig)
         except OSError:
             pass
 
-    if pid:
-        os.kill(pid, signal.SIGTERM)
+    everyone(signal.SIGCONT)                    # a paused one cannot hear TERM
+    everyone(signal.SIGTERM)
 
-        for _ in range(50):
-            if not running():
+    for _ in range(100):
+        if not alive(pid):
+            break
+        time.sleep(0.05)
+    else:
+        everyone(signal.SIGKILL)
+
+        for _ in range(40):
+            if not alive(pid):
                 break
-            time.sleep(0.1)
+            time.sleep(0.05)
+
+    for name in ("samba-dot-org-smbd.pid", "smbd.pid"):
+        try:
+            os.unlink(os.path.join(STATE, "pid", name))
+        except OSError:
+            pass
 
     return pid
+
+
+def listening():
+    """Whether something takes a connection on the peer's port."""
+    import socket
+
+    try:
+        socket.create_connection((LISTEN, PORT), timeout=0.5).close()
+        return True
+    except OSError:
+        return False
 
 
 def start(dialect, sign, seal):
@@ -274,13 +325,15 @@ def start(dialect, sign, seal):
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True)
 
-    for _ in range(100):
-        if running():
+    # Started is listening, not a pid file written: a suite connects the
+    # moment this returns.
+    for _ in range(200):
+        if running() and listening():
             break
-        time.sleep(0.1)
+        time.sleep(0.05)
 
-    if not running():
-        sys.exit("smbpeer: smbd did not start; see build/smbpeer/log/smbd.log")
+    if not (running() and listening()):
+        sys.exit("smbpeer: smbd did not start; see %s/log/smbd.log" % STATE)
 
     print(f"smbpeer: smb://127.0.0.1:{PORT}/Projects (10.0.2.2:{PORT} from a "
           f"guest), {dialect}{', signed' if sign else ''}"

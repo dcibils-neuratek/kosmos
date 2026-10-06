@@ -27,7 +27,7 @@ would prove nothing.
 The relay reads the server's side a whole message at a time (the four-byte
 length SMB 2 frames every message with over TCP), so it can find the byte
 to change; the client's side it passes as it arrives. It is used by
-`tools/run_share.py --part 3` in the same process, as `Relay`, armed
+`tools/run_share.py`'s first part in the same process, as `Relay`, armed
 between one command typed into the machine and the next.
 """
 

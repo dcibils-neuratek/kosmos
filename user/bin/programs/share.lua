@@ -4,7 +4,8 @@
 --   share connect smb://10.0.2.2:4450/Projects diego   sign in; asks the password
 --   share probe 10.0.2.2:4450                          does a server answer there?
 --   share status                                       what each server is doing
---   share disconnect 10.0.2.2:4450                     let it go
+--   share retry 10.0.2.2:4450                          Try now: one that is away
+--   share disconnect 10.0.2.2:4450                     let it go, away or not
 --
 --   --no-wait after `connect` or `probe`: say it has begun, and come back
 --
@@ -24,6 +25,11 @@
 -- smbfs once, which keeps its NT hash and not the password; Connect to
 -- Server's field (step N6) and the keyring (N8) are where it stops being
 -- typed here at all.
+--
+-- **A server that goes away is kept** (step N5): `status` says since when,
+-- and when smbfs tries it again by itself; `retry` is the mockup's Try now,
+-- signing in from what smbfs kept, with nothing asked; and `disconnect`
+-- forgets one that is away as it does one that is connected.
 
 local words = {}
 
@@ -44,6 +50,7 @@ local function usage()
   print("usage: share connect smb://server[:port]/share account [--no-wait]")
   print("       share probe server[:port] [--no-wait]")
   print("       share status")
+  print("       share retry server[:port]")
   print("       share disconnect server[:port]")
 end
 
@@ -76,11 +83,25 @@ local function line(s)
 
   if s.state == "connected" then
     parts[#parts + 1] = s.share .. " as " .. s.account
+
+    if (s.sign_ins or 0) > 1 then
+      parts[#parts + 1] = ("signed in %d times"):format(s.sign_ins)
+    end
   elseif s.state == "refused" or s.state == "away" then
     parts[#parts + 1] = s.why
   end
 
-  parts[#parts + 1] = "for " .. seconds(s.in_state_ms)
+  -- Away and kept: since when, and when it is next tried (`docs/sharing.html`,
+  -- *Gone away*: "retrying", and the next try's time).
+  if s.state == "away" and s.trying then
+    parts[#parts + 1] = "since " .. seconds(s.in_state_ms) .. ", trying again now"
+  elseif s.state == "away" and (s.next_try_ms or 0) > 0 then
+    parts[#parts + 1] = ("since %s, next try in %d s")
+                        :format(seconds(s.in_state_ms), (s.next_try_ms + 999) // 1000)
+  else
+    parts[#parts + 1] = "for " .. seconds(s.in_state_ms)
+  end
+
   return table.concat(parts, "  ")
 end
 
@@ -103,7 +124,7 @@ local function outcome(address)
     local s, why = find(address)
 
     if not s then return nil, why end
-    if s.state ~= "asking" then return s end
+    if s.state ~= "asking" and not s.trying then return s end
 
     sys.sleep(25)                       -- a tenth of a second
   end
@@ -184,6 +205,22 @@ elseif verb == "status" then
   else
     for _, s in ipairs(list) do print(line(s)) end
   end
+elseif verb == "retry" then
+  local server = split(words[2])
+
+  if not server then
+    usage()
+    return
+  end
+
+  local ok, why = fs.share_retry(server)
+
+  if not ok then
+    print("share: " .. tostring(why))
+    return
+  end
+
+  report(server)
 elseif verb == "disconnect" then
   local server = split(words[2])
 

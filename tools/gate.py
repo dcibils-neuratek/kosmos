@@ -189,32 +189,29 @@ SUITES = [
     Suite("arm-tls", ["python3", "tools/run_tls.py", ARM]),
     Suite("x86-tls", ["python3", "tools/run_tls.py", X86], x86=True),
 
-    # **smbfs connects** (`docs/sharing.md` N2): `share connect` into Samba
-    # run as the user on this Mac, each board with a peer on a port of its
-    # own - 3.1.1 signed and sealed, a wrong password and nobody refused in
-    # words, and the controls: SMB 1 alone refused, and a peer stopped
-    # mid-negotiation never stopping `share status` answering.
+    # **smbfs connects, signed and sealed** (`docs/sharing.md` N2 and N4),
+    # in one machine on ten Samba peers run as the user on this Mac: 3.1.1
+    # signed and sealed, a wrong password and nobody refused in words, SMB 1
+    # alone refused, a peer stopped mid-negotiation never stopping `share
+    # status` answering - its bound passing while the rest runs; then every
+    # dialect from 2.0.2 to 3.1.1, each record held to what a relay saw on
+    # the wire, and the control that bites - one byte changed of a signed
+    # answer (HMAC and CMAC) and of a sealed one, refused in words with
+    # nothing handed over. Two suites were three until 6 October (N2's and
+    # N4's machines and peers started once, `testing.md` 18.410).
     Suite("arm-share", ["python3", "tools/run_share.py", ARM]),
     Suite("x86-share", ["python3", "tools/run_share.py", X86], x86=True),
 
-    # **A share is a folder** (`docs/sharing.md` N3), the second half, on a
-    # peer of its own beside the first: `ls /Network`, the 2,000 names, a
-    # 64 MB file whole and in a hundred pieces against this Mac's bytes,
-    # `cat`, `cp`, dates, writes refused in words, Tracker opening it; and
-    # the peer stopped - memory marked as last heard, "not answering", both
-    # within the bound.
+    # **A share is a folder, gone away and back** (`docs/sharing.md` N3 and
+    # N5), on a peer of its own: `ls /Network`, the 2,000 names, a file
+    # whole and in a hundred pieces against this Mac's bytes, `cat`, `cp`,
+    # dates, writes refused in words, Tracker opening it; the peer stopped -
+    # memory marked as last heard, "not answering", a read in flight ended
+    # in words; continued, signed into again by itself; restarted, tried at
+    # 2, 4 and 8 seconds and signed into by `share retry`; let go of while
+    # away, and never tried again.
     Suite("arm-share-2", ["python3", "tools/run_share.py", ARM, "--part", "2"]),
     Suite("x86-share-2", ["python3", "tools/run_share.py", X86, "--part", "2"],
-          x86=True),
-
-    # **Signed and sealed** (`docs/sharing.md` N4), the third part, on nine
-    # peers of its own: every dialect from 2.0.2 to 3.1.1 with signing
-    # mandatory, 3.0 to 3.1.1 sealed, each read and its record held to what
-    # a relay saw on the wire; and the control that bites - the relay
-    # changing one byte of a signed answer (HMAC and CMAC) and of a sealed
-    # one, refused in words with nothing handed over.
-    Suite("arm-share-3", ["python3", "tools/run_share.py", ARM, "--part", "3"]),
-    Suite("x86-share-3", ["python3", "tools/run_share.py", X86, "--part", "3"],
           x86=True),
 
     # **The Servers window** (`roadmap.md`, remote step 6): opened over
