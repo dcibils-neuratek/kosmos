@@ -67,6 +67,10 @@ SHARE = os.path.join(BASE, "Projects")
 STATE = BASE                    # an instance's own, from `--instance`
 PORT = 4450
 
+# Where it listens: this Mac alone, unless `--listen` names its address on the
+# network - for a real machine, the M700, to reach it (step N7 by hand).
+LISTEN = "127.0.0.1"
+
 SAMBA = "/opt/homebrew/opt/samba"
 SMBD = os.path.join(SAMBA, "sbin", "samba-dot-org-smbd")
 PDBEDIT = os.path.join(SAMBA, "bin", "pdbedit")
@@ -159,7 +163,7 @@ def config(dialect, sign, seal):
     server role = standalone server
     workgroup = KOSMOS
     netbios name = MACPEER
-    interfaces = 127.0.0.1
+    interfaces = {LISTEN}
     bind interfaces only = yes
     smb ports = {PORT}
     disable netbios = yes
@@ -284,7 +288,7 @@ def start(dialect, sign, seal):
 
 
 def main():
-    global STATE, PORT
+    global STATE, PORT, LISTEN
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("what", choices=["start", "stop", "where", "pause", "resume"])
     ap.add_argument("--dialect", default="3.1.1", choices=sorted(DIALECTS))
@@ -292,9 +296,12 @@ def main():
     ap.add_argument("--seal", action="store_true")
     ap.add_argument("--instance", default=None)
     ap.add_argument("--port", type=int, default=PORT)
+    ap.add_argument("--listen", default=None,
+                    help="this Mac's address on the network, for a real machine")
     args = ap.parse_args()
 
     PORT = args.port
+    LISTEN = args.listen or LISTEN
 
     if args.instance:
         STATE = os.path.join(BASE, "instances", args.instance)
