@@ -199,15 +199,24 @@ static unsigned units(void)
 }
 
 /* `count` sectors from `lba` of `unit`, into the region. */
+/* Whether the last read was refused as `/Home`'s (keyring K7). */
+static bool last_guarded;
+
 static bool read_sectors(uint32_t unit, uint64_t lba, uint32_t count)
 {
     struct block_reply rep;
+    bool ok;
+
+    last_guarded = false;
 
     if (region == NULL || count == 0u || count > REGION_SECTORS) {
         return false;
     }
 
-    return blocks_call(BLOCK_OP_READ, unit, lba, count, -1, &rep);
+    zero(&rep, sizeof(rep));
+    ok = blocks_call(BLOCK_OP_READ, unit, lba, count, -1, &rep);
+    last_guarded = !ok && rep.error == BLOCK_ERR_GUARDED;
+    return ok;
 }
 
 /*
@@ -390,6 +399,20 @@ static bool identify(struct volume *v)
     const char *why = NULL;
 
     if (!read_sectors(v->unit, v->first, 1u)) {
+        /*
+         * **Refused as `/Home`'s** (keyring K7): the partition the disk
+         * server keeps from every program, so a Kosmos volume, listed and
+         * not opened here - its GUID says which, and `drivelist` calls it
+         * Home - rather than dropped, which read as a drive with a
+         * partition missing.
+         */
+        if (last_guarded) {
+            v->fs = FS_KIND_KFS;
+            v->readable = false;
+            drives_label_name(v->name, sizeof(v->name), "");
+            return true;
+        }
+
         return false;
     }
 

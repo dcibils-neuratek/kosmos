@@ -44,6 +44,8 @@ local ERRORS = {
   [6] = "the stick failed it",
   [7] = "that writes, and this endpoint only reads",
   [8] = "every open slot is taken",
+  [9] = "the stick does not write out a cache",
+  [10] = "that block is /Home's, and only the disk server reads it",
 }
 
 local function trimmed(s)

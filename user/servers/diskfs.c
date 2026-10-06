@@ -406,6 +406,24 @@ static bool look(void)
                 say_text(&line, " to ");
                 say_dec(&line, (unsigned long)hi);
                 put_text(stick.where, sizeof stick.where, line.text);
+
+                /*
+                 * **Ours alone from here** (keyring K7): the driver refuses
+                 * these blocks to reads on `/Devices/blocks`, asked on the
+                 * write endpoint only this process holds - so `/Keyring` is
+                 * no more readable underneath than through the door.
+                 */
+                {
+                    struct block_reply g;
+                    uint32_t ignored;
+
+                    if (!ask(blocks_write, BLOCK_OP_GUARD, u, lo,
+                             (uint32_t)(hi - lo + 1), -1, &g, &ignored)) {
+                        tell("the driver would not keep /Home's partition from "
+                             "/Devices/blocks", 0, false, NULL);
+                    }
+                }
+
                 return true;
             } else {
                 REACHED(11);

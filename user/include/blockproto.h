@@ -40,6 +40,8 @@
 #define BLOCK_OP_WRITE      4u  /* `count` blocks at `lba`, from the region */
 #define BLOCK_OP_CLOSE      5u  /* the region given back */
 #define BLOCK_OP_FLUSH      6u  /* every block the stick caches, written out */
+#define BLOCK_OP_GUARD      7u  /* write endpoint: `count` blocks from `lba` of `unit`
+                                 * refused to reads on `/Devices/blocks` */
 
 #define BLOCK_OK            0u
 #define BLOCK_ERR_BAD_OP    1u  /* no such operation, or a request the wrong size */
@@ -51,6 +53,16 @@
 #define BLOCK_ERR_READ_ONLY 7u  /* a write or a flush, on the endpoint that reads */
 #define BLOCK_ERR_FULL      8u  /* every open slot is taken */
 #define BLOCK_ERR_NO_FLUSH  9u  /* a flush, to a stick that has said it does not do one */
+#define BLOCK_ERR_GUARDED  10u  /* blocks of the partition that is /Home: the disk server's */
+
+/*
+ * **The partition that is `/Home` is the disk server's alone** (`docs/keyring.md`,
+ * K7). It sends `BLOCK_OP_GUARD` on the write endpoint, which only it holds,
+ * once it has found its partition; from then a read on `/Devices/blocks` that
+ * touches those blocks is refused, so the keyring's file and the key beside it
+ * are no more readable underneath the disk server than through it. The
+ * guard is the stick's, cleared when a stick is enumerated in its place.
+ */
 
 /*
  * **The most one read or write moves: 1 MB.** It was 124 KB, the largest

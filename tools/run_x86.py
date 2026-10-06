@@ -1250,8 +1250,18 @@ def usb_home(image, check):
              "-device", "usb-storage,bus=usb1.0,drive=stick",
              "-fw_cfg", "name=opt/kosmos/home,string=usb")
 
+    # **`/Home`'s partition is the disk server's alone** (keyring K7): a
+    # program reading a block inside it through `/Devices/blocks` is refused,
+    # and one outside it - the table's own, block 1 - is answered.
+    guard = ('fs.write("/Temporary/guard.lua", [[local r = '
+             'use("/Kosmos/Libraries/blocks.lua").open() '
+             'local b, why = r:read(0, %d, 1) print("inside:", b and #b, why) '
+             'local c = r:read(0, 1, 1) print("outside:", c and #c) r:close()]])'
+             % (first + 64))
+
     one = boot(image, None, 150.0,
-               typed=("diskinfo", "save notes.txt kept on a stick",
+               typed=("diskinfo", "save notes.txt kept on a stick", guard,
+                      "/Temporary/guard.lua",
                       'print("origin", sys.info().log_origin > 0 and '
                       'sys.info().log_origin <= sys.ticks())',
                       "log save", "diagnose"),
@@ -1284,6 +1294,14 @@ def usb_home(image, check):
           "diskinfo did not say /Home is the Kosmos partition, blocks %d to "
           "%d - %d sectors - on both boots:\n    %s\n    %s"
           % (first, last, last - first + 1, shown(one), shown(two)))
+
+    check(re.search(r"inside:\tnil\tthat block is /Home's", one) is not None
+          and re.search(r"outside:\t512", one) is not None,
+          "a program's read of block %d, inside /Home's partition, was not "
+          "refused, or block 1 outside it not answered:\n    %s"
+          % (first + 64, "\n    ".join(l for l in one.splitlines()
+                                       if "inside:" in l or "outside:" in l
+                                       or "kept from" in l)))
 
     check("filesystem: version" in one and "saved notes.txt" in one,
           "the first boot did not format the blank partition and save a file "

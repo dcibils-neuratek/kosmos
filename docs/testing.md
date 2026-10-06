@@ -20134,3 +20134,38 @@ typing, not the window manager. And `arm-kernel`'s test 57, "a new thread
 avoids a loaded core", which waited two seconds for its fillers to block
 (18.380): ten now, a cap that a passing run never reaches, and each of its
 two ways of failing says which it was, since this one did not.
+
+## 18.424 /Home's partition is the disk server's alone (keyring K7)
+
+Every program holds `/Devices/blocks`, the USB driver's read endpoint, and
+until now could read any block of any stick - the boot stick's Kosmos
+partition included, and so `/Keyring/keyring` and `/Keyring/machine-key`
+underneath the disk server's door (K3), which made that door's refusal
+decorative on a stick. So `blockproto.h` gains `BLOCK_OP_GUARD`: the disk
+server, once it has found its partition, asks on the **write** endpoint -
+which only it holds - for those blocks to be kept from `/Devices/blocks`,
+and the driver refuses a read there that touches any of them,
+`BLOCK_ERR_GUARDED`. The disk server reads and writes its partition through
+the write endpoint, so it is untouched. The guard belongs to the stick and
+is cleared when a stick is enumerated in its slot.
+
+The x86 stick suite's `usb_home` part, on its first boot, reads block
+`first + 64` - inside the partition - and block 1, the partition table's,
+through `/Devices/blocks` as a program would (`blocks.lua`): the first
+"that block is /Home's, and only the disk server reads it", the second 512
+bytes; and the driver says it keeps them. **Control**: the driver not
+refusing - the inside read answers 512 bytes, and the check fails.
+
+**What it does not cover, said**: QEMU's `virt` board's `/Home` is the
+kernel's own disk, which only the disk server was ever granted; the guard is
+for sticks, where it was needed. A stick pulled and pushed back is a new
+unit the disk server does not use, and is unguarded - as it is not `/Home`.
+
+**Found by the gate, and mine**: `x86-usb-2`'s `usb_drives` - the
+partition that is `/Home` no longer called Home, every volume "Untitled,
+not opened", the regression Diego photographed on the M700 on 27
+September. The drive server lists volumes by reading each partition's first
+sector through `/Devices/blocks`, its read now refused for `/Home`'s, and
+`identify` dropped the volume - GUID and all, so `drivelist` had nothing to
+call Home. A read refused as guarded is now the answer itself: the disk
+server's partition, a Kosmos volume, listed and not opened, as it was.

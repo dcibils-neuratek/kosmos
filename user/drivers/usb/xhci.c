@@ -489,6 +489,11 @@ struct stick {
     /* Whether a flush it kept has been said yet (USB step 5e). */
     bool          flushed;
 
+    /* The partition that is `/Home`: refused to reads on `/Devices/blocks`
+     * (`BLOCK_OP_GUARD`, keyring K7). `guard_count` 0 is none. */
+    uint64_t      guard_lba;
+    uint64_t      guard_count;
+
     /* Its bulk endpoints' packets, for a chained transfer's TD Size. */
     unsigned      in_packet;
     unsigned      out_packet;
@@ -3369,6 +3374,8 @@ static void first_blocks(struct controller *c, struct device *d,
      */
     if (capacity.block_size <= BLOCK_TRANSFER_MOST) {
         s->blocks = capacity.blocks;
+        s->guard_lba = 0;           /* a stick of its own: guarded by nobody yet */
+        s->guard_count = 0;
         s->block_size = capacity.block_size;
 
         if (!s->ready) {
@@ -6983,7 +6990,33 @@ static void block_answer(const struct message *in, uint64_t sender, long cap,
             }
             break;
         case BLOCK_OP_READ:
-            block_read(req, line, rep);
+            /* `/Home`'s blocks, to anybody but the disk server: refused. */
+            if (!may_write && find_unit(req->unit, &c, &s) && s->guard_count > 0
+                && req->lba < s->guard_lba + s->guard_count
+                && req->lba + req->count > s->guard_lba) {
+                rep->error = BLOCK_ERR_GUARDED;
+            } else {
+                block_read(req, line, rep);
+            }
+            break;
+        case BLOCK_OP_GUARD:
+            if (!may_write) {
+                rep->error = BLOCK_ERR_READ_ONLY;
+            } else if (!find_unit(req->unit, &c, &s)) {
+                rep->error = BLOCK_ERR_NO_UNIT;
+            } else {
+                s->guard_lba = req->lba;
+                s->guard_count = req->count;
+                say_begin(line);
+                say_text(line, "xhci: unit ");
+                say_dec(line, req->unit);
+                say_text(line, "'s blocks ");
+                say_dec(line, (unsigned long)req->lba);
+                say_text(line, " on, ");
+                say_dec(line, (unsigned long)req->count);
+                say_text(line, " of them, kept from /Devices/blocks: /Home's");
+                say_send(console, line);
+            }
             break;
         case BLOCK_OP_WRITE:
             if (may_write) {

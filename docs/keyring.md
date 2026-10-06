@@ -643,7 +643,7 @@ each is lived with before the next starts.
   display harness lists, searches, sorts, deletes through the confirmation
   and edits a note; a file in `/Home` that declares `needs keyring` is not
   handed it. It joins the dated screenshot (`tools/run_gallery.py`).
-- **K7 - programs off the boot stick's sectors.** The USB driver's read door
+- **K7 - programs off the boot stick's sectors.** **Done, 0.11.24** (`testing.md` 18.424): the disk server's guard on the write endpoint, rather than the driver learning the GUID - it already knows the partition's blocks. The USB driver's read door
   refuses the partition diskfs serves - the GUID it was given at boot - so
   `/Keyring` on a stick is no more readable underneath than through diskfs.
   *Test*: the stick suite reads every other partition and is refused that
