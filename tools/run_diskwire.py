@@ -34,6 +34,9 @@ sys.path.insert(0, HERE)
 
 import scratch                                              # noqa: E402
 
+# A path that is not there: `kfs.h`'s KFS_E_NO_FILE, above DISK_ERR_KFS.
+NOT_THERE = 32 + 7
+
 # Each: a name, the refusal it must get, and the Lua that makes the request.
 CASES = [
     ("wrong size", 1, 'send("0123456789")'),
@@ -62,6 +65,35 @@ CASES = [
     ("a write to .super", 3, 'send(req(3, 0, 0, 0, nil, "/Home/.super", "x"))'),
     ("a path through a file", 32 + 8,
      'send(req(7, 0, 0, 0, 0, KEPT .. "/inside"))'),
+
+    # **The programs' door reaches `/Home` alone** (`docs/keyring.md`, K3).
+    # The disk carries `/Keyring/keyring` and `/Keyring/other`, so "not
+    # found" is the door and not the disk: every operation that names a path,
+    # every spelling of the folder, and a rename into or out of it, is
+    # answered as a path that is not there. The two that would change it - a
+    # rename out, a delete - each have a file of their own, the delete last,
+    # so with the door open every case finds what it names (the control).
+    ("rename into /Keyring", NOT_THERE,
+     'send(req(5, 0, 0, 0, nil, KEPT, "/Keyring/moved-in"))'),
+    ("rename out of /Keyring", NOT_THERE,
+     'send(req(5, 0, 0, 0, nil, "/Keyring/other", "/Home/moved-out"))'),
+    ("setattr /Keyring/keyring", NOT_THERE,
+     'send(req(8, 0, 0, 0, nil, "/Keyring/keyring", sys.pack({ a = "b" })))'),
+    ("list /Keyring", NOT_THERE, 'send(req(1, 0, 0, 0, 0, "/Keyring"))'),
+    ("read /Keyring/keyring", NOT_THERE,
+     'send(req(2, 0, 0, 100, 0, "/Keyring/keyring"))'),
+    ("getattr /Keyring/keyring", NOT_THERE,
+     'send(req(7, 0, 0, 0, 0, "/Keyring/keyring"))'),
+    ("list the volume's root", NOT_THERE, 'send(req(1, 0, 0, 0, 0, "/"))'),
+    ("list //keyring", NOT_THERE, 'send(req(1, 0, 0, 0, 0, "//keyring"))'),
+    ("list /KEYRING", NOT_THERE, 'send(req(1, 0, 0, 0, 0, "/KEYRING"))'),
+    ("write /Keyring/stolen", NOT_THERE,
+     'send(req(3, 0, 0, 0, nil, "/Keyring/stolen", "x"))'),
+    ("mkdir /Keyring/x", NOT_THERE, 'send(req(6, 0, 0, 0, 0, "/Keyring/x"))'),
+    ("query from the root", NOT_THERE,
+     'send(req(9, 0, 0, 0, nil, "/", sys.pack({ kind = "x" })))'),
+    ("delete /Keyring/keyring", NOT_THERE,
+     'send(req(4, 0, 0, 0, 0, "/Keyring/keyring"))'),
 ]
 
 PROBE_HEAD = r'''
@@ -140,6 +172,10 @@ def main():
     work = scratch.directory("diskwire")
     probe = os.path.join(work, "wire.lua")
     disk = os.path.join(work, "disk.img")
+    secret = os.path.join(work, "keyring")
+
+    with open(secret, "w") as f:
+        f.write("not to be read through the programs' door\n")
 
     with open(probe, "w") as f:
         f.write(PROBE_HEAD)
@@ -151,7 +187,8 @@ def main():
 
     subprocess.run([os.path.join(ROOT, "build", "host", "lua"),
                     os.path.join(HERE, "kfs.lua"), "create", disk, "32",
-                    probe + ":/Home/wire.lua"],
+                    probe + ":/Home/wire.lua", secret + ":/Keyring/keyring",
+                    secret + ":/Keyring/other"],
                    check=True, capture_output=True, cwd=ROOT)
 
     os.environ["KOSMOS_DISK"] = disk

@@ -19903,3 +19903,43 @@ key; two writes with two nonces share no more than chance past the header.
 **Controls, all three biting**: sealing skipped - 16 fail, the no-secret
 checks; a refusal that leaves the records - 2,741; anything inside
 accepted - 12, the six malformed.
+
+## 18.418 The programs' door reaches /Home alone (keyring K3)
+
+**Until now every program could name any path on the volume.** The
+namespace adds `/Home` to what a program asks in its own process, but the
+capability under it is the disk server's endpoint, and a request on it may
+carry any path - `fs.raw` sends one, and so can any C program. Nothing was
+outside `/Home` yet, so nothing had been reachable that should not be; the
+keyring's file will be.
+
+So `diskfs.c` has **two doors**. The endpoint every program is handed
+answers only paths whose first component is `Home` - found as `kfs.c` finds
+a component, slashes skipped and whatever the case - and a rename's
+destination too when it is a path; anything else is answered `KFS_E_NO_FILE`,
+**as a path that is not there**. A second endpoint, made by init and
+handed to diskfs as its sixth capability, reaches `Keyring` alone and may
+not ask about the disk itself (`.super`, `.device`, a format); a thread
+receives on it and calls the first, stamping the message's `tag` with a
+word from the kernel's entropy that only diskfs knows - `smbfs.c`'s waiters,
+the same shape - so one thread still holds the filesystem.
+
+`tools/run_diskwire.py` (`arm-diskwire`) boots a disk carrying
+`/Keyring/keyring` and `/Keyring/other` and sends, through the programs'
+door, thirteen requests at them - list, read, getattr, setattr, write,
+mkdir, delete, a query from the root, a rename in and a rename out, and the
+folder spelt `/KEYRING`, `//keyring` and as the root `/` - **each answered
+39, not there**, and afterwards the disk as it was.
+
+**The control bites on all thirteen**: with the door check switched off,
+every one answers 0 and the free space moves. It took two tries to make it
+so - the first order let a delete and then a rename-out take the file the
+later cases named, so four of them passed with the door open; the
+destructive two now have a file of their own and the delete is last.
+
+**Not yet tested, said so**: the second door itself - that it reaches
+`/Keyring` and cannot reach `/Home` - has no holder until the keyring
+exists, and is K4's suite. And `/Keyring` is not added to `kfs_layout` as
+`keyring.md` drew it: disks already made have no such folder, so the
+keyring makes it through its own door on first start, and one way to make
+it is enough.

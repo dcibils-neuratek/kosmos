@@ -88,7 +88,7 @@ void drives_server(long endpoint, long blocks, long console);
  * and write endpoints for a stick's partition, the devices server's for the
  * clock, and the console's to say what it did. */
 void diskfs_server(long endpoint, long blocks_read, long blocks_write,
-                   long devices, long console);
+                   long devices, long console, long keyring);
 
 /* /Notifications (`roadmap.md`, *Notifications*): its own endpoint, and the
  * console's to say what it was told. */
@@ -776,7 +776,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_DISKFS) {
         named("diskfs");
-        diskfs_server(0, 1, 2, 3, 4);
+        diskfs_server(0, 1, 2, 3, 4, kosmos_cap_check(5) == 0 ? 5 : -1);
     }
 
     if (arg == ROLE_NOTIFY) {

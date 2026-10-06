@@ -617,7 +617,7 @@ each is lived with before the next starts.
   refused and zero what they opened; and **the file holds no secret in any
   encoding** - not the password in UTF-8 or UTF-16, not the NT hash in bytes
   or hex, not a title.
-- **K3 - diskfs's second door.** `/Keyring` made beside `/Home`; the
+- **K3 - diskfs's second door.** **Done, 0.11.20** (`testing.md` 18.418): the programs' door held to `/Home`; the second door's own test is K4's, when it has a holder; `/Keyring` is made by the keyring through its door on first start rather than by `kfs_layout`, since disks already made lack it either way. `/Keyring` made beside `/Home`; the
   programs' door held to `/Home`; a door rooted at `/Keyring`, forwarded by a
   thread with a token. *Test*: a program asks for `/Keyring/x` through its
   door and is told it does not exist; the keyring's door cannot reach

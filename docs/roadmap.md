@@ -1097,7 +1097,7 @@ name; **the key stays on the disk** (no firmware); **the password itself is
 kept**, sealed with AES-256-CCM, so **Show** can reveal it - "i need to know
 the password at some point"; a remembered share is open to every program
 for now; "Connect when Kosmos starts" on with Remember; **a lock with a
-password, later** (K9). Steps K1-K7, then K9. **K1 done** (0.11.18): one AES-CCM door in the Crypto Kit, held to Wycheproof's 552 vectors (`testing.md` 18.416). **K2 done** (0.11.19): `keyproto.h` and the sealed file, held on the Mac (18.417).
+password, later** (K9). Steps K1-K7, then K9. **K1 done** (0.11.18): one AES-CCM door in the Crypto Kit, held to Wycheproof's 552 vectors (`testing.md` 18.416). **K2 done** (0.11.19): `keyproto.h` and the sealed file, held on the Mac (18.417). **K3 done** (0.11.20): the programs' door to the disk reaches `/Home` alone, a second door reaches `/Keyring` (18.418).
 
 **FOUND on 6 October, designing the keyring - two holes in what exists.**
 (1) `notifyproto.h`'s promise that a program cannot post as another rests

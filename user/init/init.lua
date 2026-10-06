@@ -5119,6 +5119,7 @@ if role == ROLE_INIT then
   local LIBFS_EP = sys.endpoint()
   local APPFS_EP = sys.endpoint()
   local DISKFS_EP = sys.endpoint()
+  local KEYRING_DISK_EP = sys.endpoint()
   local AUDIO_EP = sys.endpoint()
   local NET_EP = sys.endpoint()
   local BLOCKS_EP = sys.endpoint()
@@ -5241,9 +5242,13 @@ if role == ROLE_INIT then
   -- The console's endpoint too, since the disk server is C (`diskfs.c`): a
   -- journal replayed and a blank disk formatted are said in the log, where
   -- the Lua one had no console and its `print` went nowhere.
+  --
+  -- And a second door, `KEYRING_DISK_EP` (`docs/keyring.md`, K3): the one
+  -- every program is handed through `/Home` reaches `/Home` alone, and this
+  -- one reaches `/Keyring` alone, for the keyring and nothing else.
   local diskfs  = start("the disk server", ROLE_DISKFS,
                         { DISKFS_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DEVICES_EP,
-                          CONSOLE_EP },
+                          CONSOLE_EP, KEYRING_DISK_EP },
                         sys.disk() and SPAWN_DISK or 0)
 
   --
