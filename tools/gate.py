@@ -150,6 +150,10 @@ SUITES = [
     # aside - and its doors.
     Suite("arm-keyring", ["python3", "tools/run_keyring.py", ARM]),
 
+    # Passwords (K6): a keyring made on the Mac, the window used as a person
+    # would - sorted, a row, Show, a note, search, Delete asked and done.
+    Suite("arm-passwords", ["python3", "tools/run_passwords.py", ARM]),
+
     # **A disk that answers slowly is waited for** (`testing.md` 18.339): the
     # disk throttled to 16 KB a second through QMP, and a 160 KB file nothing
     # had read is read whole. The kernel's virtio drivers gave a request up

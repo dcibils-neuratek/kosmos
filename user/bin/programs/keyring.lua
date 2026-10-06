@@ -16,6 +16,7 @@
 -- and forgets; it cannot put a password in, which only smbfs's door can.
 
 local words = use("/Kosmos/Libraries/files.lua").words(args)
+local clock = use("/Kosmos/Libraries/clock.lua")
 local verb, which = words[1], tonumber(words[2])
 
 if not fs.has_keyring() then
@@ -25,7 +26,7 @@ end
 
 local function date(unix)
   if not unix or unix == 0 then return "never" end
-  return os.date("%Y-%m-%d %H:%M", unix)
+  return clock.long_string(clock.at(unix))
 end
 
 if verb == nil then

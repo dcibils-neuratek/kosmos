@@ -1954,6 +1954,16 @@ $(HOSTDIR)/test_keyfile: $(TEST_KEYFILE_SRCS) $(TEST_CRYPTO_BEARSSL) user/includ
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/include -Iuser/servers $(BEARSSL_IFLAGS) -o $@ \
 	        $(TEST_KEYFILE_SRCS) $@.o/*.o
 
+# A keyring made on the Mac for a suite's disk (K6), sealed by `keyfile.c`.
+$(HOSTDIR)/keyring_seed: tools/keyring_seed.c $(TEST_KEYFILE_SRCS) $(TEST_CRYPTO_BEARSSL) \
+                         user/include/keyproto.h user/servers/keyfile.h
+	@mkdir -p $(dir $@)
+	@rm -rf $@.o && mkdir -p $@.o
+	cd $@.o && $(HOST_CC) -O1 -w -I$(CURDIR)/runtime/upstream/bearssl/inc \
+	        -I$(CURDIR)/runtime/upstream/bearssl/src -c $(addprefix $(CURDIR)/,$(TEST_CRYPTO_BEARSSL))
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/include -Iuser/servers $(BEARSSL_IFLAGS) -o $@ \
+	        tools/keyring_seed.c $(filter-out tools/test_keyfile.c,$(TEST_KEYFILE_SRCS)) $@.o/*.o
+
 # Wycheproof's AES-CCM vectors, as shipped, made a header (K1).
 $(HOSTDIR)/aes_ccm_vectors.h: tools/vectors/wycheproof/aes_ccm_test.json tools/wycheproof2c.py
 	@mkdir -p $(dir $@)

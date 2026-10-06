@@ -20088,3 +20088,49 @@ the punched ones invalid, every other one mapping its own page (identity on
 AArch64, the direct map's on x86-64, which the first draft forgot and failed
 x86 for). **Control**: without the lock it fails on both boards, three runs
 in three.
+
+## 18.423 Passwords (keyring K6)
+
+`user/bin/apps/passwords.lua`, as `docs/keyring.html` draws it and with
+Diego's decisions in it: the kinds down the side, the list with its search
+and sort in the middle, and the entry on the right - title and notes edited
+in place, account, address, **the password as dots with Show** (through
+`manage`'s `REVEAL`, dropped from memory when the choice moves or Hide is
+pressed, and never printed), kind, dates, how often and by whom it was used,
+its shares, Connect at start, **Sign in again...** (Connect to Server on its
+address) and **Delete...**, whose confirmation says what follows. It is
+handed `manage` only because it is in the image and says `needs keyring` -
+and so does the window manager now, which launches it. With no disk, the
+keyring says so (`KEY_FILE_NO_DISK`) rather than "did not open", and so does
+the status line.
+
+`tools/keyring_seed.c` makes a keyring on the Mac with the machine's own
+`keyfile.c` - made-up entries only - for a disk a suite boots, so the window
+is tested without signing into anything.
+
+`tools/run_passwords.py` (`arm-passwords`), 12 checks: the copy in `/Home`
+says it was not handed the keyring; the image's lists three, newest first;
+Title from the sort's menu puts them in title order; a row pressed shows
+it; Show shows the password and the log never holds one; a note typed and
+Return keeps it; "nas" searched leaves one; Delete... asks, Cancel keeps,
+Delete forgets - and the keyring on the disk, read on the Mac, is two
+entries' size.
+
+**Found while writing it**: the sort's dropdown was given bare strings
+where `ui.dropdown` takes pairs, so it measured "nil" and was clipped to
+"Last c"; and the header's search and sort report places inside the header,
+so the positions said for the suite had the header's own added.
+
+**Controls**: Cancel that deletes - 2 fail; Show that prints the password -
+1 fails.
+
+Passwords joins the dated picture (`run_gallery.py`), on a machine with no
+disk, so it shows the window empty and saying so - never a real entry.
+
+**The gate**: 96 of 98, the two others failing under nine suites at once
+and passing alone. `x86-display-1`'s probe program, typed over the serial
+line, arrived with a character lost and did not parse - the harness's
+typing, not the window manager. And `arm-kernel`'s test 57, "a new thread
+avoids a loaded core", which waited two seconds for its fillers to block
+(18.380): ten now, a cap that a passing run never reaches, and each of its
+two ways of failing says which it was, since this one did not.

@@ -2159,7 +2159,7 @@ local function new_namespace()
                        "nothing is kept for that", "the keyring is full",
                        "it could not be written to the disk",
                        "the keyring did not open", "a secret that long" }
-  local KEY_FILES = { [0] = "new", "opened", "set aside" }
+  local KEY_FILES = { [0] = "new", "opened", "set aside", "no disk" }
   local KEY_KINDS = { "smb", "wifi", "web", "mail" }
   local keyring_cap = nil
 

@@ -78,6 +78,7 @@ struct key_request {
 #define KEY_FILE_NEW        0u  /* there was none: an empty keyring */
 #define KEY_FILE_OPENED     1u
 #define KEY_FILE_SET_ASIDE  2u  /* it did not open; kept aside, an empty one begun */
+#define KEY_FILE_NO_DISK    3u  /* no disk to keep it on: nothing kept, nothing can be */
 
 /* A reply: `entry` for LIST, GET and REVEAL; `secret` for GET and REVEAL
  * alone; for STATE, `count` and `file`. */

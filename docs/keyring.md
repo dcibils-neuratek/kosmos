@@ -638,7 +638,7 @@ each is lived with before the next starts.
   restarted, signed in without asking; a wrong password not remembered; a
   refused remembered hash asked again and not deleted; against Samba on the
   Mac (`tools/smbpeer.py`).
-- **K6 - Passwords.** `passwords.lua` as drawn; `needs keyring` honoured only
+- **K6 - Passwords.** **Done, 0.11.23** (`testing.md` 18.423; with Show, per decision 5; the window manager declares `needs keyring` to pass it on). `passwords.lua` as drawn; `needs keyring` honoured only
   from `/Kosmos/Apps`; `/Devices/keyring` and `fs.keyring_*`. *Test*: the
   display harness lists, searches, sorts, deletes through the confirmation
   and edits a note; a file in `/Home` that declares `needs keyring` is not

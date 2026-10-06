@@ -138,6 +138,10 @@ ICONS = {
     # A page that is a favorite (6zz d3): the same star, filled.
     "starred":    ("star", None),
 
+    # Passwords (`docs/keyring.md`, K6): a kept password, in its list and
+    # its sidebar.
+    "key":        ("key", None),
+
     # Do Not Disturb, in the notifications' history (`docs/notifications.html`),
     # and Preferences' Notifications.
     "moon":       ("moon", None),

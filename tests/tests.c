@@ -2578,8 +2578,10 @@ static bool test_placement_avoids_a_loaded_processor(void)
             unsigned long start = hal_ticks();
             bool settled = false;
 
-            /* Two seconds, in scheduler ticks. */
-            while (!settled && hal_ticks() - start < 2UL * TICK_HZ) {
+            /* Ten seconds, in scheduler ticks: a cap rather than a wait,
+             * so a passing run pays nothing for it. Two failed once more on
+             * 6 October with nine suites at once (`testing.md` 18.423). */
+            while (!settled && hal_ticks() - start < 10UL * TICK_HZ) {
                 settled = true;
 
                 for (i = 0; i < 3; i++) {
@@ -2593,6 +2595,8 @@ static bool test_placement_avoids_a_loaded_processor(void)
             }
 
             if (!settled) {
+                kputs("\n   (the fillers had not blocked on their core in ten seconds)");
+
                 for (i = 0; i < 3; i++) {
                     thread_wake(fill[i]);
                 }
@@ -2627,6 +2631,9 @@ static bool test_placement_avoids_a_loaded_processor(void)
         }
 
         if (landed == loaded) {
+            kputs("\n   (placed on the loaded core, ");
+            kputu(loaded);
+            kputs(", with its fillers blocked there)");
             thread_place_across(1);
             return false;
         }

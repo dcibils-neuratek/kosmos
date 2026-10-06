@@ -688,6 +688,10 @@ static void answer(struct message *msg, uint64_t sender)
 
     if (msg->length != sizeof *rq || !request_well_formed(rq)) {
         rp->error = KEY_ERR_BAD_OP;
+    } else if (!have_key && !disk_ok && rq->op != KEY_OP_STATE) {
+        /* No disk: nothing is kept, and nothing can be - said as that, not
+         * as a keyring that did not open. */
+        rp->error = rq->op == KEY_OP_PUT ? KEY_ERR_DISK : KEY_ERR_NONE;
     } else if (!have_key && rq->op != KEY_OP_STATE) {
         rp->error = KEY_ERR_SEALED;
     } else {
@@ -780,6 +784,9 @@ void keyring_server(long smb_door, long manage_door, long disk_door, long device
     /* The folder, on a disk made before there was a keyring: made here, the
      * one place it is made (`testing.md` 18.418). */
     disk_ok = disk >= 0;
+    if (!disk_ok) {
+        file_state = KEY_FILE_NO_DISK;
+    }
     if (disk_ok) {
         uint32_t e = disk_ask(DISK_OP_MKDIR, "/Keyring", 0, 0, 0, NULL, 0, -1);
 
@@ -787,6 +794,7 @@ void keyring_server(long smb_door, long manage_door, long disk_door, long device
                        || disk_said()->node.kind != DISK_KIND_DIR)) {
             tell("there is no disk to keep it on; it holds nothing for now", 0, false, NULL);
             disk_ok = false;
+            file_state = KEY_FILE_NO_DISK;
         }
     }
 
