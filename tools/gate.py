@@ -693,7 +693,12 @@ def main():
     # seconds the same but for one that had grown - 4,229 and 4,290, the
     # difference Kosmos Write's suite gaining five phases that day. The
     # eighth slot was capacity, not contention.
-    parser.add_argument("--at-once", type=int, default=8,
+    #
+    # **Nine, measured a third time** (`testing.md` 18.419): on 6 October the
+    # gate stood at 10:07 twice at eight, the share suites having joined it,
+    # and ran in 9:13 at nine with the suites' own seconds within one per
+    # cent - 4,471 and 4,518. Capacity again, not contention.
+    parser.add_argument("--at-once", type=int, default=9,
                         help="suites at once, before the quiet ones")
     parser.add_argument("--only", default="",
                         help="suites to run, by name, separated by commas")

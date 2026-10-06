@@ -19943,3 +19943,18 @@ exists, and is K4's suite. And `/Keyring` is not added to `kfs_layout` as
 `keyring.md` drew it: disks already made have no such folder, so the
 keyring makes it through its own door on first start, and one way to make
 it is enough.
+
+## 18.419 The gate back under ten minutes: nine suites at once
+
+At eight suites at a time the gate took 10:07, twice on 6 October - over
+the ten minutes Diego set on 18 September. The slowest suite is 193 s and
+the whole is 607 s, so it was not one suite but the sum: the suites' own
+seconds had grown from 4,290 on 4 October (18.396) to 4,471, most of it
+the five share suites.
+
+Measured at nine: **9:13**, every suite passing, with the suites' own
+seconds at 4,518 - within one per cent of eight's. The ninth slot was a
+core sitting idle, as the seventh and eighth were found to be; `gate.py`'s
+default is now nine. This Mac has ten cores; a tenth slot is the last one
+this way, and the next time the gate nears ten minutes the answer is in the
+suites themselves.
