@@ -136,8 +136,8 @@ Vendored third-party code keeps its own licence, which travels beside it:
 None of those are modified in place. Changes to them are build steps, so
 what is in this tree is what their authors released.
 
-Five more are copyleft: three under the GPL, and FFmpeg's decoder and
-libsmb2 under the LGPL. Nothing here is linked dynamically - whatever is compiled into an
+Six more are copyleft: three under the GPL, and FFmpeg's decoder,
+libsmb2 and TinyCC under the LGPL. Nothing here is linked dynamically - whatever is compiled into an
 image is linked into it - so an image carrying any GPL one is a combined
 work under the GPL as a whole. Kosmos's own sources stay MIT either way.
 
@@ -164,6 +164,12 @@ work under the GPL as a whole. Kosmos's own sources stay MIT either way.
       network file sharing (docs/sharing.md), unmodified. In no image yet -
       built only on the Mac, for its tests against Samba - and when it is,
       as FFmpeg is: every source public, so the image can be relinked.
+
+  TinyCC, by Fabrice Bellard and its contributors, LGPL 2.1
+      runtime/upstream/tinycc/, in COPYING, with the vendoring recorded
+      in README.kosmos.md beside it; Kosmos's layout is a patch applied at
+      the build. Not in the system's image yet: built on the Mac, where it
+      links the test kit `make apps` makes
 
   doomgeneric, id Software's Doom by way of Chocolate Doom, GPLv2
       runtime/upstream/doom/, in LICENSE.doomgeneric. Not in the system's

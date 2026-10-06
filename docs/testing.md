@@ -20169,3 +20169,31 @@ sector through `/Devices/blocks`, its read now refused for `/Home`'s, and
 `identify` dropped the volume - GUID and all, so `drivelist` had nothing to
 call Home. A read refused as guarded is now the answer itself: the disk
 server's partition, a Kosmos volume, listed and not opened, as it was.
+
+## 18.425 TinyCC in the tree, linking Kosmos's images (TinyCC C1)
+
+TinyCC `mob` `43c7708b` vendored unmodified in `runtime/upstream/tinycc/`
+(LGPL 2.1; its tests and Windows port left out), and Kosmos's layout a
+patch applied to a copy at the build, `-DTCC_KOSMOS_LAYOUT`: `.text.start`
+first, everything read-only joined to the code in two segments as
+TinyCC already does for NetBSD, the code a page into the file at the base,
+and `__bss_start` and `__bss_end` defined by TinyCC's linker as `_edata`
+and `_end` are. `make apps` builds the two cross compilers on the Mac and,
+with them, `apps-tcc/apptest.elf`: the loader's test kit compiled by
+TinyCC (the headers GCC supplies and TinyCC lacks, `limits.h` and
+`stdint.h`, in `user/kits/tcc/include/`), linked with the lean userland
+packed into one object by GCC's `ld -r`, after `head.c`'s sixteen-byte
+slot, and stamped by `stamp.c` - "KOSMOS" and the code's size, held to the
+layout first - which the C Kit will run on the machine (C3).
+
+`arm-tcc` and `x86-tcc` run `run_loader.py` over `apps-tcc/`: 14 checks
+each, a program in TinyCC's 20.1 MB and 20.5 MB images, its kit answering
+42. **Control**: the same image with its header slot zeroed - refused, "no
+Kosmos header at its start", 4 checks failing.
+
+**Found doing it**: the first try at the bss symbols, `.set __bss_start,
+_edata` in `head.c`, assembled to 0 - TinyCC evaluates `.set` before its
+linker has defined `_edata` - so the start code's loop cleared nothing,
+harmlessly and wrongly; the linker defines them now. And TinyCC's make does
+not rebuild its compiler when `tccelf.c` changes, which is why the build
+here makes a fresh copy every time the source or the patch changes.

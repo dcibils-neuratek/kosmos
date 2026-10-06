@@ -323,6 +323,14 @@ SUITES = [
                          "build/user-test/apps"]),
     Suite("x86-loader", ["python3", "tools/run_loader.py", X86,
                          "build/user-x86_64-test/apps"], x86=True),
+
+    # **The same, with TinyCC's image** (`docs/tinycc.md`, C1): the loader's
+    # test kit compiled and linked by TinyCC against the lean userland, in
+    # `apps-tcc/` beside GCC's - a program run in it, its kit answering 42.
+    Suite("arm-tcc", ["python3", "tools/run_loader.py", ARM,
+                      "build/user-test/apps-tcc"]),
+    Suite("x86-tcc", ["python3", "tools/run_loader.py", X86,
+                      "build/user-x86_64-test/apps-tcc"], x86=True),
     Suite("arm-script", ["python3", "tools/run_script.py", ARM]),
     Suite("x86-script", ["python3", "tools/run_script.py", X86], x86=True),
 

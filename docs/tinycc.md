@@ -250,7 +250,7 @@ and Run, `tcc` at the prompt, the templates' Lua.
 
 Each step its own revision and its own permanent test.
 
-- **C1 - TinyCC in the tree.** Vendored unmodified, its licence (LGPL 2.1)
+- **C1 - TinyCC in the tree.** **Done, 0.11.26** (`testing.md` 18.425). Vendored unmodified, its licence (LGPL 2.1)
   in `LICENSE`; the Kosmos layout as a patch applied at the build, as
   `lua/patches/` is; built for the Mac as a cross compiler. *Test*, on the
   Mac: what was tried above, permanently - the loader's test kit compiled

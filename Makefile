@@ -2941,12 +2941,71 @@ $(UBUILD)/apps/snes.elf: $(USER_OBJS) $(SNES_OBJS) $(UBUILD)/init.elf user/user.
 # the one place `run_loader.py` and the stick take them from, and `MEGA=`
 # says so because an inherited one would turn `FULL` back on.
 #
+#
+# **TinyCC** (`docs/tinycc.md`, step C1): built on the Mac from the vendored
+# source, as shipped, with Kosmos's layout as a patch applied to a copy -
+# `.text.start` first, two segments, the code a page into the file, and
+# `__bss_start` and `__bss_end` defined - so the loader takes what it links.
+# Cross compilers for both processors, in one build of TinyCC's own make,
+# run with nothing of this one's variables in its environment.
+#
+TCC_UP   := runtime/upstream/tinycc
+TCC_HOST := $(HOSTDIR)/tinycc
+TCC      := $(TCC_HOST)/$(if $(filter x86_64,$(ARCH)),x86_64,arm64)-tcc
+TCC_INC  := -nostdinc -Iuser/kits/tcc/include -I$(TCC_HOST)/include -Ilua/upstream \
+            -Ilua/kosmos -Iruntime/include -Iuser/include -DKOSMOS_USER \
+            -include lua/kosmos/kosmos_lua.h
+
+$(TCC_HOST)/.built: $(wildcard $(TCC_UP)/*.c $(TCC_UP)/*.h $(TCC_UP)/lib/* $(TCC_UP)/include/*) \
+                    runtime/patches/tinycc/tccelf.c.patch
+	@rm -rf $(TCC_HOST) && mkdir -p $(TCC_HOST)
+	cp -R $(TCC_UP)/. $(TCC_HOST)/
+	patch -s -d $(TCC_HOST) -p0 < runtime/patches/tinycc/tccelf.c.patch
+	cd $(TCC_HOST) && env -i PATH="$$PATH" HOME="$$HOME" sh -c \
+	    './configure >/dev/null && make cross-arm64 cross-x86_64 CFLAGS="-O2 -DTCC_KOSMOS_LAYOUT" >/dev/null 2>&1'
+	@test -x $(TCC_HOST)/arm64-tcc && test -x $(TCC_HOST)/x86_64-tcc
+	@touch $@
+
+$(HOSTDIR)/tcc_stamp: tools/tcc_stamp.c user/kits/tcc/stamp.c user/kits/tcc/stamp.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/kits/tcc -o $@ \
+	        tools/tcc_stamp.c user/kits/tcc/stamp.c
+
+#
+# **The loader's test kit, built by TinyCC** (C1's test): `apptest.c` compiled
+# by TinyCC and linked by it with the lean userland - packed into one object
+# by GCC's `ld -r`, as the image will carry it (C2) - and stamped. In a folder
+# of its own beside `apps/`, with the other applications linked in, so
+# `run_loader.py` runs over it exactly as it runs over GCC's.
+#
+$(UBUILD)/tcc/runtime.o: $(USER_OBJS)
+	@mkdir -p $(dir $@)
+	$(CROSS)ld -r $(USER_OBJS) -o $@
+
+$(UBUILD)/tcc/head.o: user/kits/tcc/head.c $(TCC_HOST)/.built
+	@mkdir -p $(dir $@)
+	$(TCC) -c $< -o $@
+
+$(UBUILD)/tcc/apptest.o: user/kits/apptest/apptest.c $(TCC_HOST)/.built
+	@mkdir -p $(dir $@)
+	$(TCC) $(TCC_INC) -c $< -o $@
+
+$(UBUILD)/apps-tcc/apptest.elf: $(UBUILD)/tcc/head.o $(UBUILD)/tcc/runtime.o \
+                                $(UBUILD)/tcc/apptest.o $(HOSTDIR)/tcc_stamp \
+                                $(UBUILD)/apps/doom.elf $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf
+	@mkdir -p $(dir $@)
+	$(TCC) -nostdlib -static -Wl,-Ttext=$(USER_BASE) -o $@ $(UBUILD)/tcc/head.o \
+	        $(UBUILD)/tcc/runtime.o $(UBUILD)/tcc/apptest.o $(shell $(CC) -print-libgcc-file-name)
+	$(HOSTDIR)/tcc_stamp $@ $(USER_BASE)
+	@for a in doom quake snes; do ln -sf ../apps/$$a.elf $(dir $@)$$a.elf; done
+
 .PHONY: apps app-images
 apps:
 	@$(MAKE) --no-print-directory FULL=0 MEGA= app-images
 
 app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/doom.elf \
-            $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf
+            $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
+            $(UBUILD)/apps-tcc/apptest.elf
 
 $(GEN)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py $(HOSTDIR)/imagesums
 	@mkdir -p $(dir $@)
