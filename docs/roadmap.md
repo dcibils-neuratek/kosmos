@@ -1052,7 +1052,11 @@ Assessed, not designed:
   port 4450. Steps N0-N9, then read-write, discovery and the server side.
   **N0 DONE on 5 October** (`testing.md` 18.405): the peer and libsmb2,
   every dialect, on the Mac. **N1 DONE the same day** (18.406): MD4, AES-CMAC
-  and the SP 800-108 KDF on BearSSL. **Next: N2**, `smbfs` connects.
+  and the SP 800-108 KDF on BearSSL. **N2 DONE the same day** (18.407):
+  `smbfs` and the SMB Kit, `share connect` at the prompt, signed and sealed
+  against Samba. **Next: N3**, a share is a folder in `/Network`. **Found**:
+  a password typed at the prompt is shown as it is typed - the console has
+  no unechoed read yet, to add before the windows (N6).
   **Found by it, and wanted for its 1 GB copy**: `/Home` taking a write in
   pieces (a copy stops at 1 MB today), and the network stack's 16 KB
   receive ring sized by measurement, with TCP window scaling (about

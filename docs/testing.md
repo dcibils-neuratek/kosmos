@@ -19132,3 +19132,75 @@ copy with one thing wrong: CMAC's reduction constant, its second subkey not
 doubled, a bit set in every doubling, an MD4 round constant, the KDF
 without its separator - every one caught. The full gate passed, 90 suites
 in 9:58.
+
+## 18.407 smbfs connects (sharing N2)
+
+`docs/sharing.md` step N2. **smbfs**, `user/servers/smbfs.c`, a role of
+`init.elf` started at boot after the stack (`ROLE_SMBFS`, 24) and idle until
+asked, answers `user/include/shareproto.h` - PROBE, CONNECT, STATUS,
+DISCONNECT, each answered at once and the outcome asked for by STATUS - on
+its endpoint, which `/Network`'s mount now carries beside the stack's for
+`fs.share_*`. **The SMB Kit**, `user/kits/smb/`, is libsmb2 compiled as
+released against a platform of Kosmos's own - `port/config.h` and
+`smb_port.h`, its socket a connection on the stack's ring
+(`smb_transport.c`), its randomness the kernel's through `arc4random_buf` -
+and its cryptography the Crypto Kit's and BearSSL's under libsmb2's own
+names (`smb_crypto.c`), libsmb2's AES, CCM, MD4, MD5, HMAC and SHA files
+left out of the build by name. Nothing in `runtime/upstream/libsmb2/` is
+edited and no patch was needed. Each connection has **a waiter thread**
+parked in `NET_OP_POLL`, which tells the main thread what happened as a
+call to smbfs's own endpoint; the main thread alone touches libsmb2. The
+image's code grew 184 KB (ARM `init.elf` text 32,623,364 to 32,811,556).
+`share` at the prompt asks it: `share connect smb://host:port/Share
+account` (the password typed, and shown - the console has no unechoed
+read), `share probe`, `share status`, `share disconnect`.
+
+**`tools/run_share.py`, `arm-share` and `x86-share`, 14 checks in 18 s
+each**, against `tools/smbpeer.py` on a port of each suite's own (4461,
+4471; `--instance` keeps each its own configuration, passdb and pid, so the
+two and `host`'s on 4450 run side by side): status before anything;
+`share probe` of the peer, SMB 3.1.1, signing required; `share connect`
+answering "answered - MACPEER, SMB 3.1.1, signed; Projects connected as" the
+account, the server's name from NTLM's challenge; status showing it;
+disconnect; a wrong password "refused the account ...: the name or the
+password is wrong"; nobody at 10.0.2.2:4451, "nothing ... took the
+connection", in 0.2 s; and the peer requiring encryption, connected and
+sealed. **The controls the design names**: a peer of SMB 1 alone (Samba
+4.25 still takes `NT1`) - probe and connect both "took the connection and
+hung up without answering: it does not speak SMB 2 or 3"; and the peer
+stopped (SIGSTOP, `smbpeer.py pause`) with a connect under way - status
+answers in 0.1 s while it is asking, and says after the 10-second bound
+that it "took the connection and did not answer within 10 seconds".
+
+**Each control bites**, run with one thing wrong: the SMB 1 peer replaced
+by a 3.1.1 one - 2 of 14 fail, both SMB 1 checks; the bound at 60 seconds -
+the stopped peer's check fails, still asking at 12 s; one bit of the kit's
+AES flipped under libsmb2 - "Wrong signature in received PDU", and connect,
+status and the sealed connect fail, so the SMB 3 keys, the SHA-512
+preauthentication hash, CMAC and CCM are each held by a real server before
+N4.
+
+**Found on the way**, three of them by the suite: libsmb2's
+`smb2_destroy_context` frees a raw `smb2_connect_async` caller's callback
+data as its own `struct connect_data` - smbfs's probe record, which then
+listed with an empty address and, reused, corrupted the table; taken back
+before a context goes. `kosmos_receive` with a deadline returns the
+kernel's `IPC_NO_MESSAGE` (-7), not the `SYS_NO_MESSAGE` (-107) its comment
+in `kosmos.h` names - smbfs compared with the second and stopped serving at
+its first deadline, which is the stopped-peer control catching it. And
+`libsmb2.h` includes `<sys/select.h>` wherever a compiler has one: the ARM
+build took newlib's, the x86-64 one had none; the platform gives its own.
+`make test ONLY=host,arm-kernel,arm-headless,arm-share,x86-share`: 5 suites
+in 60 s.
+
+**Found by the full gate, not by N2's own suites**: `sys.spawn` and
+`sys.spawn_image` took at most sixteen capabilities, a fixed array in
+`sys_user.c`, and a seventeenth was refused as "too many capabilities" - which
+`IMAGES.spawn` reported as "could not start a process for it", dropping the
+reason. smbfs's endpoint made what every program is handed fifteen, so the
+first program to declare the camera and MIDI too - the window manager - could
+not start, and 54 of 92 suites failed on a desktop that never came up. The
+list is now as long as it is, in a userdata the collector frees, with the
+kernel's `captable_limit` the only bound, and the refusal's reason is passed
+on. The gate after it: 91 of 92, `x86-film` failing one comparison of a film's
+sound under load and passing alone, both boards, 13 of 13.

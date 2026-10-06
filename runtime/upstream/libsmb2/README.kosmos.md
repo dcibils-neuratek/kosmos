@@ -19,9 +19,12 @@ real servers' quirks, and the same code serves both directions.
 
 **Nothing in this directory is changed**, as with every vendored tree here:
 what the port needs is a build step and a platform of Kosmos's own beside
-the library. Today it is built only for this Mac (`make
+the library. It is built for this Mac (`make
 build/host/libsmb2/smb2-ls-async`, with `tools/libsmb2_mac_config.h`), and
 `tools/test_smbpeer.py` holds it to Samba run as the user at SMB 2.0.2, 3.0,
-3.1.1 signed and 3.1.1 sealed (step N0). The machine's build - its socket
-on the network stack's ring, its randomness from the kernel, its
-cryptography the Crypto Kit's - is step N2.
+3.1.1 signed and 3.1.1 sealed (step N0). **And for the machine, since step
+N2**: against `user/kits/smb/port/config.h`, its socket on the network
+stack's ring, its randomness the kernel's and its cryptography the Crypto
+Kit's (`user/kits/smb/`); which of its files leave the build is
+`LIBSMB2_LEFT_OUT` in the Makefile. `tools/run_share.py` holds that build to
+Samba from inside the machine.

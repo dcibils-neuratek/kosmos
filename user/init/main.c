@@ -94,6 +94,10 @@ void diskfs_server(long endpoint, long blocks_read, long blocks_write,
  * console's to say what it was told. */
 void notify_server(long endpoint, long console);
 
+/* Shares over the network (`docs/sharing.md` step N2): its own endpoint,
+ * the network stack's to connect through, and the console's. */
+void smbfs_server(long endpoint, long net, long console);
+
 #define ROLE_AUDIO    16UL
 #define ROLE_DEVICES   9UL
 #define ROLE_BINFS    11UL
@@ -109,6 +113,7 @@ void notify_server(long endpoint, long console);
 #define ROLE_BACKLIGHT 21UL
 #define ROLE_DISKFS   15UL
 #define ROLE_NOTIFY   23UL
+#define ROLE_SMBFS    24UL
 
 static void say(const char *s)
 {
@@ -777,6 +782,11 @@ int main(unsigned long arg)
     if (arg == ROLE_NOTIFY) {
         named("notify");
         notify_server(0, 1);
+    }
+
+    if (arg == ROLE_SMBFS) {
+        named("smbfs");
+        smbfs_server(0, 1, 2);
     }
 
     L = kosmos_lua_open();

@@ -213,9 +213,13 @@ share connected later could never be given a mount of its own in a namespace
 that already exists.
 
 It is handed, at boot: its own endpoint; the stack's capability, as a
-client of it; the console's, so what it says reaches the log; `/Devices`, for
-the clock NTLMv2 puts in its answer and `counter_hz`; and, from N8, the
-keyring's `use` door.
+client of it; the console's, so what it says reaches the log; and, from N8,
+the keyring's `use` door. **Not `/Devices`**, which this said it would be
+for the clock NTLMv2 puts in its answer and `counter_hz`: both are every
+process's already - `time()` is the userland libc's (`clock_user.c`, the
+board's epoch carried by the counter) and `counter_hz` and `tick_hz` are
+`kosmos_sysinfo`'s - so a capability for them would be one held for nothing
+(found building N2).
 
 **Its loop, and the one new idea in it.** smbfs has two things to wait on:
 callers on its endpoint, and bytes arriving on each server's TCP ring. The
@@ -231,7 +235,16 @@ caller's. So:
   needs either;
 - what the waiter waits for next - reading, or reading and room to write - is
   in the main thread's answer to its last call, so it never waits on an
-  interest that has gone stale. While the client only reads, what goes out is
+  interest that has gone stale. **As built (N2)**: the answer says go on or
+  stop, and *what* to wait for is a word in the server's record the main
+  thread writes and the waiter reads with `__atomic` loads; the waiter's
+  poll has a deadline of a second, so a change made while it was parked is
+  read within one. The waiter's call carries a word smbfs drew from the
+  kernel's entropy when it started (`SHARE_OP_WAITER`), and a call without
+  it is refused like an operation that does not exist. **And a name is
+  looked up by the waiter**, before it waits on anything: `NET_OP_RESOLVE`
+  parks its caller, so the main thread never asks it - libsmb2 is handed
+  four numbers. While the client only reads, what goes out is
   a hundred bytes a request and the out ring never fills; the case where it
   does - a WRITE larger than the ring - is held by its own test at N10;
 - the main thread is `kosmos_receive` with a timeout - the next deadline: an
@@ -282,7 +295,7 @@ numbers above `diskproto.h`'s and their own structs in `u.data`:
 | `SHARE_OP_PROBE` | an address and a port; answered at once. The server is asked to NEGOTIATE and nothing more |
 | `SHARE_OP_CONNECT` | an address, a share, a name and - until the keyring - a password; answered at once. SESSION_SETUP and TREE_CONNECT follow |
 | `SHARE_OP_STATUS` | per server: answering or since when, the dialect, signed, sealed, the name it gave, its shares, bytes arriving a second, the next try |
-| `SHARE_OP_SHARES` | a server's shares, through `srvsvc`'s NetShareEnum (libsmb2's `smb2-share-enum.c`), for "choose one once it answers" |
+| `SHARE_OP_SHARES` | a server's shares, through `srvsvc`'s NetShareEnum (libsmb2's `smb2-share-enum.c`), for "choose one once it answers" - **not in N2**: its number is kept, and it arrives with the folder it fills (N3) |
 | `SHARE_OP_DISCONNECT` | a server, or a share of it |
 
 The password crosses once, in one message, as a keystroke does - a one-shot,
@@ -290,7 +303,33 @@ which the rule about streams allows. **smbfs keeps the NT hash** (MD4 of the
 password, which is what NTLMv2 needs and all it needs), never the password,
 and only while connected, so a server that comes back after sleep is signed
 into again without asking. From N8 the message names a keyring entry
-instead, and no password crosses at all.
+instead, and no password crosses at all. **As built (N2)**: smbfs makes the
+hash with `crypto_md4` and hands libsmb2 the form it takes one in,
+`ntlm:` and 32 hex digits, so libsmb2 never sees the password either; the
+request it came in is zeroed once read. The `share` program reads it at the
+prompt, **shown as it is typed** - the console has no way yet to read a
+line without echoing it - and Connect to Server's field (N6) and the
+keyring (N8) are where it stops being typed there.
+
+**What N2 built of it** (`user/include/shareproto.h`): PROBE, CONNECT and
+DISCONNECT carry `struct share_ask` - an address with its port, a share, an
+account and the password; STATUS answers `struct share_server` three to a
+page - the address, the name it gave, the share and account, its state
+(asking, answered, connected, refused, away), the dialect, signed, sealed,
+**why in words** when refused or away, and how long it has been so, in
+milliseconds, so no clock's ticks cross. Refusals of a request are
+`SHARE_ERR_*`, above `diskproto.h`'s numbers, each with its sentence. **A
+PROBE answers the dialect and whether signing is required, but not the
+server's name**: the name is in NTLM's challenge, which only a sign-in's
+first leg brings, and a probe that began a sign-in to learn a name would be
+an authentication attempt nobody asked for. CONNECT has it - libsmb2 keeps
+the challenge's target name as the session's domain when it was given
+none, and smbfs gives none. **The bound** for a server to answer -
+connect, negotiate, sign in, connect the share - is ten seconds
+(`ANSWER_SECONDS`), one number; past it the server is away, "took the
+connection and did not answer within 10 seconds" if it took the connection
+at all. Records are kept until DISCONNECT, so STATUS can say what became of
+one that failed.
 
 The namespace gains `fs.share_probe`, `fs.share_connect`, `fs.share_status`,
 `fs.share_list` and `fs.share_disconnect` - each a `string.pack` and an
@@ -374,42 +413,78 @@ archive/`.
 icons and `minih264e` were, not `v6.0.0`: twenty-two months newer, with the
 one randomness door, CANCEL, and `libdcerpc` moved out of the library.
 
-**What the Kosmos port patches**, in `runtime/patches/libsmb2/` with its
-README, the source in `runtime/upstream/libsmb2/` as released - the
-NetSurf arrangement:
+**What the Kosmos port is - and it patches nothing.** This said the port
+would be patches in `runtime/patches/libsmb2/`, the NetSurf arrangement.
+**Built (N2), none was needed**: every file of libsmb2 includes a
+`config.h` first and guards each system header with a `HAVE_`, so the
+platform is a `config.h` of Kosmos's own and the headers it names, and
+what leaves the build leaves it by name in the Makefile
+(`LIBSMB2_LEFT_OUT`). `runtime/upstream/libsmb2/` is compiled as released,
+with `-w`, and there is no `runtime/patches/libsmb2/`:
 
-1. **A platform, `__KOSMOS__`, in `compat.h` and `compat.c`**, as the PS2,
-   the Pico W and the Switch each are. `t_socket` is an index into smbfs's
-   connections; `socket` and `connect` become `NET_OP_CONNECT` with
-   `NET_CONNECT_AT_ONCE` and the region it hands back; `writev` copies the
-   iovecs into the `out` ring and says `NET_OP_PUSH`; `readv` copies from the
-   `in` ring - **and into the caller's region, for a READ's data**, since
-   that is the buffer libsmb2's zero-copy path was given; `getaddrinfo` is
-   `NET_OP_RESOLVE`, or the four bytes of a typed address. **This is
-   compatibility inside a process** (`design.md` 17.2): those names exist in
-   the SMB Kit's build and nowhere else - no program anywhere is given a
-   `socket()`.
-2. **Randomness**: `smb2_random_bytes` is the Crypto Kit's generator, seeded
-   from `SYS_ENTROPY`, and the `random()` fallback is removed rather than
-   left to be reached.
-3. **Time**: `time()` is the wall clock from `/Devices/clock`, read once and
-   carried forward by the counter.
+1. **A platform, `__KOSMOS__`**, in `user/kits/smb/port/config.h` and
+   `smb_port.h` - not in `compat.h`, which would be an edit: its generic
+   path (`t_socket` an `int`) is all Kosmos needs of it. `t_socket` is an
+   index into the kit's table of connections, which grows; `socket`,
+   `connect`, `readv`, `writev`, `getsockopt`, `getaddrinfo` and the rest
+   are **macros onto `smb_kosmos_*`** in `smb_transport.c`: `connect` is
+   `NET_OP_CONNECT` with `NET_CONNECT_AT_ONCE` and the region it hands back;
+   `writev` copies the iovecs into the `out` ring and says `NET_OP_PUSH`;
+   `readv` copies from the `in` ring - **into the caller's buffer, for a
+   READ's data**, since that is what libsmb2's zero-copy path hands its
+   socket; `getsockopt(SO_ERROR)` is "refused" when the ring closed before
+   the far end acknowledged a byte; `getaddrinfo` takes four numbers and a
+   port, and a name is looked up before libsmb2 sees it (by smbfs's waiter,
+   above). **This is compatibility inside a process** (`design.md` 17.2):
+   those names exist in the SMB Kit's build and nowhere else - no program
+   anywhere is given a `socket()`. `port/sys/select.h` gives `fd_set`, which
+   `libsmb2.h` names in a structure of its server's: the ARM build had been
+   taking newlib's from the toolchain and the x86-64 one found none.
+2. **Randomness**: `HAVE_ARC4RANDOM_BUF`, and `arc4random_buf` is the
+   userland libc's over `SYS_ENTROPY` (`misc_user.c`) - the kernel's
+   entropy, every call, rather than the Crypto Kit's generator seeded from
+   it as this said. The `random()` fallback is then not compiled at all.
+3. **Time**: `time()` is the userland libc's - the board's epoch, read once
+   a minute and carried by the counter - and not `/Devices/clock`.
 4. **Cryptography is the Crypto Kit's** (`CLAUDE.md`, *Encryption is C, all
-   of it*): libsmb2's AES, CCM, MD4, MD5, HMAC-MD5, HMAC and SHA files leave
-   the build, and a file of the SMB Kit's, `smb_crypto.c`, gives their
-   functions' names to the kit's primitives. A second AES in the tree would
-   be a defect (`CLAUDE.md`, the premise), and tiny-AES is not constant-time.
+   of it*): libsmb2's `aes.c`, `aes_reference.c`, `aes128ccm.c`, `md4c.c`,
+   `md5.c`, `hmac-md5.c`, `hmac.c` and the SHA files leave the build, and
+   `user/kits/smb/smb_crypto.c` gives the names libsmb2's other files call
+   to the kit and BearSSL: one AES block is `crypto_aes_ctrcbc()`'s
+   (AES-NI or constant-time `aes_ct64`), CCM is BearSSL's over it, MD4 is
+   `crypto_md4`, HMAC-MD5, HMAC-SHA256 and SHA-512 are BearSSL's - each
+   kept inside libsmb2's own context structures, which the compiler checks
+   it fits. **What stays libsmb2's**: AES-CMAC's construction, a loop in
+   `smb2-signing.c` that cannot leave without an edit and keys AES again
+   for every block - over the kit's AES. Correct, and slower than
+   `crypto_aes_cmac`, which keys once; N4 measures signing and is where it
+   moves, upstream or here.
 5. **Out of the build**: Kerberos (`krb5-wrapper.c`), the synchronous API
-   (`sync.c`, which is a `poll` loop), the `NTLM_USER_FILE` path that reads
-   credentials from a file named by an environment variable, and on the
-   server's side `smb2_bind_and_listen` and `smb2_serve_port`, which are
-   `socket`, `bind`, `listen`, `accept` and `select`.
+   (`sync.c`, a `poll` loop - the two of its functions `libsmb2.c`'s own
+   synchronous helper names are refusals in `smb_transport.c`),
+   `compat.c` (other platforms'), and the `NTLM_USER_FILE` path:
+   `getenv` is no environment at all for libsmb2, so the branch that reads
+   credentials from a file is dead code the compiler drops. On the
+   server's side `smb2_bind_and_listen`, `smb2_serve_port` and
+   `smb2_accept_connection_async` are in `socket.c` and `libsmb2.c` with
+   everything else, so they are compiled - against `bind`, `listen`,
+   `accept`, `poll` and `select` that answer "not here"; nothing calls them.
 
-The SMB Kit is `user/kits/smb/`: the patches' other half - the transport
-over `tcpring.h`, `smb_crypto.c`, a `config.h` - and **no Lua door**. It is
-C linked into the processes that speak SMB, smbfs and later smbd, and an
-application never reaches it: an application reaches a share through the
-namespace.
+**And one thing of libsmb2's found wrong** (N2): `smb2_connect_async` keeps
+its caller's callback data as the context's `connect_data`, and
+`smb2_destroy_context` frees whatever is there as the `struct connect_data`
+its own `smb2_connect_share_async` puts there - so a caller of the raw
+connect has its own data freed under it. smbfs's PROBE is such a caller,
+and its record was listed empty; smbfs takes it back before a context goes
+(`server_close`). Upstream's to fix.
+
+The SMB Kit is `user/kits/smb/`: the platform, the transport over
+`tcpring.h`, `smb_crypto.c`, and `smb_kit.h` for the process that speaks
+SMB - and **no Lua door**. It is C linked into the processes that speak
+SMB, smbfs and later smbd, and an application never reaches it: an
+application reaches a share through the namespace. **It costs the image
+184 KB** of code (the ARM `init.elf`'s text, 32,623,364 bytes to
+32,811,556; libsmb2's objects 175 KB of it).
 
 **Does another application want this?** Two servers do, smbfs and smbd, and
 that is why the protocol is a kit rather than inside smbfs: smbd builds its
@@ -776,7 +851,15 @@ next. The client, read-only, first.
   dialect and the server's name; a wrong password is refused in words; an
   address with nobody on it is "not answering" within its bound. **Controls**:
   a peer pinned to SMB 1 only is refused, and a peer that is stopped (SIGSTOP)
-  mid-negotiation never stops `share status` answering.
+  mid-negotiation never stops `share status` answering. **Built on 5
+  October** (`testing.md` 18.407): `tools/run_share.py`, `arm-share` and
+  `x86-share`, 14 checks in about 18 s each, a peer of each suite's own
+  (`smbpeer.py --instance --port`, beside `host`'s on 4450) - and beyond
+  what was asked, 3.1.1 *signed* and a peer *sealing*, so SMB 3's keys, the
+  SHA-512 preauthentication hash, CMAC and CCM over the Crypto Kit are each
+  held by a real server before N4. `/Network`'s mount carries smbfs's
+  capability beside the stack's from this step, for `fs.share_*`; the
+  folder under it is N3's.
 - **N3 - a share is a folder.** `/Network` mounted twice-over; `LIST`,
   `GETATTR` from the listing, `READ` into a region and a page, `.super`,
   `.device`; read-only refusals; `places.lua`. In the machine: the 2,000 names

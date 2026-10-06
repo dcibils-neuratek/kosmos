@@ -5,6 +5,9 @@
     python3 tools/smbpeer.py start [--dialect 3.1.1] [--sign] [--seal]
     python3 tools/smbpeer.py stop
     python3 tools/smbpeer.py where        # address, share, user, password
+    python3 tools/smbpeer.py pause|resume # SIGSTOP and SIGCONT, for a control
+
+    --instance NAME --port N              # a peer of a suite's own (below)
 
 `docs/sharing.md` step N0. Samba's `smbd` from Homebrew, with every file it
 keeps under `build/smbpeer/` and listening on 127.0.0.1:4450 - so it needs
@@ -24,7 +27,21 @@ repository.
 
 **The dialect** is pinned with `--dialect` (2.0.2, 3.0, 3.1.1), signing
 made mandatory with `--sign` and encryption required with `--seal`: step
-N4's matrix is this script run once for each.
+N4's matrix is this script run once for each. `--dialect 1.0` pins SMB 1
+alone (Samba's `NT1`), which nothing here speaks: the control a client is
+held to when it says it refuses SMB 1 (step N2).
+
+**A peer of a suite's own**, `--instance NAME --port N` (step N2): the gate
+runs suites side by side, and `host`'s check and `arm-share` each starting
+and stopping the one peer on 4450 would stop each other's. An instance keeps
+its configuration, passdb, locks and pid under `build/smbpeer/instances/
+NAME/` and listens on its own port; the share's files and the password are
+the one set, read only, so nothing 64 MB is made twice.
+
+`pause` and `resume` stop and continue the peer's listening process
+(SIGSTOP, SIGCONT): a connection made while it is stopped is taken by the
+Mac's kernel and answered by nobody, which is a server that has gone to
+sleep mid-negotiation.
 """
 
 import argparse
@@ -32,6 +49,7 @@ import getpass
 import hashlib
 import os
 import secrets
+import shutil
 import signal
 import subprocess
 import sys
@@ -39,15 +57,16 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-STATE = os.path.join(ROOT, "build", "smbpeer")
-SHARE = os.path.join(STATE, "Projects")
+BASE = os.path.join(ROOT, "build", "smbpeer")
+SHARE = os.path.join(BASE, "Projects")
+STATE = BASE                    # an instance's own, from `--instance`
 PORT = 4450
 
 SAMBA = "/opt/homebrew/opt/samba"
 SMBD = os.path.join(SAMBA, "sbin", "samba-dot-org-smbd")
 PDBEDIT = os.path.join(SAMBA, "bin", "pdbedit")
 
-DIALECTS = {"2.0.2": "SMB2_02", "2.1": "SMB2_10", "3.0": "SMB3_00",
+DIALECTS = {"1.0": "NT1", "2.0.2": "SMB2_02", "2.1": "SMB2_10", "3.0": "SMB3_00",
             "3.0.2": "SMB3_02", "3.1.1": "SMB3_11"}
 
 FILES = 2000
@@ -75,28 +94,43 @@ def make_share():
     if os.path.exists(marker):
         return
 
-    os.makedirs(os.path.join(SHARE, "many"), exist_ok=True)
-    os.makedirs(os.path.join(SHARE, "inside", "deeper"), exist_ok=True)
+    # Made beside it and renamed into place, so two suites starting peers at
+    # once on a fresh tree never serve a half-made share: the loser of the
+    # rename throws its copy away.
+    os.makedirs(BASE, exist_ok=True)
+    making = os.path.join(BASE, "Projects.making.%d" % os.getpid())
+    shutil.rmtree(making, ignore_errors=True)
+    os.makedirs(os.path.join(making, "many"))
+    os.makedirs(os.path.join(making, "inside", "deeper"))
 
     for i in range(FILES):
-        with open(os.path.join(SHARE, "many", "f%04d.txt" % i), "w") as f:
+        with open(os.path.join(making, "many", "f%04d.txt" % i), "w") as f:
             f.write("file %d\n" % i)
 
-    with open(os.path.join(SHARE, "big.bin"), "wb") as f:
+    with open(os.path.join(making, "big.bin"), "wb") as f:
         f.write(big_bytes())
 
-    with open(os.path.join(SHARE, "inside", "deeper", "note.txt"), "w") as f:
+    with open(os.path.join(making, "inside", "deeper", "note.txt"), "w") as f:
         f.write("a folder inside a folder\n")
 
-    with open(os.path.join(SHARE, "hello.txt"), "w") as f:
+    with open(os.path.join(making, "hello.txt"), "w") as f:
         f.write("Hello from the Mac, over SMB.\n")
 
-    open(marker, "w").close()
+    open(os.path.join(making, ".made"), "w").close()
+
+    if os.path.isdir(SHARE) and not os.path.exists(marker):
+        shutil.rmtree(SHARE, ignore_errors=True)    # an older, unfinished one
+
+    try:
+        os.rename(making, SHARE)
+    except OSError:
+        shutil.rmtree(making, ignore_errors=True)   # another made it first
 
 
 def password():
     """The test account's password: made once, kept beside the state."""
-    path = os.path.join(STATE, "password")
+    path = os.path.join(BASE, "password")
+    os.makedirs(BASE, exist_ok=True)
 
     if not os.path.exists(path):
         with open(path, "w") as f:
@@ -170,8 +204,23 @@ def running():
         return None
 
 
+def signal_peer(sig):
+    pid = running()
+
+    if pid:
+        os.kill(pid, sig)
+
+    return pid
+
+
 def stop():
     pid = running()
+
+    if pid:
+        try:
+            os.kill(pid, signal.SIGCONT)        # a paused one cannot hear TERM
+        except OSError:
+            pass
 
     if pid:
         os.kill(pid, signal.SIGTERM)
@@ -220,17 +269,28 @@ def start(dialect, sign, seal):
 
 
 def main():
+    global STATE, PORT
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("what", choices=["start", "stop", "where"])
+    ap.add_argument("what", choices=["start", "stop", "where", "pause", "resume"])
     ap.add_argument("--dialect", default="3.1.1", choices=sorted(DIALECTS))
     ap.add_argument("--sign", action="store_true")
     ap.add_argument("--seal", action="store_true")
+    ap.add_argument("--instance", default=None)
+    ap.add_argument("--port", type=int, default=PORT)
     args = ap.parse_args()
+
+    PORT = args.port
+
+    if args.instance:
+        STATE = os.path.join(BASE, "instances", args.instance)
 
     if args.what == "start":
         start(args.dialect, args.sign, args.seal)
     elif args.what == "stop":
         print("smbpeer: stopped" if stop() else "smbpeer: was not running")
+    elif args.what in ("pause", "resume"):
+        sig = signal.SIGSTOP if args.what == "pause" else signal.SIGCONT
+        print("smbpeer: %s" % (args.what + "d" if signal_peer(sig) else "not running"))
     else:
         print(f"127.0.0.1 {PORT} Projects {getpass.getuser()} {password()}")
 

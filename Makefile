@@ -731,6 +731,29 @@ BEARSSL_CFLAGS := -w -Wno-error -Iruntime/upstream/bearssl/src \
                   -DBR_USE_URANDOM=0 -DBR_USE_GETENTROPY=0 -DBR_USE_UNIX_TIME=0 \
                   -DBR_USE_WIN32_RAND=0 -DBR_USE_WIN32_TIME=0 -DBR_RDRAND=0
 
+# libsmb2 (`runtime/upstream/libsmb2/`), the SMB Kit's protocol, on its own
+# terms (`docs/sharing.md` step N2): `-w`, as vendored code is, against a
+# `config.h` of Kosmos's own that is the whole port - its socket a
+# connection on the network stack's ring, its randomness the kernel's
+# (`user/kits/smb/port/`). Left out of the build, by name: its own
+# cryptography, which `user/kits/smb/smb_crypto.c` gives to the Crypto Kit
+# and BearSSL instead; Kerberos; the synchronous API, a `poll` loop; and
+# `compat.c`, other platforms' shims. Nothing in the tree is edited.
+LIBSMB2 := runtime/upstream/libsmb2
+LIBSMB2_LEFT_OUT := aes aes128ccm aes_reference aes_apple md4c md5 hmac-md5 \
+                    hmac sha1 sha224-256 sha384-512 usha krb5-wrapper sync compat
+LIBSMB2_SRCS := $(filter-out $(patsubst %,$(LIBSMB2)/lib/%.c,$(LIBSMB2_LEFT_OUT)),\
+                             $(sort $(wildcard $(LIBSMB2)/lib/*.c)))
+SMB_IFLAGS := -DHAVE_CONFIG_H -Iuser/kits/smb/port -Iuser/kits/smb \
+              -isystem $(LIBSMB2)/include -isystem $(LIBSMB2)/include/smb2 \
+              -isystem $(LIBSMB2)/lib $(BEARSSL_IFLAGS)
+LIBSMB2_CFLAGS := -w -Wno-error $(SMB_IFLAGS)
+
+# The SMB Kit's own C and smbfs: libsmb2's headers on the path as system
+# headers, so its warnings stay its own, and every warning on for ours.
+SMB_KOSMOS := user/kits/smb/smb_transport.c user/kits/smb/smb_crypto.c \
+              user/servers/smbfs.c
+
 TINYGL_CFLAGS := -w -Wno-error \
                  -Iruntime/upstream/tinygl/include \
                  -Iruntime/upstream/tinygl/source
@@ -761,6 +784,8 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/binfs.c \
              user/servers/appfs.c \
              user/servers/notify.c \
+             $(SMB_KOSMOS) \
+             $(LIBSMB2_SRCS) \
              user/servers/console.c \
              user/servers/ramfs.c \
              user/servers/ramstore.c \
@@ -1269,7 +1294,7 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 KFLAGS_NOW := $(CFLAGS)
 KFLAGS_FILE := $(BUILD)/flags-$(ARCH)
 
-UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(UFBX_CFLAGS) | $(WEB_CFLAGS) $(WEB_NSB_CFLAGS) $(EXPAT_CFLAGS) | $(MUSL_CFLAGS) | $(QUAKE_CFLAGS) | $(SNES_CFLAGS)$(if $(FFMPEG), | $(FFMPEG_CFLAGS))
+UFLAGS_NOW := $(UCFLAGS) | $(LIBSMB2_CFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(UFBX_CFLAGS) | $(WEB_CFLAGS) $(WEB_NSB_CFLAGS) $(EXPAT_CFLAGS) | $(MUSL_CFLAGS) | $(QUAKE_CFLAGS) | $(SNES_CFLAGS)$(if $(FFMPEG), | $(FFMPEG_CFLAGS))
 UFLAGS_FILE := $(UBUILD)/flags
 
 $(shell mkdir -p $(BUILD) $(UBUILD))
@@ -1361,6 +1386,15 @@ $(UBUILD)/user/kits/record/record_h264.c.o: user/kits/record/record_h264.c $(UFL
 $(UBUILD)/user/kits/record/record_mp4.c.o: user/kits/record/record_mp4.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(RECORD_CFLAGS) -MMD -MP -c $< -o $@
+
+# libsmb2, and the SMB Kit's own files with smbfs (above).
+$(UBUILD)/$(LIBSMB2)/lib/%.c.o: $(LIBSMB2)/lib/%.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(LIBSMB2_CFLAGS) -MMD -MP -c $< -o $@
+
+$(addprefix $(UBUILD)/,$(addsuffix .o,$(SMB_KOSMOS))): $(UBUILD)/%.c.o: %.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(SMB_IFLAGS) -MMD -MP -c $< -o $@
 
 # BearSSL, and the TLS Kit with its headers and the anchors the roots make.
 $(UBUILD)/runtime/upstream/bearssl/%.c.o: runtime/upstream/bearssl/%.c $(UFLAGS_FILE)
@@ -2298,7 +2332,6 @@ $(HOSTDIR)/test_ramstore: tools/test_ramstore.c user/servers/ramstore.c \
 # to Samba run as the user. Its Kerberos and Apple AES are left out, as the
 # port leaves them.
 #
-LIBSMB2 := runtime/upstream/libsmb2
 LIBSMB2_HOST_SRCS := $(filter-out $(LIBSMB2)/lib/aes_apple.c $(LIBSMB2)/lib/krb5-wrapper.c,$(wildcard $(LIBSMB2)/lib/*.c))
 
 $(HOSTDIR)/libsmb2/%: $(LIBSMB2)/examples/%.c $(LIBSMB2_HOST_SRCS) tools/libsmb2_mac_config.h

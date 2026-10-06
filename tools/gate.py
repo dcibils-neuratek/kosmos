@@ -189,6 +189,14 @@ SUITES = [
     Suite("arm-tls", ["python3", "tools/run_tls.py", ARM]),
     Suite("x86-tls", ["python3", "tools/run_tls.py", X86], x86=True),
 
+    # **smbfs connects** (`docs/sharing.md` N2): `share connect` into Samba
+    # run as the user on this Mac, each board with a peer on a port of its
+    # own - 3.1.1 signed and sealed, a wrong password and nobody refused in
+    # words, and the controls: SMB 1 alone refused, and a peer stopped
+    # mid-negotiation never stopping `share status` answering.
+    Suite("arm-share", ["python3", "tools/run_share.py", ARM]),
+    Suite("x86-share", ["python3", "tools/run_share.py", X86], x86=True),
+
     # **The Servers window** (`roadmap.md`, remote step 6): opened over
     # Telnet on the M700's own boot, seeing the session that opened it, a
     # Disconnect ending that session, and the web server it kept to start

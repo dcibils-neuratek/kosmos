@@ -577,33 +577,57 @@ static int l_power(lua_State *L)
     return 2;
 }
 
+/*
+ * The capabilities a child is handed, from the table at `index` - in the
+ * order it will see them - as the array the kernel reads: in a userdata on
+ * the stack, collected with the rest, so a list is as long as it is and the
+ * kernel's own bound (`captable_limit`) is the only one.
+ *
+ * **It was sixteen ints on the stack, and refused a seventeenth** with
+ * "too many capabilities" - which a caller then reported as "could not start
+ * a process for it". Fifteen are what every program is handed since smbfs
+ * joined them (`docs/sharing.md` N2), so the first program to declare both
+ * the camera and MIDI - the window manager - could not start, and with it
+ * the desktop (5 October 2026). `CLAUDE.md`: no compiled-in limits.
+ */
+static int *spawn_caps(lua_State *L, int index, unsigned long *n)
+{
+    lua_Integer count;
+    int *caps;
+    lua_Integer i;
+
+    *n = 0;
+
+    if (lua_isnoneornil(L, index)) {
+        return NULL;
+    }
+
+    luaL_checktype(L, index, LUA_TTABLE);
+    count = (lua_Integer)lua_rawlen(L, index);
+
+    if (count <= 0) {
+        return NULL;
+    }
+
+    caps = lua_newuserdatauv(L, (size_t)count * sizeof(int), 0);
+
+    for (i = 0; i < count; i++) {
+        lua_rawgeti(L, index, i + 1);
+        caps[i] = (int)luaL_checkinteger(L, -1);
+        lua_pop(L, 1);
+    }
+
+    *n = (unsigned long)count;
+    return caps;
+}
+
 static int l_spawn(lua_State *L)
 {
     unsigned long arg = (unsigned long)luaL_checkinteger(L, 1);
     unsigned long flags = (unsigned long)luaL_optinteger(L, 3, 0);
-    int caps[16];
     unsigned long n = 0;
+    int *caps = spawn_caps(L, 2, &n);
     long id;
-
-    /* Capabilities as an array, in the order the child will see them. */
-    if (!lua_isnoneornil(L, 2)) {
-        lua_Integer count;
-
-        luaL_checktype(L, 2, LUA_TTABLE);
-        count = (lua_Integer)lua_rawlen(L, 2);
-
-        if (count > 16) {
-            lua_pushnil(L);
-            lua_pushstring(L, "too many capabilities");
-            return 2;
-        }
-
-        for (n = 0; n < (unsigned long)count; n++) {
-            lua_rawgeti(L, 2, (lua_Integer)(n + 1));
-            caps[n] = (int)luaL_checkinteger(L, -1);
-            lua_pop(L, 1);
-        }
-    }
 
     id = kosmos_spawn(arg, caps, n, flags);
 
@@ -2113,8 +2137,8 @@ static int l_region_copy(lua_State *L)
 static int l_spawn_image(lua_State *L)
 {
     struct spawn_image req;
-    int caps[16];
     unsigned long n = 0;
+    int *caps;
     long id;
 
     memset(&req, 0, sizeof req);
@@ -2125,24 +2149,7 @@ static int l_spawn_image(lua_State *L)
 
     /* Capabilities as an array, in the order the child will see them, as
      * `sys.spawn` takes them. */
-    if (!lua_isnoneornil(L, 4)) {
-        lua_Integer count;
-
-        luaL_checktype(L, 4, LUA_TTABLE);
-        count = (lua_Integer)lua_rawlen(L, 4);
-
-        if (count > 16) {
-            lua_pushnil(L);
-            lua_pushstring(L, "too many capabilities");
-            return 2;
-        }
-
-        for (n = 0; n < (unsigned long)count; n++) {
-            lua_rawgeti(L, 4, (lua_Integer)(n + 1));
-            caps[n] = (int)luaL_checkinteger(L, -1);
-            lua_pop(L, 1);
-        }
-    }
+    caps = spawn_caps(L, 4, &n);
 
     req.caps = (uint64_t)(uintptr_t)caps;
     req.ncaps = n;

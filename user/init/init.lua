@@ -41,6 +41,7 @@ local ROLE_DRIVES     = 20 -- serves /Drives: every volume on every drive, read 
 local ROLE_BACKLIGHT  = 21 -- Intel's backlight PWMs: /Devices/backlight
 local ROLE_E1000      = 22 -- an Intel Ethernet controller, where there is one
 local ROLE_NOTIFY     = 23 -- serves /Notifications: what applications have said
+local ROLE_SMBFS      = 24 -- shares over the network: SMB 2 and 3 (`sharing.md`)
 
 --
 -- **A program's own image** (`docs/elf.md` step 4). A program whose header
@@ -164,9 +165,9 @@ function IMAGES.spawn(ns, path, role, caps, flags, pace)
   local image = IMAGES.named(ns, path)
 
   if not image then
-    local id = sys.spawn(role, caps, flags)
+    local id, why = sys.spawn(role, caps, flags)
 
-    return id, id == nil and "could not start a process for it" or nil
+    return id, id == nil and ("could not start a process for it: " .. tostring(why)) or nil
   end
 
   if image:find("/", 1, true) or image == "." or image == ".." then
@@ -549,7 +550,13 @@ local function new_namespace()
   -- will send it tables. `request` refuses a table to any protocol it does
   -- not route.
   --
-  function ns.mount(prefix, capability, root, proto)
+  --
+  -- `also` is a second server behind the same name, asked about what is
+  -- under it rather than about the name itself: smbfs beside the stack at
+  -- `/Network` (`docs/sharing.md`, *`/Network` is already somebody's*).
+  -- Only the `share_*` calls below take it.
+  --
+  function ns.mount(prefix, capability, root, proto, also)
     --
     -- Mounting over a prefix replaces what was there.
     --
@@ -571,7 +578,7 @@ local function new_namespace()
     end
 
     mounts[#mounts + 1] = { prefix = prefix, key = fold(prefix), cap = capability,
-                            root = root, proto = proto }
+                            root = root, proto = proto, also = also }
 
     -- Longest prefix first, so /a/b wins over /a regardless of mount order.
     table.sort(mounts, function(x, y) return #x.prefix > #y.prefix end)
@@ -2085,6 +2092,130 @@ local function new_namespace()
                       mtime = mtime, modified = modified, dated = dated ~= 0 } }
   end
 
+  --------------------------------------------------------------------------
+  -- Shares over the network: `shareproto.h`, to smbfs (`docs/sharing.md`,
+  -- step N2).
+  --
+  -- The same request and reply as a disk's, with what each operation
+  -- carries packed into `u.data`; smbfs is reached through the mount of
+  -- `/Network`, whose second capability it is. **Every operation is
+  -- answered at once**: `share_connect` says the asking has begun, and
+  -- `share_status` - asked on the caller's own clock - says how it went.
+  --------------------------------------------------------------------------
+
+  local SHARE_OP = { probe = 64, connect = 65, status = 66, disconnect = 68 }
+  local SHARE_ASK = "<c48c40c32c256"
+  local SHARE_SERVER = "<c48c40c40c32c152I4I2BBI4I4I8"
+  local SHARE_SERVER_BYTES = 336
+  local SHARE_STATES = { "asking", "answered", "connected", "refused", "away" }
+  local SHARE_DIALECTS = { [0x0202] = "2.0.2", [0x0210] = "2.1", [0x0300] = "3.0",
+                           [0x0302] = "3.0.2", [0x0311] = "3.1.1" }
+
+  local function share_at(path)
+    path = path or "/Network"
+
+    for _, m in ipairs(mounts) do
+      if within(path, m.key) then
+        if m.proto == "net" and m.also then return m.also end
+        break
+      end
+    end
+
+    return nil, "there is no SMB client at " .. tostring(path)
+  end
+
+  -- A field cut to fit, with room for the zero that ends it.
+  local function share_field(text, room)
+    return tostring(text or ""):sub(1, room - 1)
+  end
+
+  local function share_call(op, ask, offset)
+    local capability, why = share_at("/Network")
+
+    if not capability then return nil, why end
+
+    local data = ""
+
+    if ask then
+      data = string.pack(SHARE_ASK, share_field(ask.address, 48),
+                         share_field(ask.share, 40), share_field(ask.account, 32),
+                         share_field(ask.password, 256))
+    end
+
+    local raw, err = sys.call_raw(capability,
+                                  string.pack(DISK_REQUEST, SHARE_OP[op], 0,
+                                              offset or 0, 0, #data, 0, "", data))
+    data = nil
+
+    if not raw then return nil, tostring(err) end
+    if #raw < 1104 then return nil, "a reply from smbfs of the wrong size" end
+
+    local e, more, count, length, next_at, _, _, _, _, _, _, _, _, _, blob =
+      string.unpack(DISK_REPLY, raw)
+
+    if e ~= 0 then
+      if e >= 64 then return nil, blob:sub(1, length) end
+      return nil, "smbfs did not understand that"
+    end
+
+    return { more = more ~= 0, count = count, offset = next_at, blob = blob }
+  end
+
+  -- Does a server answer? Asked, and answered at once; `share_status`
+  -- says how it went.
+  function ns.share_probe(address)
+    local r, why = share_call("probe", { address = address })
+
+    if not r then return nil, why end
+    return true
+  end
+
+  -- Sign in and connect to a share: begun, and answered at once.
+  function ns.share_connect(address, share, account, password)
+    local r, why = share_call("connect", { address = address, share = share,
+                                           account = account,
+                                           password = password })
+
+    if not r then return nil, why end
+    return true
+  end
+
+  function ns.share_disconnect(address)
+    local r, why = share_call("disconnect", { address = address })
+
+    if not r then return nil, why end
+    return true
+  end
+
+  -- What each server asked for is doing: a list, each a table.
+  function ns.share_status()
+    local list, offset = {}, 0
+
+    repeat
+      local r, why = share_call("status", nil, offset)
+
+      if not r then return nil, why end
+
+      for i = 1, r.count do
+        local at = (i - 1) * SHARE_SERVER_BYTES + 1
+        local address, name, share, account, why_, state, dialect, signing,
+              sealing, probe, _, ms = string.unpack(SHARE_SERVER, r.blob, at)
+
+        list[#list + 1] = {
+          address = trim(address), name = trim(name), share = trim(share),
+          account = trim(account), why = trim(why_),
+          state = SHARE_STATES[state] or "unknown",
+          dialect = SHARE_DIALECTS[dialect], signing = signing ~= 0,
+          sealing = sealing ~= 0, probe = probe ~= 0, in_state_ms = ms,
+        }
+      end
+
+      offset = r.offset
+    until not r.more or r.count == 0
+
+    return list
+  end
+
   -- A page's names or paths: `count` of them, each ending in a zero byte.
   local function disk_names(r, into)
     local at = 1
@@ -3350,7 +3481,7 @@ local RUNNER_ROLE = ROLE_RUNNER
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap,
-                          midi_cap, notify_cap)
+                          midi_cap, notify_cap, share_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -3419,7 +3550,13 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- the target. What is here is the same name with a declared protocol
   -- behind it, because there are no connections yet to be directories of.
   --
-  if net_cap then ns.mount("/Network", net_cap, nil, "net") end
+  --
+  -- **And smbfs's capability beside the stack's** (`docs/sharing.md`,
+  -- *`/Network` is already somebody's*): the stack answers `netproto.h`
+  -- about `/Network` itself, smbfs answers `shareproto.h` - and from step
+  -- N3 a share's files - about what is under it, and the two never overlap.
+  --
+  if net_cap then ns.mount("/Network", net_cap, nil, "net", share_cap) end
 
   -- The programs this image carries. Read-only, and served by a process of
   -- its own like everything else.
@@ -4138,7 +4275,8 @@ query. `find` and `watch` are built on exactly these two calls.
     -- either. Their places are said in the request, as the rest are.
     local caps = { ep, console_cap, ramfs_cap, bin_cap, devices_cap,
                    lib_cap, app_cap, disk_cap, audio_cap, net_cap,
-                   blocks_cap, drives_cap, backlight_cap, notify_cap }
+                   blocks_cap, drives_cap, backlight_cap, notify_cap,
+                   share_cap }
     local camera_at, midi_at = nil, nil
 
     if camera then caps[#caps + 1] = camera; camera_at = #caps - 1 end
@@ -4157,7 +4295,8 @@ query. `find` and `watch` are built on exactly these two calls.
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
-      backlight = 12, notify = 13, camera = camera_at, midi = midi_at,
+      backlight = 12, notify = 13, share = share_cap and 14 or nil,
+      camera = camera_at, midi = midi_at,
       home_in_memory = home_in_memory or nil,
       protostamp = sys.protostamp,
     })
@@ -4857,6 +4996,13 @@ if role == ROLE_INIT then
   --
   local NOTIFY_EP = sys.endpoint()
 
+  --
+  -- **smbfs**, the SMB client (`docs/sharing.md`, step N2): asked through
+  -- `/Network`, whose mount carries its capability beside the stack's -
+  -- what the stack is asked and what a share is asked never overlap.
+  --
+  local SMBFS_EP = sys.endpoint()
+
   if not LIBFS_EP or not APPFS_EP then
     line("init: no endpoint for the library store or the app registry")
     sys.exit(1)
@@ -5042,6 +5188,15 @@ if role == ROLE_INIT then
   local net = start("the network stack", ROLE_NET, wires, SPAWN_NET)
 
   --
+  -- **The SMB client** (`docs/sharing.md` step N2), after the stack it
+  -- connects through: its own endpoint, the stack's as a client of it, and
+  -- the console's. Idle until somebody connects to a share; a machine with
+  -- no network has it all the same and it answers "not answering", which
+  -- keeps one boot path.
+  --
+  start("the SMB client", ROLE_SMBFS, { SMBFS_EP, NET_EP, CONSOLE_EP })
+
+  --
   -- **The power button**, the first driver outside the kernel.
   --
   -- Handed the console server's endpoint and nothing else, so it can report
@@ -5214,7 +5369,7 @@ if role == ROLE_INIT then
                       { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP,
                         APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP, BLOCKS_EP,
                         DRIVES_EP, BACKLIGHT_EP, CAMERA_EP, MIDI_EP,
-                        NOTIFY_EP },
+                        NOTIFY_EP, SMBFS_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -5287,7 +5442,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
   return
 end
 
@@ -5463,7 +5618,7 @@ if role == ROLE_RUNNER then
   -- After `/Devices`, because longest prefix wins and this is a different
   -- server from the one that answers the rest of it.
   if req.audio   then ns.mount("/Devices/audio",   req.audio, nil, "audio") end
-  if req.net     then ns.mount("/Network",         req.net, nil, "net") end
+  if req.net     then ns.mount("/Network",         req.net, nil, "net", req.share) end
   if req.blocks  then ns.mount("/Devices/blocks",  req.blocks, nil, "blocks") end
   if req.drives  then ns.mount("/Drives",          req.drives, nil, "drives") end
   if req.backlight then
@@ -5572,7 +5727,8 @@ if role == ROLE_RUNNER then
     -- after it means something different.
     local caps = { ep, req.console, req.data, req.bin, req.devices,
                    req.lib, req.app, req.disk, req.audio, req.net,
-                   req.blocks, req.drives, req.backlight, req.notify }
+                   req.blocks, req.drives, req.backlight, req.notify,
+                   req.share }
     local mounts = {}
 
     --
@@ -5679,7 +5835,8 @@ if role == ROLE_RUNNER then
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
-      backlight = 12, notify = 13, camera = camera_at, midi = midi_at,
+      backlight = 12, notify = 13, share = req.share and 14 or nil,
+      camera = camera_at, midi = midi_at,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Which protocols the system speaks, for an image built for others

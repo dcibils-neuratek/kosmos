@@ -576,11 +576,14 @@ static inline long kosmos_call(long cap, const struct message *msg,
     return sys3(SYS_CALL, cap, (long)(uintptr_t)msg, (long)(uintptr_t)reply);
 }
 
-/* `nonblocking` returns SYS_NO_MESSAGE rather than parking when nobody is
- * waiting - for a server that has something else to be getting on with. */
+/* `nonblocking` returns -7 - the kernel's `IPC_NO_MESSAGE`, as it is - rather
+ * than parking when nobody is waiting, for a server that has something else
+ * to be getting on with. */
 /*
  * `timeout` is in scheduler ticks: 0 waits for ever, anything else gives up
- * and returns SYS_NO_MESSAGE when nothing has arrived by then.
+ * and returns -7 when nothing has arrived by then. **Not `SYS_NO_MESSAGE`
+ * (-107)**, which this said until 5 October 2026: nothing returns that, and
+ * `smbfs`, comparing against it, stopped serving at its first deadline.
  *
  * The combination is what a server loop actually wants - answer whoever
  * calls, but be back by the next deadline whether or not anybody did. A
