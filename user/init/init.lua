@@ -2009,6 +2009,7 @@ local function new_namespace()
     [13] = "it is open read only",
     [14] = "the server is not answering",
     [15] = "the server refused it",
+    [16] = "the server's answer was changed on the way, and refused",
   }
 
   -- The filesystem's own refusals, 32 on: `kfs_why` (`user/servers/kfs.c`).

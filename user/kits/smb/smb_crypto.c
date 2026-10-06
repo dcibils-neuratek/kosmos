@@ -15,12 +15,9 @@
  *
  * What each name is, and what it now stands on:
  *
- *   AES128_ECB_encrypt   one block of AES-128, `crypto_aes_ctrcbc()`: AES-NI
- *                        where the processor has it, constant-time
- *                        `aes_ct64` elsewhere. libsmb2's AES-CMAC (SMB 3's
- *                        signature) is a loop over this in
- *                        `smb2-signing.c`, which stays; its AES is the kit's.
- *   aes128ccm_*          SMB 3's sealing: BearSSL's CCM over the same AES.
+ *   aes128ccm_*          SMB 3's sealing: BearSSL's CCM over
+ *                        `crypto_aes_ctrcbc()` - AES-NI where the processor
+ *                        has it, constant-time `aes_ct64` elsewhere.
  *   MD4*                 the NT hash: `crypto_md4`.
  *   smb2_hmac_md5        NTLMv2's proof: BearSSL's HMAC over its MD5.
  *   hmac* (SHA-256)      SMB 2's signature and SMB 3's key derivation:
@@ -31,10 +28,10 @@
  * are what its callers allocate, so BearSSL's state is kept inside them;
  * that each fits is checked when this compiles, not trusted.
  *
- * **What is still libsmb2's**: the CMAC construction above, a loop that
- * keys AES again for every block. It is correct, and slower than the kit's
- * `crypto_aes_cmac` - which keys once - by the cost of a key schedule a
- * block; step N4 measures what signing costs and is where that moves.
+ * **And signing is `smb_signing.c`'s** (step N4): libsmb2's `smb2-signing.c`
+ * leaves the build too, and with it the one caller of the single block of
+ * AES this file gave as `AES128_ECB_encrypt` - its CMAC, which keyed AES
+ * again for every block, and is now the kit's, keyed once.
  */
 
 #include <stdlib.h>
@@ -44,7 +41,6 @@
 
 #include "config.h"
 #include "compat.h"
-#include "aes.h"
 #include "aes128ccm.h"
 #include "md4.h"
 #include "hmac-md5.h"
@@ -53,22 +49,8 @@
 #include "crypto.h"
 
 /*------------------------------------------------------------------------
- * AES.
- *----------------------------------------------------------------------*/
-
-void AES128_ECB_encrypt(uint8_t *input, const uint8_t *key, uint8_t *output)
-{
-    br_aes_gen_ctrcbc_keys aes;
-    const br_block_ctrcbc_class *vt = crypto_aes_ctrcbc();
-    uint8_t block[16] = { 0 };
-
-    /* A CBC-MAC of one block from a zero chain is that block encrypted. */
-    vt->init(&aes.vtable, key, 16);
-    vt->mac(&aes.vtable, block, input, 16);
-    memcpy(output, block, 16);
-}
-
-/*
+ * AES-128-CCM, SMB 3's sealing.
+ *
  * AES-128-CCM, as libsmb2 calls it: the message `p` encrypted (or decrypted)
  * in place, the tag `m` of `mlen` bytes written (or checked). Decryption
  * answers 0 when the tag matches, which is what libsmb2's own did (its

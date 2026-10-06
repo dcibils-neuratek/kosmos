@@ -61,14 +61,15 @@
 #define DISK_ERR_ANSWERS       12u  /* more answers than one query keeps */
 
 /*
- * **A share's three** (`docs/sharing.md`, *A share is a disk*): a server
- * that is not `/Home` says why in `u.data`, `length` bytes, and the
+ * **A share's four** (`docs/sharing.md`, *A share is a disk*; the fourth
+ * step N4's): a server that is not `/Home` says why in `u.data`, `length` bytes, and the
  * namespace shows those words - a mount's name in its own sentences, where
  * `/Home`'s numbers are put into words by the namespace.
  */
 #define DISK_ERR_READ_ONLY     13u  /* "diego-mac's Projects is open read only" */
 #define DISK_ERR_AWAY          14u  /* "diego-mac is not answering" */
 #define DISK_ERR_DENIED        15u  /* the server refused this file to this account */
+#define DISK_ERR_ALTERED       16u  /* an answer changed on the way: its signature or seal did not hold */
 
 /*
  * And the filesystem's own refusals, as `DISK_ERR_KFS` plus `-KFS_E_*`

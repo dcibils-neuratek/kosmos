@@ -19310,3 +19310,136 @@ folder never listed now waits five seconds of silence (`SILENT_UNKNOWN_MS`);
 one listed before keeps the quarter second, since memory answers it. The
 suite holds the never-listed answer to between four and ten seconds, so the
 old bound fails it. The gate after: 94 of 94 in 9:54.
+
+## 18.409 Signed and sealed (sharing N4)
+
+`docs/sharing.md` step N4. **Every dialect, each pinned on a peer of its
+own**, and the record of each held to the wire: `tools/run_share.py --part
+3`, `arm-share-3` and `x86-share-3`, start nine Samba peers at once
+(`smbpeer.py --instance`, ports 4480-4488 and 4500-4508) - 2.0.2, 2.1, 3.0,
+3.0.2 and 3.1.1 with `server signing = mandatory`; 3.0, 3.0.2 and 3.1.1
+with `smb encrypt = required` as well; and 3.1.1 asking for neither - and
+reach every one through **`tools/smbrelay.py`**, a relay on this Mac's
+loopback that forwards the guest's bytes to the peer and back and reads the
+server's side a message at a time. It notes the dialect from NEGOTIATE's
+answer and how each READ came back - signed, inside a transform, or
+neither. One program in the machine connects all nine with
+`fs.share_connect`, reads `hello.txt` and the first megabyte of `big.bin`
+(64 KB on x86-64) from each, and hashes them; then `share status`. Each of
+the nine: connected; its bytes this Mac's; the dialect smbfs records the
+dialect the wire carried; and "signed", "sealed" or neither in its line
+exactly when every READ on the wire was signed, sealed, or neither -
+`SMB 3.0, sealed` with seven transforms and no plain message, `SMB 3.1.1`
+with two unsigned READs. Sealed sessions say "sealed" alone, which is what
+they are: libsmb2 stops signing once the seal is on, as MS-SMB2 has it.
+**GCM**: libsmb2 at `51c5910` offers AES-128-CCM and nothing else in 3.1.1's
+NEGOTIATE (`smb2-cmd-negotiate.c`), so every sealed session here is CCM;
+3.1.1 sends no signing-algorithm context, so it signs with AES-CMAC.
+
+**The control that bites.** Three relays are armed in turn - 2.1's
+(HMAC-SHA256), 3.1.1's (AES-CMAC) and 3.1.1 sealed's (AES-128-CCM) - each to
+let one READ's answer pass and change **the last byte** of the next: the
+file's own last byte for a signed answer, the ciphertext's for a sealed one.
+In the machine one program reads the first 256 KB (64 KB) of `big.bin` twice
+into one region: the first read this Mac's bytes, the relay unarmed for it -
+so the relay is harmless - and the second, changed, refused:
+`fs.read_into` answers nil and "MACPEER (10.0.2.2:4491)'s answer was changed
+on the way - its signature did not match - and was refused; nothing of it
+was handed over" (for the sealed one, "its seal did not open"), a new
+`DISK_ERR_ALTERED` (16) in `diskproto.h`; the region holds zeros; the relay
+changed exactly one answer; and `share status` says "away  MACPEER's answer
+was changed on the way - ... - so it was refused and the connection ended".
+**It bites**, run in a scratch build and not committed: with the received
+signature left in place of the computed one (`smb2_calc_signature` returning
+at once when asked to check) and CCM's tag ignored, all three second reads
+were *handed over* - 262,144 bytes, SHA-256 `6ac0ff63...`, which is this
+Mac's first 256 KB with its last byte XORed with 1 - and 9 of the 56 checks
+failed, plus the three status lines. **Found by it**: libsmb2 reads a
+READ's data straight into the caller's buffer (its zero-copy path) and
+checks the signature after the last byte, so a refused signed answer has
+already landed in the caller's region when the read fails. smbfs now takes
+back what a failed read wrote (`read_answer`); run once without that, the
+two signed regions held `6ac0ff63...` - the forgery - and the sealed one the
+first read's bytes, since a sealed answer is opened before it is copied.
+**And**: libsmb2 says a seal that did not open twice, the second time
+overwriting the first - `smb3-seal.c`'s "Failed to decrypt PDU" and then
+`socket.c`'s "Failed to decrypyt pdu", so spelt - and those sentences are
+all it gives; smbfs matches them, and a library that rewords them fails
+this suite rather than turning a forgery into "not answering".
+
+**Measured, and then moved.** libsmb2's `smb2-signing.c` signed with an
+AES-CMAC that keyed AES again for every sixteen bytes and copied each
+message whole first. Natively on this Mac (an M4), a scratch harness over
+the machine's own pieces - that loop over the kit's AES, and the kit's
+`crypto_aes_cmac` - a megabyte each:
+
+| | ARM core, `aes_ct64` | x86-64 through Rosetta, AES-NI |
+|---|---|---|
+| libsmb2's CMAC, keyed every block, the message copied | 34.6 ms | 4.6 ms |
+| the kit's CMAC, keyed once, in place | 14.3 ms | 0.8 ms |
+| HMAC-SHA256 (2.x), BearSSL's | 2.1 ms | 3.1 ms |
+| AES-128-CCM opening (sealed), BearSSL's | 15.0 ms | 0.8 ms |
+
+In the machine, under TCG - not `-icount`, which the suites' network does
+not run under - eight megabytes on ARM read twice in opposite orders, the
+quicker kept, and one megabyte on x86-64, whose QEMU processor (`qemu64`)
+has no AES-NI, so `aes_ct64` there too. What each added to a megabyte over
+3.1.1 unsigned, read on the same machine in the same run:
+
+| | ARM, before | ARM, after | x86-64, before | x86-64, after |
+|---|---|---|---|---|
+| 2.1, HMAC-SHA256 | +8 to +50 ms | +8 to +41 ms | +31 ms | +25 ms |
+| 3.0, AES-CMAC | +131 to +178 ms | +22 to +78 ms | +330 ms | +141 ms |
+| 3.1.1, AES-CMAC | +168 to +199 ms | -24 to +103 ms | +327 ms | +137 ms |
+| 3.1.1 sealed, AES-128-CCM | +82 to +87 ms | +13 to +106 ms | +145 ms | +151 ms |
+
+**What they mean.** On ARM a read of 8 MB moves by a few tenths of a
+second from run to run (unsigned: 0.8 to 1.6 s), so its column says only
+that CMAC was the largest cost before and is not after. x86-64's reads are
+paced by its slow network (0.14 MB/s, 18.408) and move by hundredths, and
+its column is the one to read: CMAC's share fell 2.4 times, which is the
+native ratio on the same AES (34.6 / 14.3), and now equals CCM's, which is
+the same AES work - so the emulated numbers agree with the native ones
+rather than standing on their own. **The decision**: libsmb2's file leaves
+the build by name (`LIBSMB2_LEFT_OUT`) and `user/kits/smb/smb_signing.c`
+supplies all four of its names - `smb3_aes_cmac_128`, `smb2_calc_signature`,
+`smb2_pdu_add_signature`, `smb2_pdu_check_signature` - CMAC the kit's over
+the message's vectors where they lie, through a new streaming form
+(`crypto_cmac_init`, `_update`, `_final`), and HMAC BearSSL's. The single
+block of AES `smb_crypto.c` gave as `AES128_ECB_encrypt` had no other
+caller and is gone. **Left for later**: on ARM, 14.3 ms a megabyte against
+a gigabit's 8.9 ms means signing, not the wire, bounds a share there;
+`aes_ct64` computes four blocks at once and a CBC-MAC uses one, and
+ARMv8's AES instructions are the roadmap's next step for it. On the M700's
+AES-NI, 0.8 ms is 9% of a core at the wire's speed.
+
+**Held**: `tools/test_crypto.c` gains the streaming form - RFC 4493's four
+examples cut in two at every place, and the longest fed in pieces of 1, 15,
+16 and 17 bytes: 61 checks natively, 66 through Rosetta. New,
+**`tools/test_smbsign.c`**, natively and as `test_smbsign_x86` through
+Rosetta, in `host`: `smb_signing.c` against libsmb2's own `smb2-signing.c`
+compiled beside it as the reference - its names given a `ref_` prefix on
+the compile line, standing on libsmb2's own AES and SHA, so the two share
+no code - 33 checks: RFC 4493 through both; `smb2_calc_signature` at every
+dialect over messages of 0 to 65,543 bytes in one vector and in two at
+every cut up to 70, in pieces of 1, 15 and 17, and a megabyte READ laid out
+as libsmb2 lays one (header, fixed part, data); and `smb2_pdu_add_signature`
+for a READ, a TREE_CONNECT, a SESSION_SETUP asked and answered, and a READ
+with no session. **Each control bites**, run with one thing wrong: the
+signature field not cleared, 2.1 signed with CMAC, the flag set after
+signing, the last vector left out - each caught, the first two at every
+dialect they touch; and in the kit, a streaming CMAC that does not hold back a final
+whole block fails example 4 and 34 of its 65 cuts.
+
+**And under load the measure says nothing**: in the run below, beside
+eight other suites, x86-64's unsigned megabyte took 6.5 s rather than 7.0,
+and every signed and sealed one 0.45 to 0.55 s more than it - HMAC as much
+as CMAC, which the quiet runs and the native ones both contradict. The
+suite prints its measure and asserts nothing of it; the table above is from
+runs alone.
+
+`arm-share-3` passes 56 checks in about 20 s alone and `x86-share-3` in
+about 62; `make test ONLY=host,arm-kernel,arm-headless,arm-share,x86-share,
+arm-share-2,x86-share-2,arm-share-3,x86-share-3`: 9 suites in 81 s, all
+passing, both new ones 57 s. The namespace and `diskproto.h` changed, so
+`arm-display-1,x86-display-1` too: both passing, 2:26.

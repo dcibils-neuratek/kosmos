@@ -40,32 +40,83 @@ static void dbl(uint8_t out[16], const uint8_t in[16])
     out[15] = (uint8_t)(in[15] << 1) ^ carry;
 }
 
-void crypto_aes_cmac(const void *key, size_t key_bytes,
-                     const void *data, size_t bytes, uint8_t out[16])
+/*
+ * **In pieces** (step N4): a message that arrives as several buffers - an
+ * SMB reply is its header, its fixed part and the data that libsmb2 read
+ * straight into a caller's region, three vectors - is signed where each
+ * piece lies, never gathered into one. CMAC's one subtlety is that the
+ * last block is treated differently from the rest and is not known to be
+ * last until the message ends, so up to a whole block is held back: what
+ * has arrived beyond it goes through the chain, and `final` does the rest.
+ */
+_Static_assert(sizeof(br_aes_gen_ctrcbc_keys) <= sizeof(((struct crypto_cmac *)0)->aes),
+               "BearSSL's keyed AES fits in struct crypto_cmac");
+
+static const br_block_ctrcbc_class **keyed(struct crypto_cmac *c)
+{
+    return &((br_aes_gen_ctrcbc_keys *)(void *)c->aes)->vtable;
+}
+
+void crypto_cmac_init(struct crypto_cmac *c, const void *key, size_t key_bytes)
 {
     static const uint8_t zero[16];
-    br_aes_gen_ctrcbc_keys aes;
+    br_aes_gen_ctrcbc_keys *aes = (br_aes_gen_ctrcbc_keys *)(void *)c->aes;
     const br_block_ctrcbc_class *vt = crypto_aes_ctrcbc();
-    const uint8_t *m = data;
-    uint8_t l[16] = { 0 }, k[16], last[16], mac[16] = { 0 };
-    size_t whole, rest, i;
+    unsigned i;
 
-    vt->init(&aes.vtable, key, key_bytes);
+    vt->init(&aes->vtable, key, key_bytes);
 
     /* RFC 4493 2.3: L = AES(K, 0), which is a CBC-MAC of one zero block
-     * from a zero chain; K1 = 2L, K2 = 4L. */
-    vt->mac(&aes.vtable, l, zero, 16);
+     * from a zero chain; K1 = 2L and K2 = 4L are made from it at the end. */
+    for (i = 0; i < 16; i++) c->l[i] = c->mac[i] = 0;
+    vt->mac(&aes->vtable, c->l, zero, 16);
+    c->held_bytes = 0;
+}
 
-    /* 2.4: every block but the last through the chain as it is; the last
-     * XORed with K1 when it is whole, and padded 10* and XORed with K2 when
-     * it is not - an empty message is one padded block. */
-    rest = bytes % 16;
-    if (bytes > 0 && rest == 0) rest = 16;
-    whole = bytes - rest;
+void crypto_cmac_update(struct crypto_cmac *c, const void *data, size_t bytes)
+{
+    const br_block_ctrcbc_class **vt = keyed(c);
+    const uint8_t *m = data;
 
-    vt->mac(&aes.vtable, mac, m, whole);
+    while (bytes > 0) {
+        size_t take;
 
-    dbl(k, l);
+        /* A whole block held, and more coming: it was not the last. */
+        if (c->held_bytes == 16) {
+            (*vt)->mac(vt, c->mac, c->held, 16);
+            c->held_bytes = 0;
+        }
+
+        /* Nothing held: every whole block but the one that may be last
+         * goes through the chain where it lies. */
+        if (c->held_bytes == 0 && bytes > 16) {
+            size_t whole = (bytes - 1) / 16 * 16;
+
+            (*vt)->mac(vt, c->mac, m, whole);
+            m += whole;
+            bytes -= whole;
+        }
+
+        take = 16 - c->held_bytes;
+        if (take > bytes) take = bytes;
+
+        for (size_t i = 0; i < take; i++) c->held[c->held_bytes + i] = m[i];
+        c->held_bytes += (unsigned)take;
+        m += take;
+        bytes -= take;
+    }
+}
+
+void crypto_cmac_final(struct crypto_cmac *c, uint8_t out[16])
+{
+    const br_block_ctrcbc_class **vt = keyed(c);
+    uint8_t k[16], last[16];
+    unsigned i, rest = c->held_bytes;
+
+    /* 2.4: the last block XORed with K1 when it is whole, and padded 10*
+     * and XORed with K2 when it is not - an empty message is one padded
+     * block. */
+    dbl(k, c->l);
     if (rest < 16) {
         uint8_t k1[16];
 
@@ -74,11 +125,21 @@ void crypto_aes_cmac(const void *key, size_t key_bytes,
     }
 
     for (i = 0; i < 16; i++) {
-        uint8_t b = i < rest ? m[whole + i] : (i == rest ? 0x80 : 0);
+        uint8_t b = i < rest ? c->held[i] : (i == rest ? 0x80 : 0);
 
         last[i] = b ^ k[i];
     }
-    vt->mac(&aes.vtable, mac, last, 16);
+    (*vt)->mac(vt, c->mac, last, 16);
 
-    for (i = 0; i < 16; i++) out[i] = mac[i];
+    for (i = 0; i < 16; i++) out[i] = c->mac[i];
+}
+
+void crypto_aes_cmac(const void *key, size_t key_bytes,
+                     const void *data, size_t bytes, uint8_t out[16])
+{
+    struct crypto_cmac c;
+
+    crypto_cmac_init(&c, key, key_bytes);
+    crypto_cmac_update(&c, data, bytes);
+    crypto_cmac_final(&c, out);
 }

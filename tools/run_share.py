@@ -50,7 +50,20 @@ last heard, a folder never listed is "not answering", each within the
 bound and neither hanging - and after it continues the folder is fresh
 again.
 
-Usage: run_share.py IMAGE [--part 1|2]
+**`--part 3`, signed and sealed** (`docs/sharing.md` step N4), on peers of
+its own: every dialect pinned in turn - 2.0.2, 2.1, 3.0, 3.0.2, 3.1.1 - with
+signing mandatory, and 3.0, 3.0.2 and 3.1.1 with encryption required, and
+3.1.1 asking for neither; each connected, a file read and its bytes this
+Mac's, and `share status` saying the dialect, signed and sealed - held to
+what a relay in between (`tools/smbrelay.py`) saw on the wire, so the words
+are checked against the bytes rather than against an expectation. **The
+control that bites**: the relay, on cue, changes one byte of a signed READ's
+answer (SMB 2.1's HMAC-SHA256 and 3.1.1's AES-CMAC) and of a sealed one (3.1.1,
+AES-128-CCM), and the read fails in words, the region it was reading into
+holding none of it; the same relay unarmed passed the same read a moment
+before. And what signing and sealing cost a megabyte, measured.
+
+Usage: run_share.py IMAGE [--part 1|2|3]
 """
 
 import hashlib
@@ -84,6 +97,9 @@ def main():
         print("SKIP: no Homebrew Samba on this Mac, so no peer to sign into "
               "(brew install samba; docs/sharing.md N0)")
         return 0
+
+    if part == "3":
+        return signed_and_sealed(image)
 
     return folders(image) if part == "2" else connects(image)
 
@@ -649,6 +665,398 @@ def folders(image):
     print("  big.bin: %d MB in %d ms (%.2f MB/s), %d READs; its SHA-256 in %d ms"
           % (whole >> 20, big_ms, (whole / 1048576) / max(big_ms / 1000, 0.001),
              reads, sum_ms))
+    return 0
+
+
+
+#--------------------------------------------------------------------------
+# The third part: signed and sealed (N4).
+#--------------------------------------------------------------------------
+
+#
+# Each conversation pinned on a peer of its own: what is pinned, what is
+# required, and what `share status` should then say. Every one is reached
+# through a relay, unarmed, which watches what crosses - the dialect the
+# server chose, and whether its answers were signed, sealed or neither.
+#
+MATRIX = [
+    # name           dialect   sign   seal
+    ("2.0.2",        "2.0.2",  True,  False),
+    ("2.1",          "2.1",    True,  False),
+    ("3.0",          "3.0",    True,  False),
+    ("3.0.2",        "3.0.2",  True,  False),
+    ("3.1.1",        "3.1.1",  True,  False),
+    ("3.0 sealed",   "3.0",    True,  True),
+    ("3.0.2 sealed", "3.0.2",  True,  True),
+    ("3.1.1 sealed", "3.1.1",  True,  True),
+    ("3.1.1 plain",  "3.1.1",  False, False),
+]
+
+# The relays that are armed after their read has passed: one of each way an
+# answer is held - HMAC-SHA256 (2.x), AES-CMAC (3.x) and AES-128-CCM.
+CHANGED = ["2.1", "3.1.1", "3.1.1 sealed"]
+
+# What the cost of a megabyte is measured on, directly to the peer.
+MEASURED = ["3.1.1 plain", "2.1", "3.0", "3.1.1", "3.1.1 sealed"]
+
+#
+# One program, written into `/Temporary` and run: each address connected, a
+# file read from it and hashed, how long that took, and what the record
+# says. Its tags are put together from halves, so the echo of this text as
+# it is typed never matches.
+#
+SIGNED_PROBE = r"""
+local crypto = use("/Kosmos/Kits/crypto")
+local regions = use("/Kosmos/Libraries/regions.lua")
+local hz = fs.read("/Devices/cpu").counter_hz
+local function since(t) return (sys.ticks() - t) * 1000 // hz end
+local function record(a) for _, s in ipairs(fs.share_status() or {}) do if s.address == a then return s end end end
+local r = regions.make(@MOST@)
+for item in ("@TARGETS@"):gmatch("[^,]+") do
+  local a, bytes, keep = item:match("^(.-)=(%d+)=(%a)$")
+  bytes = tonumber(bytes)
+  local ok, why = fs.share_connect(a, "Projects", "@ACCOUNT@", "@PASSWORD@")
+  local s = record(a)
+  for _ = 1, 150 do s = record(a) if not s or s.state ~= "asking" then break end sys.sleep(25) end
+  if not s or s.state ~= "connected" then
+    print(("N4" .. "M %s %s none none none none none 0 %s"):format(a, s and s.state or "gone", tostring(s and s.why or why):gsub("%s", "_")))
+  else
+    local root = "/Network/" .. a .. "/Projects"
+    local hello = fs.read(root .. "/hello.txt")
+    local t = sys.ticks()
+    local got, e = fs.read_into(root .. "/big.bin", r.cap, 0, bytes)
+    local ms = since(t)
+    print(("N4" .. "M %s %s %s %s %s %s %s %d %s"):format(a, s.state, tostring(s.dialect),
+      tostring(s.signing), tostring(s.sealing),
+      type(hello) == "string" and crypto.sha256(hello) or "none",
+      got and crypto.sha256(r.at, got) or "none", ms, tostring(got or e):gsub("%s", "_")))
+  end
+  if keep ~= "k" then fs.share_disconnect(a) end
+end
+regions.free(r)
+print("N4" .. "DONE")
+"""
+
+#
+# And the read the relay changes: twice into one region, the relay told to
+# let the first pass - so the region holds the file's bytes when the second
+# is refused, and what is in it after shows whether any were handed over.
+#
+CHANGED_PROBE = r"""
+local crypto = use("/Kosmos/Kits/crypto")
+local regions = use("/Kosmos/Libraries/regions.lua")
+local a, bytes = tostring(args):match("^%s*(%S+)%s+(%d+)")
+bytes = tonumber(bytes)
+local root = "/Network/" .. a .. "/Projects"
+local r = regions.make(bytes)
+local got, e = fs.read_into(root .. "/big.bin", r.cap, 0, bytes)
+print(("N4" .. "FIRST %s %s %s"):format(a, tostring(got), got and crypto.sha256(r.at, got) or tostring(e):gsub("%s", "_")))
+local got2, e2 = fs.read_into(root .. "/big.bin", r.cap, 0, bytes)
+print(("N4" .. "SECOND %s %s %s"):format(a, tostring(got2), got2 and crypto.sha256(r.at, got2) or "refused"))
+print("N4" .. "WORDS " .. a .. " " .. tostring(got2 and "" or e2))
+print(("N4" .. "AFTER %s %s"):format(a, crypto.sha256(r.at, bytes)))
+regions.free(r)
+"""
+
+
+def written(guest, R, name, text, run):
+    """A program typed into `/Temporary` in pieces a line can carry."""
+    one = " ".join(line.strip() for line in text.splitlines() if line.strip())
+    parts = [one[i:i + 600] for i in range(0, len(one), 600)]
+
+    for i, piece in enumerate(parts):
+        guest.type('fs.write("/Temporary/%s_%d.lua", [==[%s]==])' % (name, i, piece))
+        guest.wait_for(R.PROMPT, "the program written")
+
+    run("written " + name, 'fs.write("/Temporary/%s.lua", ' % name
+        + " .. ".join('fs.read("/Temporary/%s_%d.lua")' % (name, i)
+                      for i in range(len(parts)))
+        + ') print("program " .. "written")', ends="program written")
+
+
+def signed_and_sealed(image):
+    import concurrent.futures
+    import run_screenshot as R
+    import smbrelay
+
+    x86 = R.machine(image) == "x86_64"
+    board = "x86-share-3" if x86 else "arm-share-3"
+    base = 4500 if x86 else 4480
+
+    #
+    # **How much each read is.** The x86-64 machine's network receives
+    # about a seventh of a megabyte a second under QEMU (`testing.md`
+    # 18.408), which is the stack's and the card's and not SMB's: there the
+    # matrix reads 64 KB a conversation and the measure a megabyte, and on
+    # ARM a megabyte and eight. The same paths, smaller.
+    #
+    each = (64 << 10) if x86 else (1 << 20)
+    measure = (1 << 20) if x86 else (8 << 20)
+    changed_bytes = (64 << 10) if x86 else (256 << 10)
+
+    names = [m[0] for m in MATRIX]
+    peers = {m[0]: (base + i) for i, m in enumerate(MATRIX)}
+    relays = {m[0]: (base + 10 + i) for i, m in enumerate(MATRIX)}
+
+    def start(m):
+        name, dialect, sign, seal = m
+        flags = ["--dialect", dialect] + (["--sign"] if sign else []) + \
+                (["--seal"] if seal else [])
+        peer("%s-%d" % (board, names.index(name)), peers[name], "start", *flags)
+
+    # Nine peers at once, each its own smbd on its own port.
+    with concurrent.futures.ThreadPoolExecutor(len(MATRIX)) as pool:
+        list(pool.map(start, MATRIX))
+
+    _, _, share, account, password = peer("%s-0" % board, peers[names[0]],
+                                          "where").split()
+    watch = {name: smbrelay.Relay(relays[name], peers[name], least=4096)
+             for name in names}
+
+    with open(os.path.join(SHARE_DIR, "big.bin"), "rb") as f:
+        big = f.read()
+
+    with open(os.path.join(SHARE_DIR, "hello.txt"), "rb") as f:
+        hello_sum = hashlib.sha256(f.read()).hexdigest()
+
+    def at(port):
+        return "10.0.2.2:%d" % port
+
+    def probe(text, targets, most):
+        return (text.replace("@TARGETS@", targets).replace("@MOST@", str(most))
+                .replace("@ACCOUNT@", account).replace("@PASSWORD@", password))
+
+    # The matrix through the relays, every conversation kept connected, so
+    # `share status` after it has a line for each - nine servers all called
+    # MACPEER, which `/Network` tells apart by address.
+    matrix_targets = ",".join("%s=%d=k" % (at(relays[n]), each) for n in names)
+    # On ARM twice, the second time in the other order, and the quicker of
+    # the two kept: under emulation one read of a few megabytes there moves
+    # by a few tenths of a second from one run to the next, which is the
+    # size of what is measured. x86-64's is paced by its slow network and
+    # moves by a few hundredths, so once is enough - and twice would be
+    # another thirty-five seconds.
+    rounds = MEASURED if x86 else MEASURED + MEASURED[::-1]
+    measure_targets = ",".join("%s=%d=d" % (at(peers[n]), measure) for n in rounds)
+
+    guest_board = "X86_ARGS" if x86 else "QEMU_ARGS"
+    saved = getattr(R, guest_board)
+    setattr(R, guest_board, saved + ["-netdev", "user,id=net0",
+                                     "-device", R.device(image, "net") + ",netdev=net0"])
+
+    try:
+        guest = R.Guest(image, 240)
+    finally:
+        setattr(R, guest_board, saved)
+
+    said, took, fails = {}, {}, []
+    changed = {}
+
+    def run(key, command, ends=") ended, code"):
+        mark = len(guest.seen)
+        started = time.monotonic()
+        guest.type(command)
+        guest.wait_for_line(ends, "answered " + command, since=mark)
+        took[key] = time.monotonic() - started
+        said[key] = guest.seen[mark:].replace("\r", "")
+        return said[key]
+
+    try:
+        guest.wait_for(R.PROMPT, "the prompt")
+        guest.wait_for("net: an address from DHCP", "a lease")
+
+        written(guest, R, "n4m", probe(SIGNED_PROBE, matrix_targets, each), run)
+        written(guest, R, "n4c", CHANGED_PROBE, run)
+        run("matrix", "/Temporary/n4m.lua")
+        run("status", "share status")
+
+        # The control: one relay at a time told to change the second
+        # qualifying answer it carries - the first read passes, the second
+        # is changed - and then the record of it.
+        for n in CHANGED:
+            watch[n].arm(count=1, skip=1)
+            run("changed " + n, "/Temporary/n4c.lua %s %d" % (at(relays[n]), changed_bytes))
+            changed[n] = list(watch[n].altered)
+            watch[n].off()
+
+        run("after", "share status")
+
+        written(guest, R, "n4x", probe(SIGNED_PROBE, measure_targets, measure), run)
+        run("measure", "/Temporary/n4x.lua")
+    except Exception as e:                  # noqa: BLE001 - said below
+        said["error"] = "%s: %s" % (type(e).__name__, str(e)[:1500])
+    finally:
+        guest.close()
+
+        for relay in watch.values():
+            relay.close()
+
+        def stop(i):
+            try:
+                peer("%s-%d" % (board, i), peers[names[i]], "stop")
+            except subprocess.CalledProcessError:
+                pass
+
+        with concurrent.futures.ThreadPoolExecutor(len(MATRIX)) as pool:
+            list(pool.map(stop, range(len(MATRIX))))
+
+    transcript = guest.seen.replace("\r", "")
+
+    def check(ok, what):
+        if not ok:
+            fails.append(what)
+
+    def text(key):
+        return said.get(key, "")
+
+    def tagged(key, tag):
+        return [m.group(1).split() for m in
+                re.finditer(r"^N4%s (.*)$" % tag, text(key), re.M)]
+
+    if "error" in said:
+        fails.append("the machine stopped: " + said["error"])
+
+    # The matrix: each conversation connected, its bytes this Mac's, and its
+    # record what the wire showed.
+    rows = {row[0]: row for row in tagged("matrix", "M")}
+    status = text("status")
+    each_sum = hashlib.sha256(big[:each]).hexdigest()
+    results = {}
+
+    for name, dialect, sign, seal in MATRIX:
+        a = at(relays[name])
+        row = rows.get(a)
+        wire = watch[name].seen()
+        results[name] = (row, wire)
+
+        if row is None or row[1] != "connected":
+            fails.append("%s: did not connect: %r" % (name, row))
+            continue
+
+        _, _, said_dialect, said_signed, said_sealed, h_sum, b_sum, ms, got = row
+        check(said_dialect == dialect and wire["dialect"] == dialect,
+              "%s: the record says SMB %s and the wire %s" % (name, said_dialect,
+                                                             wire["dialect"]))
+        check(h_sum == hello_sum and b_sum == each_sum and got == str(each),
+              "%s: what was read is not this Mac's bytes: %r" % (name, row))
+
+        # Sealed: every answer after signing in came in a transform; signed:
+        # every one carried a signature; neither: none did. And the record
+        # says which, as `share status` prints it.
+        if seal:
+            truth = wire["sealed"] > 0 and wire["plain"] == 0 and wire["signed"] == 0
+            want_words = "SMB %s, sealed" % dialect
+        elif sign:
+            truth = wire["signed"] > 0 and wire["plain"] == 0 and wire["sealed"] == 0
+            want_words = "SMB %s, signed" % dialect
+        else:
+            truth = wire["plain"] > 0 and wire["signed"] == 0 and wire["sealed"] == 0
+            want_words = "SMB %s" % dialect
+
+        check(truth and said_signed == str(sign and not seal).lower()
+              and said_sealed == str(seal).lower(),
+              "%s: the record says signed %s, sealed %s; the wire carried %r"
+              % (name, said_signed, said_sealed, wire))
+
+        line = re.search(r"^%s  connected  MACPEER  (.*?)  Projects as %s"
+                         % (re.escape(a), re.escape(account)), status, re.M)
+        check(line is not None and line.group(1) == want_words,
+              "%s: share status does not say %r: %r" % (name, want_words,
+                                                        line and line.group(0)))
+
+    # The control that bites.
+    zeros = {}
+
+    for n in CHANGED:
+        a = at(relays[n])
+        key = "changed " + n
+        first = [r for r in tagged(key, "FIRST") if r[0] == a]
+        second = [r for r in tagged(key, "SECOND") if r[0] == a]
+        after = [r for r in tagged(key, "AFTER") if r[0] == a]
+        words = re.search(r"^N4WORDS %s (.*)$" % re.escape(a), text(key), re.M)
+        want_sum = hashlib.sha256(big[:changed_bytes]).hexdigest()
+        zero_sum = zeros.setdefault(changed_bytes,
+                                    hashlib.sha256(bytes(changed_bytes)).hexdigest())
+        how = "its seal did not open" if "sealed" in n else "its signature did not match"
+
+        check(first and first[0][1:] == [str(changed_bytes), want_sum],
+              "%s: the read before the relay changed anything is not this "
+              "Mac's bytes: %r" % (n, first))
+        check(len(changed.get(n, [])) == 1,
+              "%s: the relay did not change exactly one answer: %r"
+              % (n, changed.get(n)))
+        check(second and second[0][1:] == ["nil", "refused"],
+              "%s: an answer changed on the way was handed over: %r" % (n, second))
+        check(words is not None and ("answer was changed on the way - %s" % how)
+              in words.group(1),
+              "%s: the refusal is not in words: %r" % (n, words and words.group(1)))
+        check(after and after[0][1] == zero_sum,
+              "%s: the region still holds what the refused read put there: %r"
+              % (n, after))
+        check(re.search(r"^%s  away  MACPEER's answer was changed on the way - %s"
+                        % (re.escape(a), re.escape(how)), text("after"), re.M)
+              is not None,
+              "%s: share status does not say why it ended: %r"
+              % (n, text("after")[-600:]))
+
+    # What a megabyte cost, directly to the peer.
+    measured = {}
+    measure_sum = hashlib.sha256(big[:measure]).hexdigest()
+
+    for row in tagged("measure", "M"):
+        name = next((n for n in MEASURED if at(peers[n]) == row[0]), None)
+
+        if name and row[1] == "connected" and row[6] == measure_sum:
+            measured.setdefault(name, []).append(int(row[7]))
+
+    measured = {n: min(v) for n, v in measured.items()
+                if len(v) == len(rounds) // len(MEASURED)}
+
+    check(len(measured) == len(MEASURED),
+          "the measure did not read every conversation's bytes: %r"
+          % tagged("measure", "M"))
+
+    check(" died" not in transcript and "smbfs exited" not in transcript,
+          "something died: %r" % transcript[transcript.find(" died") - 200:][:400])
+
+    checks = 4 * len(MATRIX) + 6 * len(CHANGED) + 2
+    log = os.path.join(ROOT, "build", "%s-serial.log" % board)
+
+    with open(log, "w") as f:
+        f.write(transcript)
+
+    if fails:
+        print("FAIL: %d problems in %d checks on signing and sealing (the serial "
+              "line: %s):" % (len(fails), checks, log))
+
+        for f in fails:
+            print("  " + f)
+
+        return 1
+
+    print("PASS: %d checks on signing and sealing (every dialect from 2.0.2 to "
+          "3.1.1 signed, 3.0 to 3.1.1 sealed, 3.1.1 plain - each read and "
+          "its record held to the wire; the control: one byte changed of a "
+          "signed answer at 2.1 and 3.1.1 and a sealed one at 3.1.1, each "
+          "refused in words with nothing handed over, the same relay passing "
+          "the read before)." % checks)
+
+    for name in names:
+        row, wire = results[name]
+        print("  %-13s %-9s %4d ms for %d KB  (wire: dialect %s, %d signed, "
+              "%d sealed, %d neither)" % (name, row[1], int(row[7]), each >> 10,
+                                          wire["dialect"], wire["signed"],
+                                          wire["sealed"], wire["plain"]))
+
+    base_ms = measured.get("3.1.1 plain", 0)
+    mb = measure / 1048576
+
+    for name in MEASURED:
+        ms = measured[name]
+        print("  measured %-13s %d MB in %5d ms, %.2f MB/s; %+.0f ms a MB "
+              "against plain" % (name, mb, ms, mb / max(ms / 1000, 0.001),
+                                 (ms - base_ms) / mb))
+
     return 0
 
 

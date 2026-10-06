@@ -92,6 +92,21 @@ const struct br_block_ctrcbc_class_ *crypto_aes_ctrcbc(void);
 void crypto_aes_cmac(const void *key, size_t key_bytes,
                      const void *data, size_t bytes, uint8_t out[16]);
 
+/* The same, over a message in pieces, each signed where it lies (step N4:
+ * an SMB reply is several buffers, one of them the caller's region). The
+ * keyed AES is BearSSL's, held in `aes`, which `cmac.c` checks it fits. */
+struct crypto_cmac {
+    uint64_t aes[48];
+    uint8_t  l[16];                 /* AES(K, 0), the subkeys' root */
+    uint8_t  mac[16];               /* the chain so far */
+    uint8_t  held[16];              /* the block that may be the last */
+    unsigned held_bytes;
+};
+
+void crypto_cmac_init(struct crypto_cmac *c, const void *key, size_t key_bytes);
+void crypto_cmac_update(struct crypto_cmac *c, const void *data, size_t bytes);
+void crypto_cmac_final(struct crypto_cmac *c, uint8_t out[16]);
+
 /* NIST SP 800-108's KDF in counter mode with HMAC-SHA256: SMB 3's keys.
  * The label and the context are taken as they are, terminators included -
  * SMB's carry their own NUL - and SP 800-108's 0x00 is put between them. */

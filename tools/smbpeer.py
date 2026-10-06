@@ -25,9 +25,10 @@ privilege can only be the user it runs as, with a password made here and
 kept in `build/smbpeer/password` - never a real one, and never in the
 repository.
 
-**The dialect** is pinned with `--dialect` (2.0.2, 3.0, 3.1.1), signing
-made mandatory with `--sign` and encryption required with `--seal`: step
-N4's matrix is this script run once for each. `--dialect 1.0` pins SMB 1
+**The dialect** is pinned with `--dialect` (2.0.2, 2.1, 3.0, 3.0.2,
+3.1.1), signing made mandatory with `--sign` and encryption required with
+`--seal`: step N4's matrix is this script run once for each, nine peers at
+once on nine ports (`run_share.py --part 3`). `--dialect 1.0` pins SMB 1
 alone (Samba's `NT1`), which nothing here speaks: the control a client is
 held to when it says it refuses SMB 1 (step N2).
 

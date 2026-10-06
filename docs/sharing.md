@@ -149,7 +149,10 @@ It fits closely, and where it does not the difference is small and said:
 
 - three errors: `DISK_ERR_READ_ONLY`; `DISK_ERR_AWAY` - "diego-mac is not
   answering", the name in `u.data` as `DISK_ERR_NO_DISK` carries its why;
-  and `DISK_ERR_DENIED` - the server refused this file to this account;
+  and `DISK_ERR_DENIED` - the server refused this file to this account.
+  **And a fourth, as built (N4)**: `DISK_ERR_ALTERED` - an answer changed
+  on the way, its signature or its seal not holding - which is not a
+  server gone away and is not said as one;
 - **whether an answer is as it was last heard.** A reply gains a field
   saying the listing or the facts came from smbfs's memory of a server that
   is not answering, and the counter tick it last answered at. `/Home`
@@ -438,7 +441,10 @@ archive/`.
 - **Dialects**: 2.0.2, 2.1, 3.0, 3.0.2 and 3.1.1, any or one pinned
   (`vers=`). **Signing**: HMAC-SHA256 for 2.x, AES-CMAC for 3.x - not 3.1.1's
   AES-GMAC. **Encryption**: SMB 3's transform with **AES-128-CCM only** - not
-  GCM, not AES-256. Preauthentication integrity with SHA-512 for 3.1.1.
+  GCM, not AES-256. **Checked at N4**: its 3.1.1 NEGOTIATE offers one
+  cipher, `SMB2_ENCRYPTION_AES_128_CCM` (`smb2-cmd-negotiate.c`), and its
+  transform writes CCM's number whatever was agreed (`smb3-seal.c`); no
+  signing-algorithm context is sent, so 3.1.1 signs with CMAC too. Preauthentication integrity with SHA-512 for 3.1.1.
   Credits, compounding, `STATUS_PENDING` interim answers, and **zero-copy
   reads**: `smb2_pread_async` reads a READ's data from the socket straight
   into the caller's buffer.
@@ -513,12 +519,19 @@ with `-w`, and there is no `runtime/patches/libsmb2/`:
    (AES-NI or constant-time `aes_ct64`), CCM is BearSSL's over it, MD4 is
    `crypto_md4`, HMAC-MD5, HMAC-SHA256 and SHA-512 are BearSSL's - each
    kept inside libsmb2's own context structures, which the compiler checks
-   it fits. **What stays libsmb2's**: AES-CMAC's construction, a loop in
-   `smb2-signing.c` that cannot leave without an edit and keys AES again
-   for every block - over the kit's AES. Correct, and slower than
-   `crypto_aes_cmac`, which keys once; N4 measures signing and is where it
-   moves, upstream or here.
-5. **Out of the build**: Kerberos (`krb5-wrapper.c`), the synchronous API
+   it fits. **And signing, since N4**: libsmb2's `smb2-signing.c` leaves the
+   build too. Its AES-CMAC keyed AES again for every sixteen bytes and
+   copied every message whole before signing it - 34.6 ms a megabyte on
+   an ARM core where the kit's `crypto_aes_cmac`, keyed once, takes 14.3,
+   and 4.6 against 0.8 with AES-NI (`testing.md` 18.409) - so
+   `user/kits/smb/smb_signing.c` supplies every name that file defined
+   (`smb3_aes_cmac_128`, `smb2_calc_signature`, `smb2_pdu_add_signature`,
+   `smb2_pdu_check_signature`): CMAC the kit's, over the message's vectors
+   where they lie, and HMAC-SHA256 BearSSL's. Where an answer's signature is
+   *checked* is still libsmb2's (`socket.c`, `libsmb2.c`); this decides only
+   how one is computed. `tools/test_smbsign.c` holds it to libsmb2's own
+   file, compiled beside it as the reference.
+5. **Out of the build**: its signing (`smb2-signing.c`, item 4, N4); Kerberos (`krb5-wrapper.c`), the synchronous API
    (`sync.c`, a `poll` loop - the two of its functions `libsmb2.c`'s own
    synchronous helper names are refusals in `smb_transport.c`),
    `compat.c` (other platforms'), and the `NTLM_USER_FILE` path:
@@ -581,7 +594,7 @@ them** (N1):
 | MD5, HMAC-MD5 (RFC 1321, 2104) | NTLMv2's proof and its session key | BearSSL's `md5.c`, `hmac` |
 | SHA-512 | 3.1.1's preauthentication hash | BearSSL's `sha2big.c` |
 | AES-128, AES-256 | everything below | BearSSL's `aes_ct64` (constant-time), `aes_x86ni` on a processor with AES-NI |
-| AES-CMAC (RFC 4493) | SMB 3.0 to 3.1.1's signing | new, about sixty lines over AES; BearSSL has none |
+| AES-CMAC (RFC 4493) | SMB 3.0 to 3.1.1's signing | new, about sixty lines over AES; BearSSL has none. **And in pieces since N4** (`crypto_cmac_init`, `_update`, `_final`), so an answer is signed where its vectors lie |
 | AES-128-CCM | SMB 3's encryption, the one libsmb2 speaks | BearSSL's `ccm.c` |
 | AES-128-GCM, AES-GMAC | 3.1.1's faster cipher and signing, when the kit offers them (later) | BearSSL's `gcm.c`, `ghash_pclmul` |
 | SP 800-108 KDF, counter mode | SMB 3's signing and sealing keys | new, a loop over the kit's HMAC-SHA256 |
@@ -601,6 +614,18 @@ instructions, so on ARM a signed or sealed byte costs `aes_ct64`'s bit-sliced
 rounds. On the M700, an x86 processor with AES-NI, it should not matter.
 Where N4 measures it costing, the kit gains ARMv8's AES instructions as C
 with intrinsics - userland may use them; only the kernel may not.
+
+**Measured at N4** (`testing.md` 18.409), a megabyte on this Mac's own
+cores: AES-CMAC 14.3 ms on an ARM core's `aes_ct64` and 0.8 ms with
+AES-NI; AES-128-CCM opening 15.0 and 0.8; HMAC-SHA256 2.1 and 3.1. **So
+it costs, on ARM**: a gigabit wire brings a megabyte every 8.9 ms, and a
+signed or sealed one takes 14 ms of an M4's core to check - a Pi 5's
+slower - so signing and sealing, not the wire, would bound a share's speed
+there, at about 70 MB/s on this Mac's core. A CBC-MAC is serial and
+`aes_ct64` computes four blocks at once, so three quarters of its work is
+thrown away on CMAC; ARMv8's AES instructions are the step, on the
+roadmap and not taken in N4. On the M700 it does not matter, as guessed: 9%
+of a core at the wire's speed.
 
 ### The keyring - a piece of its own
 
@@ -770,7 +795,7 @@ M700, the Mac on the same gigabit network:
 |---|---|---|
 | 1 | Tracker starts a copy job - `cp --job`, as zip and unzip run (`start_job`) - and draws its bar | a process start |
 | 2 | `cp` asks smbfs, through the namespace, to `READ` the next piece into its region | an IPC round trip: **19.0 us** on the M700 (`testing.md`, the M700 suite) |
-| 3 | smbfs splits the piece into SMB READs of the server's `MaxReadSize`, several in flight within its credits, each signed | CMAC per byte: **not measured**; on the M700's AES-NI it should be small |
+| 3 | smbfs splits the piece into SMB READs of the server's `MaxReadSize`, several in flight within its credits, each signed | CMAC: **0.8 ms a megabyte with AES-NI** (N4, measured through Rosetta on this Mac), 9% of a core at a gigabit; 14.3 ms on an ARM core's constant-time AES |
 | 4 | the Mac sends; frames into the card's ring, the stack's TCP into smbfs's ring | **receive throughput on the M700 has never been measured** |
 | 5 | the waiter wakes smbfs; libsmb2 copies the data from the ring into `cp`'s region, checks the signature | one copy, ring to region |
 | 6 | `cp` writes the region into `/Home` | **19.5 MB/s** - the M700's `/Home` on its stick, written (`testing.md`, the M700 suite) |
@@ -972,7 +997,24 @@ next. The client, read-only, first.
   changes one byte of one READ's data, and smbfs refuses the answer rather
   than handing over the file - signed - and the same byte under sealing is
   refused by the cipher. The cost of signing and sealing a byte measured,
-  natively on this Mac's cores.
+  natively on this Mac's cores. **Built on 5 October** (`testing.md`
+  18.409): `run_share.py --part 3`, `arm-share-3` and `x86-share-3`, on
+  nine peers at once, each pinned (`smbpeer.py --instance`), every one
+  reached through `tools/smbrelay.py` - a relay that watches what crosses,
+  so `share status`'s dialect, signed and sealed are held to the wire's
+  bytes rather than to an expectation. The relay changes the last byte of
+  a READ's answer at 2.1 (HMAC-SHA256), 3.1.1 (AES-CMAC) and 3.1.1 sealed
+  (CCM), each after letting the same read pass once. Refused, in words -
+  `DISK_ERR_ALTERED`, "MACPEER's answer was changed on the way - its
+  signature did not match - and was refused; nothing of it was handed
+  over" - and the connection ended, said in `share status`. **Found**:
+  libsmb2 reads a READ's data straight into the caller's region and checks
+  the signature after the last byte, so a refused answer has already
+  landed; smbfs now takes back what a failed read wrote, and the suite
+  holds the region to zeros. The disabled check, in a scratch build, hands
+  over the file with its last byte changed - the control bites. And
+  libsmb2's `smb2-signing.c` replaced through the build, measured first
+  (*The SMB Kit*, item 4). GCM: libsmb2 offers none.
 - **N5 - gone away, and back.** The peer stopped (SIGSTOP) with a folder open:
   `fs.list` answered from memory within its bound, marked as last heard;
   a `READ` ends in words after SMB's timeout; the peer continued (SIGCONT)

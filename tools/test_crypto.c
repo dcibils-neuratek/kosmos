@@ -574,6 +574,55 @@ static void check_cmac(void)
                  i + 1, (unsigned)ex[i].len);
         same(what, got, want, 16);
     }
+
+    /*
+     * And in pieces (step N4), as an SMB reply arrives: each example cut at
+     * every place it can be cut in two, and the longest also fed a byte at
+     * a time and in pieces of 15, 16 and 17 - the boundaries where holding
+     * back the block that may be last is right or wrong.
+     */
+    for (i = 0; i < 4; i++) {
+        size_t cut;
+        int wrong = 0;
+
+        unhex(ex[i].mac, want);
+
+        for (cut = 0; cut <= ex[i].len; cut++) {
+            struct crypto_cmac c;
+
+            crypto_cmac_init(&c, key, 16);
+            crypto_cmac_update(&c, msg, cut);
+            crypto_cmac_update(&c, msg + cut, ex[i].len - cut);
+            crypto_cmac_final(&c, got);
+            wrong += memcmp(got, want, 16) != 0;
+        }
+
+        checks++;
+        if (wrong) {
+            failures++;
+            printf("FAIL: aes-cmac in two pieces, RFC 4493 example %u: %d of "
+                   "%u cuts wrong\n", i + 1, wrong, (unsigned)ex[i].len + 1);
+        }
+    }
+
+    {
+        static const size_t steps[] = { 1, 15, 16, 17 };
+
+        unhex(ex[3].mac, want);
+
+        for (i = 0; i < 4; i++) {
+            struct crypto_cmac c;
+            size_t at;
+
+            crypto_cmac_init(&c, key, 16);
+            for (at = 0; at < 64; at += steps[i])
+                crypto_cmac_update(&c, msg + at, 64 - at < steps[i] ? 64 - at : steps[i]);
+            crypto_cmac_final(&c, got);
+            snprintf(what, sizeof what, "aes-cmac in pieces of %u, RFC 4493 example 4",
+                     (unsigned)steps[i]);
+            same(what, got, want, 16);
+        }
+    }
 }
 
 /*

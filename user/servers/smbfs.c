@@ -15,6 +15,12 @@
  * page, `.super` and `.device` - and every write is refused in words, since
  * the client reads only.
  *
+ * **Signed and sealed** (N4): libsmb2 checks each answer's signature or
+ * opens its seal, and one that does not hold ends the connection. smbfs
+ * says so as that - `DISK_ERR_ALTERED`, never "not answering" - and a read
+ * it ends hands nothing over: what libsmb2 had already put in the caller's
+ * region is taken back (`read_answer`).
+ *
  * It is handed, at boot: its own endpoint; the stack's, as a client of it;
  * and the console's, so what it does is said in the log.
  *
@@ -119,6 +125,19 @@
 #define READS_IN_FLIGHT      2u
 #define READ_PIECE   (1u << 20)
 
+/*
+ * **An answer changed on the way** (step N4). libsmb2 checks every signed
+ * reply's signature and opens every sealed one, and when either does not
+ * hold it stops reading the connection and says so in a sentence - there
+ * is no number for it. These are its sentences (`socket.c`, `libsmb2.c`,
+ * `smb3-seal.c` at the pinned commit), and `tools/run_share.py --part 3`
+ * holds them to a relay that changes one byte: a library that rewords them
+ * fails that suite rather than turning a forged answer into "not
+ * answering".
+ */
+#define ALTERED_SIGNED       1u
+#define ALTERED_SEALED       2u
+
 /* What a waiter says, in `flags`. */
 #define SAID_RESOLVED        1u
 #define SAID_EVENT           2u
@@ -203,6 +222,10 @@ struct server {
     struct folder *folders;
     struct handle *handles;
     struct disk_device cost;        /* `.device` */
+
+    /* An answer that arrived changed (step N4): ALTERED_SIGNED or
+     * ALTERED_SEALED, and the connection ended for it. */
+    uint32_t altered;
 };
 
 /*
@@ -327,6 +350,47 @@ static const char *dialect_text(uint16_t d)
     case 0x0311: return "3.1.1";
     default:     return "?";
     }
+}
+
+/* Whether libsmb2 stopped because an answer did not hold, and which way. */
+static uint32_t altered_how(struct smb2_context *smb2)
+{
+    const char *said = smb2 != NULL ? smb2_get_error(smb2) : NULL;
+
+    if (said == NULL) {
+        return 0;
+    }
+
+    if (strstr(said, "Wrong signature") != NULL
+        || strstr(said, "not signed but signing is required") != NULL) {
+        return ALTERED_SIGNED;
+    }
+
+    /* "Failed to decrypt PDU" from `smb3-seal.c`, overwritten by the
+     * caller's own "Failed to decrypyt pdu" (sic) in `socket.c`. */
+    if (strstr(said, "Failed to decryp") != NULL) {
+        return ALTERED_SEALED;
+    }
+
+    return 0;
+}
+
+static const char *altered_words(uint32_t how)
+{
+    return how == ALTERED_SEALED ? "its seal did not open"
+                                 : "its signature did not match";
+}
+
+/* The server's answer refused, and the connection ended for it. */
+static void became_altered(struct server *s, uint32_t how)
+{
+    char why[SHARE_WHY_MAX];
+
+    s->altered = how;
+    snprintf(why, sizeof(why), "%s's answer was changed on the way - %s - "
+             "so it was refused and the connection ended", named(s),
+             altered_words(how));
+    become(s, SHARE_STATE_AWAY, why);
 }
 
 static void tell(const struct server *s)
@@ -495,6 +559,11 @@ static void refused_or_away(struct server *s, int status)
     uint32_t state = SHARE_STATE_REFUSED;
 
     (void)status;
+
+    if (altered_how(s->smb2) != 0) {
+        became_altered(s, altered_how(s->smb2));
+        return;
+    }
 
     if (nt == SMB2_STATUS_LOGON_FAILURE || nt == SMB2_STATUS_WRONG_PASSWORD
         || nt == SMB2_STATUS_WRONG_PASSWORD_CORE) {
@@ -697,9 +766,17 @@ static void settle(struct server *s, int serviced)
     }
 
     if (serviced < 0 && s->pub.state == SHARE_STATE_CONNECTED) {
+        uint32_t how = altered_how(s->smb2);
+
         /* A connected server that hung up: away, until step N5 signs in
-         * again by itself. */
-        become(s, SHARE_STATE_AWAY, "the server closed the connection");
+         * again by itself. Or one whose answer arrived changed, which is
+         * said as that, and is not signed in again by itself. */
+        if (how != 0) {
+            became_altered(s, how);
+        } else {
+            become(s, SHARE_STATE_AWAY, "the server closed the connection");
+        }
+
         tell(s);
         server_close(s);
         return;
@@ -1400,6 +1477,16 @@ static void away(struct server *s, struct disk_reply *rp)
 static void refused(struct server *s, int failed, uint32_t nt, const char *path,
                     struct disk_reply *rp)
 {
+    if (s->altered != 0) {
+        char label[SHARE_ADDRESS_MAX + SHARE_NAME_MAX + 4];
+
+        server_label(s, label, sizeof(label));
+        said(rp, DISK_ERR_ALTERED, "%s's answer was changed on the way - %s - "
+             "and was refused; nothing of it was handed over", label,
+             altered_words(s->altered), "");
+        return;
+    }
+
     if (s->closing || s->smb2 == NULL || nt == SMB2_STATUS_SHUTDOWN
         || nt == SMB2_STATUS_IO_TIMEOUT || failed == -ETIMEDOUT
         || failed == -ENETRESET || failed == -ECONNRESET) {
@@ -1735,6 +1822,18 @@ static void read_answer(struct held *h, struct disk_reply *rp)
             rp->error = DISK_ERR_REGION;
         } else {
             refused(s, h->failed, h->nt, h->req.path, rp);
+        }
+
+        /*
+         * **A read that fails hands over nothing** (step N4). libsmb2 reads
+         * a READ's data straight into the caller's region and checks the
+         * signature after the last byte, so a reply changed on the way
+         * has already landed when it is refused. The answer says it failed
+         * and the bytes it wrote are taken back, so a caller that looks
+         * anyway finds zeros, never a forgery.
+         */
+        if (h->at != NULL && h->issued > 0) {
+            memset(h->at, 0, (size_t)(h->issued < h->room ? h->issued : h->room));
         }
 
         return;

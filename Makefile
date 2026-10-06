@@ -737,11 +737,15 @@ BEARSSL_CFLAGS := -w -Wno-error -Iruntime/upstream/bearssl/src \
 # connection on the network stack's ring, its randomness the kernel's
 # (`user/kits/smb/port/`). Left out of the build, by name: its own
 # cryptography, which `user/kits/smb/smb_crypto.c` gives to the Crypto Kit
-# and BearSSL instead; Kerberos; the synchronous API, a `poll` loop; and
-# `compat.c`, other platforms' shims. Nothing in the tree is edited.
+# and BearSSL instead; its signing, `smb2-signing.c`, whose AES-CMAC keyed
+# AES again every sixteen bytes and which `user/kits/smb/smb_signing.c`
+# supplies in full over the kit's (step N4); Kerberos; the synchronous API,
+# a `poll` loop; and `compat.c`, other platforms' shims. Nothing in the tree
+# is edited.
 LIBSMB2 := runtime/upstream/libsmb2
 LIBSMB2_LEFT_OUT := aes aes128ccm aes_reference aes_apple md4c md5 hmac-md5 \
-                    hmac sha1 sha224-256 sha384-512 usha krb5-wrapper sync compat
+                    hmac sha1 sha224-256 sha384-512 usha smb2-signing \
+                    krb5-wrapper sync compat
 LIBSMB2_SRCS := $(filter-out $(patsubst %,$(LIBSMB2)/lib/%.c,$(LIBSMB2_LEFT_OUT)),\
                              $(sort $(wildcard $(LIBSMB2)/lib/*.c)))
 SMB_IFLAGS := -DHAVE_CONFIG_H -Iuser/kits/smb/port -Iuser/kits/smb \
@@ -752,7 +756,7 @@ LIBSMB2_CFLAGS := -w -Wno-error $(SMB_IFLAGS)
 # The SMB Kit's own C and smbfs: libsmb2's headers on the path as system
 # headers, so its warnings stay its own, and every warning on for ours.
 SMB_KOSMOS := user/kits/smb/smb_transport.c user/kits/smb/smb_crypto.c \
-              user/servers/smbfs.c
+              user/kits/smb/smb_signing.c user/servers/smbfs.c
 
 TINYGL_CFLAGS := -w -Wno-error \
                  -Iruntime/upstream/tinygl/include \
@@ -1943,6 +1947,41 @@ $(HOSTDIR)/test_crypto_x86: $(TEST_CRYPTO_SRCS) $(TEST_CRYPTO_BEARSSL) user/incl
 	        -I$(CURDIR)/runtime/upstream/bearssl/src -c $(addprefix $(CURDIR)/,$(TEST_CRYPTO_BEARSSL))
 	$(HOST_CC) -arch x86_64 -std=c11 -Wall -Wextra -Werror -O1 -Iuser/include $(BEARSSL_IFLAGS) -o $@ \
 	        $(TEST_CRYPTO_SRCS) $@.o/*.o
+
+#
+# And SMB's signatures (`docs/sharing.md`, N4): `user/kits/smb/smb_signing.c`,
+# which replaces libsmb2's `smb2-signing.c` in the machine, held to that very
+# file - compiled beside it with its names given a `ref_` prefix on the
+# compile line, standing on libsmb2's own AES and SHA rather than the kit's
+# or BearSSL's, so the two share no code. Natively (`aes_ct64`) and through
+# Rosetta (AES-NI), as `test_crypto` is.
+TEST_SMBSIGN_REF := smb2-signing aes aes_reference hmac sha1 sha224-256 sha384-512 usha
+TEST_SMBSIGN_RENAME := -Dsmb3_aes_cmac_128=ref_smb3_aes_cmac_128 \
+                       -Dsmb2_calc_signature=ref_smb2_calc_signature \
+                       -Dsmb2_pdu_add_signature=ref_smb2_pdu_add_signature \
+                       -Dsmb2_pdu_check_signature=ref_smb2_pdu_check_signature
+TEST_SMBSIGN_SRCS := tools/test_smbsign.c user/kits/smb/smb_signing.c user/kits/crypto/cmac.c
+
+define test_smbsign_rule
+$(HOSTDIR)/$(1): $(TEST_SMBSIGN_SRCS) $(TEST_CRYPTO_BEARSSL) user/include/crypto.h \
+	        tools/libsmb2_mac_config.h $(patsubst %,$(LIBSMB2)/lib/%.c,$(TEST_SMBSIGN_REF))
+	@mkdir -p $$(dir $$@)
+	@rm -rf $$@.o && mkdir -p $$@.o
+	@mkdir -p $$@.o/ref
+	@cp tools/libsmb2_mac_config.h $$@.o/config.h
+	cd $$@.o && $(HOST_CC) $(2) -O1 -w -I$(CURDIR)/runtime/upstream/bearssl/inc \
+	        -I$(CURDIR)/runtime/upstream/bearssl/src -c $$(addprefix $(CURDIR)/,$(TEST_CRYPTO_BEARSSL))
+	cd $$@.o/ref && $(HOST_CC) $(2) -O1 -w -DHAVE_CONFIG_H $(TEST_SMBSIGN_RENAME) -I.. \
+	        -I$(CURDIR)/$(LIBSMB2)/include -I$(CURDIR)/$(LIBSMB2)/include/smb2 \
+	        -I$(CURDIR)/$(LIBSMB2)/lib -c $$(patsubst %,$(CURDIR)/$(LIBSMB2)/lib/%.c,$(TEST_SMBSIGN_REF))
+	$(HOST_CC) $(2) -std=c11 -Wall -Wextra -Werror -O1 -DHAVE_CONFIG_H -I$$@.o \
+	        -Iuser/include $(BEARSSL_IFLAGS) -isystem $(LIBSMB2)/include \
+	        -isystem $(LIBSMB2)/include/smb2 -isystem $(LIBSMB2)/lib -o $$@ \
+	        $(TEST_SMBSIGN_SRCS) $$@.o/*.o $$@.o/ref/*.o
+endef
+
+$(eval $(call test_smbsign_rule,test_smbsign,))
+$(eval $(call test_smbsign_rule,test_smbsign_x86,-arch x86_64))
 
 #
 # And what SMBIOS says the machine is called, for the same reason from the
@@ -3971,7 +4010,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
+host-check: $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -4151,6 +4190,8 @@ host-check: $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $
 	$(HOSTDIR)/test_clock
 	$(HOSTDIR)/test_crypto
 	$(HOSTDIR)/test_crypto_x86
+	$(HOSTDIR)/test_smbsign
+	$(HOSTDIR)/test_smbsign_x86
 	$(HOSTDIR)/test_snesblit
 	$(HOSTDIR)/test_shadow
 	$(HOSTDIR)/test_yuv

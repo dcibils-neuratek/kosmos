@@ -207,6 +207,16 @@ SUITES = [
     Suite("x86-share-2", ["python3", "tools/run_share.py", X86, "--part", "2"],
           x86=True),
 
+    # **Signed and sealed** (`docs/sharing.md` N4), the third part, on nine
+    # peers of its own: every dialect from 2.0.2 to 3.1.1 with signing
+    # mandatory, 3.0 to 3.1.1 sealed, each read and its record held to what
+    # a relay saw on the wire; and the control that bites - the relay
+    # changing one byte of a signed answer (HMAC and CMAC) and of a sealed
+    # one, refused in words with nothing handed over.
+    Suite("arm-share-3", ["python3", "tools/run_share.py", ARM, "--part", "3"]),
+    Suite("x86-share-3", ["python3", "tools/run_share.py", X86, "--part", "3"],
+          x86=True),
+
     # **The Servers window** (`roadmap.md`, remote step 6): opened over
     # Telnet on the M700's own boot, seeing the session that opened it, a
     # Disconnect ending that session, and the web server it kept to start

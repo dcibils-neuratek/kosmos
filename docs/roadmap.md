@@ -923,6 +923,14 @@ setting the display up again, where a power-on does - to be confirmed by a
 power-on of the same build, and then the restart made a full reset (the
 ACPI reset register, or a cold reset through port 0xCF9) if that is it.
 
+**FOUND on 5 October - the gate at 10:10, ten seconds over its budget.**
+Sharing added six suites in a day (`arm-share` to `x86-share-3`) and the
+gate went from 9:49 to 10:10 at 96 suites. Under Diego's rule (`CLAUDE.md`,
+*The tests take five to ten minutes*) this is the thing to fix before more
+is added: the share suites' Samba peers start once per suite and could be
+shared, and `x86-share-3`, at a minute alone, is paced by the x86 board's
+slow emulated network - which is its own roadmap item.
+
 **Kosmos Write's window resizable, as the browser's is.** Diego, 5 October
 2026: "kosmos write works fine", "I need to be able to resizse the window
 like we do with the browsser". A window that draws its own pixels resizes
@@ -1056,8 +1064,18 @@ Assessed, not designed:
   `smbfs` and the SMB Kit, `share connect` at the prompt, signed and sealed
   against Samba. **N3 DONE the same day** (18.408): a share is a folder at
   `/Network/<server>/<share>` - `ls`, `cat`, `cp`, Tracker - read only, a
-  silent server answered for from memory as last heard. **Next: N4**,
-  signed and sealed, each dialect. **Found by N3**: x86-64's network
+  silent server answered for from memory as last heard. **N4 DONE the
+  same day** (18.409): every dialect from 2.0.2 to 3.1.1 signed and 3.0 to
+  3.1.1 sealed, each held to what a relay saw on the wire; one byte changed
+  on the way - HMAC, CMAC and CCM - refused in words with nothing handed
+  over; and libsmb2's `smb2-signing.c` replaced through the build by the
+  kit's CMAC, keyed once (34.6 to 14.3 ms a signed megabyte on an ARM
+  core, 4.6 to 0.8 with AES-NI). **Next: N5**, gone away and back.
+  **Wanted, found by N4**: ARMv8's AES instructions in the Crypto Kit -
+  CMAC and CCM are then most of what a signed or sealed megabyte costs on
+  ARM (`sharing.md`, *What the Crypto Kit gains*); and libsmb2 offers only
+  CCM, so 3.1.1's GCM and GMAC wait for upstream or a step of their own.
+  **Found by N3**: x86-64's network
   receives about 0.14 MB/s under QEMU, ten times slower than ARM's (2 MB by
   `fetch`: 13.2 s against 1.2), cause not looked for - the stack's or the
   card's; and a `LIST` carrying each name's facts is worth building for
