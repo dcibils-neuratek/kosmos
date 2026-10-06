@@ -799,6 +799,9 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/drives_decode.c \
              user/servers/fat_decode.c \
              user/servers/diskfs.c \
+             user/servers/clock_epoch.c \
+             user/servers/keyring.c \
+             user/servers/keyfile.c \
              user/servers/kfs.c \
              user/servers/diskcache.c \
              user/servers/packflat.c \
@@ -4230,6 +4233,8 @@ host-check: $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/
 	$(HOSTDIR)/test_crypto_x86
 	@# And the keyring's file, sealed whole (`docs/keyring.md`, K2).
 	$(HOSTDIR)/test_keyfile
+	@# And who a launcher hands the keyring's door to (K4).
+	$(HOSTDIR)/lua tools/test_keyring_grant.lua user/init/init.lua
 	$(HOSTDIR)/test_smbsign
 	$(HOSTDIR)/test_smbsign_x86
 	$(HOSTDIR)/test_snesblit

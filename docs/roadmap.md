@@ -1097,7 +1097,7 @@ name; **the key stays on the disk** (no firmware); **the password itself is
 kept**, sealed with AES-256-CCM, so **Show** can reveal it - "i need to know
 the password at some point"; a remembered share is open to every program
 for now; "Connect when Kosmos starts" on with Remember; **a lock with a
-password, later** (K9). Steps K1-K7, then K9. **K1 done** (0.11.18): one AES-CCM door in the Crypto Kit, held to Wycheproof's 552 vectors (`testing.md` 18.416). **K2 done** (0.11.19): `keyproto.h` and the sealed file, held on the Mac (18.417). **K3 done** (0.11.20): the programs' door to the disk reaches `/Home` alone, a second door reaches `/Keyring` (18.418).
+password, later** (K9). Steps K1-K7, then K9. **K1 done** (0.11.18): one AES-CCM door in the Crypto Kit, held to Wycheproof's 552 vectors (`testing.md` 18.416). **K2 done** (0.11.19): `keyproto.h` and the sealed file, held on the Mac (18.417). **K3 done** (0.11.20): the programs' door to the disk reaches `/Home` alone, a second door reaches `/Keyring` (18.418). **K4 done** (0.11.21): the keyring server, `smb` and `manage` doors, the `keyring` program (18.420).
 
 **FOUND on 6 October, designing the keyring - two holes in what exists.**
 (1) `notifyproto.h`'s promise that a program cannot post as another rests
@@ -5878,6 +5878,15 @@ processors, and still what follows USB:
    **And once more, differently**: the column had grown and a name was read
    mid-drawing, because "still" was two identical pictures a third of a
    second apart; it is the same picture for a second and a half now.
+   **Again on 6 October**, the first gate at nine suites at once
+   (`testing.md` 18.419): "Large icons ... did not get taller - its last row
+   of ink is still about 417", 52 s into the suite and 82 s into the gate,
+   passing alone twice after. **The failed run's log was lost** - the reruns
+   wrote over `build/gate/arm-display-4.log` - so which of the two it was,
+   the menu not opened or the desktop slow to redraw, is not known. Next
+   time: copy the suite's log and its serial log before anything runs again
+   (`keep-the-failing-binary`), then read whether the menu was on the
+   screen when the row was pressed.
 
 6p. **DONE on 26 September - Monitor updates every half second, second or
    two.** Diego, with a photograph of the window: "monitor needs an option

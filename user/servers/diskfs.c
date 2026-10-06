@@ -52,10 +52,10 @@
 #include "bytes.h"
 #include "kosmos.h"
 #include "blockproto.h"
-#include "devproto.h"
 #include "diskproto.h"
 
 #include "../init/say.h"
+#include "clock_epoch.h"
 #include "diskcache.h"
 #include "drives_decode.h"
 #include "drivers/usb/storage_decode.h"
@@ -190,39 +190,9 @@ static void put_text(char *field, size_t size, const char *text)
 static uint64_t last_second;
 static uint32_t nth;
 
-static uint64_t clock_epoch(void)
-{
-    struct message msg, rep;
-    struct dev_request *req = (struct dev_request *)msg.data;
-    const struct dev_reply *r = (const struct dev_reply *)rep.data;
-
-    if (devices < 0) {
-        return 0;
-    }
-
-    memset(&msg, 0, sizeof msg);
-    msg.length = sizeof *req;
-    req->op = DEV_OP_READ;
-    put_text(req->name, sizeof req->name, "clock");
-
-    if (kosmos_call(devices, &msg, &rep) != 0 || rep.length < sizeof *r
-        || r->error != DEV_OK) {
-        return 0;
-    }
-
-    for (uint32_t i = 0; i < r->count && i < DEV_FIELDS; i++) {
-        if (strncmp(r->field[i].name, "epoch", DEV_NAME_MAX) == 0
-            && r->field[i].kind == DEV_KIND_NUMBER) {
-            return r->field[i].number;
-        }
-    }
-
-    return 0;
-}
-
 static uint64_t stamp(void)
 {
-    uint64_t epoch = clock_epoch();
+    uint64_t epoch = clock_epoch(devices);
 
     if (epoch == 0) {
         return kosmos_ticks();

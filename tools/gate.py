@@ -145,6 +145,11 @@ SUITES = [
     # was afterwards.
     Suite("arm-diskwire", ["python3", "tools/run_diskwire.py", ARM]),
 
+    # The keyring (`docs/keyring.md`, K4): three boots - a disk given its
+    # /Keyring, the same disk opened again, a keyring that does not open kept
+    # aside - and its doors.
+    Suite("arm-keyring", ["python3", "tools/run_keyring.py", ARM]),
+
     # **A disk that answers slowly is waited for** (`testing.md` 18.339): the
     # disk throttled to 16 KB a second through QMP, and a 160 KB file nothing
     # had read is read whole. The kernel's virtio drivers gave a request up

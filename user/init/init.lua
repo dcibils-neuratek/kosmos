@@ -42,6 +42,7 @@ local ROLE_BACKLIGHT  = 21 -- Intel's backlight PWMs: /Devices/backlight
 local ROLE_E1000      = 22 -- an Intel Ethernet controller, where there is one
 local ROLE_NOTIFY     = 23 -- serves /Notifications: what applications have said
 local ROLE_SMBFS      = 24 -- shares over the network: SMB 2 and 3 (`sharing.md`)
+local ROLE_KEYRING    = 25 -- the passwords Kosmos keeps, sealed (`keyring.md`)
 
 --
 -- **A program's own image** (`docs/elf.md` step 4). A program whose header
@@ -2142,6 +2143,128 @@ local function new_namespace()
     return tostring(text or ""):sub(1, room - 1)
   end
 
+  --
+  -- **The keyring's `manage` door** (`docs/keyring.md`, K4): what Passwords
+  -- and the `keyring` program are handed, and only those - a launcher hands
+  -- it to a program in the image that says `kosmos: needs keyring`, and to
+  -- nothing else (`keyring_grant`). `keyproto.h`'s shapes, as `string.pack`
+  -- writes them; the sentence for an error is the caller's.
+  --
+  local KEY_ENTRY = "I4I2I2I8I8I8I4I4c16c128c64c64c256c128"
+  local KEY_REQUEST = "<I4I4" .. KEY_ENTRY .. "c128"
+  local KEY_REPLY = "<I4I4I4I4" .. KEY_ENTRY .. "c128"
+  local KEY_OP = { list = 1, get = 2, put = 3, forget = 4, edit = 5,
+                   state = 6, reveal = 7 }
+  local KEY_ERRORS = { "not an operation it has", "not this door's to ask",
+                       "nothing is kept for that", "the keyring is full",
+                       "it could not be written to the disk",
+                       "the keyring did not open", "a secret that long" }
+  local KEY_FILES = { [0] = "new", "opened", "set aside" }
+  local KEY_KINDS = { "smb", "wifi", "web", "mail" }
+  local keyring_cap = nil
+
+  function ns.keyring_door(cap) keyring_cap = cap end
+  function ns.has_keyring() return keyring_cap ~= nil end
+
+  local function ended(text)
+    return (text:gsub("%z.*$", ""))
+  end
+
+  local function keyring_call(op, e, secret)
+    if not keyring_cap then return nil, "this program was not handed the keyring" end
+
+    e = e or {}
+    secret = secret or ""
+    local raw, err = sys.call_raw(keyring_cap, string.pack(KEY_REQUEST,
+      KEY_OP[op], #secret, e.id or 0, e.kind or 0, e.flags or 0, 0, 0, 0, 0, 0,
+      "", share_field(e.service, 128), share_field(e.account, 64),
+      share_field(e.title, 64), share_field(e.notes, 256),
+      share_field(e.shares, 128), secret))
+    secret = nil
+
+    if not raw then return nil, tostring(err) end
+    if #raw < 840 then return nil, "a reply from the keyring of the wrong size" end
+
+    local f = { string.unpack(KEY_REPLY, raw) }
+    raw = nil
+
+    if f[1] ~= 0 then
+      return nil, KEY_ERRORS[f[1]] or ("error " .. f[1]), f[1]
+    end
+
+    local r = {
+      count = f[3], file = KEY_FILES[f[4]] or tostring(f[4]),
+      entry = {
+        id = f[5], kind = KEY_KINDS[f[6]] or tostring(f[6]),
+        at_start = f[7] & 1 == 1,
+        created = f[8], modified = f[9], used = f[10], uses = f[11],
+        used_by = f[12], used_by_name = ended(f[13]),
+        service = ended(f[14]), account = ended(f[15]), title = ended(f[16]),
+        notes = ended(f[17]), shares = ended(f[18]),
+      },
+    }
+
+    if f[2] > 0 then r.secret = f[19]:sub(1, f[2]) end
+    return r
+  end
+
+  -- Every entry the door sees, without a secret: walked one at a time.
+  function ns.keyring_list()
+    local out, after = {}, 0
+
+    while true do
+      local r, why, code = keyring_call("list", { id = after })
+
+      if not r then
+        if code == 3 then return out end
+        return nil, why
+      end
+
+      out[#out + 1] = r.entry
+      after = r.entry.id
+    end
+  end
+
+  function ns.keyring_state()
+    local r, why = keyring_call("state")
+
+    if not r then return nil, why end
+    return { count = r.count, file = r.file }
+  end
+
+  function ns.keyring_forget(id)
+    local r, why = keyring_call("forget", { id = id })
+
+    if not r then return nil, why end
+    return true
+  end
+
+  -- The Show button's: one entry's secret, as text.
+  function ns.keyring_reveal(id)
+    local r, why = keyring_call("reveal", { id = id })
+
+    if not r then return nil, why end
+    return r.secret or "", r.entry
+  end
+
+  function ns.keyring_edit(id, title, notes, at_start)
+    local r, why = keyring_call("edit", { id = id, title = title, notes = notes,
+                                          flags = at_start and 1 or 0 })
+
+    if not r then return nil, why end
+    return r.entry
+  end
+
+  -- What `smb` alone may ask, kept here so the refusal can be held to it:
+  -- a `manage` door asking is told it is not its to ask.
+  function ns.keyring_get(service, account)
+    local r, why = keyring_call("get", { kind = 1, service = service,
+                                         account = account })
+
+    if not r then return nil, why end
+    return r.secret
+  end
+
   local function share_call(op, ask, offset)
     local capability, why = share_at("/Network")
 
@@ -3590,10 +3713,28 @@ end
 
 local RUNNER_ROLE = ROLE_RUNNER
 
+--
+-- **Whether a launcher hands the keyring's `manage` door to `path`**
+-- (`docs/keyring.md`, *How Passwords is handed `manage`*): only to a file
+-- the image serves - `/Kosmos/Apps` and `/Kosmos/Programs`, which nothing at
+-- run time writes - that says `kosmos: needs keyring`. The same word in a
+-- file in `/Home` is a request nobody grants. A path with `.` or `..` in it,
+-- or an empty component, is not taken at its word.
+--
+local function keyring_grant(path)
+  if type(path) ~= "string" or path:find("//", 1, true)
+     or path:find("/%.%.?/") or path:find("/%.%.?$") then
+    return false
+  end
+
+  return path:find("^/Kosmos/Apps/[^/]") ~= nil
+      or path:find("^/Kosmos/Programs/[^/]") ~= nil
+end
+
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap,
-                          midi_cap, notify_cap, share_cap)
+                          midi_cap, notify_cap, share_cap, keyring_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -4417,7 +4558,7 @@ query. `find` and `watch` are built on exactly these two calls.
     --
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
-    local camera, midi = nil, nil
+    local camera, midi, keyring = nil, nil, nil
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -4428,6 +4569,9 @@ query. `find` and `watch` are built on exactly these two calls.
       end
       if want == "camera" then camera = camera_cap end
       if want == "midi" then midi = midi_cap end
+      if want == "keyring" and keyring_cap and keyring_grant(path) then
+        keyring = keyring_cap
+      end
     end
 
     -- The camera and MIDI last, and only when declared: everything before
@@ -4441,6 +4585,8 @@ query. `find` and `watch` are built on exactly these two calls.
 
     if camera then caps[#caps + 1] = camera; camera_at = #caps - 1 end
     if midi then caps[#caps + 1] = midi; midi_at = #caps - 1 end
+    local keyring_at = nil
+    if keyring then caps[#caps + 1] = keyring; keyring_at = #caps - 1 end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
     local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags)
@@ -4456,7 +4602,7 @@ query. `find` and `watch` are built on exactly these two calls.
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       backlight = 12, notify = 13, share = share_cap and 14 or nil,
-      camera = camera_at, midi = midi_at,
+      camera = camera_at, midi = midi_at, keyring = keyring_at,
       home_in_memory = home_in_memory or nil,
       protostamp = sys.protostamp,
     })
@@ -5120,6 +5266,8 @@ if role == ROLE_INIT then
   local APPFS_EP = sys.endpoint()
   local DISKFS_EP = sys.endpoint()
   local KEYRING_DISK_EP = sys.endpoint()
+  local KEYRING_SMB_EP = sys.endpoint()
+  local KEYRING_MANAGE_EP = sys.endpoint()
   local AUDIO_EP = sys.endpoint()
   local NET_EP = sys.endpoint()
   local BLOCKS_EP = sys.endpoint()
@@ -5375,6 +5523,17 @@ if role == ROLE_INIT then
   -- no network has it all the same and it answers "not answering", which
   -- keeps one boot path.
   --
+  --
+  -- **The keyring** (`docs/keyring.md`, K4), after the disk it keeps its
+  -- file on and before the SMB client that will ask it (K5): its two doors -
+  -- `smb`, for smbfs, and `manage`, which goes to the shell to be passed on
+  -- by the rule in `keyring_grant` - the disk server's second door, which
+  -- reaches `/Keyring` alone, the devices server for the date, and the
+  -- console.
+  --
+  start("the keyring", ROLE_KEYRING, { KEYRING_SMB_EP, KEYRING_MANAGE_EP,
+                                       KEYRING_DISK_EP, DEVICES_EP, CONSOLE_EP })
+
   start("the SMB client", ROLE_SMBFS, { SMBFS_EP, NET_EP, CONSOLE_EP })
 
   --
@@ -5550,7 +5709,7 @@ if role == ROLE_INIT then
                       { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP,
                         APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP, BLOCKS_EP,
                         DRIVES_EP, BACKLIGHT_EP, CAMERA_EP, MIDI_EP,
-                        NOTIFY_EP, SMBFS_EP },
+                        NOTIFY_EP, SMBFS_EP, KEYRING_MANAGE_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -5623,7 +5782,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
   return
 end
 
@@ -5808,6 +5967,7 @@ if role == ROLE_RUNNER then
   if req.camera  then ns.mount("/Devices/camera",  req.camera, nil, "camera") end
   if req.midi    then ns.mount("/Devices/midi",    req.midi, nil, "midi") end
   if req.notify  then ns.mount("/Notifications",   req.notify, nil, "notify") end
+  if req.keyring then ns.keyring_door(req.keyring) end
 
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started
@@ -5973,7 +6133,7 @@ if role == ROLE_RUNNER then
     --
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
-    local camera_at, midi_at = nil, nil
+    local camera_at, midi_at, keyring_at = nil, nil, nil
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -6001,6 +6161,13 @@ if role == ROLE_RUNNER then
         caps[#caps + 1] = req.midi
         midi_at = #caps - 1
       end
+
+      -- The keyring's `manage` door: only from a launcher that holds it,
+      -- and only to a file the image serves (`keyring_grant`).
+      if want == "keyring" and req.keyring and keyring_grant(path) then
+        caps[#caps + 1] = req.keyring
+        keyring_at = #caps - 1
+      end
     end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
@@ -6017,7 +6184,7 @@ if role == ROLE_RUNNER then
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       backlight = 12, notify = 13, share = req.share and 14 or nil,
-      camera = camera_at, midi = midi_at,
+      camera = camera_at, midi = midi_at, keyring = keyring_at,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Which protocols the system speaks, for an image built for others

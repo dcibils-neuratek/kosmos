@@ -622,7 +622,7 @@ each is lived with before the next starts.
   thread with a token. *Test*: a program asks for `/Keyring/x` through its
   door and is told it does not exist; the keyring's door cannot reach
   `/Home`; every `/Home` suite unchanged (*the whole gate*: diskfs is shared).
-- **K4 - the keyring.** `ROLE_KEYRING`, started by init after diskfs and
+- **K4 - the keyring.** **Done, 0.11.21** (`testing.md` 18.420): the server, its doors, `keyring_grant` in both launchers - extended to `/Kosmos/Programs`, the image too, for the `keyring` program - and `run_keyring.py`; the forged-`from` case is refused by binfs before the rule is asked, so the rule is held on the Mac. `ROLE_KEYRING`, started by init after diskfs and
   before smbfs; the `smb` and `manage` doors and their threads; the key made
   on first start; *When the file does not open*. *Test*, a suite of its own:
   put and get through `smb`; a manage operation on `smb` refused; `smb`

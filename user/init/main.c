@@ -89,6 +89,8 @@ void drives_server(long endpoint, long blocks, long console);
  * clock, and the console's to say what it did. */
 void diskfs_server(long endpoint, long blocks_read, long blocks_write,
                    long devices, long console, long keyring);
+void keyring_server(long smb_door, long manage_door, long disk, long devices,
+                    long console);
 
 /* /Notifications (`roadmap.md`, *Notifications*): its own endpoint, and the
  * console's to say what it was told. */
@@ -114,6 +116,7 @@ void smbfs_server(long endpoint, long net, long console);
 #define ROLE_DISKFS   15UL
 #define ROLE_NOTIFY   23UL
 #define ROLE_SMBFS    24UL
+#define ROLE_KEYRING  25UL
 
 static void say(const char *s)
 {
@@ -787,6 +790,11 @@ int main(unsigned long arg)
     if (arg == ROLE_SMBFS) {
         named("smbfs");
         smbfs_server(0, 1, 2);
+    }
+
+    if (arg == ROLE_KEYRING) {
+        named("keyring");
+        keyring_server(0, 1, 2, 3, 4);
     }
 
     L = kosmos_lua_open();

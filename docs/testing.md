@@ -19958,3 +19958,50 @@ core sitting idle, as the seventh and eighth were found to be; `gate.py`'s
 default is now nine. This Mac has ten cores; a tenth slot is the last one
 this way, and the next time the gate nears ten minutes the answer is in the
 suites themselves.
+
+## 18.420 The keyring, on the machine (keyring K4)
+
+`user/servers/keyring.c`, role 25, started by init after the disk server and
+before the SMB client: the `smb` door (for smbfs, from K5) and the `manage`
+door, the second a thread forwarding with a word from the kernel's entropy
+as diskfs's second door does; the file and the key in `/Keyring` through
+that door; every change written before it is answered and undone in memory
+when the write fails. The date comes from `/Devices/clock` through
+`clock_epoch.c`, moved out of `diskfs.c` so there is one way to ask it.
+`ns.keyring_*` speak `keyproto.h` from Lua, and **`keyring`**, a program in
+the image that says `kosmos: needs keyring`, lists, shows and forgets at the
+prompt.
+
+**Launchers hand `manage` only to a file the image serves**
+(`keyring_grant`): the shell's and the runner's, so a program run from
+either holds it only when it is in `/Kosmos/Apps` or `/Kosmos/Programs`
+and asks.
+
+`tools/run_keyring.py` (`arm-keyring`), three boots, 12 checks: a disk made
+before there was a keyring is given `/Keyring`, a 32-byte key and an empty
+keyring, and `keyring` says "0 entries, the file new"; through `manage`,
+`keyring get` - smbfs's question - is answered "not this door's to ask";
+the program copied into `/Home` is handed nothing; the same disk booted
+again says "the file opened" and makes no second key; and a disk whose
+`/Keyring/keyring` is 900 bytes that are not a keyring - a keyring's size,
+so it fails at the seal - says "the file set aside", and the file is in
+`/Keyring/keyring.unopened-<date>` byte for byte.
+
+**Controls**: `manage` allowed GET - 1 fails; the file overwritten rather
+than set aside - 2 fail (the first try's garbage was a size no keyring has,
+so an earlier check set it aside and the control could not bite; it is now
+900 bytes).
+
+**A control that did not bite, and why**: with `keyring_grant` granting any
+path, the `/Home` forgery was still handed nothing - because only the
+image's server says what a file `needs` (`binfs.c`), so a file in `/Home`
+declares nothing at all and is refused before the rule is asked. Two
+mechanisms, and the test saw only the outer one. The rule is for the day a
+file on the disk can declare (per-launcher permissions), and until then it
+is held on the Mac: `tools/test_keyring_grant.lua`, in `host-check`, takes
+the function out of `init.lua` by its text and asks it 18 paths - the
+image's granted; `/Home`, `..`, `.`, `//`, look-alikes refused. Its controls
+bite: granting everything - 9 fail; without the `.`/`..`/`//` guard - 3.
+
+**Not yet**: an entry put and got back - only smbfs's door puts (K5) - and
+the second disk door refusing `/Home`, whose only caller is this server.
