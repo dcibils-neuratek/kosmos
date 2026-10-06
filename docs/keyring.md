@@ -660,6 +660,45 @@ its user.
 
 ---
 
+## Diego's decisions, 6 October 2026
+
+Answered the day it was drawn - "passwords mockup is perfect", then point
+by point. **Where they differ from what is written above, they win**, and
+the sections they touch are to be read with them; the build follows these.
+
+1. **Passwords** is the application's name; the keyring is the server.
+2. **Doors, not names** - the `smb` door to smbfs, the `manage` door to
+   Passwords, `needs keyring` honoured only for `/Kosmos/Apps`. Yes.
+3. **The key stays on the disk.** "dont need to move keys into the
+   firmware": K8 is dropped, and `SYS_BOOT_SECRET` with it. What that
+   leaves is said once, plainly: a lost stick, or a copied disk image,
+   gives up everything the keyring holds, the key being beside the file.
+4. **The password itself is kept, not its NT hash.** "no, i need to know
+   the password at some point so why only the hash? how can i see the
+   password?" A hash cannot be shown. So the keyring holds the password,
+   sealed; smbfs asks the `smb` door for it at a sign-in and works the NT
+   hash out itself, keeping that only while connected, as now; and the
+   `manage` door gains **reveal** - the one operation that hands a secret
+   to Passwords. The cost: the account's own password - the Mac's - is on
+   this machine, sealed under a key beside it.
+5. **Show** is in the first version: the secret's dots become the
+   password while held or until Hide, through `reveal`. Until the lock
+   (9) exists it is behind nothing - anyone at the keyboard may see it;
+   with the lock, Show asks for the lock's password first, as macOS does.
+6. **AES-256-CCM**, through the Crypto Kit's one function. Yes.
+7. **A remembered share is open to every program** for now. Accepted.
+8. **"Connect when Kosmos starts"** on whenever Remember is ticked. Yes.
+9. **The lock** - a password that opens the keyring, and that Show then
+   asks for - **later**, as K9, an option.
+
+The build order, so: K1 the CCM function; K2 `keyproto.h` and the file
+(the check that the file holds no secret in any encoding stays - the
+password is sealed, never written plain); K3 diskfs's second door; K4 the
+keyring and its doors, with `reveal` on `manage` only and the forged-`from`
+test; K5 smbfs remembers - the password, asked for at each sign-in; K6
+Passwords, with Show; K7 the raw-read door refused the boot stick's
+partition; K8 none; K9 the lock, later.
+
 ## What is Diego's to decide
 
 1. **The application's name**: Passwords, or Keyring. *Recommended*:
