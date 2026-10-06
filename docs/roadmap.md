@@ -1112,6 +1112,37 @@ receiving emails". Assessed, not designed:
 - **Designed before it is written**, the four documents, with made-up
   messages in the mockup - never a real mailbox.
 
+**WANTED, after Kosmos Mail - Calendar, after Apple's.** Diego, 6 October
+2026, with five pictures of macOS's Calendar: "then i want to build a
+calendar app inspired in the mac os calendar app which is simple and very
+intuitive". Assessed, not designed:
+- **The window, after Apple's**: Day, Week, Month and Year, chosen at the
+  top, with Today and the arrows; the calendars down the side, each with
+  its colour and a box to show or hide it (one's own, Birthdays,
+  Holidays); a small month at the foot of the side to jump with; today
+  marked in red. An event made by a click on a day or a drag down the
+  hours, and edited in a panel at the side - its name, place, start and
+  end or all day, repeats, alerts, notes; a holiday shows what it is and
+  how it repeats. Native, drawing its own pixels, as Write does.
+- **What it stands on, as kits** (the premise): the days' arithmetic is
+  `clock.lua`'s, already the one door to the calendar (`clock.days`,
+  weekdays, months), with the week's first day a setting; **iCalendar**,
+  read and written - events, repeating rules (RRULE: every second Monday
+  of October), exceptions, time zones - a **Calendar Kit** in Lua, which
+  Mail wants too, for an invitation in a message; events kept as `.ics`
+  files under `/Home/Calendar`, a person's to copy; holidays as a
+  calendar subscribed to by its `.ics` address, over HTTPS through the TLS
+  Kit, kept and refreshed on its own clock.
+- **Alerts when the window is closed**: an event's alert must come whether
+  or not Calendar is open, so something that is always running holds the
+  next one's time and posts it through `/Notifications` when it comes -
+  a small part of the notifications server or a server of its own, which
+  the design decides; Reminders, later, would use the same.
+- **Then**: Google Calendar beside Mail's Google account, through CalDAV;
+  invitations sent and answered by Mail.
+- **Designed before it is written**, the four documents, with made-up
+  events in the mockup.
+
 **WANTED, not scheduled - sharing files over the network, both ways.**
 Diego, 5 October 2026: "Add to the roadmap the need for a network file
 sharing server and client", "Perhaps SMB? Samba in Linux for example".
