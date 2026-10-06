@@ -610,7 +610,7 @@ each is lived with before the next starts.
   16- and 32-byte keys, held to RFC 3610 and Wycheproof's 256-bit vectors in
   `tools/test_crypto.c`; `smb_crypto.c`'s `aes128ccm_*` become its callers.
   *Test*: the vectors, natively and through Rosetta; the SMB suites unchanged.
-- **K2 - the file, on the Mac.** `keyproto.h`; `user/servers/keyfile.c`, the
+- **K2 - the file, on the Mac.** **Done, 0.11.19** (`testing.md` 18.417; the secret is the password, per decision 4, and `KEY_OP_REVEAL` is in the header). `keyproto.h`; `user/servers/keyfile.c`, the
   format above, compiled on the Mac as `kfs.c` is. *Test*:
   `tools/test_keyfile.c` - two hundred entries round trip; one flipped byte
   anywhere, a changed header, a truncated file and the wrong key are each

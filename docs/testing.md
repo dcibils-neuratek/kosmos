@@ -19878,3 +19878,28 @@ odd or short tags - refused by seal and open alike, writing nothing.
 1,693 checks fail, one for each forgery; a 32-byte key keyed as 16 - 466
 fail. The SMB suites (`arm-share`, `x86-share`, `-2`, `-3`) pass unchanged
 over the door, sealed 3.0 to 3.1.1 included.
+
+## 18.417 The keyring's file, on the Mac (keyring K2)
+
+`user/include/keyproto.h` - the keyring's declared shape, with Diego's
+decisions in it: an SMB entry keeps **the password itself**, and `manage`
+gains `KEY_OP_REVEAL` for Show - and `user/servers/keyfile.c`, the file:
+a 44-byte header (magic, version, where the key is, which key, the nonce)
+that is all of it the sealing's associated data, then every entry and its
+secret sealed whole with AES-256-CCM through the kit's door (18.416), then
+the tag. Pure functions over bytes; it compiles for the machine as it is
+and joins it with the keyring (K4).
+
+`tools/test_keyfile.c`, in `host-check`, 5,500 checks in under a second:
+200 entries round trip; a byte changed at every position of a three-entry
+file and every 997th of the 200-entry one; cut short by a byte and by an
+entry; sealed by another key, and by another key with the key id made to
+match; six kinds of not-an-entry sealed with the right key - **each refused
+with the caller's records and the file's sealed part zeroed**. And the file
+holds no secret in any encoding: not the password in UTF-8 or UTF-16, not
+its NT hash in bytes or hex, not a title, account, address, share or the
+key; two writes with two nonces share no more than chance past the header.
+
+**Controls, all three biting**: sealing skipped - 16 fail, the no-secret
+checks; a refusal that leaves the records - 2,741; anything inside
+accepted - 12, the six malformed.
