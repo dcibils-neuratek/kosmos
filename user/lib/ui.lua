@@ -1793,7 +1793,7 @@ function ui.checkbox(spec)
   v.w = v.w > 0 and v.w
         or ((v.text or "") == "" and 18
             or (gfx.measure(tostring(v.text)) + 18 + 8))
-  v.focusable = true
+  v.focusable = not v.disabled
   v.checked = v.checked or false
 
   --
@@ -1809,7 +1809,7 @@ function ui.checkbox(spec)
     local by = (self.h - box) // 2
 
     if self.checked then
-      g:fill_round(0, by, box, box, theme.accent, 4)
+      g:fill_round(0, by, box, box, self.disabled and theme.track or theme.accent, 4)
       g:line_icon((box - 15) // 2, by + (box - 15) // 2, "check", 0xffffffff)
     else
       g:fill_round(0, by, box, box, theme.sunken, 4)
@@ -1820,7 +1820,8 @@ function ui.checkbox(spec)
       g:frame_round(-2, by - 2, box + 4, box + 4, theme.ring, 7)
     end
 
-    g:text(box + 8, centred(self.h), tostring(self.text or ""), theme.text)
+    g:text(box + 8, centred(self.h), tostring(self.text or ""),
+           self.disabled and theme.text_dim or theme.text)
   end
 
   -- A 16-pixel box, as fixed as the row it sits in, and the words beside it.
@@ -1837,13 +1838,21 @@ function ui.checkbox(spec)
     end
 
     if self.checked then
-      g:fill(3, by + 3, box - 6, box - 6, theme.good)
+      g:fill(3, by + 3, box - 6, box - 6, self.disabled and theme.line or theme.good)
     end
 
-    g:text(box + 8, centred(self.h), tostring(self.text or ""), theme.text)
+    g:text(box + 8, centred(self.h), tostring(self.text or ""),
+           self.disabled and theme.text_dim or theme.text)
   end
 
+  --
+  -- **`disabled`, as a button's**: drawn, dim, and answering nothing - for
+  -- a choice the window can show and cannot yet offer (Connect to Server's
+  -- "Remember in this machine's keyring", until there is a keyring).
+  --
   function v:key(c)
+    if self.disabled then return false end
+
     if c == 32 or c == 10 or c == 13 then
       self.checked = not self.checked
       if self.on_change then self.on_change(self, self.checked) end
@@ -1853,6 +1862,8 @@ function ui.checkbox(spec)
   end
 
   function v:mouse(action, x, y)
+    if self.disabled then return true end
+
     if action == "release" and x >= 0 and x < self.w
        and y >= 0 and y < self.h then
       self.checked = not self.checked
@@ -1908,10 +1919,18 @@ function ui.switch(spec)
   --
   v.h = v.h > 0 and v.h or (H + 2)
   v.w = v.w > 0 and v.w or W
-  v.focusable = true
+  v.focusable = not v.disabled
   v.on = v.on or false
 
+  --
+  -- **`disabled`**: the switch drawn where it will be, faded and answering
+  -- nothing - a page that says honestly what is not built yet (the Servers
+  -- window's File sharing, until the server side is). It never moves, so
+  -- it is not "a control that moves and does nothing".
+  --
   local function flip(self)
+    if self.disabled then return end
+
     self.on = not self.on
     if self.on_change then self.on_change(self, self.on) end
   end
@@ -1920,8 +1939,11 @@ function ui.switch(spec)
     local y = (self.h - H) // 2
     local kx = self.on and (W - KNOB - 3) or 3
     local ky = y + (H - KNOB) // 2
+    local rail = self.on and theme.accent or theme.track
 
-    g:fill_round(0, y, W, H, self.on and theme.accent or theme.track, H // 2)
+    if self.disabled then rail = theme.mix(rail, theme.sunken, 500) end
+
+    g:fill_round(0, y, W, H, rail, H // 2)
 
     if self.focused and self.keyed then
       g:frame_round(-2, y - 2, W + 4, H + 4, theme.ring, H // 2 + 2)
@@ -1930,10 +1952,13 @@ function ui.switch(spec)
     -- The shadow is the same disc one pixel lower, drawn first: `0 1px 2px`
     -- in the drawing, which at this size is a one-pixel crescent.
     g:fill_round(kx, ky + 1, KNOB, KNOB, KNOB_SHADOW, KNOB // 2)
-    g:fill_round(kx, ky, KNOB, KNOB, KNOB_WHITE, KNOB // 2)
+    g:fill_round(kx, ky, KNOB, KNOB,
+                 self.disabled and theme.mix(KNOB_WHITE, theme.sunken, 400)
+                 or KNOB_WHITE, KNOB // 2)
   end
 
   function v:key(c)
+    if self.disabled then return false end
     if c == 32 or c == 10 or c == 13 then flip(self) return true end
     return false
   end
@@ -2219,15 +2244,37 @@ local function char_before(text, i)
   return (i > 1) and utf8.offset(text, 0, i - 1) or 0
 end
 
+--
+-- **What a field draws of a stretch of its text**: the text, or for a
+-- `secret` field a mask a character - `MASK`, the mockups' bullet
+-- (`docs/sharing.html`'s password). One function, which the drawing, the
+-- caret, a click and `shown` all ask, so the caret stands after the bullets
+-- rather than where the hidden letters would have ended, and so what a
+-- caller is told is drawn is what is.
+--
+local MASK = "\u{2022}"
+
+local function field_view(self, text)
+  if self.secret then
+    return MASK:rep(utf8.len(text) or #text)
+  end
+
+  return text
+end
+
+local function field_width(self, text)
+  return gfx.measure(field_view(self, text))
+end
+
 local function field_from(self, room)
   local text, caret = self.text, self.caret
   local from = math.max(1, math.min(self.from or 1, caret))
 
-  while from > 1 and gfx.measure(text:sub(char_before(text, from), caret - 1)) <= room do
+  while from > 1 and field_width(self, text:sub(char_before(text, from), caret - 1)) <= room do
     from = char_before(text, from)
   end
 
-  while from < caret and gfx.measure(text:sub(from, caret - 1)) > room do
+  while from < caret and field_width(self, text:sub(from, caret - 1)) > room do
     from = char_after(text, from)
   end
 
@@ -2312,21 +2359,24 @@ function ui.field(spec)
     -- box, and a box does not say what it searches.
     --
     if self.hint and self.text == "" and not self.focused then
+      self.drawn = ""
       g:text(inset, centred(self.h), tostring(self.hint), theme.text_dim,
              theme.sunken)
       return
     end
 
     local from = field_from(self, room)
-    local shown = self.text:sub(from)
 
     --
-    -- **`secret`: a password's field**, drawn as a star a character. What
+    -- **`secret`: a password's field**, drawn as a bullet a character. What
     -- is typed is held as ever and only the drawing hides it, and copy and
     -- cut refuse below - a password shown in the clipboard is a password
-    -- shown (`servers.lua`'s VNC password is the first).
+    -- shown (`servers.lua`'s VNC password is the first, Connect to Server's
+    -- the second).
     --
-    if self.secret then shown = ("*"):rep(#shown) end
+    local shown = field_view(self, self.text:sub(from))
+
+    self.drawn = shown
 
     local ty = centred(self.h)
 
@@ -2342,9 +2392,19 @@ function ui.field(spec)
     g:text(inset, ty, shown, theme.text, theme.sunken)
 
     if self.focused then
-      local cx = inset + gfx.measure(self.text:sub(from, self.caret - 1))
+      local cx = inset + field_width(self, self.text:sub(from, self.caret - 1))
       g:fill(cx, ty, 1, gfx.height(), theme.ring)
     end
+  end
+
+  --
+  -- **What the field last drew of its text** - the bullets, for a `secret`
+  -- one - so a window can say what is on the screen without the screen
+  -- being read (Connect to Server prints it for the display harness, which
+  -- holds a password's field to drawing none of it).
+  --
+  function v:shown()
+    return self.drawn or field_view(self, self.text)
   end
 
   --
@@ -2492,8 +2552,8 @@ function ui.field(spec)
 
       while at <= #self.text do
         local after = char_after(self.text, at)
-        local left = gfx.measure(self.text:sub(from, at - 1))
-        local right = gfx.measure(self.text:sub(from, after - 1))
+        local left = field_width(self, self.text:sub(from, at - 1))
+        local right = field_width(self, self.text:sub(from, after - 1))
 
         if want < (left + right) / 2 then break end
 
@@ -2628,6 +2688,28 @@ function ui.sidebar(spec)
   local PITCH = v.pitch or SIDE_PITCH
   local RULE_GAP = 19
 
+  --
+  -- **A group's name, and a link beside it** (`docs/sharing.html`'s
+  -- Network group: "NETWORK  Connect..."): `heading = true` is a row 24
+  -- tall in the dim face, which names the rows under it and is not one -
+  -- never chosen, by a press or an arrow - and its `action`, words at its
+  -- right in the accent, calls `on_action(self, id)` when pressed.
+  --
+  -- And what a row may carry at its right, each as the drawing has it: a
+  -- `dot` - "live", "warn" or "none" - for a server's state, a `lock` for
+  -- one not signed into, and a `note` in the dim face ("no shares"). A
+  -- row may be `indent`ed under the one above it (a share under its
+  -- server) and drawn in the `accent` (the drawing's "All of the network").
+  --
+  local HEAD = 24
+
+  -- The drawing's 11.5 and 12: the text role at 15 here, a face of its own.
+  local function small() return ui.sized("text", 15) end
+
+  local function height(it)
+    return it.heading and HEAD or PITCH
+  end
+
   -- Where each row is, worked out once from the list.
   local function rows(self)
     local out, y = {}, 0
@@ -2636,9 +2718,20 @@ function ui.sidebar(spec)
       if it.gap then
         y = y + (it.rule and RULE_GAP or SIDE_GAP)
       else
-        out[#out + 1] = { item = it, y = y }
-        y = y + PITCH
+        out[#out + 1] = { item = it, y = y, h = height(it) }
+        y = y + height(it)
       end
+    end
+
+    return out
+  end
+
+  -- The rows a choice can land on: not a heading, not a quiet one.
+  local function choosable(list)
+    local out = {}
+
+    for _, r in ipairs(list) do
+      if not r.item.heading then out[#out + 1] = r end
     end
 
     return out
@@ -2647,7 +2740,7 @@ function ui.sidebar(spec)
   -- The item under a point, for a right-click or a drop; nil between rows.
   function v:item_at(y)
     for _, r in ipairs(rows(self)) do
-      if y >= r.y and y < r.y + PITCH then return r.item, r.y end
+      if y >= r.y and y < r.y + r.h then return r.item, r.y end
     end
 
     return nil
@@ -2657,7 +2750,28 @@ function ui.sidebar(spec)
   -- things are (Tracker tells the display harness where a new place went).
   function v:row_of(id)
     for _, r in ipairs(rows(self)) do
-      if r.item.id == id then return r.y, PITCH end
+      if r.item.id == id then return r.y, r.h end
+    end
+
+    return nil
+  end
+
+  -- Where a heading's `action` is, in the view: its left edge and width.
+  local function action_span(self, it)
+    local words = tostring(it.action)
+    local w = gfx.measure(words, small())
+
+    return self.w - SIDE_INSET - 10 - w, w
+  end
+
+  -- And for the harness, as `row_of` is: the action's middle, by id.
+  function v:action_at(id)
+    for _, r in ipairs(rows(self)) do
+      if r.item.id == id and r.item.action then
+        local x, w = action_span(self, r.item)
+
+        return x + w // 2, r.y + r.h // 2
+      end
     end
 
     return nil
@@ -2692,12 +2806,28 @@ function ui.sidebar(spec)
 
         y = y + (it.rule and RULE_GAP or SIDE_GAP)
       else
-        y = y + PITCH
+        y = y + height(it)
       end
     end
 
     for _, r in ipairs(rows(self)) do
-      local on = r.item.id == self.selected
+      local it = r.item
+      local on = it.id == self.selected and not it.heading
+
+      if it.heading then
+        -- The group's name, dim and small, and its link at the right.
+        g:text(SIDE_INSET + 10, r.y + (r.h - gfx.height(small())) // 2,
+               tostring(it.name or ""), theme.text_dim, nil, small())
+
+        if it.action then
+          local ax = action_span(self, it)
+
+          g:text(ax, r.y + (r.h - gfx.height(small())) // 2,
+                 tostring(it.action), theme.accent, nil, small())
+        end
+
+        goto next
+      end
 
       if on then
         g:fill_round(SIDE_INSET, r.y, w, PITCH, theme.line_soft, SIDE_R)
@@ -2715,23 +2845,53 @@ function ui.sidebar(spec)
         g:frame_round(SIDE_INSET, r.y, w, PITCH, theme.ring, SIDE_R)
       end
 
-      if r.item.icon then
-        g:line_icon(SIDE_INSET + SIDE_ICON, r.y + (PITCH - 15) // 2,
-                    r.item.icon, on and theme.accent or theme.text_dim)
+      do
+        local indent = it.indent and 24 or 0
+        local right = self.w - SIDE_INSET - 10
+
+        if it.icon then
+          g:line_icon(SIDE_INSET + SIDE_ICON + indent, r.y + (PITCH - 15) // 2,
+                      it.icon, (on or it.accent) and theme.accent or theme.text_dim)
+        end
+
+        -- What it says at its right: a dot, a lock, a note.
+        if it.dot then
+          local warn = ui.warning_colours()
+          local colour = (it.dot == "live") and theme.good
+                         or (it.dot == "warn") and warn or theme.line
+
+          g:fill_round(right - 8, r.y + (PITCH - 8) // 2, 8, 8, colour, 4)
+          right = right - 8 - 6
+        elseif it.lock then
+          g:line_icon(right - 15, r.y + (PITCH - 15) // 2, "secure",
+                      theme.text_dim)
+          right = right - 15 - 6
+        elseif it.note then
+          local nw = gfx.measure(tostring(it.note), small())
+
+          g:text(right - nw, r.y + (PITCH - gfx.height(small())) // 2,
+                 tostring(it.note), theme.text_dim, nil, small())
+          right = right - nw - 6
+        end
+
+        -- The chosen one's words in `label`, the drawing's weight 500; a row
+        -- with nowhere to go (`quiet`) dim, one in the `accent` so.
+        local face = on and "label" or "text"
+        local x = SIDE_INSET + SIDE_WORD + indent
+
+        g:text(x, r.y + (PITCH - gfx.height(face)) // 2,
+               ui.fitted(it.name or "", right - x, face),
+               it.accent and theme.accent
+               or (it.quiet or it.dim) and theme.text_dim or theme.text,
+               nil, face)
       end
 
-      -- The chosen one's words in `label`, the drawing's weight 500; a row
-      -- with nowhere to go (`quiet`) dim.
-      local face = on and "label" or "text"
-
-      g:text(SIDE_INSET + SIDE_WORD, r.y + (PITCH - gfx.height(face)) // 2,
-             r.item.name or "", r.item.quiet and theme.text_dim or theme.text,
-             nil, face)
+      ::next::
     end
   end
 
   function v:key(c)
-    local list = rows(self)
+    local list = choosable(rows(self))
     local i = index_of(self, list) or 1
 
     if c == -1 and i > 1 then choose(self, list[i - 1].item.id) return true end
@@ -2747,10 +2907,33 @@ function ui.sidebar(spec)
     if action ~= "press" then return true end
 
     for _, r in ipairs(rows(self)) do
-      if y >= r.y and y < r.y + PITCH
+      if y >= r.y and y < r.y + r.h and r.item.heading then
+        -- A heading is chosen by nobody; its link is pressed.
+        if r.item.action and self.on_action then
+          local ax, aw = action_span(self, r.item)
+
+          if x >= ax - 4 and x < ax + aw + 4 then
+            self.on_action(self, r.item.id)
+          end
+        end
+
+        break
+      end
+
+      if y >= r.y and y < r.y + r.h
          and x >= SIDE_INSET and x < self.w - SIDE_INSET
          and not r.item.quiet then
-        choose(self, r.item.id)
+        --
+        -- **A row pressed again goes there again** when it says so
+        -- (`again`): a share whose folder was left for one inside it is
+        -- still the chosen row, and a press on it should go back to it.
+        --
+        if r.item.id == self.selected and r.item.again and self.on_select then
+          self.on_select(self, r.item.id)
+        else
+          choose(self, r.item.id)
+        end
+
         break
       end
     end
@@ -4035,6 +4218,18 @@ local function code_colours()
 end
 
 ui.code_colours = code_colours
+
+--
+-- **The amber that says something is wrong but not over**, and the ground
+-- it sits on: the code look's warning, chosen by the ground as the rest of
+-- its palette is - one door for it, which the sidebar's dot for a server
+-- not answering and Tracker's gone-away banner both ask (`docs/sharing.html`).
+--
+function ui.warning_colours()
+  local c = code_colours()
+
+  return c.warning, c.warning_ground
+end
 
 function ui.editor(spec)
   local v = ui.view(spec)

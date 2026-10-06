@@ -93,7 +93,25 @@ network had read a seventh of a megabyte a second, its card never
 interrupting (`hal/pc/virtio.c`, 18.410), and its suites had read a
 sixteenth of ARM's.
 
-Usage: run_share.py IMAGE [--part 1|2] [--measure]
+**`--part 3`, the windows** (`docs/sharing.md` step N6, `docs/sharing.html`),
+on a peer and a machine of their own, through the desktop as a person uses
+it: Tracker's Network group's Connect... opens Connect to Server; an
+address, a name and a password typed by the keyboard - the server
+answering before the password is asked for, and **the password's field
+drawing none of it**, held both to what the field says it drew and to the
+screen's pixels (a bullet a character: every glyph in the field the same
+shape); Tracker going to the share, its sidebar naming the server and the
+share, the status line "SMB 3.1.1, signed", the Modified column the
+server's own date; a second share chosen from the list the server gives
+(`SHARE_OP_SHARES`) and connected on the same session; Tracker's clock
+held apart from its paints - smbfs counts the STATUS asks, and twenty
+repaints by the arrow keys do not move it; the peer paused and the amber
+band "MACPEER is not answering" with Try now, within smbfs's ten seconds
+of silence; resumed and Try now, the band gone and the folder fresh; a
+remembered server not signed into, as its page; and the Servers window's
+File sharing, its switch drawn disabled, pressed, and unmoved.
+
+Usage: run_share.py IMAGE [--part 1|2|3] [--measure]
 """
 
 import hashlib
@@ -139,6 +157,9 @@ def main():
 
     if part == "2":
         return folders(image, measure)
+
+    if part == "3":
+        return windows(image)
 
     return connects(image, measure)
 
@@ -1125,6 +1146,490 @@ def folders(image, measuring):
              reads, sum_ms))
     return 0
 
+
+
+#--------------------------------------------------------------------------
+# The third part: the windows (N6).
+#--------------------------------------------------------------------------
+
+def keys_for(text):
+    """QEMU's names for typing `text` on its keyboard."""
+    named = {".": "dot", "/": "slash", ":": "shift-semicolon", "-": "minus",
+             "_": "shift-minus", " ": "spc"}
+    out = []
+
+    for ch in text:
+        if ch in named:
+            out.append(named[ch])
+        elif ch.isupper():
+            out.append("shift-" + ch.lower())
+        else:
+            out.append(ch)
+
+    return out
+
+
+def glyph_shapes(width, px, box):
+    """The shapes of the ink in `box` of a screendump, one a glyph.
+
+    The field's ground is its commonest colour; a column holds ink when any
+    pixel in it differs. Runs of ink columns are glyphs - a run one pixel
+    wide is the caret and is left out - and each is returned as the tuple
+    of its columns, so two glyphs drawn alike are equal."""
+    x0, y0, w, h = box
+    counts = {}
+
+    for y in range(y0, y0 + h):
+        for x in range(x0, x0 + w):
+            o = (y * width + x) * 3
+            c = (px[o], px[o + 1], px[o + 2])
+            counts[c] = counts.get(c, 0) + 1
+
+    ground = max(counts, key=counts.get)
+
+    def column(x):
+        return tuple((px[(y * width + x) * 3], px[(y * width + x) * 3 + 1],
+                      px[(y * width + x) * 3 + 2]) != ground
+                     for y in range(y0, y0 + h))
+
+    shapes, run = [], []
+
+    for x in range(x0, x0 + w):
+        col = column(x)
+
+        if any(col):
+            run.append(col)
+        elif run:
+            shapes.append(tuple(run))
+            run = []
+
+    if run:
+        shapes.append(tuple(run))
+
+    return [sh for sh in shapes if len(sh) > 1]
+
+
+def windows(image):
+    import run_screenshot as R
+
+    x86 = R.machine(image) == "x86_64"
+    instance, port = ("x86-share-3", 4476) if x86 else ("arm-share-3", 4466)
+
+    # 3.1.1 and signing required: the status line is held to "signed".
+    peer(instance, port, "start", "--dialect", "3.1.1", "--sign")
+    _, _, share, account, password = peer(instance, port, "where").split()
+    at = "10.0.2.2:%d" % port
+    there = "/Network/MACPEER/%s" % share
+    big_at = int(os.stat(os.path.join(SHARE_DIR, "big.bin")).st_mtime)
+
+    guest = guest_on_network(R, image, 120)
+    said, took, fails = {}, {}, []
+    shots = {}
+    marks = {}
+
+    def check(ok, what):
+        if not ok:
+            fails.append(what)
+
+    def line(text, what, since, seconds=None):
+        saved = guest.timeout
+
+        if seconds is not None:
+            guest.timeout = seconds
+
+        try:
+            return guest.wait_for_line(text, what, since)
+        finally:
+            guest.timeout = saved
+
+    def until_line(text, ok, what, since, seconds=20):
+        """The rest of the first line after `since` that begins `text` and
+        that `ok` accepts."""
+        deadline = time.monotonic() + seconds
+
+        while time.monotonic() < deadline:
+            for found in re.finditer(re.escape(text) + r"(.*)\n", guest.seen[since:]):
+                if ok(found.group(1).strip()):
+                    return found.group(1).strip()
+
+            time.sleep(0.2)
+
+        raise R.Failure("the guest never %s within %d s" % (what, seconds))
+
+    def window_at(title, since):
+        found = line("wm: window %s at " % title, "the %s window" % title, since)
+        x, y, w, h = (int(v) for v in re.match(r"(\d+),(\d+) (\d+)x(\d+)", found).groups())
+        return x, y, w, h
+
+    def type_keys(text):
+        for k in keys_for(text):
+            guest.sendkey(k)
+
+    try:
+        guest.wait_for(R.PROMPT, "the prompt")
+        guest.wait_for("net: an address from DHCP", "a lease")
+
+        # Tracker, its Network group empty: Connect... is where it says. In
+        # the look the system starts in - its TrueType faces, which have
+        # the bullet a password's field masks with - rather than the
+        # harness's bitmap one, whose faces draw anything past ASCII as one
+        # box, every box touching the next.
+        mark = len(guest.seen)
+        guest.type("wm tracker:/Home")
+        tx, ty, _, _ = window_at("Tracker", mark)
+        connect_at = line("tracker: connect at ", "Tracker to say where Connect is", mark)
+        cx, cy = (int(v) for v in connect_at.split(","))
+        time.sleep(2.0)
+        width, height, _ = R.parse_ppm(guest.screendump())
+
+        def click(x, y, button="left"):
+            guest.mouse_to(*R._to_tablet(x, y, width, height))
+            time.sleep(0.25)
+            guest.mouse_button(True, button)
+            time.sleep(0.1)
+            guest.mouse_button(False, button)
+
+        # Connect... opens Connect to Server.
+        mark = len(guest.seen)
+        click(tx + cx, ty + cy)
+        kx, ky, _, _ = window_at("Connect to Server", mark)
+        fields = line("connect: address at ", "Connect to Server's fields", mark)
+        m = re.match(r"(\d+),(\d+), name at (\d+),(\d+), password at (\d+),(\d+) "
+                     r"(\d+)x(\d+), connect at (\d+),(\d+)", fields)
+        pw_box = tuple(int(v) for v in m.groups()[4:8])
+        time.sleep(1.0)
+
+        # By the keyboard: the address - answered before a password is
+        # asked for - then the name and the password.
+        started = time.monotonic()
+        type_keys("smb://%s/%s" % (at, share))
+        said["answered"] = line("connect: answered: ", "the server to answer the address",
+                                mark, 30)
+        took["answered"] = time.monotonic() - started
+        guest.sendkey("tab")
+        type_keys(account)
+        guest.sendkey("tab")
+        type_keys(password)
+        time.sleep(1.5)
+
+        dump = guest.screendump()
+        _, _, px = R.parse_ppm(dump)
+
+        # Where the field is now: the window says again whenever what the
+        # server said moved its rows.
+        last = re.findall(r"connect: address at .*password at (\d+),(\d+) (\d+)x(\d+)",
+                          guest.seen[mark:])
+        pw_box = tuple(int(v) for v in last[-1])
+        box = (kx + pw_box[0] + 4, ky + pw_box[1] + 4, pw_box[2] - 8, pw_box[3] - 8)
+        shots["password"] = glyph_shapes(width, px, box)
+
+        # Kept beside the serial line, for a person to look at when the
+        # check fails: the screen as the password's field was read.
+        with open(os.path.join(ROOT, "build", "%s-password.ppm" % instance), "wb") as f:
+            f.write(dump)
+
+        mark = len(guest.seen)
+        started = time.monotonic()
+        guest.sendkey("ret")
+        said["drawn"] = line("connect: the password field draws ", "what the field drew", mark)
+        said["done"] = line("connect: done: ", "Connect to Server to connect", mark, 40)
+        said["showing"] = line("tracker: showing " + there, "Tracker to go to the share",
+                               mark, 30)
+        took["connect"] = time.monotonic() - started
+        said["status"] = line("tracker: status ", "Tracker's status line", mark, 20)
+        said["modified"] = line("tracker: modified ", "the Modified column", mark)
+        said["network"] = line("tracker: network MACPEER", "the Network group", mark, 20)
+
+        # A second share, chosen from the server's list: the address alone,
+        # the name remembered, no password - the same session.
+        time.sleep(1.0)
+        mark = len(guest.seen)
+        click(tx + cx, ty + cy)
+        window_at("Connect to Server", mark)
+        line("connect: address at ", "Connect to Server again", mark)
+        time.sleep(1.0)
+        type_keys("smb://%s" % at)
+        line("connect: answered: ", "the server signed into already", mark, 30)
+        guest.sendkey("ret")                # to the name, remembered
+        guest.sendkey("ret")                # to the password, left empty
+        guest.sendkey("ret")                # Connect
+        said["choose"] = line("connect: share Music at ", "the server's shares as buttons",
+                              mark, 40)
+        bx, by = (int(v) for v in said["choose"].split(","))
+        click(kx + bx, ky + by)
+        said["second"] = line("connect: done: ", "the second share to connect", mark, 40)
+        said["showing music"] = line("tracker: showing /Network/MACPEER/Music",
+                                     "Tracker to go to the second share", mark, 30)
+        said["network2"] = until_line("tracker: network MACPEER live: ",
+                                      lambda t: sorted(t.split(", ")) == sorted([share, "Music"]),
+                                      "to hold both shares in the Network group", mark)
+
+        # **The clock and the paints**: twenty repaints by the arrow keys in
+        # the files, and smbfs's count of STATUS asks across them.
+        time.sleep(1.5)
+        click(tx + 400, ty + 120)
+        mark = len(guest.seen)
+        line("tracker: smbfs answered ", "a first measure", mark, 15)
+        mark = len(guest.seen)
+
+        for _ in range(10):
+            guest.sendkey("down")
+            guest.sendkey("up")
+
+        said["measure"] = line("tracker: smbfs answered ", "the measure across the keys",
+                               mark, 15)
+
+        # **Gone away**: the peer paused, and the first share's folder asked
+        # for - from memory at once, and the server away once it has said
+        # nothing for ten seconds: the amber band, with Try now.
+        rows = dict(re.findall(r"tracker: row (\S+) at (\d+)", guest.seen))
+        projects_y = int(rows.get(there, 0))
+        peer(instance, port, "pause")
+        mark = len(guest.seen)
+        started = time.monotonic()
+        click(tx + 100, ty + projects_y)
+        said["stale"] = line("tracker: showing " + there, "the folder from memory", mark, 20)
+        said["away"] = line("tracker: gone away: ", "the band", mark, 30)
+        took["away"] = time.monotonic() - started
+        buttons = line("tracker: try now at ", "the band's buttons", mark, 10)
+        bx, by = (int(v) for v in re.match(r"(\d+),(\d+)", buttons).groups())
+        time.sleep(1.5)
+        _, _, px = R.parse_ppm(guest.screendump())
+        shots["band"] = px
+        shots["origin"] = (tx, ty)
+
+        # Back, and Try now: the band goes and the folder is fresh. The
+        # peer stopped outright and started again, so it is Try now that
+        # signs in - a paused one resumed answers smbfs's own next try
+        # first, two seconds after it went away.
+        peer(instance, port, "stop")
+        peer(instance, port, "start", "--dialect", "3.1.1", "--sign")
+        mark = len(guest.seen)
+        started = time.monotonic()
+        click(tx + bx, ty + by)
+        said["try"] = line("tracker: sent Try now to ", "Try now to be sent", mark, 10)
+        said["back"] = line("tracker: back: ", "the server to come back", mark, 40)
+        said["fresh"] = line("tracker: showing " + there, "the folder read again", mark, 20)
+        took["back"] = time.monotonic() - started
+        time.sleep(2.0)
+        _, _, px = R.parse_ppm(guest.screendump())
+        shots["after"] = px
+
+        # **Seen, not signed in**: let go of at the prompt, the server is
+        # remembered and locked in the sidebar, and its page says so.
+        mark = len(guest.seen)
+        guest.proc.stdin.write(R.STOP_DESKTOP)
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 20
+
+        while R.PROMPT not in guest.seen[mark:] and time.monotonic() < deadline:
+            time.sleep(0.2)
+
+        mark = len(guest.seen)
+        guest.type("share disconnect " + at)
+        line("share: %s let go" % at, "the server let go", mark, 20)
+
+        mark = len(guest.seen)
+        guest.type("wm tracker:/Home")
+        tx, ty, _, _ = window_at("Tracker", mark)
+        said["remembered"] = line("tracker: network ", "the remembered server", mark, 20)
+        seen_y = line("tracker: row #server:%s at " % at, "the remembered server's row",
+                      mark, 10)
+        time.sleep(1.5)
+        mark = len(guest.seen)
+        click(tx + 100, ty + int(seen_y))
+        said["seen"] = line("tracker: seen ", "the server's page", mark, 10)
+
+        # **File sharing in the Servers window**: drawn, its switch disabled
+        # and unmoved by a press.
+        mark = len(guest.seen)
+        guest.proc.stdin.write(R.STOP_DESKTOP)
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 20
+
+        while R.PROMPT not in guest.seen[mark:] and time.monotonic() < deadline:
+            time.sleep(0.2)
+
+        mark = len(guest.seen)
+        guest.type("wm servers:sharing")
+        sx, sy, _, _ = window_at("Servers", mark)
+        said["sharing"] = line("servers: file sharing - ", "the File sharing page", mark, 30)
+        m = re.search(r"its switch at (\d+),(\d+), (\w+)", said["sharing"])
+        swx, swy = int(m.group(1)), int(m.group(2))
+        # The pointer away from the switch for both pictures: the screen
+        # carries it, and it is not the switch.
+        away_from = R._to_tablet(sx + 10, sy + 400, width, height)
+        guest.mouse_to(*away_from)
+        time.sleep(1.5)
+        _, _, before = R.parse_ppm(guest.screendump())
+        mark = len(guest.seen)
+        click(sx + swx, sy + swy)
+        guest.mouse_to(*away_from)
+        time.sleep(1.5)
+        _, _, after = R.parse_ppm(guest.screendump())
+        said["after switch"] = guest.seen[mark:]
+        shots["switch"] = (before, after, sx + swx, sy + swy, m.group(3))
+    except Exception as e:                  # noqa: BLE001 - said below
+        said["error"] = "%s: %s" % (type(e).__name__, str(e)[:1500])
+    finally:
+        guest.close()
+
+        try:
+            peer(instance, port, "stop")
+        except subprocess.CalledProcessError:
+            pass
+
+    transcript = guest.seen.replace("\r", "")
+
+    def text(key):
+        return said.get(key, "")
+
+    if "error" in said:
+        fails.append("the machine stopped: " + said["error"])
+
+    check(text("answered").startswith("%s answered - SMB 3.1.1, signing required" % at),
+          "the address was not answered before a password was asked for: %r"
+          % text("answered"))
+
+    # The password's field: what it says it drew, and what is on the screen.
+    bullets = "\u2022" * len(password)
+    check(text("drawn") == "%d characters as %s" % (len(password), bullets)
+          and password not in text("drawn"),
+          "the password's field drew something other than a bullet a "
+          "character: %r" % text("drawn"))
+    shapes = shots.get("password", [])
+    # Alike, to a pixel's placement: a glyph laid at a fraction of a pixel
+    # comes out in two or three versions of itself, where the password's
+    # own letters would be a dozen shapes and more.
+    check(len(shapes) >= len(password) - 2 and len(set(shapes)) <= 3,
+          "the password's field on the screen is not a bullet a character: "
+          "%d glyphs, %d different shapes (want %d alike)"
+          % (len(shapes), len(set(shapes)), len(password)))
+    said["shapes"] = "%d glyphs in %d shapes" % (len(shapes), len(set(shapes)))
+
+    check(text("done").startswith("Connected - %s on MACPEER, SMB 3.1.1, signed, as %s"
+                                  % (share, account)),
+          "Connect to Server did not say it connected: %r" % text("done"))
+    check(re.match(r", \d+ items$", text("showing")) is not None,
+          "Tracker did not go to the share, fresh: %r" % text("showing"))
+    check(text("status") == "MACPEER \u00b7 SMB 3.1.1, signed \u00b7 as %s" % account,
+          "the status line does not name the server, the dialect, signed and "
+          "the account: %r" % text("status"))
+
+    # Modified: the server's date of big.bin, as the guest's clock says it -
+    # today, yesterday, or a date - at UTC, the guest's offset.
+    import datetime
+    named = text("modified").split(" ", 1)[0] or "big.bin"
+    stamped = os.path.join(SHARE_DIR, named)
+    stamp = datetime.datetime.fromtimestamp(
+        int(os.stat(stamped).st_mtime) if os.path.exists(stamped) else big_at,
+        datetime.timezone.utc)
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    hm = stamp.strftime("%H:%M")
+    if stamp.date() == today:
+        want = "Today, " + hm
+    elif (today - stamp.date()).days == 1:
+        want = "Yesterday, " + hm
+    else:
+        want = "%d %s %d, %s" % (stamp.day, stamp.strftime("%b"), stamp.year, hm)
+    check(text("modified") == named + " " + want,
+          "the Modified column is not the server's date: %r (want %s %s)"
+          % (text("modified"), named, want))
+    check(text("network").startswith("live: " + share),
+          "the Network group does not name the server, live, with its share: %r"
+          % text("network"))
+
+    check(text("second").startswith("Connected - Music on MACPEER"),
+          "the second share, chosen from the server's list, did not connect: %r"
+          % text("second"))
+    check("smbfs: MACPEER's Music connected on the same session" in transcript,
+          "the second share was not connected on the same session")
+    check(re.match(r", \d+ items?$", text("showing music")) is not None,
+          "Tracker did not go to the second share: %r" % text("showing music"))
+    check("network2" in said, "the Network group does not hold both shares")
+
+    measure = re.match(r"(\d+) status asks in (\d+) paints over (\d+) s", text("measure"))
+    check(measure is not None and int(measure.group(2)) >= 10
+          and int(measure.group(1)) <= int(measure.group(3)) + 2,
+          "Tracker's asking is not on its own clock - smbfs's count of its STATUS "
+          "asks moved with its paints: %r" % text("measure"))
+
+    check(text("stale").endswith("as last heard"),
+          "the folder of a server paused was not shown as last heard: %r" % text("stale"))
+    check(text("away") == "MACPEER is not answering - retrying" and took.get("away", 99) < 20,
+          "the band did not say the server is not answering, within its bound "
+          "(%.1f s): %r" % (took.get("away", -1), text("away")))
+
+    def amber(px):
+        """Pixels of the band's ground in the band's rectangle, in the
+        Tracker that showed it."""
+        grounds = {(0xfd, 0xf3, 0xdc), (0x36, 0x30, 0x1f)}
+        ox, oy = shots.get("origin", (0, 0))
+        n = 0
+
+        for y in range(oy + 46 + 12, oy + 46 + 52):
+            for x in range(ox + 200 + 20, ox + 200 + 300):
+                o = (y * width + x) * 3
+                n += (px[o], px[o + 1], px[o + 2]) in grounds
+
+        return n
+
+    band = amber(shots["band"]) if "band" in shots else 0
+    after = amber(shots["after"]) if "after" in shots else -1
+    check(band > 2000, "no amber band on the screen while the server was away: %d" % band)
+    check(text("try").startswith(at + ": "), "Try now was not sent: %r" % text("try"))
+    check(text("back") == "MACPEER" and after == 0
+          and re.match(r", \d+ items$", text("fresh")) is not None,
+          "after Try now the band did not go or the folder was not fresh: %r %d %r"
+          % (text("back"), after, text("fresh")))
+
+    check("locked" in text("remembered") and text("seen").startswith(at + ", not signed in"),
+          "a remembered server let go of is not a page of a server not signed "
+          "into: %r %r" % (text("remembered"), text("seen")))
+
+    sharing = shots.get("switch")
+    check(text("sharing").startswith("Sharing this machine's folders comes in a later step")
+          and sharing is not None and sharing[4] == "disabled",
+          "the File sharing page does not say it comes later, its switch "
+          "disabled: %r" % text("sharing"))
+
+    if sharing:
+        before, after_px, x, y, _ = sharing
+        moved = sum(1 for yy in range(y - 12, y + 12) for xx in range(x - 22, x + 22)
+                    if before[(yy * width + xx) * 3:(yy * width + xx) * 3 + 3]
+                    != after_px[(yy * width + xx) * 3:(yy * width + xx) * 3 + 3])
+        check(moved == 0 and "switch moved" not in text("after switch"),
+              "the disabled switch moved when pressed: %d pixels changed" % moved)
+
+    check(" died" not in transcript and "smbfs exited" not in transcript,
+          "something died: %r" % transcript[transcript.find(" died") - 200:][:400])
+
+    checks = 21
+    log = os.path.join(ROOT, "build", "%s-serial.log" % instance)
+
+    with open(log, "w") as f:
+        f.write(transcript)
+
+    if fails:
+        print("FAIL: %d of %d checks on the windows of sharing (the serial line: %s):"
+              % (len(fails), checks, log))
+
+        for f in fails:
+            print("  " + f)
+
+        return 1
+
+    print("PASS: %d checks on the windows of sharing (Connect to Server by the "
+          "keyboard - answered in %.1f s, before the password; the password's "
+          "field a bullet a character, said and on the screen (%s); Tracker at the "
+          "share in %.1f s, its Network group, status line SMB 3.1.1 signed, "
+          "Modified the server's date; a second share chosen from the server's "
+          "list on the same session; %s; the amber band %.1f s after a paused "
+          "server was asked, Try now and back in %.1f s; a remembered server's "
+          "page; File sharing's switch disabled and unmoved)."
+          % (checks, took.get("answered", -1), text("shapes"), took.get("connect", -1),
+             text("measure"), took.get("away", -1), took.get("back", -1)))
+    return 0
 
 
 #--------------------------------------------------------------------------

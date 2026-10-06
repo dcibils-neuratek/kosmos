@@ -143,6 +143,13 @@ ICONS = {
     "moon":       ("moon", None),
     "bell":       ("bell", None),
 
+    # Sharing files over the network (`docs/sharing.html`, step N6): the
+    # globe on Tracker's trail and beside "over the network", the amber
+    # triangle of a server gone away, and a server in the Network group.
+    "globe":      ("globe", None),
+    "warning":    ("triangle-alert", None),
+    "server":     ("server", None),
+
     # Kosmos Write's toolbar and its Format panel (`docs/write.html`), and
     # Present's and Sheets' after it. View is `sidebar`, Add Page `new`,
     # Media `pictures` and a chooser's arrow `descending`, as they are.

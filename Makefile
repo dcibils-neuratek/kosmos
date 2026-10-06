@@ -4155,6 +4155,9 @@ host-check: $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $
 	@# lives in `/lib` and not inside the Deskbar.
 	$(HOSTDIR)/lua tools/test_deskbarmenu.lua
 	$(HOSTDIR)/lua tools/test_places.lua
+	@# Shares as a window shows them (docs/sharing.md N6): the Network
+	@# group, an address as typed, the status line, the gone-away banner.
+	$(HOSTDIR)/lua tools/test_netshares.lua
 	@# What a right click offers on each kind of thing, and how Info counts
 	@# a folder a slice at a time (`roadmap.md` 6za).
 	$(HOSTDIR)/lua tools/test_filemenu.lua

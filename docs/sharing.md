@@ -338,11 +338,11 @@ their address after the name.
 and has not been let go - an away one too, so its folder stays as last
 heard - and `/Network/<server>` its share; both from smbfs's records, never
 from the network. A server is found by its name or its address, and every
-name under it whatever its case, as SMB's are. **One share a server, for
-now**: a record is a connection and its one tree, as N2 built it, so
-`/Network/MACPEER` lists the share connected; `SHARE_OP_SHARES` and a
-second share on the same connection are left for the windows that choose
-one (N6). A folder's listing is kept - its names sorted once, each with its
+name under it whatever its case, as SMB's are. **One share a server, at
+N3**: a record was a connection and its one tree; `SHARE_OP_SHARES` and a
+second share on the same connection arrived with the windows that choose
+one (N6, *N6, as built*), and `/Network/MACPEER` lists every share
+connected on its session. A folder's listing is kept - its names sorted once, each with its
 size, kind and the server's date - until the server is let go; a file's
 handle is opened on its first read, read through by everyone reading it,
 and closed five seconds after the last (`HANDLE_IDLE_SECONDS`). A READ
@@ -362,7 +362,7 @@ numbers above `diskproto.h`'s and their own structs in `u.data`:
 | `SHARE_OP_PROBE` | an address and a port; answered at once. The server is asked to NEGOTIATE and nothing more |
 | `SHARE_OP_CONNECT` | an address, a share, a name and - until the keyring - a password; answered at once. SESSION_SETUP and TREE_CONNECT follow |
 | `SHARE_OP_STATUS` | per server: answering or since when, the dialect, signed, sealed, the name it gave, its shares, bytes arriving a second, the next try |
-| `SHARE_OP_SHARES` | a server's shares, through `srvsvc`'s NetShareEnum (libsmb2's `smb2-share-enum.c`), for "choose one once it answers" - **not in N2**: its number is kept, and it arrives with the folder it fills (N3) |
+| `SHARE_OP_SHARES` | a server's shares, through `srvsvc`'s NetShareEnum (libsmb2's `smb2-share-enum.c`), for "choose one once it answers" - **built at N6** (below) |
 | `SHARE_OP_DISCONNECT` | a server, or a share of it |
 
 The password crosses once, in one message, as a keystroke does - a one-shot,
@@ -1063,7 +1063,79 @@ next. The client, read-only, first.
   Modified where `dated` says so; the Open window's sidebar through
   `sidebar.lua`. Pressed by name in the display harness, as `arm-writeapp`
   presses Write's; the gallery's screenshot gains a share open. **Tracker
-  measured opening the 2,000** - the bound of N5 held to it.
+  measured opening the 2,000** - the bound of N5 held to it. **Built on 6
+  October** (`testing.md` 18.412), as *N6, as built* below says.
+
+### N6, as built
+
+**What the windows are made of.** Tracker's Network group, trail, status
+line, Modified column, gone-away band and a server's page are Tracker's
+(`tracker.lua`), drawn from one library that puts smbfs's answers together -
+`user/lib/netshares.lua`, held on the Mac by `tools/test_netshares.lua`
+(35 checks): which servers the group lists and how (live, amber, being
+asked, locked), an address read as typed (`smb://host:port/share/within`,
+which the `share` program reads with it too), the trail, the status line,
+the band's words and what is remembered. **Connect to Server is a window of
+its own**, `user/bin/apps/connect.lua`, opened by the group's *Connect...*
+and Tracker's `...` menu; the Tracker that opened it goes to the share once
+smbfs lists it. Dates in words are `clock.relative` ("Today, 11:20") and
+`clock.day_word` ("yesterday") - one door, `test_clock.lua`.
+
+**Asked on the window's own clock, never in a paint or a press.** Tracker
+asks `fs.share_status`, `/Network` and each server's listing - every one
+answered at once from smbfs's memory - once a second while any of the
+network is in view and every five seconds otherwise, and redraws only what
+changed. A press (Try now, Disconnect, Forget; Connect and a share chosen in
+Connect to Server) paints what it began at once and leaves the sending to
+the clock. **smbfs counts the STATUS requests it answers** - in STATUS's
+`size` - and Tracker says that count against its paints every five
+seconds, which is how the suite holds the two apart.
+
+**Several shares on one connection, and the list of them.** A server record
+in smbfs is one connection and one session holding a tree per share: a
+CONNECT to a server signed into as the same account is one TREE_CONNECT,
+no password; one with no share signs in to `IPC$` alone. `SHARE_OP_SHARES`
+answers what the server offers (`struct share_offered`: name, asked or
+connected or refused, its kind), from NetShareEnum on `IPC$` - folders
+only, a printer, a pipe and a share ending in `$` left out - and `bytes` is
+1 once the server's own list has been heard. A server signed into again
+(N5) connects every tree again, since a tree's number is the connection's.
+**Found building it**: libsmb2 stamps a request with the tree current when
+it is made, and a listing, an open that follows a link and the share list
+make their next request inside their own callbacks - so with two trees a
+listing's next QUERY_DIRECTORY could go to the other share. smbfs runs those
+as *chains*: the tree is selected before each request it makes and put
+back after, and a chain on another tree of the same server waits for the
+running ones to end (`chain_take`). One-shot requests - READ, CLOSE,
+`.super`'s compound - only select and put back.
+
+**Departures from the mockup, each for a reason:**
+
+- The probe answers no server name (*`shareproto.h`*, above), so the
+  answered line says "10.0.2.2:4466 answered - SMB 3.1.1, signing
+  required" where the drawing names `diego-mac`; the name appears once
+  signed in.
+- "Seen, not signed in" is a server **remembered** - signed into before and
+  not now, or one that refused - since nothing is *seen* until mDNS (N11);
+  its page says what is known (address, port, guests not tried, why it last
+  refused) with Sign in... and Forget, and not "Calls itself Synology
+  DS220+", which only discovery tells.
+- The band says since when and when the next try is, not "Tried 3 times":
+  STATUS has no count of tries.
+- The status line's rate is bytes a second the share has read
+  (`.device`), not which file is arriving.
+- No "Drives" heading over the drives: Tracker's sidebar had none, and the
+  tests click its rows by position.
+- Recent servers are kept in `/Home/Preferences/sharing` by the settings kit
+  - an address, a share and an account, never a password.
+- File sharing in the Servers window is drawn - its switches disabled, its
+  folders none - saying "Sharing this machine's folders comes in a later
+  step" (N12).
+- **The prompt's password is still shown as typed.** An unechoed read would
+  be a change to `conproto.h` and to the three servers that implement it -
+  `console.c`, the Terminal and `telnetd`'s sessions - for one program whose
+  password now has a window; Connect to Server is the door where it is not
+  shown, and the keyring (N8) where it is not typed.
 - **N7 - on real hardware, by hand.** The M700 against Diego's Mac with File
   Sharing on - his setting, turned on by him - the 2,000 listed and the film
   played from the share; the numbers above that say "not measured" measured,

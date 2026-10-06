@@ -60,6 +60,23 @@
  * the tries, and so does DISCONNECT, which forgets the hash with the rest.
  * RETRY is Try now. A connected server nobody is asking anything is sent an
  * ECHO once a minute, so one that has gone to sleep is noticed by itself.
+ *
+ * **Several shares on one connection, and the list of them** (N6). A server
+ * record is a connection and one session, and holds a tree per share asked
+ * for: a CONNECT to a server already signed into, as the same account, is
+ * one TREE_CONNECT more and asks for no password. SHARES answers what the
+ * server offers, from `srvsvc`'s NetShareEnum on `IPC$` - a tree like any
+ * other, never listed in `/Network`.
+ *
+ * **libsmb2 stamps a request with the tree that is current when the request
+ * is made**, and some of its operations make their next request inside the
+ * callback of the last - a listing's QUERY_DIRECTORY after QUERY_DIRECTORY,
+ * then CLOSE; an open that follows a link; the share list's pipe. So those
+ * are *chains*, and while one runs the current tree is its tree: smbfs
+ * selects a tree before every request it makes and puts the chain's tree
+ * back after, and a chain on another tree of the same server waits until
+ * the running ones end (`chain_take`). One request on its own - a READ, a
+ * CLOSE, `.super`'s compound - only selects and puts back.
  */
 
 #include <errno.h>
@@ -78,6 +95,7 @@
 #include "init/say.h"
 
 #include "smb_kit.h"
+#include "libsmb2-share-enum.h"
 
 /*
  * **How long a server has to answer**: connecting, negotiating, signing in
@@ -174,6 +192,24 @@
 
 struct server;
 
+/*
+ * **A share connected on a server's session** (N6): its tree, which the
+ * server numbered when it was connected - a new number on every connection,
+ * so a server signed into again connects each of them again. `IPC$` is one
+ * too, for the list of shares, and is never a folder.
+ */
+struct tree {
+    struct tree *next;
+    struct server *server;
+    char     name[SHARE_NAME_MAX];
+    uint32_t id;                    /* the server's number, while connected */
+    bool     connected;
+    bool     asking;                /* TREE_CONNECT in flight */
+    bool     refused;               /* the server said no: `pub.why` */
+    bool     was_connected;         /* a folder in /Network/<server> from then on */
+    bool     ipc;                   /* IPC$: for SHARES, never listed */
+};
+
 /* A name in a folder, as the server listed it. */
 struct entry {
     char    *name;
@@ -190,12 +226,14 @@ struct entry {
 struct folder {
     struct folder *next;
     struct server *server;
+    struct tree *tree;              /* the share it is in */
     char    *path;                  /* within the share: "", "many", "inside/deeper" */
     struct entry *entries;
     unsigned count;
     bool     known;                 /* listed at least once */
     uint64_t heard;                 /* counter ticks: when that listing arrived */
-    bool     asking;                /* a listing is in flight */
+    bool     asking;                /* a listing is in flight, or waiting to be */
+    bool     deferred;              /* waiting: a chain on another tree runs */
     uint64_t asked;                 /* counter ticks: since when */
     uint64_t asked_id;              /* libsmb2's message id when it was asked */
     int      failed;                /* the last listing's error, or 0 */
@@ -206,9 +244,11 @@ struct folder {
 struct handle {
     struct handle *next;
     struct server *server;
+    struct tree *tree;
     char    *path;
     struct smb2fh *fh;              /* libsmb2's, once open */
     bool     opening;
+    bool     deferred;              /* its open waits for another tree's chain */
     int      failed;                /* the open's error, or 0 */
     uint32_t nt;
     uint64_t size;                  /* the file's, as the open said */
@@ -265,6 +305,21 @@ struct server {
     uint64_t next_try;              /* counter ticks; 0 is no try planned */
     unsigned backoff;               /* seconds the last wait was; 0 while connected */
     uint64_t sent_before;           /* SMB requests of connections now closed */
+
+    /* Its shares (N6): a tree each, the first the one a connection begins
+     * with; and the chain running, on which tree, how many. */
+    struct tree *trees;
+    struct tree *chain_tree;
+    unsigned chains;
+
+    /* What it offers, once asked (`SHARE_OP_SHARES`). */
+    bool     list_wanted;           /* asked for, and not yet begun */
+    bool     listing;               /* NetShareEnum in flight */
+    bool     listed_once;           /* heard: `offered` is the server's */
+    bool     list_refused;          /* it would not say: `list_why` */
+    char     list_why[SHARE_WHY_MAX];
+    struct share_offered *offered;
+    unsigned offered_count;
 };
 
 /*
@@ -285,6 +340,8 @@ struct held {
 
     struct folder *folder;          /* HELD_NAMES */
     uint64_t since;                 /* counter ticks: when it was held */
+
+    struct tree *tree;              /* HELD_SUPER: the share asked about */
 
     struct handle *handle;          /* HELD_READ */
     long     cap;                   /* the caller's region, or -1 */
@@ -321,6 +378,11 @@ static struct server **servers;     /* in the order they were asked for */
 static unsigned server_count, server_room;
 
 static struct held *helds;          /* callers held, newest first */
+
+/* STATUS requests answered since smbfs started: said in each STATUS reply's
+ * `size`, so a window's asking can be counted where it arrives (N6, the
+ * display harness's measure of Tracker's clock). */
+static uint64_t status_served;
 
 static void fail_held(struct server *s);
 static void close_handles(struct server *s);
@@ -490,7 +552,7 @@ static void tell(const struct server *s)
 
         if (s->pub.state == SHARE_STATE_CONNECTED) {
             say_text(&line, "; ");
-            say_text(&line, s->pub.share);
+            say_text(&line, s->pub.share[0] != '\0' ? s->pub.share : "signed in");
             say_text(&line, " as ");
             say_text(&line, s->pub.account);
             say_text(&line, s->pub.sign_ins > 1 ? ", signed in again" : "");
@@ -502,6 +564,96 @@ static void tell(const struct server *s)
     }
 
     say_send(console, &line);
+}
+
+/*------------------------------------------------------------------------
+ * Trees, and the chains that run on them (N6).
+ *----------------------------------------------------------------------*/
+
+static struct tree *tree_find(struct server *s, const char *name);
+static bool same_name(const char *a, const char *b);
+
+/* The tree libsmb2 stamps the next request with. */
+static void tree_select(struct server *s, const struct tree *t)
+{
+    if (s->smb2 != NULL && t != NULL && t->connected) {
+        (void)smb2_select_tree_id(s->smb2, t->id);
+    }
+}
+
+/* Back to the tree a running chain is on, so its next request - made in a
+ * callback smbfs does not see - goes where it belongs. */
+static void tree_back(struct server *s)
+{
+    if (s->chains > 0) {
+        tree_select(s, s->chain_tree);
+    }
+}
+
+/* A chain begun on `t`, or false: one on another tree is running, and this
+ * one waits for it to end. */
+static bool chain_take(struct server *s, struct tree *t)
+{
+    if (s->chains > 0 && s->chain_tree != t) {
+        return false;
+    }
+
+    s->chains++;
+    s->chain_tree = t;
+    tree_select(s, t);
+    return true;
+}
+
+/* A chain over: its last callback has run, and it makes no more requests. */
+static void chain_give(struct server *s)
+{
+    if (s->chains > 0) {
+        s->chains--;
+    }
+
+    if (s->chains == 0) {
+        s->chain_tree = NULL;
+    }
+}
+
+/* The tree a connection begins with: the first asked for and not refused. */
+static struct tree *tree_first(struct server *s)
+{
+    struct tree *t;
+
+    for (t = s->trees; t != NULL; t = t->next) {
+        if (!t->refused) {
+            return t;
+        }
+    }
+
+    return NULL;
+}
+
+static struct tree *tree_add(struct server *s, const char *name, bool ipc)
+{
+    struct tree *t = tree_find(s, name), **link;
+
+    if (t != NULL) {
+        return t;
+    }
+
+    t = calloc(1, sizeof(*t));
+
+    if (t == NULL) {
+        return NULL;
+    }
+
+    t->server = s;
+    t->ipc = ipc;
+    copy(t->name, sizeof(t->name), name);
+
+    /* In the order asked for, which is the order `/Network/<server>` lists. */
+    for (link = &s->trees; *link != NULL; link = &(*link)->next) {
+    }
+
+    *link = t;
+    return t;
 }
 
 /*------------------------------------------------------------------------
@@ -616,17 +768,35 @@ static void server_close(struct server *s)
         s->smb2 = NULL;
 
         /* A listing that was out is over with the connection, whether or
-         * not libsmb2 called back for it: the next is asked of the next
-         * connection (N5). */
+         * not libsmb2 called back for it - or waiting for a chain that
+         * will not come: the next is asked of the next connection (N5). */
         {
             struct folder *f;
+            struct tree *t;
 
             for (f = s->folders; f != NULL; f = f->next) {
                 if (f->asking) {
                     f->asking = false;
+                    f->deferred = false;
                     f->failed = -ENETRESET;
                     f->nt = SMB2_STATUS_SHUTDOWN;
                 }
+            }
+
+            /* Every tree was this connection's numbering; the next one
+             * connects them again (N6). */
+            for (t = s->trees; t != NULL; t = t->next) {
+                t->connected = false;
+                t->asking = false;
+                t->id = 0;
+            }
+
+            s->chains = 0;
+            s->chain_tree = NULL;
+
+            if (s->listing) {
+                s->listing = false;
+                s->list_wanted = !s->listed_once;
             }
         }
     }
@@ -779,6 +949,19 @@ static void connected(struct smb2_context *smb2, int status, void *data,
          * SMB's own bound; the loop services libsmb2 once a second while
          * anything is in flight, which is what the timeout asks. */
         smb2_set_timeout(s->smb2, SMB_TIMEOUT_SECONDS);
+
+        /* The share it began with is the tree libsmb2 has just connected;
+         * every other one asked for is connected on the same session, by
+         * the loop (`trees_wanted`), once this callback is over (N6). */
+        {
+            struct tree *t = tree_first(s);
+
+            if (t != NULL) {
+                t->id = smb2_tree_id(s->smb2);
+                t->connected = true;
+                t->was_connected = !t->ipc;
+            }
+        }
     } else {
         refused_or_away(s, status);
     }
@@ -955,7 +1138,10 @@ static void start_smb(struct server *s)
     } else {
         smb2_set_user(s->smb2, s->pub.account);
         smb2_set_password(s->smb2, s->hash);
-        rc = smb2_connect_share_async(s->smb2, s->target, s->pub.share,
+        struct tree *first = tree_first(s);
+
+        rc = smb2_connect_share_async(s->smb2, s->target,
+                                      first != NULL ? first->name : "IPC$",
                                       s->pub.account, connected, s);
     }
 
@@ -1338,12 +1524,57 @@ static void ask_server(struct disk_request *req, struct disk_reply *rep,
         return;
     }
 
-    if (!probe && ask->share[0] == '\0') {
-        refuse(rep, SHARE_ERR_ADDRESS, "which share: smb://server/share");
-        return;
-    }
-
     was = server_find(address);
+
+    /*
+     * **One share more on the same connection** (N6): a server already
+     * signed into, as the same account, is asked for the share with a
+     * TREE_CONNECT, and nothing else - no password is asked for or used.
+     */
+    if (was != NULL && was->pub.state == SHARE_STATE_CONNECTED && !probe) {
+        char account[SHARE_ACCOUNT_MAX], share[SHARE_NAME_MAX];
+        struct tree *t;
+
+        field(account, sizeof(account), ask->account, sizeof(ask->account));
+        field(share, sizeof(share), ask->share, sizeof(ask->share));
+
+        if (!same_name(account, was->pub.account)) {
+            char why[SHARE_WHY_MAX];
+
+            snprintf(why, sizeof(why), "connected to %s as %s already: let it "
+                     "go to sign in as %s", named(was), was->pub.account, account);
+            refuse(rep, SHARE_ERR_ALREADY, why);
+            return;
+        }
+
+        if (share[0] == '\0') {
+            /* Signed in already: what it offers is SHARES's to say. */
+            was->list_wanted = !was->listed_once && !was->listing;
+            rep->error = DISK_OK;
+            return;
+        }
+
+        t = tree_find(was, share);
+
+        if (t != NULL && (t->connected || t->asking)) {
+            refuse(rep, SHARE_ERR_ALREADY, t->connected ? "already connected to "
+                   "that share" : "already asking for that share");
+            return;
+        }
+
+        t = tree_add(was, share, false);
+
+        if (t == NULL) {
+            refuse(rep, SHARE_ERR_NO_MEMORY, "no memory for another share");
+            return;
+        }
+
+        t->refused = false;
+        copy(was->pub.share, sizeof(was->pub.share), share);
+        was->pub.why[0] = '\0';
+        rep->error = DISK_OK;
+        return;                     /* connected by the loop: `trees_wanted` */
+    }
 
     if (was != NULL && was->pub.state == SHARE_STATE_CONNECTED) {
         refuse(rep, SHARE_ERR_ALREADY, "already connected to it");
@@ -1383,6 +1614,20 @@ static void ask_server(struct disk_request *req, struct disk_reply *rep,
         char password[SHARE_SECRET_MAX + 1];
 
         field(s->pub.share, sizeof(s->pub.share), ask->share, sizeof(ask->share));
+
+        /*
+         * The share it begins with - or, with none named, `IPC$` alone: a
+         * sign-in and the list of what it offers, for "choose one once it
+         * answers" (N6).
+         */
+        if (tree_add(s, s->pub.share[0] != '\0' ? s->pub.share : "IPC$",
+                     s->pub.share[0] == '\0') == NULL) {
+            server_free(s);
+            refuse(rep, SHARE_ERR_NO_MEMORY, "no memory for the share");
+            return;
+        }
+
+        s->list_wanted = s->pub.share[0] == '\0';
         field(s->pub.account, sizeof(s->pub.account), ask->account,
               sizeof(ask->account));
         field(password, sizeof(password), ask->password, sizeof(ask->password));
@@ -1450,6 +1695,12 @@ static void status_page(const struct disk_request *req, struct disk_reply *rep)
     rep->count = n;
     rep->length = (uint32_t)(n * sizeof(struct share_server));
     rep->offset = req->offset + n;
+
+    if (req->offset == 0) {
+        status_served++;
+    }
+
+    rep->size = status_served;
 
     for (; i < server_count; i++) {
         if (!servers[i]->forgotten) {
@@ -1567,6 +1818,25 @@ static bool same_name(const char *a, const char *b)
     }
 }
 
+static struct tree *tree_find(struct server *s, const char *name)
+{
+    struct tree *t;
+
+    for (t = s->trees; t != NULL; t = t->next) {
+        if (same_name(t->name, name)) {
+            return t;
+        }
+    }
+
+    return NULL;
+}
+
+/* A share in `/Network/<server>`: connected once, and not `IPC$`. */
+static bool tree_listed(const struct tree *t)
+{
+    return !t->ipc && t->was_connected;
+}
+
 /* A server in `/Network`: one whose share was connected, and still known. */
 static bool listed(const struct server *s)
 {
@@ -1619,6 +1889,7 @@ static struct server *server_called(const char *name)
 /* Where a path is: `/Network` itself, a server, a share, or inside one. */
 struct where {
     struct server *s;               /* NULL: `/Network` itself */
+    struct tree *tree;              /* the share, when one is named */
     bool     share;                 /* the share named, or something in it */
     char     inside[DISK_PATH_MAX]; /* within the share, no slashes at the ends */
     const char *name;               /* the last part of `inside`, or "" */
@@ -1660,7 +1931,9 @@ static uint32_t where_is(const char *path, struct where *w)
     memcpy(part, at, n);
     part[n] = '\0';
 
-    if (!same_name(part, w->s->pub.share)) {
+    w->tree = tree_find(w->s, part);
+
+    if (w->tree == NULL || !tree_listed(w->tree)) {
         return DISK_ERR_KFS + 7;
     }
 
@@ -1748,12 +2021,13 @@ static void refused(struct server *s, int failed, uint32_t nt, const char *path,
  * Folders, as listed.
  *----------------------------------------------------------------------*/
 
-static struct folder *folder_get(struct server *s, const char *path)
+static struct folder *folder_get(struct server *s, struct tree *t,
+                                 const char *path)
 {
     struct folder *f;
 
     for (f = s->folders; f != NULL; f = f->next) {
-        if (same_name(f->path, path)) {
+        if (f->tree == t && same_name(f->path, path)) {
             return f;
         }
     }
@@ -1766,6 +2040,7 @@ static struct folder *folder_get(struct server *s, const char *path)
     }
 
     f->server = s;
+    f->tree = t;
     f->next = s->folders;
     s->folders = f;
     return f;
@@ -1800,6 +2075,11 @@ static void folder_listed(struct smb2_context *smb2, int status, void *data,
     uint64_t now = kosmos_ticks();
 
     f->asking = false;
+
+    /* The chain's last callback: a listing makes no more requests. */
+    if (!s->closing) {
+        chain_give(s);
+    }
 
     if (status != 0 || dir == NULL) {
         f->failed = status != 0 ? status : -EIO;
@@ -1864,18 +2144,36 @@ static bool folder_ask(struct folder *f)
 {
     struct server *s = f->server;
 
-    if (f->asking) {
+    if (f->asking && !f->deferred) {
         return true;
     }
 
-    if (s->smb2 == NULL || s->closing || s->pub.state != SHARE_STATE_CONNECTED) {
+    if (s->smb2 == NULL || s->closing || s->pub.state != SHARE_STATE_CONNECTED
+        || !f->tree->connected) {
+        f->asking = f->deferred = false;
         return false;
     }
 
-    f->asked = kosmos_ticks();
+    if (!f->asking) {
+        f->asked = kosmos_ticks();
+    }
+
+    /* A chain on another of the server's shares is running: this one waits
+     * for it, and is begun by the loop when it ends (`chains_waiting`). */
+    if (!chain_take(s, f->tree)) {
+        f->asking = true;
+        f->deferred = true;
+        note_asked(s);
+        return true;
+    }
+
     f->asked_id = s->smb2->message_id;
+    f->deferred = false;
 
     if (smb2_opendir_async(s->smb2, f->path, folder_listed, f) < 0) {
+        chain_give(s);
+        tree_back(s);
+        f->asking = false;
         return false;
     }
 
@@ -2109,7 +2407,8 @@ static void super_answer(struct held *h, struct disk_reply *rp)
     su->free_known = 1;
     su->free_blocks = h->vfs.f_bavail;
     snprintf(su->where, sizeof(su->where), "%s's %s, over SMB %s%s%s", named(s),
-             s->pub.share, dialect_text(s->pub.dialect),
+             h->tree != NULL ? h->tree->name : s->pub.share,
+             dialect_text(s->pub.dialect),
              s->pub.signing ? ", signed" : "", s->pub.sealing ? ", sealed" : "");
 }
 
@@ -2256,14 +2555,18 @@ static bool piece_send(struct held *h, uint64_t offset, uint32_t count)
     p->offset = offset;
     p->count = count;
 
+    tree_select(s, h->handle->tree);
+
     if (smb2_pread_async(s->smb2, h->handle->fh, to, count, offset,
                          piece_read, p) < 0) {
+        tree_back(s);
         free(p);
         h->failed = -EIO;
         h->nt = 0;
         return false;
     }
 
+    tree_back(s);
     note_asked(s);
     h->in_flight++;
     s->cost.reads++;
@@ -2331,6 +2634,11 @@ static void handle_opened(struct smb2_context *smb2, int status, void *data,
 
     f->opening = false;
 
+    /* An open's chain ends here: a link followed was its only other step. */
+    if (!f->server->closing) {
+        chain_give(f->server);
+    }
+
     if (status == 0 && data != NULL) {
         uint64_t end = 0;
 
@@ -2360,13 +2668,37 @@ static void handle_closed(struct smb2_context *smb2, int status, void *data,
     (void)smb2; (void)status; (void)data; (void)private_data;
 }
 
+/* The open sent - now, or, when another share's chain runs, by the loop
+ * once it ends (`chains_waiting`). False when libsmb2 would not take it. */
+static bool handle_open(struct handle *f)
+{
+    struct server *s = f->server;
+
+    if (!chain_take(s, f->tree)) {
+        f->deferred = true;
+        return true;
+    }
+
+    f->deferred = false;
+
+    if (smb2_open_async(s->smb2, f->path, O_RDONLY, handle_opened, f) < 0) {
+        chain_give(s);
+        tree_back(s);
+        return false;
+    }
+
+    note_asked(s);
+    return true;
+}
+
 /* The handle a file is read through: kept, or opened now. */
-static struct handle *handle_get(struct server *s, const char *path)
+static struct handle *handle_get(struct server *s, struct tree *t,
+                                 const char *path)
 {
     struct handle *f;
 
     for (f = s->handles; f != NULL; f = f->next) {
-        if (f->failed == 0 && same_name(f->path, path)) {
+        if (f->failed == 0 && f->tree == t && same_name(f->path, path)) {
             return f;
         }
     }
@@ -2379,10 +2711,11 @@ static struct handle *handle_get(struct server *s, const char *path)
     }
 
     f->server = s;
+    f->tree = t;
     f->opening = true;
     f->used = kosmos_ticks();
 
-    if (smb2_open_async(s->smb2, path, O_RDONLY, handle_opened, f) < 0) {
+    if (!handle_open(f)) {
         free(f->path);
         free(f);
         return NULL;
@@ -2413,10 +2746,12 @@ static void close_handles(struct server *s)
 
     for (f = s->handles; f != NULL; f = f->next) {
         if (f->fh != NULL && s->smb2 != NULL) {
+            tree_select(s, f->tree);
             (void)smb2_close_async(s->smb2, f->fh, handle_closed, NULL);
         }
 
         f->fh = NULL;
+        f->deferred = false;
 
         if (f->failed == 0) {
             f->failed = -ENETRESET;
@@ -2443,7 +2778,9 @@ static bool handles_idle(struct server *s, uint64_t now)
         }
 
         if (f->fh != NULL && s->smb2 != NULL && !s->closing) {
+            tree_select(s, f->tree);
             (void)smb2_close_async(s->smb2, f->fh, handle_closed, NULL);
+            tree_back(s);
             queued = true;
         }
 
@@ -2498,6 +2835,393 @@ static void forget_share(struct server *s)
         s->handles = f->next;
         handle_free(f);
     }
+
+    while (s->trees != NULL) {
+        struct tree *t = s->trees;
+
+        s->trees = t->next;
+        free(t);
+    }
+
+    free(s->offered);
+    s->offered = NULL;
+    s->offered_count = 0;
+}
+
+/*------------------------------------------------------------------------
+ * Several shares on one session, and what a server offers (N6).
+ *----------------------------------------------------------------------*/
+
+/* A TREE_CONNECT answered: the share a folder, or why not, in words. */
+static void tree_connected(struct smb2_context *smb2, int status, void *data,
+                           void *private_data)
+{
+    struct tree *t = private_data;
+    struct server *s = t->server;
+
+    (void)data;
+    t->asking = false;
+
+    if (s->closing) {
+        return;
+    }
+
+    if (status == SMB2_STATUS_SUCCESS) {
+        /* libsmb2 made the new tree current as it read the answer; its
+         * number is kept, and a running chain's tree put back. */
+        t->id = smb2_tree_id(smb2);
+        t->connected = true;
+        t->was_connected = t->was_connected || !t->ipc;
+        tree_back(s);
+
+        if (!t->ipc) {
+            struct say_line line;
+
+            say_begin(&line);
+            say_text(&line, "smbfs: ");
+            say_text(&line, named(s));
+            say_text(&line, "'s ");
+            say_text(&line, t->name);
+            say_text(&line, " connected on the same session");
+            say_send(console, &line);
+        }
+
+        return;
+    }
+
+    tree_back(s);
+
+    t->refused = true;
+
+    if (t->ipc) {
+        s->list_wanted = false;
+        s->list_refused = true;
+        snprintf(s->list_why, sizeof(s->list_why), "%s would not list its "
+                 "shares", named(s));
+        return;
+    }
+
+    if ((uint32_t)status == SMB2_STATUS_BAD_NETWORK_NAME) {
+        snprintf(s->pub.why, sizeof(s->pub.why), "%s has no share called %s",
+                 named(s), t->name);
+    } else if ((uint32_t)status == SMB2_STATUS_ACCESS_DENIED) {
+        snprintf(s->pub.why, sizeof(s->pub.why), "%s does not let %s open %s",
+                 named(s), s->pub.account, t->name);
+    } else {
+        snprintf(s->pub.why, sizeof(s->pub.why), "%s refused %s (0x%08x)",
+                 named(s), t->name, (unsigned)status);
+    }
+
+    {
+        struct say_line line;
+
+        say_begin(&line);
+        say_text(&line, "smbfs: ");
+        say_text(&line, s->pub.why);
+        say_send(console, &line);
+    }
+}
+
+/* One TREE_CONNECT, on the session there is: `\\server\share`, as
+ * libsmb2's own connect writes it. */
+static bool tree_ask(struct server *s, struct tree *t)
+{
+    struct smb2_tree_connect_request req;
+    struct smb2_utf16 *unc;
+    struct smb2_pdu *pdu;
+    char text[SHARE_ADDRESS_MAX + SHARE_NAME_MAX + 4];
+
+    snprintf(text, sizeof(text), "\\\\%s\\%s", s->target, t->name);
+    unc = smb2_utf8_to_utf16(text);
+
+    if (unc == NULL) {
+        return false;
+    }
+
+    memset(&req, 0, sizeof(req));
+    req.path_length = (uint16_t)(2u * unc->len);
+    req.path = unc->val;
+
+    /* Its answer makes the new tree current; `tree_connected` puts the
+     * chain's back. The path is copied into the request as it is made. */
+    pdu = smb2_cmd_tree_connect_async(s->smb2, &req, tree_connected, t);
+    free(unc);
+
+    if (pdu == NULL) {
+        return false;
+    }
+
+    smb2_queue_pdu(s->smb2, pdu);
+    t->asking = true;
+    note_asked(s);
+    return true;
+}
+
+/* What NetShareEnum answered: the server's folders, kept for SHARES. */
+static void shares_listed(struct smb2_context *smb2, int status, void *data,
+                          void *private_data)
+{
+    struct server *s = private_data;
+    struct smb2_share_enum_reply *rep = data;
+    struct share_offered *out = NULL;
+    unsigned n = 0, i;
+
+    s->listing = false;
+
+    if (s->closing) {
+        if (rep != NULL) {
+            smb2_free_data(smb2, rep);
+        }
+
+        return;
+    }
+
+    chain_give(s);
+    tree_back(s);
+
+    if (status != 0 || rep == NULL || rep->level != SMB2_SHARE_INFO_1) {
+        const char *said = smb2_get_error(smb2);
+
+        s->list_refused = true;
+        snprintf(s->list_why, sizeof(s->list_why), "%s would not list its "
+                 "shares: %s", named(s), said != NULL && said[0] != '\0'
+                 ? said : "it did not say why");
+
+        if (rep != NULL) {
+            smb2_free_data(smb2, rep);
+        }
+
+        return;
+    }
+
+    out = calloc(rep->entries_read != 0 ? rep->entries_read : 1, sizeof(*out));
+
+    for (i = 0; out != NULL && i < rep->entries_read; i++) {
+        const struct smb2_share_info_1 *one = &rep->share_info.info_1[i];
+        const char *name = one->netname != NULL ? one->netname : "";
+        size_t len = strlen(name);
+
+        /*
+         * **Folders only**: a printer, a pipe and a share hidden by its name
+         * ending in `$` (`IPC$`, `ADMIN$`, `C$`) are not places to open.
+         */
+        if ((one->type & 3u) != SMB2_SHARE_TYPE_DISKTREE
+            || (one->type & SMB2_SHARE_TYPE_HIDDEN) != 0
+            || len == 0 || name[len - 1] == '$' || len >= SHARE_NAME_MAX) {
+            continue;
+        }
+
+        copy(out[n].name, sizeof(out[n].name), name);
+        out[n].kind = one->type & 3u;
+        n++;
+    }
+
+    smb2_free_data(smb2, rep);
+
+    free(s->offered);
+    s->offered = out;
+    s->offered_count = out != NULL ? n : 0;
+    s->listed_once = true;
+    s->list_refused = false;
+
+    {
+        struct say_line line;
+        char count[16];
+
+        snprintf(count, sizeof(count), "%u", s->offered_count);
+        say_begin(&line);
+        say_text(&line, "smbfs: ");
+        say_text(&line, named(s));
+        say_text(&line, " offers ");
+        say_text(&line, count);
+        say_text(&line, s->offered_count == 1 ? " share" : " shares");
+        say_send(console, &line);
+    }
+}
+
+/*
+ * **What the loop begins, on a connected server**: each share asked for and
+ * not yet connected, connected on the session; the list of shares, once
+ * `IPC$` is; and whatever waited for a chain on another tree, once none
+ * runs - every listing and open waiting on the same tree as the first one
+ * found, together. Never from inside a callback: a callback only decides.
+ */
+static void trees_wanted(struct server *s)
+{
+    struct tree *t, *ipc = NULL;
+    struct folder *f;
+    struct handle *h;
+    struct tree *next = NULL;
+    bool asked = false;
+
+    if (s->smb2 == NULL || s->closing || s->pub.state != SHARE_STATE_CONNECTED) {
+        return;
+    }
+
+    for (t = s->trees; t != NULL; t = t->next) {
+        if (!t->connected && !t->asking && !t->refused && tree_ask(s, t)) {
+            asked = true;
+        }
+
+        if (t->ipc) {
+            ipc = t;
+        }
+    }
+
+    /* The list wanted: `IPC$` connected first, if it is not. */
+    if (s->list_wanted && !s->listing) {
+        if (ipc == NULL) {
+            ipc = tree_add(s, "IPC$", true);
+
+            if (ipc != NULL && tree_ask(s, ipc)) {
+                asked = true;
+            }
+        } else if (ipc->connected && chain_take(s, ipc)) {
+            if (smb2_share_enum_async(s->smb2, SMB2_SHARE_INFO_1, shares_listed,
+                                      s) == 0) {
+                s->listing = true;
+                s->list_wanted = false;
+                note_asked(s);
+                asked = true;
+            } else {
+                chain_give(s);
+                s->list_wanted = false;
+                s->list_refused = true;
+                snprintf(s->list_why, sizeof(s->list_why), "no memory to ask "
+                         "%s for its shares", named(s));
+            }
+
+            tree_back(s);
+        }
+    }
+
+    /* Listings and opens that waited for another tree's chain. */
+    if (s->chains == 0) {
+        for (f = s->folders; f != NULL && next == NULL; f = f->next) {
+            if (f->deferred) next = f->tree;
+        }
+
+        for (h = s->handles; h != NULL && next == NULL; h = h->next) {
+            if (h->deferred) next = h->tree;
+        }
+    }
+
+    if (next != NULL) {
+        for (f = s->folders; f != NULL; f = f->next) {
+            if (f->deferred && f->tree == next && folder_ask(f)) {
+                asked = true;
+            }
+        }
+
+        for (h = s->handles; h != NULL; h = h->next) {
+            if (h->deferred && h->tree == next) {
+                if (!handle_open(h)) {
+                    h->opening = false;
+                    h->failed = -EIO;
+                    h->nt = 0;
+                }
+
+                asked = true;
+            }
+        }
+    }
+
+    if (asked) {
+        settle(s, 0);
+    }
+}
+
+/* SHARES: what the server offers, each marked with what was asked of it. */
+static void shares_page(struct disk_request *req, struct disk_reply *rep)
+{
+    struct share_ask *ask = (struct share_ask *)(void *)req->u.data;
+    struct share_offered *out = (struct share_offered *)(void *)rep->u.data;
+    char address[SHARE_ADDRESS_MAX];
+    struct server *s;
+    struct tree *t;
+    unsigned i, at = 0, n = 0;
+
+    field(address, sizeof(address), ask->address, sizeof(ask->address));
+    s = server_find(address);
+
+    if (s == NULL || s->probe || !s->was_connected) {
+        refuse(rep, SHARE_ERR_NOT_IN, "not signed into it: connect to it first, "
+               "with the account and the password");
+        return;
+    }
+
+    if (s->list_refused && !s->listed_once) {
+        bool any = false;
+
+        for (t = s->trees; t != NULL; t = t->next) {
+            any = any || !t->ipc;
+        }
+
+        if (!any) {
+            refuse(rep, SHARE_ERR_NO_LIST, s->list_why);
+            return;
+        }
+    }
+
+    /* Asked for the first time: the loop begins it (`trees_wanted`). */
+    if (!s->listed_once && !s->listing && !s->list_refused) {
+        s->list_wanted = true;
+    }
+
+    rep->bytes = s->listed_once ? 1u : 0u;
+
+#define OFFER(name_, state_, kind_) do {                                  \
+        if (at++ >= req->offset) {                                      \
+            if (n == SHARE_OFFERED_PER_PAGE) { rep->more = 1; goto full; } \
+            memset(&out[n], 0, sizeof(out[n]));                         \
+            copy(out[n].name, sizeof(out[n].name), (name_));            \
+            out[n].state = (state_);                                    \
+            out[n].kind = (kind_);                                      \
+            n++;                                                        \
+        }                                                               \
+    } while (0)
+
+    /* What it offers, in its order, each as asked for or not. */
+    for (i = 0; i < s->offered_count; i++) {
+        uint32_t state = SHARE_TREE_OFFERED;
+
+        t = tree_find(s, s->offered[i].name);
+
+        if (t != NULL) {
+            state = t->connected ? SHARE_TREE_CONNECTED
+                  : t->asking ? SHARE_TREE_ASKING
+                  : t->refused ? SHARE_TREE_REFUSED
+                  : t->was_connected ? SHARE_TREE_CONNECTED : SHARE_TREE_ASKING;
+        }
+
+        OFFER(s->offered[i].name, state, s->offered[i].kind);
+    }
+
+    /* And what was asked for that it does not list: a share it hides. */
+    for (t = s->trees; t != NULL; t = t->next) {
+        bool offered = false;
+
+        if (t->ipc) {
+            continue;
+        }
+
+        for (i = 0; i < s->offered_count && !offered; i++) {
+            offered = same_name(s->offered[i].name, t->name);
+        }
+
+        if (!offered) {
+            OFFER(t->name, t->connected ? SHARE_TREE_CONNECTED
+                  : t->asking ? SHARE_TREE_ASKING
+                  : t->refused ? SHARE_TREE_REFUSED : SHARE_TREE_ASKING,
+                  SMB2_SHARE_TYPE_DISKTREE);
+        }
+    }
+
+#undef OFFER
+full:
+    rep->count = n;
+    rep->length = (uint32_t)(n * sizeof(struct share_offered));
+    rep->offset = req->offset + n;
 }
 
 /*------------------------------------------------------------------------
@@ -2526,15 +3250,33 @@ static void above_shares(const struct disk_request *rq, const struct where *w,
     }
 
     if (w->s != NULL) {
-        /* A server's shares: the one connected. */
-        if (rq->offset == 0) {
-            size_t n = strlen(w->s->pub.share);
+        /* A server's shares: each connected on its session (N6), in the
+         * order asked for - an away one's too, as last heard. */
+        uint32_t used = 0;
+        unsigned at = 0;
+        struct tree *t;
 
-            memcpy(rp->u.data, w->s->pub.share, n + 1);
-            rp->length = (uint32_t)n + 1u;
-            rp->count = 1;
+        for (t = w->s->trees; t != NULL; t = t->next) {
+            size_t n;
+
+            if (!tree_listed(t) || at++ < rq->offset) {
+                continue;
+            }
+
+            n = strlen(t->name);
+
+            if (used + n + 1u > DISK_DATA_MAX) {
+                rp->more = 1;
+                rp->offset = at - 1u;
+                break;
+            }
+
+            memcpy(rp->u.data + used, t->name, n + 1);
+            used += (uint32_t)n + 1u;
+            rp->count++;
         }
 
+        rp->length = used;
         return;
     }
 
@@ -2586,7 +3328,7 @@ static bool names_op(const struct disk_request *rq, const struct where *w,
     }
 
     names_folder(rq, w, path, sizeof(path));
-    f = folder_get(s, path);
+    f = folder_get(s, w->tree, path);
 
     if (f == NULL) {
         said(rp, DISK_ERR_DENIED, "no memory for a folder of %s's", named(s),
@@ -2599,7 +3341,8 @@ static bool names_op(const struct disk_request *rq, const struct where *w,
      * server that is away (N5), memory is all there is, and every answer
      * from it says so, however recent; the server is not asked.
      */
-    here = s->smb2 != NULL && !s->closing && s->pub.state == SHARE_STATE_CONNECTED;
+    here = s->smb2 != NULL && !s->closing && s->pub.state == SHARE_STATE_CONNECTED
+           && w->tree->connected;
 
     if (f->known && ((here && now - f->heard < ticks_of_ms(FRESH_MS))
                      || (rq->op == DISK_OP_LIST && rq->offset > 0))) {
@@ -2666,7 +3409,8 @@ static bool read_op(const struct disk_request *rq, const struct where *w,
         return false;
     }
 
-    if (s->smb2 == NULL || s->closing || s->pub.state != SHARE_STATE_CONNECTED) {
+    if (s->smb2 == NULL || s->closing || s->pub.state != SHARE_STATE_CONNECTED
+        || !w->tree->connected) {
         away(s, rp);
         return false;
     }
@@ -2689,7 +3433,7 @@ static bool read_op(const struct disk_request *rq, const struct where *w,
         *cap = -1;                  /* the held caller's now, given back with it */
     }
 
-    h->handle = handle_get(s, w->inside);
+    h->handle = handle_get(s, w->tree, w->inside);
 
     if (h->handle == NULL) {
         h->failed = -ENOMEM;
@@ -2761,7 +3505,7 @@ static bool files_op(const struct disk_request *rq, uint64_t sender, long *cap,
 
             server_label(w.s, label, sizeof(label));
             said(rp, DISK_ERR_READ_ONLY, "%s's %s is open read only", label,
-                 w.s->pub.share, "");
+                 w.tree->name, "");
         } else {
             said(rp, DISK_ERR_READ_ONLY, "%s holds servers and their shares, "
                  "and is read only", "/Network", "", "");
@@ -2805,7 +3549,7 @@ static bool files_op(const struct disk_request *rq, uint64_t sender, long *cap,
         struct held *h;
 
         if (w.s->smb2 == NULL || w.s->closing
-            || w.s->pub.state != SHARE_STATE_CONNECTED) {
+            || w.s->pub.state != SHARE_STATE_CONNECTED || !w.tree->connected) {
             away(w.s, rp);
             return false;
         }
@@ -2817,11 +3561,19 @@ static bool files_op(const struct disk_request *rq, uint64_t sender, long *cap,
             return false;
         }
 
+        h->tree = w.tree;
+
+        /* One compound - CREATE, QUERY_INFO, CLOSE - made at once: the tree
+         * selected for it and put back, no chain. */
+        tree_select(w.s, w.tree);
+
         if (smb2_statvfs_async(w.s->smb2, "", &h->vfs, supered, h) < 0) {
             h->failed = -EIO;
         } else {
             note_asked(w.s);
         }
+
+        tree_back(w.s);
 
         settle(w.s, 0);
         return true;
@@ -2878,6 +3630,10 @@ static void answer(struct message *msg, uint64_t sender)
 
     case SHARE_OP_RETRY:
         retry_now(&req, rep);
+        break;
+
+    case SHARE_OP_SHARES:
+        shares_page(&req, rep);
         break;
 
     case SHARE_OP_WAITER: {
@@ -2947,8 +3703,16 @@ static bool busy(const struct server *s)
     const struct folder *f;
     const struct held *h;
 
-    if (s->echoing) {
+    const struct tree *t;
+
+    if (s->echoing || s->listing) {
         return true;
+    }
+
+    for (t = s->trees; t != NULL; t = t->next) {
+        if (t->asking) {
+            return true;
+        }
     }
 
     for (f = s->folders; f != NULL; f = f->next) {
@@ -3095,6 +3859,7 @@ static void deadlines(void)
         }
 
         queued = handles_idle(s, now);
+        trees_wanted(s);
 
         if (busy(s) && now - s->serviced >= counter_hz) {
             s->serviced = now;

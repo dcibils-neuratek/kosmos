@@ -1868,3 +1868,44 @@ enough, and honestly not more". A banner opening while an application started
 would have taken that application's process, so closing one could have ended
 the other. `open` now asks the kernel who sent it (`sys.sender()`,
 `SYS_SENDER`), and the guess is kept only for a kernel that cannot say.
+
+## 16.28 A password's field, a control that is not offered yet, and a group with a link
+
+Sharing's windows (`docs/sharing.md` N6, `docs/sharing.html`) asked three
+things of the kit, and each went in once rather than into the window that
+first wanted it.
+
+**`ui.field{ secret = true }`** - a field whose text is held as typed and
+drawn as a bullet a character, the mockup's `••••••`. It was there already
+for the Servers window's VNC password, drawn as a star a byte; the caret
+was then placed by measuring the *hidden* text, so it stood where the
+letters would have ended rather than after the stars, and a click landed as
+far off. Now one function says what a field draws of a stretch of its text
+(`field_view`), and the drawing, the caret, a click and **`field:shown()`**
+all ask it - `shown()` being what the field last drew, so a window can say
+what is on the screen without the screen being read (Connect to Server
+prints it; the display harness holds it to bullets, and to the pixels).
+Copy and cut still refuse a secret field. **In a bitmap look** the bullet
+is past the faces' ASCII and draws as the missing-glyph box - still a mask,
+and still nothing of the password.
+
+**`disabled` on `ui.switch` and `ui.checkbox`**, as a button has had it:
+drawn where it will be, faded, never focused, answering nothing. The
+Servers window said "a control that moves and does nothing is the thing this
+window must not have", and a disabled one does not move: File sharing's page
+is drawn as agreed with its switches disabled until the server side exists,
+and Connect to Server's "Remember in this machine's keyring" is a disabled
+box until there is a keyring.
+
+**`ui.sidebar` items that are not places**: `heading = true` names a group
+(24 tall, dim, never chosen by a press or an arrow) and may carry an
+`action` - words at its right in the accent, which call
+`on_action(self, id)` when pressed: the Network group's *Connect...*. And a
+row may carry, at its right, a `dot` ("live", "warn", "none"), a `lock`, or
+a `note` in the small face; be `indent`ed under the row above (a share
+under its server), drawn in the `accent`, or `dim`. `sidebar:action_at(id)`
+says where an action is, as `row_of` says where a row is.
+
+**The amber has one door**: `ui.warning_colours()` - the code look's warning
+and its ground, chosen by the ground it sits on - which the sidebar's dot
+for a server not answering and Tracker's gone-away band both ask.

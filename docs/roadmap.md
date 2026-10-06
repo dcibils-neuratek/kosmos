@@ -1084,7 +1084,19 @@ Assessed, not designed:
   4, 8 seconds up to a minute and signed into again by itself from the NT
   hash kept - a new session and tree; `share retry` is Try now, `share
   status` says when the next try is, `share disconnect` forgets one away.
-  **Next: N6**, the windows.
+  **N6 DONE on 6 October** (18.412): the windows, to the mockup - Tracker's
+  Network group (servers live, amber or locked, their shares, Connect...,
+  All of the network), the trail `Network > server > share` with the
+  globe and "over the network", the status line naming the server, the
+  dialect, signed or sealed, the account and bytes arriving, the Modified
+  column for a share, a remembered server's page with Sign in and Forget,
+  and the amber gone-away band with Try now and Disconnect, all asked on
+  Tracker's own clock; Connect to Server, its password's field a bullet a
+  character (`ui.field`'s `secret`), the server answering before the
+  password, a share chosen from the server's list (`SHARE_OP_SHARES`) and
+  several shares on one session; the Open window's Network group; File
+  sharing in the Servers window, drawn and disabled until N12. **Next: N7**,
+  on real hardware by hand.
   **Wanted, found by N4**: ARMv8's AES instructions in the Crypto Kit -
   CMAC and CCM are then most of what a signed or sealed megabyte costs on
   ARM (`sharing.md`, *What the Crypto Kit gains*); and libsmb2 offers only
@@ -1097,7 +1109,9 @@ Assessed, not designed:
   the same 2 MB now in 93 ms; and a `LIST` carrying each name's facts is worth building for
   `/Home`, `/Drives` and shares (`sharing.md` question 6). **Found**:
   a password typed at the prompt is shown as it is typed - the console has
-  no unechoed read yet, to add before the windows (N6).
+  no unechoed read. **Left at N6** (`sharing.md`, *N6, as built*): three
+  servers implement the console's protocol, and Connect to Server is now
+  the door where a password is not shown.
   **Found by it, and wanted for its 1 GB copy**: `/Home` taking a write in
   pieces (a copy stops at 1 MB today), and the network stack's 16 KB
   receive ring sized by measurement, with TCP window scaling (about

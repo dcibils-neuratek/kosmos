@@ -27,7 +27,7 @@
 #define SHARE_OP_PROBE       64u    /* does it answer: NEGOTIATE, and no more */
 #define SHARE_OP_CONNECT     65u    /* sign in and connect to a share */
 #define SHARE_OP_STATUS      66u    /* what each server is doing, a page from `offset` */
-/* 67 is `SHARE_OP_SHARES`, a server's shares through `srvsvc` - step N3. */
+#define SHARE_OP_SHARES      67u    /* a server's shares, offered and connected (N6) */
 #define SHARE_OP_DISCONNECT  68u    /* let a server go, and forget it */
 #define SHARE_OP_RETRY       69u    /* Try now: a server away, signed into again now */
 
@@ -41,7 +41,7 @@
  */
 #define SHARE_OP_WAITER      96u
 
-/* What PROBE, CONNECT and DISCONNECT carry, in `u.data`. `password` crosses
+/* What PROBE, CONNECT, DISCONNECT, RETRY and SHARES carry, in `u.data`. `password` crosses
  * once, in CONNECT, as a keystroke does; smbfs keeps its NT hash and never
  * the password (step N8 names a keyring entry instead). */
 #define SHARE_ADDRESS_MAX    48u    /* "192.168.1.38:445", or a name and a port */
@@ -77,7 +77,9 @@ struct share_ask {
 #define SHARE_STATE_AWAY       5u   /* not answering: `why` */
 
 /* STATUS's answer: `count` of these in `u.data`, a page from `offset`, and
- * `more` when another page follows. */
+ * `more` when another page follows. `size` is how many STATUS requests
+ * smbfs has answered since it started (N6): what a window's clock costs,
+ * counted where it arrives rather than where it is asked. */
 struct share_server {
     char     address[SHARE_ADDRESS_MAX];    /* as it was asked for */
     char     name[SHARE_NAME_MAX];          /* how it calls itself, once known */
@@ -108,11 +110,48 @@ struct share_server {
 #define SHARE_ERR_ACCOUNT    67u    /* no account: guests are not let in */
 #define SHARE_ERR_NO_MEMORY  68u
 #define SHARE_ERR_NOT_KEPT   69u    /* RETRY of a server not kept to sign into again */
+#define SHARE_ERR_NOT_IN     70u    /* SHARES of a server not signed into */
+#define SHARE_ERR_NO_LIST    71u    /* SHARES: the server would not list them */
+
+/*
+ * **A server's shares** (step N6): what Connect to Server offers once a
+ * server has been signed into - "choose one once it answers" - and what of
+ * them is connected. SHARES carries `struct share_ask` with the address,
+ * and is answered at once, as everything here is: `count` of these in
+ * `u.data`, a page from `offset`, `more` when another follows.
+ *
+ * The server's own list comes through `srvsvc`'s NetShareEnum on `IPC$`
+ * (libsmb2's `smb2-share-enum.c`), asked the first time SHARES is - or at
+ * once, by a CONNECT that names no share, which signs in to `IPC$` alone.
+ * **`bytes` says whether it has been heard**: 1 once it has, and the
+ * entries are the server's folders - its printers, its pipes and the
+ * shares it hides (a name ending in `$`) left out - with the ones asked for
+ * marked; 0 while it is being asked, and the entries are only the shares
+ * asked for; the caller asks again on its own clock. A server that will not
+ * list them is refused with SHARE_ERR_NO_LIST and its words.
+ *
+ * **Several shares on one connection.** A CONNECT to a server already
+ * signed into, as the same account, connects one share more on the same
+ * session - a TREE_CONNECT and nothing else, no password asked or used.
+ */
+#define SHARE_TREE_OFFERED     0u   /* the server offers it; not asked for */
+#define SHARE_TREE_ASKING      1u   /* TREE_CONNECT under way */
+#define SHARE_TREE_CONNECTED   2u   /* a folder: /Network/<server>/<share> */
+#define SHARE_TREE_REFUSED     3u   /* the server said no: STATUS's `why` */
+
+struct share_offered {
+    char     name[SHARE_NAME_MAX];
+    uint32_t state;                         /* SHARE_TREE_* */
+    uint32_t kind;                          /* srvsvc's STYPE_*, low two bits */
+};
+
+#define SHARE_OFFERED_PER_PAGE  (DISK_DATA_MAX / sizeof(struct share_offered))
 
 _Static_assert(sizeof(struct share_ask) <= DISK_DATA_MAX,
                "what a share is asked fits where a page of bytes does");
 _Static_assert(sizeof(struct share_server) == 336,
                "a server's status has no padding");
 _Static_assert(SHARE_PER_PAGE >= 3, "three servers a page");
+_Static_assert(sizeof(struct share_offered) == 48, "a share offered has no padding");
 
 #endif /* KOSMOS_SHAREPROTO_H */

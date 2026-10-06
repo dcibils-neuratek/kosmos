@@ -7,7 +7,8 @@
 -- Every network server this machine can run, in one window.
 --
 --   wm servers
---   wm servers telnet        open on that server's page
+--   wm servers:telnet        open on that server's page
+--   wm servers:sharing       File sharing, drawn and not built yet
 --
 -- **As `docs/servers.html` draws it**, and Diego's word on the drawing:
 -- "The mockup looks great". His ask, 29 September: "a servers app that hold
@@ -52,6 +53,16 @@ end
 -- The servers, and what each needs to be started.
 --------------------------------------------------------------------------
 
+--
+-- **File sharing** (`docs/sharing.md`, `docs/sharing.html`'s fifth state):
+-- folders of `/Home` offered to the Mac's Finder and Windows over SMB. Its
+-- page is drawn as agreed - and its switch drawn disabled, saying that
+-- sharing this machine's folders comes in a later step: the server side is
+-- `smbd`, step N12, and nothing here pretends it exists. No `program`, so
+-- nothing starts it and it is never "running".
+--
+local SHARING_LATER = "Sharing this machine's folders comes in a later step"
+
 local SERVERS = {
   { id = "web", name = "Web", icon = "network", program = "httpd",
     what = "HTTP", status = "/Temporary/httpd/status", log = "/Temporary/httpd/log",
@@ -68,6 +79,10 @@ local SERVERS = {
     defaults = { port = 5900, at_start = false, password = "", control = false },
     args = function(c) return tostring(c.port) end,
     reach = function(a, c) return ("vnc://%s%s"):format(a, c.port == 5900 and "" or (":" .. c.port)) end },
+  { id = "sharing", name = "File sharing", icon = "folder", program = nil,
+    what = "SMB", later = SHARING_LATER,
+    defaults = { port = 445, at_start = false },
+    reach = function(a) return ("smb://%s"):format(a) end },
 }
 
 local BY_ID = {}
@@ -286,12 +301,13 @@ local function page_all()
   for _, s in ipairs(SERVERS) do
     local state = state_of(s)
 
-    -- A server not built has no switch: a control that moves and does
-    -- nothing is the thing this window must not have.
+    -- A server not built has its switch drawn disabled, saying so: a
+    -- control that moves and does nothing is the thing this window must not
+    -- have, and a disabled one does not move.
     rows[#rows + 1] = { label = s.name,
-                        control = s.program and run_switch(s) or nil,
-                        value = (not s.program) and "Not built yet" or nil,
-                        note = s.what .. " · " .. state
+                        control = s.program and run_switch(s)
+                                  or ui.switch{ disabled = true },
+                        note = s.what .. " · " .. (s.later or state)
                                .. ((a and s.program) and (" · " .. s.reach(a, config(s))) or "") }
   end
 
@@ -412,7 +428,51 @@ local function page_vnc(s)
   return groups
 end
 
-local PAGES = { all = page_all, web = page_web, telnet = page_telnet, vnc = page_vnc }
+--
+-- **File sharing, as drawn** (`docs/sharing.html`): on or off, the address,
+-- which folders of `/Home` and how, who may sign in, and how it is set up -
+-- every part of it the mockup's, and every one saying it is not built:
+-- the switch disabled, the folders none, nothing to choose. When `smbd`
+-- arrives (step N12) this page gains its controls and keeps its shape.
+--
+local sharing_switch = nil
+
+local function page_sharing(s)
+  local a = address()
+  local off = function() return ui.switch{ disabled = true } end
+
+  -- The switch of the page, said where it is once the cards are laid out
+  -- (`rebuild`); a press on it is to change nothing, and if it ever did
+  -- this says so.
+  sharing_switch = off()
+  sharing_switch.on_change = function()
+    print("servers: file sharing switch moved")
+  end
+
+  return {
+    { name = "", rows = {
+        { label = "File sharing", control = sharing_switch,
+          note = SHARING_LATER .. ": folders of /Home, to the Mac's Finder, "
+                 .. "Windows and anything else that speaks SMB"
+                 .. (a and (" - " .. s.reach(a)) or "") } } },
+    { name = "Shared folders", rows = {
+        { label = "None yet", note = "Folders of /Home are chosen here, read "
+                                     .. "only or read and write, when sharing arrives" } } },
+    { name = "Who may connect", rows = {
+        { label = "Name", value = "Not set",
+          note = "The one account a visitor signs in with" },
+        { label = "Guests", value = "Off",
+          note = "Nobody reaches a folder without the name and password" },
+        { label = "From", value = "This network only" } } },
+    { name = "Set up", rows = {
+        { label = "Encrypt everything", control = off(),
+          note = "SMB 3's AES on the wire; a Mac and Windows 10 and later speak it" },
+        { label = "Start with the machine", control = off() } } },
+  }
+end
+
+local PAGES = { all = page_all, web = page_web, telnet = page_telnet, vnc = page_vnc,
+                sharing = page_sharing }
 
 local shown_cards, shown_log = nil, nil
 
@@ -443,6 +503,15 @@ rebuild = function()
   header.title = s and s.name or "All servers"
   header.sub = said
   cards:set(PAGES[showing](s))
+
+  -- File sharing's page, for the display harness: what it says and where
+  -- its switch is, in the window.
+  if showing == "sharing" and sharing_switch then
+    print(("servers: file sharing - %s; its switch at %d,%d, %s"):format(
+          SHARING_LATER, cards.x + sharing_switch.x + sharing_switch.w // 2,
+          cards.y + sharing_switch.y + sharing_switch.h // 2,
+          sharing_switch.disabled and "disabled" or "enabled"))
+  end
 
   -- The log, under the cards, for a server that keeps one.
   log.hidden = not (s and s.log)

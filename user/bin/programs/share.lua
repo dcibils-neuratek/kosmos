@@ -2,6 +2,8 @@
 -- Shares on other machines, over SMB 2 and 3.
 --
 --   share connect smb://10.0.2.2:4450/Projects diego   sign in; asks the password
+--   share connect smb://10.0.2.2:4450 diego            sign in, no share yet
+--   share shares 10.0.2.2:4450                         what a server signed into offers
 --   share probe 10.0.2.2:4450                          does a server answer there?
 --   share status                                       what each server is doing
 --   share retry 10.0.2.2:4450                          Try now: one that is away
@@ -21,10 +23,22 @@
 -- costs smbfs, and every other program asking it, nothing.
 --
 -- **The password is typed at the prompt, and shown as it is typed**: the
--- console has no way yet to read a line without echoing it. It crosses to
--- smbfs once, which keeps its NT hash and not the password; Connect to
--- Server's field (step N6) and the keyring (N8) are where it stops being
--- typed here at all.
+-- console has no way to read a line without echoing it. It crosses to
+-- smbfs once, which keeps its NT hash and not the password. **Connect to
+-- Server** (step N6, Tracker's Network group) is the door where it is not
+-- shown - its field draws a star a character - and the keyring (N8) where
+-- it stops being typed at all.
+--
+-- **Why the prompt did not gain an unechoed read at N6**: the console's
+-- line is read by three servers that each implement the same protocol -
+-- `console.c`, the Terminal and `telnetd`'s sessions - and a read that does
+-- not echo is a change to `conproto.h` and to all three, for one program
+-- whose password now has a window. Said in `docs/sharing.md`, N6.
+--
+-- **Several shares on one connection** (N6): a second `connect` to a
+-- server already signed into, as the same account, asks for the share on
+-- the same session and for no password; one with no share signs in alone,
+-- and `shares` says what the server offers.
 --
 -- **A server that goes away is kept** (step N5): `status` says since when,
 -- and when smbfs tries it again by itself; `retry` is the mockup's Try now,
@@ -47,7 +61,8 @@ end
 local verb = words[1]
 
 local function usage()
-  print("usage: share connect smb://server[:port]/share account [--no-wait]")
+  print("usage: share connect smb://server[:port][/share] account [--no-wait]")
+  print("       share shares server[:port]")
   print("       share probe server[:port] [--no-wait]")
   print("       share status")
   print("       share retry server[:port]")
@@ -55,14 +70,13 @@ local function usage()
 end
 
 -- "smb://10.0.2.2:4450/Projects", "10.0.2.2:4450/Projects", "nas": the
--- server with its port as typed, and the share after the slash.
+-- server with its port as typed, and the share after the slash - read as
+-- Connect to Server reads it, by the one library that does.
+local netshares = use("/Kosmos/Libraries/netshares.lua")
+
 local function split(text)
-  local rest = tostring(text or ""):gsub("^smb://", "")
-  local server, share = rest:match("^([^/]+)/?(.*)$")
+  local server, share = netshares.split(text)
 
-  if not server then return nil end
-
-  share = (share or ""):gsub("/+$", "")
   return server, share
 end
 
@@ -82,7 +96,7 @@ local function line(s)
   end
 
   if s.state == "connected" then
-    parts[#parts + 1] = s.share .. " as " .. s.account
+    parts[#parts + 1] = (s.share ~= "" and s.share or "signed in") .. " as " .. s.account
 
     if (s.sign_ins or 0) > 1 then
       parts[#parts + 1] = ("signed in %d times"):format(s.sign_ins)
@@ -143,10 +157,12 @@ local function report(address)
   if not s then
     print("share: " .. tostring(why))
   elseif s.state == "connected" then
-    print(("share: %s answered - %s, SMB %s%s%s; %s connected as %s")
+    print(("share: %s answered - %s, SMB %s%s%s; %s as %s")
           :format(s.address, s.name ~= "" and s.name or "a server",
                   tostring(s.dialect), s.signing and ", signed" or "",
-                  s.sealing and ", sealed" or "", s.share, s.account))
+                  s.sealing and ", sealed" or "",
+                  s.share ~= "" and (s.share .. " connected") or "signed in",
+                  s.account))
   elseif s.state == "answered" then
     print(("share: %s answered - SMB %s%s"):format(s.address, tostring(s.dialect),
           s.signing and ", signing required" or ""))
@@ -155,12 +171,62 @@ local function report(address)
   end
 end
 
+-- Signed into already, as this account? Then a share more is asked for on
+-- the same session, and no password (N6).
+local function signed_in(server, account)
+  for _, s in ipairs(fs.share_status() or {}) do
+    if s.address == server and s.state == "connected" and s.account == account then
+      return true
+    end
+  end
+
+  return false
+end
+
+-- A share asked for on a server signed into: connected, or why not.
+local function report_share(server, share)
+  for _ = 1, 15 * 10 do
+    local list = fs.share_shares(server) or {}
+
+    for _, one in ipairs(list) do
+      if one.name:lower() == share:lower() and one.state == "connected" then
+        print(("share: %s connected on the same session"):format(one.name))
+        return
+      end
+
+      if one.name:lower() == share:lower() and one.state == "refused" then
+        local s = find(server)
+        print("share: " .. tostring(s and s.why or "refused"))
+        return
+      end
+    end
+
+    sys.sleep(25)
+  end
+
+  print("share: " .. share .. " did not connect")
+end
+
 if verb == "connect" then
   local server, share = split(words[2])
   local account = words[3]
 
-  if not server or share == "" or not account then
+  if not server or not account then
     usage()
+    return
+  end
+
+  if signed_in(server, account) then
+    local ok, why = fs.share_connect(server, share, account, "")
+
+    if not ok then
+      print("share: " .. tostring(why))
+    elseif share ~= "" and wait then
+      report_share(server, share)
+    else
+      print("share: asked " .. server .. " for " .. (share ~= "" and share or "its shares"))
+    end
+
     return
   end
 
@@ -179,6 +245,36 @@ if verb == "connect" then
   end
 
   report(server)
+elseif verb == "shares" then
+  local server = split(words[2])
+
+  if not server then
+    usage()
+    return
+  end
+
+  -- Asked again until the server's own list is heard, a few times a second.
+  local list, why
+
+  for _ = 1, 15 * 10 do
+    list, why = fs.share_shares(server)
+
+    if not list or list.known then break end
+
+    sys.sleep(25)
+  end
+
+  if not list then
+    print("share: " .. tostring(why))
+  elseif #list == 0 then
+    print("share: " .. server .. " offers no shares")
+  else
+    for _, one in ipairs(list) do
+      print(("%s  %s"):format(one.name, one.state))
+    end
+
+    if not list.known then print("share: its own list was not heard yet") end
+  end
 elseif verb == "probe" then
   local server = split(words[2])
 

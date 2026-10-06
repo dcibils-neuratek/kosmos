@@ -143,8 +143,8 @@ end
 -- this second - a file's Modified (`roadmap.md` 6za step b), which is a
 -- date the disk kept rather than the time it is.
 --
-function clock.at(epoch)
-  local offset = clock.offset()
+function clock.at(epoch, offset)
+  offset = offset or clock.offset()
   local local_epoch = epoch + offset * 60
 
   -- Floor division, so a machine set west of UTC on the first hours of the
@@ -180,6 +180,45 @@ function clock.long_string(t)
 
   return ("%d %s %d, %02d:%02d"):format(t.day, clock.FULL_MONTHS[t.month],
                                         t.year, t.hour, t.min)
+end
+
+--
+-- **A moment as a list of files says it** (`docs/sharing.html`'s Modified
+-- column): "Today, 11:20", "Yesterday, 23:51", or "3 Oct 2026, 22:14" -
+-- against `now`, both seconds since 1970, in local time at `offset`
+-- minutes (`clock.offset()` when not given: a list of two thousand asks it
+-- once and hands it in, since it is a read of the settings each time).
+--
+function clock.relative(epoch, now, offset)
+  offset = offset or clock.offset()
+
+  local t = clock.at(epoch, offset)
+  local day = (epoch + offset * 60) // 86400
+  local today = (now + offset * 60) // 86400
+  local hm = ("%02d:%02d"):format(t.hour, t.min)
+
+  if day == today then return "Today, " .. hm end
+  if day == today - 1 then return "Yesterday, " .. hm end
+
+  return ("%d %s %d, %s"):format(t.day, clock.MONTHS[t.month], t.year, hm)
+end
+
+--
+-- **And a day as a list of recent things says it**: "today", "yesterday",
+-- or "2 Oct" - Connect to Server's recent servers.
+--
+function clock.day_word(epoch, now, offset)
+  offset = offset or clock.offset()
+
+  local day = (epoch + offset * 60) // 86400
+  local today = (now + offset * 60) // 86400
+
+  if day == today then return "today" end
+  if day == today - 1 then return "yesterday" end
+
+  local t = clock.at(epoch, offset)
+
+  return ("%d %s"):format(t.day, clock.MONTHS[t.month])
 end
 
 function clock.date_string(now)

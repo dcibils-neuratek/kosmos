@@ -1,5 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
--- The sidebar Tracker and every Open and Save window share: Places, System, Drives.
+-- The sidebar Tracker and every Open and Save window share: Places, System,
+-- Drives and Network.
 --
 -- `drives.html`: "An app's Open and Save windows have the same sidebar as
 -- Tracker: Places and Drives. You go through whichever is quicker." The same
@@ -144,8 +145,8 @@ end
 -- `/Running` hung Tracker and Diego asked why it was there at all:
 -- "tracker is for files". The first two are left out of the roots above
 -- (`places.holds_files`); `/Network` came back as a folder of shares
--- (`docs/sharing.md` N3), under System until N6 gives it a Network group
--- of its own.
+-- (`docs/sharing.md` N3), and is a group of its own since N6 - after
+-- Drives, as Tracker's sidebar has it (`docs/sharing.html`).
 local SYSTEM_MOUNTS = {
   ["/Kosmos"] = true, ["/Temporary"] = true,
 }
@@ -264,14 +265,42 @@ function sidebar.new()
     return out
   end
 
+  --
+  -- **The Network group** (`docs/sharing.md` N6): the servers in
+  -- `/Network` and their shares under them, as smbfs lists them from what
+  -- it already knows - so opening the group asks no server anything. Folded
+  -- until opened, as a group whose rows come from another process is: what
+  -- is asked to draw a first frame is nothing.
+  --
+  local function network_rows()
+    local out = {}
+
+    for _, e in ipairs(files.entries("/Network") or {}) do
+      if e.kind == "directory" then
+        out[#out + 1] = { text = e.name, path = files.join("/Network", e.name),
+                          children = subdirs }
+      end
+    end
+
+    if #out == 0 then
+      out[1] = { text = "(no servers)", quiet = true }
+    end
+
+    return out
+  end
+
   local groups = {}
 
   local function grouped_roots()
     local system, other = {}, {}
+    local network = false
 
     for _, m in ipairs(mount_roots()) do
       if m.path == "/Drives" then
         -- The Drives group answers for it, with what each volume is.
+      elseif m.path == "/Network" then
+        -- And the Network group for this.
+        network = true
       elseif SYSTEM_MOUNTS[m.path] then
         system[#system + 1] = m
       elseif m.path ~= "/Home" then
@@ -295,11 +324,18 @@ function sidebar.new()
     groups.drives = { text = "Drives", heading = true, open = true,
                       children = drive_rows }
 
-    return {
+    local out = {
       groups.places,
       { text = "System", heading = true, kids = system },
       groups.drives,
     }
+
+    if network then
+      groups.network = { text = "Network", heading = true, children = network_rows }
+      out[#out + 1] = groups.network
+    end
+
+    return out
   end
 
 
@@ -316,6 +352,7 @@ function sidebar.new()
 
     if groups.places then groups.places.kids = nil end
     if groups.drives then groups.drives.kids = nil end
+    if groups.network then groups.network.kids = nil end
   end
 
   --

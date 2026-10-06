@@ -27,6 +27,11 @@
 -- and would browse a directory served from another machine without
 -- noticing which it was.
 --
+-- **A Modified column for a share's files, and only there** (`docs/
+-- sharing.md` N6, Diego's answer 5): a share's server stamps real dates,
+-- so a folder under `/Network` shows when each file was last written.
+-- What follows is why `/Home` has none yet.
+--
 -- **There is no Modified column**, and the absence is deliberate rather
 -- than unfinished. A file's `mtime` is `sys.ticks()`, the counter since
 -- this machine started, so across a reboot it means nothing at all.
@@ -49,6 +54,9 @@ local iconsize = use("/Kosmos/Libraries/iconsize.lua")
 local placelib = use("/Kosmos/Libraries/places.lua")
 local filemenu = use("/Kosmos/Libraries/filemenu.lua")
 local sidebar  = use("/Kosmos/Libraries/sidebar.lua")
+local netshares = use("/Kosmos/Libraries/netshares.lua")
+local clock    = use("/Kosmos/Libraries/clock.lua")
+local prefs    = use("/Kosmos/Libraries/prefs.lua")
 local theme = ui.theme
 
 local W, H = 780, 520
@@ -322,6 +330,7 @@ local function place_icon(path)
     return "trash"
   end
   if path == "/Drives" or path:match("^/Drives/") then return "drive" end
+  if netshares.under(path) then return "globe" end
 
   return "folder"
 end
@@ -410,6 +419,11 @@ local start_drag
 -- And the one that changes directory, because the places tree calls it and
 -- is built above it.
 local show, visit
+
+-- And the network's three (N6): what a folder shown is of it, a server
+-- not signed into as a page, and Connect to Server - each called from
+-- above where it is written.
+local net_view, show_seen, open_connect
 
 -- Compress and Extract, below the foot they draw in (`roadmap.md` 6v).
 local compress_paths, zip_folder, extract_zip
@@ -800,6 +814,20 @@ local COLUMNS = {
 }
 
 --
+-- **Modified, for a share** (`docs/sharing.html`): the server's date of
+-- each file, "Today, 11:20" or "3 Oct 2026, 22:14" - worked out once a
+-- listing, in `show`, and only drawn here. `dated` says whether the folder
+-- shown is one whose dates are real.
+--
+local MODIFIED = { key = "modified", title = "Modified", x = 418, w = 160 }
+local WITH_MODIFIED = { COLUMNS[1], COLUMNS[2], COLUMNS[3], MODIFIED }
+local dated = false
+
+local function columns()
+  return dated and WITH_MODIFIED or COLUMNS
+end
+
+--
 -- What the view shows, which is not always what the directory holds.
 --
 -- Three sources, in order of how much they cost: a query's answer if one
@@ -845,6 +873,10 @@ local function sorted()
     elseif sort_by == "kind" then
       x, y = a.kind, b.kind
       if x == y then x, y = a.name, b.name end
+    elseif sort_by == "modified" then
+      x = a.attrs and a.attrs.modified or 0
+      y = b.attrs and b.attrs.modified or 0
+      if x == y then x, y = a.name, b.name end
     else
       x, y = a.name, b.name
     end
@@ -873,6 +905,53 @@ end
 --
 local side = sidebar.new()
 local place_by_id = {}
+
+--------------------------------------------------------------------------
+-- **Shares over the network** (`docs/sharing.md` step N6,
+-- `docs/sharing.html`): the Network group in the sidebar, a share's trail,
+-- status line and Modified column, a server seen and not signed into, and
+-- one gone away.
+--
+-- **All of it drawn from what smbfs has already said**, asked for on this
+-- window's own clock (`net_frame`, below) - once a second while anything
+-- of the network is in view, every five seconds otherwise - and never in a
+-- paint or a press (`CLAUDE.md`, *nothing on the desktop waits on a
+-- server*). A press on Try now or Disconnect says at once what it began,
+-- and the clock sends it. smbfs answers every one of these at once from
+-- its own records, so the clock never waits on a server either.
+--
+-- `on` is whether this machine has an SMB client at all - a namespace
+-- without one answers `fs.share_status` from itself, with no message - and
+-- the desktop, which is this program too, never asks.
+--------------------------------------------------------------------------
+
+local net = {
+  on = (not backdrop) and fs.share_status ~= nil
+       and fs.share_status() ~= nil,
+  servers = {},             -- netshares.servers' answer, last heard
+  status = {},              -- fs.share_status's, last heard
+  key = nil,                -- what the sidebar was built from
+  shares = {},              -- every share's path, to see a new one arrive
+  asked_at = 0,
+  awaiting = false,         -- this window opened Connect to Server
+  pending = nil,            -- a press's action, for the clock to send
+  away = nil,               -- the server of the folder shown, when away
+  here = nil,               -- the server of the folder shown
+  seen = nil,               -- a server not signed into, shown as a page
+  rate = 0,                 -- bytes a second arriving, from `.device`
+  read_bytes = nil, read_at = nil,
+  paints = 0, asks = 0, told_at = 0,
+}
+
+local stale = false         -- the folder shown is as last heard
+
+-- The Network group's rows: the group's name and Connect, each server and
+-- its shares, and All of the network (`netshares.rows`).
+local function network_items()
+  if not net.on then return {} end
+
+  return netshares.rows(net.servers)
+end
 
 local function place_items()
   local items, by = {}, {}
@@ -927,6 +1006,20 @@ local function place_items()
     add(sidebar.volume_label(v), sidebar.volume_path(v), "drive")
   end
 
+  --
+  -- **The Network group, under the drives** (`docs/sharing.html`): its name
+  -- with Connect..., the servers connected or remembered with their shares
+  -- under them, and All of the network.
+  --
+  local network = network_items()
+
+  if #network > 0 then items[#items + 1] = { gap = true, rule = true } end
+
+  for _, it in ipairs(network) do
+    items[#items + 1] = it
+    by[it.id] = it
+  end
+
   return items, by
 end
 
@@ -936,13 +1029,35 @@ local places = ui.sidebar{
   on_select = function(_, id)
     local it = place_by_id[id]
 
-    if it and it.path then visit(it.path) end
+    if not it then return end
+
+    -- A server not signed into is a page of what is known of it.
+    if it.server and it.server.lock then
+      show_seen(it.server)
+    elseif it.path then
+      visit(it.path)
+    end
+  end,
+
+  -- The Network group's Connect...: the window that signs into a server.
+  on_action = function(_, id)
+    if id == "#network" then open_connect() end
   end,
 }
 
--- The chosen row is the place you are in, when you are in one.
+-- The chosen row is the place you are in, when you are in one - and a
+-- server's row for the server itself, whose id is not its path.
 local function mark_place(path)
-  places.selected = place_by_id[path] and path or nil
+  if place_by_id[path] then
+    places.selected = path
+    return
+  end
+
+  places.selected = nil
+
+  for id, it in pairs(place_by_id) do
+    if it.server and it.path == path and not it.indent then places.selected = id end
+  end
 end
 
 --
@@ -1031,6 +1146,220 @@ function pane_ground:draw(g)
 end
 
 rows.focusable = true
+
+--
+-- **Gone away** (`docs/sharing.html`'s fourth state): a band across the top
+-- of the files, in the amber of something wrong and not over - the warning
+-- triangle, "MACPEER is not answering - retrying", since when and when the
+-- next try is, and Try now and Disconnect. The folder under it stays as it
+-- was last listed, greyed. Nothing spins: the words change when smbfs's
+-- answer does, on this window's clock.
+--
+local BANNER_H = 64
+
+local banner = ui.view{ x = SIDE_W, y = CONTENT_Y, w = W - SIDE_W, h = BANNER_H,
+                        hidden = true, follow = { "left", "right", "top" } }
+
+local try_now = ui.button{ text = "Try now" }
+local let_go = ui.button{ text = "Disconnect" }
+
+banner.title, banner.words = "", ""
+
+function banner:draw(g)
+  local warn, ground = ui.warning_colours()
+  local x, y, w, h = 12, 8, self.w - 24, self.h - 12
+
+  g:fill(0, 0, self.w, self.h, theme.sunken)
+  g:fill_round(x, y, w, h, ground, 12)
+  g:frame_round(x, y, w, h, theme.mix(ground, warn, 350), 12)
+  g:line_icon(x + 14, y + (h - 15) // 2, "warning", warn)
+
+  local room = try_now.x - x - 44 - 12
+
+  g:text(x + 40, y + 8, ui.fitted(self.title, room, "label"), warn, ground, "label")
+  g:text(x + 40, y + 8 + gfx.height("label") + 2, ui.fitted(self.words, room),
+         theme.text_dim, ground)
+end
+
+-- The two buttons at the band's right, against its edge whatever its width.
+local function banner_layout()
+  let_go.x = banner.w - 12 - 14 - let_go.w
+  try_now.x = let_go.x - 8 - try_now.w
+  try_now.y = (banner.h + 4 - try_now.h) // 2
+  let_go.y = try_now.y
+end
+
+banner:add(try_now)
+banner:add(let_go)
+
+local banner_resize = banner.resize
+
+function banner:resize(w, h)
+  banner_resize(self, w, h)
+  banner_layout()
+end
+
+banner_layout()
+
+-- The files start under the band while it is there.
+local function pane_top()
+  local top = CONTENT_Y + (banner.hidden and 0 or BANNER_H)
+  local bottom = pane_ground.y + pane_ground.h - FOOT_H
+
+  rows.y = top
+  rows.h = math.max(0, bottom - top)
+
+  if rows._insets then rows._insets.top = top end
+end
+
+--
+-- **Try now and Disconnect**: said at once - the band reads "trying again
+-- now" from the press - and sent by the clock (`net_frame`).
+--
+try_now.on_click = function()
+  if not net.away then return end
+
+  net.pending = { op = "retry", address = net.away.address }
+  net.away.trying = true
+  banner.title = netshares.away_words(net.away, nil)
+  status.text = "trying " .. (net.away.name ~= "" and net.away.name or net.away.address)
+                .. " now"
+  win.poll_wait_ticks = 1
+  win.dirty = true
+end
+
+let_go.on_click = function()
+  local s = net.away or net.here
+
+  if not s then return end
+
+  net.pending = { op = "disconnect", address = s.address }
+  status.text = "letting " .. ((s.name ~= "" and s.name) or s.address) .. " go"
+  win.poll_wait_ticks = 1
+  win.dirty = true
+end
+
+--
+-- **"over the network"**, with the globe, at the header's right while a
+-- folder under `/Network` is shown (`docs/sharing.html`): the second of the
+-- three things that say a folder is somewhere else, beside the globe on
+-- the place button and the status line.
+--
+local OVER = "over the network"
+
+local over = ui.view{ w = 15 + 6 + gfx.measure(OVER) + 8, h = 24, hidden = true }
+
+function over:draw(g)
+  g:line_icon(0, (self.h - 15) // 2, "globe", theme.accent)
+  g:text(21, (self.h - gfx.height()) // 2, OVER, theme.text_dim)
+end
+
+--
+-- **A server seen and not signed into** (`docs/sharing.html`'s third
+-- state): one remembered from Connect to Server, or one that refused, as
+-- a card of what is known of it - asking it nothing - with Sign in... and
+-- Forget. Until mDNS (step N11) a server is "seen" by having been asked
+-- for before; the drawing's "Calls itself Synology DS220+" waits for that.
+--
+local seen_card = ui.view{ x = SIDE_W, y = CONTENT_Y, w = W - SIDE_W,
+                           h = H - CONTENT_Y - FOOT_H, hidden = true,
+                           follow = { "left", "right", "top", "bottom" } }
+local sign_in = ui.button{ text = "Sign in\u{2026}", go = true }
+local forget = ui.button{ text = "Forget" }
+
+seen_card:add(sign_in)
+seen_card:add(forget)
+
+local CARD_W, CARD_H = 420, 300
+
+local function seen_facts(s)
+  local host, port = tostring(s.address):match("^(.-):(%d+)$")
+  local out = {
+    { "Address", host or s.address },
+    { "Speaks", "SMB, port " .. (port or "445") },
+    { "Shares", "listed once signed in" },
+    { "Guests", "this machine does not try them" },
+  }
+
+  if s.rec and s.rec.why and s.rec.why ~= "" then
+    out[#out + 1] = { "Last said", s.rec.why }
+  end
+
+  return out
+end
+
+function seen_card:draw(g)
+  local s = net.seen
+
+  g:fill(0, 0, self.w, self.h, theme.sunken)
+
+  if not s then return end
+
+  local cx = (self.w - CARD_W) // 2
+  local cy = math.max(16, (self.h - CARD_H) // 2)
+
+  g:fill_round(cx, cy, CARD_W, CARD_H, theme.raised, 18)
+  g:line_icon(cx + (CARD_W - 30) // 2, cy + 20, "server", theme.text_dim, 30)
+
+  local title = s.name or s.address
+
+  g:text(cx + (CARD_W - gfx.measure(title, "heading")) // 2, cy + 58, title,
+         theme.text, theme.raised, "heading")
+
+  local sub = s.remembered and "Remembered \u{b7} not signed in"
+              or "Not signed in"
+
+  g:text(cx + (CARD_W - gfx.measure(sub)) // 2, cy + 58 + gfx.height("heading") + 2,
+         sub, theme.text_dim, theme.raised)
+
+  local fy = cy + 108
+  local facts = seen_facts(s)
+  local fh = #facts * 28 + 8
+  local ground = theme.mix(theme.raised, theme.sunken, 500)
+
+  g:fill_round(cx + 20, fy, CARD_W - 40, fh, ground, 12)
+
+  for i, f in ipairs(facts) do
+    local ry = fy + 4 + (i - 1) * 28
+
+    if i > 1 then g:fill(cx + 32, ry, CARD_W - 64, 1, theme.line_soft) end
+
+    g:text(cx + 34, ry + (28 - gfx.height()) // 2, f[1], theme.text_dim, ground)
+
+    local v = ui.fitted(f[2], CARD_W - 40 - 140)
+
+    g:text(cx + CARD_W - 34 - gfx.measure(v), ry + (28 - gfx.height()) // 2, v,
+           theme.text, ground)
+  end
+
+  local by = fy + fh + 16
+
+  sign_in.y, forget.y = by, by
+  sign_in.x = cx + (CARD_W - sign_in.w - 10 - forget.w) // 2
+  forget.x = sign_in.x + sign_in.w + 10
+end
+
+sign_in.on_click = function()
+  local s = net.seen
+
+  if not s then return end
+
+  local r = s.remembered or {}
+
+  open_connect(netshares.url(s.address, r.share))
+end
+
+-- Forget: out of the remembered ones, said at once, written by the clock.
+forget.on_click = function()
+  local s = net.seen
+
+  if not s then return end
+
+  net.pending = { op = "forget", address = s.address, was_asked = s.rec ~= nil }
+  status.text = (s.name or s.address) .. " is forgotten"
+  win.poll_wait_ticks = 1
+  win.dirty = true
+end
 
 --
 -- **The wheel** (`roadmap.md` 5zv): a row of icons a notch, or three rows
@@ -1253,6 +1582,8 @@ function rows:draw(g)
   --
   g:fill(0, 0, self.w, self.h, backdrop and 0x00000000 or theme.sunken)
 
+  net.paints = net.paints + 1
+
   local shown = sorted()
   self.shown = shown
 
@@ -1295,7 +1626,7 @@ function rows:draw(g)
   g:fill(1, 1, self.w - 2, LROW - 1, ground)
   g:fill(1, LROW, self.w - 2, 1, theme.line_soft)
 
-  for _, c in ipairs(COLUMNS) do
+  for _, c in ipairs(columns()) do
     local mark = (sort_by == c.key) and (reversed and " v" or " ^") or ""
     g:text(c.x, wy, c.title .. mark, theme.text_dim, ground)
   end
@@ -1355,6 +1686,9 @@ function rows:draw(g)
                or theme.sunken
     local fg = (on and not flat) and theme.text_on or theme.text
 
+    -- A folder as last heard, its server away: greyed under the band.
+    if stale and not on then fg = theme.text_dim end
+
     local wide = self.w - 2 - (self.bar and ui.SCROLL_W + 2 or 0)
 
     if on then
@@ -1392,6 +1726,11 @@ function rows:draw(g)
     g:text(COLUMNS[3].x, y,
            (e.kind == "directory") and "folder"
            or (types.kind_of(e.name, e.attrs) or "file"), fg, bg)
+
+    if dated then
+      g:text(MODIFIED.x, y, ui.fitted(e.when or "", wide - MODIFIED.x - 4),
+             fg, bg)
+    end
   end
 
   draw_band()
@@ -1616,7 +1955,7 @@ function rows:mouse(action, x, y)
   -- are no columns.
   --
   if mode ~= "icons" and y < (self.top_row or 0) then
-    for _, c in ipairs(COLUMNS) do
+    for _, c in ipairs(columns()) do
       if x >= c.x - 4 and x < c.x + c.w then
         if sort_by == c.key then reversed = not reversed
         else sort_by, reversed = c.key, false end
@@ -1909,12 +2248,51 @@ function show(path)
   -- shown (`places.holds_files`).
   listed = placelib.files_only(path, listed)
 
+  --
+  -- **A share's folder** (N6): its dates are the server's, so the Modified
+  -- column is drawn, each date in words once here rather than in every
+  -- paint; and whether it is as last heard - its server away - which greys
+  -- it under the band.
+  --
+  local server_label, share_name = netshares.under(path)
+
+  dated = share_name ~= nil and share_name ~= ""
+  stale = listed.last_heard_ms ~= nil
+
+  if dated then
+    local now = (fs.read("/Devices/clock") or {}).epoch or 0
+    local offset = clock.offset()
+
+    for _, e in ipairs(listed) do
+      local m = e.attrs and e.attrs.modified
+
+      e.when = math.type(m) == "integer" and clock.relative(m, now, offset) or ""
+    end
+
+    -- The first file's, for the display harness, which holds it to the
+    -- server's own date for that file.
+    for _, e in ipairs(listed) do
+      if e.kind ~= "directory" then
+        print(("tracker: modified %s %s"):format(e.name, e.when))
+        break
+      end
+    end
+  elseif sort_by == "modified" then
+    sort_by, reversed = "name", false
+  end
+
+  net.seen = nil
+  seen_card.hidden = true
+  rows.hidden = false
+
   -- What it opened, once a folder is shown, for the harnesses: a share is
   -- held to opening as a folder by it (`docs/sharing.md` N3), where a
   -- picture of the window is N6's.
   if not backdrop then
-    print(("tracker: showing %s, %d item%s"):format(path, #listed,
-                                                  #listed == 1 and "" or "s"))
+    print(("tracker: showing %s, %d item%s%s"):format(path, #listed,
+                                                    #listed == 1 and "" or "s",
+                                                    listed.last_heard_ms
+                                                    and ", as last heard" or ""))
   end
 
   -- A directory listing replaces a query's answer: the two are different
@@ -1930,7 +2308,11 @@ function show(path)
     -- drawing say it - and the folder's name everywhere else.
     local known = place_by_id[path]
 
-    place_button.text = known and known.name
+    -- Under `/Network`, the whole trail with the globe, as the drawing's
+    -- `Network > diego-mac > Projects` (N6): a share's place is its server
+    -- as much as its folder.
+    place_button.text = netshares.trail(path)
+                        or (known and known.name)
                         or ((path == "/") and "/" or last_part(path))
     place_button.icon = place_icon(path)
     place_button:fit()
@@ -1945,6 +2327,7 @@ function show(path)
 
   recount()
   status.text = ""
+  net_view()
 end
 
 --
@@ -1952,7 +2335,9 @@ end
 -- can go Back through and `show` is not.
 --
 function visit(path)
-  if path == where then return end
+  -- The same folder again is nothing to do - unless a page stands in its
+  -- place (a server not signed into), which going there puts away.
+  if path == where and not net.seen then return end
 
   local from = where
 
@@ -1994,6 +2379,142 @@ function go_forward()
 
   show(to)
   went[#went + 1] = from
+end
+
+--------------------------------------------------------------------------
+-- The network, as this window last heard it (N6).
+--------------------------------------------------------------------------
+
+--
+-- **What the folder shown is, of the network**, from what was last heard:
+-- its server's record; the band when that server is away, in words from
+-- its record; "over the network" in the header; the status line naming
+-- the server, the dialect, signed or sealed, the account and what is
+-- arriving. Asks nothing - `net_frame` has asked.
+--
+function net_view()
+  local label, share = netshares.under(where)
+  local s = (label and label ~= "") and netshares.find(net.servers, label) or nil
+  local was_hidden = banner.hidden
+
+  net.here = s and s.rec or nil
+  net.away = (net.here and net.here.state == "away") and net.here or nil
+
+  banner.hidden = net.away == nil or net.seen ~= nil
+
+  if net.away then
+    local since = nil
+    local now = (fs.read("/Devices/clock") or {}).epoch
+
+    if now and net.away.in_state_ms then
+      local t = clock.at(now - net.away.in_state_ms // 1000)
+
+      since = ("%02d:%02d:%02d"):format(t.hour, t.min, t.sec)
+    end
+
+    local title, words = netshares.away_words(net.away, since)
+
+    if title ~= banner.title then
+      print("tracker: gone away: " .. title)
+    end
+
+    banner.title, banner.words = title, words
+    stale = true
+  end
+
+  if banner.hidden ~= was_hidden then
+    pane_top()
+
+    if not banner.hidden then
+      banner_layout()
+      print(("tracker: try now at %d,%d, disconnect at %d,%d"):format(
+            banner.x + try_now.x + try_now.w // 2, banner.y + try_now.y + try_now.h // 2,
+            banner.x + let_go.x + let_go.w // 2, banner.y + let_go.y + let_go.h // 2))
+    end
+  end
+
+  over.hidden = (label == nil) and net.seen == nil
+
+  if header then header:measure() end
+
+  -- The status line, and the count with the size of what is shown.
+  local line = (net.here and net.here.state == "connected" and share and share ~= "")
+               and netshares.status_line(net.here, net.rate) or nil
+  local bare = line and netshares.status_line(net.here, 0) or nil
+
+  if bare and bare ~= net.told_line then
+    net.told_line = bare
+    print("tracker: status " .. bare)
+  end
+
+  if line and (status.text == "" or status.text == net.line) then
+    status.text = line
+  elseif not line and status.text ~= "" and status.text == net.line then
+    status.text = ""
+  end
+
+  net.line = line
+
+  if share and share ~= "" and not found then
+    local total = 0
+
+    for _, e in ipairs(entries or {}) do total = total + (e.size or 0) end
+
+    recount()
+    count.text = count.text .. " \u{b7} " .. files.size(total)
+  end
+
+  -- Painted again only when what it says changed.
+  local said = table.concat({ tostring(banner.hidden), banner.title, banner.words,
+                              status.text, count.text, tostring(over.hidden) }, "|")
+
+  if said ~= net.view_said then
+    net.view_said = said
+    win.dirty = true
+    return true
+  end
+
+  return false
+end
+
+--
+-- **A server seen and not signed into**, as a page in place of the files.
+--
+function show_seen(s)
+  net.seen = s
+  seen_card.hidden = false
+  rows.hidden = true
+  banner.hidden = true
+  pane_top()
+
+  place_button.text = "Network \u{203a} " .. (s.name or s.address)
+  place_button.icon = "globe"
+  place_button:fit()
+  over.hidden = false
+  header:measure()
+
+  count.text = ""
+  status.text = (s.name or s.address) .. " \u{b7} not signed in \u{b7} "
+                .. "nothing asked of it"
+  places.selected = "#server:" .. s.address
+  print("tracker: seen " .. s.address .. ", not signed in")
+  win.dirty = true
+end
+
+--
+-- **Connect to Server**, a window of its own (`connect.lua`): opened from
+-- the Network group's Connect... and the ... menu, with an address when a
+-- remembered server's Sign in... opens it. This window goes to the share
+-- once one appears (`net_frame`).
+--
+function open_connect(address)
+  net.awaiting = true
+
+  local ok, why = fs.send("/Running/wm", { type = "launch", program = "connect",
+                                           args = address or "" })
+
+  status.text = ok and "connect to a server in the window that opened"
+                or ("could not open Connect to Server: " .. tostring(why))
 end
 
 --
@@ -2074,7 +2595,7 @@ end
 header = ui.header{
   x = SIDE_W, y = 0, w = W - SIDE_W, title = "", edge = { 6, 8 },
   left = { back_button, forward_button, place_button },
-  right = { new_button, view_button, more_button, search },
+  right = { over, new_button, view_button, more_button, search },
 
   -- The title bar, when the look has none; its window from the start, so
   -- the place it says for View below already leaves room for the three.
@@ -2545,21 +3066,253 @@ local ask_every  = counter_hz // 2
 local asked_at   = 0
 
 --
+-- **The network, on this window's clock** (N6): once a second while any of
+-- it is in view - a server in the sidebar, a folder under `/Network`, a
+-- server's page - and every five seconds otherwise, so a share connected
+-- from somewhere else still arrives in the sidebar. What smbfs said
+-- (`fs.share_status`), what `/Network` and each server lists - every one
+-- answered at once from smbfs's memory - and, while a share is shown, how
+-- many bytes it has read (`.device`), for the status line's rate.
+--
+-- **Then only what changed is drawn again**: the sidebar when its rows
+-- would differ, the band's words when a server is away, and the folder
+-- itself when its server comes back, so it is fresh rather than greyed.
+--
+-- And what a press began, sent: Try now, Disconnect, Forget.
+--
+local NET_FAST, NET_SLOW = 1, 5
+
+local function net_key(servers)
+  local parts = {}
+
+  for _, sv in ipairs(servers) do
+    local names = {}
+
+    for _, sh in ipairs(sv.shares) do names[#names + 1] = sh.name end
+
+    parts[#parts + 1] = table.concat({ sv.address, tostring(sv.label),
+                                       tostring(sv.dot), tostring(sv.lock),
+                                       tostring(sv.note), table.concat(names, ",") }, "|")
+  end
+
+  return table.concat(parts, ";")
+end
+
+-- The rows the network gave, said for the display harness: each server
+-- with its state and shares, and where Connect... is in the window.
+local function net_told()
+  local said = {}
+
+  for _, sv in ipairs(net.servers) do
+    local names = {}
+
+    for _, sh in ipairs(sv.shares) do names[#names + 1] = sh.name end
+
+    said[#said + 1] = ("%s %s: %s"):format(sv.name, sv.dot or (sv.lock and "locked") or "-",
+                                          table.concat(names, ", "))
+  end
+
+  print("tracker: network " .. (#said > 0 and table.concat(said, "; ") or "none"))
+
+  local cx, cy = places:action_at("#network")
+
+  if cx then
+    print(("tracker: connect at %d,%d"):format(places.x + cx, places.y + cy))
+  end
+
+  for id, it in pairs(place_by_id) do
+    if it.server or it.accent then
+      local y, h = places:row_of(id)
+
+      if y then
+        print(("tracker: row %s at %d"):format(id, places.y + y + h // 2))
+      end
+    end
+  end
+end
+
+local function net_pending()
+  local p = net.pending
+
+  net.pending = nil
+
+  if p.op == "retry" then
+    local ok, why = fs.share_retry(p.address)
+
+    print(("tracker: sent Try now to %s: %s"):format(p.address,
+          ok and "begun" or tostring(why)))
+
+    if not ok then status.text = tostring(why) end
+  elseif p.op == "disconnect" then
+    local ok, why = fs.share_disconnect(p.address)
+
+    status.text = ok and (p.address .. " is let go") or tostring(why)
+
+    if ok and netshares.under(where) then
+      net.servers = {}
+      visit(netshares.ROOT)
+    end
+  elseif p.op == "forget" then
+    local kept = prefs.read(netshares.PREFS) or {}
+
+    kept.recent = netshares.forget(kept.recent or {}, p.address)
+    prefs.write(netshares.PREFS, kept)
+
+    if p.was_asked then fs.share_disconnect(p.address) end
+
+    net.recent = nil
+    net.seen = nil
+    show(where)
+  end
+
+  net.asked_at = 0                    -- and looked at again now
+end
+
+local function net_frame()
+  if not net.on then return false end
+
+  local changed = false
+
+  if net.pending then
+    net_pending()
+    changed = true
+  end
+
+  local now = sys.ticks()
+  local in_view = netshares.under(where) ~= nil or net.seen ~= nil
+                  or #net.servers > 0
+  local every = (in_view and NET_FAST or NET_SLOW) * counter_hz
+
+  if now - net.asked_at < every then return changed end
+
+  net.asked_at = now
+  net.asks = net.asks + 1
+
+  local list = fs.share_status()
+
+  if not list then return changed end
+
+  net.status = list
+  net.served = list.served
+
+  local listing = fs.list(netshares.ROOT) or {}
+
+  --
+  -- What was remembered, read again only when something about the
+  -- servers changed - a connect, a forget - rather than every second.
+  --
+  local quick = net_key(netshares.servers(list, listing, nil, {}))
+
+  if net.recent == nil or quick ~= net.quick then
+    net.recent = (prefs.read(netshares.PREFS) or {}).recent or {}
+    net.quick = quick
+  end
+
+  local was_here = net.here and net.here.state
+  local servers = netshares.servers(list, listing, function(label)
+    return fs.list(netshares.ROOT .. "/" .. label) or {}
+  end, net.recent)
+  local key = net_key(servers)
+
+  net.servers = servers
+
+  if key ~= net.key then
+    local before = net.shares
+
+    net.key = key
+    net.shares = {}
+
+    for _, sv in ipairs(servers) do
+      for _, sh in ipairs(sv.shares) do net.shares[sh.path] = true end
+    end
+
+    places.items, place_by_id = place_items()
+    mark_place(where)
+    net_told()
+    changed = true
+
+    -- Opened Connect to Server from here: the share that has just appeared
+    -- is gone to, as the drawing's Connect opens it.
+    if net.awaiting then
+      for path in pairs(net.shares) do
+        if not before[path] then
+          net.awaiting = false
+          visit(path)
+          break
+        end
+      end
+    end
+  end
+
+  -- The folder's server back: the folder read again, fresh.
+  local label = netshares.under(where)
+  local s = (label and label ~= "") and netshares.find(servers, label) or nil
+  local state = s and s.rec and s.rec.state
+
+  if was_here == "away" and state == "connected" then
+    print("tracker: back: " .. tostring(s.name))
+    show(where)
+    changed = true
+  end
+
+  -- What a share shown has read, a second at a time.
+  local _, share = netshares.under(where)
+
+  if share and share ~= "" and state == "connected" then
+    local dev = fs.read(netshares.ROOT .. "/" .. label .. "/" .. share .. "/.device")
+    local bytes = type(dev) == "table" and dev.read_bytes or nil
+
+    if bytes and net.read_bytes and now > net.read_at then
+      net.rate = (bytes - net.read_bytes) * counter_hz // (now - net.read_at)
+    else
+      net.rate = 0
+    end
+
+    net.read_bytes, net.read_at = bytes, now
+  else
+    net.rate, net.read_bytes = 0, nil
+  end
+
+  if net_view() then changed = true end
+
+  --
+  -- **What this clock costs, said**: how many times smbfs answered STATUS -
+  -- counted by smbfs, where the asking arrives, whoever in this window
+  -- asked - against how many times the window was painted, every five
+  -- seconds while a share is in view. The display harness holds them
+  -- apart, so asking from a paint would be seen (`testing.md` 18.412).
+  --
+  if netshares.under(where) and now - net.told_at >= 5 * counter_hz then
+    if net.told_at > 0 and net.served and net.served_then then
+      print(("tracker: smbfs answered %d status asks in %d paints over %d s"):format(
+            net.served - net.served_then, net.paints,
+            (now - net.told_at) // counter_hz))
+    end
+
+    net.told_at, net.asks, net.paints = now, 0, 0
+    net.served_then = net.served
+  end
+
+  return changed
+end
+
+--
 -- **A job under way, and then a query** (`watch_job`, above): a pass looks at
 -- the one, then asks the other - and while a job runs, the window comes
--- round often enough to move its bar.
+-- round often enough to move its bar. And the network, on its own clock.
 --
 local query_frame
 
 function win:on_frame()
   local moved = watch_job()
   local asked_moved = query_frame()
+  local net_moved = net_frame()
 
   if job then
     win.poll_wait_ticks = math.min(win.poll_wait_ticks or JOB_WAIT, JOB_WAIT)
   end
 
-  return moved or asked_moved
+  return moved or asked_moved or net_moved
 end
 
 function query_frame()
@@ -2710,6 +3463,15 @@ local more_items = {
   { separator = true },
   { text = "Refresh",     on_choose = function() refresh_places() show(where) end },
 }
+
+-- **Connect to Server...**, when this machine has an SMB client - where the
+-- drawing puts it beside the Network group's link.
+if net.on then
+  table.insert(more_items, #more_items, { separator = true })
+  table.insert(more_items, #more_items,
+               { text = "Connect to Server\u{2026}",
+                 on_choose = function() open_connect() end })
+end
 
 --
 -- The `...` menu: everything File and Go held, in the order they held it.
@@ -3193,6 +3955,8 @@ end
 chrome(side_ground)
 chrome(pane_ground)
 win:add(rows)
+chrome(banner)
+chrome(seen_card)
 chrome(places)
 chrome(side_head)
 chrome(side_menu)
@@ -3212,7 +3976,9 @@ if not backdrop then
   local names = {}
 
   for _, it in ipairs(places.items or {}) do
-    if it.name then names[#names + 1] = it.name end
+    if it.name and not it.heading and not it.server and not it.accent then
+      names[#names + 1] = it.name
+    end
   end
 
   print("tracker: sidebar " .. table.concat(names, ", "))

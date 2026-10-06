@@ -144,6 +144,10 @@ function files.entries(path)
     return a.name < b.name
   end)
 
+  -- A listing from a server that is not answering is as it was last heard,
+  -- and says so (`docs/sharing.md` N3): kept, so a window can grey it.
+  out.last_heard_ms = names.last_heard_ms
+
   return out
 end
 

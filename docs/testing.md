@@ -19594,3 +19594,87 @@ which is left for one request a server otherwise answering never answers;
 and the ECHO is sent only when nothing else has been asked for a minute.
 `make test ONLY=arm-share,x86-share,arm-share-2,x86-share-2`: 4 suites in
 48 s. `arm-display-1` and `x86-display-1`: both passing, 2:25.
+
+## 18.412 The windows of sharing (sharing N6)
+
+`docs/sharing.md` step N6, *N6, as built*; `docs/sharing.html` as agreed.
+**Tracker** gains the Network group under the drives - each server
+connected or remembered (live, amber when away, locked when not signed
+into, "no shares"), its shares indented under it, *Connect...* at the
+group's name and All of the network last - the trail `Network > MACPEER >
+Projects` with the globe and "over the network" in the header, the status
+line "MACPEER · SMB 3.1.1, signed · as diego" and what is arriving, a
+Modified column for a share's files ("Today, 11:51", `clock.relative`), a
+remembered server's page (address, port, guests not tried; Sign in...,
+Forget) and the gone-away band - amber, "MACPEER is not answering -
+retrying", since when and the next try, Try now and Disconnect - over the
+folder as last heard, greyed. **All of it from what smbfs said, asked on
+Tracker's clock** (once a second while the network is in view, five
+otherwise), never in a paint or a press. **Connect to Server**
+(`connect.lua`): the address answered before a password is asked for, a
+name and a password field that draws a bullet a character, the recent
+servers, "Remember in this machine's keyring" drawn disabled, a share
+chosen from the server's list. **smbfs** builds `SHARE_OP_SHARES`
+(NetShareEnum on `IPC$`) and several shares on one session, with chains so
+libsmb2's follow-on requests keep their tree; STATUS's `size` counts the
+STATUS asks it has answered. **The kit**: `secret` fields mask a character
+at a time with the caret in step and `field:shown()`; `disabled` switches
+and checkboxes; sidebar headings with an action, dots, locks, notes and
+indents; `ui.warning_colours()`. The Open window's sidebar gains a Network
+group; the Servers window a File sharing page, its switches disabled,
+"Sharing this machine's folders comes in a later step". The `share`
+program reads addresses through `netshares.lua`, connects a second share
+without a password and lists a server's shares (`share shares`).
+
+**`run_share.py --part 3`, `arm-share-3`: 21 checks in 62-63 s**, on a peer
+of its own (`smbpeer.py --instance arm-share-3 --port 4466`, 3.1.1, signing
+required; the peer now offers `Music` beside `Projects`), through the
+desktop in the look the system starts in:
+
+- Tracker's *Connect...* pressed where Tracker says it is; the address typed
+  by QEMU's keyboard and answered by a probe in 4.5-4.7 s, "SMB 3.1.1,
+  signing required", before any password; the name and the 24-character
+  password typed; **the password's field drew "24 characters as" 24
+  bullets** and none of the password, and on the screen its ink is 24
+  glyphs of 2 shapes (one bullet at two sub-pixel placements);
+- Enter: "Connected - Projects on MACPEER, SMB 3.1.1, signed", Tracker at
+  `/Network/MACPEER/Projects` 0.8 s later, fresh; its Network group
+  "MACPEER live: Projects"; its status line "MACPEER · SMB 3.1.1, signed ·
+  as <account>"; Modified for the first file the server's own date, as
+  the Mac's `st_mtime` says it in the guest's offset;
+- Connect again with the address alone: answered as signed in already, the
+  name remembered, no password; the server's list arriving as buttons;
+  Music chosen, "MACPEER's Music connected on the same session", Tracker at
+  it, and the group holding both;
+- **the clock apart from the paints**: 20 arrow keys in the files, and
+  smbfs answered 5 STATUS asks in the 5 s that held 20 paints;
+- **gone away**: the peer paused, Projects pressed - shown at once "as last
+  heard" - and the band "MACPEER is not answering - retrying" 10.4 s after
+  (smbfs's ten seconds of silence and Tracker's second), its ground amber
+  on the screen; the peer stopped and started again, Try now pressed -
+  "sent Try now: begun" - and back in 1.7 s, the folder read again fresh
+  and no amber left;
+- `share disconnect` at the prompt, Tracker again: the server remembered
+  and locked, its row pressed, its page;
+- `wm servers:sharing`: the page says it comes in a later step, its switch
+  disabled; pressed, and not a pixel of it moved (the pointer moved off for
+  both pictures).
+
+**The controls bite** (a scratch build, not committed, the three at once):
+the field drawing its text - "24 characters as IauvJNy5..." and 16 glyphs
+of 15 shapes on the screen, both checks failing; Tracker asking
+`fs.share_status` in its paint - "25 status asks in 20 paints", failing;
+the switch not disabled - "enabled" and 812 pixels moved, failing. 5 of 21.
+
+**Host**: `tools/test_netshares.lua`, 35 checks (addresses as typed, the
+group's servers and rows, two servers of one name, a path's trail, the
+status line, the band, the recent ones and no password among them);
+`test_clock.lua` 22 (5 new: today, yesterday, a date, west of UTC across
+midnight, a recent day).
+
+`make test ONLY=host,arm-share,x86-share,arm-share-2,x86-share-2,arm-share-3,
+arm-display-1,x86-display-1,arm-display-3,arm-servers,x86-servers`: 11
+suites in 3:40, all passing - N2 to N5 unchanged on smbfs's trees, and the
+display harness's Tracker (no network card there, so no Network group)
+as it was. The whole gate is not run here; `arm-share-3` adds one suite of
+about a minute beside the others.

@@ -214,6 +214,17 @@ SUITES = [
     Suite("x86-share-2", ["python3", "tools/run_share.py", X86, "--part", "2"],
           x86=True),
 
+    # **The windows of sharing** (`docs/sharing.md` N6), on the desktop and
+    # a peer of their own: Connect to Server by the keyboard, its password's
+    # field drawing none of it - said and on the screen; Tracker at the
+    # share, its Network group, status line and Modified column; a second
+    # share chosen from the server's list on the same session; Tracker's
+    # clock apart from its paints, counted by smbfs; the amber band of a
+    # server gone away and Try now; a remembered server's page; and File
+    # sharing's switch disabled. One board: it is Lua over the kit and the
+    # window manager, and smbfs's C is held on both by the suites above.
+    Suite("arm-share-3", ["python3", "tools/run_share.py", ARM, "--part", "3"]),
+
     # **The Servers window** (`roadmap.md`, remote step 6): opened over
     # Telnet on the M700's own boot, seeing the session that opened it, a
     # Disconnect ending that session, and the web server it kept to start

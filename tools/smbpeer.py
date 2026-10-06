@@ -18,7 +18,10 @@ Sharing is a system setting and Diego's; this is not it.
 **What it serves**, made the first time and kept: `Projects`, holding 2,000
 small files named so their order is known, a 64 MB file of known bytes and
 a folder inside a folder - the shapes `docs/sharing.md`'s steps list,
-read and checked against - and nothing of anybody's.
+read and checked against - and nothing of anybody's. **And `Music`**, a
+second share of one small file (step N6), so a server's list of shares
+has more than one to choose from and a second share is connected on the
+same session.
 
 **The account** is a test one: the user's own name, as Samba run without
 privilege can only be the user it runs as, with a password made here and
@@ -64,6 +67,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 BASE = os.path.join(ROOT, "build", "smbpeer")
 SHARE = os.path.join(BASE, "Projects")
+MUSIC = os.path.join(BASE, "Music")
 STATE = BASE                    # an instance's own, from `--instance`
 PORT = 4450
 
@@ -95,9 +99,23 @@ def big_bytes():
     return bytes(out[:BIG])
 
 
+def make_music():
+    """The second share (N6): one file, made if missing."""
+    song = os.path.join(MUSIC, "song.txt")
+
+    if not os.path.exists(song):
+        os.makedirs(MUSIC, exist_ok=True)
+
+        with open(song + ".%d" % os.getpid(), "w") as f:
+            f.write("a song, as far as a test can tell\n")
+
+        os.replace(song + ".%d" % os.getpid(), song)
+
+
 def make_share():
     """The share's contents, once: made only if missing, so a run that
     checks them reads what the last one checked."""
+    make_music()
     marker = os.path.join(SHARE, ".made")
 
     if os.path.exists(marker):
@@ -187,6 +205,11 @@ def config(dialect, sign, seal):
 
 [Projects]
     path = {SHARE}
+    read only = yes
+    guest ok = no
+
+[Music]
+    path = {MUSIC}
     read only = yes
     guest ok = no
 """

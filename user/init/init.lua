@@ -2115,8 +2115,8 @@ local function new_namespace()
   -- `share_status` - asked on the caller's own clock - says how it went.
   --------------------------------------------------------------------------
 
-  local SHARE_OP = { probe = 64, connect = 65, status = 66, disconnect = 68,
-                     retry = 69 }
+  local SHARE_OP = { probe = 64, connect = 65, status = 66, shares = 67,
+                     disconnect = 68, retry = 69 }
   local SHARE_ASK = "<c48c40c32c256"
   local SHARE_SERVER = "<c48c40c40c32c152I4I2BBBBI2I4I8"
   local SHARE_SERVER_BYTES = 336
@@ -2163,7 +2163,7 @@ local function new_namespace()
     if not raw then return nil, tostring(err) end
     if #raw < 1120 then return nil, "a reply from smbfs of the wrong size" end
 
-    local e, more, count, length, next_at, _, _, _, _, _, _, _, _, _, blob =
+    local e, more, count, length, next_at, moved, size, _, _, _, _, _, _, _, blob =
       string.unpack(DISK_REPLY, raw)
 
     if e ~= 0 then
@@ -2171,7 +2171,8 @@ local function new_namespace()
       return nil, "smbfs did not understand that"
     end
 
-    return { more = more ~= 0, count = count, offset = next_at, blob = blob }
+    return { more = more ~= 0, count = count, offset = next_at, blob = blob,
+             bytes = moved, size = size }
   end
 
   -- Does a server answer? Asked, and answered at once; `share_status`
@@ -2209,6 +2210,41 @@ local function new_namespace()
     return true
   end
 
+  --
+  -- **A server's shares** (step N6): what it offers, each with what was
+  -- asked of it - "offered", "asking", "connected", "refused" - and
+  -- `known` once the server's own list has been heard; until then only the
+  -- shares asked for, and the caller asks again on its own clock. Answered
+  -- at once, as everything of smbfs's is.
+  --
+  local SHARE_OFFERED = "<c40I4I4"
+  local SHARE_OFFERED_BYTES = 48
+  local SHARE_TREES = { [0] = "offered", "asking", "connected", "refused" }
+
+  function ns.share_shares(address)
+    local list, offset = { known = false }, 0
+
+    repeat
+      local r, why = share_call("shares", { address = address }, offset)
+
+      if not r then return nil, why end
+
+      list.known = r.bytes == 1
+
+      for i = 1, r.count do
+        local name, state, kind = string.unpack(SHARE_OFFERED, r.blob,
+                                                (i - 1) * SHARE_OFFERED_BYTES + 1)
+
+        list[#list + 1] = { name = trim(name), state = SHARE_TREES[state] or "unknown",
+                            kind = kind }
+      end
+
+      offset = r.offset
+    until not r.more or r.count == 0
+
+    return list
+  end
+
   -- What each server asked for is doing: a list, each a table.
   function ns.share_status()
     local list, offset = {}, 0
@@ -2217,6 +2253,9 @@ local function new_namespace()
       local r, why = share_call("status", nil, offset)
 
       if not r then return nil, why end
+
+      -- How many times smbfs has answered this, counting this one (N6).
+      list.served = list.served or r.size
 
       for i = 1, r.count do
         local at = (i - 1) * SHARE_SERVER_BYTES + 1

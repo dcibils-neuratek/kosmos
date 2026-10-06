@@ -89,10 +89,31 @@ check(clock.duration(187.9) == "3:07" and clock.duration(0) == "0:00"
       and clock.duration(3600) == "60:00" and clock.duration(nil) == "0:00",
       "a length as a player shows it: " .. clock.duration(187.9))
 
+-- A share's Modified column (`docs/sharing.html`, N6): today, yesterday
+-- and anything older as a date, each against now and in local time - so
+-- 01:30 UTC three hours west is still yesterday's evening.
+local NOW = SEPT27 + 15 * 3600            -- 28 September, 09:00 UTC
+
+check(clock.relative(NOW - 3600, NOW, 0) == "Today, 08:00",
+      "an hour ago is today: " .. clock.relative(NOW - 3600, NOW, 0))
+check(clock.relative(SEPT27 + 5 * 3600 + 51 * 60, NOW, 0) == "Yesterday, 23:51",
+      "the evening before is yesterday: "
+      .. clock.relative(SEPT27 + 5 * 3600 + 51 * 60, NOW, 0))
+check(clock.relative(SEPT27 - 5 * 86400, NOW, 0) == "22 Sep 2026, 18:00",
+      "five days before is a date: " .. clock.relative(SEPT27 - 5 * 86400, NOW, 0))
+check(clock.relative(SEPT27 + 7 * 3600 + 30 * 60, NOW, -180) == "Yesterday, 22:30",
+      "01:30 UTC three hours west is the evening before: "
+      .. clock.relative(SEPT27 + 7 * 3600 + 30 * 60, NOW, -180))
+check(clock.day_word(NOW - 60, NOW, 0) == "today"
+      and clock.day_word(NOW - 86400, NOW, 0) == "yesterday"
+      and clock.day_word(NOW - 6 * 86400, NOW, 0) == "22 Sep",
+      "a recent server's day: " .. clock.day_word(NOW - 6 * 86400, NOW, 0))
+
 if failed == 0 then
   print(("PASS: %d checks on the local time of a moment (UTC and west of "
          .. "it, across midnight, now, and none; the calendar both ways, the "
-         .. "stamps in a file's name, and a length of time)."):format(checks))
+         .. "stamps in a file's name, a length of time, and a file's "
+         .. "Modified and a recent day as a list says them)."):format(checks))
 else
   print(("FAIL: %d of %d checks"):format(failed, checks))
   os.exit(1)
