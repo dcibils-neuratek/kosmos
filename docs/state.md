@@ -2,9 +2,46 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-05 (0.11.5)
+Last updated: 2026-10-06 (0.11.25)
 
 ---
+
+## 6 October: the keyring and Passwords, built (K1-K7), and a kernel race
+
+**Pushed: 0.11.17** (spaces in names everywhere; the server's own name in
+NTLM). **On `main`, not pushed - a push is Diego's yes**: 0.11.18-0.11.25.
+
+- **K1** 0.11.18 (18.416): one AES-CCM door in the Crypto Kit, held to all
+  552 Wycheproof vectors; the SMB Kit calls it.
+- **K2** 0.11.19 (18.417): `keyproto.h` - the password itself kept,
+  `REVEAL` for Show - and `keyfile.c`, the sealed file, held on the Mac.
+- **K3** 0.11.20 (18.418): diskfs's programs' door reaches `/Home` alone; a
+  second door reaches `/Keyring`. The gate went 10:07 -> 9:13 at nine
+  suites at once (18.419).
+- **K4** 0.11.21 (18.420): `keyring.c`, the `smb` and `manage` doors, the
+  `keyring` program, `keyring_grant` in both launchers.
+- **K5** 0.11.22 (18.421): smbfs remembers - Remember in Connect to Server,
+  remembered sign-ins with nothing typed, connected at start. **And a
+  Nebula race (18.422)**: two cores splitting one 2 MB block of the
+  kernel's map for two new stacks' guards - latent since 0.10.22, a double
+  fault once in a gate; `kernel_map_lock` on both architectures and a
+  kernel test that races it.
+- **K6** 0.11.23 (18.423): Passwords, as drawn, with Show; `keyring_seed`
+  makes a made-up keyring on the Mac for a suite.
+- **K7** 0.11.24 (18.424): `/Home`'s partition kept from `/Devices/blocks`
+  by the disk server's guard; the drive server lists a guarded partition as
+  Home's.
+- **0.11.25 netbooted onto the M700**, with Doom, Quake and the SNES
+  rebuilt from the same commit and put in `/Home/Apps`. The keyring made
+  its key on the stick and reopened the file on the next boot. **Two warm
+  restarts came up without a screen** (the known one); a cold start -
+  Diego's power button - is needed before Doom can be tried.
+
+**Next, in Diego's order**: TinyCC and the IDE - the four design documents
+first (feature set, mockup, architecture, diagram): a New Project that asks
+C app, Lua app or Lua and C app, a template of each, Build and Run
+(`roadmap.md`'s TinyCC entry). Then Maps, Mail, Calendar designs. Still
+owed: neofetch compact over telnet; Present and Sheets answers from Diego.
 
 ## Today's plan, agreed with Diego on 19 September
 
