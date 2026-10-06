@@ -945,7 +945,12 @@ since 6zz e; Write never asked to. It asks now, takes the new size, keeps
 its scroll inside the new desk and draws at once (`testing.md` 18.404).
 
 **AGREED on 5 October - TinyCC, the one C compiler inside Kosmos, and the
-IDE building C programs with it.** Diego: "I want just one C compiler",
+IDE building C programs with it.** **DESIGNED on 6 October, for Diego to agree**:
+`docs/tinycc.md` (feature set, architecture, five questions),
+`docs/tinycc.html` (New Project, Build, Run, `cc`) and
+`docs/tinycc-architecture.png`. **Tried first**: TinyCC links Kosmos's
+GCC-built runtime and its own C into an image the loader accepts and runs -
+14 checks on AArch64 and x86-64, with a fifteen-line layout patch. Diego: "I want just one C compiler",
 "What's the best option for kosmos?", then "Yes do that", "Tinycc and ide
 integration so I can build c programs". Chosen over GCC (about 50 MB at the
 least - `cc1` alone is 37 MB, bigger than all of Kosmos - and a separate

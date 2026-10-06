@@ -1,0 +1,172 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  C inside Kosmos, and what it stands on, as one picture: the IDE, `cc` and
+  a project's application on top; the C Kit - TinyCC and the header stamp -
+  marked new, beside the UI kit; the runtime TinyCC links against and the
+  headers, carried by the image; the disk server, the loader and Nebula
+  beneath, unchanged. Two paths drawn through it: Build (B) and Run (R).
+  Drawn on 6 October 2026, before any of it is built; `docs/tinycc.md` is
+  the argument and `docs/tinycc.html` the windows.
+
+  Rendered to docs/tinycc-architecture.png by headless Chrome at twice its
+  size, as docs/stack.png is:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --disable-gpu --screenshot=docs/tinycc-architecture.png \
+      --window-size=1800,H --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/tinycc-architecture.html
+
+  where H is the page's height, which the script at the end puts in the
+  title.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos C architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --user: #e9f4ef; --user-line: #9fd4c1; --user-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --metal: #f1f0eb; --metal-line: #cfcdc4; --metal-ink: #444441;
+    --new: #2a55c9; --changed: #b7780b;
+    --path-b: #d81b60; --path-r: #00838f;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1800px; background: var(--paper); color: var(--ink); font-family: "Plex", system-ui, sans-serif;
+         font-size: 17px; line-height: 1.45; padding: 56px 64px 64px; }
+  h1 { font-size: 34px; font-weight: 600; letter-spacing: -.01em; }
+  .lede { color: var(--dim); max-width: 1300px; margin: 8px 0 30px; font-size: 18px; }
+  .layer { display: grid; grid-template-columns: 210px 1fr; gap: 22px; margin-bottom: 18px; align-items: stretch; }
+  .lab { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); padding-top: 18px; }
+  .lab b { display: block; color: var(--ink); font-size: 15px; letter-spacing: 0; text-transform: none; margin-top: 4px; font-weight: 500; }
+  .row { display: grid; gap: 14px; }
+  .box { border: 1.5px solid; border-radius: 12px; padding: 14px 16px; position: relative; }
+  .box h3 { font-size: 18px; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .box p { font-size: 15px; color: var(--dim); }
+  .box code, .mono { font-family: "Plex Mono", monospace; font-size: 13.5px; }
+  .u { background: var(--user); border-color: var(--user-line); } .u h3 { color: var(--user-ink); }
+  .k { background: var(--c); border-color: var(--c-line); } .k h3 { color: var(--c-ink); }
+  .n { background: var(--kern); border-color: var(--kern-line); } .n h3 { color: var(--kern-ink); }
+  .m { background: var(--metal); border-color: var(--metal-line); } .m h3 { color: var(--metal-ink); }
+  .tag { font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; border-radius: 5px; padding: 2px 7px; color: #fff; }
+  .tag.new { background: var(--new); } .tag.ch { background: var(--changed); } .tag.same { background: #8a877d; }
+  .box.isnew { border-color: var(--new); border-width: 2.5px; }
+  .steps { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .st { font-family: "Plex Mono", monospace; font-size: 12.5px; border-radius: 6px; padding: 2px 8px; color: #fff; }
+  .st.b { background: var(--path-b); } .st.r { background: var(--path-r); }
+  .paths { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 30px; }
+  .path { border-radius: 12px; padding: 18px 20px; background: #fff; border: 1.5px solid #e4e1d8; }
+  .path h2 { font-size: 20px; margin-bottom: 8px; display: flex; gap: 10px; align-items: center; }
+  .path ol { padding-left: 22px; font-size: 15.5px; }
+  .path li { margin: 5px 0; }
+  .path .t { font-family: "Plex Mono", monospace; font-size: 13px; color: var(--dim); }
+  .key { display: flex; gap: 22px; margin-top: 26px; color: var(--dim); font-size: 14.5px; flex-wrap: wrap; }
+  .key span { display: inline-flex; gap: 8px; align-items: center; }
+  .tried { margin-top: 26px; border-left: 4px solid var(--new); padding: 10px 18px; background: #eef2fc; border-radius: 0 10px 10px 0; font-size: 15.5px; max-width: 1500px; }
+</style>
+</head>
+<body>
+  <h1>C inside Kosmos: TinyCC and the IDE</h1>
+  <p class="lede">A project's C compiled by TinyCC in the IDE's own process, linked with Kosmos's runtime into the
+  project's image, written to its folder, and started as Doom is. New: the C Kit and the runtime it links
+  against. Everything that runs the result is what runs Doom today.</p>
+
+  <div class="layer"><div class="lab">Applications<b>what a person uses</b></div>
+    <div class="row" style="grid-template-columns: 1.2fr 1fr 1fr">
+      <div class="box u"><h3>Kosmos IDE <span class="tag ch">changed</span></h3>
+        <p>New Project with the three kinds and their templates; <b>Build</b> (F6) and <b>Run</b> (F5);
+        TinyCC's diagnostics in the Problems it already lists, at their lines.</p>
+        <div class="steps"><span class="st b">B1</span><span class="st b">B6</span><span class="st r">R1</span></div></div>
+      <div class="box u isnew"><h3>cc <span class="tag new">new</span></h3>
+        <p>The compiler at the prompt: <code>cc primes.c -o primes.elf</code>, its errors as <code>file:line:</code>.
+        The C Kit's second user.</p></div>
+      <div class="box u"><h3>the project's application</h3>
+        <p><code>mandelbrot.lua</code> in <code>mandelbrot.elf</code> - <code>-- kosmos: image</code>, and
+        <code>use("mandelbrot.elf")</code> for its C, exactly as Doom's.</p>
+        <div class="steps"><span class="st r">R4</span></div></div>
+    </div></div>
+
+  <div class="layer"><div class="lab">Kits<b>code run in the caller</b></div>
+    <div class="row" style="grid-template-columns: 1.4fr 1fr 1fr">
+      <div class="box k isnew"><h3>the C Kit <span class="tag new">new</span></h3>
+        <p><b>TinyCC</b>, vendored unmodified (LGPL), its Kosmos layout a patch at the build - <code>.text.start</code> first,
+        two segments, the code a page in - compiling and linking in one call, <code>cc.build{}</code>;
+        and <b>the header stamp</b>: "KOSMOS" and the code's size, written after the link.
+        Problems through TinyCC's error callback, never parsed from text.</p>
+        <div class="steps"><span class="st b">B2</span><span class="st b">B3</span><span class="st b">B4</span></div></div>
+      <div class="box k"><h3>UI Kit <span class="tag same">as it is</span></h3>
+        <p>The project's window, in Lua - <code>ui.lua</code>. A Window Kit in C for a C app's own window is question 2.</p></div>
+      <div class="box k"><h3>kits the image carries <span class="tag same">as they are</span></h3>
+        <p>gfx, Crypto, Game ... - in every application's image, so a project's C can call them.</p></div>
+    </div></div>
+
+  <div class="layer"><div class="lab">In the image<b>what the build carries</b></div>
+    <div class="row" style="grid-template-columns: 1.2fr 1fr 1fr">
+      <div class="box n isnew"><h3>the runtime, for linking <span class="tag new">new</span></h3>
+        <p>The lean userland's 531 objects as one: <b>21 MB, 7.8 MB compressed</b>, unpacked into
+        <code>/Temporary/cc/</code> at the first build of a boot (question 1). Always this build's, so an image
+        made here speaks this system's protocols.</p>
+        <div class="steps"><span class="st b">B3</span></div></div>
+      <div class="box n isnew"><h3>/Kosmos/Developer <span class="tag new">new</span></h3>
+        <p>The headers: <code>kosmos_kit.h</code>, <code>kosmos.h</code>, Lua's, the libc's, <code>limits.h</code> and
+        <code>stdint.h</code>, TinyCC's own.</p>
+        <div class="steps"><span class="st b">B2</span></div></div>
+      <div class="box n isnew"><h3>/Kosmos/Templates <span class="tag new">new</span></h3>
+        <p>Hello Window, Mandelbrot, Sum both ways, Primes - copied on Create, each held by a test that builds and runs it.</p></div>
+    </div></div>
+
+  <div class="layer"><div class="lab">Servers and the loader<b>someone you ask</b></div>
+    <div class="row" style="grid-template-columns: 1fr 1fr 1fr">
+      <div class="box m"><h3>diskfs <span class="tag same">as it is</span></h3>
+        <p>The sources read; the 20 MB image written <b>from a region</b> - the one slow step, and only when the C changed.</p>
+        <div class="steps"><span class="st b">B5</span><span class="st r">R2</span></div></div>
+      <div class="box m"><h3>binfs <span class="tag same">as it is</span></h3>
+        <p>Serves <code>/Kosmos/Developer</code> and <code>/Kosmos/Templates</code> from the image, read only.</p></div>
+      <div class="box m"><h3>the loader <span class="tag same">as it is</span></h3>
+        <p><code>elfimage.c</code> holds the image to Kosmos's rules - code first at the base, the header, data after -
+        which TinyCC's patched layout meets: <b>tried, 14 checks, both processors</b>.</p>
+        <div class="steps"><span class="st r">R3</span></div></div>
+    </div></div>
+
+  <div class="layer"><div class="lab">Nebula<b>the microkernel</b></div>
+    <div class="row"><div class="box n"><h3>nothing new <span class="tag same">as it is</span></h3>
+      <p>A process never writes code and runs it - Diego's decision: "Tinycc writes a program file and kosmos starts separately".
+      The image is a file; the kernel maps it as it maps Doom's.</p></div></div></div>
+
+  <div class="paths">
+    <div class="path"><h2><span class="st b">B</span> Build - F6, or Run after a C change</h2>
+      <ol>
+        <li><b>B1</b> the IDE calls <code>cc.build{ sources, out, kit }</code> - in its own process</li>
+        <li><b>B2</b> TinyCC compiles each <code>.c</code> with <code>/Kosmos/Developer</code>'s headers <span class="t">3 ms a small file</span></li>
+        <li><b>B3</b> links them with the runtime, unpacked once a boot <span class="t">20-40 ms on the Mac</span></li>
+        <li><b>B4</b> the header stamped; problems handed back as a table</li>
+        <li><b>B5</b> the image written to the project's folder, from a region <span class="t">the slow step</span></li>
+        <li><b>B6</b> Problems at their lines, or "Built, 20.1 MB" in Output</li>
+      </ol></div>
+    <div class="path"><h2><span class="st r">R</span> Run - F5</h2>
+      <ol>
+        <li><b>R1</b> the IDE starts the project's Lua, as Run does today</li>
+        <li><b>R2</b> its header names <code>mandelbrot.elf</code>; the launcher reads it</li>
+        <li><b>R3</b> the loader holds it to Kosmos's rules and starts it <span class="t">0.1-0.3 s</span></li>
+        <li><b>R4</b> the Lua runs inside it; <code>use("mandelbrot.elf")</code> is its C - and the window opens</li>
+      </ol></div>
+  </div>
+
+  <div class="tried"><b>Tried before it was drawn, 6 October 2026:</b> TinyCC <span class="mono">mob 43c7708b</span> built on the Mac
+  for both processors; the loader's test kit compiled by it and linked with GCC's runtime - no relocation it could not do -
+  in 20-40 ms; its layout made Kosmos's in fifteen lines; booted by <span class="mono">run_loader.py</span>, 14 checks passing on
+  AArch64 (a 20.1 MB image) and x86-64 (20.5 MB), the kit answering 42.</div>
+
+  <div class="key"><span><span class="tag new">new</span> built by this design</span><span><span class="tag ch">changed</span> grows a part</span>
+    <span><span class="tag same">as it is</span> untouched</span><span><span class="st b">B</span><span class="st r">R</span> the two paths, step by step</span></div>
+<script>document.title = "Kosmos C architecture " + document.documentElement.scrollHeight;</script>
+</body>
+</html>
