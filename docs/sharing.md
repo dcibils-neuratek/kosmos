@@ -154,11 +154,28 @@ It fits closely, and where it does not the difference is small and said:
   saying the listing or the facts came from smbfs's memory of a server that
   is not answering, and the counter tick it last answered at. `/Home`
   always answers fresh and sets neither. That is the whole of what Tracker
-  needs to draw *Gone away*.
+  needs to draw *Gone away*. **As built (N3)**: `heard` and `heard_ms`
+  after the reply's `u`, so every field before it is where it was - and
+  *how long ago*, in milliseconds, rather than a tick, for `shareproto.h`'s
+  reason: a number mailed to another process says which clock it is in its
+  unit, and a tick of the counter crossing a boundary is the mistake
+  `CLAUDE.md`'s *Two clocks* records twice. The namespace puts it on what
+  it answers - `entries.last_heard_ms` beside a listing's names,
+  `attrs.last_heard_ms` among a node's facts - so a caller that wants only
+  the names reads them as before, and `ls` prints "(as last heard: the
+  server has not answered for 3.3 s)" under them.
 
 The namespace's words for those errors are the one place the namespace
 changes for reading: `disk_error` says "/Home did not understand that" today,
-and a mount's name goes into its sentences instead.
+and a mount's name goes into its sentences instead. **As built (N3)**: the
+server says the sentence - `u.data`, as `DISK_ERR_NO_DISK` already carried
+its why - and the namespace quotes any refusal that carries words, so
+"MACPEER's Projects is open read only" and "MACPEER is not answering" are
+smbfs's, which knows the names, and `/Home`'s numbers are put into words as
+before. "No such file" and "that is a directory" keep kfs's numbers
+(`DISK_ERR_KFS` + 7, + 9), with the words beside them. `.device` gains four
+fields after its eight - SMB requests sent, folder listings, the requests
+they took and their time - which `/Home` leaves at nought.
 
 **Two things a share is not, and why they do not change the decision.**
 SMB is a protocol of handles - CREATE, then READ, then CLOSE - and
@@ -195,6 +212,15 @@ So:
   connected, the recent ones, and - after N11 - the ones seen;
 - `README.md`'s decision log and the comment beside the mount say why it is
   two, in the same session the mount changes.
+
+**As built (N3)**: the namespace's `request` sends `list`, `getattr`,
+`read`, `write`, `delete`, `rename`, `mkdir`, `setattr` and `query` under a
+`net` mount that has a second server to that server, in `diskproto.h`
+through `disk_request` exactly as `/Home`'s - and `ns.send`'s `mkdir`,
+`delete` and `rename` the same way; everything the network kit asks still
+goes to the stack. `places.NOT_FILES` is `/Devices` and `/Running`, so
+Tracker's root and the Open window list `Network`, under System until N6's
+Network group; opening it asks smbfs, which answers from its records.
 
 **The alternative**, said so it is weighed rather than forgotten: move the
 stack to a name of its own and give smbfs the whole of `/Network`. It is
@@ -263,9 +289,26 @@ that has gone to sleep:
   it is answered from memory marked as last heard, or `DISK_ERR_AWAY` if
   there is none. **The bound is a quarter of a second to start with**, and
   N6 measures Tracker with it; it is a number in one place.
+  **As built (N3), the bound is on the server's silence**, not on the
+  listing's length (`SILENT_MS`, 250, beside `FRESH_MS`, 2,000): a caller
+  is held while bytes keep arriving from the server, and answered from
+  memory once a quarter of a second passes with nothing at all. A folder
+  of 2,000 names is seven requests and, under emulation, a third of a
+  second on ARM and two seconds on x86-64 of a server answering the whole
+  time - which a bound on the whole would have called
+  a server gone away. A server gone to sleep still stops nobody for longer
+  than the bound: whoever asks after the first is answered at once, from
+  memory, while the question to the server is still out. A page after the
+  first of one listing is answered from the same memory whatever its age,
+  so a listing never changes under the pages already read.
 - **Bytes** - `READ` - wait for the server, because a program reading a file
   wants the file; SMB's own timeout ends the wait, and the reader is a
-  program on its own clock, never Tracker's loop.
+  program on its own clock, never Tracker's loop. **As built (N3)**: thirty
+  seconds (`SMB_TIMEOUT_SECONDS`), armed once the share is connected, the
+  loop servicing libsmb2 once a second while anything is in flight - which
+  is how libsmb2's timeout runs; a held listing was seen ending at it, with
+  the bound set long as a control. The reply that arrives after a request
+  has timed out is N5's to hold to a test.
 - **Connecting** - `shareproto.h`'s `PROBE` and `CONNECT` - is answered at
   once, as `NET_CONNECT_AT_ONCE` is, and the window asks `STATUS` on its own
   clock to draw "192.168.1.38 answered - diego-mac, SMB 3.1.1, signing
@@ -282,6 +325,22 @@ fixed ceiling on none of it: tables that grow, as `net.c`'s do (`CLAUDE.md`,
 **A server's name in `/Network` is how it calls itself**, which is what the
 mockup draws. Two servers that call themselves the same are told apart by
 their address after the name.
+
+**As built (N3)**: `/Network` lists every server whose share was connected
+and has not been let go - an away one too, so its folder stays as last
+heard - and `/Network/<server>` its share; both from smbfs's records, never
+from the network. A server is found by its name or its address, and every
+name under it whatever its case, as SMB's are. **One share a server, for
+now**: a record is a connection and its one tree, as N2 built it, so
+`/Network/MACPEER` lists the share connected; `SHARE_OP_SHARES` and a
+second share on the same connection are left for the windows that choose
+one (N6). A folder's listing is kept - its names sorted once, each with its
+size, kind and the server's date - until the server is let go; a file's
+handle is opened on its first read, read through by everyone reading it,
+and closed five seconds after the last (`HANDLE_IDLE_SECONDS`). A READ
+asks for at most a megabyte at a time, two in flight, each straight into
+the caller's region at its place; a short answer has its remainder asked
+for again, there.
 
 ### `shareproto.h`: what is not a file
 
@@ -766,6 +825,37 @@ same today for a folder of 2,000. The fix is shared and is not sharing's: a
 page of facts. `diskfs`, `drives` and smbfs would each answer it, and
 `files.entries` would ask it. Measured at N3 before it is proposed.
 
+**Measured at N3** (`testing.md` 18.408), under TCG against Samba on this
+Mac through slirp - and not under `-icount`, which the suite's network
+does not run under; QEMU's numbers, for what a suite sees and for the
+proportions:
+
+| | ARM | x86-64 |
+|---|---|---|
+| SMB requests for the 2,000 (CREATE, QUERY_DIRECTORY until none are left, CLOSE) | 7 | 7 |
+| smbfs asking them, from the first request to the last answer | 337 ms | 2,066 ms |
+| `fs.list`, the 20 pages through the namespace included | 351 ms | 2,083 ms |
+| 2,000 `getattr`s, every one from smbfs's memory | 528 ms | 409 ms |
+
+**So the guess was half right.** The network took seven requests where four
+were guessed - Samba fills a reply with fewer names than 64 KB would hold.
+On ARM the listing and the 2,000 `getattr`s cost about the same: the round
+trips on this machine's side are 60% of a folder's time, a quarter of a
+millisecond each, with nothing of the network in them. A `LIST` carrying
+each name's facts would take that part away for `/Home`, `/Drives` and
+shares alike - question 6 below, now with its number. On x86-64 the network
+is five times the `getattr`s, and that is the next finding.
+
+**The bytes**: the 64 MB file read whole into one region in 5.4 s on ARM,
+11.9 MB/s, 64 READs of a megabyte; its SHA-256, in C over the region, 0.84 s.
+**On x86-64 the machine's network receives about 0.14 MB/s under QEMU** - 4
+MB through smbfs in 27.8 s, and 2 MB through `fetch` over plain HTTP in
+13.2 s against 1.2 s on ARM - so it is the stack's and the emulated card's
+on that board, not SMB's, and the x86-64 suite reads the file's first 4 MB
+whole rather than 64. **Found**, for the roadmap beside the stack's receive
+window: x86-64's receive under QEMU, ten times slower than ARM's, its
+cause not yet looked for.
+
 ### How it is tested, under QEMU first
 
 **The far end is Samba's `smbd`, from Homebrew, run as Diego's user on a high
@@ -866,7 +956,16 @@ next. The client, read-only, first.
   equal the peer's; the 64 MB file's SHA-256 equals the Mac's, read whole and
   read at a hundred random offsets; dates are the peer's; `ls`, `cat`, `cp`
   from a share; Tracker opens it. **Measured**: the listing's round trips and
-  time, split by stage, under `-icount`.
+  time, split by stage, under `-icount`. **Built on 5 October**
+  (`testing.md` 18.408): `run_share.py --part 2`, `arm-share-2` and
+  `x86-share-2`, 19 checks each on a peer of their own (18 s and 49 s), the
+  controls the peer stopped whole and a READ asking one byte further on;
+  x86-64 reads the big file's first 4 MB, its network being slow under
+  QEMU (above); measured under
+  TCG rather than `-icount` (above). Departures, each said where it
+  belongs: the bound is on silence; `heard_ms` rather than a tick; one
+  share a server and `SHARE_OP_SHARES` left for N6; Tracker held to opening
+  the share by the line it prints, its picture N6's.
 - **N4 - signed and sealed.** Each dialect from 2.0.2 to 3.1.1 pinned in
   turn; `server signing = mandatory`; `smb encrypt = required` (CCM). **The
   control that bites**: a proxy on the Mac between the guest and the peer
@@ -941,4 +1040,7 @@ Then, each when its time comes:
    roadmap now, neither before N9.
 6. **A `LIST` that carries each name's facts**, for `/Home`, `/Drives` and
    shares alike, if N3's measurement says the 2,000 `getattr` round trips are
-   where a listing's time is. *Recommended*: measure first.
+   where a listing's time is. *Recommended*: measure first. **Measured
+   (N3)**: under emulation they are a little over half of a 2,000-name
+   folder's time on a share - 507 ms against 334 for the listing itself,
+   network and all, on ARM. *Recommended now*: yes, as its own step, for all three.

@@ -57,10 +57,11 @@ end
 -- `/Devices/audio` are mounts and already appear inside `/Devices`; offering them
 -- again would be a pane that disagrees with the tree underneath it.
 --
--- **A mount that holds no files is not offered.** `/Running`, `/Devices`
--- and `/Network` are for programs - one finds another there, or reaches
--- the machine's devices, or speaks a protocol - and `places.holds_files`
--- names them (`places.lua`). The mount is not asked whether it answers a
+-- **A mount that holds no files is not offered.** `/Running` and
+-- `/Devices` are for programs - one finds another there, or reaches the
+-- machine's devices - and `places.holds_files` names them (`places.lua`).
+-- `/Network` holds files since sharing's step N3: its servers' shares,
+-- listed by smbfs from what it already knows. The mount is not asked whether it answers a
 -- listing; the loop below says what asking once cost.
 --
 -- The order is the namespace's own, which is alphabetical. That is a
@@ -141,8 +142,10 @@ end
 --
 -- `/Running`, `/Devices` and `/Network` were here too, until opening
 -- `/Running` hung Tracker and Diego asked why it was there at all:
--- "tracker is for files". They are left out of the roots above
--- (`places.holds_files`), so System is the two that hold files.
+-- "tracker is for files". The first two are left out of the roots above
+-- (`places.holds_files`); `/Network` came back as a folder of shares
+-- (`docs/sharing.md` N3), under System until N6 gives it a Network group
+-- of its own.
 local SYSTEM_MOUNTS = {
   ["/Kosmos"] = true, ["/Temporary"] = true,
 }

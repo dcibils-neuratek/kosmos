@@ -38,10 +38,14 @@ its configuration, passdb, locks and pid under `build/smbpeer/instances/
 NAME/` and listens on its own port; the share's files and the password are
 the one set, read only, so nothing 64 MB is made twice.
 
-`pause` and `resume` stop and continue the peer's listening process
-(SIGSTOP, SIGCONT): a connection made while it is stopped is taken by the
-Mac's kernel and answered by nobody, which is a server that has gone to
-sleep mid-negotiation.
+`pause` and `resume` stop and continue the peer (SIGSTOP, SIGCONT): a
+connection made while it is stopped is taken by the Mac's kernel and
+answered by nobody, which is a server that has gone to sleep
+mid-negotiation. **Every process of it** (step N3): smbd serves each
+connection from a process of its own, forked from the listening one, so
+stopping the listener alone leaves a connection already made answering -
+and a share whose server has gone to sleep is that connection going
+quiet. The whole process group is signalled.
 """
 
 import argparse
@@ -205,10 +209,20 @@ def running():
 
 
 def signal_peer(sig):
+    """The peer and every connection it is serving: smbd's process group,
+    which is its own (`start` starts it in a session of its own)."""
     pid = running()
 
     if pid:
-        os.kill(pid, sig)
+        try:
+            group = os.getpgid(pid)
+        except OSError:
+            group = None
+
+        if group is not None and group != os.getpgrp():
+            os.killpg(group, sig)
+        else:
+            os.kill(pid, sig)
 
     return pid
 
@@ -218,7 +232,7 @@ def stop():
 
     if pid:
         try:
-            os.kill(pid, signal.SIGCONT)        # a paused one cannot hear TERM
+            signal_peer(signal.SIGCONT)         # a paused one cannot hear TERM
         except OSError:
             pass
 

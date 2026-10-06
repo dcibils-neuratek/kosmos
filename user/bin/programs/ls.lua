@@ -62,4 +62,14 @@ for _, entry in ipairs(entries) do
   out[#out + 1] = ("  %-18s %8s  %s"):format(entry, size, kind)
 end
 
+--
+-- **As last heard** (`docs/sharing.md`, step N3): a share whose server did
+-- not answer in time is listed from memory, and says so - rather than
+-- passing a folder that may have changed off as one just read.
+--
+if entries.last_heard_ms then
+  out[#out + 1] = ("(as last heard: the server has not answered for %.1f s)")
+                  :format(entries.last_heard_ms / 1000)
+end
+
 print(table.concat(out, "\n"))

@@ -228,14 +228,19 @@ check(places.find(pins, "/Home/rom") == nil,
 --------------------------------------------------------------------------
 
 check(not places.holds_files("/Running") and not places.holds_files("/running")
-      and not places.holds_files("/Devices/cpu")
-      and not places.holds_files("/Network"),
-      "/Running, /Devices and /Network hold no files, in any case and below")
+      and not places.holds_files("/Devices/cpu"),
+      "/Running and /Devices hold no files, in any case and below")
 
 check(places.holds_files("/Home") and places.holds_files("/Kosmos/Apps")
       and places.holds_files("/Drives") and places.holds_files("/Temporary")
       and places.holds_files("/RunningShoes"),
       "every other root holds files - and a name that only begins like one")
+
+-- A share is a folder (`docs/sharing.md` N3): `/Network` and what is under
+-- it - its servers, their shares - hold files.
+check(places.holds_files("/Network") and places.holds_files("/network")
+      and places.holds_files("/Network/MACPEER/Projects/many"),
+      "/Network holds files: its servers' shares, in any case and below")
 
 local root = {}
 
@@ -248,7 +253,7 @@ local seen = {}
 
 for _, e in ipairs(places.files_only("/", root)) do seen[#seen + 1] = e.name end
 
-check(table.concat(seen, ",") == "Drives,Home,Kosmos,Temporary",
+check(table.concat(seen, ",") == "Drives,Home,Kosmos,Network,Temporary",
       "the root as a window for people lists it: " .. table.concat(seen, ","))
 
 local inside = { { name = "Running" }, { name = "cpu" } }

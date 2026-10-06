@@ -1909,6 +1909,14 @@ function show(path)
   -- shown (`places.holds_files`).
   listed = placelib.files_only(path, listed)
 
+  -- What it opened, once a folder is shown, for the harnesses: a share is
+  -- held to opening as a folder by it (`docs/sharing.md` N3), where a
+  -- picture of the window is N6's.
+  if not backdrop then
+    print(("tracker: showing %s, %d item%s"):format(path, #listed,
+                                                  #listed == 1 and "" or "s"))
+  end
+
   -- A directory listing replaces a query's answer: the two are different
   -- windows onto the filesystem and showing one over the other would be a
   -- list nobody could account for.

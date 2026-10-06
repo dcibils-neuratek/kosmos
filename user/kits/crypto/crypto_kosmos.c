@@ -9,9 +9,11 @@
  * `crypto.c`, each held to its specification's vectors by `test_crypto`,
  * and a program in Lua is handed the operation and never the arithmetic.
  *
- * Two functions so far, each because a program asks for it: `des` for
- * `vncd`'s password check, and `random` for whatever needs randomness -
- * VNC's challenge first, TLS next. The rest of `crypto.c` joins this table
+ * Three functions so far, each because a program asks for it: `des` for
+ * `vncd`'s password check, `random` for whatever needs randomness - VNC's
+ * challenge first, TLS next - and `sha256`, for a file checked whole
+ * without its bytes becoming a Lua string (sharing's step N3 checks a 64 MB
+ * file read from a share with it). The rest of `crypto.c` joins this table
  * when a program needs it, not before.
  */
 
@@ -114,11 +116,53 @@ static int l_random(lua_State *L)
     return 1;
 }
 
+/*
+ * `crypto.sha256(data)` or `crypto.sha256(at, bytes)` - SHA-256 (FIPS
+ * 180-4) as 64 hexadecimal digits: of a string, or of `bytes` bytes at `at`
+ * in a region this process has mapped (`regions.make`'s `at`), as
+ * `compress.crc32` takes one. The second is the one that matters: a file
+ * read into a region is checked where it lies, and a file of megabytes
+ * never passes through the heap to be hashed.
+ */
+static int l_sha256(lua_State *L)
+{
+    static const char hex[] = "0123456789abcdef";
+    uint8_t digest[32];
+    char out[64];
+    unsigned i;
+
+    if (lua_type(L, 1) == LUA_TSTRING) {
+        size_t bytes;
+        const char *data = lua_tolstring(L, 1, &bytes);
+
+        sha256(data, bytes, digest);
+    } else {
+        uintptr_t at = (uintptr_t)luaL_checkinteger(L, 1);
+        lua_Integer bytes = luaL_checkinteger(L, 2);
+
+        if (bytes < 0 || (at == 0 && bytes > 0)) {
+            return luaL_error(L, "crypto.sha256: a string, or a mapped region "
+                              "and how many of its bytes");
+        }
+
+        sha256((const void *)at, (size_t)bytes, digest);
+    }
+
+    for (i = 0; i < 32; i++) {
+        out[2 * i]     = hex[digest[i] >> 4];
+        out[2 * i + 1] = hex[digest[i] & 15];
+    }
+
+    lua_pushlstring(L, out, sizeof(out));
+    return 1;
+}
+
 void kosmos_crypto_kit(lua_State *L)
 {
     static const luaL_Reg api[] = {
         { "des",    l_des },
         { "random", l_random },
+        { "sha256", l_sha256 },
         { NULL, NULL }
     };
 

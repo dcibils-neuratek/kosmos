@@ -653,7 +653,7 @@ local function new_namespace()
           rest = (rest == "/") and m.root or (m.root .. rest)
         end
 
-        return m.cap, rest, m.prefix, m.proto, m.root
+        return m.cap, rest, m.prefix, m.proto, m.root, m.also
       end
     end
     return nil
@@ -714,7 +714,7 @@ local function new_namespace()
     -- ordinary longest-prefix rule picks it from then on and this costs one
     -- exchange the first time and nothing afterwards.
     --
-    local cap, rest, prefix, proto, root = match(path)
+    local cap, rest, prefix, proto, root, also = match(path)
 
     for _, a in ipairs(autos) do
       if prefix == a.prefix and rest ~= "/" then
@@ -742,7 +742,7 @@ local function new_namespace()
       end
     end
 
-    if cap then return cap, rest, prefix, proto, root end
+    if cap then return cap, rest, prefix, proto, root, also end
 
     -- Nothing matched at all. Still worth asking, for a registry mounted
     -- somewhere this path only partly overlaps.
@@ -1977,16 +1977,16 @@ local function new_namespace()
   --------------------------------------------------------------------------
 
   local DISK_REQUEST = "<I4I4I8I8I4I4c512c1024"
-  local DISK_REPLY   = "<I4I4I4I4I8I8I8I4I4I8I8I8I4I4c1024"
+  local DISK_REPLY   = "<I4I4I4I4I8I8I8I4I4I8I8I8I4I4c1024I4I4I8"
   local DISK_SUPER   = "<I8I8I4I4I4I4I8" .. string.rep("I4", 10) .. "I8I4I4"
                        .. string.rep("I4", 11) .. "I4I8I8c128c128c96c96"
-  local DISK_DEVICE  = "<" .. string.rep("I8", 8)
+  local DISK_DEVICE  = "<" .. string.rep("I8", 12)
 
   local DISK_DATA_MAX, DISK_PATH_MAX, DISK_REGION = 1024, 512, 1
 
   assert(string.packsize(DISK_REQUEST) == 1568,
          "namespace: the /Home request layout does not match diskproto.h")
-  assert(string.packsize(DISK_REPLY) == 1104,
+  assert(string.packsize(DISK_REPLY) == 1120,
          "namespace: the /Home reply layout does not match diskproto.h")
   assert(string.packsize(DISK_SUPER) == 608,
          "namespace: the /Home superblock layout does not match diskproto.h")
@@ -2006,6 +2006,9 @@ local function new_namespace()
     [10] = "more attributes than fit in a block",
     [11] = "more folders than one search holds",
     [12] = "more answers than one query keeps",
+    [13] = "it is open read only",
+    [14] = "the server is not answering",
+    [15] = "the server refused it",
   }
 
   -- The filesystem's own refusals, 32 on: `kfs_why` (`user/servers/kfs.c`).
@@ -2053,7 +2056,13 @@ local function new_namespace()
               .. "written"):format(blob:sub(1, length))
     end
 
-    if err == 9 then return blob:sub(1, length) end
+    --
+    -- **A server that says why is quoted** (`docs/sharing.md`, *A share is
+    -- a disk*): `/Home` answers with numbers and this puts them into
+    -- words, and a share's server - which knows it is `diego-mac` and that
+    -- its `Projects` is open read only - says the sentence itself.
+    --
+    if length and length > 0 then return blob:sub(1, length) end
 
     if err >= 32 then
       return KFS_WHY[err - 32] or ("the filesystem refused it, error " .. (err - 32))
@@ -2079,15 +2088,17 @@ local function new_namespace()
                                               path, data), pass)
 
     if not raw then return nil, tostring(why) end
-    if #raw < 1104 then return nil, "a /Home reply of the wrong size" end
+    if #raw < 1120 then return nil, "a disk server's reply of the wrong size" end
 
     local err, more, count, length, next_at, moved, size, kind, extents, nsize,
-          mtime, modified, dated, _, blob = string.unpack(DISK_REPLY, raw)
+          mtime, modified, dated, _, blob, heard, _, heard_ms =
+      string.unpack(DISK_REPLY, raw)
 
     if err ~= 0 then return nil, disk_error(err, blob, length) end
 
     return { more = more ~= 0, count = count, length = length,
              offset = next_at, bytes = moved, size = size, blob = blob,
+             heard_ms = (heard ~= 0) and heard_ms or nil,
              node = { kind = kind, extents = extents, size = nsize,
                       mtime = mtime, modified = modified, dated = dated ~= 0 } }
   end
@@ -2148,7 +2159,7 @@ local function new_namespace()
     data = nil
 
     if not raw then return nil, tostring(err) end
-    if #raw < 1104 then return nil, "a reply from smbfs of the wrong size" end
+    if #raw < 1120 then return nil, "a reply from smbfs of the wrong size" end
 
     local e, more, count, length, next_at, _, _, _, _, _, _, _, _, _, blob =
       string.unpack(DISK_REPLY, raw)
@@ -2304,7 +2315,10 @@ local function new_namespace()
       return { ok = true, value = {
         reads = d[1], writes = d[2], read_bytes = d[3], write_bytes = d[4],
         read_counter_ticks = d[5], write_counter_ticks = d[6],
-        cache_hits = d[7], cache_misses = d[8] } }
+        cache_hits = d[7], cache_misses = d[8],
+        -- A share's (`diskproto.h`): what the network was asked.
+        requests = d[9], listings = d[10], listing_requests = d[11],
+        listing_counter_ticks = d[12] } }
     end
 
     if op == "write" and special == ".format" then
@@ -2323,7 +2337,7 @@ local function new_namespace()
     end
 
     if op == "list" then
-      local entries, at = {}, tonumber(extra.offset) or 0
+      local entries, at, heard_ms = {}, tonumber(extra.offset) or 0, nil
 
       repeat
         local r, e = disk_call(capability, code, rest, at)
@@ -2331,9 +2345,18 @@ local function new_namespace()
         if not r then return nil, e end
 
         disk_names(r, entries)
+        heard_ms = heard_ms or r.heard_ms
         at = r.offset
       until not r.more
 
+      --
+      -- **As last heard** (`docs/sharing.md`, step N3): a share's server
+      -- that did not answer within its bound is answered for from memory,
+      -- and the listing says so on itself - `entries.last_heard_ms`, how
+      -- long ago the server last answered - beside the names, so every
+      -- caller that only wants the names reads them as before.
+      --
+      entries.last_heard_ms = heard_ms
       return { ok = true, entries = entries }
     end
 
@@ -2496,6 +2519,7 @@ local function new_namespace()
       attrs.mtime = node.mtime
       attrs.modified = node.dated and node.modified or nil
       attrs.extents = node.extents
+      attrs.last_heard_ms = r.heard_ms
 
       return { ok = true, attrs = attrs }
     end
@@ -2577,12 +2601,27 @@ local function new_namespace()
                 :format(tostring(name))
   end
 
+  --
+  -- **What a share's server is asked under `/Network`** (`docs/sharing.md`,
+  -- *`/Network` is already somebody's*): every file operation, through the
+  -- mount's second capability, in `diskproto.h` as `/Home` is. What the
+  -- stack is asked - connect, ping, resolve - never comes this way; it goes
+  -- through the network kit's `net_at`, as it always has.
+  --
+  local SHARE_FILE_OPS = { list = true, getattr = true, read = true, write = true,
+                           delete = true, rename = true, mkdir = true,
+                           setattr = true, query = true }
+
   local function request(op, path, extra, pass, again)
-    local capability, rest, prefix, proto = resolve(path)
+    local capability, rest, prefix, proto, _, also = resolve(path)
     if not capability then
       -- The sentence design.md 2 asks for. Nothing was denied; there is
       -- simply no such path in this process's world.
       return nil, "no such path: " .. path
+    end
+
+    if proto == "net" and also and SHARE_FILE_OPS[op] then
+      return disk_request(also, op, rest, extra, pass)
     end
 
     if proto == "kits" then
@@ -3094,10 +3133,31 @@ local function new_namespace()
   -- an index means something different on each side and only the kernel can
   -- translate it.
   function ns.send(path, message, pass, again)
-    local capability, rest, prefix, proto = resolve(path)
+    local capability, rest, prefix, proto, _, also = resolve(path)
 
     if not capability then
       return nil, "no such path: " .. path
+    end
+
+    --
+    -- `mkdir`, `delete` and `rename` under `/Network`: a share's, asked of
+    -- its server in `diskproto.h` - which, while the client reads only,
+    -- refuses each with a sentence that says so (`docs/sharing.md`).
+    --
+    if proto == "net" and also then
+      local op = tostring(message.type or "")
+
+      if op == "mkdir" or op == "delete" or op == "rename" then
+        local to = tostring(message.to or "")
+
+        if op == "rename" and to:find("/", 1, true) then
+          local _, elsewhere = match(to)
+
+          to = elsewhere or to
+        end
+
+        return disk_request(also, op, rest, (op == "rename") and { to = to } or nil)
+      end
     end
 
     --

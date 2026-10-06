@@ -197,6 +197,16 @@ SUITES = [
     Suite("arm-share", ["python3", "tools/run_share.py", ARM]),
     Suite("x86-share", ["python3", "tools/run_share.py", X86], x86=True),
 
+    # **A share is a folder** (`docs/sharing.md` N3), the second half, on a
+    # peer of its own beside the first: `ls /Network`, the 2,000 names, a
+    # 64 MB file whole and in a hundred pieces against this Mac's bytes,
+    # `cat`, `cp`, dates, writes refused in words, Tracker opening it; and
+    # the peer stopped - memory marked as last heard, "not answering", both
+    # within the bound.
+    Suite("arm-share-2", ["python3", "tools/run_share.py", ARM, "--part", "2"]),
+    Suite("x86-share-2", ["python3", "tools/run_share.py", X86, "--part", "2"],
+          x86=True),
+
     # **The Servers window** (`roadmap.md`, remote step 6): opened over
     # Telnet on the M700's own boot, seeing the session that opened it, a
     # Disconnect ending that session, and the web server it kept to start

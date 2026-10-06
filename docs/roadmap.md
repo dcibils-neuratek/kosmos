@@ -1054,7 +1054,14 @@ Assessed, not designed:
   every dialect, on the Mac. **N1 DONE the same day** (18.406): MD4, AES-CMAC
   and the SP 800-108 KDF on BearSSL. **N2 DONE the same day** (18.407):
   `smbfs` and the SMB Kit, `share connect` at the prompt, signed and sealed
-  against Samba. **Next: N3**, a share is a folder in `/Network`. **Found**:
+  against Samba. **N3 DONE the same day** (18.408): a share is a folder at
+  `/Network/<server>/<share>` - `ls`, `cat`, `cp`, Tracker - read only, a
+  silent server answered for from memory as last heard. **Next: N4**,
+  signed and sealed, each dialect. **Found by N3**: x86-64's network
+  receives about 0.14 MB/s under QEMU, ten times slower than ARM's (2 MB by
+  `fetch`: 13.2 s against 1.2), cause not looked for - the stack's or the
+  card's; and a `LIST` carrying each name's facts is worth building for
+  `/Home`, `/Drives` and shares (`sharing.md` question 6). **Found**:
   a password typed at the prompt is shown as it is typed - the console has
   no unechoed read yet, to add before the windows (N6).
   **Found by it, and wanted for its 1 GB copy**: `/Home` taking a write in

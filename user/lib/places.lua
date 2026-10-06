@@ -203,13 +203,20 @@ end
 --
 -- **Where there are no files** (Diego, 27 September 2026, after opening
 -- `/Running` hung Tracker: "why do we need access to 'running' in tracker
--- in the first place", "tracker is for files", "not processes"). Three of
--- the root's seven names are for programs: `/Running`, where one finds
--- another; `/Devices`, the machine's devices; `/Network`, a protocol rather
--- than a tree. Tracker and the Open and Save window leave them out of the
--- root and of System. The Terminal, which is for programs, has them all.
+-- in the first place", "tracker is for files", "not processes"). Two of
+-- the root's names are for programs: `/Running`, where one finds another,
+-- and `/Devices`, the machine's devices. Tracker and the Open and Save
+-- window leave them out of the root and of System. The Terminal, which is
+-- for programs, has them all.
 --
-places.NOT_FILES = { "/Devices", "/Network", "/Running" }
+-- **`/Network` was the third, and holds files since sharing's step N3**
+-- (`docs/sharing.md`, *`/Network` is already somebody's*): its servers and
+-- their shares are folders - `/Network/diego-mac/Projects` - answered by
+-- smbfs from what it already knows, so opening it asks no server anything
+-- and stops no window. What the stack answers there - connect, ping,
+-- resolve - is still for programs, and never a name in a listing.
+--
+places.NOT_FILES = { "/Devices", "/Running" }
 
 -- Is `path` somewhere files are? Whatever the case it is spelled in, as
 -- every name is found.

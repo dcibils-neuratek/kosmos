@@ -61,6 +61,16 @@
 #define DISK_ERR_ANSWERS       12u  /* more answers than one query keeps */
 
 /*
+ * **A share's three** (`docs/sharing.md`, *A share is a disk*): a server
+ * that is not `/Home` says why in `u.data`, `length` bytes, and the
+ * namespace shows those words - a mount's name in its own sentences, where
+ * `/Home`'s numbers are put into words by the namespace.
+ */
+#define DISK_ERR_READ_ONLY     13u  /* "diego-mac's Projects is open read only" */
+#define DISK_ERR_AWAY          14u  /* "diego-mac is not answering" */
+#define DISK_ERR_DENIED        15u  /* the server refused this file to this account */
+
+/*
  * And the filesystem's own refusals, as `DISK_ERR_KFS` plus `-KFS_E_*`
  * (`user/servers/kfs.h`): "no such file", "that name is taken", "the disk
  * is full" and the rest, one number each.
@@ -140,12 +150,25 @@ struct disk_super {
     char free_why[96];
 };
 
-/* `.device`: what the device has cost this server so far. */
+/*
+ * `.device`: what the device has cost this server so far.
+ *
+ * A share's (smbfs): `reads` and `read_bytes` are SMB READs and what they
+ * brought, `read_counter_ticks` the time callers waited on them;
+ * `cache_hits` the questions about names answered from memory and
+ * `cache_misses` the folders asked of the server; and the last four are
+ * the network's - every SMB request sent, the folder listings asked for,
+ * the requests those took and the time they took.
+ */
 struct disk_device {
     uint64_t reads, writes;
     uint64_t read_bytes, write_bytes;
     uint64_t read_counter_ticks, write_counter_ticks;
     uint64_t cache_hits, cache_misses;
+    uint64_t requests;          /* a share's: SMB requests sent */
+    uint64_t listings;          /* a share's: folder listings asked for */
+    uint64_t listing_requests;  /* the SMB requests those took */
+    uint64_t listing_counter_ticks;
 };
 
 struct disk_reply {
@@ -167,6 +190,18 @@ struct disk_reply {
         struct disk_super super;
         struct disk_device device;
     } u;
+
+    /*
+     * **Whether the answer is as it was last heard** (`docs/sharing.md`
+     * step N3): a listing or a node's facts from a share's server that did
+     * not answer within its bound, given from memory - and how long ago
+     * that server last answered anything, in milliseconds, so no clock's
+     * ticks cross. `/Home` always answers fresh and sets neither. After
+     * `u`, so a reader of the fields before it reads them where it did.
+     */
+    uint32_t heard;             /* 1: from memory, the server silent */
+    uint32_t reserved2;
+    uint64_t heard_ms;          /* how long since the server last answered */
 };
 
 _Static_assert(sizeof(struct disk_node) == 40, "disk_node has no padding");
@@ -174,6 +209,8 @@ _Static_assert(sizeof(struct disk_super) <= DISK_DATA_MAX,
                "disk_super fits where a page of bytes does");
 _Static_assert(sizeof(struct disk_request) <= 2048,
                "a disk request must fit in one message");
+_Static_assert(sizeof(struct disk_reply) == 1120,
+               "a disk reply is the size the namespace unpacks");
 _Static_assert(sizeof(struct disk_reply) <= 2048,
                "a disk reply must fit in one message");
 

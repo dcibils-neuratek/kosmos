@@ -19204,3 +19204,109 @@ list is now as long as it is, in a userdata the collector frees, with the
 kernel's `captable_limit` the only bound, and the refusal's reason is passed
 on. The gate after it: 91 of 92, `x86-film` failing one comparison of a film's
 sound under load and passing alone, both boards, 13 of 13.
+
+## 18.408 A share is a folder (sharing N3)
+
+`docs/sharing.md` step N3. **smbfs answers `diskproto.h`** for
+`/Network/<server>/<share>/...`: LIST a page at a time from a listing kept
+in memory, its names sorted once and each with its size, kind and the
+server's date; GETATTR from the same listing, never the network; READ
+into the caller's region - mapped by smbfs for as long as the read takes,
+libsmb2's zero-copy READ putting each megabyte straight from the TCP ring
+where it belongs, two in flight - or into a page; `.super` by QUERY_INFO and
+`.device` from smbfs's counts; and WRITE, DELETE, RENAME, MKDIR, SETATTR and
+FORMAT refused with "MACPEER's Projects is open read only". `/Network` lists
+the servers whose share was connected, `/Network/MACPEER` its share, both
+from smbfs's records. A file's handle is opened once, read through by
+whoever reads it, and closed five seconds after the last read. **The
+namespace** sends every file operation under a `net` mount with a second
+server to that server, through `disk_request` exactly as `/Home`'s
+(`ns.send`'s `mkdir`, `delete` and `rename` too), and quotes a refusal that
+carries words. `diskproto.h` gains `DISK_ERR_READ_ONLY`, `_AWAY` and
+`_DENIED`, `heard` and `heard_ms` after the reply's `u` (1,104 bytes to
+1,120), and four network figures in `.device`. `places.NOT_FILES` loses
+`/Network`; Tracker prints what it shows; `ls` says when a listing is as
+last heard; the Crypto Kit's Lua door gains `crypto.sha256`, of a string or
+of a mapped region.
+
+**The bounds, as built.** A listing younger than two seconds is answered
+from memory; otherwise the server is asked and the caller held **while the
+server keeps answering, and at most a quarter of a second of its saying
+nothing** - then from memory, marked, or "MACPEER is not answering". A
+bound on the whole listing would have called the 2,000 - seven requests, a
+third of a second of a server answering throughout on ARM, two seconds on
+x86-64 - a server gone away. SMB's own timeout, thirty seconds, is armed
+once connected, the loop servicing libsmb2 once a second while anything is
+in flight.
+
+**`tools/run_share.py --part 2`, `arm-share-2` and `x86-share-2`, 19 checks
+in 18 s and 49 s**, on peers of their own (4462, 4472) beside the first
+half's: `ls /Network` empty before, then `MACPEER` a folder, and
+`/Network/MACPEER` holding `Projects`; the share's own folder the peer's,
+`big.bin` 67,108,864 bytes; the 2,000 names of `many/` sorted and hashed
+equal to the Mac's, each with a size and a date; `big.bin` read into one
+region and its SHA-256 the Mac's - all 64 MB on ARM, the first 4 MB on
+x86-64 (below); a hundred pieces of 1 to 3,000 bytes at offsets drawn from
+a seed the Mac and the machine share, copied end to end and hashed, the
+Mac's bytes there; `cat` of `hello.txt`; `cp` of `inside/deeper/note.txt`
+into `/Temporary` and read back; `hello.txt`'s and `big.bin`'s dates the
+peer's to the second and `inside` a directory; a write, `mkdir` and `rm`
+each refused in those words; the root as Tracker filters it holding
+`Network`; and `wm tracker:/Network/MACPEER/Projects` showing the share, 5
+items. 3.1.1 without signing: signing 64 MB would measure CMAC, which is
+N4's.
+
+**The controls.** The peer stopped whole - `smbpeer.py pause` now signals
+smbd's process group, since each connection is served by a process forked
+from the listener and stopping the listener alone left the connection
+answering - with the connection made: `ls` of the share's folder, heard 2.5
+s before, answered from memory in 0.4-0.5 s, "(as last heard: the server
+has not answered for 3.3 s)", its four names' facts answered at once while
+the question was still out; `ls` of `inside`, never listed, "MACPEER is not
+answering" in 0.3-0.4 s; the peer continued, and the folder fresh again,
+unmarked. **Each bites**, run with one thing wrong and not committed: a
+READ asking one byte past where it was told (for every read not at offset
+0) - the hundred pieces' hash differs and 1 of 19 fails, the whole read
+from 0 still passing; the silence bound at 60 s - `ls` of the stopped
+peer's folder never comes back inside the harness's 150 s: the LIST ends
+at SMB's 30-second timeout (seen: `ETIMEDOUT`, `STATUS_IO_TIMEOUT`, from
+libsmb2's own timer), and then each of the five `getattr`s asks again and
+waits its own thirty.
+
+**Measured** (under TCG, not `-icount`, which the suites' network does not
+run under):
+
+| | ARM | x86-64 |
+|---|---|---|
+| SMB requests for the 2,000 | 7 | 7 |
+| smbfs listing them, first request to last answer | 337 ms | 2,066 ms |
+| `fs.list`, its 20 namespace pages included | 351 ms | 2,083 ms |
+| 2,000 `getattr`s, all from smbfs's memory | 528 ms | 409 ms |
+| `big.bin` into one region | 64 MB, 5.4 s, 11.9 MB/s | 4 MB, 27.8 s, 0.14 MB/s |
+| its SHA-256, in C over the region | 0.84 s | 0.07 s |
+
+On ARM the `getattr` round trips are 60% of a 2,000-name folder's time,
+with nothing of the network in them: a `LIST` that carries each name's
+facts is worth its step, for `/Home`, `/Drives` and shares (`sharing.md`
+question 6). **Found**: x86-64's network receives about 0.14 MB/s under
+QEMU - `fetch` of 2 MB over plain HTTP from this Mac, 13.2 s there and 1.2
+s on ARM - so it is the stack's or the emulated card's on that board and
+not SMB's; the x86-64 suite reads 4 MB of the file whole rather than 64,
+which would be seven minutes. On the roadmap, its cause not yet looked for.
+`make test ONLY=host,arm-kernel,arm-headless,arm-share,x86-share,
+arm-share-2,x86-share-2,arm-display-1,x86-display-1,arm-browser-1`: 10
+suites in 149 s, 8 passing - `x86-share-2` read the previous command's end
+as the next one's (the probe waited for its last line and not for its
+process to end; fixed), and `host`'s `test_kfs_tool` saw `docs/*.md`
+change between its two runs, because they were being edited while it ran.
+Then `host,arm-share-2,x86-share-2`: 3 suites in 60 s, all passing. And,
+since the disk's reply grew, `arm-diskwire` and `x86-disk`: both passing.
+
+**Found by the full gate**: the first gate run failed `arm-share-2` 7 of 19 -
+the 2,000-name listing answered "MACPEER is not answering". With ninety
+suites on the Mac, a quarter second passed with nothing from a server that
+was answering, and a folder never listed has no memory to answer from. A
+folder never listed now waits five seconds of silence (`SILENT_UNKNOWN_MS`);
+one listed before keeps the quarter second, since memory answers it. The
+suite holds the never-listed answer to between four and ten seconds, so the
+old bound fails it. The gate after: 94 of 94 in 9:54.
