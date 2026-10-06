@@ -85,11 +85,11 @@
         <p>New Project with the three kinds and their templates; <b>Build</b> (F6) and <b>Run</b> (F5);
         TinyCC's diagnostics in the Problems it already lists, at their lines.</p>
         <div class="steps"><span class="st b">B1</span><span class="st b">B6</span><span class="st r">R1</span></div></div>
-      <div class="box u isnew"><h3>cc <span class="tag new">new</span></h3>
-        <p>The compiler at the prompt: <code>cc primes.c -o primes.elf</code>, its errors as <code>file:line:</code>.
+      <div class="box u isnew"><h3>tcc <span class="tag new">new</span></h3>
+        <p>The compiler at the prompt: <code>tcc primes.c -o build/primes.elf</code>, its errors as <code>file:line:</code>.
         The C Kit's second user.</p></div>
       <div class="box u"><h3>the project's application</h3>
-        <p><code>mandelbrot.lua</code> in <code>mandelbrot.elf</code> - <code>-- kosmos: image</code>, and
+        <p><code>mandelbrot.lua</code> in <code>build/mandelbrot.elf</code> - <code>-- kosmos: image</code>, and
         <code>use("mandelbrot.elf")</code> for its C, exactly as Doom's.</p>
         <div class="steps"><span class="st r">R4</span></div></div>
     </div></div>
@@ -98,7 +98,7 @@
     <div class="row" style="grid-template-columns: 1.4fr 1fr 1fr">
       <div class="box k isnew"><h3>the C Kit <span class="tag new">new</span></h3>
         <p><b>TinyCC</b>, vendored unmodified (LGPL), its Kosmos layout a patch at the build - <code>.text.start</code> first,
-        two segments, the code a page in - compiling and linking in one call, <code>cc.build{}</code>;
+        two segments, the code a page in - compiling and linking in one call, <code>tcc.build{}</code>;
         and <b>the header stamp</b>: "KOSMOS" and the code's size, written after the link.
         Problems through TinyCC's error callback, never parsed from text.</p>
         <div class="steps"><span class="st b">B2</span><span class="st b">B3</span><span class="st b">B4</span></div></div>
@@ -112,7 +112,7 @@
     <div class="row" style="grid-template-columns: 1.2fr 1fr 1fr">
       <div class="box n isnew"><h3>the runtime, for linking <span class="tag new">new</span></h3>
         <p>The lean userland's 531 objects as one: <b>21 MB, 7.8 MB compressed</b>, unpacked into
-        <code>/Temporary/cc/</code> at the first build of a boot (question 1). Always this build's, so an image
+        <code>/Temporary/tcc/</code> at the first build of a boot (question 1). Always this build's, so an image
         made here speaks this system's protocols.</p>
         <div class="steps"><span class="st b">B3</span></div></div>
       <div class="box n isnew"><h3>/Kosmos/Developer <span class="tag new">new</span></h3>
@@ -144,11 +144,11 @@
   <div class="paths">
     <div class="path"><h2><span class="st b">B</span> Build - F6, or Run after a C change</h2>
       <ol>
-        <li><b>B1</b> the IDE calls <code>cc.build{ sources, out, kit }</code> - in its own process</li>
+        <li><b>B1</b> the IDE calls <code>tcc.build{ sources, out, kit }</code> - in its own process</li>
         <li><b>B2</b> TinyCC compiles each <code>.c</code> with <code>/Kosmos/Developer</code>'s headers <span class="t">3 ms a small file</span></li>
         <li><b>B3</b> links them with the runtime, unpacked once a boot <span class="t">20-40 ms on the Mac</span></li>
         <li><b>B4</b> the header stamped; problems handed back as a table</li>
-        <li><b>B5</b> the image written to the project's folder, from a region <span class="t">the slow step</span></li>
+        <li><b>B5</b> the image written to the project's <code>build</code> folder, from a region <span class="t">the slow step</span></li>
         <li><b>B6</b> Problems at their lines, or "Built, 20.1 MB" in Output</li>
       </ol></div>
     <div class="path"><h2><span class="st r">R</span> Run - F5</h2>

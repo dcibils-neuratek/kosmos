@@ -161,7 +161,7 @@
     <button data-s="new" aria-pressed="true">New Project</button>
     <button data-s="err" aria-pressed="false">Build: an error at its line</button>
     <button data-s="run" aria-pressed="false">Built, and running</button>
-    <button data-s="cc" aria-pressed="false">cc at the prompt</button>
+    <button data-s="cc" aria-pressed="false">tcc at the prompt</button>
   </div>
 
   <div class="stage">
@@ -211,7 +211,7 @@
             <div class="row">&#9662; Mandelbrot<span class="k">Lua + C</span></div>
             <div class="row"><span class="ind"></span>mandelbrot.lua</div>
             <div class="row on"><span class="ind"></span>fractal.c</div>
-            <div class="row made"><span class="ind"></span>mandelbrot.elf<span class="k">made</span></div>
+            <div class="row made"><span class="ind"></span>&#9662; build<span class="k">made</span></div><div class="row made"><span class="ind"></span><span class="ind"></span>mandelbrot.elf</div>
             <div class="cap" style="margin-top:14px">Kosmos</div>
             <div class="row">&#9656; Libraries</div><div class="row">&#9656; Kits</div><div class="row">&#9656; Developer &middot; headers</div>
           </div>
@@ -267,13 +267,13 @@
             <div class="row">&#9662; Mandelbrot<span class="k">Lua + C</span></div>
             <div class="row on"><span class="ind"></span>mandelbrot.lua</div>
             <div class="row"><span class="ind"></span>fractal.c</div>
-            <div class="row made"><span class="ind"></span>mandelbrot.elf<span class="k">20.1 MB</span></div>
+            <div class="row made"><span class="ind"></span>&#9662; build<span class="k">made</span></div><div class="row made"><span class="ind"></span><span class="ind"></span>mandelbrot.elf<span class="k">20.1 MB</span></div>
           </div>
           <div class="main">
             <div class="tabs"><div class="tab on">mandelbrot.lua</div><div class="tab">fractal.c</div></div>
             <div class="code">
 <div class="ln"><span class="n">1</span><span><span class="com">-- kosmos: application</span></span></div>
-<div class="ln"><span class="n">2</span><span><span class="com">-- kosmos: image mandelbrot.elf</span></span></div>
+<div class="ln"><span class="n">2</span><span><span class="com">-- kosmos: image build/mandelbrot.elf</span></span></div>
 <div class="ln"><span class="n">3</span><span></span></div>
 <div class="ln"><span class="n">4</span><span><span class="kw">local</span> ui = <span class="fn">use</span>(<span class="str">"/Kosmos/Libraries/ui.lua"</span>)</span></div>
 <div class="ln"><span class="n">5</span><span><span class="kw">local</span> fractal = <span class="fn">use</span>(<span class="str">"mandelbrot.elf"</span>)   <span class="com">-- the C, in this image</span></span></div>
@@ -289,7 +289,7 @@
               <div class="ptabs"><div class="ptab">Problems</div><div class="ptab on">Output</div></div>
               <div class="out">
                 <div class="d">Build: fractal.c compiled in 4 ms, linked with Kosmos's runtime in 0.16 s</div>
-                <div class="ok">Built mandelbrot.elf - 20.1 MB, written in 1.9 s</div>
+                <div class="ok">Built build/mandelbrot.elf - 20.1 MB, written in 1.9 s</div>
                 <div class="d">Run: mandelbrot.lua, in mandelbrot.elf</div>
                 <div>C: 38 ms for 166,400 pixels</div>
                 <div>Lua alone: 1,240 ms - the same picture</div>
@@ -306,12 +306,12 @@
     <div class="state" id="s-cc">
       <div class="term"><div class="bar">Terminal <span>/Home/Projects/Primes</span></div>
 <pre><span class="p">kosmos&gt;</span> ls
-primes.c   primes.lua
-<span class="p">kosmos&gt;</span> cc primes.c -o primes.elf
+build/   primes.c   primes.lua
+<span class="p">kosmos&gt;</span> tcc primes.c -o build/primes.elf
 <span class="e">primes.c:9:12: error: 'limit' undeclared</span>
 <span class="p">kosmos&gt;</span> edit primes.c
-<span class="p">kosmos&gt;</span> cc primes.c -o primes.elf
-<span class="ok">cc: primes.elf, 20.1 MB - compiled in 3 ms, linked in 0.16 s</span>
+<span class="p">kosmos&gt;</span> tcc primes.c -o build/primes.elf
+<span class="ok">tcc: build/primes.elf, 20.1 MB - compiled in 3 ms, linked in 0.16 s</span>
 <span class="p">kosmos&gt;</span> ./primes.lua 10000000
 664579 primes under 10000000, in 1.42 s
 <span class="p">kosmos&gt;</span> <span class="d">_</span></pre>
@@ -325,7 +325,7 @@ primes.c   primes.lua
     <div><b>Build</b> (F6) compiles the C with TinyCC and links it with Kosmos's runtime into the project's image. Its errors are the Problems the IDE already lists, each a click from its line. A build that fails writes nothing.</div>
     <div><b>Run</b> (F5) builds first when a C file changed, then starts the Lua inside the image - <code>-- kosmos: image</code>, as Doom is. A change to the Lua alone builds nothing.</div>
     <div><b>The image is made, not written</b>: greyed in the tree, with its size. It is a whole program, so the project folder can be copied to another Kosmos and run there.</div>
-    <div><b><code>cc</code></b> is the same compiler at the prompt - in a Terminal, over telnet, after editing in Write.</div>
+    <div><b><code>tcc</code></b> is the same compiler at the prompt - in a Terminal, over telnet, after editing in Write.</div>
     <div><b>Not drawn</b>: a C app with a window of its own (question 2 in <code>docs/tinycc.md</code>), and a debugger, which is later.</div>
   </div>
 </div>

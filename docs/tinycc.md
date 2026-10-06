@@ -54,7 +54,7 @@ start with".
 
 ### At the prompt
 
-- **`cc`**, the compiler as a program: `cc primes.c -o primes.elf` - the same
+- **`tcc`**, the compiler as a program: `tcc primes.c -o build/primes.elf` - the same
   build the IDE does, its diagnostics as `file:line: error: ...` - for a C
   program written in Write, in a Terminal, or over telnet.
 
@@ -124,8 +124,8 @@ work: where things live, and what each piece is.
 |---|---|---|
 | **New Project, Build, Run, Problems** | the IDE's | `ide.lua`, grown; New Project a dialog of its own |
 | **Templates** | three project folders, read-only, copied on Create | `/Kosmos/Templates/` in the image, new |
-| **The compiler** | TinyCC, compiling and linking in one process | **the C Kit**, new: `user/kits/cc/`, TinyCC vendored unmodified in `runtime/upstream/tinycc/` with a Kosmos patch applied at the build |
-| **`cc`** | the compiler at the prompt | `user/bin/programs/cc.lua`, new, the C Kit's first user |
+| **The compiler** | TinyCC, compiling and linking in one process | **the C Kit**, new: `user/kits/tcc/`, TinyCC vendored unmodified in `runtime/upstream/tinycc/` with a Kosmos patch applied at the build |
+| **`tcc`** | the compiler at the prompt | `user/bin/programs/tcc.lua`, new, the C Kit's first user |
 | **The runtime it links against** | the lean userland as one object | built by `make` as `runtime.o`, carried compressed (question 1) |
 | **The headers** | `kosmos.h`, the libc's, Lua's, `limits.h` and `stdint.h`, TinyCC's own | carried beside the runtime, `/Kosmos/Developer/include` |
 | **The header stamp** | "KOSMOS" and the code's size, after the link | the C Kit, 30 lines, from `elfimage.c`'s own reading of an ELF |
@@ -141,18 +141,18 @@ step 3 and 4 of the IDE. What is new is the compiler, where its inputs live,
 and a dialog.
 
 **Does another application want it?** The compiler, yes - so it is a kit,
-the C Kit, with the IDE and `cc` its first two users; a later Kosmos Write
+the C Kit, with the IDE and `tcc` its first two users; a later Kosmos Write
 macro, a shader editor in Cafesa3D or a plugin host would be the next.
 
 ### The C Kit
 
-`use("/Kosmos/Kits/cc")` gives:
+`use("/Kosmos/Kits/tcc")` gives:
 
 ```lua
-local cc = use("/Kosmos/Kits/cc")
-local r = cc.build{
+local tcc = use("/Kosmos/Kits/tcc")
+local r = tcc.build{
   sources = { "/Home/Projects/Mandelbrot/fractal.c" },
-  out     = "/Home/Projects/Mandelbrot/mandelbrot.elf",
+  out     = "/Home/Projects/Mandelbrot/build/mandelbrot.elf",
   kit     = "mandelbrot",            -- what `use("mandelbrot.elf")` finds
 }
 -- r.ok, r.milliseconds, r.bytes, and r.problems: { { file, line, column,
@@ -201,9 +201,9 @@ TinyCC links every image against the runtime: 21 MB a processor, 7.8 MB
 compressed. Something has to carry it:
 
 - **(a) In the system's image, compressed** - 7.8 MB more in a 36.6 MB
-  image - and unpacked into `/Temporary/cc/` the first time a build asks,
+  image - and unpacked into `/Temporary/tcc/` the first time a build asks,
   21 MB of memory for as long as the machine runs. Nothing to install;
-  `cc` works on every machine Kosmos boots on. **Recommended.**
+  `tcc` works on every machine Kosmos boots on. **Recommended.**
 - (b) On the disk, `/Home/Developer/` - installed by `make install-apps`
   and carried by a stick - nothing in the image, and a machine without it
   cannot build.
@@ -244,7 +244,7 @@ the Lua builds nothing. If it is still felt, the image can be written to
 ### What is C and what is Lua
 
 C: TinyCC, the C Kit, the header stamp. Lua: New Project, the IDE's Build
-and Run, `cc` at the prompt, the templates' Lua.
+and Run, `tcc` at the prompt, the templates' Lua.
 
 ### What is new code, and the order to build it in
 
@@ -260,7 +260,7 @@ Each step its own revision and its own permanent test.
 - **C3 - the C Kit**, TinyCC built for Kosmos itself. *Test*: inside the
   machine, `apptest.c` built and its image run - the whole thing, on the
   machine, without the Mac; a file with an error answered with its line.
-- **C4 - `cc` at the prompt.** *Test*: `cc primes.c -o primes.elf`, then
+- **C4 - `tcc` at the prompt.** *Test*: `tcc primes.c -o build/primes.elf`, then
   the program run; an error's `file:line:` exact.
 - **C5 - the IDE's Build and Run**, problems at their lines. *Test*: the
   display harness opens a project, builds, marks a broken line, fixes it,
@@ -361,3 +361,27 @@ and the code's size rounded up to a page, as `user/user.ld` computes it.
  		   headers itself (and the ELF header as well), it'll
  		   come out with same memory use but will make various
 ```
+
+---
+
+## Diego's decisions, 6 October 2026
+
+Answered the evening it was drawn: "1. a 2. a 3. yes 4. beside de sources
+in a build directory 5. tcc". **Where they differ from what is written
+above, they win.**
+
+1. **The runtime is in the system's image, compressed** - 7.8 MB more -
+   and unpacked into `/Temporary/tcc/` at the first build of a boot.
+2. **C apps print first**; a small **Window Kit in C** is its own step
+   after C6.
+3. **The templates as drawn**: Hello Window (Lua), Mandelbrot and Sum both
+   ways (Lua and C), Primes (C).
+4. **A build goes beside the sources, in a `build` folder**:
+   `/Home/Projects/Mandelbrot/build/mandelbrot.elf`, the project's Lua
+   saying `-- kosmos: image build/mandelbrot.elf`. The folder is made, not
+   written: the tree greys it, and deleting it loses nothing a build does
+   not make again.
+5. **The command is `tcc`**, and the kit with it: `/Kosmos/Kits/tcc`.
+
+So the build order stands as written, C1 to C6, with the Window Kit in C
+after it.

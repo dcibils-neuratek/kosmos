@@ -950,7 +950,10 @@ IDE building C programs with it.** **DESIGNED on 6 October, for Diego to agree**
 `docs/tinycc.html` (New Project, Build, Run, `cc`) and
 `docs/tinycc-architecture.png`. **Tried first**: TinyCC links Kosmos's
 GCC-built runtime and its own C into an image the loader accepts and runs -
-14 checks on AArch64 and x86-64, with a fifteen-line layout patch. Diego: "I want just one C compiler",
+14 checks on AArch64 and x86-64, with a fifteen-line layout patch. **Diego's answers, the same evening**: the runtime in the
+image, compressed; C apps print first, a Window Kit in C after; the four
+templates; builds in a `build` folder beside the sources; the command is
+`tcc` (`docs/tinycc.md`, *Diego's decisions*). **Next: C1-C6.** Diego: "I want just one C compiler",
 "What's the best option for kosmos?", then "Yes do that", "Tinycc and ide
 integration so I can build c programs". Chosen over GCC (about 50 MB at the
 least - `cc1` alone is 37 MB, bigger than all of Kosmos - and a separate
