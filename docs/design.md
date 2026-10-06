@@ -1090,6 +1090,23 @@ Decided on 27 September 2026 by Diego, once the layout gave every name a capital
 
 **A spelling kept by path is `ramfs`'s**: its table holds whole paths and a query hands them back, so it stores a new file under its directories' existing spelling, and `/Temporary/x` and `/Temporary/X` are one key. The disk kept one too - its index, while one existed, which turned every path into the disk's spelling as it arrived (`kfs.spelled`), a walk of its directories. Since the disk server is C (`docs/diskfs.md` step 3) there is no index to key: a query scans, and spells only the folder it starts from, once, with each answer built from the names as the directories store them.
 
+### 8.3g A name may have spaces in it, and an argument with one is quoted
+
+Diego, 6 October 2026, after a picture on his Mac's share would not open in Photo: "file names and directories should be able to have spaces", "we should revisit how we do that", "in kfs as well".
+
+**The filesystems never minded.** `kfs` holds a name as bytes to 255 of them and refuses only an empty one, `.` and `..`; `/Temporary`'s store a path to 256 bytes; neither splits or trims one. `tools/test_kfs.lua` and `test_ramstore` now say so - a folder and a file with spaces, spaces at a name's ends, a comma and `diego’s Public Folder`, made, listed, read, renamed and deleted (`testing.md` 18.414). Tracker's own New Folder has always made `new folder`.
+
+**What broke a name was the argument string.** A program is started with its arguments as one string, `args`, and every program read it by splitting at spaces - so `/Home/My Pictures/sea photo.png`, handed to Photo by Tracker, arrived as `/Home/My`. So there is a syntax, and one door each way:
+
+- words are separated by spaces and tabs;
+- a word may be put in double quotes, and then a space is part of it: `"/Home/My Pictures/sea photo.png"`;
+- inside the quotes `\"` is a quote and `\\` a backslash, and any other backslash is itself;
+- outside quotes nothing is special but the space and the quote, so **a word without either is typed exactly as it always was**: `cat /Home/notes.txt`, `--size 2`.
+
+`files.quote(word)` writes one - quoting only when it has to - and `files.line(list)` several; `files.words(text)` reads them back, and `files.words(text, 1)` takes a program's name off a line and hands it the rest as written (`user/lib/files.lua`). **Every place that builds an argument string quotes through the first, and every program that reads one splits through the second** - Tracker's Open, Open with and Edit, `filetypes.how_to_open`, the Deskbar, Video, Groove's and the Super Nintendo's starting again, the prompt, the Terminal and `telnetd`. Nothing else in the tree splits an argument string by hand; the shell, which has no `use`, loads the same file.
+
+**Stored command lines are read as they were.** A launcher's `args` attribute is an argument string a person wrote and is handed over unchanged; one written before this with a path without spaces means what it meant, and one that needed a space now can say it. The Super Nintendo took the whole rest of its line as the ROM's name so No-Intro's names would open, a rule of its own; it reads one word like everything else, and what opens a ROM quotes it.
+
 ### 8.3e A table stored in a file is text a person can read
 
 Decided by Diego on 4 October 2026: "Nothing is stored in binary format for settings and preferences", and "I don't like binary files for settings for anything in the system". **It had been**: `fs.write` of a table to `/Home` stored the serialiser's bytes behind a mark, `\0KTV` - a type byte and a four-byte length before each value - so every file in `/Home/Preferences` was binary, its words readable in it and nothing a person could edit (the M700's `appearance`, read back the same day).

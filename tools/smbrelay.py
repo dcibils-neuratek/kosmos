@@ -39,6 +39,7 @@ import threading
 
 READ = 0x0008
 FROM_SERVER = 0x00000001        # SMB2_FLAGS_SERVER_TO_REDIR
+STATUS_PENDING = 0x00000103
 
 
 class Relay:
@@ -52,6 +53,7 @@ class Relay:
         self.signed = 0             # READ answers signed,
         self.sealed = 0             # transforms, whatever is inside,
         self.plain = 0              # READ answers neither
+        self.pending = 0            # interim READ answers, not counted
         self.passed = 0             # messages from the server passed unchanged
         self.lock = threading.Lock()
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -166,7 +168,7 @@ class Relay:
         if message[:4] != b"\xfeSMB" or len(message) < 64:
             return
 
-        command = struct.unpack_from("<H", message, 12)[0]
+        status, command = struct.unpack_from("<IH", message, 8)
         flags = struct.unpack_from("<I", message, 16)[0]
 
         if command == 0 and len(message) >= 70:
@@ -174,6 +176,12 @@ class Relay:
             self.dialect = self.DIALECTS.get(revision, "0x%04x" % revision)
         elif command != READ:
             pass
+        elif status == STATUS_PENDING:
+            # An interim answer - "I am still reading" - which is not
+            # signed, and which Samba sends once a read
+            # goes asynchronous, as one does on a loaded machine. It carries
+            # no bytes; the final answer that does is the one counted.
+            self.pending += 1
         elif flags & 0x00000008:            # SMB2_FLAGS_SIGNED
             self.signed += 1
         else:

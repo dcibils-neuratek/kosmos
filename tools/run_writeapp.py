@@ -48,6 +48,37 @@ MAKE = ('local wd = use("/Kosmos/Libraries/writedoc.lua") local d = wd.new() '
         'print("made" .. ":", wd.save("/Home/t.write", d))')
 
 
+# **Names with spaces, and a file opened the way Tracker opens one**
+# (`testing.md` 18.414). Run by the window manager, so it can ask it to
+# start things: a folder and a file with spaces in their names made,
+# renamed, listed and deleted as Tracker's New Folder, Rename and Delete
+# send it - and then a picture and a document whose paths have spaces in
+# them opened exactly as Tracker's Open does, through `filetypes.how_to_open`
+# and a `launch`. Photo and Write each say the whole path they were handed.
+OPENS = r"""
+local types = use("/Kosmos/Libraries/filetypes.lua")
+local dir = "/Home/My Documents"
+local function said(what, ok, why) print("spaces: " .. what .. " " .. (ok and "ok" or tostring(why))) end
+
+said("mkdir", fs.send(dir, { type = "mkdir" }))
+said("write", fs.write(dir .. "/draft note.write", fs.read("/Home/t.write")))
+said("rename", fs.send(dir .. "/draft note.write", { type = "rename", to = "sea note.write" }))
+said("mkdir2", fs.send("/Home/old folder x", { type = "mkdir" }))
+said("rename2", fs.send("/Home/old folder x", { type = "rename", to = "new folder y" }))
+print("spaces: listed [" .. table.concat(fs.list(dir) or {}, "|") .. "] ["
+      .. table.concat(fs.list("/Home/My Pictures") or {}, "|") .. "]")
+said("delete", fs.send("/Home/new folder y", { type = "delete" }))
+print("spaces: gone " .. tostring(fs.getattr("/Home/new folder y") == nil))
+
+for _, p in ipairs({ "/Home/My Pictures/sea photo.png", dir .. "/sea note.write" }) do
+  local how = types.how_to_open(p, fs.getattr(p))
+  local ok, why = fs.send("/Running/wm", { type = "launch", program = how.program,
+                                           args = how.args })
+  print(("spaces: opening %s in %s with %s: %s"):format(p, how.program, how.args,
+                                                        ok and "sent" or tostring(why)))
+end
+"""
+
 
 def kfs(*args):
     done = subprocess.run([HOST_LUA, "tools/kfs.lua", *args],
@@ -155,6 +186,14 @@ def main():
         f.write(sea_bytes)
 
     kfs("put", disk, sea, "/Home/Pictures/sea.png")
+    kfs("put", disk, sea, "/Home/My Pictures/sea photo.png")
+
+    opens = os.path.join(work, "opens.lua")
+
+    with open(opens, "w") as f:
+        f.write(OPENS)
+
+    kfs("put", disk, opens, "/Home/opens.lua")
 
     guest = with_disk(image, disk)
     failed = []
@@ -758,6 +797,67 @@ def main():
                 with open(os.environ["KEEP_TYPED"], "wb") as f:
                     f.write(png(tw, th, typed_px))
 
+        # ---- names with spaces (18.414): at the prompt, then from Tracker ----
+        mark = len(guest.seen)
+        guest.proc.stdin.write(R.STOP_DESKTOP)
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 20
+
+        while time.monotonic() < deadline and R.PROMPT not in guest.seen[mark:]:
+            guest._read_available()
+            time.sleep(0.2)
+
+        # Typed as a person types them: quoted where a path has a space, and
+        # a path without one exactly as before.
+        def prompt(line, until, seconds=30):
+            mark = len(guest.seen)
+            guest.type(line)
+            deadline = time.monotonic() + seconds
+
+            while time.monotonic() < deadline and not re.search(until, guest.seen[mark:]):
+                guest._read_available()
+                time.sleep(0.1)
+
+            return guest.seen[mark:]
+
+        heard = prompt('ls "/Home/My Pictures"', r"sea photo\.png|ls:")
+        check("sea photo.png" in heard,
+              "`ls \"/Home/My Pictures\"` did not list sea photo.png: %r" % heard[-300:])
+        heard = prompt('cp "/Home/My Pictures/sea photo.png" "/Temporary/a copy.png"',
+                       r"kosmos> ")
+        heard = prompt("ls /Temporary", r"a copy\.png|kosmos> ")
+        check("a copy.png" in heard,
+              "`cp` with a quoted source and destination made no "
+              "/Temporary/a copy.png: %r" % heard[-300:])
+        heard = prompt('cd "/Home/My Pictures"', r"\n/Home/My Pictures|cd:")
+        check("\n/Home/My Pictures" in heard or heard.startswith("/Home/My Pictures"),
+              "`cd \"/Home/My Pictures\"` did not go there: %r" % heard[-300:])
+        prompt("cd /", r"kosmos> ")
+
+        mark = len(guest.seen)
+        guest.type("wm /Home/opens.lua")
+        photo = said("photo: showing ", mark, 90)
+        write = said("writer: opened ", mark, 90)
+        made = guest.seen[mark:]
+
+        for step in ("mkdir", "write", "rename", "mkdir2", "rename2", "delete"):
+            check("spaces: %s ok" % step in made,
+                  "a name with spaces: %s did not work: %r"
+                  % (step, re.findall(r"spaces: .*", made)))
+
+        check("spaces: listed [sea note.write] [sea photo.png]" in made,
+              "the folders with spaces did not list their files whole: %r"
+              % re.findall(r"spaces: listed.*", made))
+        check("spaces: gone true" in made, "a folder with spaces was not deleted")
+        check(photo is not None and photo.startswith("/Home/My Pictures/sea photo.png, 160 "),
+              "Photo, opened as Tracker opens a file, was not handed the whole "
+              "path /Home/My Pictures/sea photo.png: %r\n%s"
+              % (photo, "\n".join(re.findall(r"spaces: opening.*", made))))
+        check(write == "/Home/My Documents/sea note.write, read",
+              "Write, opened as Tracker opens a file, was not handed the whole "
+              "path /Home/My Documents/sea note.write: %r" % write)
+        print("  spaces: Photo showed %r, Write opened %r" % (photo, write))
+
         # ---- the PDF, off the disk ----
         guest.close()
         pdf = os.path.join(work, "t.pdf")
@@ -885,6 +985,7 @@ def main():
 
         print("  %d lines on the screen, each within %s pixels of the PDF's"
               % (len(screen), "a few" if failed else "3"))
+
     except R.Failure as e:
         failed.append(str(e))
     finally:

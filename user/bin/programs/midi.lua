@@ -33,7 +33,7 @@ local midi = use("/Kosmos/Libraries/midi.lua")
 
 local words = {}
 
-for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
+for _, w in ipairs(use("/Kosmos/Libraries/files.lua").words(args)) do words[#words + 1] = w end
 
 local function say_event(e, hz, since)
   local when = (e.counter - since) / hz * 1000

@@ -527,6 +527,13 @@ function filetypes.installed(store)
   return out
 end
 
+-- **The path as one argument**, quoted when it has a space in it: what it is
+-- handed is an argument string, and `/Home/My Pictures/sea photo.png` was
+-- two words to every application that read one (`files.quote`, 18.414).
+local function quoted(path)
+  return use("/Kosmos/Libraries/files.lua").quote(path)
+end
+
 --
 -- **How to open a path**: the program to start, and what to hand it - or nil
 -- when nothing claims it.
@@ -548,12 +555,12 @@ function filetypes.how_to_open(path, attrs, source)
       return { program = path, args = "" }
     end
 
-    return { program = "terminal", args = path }
+    return { program = "terminal", args = quoted(path) }
   end
 
   local program = kind and filetypes.opener(path, attrs)
 
-  return program and { program = program, args = path } or nil
+  return program and { program = program, args = quoted(path) } or nil
 end
 
 return filetypes

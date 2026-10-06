@@ -14,7 +14,8 @@
 -- remote; Diego: "We could also even write Lua apps in the Mac and push them
 -- to the m700").
 
-local program, rest = tostring(args or ""):match("^%s*(%S+)%s*(.-)%s*$")
+local said, rest = use("/Kosmos/Libraries/files.lua").words(args, 1)
+local program = said[1]
 
 if not program then
   print("open: open <application> [arguments]")

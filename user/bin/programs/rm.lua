@@ -21,7 +21,7 @@ local files = use("/Kosmos/Libraries/files.lua")
 local recursive = false
 local list = {}
 
-for word in args:gmatch("%S+") do
+for _, word in ipairs(files.words(args)) do
   if word == "-r" or word == "-rf" then
     recursive = true
   else

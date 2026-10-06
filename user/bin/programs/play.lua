@@ -32,7 +32,7 @@ local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 --
 local path, debugging = nil, false
 
-for word in (args or ""):gmatch("%S+") do
+for _, word in ipairs(use("/Kosmos/Libraries/files.lua").words(args)) do
   if word == "--debug" or word == "-d" then
     debugging = true
   elseif not path then

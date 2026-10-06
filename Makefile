@@ -756,7 +756,8 @@ LIBSMB2_CFLAGS := -w -Wno-error $(SMB_IFLAGS)
 # The SMB Kit's own C and smbfs: libsmb2's headers on the path as system
 # headers, so its warnings stay its own, and every warning on for ours.
 SMB_KOSMOS := user/kits/smb/smb_transport.c user/kits/smb/smb_crypto.c \
-              user/kits/smb/smb_signing.c user/servers/smbfs.c
+              user/kits/smb/smb_signing.c user/kits/smb/ntlm_name.c \
+              user/servers/smbfs.c
 
 TINYGL_CFLAGS := -w -Wno-error \
                  -Iruntime/upstream/tinygl/include \
@@ -2379,6 +2380,13 @@ $(HOSTDIR)/libsmb2/%: $(LIBSMB2)/examples/%.c $(LIBSMB2_HOST_SRCS) tools/libsmb2
 	$(HOST_CC) -O2 -w -DHAVE_CONFIG_H '-D_U_=__attribute__((unused))' \
 	        -I$(dir $@) -I$(LIBSMB2)/include -I$(LIBSMB2)/include/smb2 \
 	        -I$(LIBSMB2)/lib $(LIBSMB2_HOST_SRCS) $< -o $@
+
+# What a server calls itself, out of NTLM's challenge (`testing.md` 18.415).
+$(HOSTDIR)/test_ntlmname: tools/test_ntlmname.c user/kits/smb/ntlm_name.c \
+	        user/kits/smb/ntlm_name.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/kits/smb -o $@ \
+	        tools/test_ntlmname.c user/kits/smb/ntlm_name.c
 
 $(HOSTDIR)/test_drivesdecode: tools/test_drivesdecode.c \
 	        user/servers/drives_decode.c user/servers/drives_decode.h \
@@ -4010,7 +4018,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
+host-check: $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -4068,6 +4076,10 @@ host-check: $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $
 	@# every dialect sharing will speak (`docs/sharing.md` N0); a skip that
 	@# says so where Homebrew's Samba is not installed.
 	python3 tools/test_smbpeer.py $(HOSTDIR)/libsmb2
+	@# And what a server calls itself, out of NTLM's challenge: its NetBIOS
+	@# computer name, its DNS name's first label, and never a piece of its
+	@# address, which is what macOS's server named itself (18.415).
+	$(HOSTDIR)/test_ntlmname
 	$(HOSTDIR)/test_diskcache
 	@# And what an audio file says about itself - ID3v2, ID3v1 and a WAV's
 	@# INFO - read through the same tags.lua Music uses, on this machine.

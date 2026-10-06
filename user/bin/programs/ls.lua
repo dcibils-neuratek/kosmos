@@ -13,7 +13,7 @@ local types = use("/Kosmos/Libraries/filetypes.lua")
 local files = use("/Kosmos/Libraries/files.lua")
 
 -- Where you are when nothing is named; `..` walked, as the prompt walks it.
-local path = files.abs(args:match("^%s*(%S+)"), cwd)
+local path = files.abs(files.words(args)[1], cwd)
 
 local entries, err = fs.list(path)
 

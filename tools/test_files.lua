@@ -149,10 +149,95 @@ do
                                                                               tostring(before)))
 end
 
+--------------------------------------------------------------------------
+-- Arguments, written and read (`testing.md` 18.414): a path with a space
+-- in it is one word, every awkward name comes back as it went, and every
+-- string a program was started with before still reads as it did.
+--------------------------------------------------------------------------
+
+local function same(a, b)
+  if #a ~= #b then return false end
+  for i = 1, #a do if a[i] ~= b[i] then return false end end
+  return true
+end
+
+local function show(list)
+  local out = {}
+  for i, w in ipairs(list) do out[i] = ("[%s]"):format(w) end
+  return table.concat(out, " ")
+end
+
+-- Nothing that needs no quotes gets them: an invocation is what it was.
+check(files.quote("/Home/notes.txt") == "/Home/notes.txt", "a plain path is not quoted")
+check(files.quote("--size") == "--size" and files.quote("2") == "2", "nor a flag, nor a number")
+check(files.quote("-leading-dash") == "-leading-dash", "nor a leading dash")
+check(files.quote([[C:\back\slash]]) == [[C:\back\slash]], "nor a backslash alone")
+check(files.quote("/Home/My Pictures/sea photo.png") == '"/Home/My Pictures/sea photo.png"',
+      "a space is quoted: " .. files.quote("/Home/My Pictures/sea photo.png"))
+check(files.quote("") == '""', "an empty word is a pair of quotes")
+check(files.quote('say "hi"') == [["say \"hi\""]], "a quote inside is \\\" : " .. files.quote('say "hi"'))
+
+-- Round trips: each awkward name, alone and among others, comes back whole.
+local AWKWARD = {
+  "/Home/My Pictures/sea photo.png",
+  "/Home/Shares/MACPEER/diego’s Public Folder/a b.png",   -- UTF-8, a curly apostrophe
+  'a "quoted" name',
+  [[back\slash]], [[ends in a backslash\]], [[two \\ inside]], [[\"]],
+  "tab\there", "  leading and trailing  ", "-n", "--size", "",
+  "naïve café/日本語 ファイル.txt", '"', "\\", "x\"y",
+}
+
+for _, name in ipairs(AWKWARD) do
+  local back = files.words(files.quote(name))
+
+  check(#back == 1 and back[1] == name,
+        ("one word round trip: %q -> %s -> %s"):format(name, files.quote(name), show(back)))
+end
+
+do
+  local line = files.line(AWKWARD)
+  local back = files.words(line)
+
+  check(same(back, AWKWARD), "the whole list round trip: " .. line .. " -> " .. show(back))
+end
+
+-- What programs were started with before, read as before.
+check(same(files.words("/Home/notes.txt"), { "/Home/notes.txt" }), "one path")
+check(same(files.words("  --size 2  --carry /Temporary/x  --play "),
+           { "--size", "2", "--carry", "/Temporary/x", "--play" }), "flags as before")
+check(same(files.words("/bin icons desktop"), { "/bin", "icons", "desktop" }), "Tracker's words")
+check(same(files.words(""), {}) and same(files.words("   "), {}), "nothing is no words")
+check(same(files.words([[C:\a\b x]]), { [[C:\a\b]], "x" }), "a backslash outside quotes is itself")
+
+-- Quoted and plain pieces of one word join, as a shell's do.
+check(same(files.words([[--carry="/Home/a b"/c d]]), { "--carry=/Home/a b/c", "d" }),
+      "pieces join into one word")
+-- A quote left open runs to the end, rather than losing what was typed.
+check(same(files.words([[open "/Home/My Pictures]]), { "open", "/Home/My Pictures" }),
+      "an open quote runs to the end")
+-- An unknown escape inside quotes is a backslash and the character.
+check(same(files.words([["a\nb"]]), { [[a\nb]] }), "\\n inside quotes is two characters")
+
+-- At most some words, and the rest exactly as written.
+do
+  local first, rest = files.words([[  photo   "/Home/My Pictures/a b.png" --fit  ]], 1)
+
+  check(same(first, { "photo" }) and rest == [["/Home/My Pictures/a b.png" --fit]],
+        ("the first word and the rest: %s | %s"):format(show(first), tostring(rest)))
+
+  first, rest = files.words([["/Home/a b.lua" one "two three"]], 1)
+  check(first[1] == "/Home/a b.lua" and same(files.words(rest), { "one", "two three" }),
+        "a quoted first word, and the rest still quoted")
+
+  first, rest = files.words("cd", 1)
+  check(same(first, { "cd" }) and rest == "", "a word and nothing after it")
+end
+
 if failed == 0 then
   print(("PASS: %d checks on the file library's paths (a path typed made whole, `..` "
-         .. "walked and the root kept, a folder and every one above it, and a tree "
-         .. "removed with what went counted)."):format(checks))
+         .. "walked and the root kept, a folder and every one above it, a tree "
+         .. "removed with what went counted, and arguments quoted and split "
+         .. "back whole)."):format(checks))
 else
   print(("FAIL: %d of %d checks on the file library's paths"):format(failed, checks))
   os.exit(1)

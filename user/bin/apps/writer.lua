@@ -51,6 +51,7 @@
 -- pages on the screen, and the caret is drawn on the window over them.
 
 local ui        = use("/Kosmos/Libraries/ui.lua")
+local files     = use("/Kosmos/Libraries/files.lua")
 local keys      = use("/Kosmos/Libraries/keys.lua")
 local wmproto   = use("/Kosmos/Libraries/wmproto.lua")
 local richtext  = use("/Kosmos/Libraries/richtext.lua")
@@ -110,7 +111,7 @@ local COLOURS = {
 
 local UNDO_MOST = 200
 
-local path = args and args:match("^%s*(%S+)")
+local path = files.words(args)[1]
 local name = path and path:match("([^/]+)$") or "Untitled"
 
 local win, err = ui.window{
@@ -208,6 +209,10 @@ local doc, said
 if path then
   local held
   doc, held = writedoc.open(path)
+
+  -- The whole path, as it arrived: what a path with a space in it was cut
+  -- at is exactly what this line would show (`testing.md` 18.414).
+  print(("writer: opened %s, %s"):format(path, doc and "read" or tostring(held)))
 
   if not doc then
     said = tostring(held)

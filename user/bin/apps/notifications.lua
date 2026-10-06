@@ -43,6 +43,7 @@ local ui     = use("/Kosmos/Libraries/ui.lua")
 local notify = use("/Kosmos/Libraries/notify.lua")
 local clock  = use("/Kosmos/Libraries/clock.lua")
 local types  = use("/Kosmos/Libraries/filetypes.lua")
+local files  = use("/Kosmos/Libraries/files.lua")
 local theme  = ui.theme
 
 local prefs  = use("/Kosmos/Libraries/prefs.lua")
@@ -130,7 +131,8 @@ local function act(e)
     return
   end
 
-  fs.send("/Running/wm", { type = "launch", program = program, args = path })
+  fs.send("/Running/wm", { type = "launch", program = program,
+                           args = files.quote(path) })
   print(("notifications: opened %s with %s"):format(path, program))
 end
 

@@ -26,7 +26,7 @@ local where = {}
 local rounds = 3
 local terms = 0
 
-for word in tostring(args or ""):gmatch("%S+") do
+for _, word in ipairs(use("/Kosmos/Libraries/files.lua").words(args)) do
   local name, value = word:match("^([^=]+)=(.*)$")
 
   if name then

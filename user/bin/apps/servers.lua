@@ -40,6 +40,7 @@ local W, H = 760, 600
 local SIDE = 216
 local prefs = use("/Kosmos/Libraries/prefs.lua")
 local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 local win, err = ui.window{ title = "Servers", w = W, h = H, x = 140, y = 90,
                             header = true }
@@ -67,7 +68,7 @@ local SERVERS = {
   { id = "web", name = "Web", icon = "network", program = "httpd",
     what = "HTTP", status = "/Temporary/httpd/status", log = "/Temporary/httpd/log",
     defaults = { port = 80, folder = "/Home/www", at_start = false },
-    args = function(c) return ("%d %s"):format(c.port, c.folder) end,
+    args = function(c) return ("%d %s"):format(c.port, files.quote(c.folder)) end,
     reach = function(a, c) return ("http://%s%s"):format(a, c.port == 80 and "" or (":" .. c.port)) end },
   { id = "telnet", name = "Command line", icon = "run", program = "telnetd",
     what = "Telnet", status = "/Temporary/telnetd/status", log = "/Temporary/telnetd/log",

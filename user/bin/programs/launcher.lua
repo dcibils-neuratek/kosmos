@@ -7,8 +7,8 @@
 --
 -- The first word after the path is what to start - a whole path like
 -- `/Kosmos/Apps/tracker.lua`, or a short name like `tracker`, which is stored as
--- the whole path either way. The rest of the line is its arguments, spaces
--- and all. Opening a launcher in Tracker asks the window manager to start
+-- the whole path either way. The rest of the line is its arguments, as
+-- written: `launcher "/Home/Desktop/Sea photo" photo "/Home/My Pictures/sea.png"`. Opening a launcher in Tracker asks the window manager to start
 -- that program with those arguments, which is exactly what choosing it in
 -- the Deskbar does, so a launcher can start nothing the Deskbar cannot -
 -- including a Lua file that is nowhere near `/Kosmos/Apps`.
@@ -19,14 +19,22 @@
 -- Nothing is inside the node. A launcher is what its attributes say, the
 -- way a BeOS People file was a person with nothing in it.
 
-local line = tostring(args or "")
-local icon, rest = line:match("^%s*%-%-icon%s+(%S+)%s*(.*)$")
+-- Read with `files.words`, as every program reads its words: the
+-- launcher's own path and the program's may be quoted, and what follows is
+-- the arguments it will be started with, kept as written - quotes and all,
+-- because the program it starts reads them the same way (18.414).
+local files = use("/Kosmos/Libraries/files.lua")
+local said, rest = files.words(args, 2)
+local icon
 
-if not icon then rest = line end
+if said[1] == "--icon" then
+  icon = said[2]
+  said, rest = files.words(rest, 2)
+end
 
-local path, program, arguments = rest:match("^%s*(%S+)%s+(%S+)%s*(.-)%s*$")
+local path, program, arguments = said[1], said[2], rest
 
-if not path then
+if not path or not program then
   print("usage: launcher [--icon Name] <path> <program> [arguments]")
   return
 end

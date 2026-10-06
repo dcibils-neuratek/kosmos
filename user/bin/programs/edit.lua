@@ -24,7 +24,7 @@
 -- worth delaying the thing that makes the machine self-sufficient.
 --------------------------------------------------------------------------
 
-local path = tostring(args or ""):match("^%s*(%S+)")
+local path = use("/Kosmos/Libraries/files.lua").words(args)[1]
 
 if not path then
   print("usage: edit <path>")

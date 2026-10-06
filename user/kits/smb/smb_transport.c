@@ -53,6 +53,22 @@
 #include "tcpring.h"
 
 #include "smb_kit.h"
+#include "ntlm_name.h"
+
+/*
+ * **What the server calls itself, heard on the way in** (`testing.md`
+ * 18.415). libsmb2 keeps only NTLM's TargetName, which macOS's server fills
+ * with a piece of its address; the computer's own names are in the same
+ * challenge and libsmb2 lets them go. So the first bytes a connection
+ * receives are kept, up to `HEARD_MOST`, until a challenge has been read
+ * out of them (`ntlm_name.c`) - in the session's setup, a few hundred bytes
+ * in - and nothing is kept after it, or after `LISTEN_MOST` without one.
+ * libsmb2 is not touched: this is its socket, and what it reads is what
+ * arrived.
+ */
+#define HEARD_MOST   4096u
+#define LISTEN_MOST  65536u
+#define NAME_MOST    64u
 
 struct sock {
     bool             used;
@@ -61,6 +77,11 @@ struct sock {
     long             region;
     uint64_t         handle;
     uint64_t         received;
+
+    bool             listened;      /* a challenge read, or given up on */
+    uint8_t         *heard;         /* what arrived, until then */
+    uint32_t         heard_len;
+    char             name[NAME_MOST];
 };
 
 static long net = -1;
@@ -226,6 +247,7 @@ int smb_kosmos_close(int fd)
         }
     }
 
+    free(s->heard);
     memset(s, 0, sizeof(*s));
     return 0;
 }
@@ -356,6 +378,80 @@ ssize_t smb_kosmos_writev(int fd, const struct iovec *iov, int count)
     return (ssize_t)taken;
 }
 
+/* Done listening: what was kept goes, and nothing more is. */
+static void stop_listening(struct sock *s)
+{
+    free(s->heard);
+    s->heard = NULL;
+    s->heard_len = 0;
+    s->listened = true;
+}
+
+/*
+ * The `given` bytes at `read` in the ring, added to what was heard, and a
+ * challenge looked for in all of it - the signature anywhere, since it sits
+ * inside SPNEGO inside a SESSION_SETUP reply, and a reply may arrive over
+ * several reads.
+ */
+static void listen_for_name(struct sock *s, uint32_t read, uint32_t given)
+{
+    struct tcp_ring *r = s->ring;
+    uint32_t i, take = given;
+
+    if (s->received + given > LISTEN_MOST) {
+        stop_listening(s);
+        return;
+    }
+
+    if (s->heard == NULL) {
+        s->heard = malloc(HEARD_MOST);
+
+        if (s->heard == NULL) {
+            stop_listening(s);
+            return;
+        }
+    }
+
+    /* The newest bytes are the ones that can finish a challenge. */
+    if (take > HEARD_MOST) {
+        read += take - HEARD_MOST;
+        take = HEARD_MOST;
+    }
+
+    if (s->heard_len + take > HEARD_MOST) {
+        uint32_t drop = s->heard_len + take - HEARD_MOST;
+
+        memmove(s->heard, s->heard + drop, s->heard_len - drop);
+        s->heard_len -= drop;
+    }
+
+    for (i = 0; i < take; i++) {
+        s->heard[s->heard_len + i] = tcp_ring_in(r)[(read + i) % r->bytes];
+    }
+
+    s->heard_len += take;
+
+    for (i = 0; i + 8 <= s->heard_len; i++) {
+        int got;
+
+        if (memcmp(s->heard + i, "NTLMSSP", 8) != 0) {
+            continue;
+        }
+
+        got = ntlm_challenge_name(s->heard + i, s->heard_len - i, s->name,
+                                  sizeof(s->name));
+
+        if (got == NTLM_NAME_SHORT) {
+            return;                     /* the rest is still on its way */
+        }
+
+        if (got == NTLM_NAME_FOUND || got == NTLM_NAME_NONE) {
+            stop_listening(s);
+            return;
+        }
+    }
+}
+
 ssize_t smb_kosmos_readv(int fd, const struct iovec *iov, int count)
 {
     struct sock *s = sock_at(fd);
@@ -411,9 +507,25 @@ ssize_t smb_kosmos_readv(int fd, const struct iovec *iov, int count)
         }
     }
 
+    if (!s->listened) {
+        listen_for_name(s, read, given);
+    }
+
     tcp_ring_publish(&r->in_read, read + given);
     s->received += given;
     return (ssize_t)given;
+}
+
+bool smb_kit_server_name(int fd, char *out, size_t room)
+{
+    struct sock *s = sock_at(fd);
+
+    if (s == NULL || s->name[0] == '\0' || room == 0) {
+        return false;
+    }
+
+    snprintf(out, room, "%s", s->name);
+    return true;
 }
 
 /* "10.0.2.2" and "445": four numbers and a port, or nothing. */

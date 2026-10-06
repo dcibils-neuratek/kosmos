@@ -931,7 +931,7 @@ function win:on_menu_context(item)
 
   local ok, why = fs.send("/Running/wm", { type = "launch",
                                        program = "launcheredit",
-                                       args = item.path })
+                                       args = files.quote(item.path) })
 
   say(ok and ("editing " .. item.text)
       or ("could not open it: " .. tostring(why)))
@@ -1179,7 +1179,7 @@ local function kosmos_context_menu()
                       local ok, why = fs.send("/Running/wm",
                                               { type = "launch",
                                                 program = "tracker",
-                                                args = DESKBAR })
+                                                args = files.quote(DESKBAR) })
 
                       say(ok and ("opened " .. DESKBAR)
                           or tostring(why))

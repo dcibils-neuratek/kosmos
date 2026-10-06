@@ -322,7 +322,11 @@ view.focusable = true
 --------------------------------------------------------------------------
 
 local function launch(text)
-  local name, rest = text:match("^(%S+)%s*(.*)$")
+  -- The program's name, a word - quoted when its path has a space - and the
+  -- rest handed on to it exactly as typed, for it to read the same way
+  -- (`files.words`).
+  local first, rest = files.words(text, 1)
+  local name = first[1]
 
   if not name then return end
 
@@ -345,7 +349,7 @@ local function launch(text)
   end
 
   if name == "cd" then
-    local target = resolve(rest:match("^%s*(%S*)"))
+    local target = resolve(files.words(rest)[1])
 
     -- Asked rather than assumed: a path is a directory exactly when
     -- whoever serves it will list it, which is the only definition that
@@ -730,7 +734,7 @@ end
 local asked = tostring(args or ""):match("^%s*(.-)%s*$")
 
 if asked ~= "" then
-  local folder = asked:match("^(.*)/[^/]+$")
+  local folder = tostring(files.words(asked)[1]):match("^(.*)/[^/]+$")
 
   if folder then
     go(folder == "" and "/" or folder)

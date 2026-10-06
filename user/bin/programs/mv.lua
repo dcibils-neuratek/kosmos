@@ -13,7 +13,7 @@
 
 local files = use("/Kosmos/Libraries/files.lua")
 
-local a, b = args:match("^%s*(%S+)%s+(%S+)")
+local a, b = table.unpack(files.words(args), 1, 2)
 
 if not a or not b then
   print("mv: mv <from> <to>")

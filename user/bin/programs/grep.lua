@@ -18,7 +18,7 @@
 local files = use("/Kosmos/Libraries/files.lua")
 local text = use("/Kosmos/Libraries/text.lua")
 
-local pattern, name = args:match("^%s*(%S+)%s+(%S+)")
+local pattern, name = table.unpack(files.words(args), 1, 2)
 
 if not pattern or not name then
   print("grep: grep <pattern> <path>")

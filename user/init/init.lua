@@ -3857,6 +3857,11 @@ THE LINE YOU ARE TYPING
   backspace            the only editing there is - there is no cursor
   Control-C            abandon the line and start a fresh one
 
+A PATH WITH A SPACE IN IT
+  "/Home/My Pictures"  in double quotes, everywhere a path is typed;
+                       inside them \" is a quote and \\ a backslash.
+                       A path without a space is typed as it always was
+
 MOVING AROUND
   pwd                  where you are
   cd <path>            somewhere else; `cd` alone goes to /
@@ -4226,12 +4231,55 @@ query. `find` and `watch` are built on exactly these two calls.
     return "/" .. table.concat(parts, "/")
   end
 
+  --
+  -- **Words, as every program reads them**: `files.words`, the one door
+  -- (`testing.md` 18.414) - so `cd "/Home/My Pictures"` and
+  -- `run "/Home/my programs/hi.lua"` take the quoted path whole, and a path
+  -- with no space is typed as it always was. Read from `/Kosmos/Libraries`
+  -- once, the first time a line needs it, rather than written out again here.
+  --
+  local door
+
+  local function files_door()
+    if not door then
+      local source = ns.read("/Kosmos/Libraries/files.lua")
+      local chunk = type(source) == "string"
+                    and load(source, "=/Kosmos/Libraries/files.lua", "t",
+                             setmetatable({ fs = ns }, { __index = _G }))
+      local ok, kit = pcall(chunk or error)
+
+      if not ok or type(kit) ~= "table" then
+        out("shell: /Kosmos/Libraries/files.lua could not be read\n")
+        return nil
+      end
+
+      door = kit
+    end
+
+    return door
+  end
+
+  local function words(text, most)
+    local kit = files_door()
+
+    if not kit then return {}, "" end
+
+    return kit.words(text, most)
+  end
+
+  -- And the other way: a path as one word, quoted only when it has to be.
+  local function quote(word)
+    local kit = files_door()
+
+    return kit and kit.quote(word) or tostring(word)
+  end
+
   commands.pwd = function()
     out(cwd .. "\n")
   end
 
   commands.cd = function(arg)
-    local target = resolve(arg ~= "" and arg or "/")
+    local target = resolve(words(arg)[1] or "/")
 
     -- Checked by asking. There is no directory object to look up: a path is
     -- a directory exactly when whoever serves it will list it, which is the
@@ -4435,7 +4483,11 @@ query. `find` and `watch` are built on exactly these two calls.
       return
     end
 
-    local name, rest = arg:match("^(%S+)%s*(.*)$")
+    local first, rest = words(arg, 1)
+    local name = first[1]
+
+    if not name then return end
+
     local argument, detach = split_detach(rest)
 
     -- A file, from where you are, as the prompt takes one.
@@ -4787,7 +4839,8 @@ query. `find` and `watch` are built on exactly these two calls.
   if type(servers) == "table" then
     local STARTS = {
       web = function(c)
-        return "httpd", ("%d %s"):format(tonumber(c.port) or 80, tostring(c.folder or "/Home/www"))
+        return "httpd", ("%d %s"):format(tonumber(c.port) or 80,
+                                         quote(tostring(c.folder or "/Home/www")))
       end,
       telnet = function(c) return "telnetd", tostring(tonumber(c.port) or 23) end,
     }
@@ -4820,7 +4873,8 @@ query. `find` and `watch` are built on exactly these two calls.
     -- Through the same function a typed program name goes through, so
     -- `boot=wm` and typing `wm` are the same thing and there is one way a
     -- program starts.
-    local word, rest = autostart:match("^(%S+)%s*(.*)$")
+    local first, rest = words(autostart, 1)
+    local word = first[1]
     local ok, why = run_program(word, rest, false)
 
     if not ok then
@@ -4866,6 +4920,16 @@ query. `find` and `watch` are built on exactly these two calls.
       --------------------------------------------------------------------
       do
         local file, after = input:match("^(%S+)%s*(.*)$")
+
+        -- A quoted file, `"/Home/my programs/hi.lua"`, read as every program
+        -- reads its words; anything else as it was, so a line of Lua with a
+        -- string in it is never taken apart as though it were a path.
+        if file and file:sub(1, 1) == '"' then
+          local first
+
+          first, after = words(input, 1)
+          file = first[1]
+        end
         local stem = file and file:match("^([%a_][%w_]*)%.lua$")
 
         if file and file:match("%.lua$")

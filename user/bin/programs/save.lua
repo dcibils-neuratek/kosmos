@@ -7,7 +7,8 @@
 -- and both still present after the machine is turned off and on. `ls /Home`
 -- lists what is there, `cat /Home/<name>` prints one.
 
-local name, rest = args:match("^%s*(%S+)%s*(.*)$")
+local said, rest = use("/Kosmos/Libraries/files.lua").words(args, 1)
+local name = said[1]
 
 if not name then
   print("save: save <name> <text>")

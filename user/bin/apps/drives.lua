@@ -254,7 +254,7 @@ local function open_in_tracker()
   end
 
   local reply, why = fs.send("/Running/wm", { type = "launch", program = "tracker",
-                                          args = drivelist.path(v) })
+                                          args = files.quote(drivelist.path(v)) })
 
   status.text = reply and ("Opened " .. drivelist.path(v) .. " in Tracker.")
                 or ("Tracker would not open: " .. tostring(why))

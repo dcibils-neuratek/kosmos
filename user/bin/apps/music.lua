@@ -31,6 +31,7 @@
 -- saying *why* a folder could not be listed instead of showing an empty list.
 
 local ui    = use("/Kosmos/Libraries/ui.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 local audio = use("/Kosmos/Libraries/audio.lua")
 local media = use("/Kosmos/Libraries/media.lua")
 
@@ -100,7 +101,7 @@ local FOLDER = fs.getattr("/Home/Music") and "/Home/Music" or "/Home"
 local START
 
 do
-  local given = tostring(args or ""):match("^%s*(%S+)")
+  local given = files.words(args)[1]
 
   if given and given:sub(1, 1) == "/" then
     local attrs = fs.getattr(given)

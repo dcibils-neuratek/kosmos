@@ -24,7 +24,7 @@ local where = {}
 local n = 0
 local root = nil
 
-for word in tostring(args or ""):gmatch("%S+") do
+for _, word in ipairs(use("/Kosmos/Libraries/files.lua").words(args)) do
   local name, value = word:match("^([^=]+)=(.*)$")
 
   if name then

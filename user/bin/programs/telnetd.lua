@@ -266,7 +266,10 @@ end
 -- A path typed in a session is from where that session is, made whole by
 -- `files.abs` - which walks `.` and `..` as this once did for itself.
 local function launch(s, text)
-  local name, rest = text:match("^%s*(%S+)%s*(.-)%s*$")
+  -- The first word, quoted when it has a space, and the rest exactly as
+  -- typed for the program to read the same way (`files.words`).
+  local first, rest = files.words(text, 1)
+  local name = first[1]
 
   if not name then return prompt(s) end
 
@@ -277,7 +280,7 @@ local function launch(s, text)
   end
 
   if name == "cd" then
-    local target = files.abs(rest, s.cwd)
+    local target = files.abs(files.words(rest)[1], s.cwd)
 
     if fs.list(target) then
       s.cwd = target
@@ -309,14 +312,16 @@ local function launch(s, text)
   end
 
   if name == "get" then
-    get(s, files.abs(rest, s.cwd))
+    get(s, files.abs(files.words(rest)[1], s.cwd))
     return prompt(s)
   end
 
   if name == "put" then
-    local where, size = rest:match("^(%S+)%s+(%d+)$")
+    local said = files.words(rest)
+    local where, size = said[1], tonumber(said[2] or "")
 
-    if not where or tonumber(size) > 64 * 1024 * 1024 then
+    if #said ~= 2 or not size or size ~= math.floor(size) or size < 0
+       or size > 64 * 1024 * 1024 then
       send(s, "put: put <path> <size>, then the file in base64, then END\n")
       return prompt(s)
     end

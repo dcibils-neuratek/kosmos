@@ -40,6 +40,7 @@ local ui = use("/Kosmos/Libraries/ui.lua")
 local prefs = use("/Kosmos/Libraries/prefs.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
 local netshares = use("/Kosmos/Libraries/netshares.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 local theme = ui.theme
 
 local W, H = 520, 560
@@ -89,7 +90,7 @@ end
 --------------------------------------------------------------------------
 
 local address = ui.field{ x = PAD, y = 0, w = W - 2 * PAD,
-                          text = tostring(args or ""):match("^%s*(.-)%s*$"),
+                          text = files.words(args)[1] or "",
                           hint = "smb://192.168.1.38/Projects" }
 
 local half = (W - 2 * PAD - GAP) // 2

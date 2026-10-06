@@ -16,7 +16,7 @@ local files = use("/Kosmos/Libraries/files.lua")
 
 local words = {}
 
-for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
+for _, w in ipairs(files.words(args)) do words[#words + 1] = w end
 
 if words[1] == "--job" and words[2] then
   local ok, why = zip.job(words[2], zip.extract)

@@ -35,16 +35,12 @@ local clock    = use("/Kosmos/Libraries/clock.lua")
 
 local theme = ui.theme
 
-local paths = {}
-
-for line in (tostring(args or "") .. "\n"):gmatch("(.-)\n") do
-  local p = line:match("^%s*(.-)%s*$")
-
-  if p ~= "" then paths[#paths + 1] = p end
-end
+-- The paths, as Tracker writes them: each a word, quoted when it has a
+-- space (`files.quote`). They were one a line, which only Tracker spoke.
+local paths = files.words(args)
 
 if #paths == 0 then
-  print("usage: info <path>, or several, one a line")
+  print("usage: info <path> [<path> ...], a path with a space in quotes")
   return
 end
 

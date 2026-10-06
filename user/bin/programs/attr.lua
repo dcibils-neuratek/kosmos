@@ -9,7 +9,8 @@
 -- People file, which is a named entity with an address and a phone number
 -- and nothing inside it. `write` is not involved.
 
-local path, rest = tostring(args or ""):match("^%s*(%S+)%s*(.*)$")
+local said, rest = use("/Kosmos/Libraries/files.lua").words(args, 1)
+local path = said[1]
 
 if not path then
   print("usage: attr <path> [name=value ...]")

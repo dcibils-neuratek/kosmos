@@ -31,7 +31,7 @@
 local words, named, cacert, quiet = {}, nil, nil, false
 local given = {}
 
-for w in tostring(args or ""):gmatch("%S+") do given[#given + 1] = w end
+for _, w in ipairs(use("/Kosmos/Libraries/files.lua").words(args)) do given[#given + 1] = w end
 
 do
   local i = 1

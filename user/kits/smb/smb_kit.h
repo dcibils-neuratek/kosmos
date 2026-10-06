@@ -57,4 +57,13 @@ bool smb_kit_link(int fd, struct smb_link *out);
  * `NET_OK`: what a `connect` that failed at once was told. */
 uint32_t smb_kit_last_refusal(void);
 
+/*
+ * What the server on this connection calls itself, out of NTLM's challenge
+ * as it arrived (`ntlm_name.h`): its NetBIOS computer name, or its DNS
+ * name's first label, never a piece of its address. False when it gave none
+ * - and the server is then called by its whole address (`testing.md`
+ * 18.415).
+ */
+bool smb_kit_server_name(int fd, char *out, size_t room);
+
 #endif /* KOSMOS_SMB_KIT_H */

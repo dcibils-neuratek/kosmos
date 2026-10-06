@@ -18,7 +18,7 @@ local files = use("/Kosmos/Libraries/files.lua")
 
 local MAX_DEPTH = 12
 
-local name = args:match("^%s*(%S+)")
+local name = files.words(args)[1]
 local root = files.abs(name, cwd)
 
 local function total(path, depth)

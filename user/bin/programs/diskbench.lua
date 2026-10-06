@@ -14,7 +14,7 @@ local diskbench = use("/Kosmos/Libraries/diskbench.lua")
 
 local words = {}
 
-for word in (args or ""):gmatch("%S+") do
+for _, word in ipairs(use("/Kosmos/Libraries/files.lua").words(args)) do
   words[#words + 1] = word
 end
 

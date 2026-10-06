@@ -37,9 +37,8 @@
 -- the stack's tables grow and `poll` takes a set of any size, so what bounds
 -- it is the machine (`netproto.h`) - twenty at once is in the gate.
 
-local words = {}
-
-for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
+-- A folder with a space in it, quoted, is one word (`files.words`).
+local words = use("/Kosmos/Libraries/files.lua").words(args)
 
 local port = tonumber(words[1]) or 80
 local root = words[2] or "/Home/www"

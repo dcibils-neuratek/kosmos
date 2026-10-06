@@ -42,11 +42,24 @@ end
 -- them parses. This is that parse in one place, with the default the caller
 -- names: `head` and `tail` both want ten and `grep` wants none of this.
 --
+-- Read with `files.words`, as every program reads its words, so a path
+-- with a space in it is one when it is quoted (`testing.md` 18.414).
+--
 function text.count_and_path(args, fallback)
-  local n = tonumber(tostring(args or ""):match("%-n%s+(%d+)")) or fallback
-  local rest = tostring(args or ""):gsub("%-n%s+%d+", "")
+  local said = use("/Kosmos/Libraries/files.lua").words(args)
+  local n, path = fallback, nil
+  local i = 1
 
-  return n, rest:match("^%s*(%S+)")
+  while i <= #said do
+    if said[i] == "-n" and tostring(said[i + 1]):match("^%d+$") then
+      n, i = tonumber(said[i + 1]), i + 2
+    else
+      path = path or said[i]
+      i = i + 1
+    end
+  end
+
+  return n, path
 end
 
 --

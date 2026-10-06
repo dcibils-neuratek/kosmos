@@ -10,7 +10,7 @@
 
 local files = use("/Kosmos/Libraries/files.lua")
 
-local name = args:match("^%s*(%S+)")
+local name = files.words(args)[1]
 
 if not name then
   print("mkdir: mkdir <path>")

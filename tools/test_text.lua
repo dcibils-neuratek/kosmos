@@ -6,6 +6,8 @@
 --
 --   build/host/lua tools/test_text.lua
 
+use = use or function(path) return dofile((path:gsub("^/Kosmos/Libraries/", "user/lib/"))) end
+
 local text = dofile("user/lib/text.lua")
 
 local checks, failed = 0, 0
@@ -29,6 +31,11 @@ do
 
   check(n == 3 and path == "notes.txt" and m == 4 and other == "notes.txt" and d == 10,
         "-n and a path in either order, and the caller's default")
+
+  local q, spaced = text.count_and_path('-n 2 "/Home/My Notes/a b.txt"', 10)
+
+  check(q == 2 and spaced == "/Home/My Notes/a b.txt",
+        "a quoted path with spaces is one path: " .. tostring(spaced))
 end
 
 for _, c in ipairs({ { 0, "0" }, { 999, "999" }, { 1000, "1,000" }, { 1204, "1,204" },

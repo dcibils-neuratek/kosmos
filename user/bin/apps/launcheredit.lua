@@ -29,7 +29,7 @@
 local ui = use("/Kosmos/Libraries/ui.lua")
 local files = use("/Kosmos/Libraries/files.lua")
 
-local path = tostring(args or ""):match("^%s*(%S+)")
+local path = files.words(args)[1]
 
 if not path then
   print("usage: launcheredit <path to a launcher>")

@@ -12,7 +12,7 @@
 -- of the language. So this prints a table as a table and a string as a
 -- string, and neither has been through a text encoding on the way.
 
-local name = args:match("^%s*(%S+)")
+local name = use("/Kosmos/Libraries/files.lua").words(args)[1]
 
 -- Relative to where the caller was, which arrives with the request. The
 -- working directory is the shell's idea; a server is always told a whole

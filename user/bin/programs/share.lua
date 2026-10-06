@@ -45,9 +45,9 @@
 -- signing in from what smbfs kept, with nothing asked; and `disconnect`
 -- forgets one that is away as it does one that is connected.
 
-local words = {}
-
-for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
+-- A share whose name has a space in it - `"diego’s Public Folder"` - is
+-- one word when it is quoted (`files.words`, `testing.md` 18.414).
+local words = use("/Kosmos/Libraries/files.lua").words(args)
 
 local wait = true
 

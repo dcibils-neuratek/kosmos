@@ -9,7 +9,7 @@
 
 local mp3 = use("/Kosmos/Kits/mp3")
 
-local path = (args or ""):match("^%s*(%S+)")
+local path = use("/Kosmos/Libraries/files.lua").words(args)[1]
 
 if not path then print("usage: mp3info <path>") return end
 

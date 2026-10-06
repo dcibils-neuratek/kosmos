@@ -75,6 +75,117 @@ function files.join(dir, name)
 end
 
 --
+-- **Arguments, written and read: one door each way** (6 October 2026).
+--
+-- A program is started with its arguments as one string - `args` - and
+-- every program used to read it by splitting on spaces, so a path with a
+-- space in it arrived as two words and the program opened the first:
+-- `/Home/My Pictures/sea photo.png` was `/Home/My`. Diego found it opening
+-- a picture from a share in Photo; it was true of every file anywhere.
+--
+-- The syntax, and it is the whole of it:
+--
+--   * words are separated by spaces and tabs;
+--   * a word may be put in double quotes, and then a space is part of it:
+--     `"/Home/My Pictures/sea photo.png"`;
+--   * inside the quotes `\"` is a quote and `\\` a backslash, and any other
+--     backslash is itself;
+--   * outside quotes nothing is special but the space and the quote, so a
+--     word without either is typed exactly as it always was.
+--
+-- `files.quote` is what builds one - Tracker's open, a launcher, a window
+-- starting itself again - and it quotes a word only when it has to, so
+-- `/Home/notes.txt` and `--size 2` are what they were. `files.words` is
+-- what reads one, in every program that takes a path. Nothing else in the
+-- tree writes or splits an argument string by hand.
+--
+function files.quote(word)
+  word = tostring(word or "")
+
+  if word ~= "" and not word:find('[%s"]') then return word end
+
+  return '"' .. (word:gsub('[\\"]', "\\%0")) .. '"'
+end
+
+-- Several words as one argument string, each quoted when it has to be.
+function files.line(words)
+  local out = {}
+
+  for i, word in ipairs(words) do out[i] = files.quote(word) end
+
+  return table.concat(out, " ")
+end
+
+--
+-- The words of an argument string, quotes taken off: a list. With `most`,
+-- no more than that many, and what follows them as a second result exactly
+-- as it was written - which is how the Terminal takes a program's name off
+-- a line and hands that program the rest, quotes and all.
+--
+-- A quote left open runs to the end, rather than losing what was typed.
+--
+function files.words(text, most)
+  text = tostring(text or "")
+
+  local out, i, len = {}, 1, #text
+
+  while true do
+    i = text:find("%S", i)
+
+    if not i then return out, "" end
+
+    if most and #out >= most then
+      return out, (text:sub(i):match("^(.-)%s*$"))
+    end
+
+    local word = {}
+
+    while i <= len do
+      local c = text:sub(i, i)
+
+      if c == '"' then
+        i = i + 1
+
+        while i <= len do
+          local d = text:sub(i, i)
+          local after = text:sub(i + 1, i + 1)
+
+          if d == "\\" and (after == '"' or after == "\\") then
+            word[#word + 1], i = after, i + 2
+          elseif d == '"' then
+            break
+          else
+            -- A run of ordinary characters at once, not one at a time.
+            local stop = text:find('[\\"]', i) or (len + 1)
+
+            word[#word + 1] = text:sub(i, stop - 1)
+
+            -- A backslash before anything else is itself.
+            if stop <= len and text:sub(stop, stop) == "\\"
+               and not text:sub(stop + 1, stop + 1):match('["\\]') then
+              word[#word + 1], stop = "\\", stop + 1
+            end
+
+            i = stop
+          end
+        end
+
+        i = i + 1                         -- past the closing quote
+      elseif c:match("%s") then
+        break
+      else
+        local stop = text:find('[%s"]', i) or (len + 1)
+
+        word[#word + 1] = text:sub(i, stop - 1)
+        i = stop
+      end
+    end
+
+    out[#out + 1] = table.concat(word)
+  end
+end
+
+--
 -- **A folder, and every folder above it that is missing**: true, or nil
 -- and why. A filesystem's `mkdir` makes one folder in one that exists, so
 -- a first history, a first favorite, a cache, a zip's tree and a launcher
@@ -225,7 +336,10 @@ end
 -- rather than one that half did.
 --------------------------------------------------------------------------
 
-local regions = use("/Kosmos/Libraries/regions.lua")
+-- Asked for at the first copy rather than when this is loaded, so the
+-- shell - which has no `use` - can load this library for its words
+-- (`files.words`, 18.414) without the regions it never copies through.
+local regions
 
 local COPY_MAX = 1024 * 1024
 
@@ -250,6 +364,8 @@ function files.copy(from, to)
   -- Allocated once and kept: a file manager copies more than one thing, and
   -- one region serves every copy. Not mapped, since no byte of it is
   -- touched here - only the servers' and `regions.lua`'s.
+  regions = regions or use("/Kosmos/Libraries/regions.lua")
+
   if not buffer then
     buffer = regions.unmapped(COPY_MAX)
 

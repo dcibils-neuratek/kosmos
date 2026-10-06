@@ -906,16 +906,28 @@ static void refused_or_away(struct server *s, int status)
 
 static void read_session(struct server *s)
 {
-    const char *domain = smb2_get_domain(s->smb2);
-
     s->pub.dialect = smb2_get_dialect(s->smb2);
     s->pub.signing = s->smb2->sign ? 1 : 0;
     s->pub.sealing = s->smb2->seal ? 1 : 0;
 
-    /* The name the server gave in NTLM's challenge, which libsmb2 keeps as
-     * the domain when it was given none - and smbfs gives none. */
-    if (domain != NULL && domain[0] != '\0') {
-        copy(s->pub.name, sizeof(s->pub.name), domain);
+    /*
+     * **What the server calls itself** (`testing.md` 18.415): its NetBIOS
+     * computer name, or its DNS name's first label, out of NTLM's challenge
+     * as the SMB Kit heard it arrive (`ntlm_name.c`).
+     *
+     * This took the challenge's TargetName, which libsmb2 keeps as the
+     * domain when it was given none - and smbfs gives none. Samba's peer
+     * fills it with its NetBIOS name, so it read MACPEER; macOS's own server,
+     * reached at 192.168.1.38, filled it with "192", and `share status`,
+     * Tracker's Network group and the trail all called Diego's Mac that.
+     * TargetName is the domain's name where there is one, which is not the
+     * computer's. **With no name given the server is called by its whole
+     * address** (`named`), never a piece of it: a name of digits and dots
+     * is refused by the decoder, and libsmb2's domain is not read at all.
+     */
+    if (!smb_kit_server_name(smb2_get_fd(s->smb2), s->pub.name,
+                             sizeof(s->pub.name))) {
+        s->pub.name[0] = '\0';
     }
 }
 

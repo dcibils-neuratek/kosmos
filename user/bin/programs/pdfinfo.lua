@@ -22,7 +22,7 @@
 local pdf      = use("/Kosmos/Libraries/pdf.lua")
 local compress = use("/Kosmos/Kits/compress")
 
-local path = args:match("^%s*(%S+)") or "/Home/odyssey.pdf"
+local path = use("/Kosmos/Libraries/files.lua").words(args)[1] or "/Home/odyssey.pdf"
 
 -- A file read a window at a time - sixteen pages, the biggest single read
 -- - through the PDF Kit's door, `pdf.file`. This program built its own

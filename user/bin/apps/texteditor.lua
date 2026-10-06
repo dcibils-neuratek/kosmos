@@ -51,7 +51,7 @@ local W, H = 760, 560
 -- The document: where it is, what it is, and how it is shown.
 --------------------------------------------------------------------------
 
-local path = tostring(args or ""):match("^%s*(.-)%s*$")
+local path = files.words(args)[1]
 
 if path == "" then path = nil end
 
@@ -269,7 +269,7 @@ end
 
 local function launch(p)
   local ok, why = fs.send("/Running/wm", { type = "launch", program = "texteditor",
-                                           args = p or "" })
+                                           args = p and files.quote(p) or "" })
 
   if not ok then
     note = "could not open a window: " .. tostring(why)
@@ -314,7 +314,7 @@ local function show_in_tracker()
   if not path then return end
 
   fs.send("/Running/wm", { type = "launch", program = "tracker",
-                           args = files.parent(path) })
+                           args = files.quote(files.parent(path)) })
 end
 
 --------------------------------------------------------------------------

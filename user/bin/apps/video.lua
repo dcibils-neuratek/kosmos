@@ -30,6 +30,7 @@
 local ui = use("/Kosmos/Libraries/ui.lua")
 local media = use("/Kosmos/Libraries/media.lua")
 local panel = use("/Kosmos/Libraries/panel.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 local theme = ui.theme
 
@@ -45,9 +46,7 @@ local theme = ui.theme
 --------------------------------------------------------------------------
 
 local path, want_size, start_at, debugging = nil, "1", 0, false
-local words = {}
-
-for word in (args or ""):gmatch("%S+") do words[#words + 1] = word end
+local words = files.words(args)
 
 local i = 1
 
@@ -114,7 +113,7 @@ local function say_instead(lines, title)
       start = FILMS, title = "Open a film", filter = is_film,
       on_choose = function(chosen)
         fs.send("/Running/wm", { type = "launch", program = "video",
-                             args = chosen })
+                             args = files.quote(chosen) })
         win:close()
       end,
     }
@@ -271,7 +270,7 @@ local function again(size)
   local reply, sent = fs.send("/Running/wm", {
     type = "launch", program = "video",
     args = ("--size %s --at %.2f %s%s"):format(size, at,
-            debugging and "--debug " or "", path),
+            debugging and "--debug " or "", files.quote(path)),
   })
 
   if reply and reply.ok then
@@ -288,7 +287,7 @@ local function open_another()
     start = FILMS, title = "Open a film", filter = is_film,
     on_choose = function(chosen)
       local reply = fs.send("/Running/wm", { type = "launch", program = "video",
-                                         args = chosen })
+                                         args = files.quote(chosen) })
 
       if reply and reply.ok then win:close() end
     end,

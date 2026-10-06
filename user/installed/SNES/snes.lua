@@ -36,6 +36,7 @@ local panel = use("/Kosmos/Libraries/panel.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 local audio = use("/Kosmos/Libraries/audio.lua")
 local regions = use("/Kosmos/Libraries/regions.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 --
 -- The core is in this program's own image, `snes.elf` beside it in
@@ -61,20 +62,24 @@ end
 --
 -- Which ROM.
 --
--- The whole argument rather than its first word, because ROMs are named
--- the way No-Intro names them - "Super Mario World (USA).sfc" - and a name
--- cut at its first space is a file that does not exist.
+-- One word, quoted when it has a space, because ROMs are named the way
+-- No-Intro names them - `"Super Mario World (USA).sfc"`. This took the whole
+-- rest of the line instead, which was the one application here that could
+-- open a name with a space in it, by a rule of its own; it reads its words
+-- with `files.words` now, as every program does, and Tracker and the
+-- Deskbar quote what they hand it (`testing.md` 18.414).
 --
-local wanted = (args or ""):match("^%s*(.-)%s*$")
+local said = files.words(args)
+local wanted = said[1] or ""
 local path
 
 --
 -- **`--scale 2`, before the ROM, for a window twice the size.**
 --
--- The one option, and written first for the reason the ROM is the whole rest
--- of the line: a No-Intro name has spaces in it, so the option must be
--- something no file is called, and it must come off the front. Anything else
--- starting `--` is refused rather than looked for as a file.
+-- The one option, and written first, as it was when the ROM was the whole
+-- rest of the line: the option is something no file is called, and it comes
+-- off the front. Anything else starting `--` is refused rather than looked
+-- for as a file.
 --
 -- Twice and no more: 1024 by 960 fits under the bar on a 1080-line screen,
 -- and three times would fit on no screen this system has run on. Each of the
@@ -85,7 +90,7 @@ local path
 local scale = 1
 
 do
-  local given, rest = wanted:match("^%-%-scale%s+(%S+)%s*(.-)$")
+  local given = (wanted == "--scale") and (said[2] or "") or nil
 
   if given then
     local number = tonumber(given)
@@ -97,7 +102,7 @@ do
       return
     end
 
-    wanted = rest
+    wanted = said[3] or ""
   elseif wanted:sub(1, 2) == "--" then
     print("snes: the one option is --scale 1 or --scale 2, before the ROM")
     return
@@ -326,7 +331,8 @@ local paused = false
 local ran = 0                           -- frames run, for the log and the test
 
 local function relaunch(at_scale, rom)
-  local words = (at_scale > 1 and ("--scale " .. at_scale .. " ") or "") .. rom
+  local words = (at_scale > 1 and ("--scale " .. at_scale .. " ") or "")
+                .. files.quote(rom)
 
   -- Kept before the other one starts, because it reads what this writes.
   keep_game()

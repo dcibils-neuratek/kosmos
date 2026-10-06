@@ -24,7 +24,7 @@ local pdfkit   = use("/Kosmos/Kits/pdf")
 local regions  = use("/Kosmos/Libraries/regions.lua")
 
 local words = {}
-for w in args:gmatch("%S+") do words[#words + 1] = w end
+for _, w in ipairs(use("/Kosmos/Libraries/files.lua").words(args)) do words[#words + 1] = w end
 
 local path   = words[1] or "/Home/odyssey.pdf"
 local wanted = tonumber(words[2]) or 3

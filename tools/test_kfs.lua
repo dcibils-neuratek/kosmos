@@ -900,6 +900,45 @@ check(kfs.unlink(sb, "/WORK/NOTES.TXT") == true and names("/Work") == "Docs",
       "a file is removed whatever the case it is named in")
 
 --------------------------------------------------------------------------
+-- **Names with spaces in them** (`testing.md` 18.414): a folder and a file
+-- each with one, and a name with a curly apostrophe in UTF-8 as macOS names
+-- a share - made, listed, read, renamed and deleted, whole. Nothing in the
+-- format splits or trims a name; this is what says so.
+--------------------------------------------------------------------------
+
+do
+  local folder = "/My Pictures"
+  local own = "/diego’s Public Folder"
+
+  check(kfs.mkdir(sb, folder, 5) == true and kfs.mkdir(sb, own, 5) == true,
+        "a folder with a space in its name is made")
+  kfs.store(sb, folder .. "/sea photo.png", "sea", 5)
+  kfs.store(sb, own .. "/ a b  .txt", "spaced", 5)
+
+  check(names(folder) == "sea photo.png" and names(own) == " a b  .txt",
+        "a listing gives each name whole, spaces at its ends included: "
+        .. names(folder) .. " | [" .. names(own) .. "]")
+  check(contents("/my pictures/SEA PHOTO.png") == "sea"
+        and contents(own .. "/ a b  .txt") == "spaced",
+        "a file with spaces in its path is read, whatever the case")
+  check(kfs.rename(sb, folder .. "/sea photo.png", "the sea, at noon.png") == true
+        and names(folder) == "the sea, at noon.png",
+        "a rename to a name with spaces and a comma keeps it whole")
+  check(kfs.rename(sb, folder .. "/the sea, at noon.png", own .. "/sea again.png") == true
+        and contents(own .. "/sea again.png") == "sea",
+        "a rename across folders with spaces in their names")
+  check(kfs.rename(sb, own, "/Shared Folder") == true
+        and names("/Shared Folder") == " a b  .txt,sea again.png",
+        "a folder with a space in its name is renamed")
+  check(kfs.unlink(sb, "/Shared Folder/sea again.png") == true
+        and kfs.unlink(sb, "/Shared Folder/ a b  .txt") == true
+        and kfs.unlink(sb, "/Shared Folder") == true
+        and kfs.unlink(sb, folder) == true
+        and kfs.find(sb, "/Shared Folder") == nil,
+        "files and folders with spaces in their names are deleted")
+end
+
+--------------------------------------------------------------------------
 -- A file's time: a date, when there was a clock (`roadmap.md` 6za step b).
 --------------------------------------------------------------------------
 

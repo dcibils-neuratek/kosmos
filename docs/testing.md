@@ -19678,3 +19678,180 @@ suites in 3:40, all passing - N2 to N5 unchanged on smbfs's trees, and the
 display harness's Tracker (no network card there, so no Network group)
 as it was. The whole gate is not run here; `arm-share-3` adds one suite of
 about a minute beside the others.
+
+## 18.414 A name with a space in it, end to end
+
+Diego, on the M700 on 6 October 2026: "browsing network shares that have
+filenames that have spaces in will break whatever program you want to open
+it with", "Like png with spaces trying to open it with the image viewer wont
+work" - and then "file names and directories should be able to have
+spaces", "we should revisit how we do that", "in kfs as well".
+
+**It was not the shares, and it was not the filesystems.** A program is
+started with its arguments as one string, `args`; `filetypes.how_to_open`
+handed Photo `/Home/My Pictures/sea photo.png` as that string, and Photo,
+like Write, PDF, Reader, Music, the IDE, Doom, Quake and every program at
+the prompt, took `args:match("^%s*(%S+)")` - `/Home/My`. Video and Tracker
+split it into words, Text Editor and the Terminal took the whole line, and
+the Super Nintendo took the whole rest of its line, by a rule of its own, so
+No-Intro's names would open: five ways of reading one string, and none of
+them could say a path with a space in it among other words.
+
+**One door each way** (`user/lib/files.lua`, `design.md` 8.3g): words
+separated by spaces; a word in double quotes keeps its spaces; inside the
+quotes `\"` is a quote and `\\` a backslash, and any other backslash is
+itself; outside them nothing is special but the space and the quote, so a
+word without either is typed exactly as before. `files.quote` writes one,
+quoting only when it must, and `files.line` several; `files.words` reads
+them, and `files.words(text, 1)` takes a program's name off a line and
+hands the rest on as written.
+
+**Moved onto it** - the builders: `filetypes.how_to_open` (Tracker's Open,
+and a console program run in a Terminal), Tracker's Edit, Open with, a
+folder or a launcher opened from the desktop, New window, Info (whose paths
+were one a line, which only Tracker spoke), Connect and its zip jobs; the
+Deskbar's launcher editor and Deskbar folder; Drives; Text Editor's New and
+Show in Tracker; Notifications' Open; Video's Open and its starting again
+at a size; the Super Nintendo's starting again; the browser's Authorities
+folder; Servers' web folder, and init starting it at boot. The parsers:
+Write, PDF, Reader, Photo, Music, the IDE, the launcher editor, Text
+Editor, Video, Tracker, Info, Connect, the browser, Doom, Quake, the Super
+Nintendo; at the prompt `ls`, `cat`, `cp`, `mv`, `rm`, `mkdir`, `touch`,
+`tree`, `du`, `stat`, `wc`, `grep`, `find`, `attr`, `save`, `edit`,
+`open`, `zip`, `unzip`, `play`, `fetch`, `midi`, `pdfinfo`, `pdfbench`,
+`mp3info`, `diagnose`, `diskbench`, `watch`, `httpd`, `share`, `launcher`,
+`log save`, and `head` and `tail` through `text.count_and_path`; the
+shell's `cd`, `run`, a file run by its name, and the boot line; the
+Terminal's line and `cd`; `telnetd`'s line, `cd`, `get` and `put`. The
+shell has no `use`, and loads `files.lua` itself the first time a line needs
+it - for which `files.lua` now asks for `regions.lua` at its first copy
+rather than when it is loaded. The window manager takes a program by a
+path with a space in it (a Lua application in `/Home/my programs`, opened
+from Tracker, was "not a program name"), and its startup list splits at a
+comma outside quotes. `Groove`, `Solar`, `Cafesa3D`, `Camera` and
+`Preferences` read flags and numbers only and are as they were. **A
+launcher's stored arguments are read as written**: an attribute a person
+wrote, handed over unchanged.
+
+**Host.** `tools/test_files.lua` 50 checks (35 new): nothing that needs no
+quotes gets them - a plain path, `--size`, `2`, `-leading-dash`, a lone
+backslash; a space, a quote and an empty word are quoted; sixteen awkward
+names come back whole alone and as one line - `diego’s Public Folder`,
+`a "quoted" name`, a trailing backslash, a tab, spaces at both ends,
+`naïve café/日本語 ファイル.txt`, a lone `"`; Tracker's and Groove's
+strings read as before; quoted pieces join into one word; an open quote
+runs to the end; the first word and the rest as written.
+`test_filetypes.lua` 55 (3 new): a path with a space opens in Photo as one
+word, and a console program with one runs in a Terminal as one; a
+favorite is handed over quoted. `test_text.lua` 15: `-n 2` and a quoted
+path with spaces. **And the filesystems**: `test_kfs.lua` 94, plain and
+through the block cache (6 new), and `test_ramstore` 40 (7 new) - a folder
+and a file with spaces, spaces at a name's ends, a comma and `diego’s
+Public Folder`, made, listed, read, renamed (a folder too) and deleted.
+
+**In the machine** - `run_writeapp.py`, `arm-writeapp`, 55 checks (13 new),
+on its disk, which now also holds `/Home/My Pictures/sea photo.png`: at the
+prompt `ls "/Home/My Pictures"` lists `sea photo.png`; `cp "/Home/My
+Pictures/sea photo.png" "/Temporary/a copy.png"` makes it; `cd "/Home/My
+Pictures"` goes there. Then `wm /Home/opens.lua`, a program the window
+manager runs, does what Tracker does: New Folder's `mkdir` of `/Home/My
+Documents`, a document written as `draft note.write` and Rename's message
+to `sea note.write`, a folder `old folder x` made, renamed to `new folder
+y` and deleted, both folders listed - and then the picture and the
+document opened as Tracker's Open opens them, `filetypes.how_to_open` and a
+`launch`. **Photo said "photo: showing /Home/My Pictures/sea photo.png, 160
+× 100" and Write "writer: opened /Home/My Documents/sea note.write, read"**
+- each application now says the whole path it was handed.
+
+**The control bites** (scratch, not committed): Photo reading its first
+word as it did, `args:match("^%s*(%S+)")` - it was handed `"/Home/My
+Pictures/sea photo.png"` and showed `"/Home/My, that file is not a picture
+this can decode`; 1 of 55 failed, the check above.
+
+The suites that were run are at the end of 18.415.
+
+## 18.415 A server called "192"
+
+Connecting to Diego's Mac at 192.168.1.38 - macOS's own SMB server, SMB
+3.0.2, signing required - `share status`, Tracker's Network group and the
+trail called it "192".
+
+**Why.** smbfs named a server by `smb2_get_domain`, which libsmb2 fills
+with the challenge's TargetName when it was given no domain. TargetName is
+a *domain's* field (MS-NLMP 2.2.1.2): a server in a workgroup puts its
+NetBIOS name there, which is why Samba's peer read MACPEER, but it is not
+the computer's name, and macOS's server filled it with "192" - the address
+cut at its first dot. The computer's own names travel in the same
+challenge, in TargetInfo: MsvAvNbComputerName (1) and MsvAvDnsComputerName
+(3) - and libsmb2 copies them into its answer and keeps none.
+
+**What it takes now.** `user/kits/smb/ntlm_name.c`, a decoder of the
+challenge with nothing of libsmb2 in it: the NetBIOS computer name, then
+the DNS computer name's first label - what Finder shows, `Diegos-Mac-mini`
+of `Diegos-Mac-mini.local` - then TargetName; **a name that is only digits
+and dots is no name**, being an address or a piece of one; UTF-16 to UTF-8,
+a lone surrogate or a control character refusing a name, one too long cut
+at a character. With none, smbfs leaves the name empty and the server is
+called by its whole address (`named`), never a piece of it. **libsmb2 is
+not touched**: the SMB Kit's socket (`smb_transport.c`) keeps the first
+bytes a connection receives, at most 4 KB and only until a challenge has
+been read out of them or 64 KB have passed, and `smb_kit_server_name`
+gives the name to smbfs when the session is set up.
+
+What macOS sends in its TargetInfo is not known here: no Mac's SMB server
+is reachable from the gate. If it gives only "192" and the address, the
+decoder refuses both and the server is called 192.168.1.38; if it gives
+its NetBIOS or DNS name, that. `smbfs: <address> answered - <name>` on the
+M700's log says which (`roadmap.md`).
+
+**Host.** `tools/test_ntlmname.c`, 13 checks, on challenges built as the
+specification lays them out: Samba's peer is MACPEER; "192" as TargetName
+loses to the NetBIOS computer name, and with none to the DNS name's first
+label; "192" with "192.168.1.38" is no name; a challenge with no name in it
+gives none; TargetName alone, when a name, is one; a curly apostrophe
+arrives as UTF-8; a name too long is cut at a character; a lone surrogate
+gives way to the DNS name; cut short at every length, it asks for more;
+a NEGOTIATE and a wrong signature are not challenges; a pair claiming more
+than there is is not read past. **Against the peer**: `arm-share` and
+`x86-share`, 69 checks each, "answered - MACPEER" through the new path.
+
+**The controls bite** (scratch, not committed): the decoder taking a name
+of digits - "192" came back, 1 of 13 failed; the socket not listening -
+`arm-share` "answered - a server" and 15 of 69 failed, the name missing
+from every status line.
+
+**Run** for both, after the controls were put back:
+`make test ONLY=host,arm-shell,arm-display-1,arm-display-2,arm-display-3,
+arm-display-4,arm-display-5,x86-display-1,arm-media,arm-browser-1,arm-editor,
+arm-ide,arm-servers,arm-loader,arm-game,arm-launch,arm-sysapps,x86-dock,
+arm-writeapp,arm-share`: 20 suites in 3:50, all passing; and before them
+`x86-share`, `arm-share-2`, `x86-share-2`, `arm-share-3`, `arm-telnetd`
+and `arm-nogame`, passing. `arm-writeapp` is 91-94 s with the new
+phase. The whole gate is not run here: `files.lua`, `filetypes.lua`,
+the window manager and the shell changed, so it is owed before a push.
+
+## 18.413 The M700 against the Mac's own File Sharing (sharing N7)
+
+By hand, on 6 October 2026, as `docs/sharing.md` N7 asks - the M700 on
+0.11.16 by network boot, Diego's Mac with macOS's File Sharing turned on by
+him (`smb://192.168.1.38`, his account read and write, his Public Folder
+shared, Full Disk Access on). The password was typed by Diego, in a telnet
+session of his own, at `share connect smb://192.168.1.38 diego`.
+
+- `share probe 192.168.1.38:445` from the M700: "answered - SMB 3.0.2,
+  signing required" - Apple's server, at the dialect and signing N4 holds.
+- Signed in as diego; `share shares` listed "diego’s Public Folder" - with
+  a typographic apostrophe - and "diego", his home folder.
+- Both connected on the one session; Tracker on the M700 showed the home
+  folder's 59 items and 137 MB, and the Public Folder's Drop Box and
+  `.localized`, "SMB 3.0.2, signed · as diego" in its status line.
+- **File Sharing switched off**: within seconds the server was away, the
+  folder greyed as last listed under "not answering - retrying", the next
+  try counted down. **Switched on again**: about two minutes after it went,
+  the next try signed in by itself - "signed in 2 times" - with no password
+  asked, and the band was gone.
+
+**Found**: the server was named "192" - macOS's NTLM TargetName - fixed by
+taking the computer's own name from the challenge's TargetInfo (18.415);
+and a share named with spaces could not be typed at the prompt - the
+argument syntax (18.414).

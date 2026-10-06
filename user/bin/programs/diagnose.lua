@@ -212,7 +212,7 @@ say(((sys.log(262144) or ""):gsub("\r", "")))
 -- a quarter of a megabyte, and a message holds two kilobytes.
 --
 local regions = use("/Kosmos/Libraries/regions.lua")
-local name = args:match("^%s*(%S+)") or "diagnose.txt"
+local name = use("/Kosmos/Libraries/files.lua").words(args)[1] or "diagnose.txt"
 local path = name:sub(1, 1) == "/" and name or ("/Home/" .. name)
 local body = table.concat(lines, "\n")
 local wrote, err = regions.write_string(path, body)

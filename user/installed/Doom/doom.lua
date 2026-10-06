@@ -32,6 +32,7 @@
 local ui = use("/Kosmos/Libraries/ui.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 local regions = use("/Kosmos/Libraries/regions.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 
 -- The engine this program's own image carries, reached by its file; not a
 -- global, for the reason `snes.lua` gives, and not a kit, since it is Doom's.
@@ -47,7 +48,7 @@ end
 -- (Diego, 27 September) - unless another is named.
 --
 local here = tostring(sys.program or ""):match("^(.*)/[^/]+$") or "/Home/Apps/Doom"
-local path = (args or ""):match("^%s*(%S+)") or (here .. "/doom1.wad")
+local path = files.words(args)[1] or (here .. "/doom1.wad")
 
 local attrs, why = fs.getattr(path)
 

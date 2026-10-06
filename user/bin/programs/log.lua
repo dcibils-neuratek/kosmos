@@ -70,7 +70,7 @@ end
 --
 if want == "save" then
   local regions = use("/Kosmos/Libraries/regions.lua")
-  local name = args:match("^%s*save%s+(%S+)") or "log.txt"
+  local name = use("/Kosmos/Libraries/files.lua").words(args)[2] or "log.txt"
   local path = name:sub(1, 1) == "/" and name or ("/Home/" .. name)
   local wrote, err = regions.write_string(path, text)
 

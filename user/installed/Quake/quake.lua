@@ -25,6 +25,7 @@
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 local regions = use("/Kosmos/Libraries/regions.lua")
 
 -- The engine this program's own image carries, reached by its file.
@@ -38,7 +39,7 @@ end
 -- **The pak beside this file**, in `id1/` as Quake keeps it, unless another
 -- is named: part of the game, as Doom's WAD is.
 local here = tostring(sys.program or ""):match("^(.*)/[^/]+$") or "/Home/Apps/Quake"
-local path = (args or ""):match("^%s*(%S+)") or (here .. "/id1/pak0.pak")
+local path = files.words(args)[1] or (here .. "/id1/pak0.pak")
 
 local attrs, why = fs.getattr(path)
 

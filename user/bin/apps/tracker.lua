@@ -105,7 +105,7 @@ local SIDE_W = 200
 --
 local words = {}
 
-for w in args:gmatch("%S+") do words[#words + 1] = w end
+for _, w in ipairs(files.words(args)) do words[#words + 1] = w end
 
 local where = "/Home"
 
@@ -622,7 +622,7 @@ local function job_ends(state)
       visit(j.target)
     elseif j.open then
       fs.send("/Running/wm", { type = "launch", program = "tracker",
-                               args = j.target })
+                               args = files.quote(j.target) })
     else
       show(where)
     end
@@ -692,7 +692,7 @@ local function start_job(program, spec, t)
 
   if ok then
     ok, why = fs.send("/Running/wm", { type = "launch", program = program,
-                                       args = "--job " .. file })
+                                       args = "--job " .. files.quote(file) })
   end
 
   if not ok then
@@ -1773,7 +1773,7 @@ local function open_selected()
     -- desktop. A folder opened from it opens in a Tracker window of its
     -- own, which is what BeOS did and what a person reaching for one means.
     local ok, why = fs.send("/Running/wm", { type = "launch", program = "tracker",
-                                         args = path_of(e) })
+                                         args = files.quote(path_of(e)) })
 
     status.text = ok and ("opened " .. e.name)
                   or ("could not open it: " .. tostring(why))
@@ -2511,7 +2511,7 @@ function open_connect(address)
   net.awaiting = true
 
   local ok, why = fs.send("/Running/wm", { type = "launch", program = "connect",
-                                           args = address or "" })
+                                           args = address and files.quote(address) or "" })
 
   status.text = ok and "connect to a server in the window that opened"
                 or ("could not open Connect to Server: " .. tostring(why))
@@ -3373,7 +3373,7 @@ local function do_edit()
 
   local program = types.opener(path_of(e)) or "texteditor"
   local ok, why = fs.send("/Running/wm", { type = "launch", program = program,
-                                       args = path_of(e) })
+                                       args = files.quote(path_of(e)) })
 
   status.text = ok and ("editing " .. e.name .. " in " .. program)
                 or ("could not edit it: " .. tostring(why))
@@ -3595,7 +3595,7 @@ end
 --
 local function open_info(paths)
   local ok, why = fs.send("/Running/wm", { type = "launch", program = "info",
-                                       args = table.concat(paths, "\n") })
+                                       args = files.line(paths) })
 
   if not ok then status.text = "could not open Info: " .. tostring(why) end
 end
@@ -3704,7 +3704,7 @@ function context_menu(e, sx, sy)
       if e and e.kind == "launcher" then
         local ok, why = fs.send("/Running/wm", {
           type = "launch", program = "/Kosmos/Apps/launcheredit.lua",
-          args = path_of(e) })
+          args = files.quote(path_of(e)) })
 
         status.text = ok and ("editing " .. e.name)
                       or ("could not open it: " .. tostring(why))
@@ -3732,7 +3732,7 @@ function context_menu(e, sx, sy)
     open_with = e and function(program)
       local ok, why = fs.send("/Running/wm", { type = "launch",
                                                program = program,
-                                               args = path_of(e) })
+                                               args = files.quote(path_of(e)) })
 
       status.text = ok and ("opened " .. e.name .. " in "
                             .. types.app_name(program))
@@ -3945,7 +3945,7 @@ side_menu.on_click = function()
   win:open_menu(win.origin_x + side_menu.x, win.origin_y + L.head, {
     { text = "New window", on_choose = function()
         fs.send("/Running/wm", { type = "launch", program = "tracker",
-                             args = where })
+                             args = files.quote(where) })
       end },
     { separator = true },
     { text = "Empty Trash", on_choose = function() empty_trash() end },

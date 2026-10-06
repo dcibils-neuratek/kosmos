@@ -247,6 +247,28 @@ check(how and how.program == "texteditor" and how.args == "/Home/notes.txt",
 check(types.how_to_open("/Home/nothing") == nil,
       "and a file nothing claims still opens in nothing")
 
+-- **A path with a space is one argument** (`testing.md` 18.414): quoted, so
+-- the application's `files.words` reads the whole path back - and the same
+-- door reads it, so what Tracker opens is what Photo is handed.
+do
+  local files = use("/Kosmos/Libraries/files.lua")
+
+  for _, path in ipairs({ "/Home/My Pictures/sea photo.png",
+                          "/Home/Shares/MACPEER/diego’s Public Folder/a.png" }) do
+    local spaced = types.how_to_open(path)
+    local back = spaced and files.words(spaced.args) or {}
+
+    check(spaced and spaced.program == "photo" and #back == 1 and back[1] == path,
+          "a path with a space opens as one word: " .. tostring(spaced and spaced.args))
+  end
+
+  local lua = types.how_to_open("/Home/my programs/hi there.lua", nil, console)
+  local first = lua and files.words(lua.args)[1]
+
+  check(lua and lua.program == "terminal" and first == "/Home/my programs/hi there.lua",
+        "a console program with a space in its path runs in a Terminal as one word")
+end
+
 -- **A browser's favorite** (`roadmap.md` 6zz d3): an empty file with no
 -- extension, what it is in its attributes - the browser opens it, handed
 -- its path, and it is called what it is.
@@ -256,8 +278,8 @@ do
   local fav = types.how_to_open("/Home/Favorites/Dam - Wikipedia", kept)
 
   check(fav and fav.program == "browser"
-        and fav.args == "/Home/Favorites/Dam - Wikipedia",
-        "a favorite does not open in the browser, handed its file")
+        and fav.args == '"/Home/Favorites/Dam - Wikipedia"',
+        "a favorite does not open in the browser, handed its file as one word")
   check(types.how_to_open("/Home/Favorites/Dam - Wikipedia") == nil,
         "the same file without its attributes is claimed by something")
   check(types.describe("/Home/Favorites/Dam - Wikipedia", kept) == "Favorite",

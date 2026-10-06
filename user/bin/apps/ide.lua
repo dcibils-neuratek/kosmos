@@ -89,7 +89,7 @@ local FIRST = "/Home/development"
 
 local remembered = prefs.read("ide")
 
-local asked = tostring(args or ""):match("^%s*(%S+)")
+local asked = files.words(args)[1]
 
 -- A file asked for is opened, and the folder it is in is the project.
 local asked_file = nil

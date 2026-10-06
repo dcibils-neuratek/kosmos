@@ -955,8 +955,34 @@ port): TinyCC compiles, assembles and links in one program of about 300 KB,
 for both ARM64 and x86-64, in milliseconds. Its code is two or three times
 slower than GCC's and has no vector types, so the kits that want every
 cycle stay built on the Mac with GCC, which keeps building Kosmos itself.
-**Order**: after network sharing's client steps; designed first with the
-four documents (`CLAUDE.md`). **Decided by Diego the same day**: "Tinycc
+**Order**: **next after the keyring and Passwords** - Diego, 6 October,
+"put tinycc next after passwords" - ahead of Maps, Mail and Calendar;
+designed first with the four documents (`CLAUDE.md`).
+**What it is for, in Diego's words** (6 October): "i want to be able to do
+a very simple all in IDE that uses LUA and C and compile it in and run it".
+So a project in the IDE is a folder of Lua and C; **Build** compiles the C
+with TinyCC and links it with Kosmos's runtime into the project's own
+image, `myapp.elf`, its errors shown at their lines; **Run** starts the Lua
+inside that image and the Lua reaches the C by `use("myapp.elf")` - the
+mechanism Doom already stands on (`-- kosmos: image doom.elf`, `docs/elf.md`
+step 5), so no process writes code and runs it, as decided, and nothing in
+the kernel is new. **New project asks what kind of app it is** (Diego, the same
+day): a **C app** - a server, a driver, 3D, fast calculation; a **Lua
+app** - a simple desktop app, run as it is with no build; or a **Lua and
+C app** - Lua for the window and the orchestrating, C for the work that
+is CPU-bound or touches hardware. The New Project window offers **at least one template of each kind** -
+a small example that builds and runs as it is, so a person starts from
+something working rather than an empty file (Diego, the same day): a C
+app that computes and prints or draws, a Lua app with a window and a
+button, and a Lua and C app whose Lua window calls a C function for its
+heavy part. Each template is held by a test that builds and runs it.
+A C app that opens a window needs a door to windows from C, which today
+only Lua has (`ui.lua` over the window manager's protocol); whether that
+door is a small C window kit or the C app's own Lua shim is a question
+for the design. The
+design's questions: the runtime TinyCC links with, carried in the image as
+an archive; how long a link of it takes; and C's headers - `kosmos.h`, the
+Lua API - shipped beside it. **Decided by Diego the same day**: "Tinycc
 writes a program file and kosmos starts separately". No process writes code
 and then runs it - the kernel keeps never allowing it - so a build is an
 ELF on the disk, started as a program of its own, as `doom.elf` is. What it
@@ -1058,6 +1084,28 @@ not designed:
 - **Designed before it is written**, the four documents (`CLAUDE.md`): its
   feature set, the mockup, the architecture and the diagram - with no
   real person's places in the mockup.
+
+**AGREED on 6 October - the keyring, and Passwords.** Network sharing's
+N8 grew into it: Diego, "key kept on the machine itself in a keyring",
+"we can do a keyring or password manager app that holds all keys and
+passwords that kosmos uses", with macOS's Passwords as the reference; the
+mockup "is perfect". Designed in `docs/keyring.md`, `keyring.html`,
+`keyring-architecture.png`, and **his answers** written there: the
+application is **Passwords**; the keyring decides by **door** - a
+capability handed to smbfs, another to Passwords - never by a caller's
+name; **the key stays on the disk** (no firmware); **the password itself is
+kept**, sealed with AES-256-CCM, so **Show** can reveal it - "i need to know
+the password at some point"; a remembered share is open to every program
+for now; "Connect when Kosmos starts" on with Remember; **a lock with a
+password, later** (K9). Steps K1-K7, then K9.
+
+**FOUND on 6 October, designing the keyring - two holes in what exists.**
+(1) `notifyproto.h`'s promise that a program cannot post as another rests
+on `SYS_SENDER`'s `from`, which a program can forge by serving its own
+`/Kosmos/Apps` to a child it starts - found by reading, to be tried by the
+keyring's K4 test. (2) Every program is handed `/Devices/blocks`, which reads
+raw sectors of any stick, the boot stick's `/Home` partition included -
+the keyring's K7 refuses it.
 
 **WANTED, after Maps - Kosmos Mail, a native mail client.** Diego, 6
 October 2026, with a picture of Apple's Mail: "after that, i want a native
@@ -1218,8 +1266,20 @@ Assessed, not designed:
   character (`ui.field`'s `secret`), the server answering before the
   password, a share chosen from the server's list (`SHARE_OP_SHARES`) and
   several shares on one session; the Open window's Network group; File
-  sharing in the Servers window, drawn and disabled until N12. **Next: N7**,
-  on real hardware by hand.
+  sharing in the Servers window, drawn and disabled until N12. **N7 DONE on
+  6 October** (`testing.md` 18.413): the M700 against Diego's Mac's own File
+  Sharing - SMB 3.0.2 signed, his home folder and Public Folder listed in
+  Tracker, File Sharing switched off and on and the share back by itself
+  with no password asked. **Next: N8, the keyring** - designed as its own
+  piece, `docs/keyring.md`, and sharing's N8 its step K5.
+  **FIXED on 6 October, found by N7 on the M700** (`testing.md` 18.415):
+  Diego's Mac at 192.168.1.38 was called "192" - smbfs named a server by
+  NTLM's TargetName, a domain's field, which macOS's server filled with a
+  piece of its address. It takes the computer's own name from the same
+  challenge now (NetBIOS, or the DNS name's first label), and the whole
+  address when none is given. **Wanted**: whatever name macOS sends there,
+  read off the M700's log, so the decoder's macOS case is a capture rather
+  than a challenge built by the specification.
   **Wanted, found by N4**: ARMv8's AES instructions in the Crypto Kit -
   CMAC and CCM are then most of what a signed or sealed megabyte costs on
   ARM (`sharing.md`, *What the Crypto Kit gains*); and libsmb2 offers only
@@ -7928,6 +7988,19 @@ the Pi", and the Pi is not here yet.
   the second may be QEMU's x86-64 TSC under TCG and nothing of ours.
 
 ### Smaller, and wanted
+
+- **BUILT on 6 October - names with spaces, end to end** (`testing.md`
+  18.414, `design.md` 8.3g). Diego, on the M700: "browsing network shares
+  that have filenames that have spaces in will break whatever program you
+  want to open it with", and then "file names and directories should be
+  able to have spaces", "in kfs as well". An argument with a space is
+  quoted - `"/Home/My Pictures/sea photo.png"` - and `files.quote` and
+  `files.words` are the one door each way, in every builder and every
+  program; a path without one is typed as before. kfs and `/Temporary`
+  took any name already and are tested to. **Left**: the window manager's
+  startup list names a program by a word, so `wm "/Home/my apps/x.lua"` is
+  not a spelling it takes (a path with spaces through Tracker, the Deskbar
+  and `open` is); and the Open window's own field trims a name's ends.
 
 - **FOUND on 22 September - Music's two icons have never drawn.**
   `music.lua` asks for `"File_Audio"` and `"Misc_Speaker"` without `.png`,

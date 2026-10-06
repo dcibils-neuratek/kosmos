@@ -79,6 +79,7 @@ local ui    = use("/Kosmos/Libraries/ui.lua")
 local http  = use("/Kosmos/Libraries/http.lua")
 local httpcache = use("/Kosmos/Libraries/httpcache.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 local favorites = use("/Kosmos/Libraries/favorites.lua")
 local history = use("/Kosmos/Libraries/history.lua")
 local markup = use("/Kosmos/Libraries/markup.lua")
@@ -4239,7 +4240,7 @@ do
       end
 
       fs.send("/Running/wm", { type = "launch", program = "tracker",
-                               args = http.AUTHORITIES })
+                               args = files.quote(http.AUTHORITIES) })
     end)
 
     local empty = button("Empty", function()
@@ -4451,7 +4452,10 @@ do
   -- nothing could not be tried without a server running somewhere, which is
   -- a thing an operating system has no business asking for.
   --
-  local start = tostring(args or ""):match("^%s*(.-)%s*$")
+  -- The first word, quoted when it has a space - a favorite's file is
+  -- `/Home/Favorites/Dam - Wikipedia`, which Tracker quotes (`files.quote`).
+  --
+  local start = files.words(args)[1] or ""
 
   -- The days of history older than Settings keeps, let go as the window opens.
   prune_history()

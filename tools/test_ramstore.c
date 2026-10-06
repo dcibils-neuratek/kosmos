@@ -407,6 +407,50 @@ static void rename_folder(void)
           "and nothing left under the old one");
 }
 
+/*
+ * **Names with spaces in them** (`testing.md` 18.414): a folder and a file
+ * each with one, and a curly apostrophe in UTF-8 as macOS names a share -
+ * made, listed, read, renamed and deleted, whole.
+ */
+static void spaced_names(void)
+{
+    static struct ram_request req;
+    char back[16];
+
+    ram_store_init(64u * 1024u * 1024u);
+
+    check(ask(RAM_OP_MKDIR, "/My Pictures", 0, NULL, 0, 1) == RAM_OK
+          && ask(RAM_OP_MKDIR, "/diego\xe2\x80\x99s Public Folder", 0, NULL, 0, 1) == RAM_OK,
+          "a folder with a space in its name is made");
+    check(put("/My Pictures/sea photo.png", "sea") == RAM_OK
+          && put("/diego\xe2\x80\x99s Public Folder/ a b  .txt", "spaced") == RAM_OK,
+          "a file with spaces in its path is written");
+
+    check(ask(RAM_OP_LIST, "/My Pictures", 0, NULL, 0, 1) == RAM_OK
+          && said.count == 1 && strcmp(said.u.entries[0], "sea photo.png") == 0,
+          "a listing gives a name with a space in it whole");
+    check(ask(RAM_OP_LIST, "/diego\xe2\x80\x99s Public Folder", 0, NULL, 0, 1) == RAM_OK
+          && said.count == 1 && strcmp(said.u.entries[0], " a b  .txt") == 0,
+          "and spaces at a name's ends");
+    check(get("/My Pictures/sea photo.png", back, sizeof(back)) == 3
+          && memcmp(back, "sea", 3) == 0,
+          "a file with a space in its path is read");
+
+    memset(&req, 0, sizeof(req));
+    req.op = RAM_OP_RENAME;
+    snprintf(req.path, sizeof(req.path), "/My Pictures");
+    snprintf(req.u.data, sizeof(req.u.data), "/Our Pictures, 2026");
+    ram_answer(&req, sizeof(req), 1);
+
+    check(said.error == RAM_OK
+          && get("/Our Pictures, 2026/sea photo.png", back, sizeof(back)) == 3,
+          "a folder with a space renamed to one with a space and a comma");
+    check(ask(RAM_OP_DELETE, "/Our Pictures, 2026/sea photo.png", 0, NULL, 0, 1) == RAM_OK
+          && ask(RAM_OP_DELETE, "/Our Pictures, 2026", 0, NULL, 0, 1) == RAM_OK
+          && ask(RAM_OP_GETATTR, "/Our Pictures, 2026", 0, NULL, 0, 1) == RAM_ERR_NO_PATH,
+          "a file and a folder with spaces in their names are deleted");
+}
+
 static void hostile_offset(void)
 {
     ram_store_init(64u * 1024u * 1024u);
@@ -427,6 +471,7 @@ int main(void)
     room_given_back();
     many_watches();
     rename_folder();
+    spaced_names();
     hostile_offset();
 
     ram_store_init(0);

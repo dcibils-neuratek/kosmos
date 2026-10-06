@@ -24,13 +24,14 @@
 -- drawing a heading twice as wide would be worse than saying it plainly.
 
 local ui       = use("/Kosmos/Libraries/ui.lua")
+local files    = use("/Kosmos/Libraries/files.lua")
 local panel    = use("/Kosmos/Libraries/panel.lua")
 local markdown = use("/Kosmos/Libraries/markdown.lua")
 local theme    = ui.theme
 
 local W, H = 620, 460
 
-local path = args:match("^%s*(%S+)")
+local path = files.words(args)[1]
 
 local win, err = ui.window{ title = "Reader", w = W, h = H, x = 110, y = 60,
                             header = true }

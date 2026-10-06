@@ -3732,7 +3732,7 @@ handlers.open = function(req, who, cap)
   -- launch's guess stays for a window that says nothing - one opened
   -- without the kit - and nil is a window neither names: the generic one.
   local said = type(req.program) == "string" and #req.program < 128
-               and req.program:match("^/[%w%-_./]+$") and req.program
+               and req.program:match("^/[^%c]+$") and req.program
 
   win.program = said or pending_program
   pending_program = nil
@@ -3928,7 +3928,14 @@ end
 handlers.launch = function(req, who)
   local name = tostring(req.program or "")
 
-  if name == "" or name:match("[^%w%-_./]") then
+  --
+  -- A name is letters, digits, `-`, `_` and `.`; **a whole path is any
+  -- file's**, spaces and all - a Lua application in `/Home/my programs` is
+  -- opened from Tracker by its path, and this refused it (`testing.md`
+  -- 18.414). Never a control character, in either.
+  --
+  if name == "" or name:find("%c")
+     or (name:sub(1, 1) ~= "/" and name:match("[^%w%-_./]")) then
     return { ok = false, error = "not a program name: " .. name }
   end
 
@@ -6300,6 +6307,36 @@ local key = use("/Kosmos/Libraries/wm/keys.lua"){
 local wanted = tostring(args or ""):match("^%s*(.-)%s*$")
 
 --
+-- **The entries of that list**, split at each comma that is not inside
+-- quotes: `writer:"/Home/My Pictures/a, b.write",deskbar` is two. What
+-- follows a name's colon is that program's argument string as written,
+-- quotes and all, and the program reads it with `files.words` like any
+-- other (`testing.md` 18.414).
+--
+local function entries(list)
+  local out, from, quoted, i = {}, 1, false, 1
+
+  while i <= #list do
+    local c = list:sub(i, i)
+
+    if quoted and c == "\\" then
+      i = i + 1                         -- `\"` and `\\` are not the end
+    elseif c == '"' then
+      quoted = not quoted
+    elseif c == "," and not quoted then
+      out[#out + 1] = list:sub(from, i - 1)
+      from = i + 1
+    end
+
+    i = i + 1
+  end
+
+  out[#out + 1] = list:sub(from)
+
+  return ipairs(out)
+end
+
+--
 -- `trace` first, so it is a setting rather than a program: it has to be out
 -- of the list before the loop below tries to start `/Kosmos/Programs/trace.lua`, and it
 -- has to be *set* before the first window opens or the opening is the one
@@ -6308,7 +6345,7 @@ local wanted = tostring(args or ""):match("^%s*(.-)%s*$")
 do
   local rest = {}
 
-  for entry in wanted:gmatch("[^,]+") do
+  for _, entry in entries(wanted) do
     entry = entry:match("^%s*(.-)%s*$")
 
     if entry == "trace" then
@@ -6393,7 +6430,7 @@ remote.handlers.key = function(req)
   return { ok = true }
 end
 
-for entry in wanted:gmatch("[^,]+") do
+for _, entry in entries(wanted) do
   entry = entry:match("^%s*(.-)%s*$")
 
   if entry ~= "" then

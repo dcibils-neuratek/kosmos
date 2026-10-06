@@ -41,13 +41,14 @@
 -- `stb_image` is the same vendor as the rasteriser already here.
 
 local ui       = use("/Kosmos/Libraries/ui.lua")
+local files    = use("/Kosmos/Libraries/files.lua")
 local panel    = use("/Kosmos/Libraries/panel.lua")
 local pdf      = use("/Kosmos/Libraries/pdf.lua")
 
 local W, H = 760, 620
 local BAR  = 22                       -- the status line along the bottom
 
-local path = args and args:match("^%s*(%S+)")
+local path = files.words(args)[1]
 
 local win, err = ui.window{
   title = "PDF", w = W, h = H, x = 70, y = 40, direct = true,

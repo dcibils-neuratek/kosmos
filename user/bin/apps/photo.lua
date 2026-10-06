@@ -41,7 +41,7 @@ local files = use("/Kosmos/Libraries/files.lua")
 -- Photo and the Terminal did.
 local theme = ui.theme
 
-local name = tostring(args or ""):match("^%s*(%S+)") or "test-pattern.png"
+local name = files.words(args)[1] or "test-pattern.png"
 
 -- An asset is allowed to be named without its extension, because they are a
 -- known short list. A path is not: guessing at one would turn a typo into a
@@ -118,6 +118,10 @@ local function show(path)
 
   picture:set(path)
   say(describe())
+
+  -- The whole path, as it arrived: what a path with a space in it was cut
+  -- at is exactly what this line would show (`testing.md` 18.414).
+  print(("photo: showing %s, %s"):format(path, describe()))
 
   -- The Deskbar lists windows by title, and four of them saying "Photo" is
   -- a list that tells you nothing.
