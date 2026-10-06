@@ -606,7 +606,7 @@ smbfs once used, as smbfs zeroes the password today.
 **Each step its own revision and its own permanent test**, in this order;
 each is lived with before the next starts.
 
-- **K1 - one AEAD door.** `crypto_aes_ccm_seal`/`_open` in the Crypto Kit,
+- **K1 - one AEAD door.** **Done, 0.11.18** (`testing.md` 18.416; held to Wycheproof rather than RFC 3610 alone, which has no 256-bit vector). `crypto_aes_ccm_seal`/`_open` in the Crypto Kit,
   16- and 32-byte keys, held to RFC 3610 and Wycheproof's 256-bit vectors in
   `tools/test_crypto.c`; `smb_crypto.c`'s `aes128ccm_*` become its callers.
   *Test*: the vectors, natively and through Rosetta; the SMB suites unchanged.

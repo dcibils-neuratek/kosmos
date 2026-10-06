@@ -67,8 +67,8 @@ void drbg_generate(struct drbg *d, uint8_t *out, size_t bytes);
  *                      `br_hmac_update`, `br_hmac_out` - NTLMv2's proof
  *   HMAC-SHA256        the same with `br_sha256_vtable` - SMB 2.x's signature
  *   SHA-512            `br_sha512_*` - 3.1.1's preauthentication hash
- *   AES-128-CCM        `br_ccm_*` over `crypto_aes_ctrcbc()` below - SMB 3's
- *                      sealing
+ *   AES-CCM            not this list's: `crypto_aes_ccm_seal`/`_open` below,
+ *                      the one door, over BearSSL's `br_ccm_*`
  *   AES-128-GCM        `br_gcm_*` over `br_aes_x86ni_ctr_get_vtable()` or
  *                      `br_aes_ct64_ctr_vtable`, with `br_ghash_pclmul_get()`
  *                      or `br_ghash_ctmul64` - 3.1.1's other cipher, later
@@ -106,6 +106,22 @@ struct crypto_cmac {
 void crypto_cmac_init(struct crypto_cmac *c, const void *key, size_t key_bytes);
 void crypto_cmac_update(struct crypto_cmac *c, const void *data, size_t bytes);
 void crypto_cmac_final(struct crypto_cmac *c, uint8_t out[16]);
+
+/* AES-CCM (RFC 3610), the one door to it (`docs/keyring.md`, K1): SMB 3's
+ * sealing and the keyring's file. A key of 16 or 32 bytes, a nonce of 7 to
+ * 13 and a tag of 4 to 16, even; anything else answers -1 and touches
+ * nothing. `data` is encrypted or decrypted where it lies. Open answers 0
+ * when the tag matches and otherwise -1, with `data` zeroed. */
+int crypto_aes_ccm_seal(const void *key, size_t key_bytes,
+                        const uint8_t *nonce, size_t nonce_bytes,
+                        const void *aad, size_t aad_bytes,
+                        void *data, size_t bytes,
+                        uint8_t *tag, size_t tag_bytes);
+int crypto_aes_ccm_open(const void *key, size_t key_bytes,
+                        const uint8_t *nonce, size_t nonce_bytes,
+                        const void *aad, size_t aad_bytes,
+                        void *data, size_t bytes,
+                        const uint8_t *tag, size_t tag_bytes);
 
 /* NIST SP 800-108's KDF in counter mode with HMAC-SHA256: SMB 3's keys.
  * The label and the context are taken as they are, terminators included -

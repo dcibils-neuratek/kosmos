@@ -15,9 +15,9 @@
  *
  * What each name is, and what it now stands on:
  *
- *   aes128ccm_*          SMB 3's sealing: BearSSL's CCM over
- *                        `crypto_aes_ctrcbc()` - AES-NI where the processor
- *                        has it, constant-time `aes_ct64` elsewhere.
+ *   aes128ccm_*          SMB 3's sealing: the kit's one CCM door,
+ *                        `crypto_aes_ccm_seal`/`_open` (`docs/keyring.md`,
+ *                        K1), which the keyring's file uses too.
  *   MD4*                 the NT hash: `crypto_md4`.
  *   smb2_hmac_md5        NTLMv2's proof: BearSSL's HMAC over its MD5.
  *   hmac* (SHA-256)      SMB 2's signature and SMB 3's key derivation:
@@ -54,34 +54,16 @@
  * AES-128-CCM, as libsmb2 calls it: the message `p` encrypted (or decrypted)
  * in place, the tag `m` of `mlen` bytes written (or checked). Decryption
  * answers 0 when the tag matches, which is what libsmb2's own did (its
- * `memcmp`).
+ * `memcmp`) - and on a mismatch the door has zeroed `p`, which libsmb2
+ * then drops.
  */
-static void ccm_start(br_ccm_context *ccm, br_aes_gen_ctrcbc_keys *aes,
-                      const unsigned char *key, const unsigned char *nonce,
-                      size_t nlen, const unsigned char *aad, size_t alen,
-                      size_t plen, size_t mlen)
-{
-    const br_block_ctrcbc_class *vt = crypto_aes_ctrcbc();
-
-    vt->init(&aes->vtable, key, 16);
-    br_ccm_init(ccm, &aes->vtable);
-    (void)br_ccm_reset(ccm, nonce, nlen, alen, plen, mlen);
-    br_ccm_aad_inject(ccm, aad, alen);
-    br_ccm_flip(ccm);
-}
-
 void aes128ccm_encrypt(unsigned char *key,
                        unsigned char *nonce, size_t nlen,
                        unsigned char *aad, size_t alen,
                        unsigned char *p, size_t plen,
                        unsigned char *m, size_t mlen)
 {
-    br_aes_gen_ctrcbc_keys aes;
-    br_ccm_context ccm;
-
-    ccm_start(&ccm, &aes, key, nonce, nlen, aad, alen, plen, mlen);
-    br_ccm_run(&ccm, 1, p, plen);
-    (void)br_ccm_get_tag(&ccm, m);
+    (void)crypto_aes_ccm_seal(key, 16, nonce, nlen, aad, alen, p, plen, m, mlen);
 }
 
 int aes128ccm_decrypt(unsigned char *key,
@@ -90,13 +72,7 @@ int aes128ccm_decrypt(unsigned char *key,
                       unsigned char *p, size_t plen,
                       unsigned char *m, size_t mlen)
 {
-    br_aes_gen_ctrcbc_keys aes;
-    br_ccm_context ccm;
-
-    ccm_start(&ccm, &aes, key, nonce, nlen, aad, alen, plen, mlen);
-    br_ccm_run(&ccm, 0, p, plen);
-
-    return br_ccm_check_tag(&ccm, m) ? 0 : -1;
+    return crypto_aes_ccm_open(key, 16, nonce, nlen, aad, alen, p, plen, m, mlen);
 }
 
 /*------------------------------------------------------------------------

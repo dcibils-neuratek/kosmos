@@ -19855,3 +19855,26 @@ session of his own, at `share connect smb://192.168.1.38 diego`.
 taking the computer's own name from the challenge's TargetInfo (18.415);
 and a share named with spaces could not be typed at the prompt - the
 argument syntax (18.414).
+
+## 18.416 One AES-CCM door, held to Wycheproof (keyring K1)
+
+`crypto_aes_ccm_seal`/`_open` (`user/kits/crypto/ccm.c`): BearSSL's CCM
+over the kit's AES, with a 16- or 32-byte key, BearSSL's nonce and tag
+limits refused rather than ignored, and an open whose tag fails **zeroing
+what it decrypted**. The SMB Kit's `aes128ccm_*` are now two calls to it
+and its `ccm_start` is gone; the keyring's file will be the third caller
+and writes no CCM of its own.
+
+Held, in `tools/test_crypto.c`, to every one of Project Wycheproof's 552
+AES-CCM vectors - vendored unmodified at a pinned commit in
+`tools/vectors/wycheproof/`, Apache 2.0, made a header by
+`tools/wycheproof2c.py` - natively (`aes_ct64`) and through Rosetta
+(AES-NI): **135 sealed with 256-bit keys** to their ciphertext and tag and
+opened back, **54 forgeries refused with their bytes zeroed**, and **228 of
+sizes the door does not take** - 24-byte keys, nonces outside 7 to 13,
+odd or short tags - refused by seal and open alike, writing nothing.
+
+**Controls, both biting**: an open that leaves a forgery's bytes - 54 of
+1,693 checks fail, one for each forgery; a 32-byte key keyed as 16 - 466
+fail. The SMB suites (`arm-share`, `x86-share`, `-2`, `-3`) pass unchanged
+over the door, sealed 3.0 to 3.1.1 included.

@@ -128,6 +128,11 @@ Vendored third-party code keeps its own licence, which travels beside it:
       its photographer in the README there. Scaled to 1920x1080 by
       tools/wallpapers.sh. In `FULL=1` images only
 
+  Project Wycheproof's test vectors, by Google and C2SP, Apache 2.0
+      tools/vectors/wycheproof/, under the LICENSE beside them, the commit
+      and each file's hash in the README there. Not in the system's
+      image: the Crypto Kit's test is held to them on the Mac
+
 None of those are modified in place. Changes to them are build steps, so
 what is in this tree is what their authors released.
 

@@ -37,6 +37,17 @@
  *   SP 800-108    that blog's SMB 3.0 and 3.1.1 key derivations, both
  *                 channels, and two blocks against the kit's own HMAC
  *   AES-128-CCM   RFC 3610 packet vector 1 (BearSSL's), on each AES
+ *
+ * And the one AES-CCM door, `crypto_aes_ccm_seal`/`_open` - SMB 3's sealing
+ * and the keyring's file (`docs/keyring.md`, K1):
+ *
+ *   AES-CCM       every one of Wycheproof's 552 (`tools/vectors/wycheproof/`,
+ *                 made a header by `tools/wycheproof2c.py`): each valid one
+ *                 with a 16- or 32-byte key sealed to its ciphertext and tag
+ *                 and opened back; each invalid one refused, with what it
+ *                 decrypted zeroed; and each the door does not take - a
+ *                 24-byte key, a nonce outside 7 to 13 bytes, a tag outside
+ *                 4 to 16 or odd - refused by seal and open alike
  */
 
 #include <stdint.h>
@@ -46,6 +57,7 @@
 #include <bearssl.h>
 
 #include "crypto.h"
+#include "aes_ccm_vectors.h"
 
 static int failures, checks;
 
@@ -789,6 +801,103 @@ static void ccm_with(const char *name, const br_block_ctrcbc_class *vt)
     }
 }
 
+/*
+ * The door, against Wycheproof. What decides which question a vector is
+ * asked is written here rather than in the generator: whether the door
+ * takes its sizes at all.
+ */
+static int ccm_takes(const struct aead_vector *v)
+{
+    return (v->key_bytes == 16 || v->key_bytes == 32)
+        && v->nonce_bytes >= 7 && v->nonce_bytes <= 13
+        && v->tag_bytes >= 4 && v->tag_bytes <= 16 && v->tag_bytes % 2 == 0;
+}
+
+static int ccm_sealed_256, ccm_refused, ccm_outside;
+
+static void check_ccm_door(void)
+{
+    static uint8_t data[4096], tag[16];
+    size_t i;
+
+    for (i = 0; i < sizeof aes_ccm_vectors / sizeof aes_ccm_vectors[0]; i++) {
+        const struct aead_vector *v = &aes_ccm_vectors[i];
+        char what[96];
+        size_t bytes = v->msg_bytes > v->ct_bytes ? v->msg_bytes : v->ct_bytes;
+        int sealed, opened;
+
+        if (bytes > sizeof data) {
+            checks++, failures++;
+            printf("FAIL: aes-ccm vector %d is longer than the test's buffer\n", v->id);
+            continue;
+        }
+
+        if (!ccm_takes(v)) {
+            /* Outside the door: refused both ways, and nothing written. */
+            memset(data, 0xa5, sizeof data);
+            sealed = crypto_aes_ccm_seal(v->key, v->key_bytes, v->nonce, v->nonce_bytes,
+                                         v->aad, v->aad_bytes, data, v->msg_bytes,
+                                         tag, v->tag_bytes);
+            opened = crypto_aes_ccm_open(v->key, v->key_bytes, v->nonce, v->nonce_bytes,
+                                         v->aad, v->aad_bytes, data, v->ct_bytes,
+                                         v->tag, v->tag_bytes);
+            checks++;
+            if (sealed != -1 || opened != -1 || data[0] != 0xa5) {
+                failures++;
+                printf("FAIL: aes-ccm vector %d (key %zu, nonce %zu, tag %zu) was "
+                       "taken by a door that does not take its sizes\n", v->id,
+                       v->key_bytes, v->nonce_bytes, v->tag_bytes);
+            }
+            ccm_outside++;
+            continue;
+        }
+
+        if (v->valid) {
+            memcpy(data, v->msg, v->msg_bytes);
+            sealed = crypto_aes_ccm_seal(v->key, v->key_bytes, v->nonce, v->nonce_bytes,
+                                         v->aad, v->aad_bytes, data, v->msg_bytes,
+                                         tag, v->tag_bytes);
+            checks++;
+            if (sealed != 0) {
+                failures++;
+                printf("FAIL: aes-ccm vector %d refused by seal\n", v->id);
+            }
+            snprintf(what, sizeof what, "aes-ccm sealed, Wycheproof %d", v->id);
+            same(what, data, v->ct, v->ct_bytes);
+            snprintf(what, sizeof what, "aes-ccm tag, Wycheproof %d", v->id);
+            same(what, tag, v->tag, v->tag_bytes);
+            ccm_sealed_256 += v->key_bytes == 32;
+        }
+
+        memcpy(data, v->ct, v->ct_bytes);
+        opened = crypto_aes_ccm_open(v->key, v->key_bytes, v->nonce, v->nonce_bytes,
+                                     v->aad, v->aad_bytes, data, v->ct_bytes,
+                                     v->tag, v->tag_bytes);
+        checks++;
+
+        if (v->valid) {
+            if (opened != 0) {
+                failures++;
+                printf("FAIL: aes-ccm vector %d refused by open\n", v->id);
+            }
+            snprintf(what, sizeof what, "aes-ccm opened, Wycheproof %d", v->id);
+            same(what, data, v->msg, v->msg_bytes);
+        } else {
+            size_t j, left = 0;
+
+            for (j = 0; j < v->ct_bytes; j++)
+                left |= data[j];
+
+            if (opened != -1 || left != 0) {
+                failures++;
+                printf("FAIL: aes-ccm vector %d, which must be refused, was %s\n",
+                       v->id, opened != -1 ? "opened" : "refused with its bytes left");
+            }
+            ccm_refused++;
+        }
+    }
+}
+
 static const char *aes_used;
 
 static void check_ccm(void)
@@ -815,6 +924,7 @@ int main(void)
     check_cmac();
     check_kdf();
     check_ccm();
+    check_ccm_door();
 
     if (failures) {
         printf("FAIL: %d of %d checks on the Crypto Kit's primitives\n",
@@ -825,7 +935,10 @@ int main(void)
     printf("PASS: %d checks on the Crypto Kit's primitives against their "
            "specifications' vectors (SHA-256, HMAC-SHA-256, ChaCha20, "
            "Poly1305, X25519, DES, the generator, and SMB's MD4, NTLM, "
-           "HMAC-MD5, AES-CMAC, SP 800-108 KDF and AES-CCM - AES by %s)\n",
-           checks, aes_used);
+           "HMAC-MD5, AES-CMAC, SP 800-108 KDF and AES-CCM; the AES-CCM "
+           "door against Wycheproof: %d sealed with 256-bit keys, %d forgeries "
+           "refused and zeroed, %d of sizes it does not take refused - AES "
+           "by %s)\n",
+           checks, ccm_sealed_256, ccm_refused, ccm_outside, aes_used);
     return 0;
 }

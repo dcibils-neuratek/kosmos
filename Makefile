@@ -819,6 +819,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/crypto/crypto_kosmos.c \
              user/kits/crypto/md4.c \
              user/kits/crypto/cmac.c \
+             user/kits/crypto/ccm.c \
              user/kits/crypto/kdf.c \
              user/init/lua_glue.c \
              user/init/sys_user.c \
@@ -1406,8 +1407,10 @@ $(UBUILD)/runtime/upstream/bearssl/%.c.o: runtime/upstream/bearssl/%.c $(UFLAGS_
 	@mkdir -p $(dir $@)
 	$(CC) $(BEARSSL_IFLAGS) $(UCFLAGS) $(BEARSSL_CFLAGS) -MMD -MP -c $< -o $@
 
-# The Crypto Kit's AES-CMAC and SP 800-108 KDF, on BearSSL's AES and HMAC.
-$(UBUILD)/user/kits/crypto/cmac.c.o $(UBUILD)/user/kits/crypto/kdf.c.o: $(UBUILD)/%.c.o: %.c $(UFLAGS_FILE)
+# The Crypto Kit's AES-CMAC, AES-CCM and SP 800-108 KDF, on BearSSL's AES,
+# CCM and HMAC.
+$(UBUILD)/user/kits/crypto/cmac.c.o $(UBUILD)/user/kits/crypto/ccm.c.o \
+$(UBUILD)/user/kits/crypto/kdf.c.o: $(UBUILD)/%.c.o: %.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(BEARSSL_IFLAGS) $(UCFLAGS) -MMD -MP -c $< -o $@
 
@@ -1925,7 +1928,8 @@ $(HOSTDIR)/test_clock: tools/test_clock.c user/init/clock_user.c tools/stubs/clo
 # as `test_crypto_x86`, where it is AES-NI: the kit chooses, and the two
 # runs are its two choices.
 TEST_CRYPTO_SRCS := tools/test_crypto.c user/kits/crypto/crypto.c \
-                    user/kits/crypto/md4.c user/kits/crypto/cmac.c user/kits/crypto/kdf.c
+                    user/kits/crypto/md4.c user/kits/crypto/cmac.c user/kits/crypto/ccm.c \
+                    user/kits/crypto/kdf.c
 TEST_CRYPTO_BEARSSL := $(addprefix runtime/upstream/bearssl/src/, \
                     aead/ccm.c mac/hmac.c hash/md5.c hash/sha2small.c \
                     symcipher/aes_common.c symcipher/aes_ct64.c \
@@ -1933,20 +1937,25 @@ TEST_CRYPTO_BEARSSL := $(addprefix runtime/upstream/bearssl/src/, \
                     symcipher/aes_x86ni.c symcipher/aes_x86ni_ctrcbc.c) \
                     $(wildcard runtime/upstream/bearssl/src/codec/*.c)
 
-$(HOSTDIR)/test_crypto: $(TEST_CRYPTO_SRCS) $(TEST_CRYPTO_BEARSSL) user/include/crypto.h
+# Wycheproof's AES-CCM vectors, as shipped, made a header (K1).
+$(HOSTDIR)/aes_ccm_vectors.h: tools/vectors/wycheproof/aes_ccm_test.json tools/wycheproof2c.py
+	@mkdir -p $(dir $@)
+	python3 tools/wycheproof2c.py $< $@
+
+$(HOSTDIR)/test_crypto: $(TEST_CRYPTO_SRCS) $(TEST_CRYPTO_BEARSSL) user/include/crypto.h $(HOSTDIR)/aes_ccm_vectors.h
 	@mkdir -p $(dir $@)
 	@rm -rf $@.o && mkdir -p $@.o
 	cd $@.o && $(HOST_CC) -O1 -w -I$(CURDIR)/runtime/upstream/bearssl/inc \
 	        -I$(CURDIR)/runtime/upstream/bearssl/src -c $(addprefix $(CURDIR)/,$(TEST_CRYPTO_BEARSSL))
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/include $(BEARSSL_IFLAGS) -o $@ \
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/include -I$(HOSTDIR) $(BEARSSL_IFLAGS) -o $@ \
 	        $(TEST_CRYPTO_SRCS) $@.o/*.o
 
-$(HOSTDIR)/test_crypto_x86: $(TEST_CRYPTO_SRCS) $(TEST_CRYPTO_BEARSSL) user/include/crypto.h
+$(HOSTDIR)/test_crypto_x86: $(TEST_CRYPTO_SRCS) $(TEST_CRYPTO_BEARSSL) user/include/crypto.h $(HOSTDIR)/aes_ccm_vectors.h
 	@mkdir -p $(dir $@)
 	@rm -rf $@.o && mkdir -p $@.o
 	cd $@.o && $(HOST_CC) -arch x86_64 -O1 -w -I$(CURDIR)/runtime/upstream/bearssl/inc \
 	        -I$(CURDIR)/runtime/upstream/bearssl/src -c $(addprefix $(CURDIR)/,$(TEST_CRYPTO_BEARSSL))
-	$(HOST_CC) -arch x86_64 -std=c11 -Wall -Wextra -Werror -O1 -Iuser/include $(BEARSSL_IFLAGS) -o $@ \
+	$(HOST_CC) -arch x86_64 -std=c11 -Wall -Wextra -Werror -O1 -Iuser/include -I$(HOSTDIR) $(BEARSSL_IFLAGS) -o $@ \
 	        $(TEST_CRYPTO_SRCS) $@.o/*.o
 
 #
