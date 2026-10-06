@@ -1100,7 +1100,15 @@ receiving emails". Assessed, not designed:
   a kit for a message's HTML - reused rather than a third engine, with
   scripts off and remote pictures not fetched until asked, which is what
   a mail client owes its reader's privacy - or Write's setting with the
-  HTML simplified to what it draws. The design settles it.
+  HTML simplified to what it draws. **Decided by Diego the same day**: "i
+  agree that kosmos email should use the browser native html rendering as
+  most emails is html", "If the email is NOT html we can show regular text
+  using the kosmos write engine". So a message's HTML is drawn by the
+  browser's engine as a kit - scripts never run, remote pictures fetched
+  only when asked - and a plain-text one is set by Write's engine, wrapped
+  to the window, its links pressable and its quoted lines shown as
+  quotes; a message with both is shown as HTML, with the text a switch
+  away.
 - **Designed before it is written**, the four documents, with made-up
   messages in the mockup - never a real mailbox.
 
