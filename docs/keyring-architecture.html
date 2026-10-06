@@ -1,0 +1,408 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  The keyring and Passwords, and what they stand on, as one picture: the
+  applications on top - Passwords, Connect to Server, Tracker - the
+  namespace and the launcher beneath them, the keyring server marked new,
+  smbfs and diskfs changed, the Crypto Kit's one AEAD door, the USB driver,
+  the loader and Nebula, and the disk and the firmware at the bottom. Two
+  paths drawn through it: signing into a remembered share (S) and deleting
+  an entry in Passwords (D). And beside them, which door each process
+  holds, and what the key on the machine protects. Drawn on 6 October
+  2026, before any of it is built; `docs/keyring.md` is the argument and
+  `docs/keyring.html` the windows.
+
+  Rendered to docs/keyring-architecture.png by headless Chrome at twice its
+  size, as docs/stack.png is:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --disable-gpu --screenshot=docs/keyring-architecture.png \
+      --window-size=1800,H --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/keyring-architecture.html
+
+  where H is the page's height, which the script at the end puts in the
+  title.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos keyring architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --user: #e9f4ef; --user-line: #9fd4c1; --user-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --drv: #fdf6dc; --drv-line: #e2cf7f; --drv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --metal: #f1f0eb; --metal-line: #cfcdc4; --metal-ink: #444441;
+
+    --new: #2a55c9; --changed: #b7780b; --elsewhere: #6d6a60;
+    --path-s: #d81b60; --path-d: #00838f;
+    --door: #8e24aa;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1800px; background: var(--paper); color: var(--ink); position: relative;
+         font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 44px; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
+  header h1 { font-size: 40px; font-weight: 600; letter-spacing: -0.5px; }
+  header h1 span { color: var(--dim); font-weight: 400; }
+  header p { color: var(--dim); font-size: 16px; text-align: right; }
+
+  .legend { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; font-size: 14px; color: var(--dim); }
+  .legend .k { display: inline-flex; align-items: center; gap: 8px; }
+  .swatch-card { width: 34px; height: 20px; border-radius: 5px; background: #fff; border: 1px solid #cfcdc4; display: inline-block; }
+  .swatch-card.new { border: 2px solid var(--new); }
+  .swatch-card.later { border: 1.5px dashed #a9a69c; opacity: 0.7; }
+  .pathkey { width: 40px; height: 0; border-top: 4px solid; display: inline-block; border-radius: 2px; }
+
+  .band { display: grid; grid-template-columns: 250px 1fr; gap: 18px; padding: 16px 18px;
+          border-radius: 14px; border: 1px solid; margin-bottom: 10px; }
+  .band .label h2 { font-size: 21px; font-weight: 600; line-height: 1.2; }
+  .band .label p { font-size: 13.5px; margin-top: 6px; }
+  .tag { display: inline-block; font: 500 11.5px/1 "Plex", sans-serif; letter-spacing: 0.6px;
+         padding: 4px 7px; border-radius: 5px; margin-top: 8px; margin-right: 4px; }
+
+  .cards { display: grid; gap: 10px; align-content: start; }
+  .card { position: relative; z-index: 1; background: #fff; border: 1px solid; border-radius: 10px; padding: 10px 12px; }
+  .card h3 { font-size: 15.5px; font-weight: 600; margin-bottom: 3px; padding-right: 70px; }
+  .card h3 code { font-weight: 400; color: var(--dim); font-size: 12.5px; margin-left: 6px; }
+  .card p { font-size: 13.5px; color: var(--ink); }
+  .card p + p { margin-top: 4px; }
+  .card .files { font: 12px/1.5 "Plex Mono", Menlo, monospace; color: var(--dim); margin-top: 4px; }
+  code, .mono { font-family: "Plex Mono", Menlo, monospace; font-size: 0.92em; }
+
+  .user  { background: var(--user); border-color: var(--user-line); }
+  .user  .label h2, .user .label p { color: var(--user-ink); }
+  .user  .card { border-color: var(--user-line); }
+  .clang { background: var(--c); border-color: var(--c-line); }
+  .clang .label h2, .clang .label p { color: var(--c-ink); }
+  .clang .card { border-color: var(--c-line); }
+  .drv   { background: var(--drv); border-color: var(--drv-line); }
+  .drv   .label h2, .drv .label p { color: var(--drv-ink); }
+  .drv   .card { border-color: var(--drv-line); }
+  .kern  { background: var(--kern); border-color: var(--kern-line); }
+  .kern  .label h2, .kern .label p { color: var(--kern-ink); }
+  .kern  .card { border-color: var(--kern-line); }
+  .metal { background: var(--metal); border-color: var(--metal-line); }
+  .metal .label h2, .metal .label p { color: var(--metal-ink); }
+  .metal .card { border-color: var(--metal-line); }
+
+  .t-lua { background: #cfeee2; color: var(--user-ink); }
+  .t-c   { background: #f7d9bf; color: var(--c-ink); }
+  .t-el0 { background: #ffffff; color: var(--dim); border: 1px solid #d8d6ce; }
+  .t-el1 { background: #ddd8f8; color: var(--kern-ink); }
+  .t-fw  { background: #e6e4dc; color: var(--metal-ink); }
+
+  .card.new { border: 2px solid var(--new) !important; }
+  .card.later { border: 1.5px dashed #a9a69c !important; background: #f7f6f2; }
+  .card.later h3, .card.later p { color: var(--dim); }
+  .mark { display: inline-block; font: 600 10.5px/1 "Plex", sans-serif; letter-spacing: 0.7px; padding: 3px 6px;
+          border-radius: 4px; color: #fff; vertical-align: 2px; margin-left: 6px; }
+  .mark.new { background: var(--new); }
+  .mark.changed { background: var(--changed); }
+  .mark.later { background: #8d8a80; }
+  .plus { color: var(--changed); font-weight: 500; }
+  .big h3 { font-size: 19px; }
+
+  /* A door: what a process holds, drawn as a small purple tab. */
+  .door { display: inline-block; font: 500 11.5px/1 "Plex Mono", monospace; color: var(--door);
+          border: 1.5px solid var(--door); border-radius: 4px; padding: 2px 5px; margin-right: 3px; background: #fbf3fd; }
+
+  .divider { display: grid; grid-template-columns: 250px 1fr; gap: 18px; align-items: center; margin: 16px 0 16px; }
+  .divider .rule { border-top: 2px dashed #a9a69c; }
+  .divider .label { font-weight: 600; font-size: 17px; color: var(--metal-ink); }
+  .divider .what { font-size: 14px; color: var(--dim); margin-top: 8px; }
+
+  .stops { position: absolute; right: 8px; top: -11px; display: flex; gap: 4px; z-index: 3; }
+  .stop { width: 30px; height: 22px; border-radius: 11px; display: grid; place-items: center; color: #fff;
+          font: 600 12px/1 "Plex", sans-serif; box-shadow: 0 0 0 2px #fff; }
+  .stop.s { background: var(--path-s); }
+  .stop.d { background: var(--path-d); }
+  #paths { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 0; }
+  .divider .what, .band .label { position: relative; z-index: 1; }
+
+  .side { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+  .side .card { border-color: #d8d6ce; padding: 14px 16px; }
+  .side .card.spath { border: 2px solid var(--path-s); }
+  .side .card.dpath { border: 2px solid var(--path-d); }
+  .steps { display: grid; grid-template-columns: 34px 1fr 230px; gap: 6px 10px; margin-top: 8px; font-size: 13.5px; align-items: baseline; }
+  .steps .s { font-weight: 600; }
+  .spath .steps .s { color: var(--path-s); }
+  .dpath .steps .s { color: var(--path-d); }
+  .steps .ms { color: var(--dim); font-size: 13px; }
+  .steps .ms b { color: var(--ink); font-weight: 600; }
+  .sum { margin-top: 10px; padding-top: 8px; border-top: 1px solid #e4e2da; font-size: 13.5px; }
+
+  .tables { display: grid; grid-template-columns: 1fr 1.25fr; gap: 12px; margin-top: 12px; }
+  .tables .card { border-color: #d8d6ce; padding: 14px 16px; }
+  .tables .card.doors { border: 2px solid var(--door); }
+  table { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 13.5px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e4e2da; vertical-align: top; }
+  th { font-weight: 600; font-size: 13px; color: var(--dim); }
+  td.no { color: #a33b2f; font-weight: 500; }
+  td.yes { color: #2d7a3e; font-weight: 500; }
+
+  .notes4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
+  .notes4 .card { border-color: #d8d6ce; }
+  footer { margin-top: 18px; color: var(--dim); font-size: 13px; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>The keyring and Passwords <span>- before they are built</span></h1>
+  <p>Designed 6 October 2026 · nothing here is built<br>docs/keyring.md · docs/keyring.html</p>
+</header>
+
+<div class="legend">
+  <span class="k"><span class="swatch-card"></span>used as it is</span>
+  <span class="k"><span class="mark changed" style="margin:0">+</span>gains something</span>
+  <span class="k"><span class="swatch-card new"></span>new</span>
+  <span class="k"><span class="swatch-card later"></span>later step</span>
+  <span class="k"><span class="door">door</span>a capability: only its holders can send through it</span>
+  <span class="k"><span class="pathkey" style="border-color:var(--path-s)"></span><b style="color:var(--path-s)">S</b>&nbsp;signing into a remembered share</span>
+  <span class="k"><span class="pathkey" style="border-color:var(--path-d)"></span><b style="color:var(--path-d)">D</b>&nbsp;deleting an entry in Passwords</span>
+</div>
+
+<!-- ============================ The applications ============================ -->
+<section class="band user">
+  <div class="label">
+    <h2>Applications</h2>
+    <p>Passwords lists and deletes and never sees a secret. Connect to Server holds no keyring door at all.</p>
+    <span class="tag t-lua">LUA</span><span class="tag t-el0">EL0</span>
+    <p class="mono">/Kosmos/Apps</p>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.6fr 1.2fr 1fr 1fr">
+    <div class="card new big" id="c-pw"><div class="stops"><span class="stop d">D1</span></div><h3>Passwords <code>passwords.lua</code><span class="mark new">NEW · K6</span></h3>
+      <p>Kinds, a list with search and sort, the entry: account, address, the secret as dots, created, modified, where it is used, notes. Edit a title and notes; Delete&hellip; with a confirmation. <b>No Show.</b></p>
+      <p><span class="door">manage</span> from its launcher - only because it lives in <code>/Kosmos/Apps</code></p></div>
+    <div class="card" id="c-connect"><div class="stops"><span class="stop s">S1</span></div><h3>Connect to Server <code>connect.lua</code><span class="mark changed">+ K5</span></h3>
+      <p><span class="plus">+ "Remember in this machine's keyring", real and on; "Remembered: signs in as diego" in place of the fields; Connect when Kosmos starts</span></p></div>
+    <div class="card"><h3>Tracker <code>netshares.lua</code><span class="mark changed">+ K5</span></h3>
+      <p><span class="plus">+ a key beside a remembered server; pressing it signs in with no window</span></p></div>
+    <div class="card later"><h3>Wi-Fi · browser · mail<span class="mark later">LATER</span></h3>
+      <p>Each a kind and a door of its own, designed with its user</p></div>
+  </div>
+</section>
+
+<!-- ============================ The namespace ============================ -->
+<section class="band user">
+  <div class="label">
+    <h2>The namespace and the launcher</h2>
+    <p>Kits each process runs for itself. The launcher is where a door is handed down, or not.</p>
+    <span class="tag t-lua">LUA</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.3fr 1.3fr 1fr">
+    <div class="card" id="c-ns"><div class="stops"><span class="stop s">S2</span><span class="stop d">D2</span></div><h3>The namespace <code>init.lua</code><span class="mark changed">+ K6</span></h3>
+      <p><code>fs.share_connect</code> as today, through <code>/Network</code>'s second capability. <span class="plus">+ <code>/Devices/keyring</code> and <code>fs.keyring_list</code>, <code>forget</code>, <code>edit</code>, <code>state</code> - <code>keyproto.h</code> packed with <code>string.pack</code>, as <code>fs.share_*</code> are</span></p></div>
+    <div class="card"><h3>The launcher <code>init.lua</code><span class="mark changed">+ K6</span></h3>
+      <p><span class="plus">+ <code>kosmos: needs keyring</code> honoured <b>only for a file it reads from <code>/Kosmos/Apps</code></b>; the same word in <code>/Home</code> is handed nothing.</span> A program cannot pass a door it never held, so a forged <code>from</code> gains nothing</p></div>
+    <div class="card"><h3>The runner</h3>
+      <p>Says a program's file once, before its first line - the path it was <i>asked</i> to run, in a namespace its parent built. <b>Not an identity</b>: K4's suite forges it</p></div>
+  </div>
+</section>
+
+<!-- ================================ Servers ================================ -->
+<section class="band clang">
+  <div class="label">
+    <h2>Servers, in C</h2>
+    <p>The keyring answers by which door a request came through. A thread a door forwards to one thread that holds every entry.</p>
+    <span class="tag t-c">C</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.75fr 1.1fr 1.1fr">
+    <div class="card new big" id="c-keyring"><div class="stops"><span class="stop s">S4</span><span class="stop d">D3</span></div><h3>the keyring <code>keyring.c · keyfile.c · keyproto.h</code><span class="mark new">NEW · K2, K4</span></h3>
+      <p><b>Doors, not names.</b> <span class="door">smb</span> smbfs alone: get, put, list, forget - kind SMB only. <span class="door">manage</span> Passwords: list without secrets, forget, edit. A request on the wrong door is <code>KEY_ERR_NOT_THIS_DOOR</code>; no operation on <code>manage</code> answers a secret.</p>
+      <p>Entries in memory, the whole file sealed with <b>AES-256-CCM</b> and written whole at each change. <code>SYS_SENDER</code> asked on each request <i>for the record</i> - "last used by smbfs" - never to decide. A file that does not open is kept aside, never overwritten.</p>
+      <p class="files">ROLE_KEYRING · started after diskfs, before smbfs · handed smb, manage, the /Keyring door, the console</p></div>
+    <div class="card" id="c-smbfs"><div class="stops"><span class="stop s">S3</span></div><h3>smbfs<span class="mark changed">+ K5</span></h3>
+      <p>Keeps the <b>NT hash</b>, never the password. <span class="plus">+ <span class="door">smb</span>; PROBE says the account remembered; CONNECT with no password GETs it; PUTs only <b>after the server accepts</b>; at start, connects entries marked so</span></p>
+      <p>An entry is bound to its address: no "sign into X with Y's"</p></div>
+    <div class="card" id="c-diskfs"><div class="stops"><span class="stop d">D5</span></div><h3>diskfs<span class="mark changed">+ K3</span></h3>
+      <p><span class="plus">+ every program's door held to <code>/Home</code>; a second door rooted at <code>/Keyring</code>, the keyring's alone</span>. A file replaced whole under the journal: the old keyring or the new, never half</p></div>
+  </div>
+</section>
+
+<!-- ================================ Kits ================================ -->
+<section class="band clang">
+  <div class="label">
+    <h2>Kits, in C</h2>
+    <p>One AEAD door, where there were two copies of the same setup.</p>
+    <span class="tag t-c">C</span><span class="tag t-el0">EL0</span>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.4fr 1fr 1fr">
+    <div class="card" id="c-crypto"><div class="stops"><span class="stop d">D4</span></div><h3>Crypto Kit <code>user/kits/crypto/ · crypto.h</code><span class="mark changed">+ K1</span></h3>
+      <p><span class="plus">+ <code>crypto_aes_ccm_seal</code> / <code>_open</code>, 16- or 32-byte keys, over BearSSL's CCM and <code>crypto_aes_ctrcbc()</code></span> - held to RFC 3610 and Wycheproof's 256-bit vectors before anything uses it. The key: 32 bytes of its generator, seeded by <code>SYS_ENTROPY</code></p></div>
+    <div class="card"><h3>SMB Kit <code>smb_crypto.c</code><span class="mark changed">+ K1</span></h3>
+      <p><span class="plus">+ <code>aes128ccm_encrypt</code> / <code>_decrypt</code> call the kit's door</span> and <code>ccm_start</code> goes: one CCM in the tree</p></div>
+    <div class="card later"><h3>A password stretched<span class="mark later">K9</span></h3>
+      <p>PBKDF2-HMAC-SHA256 on the kit's HMAC, or Argon2id gained - only if a lock is ever wanted</p></div>
+  </div>
+</section>
+
+<!-- ================================ Drivers ================================ -->
+<section class="band drv">
+  <div class="label">
+    <h2>Drivers, and the loader</h2>
+    <p>Where the key leaves the stick, if Diego says so.</p>
+    <span class="tag t-c">C</span><span class="tag t-el0">EL0</span><span class="tag t-fw">UEFI</span>
+  </div>
+  <div class="cards" style="grid-template-columns: 1fr 1.3fr">
+    <div class="card later"><h3>USB driver <code>/Devices/blocks</code><span class="mark later">K7</span></h3>
+      <p>Its read door is every program's and reads any sector of a stick - the boot stick's Kosmos partition too. It refuses that one partition, so <code>/Keyring</code> is no more readable underneath than through diskfs</p></div>
+    <div class="card later"><h3>The loader <code>boot/efi/</code><span class="mark later">K8 · DIEGO'S</span></h3>
+      <p>Reads the UEFI variable <code>KosmosKeyring</code> - boot services only, in the machine's flash - or makes it from the firmware's RNG, and hands the 32 bytes in the boot information. After <code>ExitBootServices</code> nothing on the machine reads it again</p></div>
+  </div>
+</section>
+
+<!-- =========================== The boundary ============================= -->
+<div class="divider">
+  <div><div class="label">System calls</div></div>
+  <div><div class="rule"></div><div class="what">Everything here is a message: one entry a reply, a secret of 16 to 128 bytes once at a sign-in. Nothing recurs on a clock, so nothing needs a region.</div></div>
+</div>
+
+<!-- ============================== Nebula ================================ -->
+<section class="band kern">
+  <div class="label">
+    <h2>Nebula</h2>
+    <p>Threads, address spaces, IPC and capabilities. It does not know what a secret is, and does not learn.</p>
+    <span class="tag t-c">C</span><span class="tag t-el1">EL1</span>
+    <p class="mono">kernel/</p>
+  </div>
+  <div class="cards" style="grid-template-columns: repeat(4, 1fr)">
+    <div class="card"><h3>Capabilities</h3><p><b>The doors are this.</b> An endpoint reaches only its holders; init hands <span class="door">smb</span> to smbfs and <span class="door">manage</span> down the launchers</p><p class="files">process.c caps.c</p></div>
+    <div class="card"><h3>IPC</h3><p>One round trip a GET: 19 us on the M700, beside an SMB sign-in of several on the wire</p><p class="files">ipc.c</p></div>
+    <div class="card"><h3><code>SYS_SENDER</code></h3><p><code>id</code>, <code>parent</code>, <code>name</code> (anything it said), <code>from</code> (the runner's word). <b>For the record only</b>: none of it tells smbfs from a program wanting to be it</p><p class="files">syscall.c process.c</p></div>
+    <div class="card later"><h3><code>SYS_BOOT_SECRET</code><span class="mark later">K8</span></h3><p>The loader's 32 bytes, answered once - to init, before anything else runs - and zeroed. Carried, like the command line, not understood</p></div>
+  </div>
+</section>
+
+<!-- ============================== The machine ============================== -->
+<section class="band metal">
+  <div class="label">
+    <h2>The machine</h2>
+    <p>Where the file and the key are, and the far end a hash signs into.</p>
+  </div>
+  <div class="cards" style="grid-template-columns: 1.3fr 1.1fr 1fr">
+    <div class="card" id="c-disk"><div class="stops"><span class="stop d">D6</span></div><h3>The disk <code>/Keyring</code>, beside <code>/Home</code></h3>
+      <p><code>keyring</code> - sealed whole: magic, version, key place, key id, nonce, entries, tag. <code>machine-key</code> - 32 random bytes, until K8. <b>Not in <code>/Home</code></b>: a copy of <code>/Home</code> carries nothing</p></div>
+    <div class="card later"><h3>The firmware's flash<span class="mark later">K8</span></h3>
+      <p>A key per machine, so the ThinkPad and the M700 each open their own keyring on one stick. A firmware reset loses it - kept aside, said, never deleted</p></div>
+    <div class="card" id="c-mac"><div class="stops"><span class="stop s">S5</span></div><h3>The Mac's File Sharing</h3>
+      <p>Takes NTLMv2's answer, made from the NT hash - which is <b>password-equivalent for NTLM</b>, and is why it is kept as a password would be</p></div>
+  </div>
+</section>
+
+<!-- =========================== The two paths ============================ -->
+<div class="side">
+  <div class="card spath"><h3 style="padding-right:0">S - signing into a remembered share, no password typed</h3>
+    <div class="steps">
+      <span class="s">S1</span><span>Connect to Server: the server answered, "Remembered: signs in as diego"; Connect</span><span class="ms">a press, painted at once</span>
+      <span class="s">S2</span><span><code>fs.share_connect</code>, the password field empty</span><span class="ms">one message to smbfs</span>
+      <span class="s">S3</span><span>smbfs: no password, so ask the keyring for <i>this</i> address's entry</span><span class="ms">bound to its address</span>
+      <span class="s">S4</span><span>the keyring, on <span class="door">smb</span>: the 16-byte hash, from memory</span><span class="ms"><b>19 us</b> on the M700</span>
+      <span class="s">S5</span><span>NTLMv2 from the hash; signed, sealed if asked</span><span class="ms">the wire's round trips</span>
+    </div>
+    <p class="sum"><b>Nothing waits on the keyring</b> that would not wait on the network anyway. A refused hash is said and asked again; the entry stays until a new one is accepted.</p></div>
+  <div class="card dpath"><h3 style="padding-right:0">D - deleting an entry in Passwords</h3>
+    <div class="steps">
+      <span class="s">D1</span><span>Delete&hellip;, the confirmation, Delete</span><span class="ms">the row gone at the press</span>
+      <span class="s">D2</span><span><code>fs.keyring_forget(id)</code></span><span class="ms">one message</span>
+      <span class="s">D3</span><span>the keyring, on <span class="door">manage</span>: the entry out of memory</span><span class="ms">microseconds</span>
+      <span class="s">D4</span><span>the whole file sealed again, a new nonce</span><span class="ms">~40 KB: well under 1 ms</span>
+      <span class="s">D5</span><span>written whole through the <code>/Keyring</code> door</span><span class="ms">a diskfs write, journalled</span>
+      <span class="s">D6</span><span>on the disk</span><span class="ms">old or new, never half</span>
+    </div>
+    <p class="sum"><b>No busiest path worth the name</b>: the keyring is asked a few times a day. A connected share stays open until it ends; the next sign-in asks.</p></div>
+</div>
+
+<div class="tables">
+  <div class="card doors"><h3 style="padding-right:0">Who holds which door</h3>
+    <table>
+      <tr><th>Process</th><th><span class="door">smb</span></th><th><span class="door">manage</span></th><th>/Keyring</th></tr>
+      <tr><td>smbfs</td><td class="yes">yes</td><td class="no">no</td><td class="no">no</td></tr>
+      <tr><td>Passwords, from <code>/Kosmos/Apps</code></td><td class="no">no</td><td class="yes">yes</td><td class="no">no</td></tr>
+      <tr><td>init, the shell, the desktop, launchers</td><td class="no">no</td><td class="yes">to pass on</td><td class="no">no</td></tr>
+      <tr><td>the keyring</td><td colspan="2">answers both</td><td class="yes">yes</td></tr>
+      <tr><td>any other program</td><td class="no">no</td><td class="no">no</td><td class="no">no</td></tr>
+    </table></div>
+  <div class="card"><h3 style="padding-right:0">What the key on the machine protects - Diego chose no password at boot</h3>
+    <table>
+      <tr><th>Who</th><th>Gets</th></tr>
+      <tr><td>a program on this machine</td><td class="yes">no secret, no list, no delete - the doors; it can open a remembered share, as it can a connected one</td></tr>
+      <tr><td>a copy of <code>/Home</code></td><td class="yes">nothing - the keyring is not in it</td></tr>
+      <tr><td>the stick, lost - before K8; QEMU's disk image</td><td class="no">everything: the key is beside the file</td></tr>
+      <tr><td>the stick, lost - after K8</td><td class="yes">nothing: the key is in the machine's flash</td></tr>
+      <tr><td>somebody at the keyboard</td><td class="no">every remembered sign-in; no password shown. A lock (K9) is the answer, if ever</td></tr>
+    </table></div>
+</div>
+
+<div class="notes4">
+  <div class="card"><h3>Doors, not names</h3><p><code>sender_info</code>'s <code>name</code> is what a process said, and <code>from</code> the runner's word in a namespace its parent built. A capability is the one thing a program cannot say it has.</p></div>
+  <div class="card"><h3>The hash, not the password</h3><p>smbfs keeps MD4 of the password and nothing else. It opens SMB on that Mac as well as the password would - and the Mac account's password is nowhere here.</p></div>
+  <div class="card"><h3>No Show</h3><p>A share's password is not kept to be shown. Other kinds show only behind a lock, which Diego decided against for now.</p></div>
+  <div class="card"><h3>The order</h3><p class="mono" style="font-size:12.5px">K1 AEAD door · K2 the file, on the Mac · K3 diskfs's door · K4 the keyring · K5 smbfs remembers · K6 Passwords · K7 sticks' sectors · K8 key in firmware · K9 a lock</p></div>
+</div>
+
+<footer>
+  <span>What you were not handed, you cannot reach - and a name is not a hand.</span>
+  <span>docs/keyring-architecture.html, drawn from docs/keyring.md</span>
+</footer>
+
+<svg id="paths" xmlns="http://www.w3.org/2000/svg"></svg>
+<script>
+(function () {
+  var svg = document.getElementById("paths");
+
+  function centre(label) {
+    var body = document.body.getBoundingClientRect();
+    var all = document.querySelectorAll(".stop");
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].textContent === label) {
+        var r = all[i].getBoundingClientRect();
+        return [r.left - body.left + r.width / 2, r.top - body.top + r.height / 2];
+      }
+    }
+    return null;
+  }
+
+  function draw(prefix, count, colour, bend) {
+    var d = "";
+    for (var i = 1; i < count; i++) {
+      var a = centre(prefix + i), b = centre(prefix + (i + 1));
+      if (!a || !b) continue;
+      var dy = b[1] - a[1], dx = b[0] - a[0];
+      var c1 = [a[0] + bend, a[1] + dy * 0.35], c2 = [b[0] + bend, b[1] - dy * 0.35];
+      if (Math.abs(dy) < 40) { c1 = [a[0] + dx * 0.3, a[1] - 60]; c2 = [b[0] - dx * 0.3, b[1] - 60]; }
+      d += "M" + a[0] + "," + a[1] + " C" + c1[0] + "," + c1[1] + " " + c2[0] + "," + c2[1] + " " + b[0] + "," + b[1] + " ";
+    }
+    var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", d);
+    p.setAttribute("fill", "none");
+    p.setAttribute("stroke", colour);
+    p.setAttribute("stroke-width", "4.5");
+    p.setAttribute("stroke-linecap", "round");
+    p.setAttribute("opacity", "0.9");
+    svg.appendChild(p);
+  }
+
+  function go() {
+    svg.setAttribute("width", document.body.scrollWidth);
+    svg.setAttribute("height", document.body.scrollHeight);
+    var css = getComputedStyle(document.documentElement);
+    draw("S", 5, css.getPropertyValue("--path-s").trim(), 70);
+    draw("D", 6, css.getPropertyValue("--path-d").trim(), -70);
+    document.title = "Kosmos keyring architecture " + document.body.scrollHeight;
+  }
+
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(go); else go();
+})();
+</script>
+</body>
+</html>

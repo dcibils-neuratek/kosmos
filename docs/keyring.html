@@ -1,0 +1,654 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Passwords, and the keyring under it, drawn before any of it is built.
+
+  Diego, 6 October 2026: "actually we can do a keyring or password manager
+  app that holds all keys and passwords that kosmos uses", "a simple keyring
+  app that allows me to delete passwords i no longer want kept", "that is
+  what modern OSs like MacOS". docs/keyring.md is the design; this is its
+  windows.
+
+  Nothing here is built. The desktop is drawn at 1440 by 900 in the Night
+  look and scaled to the page, as docs/sharing.html draws it, whose page
+  structure and window chrome this copies. Every machine name, address,
+  account and date on it is made up. The pictures are the Haiku icons
+  Kosmos ships (assets/icons, MIT, their licence beside them); the key is
+  drawn here, since the set Kosmos ships has none.
+-->
+<title>Kosmos Passwords</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --accent: #2a55c9; --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* The look itself, dark whatever the page is: docs/sharing.html's Night. */
+    --d-wall: #070b14;
+    --d-strip-ink: #e8ecf4;
+    --d-surface-solid: #1e2636;
+    --d-side: #1a2130;
+    --d-raised: #2a3446;
+    --d-raised-2: #343f53;
+    --d-line: rgba(255, 255, 255, 0.08);
+    --d-ink: #e6eaf2;
+    --d-muted: #a3adbf;
+    --d-accent: #a8c7fa;
+    --d-accent-ink: #0a1b38;
+    --d-dock: rgba(34, 42, 58, 0.82);
+    --d-live: #7fd08f;
+    --d-warn: #f2b45a;
+    --d-stop: #ff9a8c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+      --rule: #283241; --accent: #85a8ff; --card: #171e28;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+    --rule: #283241; --accent: #85a8ff; --card: #171e28;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 1100px; margin: 0 auto; padding: 44px 16px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 42px)/1.1 var(--display); margin: 0 0 12px; text-wrap: balance; }
+  h2 { font: 600 24px/1.2 var(--display); margin: 48px 0 10px; text-wrap: balance; }
+  p, li { max-width: 70ch; }
+  p { margin: 0 0 12px; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 66ch; }
+  code { font: 0.88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+  .said { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; color: var(--muted); font-style: italic; margin: 16px 0; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin: 22px 0 12px; }
+  .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--rule); border-radius: 22px; overflow: hidden; background: var(--card); }
+  .seg button { font: 500 14px var(--body); color: var(--ink); background: none; border: 0; padding: 7px 16px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .label { font: 500 13px var(--mono); color: var(--muted); letter-spacing: 0.02em; }
+  .caption { color: var(--muted); font-size: 14.5px; margin: 10px 0 0; min-height: 3em; }
+
+  /* The desktop: 1440 by 900, scaled to whatever width the page has. */
+  .frame { width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--rule); background: #000; }
+  .stage { position: relative; width: 1440px; height: 900px; transform-origin: 0 0; }
+  .shell { position: relative; overflow: hidden; }
+  .desk {
+    position: absolute; inset: 0; overflow: hidden; color: var(--d-ink);
+    font: 14px/1.4 var(--body);
+    background:
+      radial-gradient(1100px 520px at 108% 2%, rgba(255, 170, 60, 0.55), transparent 55%),
+      radial-gradient(900px 600px at 102% 30%, rgba(255, 70, 120, 0.35), transparent 60%),
+      conic-gradient(from 200deg at 96% 64%, #091226 0deg, #12306e 40deg, #1f6fd1 70deg,
+                     #39d0ff 92deg, #f6e36b 104deg, #ff8a3d 116deg, #091226 150deg, #070b14 360deg),
+      var(--d-wall);
+  }
+  .strip { position: absolute; left: 0; right: 0; top: 0; height: 32px; display: flex; align-items: center; padding: 0 18px; color: var(--d-strip-ink); font: 500 14px var(--body); }
+  .strip .when { display: flex; gap: 10px; }
+  .strip .when b { font-weight: 600; }
+  .strip .status { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+  .strip .pillnet { background: rgba(255, 255, 255, 0.14); border-radius: 999px; padding: 1px 9px; font-size: 12.5px; }
+  .glyph { width: 16px; height: 16px; display: inline-block; }
+
+  .dock { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); height: 64px; padding: 0 10px; display: flex; align-items: center; gap: 4px; background: var(--d-dock); border-radius: 22px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--d-line); }
+  .kbutton { height: 42px; padding: 0 16px; border-radius: 999px; background: #2f3a50; display: flex; align-items: center; gap: 8px; color: var(--d-ink); font: 600 15px var(--body); margin-right: 4px; }
+  .kmark { width: 22px; height: 22px; border-radius: 50%; background: conic-gradient(#f4d36b 0 25%, #ff7a59 0 50%, #7aa7ff 0 75%, #4fd1a5 0); position: relative; }
+  .kmark::after { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: inherit; filter: brightness(0.25); }
+  .sep { width: 1px; height: 30px; background: rgba(255, 255, 255, 0.18); margin: 0 6px; }
+  .app { position: relative; width: 50px; height: 50px; display: grid; place-items: center; border-radius: 14px; }
+  .app img { width: 36px; height: 36px; }
+  .app.run::after { content: ""; position: absolute; bottom: 2px; left: 50%; width: 6px; height: 4px; transform: translateX(-50%); border-radius: 2px; background: var(--d-muted); }
+  .app.front::after { width: 16px; background: var(--d-accent); }
+  .keyapp { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: linear-gradient(160deg, #f6d36b, #d9962b); color: #3d2600; }
+  .keyapp svg { width: 22px; height: 22px; }
+
+  /* Which windows each state shows. */
+  .st { display: none; }
+  .s-list .st.pw, .s-confirm .st.pw, .s-confirm .st.confirm,
+  .s-remember .st.tk, .s-remember .st.remember,
+  .s-remembered .st.tk, .s-remembered .st.remembered,
+  .s-locked .st.locked { display: block; }
+  .s-remember .dk-pw, .s-remembered .dk-pw { display: none; }
+
+  /* A window in the look. */
+  .win { position: absolute; background: var(--d-surface-solid); border-radius: 18px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--d-line); overflow: hidden; display: grid; grid-template-rows: 40px 1fr; }
+  .tbar { display: flex; align-items: center; gap: 10px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--d-line); }
+  .tbar img { width: 22px; height: 22px; }
+  .tbar .keyapp { width: 22px; height: 22px; border-radius: 6px; }
+  .tbar .keyapp svg { width: 14px; height: 14px; }
+  .tbar .name { font: 500 14.5px var(--body); }
+  .tbar .file { color: var(--d-muted); }
+  .three { margin-left: auto; display: flex; gap: 2px; }
+  .three span { width: 36px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--d-ink); font-size: 15px; }
+
+  /* Passwords: kinds, the list, the entry. */
+  .pw-win { left: 120px; top: 56px; width: 1200px; height: 748px; }
+  .pw-in { display: grid; grid-template-columns: 210px 350px 1fr; min-height: 0; }
+  .side { background: var(--d-side); border-right: 1px solid var(--d-line); padding: 0 10px 12px; overflow: hidden; }
+  .side-head { display: flex; align-items: center; height: 50px; padding: 0 2px; }
+  .side-head .t { flex: 1; text-align: center; font-weight: 600; }
+  .place { display: flex; align-items: center; gap: 11px; padding: 7px 10px; border-radius: 11px; white-space: nowrap; }
+  .place svg { width: 16px; height: 16px; flex: none; color: var(--d-muted); }
+  .place .sub { margin-left: auto; color: var(--d-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .place.on { background: var(--d-accent); color: var(--d-accent-ink); font-weight: 500; }
+  .place.on svg, .place.on .sub { color: var(--d-accent-ink); }
+  .place.later { color: #7d8799; }
+  .place.later .sub { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .hair { height: 1px; background: var(--d-line); margin: 9px 8px; }
+  .grp { padding: 2px 10px 4px; color: var(--d-muted); font: 600 11.5px var(--body); letter-spacing: 0.08em; text-transform: uppercase; }
+
+  .lst { display: grid; grid-template-rows: 58px 34px 1fr 32px; min-height: 0; border-right: 1px solid var(--d-line); }
+  .search { display: flex; align-items: center; gap: 8px; margin: 12px 12px 6px; padding: 7px 12px; border-radius: 10px; background: var(--d-raised); color: var(--d-muted); }
+  .search svg { width: 15px; height: 15px; flex: none; }
+  .search input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--d-ink); font: 14px var(--body); }
+  .search input::placeholder { color: var(--d-muted); }
+  .sortrow { display: flex; align-items: center; justify-content: space-between; padding: 0 16px; color: var(--d-muted); font-size: 12.5px; }
+  .drop { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 8px; background: var(--d-raised-2); color: var(--d-ink); font: 12.5px var(--body); border: 0; cursor: pointer; }
+  .drop svg { width: 11px; height: 11px; color: var(--d-muted); }
+  .rows { overflow: hidden; padding: 4px 8px; }
+  .row { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 12px; cursor: pointer; }
+  .row + .row { margin-top: 2px; }
+  .row:hover { background: rgba(255, 255, 255, 0.04); }
+  .row.on { background: rgba(168, 199, 250, 0.18); }
+  .row b { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row span { display: block; color: var(--d-muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row small { color: var(--d-muted); font-size: 11.5px; white-space: nowrap; }
+  .row.later b, .row.later span { color: #7d8799; }
+  .kindi { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: rgba(168, 199, 250, 0.16); color: var(--d-accent); }
+  .kindi svg { width: 18px; height: 18px; }
+  .kindi.wifi { background: rgba(127, 208, 143, 0.14); color: var(--d-live); }
+  .nomatch { color: var(--d-muted); font-size: 13px; padding: 18px 12px; text-align: center; }
+  .foot { display: flex; align-items: center; gap: 8px; padding: 0 16px; border-top: 1px solid var(--d-line); color: var(--d-muted); font-size: 12.5px; white-space: nowrap; }
+  .foot svg { width: 13px; height: 13px; color: var(--d-live); flex: none; }
+
+  .det { overflow: hidden; padding: 20px 26px; display: grid; align-content: start; gap: 14px; }
+  .dhead { display: flex; align-items: center; gap: 14px; }
+  .dhead .kindi { width: 54px; height: 54px; border-radius: 15px; }
+  .dhead .kindi svg { width: 28px; height: 28px; }
+  .dhead h3 { margin: 0; font: 600 21px var(--body); }
+  .dhead span { color: var(--d-muted); font-size: 13px; }
+  .dhead .acts { margin-left: auto; display: flex; gap: 8px; }
+  .pbtn { font: 500 13px var(--body); padding: 6px 13px; border-radius: 9px; background: var(--d-raised-2); color: var(--d-ink); white-space: nowrap; border: 0; cursor: pointer; }
+  .pbtn.go { background: var(--d-accent); color: var(--d-accent-ink); font-weight: 600; }
+  .pbtn.stop { color: var(--d-stop); }
+  .pbtn.del { background: #b8473b; color: #fff; font-weight: 600; }
+  .pbtn.off { color: #6c778b; cursor: default; }
+  .gl { font-weight: 600; font-size: 12.5px; margin: 0 0 -8px 4px; color: var(--d-muted); }
+  .group { background: var(--d-raised); border-radius: 16px; overflow: hidden; }
+  .rw { display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-top: 1px solid var(--d-line); min-height: 44px; }
+  .rw:first-child { border-top: 0; }
+  .rw .k { width: 150px; color: var(--d-muted); font-size: 13px; flex: none; }
+  .rw .v { flex: 1; min-width: 0; }
+  .rw .v small { display: block; color: var(--d-muted); font-size: 12px; line-height: 1.35; margin-top: 2px; }
+  .mono { font: 13px var(--mono); }
+  .dots { letter-spacing: 2px; font-size: 15px; }
+  .notes { color: var(--d-ink); font-size: 13.5px; }
+  .notes .caret { display: inline-block; width: 1.5px; height: 1.1em; background: var(--d-accent); vertical-align: -2px; margin-left: 1px; }
+  .toggle { width: 42px; height: 24px; border-radius: 999px; background: var(--d-accent); position: relative; flex: none; }
+  .toggle::after { content: ""; position: absolute; right: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--d-accent-ink); }
+  .toggle.off { background: #4a5468; }
+  .toggle.off::after { right: auto; left: 3px; background: #c6cdd9; }
+  .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(127, 208, 143, 0.16); color: var(--d-live); margin-left: 6px; }
+  .tag.away { background: rgba(242, 180, 90, 0.14); color: var(--d-warn); }
+  .tag.later { background: rgba(255, 255, 255, 0.08); color: var(--d-muted); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; }
+  .lives { font: 11px var(--mono); color: #7d8799; padding: 0 4px; }
+
+  /* A sheet in front: the delete confirmation, Connect to Server. */
+  .scrim { position: absolute; inset: 0; background: rgba(4, 8, 16, 0.5); }
+  .sheet { left: 470px; top: 230px; width: 500px; height: 316px; }
+  .sheet-in { padding: 22px 26px 22px; display: grid; gap: 12px; align-content: start; }
+  .sheet-in .ico-warn { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: rgba(255, 154, 140, 0.14); color: var(--d-stop); }
+  .sheet-in .ico-warn svg { width: 24px; height: 24px; }
+  .sheet-in h3 { margin: 0; font: 600 18px var(--body); }
+  .sheet-in p { margin: 0; color: var(--d-muted); font-size: 13.5px; line-height: 1.5; }
+  .sheet-in p b { color: var(--d-ink); font-weight: 500; }
+  .btnrow { display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; }
+
+  /* Tracker behind Connect to Server, drawn plainly. */
+  .tk-win { left: 140px; top: 58px; width: 1160px; height: 744px; }
+  .tk-in { display: grid; grid-template-columns: 250px 1fr; min-height: 0; }
+  .place.share { padding-left: 34px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; margin-left: auto; }
+  .dot.live { background: var(--d-live); }
+  .dot.none { background: #5a6478; }
+  .place svg.keyed { margin-left: auto; color: var(--d-warn); width: 15px; height: 15px; }
+  .place svg.keyed + .dot { margin-left: 8px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 18px; align-content: start; }
+  .sv { background: var(--d-raised); border-radius: 18px; padding: 14px 16px; display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: center; }
+  .sv img { width: 40px; height: 40px; }
+  .sv b { display: block; font-weight: 600; }
+  .sv span { color: var(--d-muted); font-size: 12.5px; display: block; line-height: 1.35; }
+
+  .dlg { left: 460px; top: 120px; width: 520px; height: 600px; }
+  .dlg-in { padding: 16px 20px 18px; display: grid; gap: 10px; align-content: start; }
+  .lbl { color: var(--d-muted); font-size: 12.5px; margin-bottom: -4px; }
+  .field { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 10px; background: var(--d-raised); font: 14px var(--mono); }
+  .field.focus { box-shadow: 0 0 0 2px var(--d-accent); }
+  .field.plain { font-family: var(--body); }
+  .caret { display: inline-block; width: 1.5px; height: 1.1em; background: var(--d-accent); vertical-align: -2px; }
+  .small { color: var(--d-muted); font-size: 12.5px; }
+  .answered { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px; background: rgba(127, 208, 143, 0.12); font-size: 13px; }
+  .answered svg { width: 16px; height: 16px; color: var(--d-live); flex: none; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .chk { display: flex; align-items: flex-start; gap: 9px; font-size: 13.5px; }
+  .chk i { width: 18px; height: 18px; border-radius: 5px; background: var(--d-accent); color: var(--d-accent-ink); display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 700; flex: none; margin-top: 1px; }
+  .chk small { display: block; color: var(--d-muted); font-size: 12px; line-height: 1.4; }
+  .kept { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--d-raised); }
+  .kept .kindi { width: 38px; height: 38px; background: linear-gradient(160deg, #f6d36b, #d9962b); color: #3d2600; }
+  .kept b { display: block; font-weight: 600; }
+  .kept span { display: block; color: var(--d-muted); font-size: 12.5px; }
+  .kept .lnk { margin-left: auto; color: var(--d-accent); font-size: 13px; white-space: nowrap; }
+
+  /* Locked: the later step, drawn so it can be said no to. */
+  .lock-win { left: 120px; top: 56px; width: 1200px; height: 748px; }
+  .lock-in { display: grid; place-items: center; }
+  .lock-card { width: 440px; text-align: center; }
+  .lock-card .big { width: 76px; height: 76px; border-radius: 22px; margin: 0 auto 14px; display: grid; place-items: center; background: linear-gradient(160deg, #f6d36b, #d9962b); color: #3d2600; }
+  .lock-card .big svg { width: 38px; height: 38px; }
+  .lock-card h3 { margin: 0 0 6px; font: 600 22px var(--body); }
+  .lock-card p { color: var(--d-muted); font-size: 13.5px; margin: 0 auto 16px; max-width: 34ch; }
+  .lock-card .field { text-align: left; margin-bottom: 12px; }
+  .lock-card .later-note { margin-top: 18px; border-left: 3px solid var(--d-warn); padding: 4px 0 4px 10px; color: var(--d-muted); font-size: 12.5px; text-align: left; }
+  .lock-card .later-note b { color: var(--d-warn); }
+
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14.5px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font: 600 14px var(--display); }
+  ul.feats { padding-left: 20px; } ul.feats li { margin: 5px 0; }
+  .decide { display: grid; gap: 14px; margin-top: 12px; }
+  .q { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 18px; }
+  .q h3 { margin: 0 0 6px; font: 600 17px var(--body); }
+  .q p:last-child { margin-bottom: 0; }
+  .q .rec { color: var(--muted); }
+  .q .rec b { color: var(--ink); }
+  @media (max-width: 640px) { .seg button { padding: 7px 12px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Passwords</h1>
+  <p class="lede">What Kosmos remembers, so nothing is typed twice: a list of it, each entry with what it is and where it is used, and a
+  delete that says what follows. And under it the keyring, a server that hands each secret only to what signs in with it.
+  Drawn on 6 October 2026 for Diego to change. Nothing here is built.</p>
+  <p class="said">&ldquo;that would be better so i dont have to type the password all the time but at the same time i have a simple keyring
+  app that allows me to delete passwords i no longer want kept&rdquo; - Diego, 6 October 2026</p>
+
+  <div class="controls" role="group" aria-label="What the desktop shows">
+    <span class="label">STATE</span>
+    <div class="seg">
+      <button type="button" data-state="list" aria-pressed="true">Passwords</button>
+      <button type="button" data-state="confirm" aria-pressed="false">Delete&hellip;</button>
+      <button type="button" data-state="remember" aria-pressed="false">Remember</button>
+      <button type="button" data-state="remembered" aria-pressed="false">Remembered</button>
+      <button type="button" data-state="locked" aria-pressed="false">Locked (later)</button>
+    </div>
+  </div>
+
+  <div class="frame"><div class="shell" id="shell"><div class="stage" id="stage"><div class="desk s-list" id="desk">
+
+    <div class="strip">
+      <div class="when"><b>10:24</b><span>Tuesday 6 October</span></div>
+      <div class="status">
+        <span class="pillnet">192.168.1.40</span>
+        <svg class="glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6.5a9 9 0 0 1 12 0M4.2 9a6 6 0 0 1 7.6 0M6.4 11.4a2.6 2.6 0 0 1 3.2 0"/></svg>
+        <svg class="glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6h3l4-3v10l-4-3H2z"/><path d="M11.5 5.5a4 4 0 0 1 0 5"/></svg>
+      </div>
+    </div>
+
+    <!-- ===================================================== Passwords -->
+    <div class="st pw">
+    <div class="win pw-win">
+      <div class="tbar"><span class="keyapp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5.5" cy="8" r="3"/><path d="M8.5 8H15M12.5 8v2.5M14.5 8v2"/></svg></span><span class="name">Passwords</span>
+        <span class="three"><span>&#8212;</span><span>&#9633;</span><span>&#10005;</span></span></div>
+      <div class="pw-in">
+        <div class="side">
+          <div class="side-head"><div class="t">Passwords</div></div>
+          <div class="place on" data-kind="all"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5.5" cy="8" r="3"/><path d="M8.5 8H15M12.5 8v2.5"/></svg>All<span class="sub" id="n-all">4</span></div>
+          <div class="place" data-kind="smb"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h4l1.5 2H14v7H2z"/></svg>Shared folders<span class="sub">3</span></div>
+          <div class="place later" data-kind="wifi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6.5a9 9 0 0 1 12 0M4.2 9a6 6 0 0 1 7.6 0M6.4 11.4a2.6 2.6 0 0 1 3.2 0"/></svg>Wi-Fi<span class="sub">later</span></div>
+          <div class="hair"></div>
+          <div class="grp">This machine</div>
+          <div class="place" style="white-space:normal;align-items:flex-start"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-top:2px"><path d="M4 7h8v7H4zM5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg><span style="font-size:12.5px;color:var(--d-muted);line-height:1.4">Sealed, and opened with the machine: nothing is typed at boot.</span></div>
+        </div>
+
+        <div class="lst">
+          <div class="search"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><input id="q" type="search" placeholder="Search" aria-label="Search passwords"></div>
+          <div class="sortrow"><span id="count">4 kept</span>
+            <button class="drop" id="sort" type="button" aria-label="Sort">Last changed<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg></button></div>
+          <div class="rows" id="rows"></div>
+          <div class="foot"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7h8v7H4zM5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Sealed &middot; key kept by this machine</div>
+        </div>
+
+        <div class="det" id="det"></div>
+      </div>
+    </div>
+    </div>
+
+    <!-- ===================================================== Delete confirmation -->
+    <div class="st confirm">
+      <div class="scrim"></div>
+      <div class="win sheet">
+        <div class="tbar"><span class="keyapp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5.5" cy="8" r="3"/><path d="M8.5 8H15M12.5 8v2.5M14.5 8v2"/></svg></span><span class="name">Delete diego-mac (SMB)?</span></div>
+        <div class="sheet-in">
+          <div class="ico-warn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5h10v9H3zM6 5V3h4v2M2 5h12M6.5 7.5v4M9.5 7.5v4"/></svg></div>
+          <h3>Forget the password for diego on diego-mac?</h3>
+          <p><b>Projects</b> and <b>Music</b> stay open until they are disconnected or the machine stops. The next sign-in to
+          <b>smb://192.168.1.38</b> will ask for the password, and they will no longer be connected when Kosmos starts.</p>
+          <p>This cannot be undone. The Mac&rsquo;s own account is not changed.</p>
+          <div class="btnrow"><span class="pbtn">Cancel</span><span class="pbtn del">Delete</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================== Tracker, behind Connect to Server -->
+    <div class="st tk">
+    <div class="win tk-win">
+      <div class="tbar"><img src="../assets/icons/64x64/App_Tracker.png" alt=""><span class="name">Tracker</span><span class="file">Network</span>
+        <span class="three"><span>&#8212;</span><span>&#9633;</span><span>&#10005;</span></span></div>
+      <div class="tk-in">
+        <div class="side">
+          <div class="side-head"><div class="t">Files</div></div>
+          <div class="place"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7l6-5 6 5v7H2z"/></svg>Home</div>
+          <div class="place"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 2h7l3 3v9H3z"/></svg>Documents</div>
+          <div class="place"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 12V4l7-1v8"/><circle cx="4" cy="12" r="2"/><circle cx="11" cy="11" r="2"/></svg>Music</div>
+          <div class="hair"></div>
+          <div class="grp">Network</div>
+          <div class="place"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h12v8H2zM5 14h6M8 11v3"/></svg>diego-mac<svg class="keyed" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5.5" cy="8" r="2.6"/><path d="M8 8h6M12 8v2.2"/></svg><i class="dot none"></i></div>
+          <div class="place"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 2h10v12H3z"/><path d="M5.5 5h5M5.5 8h5"/></svg>Office NAS<svg class="keyed" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5.5" cy="8" r="2.6"/><path d="M8 8h6M12 8v2.2"/></svg><i class="dot live"></i></div>
+          <div class="place share"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h4l1.5 2H14v7H2z"/></svg>Scans</div>
+          <div class="place on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12"/></svg>All of the network</div>
+        </div>
+        <div class="grid">
+          <div class="sv"><img src="../assets/icons/64x64/App_Tracker.png" alt=""><div><b>diego-mac</b><span>Remembered &middot; not connected</span><span>192.168.1.38 &middot; SMB</span></div></div>
+          <div class="sv"><img src="../assets/icons/64x64/Device_Harddisk.png" alt=""><div><b>Office NAS</b><span>Connected &middot; Scans</span><span>192.168.1.20 &middot; SMB 3.1.1</span></div></div>
+          <div class="sv"><img src="../assets/icons/64x64/Prefs_Network.png" alt=""><div><b>Connect to Server&hellip;</b><span>Any address, typed</span></div></div>
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <!-- ===================================================== Connect to Server: remember -->
+    <div class="st remember">
+      <div class="scrim"></div>
+      <div class="win dlg">
+        <div class="tbar"><img src="../assets/icons/64x64/App_Tracker.png" alt=""><span class="name">Connect to Server</span>
+          <span class="three"><span>&#10005;</span></span></div>
+        <div class="dlg-in">
+          <div class="lbl">Server</div>
+          <div class="field">smb://192.168.1.38/Projects</div>
+          <div class="answered"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8.5l3 3 7-7"/></svg><span><b>192.168.1.38:445 answered</b> - SMB 3.1.1, signing required. Nothing remembered for it: sign in to open Projects.</span></div>
+          <div class="two">
+            <div style="display:grid;gap:10px"><div class="lbl">Name</div><div class="field plain">diego</div></div>
+            <div style="display:grid;gap:10px"><div class="lbl">Password</div><div class="field plain focus">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;<span class="caret"></span></div></div>
+          </div>
+          <div class="chk"><i>&#10003;</i><span>Remember in this machine&rsquo;s keyring<small>Kept once the Mac accepts it, as the NT hash the sign-in uses - never the password itself. Forgotten in Passwords.</small></span></div>
+          <div class="chk"><i>&#10003;</i><span>Connect when Kosmos starts</span></div>
+          <div class="small" style="margin-top:4px">The password goes to the SMB client once and is not kept by this window.</div>
+          <div class="btnrow"><span class="pbtn">Cancel</span><span class="pbtn go">Connect</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================== Connect to Server: remembered -->
+    <div class="st remembered">
+      <div class="scrim"></div>
+      <div class="win dlg" style="height:400px">
+        <div class="tbar"><img src="../assets/icons/64x64/App_Tracker.png" alt=""><span class="name">Connect to Server</span>
+          <span class="three"><span>&#10005;</span></span></div>
+        <div class="dlg-in">
+          <div class="lbl">Server</div>
+          <div class="field">smb://192.168.1.38/Projects</div>
+          <div class="answered"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8.5l3 3 7-7"/></svg><span><b>192.168.1.38:445 answered</b> - SMB 3.1.1, signing required.</span></div>
+          <div class="kept"><div class="kindi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5.5" cy="8" r="3"/><path d="M8.5 8H15M12.5 8v2.5M14.5 8v2"/></svg></div>
+            <div><b>Remembered: signs in as diego</b><span>From this machine&rsquo;s keyring &middot; last used yesterday</span></div>
+            <span class="lnk">Use another account&hellip;</span></div>
+          <div class="chk"><i>&#10003;</i><span>Connect when Kosmos starts</span></div>
+          <div class="small">No password asked. If the Mac&rsquo;s password has changed, it is said here and asked for once, and the entry is replaced only when the new one is accepted.</div>
+          <div class="btnrow"><span class="pbtn">Cancel</span><span class="pbtn go">Connect</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================== Locked, a later step -->
+    <div class="st locked">
+    <div class="win lock-win">
+      <div class="tbar"><span class="keyapp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5.5" cy="8" r="3"/><path d="M8.5 8H15M12.5 8v2.5M14.5 8v2"/></svg></span><span class="name">Passwords</span>
+        <span class="three"><span>&#8212;</span><span>&#9633;</span><span>&#10005;</span></span></div>
+      <div class="lock-in">
+        <div class="lock-card">
+          <div class="big"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 7h8v7H4zM5.5 7V5a2.5 2.5 0 0 1 5 0v2"/><circle cx="8" cy="10.5" r=".9" fill="currentColor"/></svg></div>
+          <h3>Passwords is locked</h3>
+          <p>Enter the keyring password to see and change what this machine remembers.</p>
+          <div class="field plain focus">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;<span class="caret"></span></div>
+          <span class="pbtn go">Unlock</span>
+          <div class="later-note"><b>Later, and only if chosen (K9).</b> Until then the keyring opens with the machine and nothing is
+          typed at boot - Diego&rsquo;s decision. With a lock, a lost stick holds nothing, and Show becomes possible for passwords that are kept as passwords.</div>
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <div class="dock">
+      <div class="kbutton"><span class="kmark"></span>Kosmos</div>
+      <div class="sep"></div>
+      <div class="app run" id="dk-tracker"><img src="../assets/icons/64x64/App_Tracker.png" alt=""></div>
+      <div class="app run front dk-pw"><span class="keyapp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5.5" cy="8" r="3"/><path d="M8.5 8H15M12.5 8v2.5M14.5 8v2"/></svg></span></div>
+      <div class="app run"><img src="../assets/icons/64x64/App_Terminal.png" alt=""></div>
+      <div class="app"><img src="../assets/icons/64x64/App_MediaPlayer.png" alt=""></div>
+      <div class="app"><img src="../assets/icons/64x64/App_NetSurf.png" alt=""></div>
+    </div>
+
+  </div></div></div></div>
+  <p class="caption" id="caption"></p>
+
+  <h2>What is drawn</h2>
+  <ul class="feats">
+    <li><b>Passwords.</b> Kinds down the side, the list with its search and sort in the middle, the entry on the right - macOS&rsquo;s
+    shape in Kosmos&rsquo;s look. <b>Click a row</b>, <b>type in Search</b> and <b>change the sort</b>: the drawing answers. The
+    secret is dots, with a sentence saying what is kept; there is no Show. Where it is used says who - smbfs - when and how often,
+    which shares and whether they connect at start. Notes are Diego&rsquo;s own. Sign in again&hellip; is how a changed password is
+    changed; Delete&hellip; asks first.</li>
+    <li><b>Delete&hellip;</b> The confirmation says what follows - what stays open, what will be asked next time, that the Mac&rsquo;s
+    account is untouched - rather than only &ldquo;Are you sure?&rdquo;.</li>
+    <li><b>Remember.</b> Connect to Server&rsquo;s switch, real now and on by default, with what it keeps said beside it. Nothing is
+    remembered until the Mac has accepted the password.</li>
+    <li><b>Remembered.</b> The next time, the server answers and the name and password fields are gone: &ldquo;Remembered: signs in
+    as diego&rdquo;, with Use another account&hellip; beside it. Tracker&rsquo;s Network group marks a remembered server with a key.</li>
+    <li><b>Locked, later.</b> What macOS&rsquo;s lock screen would be here - drawn so it can be said no to. Not in the first version:
+    Diego chose nothing typed at boot.</li>
+  </ul>
+  <p><b>Home Wi-Fi is drawn ahead.</b> Kosmos has no Wi-Fi yet; the entry shows what a kind that keeps a real password looks like,
+  and why it, unlike a share, could one day be shown.</p>
+
+  <h2>Who can reach what</h2>
+  <p>The keyring decides by <b>which door</b> a request came through, never by what the asker calls itself - the kernel&rsquo;s
+  <code>SYS_SENDER</code> names a process by what it said, and a program can say anything (<code>docs/keyring.md</code>, <i>Who is asking</i>).</p>
+  <div class="table-wrap"><table>
+    <tr><th>Door</th><th>Held by</th><th>May</th></tr>
+    <tr><td><code>smb</code></td><td>smbfs, from init, and nothing else</td><td>get, put, list and forget shares&rsquo; entries - no other kind</td></tr>
+    <tr><td><code>manage</code></td><td>Passwords, from <code>/Kosmos/Apps</code> only; the launchers, to pass it on</td><td>list without secrets, forget, edit a title and notes</td></tr>
+    <tr><td>diskfs&rsquo;s <code>/Keyring</code></td><td>the keyring alone</td><td>its two files; every program&rsquo;s door reaches only <code>/Home</code></td></tr>
+    <tr><td>none</td><td>every other program</td><td>nothing: no secret, no list, no delete</td></tr>
+  </table></div>
+
+  <h2>What the key on the machine buys, and what it does not</h2>
+  <p>Diego chose convenience knowingly, and the page says what it costs. <b>The doors are the protection on a running
+  machine</b>: no program can ask the keyring or read <code>/Keyring</code>. <b>The encryption protects only where the key is
+  not beside the file</b>: on a PC once the key is in the firmware (K8). Until then a lost stick, or QEMU&rsquo;s disk image,
+  holds the keyring and its key together, and gives up both.</p>
+
+  <h2>What is Diego&rsquo;s to decide</h2>
+  <div class="decide">
+    <div class="q"><h3>1. Passwords or Keyring</h3>
+      <p class="rec"><b>Passwords</b>: what a person looks for. The keyring is the server under it.</p></div>
+    <div class="q"><h3>2. Doors, not names</h3>
+      <p>A door each for smbfs and Passwords; <code>needs keyring</code> honoured only for a file in <code>/Kosmos/Apps</code>.</p>
+      <p class="rec"><b>Yes</b>, knowing that whatever runs inside a launcher holds <code>manage</code> too.</p></div>
+    <div class="q"><h3>3. Where the key lives</h3>
+      <p>On the disk behind diskfs&rsquo;s door now; on a PC, in a UEFI variable the loader reads (K8), which carries 32 bytes through Nebula once.</p>
+      <p class="rec"><b>The disk now, K8 after K7</b>, on machines that boot through Kosmos&rsquo;s loader.</p></div>
+    <div class="q"><h3>4. The NT hash, not the password</h3>
+      <p class="rec"><b>The hash</b>, as smbfs keeps it today: password-equivalent for NTLM, but the password itself nowhere here.</p></div>
+    <div class="q"><h3>5. No Show in the first version</h3>
+      <p class="rec"><b>As drawn</b>: a share&rsquo;s password is not kept to be shown; other kinds only behind a lock.</p></div>
+    <div class="q"><h3>6. AES-256-CCM through one door</h3>
+      <p class="rec"><b>CCM</b>, the AEAD the Crypto Kit already holds to its vectors, rather than the ChaCha20-Poly1305 <code>sharing.md</code> named.</p></div>
+    <div class="q"><h3>7. A remembered share is every program&rsquo;s</h3>
+      <p class="rec"><b>Accept for now</b>, as a connected share is today; a per-program <code>/Network</code> is per-launcher permissions&rsquo; job.</p></div>
+    <div class="q"><h3>8. Connect when Kosmos starts</h3>
+      <p class="rec"><b>On when Remember is ticked</b>, a switch in Connect to Server and in the entry.</p></div>
+    <div class="q"><h3>9. A lock, at all</h3>
+      <p class="rec"><b>On the roadmap as an option</b>, not built until it matters.</p></div>
+  </div>
+</main>
+
+<script>
+(function () {
+  var shell = document.getElementById("shell"), stage = document.getElementById("stage"), desk = document.getElementById("desk");
+  function fit() {
+    var s = shell.clientWidth / 1440;
+    stage.style.transform = "scale(" + s + ")";
+    shell.style.height = (900 * s) + "px";
+  }
+  window.addEventListener("resize", fit); fit();
+
+  var KEY = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 4h4l1.5 2H14v7H2z"/></svg>';
+  var WIFI = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 6.5a9 9 0 0 1 12 0M4.2 9a6 6 0 0 1 7.6 0M6.4 11.4a2.6 2.6 0 0 1 3.2 0"/></svg>';
+
+  // Made-up entries, never anybody's real ones. `changed` and `used` are
+  // minutes ago, for the sort.
+  var ENTRIES = [
+    { id: "mac", kind: "smb", title: "diego-mac (SMB)", account: "diego", service: "smb://192.168.1.38:445",
+      shares: "Projects, Music", atStart: true, state: "away", changed: 760, used: 1440,
+      created: "5 Oct 2026, 21:40", modified: "5 Oct 2026, 21:40", lastUsed: "yesterday, 10:12", uses: 14,
+      notes: "The Mac in the study." },
+    { id: "nas", kind: "smb", title: "Office NAS", account: "scanner", service: "smb://192.168.1.20:445",
+      shares: "Scans", atStart: true, state: "live", changed: 2880, used: 4,
+      created: "3 Oct 2026, 09:05", modified: "4 Oct 2026, 08:31", lastUsed: "today, 10:20", uses: 6,
+      notes: "Password changed on the 4th." },
+    { id: "lab", kind: "smb", title: "test-peer (SMB)", account: "kosmos", service: "smb://10.0.2.2:4450",
+      shares: "Kosmos", atStart: false, state: "off", changed: 10, used: 10,
+      created: "Today, 10:14", modified: "Today, 10:14", lastUsed: "today, 10:14", uses: 1,
+      notes: "" },
+    { id: "wifi", kind: "wifi", title: "Home Wi-Fi", account: "Casa-5G", service: "WPA2 Personal",
+      changed: 9000, used: 30, created: "drawn ahead", modified: "drawn ahead", lastUsed: "drawn ahead", uses: 0,
+      notes: "", later: true }
+  ];
+
+  var SORTS = [
+    ["Last changed", function (a, b) { return a.changed - b.changed; }],
+    ["Last used", function (a, b) { return a.used - b.used; }],
+    ["Title", function (a, b) { return a.title.localeCompare(b.title); }],
+    ["Kind", function (a, b) { return a.kind.localeCompare(b.kind) || a.title.localeCompare(b.title); }]
+  ];
+  var sortAt = 0, chosen = "mac", kind = "all";
+  var rows = document.getElementById("rows"), det = document.getElementById("det"), q = document.getElementById("q");
+  var sortBtn = document.getElementById("sort");
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function ago(m) { return m < 60 ? m + " min" : m < 1440 ? Math.round(m / 60) + " h" : Math.round(m / 1440) + " d"; }
+
+  function list() {
+    var text = q.value.trim().toLowerCase();
+    var shown = ENTRIES.filter(function (e) {
+      if (kind !== "all" && e.kind !== kind) return false;
+      if (!text) return true;
+      return [e.title, e.account, e.service, e.notes].join(" ").toLowerCase().indexOf(text) >= 0;
+    }).sort(SORTS[sortAt][1]);
+    document.getElementById("count").textContent = shown.length + (shown.length === 1 ? " kept" : " kept") + (text ? " matching" : "");
+    if (!shown.length) { rows.innerHTML = '<div class="nomatch">Nothing kept matches &ldquo;' + esc(q.value) + '&rdquo;.</div>'; return; }
+    if (!shown.some(function (e) { return e.id === chosen; })) chosen = shown[0].id;
+    rows.innerHTML = shown.map(function (e) {
+      return '<div class="row' + (e.id === chosen ? " on" : "") + (e.later ? " later" : "") + '" data-id="' + e.id + '">' +
+        '<div class="kindi' + (e.kind === "wifi" ? " wifi" : "") + '">' + (e.kind === "wifi" ? WIFI : KEY) + '</div>' +
+        '<div><b>' + esc(e.title) + '</b><span>' + esc(e.account) + '</span></div>' +
+        '<small>' + (sortAt === 1 ? ago(e.used) : ago(e.changed)) + '</small></div>';
+    }).join("");
+    rows.querySelectorAll(".row").forEach(function (r) { r.addEventListener("click", function () { chosen = r.dataset.id; list(); detail(); }); });
+    detail();
+  }
+
+  function detail() {
+    var e = ENTRIES.filter(function (x) { return x.id === chosen; })[0];
+    if (!e) { det.innerHTML = ""; return; }
+    var smb = e.kind === "smb";
+    var state = e.state === "live" ? '<span class="tag">connected</span>' : e.state === "away" ? '<span class="tag away">not connected</span>' : "";
+    det.innerHTML =
+      '<div class="dhead"><div class="kindi' + (smb ? "" : " wifi") + '">' + (smb ? KEY : WIFI) + '</div>' +
+        '<div><h3>' + esc(e.title) + (e.later ? '<span class="tag later">later</span>' : "") + '</h3><span>' + (smb ? "Shared folders &middot; SMB" : "Wi-Fi network") + '</span></div>' +
+        '<div class="acts">' + (smb ? '<span class="pbtn">Sign in again&hellip;</span>' : "") + '<span class="pbtn stop" data-del>Delete&hellip;</span></div></div>' +
+      '<div class="group">' +
+        '<div class="rw"><span class="k">' + (smb ? "Account" : "Network name") + '</span><span class="v">' + esc(e.account) + '</span></div>' +
+        '<div class="rw"><span class="k">Password</span><span class="v"><span class="dots">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</span>' +
+          (smb ? '<small>Kept as the NT hash the sign-in uses. The password itself is not kept, so it cannot be shown.</small>'
+               : '<small>Kept as typed. Shown only once a lock exists (later), never without one.</small>') + '</span></div>' +
+        '<div class="rw"><span class="k">' + (smb ? "Server" : "Security") + '</span><span class="v mono">' + esc(e.service) + '</span></div>' +
+      '</div>' +
+      '<div class="gl">Where it is used</div>' +
+      '<div class="group">' +
+        (smb ? '<div class="rw"><span class="k">By</span><span class="v">smbfs, the SMB client' + state + '<small>Last used ' + esc(e.lastUsed) + ' &middot; ' + e.uses + (e.uses === 1 ? " sign-in" : " sign-ins") + '</small></span></div>' +
+               '<div class="rw"><span class="k">Shares</span><span class="v">' + esc(e.shares) + '</span></div>' +
+               '<div class="rw"><span class="k">Connect at start</span><span class="v"><small style="margin:0">When Kosmos starts, without asking</small></span><div class="toggle' + (e.atStart ? "" : " off") + '"></div></div>'
+             : '<div class="rw"><span class="k">By</span><span class="v">the Wi-Fi driver<small>Kosmos has no Wi-Fi yet: this entry is drawn ahead.</small></span></div>') +
+      '</div>' +
+      '<div class="group">' +
+        '<div class="rw"><span class="k">Created</span><span class="v">' + esc(e.created) + '</span></div>' +
+        '<div class="rw"><span class="k">Modified</span><span class="v">' + esc(e.modified) + '</span></div>' +
+        '<div class="rw"><span class="k">Notes</span><span class="v notes">' + (e.notes ? esc(e.notes) : '<span style="color:var(--d-muted)">Add a note</span>') + (e.id === "mac" ? '<span class="caret"></span>' : "") + '</span></div>' +
+      '</div>' +
+      '<div class="lives">keyring &middot; /Keyring/keyring, sealed with AES-256-CCM &middot; key: this machine&rsquo;s</div>';
+    var d = det.querySelector("[data-del]");
+    if (d) d.addEventListener("click", function () { show("confirm"); });
+  }
+
+  q.addEventListener("input", list);
+  sortBtn.addEventListener("click", function () {
+    sortAt = (sortAt + 1) % SORTS.length;
+    sortBtn.firstChild.textContent = SORTS[sortAt][0];
+    list();
+  });
+  document.querySelectorAll(".pw-win [data-kind]").forEach(function (p) {
+    p.addEventListener("click", function () {
+      if (p.classList.contains("later")) return;
+      kind = p.dataset.kind;
+      document.querySelectorAll(".pw-win [data-kind]").forEach(function (o) { o.classList.toggle("on", o === p); });
+      list();
+    });
+  });
+
+  var CAPTIONS = {
+    list: "Passwords: what this machine remembers, the one chosen on the right. Click a row, search, change the sort. The password is dots and says what is kept; there is no Show.",
+    confirm: "Delete, asked first, saying what follows: what stays open, what is asked next time, and that the Mac's own account is not touched.",
+    remember: "Connect to Server, the first time. Remember is real now and on by default; the NT hash is kept only once the Mac accepts the password.",
+    remembered: "The next time: the server answers and no password is asked. Tracker's Network group marks a remembered server with a key.",
+    locked: "A lock, as macOS has - a later step, drawn so it can be said no to. Not in the first version: nothing is typed at boot."
+  };
+
+  function show(which) {
+    desk.className = "desk s-" + which;
+    document.querySelectorAll("[data-state]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.state === which)); });
+    document.getElementById("caption").textContent = CAPTIONS[which];
+    if (which === "confirm") { chosen = "mac"; q.value = ""; list(); }
+  }
+  document.querySelectorAll("[data-state]").forEach(function (b) { b.addEventListener("click", function () { show(b.dataset.state); }); });
+  list();
+  // A state can be named in the address - keyring.html#remembered - so
+  // each one can be linked to and rendered.
+  var asked = location.hash.slice(1);
+  show(CAPTIONS[asked] ? asked : "list");
+})();
+</script>
+</body>
+</html>
