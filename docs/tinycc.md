@@ -255,7 +255,7 @@ Each step its own revision and its own permanent test.
   `lua/patches/` is; built for the Mac as a cross compiler. *Test*, on the
   Mac: what was tried above, permanently - the loader's test kit compiled
   and linked by TinyCC, booted by `run_loader.py`, on both processors.
-- **C2 - the runtime and the headers in the image** (question 1's answer).
+- **C2 - the runtime and the headers on the disk**, `/Home/Developer` (decision 1). **Done, 0.11.27** (`testing.md` 18.426).
   *Test*: the archive's sum held to the build's; a stale one refused.
 - **C3 - the C Kit**, TinyCC built for Kosmos itself. *Test*: inside the
   machine, `apptest.c` built and its image run - the whole thing, on the
@@ -370,8 +370,17 @@ Answered the evening it was drawn: "1. a 2. a 3. yes 4. beside de sources
 in a build directory 5. tcc". **Where they differ from what is written
 above, they win.**
 
-1. **The runtime is in the system's image, compressed** - 7.8 MB more -
-   and unpacked into `/Temporary/tcc/` at the first build of a boot.
+1. **The runtime is on the disk, in `/Home/Developer`** - changed the same
+   evening. In the image it did not fit: the full userland is 34 MB of the
+   40 MB a process's image may take (`kernel/process.h`, `USER_HEAP_VA`),
+   and the pack is 7.8 MB compressed. Asked again with that said, Diego
+   chose the disk over moving Nebula's layout or rebuilding the data from
+   the system's copies. So `make install-apps` and a stick's `/Home` carry
+   it, as plain files TinyCC reads where they lie; **it carries the build's
+   protocol stamp**, and the C Kit refuses a pack from another build in
+   words that say so - "the developer files are from another Kosmos:
+   `make install-apps`" - rather than linking an image the system would
+   refuse.
 2. **C apps print first**; a small **Window Kit in C** is its own step
    after C6.
 3. **The templates as drawn**: Hello Window (Lua), Mandelbrot and Sum both

@@ -2990,12 +2990,45 @@ $(UBUILD)/tcc/apptest.o: user/kits/apptest/apptest.c $(TCC_HOST)/.built
 	@mkdir -p $(dir $@)
 	$(TCC) $(TCC_INC) -c $< -o $@
 
-$(UBUILD)/apps-tcc/apptest.elf: $(UBUILD)/tcc/head.o $(UBUILD)/tcc/runtime.o \
-                                $(UBUILD)/tcc/apptest.o $(HOSTDIR)/tcc_stamp \
+#
+# **The developer files** (step C2, `/Home/Developer` - Diego's decision 1):
+# what TinyCC needs to build an image anywhere, and nothing else. The runtime
+# without its debugging information, which carries the build's protocol
+# stamp behind its marker, so the C Kit can refuse a pack from another build;
+# libgcc; the header slot; and the headers - TinyCC's own, the two GCC gives
+# Kosmos's build and TinyCC lacks, Lua's, the libc's and Kosmos's. Installed
+# by `make install-apps` and carried by a stick's `/Home` (`installed.py`).
+#
+DEV := $(UBUILD)/developer
+
+$(DEV)/.made: $(UBUILD)/tcc/runtime.o $(UBUILD)/tcc/head.o $(TCC_HOST)/.built \
+              $(wildcard user/kits/tcc/include/*.h runtime/include/*.h runtime/include/sys/*.h \
+                         user/include/*.h lua/upstream/*.h lua/kosmos/kosmos_lua.h)
+	@rm -rf $(DEV) && mkdir -p $(DEV)/include/sys $(DEV)/include/lua
+	$(OBJCOPY) --strip-debug $(UBUILD)/tcc/runtime.o $(DEV)/runtime.o
+	cp $(shell $(CC) -print-libgcc-file-name) $(DEV)/libgcc.a
+	cp $(UBUILD)/tcc/head.o $(DEV)/head.o
+	cp $(TCC_HOST)/include/*.h user/kits/tcc/include/*.h runtime/include/*.h \
+	   user/include/*.h lua/kosmos/kosmos_lua.h $(DEV)/include/
+	cp runtime/include/sys/*.h $(DEV)/include/sys/
+	cp lua/upstream/lua.h lua/upstream/luaconf.h lua/upstream/lauxlib.h \
+	   lua/upstream/lualib.h $(DEV)/include/
+	@grep -q "KOSMOS-PROTOSTAMP:" $(DEV)/runtime.o \
+	    || { echo "developer: the runtime carries no protocol stamp"; exit 1; }
+	@touch $@
+
+#
+# Linked from the developer files alone - its headers and nothing of the
+# tree's - so the test that runs it says the pack is enough.
+#
+$(UBUILD)/tcc/apptest-dev.o: user/kits/apptest/apptest.c $(DEV)/.made
+	$(TCC) -nostdinc -I$(DEV)/include -DKOSMOS_USER -include kosmos_lua.h -c $< -o $@
+
+$(UBUILD)/apps-tcc/apptest.elf: $(DEV)/.made $(UBUILD)/tcc/apptest-dev.o $(HOSTDIR)/tcc_stamp \
                                 $(UBUILD)/apps/doom.elf $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf
 	@mkdir -p $(dir $@)
-	$(TCC) -nostdlib -static -Wl,-Ttext=$(USER_BASE) -o $@ $(UBUILD)/tcc/head.o \
-	        $(UBUILD)/tcc/runtime.o $(UBUILD)/tcc/apptest.o $(shell $(CC) -print-libgcc-file-name)
+	$(TCC) -nostdlib -static -Wl,-Ttext=$(USER_BASE) -o $@ $(DEV)/head.o \
+	        $(DEV)/runtime.o $(UBUILD)/tcc/apptest-dev.o $(DEV)/libgcc.a
 	$(HOSTDIR)/tcc_stamp $@ $(USER_BASE)
 	@for a in doom quake snes; do ln -sf ../apps/$$a.elf $(dir $@)$$a.elf; done
 

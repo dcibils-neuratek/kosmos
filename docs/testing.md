@@ -20197,3 +20197,23 @@ linker has defined `_edata` - so the start code's loop cleared nothing,
 harmlessly and wrongly; the linker defines them now. And TinyCC's make does
 not rebuild its compiler when `tccelf.c` changes, which is why the build
 here makes a fresh copy every time the source or the patch changes.
+
+## 18.426 The developer files (TinyCC C2)
+
+**Diego's decision 1 changed the same evening.** The runtime in the system's
+image did not fit: the full userland is 34 MB of the 40 MB a process's
+image may take (`kernel/process.h`), and the pack is 7.8 MB compressed - of
+whose 21 MB, 17 are four generated tables, the libraries, assets, fonts and
+programs. Asked again with that said, Diego chose **the disk**.
+
+So `make apps` makes `developer/` - the runtime without debugging
+information (21 MB, carrying its build's protocol stamp behind its marker,
+which the build checks is there), libgcc, `head.o` and 63 headers, 29 MB -
+and `installed.py`'s new list puts it in `/Home/Developer` for `make
+install-apps` and a stick's `/Home`. The QEMU disk has room: 70 MB of its
+128 were free.
+
+**The test kit is now linked from the pack alone** - compiled with
+`-nostdinc` and the pack's headers, linked with the pack's runtime, head and
+libgcc - so `arm-tcc` and `x86-tcc` passing (14 checks each) says the pack is
+enough to build a Kosmos image from, on either processor.

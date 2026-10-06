@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""What the build installs into /Home/Apps and /Home/Fonts, as
+"""What the build installs into /Home/Apps, /Home/Fonts and /Home/Developer, as
 `host:/Home/path` pairs.
 
     python3 tools/installed.py aarch64 ~/Kosmos/home
@@ -110,11 +110,37 @@ def fonts():
             for name, _, _, _ in fetch_fonts.FILES]
 
 
+def developer(arch):
+    """What TinyCC builds an image from, into /Home/Developer (`docs/tinycc.md`,
+    step C2, Diego's decision 1): the lean userland's runtime, libgcc, the
+    header slot and the headers, as `make apps` leaves them in `developer/`.
+    The runtime carries its build's protocol stamp, which the C Kit holds a
+    build to; so this is installed from the same build as the system."""
+    folder = os.path.join(ROOT, "build", "user-x86_64" if arch == "x86_64" else "user",
+                          "developer")
+
+    if not os.path.isfile(os.path.join(folder, ".made")):
+        sys.exit("installed: no %s - `make apps` (and ARCH=x86_64) makes it" % folder)
+
+    out = []
+
+    for here, _, files in os.walk(folder):
+        for name in sorted(files):
+            if name.startswith("."):
+                continue
+
+            path = os.path.join(here, name)
+            out.append("%s:/Home/Developer/%s" % (path, os.path.relpath(path, folder)))
+
+    return sorted(out)
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit("usage: installed.py <aarch64|x86_64> [home folder]")
 
-    for pair in pairs(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None) + fonts():
+    for pair in (pairs(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
+                 + fonts() + developer(sys.argv[1])):
         print(pair)
 
 
