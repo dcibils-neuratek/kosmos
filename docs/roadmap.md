@@ -1020,6 +1020,45 @@ thin end:
   QEMU cannot hold an audio track, so CD audio is held by a host test on
   sectors captured from a real disc, and heard on a real drive.
 
+**WANTED, not scheduled - Maps, a native application after Apple's.**
+Diego, 6 October 2026, with a picture of Apple Maps: "add a maps app to the
+roadmap taking inspiration from the apple maps one", "there are many
+openmap services available to grab the data from like openstreetmap and
+else", "The app should be lightweight and cant use the browser engine, i
+want a native app that draws directly so its speedy and clean". Assessed,
+not designed:
+- **The window**, after Apple's: the map filling it, a sidebar of places -
+  search, Pinned, Saved, Recently viewed, Recents - zoom, a compass, the
+  scale bar, the map's own labels for streets, parks, water and places,
+  and a dark look and a light one. A direct window that draws its own
+  pixels, as Write and the browser do, and nothing of the browser's engine.
+- **The data, OpenStreetMap's, as vector tiles** rather than pictures: each
+  tile the shapes and names of a piece of the world (Mapbox Vector Tile,
+  protobuf), drawn here at any zoom and angle, sharp on any screen, and a
+  fraction of a picture's bytes. From a public source whose terms allow an
+  application's use - OpenFreeMap or Protomaps' tiles, or a single
+  PMTiles file of a region kept on the disk for use with no network at
+  all - and OpenStreetMap's attribution always on the map. Raster tiles
+  from openstreetmap.org itself are not an option for an application: its
+  tile policy refuses heavy use. Search from Nominatim or Photon within
+  their terms; routes, later, from OSRM or Valhalla.
+- **What it needs from the system, as kits** (the premise: does another
+  application want this? does something already supply it?): a **Map
+  Kit** in C - a tile's protobuf decoded, its polygons filled, its lines
+  stroked anti-aliased at their widths, labels placed along lines and
+  kept from colliding - on the gfx kit's surfaces, never a pixel in Lua;
+  tiles fetched over HTTPS through the TLS Kit and kept in a cache under
+  `/Home`; and gfx's anti-aliased paths and text on a curve, which the
+  3D Kit, Write's shapes and Cafesa3D could share. Lua for the window:
+  what a person does - pan, zoom, search, pin.
+- **The busiest path**: a drag, the map redrawn every frame - the visible
+  tiles already decoded into the shapes the Map Kit draws, kept, so a
+  frame is drawing and never decoding or fetching, as nothing on the
+  desktop waits on the network.
+- **Designed before it is written**, the four documents (`CLAUDE.md`): its
+  feature set, the mockup, the architecture and the diagram - with no
+  real person's places in the mockup.
+
 **WANTED, not scheduled - sharing files over the network, both ways.**
 Diego, 5 October 2026: "Add to the roadmap the need for a network file
 sharing server and client", "Perhaps SMB? Samba in Linux for example".
