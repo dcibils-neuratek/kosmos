@@ -326,13 +326,18 @@ def listening():
         return False
 
 
-def start(dialect, sign, seal):
+def start(dialect, sign, seal, changed=False):
     os.makedirs(STATE, exist_ok=True)
     stop()
     make_share()
     conf = config(dialect, sign, seal)
     user = getpass.getuser()
     secret = password()
+
+    # **Changed** (`keyring.md`, K5): the account's password is no longer the
+    # one a client remembered - the usual one with "-changed" after it.
+    if changed:
+        secret += "-changed"
 
     # The account, in this state's own passdb: Samba run as the user can only
     # serve as the user, so the test account is the user's name with a
@@ -370,6 +375,8 @@ def main():
     ap.add_argument("--dialect", default="3.1.1", choices=sorted(DIALECTS))
     ap.add_argument("--sign", action="store_true")
     ap.add_argument("--seal", action="store_true")
+    ap.add_argument("--changed", action="store_true",
+                    help="start with the account's password changed")
     ap.add_argument("--instance", default=None)
     ap.add_argument("--port", type=int, default=PORT)
     ap.add_argument("--listen", default=None,
@@ -383,7 +390,7 @@ def main():
         STATE = os.path.join(BASE, "instances", args.instance)
 
     if args.what == "start":
-        start(args.dialect, args.sign, args.seal)
+        start(args.dialect, args.sign, args.seal, args.changed)
     elif args.what == "stop":
         print("smbpeer: stopped" if stop() else "smbpeer: was not running")
     elif args.what in ("pause", "resume"):

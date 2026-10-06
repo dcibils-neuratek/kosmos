@@ -30,6 +30,20 @@
 #define SHARE_OP_SHARES      67u    /* a server's shares, offered and connected (N6) */
 #define SHARE_OP_DISCONNECT  68u    /* let a server go, and forget it */
 #define SHARE_OP_RETRY       69u    /* Try now: a server away, signed into again now */
+#define SHARE_OP_REMEMBERED  70u    /* the account the keyring keeps for an address, or "" */
+
+/*
+ * **Remember, and remembered** (`docs/keyring.md`, K5), in CONNECT's
+ * `flags`. `SHARE_REMEMBER`: once the server accepts the sign-in - and only
+ * then - its password goes to the keyring, with the account, the share and
+ * "connect when Kosmos starts". A CONNECT with **no password** signs in with
+ * the one the keyring keeps for that address and account, and one with no
+ * account too takes the account the keyring keeps there. `SHARE_AT_START`
+ * is smbfs's own, for the shares it connects when it starts: such a server
+ * is tried again, as one that went away is, while the network comes up.
+ */
+#define SHARE_REMEMBER       1u
+#define SHARE_AT_START       2u
 
 /*
  * **smbfs's own threads, and nobody else.** A waiter - one a server
@@ -41,9 +55,10 @@
  */
 #define SHARE_OP_WAITER      96u
 
-/* What PROBE, CONNECT, DISCONNECT, RETRY and SHARES carry, in `u.data`. `password` crosses
- * once, in CONNECT, as a keystroke does; smbfs keeps its NT hash and never
- * the password (step N8 names a keyring entry instead). */
+/* What PROBE, CONNECT, DISCONNECT, RETRY, SHARES and REMEMBERED carry, in
+ * `u.data`. `password` crosses once, in CONNECT, as a keystroke does; smbfs
+ * keeps its NT hash while connected, and the password itself only until the
+ * server accepts it, when it is asked to remember it (K5). */
 #define SHARE_ADDRESS_MAX    48u    /* "192.168.1.38:445", or a name and a port */
 #define SHARE_NAME_MAX       40u    /* a share, or the name a server gives */
 #define SHARE_ACCOUNT_MAX    32u
@@ -112,6 +127,7 @@ struct share_server {
 #define SHARE_ERR_NOT_KEPT   69u    /* RETRY of a server not kept to sign into again */
 #define SHARE_ERR_NOT_IN     70u    /* SHARES of a server not signed into */
 #define SHARE_ERR_NO_LIST    71u    /* SHARES: the server would not list them */
+#define SHARE_ERR_NOT_REMEMBERED 72u /* no password, and the keyring keeps none for it */
 
 /*
  * **A server's shares** (step N6): what Connect to Server offers once a

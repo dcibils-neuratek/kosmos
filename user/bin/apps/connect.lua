@@ -11,8 +11,10 @@
 --
 -- **As the mockup draws it**: the server's address, the recent ones, what
 -- the server answered, a name and a password, "Remember in this machine's
--- keyring" - drawn and not yet offered, since there is no keyring until
--- step N8 - and Cancel and Connect.
+-- keyring" - ticked, as Diego decided (`docs/keyring.md`, K5) - and Cancel
+-- and Connect. **A server remembered** says so once it answers, fills the
+-- name in, and signs in with nothing typed: smbfs takes the password from
+-- the keyring.
 --
 -- **The server answers before the password is asked for.** Typing an
 -- address and pausing asks smbfs to PROBE it, so a mistyped address is said
@@ -29,9 +31,11 @@
 --
 -- **The password field draws a bullet a character** (`ui.field`'s
 -- `secret`); what was typed crosses to smbfs once, in CONNECT, and the field
--- is emptied as it goes. smbfs keeps the NT hash, never the password, and
--- nothing here remembers it: the recent servers are addresses, shares and
--- accounts (`/Home/Preferences/sharing`, `netshares.lua`).
+-- is emptied as it goes. smbfs keeps the NT hash while connected, and the
+-- password only until the server takes it, when Remember is ticked - then
+-- the keyring keeps it, sealed. Nothing here keeps it: the recent servers
+-- are addresses, shares and accounts (`/Home/Preferences/sharing`,
+-- `netshares.lua`).
 --
 -- The Tracker that opened it goes to the share once it is connected; this
 -- window says so and closes.
@@ -98,10 +102,15 @@ local account = ui.field{ x = PAD, y = 0, w = half, text = "", hint = "name" }
 local password = ui.field{ x = PAD + half + GAP, y = 0, w = half, text = "",
                            secret = true, hint = "password" }
 
--- Drawn and not offered: there is no keyring until step N8.
+-- Ticked unless it is unticked: once the server takes the password, the
+-- keyring keeps it and the share connects when Kosmos starts (K5).
 local remember = ui.checkbox{ x = PAD, y = 0,
                               text = "Remember in this machine\u{2019}s keyring",
-                              disabled = true }
+                              checked = true }
+
+-- What the keyring keeps for the address that answered: its account, or
+-- false when nothing is; asked once an address, on the clock.
+local remembered = {}
 
 local cancel = ui.button{ text = "Cancel" }
 local go = ui.button{ text = "Connect", go = true }
@@ -128,8 +137,8 @@ local layout = {}
 
 local NOTE = "An address, or a name: 192.168.1.38, diego-mac. A share after "
              .. "the slash, or choose one once it answers."
-local KEYRING = "The keyring comes later: a password is asked at each "
-                .. "connection, and never kept."
+local KEYRING = "Kept sealed, and shown in Passwords. The share connects "
+                .. "when Kosmos starts."
 
 function place()
   local y = 16
@@ -278,7 +287,11 @@ function body:draw(g)
 
   dim(PAD, layout.names, "Name", "text")
   dim(PAD + half + GAP, layout.names, "Password", "text")
-  dim(PAD + 26, layout.keyring, KEYRING)
+  local server = netshares.split(address.text)
+  local who = server and remembered[server]
+
+  dim(PAD + 26, layout.keyring, who and ("Remembered: signs in as " .. who
+                                         .. " with nothing to type.") or KEYRING)
 end
 
 --------------------------------------------------------------------------
@@ -427,8 +440,12 @@ local function send(action)
   local signed = s and s.state == "connected" and s.account == action.account
   local secret = signed and "" or password.text
 
+  -- No password typed for an account remembered there: none is sent, and
+  -- smbfs signs in with the keyring's. Remember only what was typed.
+  local keep = remember.checked and secret ~= ""
+
   local ok, why = fs.share_connect(action.address, action.share or "",
-                                   action.account, secret)
+                                   action.account, secret, keep)
 
   -- The password has crossed, once; the field is emptied of it.
   password.text, password.caret = "", 1
@@ -532,9 +549,19 @@ local function probe_typed()
   elseif s.state == "answered" then
     local _, share = netshares.split(address.text)
 
-    say("answered", ("%s answered - SMB %s%s. Sign in to open %s."):format(
+    -- Remembered? Asked once, here on the clock, never in a paint.
+    if remembered[server] == nil then
+      remembered[server] = fs.share_remembered(server) or false
+
+      if remembered[server] and account.text == "" then
+        account.text = remembered[server]
+      end
+    end
+
+    say("answered", ("%s answered - SMB %s%s. %s %s."):format(
         server, tostring(s.dialect or "?"),
         s.signing and ", signing required" or "",
+        remembered[server] and "Connect to open" or "Sign in to open",
         share ~= "" and share or "it and choose a share"))
   else
     say("refused", s.why ~= "" and s.why or (server .. " did not answer"))

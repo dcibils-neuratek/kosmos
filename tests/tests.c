@@ -6241,6 +6241,127 @@ static bool test_endpoints_made_at_once_are_each_their_own(void)
 }
 
 /*
+ * **One core at a time splits the kernel's map** (`testing.md` 18.422).
+ *
+ * A new thread's stack has its guard page punched into the kernel's map,
+ * which splits the 2 MB block that page sits in. Two cores doing it to the
+ * same block at once could leave the second building its table from the
+ * first's descriptor - 512 pages mapped at the wrong addresses with the
+ * access flag clear - and every core that touched those two megabytes after
+ * died in a double fault. Found when three servers began starting threads at
+ * the same moment of boot (keyring K3-K5), in one gate of ninety-seven.
+ *
+ * So the race is run as it is, rather than hoped for: in each round every
+ * core unmaps its own page inside the same fresh block at the same moment,
+ * and then **every page of the block is read back from the map without being
+ * touched** - each unmapped one invalid, every other one mapping its own
+ * page. A corrupted split is a wrong address there, so the test fails
+ * rather than the machine. Each round spends four megabytes, held for good
+ * as guard pages are.
+ */
+#define SPLIT_ROUNDS  8
+#define SPLIT_BLOCK   (512u * PAGE_SIZE)
+
+static volatile unsigned split_go;
+static volatile unsigned split_done[NR_CPUS];
+static volatile uintptr_t split_base;
+
+static void split_one(unsigned c)
+{
+    mmu_unmap_page(split_base + (uintptr_t)(c + 1) * 7u * PAGE_SIZE);
+}
+
+static void splits_with_the_others(void *arg)
+{
+    unsigned c = (unsigned)(uintptr_t)arg;
+    unsigned round;
+
+    for (round = 1; round <= SPLIT_ROUNDS; round++) {
+        while (split_go < round) {
+            cpu_relax();
+        }
+
+        split_one(c);
+        split_done[c] = round;
+    }
+}
+
+static bool test_one_core_at_a_time_splits_the_kernels_map(void)
+{
+    unsigned online = smp_online();
+    unsigned cores = online < NR_CPUS ? online : NR_CPUS;
+    unsigned c, r, i, raced = 0;
+
+    if (online < 2) {
+        return true;            /* one processor; nothing to race */
+    }
+
+    split_go = 0;
+    for (c = 0; c < NR_CPUS; c++) {
+        split_done[c] = 0;
+    }
+
+    for (c = 1; c < cores; c++) {
+        if (thread_create_on(c, "splits", splits_with_the_others,
+                             (void *)(uintptr_t)c) == NULL) {
+            return false;
+        }
+    }
+
+    for (r = 1; r <= SPLIT_ROUNDS; r++) {
+        uintptr_t base = 0;
+        unsigned tries;
+
+        /* Two blocks' worth, so one whole block lies inside - and one that
+         * is still a block, which a fresh allocation high in RAM is. */
+        for (tries = 0; tries < 4 && base == 0; tries++) {
+            uintptr_t got = (uintptr_t)pmm_alloc_contiguous(1024);
+            uintptr_t aligned;
+
+            if (got == 0) {
+                return false;
+            }
+
+            aligned = (got + SPLIT_BLOCK - 1) & ~(uintptr_t)(SPLIT_BLOCK - 1);
+            base = mmu_page_entry(aligned) == NULL ? aligned : 0;
+        }
+
+        if (base == 0) {
+            return false;       /* no block left to split: nothing raced */
+        }
+
+        split_base = base;
+        raced++;
+        split_go = r;
+        split_one(0);           /* and this core, in the same moment */
+
+        if (!all_said(split_done, cores, r)) {
+            return false;
+        }
+
+        for (i = 0; i < 512; i++) {
+            uintptr_t va = base + (uintptr_t)i * PAGE_SIZE;
+            uint64_t *e = mmu_page_entry(va);
+            bool punched = i > 0 && i % 7 == 0 && i / 7 <= cores;
+
+            if (e == NULL) {
+                return false;   /* still a block, though every core split it */
+            }
+
+            /* Its own page: identity on AArch64, the direct map's on x86-64. */
+            if (punched ? (*e & 1) != 0
+                        : ((*e & 1) == 0
+                           || (*e & 0x0000fffffffff000UL) != virt_to_phys((void *)va))) {
+                return false;
+            }
+        }
+    }
+
+    /* The others' last round is over once they have said it. */
+    return raced > 0 && all_said(split_done, cores, SPLIT_ROUNDS);
+}
+
+/*
  * **A reference is taken only for the region it names** (`threads.md` step
  * 1).
  *
@@ -9834,6 +9955,7 @@ static const struct test tests[] = {
     { "mem: a reference is taken only for the region it names", test_a_reference_is_taken_only_for_the_region_it_names },
     { "proc: a refused image gives its slot back", test_a_refused_image_gives_its_slot_back },
     { "ipc: endpoints made at once are each their own", test_endpoints_made_at_once_are_each_their_own },
+    { "mmu: one core at a time splits the kernel's map", test_one_core_at_a_time_splits_the_kernels_map },
     { "mem: a region the size of Quake's pak",  test_memobj_holds_a_pak },
     { "mem: a region can be one physical run", test_a_region_can_be_one_physical_run },
     { "irq: a line is claimed, counted and given back",

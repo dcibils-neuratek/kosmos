@@ -98,7 +98,7 @@ void notify_server(long endpoint, long console);
 
 /* Shares over the network (`docs/sharing.md` step N2): its own endpoint,
  * the network stack's to connect through, and the console's. */
-void smbfs_server(long endpoint, long net, long console);
+void smbfs_server(long endpoint, long net, long console, long keyring);
 
 #define ROLE_AUDIO    16UL
 #define ROLE_DEVICES   9UL
@@ -789,7 +789,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_SMBFS) {
         named("smbfs");
-        smbfs_server(0, 1, 2);
+        smbfs_server(0, 1, 2, kosmos_cap_check(3) == 0 ? 3 : -1);
     }
 
     if (arg == ROLE_KEYRING) {

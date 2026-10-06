@@ -549,6 +549,14 @@ static void op_put(const struct key_request *rq, struct key_reply *rp)
     r = by_name(KEY_KIND_SMB, rq->entry.service, rq->entry.account);
     fresh = r == NULL;
 
+    /* No secret: what is kept about an entry there is - its shares, its
+     * title - and the password it has, kept (smbfs, a share connected on a
+     * session signed into from the keyring, holds no password to send). */
+    if (fresh && rq->secret_bytes == 0) {
+        rp->error = KEY_ERR_NONE;
+        return;
+    }
+
     if (fresh) {
         if (!grow(count + 1)) {
             rp->error = KEY_ERR_FULL;
@@ -573,9 +581,11 @@ static void op_put(const struct key_request *rq, struct key_reply *rp)
     memcpy(r->entry.shares, rq->entry.shares, sizeof r->entry.shares);
     r->entry.shares[sizeof r->entry.shares - 1] = '\0';
     r->entry.shares[sizeof r->entry.shares - 2] = '\0';
-    memset(r->secret, 0, sizeof r->secret);
-    memcpy(r->secret, rq->secret, rq->secret_bytes);
-    r->secret_bytes = rq->secret_bytes;
+    if (rq->secret_bytes > 0) {
+        memset(r->secret, 0, sizeof r->secret);
+        memcpy(r->secret, rq->secret, rq->secret_bytes);
+        r->secret_bytes = rq->secret_bytes;
+    }
 
     if (!save()) {
         if (fresh) {

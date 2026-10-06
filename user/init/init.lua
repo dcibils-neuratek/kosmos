@@ -2117,7 +2117,7 @@ local function new_namespace()
   --------------------------------------------------------------------------
 
   local SHARE_OP = { probe = 64, connect = 65, status = 66, shares = 67,
-                     disconnect = 68, retry = 69 }
+                     disconnect = 68, retry = 69, remembered = 70 }
   local SHARE_ASK = "<c48c40c32c256"
   local SHARE_SERVER = "<c48c40c40c32c152I4I2BBBBI2I4I8"
   local SHARE_SERVER_BYTES = 336
@@ -2265,7 +2265,7 @@ local function new_namespace()
     return r.secret
   end
 
-  local function share_call(op, ask, offset)
+  local function share_call(op, ask, offset, flags)
     local capability, why = share_at("/Network")
 
     if not capability then return nil, why end
@@ -2279,7 +2279,7 @@ local function new_namespace()
     end
 
     local raw, err = sys.call_raw(capability,
-                                  string.pack(DISK_REQUEST, SHARE_OP[op], 0,
+                                  string.pack(DISK_REQUEST, SHARE_OP[op], flags or 0,
                                               offset or 0, 0, #data, 0, "", data))
     data = nil
 
@@ -2295,7 +2295,7 @@ local function new_namespace()
     end
 
     return { more = more ~= 0, count = count, offset = next_at, blob = blob,
-             bytes = moved, size = size }
+             bytes = moved, size = size, length = length }
   end
 
   -- Does a server answer? Asked, and answered at once; `share_status`
@@ -2308,13 +2308,26 @@ local function new_namespace()
   end
 
   -- Sign in and connect to a share: begun, and answered at once.
-  function ns.share_connect(address, share, account, password)
+  -- `remember`: once the server takes the password, the keyring keeps it
+  -- (`keyring.md`, K5). No password: the one the keyring keeps; no account
+  -- either: the account it keeps for that address.
+  function ns.share_connect(address, share, account, password, remember)
     local r, why = share_call("connect", { address = address, share = share,
                                            account = account,
-                                           password = password })
+                                           password = password }, 0,
+                              remember and 1 or 0)
 
     if not r then return nil, why end
     return true
+  end
+
+  -- The account the keyring keeps for an address, or nil.
+  function ns.share_remembered(address)
+    local r = share_call("remembered", { address = address })
+
+    if not r then return nil end
+    local account = r.blob:sub(1, r.length or 0)
+    return account ~= "" and account or nil
   end
 
   function ns.share_disconnect(address)
@@ -5534,7 +5547,12 @@ if role == ROLE_INIT then
   start("the keyring", ROLE_KEYRING, { KEYRING_SMB_EP, KEYRING_MANAGE_EP,
                                        KEYRING_DISK_EP, DEVICES_EP, CONSOLE_EP })
 
-  start("the SMB client", ROLE_SMBFS, { SMBFS_EP, NET_EP, CONSOLE_EP })
+  --
+  -- And the keyring's `smb` door, the one that answers passwords (K5): a
+  -- share signed into with Remember is kept there, and one remembered signs
+  -- in from it - at start too, for the shares that ask to.
+  start("the SMB client", ROLE_SMBFS, { SMBFS_EP, NET_EP, CONSOLE_EP,
+                                        KEYRING_SMB_EP })
 
   --
   -- **The power button**, the first driver outside the kernel.

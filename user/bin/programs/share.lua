@@ -10,6 +10,10 @@
 --   share disconnect 10.0.2.2:4450                     let it go, away or not
 --
 --   --no-wait after `connect` or `probe`: say it has begun, and come back
+--   --remember after `connect`: once the server takes the password, the
+--     keyring keeps it, and the share connects when Kosmos starts
+--   share connect smb://10.0.2.2:4450/Projects         no account: the one
+--     the keyring remembers there, with its password - nothing asked
 --
 -- `docs/sharing.md` step N2: the client connects, and this is how a person
 -- asks it to before any window does. It speaks to smbfs through the
@@ -49,11 +53,14 @@
 -- one word when it is quoted (`files.words`, `testing.md` 18.414).
 local words = use("/Kosmos/Libraries/files.lua").words(args)
 
-local wait = true
+local wait, remember = true, false
 
 for i = #words, 1, -1 do
   if words[i] == "--no-wait" then
     wait = false
+    table.remove(words, i)
+  elseif words[i] == "--remember" then
+    remember = true
     table.remove(words, i)
   end
 end
@@ -61,7 +68,7 @@ end
 local verb = words[1]
 
 local function usage()
-  print("usage: share connect smb://server[:port][/share] account [--no-wait]")
+  print("usage: share connect smb://server[:port][/share] [account] [--remember] [--no-wait]")
   print("       share shares server[:port]")
   print("       share probe server[:port] [--no-wait]")
   print("       share status")
@@ -209,7 +216,8 @@ end
 
 if verb == "connect" then
   local server, share = split(words[2])
-  local account = words[3]
+  local remembered = server and fs.share_remembered(server)
+  local account = words[3] or remembered
 
   if not server or not account then
     usage()
@@ -230,13 +238,19 @@ if verb == "connect" then
     return
   end
 
-  print("password for " .. account .. " at " .. server
-        .. " (shown as it is typed):")
+  -- Remembered (`keyring.md`, K5): no password asked, and none sent -
+  -- smbfs takes the keyring's.
+  local password = ""
 
-  local password = fs.read("/Devices/console") or ""
-  password = password:gsub("[\r\n]+$", "")
+  if remembered and account == remembered and not remember then
+    print("share: signing in as " .. account .. " with the remembered password")
+  else
+    print("password for " .. account .. " at " .. server
+          .. " (shown as it is typed):")
+    password = (fs.read("/Devices/console") or ""):gsub("[\r\n]+$", "")
+  end
 
-  local ok, why = fs.share_connect(server, share, account, password)
+  local ok, why = fs.share_connect(server, share, account, password, remember)
   password = nil
 
   if not ok then

@@ -382,9 +382,22 @@ static void unmap_page(uint64_t *root, uintptr_t va)
     invalidate(va);
 }
 
+/*
+ * **One core at a time edits the kernel's own map** (`testing.md` 18.422):
+ * two cores splitting the same 2 MB page for two new stacks' guards could
+ * leave the second building its table from the first's - `aarch64/mmu.c`
+ * has the whole account, found there. **Not held across the shootdown**:
+ * that waits for every other core to answer an interrupt, and one spinning
+ * here with interrupts masked could not.
+ */
+static struct spinlock kernel_map_lock = SPINLOCK("the kernel's map");
+
 void mmu_unmap_page(uintptr_t va)
 {
+    unsigned long flags = spin_lock(&kernel_map_lock);
+
     unmap_page(kernel_pml4, va);
+    spin_unlock(&kernel_map_lock, flags);
 
     /* The kernel's tables are every core's, so a guard page has to be gone
      * everywhere - or an overflow on another core walks straight into it. */

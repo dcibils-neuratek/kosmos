@@ -631,7 +631,7 @@ each is lived with before the next starts.
   aside, not overwritten; **and the forgery**: a program spawns a runner with
   a `bin` of its own and asks for `/Kosmos/Apps/passwords.lua` - and is not
   handed `manage`.
-- **K5 - smbfs remembers.** CONNECT's `SHARE_REMEMBER` and empty password;
+- **K5 - smbfs remembers.** **Done, 0.11.22** (`testing.md` 18.421; the password, not the hash, per decision 4). CONNECT's `SHARE_REMEMBER` and empty password;
   PROBE's remembered account; PUT after a sign-in succeeds; `KEY_AT_START`;
   Connect to Server's switch real and its remembered state. *Test*: N8's
   suite as `sharing.md` wrote it - a share remembered, the machine

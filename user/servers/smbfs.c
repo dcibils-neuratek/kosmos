@@ -91,6 +91,7 @@
 #include "kosmos.h"
 #include "netproto.h"
 #include "shareproto.h"
+#include "keyproto.h"
 #include "crypto.h"
 #include "init/say.h"
 
@@ -320,6 +321,18 @@ struct server {
     char     list_why[SHARE_WHY_MAX];
     struct share_offered *offered;
     unsigned offered_count;
+
+    /*
+     * **The keyring** (`docs/keyring.md`, K5). `kept` is the password, held
+     * from a CONNECT that said Remember until the server accepts or refuses
+     * it, and zeroed then; `remembered` is that the sign-in came from the
+     * keyring, and `more_shares` the shares its entry names, connected once
+     * the first is.
+     */
+    bool     remember;
+    char     kept[SHARE_SECRET_MAX + 1];
+    bool     remembered;
+    char     more_shares[KEY_SHARES_MAX];
 };
 
 /*
@@ -370,6 +383,7 @@ struct piece {
 static long endpoint = -1;
 static long net = -1;
 static long console = -1;
+static long keyring = -1;               /* its `smb` door (K5), or none */
 static uint64_t token;              /* a waiter's word (`SHARE_OP_WAITER`) */
 static uint64_t counter_hz = 62500000u;
 static uint64_t tick_hz = 250u;
@@ -571,6 +585,8 @@ static void tell(const struct server *s)
  *----------------------------------------------------------------------*/
 
 static struct tree *tree_find(struct server *s, const char *name);
+static void remember_now(struct server *s);
+static void remember_shares(struct server *s);
 static bool same_name(const char *a, const char *b);
 
 /* The tree libsmb2 stamps the next request with. */
@@ -841,7 +857,12 @@ static void refused_or_away(struct server *s, int status)
         return;
     }
 
-    if (nt == SMB2_STATUS_LOGON_FAILURE || nt == SMB2_STATUS_WRONG_PASSWORD
+    if ((nt == SMB2_STATUS_LOGON_FAILURE || nt == SMB2_STATUS_WRONG_PASSWORD
+         || nt == SMB2_STATUS_WRONG_PASSWORD_CORE) && s->remembered) {
+        /* The keyring's entry stays: a new password, accepted, replaces it. */
+        snprintf(why, sizeof(why), "%s did not accept the remembered password "
+                 "for %s", named(s), s->pub.account);
+    } else if (nt == SMB2_STATUS_LOGON_FAILURE || nt == SMB2_STATUS_WRONG_PASSWORD
         || nt == SMB2_STATUS_WRONG_PASSWORD_CORE) {
         snprintf(why, sizeof(why), "%s refused the account %s: the name or "
                  "the password is wrong", named(s), s->pub.account);
@@ -974,7 +995,28 @@ static void connected(struct smb2_context *smb2, int status, void *data,
                 t->was_connected = !t->ipc;
             }
         }
+
+        /* Remember, now the server has taken it (K5); or, signed in from
+         * the keyring, the rest of the shares its entry names. */
+        if (s->remember) {
+            remember_now(s);
+        }
+
+        for (size_t at = 0; at < sizeof(s->more_shares)
+                            && s->more_shares[at] != '\0'; ) {
+            const char *name = s->more_shares + at;
+
+            if (tree_find(s, name) == NULL) {
+                (void)tree_add(s, name, false);
+            }
+
+            at += strlen(name) + 1;
+        }
+
+        memset(s->more_shares, 0, sizeof(s->more_shares));
     } else {
+        memset(s->kept, 0, sizeof(s->kept));
+        s->remember = false;
         refused_or_away(s, status);
     }
 
@@ -1512,6 +1554,164 @@ static void retry(struct server *s)
     begin(s);
 }
 
+/*------------------------------------------------------------------------
+ * The keyring's `smb` door (`docs/keyring.md`, K5): an entry is named by its
+ * service - "smb://" and the address as it was asked for - and its account.
+ * Each caller brings its own two messages, since the thread that connects
+ * the remembered shares at start asks it too; both are zeroed after, as a
+ * password passed through them.
+ *----------------------------------------------------------------------*/
+
+struct key_talk {
+    struct message msg, rep;
+};
+
+static void service_of(const char *address, char out[KEY_SERVICE_MAX])
+{
+    snprintf(out, KEY_SERVICE_MAX, "smb://%s", address);
+}
+
+static uint32_t key_ask(struct key_talk *k, uint32_t op, uint32_t id,
+                        const char *address, const char *account,
+                        const char *title, const char *shares, uint16_t flags,
+                        const char *secret)
+{
+    struct key_request *rq = (struct key_request *)(void *)k->msg.data;
+    const struct key_reply *rp = (const struct key_reply *)(void *)k->rep.data;
+    size_t secret_bytes = secret != NULL ? strlen(secret) : 0;
+
+    if (keyring < 0) {
+        return KEY_ERR_NONE;
+    }
+
+    memset(k, 0, sizeof(*k));
+    k->msg.length = sizeof(*rq);
+    rq->op = op;
+    rq->entry.id = id;
+    rq->entry.kind = KEY_KIND_SMB;
+    rq->entry.flags = flags;
+
+    if (address != NULL) {
+        service_of(address, rq->entry.service);
+    }
+
+    copy(rq->entry.account, sizeof(rq->entry.account), account != NULL ? account : "");
+    copy(rq->entry.title, sizeof(rq->entry.title), title != NULL ? title : "");
+
+    if (shares != NULL) {
+        memcpy(rq->entry.shares, shares, sizeof(rq->entry.shares));
+    }
+
+    if (secret_bytes > KEY_SECRET_MAX) {
+        memset(k, 0, sizeof(*k));
+        return KEY_ERR_TOO_LONG;
+    }
+
+    rq->secret_bytes = (uint32_t)secret_bytes;
+    memcpy(rq->secret, secret != NULL ? secret : "", secret_bytes);
+
+    if (kosmos_call(keyring, &k->msg, &k->rep) != 0 || k->rep.length < sizeof(*rp)) {
+        memset(k, 0, sizeof(*k));
+        return KEY_ERR_NONE;
+    }
+
+    memset(&k->msg, 0, sizeof(k->msg));
+    return rp->error;
+}
+
+/* The account the keyring keeps for `address`, if any: the first entry of
+ * that service, walked one at a time. */
+static bool key_account_for(struct key_talk *k, const char *address,
+                            char account[SHARE_ACCOUNT_MAX])
+{
+    char service[KEY_SERVICE_MAX];
+    uint32_t after = 0;
+
+    service_of(address, service);
+
+    while (key_ask(k, KEY_OP_LIST, after, NULL, NULL, NULL, NULL, 0, NULL) == 0) {
+        const struct key_entry *e = &((const struct key_reply *)(void *)k->rep.data)->entry;
+
+        if (strcmp(e->service, service) == 0) {
+            copy(account, SHARE_ACCOUNT_MAX, e->account);
+            memset(k, 0, sizeof(*k));
+            return true;
+        }
+
+        after = e->id;
+    }
+
+    memset(k, 0, sizeof(*k));
+    return false;
+}
+
+/* The shares a server has connected, as an entry keeps them: "A\0B\0". */
+static void shares_of(struct server *s, char out[KEY_SHARES_MAX])
+{
+    size_t at = 0;
+
+    memset(out, 0, KEY_SHARES_MAX);
+
+    for (struct tree *t = s->trees; t != NULL; t = t->next) {
+        size_t n = strlen(t->name);
+
+        if (t->ipc || !t->connected || at + n + 2 > KEY_SHARES_MAX) {
+            continue;
+        }
+
+        memcpy(out + at, t->name, n);
+        at += n + 1;
+    }
+}
+
+/* Signed in, and told to remember: the password to the keyring, now that
+ * the server has taken it - and gone from here either way. */
+static void remember_now(struct server *s)
+{
+    static struct key_talk k;
+    char title[KEY_TITLE_MAX], shares[KEY_SHARES_MAX];
+    struct say_line line;
+    uint32_t e;
+
+    snprintf(title, sizeof(title), "%s (SMB)", named(s));
+    shares_of(s, shares);
+    e = key_ask(&k, KEY_OP_PUT, 0, s->pub.address, s->pub.account, title, shares,
+                KEY_AT_START, s->kept);
+    memset(s->kept, 0, sizeof(s->kept));
+    memset(&k, 0, sizeof(k));
+    s->remember = false;
+    s->remembered = e == 0;
+
+    say_begin(&line);
+    say_text(&line, "smbfs: ");
+    say_text(&line, e == 0 ? "remembered " : "could not remember ");
+    say_text(&line, s->pub.account);
+    say_text(&line, " at ");
+    say_text(&line, named(s));
+    say_text(&line, e == 0 ? " in the keyring" : " in the keyring: it said ");
+    if (e != 0) {
+        say_dec(&line, e);
+    }
+    say_send(console, &line);
+}
+
+/* A remembered server's shares, as they are now, kept in its entry; the
+ * password stays as the keyring has it. */
+static void remember_shares(struct server *s)
+{
+    static struct key_talk k;
+    char shares[KEY_SHARES_MAX];
+
+    if (!s->remembered) {
+        return;
+    }
+
+    shares_of(s, shares);
+    (void)key_ask(&k, KEY_OP_PUT, 0, s->pub.address, s->pub.account, NULL, shares,
+                  KEY_AT_START, NULL);
+    memset(&k, 0, sizeof(k));
+}
+
 static void ask_server(struct disk_request *req, struct disk_reply *rep,
                        bool probe)
 {
@@ -1530,10 +1730,15 @@ static void ask_server(struct disk_request *req, struct disk_reply *rep,
         return;
     }
 
+    /* No account: the one the keyring keeps for this address, if any. */
     if (!probe && ask->account[0] == '\0') {
-        refuse(rep, SHARE_ERR_ACCOUNT, "an account is needed: guests are not "
-               "let in");
-        return;
+        static struct key_talk k;
+
+        if (!key_account_for(&k, address, ask->account)) {
+            refuse(rep, SHARE_ERR_ACCOUNT, "an account is needed: guests are not "
+                   "let in");
+            return;
+        }
     }
 
     was = server_find(address);
@@ -1643,6 +1848,51 @@ static void ask_server(struct disk_request *req, struct disk_reply *rep,
         field(s->pub.account, sizeof(s->pub.account), ask->account,
               sizeof(ask->account));
         field(password, sizeof(password), ask->password, sizeof(ask->password));
+
+        /*
+         * **No password: the keyring's** (K5), for this address and account
+         * - and the shares its entry names, connected once the first is.
+         */
+        if (password[0] == '\0') {
+            static struct key_talk k;
+            const struct key_reply *kr = (const struct key_reply *)(void *)k.rep.data;
+
+            if (key_ask(&k, KEY_OP_GET, 0, address, s->pub.account, NULL, NULL, 0,
+                        NULL) != 0) {
+                char why[SHARE_WHY_MAX];
+
+                memset(&k, 0, sizeof(k));
+                snprintf(why, sizeof(why), "nothing is remembered for %s at %s: "
+                         "the password is needed", s->pub.account, address);
+                server_free(s);
+                refuse(rep, SHARE_ERR_NOT_REMEMBERED, why);
+                return;
+            }
+
+            {
+                size_t n = kr->secret_bytes < SHARE_SECRET_MAX
+                           ? kr->secret_bytes : SHARE_SECRET_MAX;
+
+                /* Ended at its own length: what the stack held before is not
+                 * part of it - the first try at this took it in, and the
+                 * server refused the hash of a password with a tail. */
+                memset(password, 0, sizeof(password));
+                memcpy(password, kr->secret, n);
+            }
+            memcpy(s->more_shares, kr->entry.shares, sizeof(s->more_shares));
+            s->more_shares[sizeof(s->more_shares) - 1] = '\0';
+            memset(&k, 0, sizeof(k));
+            s->remembered = true;
+
+            /* At start (SHARE_AT_START): tried again while the network
+             * comes up, as a server that went away is. */
+            if (req->flags & SHARE_AT_START) {
+                s->was_connected = true;
+            }
+        } else if (req->flags & SHARE_REMEMBER) {
+            s->remember = true;
+            copy(s->kept, sizeof(s->kept), password);
+        }
 
         if (!nt_hash(password, s->hash)) {
             memset(password, 0, sizeof(password));
@@ -2896,6 +3146,7 @@ static void tree_connected(struct smb2_context *smb2, int status, void *data,
             say_text(&line, t->name);
             say_text(&line, " connected on the same session");
             say_send(console, &line);
+            remember_shares(s);
         }
 
         return;
@@ -3648,6 +3899,21 @@ static void answer(struct message *msg, uint64_t sender)
         shares_page(&req, rep);
         break;
 
+    case SHARE_OP_REMEMBERED: {
+        static struct key_talk k;
+        struct share_ask *ask = (struct share_ask *)(void *)req.u.data;
+        char address[SHARE_ADDRESS_MAX], account[SHARE_ACCOUNT_MAX];
+
+        field(address, sizeof(address), ask->address, sizeof(ask->address));
+        rep->error = DISK_OK;
+
+        if (key_account_for(&k, address, account)) {
+            copy(rep->u.data, SHARE_ACCOUNT_MAX, account);
+            rep->length = (uint32_t)strlen(rep->u.data);
+        }
+        break;
+    }
+
     case SHARE_OP_WAITER: {
         struct server *s = (struct server *)(uintptr_t)req.bytes;
 
@@ -3964,13 +4230,54 @@ static unsigned long next_wait(void)
     return (unsigned long)((soonest - now) * tick_hz / counter_hz) + 1u;
 }
 
-void smbfs_server(long endpoint_cap, long net_cap, long console_cap)
+/*
+ * **At start, the remembered shares** (K5, Diego's decision 8): every SMB
+ * entry the keyring keeps with "connect when Kosmos starts", asked of smbfs
+ * as a CONNECT with no password, from a thread of its own - the keyring may
+ * still be opening its file, and nothing waits for it but this.
+ */
+static void at_start_main(unsigned long unused)
+{
+    static struct key_talk k;
+    static struct message msg, rep;
+    uint32_t after = 0;
+
+    (void)unused;
+
+    while (key_ask(&k, KEY_OP_LIST, after, NULL, NULL, NULL, NULL, 0, NULL) == 0) {
+        struct key_entry e = ((const struct key_reply *)(void *)k.rep.data)->entry;
+        struct disk_request *req = (struct disk_request *)(void *)msg.data;
+        struct share_ask *ask = (struct share_ask *)(void *)req->u.data;
+
+        after = e.id;
+
+        if (!(e.flags & KEY_AT_START) || strncmp(e.service, "smb://", 6) != 0) {
+            continue;
+        }
+
+        memset(&msg, 0, sizeof(msg));
+        msg.length = sizeof(*req);
+        req->op = SHARE_OP_CONNECT;
+        req->flags = SHARE_AT_START;
+        req->length = sizeof(*ask);
+        copy(ask->address, sizeof(ask->address), e.service + 6);
+        copy(ask->account, sizeof(ask->account), e.account);
+        copy(ask->share, sizeof(ask->share), e.shares);   /* the first; the rest follow */
+        (void)kosmos_call(endpoint, &msg, &rep);
+    }
+
+    memset(&k, 0, sizeof(k));
+    kosmos_thread_exit(0);
+}
+
+void smbfs_server(long endpoint_cap, long net_cap, long console_cap, long keyring_cap)
 {
     struct sysinfo info;
 
     endpoint = endpoint_cap;
     net = net_cap;
     console = console_cap;
+    keyring = keyring_cap;
 
     memset(&info, 0, sizeof(info));
 
@@ -3985,6 +4292,10 @@ void smbfs_server(long endpoint_cap, long net_cap, long console_cap)
 
     smb_kit_start(net_cap);
     say(console, "smbfs: SMB 2 and 3, idle until a share is connected\n");
+
+    if (keyring >= 0 && kosmos_thread_start(at_start_main, 0) < 0) {
+        say(console, "smbfs: the remembered shares could not be connected at start\n");
+    }
 
     for (;;) {
         struct message msg;

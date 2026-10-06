@@ -161,7 +161,154 @@ def main():
     if part == "3":
         return windows(image)
 
+    if part == "4":
+        return remembers(image)
+
     return connects(image, measure)
+
+
+def remembers(image):
+    """`--part 4`: the keyring remembers a share (`docs/keyring.md`, K5).
+
+    One disk, so the keyring's file lasts from the first boot to the second:
+
+      - `share connect ... --remember`, the password typed, connects - and
+        smbfs says it remembered it; `keyring` lists the entry, at start, and
+        `keyring show` shows the very password;
+      - a refused sign-in with `--remember` - an account the peer has not -
+        remembers nothing: still one entry;
+      - disconnected, `share connect` with no account signs in with the
+        remembered one and its password, nothing asked;
+      - **restarted on the same disk**, the share connects by itself;
+      - **the peer's password changed**, the next start's sign-in is refused
+        "did not accept the remembered password", and the entry is kept.
+    """
+    import shutil as _shutil
+    import scratch
+
+    work = scratch.directory("share-remember")
+    disk = os.path.join(work, "disk.img")
+    asks = os.path.join(work, "remembered.lua")
+
+    # What Connect to Server asks once an address answers.
+    with open(asks, "w") as f:
+        f.write('print("REMEMBERED " .. tostring(fs.share_remembered(args)))\n')
+
+    subprocess.run([os.path.join(ROOT, "build", "host", "lua"),
+                    os.path.join(HERE, "kfs.lua"), "create", disk, "32",
+                    asks + ":/Home/remembered.lua"],
+                   check=True, capture_output=True, cwd=ROOT)
+    os.environ["KOSMOS_DISK"] = disk
+    import run_screenshot as R
+
+    instance, port = "remember", 4470
+    fails, checks = [], 0
+
+    def check(ok, what):
+        nonlocal checks
+        checks += 1
+        if not ok:
+            fails.append(what)
+
+    def boot():
+        guest = guest_on_network(R, image, 180)
+        guest.wait_for("kosmos>", "a prompt")
+        said, took = {}, {}
+        return guest, said, runner(guest, said, took)
+
+    def connected_by_itself(run, address, want, seconds=40):
+        for _ in range(seconds * 2):
+            out = run("status", "share status")
+            line = [l for l in out.splitlines() if l.startswith(address + "  ")]
+
+            if line and want in line[0]:
+                return line[0]
+            time.sleep(0.5)
+        return line[0] if line else out[-300:]
+
+    peer(instance, port, "start", "--dialect", "3.1.1", "--sign")
+
+    try:
+        _, _, share, user, password = peer(instance, port, "where").split()
+        address = "10.0.2.2:%d" % port
+        url = "smb://%s/%s" % (address, share)
+
+        guest, said, run = boot()
+        try:
+            out = run("connect", "share connect %s %s --remember" % (url, user), password)
+            check("connected" in out, "the first sign-in did not connect:\n" + out)
+            check("remembered %s at" % user in guest.seen,
+                  "smbfs did not say it remembered the password")
+
+            out = run("list", "keyring")
+            check(re.search(r"^1 entry", out, re.M) is not None
+                  and ("smb://" + address) in out and "at start" in out,
+                  "the keyring does not list the share, at start:\n" + out)
+            ident = re.search(r"^\s*(\d+)\s+smb\s", out, re.M)
+
+            out = run("asks", "run /Home/remembered.lua " + address,
+                      ends="(remembered) ended, code")
+            check("REMEMBERED " + user in out,
+                  "what Connect to Server asks did not answer the account:\n" + out)
+            out = run("asks-none", "run /Home/remembered.lua 10.0.2.2:4499",
+                      ends="(remembered) ended, code")
+            check("REMEMBERED nil" in out, "an address never remembered answered:\n" + out)
+
+            out = run("show", "keyring show %s" % (ident.group(1) if ident else "1"))
+            check(password in out, "Show did not show the remembered password")
+
+            run("drop", "share disconnect " + address)
+            out = run("wrong", "share connect %s nobody-here --remember" % url,
+                      "not-a-password")
+            check("connected" not in out.split("password for")[-1],
+                  "an account the peer has not was let in:\n" + out)
+            out = run("still", "keyring")
+            check(re.search(r"^1 entry", out, re.M) is not None,
+                  "a refused sign-in was remembered:\n" + out)
+
+            run("drop2", "share disconnect " + address)
+            out = run("again", "share connect " + url)
+            check("with the remembered password" in out and "connected" in out,
+                  "signing in again asked or failed:\n" + out)
+            check("password for " + user + " at" not in out,
+                  "a remembered sign-in asked for the password")
+        finally:
+            guest.close()
+
+        # Restarted: connected at start, nothing typed.
+        guest, said, run = boot()
+        try:
+            got = connected_by_itself(run, address, "connected")
+            check("connected" in got, "the remembered share did not connect at start: " + got)
+        finally:
+            guest.close()
+
+        # The peer's password changed: refused, and kept.
+        peer(instance, port, "start", "--dialect", "3.1.1", "--sign", "--changed")
+        guest, said, run = boot()
+        try:
+            got = connected_by_itself(run, address, "refused")
+            check("did not accept the remembered password" in got,
+                  "a refused remembered password was not said so: " + got)
+            out = run("kept", "keyring")
+            check(re.search(r"^1 entry", out, re.M) is not None,
+                  "the refused entry was not kept:\n" + out)
+        finally:
+            guest.close()
+    finally:
+        peer(instance, port, "stop")
+
+    if fails:
+        print("FAIL: %d of %d checks on the keyring remembering a share:\n  %s"
+              % (len(fails), checks, "\n  ".join(fails)))
+        return 1
+
+    print("PASS: %d checks on the keyring remembering a share (remembered once "
+          "the peer took it, listed at start, shown; a refused sign-in not "
+          "remembered; signed in again with nothing asked; connected at start "
+          "after a restart; a changed password refused in words and the entry "
+          "kept)" % checks)
+    return 0
 
 
 def guest_on_network(R, image, timeout):

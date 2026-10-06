@@ -206,9 +206,30 @@ static void unmap_page(uint64_t *root, uintptr_t va)
     invalidate(va);
 }
 
+/*
+ * **One core at a time edits the kernel's own map** (`testing.md` 18.422).
+ * A guard page punched into a new thread's stack can split a 2 MB block, and
+ * two cores making threads at once could split the same one: both saw a
+ * block, the first replaced it with a table, and the second then read that
+ * table's descriptor as though it were the block - its address as the
+ * block's base, its missing attributes as the pages' - and published 512
+ * page descriptors pointing into the first core's table with the access
+ * flag clear. Every core that touched those two megabytes after took an
+ * access flag fault at level 3, in the exception handler too. It waited from
+ * 0.10.22, when threads spread across processors by default, for three
+ * servers to start threads at the same moment of boot (keyring K3-K5).
+ *
+ * The walk and the split happen under the lock; the page allocator, which
+ * `alloc_table` calls, takes its own and never this one.
+ */
+static struct spinlock kernel_map_lock = SPINLOCK("the kernel's map");
+
 void mmu_unmap_page(uintptr_t va)
 {
+    unsigned long flags = spin_lock(&kernel_map_lock);
+
     unmap_page(kernel_l1, va);
+    spin_unlock(&kernel_map_lock, flags);
 }
 
 

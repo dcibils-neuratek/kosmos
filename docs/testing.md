@@ -20005,3 +20005,86 @@ bite: granting everything - 9 fail; without the `.`/`..`/`//` guard - 3.
 
 **Not yet**: an entry put and got back - only smbfs's door puts (K5) - and
 the second disk door refusing `/Home`, whose only caller is this server.
+
+## 18.421 smbfs remembers (keyring K5)
+
+A CONNECT with `SHARE_REMEMBER` - Connect to Server's "Remember in this
+machine's keyring", now ticked by default, or `share connect --remember` -
+holds the typed password in smbfs **until the server accepts the sign-in**,
+then puts it in the keyring through the `smb` door, with the account, the
+share, the server's name as the title and "connect when Kosmos starts", and
+zeroes it; a refused sign-in remembers nothing. A CONNECT with **no
+password** takes the keyring's for that address and account, and one with
+no account takes the account kept there. A share connected later on the
+same session is added to the entry (a PUT with no password keeps the one
+there). **At start** a thread of smbfs's own lists the entries and asks
+smbfs to connect each, as a server that went away, so it is tried while the
+network comes up; and a remembered password the server refuses says "did
+not accept the remembered password", and the entry stays. `SHARE_OP_REMEMBERED`
+answers the account kept for an address - what Connect to Server asks once
+the address answers, to fill the name in and say there is nothing to type.
+
+`tools/run_share.py --part 4` (`arm-share-4`), one disk over three boots, 13
+checks against Samba on the Mac: remembered once the peer took it, listed
+at start, `keyring show` the very password; `fs.share_remembered` the
+account, and nothing for an address never remembered; a refused sign-in
+not remembered; signed in again with nothing asked; **connected at start**
+on the next boot; and after `smbpeer.py start --changed` - the peer's
+password no longer the one remembered - refused in words, the entry kept.
+
+**Found by it**: the in-session remembered sign-in was refused while the
+one at start worked. The keyring's password was copied into a stack buffer
+without being ended at its length, so whatever the stack held after it
+went into the NT hash; at boot the stack happened to be zero. Now zeroed
+first.
+
+**Controls**: a refused sign-in remembered - 2 fail; nothing connected at
+start - 2 fail.
+
+**Not tested, said**: the window's own drawing of "Remembered: signs in
+as ..." - the suite holds the call it makes, `fs.share_remembered`, and not
+the pixels; Passwords' display suite (K6) is where the window is looked at.
+
+## 18.422 Two cores splitting one block of the kernel's map
+
+**A kernel panic, in one gate of ninety-seven**: `arm-network`, a double
+fault on three processors at once a moment after smbfs started - "data
+abort ... write, access flag fault, level 3" - and the suite passing alone
+three times after. The image and its map were kept first
+(`keep-the-failing-binary`), and **eight copies of the suite run at once
+reproduced it twice**. The one panic report that came out unscrambled named
+`alloc_table` (`arch/aarch64/mmu.c`), zeroing a page the allocator had just
+handed it.
+
+**What it was.** A new thread's stack has its guard page unmapped from the
+kernel's map, and where that page sits in a 2 MB block the block is split
+into 512 pages first. Nothing kept two cores from doing that to one block
+at once: both saw a block; the first allocated a table, filled it and
+published it; the second, already past its check, then read the entry -
+now the first's table descriptor - as its block, took the table's address
+for the block's base and its missing attributes for the pages', and
+published 512 page descriptors pointing into the first's table with the
+access flag clear. Every core that touched those two megabytes after took
+an access flag fault, and the exception handler with them.
+
+**Why now.** It has been possible since 0.10.22, when new threads spread
+across processors by default. Nothing started threads on several cores at
+once early enough for their stacks to land in one fresh block - until the
+keyring: diskfs's second door (K3), the keyring's `manage` door (K4) and
+smbfs's thread that connects the remembered shares (K5) all start in the
+same moment of boot.
+
+**The fix**: a lock, `kernel_map_lock`, around the walk and the split in
+`mmu_unmap_page` on both architectures - on x86-64 released before the TLB
+shootdown, which waits for every other core to answer an interrupt. Eight
+copies of `arm-network` at once twice over on the fixed image: sixteen
+boots, no panic, where the old image panicked twice in eight.
+
+**And a test of its own**, `mmu: one core at a time splits the kernel's
+map` in the kernel suite, on both boards: in each of eight rounds every
+core unmaps its own page inside one fresh block at the same moment, and
+then all 512 entries are read back from the map without being touched -
+the punched ones invalid, every other one mapping its own page (identity on
+AArch64, the direct map's on x86-64, which the first draft forgot and failed
+x86 for). **Control**: without the lock it fails on both boards, three runs
+in three.

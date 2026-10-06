@@ -36,7 +36,8 @@ to decide is collected at the end.
   `smb://192.168.1.38/Projects`, a port after a colon for a test peer - and
   the recent ones. **The server answers before the password is asked for**,
   so a wrong address is said at once; then a name and a password, and the
-  share. The password is asked at each connection until the keyring exists.
+  share. A password once accepted with Remember ticked is kept in the
+  keyring, and that server is signed into with nothing typed (K5).
 - **A share is a folder**, at `/Network/diego-mac/Projects`: listed, sorted,
   opened, copied from, by Tracker, the Open window and every program, as
   `/Home` is - with **nothing new in any of them to read it**. `ls`, `cat`,
@@ -58,8 +59,8 @@ to decide is collected at the end.
 
 ### Then, each its own step
 
-- **Remembered passwords**, in the keyring (step N8, after the keyring's own
-  design).
+- **Remembered passwords**, in the keyring - **built** as `docs/keyring.md`'s
+  K1 to K5 (6 October), which N8 became.
 - **Read-write**: a file written, deleted, renamed, a folder made, a copy
   into a share from Tracker (N10).
 - **Servers seen on the network**, by mDNS: the Network group lists
@@ -360,7 +361,8 @@ numbers above `diskproto.h`'s and their own structs in `u.data`:
 | Operation | What it carries and answers |
 |---|---|
 | `SHARE_OP_PROBE` | an address and a port; answered at once. The server is asked to NEGOTIATE and nothing more |
-| `SHARE_OP_CONNECT` | an address, a share, a name and - until the keyring - a password; answered at once. SESSION_SETUP and TREE_CONNECT follow |
+| `SHARE_OP_CONNECT` | an address, a share, a name and a password - or none, for the keyring's - and `SHARE_REMEMBER` in `flags`; answered at once. SESSION_SETUP and TREE_CONNECT follow |
+| `SHARE_OP_REMEMBERED` | an address: the account the keyring keeps for it, or nothing (K5) |
 | `SHARE_OP_STATUS` | per server: answering or since when, the dialect, signed, sealed, the name it gave, its shares, bytes arriving a second, the next try |
 | `SHARE_OP_SHARES` | a server's shares, through `srvsvc`'s NetShareEnum (libsmb2's `smb2-share-enum.c`), for "choose one once it answers" - **built at N6** (below) |
 | `SHARE_OP_DISCONNECT` | a server, or a share of it |
@@ -369,8 +371,10 @@ The password crosses once, in one message, as a keystroke does - a one-shot,
 which the rule about streams allows. **smbfs keeps the NT hash** (MD4 of the
 password, which is what NTLMv2 needs and all it needs), never the password,
 and only while connected, so a server that comes back after sleep is signed
-into again without asking. From N8 the message names a keyring entry
-instead, and no password crosses at all. **As built (N2)**: smbfs makes the
+into again without asking. **From K5** a CONNECT may carry no password,
+and smbfs takes the keyring's for that address and account; with Remember,
+it holds the typed one until the server takes it and then puts it in the
+keyring (`docs/keyring.md`). **As built (N2)**: smbfs makes the
 hash with `crypto_md4` and hands libsmb2 the form it takes one in,
 `ntlm:` and 32 hex digits, so libsmb2 never sees the password either; the
 request it came in is zeroed once read. The `share` program reads it at the
@@ -641,52 +645,24 @@ of a core at the wire's speed.
 
 ### The keyring - a piece of its own
 
-**What it is**: a server in C, `user/servers/keyring.c`, holding the secrets
-a person has asked this machine to remember, and handing each only to what
-needs it. A server rather than a kit because a kit runs in its caller's
-process, and the point is that the secret is not in the caller's process.
-**It is not part of sharing**: the browser's sign-ins and mail will want the
-same thing, and the mockup said so (question 2). Sharing is its first user.
+**Designed and built in `docs/keyring.md`**, which supersedes what this
+section said on 5 October - two doors called `store` and `use`, the NT hash
+kept rather than the password, ChaCha20-Poly1305, a file in `/Home`, and a
+choice of where the key comes from. What was decided on 6 October and built
+in K1 to K5:
 
-**Two doors, as the USB driver has a read endpoint and a write one**:
-
-- **`store`**, given to what a person types a secret into - Connect to
-  Server, later the browser's sign-in: put a secret under a name
-  (`smb://diego-mac`, account `diego`), replace it, forget it. **It cannot
-  read one back.** So Tracker can remember a password and can never show
-  it, or send it anywhere.
-- **`use`**, given to the servers that sign in on a person's behalf - smbfs,
-  later smbd: for SMB, it answers **the NT hash**, which is what NTLMv2
-  needs, and never the password. Whether the keyring should go further and
-  compute NTLMv2's answer itself, so not even the hash leaves it, is for its
-  own design.
-
-**Where its secrets live**: in one file, `/Home/Keyring/keyring`, written
-only by the keyring. **Every program given `/Home` can read that file** -
-there is no per-file permission here, and none is proposed for this - so
-**the encryption is the protection**: each secret sealed with
-**ChaCha20-Poly1305** (the Crypto Kit has both halves, and the kit holds the
-AEAD to RFC 8439's vectors) under a key that is never written down.
-
-**Where the key comes from is the decision**, and it is Diego's at the
-keyring's step:
-
-- **from a keyring password**, asked the first time after a boot that a
-  secret is needed, stretched by a slow function - PBKDF2-HMAC-SHA256 from
-  the kit's HMAC, or a memory-hard one such as Argon2id, which the kit would
-  gain - and held in the keyring's memory until the machine stops. Real
-  protection, and one more thing to type;
-- **from a file beside it**: nothing to type, and it protects nothing from a
-  program that can read `/Home`, which is every program a person runs. Said
-  plainly so that it is not chosen by default;
-- **from the machine** - a TPM's sealed key - when Kosmos drives one, which
-  it does not.
-
-**Its design is a step of its own**, `docs/keyring.md` with its windows drawn
-first - the unlock prompt, and a Keyring page in Preferences listing what is
-remembered with a Forget beside each - before any code. Until it exists,
-Connect to Server asks every time, and its "Remember in this machine's
-keyring" is drawn and greyed.
+- **a server in C**, `user/servers/keyring.c`, deciding by **door**: `smb`,
+  held by smbfs alone, and `manage`, held by Passwords and the `keyring`
+  program, which may show a password (`REVEAL`) and never put one;
+- **the password itself is kept**, sealed - Diego: "i need to know the
+  password at some point" - and smbfs works out the NT hash at each sign-in
+  and keeps that only while connected;
+- **AES-256-CCM** through the Crypto Kit's one door, the whole file sealed
+  at `/Keyring/keyring`, **outside `/Home`**, behind a disk door no program
+  holds; the key at `/Keyring/machine-key`, on the disk (decision 3);
+- **Remember**, ticked in Connect to Server and `share connect --remember`:
+  kept once the server takes the password, never before; a remembered
+  server signs in with nothing typed, and connects when Kosmos starts.
 
 ### mDNS: servers seen, and this machine announced
 

@@ -216,6 +216,12 @@ SUITES = [
     # 2, 4 and 8 seconds and signed into by `share retry`; let go of while
     # away, and never tried again.
     Suite("arm-share-2", ["python3", "tools/run_share.py", ARM, "--part", "2"]),
+
+    # **The keyring remembers a share** (`docs/keyring.md`, K5): remembered
+    # once the peer takes the password, shown, signed in again with nothing
+    # typed, connected at start on the next boot of the same disk, and a
+    # changed password refused in words with the entry kept. Three boots.
+    Suite("arm-share-4", ["python3", "tools/run_share.py", ARM, "--part", "4"]),
     Suite("x86-share-2", ["python3", "tools/run_share.py", X86, "--part", "2"],
           x86=True),
 

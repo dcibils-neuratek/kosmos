@@ -26,7 +26,8 @@
 
 #define KEY_OP_LIST     1u  /* the entry after `id`, of the kinds this door sees */
 #define KEY_OP_GET      2u  /* smb: the secret kept for (service, account) */
-#define KEY_OP_PUT      3u  /* smb: a secret for (service, account), new or replacing */
+#define KEY_OP_PUT      3u  /* smb: a secret for (service, account), new or replacing;
+                               * none: the entry there kept, its shares and title changed */
 #define KEY_OP_FORGET   4u  /* by id: manage, any; smb, its own kind */
 #define KEY_OP_EDIT     5u  /* manage: a title, notes, the at-start switch */
 #define KEY_OP_STATE    6u  /* manage: how many, and how the file opened */
