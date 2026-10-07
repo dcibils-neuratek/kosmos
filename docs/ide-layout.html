@@ -1,0 +1,307 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  The Kosmos IDE's header, tools, sidebar and panels, drawn again before they
+  are changed (roadmap.md 6n, item 7). Diego, 7 October 2026: "the kosmos ide
+  needs a new project menu option, right now the toolbar is messy with build,
+  run, etc buttons that occupy a lot of space not leaving room for new
+  buttons. we should put buttons as the style of kosmos write toolbar which
+  are small and easy to read. we need to fix the layout of the buttons and
+  menu options", and "the sidebar shows a lot of kosmos apps and kosmos
+  programs in the project view where it should be empty ... perhaps we can
+  show those files in another tab in the sidebar called system files".
+  Kosmos has no menu bars since 23 September (roadmap 5zj): a window has its
+  header, a row of tools and a More menu, as Kosmos Write has.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kosmos IDE Layout</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  /* One window drawn at one CSS pixel to a screen pixel, then the menus
+     opened beside it, then the questions. The IDE's own palette. */
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --w-body: #fafafb; --w-panel: #ffffff; --w-side: #f6f7f9; --w-line: #e0e2e6; --w-ink: #1d1f24;
+    --w-dim: #74787f; --w-faint: #b3b7be; --w-accent: #2a55c9; --w-sel: #e9eefb; --w-raised: #eef0f4;
+    --w-head: #ffffff; --w-cur: #f4f6fb; --w-find: #fff0b3;
+    --c-kw: #7a3fb8; --c-num: #b3541e; --c-str: #2f7a32; --c-com: #8b919a; --c-fn: #1f5fbf; --c-lib: #0f7d86;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b;
+      --w-body: #1f2228; --w-panel: #1a1d22; --w-side: #1c1f24; --w-line: #30343c; --w-ink: #dfe3ea;
+      --w-dim: #8d95a3; --w-faint: #5a616d; --w-accent: #5b86f0; --w-sel: #26324d; --w-raised: #2a2e35;
+      --w-head: #23262c; --w-cur: #22262d; --w-find: #4a4220;
+      --c-kw: #c792ea; --c-num: #f0a36b; --c-str: #9ccc7b; --c-com: #6f7885; --c-fn: #82aaff; --c-lib: #5fd3d9;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b;
+    --w-body: #1f2228; --w-panel: #1a1d22; --w-side: #1c1f24; --w-line: #30343c; --w-ink: #dfe3ea;
+    --w-dim: #8d95a3; --w-faint: #5a616d; --w-accent: #5b86f0; --w-sel: #26324d; --w-raised: #2a2e35;
+    --w-head: #23262c; --w-cur: #22262d; --w-find: #4a4220;
+    --c-kw: #c792ea; --c-num: #f0a36b; --c-str: #9ccc7b; --c-com: #6f7885; --c-fn: #82aaff; --c-lib: #5fd3d9;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1260px; margin: 0 auto; padding-block: 36px 80px; padding-inline: 18px; }
+  h1 { font-family: var(--display); font-size: 30px; margin: 0 0 6px; }
+  h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 8px; padding-top: 20px; border-top: 1px solid var(--rule); }
+  p { max-width: 74ch; }
+  .lead { color: var(--muted); font-size: 16.5px; }
+  code { font-family: var(--mono); font-size: 13px; }
+  .scroll { overflow-x: auto; padding-bottom: 6px; }
+
+  /* The window. */
+  .win { width: 1180px; background: var(--w-body); color: var(--w-ink); border-radius: 10px; overflow: hidden;
+         box-shadow: 0 10px 34px rgba(20, 30, 50, .16); border: 1px solid var(--w-line); font-size: 13px; }
+  .head { height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 16px; background: var(--w-head);
+          border-bottom: 1px solid var(--w-line); }
+  .head .t { font-weight: 600; font-size: 14px; }
+  .head .s { color: var(--w-dim); }
+  .head .grow { flex: 1; }
+  .pill { border: 1px solid var(--w-line); border-radius: 999px; padding: 1px 10px; color: var(--w-dim); font-size: 12px; }
+  .pill.on { color: #1f6b2c; border-color: #9fd3aa; background: #e8f6eb; }
+  .field { display: flex; align-items: center; gap: 6px; width: 250px; height: 26px; border: 1px solid var(--w-line);
+           border-radius: 7px; padding: 0 8px; color: var(--w-faint); background: var(--w-panel); }
+  .dots { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--w-dim); }
+  .dots.open { background: var(--w-raised); color: var(--w-accent); }
+  .lights { display: flex; gap: 7px; margin-left: 6px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .lights i:nth-child(1) { background: #3cb24a; } .lights i:nth-child(2) { background: #e8a23a; } .lights i:nth-child(3) { background: #e2574c; }
+
+  .tools { height: 64px; display: flex; align-items: center; gap: 2px; padding: 0 12px; background: var(--w-head);
+           border-bottom: 1px solid var(--w-line); }
+  .tool { width: 56px; height: 48px; border-radius: 10px; display: flex; flex-direction: column; align-items: center;
+          justify-content: center; gap: 4px; color: var(--w-ink); font-size: 11.5px; }
+  .tool span { color: var(--w-dim); }
+  .tool svg { width: 15px; height: 15px; }
+  .tool.on { background: var(--w-raised); }
+  .tool.on svg { color: var(--w-accent); }
+  .tool.go svg { color: var(--w-accent); }
+  .tool.off { opacity: .45; }
+  .tool.wide { width: 64px; }
+  .sep { width: 1px; height: 30px; background: var(--w-line); margin: 0 8px; }
+  .gap { flex: 1; }
+
+  .findbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--w-side); border-bottom: 1px solid var(--w-line); }
+  .findbar .in { width: 240px; height: 26px; border: 1px solid var(--w-accent); border-radius: 7px; padding: 0 8px;
+                 display: flex; align-items: center; font-family: var(--mono); font-size: 12.5px; background: var(--w-panel); }
+  .findbar .in.quiet { border-color: var(--w-line); color: var(--w-faint); font-family: var(--body); font-size: 12.5px; }
+  .findbar .n { color: var(--w-dim); font-size: 12px; min-width: 62px; }
+  .chip { height: 24px; border: 1px solid var(--w-line); border-radius: 6px; padding: 0 8px; display: inline-flex;
+          align-items: center; color: var(--w-dim); font-size: 12px; background: var(--w-panel); }
+  .chip.on { color: var(--w-accent); border-color: var(--w-accent); }
+
+  .body { display: grid; grid-template-columns: 250px 1fr; height: 420px; }
+  .side { background: var(--w-side); border-right: 1px solid var(--w-line); display: flex; flex-direction: column; min-width: 0; }
+  .stabs { display: flex; gap: 2px; padding: 8px 8px 0; border-bottom: 1px solid var(--w-line); }
+  .stab { padding: 4px 10px; border-radius: 6px 6px 0 0; color: var(--w-dim); font-size: 12.5px; }
+  .stab.on { background: var(--w-panel); color: var(--w-ink); border: 1px solid var(--w-line); border-bottom-color: var(--w-panel); margin-bottom: -1px; }
+  .tree { padding: 8px 6px; font-size: 13px; }
+  .row { padding: 3px 8px; border-radius: 5px; display: flex; gap: 6px; align-items: center; }
+  .row.sel { background: var(--w-sel); }
+  .row .note { margin-left: auto; color: var(--w-faint); font-size: 11.5px; }
+  .ind1 { padding-left: 22px; } .ind2 { padding-left: 36px; }
+  .ico { width: 13px; height: 13px; flex: none; }
+
+  .main { display: grid; grid-template-rows: 30px 1fr 150px; min-width: 0; }
+  .ftabs { display: flex; align-items: end; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--w-line); background: var(--w-side); }
+  .ftab { padding: 5px 12px; font-size: 12.5px; color: var(--w-dim); display: flex; gap: 6px; align-items: center; }
+  .ftab.on { background: var(--w-panel); color: var(--w-ink); border: 1px solid var(--w-line); border-bottom-color: var(--w-panel);
+             border-radius: 6px 6px 0 0; margin-bottom: -1px; }
+  .code { background: var(--w-panel); font-family: var(--mono); font-size: 12.5px; line-height: 19px; padding: 6px 0; overflow: hidden; }
+  .ln { display: flex; white-space: pre; }
+  .ln b { font-weight: 400; width: 46px; text-align: right; padding-right: 14px; color: var(--w-faint); flex: none; }
+  .ln.cur { background: var(--w-cur); }
+  .ln.cur b { color: var(--w-dim); }
+  .k { color: var(--c-kw); } .n { color: var(--c-num); } .s { color: var(--c-str); } .c { color: var(--c-com); }
+  .f { color: var(--c-fn); } .l { color: var(--c-lib); }
+  .hit { background: var(--w-find); border-radius: 2px; }
+  .hit.cur { outline: 1px solid var(--w-accent); }
+  .bottom { border-top: 1px solid var(--w-line); display: grid; grid-template-rows: 30px 1fr; background: var(--w-panel); }
+  .btabs { display: flex; gap: 2px; padding: 0 8px; align-items: end; border-bottom: 1px solid var(--w-line); background: var(--w-side); }
+  .badge { background: var(--w-accent); color: #fff; border-radius: 999px; font-size: 10.5px; padding: 0 6px; }
+  .out { font-family: var(--mono); font-size: 12px; padding: 8px 14px; color: var(--w-ink); line-height: 18px; }
+  .out .d { color: var(--w-dim); }
+  .input { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+  .input .p { color: var(--w-accent); }
+  .foot { height: 28px; display: flex; align-items: center; gap: 18px; padding: 0 14px; border-top: 1px solid var(--w-line);
+          color: var(--w-dim); font-size: 12px; background: var(--w-side); }
+  .foot .r { margin-left: auto; }
+
+  /* The menus, opened beside it. */
+  .menus { display: flex; gap: 28px; flex-wrap: wrap; margin-top: 18px; align-items: flex-start; }
+  .menu { background: var(--w-panel); color: var(--w-ink); border: 1px solid var(--w-line); border-radius: 9px; padding: 6px 0;
+          width: 290px; box-shadow: 0 10px 26px rgba(20, 30, 50, .14); font-size: 13px; }
+  .menu .h { padding: 6px 14px 2px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--w-faint); }
+  .menu .i { padding: 4px 14px; display: flex; }
+  .menu .i span { margin-left: auto; color: var(--w-faint); font-family: var(--mono); font-size: 11.5px; }
+  .menu .i.on { background: var(--w-sel); color: var(--w-accent); }
+  .menu .sep2 { border-top: 1px solid var(--w-line); margin: 5px 0; }
+  .cap { font-size: 13px; color: var(--muted); margin: 6px 0 0; max-width: 290px; }
+
+  ol.q li { margin: 9px 0; max-width: 72ch; }
+  .rec { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Kosmos IDE Layout</h1>
+<p class="lead">The IDE's top rearranged after Kosmos Write: a header with what is open and the search, a row of small tools, and a More menu for everything else. The project view shows only your project, and Kosmos's own files get a tab of their own. Drawn to be agreed before it is changed.</p>
+
+<h2>The window</h2>
+<p>Plasma's project open, <code>plasma.c</code> in front, Find open with three matches, and the Console waiting for a line.</p>
+
+<div class="scroll">
+<div class="win" role="img" aria-label="The Kosmos IDE window, rearranged">
+  <div class="head">
+    <span class="t">Kosmos IDE</span><span class="s">Plasma · plasma.c</span>
+    <span class="grow"></span>
+    <span class="pill on">running, 12 s</span>
+    <span class="field"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 4 4"/></svg>Find a file  Ctrl P</span>
+    <span class="dots open">⋯</span>
+    <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+  </div>
+
+  <div class="tools">
+    <div class="tool on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 3v10M3 8h10"/></svg><span>New ▾</span></div>
+    <div class="tool"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 5h4l1.5 1.5H14V13H2z"/></svg><span>Open</span></div>
+    <div class="tool"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 2h8l2 2v10H3z M5 2v4h6V2 M5 10h6"/></svg><span>Save</span></div>
+    <div class="sep"></div>
+    <div class="tool"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M5 4 2 7l3 3M2 7h8a4 4 0 0 1 0 8H7"/></svg><span>Undo</span></div>
+    <div class="tool"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="m11 4 3 3-3 3M14 7H6a4 4 0 0 0 0 8h3"/></svg><span>Redo</span></div>
+    <div class="tool on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 4 4"/></svg><span>Find</span></div>
+    <div class="sep"></div>
+    <div class="tool"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9.5 2.5a3 3 0 0 0 3.8 3.8l-6.8 6.8a1.6 1.6 0 0 1-2.3-2.3z"/></svg><span>Build</span></div>
+    <div class="tool go"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg><span>Run</span></div>
+    <div class="tool"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="1.5"/></svg><span>Stop</span></div>
+    <div class="tool"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m3 8.5 3 3 7-7"/></svg><span>Check</span></div>
+    <div class="gap"></div>
+    <div class="tool"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v10H2z M2 6h12"/></svg><span>Console</span></div>
+    <div class="tool"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 3h10v10H3z M6 3v10"/></svg><span>Sidebar</span></div>
+  </div>
+
+  <div class="findbar">
+    <span class="in">kw_surface</span>
+    <span class="n">2 of 3</span>
+    <span class="chip">↑</span><span class="chip">↓</span>
+    <span class="chip">Aa</span>
+    <span class="chip on">This file</span><span class="chip">Project</span>
+    <span class="in quiet">Replace with…</span>
+    <span class="chip">Replace</span><span class="chip">All</span>
+    <span style="margin-left:auto" class="chip">✕</span>
+  </div>
+
+  <div class="body">
+    <div class="side">
+      <div class="stabs"><span class="stab on">Project</span><span class="stab">Outline</span><span class="stab">System</span></div>
+      <div class="tree">
+        <div class="row">▾ Plasma <span class="note">/Home/Projects</span></div>
+        <div class="row ind1">▸ build</div>
+        <div class="row ind1 sel">plasma.c</div>
+        <div class="row ind1">plasma.lua</div>
+      </div>
+    </div>
+    <div class="main">
+      <div class="ftabs"><span class="ftab on">plasma.c ×</span><span class="ftab">plasma.lua</span></div>
+      <div class="code">
+<div class="ln"><b>49</b><span class="c">/* main(): the window until it is closed; then how many frames, in words. */</span></div>
+<div class="ln"><b>50</b><span class="k">static</span> <span class="k">int</span> <span class="f">l_main</span>(<span class="l">lua_State</span> *L)</div>
+<div class="ln"><b>51</b>{</div>
+<div class="ln"><b>52</b>    <span class="k">struct</span> <span class="hit">kw_window</span> *w = <span class="l">kw_open</span>(<span class="s">"Plasma"</span>, <span class="n">480</span>, <span class="n">300</span>, <span class="l">KW_RESIZABLE</span> | <span class="l">KW_CENTRE</span>);</div>
+<div class="ln"><b>53</b>    <span class="k">struct</span> <span class="l">kw_event</span> e;</div>
+<div class="ln"><b>54</b>    <span class="k">unsigned</span> t = <span class="n">0</span>, frames = <span class="n">0</span>;</div>
+<div class="ln"><b>55</b></div>
+<div class="ln"><b>56</b>    <span class="k">for</span> (;;) {</div>
+<div class="ln cur"><b>57</b>        <span class="k">struct</span> <span class="hit cur">kw_surface</span> s = <span class="hit">kw_surface</span>(w);</div>
+<div class="ln"><b>58</b></div>
+<div class="ln"><b>59</b>        <span class="k">if</span> (s.pixels != <span class="k">NULL</span>) {</div>
+<div class="ln"><b>60</b>            <span class="f">draw</span>(s, t);</div>
+<div class="ln"><b>61</b>            <span class="l">kw_commit</span>(w, <span class="n">0</span>, <span class="n">0</span>, s.width, s.height);</div>
+<div class="ln"><b>62</b>        }</div>
+      </div>
+      <div class="bottom">
+        <div class="btabs"><span class="ftab">Output</span><span class="ftab">Problems</span><span class="ftab on">Console</span><span class="ftab">Search</span></div>
+        <div class="out">
+          <div class="d">plasma.lua, as process 31</div>
+          <div>How many colours? (2-256) </div>
+          <div class="input"><span class="p">›</span><span>64</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot"><span>Ln 57, Col 25</span><span>C, built by TinyCC</span><span>2 spaces</span><span class="r">F6 build · Ctrl Enter run · Ctrl F find · Ctrl / comment</span></div>
+</div>
+</div>
+
+<h2>The menus</h2>
+<div class="menus">
+  <div>
+    <div class="menu" role="img" aria-label="The New tool's menu">
+      <div class="i">New File <span>Ctrl N</span></div>
+      <div class="i on">New Project… </div>
+    </div>
+    <p class="cap"><b>New ▾</b>, the first tool: a file in the project, or a project from a template, as today's New Project window makes one.</p>
+  </div>
+  <div>
+    <div class="menu" role="img" aria-label="The More menu">
+      <div class="h">File</div>
+      <div class="i">Open… <span>Ctrl O</span></div>
+      <div class="i">Save <span>Ctrl S</span></div>
+      <div class="i">Save All</div>
+      <div class="i">Close Tab <span>Ctrl W ×2</span></div>
+      <div class="sep2"></div>
+      <div class="h">Edit</div>
+      <div class="i">Find <span>Ctrl F</span></div>
+      <div class="i">Replace <span>Ctrl R</span></div>
+      <div class="i">Find in Project <span>Ctrl Shift F</span></div>
+      <div class="i">Go to Line <span>Ctrl G</span></div>
+      <div class="i">Comment <span>Ctrl /</span></div>
+      <div class="sep2"></div>
+      <div class="h">View</div>
+      <div class="i">Larger Text <span>Ctrl =</span></div>
+      <div class="i">Smaller Text <span>Ctrl -</span></div>
+      <div class="i">Actual Size</div>
+      <div class="sep2"></div>
+      <div class="h">Help</div>
+      <div class="i">Tutorial <span>F1</span></div>
+      <div class="i">Kits and their calls</div>
+      <div class="i">Keyboard Shortcuts</div>
+    </div>
+    <p class="cap"><b>⋯ More</b>, in the header as every Kosmos window has it: what the tools don't show, grouped as a menu bar would group it, and each with its key.</p>
+  </div>
+</div>
+
+<h2>What changes</h2>
+<ul>
+  <li><b>The tools are Write's</b>: a small icon with its word under it, 56 pixels wide each, in one row 64 pixels high. Today's wide buttons with their keys written beside them take about twice the room; the keys move to the More menu and to the foot. The row has room left for what comes next.</li>
+  <li><b>New ▾ is a tool</b>, and New Project is in it.</li>
+  <li><b>The header keeps what is open, whether it is running, Find a file and ⋯ More</b>. The state pill moves up from the tools.</li>
+  <li><b>Find</b> opens a bar under the tools: matches marked in the editor, which one of how many, up and down, match case, this file or the whole project, and Replace beside it. Project results go to the <b>Search</b> tab, a click on one opening it at its line.</li>
+  <li><b>The sidebar's Project tab shows only the project.</b> Kosmos's own Apps, Programs, Libraries, Kits and Templates move to a <b>System</b> tab, read-only, opened in the editor as they are now.</li>
+  <li><b>Console</b> joins Output, Problems and Search below: what a running program prints and the lines you type to it, when it asks.</li>
+</ul>
+
+<h2>What's yours to decide</h2>
+<ol class="q">
+  <li><b>The tools as drawn</b>: New ▾, Open, Save · Undo, Redo, Find · Build, Run, Stop, Check, then Console and Sidebar at the right. <span class="rec">Recommended.</span></li>
+  <li><b>The More menu</b> instead of a menu bar, since Kosmos took menu bars out on 23 September. <span class="rec">Recommended. A menu bar would bring back what the look removed.</span></li>
+  <li><b>The sidebar's third tab, System</b>, holding Kosmos's own files. <span class="rec">Recommended, as you described it.</span></li>
+  <li><b>Find</b> as a bar under the tools, with This file and Project in one bar. <span class="rec">Recommended.</span></li>
+</ol>
+</div>
+</body>
+</html>

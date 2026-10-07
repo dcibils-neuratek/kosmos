@@ -7663,6 +7663,20 @@ processors, and still what follows USB:
    coloring and syntax highlighting and editor suggestions as you type") -
    **DONE** (0.11.39, `testing.md` 18.435); find in a file and in the
    project, find and replace, go to line; the Console tab. Then Kosmos Mail.
+   **And the IDE rearranged, ASKED on 7 October** (`docs/ide-layout.html`,
+   drawn for Diego to agree): "the kosmos ide needs a new project menu
+   option, right now the toolbar is messy with build, run, etc buttons that
+   occupy a lot of space ... we should put buttons as the style of kosmos
+   write toolbar which are small and easy to read", and "the sidebar shows a
+   lot of kosmos apps and kosmos programs in the project view where it
+   should be empty ... another tab in the sidebar called system files".
+   Drawn: Write's small tools (New ▾ with New Project, Open, Save, Undo,
+   Redo, Find, Build, Run, Stop, Check, Console, Sidebar); a ⋯ More menu in
+   the header rather than a menu bar, as 5zj took menu bars out; a find bar
+   under the tools; the sidebar's Project tab the project alone, Kosmos's
+   own files in a System tab; Console and Search tabs below. The kit's tool
+   button is `pixelkit.lua`'s `pk.tool` drawn for kit windows - one look,
+   one door.
    The September plan follows, as it was:
    **AGREED again on 26 September, NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua
