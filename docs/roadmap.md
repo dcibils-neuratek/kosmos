@@ -1223,6 +1223,30 @@ that still opens without a header, each given one. Its controls in the
 same kit style as every other window's. First the list of windows still on
 the old chrome, then the change, the gate's pictures held to it.
 
+**AGREED, 7 October - a project's C used by its file, and suggested.**
+Diego, reading the Mandelbrot template's `use("mandelbrot.elf")`: "why are
+we using use command from lua to use a .elf file", then "what if we just say
+use "fractal.c" as another source file, although we are linking the
+binary", "that way we can have the sense that is all one big project with
+sources in different languages and it all just works", and "calling a
+function from lua into C would open the syntax helper to help write code
+easier" - "yes, put both on the roadmap".
+- **`use("fractal.c")`**: each C file of a project that Lua calls declares
+  its kit under its own name (`KOSMOS_KIT(fractal)` in `fractal.c`), and
+  `use("<file>.c")` is that file's table in the image the project was built
+  into - still nothing loaded at run time. Several C files, several tables.
+  F6 says in Problems when a `.c` declares no kit or one under another name.
+  The templates, the examples, the tutorial's part three, and Doom's and
+  Quake's `use("doom.elf")` move to it; `.elf` names are kept working
+  until they have.
+- **Suggestions for a project's C, from Lua**: the IDE reads each project
+  `.c`'s `KOSMOS_KIT` block for the names Lua sees, and the comment above
+  each function for how Lua calls it (`/* fractal.fill(surface,
+  iterations) */`), so `fractal.` offers `fill(surface, iterations)` with its
+  comment as help, as `ui.` and `gfx.` do (`cdoc.lua`); and a Lua call to a
+  name the C does not register is a Problem. The suggestion box drawn and
+  agreed first.
+
 **WANTED, 7 October - Format Code in the IDE.** Diego: "the kosmos ide
 needs a format code button that makes the entire code beautiful and human
 readable with correct indentation, spaces, etc". A **Format** tool among the
