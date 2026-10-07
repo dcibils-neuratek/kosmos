@@ -91,6 +91,10 @@ local remembered = prefs.read("ide")
 
 local asked = files.words(args)[1]
 
+-- `ide new`: the remembered project, with New Project open over it.
+local asked_new = asked == "new"
+if asked_new then asked = nil end
+
 -- A file asked for is opened, and the folder it is in is the project.
 local asked_file = nil
 
@@ -545,6 +549,8 @@ end
 -- Check with a word saying what is running; the dots at the far end.
 --------------------------------------------------------------------------
 
+local new_project                  -- below, once the dialog is made
+
 local function new_file()
   local chooser = panel.save{
     start = project,
@@ -611,7 +617,12 @@ local header = ui.header{
   -- opens, Run, Stop and Check with their keys leave little else.
   sub_room = 150,
   after = {
-    icon("new", new_file), icon("open", open_chosen),
+    icon("new", function(self)
+      win:open_menu(win.origin_x + self.x, win.origin_y + self.y + self.h, {
+        { text = "New File", on_choose = new_file },
+        { text = "New Project\u{2026}", on_choose = function() new_project() end },
+      })
+    end), icon("open", open_chosen),
     icon("save", function() save() end), icon("saveall", save_all),
     divider(),
     icon("undo", function() if current then current.editor:undo() end end),
@@ -1970,5 +1981,178 @@ end
 if asked_file then open_file(asked_file) end
 
 say(("project %s, %d files open"):format(project, #open))
+
+--------------------------------------------------------------------------
+-- New Project (`docs/tinycc.md`, step C6; the drawing is `docs/tinycc.html`).
+--
+-- **What kind of application, first** - Diego's three, in his words - and
+-- at least one template of each, a project that builds and runs as it is,
+-- from `/Kosmos/Templates`. Create copies the template's folder whole into
+-- `/Home/Projects/<name>` and makes it the project, its first Lua file open;
+-- a Lua and C or a C one is then F6 away from its image and F5 from running.
+--------------------------------------------------------------------------
+
+local KINDS = {
+  { id = "lua", name = "Lua app",
+    what = "A desktop application in Lua alone. Nothing to build: Run runs it.",
+    templates = { { "HelloWindow", "Hello Window", "A window with a button that counts." } } },
+  { id = "luac", name = "Lua and C app",
+    what = "Lua for the window and the orchestrating; C for the work that wants every cycle.",
+    templates = { { "Mandelbrot", "Mandelbrot", "Lua opens the window; C computes every pixel." },
+                  { "SumBothWays", "Sum, both ways", "One loop in Lua and in C, timed side by side." } } },
+  { id = "c", name = "C app",
+    what = "A program that is C: a computation, a tool. It prints; windows from C come later.",
+    templates = { { "Primes", "Primes", "Counts the primes below a limit, and says how many." } } },
+}
+
+local new_kind, new_template = 2, 1
+local veil = ui.view{ x = 0, y = 0, w = W, h = H, hidden = true,
+                      follow = { "left", "right", "top", "bottom" } }
+local name_field = ui.field{ w = 300, text = "Mandelbrot", hint = "the project's name", hidden = true }
+local create = ui.button{ text = "Create", go = true, hidden = true }
+local cancel = ui.button{ text = "Cancel", hidden = true }
+local kind_buttons, template_buttons = {}, {}
+
+local DW, DH = 760, 420
+
+local function dialog_origin()
+  return (veil.w - DW) // 2, (veil.h - DH) // 2
+end
+
+local function place_dialog()
+  local x0, y0 = dialog_origin()
+
+  for i, b in ipairs(kind_buttons) do
+    b.x, b.y = x0 + 24 + (i - 1) * 240, y0 + 64
+    b.go = (i == new_kind)
+  end
+
+  for _, b in ipairs(template_buttons) do b.hidden = true end
+
+  for i, t in ipairs(KINDS[new_kind].templates) do
+    local b = template_buttons[new_kind * 10 + i]
+
+    b.hidden = veil.hidden
+    b.x, b.y = x0 + 24 + (i - 1) * 360, y0 + 196
+    b.go = (i == new_template)
+  end
+
+  name_field.x, name_field.y = x0 + 110, y0 + 300
+  cancel.x, cancel.y = x0 + DW - 24 - create.w - 8 - cancel.w, y0 + DH - 52
+  create.x, create.y = x0 + DW - 24 - create.w, y0 + DH - 52
+  win.dirty = true
+end
+
+function veil:draw(g)
+  local x0, y0 = dialog_origin()
+  local k = KINDS[new_kind]
+  local t = k.templates[new_template]
+
+  g:fill(0, 0, self.w, self.h, theme.mix(theme.window, theme.text, 110))
+  g:fill(x0, y0, DW, DH, theme.window)
+  g:text(x0 + 24, y0 + 18, "New Project", theme.text, nil, "title")
+  g:text(x0 + 24, y0 + 42, "What kind of application is it? Each starts from a template that builds and runs as it is.",
+         theme.text_dim, nil, "ui")
+  g:text(x0 + 24, y0 + 110, k.what, theme.text_dim, nil, "ui")
+  g:text(x0 + 24, y0 + 168, "Templates", theme.text_dim, nil, "ui")
+  g:text(x0 + 24, y0 + 240, t[3], theme.text_dim, nil, "ui")
+  g:text(x0 + 24, y0 + 306, "Name", theme.text, nil, "ui")
+  g:text(x0 + 24, y0 + 346, "/Home/Projects/" .. name_field.text, theme.text_dim, nil, "ui")
+end
+
+local function show_dialog(on)
+  veil.hidden = not on
+  name_field.hidden, create.hidden, cancel.hidden = not on, not on, not on
+
+  for _, b in ipairs(kind_buttons) do b.hidden = not on end
+
+  place_dialog()
+
+  if on then win:focus_on(name_field) end
+end
+
+-- The template's files into `/Home/Projects/<name>`, and that the project.
+local function create_project()
+  local name = (name_field.text:gsub("^%s+", ""):gsub("%s+$", ""))
+  local t = KINDS[new_kind].templates[new_template]
+  local from, to = "/Kosmos/Templates/" .. t[1], "/Home/Projects/" .. name
+
+  if name == "" or name:find("/", 1, true) then
+    say("a project wants a name, without a slash", theme.bad)
+    return
+  end
+
+  if fs.getattr(to) then
+    say(("%s is there already: another name"):format(to), theme.bad)
+    return
+  end
+
+  files.make_folder(to)
+
+  local main = nil
+
+  for _, f in ipairs(fs.list(from) or {}) do
+    local body = fs.read(from .. "/" .. f)
+
+    if type(body) == "string" then
+      fs.write(to .. "/" .. f, body)
+      if f:match("%.lua$") and not main then main = to .. "/" .. f end
+    end
+  end
+
+  -- The new project, in place of the one there was.
+  while #open > 0 do close_file(open[#open]) end
+
+  project = to
+  tree.roots[1] = folder(project, base(project), project:match("^(.*)/"))
+  tree.roots[1].open = true
+  build_problems = {}
+  show_dialog(false)
+
+  if main then open_file(main) end
+
+  remember()
+  say(("created %s from the %s template - %s"):format(to, t[2],
+      KINDS[new_kind].id == "lua" and "F5 runs it" or "F6 builds it, F5 runs it"), theme.good)
+end
+
+for i, k in ipairs(KINDS) do
+  local b = ui.button{ text = k.name, hidden = true }
+
+  b.on_click = function()
+    new_kind, new_template = i, 1
+    name_field.text = k.templates[1][1]
+    place_dialog()
+  end
+
+  kind_buttons[i] = b
+
+  for j, t in ipairs(k.templates) do
+    local tb = ui.button{ text = t[2], hidden = true }
+
+    tb.on_click = function()
+      new_template = j
+      name_field.text = t[1]
+      place_dialog()
+    end
+
+    template_buttons[i * 10 + j] = tb
+  end
+end
+
+create.on_click = create_project
+cancel.on_click = function() show_dialog(false) end
+name_field.on_enter = create_project
+
+win:add(veil)
+for _, b in ipairs(kind_buttons) do win:add(b) end
+for _, b in pairs(template_buttons) do win:add(b) end
+win:add(name_field)
+win:add(cancel)
+win:add(create)
+
+new_project = function() show_dialog(true) end
+
+if asked_new then show_dialog(true) end
 
 win:run()

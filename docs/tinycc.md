@@ -265,7 +265,7 @@ Each step its own revision and its own permanent test.
 - **C5 - the IDE's Build and Run** **Done, 0.11.30** (`testing.md` 18.429)., problems at their lines. *Test*: the
   display harness opens a project, builds, marks a broken line, fixes it,
   runs.
-- **C6 - New Project and the three templates.** *Test*: each template
+- **C6 - New Project and the templates.** **Done, 0.11.31** (`testing.md` 18.430; four templates, as Diego agreed). *Test*: each template
   created, built and run in the machine, and its window or its output
   checked - a template that stops working fails the gate.
 

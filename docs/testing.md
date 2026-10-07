@@ -20292,3 +20292,41 @@ starts nothing. 9 checks a board.
 suite still passed - F5 builds a stale image itself, so the "built" line
 came during F5's turn. The suite now keeps what each key caused apart; with
 F6 unbound, 3 fail.
+
+## 18.430 New Project and the four templates (TinyCC C6)
+
+**The templates**, `user/templates/`, served read only from the image as
+`/Kosmos/Templates` beside the themes: **Hello Window** (Lua: a window and a
+button that counts), **Mandelbrot** (Lua and C: Lua opens a direct window,
+`fractal.c` computes every pixel into its surface through
+`kosmos_surface_pixels`), **Sum, both ways** (Lua and C: one loop in each,
+timed), **Primes** (C: a sieve; its one line of Lua prints what the C
+answers). **`kosmos_kit.h`**, in the developer files: Lua's API, the
+surface door, and `KOSMOS_KIT(name)`, which defines `kosmos_project_kit` and
+its name - one weak entry in `sys_user.c`'s kit search, so `use("name.elf")`
+finds a project's C as it finds Doom's, and every other image is unchanged.
+
+**New Project in the IDE** - the header's New is a menu now, New File and
+New Project..., and `wm ide:new` opens on it: the three kinds in Diego's
+words, each kind's templates, a name, Create. It copies the template's
+folder into `/Home/Projects/<name>`, makes it the project and opens its Lua.
+
+Measured in the machine under QEMU: Sum's loop 590 ms in Lua and 52 in C;
+Mandelbrot's 520 x 340 at 200 iterations in C in 188 ms.
+
+`run_tcc.py` grows to 17 checks a board: the four templates in
+`/Kosmos/Templates`, the three with C built, Sum both ways the same answer
+from Lua and C, Primes 78,498 below a million; and New Project - Enter, F6,
+F5 - making, building and running Mandelbrot, its window's black interior
+on the screen. **Control**: Enter not creating - 2 fail.
+
+**Found writing them**: `atol` is not in Kosmos's libc, and TinyCC refuses
+an undeclared function, so Primes uses `strtol`; a C kit's `print` from
+the global table printed nowhere a program's console could see, so Primes
+hands its sentence back to its Lua; and a 96 MB test disk filled, which
+showed a read going wrong after a refused write (`roadmap.md`, to be found).
+
+The gate: 101 of 102 - `arm-queries` held `/Kosmos` to its folders as they
+were, and `Templates` is one more; its expected listing says so now, and it
+passes. `arm-tcc-2` and `x86-tcc-2` take 54 s each, five boots apiece, the
+whole gate 9:33.

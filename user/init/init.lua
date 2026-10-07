@@ -3839,6 +3839,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
 
   -- And the looks that ship, a folder of the same store.
   ns.mount("/Kosmos/Themes", bin_cap, "/themes", "bin")
+  ns.mount("/Kosmos/Templates", bin_cap, "/templates", "bin")
 
   -- And the Deskbar's menu as it ships, laid out from each application's
   -- header (`binfs.c`, `menu_path`); a person's own is `/Home/Deskbar`.
@@ -5961,6 +5962,7 @@ if role == ROLE_RUNNER then
   if req.bin     then ns.mount("/Kosmos/Apps",       req.bin, "/apps", "bin") end
   if req.bin     then ns.mount("/Kosmos/Programs",   req.bin, "/programs", "bin") end
   if req.bin     then ns.mount("/Kosmos/Themes",     req.bin, "/themes", "bin") end
+  if req.bin     then ns.mount("/Kosmos/Templates",  req.bin, "/templates", "bin") end
   if req.bin     then ns.mount("/Kosmos/Deskbar",    req.bin, "/deskbar", "bin") end
   if req.devices then ns.mount("/Devices",           req.devices, nil, "dev") end
   if req.lib     then ns.mount("/Kosmos/Libraries",  req.lib, nil, "bin") end

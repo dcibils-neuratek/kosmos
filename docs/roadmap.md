@@ -953,7 +953,7 @@ GCC-built runtime and its own C into an image the loader accepts and runs -
 14 checks on AArch64 and x86-64, with a fifteen-line layout patch. **Diego's answers, the same evening**: the runtime in the
 image, compressed; C apps print first, a Window Kit in C after; the four
 templates; builds in a `build` folder beside the sources; the command is
-`tcc` (`docs/tinycc.md`, *Diego's decisions*). **C1 done** (0.11.26): TinyCC in the tree, building Kosmos images on the Mac (18.425). **C2 done** (0.11.27): the developer files, in `/Home/Developer` - the image had no room (18.426). **C3 done** (0.11.28): C compiled and linked inside Kosmos, by the C Kit, run (18.427). **C4 done** (0.11.29): `tcc` at the prompt (18.428). **C5 done** (0.11.30): the IDE's Build (F6) and Run, building first when the C changed (18.429). Next C6, New Project and the templates.
+`tcc` (`docs/tinycc.md`, *Diego's decisions*). **C1 done** (0.11.26): TinyCC in the tree, building Kosmos images on the Mac (18.425). **C2 done** (0.11.27): the developer files, in `/Home/Developer` - the image had no room (18.426). **C3 done** (0.11.28): C compiled and linked inside Kosmos, by the C Kit, run (18.427). **C4 done** (0.11.29): `tcc` at the prompt (18.428). **C5 done** (0.11.30): the IDE's Build (F6) and Run, building first when the C changed (18.429). **C6 done** (0.11.31): New Project and the four templates (18.430). **TinyCC C1-C6 built.** Next: the Window Kit in C (decision 2), then Maps, Mail, Calendar designs.
 
 **FOUND on 6 October, in the C3 gate - two things that passed alone after.**
 (1) `x86-headless`: "/Kosmos/Programs lists 75 and user/bin/programs has
@@ -963,7 +963,16 @@ namespace's walk of it; to be found by making it happen, not by reading.
 (2) `x86-kernel`'s placement test, now saying which way it failed: "placed
 on the loaded core, 3, with its fillers blocked there" - the placement
 itself, not the wait (6q's neighbour); and its message lacked a newline,
-which ran into the TAP line and made the harness count 196 of 197 - fixed. Diego: "I want just one C compiler",
+which ran into the TAP line and made the harness count 196 of 197 - fixed.
+(3) **After a write refused for a full disk, a read came back wrong** (found
+writing C6's test, 6 October): the IDE's build of Mandelbrot on a 96 MB
+test disk was refused "the disk is full" writing its 20 MB image; the
+build after it, in the same boot, had TinyCC call `/Home/Developer/libgcc.a`
+- unchanged, and read without fault a minute before - "unrecognized file
+type". Either the disk server's state after a refused write, or the
+reader's region after a failed fill. To be reproduced on its own - fill a
+disk, refuse a write, read back a file and compare it - before anything is
+changed; a read answering wrong bytes is the worst thing a disk can do. Diego: "I want just one C compiler",
 "What's the best option for kosmos?", then "Yes do that", "Tinycc and ide
 integration so I can build c programs". Chosen over GCC (about 50 MB at the
 least - `cc1` alone is 37 MB, bigger than all of Kosmos - and a separate

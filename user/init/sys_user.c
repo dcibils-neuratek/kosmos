@@ -2604,6 +2604,15 @@ void kosmos_net_kit(lua_State *L);
 void kosmos_crypto_kit(lua_State *L);
 /* The C Kit, TinyCC, in the full image alone (`docs/tinycc.md`, C3). */
 void kosmos_tcc_kit(lua_State *L) __attribute__((weak));
+
+/*
+ * **A project's own C** (`docs/tinycc.md`, C6): what `KOSMOS_KIT(name)` in
+ * `kosmos_kit.h` defines, in an image the C Kit built - its name and its
+ * kit, reached as `use("name.elf")` as Doom's is. Weak, so every other
+ * image is unchanged by it.
+ */
+void kosmos_project_kit(lua_State *L) __attribute__((weak));
+extern const char kosmos_project_name[] __attribute__((weak));
 void kosmos_tls_kit(lua_State *L);
 #ifdef KOSMOS_WEB
 void kosmos_web_kit(lua_State *L);
@@ -2690,6 +2699,13 @@ static int l_kit(lua_State *L)
             kits[i].build(L);
             return 1;
         }
+    }
+
+    /* A project's, in the image the C Kit built for it. */
+    if (own && kosmos_project_kit != NULL && kosmos_project_name != NULL
+        && strcmp(kosmos_project_name, want) == 0) {
+        kosmos_project_kit(L);
+        return 1;
     }
 
     lua_pushnil(L);

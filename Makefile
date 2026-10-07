@@ -2810,11 +2810,16 @@ THEMES := $(wildcard user/themes/*.theme)
 # lists them.
 PAGES := $(wildcard user/pages/*.page)
 
-$(GEN)/programs.c: $(BIN_LUA) $(THEMES) $(PAGES) tools/progs2c.py $(HOSTDIR)/lua.ok
+# **The IDE's templates** (`docs/tinycc.md`, C6): a folder each, read only in
+# `/Kosmos/Templates`, copied whole into a new project.
+TEMPLATES := $(wildcard user/templates/*/*)
+
+$(GEN)/programs.c: $(BIN_LUA) $(THEMES) $(PAGES) $(TEMPLATES) tools/progs2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/progs2c.py programs_lua $@ $(BIN_LUA) \
 	    --rooted user/themes themes/ $(THEMES) \
-	    --rooted user/pages pages/ $(PAGES)
+	    --rooted user/pages pages/ $(PAGES) \
+	    --rooted user/templates templates/ $(TEMPLATES)
 
 # The libraries in user/lib/, the same way and for the same reason. A
 # separate store rather than a directory inside /bin, because a program is

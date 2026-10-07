@@ -82,14 +82,15 @@ def main():
         if os.path.exists(path):
             os.remove(path)
 
-        subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", path, "96"]
+        subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", path, "320"]
                        + pairs + ["%s:/Home/t/%s" % (os.path.join(work, n), n)
                                   for n in ("apptest.c", "make.lua", "run.lua", "broken.c")]
                        # Two projects for the IDE (C5): one that builds, one that does not.
                        + ["%s:/Home/Good/%s" % (os.path.join(work, n), n)
                           for n in ("apptest.c", "run.lua")]
                        + ["%s:/Home/Bad/broken.c" % os.path.join(work, "broken.c"),
-                          "%s:/Home/Bad/run.lua" % os.path.join(work, "run.lua")],
+                          "%s:/Home/Bad/run.lua" % os.path.join(work, "run.lua"),
+                          "%s:/Home/templates.lua" % os.path.join(HERE, "tcc_templates.lua")],
                        check=True, capture_output=True, cwd=ROOT)
         return path
 
@@ -112,6 +113,34 @@ def main():
     def ide_lines(parts):
         return "\n".join("%s: %s" % (k, l) for k in ("f6", "f5")
                          for l in parts.get(k, "").splitlines() if l.startswith("ide:"))[-1500:]
+
+    def ide_new(path):
+        """The IDE opened on New Project: Enter, F6, F5 - and the screen."""
+        guest = WA.with_disk(image, path)
+
+        try:
+            guest.wait_for("kosmos> ", "a prompt")
+            guest.type("wm ide:new")
+            guest.wait_for("wm: window ", "the IDE's window")
+            time.sleep(3)
+
+            for key, until in (("ret", "ide: created"), ("f6", "ide: built"),
+                               ("f5", "as process")):
+                guest.sendkey(key)
+                deadline = time.monotonic() + 90
+
+                while time.monotonic() < deadline and until not in guest.seen:
+                    guest._read_available()
+                    time.sleep(0.3)
+
+            time.sleep(10)
+            guest._read_available()
+            _, _, px = R.parse_ppm(guest.screendump())
+            dark = sum(1 for i in range(0, len(px) - 2, 3)
+                       if px[i] == 0x05 and px[i + 1] == 0x06 and px[i + 2] == 0x0a)
+            return guest.seen, dark
+        finally:
+            guest.close()
 
     def ide(path, project):
         """The desktop with the IDE on `project`: F6, then F5 - what each
@@ -224,6 +253,34 @@ def main():
                     parts["f6"], re.M) is not None and "as process" not in parts["f5"],
           "F6 and F5 on a project with an error did not stop at its line:\n" + ide_lines(parts))
 
+    # **The templates** (C6): each copied out of /Kosmos/Templates, the three
+    # with C built, and the two that print run - each saying what it should.
+    said = session(good, [("run /Home/templates.lua", "(templates) ended"),
+                          ("run /Home/P/SumBothWays/sum.lua", "(sum) ended"),
+                          ("run /Home/P/Primes/primes.lua 1000000", "(primes) ended")])
+    check(re.search(r"^TEMPLATES HelloWindow Mandelbrot Primes SumBothWays", said, re.M)
+          is not None, "/Kosmos/Templates does not hold the four templates:\n" + said[-600:])
+    for name in ("Mandelbrot", "SumBothWays", "Primes"):
+        check(re.search(r"^TEMPLATE %s built true" % name, said, re.M) is not None,
+              "the %s template did not build:\n%s" % (name, "\n".join(
+                  l for l in said.splitlines() if l.startswith("TEMPLATE"))))
+    check("the same answer" in said and re.search(r"^  C: +29999997 in \d+ ms", said, re.M),
+          "Sum, both ways did not give the same answer in Lua and C:\n" + said[-600:])
+    check(re.search(r"^78498 primes below 1000000", said, re.M) is not None,
+          "Primes did not count the 78,498 primes below a million:\n" + said[-400:])
+
+    # **New Project, in the IDE** (C6): opened on it, Enter creates the
+    # default - a Lua and C app from Mandelbrot - F6 builds it and F5 runs it,
+    # and the window it opens is the fractal: its black interior on the screen.
+    seen, picture = ide_new(good)
+    check("ide: created /Home/Projects/Mandelbrot from the Mandelbrot template" in seen
+          and "ide: built build/mandelbrot.elf" in seen
+          and "ide: mandelbrot.lua, as process" in seen,
+          "New Project, F6 and F5 did not make, build and run Mandelbrot:\n"
+          + "\n".join(l for l in seen.splitlines() if l.startswith("ide:"))[-1200:])
+    check(picture > 20000,
+          "Mandelbrot's window does not show the fractal: %d of its dark pixels" % picture)
+
     said = session(stale, [("run /Home/t/make.lua", "(make) ended")])
     check("BUILD refused: the developer files in /Home/Developer are from another Kosmos" in said,
           "a pack from another build was not refused in words:\n"
@@ -236,8 +293,9 @@ def main():
 
     print("PASS: %d checks on C built inside Kosmos (apptest.c compiled and linked by "
           "the C Kit into build/apptest.elf, %s bytes in %s ms; a program in it answered "
-          "42; a broken file one error on line 3; the same at the prompt with tcc; a "
-          "pack from another build refused)"
+          "42; a broken file one error on line 3; the same at the prompt with tcc; the "
+          "IDE's F6 and F5; the four templates, built and run; New Project making, "
+          "building and running Mandelbrot; a pack from another build refused)"
           % (checks, built.group(1), built.group(2)))
     return 0
 
