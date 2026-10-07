@@ -7670,7 +7670,14 @@ processors, and still what follows USB:
    Tutorial**, pages in the browser, each lesson's project copied into
    `/Home/development/`; the bundled apps opened read-only with **Save a
    copy**; and built a part at a time, each shown before the next, part one
-   with the Help menu and a suite for the lessons. **And first, the IDE's
+   with the Help menu and a suite for the lessons. **Part one DONE**
+   (0.11.44-0.11.48): Help's Tutorial and Lesson's Project, the five
+   lessons' pages in `docs/ide-tutorial/` and their projects in
+   `/Kosmos/Tutorial`, every picture taken by following the pages in QEMU
+   (`tools/ide_tutorial_shots.py`, `make ide-tutorial-shots`), the pages
+   held to the IDE's words and their pictures' sizes (`tools/test_tutorial.lua`),
+   and each finished project run by the IDE suite with a control. Shown to
+   Diego before part two. **And first, the IDE's
    gaps against its drawing**, which the lessons' pictures would show:
    **C coloured and suggested as it is typed** (Diego: "Make sure c has
    coloring and syntax highlighting and editor suggestions as you type") -
