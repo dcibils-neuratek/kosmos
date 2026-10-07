@@ -195,6 +195,44 @@ local function report(p)
     end
   end
 
+  --
+  -- **The spread** (7 October): how many passes - all of them, and the
+  -- ones a collection finished in - fell under each mark. A frame at 60 Hz
+  -- is 16.7 ms; a pass over it is a frame the screen did not get on time.
+  --
+  local marks = { "<1", "<2", "<4", "<8", "<16.7", "<33.3", ">=33.3" }
+
+  local function spread(name, prefix)
+    local cells = {}
+
+    for i, mark in ipairs(marks) do
+      cells[#cells + 1] = ("%s %d"):format(mark, p[prefix .. i] or 0)
+    end
+
+    print(("  %-16s %s"):format(name, table.concat(cells, "  ")))
+  end
+
+  if p.busy_hist_1 then
+    print("")
+    print("  passes by busy ms:")
+    spread("all", "busy_hist_")
+    spread("collecting", "gc_hist_")
+  end
+
+  --
+  -- **From a key or a press to the picture that answers it** - through the
+  -- application and back. What a person feels, and what a display server in
+  -- C would be for.
+  --
+  if p.input_n and (p.input_n > 0 or (p.input_stale or 0) > 0) then
+    print("")
+    print(string.format("  input to screen: %d answered, mean %.2f ms, WORST %.2f ms"
+                        .. "  (%d not answered within half a second)",
+                        p.input_n, p.input_n > 0 and ms(p.input_total) / p.input_n or 0,
+                        ms(p.input_max), p.input_stale or 0))
+    spread("by ms", "input_hist_")
+  end
+
   print("")
 end
 

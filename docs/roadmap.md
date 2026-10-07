@@ -7872,6 +7872,26 @@ the screen - About's and `neofetch`'s rows beside Kosmos and Nebula - with
 the next revision. Should the window manager split (a display server in C
 under a shell in Lua, asked the same day), both halves are Astra's.
 
+**MEASURED on 7 October - Astra's split: a display server in C under a
+window manager in Lua** (`testing.md` 18.438). Diego: "does it makes sense to
+think about a migration of the window manager from lua to c? ... lua is
+great for fast development of apps but not necessary efficient for system
+components", then "lets measure the display server split and make a
+choice". On the M700, under load and typing: 98.9% of passes under 1 ms,
+none over 4 ms; the slowest passes collections of 1.6-3.1 ms about one and
+a half times a second; composing (C) 80% of the busy time; key to screen
+3.8 ms on average, 6.3 at worst. Not urgent on this machine; the slowest
+passes are still the collector's, as the layer rule says they would be, and
+the Pi 5, the target, is several times slower. **The choice made, on Diego's
+ask: the split, in steps, designed first** - S0 composing's Lua garbage
+(2.1 KB a pass, more than half of all of it) made smaller, which halves the
+collections whatever comes next; S1 the design, `docs/astra-display.md` and
+its diagram, for Diego to agree: what the display server in C owns (the
+screen, surfaces, damage, composing, input routing, the frame path) and
+what the window manager in Lua keeps (placement, focus policy, decorations,
+menus, the Deskbar, the looks); then the steps it names, the desktop working
+after each. The system drawn whole the same day: `docs/how-kosmos-works.html`.
+
 ### The optimisation phase - after the applications
 
 **AGREED on 7 October - applications first, then a phase of optimising.**

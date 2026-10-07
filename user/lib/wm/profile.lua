@@ -73,10 +73,27 @@ P.pass_busy = 0
 --
 P.waiting = nil
 
-function P.reset()
+-- The windows whose answer to an input is in this pass's picture.
+P.answered_wins = {}
+
+--
+-- **The spread, not only the worst** (7 October, measuring whether Astra's
+-- window manager should split into a display server in C and a shell in
+-- Lua): how many passes took under 1, 2, 4 and 8 ms, under a frame at 60 Hz,
+-- under two, and more - and the same for the passes a collection finished
+-- in. One bad pass in a thousand and one in ten are both "a worst of 20 ms".
+--
+P.BUCKETS_MS = { 1, 2, 4, 8, 16.7, 33.3 }
+
+local function buckets() return { 0, 0, 0, 0, 0, 0, 0 } end
+
+function P.reset(hz)
+  P.hz = hz or P.hz or 62500000
   P.prof = { passes = 0, frames = 0, rects = 0, px = 0, drawn = 0,
-           busy = { total = 0, max = 0 },
-           gc = { collections = 0, worst = 0 } }
+           busy = { total = 0, max = 0, hist = buckets() },
+           gc = { collections = 0, worst = 0, hist = buckets() },
+           input = { n = 0, total = 0, max = 0, stale = 0, hist = buckets() } }
+  P.answered_wins = {}
 
   for _, name in ipairs(P.STAGES) do
     P.prof[name] = { total = 0, max = 0, kb = 0 }
@@ -122,6 +139,70 @@ function P.charge(stage, t0, h0, idle)
   return now, heap
 end
 
+-- Which bucket `ticks` falls in.
+function P.bucket(hist, ticks)
+  local ms = ticks * 1000 / P.hz
+
+  for i, limit in ipairs(P.BUCKETS_MS) do
+    if ms < limit then hist[i] = hist[i] + 1 return end
+  end
+
+  hist[#hist] = hist[#hist] + 1
+end
+
+--
+-- **From a key or a press to the picture that answers it**: what a person
+-- feels, and the number a display server would be for. Stamped when this
+-- process posts the event to a window; carried when the application's poll
+-- collects it; closed when that window's next frame - a drawing's last
+-- message, or a commit - is on the screen, at the end of the pass that
+-- composed it. A window that took over half a second was not answering that
+-- input, and is counted apart rather than as a latency.
+--
+local INPUT = { key = true, rawkey = true, mouse = true, wheel = true }
+
+function P.posted(win, event)
+  if not P.profiling or not INPUT[event.type] or win.p_posted then return end
+  if event.type == "mouse" and event.action ~= "press" then return end
+  if event.type == "rawkey" and not event.down then return end
+
+  win.p_posted = sys.ticks()
+end
+
+function P.delivered(win)
+  if win.p_posted then win.p_got, win.p_posted = win.p_posted, nil end
+end
+
+function P.answered(win)
+  if win.p_got then
+    win.p_answered, win.p_got = win.p_got, nil
+    P.answered_wins[#P.answered_wins + 1] = win
+  end
+end
+
+function P.shown()
+  if #P.answered_wins == 0 then return end
+
+  local now = sys.ticks()
+  local s = P.prof.input
+
+  for _, win in ipairs(P.answered_wins) do
+    local took = now - (win.p_answered or now)
+
+    win.p_answered = nil
+
+    if took * 2 > P.hz then
+      s.stale = s.stale + 1
+    else
+      s.n, s.total = s.n + 1, s.total + took
+      if took > s.max then s.max = took end
+      P.bucket(s.hist, took)
+    end
+  end
+
+  P.answered_wins = {}
+end
+
 -- Everything measured, flattened: the serialiser crosses this as a table of
 -- scalars, and a stage is two numbers rather than a structure worth naming
 -- twice. Times are counter ticks - what a tick is worth is `/Devices/cpu`'s
@@ -132,7 +213,15 @@ function P.report()
                 rects = P.prof.rects, px = P.prof.px, drawn = P.prof.drawn,
                 busy_total = P.prof.busy.total, busy_max = P.prof.busy.max,
                 collections = P.prof.gc.collections, gc_worst = P.prof.gc.worst,
-                heap = collectgarbage("count") }
+                input_n = P.prof.input.n, input_total = P.prof.input.total,
+                input_max = P.prof.input.max, input_stale = P.prof.input.stale,
+                hz = P.hz, heap = collectgarbage("count") }
+
+  for i = 1, #P.BUCKETS_MS + 1 do
+    out["busy_hist_" .. i] = P.prof.busy.hist[i]
+    out["gc_hist_" .. i] = P.prof.gc.hist[i]
+    out["input_hist_" .. i] = P.prof.input.hist[i]
+  end
 
   for _, name in ipairs(P.STAGES) do
     out[name .. "_total"] = P.prof[name].total

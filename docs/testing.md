@@ -20622,3 +20622,51 @@ its window at once - "an example ended while it should be running". 87 s a
 board.
 
 The gate: 102 of 102 in 9:41.
+
+## 18.438 Astra measured for the split: a display server in C, a shell in Lua?
+
+Diego, 7 October: "does it makes sense to think about a migration of the
+window manager from lua to c?", "lua is great for fast development of apps
+but not necessary efficient for system components", then "lets measure the
+display server split and make a choice".
+
+**What `frames` measures now** (`user/lib/wm/profile.lua`): beside each
+stage's time and allocation and the worst pass, **the spread** - passes
+under 1, 2, 4 and 8 ms, under a 60 Hz frame (16.7 ms), under two, and more,
+for all passes and for those a collection finished in - and **input to
+screen**: stamped when the window manager posts a key, a press or the wheel
+to a window, carried when the application's poll collects it, closed when
+that window's next frame - a drawing's last message or a commit - is
+composed. What a person feels, through the application and back.
+
+**Under QEMU** (TCG, the shape only): 10,146 passes in 20 s, 95% under 1 ms;
+every one of the 36 collecting passes 2 ms or more, the worst 9.1 ms; 3.1 KB
+allocated a pass; 49 keys to the Text Editor's screen, mean 5.9 ms.
+
+**On the M700** (0.11.41 netbooted, 1720x1440; cube3d, GL Gears, GL Teapot,
+the Text Editor, Monitor, Processes and Log open; typed by VNC), two runs:
+
+    passes            7,953 / 10,237   98.9% under 1 ms, none over 4 ms
+    worst pass        3.07 ms (a collection) / 2.04 ms (78% a collection)
+    collections       31 in 20 s, worst 3.07 ms / 40 in 25 s, worst 1.59 ms
+    composing (C)     79-80% of busy time, 0.46-0.48 ms a composing pass,
+                      1.3 ns a pixel, 365,000 pixels a frame
+    Lua stages        about 20%: application requests 9.7%, polls 7.0%,
+                      pointer 1.6%, reaping 1.2%, keys 0.9%
+    allocated         3.5 KB a pass, 213 KB a second - 2.1 KB of it composing's
+    input to screen   39 keys: mean 3.76 ms, worst 6.28 ms, all under 8 ms
+
+**What it says.** On the M700 the window manager never came near a frame: no
+pass over 4 ms, and its collections cost 1-3 ms about one and a half times a
+second. The slowest passes are still collections - the jitter the layer rule
+is about - but at this machine's speed they fit in a frame six times over.
+What would change that is a slower machine (the Pi 5, the target, is several
+times slower than this Core i5), a larger screen (4K is 3.3 times the
+pixels, which is composing's - C - and not the collector's), or more garbage.
+And more than half of the garbage is composing's Lua glue, 2.1 KB a pass:
+the cheapest fix for the jitter is to make less of it, as `con.wait` did.
+
+The gate: 100 of 102 in 9:41. `x86-film` (1368 samples off, a stretch of
+silence) and `x86-sound` (a 421 Hz tone heard for 440) - the emulated
+sound's dropout under the gate's load (`roadmap.md` 6zw) - passed alone,
+13 of 13 and 14 of 14. Nothing here touches sound.

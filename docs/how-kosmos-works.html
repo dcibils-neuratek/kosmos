@@ -1,0 +1,419 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  How Kosmos works: the whole system as layers - the hardware, Nebula, the
+  drivers, the servers, what every process carries, the kits, Astra and the
+  applications - and five journeys across them, each lighting up what it
+  passes through. Diego, 7 October 2026: "a full diagram of the operating
+  system, the kernel, the desktop, the apps, the modules, drivers, servers,
+  etc in a layered diagram that visually explains how everything works".
+  The names are the tree's at 0.11.42; docs/stack.html is the module list.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How Kosmos Works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  /* A stack of bands, the machine at the bottom and the applications at the
+     top, each a row of parts; beside it the journeys, one chosen at a time,
+     lighting the parts it touches and numbering them in order. A layer's
+     hue is its place in the stack, from the deep blue of the hardware to
+     the warm light of the applications - a nebula to its stars. */
+  :root {
+    --bg: #f4f5f8; --panel: #ffffff; --ink: #18202c; --muted: #5d6879; --rule: #dde2ea;
+    --hw: #e6e9ef;   --hw-ink: #3b4657;
+    --k: #dde5f7;    --k-ink: #23417e;
+    --drv: #dceff2;  --drv-ink: #145a66;
+    --srv: #e2f1e4;  --srv-ink: #1f5e2c;
+    --rt: #eeeedd;   --rt-ink: #5b5418;
+    --kit: #f6ead8;  --kit-ink: #7a4a10;
+    --astra: #f3e3ee; --astra-ink: #7a2a5e;
+    --app: #fbe9e2;  --app-ink: #8a3519;
+    --lit: #2a55c9; --lit-ink: #ffffff; --msg: #2a55c9; --mem: #c26b0c;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12151b; --panel: #1a1e25; --ink: #e5e9f0; --muted: #9aa4b4; --rule: #2b313b;
+      --hw: #20252e;  --hw-ink: #b7c0ce;
+      --k: #1c2740;   --k-ink: #9db8ef;
+      --drv: #17303a; --drv-ink: #8fd0db;
+      --srv: #1a3121; --srv-ink: #9ed7a8;
+      --rt: #2e2d1a;  --rt-ink: #d8cf86;
+      --kit: #352818; --kit-ink: #e9b876;
+      --astra: #36202f; --astra-ink: #e9a1cf;
+      --app: #3a2219; --app-ink: #f0a585;
+      --lit: #6f95f5; --lit-ink: #0d1220; --msg: #7fa3f7; --mem: #f0a54a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12151b; --panel: #1a1e25; --ink: #e5e9f0; --muted: #9aa4b4; --rule: #2b313b;
+    --hw: #20252e;  --hw-ink: #b7c0ce;
+    --k: #1c2740;   --k-ink: #9db8ef;
+    --drv: #17303a; --drv-ink: #8fd0db;
+    --srv: #1a3121; --srv-ink: #9ed7a8;
+    --rt: #2e2d1a;  --rt-ink: #d8cf86;
+    --kit: #352818; --kit-ink: #e9b876;
+    --astra: #36202f; --astra-ink: #e9a1cf;
+    --app: #3a2219; --app-ink: #f0a585;
+    --lit: #6f95f5; --lit-ink: #0d1220; --msg: #7fa3f7; --mem: #f0a54a;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding-block: 32px 72px; padding-inline: 18px; }
+  h1 { font-family: var(--display); font-size: 34px; margin: 0 0 4px; letter-spacing: .01em; }
+  .lead { color: var(--muted); font-size: 16.5px; max-width: 78ch; margin: 0 0 22px; }
+  .names { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 26px; }
+  .name { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 14px; min-width: 0; flex: 1 1 230px; }
+  .name b { font-family: var(--display); font-size: 19px; display: block; }
+  .name span { color: var(--muted); font-size: 13.5px; }
+
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 22px; align-items: start; }
+  @media (max-width: 980px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+
+  .stack { display: flex; flex-direction: column-reverse; gap: 6px; }
+  .band { border-radius: 10px; padding: 10px 12px 12px; display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; align-items: start; }
+  @media (max-width: 640px) { .band { grid-template-columns: minmax(0, 1fr); } }
+  .band h2 { font-family: var(--display); font-size: 17px; margin: 0; line-height: 1.2; }
+  .band .where { font-size: 12px; opacity: .85; margin-top: 3px; line-height: 1.35; }
+  .parts { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .p { position: relative; border-radius: 7px; padding: 4px 9px; font-size: 13px; line-height: 1.3; background: var(--panel); border: 1px solid transparent; transition: background .15s, color .15s, opacity .15s; }
+  .p small { display: block; font-size: 11px; opacity: .75; }
+  .p .n { position: absolute; top: -8px; right: -8px; width: 19px; height: 19px; border-radius: 50%; display: none; place-items: center; font-size: 11px; font-weight: 600; background: var(--ink); color: var(--panel); font-variant-numeric: tabular-nums; }
+  .dim .p { opacity: .35; }
+  .dim .p.lit { opacity: 1; background: var(--lit); color: var(--lit-ink); }
+  .dim .p.lit .n { display: grid; }
+  .group { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; opacity: .7; width: 100%; margin-top: 4px; }
+  .group:first-child { margin-top: 0; }
+
+  .b-hw { background: var(--hw); color: var(--hw-ink); }
+  .b-k { background: var(--k); color: var(--k-ink); }
+  .b-drv { background: var(--drv); color: var(--drv-ink); }
+  .b-srv { background: var(--srv); color: var(--srv-ink); }
+  .b-rt { background: var(--rt); color: var(--rt-ink); }
+  .b-kit { background: var(--kit); color: var(--kit-ink); }
+  .b-astra { background: var(--astra); color: var(--astra-ink); }
+  .b-app { background: var(--app); color: var(--app-ink); }
+  .band .p { color: inherit; }
+
+  .side { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 14px; }
+  @media (max-width: 980px) { .side { position: static; } }
+  .card { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; }
+  .card h3 { font-family: var(--display); font-size: 18px; margin: 0 0 8px; }
+  .journeys { display: flex; flex-wrap: wrap; gap: 6px; }
+  .journeys button { font: inherit; font-size: 13.5px; border: 1px solid var(--rule); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 4px 11px; cursor: pointer; }
+  .journeys button[aria-pressed="true"] { background: var(--lit); color: var(--lit-ink); border-color: var(--lit); }
+  .journeys button:focus-visible { outline: 2px solid var(--lit); outline-offset: 2px; }
+  ol.steps { margin: 6px 0 0; padding-left: 1.4em; font-size: 14px; }
+  ol.steps li { margin: 6px 0; }
+  .tag { font-size: 11px; font-weight: 600; border-radius: 4px; padding: 0 5px; margin-right: 4px; white-space: nowrap; }
+  .tag.msg { color: var(--msg); border: 1px solid var(--msg); }
+  .tag.mem { color: var(--mem); border: 1px solid var(--mem); }
+  .tag.call { color: var(--muted); border: 1px solid var(--rule); }
+  .note { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+  .legend { display: grid; gap: 6px; font-size: 13.5px; }
+  .legend div { display: flex; gap: 8px; align-items: baseline; }
+
+  h2.sec { font-family: var(--display); font-size: 22px; margin: 40px 0 10px; padding-top: 18px; border-top: 1px solid var(--rule); }
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .rule { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; }
+  .rule b { display: block; font-family: var(--display); font-size: 16px; margin-bottom: 4px; }
+  .rule p { margin: 0; font-size: 14px; color: var(--muted); }
+  code { font-family: var(--mono); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>How Kosmos Works</h1>
+<p class="lead">The whole system as layers, from the machine at the bottom to the applications at the top, every part by its name in the tree. Choose a journey on the right to see what a key press, a frame, a file, a sound or a C build passes through, in order.</p>
+
+<div class="names">
+  <div class="name"><b>Kosmos</b><span>the operating system: everything on this page</span></div>
+  <div class="name"><b>Nebula</b><span>the microkernel: threads, address spaces, messages, capabilities, and nothing else</span></div>
+  <div class="name"><b>Astra</b><span>the desktop: windows, the Deskbar, the dock, the looks, the UI kit</span></div>
+</div>
+
+<div class="grid">
+<div class="stack" id="stack">
+
+  <section class="band b-hw" data-layer="hw">
+    <div><h2>The machine</h2><div class="where">what Kosmos runs on</div></div>
+    <div class="parts">
+      <span class="p" data-id="m700">ThinkCentre M700<small>x86-64, 8 cores</small></span>
+      <span class="p" data-id="qemu">QEMU virt<small>AArch64, the gate</small></span>
+      <span class="p" data-id="t14">ThinkPad T14</span>
+      <span class="p" data-id="pi5">Raspberry Pi 5<small>the target, later</small></span>
+      <span class="p" data-id="hw-kbd">keyboard &amp; mouse</span>
+      <span class="p" data-id="hw-screen">screen</span>
+      <span class="p" data-id="hw-disk">USB stick &amp; NVMe</span>
+      <span class="p" data-id="hw-sound">sound chip</span>
+      <span class="p" data-id="hw-net">network card</span>
+    </div>
+  </section>
+
+  <section class="band b-k" data-layer="k">
+    <div><h2>Nebula</h2><div class="where">the kernel, EL1 / ring 0, in C</div></div>
+    <div class="parts">
+      <span class="group">kernel/</span>
+      <span class="p" data-id="k-sched">threads &amp; scheduler<small>6 priority bands, 8 cores</small></span>
+      <span class="p" data-id="k-mmu">address spaces<small>pages, regions</small></span>
+      <span class="p" data-id="k-ipc">IPC<small>call, receive, reply</small></span>
+      <span class="p" data-id="k-caps">capabilities<small>by index, never by name</small></span>
+      <span class="p" data-id="k-spawn">process images<small>sealed, never writable</small></span>
+      <span class="group">arch/ and hal/</span>
+      <span class="p" data-id="k-arch">arch/<small>aarch64, x86_64</small></span>
+      <span class="p" data-id="k-irq">interrupts &amp; timers<small>GIC, APIC</small></span>
+      <span class="p" data-id="k-fb">framebuffer &amp; cursor<small>ramfb, virtio-gpu, firmware</small></span>
+      <span class="p" data-id="k-in">keyboard &amp; pointer<small>i8042, virtio-input</small></span>
+      <span class="p" data-id="k-blk">block &amp; sound<small>virtio-blk, NVMe, HDA, virtio-snd</small></span>
+    </div>
+  </section>
+
+  <section class="band b-drv" data-layer="drv">
+    <div><h2>Drivers</h2><div class="where">processes at EL0, in C - a driver that crashes is a process that ended</div></div>
+    <div class="parts">
+      <span class="p" data-id="d-xhci">xHCI<small>USB: keyboards, mice, sticks, MIDI, pads, cameras</small></span>
+      <span class="p" data-id="d-e1000">e1000<small>Intel network, the I219</small></span>
+      <span class="p" data-id="d-backlight">backlight</span>
+      <span class="p" data-id="d-power">power button</span>
+    </div>
+  </section>
+
+  <section class="band b-srv" data-layer="srv">
+    <div><h2>Servers</h2><div class="where">processes in C that own something and rent it out, each speaking a declared shape</div></div>
+    <div class="parts">
+      <span class="p" data-id="s-console">console<small>keys, pointer, text</small></span>
+      <span class="p" data-id="s-diskfs">diskfs<small>/Home, journalled</small></span>
+      <span class="p" data-id="s-binfs">binfs<small>/Kosmos, the image</small></span>
+      <span class="p" data-id="s-appfs">appfs<small>/Running</small></span>
+      <span class="p" data-id="s-ramfs">ramfs<small>/Temporary</small></span>
+      <span class="p" data-id="s-devices">devices<small>/Devices</small></span>
+      <span class="p" data-id="s-drives">drives<small>sticks, FAT, exFAT</small></span>
+      <span class="p" data-id="s-net">net<small>TCP/IP, /Network</small></span>
+      <span class="p" data-id="s-smbfs">smbfs<small>shared folders</small></span>
+      <span class="p" data-id="s-audio">audio<small>/Devices/audio, its own band</small></span>
+      <span class="p" data-id="s-notify">notify<small>/Notifications</small></span>
+      <span class="p" data-id="s-keyring">keyring<small>/Keyring</small></span>
+    </div>
+  </section>
+
+  <section class="band b-rt" data-layer="rt">
+    <div><h2>Every process</h2><div class="where">what each one carries inside it</div></div>
+    <div class="parts">
+      <span class="p" data-id="r-ns">namespace<small>its own paths to capabilities</small></span>
+      <span class="p" data-id="r-lua">Lua 5.4</span>
+      <span class="p" data-id="r-libc">libc</span>
+      <span class="p" data-id="r-sys">sys, fs, gfx<small>the bindings</small></span>
+    </div>
+  </section>
+
+  <section class="band b-kit" data-layer="kit">
+    <div><h2>Kits</h2><div class="where">code you run, in your own process - C for what loops over bytes, Lua for the rest</div></div>
+    <div class="parts">
+      <span class="group">C, /Kosmos/Kits</span>
+      <span class="p" data-id="x-gfx">gfx<small>surfaces, pixels, text</small></span>
+      <span class="p" data-id="x-window">window<small>a window from C</small></span>
+      <span class="p" data-id="x-gl">gl<small>TinyGL</small></span>
+      <span class="p" data-id="x-3d">3d</span>
+      <span class="p" data-id="x-game">game</span>
+      <span class="p" data-id="x-media">mp3, ffmpeg, record</span>
+      <span class="p" data-id="x-synth">synth</span>
+      <span class="p" data-id="x-compress">compress</span>
+      <span class="p" data-id="x-pdf">pdf</span>
+      <span class="p" data-id="x-network">network, tls, crypto</span>
+      <span class="p" data-id="x-smb">smb</span>
+      <span class="p" data-id="x-tcc">tcc<small>TinyCC</small></span>
+      <span class="p" data-id="x-console">console</span>
+      <span class="group">Lua, /Kosmos/Libraries</span>
+      <span class="p" data-id="l-files">files, regions</span>
+      <span class="p" data-id="l-wmproto">wmproto<small>talking to Astra</small></span>
+      <span class="p" data-id="l-tccbuild">tccbuild</span>
+      <span class="p" data-id="l-media">audio, media, g3d, …</span>
+    </div>
+  </section>
+
+  <section class="band b-astra" data-layer="astra">
+    <div><h2>Astra</h2><div class="where">the desktop</div></div>
+    <div class="parts">
+      <span class="p" data-id="a-wm">window manager<small>Lua: focus, layout, events</small></span>
+      <span class="p" data-id="a-comp">compositor<small>C, in gfx: every frame's pixels</small></span>
+      <span class="p" data-id="a-ui">UI kit<small>ui.lua: every app's widgets</small></span>
+      <span class="p" data-id="a-deskbar">Deskbar</span>
+      <span class="p" data-id="a-desktop">desktop</span>
+      <span class="p" data-id="a-dock">dock &amp; launcher pad</span>
+      <span class="p" data-id="a-banners">notification banners</span>
+      <span class="p" data-id="a-looks">looks<small>Plex, Plex Night, Classic</small></span>
+    </div>
+  </section>
+
+  <section class="band b-app" data-layer="app">
+    <div><h2>Applications</h2><div class="where">windows, in Lua - with C of their own where it pays</div></div>
+    <div class="parts">
+      <span class="p" data-id="ap-tracker">Tracker</span>
+      <span class="p" data-id="ap-ide">IDE</span>
+      <span class="p" data-id="ap-write">Write</span>
+      <span class="p" data-id="ap-browser">Browser</span>
+      <span class="p" data-id="ap-text">Text Editor</span>
+      <span class="p" data-id="ap-terminal">Terminal</span>
+      <span class="p" data-id="ap-music">Music, Groove</span>
+      <span class="p" data-id="ap-media">Photo, Paint, Video, Camera</span>
+      <span class="p" data-id="ap-cafesa">Cafesa3D</span>
+      <span class="p" data-id="ap-system">Monitor, Processes, Preferences, Passwords</span>
+      <span class="p" data-id="ap-c">your C app<small>built in the IDE</small></span>
+      <span class="p" data-id="ap-games">Doom, Quake, SNES<small>installed in /Home/Apps</small></span>
+      <span class="p" data-id="ap-programs">77 programs<small>at the prompt</small></span>
+    </div>
+  </section>
+</div>
+
+<aside class="side">
+  <div class="card">
+    <h3>Journeys</h3>
+    <div class="journeys" id="journeys" role="group" aria-label="Choose a journey"></div>
+    <ol class="steps" id="steps"></ol>
+    <p class="note" id="note"></p>
+  </div>
+  <div class="card">
+    <h3>Two ways to cross</h3>
+    <div class="legend">
+      <div><span class="tag msg">message</span><span>A call to another process, through Nebula: what to do. Small, copied, a declared shape.</span></div>
+      <div><span class="tag mem">region</span><span>Pages two processes share: what to do it to. Pixels, samples, file bytes - never copied as messages.</span></div>
+      <div><span class="tag call">call</span><span>Code inside the same process: a kit or a library.</span></div>
+    </div>
+  </div>
+</aside>
+</div>
+
+<h2 class="sec">The rules that shape it</h2>
+<div class="rules">
+  <div class="rule"><b>What you were not handed, you cannot reach</b><p>A process sees only the paths its namespace was given, each a capability: an index into its own table. No global names, no ambient authority.</p></div>
+  <div class="rule"><b>Control by message, data by shared memory</b><p>A message says what to do; a region holds what to do it to. Frames, sound periods, packets and disk blocks never travel as messages.</p></div>
+  <div class="rule"><b>C for what others wait on, Lua for what a person decides</b><p>The kernel, drivers, servers and the byte loops of kits are C. Applications, the window manager's policy and libraries are Lua.</p></div>
+  <div class="rule"><b>Nothing waits on hardware</b><p>A driver hands its hardware work and collects the result when the hardware says. A window draws what it already heard and asks on its own clock.</p></div>
+  <div class="rule"><b>Kits supply, applications orchestrate</b><p>Anything another app could want is a kit with one door. An application is the thinnest layer: what a person does, put together from what the system supplies.</p></div>
+  <div class="rule"><b>Sound is above everything</b><p>The audio band sits over the desktop's, and a thread there that runs too long without sleeping drops back. Sound keeps playing under load.</p></div>
+</div>
+</div>
+
+<script>
+  // Each journey: the parts it lights, in order, with what happens at each.
+  const JOURNEYS = [
+    { name: "A key press", note: "Measured on the M700 on 7 October: 3.8 ms on average from the window manager posting the key to the screen showing the answer, 6.3 ms at worst.",
+      steps: [
+        ["hw-kbd", "", "A key goes down on the keyboard."],
+        ["d-xhci", "", "A USB keyboard's report is read by the xHCI driver (a PS/2 one by the HAL's i8042)."],
+        ["k-irq", "", "Nebula takes the interrupt and wakes whoever waits on it."],
+        ["s-console", "msg", "The console server holds the key, and wakes Astra."],
+        ["a-wm", "msg", "The window manager finds the focused window and queues the key for it."],
+        ["l-wmproto", "msg", "The application's poll collects it."],
+        ["ap-text", "call", "The Text Editor puts the letter in its line."],
+        ["a-ui", "msg", "The UI kit sends what changed as drawing commands."],
+        ["a-comp", "call", "The compositor draws the window into the screen's picture, only what changed."],
+        ["k-fb", "", "The changed rectangle reaches the screen."],
+      ] },
+    { name: "A frame", note: "Nothing is copied between processes: the window's pixels are pages both it and Astra can see. The 'buffer 2 is live' rule that lets cube3d hold 60 frames a second.",
+      steps: [
+        ["ap-c", "call", "A window that draws its own pixels - Plasma, cube3d, a game - draws into its buffer."],
+        ["x-window", "mem", "The buffer is a region shared with Astra: two of them, one shown and one drawn."],
+        ["l-wmproto", "msg", "One small message, commit: this buffer is drawn."],
+        ["a-wm", "call", "The window manager makes it the one shown and marks what changed."],
+        ["a-comp", "mem", "The compositor reads the region straight into the screen's picture."],
+        ["k-fb", "", "On the screen."],
+      ] },
+    { name: "A file", note: "A path is resolved once, to a capability. A large file arrives in a region the server fills, never as message after message.",
+      steps: [
+        ["ap-tracker", "call", "An application opens /Home/Documents/plan.txt."],
+        ["r-ns", "call", "Its namespace finds /Home: a capability to diskfs, and the rest of the path."],
+        ["s-diskfs", "msg", "A read, in the shape diskproto.h declares."],
+        ["s-diskfs", "", "diskfs walks the journalled filesystem to the file's blocks."],
+        ["d-xhci", "msg", "The blocks are asked of the stick's driver (or Nebula's NVMe and virtio)."],
+        ["hw-disk", "", "Read from the stick."],
+        ["l-files", "mem", "The bytes land in the application's region."],
+      ] },
+    { name: "A sound", note: "Under eight cores of load Groove's sound thread was never away longer than 14 ms, inside the 23 ms the device holds.",
+      steps: [
+        ["ap-music", "call", "Music decodes the next part of a song."],
+        ["x-media", "call", "The MP3 kit turns it into samples, in C."],
+        ["l-media", "mem", "The audio library puts the samples in a ring shared with the audio server: one side writes, one reads, no lock."],
+        ["s-audio", "", "The audio server, in the band above every program, mixes what each ring holds."],
+        ["k-blk", "mem", "Periods go to the sound device: HDA on a PC, virtio-snd under QEMU."],
+        ["hw-sound", "", "Heard."],
+      ] },
+    { name: "Building C", note: "No process writes code and runs it: TinyCC writes a file, and Nebula starts a new process from it in pages that process can never write.",
+      steps: [
+        ["ap-ide", "call", "F6 in the IDE."],
+        ["l-tccbuild", "call", "tccbuild reads the project's sources and the developer files, each mapped into a region."],
+        ["x-tcc", "call", "TinyCC compiles and links them with Kosmos's runtime, in the IDE's own process."],
+        ["s-diskfs", "mem", "The image is written to the project's build folder."],
+        ["k-spawn", "msg", "F5: Nebula copies the image into sealed pages and starts it."],
+        ["ap-c", "", "Your app, in a window of its own."],
+      ] },
+  ];
+
+  const stack = document.getElementById("stack");
+  const list = document.getElementById("journeys");
+  const steps = document.getElementById("steps");
+  const note = document.getElementById("note");
+  const TAG = { msg: "message", mem: "region", call: "call" };
+
+  function show(i) {
+    const j = JOURNEYS[i];
+
+    stack.classList.add("dim");
+    stack.querySelectorAll(".p").forEach(p => {
+      p.classList.remove("lit");
+      const old = p.querySelector(".n");
+      if (old) old.remove();
+    });
+
+    steps.innerHTML = "";
+
+    j.steps.forEach(([id, how, words], k) => {
+      const part = stack.querySelector('[data-id="' + id + '"]');
+
+      if (part) {
+        part.classList.add("lit");
+        if (!part.querySelector(".n")) {
+          const n = document.createElement("span");
+          n.className = "n";
+          n.textContent = k + 1;
+          part.appendChild(n);
+        }
+      }
+
+      const li = document.createElement("li");
+      if (how) {
+        const t = document.createElement("span");
+        t.className = "tag " + how;
+        t.textContent = TAG[how];
+        li.appendChild(t);
+      }
+      li.appendChild(document.createTextNode(words));
+      steps.appendChild(li);
+    });
+
+    note.textContent = j.note;
+    list.querySelectorAll("button").forEach((b, k) => b.setAttribute("aria-pressed", k === i ? "true" : "false"));
+  }
+
+  JOURNEYS.forEach((j, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = j.name;
+    b.addEventListener("click", () => show(i));
+    list.appendChild(b);
+  });
+
+  show(0);
+</script>
+</body>
+</html>

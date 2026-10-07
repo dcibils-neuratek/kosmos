@@ -3799,6 +3799,8 @@ handlers.draw = function(req)
   local win = by_handle[req.window]
   if not win then return { ok = false, error = "no such window" } end
 
+  if not req.more then P.answered(win) end
+
   for _, o in ipairs(req.ops or {}) do
     local fn = ops[o.op]
     if fn then
@@ -4317,6 +4319,8 @@ handlers.commit = function(req)
     return { ok = false, error = "that window does not have a shared surface" }
   end
 
+  P.answered(win)
+
   --
   -- **The first frame in a region handed over at a new size** (6zz e): it
   -- takes the old one's place now, and not when it was handed over, so the
@@ -4776,6 +4780,8 @@ end
 local EVENTS_PER_REPLY = 12
 
 local function events_for(win)
+  if #win.events > 0 then P.delivered(win) end
+
   local out, rest = {}, {}
   local reply = { ok = true, events = out }
 
@@ -5257,6 +5263,7 @@ function post(win, event)
   local events = win.events
 
   events[#events + 1] = event
+  P.posted(win, event)
 
   if #events > QUEUE_MAX then
     -- An application that has stopped collecting its events is not going to
@@ -5925,7 +5932,7 @@ local silent_grace = OUT.close_grace * 5
 --
 handlers.profile = function(req, who)
   if req.on == true then
-    P.reset()
+    P.reset(COUNTER_HZ)
     P.pass_busy = 0
     P.profiling = true
 
@@ -6942,6 +6949,8 @@ while OUT.running do
     local b = P.prof.busy
     b.total = b.total + P.pass_busy
     if P.pass_busy > b.max then b.max = P.pass_busy end
+    P.bucket(b.hist, P.pass_busy)
+    P.shown()
 
     --
     -- A pass the heap ended smaller than it started is a pass a collection
@@ -6953,6 +6962,7 @@ while OUT.running do
       local gc = P.prof.gc
       gc.collections = gc.collections + 1
       if P.pass_busy > gc.worst then gc.worst = P.pass_busy end
+      P.bucket(gc.hist, P.pass_busy)
     end
 
     P.pass_busy = 0
