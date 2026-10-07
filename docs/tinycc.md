@@ -260,7 +260,7 @@ Each step its own revision and its own permanent test.
 - **C3 - the C Kit**, TinyCC built for Kosmos itself. **Done, 0.11.28** (`testing.md` 18.427). *Test*: inside the
   machine, `apptest.c` built and its image run - the whole thing, on the
   machine, without the Mac; a file with an error answered with its line.
-- **C4 - `tcc` at the prompt.** *Test*: `tcc primes.c -o build/primes.elf`, then
+- **C4 - `tcc` at the prompt.** **Done, 0.11.29** (`testing.md` 18.428). *Test*: `tcc primes.c -o build/primes.elf`, then
   the program run; an error's `file:line:` exact.
 - **C5 - the IDE's Build and Run**, problems at their lines. *Test*: the
   display harness opens a project, builds, marks a broken line, fixes it,

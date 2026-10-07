@@ -20258,3 +20258,15 @@ another Kosmos", before anything is linked.
 image, "no Kosmos header at its start", and the check fails in words (the
 first try at the suite crashed instead, waiting for an end a refused start
 never prints; it waits for either now).
+
+## 18.428 `tcc` at the prompt (TinyCC C4)
+
+`user/bin/programs/tcc.lua`: `tcc a.c [b.c ...] -o build/name.elf`, paths
+from where it is typed (`files.abs`), the same build as the IDE's through
+`tccbuild.lua`, problems one to a line as a compiler at a prompt says them -
+`file:line: severity: text` - and "built in N ms" or "N problems; nothing
+written". `run_tcc.py` grows two checks, 6 a board: in `/Home/t`, `tcc
+apptest.c -o build/apptest.elf` makes an image a program then runs in,
+answered 42; `tcc broken.c` says `/Home/t/broken.c:3: error: ...` and
+writes nothing. **Control**: problems printed without their place - 1
+fails.

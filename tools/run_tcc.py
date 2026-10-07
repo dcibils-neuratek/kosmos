@@ -148,6 +148,20 @@ def main():
           "the broken file was not one error on line 3:\n"
           + "\n".join(l for l in said.splitlines() if "BUILD" in l or "PROBLEM" in l))
 
+    # **`tcc` at the prompt** (C4): the same build, from the folder it is
+    # typed in, its problems as `file:line: severity: text`.
+    said = session(good, [("cd /Home/t", "kosmos>"),
+                          ("tcc apptest.c -o build/apptest.elf", "(tcc) ended"),
+                          ("run /Home/t/run.lua", "(run) ended"),
+                          ("tcc broken.c -o build/broken.elf", "(tcc) ended")])
+    check(re.search(r"^tcc: /Home/t/build/apptest\.elf, [0-9.]+ MB - built in \d+ ms", said, re.M)
+          is not None and re.search(r"^ANSWER 42", said, re.M) is not None,
+          "`tcc apptest.c -o build/apptest.elf` did not build an image that runs:\n"
+          + said[-1200:])
+    check(re.search(r"^/Home/t/broken\.c:3: error: .*undeclared", said, re.M) is not None
+          and "tcc: 1 problem; nothing written" in said,
+          "`tcc broken.c` did not say its problem as file:line: error:\n" + said[-800:])
+
     said = session(stale, [("run /Home/t/make.lua", "(make) ended")])
     check("BUILD refused: the developer files in /Home/Developer are from another Kosmos" in said,
           "a pack from another build was not refused in words:\n"
@@ -160,7 +174,8 @@ def main():
 
     print("PASS: %d checks on C built inside Kosmos (apptest.c compiled and linked by "
           "the C Kit into build/apptest.elf, %s bytes in %s ms; a program in it answered "
-          "42; a broken file one error on line 3; a pack from another build refused)"
+          "42; a broken file one error on line 3; the same at the prompt with tcc; a "
+          "pack from another build refused)"
           % (checks, built.group(1), built.group(2)))
     return 0
 
