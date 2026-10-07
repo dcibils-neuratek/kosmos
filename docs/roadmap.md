@@ -1209,6 +1209,19 @@ receiving emails". Assessed, not designed:
 - **Designed before it is written**, the four documents, with made-up
   messages in the mockup - never a real mailbox.
 
+**AGREED on 7 October - Kosmos Mail, built as an IDE project and shipped
+as one.** Diego: "for the mail app, lets build it in kosmos ide!", "so the
+app itself is an kosmos app example!", "so we code the app in lua and
+whatever C needed, and we put it as an example of a serious system shipped
+app that the user can even make a copy and modify on his own". So Mail's
+source is a project of the IDE's shape - its Lua, any C of its own built by
+TinyCC, `-- kosmos: image build/mail.elf` - shipped in `/Kosmos/Apps` to be
+used and in `/Kosmos/Examples` to be opened, copied, changed and built. The
+premise holds: IMAP, SMTP, MIME and the rest are the **Mail Kit**, the
+system's, which another application can use; what is in the project is
+what is Mail's alone. Designed first, its four documents, after the IDE's
+examples.
+
 **WANTED, after Kosmos Mail - Calendar, after Apple's.** Diego, 6 October
 2026, with five pictures of macOS's Calendar: "then i want to build a
 calendar app inspired in the mac os calendar app which is simple and very
@@ -7688,6 +7701,14 @@ processors, and still what follows USB:
    `glteapot` and the rest) and cube3d as a project in Lua and the same in
    Lua and C - each opened, built and run in the IDE, held by a suite.
    After the IDE's layout.
+   **AGREED the same day**, Diego's answers ("1. perfect 2. yes to all 3.
+   yes"): `/Kosmos/Examples` beside the Templates, in the sidebar's System
+   tab and a section of New Project that copies one into `/Home/Projects`;
+   all eight GL demos as C projects - TinyGL's own files unchanged, the
+   window and loop their `ui.h` asks for supplied by the GL Kit as a C door
+   over the Window Kit; and Cube twice, in Lua (cube3d) and in C with its
+   own transform, depth order and triangle fill, each showing its time a
+   frame. **DONE** (0.11.41, `testing.md` 18.437).
    The September plan follows, as it was:
    **AGREED again on 26 September, NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua
@@ -7843,6 +7864,13 @@ protocol stamp, date - into `/Home`; About and `neofetch` show the system's
 version and the disk's beside it, and say plainly when they differ and
 what that means; the boot's log says it too. After the M700's test of
 0.11.38, on the next stick.
+
+**AGREED on 7 October - the desktop is called Astra.** Diego: "the OS is
+called Kosmos, the kernel is called Nebula, lets call our entire desktop
+Astra". In `CLAUDE.md`, the glossary and the decision log the same day; on
+the screen - About's and `neofetch`'s rows beside Kosmos and Nebula - with
+the next revision. Should the window manager split (a display server in C
+under a shell in Lua, asked the same day), both halves are Astra's.
 
 ### The optimisation phase - after the applications
 

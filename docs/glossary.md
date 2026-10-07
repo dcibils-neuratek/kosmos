@@ -318,6 +318,11 @@ else.
 **Nebula** — the microkernel. Threads, address spaces, IPC, capabilities, and
 nothing else. What `kernel/`, `arch/` and `hal/` build into.
 
-**Kosmos** — the operating system: Nebula plus the servers, the namespace, the
-desktop and the applications. What somebody uses.
+**Astra** — the desktop (named 7 October 2026): the window manager and its
+compositor, the desktop itself, the Deskbar, the dock and the launcher pad,
+notifications' banners, the looks, and the UI kit every application is drawn
+with. The applications that run on it are not Astra.
+
+**Kosmos** — the operating system: Nebula plus the servers, the namespace,
+Astra and the applications. What somebody uses.
 

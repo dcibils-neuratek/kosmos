@@ -2,12 +2,17 @@
 
 Microkernel OS with a Lua userland. AArch64.
 
-**Two names, and they are not interchangeable.** *Kosmos* is the operating
+**Three names, and they are not interchangeable.** *Kosmos* is the operating
 system: the servers, the namespace, the desktop, the applications, the
 userland. *Nebula* is the microkernel it runs on - threads, address spaces,
-IPC, capabilities, and nothing else. Almost everything in these documents
-that says "the kernel" means Nebula, and almost everything that says "the
-system" means Kosmos.
+IPC, capabilities, and nothing else. *Astra* is the desktop - the window
+manager and its compositor, the desktop itself, the Deskbar, the dock and
+the launcher pad, notifications' banners, the looks, and the UI kit every
+application is drawn with; the applications that run on it, Tracker and the
+IDE among them, are Kosmos's and not Astra. Diego, 7 October 2026: "the OS
+is called Kosmos, the kernel is called Nebula, lets call our entire desktop
+Astra". Almost everything in these documents that says "the kernel" means
+Nebula, "the desktop" means Astra, and "the system" means Kosmos.
 
 **Versions are `major.minor.revision`, in the `VERSION` file.** A revision
 per push, a minor when something substantial lands, and a major when we
