@@ -1247,6 +1247,30 @@ easier" - "yes, put both on the roadmap".
   name the C does not register is a Problem. The suggestion box drawn and
   agreed first.
 
+**AGREED, 7 October - a C app is its image; no Lua file needed.** Diego:
+"so any app is at least 1 lua file and 1 image file?", then "my only gripe
+is that c only app require a lua file to run", and "yes put it on the
+roadmap"; and earlier "double clicking an .elf file should run it?" - "it
+does not do that now". The Lua file a C app has today is there for its
+header - what it is, its name and icon, what it needs, what it opens - which
+the Deskbar, Tracker and the grants read. So the header moves into the C:
+- `KOSMOS_APP("kosmos: program", "kosmos: name Primes", "kosmos: needs
+  network")` in a `.c`, the same words a Lua header has, which the build puts
+  in a section of its own in the `.elf`; read from there (where
+  `elfimage.c` already reads an image before it runs) by everything that
+  reads a Lua file's header today, by one parser.
+- **An image that says it is a program runs as one**: typed by name,
+  double-clicked in Tracker, listed in the Deskbar, straight into its C's
+  `main` - one `.c`, one `.elf`, no Lua.
+- **Grants as for anything else from where it lies**: an image in `/Home` is
+  given what a Lua program in `/Home` is - the network if it asks, not the
+  keyring.
+- **Double-clicking a Lua-and-C project's `.elf`**, which holds no program of
+  its own, runs the Lua file that names it (`-- kosmos: image`), or says
+  "a built image; open its project to run it" when none does.
+- New Project's C app becomes one file; Primes and Plasma lose their Lua
+  starters.
+
 **WANTED, 7 October - Format Code in the IDE.** Diego: "the kosmos ide
 needs a format code button that makes the entire code beautiful and human
 readable with correct indentation, spaces, etc". A **Format** tool among the
