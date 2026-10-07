@@ -2886,11 +2886,36 @@ function veil:draw(g)
   g:text(x0 + 24, y0 + 382, "/Home/Projects/" .. name_field.text, theme.text_dim, nil, "ui")
 end
 
+--
+-- **The dialog over everything**, brought to the front each time it opens.
+-- Its parts were added when the IDE started, so an editor opened since -
+-- added after them - drew over the veil and the dialog in the middle of it:
+-- Diego, on the M700 on 7 October, New Project with an example open, and
+-- the window was a grey veil with the code on top and no dialog to be seen.
+--
+local function to_front()
+  local parts = { veil }
+
+  for _, b in ipairs(kind_buttons) do parts[#parts + 1] = b end
+  for _, b in pairs(template_buttons) do parts[#parts + 1] = b end
+
+  parts[#parts + 1] = name_field
+  parts[#parts + 1] = cancel
+  parts[#parts + 1] = create
+
+  for _, v in ipairs(parts) do
+    win:remove(v)
+    win:add(v)
+  end
+end
+
 local function show_dialog(on)
   veil.hidden = not on
   name_field.hidden, create.hidden, cancel.hidden = not on, not on, not on
 
   for _, b in ipairs(kind_buttons) do b.hidden = not on end
+
+  if on then to_front() end
 
   place_dialog()
 

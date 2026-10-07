@@ -480,6 +480,67 @@ def main():
 
         stop_desktop()
 
+        # **New Project over a file opened since** (Diego, the M700, 7
+        # October): the dialog in front of the editor. A file opened after
+        # the IDE started is added to the window after the dialog's parts,
+        # and was drawn over them - so: the IDE, Ctrl N and a line of code,
+        # then New and New Project from its menu, and no keyword's colour
+        # anywhere in the dialog's box.
+        guest.type('fs.write("/Home/development/k.lua", "local a\\nlocal b\\nlocal c\\n'
+                   'local d\\nlocal e\\nlocal f\\nlocal g\\nlocal h\\n")')
+        time.sleep(1)
+        mark = len(guest.seen)
+        guest.type("wm ide")
+        window = said("wm: window Kosmos IDE at ", mark, 90) or ""
+        said("ide: project ", mark, 30)
+        at = re.match(r"(\d+),(\d+) (\d+)x(\d+)", window)
+        time.sleep(2)
+        mark = len(guest.seen)
+        press("ctrl-p", "k", "dot", "l", "u", "a", "ret")
+        check(said("ide: opened /Home/development/", mark, 30) == "k.lua",
+              "Ctrl P and k.lua did not open k.lua")
+        time.sleep(1)
+        through, menu = -1, None
+
+        if at:
+            x0, y0, w, h = (int(v) for v in at.groups())
+            width, height, rgb = R.pixel_reader(guest.screendump())
+
+            def click(x, y):
+                guest.mouse_to(*R._to_tablet(x, y, width, height))
+                time.sleep(0.4)
+                guest.mouse_button(True)
+                time.sleep(0.15)
+                guest.mouse_button(False)
+                time.sleep(0.6)
+
+            mark = len(guest.seen)
+            click(x0 + 24, y0 + 60)                     # New, among the tools
+            menu = re.match(r"(\d+),(\d+) (\d+)x(\d+)",
+                            said("wm: menu of Kosmos IDE at ", mark, 20) or "")
+
+            if menu:
+                mx, my, mw, mh = (int(v) for v in menu.groups())
+                click(mx + mw // 2, my + mh * 3 // 4)  # New Project, its second row
+                time.sleep(2)
+                width, height, rgb = R.pixel_reader(guest.screendump())
+                dx, dy = x0 + (w - 760) // 2, y0 + (h - 460) // 2
+                through = 0
+
+                for y in range(dy, min(height, dy + 460), 2):
+                    for x in range(dx, min(width, dx + 760), 2):
+                        r, g, b = rgb(x, y)
+
+                        if any(abs(r - k[0]) + abs(g - k[1]) + abs(b - k[2]) < 60
+                               for k in KEYWORD):
+                            through += 1
+
+        check(menu is not None, "New among the IDE's tools did not open its menu")
+        check(through == 0, "New Project over a file opened since: %d pixels of "
+              "the code's keywords inside the dialog's box - the editor drawn "
+              "over it" % through)
+        stop_desktop()
+
         # And lesson 1's finished project, as Help's Lesson's Project opens
         # it: it runs, a window with two buttons.
         mark = len(guest.seen)

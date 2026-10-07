@@ -20810,3 +20810,21 @@ The gate: 102 of 102 in 9:49.
 **On the M700**, 0.11.49 netbooted, a whole 1720x1440 frame taken by
 `kosmos_vnc.py` from the Mac on the same network, handshake and decoding
 included: **raw 7.13 s, ZRLE 0.20 s** - 36 times sooner, the picture the same.
+
+## 18.443 New Project over a file opened since
+
+Diego, on the M700 on 7 October: "i just launched new project in kosmos ide
+and it broke" - the window a grey veil with the code drawn on top and no
+dialog. The dialog's parts were added to the window when the IDE started,
+so a file opened later was added after them and drawn over the veil and the
+dialog in its middle; a file opened *at* start came before them, which is
+all the suite had ever tried. Found by looking at the M700 through VNC and
+its log through Telnet; reproduced in QEMU in the Plex look he uses.
+
+The dialog is brought to the front each time it opens (`to_front` in
+`ide.lua`). `run_ide.py`, 49 checks: the IDE started, `k.lua` opened with
+Ctrl P, New and New Project from its menu, and no keyword's colour inside the
+dialog's box. **Control**: without `to_front` - 110 pixels of the code
+through the dialog, and it fails. (Two tries at the check passed without
+the fix first - a dialog opened at start, then an untitled file, which is
+not coloured as code - and were rewritten until it bit.)
