@@ -493,6 +493,15 @@ def main():
         check(said("converter: 20 is ", mark, 120) == "68.00 F",
               "lesson 2's finished project did not turn 20 C into 68 F")
         stop_desktop()
+        # Lesson 3's: a note handed to it as its argument, as Tracker hands
+        # one, is opened - the name with a space in it arriving whole.
+        guest.type("mkdir /Home/Notes")
+        guest.type('save "Notes/To do.note" milk')
+        mark = len(guest.seen)
+        guest.type('wm /Kosmos/Tutorial/03-Notes/notes.lua:"/Home/Notes/To do.note"')
+        check(said("notes: opened ", mark, 120) == "/Home/Notes/To do.note, 1 lines",
+              "lesson 3's finished project did not open the note it was handed")
+        stop_desktop()
         mark = len(guest.seen)
         guest.type("wm ide:/Home/development/asks.lua")
         said("ide: opened /Home/development/asks.lua", mark, 120)

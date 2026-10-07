@@ -41,7 +41,10 @@ class IdeShots(Shots):
 
     def typed(self, word):
         for ch in word:
-            self.key(ch.lower() if not ch.isupper() else "shift-" + ch.lower())
+            if ch == " ":
+                self.key("spc")
+            else:
+                self.key(ch.lower() if not ch.isupper() else "shift-" + ch.lower())
             time.sleep(0.08)
 
     def lesson1(self):
@@ -111,6 +114,59 @@ class IdeShots(Shots):
         self.save("converter-ide.png", (IDE_X - 4, IDE_Y - 26, IDE_X + IDE_W + 4, IDE_Y + IDE_H + 4),
                   halve=True)
 
+    def lines(self, words):
+        """Words typed into whatever has the focus, one a line."""
+        for i, word in enumerate(words):
+            if i:
+                self.key("ret")
+            self.typed(word)
+
+    def lesson3(self):
+        """Notes run in the IDE, a note being written in it."""
+        g = self.guest
+        mark = self.mark()
+        g.type("wm ide:/Kosmos/Tutorial/03-Notes/notes.lua")
+        self.expect("ide: opened /Kosmos/Tutorial/03-Notes/notes.lua", mark, 120,
+                    "the IDE did not open lesson 3's project")
+        time.sleep(3)
+        mark = self.mark()
+        self.key("f5")
+        where = self.expect("wm: window Notes", mark, 60, "F5 did not open Notes")
+        time.sleep(3)
+        self.screen()
+        nx, ny = self.at(where)
+        self.click(nx + 120, ny + 120)
+        self.lines(["Ideas", "a clock that rings"])
+        time.sleep(1)
+        self.screen()
+        # The whole screen: Notes opens where the desktop finds room, which
+        # is beside the IDE rather than over it.
+        self.save("notes-ide.png", (0, 0, self.W, self.H), halve=True)
+
+    def notes(self):
+        """The finished Notes: a list typed, saved through the Save window,
+        and the window pictured holding it."""
+        self.guest.wait_for("kosmos> ", "a prompt")
+        mark = self.mark()
+        self.guest.type("wm /Kosmos/Tutorial/03-Notes/notes.lua")
+        where = self.expect("wm: window Notes", mark, 120, "the finished Notes did not open")
+        time.sleep(3)
+        self.screen()
+        nx, ny = self.at(where)
+        self.click(nx + 120, ny + 120)
+        self.lines(["Shopping", "bread", "lemons", "olives", "coffee"])
+        time.sleep(1)
+        self.click(nx + 176 + 30, ny + 12 + 12)
+        self.expect("wm: window Save", mark, 30, "Save did not open the Save window")
+        time.sleep(2)
+        self.key("ret")
+        self.expect("notes: saved 5 lines to /Home/Notes/Untitled.note", mark, 30,
+                    "Return in the Save window did not save the note")
+        time.sleep(2)
+        self.point(nx + 600, ny + 300)
+        self.screen()
+        self.save("notes.png", (nx - 12, ny - 34, nx + 560 + 12, ny + 420 + 2))
+
     def counter(self):
         g = self.guest
         mark = self.mark()
@@ -140,6 +196,10 @@ class IdeShots(Shots):
         self.guest.wait_for("kosmos> ", "a prompt")
         self.lesson2()
 
+    def run3(self):
+        self.guest.wait_for("kosmos> ", "a prompt")
+        self.lesson3()
+
 
 def main():
     if len(sys.argv) != 3:
@@ -148,7 +208,7 @@ def main():
     image, out = sys.argv[1], sys.argv[2]
     problems = []
 
-    for step in ("run", "run2", "counter"):
+    for step in ("notes", "run", "run2", "run3", "counter"):
         shots = IdeShots(image, out)
 
         try:
@@ -168,7 +228,7 @@ def main():
 
         return 1
 
-    print("PASS: lessons 1 and 2 followed as their pages give them; the pictures are in " + out)
+    print("PASS: lessons 1 to 3 followed as their pages give them; the pictures are in " + out)
     return 0
 
 

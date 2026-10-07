@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>3. Notes</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+pre { font-family: "IBM Plex Mono", monospace; font-size: 14px; color: #1f2328; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 6px; padding: 0.6em 0.8em; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="2-converter.html">Previous: A unit converter</a> - <a href="index.html">Contents</a></p>
+<h1>3. Notes</h1>
+<p class="lead">A page of text that is still there tomorrow. On the way: reading and writing a file, the Open and Save window every application shares, and a note that Tracker hands to your program when somebody opens it.</p>
+<img src="notes.png" width="584" height="456" alt="The Notes window with a short shopping list in it">
+<p class="caption">What you will have at the end of this lesson.</p>
+
+<h2>Start a project</h2>
+<p><b class="ui">New</b>, <b class="ui">New Project</b>, <b class="ui">Lua app</b>, the <b class="ui">Hello Window</b> template, and the name <code>Notes</code>. Delete everything after the line that uses the UI kit, and add two more kits under it:</p>
+<pre>local panel = use("/Kosmos/Libraries/panel.lua")
+local files = use("/Kosmos/Libraries/files.lua")</pre>
+<p><code>panel</code> is the Open and Save window; <code>files</code> knows how to take a path apart.</p>
+
+<h2>A page and three buttons</h2>
+<pre>local new_button  = ui.button{ x = 16,  y = 12, text = "New" }
+local open_button = ui.button{ x = 96,  y = 12, text = "Open" }
+local save_button = ui.button{ x = 176, y = 12, text = "Save" }
+local name = ui.label{ x = 270, y = 18, w = 274, text = "" }
+local page = ui.editor{ x = 16, y = 56, w = 528, h = 348, gutter = false }</pre>
+<p>An editor is the same control the IDE writes code in. <code>gutter = false</code> leaves out the line numbers, which a note has no use for.</p>
+
+<h2>Reading and writing</h2>
+<pre>local function open(chosen)
+  local body, why = fs.read(chosen)
+
+  if type(body) ~= "string" then
+    name.text = "could not open: " .. tostring(why)
+    win.dirty = true
+    return
+  end
+
+  path = chosen
+  page:set(body)
+  page:saved()
+  show_name()
+end
+
+local function write()
+  local ok, why = fs.write(path, page:content())
+
+  if ok then
+    page:saved()
+  else
+    name.text = "could not save: " .. tostring(why)
+  end
+
+  show_name()
+end</pre>
+<p><code>fs.read</code> gives back the file's bytes, or nothing and the reason. <code>fs.write</code> replaces the file with what it is given. Both answer with the reason when they cannot, and the program shows it rather than pretending: a full disk, or a folder that was never made, is something a person can do something about.</p>
+<p class="note">A program can only reach the files its namespace holds. Notes was given <code>/Home</code> when it started, as every application is; it was never given the system's own files to change.</p>
+
+<h2>The Open and Save window</h2>
+<pre>local function save()
+  if path then return write() end
+
+  if not fs.getattr(NOTES) then fs.send(NOTES, { type = "mkdir" }) end
+
+  local chooser = panel.save{ start = NOTES, name = "Untitled.note",
+                              on_choose = function(chosen) path = chosen; write() end }
+
+  if chooser then chooser:run() end
+end</pre>
+<p>The first save asks where; every one after writes where it was. <code>panel.save</code> opens the same window Text Editor and Paint use, with Tracker's places down its side, and calls <code>on_choose</code> with the whole path - or not at all, if the person chose Cancel. It is a window of its own, and <code>chooser:run()</code> answers it until it closes; your window waits meanwhile, as a page waits while you choose where to save it. <code>/Home/Notes</code> is made the first time, so the window opens somewhere sensible.</p>
+<pre>open_button.on_click = function()
+  local chooser = panel.open{ start = fs.getattr(NOTES) and NOTES or "/Home",
+                              filter = function(file) return file:match("%.note$") end,
+                              on_choose = open }
+
+  if chooser then chooser:run() end
+end</pre>
+<p><code>filter</code> hides the files it answers false for, so the Open window shows notes and the folders that lead to them.</p>
+
+<h2>Run it</h2>
+<p>Press <kbd>F5</kbd>. Type a few lines, choose <b class="ui">Save</b>, and keep the name the window offers. Choose <b class="ui">New</b>, then <b class="ui">Open</b>: your note is there.</p>
+<img src="notes-ide.png" width="860" height="484" alt="The IDE running notes, its window beside the code">
+<p class="caption">Notes running beside its code.</p>
+
+<h2>What Tracker hands you</h2>
+<pre>-- kosmos: opens note</pre>
+<pre>local path = files.words(args)[1]
+
+if path then open(path) else show_name() end</pre>
+<p>The line at the top says Notes opens a <code>.note</code>. When somebody opens one in Tracker, Tracker starts the application that said so and hands it the path as its argument, <code>args</code>. <code>files.words</code> splits it as the command line does, so a name with a space in it, quoted, arrives as one path.</p>
+<p>Tracker looks for that line in the applications that are installed. To install yours, in a Terminal:</p>
+<pre>mkdir /Home/Apps/Notes
+cp /Home/Projects/Notes/hello.lua /Home/Apps/Notes/notes.lua</pre>
+<p>An installed application is a folder in <code>/Home/Apps</code> holding a Lua file of the same name. Now open <code>/Home/Notes</code> in Tracker and double-click your note.</p>
+<p class="tip">The finished lesson is in <b class="ui">Lesson's Project</b>, under the three dots: <code>03-Notes</code>.</p>
+
+<h2>Try changing</h2>
+<ul>
+<li>Show <code>- changed</code> after the name while there is something unsaved: an editor has <code>dirty</code>.</li>
+<li>Add a fourth button that saves under a new name, always asking where.</li>
+<li>Count the words and show the number under the page.</li>
+</ul>
+
+<h2>How Kosmos does it</h2>
+<p>There is no file system in Nebula, the kernel. <code>/Home</code> is a server - a program - that owns the disk, and <code>fs.write</code> is a message to it: the path and the bytes go across, the answer comes back. The names your program can use are a namespace built for it when it started, and a name that is not in it cannot be reached, however it is spelled. That is why Notes can keep your notes and cannot touch anyone else's.</p>
+
+<h2>The real thing</h2>
+<p>Text Editor is Notes grown up: Markdown, finding, recent documents, one window per document. Open the IDE's <b class="ui">System</b> tab, then <code>/Kosmos/Apps</code>, then <code>texteditor.lua</code>, and look for <code>save_as</code>.</p>
+<p class="nav"><a href="2-converter.html">Previous: A unit converter</a> - <a href="index.html">Contents</a></p>
+</body>
+</html>
