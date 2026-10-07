@@ -357,12 +357,16 @@ function tabs.width(win)
 end
 
 -- The tab and the body, as rectangles, for a decorated window.
-function tabs.shape(win)
+-- A tabbed window's shape, its tab and its body, as eight numbers into
+-- `out` - the compositor's own array, refilled every pass rather than two
+-- tables made (`compose.lua`) - and how many parts that is.
+function tabs.shape(win, out)
   local fx, fy = win.x - OUT.BORDER, win.y - OUT.TAB_H
   local fw = win.w + OUT.BORDER * 2
 
-  return { fx, fy, tabs.width(win), OUT.TAB_H },
-         { fx, win.y, fw, win.h + OUT.BORDER }
+  out[1], out[2], out[3], out[4] = fx, fy, tabs.width(win), OUT.TAB_H
+  out[5], out[6], out[7], out[8] = fx, win.y, fw, win.h + OUT.BORDER
+  return 2
 end
 
 -- What `load_appearance` found, for the startup below to apply.
@@ -1518,24 +1522,42 @@ OUT.keep_surface = gfx.surface{ w = 64, h = 64 }
 -- scratch it goes. Empty when the rectangle touches no corner, which is the
 -- common case for a window being dragged across the middle of the screen.
 --
+--
+-- **One list, refilled at each call** (`compose.lua`, 18.439): its caller
+-- keeps the corners, draws, and puts them back with no other call between,
+-- so the list and its four entries are this function's, made once.
+--
+local corner_list, corner_entries = {}, { {}, {}, {}, {} }
+local corner_at = { {}, {}, {}, {} }
+
 function OUT.corners(fx, fy, fw, fh, r)
   local c = OUT.corner
-  local out = {}
+  local out = corner_list
+
+  for i = #out, 1, -1 do out[i] = nil end
 
   if c <= 0 or c > 32 then return out end
 
-  for _, at in ipairs({ { fx, fy, 0, 0 },
-                        { fx + fw - c, fy, c, 0 },
-                        { fx, fy + fh - c, 0, c },
-                        { fx + fw - c, fy + fh - c, c, c } }) do
+  local a = corner_at
+
+  a[1][1], a[1][2], a[1][3], a[1][4] = fx, fy, 0, 0
+  a[2][1], a[2][2], a[2][3], a[2][4] = fx + fw - c, fy, c, 0
+  a[3][1], a[3][2], a[3][3], a[3][4] = fx, fy + fh - c, 0, c
+  a[4][1], a[4][2], a[4][3], a[4][4] = fx + fw - c, fy + fh - c, c, c
+
+  for k = 1, 4 do
+    local at = a[k]
     local x0 = math.max(at[1], r.x)
     local y0 = math.max(at[2], r.y)
     local x1 = math.min(at[1] + c, r.x + r.w)
     local y1 = math.min(at[3] and at[2] + c or 0, r.y + r.h)
 
     if x1 > x0 and y1 > y0 then
-      out[#out + 1] = { x0, y0, x1 - x0, y1 - y0,
-                        at[3] + (x0 - at[1]), at[4] + (y0 - at[2]) }
+      local e = corner_entries[#out + 1]
+
+      e[1], e[2], e[3], e[4] = x0, y0, x1 - x0, y1 - y0
+      e[5], e[6] = at[3] + (x0 - at[1]), at[4] + (y0 - at[2])
+      out[#out + 1] = e
     end
   end
 
@@ -1614,13 +1636,22 @@ function OUT.corner_squares(win)
 
   local fx, fy, fw, fh = frame_of(win)
 
-  return { c, { fx, fy }, { fx + fw - c, fy },
-           { fx, fy + fh - c }, { fx + fw - c, fy + fh - c } }
+  -- Kept on the window and refilled, rather than five tables a pass.
+  local s = win.corner_squares or { 0, {}, {}, {}, {} }
+
+  win.corner_squares = s
+  s[1] = c
+  s[2][1], s[2][2] = fx, fy
+  s[3][1], s[3][2] = fx + fw - c, fy
+  s[4][1], s[4][2] = fx, fy + fh - c
+  s[5][1], s[5][2] = fx + fw - c, fy + fh - c
+
+  return s
 end
 
 -- What of those squares lies inside `x0, y0 - x1, y1`, the part of a piece
 -- the window was cut from, handed back to be painted behind it.
-function OUT.uncover(keep, round, x0, y0, x1, y1)
+function OUT.uncover(keep, round, x0, y0, x1, y1, rect)
   local c = round[1]
 
   for k = 2, 5 do
@@ -1629,7 +1660,7 @@ function OUT.uncover(keep, round, x0, y0, x1, y1)
     local ix1, iy1 = math.min(sx + c, x1), math.min(sy + c, y1)
 
     if ix1 > ix0 and iy1 > iy0 then
-      keep[#keep + 1] = { x = ix0, y = iy0, w = ix1 - ix0, h = iy1 - iy0 }
+      keep[#keep + 1] = rect(ix0, iy0, ix1 - ix0, iy1 - iy0)
     end
   end
 end

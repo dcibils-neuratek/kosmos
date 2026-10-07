@@ -7,6 +7,52 @@
 --
 
 --
+-- **Nothing made a pass** (7 October, `testing.md` 18.439): composing was
+-- more than half of all the window manager allocated - 2.1 KB a pass on the
+-- M700 - in small tables for every damaged rectangle and every window: the
+-- pieces left to draw, each window's shape, its visible box, the rectangle
+-- handed to `draw_window`. Those are scratch, dead before the rectangle is
+-- done, so they come from pools here, reset for each damaged rectangle, and
+-- the lists alternate between two kept for the purpose. The collector is
+-- the jitter (`frames`), and the cheapest pause is the one never caused.
+--
+local rects, nrect = {}, 0
+
+local function rect(x, y, w, h)
+  nrect = nrect + 1
+
+  local t = rects[nrect]
+
+  if not t then t = {} rects[nrect] = t end
+
+  t.x, t.y, t.w, t.h = x, y, w, h
+  return t
+end
+
+local boxes, nbox = {}, 0
+
+local function box(x0, y0, x1, y1)
+  nbox = nbox + 1
+
+  local t = boxes[nbox]
+
+  if not t then t = {} boxes[nbox] = t end
+
+  t.x0, t.y0, t.x1, t.y1 = x0, y0, x1, y1
+  return t
+end
+
+-- A list emptied, to be filled again, without making a new one.
+local function clear(t)
+  for i = #t, 1, -1 do t[i] = nil end
+  return t
+end
+
+-- The lists a rectangle's pieces pass between, what each window shows, and
+-- a window's shape: one part or two, four numbers each.
+local list_a, list_b, visible, parts = {}, {}, {}, {}
+
+--
 -- `a` with `b` cut out of it, appended to `out` as up to four rectangles.
 --
 -- The pieces are taken in bands - above, below, then left and right of what
@@ -17,11 +63,11 @@ local function subtract_into(out, a, bx0, by0, bx1, by1)
   local ax1, ay1 = a.x + a.w, a.y + a.h
 
   if by0 > a.y then
-    out[#out + 1] = { x = a.x, y = a.y, w = a.w, h = by0 - a.y }
+    out[#out + 1] = rect(a.x, a.y, a.w, by0 - a.y)
   end
 
   if by1 < ay1 then
-    out[#out + 1] = { x = a.x, y = by1, w = a.w, h = ay1 - by1 }
+    out[#out + 1] = rect(a.x, by1, a.w, ay1 - by1)
   end
 
   local y0 = (by0 > a.y) and by0 or a.y
@@ -29,11 +75,11 @@ local function subtract_into(out, a, bx0, by0, bx1, by1)
 
   if y1 > y0 then
     if bx0 > a.x then
-      out[#out + 1] = { x = a.x, y = y0, w = bx0 - a.x, h = y1 - y0 }
+      out[#out + 1] = rect(a.x, y0, bx0 - a.x, y1 - y0)
     end
 
     if bx1 < ax1 then
-      out[#out + 1] = { x = bx1, y = y0, w = ax1 - bx1, h = y1 - y0 }
+      out[#out + 1] = rect(bx1, y0, ax1 - bx1, y1 - y0)
     end
   end
 end
@@ -91,8 +137,14 @@ return function(ctx)
     --
     -- What each window still shows, and what is left for the desktop.
     --
-    local visible  = {}
-    local remaining = { r }
+    nrect, nbox = 0, 0
+
+    -- By window number, with gaps: emptied by its keys, not its length.
+    for k in pairs(visible) do visible[k] = nil end
+
+    local remaining = clear(list_a)
+
+    remaining[1] = r
 
     -- In the order they are drawn: the stack, and a dock in front of all of
     -- it (`OUT.order`, nil when there is no dock).
@@ -112,26 +164,29 @@ return function(ctx)
         -- With the tab across the whole frame the two meet exactly, and the
         -- cut is the rectangle it always was.
         --
-        local shape, round
+        local nparts, round
 
         if win.kind == "menu" or win.backdrop or win.strip
            or win.fullscreen or win.tip then
-          shape = { { frame_of(win) } }
+          parts[1], parts[2], parts[3], parts[4] = frame_of(win)
+          nparts = 1
         elseif win.headed or win.popup then
           -- No tab: its rectangle, and rounded (`roadmap.md` 6zj) - a
           -- popup as well, which is a page with nothing round it.
-          shape = { { frame_of(win) } }
+          parts[1], parts[2], parts[3], parts[4] = frame_of(win)
+          nparts = 1
           round = OUT.corner_squares(win)
         else
-          shape = { tabs.shape(win) }
+          nparts = tabs.shape(win, parts)
           round = OUT.corner_squares(win)
         end
 
         local mine = nil
 
-        for _, part in ipairs(shape) do
-          local fx, fy, fw, fh = part[1], part[2], part[3], part[4]
-          local keep = {}
+        for part = 0, nparts - 1 do
+          local fx, fy = parts[part * 4 + 1], parts[part * 4 + 2]
+          local fw, fh = parts[part * 4 + 3], parts[part * 4 + 4]
+          local keep = clear((remaining == list_a) and list_b or list_a)
 
           for _, piece in ipairs(remaining) do
             local x0 = (fx > piece.x) and fx or piece.x
@@ -146,7 +201,7 @@ return function(ctx)
                 if x1 > mine.x1 then mine.x1 = x1 end
                 if y1 > mine.y1 then mine.y1 = y1 end
               else
-                mine = { x0 = x0, y0 = y0, x1 = x1, y1 = y1 }
+                mine = box(x0, y0, x1, y1)
               end
 
               --
@@ -167,7 +222,7 @@ return function(ctx)
               else
                 subtract_into(keep, piece, x0, y0, x1, y1)
 
-                if round then OUT.uncover(keep, round, x0, y0, x1, y1) end
+                if round then OUT.uncover(keep, round, x0, y0, x1, y1, rect) end
               end
             else
               keep[#keep + 1] = piece
@@ -200,7 +255,7 @@ return function(ctx)
           P.prof.drawn = P.prof.drawn + (v.x1 - v.x0) * (v.y1 - v.y0)
         end
 
-        draw_window(i, { x = v.x0, y = v.y0, w = v.x1 - v.x0, h = v.y1 - v.y0 })
+        draw_window(i, rect(v.x0, v.y0, v.x1 - v.x0, v.y1 - v.y0))
       end
     end
 

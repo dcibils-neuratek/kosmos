@@ -20670,3 +20670,36 @@ The gate: 100 of 102 in 9:41. `x86-film` (1368 samples off, a stretch of
 silence) and `x86-sound` (a 421 Hz tone heard for 440) - the emulated
 sound's dropout under the gate's load (`roadmap.md` 6zw) - passed alone,
 13 of 13 and 14 of 14. Nothing here touches sound.
+
+## 18.439 Composing without garbage (Astra's split, D0); Astra on the screen
+
+**Composing made more than half of Astra's garbage** (18.438): small tables
+for every damaged rectangle and every window - the pieces left to draw, each
+window's shape (`tabs.shape`), its corners (`OUT.corner_squares`,
+`OUT.corners`), its visible box, the rectangle handed to `draw_window`. All
+scratch, dead before the rectangle is done. Now: pieces and boxes from pools
+reset for each rectangle, the piece lists alternating between two kept,
+`tabs.shape` filling the compositor's own array, a window's corner squares
+kept on it and refilled, `OUT.corners` one list refilled. The `visible` map
+is by window number with gaps, so it is emptied by its keys, not its length.
+
+    QEMU, the same load     composing 2.42 -> 0.06 KB a pass; the whole
+                            3.1 -> 0.7 KB; collections 36 -> 9 in 20 s
+    M700 (0.11.43), two     0.9 KB a pass, 53 KB a second (was 3.5, 213);
+    runs of 25 s            43 collections, worst 0.86-1.23 ms (was 1.6-3.1),
+                            40 of them under 1 ms; the worst pass 2.9-3.7 ms
+                            and no longer a collection; key to screen mean
+                            2.5-2.6 ms, worst 3.5-4.0 (was 3.8 and 6.3)
+
+The windows lay differently on the M700 the second time - composing 0.17 ms
+a pass against 0.48 - so the times are not strictly like for like; the
+garbage and the collections are.
+
+**Astra by name, on the screen**: About's Desktop row and `neofetch`'s,
+"Astra" and the system's version, which it is built with. `run_x86.py`'s
+`identity` holds `neofetch`'s - **control**: "Astral" - 1 fails.
+
+And D1's design, `docs/astra-display.md` with `docs/astra-display.png`, for
+Diego: the split, and the decision under it - who draws an ordinary window.
+
+The gate: 102 of 102 in 9:44.

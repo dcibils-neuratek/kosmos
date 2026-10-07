@@ -1,0 +1,146 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Astra's display server, drawn: the window manager as one Lua process
+  today, and split - a display server in C under Astra's shell in Lua - as
+  docs/astra-display.md proposes. For Diego to decide, 7 October 2026.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Astra's Display Server</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  /* Two columns, today and split, each a stack of boxes from the machine
+     up; the colour of a box is its language - C blue-green, Lua amber - so
+     the split reads as the line between them moving. */
+  :root {
+    --bg: #f4f5f8; --panel: #ffffff; --ink: #18202c; --muted: #5d6879; --rule: #dde2ea;
+    --c: #dcefee; --c-ink: #14545a; --c-edge: #8cc6c4;
+    --lua: #f8ebd6; --lua-ink: #7a4a10; --lua-edge: #e2b46c;
+    --app: #fbe9e2; --app-ink: #8a3519;
+    --k: #dde5f7; --k-ink: #23417e;
+    --msg: #2a55c9; --mem: #c26b0c; --new: #b4247a;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12151b; --panel: #1a1e25; --ink: #e5e9f0; --muted: #9aa4b4; --rule: #2b313b;
+      --c: #163235; --c-ink: #8fd6d2; --c-edge: #2f6b69;
+      --lua: #33281a; --lua-ink: #e9b876; --lua-edge: #7a5a2a;
+      --app: #3a2219; --app-ink: #f0a585; --k: #1c2740; --k-ink: #9db8ef;
+      --msg: #7fa3f7; --mem: #f0a54a; --new: #f07cc0;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12151b; --panel: #1a1e25; --ink: #e5e9f0; --muted: #9aa4b4; --rule: #2b313b;
+    --c: #163235; --c-ink: #8fd6d2; --c-edge: #2f6b69;
+    --lua: #33281a; --lua-ink: #e9b876; --lua-edge: #7a5a2a;
+    --app: #3a2219; --app-ink: #f0a585; --k: #1c2740; --k-ink: #9db8ef;
+    --msg: #7fa3f7; --mem: #f0a54a; --new: #f07cc0;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 32px 64px; padding-inline: 18px; }
+  h1 { font-family: var(--display); font-size: 32px; margin: 0 0 4px; }
+  .lead { color: var(--muted); max-width: 76ch; margin: 0 0 20px; }
+  .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+  @media (max-width: 860px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+  .col { background: var(--panel); border: 1px solid var(--rule); border-radius: 14px; padding: 16px; min-width: 0; }
+  .col h2 { font-family: var(--display); font-size: 21px; margin: 0 0 2px; }
+  .col .sub { color: var(--muted); font-size: 13.5px; margin: 0 0 14px; }
+  .stack { display: flex; flex-direction: column; gap: 8px; }
+  .box { border-radius: 10px; padding: 10px 12px; border: 1.5px solid transparent; }
+  .box b { font-family: var(--display); font-size: 16.5px; display: block; }
+  .box ul { margin: 4px 0 0; padding-left: 1.1em; font-size: 13.5px; }
+  .box li { margin: 1px 0; }
+  .lang { float: right; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; opacity: .8; }
+  .c { background: var(--c); color: var(--c-ink); border-color: var(--c-edge); }
+  .lua { background: var(--lua); color: var(--lua-ink); border-color: var(--lua-edge); }
+  .app { background: var(--app); color: var(--app-ink); }
+  .k { background: var(--k); color: var(--k-ink); }
+  .new { box-shadow: 0 0 0 2px var(--new); }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .wire { font-size: 12.5px; color: var(--muted); display: flex; gap: 6px; align-items: center; padding: 0 4px; flex-wrap: wrap; }
+  .tag { font-size: 11px; font-weight: 600; border-radius: 4px; padding: 0 5px; white-space: nowrap; }
+  .tag.msg { color: var(--msg); border: 1px solid var(--msg); }
+  .tag.mem { color: var(--mem); border: 1px solid var(--mem); }
+  .numbers { margin-top: 26px; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+  .num { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; }
+  .num b { display: block; font-family: var(--display); font-size: 24px; font-variant-numeric: tabular-nums; }
+  .num span { font-size: 13px; color: var(--muted); }
+  h3 { font-family: var(--display); font-size: 19px; margin: 30px 0 8px; }
+  ol.q li { margin: 6px 0; max-width: 76ch; }
+  .rec { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Astra's Display Server</h1>
+<p class="lead">Astra's window manager today, and split: a display server in C for everything a frame or a key waits on, under Astra's shell in Lua for everything a person decides. Blue-green is C, amber is Lua, and the new parts are outlined.</p>
+
+<div class="cols">
+  <section class="col">
+    <h2>Today</h2>
+    <p class="sub">One process, about 9,400 lines of Lua, with composing in C underneath</p>
+    <div class="stack">
+      <div class="box app"><b>Applications</b>
+        <ul><li>kit windows send their frames as drawing commands</li><li>direct windows draw into a shared region</li></ul></div>
+      <div class="wire"><span class="tag msg">tables</span> open, menus, polls, drawing commands <span class="tag mem">region</span> direct windows' pixels</div>
+      <div class="box lua"><span class="lang">Lua</span><b>wm: Astra's window manager</b>
+        <ul><li>carries out every kit window's drawing commands</li><li>window list, stacking, damage</li><li>input routing, focus, shortcuts</li><li>placement, title bars, menus, drag and drop, the look</li><li>answers polls and commits</li></ul></div>
+      <div class="box c"><span class="lang">C</span><b>gfx: composing, text, fills</b>
+        <ul><li>80% of the busy time, called from the Lua above</li></ul></div>
+      <div class="box k"><b>Nebula, the screen and the console</b></div>
+    </div>
+  </section>
+
+  <section class="col">
+    <h2>Split</h2>
+    <p class="sub">The frame path in C; policy stays Lua, off it</p>
+    <div class="stack">
+      <div class="box app"><b>Applications</b>
+        <ul><li class="new-li">every window draws itself, with gfx, in its own process <em>(choice b)</em></li></ul></div>
+      <div class="row">
+        <div class="wire"><span class="tag msg">tables</span> open, menus, clipboard</div>
+        <div class="wire"><span class="tag msg">structs</span> commit, poll <span class="tag mem">region</span> pixels</div>
+      </div>
+      <div class="row">
+        <div class="box lua"><span class="lang">Lua</span><b>Astra's shell</b>
+          <ul><li>placement, focus, stacking</li><li>title bars and tabs, in the look</li><li>menus, drag and drop</li><li>Super's shortcuts</li></ul></div>
+        <div class="box c new"><span class="lang">C</span><b>display server</b>
+          <ul><li>the screen, the cursor</li><li>every window's surfaces, stacking, damage</li><li>composing</li><li>input routed to windows</li><li>commit and poll, event queues</li></ul></div>
+      </div>
+      <div class="wire"><span class="tag msg">structs</span> the manager door: make, move, raise, focus; presses on decorations, the keys it asked for</div>
+      <div class="box k"><b>Nebula, the screen and the console</b></div>
+    </div>
+  </section>
+</div>
+
+<h3>Measured on the M700, 7 October</h3>
+<div class="numbers">
+  <div class="num"><b>98.9%</b><span>of passes under 1 ms; none over 4 ms</span></div>
+  <div class="num"><b>1.6–3.1 ms</b><span>the slowest passes: garbage collections</span></div>
+  <div class="num"><b>3.8 ms</b><span>key to screen on average, 6.3 at worst</span></div>
+  <div class="num"><b>2.42 → 0.06 KB</b><span>composing's garbage a pass, after D0 (QEMU)</span></div>
+  <div class="num"><b>36 → 9</b><span>collections in 20 seconds, after D0 (QEMU)</span></div>
+</div>
+
+<h3>For Diego</h3>
+<ol class="q">
+  <li><b>The split, as drawn.</b> <span class="rec">Recommended: not urgent on the M700, right by the layer rule and for the Pi 5.</span></li>
+  <li><b>Who draws an ordinary window:</b> (b) every window itself, with gfx in its own process, or (a) the display server carrying out drawing commands in C. <span class="rec">Recommended: (b) - a smaller server, and no drawing commands crossing processes.</span></li>
+  <li><b>The name:</b> <code>display</code>, at <code>/Running/display</code>.</li>
+  <li><b>When:</b> after tutorial part one and Mail, or sooner.</li>
+</ol>
+</div>
+</body>
+</html>

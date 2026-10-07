@@ -132,6 +132,8 @@ fact("Processor:", (present == using)
                                                 present, using))
 fact("Kernel:", ("%s %s, %s"):format(b.kernel or "Nebula", b.version,
                                      b.build))
+-- The desktop, Astra (7 October): built with the system, so its version.
+fact("Desktop:", ("Astra %s"):format(b.version))
 fact("Running:", "just started")
 fact("Memory:", ("%d MB, %d free"):format(mem.total_mb or 0,
                                           mem.free_mb or 0))

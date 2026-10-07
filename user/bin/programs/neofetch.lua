@@ -154,12 +154,14 @@ local name = hardware.name(info)
 row("Host", name and cpu.arch and (name .. ", " .. cpu.arch)
             or name or b.platform or "unknown machine")
 
--- Two names, and they are not interchangeable: Kosmos is the system this
--- banner is the banner of, Nebula is the microkernel under it. The version
+-- Three names, and they are not interchangeable: Kosmos is the system this
+-- banner is the banner of, Nebula is the microkernel under it, and Astra
+-- the desktop over it (7 October). The version
 -- is the header's, because they are built together and there is no second
 -- number to give - so this line carries the commit instead, which is the
 -- part the header does not have.
 row("Kernel", ("%s, build %s"):format(b.kernel or "Nebula", b.build or "?"))
+row("Desktop", ("Astra %s"):format(b.version or "?"))
 
 --
 -- Uptime, on the counter - and the frequency is read three lines above the

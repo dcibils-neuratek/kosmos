@@ -7891,6 +7891,12 @@ screen, surfaces, damage, composing, input routing, the frame path) and
 what the window manager in Lua keeps (placement, focus policy, decorations,
 menus, the Deskbar, the looks); then the steps it names, the desktop working
 after each. The system drawn whole the same day: `docs/how-kosmos-works.html`.
+**D0 DONE** (0.11.43, `testing.md` 18.439): composing makes 0.06 KB a pass,
+the whole 0.9 on the M700 (was 3.5); the worst collection under 1.3 ms, the
+worst pass no longer one; key to screen 2.5 ms on average. **D1 written**:
+`docs/astra-display.md` and its diagram, four questions for Diego - the
+split, who draws an ordinary window (every window itself is recommended),
+the name, when.
 
 ### The optimisation phase - after the applications
 

@@ -3552,6 +3552,14 @@ def identity(image, check):
     check(host.startswith("QEMU Standard PC") and host.endswith(", x86-64"),
           "neofetch's Host is %r, not the name QEMU's firmware gives" % host)
 
+    # The desktop by its name, Astra (7 October), at the system's version.
+    version = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "VERSION")).read().strip()
+    desktop = row(out, "Desktop") or ""
+
+    check(desktop == "Astra " + version,
+          "neofetch's Desktop is %r, not Astra %s" % (desktop, version))
+
     network = row(out, "Network") or ""
 
     # q35's own card, and `user/servers/e1000.c` drives it - so the row is

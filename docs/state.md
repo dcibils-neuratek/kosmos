@@ -38,6 +38,13 @@ and Replace, Ctrl G, Ctrl Shift F, System tab, Console that answers a read.
 **0.11.41** (18.437): the IDE's examples - TinyGL's eight demos as C projects
 through the GL Kit's door, Cube in Lua and in C; project defines.
 
+**0.11.42-0.11.43** (18.438-18.439): Astra measured on the M700 - no pass
+over 4 ms, the slowest collections - and composing's garbage taken away,
+0.9 KB a pass from 3.5; key to screen 2.5 ms. The split designed,
+`docs/astra-display.md`, four questions for Diego. The desktop named Astra,
+on the screen. The whole system drawn: `docs/how-kosmos-works.html`. The
+M700 netbooted to 0.11.43 with four windows open (Diego away).
+
 **Next**: the
 Maps, Mail and Calendar designs; W3 only if a Lua app's frames show it.
 
