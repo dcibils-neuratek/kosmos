@@ -1284,8 +1284,8 @@ with the project's other settings (`prefs.lua`). Through the kit's
 panes can have it the same way - Tracker's sidebar, Preferences', Mail's
 three panes.
 
-**AGREED, 7 October - the launcher's sections as a sidebar, browsed by
-hovering** (`docs/launcher.html`; Diego: "yes to all, go ahead" - the
+**DONE, 7 October (0.11.53, `testing.md` 18.446) - the launcher's sections
+as a sidebar, browsed by hovering** (`docs/launcher.html`; Diego: "yes to all, go ahead" - the
 menu's pause, opening on All, a Recent row as its own step after, the panel
 820 wide). Diego: "right now is
 hard to find apps in the new app launcher because there are many", "the

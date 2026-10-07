@@ -20883,3 +20883,27 @@ before counting).
 The gate: 101 of 102 in 9:21, the one `arm-display-4`'s desktop-icon read
 caught mid-redraw (row 220 for 241, as 18.219 records), 79 of 79 alone.
 Direct windows (step 2) and the window manager's old chrome (step 3) next.
+
+## 18.446 The launcher's sections as a sidebar, browsed by hovering
+
+Agreed 7 October (`docs/launcher.html`; Diego: "yes to all, go ahead"). The
+category pills became rows down a 236-wide column at the panel's left - All,
+a rule, then Applications, System, Development, Demos and Preferences, each
+46 high with its picture, its name and how many it holds - and the grid moved
+beside them, five across, in a panel grown from 600 to 820.
+
+- **Browsed without a click**: the window asks for the pointer's passing
+  (`wmproto.track`), and a section is shown when it rests on its row - at
+  once going up or down, after 90 ms when heading right for the grid, so the
+  rows crossed on the way are not taken (`launchgrid.aim`, the menu's
+  pause). A press on a row does the same.
+- **Keys**: Up and Down through the sections, Right or Tab into the grid,
+  Left from its first column back.
+- `tools/test_launchgrid.lua`, 51 checks: the grid beside the column, the
+  rows and what the pointer is on, the pause's rule, the panel 820 wide.
+- `run_dock.py`, 46 checks: the rows in Diego's order; **the pointer moved
+  onto Demos, the button never pressed, and Demos shown alone**; Down to
+  Preferences. The launcher's picture is kept in `build/dock/launcher.png`.
+
+Opening on All, and the panel's width, as the drawing's answers were; the
+Recent row is its own step after.

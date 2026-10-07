@@ -70,6 +70,9 @@ os.environ["KOSMOS_DISK"] = _DISK
 
 import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
+import kosmos_vnc as V                                      # noqa: E402
+
+ROOT = os.path.dirname(HERE)
 
 GAP = 6             # `DOCK_GAP` in `wm.lua`: a floating dock above the edge
 DOCK_H = 64         # `dock.H`
@@ -432,21 +435,36 @@ def main():
         time.sleep(3)                                   # the dock a cell wider
 
         # A second press on the button closes it, and starts nothing - after
-        # its categories: the pills in Diego's order, Demos pressed, Tab.
+        # its sections: the rows in Diego's order, Demos shown by the pointer
+        # resting on it with no click, and Down to the next (7 October,
+        # `docs/launcher.html`).
         mark = len(guest.seen)
         click(*kosmos_button(), width, height)
         at_grid = guest.wait_for_line("launchpad: the grid at ", "the launcher grid again", mark)
-        said["pills"] = guest.wait_for_line("launchpad: pills ", "the grid's pills", mark)
+        said["pills"] = guest.wait_for_line("launchpad: rows ", "the sections' rows", mark)
         time.sleep(2)
         gx, gy = (int(v) for v in re.match(r"(\d+),(\d+)", at_grid).groups())
         pill = re.search(r"Demos (\d+),(\d+) (\d+)x(\d+)", said["pills"])
 
         if pill:
             px, py, pw, ph = (int(v) for v in pill.groups())
-            click(gx + px + pw // 2, gy + py + ph // 2, width, height)
-            said["demos"] = guest.wait_for_line("launchpad: Demos, ", "the Demos pill", mark)
-            guest.sendkey("tab")
-            said["tabbed"] = guest.wait_for_line("launchpad: Preferences, ", "Tab to the next pill", mark)
+            # Moved onto it, the button never pressed.
+            guest.mouse_to(*R._to_tablet(gx + px + 60, gy + py + ph // 2, width, height))
+            said["demos"] = guest.wait_for_line("launchpad: Demos, ", "Demos shown by resting on it", mark)
+            # The launcher kept as it looked, for whoever reads the run after.
+            time.sleep(1.5)
+            w_, h_, rgb_ = R.parse_ppm(guest.screendump())
+            m_ = re.match(r"(\d+),(\d+) (\d+)x(\d+)", at_grid)
+
+            if m_:
+                lx, ly, lw, lh = (int(v) for v in m_.groups())
+                rows_ = [rgb_[((y_ * w_) + lx) * 3:((y_ * w_) + lx + lw) * 3]
+                         for y_ in range(ly, min(h_, ly + lh))]
+                os.makedirs(os.path.join(ROOT, "build", "dock"), exist_ok=True)
+                V.png(os.path.join(ROOT, "build", "dock", "launcher.png"), lw, len(rows_),
+                      b"".join(rows_))
+            guest.sendkey("down")
+            said["tabbed"] = guest.wait_for_line("launchpad: Preferences, ", "Down to the next section", mark)
 
         click(*kosmos_button(), width, height)
         time.sleep(3)
@@ -746,18 +764,18 @@ def main():
     order = [p.split(" ")[0] for p in said.get("pills", "").split("; ")]
 
     if order != ["All", "Applications", "System", "Development", "Demos", "Preferences"]:
-        fails.append("the grid's pills were not All and the five in Diego's order: %r"
+        fails.append("the sections' rows were not All and the five in Diego's order: %r"
                      % said.get("pills"))
 
     demos = re.match(r"(\d+)", said.get("demos", ""))
     every = int(grid.group(5)) if grid else 0
 
     if not demos or not 0 < int(demos.group(1)) < every:
-        fails.append("the Demos pill did not show Demos alone: %r of %d"
+        fails.append("resting on Demos, with no click, did not show Demos alone: %r of %d"
                      % (said.get("demos"), every))
 
     if not said.get("tabbed"):
-        fails.append("Tab did not step from Demos to Preferences")
+        fails.append("Down did not step from Demos to Preferences")
 
     if not said.get("modal") or not said.get("modal closed"):
         fails.append("Super and the key left of 1 did not open the shortcuts "
@@ -851,7 +869,7 @@ def main():
           "button's, opening upwards over its button, floating and along the "
           "whole width, Restart and Shut Down in it wearing a picture; the launcher grid above the dock with every "
           "application, the button lit while it is open, a name typed and "
-          "Return opening it, its pills in Diego's order, Demos and Tab, the "
+          "Return opening it, its sections in Diego's order, Demos shown by resting on it and Down, the "
           "Windows key alone on a USB keyboard opening and closing it, and "
           "a second press or one outside closing it; Super and º opening the "
           "shortcuts over everything and Escape closing them; "

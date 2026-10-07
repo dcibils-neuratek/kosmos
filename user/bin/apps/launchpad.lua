@@ -164,7 +164,7 @@ local function grid_mode(ax, ay)
     win.dirty = true
   end
 
-  -- A category chosen, by its pill or by Tab: the grid that folder's alone,
+  -- A section chosen, by resting on it, a press or the arrows: the grid that folder's alone,
   -- what was typed still searching inside it.
   local function choose(cat)
     category = cat
@@ -187,18 +187,35 @@ local function grid_mode(ax, ay)
   -- the look's own size and two more.
   local SMALL = 14
   local small = ui.sized("ui", SMALL)
-  local PILL = 15
-  local pill_face = ui.sized("ui", PILL)
+  local ROW = 15
+  local row_face = ui.sized("ui", ROW)
   local SEARCH = (theme.fonts and theme.fonts.ui and tonumber(theme.fonts.ui.px or theme.fonts.ui.size) or 18) + 2
   local search_face = ui.sized("ui", SEARCH)
-  local chips = grid.chips(cats, function(s) return gfx.measure(s, pill_face) end, pw)
+  --
+  -- **The sections as a sidebar** (`docs/launcher.html`, agreed 7 October):
+  -- a row each down the left, a menu's row tall, its picture, its name and
+  -- how many it holds - browsed by moving the pointer over them, with no
+  -- click (`on_hover` below), as the right-click Kosmos menu is.
+  --
+  local side = grid.side_rows(cats)
+  local SECTION_ICON = { All = "Misc_Deskbar_Group", Applications = "App_Tracker",
+                         System = "App_Pulse", Development = "App_Pe",
+                         Demos = "App_GLDirectMode", Preferences = "Prefs_Appearance" }
+  local held = { [grid.ALL] = #apps }
+
+  for _, item in ipairs(apps) do
+    if item.section then held[item.section] = (held[item.section] or 0) + 1 end
+  end
+
+  -- Where the keys are: the sections ("side") or the grid.
+  local where = "side"
 
   do
     local said = {}
 
-    for _, c in ipairs(chips) do said[#said + 1] = ("%s %d,%d %dx%d"):format(c.name, c.x, grid.CHIP_Y, c.w, grid.CHIP_H) end
+    for _, r in ipairs(side) do said[#said + 1] = ("%s 0,%d %dx%d"):format(r.name, r.y, grid.SIDE_W, r.h) end
 
-    print("launchpad: pills " .. table.concat(said, "; "))
+    print("launchpad: rows " .. table.concat(said, "; "))
   end
 
   local view = ui.view{ x = 0, y = 0, w = pw, h = ph }
@@ -226,14 +243,36 @@ local function grid_mode(ax, ay)
       g:fill(tx + gfx.measure(typed, search_face) + 1, sy + 14, 2, sh_ - 28, theme.accent)
     end
 
-    -- The categories: All, then the menu's folders, the chosen one lit.
-    for _, c in ipairs(chips) do
-      local on = (c.name == category)
-      local back = on and theme.accent or theme.raised
+    -- The sections: a column of their own, the chosen one lit with the
+    -- accent's bar at its edge, and a rule under All. While something is
+    -- typed the search is every application, and no section is lit.
+    local column = mix(face, 0xff000000, 14)
+    local lit = mix(face, 0xffffffff, 22)
+    local RI = grid.ROW_IN
 
-      g:fill_round(c.x, grid.CHIP_Y, c.w, grid.CHIP_H, back, grid.CHIP_H // 2)
-      g:text(c.x + grid.CHIP_IN, grid.CHIP_Y + (grid.CHIP_H - gfx.height(pill_face)) // 2, c.name,
-             on and theme.text_on or theme.text, back, "ui", PILL)
+    g:fill(0, sy + sh_ + 10, grid.SIDE_W, self.h - (sy + sh_ + 10), column)
+
+    for i, r in ipairs(side) do
+      local on = (r.name == category) and typed == ""
+      local back = on and lit or column
+
+      if on then
+        g:fill_round(RI, r.y, grid.SIDE_W - 2 * RI, r.h, lit, 12)
+        g:fill_round(RI - 6, r.y + 12, 3, r.h - 24, theme.accent, 1)
+      end
+
+      g:icon(RI + 12, r.y + (r.h - 26) // 2, (SECTION_ICON[r.name] or "Folder_generic") .. ".png", 26)
+      g:text(RI + 12 + 26 + 12, r.y + (r.h - gfx.height(row_face)) // 2, r.name,
+             theme.text, back, "ui", ROW)
+
+      local n = tostring(held[r.name] or 0)
+
+      g:text(grid.SIDE_W - RI - 12 - gfx.measure(n, small), r.y + (r.h - gfx.height(small)) // 2,
+             n, on and theme.accent or theme.text_dim, back, "ui", SMALL)
+
+      if i == 1 then
+        g:fill(RI + 6, r.y + r.h + 2 + grid.SEP_H // 2, grid.SIDE_W - 2 * RI - 12, 1, theme.line_soft)
+      end
     end
 
     -- What the grid holds, and in what order.
@@ -241,7 +280,7 @@ local function grid_mode(ax, ay)
                  or (category == grid.ALL) and ("Every application, %d"):format(#apps)
                  or ("%s, %d"):format(category, #list)
 
-    g:text(P + 8, grid.HEAD_Y, head, theme.text_dim, face, "ui", SMALL)
+    g:text(grid.GX + 8, grid.HEAD_Y, head, theme.text_dim, face, "ui", SMALL)
     g:text(self.w - P - 8 - gfx.measure("A to Z", small), grid.HEAD_Y, "A to Z",
            theme.text_dim, face, "ui", SMALL)
 
@@ -274,16 +313,19 @@ local function grid_mode(ax, ay)
     end
 
     if #list == 0 then
-      g:text(P + 8, grid.TOP + 8, "Nothing here is called that", theme.text_dim, face)
+      g:text(grid.GX + 8, grid.TOP + 8, "Nothing here is called that", theme.text_dim, face)
     end
   end
 
   function view:mouse(action, x, y)
     if action ~= "press" then return false end
 
-    local cat = grid.chip_hit(chips, x, y)
+    -- A press on a section does what resting on it does, so a click is
+    -- never wrong either.
+    local cat = grid.side_hit(side, x, y)
 
     if cat then
+      where = "side"
       choose(cat)
       return true
     end
@@ -292,6 +334,67 @@ local function grid_mode(ax, ay)
 
     if i then open(list[i]) end
 
+    return true
+  end
+
+  --
+  -- **Browsed without a click** (Diego: "its crucial that i can navigate all
+  -- the menus without clicking down as we do now with the old menu"): the
+  -- pointer resting on a section's row shows it. Taken at once going up or
+  -- down the column, and after `grid.PAUSE_MS` when heading right, for the
+  -- grid - so the rows passed over on the way are not taken, as a menu
+  -- keeps the submenu you are going for (`grid.aim`).
+  --
+  local wmproto = use("/Kosmos/Libraries/wmproto.lua")
+  local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+  local last_x, last_y, pending = nil, nil, nil
+
+  wmproto.track(win.handle, true)
+
+  win.on_hover = function(_, x, y)
+    local name = grid.side_hit(side, x, y)
+    local how = grid.aim(last_x, last_y, x, y)
+
+    last_x, last_y = x, y
+
+    if not name or name == category or typed ~= "" then
+      pending = nil
+      win.poll_wait_ticks = nil
+      return false
+    end
+
+    if how == "now" then
+      pending = nil
+      win.poll_wait_ticks = nil
+      where = "side"
+      choose(name)
+      return true
+    end
+
+    if not pending or pending.name ~= name then
+      pending = { name = name, since = sys.ticks() }
+    end
+
+    win.poll_wait_ticks = 2          -- asked again soon, to end the pause
+    return false
+  end
+
+  -- The pause ended with the pointer still on the row: it is taken.
+  win.on_frame = function()
+    if not pending then return false end
+
+    if (sys.ticks() - pending.since) * 1000 < grid.PAUSE_MS * counter_hz then return false end
+
+    local still = last_x and grid.side_hit(side, last_x, last_y)
+    local name = pending.name
+
+    pending = nil
+    win.poll_wait_ticks = nil
+
+    if still ~= name then return false end
+
+    where = "side"
+    choose(name)
     return true
   end
 
@@ -333,7 +436,7 @@ local function grid_mode(ax, ay)
   --
   -- The keys are the grid's: it is the one thing in the window, focused,
   -- and it takes Tab - which a window keeps for moving the focus unless
-  -- what has it says `takes_tab` - to go round the categories.
+  -- what has it says `takes_tab` - to go between the sections and the grid.
   --
   view.focusable = true
   view.takes_tab = true
@@ -342,15 +445,34 @@ local function grid_mode(ax, ay)
     if c == 27 then
       win:close()
     elseif c == 9 then
-      choose(grid.next_category(cats, category))
+      -- Tab goes between the sections and the grid.
+      where = (where == "side") and "grid" or "side"
     elseif c == 10 or c == 13 then
       open(sel and list[sel])
     elseif c == 8 or c == 127 then
       search(typed:sub(1, (utf8.offset(typed, -1) or 1) - 1))
-    elseif ARROW[c] then
-      sel = grid.move(sel, #list, ARROW[c])
+    elseif ARROW[c] and where == "side" then
+      -- Up and Down through the sections, each shown as it is reached;
+      -- Right into the grid.
+      if ARROW[c] == "right" then
+        where = "grid"
+      elseif ARROW[c] == "up" or ARROW[c] == "down" then
+        local at = 1
 
-      if sel then top = grid.keep_visible(sel, top, rows) end
+        for i, name in ipairs(cats) do if name == category then at = i end end
+
+        at = (ARROW[c] == "down") and math.min(#cats, at + 1) or math.max(1, at - 1)
+        choose(cats[at])
+      end
+    elseif ARROW[c] then
+      -- Left from the grid's first column goes back to the sections.
+      if ARROW[c] == "left" and sel and (sel - 1) % grid.COLS == 0 then
+        where = "side"
+      else
+        sel = grid.move(sel, #list, ARROW[c])
+
+        if sel then top = grid.keep_visible(sel, top, rows) end
+      end
     elseif c >= 32 then
       search(typed .. utf8.char(c))
     else

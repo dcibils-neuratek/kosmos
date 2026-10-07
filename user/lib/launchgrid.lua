@@ -5,7 +5,7 @@
 -- `roadmap.md`, a dock at the bottom, step 4 - drawn in `docs/dock.html`
 -- and agreed by Diego on 3 October: above the dock's Kosmos button, a
 -- panel with its search first, then every application A to Z in round
--- tiles, six to a row. `launchpad` draws it when the Deskbar is a dock and
+-- tiles - beside the sections' column since 7 October, five to a row. `launchpad` draws it when the Deskbar is a dock and
 -- says where (`/Running/Deskbar/anchor`), and its list of names otherwise.
 --
 -- **Arithmetic here, pixels in `launchpad`**, as `dock.lua` and the
@@ -15,17 +15,27 @@
 
 local grid = {}
 
-grid.W        = 600     -- the panel, as the drawing has it
+--
+-- **The sections as a sidebar** (`docs/launcher.html`, agreed 7 October;
+-- Diego: "the categories are good but they are small and hard to click",
+-- "i want to convert the categories into menus (like a sidebar of items)
+-- where i can browse with the mouse without needing to click down"). The
+-- pills across the top became rows down a column at the left, each as tall
+-- as a menu's row, and the grid moved beside it, five across in a panel
+-- grown from 600 to 820 so the tiles keep their size.
+--
+grid.W        = 820     -- the panel, as the drawing has it
 grid.H        = 600
 grid.PAD      = 18      -- inside it, all round
 grid.SEARCH_H = 50      -- the search pill
-grid.CHIP_Y   = 78      -- the categories' pills
-grid.CHIP_H   = 30
-grid.CHIP_IN  = 14      -- inside a pill, either side of its word
-grid.CHIP_GAP = 8
-grid.HEAD_Y   = 122     -- "Every application" and "A to Z"
-grid.TOP      = 146     -- where the first row of tiles starts
-grid.COLS     = 6
+grid.SIDE_W   = 236     -- the sections' column, from the panel's left edge
+grid.SIDE_TOP = 82      -- its first row, under the search
+grid.ROW_H    = 46      -- a section's row: a menu's row, not a pill
+grid.ROW_IN   = 10      -- a row's lit band, in from the column's edges
+grid.SEP_H    = 13      -- the rule under All
+grid.HEAD_Y   = 90      -- "Every application" and "A to Z", beside it
+grid.TOP      = 114     -- where the first row of tiles starts
+grid.COLS     = 5
 grid.CELL_H   = 96      -- a tile and its name under it
 grid.TILE     = 52      -- the round tile
 grid.ICON     = 38      -- the picture in it
@@ -134,44 +144,52 @@ function grid.next_category(cats, current)
 end
 
 --
--- Where each pill is, given how wide its word is in the face that draws it
--- (`measure`): `{ name, x, w }`, left to right from the panel's margin, as
--- many as fit in `w` - a pill that would not fit is left out rather than
--- drawn over the edge, and Tab still reaches it.
+-- **The sections' rows**: All first and a rule under it, then the rest -
+-- each `{ name, y, h }`, its `y` from the panel's top.
 --
-function grid.chips(cats, measure, w)
-  local out, x = {}, grid.PAD
-  local right = (w or grid.W) - grid.PAD
+function grid.side_rows(cats)
+  local out, y = {}, grid.SIDE_TOP
 
-  for _, name in ipairs(cats or {}) do
-    local cw = measure(name) + 2 * grid.CHIP_IN
+  for i, name in ipairs(cats or {}) do
+    out[#out + 1] = { name = name, y = y, h = grid.ROW_H }
+    y = y + grid.ROW_H + 2
 
-    if x + cw > right then break end
-
-    out[#out + 1] = { name = name, x = x, w = cw }
-    x = x + cw + grid.CHIP_GAP
+    if i == 1 then y = y + grid.SEP_H end
   end
 
   return out
 end
 
--- The pill a press at `x, y` landed on, or nil.
-function grid.chip_hit(chips, x, y)
-  if y < grid.CHIP_Y or y >= grid.CHIP_Y + grid.CHIP_H then return nil end
+-- The section whose row a point in the panel is on, or nil.
+function grid.side_hit(rows, x, y)
+  if x < 0 or x >= grid.SIDE_W then return nil end
 
-  for _, c in ipairs(chips or {}) do
-    if x >= c.x and x < c.x + c.w then return c.name end
+  for _, r in ipairs(rows or {}) do
+    if y >= r.y and y < r.y + r.h then return r.name end
   end
 
   return nil
 end
 
 --
--- **What matches what was typed**, in the category chosen: a name that
--- begins with it before one that only contains it, A to Z within each -
--- `launchpad`'s own rule, so `te` offers Terminal above Notes. Case does not
--- matter; nothing fuzzy. No category, or All, is every one.
+-- **A menu's pause** (the drawing's first question, agreed): a row is taken
+-- at once when the pointer comes to it going up or down, and only after a
+-- moment when it is heading right, across the rows between, for the grid -
+-- the way a menu keeps the submenu you are going for open. "now" or "wait",
+-- from where the pointer was to where it is.
 --
+grid.PAUSE_MS = 90
+
+function grid.aim(from_x, from_y, x, y)
+  if not from_x then return "now" end
+
+  local dx, dy = x - from_x, y - from_y
+
+  if dx > 0 and dx >= math.abs(dy) then return "wait" end
+
+  return "now"
+end
+
 function grid.filter(items, typed, category)
   local want = tostring(typed or ""):lower()
   local starts, contains = {}, {}
@@ -195,8 +213,11 @@ function grid.filter(items, typed, category)
 end
 
 -- How wide a column is, and how many rows a panel `h` tall shows.
+-- Where the grid starts across the panel: right of the sections' column.
+grid.GX = grid.SIDE_W + grid.PAD
+
 function grid.cell_w(w)
-  return ((w or grid.W) - 2 * grid.PAD) // grid.COLS
+  return ((w or grid.W) - grid.GX - grid.PAD) // grid.COLS
 end
 
 function grid.rows_shown(h)
@@ -216,7 +237,7 @@ function grid.place(i, top, w)
   local row, col = (i - 1) // grid.COLS, (i - 1) % grid.COLS
   local cw = grid.cell_w(w)
 
-  return grid.PAD + col * cw, grid.TOP + (row - (top or 0)) * grid.CELL_H, cw, grid.CELL_H
+  return grid.GX + col * cw, grid.TOP + (row - (top or 0)) * grid.CELL_H, cw, grid.CELL_H
 end
 
 -- The tile a press at `x, y` landed on, of `n`, or nil: the search, the
@@ -224,10 +245,10 @@ end
 function grid.hit(n, top, w, h, x, y)
   local cw = grid.cell_w(w)
 
-  if x < grid.PAD or x >= grid.PAD + cw * grid.COLS then return nil end
+  if x < grid.GX or x >= grid.GX + cw * grid.COLS then return nil end
   if y < grid.TOP or y >= grid.TOP + grid.rows_shown(h) * grid.CELL_H then return nil end
 
-  local col = (x - grid.PAD) // cw
+  local col = (x - grid.GX) // cw
   local row = (y - grid.TOP) // grid.CELL_H + (top or 0)
   local i = row * grid.COLS + col + 1
 
