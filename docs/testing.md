@@ -20806,3 +20806,7 @@ which the M700 sent at 1.4 MB a second - and he chose the compressed encoding
   frame took 8,294,416 bytes and the check fails.
 
 The gate: 102 of 102 in 9:49.
+
+**On the M700**, 0.11.49 netbooted, a whole 1720x1440 frame taken by
+`kosmos_vnc.py` from the Mac on the same network, handshake and decoding
+included: **raw 7.13 s, ZRLE 0.20 s** - 36 times sooner, the picture the same.
