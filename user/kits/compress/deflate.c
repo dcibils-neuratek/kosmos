@@ -188,8 +188,144 @@ static int l_copy_into(lua_State *L)
     return 0;
 }
 
+/*
+ * **A zlib stream that goes on** (`roadmap.md`, remote 7c):
+ * `compress.zstream([level])`, and on it `z:deflate(src, bytes)` or
+ * `z:deflate(string)` - what it was given, deflated and flushed to a byte
+ * boundary, as a string.
+ *
+ * VNC's ZRLE is one zlib stream for a whole connection: two bytes of header
+ * at its start and never an end, each update's tiles deflated on from the
+ * last with the dictionary the stream has built, and flushed (`Z_SYNC_FLUSH`)
+ * so the viewer can decode everything sent so far. So the deflater's state
+ * belongs to the stream rather than to the kit, as `deflate_into`'s does:
+ * about 320 KB a stream, mapped when it is made and given back when it is
+ * collected. What comes out is small - a desktop's tiles are a few per cent
+ * of its pixels before this - so it is handed back as a string rather than
+ * into a region.
+ */
+struct zstream {
+    tdefl_compressor *d;
+    size_t pages;
+};
+
+#define ZSTREAM "kosmos.zstream"
+
+static int l_zstream(lua_State *L)
+{
+    int level = (int)luaL_optinteger(L, 1, 6);
+    struct zstream *z;
+    mz_uint flags;
+
+    if (level < 0 || level > 9) {
+        return luaL_error(L, "zstream: a level is 0 to 9, not %d", level);
+    }
+
+    z = lua_newuserdatauv(L, sizeof *z, 0);
+    z->d = NULL;
+    z->pages = 0;
+    luaL_setmetatable(L, ZSTREAM);
+
+    z->d = kosmos_map_bytes(sizeof(tdefl_compressor), &z->pages);
+
+    if (z->d == NULL) {
+        lua_pushnil(L);
+        lua_pushstring(L, "no memory for a deflater");
+        return 2;
+    }
+
+    /* A positive window: the zlib header, before the first block. */
+    flags = tdefl_create_comp_flags_from_zip_params(level, MZ_DEFAULT_WINDOW_BITS,
+                                                    MZ_DEFAULT_STRATEGY);
+
+    if (tdefl_init(z->d, NULL, NULL, (int)flags) != TDEFL_STATUS_OKAY) {
+        return luaL_error(L, "zstream: the deflater would not start");
+    }
+
+    return 1;
+}
+
+static int l_zstream_deflate(lua_State *L)
+{
+    static uint8_t chunk[16384];
+    struct zstream *z = luaL_checkudata(L, 1, ZSTREAM);
+    const uint8_t *in;
+    size_t left;
+    luaL_Buffer b;
+    tdefl_status st;
+
+    if (lua_type(L, 2) == LUA_TSTRING) {
+        in = (const uint8_t *)lua_tolstring(L, 2, &left);
+    } else {
+        in = (const uint8_t *)(uintptr_t)luaL_checkinteger(L, 2);
+        left = (size_t)luaL_checkinteger(L, 3);
+
+        if (in == NULL && left > 0) {
+            return luaL_error(L, "zstream: needs a mapped region");
+        }
+    }
+
+    if (z->d == NULL) {
+        return luaL_error(L, "zstream: this stream has no deflater");
+    }
+
+    luaL_buffinit(L, &b);
+
+    /* Until all of it is taken and the flush is out: a full chunk may mean
+     * more is waiting, and asking again with nothing costs nothing. */
+    for (;;) {
+        size_t in_size = left, out_size = sizeof chunk;
+
+        st = tdefl_compress(z->d, in, &in_size, chunk, &out_size, TDEFL_SYNC_FLUSH);
+
+        if (st != TDEFL_STATUS_OKAY) {
+            return luaL_error(L, "zstream: would not deflate (%d)", (int)st);
+        }
+
+        in += in_size;
+        left -= in_size;
+        luaL_addlstring(&b, (const char *)chunk, out_size);
+
+        if (left == 0 && out_size < sizeof chunk) {
+            break;
+        }
+    }
+
+    luaL_pushresult(&b);
+    return 1;
+}
+
+static int l_zstream_gc(lua_State *L)
+{
+    struct zstream *z = luaL_checkudata(L, 1, ZSTREAM);
+
+    if (z->d != NULL) {
+        kosmos_unmap((uintptr_t)z->d, z->pages);
+        z->d = NULL;
+    }
+
+    return 0;
+}
+
 void kosmos_compress_deflate(lua_State *L)
 {
+    if (luaL_newmetatable(L, ZSTREAM)) {
+        static const luaL_Reg methods[] = {
+            { "deflate", l_zstream_deflate },
+            { NULL, NULL },
+        };
+
+        luaL_newlib(L, methods);
+        lua_setfield(L, -2, "__index");
+        lua_pushcfunction(L, l_zstream_gc);
+        lua_setfield(L, -2, "__gc");
+    }
+
+    lua_pop(L, 1);
+
+    lua_pushcfunction(L, l_zstream);
+    lua_setfield(L, -2, "zstream");
+
     lua_pushcfunction(L, l_deflate_into);
     lua_setfield(L, -2, "deflate_into");
 

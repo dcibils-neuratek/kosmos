@@ -40,12 +40,27 @@
 -- weak: eight characters and a cipher broken since 1998. It keeps out a
 -- visitor on the network, which is what it is for here.
 --
--- **Raw pixels**, packed in C into the format the viewer asks for
--- (`surface:pack`). A compressed encoding is 7c, when the M700 says the
--- network needs one. And the subnet rule `telnetd` keeps: a viewer from
+-- **ZRLE when the viewer offers it, raw pixels when it does not**, both in
+-- the pixel format the viewer asks for (`roadmap.md`, remote 7c). Raw is
+-- the format packed in C (`surface:pack`): ten megabytes a frame at
+-- 1720x1440, which the M700 sent at 1.4 MB a second and Diego, reaching it
+-- from outside the house on 7 October, found "really slow". ZRLE is the
+-- rectangle as tiles of 64 by 64 - one colour, a small palette, runs - in
+-- C (`surface:zrle`, `gfx/zrle.c`), deflated on one zlib stream a viewer
+-- (`compress.zstream`), and a desktop comes to a few per cent of its
+-- pixels. Every viewer that matters speaks it: TigerVNC, RealVNC, macOS's
+-- Screen Sharing. And the subnet rule `telnetd` keeps: a viewer from
 -- outside this machine's own network is closed unanswered.
 
 local crypto = use("/Kosmos/Kits/crypto")
+local compress = use("/Kosmos/Kits/compress")
+local regions = use("/Kosmos/Libraries/regions.lua")
+
+-- ZRLE's number for itself in SetEncodings and on each rectangle, and the
+-- rows a rectangle is cut into: one row of tiles, so each band's tiles are
+-- whole and the region they are written into stays small.
+local ZRLE = 16
+local BAND = 64
 
 local words = {}
 
@@ -329,6 +344,9 @@ end
 local function close(at, why)
   local v = viewers[at]
 
+  regions.free(v.tiles)
+  v.tiles, v.zstream = nil, nil
+
   if v.stage == "normal" then
     net:note(ipv4.text(v.from) .. "  " .. (why or "left"))
   end
@@ -393,9 +411,46 @@ local function inside(r, want)
 end
 
 -- An update begun: the header now, the pixels as the connection takes them.
+--
+-- For ZRLE each rectangle is cut into bands a row of tiles high first, since
+-- the header says how many rectangles follow and each band is one.
 local function begin_update(v, rects)
+  if v.zrle then
+    local bands = {}
+
+    for _, r in ipairs(rects) do
+      for top = 0, r[4] - 1, BAND do
+        bands[#bands + 1] = { r[1], r[2] + top, r[3], math.min(BAND, r[4] - top) }
+      end
+    end
+
+    rects = bands
+  end
+
   v.job = { rects = rects, i = 1, row = 0 }
   send(v, string.pack(">BxI2", 0, #rects))
+end
+
+-- One band as ZRLE: its tiles written into the viewer's region, deflated on
+-- its stream, and sent as the length and the bytes. The region is made the
+-- first time, for a band as wide as the screen; the stream lives as long as
+-- the connection, because the viewer's inflater does.
+local function send_zrle(v, x, y, w, h)
+  if not v.tiles then
+    local bytes = gfx.zrle_bound(screen.w, BAND)
+
+    v.tiles = assert(regions.make(bytes))
+    v.tiles_cap = bytes
+    v.zstream = assert(compress.zstream(6))
+  end
+
+  local n = assert(screen.surface:zrle(x, y, w, h, v.format, v.tiles.at, v.tiles_cap))
+  local data = v.zstream:deflate(v.tiles.at, n)
+
+  send(v, string.pack(">I2I2I2I2i4I4", x, y, w, h, ZRLE, #data))
+  send(v, data)
+  v.sent_zrle = (v.sent_zrle or 0) + 16 + #data
+  v.sent_pixels = (v.sent_pixels or 0) + w * h * (v.format.bpp // 8)
 end
 
 -- Some more of the update in progress, about 16 KB of it: a row band of a
@@ -407,15 +462,21 @@ local function pump(v)
     local r = job.rects[job.i]
     local x, y, w, h = r[1], r[2], r[3], r[4]
 
-    if job.row == 0 then
-      send(v, string.pack(">I2I2I2I2i4", x, y, w, h, 0))
+    if v.zrle then
+      -- A band a pass, whole: its tiles are a few kilobytes deflated.
+      send_zrle(v, x, y, w, h)
+      job.row = h
+    else
+      if job.row == 0 then
+        send(v, string.pack(">I2I2I2I2i4", x, y, w, h, 0))
+      end
+
+      local per = w * (v.format.bpp // 8)
+      local rows = math.max(1, math.min(h - job.row, 16384 // math.max(1, per)))
+
+      send(v, screen.surface:pack(x, y + job.row, w, rows, v.format))
+      job.row = job.row + rows
     end
-
-    local per = w * (v.format.bpp // 8)
-    local rows = math.max(1, math.min(h - job.row, 16384 // math.max(1, per)))
-
-    send(v, screen.surface:pack(x, y + job.row, w, rows, v.format))
-    job.row = job.row + rows
 
     if job.row >= h then
       job.i, job.row = job.i + 1, 0
@@ -550,11 +611,20 @@ local function take(v)
         v.inb = inb:sub(21)
         publish()
       elseif kind == 2 then
-        -- SetEncodings: Raw is always allowed, and it is all this sends.
+        -- SetEncodings: ZRLE when it is among them, Raw otherwise - Raw is
+        -- always allowed. A viewer may send this again mid-connection; a
+        -- stream already begun goes on, since the viewer's inflater has it.
         local n = string.unpack(">I2", inb, 3)
 
         if #inb < 4 + 4 * n then return true end
 
+        v.zrle = false
+
+        for i = 0, n - 1 do
+          if string.unpack(">i4", inb, 5 + 4 * i) == ZRLE then v.zrle = true end
+        end
+
+        net:note(ipv4.text(v.from) .. "  " .. (v.zrle and "ZRLE" or "raw pixels"))
         v.inb = inb:sub(5 + 4 * n)
       elseif kind == 3 then
         -- FramebufferUpdateRequest.

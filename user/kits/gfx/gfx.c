@@ -30,6 +30,7 @@
  */
 
 #include "pack.h"
+#include "zrle.h"
 #include "rows.h"
 #include "shadow.h"
 #include "yuv.h"
@@ -3015,6 +3016,64 @@ static int l_get(lua_State *L)
  * clipped answer would be bytes for somewhere it did not ask about, which a
  * protocol then sends as though it had.
  */
+/*
+ * The format table `pack` and `zrle` take, read and checked: `{ bpp, big,
+ * rmax, gmax, bmax, rshift, gshift, bshift, depth }`, and the rectangle at
+ * arguments 2 to 5 held inside the surface. Its depth back, which only ZRLE
+ * asks: 24 for a 32-bit format that does not say.
+ */
+static unsigned check_format(lua_State *L, struct surface *s, int at,
+                             struct gfx_pack_format *f, const char *who)
+{
+    lua_Integer x = luaL_checkinteger(L, 2);
+    lua_Integer y = luaL_checkinteger(L, 3);
+    lua_Integer w = luaL_checkinteger(L, 4);
+    lua_Integer h = luaL_checkinteger(L, 5);
+    lua_Integer bpp, rmax, gmax, bmax, rs, gs, bs, depth;
+
+    luaL_checktype(L, at, LUA_TTABLE);
+
+    lua_getfield(L, at, "bpp");    bpp   = luaL_optinteger(L, -1, 32);
+    lua_getfield(L, at, "rmax");   rmax  = luaL_optinteger(L, -1, 255);
+    lua_getfield(L, at, "gmax");   gmax  = luaL_optinteger(L, -1, 255);
+    lua_getfield(L, at, "bmax");   bmax  = luaL_optinteger(L, -1, 255);
+    lua_getfield(L, at, "rshift"); rs    = luaL_optinteger(L, -1, 16);
+    lua_getfield(L, at, "gshift"); gs    = luaL_optinteger(L, -1, 8);
+    lua_getfield(L, at, "bshift"); bs    = luaL_optinteger(L, -1, 0);
+    lua_getfield(L, at, "depth");  depth = luaL_optinteger(L, -1, bpp == 32 ? 24 : bpp);
+    lua_getfield(L, at, "big");
+    f->big = lua_toboolean(L, -1);
+    lua_pop(L, 9);
+
+    if (bpp != 8 && bpp != 16 && bpp != 32) {
+        luaL_error(L, "%s: a pixel is 8, 16 or 32 bits, not %d", who, (int)bpp);
+    }
+
+    if (rmax < 1 || gmax < 1 || bmax < 1 || rmax > 65535 || gmax > 65535
+        || bmax > 65535 || rs < 0 || gs < 0 || bs < 0
+        || rs > 31 || gs > 31 || bs > 31) {
+        luaL_error(L, "%s: a channel's largest value is 1 to 65535 "
+                   "and its shift 0 to 31", who);
+    }
+
+    if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > (lua_Integer)s->width
+        || y + h > (lua_Integer)s->height) {
+        luaL_error(L, "%s: %dx%d at %d,%d is not inside this %ux%u "
+                   "surface", who, (int)w, (int)h, (int)x, (int)y,
+                   s->width, s->height);
+    }
+
+    f->bpp = (unsigned)bpp;
+    f->rmax = (uint32_t)rmax;
+    f->gmax = (uint32_t)gmax;
+    f->bmax = (uint32_t)bmax;
+    f->rshift = (unsigned)rs;
+    f->gshift = (unsigned)gs;
+    f->bshift = (unsigned)bs;
+
+    return (depth < 1 || depth > 32) ? 24u : (unsigned)depth;
+}
+
 static int l_pack(lua_State *L)
 {
     struct surface *s = check_surface(L, 1);
@@ -3022,51 +3081,15 @@ static int l_pack(lua_State *L)
     lua_Integer y = luaL_checkinteger(L, 3);
     lua_Integer w = luaL_checkinteger(L, 4);
     lua_Integer h = luaL_checkinteger(L, 5);
-    lua_Integer bpp, rmax, gmax, bmax, rs, gs, bs;
+    lua_Integer bpp;
     struct gfx_pack_format f;
     size_t per, bytes;
     luaL_Buffer b;
     uint8_t *out;
     lua_Integer row;
 
-    luaL_checktype(L, 6, LUA_TTABLE);
-
-    lua_getfield(L, 6, "bpp");    bpp  = luaL_optinteger(L, -1, 32);
-    lua_getfield(L, 6, "rmax");   rmax = luaL_optinteger(L, -1, 255);
-    lua_getfield(L, 6, "gmax");   gmax = luaL_optinteger(L, -1, 255);
-    lua_getfield(L, 6, "bmax");   bmax = luaL_optinteger(L, -1, 255);
-    lua_getfield(L, 6, "rshift"); rs   = luaL_optinteger(L, -1, 16);
-    lua_getfield(L, 6, "gshift"); gs   = luaL_optinteger(L, -1, 8);
-    lua_getfield(L, 6, "bshift"); bs   = luaL_optinteger(L, -1, 0);
-    lua_getfield(L, 6, "big");
-    f.big = lua_toboolean(L, -1);
-    lua_pop(L, 8);
-
-    if (bpp != 8 && bpp != 16 && bpp != 32) {
-        return luaL_error(L, "pack: a pixel is 8, 16 or 32 bits, not %d", (int)bpp);
-    }
-
-    if (rmax < 1 || gmax < 1 || bmax < 1 || rmax > 65535 || gmax > 65535
-        || bmax > 65535 || rs < 0 || gs < 0 || bs < 0
-        || rs > 31 || gs > 31 || bs > 31) {
-        return luaL_error(L, "pack: a channel's largest value is 1 to 65535 "
-                          "and its shift 0 to 31");
-    }
-
-    if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > (lua_Integer)s->width
-        || y + h > (lua_Integer)s->height) {
-        return luaL_error(L, "pack: %dx%d at %d,%d is not inside this %ux%u "
-                          "surface", (int)w, (int)h, (int)x, (int)y,
-                          s->width, s->height);
-    }
-
-    f.bpp = (unsigned)bpp;
-    f.rmax = (uint32_t)rmax;
-    f.gmax = (uint32_t)gmax;
-    f.bmax = (uint32_t)bmax;
-    f.rshift = (unsigned)rs;
-    f.gshift = (unsigned)gs;
-    f.bshift = (unsigned)bs;
+    check_format(L, s, 6, &f, "pack");
+    bpp = (lua_Integer)f.bpp;
 
     per = (size_t)w * ((size_t)bpp / 8u);
     bytes = per * (size_t)h;
@@ -3079,6 +3102,60 @@ static int l_pack(lua_State *L)
     }
 
     luaL_pushresultsize(&b, bytes);
+    return 1;
+}
+
+/*
+ * `surface:zrle(x, y, w, h, format, dst, cap) -> bytes` - the rectangle as
+ * VNC's ZRLE tiles, before zlib (`zrle.h`), written at `dst`, a mapped
+ * region of `cap` bytes. Nil and why when `cap` is less than the most the
+ * rectangle could come to, which is `gfx.zrle_bound(w, h)`: the tiles go
+ * into a region rather than a string because the next thing that reads
+ * them is C too - the Compression Kit's `zstream` - and bytes between two C
+ * stages do not pass through Lua (`roadmap.md`, remote 7c).
+ */
+static int l_zrle(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    lua_Integer x = luaL_checkinteger(L, 2);
+    lua_Integer y = luaL_checkinteger(L, 3);
+    lua_Integer w = luaL_checkinteger(L, 4);
+    lua_Integer h = luaL_checkinteger(L, 5);
+    uintptr_t dst = (uintptr_t)luaL_checkinteger(L, 7);
+    size_t cap = (size_t)luaL_checkinteger(L, 8);
+    struct gfx_pack_format f;
+    unsigned depth = check_format(L, s, 6, &f, "zrle");
+    size_t got;
+
+    if (dst == 0) {
+        return luaL_error(L, "zrle: needs a mapped region");
+    }
+
+    got = gfx_zrle_rect(row_of(s, (unsigned)y) + x, s->pitch / 4u, (unsigned)w,
+                        (unsigned)h, &f, depth, (uint8_t *)dst, cap);
+
+    if (got == 0) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "%d bytes is less than %dx%d of tiles can come to",
+                        (int)cap, (int)w, (int)h);
+        return 2;
+    }
+
+    lua_pushinteger(L, (lua_Integer)got);
+    return 1;
+}
+
+/* `gfx.zrle_bound(w, h)`: the region `surface:zrle` needs for that. */
+static int l_zrle_bound(lua_State *L)
+{
+    lua_Integer w = luaL_checkinteger(L, 1);
+    lua_Integer h = luaL_checkinteger(L, 2);
+
+    if (w <= 0 || h <= 0 || w > 65535 || h > 65535) {
+        return luaL_error(L, "zrle_bound: %dx%d is not a rectangle", (int)w, (int)h);
+    }
+
+    lua_pushinteger(L, (lua_Integer)gfx_zrle_bound((unsigned)w, (unsigned)h));
     return 1;
 }
 
@@ -3766,6 +3843,7 @@ static const luaL_Reg surface_methods[] = {
     { "get",    l_get },
     { "set",    l_set },
     { "pack",   l_pack },
+    { "zrle",   l_zrle },
     { "free",   l_free },
     { NULL, NULL }
 };
@@ -4059,6 +4137,7 @@ static const luaL_Reg gfx_functions[] = {
     { "fallbacks",     l_fallbacks },
     { "surface", l_new },
     { "wrap",    l_wrap },
+    { "zrle_bound", l_zrle_bound },
     { "bytes",   l_surface_bytes },
     { "screen",  l_screen },
     { "cursor",  l_cursor },

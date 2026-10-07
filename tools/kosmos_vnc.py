@@ -30,8 +30,10 @@ A STEP is one of:
 Keys and the pointer reach the desktop only when the Servers window lets a
 viewer use them; otherwise the machine looks and does not listen.
 
-ADDRESS may be `host:port`; the port is 5900 otherwise. RFB 3.3, the Raw
-encoding, and VNC Authentication when the machine asks for it, answered with
+ADDRESS may be `host:port`; the port is 5900 otherwise. `--zrle` asks for
+ZRLE, the compressed encoding, rather than Raw. RFB 3.3, Raw or ZRLE - its
+tiles decoded here, from RFC 6143, and through Python's zlib - and VNC
+Authentication when the machine asks for it, answered with
 OpenSSL's DES - a second implementation beside the one `vncd` checks with,
 which is what makes a test of it mean something.
 """
@@ -68,7 +70,10 @@ class Viewer:
     """One connection: the handshake, then updates into `self.frame`, a
     bytearray of 0xRRGGBB pixels three bytes each, row after row."""
 
-    def __init__(self, address, password=None, answer=None, timeout=30):
+    def __init__(self, address, password=None, answer=None, timeout=30, zrle=False):
+        self.received = 0
+        self.zrle = zrle
+        self.inflater = zlib.decompressobj()
         host, _, port = address.partition(":")
         self.sock = socket.create_connection((host, int(port or 5900)), timeout=timeout)
         self.version = self.exact(12)
@@ -106,9 +111,12 @@ class Viewer:
         (n,) = struct.unpack(">I", self.exact(4))
         self.name = self.exact(n).decode(errors="replace")
         self.frame = bytearray(self.width * self.height * 3)
-        self.format = dict(bpp=32, big=False, rmax=255, gmax=255, bmax=255,
+        self.format = dict(bpp=32, depth=24, big=False, rmax=255, gmax=255, bmax=255,
                            rshift=16, gshift=8, bshift=0)
-        self.sock.sendall(struct.pack(">BxH i", 2, 1, 0))   # SetEncodings: Raw
+        if zrle:                                             # SetEncodings
+            self.sock.sendall(struct.pack(">BxH ii", 2, 2, 16, 0))
+        else:
+            self.sock.sendall(struct.pack(">BxH i", 2, 1, 0))
 
     def exact(self, n):
         data = b""
@@ -122,11 +130,12 @@ class Viewer:
 
             data += piece
 
+        self.received += n
         return data
 
     def set_format(self, bpp, big, rmax, gmax, bmax, rshift, gshift, bshift):
         depth = 24 if bpp == 32 else bpp
-        self.format = dict(bpp=bpp, big=big, rmax=rmax, gmax=gmax, bmax=bmax,
+        self.format = dict(bpp=bpp, depth=depth, big=big, rmax=rmax, gmax=gmax, bmax=bmax,
                            rshift=rshift, gshift=gshift, bshift=bshift)
         self.sock.sendall(struct.pack(">Bxxx BBBB HHH BBB xxx", 0, bpp, depth,
                                       1 if big else 0, 1, rmax, gmax, bmax,
@@ -193,6 +202,12 @@ class Viewer:
         for _ in range(count):
             x, y, w, h, encoding = struct.unpack(">HHHHi", self.exact(12))
 
+            if encoding == 16 and self.zrle:
+                (n,) = struct.unpack(">I", self.exact(4))
+                self.zrle_rect(self.inflater.decompress(self.exact(n)), x, y, w, h)
+                rects.append((x, y, w, h))
+                continue
+
             if encoding != 0:
                 raise RFBError("an encoding this did not ask for: %d" % encoding)
 
@@ -233,6 +248,104 @@ class Viewer:
             rects.append((x, y, w, h))
 
         return rects
+
+    def rgb(self, v):
+        """A pixel value in the viewer's format as three bytes."""
+        f = self.format
+        return bytes((((v >> f["rshift"]) & f["rmax"]) * 255 // f["rmax"],
+                      ((v >> f["gshift"]) & f["gmax"]) * 255 // f["gmax"],
+                      ((v >> f["bshift"]) & f["bmax"]) * 255 // f["bmax"]))
+
+    def zrle_rect(self, data, x, y, w, h):
+        """One ZRLE rectangle's tiles, inflated already, into the frame."""
+        f = self.format
+        used = ((f["rmax"] << f["rshift"]) | (f["gmax"] << f["gshift"])
+                | (f["bmax"] << f["bshift"]))
+        cp = f["bpp"] // 8
+        high = False
+
+        if f["bpp"] == 32 and f.get("depth", 24) <= 24:
+            if used & 0xFF000000 == 0:
+                cp = 3
+            elif used & 0xFF == 0:
+                cp, high = 3, True
+
+        order = "big" if f["big"] else "little"
+        colours = {}
+        at = 0
+
+        def cpixel():
+            nonlocal at
+            v = int.from_bytes(data[at:at + cp], order)
+            at += cp
+            v = (v << 8) if high else v
+
+            if v not in colours:
+                colours[v] = self.rgb(v)
+
+            return colours[v]
+
+        def length():
+            nonlocal at
+            n = 1
+
+            while True:
+                b = data[at]
+                at += 1
+                n += b
+
+                if b != 255:
+                    return n
+
+        for ty in range(0, h, 64):
+            th = min(64, h - ty)
+
+            for tx in range(0, w, 64):
+                tw = min(64, w - tx)
+                sub = data[at]
+                at += 1
+                pixels = []
+
+                if sub == 0:
+                    pixels = [cpixel() for _ in range(tw * th)]
+                elif sub == 1:
+                    pixels = [cpixel()] * (tw * th)
+                elif 2 <= sub <= 16:
+                    pal = [cpixel() for _ in range(sub)]
+                    bits = 1 if sub <= 2 else 2 if sub <= 4 else 4
+                    per_row = (tw * bits + 7) // 8
+
+                    for row in range(th):
+                        line = data[at:at + per_row]
+                        at += per_row
+
+                        for col in range(tw):
+                            bit = col * bits
+                            k = (line[bit // 8] >> (8 - bits - bit % 8)) & ((1 << bits) - 1)
+                            pixels.append(pal[k])
+                elif sub == 128:
+                    while len(pixels) < tw * th:
+                        c = cpixel()
+                        pixels.extend([c] * length())
+                elif sub >= 130:
+                    pal = [cpixel() for _ in range(sub - 128)]
+
+                    while len(pixels) < tw * th:
+                        b = data[at]
+                        at += 1
+                        pixels.extend([pal[b & 127]] * (length() if b & 128 else 1))
+                else:
+                    raise RFBError("a ZRLE subencoding there is not: %d" % sub)
+
+                if len(pixels) != tw * th:
+                    raise RFBError("a ZRLE tile of %d pixels, not %d" % (len(pixels), tw * th))
+
+                for row in range(th):
+                    start = ((y + ty + row) * self.width + x + tx) * 3
+                    self.frame[start:start + tw * 3] = b"".join(pixels[row * tw:(row + 1) * tw])
+
+        if at != len(data):
+            raise RFBError("%d bytes left after a ZRLE rectangle's tiles" % (len(data) - at))
 
     def close(self):
         self.sock.close()
@@ -352,6 +465,8 @@ def main(argv):
         return 2
 
     password = None
+    zrle = "--zrle" in argv
+    argv = [a for a in argv if a != "--zrle"]
 
     if "--password" in argv:
         at = argv.index("--password")
@@ -369,7 +484,7 @@ def main(argv):
         print(__doc__)
         return 2
 
-    viewer = Viewer(address, password=password)
+    viewer = Viewer(address, password=password, zrle=zrle)
 
     try:
         for s in steps:

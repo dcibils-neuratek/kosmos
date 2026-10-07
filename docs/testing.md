@@ -20739,3 +20739,70 @@ opened from the IDE's Help, each lesson's project copied into
   **Control**: F1 taken out - 2 fail.
 
 The gate: 102 of 102 in 9:47.
+
+## 18.441 The IDE tutorial, part one whole: lessons 2 to 5
+
+Lessons 2 to 5 of part one (`docs/ide-tutorial/`), each with its finished
+project in `/Kosmos/Tutorial`, its pictures taken by following its page in
+QEMU (`tools/ide_tutorial_shots.py`), its page held to the IDE's words and
+its pictures' sizes (`tools/test_tutorial.lua`, 613 checks over six pages and
+eleven pictures), and its project run by the IDE suite:
+
+- **2, a unit converter** (0.11.45): a field, a dropdown, the answer as you
+  type, what it knows kept in a table. `run_ide.py`: it turns 20 C into
+  68.00 F. **Control**: the sum made wrong - fails.
+- **3, Notes** (0.11.46): `fs.read` and `fs.write`, the Open and Save window,
+  a note handed as the argument. The pictures tool types a list into it and
+  saves it through the Save window, Return choosing the name offered.
+  **Found writing it**: the panel is a window of its own that its caller
+  runs, `chooser:run()` - the first draft opened it and never drew it.
+  `run_ide.py`: a note named with a space, handed as Tracker hands one, is
+  opened. **Control**: the second word taken for the path - fails. **And a
+  control that was not put back**: an interrupted first try had already
+  broken the line, so the second copied the broken file as its backup and
+  "restored" that; 0.11.46 was committed with it, the next run of the suite
+  failed on it, and the commit was amended. Every control since is checked
+  restored by `grep`, not assumed.
+- **4, What's running** (0.11.47): `sys.processes`, `/Devices/memory`, the
+  counter and its rate, `/Running`, a view with `tick` - and why a window
+  asks on a clock rather than while it draws. `run_ide.py`: it looks a third
+  time on its clock. **Control**: the clock not added - fails.
+- **5, A kitchen timer** (0.11.48): the two clocks - a deadline on the
+  counter, waited for on the window's tick - an alert through the
+  notification server, and `beep` asked of Astra. `run_ide.py`: given 0.05
+  minutes it rings after 3 s, with its notification. **Control**: a timer
+  that measures wrongly - both fail.
+
+The IDE suite: 46 checks on both boards.
+
+## 18.442 VNC by ZRLE
+
+Diego, reaching the M700 from outside the house on 7 October through
+Tailscale: "its really slow". It was raw pixels - a 1720x1440 frame is 9.9 MB,
+which the M700 sent at 1.4 MB a second - and he chose the compressed encoding
+(`roadmap.md`, remote 7c) ahead of Mail's design.
+
+- **`user/kits/gfx/zrle.c`**: a rectangle as ZRLE's 64 by 64 tiles (RFC 6143
+  7.7.6), each the cheapest of one colour, a packed palette of 2 to 16, runs
+  of a palette of up to 127, runs, or raw - each size counted exactly before
+  one is chosen - in the viewer's pixel format, with both three-byte CPIXELs.
+  `surface:zrle(x, y, w, h, format, dst, cap)` writes into a region,
+  `gfx.zrle_bound(w, h)` says how large.
+- **`compress.zstream([level])`**, the Compression Kit: one zlib stream that
+  goes on, `z:deflate(src, bytes)` flushed to a byte boundary each time - the
+  deflater's 320 KB its own, given back when it is collected.
+- **`vncd`** sends ZRLE when the viewer's SetEncodings has it, a band a row
+  of tiles high at a time, and raw otherwise.
+- **`tools/test_zrle.c`**: decoded back by a decoder written here from the
+  RFC, eight formats, five picture kinds, sizes that are not whole tiles,
+  every subencoding reached; a flat tile one colour, a two-colour one a
+  palette and one bit a pixel; a buffer one byte short refused. A
+  desktop-like 1720x1440 comes to 6.7% of its pixels before zlib. **Control**:
+  indices packed least significant first - 40 fail.
+- **`tools/kosmos_vnc.py --zrle`** decodes it too, and **`run_servers.py`**,
+  30 checks: a whole frame by ZRLE as QEMU scans out, 100.00%, in 53 KB on
+  ARM and 52 on x86 - **0.7% of raw** - and a 565 region on the same stream,
+  its second update, 100.00%. **Control**: vncd not taking ZRLE up - the
+  frame took 8,294,416 bytes and the check fails.
+
+The gate: 102 of 102 in 9:49.

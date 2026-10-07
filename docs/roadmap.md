@@ -1740,7 +1740,11 @@ answers to its three questions, the same day:
      window's switch; and `vncd` started by the window manager when kept.
      7c and 7d stay. 7c, a compressed encoding - zlib, through the miniz the
      compress kit already carries - when the M700 says Raw is too slow on
-     its network. 7d, the Deskbar's mark while the screen is watched.
+     its network. **7c DONE on 7 October** (`testing.md` 18.442), when
+     Diego, reaching the M700 from outside the house, found raw "really
+     slow" and chose it ahead of Mail: ZRLE, tiles in C (`gfx/zrle.c`) on
+     one zlib stream a viewer (`compress.zstream`), a whole frame 0.7% of
+     raw. 7d, the Deskbar's mark while the screen is watched.
 
 **Storage at full speed, performance first.** Diego, 14 September: "I expect
 our usb drives and nvme to perform like any other os like Linux", and "it's

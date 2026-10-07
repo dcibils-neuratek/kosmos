@@ -343,6 +343,51 @@ def look(guest, telnet, vnc, seen, fails):
     if good < 0.99 * 64000:
         fails.append("a region in 565 was %.2f%% the screen" % (100 * good / 64000.0))
 
+    # **ZRLE** (remote 7c): a second viewer that offers it, its whole frame
+    # against the screen as the raw one's was, and what it cost; then a
+    # region in 565 on the same zlib stream, which is the stream going on.
+    zv = V.Viewer(address, zrle=True)
+    _, _, before = R.parse_ppm(guest.screendump())
+    began = zv.received
+    zv.request(False)
+    zv.update()
+    width, height, px = R.parse_ppm(guest.screendump())
+    whole, still = still_share(zv.frame, width, before, px)
+    cost = zv.received - began
+    seen["zrle"] = "%.2f%% of what held still, in %d KB - %.1f%% of raw" % (
+        100 * whole, cost // 1024, 100.0 * cost / (width * height * 4))
+
+    if whole < 0.999 or still < 0.5 * width * height:
+        fails.append("a whole frame by ZRLE was %.2f%% of the screen, the difference "
+                     "within %s" % (100 * whole, where_differs(zv.frame, width, height, px)))
+
+    if cost > width * height * 4 // 10:
+        fails.append("a whole frame by ZRLE took %d bytes, more than a tenth of raw's %d"
+                     % (cost, width * height * 4))
+
+    zv.set_format(16, False, 31, 63, 31, 11, 5, 0)
+    zv.request(False, 0, 0, 320, 200)
+    zv.update()
+    width, height, px = R.parse_ppm(guest.screendump())
+    good = 0
+
+    for y in range(200):
+        for x in range(320):
+            at = (y * width + x) * 3
+            want = bytes(((c * m + 127) // 255) * 255 // m
+                         for c, m in zip(px[at:at + 3], (31, 63, 31)))
+
+            if zv.frame[at:at + 3] == want:
+                good += 1
+
+    seen["zrle565"] = "%.2f%%" % (100 * good / 64000.0)
+
+    if good < 0.99 * 64000:
+        fails.append("a region in 565 by ZRLE, the stream's second update, was %.2f%% "
+                     "the screen" % (100 * good / 64000.0))
+
+    zv.close()
+
     # With no control kept, a viewer only looks: its click goes nowhere.
     viewer.pointer(211, 311, 1)
     viewer.pointer(211, 311, 0)
@@ -721,7 +766,7 @@ def main():
         if line not in guest.seen:
             fails.append("the log never said %r" % line)
 
-    checks = 27
+    checks = 30
 
     if fails:
         print("FAIL: %d of %d checks on the Servers window:" % (len(fails), checks))
@@ -739,7 +784,8 @@ def main():
           "the web server kept to start with the machine serving its page "
           "after a boot; and the screen by VNC started with it - its size, a "
           "whole frame as QEMU scans it out (%s), a window opened after "
-          "arriving as an update (%s), 565 (%s), a click that went nowhere "
+          "arriving as an update (%s), 565 (%s), by ZRLE a whole frame (%s) and "
+          "565 on the same stream (%s), a click that went nowhere "
           "with no control kept, a Disconnect, the copy let go, a password "
           "refused wrong and admitted right, and with control kept a command "
           "typed into a Terminal, a click at its own place and the pointer "
@@ -748,7 +794,8 @@ def main():
           "opt/kosmos/vnc=control alone; a direct window granted less than "
           "it asked drawing upright at the granted size; and Groove resized "
           "by its grip)."
-          % (checks, seen.get("whole"), seen.get("update"), seen.get("565")))
+          % (checks, seen.get("whole"), seen.get("update"), seen.get("565"),
+             seen.get("zrle"), seen.get("zrle565")))
     return 0
 
 
