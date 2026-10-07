@@ -2,9 +2,35 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-06 (0.11.25)
+Last updated: 2026-10-06 (0.11.31)
 
 ---
+
+## 6 October, the evening: C inside Kosmos - TinyCC C1-C6
+
+**Pushed through 0.11.25. On `main`, not pushed: 0.11.26-0.11.31** - a push
+is Diego's yes. Designed first (`docs/tinycc.md`, `.html`,
+`-architecture.png`) and tried before it was drawn; Diego's answers: the
+runtime on the disk (the image had no room - asked again), C apps print
+first, the four templates, a `build` folder, `tcc`.
+
+- **C1** 0.11.26 (18.425): TinyCC vendored, Kosmos's layout a patch; the
+  Mac's cross compilers link a Kosmos image the loader runs.
+- **C2** 0.11.27 (18.426): the developer files for `/Home/Developer`.
+- **C3** 0.11.28 (18.427): the C Kit - TinyCC inside Kosmos, files through
+  a Lua reader into regions, no `-run` compiled in; `tccbuild.lua`.
+- **C4** 0.11.29 (18.428): `tcc` at the prompt.
+- **C5** 0.11.30 (18.429): the IDE's Build (F6), Run building first.
+- **C6** 0.11.31 (18.430): New Project and the four templates; Mandelbrot
+  built and run in the IDE, its fractal on the screen.
+
+**Found, in the roadmap and not yet looked at**: a read answering wrong
+bytes after a write refused for a full disk; `/Kosmos/Programs` listing one
+short once under load; the placement test failing once, now saying how.
+
+**Next**: the Window Kit in C (decision 2); the M700 with
+`/Home/Developer` on its stick, to try `tcc` there; then the Maps, Mail and
+Calendar designs; neofetch compact over telnet.
 
 ## 6 October: the keyring and Passwords, built (K1-K7), and a kernel race
 
