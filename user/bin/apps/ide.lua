@@ -596,6 +596,7 @@ local run_button = ui.button{ text = "Run", go = true, icon = "run",
 local stop = ui.button{ text = "Stop", icon = "stop", hint = "Shift F5",
                         disabled = true }
 local check = ui.button{ text = "Check", icon = "check", hint = "F7" }
+local build_button = ui.button{ text = "Build", icon = "settings", hint = "F6" }
 
 -- Finding a file by its name, at the header's right end where Tracker keeps
 -- its Search; what it finds and how are further down, under "Finding a file".
@@ -616,7 +617,7 @@ local header = ui.header{
     icon("undo", function() if current then current.editor:undo() end end),
     icon("redo", function() if current then current.editor:redo() end end),
     divider(),
-    run_button, stop, check, pill,
+    build_button, run_button, stop, check, pill,
   },
   right = { find, icon("more", function(self)
     win:open_menu(win.origin_x + self.x, win.origin_y + self.y + self.h, text:items())
@@ -656,9 +657,164 @@ local function literally(text)
   return (text:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0"))
 end
 
+local start_lua                       -- below: running a Lua file as it is
+
+--------------------------------------------------------------------------
+-- Building C (`docs/tinycc.md`, step C5).
+--
+-- **A project's C is built into its own image**, in its `build` folder
+-- (Diego's decision 4): every `.c` file at the project's top, compiled and
+-- linked by the C Kit through `tccbuild.lua` - the same build as `tcc` at
+-- the prompt - into the image its Lua names, `-- kosmos: image
+-- build/name.elf`, or the folder's own name when none does. Saved first:
+-- what is built is what is on the screen.
+--
+-- **TinyCC's problems are the Problems**, in its words, each on its line in
+-- its file, marked there, a click away. A build that fails writes nothing,
+-- and Run runs nothing after it.
+--
+-- **Run builds first when a C file is newer than the image**, so F5 on a
+-- Lua and C project is always the C on the screen; a change to the Lua
+-- alone builds nothing.
+--------------------------------------------------------------------------
+
+local function c_sources()
+  local list = {}
+
+  for _, name in ipairs(fs.list(project) or {}) do
+    if name:match("%.c$") then list[#list + 1] = project .. "/" .. name end
+  end
+
+  table.sort(list)
+  return list
+end
+
+-- The project's Lua that runs in its image, and the image: the first Lua
+-- file at the top whose header names one in `build/`.
+local function project_image()
+  for _, name in ipairs(fs.list(project) or {}) do
+    if name:match("%.lua$") then
+      local source = fs.read(project .. "/" .. name)
+      local image = type(source) == "string"
+                    and source:match("%-%-%s*kosmos:%s*image%s+build/([^%s/]+)")
+
+      if image then return project .. "/build/" .. image, project .. "/" .. name end
+    end
+  end
+
+  return project .. "/build/" .. base(project):lower():gsub("%s+", "-") .. ".elf", nil
+end
+
+local build_problems = {}
+
+local function show_build_problems()
+  problems:set("")
+
+  for _, p in ipairs(build_problems) do
+    problems:append(("line %-4d  %s    - tcc, %s\n"):format(p.line or 0, p.text, base(p.file or "")),
+                    p.severity == "error" and theme.bad or ui.code_colours().warning)
+  end
+
+  bottom_tabs.items[2].count = (#build_problems > 0) and #build_problems or nil
+end
+
+-- Built, or not: true when an image that is the C on the screen is there.
+local function build_now()
+  local sources = c_sources()
+
+  if #sources == 0 then
+    say("Build builds the project's C - this project has no .c file")
+    return false
+  end
+
+  save_all()
+
+  local image = project_image()
+  local r, why = use("/Kosmos/Libraries/tccbuild.lua").build{ sources = sources, out = image }
+
+  for _, f in ipairs(open) do
+    if f.path:match("%.c$") then f.editor:clear_marks() end
+  end
+
+  if not r then
+    say("could not build: " .. tostring(why), theme.bad)
+    return false
+  end
+
+  build_problems = r.problems
+
+  for _, p in ipairs(r.problems) do
+    local f = p.file and find_open(p.file)
+
+    if f and (p.line or 0) > 0 then f.editor:mark(p.line, p.severity) end
+  end
+
+  show_build_problems()
+
+  if r.ok then
+    say(("built %s - %.1f MB in %d ms"):format(relative(image), (r.bytes or 0) / 1048576,
+        r.milliseconds), theme.good)
+    return true
+  end
+
+  local first = r.problems[1] or {}
+
+  say(("build: %d %s, the first %s:%d - %s; nothing was written")
+      :format(#r.problems, #r.problems == 1 and "problem" or "problems",
+              base(first.file or "?"), first.line or 0, first.text or ""), theme.bad)
+
+  bottom_tabs.on = 2
+  output.hidden, problems.hidden = true, false
+
+  if first.file then
+    local f = find_open(first.file) or open_file(first.file)
+
+    if f then show(f) f.editor:go_to(first.line or 1, 1) end
+  end
+
+  return false
+end
+
+-- Whether the image is older than some C: a build is wanted before a run.
+local function stale(image)
+  local made = fs.getattr(image)
+
+  if not made then return true end
+
+  for _, src in ipairs(c_sources()) do
+    local a = fs.getattr(src)
+
+    if a and (a.modified or 0) > (made.modified or 0) then return true end
+  end
+
+  return false
+end
+
 local function start()
   local f = current
+  local sources = c_sources()
 
+  -- **A Lua and C project**: build when the C is newer than its image, then
+  -- run the Lua that names it - from whichever of its files is in front.
+  if #sources > 0 then
+    local image, main = project_image()
+
+    for _, g in ipairs(open) do
+      if g.path:match("%.c$") and g.editor.dirty then save(g) end
+    end
+
+    if stale(image) and not build_now() then return end
+
+    if main and not (f and f.path == main) then
+      f = find_open(main) or open_file(main)
+      if f then show(f) end
+    end
+  end
+
+  return start_lua(f)
+end
+
+function start_lua(f)
   if not f or not f.editor.code then
     say("Run runs a Lua file - open one first")
     return
@@ -1089,6 +1245,7 @@ function check_now(f, open_panel)
 end
 
 check.on_click = function() check_now(current, true) end
+build_button.on_click = function() build_now() end
 
 -- A click on a problem goes to its line.
 local problems_mouse = problems.mouse
@@ -1757,6 +1914,7 @@ function win:on_key(c)
   if (k == 13 and mods == ui.CTRL) or c == ui.F[5] then start() return true end
   if k == ui.F[5] and mods == ui.SHIFT then stop_run() return true end
   if c == ui.F[7] then check_now(current, true) return true end
+  if c == ui.F[6] then build_now() return true end
 
   if c == ui.keywith(61, ui.CTRL) then text:step(1) return true end    -- Ctrl =
   if c == ui.keywith(45, ui.CTRL) then text:step(-1) return true end   -- Ctrl -

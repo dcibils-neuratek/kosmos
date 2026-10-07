@@ -20270,3 +20270,25 @@ apptest.c -o build/apptest.elf` makes an image a program then runs in,
 answered 42; `tcc broken.c` says `/Home/t/broken.c:3: error: ...` and
 writes nothing. **Control**: problems printed without their place - 1
 fails.
+
+## 18.429 The IDE's Build and Run (TinyCC C5)
+
+`ide.lua` grows **Build** - a button in the bar and F6 - over the same
+build as `tcc` at the prompt: every `.c` at the project's top into the image
+its Lua names, `-- kosmos: image build/name.elf`, saved first; TinyCC's
+problems in Problems in its words, each marked on its line in its open file,
+a click from it, and the first opened; a failed build writes nothing.
+**Run (F5) builds first when a C file is newer than the image**, then runs
+the Lua that names it from whichever of the project's files is in front;
+a change to the Lua alone builds nothing.
+
+`run_tcc.py`'s IDE part, in the desktop, keys through QEMU's keyboard: on a
+project that builds, F6 says "built build/apptest.elf" and F5 runs
+`run.lua` in it to "ended, code 0" **without building again**; on a project
+with an error, F6 says "build: 1 problem, the first broken.c:3" and F5
+starts nothing. 9 checks a board.
+
+**A control that did not bite at first**, and why: with F6 unbound, the
+suite still passed - F5 builds a stale image itself, so the "built" line
+came during F5's turn. The suite now keeps what each key caused apart; with
+F6 unbound, 3 fail.

@@ -84,7 +84,12 @@ def main():
 
         subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", path, "96"]
                        + pairs + ["%s:/Home/t/%s" % (os.path.join(work, n), n)
-                                  for n in ("apptest.c", "make.lua", "run.lua", "broken.c")],
+                                  for n in ("apptest.c", "make.lua", "run.lua", "broken.c")]
+                       # Two projects for the IDE (C5): one that builds, one that does not.
+                       + ["%s:/Home/Good/%s" % (os.path.join(work, n), n)
+                          for n in ("apptest.c", "run.lua")]
+                       + ["%s:/Home/Bad/broken.c" % os.path.join(work, "broken.c"),
+                          "%s:/Home/Bad/run.lua" % os.path.join(work, "run.lua")],
                        check=True, capture_output=True, cwd=ROOT)
         return path
 
@@ -103,6 +108,45 @@ def main():
                   for p in developer], "stale.img")
 
     import run_screenshot as R                              # noqa: E402
+
+    def ide_lines(parts):
+        return "\n".join("%s: %s" % (k, l) for k in ("f6", "f5")
+                         for l in parts.get(k, "").splitlines() if l.startswith("ide:"))[-1500:]
+
+    def ide(path, project):
+        """The desktop with the IDE on `project`: F6, then F5 - what each
+        caused, apart, since F5 builds too when the image is stale."""
+        guest = WA.with_disk(image, path)
+
+        try:
+            guest.wait_for("kosmos> ", "a prompt")
+            guest.type("wm ide:" + project)
+            guest.wait_for("wm: window ", "the IDE's window")
+            time.sleep(3)
+
+            parts = {}
+
+            for key, until in (("f6", ("ide: built", "ide: build:")),
+                               ("f5", ("ended, code", "ide: build:", "could not"))):
+                mark = len(guest.seen)
+                guest.sendkey(key)
+                deadline = time.monotonic() + 90
+
+                while time.monotonic() < deadline:
+                    guest._read_available()
+
+                    if any(u in guest.seen[mark:] for u in until):
+                        break
+
+                    time.sleep(0.3)
+
+                time.sleep(1)
+                guest._read_available()
+                parts[key] = guest.seen[mark:]
+
+            return parts
+        finally:
+            guest.close()
     import run_writeapp as WA                               # noqa: E402
 
     def session(path, steps):
@@ -161,6 +205,24 @@ def main():
     check(re.search(r"^/Home/t/broken\.c:3: error: .*undeclared", said, re.M) is not None
           and "tcc: 1 problem; nothing written" in said,
           "`tcc broken.c` did not say its problem as file:line: error:\n" + said[-800:])
+
+    # **The IDE's Build and Run** (C5), in the desktop: F6 builds the
+    # project's C into the image its Lua names; F5 runs that Lua in it; a
+    # project with an error answers it at its line, and runs nothing.
+    parts = ide(good, "/Home/Good")
+    check(re.search(r"^ide: built build/apptest\.elf - [0-9.]+ MB in \d+ ms", parts["f6"], re.M)
+          is not None,
+          "F6 in the IDE did not build the project's image:\n" + ide_lines(parts))
+    check(re.search(r"^ide: run\.lua, as process \d+", parts["f5"], re.M) is not None
+          and re.search(r"^ide: run\.lua ended, code 0", parts["f5"], re.M) is not None
+          and "ide: built" not in parts["f5"],
+          "F5 in the IDE did not run the project's Lua in its image, without building "
+          "again what F6 had just built:\n" + ide_lines(parts))
+
+    parts = ide(good, "/Home/Bad")
+    check(re.search(r"^ide: build: 1 problem, the first broken\.c:3 - .*undeclared",
+                    parts["f6"], re.M) is not None and "as process" not in parts["f5"],
+          "F6 and F5 on a project with an error did not stop at its line:\n" + ide_lines(parts))
 
     said = session(stale, [("run /Home/t/make.lua", "(make) ended")])
     check("BUILD refused: the developer files in /Home/Developer are from another Kosmos" in said,

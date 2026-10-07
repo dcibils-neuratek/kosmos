@@ -262,7 +262,7 @@ Each step its own revision and its own permanent test.
   machine, without the Mac; a file with an error answered with its line.
 - **C4 - `tcc` at the prompt.** **Done, 0.11.29** (`testing.md` 18.428). *Test*: `tcc primes.c -o build/primes.elf`, then
   the program run; an error's `file:line:` exact.
-- **C5 - the IDE's Build and Run**, problems at their lines. *Test*: the
+- **C5 - the IDE's Build and Run** **Done, 0.11.30** (`testing.md` 18.429)., problems at their lines. *Test*: the
   display harness opens a project, builds, marks a broken line, fixes it,
   runs.
 - **C6 - New Project and the three templates.** *Test*: each template

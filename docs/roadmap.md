@@ -953,7 +953,7 @@ GCC-built runtime and its own C into an image the loader accepts and runs -
 14 checks on AArch64 and x86-64, with a fifteen-line layout patch. **Diego's answers, the same evening**: the runtime in the
 image, compressed; C apps print first, a Window Kit in C after; the four
 templates; builds in a `build` folder beside the sources; the command is
-`tcc` (`docs/tinycc.md`, *Diego's decisions*). **C1 done** (0.11.26): TinyCC in the tree, building Kosmos images on the Mac (18.425). **C2 done** (0.11.27): the developer files, in `/Home/Developer` - the image had no room (18.426). **C3 done** (0.11.28): C compiled and linked inside Kosmos, by the C Kit, run (18.427). **C4 done** (0.11.29): `tcc` at the prompt (18.428). Next C5, the IDE's Build and Run, then C6.
+`tcc` (`docs/tinycc.md`, *Diego's decisions*). **C1 done** (0.11.26): TinyCC in the tree, building Kosmos images on the Mac (18.425). **C2 done** (0.11.27): the developer files, in `/Home/Developer` - the image had no room (18.426). **C3 done** (0.11.28): C compiled and linked inside Kosmos, by the C Kit, run (18.427). **C4 done** (0.11.29): `tcc` at the prompt (18.428). **C5 done** (0.11.30): the IDE's Build (F6) and Run, building first when the C changed (18.429). Next C6, New Project and the templates.
 
 **FOUND on 6 October, in the C3 gate - two things that passed alone after.**
 (1) `x86-headless`: "/Kosmos/Programs lists 75 and user/bin/programs has
