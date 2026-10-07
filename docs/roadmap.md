@@ -1316,6 +1316,18 @@ quarter of a second to three. Not while a button is held (a drag passing
 over windows), not for the Deskbar, the dock, menus, popups or the
 backdrop, and moving the pointer before the delay ends starts it again.
 
+**AGREED, 7 October - Photo Viewer zooms.** Diego: "image viewer needs a
+zoom function, right now it shrinks the size to the size of the window",
+"I want to have options like the piece attached" - a menu of four, as
+macOS's Preview has them: **Actual Size** (Ctrl 0), **Zoom to Fit** (Ctrl 9,
+what it does today), **Zoom In** (Ctrl +) and **Zoom Out** (Ctrl -), the one
+in force ticked. In the header's menu with their keys. Zooming steps through
+fixed sizes (25% to 800%) and keeps the point under the pointer where it is
+when it comes from the wheel (Ctrl and the wheel); a picture larger than the
+window is moved by dragging it and by the wheel, with its scale shown in the
+header. The scaling is the gfx Kit's (`surface:blit_scaled`), so a zoom is
+one C call a frame and never a loop in Lua.
+
 **WANTED, 7 October - Format Code in the IDE.** Diego: "the kosmos ide
 needs a format code button that makes the entire code beautiful and human
 readable with correct indentation, spaces, etc". A **Format** tool among the
