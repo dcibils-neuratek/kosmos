@@ -1345,6 +1345,14 @@ alone or pixels and shapes; layers; and what it opens and saves. The
 premise holds - brushes, selections, filters and the file formats are kits
 another application (Photo Viewer, Write's pictures, Cafesa3D's textures)
 could use, in C where they are loops over pixels.
+**Decided the same day**: after **Pixelmator Pro**; **pixels, with shape
+tools** - rectangles, ellipses, lines and text as editable shape layers until
+flattened; **layers with blend modes** (opacity, shown or hidden, the order,
+multiply, screen, overlay and the rest); opening and saving **PNG, JPEG,
+WebP, GIF and BMP** - and **PSD planned for later**, as the format that keeps
+the layers ("plan for psd in the future because we want to store layers as
+well in a format"), so the document model is Photoshop's shape from the
+start: layers, their modes and opacities, groups, masks to come.
 
 **WANTED, 7 October - Format Code in the IDE.** Diego: "the kosmos ide
 needs a format code button that makes the entire code beautiful and human
