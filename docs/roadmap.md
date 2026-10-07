@@ -1875,7 +1875,19 @@ answers to its three questions, the same day:
      Diego, reaching the M700 from outside the house, found raw "really
      slow" and chose it ahead of Mail: ZRLE, tiles in C (`gfx/zrle.c`) on
      one zlib stream a viewer (`compress.zstream`), a whole frame 0.7% of
-     raw. 7d, the Deskbar's mark while the screen is watched.
+     raw. 7d, the Deskbar's mark while the screen is watched. **Widened and
+     agreed on 7 October** - Diego: "perhaps we can show a status icon
+     beside the network and sound status icon for VNC when is active and
+     Telnet when is active and connected": a status icon for each beside
+     the network's and the sound's (`docs/statusicons.html`'s row) - a
+     screen for VNC and a terminal for Telnet - there while the server
+     runs, dim with nobody connected and lit while somebody is; hovering
+     lists who, and whether they may use the keyboard and the pointer; a
+     click opens Servers at that server, where Disconnect is. From what
+     `vncd` and `telnetd` already publish (`netprogram`'s status), read on
+     the Deskbar's own clock and never in its paint. With the notifications
+     of 7 October (`netprogram.tell_connected`), so a connection is both
+     said once and shown for as long as it lasts.
 
 **Storage at full speed, performance first.** Diego, 14 September: "I expect
 our usb drives and nvme to perform like any other os like Linux", and "it's
