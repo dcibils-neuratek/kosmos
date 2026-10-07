@@ -1209,6 +1209,20 @@ receiving emails". Assessed, not designed:
 - **Designed before it is written**, the four documents, with made-up
   messages in the mockup - never a real mailbox.
 
+**AGREED, 7 October - one window chrome: the header is the title bar,
+everywhere.** Diego, on the M700, of Tracker's Connect to Server window - a
+title bar of its own above it, a thick frame, its fields and buttons in an
+older style: "why is the connect to server looking like it has different
+button styles", "and the old window chrome?", "we need to get rid of the old
+window chrome as we are staying with the new one only", "that does away
+with the extra titlebar". So **every window's header is its title bar** -
+the three lights in it, dragged by it, double-clicked to maximise - and the
+old chrome, a title bar the window manager draws above a window, goes: from
+the window manager, from the looks that chose it, and from every window
+that still opens without a header, each given one. Its controls in the
+same kit style as every other window's. First the list of windows still on
+the old chrome, then the change, the gate's pictures held to it.
+
 **WANTED, 7 October - Format Code in the IDE.** Diego: "the kosmos ide
 needs a format code button that makes the entire code beautiful and human
 readable with correct indentation, spaces, etc". A **Format** tool among the
