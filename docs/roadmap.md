@@ -1284,6 +1284,22 @@ with the project's other settings (`prefs.lua`). Through the kit's
 panes can have it the same way - Tracker's sidebar, Preferences', Mail's
 three panes.
 
+**DRAWN, 7 October - the launcher's sections as a sidebar, browsed by
+hovering** (`docs/launcher.html`, for Diego to agree). Diego: "right now is
+hard to find apps in the new app launcher because there are many", "the
+categories are good but they are small and hard to click", "i want to
+convert the categories into menus (like a sidebar of items) where i can
+browse with the mouse without needing to click down and hovering the
+categories will show the apps in the category as its now", "its crucial
+that i can navigate all the menus without clicking down as we do now with
+the old menu", "lets mockup before changing it". Drawn: All, then the
+Deskbar menu's sections as rows 46 high down a 236-wide column, each its
+icon, name and count; resting on one shows its applications in the grid
+beside it, with a menu's pause so heading across to the grid does not
+switch rows; a click only to start something; search still across every
+application; the keyboard's Up and Down through the rows; the panel 820
+wide. Four questions asked on the page.
+
 **WANTED, 7 October - Format Code in the IDE.** Diego: "the kosmos ide
 needs a format code button that makes the entire code beautiful and human
 readable with correct indentation, spaces, etc". A **Format** tool among the

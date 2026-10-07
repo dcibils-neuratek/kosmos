@@ -1,0 +1,242 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<!--
+  The launcher, drawn again before it is changed. Diego, 7 October 2026:
+  "right now is hard to find apps in the new app launcher because there are
+  many", "the categories are good but they are small and hard to click",
+  "so i want to convert the categories into menus (like a sidebar of items)
+  where i can browse with the mouse without needing to click down and
+  hovering the categories will show the apps in the category as its now",
+  "lets mockup before changing it".
+
+  Today's launcher is docs/dock.html's: a panel above the dock's Kosmos
+  button, a search pill, the categories as a row of small pills, and every
+  application A to Z in round tiles, six to a row (user/lib/launchgrid.lua,
+  user/bin/apps/launchpad.lua). The categories are the Deskbar menu's
+  sections; the applications and their icons are the ones Kosmos ships, the
+  icons Haiku's (assets/icons/64x64, MIT, their licence beside them). The
+  panel is drawn in the dark look the M700 wears, as dock.html draws it.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kosmos Launcher Sidebar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --accent: #2a55c9; --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* The launcher itself is in the dark look whatever the page is, as
+       dock.html draws it. */
+    --d-wall: #070b14;
+    --d-surface: rgba(30, 38, 54, 0.96);
+    --d-side: rgba(22, 29, 42, 0.9);
+    --d-raised: #2a3446;
+    --d-raised-2: #343f53;
+    --d-line: rgba(255, 255, 255, 0.08);
+    --d-ink: #e6eaf2;
+    --d-muted: #a3adbf;
+    --d-accent: #a8c7fa;
+    --d-accent-ink: #0a1b38;
+    --d-dock: rgba(34, 42, 58, 0.82);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+      --rule: #283241; --accent: #85a8ff; --card: #171e28;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+    --rule: #283241; --accent: #85a8ff; --card: #171e28;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 1100px; margin: 0 auto; padding: 40px 16px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 40px)/1.1 var(--display); margin: 0 0 10px; text-wrap: balance; }
+  h2 { font: 600 23px/1.2 var(--display); margin: 44px 0 10px; text-wrap: balance; }
+  p, li { max-width: 72ch; }
+  .lede { font-size: 18px; color: var(--muted); }
+  .said { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; color: var(--muted); font-style: italic; margin: 16px 0; }
+  code { font: 0.88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+  .hint { font-size: 14px; color: var(--muted); margin: 14px 0 8px; }
+
+  /* The screen: the wall, the launcher above the dock. Drawn at 1180 by
+     760 and scaled to the page. */
+  .frame { width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--rule); background: #000; }
+  .shell { position: relative; overflow: hidden; }
+  .stage { position: relative; width: 1180px; height: 760px; transform-origin: 0 0;
+           background: radial-gradient(1200px 700px at 20% 10%, #23305a 0%, transparent 60%),
+                       radial-gradient(900px 600px at 90% 90%, #5a2340 0%, transparent 55%), var(--d-wall);
+           color: var(--d-ink); font: 14px/1.4 var(--body); }
+
+  .dock { position: absolute; left: 50%; transform: translateX(-50%); bottom: 14px; height: 64px;
+          display: flex; align-items: center; gap: 10px; padding: 0 14px; border-radius: 22px;
+          background: var(--d-dock); box-shadow: 0 10px 30px rgba(0, 0, 0, .4); }
+  .dock .k { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 16px; background: rgba(255,255,255,.14); font-weight: 500; }
+  .dock img { width: 40px; height: 40px; }
+
+  .pad { position: absolute; left: 50%; transform: translateX(-50%); bottom: 92px; width: 820px; height: 600px;
+         background: var(--d-surface); border-radius: 26px; box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 0 0 1px var(--d-line);
+         display: grid; grid-template-rows: 78px 1fr; overflow: hidden; }
+  .search { margin: 18px 18px 10px; height: 50px; border-radius: 999px; background: var(--d-raised);
+            display: flex; align-items: center; gap: 12px; padding: 0 20px; color: var(--d-muted); font-size: 15.5px; }
+  .search svg { width: 18px; height: 18px; flex: none; }
+  .body { display: grid; grid-template-columns: 236px 1fr; min-height: 0; }
+
+  /* The sections: a column of rows, each as tall as a menu row and as wide
+     as the column - a target, not a pill. */
+  .side { background: var(--d-side); border-right: 1px solid var(--d-line); padding: 8px 10px 14px; display: flex; flex-direction: column; gap: 2px; }
+  .row { height: 46px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-radius: 12px;
+         color: var(--d-ink); font-size: 15px; cursor: default; user-select: none; }
+  .row img { width: 26px; height: 26px; flex: none; }
+  .row .n { margin-left: auto; color: var(--d-muted); font: 12.5px var(--mono); }
+  .row.on { background: var(--d-raised-2); }
+  .row.on .n { color: var(--d-accent); }
+  .row .bar { width: 3px; height: 22px; border-radius: 2px; background: transparent; margin-left: -8px; margin-right: -4px; }
+  .row.on .bar { background: var(--d-accent); }
+  .sep { height: 1px; background: var(--d-line); margin: 6px 6px; }
+
+  .main { padding: 6px 18px 18px; min-width: 0; display: flex; flex-direction: column; }
+  .head { display: flex; align-items: baseline; gap: 10px; padding: 8px 6px 6px; }
+  .head b { font-weight: 600; font-size: 16px; }
+  .head span { color: var(--d-muted); font-size: 13px; }
+  .head .az { margin-left: auto; }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px 6px; align-content: start; overflow: hidden; }
+  .tile { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 10px 4px 8px; border-radius: 16px; }
+  .tile .t { width: 54px; height: 54px; border-radius: 50%; background: rgba(214, 228, 255, 0.92);
+             display: grid; place-items: center; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); }
+  .tile .t img { width: 36px; height: 36px; }
+  .tile .l { font-size: 12.5px; text-align: center; color: var(--d-ink); line-height: 1.25; max-width: 100%; }
+  .tile.sel { background: rgba(168, 199, 250, 0.16); }
+
+  .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 18px; }
+  .note { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; }
+  .note b { display: block; font-family: var(--display); font-size: 17px; margin-bottom: 4px; }
+  .note p { margin: 0; font-size: 14.5px; color: var(--muted); }
+  ol.q li { margin: 10px 0; }
+  .rec { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+<h1>Kosmos Launcher Sidebar</h1>
+<p class="lede">The launcher's categories become a column of rows down its left side, each as tall as a menu row. Resting the pointer on one shows its applications at once, with no click, so you browse by moving the mouse down the list.</p>
+<p class="said">"the categories are good but they are small and hard to click … i want to convert the categories into menus (like a sidebar of items) where i can browse with the mouse without needing to click down", and "its crucial that i can navigate all the menus without clicking down as we do now with the old menu" - Diego, 7 October</p>
+
+<p class="hint">Move the pointer down the sections on the left. The launcher is drawn as it would open from the dock's Kosmos button.</p>
+<div class="frame"><div class="shell" id="shell"><div class="stage" id="stage">
+  <div class="pad" role="img" aria-label="The launcher with its sections as a sidebar">
+    <div class="search">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.6"/><path d="m10.6 10.6 3.8 3.8"/></svg>
+      Type to search every application
+    </div>
+    <div class="body">
+      <div class="side" id="side"></div>
+      <div class="main">
+        <div class="head"><b id="title">Applications</b><span id="count">17</span><span class="az">A to Z</span></div>
+        <div class="grid" id="grid"></div>
+      </div>
+    </div>
+  </div>
+  <div class="dock">
+    <span class="k"><img src="../assets/icons/64x64/App_Deskbar.png" alt="" width="26" height="26" style="width:26px;height:26px">Kosmos</span>
+    <img src="../assets/icons/64x64/App_Tracker.png" alt="">
+    <img src="../assets/icons/64x64/App_Terminal.png" alt="">
+    <img src="../assets/icons/64x64/App_Pe.png" alt="">
+    <img src="../assets/icons/64x64/App_NetSurf.png" alt="">
+    <img src="../assets/icons/64x64/File_Text.png" alt="">
+    <img src="../assets/icons/64x64/App_Pulse.png" alt="">
+  </div>
+</div></div></div>
+
+<h2>What changes</h2>
+<div class="notes">
+  <div class="note"><b>Sections as rows</b><p>All, then Applications, System, Development, Demos and Preferences, each a row 46 high across a 236-wide column, its icon, its name and how many it holds. Today's pills are 30 high and as wide as their word.</p></div>
+  <div class="note"><b>Browse without a click</b><p>As in the right-click Kosmos menu, where a submenu opens as the pointer reaches it: resting on a row shows its applications in the grid, so every section can be looked through by moving the mouse alone. The only click is the one that starts an application. A click on a row does the same as resting on it, so a click is never wrong either.</p></div>
+  <div class="note"><b>Heading for the grid does not switch</b><p>Moving from a row across to the grid passes over other rows on the way. As in a menu, a row is taken only when the pointer slows on it (about a tenth of a second) or moves straight up or down, so the section you aimed from stays shown.</p></div>
+  <div class="note"><b>Searching is still everything</b><p>Typing searches every application whatever row is lit, as now; the sidebar shows "Results" lit while there is text, and the row you were on again when it is cleared.</p></div>
+  <div class="note"><b>The keyboard</b><p>Up and Down move through the rows and show each; Right or Tab goes into the grid; Left comes back; Return starts what is chosen; Escape closes.</p></div>
+  <div class="note"><b>Room for more</b><p>The grid is five across beside the column. The panel grows from 600 to 820 wide so the tiles keep their size, and it still fits above the dock on a 1280-wide screen.</p></div>
+</div>
+
+<h2>Yours to decide</h2>
+<ol class="q">
+  <li><b>Hover shows, with the menu's pause</b> so heading for the grid does not switch rows. <span class="rec">Recommended. Without it, every diagonal move to the grid lands you in another section.</span></li>
+  <li><b>An "All" row at the top</b>, every application A to Z, as the launcher opens on today. Or open on Applications. <span class="rec">Recommended: All, so a launcher opened to type into shows everything.</span></li>
+  <li><b>A "Recent" row</b> under All: the last eight you started, newest first. <span class="rec">Recommended, as its own small step after this.</span></li>
+  <li><b>The panel 820 wide</b> rather than 600, so the grid beside the sidebar keeps five tiles a row at today's size. <span class="rec">Recommended.</span></li>
+</ol>
+</main>
+<script>
+(function () {
+  var I = "../assets/icons/64x64/";
+  var S = [
+    ["All", "Misc_Deskbar_Group", null],
+    null,
+    ["Applications", "App_Tracker", [["Cafesa3D","App_Teapot"],["Calculator","App_Calculator"],["Camera","App_CodyCam"],["Clock","App_Clock"],["Groove","File_Audio"],["Kosmos Write","File_Text"],["Music","App_MediaPlayer"],["Paint","App_Wonderbrush"],["PDF Viewer","File_PDF"],["Photo Viewer","App_ShowImage"],["Reader","Misc_Book"],["Terminal","App_Terminal"],["Text Editor","App_StyledEdit"],["Tracker","App_Tracker"],["Video Player","App_MediaPlayer"],["Web Browser","App_NetSurf"],["Deskbar","App_Deskbar"]]],
+    ["System", "App_Pulse", [["About Kosmos","App_About"],["About This Machine","Prefs_Devices"],["Drives","Device_Harddisk"],["Log Viewer","Server_Syslog"],["Passwords","App_Generic"],["Process Viewer","TeamIcon"],["Processor Cores","App_Pulse"],["Servers","App_Poorman"],["System Monitor","App_Pulse"]]],
+    ["Development", "App_Pe", [["Kosmos IDE","App_Pe"],["Hello Window","App_Generic"],["System Benchmark","App_Chart"],["Widget Gallery","App_Playground"],["Window Latency","App_Generic"],["Adopt Test","Misc_Dragger"],["Stuck Window","Misc_Bug"]]],
+    ["Demos", "App_GLDirectMode", [["3D Cube","App_GLDirectMode"],["Falling Blocks","App_Generic"],["GL Bounce","App_GLDirectMode"],["GL Cube","App_GLDirectMode"],["GL Gears","App_GLDirectMode"],["GL Mech","App_GLDirectMode"],["GL Morph 3D","App_GLDirectMode"],["GL Spin","App_GLDirectMode"],["GL Teapot","App_Teapot"],["GL Textures","App_GLDirectMode"],["Plasma","App_Mandelbrot"],["Solar System","App_GLDirectMode"]]],
+    ["Preferences", "Prefs_Appearance", [["Keyboard Shortcuts","Misc_Book"],["Launcher Editor","Prefs_Appearance"],["Network","Prefs_Network"],["Preferences","Prefs_Devices"],["Scheduler","System_Kernel"],["Sound Mixer","Misc_Speaker"]]]
+  ];
+  var all = [];
+  S.forEach(function (s) { if (s && s[2]) all = all.concat(s[2]); });
+  all.sort(function (a, b) { return a[0].localeCompare(b[0]); });
+  S[0][2] = all;
+
+  var side = document.getElementById("side"), grid = document.getElementById("grid");
+  var title = document.getElementById("title"), count = document.getElementById("count");
+  var rows = [];
+
+  function show(i) {
+    var s = S[i];
+    rows.forEach(function (r) { r.el.classList.toggle("on", r.i === i); });
+    title.textContent = s[0] === "All" ? "Every application" : s[0];
+    count.textContent = s[2].length;
+    var list = s[2].slice().sort(function (a, b) { return a[0].localeCompare(b[0]); }).slice(0, 20);
+    grid.innerHTML = "";
+    list.forEach(function (a, k) {
+      var t = document.createElement("div");
+      t.className = "tile" + (k === 0 ? " sel" : "");
+      t.innerHTML = '<div class="t"><img alt="" src="' + I + a[1] + '.png"></div><div class="l"></div>';
+      t.querySelector(".l").textContent = a[0];
+      grid.appendChild(t);
+    });
+  }
+
+  S.forEach(function (s, i) {
+    if (!s) { var d = document.createElement("div"); d.className = "sep"; side.appendChild(d); return; }
+    var r = document.createElement("div");
+    r.className = "row";
+    r.innerHTML = '<span class="bar"></span><img alt="" src="' + I + s[1] + '.png"><span class="nm"></span><span class="n"></span>';
+    r.querySelector(".nm").textContent = s[0];
+    r.querySelector(".n").textContent = s[2].length;
+    var timer = null;
+    // The menu's pause: a row is taken when the pointer rests on it.
+    r.addEventListener("mouseenter", function () { timer = setTimeout(function () { show(i); }, 90); });
+    r.addEventListener("mouseleave", function () { clearTimeout(timer); });
+    r.addEventListener("click", function () { show(i); });
+    side.appendChild(r);
+    rows.push({ el: r, i: i });
+  });
+
+  show(2);
+
+  var shell = document.getElementById("shell"), stage = document.getElementById("stage");
+  function fit() { var k = shell.clientWidth / 1180; stage.style.transform = "scale(" + k + ")"; shell.style.height = (760 * k) + "px"; }
+  window.addEventListener("resize", fit); fit();
+})();
+</script>
+</body>
+</html>
