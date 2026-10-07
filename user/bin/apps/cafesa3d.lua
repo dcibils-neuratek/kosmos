@@ -50,7 +50,9 @@ local L = ui.layout
 local screen = fs.read("/Devices/screen") or {}
 
 do
-  local ok, got = pcall(fs.send, "/Running/wm", { type = "workarea" })
+  -- As a window whose header is its title bar: the room is the screen's,
+  -- no tab taken off it (one window chrome, 7 October).
+  local ok, got = pcall(fs.send, "/Running/wm", { type = "workarea", header = true })
 
   if ok and type(got) == "table" and got.ok and tonumber(got.w) and tonumber(got.h) then
     screen.area = got
@@ -72,7 +74,9 @@ local PROPS_Y = OUT_Y + OUT_H               -- Properties, under it
 local TABS_W = 38
 local ROW = 27
 
-local win = ui.window{ title = "Cafesa3D", w = W, h = H, direct = true,
+-- `header = true`: it draws its own header (`pk.header`), which is the
+-- title bar; the kit adds no band of its own above it.
+local win = ui.window{ title = "Cafesa3D", w = W, h = H, direct = true, header = true,
                        maximised = screen.area and true or nil,
                        centre = not screen.area or nil }
 
@@ -795,7 +799,8 @@ local function segmented(s, x, y, parts)
 end
 
 local function draw_header(s)
-  local right = W - L.head_edge
+  -- Left of the three: the header is the title bar (one chrome, 7 October).
+  local right = W - L.lights_in - ((win and win.lights and win.lights.w) or 62) - L.head_edge
   local cy = (HEAD - 1 - 31) // 2
 
   -- From the right: the dots, Render, the shading.
@@ -2383,7 +2388,8 @@ function final.draw()
   local job, kept = final.job, final.stopped
   local save_w = pk.button_width("Save as PNG...")
   local again_w = math.max(pk.button_width("Render again"), pk.button_width("Stop"))
-  local save_x = final.W - L.head_edge - save_w
+  local save_x = final.W - L.lights_in - ((final.win.lights and final.win.lights.w) or 62)
+                 - L.head_edge - save_w
   local again_x = save_x - 8 - again_w
   local pw, ph = final.pic:size()
   local passes = job and job:passes() or (kept and kept.passes) or 0
@@ -2558,7 +2564,7 @@ function final.open()
   end
 
   if not final.win then
-    local w = ui.window{ title = "Render", w = final.W, h = final.H, direct = true,
+    local w = ui.window{ title = "Render", w = final.W, h = final.H, direct = true, header = true,
                          x = (win.origin_x or 0) + 60, y = (win.origin_y or 0) + 80 }
 
     if not w or not w:surface() then
@@ -2617,6 +2623,9 @@ function final.tend()
            and ((final.job and final.job:passes() > 0)
                 or (final.stopped and final.stopped.passes > 0)) then
       final.save()
+    elseif ev.type == "mouse" and ev.action == "press" and ev.y < L.head then
+      -- The header's empty part, which is the title bar.
+      final.win:take_hold(ev.x, ev.y)
     end
   end
 
@@ -4327,6 +4336,13 @@ local function press(x, y)
              pan = shift, moved = false }
   end
 
+  -- Nothing of its own under it in the header: the header is the title bar,
+  -- so the window is taken hold of - moved, or maximised on a second press.
+  if y < HEAD then
+    win:take_hold(x, y)
+    return true
+  end
+
   return false
 end
 
@@ -4765,6 +4781,7 @@ function FULL.toggle()
     -- Back to where it came from: maximised, or centred when there was
     -- nobody to ask where that is.
     fresh, why = ui.window{ title = "Cafesa3D", w = w, h = h, direct = true,
+                            header = (not on) or nil,
                             fullscreen = on or nil,
                             maximised = (not on and screen.area) and true or nil,
                             centre = (not on and not screen.area) or nil }

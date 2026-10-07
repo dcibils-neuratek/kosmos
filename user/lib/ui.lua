@@ -5939,7 +5939,20 @@ function ui.window(spec)
   local auto_head = not (spec.header or spec.direct or spec.backdrop
                          or spec.fullscreen or spec.strip or spec.popup
                          or spec.tip or spec.banner)
-  local head_h = auto_head and L.head or 0
+
+  --
+  -- **And a window that draws its own pixels** (step 2): the band is drawn
+  -- by this kit into the top of its surface - its title, and its menus'
+  -- titles where it has a menu bar - and the application is handed the
+  -- surface below it (`window:surface`, a view), its commits moved down
+  -- past it (`window:commit`) and the pointer moved up for it
+  -- (`window:band_events`, which `wmproto.poll` runs) - so no application
+  -- that draws its own pixels changes for it, and none can draw over it.
+  --
+  local band = spec.direct and not (spec.header or spec.backdrop or spec.fullscreen
+                                    or spec.strip or spec.popup or spec.tip
+                                    or spec.banner) or false
+  local head_h = (auto_head or band) and L.head or 0
 
   --
   -- `direct = true` asks for a window whose pixels this process draws
@@ -5959,7 +5972,7 @@ function ui.window(spec)
   local region = nil
 
   if spec.direct then
-    region, shared_cap = direct_region(spec.w or 400, spec.h or 240)
+    region, shared_cap = direct_region(spec.w or 400, (spec.h or 240) + head_h)
   end
 
   local reply, err = fs.send("/Running/wm", {
@@ -6054,7 +6067,7 @@ function ui.window(spec)
     -- (`headed`): Plex's windows have no bar above them, Classic's keep the
     -- tab.
     --
-    header = (spec.header or auto_head) or nil,
+    header = (spec.header or auto_head or band) or nil,
 
     --
     -- **A menu bar, for a window that draws its own pixels.** The kit cannot
@@ -6063,7 +6076,7 @@ function ui.window(spec)
     -- themselves are this kit's, opened by `direct_event`. Only the titles
     -- go: the items stay here, where their `on_choose` can run.
     --
-    menubar = (spec.direct and spec.menubar) and (function()
+    menubar = (spec.direct and spec.menubar and not band) and (function()
       local titles = {}
 
       for i, m in ipairs(spec.menubar) do titles[i] = tostring(m.title) end
@@ -6101,9 +6114,13 @@ function ui.window(spec)
 
   local w = setmetatable({
     handle = reply.window,
-    root = ui.view{ x = 0, y = head_h, w = reply.w, h = reply.h - head_h,
+    -- Under the kit's header for a kit window; for a direct one, whose
+    -- events are moved up past the band before anything here sees them,
+    -- the content's own top.
+    root = ui.view{ x = 0, y = band and 0 or head_h, w = reply.w, h = reply.h - head_h,
                     follow = { "left", "right", "top", "bottom" } },
     head_h = head_h,
+    band = band and { version = 1, drawn = {}, spans = {} } or nil,
 
     -- Menus this window has open, innermost last. See `push_menu`.
     menus = {},
@@ -6168,6 +6185,10 @@ function ui.window(spec)
   -- reach it.
   --
   w.root.window = w
+
+  -- A window whose band this kit draws is one `wmproto.poll` hands its
+  -- events through `band_events` for.
+  if band then wmproto.banded[w.handle] = w end
 
   -- The frame the window draws, hits and resizes: the header and `root`
   -- under it, or `root` itself when the kit adds no header.
@@ -6241,7 +6262,10 @@ function ui.window(spec)
   -- the size to lay out from.
   --
   if region and (w.w ~= (spec.w or 400) or w.h ~= (spec.h or 240)) then
-    w:take_size(w.w, w.h)
+    -- The buffers the window's whole height: the band's and what is under.
+    w:take_size(w.w, w.h + (band and head_h or 0))
+  elseif band then
+    w:prime_band()
   end
 
   return w
@@ -6257,7 +6281,161 @@ end
 function window:surface()
   if not self.region then return nil end
 
-  return self.region[self.region.draw_into]
+  local slot = self.region.draw_into
+  local whole = self.region[slot]
+
+  if not self.band then return whole end
+
+  -- The band, drawn into this buffer when it is not there yet or has
+  -- changed since - and the surface under it, kept for each buffer so a
+  -- frame asks for no new userdata.
+  if self.band.drawn[slot] ~= self.band.version then self:draw_band(whole, slot) end
+
+  self.region.views = self.region.views or {}
+
+  local below = self.region.views[slot]
+
+  if not below then
+    below = whole:view(0, self.head_h, self.w, self.h)
+    self.region.views[slot] = below
+  end
+
+  return below
+end
+
+--
+-- **The band**: the header's colour and its rule, the title in the title
+-- face, and a direct window's menus' titles after it, as `pk.header` draws
+-- a header - the three are the window manager's, where every header has
+-- them (`OUT.lights_at`). Each title's span kept for `band_events`.
+--
+local BAND_MENU_GAP = 18
+
+-- Both buffers given the band and their views under it, at once: when the
+-- window opens and when it is made another size, so no frame after that
+-- asks for anything new - the C Window Kit's frame path makes no garbage,
+-- and a check of it says so (W2).
+function window:prime_band()
+  if not (self.band and self.region) then return end
+
+  self.region.views = {}
+
+  for slot = 1, 2 do
+    local whole = self.region[slot]
+
+    if whole then
+      self:draw_band(whole, slot)
+      self.region.views[slot] = whole:view(0, self.head_h, self.w, self.h)
+    end
+  end
+end
+
+function window:draw_band(s, slot)
+  local w = self.w
+  local hh = self.head_h
+
+  s:fill(0, 0, w, hh - 1, theme.sunken)
+  s:fill(0, hh - 1, w, 1, theme.line_soft)
+
+  local x = L.head_in
+  local title = tostring(self.title or "")
+
+  if title ~= "" then
+    s:text(x, (hh - 1 - gfx.height("title")) // 2, title, theme.text, nil, "title")
+    x = x + gfx.measure(title, "title") + 2 * BAND_MENU_GAP
+  end
+
+  self.band.spans = {}
+
+  for i, m in ipairs(self.direct_menus or {}) do
+    local words = tostring(m.title)
+    local mw = gfx.measure(words)
+
+    s:text(x, (hh - 1 - gfx.height()) // 2, words, theme.text_dim, nil, "ui")
+    self.band.spans[#self.band.spans + 1] = { i = i, x = x - 8, w = mw + 16 }
+    x = x + mw + BAND_MENU_GAP
+  end
+
+  self.band.drawn[slot] = self.band.version
+
+  -- Where its menus' titles are, said once a version, for whoever presses
+  -- them from outside - the harnesses, as the window manager's strip said.
+  if #self.band.spans > 0 and self.band.told ~= self.band.version then
+    self.band.told = self.band.version
+
+    local said = {}
+
+    for _, sp in ipairs(self.band.spans) do
+      said[#said + 1] = ("%s %d,%d"):format(tostring(self.direct_menus[sp.i].title),
+                                            sp.x + sp.w // 2, (hh - 1) // 2)
+    end
+
+    print(("ui: %s's menus in its header: %s"):format(tostring(self.title),
+                                                      table.concat(said, ", ")))
+  end
+
+  -- Said to whoever commits next, in this buffer: the band with it. An
+  -- integer in a field, which the C Window Kit reads as it reads
+  -- `draw_into`.
+  self.region.band_fresh = 1
+end
+
+--
+-- **What a direct window with a band is sent**, before it sees it, from
+-- `wmproto.poll`: the pointer moved up past the band; a press on the band
+-- taken hold of - the window moved, or maximised on a second - or a menu's
+-- title opening its menu; a resize said at the size under the band; a new
+-- look, the band drawn again.
+--
+function window:band_events(events)
+  local hh = self.head_h
+  local kept = 1
+
+  for i = 1, #events do
+    local ev = events[i]
+    local drop = false
+
+    if ev.type == "mouse" and not ev.menu and ev.y then
+      if ev.y < hh then
+        drop = true
+
+        if ev.action == "press" and (ev.button or "left") == "left" then
+          local hit = nil
+
+          for _, sp in ipairs(self.band.spans) do
+            if ev.x >= sp.x and ev.x < sp.x + sp.w then hit = sp end
+          end
+
+          if hit then
+            -- As the window manager's menu bar said it, so `direct_event`
+            -- opens it as it always has: under the title, on the screen.
+            events[i] = { type = "menubar", index = hit.i,
+                          title = tostring(self.direct_menus[hit.i].title),
+                          x = self.origin_x + hit.x, y = self.origin_y + hh }
+            ev = events[i]
+            drop = false
+          else
+            self:take_hold(ev.x, ev.y)
+          end
+        end
+      else
+        ev.y = ev.y - hh
+      end
+    elseif ev.type == "wheel" and ev.y then
+      ev.y = ev.y - hh
+    elseif ev.type == "resize" and ev.h then
+      ev.h = ev.h - hh
+    elseif ev.type == "theme" then
+      self.band.version = self.band.version + 1
+    end
+
+    if not drop then
+      events[kept] = ev
+      kept = kept + 1
+    end
+  end
+
+  for i = #events, kept, -1 do events[i] = nil end
 end
 
 --
@@ -6272,6 +6450,19 @@ function window:commit(damage)
   if not self.region then return false end
 
   damage = damage or { x = 0, y = 0, w = self.frame.w, h = self.frame.h }
+
+  -- Under the band: moved down past it, and the band with it from the top
+  -- when it was just drawn into this buffer.
+  if self.band then
+    local y = damage.y + self.head_h
+
+    if self.region.band_fresh == 1 then
+      self.region.band_fresh = 0
+      damage = { x = 0, y = 0, w = self.w, h = y + damage.h }
+    else
+      damage = { x = damage.x, y = y, w = damage.w, h = damage.h }
+    end
+  end
 
   local reply = fs.send("/Running/wm", {
     type = "commit", window = self.handle,
@@ -6301,6 +6492,9 @@ end
 function window:take_size(w, h)
   if not self.region then return false, "this window does not draw its own pixels" end
 
+  -- A new region: the band drawn into its buffers afresh, once it is here.
+  if self.band then self.band.drawn = {} end
+
   local region, cap = direct_region(w, h)
 
   if not region then return false, "no memory for a surface that size" end
@@ -6320,6 +6514,8 @@ function window:take_size(w, h)
   self.region, self.shared_cap = region, cap
 
   if old then sys.release(old) end
+
+  self:prime_band()
 
   return true
 end
@@ -6580,6 +6776,7 @@ end
 function window:close()
   if self.closed then return end
 
+  wmproto.banded[self.handle] = nil
   self.closed = true
   self.running = false
 
@@ -7031,8 +7228,10 @@ function window:direct_event(ev)
   -- Resized, for one that runs its own loop: a region the new size, and
   -- the event left for the application, which lays out for it (6zz e).
   if ev.type == "resize" and self.region then
+    -- `ev.h` is already the height under a band (`band_events`); the
+    -- region is the band's and that.
     self.w, self.h = ev.w, ev.h
-    self:take_size(ev.w, ev.h)
+    self:take_size(ev.w, ev.h + (self.band and self.head_h or 0))
     return false
   end
 
@@ -7738,13 +7937,17 @@ function window:run()
         -- caught it. Found writing `window:resize`, where the same two
         -- fields are taken from the reply.
         --
-        self.w, self.h = ev.w, ev.h - (self.head_h or 0)
+        -- A band's window was told its height under the band already
+        -- (`band_events`); a kit window's is the window's, its header in it.
+        local whole = self.band and (ev.h + self.head_h) or ev.h
+
+        self.w, self.h = ev.w, whole - (self.head_h or 0)
 
         -- A window that draws its own pixels gets a region the new size
         -- first, so what it draws next is drawn at it (6zz e).
-        if self.region then self:take_size(ev.w, ev.h) end
+        if self.region then self:take_size(ev.w, whole) end
 
-        self.frame:resize(ev.w, ev.h)
+        self.frame:resize(ev.w, self.band and self.h or whole)
 
         if self.on_resize then pcall(self.on_resize, self, self.w, self.h) end
 

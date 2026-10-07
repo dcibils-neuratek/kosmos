@@ -91,12 +91,27 @@ end
 -- Returns whatever the manager replied, or nil when it has gone away, which
 -- is the ordinary end of an application here.
 --
+--
+-- **Windows whose band the kit draws** (one window chrome, step 2): a
+-- direct window's header is drawn into the top of its surface by `ui.lua`,
+-- which registers it here, and its events go through `band_events` - the
+-- pointer moved up past the band, a press on it taken - before the
+-- application, which polls with this as it always has, sees them.
+--
+wmproto.banded = {}
+
 function wmproto.poll(handle, wait_ticks)
-  return fs.send(wmproto.WM, {
+  local reply = fs.send(wmproto.WM, {
     type = "poll",
     window = handle,
     wait_ticks = wait_ticks or 0,
   })
+
+  local win = wmproto.banded[handle]
+
+  if win and reply and reply.events then win:band_events(reply.events) end
+
+  return reply
 end
 
 --

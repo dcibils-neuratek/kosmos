@@ -20931,3 +20931,29 @@ From Diego on the M700, 7 October:
 The gate: 101 of 102 in 9:19; `arm-display-4`'s desktop-icon read again at
 220 for 241, 79 of 79 alone - three gates running, so on the roadmap to be
 mended rather than rerun.
+
+## 18.448 One window chrome, step 2: a direct window's title bar is a band the kit draws
+
+Step 1 gave an ordinary kit window its header as the title bar; a window
+that draws its own pixels (`direct = true`) still wore the window manager's
+tab. Now the kit draws a 46-row band into the top of its surface - the
+title, the menu titles where the menubar strip used to be, the three left
+room at the right - and hands the program a view below it, so a program
+that draws at 0,0 draws under the band without knowing it is there. A
+commit is offset by the band; a pointer, a wheel and a resize are given
+back in the program's own rows; a press on the band takes the window by
+its title, or opens a menu on a menu's title. The C Window Kit does the
+same offsets, for a program in C. Cafesa3D and Camera, which draw their own
+header, say `header = true` and keep their controls left of the three.
+
+What the harnesses look at now: display-3's two direct windows are each
+told as headed and 46 taller than they drew, the band runs across the front
+one over the other's body, the maximise light of one that cannot be
+maximised is grey, and a drag on it moves nothing; Camera says where its
+size box and its dots are, and display-4 presses there; the Servers
+window's stripes are sampled under the band and clear of the rounded corner
+(column 0, ten rows from the bottom, is the desk through the curve).
+
+**Control**: the band turned off in `ui.lua` - display-3 fails, "the window
+manager did not say where Front and Behind are, each headed by the band the
+kit draws". Restored, and checked by grep.

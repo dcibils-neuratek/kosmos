@@ -118,7 +118,10 @@ def upright(width, px, placed):
         c = (x * 2654435761) & 0xffffff
         want = bytes(((c >> 16) & 255, (c >> 8) & 255, c & 255))
 
-        for y in (y0 + 10, y0 + h - 10):
+        # Under its header's band, which the window manager's place includes
+        # (one window chrome, 7 October), and far enough above the bottom
+        # that column 0 is inside the rounded corner rather than outside it.
+        for y in (y0 + 46 + 10, y0 + h - 20):
             at = (y * width + x0 + x) * 3
             looked += 1
 

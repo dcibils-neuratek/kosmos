@@ -895,11 +895,17 @@ def main():
         # `ui.lua`): 22 with the default face, the first from 2.
         def choose(title, offset, marker, item=1):
             before = len(guest.seen)
-            click(wx + offset + 10, wy + strip // 2)
-            opened = line_after(before, r"wm: menu bar (\w+) of kosmos-test "
-                                        r"at (\d+),(\d+)")
+            # The menus are in the header's band now (one window chrome, 7
+            # October): the title where the kit says it drew it, and the
+            # menu that opens is the window's.
+            told = re.findall(r"ui: kosmos-test's menus in its header: (.*)", guest.seen)
+            at_ = re.search(r"%s (\d+),(\d+)" % title, told[-1]) if told else None
+            mx, my = (int(at_.group(1)), int(at_.group(2))) if at_ else (offset + 10, strip // 2)
+            click(wx + mx, wy + my)
+            opened = line_after(before, r"wm: menu of (kosmos-test) at (\d+),(\d+)")
+            opened_title = title if opened else None
 
-            if opened is None or opened.group(1) != title:
+            if opened is None or opened_title != title:
                 raise Failure("a press where %s should be in the Super "
                               "Nintendo's menu bar opened %s:\n%s"
                               % (title, opened.group(1) if opened else

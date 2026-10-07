@@ -4588,7 +4588,12 @@ def check_direct_menu(guest):
 
     def choose(row, marker, separators=0):
         before = len(guest.seen)
-        click(x + 4 + 10, y + strip // 2)
+        # The menus are in the header's band now (one window chrome, 7
+        # October): File where the kit says it drew it.
+        told = re.findall(r"ui: Strip's menus in its header: File (\d+),(\d+)",
+                          guest.seen)
+        fx, fy = (int(v) for v in told[-1]) if told else (4 + 10, strip // 2)
+        click(x + fx, y + fy)
 
         if not said("strip: menubar File at", 15) \
                 or "strip: menubar File at" not in guest.seen[before:]:
@@ -5186,9 +5191,10 @@ def check_tabs(guest):
     that still says `tabs = "beos"`, as the old panel wrote it:
 
       the point where a BeOS tab would have ended, in Front's title row, is
-      the tab's yellow - the bar is across, whatever was saved;
-      the window manager says Front's bar is its whole frame wide;
-      Front's maximise box is there, its glyph in `text_dim`;
+      the band - across, whatever was saved (since 7 October the band the
+      kit draws in a direct window's top rows, and no tab at all);
+      the window manager says Front is headed, 46 taller than it drew;
+      Front's maximise light is there, grey;
       and a press on it that drags does nothing - before, with no box
       there, the same press took the window by its title and moved it.
 
@@ -5201,7 +5207,7 @@ def check_tabs(guest):
         "local back = ui.window{ title = 'Behind', w = 700, h = 400, x = 300, "
         "y = 250, direct = true } "
         "local front = ui.window{ title = 'Front', w = 500, h = 150, x = 350, "
-        "y = 600, direct = true } "
+        "y = 640, direct = true } "
         "for _ = 1, 2 do back:surface():fill(0, 0, 700, 400, 0xff3060c0) "
         "back:commit{ x = 0, y = 0, w = 700, h = 400 } "
         "front:surface():fill(0, 0, 500, 150, 0xff30a040) "
@@ -5247,29 +5253,35 @@ def check_tabs(guest):
             raise Failure("the two windows for the title bar never opened:\n"
                           + guest.seen[mark:][-800:])
 
-        front = re.search(r"wm: window Front at (\d+),(\d+) (\d+)x(\d+), a "
-                          r"tab (\d+) wide", guest.seen[mark:])
-        behind = re.search(r"wm: window Behind at (\d+),(\d+) (\d+)x(\d+)",
-                           guest.seen[mark:])
+        front = re.search(r"wm: window Front at (\d+),(\d+) (\d+)x(\d+), its "
+                          r"header the title bar", guest.seen[mark:])
+        behind = re.search(r"wm: window Behind at (\d+),(\d+) (\d+)x(\d+), its "
+                           r"header the title bar", guest.seen[mark:])
 
         if not front or not behind:
             raise Failure("the window manager did not say where Front and "
-                          "Behind are:\n" + guest.seen[mark:][-800:])
+                          "Behind are, each headed by the band the kit "
+                          "draws:\n" + guest.seen[mark:][-800:])
 
-        fx, fy, fw, fh, bar = (int(v) for v in front.groups())
+        fx, fy, fw, fh = (int(v) for v in front.groups())
         bx, by, bw, bh = (int(v) for v in behind.groups())
 
-        if bar != fw + 2 * FRAME:
-            raise Failure("Front's title bar is %d wide and its frame %d - a "
-                          "bar across is the frame's width, whatever "
-                          "/Home/Preferences/appearance says" % (bar, fw + 2 * FRAME))
+        if fh != 150 + KIT_HEAD:
+            raise Failure("Front is %d tall - wanted its 150 and the band's "
+                          "%d above them" % (fh, KIT_HEAD))
 
-        # Where a BeOS tab on "Front" would have ended long before: over
-        # Behind's body, in Front's title row, left of the boxes.
-        px, py = fx + fw * 6 // 10, fy - 13
+        #
+        # **Since one window chrome (7 October) a direct window's title bar
+        # is a band the kit draws in its own top rows**, and the old
+        # panel's `tabs = "beos"` has nothing left to shape. So the band
+        # runs across: at six tenths of Front's width, in the band's row and
+        # over Behind's body, the pixel is neither Front's green nor
+        # Behind's blue - it is the band.
+        #
+        px, py = fx + fw * 6 // 10, fy + KIT_HEAD // 2
 
         if not (bx <= px < bx + bw and by <= py < by + bh):
-            raise Failure("Front's title row does not lie over Behind, so "
+            raise Failure("Front's band does not lie over Behind, so "
                           "the check has nothing to look through")
 
         width, height, _ = parse_ppm(guest.screendump())
@@ -5282,27 +5294,19 @@ def check_tabs(guest):
         time.sleep(1.5)
         across = pixel(px, py)
 
-        # Within `TAB_TOL`: the bar is a gradient over the tab's colour.
-        if any(abs(a - b) > TAB_TOL for a, b in zip(across, TAB)):
-            raise Failure("Front's title row is %r where a BeOS tab would "
-                          "have ended - wanted the tab's yellow %r across the "
-                          "whole window" % (across, TAB))
+        if across in ((0x30, 0xa0, 0x40), (0x30, 0x60, 0xc0)):
+            raise Failure("Front's band is %r at six tenths across - a "
+                          "window's own pixels or the one behind, not a band "
+                          "across the whole window" % (across,))
 
         #
-        # The maximise box, greyed. It is the first of the three at the
-        # right since 24 September (`OUT.SLOT`: green, amber, red): the run
-        # ends `MARGIN` - 10 since 0.10.149, it was 4 - in from the frame,
-        # each box a `BOX_W` slot of 22 and the last one `BOX`, 18, so
-        # maximise starts 72 in from the frame's right edge (`boxes_x`),
-        # which is `FRAME` outside the content's. 22 above the top.
+        # The maximise light, greyed. A headed window's three are where
+        # every header puts them (`OUT.lights_at`): their run 62 wide
+        # (`OUT.RUN`), 12 in from the right, centred in the band's 46 -
+        # and maximise is the first, a disc 18 across. A maximise that
+        # cannot be used is a grey one where a working one is green.
         #
-        # **Since 0.10.149 the three are coloured circles** (`roadmap.md`
-        # 5zq), and a maximise that cannot be used is a grey one with no
-        # glyph where a working one is green. So the check is the disc's
-        # middle: grey - its three channels together - and not the green,
-        # which holds in any look without knowing the look's grey.
-        #
-        zx, zy = fx + fw + FRAME - 72, fy - 22
+        zx, zy = fx + fw - 12 - 62, fy + (KIT_HEAD - 1 - 18) // 2
         glyph = pixel(zx + 9, zy + 9)
         green = (0x28, 0xc8, 0x40)
 
@@ -5312,8 +5316,8 @@ def check_tabs(guest):
                           "green %r of one that works, nor anything else "
                           % (glyph, green))
 
-        # Pressed and dragged, it does nothing: Front's top-left stays green.
-        corner = pixel(fx + 6, fy + 6)
+        # Pressed and dragged, it does nothing: Front's body stays put.
+        corner = pixel(fx + 6, fy + KIT_HEAD + 6)
         guest.mouse_to(*_to_tablet(zx + 9, zy + 9, width, height))
         time.sleep(0.3)
         guest.mouse_button(True)
@@ -5326,11 +5330,11 @@ def check_tabs(guest):
 
         guest.mouse_button(False)
         time.sleep(1.5)
-        after = pixel(fx + 6, fy + 6)
+        after = pixel(fx + 6, fy + KIT_HEAD + 6)
 
         if corner != (0x30, 0xa0, 0x40) or after != corner:
-            raise Failure("a press on Front's greyed maximise box, dragged, "
-                          "moved the window: its corner was %r and is %r"
+            raise Failure("a press on Front's greyed maximise light, dragged, "
+                          "moved the window: its body's corner was %r and is %r"
                           % (corner, after))
 
         guest.mouse_to(*_to_tablet(fx + fw // 2, fy + fh // 2, width, height))
@@ -5772,9 +5776,12 @@ def check_scale(guest):
                           % (asked + (gw, gh)
                              + (asked[0] * 3 // 2, asked[1] * 3 // 2)))
 
-        if (dw, dh) != (300, 150):
+        # Its header's band above it since 7 October (one window chrome),
+        # scaled with it: 46 points, 69 rows at 150.
+        if (dw, dh) != (300, 150 + KIT_HEAD * 3 // 2):
             raise Failure("the own-pixel window asked for 200x100 and is "
-                          "%dx%d - at 150 it is 300x150" % (dw, dh))
+                          "%dx%d - at 150 it is 300x150 and its band's 69"
+                          % (dw, dh))
 
         time.sleep(2.0)
         shot = guest.screendump()
@@ -5795,36 +5802,21 @@ def check_scale(guest):
             return tuple(px[o:o + 3])
 
         #
-        # The title bar: the rows straight above the own-pixel window that
-        # are neither the desk nor its shadow. Not by the tab's colour,
-        # since which of the two windows opened last - and so is focused -
-        # is a race.
-        #
-        # **The shadow is why "not the desk" is not enough** (`roadmap.md`
-        # 5zj, 23 September). A window casts one now, so between its tab and
-        # the desk there are a dozen rows that are the desk *darkened* - and
-        # this counted them as title bar and read 49 where the tab is 39.
-        #
-        # A shadow is darker than the desk in every channel and a tab is
-        # not: every look's tab is lighter than its desktop, because a title
-        # bar that recedes into the background is a title bar nobody finds.
-        # So "darker than the desk everywhere" separates the two without
-        # knowing either colour.
-        #
-        desk = at(10, 700)
+        # **Its header's band, inside the window since 7 October** (one
+        # window chrome): the rows from its top down to where its own green
+        # begins, in the middle of it - 46 points, 69 at 150. It measured
+        # the tab above the window until there was none.
         rows = 0
 
-        while rows < 80 and dy - 1 - rows >= 0:
-            here = at(dx + dw // 2, dy - 1 - rows)
-
-            if here == desk or all(here[i] <= desk[i] for i in range(3)):
+        while rows < 120 and dy + rows < height:
+            if at(dx + dw // 2, dy + rows) == (0x30, 0xa0, 0x40):
                 break
 
             rows += 1
 
-        if abs(rows - 39) > 2:
-            raise Failure("the own-pixel window's title bar is %d rows tall - "
-                          "the tab's 26 at 150 is 39" % rows)
+        if abs(rows - KIT_HEAD * 3 // 2) > 2:
+            raise Failure("the own-pixel window's band is %d rows tall - "
+                          "the header's 46 at 150 is 69" % rows)
 
         # The own-pixel window's surface reaches its bottom-right corner -
         # sampled twelve in from it, since the page is rounded inside the
@@ -7648,11 +7640,15 @@ def check_camera(guest):
         # `stretch` refuses - so on 24 September, on Diego's MacBook with
         # v0.10.156, choosing 1280 x 720 closed the app on its first frame.
         #
-        # The size box ends at 680 - 10 - 26 - 4 = 640 whatever its label
-        # says, so 20 in from there is inside it; the menu says where it
-        # opened, and its third row is 1280 x 720 (`PATTERN_SIZES`).
+        # Camera says where its size box is (its header holds the three
+        # now, so the box moves with them), and 20 in from its left is
+        # inside it; the menu says where it opened, and its third row is
+        # 1280 x 720 (`PATTERN_SIZES`).
         #
         width, height, _ = parse_ppm(guest.screendump())
+        bx, by, dx, dy = (int(v) for v in re.findall(
+            r"camera: size box at (\d+),(\d+), its dots at (\d+),(\d+)",
+            guest.seen)[-1])
 
         def click(cx, cy):
             guest.mouse_to(*_to_tablet(cx, cy, width, height))
@@ -7663,7 +7659,7 @@ def check_camera(guest):
             time.sleep(0.6)
 
         before = len(guest.seen)
-        click(wx + 620, wy + 22)
+        click(wx + bx + 20, wy + by + 15)
         menu = guest.wait_for_line("wm: menu of Camera at ",
                                    "the size dropdown to open", before)
         mx, my = (int(v) for v in
@@ -7726,7 +7722,7 @@ def check_camera(guest):
         # cameras, so it is the fourth row.
         #
         before = len(guest.seen)
-        click(wx + 657, wy + 22)            # the dots: 680 - 10 - 26 + 13
+        click(wx + dx + 13, wy + dy + 13)   # the dots, as Camera told
         menu = guest.wait_for_line("wm: menu of Camera at ",
                                    "the dots' menu to open", before)
         mx, my = (int(v) for v in

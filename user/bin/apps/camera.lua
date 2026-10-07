@@ -48,8 +48,9 @@ local PICTURE_H = 520
 local H = L.head + PICTURE_H + FOOT
 local PICTURE_Y = L.head
 
+-- Its own header (`pk.header`) is its title bar: no band of the kit's.
 local win = ui.window{ title = "Camera", w = W, h = H, x = 120, y = 90,
-                       direct = true }
+                       direct = true, header = true }
 
 if not win or not win:surface() then
   print("camera: no window")
@@ -211,7 +212,9 @@ local size_box = { h = 31 }
 local record = { text = "Record", disabled = true }
 
 local function place_controls()
-  local right = W - L.head_edge
+  -- Left of the three, which its header holds now it is the title bar.
+  local three = (win and win.lights and win.lights.w) or 62
+  local right = W - L.lights_in - three - L.head_edge
 
   more.x, more.y = right - 26, (L.head - 1 - 26) // 2
   right = more.x - L.head_gap
@@ -223,6 +226,15 @@ local function place_controls()
   size_box.w = gfx.measure(label) + 12 + 8 + 7 + 11
   size_box.x, size_box.y = right - size_box.w, (L.head - 1 - 31) // 2
   right = size_box.x - L.head_gap
+
+  -- Said once a place, for a harness to aim at rather than to work out.
+  local at = ("%d,%d, its dots at %d,%d"):format(size_box.x, size_box.y,
+                                                 more.x, more.y)
+
+  if at ~= size_box.said then
+    size_box.said = at
+    print("camera: size box at " .. at)
+  end
 
   record.text = recording and "Stop" or "Record"
   record.disabled = not (stream and size and size.pixels == "yuy2")
@@ -514,6 +526,10 @@ while win.running do
       elseif pk.inside(record, ev.x, ev.y) and not record.disabled then
         if recording then stop_recording() else start_recording() end
         draw_all()
+      elseif ev.y < L.head then
+        -- The header's empty part is the title bar's: the window moved,
+        -- or maximised on a second press.
+        win:take_hold(ev.x, ev.y)
       end
     elseif ev.type == "rawkey" and ev.down and ev.code == 50 then
       -- M: the mirror, without the menu.

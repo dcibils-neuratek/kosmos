@@ -341,6 +341,20 @@ this order, each step its own test:
    bar is a dock). **Done** (`testing.md` 18.360): a popup window placed
    from the Deskbar's anchor, closed by a press outside it; the menu with
    Restart and Shut Down on the button's right press until step 5.
+   **Wanted, 7 October** (Diego, on the M700, with a picture of KDE's
+   launcher): **a power row at the launcher's foot** - "the new menu
+   launcher needs a shutdown menu (possibly aligned to the bottom) and that
+   shutdown opens a shutdown/restart" - Restart and Shut Down along the
+   bottom (Sleep only once there is a suspend to ask for, and there is
+   not), each asking `wm`'s `power` as the Deskbar's menu does, behind a
+   confirming window. And **a Recently used section** in the sidebar -
+   "we will be adding all the recently opened apps as a shortcut": the
+   last applications started, newest first, which `docs/launcher.html`
+   already recommended as "Recent". Nothing keeps that list today -
+   `wm` knows what is running, not what ran - so whatever starts a
+   program (the launcher, the Deskbar, Tracker, `open`) records it once,
+   through one door, in `/Home/Preferences/recent`. Drawn into
+   `launcher.html` and agreed before it is built.
 5. **Quick settings** under the strip's indicators: volume, brightness where
    there is a backlight, the network, the servers, the screenshot, `/Home`,
    restart and shut down.

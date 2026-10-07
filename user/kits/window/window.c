@@ -41,6 +41,7 @@ struct kw_window {
     long handle;                /* the window manager's name for it */
     long wm;                    /* its endpoint: the frame path's door */
     int open;
+    int band;                   /* the header's band above the surface: its rows */
     unsigned head, count;
     struct kw_event queue[QUEUE];
 };
@@ -205,6 +206,25 @@ struct kw_window *kw_open(const char *title, unsigned width, unsigned height,
     lua_getfield(L, -1, "handle");
     w->handle = (long)lua_tointeger(L, -1);
     lua_pop(L, 1);
+
+    /*
+     * **The band** (one window chrome, step 2): `ui.lua` draws a direct
+     * window's header into the top of its surface and hands `surface` the
+     * part under it. Its height, once, so the frame path moves a commit
+     * down past it and the pointer up past it without asking Lua - a press
+     * on the band is the one thing that does.
+     */
+    lua_getfield(L, -1, "band");
+
+    if (lua_istable(L, -1)) {
+        lua_getfield(L, -2, "head_h");
+        w->band = (int)lua_tointeger(L, -1);
+        lua_pop(L, 1);
+    } else {
+        w->band = 0;
+    }
+
+    lua_pop(L, 1);
     w->win = luaL_ref(L, LUA_REGISTRYINDEX);
     w->open = 1;
     w->wm = -1;
@@ -299,6 +319,33 @@ int kw_commit(struct kw_window *w, unsigned x, unsigned y, unsigned width,
         return 0;
     }
 
+    /* Under the band, and the band with it from the top when `ui.lua` has
+     * just drawn it into this buffer - an integer it leaves in the region,
+     * read and cleared here as `draw_into` is written. */
+    if (w->band > 0) {
+        y += (unsigned)w->band;
+        top = lua_gettop(L);
+        lua_rawgeti(L, LUA_REGISTRYINDEX, w->win);
+        lua_getfield(L, -1, "region");
+
+        if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, "band_fresh");
+
+            if (lua_tointeger(L, -1) == 1) {
+                lua_pop(L, 1);
+                lua_pushinteger(L, 0);
+                lua_setfield(L, -2, "band_fresh");
+                height += y;
+                x = 0;
+                y = 0;
+                lua_getfield(L, -2, "w");
+                width = (unsigned)lua_tointeger(L, -1);
+            }
+        }
+
+        lua_settop(L, top);
+    }
+
     rq = (struct wm_frame_request){ WM_FRAME_COMMIT, (uint32_t)w->handle,
                                     (int32_t)x, (int32_t)y, width, height, 0 };
 
@@ -335,10 +382,12 @@ static void take_size(lua_State *L, struct kw_window *w, int width, int height)
 {
     int top = lua_gettop(L);
 
+    /* `height` is the window's; what the application draws is under the
+     * band, and the region the band's and that. */
     lua_rawgeti(L, LUA_REGISTRYINDEX, w->win);
     lua_pushinteger(L, width);
     lua_setfield(L, -2, "w");
-    lua_pushinteger(L, height);
+    lua_pushinteger(L, height - w->band);
     lua_setfield(L, -2, "h");
     lua_settop(L, top);
 
@@ -380,23 +429,40 @@ int kw_poll(struct kw_window *w, struct kw_event *e, unsigned wait_ms)
                     ev.key = f->a;
                     break;
                 case WM_EV_POINTER:
+                    /* On the band: a left press takes hold of the window -
+                     * moved, or maximised on a second - and nothing of it
+                     * reaches the application; under it, moved up. */
+                    if (f->b < w->band) {
+                        if (f->action == WM_ACT_PRESS && f->button != WM_BUTTON_RIGHT) {
+                            lua_State *L = kosmos_lua_state;
+                            int top = lua_gettop(L);
+
+                            lua_pushinteger(L, f->a);
+                            lua_pushinteger(L, f->b);
+                            method(L, w, "take_hold", 2, 0);
+                            lua_settop(L, top);
+                        }
+
+                        continue;
+                    }
+
                     ev.type = KW_POINTER;
                     ev.action = f->action == WM_ACT_PRESS ? KW_PRESS
                               : f->action == WM_ACT_RELEASE ? KW_RELEASE : KW_MOVE;
                     ev.button = f->button == WM_BUTTON_RIGHT ? KW_RIGHT : KW_LEFT;
                     ev.x = f->a;
-                    ev.y = f->b;
+                    ev.y = f->b - w->band;
                     break;
                 case WM_EV_WHEEL:
                     ev.type = KW_WHEEL;
                     ev.x = f->a;
-                    ev.y = f->b;
+                    ev.y = f->b - w->band;
                     ev.amount = f->c;
                     break;
                 case WM_EV_RESIZE:
                     ev.type = KW_RESIZE;
                     ev.width = f->a;
-                    ev.height = f->b;
+                    ev.height = f->b - w->band;
                     take_size(kosmos_lua_state, w, f->a, f->b);
                     break;
                 case WM_EV_CLOSE:
