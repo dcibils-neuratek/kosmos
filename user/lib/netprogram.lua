@@ -99,7 +99,7 @@ function netprogram.open(spec)
   local self = setmetatable({
     name = name, port = port, listener = listener, info = info,
     neighbours = spec.neighbours,
-    status = dir .. "/status", log = dir .. "/log", lines = {},
+    status = dir .. "/status", log = dir .. "/log", lines = {}, heard = {},
     counter_hz = math.max(1, ((fs.read("/Devices/cpu") or {}).counter_hz or 1)),
   }, methods)
 
@@ -142,6 +142,32 @@ function methods:note(text)
 
   fs.write(self.log, lines)
   print(self.name .. ": " .. text)
+end
+
+--
+-- **Someone connected, said to the person at the machine** (Diego, 7
+-- October: "vnc server should notify when a new connection is made from a
+-- client so the user knows someone connected", and the same of telnetd): a
+-- notification - `title`, `body`, an alert when `alert` - the first time an
+-- address connects, and again only after it has been quiet for ten minutes.
+-- Once a session rather than once a connection, because a script driving
+-- this machine over Telnet connects for every command it sends, and a
+-- banner each time would bury what it is for. True when it was said.
+--
+local QUIET_SECONDS = 600
+
+function methods:tell_connected(from, title, body, alert)
+  local key = ipv4.text(from)
+  local now = sys.ticks()
+  local last = self.heard[key]
+
+  self.heard[key] = now
+
+  if last and (now - last) < QUIET_SECONDS * self.counter_hz then return false end
+
+  use("/Kosmos/Libraries/notify.lua").post{ title = title, body = body,
+                                           alert = alert or nil }
+  return true
 end
 
 -- What it is doing, written whole: `fields`, with its port, and its state

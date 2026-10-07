@@ -5925,6 +5925,23 @@ function ui.window(spec)
   spec = spec or {}
 
   --
+  -- **One chrome: a window's header is its title bar** (`roadmap.md`, agreed
+  -- 7 October; Diego: "we need to get rid of the old window chrome as we are
+  -- staying with the new one only", "that does away with the extra
+  -- titlebar"). An ordinary window that draws no header of its own is given
+  -- one here - the title, the three lights, dragged by it - above what it
+  -- draws: an outer frame holds the header and, below it, `root`, which is
+  -- where the application lays itself out exactly as before, its size the
+  -- size it asked for. A window that has a header of its own (`header =
+  -- true`), and the kinds that wear none - a strip, a popup, a tip, a
+  -- banner, the backdrop, a full screen - are as they were.
+  --
+  local auto_head = not (spec.header or spec.direct or spec.backdrop
+                         or spec.fullscreen or spec.strip or spec.popup
+                         or spec.tip or spec.banner)
+  local head_h = auto_head and L.head or 0
+
+  --
   -- `direct = true` asks for a window whose pixels this process draws
   -- itself, into memory both it and the compositor can see.
   --
@@ -5948,7 +5965,7 @@ function ui.window(spec)
   local reply, err = fs.send("/Running/wm", {
     type = "open",
     title = spec.title or "window",
-    w = spec.w or 400, h = spec.h or 240,
+    w = spec.w or 400, h = (spec.h or 240) + head_h,
     x = spec.x, y = spec.y,
 
     -- The file this process runs, as its runner kept it: what the Deskbar
@@ -6037,7 +6054,7 @@ function ui.window(spec)
     -- (`headed`): Plex's windows have no bar above them, Classic's keep the
     -- tab.
     --
-    header = spec.header or nil,
+    header = (spec.header or auto_head) or nil,
 
     --
     -- **A menu bar, for a window that draws its own pixels.** The kit cannot
@@ -6084,7 +6101,9 @@ function ui.window(spec)
 
   local w = setmetatable({
     handle = reply.window,
-    root = ui.view{ x = 0, y = 0, w = reply.w, h = reply.h },
+    root = ui.view{ x = 0, y = head_h, w = reply.w, h = reply.h - head_h,
+                    follow = { "left", "right", "top", "bottom" } },
+    head_h = head_h,
 
     -- Menus this window has open, innermost last. See `push_menu`.
     menus = {},
@@ -6110,7 +6129,7 @@ function ui.window(spec)
     -- as a border under it.
     --
     w = reply.w,
-    h = reply.h,
+    h = reply.h - head_h,
     -- Nil unless the application asked for a particular colour, so that
     -- `paint` can fall back to the palette *at the moment it draws*.
     -- Resolving it here instead captured the colour once, at creation, and
@@ -6149,6 +6168,19 @@ function ui.window(spec)
   -- reach it.
   --
   w.root.window = w
+
+  -- The frame the window draws, hits and resizes: the header and `root`
+  -- under it, or `root` itself when the kit adds no header.
+  if auto_head then
+    w.frame = ui.view{ x = 0, y = 0, w = reply.w, h = reply.h }
+    w.frame.window = w
+    w.auto_header = ui.header{ x = 0, y = 0, w = reply.w,
+                               title = spec.title or "window", title_bar = true }
+    w.frame:add(w.auto_header)
+    w.frame:add(w.root)
+  else
+    w.frame = w.root
+  end
 
   --
   -- What every window exposes, before the application adds anything.
@@ -6239,7 +6271,7 @@ end
 function window:commit(damage)
   if not self.region then return false end
 
-  damage = damage or { x = 0, y = 0, w = self.root.w, h = self.root.h }
+  damage = damage or { x = 0, y = 0, w = self.frame.w, h = self.frame.h }
 
   local reply = fs.send("/Running/wm", {
     type = "commit", window = self.handle,
@@ -6328,7 +6360,8 @@ end
 --
 function window:resize(w, h)
   local reply, why = fs.send("/Running/wm", { type = "resize",
-                                          window = self.handle, w = w, h = h })
+                                          window = self.handle, w = w,
+                                          h = h + (self.head_h or 0) })
 
   if not reply then return false, why end
 
@@ -6336,10 +6369,10 @@ function window:resize(w, h)
   -- the reply's fields whatever they were, and a refusal has none.
   if not reply.ok then return false, reply.error end
 
-  self.w, self.h = reply.w, reply.h
-  self.root:resize(reply.w, reply.h)
+  self.w, self.h = reply.w, reply.h - (self.head_h or 0)
+  self.frame:resize(reply.w, reply.h)
 
-  return true, reply.w, reply.h
+  return true, self.w, self.h
 end
 
 --
@@ -6416,7 +6449,7 @@ end
 -- Out of the window, with the keyboard kept on whatever it was on - or on
 -- the first thing that takes it, when it was on what went.
 function window:remove(child)
-  local had = self.root:focusables()[self.focus]
+  local had = self.frame:focusables()[self.focus]
   local gone = self.root:remove(child)
 
   for i, t in ipairs(self.ticking or {}) do
@@ -6485,7 +6518,7 @@ end
 -- is a question worth being able to ask rather than a silent nothing.
 --
 function window:focus_on(view)
-  for i, v in ipairs(self.root:focusables()) do
+  for i, v in ipairs(self.frame:focusables()) do
     if v == view then
       self.focus = i
       return true
@@ -6579,7 +6612,7 @@ end
 -- sees one. A field's border and a caret are not rings and do not wait.
 --
 local function apply_focus(self)
-  local list = self.root:focusables()
+  local list = self.frame:focusables()
 
   for i, v in ipairs(list) do
     v.focused = (i == self.focus)
@@ -7158,7 +7191,7 @@ function window:paint()
   apply_focus(self)
 
   local g = new_gc()
-  g.cw, g.ch = self.root.w, self.root.h
+  g.cw, g.ch = self.frame.w, self.frame.h
 
   --
   -- **The clear, which a window whose views cover it does not need.**
@@ -7180,11 +7213,11 @@ function window:paint()
   --
   if self.background ~= false then
     g.ops[#g.ops + 1] = { op = "fill", x = 0, y = 0,
-                          w = self.root.w, h = self.root.h,
+                          w = self.frame.w, h = self.frame.h,
                           color = self.background or theme.window }
   end
 
-  self.root:paint(g)
+  self.frame:paint(g)
 
   local at = 1
 
@@ -7344,7 +7377,7 @@ local function dispatch_context(self, ev)
   -- where in the window it sits, and a window can answer everywhere without
   -- giving every widget a handler.
   --
-  local target, lx, ly = self.root:hit(ev.x, ev.y)
+  local target, lx, ly = self.frame:hit(ev.x, ev.y)
 
   if target and target.on_context then
     return target.on_context(target, lx, ly) and true or false
@@ -7363,7 +7396,7 @@ local function dispatch_mouse(self, ev)
   end
 
   if ev.action == "press" then
-    local target, lx, ly = self.root:hit(ev.x, ev.y)
+    local target, lx, ly = self.frame:hit(ev.x, ev.y)
 
     self.grab = nil
 
@@ -7385,7 +7418,7 @@ local function dispatch_mouse(self, ev)
     self.keyed = false
 
     if target and target.focusable then
-      for i, v in ipairs(self.root:focusables()) do
+      for i, v in ipairs(self.frame:focusables()) do
         if v == target then
           self.focus = i
           break
@@ -7440,7 +7473,7 @@ ui.WHEEL_ROWS = 3               -- rows a notch, everywhere the kit scrolls
 
 local function dispatch_wheel(self, ev)
   local path = {}
-  local v, x, y = self.root, ev.x or 0, ev.y or 0
+  local v, x, y = self.frame, ev.x or 0, ev.y or 0
 
   while v do
     path[#path + 1] = { v, x, y }
@@ -7474,7 +7507,7 @@ local function dispatch_wheel(self, ev)
 end
 
 local function dispatch_drop(self, ev)
-  local target, lx, ly = self.root:hit(ev.x, ev.y)
+  local target, lx, ly = self.frame:hit(ev.x, ev.y)
 
   while target do
     if target.drop then
@@ -7515,6 +7548,11 @@ end
 --
 function window:retitle(text)
   self.title = tostring(text)
+
+  if self.auto_header then
+    self.auto_header.title = self.title
+    self.dirty = true
+  end
 
   return fs.send("/Running/wm", { type = "retitle", window = self.handle,
                               title = self.title })
@@ -7700,15 +7738,15 @@ function window:run()
         -- caught it. Found writing `window:resize`, where the same two
         -- fields are taken from the reply.
         --
-        self.w, self.h = ev.w, ev.h
+        self.w, self.h = ev.w, ev.h - (self.head_h or 0)
 
         -- A window that draws its own pixels gets a region the new size
         -- first, so what it draws next is drawn at it (6zz e).
         if self.region then self:take_size(ev.w, ev.h) end
 
-        self.root:resize(ev.w, ev.h)
+        self.frame:resize(ev.w, ev.h)
 
-        if self.on_resize then pcall(self.on_resize, self, ev.w, ev.h) end
+        if self.on_resize then pcall(self.on_resize, self, self.w, self.h) end
 
         changed = true
       elseif ev.type == "moved" then

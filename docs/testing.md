@@ -20844,3 +20844,42 @@ belongs in the region and never a string the file's size.
 `run_ide.py` (diskless, so `/Home` in memory), 50 checks: three megabytes
 read whole into a region, its last bytes read back - 0.8 s under TCG.
 **Control**: without the fallback, "stopped after 0 of 3145728 bytes".
+
+## 18.445 One window chrome, step 1: every ordinary window's header is its title bar
+
+Agreed 7 October (`roadmap.md`; Diego: "we need to get rid of the old window
+chrome as we are staying with the new one only", "that does away with the
+extra titlebar"), after Tracker's Connect to Server wore the old tab and frame
+on the M700.
+
+- **The kit gives a header to a window that draws none** (`ui.window`): an
+  outer frame holds the kit's `ui.header{ title_bar = true }` and, under it,
+  `root`, where the application lays itself out as before at the size it
+  asked; the window manager is asked for that plus the header. Eighteen
+  windows changed chrome by it - Connect to Server, Open and Save, About,
+  Calculator, Music, the tutorial's lessons and the rest.
+- **The look no longer decides** (`OUT.headed`): the twenty-three windows
+  with a header of their own were headed only in Plex and Plex Night; in
+  every look now.
+- **A window that never drew still has a close box** (`OUT.lights_at`): the
+  three where every header puts them until it says.
+- Connect to Server's keyring sentence wraps; the coordinates programs print
+  for the harnesses are the window's, under the header; Launchpad's menu
+  under it.
+- **The harnesses found windows by the colour of their tabs** - counting,
+  waiting for and clicking them. They read the window manager's word now
+  (`started`, `windows_on`, `KIT_HEAD`), and the checks of the old chrome
+  are checks of the new: Tracker and Preferences headed in the harness's
+  look, the Calculator given the kit's header, the gallery dragged by its
+  band, a rename heard by the window manager.
+
+Also landed with it: **a screenshot is said as a notification**, which opens
+the picture when pressed (`run_dock.py`); and **VNC and Telnet connections
+are said** - "Screen shared with ...", "Command line opened from ..." - once
+an address a session (`netprogram.tell_connected`, ten quiet minutes), as
+banners (`run_servers.py`, `run_notify.py`, which clears the session's own
+before counting).
+
+The gate: 101 of 102 in 9:21, the one `arm-display-4`'s desktop-icon read
+caught mid-redraw (row 220 for 241, as 18.219 records), 79 of 79 alone.
+Direct windows (step 2) and the window manager's old chrome (step 3) next.

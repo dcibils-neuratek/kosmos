@@ -587,6 +587,18 @@ local function take(v)
       v.stage = "normal"
       net:note(ipv4.text(v.from) .. "  connected")
       publish()
+
+      --
+      -- **Said to whoever is at the machine** (Diego, 7 October: "vnc server
+      -- should notify when a new connection is made from a client so the
+      -- user knows someone connected"): who, and whether they may use the
+      -- keyboard and the pointer or only look - once a session, as a banner;
+      -- what stays while they are connected is the Deskbar's status icon
+      -- (`roadmap.md`, 7d).
+      --
+      net:tell_connected(v.from, "Screen shared with " .. ipv4.text(v.from),
+                         v.control and "by VNC - it can use the keyboard and the pointer"
+                                   or "by VNC - it can see the screen, not use it")
     else
       if #inb < 1 then return true end
 

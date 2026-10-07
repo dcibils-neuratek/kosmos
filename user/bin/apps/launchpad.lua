@@ -318,7 +318,8 @@ local function grid_mode(ax, ay)
       end }
     end
 
-    win:open_menu(win.origin_x + x, win.origin_y + y, rows)
+    -- `y` is in the window's content, under the kit's header.
+    win:open_menu(win.origin_x + x, win.origin_y + (win.head_h or 0) + y, rows)
     return true
   end
 

@@ -34,6 +34,11 @@ import time
 import wave
 import zlib
 
+# **The kit's header** (one window chrome, 7 October): a window that draws no
+# header of its own is given one, and what it draws starts this far below the
+# top the window manager says. `run_screenshot.KIT_HEAD` is the same number.
+KIT_HEAD = 46
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 LUA = os.path.join(os.path.dirname(HERE), "build", "host", "lua")
 RATE, SECONDS = 44100, 6
@@ -757,6 +762,7 @@ def main():
                           + guest.seen[mark:][-1200:])
 
         wx, wy, ww, wh = (int(v) for v in where.groups())
+        wy, wh = wy + KIT_HEAD, wh - KIT_HEAD      # under the kit's header
         time.sleep(2.0)
 
         width, height, _ = parse_ppm(guest.screendump())
@@ -1105,7 +1111,8 @@ def main():
             found = re.search(r"wm: window Cover at (\d+),(\d+) (\d+)x(\d+)",
                               guest.seen)
             if found:
-                placed = tuple(int(v) for v in found.groups())
+                fx, fy, fw, fh = (int(v) for v in found.groups())
+                placed = (fx, fy + KIT_HEAD, fw, fh - KIT_HEAD)   # under the kit's header
             time.sleep(0.3)
 
         said = [l.strip() for l in guest.seen[mark:].splitlines()
@@ -1198,7 +1205,8 @@ def main():
             found = re.search(r"wm: window Music at (\d+),(\d+) (\d+)x(\d+)",
                               guest.seen)
             if found:
-                placed = tuple(int(v) for v in found.groups())
+                fx, fy, fw, fh = (int(v) for v in found.groups())
+                placed = (fx, fy + KIT_HEAD, fw, fh - KIT_HEAD)   # under the kit's header
             time.sleep(0.3)
 
         if placed is None:

@@ -416,6 +416,13 @@ local function open(conn, from)
   net:note(ipv4.text(from) .. "  connected")
   publish()
 
+  -- Said to whoever is at the machine, once a session (`netprogram`'s
+  -- `tell_connected`). A banner rather than an alert kept until closed:
+  -- what stays for as long as somebody is connected is the Deskbar's status
+  -- icon (`roadmap.md`, 7d), and a banner says when it began.
+  net:tell_connected(from, "Command line opened from " .. ipv4.text(from),
+                     "by Telnet - it can run programs on this machine")
+
   -- What machine this is, as a Terminal starts; the prompt comes when it ends.
   launch(s, "neofetch")
 end

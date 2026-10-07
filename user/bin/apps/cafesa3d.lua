@@ -3629,8 +3629,11 @@ function FILE.panel(kind, spec)
 
   if not chooser then return false end
 
+  -- Where what the panel draws begins, under the header the kit gives it
+  -- (one window chrome, 7 October), for the harness that clicks in it.
   print(("cafesa3d: %s panel at %d,%d"):format(kind, chooser.origin_x or 0,
-                                               chooser.origin_y or 0))
+                                               (chooser.origin_y or 0)
+                                               + (chooser.head_h or 0)))
   chooser:run()
   return true
 end

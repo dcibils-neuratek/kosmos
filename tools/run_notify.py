@@ -145,6 +145,14 @@ def main():
                            ("stubborn", STUBBORN)):
             session.put(text.encode(), "/Temporary/%s.lua" % name)
 
+        # This very session is said as a notification - "Command line opened
+        # from 10.0.2.2", since 7 October - which is not one of the five this
+        # suite counts: waited for, cleared, and its banner let go before the
+        # first step looks at the screen.
+        maybe('notify: 1 "Command line opened from', "the session said", 0)
+        session.run("notify --clear")
+        time.sleep(6)
+
         width, height, _ = R.parse_ppm(guest.screendump())
         room = session.run("/Temporary/room.lua").decode(errors="replace")
         m = re.search(r"ROOM (\d+) (\d+) (\d+) (\d+)", room)
@@ -160,7 +168,16 @@ def main():
         mark = len(guest.seen)
         said["post"] = session.run("notify Render finished | Kitchen.c3d, 1920 by 1080, "
                                    "256 samples, in 4 min 12 s.").decode(errors="replace")
-        said["banner"] = maybe("notifications: banner 1, Render finished", "the banner", mark)
+        # Whatever number it is given: the session's own notice came first.
+        deadline = time.monotonic() + 30
+        said["banner"] = None
+
+        while said["banner"] is None and time.monotonic() < deadline:
+            guest._read_available()
+            m = re.search(r"notifications: banner \d+, Render finished(.*)\n",
+                          guest.seen[mark:])
+            said["banner"] = m.group(1) if m else None
+            time.sleep(0.2)
         place = banner_place(mark)
         said["place"] = place
         time.sleep(0.5)
@@ -269,13 +286,17 @@ def main():
         mark = len(guest.seen)
         session.run("/Temporary/launch.lua /Temporary/stubborn.lua")
         stubborn = maybe("wm: window Stubborn at ", "a window that will not listen", mark)
-        m = re.match(r"(\d+),(\d+) (\d+)x(\d+), a tab (\d+) wide", stubborn or "")
+        three = maybe("wm: Stubborn's three at ", "the three in its header", mark)
+        m = re.match(r"(\d+),(\d+) ", stubborn or "")
+        n = re.match(r"(\d+),(\d+)", three or "")
 
-        if m:
-            sx, sy, _, _, tab = (int(v) for v in m.groups())
-            # Its close box: the last of the three at the tab's right end,
-            # 28 in from the frame's edge, the frame 4 out and the tab 26 up.
-            click(sx - 4 + tab - 28 + 9, sy - 26 + 13, width, height)
+        if m and n:
+            sx, sy = (int(v) for v in m.groups())
+            lx, ly = (int(v) for v in n.groups())
+            # Its close box: the red, last of the three in its header, which
+            # is its title bar (one window chrome, 7 October) - 44 past where
+            # the window manager says the three begin, and 9 into it.
+            click(sx + lx + 44 + 9, sy + ly + 9, width, height)
 
         said["ended"] = maybe('"Stubborn stopped answering", an alert, from /Kosmos/Programs/wm.lua',
                               "the window manager ending it", mark)

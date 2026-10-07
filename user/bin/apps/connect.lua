@@ -189,8 +189,11 @@ function place()
   y = y + account.h + 12
   remember.y = y
   y = y + remember.h + 4
+  -- The keyring's sentence wrapped to the room beside the box, which it
+  -- ran past on one line (Diego's screenshot, 7 October).
   layout.keyring = y
-  y = y + lh + 12
+  layout.keyring_lines = ui.wrapped(KEYRING, W - 2 * PAD - 26)
+  y = y + #layout.keyring_lines * lh + 12
 
   go.x, go.y = W - PAD - go.w, H - PAD - go.h
   cancel.x, cancel.y = go.x - 10 - cancel.w, go.y
@@ -200,12 +203,13 @@ function place()
   -- types into them by the keyboard and reads the password's from the
   -- screen - said again whenever what the server said moves them.
   --
+  local top = win.head_h or 0
   local where = ("connect: address at %d,%d, name at %d,%d, password at %d,%d %dx%d, "
                  .. "connect at %d,%d"):format(
-                address.x + 10, address.y + address.h // 2,
-                account.x + 10, account.y + account.h // 2,
-                password.x, password.y, password.w, password.h,
-                go.x + go.w // 2, go.y + go.h // 2)
+                address.x + 10, top + address.y + address.h // 2,
+                account.x + 10, top + account.y + account.h // 2,
+                password.x, top + password.y, password.w, password.h,
+                go.x + go.w // 2, top + go.y + go.h // 2)
 
   if where ~= layout.told then
     layout.told = where
@@ -290,8 +294,13 @@ function body:draw(g)
   local server = netshares.split(address.text)
   local who = server and remembered[server]
 
-  dim(PAD + 26, layout.keyring, who and ("Remembered: signs in as " .. who
-                                         .. " with nothing to type.") or KEYRING)
+  local lines = who and ui.wrapped("Remembered: signs in as " .. who
+                                  .. " with nothing to type.", W - 2 * PAD - 26)
+                or layout.keyring_lines or { KEYRING }
+
+  for i, line in ipairs(lines) do
+    dim(PAD + 26, layout.keyring + (i - 1) * gfx.height(), line)
+  end
 end
 
 --------------------------------------------------------------------------
@@ -394,7 +403,8 @@ local function show_choices(list)
 
   -- Where each is, for the display harness, which chooses one.
   for _, b in ipairs(choices) do
-    print(("connect: share %s at %d,%d"):format(b.text, b.x + b.w // 2, b.y + b.h // 2))
+    print(("connect: share %s at %d,%d"):format(b.text, b.x + b.w // 2,
+                                                (win.head_h or 0) + b.y + b.h // 2))
   end
 end
 

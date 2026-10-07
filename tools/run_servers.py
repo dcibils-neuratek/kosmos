@@ -251,6 +251,18 @@ def look(guest, telnet, vnc, seen, fails):
     if viewer.security != 1:
         fails.append("with no password the security type was %d, not none" % viewer.security)
 
+    # And the person at the machine is told someone is looking.
+    told = r'notify: \d+ "Screen shared with [\d.]+" from /Kosmos/Programs/vncd\.lua'
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline and not re.search(told, guest.seen):
+        guest._read_available()
+        time.sleep(0.3)
+
+    if not re.search(told, guest.seen):
+        fails.append("a viewer connecting was not said as a notification")
+
+
     if (viewer.width, viewer.height) != (width, height):
         fails.append("the viewer was told %dx%d and the display is %dx%d"
                      % (viewer.width, viewer.height, width, height))
@@ -387,6 +399,17 @@ def look(guest, telnet, vnc, seen, fails):
                      "the screen" % (100 * good / 64000.0))
 
     zv.close()
+
+    # A command line from elsewhere, said once a session: this suite has
+    # opened several from the same address by now, and only the first is a
+    # banner (`netprogram`'s `tell_connected`).
+    lines = re.findall(r'notify: \d+ "Command line opened from [\d.]+" '
+                       r'from /Kosmos/Programs/telnetd\.lua', guest.seen)
+
+    if len(lines) != 1:
+        fails.append("Telnet connections from one address were said %d times, "
+                     "not once: %r" % (len(lines), [l for l in guest.seen.splitlines()
+                                                    if "notify" in l or "telnetd:" in l][-12:]))
 
     # With no control kept, a viewer only looks: its click goes nowhere.
     viewer.pointer(211, 311, 1)
@@ -637,8 +660,17 @@ def main():
         session.run("open /Temporary/stripes.lua")
         said["stripes"] = guest.wait_for_line("STRIPES ", "the probe's size")
         placed = guest.wait_for_line("wm: window Stripes at ", "the probe's window")
+        # The viewer's banner, "Screen shared with ...", lies over the
+        # probe's right end for its five seconds; looked at after it.
+        time.sleep(6)
         width, height, px = R.parse_ppm(guest.screendump())
         said["upright"] = upright(width, px, placed)
+
+        if said["upright"][0]:
+            # The picture kept, since it is the evidence.
+            os.makedirs(os.path.join(ROOT, "build", "servers"), exist_ok=True)
+            V.png(os.path.join(ROOT, "build", "servers", "stripes.png"), width, height,
+                  bytes(px))
 
         # **Groove resized by its grip** (Diego, 3 October: "groove needs to
         # be resizable", "like we did with the browser"): opened at 700 by
@@ -766,7 +798,7 @@ def main():
         if line not in guest.seen:
             fails.append("the log never said %r" % line)
 
-    checks = 30
+    checks = 32
 
     if fails:
         print("FAIL: %d of %d checks on the Servers window:" % (len(fails), checks))

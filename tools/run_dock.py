@@ -544,6 +544,12 @@ def main():
             time.sleep(1.2)                # another second, another name
 
         said["shots"] = shots
+        # Each said as a notification, which opens the picture when pressed.
+        guest._read_available()
+        said["shot notes"] = len(re.findall(
+            r'notify: \d+ "Screenshot saved" from /Kosmos/Programs/screenshot\.lua',
+            guest.seen))
+        said["shot opens"] = session.run("notify --list").decode(errors="replace")
         first = re.match(r"(\S+), (\d+)x(\d+), (\d+) bytes", shots[0][1] or "")
 
         if first:
@@ -771,6 +777,15 @@ def main():
                                     % (width, height), line):
             fails.append("%s did not save a picture of the %dx%d screen into "
                          "Captures: %r" % (keys_, width, height, line))
+
+    if said.get("shot notes") != 3:
+        fails.append("three screenshots were not said as three notifications: %r"
+                     % said.get("shot notes"))
+
+    if not re.search(r"Screenshot saved\s+\S.*-> /Home/Captures/screenshot-\d{4}-\d\d-\d\d-\d{6}\.png",
+                     said.get("shot opens", "")):
+        fails.append("a screenshot's notification does not open its picture: %r"
+                     % said.get("shot opens", "")[-300:])
 
     png = said.get("png") or b""
 

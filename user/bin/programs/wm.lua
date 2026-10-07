@@ -1851,11 +1851,13 @@ end
 
 --
 -- **Whether this window's header is its title bar**: it has one the kit
--- can put the three in (`win.can_head`), and the look says windows like it
--- wear no bar (`title_bars = no`, `theme.lua`). True or nil.
+-- can put the three in (`win.can_head`). True or nil. It used to be the
+-- look's to say as well (`title_bars = no`), and four looks kept the old
+-- tab above every window; there is one chrome now (`roadmap.md`, agreed 7
+-- October), and the kit gives every ordinary window a header.
 --
 function OUT.headed(win)
-  return (win.can_head and theme.title_bars == false) and true or nil
+  return win.can_head and true or nil
 end
 
 --
@@ -1910,6 +1912,23 @@ end
 -- pointer, because those two agreeing by coincidence is how a control ends
 -- up drawn in one place and clickable in another.
 --
+--
+-- **Where a headed window's three are**: where its header said (`handlers.
+-- lights`), or until it has, where every header puts them - 12 in from the
+-- right and centred in the 46 of the band. Nowhere at all was the answer
+-- before, and a window that stopped before it first drew had no close box:
+-- with the old chrome gone (one window chrome, 7 October) the window
+-- manager's own bar no longer stood in for it.
+--
+function OUT.lights_at(win)
+  if win.lights_at then return win.lights_at end
+
+  local pct = win.pct or 100
+
+  return { x = win.w - scale.px(12, pct) - OUT.RUN,
+           y = (scale.px(46, pct) - 1 - OUT.BOX) // 2 }
+end
+
 local function boxes_x(win)
   local fx = frame_of(win)
 
@@ -1936,11 +1955,11 @@ local function boxes_x(win)
   -- and the last is `BOX` wide, with the far edge `MARGIN` from the frame.
   --
   -- **On a window with no tab, where its header left room for them**
-  -- (`handlers.lights`), and nowhere until it has said: nil, which every
-  -- caller reads as "no three here".
+  -- (`handlers.lights`), and where every header leaves it until it has said
+  -- (`OUT.lights_at`).
   --
   if win.headed then
-    return win.lights_at and win.x + win.lights_at.x or nil
+    return win.x + OUT.lights_at(win).x
   end
 
   return fx + tabs.width(win) - OUT.MARGIN - OUT.RUN
@@ -1992,7 +2011,7 @@ function OUT.boxes_rect(win)
   if not bx then return nil end
 
   if win.headed then
-    return bx, win.y + win.lights_at.y, OUT.RUN, OUT.BOX
+    return bx, win.y + OUT.lights_at(win).y, OUT.RUN, OUT.BOX
   end
 
   local _, fy = frame_of(win)

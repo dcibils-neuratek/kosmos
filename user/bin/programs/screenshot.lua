@@ -62,3 +62,16 @@ if not ok then
 end
 
 print(("screenshot: %s, %dx%d, %d bytes"):format(path, screen.w, screen.h, #png))
+
+--
+-- **Said as a notification, which opens it** (Diego, 7 October: "can the
+-- grab screenshot function notify the user a screenshot is ready?",
+-- "clicking the notification opens the screenshot in image viewer?"). Posted
+-- after the picture is taken, so its banner is never in it; a press on the
+-- banner opens the file in whatever opens a PNG - Photo Viewer.
+--
+local notify = use("/Kosmos/Libraries/notify.lua")
+local name = path:match("([^/]+)$") or path
+
+notify.post{ title = "Screenshot saved", body = name .. " in Captures - press to open it",
+             open = path }

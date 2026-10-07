@@ -872,6 +872,40 @@ def settle(guest, predicate, what, seconds=20):
     raise Failure(f"waited {seconds}s and {what}")
 
 
+# **The kit's header**, which every ordinary window without one of its own is
+# given (one window chrome, 7 October): what it draws starts this far below
+# the top the window manager says, at the harness's scale.
+KIT_HEAD = 46
+
+# An ordinary window, as the window manager says it opened.
+OPENED = re.compile(r"wm: window .+? at -?\d+,-?\d+ \d+x\d+")
+
+
+def windows_on(guest):
+    """How many ordinary windows are open, by the window manager's word:
+    those it said it opened since it last started, less those it said it
+    closed. Counting title bars on the screen was how this was done until
+    there were none to count (one window chrome, 7 October)."""
+    guest._read_available()
+    start = guest.seen.rfind("wm: faces ")
+    tail = guest.seen[start:] if start >= 0 else guest.seen
+    events = []
+
+    for m in re.finditer(r"wm: window (.+?) at -?\d+,-?\d+ \d+x\d+"
+                         r"|wm: closed (.+)", tail):
+        events.append(m)
+
+    open_ = []
+
+    for m in sorted(events, key=lambda m: m.start()):
+        if m.group(1) is not None:
+            open_.append(m.group(1))
+        elif m.group(2).strip() in open_:
+            open_.remove(m.group(2).strip())
+
+    return len(open_)
+
+
 def started(guest, windows=1, seconds=25):
     """Waits until `windows` window(s) are on screen, and returns the picture.
 
@@ -887,12 +921,32 @@ def started(guest, windows=1, seconds=25):
     returns as soon as it is true, and it says what it was waiting for when
     it never becomes true.
     """
-    return settle(
-        guest,
-        lambda w, h, px: (lambda n: n if n >= windows else None)(
-            count_windows(w, h, px)),
-        f"waited {seconds}s and {windows} window(s) never appeared.",
-        seconds=seconds)
+    #
+    # **By the window manager's word, not by the colour of a tab** (7
+    # October): every window's header is its title bar now (`roadmap.md`,
+    # one window chrome), so there is no tab to count. An ordinary window
+    # says itself as it opens - `wm: window Calculator at 240,140 300x414,
+    # its header the title bar` - and these are counted from the window
+    # manager's latest start; the picture is taken once there are enough
+    # and the screen has been drawn since.
+    #
+    def opened():
+        guest._read_available()
+        start = guest.seen.rfind("wm: faces ")
+        tail = guest.seen[start:] if start >= 0 else guest.seen
+
+        return len(OPENED.findall(tail))
+
+    deadline = time.monotonic() + seconds
+
+    while time.monotonic() < deadline:
+        if opened() >= windows:
+            time.sleep(0.6)
+            return parse_ppm(guest.screendump())
+
+        time.sleep(0.3)
+
+    raise Failure(f"waited {seconds}s and {windows} window(s) never appeared.")
 
 
 def check_boot_screen(geometry, data):
@@ -1641,7 +1695,7 @@ def check_context(guest):
         'function win:on_context(x, y) '
         'print("ctx" .. "-probe: context at " .. x .. "," .. y) '
         'return true end '
-        'print("ctx" .. "-probe: at " .. win.origin_x .. "," .. win.origin_y) '
+        'print("ctx" .. "-probe: at " .. win.origin_x .. "," .. (win.origin_y + (win.head_h or 0))) '
         'win:run()'
     )
 
@@ -1807,7 +1861,7 @@ def check_preferences(guest):
     while time.monotonic() < deadline:
         width, height, px = picture("when it opened")
 
-        if count_windows(width, height, px) >= 1:
+        if windows_on(guest) >= 1:
             break
 
         time.sleep(0.4)
@@ -1815,17 +1869,19 @@ def check_preferences(guest):
         raise Failure("Preferences never put a window on the screen.")
 
 
-    # Where the window is: its title bar is the only tab-coloured run, and
-    # the application asked for 150,100 so this is a check as much as a
-    # measurement - a window that opened somewhere else would read nothing.
-    found = find_colour_anywhere(width, height, px, TAB)
+    # Where the window is: where the window manager says it put it. This
+    # found the only tab-coloured run on the screen until there were no tabs
+    # (one window chrome, 7 October); the region below is the one it read
+    # then - its header's band and the page under it - measured from the
+    # tab's corner, which was 4 left of the window and 26 above it.
+    placed = re.search(r"wm: window Preferences at (-?\d+),(-?\d+) ", guest.seen)
 
     check = []
 
-    if found is None:
-        raise Failure("Preferences opened no window with a title bar on it.")
+    if placed is None:
+        raise Failure("Preferences opened no window the window manager said.")
 
-    wx, wy = found
+    wx, wy = int(placed.group(1)) - 4, int(placed.group(2)) - 26
 
     # The content area: right of the sidebar, below the title bar. Numbers
     # from the application's own SIDE and the window's size, kept here so a
@@ -2507,6 +2563,8 @@ def check_text_size(guest):
                       + guest.seen[mark:][-900:])
 
     wx, wy, ww, wh = placed
+    # What it draws begins under the kit's header (one chrome, 7 October).
+    wy, wh = wy + KIT_HEAD, wh - KIT_HEAD
     time.sleep(2.0)
     width, height, px = parse_ppm(guest.screendump())
 
@@ -2668,6 +2726,7 @@ def check_window_resize(guest):
                       + guest.seen[mark:][-900:])
 
     wx, wy, ww, wh = placed
+    wy, wh = wy + KIT_HEAD, wh - KIT_HEAD       # under the kit's header
     time.sleep(1.5)
 
     def block(px, width, height):
@@ -2976,60 +3035,32 @@ def check_scripting(guest):
     the wrong text would have passed the old check.
     """
 
-    def title_row(width, height, px):
-        """The pixels of the tab's title row, as bytes.
-
-        One row through the middle of the tab, from past the close box to
-        the width the title could reach. Compared for difference, not
-        matched against an expected picture: what has to be true is that
-        renaming changed what is drawn there.
-        """
-        top = tab_top(width, height, px)
-
-        if top is None:
-            return None
-
-        y = top + 10                       # inside the tab, on the glyphs
-        row = []
-
-        for x in range(0, min(width, 700)):
-            at = (y * width + x) * 3
-            row.append(px[at:at + 3])
-
-        return b"".join(bytes(v) for v in row)
+    #
+    # **Renamed, by the window manager's word** (one window chrome, 7
+    # October): the title was read off the tab, and there is no tab - the
+    # gallery's header says "Widgets", its own words, whatever the window is
+    # called. What a rename reaches is the window manager, which shows the
+    # name in the Deskbar and says so in the log.
+    #
     guest.type("wm gallery")
     started(guest)
-
-    width, height, px = parse_ppm(guest.screendump())
-    before = title_row(width, height, px)
-
-    if before is None:
-        raise Failure(
-            "no window tab on screen after `wm gallery`, so there is "
-            "nothing here to rename."
-        )
-
-    # Back to the shell, then start both together.
     guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
     time.sleep(2)
 
+    mark = len(guest.seen)
     guest.type("wm gallery,setprop:/Running/gallery/title=renamed by another one")
     started(guest)
 
-    width, height, px = parse_ppm(guest.screendump())
-    after = title_row(width, height, px)
-
-    if after is None:
-        raise Failure("no tab on screen at all after the second start.")
-
-    if after == before:
+    try:
+        guest.wait_for_line("wm: window gallery is now renamed by another one",
+                            "the window to be renamed by another program", mark)
+    except Failure:
         raise Failure(
-            "the title drawn on the tab is identical before and after "
-            "something renamed the window. Either the registry did not hand "
-            "over the window's endpoint, or the property was stored "
-            "somewhere that is not the window."
-        )
+            "the window manager never heard the window renamed by another "
+            "program. Either the registry did not hand over the window's "
+            "endpoint, or the property was stored somewhere that is not the "
+            "window.")
 
     # And hand the screen back for the phase after this one.
     mark = len(guest.seen)
@@ -3312,7 +3343,7 @@ def check_idle(guest):
 
     width, height, px = parse_ppm(guest.screendump())
 
-    if count_windows(width, height, px) < 1:
+    if windows_on(guest) < 1:
         raise Failure(
             "the monitor did not open a window, so there is no meter to "
             "read here."
@@ -4170,8 +4201,8 @@ def check_no_title_bar(guest):
     a change of look reaching an open window - and dragged by its sidebar's
     head; and Processes, Log View, the Terminal and Kosmos Write opened in
     Plex, each with its header as its title bar and the three in place -
-    Write's tools under its band rather than at the top - beside the
-    Calculator, which has no header and keeps its tab.
+    Write's tools under its band rather than at the top - and the
+    Calculator, which draws no header and is given the kit's.
 
     And the control: the same Tracker in the harness's own look, which
     wears title bars, has its tab, is told of no three, and a press on the
@@ -4337,25 +4368,23 @@ def check_no_title_bar(guest):
         guest.type(appearance() + ' print("nochrome" .. "-reset")')
         guest.wait_for("nochrome-reset", "put the harness's appearance back")
 
-    # The control: a look with title bars.
+    # **And the harness's own look, which used to give it a tab.** One
+    # window chrome since 7 October (`roadmap.md`; Diego: "we need to get rid
+    # of the old window chrome as we are staying with the new one only"):
+    # Tracker's header is its title bar in every look, dragged by it.
     try:
         mark, line, x, y, w, h, bx, by = open_tracker(
             "Tracker to open in the harness's look")
 
-        if not re.search(r", a tab \d+ wide", line):
-            raise Failure("Tracker in a look with title bars has no tab: %r"
+        if "its header the title bar" not in line:
+            raise Failure("Tracker in the harness's look wears the old tab: %r"
                           % line)
 
         time.sleep(2.0)
-        width, height, _ = parse_ppm(guest.screendump())
-        held = len(guest.seen)
         press_drag(x + bx, y + by, 120, 80)
-        time.sleep(1.5)
-        told = guest.seen[mark:]
-
-        if "moved Tracker by its header" in told or "Tracker's three" in told:
-            raise Failure("Tracker wears a title bar and its header still "
-                          "moved it, or took the three:\n%s" % told[-600:])
+        guest.wait_for_line("wm: moved Tracker by its header",
+                            "Tracker dragged by its header in the harness's look",
+                            mark)
     finally:
         stop()
 
@@ -4379,10 +4408,10 @@ def check_no_title_bar(guest):
 
     #
     # **A look chosen with a window open**: Preferences opens in the
-    # harness's look, wearing its tab, and chooses Plex - its title bar goes
-    # and the three are placed in its header, which is the change of look
-    # reaching a window that is already there. Then it is dragged by its
-    # sidebar's head, the other half of its top band.
+    # harness's look with its header for a title bar, as every window has
+    # since 7 October, and chooses Plex - which leaves the chrome as it is.
+    # Then it is dragged by its sidebar's head, the other half of its top
+    # band.
     #
     try:
         mark = len(guest.seen)
@@ -4390,13 +4419,12 @@ def check_no_title_bar(guest):
         line = guest.wait_for_line("wm: window Preferences at ",
                                    "Preferences to open", mark)
 
-        if not re.search(r", a tab \d+ wide", line):
-            raise Failure("Preferences opened in the harness's look with no "
-                          "tab: %r" % line)
+        # One window chrome (7 October): its header is its title bar in the
+        # harness's look too, and choosing Plex changes nothing of that.
+        if "its header the title bar" not in line:
+            raise Failure("Preferences opened in the harness's look wearing "
+                          "the old tab: %r" % line)
 
-        guest.wait_for_line("wm: Preferences has its header for a title bar",
-                            "choosing Plex to take Preferences' title bar off",
-                            mark)
         _, x, y, w, h = placed("Preferences", mark)
 
         time.sleep(1.5)
@@ -4447,12 +4475,13 @@ def check_no_title_bar(guest):
             raise Failure("Write's View tool is at %s in Plex - wanted 12,54, "
                           "under the header's band" % tool)
 
-        line = guest.wait_for_line("wm: window Calculator at ",
-                                   "the Calculator to open", mark)
+        # The Calculator draws no header of its own; the kit gives it one,
+        # and that is its title bar, with the three placed in it.
+        line, _, _, _, _ = placed("Calculator", mark)
 
-        if not re.search(r", a tab \d+ wide", line):
-            raise Failure("the Calculator has no header and lost its title "
-                          "bar in Plex: %r" % line)
+        if "its header the title bar" not in line:
+            raise Failure("the Calculator, with no header of its own, was "
+                          "not given the kit's: %r" % line)
     finally:
         stop()
         guest.type(appearance() + ' print("nochrome" .. "-done")')
@@ -5881,7 +5910,9 @@ def check_scale(guest):
             return None
 
         before = bar_corner()
-        grab_x, grab_y = gx + 300, gy - 20
+        # The header's band, which is the title bar (one chrome, 7 October):
+        # 20 down into it, where the tab used to be 20 above.
+        grab_x, grab_y = gx + 300, gy + 20
         guest.mouse_to(*_to_tablet(grab_x, grab_y, width, height))
         time.sleep(0.3)
         guest.mouse_button(True)
@@ -7202,9 +7233,16 @@ def check_log_view(guest):
         # window that opens at another size is still clicked in the right
         # place.
         #
+        # **And left of the three** (one window chrome, 7 October): the
+        # header is the title bar in every look, so the three take its right
+        # end and the dots sit 10 left of them - where the window manager says
+        # it put the three, rather than more arithmetic on padding.
         if pitch:
+            three = re.search(r"wm: Log's three at (\d+),", guest.seen)
+            dots_x = (log[0] + int(three.group(1)) - 10 - 13) if three \
+                else (log[0] + log[2] - 23)
             opened = len(guest.seen)
-            click(log[0] + log[2] - 23, log[1] + 22)
+            click(dots_x, log[1] + 22)
 
             where = None
             deadline = time.monotonic() + 10
@@ -8226,7 +8264,9 @@ def check_clipboard(guest):
         lift = min(160 - below, ry - (STRIP_H + 26 + 10))
 
         if lift > 0:
-            gx, gy = rx + rw // 2, ry - 13
+            # By its header, which is its title bar (one chrome, 7 October):
+            # 20 into the band, where the tab was 13 above it.
+            gx, gy = rx + rw // 2, ry + 20
             guest.mouse_to(*_to_tablet(gx, gy, width, height))
             time.sleep(0.3)
             guest.mouse_button(True)
@@ -8383,14 +8423,14 @@ def check_deskbar(guest):
     # So: wait for two readings the same, and use that.
     #
     width, height, px = parse_ppm(guest.screendump())
-    before = count_windows(width, height, px, STRIP_H)
+    before = windows_on(guest)
 
     settled = time.monotonic() + 25
 
     while time.monotonic() < settled:
         time.sleep(1.5)
         width, height, px = parse_ppm(guest.screendump())
-        again = count_windows(width, height, px, STRIP_H)
+        again = windows_on(guest)
 
         if again == before:
             break
@@ -9146,12 +9186,15 @@ def check_focus_shown(guest):
     # `boxes_x` puts 72 pixels in from the *tab's* right edge -
     # the whole frame's with a bar across it, the title's end with a BeOS
     # tab, whose width the window manager says as it places the window.
+    # The window is its page now, its header the title bar (one chrome, 7
+    # October): no border round it and no tab above, so a point 13 into it
+    # is on the header's band, which a press takes hold of as it did a tab.
     def frame(title):
-        x, y, w, h = placed[title]
-        return x - FRAME, y - 26, w + 2 * FRAME, h + 26 + FRAME
+        return placed[title]
 
     def tab_point(title):
-        """A point on the tab that the other window does not cover."""
+        """A point on the header's band that the other window does not
+        cover."""
         fx, fy, fw, _ = frame(title)
         ox, oy, ow, oh = frame([t for t in apps if t != title][0])
         y = fy + 13
@@ -9315,7 +9358,17 @@ def check_focus_shown(guest):
     #
     since = len(guest.seen)
     fx, fy, fw, _ = frame(current)
-    click(fx + (tab_wide.get(current) or fw) - 50 + 9, fy + 13)
+    # In its header now (one window chrome, 7 October): 22 past where the
+    # window manager says the three begin, and 9 into the box.
+    three = re.findall(r"wm: %s's three at (\d+),(\d+)" % re.escape(current),
+                       guest.seen)
+
+    if not three:
+        raise Failure(f"the window manager never said where {current}'s "
+                      "three are in its header")
+
+    lx, ly = (int(v) for v in three[-1])
+    click(fx + lx + 22 + 9, fy + ly + 9)
 
     limit = time.monotonic() + 6
 
@@ -9417,7 +9470,8 @@ def check_panel(guest):
         raise Failure("the Open window never opened:\n"
                       + guest.seen[mark:][-900:])
 
-    wx, wy = placed[0], placed[1]
+    # Its content under the kit's header (one window chrome, 7 October).
+    wx, wy = placed[0], placed[1] + KIT_HEAD
     time.sleep(2.5)
     width, height, _ = parse_ppm(guest.screendump())
 
@@ -11050,10 +11104,14 @@ def check_graphical_mode(guest):
     #
     deadline = time.monotonic() + 30
 
+    # The window by the window manager's word, there being no tab to look
+    # for (one window chrome, 7 October).
     while time.monotonic() < deadline:
-        width, height, before = parse_ppm(guest.screendump())
+        guest._read_available()
 
-        if tab_width(width, height, before) > 0:
+        if "wm: window gallery at " in guest.seen[mark:]:
+            time.sleep(1.0)
+            width, height, before = parse_ppm(guest.screendump())
             break
 
         time.sleep(0.5)
@@ -11351,7 +11409,7 @@ def check_reaped(guest):
         time.sleep(1.0)
         width, height, px = parse_ppm(guest.screendump())
 
-        if count_windows(width, height, px) == 0:
+        if windows_on(guest) == 0:
             gone = True
             break
 
