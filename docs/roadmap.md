@@ -1271,6 +1271,19 @@ the Deskbar, Tracker and the grants read. So the header moves into the C:
 - New Project's C app becomes one file; Primes and Plasma lose their Lua
   starters.
 
+**AGREED, 7 October - the IDE's panes resized by dragging.** Diego: "one
+problem i see with the kosmos ide is that the views are not resizable like
+the project sidebar and the bottom bar with output, problems, console,
+search views", "i need to be able to resize them to see more of whats
+there". The edge between the sidebar and the editor dragged across, and the
+edge above the Output, Problems, Console and Search panel dragged up and
+down - the pointer showing it can be taken there, each pane kept to a
+sensible least, a double click putting it back, and the sizes remembered
+with the project's other settings (`prefs.lua`). Through the kit's
+`ui.splitter`, which exists and nothing uses yet, so every window with
+panes can have it the same way - Tracker's sidebar, Preferences', Mail's
+three panes.
+
 **WANTED, 7 October - Format Code in the IDE.** Diego: "the kosmos ide
 needs a format code button that makes the entire code beautiful and human
 readable with correct indentation, spaces, etc". A **Format** tool among the
