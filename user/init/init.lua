@@ -3479,6 +3479,21 @@ local function new_namespace()
   -- which it speaks is told the path is not there when it resolves to any
   -- other - which, for this process, is the truth.
   --
+  --
+  -- **The capability a path resolves to**, for C in this process that
+  -- speaks to it itself - the Window Kit, whose frame path is `wmproto.h`'s
+  -- structs sent straight from C, with nothing allocated in Lua a frame. An
+  -- index into this process's own table, which it already holds: nothing a
+  -- program could not reach by sending to the path.
+  --
+  function ns.capability(path)
+    local capability = resolve(path)
+
+    if not capability then return nil, "no such path: " .. tostring(path) end
+
+    return capability
+  end
+
   function ns.raw(path, bytes, pass, proto)
     local capability = resolve(path)
 

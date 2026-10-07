@@ -2,7 +2,7 @@
 
 Written 7 October 2026, after TinyCC C1-C6 (`docs/tinycc.md`, decision 2:
 "C apps print first; a small Window Kit in C is its own step after C6").
-**W1 is built** (0.11.35, `testing.md` 18.432); W2 and W3 are not.
+**W1 is built** (0.11.35, `testing.md` 18.432) and **W2** (0.11.36, 18.433): a C app's frames make no garbage in Lua, measured - 1,216 bytes a frame before, 0 after. W3 is not built.
 
 ## What it is for
 
@@ -99,6 +99,21 @@ than argued.
    frame path as structs), measured.
 2. **The template is Plasma.**
 3. **`kosmos_window.h`**, and the kit at **`/Kosmos/Kits/window`**.
+
+## What W2 became, and why it differs from the plan above
+
+- **`commit` and `poll` are structs; `open` stays a table.** Opening happens
+  once a window, with twenty options `ui.lua` already sends; a struct for it
+  would be a second copy of all of them for nothing a frame would feel.
+- **No second endpoint.** The window manager sleeps in the console's wait,
+  which ends early only for `/Running/wm` (`fs.watch_input`); a door of its
+  own would have its requests answered a sleep late - the 11.5 ms that was
+  found and fixed once already. So frame requests go to `/Running/wm` and
+  say what they are with the message's tag, `WM_FRAME_TAG`, which
+  `sys.receive` hands over as bytes rather than unpacking.
+- **Commit and poll are written once.** The window manager turns a frame
+  request into the request its table handlers take and their answer into
+  `struct wm_frame_reply`, held answers included.
 
 ## What was asked
 

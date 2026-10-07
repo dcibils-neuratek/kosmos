@@ -1,15 +1,14 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * The Window Kit, step W1 (`docs/windowkit.md`): `kosmos_window.h`'s five
- * calls, made over the door Lua apps already use.
+ * The Window Kit (`docs/windowkit.md`): `kosmos_window.h`'s five calls.
  *
- * **Not a second copy of it.** Opening, the two buffers, committing,
- * resizing - `take_size` - and a direct window's own events are `ui.lua`'s,
- * and this kit calls them on the process's Lua state rather than writing
- * them again in C. What is C here is the shape the application sees: a
- * struct for the surface, a struct for each event, a wait in milliseconds.
- * W2 moves the frame path - open, commit, poll - onto a declared shape
- * (`wmproto.h`), and the calls above it do not change.
+ * **What happens once is `ui.lua`'s; what happens every frame is C's.**
+ * Opening, the two buffers and a resize's new region - `take_size` - are
+ * `ui.lua`'s, called on the process's Lua state rather than written again
+ * here (W1). `commit` and `poll`, sixty times a second, are `wmproto.h`'s
+ * structs, sent from here to the window manager's endpoint with nothing
+ * built in Lua (W2): over tables they made 1,216 bytes of garbage a frame
+ * in an application that otherwise makes none (`testing.md` 18.433).
  *
  * Every Kosmos process that runs C a project wrote is entered from Lua, so
  * there is a state to call on: `kosmos_lua_state`, the one `lua_glue.c`
@@ -17,6 +16,7 @@
  * KW_CLOSE, never a Lua error raised through the application's C.
  */
 
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -25,6 +25,7 @@
 #include "lauxlib.h"
 
 #include "kosmos_window.h"
+#include "wmproto.h"
 
 extern lua_State *kosmos_lua_state;
 
@@ -38,13 +39,14 @@ void kosmos_window_kit(lua_State *L);
 struct kw_window {
     int win;                    /* registry: ui.lua's window */
     long handle;                /* the window manager's name for it */
+    long wm;                    /* its endpoint: the frame path's door */
     int open;
     unsigned head, count;
     struct kw_event queue[QUEUE];
 };
 
 static char why[160] = "";
-static int ui_ref = LUA_NOREF, wmproto_ref = LUA_NOREF;
+static int ui_ref = LUA_NOREF;
 static unsigned long tick_hz;
 
 static void say(const char *text)
@@ -59,13 +61,14 @@ const char *kw_why(void)
 }
 
 /*
- * The program's own `use`, on the stack, or 0. A program's world is its
- * environment, not Lua's globals (`init.lua`, `env.use`): a library is
- * loaded with the caller's environment and reaches what the caller can and
- * nothing more. So the kit looks where a library would - the `_ENV` of the
- * nearest Lua function that called into this C, which is the program's.
+ * The program's own `name` - `use`, `fs` - on the stack, or 0. A program's
+ * world is its environment, not Lua's globals (`init.lua`, `env.use`): a
+ * library is loaded with the caller's environment and reaches what the
+ * caller can and nothing more. So the kit looks where a library would - the
+ * `_ENV` of the nearest Lua function that called into this C, which is the
+ * program's.
  */
-static int program_use(lua_State *L)
+static int program_has(lua_State *L, const char *want)
 {
     lua_Debug ar;
 
@@ -80,9 +83,9 @@ static int program_use(lua_State *L)
             }
 
             if (strcmp(name, "_ENV") == 0 && lua_istable(L, -1)) {
-                lua_getfield(L, -1, "use");
+                lua_getfield(L, -1, want);
 
-                if (lua_isfunction(L, -1)) {
+                if (!lua_isnil(L, -1)) {
                     lua_replace(L, -3);         /* over the function */
                     lua_pop(L, 1);              /* the environment */
                     return 1;
@@ -97,7 +100,7 @@ static int program_use(lua_State *L)
         lua_pop(L, 1);
     }
 
-    say("no program's `use` above this C to open libraries with");
+    say("no program's environment above this C to open a window from");
     return 0;
 }
 
@@ -105,7 +108,7 @@ static int program_use(lua_State *L)
 static int library(lua_State *L, int *ref, const char *path)
 {
     if (*ref == LUA_NOREF) {
-        if (!program_use(L)) {
+        if (!program_has(L, "use")) {
             return 0;
         }
 
@@ -204,7 +207,26 @@ struct kw_window *kw_open(const char *title, unsigned width, unsigned height,
     lua_pop(L, 1);
     w->win = luaL_ref(L, LUA_REGISTRYINDEX);
     w->open = 1;
+    w->wm = -1;
+
+    /* The window manager's endpoint, once: `fs.capability`, an index this
+     * process already holds for `/Running/wm`. */
+    if (program_has(L, "fs")) {
+        lua_getfield(L, -1, "capability");
+        lua_pushstring(L, "/Running/wm");
+
+        if (lua_pcall(L, 1, 1, 0) == LUA_OK && lua_isinteger(L, -1)) {
+            w->wm = (long)lua_tointeger(L, -1);
+        }
+    }
+
     lua_settop(L, top);
+
+    if (w->wm < 0) {
+        say("the window manager's endpoint was not found for the frame path");
+        kw_close(w);
+        return NULL;
+    }
 
     if (tick_hz == 0) {
         struct schedinfo info;
@@ -235,29 +257,68 @@ struct kw_surface kw_surface(struct kw_window *w)
     return s;
 }
 
+/* One frame request and its answer, `wmproto.h`'s shapes: 0, or the
+ * kernel's or the window manager's no. */
+static long frame_call(struct kw_window *w, const struct wm_frame_request *rq,
+                       struct wm_frame_reply *rp)
+{
+    static struct message msg, reply;   /* 2 KB each: off the stack */
+    long status;
+
+    memset(&msg, 0, offsetof(struct message, data));
+    msg.tag = WM_FRAME_TAG;
+    msg.length = sizeof *rq;
+    memcpy(msg.data, rq, sizeof *rq);
+
+    status = kosmos_call(w->wm, &msg, &reply);
+
+    if (status != 0) {
+        return status;
+    }
+
+    memset(rp, 0, sizeof *rp);
+    memcpy(rp, reply.data, reply.length < sizeof *rp ? reply.length : sizeof *rp);
+
+    if (reply.length < 12 || rp->count > WM_FRAME_EVENTS
+        || reply.length < 12 + rp->count * sizeof(struct wm_frame_event)) {
+        return WM_FRAME_BAD;
+    }
+
+    return rp->error;
+}
+
 int kw_commit(struct kw_window *w, unsigned x, unsigned y, unsigned width,
               unsigned height)
 {
     lua_State *L = kosmos_lua_state;
-    int top = lua_gettop(L), ok;
+    struct wm_frame_request rq;
+    struct wm_frame_reply rp;
+    int top;
 
     if (w == NULL || !w->open) {
         return 0;
     }
 
-    lua_createtable(L, 0, 4);
-    lua_pushinteger(L, x);
-    lua_setfield(L, -2, "x");
-    lua_pushinteger(L, y);
-    lua_setfield(L, -2, "y");
-    lua_pushinteger(L, width);
-    lua_setfield(L, -2, "w");
-    lua_pushinteger(L, height);
-    lua_setfield(L, -2, "h");
+    rq = (struct wm_frame_request){ WM_FRAME_COMMIT, (uint32_t)w->handle,
+                                    (int32_t)x, (int32_t)y, width, height, 0 };
 
-    ok = method(L, w, "commit", 1, 1) && lua_toboolean(L, -1);
+    if (frame_call(w, &rq, &rp) != 0) {
+        return 0;
+    }
+
+    /* The buffer to draw into next, where `window:surface` reads it: an
+     * integer into a field that is there, which allocates nothing. */
+    top = lua_gettop(L);
+    lua_rawgeti(L, LUA_REGISTRYINDEX, w->win);
+    lua_getfield(L, -1, "region");
+
+    if (lua_istable(L, -1)) {
+        lua_pushinteger(L, rp.draw_into);
+        lua_setfield(L, -2, "draw_into");
+    }
+
     lua_settop(L, top);
-    return ok;
+    return 1;
 }
 
 static void queue(struct kw_window *w, const struct kw_event *e)
@@ -268,82 +329,27 @@ static void queue(struct kw_window *w, const struct kw_event *e)
     }
 }
 
-static int field(lua_State *L, int t, const char *name)
+/* A resize: the region the new size, made by `ui.lua` - which happens
+ * because a person dragged a grip, not because a clock came round. */
+static void take_size(lua_State *L, struct kw_window *w, int width, int height)
 {
-    int v;
+    int top = lua_gettop(L);
 
-    lua_getfield(L, t, name);
-    v = (int)lua_tointeger(L, -1);
-    lua_pop(L, 1);
-    return v;
-}
+    lua_rawgeti(L, LUA_REGISTRYINDEX, w->win);
+    lua_pushinteger(L, width);
+    lua_setfield(L, -2, "w");
+    lua_pushinteger(L, height);
+    lua_setfield(L, -2, "h");
+    lua_settop(L, top);
 
-/* One of the window manager's events, at the top of the stack, as a struct
- * - after the window's own handling, which takes a resize's new surface
- * and anything that was a menu's. */
-static void take(lua_State *L, struct kw_window *w)
-{
-    int ev = lua_gettop(L);
-    struct kw_event e;
-    const char *type, *s;
-    int handled;
-
-    lua_pushvalue(L, ev);
-    handled = method(L, w, "direct_event", 1, 1) && lua_toboolean(L, -1);
-    lua_settop(L, ev);
-
-    if (handled) {
-        return;
-    }
-
-    memset(&e, 0, sizeof e);
-    lua_getfield(L, ev, "type");
-    type = lua_tostring(L, -1);
-    lua_pop(L, 1);
-
-    if (type == NULL) {
-        return;
-    }
-
-    if (strcmp(type, "key") == 0) {
-        e.type = KW_KEY;
-        e.key = field(L, ev, "code");
-    } else if (strcmp(type, "mouse") == 0) {
-        e.type = KW_POINTER;
-        lua_getfield(L, ev, "action");
-        s = lua_tostring(L, -1);
-        e.action = s == NULL ? 0 : strcmp(s, "press") == 0 ? KW_PRESS
-                 : strcmp(s, "release") == 0 ? KW_RELEASE : KW_MOVE;
-        lua_pop(L, 1);
-        lua_getfield(L, ev, "button");
-        s = lua_tostring(L, -1);
-        e.button = s != NULL && strcmp(s, "right") == 0 ? KW_RIGHT : KW_LEFT;
-        lua_pop(L, 1);
-        e.x = field(L, ev, "x");
-        e.y = field(L, ev, "y");
-    } else if (strcmp(type, "wheel") == 0) {
-        e.type = KW_WHEEL;
-        e.amount = field(L, ev, "n");
-        e.x = field(L, ev, "x");
-        e.y = field(L, ev, "y");
-    } else if (strcmp(type, "resize") == 0) {
-        e.type = KW_RESIZE;
-        e.width = field(L, ev, "w");
-        e.height = field(L, ev, "h");
-    } else if (strcmp(type, "close") == 0) {
-        e.type = KW_CLOSE;
-    } else {
-        return;
-    }
-
-    queue(w, &e);
+    lua_pushinteger(L, width);
+    lua_pushinteger(L, height);
+    method(L, w, "take_size", 2, 0);
+    lua_settop(L, top);
 }
 
 int kw_poll(struct kw_window *w, struct kw_event *e, unsigned wait_ms)
 {
-    lua_State *L = kosmos_lua_state;
-    int top;
-
     if (w == NULL) {
         return 0;
     }
@@ -351,41 +357,58 @@ int kw_poll(struct kw_window *w, struct kw_event *e, unsigned wait_ms)
     if (w->count == 0 && w->open) {
         /* Milliseconds here, the scheduler's ticks on the wire: the one
          * conversion, rounded up so a short wait is not no wait. */
-        unsigned long ticks = ((unsigned long)wait_ms * tick_hz + 999) / 1000;
+        struct wm_frame_request rq = { WM_FRAME_POLL, (uint32_t)w->handle, 0, 0, 0, 0,
+                                       (uint32_t)(((unsigned long)wait_ms * tick_hz + 999) / 1000) };
+        struct wm_frame_reply rp;
 
-        top = lua_gettop(L);
+        if (frame_call(w, &rq, &rp) != 0) {
+            /* No answer, or no window: the window manager has gone, or the
+             * window with it - which is how an application here ends. */
+            struct kw_event gone = { .type = KW_CLOSE };
 
-        if (library(L, &wmproto_ref, "/Kosmos/Libraries/wmproto.lua")) {
-            lua_getfield(L, -1, "poll");
-            lua_pushinteger(L, w->handle);
-            lua_pushinteger(L, (lua_Integer)ticks);
+            queue(w, &gone);
+        } else {
+            for (uint32_t i = 0; i < rp.count; i++) {
+                const struct wm_frame_event *f = &rp.events[i];
+                struct kw_event ev;
 
-            if (lua_pcall(L, 2, 1, 0) != LUA_OK || !lua_istable(L, -1)) {
-                /* No answer: the window manager has gone, and so has the
-                 * window - which is how an application here ends. */
-                struct kw_event gone = { .type = KW_CLOSE };
+                memset(&ev, 0, sizeof ev);
 
-                queue(w, &gone);
-            } else {
-                lua_getfield(L, -1, "events");
-
-                if (lua_istable(L, -1)) {
-                    lua_Integer n = (lua_Integer)lua_rawlen(L, -1);
-
-                    for (lua_Integer i = 1; i <= n; i++) {
-                        lua_rawgeti(L, -1, i);
-
-                        if (lua_istable(L, -1)) {
-                            take(L, w);
-                        }
-
-                        lua_pop(L, 1);
-                    }
+                switch (f->type) {
+                case WM_EV_KEY:
+                    ev.type = KW_KEY;
+                    ev.key = f->a;
+                    break;
+                case WM_EV_POINTER:
+                    ev.type = KW_POINTER;
+                    ev.action = f->action == WM_ACT_PRESS ? KW_PRESS
+                              : f->action == WM_ACT_RELEASE ? KW_RELEASE : KW_MOVE;
+                    ev.button = f->button == WM_BUTTON_RIGHT ? KW_RIGHT : KW_LEFT;
+                    ev.x = f->a;
+                    ev.y = f->b;
+                    break;
+                case WM_EV_WHEEL:
+                    ev.type = KW_WHEEL;
+                    ev.x = f->a;
+                    ev.y = f->b;
+                    ev.amount = f->c;
+                    break;
+                case WM_EV_RESIZE:
+                    ev.type = KW_RESIZE;
+                    ev.width = f->a;
+                    ev.height = f->b;
+                    take_size(kosmos_lua_state, w, f->a, f->b);
+                    break;
+                case WM_EV_CLOSE:
+                    ev.type = KW_CLOSE;
+                    break;
+                default:
+                    continue;
                 }
+
+                queue(w, &ev);
             }
         }
-
-        lua_settop(L, top);
     }
 
     if (w->count == 0) {

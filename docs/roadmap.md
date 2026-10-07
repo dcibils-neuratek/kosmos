@@ -963,7 +963,12 @@ over tables, `kosmos_window.h`, `/Kosmos/Kits/window`, and the Plasma
 template. **W2**: `open`, `commit` and `poll` as structs, the window
 manager answering both, measured. **W3**: Lua's direct windows onto the
 same door, if W2's numbers say so. **W1 done** (0.11.35, 18.432): the kit
-over tables, Plasma in New Project's C kind.
+over tables, Plasma in New Project's C kind. **W2 done** (0.11.36, 18.433):
+commit and poll as `wmproto.h`'s structs on `/Running/wm`, told apart by the
+tag - 1,216 bytes of Lua garbage a frame to 0. **Found**: the developer
+files carry `kosmos.h` and not the kernel's `syscall.h` it includes, so a
+C app cannot include `kosmos.h` at all - the pack to carry it, or `kosmos.h`
+to stand alone; TinyCC's assembler is also to be tried on its `svc`.
 
 **FOUND on 6 October, in the C3 gate - two things that passed alone after.**
 (1) `x86-headless`: "/Kosmos/Programs lists 75 and user/bin/programs has

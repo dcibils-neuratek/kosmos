@@ -27,7 +27,11 @@ not on it, and matters only after a refused write.
 **0.11.35 - the Window Kit, W1** (18.432): `kosmos_window.h`, five calls,
 over `ui.lua`'s door; Plasma, a C app with a window, in New Project.
 
-**Next**: W2 - `wmproto.h`, open, commit and poll as structs, measured.
+**0.11.36 - W2** (18.433): commit and poll as structs on `/Running/wm`,
+by the message's tag; a C app's frames 1,216 bytes of Lua garbage to 0.
+
+**Next**: the developer files' `kosmos.h` (roadmap, found in W2); then the
+Maps, Mail and Calendar designs; W3 only if a Lua app's frames show it.
 
 ## 6 October, the evening: C inside Kosmos - TinyCC C1-C6
 

@@ -20405,3 +20405,46 @@ third time that echo was taken for an answer (27 and 28 September before).
 `run_loader.py`'s `typed` now passes over any line that is a piece of what
 was typed, not only one ending in all of it; both boards' `tcc` suites pass
 with it, 14 of 14.
+
+## 18.433 The frame path as a declared shape (Window Kit W2): 1,216 bytes a frame to 0
+
+**Measured first.** Plasma with the collector stopped for 200 frames, the
+Lua heap read before and after: **1,216 bytes a frame** over W1's tables -
+about 73 KB a second at sixty frames, in an application whose own code
+allocates nothing. After: **0**.
+
+**`user/include/wmproto.h`**: `struct wm_frame_request` (28 bytes),
+`struct wm_frame_event` (20) and `struct wm_frame_reply` (12 and twelve
+events), with `WM_FRAME_COMMIT` and `WM_FRAME_POLL`. They go to
+`/Running/wm` itself, because its arrival is what ends the window manager's
+sleep and a second endpoint's would wait a pass; a request says it is one
+with the message's tag, `WM_FRAME_TAG`, "WMFRAME1". `sys.receive` takes a
+fourth argument, a tag whose messages come back as bytes and a fourth
+answer, true; `sys.call_raw` a fourth, the tag to send with.
+
+**The window manager**: `frame.request` unpacks a request into the table
+`handlers.commit` and `handlers.poll` already take, and `frame.answer`
+packs their answer - now or when a held poll is answered - so neither
+operation is written twice. A request too short or with an operation the
+shape has not got is answered 3, a window that is not there 1, a commit to
+a window without its own pixels 2; none is acted on. Only events the shape
+has go: a move or a menu's press is a table's.
+
+**The kit**: `kw_commit` and `kw_poll` are one `kosmos_call` each from C,
+the window manager's endpoint found once at `kw_open` through the
+program's `fs.capability` (new: the capability a path resolves to, for C in
+the process). A resize's new region is still `ui.lua`'s `take_size` - a
+person dragged a grip; no clock came round.
+
+`run_tcc.py`, 23 checks a board: `framecheck.c`, built at the prompt by
+`tcc`, opens a window beside Plasma and makes 100 frames with the collector
+stopped - 0 bytes; and `framecheck.lua` asks the window manager an
+operation 99, a request of eight bytes and a window that is not there -
+3, 3 and 1. **Controls**: a table made and dropped in `kw_commit` - "5600
+bytes over 100 frames"; the window manager not checking the window - "no
+window 3". Each fails its check.
+
+**Found**: the developer files carry `kosmos.h` but not the kernel's
+`syscall.h` it includes, so a C app cannot include it (`roadmap.md`).
+
+The gate: 102 of 102 in 9:32.

@@ -799,7 +799,7 @@ static int l_call(lua_State *L)
 }
 
 /*
- * `sys.call_raw(cap, bytes [, pass])` -> bytes
+ * `sys.call_raw(cap, bytes [, pass [, tag]])` -> bytes
  *
  * A call whose payload is bytes rather than a serialised Lua value.
  *
@@ -831,7 +831,9 @@ static int l_call_raw(lua_State *L)
     }
 
     memset(&msg, 0, sizeof(msg));
-    msg.tag = 0;
+    /* The tag, when the protocol says what its messages are by one - the
+     * window manager's frame path (`wmproto.h`). */
+    msg.tag = (uint64_t)luaL_optinteger(L, 4, 0);
     msg.length = (uint32_t)len;
     msg.cap_plus_one = (pass >= 0) ? (uint32_t)(pass + 1) : 0u;
     memcpy(msg.data, bytes, len);
@@ -867,10 +869,28 @@ static int l_receive(lua_State *L)
     /* Scheduler ticks, and absent means wait for ever - which is what every
      * caller written before this argument existed meant. */
     unsigned long timeout = (unsigned long)luaL_optinteger(L, 3, 0);
+    /*
+     * **A tag whose messages are bytes, not a table** - the window
+     * manager's frame path (`wmproto.h`), which arrives on the endpoint its
+     * tables do because that is the one whose arrival wakes it. Such a
+     * message comes back as its bytes and a fourth answer, true.
+     */
+    int raw_tag = !lua_isnoneornil(L, 4);
+    uint64_t raw = raw_tag ? (uint64_t)luaL_checkinteger(L, 4) : 0;
     long status = kosmos_receive(cap, &msg, &sender, nonblocking, timeout);
 
     if (status != 0) {
         return fail(L, status);
+    }
+
+    if (raw_tag && msg.tag == raw) {
+        lua_pushlstring(L, (const char *)msg.data,
+                        (msg.length > MSG_BYTES) ? MSG_BYTES : msg.length);
+        lua_pushinteger(L, (lua_Integer)sender);
+        lua_pushinteger(L, (lua_Integer)((msg.cap_plus_one == 0)
+                                         ? -1 : (long)msg.cap_plus_one - 1));
+        lua_pushboolean(L, 1);
+        return 4;
     }
 
     push_message(L, &msg);

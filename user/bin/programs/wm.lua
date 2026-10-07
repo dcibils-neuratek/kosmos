@@ -4888,6 +4888,7 @@ handlers.poll = function(req, who)
 
   waiting[#waiting + 1] = {
     who = who, win = win, deadline = sys.ticks() + in_counter(wait),
+    raw = req.raw,                      -- answered as `wmproto.h` says
   }
 
   return DEFER
@@ -4988,6 +4989,101 @@ end
 --
 -- Answer everyone whose window has something, or whose wait is over.
 --
+--------------------------------------------------------------------------
+-- **The frame path as a declared shape** (`user/include/wmproto.h`,
+-- `docs/windowkit.md` step W2): `commit` and `poll` as fixed structs, on
+-- this same endpoint - the one whose arrival ends this process's sleep -
+-- told from a table by the message's tag. A C app sends them straight from
+-- C, and neither side builds a table for them on the way: here the struct
+-- becomes the request the table handlers below already answer, and their
+-- answer becomes the struct, so commit and poll are each written once.
+--------------------------------------------------------------------------
+
+local frame = {
+  TAG = 0x31454d4152464d57,                     -- "WMFRAME1"
+  REQUEST = "<I4I4i4i4I4I4I4",                  -- struct wm_frame_request
+  HEAD = "<i4I4I4",                             -- struct wm_frame_reply's
+  EVENT = "<I2I2I2I2i4i4i4",                    -- struct wm_frame_event
+  OPS = { [1] = "commit", [2] = "poll" },
+  TYPES = { key = 1, mouse = 2, wheel = 3, resize = 4, close = 5 },
+  ACTIONS = { press = 1, release = 2, move = 3 },
+  NO_WINDOW = 1, NO_SURFACE = 2, BAD = 3,
+}
+
+function frame.whole(v)
+  return math.tointeger(math.floor(tonumber(v) or 0)) or 0
+end
+
+-- A table handler's answer, as `struct wm_frame_reply`. Only the events the
+-- shape has go: a move, a menu's press, anything else is a table's.
+function frame.reply(reply)
+  local whole = frame.whole
+
+  if type(reply) ~= "table" or not reply.ok then
+    return string.pack(frame.HEAD, frame.BAD, 0, 0)
+  end
+
+  local parts = {}
+
+  for _, ev in ipairs(reply.events or {}) do
+    local t = frame.TYPES[ev.type]
+
+    if t and not ev.menu then
+      local act, button, a, b, c = 0, 0, 0, 0, 0
+
+      if t == 1 then
+        a = whole(ev.code)
+      elseif t == 2 then
+        act = frame.ACTIONS[ev.action] or 3
+        button = (ev.button == "right") and 2 or 1
+        a, b = whole(ev.x), whole(ev.y)
+      elseif t == 3 then
+        a, b, c = whole(ev.x), whole(ev.y), whole(ev.n)
+      elseif t == 4 then
+        a, b = whole(ev.w), whole(ev.h)
+      end
+
+      parts[#parts + 1] = string.pack(frame.EVENT, t, act, button, 0, a, b, c)
+    end
+  end
+
+  return string.pack(frame.HEAD, 0, whole(reply.draw_into), #parts)
+         .. table.concat(parts)
+end
+
+-- An answer to a table or to a struct, whichever it was asked as.
+function frame.answer(who, reply, raw)
+  if raw then return pcall(sys.reply_raw, who, frame.reply(reply)) end
+
+  return pcall(sys.reply, who, reply)
+end
+
+-- One frame request, answered or held. A server receives what it expects:
+-- a short message, an operation the shape has not got, or a window that is
+-- not there is answered with why, never acted on.
+function frame.request(bytes, who)
+  local function refuse(code)
+    replied(pcall(sys.reply_raw, who, string.pack(frame.HEAD, code, 0, 0)), nil, "a frame")
+  end
+
+  if #bytes < string.packsize(frame.REQUEST) then return refuse(frame.BAD) end
+
+  local op, window, x, y, w, h, wait = string.unpack(frame.REQUEST, bytes)
+  local name, win = frame.OPS[op], by_handle[window]
+
+  if not name then return refuse(frame.BAD) end
+  if not win then return refuse(frame.NO_WINDOW) end
+  if name == "commit" and not win.shared then return refuse(frame.NO_SURFACE) end
+
+  local ok, result = pcall(handlers[name], { type = name, window = window, x = x, y = y,
+                                             w = w, h = h, wait_ticks = wait,
+                                             raw = true }, who)
+
+  if ok and result == DEFER then return end
+
+  replied(frame.answer(who, ok and result or nil, true))
+end
+
 local function answer_waiting()
   local now = sys.ticks()
   local still = {}
@@ -4997,7 +5093,7 @@ local function answer_waiting()
       -- Its window closed underneath it. An empty answer, so the
       -- application's loop notices and leaves rather than hanging on a
       -- reply nobody is going to send.
-      replied(pcall(sys.reply, w.who, { ok = true, events = {} }),
+      replied(frame.answer(w.who, { ok = true, events = {} }, w.raw),
               nil, "a closed window")
     elseif #w.win.events > 0 or now >= w.deadline then
       if TRACE then
@@ -5006,7 +5102,7 @@ local function answer_waiting()
       end
 
       do
-        local ok, err = pcall(sys.reply, w.who, events_for(w.win))
+        local ok, err = frame.answer(w.who, events_for(w.win), w.raw)
         replied(ok, err, w.win.title)
       end
     else
@@ -6643,8 +6739,13 @@ while OUT.running do
     -- and forgetting to take it here is exactly how that arrived as a
     -- window that opened and stayed blank.
     --
-    local req, who, cap = sys.receive(ep, true)
+    local req, who, cap, raw = sys.receive(ep, true, nil, frame.TAG)
     if not req then break end
+
+    if raw then
+      frame.request(req, who)
+      goto next_request
+    end
 
     local handler = handlers[req.type]
     local reply
@@ -6675,6 +6776,8 @@ while OUT.running do
                                         .. " did not fit in a message" })
       end
     end
+
+    ::next_request::
   end
 
   -- A window of each application being read off the disk (`launching`).

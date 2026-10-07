@@ -108,7 +108,9 @@ def main():
                           for n in ("apptest.c", "run.lua")]
                        + ["%s:/Home/Bad/broken.c" % os.path.join(work, "broken.c"),
                           "%s:/Home/Bad/run.lua" % os.path.join(work, "run.lua"),
-                          "%s:/Home/templates.lua" % os.path.join(HERE, "tcc_templates.lua")],
+                          "%s:/Home/templates.lua" % os.path.join(HERE, "tcc_templates.lua"),
+                          "%s:/Home/t/framecheck.c" % os.path.join(HERE, "tcc_framecheck.c"),
+                          "%s:/Home/t/framecheck.lua" % os.path.join(HERE, "tcc_framecheck.lua")],
                        check=True, capture_output=True, cwd=ROOT)
         return path
 
@@ -204,7 +206,7 @@ def main():
 
         try:
             guest.wait_for("kosmos> ", "a prompt")
-            guest.type("wm /Home/P/Plasma/plasma.lua")
+            guest.type("wm /Home/P/Plasma/plasma.lua,/Home/t/framecheck.lua")
             guest.wait_for("wm: window ", "Plasma's window")
             time.sleep(4)
             _, _, one = R.parse_ppm(guest.screendump())
@@ -213,7 +215,8 @@ def main():
             guest.sendkey("esc")
             deadline = time.monotonic() + 30
 
-            while time.monotonic() < deadline and "plasma: " not in guest.seen:
+            while time.monotonic() < deadline and ("plasma: " not in guest.seen
+                                                   or "FRAMECHECK" not in guest.seen):
                 guest._read_available()
                 time.sleep(0.3)
 
@@ -280,7 +283,8 @@ def main():
     said = session(good, [("cd /Home/t", "kosmos>"),
                           ("tcc apptest.c -o build/apptest.elf", "(tcc) ended"),
                           ("run /Home/t/run.lua", "(run) ended"),
-                          ("tcc broken.c -o build/broken.elf", "(tcc) ended")])
+                          ("tcc broken.c -o build/broken.elf", "(tcc) ended"),
+                          ("tcc framecheck.c -o build/framecheck.elf", "(tcc) ended")])
     check(re.search(r"^tcc: /Home/t/build/apptest\.elf, [0-9.]+ MB - built in \d+ ms", said, re.M)
           is not None and re.search(r"^ANSWER 42", said, re.M) is not None,
           "`tcc apptest.c -o build/apptest.elf` did not build an image that runs:\n"
@@ -334,6 +338,20 @@ def main():
     check(moved > 50000,
           "Plasma's window is not animating: %d pixels changed in a second and a half" % moved)
 
+    # **The frame path as a declared shape** (W2): built by `tcc` above and
+    # started beside Plasma - 100 frames of commit and poll allocating
+    # nothing in Lua, and the window manager answering a bad operation, a
+    # short request and a missing window each with its reason (`wmproto.h`:
+    # 3, 3, 1).
+    framed = re.search(r"^FRAMECHECK (-?\d+) bytes over 100 frames; op 99 (-?\d+); "
+                       r"short (-?\d+); no window (-?\d+)", seen, re.M)
+    check(framed is not None and int(framed.group(1)) == 0,
+          "a window's frames allocated in Lua (W2):\n"
+          + "\n".join(l for l in seen.splitlines() if "FRAMECHECK" in l or "framecheck" in l))
+    check(framed is not None and framed.group(2, 3, 4) == ("3", "3", "1"),
+          "the window manager did not refuse bad frame requests with their reasons:\n"
+          + "\n".join(l for l in seen.splitlines() if "FRAMECHECK" in l))
+
     # **New Project, in the IDE** (C6): opened on it, Enter creates the
     # default - a Lua and C app from Mandelbrot - F6 builds it and F5 runs it,
     # and the window it opens is the fractal: its black interior on the screen.
@@ -359,7 +377,7 @@ def main():
     print("PASS: %d checks on C built inside Kosmos (apptest.c compiled and linked by "
           "the C Kit into build/apptest.elf, %s bytes in %s ms; a program in it answered "
           "42; a build after a refused image; a broken file one error on line 3; the same at the prompt with tcc; the "
-          "IDE's F6 and F5; the five templates, built and run; Plasma's window from C, animating and closed; New Project making, "
+          "IDE's F6 and F5; the five templates, built and run; Plasma's window from C, animating and closed; its frames allocating nothing in Lua and bad ones refused; New Project making, "
           "building and running Mandelbrot; a pack from another build refused)"
           % (checks, built.group(1), built.group(2)))
     return 0
