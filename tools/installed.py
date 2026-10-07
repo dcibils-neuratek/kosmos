@@ -110,14 +110,14 @@ def fonts():
             for name, _, _, _ in fetch_fonts.FILES]
 
 
-def developer(arch):
+def developer(arch, folder=None):
     """What TinyCC builds an image from, into /Home/Developer (`docs/tinycc.md`,
     step C2, Diego's decision 1): the lean userland's runtime, libgcc, the
     header slot and the headers, as `make apps` leaves them in `developer/`.
     The runtime carries its build's protocol stamp, which the C Kit holds a
     build to; so this is installed from the same build as the system."""
-    folder = os.path.join(ROOT, "build", "user-x86_64" if arch == "x86_64" else "user",
-                          "developer")
+    folder = folder or os.path.join(ROOT, "build", "user-x86_64" if arch == "x86_64" else "user",
+                                    "developer")
 
     if not os.path.isfile(os.path.join(folder, ".made")):
         sys.exit("installed: no %s - `make apps` (and ARCH=x86_64) makes it" % folder)

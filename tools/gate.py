@@ -331,6 +331,14 @@ SUITES = [
                       "build/user-test/apps-tcc"]),
     Suite("x86-tcc", ["python3", "tools/run_loader.py", X86,
                       "build/user-x86_64-test/apps-tcc"], x86=True),
+
+    # **C compiled inside Kosmos** (C3): the C Kit builds `apptest.c` in the
+    # machine from the developer files into `build/apptest.elf`, a program in
+    # it is answered 42, a broken file is one problem at its line, and a pack
+    # from another build is refused.
+    Suite("arm-tcc-2", ["python3", "tools/run_tcc.py", ARM, "build/user-test/developer"]),
+    Suite("x86-tcc-2", ["python3", "tools/run_tcc.py", X86,
+                        "build/user-x86_64-test/developer"], x86=True),
     Suite("arm-script", ["python3", "tools/run_script.py", ARM]),
     Suite("x86-script", ["python3", "tools/run_script.py", X86], x86=True),
 

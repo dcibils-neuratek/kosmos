@@ -20217,3 +20217,44 @@ install-apps` and a stick's `/Home`. The QEMU disk has room: 70 MB of its
 `-nostdinc` and the pack's headers, linked with the pack's runtime, head and
 libgcc - so `arm-tcc` and `x86-tcc` passing (14 checks each) says the pack is
 enough to build a Kosmos image from, on either processor.
+
+## 18.427 C compiled inside Kosmos (TinyCC C3)
+
+**The C Kit**, `/Kosmos/Kits/tcc`, in the full image (0.4 MB; the
+applications' images, which never compile, do not carry it): TinyCC built
+for Kosmos itself from the same patched copy, plus three files of its own.
+
+- **What TinyCC asks of a Unix is answered by the kit, not the libc**
+  (`shim.h`, `shim.c`). Kosmos's `unistd.h` is empty on purpose and its
+  stdio reads only bytes handed to it, so TinyCC's `open`, `read`, `lseek`,
+  `close`, `fdopen`, `fwrite`, `fputc`, `fclose`, `unlink` and the rest are
+  macros onto the kit's own, in TinyCC's one translation unit alone. **A
+  file opened for reading is asked of a Lua function** - `tccbuild.lua`
+  reads it through the namespace into a region, once a build - so only
+  what is included is read and nothing passes through the interpreter; a
+  file opened for writing is memory the kit owns.
+- **No `-run`**: a second patch, to `tcc.h`, undefines `TCC_IS_NATIVE`
+  under the Kosmos layout, so the code that runs what TinyCC made is not
+  compiled in at all - the kernel never allowing it is now matched by the
+  compiler not containing it.
+- **`tccbuild.lua`**: the developer files' runtime held to the system's
+  protocol stamp first (the kit scans for it in C), the build, the image
+  stamped and handed back in a region, written to the project's `build`
+  folder, and every region let go.
+- **The loader takes `build/<name>.elf`** in a program's `kosmos: image`
+  line - Diego's decision 4 - and still nothing that climbs out of the
+  program's folder.
+
+`tools/run_tcc.py` (`arm-tcc-2`, `x86-tcc-2`), 4 checks a board, in the
+machine and nothing from the Mac: `apptest.c` compiled and linked by the
+C Kit into `build/apptest.elf` - 20 MB, **227 ms on AArch64 and 83 ms on
+x86-64 under QEMU** - a program in it answered 42 by its kit; a file with
+an undeclared name answered with one problem, `/Home/t/broken.c:3`, in
+TinyCC's words, and nothing written; and the same pack with its runtime's
+stamp changed refused, "the developer files in /Home/Developer are from
+another Kosmos", before anything is linked.
+
+**Control**: the kit not stamping the header - the loader refuses the
+image, "no Kosmos header at its start", and the check fails in words (the
+first try at the suite crashed instead, waiting for an end a refused start
+never prints; it waits for either now).

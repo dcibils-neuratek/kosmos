@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+"""C compiled inside Kosmos (`docs/tinycc.md`, step C3).
+
+A disk carries the developer files (`installed.py`'s list, `/Home/Developer`)
+and a project: the loader's test kit's source, `apptest.c`; a program that
+builds it with the C Kit through `tccbuild.lua` into `build/apptest.elf`; a
+program whose header names that image; and a file with an error in it.
+Then, in the machine, with nothing from the Mac:
+
+  - **built**: the C Kit compiles and links, and the image is written to the
+    project's `build` folder - Diego's decision 4;
+  - **run**: a program in that image asks its kit, and is answered 42;
+  - **a problem at its line**: the broken file answers one error, on line 3,
+    in TinyCC's words, and nothing is written;
+  - **a pack from another build refused** - the runtime's protocol stamp
+    changed on the disk - in words that say so, before anything is linked.
+
+Usage: run_tcc.py IMAGE [DEVELOPER]   - the developer folder `make apps` made
+"""
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+
+import installed                                            # noqa: E402
+import scratch                                              # noqa: E402
+
+LUA = os.path.join(ROOT, "build", "host", "lua")
+
+MAKE = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+local r, why = use("/Kosmos/Libraries/tccbuild.lua").build{
+  sources = { "/Home/t/" .. ((args or "") ~= "" and args or "apptest.c") },
+  out = "/Home/t/build/apptest.elf" }
+if not r then print("BUILD refused: " .. tostring(why)) return end
+print(("BUILD %s %s bytes %s ms %d problems"):format(tostring(r.ok), tostring(r.bytes),
+      tostring(r.milliseconds), #r.problems))
+for _, p in ipairs(r.problems) do
+  print(("PROBLEM %s:%s %s %s"):format(tostring(p.file), p.line, p.severity, p.text))
+end
+"""
+
+RUN = """-- kosmos: image build/apptest.elf
+print("ANSWER " .. tostring(use("apptest.elf").answer()))
+"""
+
+BROKEN = """#include "lua.h"
+int f(void) {
+    return undeclared_name;
+}
+"""
+
+
+def main():
+    image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
+    arch = "x86_64" if "x86_64" in image else "aarch64"
+    work = scratch.directory("tcc-" + arch)
+    fails, checks = [], 0
+
+    def check(ok, what):
+        nonlocal checks
+        checks += 1
+        if not ok:
+            fails.append(what)
+
+    for name, text in (("make.lua", MAKE), ("run.lua", RUN), ("broken.c", BROKEN)):
+        with open(os.path.join(work, name), "w") as f:
+            f.write(text)
+
+    shutil.copy(os.path.join(ROOT, "user", "kits", "apptest", "apptest.c"), work)
+
+    def disk(pairs, name):
+        path = os.path.join(work, name)
+
+        if os.path.exists(path):
+            os.remove(path)
+
+        subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", path, "96"]
+                       + pairs + ["%s:/Home/t/%s" % (os.path.join(work, n), n)
+                                  for n in ("apptest.c", "make.lua", "run.lua", "broken.c")],
+                       check=True, capture_output=True, cwd=ROOT)
+        return path
+
+    developer = installed.developer(arch, sys.argv[2] if len(sys.argv) > 2 else None)
+    good = disk(developer, "disk.img")
+
+    # The same pack, its runtime's protocol stamp changed: another build's.
+    stale_runtime = os.path.join(work, "runtime-stale.o")
+    runtime = [p.split(":", 1)[0] for p in developer if p.endswith("/runtime.o")][0]
+    data = bytearray(open(runtime, "rb").read())
+    at = data.find(b"KOSMOS-PROTOSTAMP:") + len(b"KOSMOS-PROTOSTAMP:")
+    data[at:at + 16] = b"0123456789abcdef"
+    open(stale_runtime, "wb").write(bytes(data))
+    stale = disk([p if not p.endswith("/runtime.o")
+                  else "%s:/Home/Developer/runtime.o" % stale_runtime
+                  for p in developer], "stale.img")
+
+    import run_screenshot as R                              # noqa: E402
+    import run_writeapp as WA                               # noqa: E402
+
+    def session(path, steps):
+        guest = WA.with_disk(image, path)
+
+        try:
+            guest.wait_for("kosmos> ", "a prompt")
+
+            for command, until in steps:
+                mark = len(guest.seen)
+                guest.type(command)
+
+                # The program's end, or the launcher's refusal - an image it
+                # would not start ends nothing - within the harness's while.
+                deadline = time.monotonic() + 120
+
+                while time.monotonic() < deadline:
+                    guest._read_available()
+                    after = guest.seen[mark:]
+
+                    if until in after or "\nrun: " in after:
+                        break
+
+                    time.sleep(0.2)
+
+            time.sleep(0.5)
+            guest._read_available()
+            return guest.seen
+        finally:
+            guest.close()
+
+    said = session(good, [("run /Home/t/make.lua", "(make) ended"),
+                          ("run /Home/t/run.lua", "(run) ended"),
+                          ("run /Home/t/make.lua broken.c", "(make) ended")])
+
+    built = re.search(r"^BUILD true (\d+) bytes (\d+) ms 0 problems", said, re.M)
+    check(built is not None and int(built.group(1)) > 1000000,
+          "apptest.c was not built into an image:\n" + said[-1500:])
+    check(re.search(r"^ANSWER 42", said, re.M) is not None,
+          "a program in the built image was not answered 42 by its kit:\n" + said[-1000:])
+    check(re.search(r"^BUILD false nil bytes \d+ ms 1 problems", said, re.M) is not None
+          and re.search(r"^PROBLEM /Home/t/broken\.c:3 error .*undeclared", said, re.M) is not None,
+          "the broken file was not one error on line 3:\n"
+          + "\n".join(l for l in said.splitlines() if "BUILD" in l or "PROBLEM" in l))
+
+    said = session(stale, [("run /Home/t/make.lua", "(make) ended")])
+    check("BUILD refused: the developer files in /Home/Developer are from another Kosmos" in said,
+          "a pack from another build was not refused in words:\n"
+          + "\n".join(l for l in said.splitlines() if "BUILD" in l))
+
+    if fails:
+        print("FAIL: %d of %d checks on C built inside Kosmos:\n  %s"
+              % (len(fails), checks, "\n  ".join(fails)))
+        return 1
+
+    print("PASS: %d checks on C built inside Kosmos (apptest.c compiled and linked by "
+          "the C Kit into build/apptest.elf, %s bytes in %s ms; a program in it answered "
+          "42; a broken file one error on line 3; a pack from another build refused)"
+          % (checks, built.group(1), built.group(2)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

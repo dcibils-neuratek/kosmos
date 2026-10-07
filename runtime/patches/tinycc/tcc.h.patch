@@ -1,0 +1,16 @@
+--- tcc.h
++++ tcc.h
+@@ -201,6 +201,13 @@
+ # endif
+ #endif
+ 
++#ifdef TCC_KOSMOS_LAYOUT
++/* Kosmos: a compiler that writes a program file and never runs code it
++   made - the kernel allows no process to (docs/tinycc.md). So there is no
++   -run, and none of what it needs is compiled in. */
++# undef TCC_IS_NATIVE
++#endif
++
+ #if defined CONFIG_TCC_BACKTRACE && CONFIG_TCC_BACKTRACE==0
+ # undef CONFIG_TCC_BACKTRACE
+ #else

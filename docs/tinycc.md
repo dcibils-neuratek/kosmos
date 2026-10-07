@@ -257,7 +257,7 @@ Each step its own revision and its own permanent test.
   and linked by TinyCC, booted by `run_loader.py`, on both processors.
 - **C2 - the runtime and the headers on the disk**, `/Home/Developer` (decision 1). **Done, 0.11.27** (`testing.md` 18.426).
   *Test*: the archive's sum held to the build's; a stale one refused.
-- **C3 - the C Kit**, TinyCC built for Kosmos itself. *Test*: inside the
+- **C3 - the C Kit**, TinyCC built for Kosmos itself. **Done, 0.11.28** (`testing.md` 18.427). *Test*: inside the
   machine, `apptest.c` built and its image run - the whole thing, on the
   machine, without the Mac; a file with an error answered with its line.
 - **C4 - `tcc` at the prompt.** *Test*: `tcc primes.c -o build/primes.elf`, then

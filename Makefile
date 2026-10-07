@@ -558,6 +558,12 @@ DEPS := $(OBJS:.o=.d)
 # error. Every variant builds.
 UBUILD := build/user$(VARIANT)
 
+# TinyCC's source and the patched copy built from it (`docs/tinycc.md`): for
+# the Mac's cross compilers in every build, and for the C Kit in the full one.
+TCC_UP   := runtime/upstream/tinycc
+TCC_HOST := $(HOSTDIR)/tinycc
+TCC_KIT_TARGET := $(if $(filter x86_64,$(ARCH)),TCC_TARGET_X86_64,TCC_TARGET_ARM64)
+
 USER_LIBC := runtime/libc/string.c \
              runtime/libc/malloc.c \
              runtime/libc/math.c \
@@ -1162,6 +1168,17 @@ WEB_GEN := $(GEN)/netsurf/aliases.inc \
            $(addprefix $(GEN)/nspatched/,$(WEB_PATCHED_H))
 
 USER_SRCS += $(WEB_SRCS) $(WEB_GEN_CSS)
+
+#
+# **The C Kit** (`docs/tinycc.md`, step C3): TinyCC inside Kosmos, in the
+# full image alone - the applications' images never compile anything, and
+# 0.4 MB in each would be for nothing. Its own three files are ordinary
+# userland C; TinyCC itself is compiled from the patched copy the Mac's
+# cross compilers are built from (`TCC_HOST`), with `shim.h` forced in -
+# what TinyCC asks of a Unix, answered by the kit and not by the libc.
+#
+USER_SRCS += user/kits/tcc/tcc_kosmos.c user/kits/tcc/shim.c user/kits/tcc/stamp.c \
+             $(TCC_HOST)/libtcc.c
 
 #
 # `-w -Wno-error` for the reason Doom and TinyGL get them: vendored code is
@@ -2949,18 +2966,34 @@ $(UBUILD)/apps/snes.elf: $(USER_OBJS) $(SNES_OBJS) $(UBUILD)/init.elf user/user.
 # Cross compilers for both processors, in one build of TinyCC's own make,
 # run with nothing of this one's variables in its environment.
 #
-TCC_UP   := runtime/upstream/tinycc
-TCC_HOST := $(HOSTDIR)/tinycc
 TCC      := $(TCC_HOST)/$(if $(filter x86_64,$(ARCH)),x86_64,arm64)-tcc
 TCC_INC  := -nostdinc -Iuser/kits/tcc/include -I$(TCC_HOST)/include -Ilua/upstream \
             -Ilua/kosmos -Iruntime/include -Iuser/include -DKOSMOS_USER \
             -include lua/kosmos/kosmos_lua.h
 
+# TinyCC for Kosmos itself, the C Kit's compiler (C3): the same patched copy,
+# vendored code under `-w` as Doom's is, `-std=gnu11` for the extensions it
+# is written in, and none of its parts a compiler that writes a file and runs
+# nothing needs - no `-run`, no bounds checker, no backtraces, no lock.
+$(UBUILD)/$(TCC_HOST)/libtcc.c.o: $(TCC_HOST)/.built user/kits/tcc/shim.h \
+                                  user/kits/tcc/sys/time.h $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) -std=gnu11 -w -Wno-error -Iuser/kits/tcc -I$(TCC_HOST) \
+	        -include user/kits/tcc/shim.h -D$(TCC_KIT_TARGET) -DONE_SOURCE=1 \
+	        -DCONFIG_TCC_STATIC=1 -DCONFIG_TCC_BACKTRACE=0 -DCONFIG_TCC_BCHECK=0 \
+	        -DCONFIG_TCC_SEMLOCK=0 -DTCC_KOSMOS_LAYOUT=1 -DTCC_VERSION='"0.9.28rc"' \
+	        -DCONFIG_TCCDIR='"/Home/Developer"' -c $(TCC_HOST)/libtcc.c -o $@
+
+$(UBUILD)/user/kits/tcc/tcc_kosmos.c.o: $(TCC_HOST)/.built
+$(UBUILD)/user/kits/tcc/tcc_kosmos.c.o: UCFLAGS += -I$(TCC_HOST) -Iuser/kits/tcc
+$(UBUILD)/user/kits/tcc/stamp.c.o: UCFLAGS += -Iuser/kits/tcc
+$(UBUILD)/user/kits/tcc/shim.c.o: UCFLAGS += -Iuser/kits/tcc
+
 $(TCC_HOST)/.built: $(wildcard $(TCC_UP)/*.c $(TCC_UP)/*.h $(TCC_UP)/lib/* $(TCC_UP)/include/*) \
-                    runtime/patches/tinycc/tccelf.c.patch
+                    $(wildcard runtime/patches/tinycc/*.patch)
 	@rm -rf $(TCC_HOST) && mkdir -p $(TCC_HOST)
 	cp -R $(TCC_UP)/. $(TCC_HOST)/
-	patch -s -d $(TCC_HOST) -p0 < runtime/patches/tinycc/tccelf.c.patch
+	for p in runtime/patches/tinycc/*.patch; do patch -s -d $(TCC_HOST) -p0 < $$p || exit 1; done
 	cd $(TCC_HOST) && env -i PATH="$$PATH" HOME="$$HOME" sh -c \
 	    './configure >/dev/null && make cross-arm64 cross-x86_64 CFLAGS="-O2 -DTCC_KOSMOS_LAYOUT" >/dev/null 2>&1'
 	@test -x $(TCC_HOST)/arm64-tcc && test -x $(TCC_HOST)/x86_64-tcc

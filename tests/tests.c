@@ -2595,7 +2595,7 @@ static bool test_placement_avoids_a_loaded_processor(void)
             }
 
             if (!settled) {
-                kputs("\n   (the fillers had not blocked on their core in ten seconds)");
+                kputs("\n   (the fillers had not blocked on their core in ten seconds)\n");
 
                 for (i = 0; i < 3; i++) {
                     thread_wake(fill[i]);
@@ -2633,7 +2633,7 @@ static bool test_placement_avoids_a_loaded_processor(void)
         if (landed == loaded) {
             kputs("\n   (placed on the loaded core, ");
             kputu(loaded);
-            kputs(", with its fillers blocked there)");
+            kputs(", with its fillers blocked there)\n");
             thread_place_across(1);
             return false;
         }

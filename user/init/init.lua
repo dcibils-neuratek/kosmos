@@ -171,8 +171,14 @@ function IMAGES.spawn(ns, path, role, caps, flags, pace)
     return id, id == nil and ("could not start a process for it: " .. tostring(why)) or nil
   end
 
-  if image:find("/", 1, true) or image == "." or image == ".." then
-    return nil, image .. ": an image is a file beside its program"
+  -- **Beside its program, or in the `build` folder beside it** - where the
+  -- C Kit writes a project's image (`docs/tinycc.md`, Diego's decision 4:
+  -- "beside the sources in a build directory"). Nothing else: a header
+  -- names no path that climbs out of its program's folder.
+  local leaf = image:match("^build/([^/]+)$") or image
+
+  if leaf:find("/", 1, true) or leaf == "." or leaf == ".." or leaf == "" then
+    return nil, image .. ": an image is a file beside its program, or in its build folder"
   end
 
   local region, length = IMAGES.load(ns, (path:match("^(.*)/[^/]*$") or "") .. "/" .. image,
