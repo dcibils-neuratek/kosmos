@@ -186,6 +186,36 @@ end
 --
 -- How many bytes landed, which is `size`, or nil and why.
 --
+--
+-- **And where the filesystem has no pages to hand over** - `/Home` in memory,
+-- which is what the M700 has when its stick is not taken at boot - the
+-- first window is refused, and the file comes a piece at a time through
+-- `fs.chunks` instead, each piece written into the region where it belongs.
+-- Slower, a round trip a couple of kilobytes, and never a string the file's
+-- size. Diego's first build on the M700, 7 October, stopped at nought bytes
+-- of a 22 MB `runtime.o` for want of it.
+--
+local function stream(path, r, size)
+  local done = 0
+
+  for piece in fs.chunks(path) do
+    local n = math.min(#piece, size - done)
+    local put, oops = sys.region_write(r.cap, done, n < #piece and piece:sub(1, n) or piece)
+
+    if not put then return nil, tostring(oops) end
+
+    done = done + n
+
+    if done >= size then break end
+  end
+
+  if done < size then
+    return nil, ("%s stopped after %d of %d bytes"):format(path, done, size)
+  end
+
+  return done
+end
+
 function regions.fill(path, r, size, window)
   window = window or regions.WINDOW
 
@@ -198,6 +228,11 @@ function regions.fill(path, r, size, window)
   while done < size do
     local got = fs.read_into(path, scratch.cap, done,
                              math.min(window, size - done))
+
+    if (not got or got == 0) and done == 0 then
+      regions.free(scratch)
+      return stream(path, r, size)
+    end
 
     if not got or got == 0 then
       regions.free(scratch)

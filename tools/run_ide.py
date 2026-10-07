@@ -480,6 +480,25 @@ def main():
 
         stop_desktop()
 
+        # **A large file in `/Home` in memory, into a region** (the M700, 7
+        # October): this harness has no disk, so `/Home` is in memory, as the
+        # M700's is when its stick is not taken at boot - and Build reads a
+        # 22 MB `runtime.o` from there. Three megabytes here, its last bytes
+        # read back from the region.
+        guest.type('fs.write("/Home/big.bin", string.rep("kosmos!!", 393216))')
+        time.sleep(3)
+        mark = len(guest.seen)
+        guest.type('fs.write("/Home/whole.lua", "local r, n = use([[/Kosmos/Libraries/regions.lua]])'
+                   '.read_whole([[/Home/big.bin]]) print([[WHOLE]], n, r and sys.region_read(r.cap, n - 8, 8))")')
+        time.sleep(1)
+        mark = len(guest.seen)
+        guest.type("/Home/whole.lua")
+        whole = said("WHOLE\t", mark, 60)
+        check(whole is not None and whole.split() == ["3145728", "kosmos!!"],
+              "three megabytes in /Home in memory did not come into a region whole: %r" % whole)
+        guest.type("rm /Home/big.bin")
+        guest.type("rm /Home/whole.lua")
+
         # **New Project over a file opened since** (Diego, the M700, 7
         # October): the dialog in front of the editor. A file opened after
         # the IDE started is added to the window after the dialog's parts,

@@ -20828,3 +20828,19 @@ dialog's box. **Control**: without `to_front` - 110 pixels of the code
 through the dialog, and it fails. (Two tries at the check passed without
 the fix first - a dialog opened at start, then an untitled file, which is
 not coloured as code - and were rewritten until it bit.)
+
+## 18.444 A large file from `/Home` in memory, into a region
+
+Diego, the same evening, on the M700: Build said "there are no developer
+files in /Home/Developer". Two causes. They were missing - only the
+installed applications had been sent with each network-booted build; they
+are sent with it now (75 files). And then they could not be read: the M700's
+`/Home` was in memory, its stick not taken at boot, and `regions.fill` reads
+with `fs.read_into`, which a filesystem in memory has no pages for - the
+22 MB `runtime.o` stopped at nought bytes. `regions.fill` now falls back to
+`fs.chunks` when the first window is refused, each piece written where it
+belongs in the region and never a string the file's size.
+
+`run_ide.py` (diskless, so `/Home` in memory), 50 checks: three megabytes
+read whole into a region, its last bytes read back - 0.8 s under TCG.
+**Control**: without the fallback, "stopped after 0 of 3145728 bytes".
