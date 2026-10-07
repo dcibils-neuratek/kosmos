@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>2. A unit converter</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+pre { font-family: "IBM Plex Mono", monospace; font-size: 14px; color: #1f2328; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 6px; padding: 0.6em 0.8em; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="1-hello-button.html">Previous: Hello, button</a> - <a href="index.html">Contents</a></p>
+<h1>2. A unit converter</h1>
+<p class="lead">Type a number, choose what to turn it into, and the answer appears as you type. On the way: a field you type in, a list to choose from, and a program that keeps its knowledge in a table rather than in a row of ifs.</p>
+<img src="converter.png" width="456" height="276" alt="The Converter window turning 20 Celsius into 68 Fahrenheit">
+<p class="caption">What you will have at the end of this lesson.</p>
+
+<h2>Start a project</h2>
+<p>As in lesson 1: <b class="ui">New</b>, <b class="ui">New Project</b>, <b class="ui">Lua app</b>, the <b class="ui">Hello Window</b> template, and the name <code>Converter</code>. Then select everything in <code>hello.lua</code> after the line that uses the UI kit, and delete it: this time the window is built from nothing.</p>
+
+<h2>A table of what it knows</h2>
+<pre>local CONVERSIONS = {
+  { "c-f",   "Celsius to Fahrenheit",  "f-c",   function(n) return n * 9 / 5 + 32 end, "F" },
+  { "f-c",   "Fahrenheit to Celsius",  "c-f",   function(n) return (n - 32) * 5 / 9 end, "C" },
+  { "km-mi", "Kilometres to miles",    "mi-km", function(n) return n / 1.609344 end, "miles" },
+  { "mi-km", "Miles to kilometres",    "km-mi", function(n) return n * 1.609344 end, "km" },
+}</pre>
+<p>Each row is one conversion: a short name, the words a person reads, the conversion that goes back the other way, the sum itself - a function, kept in the table like any other value - and the unit of the answer. Adding a conversion is adding a row; nothing else changes.</p>
+
+<h2>A field and a list</h2>
+<pre>local number = ui.field{ x = 24, y = 30, w = 140, text = "20", hint = "a number" }
+local which = ui.dropdown{ x = 180, y = 28, choices = choices, value = "c-f" }
+local answer = ui.label{ x = 24, y = 92, w = 392, text = "" }</pre>
+<p>A field is a line you can type in; <code>hint</code> is the grey word it shows while empty. A dropdown is a list to choose from: its <code>choices</code> are pairs - the value a program reads and the words a person sees - which the lesson's project makes from the table, one pair a row.</p>
+
+<h2>The answer, as you type</h2>
+<pre>local function work_out()
+  local n = tonumber(number.text)
+  local c = by[which.value]
+
+  if not n then
+    answer.text = "Type a number."
+  else
+    answer.text = ("%s is %.2f %s"):format(number.text, c[4](n), c[5])
+  end
+
+  win.dirty = true
+end
+
+number.on_change = function() work_out() end
+which.on_change = function() work_out() end</pre>
+<p><code>on_change</code> runs on every key typed into the field, and every choice made in the list, so the answer is always the answer to what is on the screen. <code>tonumber</code> turns the words into a number, or into nothing when they are not one - which the program says, rather than failing.</p>
+
+<h2>Run it</h2>
+<p>Press <kbd>F5</kbd>. Type a number; choose another conversion; watch the answer follow.</p>
+<img src="converter-ide.png" width="594" height="395" alt="The IDE running converter.lua, its window beside the code">
+<p class="caption">The converter running beside its code.</p>
+
+<h2>Swap</h2>
+<pre>swap.on_click = function()
+  local n = tonumber(number.text)
+  local c = by[which.value]
+
+  if n then
+    number.text = ("%.2f"):format(c[4](n))
+    number.caret = #number.text + 1
+  end
+
+  which.value = c[3]
+  work_out()
+end</pre>
+<p>The answer becomes the question, and the conversion turns round, using the third column of the table. Setting a field's text from the program moves nothing by itself, so the caret is put at the end as a person would expect it.</p>
+<p class="tip">The finished lesson is in <b class="ui">Lesson's Project</b>, under the three dots: <code>02-Converter</code>.</p>
+
+<h2>Try changing</h2>
+<ul>
+<li>Add litres to gallons, and gallons to litres - two rows.</li>
+<li>Show the answer with no decimals when it is a whole number.</li>
+<li>Make <kbd>Enter</kbd> in the field swap: a field has <code>on_enter</code> as well as <code>on_change</code>.</li>
+</ul>
+
+<h2>How Kosmos does it</h2>
+<p>A key reaches whichever control has the focus - here the field - and only it. The field keeps its own words and caret, and calls <code>on_change</code>; your program changes the label and says the window is dirty; the UI kit sends Astra what changed, and only that part of the screen is drawn again. Measured on the ThinkCentre, a key reaches the screen in about two and a half milliseconds.</p>
+
+<h2>The real thing</h2>
+<p>Kosmos's Preferences is built of these controls: dropdowns, fields and switches, each saving a setting the moment it changes. Open the IDE's <b class="ui">System</b> tab, then <code>/Kosmos/Apps</code>, then <code>preferences.lua</code>.</p>
+<p class="nav"><a href="1-hello-button.html">Previous: Hello, button</a> - <a href="index.html">Contents</a></p>
+</body>
+</html>

@@ -487,6 +487,12 @@ def main():
         check(said("counter: a window with ", mark, 120) == "two buttons",
               "lesson 1's finished project did not run")
         stop_desktop()
+        # Lesson 2's: the answer is worked out as the window opens.
+        mark = len(guest.seen)
+        guest.type("wm /Kosmos/Tutorial/02-Converter/converter.lua")
+        check(said("converter: 20 is ", mark, 120) == "68.00 F",
+              "lesson 2's finished project did not turn 20 C into 68 F")
+        stop_desktop()
         mark = len(guest.seen)
         guest.type("wm ide:/Home/development/asks.lua")
         said("ide: opened /Home/development/asks.lua", mark, 120)

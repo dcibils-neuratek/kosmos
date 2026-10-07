@@ -92,14 +92,37 @@ class IdeShots(Shots):
         self.save("running.png", (IDE_X - 4, IDE_Y - 26, IDE_X + IDE_W + 4, IDE_Y + IDE_H + 4),
                   halve=True)
 
+    def at(self, where):
+        return (int(n) for n in re.match(r"at (-?\d+),(-?\d+)", where or "at 180,140").groups())
+
+    def lesson2(self):
+        """The converter run in the IDE, beside its code."""
+        g = self.guest
+        mark = self.mark()
+        g.type("wm ide:/Kosmos/Tutorial/02-Converter/converter.lua")
+        self.expect("ide: opened /Kosmos/Tutorial/02-Converter/converter.lua", mark, 120,
+                    "the IDE did not open lesson 2's project")
+        time.sleep(3)
+        mark = self.mark()
+        self.key("f5")
+        self.expect("wm: window Converter", mark, 60, "F5 did not open the converter")
+        time.sleep(3)
+        self.screen()
+        self.save("converter-ide.png", (IDE_X - 4, IDE_Y - 26, IDE_X + IDE_W + 4, IDE_Y + IDE_H + 4),
+                  halve=True)
+
     def counter(self):
         g = self.guest
         mark = self.mark()
-        g.type("wm /Kosmos/Tutorial/01-Counter/counter.lua")
+        g.type("wm /Kosmos/Tutorial/01-Counter/counter.lua,/Kosmos/Tutorial/02-Converter/converter.lua")
         where = self.expect("wm: window Counter", mark, 120, "the finished Counter did not open")
+        there = self.expect("wm: window Converter", mark, 120, "the finished Converter did not open")
+        self.expect("converter: 20 is 68.00 F", mark, 60, "the converter did not turn 20 C into 68 F")
         time.sleep(3)
         self.screen()
-        wx, wy = (int(n) for n in re.match(r"at (-?\d+),(-?\d+)", where or "at 180,140").groups())
+        cx, cy = self.at(there)
+        self.save("converter.png", (cx - 12, cy - 34, cx + 440 + 12, cy + 230 + 12))
+        wx, wy = self.at(where)
 
         for _ in range(3):
             self.click(wx + 24 + 40, wy + 96 + 14)
@@ -113,6 +136,10 @@ class IdeShots(Shots):
         self.guest.wait_for("kosmos> ", "a prompt")
         self.lesson1()
 
+    def run2(self):
+        self.guest.wait_for("kosmos> ", "a prompt")
+        self.lesson2()
+
 
 def main():
     if len(sys.argv) != 3:
@@ -121,7 +148,7 @@ def main():
     image, out = sys.argv[1], sys.argv[2]
     problems = []
 
-    for step in ("run", "counter"):
+    for step in ("run", "run2", "counter"):
         shots = IdeShots(image, out)
 
         try:
@@ -141,7 +168,7 @@ def main():
 
         return 1
 
-    print("PASS: lesson 1 followed as its page gives it; the pictures are in " + out)
+    print("PASS: lessons 1 and 2 followed as their pages give them; the pictures are in " + out)
     return 0
 
 
