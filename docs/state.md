@@ -30,7 +30,9 @@ over `ui.lua`'s door; Plasma, a C app with a window, in New Project.
 **0.11.36 - W2** (18.433): commit and poll as structs on `/Running/wm`,
 by the message's tag; a C app's frames 1,216 bytes of Lua garbage to 0.
 
-**Next**: the developer files' `kosmos.h` (roadmap, found in W2); then the
+**0.11.37** (18.434): `kosmos.h` in a C app built inside Kosmos.
+
+**Next**: the
 Maps, Mail and Calendar designs; W3 only if a Lua app's frames show it.
 
 ## 6 October, the evening: C inside Kosmos - TinyCC C1-C6

@@ -969,6 +969,9 @@ tag - 1,216 bytes of Lua garbage a frame to 0. **Found**: the developer
 files carry `kosmos.h` and not the kernel's `syscall.h` it includes, so a
 C app cannot include `kosmos.h` at all - the pack to carry it, or `kosmos.h`
 to stand alone; TinyCC's assembler is also to be tried on its `svc`.
+**FIXED** (0.11.37, 18.434): the pack carries `syscall.h`, the C Kit
+defines `KOSMOS_USER_BASE`, and under TinyCC - whose AArch64 assembler has
+no `svc` - the six stubs are calls into the runtime.
 
 **FOUND on 6 October, in the C3 gate - two things that passed alone after.**
 (1) `x86-headless`: "/Kosmos/Programs lists 75 and user/bin/programs has

@@ -20448,3 +20448,27 @@ window 3". Each fails its check.
 `syscall.h` it includes, so a C app cannot include it (`roadmap.md`).
 
 The gate: 102 of 102 in 9:32.
+
+## 18.434 `kosmos.h` in a C app built inside Kosmos
+
+Found writing W2's test: the developer files carried `kosmos.h` and a C app
+could not include it. Three things stood in the way, found one at a time
+with the Mac's own TinyCC:
+
+- `kosmos.h` includes the kernel's `syscall.h`, which the pack did not
+  carry. It does now.
+- it refuses to compile without `KOSMOS_USER_BASE`, which GCC's builds pass
+  and the C Kit did not. The C Kit defines it as the base it links at.
+- **TinyCC's AArch64 assembler has no `svc`** ("ARM64 instruction 'svc' not
+  implemented"), so the inline stubs cannot be built by it at all. Under
+  `__TINYC__`, `syscall-aarch64.h` declares the six as functions, and
+  `user/init/syscalls.c` - GCC's, in every image's runtime - defines them
+  from the inline stubs. x86-64's TinyCC assembles `syscall` and needs none
+  of it. TinyCC is not patched for this.
+
+`run_tcc.py`: `framecheck.c` sends its three bad requests itself, with
+`kosmos_call` and `wmproto.h`, built at the prompt by `tcc` - 23 checks.
+**Control**: the `__TINYC__` branch taken out - `framecheck.c` is not built,
+2 fail.
+
+The gate: 102 of 102 in 9:33.

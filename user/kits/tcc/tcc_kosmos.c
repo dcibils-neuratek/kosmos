@@ -222,6 +222,15 @@ static int l_build(lua_State *L)
     tcc_set_output_type(s, TCC_OUTPUT_EXE);
     tcc_define_symbol(s, "KOSMOS_USER", "1");
 
+    /* Where the image is mapped, as GCC's builds say it (`kosmos.h`): the
+     * base this image is linked at. */
+    {
+        char at[32];
+
+        snprintf(at, sizeof at, "0x%llx", (unsigned long long)base);
+        tcc_define_symbol(s, "KOSMOS_USER_BASE", at);
+    }
+
     each(L, 1, "includes", s, tcc_add_include_path);
 
     prelude = field(L, 1, "prelude");

@@ -839,6 +839,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/gfx/pack.c \
              user/kits/gfx/rows.c \
              user/kits/window/window.c \
+             user/init/syscalls.c \
              user/kits/game/game.c \
              user/kits/game/gamesoft.c \
              user/kits/3d/k3d_mesh.c \
@@ -3041,14 +3042,14 @@ $(UBUILD)/tcc/apptest.o: user/kits/apptest/apptest.c $(TCC_HOST)/.built
 DEV := $(UBUILD)/developer
 
 $(DEV)/.made: $(UBUILD)/tcc/runtime.o $(UBUILD)/tcc/head.o $(TCC_HOST)/.built \
-              $(wildcard user/kits/tcc/include/*.h user/kits/window/kosmos_window.h runtime/include/*.h runtime/include/sys/*.h \
+              $(wildcard user/kits/tcc/include/*.h user/kits/window/kosmos_window.h kernel/syscall.h runtime/include/*.h runtime/include/sys/*.h \
                          user/include/*.h lua/upstream/*.h lua/kosmos/kosmos_lua.h)
 	@rm -rf $(DEV) && mkdir -p $(DEV)/include/sys $(DEV)/include/lua
 	$(OBJCOPY) --strip-debug $(UBUILD)/tcc/runtime.o $(DEV)/runtime.o
 	cp $(shell $(CC) -print-libgcc-file-name) $(DEV)/libgcc.a
 	cp $(UBUILD)/tcc/head.o $(DEV)/head.o
 	cp $(TCC_HOST)/include/*.h user/kits/tcc/include/*.h user/kits/window/kosmos_window.h runtime/include/*.h \
-	   user/include/*.h lua/kosmos/kosmos_lua.h $(DEV)/include/
+	   user/include/*.h kernel/syscall.h lua/kosmos/kosmos_lua.h $(DEV)/include/
 	cp runtime/include/sys/*.h $(DEV)/include/sys/
 	cp lua/upstream/lua.h lua/upstream/luaconf.h lua/upstream/lauxlib.h \
 	   lua/upstream/lualib.h $(DEV)/include/

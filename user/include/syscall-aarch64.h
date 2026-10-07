@@ -13,7 +13,31 @@
  *
  * The result comes back in x0, which is also argument zero - hence the
  * `"+r"` on it in every stub but the first.
+ *
+ * **Under TinyCC they are functions**, because its AArch64 assembler has no
+ * `svc` (`docs/tinycc.md`): a C app built inside Kosmos includes this file
+ * too, and gets the same six names as calls into the runtime it is linked
+ * with - `user/init/syscalls.c`, which GCC compiled from the stubs below.
+ * One more branch a system call, in code TinyCC built.
  */
+
+#if defined(__TINYC__)
+
+long kosmos_sys0(long n);
+long kosmos_sys1(long n, long a);
+long kosmos_sys2(long n, long a, long b);
+long kosmos_sys3(long n, long a, long b, long c);
+long kosmos_sys4(long n, long a, long b, long c, long d);
+long kosmos_sys5(long n, long a, long b, long c, long d, long e);
+
+#define sys0 kosmos_sys0
+#define sys1 kosmos_sys1
+#define sys2 kosmos_sys2
+#define sys3 kosmos_sys3
+#define sys4 kosmos_sys4
+#define sys5 kosmos_sys5
+
+#else
 
 static inline long sys0(long n)
 {
@@ -79,5 +103,7 @@ static inline long sys5(long n, long a, long b, long c, long d, long e)
                      : "memory", "cc");
     return x0;
 }
+
+#endif /* __TINYC__ */
 
 #endif /* KOSMOS_SYSCALL_AARCH64_H */
