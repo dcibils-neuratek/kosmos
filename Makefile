@@ -2596,7 +2596,7 @@ check-lua: $(HOSTDIR)/lua.ok
 # for it and left `init.bin`. Whatever happens to the tree while a build
 # runs, the build is of one revision and says one.
 #
-IMAGE_DOCS := docs/cheatsheet.html docs/cafesa3d-tutorial
+IMAGE_DOCS := docs/cheatsheet.html docs/cafesa3d-tutorial docs/ide-tutorial
 
 ifndef KOSMOS_BUILD
 KOSMOS_DIRTY := $(shell { git status --porcelain -- . ':!builds' ':!docs' ':!.*'; \
@@ -2719,6 +2719,12 @@ $(SCENE_FILES): $(GEN)/scenes/.made
 # holds that nothing in it is unreachable from the first page.
 TUTORIAL_FILES := $(wildcard docs/cafesa3d-tutorial/*.html docs/cafesa3d-tutorial/*.png)
 
+# **The IDE's tutorial** (`docs/ide-tutorial/`), the same way: carried as
+# `tutorial/ide/index.html` and the rest. Its lessons' finished projects are
+# `user/tutorial/`, served as `/Kosmos/Tutorial` with the templates' store.
+IDE_TUTORIAL_FILES := $(wildcard docs/ide-tutorial/*.html docs/ide-tutorial/*.png)
+LESSONS := $(wildcard user/tutorial/*/*)
+
 
 # **Whom the TLS Kit trusts, by name**, for the browser's Settings (`roadmap.md`
 # 6zz d5): the date of Mozilla's bundle and each root's name, read out of
@@ -2735,6 +2741,7 @@ $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
                  assets/images/test-screen.jpg \
                  $(ASSET_FILES) $(ASSET_LIST) LICENSE \
                  docs/cheatsheet.html tools/assets2c.py $(SCENE_FILES) $(TUTORIAL_FILES) \
+                 $(IDE_TUTORIAL_FILES) \
                  $(NETSURF_SHEETS) $(ROOT_NAMES)
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py assets_table $@ \
@@ -2747,6 +2754,7 @@ $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
 	        --prefix=line/ $(LINE_FILES) \
 	        --prefix=scenes/ $(SCENE_FILES) \
 	        --prefix=tutorial/cafesa3d/ $(TUTORIAL_FILES) \
+	        --prefix=tutorial/ide/ $(IDE_TUTORIAL_FILES) \
 	        --prefix=netsurf/ $(NETSURF_SHEETS) \
 	        --prefix=hyphenation/ $(HYPH_FILES) \
 	        --prefix=ca/ $(ROOT_NAMES)
@@ -2827,12 +2835,13 @@ TEMPLATES := $(wildcard user/templates/*/*)
 EXAMPLE_INPUTS := tools/examples.py $(wildcard user/examples/*/*) \
                   $(wildcard runtime/upstream/tinygl/examples/*) user/bin/apps/cube3d.lua
 
-$(GEN)/programs.c: $(BIN_LUA) $(THEMES) $(PAGES) $(TEMPLATES) $(EXAMPLE_INPUTS) tools/progs2c.py $(HOSTDIR)/lua.ok
+$(GEN)/programs.c: $(BIN_LUA) $(THEMES) $(PAGES) $(TEMPLATES) $(LESSONS) $(EXAMPLE_INPUTS) tools/progs2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/progs2c.py programs_lua $@ $(BIN_LUA) \
 	    --rooted user/themes themes/ $(THEMES) \
 	    --rooted user/pages pages/ $(PAGES) \
 	    --rooted user/templates templates/ $(TEMPLATES) \
+	    --rooted user/tutorial tutorial/ $(LESSONS) \
 	    --rooted $(GEN)/examples examples/ $$(python3 tools/examples.py $(GEN)/examples)
 
 # The libraries in user/lib/, the same way and for the same reason. A
@@ -4332,6 +4341,8 @@ host-check: $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/
 	@# decode at the size its page gives it, only what the browser draws,
 	@# and every control a page names in bold one the application has.
 	$(HOSTDIR)/lua tools/test_tutorial.lua $(TUTORIAL_FILES)
+	$(HOSTDIR)/lua tools/test_tutorial.lua --app user/bin/apps/ide.lua \
+	    --prefix tutorial/ide/ $(IDE_TUTORIAL_FILES)
 	@# The WAV header walker, likewise: pure Lua over a reader, so the
 	@# awkward headers can be built by hand rather than found in the wild.
 	$(HOSTDIR)/lua tools/test_wav.lua
@@ -4672,6 +4683,13 @@ tutorial-shots: $(HOSTDIR)/lua
 	@$(MAKE) --no-print-directory $(TARGET)
 	python3 tools/cafesa3d_tutorial_shots.py $(TARGET) docs/cafesa3d-tutorial
 
+# The IDE tutorial's pictures, the same way (`docs/ide-tutorial/`): each
+# lesson followed in the IDE as its page gives it, a step that cannot be
+# followed a failure by name. A few minutes.
+ide-tutorial-shots: $(HOSTDIR)/lua
+	@$(MAKE) --no-print-directory $(TARGET)
+	python3 tools/ide_tutorial_shots.py $(TARGET) docs/ide-tutorial
+
 # Everything in one image, linked. `MEGA=1` is where Doom and Quake meet in
 # a single link - where a name both of them define shows up - and the image
 # that comes closest to its heap, which `user/user.ld` asserts. Built rather
@@ -4707,7 +4725,7 @@ prepush:
 	@echo "ready to push: suites green and $(SHOTDIR) has today's picture."
 
 
-.PHONY: shot web browser tutorial-shots
+.PHONY: shot web browser tutorial-shots ide-tutorial-shots
 shot:
 	@$(MAKE) --no-print-directory FB=1920x1080 $(TARGET)
 	@mkdir -p $(SHOTDIR)

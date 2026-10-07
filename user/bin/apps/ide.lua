@@ -709,8 +709,10 @@ local build_button = ui.tool{ text = "Build", icon = "settings" }
 local FIND_FIELD = 240
 local find = ui.field{ w = FIND_FIELD, text = "", hint = "Find a file", icon = "search" }
 
--- The find bar's doors, written further down with the bar.
+-- The find bar's doors, written further down with the bar; and the
+-- tutorial's, with New Project.
 local open_bar, close_bar, bar_step
+local TUTORIAL
 
 -- **⋯ More**: what the tools do not show, grouped as a menu bar would group
 -- it - Kosmos has no menu bars (`roadmap.md` 5zj) - each with its key.
@@ -734,9 +736,11 @@ local function more_items()
 
   for _, it in ipairs(text:items()) do items[#items + 1] = it end
 
-  -- Help, with the tutorial: part one brings it (`roadmap.md` item 7).
+  -- Help: the tutorial's pages, and each lesson's project (`roadmap.md`
+  -- item 7). The two after are the tutorial's later parts'.
   items[#items + 1] = { separator = true }
-  items[#items + 1] = { text = "Tutorial", hint = "F1", disabled = true }
+  items[#items + 1] = { text = "Tutorial", hint = "F1", on_choose = function() TUTORIAL.open() end }
+  items[#items + 1] = { text = "Lesson's Project", submenu = TUTORIAL.items() }
   items[#items + 1] = { text = "Kits and their calls", disabled = true }
   items[#items + 1] = { text = "Keyboard Shortcuts", disabled = true }
 
@@ -2721,6 +2725,7 @@ function win:on_key(c)
   if c == ui.keywith(ui.F[3], ui.SHIFT) and bar_step then bar_step(true) return true end
   if c == 27 and bar_on then close_bar() return true end
 
+  if c == ui.F[1] then TUTORIAL.open() return true end      -- F1, the tutorial
   if c == 19 then save() return true end                    -- Ctrl S
   if c == 14 then new_file() return true end                -- Ctrl N
   if c == 15 then open_chosen() return true end             -- Ctrl O
@@ -2893,6 +2898,43 @@ local function show_dialog(on)
 end
 
 -- The template's files into `/Home/Projects/<name>`, and that the project.
+--
+-- **A folder of Kosmos's made a project**: copied to `to` unless it is
+-- there already - a lesson opened twice is the one being worked on - then
+-- made the project, in place of the one there was, its first Lua open.
+-- New Project and Help's lessons both come here. Whether it has C.
+--
+local function adopt_project(from, to)
+  local main, has_c = nil, false
+
+  if not fs.getattr(to) then
+    files.make_folder(to)
+
+    for _, f in ipairs(fs.list(from) or {}) do
+      local body = fs.read(from .. "/" .. f)
+
+      if type(body) == "string" then fs.write(to .. "/" .. f, body) end
+    end
+  end
+
+  for _, f in ipairs(fs.list(to) or {}) do
+    if f:match("%.lua$") and not main then main = to .. "/" .. f end
+    if f:match("%.c$") then has_c = true end
+  end
+
+  while #open > 0 do close_file(open[#open]) end
+
+  project = to
+  tree.roots[1] = folder(project, base(project), project:match("^(.*)/"))
+  tree.roots[1].open = true
+  build_problems = {}
+
+  if main then open_file(main) end
+
+  remember()
+  return has_c
+end
+
 local function create_project()
   local name = (name_field.text:gsub("^%s+", ""):gsub("%s+$", ""))
   local t = KINDS[new_kind].templates[new_template]
@@ -2909,34 +2951,55 @@ local function create_project()
     return
   end
 
-  files.make_folder(to)
-
-  local main, has_c = nil, false
-
-  for _, f in ipairs(fs.list(from) or {}) do
-    local body = fs.read(from .. "/" .. f)
-
-    if type(body) == "string" then
-      fs.write(to .. "/" .. f, body)
-      if f:match("%.lua$") and not main then main = to .. "/" .. f end
-      if f:match("%.c$") then has_c = true end
-    end
-  end
-
-  -- The new project, in place of the one there was.
-  while #open > 0 do close_file(open[#open]) end
-
-  project = to
-  tree.roots[1] = folder(project, base(project), project:match("^(.*)/"))
-  tree.roots[1].open = true
-  build_problems = {}
   show_dialog(false)
 
-  if main then open_file(main) end
+  local has_c = adopt_project(from, to)
 
-  remember()
   say(("created %s from the %s template - %s"):format(to, t[2],
       has_c and "F6 builds it, F5 runs it" or "F5 runs it"), theme.good)
+end
+
+--
+-- **The tutorial** (`docs/ide-tutorial.html`, part one 7 October): its
+-- pages, carried in the image and read by the browser where they lie, and
+-- each lesson's finished project in `/Kosmos/Tutorial`, opened as a project
+-- in `/Home/development` - the first project's folder - to be read, run and
+-- changed.
+--
+TUTORIAL = { index = "asset:tutorial/ide/index.html", lessons = "/Kosmos/Tutorial" }
+
+function TUTORIAL.open()
+  local ok, why = fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/browser.lua",
+                                       args = TUTORIAL.index })
+
+  print(ok and ("ide: tutorial at " .. TUTORIAL.index)
+        or ("ide: could not start the browser: " .. tostring(why)))
+end
+
+function TUTORIAL.items()
+  local items = {}
+  local names = fs.list(TUTORIAL.lessons) or {}
+
+  table.sort(names)
+
+  for _, name in ipairs(names) do
+    local number, title = name:match("^(%d+)%-(.+)$")
+
+    items[#items + 1] = {
+      text = number and ("%d. %s"):format(tonumber(number), title) or name,
+      on_choose = function()
+        local to = FIRST .. "/" .. name
+
+        adopt_project(TUTORIAL.lessons .. "/" .. name, to)
+        say(("lesson %s, in %s - F5 runs it"):format(name, to), theme.good)
+        print(("ide: lesson %s in %s"):format(name, to))
+      end,
+    }
+  end
+
+  if #items == 0 then items[1] = { text = "no lessons here", disabled = true } end
+
+  return items
 end
 
 for i, k in ipairs(KINDS) do

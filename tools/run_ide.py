@@ -465,6 +465,27 @@ def main():
               "Find in the project did not find the lamps: %r" % found)
         press("esc")
 
+        # **The tutorial** (part one, 7 October): F1 opens its first page in
+        # the browser, carried in the image, every picture on it shown.
+        mark = len(guest.seen)
+        press("f1")
+        index = "asset:tutorial/ide/index.html"
+        check(said("ide: tutorial at ", mark, 30) == index,
+              "F1 did not open the IDE's tutorial")
+        shown = said("browser: showing ", mark, 120)
+        check(shown is not None
+              and re.match(re.escape(index) + r', "Kosmos IDE tutorial", \d+ pixels tall, '
+                           r"\d+ pictures, 0 missing", shown) is not None,
+              "the browser did not show the tutorial's first page whole: %r" % shown)
+
+        stop_desktop()
+
+        # And lesson 1's finished project, as Help's Lesson's Project opens
+        # it: it runs, a window with two buttons.
+        mark = len(guest.seen)
+        guest.type("wm /Kosmos/Tutorial/01-Counter/counter.lua")
+        check(said("counter: a window with ", mark, 120) == "two buttons",
+              "lesson 1's finished project did not run")
         stop_desktop()
         mark = len(guest.seen)
         guest.type("wm ide:/Home/development/asks.lua")
@@ -497,7 +518,7 @@ def main():
           "line, Ctrl+S, the file exactly what the keys meant; the project and "
           "its file remembered; a program changed and not saved run to its error "
           "with Ctrl+Enter, a 21 KB library run as it is and said to be one, "
-          "another started with F5 and stopped with Shift+F5; the text larger and smaller with Ctrl = and Ctrl -, in the same face, and bench.lua's view moved by its scrollbar; a file checked as it opened, and a stray end refused by Lua's parser and taken back; a changed tab closed only when asked twice; ui.slidr found, and ui. and win: offering ui.lua's names and a window's methods, slider taken with Tab; Ctrl P finding the Clock, its library and the longer name in that order whatever the case, the library opened with Down and Enter, and the project's own file first; Find counting, choosing, going back, replacing, a line by Ctrl G, the project by Ctrl Shift F; a program's line typed in the Console)" % checks)
+          "another started with F5 and stopped with Shift+F5; the text larger and smaller with Ctrl = and Ctrl -, in the same face, and bench.lua's view moved by its scrollbar; a file checked as it opened, and a stray end refused by Lua's parser and taken back; a changed tab closed only when asked twice; ui.slidr found, and ui. and win: offering ui.lua's names and a window's methods, slider taken with Tab; Ctrl P finding the Clock, its library and the longer name in that order whatever the case, the library opened with Down and Enter, and the project's own file first; Find counting, choosing, going back, replacing, a line by Ctrl G, the project by Ctrl Shift F; a program's line typed in the Console; F1's tutorial shown whole, and lesson 1's project run)" % checks)
     return 0
 
 

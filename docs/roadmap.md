@@ -7897,6 +7897,14 @@ worst pass no longer one; key to screen 2.5 ms on average. **D1 written**:
 `docs/astra-display.md` and its diagram, four questions for Diego - the
 split, who draws an ordinary window (every window itself is recommended),
 the name, when.
+**The order, Diego, 7 October**: "lets do tutorial and mail, then do the
+astra window manager split. i need a mail client to work so its necessary",
+and the split's reason in his words: "the split is an optimization and a
+tidy and elegant split so we dont mix lua and c in places where should be
+c and places where it should be lua". So: IDE tutorial part one, then Kosmos
+Mail (designed first, built as an IDE project), then the split - D2 onwards,
+with D1's remaining questions (who draws an ordinary window, the name) put
+to him when its turn comes.
 
 ### The optimisation phase - after the applications
 

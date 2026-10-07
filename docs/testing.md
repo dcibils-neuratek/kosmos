@@ -20703,3 +20703,39 @@ And D1's design, `docs/astra-display.md` with `docs/astra-display.png`, for
 Diego: the split, and the decision under it - who draws an ordinary window.
 
 The gate: 102 of 102 in 9:44.
+
+## 18.440 The IDE tutorial, part one begun: Help, /Kosmos/Tutorial, lesson 1
+
+Agreed 7 October (`docs/ide-tutorial.html`): fourteen lessons in four parts,
+opened from the IDE's Help, each lesson's project copied into
+`/Home/development`, a part at a time. Part one's frame and its first lesson:
+
+- **Help, in the More menu**: **Tutorial** (and `F1`) opens the pages in the
+  browser - carried in the image as `tutorial/ide/`, read where they lie, as
+  Cafesa3D's are - and **Lesson's Project** lists `/Kosmos/Tutorial`, each
+  lesson's finished project, copying the one chosen into
+  `/Home/development/<lesson>` (or opening it there if it is already) and
+  making it the project. New Project and the lessons share one door for that,
+  `adopt_project`, rather than two copies of it.
+- **`docs/ide-tutorial/`**: the contents, and **lesson 1, Hello, button** -
+  New Project from the Hello Window template, the code read line by line, run,
+  changed into a counter with Start again; Try changing; How Kosmos does it;
+  and the real thing, the Calculator. Its finished project is
+  `user/tutorial/01-Counter`.
+- **Its pictures taken by following it**, `tools/ide_tutorial_shots.py`
+  (`make ide-tutorial-shots`), on Cafesa3D's `Shots`: New Project with Lua app
+  and Hello Window chosen and Counter typed, the project run and its button
+  pressed three times with the Output beside it, and the finished Counter. A
+  step that cannot be followed is a failure by name. **Found taking them**:
+  the window manager places a window where it fits, not always where it
+  asked - the button is pressed where the window says it opened.
+- **`tools/test_tutorial.lua`** takes the application and the folder now -
+  `--app user/bin/apps/ide.lua --prefix tutorial/ide/` - and allows `pre`,
+  which the browser draws spaces kept: 167 checks over two pages and three
+  pictures, every control a page names in bold one the IDE's source says.
+  **Control**: "Make It" for Create - 1 fails.
+- **`run_ide.py`**, 41 checks: F1 opening the first page, the browser showing
+  it with every picture and none missing; lesson 1's project running.
+  **Control**: F1 taken out - 2 fail.
+
+The gate: 102 of 102 in 9:47.

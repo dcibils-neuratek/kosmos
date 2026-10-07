@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos IDE tutorial</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+pre { font-family: "IBM Plex Mono", monospace; font-size: 14px; color: #1f2328; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 6px; padding: 0.6em 0.8em; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="1-hello-button.html">Next: Hello, button</a></p>
+<h1>Kosmos IDE tutorial</h1>
+<p class="lead">Fourteen lessons that build real applications for Kosmos in its IDE, from a window with a button to a world in 3D: first in Lua, then with C. Each ends by showing the application Kosmos itself ships that does the same thing for real, so its own applications become your worked examples.</p>
+<p>Every lesson builds one small application, step by step, with the code in front of you. Its finished project is in the IDE too: open the three dots at the right of the IDE's header, then <b class="ui">Lesson's Project</b>, and choose the lesson - it is copied into <code>/Home/development</code>, where you can run it, read it and change it.</p>
+<p class="note">Open this tutorial again at any time with <kbd>F1</kbd> in the IDE, or from the three dots, then <b class="ui">Tutorial</b>.</p>
+<h2>Part one: a Lua app</h2>
+<ul>
+<li><a href="1-hello-button.html">1. Hello, button</a> - a window, a label and buttons; running it, and changing it.</li>
+<li>2. A unit converter - fields, choices and the answer as you type. <i>Coming next.</i></li>
+<li>3. Notes - saving to <code>/Home</code>, and opening what Tracker hands you. <i>Coming.</i></li>
+<li>4. What's running - the system's servers, asked on a clock. <i>Coming.</i></li>
+<li>5. A kitchen timer - the two clocks, a notification, and a sound. <i>Coming.</i></li>
+</ul>
+<h2>Later parts</h2>
+<p>Part two draws pixels - a sketchpad and a falling-blocks game. Part three adds C - Mandelbrot timed in Lua and in C, and a window drawn entirely from C. Part four uses the system's kits - sound, the network, compression, a camera and 3D.</p>
+<h2>Three words first</h2>
+<p><b>A project</b> is a folder of your application's files. The IDE shows it on the left, under <b class="ui">Project</b>.</p>
+<p><b>An application</b> is a program with a window. In Kosmos it is written in Lua, and its first lines say so: <code>-- kosmos: application</code>.</p>
+<p><b>A kit</b> is code Kosmos supplies for your application to use - the UI kit for windows and buttons, the gfx kit for pixels, and many more. You reach one with <code>use</code>.</p>
+<p class="nav"><a href="1-hello-button.html">Next: Hello, button</a></p>
+</body>
+</html>

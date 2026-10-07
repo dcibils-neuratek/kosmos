@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>1. Hello, button</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+pre { font-family: "IBM Plex Mono", monospace; font-size: 14px; color: #1f2328; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 6px; padding: 0.6em 0.8em; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Contents</a></p>
+<h1>1. Hello, button</h1>
+<p class="lead">A window with a label and two buttons: one counts how many times it is pressed, and one starts again. It is the smallest whole application there is, and every other lesson grows from it.</p>
+<img src="counter.png" width="384" height="246" alt="The Counter window, pressed three times">
+<p class="caption">What you will have at the end of this lesson.</p>
+
+<h2>Start a project</h2>
+<p>Open the IDE from the Deskbar. In its row of tools, press <b class="ui">New</b>, then <b class="ui">New Project</b>. Choose <b class="ui">Lua app</b>, then the <b class="ui">Hello Window</b> template, type <code>Counter</code> as its name, and press <b class="ui">Create</b>.</p>
+<img src="new-project.png" width="760" height="460" alt="The New Project window with Lua app and Hello Window chosen">
+<p class="caption">New Project: what kind of application, which template, and its name.</p>
+<p>The IDE copies the template into <code>/Home/Projects/Counter</code> and opens its one file, <code>hello.lua</code>.</p>
+
+<h2>Read it</h2>
+<pre>local ui = use("/Kosmos/Libraries/ui.lua")</pre>
+<p>The UI kit: windows, labels, buttons and the rest. <code>use</code> is how a Kosmos program reaches anything the system supplies.</p>
+<pre>local win = ui.window{ title = "Hello Window", w = 360, h = 190, x = 180, y = 140 }</pre>
+<p>A window, with its title, its size and where on the screen it opens.</p>
+<pre>local label = ui.label{ x = 24, y = 34, w = 312, text = "Not pressed yet." }
+local button = ui.button{ x = 24, y = 92, text = "Press me", go = true }</pre>
+<p>A label and a button, placed in the window. <code>go = true</code> gives the button the accent colour that says it is the one to press.</p>
+<pre>button.on_click = function()
+  count = count + 1
+  label.text = ("Pressed %d %s."):format(count, count == 1 and "time" or "times")
+  win.dirty = true
+end</pre>
+<p>What happens on a press: count, change the label's words, and say the window has changed - <code>win.dirty</code> - so it is drawn again.</p>
+<pre>win:add(label)
+win:add(button)
+win:run()</pre>
+<p>Put them in the window, and run it: <code>win:run</code> draws the window and answers its events until it is closed.</p>
+
+<h2>Run it</h2>
+<p>Press <b class="ui">Run</b> in the tools, or <kbd>F5</kbd>. The window opens on the desktop; press its button a few times. What the program prints with <code>print</code> appears in the IDE's <b class="ui">Output</b>, below the code.</p>
+<img src="running.png" width="594" height="395" alt="The IDE running hello.lua, with its window beside it and the Output below">
+<p class="caption">Running: the application's window on the desktop, and what it printed in Output.</p>
+
+<h2>Change it</h2>
+<p>Make it a counter that can start again. Change the window's title to <code>"Counter"</code> and add a second button under the first:</p>
+<pre>local reset = ui.button{ x = 150, y = 96, text = "Start again" }
+
+reset.on_click = function()
+  count = 0
+  label.text = "Not pressed yet."
+  win.dirty = true
+end
+
+win:add(reset)</pre>
+<p>Put <code>win:add(reset)</code> before <code>win:run()</code> - nothing after <code>run</code> happens until the window is closed. Press <kbd>F5</kbd> again: the old window closes and the new one opens.</p>
+<p class="tip">The finished lesson is in <b class="ui">Lesson's Project</b>, under the three dots: <code>01-Counter</code>.</p>
+
+<h2>Try changing</h2>
+<ul>
+<li>Make the button count down from ten, and say "Lift off!" at nought.</li>
+<li>Make the window larger, and move the buttons side by side under the label.</li>
+<li>Print something different on each press, and watch the Output.</li>
+</ul>
+
+<h2>How Kosmos does it</h2>
+<p><code>ui.window</code> asks Astra, the desktop, for a window: a message to its window manager, which answers with the window and its size. When your window is drawn, the UI kit sends what it looks like - the label's words, the button's shape - and Astra puts it on the screen with everything else. A press on the button comes back to your program as an event, which <code>win:run</code> collects and hands to <code>on_click</code>. Your program never touches the screen and never needs to: what it was not given, it cannot reach.</p>
+
+<h2>The real thing</h2>
+<p>Kosmos's own Calculator is this lesson grown up: a window, a label for the answer, and a grid of buttons. Open the IDE's <b class="ui">System</b> tab, then <code>/Kosmos/Apps</code>, then <code>calc.lua</code>, and read it.</p>
+<p class="nav"><a href="index.html">Contents</a></p>
+</body>
+</html>

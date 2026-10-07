@@ -24,9 +24,28 @@
 --     - is a name the application's source has in quotes.
 --
 --   build/host/lua tools/test_tutorial.lua docs/cafesa3d-tutorial/*
+--   build/host/lua tools/test_tutorial.lua --app user/bin/apps/ide.lua \
+--       --prefix tutorial/ide/ docs/ide-tutorial/*
+--
+-- The application and where the image carries its tutorial are Cafesa3D's
+-- unless said: the IDE's tutorial is held the same way (7 October).
 
 local APP = "user/bin/apps/cafesa3d.lua"
 local PREFIX = "tutorial/cafesa3d/"
+
+do
+  local rest = {}
+  local i = 1
+
+  while i <= #arg do
+    if arg[i] == "--app" then APP, i = arg[i + 1], i + 2
+    elseif arg[i] == "--prefix" then PREFIX, i = arg[i + 1], i + 2
+    else rest[#rest + 1], i = arg[i], i + 1 end
+  end
+
+  for k = #arg, 1, -1 do arg[k] = nil end
+  for k, v in ipairs(rest) do arg[k] = v end
+end
 
 local checks, failed = 0, 0
 
@@ -63,10 +82,10 @@ end
 check(dir ~= nil, "given no files: build/host/lua tools/test_tutorial.lua docs/cafesa3d-tutorial/*")
 check(files["index.html"], "the folder has no index.html")
 
-local index = app:match('local TUTORIAL = { index = "asset:([^"]+)" }')
+local index = app:match('TUTORIAL = { index = "asset:([^"]+)"')
 
 check(index == PREFIX .. "index.html",
-      ("Cafesa3D opens the tutorial at %s, not at its first page"):format(tostring(index)))
+      ("%s opens the tutorial at %s, not at its first page"):format(APP, tostring(index)))
 
 -- What Kosmos's browser draws: the elements `web_style.c` gives a block
 -- or an inline style, and `web_paint.c`'s pictures, less the ones these
@@ -74,7 +93,10 @@ check(index == PREFIX .. "index.html",
 local TAGS = { html = true, head = true, meta = true, title = true, style = true, body = true,
                h1 = true, h2 = true, h3 = true, p = true, ul = true, li = true, a = true,
                b = true, strong = true, i = true, em = true, code = true, kbd = true,
-               img = true }
+               img = true,
+               -- A program's lines, spaces kept and not wrapped
+               -- (`web_paint.c`'s `put_pre`): the IDE's tutorial is code.
+               pre = true }
 
 -- Every quoted string in the application, folded: a tab is "material" in
 -- the source and Material on the screen.
