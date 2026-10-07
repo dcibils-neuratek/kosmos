@@ -7785,6 +7785,40 @@ that feels fast on it is a result rather than an emulator number. Every
 performance question in this project is currently answered "measure it on
 the Pi", and the Pi is not here yet.
 
+### The optimisation phase - after the applications
+
+**AGREED on 7 October - applications first, then a phase of optimising.**
+Diego: "I want to keep building apps that makes the os useful and
+productive before entering an optimization phase", and dynamic linking
+held for it: "Let's hold this now and add it to the roadmap as an
+optimization phase for kosmos". What waits here waits on purpose, until
+the applications make the system useful, and is not pulled forward.
+
+- **Dynamic linking: a C module loaded into a running process**, as Lua's
+  manual has it (`luaopen_x`, PiL chapter 26) - asked 7 October after the
+  three kinds of project were built. Today every TinyCC project is an image
+  of its own carrying the whole runtime, about 20 MB to add a few KB of C,
+  linked in about 220 ms under QEMU; and the developer files carry the
+  21 MB `runtime.o` for it. Checked the same day: TinyCC writes shared
+  objects for both processors (`-shared`, `R_AARCH64_JUMP_SLOT`,
+  `R_X86_64_JUMP_SLOT`), and the kernel already copies an image into pages
+  a process cannot write (`SYS_SPAWN_IMAGE`). **The steps**, as estimated:
+  D1 a system call that copies a prepared region into the caller's own
+  pages at an address it chose, code read-and-execute and data read-write;
+  D2 the runtime's symbols published, a table made by linking twice as
+  Linux's `kallsyms` is; D3 the loader in C, which relocates while the
+  bytes are still an ordinary region and then has D1 seal them - held on
+  the Mac to TinyCC's real output for both processors, since a wrong
+  relocation runs at the wrong address and says nothing; D4 `use("x.so")`
+  calling `luaopen_x`; D5 the IDE and `tcc` building `.so`; D6 the
+  documents. **What is Diego's first**: the principle "no process writes
+  code and runs it" would become "code is executable only through the
+  kernel's copy, never from pages a process can write" - which still
+  forbids a JIT. Designed first (`docs/dynlink.md`) when the phase comes.
+  Also asked: whether `KOSMOS_KIT` should take a manual-style
+  `luaopen_<name>` as well, and whether the Window Kit's calls should take
+  the `lua_State` explicitly.
+
 ### The browser
 
 - **FOUND on 5 October - a page from the network can link to a file on
