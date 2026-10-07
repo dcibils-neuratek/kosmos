@@ -1209,6 +1209,18 @@ receiving emails". Assessed, not designed:
 - **Designed before it is written**, the four documents, with made-up
   messages in the mockup - never a real mailbox.
 
+**WANTED, 7 October - Format Code in the IDE.** Diego: "the kosmos ide
+needs a format code button that makes the entire code beautiful and human
+readable with correct indentation, spaces, etc". A **Format** tool among the
+IDE's tools (and a key), for the file in front: Lua and C each set out in
+the system's own style - indentation by structure, one space around
+operators and after commas, blank lines between functions kept to one,
+trailing spaces gone - as one undoable step, the caret kept on its code.
+**A formatter is a kit**, since Text Editor, Cafesa3D's Script panel and a
+pre-save check could all want it: `luafmt.lua` over `lualex.lua`, and C's
+over `clex.lua`, the lexers the IDE already colours with, so a comment or a
+string is never rearranged. Drawn and agreed before it is built.
+
 **AGREED on 7 October - Kosmos Mail, built as an IDE project and shipped
 as one.** Diego: "for the mail app, lets build it in kosmos ide!", "so the
 app itself is an kosmos app example!", "so we code the app in lua and
