@@ -1336,6 +1336,16 @@ while the desktop draws the larger icons in stages, which the check's own
 time 79 of 79 alone. To wait for the desktop's word that it finished laying
 out, rather than for the screen to hold still.
 
+**WANTED, 7 October - Paint, redesigned as a serious image editor.** Diego:
+"paint needs a massive redesign with more features and more professional
+tools". Designed first, its four documents (`CLAUDE.md`, *And an app is
+designed before it is written*), with these asked of Diego before the
+feature set is fixed: which application it is after; whether it is pixels
+alone or pixels and shapes; layers; and what it opens and saves. The
+premise holds - brushes, selections, filters and the file formats are kits
+another application (Photo Viewer, Write's pictures, Cafesa3D's textures)
+could use, in C where they are loops over pixels.
+
 **WANTED, 7 October - Format Code in the IDE.** Diego: "the kosmos ide
 needs a format code button that makes the entire code beautiful and human
 readable with correct indentation, spaces, etc". A **Format** tool among the
