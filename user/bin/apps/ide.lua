@@ -55,6 +55,10 @@ local ui = use("/Kosmos/Libraries/ui.lua")
 local files = use("/Kosmos/Libraries/files.lua")
 local lint = use("/Kosmos/Libraries/lint.lua")
 local libdoc = use("/Kosmos/Libraries/libdoc.lua")
+-- A project's C: coloured by `clex`, its headers read by `cdoc` for what is
+-- suggested as it is typed.
+local clex = use("/Kosmos/Libraries/clex.lua")
+local cdoc = use("/Kosmos/Libraries/cdoc.lua")
 local lualex = use("/Kosmos/Libraries/lualex.lua")
 local panel = use("/Kosmos/Libraries/panel.lua")
 local theme = ui.theme
@@ -276,7 +280,7 @@ local function open_file(path)
   local editor = ui.editor{
     x = SIDE, y = BODY, w = rw - SIDE, h = rh - BODY - BOTTOM - FOOT,
     follow = { "left", "right", "top", "bottom" },
-    code = path:match("%.lua$") and "lua" or nil,
+    code = (path:match("%.lua$") and "lua") or (path:match("%.[ch]$") and "c") or nil,
     read_only = read_only(path),
     text = body,
     face = function() return text:face() end,
@@ -446,10 +450,23 @@ local function outline_of(f)
 
   if not f then return rows end
 
+  local c = f.editor.code == "c"
+
   for n, line in ipairs(f.editor.lines) do
-    local name = line:match("^%s*local%s+function%s+([%w_%.:]+)")
-                 or line:match("^%s*function%s+([%w_%.:]+)")
-                 or line:match("^%s*([%w_%.]+)%s*=%s*function")
+    local name
+
+    if c then
+      -- A function defined at the top: a head that starts the line, a name
+      -- and its `(`, and no `;` - which would make it a declaration.
+      name = not line:find(";%s*$") and not line:match("^%s*#")
+             and line:match("^[%a_][%w_%s%*]-([%a_][%w_]*)%s*%(")
+
+      if name and clex.KEYWORDS[name] then name = nil end
+    else
+      name = line:match("^%s*local%s+function%s+([%w_%.:]+)")
+             or line:match("^%s*function%s+([%w_%.:]+)")
+             or line:match("^%s*([%w_%.]+)%s*=%s*function")
+    end
 
     if name then rows[#rows + 1] = { text = name, line = n, note = tostring(n) } end
   end
@@ -529,8 +546,9 @@ function foot:draw(g)
     end
 
     words = ("Ln %d, Col %d    %s    2 spaces    %s%s"):format(b.cy, b.cx,
-            current.editor.code and "Lua 5.4" or "Text",
-            current.editor.code and said or "",
+            (current.editor.code == "lua" and "Lua 5.4")
+              or (current.editor.code == "c" and "C, built by TinyCC") or "Text",
+            current.editor.code == "lua" and said or "",
             current.editor.read_only and "    read only" or "")
   else
     words = "no file open - choose one in the tree"
@@ -826,7 +844,7 @@ local function start()
 end
 
 function start_lua(f)
-  if not f or not f.editor.code then
+  if not f or f.editor.code ~= "lua" then
     say("Run runs a Lua file - open one first")
     return
   end
@@ -1222,7 +1240,8 @@ end
 -- files, read only, get the parser and not luacheck: they are not yours to
 -- change, and luacheck over `ui.lua` would stop the window for a while.
 function check_now(f, open_panel)
-  if not (f and f.editor.code) then return end
+  -- Lua's parser and luacheck are Lua's; C is checked by TinyCC, at F6.
+  if not (f and f.editor.code == "lua") then return end
 
   parse_now(f)
 
@@ -1318,7 +1337,8 @@ function suggest:draw(g)
       g:fill(2, y, LIST_W - 3, SUGGEST_ROW, colours.selection)
     end
 
-    local badge = (e.kind == "method") and "m" or (e.kind == "value") and "v" or "fn"
+    local badge = ({ method = "m", value = "v", type = "t", macro = "#",
+                     keyword = "k" })[e.kind] or "fn"
     local bw = gfx.measure(badge, "ui") + 8
 
     g:frame_round(10, y + (SUGGEST_ROW - 16) // 2, bw, 16, colours.call, 4)
@@ -1403,10 +1423,184 @@ local function take_suggestion(editor)
   close_suggestions()
 end
 
+--------------------------------------------------------------------------
+-- **C, suggested as it is typed** (7 October; Diego: "Make sure c has
+-- coloring and syntax highlighting and editor suggestions as you type").
+-- What a C file can call is what its headers declare, so the names are
+-- read from them - `#include "kosmos_window.h"` from the project's folder
+-- or the developer files, and what those include in turn - with the file's
+-- own functions and C's words. Two letters of a name open the list; a `.`
+-- or `->` after a variable whose struct is known offers its fields.
+--------------------------------------------------------------------------
+
+local headers = {}                      -- a header's path: its names, or false
+
+local function header_names(name, folder)
+  for _, dir in ipairs({ folder, use("/Kosmos/Libraries/tccbuild.lua").DEVELOPER .. "/include" }) do
+    local path = dir .. "/" .. name
+
+    if headers[path] == nil then
+      local source = fs.read(path)
+
+      headers[path] = (type(source) == "string") and { set = cdoc.read(source), source = source }
+                      or false
+    end
+
+    if headers[path] then return headers[path] end
+  end
+
+  return nil
+end
+
+-- Everything `editor`'s file can name, kept until the file changes.
+local function c_names(editor, folder)
+  if editor.c_names and editor.c_names_version == editor.version then
+    return editor.c_names
+  end
+
+  local all = { list = {}, names = {}, fields = {} }
+
+  local function merge(set)
+    for _, e in ipairs(set.list) do
+      local had = all.names[e.name]
+
+      if not had or (had.kind == "type" and e.kind ~= "type") then
+        if not had then all.list[#all.list + 1] = e end
+        all.names[e.name] = e
+      end
+    end
+
+    for tag, fields in pairs(set.fields or {}) do all.fields[tag] = all.fields[tag] or fields end
+  end
+
+  -- The headers, and theirs, three deep.
+  local seen = {}
+
+  local function include(name, depth)
+    if seen[name] or depth > 3 then return end
+    seen[name] = true
+
+    local h = header_names(name, folder)
+
+    if not h then return end
+
+    merge(h.set)
+
+    for line in h.source:gmatch("[^\n]+") do
+      local inner = line:match('^%s*#%s*include%s*["<]([^">]+)[">]')
+
+      if inner then include(inner, depth + 1) end
+    end
+  end
+
+  merge(cdoc.own(editor.lines))
+
+  for _, name in ipairs(cdoc.includes(editor.lines)) do include(name, 1) end
+
+  for word in pairs(clex.KEYWORDS) do
+    if not all.names[word] then
+      local e = { name = word, kind = "keyword", signature = word, doc = "" }
+
+      all.names[word] = e
+      all.list[#all.list + 1] = e
+    end
+  end
+
+  table.sort(all.list, function(a, b) return a.name < b.name end)
+
+  editor.c_names, editor.c_names_version = all, editor.version
+  return all
+end
+
+-- The struct a variable of the file was declared as: `struct kw_surface s`,
+-- `struct kw_event *e`, or a typedef'd name the headers give fields to.
+local function c_type_of(lines, var, names)
+  for _, line in ipairs(lines) do
+    local tag = line:match("struct%s+([%a_][%w_]*)%s*%**%s*" .. var .. "%f[^%w_]")
+
+    if tag and names.fields[tag] then return tag end
+
+    for ty in line:gmatch("([%a_][%w_]*)%s+%**%s*" .. var .. "%f[^%w_]") do
+      if names.fields[ty] then return ty end
+    end
+  end
+
+  return nil
+end
+
+-- Whether column `col` of line `n` is inside a string or a comment.
+local function in_words(lines, n, col)
+  local state = nil
+
+  for i = 1, n - 1 do
+    local _, after = clex.line(lines[i], state)
+    state = after
+  end
+
+  local spans = clex.line(lines[n], state)
+
+  for _, s in ipairs(spans) do
+    if (s[3] == "string" or s[3] == "comment") and col >= s[1] and col <= s[2] then
+      return true
+    end
+  end
+
+  return false
+end
+
+local function refresh_c(editor, c, forced)
+  local b = editor.buf
+  local before = b.lines[b.cy]:sub(1, b.cx - 1)
+
+  if #before > 0 and in_words(b.lines, b.cy, #before) then return close_suggestions() end
+
+  local names = c_names(editor, project or "/Home")
+  local var, sep, prefix = before:match("([%a_][%w_]*)%s*(%.)([%w_]*)$")
+
+  if not var then var, sep, prefix = before:match("([%a_][%w_]*)%s*(%->)([%w_]*)$") end
+
+  local set, what
+
+  if var then
+    local tag = c_type_of(b.lines, var, names)
+
+    set = tag and names.fields[tag]
+    what = var .. sep
+  else
+    prefix = before:match("([%a_][%w_]*)$")
+
+    -- Two letters of a word, or any after Ctrl+Space; never a number.
+    if prefix and (#prefix >= 2 or forced) and not before:match("%d[%w_]*$") then
+      set, what = names, "a word"
+    elseif forced and not prefix then
+      set, what, prefix = names, "a word", ""
+    end
+  end
+
+  if not set then return close_suggestions() end
+
+  -- A letter, a `.` or `>` typed opens it; any other key only narrows or
+  -- closes what is open.
+  local typed = c and ((c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95
+                        or (c >= 48 and c <= 57) or c == 46 or c == 62)
+
+  if suggest.hidden and not (forced or typed) then return end
+
+  local items = libdoc.matching(set, prefix)
+
+  if #items == 0 or (#items == 1 and items[1].name == prefix) then
+    return close_suggestions()
+  end
+
+  open_suggestions(editor, items, prefix, what)
+end
+
 -- What the caret is after, asked again after every key: opened by a `.` or
 -- a `:` typed, or by Ctrl+Space, and narrowed by typing while it is open.
 local function refresh_suggestions(editor, c, forced)
   if not editor.code or editor.read_only then return close_suggestions() end
+
+  if editor.code == "c" then return refresh_c(editor, c, forced) end
 
   local b = editor.buf
   local before = b.lines[b.cy]:sub(1, b.cx - 1)
@@ -1806,7 +2000,7 @@ function win:on_frame()
   -- The parser, once typing has stopped for a moment.
   local f = current
 
-  if f and f.editor.code then
+  if f and f.editor.code == "lua" then
     local now = sys.ticks()
 
     if f.editor.version ~= f.seen_version then
@@ -1819,7 +2013,7 @@ function win:on_frame()
   end
 
   -- And awake while it is waiting to look.
-  local waiting = f and f.editor.code and f.parsed_version ~= f.seen_version
+  local waiting = f and f.editor.code == "lua" and f.parsed_version ~= f.seen_version
 
   local shown = running and ((sys.ticks() - running.started) // counter_hz)
 

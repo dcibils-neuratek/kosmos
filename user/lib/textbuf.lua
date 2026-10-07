@@ -647,9 +647,12 @@ end
 -- that has something on it already starts with `--`, those are taken off;
 -- otherwise `-- ` goes on every such line, at the indent of the least
 -- indented, so a block reads as one block with its comment marks in a
--- column.
+-- column. `mark` is the language's: `--` for Lua, the default, `//` for C.
 --
-function textbuf:toggle_comment()
+function textbuf:toggle_comment(mark)
+  mark = mark or "--"
+
+  local quoted = mark:gsub("%p", "%%%0")
   local y1, y2 = self:selected_lines()
   local all, least = true, nil
 
@@ -660,7 +663,7 @@ function textbuf:toggle_comment()
       local lead = #line:match("^[ \t]*")
 
       least = least and math.min(least, lead) or lead
-      if not line:find("^[ \t]*%-%-") then all = false end
+      if not line:find("^[ \t]*" .. quoted) then all = false end
     end
   end
 
@@ -674,14 +677,14 @@ function textbuf:toggle_comment()
     if not line:find("%S") then return end
 
     if all then
-      local _, e = line:find("^[ \t]*%-%- ?")
+      local _, e = line:find("^[ \t]*" .. quoted .. " ?")
       local lead = #line:match("^[ \t]*")
 
       self:replace(y, lead + 1, y, e + 1, "")
       self.shift[y] = -(e - lead)
     else
-      self:replace(y, least + 1, y, least + 1, "-- ")
-      self.shift[y] = 3
+      self:replace(y, least + 1, y, least + 1, mark .. " ")
+      self.shift[y] = #mark + 1
     end
   end)
 end

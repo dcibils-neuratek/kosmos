@@ -7645,7 +7645,26 @@ processors, and still what follows USB:
    screen, the processors - each showing the few lines of Lua that reach it,
    so the page is the demonstration and the code is the lesson. **Drawn
    first**, as every app is, and a natural companion to the tutorial below.
-7. **AGREED again on 26 September, NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
+7. **PLANNED AND AGREED on 7 October - the IDE tutorial, fourteen lessons
+   in four parts** (`docs/ide-tutorial.html`): a Lua app (a button, a unit
+   converter, notes, what's running, a kitchen timer), pixels (Sketch,
+   falling blocks), with C (Mandelbrot timed both ways, a window from C),
+   and the system's kits (a player, fetching a page, zipping a folder, a
+   camera window, 3D) - each ending on the bundled app that does it for
+   real. Diego, 7 October: "Lets focus on the tutorials for ide now that the
+   ide has been updated with C", then "Go ahead" to the four questions as
+   recommended: the lessons as drawn; opened from the IDE's **Help ▸
+   Tutorial**, pages in the browser, each lesson's project copied into
+   `/Home/development/`; the bundled apps opened read-only with **Save a
+   copy**; and built a part at a time, each shown before the next, part one
+   with the Help menu and a suite for the lessons. **And first, the IDE's
+   gaps against its drawing**, which the lessons' pictures would show:
+   **C coloured and suggested as it is typed** (Diego: "Make sure c has
+   coloring and syntax highlighting and editor suggestions as you type") -
+   **DONE** (0.11.39, `testing.md` 18.435); find in a file and in the
+   project, find and replace, go to line; the Console tab. Then Kosmos Mail.
+   The September plan follows, as it was:
+   **AGREED again on 26 September, NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua
    which was always the idea", which is `design.md` §9.1: there is no
    distinction between writing an app and modifying the system. Ten lessons,

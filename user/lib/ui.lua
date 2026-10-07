@@ -4147,6 +4147,7 @@ end
 --
 --   ui.editor{ x =, y =, w =, h =, text = "..." }
 --   ui.editor{ ..., code = "lua" }       the IDE's: coloured, marked, Tab kept
+--   ui.editor{ ..., code = "c" }         the same, for C
 --
 -- **The view over a `/Kosmos/Libraries/textbuf.lua`**, which holds the lines, the caret,
 -- the selection and the undo, and is tested on the Mac. This file draws it
@@ -4174,6 +4175,8 @@ end
 
 local textbuf = use("/Kosmos/Libraries/textbuf.lua")
 local lualex = use("/Kosmos/Libraries/lualex.lua")
+-- And C's, for a project's `.c` and `.h` (`code = "c"`), in the same kinds.
+local clex = use("/Kosmos/Libraries/clex.lua")
 
 --
 -- **The code look's colours: the drawing's two palettes, light and dark,
@@ -4574,7 +4577,8 @@ function ui.editor(spec)
   local function spans_of(n)
     while known < n do
       local i = known + 1
-      local got, after = lualex.line(buf.lines[i] or "", starts[i] or nil)
+      local got, after = ((v.code == "c") and clex or lualex)
+                           .line(buf.lines[i] or "", starts[i] or nil)
 
       spans[i] = got
       starts[i + 1] = after or false
@@ -4873,7 +4877,7 @@ function ui.editor(spec)
     elseif k == 9 and self.code then                          -- Tab
       if shift then buf:outdent() else buf:tab() end
     elseif k == 47 and ctrl and self.code then                -- Ctrl+/
-      buf:toggle_comment()
+      buf:toggle_comment(self.code == "c" and "//" or "--")
     elseif c >= 32 and c < 127 then
       buf:insert(string.char(c), "type")
     else

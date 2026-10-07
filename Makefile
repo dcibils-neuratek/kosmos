@@ -4286,6 +4286,8 @@ host-check: $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/
 	@# And Groove's Lua held to it: the sound bank, the demos, projects.
 	$(HOSTDIR)/test_synth tools/test_groove.lua
 	$(HOSTDIR)/lua tools/test_lualex.lua
+	$(HOSTDIR)/lua tools/test_clex.lua
+	$(HOSTDIR)/lua tools/test_cdoc.lua
 	@# And its checking: Lua's own parser, and the vendored luacheck loaded
 	@# as the machine loads it (6n, step 4).
 	$(HOSTDIR)/lua tools/test_lint.lua

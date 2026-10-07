@@ -20472,3 +20472,56 @@ with the Mac's own TinyCC:
 2 fail.
 
 The gate: 102 of 102 in 9:33.
+
+## 18.435 C in the IDE: coloured, and suggested as it is typed
+
+Diego, 7 October: "Make sure c has coloring and syntax highlighting and
+editor suggestions as you type". A project's `.c` opened as plain text.
+
+**Colours** - `user/lib/clex.lua`, `lualex.lua`'s shape for C: the same
+kinds, so the same two palettes - C's words and a directive in the
+keyword's colour, a header an `#include` names as a string, numbers with
+their suffixes, both kinds of comment, a name before `(` as a call, and
+the names a C app is handed - the standard types, and anything wearing
+`lua_`, `luaL_`, `kw_`, `KW_`, `kosmos_`, `WM_` - as the library's. What a
+comment, a string or a directive ending in a backslash carries to the next
+line is said, as Lua's long strings are. The editor picks the lexer by
+`code`; Ctrl+/ comments C with `//` (`textbuf:toggle_comment(mark)`).
+
+**Suggestions** - `user/lib/cdoc.lua` reads a header's declarations a
+statement at a time, comments kept aside: functions with how each is
+written and the comment above it, macros, constants, typedefs, and every
+struct's fields. Lua's `LUA_API int (lua_gettop) (lua_State *L);` reads as
+`int lua_gettop(lua_State *L);`. C keeps a struct's name apart from a
+function's, and so does it: `kosmos_window.h` has both `struct kw_surface`
+and `kw_surface()`. The IDE gathers what a file can name - the headers it
+includes, from the project or the developer files, and theirs three deep,
+its own functions, C's words - once a version of the file. **Two letters
+of a name open the list**, as typed; after `.` or `->` a variable's
+struct's fields, its type found where the file declares it; never inside a
+string or a comment. Badges: fn, v, t for a type, # for a macro, k for a
+keyword. The Lua parser, luacheck and the library check are Lua's alone
+now; the outline lists a C file's functions; the status bar says "C,
+built by TinyCC".
+
+**Found making it**: a function taking a struct -
+`static void draw(struct kw_surface s, ...)` - was read as that struct's
+definition, its body as the fields, so `s.` offered eleven names. A head
+with a `(` is a function's. And a rebuild in the edit's second left the
+image's `cdoc.lua` behind (*Make sees seconds*) - the first run of the
+fixed reader was the old one.
+
+Host: `tools/test_clex.lua`, 16 checks - **control**: the handed names off,
+3 fail; `tools/test_cdoc.lua`, 22, read from the tree's own headers -
+**control**: a struct's name hiding a function's, 1 fails. In the machine,
+`run_tcc.py`, 26 checks a board: plasma.c on the screen in the keyword's
+purple and the library's teal, counted by hue since a thin face is mostly
+blended edges; `kw_o` opening the list and Tab taking `kw_open`; `s.`
+offering `struct kw_surface`'s four fields and `pix` Tab taking `pixels`.
+**Control**: `.c` as plain text again - 3 fail.
+
+The gate: 100 of 102 in 9:39. `x86-network` - the second lookup of a boot
+unanswered - passed alone, 34 of 34; `x86-kernel`'s test 54, "a new thread
+avoids a loaded core" (the placement test on the roadmap), failed alone
+once more while the Mac's load was 8.6 and passed twice after it fell,
+197 of 197. Neither touches what this changed.

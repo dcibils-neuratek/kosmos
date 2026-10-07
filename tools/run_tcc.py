@@ -198,6 +198,65 @@ def main():
             guest.close()
     import run_writeapp as WA                               # noqa: E402
 
+    def ide_c(path):
+        """The IDE on Plasma's C (7 October): the screen's pixels in the
+        code look's keyword and library colours, then `kw_o` typed on a new
+        line and Tab, and `s.` and `pix` and Tab - what the IDE said."""
+        guest = WA.with_disk(image, path)
+
+        try:
+            guest.wait_for("kosmos> ", "a prompt")
+            guest.type("wm ide:/Home/P/Plasma/plasma.c")
+            guest.wait_for("wm: window ", "the IDE's window")
+            time.sleep(4)
+            dump = guest.screendump()
+            _, _, px = R.parse_ppm(dump)
+
+            # By hue rather than by value, since a thin mono face is mostly
+            # edges blended into the ground: the keyword's purple (red and
+            # blue well over green) and the library's teal (green and blue
+            # well over red, and close to each other). Nothing else in the
+            # window is either.
+            keyword = library = 0
+
+            for i in range(0, len(px) - 2, 3):
+                r, g, b = px[i], px[i + 1], px[i + 2]
+
+                if r > g + 30 and b > g + 60 and b > r:
+                    keyword += 1
+                elif g > r + 50 and b > r + 50 and abs(g - b) < 30:
+                    library += 1
+
+            # Inside the loop, where `struct kw_surface s` is declared: the
+            # line after `draw(s, t);` - found by Ctrl End and going up is
+            # fragile, so a new last line is used, and `s` is the loop's.
+            mark = len(guest.seen)
+
+            for key in ("ctrl-end", "ret", "k", "w", "shift-minus", "o"):
+                guest.sendkey(key)
+                time.sleep(0.15)
+
+            deadline = time.monotonic() + 30
+
+            while time.monotonic() < deadline and "ide: suggesting" not in guest.seen[mark:]:
+                guest._read_available()
+                time.sleep(0.2)
+
+            guest.sendkey("tab")
+            time.sleep(1)
+
+            for key in ("ret", "s", "dot", "p", "i", "x"):
+                guest.sendkey(key)
+                time.sleep(0.15)
+
+            time.sleep(1)
+            guest.sendkey("tab")
+            time.sleep(1.5)
+            guest._read_available()
+            return guest.seen[mark:], keyword, library
+        finally:
+            guest.close()
+
     def plasma(path):
         """The Plasma template, built by `templates.lua`, on the desktop: two
         screens a second apart, then Escape - what it said, and how many
@@ -352,6 +411,24 @@ def main():
           "the window manager did not refuse bad frame requests with their reasons:\n"
           + "\n".join(l for l in seen.splitlines() if "FRAMECHECK" in l))
 
+    # **C in the IDE** (7 October; Diego: "Make sure c has coloring and
+    # syntax highlighting and editor suggestions as you type"): plasma.c in
+    # the code look's colours - its keywords and the names a C app is handed
+    # - and, typed, two letters opening the names its headers declare, Tab
+    # taking `kw_open`, and `s.` offering `struct kw_surface`'s fields.
+    typed, keyword, library = ide_c(good)
+    check(keyword > 40 and library > 40,
+          "plasma.c is not coloured as C: %d keyword pixels, %d library pixels"
+          % (keyword, library))
+    check(re.search(r"^ide: suggesting \d+ names after a word", typed, re.M) is not None
+          and "ide: took kw_open" in typed,
+          "kw_o did not offer and take kw_open:\n"
+          + "\n".join(l for l in typed.splitlines() if l.startswith("ide:")))
+    check(re.search(r"^ide: suggesting 4 names after s\.", typed, re.M) is not None
+          and "ide: took pixels" in typed,
+          "s. did not offer struct kw_surface's four fields and take pixels:\n"
+          + "\n".join(l for l in typed.splitlines() if l.startswith("ide:")))
+
     # **New Project, in the IDE** (C6): opened on it, Enter creates the
     # default - a Lua and C app from Mandelbrot - F6 builds it and F5 runs it,
     # and the window it opens is the fractal: its black interior on the screen.
@@ -377,7 +454,7 @@ def main():
     print("PASS: %d checks on C built inside Kosmos (apptest.c compiled and linked by "
           "the C Kit into build/apptest.elf, %s bytes in %s ms; a program in it answered "
           "42; a build after a refused image; a broken file one error on line 3; the same at the prompt with tcc; the "
-          "IDE's F6 and F5; the five templates, built and run; Plasma's window from C, animating and closed; its frames allocating nothing in Lua and bad ones refused; New Project making, "
+          "IDE's F6 and F5; the five templates, built and run; Plasma's window from C, animating and closed; C coloured in the IDE and suggested as it is typed; its frames allocating nothing in Lua and bad ones refused; New Project making, "
           "building and running Mandelbrot; a pack from another build refused)"
           % (checks, built.group(1), built.group(2)))
     return 0
