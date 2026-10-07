@@ -7837,6 +7837,27 @@ the Pi", and the Pi is not here yet.
 
 ### The system
 
+- **WANTED on 6 October - a virtual machine: Linux running inside Kosmos.**
+  Diego: "Is there a way que could port qemu to kosmos? There is a web
+  version callee jslinux that runs Linux virtualization in the browser",
+  and then "Put it on the roadmap". **Not QEMU**: its speed is TCG, which
+  writes machine code and runs it, and no process here may run code it
+  wrote (the rule TinyCC was built around - it writes a file, and Kosmos
+  starts it); and it stands on glib, threads, signals, `mmap`, sockets and
+  `poll`, a POSIX personality of about two million lines. **TinyEMU
+  instead** - Bellard's, the engine under JSLinux: about 20,000 lines of C,
+  MIT, an *interpreter* of a RISC-V machine with virtio devices, so it
+  needs no rule changed. Its parts map onto what exists: the screen a gfx
+  surface, the keyboard and pointer the window's, the disk image in a
+  region, the network through the Network Kit. Its x86 mode needs KVM, so
+  the guest is RISC-V Linux, not x86 Linux or Windows; a shell, `gcc` and
+  small programs should be comfortable on the M700, a heavy desktop not.
+  **The shape, by the premise**: an *Emulator Kit* holding TinyEMU's core,
+  and a thin *Virtual Machine* app over it - an image chosen, its screen in
+  a window, its disk in `/Home`. As a new app it gets its four documents
+  first (feature set, mockup, architecture, diagram). **Later, and much
+  larger**: guests at full speed would mean Nebula itself a hypervisor (EL2
+  on ARM, VT-x on the M700) - a decision about the kernel, Diego's.
 - **NTFS, read only**, so the Windows files on the ThinkPad's NVMe open in
   Kosmos. Asked for by Diego on 14 September while deciding the drives
   design, then left out of USB step 6 to focus on FAT32 and exFAT: "we can
