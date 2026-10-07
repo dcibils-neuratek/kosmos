@@ -28,6 +28,15 @@ first, the four templates, a `build` folder, `tcc`.
 bytes after a write refused for a full disk; `/Kosmos/Programs` listing one
 short once under load; the placement test failing once, now saying how.
 
+**Pushed through 0.11.31** (`5a1160d5`). **The M700**: 0.11.32 netbooted;
+a stick image, `kosmos-usb-0.11.33-development.img`, built with Doom, Quake,
+the SNES and `/Home/Developer` in its `/Home` and booted under OVMF (32
+checks) - Diego writes it tomorrow with `tools/mkusb.sh`. **The netboot now
+names that stick's partition** by its GUID, so until it is written the
+M700's old stick is not found as `/Home`. A telnet copy of the developer
+files to the old stick was started and not finished; the new stick makes it
+moot.
+
 **Next**: the Window Kit in C (decision 2); the M700 with
 `/Home/Developer` on its stick, to try `tcc` there; then the Maps, Mail and
 Calendar designs; neofetch compact over telnet.
