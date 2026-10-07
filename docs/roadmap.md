@@ -1284,8 +1284,10 @@ with the project's other settings (`prefs.lua`). Through the kit's
 panes can have it the same way - Tracker's sidebar, Preferences', Mail's
 three panes.
 
-**DRAWN, 7 October - the launcher's sections as a sidebar, browsed by
-hovering** (`docs/launcher.html`, for Diego to agree). Diego: "right now is
+**AGREED, 7 October - the launcher's sections as a sidebar, browsed by
+hovering** (`docs/launcher.html`; Diego: "yes to all, go ahead" - the
+menu's pause, opening on All, a Recent row as its own step after, the panel
+820 wide). Diego: "right now is
 hard to find apps in the new app launcher because there are many", "the
 categories are good but they are small and hard to click", "i want to
 convert the categories into menus (like a sidebar of items) where i can
