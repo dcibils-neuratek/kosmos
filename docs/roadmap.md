@@ -1302,6 +1302,20 @@ switch rows; a click only to start something; search still across every
 application; the keyboard's Up and Down through the rows; the panel 820
 wide. Four questions asked on the page.
 
+**AGREED, 7 October - a window made active by resting the pointer on it.**
+Diego: "theres one feature i love from old unix systems", "once you hover
+an app with the mouse for 1 second (configurable in preferences) the window
+becomes active (as if you clicked it)". X11's focus following the mouse,
+with its auto-raise: the pointer resting on a window that is not the active
+one for the delay - 1 second by default - makes it active and brings it to
+the front, exactly as a click on it would, without the click reaching the
+window. In the window manager (it knows where the pointer is and which
+window is under it, and already raises and focuses on a press), not in
+each application. **Preferences**: on or off, and the delay, from a
+quarter of a second to three. Not while a button is held (a drag passing
+over windows), not for the Deskbar, the dock, menus, popups or the
+backdrop, and moving the pointer before the delay ends starts it again.
+
 **WANTED, 7 October - Format Code in the IDE.** Diego: "the kosmos ide
 needs a format code button that makes the entire code beautiful and human
 readable with correct indentation, spaces, etc". A **Format** tool among the
