@@ -1325,7 +1325,7 @@ in force ticked. In the header's menu with their keys. Zooming steps through
 fixed sizes (25% to 800%) and keeps the point under the pointer where it is
 when it comes from the wheel (Ctrl and the wheel); a picture larger than the
 window is moved by dragging it and by the wheel, with its scale shown in the
-header. The scaling is the gfx Kit's (`surface:blit_scaled`), so a zoom is
+header. The scaling is the gfx Kit's (`surface:stretch`, the scaler Photo Viewer uses today), so a zoom is
 one C call a frame and never a loop in Lua.
 
 **WANTED, 7 October - Format Code in the IDE.** Diego: "the kosmos ide
