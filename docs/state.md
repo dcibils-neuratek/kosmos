@@ -35,6 +35,9 @@ by the message's tag; a C app's frames 1,216 bytes of Lua garbage to 0.
 **0.11.40** (18.436): the IDE rearranged after Write - tools, More, Find
 and Replace, Ctrl G, Ctrl Shift F, System tab, Console that answers a read.
 
+**0.11.41** (18.437): the IDE's examples - TinyGL's eight demos as C projects
+through the GL Kit's door, Cube in Lua and in C; project defines.
+
 **Next**: the
 Maps, Mail and Calendar designs; W3 only if a Lua app's frames show it.
 

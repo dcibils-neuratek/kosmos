@@ -877,6 +877,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              $(TINYGL_SRCS) \
              $(TINYGL_DEMO_SRCS) \
              user/kits/gl/gl_demos.c \
+             user/kits/gl/gl_window.c \
              $(GEN)/font_8x16.c \
              $(GEN)/programs.c \
              $(GEN)/version.c \
@@ -1681,6 +1682,10 @@ $(UBUILD)/user/kits/gl/gl_demos.c.o: user/kits/gl/gl_demos.c $(UFLAGS_FILE)
 	$(CC) $(UCFLAGS) -Iruntime/upstream/tinygl/include -MMD -MP -c $< -o $@
 
 $(UBUILD)/user/kits/gl/gl_kosmos.c.o: user/kits/gl/gl_kosmos.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) -Iruntime/upstream/tinygl/include -MMD -MP -c $< -o $@
+
+$(UBUILD)/user/kits/gl/gl_window.c.o: user/kits/gl/gl_window.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) -Iruntime/upstream/tinygl/include -MMD -MP -c $< -o $@
 
@@ -2816,12 +2821,19 @@ PAGES := $(wildcard user/pages/*.page)
 # `/Kosmos/Templates`, copied whole into a new project.
 TEMPLATES := $(wildcard user/templates/*/*)
 
-$(GEN)/programs.c: $(BIN_LUA) $(THEMES) $(PAGES) $(TEMPLATES) tools/progs2c.py $(HOSTDIR)/lua.ok
+# **The IDE's examples** (`tools/examples.py`): put together at the build
+# from TinyGL's own demos, the system's cube3d and `user/examples/`, so none
+# is a second copy kept in the tree - and served as `/Kosmos/Examples`.
+EXAMPLE_INPUTS := tools/examples.py $(wildcard user/examples/*/*) \
+                  $(wildcard runtime/upstream/tinygl/examples/*) user/bin/apps/cube3d.lua
+
+$(GEN)/programs.c: $(BIN_LUA) $(THEMES) $(PAGES) $(TEMPLATES) $(EXAMPLE_INPUTS) tools/progs2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/progs2c.py programs_lua $@ $(BIN_LUA) \
 	    --rooted user/themes themes/ $(THEMES) \
 	    --rooted user/pages pages/ $(PAGES) \
-	    --rooted user/templates templates/ $(TEMPLATES)
+	    --rooted user/templates templates/ $(TEMPLATES) \
+	    --rooted $(GEN)/examples examples/ $$(python3 tools/examples.py $(GEN)/examples)
 
 # The libraries in user/lib/, the same way and for the same reason. A
 # separate store rather than a directory inside /bin, because a program is
@@ -3018,9 +3030,18 @@ $(HOSTDIR)/tcc_stamp: tools/tcc_stamp.c user/kits/tcc/stamp.c user/kits/tcc/stam
 # of its own beside `apps/`, with the other applications linked in, so
 # `run_loader.py` runs over it exactly as it runs over GCC's.
 #
+#
+# **Without the system's own GL demos**: they are TinyGL's examples linked
+# into the image under renamed entry points, and their other globals -
+# `vertices`, `Ymin` - are what a project built from the same demos defines
+# too (the IDE's examples, 7 October). The GL Kit's `demos` is weak.
+#
+TCC_RUNTIME_OBJS := $(filter-out $(UBUILD)/runtime/upstream/tinygl/examples/%.c.o \
+                                 $(UBUILD)/user/kits/gl/gl_demos.c.o,$(USER_OBJS))
+
 $(UBUILD)/tcc/runtime.o: $(USER_OBJS)
 	@mkdir -p $(dir $@)
-	$(CROSS)ld -r $(USER_OBJS) -o $@
+	$(CROSS)ld -r $(TCC_RUNTIME_OBJS) -o $@
 
 $(UBUILD)/tcc/head.o: user/kits/tcc/head.c $(TCC_HOST)/.built
 	@mkdir -p $(dir $@)
@@ -3042,15 +3063,20 @@ $(UBUILD)/tcc/apptest.o: user/kits/apptest/apptest.c $(TCC_HOST)/.built
 DEV := $(UBUILD)/developer
 
 $(DEV)/.made: $(UBUILD)/tcc/runtime.o $(UBUILD)/tcc/head.o $(TCC_HOST)/.built \
-              $(wildcard user/kits/tcc/include/*.h user/kits/window/kosmos_window.h kernel/syscall.h runtime/include/*.h runtime/include/sys/*.h \
+              $(wildcard user/kits/tcc/include/*.h user/kits/window/kosmos_window.h user/kits/gl/kosmos_gl.h runtime/upstream/tinygl/include/GL/*.h runtime/upstream/tinygl/examples/ui.h kernel/syscall.h runtime/include/*.h runtime/include/sys/*.h \
                          user/include/*.h lua/upstream/*.h lua/kosmos/kosmos_lua.h)
-	@rm -rf $(DEV) && mkdir -p $(DEV)/include/sys $(DEV)/include/lua
+	@rm -rf $(DEV) && mkdir -p $(DEV)/include/sys $(DEV)/include/lua $(DEV)/include/GL
 	$(OBJCOPY) --strip-debug $(UBUILD)/tcc/runtime.o $(DEV)/runtime.o
 	cp $(shell $(CC) -print-libgcc-file-name) $(DEV)/libgcc.a
 	cp $(UBUILD)/tcc/head.o $(DEV)/head.o
 	cp $(TCC_HOST)/include/*.h user/kits/tcc/include/*.h user/kits/window/kosmos_window.h runtime/include/*.h \
 	   user/include/*.h kernel/syscall.h lua/kosmos/kosmos_lua.h $(DEV)/include/
 	cp runtime/include/sys/*.h $(DEV)/include/sys/
+	@# TinyGL's, for a C program that draws in GL - the IDE's examples are
+	@# its own demos, unchanged, so their `ui.h` comes too - and the GL
+	@# Kit's door that gives such a program its window.
+	cp runtime/upstream/tinygl/include/GL/*.h $(DEV)/include/GL/
+	cp runtime/upstream/tinygl/examples/ui.h user/kits/gl/kosmos_gl.h $(DEV)/include/
 	cp lua/upstream/lua.h lua/upstream/luaconf.h lua/upstream/lauxlib.h \
 	   lua/upstream/lualib.h $(DEV)/include/
 	@grep -q "KOSMOS-PROTOSTAMP:" $(DEV)/runtime.o \

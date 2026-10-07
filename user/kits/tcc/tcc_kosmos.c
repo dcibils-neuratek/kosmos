@@ -9,6 +9,7 @@
  *     link     = { "/Home/Developer/head.o", "/Home/Developer/runtime.o",
  *                  "/Home/Developer/libgcc.a" },     -- head first
  *     prelude  = "/Home/Developer/include/kosmos_lua.h",
+ *     defines  = { "main=demo_main" },        -- a project's, as -D
  *     base     = 0x80000000,              -- this machine's when left out
  *     reader   = function(path) return address, size end,  -- or nil
  *   }
@@ -232,6 +233,34 @@ static int l_build(lua_State *L)
     }
 
     each(L, 1, "includes", s, tcc_add_include_path);
+
+    /* A project's own: `defines = { "main=demo_main", "DEBUG" }`, as `-D`. */
+    lua_getfield(L, 1, "defines");
+
+    if (lua_istable(L, -1)) {
+        int n = (int)lua_rawlen(L, -1);
+
+        for (int i = 1; i <= n; i++) {
+            lua_rawgeti(L, -1, i);
+
+            if (lua_isstring(L, -1)) {
+                char name[128];
+                const char *d = lua_tostring(L, -1);
+                const char *eq = strchr(d, '=');
+                size_t len = eq ? (size_t)(eq - d) : strlen(d);
+
+                if (len > 0 && len < sizeof name) {
+                    memcpy(name, d, len);
+                    name[len] = '\0';
+                    tcc_define_symbol(s, name, eq ? eq + 1 : "1");
+                }
+            }
+
+            lua_pop(L, 1);
+        }
+    }
+
+    lua_pop(L, 1);
 
     prelude = field(L, 1, "prelude");
     if (prelude != NULL) {

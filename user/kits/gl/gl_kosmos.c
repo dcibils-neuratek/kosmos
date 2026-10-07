@@ -35,7 +35,9 @@
 #include <GL/gl.h>
 #include <GL/ostinygl.h>
 
-void kosmos_gl_demos(lua_State *L);
+/* Weak: a C project's runtime is linked without the system's demos, whose
+ * globals its own copy of a demo defines too (`Makefile`, `TCC_RUNTIME_OBJS`). */
+void kosmos_gl_demos(lua_State *L) __attribute__((weak));
 
 #define GL_CONTEXT_MT  "kosmos.gl.context"
 
@@ -216,5 +218,7 @@ void kosmos_gl_kit(lua_State *L)
 
     /* TinyGL's own demos join the same table: `gl.demos()`, `gl.start(...)`,
      * `gl.frame()`. They are the reason the kit exists at all. */
-    kosmos_gl_demos(L);
+    if (kosmos_gl_demos != NULL) {
+        kosmos_gl_demos(L);
+    }
 }

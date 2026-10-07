@@ -20573,3 +20573,52 @@ down. **Controls**: the board's old Control-Shift-letter - Ctrl Shift F is
 Ctrl F, 2 fail; the read refused as before - 2 fail.
 
 The gate: 102 of 102 in 9:39.
+
+## 18.437 The IDE's examples: TinyGL's demos and the cube, in Lua and in C
+
+Diego, 7 October: "an example folder with code that can be used to learn",
+"And we can compile them with the ide", "Also cube3d to show how it can be
+done in Lua vS C code"; then "1. perfect 2. yes to all 3. yes".
+
+**`/Kosmos/Examples`**, ten projects put together at the build by
+`tools/examples.py`, none a second copy kept in the tree: the eight GL demos -
+TinyGL's own files as released, a `window.c` written for each and the line
+of Lua that starts it - Cube in Lua, the system's cube3d, and Cube in C,
+`user/examples/CubeC`. In the sidebar's System tab, and New Project's fourth
+kind, Examples, which copies one into `/Home/Projects`; the dialog's kinds
+and templates flow by their widths now, two rows at most.
+
+**The GL Kit's door for C**, `kosmos_gl.h`: `kosmos_gl_run(title, w, h, init,
+draw, idle, reshape, key)` - the Window Kit's window, a TinyGL context its
+size, the five functions TinyGL's `ui.h` asks of a demo called, arrows as
+`ui.h`'s keys, a resize a new context and `reshape`, Escape or the close box
+the end. `swap_buffers` and `ui_loop`, what `ui.h` asks of a backend, are the
+door's now and the system's demos use them too. The developer files carry
+TinyGL's headers, `ui.h` and the door.
+
+**A project's defines**: `-- kosmos: define main=demo_main display=draw` in
+the Lua that names the image, read by `tccbuild.defines_of` - one door for
+the IDE's Build and the suite - and `-D` at `tcc`. A demo's `main` is the
+runtime's name too; `mech.c` calls `draw` `display`, GLUT's name.
+
+**Found making it**: the runtime a project links with carried the system's
+own eight demos, whose globals - `vertices`, `Ymin`, `UpperLeg`,
+`bind_texture` - four of the examples define again; "defined twice". Left out
+of the developer runtime (`TCC_RUNTIME_OBJS`), the GL Kit's `demos` weak.
+The libc's `math.h` has no `sinf` and the rest, and an undeclared function
+in C returns an int: Cube in C uses the double ones. And ten images at about
+20 MB each fill a 320 MB disk - what dynamic linking would end
+(`roadmap.md`, the optimisation phase); the suite's disk is 640 MB.
+
+**Cube in C**: the same cube, camera and colours as cube3d with all of it in
+C - the matrices, the divide, culling, the painter's sort and a triangle
+fill - its time a frame in the corner in a three-by-five font of its own.
+cube3d shows its own beside: "0.2 ms a frame" under TCG.
+
+`run_tcc.py`, 41 checks a board: the ten in `/Kosmos/Examples`, the nine with
+C built inside the machine; GL Gears, Cube in C and Cube in Lua open on a
+desktop of their own, moving, none ended. **Control**: the GL door closing
+its window at once - "an example ended while it should be running". 87 s a
+board.
+
+The gate: 102 of 102 in 9:41.

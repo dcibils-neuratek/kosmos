@@ -99,7 +99,10 @@ def main():
         if os.path.exists(path):
             os.remove(path)
 
-        subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", path, "320"]
+        # 640 MB: every image a C project builds carries the runtime, about
+        # 20 MB, and the examples are ten (dynamic linking is the cure, and
+        # waits for the optimisation phase - `roadmap.md`).
+        subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", path, "640"]
                        + pairs + ["%s:/Home/t/%s" % (os.path.join(work, n), n)
                                   for n in ("apptest.c", "make.lua", "run.lua", "broken.c",
                                             "twice.lua")]
@@ -109,6 +112,7 @@ def main():
                        + ["%s:/Home/Bad/broken.c" % os.path.join(work, "broken.c"),
                           "%s:/Home/Bad/run.lua" % os.path.join(work, "run.lua"),
                           "%s:/Home/templates.lua" % os.path.join(HERE, "tcc_templates.lua"),
+                          "%s:/Home/examples.lua" % os.path.join(HERE, "tcc_examples.lua"),
                           "%s:/Home/t/framecheck.c" % os.path.join(HERE, "tcc_framecheck.c"),
                           "%s:/Home/t/framecheck.lua" % os.path.join(HERE, "tcc_framecheck.lua")],
                        check=True, capture_output=True, cwd=ROOT)
@@ -257,6 +261,32 @@ def main():
         finally:
             guest.close()
 
+    def examples(path):
+        """GL Gears, Cube in C and Cube in Lua on the desktop: what was said,
+        and how many pixels moved between two screens a second apart."""
+        guest = WA.with_disk(image, path)
+
+        try:
+            guest.wait_for("kosmos> ", "a prompt")
+            guest.type("wm /Home/E/GLGears/gears.lua,/Home/E/CubeC/cube.lua,"
+                       "/Home/E/CubeLua/cube3d.lua")
+            deadline = time.monotonic() + 60
+
+            while time.monotonic() < deadline and guest.seen.count("wm: window ") < 3:
+                guest._read_available()
+                time.sleep(0.3)
+
+            time.sleep(4)
+            _, _, one = R.parse_ppm(guest.screendump())
+            time.sleep(1.0)
+            _, _, two = R.parse_ppm(guest.screendump())
+            guest._read_available()
+            moved = sum(1 for i in range(0, min(len(one), len(two)), 3)
+                        if one[i:i + 3] != two[i:i + 3])
+            return guest.seen, moved
+        finally:
+            guest.close()
+
     def plasma(path):
         """The Plasma template, built by `templates.lua`, on the desktop: two
         screens a second apart, then Escape - what it said, and how many
@@ -373,6 +403,7 @@ def main():
     # **The templates** (C6): each copied out of /Kosmos/Templates, the three
     # with C built, and the two that print run - each saying what it should.
     said = session(good, [("run /Home/templates.lua", "(templates) ended"),
+                          ("run /Home/examples.lua", "(examples) ended"),
                           ("run /Home/P/SumBothWays/sum.lua", "(sum) ended"),
                           ("run /Home/P/Primes/primes.lua 1000000", "(primes) ended")])
     check(re.search(r"^TEMPLATES HelloWindow Mandelbrot Plasma Primes SumBothWays", said, re.M)
@@ -386,6 +417,19 @@ def main():
     check(re.search(r"^78498 primes below 1000000", said, re.M) is not None,
           "Primes did not count the 78,498 primes below a million:\n" + said[-400:])
 
+    # **The examples** (7 October): /Kosmos/Examples holding the ten, and the
+    # nine with C - TinyGL's eight demos unchanged and Cube in C - built by
+    # TinyCC inside the machine with their projects' defines.
+    check(re.search(r"^EXAMPLES CubeC CubeLua GLBounce GLCube GLGears GLMech GLMorph3D "
+                    r"GLSpin GLTeapot GLTexObj", said, re.M) is not None,
+          "/Kosmos/Examples does not hold the ten examples:\n"
+          + "\n".join(l for l in said.splitlines() if l.startswith("EXAMPLE")))
+    for name in ("CubeC", "GLBounce", "GLCube", "GLGears", "GLMech", "GLMorph3D",
+                 "GLSpin", "GLTeapot", "GLTexObj"):
+        check(re.search(r"^EXAMPLE %s built true" % name, said, re.M) is not None,
+              "the %s example did not build:\n%s" % (name, "\n".join(
+                  l for l in said.splitlines() if l.startswith("EXAMPLE " + name))))
+
     # **A window from C** (`docs/windowkit.md`, W1): Plasma, built above,
     # opens its window through the Window Kit, draws a frame after frame -
     # the screen a second later is not the same - and Escape closes it, in
@@ -396,6 +440,19 @@ def main():
           + "\n".join(l for l in seen.splitlines() if "plasma" in l or "wm:" in l)[-1000:])
     check(moved > 50000,
           "Plasma's window is not animating: %d pixels changed in a second and a half" % moved)
+
+    # **The examples running** (7 October): GL Gears and Cube in C, built
+    # above by TinyCC, and Cube in Lua, on a desktop of their own - each
+    # window open, the screen moving, none ended with an error.
+    ex_seen, ex_moved = examples(good)
+    for title in ("GL Gears", "Cube in C", "Cube"):
+        check(re.search(r"^wm: window %s at " % re.escape(title), ex_seen, re.M) is not None,
+              "the %s example did not open its window:\n%s" % (title, "\n".join(
+                  l for l in ex_seen.splitlines() if "wm:" in l or "ended" in l)[-1200:]))
+    check(not re.search(r"\((gears|cube|cube3d)\) ended", ex_seen),
+          "an example ended while it should be running:\n" + "\n".join(
+              l for l in ex_seen.splitlines() if "ended" in l))
+    check(ex_moved > 20000, "the examples are not animating: %d pixels changed" % ex_moved)
 
     # **The frame path as a declared shape** (W2): built by `tcc` above and
     # started beside Plasma - 100 frames of commit and poll allocating
@@ -454,7 +511,7 @@ def main():
     print("PASS: %d checks on C built inside Kosmos (apptest.c compiled and linked by "
           "the C Kit into build/apptest.elf, %s bytes in %s ms; a program in it answered "
           "42; a build after a refused image; a broken file one error on line 3; the same at the prompt with tcc; the "
-          "IDE's F6 and F5; the five templates, built and run; Plasma's window from C, animating and closed; C coloured in the IDE and suggested as it is typed; its frames allocating nothing in Lua and bad ones refused; New Project making, "
+          "IDE's F6 and F5; the five templates, built and run; the ten examples, nine built and three running; Plasma's window from C, animating and closed; C coloured in the IDE and suggested as it is typed; its frames allocating nothing in Lua and bad ones refused; New Project making, "
           "building and running Mandelbrot; a pack from another build refused)"
           % (checks, built.group(1), built.group(2)))
     return 0

@@ -76,25 +76,8 @@ static const struct demo {
     { NULL, NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
-/*
- * What `ui.h` promises the demos, and what Kosmos gives them instead.
- *
- * `swap_buffers` does nothing: TinyGL has already rendered into its own
- * buffer by the time it is called, and the copy into a window's surface is
- * `gl.blit`, which the application does when it is ready rather than when
- * the demo says so. `ui_loop` is never called - a demo's `main` is renamed
- * away with everything else - but it has to exist, because that `main` still
- * refers to it and the linker does not know it will never run.
- */
-void swap_buffers(void);
-void swap_buffers(void) { }
-
-int ui_loop(int argc, char **argv, const char *name);
-int ui_loop(int argc, char **argv, const char *name)
-{
-    (void)argc; (void)argv; (void)name;
-    return 0;
-}
+/* `swap_buffers` and `ui_loop`, what `ui.h` asks of a backend, are the GL
+ * Kit's door's (`gl_window.c`), for these and for a project's demos alike. */
 
 static const struct demo *current;
 

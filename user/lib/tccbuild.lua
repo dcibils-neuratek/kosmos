@@ -24,6 +24,22 @@ local tccbuild = {}
 
 tccbuild.DEVELOPER = "/Home/Developer"
 
+--
+-- **A project's defines**, from the Lua file that names its image: each
+-- `-- kosmos: define main=demo_main display=draw` line, its words as `-D`
+-- (7 October, the IDE's examples: TinyGL's demos define `main`, which the
+-- runtime they are linked with has already). A list, possibly empty.
+--
+function tccbuild.defines_of(source)
+  local out = {}
+
+  for words in tostring(source or ""):gmatch("%-%-%s*kosmos:%s*define%s+([^\n]*)") do
+    for word in words:gmatch("%S+") do out[#out + 1] = word end
+  end
+
+  return out
+end
+
 function tccbuild.build(opts)
   local tcc = use("/Kosmos/Kits/tcc")
   local dev = opts.developer or tccbuild.DEVELOPER
@@ -79,6 +95,7 @@ function tccbuild.build(opts)
     prelude = dev .. "/include/kosmos_lua.h",
     link = { dev .. "/head.o", runtime, dev .. "/libgcc.a" },
     reader = reader,
+    defines = opts.defines,
   }
   local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 

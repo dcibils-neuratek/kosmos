@@ -14,13 +14,16 @@ local files = use("/Kosmos/Libraries/files.lua")
 local tccbuild = use("/Kosmos/Libraries/tccbuild.lua")
 
 local words = files.words(args)
-local sources, out = {}, nil
+local sources, out, defines = {}, nil, {}
 local i = 1
 
 while i <= #words do
   if words[i] == "-o" then
     out = words[i + 1]
     i = i + 2
+  elseif words[i]:match("^%-D.") then                    -- -Dname=value
+    defines[#defines + 1] = words[i]:sub(3)
+    i = i + 1
   else
     sources[#sources + 1] = words[i]
     i = i + 1
@@ -28,7 +31,7 @@ while i <= #words do
 end
 
 if #sources == 0 or not out then
-  print("usage: tcc file.c [more.c ...] -o build/name.elf")
+  print("usage: tcc file.c [more.c ...] [-Dname=value ...] -o build/name.elf")
   return
 end
 
@@ -36,7 +39,7 @@ end
 for k, p in ipairs(sources) do sources[k] = files.abs(p, cwd) end
 out = files.abs(out, cwd)
 
-local r, why = tccbuild.build{ sources = sources, out = out }
+local r, why = tccbuild.build{ sources = sources, out = out, defines = defines }
 
 if not r then
   print("tcc: " .. tostring(why))

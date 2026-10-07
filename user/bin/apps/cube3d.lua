@@ -63,8 +63,14 @@ local total_faces = #mesh.faces // 3
 local window_from = sys.ticks()
 local window_n    = 0
 
+-- **The time a frame**, drawing only - the clear and the cube, not the
+-- wait for the next one: the number to hold beside Cube in C's, which is
+-- the same cube with its maths in C (the IDE's examples, 7 October).
+local spent, shown_ms = 0, 0
+
 while win.running do
   local s = win:surface()
+  local t0 = sys.ticks()
 
   s:fill(0, 0, W, H, BG)
 
@@ -81,11 +87,15 @@ while win.running do
   local now = sys.ticks()
   local span = now - window_from
 
+  spent = spent + (now - t0)
+
   if span >= hz then
     shown_fps   = window_n * hz // span
     shown_faces = faces
+    shown_ms    = spent * 1000 / hz / window_n
     window_from = now
     window_n    = 0
+    spent       = 0
   end
 
   -- Drawn after the cube so it is on top of it, and inside the same frame
@@ -95,8 +105,8 @@ while win.running do
   -- back-face culling is working: half of a cube's twelve triangles face
   -- away at any moment, and a `12/12` would mean the far ones are being
   -- drawn too.
-  s:text(8, 8, ("%d fps   %d/%d faces")
-               :format(shown_fps, shown_faces, total_faces), 0xffc8d4e8)
+  s:text(8, 8, ("%.1f ms a frame   %d fps   %d/%d faces")
+               :format(shown_ms, shown_fps, shown_faces, total_faces), 0xffc8d4e8)
 
   if not win:commit{ x = 0, y = 0, w = W, h = H } then
     break

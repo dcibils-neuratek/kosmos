@@ -471,6 +471,7 @@ local system = ui.tree{
       end,
     },
     folder("/Kosmos/Templates", "/Kosmos/Templates", "read only"),
+    folder("/Kosmos/Examples", "/Kosmos/Examples", "read only"),
   },
 }
 
@@ -930,8 +931,10 @@ local function build_now()
 
   save_all()
 
-  local image = project_image()
-  local r, why = use("/Kosmos/Libraries/tccbuild.lua").build{ sources = sources, out = image }
+  local image, main = project_image()
+  local tccbuild = use("/Kosmos/Libraries/tccbuild.lua")
+  local r, why = tccbuild.build{ sources = sources, out = image,
+                                 defines = tccbuild.defines_of(main and fs.read(main)) }
 
   for _, f in ipairs(open) do
     if f.path:match("%.c$") then f.editor:clear_marks() end
@@ -2793,6 +2796,24 @@ local KINDS = {
     what = "A program that is C: a computation, a tool, a window drawn from C.",
     templates = { { "Primes", "Primes", "Counts the primes below a limit, and says how many." },
                   { "Plasma", "Plasma", "A window from C: an animation, keys and the pointer." } } },
+  -- **The examples** (7 October; Diego: "an example folder with code that
+  -- can be used to learn", "And we can compile them with the ide", "Also
+  -- cube3d to show how it can be done in Lua vS C code"), from
+  -- `/Kosmos/Examples` (`tools/examples.py`).
+  { id = "examples", name = "Examples", root = "/Kosmos/Examples",
+    what = "To learn from: TinyGL's own demos in C, and one cube in Lua and in C to compare.",
+    templates = {
+      { "CubeLua",   "Cube in Lua", "The maths in Lua, the triangle fill in C: look at its time a frame." },
+      { "CubeC",     "Cube in C",   "The same cube with all of it in C - the same time, measured beside it." },
+      { "GLGears",   "GL Gears",    "Brian Paul's gears, the oldest OpenGL demo there is: TinyGL, in C." },
+      { "GLTeapot",  "GL Teapot",   "The Utah teapot, lit: TinyGL, in C." },
+      { "GLSpin",    "GL Spin",     "Two spinning shapes: TinyGL, in C." },
+      { "GLBounce",  "GL Bounce",   "A bouncing ball: TinyGL, in C." },
+      { "GLCube",    "GL Cube",     "A textured cube: TinyGL, in C." },
+      { "GLMorph3D", "GL Morph3D",  "Morphing platonic solids: TinyGL, in C." },
+      { "GLMech",    "GL Mech",     "A walking mech, the largest of them: TinyGL, in C." },
+      { "GLTexObj",  "GL Textures", "Texture objects: TinyGL, in C." },
+    } },
 }
 
 local new_kind, new_template = 2, 1
@@ -2803,7 +2824,7 @@ local create = ui.button{ text = "Create", go = true, hidden = true }
 local cancel = ui.button{ text = "Cancel", hidden = true }
 local kind_buttons, template_buttons = {}, {}
 
-local DW, DH = 760, 420
+local DW, DH = 760, 460
 
 local function dialog_origin()
   return (veil.w - DW) // 2, (veil.h - DH) // 2
@@ -2812,22 +2833,32 @@ end
 local function place_dialog()
   local x0, y0 = dialog_origin()
 
+  -- The kinds in a row, and a kind's templates flowing over two rows at
+  -- most - the examples are ten - each as wide as its name.
+  local x = x0 + 24
+
   for i, b in ipairs(kind_buttons) do
-    b.x, b.y = x0 + 24 + (i - 1) * 240, y0 + 64
+    b.x, b.y = x, y0 + 64
     b.go = (i == new_kind)
+    x = x + b.w + 12
   end
 
-  for _, b in ipairs(template_buttons) do b.hidden = true end
+  for _, b in pairs(template_buttons) do b.hidden = true end
 
-  for i, t in ipairs(KINDS[new_kind].templates) do
-    local b = template_buttons[new_kind * 10 + i]
+  local tx, ty = x0 + 24, y0 + 190
+
+  for i in ipairs(KINDS[new_kind].templates) do
+    local b = template_buttons[new_kind * 100 + i]
+
+    if tx + b.w > x0 + DW - 24 then tx, ty = x0 + 24, ty + b.h + 8 end
 
     b.hidden = veil.hidden
-    b.x, b.y = x0 + 24 + (i - 1) * 360, y0 + 196
+    b.x, b.y = tx, ty
     b.go = (i == new_template)
+    tx = tx + b.w + 8
   end
 
-  name_field.x, name_field.y = x0 + 110, y0 + 300
+  name_field.x, name_field.y = x0 + 110, y0 + 336
   cancel.x, cancel.y = x0 + DW - 24 - create.w - 8 - cancel.w, y0 + DH - 52
   create.x, create.y = x0 + DW - 24 - create.w, y0 + DH - 52
   win.dirty = true
@@ -2844,10 +2875,10 @@ function veil:draw(g)
   g:text(x0 + 24, y0 + 42, "What kind of application is it? Each starts from a template that builds and runs as it is.",
          theme.text_dim, nil, "ui")
   g:text(x0 + 24, y0 + 110, k.what, theme.text_dim, nil, "ui")
-  g:text(x0 + 24, y0 + 168, "Templates", theme.text_dim, nil, "ui")
-  g:text(x0 + 24, y0 + 240, t[3], theme.text_dim, nil, "ui")
-  g:text(x0 + 24, y0 + 306, "Name", theme.text, nil, "ui")
-  g:text(x0 + 24, y0 + 346, "/Home/Projects/" .. name_field.text, theme.text_dim, nil, "ui")
+  g:text(x0 + 24, y0 + 168, k.root and "Examples" or "Templates", theme.text_dim, nil, "ui")
+  g:text(x0 + 24, y0 + 290, t[3], theme.text_dim, nil, "ui")
+  g:text(x0 + 24, y0 + 342, "Name", theme.text, nil, "ui")
+  g:text(x0 + 24, y0 + 382, "/Home/Projects/" .. name_field.text, theme.text_dim, nil, "ui")
 end
 
 local function show_dialog(on)
@@ -2865,7 +2896,8 @@ end
 local function create_project()
   local name = (name_field.text:gsub("^%s+", ""):gsub("%s+$", ""))
   local t = KINDS[new_kind].templates[new_template]
-  local from, to = "/Kosmos/Templates/" .. t[1], "/Home/Projects/" .. name
+  local from, to = (KINDS[new_kind].root or "/Kosmos/Templates") .. "/" .. t[1],
+                   "/Home/Projects/" .. name
 
   if name == "" or name:find("/", 1, true) then
     say("a project wants a name, without a slash", theme.bad)
@@ -2879,7 +2911,7 @@ local function create_project()
 
   files.make_folder(to)
 
-  local main = nil
+  local main, has_c = nil, false
 
   for _, f in ipairs(fs.list(from) or {}) do
     local body = fs.read(from .. "/" .. f)
@@ -2887,6 +2919,7 @@ local function create_project()
     if type(body) == "string" then
       fs.write(to .. "/" .. f, body)
       if f:match("%.lua$") and not main then main = to .. "/" .. f end
+      if f:match("%.c$") then has_c = true end
     end
   end
 
@@ -2903,7 +2936,7 @@ local function create_project()
 
   remember()
   say(("created %s from the %s template - %s"):format(to, t[2],
-      KINDS[new_kind].id == "lua" and "F5 runs it" or "F6 builds it, F5 runs it"), theme.good)
+      has_c and "F6 builds it, F5 runs it" or "F5 runs it"), theme.good)
 end
 
 for i, k in ipairs(KINDS) do
@@ -2926,7 +2959,7 @@ for i, k in ipairs(KINDS) do
       place_dialog()
     end
 
-    template_buttons[i * 10 + j] = tb
+    template_buttons[i * 100 + j] = tb
   end
 end
 
