@@ -2,7 +2,7 @@
 
 Written 7 October 2026, after TinyCC C1-C6 (`docs/tinycc.md`, decision 2:
 "C apps print first; a small Window Kit in C is its own step after C6").
-Nothing here is built.
+**W1 is built** (0.11.35, `testing.md` 18.432); W2 and W3 are not.
 
 ## What it is for
 

@@ -2001,8 +2001,9 @@ local KINDS = {
     templates = { { "Mandelbrot", "Mandelbrot", "Lua opens the window; C computes every pixel." },
                   { "SumBothWays", "Sum, both ways", "One loop in Lua and in C, timed side by side." } } },
   { id = "c", name = "C app",
-    what = "A program that is C: a computation, a tool. It prints; windows from C come later.",
-    templates = { { "Primes", "Primes", "Counts the primes below a limit, and says how many." } } },
+    what = "A program that is C: a computation, a tool, a window drawn from C.",
+    templates = { { "Primes", "Primes", "Counts the primes below a limit, and says how many." },
+                  { "Plasma", "Plasma", "A window from C: an animation, keys and the pointer." } } },
 }
 
 local new_kind, new_template = 2, 1

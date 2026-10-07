@@ -4,7 +4,7 @@
 local tccbuild = use("/Kosmos/Libraries/tccbuild.lua")
 local files = use("/Kosmos/Libraries/files.lua")
 print("TEMPLATES " .. table.concat(fs.list("/Kosmos/Templates") or {}, " "))
-for _, name in ipairs({ "HelloWindow", "Mandelbrot", "SumBothWays", "Primes" }) do
+for _, name in ipairs({ "HelloWindow", "Mandelbrot", "SumBothWays", "Primes", "Plasma" }) do
   local from, to = "/Kosmos/Templates/" .. name, "/Home/P/" .. name
   files.make_folder(to)
   local cs, image = {}, nil

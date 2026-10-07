@@ -2614,6 +2614,7 @@ void kosmos_3d_kit(lua_State *L);
 void kosmos_synth_kit(lua_State *L);
 void kosmos_net_kit(lua_State *L);
 void kosmos_crypto_kit(lua_State *L);
+void kosmos_window_kit(lua_State *L);
 /* The C Kit, TinyCC, in the full image alone (`docs/tinycc.md`, C3). */
 void kosmos_tcc_kit(lua_State *L) __attribute__((weak));
 
@@ -2672,6 +2673,8 @@ static const struct {
     { "crypto",   kosmos_crypto_kit, 0 },
     /* TLS, BearSSL's, on a Network Kit connection (`user/kits/tls/`). */
     { "tls",      kosmos_tls_kit, 0 },
+    /* A window from C: its door is `kosmos_window.h` (`docs/windowkit.md`). */
+    { "window",   kosmos_window_kit, 0 },
     /* C, compiled inside Kosmos into a program file (`docs/tinycc.md`). */
     { "tcc",      kosmos_tcc_kit, 0 },
 #ifdef KOSMOS_WEB

@@ -962,7 +962,8 @@ manager a declared shape, `wmproto.h`, rather than tables. **W1**: the kit
 over tables, `kosmos_window.h`, `/Kosmos/Kits/window`, and the Plasma
 template. **W2**: `open`, `commit` and `poll` as structs, the window
 manager answering both, measured. **W3**: Lua's direct windows onto the
-same door, if W2's numbers say so.
+same door, if W2's numbers say so. **W1 done** (0.11.35, 18.432): the kit
+over tables, Plasma in New Project's C kind.
 
 **FOUND on 6 October, in the C3 gate - two things that passed alone after.**
 (1) `x86-headless`: "/Kosmos/Programs lists 75 and user/bin/programs has

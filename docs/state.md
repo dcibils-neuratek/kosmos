@@ -24,7 +24,10 @@ an Emulator Kit and a thin app, not QEMU (*The system*).
 (`kosmos-usb-0.11.33-development.img`, `tools/mkusb.sh`) - the fix above is
 not on it, and matters only after a refused write.
 
-**Next**: the Window Kit in C (TinyCC decision 2).
+**0.11.35 - the Window Kit, W1** (18.432): `kosmos_window.h`, five calls,
+over `ui.lua`'s door; Plasma, a C app with a window, in New Project.
+
+**Next**: W2 - `wmproto.h`, open, commit and poll as structs, measured.
 
 ## 6 October, the evening: C inside Kosmos - TinyCC C1-C6
 

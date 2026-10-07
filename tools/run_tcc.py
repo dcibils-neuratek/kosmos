@@ -196,6 +196,35 @@ def main():
             guest.close()
     import run_writeapp as WA                               # noqa: E402
 
+    def plasma(path):
+        """The Plasma template, built by `templates.lua`, on the desktop: two
+        screens a second apart, then Escape - what it said, and how many
+        pixels differ between the two."""
+        guest = WA.with_disk(image, path)
+
+        try:
+            guest.wait_for("kosmos> ", "a prompt")
+            guest.type("wm /Home/P/Plasma/plasma.lua")
+            guest.wait_for("wm: window ", "Plasma's window")
+            time.sleep(4)
+            _, _, one = R.parse_ppm(guest.screendump())
+            time.sleep(1.5)
+            _, _, two = R.parse_ppm(guest.screendump())
+            guest.sendkey("esc")
+            deadline = time.monotonic() + 30
+
+            while time.monotonic() < deadline and "plasma: " not in guest.seen:
+                guest._read_available()
+                time.sleep(0.3)
+
+            time.sleep(0.5)
+            guest._read_available()
+            moved = sum(1 for i in range(0, min(len(one), len(two)), 3)
+                        if one[i:i + 3] != two[i:i + 3])
+            return guest.seen, moved
+        finally:
+            guest.close()
+
     def session(path, steps):
         guest = WA.with_disk(image, path)
 
@@ -283,9 +312,9 @@ def main():
     said = session(good, [("run /Home/templates.lua", "(templates) ended"),
                           ("run /Home/P/SumBothWays/sum.lua", "(sum) ended"),
                           ("run /Home/P/Primes/primes.lua 1000000", "(primes) ended")])
-    check(re.search(r"^TEMPLATES HelloWindow Mandelbrot Primes SumBothWays", said, re.M)
-          is not None, "/Kosmos/Templates does not hold the four templates:\n" + said[-600:])
-    for name in ("Mandelbrot", "SumBothWays", "Primes"):
+    check(re.search(r"^TEMPLATES HelloWindow Mandelbrot Plasma Primes SumBothWays", said, re.M)
+          is not None, "/Kosmos/Templates does not hold the five templates:\n" + said[-600:])
+    for name in ("Mandelbrot", "SumBothWays", "Primes", "Plasma"):
         check(re.search(r"^TEMPLATE %s built true" % name, said, re.M) is not None,
               "the %s template did not build:\n%s" % (name, "\n".join(
                   l for l in said.splitlines() if l.startswith("TEMPLATE"))))
@@ -293,6 +322,17 @@ def main():
           "Sum, both ways did not give the same answer in Lua and C:\n" + said[-600:])
     check(re.search(r"^78498 primes below 1000000", said, re.M) is not None,
           "Primes did not count the 78,498 primes below a million:\n" + said[-400:])
+
+    # **A window from C** (`docs/windowkit.md`, W1): Plasma, built above,
+    # opens its window through the Window Kit, draws a frame after frame -
+    # the screen a second later is not the same - and Escape closes it, in
+    # its own words.
+    seen, moved = plasma(good)
+    check(re.search(r"^plasma: \d+ frames", seen, re.M) is not None,
+          "Plasma did not close on Escape, saying its frames:\n"
+          + "\n".join(l for l in seen.splitlines() if "plasma" in l or "wm:" in l)[-1000:])
+    check(moved > 50000,
+          "Plasma's window is not animating: %d pixels changed in a second and a half" % moved)
 
     # **New Project, in the IDE** (C6): opened on it, Enter creates the
     # default - a Lua and C app from Mandelbrot - F6 builds it and F5 runs it,
@@ -319,7 +359,7 @@ def main():
     print("PASS: %d checks on C built inside Kosmos (apptest.c compiled and linked by "
           "the C Kit into build/apptest.elf, %s bytes in %s ms; a program in it answered "
           "42; a build after a refused image; a broken file one error on line 3; the same at the prompt with tcc; the "
-          "IDE's F6 and F5; the four templates, built and run; New Project making, "
+          "IDE's F6 and F5; the five templates, built and run; Plasma's window from C, animating and closed; New Project making, "
           "building and running Mandelbrot; a pack from another build refused)"
           % (checks, built.group(1), built.group(2)))
     return 0

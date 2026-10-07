@@ -145,6 +145,13 @@ static int at_panic(lua_State *L)
 extern const unsigned char tabletext_lua[];
 extern const unsigned long tabletext_lua_len;
 
+/*
+ * The process's state, for C that a Lua program called and that calls back
+ * into Lua without being handed one - the Window Kit (`kosmos_window.h`),
+ * whose application writes no Lua. One state a process.
+ */
+lua_State *kosmos_lua_state;
+
 lua_State *kosmos_lua_open(void)
 {
     lua_State *L = lua_newstate(user_alloc, NULL);
@@ -153,6 +160,8 @@ lua_State *kosmos_lua_open(void)
     if (L == NULL) {
         return NULL;
     }
+
+    kosmos_lua_state = L;
 
     lua_atpanic(L, at_panic);
 

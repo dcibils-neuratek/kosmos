@@ -20364,3 +20364,44 @@ of them are covered without being edited.
 refuses, then a build that must link. **Control**: the C Kit dropping past
 the hook, as before - 1 fails, "/Home/Developer/libgcc.a: unrecognized file
 type", the symptom first seen.
+
+## 18.432 A window from C: the Window Kit, step W1, and Plasma
+
+**`kosmos_window.h`** (`docs/windowkit.md`, Diego's decisions of 7 October):
+`kw_open`, `kw_surface`, `kw_commit`, `kw_poll`, `kw_close`, and `kw_why`
+for a window that would not open. A surface is a struct - pixels, width,
+height, and the pitch in bytes; an event is a struct - a key, the pointer
+with its action and button, the wheel, a resize, a close; a wait is in
+milliseconds and becomes the scheduler's ticks in one place.
+
+**Over Lua's door, not beside it** (W1): `user/kits/window/window.c` calls
+`ui.window{direct = true}`, `window:surface`, `window:commit`,
+`wmproto.poll` and `window:direct_event` on the process's Lua state, so the
+two buffers, a resize's new region and a direct window's own events are
+`ui.lua`'s and are not written a second time. W2 moves open, commit and
+poll onto a declared shape underneath, and the five calls do not change.
+
+**Found making it**: a program's `use` is in the program's environment,
+never in Lua's globals - a library sees what its caller sees and nothing
+more - so the kit finds it where a library would, in the `_ENV` of the
+nearest Lua function that called into the C. The first run said "attempt
+to call a nil value", from `lua_getglobal(L, "use")`. `lua_glue.c` keeps
+the process's state as `kosmos_lua_state` for C that is handed none.
+
+**Plasma**, the C kind's second template: an animated plasma drawn into
+the window's pixels every frame, Space to pause, a click for the next
+palette, Escape or the close box to end; resizable. The header goes into
+the developer files; the kit is in every image's runtime, and
+`/Kosmos/Kits/window` names it.
+
+`run_tcc.py`, 21 checks a board: the five templates, Plasma built; then on
+the desktop its window, two screens a second and a half apart differing in
+more than 50,000 pixels, and Escape ending it with "plasma: N frames".
+**Control**: `kw_commit` doing nothing - 1 fails, "0 pixels changed".
+
+The gate: 101 of 102 in 9:35. `x86-tcc` read the echo of `run
+.../apptest/plain.lua`, broken in two under load, as `plain`'s answer - the
+third time that echo was taken for an answer (27 and 28 September before).
+`run_loader.py`'s `typed` now passes over any line that is a piece of what
+was typed, not only one ending in all of it; both boards' `tcc` suites pass
+with it, 14 of 14.

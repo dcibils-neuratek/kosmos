@@ -193,8 +193,13 @@ def main():
             # **Whole lines only**: the last piece is a line still arriving
             # until its newline does, and on 4 October, under the whole
             # gate's load, `stale`'s sentence was read as "run: st".
+            # **And no piece of it**: on 7 October, under the gate, the
+            # echo of `plain` arrived broken in two and its second half,
+            # "/apptest/plain.lua", was read as the answer. A line that is
+            # any part of what was typed is the echo, whole or in pieces.
             for line in guest.seen[mark:].split("\n")[1:-1]:
                 if (want in line and not line.rstrip().endswith(command)
+                        and line.strip() not in command
                         and not line.lstrip().startswith("kosmos>")):
                     found = line.strip()
                     break
