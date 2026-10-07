@@ -20330,3 +20330,37 @@ The gate: 101 of 102 - `arm-queries` held `/Kosmos` to its folders as they
 were, and `Templates` is one more; its expected listing says so now, and it
 passes. `arm-tcc-2` and `x86-tcc-2` take 54 s each, five boots apiece, the
 whole gate 9:33.
+
+## 18.431 Not the disk: a mapping kept after its capability was dropped
+
+**The read that went wrong after a full disk** (18.430, `roadmap.md`) was
+reproduced first, as the roadmap asked, and it was not the disk. On the Mac,
+`kfs.c` read an untouched file back whole after a write refused for a full
+disk, with the block cache and without; in the machine, on a 64 MB disk with
+the developer files, filled until refused, a build's image refused, then
+`libgcc.a` read back three times byte for byte the same - and the next build
+in the same process still said "unrecognized file type" for it. Three builds
+in a row on a roomy disk all linked. So it took the refusal, and it was in
+the process rather than the server.
+
+**The cause.** `sys_user.c` remembers each region it maps by capability
+*number* (`region_of`), and only `sys.release` forgot one. When the image
+could not be written, `regions.write_file` took its long way - the image read
+into a string with `sys.region_read`, which mapped it and was remembered -
+and the C Kit's `tcc.release` then dropped the capability itself, with
+`kosmos_cap_drop`, past the record. The next region given that number - one
+of the next build's file regions - was answered the old image's address: an
+executable where `libgcc.a` should be. `l_release`'s comment had described
+exactly this, as an evening once lost; the fix then was in one caller.
+
+**The fix is in the door every drop goes through.** `kosmos_cap_drop`
+(`kosmos.h`) calls `kosmos_cap_dropping` first where a process has one - weak,
+so a server without the Lua runtime is unchanged - and `sys_user.c`'s takes
+the mapping down and forgets it. `sys.release` is a drop like any other now.
+The Network Kit, the SMB Kit and the C Kit drop regions themselves, and all
+of them are covered without being edited.
+
+`run_tcc.py`, 18 checks a board: in one process, a build whose image `/Kosmos`
+refuses, then a build that must link. **Control**: the C Kit dropping past
+the hook, as before - 1 fails, "/Home/Developer/libgcc.a: unrecognized file
+type", the symptom first seen.

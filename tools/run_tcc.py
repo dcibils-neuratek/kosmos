@@ -51,6 +51,22 @@ RUN = """-- kosmos: image build/apptest.elf
 print("ANSWER " .. tostring(use("apptest.elf").answer()))
 """
 
+# **A build after one whose image was refused** (18.431): `/Kosmos` takes no
+# file, so the first image goes the long way - `regions.write_file` reads it
+# into a string to write that way too, which maps it - and the C Kit then
+# gives it back. The second build, in the same process, must still link.
+TWICE = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+local tccbuild = use("/Kosmos/Libraries/tccbuild.lua")
+local function build(out)
+  local r, why = tccbuild.build{ sources = { "/Home/t/apptest.c" }, out = out }
+  if not r then print("TWICE refused " .. tostring(why)) return end
+  local first = r.problems[1]
+  print(("TWICE %s %s %s"):format(out, tostring(r.ok), first and first.text or "-"))
+end
+build("/Kosmos/apptest.elf")
+build("/Home/t/build/twice.elf")
+"""
+
 BROKEN = """#include "lua.h"
 int f(void) {
     return undeclared_name;
@@ -70,7 +86,8 @@ def main():
         if not ok:
             fails.append(what)
 
-    for name, text in (("make.lua", MAKE), ("run.lua", RUN), ("broken.c", BROKEN)):
+    for name, text in (("make.lua", MAKE), ("run.lua", RUN), ("broken.c", BROKEN),
+                       ("twice.lua", TWICE)):
         with open(os.path.join(work, name), "w") as f:
             f.write(text)
 
@@ -84,7 +101,8 @@ def main():
 
         subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", path, "320"]
                        + pairs + ["%s:/Home/t/%s" % (os.path.join(work, n), n)
-                                  for n in ("apptest.c", "make.lua", "run.lua", "broken.c")]
+                                  for n in ("apptest.c", "make.lua", "run.lua", "broken.c",
+                                            "twice.lua")]
                        # Two projects for the IDE (C5): one that builds, one that does not.
                        + ["%s:/Home/Good/%s" % (os.path.join(work, n), n)
                           for n in ("apptest.c", "run.lua")]
@@ -209,7 +227,8 @@ def main():
 
     said = session(good, [("run /Home/t/make.lua", "(make) ended"),
                           ("run /Home/t/run.lua", "(run) ended"),
-                          ("run /Home/t/make.lua broken.c", "(make) ended")])
+                          ("run /Home/t/make.lua broken.c", "(make) ended"),
+                          ("run /Home/t/twice.lua", "(twice) ended")])
 
     built = re.search(r"^BUILD true (\d+) bytes (\d+) ms 0 problems", said, re.M)
     check(built is not None and int(built.group(1)) > 1000000,
@@ -220,6 +239,12 @@ def main():
           and re.search(r"^PROBLEM /Home/t/broken\.c:3 error .*undeclared", said, re.M) is not None,
           "the broken file was not one error on line 3:\n"
           + "\n".join(l for l in said.splitlines() if "BUILD" in l or "PROBLEM" in l))
+
+    check(re.search(r"^TWICE /Kosmos/apptest\.elf false /Kosmos/apptest\.elf would not be "
+                    r"written", said, re.M) is not None
+          and re.search(r"^TWICE /Home/t/build/twice\.elf true -", said, re.M) is not None,
+          "a build after one whose image was refused did not build (18.431):\n"
+          + "\n".join(l for l in said.splitlines() if "TWICE" in l or "tcc:" in l))
 
     # **`tcc` at the prompt** (C4): the same build, from the folder it is
     # typed in, its problems as `file:line: severity: text`.
@@ -293,7 +318,7 @@ def main():
 
     print("PASS: %d checks on C built inside Kosmos (apptest.c compiled and linked by "
           "the C Kit into build/apptest.elf, %s bytes in %s ms; a program in it answered "
-          "42; a broken file one error on line 3; the same at the prompt with tcc; the "
+          "42; a build after a refused image; a broken file one error on line 3; the same at the prompt with tcc; the "
           "IDE's F6 and F5; the four templates, built and run; New Project making, "
           "building and running Mandelbrot; a pack from another build refused)"
           % (checks, built.group(1), built.group(2)))

@@ -955,6 +955,15 @@ image, compressed; C apps print first, a Window Kit in C after; the four
 templates; builds in a `build` folder beside the sources; the command is
 `tcc` (`docs/tinycc.md`, *Diego's decisions*). **C1 done** (0.11.26): TinyCC in the tree, building Kosmos images on the Mac (18.425). **C2 done** (0.11.27): the developer files, in `/Home/Developer` - the image had no room (18.426). **C3 done** (0.11.28): C compiled and linked inside Kosmos, by the C Kit, run (18.427). **C4 done** (0.11.29): `tcc` at the prompt (18.428). **C5 done** (0.11.30): the IDE's Build (F6) and Run, building first when the C changed (18.429). **C6 done** (0.11.31): New Project and the four templates (18.430). **TinyCC C1-C6 built.** Next: the Window Kit in C (decision 2), then Maps, Mail, Calendar designs.
 
+**AGREED on 7 October - the Window Kit in C** (`docs/windowkit.md`). Diego:
+"Yes to all" - a C app opens a window, draws into its surface and answers
+events with five calls and no Lua of its own; the frame path to the window
+manager a declared shape, `wmproto.h`, rather than tables. **W1**: the kit
+over tables, `kosmos_window.h`, `/Kosmos/Kits/window`, and the Plasma
+template. **W2**: `open`, `commit` and `poll` as structs, the window
+manager answering both, measured. **W3**: Lua's direct windows onto the
+same door, if W2's numbers say so.
+
 **FOUND on 6 October, in the C3 gate - two things that passed alone after.**
 (1) `x86-headless`: "/Kosmos/Programs lists 75 and user/bin/programs has
 76" - a listing that stops one short, silently, under the gate's load; the
@@ -972,7 +981,11 @@ build after it, in the same boot, had TinyCC call `/Home/Developer/libgcc.a`
 type". Either the disk server's state after a refused write, or the
 reader's region after a failed fill. To be reproduced on its own - fill a
 disk, refuse a write, read back a file and compare it - before anything is
-changed; a read answering wrong bytes is the worst thing a disk can do. Diego: "I want just one C compiler",
+changed; a read answering wrong bytes is the worst thing a disk can do.
+**FIXED on 7 October (18.431) - it was not the disk**: reproduced, the file
+read back whole every time; a region kept mapped by capability number after
+the C Kit dropped the capability, so the next build's region was the old
+image. `kosmos_cap_drop` forgets the mapping itself now. Diego: "I want just one C compiler",
 "What's the best option for kosmos?", then "Yes do that", "Tinycc and ide
 integration so I can build c programs". Chosen over GCC (about 50 MB at the
 least - `cc1` alone is 37 MB, bigger than all of Kosmos - and a separate

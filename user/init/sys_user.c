@@ -1743,14 +1743,36 @@ static int l_set_policy(lua_State *L)
     return 1;
 }
 
+/*
+ * What this process remembered about a capability it is dropping: the
+ * mapping, taken down and forgotten. Called by `kosmos_cap_drop` itself
+ * (`kosmos.h`), so a kit in this process that drops a region - the C Kit's
+ * image, the Network Kit's buffers - forgets it here as `sys.release` does.
+ */
+void kosmos_cap_dropping(long cap)
+{
+    unsigned i;
+
+    for (i = 0; i < mapped_count; i++) {
+        if (mapped[i].cap == cap) {
+            kosmos_share_unmap(mapped[i].at, mapped[i].bytes / 4096u);
+
+            mapped[i] = mapped[mapped_count - 1];
+            mapped_count--;
+            break;
+        }
+    }
+}
+
 static int l_release(lua_State *L)
 {
     long cap = (long)luaL_checkinteger(L, 1);
     long status;
-    unsigned i;
 
     /*
-     * The mapping goes first, and forgetting it is not optional.
+     * The mapping goes first, and forgetting it is not optional - which is
+     * why `kosmos_cap_drop` does it, through `kosmos_cap_dropping`, for
+     * every caller in this process and not only this one.
      *
      * `region_of` caches by capability *index*, which was safe for exactly
      * as long as an index was never reused - which was until this function
@@ -1766,16 +1788,6 @@ static int l_release(lua_State *L)
      * because dropping first would leave a window where the pages could be
      * freed underneath a mapping this process still has.
      */
-    for (i = 0; i < mapped_count; i++) {
-        if (mapped[i].cap == cap) {
-            kosmos_share_unmap(mapped[i].at, mapped[i].bytes / 4096u);
-
-            mapped[i] = mapped[mapped_count - 1];
-            mapped_count--;
-            break;
-        }
-    }
-
     status = kosmos_cap_drop(cap);
 
     if (status != 0) {

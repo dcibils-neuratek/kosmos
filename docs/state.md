@@ -2,9 +2,29 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-06 (0.11.31)
+Last updated: 2026-10-07 (0.11.34)
 
 ---
+
+## 7 October, past midnight: the full-disk read, found - not the disk
+
+**0.11.34** (18.431). The roadmap's "a read came back wrong after a write
+refused for a full disk" was reproduced and was the Lua runtime, not
+`diskfs`: `sys_user.c` remembers a mapped region by capability number, the
+C Kit dropped its image's capability past that record, and the next region
+given the number was answered the old image's pages. **`kosmos_cap_drop`
+now forgets the mapping itself** (a weak `kosmos_cap_dropping`, defined by
+the runtime), so every kit's drop is covered. `run_tcc.py` holds it, with a
+control that bites. The full gate ran for it (shared header).
+
+Also on the roadmap since the evening: **a virtual machine** - TinyEMU as
+an Emulator Kit and a thin app, not QEMU (*The system*).
+
+**Not pushed**: 0.11.32-0.11.34. **Waiting**: Diego writes the M700's stick
+(`kosmos-usb-0.11.33-development.img`, `tools/mkusb.sh`) - the fix above is
+not on it, and matters only after a refused write.
+
+**Next**: the Window Kit in C (TinyCC decision 2).
 
 ## 6 October, the evening: C inside Kosmos - TinyCC C1-C6
 

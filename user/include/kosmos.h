@@ -530,10 +530,6 @@ static inline long kosmos_endpoint_destroy(long cap)
     return sys1(SYS_ENDPOINT_DESTROY, cap);
 }
 
-/*
- * A capability back. The region's pages survive while anyone else holds one,
- * so a server may drop what it was handed the moment it has finished.
- */
 /* How the machine is scheduled, and changing it. */
 static inline long kosmos_sched_info(void *out)
 {
@@ -545,8 +541,29 @@ static inline long kosmos_sched_set(long what, long value)
     return sys2(SYS_SCHED_SET, what, value);
 }
 
+/*
+ * A capability back. The region's pages survive while anyone else holds one,
+ * so a server may drop what it was handed the moment it has finished.
+ *
+ * **And whatever this process remembered about it is forgotten first**,
+ * through `kosmos_cap_dropping` where the process has one - the Lua runtime
+ * (`sys_user.c`), which keeps each region it maps by capability *number*.
+ * The number is reused by the next region to arrive, so a record that
+ * outlives its capability hands that region somebody else's pages. Only
+ * `sys.release` forgot until 7 October 2026; the C Kit dropped its image's
+ * capability here, after `sys.region_read` had mapped it, and the next
+ * build read `libgcc.a` out of the old image (`testing.md` 18.431). So the
+ * one door every drop goes through is where the forgetting is, rather
+ * than each caller remembering to.
+ */
+extern void kosmos_cap_dropping(long cap) __attribute__((weak));
+
 static inline long kosmos_cap_drop(long cap)
 {
+    if (kosmos_cap_dropping != 0) {
+        kosmos_cap_dropping(cap);
+    }
+
     return sys1(SYS_CAP_DROP, cap);
 }
 
