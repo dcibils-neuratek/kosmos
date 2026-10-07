@@ -502,6 +502,12 @@ def main():
         check(said("notes: opened ", mark, 120) == "/Home/Notes/To do.note, 1 lines",
               "lesson 3's finished project did not open the note it was handed")
         stop_desktop()
+        # Lesson 4's: it asks the machine, and asks again on its clock.
+        mark = len(guest.seen)
+        guest.type("wm /Kosmos/Tutorial/04-Running/running.lua")
+        check(said("running: looked ", mark, 120) == "3 times",
+              "lesson 4's finished project did not look again on its clock")
+        stop_desktop()
         mark = len(guest.seen)
         guest.type("wm ide:/Home/development/asks.lua")
         said("ide: opened /Home/development/asks.lua", mark, 120)

@@ -143,6 +143,35 @@ class IdeShots(Shots):
         # is beside the IDE rather than over it.
         self.save("notes-ide.png", (0, 0, self.W, self.H), halve=True)
 
+    def lesson4(self):
+        """What's Running run in the IDE, and the finished one on its own."""
+        g = self.guest
+        g.wait_for("kosmos> ", "a prompt")
+        mark = self.mark()
+        g.type("wm ide:/Kosmos/Tutorial/04-Running/running.lua")
+        self.expect("ide: opened /Kosmos/Tutorial/04-Running/running.lua", mark, 120,
+                    "the IDE did not open lesson 4's project")
+        time.sleep(3)
+        mark = self.mark()
+        self.key("f5")
+        self.expect("wm: window What's Running", mark, 60, "F5 did not open What's Running")
+        time.sleep(4)
+        self.screen()
+        self.save("whats-running-ide.png", (0, 0, self.W, self.H), halve=True)
+
+    def running(self):
+        g = self.guest
+        g.wait_for("kosmos> ", "a prompt")
+        mark = self.mark()
+        g.type("wm /Kosmos/Tutorial/04-Running/running.lua")
+        where = self.expect("wm: window What's Running", mark, 120,
+                            "the finished What's Running did not open")
+        self.expect("running: looked 3 times", mark, 60,
+                    "What's Running did not look again on its clock")
+        self.screen()
+        x, y = self.at(where)
+        self.save("whats-running.png", (x - 12, y - 34, x + 420 + 12, y + 360 + 12))
+
     def notes(self):
         """The finished Notes: a list typed, saved through the Save window,
         and the window pictured holding it."""
@@ -208,7 +237,7 @@ def main():
     image, out = sys.argv[1], sys.argv[2]
     problems = []
 
-    for step in ("notes", "run", "run2", "run3", "counter"):
+    for step in ("notes", "lesson4", "running", "run", "run2", "run3", "counter"):
         shots = IdeShots(image, out)
 
         try:
@@ -228,7 +257,7 @@ def main():
 
         return 1
 
-    print("PASS: lessons 1 to 3 followed as their pages give them; the pictures are in " + out)
+    print("PASS: lessons 1 to 4 followed as their pages give them; the pictures are in " + out)
     return 0
 
 

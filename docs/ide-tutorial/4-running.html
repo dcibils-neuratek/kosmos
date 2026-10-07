@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>4. What's running</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+pre { font-family: "IBM Plex Mono", monospace; font-size: 14px; color: #1f2328; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 6px; padding: 0.6em 0.8em; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="3-notes.html">Previous: Notes</a> - <a href="index.html">Contents</a></p>
+<h1>4. What's running</h1>
+<p class="lead">A window that asks the machine what it is doing - its processes and what each one holds, its memory, how long it has been up - and asks again every second. On the way: the system's servers, which you reach by name; the counter, which tells the time; and why a window asks on a clock of its own rather than whenever it draws.</p>
+<img src="whats-running.png" width="444" height="406" alt="The What's Running window listing processes by memory">
+<p class="caption">What you will have at the end of this lesson.</p>
+
+<h2>Start a project</h2>
+<p><b class="ui">New</b>, <b class="ui">New Project</b>, <b class="ui">Lua app</b>, the <b class="ui">Hello Window</b> template, and the name <code>Running</code>. Delete everything after the line that uses the UI kit.</p>
+
+<h2>Three labels and a list</h2>
+<pre>local machine = ui.label{ x = 16, y = 14, w = 388, text = "" }
+local memory  = ui.label{ x = 16, y = 42, w = 388, text = "" }
+local named   = ui.label{ x = 16, y = 70, w = 388, text = "" }
+local names   = ui.list{ x = 16, y = 104, w = 388, h = 240, items = {} }</pre>
+<p>A list shows rows of words, and scrolls when there are more than fit. Its <code>items</code> can be replaced whenever the program likes; the list draws what it was last given.</p>
+
+<h2>Asking the kernel</h2>
+<pre>local alive = {}
+
+for _, p in ipairs(sys.processes() or {}) do
+  if not p.exited then alive[#alive + 1] = p end
+end
+
+table.sort(alive, function(a, b) return (a.held or a.pages or 0) > (b.held or b.pages or 0) end)</pre>
+<p><code>sys.processes()</code> asks Nebula, the kernel, for its table of processes: a name, an id, how many pages of memory each holds, and more. Any program may ask. Knowing that a process exists is not being able to reach it - to talk to one, you need to have been given a way to, and Notes in lesson 3 was given <code>/Home</code> and nothing else.</p>
+<p>A page is 4 KB, so each row is its name and its pages times four, the largest first.</p>
+
+<h2>Asking a server</h2>
+<pre>local m = fs.read("/Devices/memory")
+
+if m then
+  memory.text = ("%d of %d MB in use"):format(m.total_mb - m.free_mb, m.total_mb)
+end</pre>
+<p><code>/Devices</code> is not a folder on a disk. It is a server - a program written in C - that answers questions about the machine, and <code>fs.read</code> is a message to it. What comes back is a table: <code>total_mb</code> and <code>free_mb</code> here. <code>/Devices/cpu</code> answers with the processor's architecture, its cores and how fast its counter counts.</p>
+<pre>local running = fs.list("/Running") or {}
+named.text = "Answering by name: " .. table.concat(running, ", ")</pre>
+<p><code>/Running</code> holds the names of the programs that answer messages of their own - Astra's window manager, <code>wm</code>, and every application with a window, this one among them.</p>
+
+<h2>The time</h2>
+<pre>local cpu = fs.read("/Devices/cpu") or {}
+local counter_hz = cpu.counter_hz or 62500000
+
+local up = sys.ticks() // counter_hz</pre>
+<p><code>sys.ticks()</code> reads the processor's counter, which has counted since the machine started. How fast it counts depends on the machine - 62.5 million a second in QEMU, 24 million on a Mac's own cores, a few thousand million on a PC - so a program reads the rate from <code>/Devices/cpu</code> once, and divides. A number of ticks on its own means nothing; ticks and their rate are a time.</p>
+
+<h2>Asking on a clock</h2>
+<pre>local clock = ui.view{ x = 0, y = 0, w = 0, h = 0 }
+
+function clock:tick() look() end
+
+win:add(clock)</pre>
+<p>A view with a <code>tick</code> is called once a second by its window, between everything else the window does. This one has no size and draws nothing; it is only the clock. <code>look</code> asks everything again and says the window is dirty, and the window draws what it now knows.</p>
+<p class="note">Why not ask while drawing? Because a window draws whenever it must - when it is uncovered, when the pointer passes over a button - and a question to a server may have to wait for its answer. A window that waits while it draws is a window that stops answering the person in front of it. So in Kosmos a window draws only what it already knows, and asks on a clock of its own.</p>
+
+<h2>Run it</h2>
+<p>Press <kbd>F5</kbd>. Start something else from the Deskbar and watch it appear in the list a second later; close it and watch it go.</p>
+<img src="whats-running-ide.png" width="860" height="484" alt="The IDE running What's Running, its window beside the code">
+<p class="caption">What's Running beside the IDE.</p>
+<p class="tip">The finished lesson is in <b class="ui">Lesson's Project</b>, under the three dots: <code>04-Running</code>.</p>
+
+<h2>Try changing</h2>
+<ul>
+<li>Show how many threads each process has: a process has <code>threads</code> as well as <code>pages</code>.</li>
+<li>Show how many processors the machine has: <code>/Devices/cpu</code> has <code>cores</code>.</li>
+<li>Show the memory in use as a percentage as well.</li>
+</ul>
+
+<h2>How Kosmos does it</h2>
+<p>Nebula, the kernel, knows about threads, memory, messages and capabilities, and nothing else - there is no file system, no network and no screen in it. Everything else is a server: <code>/Devices</code> for the machine, <code>/Home</code> for your files, Astra for the screen. Each is an ordinary process, in the list your window shows, and each answers messages. When one stops, the others go on.</p>
+
+<h2>The real thing</h2>
+<p>Process Viewer is this window grown up: each process's share of the processors, its threads and its memory, and a way to stop one. Open the IDE's <b class="ui">System</b> tab, then <code>/Kosmos/Apps</code>, then <code>procs.lua</code>, and look for <code>sampler:tick</code>.</p>
+<p class="nav"><a href="3-notes.html">Previous: Notes</a> - <a href="index.html">Contents</a></p>
+</body>
+</html>
