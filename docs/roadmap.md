@@ -8456,6 +8456,18 @@ the applications make the system useful, and is not pulled forward.
   **Step 2, the tag reader, is built** (§18.67). Next, the window from
   `docs/music.html`.
 
+  **Asked again on 7 October, with FLAC.** Diego: "how hard is to add a FLAC
+  decoder to the music player to listen to lossless audio?", and "the music
+  player needs a user interface refresh as we have been changing the ui kit
+  a lot for a refreshed look and pixel perfect design per the current
+  mockup". So: `docs/music.html` drawn again in today's kit - the looks, the
+  header as the title bar, the controls as they are now - and agreed before
+  the window is built; and **FLAC** through the decoder FFmpeg already
+  brings (the Video Player's, `user/kits/ffmpeg/`), one door in `media.lua`
+  rather than a second decoder, its tags and picture read by the tag reader
+  (Vorbis comments, `METADATA_BLOCK_PICTURE`), 24-bit files dithered to the
+  16 the audio path carries until a 24-bit path is its own step.
+
   **The icons, decided 15 September**: the vendored Haiku set has none of the
   transport controls - it is applications, files, folders, devices and
   preferences - so Music takes `App_MediaPlayer` for its window and Deskbar
