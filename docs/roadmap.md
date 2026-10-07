@@ -7785,6 +7785,21 @@ that feels fast on it is a result rather than an emulator number. Every
 performance question in this project is currently answered "measure it on
 the Pi", and the Pi is not here yet.
 
+**AGREED on 7 October - the versions of what is running, shown.** Diego:
+"We need to make sure kernels image versions and disk image version are
+shown in the os somewhere". The kernel and the system's image are one file
+and already say their version - About, `neofetch`, the desktop's footer.
+**What says nothing is `/Home`**: the stick's disk holds the installed
+applications and the developer files, each tied to the build that made
+them by its protocol stamp, and no file records which build that was - so
+a netboot moved to a newer build than the stick's is found only when Doom
+or `tcc` refuses "built for another Kosmos". So: `homeimage.py` (and
+`make install-apps`) write the build that made the disk - version, build,
+protocol stamp, date - into `/Home`; About and `neofetch` show the system's
+version and the disk's beside it, and say plainly when they differ and
+what that means; the boot's log says it too. After the M700's test of
+0.11.38, on the next stick.
+
 ### The optimisation phase - after the applications
 
 **AGREED on 7 October - applications first, then a phase of optimising.**
