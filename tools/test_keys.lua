@@ -84,6 +84,7 @@ local SEQUENCES = {
   { "\27[9;5u",   keys.with(keys.TAB, C) },
   { "\27[32;5u",  keys.with(keys.SPACE, C) },
   { "\27[13;5u",  keys.with(keys.ENTER, C) },
+  { "\27[102;6u", keys.with(102, S | C) },    -- Ctrl+Shift+F, Find in Project
   { "\27[47;5u",  keys.with(47, C) },
   { "\27[96;6u",  keys.with(96, S | C) },
   -- Other terminals' Home and End, and the application-mode arrows.

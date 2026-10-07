@@ -3081,6 +3081,85 @@ function ui.segments(spec)
 end
 
 --
+-- **A tool**: a line icon at 15 with its word under it, in a row of them -
+-- Kosmos Write's tools (`pixelkit.lua`'s `pk.tool`, at the same measures),
+-- for a window built of the kit's widgets: the IDE's (`docs/ide-layout.html`,
+-- 7 October). 48 high and as wide as its word wants, at least 52. `on`
+-- raises it and puts the icon in the accent, as a tool whose panel is open;
+-- `go` puts the icon in the accent alone, as Run.
+--
+ui.TOOL_H = 48
+
+function ui.tool(spec)
+  local v = ui.view(spec)
+  local function small()
+    return ui.sized("ui", math.max(9, (theme.fonts.ui and theme.fonts.ui.px or 13) - 2))
+  end
+
+  function v:fit()
+    self.w = math.max(52, gfx.measure(tostring(self.text or ""), small()) + 16)
+    self.h = ui.TOOL_H
+  end
+
+  v:fit()
+  v.focusable = not v.disabled
+
+  function v:draw(g)
+    local face = small()
+
+    if (self.on or self.pressed) and not self.disabled then
+      g:fill_round(0, 0, self.w, self.h, theme.raised or theme.line_soft, 10)
+    end
+
+    if self.focused and self.keyed then
+      g:frame_round(0, 0, self.w, self.h, theme.ring, 10)
+    end
+
+    local ink = self.disabled and theme.line
+                or ((self.on or self.go) and theme.accent or theme.text)
+
+    g:line_icon((self.w - 15) // 2, 8, self.icon or "more", ink)
+
+    local word = tostring(self.text or "")
+
+    g:text((self.w - gfx.measure(word, face)) // 2, 8 + 15 + 6, word,
+           self.disabled and theme.line or theme.text_dim, nil, face)
+  end
+
+  function v:key(c)
+    if self.disabled then return false end
+
+    if c == 10 or c == 13 or c == 32 then
+      if self.on_click then self.on_click(self) end
+      return true
+    end
+
+    return false
+  end
+
+  function v:mouse(action, x, y)
+    local inside = x >= 0 and x < self.w and y >= 0 and y < self.h
+
+    if self.disabled then return true end
+
+    if action == "press" then
+      self.pressed = true
+    elseif action == "move" then
+      self.pressed = inside
+    elseif action == "release" then
+      local fire = self.pressed and inside
+
+      self.pressed = false
+      if fire and self.on_click then self.on_click(self) end
+    end
+
+    return true
+  end
+
+  return v
+end
+
+--
 -- **An icon button**: 26 square, no border, a line icon at 15 in the dim
 -- colour - `tracker2.html`'s `.ico`. Pressed, a quiet fill under it.
 --
@@ -4192,6 +4271,7 @@ local CODE_LIGHT = {
   number_dim = 0xffb3b7be, number_here = 0xff74787f,
   error = 0xffc0392b, error_ground = 0xfffde8e6,
   warning = 0xffb7791f, warning_ground = 0xfffdf3dc,
+  found = 0xfffff0b3,
 }
 
 local CODE_DARK = {
@@ -4201,6 +4281,7 @@ local CODE_DARK = {
   number_dim = 0xff5a616d, number_here = 0xff8d95a3,
   error = 0xffff7b72, error_ground = 0xff3a2224,
   warning = 0xffe0b060, warning_ground = 0xff36301f,
+  found = 0xff4a4220,
 }
 
 local function code_colours()
@@ -4396,6 +4477,20 @@ function ui.editor(spec)
   -- Put the caret on a line - a click in the Output panel, a mark's line.
   function v:go_to(line, x)
     buf:place(line, x or 1)
+    self.followed = nil
+  end
+
+  --
+  -- **What a Find bar is looking for**, marked wherever it is on the lines
+  -- in view, behind the text; nil or "" for nothing. And a match chosen:
+  -- selected, and the view taken to it.
+  --
+  function v:show_found(text, case)
+    self.found = (text and text ~= "") and { text = text, case = case } or nil
+  end
+
+  function v:select_range(y, x1, x2)
+    buf:select(y, x1, y, x2)
     self.followed = nil
   end
 
@@ -4691,6 +4786,24 @@ function ui.editor(spec)
 
         g:text(x0 - 2 * GW - #number * GW, y, number,
                here and colours.number_here or colours.number_dim, nil, F)
+
+        -- What Find is looking for, behind the text and under the selection.
+        if self.found then
+          local needle = self.found.case and self.found.text or self.found.text:lower()
+          local hay = self.found.case and line or line:lower()
+          local s = 1
+
+          while true do
+            local a = hay:find(needle, s, true)
+
+            if not a or a > columns then break end
+
+            local to = math.min(a + #needle - 1, columns)
+
+            g:fill(x0 + (a - 1) * GW, y, (to - a + 1) * GW, GH, colours.found)
+            s = a + #needle
+          end
+        end
 
         if sy1 and n >= sy1 and n <= sy2 then
           local from = (n == sy1) and sx1 or 1

@@ -20525,3 +20525,51 @@ unanswered - passed alone, 34 of 34; `x86-kernel`'s test 54, "a new thread
 avoids a loaded core" (the placement test on the roadmap), failed alone
 once more while the Mac's load was 8.6 and passed twice after it fell,
 197 of 197. Neither touches what this changed.
+
+## 18.436 The IDE rearranged after Kosmos Write: tools, Find, System, Console
+
+Diego, 7 October: "the toolbar is messy with build, run, etc buttons that
+occupy a lot of space ... we should put buttons as the style of kosmos
+write toolbar", and "the sidebar shows a lot of kosmos apps and kosmos
+programs in the project view where it should be empty". Drawn first
+(`docs/ide-layout.html`) and agreed - "yes to all, go ahead".
+
+- **`ui.tool`**, the kit's form of Write's tool (`pk.tool`, at its
+  measures): a line icon and its word, 48 high. The IDE's row under the
+  header: New (New File, New Project...), Open, Save, Undo, Redo, Find,
+  Build, Run, Stop, Check, and Console and Sidebar at the right. The header
+  keeps the project and file, the running pill, Find a file and More; More
+  holds the rest, grouped and each with its key - Kosmos has no menu bars
+  (`roadmap.md` 5zj). Tutorial and the Help items wait, greyed, for part one.
+- **Find**, a bar under the tools: the count ("2 of 4"), Enter or F3 the next
+  and Shift F3 the one before, Match case, This file or Project, Replace
+  (Enter in its field) and All. The matches marked in the editor behind the
+  text in a find colour of each palette (`v:show_found`), the chosen one
+  selected (`v:select_range`); `textbuf:find`, `matches`, `select` and
+  `replace_all` - one undo step - underneath. In the project, the files'
+  lines in a new Search tab, a click opening one at its match. Ctrl G goes to
+  a line. Escape closes the bar from either field. The body moves down for
+  the bar and left for no sidebar (`place_body`, and `put` keeping each
+  part's distances to the edges as `view:add` takes them).
+- **Ctrl Shift F** is told from Ctrl F: the board sends Control and Shift
+  with a letter as CSI u, `ESC [ 102 ; 6 u`, where it sent the control
+  character and lost the Shift (`hal/keys.c`); Control with a letter alone is
+  the control character still. Only Cafesa3D used Control and Shift, and by
+  raw codes. Shift with Enter is still Enter, which is why F3 is there.
+- **System**, the sidebar's third tab: Apps, Programs, Libraries, Kits and
+  Templates, read only; the Project tab is the project alone.
+- **The Console**: what a running program prints, and a line under it. A
+  program reading its console - `fs.read("/Devices/console")` - is held
+  rather than refused, the Console brought forward and its line focused, and
+  answered on Enter.
+
+Host: `test_textbuf.lua`, 96 - **control**: Replace All outside one group,
+1 fails; `test_keys.lua`, 64 with Control-Shift-F read back; the kernel's
+key sequences with it. In the machine, `run_ide.py`, 38 checks: four lamps
+counted, the first chosen, Shift F3 back round to the last, Ctrl R and Enter
+replacing it, Escape closing, Ctrl G to line 2, Ctrl Shift F finding them in
+the project, and a program given 64 through the Console and writing it
+down. **Controls**: the board's old Control-Shift-letter - Ctrl Shift F is
+Ctrl F, 2 fail; the read refused as before - 2 fail.
+
+The gate: 102 of 102 in 9:39.

@@ -400,7 +400,10 @@ static const unsigned char keymap_shift[128] = {
  * The last is the "CSI u" form xterm and kitty agree on, for keys the
  * older forms never had room for. Control with a letter is still the
  * control character it names, so every program that reads Control-S as 19
- * goes on doing so.
+ * goes on doing so. **Control and Shift with a letter** is CSI u too, the
+ * letter unshifted - `ESC [ 102 ; 6 u` for Control-Shift-F, the IDE's Find
+ * in Project (7 October): as a control character the Shift was lost, and
+ * Control-Shift-F was Control-F.
  */
 static const char *sequence_of(char out[KEY_SEQUENCE_MAX], unsigned number,
                                unsigned m, char final, bool ss3)
@@ -498,6 +501,10 @@ const char *hal_key_sequence(unsigned code, bool shift, bool ctrl,
 
         if (plain != 0 && !(plain >= 'a' && plain <= 'z')) {
             return sequence_of(out, (plain == '\n') ? 13u : plain, m, 'u', false);
+        }
+
+        if (plain >= 'a' && plain <= 'z' && shift) {
+            return sequence_of(out, plain, m, 'u', false);
         }
     }
 

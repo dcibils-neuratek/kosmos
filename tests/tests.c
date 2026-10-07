@@ -7104,6 +7104,7 @@ static bool test_a_modified_key_is_one_sequence(void)
         { 28,           false, true,  "\x1b[13;5u" },    /* Ctrl+Enter */
         { 53,           false, true,  "\x1b[47;5u" },    /* Ctrl+/ */
         { 41,           true,  true,  "\x1b[96;6u" },    /* the longest */
+        { 33,           true,  true,  "\x1b[102;6u" },   /* Ctrl+Shift+F */
     };
     char buffer[KEY_SEQUENCE_MAX];
     bool ok = true;
@@ -7125,8 +7126,8 @@ static bool test_a_modified_key_is_one_sequence(void)
 
     return ok
         && hal_key_sequence(30, false, false, buffer) == NULL        /* a */
-        && hal_key_sequence(30, true, true, buffer) == NULL
-        && hal_key_char(30, false, true, false) == 1                 /* ^A */
+        && hal_key_sequence(30, false, true, buffer) == NULL         /* ^A */
+        && hal_key_char(30, false, true, false) == 1
         && hal_key_sequence(KEY_TAB, false, false, buffer) == NULL
         && hal_key_sequence(57, true, false, buffer) == NULL         /* Space */
         && hal_key_sequence(28, false, false, buffer) == NULL        /* Enter */

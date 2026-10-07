@@ -689,4 +689,101 @@ function textbuf:toggle_comment(mark)
   end)
 end
 
+--
+-- **Finding** (7 October, `docs/ide-layout.html`): text on one line, from a
+-- place, forwards or with `opts.back` backwards, round the end to the start
+-- as every editor's Find goes; with `opts.case` the letters' case counts.
+-- The line and the match's first byte and the byte after its last, or nil.
+--
+function textbuf:find(text, y, x, opts)
+  opts = opts or {}
+  text = tostring(text or "")
+
+  local n = #self.lines
+
+  if text == "" or n == 0 then return nil end
+
+  local needle = opts.case and text or text:lower()
+
+  local function hay(ly)
+    local line = self.lines[ly]
+    return opts.case and line or line:lower()
+  end
+
+  for step = 0, n do
+    if opts.back then
+      local ly = ((y - 1 - step) % n) + 1
+      local h = hay(ly)
+      local limit = (step == 0) and (x - 1) or #h
+      local best, s = nil, 1
+
+      while true do
+        local a = h:find(needle, s, true)
+
+        if not a or a > limit then break end
+        best, s = a, a + 1
+      end
+
+      if best then return ly, best, best + #text end
+    else
+      local ly = ((y - 1 + step) % n) + 1
+      local a = hay(ly):find(needle, (step == 0) and x or 1, true)
+
+      if a then return ly, a, a + #text end
+    end
+  end
+
+  return nil
+end
+
+-- Every match, `{ y, x1, x2 }` in order: what a Find bar marks and counts.
+function textbuf:matches(text, opts)
+  opts = opts or {}
+  text = tostring(text or "")
+
+  local out = {}
+
+  if text == "" then return out end
+
+  local needle = opts.case and text or text:lower()
+
+  for y, line in ipairs(self.lines) do
+    local h = opts.case and line or line:lower()
+    local s = 1
+
+    while true do
+      local a = h:find(needle, s, true)
+
+      if not a then break end
+      out[#out + 1] = { y, a, a + #text }
+      s = a + #text
+    end
+  end
+
+  return out
+end
+
+-- The text from one place to another chosen, the caret at its end.
+function textbuf:select(y1, x1, y2, x2)
+  self.anchor = { y1, x1 }
+  self.cy, self.cx, self.want = y2, x2, nil
+end
+
+-- Every match replaced, as one step to take back; how many there were.
+function textbuf:replace_all(text, with, opts)
+  local found = self:matches(text, opts)
+
+  if #found == 0 then return 0 end
+
+  self:group(function()
+    for i = #found, 1, -1 do
+      local m = found[i]
+
+      self:replace(m[1], m[2], m[1], m[3], with)
+    end
+  end)
+
+  return #found
+end
+
 return textbuf

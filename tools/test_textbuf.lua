@@ -340,6 +340,38 @@ do
   check(b.changed_from == 3, "an undo on line 3 said line " .. b.changed_from)
 end
 
+-- Finding and replacing (7 October): forwards and back round the ends, case
+-- or not, every match counted, and Replace All one step to take back.
+do
+  local b = textbuf.new("Plasma plasma\nno match\nPLASMA here")
+
+  local y, x1, x2 = b:find("plasma", 1, 1)
+  check(y == 1 and x1 == 1 and x2 == 7, "the first match from the start")
+  y, x1 = b:find("plasma", 1, 2)
+  check(y == 1 and x1 == 8, "the next one along the line")
+  y, x1 = b:find("plasma", 1, 9)
+  check(y == 3 and x1 == 1, "the next line that has one, any case")
+  y, x1 = b:find("plasma", 3, 2)
+  check(y == 1 and x1 == 1, "round the end to the start")
+  y, x1 = b:find("plasma", 1, 1, { back = true })
+  check(y == 3 and x1 == 1, "backwards, round the start to the end")
+  y, x1 = b:find("plasma", 1, 1, { case = true })
+  check(y == 1 and x1 == 8, "with case, only the one written so")
+  check(b:find("nothing", 1, 1) == nil, "a word that is not there")
+  check(#b:matches("plasma") == 3 and #b:matches("plasma", { case = true }) == 1,
+        "every match counted, and with case")
+
+  b:select(1, 8, 1, 14)
+  check(b:selected() == "plasma", "a match selected: " .. tostring(b:selected()))
+
+  check(b:replace_all("plasma", "fire") == 3, "Replace All says how many")
+  check(b.lines[1] == "fire fire" and b.lines[3] == "fire here",
+        "every match replaced: " .. b.lines[1] .. " / " .. b.lines[3])
+  b:undo()
+  check(b.lines[1] == "Plasma plasma" and b.lines[3] == "PLASMA here",
+        "and one undo takes all of them back")
+end
+
 if failed > 0 then
   print(("FAIL: %d of %d checks on the text an editor edits"):format(failed,
         passed + failed))
@@ -349,4 +381,4 @@ end
 print(("PASS: %d checks on the text an editor edits (typing and undo a word "
        .. "at a time, redo, Enter keeping the indent, Backspace and Delete "
        .. "gathered, selections by Shift and by words, Home, indent, outdent "
-       .. "and comments as one step each, saved and changed)"):format(passed))
+       .. "and comments as one step each, saved and changed, found and replaced)"):format(passed))

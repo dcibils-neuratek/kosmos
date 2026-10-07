@@ -7677,6 +7677,17 @@ processors, and still what follows USB:
    own files in a System tab; Console and Search tabs below. The kit's tool
    button is `pixelkit.lua`'s `pk.tool` drawn for kit windows - one look,
    one door.
+   **AGREED the same day** - Diego: "yes to all, go ahead": the tools as
+   drawn, the More menu rather than a menu bar, the System tab, and Find as
+   a bar under the tools with This file and Project in it.
+   **WANTED the same day - examples in the IDE.** Diego: "What if we add the
+   gl demos to the examples as well of the ide", "Not the tutorial but an
+   example folder with code that can be used to learn", "And we can compile
+   them with the ide", "Also cube3d to show how it can be done in Lua vS C
+   code". An Examples folder beside the templates - the GL demos (`glgears`,
+   `glteapot` and the rest) and cube3d as a project in Lua and the same in
+   Lua and C - each opened, built and run in the IDE, held by a suite.
+   After the IDE's layout.
    The September plan follows, as it was:
    **AGREED again on 26 September, NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua

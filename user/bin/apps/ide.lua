@@ -167,7 +167,36 @@ if not win then
   return
 end
 
-local BODY = L.head + TAB_H
+-- **The tools' row under the header, and the find bar under that when it
+-- is open** (`docs/ide-layout.html`, 7 October): Kosmos Write's tools, at
+-- `ui.TOOL_H` in a row 64 high, and a bar of the find's fields.
+local TOOLS_H = 64
+local FIND_H = 40
+
+-- What is shown decides where everything goes: the sidebar, and the bar.
+local side_on, bar_on = true, false
+local place_body
+
+local function top() return L.head + TOOLS_H + (bar_on and FIND_H or 0) end
+
+local BODY = L.head + TOOLS_H + TAB_H
+
+-- A widget put somewhere, and the distances to the window's edges it keeps
+-- as the window is resized taken from there - as `view:add` takes them.
+local function put(v, x, y, w, h)
+  local rw, rh = win.root.w, win.root.h
+
+  v.x, v.y, v.w, v.h = x, y, w, h
+  v._insets = { left = x, top = y, right = rw - (x + w), bottom = rh - (y + h) }
+end
+
+-- Where an editor goes, now.
+local function editor_box()
+  local sx = side_on and SIDE or 0
+  local y = top() + TAB_H
+
+  return sx, y, win.root.w - sx, win.root.h - y - BOTTOM - FOOT
+end
 
 -- The open files, in their tabs' order: `{ path =, editor = }`.
 local open = {}
@@ -221,7 +250,7 @@ end
 -- keeps its own undo and its own place; only the one in front is shown.
 --------------------------------------------------------------------------
 
-local tabs = ui.tabs{ x = SIDE, y = L.head, w = W - SIDE, items = {} }
+local tabs = ui.tabs{ x = SIDE, y = L.head + TOOLS_H, w = W - SIDE, items = {} }
 local show
 
 local function sync_tabs()
@@ -276,9 +305,9 @@ local function open_file(path)
   -- the distances to the edges it had when it was added, so an editor made
   -- at the first size in a window since maximised would stay that small.
   --
-  local rw, rh = win.root.w, win.root.h
+  local ex, ey, ew, eh = editor_box()
   local editor = ui.editor{
-    x = SIDE, y = BODY, w = rw - SIDE, h = rh - BODY - BOTTOM - FOOT,
+    x = ex, y = ey, w = ew, h = eh,
     follow = { "left", "right", "top", "bottom" },
     code = (path:match("%.lua$") and "lua") or (path:match("%.[ch]$") and "c") or nil,
     read_only = read_only(path),
@@ -396,10 +425,14 @@ local function folder(path, name, note)
   }
 end
 
-local side = ui.tabs{ x = 0, y = L.head, w = SIDE,
+local side = ui.tabs{ x = 0, y = L.head + TOOLS_H, w = SIDE,
                       follow = { "left", "top" },
-                      items = { { text = "Project" }, { text = "Outline" } } }
+                      items = { { text = "Project" }, { text = "Outline" },
+                                { text = "System" } } }
 
+-- **The project, and only the project** (Diego, 7 October: "the sidebar
+-- shows a lot of kosmos apps and kosmos programs in the project view where
+-- it should be empty").
 local tree = ui.tree{
   x = 0, y = BODY, w = SIDE, h = H - BODY - FOOT,
   follow = { "left", "top", "bottom" },
@@ -410,7 +443,16 @@ local tree = ui.tree{
       root.open = true
       return root
     end)(),
-    { text = "Kosmos, to read", heading = true },
+  },
+}
+
+-- **Kosmos's own files, in a tab of their own** - "perhaps we can show
+-- those files in another tab in the sidebar called system files so user can
+-- read and access those easily": read only, opened as they were.
+local system = ui.tree{
+  x = 0, y = BODY, w = SIDE, h = H - BODY - FOOT,
+  follow = { "left", "top", "bottom" },
+  roots = {
     folder("/Kosmos/Apps", "/Kosmos/Apps", "read only"),
     folder("/Kosmos/Programs", "/Kosmos/Programs", "read only"),
     folder("/Kosmos/Libraries", "/Kosmos/Libraries", "read only"),
@@ -428,13 +470,18 @@ local tree = ui.tree{
         return kids
       end,
     },
+    folder("/Kosmos/Templates", "/Kosmos/Templates", "read only"),
   },
 }
 
--- A file chosen in the tree is opened; a folder opens with its arrow.
+system.hidden = true
+
+-- A file chosen in either tree is opened; a folder opens with its arrow.
 tree.on_select = function(_, node)
   if node.path and not node.children then open_file(node.path) end
 end
+
+system.on_select = tree.on_select
 
 -- The outline: the file's functions, in order, a press away.
 local outline = ui.tree{
@@ -484,8 +531,9 @@ outline.on_select = function(_, node)
 end
 
 side.on_choose = function(_, i)
-  tree.hidden = (i ~= 1)
-  outline.hidden = (i ~= 2)
+  tree.hidden = (i ~= 1) or not side_on
+  outline.hidden = (i ~= 2) or not side_on
+  system.hidden = (i ~= 3) or not side_on
 
   if i == 2 then outline.roots = outline_of(current) end
 end
@@ -497,7 +545,8 @@ end
 local bottom_tabs = ui.tabs{
   x = SIDE, y = H - FOOT - BOTTOM, w = W - SIDE,
   follow = { "left", "right", "bottom" },
-  items = { { text = "Output" }, { text = "Problems" } },
+  items = { { text = "Output" }, { text = "Problems" }, { text = "Console" },
+            { text = "Search" } },
 }
 
 output = ui.editor{
@@ -516,10 +565,48 @@ local problems = ui.editor{
 
 problems.hidden = true
 
-bottom_tabs.on_choose = function(_, i)
+--
+-- **The Console** (`docs/ide-layout.html`): what a running program prints,
+-- and a line under it for what it asks for - a program that reads waits
+-- until Enter, rather than being told nobody will answer.
+--
+local CONSOLE_IN = 30
+
+local console_view = ui.editor{
+  x = SIDE, y = H - FOOT - BOTTOM + TAB_H, w = W - SIDE, h = BOTTOM - TAB_H - CONSOLE_IN,
+  follow = { "left", "right", "bottom" },
+  read_only = true, gutter = false, plain = true, inset = { 14, 8 },
+  text = "", face = function() return text:face() end,
+}
+
+local console_in = ui.field{
+  x = SIDE + 10, y = H - FOOT - CONSOLE_IN + 2, w = W - SIDE - 20, h = 26,
+  follow = { "left", "right", "bottom" },
+  text = "", hint = "nothing is running",
+}
+
+console_view.hidden, console_in.hidden = true, true
+
+-- **Search**: what Find found in the project, a line a match; a click on
+-- one opens its file there.
+local search_view = ui.editor{
+  x = SIDE, y = H - FOOT - BOTTOM + TAB_H, w = W - SIDE, h = BOTTOM - TAB_H,
+  follow = { "left", "right", "bottom" },
+  read_only = true, gutter = false, plain = true, inset = { 14, 8 },
+  text = "", face = function() return text:face() end,
+}
+
+search_view.hidden = true
+
+local function bottom_show(i)
+  bottom_tabs.on = i
   output.hidden = (i ~= 1)
   problems.hidden = (i ~= 2)
+  console_view.hidden, console_in.hidden = (i ~= 3), (i ~= 3)
+  search_view.hidden = (i ~= 4)
 end
+
+bottom_tabs.on_choose = function(_, i) bottom_show(i) end
 
 --------------------------------------------------------------------------
 -- The foot: where the caret is, what the file is, and the keys.
@@ -556,7 +643,7 @@ function foot:draw(g)
 
   g:text(14, ty, words, theme.text_dim, nil, "ui")
 
-  local keys = "Ctrl Enter run    Shift F5 stop    Ctrl S save    Ctrl / comment    Ctrl P find"
+  local keys = "F6 build    Ctrl Enter run    Ctrl F find    Ctrl / comment    Ctrl P find a file"
 
   g:text(self.w - 14 - gfx.measure(keys, "ui"), ty, keys, theme.text_dim, nil, "ui")
 end
@@ -591,14 +678,6 @@ local function open_chosen()
   if chooser then chooser:run() end
 end
 
-local function divider()
-  local v = ui.view{ w = 13, h = 20 }
-
-  function v:draw(g) g:fill(6, 0, 1, self.h, theme.line_soft) end
-
-  return v
-end
-
 local pill = ui.view{ w = gfx.measure("not running", "ui") + 18, h = 22 }
 
 pill.words = "not running"
@@ -614,45 +693,138 @@ local function icon(name, action)
   return ui.iconbutton{ icon = name, w = 30, h = 30, on_click = action }
 end
 
--- Not `run`: that is the function a program starts another with.
-local run_button = ui.button{ text = "Run", go = true, icon = "run",
-                              hint = "Ctrl Enter" }
-local stop = ui.button{ text = "Stop", icon = "stop", hint = "Shift F5",
-                        disabled = true }
-local check = ui.button{ text = "Check", icon = "check", hint = "F7" }
-local build_button = ui.button{ text = "Build", icon = "settings", hint = "F6" }
+-- **The tools**, Kosmos Write's (`docs/ide-layout.html`, 7 October; Diego:
+-- "we should put buttons as the style of kosmos write toolbar which are
+-- small and easy to read"): an icon and its word, the keys in the More
+-- menu and the foot. Not `run`: that is the function a program starts
+-- another with.
+local run_button = ui.tool{ text = "Run", icon = "run", go = true }
+local stop = ui.tool{ text = "Stop", icon = "stop", disabled = true }
+local check = ui.tool{ text = "Check", icon = "check" }
+local build_button = ui.tool{ text = "Build", icon = "settings" }
 
 -- Finding a file by its name, at the header's right end where Tracker keeps
 -- its Search; what it finds and how are further down, under "Finding a file".
 local FIND_FIELD = 240
 local find = ui.field{ w = FIND_FIELD, text = "", hint = "Find a file", icon = "search" }
 
+-- The find bar's doors, written further down with the bar.
+local open_bar, close_bar, bar_step
+
+-- **⋯ More**: what the tools do not show, grouped as a menu bar would group
+-- it - Kosmos has no menu bars (`roadmap.md` 5zj) - each with its key.
+local function more_items()
+  local items = {
+    { text = "Open\u{2026}", hint = "Ctrl O", on_choose = open_chosen },
+    { text = "Save", hint = "Ctrl S", on_choose = function() save() end },
+    { text = "Save All", on_choose = save_all },
+    { text = "Close Tab", hint = "Ctrl W twice",
+      on_choose = function() if current then close_file(current) end end },
+    { separator = true },
+    { text = "Find", hint = "Ctrl F", on_choose = function() open_bar("file") end },
+    { text = "Replace", hint = "Ctrl R", on_choose = function() open_bar("file", true) end },
+    { text = "Find in Project", hint = "Ctrl Shift F", on_choose = function() open_bar("project") end },
+    { text = "Go to Line", hint = "Ctrl G", on_choose = function() open_bar("line") end },
+    { text = "Comment", hint = "Ctrl /", on_choose = function()
+      if current then current.editor:key(ui.keywith(47, ui.CTRL)) end
+    end },
+    { separator = true },
+  }
+
+  for _, it in ipairs(text:items()) do items[#items + 1] = it end
+
+  -- Help, with the tutorial: part one brings it (`roadmap.md` item 7).
+  items[#items + 1] = { separator = true }
+  items[#items + 1] = { text = "Tutorial", hint = "F1", disabled = true }
+  items[#items + 1] = { text = "Kits and their calls", disabled = true }
+  items[#items + 1] = { text = "Keyboard Shortcuts", disabled = true }
+
+  return items
+end
+
 local header = ui.header{
   x = 0, y = 0, w = W, title = "Kosmos IDE", sub = "",
-  -- Room for the project and the file, so the bar after them stays where
-  -- it is as the file in front changes; a longer path is cut. It was 300,
-  -- and the field to find a file needed the rest: at the size the window
-  -- opens, Run, Stop and Check with their keys leave little else.
-  sub_room = 150,
-  after = {
-    icon("new", function(self)
-      win:open_menu(win.origin_x + self.x, win.origin_y + self.y + self.h, {
-        { text = "New File", on_choose = new_file },
-        { text = "New Project\u{2026}", on_choose = function() new_project() end },
-      })
-    end), icon("open", open_chosen),
-    icon("save", function() save() end), icon("saveall", save_all),
-    divider(),
-    icon("undo", function() if current then current.editor:undo() end end),
-    icon("redo", function() if current then current.editor:redo() end end),
-    divider(),
-    build_button, run_button, stop, check, pill,
-  },
+  -- Room for the project and the file, so what is after them stays where it
+  -- is as the file in front changes; a longer path is cut.
+  sub_room = 300,
+  after = { pill },
   right = { find, icon("more", function(self)
-    win:open_menu(win.origin_x + self.x, win.origin_y + self.y + self.h, text:items())
+    win:open_menu(win.origin_x + self.x, win.origin_y + self.y + self.h, more_items())
   end) },
   title_bar = true,
 }
+
+-- The row the tools stand in, under the header.
+local toolbar = ui.view{ x = 0, y = L.head, w = W, h = TOOLS_H,
+                         follow = { "left", "right", "top" } }
+
+function toolbar:draw(g)
+  g:fill(0, 0, self.w, self.h, theme.window)
+  g:fill(0, self.h - 1, self.w, 1, theme.line_soft)
+end
+
+local function tool(text_, icon_, action)
+  return ui.tool{ text = text_, icon = icon_, on_click = action }
+end
+
+local function toggle_side()
+  side_on = not side_on
+  place_body()
+end
+
+local tools_left = {
+  tool("New", "new", function(self)
+    win:open_menu(win.origin_x + self.x, win.origin_y + self.y + self.h, {
+      { text = "New File", hint = "Ctrl N", on_choose = new_file },
+      { text = "New Project\u{2026}", on_choose = function() new_project() end },
+    })
+  end),
+  tool("Open", "open", open_chosen),
+  tool("Save", "save", function() save() end),
+  false,
+  tool("Undo", "undo", function() if current then current.editor:undo() end end),
+  tool("Redo", "redo", function() if current then current.editor:redo() end end),
+  tool("Find", "search", function() open_bar("file") end),
+  false,
+  build_button, run_button, stop, check,
+}
+
+local tools_right = {
+  tool("Console", "keyboard", function() bottom_show(3) end),
+  tool("Sidebar", "sidebar", function() toggle_side() end),
+}
+
+-- A thin line between groups of tools.
+local tool_lines = {}
+
+do
+  local x, y = 12, L.head + (TOOLS_H - ui.TOOL_H) // 2
+
+  for _, t in ipairs(tools_left) do
+    if t then
+      t.x, t.y = x, y
+      x = x + t.w + 2
+    else
+      local line = ui.view{ x = x + 8, y = y + 9, w = 1, h = 30 }
+
+      function line:draw(g) g:fill(0, 0, 1, self.h, theme.line_soft) end
+
+      tool_lines[#tool_lines + 1] = line
+      x = x + 17
+    end
+  end
+
+  x = W - 12
+
+  for i = #tools_right, 1, -1 do
+    local t = tools_right[i]
+
+    x = x - t.w
+    t.x, t.y = x, y
+    t.follow = { right = true, top = true }
+    x = x - 2
+  end
+end
 
 --------------------------------------------------------------------------
 -- Running (step 3).
@@ -792,8 +964,7 @@ local function build_now()
       :format(#r.problems, #r.problems == 1 and "problem" or "problems",
               base(first.file or "?"), first.line or 0, first.text or ""), theme.bad)
 
-  bottom_tabs.on = 2
-  output.hidden, problems.hidden = true, false
+  bottom_show(2)
 
   if first.file then
     local f = find_open(first.file) or open_file(first.file)
@@ -897,6 +1068,8 @@ function start_lua(f)
   f.editor:clear_marks()
   running = { id = id, path = f.path, scratch = scratch, started = sys.ticks(),
               printed = 0 }
+  console_view:set("")
+  console_in.hint = "the program is running"
   say(("%s, as process %s - %s"):format(base(f.path), tostring(id),
       app and "an application: its window opens on the desktop"
           or "a program: what it prints is below"), theme.accent)
@@ -937,6 +1110,31 @@ local function finish(r, code)
   end
 end
 
+-- **A program asking for a line** (the Console, 7 October): its request
+-- held, the Console brought forward, and answered when Enter is pressed in
+-- the line under it - and refused if the program ends first, which it
+-- cannot see, being gone.
+local waiting_read = nil
+
+function console_in.on_enter(_, typed)
+  if not waiting_read then return end
+
+  local who = waiting_read
+
+  waiting_read = nil
+  console_view:append(typed .. "\n", theme.accent)
+  console_in.text, console_in.caret = "", 1
+  console_in.hint = running and "the program is running" or "nothing is running"
+  pcall(sys.reply_raw, who, con.encode_reply({ line = typed }))
+  print(("ide: gave the program a line, %d bytes"):format(#typed))
+end
+
+-- A run over: a line it was waiting for is not, and the Console says so.
+local function console_ended()
+  waiting_read = nil
+  console_in.hint = "nothing is running"
+end
+
 -- The console's protocol, as far as a program can tell.
 local function serve()
   local changed = false
@@ -968,14 +1166,20 @@ local function serve()
       end
 
       out(text, colour)
+      console_view:append(text, colour)
     elseif req.op == con.READ then
-      -- Nothing typed in the IDE reaches a program yet: said, not hung.
-      reply = { error = con.ERR_NO_READER }
+      -- Held: answered when a line is typed in the Console.
+      waiting_read = who
+      reply = nil
+      bottom_show(3)
+      console_in.hint = "the program is waiting for a line - type it, then Enter"
+      win:focus_on(console_in)
+      print("ide: the program asks for a line")
     elseif req.op ~= con.POLL and req.op ~= con.KEYS then
       reply = { error = con.ERR_BAD_OP }
     end
 
-    pcall(sys.reply_raw, who, con.encode_reply(reply))
+    if reply then pcall(sys.reply_raw, who, con.encode_reply(reply)) end
     changed = true
   end
 end
@@ -1269,8 +1473,7 @@ function check_now(f, open_panel)
         f.counts[1], f.counts[2]))
 
   if open_panel then
-    bottom_tabs.on = 2
-    output.hidden, problems.hidden = true, false
+    bottom_show(2)
   end
 end
 
@@ -1993,6 +2196,7 @@ function win:on_frame()
 
       running = nil
       finish(r, code)
+      console_ended()
       changed = true
     end
   end
@@ -2108,6 +2312,373 @@ function header:measure()
 end
 
 --------------------------------------------------------------------------
+-- **Find** (`docs/ide-layout.html`, 7 October): a bar under the tools - what
+-- to find, which match of how many, up and down, Match case, This file or
+-- the Project, and Replace beside it. In a file the matches are marked in
+-- the editor and the one chosen selected; in the project they are listed
+-- in Search, a click on one opening its file there. And Go to Line, the
+-- same field asking for a number.
+--------------------------------------------------------------------------
+
+do
+
+local seek = ui.field{ w = 240, text = "", hint = "Find" }
+local swap = ui.field{ w = 200, text = "", hint = "Replace with\u{2026}" }
+local up = ui.iconbutton{ icon = "ascending", w = 26, h = 26 }
+local down = ui.iconbutton{ icon = "descending", w = 26, h = 26 }
+local case = ui.checkbox{ text = "Match case" }
+local scope = ui.segments{ items = { "This file", "Project" } }
+local replace_one = ui.button{ text = "Replace" }
+local replace_every = ui.button{ text = "All" }
+local unbar = ui.iconbutton{ icon = "close", w = 26, h = 26 }
+
+local bar_mode = "file"                -- "file", "project" or "line"
+local bar_said = ""                    -- "2 of 3", "12 in 4 files", ...
+
+local findbar = ui.view{ x = 0, y = L.head + TOOLS_H, w = W, h = FIND_H,
+                         follow = { "left", "right", "top" } }
+
+function findbar:draw(g)
+  g:fill(0, 0, self.w, self.h, theme.sunken)
+  g:fill(0, self.h - 1, self.w, 1, theme.line_soft)
+
+  if bar_said ~= "" then
+    g:text(seek.x + seek.w + 10, (self.h - gfx.height("ui")) // 2, bar_said,
+           theme.text_dim, nil, "ui")
+  end
+end
+
+local bar_parts = { findbar, seek, up, down, case, scope, swap, replace_one,
+                    replace_every, unbar }
+
+local function opts() return { case = case.checked } end
+
+-- The matches in the file in front, marked, and which of them is chosen.
+local told_last = nil                  -- what the log was last told
+
+local function mark_found()
+  if not current then bar_said = "" return {} end
+
+  local e = current.editor
+  local list = (bar_mode == "file" and seek.text ~= "") and e.buf:matches(seek.text, opts()) or {}
+
+  e:show_found(bar_mode == "file" and seek.text or nil, case.checked)
+
+  local y1, x1 = e.buf:selection()
+  local at = 0
+
+  for i, m in ipairs(list) do
+    if y1 == m[1] and x1 == m[2] then at = i end
+  end
+
+  if bar_mode == "file" then
+    local was = bar_said
+
+    bar_said = (seek.text == "" and "") or (#list == 0 and "no matches")
+               or (at > 0 and ("%d of %d"):format(at, #list)) or ("%d matches"):format(#list)
+
+    local told = seek.text .. "\0" .. bar_said
+
+    if told ~= told_last and bar_said ~= "" then
+      told_last = told
+      print(("ide: find %s: %s"):format(seek.text, bar_said))
+    end
+  end
+
+  return list
+end
+
+local function find_step(back)
+  if not current or seek.text == "" then return end
+
+  local b = current.editor.buf
+  local y, x = b.cy, b.cx
+
+  if back then
+    local y1, x1 = b:selection()
+    if y1 then y, x = y1, x1 end
+  end
+
+  local fy, fx1, fx2 = b:find(seek.text, y, x, { case = case.checked, back = back })
+
+  if fy then
+    current.editor:select_range(fy, fx1, fx2)
+    print(("ide: found %s at line %d"):format(seek.text, fy))
+  end
+
+  mark_found()
+end
+
+-- Every match in the project's files, in Search.
+local SEARCHED = { lua = true, c = true, h = true, md = true, txt = true, html = true }
+
+local function search_project()
+  local needle = seek.text
+  local lines, hits, in_files = {}, 0, 0
+
+  if needle == "" then return end
+
+  local low = not case.checked and needle:lower()
+
+  local function walk(dir)
+    for _, e in ipairs(files.entries(dir) or {}) do
+      local path = files.join(dir, e.name)
+
+      if e.kind == "directory" then
+        if e.name ~= "build" and not e.name:match("^%.") then walk(path) end
+      elseif SEARCHED[(e.name:match("%.(%w+)$") or ""):lower()] then
+        local body = fs.read(path)
+
+        if type(body) == "string" then
+          local n, any = 0, false
+
+          for line in (body .. "\n"):gmatch("(.-)\n") do
+            n = n + 1
+
+            local hay = low and line:lower() or line
+
+            if hay:find(low or needle, 1, true) then
+              hits, any = hits + 1, true
+              lines[#lines + 1] = ("%s:%d:  %s"):format(relative(path), n,
+                                                         (line:gsub("^%s+", "")))
+            end
+          end
+
+          if any then in_files = in_files + 1 end
+        end
+      end
+    end
+  end
+
+  walk(project)
+
+  search_view:set(#lines > 0 and (table.concat(lines, "\n") .. "\n")
+                  or ("nothing in %s has %q\n"):format(base(project), needle))
+  bar_said = ("%d in %d file%s"):format(hits, in_files, in_files == 1 and "" or "s")
+  bottom_show(4)
+  print(("ide: searched %s for %s: %d in %d files"):format(base(project), needle, hits, in_files))
+end
+
+-- A click on a line of Search: its file, at its line, the match chosen.
+local search_mouse = search_view.mouse
+
+function search_view:mouse(action, x, y)
+  local handled = search_mouse(self, action, x, y)
+
+  if action == "press" then
+    local path, n = (self.buf.lines[self.buf.cy] or ""):match("^(.-):(%d+):  ")
+
+    if path then
+      local f = open_file(path:sub(1, 1) == "/" and path or (project .. "/" .. path))
+
+      if f then
+        local row = f.editor.buf.lines[tonumber(n)] or ""
+        local hay = case.checked and row or row:lower()
+        local at = hay:find(case.checked and seek.text or seek.text:lower(), 1, true)
+
+        if at then f.editor:select_range(tonumber(n), at, at + #seek.text)
+        else f.editor:go_to(tonumber(n), 1) end
+
+        win:focus_on(f.editor)
+      end
+    end
+  end
+
+  return handled
+end
+
+function seek.on_change() if bar_mode == "file" then mark_found() end end
+
+function seek.on_enter()
+  if bar_mode == "line" then
+    local n = tonumber(seek.text)
+
+    if n and current then
+      current.editor:go_to(math.max(1, math.min(n, #current.editor.buf.lines)), 1)
+      print(("ide: went to line %d"):format(n))
+    end
+
+    close_bar()
+  elseif bar_mode == "project" then
+    search_project()
+  else
+    find_step(false)
+  end
+end
+
+up.on_click = function() find_step(true) end
+down.on_click = function() find_step(false) end
+case.on_change = function() mark_found() end
+scope.on_change = function(_, i)
+  bar_mode = (i == 2) and "project" or "file"
+  place_body()
+  mark_found()
+end
+
+replace_one.on_click = function()
+  if not current or seek.text == "" then return end
+
+  local e = current.editor
+  local chosen = e.buf:selected()
+
+  if chosen and (case.checked and chosen == seek.text
+                 or (not case.checked and chosen:lower() == seek.text:lower())) then
+    local y1, x1, y2, x2 = e.buf:selection()
+
+    e.buf:replace(y1, x1, y2, x2, swap.text)
+    print(("ide: replaced %s with %s at line %d"):format(seek.text, swap.text, y1))
+  end
+
+  find_step(false)
+end
+
+-- Enter in Replace replaces the match chosen, and goes to the next.
+function swap.on_enter() replace_one.on_click() end
+
+replace_every.on_click = function()
+  if not current or seek.text == "" then return end
+
+  local n = current.editor.buf:replace_all(seek.text, swap.text, opts())
+
+  print(("ide: replaced %d"):format(n))
+  mark_found()
+  bar_said = ("replaced %d"):format(n)
+end
+
+unbar.on_click = function() close_bar() end
+
+-- The keys both fields keep: Escape closes the bar at once, rather than
+-- emptying the field first; Shift+Enter goes back where a board can say it.
+for _, field in ipairs({ seek, swap }) do
+  local field_key = field.key
+
+  function field:key(c)
+    if c == 27 then close_bar() return true end
+    if c == ui.keywith(13, ui.SHIFT) then find_step(true) return true end
+
+    return field_key(self, c)
+  end
+end
+
+-- F3 and Shift+F3, the next match and the one before, wherever the focus is.
+bar_step = find_step
+
+function open_bar(mode, replacing)
+  bar_mode = mode
+  bar_on = true
+
+  -- What is selected is what to find, as every editor's Find starts.
+  local chosen = current and current.editor.buf:selected()
+
+  if mode ~= "line" and chosen and not chosen:find("\n") then
+    seek.text, seek.caret = chosen, #chosen + 1
+  end
+
+  if mode == "line" then seek.text, seek.caret = "", 1 end
+
+  seek.hint = (mode == "line") and "Line number" or "Find"
+  scope.on = (mode == "project") and 2 or 1
+  place_body()
+  win:focus_on(replacing and swap or seek)
+  seek.all = (mode ~= "line") and seek.text ~= ""
+  mark_found()
+  print(("ide: find bar, %s"):format(mode))
+end
+
+function close_bar()
+  bar_on = false
+  bar_said = ""
+  print("ide: find bar closed")
+
+  if current then current.editor:show_found(nil) end
+
+  place_body()
+
+  if current then win:focus_on(current.editor) end
+end
+
+--
+-- **Where everything goes**, from what is shown: the sidebar or not, the
+-- find bar or not - every part below the tools moved to fit, with the
+-- distances to the window's edges it keeps from there (`put`).
+--
+function place_body()
+  local rw, rh = win.root.w, win.root.h
+  local t = top()
+  local sx = side_on and SIDE or 0
+
+  put(side, 0, t, SIDE, side.h)
+  side.hidden = not side_on
+
+  for _, v in ipairs({ tree, outline, system }) do
+    put(v, 0, t + TAB_H, SIDE, rh - (t + TAB_H) - FOOT)
+  end
+
+  side.on_choose(side, side.on or 1)
+  put(tabs, sx, t, rw - sx, tabs.h)
+
+  for _, f in ipairs(open) do
+    local x, y, w, h = editor_box()
+
+    put(f.editor, x, y, w, h)
+  end
+
+  local by = rh - FOOT - BOTTOM
+
+  put(bottom_tabs, sx, by, rw - sx, bottom_tabs.h)
+
+  for _, v in ipairs({ output, problems, search_view }) do
+    put(v, sx, by + TAB_H, rw - sx, BOTTOM - TAB_H)
+  end
+
+  put(console_view, sx, by + TAB_H, rw - sx, BOTTOM - TAB_H - CONSOLE_IN)
+  put(console_in, sx + 10, rh - FOOT - CONSOLE_IN + 2, rw - sx - 20, 26)
+
+  -- The bar's parts, in a row; Replace's only for a file.
+  for _, v in ipairs(bar_parts) do v.hidden = not bar_on end
+
+  local y = L.head + TOOLS_H + (FIND_H - 26) // 2
+  local x = 12
+
+  put(findbar, 0, L.head + TOOLS_H, rw, FIND_H)
+  put(seek, x, y, 240, 26)
+  x = x + 240 + gfx.measure("12 in 34 files", "ui") + 20
+
+  for _, v in ipairs({ up, down }) do put(v, x, y, 26, 26) x = x + 28 end
+
+  x = x + 8
+  local cw = (case.w > 0) and case.w or (gfx.measure("Match case", "ui") + 30)
+
+  put(case, x, y + 2, cw, (case.h > 0) and case.h or 22)
+  x = x + cw + 12
+  put(scope, x, y - 2, scope.w, scope.h)
+  x = x + scope.w + 16
+
+  local replacing = bar_on and bar_mode == "file"
+
+  swap.hidden, replace_one.hidden, replace_every.hidden =
+    not replacing, not replacing, not replacing
+
+  put(swap, x, y, 200, 26)
+  x = x + 208
+  replace_one:fit()
+  put(replace_one, x, y - 2, replace_one.w, replace_one.h)
+  x = x + replace_one.w + 6
+  replace_every:fit()
+  put(replace_every, x, y - 2, replace_every.w, replace_every.h)
+  put(unbar, rw - 12 - 26, y, 26, 26)
+
+  -- In a line's mode the field alone.
+  if bar_mode == "line" then
+    up.hidden, down.hidden, case.hidden, scope.hidden = true, true, true, true
+  end
+end
+
+for _, v in ipairs(bar_parts) do v.hidden = true win:add(v) end
+
+end
+
+--------------------------------------------------------------------------
 -- Keys the window keeps, whichever part has the focus.
 --------------------------------------------------------------------------
 
@@ -2132,6 +2703,21 @@ function win:on_key(c)
     return true
   end
 
+  -- Find (`docs/ide-layout.html`): Ctrl F in the file, Ctrl R with Replace,
+  -- Ctrl Shift F in the project - which the board says apart from Ctrl F
+  -- since 7 October (`hal/keys.c`) - Ctrl G a line; Enter or F3 the next
+  -- match and Shift F3 the one before; Escape closes it.
+  if c == 6 then open_bar("file") return true end           -- Ctrl F
+  if c == 18 then open_bar("file", true) return true end    -- Ctrl R
+  if c == 7 then open_bar("line") return true end           -- Ctrl G
+  if c == ui.keywith(102, ui.CTRL | ui.SHIFT) then open_bar("project") return true end
+  if c == ui.F[3] then
+    if bar_on and bar_step then bar_step(false) else open_bar("file") end
+    return true
+  end
+  if c == ui.keywith(ui.F[3], ui.SHIFT) and bar_step then bar_step(true) return true end
+  if c == 27 and bar_on then close_bar() return true end
+
   if c == 19 then save() return true end                    -- Ctrl S
   if c == 14 then new_file() return true end                -- Ctrl N
   if c == 15 then open_chosen() return true end             -- Ctrl O
@@ -2153,12 +2739,21 @@ end
 win:add(side)
 win:add(tree)
 win:add(outline)
+win:add(system)
 win:add(tabs)
 win:add(bottom_tabs)
 win:add(output)
 win:add(problems)
+win:add(console_view)
+win:add(console_in)
+win:add(search_view)
 win:add(foot)
+win:add(toolbar)
+for _, line in ipairs(tool_lines) do win:add(line) end
+for _, t in ipairs(tools_left) do if t then win:add(t) end end
+for _, t in ipairs(tools_right) do win:add(t) end
 win:add(header)
+place_body()
 
 -- The files that were open, as they were; the project's first Lua file if
 -- none were; and said, for whoever drives this from outside.

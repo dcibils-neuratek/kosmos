@@ -32,6 +32,9 @@ by the message's tag; a C app's frames 1,216 bytes of Lua garbage to 0.
 
 **0.11.37** (18.434): `kosmos.h` in a C app built inside Kosmos.
 
+**0.11.40** (18.436): the IDE rearranged after Write - tools, More, Find
+and Replace, Ctrl G, Ctrl Shift F, System tab, Console that answers a read.
+
 **Next**: the
 Maps, Mail and Calendar designs; W3 only if a Lua app's frames show it.
 

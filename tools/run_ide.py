@@ -409,6 +409,80 @@ def main():
               "text comes out in whatever face the compositor has at that "
               "number" % drew)
         stop_desktop()
+
+        # **Find, and the Console** (`docs/ide-layout.html`, 7 October): a
+        # file with four lamps - Ctrl F counting them and Enter choosing
+        # the first, Shift F3 going back round, Ctrl R and Enter
+        # replacing one, Ctrl G going to a line, Ctrl Shift F finding them
+        # across the project (which the board tells from Ctrl F since this
+        # day), and Escape closing the bar. Then a program that asks for a
+        # line, answered in the Console.
+        guest.type('fs.write("/Home/development/f.lua", "-- a lamp\\nlocal lamp = 1\\n'
+                   'print(lamp + 1) -- lamp\\n")')
+        guest.type('fs.write("/Home/development/asks.lua", "write(\\"How many? \\")\\n'
+                   'local got = fs.read(\\"/Devices/console\\")\\n'
+                   'fs.write(\\"/Home/development/answer.txt\\", \\"got \\" .. tostring(got))\\n")')
+        time.sleep(1)
+        mark = len(guest.seen)
+        guest.type("wm ide:/Home/development/f.lua")
+        said("ide: opened /Home/development/f.lua", mark, 120)
+        time.sleep(2)
+
+        mark = len(guest.seen)
+        press("ctrl-f", "l", "a", "m", "p")
+        check(said("ide: find lamp: ", mark, 20) == "4 matches",
+              "Ctrl F and lamp did not count four in the file")
+        mark = len(guest.seen)
+        press("ret")
+        check(said("ide: found lamp at line ", mark, 20) == "1",
+              "Enter did not choose the first lamp, on line 1")
+        mark = len(guest.seen)
+        press("shift-f3")
+        check(said("ide: found lamp at line ", mark, 20) == "3",
+              "Shift F3 did not go back round to the last lamp, on line 3")
+
+        mark = len(guest.seen)
+        press("ctrl-r", "t", "o", "r", "c", "h", "ret")
+        check(said("ide: replaced lamp with ", mark, 20) == "torch at line 3",
+              "Ctrl R, torch and Enter did not replace the lamp chosen")
+
+        mark = len(guest.seen)
+        press("esc")
+        check(said("ide: find bar ", mark, 20) == "closed", "Escape did not close the bar")
+
+        mark = len(guest.seen)
+        press("ctrl-g", "2", "ret")
+        check(said("ide: went to line ", mark, 20) == "2", "Ctrl G and 2 did not go to line 2")
+
+        mark = len(guest.seen)
+        press("ctrl-shift-f")
+        check(said("ide: find bar, ", mark, 20) == "project",
+              "Ctrl Shift F did not open Find in the project - Shift lost on the way?")
+        press("ctrl-a", "l", "a", "m", "p", "ret")
+        found = said("ide: searched development for lamp: ", mark, 30)
+        check(found is not None and re.match(r"\d+ in \d+ files?$", found)
+              and int(found.split()[0]) >= 2,
+              "Find in the project did not find the lamps: %r" % found)
+        press("esc")
+
+        stop_desktop()
+        mark = len(guest.seen)
+        guest.type("wm ide:/Home/development/asks.lua")
+        said("ide: opened /Home/development/asks.lua", mark, 120)
+        time.sleep(2)
+        mark = len(guest.seen)
+        press("f5")
+        asked = said("ide: the program asks ", mark, 60)
+        check(asked == "for a line", "a program reading its console was not given the Console")
+        press("6", "4", "ret")
+        check(said("ide: gave the program a line, ", mark, 30) == "2 bytes",
+              "64 and Enter in the Console did not reach the program")
+        time.sleep(3)
+        stop_desktop()
+        mark = len(guest.seen)
+        guest.type('print("ans" .. "wer:" .. tostring(fs.read("/Home/development/answer.txt")))')
+        check(said("answer:", mark, 20) == "got 64",
+              "the program did not read the line typed in the Console")
     finally:
         guest.close()
 
@@ -423,7 +497,7 @@ def main():
           "line, Ctrl+S, the file exactly what the keys meant; the project and "
           "its file remembered; a program changed and not saved run to its error "
           "with Ctrl+Enter, a 21 KB library run as it is and said to be one, "
-          "another started with F5 and stopped with Shift+F5; the text larger and smaller with Ctrl = and Ctrl -, in the same face, and bench.lua's view moved by its scrollbar; a file checked as it opened, and a stray end refused by Lua's parser and taken back; a changed tab closed only when asked twice; ui.slidr found, and ui. and win: offering ui.lua's names and a window's methods, slider taken with Tab; Ctrl P finding the Clock, its library and the longer name in that order whatever the case, the library opened with Down and Enter, and the project's own file first)" % checks)
+          "another started with F5 and stopped with Shift+F5; the text larger and smaller with Ctrl = and Ctrl -, in the same face, and bench.lua's view moved by its scrollbar; a file checked as it opened, and a stray end refused by Lua's parser and taken back; a changed tab closed only when asked twice; ui.slidr found, and ui. and win: offering ui.lua's names and a window's methods, slider taken with Tab; Ctrl P finding the Clock, its library and the longer name in that order whatever the case, the library opened with Down and Enter, and the project's own file first; Find counting, choosing, going back, replacing, a line by Ctrl G, the project by Ctrl Shift F; a program's line typed in the Console)" % checks)
     return 0
 
 
