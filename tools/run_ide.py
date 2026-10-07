@@ -508,6 +508,14 @@ def main():
         check(said("running: looked ", mark, 120) == "3 times",
               "lesson 4's finished project did not look again on its clock")
         stop_desktop()
+        # Lesson 5's: three seconds, measured on the counter, then it rings.
+        mark = len(guest.seen)
+        guest.type("wm /Kosmos/Tutorial/05-Timer/timer.lua:0.05")
+        check(said("timer: rang after ", mark, 120) == "3 s",
+              "lesson 5's finished project did not ring after three seconds")
+        check(said('"Kitchen Timer", an alert', mark, 10) is not None,
+              "lesson 5's finished project rang without a notification")
+        stop_desktop()
         mark = len(guest.seen)
         guest.type("wm ide:/Home/development/asks.lua")
         said("ide: opened /Home/development/asks.lua", mark, 120)

@@ -172,6 +172,41 @@ class IdeShots(Shots):
         x, y = self.at(where)
         self.save("whats-running.png", (x - 12, y - 34, x + 420 + 12, y + 360 + 12))
 
+    def lesson5(self):
+        """The Kitchen Timer run in the IDE and started, counting."""
+        g = self.guest
+        g.wait_for("kosmos> ", "a prompt")
+        mark = self.mark()
+        g.type("wm ide:/Kosmos/Tutorial/05-Timer/timer.lua")
+        self.expect("ide: opened /Kosmos/Tutorial/05-Timer/timer.lua", mark, 120,
+                    "the IDE did not open lesson 5's project")
+        time.sleep(3)
+        mark = self.mark()
+        self.key("f5")
+        where = self.expect("wm: window Kitchen Timer", mark, 60, "F5 did not open the timer")
+        time.sleep(3)
+        self.screen()
+        x, y = self.at(where)
+        self.click(x + 128 + 30, y + 128 + 12)          # Start
+        time.sleep(3)
+        self.screen()
+        self.save("timer-ide.png", (0, 0, self.W, self.H), halve=True)
+
+    def timer(self):
+        """The finished timer, started with a tenth of a minute: pictured
+        counting, and heard to ring."""
+        g = self.guest
+        g.wait_for("kosmos> ", "a prompt")
+        mark = self.mark()
+        g.type("wm /Kosmos/Tutorial/05-Timer/timer.lua:0.1")
+        where = self.expect("wm: window Kitchen Timer", mark, 120,
+                            "the finished timer did not open")
+        time.sleep(1)
+        self.screen()
+        x, y = self.at(where)
+        self.save("timer.png", (x - 12, y - 34, x + 380 + 12, y + 250 + 12))
+        self.expect("timer: rang after 6 s", mark, 40, "the timer did not ring after six seconds")
+
     def notes(self):
         """The finished Notes: a list typed, saved through the Save window,
         and the window pictured holding it."""
@@ -237,7 +272,7 @@ def main():
     image, out = sys.argv[1], sys.argv[2]
     problems = []
 
-    for step in ("notes", "lesson4", "running", "run", "run2", "run3", "counter"):
+    for step in ("timer", "lesson5", "notes", "lesson4", "running", "run", "run2", "run3", "counter"):
         shots = IdeShots(image, out)
 
         try:
@@ -257,7 +292,7 @@ def main():
 
         return 1
 
-    print("PASS: lessons 1 to 4 followed as their pages give them; the pictures are in " + out)
+    print("PASS: lessons 1 to 5 followed as their pages give them; the pictures are in " + out)
     return 0
 
 

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>5. A kitchen timer</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+pre { font-family: "IBM Plex Mono", monospace; font-size: 14px; color: #1f2328; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 6px; padding: 0.6em 0.8em; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="4-running.html">Previous: What's running</a> - <a href="index.html">Contents</a></p>
+<h1>5. A kitchen timer</h1>
+<p class="lead">Type how many minutes, press Start, and when they are up the timer says so - in its window, in a notification, and out loud. On the way: the two clocks Kosmos keeps and which one a program uses for what, the notification server, and asking Astra to start a program for you.</p>
+<img src="timer.png" width="404" height="296" alt="The Kitchen Timer counting down">
+<p class="caption">What you will have at the end of this lesson.</p>
+
+<h2>Start a project</h2>
+<p><b class="ui">New</b>, <b class="ui">New Project</b>, <b class="ui">Lua app</b>, the <b class="ui">Hello Window</b> template, and the name <code>Timer</code>. Delete everything after the line that uses the UI kit, and add the notification kit under it:</p>
+<pre>local notify = use("/Kosmos/Libraries/notify.lua")</pre>
+
+<h2>Big digits</h2>
+<pre>local shown = ui.label{ x = 24, y = 20, w = 332, text = "05:00", role = ui.sized("heading", 56) }</pre>
+<p>A label draws in a <code>role</code> - the face the desktop uses for that kind of text. <code>ui.sized</code> gives the heading's face at 56 pixels. It is asked for after the window is open, because that is when Astra tells the application what its faces are.</p>
+
+<h2>Two clocks</h2>
+<p>Kosmos keeps two clocks, and they do different jobs.</p>
+<ul>
+<li><b>The counter</b>, <code>sys.ticks()</code>, is for measuring: how long something took, or how long is left. You met it in lesson 4. It counts very fast and never misses a beat.</li>
+<li><b>The scheduler's ticks</b> are for waiting: every time a program sleeps, or a window waits for something to happen, it says how long in these. A window's once-a-second <code>tick</code> is one of these waits.</li>
+</ul>
+<p>So the timer waits on one clock and measures on the other:</p>
+<pre>began = sys.ticks()
+deadline = began + math.floor(m * 60 * counter_hz)</pre>
+<pre>function clock:tick()
+  if not deadline then return end
+
+  local left = deadline - sys.ticks()
+
+  if left <= 0 then
+    ring()
+  else
+    show((left + counter_hz - 1) // counter_hz)
+  end
+end</pre>
+<p>Start works out the moment it should ring, on the counter. Each tick works out what is left from the counter again, rather than taking one away from a number of seconds. A tick can arrive late - when the machine is busy, or the window was being dragged - and a timer that counted its ticks would fall behind by every late one. One that measures cannot: however late a tick is, it shows the time that is really left.</p>
+<p class="note">Rounding up, with <code>counter_hz - 1</code> added before dividing, means the timer shows 00:01 for the last second rather than 00:00 while there is still time to go.</p>
+
+<h2>When the time is up</h2>
+<pre>local function ring()
+  deadline = nil
+
+  show(0)
+  said.text = "Time's up."
+  notify.post{ title = "Kitchen Timer", body = minutes.text .. " minutes are up", alert = true }
+  fs.send("/Running/wm", { type = "launch", program = "beep", args = "880 600" })
+end</pre>
+<p><code>notify.post</code> sends a notification to the notification server, which keeps it, and Astra shows it as a banner. <code>alert = true</code> makes it one that stays until somebody closes it - a timer that rang while you were out of the room should still be saying so when you come back.</p>
+<p>The sound is asked of Astra: <code>/Running/wm</code> is its name, and <code>launch</code> asks it to start a program - here <code>beep</code>, at 880 Hz for 600 milliseconds. The timer does not play anything itself. <code>beep</code> opens a stream to the audio server, which mixes it with whatever else is playing and appears in the Mixer while it sounds.</p>
+
+<h2>Run it</h2>
+<p>Press <kbd>F5</kbd>, type <code>0.1</code> - six seconds - and press the timer's Start.</p>
+<img src="timer-ide.png" width="860" height="484" alt="The IDE with the Kitchen Timer counting beside it">
+<p class="caption">The timer counting beside the IDE.</p>
+<p class="tip">The finished lesson is in <b class="ui">Lesson's Project</b>, under the three dots: <code>05-Timer</code>. It also takes its minutes as its argument, as Notes took a note: started as <code>timer.lua:5</code>, it counts five minutes at once.</p>
+
+<h2>Try changing</h2>
+<ul>
+<li>Add a <b>Pause</b> button: keep what is left, and work out a new deadline when it carries on.</li>
+<li>Make the last ten seconds count in red: a label has <code>color</code>.</li>
+<li>Ring three times, a little higher each time.</li>
+</ul>
+
+<h2>How Kosmos does it</h2>
+<p>A timer that waits on one clock and measures on the other is the same idea the whole system is built on. Nebula, the kernel, wakes a waiting thread on the scheduler's ticks; the counter belongs to the processor and is read without asking anyone. Sound has a priority of its own, above every program, so a beep is not late because the machine was busy.</p>
+
+<h2>The real thing</h2>
+<p>Notifications is the program that shows the banners, and - from the clock in the Deskbar - everything the notification server keeps; Clock is a replicant - a small clock that can live in the Deskbar. Open the IDE's <b class="ui">System</b> tab, then <code>/Kosmos/Apps</code>, then <code>notifications.lua</code> and <code>clock.lua</code>.</p>
+<p>That is the end of part one. You can build a window, take what a person types, keep files, ask the system and keep time - which is most of what an application does. Part two draws pixels: a sketchpad and a falling-blocks game.</p>
+<p class="nav"><a href="4-running.html">Previous: What's running</a> - <a href="index.html">Contents</a></p>
+</body>
+</html>
