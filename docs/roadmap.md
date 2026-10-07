@@ -1328,6 +1328,14 @@ window is moved by dragging it and by the wheel, with its scale shown in the
 header. The scaling is the gfx Kit's (`surface:stretch`, the scaler Photo Viewer uses today), so a zoom is
 one C call a frame and never a loop in Lua.
 
+**To mend - the desktop-icon read in `arm-display-4`** (found 7 October,
+three full gates running): the name before the last in the first column
+read at row 220 where the finished layout has it at 241 - a picture caught
+while the desktop draws the larger icons in stages, which the check's own
+"still for a second and a half" did not outlast under the gate's load. Each
+time 79 of 79 alone. To wait for the desktop's word that it finished laying
+out, rather than for the screen to hold still.
+
 **WANTED, 7 October - Format Code in the IDE.** Diego: "the kosmos ide
 needs a format code button that makes the entire code beautiful and human
 readable with correct indentation, spaces, etc". A **Format** tool among the

@@ -185,11 +185,11 @@ local function grid_mode(ax, ay)
   -- fonts for the app new drawer is too small, lets increase the size by
   -- 2pts"): the names and the heading, the pills, and the search, which is
   -- the look's own size and two more.
-  local SMALL = 14
+  local SMALL = 16                -- 14 until 7 October: Diego, "increase the font size by 2pts"
   local small = ui.sized("ui", SMALL)
-  local ROW = 15
+  local ROW = 17
   local row_face = ui.sized("ui", ROW)
-  local SEARCH = (theme.fonts and theme.fonts.ui and tonumber(theme.fonts.ui.px or theme.fonts.ui.size) or 18) + 2
+  local SEARCH = (theme.fonts and theme.fonts.ui and tonumber(theme.fonts.ui.px or theme.fonts.ui.size) or 18) + 4
   local search_face = ui.sized("ui", SEARCH)
   --
   -- **The sections as a sidebar** (`docs/launcher.html`, agreed 7 October):
@@ -356,6 +356,24 @@ local function grid_mode(ax, ay)
     local how = grid.aim(last_x, last_y, x, y)
 
     last_x, last_y = x, y
+
+    -- **A tile under the pointer is the chosen one** (Diego, 7 October:
+    -- "hovering over apps should mark them as active with the background
+    -- color change"): lit as the arrows light it, so Return starts what is
+    -- pointed at.
+    local over = grid.hit(#list, top, view.w, view.h, x, y)
+
+    if over then
+      pending = nil
+      win.poll_wait_ticks = nil
+
+      if over ~= sel then
+        sel, where = over, "grid"
+        return true
+      end
+
+      return false
+    end
 
     if not name or name == category or typed ~= "" then
       pending = nil

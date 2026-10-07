@@ -20907,3 +20907,27 @@ beside them, five across, in a panel grown from 600 to 820.
 
 Opening on All, and the panel's width, as the drawing's answers were; the
 Recent row is its own step after.
+
+## 18.447 The dock's size, its marks, the launcher larger and lit under the pointer, Tracker's list icons
+
+From Diego on the M700, 7 October:
+
+- **The dock 4 shorter, and a setting**: "can you make the dock 4 points
+  shorter", then "can we add a preferences setting for it?", "so we can
+  resize as needed". Appearance's **The dock's size** - Small 52, Medium 60
+  (the default, 64 before), Large 72, Larger 84 - each its icons, cells,
+  Kosmos button and corners scaled with it (`dock.SIZES`, `dock.sized`); the
+  Deskbar started again at it as for where the bar is, and at the top kept
+  for when the bar is a dock. `run_dock.py` 47: Large 72 tall, Medium 60.
+- **The open and in-front marks 3 under the icon**, not 9 off the dock's edge.
+- **The launcher's words 2 larger** (16, 17, the search four above the
+  look's), and **the tile under the pointer lit** as the arrows light it.
+- **Tracker's list view draws each item's icon at 16** (`files.icon`, the
+  icon view's), where it drew a blue block for a folder and grey for the rest.
+- **A hover move not yet collected is replaced by the next** in the window
+  manager's queue: the launcher, tracking the pointer, was sent a mouse's
+  every move and the queue's limit logged each one it dropped.
+
+The gate: 101 of 102 in 9:19; `arm-display-4`'s desktop-icon read again at
+220 for 241, 79 of 79 alone - three gates running, so on the roadmap to be
+mended rather than rerun.

@@ -1700,14 +1700,14 @@ function rows:draw(g)
     end
 
     --
-    -- A folder or a file, as the drawing marks them before the name: a
-    -- small rounded block, the accent's for a folder and the rail's grey for
-    -- anything else.
+    -- **Its icon, at 16**, the one the icon view draws larger (`files.icon`):
+    -- a folder's, a document's by its kind, a launcher's own. It was a
+    -- small block, the accent's for a folder and grey for anything else -
+    -- the first drawing's mark - until Diego, 7 October: "why does the
+    -- tracker wont show folder icons in list view? it just shows a blue
+    -- square beside folders", "we do have small icon set right?".
     --
-    g:fill_round(COLUMNS[1].x, ry + (LROW - 13) // 2, 16, 13,
-                 (e.kind == "directory") and theme.mix(theme.accent,
-                                                       theme.sunken, 250)
-                 or theme.track, 2)
+    files.icon(g, COLUMNS[1].x, ry + (LROW - 16) // 2, e, path_of(e), 16)
 
     g:text(COLUMNS[1].x + 24, y, files.label(e), fg, bg)
     g:text(COLUMNS[2].x, y,

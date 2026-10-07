@@ -21,7 +21,7 @@
 
 local dock = {}
 
-dock.H        = 64      -- the dock's height
+dock.H        = 60      -- the dock's height, at its Medium size (below); 64 until 7 October
 dock.STRIP_H  = 32      -- the strip across the top, which holds the time
 dock.ICON     = 36      -- an application's picture
 dock.CELL     = 50      -- the square a picture is pressed in
@@ -38,6 +38,29 @@ dock.RADIUS   = 22      -- the dock's own corners, floating
 -- eight (`docs/dock.html`), by the name `launch` takes. A person's own list
 -- is `/Home/Preferences/dock`, `{ pins = { ... } }`, read in its place.
 --
+--
+-- **The dock's size, a setting** (Diego, 7 October: "can you make the dock 4
+-- points shorter in height", then "can we add a preferences setting for
+-- it?", "so we can resize as needed"): Appearance's `dock_size`, each size
+-- its height and what is in it, scaled together. Medium is the 60 he asked
+-- for; 64 was the drawing's.
+--
+dock.SIZES = {
+  small  = { H = 52, ICON = 30, CELL = 42, KOSMOS_H = 36, MARK = 20, RADIUS = 18 },
+  medium = { H = 60, ICON = 36, CELL = 50, KOSMOS_H = 42, MARK = 22, RADIUS = 22 },
+  large  = { H = 72, ICON = 44, CELL = 60, KOSMOS_H = 50, MARK = 26, RADIUS = 26 },
+  larger = { H = 84, ICON = 52, CELL = 70, KOSMOS_H = 58, MARK = 30, RADIUS = 30 },
+}
+
+-- The sizes taken for this process's dock, by name; Medium for any other.
+function dock.sized(name)
+  local s = dock.SIZES[tostring(name or "")] or dock.SIZES.medium
+
+  for k, v in pairs(s) do dock[k] = v end
+
+  return dock
+end
+
 dock.PINS = { "tracker", "browser", "terminal", "music", "groove",
               "cafesa3d", "ide", "preferences" }
 

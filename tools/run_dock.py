@@ -75,7 +75,7 @@ import kosmos_vnc as V                                      # noqa: E402
 ROOT = os.path.dirname(HERE)
 
 GAP = 6             # `DOCK_GAP` in `wm.lua`: a floating dock above the edge
-DOCK_H = 64         # `dock.H`
+DOCK_H = 60         # `dock.H`
 STRIP_H = 32        # `dock.STRIP_H`
 PAD = 10            # `dock.PAD`: the Kosmos button's distance from the end
 
@@ -582,6 +582,42 @@ def main():
             m = re.search(r"PNGHEAD ([0-9a-f]+)", out)
             said["png"] = bytes.fromhex(m.group(1)) if m else out.encode()
 
+        # Where the window manager put the dock: a floating one is "the dock
+        # at", one the whole width is the Deskbar's window - either is
+        # "x,y WxH" after it.
+        def dock_line(since, what):
+            deadline = time.monotonic() + 60
+
+            while time.monotonic() < deadline:
+                guest._read_available()
+                m = re.search(r"(?:wm: the dock at |wm: window Deskbar at )(\d+,\d+ \d+x\d+)",
+                              guest.seen[since:])
+
+                if m and not m.group(1).startswith("0,0 "):
+                    return m.group(1)
+
+                time.sleep(0.3)
+
+            raise R.Failure("the guest never said " + what)
+
+        # ---- 6c: the dock's size, a setting (7 October) - Large, the dock
+        # started again at 72 tall, and Medium back at 60 ----
+        mark = len(guest.seen)
+        session.run("setprop /Running/Deskbar/bar dock")
+        guest.wait_for_line("deskbar: again, the bar dock", "the bar a dock for its size", mark)
+        time.sleep(2)
+        mark = len(guest.seen)
+        session.run("setprop /Running/Deskbar/size large")
+        said["large"] = dock_line(mark, "the dock at its Large size")
+        mark = len(guest.seen)
+        session.run("setprop /Running/Deskbar/size medium")
+        said["medium"] = dock_line(mark, "the dock at its Medium size")
+        time.sleep(2)
+        mark = len(guest.seen)
+        session.run("setprop /Running/Deskbar/bar top")
+        guest.wait_for_line("wm: window Deskbar at 0,0 ", "the bar back at the top", mark)
+        time.sleep(2)
+
         # ---- 7: one program moving the bar four times ----
         session.put(SWITCH.encode(), "/Temporary/switch.lua")
         mark = len(guest.seen)
@@ -811,6 +847,12 @@ def main():
         fails.append("the screenshot read back is not a %dx%d PNG: %r"
                      % (width, height, png[:32]))
 
+    tall = [re.search(r"\d+,\d+ \d+x(\d+)", said.get(k) or "") for k in ("large", "medium")]
+
+    if not all(tall) or [int(m.group(1)) for m in tall] != [72, 60]:
+        fails.append("the dock's size, Large and then Medium, did not make it 72 and "
+                     "then 60 tall: %r, %r" % (said.get("large"), said.get("medium")))
+
     took = re.findall(r"SWITCH (\w+) (\w+) (true|false)", said.get("switch", ""))
     moved = re.findall(r"deskbar: again, the bar (\w+) and the dock (\w+)",
                        said.get("switched", ""))
@@ -849,7 +891,7 @@ def main():
                      "the dock about half transparent and keep it: %r"
                      % ((said.get("slid"), said.get("slid kept")),))
 
-    checks = 46
+    checks = 47
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))

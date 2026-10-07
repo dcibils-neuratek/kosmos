@@ -5311,6 +5311,21 @@ function post(win, event)
   end
 
   local events = win.events
+  local last = events[#events]
+
+  --
+  -- **The pointer passing over, kept as where it is now**: a hover move
+  -- not yet collected is replaced by the next, since only the latest says
+  -- where the pointer is. Every one was queued - a window that asked for
+  -- them (`wmproto.track`, the launcher's sidebar since 7 October) was sent
+  -- a mouse's thousand a second, faster than it reads, and the queue's
+  -- limit dropped them with a line in the log each (Diego's screenshot).
+  --
+  if event.hover and last and last.hover and last.type == event.type
+     and last.action == event.action then
+    events[#events] = event
+    return
+  end
 
   events[#events + 1] = event
   P.posted(win, event)

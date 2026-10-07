@@ -182,6 +182,20 @@ settings.ITEMS = {
         kind = "percent", file = settings.APPEARANCE, key = "dock_transparency",
         default = 25 },
 
+  --
+  -- **The dock's size** (Diego, 7 October: "can we add a preferences setting
+  -- for it?", "so we can resize as needed"): its height and its icons
+  -- together (`dock.SIZES`). Told to the Deskbar, which starts itself again
+  -- at it, as it does for where the bar is.
+  --
+  item{ category = "appearance", group = "Look",
+        label = "The dock's size",
+        note = "How tall the dock is, and its icons with it",
+        kind = "choice", file = settings.APPEARANCE, key = "dock_size",
+        default = "medium",
+        choices = { { "small", "Small" }, { "medium", "Medium" },
+                    { "large", "Large" }, { "larger", "Larger" } } },
+
   item{ category = "appearance", group = "Look",
         label = "Wallpaper", note = "Carried in the image, or a picture in /Home",
         kind = "choice", file = settings.APPEARANCE, key = "wallpaper",

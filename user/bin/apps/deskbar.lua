@@ -488,6 +488,8 @@ local appearance = prefs.read("appearance")
 
 local asked_bar = tostring(args or ""):match("%-%-bar%s+(%a+)")
 local asked_dock = tostring(args or ""):match("%-%-dock%s+(%a+)")
+local asked_size = tostring(args or ""):match("%-%-size%s+(%a+)")
+local DOCK_SIZE = asked_size or appearance.dock_size or "medium"
 local DOCKED = (asked_bar or appearance.bar) == "dock"
 local FLOATING = (asked_dock or appearance.dock) ~= "whole"
 
@@ -508,7 +510,7 @@ local function transparency_of(v)
 end
 
 local transparency = transparency_of(appearance.dock_transparency)
-local dock = DOCKED and use("/Kosmos/Libraries/dock.lua") or nil
+local dock = DOCKED and use("/Kosmos/Libraries/dock.lua").sized(DOCK_SIZE) or nil
 local topstrip = nil              -- the dock's strip across the top
 local kosmos_at = nil             -- where the dock drew its Kosmos button, in it
 
@@ -615,12 +617,16 @@ win:publish("menu",
 --
 local leaving = nil         -- { bar, dock } once a new place has been asked for
 
-local function again(bar_is, dock_is)
+local function again(bar_is, dock_is, size_is)
+  size_is = size_is or DOCK_SIZE
+
   local reply = fs.send("/Running/wm", { type = "launch", program = "deskbar",
-                                         args = ("--bar %s --dock %s --again"):format(bar_is, dock_is) })
+                                         args = ("--bar %s --dock %s --size %s --again")
+                                                :format(bar_is, dock_is, size_is) })
 
   if reply and reply.ok then
-    print(("deskbar: again, the bar %s and the dock %s"):format(bar_is, dock_is))
+    print(("deskbar: again, the bar %s and the dock %s"):format(bar_is, dock_is)
+          .. (size_is ~= DOCK_SIZE and (", " .. size_is) or ""))
     if topstrip then topstrip:close() end
     win:close()
   else
@@ -652,6 +658,26 @@ win:publish("dock",
   function() return FLOATING and "floating" or "whole" end,
   function(v)
     move_to(DOCKED and "dock" or "top", tostring(v) == "whole" and "whole" or "floating")
+  end)
+
+-- The dock's size (Appearance's `dock_size`): started again at it, as for
+-- where the bar is - its height is the window's, which the window manager
+-- makes room for. The size it has already asks for nothing.
+win:publish("size",
+  function() return DOCK_SIZE end,
+  function(v)
+    v = tostring(v)
+
+    if not use("/Kosmos/Libraries/dock.lua").SIZES[v] or v == DOCK_SIZE then return end
+
+    -- At the top it is kept for when the bar is a dock, as the dock's
+    -- width is: a bar that is not a dock has nothing to resize.
+    if not DOCKED then
+      DOCK_SIZE = v
+      return
+    end
+
+    leaving = { "dock", FLOATING and "floating" or "whole", v }
   end)
 
 -- The dock's transparency, as Appearance's slider moves: drawn again, and
@@ -1909,10 +1935,14 @@ if DOCKED then
       else
         g:icon(x + (it.w - dock.ICON) // 2, cy - dock.ICON // 2 - 3, it.icon .. ".png", dock.ICON)
 
+        -- Open, and in front: a dot, or a line, 3 under the picture - it
+        -- was 9 off the dock's bottom edge, which left it nearer the edge
+        -- than the icon it belongs to (Diego, 7 October: "put the active
+        -- and open indicator dot and line below closer to the icon").
         if it.running then
           local mw = it.front and 16 or 6
 
-          g:fill_round(x + (it.w - mw) // 2, self.h - 9, mw, 4,
+          g:fill_round(x + (it.w - mw) // 2, cy - 3 + dock.ICON // 2 + 3, mw, 4,
                        it.front and theme.accent or theme.text_dim, 2)
         end
       end
@@ -2418,7 +2448,7 @@ win.on_frame = function(self)
     local to = leaving
 
     leaving = nil
-    again(to[1], to[2])
+    again(to[1], to[2], to[3])
     return false
   end
 

@@ -374,6 +374,14 @@ local APPLY = {
   -- setting all the same, for the next one to read.
   -- The dock's transparency, told as the slider moves: the Deskbar draws its
   -- pill again and starts nothing.
+  dock_size = function(size)
+    local ok, why = fs.write("/Running/Deskbar/size", tostring(size))
+
+    if not ok then print("preferences: the Deskbar was not told: " .. tostring(why)) end
+
+    return true
+  end,
+
   dock_transparency = function(percent)
     local ok, why = fs.write("/Running/Deskbar/transparency", tostring(percent))
 
