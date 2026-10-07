@@ -1,0 +1,283 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  The Kosmos IDE tutorial, planned before a lesson is written (roadmap.md 6n
+  step 6e and item 7). Diego, 14 September 2026: a tutorial on building apps
+  for Kosmos, from a button to 3D; 27 September: "6e does need the tutorial
+  lessons for the ide", calling "kits, drivers, servers ... 3d kit, video,
+  audio, compression", with the bundled apps as worked examples - "a
+  showcase of capabilities for the os from a developer perspective". 7
+  October: "Lets focus on the tutorials for ide now that the ide has been
+  updated with C". Pictures in each lesson are taken by a tool in QEMU.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kosmos IDE Tutorial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  /* A plan read top to bottom: one column of parts and lessons, then one
+     lesson page drawn as Kosmos shows it, then the questions. Kosmos IDE's
+     own palette and faces (docs/kosmos-ide.html). */
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --panel: #ffffff; --accent: #2a55c9; --accent-soft: #e9eefb;
+    --lua: #2f6fb3; --luabg: #e6eff9; --c: #a3461f; --cbg: #fbeee6;
+    --code: #f6f7f9; --kw: #7a3fb8; --str: #2f7a32; --com: #8b919a;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b;
+      --panel: #1c1f25; --accent: #7b9ff2; --accent-soft: #25304a;
+      --lua: #82aaff; --luabg: #1f2a3d; --c: #f0a36b; --cbg: #3a2a20;
+      --code: #1f2228; --kw: #c792ea; --str: #9ccc7b; --com: #6f7885;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b;
+    --panel: #1c1f25; --accent: #7b9ff2; --accent-soft: #25304a;
+    --lua: #82aaff; --luabg: #1f2a3d; --c: #f0a36b; --cbg: #3a2a20;
+    --code: #1f2228; --kw: #c792ea; --str: #9ccc7b; --com: #6f7885;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink);
+         font-family: var(--body); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 980px; margin: 0 auto; padding-block: 36px 80px; padding-inline: 18px; }
+  h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+  h2 { font-family: var(--display); font-size: 21px; margin: 48px 0 8px;
+       padding-top: 20px; border-top: 1px solid var(--rule); text-wrap: balance; }
+  h3 { font-family: var(--display); font-size: 17px; margin: 0; }
+  p { max-width: 68ch; }
+  .lead { font-size: 17px; color: var(--muted); }
+  code, .mono { font-family: var(--mono); font-size: 13.5px; }
+
+  .part { margin-top: 30px; }
+  .part-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  .part-head .tag { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .part-head p { margin: 2px 0 0; color: var(--muted); }
+
+  .lessons { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
+  .lesson { display: grid; grid-template-columns: 44px 1fr; gap: 12px; background: var(--panel);
+            border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; }
+  .num { font-family: var(--display); font-size: 26px; color: var(--accent); line-height: 1; padding-top: 2px;
+         font-variant-numeric: tabular-nums; }
+  .lesson-body { min-width: 0; }
+  .title-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .lang { font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 1px 8px; letter-spacing: .03em; }
+  .lang.lua { color: var(--lua); background: var(--luabg); }
+  .lang.c { color: var(--c); background: var(--cbg); }
+  .lesson p { margin: 4px 0 6px; }
+  .facts { display: grid; grid-template-columns: 7.5em 1fr; gap: 2px 10px; font-size: 13.5px; margin: 0; }
+  .facts dt { color: var(--muted); }
+  .facts dd { margin: 0; min-width: 0; }
+
+  /* The lesson page, as Kosmos's browser shows it. */
+  .shot { margin-top: 14px; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden;
+          background: var(--panel); box-shadow: 0 8px 28px rgba(20, 30, 50, .10); }
+  .bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--rule);
+         font-size: 13px; color: var(--muted); }
+  .dots { display: flex; gap: 6px; }
+  .dots i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+  .dots i:nth-child(1) { background: #3cb24a; } .dots i:nth-child(2) { background: #e8a23a; } .dots i:nth-child(3) { background: #e2574c; }
+  .addr { font-family: var(--mono); font-size: 12.5px; background: var(--code); border-radius: 6px; padding: 2px 8px;
+          min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .page { padding: 18px 22px 22px; max-width: 46em; }
+  .page .nav { font-size: 13px; color: var(--muted); margin: 0 0 6px; }
+  .page h3 { font-size: 24px; margin: 4px 0 6px; }
+  .page h4 { font-family: var(--display); font-size: 17px; margin: 18px 0 4px; }
+  .page .btn { display: inline-block; background: var(--accent); color: #fff; border-radius: 6px;
+               padding: 5px 12px; font-size: 13.5px; font-weight: 500; }
+  .pic { margin: 12px 0 2px; border: 1px solid var(--rule); border-radius: 6px; aspect-ratio: 16 / 7; max-width: 100%;
+         display: grid; place-items: center; color: var(--muted); font-size: 13px;
+         background: repeating-linear-gradient(135deg, var(--code) 0 10px, var(--panel) 10px 20px); }
+  .caption { font-size: 12.5px; color: var(--muted); margin: 2px 0 10px; }
+  pre { background: var(--code); border-radius: 6px; padding: 10px 12px; overflow-x: auto; margin: 8px 0;
+        font-family: var(--mono); font-size: 13px; line-height: 1.5; }
+  pre .k { color: var(--kw); } pre .s { color: var(--str); } pre .m { color: var(--com); }
+  .how { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 8px 12px; border-radius: 0 6px 6px 0; }
+  .how p { margin: 3px 0; }
+
+  .menu { margin-top: 14px; display: inline-block; background: var(--panel); border: 1px solid var(--rule);
+          border-radius: 8px; padding: 6px 0; min-width: 260px; max-width: 100%; box-shadow: 0 8px 22px rgba(20, 30, 50, .10); }
+  .menu div { padding: 4px 16px; font-size: 14px; }
+  .menu .sep { border-top: 1px solid var(--rule); margin: 5px 0; padding: 0; }
+  .menu .on { background: var(--accent-soft); color: var(--accent); }
+  .menu .k { float: right; color: var(--muted); font-family: var(--mono); font-size: 12.5px; }
+
+  ol.q { padding-left: 1.3em; } ol.q li { margin: 8px 0; max-width: 70ch; }
+  .rec { color: var(--muted); }
+  a { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Kosmos IDE Tutorial</h1>
+<p class="lead">Fourteen lessons that build real apps in the IDE, from a button to 3D: first in Lua, then with C. Each one ends by opening the bundled Kosmos app that does the same thing for real, so the system's own apps become the worked examples. Planned here to be agreed before any lesson is written.</p>
+
+<h2>How a lesson works</h2>
+<p><b>A page and a project.</b> Each lesson is a page with pictures, taken in QEMU by a tool so they can be retaken when an app changes. It comes with a small project that is complete at every step. Open it from the IDE's <b>Help</b> menu: <b>Tutorial</b> shows the contents in the browser, and each lesson's <b>Open this lesson's project</b> copies its folder into <code>/Home/development/</code> and opens it in the IDE.</p>
+<p><b>Every lesson has the same four parts:</b> what you build, the steps with the code, "try changing", and <b>How Kosmos does it</b>, which names the kits, servers and drivers involved. The worked example is the bundled app that does the same thing; the IDE opens its source, and you can save a copy to change.</p>
+<p><b>Every lesson is tested.</b> A suite builds and runs every lesson project on both processors, as the templates are, so a lesson can't quietly stop working.</p>
+
+<div class="menu" role="img" aria-label="The IDE's Help menu">
+  <div class="on">Tutorial <span class="k">F1</span></div>
+  <div>Lesson's project…</div>
+  <div class="sep"></div>
+  <div>Kits and their calls</div>
+  <div>Keyboard shortcuts</div>
+</div>
+<p class="caption">The IDE's Help menu, which is new. <b>Kits and their calls</b> lists every kit's functions, as the IDE's suggestions already know them.</p>
+
+<h2>The lessons</h2>
+
+<div class="part">
+  <div class="part-head"><span class="tag">Part one</span><h3>A Lua app</h3></div>
+  <p>Windows, controls, files and the system's servers, in Lua alone. Nothing to build: F5 runs it.</p>
+  <ol class="lessons">
+    <li class="lesson"><span class="num">1</span><div class="lesson-body">
+      <div class="title-row"><h3>Hello, button</h3><span class="lang lua">Lua</span></div>
+      <p>A window with a button that counts its presses.</p>
+      <dl class="facts"><dt>Teaches</dt><dd>a project, F5, <code>ui.window</code>, a button, a label, the event loop</dd>
+      <dt>Real thing</dt><dd>the Hello Window template</dd></dl></div></li>
+    <li class="lesson"><span class="num">2</span><div class="lesson-body">
+      <div class="title-row"><h3>A unit converter</h3><span class="lang lua">Lua</span></div>
+      <p>Celsius, miles, kilos: fields, a choice, the answer as you type.</p>
+      <dl class="facts"><dt>Teaches</dt><dd>layout, fields, dropdowns, menus, keys, the look from Preferences</dd>
+      <dt>Real thing</dt><dd>Calculator</dd></dl></div></li>
+    <li class="lesson"><span class="num">3</span><div class="lesson-body">
+      <div class="title-row"><h3>Notes</h3><span class="lang lua">Lua</span></div>
+      <p>A notes app that saves to <code>/Home</code> and opens what Tracker hands it.</p>
+      <dl class="facts"><dt>Teaches</dt><dd><code>fs.read</code> and <code>fs.write</code>, the namespace, the Open and Save window, file types, opening from Tracker</dd>
+      <dt>Real thing</dt><dd>Text Editor</dd></dl></div></li>
+    <li class="lesson"><span class="num">4</span><div class="lesson-body">
+      <div class="title-row"><h3>What's running</h3><span class="lang lua">Lua</span></div>
+      <p>A small task list: every process, its memory, its processor time, updated each second.</p>
+      <dl class="facts"><dt>Teaches</dt><dd>servers and capabilities, <code>/Running</code>, <code>/Devices/cpu</code>, asking on a clock and never in a repaint</dd>
+      <dt>Real thing</dt><dd>Processes</dd></dl></div></li>
+    <li class="lesson"><span class="num">5</span><div class="lesson-body">
+      <div class="title-row"><h3>A kitchen timer</h3><span class="lang lua">Lua</span></div>
+      <p>Counts down and tells you in the corner of the screen when it's done.</p>
+      <dl class="facts"><dt>Teaches</dt><dd>the two clocks, the Notifications server, sound from the Synth Kit</dd>
+      <dt>Real thing</dt><dd>Notifications, Clock</dd></dl></div></li>
+  </ol>
+</div>
+
+<div class="part">
+  <div class="part-head"><span class="tag">Part two</span><h3>Pixels</h3></div>
+  <p>A window whose pixels your app draws itself: the way games and editors do it.</p>
+  <ol class="lessons" start="6">
+    <li class="lesson"><span class="num">6</span><div class="lesson-body">
+      <div class="title-row"><h3>Sketch</h3><span class="lang lua">Lua</span></div>
+      <p>Draw with the pointer; save the picture as a PNG.</p>
+      <dl class="facts"><dt>Teaches</dt><dd>a direct window, its two buffers and commit, gfx surfaces, the pointer, why a pixel never goes in a Lua table</dd>
+      <dt>Real thing</dt><dd>Paint</dd></dl></div></li>
+    <li class="lesson"><span class="num">7</span><div class="lesson-body">
+      <div class="title-row"><h3>Falling blocks</h3><span class="lang lua">Lua</span></div>
+      <p>A small game: a frame clock, keys held down, a score.</p>
+      <dl class="facts"><dt>Teaches</dt><dd>a game loop, the Game Kit, raw keys, holding sixty frames a second</dd>
+      <dt>Real thing</dt><dd>Blocks</dd></dl></div></li>
+  </ol>
+</div>
+
+<div class="part">
+  <div class="part-head"><span class="tag">Part three</span><h3>With C</h3></div>
+  <p>Lua decides what to do; C does the work that wants every cycle. F6 builds, F5 runs.</p>
+  <ol class="lessons" start="8">
+    <li class="lesson"><span class="num">8</span><div class="lesson-body">
+      <div class="title-row"><h3>Mandelbrot, and timing it</h3><span class="lang lua">Lua</span><span class="lang c">C</span></div>
+      <p>The same loop in Lua and in C, timed side by side; then the fractal, every pixel computed in C.</p>
+      <dl class="facts"><dt>Teaches</dt><dd>a Lua and C project, F6, TinyCC, a C function called from Lua (Lua's manual, chapter 26), <code>KOSMOS_KIT</code>, a surface's pixels and its pitch, problems at their line</dd>
+      <dt>Real thing</dt><dd>the Mandelbrot and Sum, both ways templates</dd></dl></div></li>
+    <li class="lesson"><span class="num">9</span><div class="lesson-body">
+      <div class="title-row"><h3>A window from C</h3><span class="lang c">C</span></div>
+      <p>Plasma: an animated window drawn entirely in C, answering keys and the pointer.</p>
+      <dl class="facts"><dt>Teaches</dt><dd>the Window Kit's five calls, events as structs, resizing, <code>tcc</code> at the prompt</dd>
+      <dt>Real thing</dt><dd>the Plasma template</dd></dl></div></li>
+  </ol>
+</div>
+
+<div class="part">
+  <div class="part-head"><span class="tag">Part four</span><h3>The system's kits</h3></div>
+  <p>What Kosmos supplies for media and the network, used from an app of your own.</p>
+  <ol class="lessons" start="10">
+    <li class="lesson"><span class="num">10</span><div class="lesson-body">
+      <div class="title-row"><h3>A little player</h3><span class="lang lua">Lua</span></div>
+      <p>Plays an MP3 from <code>/Home</code>, with a level meter.</p>
+      <dl class="facts"><dt>Teaches</dt><dd>the audio server, the MP3 Kit, a shared ring of samples (control by message, data by shared memory)</dd>
+      <dt>Real thing</dt><dd>Music, Groove</dd></dl></div></li>
+    <li class="lesson"><span class="num">11</span><div class="lesson-body">
+      <div class="title-row"><h3>Fetch a page</h3><span class="lang lua">Lua</span></div>
+      <p>Asks a web server for a page over HTTPS and shows its headers and size.</p>
+      <dl class="facts"><dt>Teaches</dt><dd>the Network Kit, the TLS Kit, waiting without hanging the window</dd>
+      <dt>Real thing</dt><dd>the Browser, Connect to Server</dd></dl></div></li>
+    <li class="lesson"><span class="num">12</span><div class="lesson-body">
+      <div class="title-row"><h3>Zip a folder</h3><span class="lang lua">Lua</span></div>
+      <p>Compresses a folder into a <code>.zip</code>, with a progress bar, and opens one back up.</p>
+      <dl class="facts"><dt>Teaches</dt><dd>the Compress Kit, files through regions rather than strings, long work in steps</dd>
+      <dt>Real thing</dt><dd>Tracker's Compress and Extract</dd></dl></div></li>
+    <li class="lesson"><span class="num">13</span><div class="lesson-body">
+      <div class="title-row"><h3>A camera window</h3><span class="lang lua">Lua</span></div>
+      <p>Shows a USB camera live and takes a still.</p>
+      <dl class="facts"><dt>Teaches</dt><dd>a driver as a process, <code>/Devices</code>, frames in a region, YUV to pixels in C</dd>
+      <dt>Real thing</dt><dd>Camera, Video</dd></dl></div></li>
+    <li class="lesson"><span class="num">14</span><div class="lesson-body">
+      <div class="title-row"><h3>A world in 3D</h3><span class="lang lua">Lua</span></div>
+      <p>A lit, turning model you can orbit with the pointer.</p>
+      <dl class="facts"><dt>Teaches</dt><dd>the 3D Kit, a scene, a camera, light, and when TinyGL is the better door</dd>
+      <dt>Real thing</dt><dd>Cafesa3D, the cube, the solar system</dd></dl></div></li>
+  </ol>
+</div>
+
+<h2>A lesson page, as Kosmos shows it</h2>
+<p>Lesson 9, drawn as it would open in Kosmos's browser from the IDE's Help menu. The grey boxes are where the pictures from QEMU go.</p>
+
+<div class="shot">
+  <div class="bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="addr">asset:tutorial/ide/09-window-from-c.html</span></div>
+  <div class="page">
+    <p class="nav">Previous: Mandelbrot · Contents · Next: A little player</p>
+    <h3>9. A window from C</h3>
+    <p>Plasma is a C app with a window of its own: the animation, the keys and the pointer are all C. Its one line of Lua only starts it.</p>
+    <p><span class="btn">Open this lesson's project</span></p>
+    <div class="pic">The IDE with plasma.c open, the Output panel saying "built build/plasma.elf"</div>
+    <p class="caption">F6 builds plasma.c into build/plasma.elf in about a quarter of a second.</p>
+    <h4>Open a window</h4>
+    <pre><span class="m">/* A window that draws its own pixels, 480 by 300, which can be resized. */</span>
+<span class="k">struct</span> kw_window *w = kw_open(<span class="s">"Plasma"</span>, 480, 300, KW_RESIZABLE | KW_CENTRE);</pre>
+    <h4>Draw a frame, then show it</h4>
+    <pre><span class="k">struct</span> kw_surface s = kw_surface(w);       <span class="m">/* pixels, width, height, pitch */</span>
+draw(s.pixels, s.width, s.height, s.pitch);
+kw_commit(w, 0, 0, s.width, s.height);    <span class="m">/* this buffer is shown now */</span></pre>
+    <div class="pic">Plasma's window on the desktop</div>
+    <p class="caption">F5 runs it.</p>
+    <h4>Try changing</h4>
+    <p>Make Space change the speed instead of pausing, or draw the plasma in four colours only.</p>
+    <div class="how">
+      <p><b>How Kosmos does it.</b> The window's pixels are a region shared with the window manager, holding two buffers. <code>kw_commit</code> swaps which one is shown, so nothing is copied. Each frame is one fixed-size message to the window manager, so the app makes no garbage at all.</p>
+      <p><b>The real thing:</b> the Plasma template. <span class="mono">Help ▸ Kits and their calls ▸ window</span> lists all five calls.</p>
+    </div>
+  </div>
+</div>
+
+<h2>What's yours to decide</h2>
+<ol class="q">
+  <li><b>The fourteen lessons, in four parts,</b> as listed. <span class="rec">Recommended as drawn: button to 3D, as agreed in September, with C as part three now that the IDE builds it.</span></li>
+  <li><b>Where it opens:</b> the IDE's <b>Help ▸ Tutorial</b>, pages in the browser like Cafesa3D's tutorial, each lesson's project copied into <code>/Home/development/</code>. <span class="rec">Recommended.</span></li>
+  <li><b>The bundled apps as worked examples</b> open read-only in the IDE, with <b>Save a copy</b> to change one. Or open them straight for editing, which changes the system's own app. <span class="rec">Recommended: read-only with a copy, until installed apps can be replaced safely.</span></li>
+  <li><b>The order of building:</b> one part at a time, each shown to you before the next. Part one first, together with the Help menu and the lesson suite. <span class="rec">Recommended.</span></li>
+</ol>
+
+</div>
+</body>
+</html>
