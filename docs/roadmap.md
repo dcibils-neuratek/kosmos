@@ -7940,6 +7940,13 @@ processors, and still what follows USB:
    page of concepts in `docs/` for Diego to choose from - flat, as the
    dock, the About window and the boot screen would show it - and then
    built in 3D for the example, turning beside the letters.
+   **Drawn the same evening** (`docs/logo.html`, six concepts) **and
+   chosen: 2, Core** - Diego: "i love the number 2 design -- the
+   microkernel drawn and the concept". A small bright core, Nebula, with
+   three servers close around it and more in an outer ring. Next: refined
+   (one colour or its three, its 16-point form), then on the dock's Kosmos
+   button, the About window, the boot screen and the launcher's foot, and
+   in 3D in the example, the three spheres orbiting the core.
    The September plan follows, as it was:
    **AGREED again on 26 September, NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua

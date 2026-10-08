@@ -1,0 +1,256 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<!--
+  A logo for Kosmos, drawn as concepts to choose from. Diego, 8 October
+  2026: "for the kosmos 3d letters app we can also invent a logo in 3d that
+  rotates and else", "We need a logo for kosmos", then "draw the logo
+  concepts". Kosmos has none: the dock's Kosmos button wears Haiku's
+  Deskbar icon.
+
+  Each concept is drawn three ways - large, as an application tile on the
+  dock, and at 16 points beside the word - in the Night look the M700 wears
+  and on a light ground, because a mark has to survive both and a small
+  size. The colours are Night's pale blue and the new looks' accents.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kosmos Logo Concepts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f2f4f8; --ink: #182030; --muted: #5a6577; --rule: #dbe1ea; --card: #ffffff;
+    --accent: #2a55c9;
+    --night: #0b1220; --night-win: #1e2636; --night-raised: #2a3446; --night-ink: #e6eaf2; --night-muted: #a3adbf;
+    --blue: #a8c7fa; --mint: #5eead4; --lilac: #c4b5fd; --coral: #ff8a73; --navy: #0a1b38;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #0d121a; --ink: #e6edf3; --muted: #98a4b5; --rule: #263142; --card: #151c27; --accent: #a8c7fa; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --ground: #0d121a; --ink: #e6edf3; --muted: #98a4b5; --rule: #263142; --card: #151c27; --accent: #a8c7fa; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 1120px; margin: 0 auto; padding: 40px 16px 72px; }
+  h1 { font: 700 clamp(30px, 5vw, 42px)/1.1 var(--display); margin: 0 0 10px; letter-spacing: .01em; text-wrap: balance; }
+  h2 { font: 600 24px/1.2 var(--display); margin: 0; text-wrap: balance; }
+  p, li { max-width: 70ch; }
+  .lede { font-size: 18px; color: var(--muted); }
+  .said { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; color: var(--muted); font-style: italic; margin: 16px 0 28px; }
+
+  .concepts { display: grid; gap: 22px; }
+  .concept { background: var(--card); border: 1px solid var(--rule); border-radius: 16px; overflow: hidden;
+             display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+  @media (max-width: 760px) { .concept { grid-template-columns: 1fr; } }
+  .stage { background: radial-gradient(600px 380px at 30% 20%, #1b2a4d 0%, transparent 70%), var(--night);
+           display: grid; grid-template-rows: 1fr auto; gap: 14px; padding: 26px 22px 18px; min-height: 330px; }
+  .big { display: grid; place-items: center; }
+  .big svg { width: 190px; height: 190px; }
+  .uses { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; justify-content: center; }
+  .tile { width: 56px; height: 56px; border-radius: 16px; background: var(--night-raised); display: grid; place-items: center; box-shadow: 0 6px 16px rgba(0,0,0,.35); }
+  .tile svg { width: 38px; height: 38px; }
+  .word { display: flex; align-items: center; gap: 8px; color: var(--night-ink); font: 600 17px var(--body); }
+  .word svg { width: 18px; height: 18px; }
+  .light { display: flex; align-items: center; gap: 10px; background: #f6f5f4; color: #241f31; border-radius: 12px; padding: 8px 14px; font: 600 15px var(--body); }
+  .light svg { width: 26px; height: 26px; }
+
+  .about { padding: 24px 26px; display: flex; flex-direction: column; gap: 10px; }
+  .about .k { font: 500 12.5px var(--mono); color: var(--muted); letter-spacing: .04em; }
+  .about p { margin: 0; color: var(--muted); font-size: 15px; }
+  .about p b { color: var(--ink); font-weight: 600; }
+  .about dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 6px 0 0; font-size: 14.5px; }
+  .about dt { color: var(--muted); }
+  .about dd { margin: 0; }
+
+  ol.q li { margin: 10px 0; }
+  .rec { color: var(--muted); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .spin { animation: spin 14s linear infinite; transform-origin: 50% 50%; transform-box: fill-box; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  }
+</style>
+</head>
+<body>
+<main>
+<h1>Kosmos Logo Concepts</h1>
+<p class="lede">Six ideas for a Kosmos mark. Each is shown large, as a tile on the dock, and at 16 points beside the name, on Night and on a light ground. Pick one, or parts of two, and it gets refined, then built in 3D to turn beside the KOSMOS letters.</p>
+<p class="said">"we can also invent a logo in 3d that rotates and else", "We need a logo for kosmos" - Diego, 8 October</p>
+
+<p>What the name gives to work with: <b>kosmos</b> is Greek for <i>order</i>, and then for the ordered universe; the kernel is <b>Nebula</b>, a cloud stars are born from; the desktop is <b>Astra</b>, the stars. A microkernel is a small core with everything else around it, asked by message.</p>
+
+<div class="concepts">
+
+<!-- 1. Orbit -->
+<section class="concept">
+  <div class="stage">
+    <div class="big"><svg viewBox="0 0 100 100" aria-label="Orbit concept">
+      <defs><linearGradient id="o1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c9dcff"/><stop offset="1" stop-color="#6f9ef0"/></linearGradient></defs>
+      <circle cx="50" cy="50" r="17" fill="url(#o1)"/>
+      <ellipse cx="50" cy="50" rx="40" ry="14" fill="none" stroke="#a8c7fa" stroke-width="5" transform="rotate(-24 50 50)"/>
+      <circle cx="84" cy="34" r="5.5" fill="#5eead4"/>
+    </svg></div>
+    <div class="uses">
+      <span class="tile"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="19" fill="url(#o1)"/><ellipse cx="50" cy="50" rx="42" ry="15" fill="none" stroke="#a8c7fa" stroke-width="7" transform="rotate(-24 50 50)"/></svg></span>
+      <span class="word"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="22" fill="#a8c7fa"/><ellipse cx="50" cy="50" rx="44" ry="16" fill="none" stroke="#a8c7fa" stroke-width="9" transform="rotate(-24 50 50)"/></svg>Kosmos</span>
+      <span class="light"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="19" fill="#2e5cb8"/><ellipse cx="50" cy="50" rx="42" ry="15" fill="none" stroke="#2e5cb8" stroke-width="7" transform="rotate(-24 50 50)"/><circle cx="85" cy="34" r="6" fill="#2f9d8a"/></svg>Kosmos</span>
+    </div>
+  </div>
+  <div class="about">
+    <span class="k">1 · ORBIT</span>
+    <h2>A world and its ring</h2>
+    <p>A planet with a tilted ring and one small moon on it: the universe in the simplest shape anyone reads at once. <b>Quiet and certain</b>, and it stays a planet at 16 points.</p>
+    <dl><dt>In 3D</dt><dd>The planet turns, the moon travels the ring; a light circling makes the ring's shadow cross the sphere.</dd>
+        <dt>Risk</dt><dd>Planets with rings are common marks; it says "space" more than it says "Kosmos".</dd></dl>
+  </div>
+</section>
+
+<!-- 2. Core -->
+<section class="concept">
+  <div class="stage">
+    <div class="big"><svg viewBox="0 0 100 100" aria-label="Core concept">
+      <circle cx="50" cy="50" r="40" fill="none" stroke="#2a3446" stroke-width="1.5"/>
+      <circle cx="50" cy="50" r="27" fill="none" stroke="#344158" stroke-width="1.5"/>
+      <circle cx="50" cy="50" r="11" fill="#a8c7fa"/>
+      <g class="spin">
+        <circle cx="50" cy="23" r="5" fill="#5eead4"/><circle cx="73.4" cy="63.5" r="5" fill="#c4b5fd"/><circle cx="26.6" cy="63.5" r="5" fill="#ff8a73"/>
+      </g>
+      <circle cx="50" cy="10" r="3.4" fill="#e6eaf2"/><circle cx="84.6" cy="70" r="3.4" fill="#e6eaf2"/><circle cx="15.4" cy="70" r="3.4" fill="#e6eaf2"/>
+      <circle cx="84.6" cy="30" r="3.4" fill="#e6eaf2"/><circle cx="15.4" cy="30" r="3.4" fill="#e6eaf2"/><circle cx="50" cy="90" r="3.4" fill="#e6eaf2"/>
+    </svg></div>
+    <div class="uses">
+      <span class="tile"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="16" fill="#a8c7fa"/><circle cx="50" cy="16" r="9" fill="#5eead4"/><circle cx="79.4" cy="67" r="9" fill="#c4b5fd"/><circle cx="20.6" cy="67" r="9" fill="#ff8a73"/></svg></span>
+      <span class="word"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="20" fill="#a8c7fa"/><circle cx="50" cy="12" r="12" fill="#5eead4"/><circle cx="83" cy="69" r="12" fill="#c4b5fd"/><circle cx="17" cy="69" r="12" fill="#ff8a73"/></svg>Kosmos</span>
+      <span class="light"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="16" fill="#2e5cb8"/><circle cx="50" cy="16" r="9" fill="#2f9d8a"/><circle cx="79.4" cy="67" r="9" fill="#7c5cd6"/><circle cx="20.6" cy="67" r="9" fill="#e0573f"/></svg>Kosmos</span>
+    </div>
+  </div>
+  <div class="about">
+    <span class="k">2 · CORE</span>
+    <h2>The microkernel, drawn</h2>
+    <p>A small bright core - Nebula - with three servers close around it and more in the outer ring: <b>what Kosmos actually is</b>, a little kernel and everything else around it, asked. It also reads as an atom or a solar system.</p>
+    <dl><dt>In 3D</dt><dd>The three spheres orbit the core on tilted paths, each a different speed; the outer ring of points turns slowly the other way.</dd>
+        <dt>Risk</dt><dd>Four colours is busy at 16 points; the small one could be the core and three dots alone.</dd></dl>
+  </div>
+</section>
+
+<!-- 3. Constellation K -->
+<section class="concept">
+  <div class="stage">
+    <div class="big"><svg viewBox="0 0 100 100" aria-label="Constellation concept">
+      <g stroke="#a8c7fa" stroke-width="2.4" stroke-linecap="round" opacity=".85">
+        <line x1="32" y1="16" x2="30" y2="50"/><line x1="30" y1="50" x2="33" y2="84"/>
+        <line x1="30" y1="50" x2="70" y2="18"/><line x1="44" y1="40" x2="72" y2="82"/>
+      </g>
+      <circle cx="32" cy="16" r="5" fill="#e6eaf2"/><circle cx="30" cy="50" r="7.5" fill="#a8c7fa"/><circle cx="33" cy="84" r="5" fill="#e6eaf2"/>
+      <circle cx="70" cy="18" r="6" fill="#e6eaf2"/><circle cx="44" cy="40" r="3.6" fill="#e6eaf2"/><circle cx="72" cy="82" r="6" fill="#e6eaf2"/>
+      <circle cx="58" cy="61" r="3.6" fill="#e6eaf2"/>
+    </svg></div>
+    <div class="uses">
+      <span class="tile"><svg viewBox="0 0 100 100"><g stroke="#a8c7fa" stroke-width="5" stroke-linecap="round"><line x1="32" y1="16" x2="30" y2="84"/><line x1="30" y1="50" x2="70" y2="18"/><line x1="44" y1="40" x2="72" y2="82"/></g><circle cx="30" cy="50" r="10" fill="#a8c7fa"/><circle cx="70" cy="18" r="8" fill="#e6eaf2"/><circle cx="72" cy="82" r="8" fill="#e6eaf2"/></svg></span>
+      <span class="word"><svg viewBox="0 0 100 100"><g stroke="#a8c7fa" stroke-width="9" stroke-linecap="round"><line x1="30" y1="12" x2="30" y2="88"/><line x1="30" y1="52" x2="74" y2="14"/><line x1="46" y1="38" x2="76" y2="86"/></g></svg>Kosmos</span>
+      <span class="light"><svg viewBox="0 0 100 100"><g stroke="#2e5cb8" stroke-width="5" stroke-linecap="round"><line x1="32" y1="16" x2="30" y2="84"/><line x1="30" y1="50" x2="70" y2="18"/><line x1="44" y1="40" x2="72" y2="82"/></g><circle cx="30" cy="50" r="10" fill="#2e5cb8"/><circle cx="70" cy="18" r="8" fill="#2e5cb8"/><circle cx="72" cy="82" r="8" fill="#2e5cb8"/></svg>Kosmos</span>
+    </div>
+  </div>
+  <div class="about">
+    <span class="k">3 · CONSTELLATION</span>
+    <h2>A K written in stars</h2>
+    <p>Seven stars joined into a K, the way a constellation is a shape found in scattered points: <b>order out of the sky</b>, which is the word's own meaning. The brightest star is where the strokes meet.</p>
+    <dl><dt>In 3D</dt><dd>Stars at different depths that only line up into a K from the front: the camera swings round, the K falls apart into scattered points, and gathers again.</dd>
+        <dt>Risk</dt><dd>At 16 points the stars drop out and it is a plain K, which is the fallback drawn.</dd></dl>
+  </div>
+</section>
+
+<!-- 4. Block K -->
+<section class="concept">
+  <div class="stage">
+    <div class="big"><svg viewBox="0 0 100 100" aria-label="Block concept">
+      <polygon points="50,10 86,30 86,72 50,92 14,72 14,30" fill="#2a3446"/>
+      <polygon points="50,10 86,30 50,50 14,30" fill="#a8c7fa"/>
+      <polygon points="14,30 50,50 50,92 14,72" fill="#6f8fc4"/>
+      <polygon points="86,30 50,50 50,92 86,72" fill="#3e5784"/>
+      <g fill="#0b1220"><polygon points="24,44 31,48 31,76 24,72"/><polygon points="31,61 42,54 42,62 31,69"/><polygon points="34,63 42,74 42,80 34,70"/></g>
+      <g fill="#e6eaf2" opacity=".9"><polygon points="58,54 64,51 64,58 58,61"/><polygon points="66,50 78,44 78,51 66,57"/></g>
+    </svg></div>
+    <div class="uses">
+      <span class="tile"><svg viewBox="0 0 100 100"><polygon points="50,8 88,29 50,50 12,29" fill="#a8c7fa"/><polygon points="12,29 50,50 50,94 12,73" fill="#6f8fc4"/><polygon points="88,29 50,50 50,94 88,73" fill="#3e5784"/><polygon points="22,44 30,48 30,78 22,74" fill="#0b1220"/><polygon points="30,62 42,55 42,63 30,70" fill="#0b1220"/><polygon points="33,64 42,76 42,83 33,71" fill="#0b1220"/></svg></span>
+      <span class="word"><svg viewBox="0 0 100 100"><polygon points="50,8 88,29 50,50 12,29" fill="#a8c7fa"/><polygon points="12,29 50,50 50,94 12,73" fill="#6f8fc4"/><polygon points="88,29 50,50 50,94 88,73" fill="#3e5784"/></svg>Kosmos</span>
+      <span class="light"><svg viewBox="0 0 100 100"><polygon points="50,8 88,29 50,50 12,29" fill="#a7c7ee"/><polygon points="12,29 50,50 50,94 12,73" fill="#3584e4"/><polygon points="88,29 50,50 50,94 88,73" fill="#1b4f9c"/><polygon points="22,44 30,48 30,78 22,74" fill="#fff"/><polygon points="30,62 42,55 42,63 30,70" fill="#fff"/><polygon points="33,64 42,76 42,83 33,71" fill="#fff"/></svg>Kosmos</span>
+    </div>
+  </div>
+  <div class="about">
+    <span class="k">4 · BLOCK</span>
+    <h2>A cube with a K cut in</h2>
+    <p>An isometric cube, a K cut into its left face and a little window on its right: <b>a building block</b>, the kits and servers an application is put together from. It is already solid, so it is the one that is most natural in 3D, and it shares the pencil letters' block look.</p>
+    <dl><dt>In 3D</dt><dd>The cube turns on a corner and the light going round the KOSMOS letters lights its three faces in turn, the K's cut throwing its own shadow.</dd>
+        <dt>Risk</dt><dd>Cubes are a common mark for software; the cut K is what makes it ours, and it vanishes small.</dd></dl>
+  </div>
+</section>
+
+<!-- 5. Four-point star -->
+<section class="concept">
+  <div class="stage">
+    <div class="big"><svg viewBox="0 0 100 100" aria-label="Star concept">
+      <defs><radialGradient id="s5" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffffff"/><stop offset=".55" stop-color="#a8c7fa"/><stop offset="1" stop-color="#6f9ef0"/></radialGradient></defs>
+      <circle cx="50" cy="50" r="38" fill="#a8c7fa" opacity=".08"/>
+      <circle cx="50" cy="50" r="26" fill="#a8c7fa" opacity=".10"/>
+      <path d="M50 8 C53 38 62 47 92 50 C62 53 53 62 50 92 C47 62 38 53 8 50 C38 47 47 38 50 8Z" fill="url(#s5)"/>
+      <path d="M78 18 C79 25 81 27 88 28 C81 29 79 31 78 38 C77 31 75 29 68 28 C75 27 77 25 78 18Z" fill="#e6eaf2"/>
+    </svg></div>
+    <div class="uses">
+      <span class="tile"><svg viewBox="0 0 100 100"><path d="M50 8 C53 38 62 47 92 50 C62 53 53 62 50 92 C47 62 38 53 8 50 C38 47 47 38 50 8Z" fill="#a8c7fa"/></svg></span>
+      <span class="word"><svg viewBox="0 0 100 100"><path d="M50 4 C54 38 62 46 96 50 C62 54 54 62 50 96 C46 62 38 54 4 50 C38 46 46 38 50 4Z" fill="#a8c7fa"/></svg>Kosmos</span>
+      <span class="light"><svg viewBox="0 0 100 100"><path d="M50 8 C53 38 62 47 92 50 C62 53 53 62 50 92 C47 62 38 53 8 50 C38 47 47 38 50 8Z" fill="#2e5cb8"/><path d="M78 18 C79 25 81 27 88 28 C81 29 79 31 78 38 C77 31 75 29 68 28 C75 27 77 25 78 18Z" fill="#2f9d8a"/></svg>Kosmos</span>
+    </div>
+  </div>
+  <div class="about">
+    <span class="k">5 · ASTRA</span>
+    <h2>A star, being born</h2>
+    <p>A four-pointed star in a soft glow, and a small one beside it: <b>Astra</b>, the desktop, out of <b>Nebula</b>, the cloud. The simplest of the six, and the one that reads best at 16 points and on a dock.</p>
+    <dl><dt>In 3D</dt><dd>The star as a faceted crystal turning slowly, catching the circling light on its points; the glow breathes.</dd>
+        <dt>Risk</dt><dd>Sparkles are what every AI product chose in 2024 and 2025; it would need the second star or a cut of its own to be ours.</dd></dl>
+  </div>
+</section>
+
+<!-- 6. Spiral -->
+<section class="concept">
+  <div class="stage">
+    <div class="big"><svg viewBox="0 0 100 100" aria-label="Spiral concept">
+      <g fill="none" stroke-linecap="round">
+        <path d="M50 50 m0 -6 a6 6 0 1 1 -6 6 a12 12 0 0 1 12 -12 a18 18 0 0 1 18 18 a24 24 0 0 1 -24 24 a30 30 0 0 1 -30 -30 a36 36 0 0 1 36 -36" stroke="#a8c7fa" stroke-width="5"/>
+      </g>
+      <circle cx="50" cy="50" r="4" fill="#e6eaf2"/>
+      <circle cx="86" cy="13" r="4.5" fill="#c4b5fd"/>
+      <circle cx="21" cy="34" r="2.4" fill="#e6eaf2" opacity=".8"/><circle cx="74" cy="78" r="2" fill="#e6eaf2" opacity=".7"/><circle cx="80" cy="44" r="1.8" fill="#e6eaf2" opacity=".6"/>
+    </svg></div>
+    <div class="uses">
+      <span class="tile"><svg viewBox="0 0 100 100"><path d="M50 50 m0 -7 a7 7 0 1 1 -7 7 a14 14 0 0 1 14 -14 a21 21 0 0 1 21 21 a28 28 0 0 1 -28 28 a35 35 0 0 1 -35 -35" fill="none" stroke="#a8c7fa" stroke-width="8" stroke-linecap="round"/></svg></span>
+      <span class="word"><svg viewBox="0 0 100 100"><path d="M50 50 m0 -9 a9 9 0 1 1 -9 9 a18 18 0 0 1 18 -18 a27 27 0 0 1 27 27 a36 36 0 0 1 -36 36" fill="none" stroke="#a8c7fa" stroke-width="11" stroke-linecap="round"/></svg>Kosmos</span>
+      <span class="light"><svg viewBox="0 0 100 100"><path d="M50 50 m0 -7 a7 7 0 1 1 -7 7 a14 14 0 0 1 14 -14 a21 21 0 0 1 21 21 a28 28 0 0 1 -28 28 a35 35 0 0 1 -35 -35" fill="none" stroke="#2e5cb8" stroke-width="8" stroke-linecap="round"/><circle cx="84" cy="14" r="6" fill="#7c5cd6"/></svg>Kosmos</span>
+    </div>
+  </div>
+  <div class="about">
+    <span class="k">6 · NEBULA</span>
+    <h2>A galaxy unwinding</h2>
+    <p>One line winding out from a bright centre into a spiral, a single star loose at its end: <b>a galaxy forming</b>, the kernel at the middle and everything growing from it. One stroke, so it is easy to draw anywhere.</p>
+    <dl><dt>In 3D</dt><dd>The spiral as a disc of points seen at a tilt, turning; the arm catches the light as it comes round.</dd>
+        <dt>Risk</dt><dd>A spiral can read as a loading spinner or a snail; the star at its end is what keeps it a galaxy.</dd></dl>
+  </div>
+</section>
+
+</div>
+
+<h2 style="margin-top:44px">Yours to choose</h2>
+<ol class="q">
+  <li><b>Which one</b>, or which two to combine - the Block's cube with the Constellation's K on its face, the Orbit's ring around the Core. <span class="rec">My pick: 4, Block, for being ours, solid in 3D and matching the block letters; 2, Core, for saying what Kosmos is.</span></li>
+  <li><b>One colour or several.</b> A mark in Night's pale blue alone works on every look; the Core's three colours are the new looks' accents. <span class="rec">Recommended: one colour, with the others kept for the 3D showcase.</span></li>
+  <li><b>Where it goes first</b>: the dock's Kosmos button, the About window, the boot screen, the launcher's power row. <span class="rec">Recommended: all four, once it is chosen and refined.</span></li>
+</ol>
+</main>
+</body>
+</html>
