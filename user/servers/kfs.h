@@ -70,11 +70,28 @@
 /*
  * Runs of blocks one transaction may free. A block freed in a transaction is
  * not handed out again until it commits (`kfs.lua`'s `txn.freed`), and this
- * keeps them as runs rather than a flag a block: an operation frees a file's
- * extents and a directory's, a few dozen runs at the most. A transaction that
- * would free more is refused rather than forgetting one.
+ * keeps them as runs rather than a flag a block. It was 512, "a few dozen
+ * runs at the most" - until a file could have more extents than twelve
+ * (`docs/diskfs.md`, *No limit*, G1), and freeing one of those is a run an
+ * extent. A transaction that would free more is still refused rather than
+ * forgetting one.
  */
-#define KFS_FREED_RUNS      512u
+#define KFS_FREED_RUNS      16384u
+
+/*
+ * **More extents than an inode holds** (`docs/diskfs.md`, *No limit*, G1;
+ * Diego, 8 October: "i dont want a limit"). An inode has twelve slots. A
+ * file in more pieces than that keeps eleven there, and its twelfth slot is
+ * `count` 0 - which no extent ever is - with `start` the first of a chain of
+ * extent blocks: 511 extents each, and the 512th slot the next block in the
+ * chain, `count` 0, or zeroes at the end. `extents` counts every extent the
+ * file has, wherever it is. A file of twelve or fewer is exactly what it was.
+ *
+ * `KFS_FILE_RUNS` is the most pieces one file is written in, which is the
+ * working list a write keeps so a failure gives back exactly what it took.
+ */
+#define KFS_EXT_PER_BLOCK   511u
+#define KFS_FILE_RUNS       16384u
 
 /*
  * The largest directory this can edit. A directory is rewritten whole on
@@ -211,6 +228,11 @@ struct kfs {
     uint8_t map[KFS_BLOCK];             /* a bitmap block */
     uint8_t ino[KFS_BLOCK];             /* an inode table block */
     uint8_t part[KFS_BLOCK];            /* a block read or written in part */
+    uint8_t ext[KFS_BLOCK];             /* a block of a file's extents */
+
+    /* A file's runs while it is written (`KFS_FILE_RUNS`). */
+    uint32_t runs_n;
+    struct kfs_extent runs[KFS_FILE_RUNS];
     uint8_t head[KFS_BLOCK];            /* the journal's header, the superblock */
 };
 

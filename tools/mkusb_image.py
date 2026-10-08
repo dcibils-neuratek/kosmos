@@ -316,10 +316,28 @@ def write_gpt(path, esp, esp_size, home=None, home_guid=None):
             f.write(src.read())
 
         if home:
-            f.seek(home_first * SECTOR)
+            # A piece at a time, and an empty piece not written at all: the
+            # image is sparse, so an 8 GB /Home (Diego, 8 October, "8gb")
+            # costs this Mac the blocks it holds rather than eight gigabytes,
+            # and is never in memory whole. The stick is still written every
+            # byte - `dd` reads the holes as the zeros they are.
+            piece = 4 << 20
+            empty = bytes(piece)
 
             with open(home, "rb") as src:
-                f.write(src.read())
+                at = home_first * SECTOR
+
+                while True:
+                    chunk = src.read(piece)
+
+                    if not chunk:
+                        break
+
+                    if chunk != empty[:len(chunk)]:
+                        f.seek(at)
+                        f.write(chunk)
+
+                    at += len(chunk)
 
         # And the same table again at the far end, which the specification
         # requires and some firmware checks.

@@ -969,6 +969,61 @@ do
 end
 
 --------------------------------------------------------------------------
+-- **A file in more pieces than an inode holds** (`docs/diskfs.md`, *No
+-- limit*, G1). The M700's /Home, 8 October, refused a 23 MB image as "too
+-- fragmented for 12 extents" with 261 MB free. Here a disk is cut into a
+-- thousand one-block holes, and a file of 1300 blocks goes into them: some
+-- six hundred pieces - eleven in its inode and the rest in a chain of two
+-- extent blocks - read back whole, and every block given back when it goes.
+--------------------------------------------------------------------------
+
+do
+  disk = {}
+  disk_changed()
+  assert(kfs.mkfs(32768 * 8, 1))           -- 128 MB, 2048 inodes
+  local big_sb = assert(kfs.mount())
+
+  for i = 1, 1200 do
+    assert(kfs.store(big_sb, "/f" .. i, string.rep("x", 100), 1))
+  end
+
+  for i = 1, 1200, 2 do assert(kfs.unlink(big_sb, "/f" .. i)) end
+
+  local before = kfs.free_blocks(big_sb)
+  local body = {}
+
+  for i = 1, 1300 do body[i] = string.char(i % 251) .. string.rep(string.char(i % 7 + 65), kfs.BLOCK - 1) end
+
+  body = table.concat(body)
+
+  local ok, why = kfs.store(big_sb, "/big", body, 1)
+  check(ok, "a file into six hundred holes was refused: " .. tostring(why))
+
+  local _, node = kfs.find(big_sb, "/big")
+
+  check(node and node.extent_count and node.extent_count > 2 * 511 // 2 and #node.extents == 12
+        and node.extents[12].count == 0 and node.extents[12].start > 0,
+        ("its extents are not eleven in the inode and a chain after: %s in all, %s slots")
+        :format(tostring(node and node.extent_count), tostring(node and #node.extents)))
+  check(node and node.extent_count > 11 + 511,
+        "the file did not need a second extent block, so the chain was not tested past one")
+  check(node and kfs.read_file(big_sb, node) == body, "the file in pieces did not read back whole")
+  check(node and kfs.read_range(big_sb, node, 700 * kfs.BLOCK + 5, 10)
+          == body:sub(700 * kfs.BLOCK + 6, 700 * kfs.BLOCK + 15),
+        "a window in the middle of the chain read wrong")
+
+  -- Mounted again from the disk alone: the chain is on it, not in memory.
+  local again = assert(kfs.mount())
+  local _, node2 = kfs.find(again, "/big")
+  check(node2 and kfs.read_file(again, node2) == body, "after a mount, the file in pieces read wrong")
+
+  assert(kfs.unlink(again, "/big"))
+  check(kfs.free_blocks(again) == before,
+        ("deleting it gave back %d blocks of %d - the chain's too?")
+        :format(kfs.free_blocks(again) - (before - 1300), 1300))
+end
+
+--------------------------------------------------------------------------
 
 if failed > 0 then
   print(("\nFAIL: %d of %d checks on the format failed (kfs.c%s).")

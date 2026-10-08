@@ -1994,7 +1994,12 @@ large files had left the free space in pieces. Removing the old copy first
 let the new one in. kfs's twelve extents a file is a limit to look at
 (more extents, an indirect extent block, or the allocator preferring one
 run); `make install-apps` and the M700's send could also remove before
-writing.
+writing. **AGREED the same afternoon - no limit**: "i dont want a
+limit", and the M700's stick "Grow it in place". `docs/diskfs.md`, *No
+limit*: G1 extents without a ceiling, G2 kfs grows, G3 the partition grows
+on the stick, G4 new sticks start whole. **Then "cant we just format the stick ... and
+just have the entire stick"**: G2 and G3 dropped; the stick is written again
+with `/Home` the whole of it.
 
 **Storage at full speed, performance first.** Diego, 14 September: "I expect
 our usb drives and nvme to perform like any other os like Linux", and "it's

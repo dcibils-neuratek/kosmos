@@ -231,3 +231,51 @@ from `find`, Tracker's search and the query suite, never from anything on a
 frame's path, and dropping the index drops the second walk from every
 request that is. 3a builds the scan, since it is the simpler of the two and
 the one that can be measured; an index is added if the numbers ask for it.
+
+## No limit (8 October 2026)
+
+Diego, on being told `/Home` on the M700's stick was 512 MB and a file had
+met kfs's twelve extents: "why there is a limit of 512mb?", "i dont want a
+limit" - and, asked how the stick in the machine should get the whole of
+itself, "Grow it in place".
+
+The 512 MB was never kfs's: blocks are counted in 32 bits, sixteen
+terabytes of them. It is `STICK_HOME_MB`, the size of the partition the Mac
+builds as an image and the stick is written from byte for byte, chosen on
+19 September as a floor. What kfs itself fixes is two things, and
+both go:
+
+- **G1, extents without a ceiling.** An inode has room for twelve and no
+  more, and a file whose blocks are in more pieces than that is refused -
+  `doom.elf`, 23 MB, on a partition with 261 MB free in pieces. When a file
+  needs a thirteenth, its twelfth slot becomes a pointer, `count` 0 - which
+  no extent ever has - and `start` a block of extents, 512 more; `extents`
+  counts them all. A file with twelve or fewer is written exactly as
+  before, so a disk with none is unchanged and still version 1.
+- **G2, a filesystem that grows.** The superblock says where the bitmap and
+  the inode table are and how large; neither is fixed in place. Growing to
+  `n` blocks writes a bitmap for `n` blocks and an inode table of `n / 16`
+  (the rule `mkfs` already uses) into the space being added - nowhere
+  anything points yet - copies the old ones in, marks the old ones' blocks
+  free, and then writes the superblock: one block, the one moment it is
+  the new filesystem rather than the old. A power cut before that write is
+  the old filesystem, whole; after it, the new.
+- **G3, the partition grows.** The disk server, which alone may write the
+  stick's partition (keyring K7), extends `/Home`'s entry in the GPT to
+  the last usable block, primary and backup with their CRCs, then grows
+  the filesystem into it - asked for once, by a person, never by itself.
+- **G4, new sticks start whole.** `mkusb.sh` makes `/Home`'s partition
+  fill the stick it writes and formats it there, writing only the blocks
+  in use, so a 115 GB `/Home` takes about as long to write as 512 MB did.
+
+Before the M700's stick is grown, its `/Home` is copied to the Mac.
+
+**Changed the same hour**: "cant we just format the stick", "to the real
+size", "and just have the entire stick". So G2 and G3 are not built. The
+stick is written again with `/Home` filling it (G4), and what only the
+M700's stick held is copied to the Mac first and put back. G1 stays,
+because a file in pieces is a limit on any size of disk.
+Then "we format the stick to a certain size and thats it", "we dont need to
+dinamycally grow the fs", "8gb", and "we can do a 2gb stick now": `/Home`
+is made at 2 GB when a stick is written (`STICK_HOME_MB`), sparse on the
+Mac, and that is its size. G4's filling the whole stick is not built.

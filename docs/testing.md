@@ -21554,3 +21554,31 @@ second 64.
 installed applications are built again.
 
 The whole x86 gate: 52 of 52 in 5:43.
+
+## 18.477 No limit: a file in any number of pieces, and /Home at 2 GB
+
+Diego, 8 October: "i dont want a limit", then "we format the stick to a
+certain size and thats it", "we can do a 2gb stick now". Two changes.
+
+- **G1, a file in any number of pieces** (`docs/diskfs.md`, *No limit*).
+  The M700's `/Home` had refused a 23 MB `doom.elf` as "too fragmented for
+  12 extents" with 261 MB free. A file of more than twelve keeps eleven
+  extents in its inode, and its twelfth slot (`count` 0) points at a chain of
+  extent blocks, 511 extents each. A write takes and writes every run first,
+  in a working list (16,384 runs), so a failure gives back exactly what it
+  took. The chain is written before the inode that points at it, as data is.
+  The transaction's freed list went from 512 runs to 16,384, since freeing
+  a file is a run per extent. A file of twelve or fewer is what it was. The
+  Mac's binding gives Lua the inode's slots and `extent_count`, and takes
+  both back.
+- **`/Home` on a stick is 2 GB** (`STICK_HOME_MB`). Its image is sparse on
+  the Mac, and `mkusb_image.py` copies it in 4 MB pieces and skips the empty
+  ones, so the Mac holds what is used rather than two gigabytes.
+
+`test_kfs` 101, through the cache too: a 128 MB disk cut into 600 one-block
+holes, a file of 1300 blocks in 600 pieces (eleven in its inode, two chain
+blocks), read whole, a window in the chain read right, read again after a
+fresh mount, and every block given back when it is deleted. **Control**:
+more than twelve refused again, it fails with "a file into six hundred
+holes was refused". The first run found the test's own binding taking the
+inode's twelve slots as the file's whole count. The whole x86 gate: 52 of 52 in 5:44.

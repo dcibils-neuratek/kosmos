@@ -4142,10 +4142,13 @@ USB_IMG := $(X86_BUILD)/kosmos-usb-$(VERSION)-development.img
 # is the default, and `USB_HOME=disk` asks for the old one.
 #
 # **That `/Home` is made fresh for each stick, from a folder on this Mac**:
-# `HOME_DIR`, `~/Kosmos/home`, at `STICK_HOME_MB`, 512 - Diego, 19 September:
-# "from now on we need to make the drive image at least 512mb", "and i will
-# be adding more images, videos, etc". `tools/homeimage.py` has the rest. The
-# folder is his and never the repository's.
+# `HOME_DIR`, `~/Kosmos/home`, at `STICK_HOME_MB` - 512 from 19 September
+# ("from now on we need to make the drive image at least 512mb"), and 2048
+# from 8 October: "i dont want a limit", "we format the stick to a certain
+# size and thats it", "8gb", then "we can do a 2gb stick now" (`docs/diskfs.md`,
+# *No limit*). The image is sparse, so the Mac holds the blocks in use;
+# the stick is written whole. `tools/homeimage.py` has the rest. The folder
+# is his and never the repository's.
 #
 #     make MEGA=1 x86-usb-image
 #
@@ -4206,7 +4209,7 @@ m700: netboot
 
 USB_HOME      ?= partition
 HOME_DIR      ?= $(HOME)/Kosmos/home
-STICK_HOME_MB ?= 512
+STICK_HOME_MB ?= 2048
 STICK_HOME    := build/stick-home.img
 
 x86-usb-image: x86-build $(HOSTDIR)/lua $(EFI_LOADER)

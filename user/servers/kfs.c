@@ -37,7 +37,7 @@ const char *kfs_why(int status)
     case KFS_E_NOT_EMPTY:   return "the directory is not empty";
     case KFS_E_FULL:        return "the disk is full";
     case KFS_E_NO_INODES:   return "no inodes left";
-    case KFS_E_FRAGMENTED:  return "the file is too fragmented for 12 extents";
+    case KFS_E_FRAGMENTED:  return "the file is in more pieces than one write keeps";
     case KFS_E_OPEN:        return "a transaction is already open";
     case KFS_E_NOT_OPEN:    return "no transaction is open";
     case KFS_E_TOO_BIG:     return "more blocks changed than the journal can hold";
@@ -181,13 +181,17 @@ static int unpack_inode(const uint8_t *p, struct kfs_inode *node)
     node->attrs = get_le32(p + 24);
     node->extents = get_le32(p + 28);
 
-    if (node->extents > KFS_EXTENTS) {
-        return KFS_E_BAD_INODE;
-    }
-
-    for (uint32_t i = 0; i < node->extents; i++) {
+    for (uint32_t i = 0; i < node->extents && i < KFS_EXTENTS; i++) {
         node->extent[i].start = get_le32(p + 32 + i * 8);
         node->extent[i].count = get_le32(p + 36 + i * 8);
+    }
+
+    /* More than twelve: the twelfth is the chain's first block, `count` 0
+     * (`KFS_EXT_PER_BLOCK`); anything else claiming more is damaged. */
+    if (node->extents > KFS_EXTENTS
+        && (node->extent[KFS_EXTENTS - 1].count != 0
+            || node->extent[KFS_EXTENTS - 1].start == 0)) {
+        return KFS_E_BAD_INODE;
     }
 
     return KFS_OK;
@@ -902,6 +906,120 @@ int kfs_alloc_inode(struct kfs *k, const struct kfs_super *sb, uint32_t *number)
  * ------------------------------------------------------------------------
  */
 
+/*
+ * **Every extent of a file, in order** - the inode's, then its chain's
+ * (`KFS_EXT_PER_BLOCK`) - handed to `each`, which stops the walk with
+ * anything but `KFS_OK`. With `chain`, each of the chain's own blocks is
+ * handed over too, as a run of one, after the extents it held: what freeing
+ * a file has to give back.
+ */
+typedef int (*extent_fn)(struct kfs *k, void *ctx, const struct kfs_extent *x);
+
+static int each_extent(struct kfs *k, const struct kfs_inode *node, bool chain,
+                       extent_fn each, void *ctx)
+{
+    uint32_t here = node->extents > KFS_EXTENTS ? KFS_EXTENTS - 1 : node->extents;
+    uint32_t left = node->extents - here;
+    uint32_t block = node->extents > KFS_EXTENTS ? node->extent[KFS_EXTENTS - 1].start : 0;
+
+    for (uint32_t e = 0; e < here; e++) {
+        int r = each(k, ctx, &node->extent[e]);
+
+        if (r != KFS_OK) return r;
+    }
+
+    while (left > 0) {
+        uint32_t take = left < KFS_EXT_PER_BLOCK ? left : KFS_EXT_PER_BLOCK;
+        uint32_t next;
+        int r;
+
+        if (block == 0) return KFS_E_BAD_INODE;
+
+        r = kfs_read_block(k, block, k->ext);
+
+        if (r != KFS_OK) return r;
+
+        next = get_le32(k->ext + KFS_EXT_PER_BLOCK * 8);
+
+        for (uint32_t i = 0; i < take; i++) {
+            struct kfs_extent x = { get_le32(k->ext + i * 8), get_le32(k->ext + i * 8 + 4) };
+
+            if (x.count == 0) return KFS_E_BAD_INODE;
+
+            r = each(k, ctx, &x);
+
+            if (r != KFS_OK) return r;
+
+            /* `each` may have read a block of its own; the chain's is read
+             * again for the next. */
+            if (i + 1 < take) {
+                r = kfs_read_block(k, block, k->ext);
+
+                if (r != KFS_OK) return r;
+            }
+        }
+
+        if (chain) {
+            struct kfs_extent own = { block, 1 };
+
+            r = each(k, ctx, &own);
+
+            if (r != KFS_OK) return r;
+        }
+
+        left -= take;
+        block = next;
+    }
+
+    return KFS_OK;
+}
+
+struct reading {
+    uint64_t offset, finish, start;
+    uint8_t *out;
+};
+
+static int read_extent(struct kfs *k, void *ctx, const struct kfs_extent *x)
+{
+    struct reading *rd = ctx;
+    uint64_t span = (uint64_t)x->count * KFS_BLOCK;
+    uint64_t start = rd->start;
+    uint64_t now = rd->offset > start ? rd->offset : start;
+    uint64_t end = min64(rd->finish, start + span);
+
+    rd->start += span;
+
+    if (start >= rd->finish) return KFS_OK;
+
+    while (now < end) {
+        uint32_t block = (uint32_t)((now - start) / KFS_BLOCK);
+        uint64_t skip = now - (start + (uint64_t)block * KFS_BLOCK);
+        uint8_t *place = rd->out + (now - rd->offset);
+        int r;
+
+        if (skip == 0 && end - now >= KFS_BLOCK) {
+            uint32_t whole = (uint32_t)((end - now) / KFS_BLOCK);
+
+            r = read_blocks(k, x->start + block, whole, place);
+
+            if (r != KFS_OK) return r;
+
+            now += (uint64_t)whole * KFS_BLOCK;
+        } else {
+            uint64_t take = min64(KFS_BLOCK - skip, end - now);
+
+            r = kfs_read_block(k, x->start + block, k->part);
+
+            if (r != KFS_OK) return r;
+
+            memcpy(place, k->part + skip, (size_t)take);
+            now += take;
+        }
+    }
+
+    return KFS_OK;
+}
+
 int kfs_read_range(struct kfs *k, const struct kfs_super *sb,
                    const struct kfs_inode *node, uint64_t offset, uint64_t want,
                    void *to, uint64_t *placed)
@@ -922,58 +1040,46 @@ int kfs_read_range(struct kfs *k, const struct kfs_super *sb,
 
     finish = offset + want;
 
-    for (uint32_t e = 0; e < node->extents && start < finish; e++) {
-        const struct kfs_extent *x = &node->extent[e];
-        uint64_t span = (uint64_t)x->count * KFS_BLOCK;
-        uint64_t now = offset > start ? offset : start;
-        uint64_t end = min64(finish, start + span);
+    {
+        struct reading rd = { offset, finish, start, out };
+        int r = each_extent(k, node, false, read_extent, &rd);
 
-        while (now < end) {
-            uint32_t block = (uint32_t)((now - start) / KFS_BLOCK);
-            uint64_t skip = now - (start + (uint64_t)block * KFS_BLOCK);
-            uint8_t *place = out + (now - offset);
-            int r;
-
-            if (skip == 0 && end - now >= KFS_BLOCK) {
-                uint32_t whole = (uint32_t)((end - now) / KFS_BLOCK);
-
-                r = read_blocks(k, x->start + block, whole, place);
-
-                if (r != KFS_OK) {
-                    return r;
-                }
-
-                now += (uint64_t)whole * KFS_BLOCK;
-            } else {
-                uint64_t take = min64(KFS_BLOCK - skip, end - now);
-
-                r = kfs_read_block(k, x->start + block, k->part);
-
-                if (r != KFS_OK) {
-                    return r;
-                }
-
-                memcpy(place, k->part + skip, (size_t)take);
-                now += take;
-            }
-        }
-
-        start += span;
+        if (r != KFS_OK) return r;
     }
 
     *placed = want;
     return KFS_OK;
 }
 
-static void release(struct kfs *k, const struct kfs_super *sb,
-                    struct kfs_inode *node)
+static int free_extent(struct kfs *k, void *ctx, const struct kfs_extent *x)
 {
-    for (uint32_t e = 0; e < node->extents; e++) {
-        kfs_free_run(k, sb, node->extent[e].start, node->extent[e].count);
-    }
+    return kfs_free_run(k, ctx, x->start, x->count);
+}
+
+/* Every block a file's contents hold given back - its chain's too. */
+static int release(struct kfs *k, const struct kfs_super *sb,
+                   struct kfs_inode *node)
+{
+    int r = each_extent(k, node, true, free_extent, (void *)sb);
 
     node->extents = 0;
     node->size = 0;
+    return r;
+}
+
+/* What a write had taken, given back when it cannot finish. */
+static void give_back(struct kfs *k, const struct kfs_super *sb,
+                      const uint32_t *chain, uint32_t chained)
+{
+    for (uint32_t i = 0; i < k->runs_n; i++) {
+        kfs_free_run(k, sb, k->runs[i].start, k->runs[i].count);
+    }
+
+    for (uint32_t i = 0; i < chained; i++) {
+        kfs_free_run(k, sb, chain[i], 1);
+    }
+
+    k->runs_n = 0;
 }
 
 /*
@@ -1004,42 +1110,47 @@ int kfs_write_file(struct kfs *k, const struct kfs_super *sb, uint32_t number,
     const uint8_t *from = bytes;
     uint64_t left = (size + KFS_BLOCK - 1) / KFS_BLOCK;
     uint64_t offset = 0;
+    uint32_t chain[KFS_FILE_RUNS / KFS_EXT_PER_BLOCK + 2];
+    uint32_t chained = 0;
+    int r = release(k, sb, node);
 
-    release(k, sb, node);
+    if (r != KFS_OK) {
+        return r;
+    }
 
+    k->runs_n = 0;
+
+    /*
+     * Every run taken and written first, kept in `runs`, so a failure can
+     * give back exactly what it took. A new extent for each run: a run ends
+     * at the first block that is not free, so the next begins somewhere
+     * else and could never be joined to it.
+     */
     while (left > 0) {
         uint32_t start, got;
         uint64_t want;
-        int r = kfs_alloc_run(k, sb, (uint32_t)min64(left, UINT32_MAX), &start, &got);
+
+        if (k->runs_n == KFS_FILE_RUNS) {
+            give_back(k, sb, chain, chained);
+            return KFS_E_FRAGMENTED;
+        }
+
+        r = kfs_alloc_run(k, sb, (uint32_t)min64(left, UINT32_MAX), &start, &got);
 
         if (r != KFS_OK) {
-            release(k, sb, node);
+            give_back(k, sb, chain, chained);
             return r;
         }
 
-        /*
-         * A new extent for each run. `kfs.lua` joins a run onto the last
-         * extent when it follows it, and it never does: a run ends at the
-         * first block that is not free, so the next begins somewhere else.
-         * That was for blocks taken one at a time, before runs, and a
-         * control that took it out of this changed no block of any disk
-         * `test_kfs_cross.lua` makes.
-         */
-        if (node->extents >= KFS_EXTENTS) {
-            kfs_free_run(k, sb, start, got);
-            release(k, sb, node);
-            return KFS_E_FRAGMENTED;
-        } else {
-            node->extent[node->extents].start = start;
-            node->extent[node->extents].count = got;
-            node->extents++;
-        }
+        k->runs[k->runs_n].start = start;
+        k->runs[k->runs_n].count = got;
+        k->runs_n++;
 
         want = min64((uint64_t)got * KFS_BLOCK, size - offset);
         r = write_data(k, start, from + offset, want);
 
         if (r != KFS_OK) {
-            release(k, sb, node);
+            give_back(k, sb, chain, chained);
             return r;
         }
 
@@ -1047,7 +1158,70 @@ int kfs_write_file(struct kfs *k, const struct kfs_super *sb, uint32_t number,
         left -= got;
     }
 
+    /* Twelve or fewer: in the inode, exactly as a file always was. */
+    if (k->runs_n <= KFS_EXTENTS) {
+        for (uint32_t i = 0; i < k->runs_n; i++) node->extent[i] = k->runs[i];
+
+        node->extents = k->runs_n;
+        node->size = size;
+        k->runs_n = 0;
+        return kfs_write_inode(k, sb, number, node);
+    }
+
+    /*
+     * More: eleven in the inode and the rest in a chain of extent blocks
+     * (`KFS_EXT_PER_BLOCK`), each taken and written before the inode that
+     * points at them - written once, straight to blocks nothing points at
+     * yet, as a file's data is.
+     */
+    {
+        uint32_t rest = k->runs_n - (KFS_EXTENTS - 1);
+        uint32_t blocks = (rest + KFS_EXT_PER_BLOCK - 1) / KFS_EXT_PER_BLOCK;
+
+        for (uint32_t b = 0; b < blocks; b++) {
+            uint32_t got;
+
+            r = kfs_alloc_run(k, sb, 1, &chain[chained], &got);
+
+            if (r != KFS_OK) {
+                give_back(k, sb, chain, chained);
+                return r;
+            }
+
+            chained++;
+        }
+
+        for (uint32_t b = 0; b < blocks; b++) {
+            uint32_t first = (KFS_EXTENTS - 1) + b * KFS_EXT_PER_BLOCK;
+            uint32_t n = k->runs_n - first < KFS_EXT_PER_BLOCK ? k->runs_n - first
+                                                               : KFS_EXT_PER_BLOCK;
+
+            memset(k->ext, 0, KFS_BLOCK);
+
+            for (uint32_t i = 0; i < n; i++) {
+                put_le32(k->ext + i * 8, k->runs[first + i].start);
+                put_le32(k->ext + i * 8 + 4, k->runs[first + i].count);
+            }
+
+            put_le32(k->ext + KFS_EXT_PER_BLOCK * 8, b + 1 < blocks ? chain[b + 1] : 0);
+
+            r = disk_write(k, chain[b], 1, k->ext);
+
+            if (r != KFS_OK) {
+                give_back(k, sb, chain, chained);
+                return r;
+            }
+        }
+
+        for (uint32_t i = 0; i < KFS_EXTENTS - 1; i++) node->extent[i] = k->runs[i];
+
+        node->extent[KFS_EXTENTS - 1].start = chain[0];
+        node->extent[KFS_EXTENTS - 1].count = 0;
+        node->extents = k->runs_n;
+    }
+
     node->size = size;
+    k->runs_n = 0;
     return kfs_write_inode(k, sb, number, node);
 }
 
@@ -1851,12 +2025,10 @@ int kfs_unlink(struct kfs *k, const struct kfs_super *sb, const char *path,
         return r;
     }
 
-    for (uint32_t e = 0; e < node.extents; e++) {
-        r = kfs_free_run(k, sb, node.extent[e].start, node.extent[e].count);
+    r = release(k, sb, &node);
 
-        if (r != KFS_OK) {
-            return r;
-        }
+    if (r != KFS_OK) {
+        return r;
     }
 
     if (node.attrs != 0) {

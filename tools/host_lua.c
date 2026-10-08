@@ -333,6 +333,16 @@ static void get_node(lua_State *L, int idx, struct kfs_inode *node)
     }
 
     lua_pop(L, 1);
+
+    /* A file of more than twelve: every extent it has, the slots being the
+     * inode's eleven and its chain's pointer (`push_node`'s `extent_count`). */
+    lua_getfield(L, idx, "extent_count");
+
+    if (lua_isinteger(L, -1) && lua_tointeger(L, -1) > KFS_EXTENTS) {
+        node->extents = (uint32_t)lua_tointeger(L, -1);
+    }
+
+    lua_pop(L, 1);
 }
 
 /* A node's fields, into the table at the top of the stack. */
@@ -343,9 +353,15 @@ static void fill_node(lua_State *L, const struct kfs_inode *node)
     set_int(L, "size", node->size);
     set_int(L, "mtime", node->mtime);
     set_int(L, "attrs", node->attrs);
-    lua_createtable(L, (int)node->extents, 0);
+    /* The inode's own slots: a file of more than twelve keeps the rest in
+     * a chain its twelfth points at (`KFS_EXT_PER_BLOCK`), and `extents`
+     * there is the slots, `extent_count` every extent the file has. */
+    uint32_t slots = node->extents < KFS_EXTENTS ? node->extents : KFS_EXTENTS;
 
-    for (uint32_t i = 0; i < node->extents; i++) {
+    set_int(L, "extent_count", node->extents);
+    lua_createtable(L, (int)slots, 0);
+
+    for (uint32_t i = 0; i < slots; i++) {
         lua_createtable(L, 0, 2);
         set_int(L, "start", node->extent[i].start);
         set_int(L, "count", node->extent[i].count);
