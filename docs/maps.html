@@ -1,0 +1,289 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<!--
+  Maps, drawn before it is written. Diego, 6 October 2026, with a picture of
+  Apple Maps: "add a maps app to the roadmap taking inspiration from the
+  apple maps one", "The app should be lightweight and cant use the browser
+  engine, i want a native app that draws directly so its speedy and clean";
+  and on 8 October, "can you mockup our new maps app?", "i want to see it
+  before i go to bed".
+
+  The window in Kosmos's own chrome - the kit's header with the three at its
+  right - in the Night look and a light one. The city is made up: Port
+  Alder, its streets, parks, bay and places are invented for the drawing,
+  and no real person's places are in it. The map is drawn as the Map Kit
+  would draw OpenStreetMap's vector tiles: filled areas, stroked roads at
+  their widths, labels along them.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kosmos Maps</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f2f4f8; --ink: #182030; --muted: #5a6577; --rule: #dbe1ea; --card: #ffffff; --accent: #2a55c9;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #0d121a; --ink: #e6edf3; --muted: #98a4b5; --rule: #263142; --card: #151c27; --accent: #a8c7fa; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --ground: #0d121a; --ink: #e6edf3; --muted: #98a4b5; --rule: #263142; --card: #151c27; --accent: #a8c7fa; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 1180px; margin: 0 auto; padding: 40px 16px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 40px)/1.1 var(--display); margin: 0 0 10px; text-wrap: balance; }
+  h2 { font: 600 23px/1.2 var(--display); margin: 44px 0 10px; text-wrap: balance; }
+  p, li { max-width: 72ch; }
+  .lede { font-size: 18px; color: var(--muted); }
+  .said { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; color: var(--muted); font-style: italic; margin: 16px 0; }
+  code { font: .88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+  .hint { font-size: 14px; color: var(--muted); margin: 14px 0 8px; }
+  .looks { display: flex; gap: 8px; margin: 10px 0; }
+  .looks button { font: 500 14px var(--body); padding: 6px 14px; border-radius: 999px; border: 1px solid var(--rule); background: var(--card); color: var(--ink); cursor: pointer; }
+  .looks button[aria-pressed="true"] { background: var(--accent); color: var(--ground); border-color: transparent; }
+  .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin-top: 18px; }
+  .note { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; }
+  .note b { display: block; font-family: var(--display); font-size: 17px; margin-bottom: 4px; }
+  .note p { margin: 0; font-size: 14.5px; color: var(--muted); }
+  ol.q li { margin: 10px 0; }
+  .rec { color: var(--muted); }
+
+  /* ---- The window, drawn at 1160 by 720 and scaled to the page ---- */
+  .shell { width: 100%; overflow: hidden; border-radius: 14px; }
+  .stage { width: 1160px; height: 720px; transform-origin: 0 0; position: relative; font: 14px/1.35 var(--body); }
+
+  .win { position: absolute; inset: 0; border-radius: 18px; overflow: hidden; display: grid; grid-template-rows: 46px 1fr;
+         background: var(--w-window); color: var(--w-text); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+  .win.night { --w-window: #1e2636; --w-raised: #2a3446; --w-sunken: #161d2b; --w-line: #313b4e; --w-text: #e6eaf2; --w-dim: #a3adbf;
+               --w-accent: #a8c7fa; --w-on: #0a1b38; --w-glass: rgba(30, 38, 54, .86);
+               --m-land: #1d2433; --m-block: #222b3c; --m-park: #1f3a32; --m-water: #10233f; --m-road: #3a4659; --m-major: #56647c;
+               --m-motor: #8a6f3e; --m-label: #c9d1df; --m-water-label: #6f93c9; --m-park-label: #7fb39b; --m-casing: #151b27; }
+  .win.day { --w-window: #f6f5f4; --w-raised: #ffffff; --w-sunken: #ffffff; --w-line: #e3e0dd; --w-text: #241f31; --w-dim: #77767b;
+             --w-accent: #3584e4; --w-on: #ffffff; --w-glass: rgba(255, 255, 255, .88);
+             --m-land: #f2efe9; --m-block: #e8e3da; --m-park: #cfe8c8; --m-water: #aad3f2; --m-road: #ffffff; --m-major: #fde8a8;
+             --m-motor: #f6bb6a; --m-label: #3d3a45; --m-water-label: #3a6ea8; --m-park-label: #3f7a43; --m-casing: #d9d2c6; }
+
+  .head { display: flex; align-items: center; gap: 12px; padding: 0 12px 0 18px; border-bottom: 1px solid var(--w-line); background: var(--w-window); }
+  .head .t { font-weight: 600; font-size: 15px; }
+  .head .sub { color: var(--w-dim); font-size: 13.5px; }
+  .head .sp { flex: 1; }
+  .seg { display: flex; background: var(--w-sunken); border: 1px solid var(--w-line); border-radius: 9px; padding: 2px; }
+  .seg span { padding: 4px 12px; border-radius: 7px; font-size: 13px; color: var(--w-dim); }
+  .seg span.on { background: var(--w-raised); color: var(--w-text); box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .ib { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; color: var(--w-text); }
+  .ib svg { width: 17px; height: 17px; }
+  .lights { display: flex; gap: 8px; margin-left: 6px; }
+  .lights i { width: 16px; height: 16px; border-radius: 50%; display: block; }
+
+  .body { position: relative; display: grid; grid-template-columns: 300px 1fr; min-height: 0; }
+  .side { background: var(--w-window); border-right: 1px solid var(--w-line); padding: 12px 12px 0; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+  .search { height: 38px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-radius: 10px; background: var(--w-sunken); border: 1px solid var(--w-line); color: var(--w-dim); }
+  .search svg { width: 16px; height: 16px; }
+  .sec { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--w-dim); padding: 10px 6px 2px; }
+  .pins { display: flex; gap: 12px; padding: 4px 4px 6px; }
+  .pin { width: 62px; display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 12px; color: var(--w-dim); }
+  .pin b { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: #fff; }
+  .pin b svg { width: 20px; height: 20px; }
+  .item { display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: center; padding: 7px 6px; border-radius: 9px; }
+  .item .d { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--w-raised); color: var(--w-dim); }
+  .item .d svg { width: 15px; height: 15px; }
+  .item .n { font-size: 14px; }
+  .item .w { font-size: 12.5px; color: var(--w-dim); }
+  .item.on { background: var(--w-raised); }
+
+  .map { position: relative; overflow: hidden; background: var(--m-land); }
+  .map svg.city { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  .card { position: absolute; left: 16px; top: 16px; width: 300px; background: var(--w-glass); backdrop-filter: blur(12px);
+          border: 1px solid var(--w-line); border-radius: 16px; padding: 14px 16px 16px; box-shadow: 0 12px 30px rgba(0,0,0,.25); }
+  .card h3 { margin: 0; font-size: 18px; font-weight: 600; }
+  .card .k { color: var(--w-dim); font-size: 13px; margin: 2px 0 10px; }
+  .card .acts { display: flex; gap: 8px; margin-bottom: 12px; }
+  .card .acts span { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 0; border-radius: 10px; background: var(--w-raised); font-size: 12px; }
+  .card .acts span.go { background: var(--w-accent); color: var(--w-on); }
+  .card .acts svg { width: 17px; height: 17px; }
+  .card dl { display: grid; grid-template-columns: 74px 1fr; gap: 4px 10px; margin: 0; font-size: 13px; }
+  .card dt { color: var(--w-dim); }
+  .card dd { margin: 0; }
+
+  .ctl { position: absolute; right: 16px; top: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .ctl .grp { background: var(--w-glass); backdrop-filter: blur(12px); border: 1px solid var(--w-line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+  .ctl .grp span { width: 40px; height: 40px; display: grid; place-items: center; color: var(--w-text); }
+  .ctl .grp span + span { border-top: 1px solid var(--w-line); }
+  .ctl svg { width: 18px; height: 18px; }
+  .compass { width: 42px; height: 42px; border-radius: 50%; background: var(--w-glass); border: 1px solid var(--w-line); display: grid; place-items: center; }
+  .scale { position: absolute; left: 16px; bottom: 14px; display: flex; flex-direction: column; gap: 3px; font: 11.5px var(--mono); color: var(--w-text); }
+  .scale i { display: block; width: 96px; height: 5px; border: 2px solid var(--w-text); border-top: 0; }
+  .attr { position: absolute; right: 12px; bottom: 10px; font-size: 11px; color: var(--w-dim); background: var(--w-glass); padding: 2px 8px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Kosmos Maps</h1>
+<p class="lede">A native map that draws itself: OpenStreetMap's streets, parks and water as shapes, drawn by Kosmos at any zoom, sharp on any screen, with no browser underneath. Apple Maps' layout, Kosmos's look.</p>
+<p class="said">"add a maps app to the roadmap taking inspiration from the apple maps one", "i want a native app that draws directly so its speedy and clean" - Diego, 6 October</p>
+
+<p class="hint">The city is made up - Port Alder, its bay and its places are invented for the drawing. Switch the look:</p>
+<div class="looks" role="group" aria-label="Look">
+  <button type="button" data-look="night" aria-pressed="true">Night</button>
+  <button type="button" data-look="day" aria-pressed="false">Light</button>
+</div>
+
+<div class="shell" id="shell"><div class="stage" id="stage">
+  <div class="win night" id="win">
+    <div class="head">
+      <span class="t">Maps</span><span class="sub">Port Alder</span>
+      <span class="sp"></span>
+      <div class="seg"><span class="on">Explore</span><span>Satellite</span><span>Transit</span></div>
+      <span class="ib" title="Directions"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M10 2 18 10 10 18 2 10Z"/><path d="M8 11V9h4M10.5 7.5 12 9l-1.5 1.5"/></svg></span>
+      <span class="ib" title="More"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="4.5" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="10" cy="15.5" r="1.6"/></svg></span>
+      <span class="lights"><i style="background:#28c840"></i><i style="background:#febc2e"></i><i style="background:#ff5f57"></i></span>
+    </div>
+    <div class="body">
+      <aside class="side">
+        <div class="search"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.6"/><path d="m10.6 10.6 3.8 3.8"/></svg>Search Maps</div>
+        <div class="sec">Pinned</div>
+        <div class="pins">
+          <span class="pin"><b style="background:#3584e4"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3 2.5 9.5H5V17h4v-4.5h2V17h4V9.5h2.5Z"/></svg></b>Home</span>
+          <span class="pin"><b style="background:#8a63d2"><svg viewBox="0 0 20 20" fill="currentColor"><rect x="3.5" y="6" width="13" height="10" rx="2"/><rect x="7" y="3.5" width="6" height="3.5" rx="1"/></svg></b>Work</span>
+          <span class="pin"><b style="background:#e0573f"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M6 3v6a2 2 0 0 0 1.5 1.9V17h1.5v-6.1A2 2 0 0 0 10.5 9V3H9.3v5H8.6V3H7.4v5H6.7V3ZM13 3c-1.6 1.2-2 3.2-2 5.5h1.5V17H14V3Z"/></svg></b>Lunch</span>
+          <span class="pin"><b style="background:#2f9d62"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2.5 15 9h-3l4 5.5h-5V17H9v-2.5H4L8 9H5Z"/></svg></b>Park</span>
+        </div>
+        <div class="sec">Saved</div>
+        <div class="item on"><span class="d" style="background:#e0573f;color:#fff"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a5.5 5.5 0 0 0-5.5 5.5C4.5 12 10 18 10 18s5.5-6 5.5-10.5A5.5 5.5 0 0 0 10 2Zm0 7.5a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z"/></svg></span><span><div class="n">Lantern Street Market</div><div class="w">Market · Old Harbour</div></span></div>
+        <div class="item"><span class="d"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 16V8l6-4 6 4v8h-4v-4H8v4Z"/></svg></span><span><div class="n">Alder Library</div><div class="w">Library · Civic Quarter</div></span></div>
+        <div class="item"><span class="d"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="10" r="6"/></svg></span><span><div class="n">Bayview Lookout</div><div class="w">Viewpoint · Gull Point</div></span></div>
+        <div class="sec">Recently viewed</div>
+        <div class="item"><span class="d"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><path d="M10 6v4l2.5 2"/></svg></span><span><div class="n">Ferry Terminal</div><div class="w">Harbour Road</div></span></div>
+        <div class="item"><span class="d"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><path d="M10 6v4l2.5 2"/></svg></span><span><div class="n">Cedar Park</div><div class="w">Park · Northside</div></span></div>
+      </aside>
+      <div class="map" id="map">
+        <svg class="city" id="city" viewBox="0 0 860 674" preserveAspectRatio="xMidYMid slice" aria-label="A made-up city, Port Alder"></svg>
+        <div class="card">
+          <h3>Lantern Street Market</h3>
+          <div class="k">Market · Old Harbour · 1.2 km</div>
+          <div class="acts">
+            <span class="go"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2 18 10 10 18 2 10Zm-1.5 9.5V9.5h3v1.5L14 8.5 11.5 6v1.5h-4a1 1 0 0 0-1 1v3Z"/></svg>Directions</span>
+            <span><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 3.5 12 8l5 .5-3.8 3.3 1.2 4.9L10 14.2 5.6 16.7l1.2-4.9L3 8.5 8 8Z"/></svg>Save</span>
+            <span><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 3v9M6.5 6.5 10 3l3.5 3.5M4 11v5h12v-5"/></svg>Share</span>
+          </div>
+          <dl><dt>Open</dt><dd>Daily, 8:00 - 20:00</dd><dt>Address</dt><dd>14 Lantern Street, Port Alder</dd><dt>From OSM</dt><dd>amenity=marketplace</dd></dl>
+        </div>
+        <div class="ctl">
+          <div class="grp"><span title="Zoom in"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M10 4v12M4 10h12"/></svg></span><span title="Zoom out"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 10h12"/></svg></span></div>
+          <div class="grp"><span title="Where I am"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M17 3 3 9.5l6 1.5 1.5 6Z"/></svg></span><span title="3D"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 2.5 16.5 6v8L10 17.5 3.5 14V6Z"/><path d="M3.5 6 10 9.5 16.5 6M10 9.5v8"/></svg></span></div>
+          <span class="compass" title="North"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 3 15 12H9Z" fill="#ff5f57"/><path d="M12 21 9 12h6Z" fill="currentColor" opacity=".55"/></svg></span>
+        </div>
+        <div class="scale"><span>500 m</span><i></i></div>
+        <div class="attr">© OpenStreetMap contributors</div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<h2>What a person can do</h2>
+<div class="notes">
+  <div class="note"><b>Look around</b><p>Drag to move, the wheel or a pinch to zoom, Ctrl and a drag to turn the map; the compass puts north back up. Explore, Satellite later, Transit later.</p></div>
+  <div class="note"><b>Find a place</b><p>Search for a place, a street or an address; results in the sidebar and as pins on the map. A pressed pin or label opens its card: name, kind, distance, hours and address.</p></div>
+  <div class="note"><b>Keep places</b><p>Pinned along the top - Home, Work and any others - Saved below them, and Recently viewed. Kept by the settings kit, on this machine only.</p></div>
+  <div class="note"><b>Directions, later</b><p>A route drawn on the map, by car, on foot or by bicycle, with its steps in the sidebar - from OSRM or Valhalla, a step after the map itself.</p></div>
+  <div class="note"><b>Without a network</b><p>A region kept on the disk as one PMTiles file - a city, a country - and the map works with no network at all.</p></div>
+  <div class="note"><b>Night and Light</b><p>The map takes the window's look: the night's blue-greys, or a light map with its parks green and water blue, as the toggle above shows.</p></div>
+</div>
+
+<h2>Yours to decide</h2>
+<ol class="q">
+  <li><b>A sidebar always there</b>, as drawn, or the map filling the window with the sidebar a button away. <span class="rec">Recommended: always there, hidden with Ctrl+S on a small screen.</span></li>
+  <li><b>The place card over the map</b>, at its top left as Apple's floats, or inside the sidebar in place of the lists. <span class="rec">Recommended: over the map, as drawn.</span></li>
+  <li><b>Where the map comes from</b>: OpenFreeMap's tiles over the network first, a PMTiles region on the disk second. <span class="rec">Recommended: both, the network first.</span></li>
+  <li><b>Satellite and Transit</b> drawn as switches now and greyed until built, or left out until they exist. <span class="rec">Recommended: left out until they exist.</span></li>
+</ol>
+<p>The architecture and its diagram come next, once the window is agreed: the Map Kit in C that decodes a tile and draws it, the tiles fetched through the TLS Kit and kept under <code>/Home</code>, and Lua for what a person does.</p>
+</main>
+<script>
+(function () {
+  var NS = "http://www.w3.org/2000/svg", svg = document.getElementById("city");
+  function el(name, attrs, parent) {
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    (parent || svg).appendChild(e);
+    return e;
+  }
+  // The bay, the river, the parks.
+  el("path", { d: "M0 470 C120 440 210 500 300 520 C390 540 430 610 520 674 L0 674 Z", fill: "var(--m-water)" });
+  el("path", { d: "M860 120 C780 150 740 210 700 260 C660 310 600 330 560 380 C520 430 520 500 520 674 L560 674 C566 520 572 450 610 410 C650 366 710 340 750 290 C790 240 820 190 860 168 Z", fill: "var(--m-water)" });
+  el("path", { d: "M90 90 L250 70 L270 190 L110 214 Z", fill: "var(--m-park)" });
+  el("path", { d: "M620 470 L760 450 L790 560 L640 590 Z", fill: "var(--m-park)" });
+  el("circle", { cx: 420, cy: 330, r: 34, fill: "var(--m-park)" });
+  // Blocks, between the streets.
+  var g = el("g", { transform: "rotate(-8 430 330)" });
+  for (var x = 0; x < 9; x++) for (var y = 0; y < 8; y++) {
+    var bx = 40 + x * 92, by = 30 + y * 76;
+    if ((x === 1 || x === 2) && y < 2) continue;
+    if (x === 4 && (y === 3 || y === 4)) continue;
+    el("rect", { x: bx + 7, y: by + 7, width: 78, height: 62, rx: 3, fill: "var(--m-block)" }, g);
+  }
+  // Streets: casing, then the road, minor then major.
+  function road(d, w, color) {
+    el("path", { d: d, fill: "none", stroke: "var(--m-casing)", "stroke-width": w + 2, "stroke-linecap": "round", transform: "rotate(-8 430 330)" });
+    el("path", { d: d, fill: "none", stroke: color, "stroke-width": w, "stroke-linecap": "round", transform: "rotate(-8 430 330)" });
+  }
+  for (var i = 0; i < 10; i++) road("M" + (40 + i * 92) + " 10 V 660", 5, "var(--m-road)");
+  for (var j = 0; j < 9; j++) road("M 20 " + (30 + j * 76) + " H 880", 5, "var(--m-road)");
+  road("M 408 10 V 660", 10, "var(--m-major)");
+  road("M 20 258 H 880", 10, "var(--m-major)");
+  el("path", { d: "M0 360 C160 340 300 300 430 330 C560 360 640 300 860 250", fill: "none", stroke: "var(--m-casing)", "stroke-width": 16, "stroke-linecap": "round" });
+  el("path", { d: "M0 360 C160 340 300 300 430 330 C560 360 640 300 860 250", fill: "none", stroke: "var(--m-motor)", "stroke-width": 12, "stroke-linecap": "round", id: "ring" });
+  // Labels: water, parks, streets along their line, places.
+  function label(x, y, t, color, size, weight, extra) {
+    var a = { x: x, y: y, fill: color, "font-family": "IBM Plex Sans, sans-serif", "font-size": size, "font-weight": weight || 500,
+              "text-anchor": "middle", "paint-order": "stroke", stroke: "var(--m-land)", "stroke-width": 3, "stroke-linejoin": "round" };
+    for (var k in extra || {}) a[k] = extra[k];
+    var e = el("text", a); e.textContent = t; return e;
+  }
+  label(170, 610, "Alder Bay", "var(--m-water-label)", 17, 500, { "font-style": "italic", stroke: "var(--m-water)" });
+  label(690, 330, "Silver River", "var(--m-water-label)", 13, 500, { "font-style": "italic", stroke: "var(--m-water)", transform: "rotate(-40 690 330)" });
+  label(180, 146, "Cedar Park", "var(--m-park-label)", 13, 600, { stroke: "var(--m-park)" });
+  label(706, 524, "Gull Point", "var(--m-park-label)", 13, 600, { stroke: "var(--m-park)" });
+  label(240, 352, "Ring Road", "var(--m-label)", 11.5, 600, { transform: "rotate(-5 240 352)" });
+  label(370, 250, "Harbour Road", "var(--m-label)", 11.5, 600, { transform: "rotate(-8 370 250)" });
+  label(392, 470, "Lantern Street", "var(--m-label)", 11.5, 600, { transform: "rotate(82 392 470)" });
+  label(560, 120, "CIVIC QUARTER", "var(--m-label)", 12, 600, { "letter-spacing": "2", opacity: .7 });
+  label(300, 420, "OLD HARBOUR", "var(--m-label)", 12, 600, { "letter-spacing": "2", opacity: .7 });
+  // The chosen place, and two more.
+  function pin(x, y, c, big) {
+    var r = big ? 15 : 9;
+    el("circle", { cx: x, cy: y, r: r + 3, fill: "#000", opacity: .18 });
+    el("circle", { cx: x, cy: y, r: r, fill: c, stroke: "#fff", "stroke-width": 2.5 });
+  }
+  pin(560, 196, "#8a63d2"); pin(236, 470, "#3584e4");
+  pin(372, 438, "#e0573f", true);
+  label(372, 474, "Lantern Street Market", "var(--m-label)", 13, 600);
+  // Where I am.
+  el("circle", { cx: 470, cy: 560, r: 22, fill: "#3584e4", opacity: .18 });
+  el("circle", { cx: 470, cy: 560, r: 8, fill: "#3584e4", stroke: "#fff", "stroke-width": 3 });
+
+  var win = document.getElementById("win");
+  Array.prototype.forEach.call(document.querySelectorAll(".looks button"), function (b) {
+    b.addEventListener("click", function () {
+      win.className = "win " + b.getAttribute("data-look");
+      Array.prototype.forEach.call(document.querySelectorAll(".looks button"), function (o) {
+        o.setAttribute("aria-pressed", o === b ? "true" : "false");
+      });
+    });
+  });
+
+  var shell = document.getElementById("shell"), stage = document.getElementById("stage");
+  function fit() { var k = Math.min(1, shell.clientWidth / 1160); stage.style.transform = "scale(" + k + ")"; shell.style.height = (720 * k) + "px"; }
+  window.addEventListener("resize", fit); fit();
+})();
+</script>
+</body>
+</html>
