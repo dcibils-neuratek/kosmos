@@ -800,7 +800,7 @@ end
 
 local function draw_header(s)
   -- Left of the three: the header is the title bar (one chrome, 7 October).
-  local right = W - L.lights_in - ((win and win.lights and win.lights.w) or 62) - L.head_edge
+  local right = W - L.lights_in - ((win and win.lights and win.lights.w) or 68) - L.head_edge
   local cy = (HEAD - 1 - 31) // 2
 
   -- From the right: the dots, Render, the shading.
@@ -2388,7 +2388,7 @@ function final.draw()
   local job, kept = final.job, final.stopped
   local save_w = pk.button_width("Save as PNG...")
   local again_w = math.max(pk.button_width("Render again"), pk.button_width("Stop"))
-  local save_x = final.W - L.lights_in - ((final.win.lights and final.win.lights.w) or 62)
+  local save_x = final.W - L.lights_in - ((final.win.lights and final.win.lights.w) or 68)
                  - L.head_edge - save_w
   local again_x = save_x - 8 - again_w
   local pw, ph = final.pic:size()

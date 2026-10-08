@@ -20993,3 +20993,18 @@ places and presses; the thumb). `run_dock.py` 50: Recently used holds the
 Calculator started a moment before, and Shut Down opens the window that asks
 and Escape there leaves the machine on. **Control**: `remember` not called
 and the launcher's Shut Down sending nothing - both fail. Restored.
+
+## 18.451 The three lights 15% larger; Recently used counts windows, not starts
+
+- Diego, 8 October: "the close, maximise, minimize window buttons are too
+  small. can you make them 15% larger in diameter?". `OUT.BOX` 18 to 20, so
+  each disc is 16 across where it was 14, and the run of three 68 wide
+  rather than 62; every header is told it by the window manager, and the
+  harnesses that place them (display-3's Front, display's headers, the
+  browser's strip) expect 68 and 20. x86 gate 50 of 51, the browser's
+  strip the one, then alone.
+- "tracker appears twice in the recently used apps": the desktop is Tracker
+  started with `desktop`, recorded as a second Tracker. An application is
+  now recorded when it opens its first window a person looks at - not a
+  backdrop, strip, popup, menu, tip or banner - and kept by its program
+  alone, so a list holding both merges into one (`test_launchgrid.lua` 66).

@@ -148,29 +148,30 @@ local recent = dofile("user/lib/recent.lua")
 local function said(l)
   local out = {}
 
-  for _, e in ipairs(l) do out[#out + 1] = e.program .. ((e.args or "") ~= "" and (" " .. e.args) or "") end
+  for _, e in ipairs(l) do out[#out + 1] = e.program end
 
   return table.concat(out, ", ")
 end
 
+-- Tracker twice - opened on a folder, and as the desktop - is one Tracker.
 local list = recent.parse({ { program = "/Kosmos/Apps/terminal.lua" },
-                            { program = "/Kosmos/Apps/browser.lua", args = "https://example.com/" },
+                            { program = "/Kosmos/Apps/tracker.lua", args = "desktop" },
                             { program = "not a path" }, "nor a table",
+                            { program = "/Kosmos/Apps/tracker.lua" },
                             { program = "/Home/Projects/hello/hello.lua" } })
 
-check(#list == 3 and list[2].args == "https://example.com/" and list[1].args == "",
+check(#list == 3 and list[2].program == "/Kosmos/Apps/tracker.lua"
+      and list[3].program == "/Home/Projects/hello/hello.lua" and list[2].args == nil,
       "the recent list read as " .. said(list))
-check(said(recent.parse(recent.format(list))) == said(list) and recent.format(list)[1].args == nil,
+check(said(recent.parse(recent.format(list))) == said(list),
       "the recent list did not read back as it was kept")
 
-list = recent.add(list, "/Kosmos/Apps/browser.lua", "https://example.com/")
-check(#list == 3 and list[1].program == "/Kosmos/Apps/browser.lua"
+list = recent.add(list, "/Kosmos/Apps/tracker.lua")
+check(#list == 3 and list[1].program == "/Kosmos/Apps/tracker.lua"
       and list[2].program == "/Kosmos/Apps/terminal.lua",
-      "started again, the browser was not moved to the top once: " .. said(list))
-list = recent.add(list, "/Kosmos/Apps/browser.lua", "")
-check(#list == 4, "the browser with no address was not its own entry")
-check(recent.add({}, "/Kosmos/Apps/x.lua", "a\nb")[1].args == "",
-      "arguments with a line break went into the file")
+      "opened again, Tracker was not moved to the top once: " .. said(list))
+list = recent.add(list, "/Kosmos/Apps/browser.lua")
+check(#list == 4 and list[1].program == "/Kosmos/Apps/browser.lua", "the browser was not added at the top")
 
 local many = {}
 

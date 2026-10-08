@@ -4294,7 +4294,7 @@ def check_no_title_bar(guest):
 
         # 62 for the three (`OUT.RUN`) and 12 in from the right; centred in
         # a header of 46 whose last row is its rule.
-        if (lx, ly) != (w - 12 - 62, (46 - 1 - 18) // 2):
+        if (lx, ly) != (w - 12 - 68, (46 - 1 - 20) // 2):
             raise Failure("Tracker's three are at %d,%d in a window %d wide "
                           "- wanted %d,%d" % (lx, ly, w, w - 74, 13))
 
@@ -4400,7 +4400,7 @@ def check_no_title_bar(guest):
                                     % title, mark)
         lx, ly = (int(v) for v in re.match(r"(\d+),(\d+)", three).groups())
 
-        if (lx, ly) != (w - 12 - 62, (46 - 1 - 18) // 2):
+        if (lx, ly) != (w - 12 - 68, (46 - 1 - 20) // 2):
             raise Failure("%s's three are at %d,%d in a window %d wide - "
                           "wanted %d,%d" % (title, lx, ly, w, w - 74, 13))
 
@@ -5301,13 +5301,13 @@ def check_tabs(guest):
 
         #
         # The maximise light, greyed. A headed window's three are where
-        # every header puts them (`OUT.lights_at`): their run 62 wide
+        # every header puts them (`OUT.lights_at`): their run 68 wide
         # (`OUT.RUN`), 12 in from the right, centred in the band's 46 -
-        # and maximise is the first, a disc 18 across. A maximise that
+        # and maximise is the first, in a box 20 across. A maximise that
         # cannot be used is a grey one where a working one is green.
         #
-        zx, zy = fx + fw - 12 - 62, fy + (KIT_HEAD - 1 - 18) // 2
-        glyph = pixel(zx + 9, zy + 9)
+        zx, zy = fx + fw - 12 - 68, fy + (KIT_HEAD - 1 - 20) // 2
+        glyph = pixel(zx + 10, zy + 10)
         green = (0x28, 0xc8, 0x40)
 
         if glyph == green or max(glyph) - min(glyph) > 24:
@@ -5318,7 +5318,7 @@ def check_tabs(guest):
 
         # Pressed and dragged, it does nothing: Front's body stays put.
         corner = pixel(fx + 6, fy + KIT_HEAD + 6)
-        guest.mouse_to(*_to_tablet(zx + 9, zy + 9, width, height))
+        guest.mouse_to(*_to_tablet(zx + 10, zy + 10, width, height))
         time.sleep(0.3)
         guest.mouse_button(True)
         time.sleep(0.2)

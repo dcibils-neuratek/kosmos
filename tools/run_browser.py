@@ -2973,9 +2973,10 @@ def main():
                                         since=mark)
             lx, ly = (int(v) for v in re.match(r"(\d+),(\d+)", three).groups())
 
-            if (lx, ly) != (ww - 12 - 62, (TABS - 18) // 2):
+            # The run of three 68 wide and 20 tall since 8 October (`OUT.BOX`).
+            if (lx, ly) != (ww - 12 - 68, (TABS - 20) // 2):
                 raise Failure(f"the browser's three are at {lx},{ly} in a window "
-                              f"{ww} wide - wanted {ww - 74},{(TABS - 18) // 2}, the "
+                              f"{ww} wide - wanted {ww - 80},{(TABS - 20) // 2}, the "
                               f"strip's right end")
 
             band = re.search(r"browser: tabs 1, each \d+ wide, the first at \d+,\d+, "

@@ -355,6 +355,18 @@ this order, each step its own test:
    program (the launcher, the Deskbar, Tracker, `open`) records it once,
    through one door, in `/Home/Preferences/recent`. Drawn into
    `launcher.html` and agreed before it is built.
+   **Built** (0.11.57, `testing.md` 18.450), with a scrollbar beside the
+   grid. **WANTED next, 8 October - the search as Spotlight** (Diego:
+   "could we do the search bar a global search like spotlight in mac that
+   not only searches apps but searches files?"). Typing finds files by
+   name as well as applications - grouped, Applications first, then
+   Files and Folders, each with its place - and Return opens one the way
+   Tracker would. A walk of `/Home` per keystroke is too slow on a stick,
+   so it wants an index kept by a server as files change (`diskfs` knows
+   every create, rename and delete), asked through one door any program
+   can use - Tracker's own Search and the Open window would want it too.
+   Names first; the words inside documents later. Drawn into
+   `launcher.html` first.
 5. **Quick settings** under the strip's indicators: volume, brightness where
    there is a backlight, the network, the servers, the screenshot, `/Home`,
    restart and shut down.

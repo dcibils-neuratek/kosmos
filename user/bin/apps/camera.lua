@@ -213,7 +213,7 @@ local record = { text = "Record", disabled = true }
 
 local function place_controls()
   -- Left of the three, which its header holds now it is the title bar.
-  local three = (win and win.lights and win.lights.w) or 62
+  local three = (win and win.lights and win.lights.w) or 68
   local right = W - L.lights_in - three - L.head_edge
 
   more.x, more.y = right - 26, (L.head - 1 - 26) // 2

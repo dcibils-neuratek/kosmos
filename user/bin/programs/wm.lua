@@ -198,7 +198,13 @@ OUT.BORDER     = 4
 -- thin is a target you miss" - and this is that sentence applied to the end
 -- of the bar it shares.
 --
-OUT.BOX        = 18
+--
+-- **20 since 8 October** (Diego: "the close, maximise, minimize window
+-- buttons are too small. can you make them 15% larger in diameter?"): the
+-- disc is the box less 4, so 14 across became 16, and the run of three 62
+-- wide became 68.
+--
+OUT.BOX        = 20
 
 -- How far the controls sit from the end of the tab, and the title from its
 -- start.
@@ -287,7 +293,7 @@ function scale.chrome()
   OUT.corner = OUT.want_corner and scale.px(theme.metrics.corner or 0) or 0
   OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
   OUT.BORDER  = scale.px(4)
-  OUT.BOX     = scale.px(18)
+  OUT.BOX     = scale.px(20)
   OUT.MARGIN  = scale.px(10)
   OUT.TITLE_IN = scale.px(18)
   OUT.cascade = OUT.TAB_H + scale.px(8)
@@ -3058,6 +3064,52 @@ remote.handlers.watched = function()
   return { ok = true, rects = table.concat(parts) }
 end
 
+--
+-- **Recently used** (`docs/launcher.html`, agreed 8 October): an
+-- application whose window opens here goes to the top of the settings kit's `recent`,
+-- which the launcher's Recently used row shows. Here because this is the
+-- one place every window passes, whoever started it, and `recent.lua` is
+-- the one door to the list. Two small requests to `/Home` on a process's
+-- first window, the same disk its program was just read from; a `/Home`
+-- that refuses (none, or read only) costs the list and nothing else.
+--
+local recent = use("/Kosmos/Libraries/recent.lua")
+
+--
+-- **When it opens a window a person looks at**, not when it is started:
+-- the desktop is Tracker started with `desktop`, and counting starts put a
+-- second Tracker in the list on every boot (Diego, 8 October: "tracker
+-- appears twice in the recently used apps"). So a process's first window
+-- that is not a backdrop, a strip, a popup, a menu or a tip records its
+-- program - whoever started it, the launcher or a Terminal - and an
+-- application is kept once, by its program, without the words it was
+-- started with.
+--
+local function remember(win)
+  if not win.program or win.kind == "menu" or win.backdrop or win.strip
+     or win.popup or win.tip or win.banner then
+    return
+  end
+
+  -- Its process's first: a second window of an open application is not
+  -- another start. Asked before this one joins `windows`.
+  for _, other in ipairs(windows) do
+    if other.pid == win.pid and other.program == win.program
+       and not (other.backdrop or other.strip or other.popup or other.tip) then
+      return
+    end
+  end
+
+  if not recent.counts(fs.getattr(win.program)) then return end
+
+  local list = recent.add(recent.parse(prefs.read(recent.NAME)), win.program)
+  local ok, why = prefs.write(recent.NAME, recent.format(list))
+
+  if not ok then
+    print(("wm: recently used not kept: %s"):format(tostring(why)))
+  end
+end
+
 --------------------------------------------------------------------------
 -- A window whose pixels the application draws itself.
 --
@@ -3792,6 +3844,8 @@ handlers.open = function(req, who, cap)
     stop_starting(function(s) return s.path == win.program end)
   end
 
+  remember(win)
+
   next_handle = next_handle + 1
 
   by_handle[win.handle] = win
@@ -3925,31 +3979,6 @@ end
 --
 local launching = {}
 
---
--- **Recently used** (`docs/launcher.html`, agreed 8 October): an
--- application started here goes to the top of the settings kit's `recent`,
--- which the launcher's Recently used row shows. Here because this is the
--- one place every start passes - the launcher, the dock, the Deskbar's
--- menu, Tracker and `open` all ask - and `recent.lua` is the one door to
--- the list. Two small requests to `/Home` once a start has succeeded, the
--- same disk the start has just read the program from; a `/Home` that
--- refuses (none, or read only) costs the list and nothing else.
---
-local recent = use("/Kosmos/Libraries/recent.lua")
-
-local function remember(l)
-  local attrs = fs.getattr(l.path)
-
-  if not recent.counts(attrs) then return end
-
-  local list = recent.add(recent.parse(prefs.read(recent.NAME)), l.path, l.args)
-  local ok, why = prefs.write(recent.NAME, recent.format(list))
-
-  if not ok then
-    print(("wm: recently used not kept: %s"):format(tostring(why)))
-  end
-end
-
 local function finish_launch(l, ok, err, id)
   print(("wm: launched %s -> %s %s"):format(tostring(l.program),
         tostring(ok), tostring(ok and id or err)))
@@ -3974,8 +4003,6 @@ local function finish_launch(l, ok, err, id)
     -- (`SYS_SENDER`, in `handlers.open`); this is that answer's fallback.
     pending_pid = id
     pending_program = l.path
-
-    remember(l)
   end
 
   -- Nobody waiting: asked with `wait = false`, and answered at the start.
