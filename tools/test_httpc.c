@@ -109,8 +109,9 @@ int main(void)
         check(strstr(f.wrote, "GET /planet/14/1/2.pbf HTTP/1.1\r\n") == f.wrote
               && strstr(f.wrote, "Host: tiles.example\r\n") != NULL
               && strstr(f.wrote, "Accept-Encoding: gzip\r\n") != NULL
+              && strstr(f.wrote, "User-Agent: Kosmos/1 (+https://") != NULL
               && f.wrote_len > 4 && memcmp(f.wrote + f.wrote_len - 4, "\r\n\r\n", 4) == 0,
-              "the request was not a GET with its Host and Accept-Encoding");
+              "the request was not a GET with its Host, User-Agent and Accept-Encoding");
 
         /* 2. The same connection again: chunks, with an extension. */
         f.reply = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"

@@ -21380,3 +21380,24 @@ with `opt/kosmos/home=usb` it found `/Home` in 1.1 s. The stick was written
 from 0.10.205's image, as `state.md` says, and the netboot is to be made
 with `make netboot STICK=build/x86_64/kosmos-usb-0.10.205-development.img`.
 Plain `make netboot` took 0.11.38's GUID. That was my mistake, not the system's.
+
+## 18.467 Maps M6e: places in the world, found by name
+
+`docs/maps.md` M6e. The tiles server gets two more questions, `FIND`
+(words) and `FINDER` (where to ask; Nominatim unless told otherwise), and a
+second connection, because the finder is another host. The connection and
+its TLS and HTTP became `struct link`, one for each host. A search's answer
+is not read in C. It is JSON from outside, and the system's reader of that
+is `json.lua`, whose own header says why it is Lua. So the server writes the
+answer into `/Home/Cache/Maps/places/<n>.json` as it writes a tile, says so
+in `ARRIVED`'s `found`, and Maps reads it there. One search at a time, a
+second apart at the least, and asked when Return is pressed, never as each
+key is typed, as Nominatim's policy asks. `httpc`'s User-Agent names Kosmos
+and where it lives (`test_httpc` holds it, 108 checks).
+
+`x86-maps` adds three checks to make 22: the finder asked for "montevideo"
+as Nominatim is asked, the words as `q=`, `format=jsonv2`, naming Kosmos;
+the made-up answer read into two places, Montevideo first, "City ·
+Uruguay"; and Return taking the map there, at 12, a city's zoom by its
+`place_rank`. **Control**: Maps never asking, it fails waiting for the
+search to be asked, and passes again when that is restored.

@@ -29,6 +29,19 @@
  * known not to exist (a 404: the sea, beyond the world's data). */
 #define TILES_OP_ARRIVED  3u
 
+/* A place looked up by name (`docs/maps.md` M6e): `u.url` the words, as a
+ * person typed them. Answered at once with the search's number in `seq`;
+ * the answer - the finder's JSON, as it sent it - is written to
+ * `/Home/Cache/Maps/places/<number>.json`, and `ARRIVED` says when, in
+ * `found`. One search at a time and one a second at most, as Nominatim
+ * asks: a search not yet begun is replaced by the next. */
+#define TILES_OP_FIND     4u
+
+/* Where places are looked up: `u.url` an address to which "?q=..." is
+ * added - Nominatim's `https://nominatim.openstreetmap.org/search` unless
+ * told otherwise. */
+#define TILES_OP_FINDER   5u
+
 #define TILES_OK          0u
 #define TILES_ERR_BAD_OP  1u
 #define TILES_ERR_SOURCE  2u    /* no source yet, or one this cannot read */
@@ -53,10 +66,12 @@ struct tiles_request {
 };
 
 /*
- * 24 + 64 + 128 + 768 = 984 bytes: "<I4I4I4I4I4I4c64c128" and 192 "I4".
- * `seq` is the next `since`; `outstanding` how many are still to fetch;
- * `failed` how many fetches have failed since the server started, `why`
- * the last one's reason; `cache` the source's folder.
+ * 32 + 64 + 128 + 768 = 992 bytes: "<I4I4I4I4I4I4I4I4c64c128" and 192 "I4".
+ * `seq` is the next `since` (for `find`, the search's number);
+ * `outstanding` how many are still to fetch; `failed` how many fetches
+ * have failed since the server started, `why` the last one's reason;
+ * `found` the last search answered, and `found_status` how: the finder's
+ * HTTP status, or 0 when it could not be asked; `cache` the source's folder.
  */
 struct tiles_reply {
     uint32_t status;
@@ -64,6 +79,8 @@ struct tiles_reply {
     uint32_t seq;
     uint32_t outstanding;
     uint32_t failed;
+    uint32_t found;
+    uint32_t found_status;
     uint32_t reserved;
     char     cache[64];
     char     why[128];
@@ -71,6 +88,6 @@ struct tiles_reply {
 };
 
 _Static_assert(sizeof(struct tiles_request) == 784, "tiles_request is 784 bytes");
-_Static_assert(sizeof(struct tiles_reply) == 984, "tiles_reply is 984 bytes");
+_Static_assert(sizeof(struct tiles_reply) == 992, "tiles_reply is 992 bytes");
 
 #endif

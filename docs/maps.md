@@ -266,6 +266,14 @@ the tests never depend on the internet.
   own clock, five times a second while anything is to come. Past 14,
   OpenFreeMap's deepest, its tiles are drawn larger. The map says
   whose it is, as OpenFreeMap asks.
+- **Places by name (M6e, 0.11.73)**: Return in the search field, when
+  nothing in the region is called that, asks the tiles server to `FIND` the
+  words. It asks Nominatim (`FINDER` says where else), one search at a time
+  and a second apart, and writes the answer, JSON as it came, into
+  `/Home/Cache/Maps/places/`. Maps reads it with `json.lua` - the system's
+  one JSON reader, Lua because JSON from outside is read most safely where
+  nothing can overflow - and lists the places with where each is. Return
+  goes there, at a zoom from the place's `place_rank`.
 - **Not yet**: the 256 MB ceiling, the least recently used going first
   (roadmap); and finding the source's address by name still waits on the
   network server's answer, once per source, inside the server - to be

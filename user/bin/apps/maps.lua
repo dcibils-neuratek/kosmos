@@ -14,6 +14,8 @@
 --   maps /Home/Maps/x.pmtiles  a region of one's own
 --   maps --source URL          the world's tiles from somewhere else: a
 --                              TileJSON, or an address with {z}, {x}, {y}
+--   maps --finder URL          places looked up somewhere other than
+--                              Nominatim, with "?q=" added
 --
 -- **The thinnest layer** (`CLAUDE.md`, kits supply and applications
 -- orchestrate): the Map Kit reads a region, decodes its tiles and draws
@@ -40,7 +42,7 @@ local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
 local SHIPPED = "maps/port-alder.pmtiles"
 local SOURCE = "https://tiles.openfreemap.org/planet"
-local region_path, source = "", SOURCE
+local region_path, source, finder = "", SOURCE, nil
 
 do
   local words = {}
@@ -52,6 +54,8 @@ do
   while i <= #words do
     if words[i] == "--source" and words[i + 1] then
       source, i = words[i + 1], i + 2
+    elseif words[i] == "--finder" and words[i + 1] then
+      finder, i = words[i + 1], i + 2
     else
       region_path, i = words[i], i + 1
     end
@@ -175,13 +179,14 @@ local TILE = 512
 local NET_MAX = 14                     -- OpenFreeMap's deepest; drawn larger past it
 local TILES_REQUEST = "<I4I4I4I4" .. string.rep("I4", 192)
 local TILES_SOURCE = "<I4I4I4I4c768"
-local TILES_REPLY = "<I4I4I4I4I4I4c64c128" .. string.rep("I4", 192)
-local OP_SOURCE, OP_WANT, OP_ARRIVED = 1, 2, 3
+local TILES_REPLY = "<I4I4I4I4I4I4I4I4c64c128" .. string.rep("I4", 192)
+local OP_SOURCE, OP_WANT, OP_ARRIVED, OP_FIND, OP_FINDER = 1, 2, 3, 4, 5
 local ZEROS = {}
 
 for i = 1, 192 do ZEROS[i] = 0 end
 
 local net = nil                        -- { dir, since, outstanding, failed, ... }
+local on_found                         -- a search answered: the search's, below
 
 local function zstring(s) return (s:gsub("%z.*$", "")) end
 
@@ -189,14 +194,15 @@ local function zstring(s) return (s:gsub("%z.*$", "")) end
 local function tiles_ask(packed)
   local reply, why = fs.raw("/Tiles", packed, nil, "tiles")
 
-  if type(reply) ~= "string" or #reply < 984 then return nil, why or "no answer" end
+  if type(reply) ~= "string" or #reply < 992 then return nil, why or "no answer" end
 
   local v = { string.unpack(TILES_REPLY, reply) }
   local out = { status = v[1], count = v[2], seq = v[3], outstanding = v[4], failed = v[5],
-                cache = zstring(v[7]), why = zstring(v[8]), tiles = {} }
+                found = v[6], found_status = v[7], cache = zstring(v[9]), why = zstring(v[10]),
+                tiles = {} }
 
   for i = 1, out.count do
-    local at = 8 + (i - 1) * 3
+    local at = 10 + (i - 1) * 3
 
     out.tiles[i] = { z = v[at + 1], x = v[at + 2], y = v[at + 3] }
   end
@@ -209,9 +215,15 @@ do
 
   if said and said.status == 0 then
     net = { dir = said.cache, since = 0, outstanding = 0, failed = said.failed,
-            asked = {}, sent = "", polled = 0, came = 0 }
+            asked = {}, sent = "", polled = 0, came = 0, finding = nil }
     MIN_ZOOM, MAX_ZOOM = 1, 19
     print(("maps: tiles from %s into %s"):format(source, said.cache))
+
+    if finder then
+      local f = tiles_ask(string.pack(TILES_SOURCE, OP_FINDER, 0, 0, 0, finder))
+
+      print("maps: places from " .. finder .. ((f and f.status == 0) and "" or ", refused"))
+    end
   else
     print("maps: no tiles from the network: " .. tostring(said and said.why or why))
   end
@@ -338,7 +350,7 @@ end
 -- On Maps' own clock, while anything is to come: what came. True when
 -- something did, and the map is to be drawn again.
 local function poll_arrived()
-  if not net or (net.outstanding == 0 and net.sent == "") then return false end
+  if not net or (net.outstanding == 0 and net.sent == "" and not net.finding) then return false end
 
   local now = sys.ticks()
 
@@ -352,6 +364,15 @@ local function poll_arrived()
   if not said then return false end
 
   net.since, net.outstanding = said.seq, said.outstanding
+
+  -- The search asked for, answered (`on_found`, with the search, below).
+  if net.finding and said.found >= net.finding then
+    local number = net.finding
+
+    net.finding = nil
+    on_found(number, said.found_status)
+    return true
+  end
 
   for _, t in ipairs(said.tiles) do
     local key = "n" .. t.z .. "/" .. t.x .. "/" .. t.y
@@ -398,11 +419,16 @@ local KIND = {
 local function kind_of(p)
   local k = KIND[p.class or ""]
 
-  if k then return k end
+  if not k then
+    local c = tostring(p.class or p.layer or "place"):gsub("_", " ")
 
-  local c = tostring(p.class or p.layer or "place"):gsub("_", " ")
+    k = c:sub(1, 1):upper() .. c:sub(2)
+  end
 
-  return (c:sub(1, 1):upper() .. c:sub(2))
+  -- A place in the world says where it is too: "City - Uruguay".
+  if p.where and p.where ~= "" then k = k .. " \u{b7} " .. p.where end
+
+  return k
 end
 
 -- A point of interest's colour, by what it is for.
@@ -529,6 +555,91 @@ local results, chosen_result = {}, 1
 local card = nil                       -- the place whose card is open
 
 --------------------------------------------------------------------------
+-- Places in the world, looked up by name (`docs/maps.md` M6e): asked of
+-- the tiles server, which asks Nominatim and writes its answer into the
+-- cache; read here with the system's JSON reader. Asked when Return is
+-- pressed, never as each key is typed - Nominatim's policy, and a search a
+-- keystroke would be a request a keystroke.
+--------------------------------------------------------------------------
+
+local json = use("/Kosmos/Libraries/json.lua")
+local world = { asked = nil, results = nil, said = nil }   -- the last search's
+
+-- How close to go, by Nominatim's `place_rank`: a country from afar, a
+-- house from near.
+local function zoom_for_rank(rank)
+  rank = tonumber(rank) or 30
+
+  if rank <= 4 then return 5 elseif rank <= 8 then return 7 elseif rank <= 12 then return 9
+  elseif rank <= 16 then return 12 elseif rank <= 20 then return 14 elseif rank <= 26 then return 16 end
+
+  return 17
+end
+
+local function find_in_world(text)
+  if not net or text == "" then return false end
+
+  local said = tiles_ask(string.pack(TILES_SOURCE, OP_FIND, 0, 0, 0, text))
+
+  if not said or said.status ~= 0 then
+    world.said = "the search could not be asked"
+    return false
+  end
+
+  world.asked, world.results, world.said = said.seq, nil, nil
+  net.finding = said.seq
+  print(("maps: searching the world for %q"):format(text))
+  return true
+end
+
+-- The answer, once the server says it came: places, or nil and why.
+local function read_found(number, status)
+  if status ~= 200 then return nil, "the search could not be answered" end
+
+  local text = fs.read(net.dir:gsub("/[^/]*$", "") .. "/places/" .. number .. ".json")
+
+  if type(text) ~= "string" then return nil, "the answer could not be read" end
+
+  local list, why = json.decode(text)
+
+  if type(list) ~= "table" then return nil, "the answer is not JSON: " .. tostring(why) end
+
+  local out = {}
+
+  for _, r in ipairs(list) do
+    local lat, lon = tonumber(r.lat), tonumber(r.lon)
+    local name = type(r.name) == "string" and r.name ~= "" and r.name
+                 or tostring(r.display_name or ""):match("^[^,]+") or "?"
+
+    if lat and lon then
+      local x, y = map.project(lon, lat)
+      local where = tostring(r.display_name or ""):gsub("^[^,]*,%s*", "")
+
+      out[#out + 1] = { name = name, class = tostring(r.type or r.addresstype or "place"),
+                        layer = "world", where = where, x = x, y = y,
+                        zoom = zoom_for_rank(r.place_rank) }
+    end
+  end
+
+  return out
+end
+
+on_found = function(number, status)
+  local list, why = read_found(number, status)
+
+  if list then
+    world.results = list
+    results, chosen_result = list, 1
+    world.said = #list == 0 and "Nowhere in the world is called that" or nil
+    print(("maps: %d found in the world%s"):format(#list,
+          list[1] and (", first " .. list[1].name .. " (" .. kind_of(list[1]) .. ")") or ""))
+  else
+    world.said = why
+    print("maps: the world's search: " .. tostring(why))
+  end
+end
+
+--------------------------------------------------------------------------
 -- The header, the sidebar, the controls over the map.
 --------------------------------------------------------------------------
 
@@ -633,7 +744,13 @@ local function draw_sidebar(s)
       y = place_row(s, y, p, i == chosen_result)
     end
 
-    if #results == 0 then s:text(18, y, "Nothing here is called that", theme.text_dim, nil, "ui") end
+    if #results == 0 then
+      local line = not net and "Nothing here is called that"
+                   or world.asked and not world.results and not world.said and "Searching the world\u{2026}"
+                   or world.said or "Return searches the world"
+
+      s:text(18, y, line, theme.text_dim, nil, "ui")
+    end
 
     return
   end
@@ -1064,7 +1181,7 @@ end
 -- open, and it at the top of Recently viewed.
 local function go_to(p)
   cx, cy = p.x, p.y
-  zoom = math.max(zoom, 16)
+  zoom = p.zoom and math.max(MIN_ZOOM, math.min(MAX_ZOOM, p.zoom)) or math.max(zoom, 16)
   card = p
   toggle_in(kept.recent, p, 8)
   if find_in(kept.recent, p) == nil then toggle_in(kept.recent, p, 8) end
@@ -1127,7 +1244,11 @@ local function key(c)
     if k == keys.ESCAPE then
       search_focused = false
     elseif k == keys.ENTER or k == 10 then
-      if results[chosen_result] then go_to(results[chosen_result]) end
+      if results[chosen_result] then
+        go_to(results[chosen_result])
+      else
+        find_in_world(search.text)
+      end
     elseif k == keys.DOWN then
       chosen_result = math.min(#results, chosen_result + 1)
     elseif k == keys.UP then
@@ -1141,6 +1262,8 @@ local function key(c)
     end
 
     if search.text ~= typed then
+      world.asked, world.results, world.said = nil, nil, nil
+      if net then net.finding = nil end
       results, chosen_result = search_for(search.text), 1
       print(("maps: search %q, %d found%s"):format(search.text, #results,
             results[1] and (", first " .. results[1].name) or ""))

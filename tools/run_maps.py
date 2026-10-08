@@ -19,6 +19,14 @@ the tiles server reads the TileJSON, fetches the tiles Maps asks for into
 the region has nothing, the map is drawn from the network alone; a tile
 the server has none of is kept as an empty file and not asked for again.
 
+**M6e - places in the world**: the same server on this Mac answers
+`/search` as Nominatim does, with a made-up answer. "montevideo", which
+Port Alder has no place called, is typed and Return pressed: the tiles
+server asks the finder - the words as a query, with the User-Agent naming
+Kosmos - writes the JSON into the cache, Maps reads it with `json.lua`,
+and Return again takes the map to the first place found, at a zoom by its
+rank.
+
 **M3 - the Map Kit inside Kosmos**: Port Alder, carried in the image as
 `maps/port-alder.pmtiles`, opened by `use("/Kosmos/Kits/map")`; its header
 read; the tile at zoom 16 where Lantern Street Market is decoded; drawn
@@ -33,6 +41,7 @@ import gzip
 import http.server
 import importlib
 import io
+import json
 import os
 import random
 import re
@@ -112,7 +121,7 @@ DENSE = max((mapcity.tile_bytes(13, x, y) for x, y in mapcity.tiles_covering(13)
 def tile_server():
     """Port Alder by `/t/{z}/{x}/{y}.pbf`, gzipped as a planet's are, behind
     `/tiles.json`; what was asked for, kept."""
-    asked = []
+    asked, agents = [], []
 
     class Handler(http.server.BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -129,6 +138,21 @@ def tile_server():
 
         def do_GET(self):
             asked.append(self.path)
+
+            if self.path.startswith("/search?"):
+                agents.append(self.headers.get("User-Agent", ""))
+                # Nominatim's shape, jsonv2; made up, as Port Alder is.
+                body = json.dumps([
+                    {"place_id": 1, "lat": "-34.9058916", "lon": "-56.1913095",
+                     "category": "place", "type": "city", "place_rank": 16,
+                     "addresstype": "city", "name": "Montevideo",
+                     "display_name": "Montevideo, Uruguay"},
+                    {"place_id": 2, "lat": "-34.83", "lon": "-56.01",
+                     "category": "aeroway", "type": "aerodrome", "place_rank": 30,
+                     "addresstype": "aeroway", "name": "Carrasco",
+                     "display_name": "Carrasco, Canelones, Uruguay"},
+                ]).encode()
+                return self.send(200, body, "application/json")
 
             if self.path == "/tiles.json":
                 # As slow as a server across the world, so Maps draws again
@@ -165,12 +189,12 @@ def tile_server():
     httpd = http.server.ThreadingHTTPServer(("0.0.0.0", 0), Handler)
     import threading
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    return httpd, asked
+    return httpd, asked, agents
 
 
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
-    httpd, asked = tile_server()
+    httpd, asked, agents = tile_server()
 
     # A disk, as a machine has: the map's cache is the disk server's to keep,
     # and a `/Home` held in memory has no disk server behind it.
@@ -181,6 +205,7 @@ def main():
     os.environ["KOSMOS_DISK"] = disk
     importlib.reload(R)
     source = "http://10.0.2.2:%d/tiles.json" % httpd.server_address[1]
+    finder = "http://10.0.2.2:%d/search" % httpd.server_address[1]
     telnet, web = random.randint(20000, 40000), random.randint(40001, 60000)
     guest = S.boot(image, telnet, web)
     fails, said = [], {}
@@ -194,7 +219,7 @@ def main():
 
         # ---- M4: the window ----
         mark = len(guest.seen)
-        session.run("open maps --source " + source)
+        session.run("open maps --source " + source + " --finder " + finder)
         placed = guest.wait_for_line("wm: window Maps at ", "the Maps window", mark)
         controls = guest.wait_for_line("maps: controls ", "the Maps controls", mark)
         said["first"] = guest.wait_for_line("maps: at ", "the first map drawn", mark)
@@ -332,6 +357,28 @@ def main():
                  for y_ in range(wy, min(h_, wy + wh))]
         V.png(os.path.join(os.path.dirname(HERE), "build", "maps", "world.png"), ww, len(rows_),
               b"".join(rows_))
+
+        # ---- M6e: a place in the world, by name ----
+        click(srch[0] + 60, srch[1] + 18)
+        for _ in range(8):
+            guest.sendkey("backspace")
+            time.sleep(0.2)
+        mark = len(guest.seen)
+        for k in "montevideo":
+            guest.sendkey(k)
+            time.sleep(0.4)
+        guest.wait_for_line('maps: search "montevideo", 0 found', "montevideo typed", mark)
+        time.sleep(0.5)
+        guest.sendkey("ret")
+        said["world"] = guest.wait_for_line("maps: searching the world for ", "the search asked", mark)
+        guest.wait_for_line("found in the world", "the world's answer", mark)
+        said["worldfound"] = (re.findall(r"maps: (\d+ found in the world[^\r\n]*)",
+                                         guest.seen[mark:]) or [""])[-1]
+        time.sleep(1)
+        mark = len(guest.seen)
+        guest.sendkey("ret")
+        said["worldcard"] = guest.wait_for_line("maps: card ", "the world's place's card", mark)
+        said["worldat"] = guest.wait_for_line("maps: at ", "the map at the world's place", mark)
     finally:
         guest.close()
         httpd.shutdown()
@@ -445,7 +492,28 @@ def main():
         fails.append("a tile the source has none of was not kept as an empty file, asked for "
                      "once: %r, asked %r" % (said.get("ls10", "")[:400], sea[:12]))
 
-    checks = 19
+    # ---- M6e ----
+    searches = [a for a in asked if a.startswith("/search?")]
+
+    if not searches or "q=montevideo" not in searches[-1] or "format=jsonv2" not in searches[-1] \
+            or not agents or not agents[-1].startswith("Kosmos/"):
+        fails.append("the finder was not asked for montevideo as Nominatim is, naming Kosmos: "
+                     "%r, %r" % (searches[-1:], agents[-1:]))
+
+    if not re.match(r"\s*2 found in the world, first Montevideo \(City \S+ Uruguay\)",
+                    said.get("worldfound", "")):
+        fails.append("the finder's answer was not read into two places, Montevideo first, a "
+                     "city in Uruguay: %r" % said.get("worldfound"))
+
+    at_ = re.match(r"(\S+) (\S+), zoom ([\d.]+)", said.get("worldat", ""))
+
+    if (said.get("worldcard") or "").strip() != "Montevideo" or not at_ \
+            or abs(float(at_.group(1)) + 56.19131) > 0.001 \
+            or abs(float(at_.group(2)) + 34.90589) > 0.001 or float(at_.group(3)) != 12:
+        fails.append("Return did not take the map to Montevideo at 12, a city's zoom: %r, %r"
+                     % (said.get("worldcard"), said.get("worldat")))
+
+    checks = 22
 
     if fails:
         print("FAIL: %d of %d checks on Maps:" % (len(fails), checks))
@@ -463,7 +531,8 @@ def main():
           "a step, a drag moving the map; M5: a search finding the market, its card opened "
           "with names on the map, Save keeping it; M6d: a TileJSON read, %d tiles fetched "
           "into /Home/Cache/Maps and said to have come, the world at 10 drawn from the "
-          "network alone, a tile with nothing in it kept empty and asked for once)"
+          "network alone, a tile with nothing in it kept empty and asked for once; M6e: "
+          "a place in the world found by name, read and gone to)"
           % (checks, (" in " + timing.group(1) + " ms") if timing else "",
              len([a for a in asked if a.startswith("/t/")])))
     return 0

@@ -63,7 +63,10 @@ int httpc_get(struct httpc *h, const char *path)
 
     httpc_reset(h);
     n = snprintf(h->request, sizeof(h->request),
-                 "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: Kosmos\r\n"
+                 /* Who is asking, as Nominatim's policy and OpenFreeMap's
+                  * ask an application to say (`docs/maps.md` M6e). */
+                 "GET %s HTTP/1.1\r\nHost: %s\r\n"
+                 "User-Agent: Kosmos/1 (+https://github.com/dcibils-neuratek/kosmos)\r\n"
                  "Accept-Encoding: gzip\r\nConnection: keep-alive\r\n\r\n",
                  path, h->host);
 
