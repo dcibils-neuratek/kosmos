@@ -242,6 +242,28 @@ settings.ITEMS = {
         kind = "switch", file = settings.APPEARANCE, key = "shadow",
         default = false },
 
+  --
+  -- **Focus follows the pointer** (`roadmap.md`, agreed 7 October; Diego:
+  -- "once you hover an app with the mouse for 1 second (configurable in
+  -- preferences) the window becomes active (as if you clicked it)"). Off
+  -- until it is turned on, and the delay from a quarter of a second to
+  -- three, a second by default. Told to the window manager at once
+  -- (`handlers.keys`), which acts on it in its pointer pass.
+  --
+  item{ category = "appearance", group = "Windows",
+        label = "Focus follows the pointer",
+        note = "A window the pointer rests on comes to the front",
+        kind = "switch", file = settings.APPEARANCE, key = "focus_follows",
+        default = false },
+
+  item{ category = "appearance", group = "Windows",
+        label = "After resting for", note = "How long before it comes forward",
+        kind = "choice", file = settings.APPEARANCE, key = "focus_delay_ms",
+        default = 1000,
+        choices = { { 250, "A quarter second" }, { 500, "Half a second" },
+                    { 1000, "1 second" }, { 1500, "1.5 seconds" },
+                    { 2000, "2 seconds" }, { 3000, "3 seconds" } } },
+
   item{ category = "appearance", group = "Icons",
         label = "On the desktop", note = "Small 16, Normal 32, Large 64",
         kind = "choice", file = settings.TRACKER, key = "desktop_icon_px",

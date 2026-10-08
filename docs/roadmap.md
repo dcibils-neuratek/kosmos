@@ -8476,6 +8476,21 @@ the applications make the system useful, and is not pulled forward.
 
 ### Smaller, and wanted
 
+- **FOUND on 8 October - Scheduler's Policy cannot be changed, and says
+  the wrong thing** (Diego, on the M700: "the scheduler app cant change
+  the policy scheduler as it raises an error"). Choosing a policy reads
+  "could not: this process does not hold that device". The kernel refuses
+  on purpose: `sched_switch_to` (`kernel/thread.c`) will not swap the
+  policy once more than one processor schedules, since that means draining
+  every core's queue at once - and the M700 schedules on eight. What is
+  wrong is the window: it offers a choice the machine will refuse, and the
+  refusal is `SYS_ERR_DENIED`, whose sentence is about devices. The fix:
+  the kernel says why in its own result (a "one processor only" code), and
+  Scheduler shows the Policy chooser greyed with "One processor only - this
+  machine schedules on 8" when `sysinfo` reports more than one, the quantum
+  still changeable. Making policies swappable across cores is a separate
+  question, and a kernel one.
+
 - **BUILT on 6 October - names with spaces, end to end** (`testing.md`
   18.414, `design.md` 8.3g). Diego, on the M700: "browsing network shares
   that have filenames that have spaces in will break whatever program you

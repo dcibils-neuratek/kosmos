@@ -539,6 +539,13 @@ local function load_appearance()
   if saved.corner ~= nil then OUT.want_corner = saved.corner and true end
   if saved.shadow ~= nil then OUT.want_shadow = saved.shadow and true end
 
+  -- Focus following the pointer (`wm/pointer.lua`), and its delay.
+  OUT.focus_follows = saved.focus_follows == true
+
+  if math.type(saved.focus_delay_ms) == "integer" then
+    OUT.focus_delay_ms = math.max(250, math.min(3000, saved.focus_delay_ms))
+  end
+
   -- The scale next: the chrome's sizes and every face below follow it.
   if math.type(saved.scale) == "integer" and scale.valid(saved.scale) then
     scale.pct = saved.scale
@@ -1681,6 +1688,10 @@ end
 -- menu.
 --
 OUT.keys = { power = "off", super = "menu" }
+
+-- Focus following the pointer: off until Preferences turns it on, a second
+-- by default (`load_appearance`, `handlers.keys`, `wm/pointer.lua`).
+OUT.focus_follows, OUT.focus_delay_ms = false, 1000
 
 function OUT.load_keys()
   local power = prefs.read("power")
@@ -5557,6 +5568,17 @@ end
 -- ignored rather than stored.
 --
 handlers.keys = function(req)
+  -- Focus following the pointer, and after how long (`wm/pointer.lua`).
+  if req.focus_follows ~= nil then
+    OUT.focus_follows = req.focus_follows == true
+    PT.dwell = nil
+    print("wm: focus follows the pointer " .. (OUT.focus_follows and "on" or "off"))
+  end
+
+  if math.type(req.focus_delay_ms) == "integer" then
+    OUT.focus_delay_ms = math.max(250, math.min(3000, req.focus_delay_ms))
+  end
+
   for _, pair in ipairs({ { "power", { off = 1, menu = 1, nothing = 1 } },
                           { "super", { menu = 1, nothing = 1 } } }) do
     local v = req[pair[1]]
@@ -6451,6 +6473,7 @@ local pointer_pass = use("/Kosmos/Libraries/wm/pointer.lua"){
   OUT = OUT,
   W = W,
   H = H,
+  COUNTER_HZ = COUNTER_HZ,
   add_damage = add_damage,
   boxes_x = boxes_x,
   by_handle = by_handle,
@@ -7004,6 +7027,9 @@ while OUT.running do
       pointer_pass(mouse)
     end
   end
+
+  -- Focus following a pointer at rest (`wm/pointer.lua`).
+  OUT.follow_tick()
 
   if P.measuring then t, heap = P.charge("pointer", t, heap) end
 

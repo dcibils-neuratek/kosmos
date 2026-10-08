@@ -21034,3 +21034,22 @@ the names as well for those".
 x86 display 1-5, dock and host pass. The gallery's drawing has no check of
 its own beyond the count and the keyboard - its names are looked at on the
 M700.
+
+## 18.453 Focus follows the pointer
+
+Agreed with Diego on 7 October ("once you hover an app with the mouse for 1
+second (configurable in preferences) the window becomes active (as if you
+clicked it)", "front plus active"). Appearance's Windows group: **Focus
+follows the pointer**, off until turned on, and **After resting for**, a
+quarter of a second to three, a second by default; both told to the window
+manager at once (`handlers.keys`). The pointer resting on a window that is
+not the active one raises it and gives it the focus; any move starts the
+clock again; not while a button is held or a menu is open, and never the
+desktop, the Deskbar or dock, a popup, a banner or a tip. The clock is read
+every pass of the loop (`OUT.follow_tick`): a pointer at rest reports
+nothing, so a check made only in the pointer's pass never came round.
+
+`run_dock.py` 51: turned on at a quarter second, the Clock opened over the
+Calculator, the pointer rested on a part of the Calculator the Clock does
+not cover - "wm: focus followed the pointer to Calculator". **Control**: the
+loop's `OUT.follow_tick()` taken out - fails. Restored.

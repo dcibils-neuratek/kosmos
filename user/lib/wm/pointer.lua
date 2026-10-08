@@ -20,8 +20,53 @@ return function(ctx)
     ctx.move_window, ctx.pointer_log, ctx.post, ctx.raise
   local resizable, resize_window, scale, strips =
     ctx.resizable, ctx.resize_window, ctx.scale, ctx.strips
-  local window_at =
-    ctx.window_at
+  local window_at, COUNTER_HZ =
+    ctx.window_at, ctx.COUNTER_HZ
+
+  --
+  -- **Focus follows the pointer** (`roadmap.md`, agreed 7 October; Diego:
+  -- "theres one feature i love from old unix systems", "once you hover an
+  -- app with the mouse for 1 second (configurable in preferences) the
+  -- window becomes active (as if you clicked it)"). X11's focus following
+  -- the mouse with its auto-raise: the pointer resting on a window that is
+  -- not the active one for `OUT.focus_delay_ms` raises it and gives it the
+  -- focus, as a press would, without the press reaching it. Resting means
+  -- the clock starts again at every move. Not while a button is held - a
+  -- drag passing over windows - nor while a menu is open, and never for the
+  -- desktop, the Deskbar or dock, a popup, a banner or a tip.
+  --
+  local function follows(win)
+    return win and not (win.backdrop or win.strip or win.popup or win.banner
+                        or win.tip or win.hidden or win.kind == "menu")
+  end
+
+  local function dwell(nx, ny, is_down, moved)
+    if not OUT.focus_follows or is_down or #menus > 0 then
+      PT.dwell = nil
+      return
+    end
+
+    local now = sys.ticks()
+
+    if moved or not PT.dwell then
+      local win = window_at(nx, ny)
+
+      PT.dwell = (follows(win) and win ~= focused_window())
+                 and { win = win, since = now } or nil
+      return
+    end
+
+    local d = PT.dwell
+
+    if (now - d.since) * 1000 < OUT.focus_delay_ms * COUNTER_HZ then return end
+
+    PT.dwell = nil
+
+    if window_at(nx, ny) == d.win and d.win ~= focused_window() then
+      raise(d.win)
+      print(("wm: focus followed the pointer to %s"):format(tostring(d.win.title)))
+    end
+  end
 
   --
   -- **A press on one of the three**, on a tab or over a header that is the
@@ -571,6 +616,17 @@ return function(ctx)
     end
 
     PT.buttons = p.buttons
+
+    -- A move starts the clock again; the clock itself is read every pass
+    -- by `OUT.follow_tick`, since a pointer at rest reports nothing.
+    if moved_this_pass or (p.buttons or 0) ~= 0 then
+      dwell(nx, ny, (p.buttons or 0) ~= 0, true)
+    end
+  end
+
+  -- Every pass of the loop, whether the pointer said anything or not.
+  function OUT.follow_tick()
+    if PT.dwell and PT.x then dwell(PT.x, PT.y, (PT.buttons or 0) ~= 0, false) end
   end
 
   return pointer_pass

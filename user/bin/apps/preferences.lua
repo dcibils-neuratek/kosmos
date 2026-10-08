@@ -424,6 +424,16 @@ local APPLY = {
   super = function(what)
     return fs.send("/Running/wm", { type = "keys", super = what })
   end,
+
+  -- Focus following the pointer, and after how long: the manager acts on
+  -- both in its pointer pass, every pass, and holds them.
+  focus_follows = function(on)
+    return fs.send("/Running/wm", { type = "keys", focus_follows = on == true })
+  end,
+
+  focus_delay_ms = function(ms)
+    return fs.send("/Running/wm", { type = "keys", focus_delay_ms = ms })
+  end,
 }
 
 --

@@ -135,6 +135,8 @@ CLOSE = ('local r = use("/Kosmos/Libraries/wmproto.lua").windows()\n'
          'for _, w in ipairs(r and r.windows or {}) do\n'
          '  if w.title == args then fs.send("/Running/wm", { type = "close", window = w.handle }) end\n'
          'end\n')
+FOLLOW = ('local on = args == "on"\n'
+          'fs.send("/Running/wm", { type = "keys", focus_follows = on, focus_delay_ms = 250 })\n')
 CLEAR = ('local f = fs.read("/Home/Preferences/appearance")\n'
          'print("CLEAR " .. tostring(type(f) == "table" and f.dock_transparency))\n')
 
@@ -556,6 +558,44 @@ def main():
                                and "power: off" not in guest.seen[mark:]
                                and "wm: closed Open" in guest.seen[mark:])
 
+        # ---- 3f: focus follows the pointer (agreed 7 October) ----
+        # Turned on as Preferences turns it on, at a quarter of a second;
+        # the Clock opened in front of the Calculator; the pointer rested on
+        # a part of the Calculator the Clock does not cover, and the
+        # Calculator comes to the front. Then off again.
+        session.put(FOLLOW.encode(), "/Temporary/follow.lua")
+        mark = len(guest.seen)
+        session.run("/Temporary/follow.lua on")
+        said["follows on"] = maybe("wm: focus follows the pointer on", "focus following turned on", mark)
+        session.run("open clock")
+        clock = maybe("wm: window clock at ", "the Clock", mark)
+        time.sleep(2)
+        calc = re.findall(r"wm: window Calculator at (\d+),(\d+) (\d+)x(\d+)", guest.seen)
+        ck = re.match(r"(\d+),(\d+) (\d+)x(\d+)", clock or "")
+
+        if calc and ck:
+            cx, cy, cw, ch = (int(v) for v in calc[-1])
+            kx, ky, kw, kh = (int(v) for v in ck.groups())
+            spot = None
+
+            for fx in (0.15, 0.5, 0.85):
+                for fy in (0.3, 0.6, 0.9):
+                    px, py = cx + int(cw * fx), cy + int(ch * fy)
+
+                    if not (kx <= px < kx + kw and ky <= py < ky + kh) and spot is None:
+                        spot = (px, py)
+
+            said["follow spot"] = (spot, calc[-1], ck.groups())
+
+            if spot:
+                mark = len(guest.seen)
+                guest.mouse_to(*R._to_tablet(spot[0], spot[1], width, height))
+                said["followed"] = maybe("wm: focus followed the pointer to ", "focus following the pointer", mark)
+
+        session.run("/Temporary/follow.lua off")
+        session.run("/Temporary/close.lua clock")
+        time.sleep(1)
+
         # ---- 4: the whole width ----
         mark = len(guest.seen)
         said["whole"] = session.run("setprop /Running/Deskbar/dock whole").decode(errors="replace")
@@ -948,6 +988,11 @@ def main():
                      "the dock about half transparent and keep it: %r"
                      % ((said.get("slid"), said.get("slid kept")),))
 
+    if said.get("follows on") is None or (said.get("followed") or "").strip() != "Calculator":
+        fails.append("with focus following the pointer, resting on the Calculator behind the "
+                     "Clock did not bring it forward: %r"
+                     % ((said.get("follows on"), said.get("followed"), said.get("follow spot")),))
+
     recent_ = re.match(r"(\d+)", said.get("recent") or "")
 
     if not recent_ or int(recent_.group(1)) < 1:
@@ -967,7 +1012,7 @@ def main():
                      "the new height - its sidebar's ground near the new bottom "
                      "%r, near the old %r: %r" % (g1, g0, said.get("prefs resized")))
 
-    checks = 50
+    checks = 51
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))
