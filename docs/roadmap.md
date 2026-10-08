@@ -1987,7 +1987,14 @@ cpu like Intel Core i7 Quad Core 3.5ghz or AMD etc" - the processor's name:
 x86's brand string from CPUID 0x80000002-4, read once by the kernel and
 passed through `/Devices/cpu`; on ARM a name looked up from MIDR; shown by
 About This Machine, the CPU monitor and `neofetch`, the raw ID kept as a
-detail.
+detail. **BUILT** 0.11.81-0.11.82. **Found sending the games after it**: the
+M700's 512 MB `/Home` refused a new 23 MB `doom.elf` with "the file is too
+fragmented for 12 extents", with 261 MB free - a day of rewriting the same
+large files had left the free space in pieces. Removing the old copy first
+let the new one in. kfs's twelve extents a file is a limit to look at
+(more extents, an indirect extent block, or the allocator preferring one
+run); `make install-apps` and the M700's send could also remove before
+writing.
 
 **Storage at full speed, performance first.** Diego, 14 September: "I expect
 our usb drives and nvme to perform like any other os like Linux", and "it's
