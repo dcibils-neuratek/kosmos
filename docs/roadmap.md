@@ -8513,6 +8513,25 @@ the applications make the system useful, and is not pulled forward.
   by an unsolicited response - is what mutes the speaker when headphones go
   in. The account of how the ThinkPad got sound, from a codec that did not
   answer to an amplifier nobody switched on, is in `thinkpad.md`.
+- **USB audio, and choosing the sound devices in Mixer** (Diego, 8
+  October: "do we support usb audio? i have a usb speaker that i would like
+  to try in kosmos", then "the mixer app that shows volumes should have a
+  sound out and in device selector. we need to know which device is
+  selected", "we are adding usb audio and else so we need to select which
+  audio device is for input and for output", "also what bitrate, hz and
+  channels the device has", "16 bit, 24 bit, etc"). Today there is one
+  output, the machine's own (HDA or virtio-sound), and USB carries
+  streams only inward (the camera's isochronous IN, `usb.md` 8b). What it
+  takes: isochronous OUT in `xhci.c`; a USB Audio Class 1 and 2 driver
+  (the class nearly every USB speaker and microphone speaks), its
+  descriptors read for the formats each offers; the audio server holding
+  more than one device and a choice of which plays and which records;
+  and **Mixer showing it** - an Output and an Input chooser at the top,
+  each device by name with what it is now running at, sample size (16,
+  24 or 32 bit), rate (44.1, 48, 96 kHz) and channels, and what else it
+  can do. QEMU has a USB speaker (`-device usb-audio`, UAC1), so it is
+  built and tested here before Diego's is plugged in. Mixer is drawn
+  again first, its chooser and the formats on the page.
 - An equaliser in the mixer — the first thing that will want the ring to
   carry something other than what was written to it.
 - **Music, as VOX is**, Diego's, 14 September: "the music player is really
