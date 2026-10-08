@@ -2,9 +2,38 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-08 (0.11.64)
+Last updated: 2026-10-08 (0.11.72)
 
 ---
+
+## 8 October, afternoon: Maps M6a-M6d - the world from OpenFreeMap, on the M700
+
+**On `main`, not pushed: 0.11.60-0.11.72** and the documents since - a push
+is Diego's yes.
+
+- 0.11.66-0.11.68: TLS, the network and HTTP from C (`tls_core.c`,
+  `netclient.c`, `httpc.c`). 0.11.69: the disk server's doors a list, with
+  `/Home/Cache/Maps` the second. 0.11.70: the `tiles` server (role 26,
+  `/Tiles`, `tileproto.h`) and Maps drawing the world beneath its region;
+  `needs` grew to 16 words and `check_needs.py` guards it. 0.11.71: TLS
+  writes flushed, and Maps no longer takes back what it asked for (both
+  found on the M700). 0.11.72: names in Latin, places by zoom, land and
+  water apart, one credit, no tile fetched twice.
+- **The M700 runs 0.11.72** with the world on it: West Africa at zoom 3
+  from OpenFreeMap, cached on the stick. **Netboot it with `make netboot
+  STICK=build/x86_64/kosmos-usb-0.10.205-development.img`** - plain `make
+  netboot` names 0.11.38's GUID and `/Home` comes up in memory (it did on
+  0.11.70-0.11.71). `build/netboot` holds `home=usb` by hand for now.
+- The installed apps and `/Home/Developer` were sent again for 0.11.72
+  (`/bin`'s reply changed shape in 0.11.70).
+- `x86-maps` 19 checks with a disk and a tile server on the Mac;
+  `test_map` 30; `test_diskdoor` 60; `check_needs.py`. A full gate passed
+  51/52 on 0.11.70, `x86-dock` flaking once and passing alone.
+
+**Next**: M6e, search from the network (Nominatim) through `httpc`; the
+cache's 256 MB ceiling; borders by `admin_level`; VNC's re-watching each
+second (roadmap); then the queue below.
+
 
 ## 7-8 October: one window chrome, the launcher, looks, focus, and Maps M1-M5
 

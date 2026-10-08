@@ -21376,5 +21376,7 @@ came, and the suite passes with 19 checks. That failing run is the control.
 from the newest stick image (0.11.38), whose `/Home` GUID is not the one the
 stick in the M700 carries. The disk server's own count said so: 232 looks,
 each stopping at step 10, a Kosmos partition with a different GUID. Booted
-with `opt/kosmos/home=usb` it found `/Home` in 1.1 s. Which stick image the
-machine's stick was written from is Diego's to say (roadmap).
+with `opt/kosmos/home=usb` it found `/Home` in 1.1 s. The stick was written
+from 0.10.205's image, as `state.md` says, and the netboot is to be made
+with `make netboot STICK=build/x86_64/kosmos-usb-0.10.205-development.img`.
+Plain `make netboot` took 0.11.38's GUID. That was my mistake, not the system's.
