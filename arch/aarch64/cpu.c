@@ -129,6 +129,31 @@ void cpu_identify(struct cpu_info *out)
     }
 
     out->model_name = out->part_name;
+
+    /* A person's name for it, from the same tables: "Arm Cortex-A72". None
+     * when the part is not one the tables know - "Arm unknown" names
+     * nothing. */
+    {
+        unsigned n = 0;
+
+        out->name[0] = '\0';
+
+        if (out->part_name[0] != '\0' && !(out->part_name[0] == 'u'
+                                           && out->part_name[1] == 'n'
+                                           && out->part_name[2] == 'k')) {
+            for (const char *p = out->vendor_name; *p && n + 1 < sizeof(out->name); p++) {
+                out->name[n++] = *p;
+            }
+
+            if (n + 1 < sizeof(out->name)) out->name[n++] = ' ';
+
+            for (const char *p = out->part_name; *p && n + 1 < sizeof(out->name); p++) {
+                out->name[n++] = *p;
+            }
+
+            out->name[n] = '\0';
+        }
+    }
     out->id_name    = "MIDR_EL1";
     out->id         = midr;
 

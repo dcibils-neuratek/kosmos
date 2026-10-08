@@ -114,6 +114,47 @@ void cpu_identify(struct cpu_info *out)
                  : 0;
 
     /*
+     * **The brand string**: forty-eight characters in leaves 0x80000002 to
+     * 0x80000004, EAX, EBX, ECX, EDX of each in turn - the name the maker
+     * gave it, which the signature only implies. Intel pads it with
+     * spaces at the front on older parts and AMD at the back, so runs of
+     * spaces are made one and the ends trimmed. Empty when the processor
+     * has no such leaves, which a person is then told by what is left.
+     */
+    {
+        char raw[49];
+        unsigned at = 0, n = 0;
+
+        raw[0] = '\0';
+
+        if (extended >= 0x80000004u) {
+            for (uint32_t leaf = 0x80000002u; leaf <= 0x80000004u; leaf++) {
+                struct regs r = cpuid(leaf, 0);
+                uint32_t words[4] = { r.eax, r.ebx, r.ecx, r.edx };
+
+                for (i = 0; i < 16; i++) {
+                    raw[at++] = (char)((words[i / 4] >> ((i % 4) * 8)) & 0xff);
+                }
+            }
+
+            raw[48] = '\0';
+        }
+
+        for (i = 0; i < 48 && raw[i] != '\0'; i++) {
+            char c = raw[i];
+
+            if (c < 32 || c > 126) c = ' ';
+            if (c == ' ' && (n == 0 || out->name[n - 1] == ' ')) continue;
+
+            out->name[n++] = c;
+        }
+
+        while (n > 0 && out->name[n - 1] == ' ') n--;
+
+        out->name[n] = '\0';
+    }
+
+    /*
      * Family and model, folded the way the manuals specify.
      *
      * The base fields ran out - family is four bits and Intel reached 15 -

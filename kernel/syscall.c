@@ -769,6 +769,9 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
     info.cpu_arch   = cpu_arch();
     info.cpu_words  = cpu_raw(&cpu, info.cpu_raw, CPU_RAW_WORDS);
     info.counter_hz = cpu.counter_hz;
+    _Static_assert(sizeof(info.cpu_name) == sizeof(cpu.name), "cpu_name is cpu_info's name");
+    memcpy(info.cpu_name, cpu.name, sizeof(info.cpu_name));
+    info.cpu_name[sizeof(info.cpu_name) - 1] = '\0';
     info.log_origin = console_log_origin();
 
     info.ram_base    = ram.base;

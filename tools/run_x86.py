@@ -3552,6 +3552,15 @@ def identity(image, check):
     check(host.startswith("QEMU Standard PC") and host.endswith(", x86-64"),
           "neofetch's Host is %r, not the name QEMU's firmware gives" % host)
 
+    # The processor by its own name, CPUID's brand string (Diego, 8 October:
+    # "why ... does not show the real name of the cpu like Intel Core i7"):
+    # QEMU's default processor calls itself this, where the row said
+    # "GenuineIntel f6m6 s3".
+    cpu_row = row(out, "CPU") or ""
+
+    check(cpu_row.startswith("QEMU Virtual CPU"),
+          "neofetch's CPU is %r, not the processor's own name" % cpu_row)
+
     # The desktop by its name, Astra (7 October), at the system's version.
     version = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                 "VERSION")).read().strip()

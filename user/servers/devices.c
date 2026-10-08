@@ -328,6 +328,15 @@ static void node_cpu(const struct sysinfo *i, struct dev_reply *r)
     put_text(r, "arch", i->cpu_arch == CPU_ARCH_AARCH64 ? "aarch64"
                       : i->cpu_arch == CPU_ARCH_X86_64  ? "x86-64"
                                                         : "unknown");
+
+    /* Its name for a person, when it gives one (`sysinfo.cpu_name`). */
+    if (i->cpu_name[0] != '\0') {
+        char name[sizeof i->cpu_name];
+
+        memcpy(name, i->cpu_name, sizeof name);
+        name[sizeof name - 1] = '\0';
+        put_text(r, "name", name);
+    }
     /*
      * Two counts, because they are two questions.
      *

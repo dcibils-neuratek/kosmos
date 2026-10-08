@@ -66,6 +66,14 @@ struct cpu_info {
      * assignment away from a dangling one.
      */
     char        vendor_name[16];    /* "Arm" */
+
+    /*
+     * The processor's name for a person - "Intel(R) Core(TM) i7-6700 CPU @
+     * 3.40GHz", "Arm Cortex-A72" - or empty when it has none to give.
+     * Diego, 8 October: "why the app about this machine and the cpu monitor
+     * app does not show the real name of the cpu".
+     */
+    char        name[64];
     const char *model_name;         /* never NULL; a static string */
     char        revision_text[16];  /* "r0p3" */
     const char *id_name;            /* "MIDR_EL1" */

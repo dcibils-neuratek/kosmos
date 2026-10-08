@@ -197,7 +197,8 @@ end
 -- the same three field names precisely so that this does not have to know
 -- which machine it is on.
 --
-local model = cpu.implementer
+local model = cpu.name
+  or cpu.implementer
   and (("%s %s %s"):format(cpu.implementer, cpu.part or "",
                            cpu.revision or ""):gsub("%s+", " "):gsub(" $", ""))
   or (cpu.arch or "unknown")

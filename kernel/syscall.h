@@ -1293,6 +1293,11 @@ struct sysinfo {
     uint32_t battery_on_ac;
     uint32_t battery_critical;
     uint32_t battery_percent;
+
+    /* The processor's name for a person, from `cpu_info.name`: the brand
+     * string on x86, implementer and part on ARM; empty for none. Last, so
+     * nothing above moves. */
+    char cpu_name[64];
 };
 
 /*

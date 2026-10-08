@@ -271,8 +271,7 @@ end
 -- which aims at nothing at all.
 --
 -- The part a person is looking for: "Cortex-A72 r0p3", not the vendor alone.
-local processor = table.concat({ ident[2] or "", ident[3] or "" }, " ")
-                  :match("^%s*(.-)%s*$")
+local processor = pulse.name()
 
 local header = ui.header{
   x = 0, y = 0, w = W, title = "Cores", sub = "no workers",

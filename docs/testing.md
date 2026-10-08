@@ -21514,3 +21514,26 @@ Appearance > Windows offers exactly those, and the window manager takes 0 to
 the pointer stops on it. `test_settings` 200 checks hold the seven.
 
 The whole x86 gate on it, with 0.11.78-0.11.79's kit and Deskbar: 52 of 52 in 5:44.
+
+## 18.475 The processor by its own name
+
+Diego, 8 October: "why the app about this machine and the cpu monitor app
+does not show the real name of the cpu like Intel Core i7 Quad Core 3.5ghz
+or AMD etc". The kernel read CPUID's leaves 0 and 1 and never the three
+that hold the maker's name. `cpu_identify` reads 0x80000002-0x80000004 now,
+runs of spaces made one and the ends trimmed (Intel pads the front, AMD the
+back). On AArch64 the name is the implementer and part its tables already
+know ("Arm Cortex-A72"). It goes to `sysinfo.cpu_name`, added at the struct's
+end, then to `/Devices/cpu`'s `name`, then About This Machine, the CPU monitor
+and Cores (`pulse.name()`, one door) and `neofetch`. The raw signature stays
+where a processor gives no name.
+
+`x86-storage` 47 checks: `neofetch`'s CPU row is QEMU's brand string.
+**Control**: `/Devices/cpu` without the name, it fails reading
+"AuthenticAMD f15m107 s1, 1 core" - QEMU's default x86 processor, as the
+row was. AArch64 compiles. Its row is not run under the x86-only rule.
+**`sysinfo` grew**: an installed application linked against the old size
+must be built again before it runs on this kernel, since the kernel writes
+the whole struct into its buffer.
+
+The whole x86 gate: 51 of 52. `x86-network`'s second lookup, which goes to a real DNS server through QEMU, did not answer under the gate's load. Alone it passed 34 of 34, so it is recorded as a flake beside `x86-dock`'s and `x86-film`'s.

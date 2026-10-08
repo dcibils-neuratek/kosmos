@@ -66,6 +66,20 @@ end
 -- these units twice, one board apart. So it says which clock it is.
 -- `architecture.md` §5 is why there are two.
 --
+--
+-- The processor's name for a person: its own when it gives one ("Intel(R)
+-- Core(TM) i7-6700 CPU @ 3.40GHz", `/Devices/cpu`'s `name`), else its
+-- maker and part. Diego, 8 October: "why ... the cpu monitor app does not
+-- show the real name of the cpu".
+--
+function pulse.name()
+  local cpu = fs.read("/Devices/cpu") or {}
+
+  if type(cpu.name) == "string" and cpu.name ~= "" then return cpu.name end
+
+  return (("%s %s"):format(cpu.implementer or "", cpu.part or "")):match("^%s*(.-)%s*$")
+end
+
 function pulse.identity()
   local cpu  = fs.read("/Devices/cpu") or {}
   local out  = {}

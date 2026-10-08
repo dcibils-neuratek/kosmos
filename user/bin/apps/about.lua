@@ -125,11 +125,15 @@ fact("Machine:", hardware.name(sys.info()) or b.platform)
 local present = cpu.cores_present or cpu.cores or 1
 local using   = cpu.cores or 1
 
+-- Its name for a person when it gives one - "Intel(R) Core(TM) i7-6700 CPU
+-- @ 3.40GHz" - and its signature when it does not (Diego, 8 October: "why
+-- the app about this machine ... does not show the real name of the cpu").
+local called = cpu.name or ("%s %s"):format(cpu.implementer or "", cpu.part or "unknown")
+                           :gsub("^%s+", "")
+
 fact("Processor:", (present == using)
-     and ("%s, %d core%s"):format(cpu.part or "unknown", using,
-                                  (using == 1) and "" or "s")
-     or  ("%s, %d cores, %d scheduling"):format(cpu.part or "unknown",
-                                                present, using))
+     and ("%s, %d core%s"):format(called, using, (using == 1) and "" or "s")
+     or  ("%s, %d cores, %d scheduling"):format(called, present, using))
 fact("Kernel:", ("%s %s, %s"):format(b.kernel or "Nebula", b.version,
                                      b.build))
 -- The desktop, Astra (7 October): built with the system, so its version.

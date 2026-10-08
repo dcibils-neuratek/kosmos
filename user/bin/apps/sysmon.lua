@@ -124,9 +124,7 @@ end
 -- The header: the subject, the processor, and what the two colours mean.
 --------------------------------------------------------------------------
 
-local ident = pulse.identity()
-local processor = table.concat({ ident[2] or "", ident[3] or "" }, " ")
-                  :match("^%s*(.-)%s*$")
+local processor = pulse.name()
 local sub = ("%d %s"):format(CORES, CORES == 1 and "core" or "cores")
 
 if processor ~= "" then sub = sub .. " \u{b7} " .. processor end
