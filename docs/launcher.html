@@ -157,6 +157,23 @@
   .btn.go { background: var(--d-accent); color: var(--d-accent-ink); border-color: transparent; }
   .btn:focus-visible { outline: 2px solid var(--d-accent); outline-offset: 2px; }
 
+  /* The search as Spotlight: typed into, and the results grouped. */
+  .search input { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--d-ink); font: 15.5px var(--body); outline: none; }
+  .search input::placeholder { color: var(--d-muted); }
+  .results { display: none; overflow: hidden; flex-direction: column; gap: 2px; padding: 2px 2px 0; }
+  .main.searching .grid, .main.searching .head { display: none; }
+  .main.searching .results { display: flex; }
+  .grp { display: flex; align-items: baseline; gap: 8px; padding: 10px 10px 4px; color: var(--d-muted); font: 600 12.5px var(--body); letter-spacing: .06em; text-transform: uppercase; }
+  .grp span { font: 500 12px var(--mono); letter-spacing: 0; text-transform: none; }
+  .hit { display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 12px; height: 44px; padding: 0 10px; border-radius: 10px; }
+  .hit img { width: 30px; height: 30px; }
+  .hit .nm { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hit .nm b { color: var(--d-accent); font-weight: 600; }
+  .hit .wh { color: var(--d-muted); font: 12.5px var(--mono); white-space: nowrap; }
+  .hit.sel { background: var(--d-raised-2); }
+  .hit.sel .wh::after { content: "  \21B5 Open"; color: var(--d-ink); }
+  .more { color: var(--d-muted); font-size: 13px; padding: 4px 10px 0 54px; }
+
   .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 18px; }
   .note { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; }
   .note b { display: block; font-family: var(--display); font-size: 17px; margin-bottom: 4px; }
@@ -174,18 +191,22 @@
 <p class="lede">Drawn again with two additions: a <b>Recently used</b> row under All, and a <b>power row</b> along the launcher's foot whose Restart and Shut Down open a window asking you to confirm.</p>
 <p class="said">"the new menu launcher needs a sutdown menu (possibly aligned to the bottom) and that shutdown opens a shutdown/restart", and "can we add a new extra menu called "Recently used" and we will be adding all the recently opened apps as a shortcut?" - Diego, 7 October</p>
 
-<p class="hint">Move the pointer down the sections on the left, and press Restart or Shut Down at the foot. The launcher is drawn as it would open from the dock's Kosmos button; what Recently used holds here is made up.</p>
+<p class="lede">And a third addition, drawn after: <b>the search as Spotlight</b> - typing finds files and folders in <code>/Home</code> by name as well as applications, grouped, with where each one is.</p>
+<p class="said">"could we do the search bar a global search like spotlight in mac that not only searches apps but searches files?", "and the search results would be apps and files?", "lets mockup how would the search results look" - Diego, 8 October</p>
+
+<p class="hint">Type into the search - it opens showing "pho". Then move the pointer down the sections on the left, and press Restart or Shut Down at the foot. The launcher is drawn as it would open from the dock's Kosmos button; what Recently used holds here is made up.</p>
 <div class="frame"><div class="shell" id="shell"><div class="stage" id="stage">
   <div class="pad" role="img" aria-label="The launcher with its sections as a sidebar">
     <div class="search">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.6"/><path d="m10.6 10.6 3.8 3.8"/></svg>
-      Type to search every application
+      <input id="q" type="text" placeholder="Search applications and files" aria-label="Search applications and files" autocomplete="off" spellcheck="false">
     </div>
     <div class="body">
       <div class="side" id="side"></div>
       <div class="main">
         <div class="head"><b id="title">Applications</b><span id="count">17</span><span class="az">A to Z</span></div>
         <div class="grid" id="grid"></div>
+        <div class="results" id="results"></div>
       </div>
     </div>
     <div class="foot">
@@ -239,6 +260,22 @@
   <li><b>An "All" row at the top</b>, every application A to Z, as the launcher opens on today. Or open on Applications. <span class="rec">Recommended: All, so a launcher opened to type into shows everything.</span></li>
   <li><b>A "Recent" row</b> under All: the last eight you started, newest first. <span class="rec">Agreed, as Recently used (below).</span></li>
   <li><b>The panel 820 wide</b> rather than 600, so the grid beside the sidebar keeps five tiles a row at today's size. <span class="rec">Recommended.</span></li>
+</ol>
+
+<h2>The search as Spotlight</h2>
+<div class="notes">
+  <div class="note"><b>Three groups</b><p>Applications first, then Folders, then Files, each with how many matched. A few of each are shown, so applications are never pushed off by a hundred photos; "Show all 7 files in Tracker" opens the rest in Tracker's own search.</p></div>
+  <div class="note"><b>Where each one is</b><p>A file or folder shows its folder at the right, so two <code>notes.txt</code> can be told apart. What was typed is lit in the name. A name that starts with it comes before one that only contains it, as now.</p></div>
+  <div class="note"><b>Return opens the first</b><p>The first result is chosen as you type. The arrows move through all three groups, and Return opens the chosen one the way Tracker would: an application starts, a folder opens in Tracker, a file opens in its application.</p></div>
+  <div class="note"><b>Fast on a stick</b><p>Walking <code>/Home</code> at every key is too slow on a USB stick. A small index of every name, kept by the disk's server as files are made, renamed and deleted, answers in the time a key takes. Tracker's search and the Open window can use the same index.</p></div>
+</div>
+
+<h2>Yours to decide, for the search</h2>
+<ol class="q">
+  <li><b>Names only at first</b>, the words inside documents later. <span class="rec">Recommended: names are what an index of the disk gives cheaply.</span></li>
+  <li><b>Only <code>/Home</code></b>, not the system's own files in <code>/Kosmos</code> nor drives plugged in. <span class="rec">Recommended: what a person looks for is theirs.</span></li>
+  <li><b>Three applications, two folders and four files</b> at most before "Show all". <span class="rec">Recommended.</span></li>
+  <li><b>While searching, the sections stay</b> and none is lit, as today. <span class="rec">Recommended.</span></li>
 </ol>
 
 <h2>Yours to decide, for the two additions</h2>
@@ -306,6 +343,81 @@
   });
 
   show(1);
+
+  // The search as Spotlight. The files are made up for the drawing.
+  var FILES = [
+    ["photo-viewer-notes.txt", "File_Text", "/Home/Documents", "Text, 2 KB"],
+    ["Photos", "Folder_generic", "/Home", "Folder, 214 items"],
+    ["Photo Booth", "Folder_generic", "/Home/Photos", "Folder, 38 items"],
+    ["photosynthesis.pdf", "File_PDF", "/Home/Documents/School", "PDF, 1.4 MB"],
+    ["phone-numbers.txt", "File_Text", "/Home/Documents", "Text, 1 KB"],
+    ["sea-photo.png", "File_Image_1", "/Home/Photos/2026", "PNG, 3.1 MB"],
+    ["photo-frame.lua", "File_SourceCode", "/Home/Projects/frame", "Lua, 4 KB"],
+    ["Phoenix.mp3", "File_Audio", "/Home/Music/Rock", "MP3, 6.2 MB"],
+    ["Graphics", "Folder_generic", "/Home/Projects", "Folder, 12 items"],
+    ["morphology.pdf", "File_PDF", "/Home/Documents", "PDF, 860 KB"]
+  ];
+  var q = document.getElementById("q"), results = document.getElementById("results");
+  var mainEl = document.querySelector(".main");
+  function mark(name, typed) {
+    var i = name.toLowerCase().indexOf(typed), span = document.createElement("span");
+    if (i < 0) { span.textContent = name; return span; }
+    span.appendChild(document.createTextNode(name.slice(0, i)));
+    var b = document.createElement("b"); b.textContent = name.slice(i, i + typed.length); span.appendChild(b);
+    span.appendChild(document.createTextNode(name.slice(i + typed.length)));
+    return span;
+  }
+  function ranked(list, typed, nameOf) {
+    var starts = [], has = [];
+    list.forEach(function (x) {
+      var n = nameOf(x).toLowerCase(), at = n.indexOf(typed);
+      if (at === 0) starts.push(x); else if (at > 0) has.push(x);
+    });
+    return starts.concat(has);
+  }
+  function group(title, items, total) {
+    if (!items.length) return;
+    var g = document.createElement("div"); g.className = "grp";
+    g.appendChild(document.createTextNode(title + " "));
+    var n = document.createElement("span"); n.textContent = total; g.appendChild(n);
+    results.appendChild(g);
+    items.forEach(function (it) { results.appendChild(it); });
+  }
+  function hit(icon, name, where, typed) {
+    var h = document.createElement("div"); h.className = "hit";
+    var img = document.createElement("img"); img.alt = ""; img.src = I + icon + ".png";
+    var nm = document.createElement("div"); nm.className = "nm"; nm.appendChild(mark(name, typed));
+    var wh = document.createElement("div"); wh.className = "wh"; wh.textContent = where;
+    h.appendChild(img); h.appendChild(nm); h.appendChild(wh);
+    return h;
+  }
+  function find() {
+    var typed = q.value.trim().toLowerCase();
+    mainEl.classList.toggle("searching", typed !== "");
+    rows.forEach(function (r) { r.el.classList.toggle("on", typed === "" && r.el.classList.contains("was")); });
+    results.innerHTML = "";
+    if (!typed) { show(1); return; }
+    var apps = ranked(S[0][2], typed, function (a) { return a[0]; });
+    var files = ranked(FILES.filter(function (f) { return f[1] !== "Folder_generic"; }), typed, function (f) { return f[0]; });
+    var folders = ranked(FILES.filter(function (f) { return f[1] === "Folder_generic"; }), typed, function (f) { return f[0]; });
+    var first = true;
+    function one(el) { if (first) { el.classList.add("sel"); first = false; } return el; }
+    group("Applications", apps.slice(0, 3).map(function (a) { return one(hit(a[1], a[0], "Application", typed)); }), apps.length);
+    group("Folders", folders.slice(0, 2).map(function (f) { return one(hit(f[1], f[0], f[2], typed)); }), folders.length);
+    group("Files", files.slice(0, 4).map(function (f) { return one(hit(f[1], f[0], f[2], typed)); }), files.length);
+    if (files.length > 4) {
+      var m = document.createElement("div"); m.className = "more";
+      m.textContent = "Show all " + files.length + " files in Tracker";
+      results.appendChild(m);
+    }
+    if (!apps.length && !files.length && !folders.length) {
+      var none = document.createElement("div"); none.className = "more"; none.textContent = "Nothing is called that";
+      results.appendChild(none);
+    }
+  }
+  q.addEventListener("input", find);
+  q.value = "pho";
+  find();
 
   // The power row and what it opens.
   var veil = document.getElementById("veil"), timer = null, left = 30, act = null;
