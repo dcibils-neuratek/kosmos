@@ -21239,3 +21239,19 @@ request on the kept connection, in chunks with an extension; a gzipped body
 inflated; a body ended by its connection, not reused; a 404 answered as one;
 a body larger than allowed refused; one cut short failed, not taken.
 **Control**: chunk sizes read as decimal - 12 of 108 fail.
+
+## 18.463 Maps M6d, the first part: the disk server's doors made a list
+
+`docs/maps.md` M6d. The disk server had one further door, `/Keyring`'s,
+hard-wired: a second endpoint whose thread stamps a word on what it forwards,
+answered as reaching that folder alone. The map's `tiles` server needs the
+same for its cache, so the doors are a list now - `/Keyring` and
+`/Home/Cache/Maps` - each with its root, its word and its thread. A root may
+be several folders deep, a path through a door may not step through "." or
+"..", and a door may make the folders above its root so its own can be made
+on a disk that has none. Init makes the third endpoint and hands it to the
+disk server; the `tiles` server is handed it next.
+
+`arm-keyring` 12 (the only suite of the keyring's door, named alone under
+the x86-only rule), `x86-disk` 33, `x86-slowdisk` 7 and `x86-storage` 46
+pass on it. The cache door's own checks come with `tiles`.

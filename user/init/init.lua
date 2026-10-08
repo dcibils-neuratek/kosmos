@@ -5303,6 +5303,9 @@ if role == ROLE_INIT then
   local APPFS_EP = sys.endpoint()
   local DISKFS_EP = sys.endpoint()
   local KEYRING_DISK_EP = sys.endpoint()
+  -- And a third (`docs/maps.md` M6d): the map's tiles server's, reaching
+  -- `/Home/Cache/Maps` alone.
+  local MAPS_CACHE_DISK_EP = sys.endpoint()
   local KEYRING_SMB_EP = sys.endpoint()
   local KEYRING_MANAGE_EP = sys.endpoint()
   local AUDIO_EP = sys.endpoint()
@@ -5433,7 +5436,7 @@ if role == ROLE_INIT then
   -- one reaches `/Keyring` alone, for the keyring and nothing else.
   local diskfs  = start("the disk server", ROLE_DISKFS,
                         { DISKFS_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DEVICES_EP,
-                          CONSOLE_EP, KEYRING_DISK_EP },
+                          CONSOLE_EP, KEYRING_DISK_EP, MAPS_CACHE_DISK_EP },
                         sys.disk() and SPAWN_DISK or 0)
 
   --

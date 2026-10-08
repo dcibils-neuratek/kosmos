@@ -63,7 +63,7 @@
 #include "packflat.h"
 
 void diskfs_server(long endpoint, long blocks_read, long blocks_write,
-                   long devices, long console, long keyring);
+                   long devices, long console, long keyring, long maps_cache);
 
 /* The names a Kosmos disk keeps for itself (the Lua server's `RESERVED`). */
 static const char *const RESERVED[] = { ".super", ".format", ".device" };
@@ -125,16 +125,33 @@ static bool told_unreadable;
 static uint64_t generation;
 
 /*
- * The doors (step K3): the folder each reaches, and the word the second
+ * The doors (step K3): the folder each reaches, and the word each further
  * door's thread stamps on what it forwards, in the message's `tag`. A
- * caller on the first door may put anything in its tag; it cannot put this.
+ * caller on the first door may put anything in its tag; it cannot put one
+ * of these.
+ *
+ * **A list since 8 October** (`docs/maps.md` M6d): `/Keyring` for the
+ * keyring was the only one, and the map's `tiles` server needed the same -
+ * a door reaching its cache, `/Home/Cache/Maps`, and nothing else. A root
+ * may be several folders deep now.
  */
 static const char HOME_ROOT[] = "Home";
-static const char KEYRING_ROOT[] = "Keyring";
-static uint64_t door_token;
-static bool door_open;
+
+struct door {
+    const char *root;
+    long        ep;
+    uint64_t    token;
+    bool        open;
+};
+
+static struct door doors[] = {
+    { "Keyring", -1, 0, false },
+    { "Home/Cache/Maps", -1, 0, false },
+};
+
+#define DOORS (sizeof doors / sizeof doors[0])
+
 static long main_door = -1;
-static long keyring_door = -1;
 
 /*
  * ------------------------------------------------------------------------
@@ -1535,24 +1552,87 @@ static void op_format(const struct disk_request *rq, struct disk_reply *rp)
  * component, found as `kfs.c` finds one - slashes skipped, whatever the case.
  * `.` and `..` need no thought here, because `kfs.c` refuses them anywhere.
  */
+/*
+ * Whether `path` is in `root` - the root's folders, one by one, then
+ * anything or nothing - and never through "." or "..", which a door's
+ * caller could otherwise use to climb out of it.
+ */
 static bool inside(const char *root, const char *path, size_t len)
 {
-    size_t at = 0, n;
+    size_t at = 0;
+    const char *r = root;
 
-    while (at < len && path[at] == '/') {
-        at++;
+    while (*r != '\0') {
+        size_t n, rn;
+        const char *slash;
+
+        while (at < len && path[at] == '/') {
+            at++;
+        }
+
+        for (n = 0; at + n < len && path[at + n] != '/' && path[at + n] != '\0'; n++) {
+        }
+
+        slash = strchr(r, '/');
+        rn = slash ? (size_t)(slash - r) : strlen(r);
+
+        if (n == 0 || !kfs_same_name(path + at, n, r, rn)) {
+            return false;
+        }
+
+        at += n;
+        r += rn;
+
+        if (*r == '/') {
+            r++;
+        }
     }
 
-    for (n = 0; at + n < len && path[at + n] != '/' && path[at + n] != '\0'; n++) {
+    /* Below the root, no step may go back up. */
+    while (at < len && path[at] != '\0') {
+        size_t n;
+
+        while (at < len && path[at] == '/') {
+            at++;
+        }
+
+        for (n = 0; at + n < len && path[at + n] != '/' && path[at + n] != '\0'; n++) {
+        }
+
+        if ((n == 1 && path[at] == '.') || (n == 2 && path[at] == '.' && path[at + 1] == '.')) {
+            return false;
+        }
+
+        at += n;
     }
 
-    return n > 0 && kfs_same_name(path + at, n, root, strlen(root));
+    return true;
+}
+
+/* Whether `path` is one of the folders above `root` - "/Home" or
+ * "/Home/Cache" for "Home/Cache/Maps" - which a door may make, so its own
+ * folder can be made on a disk that has none of them yet. */
+static bool above(const char *root, const char *path)
+{
+    size_t n;
+
+    while (*path == '/') {
+        path++;
+    }
+
+    n = strlen(path);
+
+    while (n > 0 && path[n - 1] == '/') {
+        n--;
+    }
+
+    return n > 0 && n < strlen(root) && strncmp(root, path, n) == 0 && root[n] == '/';
 }
 
 /* Whether this door may ask this: the disk itself is the first door's, and
  * every path is to be in the door's folder - a rename's destination too,
  * when it is a path rather than a name. */
-static bool door_allows(const struct disk_request *rq, const char *root, bool keyring)
+static bool door_allows(const struct disk_request *rq, const char *root, bool restricted)
 {
     size_t to_len;
 
@@ -1560,12 +1640,17 @@ static bool door_allows(const struct disk_request *rq, const char *root, bool ke
     case DISK_OP_SUPER:
     case DISK_OP_DEVICE:
     case DISK_OP_FORMAT:
-        return !keyring;
+        return !restricted;
     case DISK_OP_RENAME:
         to_len = rq->length < DISK_PATH_MAX ? rq->length : 0;
 
         if (memchr(rq->u.to, '/', to_len) != NULL && !inside(root, rq->u.to, to_len)) {
             return false;
+        }
+        break;
+    case DISK_OP_MKDIR:
+        if (restricted && above(root, rq->path)) {
+            return true;
         }
         break;
     default:
@@ -1581,14 +1666,20 @@ static void answer(const struct message *msg, uint64_t sender)
     const struct disk_request *rq = (const struct disk_request *)msg->data;
     struct disk_reply *rp = (struct disk_reply *)out.data;
     long cap = msg->cap_plus_one ? (long)msg->cap_plus_one - 1 : -1;
-    bool keyring = door_open && msg->tag == door_token;
+    const struct door *through = NULL;
+
+    for (size_t d = 0; d < DOORS && msg->tag != 0; d++) {
+        if (doors[d].open && msg->tag == doors[d].token) {
+            through = &doors[d];
+        }
+    }
 
     memset(&out, 0, sizeof out);
     out.length = sizeof *rp;
 
     if (msg->length != sizeof *rq || memchr(rq->path, '\0', DISK_PATH_MAX) == NULL) {
         rp->error = DISK_ERR_BAD_OP;
-    } else if (!door_allows(rq, keyring ? KEYRING_ROOT : HOME_ROOT, keyring)) {
+    } else if (!door_allows(rq, through ? through->root : HOME_ROOT, through != NULL)) {
         /* A path: not there, through this door. The disk itself: not this
          * door's to ask about. */
         bool disk = rq->op == DISK_OP_SUPER || rq->op == DISK_OP_DEVICE
@@ -1635,43 +1726,42 @@ static void answer(const struct message *msg, uint64_t sender)
 }
 
 /*
- * The second door: what arrives on it, forwarded to the first stamped with
- * the word, and the answer handed back. A region that came with a request
+ * A further door: what arrives on it, forwarded to the first stamped with
+ * its word, and the answer handed back. A region that came with a request
  * goes on with it, and this thread's own copy is let go once it is answered.
  */
-static void keyring_door_main(unsigned long unused)
+static void door_main(unsigned long which)
 {
-    static struct message in, back;
-
-    (void)unused;
+    static struct message in[DOORS], back[DOORS];
+    struct door *d = &doors[which];
 
     for (;;) {
         uint64_t caller = 0;
         long cap;
 
-        if (kosmos_receive(keyring_door, &in, &caller, 0, 0) != 0) {
+        if (kosmos_receive(d->ep, &in[which], &caller, 0, 0) != 0) {
             return;
         }
 
-        cap = in.cap_plus_one ? (long)in.cap_plus_one - 1 : -1;
-        in.tag = door_token;
+        cap = in[which].cap_plus_one ? (long)in[which].cap_plus_one - 1 : -1;
+        in[which].tag = d->token;
 
-        if (kosmos_call(main_door, &in, &back) != 0) {
-            memset(&back, 0, sizeof back);
-            back.length = sizeof(struct disk_reply);
-            ((struct disk_reply *)back.data)->error = DISK_ERR_BAD_OP;
+        if (kosmos_call(main_door, &in[which], &back[which]) != 0) {
+            memset(&back[which], 0, sizeof back[which]);
+            back[which].length = sizeof(struct disk_reply);
+            ((struct disk_reply *)back[which].data)->error = DISK_ERR_BAD_OP;
         }
 
         if (cap >= 0) {
             kosmos_cap_drop(cap);
         }
 
-        (void)kosmos_reply(caller, &back);
+        (void)kosmos_reply(caller, &back[which]);
     }
 }
 
 void diskfs_server(long endpoint, long read_ep, long write_ep, long devices_ep,
-                   long console_ep, long keyring_ep)
+                   long console_ep, long keyring_ep, long maps_cache_ep)
 {
     long at = kosmos_map((sizeof(struct arena) + 4095u) / 4096u);
     struct kfs_disk dev = { NULL, device_read, device_write, 1 };
@@ -1712,22 +1802,28 @@ void diskfs_server(long endpoint, long read_ep, long write_ep, long devices_ep,
         }
     }
 
-    /* The second door, when init made one: a word nobody else knows, never
-     * the 0 an ordinary request may carry. */
+    /* The further doors init made: each a word nobody else knows, never the
+     * 0 an ordinary request may carry, and a thread to stamp it. */
     main_door = endpoint;
-    keyring_door = keyring_ep;
+    doors[0].ep = keyring_ep;
+    doors[1].ep = maps_cache_ep;
 
-    if (keyring_door >= 0) {
-        while (door_token == 0
-               && kosmos_entropy(&door_token, sizeof door_token) == (long)sizeof door_token) {
+    for (size_t d = 0; d < DOORS; d++) {
+        if (doors[d].ep < 0) {
+            continue;
         }
 
-        if (door_token == 0) {
-            say(console, "diskfs: no entropy for the second door; /Keyring is shut\n");
-        } else if (kosmos_thread_start(keyring_door_main, 0) < 0) {
-            say(console, "diskfs: the second door would not start; /Keyring is shut\n");
+        while (doors[d].token == 0
+               && kosmos_entropy(&doors[d].token, sizeof doors[d].token)
+                  == (long)sizeof doors[d].token) {
+        }
+
+        if (doors[d].token == 0) {
+            say(console, "diskfs: no entropy for a door; it is shut\n");
+        } else if (kosmos_thread_start(door_main, (unsigned long)d) < 0) {
+            say(console, "diskfs: a door's thread would not start; it is shut\n");
         } else {
-            door_open = true;
+            doors[d].open = true;
         }
     }
 
