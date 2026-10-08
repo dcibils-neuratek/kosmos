@@ -1,6 +1,7 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * The SVG rasteriser's pixel work (`web_raster.h`, `roadmap.md` 6zz j5).
+ * gfx's rasteriser (`raster.h`): the browser's SVG's since `roadmap.md`
+ * 6zz j5, and gfx's paths' since `docs/maps.md` M1.
  *
  * **It accumulates area**, the way Raph Levien's font-rs does: every edge
  * adds, to each pixel it crosses, the signed area of the pixel that lies to
@@ -50,7 +51,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "web_raster.h"
+#include "raster.h"
 
 bool raster_open(struct raster *r, int w, int h)
 {
@@ -80,7 +81,29 @@ bool raster_open(struct raster *r, int w, int h)
 
     r->top = h;
     r->bottom = 0;
+    r->cap = (size_t)(w + 2) * (size_t)h;
+    r->cap_h = h;
     return true;
+}
+
+bool raster_size(struct raster *r, int w, int h)
+{
+    if (w < 1 || h < 1) {
+        return false;
+    }
+
+    if (r->acc != NULL && (size_t)(w + 2) * (size_t)h <= r->cap && h <= r->cap_h) {
+        /* All nought already; the rows' spans say untouched however `w`
+         * changed, since a span is untouched while `from >= to`. */
+        r->w = w;
+        r->h = h;
+        r->top = h;
+        r->bottom = 0;
+        return true;
+    }
+
+    raster_close(r);
+    return raster_open(r, w, h);
 }
 
 void raster_close(struct raster *r)

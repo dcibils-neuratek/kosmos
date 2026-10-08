@@ -34,6 +34,7 @@
 #include "rows.h"
 #include "shadow.h"
 #include "yuv.h"
+#include "path.h"
 #include "cameraproto.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -3817,7 +3818,152 @@ static int l_cursor_hide(lua_State *L)
     return 0;
 }
 
+/*
+ * **Polygons and wide lines** (`path.c`, `docs/maps.md` M1): a path
+ * painted in a colour - opaque, the rasteriser's - in one pass over the
+ * pixels however many shapes went into it.
+ */
+void gfx_draw_path_blend(struct surface *s, struct gfx_path *p, uint32_t colour)
+{
+    if (s == NULL || s->pixels == NULL || p->w <= 0) return;
+
+    gfx_path_paint(p, row_of(s, (unsigned)p->y0) + p->x0, s->pitch, colour);
+}
+
+/* The box a path over [x0, x1) by [y0, y1) may touch: that, cut to `s`. */
+int gfx_draw_path_begin(struct gfx_path *p, struct surface *s,
+                        long x0, long y0, long x1, long y1)
+{
+    if (s == NULL || s->pixels == NULL) return -1;
+
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > (long)s->width) x1 = (long)s->width;
+    if (y1 > (long)s->height) y1 = (long)s->height;
+
+    if (x1 <= x0 || y1 <= y0) {
+        p->w = p->h = 0;
+        return -1;
+    }
+
+    return gfx_path_begin(p, x0, y0, x1 - x0, y1 - y0);
+}
+
+/* The points of a flat Lua table `{ x1, y1, x2, y2, ... }` at `index`, into
+ * a buffer kept between calls; their bounds widened into `box`. */
+static float *path_points;
+static size_t path_points_cap;
+
+static size_t read_points(lua_State *L, int index, float box[4])
+{
+    size_t n = lua_rawlen(L, index) / 2;
+
+    if (n * 2 > path_points_cap) {
+        float *grown = realloc(path_points, n * 2 * sizeof(float));
+
+        if (grown == NULL) luaL_error(L, "a path of %d points is too many", (int)n);
+
+        path_points = grown;
+        path_points_cap = n * 2;
+    }
+
+    for (size_t i = 0; i < n * 2; i++) {
+        float v;
+
+        lua_rawgeti(L, index, (lua_Integer)i + 1);
+        v = (float)lua_tonumber(L, -1);
+        lua_pop(L, 1);
+        path_points[i] = v;
+
+        if (i % 2 == 0) {
+            if (v < box[0]) box[0] = v;
+            if (v > box[2]) box[2] = v;
+        } else {
+            if (v < box[1]) box[1] = v;
+            if (v > box[3]) box[3] = v;
+        }
+    }
+
+    return n;
+}
+
+static struct gfx_path lua_path;
+
+/*
+ * `s:polygon(xy, colour)` - `xy` a flat list of points, x then y - or
+ * `s:polygon({ ring, hole, ... }, colour)`, rings that are lists of the
+ * same, a hole wound the other way from its ring. Filled, anti-aliased.
+ */
+static int l_polygon(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    uint32_t colour = (uint32_t)luaL_checkinteger(L, 3);
+    float box[4] = { 1e30f, 1e30f, -1e30f, -1e30f };
+    int nested;
+
+    luaL_checktype(L, 2, LUA_TTABLE);
+    lua_rawgeti(L, 2, 1);
+    nested = lua_type(L, -1) == LUA_TTABLE;
+    lua_pop(L, 1);
+
+    /* Twice through the rings: their bounds first, so the box is begun the
+     * size of the shape, then their edges. */
+    for (int pass = 0; pass < 2; pass++) {
+        size_t rings = nested ? lua_rawlen(L, 2) : 1;
+
+        for (size_t r = 0; r < rings; r++) {
+            size_t n;
+
+            if (nested) lua_rawgeti(L, 2, (lua_Integer)r + 1);
+
+            n = read_points(L, nested ? lua_gettop(L) : 2, box);
+
+            if (pass == 1) gfx_path_ring(&lua_path, path_points, n);
+            if (nested) lua_pop(L, 1);
+        }
+
+        if (pass == 0 && gfx_draw_path_begin(&lua_path, s, (long)box[0] - 1,
+                                             (long)box[1] - 1, (long)box[2] + 2,
+                                             (long)box[3] + 2) != 0) {
+            return 0;
+        }
+    }
+
+    gfx_draw_path_blend(s, &lua_path, colour);
+    return 0;
+}
+
+/* `s:polyline(xy, width, colour)`: a line through the points, `width`
+ * wide, round at its joints and ends. */
+static int l_polyline(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    float width = (float)luaL_checknumber(L, 3);
+    uint32_t colour = (uint32_t)luaL_checkinteger(L, 4);
+    float box[4] = { 1e30f, 1e30f, -1e30f, -1e30f };
+    size_t n;
+    long pad;
+
+    luaL_checktype(L, 2, LUA_TTABLE);
+
+    if (width <= 0.0f || width > 1024.0f) return 0;
+
+    n = read_points(L, 2, box);
+    pad = (long)(width / 2.0f) + 2;
+
+    if (gfx_draw_path_begin(&lua_path, s, (long)box[0] - pad, (long)box[1] - pad,
+                            (long)box[2] + pad + 1, (long)box[3] + pad + 1) != 0) {
+        return 0;
+    }
+
+    gfx_path_stroke(&lua_path, path_points, n, width);
+    gfx_draw_path_blend(s, &lua_path, colour);
+    return 0;
+}
+
 static const luaL_Reg surface_methods[] = {
+    { "polygon",  l_polygon },
+    { "polyline", l_polyline },
     { "size",   l_size },
     { "flush",  l_flush },
     { "view",   l_view },

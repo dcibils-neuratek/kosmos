@@ -839,6 +839,8 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/gfx/pack.c \
              user/kits/gfx/zrle.c \
              user/kits/gfx/rows.c \
+             user/kits/gfx/raster.c \
+             user/kits/gfx/path.c \
              user/kits/window/window.c \
              user/init/syscalls.c \
              user/kits/game/game.c \
@@ -1120,7 +1122,7 @@ WEB_PATCHED_H := netsurf/content/fetch.h
 # vendored ones - it is not vendored.
 WEB_SRCS += user/bin/apps/browser/web_kosmos.c user/bin/apps/browser/web_select.c user/bin/apps/browser/web_style.c \
             user/bin/apps/browser/web_paint.c user/bin/apps/browser/web_netsurf.c \
-            user/bin/apps/browser/web_svg.c user/bin/apps/browser/web_raster.c
+            user/bin/apps/browser/web_svg.c
 
 #
 # **NetSurf's layout** (`roadmap.md` 6zz j): the box tree, layout, tables,
@@ -2201,8 +2203,8 @@ $(HOSTDIR)/test_pack_x86: tools/test_pack.c user/kits/gfx/pack.c user/kits/gfx/p
 	        tools/test_pack.c user/kits/gfx/pack.c
 
 #
-# **The SVG rasteriser** (`user/bin/apps/browser/web_raster.c`, `roadmap.md`
-# 6zz j5): what a shape covers, and four pixels at a time held to one at a
+# **The rasteriser** (`user/kits/gfx/raster.c`, the browser's SVG's since `roadmap.md`
+# 6zz j5 and gfx's since Maps' M1): what a shape covers, and four pixels at a time held to one at a
 # time, natively for NEON and through Rosetta for SSE2. `-ffp-contract=off`
 # because the two have to be the same float operations to agree to the bit,
 # and a fused multiply-add in one and not the other is not; GCC builds the
@@ -2213,12 +2215,12 @@ $(HOSTDIR)/test_pack_x86: tools/test_pack.c user/kits/gfx/pack.c user/kits/gfx/p
 # lanes are written out. Written vector types are not touched by the flags.
 #
 RASTER_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -O2 -ffp-contract=off \
-                     -fno-vectorize -fno-slp-vectorize -Iuser/bin/apps/browser
+                     -fno-vectorize -fno-slp-vectorize -Iuser/kits/gfx
 
-$(HOSTDIR)/test_raster: tools/test_raster.c user/bin/apps/browser/web_raster.c user/bin/apps/browser/web_raster.h
+$(HOSTDIR)/test_raster: tools/test_raster.c user/kits/gfx/raster.c user/kits/gfx/raster.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) $(RASTER_TEST_FLAGS) -o $@ \
-	        tools/test_raster.c user/bin/apps/browser/web_raster.c
+	        tools/test_raster.c user/kits/gfx/raster.c
 
 #
 # **Filling, and a glyph over a row** (`user/kits/gfx/rows.c`, `roadmap.md`
@@ -2237,10 +2239,18 @@ $(HOSTDIR)/test_rows_x86: tools/test_rows.c user/kits/gfx/rows.c user/kits/gfx/r
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -arch x86_64 $(ROWS_TEST_FLAGS) -o $@ tools/test_rows.c user/kits/gfx/rows.c
 
-$(HOSTDIR)/test_raster_x86: tools/test_raster.c user/bin/apps/browser/web_raster.c user/bin/apps/browser/web_raster.h
+# **gfx's paths** (`user/kits/gfx/path.c`, `docs/maps.md` M1): a polygon and
+# a wide line on the rasteriser, held to areas worked out by hand.
+$(HOSTDIR)/test_path: tools/test_path.c user/kits/gfx/path.c user/kits/gfx/path.h \
+                      user/kits/gfx/raster.c user/kits/gfx/raster.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) $(RASTER_TEST_FLAGS) -o $@ tools/test_path.c user/kits/gfx/path.c \
+	        user/kits/gfx/raster.c
+
+$(HOSTDIR)/test_raster_x86: tools/test_raster.c user/kits/gfx/raster.c user/kits/gfx/raster.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -arch x86_64 $(RASTER_TEST_FLAGS) -o $@ \
-	        tools/test_raster.c user/bin/apps/browser/web_raster.c
+	        tools/test_raster.c user/kits/gfx/raster.c
 
 $(HOSTDIR)/test_yuv: tools/test_yuv.c user/kits/gfx/yuv.c user/kits/gfx/yuv.h
 	@mkdir -p $(dir $@)
@@ -4231,7 +4241,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
+host-check: $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -4444,6 +4454,8 @@ host-check: $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/
 	$(HOSTDIR)/test_raster_x86
 	$(HOSTDIR)/test_rows
 	$(HOSTDIR)/test_rows_x86
+	@# gfx's paths: polygons and wide lines (docs/maps.md M1).
+	$(HOSTDIR)/test_path
 	$(HOSTDIR)/test_gunzip
 	@# Broken-down time, which FFmpeg's option parser and logger reach.
 	$(HOSTDIR)/test_time

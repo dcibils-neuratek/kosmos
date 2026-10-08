@@ -24,7 +24,7 @@ import sys
 LANES = [
     ("user/kits/gfx/rows.c.o", None),
     ("user/kits/gfx/pack.c.o", None),
-    ("user/bin/apps/browser/web_raster.c.o", None),
+    ("user/kits/gfx/raster.c.o", None),
     ("user/kits/gfx/gfx.c.o", "l_blend"),
 ]
 

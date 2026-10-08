@@ -21053,3 +21053,29 @@ nothing, so a check made only in the pointer's pass never came round.
 Calculator, the pointer rested on a part of the Calculator the Clock does
 not cover - "wm: focus followed the pointer to Calculator". **Control**: the
 loop's `OUT.follow_tick()` taken out - fails. Restored.
+
+## 18.454 Maps M1: gfx's paths - polygons and wide lines, on the browser's rasteriser
+
+`docs/maps.md` step M1. A filled polygon (holes wound the other way) and a
+wide line with round joints and ends, anti-aliased: `s:polygon(xy | rings,
+colour)` and `s:polyline(xy, width, colour)` for Lua, `gfx_draw_path_begin`,
+`gfx_path_ring`, `gfx_path_stroke` and `gfx_draw_path_blend` for a kit in C.
+
+**On the rasteriser that was already there.** The browser's SVG had one -
+signed area accumulated, font-rs's method, vectorised and held by
+`test_raster` - in the browser's own directory, and a second was half
+written for Maps before it was noticed. It moved into gfx as `raster.c`
+(the browser includes it from there), learned `raster_size` so one buffer
+serves every size without allocating or clearing, and `path.c` is only the
+geometry on top: a box anywhere on a surface, rings, and a line as a quad a
+segment and a disc a joint, all wound alike so their overlaps are one shape.
+
+`test_path` 21, on the Mac: a square on the grid solid inside and nothing
+out, 100 pixels; half a pixel over, its edges at 128; either winding the
+same; a triangle's coverage its area; a hole cancelling its ring; two rings
+their union; a line 4 wide covering 4 rows with round ends, about 113
+pixels; an L's corner filled and round, not square; a shape across the
+box's left edge covered from it, one off the right nothing; a box at an
+offset; empty after every path; a small box after a large and the large
+again. **Control**: coverage taken by its sign rather than its size - 11 of
+19 fail. `test_raster` 15 and both x86 browser suites still pass.

@@ -1,7 +1,7 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
  * The SVG rasteriser against what a shape covers, and its four lanes
- * against its one (`user/bin/apps/browser/web_raster.c`, `roadmap.md`
+ * against its one (`user/kits/gfx/raster.c`, `roadmap.md`
  * 6zz j5).
  *
  *   - a rectangle with half-pixel edges: whole pixels inside, half ones on
@@ -30,7 +30,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "web_raster.h"
+#include "raster.h"
 
 static int failures, checks;
 

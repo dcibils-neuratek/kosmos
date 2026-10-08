@@ -88,6 +88,18 @@ void gfx_draw_stretch(struct surface *dst, const struct surface *src,
 void gfx_draw_size(const struct surface *s, unsigned *width,
                    unsigned *height);
 
+/*
+ * **A path, for a kit that draws shapes** (`path.h`, `docs/maps.md` M1):
+ * begun over [x0, x1) by [y0, y1) of `s` - cut to it - then given rings
+ * and lines through `gfx_path_ring` and `gfx_path_stroke`, then blended in
+ * one colour. The Map Kit draws a style's rule this way, every feature of
+ * it into one path and one blend. -1 from begin: nothing of it is on `s`.
+ */
+struct gfx_path;
+int  gfx_draw_path_begin(struct gfx_path *p, struct surface *s,
+                         long x0, long y0, long x1, long y1);
+void gfx_draw_path_blend(struct surface *s, struct gfx_path *p, uint32_t colour);
+
 long gfx_draw_measure(int face, const char *str, size_t len);
 int  gfx_draw_height(int face);
 

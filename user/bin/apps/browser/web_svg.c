@@ -6,7 +6,7 @@
  * into a list of shapes: paths of straight lines and cubic curves, each
  * filled, stroked or both in one colour. This file walks them into straight
  * edges, curves flattened into as many short lines as their size needs, and
- * `web_raster.c` turns the edges into pixels, four at a time. Its sum is a
+ * gfx's `raster.c` turns the edges into pixels, four at a time. Its sum is a
  * winding number, which is what SVG calls `nonzero`, its default;
  * `evenodd` is not told apart, and libsvgtiny does not say which.
  *
@@ -28,7 +28,7 @@
 
 #include <svgtiny.h>
 
-#include "web_raster.h"
+#include "kits/gfx/raster.h"
 #include "web_svg.h"
 
 /* The one door into a surface from outside `gfx.c`, as `gamesoft.c` has it. */
