@@ -882,6 +882,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              $(BEARSSL_SRCS) \
              user/kits/tls/tls_core.c \
              user/kits/network/netclient.c \
+             user/kits/network/httpc.c \
              user/kits/tls/tls_kosmos.c \
              $(TINYGL_SRCS) \
              $(TINYGL_DEMO_SRCS) \
@@ -2276,6 +2277,16 @@ $(HOSTDIR)/test_map: tools/test_map.c $(MAP_PURE) $(wildcard user/kits/map/*.h) 
 	        -Iuser -Iuser/kits/map -Iuser/kits/compress -Iuser/kits/gfx -Iruntime/upstream/miniz -o $@ \
 	        tools/test_map.c $(MAP_PURE) user/kits/compress/gzip.c runtime/upstream/miniz/miniz.c \
 	        user/kits/gfx/path.c user/kits/gfx/raster.c
+
+# **HTTP from C** (`user/kits/network/httpc.c`, `docs/maps.md` M6c): the
+# client held to replies written in the test, in pieces of every size.
+$(HOSTDIR)/test_httpc: tools/test_httpc.c user/kits/network/httpc.c user/kits/network/httpc.h \
+                       user/kits/compress/gzip.c user/kits/compress/gzip.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -D_DEFAULT_SOURCE $(MINIZ_FLAGS) \
+	        -Iuser -Iuser/kits/network -Iuser/kits/compress -Iruntime/upstream/miniz -o $@ \
+	        tools/test_httpc.c user/kits/network/httpc.c user/kits/compress/gzip.c \
+	        runtime/upstream/miniz/miniz.c
 
 $(HOSTDIR)/test_raster_x86: tools/test_raster.c user/kits/gfx/raster.c user/kits/gfx/raster.h
 	@mkdir -p $(dir $@)
@@ -4278,7 +4289,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
+host-check: $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_httpc $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -4495,6 +4506,8 @@ host-check: $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/
 	$(HOSTDIR)/test_path
 	@# The Map Kit's reading: PMTiles and vector tiles (docs/maps.md M2).
 	$(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles
+	@# HTTP from C (docs/maps.md M6c).
+	$(HOSTDIR)/test_httpc
 	$(HOSTDIR)/test_gunzip
 	@# Broken-down time, which FFmpeg's option parser and logger reach.
 	$(HOSTDIR)/test_time

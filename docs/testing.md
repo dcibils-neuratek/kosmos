@@ -21222,3 +21222,20 @@ handed it rather than reaching into the ring. `tiles` is its second caller.
 `x86-share` 69 and `x86-share-2` 33 pass on it - smbfs to Samba on this
 Mac, signed and sealed, a share as a folder gone away and back. **Control**:
 a client whose read never returns a byte - 29 of 69 fail. Restored.
+
+## 18.462 Maps M6c: HTTP from C
+
+`docs/maps.md` M6c. `user/kits/network/httpc.c` (`httpc.h`): GET requests on
+one connection, stepped so a server waits for none - the request written,
+the reply's head read, its body ended by its length, by chunks or by the
+close, gzip inflated through the compress kit's inflater, and the connection
+kept for the next request unless the reply closes it. Its bytes move through
+two calls the caller gives: the Network Kit's TCP, the TLS core over it, or
+a test's replies. In every image; its first caller is `tiles` (M6d).
+
+`test_httpc` 108, on the Mac, every case handed over in pieces of 1 to 4096
+bytes: a body by its length and the request as it should be; a second
+request on the kept connection, in chunks with an extension; a gzipped body
+inflated; a body ended by its connection, not reused; a 404 answered as one;
+a body larger than allowed refused; one cut short failed, not taken.
+**Control**: chunk sizes read as decimal - 12 of 108 fail.
