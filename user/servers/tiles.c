@@ -381,6 +381,20 @@ static bool same(const struct tiles_id *a, const struct tiles_id *b)
     return a->z == b->z && a->x == b->x && a->y == b->y;
 }
 
+/* Whether a tile came lately, so is in the cache already: the application
+ * asks for what it has not yet heard came, and hears only when it asks, so
+ * a tile can be asked for again in between - fetched twice, without this. */
+static bool came_lately(const struct tiles_id *t)
+{
+    uint32_t kept = arrived_seq < ARRIVED_KEPT ? arrived_seq : ARRIVED_KEPT;
+
+    for (uint32_t k = 1; k <= kept; k++) {
+        if (same(&arrived[(arrived_seq - k) % ARRIVED_KEPT], t)) return true;
+    }
+
+    return false;
+}
+
 /* `{z}`, `{x}` and `{y}` filled in. */
 static bool tile_path(const struct tiles_id *t, char *out, size_t room)
 {
@@ -608,6 +622,7 @@ static void answer(const struct message *in, struct message *out)
         for (uint32_t i = 0; i < rq->count; i++) {
             if (rq->u.tiles[i].z > 22) continue;
             if (now.busy && !now.tilejson && same(&rq->u.tiles[i], &now.tile)) continue;
+            if (came_lately(&rq->u.tiles[i])) continue;
 
             wanted[wanted_count++] = rq->u.tiles[i];
         }

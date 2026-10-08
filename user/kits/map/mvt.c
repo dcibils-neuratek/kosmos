@@ -298,6 +298,7 @@ static int layer(struct mvt_tile *t, struct pb l, struct pending **pend, size_t 
                 /* The tags: pairs of a key's index and a value's. */
                 struct pb tags = gsub;
                 uint64_t ki, vi;
+                int named = 0;      /* which of its names was kept: 1 to 3 */
 
                 while (tags.p < tags.end) {
                     if (!pb_varint(&tags, &ki) || !pb_varint(&tags, &vi)) {
@@ -312,10 +313,21 @@ static int layer(struct mvt_tile *t, struct pb l, struct pending **pend, size_t 
 
                     if (val->is_string) {
                         long *slot = is_key(k, "class") ? &pd->klass
-                                   : is_key(k, "subclass") ? &pd->subclass
-                                   : is_key(k, "name") ? &pd->name : NULL;
+                                   : is_key(k, "subclass") ? &pd->subclass : NULL;
 
-                        if (slot != NULL) {
+                        /* A place's name in the Latin alphabet, which the
+                         * system's faces draw - English, else its Latin
+                         * spelling, else the name as the place writes it
+                         * (OpenMapTiles carries all three; "Ελλάδα" as
+                         * that would be "????" on the screen). */
+                        int rank = is_key(k, "name:en") || is_key(k, "name_en") ? 3
+                                 : is_key(k, "name:latin") ? 2
+                                 : is_key(k, "name") ? 1 : 0;
+
+                        if (rank > named) {
+                            named = rank;
+                            pd->name = keep(t, val->s, val->n);
+                        } else if (slot != NULL) {
                             *slot = keep(t, val->s, val->n);
                         } else if (is_key(k, "brunnel")) {
                             ft->brunnel = (val->n == 6 && memcmp(val->s, "bridge", 6) == 0) ? 1

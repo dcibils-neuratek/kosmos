@@ -1184,7 +1184,7 @@ not designed:
   the disk server's door to the cache, the `tiles` server, and Maps drawing
   the world beneath its region. **Left from M6d**: the cache's 256 MB
   ceiling, least recently used first; the source's name found without the
-  server waiting on it; a suite over HTTPS for `tiles`, which needs a way to hand it the suites' certificate authority (`testing.md` 18.465). **Next, M6e**: search from the network.
+  server waiting on it; a suite over HTTPS for `tiles`, which needs a way to hand it the suites' certificate authority (`testing.md` 18.465). **Found on the M700, 8 October**: `make netboot` names the newest stick image's `/Home` GUID, which is not the M700's stick's, so `/Home` came up in memory; booted with `home=usb` until the right image is known (`testing.md` 18.466). **Next, M6e**: search from the network.
   Directions after. **Wanted with it**: text
   drawn turned, for street names along any street (gfx).
 

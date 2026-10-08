@@ -111,13 +111,16 @@ local sidebar = true
 
 local function style_for(dark)
   local c = dark and {
-    land = 0x1d2433, block = 0x222b3c, park = 0x1f3a32, water = 0x10233f,
-    building = 0x2b3547, casing = 0x151b27, minor = 0x3a4659, major = 0x56647c,
-    motor = 0x8a6f3e, path = 0x4a5568,
+    -- Land and water far enough apart that a coast is seen at a glance -
+    -- the M700, 8 October: at 0x1d2433 against 0x10233f Africa was barely
+    -- there at zoom 3.
+    land = 0x283142, block = 0x2d3749, park = 0x24423a, water = 0x0c1828,
+    building = 0x36415a, casing = 0x1a2130, minor = 0x445168, major = 0x5e6d87,
+    motor = 0x8a6f3e, path = 0x4a5568, border = 0x6b5f8a,
   } or {
     land = 0xf2efe9, block = 0xe8e3da, park = 0xcfe8c8, water = 0xaad3f2,
     building = 0xdcd5c9, casing = 0xd9d2c6, minor = 0xffffff, major = 0xfde8a8,
-    motor = 0xf6bb6a, path = 0xc8bfae,
+    motor = 0xf6bb6a, path = 0xc8bfae, border = 0xb9a6c9,
   }
 
   return c, map.style{ background = c.land, rules = {
@@ -126,6 +129,7 @@ local function style_for(dark)
     { layer = "park", fill = c.park },
     { layer = "water", fill = c.water },
     { layer = "waterway", line = c.water, width = { 12, 1, 18, 8 } },
+    { layer = "boundary", line = c.border, width = { 2, 0.8, 10, 1.5 } },
     { layer = "building", fill = c.building, minzoom = 14 },
     { layer = "transportation", classes = "path,track", line = c.path,
       width = { 15, 0.6, 18, 2 }, minzoom = 15 },
@@ -562,7 +566,8 @@ local function place_controls()
 end
 
 local function draw_header(s)
-  pk.header(s, 0, 0, W, "Maps", made_up and "Port Alder, a made-up city" or region_path,
+  pk.header(s, 0, 0, W, "Maps", net and "The world, from OpenFreeMap"
+            or made_up and "Port Alder, a made-up city" or region_path,
             dots.x - 8, side_button.x + 26 + 10)
   side_button.pressed = sidebar
   pk.iconbutton(s, side_button)
@@ -760,9 +765,16 @@ local function draw_controls(s)
   s:fill(bx, by - 5, 2, 7, theme.text)
   s:fill(bx + len - 2, by - 5, 2, 7, theme.text)
 
-  -- Whose map it is, always on it.
+  -- Whose map it is, always on it: OpenFreeMap asks for its line, and
+  -- Port Alder says it is made up wherever it is drawn.
+  local region_shown = math.floor(zoom) >= info.min_zoom
   local credit = made_up and "Made up for Kosmos - not a real place"
                  or "\u{a9} OpenStreetMap contributors"
+
+  if net then
+    credit = "OpenFreeMap  \u{a9} OpenMapTiles  \u{a9} OpenStreetMap"
+             .. ((made_up and region_shown) and "  \u{b7}  Port Alder is made up" or "")
+  end
   local cw = gfx.measure(credit) + 16
   local ch = gfx.height() + 6
 
@@ -787,6 +799,14 @@ local label_cache = {}
 local placed_labels = {}
 local draw_labels
 local drawn_labels = 0
+
+-- From which zoom each kind of place is named - OpenMapTiles' classes,
+-- as a printed map names a continent's countries and keeps its provinces
+-- for when there is room (`docs/maps.md`; seen on the M700, 8 October, with
+-- Africa's provinces covering its cities at zoom 3).
+local PLACE_FROM = { continent = 0, country = 2, state = 5, province = 5, city = 4,
+                     town = 8, village = 11, hamlet = 13, suburb = 12, quarter = 13,
+                     neighbourhood = 14, isolated_dwelling = 15, locality = 15 }
 
 local ORDER = { place = 1, water_name = 2, park = 3, poi = 4, transportation_name = 5 }
 
@@ -838,7 +858,7 @@ draw_labels = function(s, drawn, mx, my, mw, mh)
       local key, t, tx, ty, n, size = d.key, d.t, d.tx, d.ty, d.n, d.size
 
       for _, l in ipairs(labels_of(key, t)) do
-        local wanted = (l.layer == "place")
+        local wanted = (l.layer == "place" and zoom >= (PLACE_FROM[l.class] or 12))
           or (l.layer == "water_name")
           or (l.layer == "park" and zoom >= 14)
           or (l.layer == "poi" and zoom >= 15)
@@ -984,15 +1004,6 @@ local function draw_map(s)
   end
 
   draw_labels(s, drawn, mx, my, mw, mh)
-
-  -- OpenFreeMap asks that its maps say whose they are.
-  if net then
-    local text = "OpenFreeMap  \u{a9} OpenMapTiles  \u{a9} OpenStreetMap"
-    local tw, th = gfx.measure(text, "label"), gfx.height("label")
-
-    s:fill(mx + mw - tw - 12, my + mh - th - 6, tw + 12, th + 6, 0xff000000 | colours.land)
-    s:text(mx + mw - tw - 6, my + mh - th - 3, text, theme.text_dim, nil, "label")
-  end
 
   drawn_ms = (sys.ticks() - t0) * 1000 / counter_hz
 end

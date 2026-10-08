@@ -21345,3 +21345,36 @@ its TileJSON take 3 s, as a server across the world does, and passes 19 in
 tiles to come. It passes again when the fix is restored. The flush has no suite yet: the tiles
 server trusts only the image's anchors, and the suites' certificate
 authority is not one of them (roadmap).
+
+## 18.466 Maps on the M700: the world drawn, and what it showed
+
+With 0.11.71 the M700 drew the world from OpenFreeMap: 49 tiles fetched over
+HTTPS into the stick's `/Home/Cache/Maps`, West Africa at zoom 3. The
+screen showed four things wrong:
+
+- **Names as "????"**: the decoder kept a place's `name`, its own script,
+  which the system's faces do not draw. It keeps `name:en`, else
+  `name:latin`, else `name`, whichever order the tags come in.
+  `test_map` builds a tile of four places to hold that (30 checks).
+  **Control**: English ranked as nothing, 2 of 30 fail.
+- **Provinces over cities**: every place was named at every zoom. Each
+  OpenMapTiles class is now named from a zoom of its own: countries from 2,
+  cities 4, states 5, towns 8, villages 11.
+- **Land and water nearly one colour** in the dark look (0x1d2433 against
+  0x10233f). They are 0x283142 and 0x0c1828 now, and borders are drawn faintly.
+- **Two credits in one place**: OpenFreeMap's line and Port Alder's note
+  are one line now, the note only where Port Alder is drawn. The header says
+  "The world, from OpenFreeMap".
+
+Found by `x86-maps` along the way: once Maps asked again for every tile it
+had not yet heard came, a tile the server had just fetched could be asked
+for again before Maps polled, and was fetched twice. The run showed two of
+the six requests repeated. The server now skips a tile in its record of what
+came, and the suite passes with 19 checks. That failing run is the control.
+
+**And `/Home` was in memory on 0.11.70 and 0.11.71.** `make netboot` takes the command line
+from the newest stick image (0.11.38), whose `/Home` GUID is not the one the
+stick in the M700 carries. The disk server's own count said so: 232 looks,
+each stopping at step 10, a Kosmos partition with a different GUID. Booted
+with `opt/kosmos/home=usb` it found `/Home` in 1.1 s. Which stick image the
+machine's stick was written from is Diego's to say (roadmap).

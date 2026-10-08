@@ -87,6 +87,40 @@ static const struct mvt_feature *named(const struct mvt_tile *t, const char *nam
     return NULL;
 }
 
+/* A vector tile written here, a protocol buffer at a time. */
+struct pbw { uint8_t b[512]; size_t n; };
+
+static void pbw_varint(struct pbw *w, uint64_t v)
+{
+    while (v >= 0x80) {
+        w->b[w->n++] = (uint8_t)(v | 0x80);
+        v >>= 7;
+    }
+
+    w->b[w->n++] = (uint8_t)v;
+}
+
+static void pbw_bytes(struct pbw *w, unsigned field, const void *p, size_t n)
+{
+    pbw_varint(w, (uint64_t)field << 3 | 2);
+    pbw_varint(w, n);
+    memcpy(w->b + w->n, p, n);
+    w->n += n;
+}
+
+/* One point in a `place` layer, its tags as key and value indices. */
+static void pbw_point(struct pbw *layer, const uint8_t *tags, size_t ntags)
+{
+    struct pbw f = { .n = 0 };
+    static const uint8_t geom[] = { 9, 50, 34 };   /* MoveTo once, (25, 17) */
+
+    pbw_bytes(&f, 2, tags, ntags);
+    pbw_varint(&f, 3 << 3);                         /* type: */
+    pbw_varint(&f, 1);                              /* a point */
+    pbw_bytes(&f, 4, geom, sizeof geom);
+    pbw_bytes(layer, 2, f.b, f.n);
+}
+
 static size_t count(const struct mvt_tile *t, int layer, const char *klass)
 {
     size_t n = 0;
@@ -318,10 +352,62 @@ int main(int argc, char **argv)
 
     free(data);
 
+    /* 8. A place's name drawn in the Latin alphabet: English, else its
+     * Latin spelling, else its own - whichever order the tags come in. */
+    {
+        struct pbw layer = { .n = 0 }, tile = { .n = 0 };
+        struct pbw v;
+        static const char *keys[] = { "name", "name:latin", "name:en", "class" };
+        static const char *values[] = { "\xce\x95\xce\xbb\xce\xbb\xce\xac\xce\xb4\xce\xb1",
+                                         "Ellada", "Greece", "country", "Lantern Port" };
+        static const uint8_t own_latin_en[] = { 0, 0, 1, 1, 2, 2, 3, 3 };
+        static const uint8_t en_first[]     = { 2, 2, 0, 0, 3, 3 };
+        static const uint8_t latin_own[]    = { 1, 1, 0, 0 };
+        static const uint8_t own_only[]     = { 0, 4 };
+
+        pbw_varint(&layer, 15 << 3);
+        pbw_varint(&layer, 2);
+        pbw_bytes(&layer, 1, "place", 5);
+        pbw_point(&layer, own_latin_en, sizeof own_latin_en);
+        pbw_point(&layer, en_first, sizeof en_first);
+        pbw_point(&layer, latin_own, sizeof latin_own);
+        pbw_point(&layer, own_only, sizeof own_only);
+
+        for (size_t i = 0; i < 4; i++) pbw_bytes(&layer, 3, keys[i], strlen(keys[i]));
+
+        for (size_t i = 0; i < 5; i++) {
+            v.n = 0;
+            pbw_bytes(&v, 1, values[i], strlen(values[i]));
+            pbw_bytes(&layer, 4, v.b, v.n);
+        }
+
+        pbw_varint(&layer, 5 << 3);
+        pbw_varint(&layer, 4096);
+        pbw_bytes(&tile, 3, layer.b, layer.n);
+
+        int r = mvt_decode(&t, tile.b, tile.n);
+
+        check(r == MVT_OK && t.nfeatures == 4, "the tile of four named places did not decode");
+
+        if (r == MVT_OK && t.nfeatures == 4) {
+            check(t.features[0].name && strcmp(t.features[0].name, "Greece") == 0,
+                  "a place named in its own script, in Latin and in English was not named in English");
+            check(t.features[1].name && strcmp(t.features[1].name, "Greece") == 0,
+                  "English given before the place's own name was replaced by it");
+            check(t.features[2].name && strcmp(t.features[2].name, "Ellada") == 0,
+                  "a Latin spelling given before the place's own name was replaced by it");
+            check(t.features[3].name && strcmp(t.features[3].name, "Lantern Port") == 0,
+                  "a place with only its own name lost it");
+        }
+
+        mvt_free(&t);
+    }
+
     if (fails == 0) {
         printf("PASS: %d checks on the Map Kit's reading (the specification's tile numbers, "
                "Port Alder's header and directory, its zoom 11 and zoom 16 tiles decoded, "
-               "zoom 16 drawn in a style, what is not there, bad bytes refused)\n", checks);
+               "zoom 16 drawn in a style, what is not there, bad bytes refused, a place named in "
+               "English, else in Latin, else in its own script)\n", checks);
         return 0;
     }
 
