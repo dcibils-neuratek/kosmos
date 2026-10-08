@@ -16,6 +16,13 @@
   sections; the applications and their icons are the ones Kosmos ships, the
   icons Haiku's (assets/icons/64x64, MIT, their licence beside them). The
   panel is drawn in the dark look the M700 wears, as dock.html draws it.
+
+  Drawn again the same evening with two additions. Diego, with a picture of
+  KDE's launcher: "the new menu launcher needs a sutdown menu (possibly
+  aligned to the bottom) and that shutdown opens a shutdown/restart", and
+  "can we add a new extra menu called "Recently used" and we will be adding
+  all the recently opened apps as a shortcut?". The recent applications
+  shown are made up for the drawing.
 -->
 <html lang="en">
 <head>
@@ -88,7 +95,7 @@
 
   .pad { position: absolute; left: 50%; transform: translateX(-50%); bottom: 92px; width: 820px; height: 600px;
          background: var(--d-surface); border-radius: 26px; box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 0 0 1px var(--d-line);
-         display: grid; grid-template-rows: 78px 1fr; overflow: hidden; }
+         display: grid; grid-template-rows: 78px 1fr 56px; overflow: hidden; }
   .search { margin: 18px 18px 10px; height: 50px; border-radius: 999px; background: var(--d-raised);
             display: flex; align-items: center; gap: 12px; padding: 0 20px; color: var(--d-muted); font-size: 15.5px; }
   .search svg { width: 18px; height: 18px; flex: none; }
@@ -120,6 +127,36 @@
   .tile .l { font-size: 12.5px; text-align: center; color: var(--d-ink); line-height: 1.25; max-width: 100%; }
   .tile.sel { background: rgba(168, 199, 250, 0.16); }
 
+  /* The power row: the panel's foot, across its whole width. */
+  .foot { border-top: 1px solid var(--d-line); background: var(--d-side); display: flex; align-items: center; gap: 4px; padding: 0 12px 0 18px; }
+  .foot .who { color: var(--d-muted); font-size: 13px; margin-right: auto; font-family: var(--mono); }
+  .pw { height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 10px; color: var(--d-ink);
+        font: 500 14px var(--body); background: transparent; border: 0; cursor: default; }
+  .pw svg { width: 18px; height: 18px; flex: none; }
+  .pw:hover, .pw.on { background: var(--d-raised-2); }
+  .pw:focus-visible { outline: 2px solid var(--d-accent); outline-offset: 1px; }
+  .row .when { margin-left: auto; color: var(--d-muted); font: 12.5px var(--mono); }
+
+  /* What Shut Down and Restart open: a window of their own, in the middle
+     of the screen, the launcher closed behind it. */
+  .veil { position: absolute; inset: 0; background: rgba(4, 7, 14, 0.55); display: none; place-items: center; }
+  .veil.open { display: grid; }
+  .ask { width: 460px; background: var(--d-surface); border-radius: 18px; box-shadow: 0 24px 60px rgba(0,0,0,.6), 0 0 0 1px var(--d-line); overflow: hidden; }
+  .ask .bandt { height: 46px; display: flex; align-items: center; padding: 0 16px; font-weight: 600; border-bottom: 1px solid var(--d-line); background: var(--d-side); }
+  .ask .bandt .lights { margin-left: auto; display: flex; gap: 8px; }
+  .ask .bandt .lights i { width: 13px; height: 13px; border-radius: 50%; background: #5a6274; display: block; }
+  .ask .bandt .lights i.c { background: #ff5f57; }
+  .ask .in { padding: 22px 24px 8px; display: grid; grid-template-columns: 56px 1fr; gap: 16px; align-items: start; }
+  .ask .in .ic { width: 56px; height: 56px; border-radius: 50%; background: var(--d-raised); display: grid; place-items: center; color: var(--d-accent); }
+  .ask .in .ic svg { width: 28px; height: 28px; }
+  .ask h3 { margin: 2px 0 6px; font: 600 18px var(--body); }
+  .ask p { margin: 0; color: var(--d-muted); font-size: 14px; }
+  .ask .left { color: var(--d-ink); font-family: var(--mono); font-size: 13px; margin-top: 8px; }
+  .ask .btns { display: flex; justify-content: flex-end; gap: 10px; padding: 18px 24px 22px; }
+  .btn { height: 36px; padding: 0 18px; border-radius: 9px; border: 1px solid var(--d-line); background: var(--d-raised); color: var(--d-ink); font: 500 14px var(--body); }
+  .btn.go { background: var(--d-accent); color: var(--d-accent-ink); border-color: transparent; }
+  .btn:focus-visible { outline: 2px solid var(--d-accent); outline-offset: 2px; }
+
   .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 18px; }
   .note { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; }
   .note b { display: block; font-family: var(--display); font-size: 17px; margin-bottom: 4px; }
@@ -134,7 +171,10 @@
 <p class="lede">The launcher's categories become a column of rows down its left side, each as tall as a menu row. Resting the pointer on one shows its applications at once, with no click, so you browse by moving the mouse down the list.</p>
 <p class="said">"the categories are good but they are small and hard to click … i want to convert the categories into menus (like a sidebar of items) where i can browse with the mouse without needing to click down", and "its crucial that i can navigate all the menus without clicking down as we do now with the old menu" - Diego, 7 October</p>
 
-<p class="hint">Move the pointer down the sections on the left. The launcher is drawn as it would open from the dock's Kosmos button.</p>
+<p class="lede">Drawn again with two additions: a <b>Recently used</b> row under All, and a <b>power row</b> along the launcher's foot whose Restart and Shut Down open a window asking you to confirm.</p>
+<p class="said">"the new menu launcher needs a sutdown menu (possibly aligned to the bottom) and that shutdown opens a shutdown/restart", and "can we add a new extra menu called "Recently used" and we will be adding all the recently opened apps as a shortcut?" - Diego, 7 October</p>
+
+<p class="hint">Move the pointer down the sections on the left, and press Restart or Shut Down at the foot. The launcher is drawn as it would open from the dock's Kosmos button; what Recently used holds here is made up.</p>
 <div class="frame"><div class="shell" id="shell"><div class="stage" id="stage">
   <div class="pad" role="img" aria-label="The launcher with its sections as a sidebar">
     <div class="search">
@@ -147,6 +187,25 @@
         <div class="head"><b id="title">Applications</b><span id="count">17</span><span class="az">A to Z</span></div>
         <div class="grid" id="grid"></div>
       </div>
+    </div>
+    <div class="foot">
+      <span class="who">Kosmos 0.11.55 · up 1:49</span>
+      <button class="pw" data-act="restart" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M16 10a6 6 0 1 1-1.8-4.3"/><path d="M16 3.5v3.2h-3.2"/></svg>Restart</button>
+      <button class="pw" data-act="shutdown" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10 3v7"/><path d="M6.2 5.6a6 6 0 1 0 7.6 0"/></svg>Shut Down</button>
+    </div>
+  </div>
+  <div class="veil" id="veil">
+    <div class="ask" role="dialog" aria-labelledby="ask-h">
+      <div class="bandt"><span id="ask-t">Shut Down</span><span class="lights"><i></i><i></i><i class="c"></i></span></div>
+      <div class="in">
+        <div class="ic" id="ask-ic"></div>
+        <div>
+          <h3 id="ask-h">Shut down Kosmos?</h3>
+          <p id="ask-p">Every application is asked to close first, so one with unsaved work can say so.</p>
+          <div class="left" id="ask-left">Shutting down by itself in 30 s</div>
+        </div>
+      </div>
+      <div class="btns"><button class="btn" id="ask-no" type="button">Cancel</button><button class="btn go" id="ask-go" type="button">Shut Down</button></div>
     </div>
   </div>
   <div class="dock">
@@ -162,6 +221,10 @@
 
 <h2>What changes</h2>
 <div class="notes">
+  <div class="note"><b>Recently used</b><p>A row under All: the applications you started last, newest first rather than A to Z, each once, up to fifteen (three rows of the grid). Its count is how many it holds; the row is left out until something has been started.</p></div>
+  <div class="note"><b>Where the list comes from</b><p>Nothing keeps one today: the window manager knows what is running, not what ran. So starting a program - from the launcher, the dock, the Deskbar's menu, Tracker or <code>open</code> - goes through one door that also writes it to <code>/Home/Preferences/recent</code>, a file of names one a line. Started twice, it moves to the top.</p></div>
+  <div class="note"><b>The power row</b><p>Along the launcher's foot, the whole width: the version and how long the machine has been up at the left, Restart and Shut Down at the right, as in KDE's. Each closes the launcher and opens a window in the middle of the screen asking you to confirm. No Sleep: Kosmos cannot suspend a machine yet, and a button that does nothing is worse than none.</p></div>
+  <div class="note"><b>The confirming window</b><p>Says what is about to happen, with Cancel and the action (Return takes it, Escape cancels), and does it by itself after 30 seconds unless cancelled, as KDE's does - so a machine you walked away from still goes off. It is the same request the Deskbar's menu sends today, <code>wm</code>'s <code>power</code>.</p></div>
   <div class="note"><b>Sections as rows</b><p>All, then Applications, System, Development, Demos and Preferences, each a row 46 high across a 236-wide column, its icon, its name and how many it holds. Today's pills are 30 high and as wide as their word.</p></div>
   <div class="note"><b>Browse without a click</b><p>As in the right-click Kosmos menu, where a submenu opens as the pointer reaches it: resting on a row shows its applications in the grid, so every section can be looked through by moving the mouse alone. The only click is the one that starts an application. A click on a row does the same as resting on it, so a click is never wrong either.</p></div>
   <div class="note"><b>Heading for the grid does not switch</b><p>Moving from a row across to the grid passes over other rows on the way. As in a menu, a row is taken only when the pointer slows on it (about a tenth of a second) or moves straight up or down, so the section you aimed from stays shown.</p></div>
@@ -174,8 +237,16 @@
 <ol class="q">
   <li><b>Hover shows, with the menu's pause</b> so heading for the grid does not switch rows. <span class="rec">Recommended. Without it, every diagonal move to the grid lands you in another section.</span></li>
   <li><b>An "All" row at the top</b>, every application A to Z, as the launcher opens on today. Or open on Applications. <span class="rec">Recommended: All, so a launcher opened to type into shows everything.</span></li>
-  <li><b>A "Recent" row</b> under All: the last eight you started, newest first. <span class="rec">Recommended, as its own small step after this.</span></li>
+  <li><b>A "Recent" row</b> under All: the last eight you started, newest first. <span class="rec">Agreed, as Recently used (below).</span></li>
   <li><b>The panel 820 wide</b> rather than 600, so the grid beside the sidebar keeps five tiles a row at today's size. <span class="rec">Recommended.</span></li>
+</ol>
+
+<h2>Yours to decide, for the two additions</h2>
+<ol class="q">
+  <li><b>Restart and Shut Down as two buttons</b> at the foot, as KDE's are, or one Power button that opens a small menu of the two. <span class="rec">Recommended: two buttons - one press to the question, and there are only two.</span></li>
+  <li><b>The confirming window acts by itself after 30 seconds</b>, or waits for you forever. <span class="rec">Recommended: 30 seconds, counted down in the window.</span></li>
+  <li><b>Recently used holds fifteen</b>, newest first, and sits under All. <span class="rec">Recommended.</span></li>
+  <li><b>A way to clear it</b>: a right press on the row offers "Clear Recently used". <span class="rec">Recommended, as the one thing a person would want to do to it.</span></li>
 </ol>
 </main>
 <script>
@@ -183,6 +254,7 @@
   var I = "../assets/icons/64x64/";
   var S = [
     ["All", "Misc_Deskbar_Group", null],
+    ["Recently used", "App_Clock", [["Kosmos IDE","App_Pe"],["Terminal","App_Terminal"],["Web Browser","App_NetSurf"],["Cafesa3D","App_Teapot"],["Music","App_MediaPlayer"],["Tracker","App_Tracker"],["Photo Viewer","App_ShowImage"],["Servers","App_Poorman"],["Text Editor","App_StyledEdit"],["GL Gears","App_GLDirectMode"]], true],
     null,
     ["Applications", "App_Tracker", [["Cafesa3D","App_Teapot"],["Calculator","App_Calculator"],["Camera","App_CodyCam"],["Clock","App_Clock"],["Groove","File_Audio"],["Kosmos Write","File_Text"],["Music","App_MediaPlayer"],["Paint","App_Wonderbrush"],["PDF Viewer","File_PDF"],["Photo Viewer","App_ShowImage"],["Reader","Misc_Book"],["Terminal","App_Terminal"],["Text Editor","App_StyledEdit"],["Tracker","App_Tracker"],["Video Player","App_MediaPlayer"],["Web Browser","App_NetSurf"],["Deskbar","App_Deskbar"]]],
     ["System", "App_Pulse", [["About Kosmos","App_About"],["About This Machine","Prefs_Devices"],["Drives","Device_Harddisk"],["Log Viewer","Server_Syslog"],["Passwords","App_Generic"],["Process Viewer","TeamIcon"],["Processor Cores","App_Pulse"],["Servers","App_Poorman"],["System Monitor","App_Pulse"]]],
@@ -191,7 +263,7 @@
     ["Preferences", "Prefs_Appearance", [["Keyboard Shortcuts","Misc_Book"],["Launcher Editor","Prefs_Appearance"],["Network","Prefs_Network"],["Preferences","Prefs_Devices"],["Scheduler","System_Kernel"],["Sound Mixer","Misc_Speaker"]]]
   ];
   var all = [];
-  S.forEach(function (s) { if (s && s[2]) all = all.concat(s[2]); });
+  S.forEach(function (s) { if (s && s[2] && !s[3]) all = all.concat(s[2]); });
   all.sort(function (a, b) { return a[0].localeCompare(b[0]); });
   S[0][2] = all;
 
@@ -204,7 +276,9 @@
     rows.forEach(function (r) { r.el.classList.toggle("on", r.i === i); });
     title.textContent = s[0] === "All" ? "Every application" : s[0];
     count.textContent = s[2].length;
-    var list = s[2].slice().sort(function (a, b) { return a[0].localeCompare(b[0]); }).slice(0, 20);
+    document.querySelector(".head .az").textContent = s[3] ? "Newest first" : "A to Z";
+    // Recently used keeps the order things were started in.
+    var list = (s[3] ? s[2].slice() : s[2].slice().sort(function (a, b) { return a[0].localeCompare(b[0]); })).slice(0, 20);
     grid.innerHTML = "";
     list.forEach(function (a, k) {
       var t = document.createElement("div");
@@ -231,7 +305,40 @@
     rows.push({ el: r, i: i });
   });
 
-  show(2);
+  show(1);
+
+  // The power row and what it opens.
+  var veil = document.getElementById("veil"), timer = null, left = 30, act = null;
+  var ICON = {
+    shutdown: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10 3v7"/><path d="M6.2 5.6a6 6 0 1 0 7.6 0"/></svg>',
+    restart: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M16 10a6 6 0 1 1-1.8-4.3"/><path d="M16 3.5v3.2h-3.2"/></svg>'
+  };
+  var WORDS = {
+    shutdown: ["Shut Down", "Shut down Kosmos?", "Shutting down"],
+    restart: ["Restart", "Restart Kosmos?", "Restarting"]
+  };
+  function tick() {
+    document.getElementById("ask-left").textContent = WORDS[act][2] + " by itself in " + left + " s";
+  }
+  function close() { veil.classList.remove("open"); clearInterval(timer); }
+  function ask(which) {
+    act = which; left = 30;
+    document.getElementById("ask-t").textContent = WORDS[which][0];
+    document.getElementById("ask-h").textContent = WORDS[which][1];
+    document.getElementById("ask-go").textContent = WORDS[which][0];
+    document.getElementById("ask-ic").innerHTML = ICON[which];
+    tick();
+    veil.classList.add("open");
+    document.getElementById("ask-go").focus();
+    clearInterval(timer);
+    timer = setInterval(function () { left = Math.max(0, left - 1); tick(); if (!left) clearInterval(timer); }, 1000);
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".pw"), function (b) {
+    b.addEventListener("click", function () { ask(b.getAttribute("data-act")); });
+  });
+  document.getElementById("ask-no").addEventListener("click", close);
+  document.getElementById("ask-go").addEventListener("click", close);
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
 
   var shell = document.getElementById("shell"), stage = document.getElementById("stage");
   function fit() { var k = shell.clientWidth / 1180; stage.style.transform = "scale(" + k + ")"; shell.style.height = (760 * k) + "px"; }
