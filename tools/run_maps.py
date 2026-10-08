@@ -112,6 +112,15 @@ print("NONE " .. tostring(select(2, region:tile(16, 0, 0))))
 """
 
 
+# Night chosen, as Preferences chooses it (`run_dock.py`'s LOOK).
+NIGHT = ('local th = use("/Kosmos/Libraries/ui.lua").theme\n'
+         'local look = th.read(use("/Kosmos/Libraries/themes.lua").night, "dark")\n'
+         'local c = {}\n'
+         'for _, k in ipairs(th.tokens) do c[k] = look[k] end\n'
+         'local r = fs.send("/Running/wm", { type = "theme", palette = c, fonts = look.fonts })\n'
+         'print("LOOK " .. tostring(r and r.ok))\n')
+
+
 def gz(data):
     buf = io.BytesIO()
     with gzip.GzipFile(fileobj=buf, mode="wb", mtime=0) as f:
@@ -394,6 +403,12 @@ def main():
         guest.sendkey("ret")
         said["worldcard"] = guest.wait_for_line("maps: card ", "the world's place's card", mark)
         said["worldat"] = guest.wait_for_line("maps: at ", "the map at the world's place", mark)
+
+        # ---- the look: Night chosen, and the map goes dark with it ----
+        session.put(NIGHT.encode(), "/Temporary/night.lua")
+        mark = len(guest.seen)
+        said["night"] = session.run("/Temporary/night.lua").decode(errors="replace")
+        said["dark"] = guest.wait_for_line("maps: the map is ", "the map told the look", mark)
     finally:
         guest.close()
         httpd.shutdown()
@@ -536,7 +551,11 @@ def main():
         fails.append("Return did not take the map to Montevideo at 12, a city's zoom: %r, %r"
                      % (said.get("worldcard"), said.get("worldat")))
 
-    checks = 24
+    if (said.get("dark") or "").strip() != "dark" or "LOOK true" not in said.get("night", ""):
+        fails.append("Night chosen, the map did not go dark with it: %r, %r"
+                     % (said.get("night", "")[-100:], said.get("dark")))
+
+    checks = 25
 
     if fails:
         print("FAIL: %d of %d checks on Maps:" % (len(fails), checks))

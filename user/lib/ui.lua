@@ -5744,7 +5744,24 @@ local sized_faces = {}
 local sized_order = {}                  -- their keys, in the order first asked
 local loaded_fonts = {}                 -- what `gfx` was last given, by role
 
-local function apply_fonts(fonts)
+local apply_fonts
+
+--
+-- **A new look, applied**: the palette mutated in place, the desktop's
+-- colour, and the faces. The kit's own loop does it for a window it runs,
+-- and `direct_event` for one that runs its own - which until 8 October did
+-- not, so an application with its own loop asked whether the look was dark
+-- and was answered from the look it had opened with (Maps, Diego: "maps
+-- needs to follow the users theme preferences").
+--
+local function apply_look(ev)
+  if ev.palette then theme.apply(ev.palette) end
+  if ev.desktop then theme.override { desktop = ev.desktop } end
+
+  apply_fonts(ev.fonts)
+end
+
+function apply_fonts(fonts)
   if type(fonts) ~= "table" then return end
 
   -- **The same fonts again are not a change.** Every window that opens is
@@ -7248,6 +7265,13 @@ function window:direct_event(ev)
     return true
   end
 
+  -- A new look: applied here, and the event left for the application,
+  -- which draws itself again in it.
+  if ev.type == "theme" then
+    apply_look(ev)
+    return false
+  end
+
   return false
 end
 
@@ -7899,8 +7923,7 @@ function window:run()
         -- point: an application that had to know about themes would be an
         -- application that could get them wrong.
         --
-        if ev.palette then theme.apply(ev.palette) end
-        if ev.desktop then theme.override { desktop = ev.desktop } end
+        apply_look(ev)
 
         -- A look that takes the title bars off, or puts them back: the
         -- header makes room for the three or gives it back, and says
@@ -7911,10 +7934,9 @@ function window:run()
         end
 
         -- A window that draws its own pixels draws its own text, so it
-        -- needs the faces as well as the colours. One that sends commands
-        -- is unaffected: the compositor drew that text and has already
-        -- changed.
-        apply_fonts(ev.fonts)
+        -- needs the faces as well as the colours (`apply_look`). One that
+        -- sends commands is unaffected: the compositor drew that text and
+        -- has already changed.
 
         changed = true
       elseif ev.type == "resize" then

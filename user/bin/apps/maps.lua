@@ -160,6 +160,8 @@ end
 
 local colours, style = style_for(is_dark())
 
+print("maps: the map is " .. (is_dark() and "dark" or "light"))
+
 --------------------------------------------------------------------------
 -- Where the map is looking: its centre across the world, 0 to 1, and its
 -- zoom, which need not be whole.
@@ -1327,7 +1329,10 @@ while win.running do
     elseif ev.type == "close" then
       win:close()
     elseif ev.type == "theme" then
+      -- The look changed (applied by `direct_event`): the dark map for a
+      -- dark look, the light one for a light look.
       colours, style = style_for(is_dark())
+      print("maps: the map is " .. (is_dark() and "dark" or "light"))
       dirty = true
     elseif ev.type == "key" then
       local a, b = decode(ev.code)

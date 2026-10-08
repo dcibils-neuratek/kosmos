@@ -21481,3 +21481,20 @@ existing icons by a pixel's shade (a newer Chrome), and those were put back.
 by the Deskbar. **Control**: the first build drew them on the strip alone;
 the suite's machine has the bar, and the check failed with nothing said.
 `x86-dock` 52 passes with the strip's.
+
+## 18.473 A new look reaches a window that runs its own loop
+
+Diego, 8 October: "maps needs to follow the users theme preferences", "now
+its just black theme" - and, when the map was given the look's own colours,
+"just dark and light mode ... its too complicated to grab themes colors",
+so that was undone the same hour. Two maps then, the dark one for a dark
+look and the light one for a light look, as before. The bug was that Maps never
+changed between them. The kit's own loop applies a new look to the theme
+table. A window that runs its own loop goes through `direct_event`, which
+did not, so Maps asked "is the look dark?" and was answered from the look it
+had opened with. `direct_event` applies it now (`apply_look`, one function
+for both), and every application with its own loop is mended with it.
+
+`x86-maps` 25 checks: Night chosen at the end, as Preferences chooses it,
+and Maps says "the map is dark". **Control**: `direct_event` without
+`apply_look`, it fails, "LOOK true" and the map "light".
