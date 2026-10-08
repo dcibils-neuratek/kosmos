@@ -3925,6 +3925,31 @@ end
 --
 local launching = {}
 
+--
+-- **Recently used** (`docs/launcher.html`, agreed 8 October): an
+-- application started here goes to the top of the settings kit's `recent`,
+-- which the launcher's Recently used row shows. Here because this is the
+-- one place every start passes - the launcher, the dock, the Deskbar's
+-- menu, Tracker and `open` all ask - and `recent.lua` is the one door to
+-- the list. Two small requests to `/Home` once a start has succeeded, the
+-- same disk the start has just read the program from; a `/Home` that
+-- refuses (none, or read only) costs the list and nothing else.
+--
+local recent = use("/Kosmos/Libraries/recent.lua")
+
+local function remember(l)
+  local attrs = fs.getattr(l.path)
+
+  if not recent.counts(attrs) then return end
+
+  local list = recent.add(recent.parse(prefs.read(recent.NAME)), l.path, l.args)
+  local ok, why = prefs.write(recent.NAME, recent.format(list))
+
+  if not ok then
+    print(("wm: recently used not kept: %s"):format(tostring(why)))
+  end
+end
+
 local function finish_launch(l, ok, err, id)
   print(("wm: launched %s -> %s %s"):format(tostring(l.program),
         tostring(ok), tostring(ok and id or err)))
@@ -3949,6 +3974,8 @@ local function finish_launch(l, ok, err, id)
     -- (`SYS_SENDER`, in `handlers.open`); this is that answer's fallback.
     pending_pid = id
     pending_program = l.path
+
+    remember(l)
   end
 
   -- Nobody waiting: asked with `wait = false`, and answered at the start.
@@ -4017,7 +4044,7 @@ handlers.launch = function(req, who)
   -- program is starting, which is the whole of what it is for.
   --
   local l = { who = (req.wait ~= false) and who or nil,
-              program = req.program, path = path }
+              program = req.program, path = path, args = req.args }
 
   -- A failure still on its button is replaced by the new try.
   stop_starting(function(s) return s.path == path end)

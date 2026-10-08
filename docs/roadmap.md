@@ -7920,7 +7920,8 @@ processors, and still what follows USB:
    to side"): KOSMOS in square block capitals, lying on a pale ground seen
    from above at a slant, the tops hatched in fine lines, the sides solid,
    and a light circling the word so each letter's sides and its shadow on
-   the ground swing round with it.
+   the ground swing round with it - and the letters themselves turning
+   too ("we can rotate letters... as well").
    The September plan follows, as it was:
    **AGREED again on 26 September, NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua

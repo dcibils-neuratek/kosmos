@@ -40,6 +40,7 @@ grid.CELL_H   = 96      -- a tile and its name under it
 grid.TILE     = 52      -- the round tile
 grid.ICON     = 38      -- the picture in it
 grid.GAP      = 12      -- between the panel and the dock
+grid.FOOT_H   = 56      -- the power row, across the panel's foot
 
 --
 -- **Every application, A to Z, each once.** The Deskbar's menu flattened -
@@ -107,9 +108,12 @@ end
 -- `order` does not name comes after, as the items have it.
 --
 grid.ALL = "All"
+grid.RECENT = "Recently used"     -- under All, while it holds anything
 
-function grid.categories(items, order)
+function grid.categories(items, order, recent)
   local has, out, seen = {}, { grid.ALL }, {}
+
+  if recent and #recent > 0 then out[#out + 1] = grid.RECENT end
 
   for _, item in ipairs(items or {}) do
     if item.section and item.section ~= "" then has[item.section] = true end
@@ -144,17 +148,19 @@ function grid.next_category(cats, current)
 end
 
 --
--- **The sections' rows**: All first and a rule under it, then the rest -
--- each `{ name, y, h }`, its `y` from the panel's top.
+-- **The sections' rows**: All first - and Recently used under it, when it
+-- is there - and a rule under them, then the rest - each `{ name, y, h }`,
+-- its `y` from the panel's top.
 --
 function grid.side_rows(cats)
   local out, y = {}, grid.SIDE_TOP
+  local lead = (cats and cats[2] == grid.RECENT) and 2 or 1
 
   for i, name in ipairs(cats or {}) do
     out[#out + 1] = { name = name, y = y, h = grid.ROW_H }
     y = y + grid.ROW_H + 2
 
-    if i == 1 then y = y + grid.SEP_H end
+    if i == lead then y = y + grid.SEP_H end
   end
 
   return out
@@ -221,7 +227,7 @@ function grid.cell_w(w)
 end
 
 function grid.rows_shown(h)
-  return math.max(1, ((h or grid.H) - grid.TOP - grid.PAD // 2) // grid.CELL_H)
+  return math.max(1, ((h or grid.H) - grid.FOOT_H - grid.TOP - grid.PAD // 2) // grid.CELL_H)
 end
 
 function grid.rows(n)
@@ -293,12 +299,100 @@ function grid.keep_visible(sel, top, shown)
   return top
 end
 
+--
+-- **The scrollbar's thumb** (Diego, 8 October: "the app launcher lacks a
+-- scrollbar although it scrolls fine but it lacks the indicator"): along
+-- the grid's right edge, as long as the grid's height is to the list's and
+-- as far down as `top` is - its y from the grid's top and its length, or
+-- nil when every row shows.
+--
+function grid.thumb(n, top, shown)
+  local all = grid.rows(n)
+
+  if all <= shown then return nil end
+
+  local track = shown * grid.CELL_H
+  local len = math.max(24, track * shown // all)
+  local most = all - shown
+
+  return (track - len) * math.min(top or 0, most) // most, len
+end
+
 -- The first row after scrolling `by` rows (the wheel's notches), held so
 -- the last row is never above the bottom of the panel.
 function grid.scroll(top, n, shown, by)
   local most = math.max(0, grid.rows(n) - shown)
 
   return math.max(0, math.min(most, (top or 0) + (by or 0)))
+end
+
+--
+-- **What Recently used shows**: each entry the file holds (`recent.lua`),
+-- newest first, as the launcher's own item for that program when the menu
+-- has one - its name and its picture - and otherwise an item of its own,
+-- named after its file, so something started from a Terminal or Tracker is
+-- there too.
+--
+function grid.recent_items(apps, entries)
+  local out = {}
+
+  for _, e in ipairs(entries or {}) do
+    local found
+
+    -- Not the launcher, nor the desktop and its bar: never shown anywhere.
+    if grid.NOT_STARTED_HERE[program_name(e.program)] then goto next end
+
+    for _, item in ipairs(apps or {}) do
+      if item.program == e.program and (item.args or "") == (e.args or "") then
+        found = item
+        break
+      end
+    end
+
+    found = found or { name = program_name(e.program), program = e.program,
+                       args = (e.args ~= "") and e.args or nil }
+    out[#out + 1] = found
+
+    ::next::
+  end
+
+  return out
+end
+
+--
+-- **The power row** (`docs/launcher.html`, agreed 8 October; Diego: "the
+-- new menu launcher needs a shutdown menu (possibly aligned to the bottom)"):
+-- across the panel's foot, Restart and Shut Down at its right as KDE's are.
+-- Each `{ name, text, x, y, w, h }` in the panel; the row itself starts at
+-- `h - FOOT_H`.
+--
+grid.POWER = {
+  { name = "restart",  text = "Restart",   w = 118 },
+  { name = "shutdown", text = "Shut Down", w = 138 },
+}
+
+function grid.foot(w, h)
+  local out, x = {}, (w or grid.W) - 12
+  local y = (h or grid.H) - grid.FOOT_H + (grid.FOOT_H - 38) // 2
+
+  for i = #grid.POWER, 1, -1 do
+    local b = grid.POWER[i]
+
+    x = x - b.w
+    table.insert(out, 1, { name = b.name, text = b.text, x = x, y = y, w = b.w, h = 38 })
+    x = x - 4
+  end
+
+  return out
+end
+
+-- The power button a point is on, or nil.
+function grid.foot_hit(buttons, x, y)
+  for _, b in ipairs(buttons or {}) do
+    if x >= b.x and x < b.x + b.w and y >= b.y and y < b.y + b.h then return b.name end
+  end
+
+  return nil
 end
 
 --

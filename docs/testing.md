@@ -20969,3 +20969,27 @@ now, and `win.on_resize` builds the page again at the new size.
 size, and its sidebar's ground near the new bottom is the colour it is near
 the old one. **Control**: 0.11.55's `preferences.lua` - fails, "(30, 38, 54)
 near the new bottom, (36, 45, 62) near the old". Restored.
+
+## 18.450 The launcher's Recently used, its power row and its scrollbar
+
+`docs/launcher.html`, agreed by Diego on 8 October ("yes to all"):
+
+- **Recently used**, a row under All: the window manager keeps every
+  application it starts, newest first, fifteen at most, as the settings
+  kit's `recent` (`user/lib/recent.lua`, the one door both sides use); the
+  launcher shows them in that order, and a right press on the row clears it.
+  Only an application a person opens counts - not a program, nor anything
+  filed `section none`.
+- **The power row** at the panel's foot: the version and how long the
+  machine has been up, then Restart and Shut Down, lit under the pointer.
+  Each closes the launcher and opens `power`, which asks - Cancel or the
+  action, Return and Escape, and done by itself after 30 seconds.
+- **A scrollbar** along the grid's right edge when there is more than shows
+  (Diego: "it scrolls fine but it lacks the indicator").
+
+`test_launchgrid.lua` 67 (the list kept and read back, moved up rather than
+added twice, fifteen, what counts; the row and its rule; the power row's
+places and presses; the thumb). `run_dock.py` 50: Recently used holds the
+Calculator started a moment before, and Shut Down opens the window that asks
+and Escape there leaves the machine on. **Control**: `remember` not called
+and the launcher's Shut Down sending nothing - both fail. Restored.

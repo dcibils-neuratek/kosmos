@@ -521,6 +521,41 @@ def main():
         guest._read_available()
         said["outside"] = guest.seen[mark:]
 
+        # ---- 3e: Recently used and the power row (`docs/launcher.html`,
+        # agreed 8 October) ----
+        # The Calculator started above is in Recently used, a row under All
+        # shown by resting on it; Shut Down at the foot closes the launcher
+        # and opens the window that asks, which Escape closes having done
+        # nothing.
+        mark = len(guest.seen)
+        click(*kosmos_button(), width, height)
+        at_grid = guest.wait_for_line("launchpad: the grid at ", "the launcher a fourth time", mark)
+        rows4 = guest.wait_for_line("launchpad: rows ", "the rows again", mark)
+        power4 = maybe("launchpad: power ", "the power row", mark)
+        time.sleep(2)
+        gx, gy = (int(v) for v in re.match(r"(\d+),(\d+)", at_grid).groups())
+        rec = re.search(r"Recently used (\d+),(\d+) (\d+)x(\d+)", rows4)
+
+        if rec:
+            rx, ry, rw, rh = (int(v) for v in rec.groups())
+            guest.mouse_to(*R._to_tablet(gx + rx + 60, gy + ry + rh // 2, width, height))
+            said["recent"] = maybe("launchpad: Recently used, ", "Recently used shown", mark)
+
+        off = re.search(r"shutdown (\d+),(\d+)", power4 or "")
+
+        if off:
+            mark = len(guest.seen)
+            click(gx + int(off.group(1)) + 20, gy + int(off.group(2)) + 19, width, height)
+            said["asked"] = maybe("power: asking to ", "the window that asks", mark)
+            guest.wait_for("wm: window Shut Down at ", "the window that asks, open")
+            time.sleep(2)
+            guest.sendkey("esc")
+            time.sleep(2)
+            guest._read_available()
+            said["not off"] = ("wm: closed Shut Down" in guest.seen[mark:]
+                               and "power: off" not in guest.seen[mark:]
+                               and "wm: closed Open" in guest.seen[mark:])
+
         # ---- 4: the whole width ----
         mark = len(guest.seen)
         said["whole"] = session.run("setprop /Running/Deskbar/dock whole").decode(errors="replace")
@@ -816,10 +851,13 @@ def main():
                      "launcher, or opened another: %d grids, closed %s"
                      % (second.count("launchpad: the grid at"), "wm: closed Open" in second))
 
-    order = [p.split(" ")[0] for p in said.get("pills", "").split("; ")]
+    # A row's name is everything before its place - "Recently used" is two
+    # words - and Recently used is under All once anything was started.
+    order = [re.sub(r" -?\d+,\d+ .*$", "", p) for p in said.get("pills", "").split("; ")]
 
-    if order != ["All", "Applications", "System", "Development", "Demos", "Preferences"]:
-        fails.append("the sections' rows were not All and the five in Diego's order: %r"
+    if order != ["All", "Recently used", "Applications", "System", "Development", "Demos",
+                 "Preferences"]:
+        fails.append("the sections' rows were not All, Recently used and the five in Diego's order: %r"
                      % said.get("pills"))
 
     demos = re.match(r"(\d+)", said.get("demos", ""))
@@ -910,6 +948,17 @@ def main():
                      "the dock about half transparent and keep it: %r"
                      % ((said.get("slid"), said.get("slid kept")),))
 
+    recent_ = re.match(r"(\d+)", said.get("recent") or "")
+
+    if not recent_ or int(recent_.group(1)) < 1:
+        fails.append("Recently used was not a row under All holding the Calculator "
+                     "started a moment before: %r" % said.get("recent"))
+
+    if said.get("asked") != "shutdown, 30 s" or not said.get("not off"):
+        fails.append("Shut Down at the launcher's foot did not close it and open the "
+                     "window that asks, or Escape there did not leave the machine on: %r"
+                     % ((said.get("asked"), said.get("not off")),))
+
     grown = re.match(r"(\d+)x(\d+)", said.get("prefs resized") or "")
     g0, g1 = said.get("prefs ground") or (None, None)
 
@@ -918,7 +967,7 @@ def main():
                      "the new height - its sidebar's ground near the new bottom "
                      "%r, near the old %r: %r" % (g1, g0, said.get("prefs resized")))
 
-    checks = 48
+    checks = 50
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))

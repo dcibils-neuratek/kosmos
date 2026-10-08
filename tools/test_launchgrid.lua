@@ -141,11 +141,91 @@ check(ph == 644 - grid.GAP - 32 - grid.GAP and py == 32 + grid.GAP,
 px = grid.panel(100, 1364, 1720, 32)
 check(px == 0, "a panel near the left edge went off the screen")
 
+-- 11. Recently used (`recent.lua`): the file read and written, a start
+-- moved to the top rather than added twice, fifteen at most, and only an
+-- application someone opens counted.
+local recent = dofile("user/lib/recent.lua")
+local function said(l)
+  local out = {}
+
+  for _, e in ipairs(l) do out[#out + 1] = e.program .. ((e.args or "") ~= "" and (" " .. e.args) or "") end
+
+  return table.concat(out, ", ")
+end
+
+local list = recent.parse({ { program = "/Kosmos/Apps/terminal.lua" },
+                            { program = "/Kosmos/Apps/browser.lua", args = "https://example.com/" },
+                            { program = "not a path" }, "nor a table",
+                            { program = "/Home/Projects/hello/hello.lua" } })
+
+check(#list == 3 and list[2].args == "https://example.com/" and list[1].args == "",
+      "the recent list read as " .. said(list))
+check(said(recent.parse(recent.format(list))) == said(list) and recent.format(list)[1].args == nil,
+      "the recent list did not read back as it was kept")
+
+list = recent.add(list, "/Kosmos/Apps/browser.lua", "https://example.com/")
+check(#list == 3 and list[1].program == "/Kosmos/Apps/browser.lua"
+      and list[2].program == "/Kosmos/Apps/terminal.lua",
+      "started again, the browser was not moved to the top once: " .. said(list))
+list = recent.add(list, "/Kosmos/Apps/browser.lua", "")
+check(#list == 4, "the browser with no address was not its own entry")
+check(recent.add({}, "/Kosmos/Apps/x.lua", "a\nb")[1].args == "",
+      "arguments with a line break went into the file")
+
+local many = {}
+
+for i = 1, 20 do many = recent.add(many, "/Kosmos/Apps/a" .. i .. ".lua") end
+
+check(#many == recent.MOST and many[1].program == "/Kosmos/Apps/a20.lua",
+      "twenty started kept " .. #many .. ", the newest first")
+check(recent.counts({ kind = "application", section = "applications" })
+      and not recent.counts({ kind = "application", section = "none" })
+      and not recent.counts({ kind = "program" }) and not recent.counts(nil),
+      "the wrong starts counted as an application opened")
+
+-- Its row: under All, the rule under both, and what it shows.
+local rcats = grid.categories(filed, { "Applications" }, list)
+local rrows = grid.side_rows(rcats)
+
+check(rcats[2] == grid.RECENT and rrows[2].y == rrows[1].y + grid.ROW_H + 2
+      and rrows[3].y == rrows[2].y + grid.ROW_H + 2 + grid.SEP_H,
+      "Recently used was not under All with the rule under it")
+check(grid.categories(filed, { "Applications" }, {})[2] ~= grid.RECENT,
+      "an empty Recently used still had a row")
+
+local shownr = grid.recent_items(menu, recent.parse({ { program = "/Kosmos/Apps/groove.lua" },
+                                 { program = "/Home/Projects/hello/hello.lua" },
+                                 { program = "/Kosmos/Apps/launchpad.lua" } }))
+
+check(#shownr == 2 and shownr[1].name == "Groove" and shownr[2].name == "hello",
+      "Recently used showed " .. names(shownr))
+
+-- 12. The power row: Restart and Shut Down at the foot's right, pressed.
+local foot = grid.foot(820, 600)
+
+check(#foot == 2 and foot[1].name == "restart" and foot[2].x + foot[2].w == 820 - 12
+      and foot[1].x + foot[1].w + 4 == foot[2].x and foot[1].y > 600 - grid.FOOT_H,
+      "the power row's buttons are not at the foot's right")
+check(grid.foot_hit(foot, foot[2].x + 5, foot[2].y + 5) == "shutdown"
+      and grid.foot_hit(foot, foot[1].x + 5, foot[1].y + 5) == "restart"
+      and grid.foot_hit(foot, 40, 600 - 20) == nil,
+      "a press on the power row hit the wrong thing")
+check(grid.TOP + grid.rows_shown(600) * grid.CELL_H <= 600 - grid.FOOT_H,
+      "the grid's rows run under the power row")
+
+-- 13. The scrollbar: none when everything shows; at the top, then at the
+-- bottom of its track, and as long as what shows is of the whole.
+check(grid.thumb(20, 0, 4) == nil, "twenty tiles in four rows had a scrollbar")
+local ty, tl = grid.thumb(40, 0, 4)
+check(ty == 0 and tl == 4 * grid.CELL_H * 4 // 8, ("the thumb at the top is %s, %s long"):format(ty, tl))
+ty, tl = grid.thumb(40, 4, 4)
+check(ty + tl == 4 * grid.CELL_H, "scrolled to the end, the thumb is not at the track's foot")
+
 if fails == 0 then
   print(("PASS: %d checks on the launcher grid's arithmetic (every application once and "
          .. "A to Z, a search, where each tile is beside the sections, what a press hit, "
-         .. "the sections' rows and the menu's pause, the arrows, the wheel, and where the "
-         .. "panel sits)."):format(checks))
+         .. "the sections' rows and the menu's pause, the arrows, the wheel, where the "
+         .. "panel sits, Recently used and the power row)."):format(checks))
   os.exit(0)
 end
 

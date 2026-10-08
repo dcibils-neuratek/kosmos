@@ -114,7 +114,16 @@ local function grid_mode(ax, ay)
   local apps = grid.everything(all)
   local typed, list, sel, top = "", apps, (#apps > 0) and 1 or nil, 0
   local rows = grid.rows_shown(ph)
-  local cats = grid.categories(apps, section_order)
+
+  --
+  -- **Recently used** (`docs/launcher.html`, agreed 8 October): what the
+  -- window manager wrote as it started each application (`recent.lua`),
+  -- newest first, a row under All while it holds anything.
+  --
+  local recent = use("/Kosmos/Libraries/recent.lua")
+  local prefs = use("/Kosmos/Libraries/prefs.lua")
+  local recently = grid.recent_items(apps, recent.parse(prefs.read(recent.NAME)))
+  local cats = grid.categories(apps, section_order, recently)
   local category = grid.ALL
 
   local win, err = ui.window{ title = "Open", w = pw, h = ph, x = px, y = py,
@@ -158,7 +167,15 @@ local function grid_mode(ax, ay)
 
   local function search(text)
     typed = text
-    list = grid.filter(apps, typed, category)
+
+    -- Recently used keeps the order things were started in, and searches
+    -- inside itself as a section does.
+    if category == grid.RECENT then
+      list = grid.filter(recently, typed, nil)
+    else
+      list = grid.filter(apps, typed, category)
+    end
+
     sel = (#list > 0) and 1 or nil
     top = 0
     win.dirty = true
@@ -200,8 +217,9 @@ local function grid_mode(ax, ay)
   local side = grid.side_rows(cats)
   local SECTION_ICON = { All = "Misc_Deskbar_Group", Applications = "App_Tracker",
                          System = "App_Pulse", Development = "App_Pe",
-                         Demos = "App_GLDirectMode", Preferences = "Prefs_Appearance" }
-  local held = { [grid.ALL] = #apps }
+                         Demos = "App_GLDirectMode", Preferences = "Prefs_Appearance",
+                         [grid.RECENT] = "App_Clock" }
+  local held = { [grid.ALL] = #apps, [grid.RECENT] = #recently }
 
   for _, item in ipairs(apps) do
     if item.section then held[item.section] = (held[item.section] or 0) + 1 end
@@ -219,6 +237,43 @@ local function grid_mode(ax, ay)
   end
 
   local view = ui.view{ x = 0, y = 0, w = pw, h = ph }
+
+  --
+  -- **The power row** (`docs/launcher.html`, agreed 8 October): Restart and
+  -- Shut Down at the foot. A press closes the launcher and opens `power`,
+  -- the window that asks before it does either.
+  --
+  local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+  local about_machine
+  local foot = grid.foot(pw, ph)
+  local POWER_ICON = { restart = "reload", shutdown = "power" }
+  local lit_power = nil
+
+  do
+    local said = {}
+
+    for _, b in ipairs(foot) do said[#said + 1] = ("%s %d,%d"):format(b.name, b.x, b.y) end
+
+    print("launchpad: power " .. table.concat(said, "; "))
+  end
+
+  -- "Kosmos 0.11.56 · up 1:49", from the build and the counter.
+  local build = sys.build() or {}
+
+  about_machine = function()
+    local text = "Kosmos " .. tostring(build.version or "")
+    local seconds = sys.ticks() // counter_hz
+    local minutes = seconds // 60
+
+    return text .. ("  \u{b7}  up %d:%02d"):format(minutes // 60, minutes % 60)
+  end
+
+  local function power(name)
+    print("launchpad: " .. name)
+    fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/power.lua",
+                             args = name, wait = false })
+    win:close()
+  end
 
   function view:draw(g)
     local P = grid.PAD
@@ -270,7 +325,7 @@ local function grid_mode(ax, ay)
       g:text(grid.SIDE_W - RI - 12 - gfx.measure(n, small), r.y + (r.h - gfx.height(small)) // 2,
              n, on and theme.accent or theme.text_dim, back, "ui", SMALL)
 
-      if i == 1 then
+      if i == ((cats[2] == grid.RECENT) and 2 or 1) then
         g:fill(RI + 6, r.y + r.h + 2 + grid.SEP_H // 2, grid.SIDE_W - 2 * RI - 12, 1, theme.line_soft)
       end
     end
@@ -280,8 +335,10 @@ local function grid_mode(ax, ay)
                  or (category == grid.ALL) and ("Every application, %d"):format(#apps)
                  or ("%s, %d"):format(category, #list)
 
+    local order = (category == grid.RECENT and typed == "") and "Newest first" or "A to Z"
+
     g:text(grid.GX + 8, grid.HEAD_Y, head, theme.text_dim, face, "ui", SMALL)
-    g:text(self.w - P - 8 - gfx.measure("A to Z", small), grid.HEAD_Y, "A to Z",
+    g:text(self.w - P - 8 - gfx.measure(order, small), grid.HEAD_Y, order,
            theme.text_dim, face, "ui", SMALL)
 
     -- The tiles that show: a round tile, its picture, its name under it -
@@ -315,6 +372,43 @@ local function grid_mode(ax, ay)
     if #list == 0 then
       g:text(grid.GX + 8, grid.TOP + 8, "Nothing here is called that", theme.text_dim, face)
     end
+
+    -- The scrollbar, when there is more than shows: a thumb along the
+    -- grid's right edge, in the margin beside the last column.
+    local thumb_y, thumb_len = grid.thumb(#list, top, rows)
+
+    if thumb_y then
+      local tx_ = self.w - P // 2 - 3
+
+      g:fill_round(tx_, grid.TOP, 4, rows * grid.CELL_H, mix(face, 0xffffffff, 10), 2)
+      g:fill_round(tx_, grid.TOP + thumb_y, 4, thumb_len, theme.text_dim, 2)
+    end
+
+    -- The power row, over everything above it: its own ground, a rule,
+    -- the system and how long it has been up at the left, and Restart and
+    -- Shut Down at the right, lit under the pointer.
+    local fy = self.h - grid.FOOT_H
+
+    g:fill(0, fy, self.w, grid.FOOT_H, column)
+    g:fill(0, fy, self.w, 1, theme.line_soft)
+    g:text(P, fy + (grid.FOOT_H - gfx.height(small)) // 2, about_machine(),
+           theme.text_dim, column, "ui", SMALL)
+
+    for _, b in ipairs(foot) do
+      local back = column
+
+      if b.name == lit_power then
+        back = lit
+        g:fill_round(b.x, b.y, b.w, b.h, lit, 10)
+      end
+
+      local tw = 19 + 8 + gfx.measure(b.text, row_face)
+      local bx = b.x + (b.w - tw) // 2
+
+      g:line_icon(bx, b.y + (b.h - 19) // 2, POWER_ICON[b.name], theme.text, 19)
+      g:text(bx + 19 + 8, b.y + (b.h - gfx.height(row_face)) // 2, b.text,
+             theme.text, back, "ui", ROW)
+    end
   end
 
   function view:mouse(action, x, y)
@@ -327,6 +421,13 @@ local function grid_mode(ax, ay)
     if cat then
       where = "side"
       choose(cat)
+      return true
+    end
+
+    local p = grid.foot_hit(foot, x, y)
+
+    if p then
+      power(p)
       return true
     end
 
@@ -346,12 +447,19 @@ local function grid_mode(ax, ay)
   -- keeps the submenu you are going for (`grid.aim`).
   --
   local wmproto = use("/Kosmos/Libraries/wmproto.lua")
-  local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
   local last_x, last_y, pending = nil, nil, nil
 
   wmproto.track(win.handle, true)
 
   win.on_hover = function(_, x, y)
+    -- Restart and Shut Down lit under the pointer, as a tile is.
+    local p = grid.foot_hit(foot, x, y)
+
+    if p ~= lit_power then
+      lit_power = p
+      win.dirty = true
+    end
+
     local name = grid.side_hit(side, x, y)
     local how = grid.aim(last_x, last_y, x, y)
 
@@ -423,6 +531,29 @@ local function grid_mode(ax, ay)
   -- address rather than an application of its own.
   --
   function view:on_context(x, y)
+    --
+    -- **Recently used's right press**: Clear Recently used (agreed 8
+    -- October), the one thing a person would want to do to it. The list
+    -- emptied, the row gone, and All shown if it was what was showing.
+    --
+    if grid.side_hit(side, x, y) == grid.RECENT then
+      win:open_menu(win.origin_x + x, win.origin_y + (win.head_h or 0) + y, {
+        { text = "Clear Recently used", on_choose = function()
+          prefs.write(recent.NAME, {})
+          recently = {}
+          held[grid.RECENT] = 0
+          cats = grid.categories(apps, section_order, recently)
+          side = grid.side_rows(cats)
+          print("launchpad: recently used cleared")
+
+          if category == grid.RECENT then choose(grid.ALL) end
+
+          win.dirty = true
+        end },
+      })
+      return true
+    end
+
     local i = grid.hit(#list, top, self.w, self.h, x, y)
     local item = i and list[i]
 
