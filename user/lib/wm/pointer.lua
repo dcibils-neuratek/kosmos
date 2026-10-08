@@ -239,7 +239,7 @@ return function(ctx)
         raise(win)
 
         --
-        -- Super and Control held: the window moves, from wherever it was
+        -- Super held: the window moves, from wherever it was
         -- pressed, and the application never sees the press - a button under
         -- the pointer is not pressed, a game's picture is not clicked. Not the
         -- desktop, the Deskbar or a full-screen window, which do not move.
@@ -411,7 +411,7 @@ return function(ctx)
         -- Said for a move by the keys, which nothing else shows but pixels,
         -- as a keyboard's move is said below.
         if PT.dragging.held then
-          print(("wm: moved %s by Super + Control to %d,%d"):format(
+          print(("wm: moved %s by Super to %d,%d"):format(
                 tostring(PT.dragging.win.title), PT.dragging.win.x, PT.dragging.win.y))
         elseif PT.dragging.header then
           -- And by a header, whose drag began in the window rather than

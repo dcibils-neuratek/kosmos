@@ -2254,10 +2254,13 @@ PT.dragging = nil          -- { win, dx, dy } while a title bar is held
 --
 -- **Which keys are held**, from the raw events every key sends (the same
 -- numbers on both boards, `hal/keys.h`), for a press that asks with them:
--- Super and Control held and a window pressed anywhere moves it
--- (`roadmap.md` 6zj - Diego: "a key combination and that activates full
--- window drag? Like super+ctrl+click and drag"). The window manager sees
--- the keys and the press before any application, so it keeps the press.
+-- Super held and a window pressed anywhere moves it - Super and Control
+-- from 6zj (Diego: "a key combination and that activates full window drag?
+-- Like super+ctrl+click and drag"), and Super alone from 8 October, when
+-- the old tab went and this became how a window whose application has hung
+-- is moved (Diego, choosing it: "Super+drag, anywhere"). The window manager
+-- sees the keys and the press before any application, so it keeps the
+-- press - and it needs nothing from the application to do it.
 --
 -- **And the Super it was held with does not open the menu.** Both keyboard
 -- drivers send Super's tap - `ESC [ 1 ; 9 ~`, the Kosmos menu - on its
@@ -2269,9 +2272,7 @@ OUT.chord = { held = {}, super_moved = false }
 function OUT.chord.move_held()
   local held = OUT.chord.held
 
-  return (held[29] or held[97])                    -- Control, left or right
-         and (held[125] or held[126])              -- Super, left or right
-         and true or false
+  return (held[125] or held[126]) and true or false     -- Super, left or right
 end
 PT.resizing = nil          -- { win, ox, oy, ow, oh } while a grip is held
 

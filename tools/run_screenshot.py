@@ -4064,9 +4064,10 @@ def check_wallpapers(guest):
 
 
 def check_super_drag(guest):
-    """**Super + Control and a drag moves a window from anywhere in it**
-    (`roadmap.md` 6zj). Diego, 27 September: "a key combination and that
-    activates full window drag? Like super+ctrl+click and drag".
+    """**Super and a drag moves a window from anywhere in it** (`roadmap.md`
+    6zj). Diego, 27 September: "a key combination and that activates full
+    window drag? Like super+ctrl+click and drag" - and Super alone from 8
+    October, when the old tab went and this became how a hung window moves.
 
     A probe window that says when it is pressed, in the middle of its own
     content where no title bar is. A plain press there reaches it - which is
@@ -4122,9 +4123,8 @@ def check_super_drag(guest):
     guest.wait_for_line("dragprobe: pressed", "a plain press to reach the "
                         "probe - which is what shows it can hear one", mark)
 
-    # Control and Super held, the same place pressed and dragged.
+    # Super alone held, the same place pressed and dragged.
     held = len(guest.seen)
-    keys(True, "ctrl")
     keys(True, "meta_l")
     to(mx, my)
     time.sleep(0.4)
@@ -4139,14 +4139,13 @@ def check_super_drag(guest):
     guest.mouse_button(False)
     time.sleep(0.4)
     keys(False, "meta_l")
-    keys(False, "ctrl")
 
-    moved = guest.wait_for_line("wm: moved DragProbe by Super + Control to ",
-                                "the window to move by Super + Control", held)
+    moved = guest.wait_for_line("wm: moved DragProbe by Super to ",
+                                "the window to move by Super", held)
     nx, ny = (int(v) for v in re.match(r"(\d+),(\d+)", moved).groups())
 
     if abs(nx - (x + 120)) > 3 or abs(ny - (y + 80)) > 3:
-        raise Failure("Super + Control and a drag of 120 across and 80 down "
+        raise Failure("Super and a drag of 120 across and 80 down "
                       "moved the window from %d,%d to %d,%d" % (x, y, nx, ny))
 
     guest.wait_for_line("wm: Super moved a window, so its tap opens nothing",
@@ -4154,7 +4153,7 @@ def check_super_drag(guest):
                         "let go", held)
 
     if "dragprobe: pressed" in guest.seen[held:]:
-        raise Failure("the press held with Super and Control reached the "
+        raise Failure("the press held with Super reached the "
                       "window as well as moving it - the application heard "
                       "a click nobody meant for it")
 
@@ -11918,7 +11917,7 @@ def main():
           f"{wallpaper_checks} on the desktop's wallpapers carried in the "
           f"image and one reaching the screen pixel for pixel, "
           f"{super_drag_checks} on a window moved from anywhere in it with "
-          f"Super + Control, its application not hearing the press and the "
+          f"Super, its application not hearing the press and the "
           f"Super opening nothing, "
           f"{compress_checks} on Compress and Extract from Tracker's right "
           f"click, each a program Tracker watches to its end, "
