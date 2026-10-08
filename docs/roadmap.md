@@ -7914,6 +7914,13 @@ processors, and still what follows USB:
    Kit's meshes and TinyGL already exist, and a glyph's outline made
    into a mesh is a thing Cafesa3D's text would want too, so likely a
    kit door rather than the example's own code.
+   **Its look, the same evening** (Diego, with a picture of HELLO drawn
+   in pencil as block letters standing on the page: "i like we draw kosmos
+   like the image and a light goes around and the shadow changes from side
+   to side"): KOSMOS in square block capitals, lying on a pale ground seen
+   from above at a slant, the tops hatched in fine lines, the sides solid,
+   and a light circling the word so each letter's sides and its shadow on
+   the ground swing round with it.
    The September plan follows, as it was:
    **AGREED again on 26 September, NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua
