@@ -1162,9 +1162,14 @@ not designed:
 - **Drawn on 8 October, `docs/maps.html`, and agreed**: "mockup is
   great", "but i do want a close/open sidebar button always visible", then
   "go ahead and build it". So: a sidebar button in the header, always
-  there, opening and closing the sidebar; the rest as drawn. Next, before
-  code: the architecture (`docs/maps.md`) and its diagram, then the Map
-  Kit's first step.
+  there, opening and closing the sidebar; the rest as drawn. **Designed
+  the same night**: `docs/maps.md` (the feature set and the architecture)
+  and `docs/maps-architecture.png` - a Map Kit in C reading PMTiles and
+  OpenStreetMap vector tiles and drawing them through new anti-aliased
+  paths in gfx, a made-up region (Port Alder, on Null Island) carried in
+  the image, and Lua for the window. Steps **M1** gfx paths, **M2** PMTiles
+  and MVT, **M3** drawing and the region, **M4** the window, **M5** labels,
+  search and places, **M6** the network.
 
 **AGREED on 6 October - the keyring, and Passwords.** Network sharing's
 N8 grew into it: Diego, "key kept on the machine itself in a keyring",

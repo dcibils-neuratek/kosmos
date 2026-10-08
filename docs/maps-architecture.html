@@ -1,0 +1,158 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Maps, and what it stands on, as one picture: the application on top, the
+  libraries it uses beside it, the Map Kit marked new, gfx's paths marked
+  new, the compress kit and the window manager as they are, and Nebula at
+  the bottom. The busiest path - a frame of a drag - drawn through it (F),
+  and the later network path (N) dashed. Drawn on 8 October 2026, before
+  any of it is built; `docs/maps.md` is the argument and `docs/maps.html`
+  the window.
+
+  Rendered to docs/maps-architecture.png by headless Chrome at twice its
+  size, as docs/stack.png is:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --disable-gpu --screenshot=docs/maps-architecture.png \
+      --window-size=1400,H --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/maps-architecture.html
+
+  where H is the page's height, which the script at the end puts in the
+  title.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Maps architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Maps - what it stands on</h1>
+<p class="sub">A native map: OpenStreetMap's vector tiles read from a PMTiles archive, decoded and drawn in C by a new Map Kit, through new anti-aliased paths in gfx, into a window that draws its own pixels. Maps itself is Lua - what a person does - and the thinnest layer there is.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--later);border-style:dashed;background:#fff"></i>later (M6)</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>application</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>C kits</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">F</span><span>a frame of a drag</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Application</h2>
+      <div class="row" style="grid-template-columns:1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Maps - <code>maps.lua</code></b><p>The window and its header with the sidebar button; the sidebar - search, Pinned, Saved, Recently viewed; the card; pan and zoom: which tiles and where <span class="f">F1</span>; labels placed and kept from overlapping <span class="f">F4</span>.</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in Maps' process)</h2>
+      <div class="row" style="grid-template-columns:repeat(4,1fr)">
+        <div class="box"><b>ui.lua</b><p>the direct window, its band, events</p></div>
+        <div class="box"><b>pixelkit.lua</b><p>header, buttons, field, lists on a surface</p></div>
+        <div class="box"><b>prefs.lua</b><p><code>maps</code>: pins, saved, recent</p></div>
+        <div class="box later-box"><span class="tag later">M6</span><b>http.lua</b><p>tiles over HTTPS, in a helper</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>C kits (in Maps' process)</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Map Kit - <code>/Kosmos/Kits/map</code></b>
+          <p><code>pmtiles.c</code> the archive: header, directories, Hilbert tile ids <span class="f">(once a tile)</span><br>
+             <code>mvt.c</code> a tile: layers, features, names, geometry <span class="f">(once a tile)</span><br>
+             <code>mapdraw.c</code> the style's rules, in order, casings first <span class="f">F2</span><br>
+             <code>map.project</code> / <code>unproject</code>: longitude and latitude to the map</p></div>
+        <div class="box"><b>compress</b><p><code>gzip.h</code>: a tile stored gzipped</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:2fr 1fr;margin-top:10px">
+        <div class="box new"><span class="tag">NEW</span><b>gfx - <code>path.c</code></b><p>a polygon and a wide line through one coverage buffer, blended once a rule <span class="f">F3</span>; <code>s:polygon</code>, <code>s:polyline</code> for Lua, <code>gfx_path_*</code> for C - Write, Paint, the 3D Kit and Cafesa3D want it too</p></div>
+        <div class="box"><b>gfx</b><p>surfaces, text, measure</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers</h2>
+      <div class="row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="box"><b>window manager</b><p>composes the window's region <span class="f">F5</span></p></div>
+        <div class="box"><b>binfs / diskfs</b><p><code>/Kosmos/Maps</code>, <code>/Home/Maps</code>: the archives</p></div>
+        <div class="box later-box"><span class="tag later">M6</span><b>network, TLS Kit</b><p>OpenFreeMap's tiles, cached under <code>/Home</code></p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr"><div class="box"><b>threads, address spaces, IPC, capabilities</b><p>the region the window draws into and the window manager reads</p></div></div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>F - a frame of a drag</h3>
+      <ol>
+        <li><b>F1</b> Maps works out which tiles are on the screen at this zoom and where - about twelve at 1720 by 1440.</li>
+        <li><b>F2</b> For each, <code>tile:draw</code>: the style's rules in order - land, water, parks, buildings, road casings, roads.</li>
+        <li><b>F3</b> Each rule is one coverage buffer filled by gfx's paths and blended once.</li>
+        <li><b>F4</b> The labels: placed when a tile arrives, moved by the drag, drawn as text.</li>
+        <li><b>F5</b> One commit; the window manager composes.</li>
+      </ol>
+      <p style="font-size:13px;color:var(--dim);margin-top:6px">Nothing on this path decodes, reads the disk or waits on the network: tiles are decoded once and kept.</p>
+    </div>
+    <div class="card"><h3>What crosses where</h3>
+      <table>
+        <tr><td>The archive</td><td>read once into Maps' memory</td></tr>
+        <tr><td>Pixels</td><td>the window's region, shared with the window manager</td></tr>
+        <tr><td>The style</td><td>a Lua table, handed to the kit once</td></tr>
+        <tr><td>Tiles from the network (M6)</td><td>bytes on the disk; a message saying which arrived</td></tr>
+        <tr><td>Pins, Saved, Recent</td><td><code>/Home/Preferences/maps</code></td></tr>
+      </table>
+    </div>
+    <div class="card"><h3>C or Lua</h3>
+      <table>
+        <tr><td>Decoding, drawing</td><td>C - thousands of points a tile, every frame</td></tr>
+        <tr><td>Which tiles, labels, sidebar, search</td><td>Lua - a few dozen things a frame</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>
