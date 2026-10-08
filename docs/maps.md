@@ -172,6 +172,41 @@ streets within thirty degrees of it, until gfx can turn text.
 Each step leaves a permanent test - the host's for C, `run_maps.py` for
 the window - and only x86-64 runs them for now (`CLAUDE.md`).
 
+## M6, the network - written down for Diego to decide
+
+What M6 is: the world's map, not only a region on the disk. Tiles come from
+OpenFreeMap (`https://tiles.openfreemap.org/planet`, OpenMapTiles' schema,
+free for an application's use, no key), are kept on the disk so a place
+looked at once opens with no network, and **the window never waits for
+one** (`CLAUDE.md`: nothing on the desktop waits on a server or the network).
+
+**What has to exist, and the one choice in it.** Something has to fetch
+over HTTPS while the window goes on drawing. That something is someone the
+window *asks* - so by the language rule it is a **server, in C**: Lua's
+`http.lua` is for a program a person runs, and a server's timing and
+correctness are other processes' business. It is also a thing other
+applications want (a photo's place, a weather map), which the premise says
+makes it the system's rather than Maps'.
+
+**Recommended: a `tiles` server**, C, started by Maps when first wanted:
+
+- asked by a declared shape (`user/include/tileproto.h`): `want` a list of
+  tiles - answered at once, the fetching queued - and `arrived` since a
+  count - answered at once with which have come;
+- it fetches with the TLS Kit over the Network Kit, one connection kept to
+  the host, a few tiles at a time, newest wants first;
+- it keeps each tile under `/Home/Maps/cache` - a PMTiles-like file of its
+  own, so the Map Kit reads a cached tile the way it reads a region - to a
+  ceiling (proposed 256 MB), the least recently used going first;
+- Maps asks `arrived` on its own clock while anything is outstanding, and
+  draws a tile the moment it is in; a missing tile is the zoom above it,
+  scaled, until then.
+
+**For Diego**: (1) OpenFreeMap as the source; (2) a `tiles` server in C,
+shared, rather than a helper only Maps uses; (3) the cache in
+`/Home/Maps/cache` with a 256 MB ceiling; (4) search from the network
+(Nominatim) in M6 as well, or after.
+
 ## Decided along the way
 
 - **Port Alder on Null Island.** A made-up city has to stand somewhere on
