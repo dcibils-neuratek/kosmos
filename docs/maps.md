@@ -242,6 +242,35 @@ So: **M6a** TLS core in C, **M6b** the Network Kit's C client, **M6c**
 held by host tests and a guest suite that serves tiles from the Mac -
 the tests never depend on the internet.
 
+### M6d, as built (8 October)
+
+- **`tiles`** (`user/servers/tiles.c`, `user/include/tileproto.h`), role
+  26, mounted at `/Tiles` for a program that declares `kosmos: needs
+  tiles`. Three questions, each answered at once: `SOURCE` (a TileJSON,
+  whose first `tiles` address on the same host is used, or an address with
+  `{z}`, `{x}`, `{y}` in it), answered with the cache folder;
+  `WANT`, a list of up to 64 that replaces the last, the first most
+  wanted; and `ARRIVED` since a count. One fetch at a time on one kept
+  connection, stepped between the server's answers - the door is never
+  shut while a tile is on its way.
+- **The cache** is `/Home/Cache/Maps/<16 hex digits of the source's
+  address>/<z>/<x>-<y>.pbf`, written through a door of the disk server's
+  that reaches that folder and nothing else (0.11.69). A tile the source
+  has none of - a 404, the sea - is an empty file, so it is not asked for
+  again.
+- **Maps** sets the source when it opens - OpenFreeMap, or `--source URL`
+  - and zooms from 1 to 19 once it has one. The world from the network is
+  drawn beneath and the region on top. A tile is read from the cache once
+  and decoded by `map.decode`. A tile not there yet is asked for and drawn as its nearest
+  ancestor, larger, until `ARRIVED` says it came; Maps asks that on its
+  own clock, five times a second while anything is to come. Past 14,
+  OpenFreeMap's deepest, its tiles are drawn larger. The map says
+  whose it is, as OpenFreeMap asks.
+- **Not yet**: the 256 MB ceiling, the least recently used going first
+  (roadmap); and finding the source's address by name still waits on the
+  network server's answer, once per source, inside the server - to be
+  stepped as the rest is.
+
 ## Decided along the way
 
 - **Port Alder on Null Island.** A made-up city has to stand somewhere on

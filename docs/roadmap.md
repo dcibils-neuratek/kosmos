@@ -1180,6 +1180,11 @@ not designed:
   (`maps.md`, Diego's four answers): tiles from OpenFreeMap over HTTPS by a
   shared `tiles` server in C so the window never waits, cached in
   `/Home/Cache/Maps` to 256 MB; and search from the network in M6 too.
+  **M6a-M6d BUILT** (0.11.66-0.11.70): TLS, the network and HTTP from C,
+  the disk server's door to the cache, the `tiles` server, and Maps drawing
+  the world beneath its region. **Left from M6d**: the cache's 256 MB
+  ceiling, least recently used first; the source's name found without the
+  server waiting on it. **Next, M6e**: search from the network.
   Directions after. **Wanted with it**: text
   drawn turned, for street names along any street (gfx).
 

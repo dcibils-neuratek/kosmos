@@ -490,7 +490,11 @@ static void fill_attrs(const struct source_entry *e, struct bin_reply *rep)
      * five - it holds the camera to pass it on (`usb.md` §11 8d) - and four
      * would have dropped the last without a word. Eight since 29 September,
      * when it came to seven with `midi` and `profile`, and six would have
-     * dropped the right to profile the same way.
+     * dropped the right to profile the same way. Nine on 8 October with
+     * `tiles`, and eight dropped the map's tiles from Maps without a word -
+     * so sixteen, and `tools/check_needs.py` (in `make test`'s host suite)
+     * now refuses a program that declares more than this holds, rather than
+     * a fourth time being found by what stopped working.
      */
     s = declared(e->text, e->length, "needs", &n);
 

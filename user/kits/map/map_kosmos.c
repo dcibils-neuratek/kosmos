@@ -9,6 +9,7 @@
  *   region:info()                             { min_zoom, max_zoom, west, south,
  *                                               east, north, lon, lat, zoom }
  *   local tile, why = region:tile(z, x, y)    decoded once, kept by the caller
+ *   local tile, why = map.decode(bytes)       a tile from its bytes (gzipped or not)
  *   tile:draw(surface, x, y, size, zoom, style, cx0, cy0, cx1, cy1)
  *                                             its top left at x, y, `size` points
  *                                             a side; nothing outside the clip
@@ -52,6 +53,8 @@
 
 struct region { struct pmtiles a; int open; };
 struct tile   { struct mvt_tile t; struct map_matches m; int live; };
+
+static int push_tile(lua_State *L, const uint8_t *bytes, size_t n);
 
 static const char *const LAYER_NAMES[L_COUNT] = {
     [L_OTHER] = "other", [L_WATER] = "water", [L_WATERWAY] = "waterway",
@@ -183,7 +186,6 @@ static int l_tile(lua_State *L)
     lua_Integer y = luaL_checkinteger(L, 4);
     const uint8_t *bytes;
     size_t n, got;
-    struct tile *t;
     int result;
 
     if (z < 0 || z > 30 || x < 0 || y < 0) {
@@ -214,7 +216,15 @@ static int l_tile(lua_State *L)
         bytes = inflated.bytes, n = inflated.n;
     }
 
-    t = lua_newuserdatauv(L, sizeof *t, 0);
+    return push_tile(L, bytes, n);
+}
+
+/* A decoded tile, pushed; or nil and why. */
+static int push_tile(lua_State *L, const uint8_t *bytes, size_t n)
+{
+    struct tile *t = lua_newuserdatauv(L, sizeof *t, 0);
+    int result;
+
     memset(t, 0, sizeof *t);
     luaL_setmetatable(L, TILE);
 
@@ -227,6 +237,32 @@ static int l_tile(lua_State *L)
 
     t->live = 1;
     return 1;
+}
+
+/*
+ * `map.decode(bytes)` - a tile from its bytes, gzipped or not: what the map's
+ * `tiles` server keeps in `/Home/Cache/Maps` (`docs/maps.md` M6d), read by
+ * whoever draws it. nil and why for bytes that are not a vector tile.
+ */
+static int l_decode(lua_State *L)
+{
+    size_t n, got;
+    const uint8_t *bytes = (const uint8_t *)luaL_checklstring(L, 1, &n);
+
+    if (n >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b) {
+        inflated.n = 0, inflated.short_of_memory = 0;
+
+        if (kosmos_gunzip(bytes, n, kosmos_inflater(), gather_put, &inflated, &got)
+            != GUNZIP_WHOLE) {
+            lua_pushnil(L);
+            lua_pushstring(L, "the tile would not inflate");
+            return 2;
+        }
+
+        bytes = inflated.bytes, n = inflated.n;
+    }
+
+    return push_tile(L, bytes, n);
 }
 
 /* ---- tiles ---- */
@@ -578,6 +614,8 @@ void kosmos_map_kit(lua_State *L)
     lua_setfield(L, -2, "open");
     lua_pushcfunction(L, l_style);
     lua_setfield(L, -2, "style");
+    lua_pushcfunction(L, l_decode);
+    lua_setfield(L, -2, "decode");
     lua_pushcfunction(L, l_project);
     lua_setfield(L, -2, "project");
     lua_pushcfunction(L, l_unproject);

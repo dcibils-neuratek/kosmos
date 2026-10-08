@@ -21255,3 +21255,67 @@ disk server; the `tiles` server is handed it next.
 `arm-keyring` 12 (the only suite of the keyring's door, named alone under
 the x86-only rule), `x86-disk` 33, `x86-slowdisk` 7 and `x86-storage` 46
 pass on it. The cache door's own checks come with `tiles`.
+
+## 18.464 Maps M6d: the `tiles` server, and Maps drawing the world from it
+
+`docs/maps.md` M6d. A server in C, `tiles`, fetches map tiles over HTTP or
+HTTPS - the TLS Kit's core, the Network Kit's client and `httpc`, M6a-M6c -
+into `/Home/Cache/Maps/<source>/<z>/<x>-<y>.pbf` through the disk server's
+door to that folder. It is asked by a declared shape (`tileproto.h`):
+`SOURCE`, `WANT` and `ARRIVED`, each answered at once, the fetching going on
+between answers. Maps sets its source on opening - OpenFreeMap, or
+`--source URL` - draws the world beneath its region, asks for what it
+lacks, draws an ancestor larger meanwhile, and asks what came five times a
+second while anything is to come.
+
+`x86-maps` serves Port Alder's tiles from the Mac by `{z}/{x}/{y}`, behind a
+TileJSON - so it never reaches the internet - and adds five checks to
+fourteen: the TileJSON read for the tiles' address; Maps told its cache
+folder; the tiles at 14 fetched, cached and said to have come; out at
+zoom 10, below the region's zooms, the map drawn from the network alone;
+and a tile the source has none of kept as an empty file, asked for once.
+
+`test_diskdoor` (host, in `make test`'s `host`) holds the disk server's
+door checks, moved into `user/servers/diskdoor.c` so the Mac can run them:
+60 checks - the cache door reaching its folder whatever the case, refused
+a folder beside it, a name that only begins like it, and any climb out
+through "." or ".."; the folders above it made and nothing else done to
+them; a rename held to it; the disk refused to every door but the first;
+and the keyring's door alongside. **Control**: the ".." refusal taken out,
+8 of 60 fail - the climbs out, the rename by "..", and the keyring's.
+
+
+**Found on the way: `needs` lost its ninth word.** The first run failed
+with Maps saying "no such path: /Tiles". The window manager now declares nine
+authorities, adding `tiles` so it can pass the door on, and `binfs` kept eight
+(`BIN_NEEDS_MAX`) and dropped the rest without a word, so the window
+manager never held the door to hand over. It is the third time: the
+camera at five, the right to profile at seven. The limit is sixteen now
+(`BIN_CHUNK` 1760 -> 1632, 25 names a listing), the namespace reads the
+count rather than eight names, and the class is closed by a check:
+`tools/check_needs.py`, in the host suite, refuses any program in the image
+or installed beside it whose `needs` line is longer than the store holds,
+and init.lua reading a count different from `binproto.h`'s. **Control**: the
+limit put back to eight, it fails naming `wm.lua` and "tiles would be
+dropped", and the two sides disagreeing.
+
+The second run found the next thing: "a tile would not go into the cache".
+The suite booted as most do, without a disk, so `/Home` was held in memory and no
+disk server stood behind the cache's door. `run_maps.py` now makes a disk
+of 32 MB with `kfs.lua`, as `run_servers.py` does, because a machine
+keeps its map there. A `/Home` in memory keeps no map tiles; Maps draws
+what the region has and says why the rest failed. `tiles` now puts the disk's
+own error in its reason.
+
+`x86-maps` passes with 19 checks in 63 s, with a disk and with a tile server
+on the Mac whose row north of the equator answers 404. **Control**: Maps
+made never to send `WANT`, it fails waiting for the first tiles to come,
+and passes again when that is restored. That run also showed the tiles server's line cut in
+two by one of Maps' on the same console, so the TileJSON check now looks
+for the address in everything the guest said rather than on one line.
+
+The whole x86 gate: 51 of 52 suites passed. `x86-dock` failed one phase
+under the gate's load: a program moving the bar was not heard, and "the bar
+back at the top" never came. Alone it passed all 52 checks in 192 s. That is a
+flake under load, the same shape as `x86-film`'s. It is recorded so a second
+one is counted rather than forgotten.

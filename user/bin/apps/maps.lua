@@ -3,13 +3,17 @@
 -- kosmos: icon Prefs_Locale
 -- kosmos: name Maps
 -- kosmos: section applications
+-- kosmos: needs tiles
 --
 -- Maps: OpenStreetMap's world as shapes, drawn by Kosmos (`docs/maps.md`,
 -- the window `docs/maps.html`, agreed by Diego on 8 October 2026: "mockup
 -- is great", "but i do want a close/open sidebar button always visible").
 --
---   maps                       the region the image carries, Port Alder
+--   maps                       the region the image carries, Port Alder,
+--                              and the world from OpenFreeMap around it
 --   maps /Home/Maps/x.pmtiles  a region of one's own
+--   maps --source URL          the world's tiles from somewhere else: a
+--                              TileJSON, or an address with {z}, {x}, {y}
 --
 -- **The thinnest layer** (`CLAUDE.md`, kits supply and applications
 -- orchestrate): the Map Kit reads a region, decodes its tiles and draws
@@ -35,7 +39,24 @@ local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 --------------------------------------------------------------------------
 
 local SHIPPED = "maps/port-alder.pmtiles"
-local region_path = tostring(args or ""):match("^%s*(%S+)") or ""
+local SOURCE = "https://tiles.openfreemap.org/planet"
+local region_path, source = "", SOURCE
+
+do
+  local words = {}
+
+  for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
+
+  local i = 1
+
+  while i <= #words do
+    if words[i] == "--source" and words[i + 1] then
+      source, i = words[i + 1], i + 2
+    else
+      region_path, i = words[i], i + 1
+    end
+  end
+end
 local bytes, why
 
 if region_path ~= "" then
@@ -140,6 +161,58 @@ local zoom = math.max(info.min_zoom, math.min(info.max_zoom, (info.zoom or 14) >
 local MIN_ZOOM, MAX_ZOOM = math.max(2, info.min_zoom - 1), info.max_zoom + 3
 local TILE = 512
 
+--------------------------------------------------------------------------
+-- The world, from the network (`docs/maps.md` M6d): the tiles server
+-- fetches what is asked for into `/Home/Cache/Maps`, and says when each has
+-- come. Nothing here waits for one - a tile that is not here yet is a
+-- blank, or its parent drawn larger, until the server says it came.
+--------------------------------------------------------------------------
+
+local NET_MAX = 14                     -- OpenFreeMap's deepest; drawn larger past it
+local TILES_REQUEST = "<I4I4I4I4" .. string.rep("I4", 192)
+local TILES_SOURCE = "<I4I4I4I4c768"
+local TILES_REPLY = "<I4I4I4I4I4I4c64c128" .. string.rep("I4", 192)
+local OP_SOURCE, OP_WANT, OP_ARRIVED = 1, 2, 3
+local ZEROS = {}
+
+for i = 1, 192 do ZEROS[i] = 0 end
+
+local net = nil                        -- { dir, since, outstanding, failed, ... }
+
+local function zstring(s) return (s:gsub("%z.*$", "")) end
+
+-- One exchange with `/Tiles`; the reply as a table, or nil and why.
+local function tiles_ask(packed)
+  local reply, why = fs.raw("/Tiles", packed, nil, "tiles")
+
+  if type(reply) ~= "string" or #reply < 984 then return nil, why or "no answer" end
+
+  local v = { string.unpack(TILES_REPLY, reply) }
+  local out = { status = v[1], count = v[2], seq = v[3], outstanding = v[4], failed = v[5],
+                cache = zstring(v[7]), why = zstring(v[8]), tiles = {} }
+
+  for i = 1, out.count do
+    local at = 8 + (i - 1) * 3
+
+    out.tiles[i] = { z = v[at + 1], x = v[at + 2], y = v[at + 3] }
+  end
+
+  return out
+end
+
+do
+  local said, why = tiles_ask(string.pack(TILES_SOURCE, OP_SOURCE, 0, 0, 0, source))
+
+  if said and said.status == 0 then
+    net = { dir = said.cache, since = 0, outstanding = 0, failed = said.failed,
+            asked = {}, sent = "", polled = 0, came = 0 }
+    MIN_ZOOM, MAX_ZOOM = 1, 19
+    print(("maps: tiles from %s into %s"):format(source, said.cache))
+  else
+    print("maps: no tiles from the network: " .. tostring(said and said.why or why))
+  end
+end
+
 if made_up then
   -- Port Alder's middle, a little south where the market is.
   cx, cy = map.project(0.0, -0.0006)
@@ -159,21 +232,142 @@ end
 
 local cache, order = {}, {}
 
+local function keep_tile(key, t)
+  cache[key] = t
+  order[#order + 1] = key
+
+  if #order > 96 then
+    cache[table.remove(order, 1)] = nil
+  end
+end
+
 local function tile_at(z, x, y)
   local key = z .. "/" .. x .. "/" .. y
   local t = cache[key]
 
   if t == nil then
     t = region:tile(z, x, y) or false
-    cache[key] = t
-    order[#order + 1] = key
-
-    if #order > 96 then
-      cache[table.remove(order, 1)] = nil
-    end
+    keep_tile(key, t)
   end
 
   return t or nil
+end
+
+-- A tile from the network's cache: the tile, false when there is none of
+-- it (the sea), or nil when it is not here yet - and then it is wanted.
+local wants = {}
+
+local function net_tile(z, x, y)
+  local key = "n" .. z .. "/" .. x .. "/" .. y
+  local t = cache[key]
+
+  if t ~= nil then return t or nil end
+  if net.asked[key] then return nil end
+
+  local bytes = fs.read(net.dir .. "/" .. z .. "/" .. x .. "-" .. y .. ".pbf")
+
+  if type(bytes) == "string" then
+    t = #bytes > 0 and map.decode(bytes) or false
+    keep_tile(key, t)
+    return t or nil
+  end
+
+  net.asked[key] = true
+  wants[#wants + 1] = { z, x, y }
+  return nil
+end
+
+-- The nearest of its ancestors already here, and how many levels up.
+local function net_parent(z, x, y)
+  for up = 1, math.min(z, 4) do
+    local t = cache["n" .. (z - up) .. "/" .. (x >> up) .. "/" .. (y >> up)]
+
+    if t then return t, up end
+  end
+end
+
+-- After a frame: what it found missing, asked for, the middle first.
+local function send_wants(cx_tile, cy_tile)
+  if not net then return end
+
+  table.sort(wants, function(a, b)
+    local da = (a[2] + 0.5 - cx_tile) ^ 2 + (a[3] + 0.5 - cy_tile) ^ 2
+    local db = (b[2] + 0.5 - cx_tile) ^ 2 + (b[3] + 0.5 - cy_tile) ^ 2
+
+    return da < db
+  end)
+
+  -- Those still missing from what was asked before are asked again with
+  -- the new ones, since the list replaces the last.
+  local ids, seen = {}, {}
+
+  for _, w in ipairs(wants) do
+    local k = w[1] .. "/" .. w[2] .. "/" .. w[3]
+
+    if #ids < 64 * 3 and not seen[k] then
+      seen[k] = true
+      ids[#ids + 1], ids[#ids + 2], ids[#ids + 3] = w[1], w[2], w[3]
+    end
+  end
+
+  local sent = table.concat(ids, ",")
+
+  if sent == net.sent then return end
+
+  net.sent = sent
+
+  local count = #ids // 3
+
+  for i = #ids + 1, 192 do ids[i] = 0 end
+
+  local said = tiles_ask(string.pack(TILES_REQUEST, OP_WANT, count, 0, 0, table.unpack(ids)))
+
+  if said then net.outstanding = said.outstanding end
+end
+
+-- On Maps' own clock, while anything is to come: what came. True when
+-- something did, and the map is to be drawn again.
+local function poll_arrived()
+  if not net or (net.outstanding == 0 and net.sent == "") then return false end
+
+  local now = sys.ticks()
+
+  if now - net.polled < counter_hz // 5 then return false end
+
+  net.polled = now
+
+  local said = tiles_ask(string.pack(TILES_REQUEST, OP_ARRIVED, 0, net.since, 0,
+                                     table.unpack(ZEROS)))
+
+  if not said then return false end
+
+  net.since, net.outstanding = said.seq, said.outstanding
+
+  for _, t in ipairs(said.tiles) do
+    local key = "n" .. t.z .. "/" .. t.x .. "/" .. t.y
+
+    net.asked[key] = nil
+    cache[key] = nil
+  end
+
+  -- A failed fetch is tried again at the next ask.
+  if said.failed ~= net.failed then
+    print(("maps: %d tiles failed: %s"):format(said.failed - net.failed, said.why))
+    net.failed = said.failed
+    net.asked = {}
+  end
+
+  if #said.tiles > 0 then
+    net.came = net.came + #said.tiles
+    net.sent = ""
+    print(("maps: %d tiles came, %d in all, %d to come"):format(#said.tiles, net.came,
+          said.outstanding))
+    return true
+  end
+
+  if said.outstanding == 0 then net.sent = "" end
+
+  return false
 end
 
 --------------------------------------------------------------------------
@@ -621,7 +815,7 @@ local function halo_text(s, x, y, text, colour, face)
   s:text(x, y, text, colour, nil, face)
 end
 
-draw_labels = function(s, z, n, size, left, top, mx, my, mw, mh, x0, y0, x1, y1)
+draw_labels = function(s, drawn, mx, my, mw, mh)
   local candidates = {}
   local named = {}                     -- each name's places this frame
 
@@ -633,12 +827,11 @@ draw_labels = function(s, z, n, size, left, top, mx, my, mw, mh, x0, y0, x1, y1)
 
   placed_labels[#placed_labels + 1] = { x = mx + mw - 16 - 40, y = my + 16, w = 40, h = 80 + 14 + 40 }
 
-  for ty = math.max(0, y0), math.min(n - 1, y1) do
-    for tx = math.max(0, x0), math.min(n - 1, x1) do
-      local key = z .. "/" .. tx .. "/" .. ty
-      local t = cache[key]
+  for _, d in ipairs(drawn) do
+    do
+      local key, t, tx, ty, n, size = d.key, d.t, d.tx, d.ty, d.n, d.size
 
-      for _, l in ipairs(t and labels_of(key, t) or {}) do
+      for _, l in ipairs(labels_of(key, t)) do
         local wanted = (l.layer == "place")
           or (l.layer == "water_name")
           or (l.layer == "park" and zoom >= 14)
@@ -647,7 +840,7 @@ draw_labels = function(s, z, n, size, left, top, mx, my, mw, mh, x0, y0, x1, y1)
 
         if wanted then
           candidates[#candidates + 1] = {
-            l = l, x = mx + tx * size - left + l.x * size, y = my + ty * size - top + l.y * size,
+            l = l, x = d.ox + l.x * size, y = d.oy + l.y * size,
             order = (ORDER[l.layer] or 9) * 100 + (l.rank or 0),
             world_x = (tx + l.x) / n, world_y = (ty + l.y) / n,
           }
@@ -708,36 +901,93 @@ draw_labels = function(s, z, n, size, left, top, mx, my, mw, mh, x0, y0, x1, y1)
   end
 end
 
-local function draw_map(s)
-  local mx, my, mw, mh = map_box()
-  local z = math.max(info.min_zoom, math.min(info.max_zoom, math.floor(zoom)))
+-- One zoom level's tiles over the map's rectangle, each handed to `each`
+-- with where it goes and how large.
+local function over_tiles(z, mx, my, mw, mh, each)
   local size = TILE * 2 ^ (zoom - z)
   local n = 1 << z
-  local t0 = sys.ticks()
-
-  s:fill(mx, my, mw, mh, 0xff000000 | colours.land)
-
-  -- The world's pixel at the window's middle of the map is the centre.
-  local wx, wy = cx * n * size, cy * n * size
-  local left, top = wx - mw / 2, wy - mh / 2
+  local left, top = cx * n * size - mw / 2, cy * n * size - mh / 2
   local x0, y0 = math.floor(left / size), math.floor(top / size)
   local x1, y1 = math.floor((left + mw) / size), math.floor((top + mh) / size)
 
-  drawn_tiles = 0
-
   for ty = math.max(0, y0), math.min(n - 1, y1) do
     for tx = math.max(0, x0), math.min(n - 1, x1) do
-      local t = tile_at(z, tx, ty)
-
-      if t then
-        t:draw(s, mx + tx * size - left, my + ty * size - top, size, zoom, style,
-               mx, my, mx + mw, my + mh)
-        drawn_tiles = drawn_tiles + 1
-      end
+      each(tx, ty, mx + tx * size - left, my + ty * size - top, size, n)
     end
   end
 
-  draw_labels(s, z, n, size, left, top, mx, my, mw, mh, x0, y0, x1, y1)
+  return n
+end
+
+local function draw_map(s)
+  local mx, my, mw, mh = map_box()
+  local t0 = sys.ticks()
+  local drawn = {}
+
+  s:fill(mx, my, mw, mh, 0xff000000 | colours.land)
+  drawn_tiles = 0
+
+  -- The world beneath, from the network: at its own deepest past 14, and
+  -- a tile not here yet as its nearest ancestor drawn larger.
+  if net then
+    local z = math.max(0, math.min(NET_MAX, math.floor(zoom)))
+
+    wants = {}
+
+    local n = over_tiles(z, mx, my, mw, mh, function(tx, ty, ox, oy, size, n)
+      local t = net_tile(z, tx, ty)
+
+      if t then
+        t:draw(s, ox, oy, size, zoom, style, mx, my, mx + mw, my + mh)
+        drawn[#drawn + 1] = { t = t, key = "n" .. z .. "/" .. tx .. "/" .. ty,
+                              ox = ox, oy = oy, size = size, n = n, tx = tx, ty = ty }
+        drawn_tiles = drawn_tiles + 1
+      elseif t == nil then
+        local p, up = net_parent(z, tx, ty)
+
+        if p then
+          local big = size * (1 << up)
+          local mask = (1 << up) - 1
+
+          p:draw(s, ox - (tx & mask) * size, oy - (ty & mask) * size, big, zoom, style,
+                 math.max(mx, ox), math.max(my, oy),
+                 math.min(mx + mw, ox + size), math.min(my + mh, oy + size))
+        end
+      end
+    end)
+
+    send_wants(cx * n, cy * n)
+  end
+
+  -- The region on top, where it has tiles: its own detail wins.
+  local z = math.floor(zoom)
+
+  if z >= info.min_zoom and z <= info.max_zoom + 3 then
+    z = math.min(info.max_zoom, z)
+
+    over_tiles(z, mx, my, mw, mh, function(tx, ty, ox, oy, size, n)
+      local t = tile_at(z, tx, ty)
+
+      if t then
+        t:draw(s, ox, oy, size, zoom, style, mx, my, mx + mw, my + mh)
+        drawn[#drawn + 1] = { t = t, key = z .. "/" .. tx .. "/" .. ty,
+                              ox = ox, oy = oy, size = size, n = n, tx = tx, ty = ty }
+        drawn_tiles = drawn_tiles + 1
+      end
+    end)
+  end
+
+  draw_labels(s, drawn, mx, my, mw, mh)
+
+  -- OpenFreeMap asks that its maps say whose they are.
+  if net then
+    local text = "OpenFreeMap  \u{a9} OpenMapTiles  \u{a9} OpenStreetMap"
+    local tw, th = gfx.measure(text, "label"), gfx.height("label")
+
+    s:fill(mx + mw - tw - 12, my + mh - th - 6, tw + 12, th + 6, 0xff000000 | colours.land)
+    s:text(mx + mw - tw - 6, my + mh - th - 3, text, theme.text_dim, nil, "label")
+  end
+
   drawn_ms = (sys.ticks() - t0) * 1000 / counter_hz
 end
 
@@ -906,7 +1156,10 @@ while win.running do
 
   if not reply then break end
 
-  local moved = false
+  -- Tiles that came are drawn, and where the map is said again with them.
+  local moved = poll_arrived()
+
+  if moved then dirty = true end
 
   for _, ev in ipairs(reply.events or {}) do
     if win:direct_event(ev) then

@@ -61,17 +61,18 @@
  * tree: a name anywhere in Kosmos may be sixty-four characters, and a store
  * that held fewer would be the one place that broke it.
  *
- * The assert below still holds at 64: 1760 / 64 is 27 names to a listing
+ * The assert below still holds at 64: 1632 / 64 is 25 names to a listing
  * reply, against the sixteen it asks for - 1792 and 28 until a title took
- * thirty-two bytes of it (3 October 2026).
+ * thirty-two bytes of it (3 October 2026), and 1760 and 27 until `needs`
+ * took sixteen words rather than eight (8 October).
  */
 #define BIN_NAME_MAX    64u
 #define BIN_WORD_MAX    16u       /* a kind, a section, one `needs` word */
-#define BIN_NEEDS_MAX    8u       /* authorities one program may declare */
+#define BIN_NEEDS_MAX   16u       /* authorities one program may declare */
 #define BIN_ICON_MAX    32u       /* `Misc_Deskbar_Group` is eighteen */
 #define BIN_OPENS_MAX   40u       /* `kosmos: opens`, a line of types */
 #define BIN_TITLE_MAX   32u       /* `kosmos: name`, "About This Machine" */
-#define BIN_CHUNK     1760u       /* source bytes, or 27 names, per reply */
+#define BIN_CHUNK     1632u       /* source bytes, or 25 names, per reply */
 
 struct bin_request {
     uint32_t op;

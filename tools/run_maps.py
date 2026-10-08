@@ -11,6 +11,14 @@ way the pointer went.
 Market first, Return opens its card and centres the map there with names
 on it, Save keeps it, and the settings kit's `maps` holds it.
 
+**M6d - the world from the network**: a tile server on this Mac, reached
+by the guest as 10.0.2.2, serving Port Alder's tiles by `{z}/{x}/{y}` behind
+a TileJSON - what OpenFreeMap does for the planet. Maps is opened on it:
+the tiles server reads the TileJSON, fetches the tiles Maps asks for into
+`/Home/Cache/Maps/<source>/`, and says they came; zoomed out to 10, where
+the region has nothing, the map is drawn from the network alone; a tile
+the server has none of is kept as an empty file and not asked for again.
+
 **M3 - the Map Kit inside Kosmos**: Port Alder, carried in the image as
 `maps/port-alder.pmtiles`, opened by `use("/Kosmos/Kits/map")`; its header
 read; the tile at zoom 16 where Lantern Street Market is decoded; drawn
@@ -21,9 +29,14 @@ there and back.
 Usage: run_maps.py IMAGE
 """
 
+import gzip
+import http.server
+import importlib
+import io
 import os
 import random
 import re
+import subprocess
 import sys
 import time
 
@@ -33,6 +46,8 @@ sys.path.insert(0, HERE)
 import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
 import kosmos_vnc as V                                      # noqa: E402
+import mapcity                                              # noqa: E402
+import scratch                                              # noqa: E402
 
 # The light look's colours, as `maps.lua` draws them.
 LAND, MAJOR = (0xf2, 0xef, 0xe9), (0xfd, 0xe8, 0xa8)
@@ -81,8 +96,87 @@ print("NONE " .. tostring(select(2, region:tile(16, 0, 0))))
 """
 
 
+def gz(data):
+    buf = io.BytesIO()
+    with gzip.GzipFile(fileobj=buf, mode="wb", mtime=0) as f:
+        f.write(data)
+    return buf.getvalue()
+
+
+# The densest of Port Alder's tiles at 13, served for the middle of the
+# world below the region's own zooms - drawn too large there, which is no
+# matter: what is checked is that the network's tile was drawn.
+DENSE = max((mapcity.tile_bytes(13, x, y) for x, y in mapcity.tiles_covering(13)), key=len)
+
+
+def tile_server():
+    """Port Alder by `/t/{z}/{x}/{y}.pbf`, gzipped as a planet's are, behind
+    `/tiles.json`; what was asked for, kept."""
+    asked = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *a):
+            pass
+
+        def send(self, code, body, kind="application/x-protobuf"):
+            self.send_response(code)
+            self.send_header("Content-Type", kind)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            asked.append(self.path)
+
+            if self.path == "/tiles.json":
+                port = self.server.server_address[1]
+                body = ('{"tilejson": "3.0.0", "tiles": ["http://10.0.2.2:%d/t/{z}/{x}/{y}.pbf"],'
+                        ' "minzoom": 0, "maxzoom": 14}' % port).encode()
+                return self.send(200, body, "application/json")
+
+            m = re.match(r"/t/(\d+)/(\d+)/(\d+)\.pbf$", self.path)
+
+            if not m:
+                return self.send(404, b"", "text/plain")
+
+            z, x, y = (int(v) for v in m.groups())
+            n = 1 << z
+
+            if z >= mapcity.MINZOOM:
+                data = mapcity.tile_bytes(z, x, y)
+            elif x in (n // 2 - 1, n // 2) and y == n // 2:
+                # The row south of the equator, where Port Alder is; the
+                # row north of it has nothing - the sea, a 404.
+                data = DENSE
+            else:
+                data = b""
+
+            if not data:
+                return self.send(404, b"", "text/plain")
+
+            self.send(200, gz(data))
+
+    httpd = http.server.ThreadingHTTPServer(("0.0.0.0", 0), Handler)
+    import threading
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd, asked
+
+
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
+    httpd, asked = tile_server()
+
+    # A disk, as a machine has: the map's cache is the disk server's to keep,
+    # and a `/Home` held in memory has no disk server behind it.
+    disk = os.path.join(scratch.directory("maps"), "disk.img")
+    subprocess.run([os.path.join(os.path.dirname(HERE), "build", "host", "lua"),
+                    os.path.join(HERE, "kfs.lua"), "create", disk, "32"],
+                   check=True, capture_output=True, cwd=os.path.dirname(HERE))
+    os.environ["KOSMOS_DISK"] = disk
+    importlib.reload(R)
+    source = "http://10.0.2.2:%d/tiles.json" % httpd.server_address[1]
     telnet, web = random.randint(20000, 40000), random.randint(40001, 60000)
     guest = S.boot(image, telnet, web)
     fails, said = [], {}
@@ -96,10 +190,16 @@ def main():
 
         # ---- M4: the window ----
         mark = len(guest.seen)
-        session.run("open maps")
+        session.run("open maps --source " + source)
         placed = guest.wait_for_line("wm: window Maps at ", "the Maps window", mark)
         controls = guest.wait_for_line("maps: controls ", "the Maps controls", mark)
         said["first"] = guest.wait_for_line("maps: at ", "the first map drawn", mark)
+        said["net"] = guest.wait_for_line("maps: tiles from ", "the tiles' source", mark)
+        # Its line can be cut by another's on the same console, so the
+        # address is looked for in all that was said, not in the one line.
+        guest.wait_for("tiles: the source's tiles are at ", "the TileJSON read")
+        said["came"] = guest.wait_for_line("tiles came, ", "the first tiles come", mark)
+        said["template"] = guest.seen[mark:]
         time.sleep(2)
         wx, wy, ww, wh = (int(v) for v in re.match(r"(\d+),(\d+) (\d+)x(\d+)", placed).groups())
         width, height, _ = R.parse_ppm(guest.screendump())
@@ -199,8 +299,38 @@ def main():
                  for y_ in range(wy, min(h_, wy + wh))]
         V.png(os.path.join(os.path.dirname(HERE), "build", "maps", "card.png"), ww, len(rows_),
               b"".join(rows_))
+
+        # ---- M6d: out to 10, where only the network has the world ----
+        guest.sendkey("esc")
+        time.sleep(0.5)
+        mark = len(guest.seen)
+        for _ in range(8):
+            guest.sendkey("minus")
+            time.sleep(0.3)
+        out_at = mark
+        deadline = time.time() + 60
+        said["ten"] = ""
+        while time.time() < deadline:
+            guest._read_available()
+            tens = re.findall(r"maps: at (\S+ \S+, zoom 10\.00, \d+ tiles[^\n]*)", guest.seen[out_at:])
+            if tens and int(re.search(r"(\d+) tiles", tens[-1]).group(1)) > 0:
+                said["ten"] = tens[-1]
+                break
+            time.sleep(0.5)
+        if not said["ten"]:
+            said["ten"] = " | ".join(re.findall(r"maps: [^\n]*", guest.seen[out_at:])[-6:])
+        key = re.search(r"into (/Home/Cache/Maps/[0-9a-f]{16})", said.get("net", ""))
+        folder = key.group(1) if key else "/Home/Cache/Maps/none"
+        said["ls14"] = session.run("ls " + folder + "/14").decode(errors="replace")
+        said["ls10"] = session.run("ls " + folder + "/10").decode(errors="replace")
+        w_, h_, rgb_ = R.parse_ppm(guest.screendump())
+        rows_ = [rgb_[((y_ * w_) + wx) * 3:((y_ * w_) + wx + ww) * 3]
+                 for y_ in range(wy, min(h_, wy + wh))]
+        V.png(os.path.join(os.path.dirname(HERE), "build", "maps", "world.png"), ww, len(rows_),
+              b"".join(rows_))
     finally:
         guest.close()
+        httpd.shutdown()
 
     out = said.get("kit", "")
     asset = re.search(r"ASSET (\d+)", out)
@@ -280,7 +410,38 @@ def main():
         fails.append("Save did not keep the market in the settings kit's maps: %r, %r"
                      % (said.get("saved"), said.get("kept", "")[:300]))
 
-    checks = 14
+    # ---- M6d ----
+    if "/t/{z}/{x}/{y}.pbf" not in said.get("template", "") or "/tiles.json" not in asked:
+        fails.append("the tiles server did not read the source's TileJSON for its tiles' "
+                     "address: %r, asked %r" % (said.get("template"), asked[:3]))
+
+    if not re.search(r"into /Home/Cache/Maps/[0-9a-f]{16}$", said.get("net", "").strip()):
+        fails.append("Maps did not set its source and learn its cache folder: %r" % said.get("net"))
+
+    fourteen = [a for a in asked if a.startswith("/t/14/")]
+    came = re.match(r"\s*(\d+) in all", said.get("came", ""))
+
+    if not fourteen or not came or int(came.group(1)) < 1 \
+            or not re.search(r"\d+-\d+\.pbf", said.get("ls14", "")):
+        fails.append("the tiles Maps asked for at 14 were not fetched into the cache and said "
+                     "to have come: %d asked at 14, %r, %r" % (len(fourteen), said.get("came"),
+                                                              said.get("ls14", "")[:300]))
+
+    if not re.search(r"zoom 10\.00, [1-9]\d* tiles", said.get("ten", "")):
+        fails.append("out at 10, below the region's zooms, nothing was drawn from the "
+                     "network: %r" % said.get("ten"))
+
+    # A tile the source has none of: an empty file, asked for once.
+    empty = re.findall(r"(\d+-\d+)\.pbf", said.get("ls10", ""))
+    sea = [a for a in asked if a.startswith("/t/10/")]
+    once = len(sea) == len(set(sea))
+
+    if not re.search(r"\b0\s+\S*\s*\d+-\d+\.pbf|\d+-\d+\.pbf\s+0\b", said.get("ls10", "")) \
+            or not once:
+        fails.append("a tile the source has none of was not kept as an empty file, asked for "
+                     "once: %r, asked %r" % (said.get("ls10", "")[:400], sea[:12]))
+
+    checks = 19
 
     if fails:
         print("FAIL: %d of %d checks on Maps:" % (len(fails), checks))
@@ -296,8 +457,11 @@ def main():
           "two rules%s, labelled, the projection there and back, a tile off the region refused; "
           "M4: the window opened with the city drawn, the sidebar's button hiding it, + zooming "
           "a step, a drag moving the map; M5: a search finding the market, its card opened "
-          "with names on the map, Save keeping it)"
-          % (checks, (" in " + timing.group(1) + " ms") if timing else ""))
+          "with names on the map, Save keeping it; M6d: a TileJSON read, %d tiles fetched "
+          "into /Home/Cache/Maps and said to have come, the world at 10 drawn from the "
+          "network alone, a tile with nothing in it kept empty and asked for once)"
+          % (checks, (" in " + timing.group(1) + " ms") if timing else "",
+             len([a for a in asked if a.startswith("/t/")])))
     return 0
 
 

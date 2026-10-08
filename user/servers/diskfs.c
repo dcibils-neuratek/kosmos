@@ -57,6 +57,7 @@
 #include "../init/say.h"
 #include "clock_epoch.h"
 #include "diskcache.h"
+#include "diskdoor.h"
 #include "drives_decode.h"
 #include "drivers/usb/storage_decode.h"
 #include "kfs.h"
@@ -1547,119 +1548,6 @@ static void op_format(const struct disk_request *rq, struct disk_reply *rp)
  * ------------------------------------------------------------------------
  */
 
-/*
- * Whether `path` is in the folder `root` at the top of the volume: its first
- * component, found as `kfs.c` finds one - slashes skipped, whatever the case.
- * `.` and `..` need no thought here, because `kfs.c` refuses them anywhere.
- */
-/*
- * Whether `path` is in `root` - the root's folders, one by one, then
- * anything or nothing - and never through "." or "..", which a door's
- * caller could otherwise use to climb out of it.
- */
-static bool inside(const char *root, const char *path, size_t len)
-{
-    size_t at = 0;
-    const char *r = root;
-
-    while (*r != '\0') {
-        size_t n, rn;
-        const char *slash;
-
-        while (at < len && path[at] == '/') {
-            at++;
-        }
-
-        for (n = 0; at + n < len && path[at + n] != '/' && path[at + n] != '\0'; n++) {
-        }
-
-        slash = strchr(r, '/');
-        rn = slash ? (size_t)(slash - r) : strlen(r);
-
-        if (n == 0 || !kfs_same_name(path + at, n, r, rn)) {
-            return false;
-        }
-
-        at += n;
-        r += rn;
-
-        if (*r == '/') {
-            r++;
-        }
-    }
-
-    /* Below the root, no step may go back up. */
-    while (at < len && path[at] != '\0') {
-        size_t n;
-
-        while (at < len && path[at] == '/') {
-            at++;
-        }
-
-        for (n = 0; at + n < len && path[at + n] != '/' && path[at + n] != '\0'; n++) {
-        }
-
-        if ((n == 1 && path[at] == '.') || (n == 2 && path[at] == '.' && path[at + 1] == '.')) {
-            return false;
-        }
-
-        at += n;
-    }
-
-    return true;
-}
-
-/* Whether `path` is one of the folders above `root` - "/Home" or
- * "/Home/Cache" for "Home/Cache/Maps" - which a door may make, so its own
- * folder can be made on a disk that has none of them yet. */
-static bool above(const char *root, const char *path)
-{
-    size_t n;
-
-    while (*path == '/') {
-        path++;
-    }
-
-    n = strlen(path);
-
-    while (n > 0 && path[n - 1] == '/') {
-        n--;
-    }
-
-    return n > 0 && n < strlen(root) && strncmp(root, path, n) == 0 && root[n] == '/';
-}
-
-/* Whether this door may ask this: the disk itself is the first door's, and
- * every path is to be in the door's folder - a rename's destination too,
- * when it is a path rather than a name. */
-static bool door_allows(const struct disk_request *rq, const char *root, bool restricted)
-{
-    size_t to_len;
-
-    switch (rq->op) {
-    case DISK_OP_SUPER:
-    case DISK_OP_DEVICE:
-    case DISK_OP_FORMAT:
-        return !restricted;
-    case DISK_OP_RENAME:
-        to_len = rq->length < DISK_PATH_MAX ? rq->length : 0;
-
-        if (memchr(rq->u.to, '/', to_len) != NULL && !inside(root, rq->u.to, to_len)) {
-            return false;
-        }
-        break;
-    case DISK_OP_MKDIR:
-        if (restricted && above(root, rq->path)) {
-            return true;
-        }
-        break;
-    default:
-        break;
-    }
-
-    return inside(root, rq->path, DISK_PATH_MAX);
-}
-
 static void answer(const struct message *msg, uint64_t sender)
 {
     static struct message out;
@@ -1679,7 +1567,7 @@ static void answer(const struct message *msg, uint64_t sender)
 
     if (msg->length != sizeof *rq || memchr(rq->path, '\0', DISK_PATH_MAX) == NULL) {
         rp->error = DISK_ERR_BAD_OP;
-    } else if (!door_allows(rq, through ? through->root : HOME_ROOT, through != NULL)) {
+    } else if (!disk_door_allows(rq, through ? through->root : HOME_ROOT, through != NULL)) {
         /* A path: not there, through this door. The disk itself: not this
          * door's to ask about. */
         bool disk = rq->op == DISK_OP_SUPER || rq->op == DISK_OP_DEVICE

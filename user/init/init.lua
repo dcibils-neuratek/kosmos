@@ -43,6 +43,7 @@ local ROLE_E1000      = 22 -- an Intel Ethernet controller, where there is one
 local ROLE_NOTIFY     = 23 -- serves /Notifications: what applications have said
 local ROLE_SMBFS      = 24 -- shares over the network: SMB 2 and 3 (`sharing.md`)
 local ROLE_KEYRING    = 25 -- the passwords Kosmos keeps, sealed (`keyring.md`)
+local ROLE_TILES      = 26 -- the map's tiles from the network: /Tiles (`maps.md`)
 
 --
 -- **A program's own image** (`docs/elf.md` step 4). A program whose header
@@ -1122,13 +1123,14 @@ local function new_namespace()
   --
   local BIN_NAME_MAX = 64                 -- has to match binproto.h
   local BIN_REQUEST  = "<I4I4c" .. BIN_NAME_MAX   -- op, offset, name
-  local BIN_HEAD     = "<I4I4I4I4I4I4c16c16c16c16c16c16c16c16c16c16c32c40c32"
+  local BIN_NEEDS_MAX = 16                -- has to match binproto.h
+  local BIN_HEAD     = "<I4I4I4I4I4I4c16c16" .. string.rep("c16", BIN_NEEDS_MAX) .. "c32c40c32"
 
   assert(#string.pack(BIN_REQUEST, 0, 0, "") == 8 + BIN_NAME_MAX,
          "namespace: the /bin request layout does not match binproto.h")
 
   -- Past the header, the icon, what it opens and its name, 1-based.
-  local BIN_DATA = 24 + 160 + 32 + 40 + 32 + 1
+  local BIN_DATA = 24 + 32 + 16 * BIN_NEEDS_MAX + 32 + 40 + 32 + 1
   local BIN_OPS = { list = 1, read = 2, getattr = 3 }
   local BIN_ERRORS = {
     [1] = "no such program",
@@ -1154,9 +1156,10 @@ local function new_namespace()
     if not reply then return nil, tostring(why) end
     if #reply < BIN_DATA then return nil, "a /bin reply of the wrong size" end
 
-    local err, count, size, length, more, windowed,
-          kind, section, n1, n2, n3, n4, n5, n6, n7, n8, icon, opens, title =
-      string.unpack(BIN_HEAD, reply)
+    local head = { string.unpack(BIN_HEAD, reply) }
+    local err, count, size, length, more, windowed, kind, section =
+      table.unpack(head, 1, 8)
+    local icon, opens, title = table.unpack(head, 9 + BIN_NEEDS_MAX, 11 + BIN_NEEDS_MAX)
 
     if err ~= 0 then
       return nil, BIN_ERRORS[err] or ("bin error " .. tostring(err))
@@ -1188,8 +1191,8 @@ local function new_namespace()
     if op == "getattr" then
       local needs = nil
 
-      for _, w in ipairs({ n1, n2, n3, n4, n5, n6, n7, n8 }) do
-        w = trim(w)
+      for i = 9, 8 + BIN_NEEDS_MAX do
+        local w = trim(head[i])
 
         if w ~= "" then
           needs = needs or {}
@@ -3768,7 +3771,7 @@ end
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap,
-                          midi_cap, notify_cap, share_cap, keyring_cap)
+                          midi_cap, notify_cap, share_cap, keyring_cap, tiles_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -4595,7 +4598,7 @@ query. `find` and `watch` are built on exactly these two calls.
     --
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
-    local camera, midi, keyring = nil, nil, nil
+    local camera, midi, keyring, tiles = nil, nil, nil, nil
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -4609,6 +4612,7 @@ query. `find` and `watch` are built on exactly these two calls.
       if want == "keyring" and keyring_cap and keyring_grant(path) then
         keyring = keyring_cap
       end
+      if want == "tiles" then tiles = tiles_cap end
     end
 
     -- The camera and MIDI last, and only when declared: everything before
@@ -4624,6 +4628,8 @@ query. `find` and `watch` are built on exactly these two calls.
     if midi then caps[#caps + 1] = midi; midi_at = #caps - 1 end
     local keyring_at = nil
     if keyring then caps[#caps + 1] = keyring; keyring_at = #caps - 1 end
+    local tiles_at = nil
+    if tiles then caps[#caps + 1] = tiles; tiles_at = #caps - 1 end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
     local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags)
@@ -4639,7 +4645,7 @@ query. `find` and `watch` are built on exactly these two calls.
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       backlight = 12, notify = 13, share = share_cap and 14 or nil,
-      camera = camera_at, midi = midi_at, keyring = keyring_at,
+      camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
       home_in_memory = home_in_memory or nil,
       protostamp = sys.protostamp,
     })
@@ -5306,6 +5312,7 @@ if role == ROLE_INIT then
   -- And a third (`docs/maps.md` M6d): the map's tiles server's, reaching
   -- `/Home/Cache/Maps` alone.
   local MAPS_CACHE_DISK_EP = sys.endpoint()
+  local TILES_EP = sys.endpoint()
   local KEYRING_SMB_EP = sys.endpoint()
   local KEYRING_MANAGE_EP = sys.endpoint()
   local AUDIO_EP = sys.endpoint()
@@ -5582,6 +5589,14 @@ if role == ROLE_INIT then
                                         KEYRING_SMB_EP })
 
   --
+  -- **The map's tiles** (`docs/maps.md` M6d), after the network stack it
+  -- fetches through and the disk server whose third door reaches its cache,
+  -- `/Home/Cache/Maps`, and nothing else. Idle until a map asks.
+  --
+  start("the map's tiles", ROLE_TILES, { TILES_EP, NET_EP, MAPS_CACHE_DISK_EP,
+                                         CONSOLE_EP })
+
+  --
   -- **The power button**, the first driver outside the kernel.
   --
   -- Handed the console server's endpoint and nothing else, so it can report
@@ -5754,7 +5769,7 @@ if role == ROLE_INIT then
                       { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP,
                         APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP, BLOCKS_EP,
                         DRIVES_EP, BACKLIGHT_EP, CAMERA_EP, MIDI_EP,
-                        NOTIFY_EP, SMBFS_EP, KEYRING_MANAGE_EP },
+                        NOTIFY_EP, SMBFS_EP, KEYRING_MANAGE_EP, TILES_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -5827,7 +5842,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)
   return
 end
 
@@ -6016,6 +6031,7 @@ if role == ROLE_RUNNER then
   if req.midi    then ns.mount("/Devices/midi",    req.midi, nil, "midi") end
   if req.notify  then ns.mount("/Notifications",   req.notify, nil, "notify") end
   if req.keyring then ns.keyring_door(req.keyring) end
+  if req.tiles   then ns.mount("/Tiles",           req.tiles, nil, "tiles") end
 
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started
@@ -6181,7 +6197,7 @@ if role == ROLE_RUNNER then
     --
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
-    local camera_at, midi_at, keyring_at = nil, nil, nil
+    local camera_at, midi_at, keyring_at, tiles_at = nil, nil, nil, nil
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -6216,6 +6232,13 @@ if role == ROLE_RUNNER then
         caps[#caps + 1] = req.keyring
         keyring_at = #caps - 1
       end
+
+      -- The map's tiles (`docs/maps.md` M6d): only to a program that
+      -- declares it, and only from one that holds it.
+      if want == "tiles" and req.tiles then
+        caps[#caps + 1] = req.tiles
+        tiles_at = #caps - 1
+      end
     end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
@@ -6232,7 +6255,7 @@ if role == ROLE_RUNNER then
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       backlight = 12, notify = 13, share = req.share and 14 or nil,
-      camera = camera_at, midi = midi_at, keyring = keyring_at,
+      camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Which protocols the system speaks, for an image built for others
