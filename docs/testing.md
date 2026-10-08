@@ -21155,3 +21155,26 @@ sidebar's button hiding the sidebar and land where it was; + zooming 15.00
 to 16.00; a drag 200 to the right moving the centre west. The window is kept
 as `build/maps/maps.png`. **Control**: the tiles left undrawn - "0 tiles",
 no main road. Restored.
+
+## 18.458 Maps M5: names on the map, search, a place's card, Pinned, Saved and Recently viewed
+
+`docs/maps.md` step M5. **Names on the map** from each visible tile's
+labels, kept with the tile: the city and its districts, water, parks from
+zoom 14, points of interest from 15 with a dot coloured by what they are for,
+street names from 15 - each only where nothing written before it is, never
+under the card or the controls, and a name written again only 300 points
+from where it was. Street names are drawn level, so only along streets
+within thirty degrees of it, until gfx can turn text. **Search** over an
+index of the region's names, made the first time it is wanted from the
+tiles at zoom 14: names starting with what is typed, then names holding it,
+twelve, the arrows choosing, Return going. **A place's card** over the map:
+its name and kind, Save and Pin, closed by its cross; a press on a name on
+the map opens one too. **Pinned** (four, as round marks), **Saved** and
+**Recently viewed** (eight) in the sidebar, kept by the settings kit as
+`maps`, each a press away.
+
+`run_maps.py` 14, adding: "market" typed into the search finds two, Lantern
+Street Market first; Return opens its card with the map there at 16 and
+names drawn; Save keeps it, and `/Home/Preferences/maps` holds it. The
+window after Save is kept as `build/maps/card.png`. **Control**: a search
+that finds nothing - the suite stops at the card that never opens.

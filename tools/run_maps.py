@@ -7,6 +7,10 @@ colours; the sidebar's button hiding the sidebar and the map taking its
 place; the + button zooming in a whole step; and a drag moving the map the
 way the pointer went.
 
+**M5 - places**: "market" typed into the search finds Lantern Street
+Market first, Return opens its card and centres the map there with names
+on it, Save keeps it, and the settings kit's `maps` holds it.
+
 **M3 - the Map Kit inside Kosmos**: Port Alder, carried in the image as
 `maps/port-alder.pmtiles`, opened by `use("/Kosmos/Kits/map")`; its header
 read; the tile at zoom 16 where Lantern Street Market is decoded; drawn
@@ -163,6 +167,38 @@ def main():
             time.sleep(0.25)
         guest.mouse_button(False)
         said["dragged"] = guest.wait_for_line("maps: at ", "dragged", mark)
+
+        # ---- M5: search, the card, Save ----
+        # The sidebar back first, then the search field pressed and typed in.
+        click(side[0] + 13, side[1] + 13)
+        time.sleep(2)
+        srch = at("search", controls)
+        mark = len(guest.seen)
+        click(srch[0] + 60, srch[1] + 18)
+        for k in "market":
+            guest.sendkey(k)
+            time.sleep(0.4)
+        found = guest.wait_for_line('maps: search "market"', "the search", mark)
+        time.sleep(1)
+        guest._read_available()
+        said["found"] = re.findall(r'maps: search "market", (.*)', guest.seen[mark:])[-1:]
+        mark = len(guest.seen)
+        guest.sendkey("ret")
+        said["card"] = guest.wait_for_line("maps: card ", "the card", mark)
+        buttons = guest.wait_for_line("maps: card buttons ", "the card's buttons", mark)
+        said["there"] = guest.wait_for_line("maps: at ", "the map at the place", mark)
+        time.sleep(2)
+        save = at("save", buttons)
+        mark = len(guest.seen)
+        click(save[0] + 20, save[1] + 15)
+        said["saved"] = guest.wait_for_line("maps: saved ", "Save", mark)
+        time.sleep(1)
+        said["kept"] = session.run("cat /Home/Preferences/maps").decode(errors="replace")
+        w_, h_, rgb_ = R.parse_ppm(guest.screendump())
+        rows_ = [rgb_[((y_ * w_) + wx) * 3:((y_ * w_) + wx + ww) * 3]
+                 for y_ in range(wy, min(h_, wy + wh))]
+        V.png(os.path.join(os.path.dirname(HERE), "build", "maps", "card.png"), ww, len(rows_),
+              b"".join(rows_))
     finally:
         guest.close()
 
@@ -225,7 +261,26 @@ def main():
         fails.append("a drag to the right did not move the map west: %r then %r"
                      % (said.get("zoomed"), said.get("dragged")))
 
-    checks = 11
+    found = (said.get("found") or [""])[0].strip()
+
+    if not found.endswith("first Lantern Street Market") or not re.match(r"[2-9] found", found):
+        fails.append('"market" typed into the search did not find Lantern Street Market first '
+                     "among two or more: %r" % found)
+
+    there = re.match(r"\S+ \S+, zoom ([\d.]+), \d+ tiles in [\d.]+ ms, (\d+) names",
+                     said.get("there", ""))
+
+    if (said.get("card") or "").strip() != "Lantern Street Market" or not there \
+            or float(there.group(1)) < 16 or int(there.group(2)) < 3:
+        fails.append("Return did not open the market's card with the map there at 16 and names "
+                     "on it: %r, %r" % (said.get("card"), said.get("there")))
+
+    if (said.get("saved") or "").strip() != "Lantern Street Market" \
+            or "Lantern Street Market" not in said.get("kept", ""):
+        fails.append("Save did not keep the market in the settings kit's maps: %r, %r"
+                     % (said.get("saved"), said.get("kept", "")[:300]))
+
+    checks = 14
 
     if fails:
         print("FAIL: %d of %d checks on Maps:" % (len(fails), checks))
@@ -240,7 +295,8 @@ def main():
           "Map Kit, its header, the market's tile at zoom 16 decoded, drawn in a style of "
           "two rules%s, labelled, the projection there and back, a tile off the region refused; "
           "M4: the window opened with the city drawn, the sidebar's button hiding it, + zooming "
-          "a step, a drag moving the map)"
+          "a step, a drag moving the map; M5: a search finding the market, its card opened "
+          "with names on the map, Save keeping it)"
           % (checks, (" in " + timing.group(1) + " ms") if timing else ""))
     return 0
 

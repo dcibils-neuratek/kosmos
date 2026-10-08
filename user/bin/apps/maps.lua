@@ -177,6 +177,154 @@ local function tile_at(z, x, y)
 end
 
 --------------------------------------------------------------------------
+-- Places: what a name is, where it is, and what a person kept.
+--------------------------------------------------------------------------
+
+local prefs = use("/Kosmos/Libraries/prefs.lua")
+
+-- What a person reads for a class: OpenMapTiles' words, said plainly.
+local KIND = {
+  marketplace = "Market", ferry_terminal = "Ferry terminal", railway = "Station",
+  drinking_water = "Water", townhall = "Town hall", city = "City", town = "Town",
+  suburb = "District", neighbourhood = "Neighbourhood", village = "Village",
+  primary = "Main road", secondary = "Road", tertiary = "Road", minor = "Street",
+  motorway = "Motorway", river = "River", bay = "Bay", park = "Park",
+}
+
+local function kind_of(p)
+  local k = KIND[p.class or ""]
+
+  if k then return k end
+
+  local c = tostring(p.class or p.layer or "place"):gsub("_", " ")
+
+  return (c:sub(1, 1):upper() .. c:sub(2))
+end
+
+-- A point of interest's colour, by what it is for.
+local function dot_of(p)
+  local c = p.class or ""
+
+  if c:match("cafe") or c:match("bakery") or c:match("restaurant") then return 0xffe8833a end
+  if c:match("market") or c:match("shop") or c:match("pharmacy") then return 0xffe0573f end
+  if c:match("museum") or c:match("library") or c:match("cinema") or c:match("school") then
+    return 0xff8a63d2
+  end
+  if c:match("railway") or c:match("ferry") or c:match("station") then return 0xff3584e4 end
+  if c:match("viewpoint") or c:match("lighthouse") or c:match("water") then return 0xff2f9d62 end
+
+  return 0xff7a8599
+end
+
+-- Kept on this machine: { pinned, saved, recent }, each a list of places
+-- `{ name, class, layer, x, y }` with x and y across the world.
+local kept = prefs.read("maps")
+
+for _, k in ipairs({ "pinned", "saved", "recent" }) do
+  if type(kept[k]) ~= "table" then kept[k] = {} end
+end
+
+local function keep()
+  local ok, why = prefs.write("maps", kept)
+
+  if not ok then print("maps: not kept: " .. tostring(why)) end
+end
+
+local function same(a, b) return a and b and a.name == b.name and a.layer == b.layer end
+
+local function find_in(list, p)
+  for i, q in ipairs(list) do
+    if same(q, p) then return i end
+  end
+
+  return nil
+end
+
+local function toggle_in(list, p, most)
+  local i = find_in(list, p)
+
+  if i then
+    table.remove(list, i)
+    return false
+  end
+
+  table.insert(list, 1, { name = p.name, class = p.class, layer = p.layer, x = p.x, y = p.y })
+
+  while #list > most do table.remove(list) end
+
+  return true
+end
+
+--
+-- **The search's index**: every name in the region, once, with where it
+-- is - made the first time it is wanted from the tiles at zoom 14 (or the
+-- region's deepest, if that is shallower), sixty-four tiles round the
+-- region's middle at most. Port Alder is four; a country's extract would be
+-- searched round where it opens until search comes from the network (M6).
+--
+local index = nil
+
+local function build_index()
+  if index then return index end
+
+  local z = math.min(info.max_zoom, 14)
+  local n = 1 << z
+  local x0, y0 = map.project(info.west, info.north)
+  local x1, y1 = map.project(info.east, info.south)
+  local tx0, ty0 = math.floor(x0 * n), math.floor(y0 * n)
+  local tx1, ty1 = math.floor(x1 * n), math.floor(y1 * n)
+  local mx_, my_ = (tx0 + tx1) // 2, (ty0 + ty1) // 2
+  local seen, tiles = {}, 0
+
+  index = {}
+
+  for ty = math.max(ty0, my_ - 3), math.min(ty1, my_ + 4) do
+    for tx = math.max(tx0, mx_ - 3), math.min(tx1, mx_ + 4) do
+      local t = region:tile(z, tx, ty)
+
+      tiles = tiles + 1
+
+      for _, l in ipairs(t and t:labels() or {}) do
+        local key = l.name .. "|" .. l.layer
+
+        if not seen[key] then
+          seen[key] = true
+          index[#index + 1] = { name = l.name, class = l.class, layer = l.layer,
+                                x = (tx + l.x) / n, y = (ty + l.y) / n }
+        end
+      end
+    end
+  end
+
+  table.sort(index, function(a, b) return a.name < b.name end)
+  print(("maps: %d names from %d tiles at zoom %d"):format(#index, tiles, z))
+  return index
+end
+
+-- Names that start with what was typed, then names that hold it; twelve.
+local function search_for(text)
+  local want = text:lower()
+  local starts, holds = {}, {}
+
+  if want == "" then return {} end
+
+  for _, p in ipairs(build_index()) do
+    local at = p.name:lower():find(want, 1, true)
+
+    if at == 1 then starts[#starts + 1] = p elseif at then holds[#holds + 1] = p end
+  end
+
+  for _, p in ipairs(holds) do starts[#starts + 1] = p end
+
+  while #starts > 12 do table.remove(starts) end
+
+  return starts
+end
+
+local results, chosen_result = {}, 1
+local card = nil                       -- the place whose card is open
+
+--------------------------------------------------------------------------
 -- The header, the sidebar, the controls over the map.
 --------------------------------------------------------------------------
 
@@ -227,7 +375,25 @@ local function section(s, y, text)
   return y + gfx.height("label") + 8
 end
 
+local rows = {}                         -- the sidebar's pressable rows
+
+local function place_row(s, y, p, lit)
+  local h = 44
+
+  if lit then s:fill_round(8, y, SIDE_W - 16, h, theme.sunken, 9) end
+
+  s:disc(8 + 10 + 15, y + h // 2, 15, theme.raised)
+  s:disc(8 + 10 + 15, y + h // 2, 6, p.layer == "poi" and dot_of(p) or theme.text_dim)
+  s:text(8 + 10 + 30 + 12, y + 5, ui.fitted(p.name, SIDE_W - 90, "ui"), theme.text, nil, "ui")
+  s:text(8 + 10 + 30 + 12, y + 5 + gfx.height() + 1, kind_of(p), theme.text_dim, nil, "ui")
+  rows[#rows + 1] = { x = 8, y = y, w = SIDE_W - 16, h = h, place = p }
+
+  return y + h + 2
+end
+
 local function draw_sidebar(s)
+  rows = {}
+
   if not sidebar then return end
 
   s:fill(0, L.head, SIDE_W, H - L.head, theme.window)
@@ -251,22 +417,112 @@ local function draw_sidebar(s)
     s:fill(cx_, search.y + 9, 2, search.h - 18, theme.accent)
   end
 
-  local y = search.y + search.h + 22
+  local y = search.y + search.h + 16
 
+  -- While something is typed: what matches, the chosen one lit.
+  if search.text ~= "" then
+    y = section(s, y, ("%d found"):format(#results))
+
+    for i, p in ipairs(results) do
+      if y + 44 > H then break end
+      y = place_row(s, y, p, i == chosen_result)
+    end
+
+    if #results == 0 then s:text(18, y, "Nothing here is called that", theme.text_dim, nil, "ui") end
+
+    return
+  end
+
+  -- Pinned, as round marks along the top, four at most.
   y = section(s, y, "Pinned")
-  s:text(18, y, "Nothing pinned yet", theme.text_dim, nil, "ui")
-  y = y + gfx.height() + 22
+
+  if #kept.pinned == 0 then
+    s:text(18, y, "A place's Pin puts it here", theme.text_dim, nil, "ui")
+    y = y + gfx.height() + 18
+  else
+    for i, p in ipairs(kept.pinned) do
+      if i > 4 then break end
+
+      local x = 18 + (i - 1) * 68
+
+      s:disc(x + 22, y + 22, 22, p.layer == "poi" and dot_of(p) or theme.accent)
+      s:text(x + 22 - gfx.measure(p.name:sub(1, 1):upper(), "title") // 2,
+             y + 22 - gfx.height("title") // 2, p.name:sub(1, 1):upper(), 0xffffffff, nil, "title")
+      s:text(x, y + 48, ui.fitted(p.name, 64, "ui"), theme.text_dim, nil, "ui")
+      rows[#rows + 1] = { x = x, y = y, w = 64, h = 70, place = p }
+    end
+
+    y = y + 78
+  end
+
   y = section(s, y, "Saved")
-  s:text(18, y, "Nothing saved yet", theme.text_dim, nil, "ui")
-  y = y + gfx.height() + 22
+
+  if #kept.saved == 0 then
+    s:text(18, y, "A place's Save keeps it here", theme.text_dim, nil, "ui")
+    y = y + gfx.height() + 18
+  else
+    for i, p in ipairs(kept.saved) do
+      if i > 4 or y + 44 > H then break end
+      y = place_row(s, y, p, false)
+    end
+
+    y = y + 8
+  end
+
   y = section(s, y, "Recently viewed")
-  s:text(18, y, "Places you look at appear here", theme.text_dim, nil, "ui")
+
+  if #kept.recent == 0 then
+    s:text(18, y, "Places you look at appear here", theme.text_dim, nil, "ui")
+  else
+    for _, p in ipairs(kept.recent) do
+      if y + 44 > H then break end
+      y = place_row(s, y, p, false)
+    end
+  end
 end
 
 -- A glass panel over the map: the window's colour, its edge.
 local function glass(s, x, y, w, h)
   s:fill_round(x, y, w, h, theme.window, 12)
   s:frame_round(x, y, w, h, theme.line_soft, 12)
+end
+
+local save_button, pin_button, close_button = {}, {}, { icon = "close" }
+local said_card = nil
+
+local function draw_card(s)
+  if not card then return end
+
+  local mx, my = map_box()
+  local x, y, w = mx + 16, my + 16, 320
+  local h = 136
+
+  glass(s, x, y, w, h)
+  s:text(x + 16, y + 14, ui.fitted(card.name, w - 64, "title"), theme.text, nil, "title")
+  s:text(x + 16, y + 14 + gfx.height("title") + 4, kind_of(card), theme.text_dim, nil, "ui")
+
+  close_button.x, close_button.y = x + w - 12 - 26, y + 10
+  pk.iconbutton(s, close_button)
+
+  local by = y + h - 16 - 31
+  local saved, pinned = find_in(kept.saved, card) ~= nil, find_in(kept.pinned, card) ~= nil
+
+  save_button.x, save_button.y, save_button.text = x + 16, by, saved and "Saved" or "Save"
+  save_button.go = not saved
+  save_button.w = nil
+  pk.button(s, save_button)
+  pin_button.x, pin_button.y, pin_button.text = save_button.x + save_button.w + 8, by,
+                                                pinned and "Pinned" or "Pin"
+  pin_button.w = nil
+  pk.button(s, pin_button)
+
+  local where = ("save %d,%d; pin %d,%d; close %d,%d"):format(save_button.x, save_button.y,
+                pin_button.x, pin_button.y, close_button.x, close_button.y)
+
+  if where ~= said_card then
+    said_card = where
+    print("maps: card buttons " .. where)
+  end
 end
 
 local function draw_controls(s)
@@ -320,6 +576,138 @@ end
 
 local drawn_tiles, drawn_ms = 0, 0
 
+--
+-- **The names on the map**, from each visible tile's labels, kept with the
+-- tile: the city and its districts, then water, parks, points of interest
+-- and street names - each only where nothing written before it is, so they
+-- never overlap. A street's name is drawn level, so only along streets
+-- that run within thirty degrees of it, until gfx can turn text.
+--
+local label_cache = {}
+local placed_labels = {}
+local draw_labels
+local drawn_labels = 0
+
+local ORDER = { place = 1, water_name = 2, park = 3, poi = 4, transportation_name = 5 }
+
+local function labels_of(key, t)
+  local l = label_cache[key]
+
+  if l == nil then
+    l = t:labels()
+    label_cache[key] = l
+  end
+
+  return l
+end
+
+local function overlaps(b)
+  for _, o in ipairs(placed_labels) do
+    if b.x < o.x + o.w and o.x < b.x + b.w and b.y < o.y + o.h and o.y < b.y + b.h then
+      return true
+    end
+  end
+
+  return false
+end
+
+local function halo_text(s, x, y, text, colour, face)
+  local back = 0xff000000 | colours.land
+
+  for _, d in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
+    s:text(x + d[1], y + d[2], text, back, nil, face)
+  end
+
+  s:text(x, y, text, colour, nil, face)
+end
+
+draw_labels = function(s, z, n, size, left, top, mx, my, mw, mh, x0, y0, x1, y1)
+  local candidates = {}
+  local named = {}                     -- each name's places this frame
+
+  -- What the card and the controls cover is taken before any name is.
+  placed_labels = {}
+  drawn_labels = 0
+
+  if card then placed_labels[1] = { x = mx + 16, y = my + 16, w = 320, h = 136 } end
+
+  placed_labels[#placed_labels + 1] = { x = mx + mw - 16 - 40, y = my + 16, w = 40, h = 80 + 14 + 40 }
+
+  for ty = math.max(0, y0), math.min(n - 1, y1) do
+    for tx = math.max(0, x0), math.min(n - 1, x1) do
+      local key = z .. "/" .. tx .. "/" .. ty
+      local t = cache[key]
+
+      for _, l in ipairs(t and labels_of(key, t) or {}) do
+        local wanted = (l.layer == "place")
+          or (l.layer == "water_name")
+          or (l.layer == "park" and zoom >= 14)
+          or (l.layer == "poi" and zoom >= 15)
+          or (l.layer == "transportation_name" and zoom >= 15 and math.abs(l.angle) < 0.52)
+
+        if wanted then
+          candidates[#candidates + 1] = {
+            l = l, x = mx + tx * size - left + l.x * size, y = my + ty * size - top + l.y * size,
+            order = (ORDER[l.layer] or 9) * 100 + (l.rank or 0),
+            world_x = (tx + l.x) / n, world_y = (ty + l.y) / n,
+          }
+        end
+      end
+    end
+  end
+
+  table.sort(candidates, function(a, b)
+    if a.order ~= b.order then return a.order < b.order end
+    return a.l.name < b.l.name
+  end)
+
+  for _, c in ipairs(candidates) do
+    local l = c.l
+    local face = (l.layer == "place" and l.class == "city") and "title" or "ui"
+    local text = l.name
+    local colour = theme.text
+
+    if l.layer == "place" and l.class ~= "city" then
+      text, face, colour = text:upper(), "label", theme.text_dim
+    elseif l.layer == "water_name" then
+      colour = 0xff3a6ea8
+    elseif l.layer == "park" then
+      colour = 0xff3f7a43
+    end
+
+    local tw, th = gfx.measure(text, face), gfx.height(face)
+    local dot = l.layer == "poi" and 6 or 0
+    local box = { x = c.x - (dot > 0 and dot or tw / 2), y = c.y - th / 2,
+                  w = tw + dot * 2 + 4, h = th }
+
+    -- A street crossing two tiles has a name in each: written again only
+    -- 300 points from where it was, as a map repeats a long road's name.
+    local again = false
+
+    for _, at in ipairs(named[l.name] or {}) do
+      if math.abs(at[1] - c.x) < 300 and math.abs(at[2] - c.y) < 300 then again = true end
+    end
+
+    if not again and box.x >= mx and box.y >= my and box.x + box.w <= mx + mw
+       and box.y + box.h <= my + mh and not overlaps(box) then
+      named[l.name] = named[l.name] or {}
+      table.insert(named[l.name], { c.x, c.y })
+      placed_labels[#placed_labels + 1] = box
+      box.place = { name = l.name, class = l.class, layer = l.layer, x = c.world_x, y = c.world_y }
+
+      if dot > 0 then
+        s:disc(math.floor(c.x), math.floor(c.y), dot, 0xffffffff)
+        s:disc(math.floor(c.x), math.floor(c.y), dot - 2, dot_of(l))
+        halo_text(s, math.floor(c.x + dot + 5), math.floor(box.y), text, colour, face)
+      else
+        halo_text(s, math.floor(box.x), math.floor(box.y), text, colour, face)
+      end
+
+      drawn_labels = drawn_labels + 1
+    end
+  end
+end
+
 local function draw_map(s)
   local mx, my, mw, mh = map_box()
   local z = math.max(info.min_zoom, math.min(info.max_zoom, math.floor(zoom)))
@@ -349,6 +737,7 @@ local function draw_map(s)
     end
   end
 
+  draw_labels(s, z, n, size, left, top, mx, my, mw, mh, x0, y0, x1, y1)
   drawn_ms = (sys.ticks() - t0) * 1000 / counter_hz
 end
 
@@ -358,6 +747,7 @@ local function draw_all()
   place_controls()
   draw_map(s)
   draw_controls(s)
+  draw_card(s)
   draw_sidebar(s)
   draw_header(s)
 
@@ -367,8 +757,8 @@ end
 local function say_where()
   local lon, lat = map.unproject(cx, cy)
 
-  print(("maps: at %.5f %.5f, zoom %.2f, %d tiles in %.1f ms")
-        :format(lon, lat, zoom, drawn_tiles, drawn_ms))
+  print(("maps: at %.5f %.5f, zoom %.2f, %d tiles in %.1f ms, %d names")
+        :format(lon, lat, zoom, drawn_tiles, drawn_ms, drawn_labels))
 end
 
 --------------------------------------------------------------------------
@@ -401,6 +791,18 @@ local function zoom_by(by, px, py)
   local after = world_size()
 
   cx, cy = ux - ox / after, uy - oy / after
+end
+
+-- A place shown: the map centred on it, close enough to see it, its card
+-- open, and it at the top of Recently viewed.
+local function go_to(p)
+  cx, cy = p.x, p.y
+  zoom = math.max(zoom, 16)
+  card = p
+  toggle_in(kept.recent, p, 8)
+  if find_in(kept.recent, p) == nil then toggle_in(kept.recent, p, 8) end
+  keep()
+  print("maps: card " .. p.name)
 end
 
 local function toggle_sidebar()
@@ -453,14 +855,28 @@ local function key(c)
   local step = 120
 
   if search_focused then
-    if k == keys.ESCAPE or k == keys.ENTER then
+    local typed = search.text
+
+    if k == keys.ESCAPE then
       search_focused = false
+    elseif k == keys.ENTER or k == 10 then
+      if results[chosen_result] then go_to(results[chosen_result]) end
+    elseif k == keys.DOWN then
+      chosen_result = math.min(#results, chosen_result + 1)
+    elseif k == keys.UP then
+      chosen_result = math.max(1, chosen_result - 1)
     elseif k == 8 or k == 127 then
       search.text = search.text:sub(1, (utf8.offset(search.text, -1) or 1) - 1)
     elseif k >= 32 and mods == 0 then
       search.text = search.text .. utf8.char(k)
     else
       return false
+    end
+
+    if search.text ~= typed then
+      results, chosen_result = search_for(search.text), 1
+      print(("maps: search %q, %d found%s"):format(search.text, #results,
+            results[1] and (", first " .. results[1].name) or ""))
     end
 
     return true
@@ -532,6 +948,19 @@ while win.running do
           dots_menu()
         elseif y < L.head then
           win:take_hold(x, y)
+        elseif card and pk.inside(close_button, x, y) then
+          card = nil
+          dirty = true
+        elseif card and pk.inside(save_button, x, y) then
+          local now = toggle_in(kept.saved, card, 50)
+          keep()
+          print(("maps: %s %s"):format(now and "saved" or "unsaved", card.name))
+          dirty = true
+        elseif card and pk.inside(pin_button, x, y) then
+          local now = toggle_in(kept.pinned, card, 4)
+          keep()
+          print(("maps: %s %s"):format(now and "pinned" or "unpinned", card.name))
+          dirty = true
         elseif pk.inside(zoom_in, x, y) then
           zoom_by(1)
           dirty, moved = true, true
@@ -540,13 +969,34 @@ while win.running do
           dirty, moved = true, true
         elseif sidebar and x < SIDE_W then
           search_focused = pk.inside(search, x, y)
+
+          for _, r in ipairs(rows) do
+            if pk.inside(r, x, y) then
+              go_to(r.place)
+              moved = true
+            end
+          end
+
           dirty = true
         elseif inside_map(x, y) then
           search_focused = false
 
+          local on_label = nil
+
+          for _, box in ipairs(placed_labels) do
+            if box.place and pk.inside(box, x, y) then on_label = box.place end
+          end
+
           if double then
             zoom_by(1, x, y)
             dirty, moved = true, true
+          elseif on_label then
+            card = on_label
+            toggle_in(kept.recent, card, 8)
+            if find_in(kept.recent, card) == nil then toggle_in(kept.recent, card, 8) end
+            keep()
+            print("maps: card " .. card.name)
+            dirty = true
           else
             dragging = { x = x, y = y }
           end
