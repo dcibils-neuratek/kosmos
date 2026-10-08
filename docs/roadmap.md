@@ -7903,6 +7903,17 @@ processors, and still what follows USB:
    over the Window Kit; and Cube twice, in Lua (cube3d) and in C with its
    own transform, depth order and triangle fill, each showing its time a
    frame. **DONE** (0.11.41, `testing.md` 18.437).
+   **WANTED, 8 October - KOSMOS in 3D letters, an example.** Diego: "i
+   want to build an example app for kosmos ide that draws KOSMOS in 3d
+   letters moving around like a 3d showcase". A sixth kind of example
+   beside the GL demos and the two Cubes: the word extruded from the
+   system font's outlines into solid letters, lit, turning and
+   travelling across the window. It opens a window, so it is drawn and
+   designed first (feature set, mockup, architecture, diagram); the
+   question for its architecture is what supplies the letters - the 3D
+   Kit's meshes and TinyGL already exist, and a glyph's outline made
+   into a mesh is a thing Cafesa3D's text would want too, so likely a
+   kit door rather than the example's own code.
    The September plan follows, as it was:
    **AGREED again on 26 September, NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua
@@ -8229,6 +8240,19 @@ the applications make the system useful, and is not pulled forward.
   first (feature set, mockup, architecture, diagram). **Later, and much
   larger**: guests at full speed would mean Nebula itself a hypervisor (EL2
   on ARM, VT-x on the M700) - a decision about the kernel, Diego's.
+- **The games' window: its size and a dots menu** (Diego, 8 October, at
+  Quake on the M700: "can we add a window menu to run it at the original
+  resolution, 2x size or full screen? also lets use that blank space in the
+  app window bar and add the 3 dots menu to add options and settings. same
+  thing with the snes emulator"). Doom, Quake and the Super Nintendo draw
+  their own pixels, and since one window chrome (0.11.55) their title bar
+  is the band the kit draws, empty but for the title. A dots button in it,
+  left of the three, opening a menu: Original size, Twice the size, Full
+  screen (a check on the one in force), then each game's own options and
+  settings - the Super Nintendo's ROM and controls, the engines' sound and
+  keys. Scaling in C, nearest-neighbour, through `gfx`; full screen as the
+  window manager's. One door for the menu and the sizes, shared by the
+  three - a kit piece, not three copies - drawn first as the games' page.
 - **NTFS, read only**, so the Windows files on the ThinkPad's NVMe open in
   Kosmos. Asked for by Diego on 14 September while deciding the drives
   design, then left out of USB step 6 to focus on FAT32 and exFAT: "we can
@@ -8238,7 +8262,9 @@ the applications make the system useful, and is not pulled forward.
   as references, or their code under the GPL arrangement Doom's builds have;
   and BitLocker, on by default on many Windows 11 laptops, leaves the
   partition unreadable either way. Until then an NTFS filesystem is listed
-  with its type, and not opened (`docs/drives.html`).
+  with its type, and not opened (`docs/drives.html`). **Asked for again on 8 October**
+  ("can we add ntfs read only fs driver to the roadmap?"): wanted, beside
+  FAT32 and exFAT behind `/Drives`, read only.
 - **SMP.** Moved up to *Being built now* — see there, and `docs/smp.md` for
   the map. **This entry used to claim the kernel was "written SMP-ready: no
   loose mutable globals, a per-CPU pointer, a per-CPU runqueue with one CPU
