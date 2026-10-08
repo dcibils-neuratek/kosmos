@@ -21450,3 +21450,13 @@ had never drawn a parent at an offset that was not whole.
 400.2: 24 checks. **Control**: the clip's y taken as an integer again, it
 fails with the M700's words exactly, "bad argument #9 ... no integer
 representation".
+
+## 18.471 Montevideo at 15, with its shops thinned
+
+0.11.76 on the M700: Montevideo found, gone to and zoomed to 15 without
+stopping, 15 tiles fetched as it went. The centre at 15 was every shop's
+name at once, so a point of interest is named at 15 only to rank 8, at 16
+to rank 20, and from 17 all. OpenMapTiles ranks them, the lower the more
+notable. **Not held by a suite**: Port Alder's shops all have rank 1, so
+`x86-maps` (24 checks, passing) cannot tell the rule from its absence. That
+wants a shop of low note in `mapcity.py`.

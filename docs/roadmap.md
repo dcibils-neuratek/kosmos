@@ -1967,7 +1967,11 @@ answers to its three questions, the same day:
      `vncd` and `telnetd` already publish (`netprogram`'s status), read on
      the Deskbar's own clock and never in its paint. With the notifications
      of 7 October (`netprogram.tell_connected`), so a connection is both
-     said once and shown for as long as it lasts.
+     said once and shown for as long as it lasts. **Asked again on 8
+     October**, placed: "when vnc is sharing the screen on kosmos, can we
+     add a screen sharing status symbol near the notifications bell? so we
+     can tell is actively sharing the screen with a vnc client" - the
+     screen's icon beside the bell, lit while a viewer is watching.
 
 **Storage at full speed, performance first.** Diego, 14 September: "I expect
 our usb drives and nvme to perform like any other os like Linux", and "it's

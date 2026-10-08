@@ -932,6 +932,15 @@ local PLACE_FROM = { continent = 0, country = 2, state = 5, province = 5, city =
                      town = 8, village = 11, hamlet = 13, suburb = 12, quarter = 13,
                      neighbourhood = 14, isolated_dwelling = 15, locality = 15 }
 
+-- Which points of interest are named at a zoom: OpenMapTiles ranks them,
+-- the lower the more notable, so at 15 only the most and from 17 all. A
+-- city's centre at 15 was every shop's name at once (Montevideo, the M700).
+local function POI_RANK(z)
+  if z >= 17 then return math.huge elseif z >= 16 then return 20 end
+
+  return 8
+end
+
 local ORDER = { place = 1, water_name = 2, park = 3, poi = 4, transportation_name = 5 }
 
 local function labels_of(key, t)
@@ -985,7 +994,7 @@ draw_labels = function(s, drawn, mx, my, mw, mh)
         local wanted = (l.layer == "place" and zoom >= (PLACE_FROM[l.class] or 12))
           or (l.layer == "water_name")
           or (l.layer == "park" and zoom >= 14)
-          or (l.layer == "poi" and zoom >= 15)
+          or (l.layer == "poi" and zoom >= 15 and (l.rank or 0) <= POI_RANK(zoom))
           or (l.layer == "transportation_name" and zoom >= 15 and math.abs(l.angle) < 0.52)
 
         if wanted then
