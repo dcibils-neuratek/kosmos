@@ -209,6 +209,39 @@ specific directory for caches for apps?": we do, `/Home/Cache/<App>`
 (`layout.md`, his choice of 1 October), so `/Home/Cache/Maps`, with a
 256 MB ceiling; (4) search from the network in M6 as well - "yes".
 
+### M6's steps, after reading what exists (8 October)
+
+A C server cannot fetch over HTTPS today, and that is three missing
+pieces, each the system's rather than Maps':
+
+- **TLS from C.** The TLS Kit (`user/kits/tls/tls_kosmos.c`) is BearSSL
+  driven through a *Lua* connection's `read` and `write`; there is no C
+  door. Its core - handshake, trust anchors, records - is split from its
+  Lua binding into `tls_core.c` with a C door (`tls_core.h`) whose bytes
+  move through callbacks; the Lua kit becomes one caller of it and a C
+  server another. No second copy of BearSSL's driving.
+- **The network from C.** `smb_transport.c` talks to the network server
+  by hand (`netproto.h`, the shared rings of `tcpring.h`) for the SMB
+  Kit alone. That moves into the Network Kit as `netclient.c` - resolve,
+  connect, read and write on the rings, poll, close, never waiting unless
+  asked to - and the SMB Kit is its first caller, `tiles` its second.
+- **HTTP from C.** None exists: the browser and `http.lua` speak it in Lua.
+  `httpc.c`, a GET client - a request written, a reply's head read, its
+  body by length or by chunks, gzip through the compress kit, the
+  connection kept - stepped, so a server drives many at once and waits
+  for none.
+
+Then **`tiles`** itself (`user/servers/tiles.c`, `tileproto.h`): `want`
+and `arrived`, OpenFreeMap's TileJSON read once for where the tiles are,
+a few fetches at a time, the cache in `/Home/Cache/Maps` to 256 MB; and
+Maps drawing from region, cache and network alike. Then search from the
+network (Nominatim), through the same `httpc`.
+
+So: **M6a** TLS core in C, **M6b** the Network Kit's C client, **M6c**
+`httpc`, **M6d** the `tiles` server and Maps on it, **M6e** search. Each
+held by host tests and a guest suite that serves tiles from the Mac -
+the tests never depend on the internet.
+
 ## Decided along the way
 
 - **Port Alder on Null Island.** A made-up city has to stand somewhere on
