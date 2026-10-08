@@ -1,6 +1,12 @@
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """Maps, in the machine (`docs/maps.md`).
 
+**M4 - the window**: `open maps` - Port Alder drawn in the light look the
+suite's machine wears, its land and its main roads on the screen in their
+colours; the sidebar's button hiding the sidebar and the map taking its
+place; the + button zooming in a whole step; and a drag moving the map the
+way the pointer went.
+
 **M3 - the Map Kit inside Kosmos**: Port Alder, carried in the image as
 `maps/port-alder.pmtiles`, opened by `use("/Kosmos/Kits/map")`; its header
 read; the tile at zoom 16 where Lantern Street Market is decoded; drawn
@@ -20,7 +26,12 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
+import kosmos_vnc as V                                      # noqa: E402
+
+# The light look's colours, as `maps.lua` draws them.
+LAND, MAJOR = (0xf2, 0xef, 0xe9), (0xfd, 0xe8, 0xa8)
 
 KIT = r"""
 local map = use("/Kosmos/Kits/map")
@@ -78,6 +89,80 @@ def main():
         session = S.connect(telnet)
         session.put(KIT.encode(), "/Temporary/kit.lua")
         said["kit"] = session.run("/Temporary/kit.lua").decode(errors="replace")
+
+        # ---- M4: the window ----
+        mark = len(guest.seen)
+        session.run("open maps")
+        placed = guest.wait_for_line("wm: window Maps at ", "the Maps window", mark)
+        controls = guest.wait_for_line("maps: controls ", "the Maps controls", mark)
+        said["first"] = guest.wait_for_line("maps: at ", "the first map drawn", mark)
+        time.sleep(2)
+        wx, wy, ww, wh = (int(v) for v in re.match(r"(\d+),(\d+) (\d+)x(\d+)", placed).groups())
+        width, height, _ = R.parse_ppm(guest.screendump())
+
+        def at(name, text):
+            m = re.search(name + r" (\d+),(\d+)", text)
+            return (int(m.group(1)), int(m.group(2))) if m else None
+
+        def click(x, y):
+            guest.mouse_to(*R._to_tablet(wx + x, wy + y, width, height))
+            time.sleep(0.3)
+            guest.mouse_button(True)
+            time.sleep(0.2)
+            guest.mouse_button(False)
+            time.sleep(0.5)
+
+        def colours_in(x0, y0, x1, y1):
+            _, _, pick = R.pixel_reader(guest.screendump())
+            land = major = 0
+            for y in range(wy + y0, wy + y1, 3):
+                for x in range(wx + x0, wx + x1, 3):
+                    c = pick(x, y)
+                    land += c == LAND
+                    major += c == MAJOR
+            return land, major
+
+        # The window kept as it looked, for whoever reads the run after.
+        w_, h_, rgb_ = R.parse_ppm(guest.screendump())
+        rows_ = [rgb_[((y_ * w_) + wx) * 3:((y_ * w_) + wx + ww) * 3]
+                 for y_ in range(wy, min(h_, wy + wh))]
+        os.makedirs(os.path.join(os.path.dirname(HERE), "build", "maps"), exist_ok=True)
+        V.png(os.path.join(os.path.dirname(HERE), "build", "maps", "maps.png"), ww, len(rows_),
+              b"".join(rows_))
+
+        mapbox = re.search(r"map (\d+),(\d+) (\d+)x(\d+)", controls)
+        mx, my, mw, mh = (int(v) for v in mapbox.groups())
+        said["drawn"] = colours_in(mx + 10, my + 10, mx + mw - 10, my + mh - 10)
+
+        # The sidebar's button: hidden, and the map where it was.
+        side = at("sidebar", controls)
+        mark = len(guest.seen)
+        click(side[0] + 13, side[1] + 13)
+        said["hidden"] = guest.wait_for_line("maps: sidebar ", "the sidebar's button", mark)
+        said["controls2"] = guest.wait_for_line("maps: controls ", "the controls again", mark)
+        time.sleep(2)
+        said["under"] = colours_in(20, my + 60, mx - 20, my + 300)
+
+        # Zoom in, by its button.
+        zin = at("zoom in", said["controls2"])
+        mark = len(guest.seen)
+        click(zin[0] + 20, zin[1] + 20)
+        said["zoomed"] = guest.wait_for_line("maps: at ", "zoomed in", mark)
+
+        # A drag, 200 to the right: the map moves with the pointer, so its
+        # centre goes west.
+        m2 = re.search(r"map (\d+),(\d+) (\d+)x(\d+)", said["controls2"])
+        cx0 = int(m2.group(1)) + int(m2.group(3)) // 2
+        cy0 = int(m2.group(2)) + int(m2.group(4)) // 2
+        mark = len(guest.seen)
+        guest.mouse_to(*R._to_tablet(wx + cx0, wy + cy0, width, height))
+        time.sleep(0.3)
+        guest.mouse_button(True)
+        for k in range(1, 9):
+            guest.mouse_to(*R._to_tablet(wx + cx0 + 25 * k, wy + cy0, width, height))
+            time.sleep(0.25)
+        guest.mouse_button(False)
+        said["dragged"] = guest.wait_for_line("maps: at ", "dragged", mark)
     finally:
         guest.close()
 
@@ -115,7 +200,32 @@ def main():
     if "NONE no such tile" not in out:
         fails.append("a tile off the region was not refused as no such tile: %r" % out[-200:])
 
-    checks = 7
+    first = re.match(r"(\S+) (\S+), zoom ([\d.]+), (\d+) tiles", said.get("first", ""))
+    land, major = said.get("drawn", (0, 0))
+
+    if not first or int(first.group(4)) < 2 or land < 1000 or major < 50:
+        fails.append("Maps did not open with Port Alder drawn - its land and main roads in "
+                     "their colours: %r, %d land, %d main road" % (said.get("first"), land, major))
+
+    under_land, _ = said.get("under", (0, 0))
+
+    if (said.get("hidden") or "").strip() != "hidden" or under_land < 200:
+        fails.append("the sidebar's button did not hide the sidebar and give its room to the "
+                     "map: %r, %d of land where it was" % (said.get("hidden"), under_land))
+
+    zoomed = re.match(r"\S+ \S+, zoom ([\d.]+)", said.get("zoomed", ""))
+
+    if not first or not zoomed or abs(float(zoomed.group(1)) - float(first.group(3)) - 1) > 0.01:
+        fails.append("the + button did not zoom in a whole step: %r then %r"
+                     % (said.get("first"), said.get("zoomed")))
+
+    dragged = re.match(r"(\S+) (\S+), zoom", said.get("dragged", ""))
+
+    if not zoomed or not dragged or not float(dragged.group(1)) < float(said["zoomed"].split()[0]):
+        fails.append("a drag to the right did not move the map west: %r then %r"
+                     % (said.get("zoomed"), said.get("dragged")))
+
+    checks = 11
 
     if fails:
         print("FAIL: %d of %d checks on Maps:" % (len(fails), checks))
@@ -128,7 +238,9 @@ def main():
     timing = re.search(r"DRAW .*, ([\d.]+) ms", out)
     print("PASS: %d checks on Maps (M3: Port Alder carried in the image and opened by the "
           "Map Kit, its header, the market's tile at zoom 16 decoded, drawn in a style of "
-          "two rules%s, labelled, the projection there and back, a tile off the region refused)"
+          "two rules%s, labelled, the projection there and back, a tile off the region refused; "
+          "M4: the window opened with the city drawn, the sidebar's button hiding it, + zooming "
+          "a step, a drag moving the map)"
           % (checks, (" in " + timing.group(1) + " ms") if timing else ""))
     return 0
 

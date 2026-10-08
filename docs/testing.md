@@ -21134,3 +21134,24 @@ decoded, drawn in two rules into a surface (104 ms under TCG), its labels
 naming the market a marketplace, the projection there and back to a
 millionth of a degree, a tile off the region refused. **Control**: the kit
 taken out of the table of kits - 7 of 7 fail. Restored.
+
+## 18.457 Maps M4: the window
+
+`docs/maps.md` step M4, `docs/maps.html` as agreed. `user/bin/apps/maps.lua`
+opens the region the image carries (or a `.pmtiles` file named on its
+command line) in a window that draws its own pixels: its header - the
+sidebar's button always at its left (Diego's addition to the drawing), the
+title, the dots with the regions in `/Home/Maps` - the sidebar with its
+search field and Pinned, Saved and Recently viewed (filled in M5), and the
+map: dragged, zoomed by the wheel about the pointer, by + and -, by a
+double press and by the keys, with a north mark, a scale bar and whose map
+it is. The tiles are decoded once and the last 96 kept; the style is Night's
+colours or a light map's, by the look, from the drawing's tokens. Maps
+joins the gallery's picture (`run_gallery.py`).
+
+`run_maps.py` 11 (`x86-maps`), adding to M3's: opened, Port Alder drawn
+in the light look - thousands of its land's pixels and its main roads'; the
+sidebar's button hiding the sidebar and land where it was; + zooming 15.00
+to 16.00; a drag 200 to the right moving the centre west. The window is kept
+as `build/maps/maps.png`. **Control**: the tiles left undrawn - "0 tiles",
+no main road. Restored.
