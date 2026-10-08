@@ -219,6 +219,25 @@ def main():
         said["dock"] = last_dock(guest.seen)
         said["room dock"] = room(session)
 
+        # The bell, at the strip's right beside the network and the sound
+        # (8 October): a press on it asks for what has been said.
+        bells = re.findall(r"deskbar: the bell at (\d+)", guest.seen[mark:])
+        strip_at = re.match(r"(\d+),(\d+) (\d+)x(\d+)", said["strip"])
+
+        if bells and strip_at:
+            sx_, sy_, sw_, sh_ = (int(v) for v in strip_at.groups())
+            said["bell x"] = int(bells[-1])
+            mark_b = len(guest.seen)
+            click(sx_ + said["bell x"] + 9, sy_ + sh_ // 2, width, height)
+            try:
+                said["bell"] = guest.wait_for_line("deskbar: the notifications' history asked for",
+                                                   "the bell pressed", mark_b)
+            except Exception:              # noqa: BLE001 - its check says
+                said["bell"] = None
+            time.sleep(3)
+            guest.sendkey("esc")
+            time.sleep(1)
+
         # The place it already has: answered, and nothing started again.
         mark = len(guest.seen)
         said["same"] = session.run("setprop /Running/Deskbar/bar dock").decode(errors="replace")
@@ -993,6 +1012,10 @@ def main():
                      "Clock did not bring it forward: %r"
                      % ((said.get("follows on"), said.get("followed"), said.get("follow spot")),))
 
+    if said.get("bell") is None or not said.get("bell x") or said["bell x"] < width // 2:
+        fails.append("the bell was not at the strip's right, or a press on it did not ask for "
+                     "the notifications' history: %r at %r" % (said.get("bell"), said.get("bell x")))
+
     recent_ = re.match(r"(\d+)", said.get("recent") or "")
 
     if not recent_ or int(recent_.group(1)) < 1:
@@ -1012,7 +1035,7 @@ def main():
                      "the new height - its sidebar's ground near the new bottom "
                      "%r, near the old %r: %r" % (g1, g0, said.get("prefs resized")))
 
-    checks = 51
+    checks = 52
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))

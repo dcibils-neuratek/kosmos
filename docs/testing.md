@@ -21178,3 +21178,14 @@ Street Market first; Return opens its card with the map there at 16 and
 names drawn; Save keeps it, and `/Home/Preferences/maps` holds it. The
 window after Save is kept as `build/maps/card.png`. **Control**: a search
 that finds nothing - the suite stops at the card that never opens.
+
+## 18.459 The notification mark, a bell at the strip's right
+
+Diego, 8 October: "put the notification status symbol to the right beside
+the network icons and else, now is on the left". It was an accent dot after
+the date; it is the line icon `bell` at the strip's right, beside the
+network, the sound and the battery, with the dot on it while something said
+has not been looked at, and a press on it opens the history as one on the
+clock does. `run_dock.py` 52: the strip says where the bell is, in its
+right half, and a press there asks for the history. **Control**: the press
+not handled - fails. Restored.

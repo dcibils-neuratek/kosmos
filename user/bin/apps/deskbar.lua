@@ -2277,14 +2277,9 @@ if DOCKED then
     shadowed(g, 18 + gfx.measure(time) + 10, ty, date, ink)
     self.clock_w = 18 + gfx.measure(time) + 10 + gfx.measure(date)
 
-    -- Something said since the history was last opened.
-    if news() then
-      g:fill_round(self.clock_w + 8, (self.h - 6) // 2, 6, 6, theme.accent, 3)
-    end
-
     local x = self.w - 18
 
-    self.volume_x, self.network_x, self.battery_x = nil, nil, nil
+    self.volume_x, self.network_x, self.battery_x, self.bell_x = nil, nil, nil, nil
 
     local bat = heard.battery
 
@@ -2310,6 +2305,28 @@ if DOCKED then
       x = x - LINE
       g:line_icon(x, ly, heard.network, ink, LINE)
       self.network_x = x
+      x = x - 14
+    end
+
+    --
+    -- **What has been said, as a bell with the rest** (Diego, 8 October:
+    -- "put the notification status symbol to the right beside the network
+    -- icons and else, now is on the left"). It was a dot after the date;
+    -- it is the bell now, at the right beside the network, the sound and
+    -- the battery, a dot on it while something said has not been looked
+    -- at. A press on it opens the history, as one on the clock does.
+    --
+    x = x - LINE
+    g:line_icon(x, ly, "bell", ink, LINE)
+    self.bell_x = x
+
+    if news() then
+      g:fill_round(x + LINE - 5, ly - 1, 7, 7, theme.accent, 3)
+    end
+
+    if self.bell_said ~= x then
+      self.bell_said = x
+      print(("deskbar: the bell at %d"):format(x))
     end
   end
 
@@ -2318,7 +2335,10 @@ if DOCKED then
     local function near(at_) return at_ and x >= at_ - 6 and x < at_ + LINE + 6 end
     local program = nil
 
-    if near(strip.volume_x) then
+    if near(strip.bell_x) then
+      open_history()
+      return
+    elseif near(strip.volume_x) then
       program = "/Kosmos/Apps/mixer.lua"
     elseif near(strip.network_x) then
       program = "/Kosmos/Apps/network.lua"
