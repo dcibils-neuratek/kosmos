@@ -21435,3 +21435,18 @@ host does: 23 checks, the suite 84 s. **Control**: the deadline made 2000 s,
 it fails waiting for the first tiles to come, and passes again when that is restored. What
 stalled on the M700 is not known yet. With the deadline it will at least be
 said, and retried.
+
+## 18.470 A tile clipped between pixels
+
+On the M700, at Montevideo, a zoom in stopped Maps: "maps.lua:1102: bad
+argument #9 to 'draw' (number has no integer representation)", with the
+"Maps stopped" alert. A tile not there yet is drawn as its ancestor, larger,
+clipped to where the tile goes. That edge can fall between pixels, and the
+kit's `draw` took its clip as integers. It takes numbers now and widens the
+clip to the pixels it touches, so no caller can stop that way. The suite
+had never drawn a parent at an offset that was not whole.
+
+`x86-maps`' kit script draws a tile clipped at 10.5, 20.25 to 300.7,
+400.2: 24 checks. **Control**: the clip's y taken as an integer again, it
+fails with the M700's words exactly, "bad argument #9 ... no integer
+representation".

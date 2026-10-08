@@ -267,6 +267,21 @@ static int l_decode(lua_State *L)
 
 /* ---- tiles ---- */
 
+/* A coordinate to the whole pixel at or before it, and at or after it. */
+static long pixel_floor(lua_Number v)
+{
+    long i = (long)v;
+
+    return (lua_Number)i > v ? i - 1 : i;
+}
+
+static long pixel_ceil(lua_Number v)
+{
+    long i = (long)v;
+
+    return (lua_Number)i < v ? i + 1 : i;
+}
+
 static struct tile *check_tile(lua_State *L, int index)
 {
     struct tile *t = luaL_checkudata(L, index, TILE);
@@ -311,9 +326,14 @@ static int l_draw(lua_State *L)
     float ox = (float)luaL_checknumber(L, 3), oy = (float)luaL_checknumber(L, 4);
     float size = (float)luaL_checknumber(L, 5), zoom = (float)luaL_checknumber(L, 6);
     struct style *st = luaL_checkudata(L, 7, STYLE);
-    long cx0 = (long)luaL_optinteger(L, 8, 0), cy0 = (long)luaL_optinteger(L, 9, 0);
-    long cx1 = (long)luaL_optinteger(L, 10, (lua_Integer)w);
-    long cy1 = (long)luaL_optinteger(L, 11, (lua_Integer)h);
+    /* The clip may fall between pixels - a tile's edge does, and Maps
+     * clipped a parent drawn larger to one (the M700, 8 October: "number
+     * has no integer representation", and Maps stopped) - so it is taken as
+     * a number and widened to the pixels it touches. */
+    long cx0 = pixel_floor(luaL_optnumber(L, 8, 0));
+    long cy0 = pixel_floor(luaL_optnumber(L, 9, 0));
+    long cx1 = pixel_ceil(luaL_optnumber(L, 10, (lua_Number)w));
+    long cy1 = pixel_ceil(luaL_optnumber(L, 11, (lua_Number)h));
 
     lua_pushinteger(L, map_draw(&t->t, &t->m, &st->s, &draw_path, pixels, pitch, (long)w,
                                 (long)h, ox, oy, size, zoom, cx0, cy0, cx1, cy1));

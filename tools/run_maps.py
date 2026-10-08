@@ -98,6 +98,9 @@ for py = 0, 511, 4 do
   end
 end
 print(("DRAW %d rules, %d grey, %d white, %.1f ms"):format(drew, grey, white, (sys.ticks() - t0) * 1000 / hz))
+-- Clipped between pixels, as a tile's edge falls: drawn, not refused.
+local clipped, cwhy = pcall(tile.draw, tile, s, 0.5, 0.25, 512, 16, style, 10.5, 20.25, 300.7, 400.2)
+print("CLIP " .. (clipped and "drawn" or tostring(cwhy)))
 local market
 for _, l in ipairs(tile:labels()) do
   if l.name == "Lantern Street Market" then market = l end
@@ -426,6 +429,10 @@ def main():
         fails.append("the projection there and back is not where it started: %r"
                      % (round_ and round_.group(0)))
 
+    if "CLIP drawn" not in out:
+        fails.append("a tile clipped between pixels was not drawn: %r"
+                     % (re.findall(r"CLIP [^\n]*", out) or [out[-200:]]))
+
     if "NONE no such tile" not in out:
         fails.append("a tile off the region was not refused as no such tile: %r" % out[-200:])
 
@@ -529,7 +536,7 @@ def main():
         fails.append("Return did not take the map to Montevideo at 12, a city's zoom: %r, %r"
                      % (said.get("worldcard"), said.get("worldat")))
 
-    checks = 23
+    checks = 24
 
     if fails:
         print("FAIL: %d of %d checks on Maps:" % (len(fails), checks))
