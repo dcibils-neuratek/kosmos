@@ -143,7 +143,15 @@ local showing = wanted()
 -- `ui.group` and this loses twenty lines; until then a widget in the kit
 -- would be a guess at what the second caller wants.
 --
-local page = ui.view{ x = SIDE, y = 0, w = W - SIDE, h = H }
+--
+-- **It follows every edge** (Diego, 8 October, on the M700: "when resizing
+-- the preferences app it breaks the layout"): without a `follow` it kept
+-- the size it opened at, so a taller window drew no rows below the old
+-- bottom and their labels were cut at it. `win.on_resize` lays the page
+-- out again at the new size.
+--
+local page = ui.view{ x = SIDE, y = 0, w = W - SIDE, h = H,
+                      follow = { "left", "right", "top", "bottom" } }
 
 local cards = {}            -- { y, h, rules } for each card, page coordinates
 
@@ -268,7 +276,8 @@ local side = ui.sidebar{
 
 -- The sidebar's own ground, under the list and the header both, down to the
 -- bottom of the window.
-local side_ground = ui.view{ x = 0, y = 0, w = SIDE, h = H }
+local side_ground = ui.view{ x = 0, y = 0, w = SIDE, h = H,
+                             follow = { "left", "top", "bottom" } }
 
 function side_ground:draw(g)
   g:fill(0, 0, self.w, self.h, theme.mix(theme.window, theme.line_soft, 330))
@@ -1088,6 +1097,13 @@ function ticker:tick()
 end
 
 win:add(ticker)
+
+-- A new size: the cards again at it, the scroll held inside what there is.
+win.on_resize = function()
+  scroll = math.max(0, math.min(scroll, page_h - page.h))
+  rebuild()
+  print(("preferences: resized to %dx%d"):format(page.w, page.h))
+end
 
 --------------------------------------------------------------------------
 -- The command line: a choice made the way a click makes it.

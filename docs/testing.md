@@ -20957,3 +20957,15 @@ window's stripes are sampled under the band and clear of the rounded corner
 **Control**: the band turned off in `ui.lua` - display-3 fails, "the window
 manager did not say where Front and Behind are, each headed by the band the
 kit draws". Restored, and checked by grep.
+
+## 18.449 Preferences laid out again when it is resized
+
+Diego, 8 October, on the M700: "when resizing the preferences app it breaks
+the layout". Its page and its sidebar's ground had no `follow`, so they kept
+the size the window opened at: below the old bottom there was the window's
+plain ground and rows without their labels. Both follow the window's edges
+now, and `win.on_resize` builds the page again at the new size.
+`run_dock.py` 48: Preferences dragged 160 taller by its grip says its new
+size, and its sidebar's ground near the new bottom is the colour it is near
+the old one. **Control**: 0.11.55's `preferences.lua` - fails, "(30, 38, 54)
+near the new bottom, (36, 45, 62) near the old". Restored.

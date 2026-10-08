@@ -381,6 +381,25 @@ def main():
             said["slid"] = maybe("deskbar: the dock ", "the slider pressed", mark)
             said["slid kept"] = session.run("/Temporary/clear.lua").decode(errors="replace")
 
+        # **Preferences made taller by its grip** (Diego, 8 October: "when
+        # resizing the preferences app it breaks the layout"): its page and
+        # its sidebar's ground kept the height they opened at, so below the
+        # old bottom there was no ground and no labels. Dragged 160 down,
+        # the page says its new height, and the sidebar's ground near the
+        # new bottom is the colour it is near the old one.
+        win_ = re.match(r"(\d+),(\d+) (\d+)x(\d+)", prefs or "")
+
+        if win_:
+            wx, wy, ww, wh = (int(v) for v in win_.groups())
+            _, _, at_ = R.pixel_reader(guest.screendump())
+            ground = at_(wx + 12, wy + wh - 30)
+            mark = len(guest.seen)
+            drag_from_to(wx + ww - 6, wy + wh - 6, wx + ww - 6, wy + wh + 154)
+            said["prefs resized"] = maybe("preferences: resized to ", "Preferences resized", mark)
+            time.sleep(1)
+            _, _, at_ = R.pixel_reader(guest.screendump())
+            said["prefs ground"] = (ground, at_(wx + 12, wy + wh + 130))
+
         session.run("/Temporary/close.lua Preferences")
         dock_at(25)
         time.sleep(1)
@@ -891,7 +910,15 @@ def main():
                      "the dock about half transparent and keep it: %r"
                      % ((said.get("slid"), said.get("slid kept")),))
 
-    checks = 47
+    grown = re.match(r"(\d+)x(\d+)", said.get("prefs resized") or "")
+    g0, g1 = said.get("prefs ground") or (None, None)
+
+    if not grown or g0 is None or g0 != g1:
+        fails.append("Preferences made 160 taller did not lay itself out at "
+                     "the new height - its sidebar's ground near the new bottom "
+                     "%r, near the old %r: %r" % (g1, g0, said.get("prefs resized")))
+
+    checks = 48
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))
