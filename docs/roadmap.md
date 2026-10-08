@@ -7934,6 +7934,12 @@ processors, and still what follows USB:
    and a light circling the word so each letter's sides and its shadow on
    the ground swing round with it - and the letters themselves turning
    too ("we can rotate letters... as well").
+   **And a logo, 8 October** (Diego: "we can also invent a logo in 3d
+   that rotates and else", "We need a logo for kosmos"). Kosmos has none:
+   the Deskbar's button wears Haiku's icon. A mark designed first as a
+   page of concepts in `docs/` for Diego to choose from - flat, as the
+   dock, the About window and the boot screen would show it - and then
+   built in 3D for the example, turning beside the letters.
    The September plan follows, as it was:
    **AGREED again on 26 September, NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua
