@@ -92,8 +92,8 @@ return function(ctx)
   local mirror = ctx.mirror
   local draw_window, focused_colour, frame_of, menus =
     ctx.draw_window, ctx.focused_colour, ctx.frame_of, ctx.menus
-  local osd, screen, tabs =
-    ctx.osd, ctx.screen, ctx.tabs
+  local osd, screen =
+    ctx.osd, ctx.screen
   local windows =
     ctx.windows
 
@@ -159,10 +159,8 @@ return function(ctx)
 
       if not win.hidden then
         --
-        -- A decorated window is its tab and its body (`tabs.shape`), each cut
-        -- out of what is behind in turn; everything else is its rectangle.
-        -- With the tab across the whole frame the two meet exactly, and the
-        -- cut is the rectangle it always was.
+        -- Every window is its rectangle (the old tab and its body went in
+        -- one chrome's step 3, 8 October); an ordinary one rounded.
         --
         local nparts, round
 
@@ -170,14 +168,11 @@ return function(ctx)
            or win.fullscreen or win.tip then
           parts[1], parts[2], parts[3], parts[4] = frame_of(win)
           nparts = 1
-        elseif win.headed or win.popup then
-          -- No tab: its rectangle, and rounded (`roadmap.md` 6zj) - a
-          -- popup as well, which is a page with nothing round it.
+        else
+          -- Its rectangle, and rounded (`roadmap.md` 6zj) - a popup as
+          -- well, which is a page with nothing round it.
           parts[1], parts[2], parts[3], parts[4] = frame_of(win)
           nparts = 1
-          round = OUT.corner_squares(win)
-        else
-          nparts = tabs.shape(win, parts)
           round = OUT.corner_squares(win)
         end
 

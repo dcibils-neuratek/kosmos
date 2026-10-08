@@ -1781,6 +1781,17 @@ arrived stays a click. Twice within the double-click interval is
 `maximise`. It is the same split Wayland arrived at for the same reason: a
 client that draws its own header asks the compositor to begin the move.
 
+**And the old tab is gone** (one chrome's step 3, 8 October; Diego: "we
+need to get rid of the old window chrome as we are staying with the new
+one only"). Every ordinary window is headed: one that draws no header -
+a program sending drawing commands, as `hello-win` teaches - has its top
+rows for its title bar and the three drawn over them. The window manager
+draws no tab and no border round anything, and a window is its page.
+**A window whose application has hung moves by Super and a drag**,
+pressed anywhere in it - the window manager's own move, which needs
+nothing from the application; Diego, asked how a hung window should move
+once the tab went: "Super+drag, anywhere". It was Super and Control.
+
 ## 16.10 What we do not copy from BeOS
 
 **The C++ class hierarchy.** `BApplication`, `BLooper`, `BHandler`, `BWindow`, `BView`, `BArchivable`, `BInvoker`. It existed because 1990s C++ had no better way to express composition. In Lua it is table composition with closures, no inheritance.

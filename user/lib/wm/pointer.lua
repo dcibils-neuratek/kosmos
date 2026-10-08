@@ -278,15 +278,6 @@ return function(ctx)
           PT.grabbed = win
           post(win, { type = "mouse", action = "press",
                       x = nx - win.x, y = ny - win.y })
-        elseif not win.headed and ny < fy + OUT.TAB_H then
-          local mx = boxes_x(win)
-
-          if win.pinned then
-            -- Nothing on this tab but the tab. Drag it and that is all.
-            PT.dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
-          elseif not press_box(win, nx, mx) then
-            PT.dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
-          end
         elseif win.headed and not win.pinned and OUT.boxes_under(nx, ny) == win then
           --
           -- **The three over a header that is the title bar** (`roadmap.md`
@@ -446,13 +437,8 @@ return function(ctx)
 
       damage_outline(PT.outline)
 
-      -- The frame it will have: the page alone, for a window with no tab.
-      if win.headed then
-        PT.outline = { x = win.x, y = win.y, w = w, h = h }
-      else
-        PT.outline = { x = win.x - OUT.BORDER, y = win.y - OUT.TAB_H,
-                    w = w + OUT.BORDER * 2, h = h + OUT.TAB_H + OUT.BORDER }
-      end
+      -- The frame it will have: the page alone, as every window is.
+      PT.outline = { x = win.x, y = win.y, w = w, h = h }
 
       damage_outline(PT.outline)
     end

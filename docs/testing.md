@@ -21609,3 +21609,30 @@ again once. **Control**: the window manager and `wmproto.lua` as they
 were, it fails, "watched again 3 times" in four seconds.
 
 The whole x86 gate: 52 of 52 in 5:47.
+
+## 18.479 One window chrome, step 3: the old tab gone
+
+Agreed 7 October, ordered 8 October: "do chrome step 3 first, then mail,
+then the split". Three parts:
+
+- **Super and a drag moves any window**, pressed anywhere in it, done by
+  the window manager alone. It needed Super and Control. Asked how a hung
+  window should move once the tab went, Diego chose "Super+drag, anywhere".
+  `x86-display-3` holds it with Super alone. **Control**: with Control
+  required again, it fails, "never the window to move by Super".
+- **Every ordinary window is headed.** Three programs that send drawing
+  commands and draw no header (`hello-win`, `stuck`, `wmlatency`) were
+  still given the window manager's tab and frame. Now their top rows are
+  their title bar with the three drawn over them. `stuck`'s hung window is
+  moved by Super and a drag in the hung-window check. Every application in
+  `/Kosmos/Apps` opened under QEMU: 58, none given a tab (one before).
+- **The old chrome's code removed**, 337 lines more removed than added:
+  the tab's drawing, its shape in the compositor, its hit test and its
+  rubber band in the pointer, `tabs`, `round_inside`, `rehead` and the look
+  that took bars off, `TAB_H`, and the frame. `BORDER`, which also set how
+  far in from the screen's edge a window is placed, stays as that and is
+  named `EDGE`.
+
+Display 1-4, dock and servers pass with the code gone.
+
+The whole x86 gate: 52 of 52 in 5:44.

@@ -131,47 +131,12 @@ local OUT = { want_corner = true,
               cascade = theme.metrics.tab + 8 }
 
 --
--- **Twenty-six, and the reasoning that gave twenty was measuring the wrong
--- thing.**
+-- **How far in from the screen's edge a window is placed** when it is
+-- placed rather than put where it asked. It was the frame round a window
+-- in its title bar's colour (`BORDER`, 4), and the frame went with the old
+-- tab in one chrome's step 3 (8 October); the margin it gave stayed.
 --
--- It said: the controls are fourteen and the glyphs sixteen, so this is the
--- smallest a tab can be and still hold both with a pixel either side. That
--- is an argument about what *fits*, and a title bar is not a container - it
--- is a handle. What decides its height is how hard it is to put a pointer on
--- it and keep it there while dragging.
---
--- On a 14-inch panel at 1920x1080 twenty pixels is about 2.4 mm of physical
--- target, and it reads as a hairline you have to aim at. The number that
--- matters is millimetres on the glass rather than pixels in the buffer, and
--- nothing in this file had ever asked that question - it was a desktop
--- measured in QEMU windows, where the panel is whatever the Mac's display
--- makes of it.
---
--- Six more, because that is what the machine says is comfortable. The
--- controls stay fourteen: a bigger handle, not bigger buttons.
---
--- **Read from the fixed layout** (`theme.metrics.tab`), which said 20 for
--- as long as this said 26 - the one number, kept in one place.
---
-OUT.TAB_H =  theme.metrics.tab
---
--- **The frame down the sides and along the bottom**, in the title bar's
--- colour: 4, where it was 2. Diego, 24 September, looking at a Log View
--- whose console ran to the window's edge: "We need to add some extra
--- chrome to the other borders of the apps as now it looks weird and make
--- better rounded borders". Two pixels was a line rather than chrome, so a
--- window whose page runs edge to edge - a terminal, a log, a photograph -
--- had a title bar on top and nothing holding the other three sides; and at
--- the bottom the corner's arc cut straight through the page while the line
--- ran square past it. A frame carries the bar's colour round the window,
--- and the page is rounded inside it (`OUT.round_inside`), so the frame
--- follows the curve.
---
--- **Four, not the six it was for an afternoon**: "the chrome arround the
--- window is too thick, we should take a couple of pixels out". Six read as
--- a picture frame; four holds the page without being looked at.
---
-OUT.BORDER     = 4
+OUT.EDGE       = 4
 --
 -- The three controls on a tab, and the room they take.
 --
@@ -289,14 +254,13 @@ function scale.valid(pct)
 end
 
 function scale.chrome()
-  OUT.TAB_H   = scale.px(theme.metrics.tab)
   OUT.corner = OUT.want_corner and scale.px(theme.metrics.corner or 0) or 0
   OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
-  OUT.BORDER  = scale.px(4)
+  OUT.EDGE    = scale.px(4)
   OUT.BOX     = scale.px(20)
   OUT.MARGIN  = scale.px(10)
   OUT.TITLE_IN = scale.px(18)
-  OUT.cascade = OUT.TAB_H + scale.px(8)
+  OUT.cascade = scale.px(theme.metrics.tab) + scale.px(8)
   OUT.GRIP    = scale.px(16)
   OUT.BOX_W   = OUT.BOX + scale.px(4)
   OUT.RUN     = OUT.BOX_W * 2 + OUT.BOX
@@ -324,8 +288,6 @@ end
 -- mutated in place and never replaced, so these functions see the change.
 local function desktop_colour()  return theme.desktop end
 local function focused_colour()  return theme.tab end
-local function idle_colour()     return theme.tab_idle end
-local function title_colour()    return theme.tab_text end
 local function stamp_colour()    return theme.stamp end
 
 --------------------------------------------------------------------------
@@ -338,43 +300,6 @@ local function stamp_colour()    return theme.stamp end
 local prefs = use("/Kosmos/Libraries/prefs.lua")
 
 --
--- **The title's shape: a bar across the whole window, and not a setting.**
---
--- It was a BeOS tab, as wide as what is on it, from 18 September - Diego:
--- "i love the tabs in the windows like BEOS instead of the full windoe tab
--- like we have today" - with the bar across as a choice in Appearance. The
--- choice left with the looks (`roadmap.md` 5y) and the tab stayed, until
--- Diego, 22 September: "i want to switch back the tabs from be os style to
--- full width". So every window's title bar is as wide as the window, and a
--- `tabs` an older `/Home/Preferences/appearance` saved is read by nothing: a machine
--- whose file still says "beos" would have kept the tab under a new default
--- alone. The tab's width was worked out from the close box, the title and
--- the two boxes; 0.10.113 has it.
---
--- `tabs.shape` is still the window as a title bar on a body, for the three
--- things that need its shape - the compositor cutting it out of what is
--- behind, the pointer finding what is under it, and the paint staying
--- inside it - and the two now make the frame's rectangle.
---
-local tabs = {}
-
-function tabs.width(win)
-  return win.w + OUT.BORDER * 2
-end
-
--- The tab and the body, as rectangles, for a decorated window.
--- A tabbed window's shape, its tab and its body, as eight numbers into
--- `out` - the compositor's own array, refilled every pass rather than two
--- tables made (`compose.lua`) - and how many parts that is.
-function tabs.shape(win, out)
-  local fx, fy = win.x - OUT.BORDER, win.y - OUT.TAB_H
-  local fw = win.w + OUT.BORDER * 2
-
-  out[1], out[2], out[3], out[4] = fx, fy, tabs.width(win), OUT.TAB_H
-  out[5], out[6], out[7], out[8] = fx, win.y, fw, win.h + OUT.BORDER
-  return 2
-end
-
 -- What `load_appearance` found, for the startup below to apply.
 local saved_wallpaper = nil
 local saved_fit = nil
@@ -1480,15 +1405,9 @@ local function frame_of(win)
   -- **And a window whose header is its title bar** (`win.headed`,
   -- `roadmap.md` 6zj): no tab and no border, so its frame is its page -
   -- rounded, and with its shadow, which the others here do not have.
-  if win.kind == "menu" or win.backdrop or win.strip or win.fullscreen
-     or win.headed or win.popup or win.tip then
-    return win.x, win.y, win.w, win.h
-  end
-
-  return win.x - OUT.BORDER,
-         win.y - OUT.TAB_H,
-         win.w + OUT.BORDER * 2,
-         win.h + OUT.TAB_H + OUT.BORDER
+  -- **Since one chrome's step 3 (8 October) every window is this**: no
+  -- window has a tab or a border the window manager draws round it.
+  return win.x, win.y, win.w, win.h
 end
 
 --
@@ -1604,29 +1523,6 @@ end
 --
 OUT.frame_fill = gfx.surface{ w = 64, h = 64 }
 
-function OUT.round_inside(win, r, colour)
-  local c = OUT.corner - OUT.BORDER
-
-  if c <= 0 or c > 64 or win.kind == "menu" then return end
-
-  if OUT.frame_fill_colour ~= colour then
-    OUT.frame_fill:fill(0, 0, 64, 64, colour)
-    OUT.frame_fill_colour = colour
-  end
-
-  local y = win.y + win.h - c
-
-  for _, x in ipairs({ win.x, win.x + win.w - c }) do
-    local x0, y0 = math.max(x, r.x), math.max(y, r.y)
-    local x1 = math.min(x + c, r.x + r.w)
-    local y1 = math.min(y + c, r.y + r.h)
-
-    if x1 > x0 and y1 > y0 then
-      back:blit_round(OUT.frame_fill, 0, 0, x1 - x0, y1 - y0, x0, y0,
-                      win.x, win.y, win.w, win.h, c, true)
-    end
-  end
-end
 
 --
 -- **A rounded window does not cover its corners**, so they are not cut out
@@ -1749,10 +1645,10 @@ end
 --
 -- How far down the screen an ordinary window may start.
 --
--- `TAB_H` on its own, until something claims a strip across the top. A
--- window's own title bar is drawn *above* `win.y`, so the smallest `win.y`
--- that leaves the tab on screen is `TAB_H` - and with a bar up there it is
--- that plus the bar.
+-- The top of the screen, until something claims a strip across it: a
+-- window's title bar is its own header, inside it, so nothing has to be
+-- left above `win.y` (it was the old tab's height, until one chrome's step
+-- 3, 8 October).
 --
 -- A number the strip sets rather than a constant, because the strip is an
 -- application and its height is its own business: it chooses a font, and a
@@ -1843,7 +1739,7 @@ function OUT.order()
 end
 
 local function top_limit()
-  return OUT.TAB_H + reserved_top
+  return reserved_top
 end
 
 --
@@ -1852,7 +1748,7 @@ end
 -- then the handle, and it is inside the window.
 --
 function OUT.top_of(win)
-  return win.headed and reserved_top or top_limit()
+  return top_limit()
 end
 
 --
@@ -1861,9 +1757,7 @@ end
 -- with them.
 --
 function OUT.room(win)
-  if win.headed then return W, H - reserved_top - reserved_bottom end
-
-  return W - OUT.BORDER * 2, H - OUT.TAB_H - OUT.BORDER
+  return W, H - reserved_top - reserved_bottom
 end
 
 --
@@ -1909,26 +1803,6 @@ function OUT.lights_size(pct)
   return { w = scale.pt(OUT.RUN, pct), h = scale.pt(OUT.BOX, pct) }
 end
 
---
--- **A new look, and a window gains its tab or loses it.** Its page stays
--- where it is; one that gains a tab is moved down if the tab would be
--- above the room, since a tab off the top of the screen is a window that
--- cannot be taken hold of.
---
-function OUT.rehead(win)
-  local now = OUT.headed(win)
-
-  if now == win.headed then return end
-
-  damage_window(win)
-  win.headed = now
-
-  if win.y < OUT.top_of(win) then win.y = OUT.top_of(win) end
-
-  damage_window(win)
-  print(("wm: %s %s"):format(tostring(win.title),
-        now and "has its header for a title bar" or "wears a title bar"))
-end
 
 --
 -- Where the first of the three boxes starts; `OUT.SLOT` says which is where.
@@ -1987,7 +1861,7 @@ local function boxes_x(win)
     return win.x + OUT.lights_at(win).x
   end
 
-  return fx + tabs.width(win) - OUT.MARGIN - OUT.RUN
+  return nil
 end
 
 --
@@ -2039,9 +1913,7 @@ function OUT.boxes_rect(win)
     return bx, win.y + OUT.lights_at(win).y, OUT.RUN, OUT.BOX
   end
 
-  local _, fy = frame_of(win)
-
-  return bx, fy + (OUT.TAB_H - OUT.BOX) // 2, OUT.RUN, OUT.BOX
+  return nil
 end
 
 function OUT.damage_boxes(win)
@@ -2606,11 +2478,9 @@ local strips = use("/Kosmos/Libraries/wm/strips.lua"){
 -- below, so it is handed as a function that asks for it when called.
 --
 local draw_window = use("/Kosmos/Libraries/wm/drawwindow.lua"){
-  OUT = OUT, back = back, theme = theme, tabs = tabs, windows = windows,
-  strips = strips, frame_of = frame_of, boxes_x = boxes_x,
+  OUT = OUT, back = back, theme = theme, windows = windows,
+  strips = strips, frame_of = frame_of,
   resizable = function(win) return resizable(win) end,
-  focused_colour = focused_colour, idle_colour = idle_colour,
-  title_colour = title_colour,
 }
 
 --------------------------------------------------------------------------
@@ -2714,7 +2584,6 @@ local compose = use("/Kosmos/Libraries/wm/compose.lua"){
   menus = menus,
   osd = osd,
   screen = screen,
-  tabs = tabs,
   windows = windows,
 }
 
@@ -2752,11 +2621,7 @@ end
 -- no bar above it and no frame round it, so nothing to leave space for.
 --
 function OUT.maximised(win)
-  if win and win.headed then return OUT.room(win) end
-
-  return math.min(W - OUT.BORDER * 2, W - 8),
-         math.min(H - top_limit() - OUT.BORDER, H - OUT.TAB_H - 8)
-         - reserved_bottom
+  return OUT.room(win)
 end
 
 local function maximise(win)
@@ -2786,7 +2651,7 @@ local function maximise(win)
   local was = { x = win.x, y = win.y, w = win.w, h = win.h }
 
   damage_window(win)
-  win.x, win.y = win.headed and 0 or OUT.BORDER, OUT.top_of(win)
+  win.x, win.y = 0, OUT.top_of(win)
 
   if not resize_window(win, OUT.maximised(win)) then
     win.x, win.y = was.x, was.y
@@ -3212,7 +3077,7 @@ handlers.open = function(req, who, cap)
 
   local strip = req.strip == "top" or req.strip == "bottom"
   local room_w = strip and W or (W - 8)
-  local room_h = strip and H or (H - OUT.TAB_H - 8 - reserved_bottom)
+  local room_h = strip and H or (H - reserved_top - 8 - reserved_bottom)
 
   --
   -- The floor of 32 is so a window cannot be smaller than its own
@@ -3305,14 +3170,14 @@ handlers.open = function(req, who, cap)
     -- actually available rather than half a strip too high.
     --
     x       = req.centre
-              and math.max(OUT.BORDER, (W - w_) // 2)
-              or math.min(math.max(tonumber(req.x) or 40, OUT.BORDER),
-                          W - w_ - OUT.BORDER),
+              and math.max(OUT.EDGE, (W - w_) // 2)
+              or math.min(math.max(tonumber(req.x) or 40, OUT.EDGE),
+                          W - w_ - OUT.EDGE),
     y       = req.centre
               and math.max(top_limit(),
                            top_limit() + (H - top_limit() - h_) // 2)
               or math.min(math.max(tonumber(req.y) or 40, top_limit()),
-                          H - h_ - OUT.BORDER),
+                          H - h_ - OUT.EDGE),
     w       = w_,
     h       = h_,
     pct     = pct,
@@ -3437,7 +3302,7 @@ handlers.open = function(req, who, cap)
   -- maximise uses, over whatever is there, which is the point of it.
   --
   if req.maximised and not req.fullscreen and not req.backdrop and req.strip ~= "top" then
-    win.x, win.y = win.headed and 0 or OUT.BORDER, OUT.top_of(win)
+    win.x, win.y = 0, OUT.top_of(win)
   end
 
   if req.kind ~= "menu" and not req.backdrop and req.strip ~= "top"
@@ -3526,8 +3391,8 @@ handlers.open = function(req, who, cap)
       -- no search here counts, and the order is what it was.
       --
       local top = top_limit()
-      local midx = OUT.BORDER + (W - OUT.BORDER * 2) // 2
-      local midy = top + (H - OUT.BORDER - top) // 2
+      local midx = OUT.EDGE + (W - OUT.EDGE * 2) // 2
+      local midy = top + (H - OUT.EDGE - top) // 2
 
       local placed = false
 
@@ -3566,14 +3431,14 @@ handlers.open = function(req, who, cap)
         return true
       end
 
-      for _, slot in ipairs({ { OUT.BORDER, top }, { OUT.BORDER, midy },
+      for _, slot in ipairs({ { OUT.EDGE, top }, { OUT.EDGE, midy },
                               { midx, midy }, { midx, top } }) do
         -- Pulled back to fit rather than skipped: a window taller than half
         -- the screen still belongs in the left half of it.
-        local x = math.min(slot[1], W - OUT.BORDER - win.w)
-        local y = math.min(slot[2], H - OUT.BORDER - win.h)
+        local x = math.min(slot[1], W - OUT.EDGE - win.w)
+        local y = math.min(slot[2], H - OUT.EDGE - win.h)
 
-        if x >= OUT.BORDER and y >= top and slot_ok(x, y) then
+        if x >= OUT.EDGE and y >= top and slot_ok(x, y) then
           win.x, win.y = x, y
           placed = true
           break
@@ -3588,8 +3453,8 @@ handlers.open = function(req, who, cap)
           win.y = win.y + OUT.cascade
 
           -- Back to the top left rather than off the bottom right.
-          if win.x + win.w > W - OUT.BORDER or win.y + win.h > H - OUT.BORDER then
-            win.x, win.y = OUT.BORDER + OUT.cascade, top + OUT.cascade
+          if win.x + win.w > W - OUT.EDGE or win.y + win.h > H - OUT.EDGE then
+            win.x, win.y = OUT.EDGE + OUT.cascade, top + OUT.cascade
             break
           end
         end
@@ -3831,12 +3696,6 @@ handlers.open = function(req, who, cap)
     -- where the others give the tab's width.
     print(("wm: window %s at %d,%d %dx%d, its header the title bar"):format(
           tostring(win.title), win.x, win.y, win.w, win.h))
-  else
-    -- And how wide its tab is, which the title's font decides (`tabs`): a
-    -- harness pressing the minimise box at the tab's end is told where
-    -- that is rather than working out a font's metrics.
-    print(("wm: window %s at %d,%d %dx%d, a tab %d wide"):format(
-          tostring(win.title), win.x, win.y, win.w, win.h, tabs.width(win)))
   end
 
   --
@@ -5104,7 +4963,7 @@ handlers.workarea = function(req)
 
   local w, h = OUT.maximised()
 
-  return { ok = true, x = OUT.BORDER, y = top_limit(), w = w, h = h }
+  return { ok = true, x = OUT.EDGE, y = top_limit(), w = w, h = h }
 end
 
 --
@@ -5701,11 +5560,9 @@ handlers.theme = function(req)
   --
   local now = theme.current()
 
-  -- A look with no title bars takes them off, and one with them puts them
-  -- back - and each window is told which it has, so its header draws or
-  -- stops drawing the room for the three.
+  -- And each window is told, with whether its header is the title bar -
+  -- which every ordinary window's is.
   for _, win in ipairs(windows) do
-    OUT.rehead(win)
     post(win, { type = "theme", palette = now, desktop = theme.desktop,
                 fonts = theme.fonts, headed = win.headed or false })
   end
@@ -6396,9 +6253,7 @@ local function window_at(x, y)
     local fx, fy, fw, fh = frame_of(win)
 
     if not win.hidden and not win.tip
-       and x >= fx and x < fx + fw and y >= fy and y < fy + fh
-       and not (y < fy + OUT.TAB_H and win.kind ~= "menu" and not win.backdrop
-                and not win.strip and not win.popup and x >= fx + tabs.width(win)) then
+       and x >= fx and x < fx + fw and y >= fy and y < fy + fh then
       return win, fx, fy
     end
   end
