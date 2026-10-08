@@ -47,6 +47,10 @@ ARGS = [
 PAGE_SIZE = 4096
 
 
+# The M700's processor, by its brand string.
+M700_CPU = "Intel(R) Core(TM) i7-6700 CPU @ 3.40GHz"
+
+
 def boot(image, option, timeout, typed=(), extra=(), until=None, after=None,
          poke=None):
     """Boots, optionally types at the prompt, and returns everything printed.
@@ -3534,8 +3538,12 @@ def identity(image, check):
     # process of its own, up a moment after the stack - the M700's shape.
     # Waiting for the stack's line is the check that it came at all.
     #
+    # The processor named as the M700's is, 39 characters - longer than the
+    # 31 a device's text held until 8 October, when the M700 said "Intel(R)
+    # Core(TM) i7-6700 CPU @" and stopped.
     out = boot(image, None, 120.0, typed=("neofetch",),
-               after="net: an address from DHCP")
+               after="net: an address from DHCP",
+               extra=("-cpu", "qemu64,model-id=" + M700_CPU))
 
     if out is None:
         check(False, "the machine would not boot to be asked what it is")
@@ -3558,8 +3566,8 @@ def identity(image, check):
     # "GenuineIntel f6m6 s3".
     cpu_row = row(out, "CPU") or ""
 
-    check(cpu_row.startswith("QEMU Virtual CPU"),
-          "neofetch's CPU is %r, not the processor's own name" % cpu_row)
+    check(cpu_row.startswith(M700_CPU + ","),
+          "neofetch's CPU is %r, not the processor's own name, whole" % cpu_row)
 
     # The desktop by its name, Astra (7 October), at the system's version.
     version = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),

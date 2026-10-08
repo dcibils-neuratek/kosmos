@@ -37,7 +37,8 @@
 #define DEV_ERR_BAD_OP      3u
 
 #define DEV_NAME_MAX    20u       /* a field's name, or a node's */
-#define DEV_TEXT_MAX    32u       /* a field's value, when it is words */
+#define DEV_TEXT_MAX    48u       /* a field's value, when it is words: a
+                                     * processor's brand string is 47 at most */
 #define DEV_FIELDS      24u       /* the most any one node holds */
 
 #define DEV_KIND_NUMBER  0u
@@ -51,7 +52,7 @@ struct dev_request {
 /*
  * Laid out largest first so that the size is what it looks like.
  *
- * 8 + 4 + 20 + 32 is 64 with no padding anywhere, which matters because the
+ * 8 + 4 + 20 + 48 is 80 with no padding anywhere, which matters because the
  * Lua side reads this with a `string.pack` format and a compiler that
  * inserted four quiet bytes would put every field after the first one at the
  * wrong offset - visible as a device tree of plausible nonsense rather than
@@ -70,8 +71,8 @@ struct dev_reply {
     struct dev_field field[DEV_FIELDS];
 };
 
-_Static_assert(sizeof(struct dev_field) == 64,
-               "dev_field must be 64 bytes with no padding - the Lua side "
+_Static_assert(sizeof(struct dev_field) == 80,
+               "dev_field must be 80 bytes with no padding - the Lua side "
                "reads it with a fixed string.pack format");
 _Static_assert(sizeof(struct dev_reply) <= 2048,
                "a devices reply must fit in one message - lower DEV_FIELDS");

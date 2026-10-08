@@ -21537,3 +21537,20 @@ must be built again before it runs on this kernel, since the kernel writes
 the whole struct into its buffer.
 
 The whole x86 gate: 51 of 52. `x86-network`'s second lookup, which goes to a real DNS server through QEMU, did not answer under the gate's load. Alone it passed 34 of 34, so it is recorded as a flake beside `x86-dock`'s and `x86-film`'s.
+
+## 18.476 A device's words, 47 characters
+
+0.11.81 on the M700: `neofetch` said "Intel(R) Core(TM) i7-6700 CPU @, 8
+cores". The device server's text field held 31 characters and cut the rest
+without a word. `DEV_TEXT_MAX` is 48 now, enough for a brand string at its
+longest, 47. A field is 80 bytes and 24 of them fit a message (1928 of
+2048). The namespace reads the field's size from one constant rather than a
+second 64.
+
+`x86-storage`'s identity boot names QEMU's processor as the M700's
+(`-cpu qemu64,model-id=...`, 39 characters), and the row must show it whole.
+**Control**: the field at 32 again, it fails with the M700's words exactly,
+"Intel(R) Core(TM) i7-6700 CPU @". A protocol header changed, so the
+installed applications are built again.
+
+The whole x86 gate: 52 of 52 in 5:43.

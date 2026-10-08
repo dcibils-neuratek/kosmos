@@ -454,12 +454,13 @@ end
 --------------------------------------------------------------------------
 
 local DEV_REQUEST = "<I4c20"          -- op, name[20]
-local DEV_FIELD   = "<I8I4c20c32"     -- number, kind, name[20], text[32]
+local DEV_FIELD   = "<I8I4c20c48"     -- number, kind, name[20], text[48]
+local DEV_FIELD_BYTES = 80
 local DEV_HEAD    = "<I4I4"           -- error, count
 
 assert(#string.pack(DEV_REQUEST, 0, "") == 24,
        "namespace: the /Devices request layout does not match devproto.h")
-assert(#string.pack(DEV_FIELD, 0, 0, "", "") == 64,
+assert(#string.pack(DEV_FIELD, 0, 0, "", "") == DEV_FIELD_BYTES,
        "namespace: the /Devices field layout does not match devproto.h")
 
 local DEV_OPS = { list = 1, read = 2, getattr = 3 }
@@ -502,7 +503,7 @@ local function dev_request(capability, op, rest)
   local names, value = {}, {}
 
   for i = 1, count do
-    local at = 8 + (i - 1) * 64 + 1
+    local at = 8 + (i - 1) * DEV_FIELD_BYTES + 1
     local number, kind, name, text = string.unpack(DEV_FIELD, reply, at)
 
     name = trim(name)
