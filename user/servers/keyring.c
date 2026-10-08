@@ -50,7 +50,7 @@
 #include "keyfile.h"
 
 void keyring_server(long smb_door, long manage_door, long disk, long devices,
-                    long console);
+                    long console, long mail_door);
 
 static const char KEY_PATH[] = "/Keyring/machine-key";
 static const char FILE_PATH[] = "/Keyring/keyring";
@@ -64,7 +64,6 @@ static long console = -1;
 static long devices = -1;
 static long disk = -1;
 static long smb = -1;
-static long manage = -1;
 
 static uint8_t key[KEYFILE_KEY_BYTES];
 static bool have_key;
@@ -75,8 +74,27 @@ static struct key_record *records;
 static size_t count, room;
 static uint32_t next_id = 1;
 
-static uint64_t door_token;
-static bool door_open;
+/*
+ * **The doors after the first**, each forwarding to the first with a word of
+ * its own stamped on: `manage`, Passwords', which sees every kind; and
+ * `mail` (`docs/mail.md` M0, 8 October), Mail's, which is `smb`'s twin for
+ * mail's kind - keep, read and forget its own entries and see nothing else.
+ * The first endpoint is `smb`'s, untagged.
+ */
+struct door {
+    const char *name;
+    long        ep;
+    uint64_t    token;
+    bool        open;
+    uint16_t    kind;           /* the kind it keeps; 0 for manage, which sees all */
+};
+
+static struct door doors[] = {
+    { "manage", -1, 0, false, 0 },
+    { "mail",   -1, 0, false, KEY_KIND_MAIL },
+};
+
+#define DOORS (sizeof doors / sizeof doors[0])
 
 /*
  * ------------------------------------------------------------------------
@@ -479,19 +497,21 @@ static struct key_record *by_name(uint16_t kind, const char *service, const char
     return NULL;
 }
 
-static bool sees(bool managing, uint16_t kind)
+/* What a door sees: `manage` every kind, the others their own. */
+static bool sees(bool managing, uint16_t own, uint16_t kind)
 {
-    return managing || kind == KEY_KIND_SMB;
+    return managing || kind == own;
 }
 
-static void op_list(const struct key_request *rq, struct key_reply *rp, bool managing)
+static void op_list(const struct key_request *rq, struct key_reply *rp, bool managing,
+                    uint16_t own)
 {
     const struct key_record *best = NULL;
 
     for (size_t i = 0; i < count; i++) {
         const struct key_record *r = &records[i];
 
-        if (r->entry.id > rq->entry.id && sees(managing, r->entry.kind)
+        if (r->entry.id > rq->entry.id && sees(managing, own, r->entry.kind)
             && (best == NULL || r->entry.id < best->entry.id)) {
             best = r;
         }
@@ -506,9 +526,9 @@ static void op_list(const struct key_request *rq, struct key_reply *rp, bool man
     rp->count = (uint32_t)count;
 }
 
-static void op_get(const struct key_request *rq, struct key_reply *rp)
+static void op_get(const struct key_request *rq, struct key_reply *rp, uint16_t own)
 {
-    struct key_record *r = by_name(KEY_KIND_SMB, rq->entry.service, rq->entry.account);
+    struct key_record *r = by_name(own, rq->entry.service, rq->entry.account);
     struct sender_info who;
 
     if (r == NULL) {
@@ -530,7 +550,7 @@ static void op_get(const struct key_request *rq, struct key_reply *rp)
     memcpy(rp->secret, r->secret, r->secret_bytes);
 }
 
-static void op_put(const struct key_request *rq, struct key_reply *rp)
+static void op_put(const struct key_request *rq, struct key_reply *rp, uint16_t own)
 {
     struct key_record *r;
     struct key_record was;
@@ -546,7 +566,7 @@ static void op_put(const struct key_request *rq, struct key_reply *rp)
         return;
     }
 
-    r = by_name(KEY_KIND_SMB, rq->entry.service, rq->entry.account);
+    r = by_name(own, rq->entry.service, rq->entry.account);
     fresh = r == NULL;
 
     /* No secret: what is kept about an entry there is - its shares, its
@@ -566,7 +586,7 @@ static void op_put(const struct key_request *rq, struct key_reply *rp)
         r = &records[count++];
         memset(r, 0, sizeof *r);
         r->entry.id = next_id++;
-        r->entry.kind = KEY_KIND_SMB;
+        r->entry.kind = own;
         r->entry.created_unix = now();
         put_text(r->entry.service, sizeof r->entry.service, rq->entry.service);
         put_text(r->entry.account, sizeof r->entry.account, rq->entry.account);
@@ -604,13 +624,14 @@ static void op_put(const struct key_request *rq, struct key_reply *rp)
     rp->entry = r->entry;
 }
 
-static void op_forget(const struct key_request *rq, struct key_reply *rp, bool managing)
+static void op_forget(const struct key_request *rq, struct key_reply *rp, bool managing,
+                      uint16_t own)
 {
     struct key_record *r = by_id(rq->entry.id);
     struct key_record was;
     size_t at;
 
-    if (r == NULL || !sees(managing, r->entry.kind)) {
+    if (r == NULL || !sees(managing, own, r->entry.kind)) {
         rp->error = KEY_ERR_NONE;
         return;
     }
@@ -675,7 +696,15 @@ static void answer(struct message *msg, uint64_t sender)
     static struct message out;
     struct key_request *rq = (struct key_request *)msg->data;
     struct key_reply *rp = (struct key_reply *)out.data;
-    bool managing = door_open && msg->tag == door_token;
+    bool managing = false;
+    uint16_t own = KEY_KIND_SMB;            /* the first endpoint, smbfs's */
+
+    for (size_t d = 0; d < DOORS && msg->tag != 0; d++) {
+        if (doors[d].open && msg->tag == doors[d].token) {
+            managing = doors[d].kind == 0;
+            own = doors[d].kind;
+        }
+    }
 
     memset(&out, 0, sizeof out);
     out.length = sizeof *rp;
@@ -697,18 +726,18 @@ static void answer(struct message *msg, uint64_t sender)
     } else {
         switch (rq->op) {
         case KEY_OP_LIST:
-            op_list(rq, rp, managing);
+            op_list(rq, rp, managing, own);
             break;
         case KEY_OP_FORGET:
-            op_forget(rq, rp, managing);
+            op_forget(rq, rp, managing, own);
             break;
         case KEY_OP_GET:
             if (managing) rp->error = KEY_ERR_NOT_THIS_DOOR;
-            else op_get(rq, rp);
+            else op_get(rq, rp, own);
             break;
         case KEY_OP_PUT:
             if (managing) rp->error = KEY_ERR_NOT_THIS_DOOR;
-            else op_put(rq, rp);
+            else op_put(rq, rp, own);
             break;
         case KEY_OP_EDIT:
             if (!managing) rp->error = KEY_ERR_NOT_THIS_DOOR;
@@ -739,44 +768,44 @@ static void answer(struct message *msg, uint64_t sender)
  * ------------------------------------------------------------------------
  */
 
-/* The `manage` door: forwarded to `smb`, stamped, and the answer handed back. */
-static void manage_door_main(unsigned long unused)
+/* A door after the first: forwarded to `smb`, stamped, and the answer handed back. */
+static void door_main(unsigned long which)
 {
-    static struct message in, back;
-
-    (void)unused;
+    static struct message in[DOORS], back[DOORS];
+    struct door *d = &doors[which];
 
     for (;;) {
         uint64_t caller = 0;
 
-        if (kosmos_receive(manage, &in, &caller, 0, 0) != 0) {
+        if (kosmos_receive(d->ep, &in[which], &caller, 0, 0) != 0) {
             return;
         }
 
-        if (in.cap_plus_one) {
-            kosmos_cap_drop((long)in.cap_plus_one - 1);
-            in.cap_plus_one = 0;
+        if (in[which].cap_plus_one) {
+            kosmos_cap_drop((long)in[which].cap_plus_one - 1);
+            in[which].cap_plus_one = 0;
         }
 
-        in.tag = door_token;
+        in[which].tag = d->token;
 
-        if (kosmos_call(smb, &in, &back) != 0) {
-            memset(&back, 0, sizeof back);
-            back.length = sizeof(struct key_reply);
-            ((struct key_reply *)back.data)->error = KEY_ERR_BAD_OP;
+        if (kosmos_call(smb, &in[which], &back[which]) != 0) {
+            memset(&back[which], 0, sizeof back[which]);
+            back[which].length = sizeof(struct key_reply);
+            ((struct key_reply *)back[which].data)->error = KEY_ERR_BAD_OP;
         }
 
-        memset(in.data, 0, sizeof in.data);
-        (void)kosmos_reply(caller, &back);
-        memset(back.data, 0, sizeof back.data);
+        memset(in[which].data, 0, sizeof in[which].data);
+        (void)kosmos_reply(caller, &back[which]);
+        memset(back[which].data, 0, sizeof back[which].data);
     }
 }
 
 void keyring_server(long smb_door, long manage_door, long disk_door, long devices_ep,
-                    long console_ep)
+                    long console_ep, long mail_door)
 {
     smb = smb_door;
-    manage = manage_door;
+    doors[0].ep = manage_door;
+    doors[1].ep = mail_door;
     disk = disk_door;
     devices = devices_ep;
     console = console_ep;
@@ -803,14 +832,21 @@ void keyring_server(long smb_door, long manage_door, long disk_door, long device
         open_file();
     }
 
-    while (door_token == 0
-           && kosmos_entropy(&door_token, sizeof door_token) == (long)sizeof door_token) {
-    }
+    for (size_t d = 0; d < DOORS; d++) {
+        if (doors[d].ep < 0) {
+            continue;
+        }
 
-    if (manage >= 0 && door_token != 0 && kosmos_thread_start(manage_door_main, 0) >= 0) {
-        door_open = true;
-    } else if (manage >= 0) {
-        tell("the manage door would not open", 0, false, NULL);
+        while (doors[d].token == 0
+               && kosmos_entropy(&doors[d].token, sizeof doors[d].token)
+                  == (long)sizeof doors[d].token) {
+        }
+
+        if (doors[d].token != 0 && kosmos_thread_start(door_main, (unsigned long)d) >= 0) {
+            doors[d].open = true;
+        } else {
+            tell("a door would not open: ", 0, false, doors[d].name);
+        }
     }
 
     for (;;) {

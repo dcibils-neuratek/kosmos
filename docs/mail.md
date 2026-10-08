@@ -469,6 +469,13 @@ as `http.lua` is, and its C is the Mail Kit's.
 
 ## Yours to decide
 
+**Decided by Diego, 8 October: "as recommended, go ahead and build it"** -
+two programs; `maild` Mail's own; plain text first; the keyring's door
+for mail lent only to the system's Mail; the list file measured at M4;
+All Inboxes and conversations in the first version; the three columns as
+drawn. The steps below, M0 first.
+
+
 1. **`maild` beside the window.** Mail as two programs - the window, and
    `maild` running from when the desktop starts, holding the connections,
    fetching and notifying with the window closed - or the window alone,

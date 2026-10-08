@@ -91,7 +91,7 @@ void diskfs_server(long endpoint, long blocks_read, long blocks_write,
                    long devices, long console, long keyring, long maps_cache);
 void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep);
 void keyring_server(long smb_door, long manage_door, long disk, long devices,
-                    long console);
+                    long console, long mail_door);
 
 /* /Notifications (`roadmap.md`, *Notifications*): its own endpoint, and the
  * console's to say what it was told. */
@@ -797,7 +797,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_KEYRING) {
         named("keyring");
-        keyring_server(0, 1, 2, 3, 4);
+        keyring_server(0, 1, 2, 3, 4, kosmos_cap_check(5) == 0 ? 5 : -1);
     }
 
     if (arg == ROLE_TILES) {

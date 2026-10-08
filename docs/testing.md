@@ -21636,3 +21636,24 @@ then the split". Three parts:
 Display 1-4, dock and servers pass with the code gone.
 
 The whole x86 gate: 52 of 52 in 5:44.
+
+## 18.480 Mail M0: the keyring's door for mail
+
+`docs/mail.md`, agreed 8 October ("as recommended, go ahead and build it").
+The keyring's doors after the first became a list, as the disk server's
+did: `manage`, Passwords', which sees every kind; and `mail`, `smb`'s twin
+for `KEY_KIND_MAIL`, which keeps, reads, lists and forgets its own entries
+and sees nothing else. Each door owns a kind, and `get` and `put` look up
+and make entries of that kind, where they named share passwords outright.
+It is lent to a program that declares `kosmos: needs keyring-mail`, only
+when the image serves it (`keyring_grant`), from the shell and from the
+window manager, which declares the word to pass it on. `fs.mail_password`,
+`mail_password_keep`, `mail_passwords` and `mail_password_forget` are its
+calls, and `mailpass` uses them at the prompt. It never prints a password:
+`check` says whether one matches, as a sign-in would.
+
+`arm-keyring` 18 checks (13 before; the keyring's suite, named alone under
+the x86-only rule): an account kept, checked right and wrong, listed through
+the mail door, seen by Passwords' door as kind `mail`, the same program
+copied into `/Home` handed nothing, and forgotten. **Control**: the mail door
+given the share kind, it fails, "Passwords' door did not see mail's entry".

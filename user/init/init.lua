@@ -2172,20 +2172,25 @@ local function new_namespace()
   local KEY_FILES = { [0] = "new", "opened", "set aside", "no disk" }
   local KEY_KINDS = { "smb", "wifi", "web", "mail" }
   local keyring_cap = nil
+  local mail_keys_cap = nil         -- the keyring's `mail` door (`docs/mail.md` M0)
 
   function ns.keyring_door(cap) keyring_cap = cap end
   function ns.has_keyring() return keyring_cap ~= nil end
+  function ns.mail_keys_door(cap) mail_keys_cap = cap end
+  function ns.has_mail_keys() return mail_keys_cap ~= nil end
 
   local function ended(text)
     return (text:gsub("%z.*$", ""))
   end
 
-  local function keyring_call(op, e, secret)
-    if not keyring_cap then return nil, "this program was not handed the keyring" end
+  local function keyring_call(op, e, secret, door)
+    door = door or keyring_cap
+
+    if not door then return nil, "this program was not handed the keyring" end
 
     e = e or {}
     secret = secret or ""
-    local raw, err = sys.call_raw(keyring_cap, string.pack(KEY_REQUEST,
+    local raw, err = sys.call_raw(door, string.pack(KEY_REQUEST,
       KEY_OP[op], #secret, e.id or 0, e.kind or 0, e.flags or 0, 0, 0, 0, 0, 0,
       "", share_field(e.service, 128), share_field(e.account, 64),
       share_field(e.title, 64), share_field(e.notes, 256),
@@ -2273,6 +2278,57 @@ local function new_namespace()
 
     if not r then return nil, why end
     return r.secret
+  end
+
+  --
+  -- **Mail's passwords, through the keyring's `mail` door** (`docs/mail.md`
+  -- M0; Diego, 8 October: "as recommended" - the door lent only to the
+  -- system's Mail). An account's password kept and read by (service,
+  -- account), and nothing of any other kind seen: the door is `smb`'s twin
+  -- for mail's kind, and `manage` - Passwords - lists them beside the shares'.
+  --
+  local function mail_call(op, e, secret)
+    if not mail_keys_cap then return nil, "this program was not handed mail's passwords" end
+
+    return keyring_call(op, e, secret, mail_keys_cap)
+  end
+
+  function ns.mail_password(service, account)
+    local r, why = mail_call("get", { kind = 4, service = service, account = account })
+
+    if not r then return nil, why end
+    return r.secret
+  end
+
+  function ns.mail_password_keep(service, account, secret, title)
+    local r, why = mail_call("put", { kind = 4, service = service, account = account,
+                                      title = title }, secret)
+
+    if not r then return nil, why end
+    return r.entry
+  end
+
+  function ns.mail_passwords()
+    local out, after = {}, 0
+
+    while true do
+      local r, why, code = mail_call("list", { id = after })
+
+      if not r then
+        if code == 3 then return out end
+        return nil, why
+      end
+
+      out[#out + 1] = r.entry
+      after = r.entry.id
+    end
+  end
+
+  function ns.mail_password_forget(id)
+    local r, why = mail_call("forget", { id = id })
+
+    if not r then return nil, why end
+    return true
   end
 
   local function share_call(op, ask, offset, flags)
@@ -3772,7 +3828,8 @@ end
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap,
-                          midi_cap, notify_cap, share_cap, keyring_cap, tiles_cap)
+                          midi_cap, notify_cap, share_cap, keyring_cap, tiles_cap,
+                          mail_keys_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -4599,7 +4656,7 @@ query. `find` and `watch` are built on exactly these two calls.
     --
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
-    local camera, midi, keyring, tiles = nil, nil, nil, nil
+    local camera, midi, keyring, tiles, mailkeys = nil, nil, nil, nil, nil
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -4614,6 +4671,10 @@ query. `find` and `watch` are built on exactly these two calls.
         keyring = keyring_cap
       end
       if want == "tiles" then tiles = tiles_cap end
+      -- Mail's passwords (`docs/mail.md` M0): the system's own, as `keyring`.
+      if want == "keyring-mail" and mail_keys_cap and keyring_grant(path) then
+        mailkeys = mail_keys_cap
+      end
     end
 
     -- The camera and MIDI last, and only when declared: everything before
@@ -4631,6 +4692,8 @@ query. `find` and `watch` are built on exactly these two calls.
     if keyring then caps[#caps + 1] = keyring; keyring_at = #caps - 1 end
     local tiles_at = nil
     if tiles then caps[#caps + 1] = tiles; tiles_at = #caps - 1 end
+    local mailkeys_at = nil
+    if mailkeys then caps[#caps + 1] = mailkeys; mailkeys_at = #caps - 1 end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
     local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags)
@@ -4647,6 +4710,7 @@ query. `find` and `watch` are built on exactly these two calls.
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       backlight = 12, notify = 13, share = share_cap and 14 or nil,
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
+      mailkeys = mailkeys_at,
       home_in_memory = home_in_memory or nil,
       protostamp = sys.protostamp,
     })
@@ -5316,6 +5380,7 @@ if role == ROLE_INIT then
   local TILES_EP = sys.endpoint()
   local KEYRING_SMB_EP = sys.endpoint()
   local KEYRING_MANAGE_EP = sys.endpoint()
+  local KEYRING_MAIL_EP = sys.endpoint()     -- the keyring's `mail` door (`mail.md` M0)
   local AUDIO_EP = sys.endpoint()
   local NET_EP = sys.endpoint()
   local BLOCKS_EP = sys.endpoint()
@@ -5580,7 +5645,8 @@ if role == ROLE_INIT then
   -- console.
   --
   start("the keyring", ROLE_KEYRING, { KEYRING_SMB_EP, KEYRING_MANAGE_EP,
-                                       KEYRING_DISK_EP, DEVICES_EP, CONSOLE_EP })
+                                       KEYRING_DISK_EP, DEVICES_EP, CONSOLE_EP,
+                                       KEYRING_MAIL_EP })
 
   --
   -- And the keyring's `smb` door, the one that answers passwords (K5): a
@@ -5770,7 +5836,8 @@ if role == ROLE_INIT then
                       { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP,
                         APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP, BLOCKS_EP,
                         DRIVES_EP, BACKLIGHT_EP, CAMERA_EP, MIDI_EP,
-                        NOTIFY_EP, SMBFS_EP, KEYRING_MANAGE_EP, TILES_EP },
+                        NOTIFY_EP, SMBFS_EP, KEYRING_MANAGE_EP, TILES_EP,
+                        KEYRING_MAIL_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -5843,7 +5910,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18)
   return
 end
 
@@ -6033,6 +6100,7 @@ if role == ROLE_RUNNER then
   if req.notify  then ns.mount("/Notifications",   req.notify, nil, "notify") end
   if req.keyring then ns.keyring_door(req.keyring) end
   if req.tiles   then ns.mount("/Tiles",           req.tiles, nil, "tiles") end
+  if req.mailkeys then ns.mail_keys_door(req.mailkeys) end
 
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started
@@ -6198,7 +6266,7 @@ if role == ROLE_RUNNER then
     --
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
-    local camera_at, midi_at, keyring_at, tiles_at = nil, nil, nil, nil
+    local camera_at, midi_at, keyring_at, tiles_at, mailkeys_at = nil, nil, nil, nil, nil
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -6240,6 +6308,13 @@ if role == ROLE_RUNNER then
         caps[#caps + 1] = req.tiles
         tiles_at = #caps - 1
       end
+
+      -- Mail's passwords, only from a launcher that holds them, and only
+      -- to a file the image serves (`keyring_grant`, `docs/mail.md` M0).
+      if want == "keyring-mail" and req.mailkeys and keyring_grant(path) then
+        caps[#caps + 1] = req.mailkeys
+        mailkeys_at = #caps - 1
+      end
     end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
@@ -6257,6 +6332,7 @@ if role == ROLE_RUNNER then
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       backlight = 12, notify = 13, share = req.share and 14 or nil,
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
+      mailkeys = mailkeys_at,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Which protocols the system speaks, for an image built for others

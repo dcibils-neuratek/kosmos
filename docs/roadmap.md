@@ -8210,7 +8210,10 @@ to him when its turn comes.
 **The order again, Diego, 8 October**: "do chrome step 3 first, then mail,
 then the split" - the window manager's old chrome taken out first, which
 is the split's own direction (every window drawing itself), then Kosmos
-Mail, then D2 onwards.
+Mail, then D2 onwards. **Chrome step 3 BUILT** (0.11.85). **Mail designed and
+AGREED the same evening** (`docs/mail.md`, `mail.html`,
+`mail-architecture.png`): "as recommended, go ahead and build it" - M0 the
+keyring's door for mail first.
 
 ### The optimisation phase - after the applications
 

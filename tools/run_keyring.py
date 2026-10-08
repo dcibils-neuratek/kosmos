@@ -45,6 +45,11 @@ import scratch                                              # noqa: E402
 LUA = os.path.join(ROOT, "build", "host", "lua")
 KFS = os.path.join(HERE, "kfs.lua")
 PROGRAM = os.path.join(ROOT, "user", "bin", "programs", "keyring.lua")
+MAILPASS = os.path.join(ROOT, "user", "bin", "programs", "mailpass.lua")
+
+# Mail's door (`docs/mail.md` M0): an account made up for the test.
+MAIL_SERVICE, MAIL_ACCOUNT, MAIL_SECRET = ("imap://imap.example.com:993", "lena@example.com",
+                                           "test-only-word")
 # **The size of a keyring of one entry** (`keyfile_bytes(1)`: a 44-byte
 # header, 8 of counts, an 832-byte entry, a 16-byte tag), so it is refused by
 # the seal and not by its size - the path a damaged keyring takes.
@@ -91,8 +96,11 @@ def main():
     # The forgery: the image's own program, in /Home.
     forged = os.path.join(work, "forged.lua")
     shutil.copy(PROGRAM, forged)
+    forged_mail = os.path.join(work, "forged-mail.lua")
+    shutil.copy(MAILPASS, forged_mail)
 
-    kfs("create", disk, "32", forged + ":/Home/forged.lua")
+    kfs("create", disk, "32", forged + ":/Home/forged.lua",
+        forged_mail + ":/Home/forged-mail.lua")
     os.environ["KOSMOS_DISK"] = disk
     import run_screenshot as R                              # noqa: E402
 
@@ -115,11 +123,39 @@ def main():
     kfs("get", disk, "/Keyring/machine-key", key)
     check(os.path.getsize(key) == 32, "the key is %d bytes" % os.path.getsize(key))
 
-    # 2. The same disk again.
-    said = boot(R, image, ["keyring", "echo DONE-TWO"], "DONE-TWO")
+    # 2. The same disk again - and mail's door, on a keyring that opened.
+    said = boot(R, image, [
+        "keyring",
+        "mailpass keep %s %s %s Lena" % (MAIL_SERVICE, MAIL_ACCOUNT, MAIL_SECRET),
+        "mailpass check %s %s %s" % (MAIL_SERVICE, MAIL_ACCOUNT, MAIL_SECRET),
+        "mailpass check %s %s not-the-word" % (MAIL_SERVICE, MAIL_ACCOUNT),
+        "mailpass",
+        "keyring",
+        "run /Home/forged-mail.lua",
+        "echo DONE-TWO"], "DONE-TWO")
+    check(re.search(r"mailpass: kept, entry \d+", said) is not None,
+          "mail's door did not keep an account's password:\n" + said[-600:])
+    check("mailpass: it matches" in said and "mailpass: it differs" in said,
+          "the password kept through mail's door did not check right and wrong")
+    check(re.search(r"^1 mail account kept\s*\n\s+\d+\s+imap://imap\.example\.com:993\s+lena@example\.com",
+                    said, re.M) is not None,
+          "mail's door did not list the account it kept:\n" + said[-600:])
+    # `keyring`'s own line for an entry: its id, its kind, its service.
+    check(re.search(r"^\s*\d+\s+mail\s+imap://imap\.example\.com:993", said, re.M) is not None,
+          "Passwords' door did not see mail's entry beside the rest:\n" + said[-800:])
+    check("mailpass: this program was not handed mail's passwords" in said,
+          "mailpass copied into /Home was handed mail's passwords")
+
     check(re.search(r"^0 entries, the file opened", said, re.M) is not None,
           "the second boot did not open the first's file:\n" + said[-600:])
     check("a key made" not in said, "the second boot made another key")
+
+    # 2b. Forgotten through mail's own door, and gone.
+    entry = re.search(r"mailpass: kept, entry (\d+)", said)
+    said = boot(R, image, ["mailpass forget %s" % (entry.group(1) if entry else "0"),
+                           "mailpass", "echo DONE-TWO-B"], "DONE-TWO-B")
+    check("mailpass: forgotten" in said and re.search(r"^0 mail accounts kept", said, re.M),
+          "mail's door did not forget its own entry:\n" + said[-600:])
 
     # 3. A keyring that does not open, beside a key.
     garbage = os.path.join(work, "garbage")
@@ -153,7 +189,9 @@ def main():
           "a key and an empty keyring; the manage door refused smbfs's "
           "question; the program copied into /Home handed nothing; the file "
           "opened again on the next boot; a keyring that did not open kept "
-          "aside byte for byte and an empty one begun)" % checks)
+          "aside byte for byte and an empty one begun; mail's door keeping, checking, "
+          "listing and forgetting an account's password, Passwords seeing it, and a "
+          "copy in /Home handed nothing)" % checks)
     return 0
 
 
