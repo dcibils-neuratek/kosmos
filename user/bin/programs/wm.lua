@@ -1891,8 +1891,16 @@ end
 -- header in it to put the three in; the window has one of its own.
 --
 function OUT.wants_head(req)
-  return req.header == true and not req.kind and not req.backdrop
-         and not req.strip and not req.fullscreen
+  --
+  -- **Every ordinary window, since one chrome's step 3** (8 October; Diego:
+  -- "we need to get rid of the old window chrome as we are staying with the
+  -- new one only"). A window that draws no header of its own - one sending
+  -- commands, as `hello-win` teaches - has its top rows for its title bar
+  -- and the three drawn over them; it moves by Super and a drag, as every
+  -- window does. Nothing is given the old tab any more.
+  --
+  return not req.kind and not req.backdrop and not req.strip and not req.fullscreen
+         and not req.popup and not req.tip and not req.banner
 end
 
 -- The room the three take, in a window's points: what its header leaves

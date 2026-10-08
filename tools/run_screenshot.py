@@ -11179,7 +11179,8 @@ def check_window_manager(guest):
 
     `wm hello-win,stuck` starts two applications in windows. One of them
     answers and one of them is an infinite loop that never replies again.
-    Dragging the hung one's window by its title bar has to work anyway.
+    Moving the hung one's window has to work anyway - by Super and a drag
+    since the old tab went, which needs nothing from the application.
 
     That is not a question about speed, it is a question about who owns the
     pixels. An application here owns none: it sends a list of drawing
@@ -11215,8 +11216,22 @@ def check_window_manager(guest):
     # monitor's `mouse_move`, because that one sends *relative* deltas and
     # this device reports absolute position. They never meet, and the
     # symptom is a cursor that never moves.
-    tab_x, tab_y = before[0] + 40, before[1] - 10
+    #
+    # **By Super and a drag** since one chrome's step 3 (8 October): there is
+    # no tab the window manager draws any more, and a hung application cannot
+    # answer a press on its own title bar - so the window manager's own move,
+    # Super held and the window pressed anywhere, is how it moves (Diego:
+    # "Super+drag, anywhere").
+    #
+    def super_key(down):
+        guest._qmp("input-send-event", {"events": [
+            {"type": "key", "data": {"down": down,
+                                     "key": {"type": "qcode", "data": "meta_l"}}}]})
+        time.sleep(0.2)
 
+    tab_x, tab_y = before[0] + 40, before[1] + 40
+
+    super_key(True)
     guest.mouse_to(*_to_tablet(tab_x, tab_y, width, height))
     time.sleep(0.5)
     guest.mouse_button(True)
@@ -11228,6 +11243,8 @@ def check_window_manager(guest):
         time.sleep(0.25)
 
     guest.mouse_button(False)
+    time.sleep(0.3)
+    super_key(False)
     time.sleep(1.5)
 
     width, height, px = parse_ppm(guest.screendump())
