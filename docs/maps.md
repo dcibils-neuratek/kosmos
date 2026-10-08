@@ -160,6 +160,15 @@ next, written down so it is not mistaken for the design.
 - **M6** - tiles from the network, by a helper, cached; then search and
   directions from the network.
 
+**Where it stands, 8 October**: M1 to M5 built in one night (0.11.61 to
+0.11.64, `testing.md` 18.454 to 18.458) - Maps opens Port Alder, drags,
+zooms, names its streets and places, searches them, opens a place's card
+and keeps Pinned, Saved and Recently viewed. M6, the network, is next.
+Drawn differently from the mockup, and why: Satellite and Transit are left
+out until they exist (the drawing's fourth question); Directions is not on
+the card yet, for the same reason; street names are level, so only along
+streets within thirty degrees of it, until gfx can turn text.
+
 Each step leaves a permanent test - the host's for C, `run_maps.py` for
 the window - and only x86-64 runs them for now (`CLAUDE.md`).
 

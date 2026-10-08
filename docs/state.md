@@ -2,9 +2,45 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-07 (0.11.34)
+Last updated: 2026-10-08 (0.11.64)
 
 ---
+
+## 7-8 October: one window chrome, the launcher, looks, focus, and Maps M1-M5
+
+**Pushed through 0.11.59** (Diego's yes, 8 October). **On `main`, not
+pushed: 0.11.60-0.11.64** and the documents since - a push is Diego's yes.
+
+- 0.11.55 chrome step 2: a direct window's title bar is a band the kit
+  draws. **Step 3** (the window manager's old chrome taken out) is still to
+  do.
+- 0.11.56-0.11.59: Preferences relaid out on resize; the launcher's
+  Recently used, power row and scrollbar; the lights 15% larger; one corner
+  (18) for every look and the dock; the looks named in a gallery; five new
+  looks (Aurora, Amethyst, Ember, Sakura, Meadow).
+- 0.11.60: **focus follows the pointer**, Appearance > Windows, off until
+  turned on.
+- **Tests are x86-64 only** until Diego says otherwise (`CLAUDE.md`):
+  `make test` skips `arm-`; `ARM=1` puts them back. A gate is about 5:30.
+- **Maps**, designed and built overnight while Diego slept ("Keep building
+  the maps app while I sleep"): `docs/maps.md`, `maps.html`,
+  `maps-architecture.png`; M1 gfx paths on the browser's rasteriser moved
+  into gfx (0.11.61), M2 the Map Kit reading PMTiles and vector tiles and
+  Port Alder generated (`tools/mapcity.py`), M3 drawing in a style and the
+  rasteriser made exact at its sides (0.11.62), M4 the window (0.11.63), M5
+  names, search, card, Pinned/Saved/Recent (0.11.64). `x86-maps` 14 checks;
+  pictures in `build/maps/`.
+- **The M700** was netbooted to 0.11.60 but came up with no screen: its
+  monitor was off ("Display none"). Turned on and restarted, it boots what
+  `build/netboot` holds - rebuild it (`make netboot STICK=...0.10.205...`)
+  to put Maps on it.
+
+**Next**: Maps M6 (tiles from the network by a helper, cached), the
+notification icon to the right of the network and sound icons, chrome step
+3, then the queue in `roadmap.md` (games' window sizes, Mixer's devices and
+USB audio, the KOSMOS 3D example with the Core logo, Photo Viewer zoom,
+Spotlight search in the launcher, Scheduler's policy message).
+
 
 ## 7 October, past midnight: the full-disk read, found - not the disk
 

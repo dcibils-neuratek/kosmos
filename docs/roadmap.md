@@ -1170,6 +1170,16 @@ not designed:
   the image, and Lua for the window. Steps **M1** gfx paths, **M2** PMTiles
   and MVT, **M3** drawing and the region, **M4** the window, **M5** labels,
   search and places, **M6** the network.
+  **M1-M5 BUILT the same night** (0.11.61-0.11.64, `testing.md` 18.454-
+  18.458): Maps opens Port Alder, drags, zooms, names the map, searches
+  it, opens a place's card, and keeps Pinned, Saved and Recently viewed.
+  Found on the way and fixed: the browser's SVG rasteriser was the second
+  copy about to be written - it moved into gfx - and it drew every edge
+  that crossed a picture's side a little off, which showed as a step in
+  every street where two tiles met. **Next, M6**: tiles from OpenFreeMap
+  over HTTPS by a helper so the window never waits, cached under `/Home`;
+  then search from the network and directions. **Wanted with it**: text
+  drawn turned, for street names along any street (gfx).
 
 **AGREED on 6 October - the keyring, and Passwords.** Network sharing's
 N8 grew into it: Diego, "key kept on the machine itself in a keyring",
