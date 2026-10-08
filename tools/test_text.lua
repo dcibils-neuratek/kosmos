@@ -50,9 +50,19 @@ check(text.meter(0, 4) == "[....]" and text.meter(100, 4) == "[||||]", "empty an
 check(text.meter(250, 4) == "[||||]" and text.meter(-5, 4) == "[....]",
       "past either end, held to the bar")
 
+-- Capitals that keep their accents.
+for _, c in ipairs({
+  { "Cordón", "CORDÓN" }, { "Larrañaga", "LARRAÑAGA" }, { "Muñoz", "MUÑOZ" },
+  { "Ålesund", "ÅLESUND" }, { "Łódź", "ŁÓDŹ" }, { "Kraków", "KRAKÓW" },
+  { "Ελλάδα", "ΕΛΛΆΔΑ" }, { "Москва", "МОСКВА" }, { "straße", "STRAßE" },
+  { "Port Alder 3", "PORT ALDER 3" }, { "東京", "東京" }, { "a\xffb", "A\xffB" },
+}) do
+  check(text.upper(c[1]) == c[2], ("%q in capitals is %q, not %q"):format(c[1], text.upper(c[1]), c[2]))
+end
+
 if failed == 0 then
   print(("PASS: %d checks on what programs and windows share about text (lines, "
-         .. "-n and a path, thousands marked, a share as a bar)."):format(checks))
+         .. "-n and a path, thousands marked, a share as a bar, capitals that keep their accents)."):format(checks))
 else
   print(("FAIL: %d of %d checks on text.lua"):format(failed, checks))
   os.exit(1)

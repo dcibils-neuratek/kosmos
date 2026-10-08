@@ -8,6 +8,9 @@
 -- copies of an answer is how two of them end up disagreeing about a file
 -- with no final newline.
 --
+-- And a word in capitals that keeps its accents (`text.upper`), which
+-- Lua's own `upper` cannot do: it knows ASCII and leaves "ñ" as it is.
+--
 -- And two ways a number is written for a person to read, which programs and
 -- windows had each written out again: its digits grouped in thousands, and
 -- a share as a bar of characters.
@@ -22,6 +25,56 @@ local text = {}
 -- what `wc -l` reports. A file with no final newline still has its last
 -- line, which is the other half of the same rule.
 --
+--
+-- Capitals, in UTF-8: "Cordón" is "CORDÓN", not "CORDóN". ASCII, Latin-1's
+-- letters, Latin Extended-A, Greek and Cyrillic - the scripts the system's
+-- faces draw and a map's names are written in (Maps, 8 October, where
+-- Montevideo's neighbourhoods came out half capitals). A character with no
+-- capital, or in another script, is left as it is, and bytes that are not
+-- UTF-8 are passed through rather than refused.
+--
+local function capital(c)
+  if c >= 0x61 and c <= 0x7a then return c - 32 end
+  if c < 0xe0 then return c end
+  if c <= 0xfe then return c == 0xf7 and c or c - 32 end
+  if c == 0xff then return 0x178 end
+
+  if c >= 0x100 and c <= 0x17f then
+    -- Pairs, the capital first, except the two runs where it is second.
+    if (c >= 0x139 and c <= 0x148) or (c >= 0x179 and c <= 0x17e) then
+      return c % 2 == 0 and c - 1 or c
+    end
+
+    if c == 0x131 or c == 0x138 or c == 0x149 or c == 0x17f then return c end
+
+    return c % 2 == 1 and c - 1 or c
+  end
+
+  if c >= 0x3b1 and c <= 0x3c9 then return c == 0x3c2 and 0x3a3 or c - 32 end
+
+  -- Greek's vowels with their accent, which sit apart from the rest.
+  if c == 0x3ac then return 0x386 end
+  if c >= 0x3ad and c <= 0x3af then return c - 37 end
+  if c == 0x3cc then return 0x38c end
+  if c == 0x3cd or c == 0x3ce then return c - 63 end
+  if c >= 0x430 and c <= 0x44f then return c - 32 end
+  if c >= 0x450 and c <= 0x45f then return c - 80 end
+
+  return c
+end
+
+function text.upper(s)
+  s = tostring(s)
+
+  if not utf8.len(s) then return s:upper() end
+
+  local out = {}
+
+  for _, c in utf8.codes(s) do out[#out + 1] = utf8.char(capital(c)) end
+
+  return table.concat(out)
+end
+
 function text.lines(body)
   local out = {}
 

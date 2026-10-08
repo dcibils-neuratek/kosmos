@@ -21401,3 +21401,22 @@ the made-up answer read into two places, Montevideo first, "City ·
 Uruguay"; and Return taking the map there, at 12, a city's zoom by its
 `place_rank`. **Control**: Maps never asking, it fails waiting for the
 search to be asked, and passes again when that is restored.
+
+## 18.468 Maps M6e on the M700: Montevideo, from the real Nominatim
+
+On the M700, "Montevideo" typed and Return pressed: the real Nominatim
+answered in under two seconds with three places, the window drawing all the
+while, and Return drew Montevideo from OpenFreeMap at 12 (6 tiles, 20
+names). The screen showed three things:
+
+- **"Administrative · Uruguay"**: Nominatim's `type` for a city drawn as a
+  boundary. Its `addresstype` is now used then, so it reads "City · Uruguay".
+  `x86-maps`' made-up answer now says it as Nominatim does. **Control**: the
+  rule taken out, the check fails reading "Administrative · Uruguay".
+- **A long "where" ran out of the sidebar** onto the map ("Goiás,
+  Central-West Region, Brazil"). The kind line is fitted to the sidebar and
+  to the card now.
+- **"CORDóN", "BARRIO LARRAñAGA"**: Lua's `upper` knows ASCII alone.
+  `text.upper` (`user/lib/text.lua`, for anything to use) capitalises
+  Latin-1, Latin Extended-A, Greek and its accented vowels, and Cyrillic.
+  `test_text` 27 checks, the Greek vowels found by its first run.

@@ -31,6 +31,7 @@ local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 local keys = use("/Kosmos/Libraries/keys.lua")
 local pk = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
 local map = use("/Kosmos/Kits/map")
+local text_kit = use("/Kosmos/Libraries/text.lua")
 local theme = ui.theme
 local L = ui.layout
 
@@ -615,7 +616,11 @@ local function read_found(number, status)
       local x, y = map.project(lon, lat)
       local where = tostring(r.display_name or ""):gsub("^[^,]*,%s*", "")
 
-      out[#out + 1] = { name = name, class = tostring(r.type or r.addresstype or "place"),
+      -- What a person would call it: Nominatim's `type` is "administrative"
+      -- for a city drawn as a boundary, and its `addresstype` says "city".
+      local class = (r.type == "administrative" or not r.type) and r.addresstype or r.type
+
+      out[#out + 1] = { name = name, class = tostring(class or "place"),
                         layer = "world", where = where, x = x, y = y,
                         zoom = zoom_for_rank(r.place_rank) }
     end
@@ -701,7 +706,8 @@ local function place_row(s, y, p, lit)
   s:disc(8 + 10 + 15, y + h // 2, 15, theme.raised)
   s:disc(8 + 10 + 15, y + h // 2, 6, p.layer == "poi" and dot_of(p) or theme.text_dim)
   s:text(8 + 10 + 30 + 12, y + 5, ui.fitted(p.name, SIDE_W - 90, "ui"), theme.text, nil, "ui")
-  s:text(8 + 10 + 30 + 12, y + 5 + gfx.height() + 1, kind_of(p), theme.text_dim, nil, "ui")
+  s:text(8 + 10 + 30 + 12, y + 5 + gfx.height() + 1, ui.fitted(kind_of(p), SIDE_W - 90, "ui"),
+         theme.text_dim, nil, "ui")
   rows[#rows + 1] = { x = 8, y = y, w = SIDE_W - 16, h = h, place = p }
 
   return y + h + 2
@@ -821,7 +827,8 @@ local function draw_card(s)
 
   glass(s, x, y, w, h)
   s:text(x + 16, y + 14, ui.fitted(card.name, w - 64, "title"), theme.text, nil, "title")
-  s:text(x + 16, y + 14 + gfx.height("title") + 4, kind_of(card), theme.text_dim, nil, "ui")
+  s:text(x + 16, y + 14 + gfx.height("title") + 4, ui.fitted(kind_of(card), w - 32, "ui"),
+         theme.text_dim, nil, "ui")
 
   close_button.x, close_button.y = x + w - 12 - 26, y + 10
   pk.iconbutton(s, close_button)
@@ -1004,7 +1011,7 @@ draw_labels = function(s, drawn, mx, my, mw, mh)
     local colour = theme.text
 
     if l.layer == "place" and l.class ~= "city" then
-      text, face, colour = text:upper(), "label", theme.text_dim
+      text, face, colour = text_kit.upper(text), "label", theme.text_dim
     elseif l.layer == "water_name" then
       colour = 0xff3a6ea8
     elseif l.layer == "park" then

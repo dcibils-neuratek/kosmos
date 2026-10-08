@@ -144,7 +144,8 @@ def tile_server():
                 # Nominatim's shape, jsonv2; made up, as Port Alder is.
                 body = json.dumps([
                     {"place_id": 1, "lat": "-34.9058916", "lon": "-56.1913095",
-                     "category": "place", "type": "city", "place_rank": 16,
+                     # As Nominatim answers for a city drawn as a boundary.
+                     "category": "boundary", "type": "administrative", "place_rank": 16,
                      "addresstype": "city", "name": "Montevideo",
                      "display_name": "Montevideo, Uruguay"},
                     {"place_id": 2, "lat": "-34.83", "lon": "-56.01",
