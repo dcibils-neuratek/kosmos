@@ -1,0 +1,343 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<!--
+  Kosmos Mail, drawn before it is written. Diego, 6 October 2026, with a
+  picture of Apple's Mail: "i want a native mail client", "the client
+  should be able to connect to imap, pop3 and google accounts (google
+  first)", "Kosmos Email should publish notifications upon receiving
+  emails", "kosmos email should use the browser native html rendering as
+  most emails is html"; 7 October, "i need a mail client to work"; and 8
+  October, the order: "do chrome step 3 first, then mail, then the split".
+
+  The windows in Kosmos's own chrome - the kit's header as the title bar,
+  the three at its right - in the Night look and a light one. Every name,
+  address and message here is made up; example.com and example.org are the
+  domains set aside for examples, and nobody's real mail is in it.
+  `docs/mail.md` is the feature set and the architecture.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kosmos Mail</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f2f4f8; --ink: #182030; --muted: #5a6577; --rule: #dbe1ea; --card: #ffffff; --accent: #2a55c9;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #0d121a; --ink: #e6edf3; --muted: #98a4b5; --rule: #263142; --card: #151c27; --accent: #a8c7fa; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --ground: #0d121a; --ink: #e6edf3; --muted: #98a4b5; --rule: #263142; --card: #151c27; --accent: #a8c7fa; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 1240px; margin: 0 auto; padding: 40px 16px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 40px)/1.1 var(--display); margin: 0 0 10px; text-wrap: balance; }
+  h2 { font: 600 23px/1.2 var(--display); margin: 44px 0 10px; text-wrap: balance; }
+  p, li { max-width: 72ch; }
+  .lede { font-size: 18px; color: var(--muted); }
+  .said { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; color: var(--muted); font-style: italic; margin: 16px 0; }
+  code { font: .88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+  .hint { font-size: 14px; color: var(--muted); margin: 14px 0 8px; }
+  .looks { display: flex; gap: 8px; margin: 10px 0; }
+  .looks button { font: 500 14px var(--body); padding: 6px 14px; border-radius: 999px; border: 1px solid var(--rule); background: var(--card); color: var(--ink); cursor: pointer; }
+  .looks button[aria-pressed="true"] { background: var(--accent); color: var(--ground); border-color: transparent; }
+  .looks button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin-top: 18px; }
+  .note { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; }
+  .note b { display: block; font-family: var(--display); font-size: 17px; margin-bottom: 4px; }
+  .note p { margin: 0; font-size: 14.5px; color: var(--muted); }
+  ol.q li { margin: 10px 0; }
+  .rec { color: var(--muted); }
+
+  /* ---- A window, drawn at its size and scaled to the page ---- */
+  .shell { width: 100%; overflow: hidden; border-radius: 14px; }
+  .stage { transform-origin: 0 0; position: relative; font: 14px/1.35 var(--body); }
+
+  .win { position: absolute; inset: 0; border-radius: 10px; overflow: hidden; display: grid; grid-template-rows: 46px 1fr;
+         background: var(--w-window); color: var(--w-text); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+  .night { --w-window: #1e2636; --w-raised: #2a3446; --w-sunken: #161d2b; --w-line: #313b4e; --w-text: #e6eaf2; --w-dim: #a3adbf;
+           --w-accent: #a8c7fa; --w-on: #0a1b38; --w-sel: #2f3f5e; --w-unread: #6ea8ff; --w-flag: #f5a524; --w-paper: #f7f7f5; --w-paper-ink: #22252b; }
+  .day   { --w-window: #f6f5f4; --w-raised: #ffffff; --w-sunken: #ffffff; --w-line: #e3e0dd; --w-text: #241f31; --w-dim: #77767b;
+           --w-accent: #3584e4; --w-on: #ffffff; --w-sel: #dbe8fb; --w-unread: #3584e4; --w-flag: #e5a50a; --w-paper: #ffffff; --w-paper-ink: #22252b; }
+
+  .head { display: flex; align-items: center; gap: 6px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--w-line); background: var(--w-window); }
+  .head .t { font-weight: 600; font-size: 15px; margin-left: 4px; }
+  .head .sub { color: var(--w-dim); font-size: 13.5px; margin-left: 6px; }
+  .head .sp { flex: 1; }
+  .ib { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; color: var(--w-text); }
+  .ib.on { background: var(--w-raised); }
+  .ib svg { width: 17px; height: 17px; }
+  .sep { width: 1px; height: 20px; background: var(--w-line); margin: 0 4px; }
+  .lights { display: flex; gap: 8px; margin-left: 8px; }
+  .lights i { width: 16px; height: 16px; border-radius: 50%; display: block; }
+
+  /* The main window: mailboxes, the list, the message. */
+  .body3 { display: grid; grid-template-columns: 230px 360px 1fr; min-height: 0; }
+  .boxes { background: var(--w-window); border-right: 1px solid var(--w-line); padding: 10px 8px; overflow: hidden; }
+  .acct { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--w-dim); padding: 12px 8px 4px; }
+  .mb { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 8px; font-size: 14px; }
+  .mb svg { width: 16px; height: 16px; color: var(--w-dim); }
+  .mb .c { font-size: 12px; color: var(--w-dim); font-variant-numeric: tabular-nums; }
+  .mb.on { background: var(--w-sel); }
+  .mb.on .c { color: var(--w-text); font-weight: 600; }
+  .mb.sub { padding-left: 22px; }
+
+  .list { border-right: 1px solid var(--w-line); display: flex; flex-direction: column; min-height: 0; background: var(--w-sunken); }
+  .lhead { padding: 10px 12px 8px; border-bottom: 1px solid var(--w-line); background: var(--w-window); }
+  .lhead .n { font-weight: 600; font-size: 16px; }
+  .lhead .m { font-size: 12.5px; color: var(--w-dim); }
+  .search { margin-top: 8px; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 9px; background: var(--w-sunken); border: 1px solid var(--w-line); color: var(--w-dim); font-size: 13px; }
+  .search svg { width: 14px; height: 14px; }
+  .msg { display: grid; grid-template-columns: 14px 1fr; gap: 6px; padding: 9px 12px 10px 8px; border-bottom: 1px solid var(--w-line); }
+  .msg .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; }
+  .msg .dot.u { background: var(--w-unread); }
+  .msg .top { display: flex; gap: 8px; align-items: baseline; }
+  .msg .who { font-weight: 600; font-size: 14px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .msg .when { font-size: 12px; color: var(--w-dim); font-variant-numeric: tabular-nums; }
+  .msg .subj { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .msg .pre { font-size: 12.5px; color: var(--w-dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .msg .marks { display: flex; gap: 6px; margin-left: 4px; color: var(--w-dim); }
+  .msg .marks svg { width: 13px; height: 13px; }
+  .msg.on { background: var(--w-sel); }
+  .msg.read .who { font-weight: 500; }
+  .count { font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--w-raised); color: var(--w-dim); }
+
+  .read { display: flex; flex-direction: column; min-height: 0; background: var(--w-window); }
+  .rhead { padding: 14px 20px 12px; border-bottom: 1px solid var(--w-line); display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; align-items: start; }
+  .av { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; color: #fff; }
+  .rhead .from { font-weight: 600; font-size: 15px; }
+  .rhead .addr { color: var(--w-dim); font-weight: 400; font-size: 13px; }
+  .rhead .to { font-size: 13px; color: var(--w-dim); }
+  .rhead .subj { font-size: 17px; font-weight: 600; margin-top: 6px; }
+  .rhead .when { font-size: 12.5px; color: var(--w-dim); text-align: right; }
+  .pics { display: flex; align-items: center; gap: 10px; margin: 10px 20px 0; padding: 8px 12px; border-radius: 9px; background: var(--w-raised); font-size: 13px; color: var(--w-dim); }
+  .pics svg { width: 15px; height: 15px; }
+  .pics .b { margin-left: auto; white-space: nowrap; padding: 3px 10px; border-radius: 7px; border: 1px solid var(--w-line); color: var(--w-text); font-size: 12.5px; }
+  .paper { margin: 12px 20px 0; border-radius: 10px; background: var(--w-paper); color: var(--w-paper-ink); overflow: hidden; flex: 1; border: 1px solid var(--w-line); }
+  .paper .band { background: #0f5c4d; color: #fff; padding: 18px 26px; font: 600 22px/1.2 "IBM Plex Serif", Georgia, serif; }
+  .paper .band small { display: block; font: 400 12.5px var(--body); opacity: .8; margin-top: 4px; }
+  .paper .copy { padding: 18px 26px; font: 15px/1.55 "IBM Plex Serif", Georgia, serif; }
+  .paper .copy p { margin: 0 0 12px; }
+  .ph { height: 120px; border: 1.5px dashed #c9c6bf; border-radius: 8px; display: grid; place-items: center; color: #8b877e; font: 12.5px var(--body); margin: 4px 0 14px; }
+  .att { display: flex; gap: 10px; margin: 10px 20px 16px; }
+  .chip { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 9px; background: var(--w-raised); border: 1px solid var(--w-line); font-size: 13px; }
+  .chip svg { width: 16px; height: 16px; color: var(--w-dim); }
+  .chip span { color: var(--w-dim); font-size: 12px; }
+
+  /* The composer. */
+  .comp { display: flex; flex-direction: column; background: var(--w-window); }
+  .field { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 8px; padding: 7px 18px; border-bottom: 1px solid var(--w-line); font-size: 14px; }
+  .field .l { color: var(--w-dim); }
+  .who-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; background: var(--w-sel); font-size: 13px; margin-right: 6px; }
+  .comp { position: relative; }
+  .suggest { position: absolute; left: 96px; top: 40px; z-index: 2; border: 1px solid var(--w-line); border-radius: 10px; background: var(--w-raised); box-shadow: 0 10px 24px rgba(0,0,0,.25); overflow: hidden; width: 300px; }
+  .suggest div { padding: 7px 12px; font-size: 13px; }
+  .suggest div span { color: var(--w-dim); font-size: 12px; display: block; }
+  .suggest div.on { background: var(--w-sel); }
+  .bodytext { padding: 14px 18px; font-size: 14.5px; line-height: 1.55; flex: 1; }
+  .bodytext .q { border-left: 3px solid var(--w-line); padding-left: 10px; color: var(--w-dim); margin-top: 10px; }
+  .caret { display: inline-block; width: 2px; height: 17px; background: var(--w-accent); vertical-align: -3px; }
+  .send { margin-left: 6px; padding: 5px 14px; border-radius: 8px; background: var(--w-accent); color: var(--w-on); font-weight: 600; font-size: 13.5px; }
+
+  /* A notification, as the desktop shows one. */
+  .banner { position: absolute; right: 18px; top: 18px; width: 360px; display: grid; grid-template-columns: 40px 1fr; gap: 12px; padding: 12px 14px;
+            border-radius: 14px; background: var(--w-raised); border: 1px solid var(--w-line); box-shadow: 0 14px 34px rgba(0,0,0,.3); color: var(--w-text); }
+  .banner .ic { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: var(--w-accent); color: var(--w-on); }
+  .banner .ic svg { width: 22px; height: 22px; }
+  .banner .a { font-size: 12px; color: var(--w-dim); display: flex; justify-content: space-between; }
+  .banner .b { font-weight: 600; font-size: 14px; }
+  .banner .c { font-size: 13px; color: var(--w-dim); }
+
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .pair > div { min-width: 0; }
+  @media (max-width: 900px) { .pair { grid-template-columns: 1fr; } }
+  .cap { font-size: 13.5px; color: var(--muted); margin: 8px 0 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>Kosmos Mail</h1>
+<p class="lede">Apple's Mail on Kosmos: mailboxes down the side, the messages in the middle, the one chosen on the right - read as its sender drew it, answered, and announced by a banner the moment it arrives, with the window open or not.</p>
+<p class="said">"i want a native mail client", "google first ... as its my personal email", "Kosmos Email should publish notifications upon receiving emails" - Diego, 6 October</p>
+
+<p class="hint">Every name, address and message here is made up. Switch the look:</p>
+<div class="looks" role="group" aria-label="Look">
+  <button type="button" data-look="night" aria-pressed="true">Night</button>
+  <button type="button" data-look="day" aria-pressed="false">Light</button>
+</div>
+
+<!-- ============ The main window ============ -->
+<div class="shell" data-w="1220" data-h="740"><div class="stage" style="width:1220px;height:740px">
+  <div class="win night lookable">
+    <div class="head">
+      <span class="ib" title="Mailboxes"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M8 3.5v13"/></svg></span>
+      <span class="t">Mail</span><span class="sub">Inbox · 3 unread</span>
+      <span class="sp"></span>
+      <span class="ib" title="New message"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M13.5 3.5 16.5 6.5 8 15H5v-3Z"/><path d="M3 17.5h14"/></svg></span>
+      <span class="sep"></span>
+      <span class="ib" title="Reply"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M8 5 3 10l5 5"/><path d="M3 10h8a6 6 0 0 1 6 6"/></svg></span>
+      <span class="ib" title="Reply All"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M7 5 2 10l5 5"/><path d="M11 5 6 10l5 5"/><path d="M6 10h6a6 6 0 0 1 6 6"/></svg></span>
+      <span class="ib" title="Forward"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 5l5 5-5 5"/><path d="M17 10H9a6 6 0 0 0-6 6"/></svg></span>
+      <span class="sep"></span>
+      <span class="ib" title="Archive"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="3.5" width="15" height="4" rx="1"/><path d="M4 7.5v8.5h12V7.5M8 11h4"/></svg></span>
+      <span class="ib" title="Delete"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3.5 5.5h13M8 5.5V3.5h4v2M5 5.5l1 11h8l1-11"/></svg></span>
+      <span class="ib on" title="Flag"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M4.5 2.5h1.5v15H4.5z"/><path d="M6 3.5h9l-2 3.5 2 3.5H6z" fill="var(--w-flag)"/></svg></span>
+      <span class="ib" title="More"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="4.5" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="10" cy="15.5" r="1.6"/></svg></span>
+      <span class="lights"><i style="background:#28c840"></i><i style="background:#febc2e"></i><i style="background:#ff5f57"></i></span>
+    </div>
+    <div class="body3">
+      <aside class="boxes">
+        <div class="mb on"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M2.5 11.5 5 4.5h10l2.5 7v4h-15Z"/><path d="M2.5 11.5h4l1 2h5l1-2h4"/></svg>All Inboxes<span class="c">3</span></div>
+        <div class="mb"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M10 3.5 12 8l5 .5-3.8 3.3 1.2 4.9L10 14.2 5.6 16.7l1.2-4.9L3 8.5 8 8Z"/></svg>Flagged<span class="c">1</span></div>
+        <div class="acct">Lena · Gmail</div>
+        <div class="mb"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M2.5 11.5 5 4.5h10l2.5 7v4h-15Z"/><path d="M2.5 11.5h4l1 2h5l1-2h4"/></svg>Inbox<span class="c">3</span></div>
+        <div class="mb"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 3.5h12v13H4z"/><path d="M7 7.5h6M7 10.5h6M7 13.5h3"/></svg>Drafts<span class="c">1</span></div>
+        <div class="mb"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M17 3 2.5 9l6 2.5L11 17.5Z"/></svg>Sent<span class="c"></span></div>
+        <div class="mb"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="3.5" width="15" height="4" rx="1"/><path d="M4 7.5v8.5h12V7.5"/></svg>Archive<span class="c"></span></div>
+        <div class="mb"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7"/><path d="M5 5l10 10"/></svg>Junk<span class="c">2</span></div>
+        <div class="mb"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3.5 5.5h13M8 5.5V3.5h4v2M5 5.5l1 11h8l1-11"/></svg>Trash<span class="c"></span></div>
+        <div class="mb sub"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 6.5 4.5 4.5h4L10 6h7v9.5H3Z"/></svg>Receipts<span class="c"></span></div>
+        <div class="mb sub"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 6.5 4.5 4.5h4L10 6h7v9.5H3Z"/></svg>Travel<span class="c"></span></div>
+        <div class="acct">Work · IMAP</div>
+        <div class="mb"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M2.5 11.5 5 4.5h10l2.5 7v4h-15Z"/><path d="M2.5 11.5h4l1 2h5l1-2h4"/></svg>Inbox<span class="c"></span></div>
+        <div class="mb"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M17 3 2.5 9l6 2.5L11 17.5Z"/></svg>Sent<span class="c"></span></div>
+      </aside>
+
+      <section class="list">
+        <div class="lhead"><div class="n">All Inboxes</div><div class="m">3 unread · 214 messages · updated just now</div>
+          <div class="search"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.6"/><path d="m10.6 10.6 3.8 3.8"/></svg>Search</div></div>
+        <div class="msg on"><span class="dot u"></span><div><div class="top"><span class="who">Greenway Cycling Club</span><span class="when">09:41</span></div><div class="subj">Saturday's ride: route, weather and coffee</div><div class="pre">Forty kilometres along the river, a stop at the old mill, and back before lunch. The route is attached, and the forecast says dry.</div></div></div>
+        <div class="msg"><span class="dot u"></span><div><div class="top"><span class="who">Tomás Ferreira</span><span class="marks"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2h1.2v12H4z"/><path d="M5.2 3h7l-1.6 2.8 1.6 2.8h-7z" fill="var(--w-flag)"/></svg></span><span class="when">08:12</span></div><div class="subj">Re: The photos from the lake <span class="count">3</span></div><div class="pre">Here are the rest - the one at sunset is my favourite. Do you still have the one with the boat?</div></div></div>
+        <div class="msg"><span class="dot u"></span><div><div class="top"><span class="who">Northbank Library</span><span class="when">Yesterday</span></div><div class="subj">Your hold is ready to collect</div><div class="pre">"A Short History of Maps" is waiting at the front desk until Friday the 16th.</div></div></div>
+        <div class="msg read"><span class="dot"></span><div><div class="top"><span class="who">Priya Nair</span><span class="marks"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M10.5 4.5 5.8 9.2a1.6 1.6 0 0 0 2.3 2.3l5-5a3 3 0 0 0-4.2-4.2l-5.2 5.2a4.4 4.4 0 0 0 6.2 6.2L13 10.5"/></svg></span><span class="when">Yesterday</span></div><div class="subj">The recipe, as promised</div><div class="pre">Attached - and the secret is the lemon at the very end. Let me know how it turns out.</div></div></div>
+        <div class="msg read"><span class="dot"></span><div><div class="top"><span class="who">Harbour Hardware</span><span class="when">Tuesday</span></div><div class="subj">Order 40213 has shipped</div><div class="pre">Two shelf brackets and a box of screws are on their way, arriving Thursday.</div></div></div>
+        <div class="msg read"><span class="dot"></span><div><div class="top"><span class="who">Ana Kowalski</span><span class="when">Monday</span></div><div class="subj">Dinner on the 20th?</div><div class="pre">We were thinking of the place by the market. Seven o'clock suits everyone so far.</div></div></div>
+      </section>
+
+      <section class="read">
+        <div class="rhead">
+          <span class="av" style="background:#0f5c4d">G</span>
+          <div><div class="from">Greenway Cycling Club <span class="addr">&lt;rides@greenway.example.org&gt;</span></div>
+            <div class="to">To: Lena Moreau</div>
+            <div class="subj">Saturday's ride: route, weather and coffee</div></div>
+          <div class="when">Today, 09:41</div>
+        </div>
+        <div class="pics"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="m3 11 3.5-3.5 2.5 2.5 2-2 2 2"/></svg>Pictures from the network were not loaded, so the sender cannot see this was read.<span class="b">Load pictures</span></div>
+        <div class="paper">
+          <div class="band">Saturday's ride<small>Greenway Cycling Club · this week</small></div>
+          <div class="copy">
+            <p>Hello Lena,</p>
+            <p>This Saturday we ride forty kilometres along the river path to the old mill, stop for coffee, and are back in town before lunch.</p>
+            <div class="ph">A picture on the network - not fetched until asked</div>
+            <p>Meet at the bridge at 8:30. The route is attached as a GPX file; the forecast says dry and 14 degrees.</p>
+          </div>
+        </div>
+        <div class="att">
+          <div class="chip"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 2.5h7l3.5 3.5V17.5H5Z"/><path d="M12 2.5V6h3.5"/></svg>route-to-the-mill.gpx <span>84 KB</span></div>
+          <div class="chip"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="14" height="12" rx="1.5"/><path d="m4 14 4-4 3 3 2-2 3 3"/></svg>mill-cafe.jpg <span>1.2 MB</span></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div></div>
+<p class="cap">The main window. HTML drawn by the browser's engine, no scripts, pictures from the network not fetched until asked; a picture sent inside the message would be shown at once.</p>
+
+<!-- ============ The composer, and a banner ============ -->
+<div class="pair">
+  <div>
+    <div class="shell" data-w="620" data-h="520"><div class="stage" style="width:620px;height:520px">
+      <div class="win night lookable">
+        <div class="head">
+          <span class="t">New Message</span><span class="sub">Re: The photos from the lake</span>
+          <span class="sp"></span>
+          <span class="ib" title="Attach"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13 5.5 7.2 11.3a2 2 0 0 0 2.9 2.9l6-6a3.8 3.8 0 0 0-5.4-5.4L4.5 9a5.5 5.5 0 0 0 7.8 7.8L16 13"/></svg></span>
+          <span class="send">Send</span>
+          <span class="lights"><i style="background:#28c840"></i><i style="background:#febc2e"></i><i style="background:#ff5f57"></i></span>
+        </div>
+        <div class="comp">
+          <div class="field"><span class="l">To</span><span><span class="who-chip">Tomás Ferreira</span>pri<span class="caret"></span></span></div>
+          <div class="suggest">
+            <div class="on">Priya Nair<span>priya.nair@example.com · 12 messages</span></div>
+            <div>Prince Street Bakery<span>orders@bakery.example.org · 2 messages</span></div>
+          </div>
+          <div class="field"><span class="l">Cc</span><span></span></div>
+          <div class="field"><span class="l">Subject</span><span>Re: The photos from the lake</span></div>
+          <div class="bodytext">The one with the boat is in the folder from August - I'll send it tonight.<br><br>Lena
+            <div class="q">On 8 October, Tomás Ferreira wrote:<br>Here are the rest - the one at sunset is my favourite. Do you still have the one with the boat?</div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+    <p class="cap">Writing: addresses become chips and are completed from the mail kept; plain text in the first version, with the message quoted. Saved as a draft as it is typed.</p>
+  </div>
+  <div>
+    <div class="shell" data-w="620" data-h="520"><div class="stage" style="width:620px;height:520px">
+      <div class="win night lookable" style="background:linear-gradient(160deg,#25324a,#121826);grid-template-rows:1fr">
+        <div class="banner">
+          <span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2.5" y="4.5" width="15" height="11" rx="2"/><path d="m3 5.5 7 5.5 7-5.5"/></svg></span>
+          <div><div class="a"><span>Mail</span><span>now</span></div><div class="b">Northbank Library</div><div class="c">Your hold is ready to collect</div></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="cap">New mail, with the window closed: a banner through the notifications, pressing it opening the message. Do Not Disturb and Mail's own setting in Preferences apply.</p>
+  </div>
+</div>
+
+<h2>What a person can do</h2>
+<div class="notes">
+  <div class="note"><b>Sign in</b><p>A Google account with its address and an app password, or any IMAP account with its server shown - checked before it is kept, the password in the keyring.</p></div>
+  <div class="note"><b>Read</b><p>Mailboxes by what they are, counts beside them; conversations kept together; HTML as its sender drew it, plain text set by Write's engine.</p></div>
+  <div class="note"><b>Answer</b><p>Reply, Reply All, Forward; To, Cc and Bcc completed as they are typed; drafts kept as they are written; sent and kept in Sent.</p></div>
+  <div class="note"><b>Tidy</b><p>Read or unread, flag, archive, delete, move - from the tools, the keys and the right button, on one or several.</p></div>
+  <div class="note"><b>Find</b><p>Search by who, subject and words as they are typed, in a mailbox or all - the system's search, since a message is a file with its facts as attributes.</p></div>
+  <div class="note"><b>Know</b><p>New mail as it is sent (IMAP's IDLE), a banner for each, with the window open or closed.</p></div>
+</div>
+
+<h2>Yours to decide</h2>
+<ol class="q">
+  <li><b>Two programs</b>: the window, and <code>maild</code> running from when the desktop starts, fetching and notifying with the window closed. <span class="rec">Recommended: two - a banner with the window closed is what you asked for.</span></li>
+  <li><b><code>maild</code> Mail's own</b>, or a system server any application sends mail through. <span class="rec">Recommended: Mail's own, until a second application needs to send mail.</span></li>
+  <li><b>Plain text first</b> in the composer, rich text once Write's typing is moved out of <code>writer.lua</code>. <span class="rec">Recommended: plain text first.</span></li>
+  <li><b>The keyring's door for mail</b> lent only to the system's Mail, so a copy made in the IDE asks for its password each time. <span class="rec">Recommended: yes.</span></li>
+  <li><b>Opening 10,000 messages in a frame</b>: a mailbox's own list file, or the attributes alone. <span class="rec">Recommended: measure when the window is built, and decide then.</span></li>
+  <li><b>All Inboxes and conversations</b> in the first version, as drawn. <span class="rec">Recommended: in it.</span></li>
+  <li><b>The three columns, as drawn</b> - mailboxes, list, message - with the mailboxes hidden by the button at the header's left on a small screen. <span class="rec">Recommended: as drawn.</span></li>
+</ol>
+<p>The feature set and the architecture are <code>docs/mail.md</code>; what it stands on is drawn in <code>docs/mail-architecture.png</code>.</p>
+</main>
+<script>
+(function () {
+  var wins = document.querySelectorAll(".lookable");
+  Array.prototype.forEach.call(document.querySelectorAll(".looks button"), function (b) {
+    b.addEventListener("click", function () {
+      var look = b.getAttribute("data-look");
+      Array.prototype.forEach.call(wins, function (w) {
+        w.classList.remove("night", "day");
+        w.classList.add(look);
+      });
+      Array.prototype.forEach.call(document.querySelectorAll(".looks button"), function (o) {
+        o.setAttribute("aria-pressed", o === b ? "true" : "false");
+      });
+    });
+  });
+  var shells = document.querySelectorAll(".shell");
+  function fit() {
+    Array.prototype.forEach.call(shells, function (shell) {
+      var w = +shell.getAttribute("data-w"), h = +shell.getAttribute("data-h");
+      var k = Math.min(1, shell.clientWidth / w);
+      shell.firstElementChild.style.transform = "scale(" + k + ")";
+      shell.style.height = (h * k) + "px";
+    });
+  }
+  window.addEventListener("resize", fit); fit();
+})();
+</script>
+</body>
+</html>

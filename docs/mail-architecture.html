@@ -1,0 +1,164 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Kosmos Mail, and what it stands on, as one picture: the window and maild
+  on top, the Lua libraries beside them, the Mail Kit marked new, the Web
+  Kit, the TLS Kit and the Compression Kit as they are, the servers, and
+  Nebula at the bottom. The busiest path - a message arriving - drawn
+  through it (A). Drawn on 8 October 2026, before any of it is built;
+  `docs/mail.md` is the argument and `docs/mail.html` the windows.
+
+  Rendered to docs/mail-architecture.png by headless Chrome at twice its
+  size, as docs/stack.png is:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --disable-gpu --screenshot=docs/mail-architecture.png \
+      --window-size=1400,H --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/mail-architecture.html
+
+  where H is the page's height, which the script at the end puts in the
+  title.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Mail architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --grows: #0f7a5a; --path-a: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .grow { border-color: var(--grows) !important; border-style: dashed !important; }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.g { background: var(--grows); }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .a { color: var(--path-a); font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Kosmos Mail - what it stands on</h1>
+<p class="sub">A native mail client: IMAP and SMTP spoken in Lua over the TLS Kit, a message's bytes undone in C by a new Mail Kit, HTML drawn by the browser's own engine, and <code>maild</code> fetching and announcing new mail with the window closed. No new server and no new system call; one door grows on the keyring.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--grows);border-style:dashed;background:#fff"></i>grows</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>application</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>C kits</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="a">A</span><span>a message arriving</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Application - a Lua project, shipped and copied in the IDE</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b><code>maild</code> - started with the desktop</b><p>one IMAP connection an account, held in IDLE <span class="a">A1</span>; new mail fetched to a file <span class="a">A2</span>, its facts written <span class="a">A4</span>; a banner for each <span class="a">A5</span>; flags, moves and sending, asked by the window</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>Mail - the window</b><p>mailboxes, the list, the message, the composer; reads <code>/Home/Mail</code> and never the network; told "this mailbox changed" by a post <span class="a">A6</span></p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries</h2>
+      <div class="row" style="grid-template-columns:repeat(4,1fr)">
+        <div class="box new"><span class="tag">NEW</span><b>imap.lua</b><p>IMAP4rev1, IDLE, UIDPLUS, MOVE, SPECIAL-USE, CONDSTORE; never waits - stepped</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>smtp.lua</b><p>a message sent: EHLO, STARTTLS, AUTH, DATA</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>addresses.lua</b><p>every address kept, by how often; Calendar wants it too</p></div>
+        <div class="box"><b>notify.lua</b><p>the banner, its press opening the message</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:repeat(4,1fr);margin-top:10px">
+        <div class="box grow"><span class="tag g">GROWS</span><b>pageset.lua</b><p>a plain-text message on a page as tall as its text</p></div>
+        <div class="box"><b>richtext, pagedraw</b><p>Write's engine, setting it</p></div>
+        <div class="box"><b>docview, textbuf</b><p>the composer's plain-text body</p></div>
+        <div class="box"><b>ui, pixelkit, filetypes</b><p>the window; attachments opened and saved</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>C kits (in each program's own process)</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Mail Kit - <code>/Kosmos/Kits/mail</code></b>
+          <p>a message parsed once <span class="a">A3</span>: headers unfolded, encoded words decoded, its parts as a tree, base64 and quoted-printable undone, character sets to UTF-8 (libparserutils, moved from the browser's build), dates with their zone; a message built for sending</p></div>
+        <div class="box"><b>Web Kit</b><p>an HTML message parsed, laid out and painted; no scripts; it fetches nothing</p></div>
+        <div class="box"><b>TLS Kit</b><p>IMAP over 993, SMTP over 465 or STARTTLS</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr 1fr;margin-top:10px">
+        <div class="box grow"><span class="tag g">GROWS</span><b>Compression Kit</b><p><code>base64</code> with a message's line breaks allowed</p></div>
+        <div class="box"><b>gfx</b><p>surfaces, text</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers</h2>
+      <div class="row" style="grid-template-columns:repeat(4,1fr)">
+        <div class="box"><b>network</b><p>TCP, rings; never waiting</p></div>
+        <div class="box"><b>diskfs</b><p><code>/Home/Mail</code>: a file a message, its facts as attributes; queries</p></div>
+        <div class="box grow"><span class="tag g">GROWS</span><b>keyring</b><p>a door for mail: an account's password kept and read, lent to the system's Mail</p></div>
+        <div class="box"><b>notify, window manager</b><p>the banner; the windows</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr"><div class="box"><b>threads, address spaces, IPC, capabilities</b><p>regions for a message's bytes between the C stages; posts between <code>maild</code> and the window</p></div></div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>A - a message arriving</h3>
+      <ol>
+        <li><b>A1</b> The server says <code>* 18433 EXISTS</code> on the connection <code>maild</code> holds in IDLE.</li>
+        <li><b>A2</b> <code>maild</code> leaves IDLE and fetches the message, copied from the connection into its file as it arrives.</li>
+        <li><b>A3</b> The Mail Kit parses it once, from a region.</li>
+        <li><b>A4</b> Its facts - from, subject, date, preview, seen - written as the file's attributes.</li>
+        <li><b>A5</b> A banner posted through the notifications.</li>
+        <li><b>A6</b> The window told, by a post, and adds one line; <code>maild</code> goes back to IDLE.</li>
+      </ol>
+      <p style="font-size:13px;color:var(--dim);margin-top:6px">Most of the time is the network's. Nothing waits on the window, and the window waits on nothing.</p>
+    </div>
+    <div class="card"><h3>What crosses where</h3>
+      <table>
+        <tr><td>A message from the network</td><td>the TCP ring to its file - never a message payload</td></tr>
+        <tr><td>A message read</td><td>its file to a region, the Mail Kit, a part in a region, the Web Kit</td></tr>
+        <tr><td>"Flag these", "send that"</td><td>a message to <code>/Running/maild</code></td></tr>
+        <tr><td>"Mail arrived"</td><td>a post to the window, and a notification</td></tr>
+        <tr><td>The password</td><td>the keyring's door for mail, read for a login and not kept</td></tr>
+      </table>
+    </div>
+    <div class="card"><h3>C or Lua</h3>
+      <table>
+        <tr><td>MIME's byte work</td><td>C - the Mail Kit, a loop over bytes, held to its tests on the Mac</td></tr>
+        <tr><td>IMAP, SMTP, maild, the window</td><td>Lua - conversations and policy, never on a frame's clock</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>
