@@ -454,6 +454,8 @@ local function news()
   return heard.newest and looked and heard.newest > looked
 end
 
+local netprogram = use("/Kosmos/Libraries/netprogram.lua")
+
 local function listen()
   heard.at = sys.ticks()
   heard.newest = notify.newest()
@@ -464,6 +466,13 @@ local function listen()
   heard.battery = battery_now()
   heard.busy = load_now()
   heard.used, heard.total = memory_now()
+
+  -- Who is reaching this machine: VNC's viewers and Telnet's sessions,
+  -- from what each server publishes for the Servers window (`netprogram`).
+  local vnc, telnet = netprogram.status("vncd"), netprogram.status("telnetd")
+
+  heard.vnc = vnc and #(vnc.viewers or {}) or nil
+  heard.telnet = telnet and #(telnet.sessions or {}) or nil
 end
 
 
@@ -473,6 +482,58 @@ local ICON = 24
 -- The indicators' line glyphs (`docs/statusicons.html`): 19 of the sizes
 -- `tools/lineicons.py` renders, in the 32-pixel bar.
 local LINE = 19
+
+--
+-- **Who is reaching this machine** (`roadmap.md`, the status icons; Diego,
+-- 8 October: "when vnc is sharing the screen on kosmos, can we add a screen
+-- sharing status symbol near the notifications bell? so we can tell is
+-- actively sharing the screen with a vnc client"). The screen while VNC
+-- runs and a terminal while Telnet does: dim with nobody connected, the
+-- accent while somebody is, and not there at all while the server is not
+-- running. Beside the bell on the dock's strip and beside the network on
+-- the bar - both layouts, one drawing. A press on either opens Servers.
+--
+-- Drawn leftwards from `x`, `gap` before each; the new `x`.
+local function draw_reach(self, g, x, ly, gap, ink)
+  self.vnc_x, self.telnet_x = nil, nil
+
+  local function one(count, icon)
+    if not count then return nil end
+
+    x = x - gap - LINE
+    g:line_icon(x, ly, icon, count > 0 and theme.accent or ((ink & 0x00ffffff) | 0x80000000), LINE)
+    return x
+  end
+
+  self.vnc_x = one(heard.vnc, "screenshare")
+  self.telnet_x = one(heard.telnet, "terminal")
+
+  -- Said in the log when it changes, for a harness, as the network is.
+  local now = ("%s %s"):format(tostring(heard.vnc), tostring(heard.telnet))
+
+  if self.reach_said ~= now then
+    self.reach_said = now
+    print(("deskbar: the screen %s, the command line %s"):format(
+      heard.vnc == nil and "not shared" or heard.vnc == 0 and "shared with nobody yet"
+        or ("shared with %d viewer%s"):format(heard.vnc, heard.vnc == 1 and "" or "s"),
+      heard.telnet == nil and "not served" or heard.telnet == 0 and "with nobody yet"
+        or ("with %d session%s"):format(heard.telnet, heard.telnet == 1 and "" or "s")))
+  end
+
+  return x
+end
+
+-- Whether a press at `x` is on one of them: Servers opened.
+local function reach_press(self, x)
+  local function on(at_) return at_ and x >= at_ - 6 and x < at_ + LINE + 6 end
+
+  if on(self.vnc_x) or on(self.telnet_x) then
+    fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/servers.lua" })
+    return true
+  end
+
+  return false
+end
 local W = sw
 
 --
@@ -1526,6 +1587,8 @@ function bar:draw(g)
     self.network_x = nil
   end
 
+  x = draw_reach(self, g, x, ly, PAD, theme.tab_text)
+
   --
   -- The battery: its charge, and "charging" while it is.
   --
@@ -1716,6 +1779,8 @@ function bar:mouse(action, x, y)
     fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/network.lua" })
     return true
   end
+
+  if reach_press(self, x) then return true end
 
   if self.meters_x and x >= self.meters_x and x < self.meters_x + 26 then
     fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/sysmon.lua" })
@@ -2328,6 +2393,11 @@ if DOCKED then
       self.bell_said = x
       print(("deskbar: the bell at %d"):format(x))
     end
+
+    --
+    -- Who is reaching this machine, beside the bell (`draw_reach`).
+    --
+    x = draw_reach(self, g, x, ly, 14, ink)
   end
 
   -- What a press on the strip opens, as the bar's indicators do.
@@ -2337,6 +2407,8 @@ if DOCKED then
 
     if near(strip.bell_x) then
       open_history()
+      return
+    elseif reach_press(strip, x) then
       return
     elseif near(strip.volume_x) then
       program = "/Kosmos/Apps/mixer.lua"

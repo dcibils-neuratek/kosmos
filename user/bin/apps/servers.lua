@@ -112,14 +112,10 @@ end
 -- Is it running, and where is this machine?
 --------------------------------------------------------------------------
 
+local netprogram = use("/Kosmos/Libraries/netprogram.lua")
+
 local function running(s)
-  if not s.program then return nil end
-
-  for _, p in ipairs(sys.processes() or {}) do
-    if p.name == s.program and not p.exited then return p.id end
-  end
-
-  return nil
+  return s.program and netprogram.running(s.program) or nil
 end
 
 local function address()

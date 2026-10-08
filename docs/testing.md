@@ -21460,3 +21460,24 @@ to rank 20, and from 17 all. OpenMapTiles ranks them, the lower the more
 notable. **Not held by a suite**: Port Alder's shops all have rank 1, so
 `x86-maps` (24 checks, passing) cannot tell the rule from its absence. That
 wants a shop of low note in `mapcity.py`.
+
+## 18.472 Who is reaching this machine, beside the bell
+
+Diego, 8 October: "when vnc is sharing the screen on kosmos, can we add a
+screen sharing status symbol near the notifications bell? so we can tell is
+actively sharing the screen with a vnc client" - the status icons agreed on
+7 October, built. The Deskbar shows a screen while `vncd` runs and a terminal
+while `telnetd` does: dim with nobody connected, in the accent while
+somebody is, and absent while the server is not running. They sit beside
+the bell on the dock's strip and beside the network on the bar, as one
+drawing (`draw_reach`), and a press opens Servers. What each server
+publishes is read on the bar's own second, through
+`netprogram.status`/`running`. Those are the questions Servers asked by
+itself, and it now asks them there too. Two line icons were added from
+Lucide (`screen-share`, `terminal`). The re-render also changed eight
+existing icons by a pixel's shade (a newer Chrome), and those were put back.
+
+`x86-servers` 33 checks: a viewer watching and a session open both said
+by the Deskbar. **Control**: the first build drew them on the strip alone;
+the suite's machine has the bar, and the check failed with nothing said.
+`x86-dock` 52 passes with the strip's.

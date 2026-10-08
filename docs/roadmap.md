@@ -1973,6 +1973,16 @@ answers to its three questions, the same day:
      can tell is actively sharing the screen with a vnc client" - the
      screen's icon beside the bell, lit while a viewer is watching.
 
+**Asked on 8 October, afternoon**, while the icons were being built:
+"maps needs to follow the users theme preferences", "now its just black
+theme" - Maps' map to follow the chosen look, light or dark; and "at some
+point we changed the rounded borders radius and i want to rever to how it
+was before, smaller radius", "to all themes the same" - the window corner
+back to its radius before 0.11.59's 18, one radius for every look. And
+"i want to change the selector on focus follows mouse. use these options:
+0ms, 100ms, 250ms, 500ms, 1 sec, 1.5 seconds, 2 seconds" - the delay's
+choices in Appearance > Windows exactly those seven.
+
 **Storage at full speed, performance first.** Diego, 14 September: "I expect
 our usb drives and nvme to perform like any other os like Linux", and "it's
 bad to have a nicely designed and modular system if it's slow and unusable".

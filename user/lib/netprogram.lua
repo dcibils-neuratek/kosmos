@@ -38,6 +38,33 @@ local methods = {}
 methods.__index = methods
 
 --
+-- **And for whoever shows them** - the Servers window, and the Deskbar's
+-- icons beside the bell (Diego, 8 October: "a screen sharing status symbol
+-- near the notifications bell") - the two questions about one of these
+-- programs, answered once:
+--
+--   netprogram.running("vncd")    its process's id, or nil when it is not
+--   netprogram.status("vncd")     what it last published, or nil when it
+--                                 is not running - a file left by one that
+--                                 has stopped says nothing
+--
+function netprogram.running(program)
+  for _, p in ipairs(sys.processes() or {}) do
+    if p.name == program and not p.exited then return p.id end
+  end
+
+  return nil
+end
+
+function netprogram.status(program)
+  if not netprogram.running(program) then return nil end
+
+  local s = fs.read("/Temporary/" .. program .. "/status")
+
+  return type(s) == "table" and s or {}
+end
+
+--
 -- **Listening, and waiting for an address if asked to** (`testing.md`
 -- 18.352). A stick and a network boot start `telnetd` before DHCP has
 -- answered, and with no address the stack refuses to listen - so it said

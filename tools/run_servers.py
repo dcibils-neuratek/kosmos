@@ -801,7 +801,17 @@ def main():
         if line not in guest.seen:
             fails.append("the log never said %r" % line)
 
-    checks = 32
+    # Beside the bell (Diego, 8 October: "a screen sharing status symbol
+    # near the notifications bell"): the screen shared while a viewer
+    # watched, and the command line while a session was open.
+    reach = re.findall(r"deskbar: the screen ([^\r\n]*)", guest.seen)
+
+    if not any(r.startswith("shared with 1 viewer") for r in reach) \
+            or not any("with 1 session" in r for r in reach):
+        fails.append("the Deskbar's icons beside the bell never said a viewer watching and a "
+                     "session open: %r" % reach[-6:])
+
+    checks = 33
 
     if fails:
         print("FAIL: %d of %d checks on the Servers window:" % (len(fails), checks))
@@ -817,6 +827,7 @@ def main():
           "command line running with this session, the web server and the "
           "screen stopped; the settings kept; a Disconnect ending a session; "
           "the web server kept to start with the machine serving its page "
+          "with the Deskbar showing a viewer and a session beside its bell "
           "after a boot; and the screen by VNC started with it - its size, a "
           "whole frame as QEMU scans it out (%s), a window opened after "
           "arriving as an update (%s), 565 (%s), by ZRLE a whole frame (%s) and "

@@ -147,6 +147,13 @@ ICONS = {
     "moon":       ("moon", None),
     "bell":       ("bell", None),
 
+    # Who is reaching this machine, beside the bell on the Deskbar's strip
+    # (`roadmap.md`, the status icons; Diego, 8 October: "a screen sharing
+    # status symbol near the notifications bell"): the screen shared by VNC
+    # and a command line by Telnet.
+    "screenshare": ("screen-share", None),
+    "terminal":   ("terminal", None),
+
     # Sharing files over the network (`docs/sharing.html`, step N6): the
     # globe on Tracker's trail and beside "over the network", the amber
     # triangle of a server gone away, and a server in the Network group.
