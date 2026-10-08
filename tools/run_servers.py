@@ -783,6 +783,27 @@ def main():
                 time.sleep(1)
 
         look(guest, telnet, vnc, seen, fails)
+
+        # **A window past the screen's edge while a viewer watches.** Its
+        # rectangle reached `watched` with a negative corner, the reply
+        # failed, and `vncd` watched again - the whole screen copied each
+        # pass (the M700, 8 October). The copy is to be watched once.
+        import kosmos_vnc as V
+        edge_session = connect(telnet)
+        edge_session.run("open procs")
+        guest.wait_for("wm: window Processes", "the Processes window")
+        time.sleep(1)
+        moved = edge_session.run("setprop /Running/Processes/x -60").decode(errors="replace")
+        mark = len(guest.seen)
+        # The password `look` kept, the suite's own.
+        viewer = V.Viewer("127.0.0.1:%d" % vnc, password="Kosmos")
+        # Connected for a few seconds, which is what has `vncd` ask what
+        # changed on every pass; a still screen sends no frame to wait for.
+        time.sleep(4)
+        viewer.close()
+        time.sleep(1)
+        guest._read_available()
+        seen["edge"] = (moved, guest.seen[mark:].count("(another asked)"))
     except Exception as e:                  # noqa: BLE001 - said below
         fails.append("the second boot stopped: %s: %s" % (type(e).__name__, e))
     finally:
@@ -811,7 +832,13 @@ def main():
         fails.append("the Deskbar's icons beside the bell never said a viewer watching and a "
                      "session open: %r" % reach[-6:])
 
-    checks = 33
+    edge = seen.get("edge", ("", -1))
+
+    if "is now -60" not in edge[0] or edge[1] != 0:
+        fails.append("a window past the screen's left edge, watched by a viewer, made the screen "
+                     "be watched again %d times: %r" % (edge[1], edge[0][:80]))
+
+    checks = 34
 
     if fails:
         print("FAIL: %d of %d checks on the Servers window:" % (len(fails), checks))

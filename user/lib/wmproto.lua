@@ -222,11 +222,27 @@ end
 -- then says too.
 --
 function wmproto.watched(screen)
-  local r = fs.send(wmproto.REMOTE, { type = "watched" })
+  local r, why = fs.send(wmproto.REMOTE, { type = "watched" })
 
-  if type(r) ~= "table" or not r.ok or type(r.rects) ~= "string" then
-    screen.watching = false
-    return nil
+  --
+  -- **Let go only when the window manager says so.** Any failure used to
+  -- mean "watch again", and watching again is the whole screen copied: when
+  -- `watched` itself failed (a rectangle it could not pack, the M700, 8
+  -- October), every pass became a full copy. Now only "nothing is watched"
+  -- is a copy let go; anything else is said once and the copy kept.
+  --
+  if type(r) ~= "table" or type(r.rects) ~= "string" then
+    if why == "nothing is watched" or not screen.watching then
+      screen.watching = false
+      return nil
+    end
+
+    if screen.said ~= why then
+      screen.said = why
+      print("wmproto: the screen's changes could not be had: " .. tostring(why))
+    end
+
+    return {}
   end
 
   local list = {}

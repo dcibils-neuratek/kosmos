@@ -21582,3 +21582,30 @@ fresh mount, and every block given back when it is deleted. **Control**:
 more than twelve refused again, it fails with "a file into six hundred
 holes was refused". The first run found the test's own binding taking the
 inode's twelve slots as the file's whole count. The whole x86 gate: 52 of 52 in 5:44.
+
+## 18.478 VNC watching the screen once, with a window off its edge
+
+On the M700, whenever VNC was watching, the Log said "the screen is no
+longer watched (another asked)" and "the screen is watched" over and over,
+up to every 8 ms, and screenshots by VNC came back torn. The roadmap had
+it as "`wmproto.watched` answering nil is the place to start". It was. Printed on the
+M700: `wm.lua:3069: bad argument #2 to 'pack' (unsigned overflow)`. A
+rectangle composed partly off the screen, a window or its shadow past the
+left or top, reached `watched`'s reply with a negative corner. Packing it
+threw, the reply said `ok = false`, and `wmproto.watched` took any failure
+for the copy let go. So `vncd` watched again, the whole 1720x1440 screen
+copied each pass for as long as the window stayed there. Under QEMU no window had ever been
+off the edge, so nothing showed.
+
+- The window manager keeps a changed rectangle on the screen, in whole
+  pixels, or not at all (`watch_add`).
+- `wmproto.watched` lets the copy go only when the window manager says
+  "nothing is watched". Any other failure is said once and the copy kept,
+  so a reply that fails can no longer become a whole screen a pass.
+
+`x86-servers` 34 checks: on its second boot, Processes opened, moved to
+x = -60, a viewer connected for four seconds, and the screen not watched
+again once. **Control**: the window manager and `wmproto.lua` as they
+were, it fails, "watched again 3 times" in four seconds.
+
+The whole x86 gate: 52 of 52 in 5:47.

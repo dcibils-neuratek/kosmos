@@ -2636,6 +2636,22 @@ local WATCH_LAPSE = 5 * COUNTER_HZ
 local function watch_add(x, y, w, h)
   local list = watcher.rects
 
+  --
+  -- **On the screen, in whole pixels, or not at all.** A rectangle composed
+  -- partly off the screen - a window or its shadow past the left or top -
+  -- reached `watched`'s reply with a negative corner, `string.pack` refused
+  -- it ("unsigned overflow"), the reply said `ok = false`, and `vncd` took
+  -- that for the copy let go and watched again, the whole 1720x1440 screen
+  -- copied each pass while it lasted (the M700, 8 October: "the screen is
+  -- no longer watched (another asked)" a hundred times a second).
+  --
+  local x0, y0 = math.max(0, math.floor(x)), math.max(0, math.floor(y))
+  local x1, y1 = math.min(W, math.ceil(x + w)), math.min(H, math.ceil(y + h))
+
+  if x1 <= x0 or y1 <= y0 then return end
+
+  x, y, w, h = x0, y0, x1 - x0, y1 - y0
+
   -- A list without end is a reply that does not fit a message; past its
   -- length, one rectangle round everything.
   if #list >= WATCH_RECTS then

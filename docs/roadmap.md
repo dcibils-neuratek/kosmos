@@ -1971,7 +1971,11 @@ answers to its three questions, the same day:
      October**, placed: "when vnc is sharing the screen on kosmos, can we
      add a screen sharing status symbol near the notifications bell? so we
      can tell is actively sharing the screen with a vnc client" - the
-     screen's icon beside the bell, lit while a viewer is watching.
+     screen's icon beside the bell, lit while a viewer is watching. **Built 0.11.78.** And, 8 October evening: "the
+     status icons in the top need some tooltip like we do on the bottom dock to
+     display some kind of status", "on the sharing screen it might say 'VNCd is
+     sharing this screen' and stuff like that for the rest of the status icons"
+     - a tooltip on every status icon at the top, saying its state in words.
 
 **Asked on 8 October, afternoon**, while the icons were being built:
 "maps needs to follow the users theme preferences", "now its just black
@@ -8203,6 +8207,10 @@ c and places where it should be lua". So: IDE tutorial part one, then Kosmos
 Mail (designed first, built as an IDE project), then the split - D2 onwards,
 with D1's remaining questions (who draws an ordinary window, the name) put
 to him when its turn comes.
+**The order again, Diego, 8 October**: "do chrome step 3 first, then mail,
+then the split" - the window manager's old chrome taken out first, which
+is the split's own direction (every window drawing itself), then Kosmos
+Mail, then D2 onwards.
 
 ### The optimisation phase - after the applications
 
