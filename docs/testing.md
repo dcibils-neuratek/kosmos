@@ -21319,3 +21319,29 @@ under the gate's load: a program moving the bar was not heard, and "the bar
 back at the top" never came. Alone it passed all 52 checks in 192 s. That is a
 flake under load, the same shape as `x86-film`'s. It is recorded so a second
 one is counted rather than forgotten.
+
+## 18.465 Maps M6d on the M700: two bugs the suite's quick, plain-HTTP server hid
+
+On the M700, against OpenFreeMap, no tile came. Every fetch ended "the connection
+closed before the reply", once every fifteen seconds. There were two bugs. The suite's
+tile server answered at once and over plain HTTP, so neither could show there.
+
+- **TLS writes were not flushed.** The tiles server handed a request to
+  the TLS core and never flushed it. The engine holds plaintext until a
+  record fills, which a GET never does, so the request never left and
+  Cloudflare hung up after its idle wait. The Lua door had always flushed.
+  `secure_write` flushes now.
+- **Maps took back what it had asked for.** A tile asked for and not yet
+  come was left out of the next frame's list, and each list replaces the
+  last. So the second frame, drawn while the TileJSON was still on its way,
+  sent an empty list, and nothing was ever fetched. Found by logging the
+  server's WANTs: 4, then 0. A tile still missing is now asked for again in
+  every list.
+
+Checked under QEMU against the real OpenFreeMap, by hand, never in a suite:
+the TileJSON read over HTTPS, "4 tiles came", 8 drawn. `x86-maps` now has
+its TileJSON take 3 s, as a server across the world does, and passes 19 in
+80 s. **Control**: the second fix taken out, it fails waiting for the first
+tiles to come. It passes again when the fix is restored. The flush has no suite yet: the tiles
+server trusts only the image's anchors, and the suites' certificate
+authority is not one of them (roadmap).

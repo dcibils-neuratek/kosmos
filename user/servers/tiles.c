@@ -267,9 +267,19 @@ static long secure_write(void *user, const void *p, size_t n)
 {
     (void)user;
 
+    size_t took;
+
     if (tls_core_state(&tls, NULL, NULL, NULL) == TLS_CLOSED) return -1;
 
-    return (long)tls_core_write(&tls, p, n);
+    /* Sent now: the engine otherwise holds a request until a record fills,
+     * which a GET never does, and the far end hangs up waiting for it -
+     * "the connection closed before the reply", every fifteen seconds, on
+     * the M700 against OpenFreeMap (8 October). */
+    took = tls_core_write(&tls, p, n);
+
+    if (took > 0) tls_core_flush(&tls);
+
+    return (long)took;
 }
 
 static long secure_read(void *user, void *buf, size_t max)

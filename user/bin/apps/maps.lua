@@ -262,7 +262,13 @@ local function net_tile(z, x, y)
   local t = cache[key]
 
   if t ~= nil then return t or nil end
-  if net.asked[key] then return nil end
+
+  -- Asked for already and not come: asked for again, since each list
+  -- replaces the last - a frame that left it out would take it back.
+  if net.asked[key] then
+    wants[#wants + 1] = { z, x, y }
+    return nil
+  end
 
   local bytes = fs.read(net.dir .. "/" .. z .. "/" .. x .. "-" .. y .. ".pbf")
 

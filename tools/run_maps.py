@@ -131,6 +131,10 @@ def tile_server():
             asked.append(self.path)
 
             if self.path == "/tiles.json":
+                # As slow as a server across the world, so Maps draws again
+                # before its tiles can be fetched - and a frame that took
+                # back what the last one asked for would be seen.
+                time.sleep(3)
                 port = self.server.server_address[1]
                 body = ('{"tilejson": "3.0.0", "tiles": ["http://10.0.2.2:%d/t/{z}/{x}/{y}.pbf"],'
                         ' "minzoom": 0, "maxzoom": 14}' % port).encode()

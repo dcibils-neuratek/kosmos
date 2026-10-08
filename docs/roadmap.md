@@ -1184,7 +1184,7 @@ not designed:
   the disk server's door to the cache, the `tiles` server, and Maps drawing
   the world beneath its region. **Left from M6d**: the cache's 256 MB
   ceiling, least recently used first; the source's name found without the
-  server waiting on it. **Next, M6e**: search from the network.
+  server waiting on it; a suite over HTTPS for `tiles`, which needs a way to hand it the suites' certificate authority (`testing.md` 18.465). **Next, M6e**: search from the network.
   Directions after. **Wanted with it**: text
   drawn turned, for street names along any street (gfx).
 
