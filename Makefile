@@ -4579,7 +4579,7 @@ gate-images: $(TARGET) $(HOSTDIR)/lua
 # `make test ONLY=arm-browser-1,x86-browser-1`: the suites for what changed,
 # by name (CLAUDE.md, "Test what changed"); with no ONLY, all of them.
 test:
-	@python3 tools/gate.py --jobs $(J) $(if $(ONLY),--only $(ONLY),)
+	@python3 tools/gate.py --jobs $(J) $(if $(filter 1,$(ARM)),--arm,) $(if $(ONLY),--only $(ONLY),)
 
 # Used for a while, then asked whether it gave everything back.
 #

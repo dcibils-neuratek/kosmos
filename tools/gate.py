@@ -37,7 +37,7 @@ happens; the end says which were slowest, so the next thing to make faster
 is a number rather than an opinion. A failed suite's log is kept whole, and
 its last lines are printed with the path to the rest.
 
-Usage: gate.py [--jobs N] [--at-once N] [--only NAME,...]
+Usage: gate.py [--jobs N] [--at-once N] [--arm] [--only NAME,...]
 """
 
 import argparse
@@ -731,6 +731,8 @@ def main():
     # cent - 4,471 and 4,518. Capacity again, not contention.
     parser.add_argument("--at-once", type=int, default=9,
                         help="suites at once, before the quiet ones")
+    parser.add_argument("--arm", action="store_true",
+                        help="run the AArch64 suites too (held back for now)")
     parser.add_argument("--only", default="",
                         help="suites to run, by name, separated by commas")
     args = parser.parse_args()
@@ -760,6 +762,21 @@ def main():
 
     chosen = [s for s in SUITES if not args.only
               or s.name in args.only.split(",")]
+
+    #
+    # **x86-64 only, until Diego says otherwise** (8 October 2026: "from now
+    # on lets do tests on x86 only and leave arm for a later period. i will
+    # tell you when to resume arm tests"). The machine being worked on is
+    # the M700, a PC, and the AArch64 suites doubled every wait. They run
+    # with `--arm` (`make test ARM=1`), or when named in `--only`.
+    #
+    if not args.arm and not args.only:
+        held = [s.name for s in chosen if s.name.startswith("arm-")]
+        chosen = [s for s in chosen if not s.name.startswith("arm-")]
+
+        if held:
+            print("SKIP: %d AArch64 suites - x86-64 only for now; ARM=1 runs them."
+                  % len(held), flush=True)
 
     if not have_x86:
         print("SKIP: every x86-64 suite, because x86_64-elf-gcc is not "

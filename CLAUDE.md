@@ -961,6 +961,15 @@ already does. And a suite is kept short: split in halves that run side by
 side (the browser's on 1 October, Cafesa3D's after), waiting for the thing
 rather than for a number of seconds.
 
+**x86-64 only, for now.** Diego, 8 October 2026: "from now on lets do tests
+on x86 only and leave arm for a later period. i will tell you when to resume
+arm tests" - and "we need to be clever about what to test and the platforms
+we need to test, right now we are working on intel so we might focus on
+that". So `make test` runs the x86-64 suites and the host's and leaves every
+`arm-` suite out; `make test ARM=1` puts them back, and an `arm-` suite named
+in `ONLY=` still runs. The AArch64 build still has to compile. When Diego says
+to resume ARM, this paragraph goes.
+
 **One thing at a time.** `docs/state.md` is where the work is; `docs/roadmap.md`
 is what is built and what is wanted. Do not pull something forward off the
 wishlist because it looks cheap - that is the main way a project like this
