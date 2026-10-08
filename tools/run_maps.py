@@ -19,6 +19,10 @@ the tiles server reads the TileJSON, fetches the tiles Maps asks for into
 the region has nothing, the map is drawn from the network alone; a tile
 the server has none of is kept as an empty file and not asked for again.
 
+**And a stalled host**: the first ask for the TileJSON is never answered,
+and the tiles server is to give up after twenty seconds, say so, and ask
+again - before which nothing is fetched at all.
+
 **M6e - places in the world**: the same server on this Mac answers
 `/search` as Nominatim does, with a made-up answer. "montevideo", which
 Port Alder has no place called, is typed and Return pressed: the tiles
@@ -156,6 +160,12 @@ def tile_server():
                 return self.send(200, body, "application/json")
 
             if self.path == "/tiles.json":
+                # The first ask is never answered, as a stalled host does:
+                # the tiles server is to give up after twenty seconds, say
+                # so, and ask again (the M700, 8 October, waited forever).
+                if asked.count("/tiles.json") == 1:
+                    time.sleep(45)
+                    return
                 # As slow as a server across the world, so Maps draws again
                 # before its tiles can be fetched - and a frame that took
                 # back what the last one asked for would be seen.
@@ -229,6 +239,7 @@ def main():
         # address is looked for in all that was said, not in the one line.
         guest.wait_for("tiles: the source's tiles are at ", "the TileJSON read")
         said["came"] = guest.wait_for_line("tiles came, ", "the first tiles come", mark)
+        said["stalled"] = "the source did not answer within twenty seconds" in guest.seen[mark:]
         said["template"] = guest.seen[mark:]
         time.sleep(2)
         wx, wy, ww, wh = (int(v) for v in re.match(r"(\d+),(\d+) (\d+)x(\d+)", placed).groups())
@@ -493,6 +504,10 @@ def main():
         fails.append("a tile the source has none of was not kept as an empty file, asked for "
                      "once: %r, asked %r" % (said.get("ls10", "")[:400], sea[:12]))
 
+    if not said.get("stalled") or asked.count("/tiles.json") < 2:
+        fails.append("a source that never answered was not given up after twenty seconds and "
+                     "asked again: %r, %d asks" % (said.get("stalled"), asked.count("/tiles.json")))
+
     # ---- M6e ----
     searches = [a for a in asked if a.startswith("/search?")]
 
@@ -514,7 +529,7 @@ def main():
         fails.append("Return did not take the map to Montevideo at 12, a city's zoom: %r, %r"
                      % (said.get("worldcard"), said.get("worldat")))
 
-    checks = 22
+    checks = 23
 
     if fails:
         print("FAIL: %d of %d checks on Maps:" % (len(fails), checks))

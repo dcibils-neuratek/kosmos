@@ -46,6 +46,21 @@ void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep);
 
 static long console = -1;
 static long disk = -1;
+static unsigned long counter_hz = 62500000ul;      /* from sysinfo, at start */
+
+/*
+ * **A fetch is given twenty seconds**, then let go: a connection that
+ * stalls - a handshake lost, a host that stops answering - would otherwise
+ * hold its fetch for good, with nothing said and nothing else fetched. The
+ * M700, 8 October: both connections stalled after a boot, the TileJSON and
+ * a search waiting with no end, and nothing in the log to say so.
+ */
+#define FETCH_SECONDS 20ul
+
+static bool too_long(unsigned long since)
+{
+    return kosmos_ticks() - since > FETCH_SECONDS * counter_hz;
+}
 
 /* ------------------------------------------------------------------------
  * The source: where tiles come from.
@@ -402,6 +417,7 @@ static struct {
     bool            busy;
     bool            tilejson;   /* fetching the source's TileJSON */
     struct tiles_id tile;
+    unsigned long   since;      /* counter ticks, when it began */
 } now;
 
 static struct tiles_id arrived[ARRIVED_KEPT];
@@ -520,6 +536,7 @@ static void begin(void)
         if (httpc_get(&tl.http, src.tilejson_path) != 0) return;
 
         now.busy = true;
+        now.since = kosmos_ticks();
         now.tilejson = true;
         return;
     }
@@ -537,6 +554,7 @@ static void begin(void)
     }
 
     now.busy = true;
+    now.since = kosmos_ticks();
     now.tilejson = false;
 }
 
@@ -550,6 +568,15 @@ static void step(void)
     if (!now.busy) return;
 
     r = httpc_step(&tl.http);
+
+    if (r != HTTPC_DONE && r != HTTPC_FAILED && too_long(now.since)) {
+        failed++;
+        note("the source did not answer within twenty seconds");
+        say(console, "tiles: the source did not answer within twenty seconds; tried again\n");
+        now.busy = false;
+        link_hang_up(&tl);
+        return;
+    }
 
     if (r == HTTPC_DONE) {
         now.busy = false;
@@ -616,7 +643,6 @@ static struct {
     bool     began_once;
 } finder;
 
-static unsigned long counter_hz = 62500000ul;
 
 static bool finder_aim(const char *url)
 {
@@ -704,6 +730,15 @@ static void finder_step(void)
     if (finder.now == 0) return;
 
     int r = httpc_step(&finder.link.http);
+
+    if (r != HTTPC_DONE && r != HTTPC_FAILED && too_long(finder.began)) {
+        failed++;
+        note("the finder did not answer within twenty seconds");
+        say(console, "tiles: the finder did not answer within twenty seconds\n");
+        link_hang_up(&finder.link);
+        finder_answered(0);
+        return;
+    }
 
     if (r == HTTPC_DONE) {
         char name[24];

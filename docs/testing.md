@@ -21420,3 +21420,18 @@ names). The screen showed three things:
   `text.upper` (`user/lib/text.lua`, for anything to use) capitalises
   Latin-1, Latin Extended-A, Greek and its accented vowels, and Cyrillic.
   `test_text` 27 checks, the Greek vowels found by its first run.
+
+## 18.469 A fetch given twenty seconds
+
+0.11.74 booted on the M700 and neither of the tiles server's connections
+got anywhere: no TileJSON and no search answer. The names resolved, the
+network was answering, and nothing was said. A fetch had no deadline, so a
+connection that stalled after connecting held its fetch for good. Each fetch,
+a tile's, the TileJSON's or a search's, now has twenty seconds and is then
+let go, said on the console and in `why`, and tried again at the next ask.
+
+`x86-maps` now never answers the first ask for the TileJSON, as a stalled
+host does: 23 checks, the suite 84 s. **Control**: the deadline made 2000 s,
+it fails waiting for the first tiles to come, and passes again when that is restored. What
+stalled on the M700 is not known yet. With the deadline it will at least be
+said, and retried.
