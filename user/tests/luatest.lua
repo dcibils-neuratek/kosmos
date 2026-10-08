@@ -73,6 +73,7 @@ local R_STRETCH      = 48
 local R_PNG_PALETTE  = 49
 local R_FACES_BACK   = 50
 local R_ARC          = 51
+local R_MAIL         = 52
 
 -- The /Running registry's role in `user/init/main.c`. Not offset by BASE: a
 -- server role is dispatched before any chunk is chosen, so this is the
@@ -1377,6 +1378,82 @@ if role == R_CONWRITE_PEER then
   for _, text in ipairs { "", "a", "ab", "abc" } do
     sys.call_raw(0, con.encode_request{ op = con.WRITE, text = text })
   end
+
+  sys.exit(0)
+end
+
+if role == R_MAIL then
+  -- The Mail Kit's door, on the machine (`docs/mail.md` M1). Its reading is
+  -- held to the byte on the Mac (`tools/test_mail.c`); what this proves is
+  -- what the Mac cannot: that the kit is in the image under its name, that a
+  -- message parses from a region and from a string, and that a part comes
+  -- out into a region - undone, and in UTF-8 - and is refused, with the room
+  -- it needs, when the room is short.
+  local mail = sys.kit("mail")
+  check(mail, "no mail kit")
+
+  local text = "From: \"Ferreira, Tom\xc3\xa1s\" <tomas@example.org>\r\n"
+            .. "To: lena@example.com, Bob <bob@example.net>\r\n"
+            .. "Subject: =?UTF-8?Q?Caf=C3=A9?= on\r\n Saturday\r\n"
+            .. "Date: Tue, 6 Oct 2026 09:41:07 +0200\r\n"
+            .. "Content-Type: multipart/mixed; boundary=b1\r\n"
+            .. "\r\n"
+            .. "--b1\r\n"
+            .. "Content-Type: text/plain; charset=windows-1252\r\n"
+            .. "Content-Transfer-Encoding: quoted-printable\r\n"
+            .. "\r\n"
+            .. "Coffee =96 at ten.\r\n"
+            .. "--b1\r\n"
+            .. "Content-Type: application/octet-stream; name=\"route.gpx\"\r\n"
+            .. "Content-Disposition: attachment\r\n"
+            .. "Content-Transfer-Encoding: base64\r\n"
+            .. "\r\n"
+            .. "PGdweD5yaXZlcjwv\r\nZ3B4Pg==\r\n"
+            .. "--b1--\r\n"
+
+  local region = sys.memory(1)
+  sys.region_write(region, 0, text)
+
+  local m, why = mail.parse(sys.memory_map(region), #text)
+  check(m, "a message in a region did not parse: " .. tostring(why))
+
+  check(m:header("subject") == "Caf\xc3\xa9 on Saturday",
+        "the subject was " .. tostring(m:header("subject")))
+  check(m:header("x-none") == nil, "a field that is not there was found")
+  check(m:date() == 1791272467, "the date was " .. tostring(m:date()))
+
+  local to = m:addresses("to")
+  check(#to == 2 and to[1].address == "lena@example.com" and to[2].name == "Bob",
+        "To read as " .. #to .. " addresses")
+  check(m:addresses("from")[1].name == "Ferreira, Tom\xc3\xa1s", "From's quoted name was split")
+
+  local parts = m:parts()
+  check(#parts == 3 and parts[1].multipart and parts[2].parent == 1
+        and parts[2].type == "text/plain" and parts[3].name == "route.gpx"
+        and parts[3].disposition == "attachment",
+        "the parts were not a mixed holding text and an attachment")
+
+  local out = sys.memory(1)
+  local at = sys.memory_map(out)
+
+  local n = m:part_into(2, at, 4096)
+  check(n and sys.region_read(out, 0, n) == "Coffee \xe2\x80\x93 at ten.",
+        "the text part did not come out in UTF-8")
+
+  n = m:part_into(3, at, 4096)
+  check(n == 16 and sys.region_read(out, 0, n) == "<gpx>river</gpx>",
+        "the attachment did not come out whole")
+
+  local none, need = m:part_into(2, at, 2)
+  check(none == nil and need == parts[2].bound, "a short room was not refused with what it needs")
+
+  check(m:preview(80) == "Coffee \xe2\x80\x93 at ten.", "the preview was " .. m:preview(80))
+
+  -- A string is kept by the message it made, through a collection.
+  local s = mail.parse("Subject: kept\r\n\r\nbody")
+  collectgarbage()
+  check(s:header("subject") == "kept", "a message from a string lost its bytes")
+  check(mail.parse("") == nil, "nothing parsed as a message")
 
   sys.exit(0)
 end

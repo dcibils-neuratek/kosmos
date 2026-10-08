@@ -21657,3 +21657,30 @@ the x86-only rule): an account kept, checked right and wrong, listed through
 the mail door, seen by Passwords' door as kind `mail`, the same program
 copied into `/Home` handed nothing, and forgotten. **Control**: the mail door
 given the share kind, it fails, "Passwords' door did not see mail's entry".
+
+## 18.481 Mail M1: the Mail Kit's reading
+
+`user/kits/mail/` (`docs/mail.md` M1), in C: `mime.c` parses a message once
+into a table of parts pointing into its bytes - header fields unfolded,
+encoded words B and Q undone (RFC 2047), parameters with RFC 2231's
+continuations and charsets, multiparts inside multiparts to sixteen deep,
+a part's base64 or quoted-printable undone - and `charset.c` turns a text
+part's characters into UTF-8 from libparserutils' own tables, the
+browser's, read where they ship rather than copied. Base64 itself moved
+into `base64_core.c`, which the Compression Kit's `base64` and `unbase64`
+use too: one copy, with `lines` the one difference between a message's
+base64 and a strict one. `use("/Kosmos/Kits/mail")` is `mail_kosmos.c`:
+`parse`, `header`, `addresses`, `date`, `parts`, `part_into` - a part into
+a region, never a Lua string - and `preview`.
+
+`host`: `tools/test_mail.c`, 28 checks on messages made for it. It found
+two bugs before anything else could: a boundary matched as a prefix, so
+`--d1` was also the line `--d10`, and forty nested multiparts made 34
+parts rather than stopping at sixteen; and a folded field kept both spaces
+of its fold. **Control**: the boundary matched as a prefix again, it fails,
+"forty nested multiparts made 34 parts, deeper than 16".
+
+`x86-kernel`: "mail: a message read through the kit", a guest role - the
+kit in the image under its name, a message from a region and from a string
+kept through a collection, the text part into a region in UTF-8, the
+attachment whole, and a short room refused with the room it needs.

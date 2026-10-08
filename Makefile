@@ -866,6 +866,10 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/compress/deflate.c \
              user/kits/compress/gzip.c \
              user/kits/compress/base64.c \
+             user/kits/compress/base64_core.c \
+             user/kits/mail/mime.c \
+             user/kits/mail/charset.c \
+             user/kits/mail/mail_kosmos.c \
              user/kits/synth/synth_dsp.c \
              user/kits/synth/synth_engine.c \
              user/kits/synth/synth_lua.c \
@@ -2285,6 +2289,17 @@ $(HOSTDIR)/test_map: tools/test_map.c $(MAP_PURE) $(wildcard user/kits/map/*.h) 
 	        tools/test_map.c $(MAP_PURE) user/kits/compress/gzip.c runtime/upstream/miniz/miniz.c \
 	        user/kits/gfx/path.c user/kits/gfx/raster.c
 
+# **The Mail Kit's reading** (`user/kits/mail/mime.c`, `docs/mail.md` M1):
+# messages written in the test, each answer held to the byte. The charset
+# tables are libparserutils', read as they ship.
+MAIL_PURE := user/kits/mail/mime.c user/kits/mail/charset.c user/kits/compress/base64_core.c
+PARSERUTILS_TABLES := runtime/upstream/netsurf/libparserutils/src/charset/codecs
+$(HOSTDIR)/test_mail: tools/test_mail.c $(MAIL_PURE) user/kits/mail/mime.h \
+                      user/kits/compress/base64_core.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuser -Iuser/kits/mail \
+	        -I$(PARSERUTILS_TABLES) -o $@ tools/test_mail.c $(MAIL_PURE)
+
 # **The disk server's doors** (`user/servers/diskdoor.c`, `docs/maps.md`
 # M6d): the map's cache door held to what it may reach and what not.
 $(HOSTDIR)/test_diskdoor: tools/test_diskdoor.c user/servers/diskdoor.c user/servers/diskdoor.h \
@@ -3098,6 +3113,8 @@ $(UBUILD)/$(TCC_HOST)/libtcc.c.o: $(TCC_HOST)/.built user/kits/tcc/shim.h \
 $(UBUILD)/user/kits/tcc/tcc_kosmos.c.o: $(TCC_HOST)/.built
 $(UBUILD)/user/kits/tcc/tcc_kosmos.c.o: UCFLAGS += -I$(TCC_HOST) -Iuser/kits/tcc
 $(UBUILD)/user/kits/tcc/stamp.c.o: UCFLAGS += -Iuser/kits/tcc
+# The Mail Kit's charsets are libparserutils' tables, read as they ship.
+$(UBUILD)/user/kits/mail/charset.c.o: UCFLAGS += -I$(PARSERUTILS_TABLES)
 $(UBUILD)/user/kits/tcc/shim.c.o: UCFLAGS += -Iuser/kits/tcc
 
 $(TCC_HOST)/.built: $(wildcard $(TCC_UP)/*.c $(TCC_UP)/*.h $(TCC_UP)/lib/* $(TCC_UP)/include/*) \
@@ -4307,7 +4324,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_httpc $(HOSTDIR)/test_diskdoor $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
+host-check: $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_httpc $(HOSTDIR)/test_diskdoor $(HOSTDIR)/test_mail $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -4527,6 +4544,7 @@ host-check: $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/
 	@# HTTP from C (docs/maps.md M6c).
 	$(HOSTDIR)/test_httpc
 	$(HOSTDIR)/test_diskdoor
+	$(HOSTDIR)/test_mail
 	python3 tools/check_needs.py
 	$(HOSTDIR)/test_gunzip
 	@# Broken-down time, which FFmpeg's option parser and logger reach.

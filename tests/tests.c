@@ -4904,6 +4904,13 @@ static bool test_sized_faces_given_back(void)          { return luatest_role(50)
 static bool test_gfx_arc_and_line(void)                { return luatest_role(51); }
 
 /*
+ * The Mail Kit's door (`docs/mail.md` M1): in the image under its name, a
+ * message parsed from a region and from a string, a part into a region in
+ * UTF-8, and a short room refused with the room it needs.
+ */
+static bool test_mail_kit_reads(void)                  { return luatest_role(52); }
+
+/*
  * An endpoint ends with the process that made it. A server takes a client's
  * call and is killed before answering: the client has to be woken with an
  * error, and the pool has to get the endpoint back.
@@ -9949,6 +9956,7 @@ static const struct test tests[] = {
     { "cap: forty regions, made and released", test_cap_release_frees_slots },
     { "inflate: a stream from elsewhere",      test_inflate_round_trip },
     { "pdf: the scanner reads what it should", test_pdf_scanner },
+    { "mail: a message read through the kit",  test_mail_kit_reads },
     { "licence: the image carries LICENSE",     test_licence_is_carried },
     { "jpeg: four quadrants, and not a PNG",   test_a_jpeg_decodes },
     { "png: a palette, its alpha, and no palette", test_a_palette_png_decodes },

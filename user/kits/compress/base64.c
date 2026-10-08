@@ -21,49 +21,16 @@
 #include "lua.h"
 #include "lauxlib.h"
 
-static const char digits[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+#include "base64_core.h"
 
-/*
- * `compress.base64(bytes)` - the standard alphabet, padded with `=` as
- * RFC 4648 says, so any program's reader takes it: a mesh's points and
- * triangles saved as the text of a `data:` URI, or a file sent over a
- * Telnet line.
- */
 static int l_base64(lua_State *L)
 {
-    size_t len, i, o = 0;
+    size_t len;
     const unsigned char *in = (const unsigned char *)luaL_checklstring(L, 1, &len);
-    size_t want = (len + 2) / 3 * 4;
     luaL_Buffer b;
-    char *out = luaL_buffinitsize(L, &b, want);
+    char *out = luaL_buffinitsize(L, &b, (len + 2) / 3 * 4);
 
-    for (i = 0; i + 2 < len; i += 3) {
-        uint32_t v = (uint32_t)in[i] << 16 | (uint32_t)in[i + 1] << 8 | in[i + 2];
-
-        out[o++] = digits[v >> 18];
-        out[o++] = digits[(v >> 12) & 63];
-        out[o++] = digits[(v >> 6) & 63];
-        out[o++] = digits[v & 63];
-    }
-
-    if (len - i == 1) {
-        uint32_t v = (uint32_t)in[i] << 16;
-
-        out[o++] = digits[v >> 18];
-        out[o++] = digits[(v >> 12) & 63];
-        out[o++] = '=';
-        out[o++] = '=';
-    } else if (len - i == 2) {
-        uint32_t v = (uint32_t)in[i] << 16 | (uint32_t)in[i + 1] << 8;
-
-        out[o++] = digits[v >> 18];
-        out[o++] = digits[(v >> 12) & 63];
-        out[o++] = digits[(v >> 6) & 63];
-        out[o++] = '=';
-    }
-
-    luaL_pushresultsize(&b, o);
+    luaL_pushresultsize(&b, base64_encode(in, len, out));
     return 1;
 }
 
@@ -71,46 +38,23 @@ static int l_base64(lua_State *L)
  * `compress.unbase64(text)` - the bytes back. Decoding stops at the first
  * `=`, and anything else that is not base64 - a space, a line's end - is
  * refused rather than skipped, by where it is: text that is not what it
- * says is worth hearing about.
+ * says is worth hearing about. (A message's base64, broken into lines, is
+ * the Mail Kit's to undo, with `base64_decode`'s `lines`.)
  */
 static int l_unbase64(lua_State *L)
 {
-    size_t len, i, o = 0;
-    const unsigned char *in = (const unsigned char *)luaL_checklstring(L, 1, &len);
+    size_t len, bad, got;
+    const char *in = luaL_checklstring(L, 1, &len);
     luaL_Buffer b;
-    char *out = luaL_buffinitsize(L, &b, len / 4 * 3 + 3);
-    uint32_t acc = 0;
-    int bits = 0;
+    uint8_t *out = (uint8_t *)luaL_buffinitsize(L, &b, len / 4 * 3 + 3);
 
-    for (i = 0; i < len; i++) {
-        unsigned c = in[i], v;
+    got = base64_decode(in, len, out, len / 4 * 3 + 3, 0, &bad);
 
-        if (c >= 'A' && c <= 'Z') {
-            v = c - 'A';
-        } else if (c >= 'a' && c <= 'z') {
-            v = c - 'a' + 26;
-        } else if (c >= '0' && c <= '9') {
-            v = c - '0' + 52;
-        } else if (c == '+') {
-            v = 62;
-        } else if (c == '/') {
-            v = 63;
-        } else if (c == '=') {
-            break;
-        } else {
-            return luaL_error(L, "not base64 at byte %d", (int)i);
-        }
-
-        acc = (acc << 6) | v;
-        bits += 6;
-
-        if (bits >= 8) {
-            bits -= 8;
-            out[o++] = (char)((acc >> bits) & 0xff);
-        }
+    if (bad < len) {
+        return luaL_error(L, "not base64 at byte %d", (int)bad);
     }
 
-    luaL_pushresultsize(&b, o);
+    luaL_pushresultsize(&b, got);
     return 1;
 }
 

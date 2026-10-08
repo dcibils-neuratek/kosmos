@@ -2658,6 +2658,7 @@ void kosmos_web_kit(lua_State *L);
  * kits. Linked in, they are what they always were.
  */
 void kosmos_map_kit(lua_State *L);
+void kosmos_mail_kit(lua_State *L);
 void kosmos_doom_kit(lua_State *L) __attribute__((weak));
 void kosmos_quake_kit(lua_State *L) __attribute__((weak));
 void kosmos_snes_kit(lua_State *L) __attribute__((weak));
@@ -2700,6 +2701,8 @@ static const struct {
     { "tcc",      kosmos_tcc_kit, 0 },
     /* Maps' regions and tiles, drawn through gfx's paths (`docs/maps.md`). */
     { "map",      kosmos_map_kit, 0 },
+    /* A message read: MIME, its encodings and charsets (`docs/mail.md`). */
+    { "mail",     kosmos_mail_kit, 0 },
 #ifdef KOSMOS_WEB
     { "web",      kosmos_web_kit, 0 },
 #endif

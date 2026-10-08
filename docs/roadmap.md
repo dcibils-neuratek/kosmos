@@ -8213,7 +8213,9 @@ is the split's own direction (every window drawing itself), then Kosmos
 Mail, then D2 onwards. **Chrome step 3 BUILT** (0.11.85). **Mail designed and
 AGREED the same evening** (`docs/mail.md`, `mail.html`,
 `mail-architecture.png`): "as recommended, go ahead and build it" - M0 the
-keyring's door for mail first.
+keyring's door for mail first. **M0 done** (`testing.md` 18.480). **M1
+done**: the Mail Kit's reading, in C, `use("/Kosmos/Kits/mail")` (18.481).
+Next: M2, `imap.lua` and `smtp.lua` against `tools/mailpeer.py`.
 
 ### The optimisation phase - after the applications
 
