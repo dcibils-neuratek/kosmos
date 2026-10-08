@@ -21079,3 +21079,26 @@ box's left edge covered from it, one off the right nothing; a box at an
 offset; empty after every path; a small box after a large and the large
 again. **Control**: coverage taken by its sign rather than its size - 11 of
 19 fail. `test_raster` 15 and both x86 browser suites still pass.
+
+## 18.455 Maps M2: the Map Kit reads PMTiles and vector tiles; Port Alder made up
+
+`docs/maps.md` step M2. `user/kits/map/pmtiles.c` reads PMTiles version 3 -
+the header, the directories (gzipped, as every real archive's are, through
+the compress kit's one inflater), leaf directories, a tile found by its
+Hilbert number - and `mvt.c` decodes a Mapbox Vector Tile into plain arrays
+a frame can draw from: each feature's layer, kind, class, subclass, name,
+rank and bridge or tunnel, its parts and its points in the tile's units.
+
+`tools/mapcity.py` writes **Port Alder**, a made-up city on Null Island, as
+an archive exactly like a real one: OpenMapTiles' layers, clipped to each
+tile with a buffer, outer rings clockwise, gzipped - 138 tiles at zooms 11
+to 16, 110 KB, the same bytes every run.
+
+`test_map` 20, on the Mac, over that archive: the specification's own tile
+numbers; the header, its bounds round Null Island, 138 entries; zoom 11 with
+Port Alder named a city, the bay and the Ring Road and no buildings yet;
+zoom 16 at the market - Lantern Street Market a marketplace, buildings and a
+main road, every point inside the tile and its buffer, every building's ring
+clockwise; a tile off the region and a zoom past it not found; junk and an
+archive cut short refused. **Control**: the Hilbert curve without its
+rotation - 3 of 20 fail (the market's tile is not found).
