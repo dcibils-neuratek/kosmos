@@ -1176,9 +1176,11 @@ not designed:
   Found on the way and fixed: the browser's SVG rasteriser was the second
   copy about to be written - it moved into gfx - and it drew every edge
   that crossed a picture's side a little off, which showed as a step in
-  every street where two tiles met. **Next, M6**: tiles from OpenFreeMap
-  over HTTPS by a helper so the window never waits, cached under `/Home`;
-  then search from the network and directions. **Wanted with it**: text
+  every street where two tiles met. **Next, M6, AGREED 8 October**
+  (`maps.md`, Diego's four answers): tiles from OpenFreeMap over HTTPS by a
+  shared `tiles` server in C so the window never waits, cached in
+  `/Home/Cache/Maps` to 256 MB; and search from the network in M6 too.
+  Directions after. **Wanted with it**: text
   drawn turned, for street names along any street (gfx).
 
 **AGREED on 6 October - the keyring, and Passwords.** Network sharing's

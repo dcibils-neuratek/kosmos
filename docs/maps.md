@@ -195,17 +195,19 @@ makes it the system's rather than Maps'.
   count - answered at once with which have come;
 - it fetches with the TLS Kit over the Network Kit, one connection kept to
   the host, a few tiles at a time, newest wants first;
-- it keeps each tile under `/Home/Maps/cache` - a PMTiles-like file of its
+- it keeps each tile under `/Home/Cache/Maps` - the folder an application
+  each that `layout.md` gives what can be fetched again - a file of its
   own, so the Map Kit reads a cached tile the way it reads a region - to a
   ceiling (proposed 256 MB), the least recently used going first;
 - Maps asks `arrived` on its own clock while anything is outstanding, and
   draws a tile the moment it is in; a missing tile is the zoom above it,
   scaled, until then.
 
-**For Diego**: (1) OpenFreeMap as the source; (2) a `tiles` server in C,
-shared, rather than a helper only Maps uses; (3) the cache in
-`/Home/Maps/cache` with a 256 MB ceiling; (4) search from the network
-(Nominatim) in M6 as well, or after.
+**Decided by Diego, 8 October**: (1) OpenFreeMap as the source - "yes";
+(2) a `tiles` server in C, shared - "yes"; (3) the cache - "dont we have a
+specific directory for caches for apps?": we do, `/Home/Cache/<App>`
+(`layout.md`, his choice of 1 October), so `/Home/Cache/Maps`, with a
+256 MB ceiling; (4) search from the network in M6 as well - "yes".
 
 ## Decided along the way
 
