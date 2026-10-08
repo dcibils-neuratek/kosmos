@@ -881,6 +881,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              runtime/upstream/miniz/miniz.c \
              $(BEARSSL_SRCS) \
              user/kits/tls/tls_core.c \
+             user/kits/network/netclient.c \
              user/kits/tls/tls_kosmos.c \
              $(TINYGL_SRCS) \
              $(TINYGL_DEMO_SRCS) \

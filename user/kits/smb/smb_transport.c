@@ -50,7 +50,7 @@
 
 #include "kosmos.h"
 #include "netproto.h"
-#include "tcpring.h"
+#include "kits/network/netclient.h"
 
 #include "smb_kit.h"
 #include "ntlm_name.h"
@@ -70,13 +70,15 @@
 #define LISTEN_MOST  65536u
 #define NAME_MOST    64u
 
+/*
+ * A socket is the Network Kit's C connection (`netclient.h`, `docs/maps.md`
+ * M6b) - which this file used to be, for itself alone - and what the SMB
+ * Kit hears on it.
+ */
 struct sock {
     bool             used;
     bool             connected;     /* the stack gave it a ring */
-    struct tcp_ring *ring;
-    long             region;
-    uint64_t         handle;
-    uint64_t         received;
+    struct net_conn  conn;
 
     bool             listened;      /* a challenge read, or given up on */
     uint8_t         *heard;         /* what arrived, until then */
@@ -84,14 +86,13 @@ struct sock {
     char             name[NAME_MOST];
 };
 
-static long net = -1;
 static struct sock *socks;
 static unsigned sock_count;
 static uint32_t last_refusal = NET_OK;
 
 void smb_kit_start(long net_cap)
 {
-    net = net_cap;
+    net_client_start(net_cap);
 }
 
 uint32_t smb_kit_last_refusal(void)
@@ -106,26 +107,6 @@ static struct sock *sock_at(int fd)
     }
 
     return &socks[fd];
-}
-
-/* One exchange with the stack, answered at once by every operation used
- * here (CONNECT at once, PUSH, CLOSE). */
-static bool ask(const struct net_request *req, struct net_reply *rep,
-                struct message *out)
-{
-    struct message msg;
-
-    memset(&msg, 0, sizeof(msg));
-    msg.length = sizeof(*req);
-    memcpy(msg.data, req, sizeof(*req));
-
-    if (net < 0 || kosmos_call(net, &msg, out) != 0
-        || out->length < sizeof(*rep)) {
-        return false;
-    }
-
-    memcpy(rep, out->data, sizeof(*rep));
-    return true;
 }
 
 int smb_kosmos_socket(int family, int type, int protocol)
@@ -161,7 +142,7 @@ int smb_kosmos_socket(int family, int type, int protocol)
 
     memset(&socks[i], 0, sizeof(socks[i]));
     socks[i].used = true;
-    socks[i].region = -1;
+    socks[i].conn.region = -1;
     return (int)i;
 }
 
@@ -169,10 +150,8 @@ int smb_kosmos_connect(int fd, const struct sockaddr *to, socklen_t len)
 {
     struct sock *s = sock_at(fd);
     const struct sockaddr_in *in = (const struct sockaddr_in *)(const void *)to;
-    struct net_request req;
-    struct net_reply rep;
-    struct message out;
-    long at;
+    uint8_t address[4];
+    uint32_t status;
 
     if (s == NULL || s->connected || len < sizeof(*in)
         || in->sin_family != AF_INET) {
@@ -180,42 +159,21 @@ int smb_kosmos_connect(int fd, const struct sockaddr *to, socklen_t len)
         return -1;
     }
 
-    memset(&req, 0, sizeof(req));
-    req.op    = NET_OP_CONNECT;
-    req.flags = NET_CONNECT_AT_ONCE;
-    req.port  = ntohs(in->sin_port);
-    memcpy(req.to.byte, &in->sin_addr.s_addr, 4);
+    memcpy(address, &in->sin_addr.s_addr, 4);
+    status = net_client_connect(&s->conn, address, ntohs(in->sin_port));
+    last_refusal = status;
 
-    if (!ask(&req, &rep, &out)) {
-        last_refusal = ~0u;
-        errno = ENETDOWN;
-        return -1;
-    }
-
-    last_refusal = rep.status;
-
-    if (rep.status != NET_OK || out.cap_plus_one == 0) {
-        errno = rep.status == NET_ERR_REFUSED ? ECONNREFUSED
-              : rep.status == NET_ERR_TIMEOUT ? ETIMEDOUT
-              : rep.status == NET_ERR_NO_CARD ? ENETDOWN
+    if (status != NET_OK) {
+        errno = status == NET_ERR_REFUSED ? ECONNREFUSED
+              : status == NET_ERR_TIMEOUT ? ETIMEDOUT
+              : status == NET_ERR_NO_CARD ? ENETDOWN
+              : status == NET_ERR_FULL ? ENOMEM
+              : status == ~0u ? ENETDOWN
               : ENETUNREACH;
         return -1;
     }
 
-    s->region = (long)out.cap_plus_one - 1;
-    at = kosmos_mem_map(s->region);
-
-    if (at < 0) {
-        (void)kosmos_cap_drop(s->region);
-        s->region = -1;
-        errno = ENOMEM;
-        return -1;
-    }
-
-    s->ring = (struct tcp_ring *)(uintptr_t)at;
-    s->handle = rep.handle;
     s->connected = true;
-
     errno = EINPROGRESS;
     return -1;
 }
@@ -230,21 +188,7 @@ int smb_kosmos_close(int fd)
     }
 
     if (s->connected) {
-        struct net_request req;
-        struct net_reply rep;
-        struct message out;
-
-        memset(&req, 0, sizeof(req));
-        req.op     = NET_OP_CLOSE;
-        req.handle = s->handle;
-        (void)ask(&req, &rep, &out);
-
-        /* Unmapped first and the capability after, as the network kit
-         * lets a ring go (`net_kosmos.c`, `l_gc`). */
-        if (kosmos_share_unmap((unsigned long)(uintptr_t)s->ring,
-                               (TCP_RING_REGION + 4095u) / 4096u) == 0) {
-            (void)kosmos_cap_drop(s->region);
-        }
+        net_client_close(&s->conn);
     }
 
     free(s->heard);
@@ -262,12 +206,12 @@ bool smb_kit_link(int fd, struct smb_link *out)
         return false;
     }
 
-    out->handle   = s->handle;
-    out->taken    = tcp_ring_acquire(&s->ring->out_read) != 0;
-    out->closed   = tcp_ring_acquire(&s->ring->closed) != 0;
-    out->received = s->received;
-    out->room     = tcp_ring_space(s->ring->bytes, s->ring->out_write,
-                                   tcp_ring_acquire(&s->ring->out_read));
+    out->handle   = s->conn.handle;
+    out->taken    = tcp_ring_acquire(&s->conn.ring->out_read) != 0;
+    out->closed   = tcp_ring_acquire(&s->conn.ring->closed) != 0;
+    out->received = s->conn.received;
+    out->room     = tcp_ring_space(s->conn.ring->bytes, s->conn.ring->out_write,
+                                   tcp_ring_acquire(&s->conn.ring->out_read));
     return true;
 }
 
@@ -285,8 +229,8 @@ int smb_kosmos_getsockopt(int fd, int level, int name, void *value,
 
     /* Over before the far end took a byte: refused, or never answered. */
     if (!s->connected
-        || (tcp_ring_acquire(&s->ring->closed) != 0
-            && tcp_ring_acquire(&s->ring->out_read) == 0 && s->received == 0)) {
+        || (tcp_ring_acquire(&s->conn.ring->closed) != 0
+            && tcp_ring_acquire(&s->conn.ring->out_read) == 0 && s->conn.received == 0)) {
         err = ECONNREFUSED;
     }
 
@@ -315,8 +259,7 @@ int smb_kosmos_fcntl(int fd, int command, ...)
 ssize_t smb_kosmos_writev(int fd, const struct iovec *iov, int count)
 {
     struct sock *s = sock_at(fd);
-    struct tcp_ring *r;
-    uint32_t write, space, taken = 0;
+    ssize_t taken = 0;
     int i;
 
     if (s == NULL || !s->connected) {
@@ -324,37 +267,18 @@ ssize_t smb_kosmos_writev(int fd, const struct iovec *iov, int count)
         return -1;
     }
 
-    r = s->ring;
+    for (i = 0; i < count; i++) {
+        long n = net_client_write(&s->conn, iov[i].iov_base, iov[i].iov_len);
 
-    if (tcp_ring_acquire(&r->closed) != 0) {
-        errno = EPIPE;
-        return -1;
-    }
-
-    write = r->out_write;
-    space = tcp_ring_space(r->bytes, write, tcp_ring_acquire(&r->out_read));
-
-    for (i = 0; i < count && taken < space; i++) {
-        const uint8_t *from = iov[i].iov_base;
-        size_t n = iov[i].iov_len;
-        size_t k;
-
-        if (n > space - taken) {
-            n = space - taken;
+        if (n < 0) {
+            if (taken > 0) break;
+            errno = EPIPE;
+            return -1;
         }
 
-        for (k = 0; k < n; ) {
-            uint32_t at = (write + taken) % r->bytes;
-            size_t run = r->bytes - at;
+        taken += n;
 
-            if (run > n - k) {
-                run = n - k;
-            }
-
-            memcpy(tcp_ring_out(r) + at, from + k, run);
-            k += run;
-            taken += (uint32_t)run;
-        }
+        if ((size_t)n < iov[i].iov_len) break;      /* the ring is full */
     }
 
     if (taken == 0) {
@@ -362,20 +286,7 @@ ssize_t smb_kosmos_writev(int fd, const struct iovec *iov, int count)
         return -1;
     }
 
-    tcp_ring_publish(&r->out_write, write + taken);
-
-    {
-        struct net_request req;
-        struct net_reply rep;
-        struct message out;
-
-        memset(&req, 0, sizeof(req));
-        req.op     = NET_OP_PUSH;
-        req.handle = s->handle;
-        (void)ask(&req, &rep, &out);
-    }
-
-    return (ssize_t)taken;
+    return taken;
 }
 
 /* Done listening: what was kept goes, and nothing more is. */
@@ -388,17 +299,16 @@ static void stop_listening(struct sock *s)
 }
 
 /*
- * The `given` bytes at `read` in the ring, added to what was heard, and a
+ * The `given` bytes just read, added to what was heard, and a
  * challenge looked for in all of it - the signature anywhere, since it sits
  * inside SPNEGO inside a SESSION_SETUP reply, and a reply may arrive over
  * several reads.
  */
-static void listen_for_name(struct sock *s, uint32_t read, uint32_t given)
+static void listen_for_name(struct sock *s, const uint8_t *bytes, uint32_t given)
 {
-    struct tcp_ring *r = s->ring;
     uint32_t i, take = given;
 
-    if (s->received + given > LISTEN_MOST) {
+    if (s->conn.received > LISTEN_MOST) {
         stop_listening(s);
         return;
     }
@@ -414,7 +324,7 @@ static void listen_for_name(struct sock *s, uint32_t read, uint32_t given)
 
     /* The newest bytes are the ones that can finish a challenge. */
     if (take > HEARD_MOST) {
-        read += take - HEARD_MOST;
+        bytes += take - HEARD_MOST;
         take = HEARD_MOST;
     }
 
@@ -425,9 +335,7 @@ static void listen_for_name(struct sock *s, uint32_t read, uint32_t given)
         s->heard_len -= drop;
     }
 
-    for (i = 0; i < take; i++) {
-        s->heard[s->heard_len + i] = tcp_ring_in(r)[(read + i) % r->bytes];
-    }
+    memcpy(s->heard + s->heard_len, bytes, take);
 
     s->heard_len += take;
 
@@ -455,8 +363,7 @@ static void listen_for_name(struct sock *s, uint32_t read, uint32_t given)
 ssize_t smb_kosmos_readv(int fd, const struct iovec *iov, int count)
 {
     struct sock *s = sock_at(fd);
-    struct tcp_ring *r;
-    uint32_t read, ready, given = 0;
+    ssize_t given = 0;
     int i;
 
     if (s == NULL || !s->connected) {
@@ -464,56 +371,29 @@ ssize_t smb_kosmos_readv(int fd, const struct iovec *iov, int count)
         return -1;
     }
 
-    r = s->ring;
+    for (i = 0; i < count; i++) {
+        long n = net_client_read(&s->conn, iov[i].iov_base, iov[i].iov_len);
 
-    /* `closed` before the index: bytes published before the close are
-     * then certainly seen, and none is left behind as "the end". */
-    {
-        uint32_t over = tcp_ring_acquire(&r->closed);
-
-        read = r->in_read;
-        ready = tcp_ring_ready(tcp_ring_acquire(&r->in_write), read);
-
-        if (ready == 0) {
-            if (over != 0) {
-                return 0;
-            }
-
-            errno = EAGAIN;
-            return -1;
-        }
-    }
-
-    for (i = 0; i < count && given < ready; i++) {
-        uint8_t *to = iov[i].iov_base;
-        size_t n = iov[i].iov_len;
-        size_t k;
-
-        if (n > ready - given) {
-            n = ready - given;
+        if (n < 0) {
+            if (given > 0) break;
+            return 0;                           /* over, and nothing left */
         }
 
-        for (k = 0; k < n; ) {
-            uint32_t at = (read + given) % r->bytes;
-            size_t run = r->bytes - at;
-
-            if (run > n - k) {
-                run = n - k;
-            }
-
-            memcpy(to + k, tcp_ring_in(r) + at, run);
-            k += run;
-            given += (uint32_t)run;
+        if (n > 0 && !s->listened) {
+            listen_for_name(s, iov[i].iov_base, (uint32_t)n);
         }
+
+        given += n;
+
+        if ((size_t)n < iov[i].iov_len) break;  /* nothing more yet */
     }
 
-    if (!s->listened) {
-        listen_for_name(s, read, given);
+    if (given == 0) {
+        errno = EAGAIN;
+        return -1;
     }
 
-    tcp_ring_publish(&r->in_read, read + given);
-    s->received += given;
-    return (ssize_t)given;
+    return given;
 }
 
 bool smb_kit_server_name(int fd, char *out, size_t room)

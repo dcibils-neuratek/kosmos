@@ -21207,3 +21207,18 @@ extra authorities, kept on the stack for the handshake, were read past -
 the loop indexed "the top" where the table had been, and `fetch --cacert`
 faulted in `lua_rawlen`; the table is held by its place now. The C door's
 first caller is `httpc` (M6c).
+
+## 18.461 Maps M6b: the Network Kit from C - the SMB Kit's connection made the kit's
+
+`docs/maps.md` M6b. The SMB Kit talked to the network server by hand, for
+itself alone: a connect in `netproto.h`'s shape, a connection's region of
+two rings mapped, bytes copied round them and the stack told. It is
+`user/kits/network/netclient.c` now (`netclient.h`): connect (answered at
+once), write, read, whether it is over, close, and a name's address (the one
+call that parks, as long as it is told). The SMB Kit's socket is a
+`net_conn`; its listening for the server's name reads the bytes the client
+handed it rather than reaching into the ring. `tiles` is its second caller.
+
+`x86-share` 69 and `x86-share-2` 33 pass on it - smbfs to Samba on this
+Mac, signed and sealed, a share as a folder gone away and back. **Control**:
+a client whose read never returns a byte - 29 of 69 fail. Restored.
