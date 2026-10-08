@@ -1159,6 +1159,12 @@ not designed:
 - **Designed before it is written**, the four documents (`CLAUDE.md`): its
   feature set, the mockup, the architecture and the diagram - with no
   real person's places in the mockup.
+- **Drawn on 8 October, `docs/maps.html`, and agreed**: "mockup is
+  great", "but i do want a close/open sidebar button always visible", then
+  "go ahead and build it". So: a sidebar button in the header, always
+  there, opening and closing the sidebar; the rest as drawn. Next, before
+  code: the architecture (`docs/maps.md`) and its diagram, then the Map
+  Kit's first step.
 
 **AGREED on 6 October - the keyring, and Passwords.** Network sharing's
 N8 grew into it: Diego, "key kept on the machine itself in a keyring",
