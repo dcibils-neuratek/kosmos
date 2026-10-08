@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "gzip.h"
+#include "kits/compress/gzip.h"
 
 const char *pmt_said(int result)
 {

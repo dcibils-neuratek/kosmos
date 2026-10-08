@@ -8,7 +8,8 @@
  *     test_map port-alder.pmtiles
  */
 
-#include "gzip.h"
+#include "kits/compress/gzip.h"
+#include "mapdraw.h"
 #include "mvt.h"
 #include "pmtiles.h"
 
@@ -205,7 +206,90 @@ int main(int argc, char **argv)
         mvt_free(&t);
     }
 
-    /* 5. What is not there: a tile off the region, a zoom past it. */
+    /* 5. Drawn: zoom 16 at the market, 512 pixels a side, in a style of
+     * four rules - buildings grey, minor streets white, main roads yellow,
+     * water blue - over a ground of black. Each colour where it should be,
+     * a clip keeping half the pixels untouched, and the same pixels twice. */
+    {
+        enum { S = 512 };
+        static uint32_t px[S][S], again[S][S];
+        struct map_rule rules[4] = { 0 };
+        struct map_style style = { 0x000000, rules, 4, 1 };
+        struct map_matches m = { 0 };
+        struct gfx_path path = { 0 };
+        uint32_t x, y;
+        double c = cos(-8 * M_PI / 180), sn = sin(-8 * M_PI / 180);
+        double mx = 20 * c - (-330) * sn, my = 20 * sn + (-330) * c;
+        double lon = mx / 6378137.0 * 180.0 / M_PI;
+        double lat = (2 * atan(exp(my / 6378137.0)) - M_PI / 2) * 180.0 / M_PI;
+        long grey = 0, white = 0, yellow = 0, other = 0;
+        int drew;
+
+        rules[0].layer = L_WATER, rules[0].kind = MAP_FILL, rules[0].colour = 0x0000ff;
+        rules[0].maxzoom = 99;
+        rules[1].layer = L_BUILDING, rules[1].kind = MAP_FILL, rules[1].colour = 0x808080;
+        rules[1].minzoom = 14, rules[1].maxzoom = 99;
+        rules[2].layer = L_TRANSPORTATION, rules[2].kind = MAP_LINE, rules[2].colour = 0xffffff;
+        strcpy(rules[2].classes, "minor,service");
+        rules[2].maxzoom = 99, rules[2].nstops = 2;
+        rules[2].stops[0] = 14, rules[2].stops[1] = 2, rules[2].stops[2] = 18, rules[2].stops[3] = 18;
+        rules[3].layer = L_TRANSPORTATION, rules[3].kind = MAP_LINE, rules[3].colour = 0xffff00;
+        strcpy(rules[3].classes, "primary,secondary");
+        rules[3].maxzoom = 99, rules[3].nstops = 1;
+        rules[3].stops[0] = 0, rules[3].stops[1] = 10;
+
+        check(map_width(&rules[2], 16) == 10.0f && map_width(&rules[2], 10) == 2.0f
+              && map_width(&rules[2], 20) == 18.0f, "a rule's width does not follow its stops");
+
+        tile_of(lon, lat, 16, &x, &y);
+        tile(&a, 16, x, y, &t);
+
+        drew = map_draw(&t, &m, &style, &path, &px[0][0], S * 4, S, S, 0, 0, S, 16.0f,
+                        0, 0, S, S);
+        snprintf(said, sizeof said, "%d of 4 rules drew at the market", drew);
+        check(drew >= 3, said);
+
+        for (int yy = 0; yy < S; yy++)
+            for (int xx = 0; xx < S; xx++) {
+                uint32_t v = px[yy][xx] & 0xffffff;
+
+                if (v == 0x808080) grey++;
+                else if (v == 0xffffff) white++;
+                else if (v == 0xffff00) yellow++;
+                else if (v != 0) other++;
+            }
+
+        snprintf(said, sizeof said, "the market's tile drew %ld building, %ld street and %ld "
+                 "main road pixels, and %ld of edges between", grey, white, yellow, other);
+        check(grey > 5000 && white > 2000 && yellow > 1000, said);
+
+        /* Again, through the matches kept from the first time. */
+        memcpy(again, px, sizeof px);
+        memset(px, 0, sizeof px);
+        map_draw(&t, &m, &style, &path, &px[0][0], S * 4, S, S, 0, 0, S, 16.0f, 0, 0, S, S);
+        check(memcmp(px, again, sizeof px) == 0, "the same tile drew different pixels twice");
+
+        /* Clipped to its left half: the right half untouched. */
+        memset(px, 0, sizeof px);
+        map_draw(&t, &m, &style, &path, &px[0][0], S * 4, S, S, 0, 0, S, 16.0f, 0, 0, S / 2, S);
+        {
+            int right = 0, left = 0;
+
+            for (int yy = 0; yy < S; yy++)
+                for (int xx = 0; xx < S; xx++) {
+                    if (px[yy][xx] && xx >= S / 2) right++;
+                    if (px[yy][xx] && xx < S / 2) left++;
+                }
+
+            check(right == 0 && left > 1000, "a clip to the left half drew on the right");
+        }
+
+        mvt_free(&t);
+        map_matches_free(&m);
+        gfx_path_free(&path);
+    }
+
+    /* 6. What is not there: a tile off the region, a zoom past it. */
     {
         const uint8_t *b;
         size_t n;
@@ -216,7 +300,7 @@ int main(int argc, char **argv)
 
     pmt_close(&a);
 
-    /* 6. Bad bytes are refused, never followed: not PMTiles, cut short. */
+    /* 7. Bad bytes are refused, never followed: not PMTiles, cut short. */
     {
         uint8_t junk[200];
         struct pmtiles b;
@@ -237,7 +321,7 @@ int main(int argc, char **argv)
     if (fails == 0) {
         printf("PASS: %d checks on the Map Kit's reading (the specification's tile numbers, "
                "Port Alder's header and directory, its zoom 11 and zoom 16 tiles decoded, "
-               "what is not there, bad bytes refused)\n", checks);
+               "zoom 16 drawn in a style, what is not there, bad bytes refused)\n", checks);
         return 0;
     }
 

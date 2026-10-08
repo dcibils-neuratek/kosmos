@@ -126,7 +126,61 @@ static float within(float v, float lo, float hi)
     return v < lo ? lo : v > hi ? hi : v;
 }
 
-/* One straight edge into the accumulator: font-rs's `draw_line`. */
+/*
+ * One piece of an edge within a row - from x `xs` to `xe`, both inside the
+ * picture, sweeping `d` of the row's height, signed - into the row's cells:
+ * font-rs's `draw_line`, for a row.
+ */
+static void sweep(struct raster *r, float *row, int y, float xs, float xe, float d)
+{
+    float xa = xs < xe ? xs : xe;
+    float xb = xs < xe ? xe : xs;
+    float xafloor = floorf(xa);
+    int xai = (int)xafloor;
+    int xbi = (int)ceilf(xb);
+    int last;
+
+    if (xbi <= xai + 1) {
+        float xmf = 0.5f * (xs + xe) - xafloor;
+
+        row[xai] += d - d * xmf;
+        row[xai + 1] += d * xmf;
+        last = xai + 1;
+    } else {
+        float s = 1.0f / (xb - xa);
+        float xaf = xa - xafloor;
+        float a0 = 0.5f * s * (1.0f - xaf) * (1.0f - xaf);
+        float xbf = xb - ceilf(xb) + 1.0f;
+        float am = 0.5f * s * xbf * xbf;
+        int xi;
+
+        row[xai] += d * a0;
+
+        if (xbi == xai + 2) {
+            row[xai + 1] += d * (1.0f - a0 - am);
+        } else {
+            float a1 = s * (1.5f - xaf);
+            float a2;
+
+            row[xai + 1] += d * (a1 - a0);
+
+            for (xi = xai + 2; xi < xbi - 1; xi++) {
+                row[xi] += d * s;
+            }
+
+            a2 = a1 + (float)(xbi - xai - 3) * s;
+            row[xbi - 1] += d * (1.0f - a2 - am);
+        }
+
+        row[xbi] += d * am;
+        last = xbi;
+    }
+
+    if (xai < r->from[y]) r->from[y] = xai;
+    if (last + 1 > r->to[y]) r->to[y] = last + 1;
+}
+
+/* One straight edge into the accumulator. */
 void raster_edge(struct raster *r, float x0, float y0, float x1, float y1)
 {
     float dir = 1.0f, dxdy, x, w = (float)r->w;
@@ -153,17 +207,27 @@ void raster_edge(struct raster *r, float x0, float y0, float x1, float y1)
         return;
     }
 
-    /* Outside to the left or right counts at the picture's edge: the area
-     * is the same to every pixel inside, which is all the sum needs. */
-    x0 = within(x0, 0.0f, w);
-    x1 = within(x1, 0.0f, w);
-
+    /*
+     * **Outside to the left or right counts at the picture's edge**: the
+     * area is the same to every pixel inside, which is all the sum needs.
+     *
+     * **Exactly so, where an edge crosses a side.** Each row's piece of the
+     * edge is cut where it crosses x = 0 or x = w: what lies left of the
+     * picture sweeps its part of the row's height as an upright edge at
+     * 0, what lies right of it as one at w, and what lies inside as it is.
+     * The ends of the whole edge used to be held to the sides first, which
+     * made an edge that crossed one into another edge, drawn a little off
+     * for all its length inside - unseen in an SVG, whose shapes seldom
+     * cross the picture's edge, and a step in every street where two map
+     * tiles met, since a tile's features cross its edges all the time
+     * (`docs/maps.md` M3, `tools/test_path.c`'s two boxes).
+     */
     dxdy = (x1 - x0) / (y1 - y0);
     x = x0;
     ytop = 0;
 
     if (y0 < 0.0f) {
-        x = within(x - y0 * dxdy, 0.0f, w);
+        x = x - y0 * dxdy;
     } else {
         ytop = (int)y0;
     }
@@ -178,53 +242,32 @@ void raster_edge(struct raster *r, float x0, float y0, float x1, float y1)
         float below = (float)(y + 1) < y1 ? (float)(y + 1) : y1;
         float above = (float)y > y0 ? (float)y : y0;
         float dy = below - above;
-        float xnext = within(x + dxdy * dy, 0.0f, w);
-        float d = dy * dir;
-        float xa = x < xnext ? x : xnext;
-        float xb = x < xnext ? xnext : x;
-        float xafloor = floorf(xa);
-        int xai = (int)xafloor;
-        int xbi = (int)ceilf(xb);
-        int last;
+        float xnext = x + dxdy * dy;
+        float cut[4], at[4];
+        int n = 0;
 
-        if (xbi <= xai + 1) {
-            float xmf = 0.5f * (x + xnext) - xafloor;
+        /* Where along this row's piece (0 to 1) it crosses a side. */
+        cut[n++] = 0.0f;
 
-            row[xai] += d - d * xmf;
-            row[xai + 1] += d * xmf;
-            last = xai + 1;
-        } else {
-            float s = 1.0f / (xb - xa);
-            float xaf = xa - xafloor;
-            float a0 = 0.5f * s * (1.0f - xaf) * (1.0f - xaf);
-            float xbf = xb - ceilf(xb) + 1.0f;
-            float am = 0.5f * s * xbf * xbf;
-            int xi;
+        if ((x < 0.0f) != (xnext < 0.0f)) cut[n++] = (0.0f - x) / (xnext - x);
+        if ((x > w) != (xnext > w)) cut[n++] = (w - x) / (xnext - x);
 
-            row[xai] += d * a0;
+        if (n == 3 && cut[2] < cut[1]) {
+            float t = cut[1];
 
-            if (xbi == xai + 2) {
-                row[xai + 1] += d * (1.0f - a0 - am);
-            } else {
-                float a1 = s * (1.5f - xaf);
-                float a2;
-
-                row[xai + 1] += d * (a1 - a0);
-
-                for (xi = xai + 2; xi < xbi - 1; xi++) {
-                    row[xi] += d * s;
-                }
-
-                a2 = a1 + (float)(xbi - xai - 3) * s;
-                row[xbi - 1] += d * (1.0f - a2 - am);
-            }
-
-            row[xbi] += d * am;
-            last = xbi;
+            cut[1] = cut[2], cut[2] = t;
         }
 
-        if (xai < r->from[y]) r->from[y] = xai;
-        if (last + 1 > r->to[y]) r->to[y] = last + 1;
+        cut[n++] = 1.0f;
+
+        for (int i = 0; i < n; i++) at[i] = x + (xnext - x) * cut[i];
+
+        for (int i = 0; i + 1 < n; i++) {
+            float piece = (cut[i + 1] - cut[i]) * dy * dir;
+            float xs = within(at[i], 0.0f, w), xe = within(at[i + 1], 0.0f, w);
+
+            if (piece != 0.0f) sweep(r, row, y, xs, xe, piece);
+        }
 
         x = xnext;
     }

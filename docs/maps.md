@@ -62,6 +62,7 @@ application want this, and does something already supply it?
 |---|---|---|
 | A filled shape and a wide line, anti-aliased | **gfx**: `path.c`, `s:polygon`, `s:polyline` and their C door `gfx_path_*` | new, in gfx - the 3D Kit's outlines, Write's shapes, Cafesa3D's guides and Paint's vectors want it too |
 | Reading a PMTiles archive | **Map Kit**: `pmtiles.c` | new kit |
+| Filling and stroking without seams where tiles meet | **gfx**: `raster.c`, the browser's SVG rasteriser, moved into gfx and made exact at a picture's sides | existed in the browser; now gfx's |
 | Decoding a vector tile (MVT protobuf) | **Map Kit**: `mvt.c` | new kit |
 | Drawing a tile in a style | **Map Kit**: `mapdraw.c`, on gfx's paths | new kit |
 | A tile's names, for labels and search | **Map Kit**: `tile:labels()`, `archive:names()` | new kit |
@@ -151,8 +152,9 @@ next, written down so it is not mistaken for the design.
 - **M2** - the Map Kit's PMTiles and MVT: an archive read, a tile found by
   its z/x/y, decoded; held on the Mac to `tools/mapcity.py`'s own region.
 - **M3** - drawing a tile in a style; Port Alder carried in the image as
-  `/Kosmos/Maps/port-alder.pmtiles`, made at build time by
-  `tools/mapcity.py`.
+  the asset `maps/port-alder.pmtiles` (`sys.asset`, as the wallpapers and
+  icons are - the programs' store holds text, not bytes), made at build
+  time by `tools/mapcity.py`.
 - **M4** - the window: header, sidebar and its button, pan, zoom, scale.
 - **M5** - labels, search, the card, Pinned, Saved and Recently viewed.
 - **M6** - tiles from the network, by a helper, cached; then search and

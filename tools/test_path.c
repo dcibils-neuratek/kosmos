@@ -229,6 +229,37 @@ int main(void)
               "the larger box again kept something of the smaller one");
     }
 
+    /* 14. Two boxes side by side draw what one box does: a slanted band
+     * crossing x = 20, drawn in [0, 20) and [20, 40) and then in [0, 40),
+     * is the same pixels - a map's tiles meet without a seam. */
+    {
+        float band[] = { 3, 2, 37, 9, 36, 16, 2, 9 };
+        static uint8_t whole[H][W];
+        int same = 1;
+
+        gfx_path_begin(&p, 0, 0, W, H);
+        gfx_path_ring(&p, band, 4);
+        read_out(&p);
+        memcpy(whole, pic, sizeof pic);
+
+        memset(pixels, 0, sizeof pixels);
+        gfx_path_begin(&p, 0, 0, 20, H);
+        gfx_path_ring(&p, band, 4);
+        gfx_path_paint(&p, &pixels[0][0], W * 4, 0xffffff);
+        gfx_path_begin(&p, 20, 0, 20, H);
+        gfx_path_ring(&p, band, 4);
+        gfx_path_paint(&p, &pixels[0][20], W * 4, 0xffffff);
+
+        for (int y = 0; y < H; y++)
+            for (int x = 0; x < W; x++) {
+                int v = (int)(pixels[y][x] >> 24) - whole[y][x];
+
+                if (v > 1 || v < -1) same = 0;
+            }
+
+        check(same, "a shape drawn in two boxes side by side differs from one box: a seam");
+    }
+
     gfx_path_free(&p);
 
     if (fails == 0) {

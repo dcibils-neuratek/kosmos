@@ -21102,3 +21102,35 @@ main road, every point inside the tile and its buffer, every building's ring
 clockwise; a tile off the region and a zoom past it not found; junk and an
 archive cut short refused. **Control**: the Hilbert curve without its
 rotation - 3 of 20 fail (the market's tile is not found).
+
+## 18.456 Maps M3: a tile drawn in a style, inside Kosmos; the rasteriser exact at its sides
+
+`docs/maps.md` step M3. `mapdraw.c` draws a decoded tile in a style - rules
+in order, each a layer, its classes, a fill or a line and widths by zoom,
+handed in from Lua as `map.style{...}` - one gfx path a rule, cut to the
+tile's box; which features each rule takes is worked out once a tile meets
+a style and kept. `map_kosmos.c` is the kit's door: `map.open`,
+`region:info`, `region:tile`, `tile:draw`, `tile:labels`, `tile:count`,
+`map.project`, `map.unproject`. Port Alder is in every image as the asset
+`maps/port-alder.pmtiles`.
+
+**Looking at a drawn tile found a fault in the rasteriser** the browser has
+had since 6zz j5: an edge's ends were held to the picture's sides before
+its slope was taken, so an edge crossing a side became another edge, a
+little off for its whole length inside. An SVG seldom crosses its
+picture's edge; a tile's features always do, and every street stepped
+where two tiles met. Each row's piece of an edge is now cut where it
+crosses a side: outside counts as an upright edge at that side, inside as
+it is. `test_path` 22: a slanted band drawn in two boxes side by side is
+the same pixels as in one - and fails on the rasteriser as it was.
+`test_raster` 15 still passes, its lanes and its single pixels agreeing.
+
+`test_map` 25: the market's tile drawn at 512 in four rules - its
+buildings, streets and main roads each thousands of pixels, the same pixels
+twice through the kept matches, a clip to the left half drawing nothing on
+the right; a rule's width between its stops. `run_maps.py` (`x86-maps`) 7,
+inside the machine: Port Alder in the image, its header, the market's tile
+decoded, drawn in two rules into a surface (104 ms under TCG), its labels
+naming the market a marketplace, the projection there and back to a
+millionth of a degree, a tile off the region refused. **Control**: the kit
+taken out of the table of kits - 7 of 7 fail. Restored.

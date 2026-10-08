@@ -2657,6 +2657,7 @@ void kosmos_web_kit(lua_State *L);
  * every image, the system's and each program's, rather than once a set of
  * kits. Linked in, they are what they always were.
  */
+void kosmos_map_kit(lua_State *L);
 void kosmos_doom_kit(lua_State *L) __attribute__((weak));
 void kosmos_quake_kit(lua_State *L) __attribute__((weak));
 void kosmos_snes_kit(lua_State *L) __attribute__((weak));
@@ -2697,6 +2698,8 @@ static const struct {
     { "window",   kosmos_window_kit, 0 },
     /* C, compiled inside Kosmos into a program file (`docs/tinycc.md`). */
     { "tcc",      kosmos_tcc_kit, 0 },
+    /* Maps' regions and tiles, drawn through gfx's paths (`docs/maps.md`). */
+    { "map",      kosmos_map_kit, 0 },
 #ifdef KOSMOS_WEB
     { "web",      kosmos_web_kit, 0 },
 #endif

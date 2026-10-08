@@ -841,6 +841,10 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/gfx/rows.c \
              user/kits/gfx/raster.c \
              user/kits/gfx/path.c \
+             user/kits/map/pmtiles.c \
+             user/kits/map/mvt.c \
+             user/kits/map/mapdraw.c \
+             user/kits/map/map_kosmos.c \
              user/kits/window/window.c \
              user/init/syscalls.c \
              user/kits/game/game.c \
@@ -2255,14 +2259,15 @@ $(HOSTDIR)/port-alder.pmtiles: tools/mapcity.py
 
 # **The Map Kit's reading** (`user/kits/map/pmtiles.c`, `mvt.c`): an archive
 # opened and a tile decoded, held to the specification and to Port Alder.
-MAP_PURE := user/kits/map/pmtiles.c user/kits/map/mvt.c
+MAP_PURE := user/kits/map/pmtiles.c user/kits/map/mvt.c user/kits/map/mapdraw.c
 
 $(HOSTDIR)/test_map: tools/test_map.c $(MAP_PURE) $(wildcard user/kits/map/*.h) \
                      user/kits/compress/gzip.c user/kits/compress/gzip.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -D_DEFAULT_SOURCE $(MINIZ_FLAGS) \
-	        -Iuser/kits/map -Iuser/kits/compress -Iruntime/upstream/miniz -o $@ \
-	        tools/test_map.c $(MAP_PURE) user/kits/compress/gzip.c runtime/upstream/miniz/miniz.c
+	        -Iuser -Iuser/kits/map -Iuser/kits/compress -Iuser/kits/gfx -Iruntime/upstream/miniz -o $@ \
+	        tools/test_map.c $(MAP_PURE) user/kits/compress/gzip.c runtime/upstream/miniz/miniz.c \
+	        user/kits/gfx/path.c user/kits/gfx/raster.c
 
 $(HOSTDIR)/test_raster_x86: tools/test_raster.c user/kits/gfx/raster.c user/kits/gfx/raster.h
 	@mkdir -p $(dir $@)
@@ -2774,12 +2779,18 @@ $(ROOT_NAMES): assets/ca/cacert.pem
 	@mkdir -p $(dir $@)
 	awk '/^## Certificate data from Mozilla as of:/ { sub(/^## Certificate data from Mozilla as of: /, ""); print "as of " $$0 } prev != "" && /^=+$$/ { print prev } { prev = $$0 }' $< > $@
 
+# **Maps' made-up region, in every image** (`tools/mapcity.py`, `docs/maps.md`
+# M3): `sys.asset("maps/port-alder.pmtiles")`, 110 KB.
+$(GEN)/port-alder.pmtiles: tools/mapcity.py
+	@mkdir -p $(dir $@)
+	python3 tools/mapcity.py $@ >/dev/null
+
 $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
                  assets/images/test-screen.jpg \
                  $(ASSET_FILES) $(ASSET_LIST) LICENSE \
                  docs/cheatsheet.html tools/assets2c.py $(SCENE_FILES) $(TUTORIAL_FILES) \
                  $(IDE_TUTORIAL_FILES) \
-                 $(NETSURF_SHEETS) $(ROOT_NAMES)
+                 $(NETSURF_SHEETS) $(ROOT_NAMES) $(GEN)/port-alder.pmtiles
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py assets_table $@ \
 	        assets/images/test-pattern.png assets/images/test-quads.jpg \
@@ -2794,7 +2805,8 @@ $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
 	        --prefix=tutorial/ide/ $(IDE_TUTORIAL_FILES) \
 	        --prefix=netsurf/ $(NETSURF_SHEETS) \
 	        --prefix=hyphenation/ $(HYPH_FILES) \
-	        --prefix=ca/ $(ROOT_NAMES)
+	        --prefix=ca/ $(ROOT_NAMES) \
+	        --prefix=maps/ $(GEN)/port-alder.pmtiles
 
 # The outline fonts, embedded the same way.
 #

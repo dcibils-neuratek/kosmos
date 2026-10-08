@@ -255,6 +255,11 @@ SUITES = [
     # window manager, the same on both.
     Suite("x86-dock", ["python3", "tools/run_dock.py", X86], x86=True),
 
+    # **Maps** (`docs/maps.md`): the Map Kit inside the machine - Port Alder
+    # carried in the image, opened, a tile decoded, drawn and labelled (M3) -
+    # and the window as it grows. x86-64 only, for now (`CLAUDE.md`).
+    Suite("x86-maps", ["python3", "tools/run_maps.py", X86], x86=True),
+
     # **Notifications on the desktop** (`roadmap.md`, *Notifications*, step
     # 2): a banner that keeps nobody's keys, gone by itself; an alert, its
     # cross; a press that opens; Do Not Disturb; the history from the clock.

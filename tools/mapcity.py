@@ -147,6 +147,16 @@ add("transportation_name", "line", [ring[2:5]], {"name": "Ring Road", "class": "
 add("transportation", "line", [leaned([(-1450, 950), (-1100, 1250), (-750, 1450)])],
     {"class": "path"}, 15)
 
+def near_river(x, y, within):
+    """Whether (x, y) is within `within` metres of the river's line."""
+    for (ax, ay), (bx, by) in zip(river, river[1:]):
+        dx, dy = bx - ax, by - ay
+        t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)))
+        if math.hypot(ax + t * dx - x, ay + t * dy - y) < within:
+            return True
+    return False
+
+
 # Buildings: four to a block, inside the streets, from zoom 14.
 for i in range(-11, 11):
     for j in range(-11, 11):
@@ -158,6 +168,9 @@ for i in range(-11, 11):
         if abs(cx - 150) < 200 and abs(cy - 150) < 200:
             continue
         if (i * 7 + j * 3) % 11 == 0:
+            continue
+        # Nor in the river: a block whose middle, leaned, is near its line.
+        if near_river(*lean(cx, cy), 200):
             continue
 
         for bx, by in ((0, 0), (1, 0), (0, 1), (1, 1)):
