@@ -2,9 +2,37 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-08 (0.11.72)
+Last updated: 2026-10-08 (0.11.85, and Mail M0-M2 after it)
 
 ---
+
+## 8 October, evening: chrome step 3, then Kosmos Mail M0-M2
+
+**On `main`, not pushed: 0.11.60-0.11.85 and the Mail commits after it** -
+a push is Diego's yes. Diego's order: "do chrome step 3 first, then mail,
+then the split".
+
+- 0.11.73-0.11.85: Maps from the M700 (search, deadlines, flushes), the
+  screen-sharing icon in the Deskbar, Maps dark or light by the look,
+  corners back to 10, focus-follows-mouse delays, the CPU's real name,
+  `/Home` at 2 GB on the stick with no limit on a file's extents, VNC's
+  watch clipped to the screen, and chrome step 3 - every window headed,
+  Super and a drag moving any window, the old tab's code gone.
+- **The M700 runs 0.11.85** from the 0.11.83 stick: `make netboot
+  STICK=build/x86_64/kosmos-usb-0.11.83-development.img` (`/Home` 2 GB,
+  its partition named on that stick's command line).
+- **Mail** (`docs/mail.md`, agreed "as recommended, go ahead and build
+  it"): **M0** the keyring's `mail` door and `mailpass` (18.480); **M1** the
+  Mail Kit's reading in C, `use("/Kosmos/Kits/mail")`, `test_mail` 28 and a
+  guest role (18.481); **M2** `imap.lua`, `smtp.lua` and `netstream.lua`
+  (the connection half out of `http.lua`), `tools/mailpeer.py`, `x86-mail`
+  20 (18.482).
+
+**Next**: Mail M3, `maild` - an account kept, its Inbox fetched into
+`/Home/Mail`, IDLE, a notification for each new message; then M4, the
+window. After Mail, the window-server split (D2 onwards). On the roadmap
+meanwhile: tooltips on the top status icons, the games' 2x and full-screen
+sizes.
 
 ## 8 October, afternoon: Maps M6a-M6d - the world from OpenFreeMap, on the M700
 

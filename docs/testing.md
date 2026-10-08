@@ -21684,3 +21684,39 @@ of its fold. **Control**: the boundary matched as a prefix again, it fails,
 kit in the image under its name, a message from a region and from a string
 kept through a collection, the text part into a region in UTF-8, the
 attachment whole, and a short room refused with the room it needs.
+
+## 18.482 Mail M2: IMAP and SMTP, against a server on this Mac
+
+`user/lib/imap.lua` and `smtp.lua` (`docs/mail.md` M2), Lua, stepped:
+every call returns a request answered as the conversation goes, and
+nothing waits on the network but `wait`, for a program or a test. IMAP's
+commands go one at a time, so every response belongs to the one waiting;
+that is what lets a fetched message's literal go from the connection into
+a region of its announced size and from the region to its file, never a
+Lua string. Mailbox names are kept as the server spells them, with
+`title` out of modified UTF-7.
+
+**The connection half is one copy now.** The lookup, the trusted
+authorities and the plain and TLS streams moved out of `http.lua` into
+`netstream.lua`, which mail's conversations share; `http.lua` keeps
+requests, replies and kept connections.
+
+`tools/mailpeer.py` is the server: IMAP over TLS with IDLE, UIDPLUS,
+MOVE, SPECIAL-USE and CONDSTORE, and SMTP with STARTTLS, holding three
+made-up messages - a Windows-1252 subject, HTML with a picture inside, a
+300 KB attachment. Checked first against Python's own `imaplib` and
+`smtplib`.
+
+`x86-mail`, 20 checks: signed in over TLS, MOVE and CONDSTORE known; a
+wrong password refused in the server's words; the mailboxes by their use
+and `Café` out of `Caf&AOk-`; the Inbox's counts and UIDVALIDITY; what is
+new; a message fetched and its subject read by the Mail Kit; 420 KB
+fetched in many reads and its attachment undone byte for byte; a flag, a
+move and an append on the server, and CONDSTORE's changes naming only the
+flagged message; IDLE told of a message delivered while it waited; a
+message sent with STARTTLS to two people with a dot-led line kept; and a
+recipient the server refuses said, with nothing delivered. **Control**:
+the literal sent to a string rather than the file's region, fetch fails
+twice, "said 'nil nil', not '309 Café on Saturday'".
+
+The whole x86 gate, with `http.lua` on `netstream.lua`: 53 of 53 in 5:48.

@@ -8215,7 +8215,9 @@ AGREED the same evening** (`docs/mail.md`, `mail.html`,
 `mail-architecture.png`): "as recommended, go ahead and build it" - M0 the
 keyring's door for mail first. **M0 done** (`testing.md` 18.480). **M1
 done**: the Mail Kit's reading, in C, `use("/Kosmos/Kits/mail")` (18.481).
-Next: M2, `imap.lua` and `smtp.lua` against `tools/mailpeer.py`.
+**M2 done**: `imap.lua` and `smtp.lua` against `tools/mailpeer.py`, the
+connection half shared with `http.lua` as `netstream.lua` (18.482). Next:
+M3, `maild`.
 
 ### The optimisation phase - after the applications
 

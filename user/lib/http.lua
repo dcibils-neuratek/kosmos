@@ -50,8 +50,12 @@
 
 local http = {}
 
+-- The connection under a request - a name looked up, TLS laid on it - is
+-- `netstream.lua`'s, which mail's conversations share (`docs/mail.md` M2).
+local netstream = use("/Kosmos/Libraries/netstream.lua")
+
 -- The certificates a person trusts, a folder the settings kit keeps.
-http.AUTHORITIES = use("/Kosmos/Libraries/prefs.lua").path("Authorities")
+http.AUTHORITIES = netstream.AUTHORITIES
 
 local function trim(text)
   return (tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", ""))
@@ -91,20 +95,9 @@ function http.split(text)
            port = tonumber(port) or (scheme == "https" and 443 or 80) }
 end
 
--- Four numbers under 256, as the four bytes the Network Kit takes
--- (`ipv4.bytes`); nil for a name, and nil and why for four numbers that are
--- not an address.
-local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
-
-local function numbers(host)
-  if not tostring(host):match("^%d+%.%d+%.%d+%.%d+$") then return nil end
-
-  local bytes = ipv4.bytes(host)
-
-  if not bytes then return nil, "those are not four numbers under 256" end
-
-  return bytes
-end
+-- Four numbers under 256, as the four bytes the Network Kit takes; nil for
+-- a name, and nil and why for four numbers that are not an address.
+local numbers = netstream.numbers
 
 --
 -- **A refresh's words**, `5; url=next.html`, as a `<meta http-equiv=
@@ -162,21 +155,7 @@ function http.agent()
   return ("%s/%s"):format(build.name or "Kosmos", build.version or "0")
 end
 
---
--- **Names, remembered for a minute.** Every fetch looked its host up again:
--- gnu.org's twelve pictures were twelve questions to the resolver about one
--- name, each a round trip before anything else could start (`roadmap.md`
--- 6zz g). The resolver gives no lifetime back, so a minute is this side's,
--- and a failed lookup is not remembered.
---
-local names = {}
-local counter_hz
-
--- The counter's rate, read once: what a `sys.ticks()` difference is in.
-local function counter()
-  counter_hz = counter_hz or (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
-  return counter_hz
-end
+local counter = netstream.counter
 
 --
 -- **Fifteen seconds with nothing new** is when a request is given up on -
@@ -192,94 +171,17 @@ local function quiet_for(since_ticks)
   return sys.ticks() - since_ticks >= QUIET_SECONDS * counter()
 end
 
-local function lookup(host, wait_ticks, hz)
-  local now = sys.ticks()
-  local known = names[host]
-
-  if known and now - known.at < 60 * counter() then
-    return known.address
-  end
-
-  local found, why, said = fs.resolve(host, wait_ticks or 5 * hz)
-
-  if found then
-    names[host] = { address = found, at = now }
-  end
-
-  return found, why, said
-end
-
---
--- The certificates this machine's person has said to trust: each file in
--- `http.AUTHORITIES` named `.der` or `.cer` that is not empty. As DER, for
--- the handshake; and by name, for whoever shows what is trusted - the
--- browser's Settings and its page of authorities, which listed every file
--- in the folder as trusted, whatever it was. One walk for both, so what is
--- shown is what is trusted.
---
-local function trusted()
-  local ders, names = {}, {}
-
-  for _, name in ipairs(fs.list(http.AUTHORITIES) or {}) do
-    if name:match("%.[Dd][Ee][Rr]$") or name:match("%.[Cc][Ee][Rr]$") then
-      local der = fs.read(http.AUTHORITIES .. "/" .. name)
-
-      if type(der) == "string" and der ~= "" then
-        ders[#ders + 1], names[#names + 1] = der, name
-      end
-    end
-  end
-
-  return ders, names
-end
-
 function http.authorities()
-  return (trusted())
+  return (netstream.trusted())
 end
 
 function http.authority_names()
-  local _, names = trusted()
+  local _, names = netstream.trusted()
 
   return names
 end
 
---
--- The connection a request goes over: the TCP one as it is, or TLS laid on
--- it. Both answer `write`, `read`, `flush` and `done` - whether nothing more
--- will come, and why when that is an error - so the request does not care
--- which.
---
-local function plain(conn)
-  return {
-    write = function(_, s) return conn:write(s) end,
-    read = function() return conn:read() end,
-    flush = function() end,
-    done = function() return conn:closed(), nil end,
-    close = function() end,
-  }
-end
-
-local function secure(conn, t)
-  return {
-    write = function(_, s) return t:write(s) end,
-    read = function() return t:read() end,
-    flush = function() t:flush() end,
-    done = function()
-      local state, reason, code, certificate = t:state()
-
-      if state == "closed" then
-        return true, (code ~= 0) and reason or nil, certificate
-      end
-
-      -- The connection's bytes are the engine's to read, never this: a
-      -- closed connection is enough, and the read after the loop takes what
-      -- was left in the engine.
-      return conn:closed(), nil
-    end,
-    close = function() t:close() end,
-    tls = t,
-  }
-end
+local plain = netstream.plain
 
 --
 -- **Connections kept** (`roadmap.md` 6zz g). HTTP/1.1, and a connection the
@@ -887,7 +789,6 @@ local function get_uncached(address, opts)
   end
 
   local how = { scheme = parts.scheme }
-  local hz = (sys.info() or {}).tick_hz or 250
   local where, wrong = numbers(parts.host)
 
   if wrong then return nil, wrong, how end
@@ -895,7 +796,7 @@ local function get_uncached(address, opts)
   if not where then
     say("looking up " .. parts.host .. " ...")
 
-    local found, why, said = lookup(parts.host, opts.wait_ticks, hz)
+    local found, why, said = netstream.address(parts.host, opts.wait_ticks)
 
     if not found then
       return nil, ("cannot look up %s: %s"):format(parts.host, said or tostring(why)), how
@@ -903,7 +804,6 @@ local function get_uncached(address, opts)
 
     where = found
   end
-
   say("connecting to " .. parts.hostport .. " ...")
 
   -- At once when something else schedules the waiting: the handshake goes
@@ -915,20 +815,15 @@ local function get_uncached(address, opts)
   local stream = plain(conn)
 
   if parts.scheme == "https" then
-    local tls = use("/Kosmos/Kits/tls")
-    local anchors = http.authorities()
+    local secure, why = netstream.start_tls(conn, name, { anchors = opts.anchors,
+                                                          insecure = anyway })
 
-    for _, der in ipairs(opts.anchors or {}) do anchors[#anchors + 1] = der end
-
-    local ok, t = pcall(tls.client, conn, name, { anchors = anchors,
-                                                  insecure = anyway })
-
-    if not ok then
+    if not secure then
       conn:close()
-      return nil, tostring(t), how
+      return nil, why, how
     end
 
-    stream = secure(conn, t)
+    stream = secure
   end
 
   return exchange(parts, opts, conn, stream, key, false, how)

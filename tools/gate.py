@@ -198,6 +198,14 @@ SUITES = [
     Suite("arm-tls", ["python3", "tools/run_tls.py", ARM]),
     Suite("x86-tls", ["python3", "tools/run_tls.py", X86], x86=True),
 
+    # **Mail's conversations** (`docs/mail.md` M2): `imap.lua` and
+    # `smtp.lua` against `mailpeer.py` on this Mac, over TLS - signed in and
+    # refused, mailboxes, a message fetched into a file and read by the Mail
+    # Kit, 420 KB whole, a flag, a move and an append on the server, CONDSTORE,
+    # IDLE, and a message sent with STARTTLS.
+    Suite("arm-mail", ["python3", "tools/run_mail.py", ARM]),
+    Suite("x86-mail", ["python3", "tools/run_mail.py", X86], x86=True),
+
     # **smbfs connects, signed and sealed** (`docs/sharing.md` N2 and N4),
     # in one machine on ten Samba peers run as the user on this Mac: 3.1.1
     # signed and sealed, a wrong password and nobody refused in words, SMB 1
