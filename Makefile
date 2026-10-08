@@ -880,6 +880,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              $(MUSL_SRCS) \
              runtime/upstream/miniz/miniz.c \
              $(BEARSSL_SRCS) \
+             user/kits/tls/tls_core.c \
              user/kits/tls/tls_kosmos.c \
              $(TINYGL_SRCS) \
              $(TINYGL_DEMO_SRCS) \
@@ -1444,9 +1445,15 @@ $(UBUILD)/user/kits/crypto/kdf.c.o: $(UBUILD)/%.c.o: %.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(BEARSSL_IFLAGS) $(UCFLAGS) -MMD -MP -c $< -o $@
 
-$(UBUILD)/user/kits/tls/tls_kosmos.c.o: user/kits/tls/tls_kosmos.c $(HOSTDIR)/tls_anchors.c $(UFLAGS_FILE)
+# The TLS core holds the image's anchors; the Lua door and any C caller
+# (`docs/maps.md` M6a) reach BearSSL's headers through `tls_core.h`.
+$(UBUILD)/user/kits/tls/tls_core.c.o: user/kits/tls/tls_core.c $(HOSTDIR)/tls_anchors.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(BEARSSL_IFLAGS) -I$(HOSTDIR) $(UCFLAGS) -MMD -MP -c $< -o $@
+
+$(UBUILD)/user/kits/tls/tls_kosmos.c.o: user/kits/tls/tls_kosmos.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(BEARSSL_IFLAGS) $(UCFLAGS) -MMD -MP -c $< -o $@
 
 # ufbx and the 3D Kit's reader of it, against the same switches.
 $(UBUILD)/runtime/upstream/ufbx/ufbx.c.o: runtime/upstream/ufbx/ufbx.c $(UFLAGS_FILE)

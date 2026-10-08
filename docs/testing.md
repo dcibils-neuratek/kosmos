@@ -21189,3 +21189,21 @@ has not been looked at, and a press on it opens the history as one on the
 clock does. `run_dock.py` 52: the strip says where the bell is, in its
 right half, and a press there asks for the history. **Control**: the press
 not handled - fails. Restored.
+
+## 18.460 Maps M6a: TLS from C - the TLS Kit's core split from its Lua door
+
+`docs/maps.md` M6a. The TLS Kit was BearSSL driven through a Lua
+connection's `read` and `write`, so no server in C could speak HTTPS. Its
+core - whom it trusts, the clock, the randomness, Open anyway, the sessions
+kept to be offered back - is `user/kits/tls/tls_core.c` now, with a C door
+(`tls_core.h`) whose bytes move through two calls the caller gives; the Lua
+kit (`tls_kosmos.c`) is a thin caller of it, its behaviour unchanged. The
+image's authorities are compiled into the core alone.
+
+`x86-tls` 9 (a page whole from a server on this Mac; refused for another
+name, an expired certificate, an authority it was not given) and both x86
+browser suites pass through the split kit. Found on the way: the Lua door's
+extra authorities, kept on the stack for the handshake, were read past -
+the loop indexed "the top" where the table had been, and `fetch --cacert`
+faulted in `lua_rawlen`; the table is held by its place now. The C door's
+first caller is `httpc` (M6c).
