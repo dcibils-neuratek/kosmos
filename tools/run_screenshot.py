@@ -4714,9 +4714,13 @@ def check_appearance(guest):
     # photographs of Googlebook, and named - "4. night" (`roadmap.md`, a dock
     # at the bottom). The sixth had its conversation.
     #
-    if looks != 6:
-        raise Failure("Preferences offers %d looks; there are six - Plex, "
-                      "Plex Night, Classic, Studio, Endeavour and Night" % looks)
+    # **Eleven since 8 October**: Diego, "add 5 more theme colors, 3 dark
+    # ones and 2 light ones" - Aurora, Amethyst, Ember, Sakura and Meadow.
+    #
+    if looks != 11:
+        raise Failure("Preferences offers %d looks; there are eleven - Plex, "
+                      "Plex Night, Classic, Studio, Endeavour, Night, Aurora, "
+                      "Amethyst, Ember, Sakura and Meadow" % looks)
 
     checks += 1
 

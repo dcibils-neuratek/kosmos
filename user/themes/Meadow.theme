@@ -1,0 +1,53 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+# Meadow: a field in early summer. A light look whose desk is a soft sage
+# and whose windows are the pale of dry grass in the sun, its one colour a
+# deep leaf green.
+#
+# One of five looks added on 8 October 2026 - Diego: "add 5 more theme
+# colors, 3 dark ones and 2 light ones with different tones that make the
+# desktop look cool. create the names as well for those". Built as Night
+# is: flat, a title bar on every window, three steps of surface and one
+# colour, and what is written on that colour dark enough to read.
+
+name       = meadow
+flat       = yes
+title_bars = yes
+
+desktop    = #7fa38a
+window     = #f5f7f2
+raised     = #ffffff
+sunken     = #ffffff
+
+line       = #cfd8cb
+line_soft  = #e2e8de
+track      = #d4ddd0
+swatch     = #a9cbb0
+
+edge_light = #ffffff
+edge_dark  = #d4ddd0
+
+text       = #1c2a20
+text_dim   = #66756a
+text_on    = #ffffff
+
+tab        = #d5e8d9
+tab_idle   = #e6ebe2
+tab_text   = #1f4a2c
+desktop_text = #ffffff
+console    = #1c2a20
+console_text = #f5f7f2
+
+accent     = #2f7a48
+good       = #2f7a48
+bad        = #c8322a
+ring       = #2f7a48
+stamp      = #b9d6c0
+
+# Plex's faces at the sizes the fixed layout holds (`theme.lua`), as every
+# look has them.
+font.title   = ibmplexsans-semibold 18
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
+font.text    = ibmplexsans 18
+font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18

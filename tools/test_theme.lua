@@ -126,7 +126,11 @@ end
 -- **Six since 3 October**: Night, which he asked for by name with
 -- photographs of Googlebook and agreed in `docs/dock.html` - "4. night".
 --
-check(#themes.order == 6, "there are " .. #themes.order .. " looks, not six")
+--
+-- **Eleven since 8 October**: Aurora, Amethyst, Ember, Sakura and Meadow,
+-- which Diego asked for - "3 dark ones and 2 light ones".
+--
+check(#themes.order == 11, "there are " .. #themes.order .. " looks, not eleven")
 
 for _, name in ipairs(themes.order) do
   local p = theme.read(themes[name], "dark")
@@ -298,46 +302,44 @@ do
         "a theme naming a Deskbar colour was told: " .. table.concat(said, "; "))
 end
 
--- 6. A window's corner and shadow, a look's own since Night (`roadmap.md`, a
--- dock at the bottom): Night's 18 and 24, every other look the 10 and 14
--- they all had, `theme.apply` putting them in force and the next look
--- putting them back, and a value that is not a number of points told.
+-- 6. A window's corner, every look's 18 since 8 October (Diego: "rounded
+-- corners should always stay the same regardless of the color theme"), and
+-- its shadow, a look's own: Night's 24, every other look's 14, `theme.apply`
+-- putting them in force and the next look putting them back; a look that
+-- still names a corner is told, and a shadow that is not points too.
 do
   local night = theme.read(themes.night, "dark")
 
-  check(night.corner == 18 and night.shadow == 24,
+  check(theme.CORNER == 18 and night.corner == 18 and night.shadow == 24,
         ("Night's corner and shadow read %s and %s, not 18 and 24"):format(
           tostring(night.corner), tostring(night.shadow)))
 
   for _, name in ipairs(themes.order) do
-    if name ~= "night" then
-      local p = theme.read(themes[name], "dark")
+    local p = theme.read(themes[name], "dark")
 
-      check(p.corner == theme.CORNER and p.shadow == theme.SHADOW,
-            name .. " has a corner of " .. tostring(p.corner) .. " and a shadow of "
-            .. tostring(p.shadow) .. ", not every look's "
-            .. theme.CORNER .. " and " .. theme.SHADOW)
-    end
+    check(p.corner == theme.CORNER, name .. " has a corner of " .. tostring(p.corner)
+          .. ", not every look's " .. theme.CORNER)
   end
 
   theme.apply(night)
   check(theme.metrics.corner == 18 and theme.metrics.shadow == 24,
         "Night applied left the corner at " .. tostring(theme.metrics.corner))
   theme.apply(theme.read(themes.plex, "dark"))
-  check(theme.metrics.corner == theme.CORNER and theme.metrics.shadow == theme.SHADOW,
+  check(theme.metrics.corner == 18 and theme.metrics.shadow == theme.SHADOW,
         "Plex applied after Night left the corner at " .. tostring(theme.metrics.corner))
 
-  local _, said = theme.read("corner = round\nshadow = 99\n", "dark")
+  local _, said = theme.read("corner = 6\nshadow = 99\n", "dark")
 
-  check(#said == 2 and (said[1] or ""):find("number of points", 1, true),
-        "a corner that is not a number of points was not told: "
+  check(#said == 2 and (said[1] or ""):find("no token called `corner`", 1, true)
+        and (said[2] or ""):find("number of points", 1, true),
+        "a look naming its corner, or a shadow not in points, was not told: "
         .. table.concat(said, "; "))
 end
 
 if fails == 0 then
   print(("PASS: %d checks on the themes that ship (every face carried, the "
          .. "the looks sharing their faces, legible and fitting the fixed layout, Plex as docs/plex.html has it, a bad "
-         .. "line told, a palette applied without its faces, and a look's own corner and shadow)."):format(checks))
+         .. "line told, a palette applied without its faces, and one corner for every look and a look's own shadow)."):format(checks))
   os.exit(0)
 end
 

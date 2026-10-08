@@ -1,0 +1,53 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+# Ember: what is left glowing in a fire. A warm charcoal, nearly black,
+# its one colour the coral of a live coal.
+#
+# One of five looks added on 8 October 2026 - Diego: "add 5 more theme
+# colors, 3 dark ones and 2 light ones with different tones that make the
+# desktop look cool. create the names as well for those". Built as Night
+# is: flat, a title bar on every window, three steps of surface and one
+# colour, and what is written on that colour dark enough to read.
+
+name       = ember
+flat       = yes
+title_bars = yes
+shadow     = 24
+
+desktop    = #140c0b
+window     = #211816
+raised     = #2e2220
+sunken     = #1a1211
+
+line       = #0a0505
+line_soft  = #3b2d2a
+track      = #473733
+swatch     = #ff8a73
+
+edge_light = #3c2e2b
+edge_dark  = #0a0505
+
+text       = #f5e8e4
+text_dim   = #b8a19b
+text_on    = #3a0d05
+
+tab        = #2e2220
+tab_idle   = #1b1312
+tab_text   = #f5e8e4
+desktop_text = #ffffff
+console    = #120b0a
+console_text = #ecdcd7
+
+accent     = #ff8a73
+good       = #8bd5a0
+bad        = #ff9e9e
+ring       = #ff8a73
+stamp      = #5a2c24
+
+# Plex's faces at the sizes the fixed layout holds (`theme.lua`), as every
+# look has them.
+font.title   = ibmplexsans-semibold 18
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
+font.text    = ibmplexsans 18
+font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18

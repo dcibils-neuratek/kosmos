@@ -13,8 +13,8 @@
 # on it is a dark navy rather than white: Googlebook's selected tiles and
 # pills read that way, and white on a pale blue does not read at all.
 #
-# Rounder than the others: a window's corner is 18 points where every other
-# look's is 10, and its shadow reaches 24 - the drawing's `.win`.
+# Its shadow reaches 24 - the drawing's `.win`. Its corner of 18 points was
+# its own and is every look's since 8 October (`theme.CORNER`).
 #
 # Flat, as Plex and Endeavour are; and a title bar on every window, as
 # Googlebook's windows all have one.
@@ -22,7 +22,6 @@
 name       = night
 flat       = yes
 title_bars = yes
-corner     = 18
 shadow     = 24
 
 desktop    = #0b1220

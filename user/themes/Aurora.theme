@@ -1,0 +1,53 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+# Aurora: the northern lights over a polar night. A deep blue-green dark,
+# its one colour the mint-green of the lights themselves.
+#
+# One of five looks added on 8 October 2026 - Diego: "add 5 more theme
+# colors, 3 dark ones and 2 light ones with different tones that make the
+# desktop look cool. create the names as well for those". Built as Night
+# is: flat, a title bar on every window, three steps of surface and one
+# colour, and what is written on that colour dark enough to read.
+
+name       = aurora
+flat       = yes
+title_bars = yes
+shadow     = 24
+
+desktop    = #06171a
+window     = #10262a
+raised     = #183439
+sunken     = #0a1c1f
+
+line       = #030c0e
+line_soft  = #21403f
+track      = #2a4c4b
+swatch     = #5eead4
+
+edge_light = #1f3f42
+edge_dark  = #030c0e
+
+text       = #e2f3f0
+text_dim   = #93b5af
+text_on    = #032b26
+
+tab        = #183439
+tab_idle   = #0d2023
+tab_text   = #e2f3f0
+desktop_text = #ffffff
+console    = #071518
+console_text = #cfe9e4
+
+accent     = #5eead4
+good       = #86efac
+bad        = #fda4af
+ring       = #5eead4
+stamp      = #1d4a4a
+
+# Plex's faces at the sizes the fixed layout holds (`theme.lua`), as every
+# look has them.
+font.title   = ibmplexsans-semibold 18
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
+font.text    = ibmplexsans 18
+font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18

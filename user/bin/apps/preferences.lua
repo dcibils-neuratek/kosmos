@@ -452,30 +452,37 @@ end
 -- returned, so every choice in this window - the look above all - wrote a
 -- file and changed nothing anybody could see.
 --
+local row_room = 400                -- a whole-row control's width, per page
 --
--- **The look, as a row of swatches** - `docs/preferences.html`'s Theme row,
--- which the first version drew as a dropdown of names. A look is chosen by
--- how it looks, and a dropdown of words asks a person to remember that.
+-- **The looks, as a gallery of small desks with their names** - Diego, 8
+-- October, at eleven looks: "the themes lost their names so i cant tell
+-- which name is which", "we need a way to see names of the themes as well
+-- to remember". It was a row of swatches, each look's one colour 26 across
+-- (`docs/preferences.html`), which said how a look looks and never what it
+-- is called - fine at four, a row of guesses at eleven.
 --
--- Each look's own `swatch`, 26 across with a radius of 6 and a faint edge,
--- 7 apart; the one in force ringed in the accent, two pixels wide and two
--- pixels out - the drawing's `outline: 2px solid; outline-offset: 2px`,
--- which follows the square's rounding. The drawing's four are Plex, Plex
--- Night, Classic and Studio in that order - yellow, blue, grey, near black -
--- and Endeavour, which came after it, is its own light blue tab.
+-- Each look a tile under the row's words, across the whole card: its desk,
+-- a little window on it in its window colour with its title strip, its one
+-- colour as a pill and its dim text as a line - drawn from the look's own
+-- palette - and its name under it. The one in force ringed in the accent.
 --
--- Left and right move along the row and choose, as the sidebar's arrows do,
--- because the first thing a person does with a row of looks is try them.
+-- Left and right move along and choose, as the sidebar's arrows do,
+-- because the first thing a person does with looks is try them; up and
+-- down move a row.
 --
-local SWATCH, SWATCH_GAP, RING = 26, 7, 4
+local GALLERY_COLS, GALLERY_GAP = 4, 10
+local PREVIEW_H, NAME_H = 58, 24
 local EDGE = 0x1f000000                  -- the drawing's rgba(0,0,0,.12)
 
 local function swatches(it)
   local names = LOOKS.order
-  local v = ui.view{ w = #names * SWATCH + (#names - 1) * SWATCH_GAP + 2 * RING,
-                     h = SWATCH + 2 * RING }
+  local rows = (#names + GALLERY_COLS - 1) // GALLERY_COLS
+  local tile_w = (row_room - (GALLERY_COLS - 1) * GALLERY_GAP) // GALLERY_COLS
+  local tile_h = PREVIEW_H + NAME_H
+  local v = ui.view{ w = row_room, h = rows * tile_h + (rows - 1) * GALLERY_GAP }
 
   v.focusable = true
+  v.below = true                         -- under the row's words, not beside them
   v.value = settings.get(it)
 
   local function pick(self, name)
@@ -489,26 +496,48 @@ local function swatches(it)
     win:paint()
   end
 
-  local function at(i) return RING + (i - 1) * (SWATCH + SWATCH_GAP) end
+  local function at(i)
+    local col, row = (i - 1) % GALLERY_COLS, (i - 1) // GALLERY_COLS
+
+    return col * (tile_w + GALLERY_GAP), row * (tile_h + GALLERY_GAP)
+  end
 
   function v:draw(g)
     for i, name in ipairs(names) do
-      local x = at(i)
+      local x, y = at(i)
       local look = theme.palettes[name] or {}
+      local desk = look.desktop or theme.desktop
 
       if name == self.value then
-        g:frame_round(x - RING, 0, SWATCH + 2 * RING, SWATCH + 2 * RING,
-                      theme.accent, 6 + RING)
-        g:frame_round(x - RING + 1, 1, SWATCH + 2 * RING - 2,
-                      SWATCH + 2 * RING - 2, theme.accent, 6 + RING - 1)
+        g:frame_round(x, y, tile_w, PREVIEW_H, theme.accent, 10)
+        g:frame_round(x + 1, y + 1, tile_w - 2, PREVIEW_H - 2, theme.accent, 9)
       end
 
-      g:fill_round(x, RING, SWATCH, SWATCH, look.swatch or theme.text_dim, 6)
-      g:frame_round(x, RING, SWATCH, SWATCH, EDGE, 6)
+      -- The desk, and a window on it.
+      g:fill_round(x + 3, y + 3, tile_w - 6, PREVIEW_H - 6, desk, 8)
+      g:frame_round(x + 3, y + 3, tile_w - 6, PREVIEW_H - 6, EDGE, 8)
+
+      local wx, wy, ww, wh = x + 14, y + 12, tile_w - 28, PREVIEW_H - 18
+
+      g:fill_round(wx, wy, ww, wh, look.window or theme.window, 5)
+      g:fill(wx + 5, wy + 9, ww - 10, 1, look.line_soft or theme.line_soft)
+      g:fill_round(wx + ww - 22, wy + 3, 4, 4, 0xffff5f57, 2)
+      g:fill_round(wx + ww - 15, wy + 3, 4, 4, 0xfffebc2e, 2)
+      g:fill_round(wx + ww - 8, wy + 3, 4, 4, 0xff28c840, 2)
+      g:fill_round(wx + 6, wy + 15, math.min(34, ww - 12), 8, look.accent or theme.accent, 4)
+      g:fill(wx + 6, wy + 28, math.min(52, ww - 12), 3, look.text_dim or theme.text_dim)
+
+      -- Its name, under it, centred.
+      local title = LOOKS.titles[name] or name
+      local face = (name == self.value) and "label" or "ui"
+
+      g:text(x + (tile_w - gfx.measure(title, face)) // 2,
+             y + PREVIEW_H + (NAME_H - gfx.height(face)) // 2, title,
+             (name == self.value) and theme.text or theme.text_dim, nil, face)
     end
 
     if self.focused then
-      g:fill(RING, self.h - 1, self.w - 2 * RING, 1, theme.ring)
+      g:fill(0, self.h - 1, self.w, 1, theme.ring)
     end
   end
 
@@ -519,17 +548,23 @@ local function swatches(it)
       if name == self.value then i = k end
     end
 
-    if c == -4 and i > 1 then pick(self, names[i - 1]) return true end
-    if c == -3 and i < #names then pick(self, names[i + 1]) return true end
+    local to = (c == -4 and i - 1) or (c == -3 and i + 1)
+               or (c == -1 and i - GALLERY_COLS) or (c == -2 and i + GALLERY_COLS) or nil
 
-    return c == -3 or c == -4
+    if not to then return false end
+
+    if to >= 1 and to <= #names then pick(self, names[to]) end
+
+    return true
   end
 
-  function v:mouse(action, x)
+  function v:mouse(action, x, y)
     if action ~= "press" then return true end
 
     for i, name in ipairs(names) do
-      if x >= at(i) and x < at(i) + SWATCH then pick(self, name) end
+      local tx, ty = at(i)
+
+      if x >= tx and x < tx + tile_w and y >= ty and y < ty + tile_h then pick(self, name) end
     end
 
     return true
@@ -538,7 +573,6 @@ local function swatches(it)
   return v
 end
 
-local row_room = 400                -- a whole-row control's width, per page
 local now_label = nil               -- the clock's row, which keeps time
 
 local function control_for(it, x, y, changed)
@@ -941,7 +975,20 @@ rebuild = function()
       local least = (i == n) and ROW_MIN or (ROW_MIN - 1)
       local h = math.max(least, 2 * ROW_PAD + math.max(words, ch))
 
-      if c then
+      -- A control that goes under the row's words, across the card - the
+      -- looks' gallery - rather than beside them at the right.
+      local below = c and c.below
+
+      if below then
+        h = 2 * ROW_PAD + words + ROW_PAD + c.h
+        taken = 0
+      end
+
+      if below then
+        c.x = cx + 1 + ROW_IN
+        c.y = y + ROW_PAD + words + ROW_PAD
+        page:add(c)
+      elseif c then
         c.x = right - c.w
         c.y = y + (h - c.h) // 2
         page:add(c)
@@ -980,7 +1027,7 @@ rebuild = function()
       -- The name and its note as one block, centred in the row: each in a
       -- line of the drawing's height, the face centred in its line.
       --
-      local top = y + (h - words) // 2
+      local top = below and (y + ROW_PAD) or (y + (h - words) // 2)
 
       -- The row's name in `label`: the drawing's 13.5 at weight 500.
       if it.label ~= "" then

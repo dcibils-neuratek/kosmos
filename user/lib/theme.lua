@@ -277,20 +277,18 @@ theme.tokens = {
   "title_bars",
 
   --
-  -- **`corner` and `shadow`: how round a window is and how far its shadow
-  -- reaches**, in points, which `theme.metrics` carried for every look
-  -- alike until Night (`roadmap.md`, a dock at the bottom; Diego, 3 October:
-  -- "replicate as mich as possible the design language of googlebook"),
-  -- whose windows are rounder than the others'. A look that does not say
-  -- has the ten and fourteen every look had, so leaving Night for another
-  -- puts them back.
+  -- **`shadow`: how far a window's shadow reaches**, in points - a look's
+  -- own since Night. **Not `corner` any more**: Diego, 8 October, "rounded
+  -- corners should always stay the same regardless of the color theme, use
+  -- the dark one as the default". Night's 18 is every look's (`CORNER`),
+  -- and a look that still names one is told it has no such token.
   --
-  "corner", "shadow",
+  "shadow",
 }
 
 -- What `corner` and `shadow` are in a look that does not name them, and the
 -- most a look may: past that a window is a capsule.
-theme.CORNER, theme.SHADOW, theme.METRIC_MOST = 10, 14, 40
+theme.CORNER, theme.SHADOW, theme.METRIC_MOST = 18, 14, 40
 
 local known = {}
 
@@ -460,7 +458,7 @@ function theme.read(text, base)
         said[#said + 1] = ("line %d: no token called `%s`"):format(n, key)
       elseif key == "name" then
         out.name = value
-      elseif key == "corner" or key == "shadow" then
+      elseif key == "shadow" then
         local v = math.tointeger(tonumber(value))
 
         if v and v >= 0 and v <= theme.METRIC_MOST then
@@ -500,7 +498,7 @@ function theme.read(text, base)
   --
   if out.flat == nil then out.flat = false end
   if out.title_bars == nil then out.title_bars = true end
-  if out.corner == nil then out.corner = theme.CORNER end
+  out.corner = theme.CORNER             -- every look's, never its own
   if out.shadow == nil then out.shadow = theme.SHADOW end
 
   return out, said

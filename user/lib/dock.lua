@@ -31,7 +31,7 @@ dock.SEP      = 13      -- a separator's room
 dock.KOSMOS_H = 42      -- the Kosmos button, a pill
 dock.KOSMOS_IN = 16     -- inside it, either side
 dock.MARK     = 22      -- the Kosmos button's picture
-dock.RADIUS   = 22      -- the dock's own corners, floating
+dock.RADIUS   = 18      -- the dock's own corners, floating: a window's (`theme.CORNER`)
 
 --
 -- **What is pinned, until somebody pins something else**: the drawing's
@@ -45,11 +45,17 @@ dock.RADIUS   = 22      -- the dock's own corners, floating
 -- its height and what is in it, scaled together. Medium is the 60 he asked
 -- for; 64 was the drawing's.
 --
+--
+-- **Its corners are a window's at every size** (Diego, 8 October:
+-- "rounded corners should always stay the same regardless of the color
+-- theme, use the dark one as the default"): 18, `theme.CORNER`, so the dock
+-- and the windows over it are rounded alike.
+--
 dock.SIZES = {
   small  = { H = 52, ICON = 30, CELL = 42, KOSMOS_H = 36, MARK = 20, RADIUS = 18 },
-  medium = { H = 60, ICON = 36, CELL = 50, KOSMOS_H = 42, MARK = 22, RADIUS = 22 },
-  large  = { H = 72, ICON = 44, CELL = 60, KOSMOS_H = 50, MARK = 26, RADIUS = 26 },
-  larger = { H = 84, ICON = 52, CELL = 70, KOSMOS_H = 58, MARK = 30, RADIUS = 30 },
+  medium = { H = 60, ICON = 36, CELL = 50, KOSMOS_H = 42, MARK = 22, RADIUS = 18 },
+  large  = { H = 72, ICON = 44, CELL = 60, KOSMOS_H = 50, MARK = 26, RADIUS = 18 },
+  larger = { H = 84, ICON = 52, CELL = 70, KOSMOS_H = 58, MARK = 30, RADIUS = 18 },
 }
 
 -- The sizes taken for this process's dock, by name; Medium for any other.

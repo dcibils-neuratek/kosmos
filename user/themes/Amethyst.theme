@@ -1,0 +1,53 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+# Amethyst: the violet of the stone, held to the light. A deep plum dark,
+# its one colour a pale lilac.
+#
+# One of five looks added on 8 October 2026 - Diego: "add 5 more theme
+# colors, 3 dark ones and 2 light ones with different tones that make the
+# desktop look cool. create the names as well for those". Built as Night
+# is: flat, a title bar on every window, three steps of surface and one
+# colour, and what is written on that colour dark enough to read.
+
+name       = amethyst
+flat       = yes
+title_bars = yes
+shadow     = 24
+
+desktop    = #120b1f
+window     = #1f1830
+raised     = #2b2240
+sunken     = #171126
+
+line       = #08050f
+line_soft  = #382e4f
+track      = #43395c
+swatch     = #c4b5fd
+
+edge_light = #3a3052
+edge_dark  = #08050f
+
+text       = #ece6f7
+text_dim   = #a99fbf
+text_on    = #1e1240
+
+tab        = #2b2240
+tab_idle   = #1a1428
+tab_text   = #ece6f7
+desktop_text = #ffffff
+console    = #110c1c
+console_text = #ddd4ee
+
+accent     = #c4b5fd
+good       = #86efac
+bad        = #fca5a5
+ring       = #c4b5fd
+stamp      = #3b2f5e
+
+# Plex's faces at the sizes the fixed layout holds (`theme.lua`), as every
+# look has them.
+font.title   = ibmplexsans-semibold 18
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
+font.text    = ibmplexsans 18
+font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18

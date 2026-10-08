@@ -46,12 +46,20 @@ local themes = {}
 -- default: the window manager and Preferences both take `order[1]`.
 -- Night, the sixth, last (`roadmap.md`, a dock at the bottom): offered
 -- beside the others, never the default.
-themes.order = { "endeavour", "plex", "plexnight", "classic", "studio", "night" }
+--
+-- **Five more on 8 October** (Diego: "add 5 more theme colors, 3 dark ones
+-- and 2 light ones with different tones that make the desktop look cool.
+-- create the names as well for those"): Aurora, Amethyst and Ember dark,
+-- Sakura and Meadow light, after Night.
+themes.order = { "endeavour", "plex", "plexnight", "classic", "studio", "night",
+                 "aurora", "amethyst", "ember", "sakura", "meadow" }
 
 -- What each is called where a person reads it.
 themes.titles = {
   plex = "Plex", plexnight = "Plex Night", classic = "Classic",
   studio = "Studio", endeavour = "Endeavour", night = "Night",
+  aurora = "Aurora", amethyst = "Amethyst", ember = "Ember",
+  sakura = "Sakura", meadow = "Meadow",
 }
 
 --

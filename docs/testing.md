@@ -21008,3 +21008,29 @@ and the launcher's Shut Down sending nothing - both fail. Restored.
   now recorded when it opens its first window a person looks at - not a
   backdrop, strip, popup, menu, tip or banner - and kept by its program
   alone, so a list holding both merges into one (`test_launchgrid.lua` 66).
+
+## 18.452 One corner for every look; the looks named in a gallery; five more
+
+Diego, 8 October: "rounded corners should always stay the same regardless of
+the color theme, use the dark one as the default", "the themes lost their
+names so i cant tell which name is which", "we need a way to see names of
+the themes as well to remember, and add 5 more theme colors, 3 dark ones and
+2 light ones with different tones that make the desktop look cool. create
+the names as well for those".
+
+- **A window's corner is 18 in every look** (`theme.CORNER`, Night's); a
+  look that names its own is told there is no such token. The dock's corners
+  are 18 at every size. `test_theme.lua` 389: every look's corner is 18, and
+  a look naming one is told.
+- **The Theme row is a gallery**: each look a small desk in its own colours
+  with a window on it, and its name under it; the one in force ringed;
+  arrows choose. The display harness's keyboard drive of the look (Tab,
+  Right) still changes the whole screen.
+- **Aurora, Amethyst and Ember** (dark: blue-green and mint, plum and lilac,
+  charcoal and coral) and **Sakura and Meadow** (light: blossom pink and
+  rose, sage and leaf green): `themes.order` eleven, held by `test_theme`,
+  `test_settings` and the display harness.
+
+x86 display 1-5, dock and host pass. The gallery's drawing has no check of
+its own beyond the count and the keyboard - its names are looked at on the
+M700.
