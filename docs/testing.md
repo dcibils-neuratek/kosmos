@@ -21498,3 +21498,19 @@ for both), and every application with its own loop is mended with it.
 `x86-maps` 25 checks: Night chosen at the end, as Preferences chooses it,
 and Maps says "the map is dark". **Control**: `direct_event` without
 `apply_look`, it fails, "LOOK true" and the map "light".
+
+## 18.474 One corner again, smaller; and the pointer's rest, Diego's seven
+
+Diego, 8 October, afternoon: "at some point we changed the rounded borders
+radius and i want to rever to how it was before, smaller radius", "to all
+themes the same". 0.11.59 had made Night's 18 every look's. It is 10 now,
+what every other look had before, and still one for all (`theme.CORNER`).
+`test_theme` 389 checks hold 10.
+
+And "i want to change the selector on focus follows mouse. use these
+options: 0ms, 100ms, 250ms, 500ms, 1 sec, 1.5 seconds, 2 seconds".
+Appearance > Windows offers exactly those, and the window manager takes 0 to
+2000 rather than 250 to 3000. At 0 a window comes forward on the pass after
+the pointer stops on it. `test_settings` 200 checks hold the seven.
+
+The whole x86 gate on it, with 0.11.78-0.11.79's kit and Deskbar: 52 of 52 in 5:44.

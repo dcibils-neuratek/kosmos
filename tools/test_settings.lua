@@ -336,6 +336,21 @@ do
         "nobody having said anything made rows")
 end
 
+-- The pointer's rest before focus follows: Diego's seven, 8 October -
+-- "0ms, 100ms, 250ms, 500ms, 1 sec, 1.5 seconds, 2 seconds".
+do
+  local got = {}
+
+  for _, it in ipairs(settings.ITEMS) do
+    if it.key == "focus_delay_ms" then
+      for _, c in ipairs(it.choices or {}) do got[#got + 1] = tostring(c[1]) end
+    end
+  end
+
+  check(table.concat(got, ",") == "0,100,250,500,1000,1500,2000",
+        "focus follows the pointer after " .. table.concat(got, ",") .. " ms, not Diego's seven")
+end
+
 if #fails > 0 then
   print(("FAIL: %d of %d checks on the settings list:"):format(#fails, checks))
   for _, f in ipairs(fails) do print("  " .. f) end

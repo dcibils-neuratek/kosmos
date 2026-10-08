@@ -260,9 +260,11 @@ settings.ITEMS = {
         label = "After resting for", note = "How long before it comes forward",
         kind = "choice", file = settings.APPEARANCE, key = "focus_delay_ms",
         default = 1000,
-        choices = { { 250, "A quarter second" }, { 500, "Half a second" },
+        -- Diego, 8 October: "use these options: 0ms, 100ms, 250ms, 500ms,
+        -- 1 sec, 1.5 seconds, 2 seconds".
+        choices = { { 0, "0 ms" }, { 100, "100 ms" }, { 250, "250 ms" }, { 500, "500 ms" },
                     { 1000, "1 second" }, { 1500, "1.5 seconds" },
-                    { 2000, "2 seconds" }, { 3000, "3 seconds" } } },
+                    { 2000, "2 seconds" } } },
 
   item{ category = "appearance", group = "Icons",
         label = "On the desktop", note = "Small 16, Normal 32, Large 64",

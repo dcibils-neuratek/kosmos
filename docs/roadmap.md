@@ -1981,7 +1981,13 @@ was before, smaller radius", "to all themes the same" - the window corner
 back to its radius before 0.11.59's 18, one radius for every look. And
 "i want to change the selector on focus follows mouse. use these options:
 0ms, 100ms, 250ms, 500ms, 1 sec, 1.5 seconds, 2 seconds" - the delay's
-choices in Appearance > Windows exactly those seven.
+choices in Appearance > Windows exactly those seven. And "why the app about
+this machine and the cpu monitor app does not show the real name of the
+cpu like Intel Core i7 Quad Core 3.5ghz or AMD etc" - the processor's name:
+x86's brand string from CPUID 0x80000002-4, read once by the kernel and
+passed through `/Devices/cpu`; on ARM a name looked up from MIDR; shown by
+About This Machine, the CPU monitor and `neofetch`, the raw ID kept as a
+detail.
 
 **Storage at full speed, performance first.** Diego, 14 September: "I expect
 our usb drives and nvme to perform like any other os like Linux", and "it's

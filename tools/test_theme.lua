@@ -302,16 +302,18 @@ do
         "a theme naming a Deskbar colour was told: " .. table.concat(said, "; "))
 end
 
--- 6. A window's corner, every look's 18 since 8 October (Diego: "rounded
--- corners should always stay the same regardless of the color theme"), and
+-- 6. A window's corner, every look's the same since 8 October (Diego:
+-- "rounded corners should always stay the same regardless of the color
+-- theme") - 18 that morning, 10 by the afternoon ("i want to rever to how
+-- it was before, smaller radius", "to all themes the same") - and
 -- its shadow, a look's own: Night's 24, every other look's 14, `theme.apply`
 -- putting them in force and the next look putting them back; a look that
 -- still names a corner is told, and a shadow that is not points too.
 do
   local night = theme.read(themes.night, "dark")
 
-  check(theme.CORNER == 18 and night.corner == 18 and night.shadow == 24,
-        ("Night's corner and shadow read %s and %s, not 18 and 24"):format(
+  check(theme.CORNER == 10 and night.corner == 10 and night.shadow == 24,
+        ("Night's corner and shadow read %s and %s, not 10 and 24"):format(
           tostring(night.corner), tostring(night.shadow)))
 
   for _, name in ipairs(themes.order) do
@@ -322,10 +324,10 @@ do
   end
 
   theme.apply(night)
-  check(theme.metrics.corner == 18 and theme.metrics.shadow == 24,
+  check(theme.metrics.corner == 10 and theme.metrics.shadow == 24,
         "Night applied left the corner at " .. tostring(theme.metrics.corner))
   theme.apply(theme.read(themes.plex, "dark"))
-  check(theme.metrics.corner == 18 and theme.metrics.shadow == theme.SHADOW,
+  check(theme.metrics.corner == 10 and theme.metrics.shadow == theme.SHADOW,
         "Plex applied after Night left the corner at " .. tostring(theme.metrics.corner))
 
   local _, said = theme.read("corner = 6\nshadow = 99\n", "dark")

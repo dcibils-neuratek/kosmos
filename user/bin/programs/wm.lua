@@ -543,7 +543,7 @@ local function load_appearance()
   OUT.focus_follows = saved.focus_follows == true
 
   if math.type(saved.focus_delay_ms) == "integer" then
-    OUT.focus_delay_ms = math.max(250, math.min(3000, saved.focus_delay_ms))
+    OUT.focus_delay_ms = math.max(0, math.min(2000, saved.focus_delay_ms))
   end
 
   -- The scale next: the chrome's sizes and every face below follow it.
@@ -5576,7 +5576,7 @@ handlers.keys = function(req)
   end
 
   if math.type(req.focus_delay_ms) == "integer" then
-    OUT.focus_delay_ms = math.max(250, math.min(3000, req.focus_delay_ms))
+    OUT.focus_delay_ms = math.max(0, math.min(2000, req.focus_delay_ms))
   end
 
   for _, pair in ipairs({ { "power", { off = 1, menu = 1, nothing = 1 } },

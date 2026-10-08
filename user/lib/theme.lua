@@ -280,15 +280,18 @@ theme.tokens = {
   -- **`shadow`: how far a window's shadow reaches**, in points - a look's
   -- own since Night. **Not `corner` any more**: Diego, 8 October, "rounded
   -- corners should always stay the same regardless of the color theme, use
-  -- the dark one as the default". Night's 18 is every look's (`CORNER`),
-  -- and a look that still names one is told it has no such token.
+  -- the dark one as the default". One radius is every look's (`CORNER`),
+  -- and a look that still names one is told it has no such token. It was
+  -- Night's 18 from 0.11.59, and is 10 again since the same day's
+  -- afternoon: "i want to rever to how it was before, smaller radius", "to
+  -- all themes the same" - 10 being what every look but Night had.
   --
   "shadow",
 }
 
 -- What `corner` and `shadow` are in a look that does not name them, and the
 -- most a look may: past that a window is a capsule.
-theme.CORNER, theme.SHADOW, theme.METRIC_MOST = 18, 14, 40
+theme.CORNER, theme.SHADOW, theme.METRIC_MOST = 10, 14, 40
 
 local known = {}
 
