@@ -45,10 +45,10 @@ shell rather than underneath it.
        .   |  htop  |  cat   |   ls   | monitor| hello  |benchmark      .
        .   +--------+--------+--------+--------+--------+--------+      .
        .                                                                .
-       .   +--------+  the window manager. Applications send it lists   .
-       .   |   wm   |  of drawing commands; it owns every pixel they    .
-       .   +--------+  ask for, which is why a hung one still has a     .
-       .      ^   ^    window that moves.                               .
+       .   +--------+  the window manager. Applications draw their      .
+       .   |   wm   |  windows into pictures of their own and hand      .
+       .   +--------+  them over; it composes them, which is why a      .
+       .      ^   ^    hung one still has a window that moves.          .
        .      |   |                                                     .
        .   +------+ +--------+                                          .
        .   |hello-| | stuck  |  started by wm, each handed /Running/wm  .

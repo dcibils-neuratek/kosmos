@@ -7,20 +7,37 @@
 --
 -- Started by `wm`, which hands it the window manager under /Running/wm and
 -- nothing else it did not already have. It draws once, then redraws when a
--- key arrives, and it never touches a pixel: everything it wants on screen
--- leaves here as a list of commands.
+-- key arrives - **into pixels of its own**: a region of two pictures this
+-- process owns and hands the window manager when it opens the window, one
+-- shown while the other is drawn, and `commit` says which. Since Astra's D2
+-- (`docs/astra-display.md`, 9 October 2026) every window draws itself so;
+-- the window manager only puts the pictures on the screen.
 --
--- That is `ui.md` 16.6, and the reason for it is visible from the other
--- side: because the pixels live in the window manager, this program can
--- stop answering and its window carries on existing.
 
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
+local regions = use("/Kosmos/Libraries/regions.lua")
 
 local W, H = 360, 200
 
+-- Two pictures of the window's size, in one region.
+local bytes = gfx.bytes(W, H)
+local region = regions.make(bytes * 2)
+
+if not region then
+  print("hello-win: no memory for its pictures")
+  return
+end
+
+local pictures = { gfx.wrap{ at = region.at, w = W, h = H },
+                   gfx.wrap{ at = region.at + bytes, w = W, h = H } }
+
+-- The window manager shows the first until the first commit; this draws
+-- into the second.
+local draw_into = 2
+
 local win, err = fs.send("/Running/wm", {
   type = "open", title = "hello", w = W, h = H, x = 80, y = 120,
-})
+}, region.cap)
 
 if not win then
   print("hello-win: " .. tostring(err))
@@ -31,27 +48,20 @@ local handle = win.window
 local presses = 0
 
 local function draw()
-  fs.send("/Running/wm", { type = "draw", window = handle, ops = {
-    { op = "fill", x = 0, y = 0, w = W, h = H, color = 0xff101820 },
-    { op = "fill", x = 0, y = 0, w = W, h = 28,  color = 0xff1f6feb },
-    { op = "text", x = 10, y = 7, s = "A window of my own",
-      color = 0xffffffff, bg = 0xff1f6feb },
-    { op = "text", x = 10, y = 48,
-      s = "The pixels are not here. They are in the",
-      color = 0xffc9d1d9, bg = 0xff101820 },
-    { op = "text", x = 10, y = 64,
-      s = "window manager, which is why this window",
-      color = 0xffc9d1d9, bg = 0xff101820 },
-    { op = "text", x = 10, y = 80,
-      s = "outlives whatever happens in here.",
-      color = 0xffc9d1d9, bg = 0xff101820 },
-    { op = "text", x = 10, y = 120,
-      s = ("keys received: %d"):format(presses),
-      color = 0xff7ee787, bg = 0xff101820 },
-    { op = "text", x = 10, y = 150,
-      s = "Tab switches windows, arrows move one.",
-      color = 0xff8b949e, bg = 0xff101820 },
-  } })
+  local s = pictures[draw_into]
+
+  s:fill(0, 0, W, H, 0xff101820)
+  s:fill(0, 0, W, 28, 0xff1f6feb)
+  s:text(10, 7, "A window of my own", 0xffffffff, 0xff1f6feb)
+  s:text(10, 48, "The pixels are here, in this process:", 0xffc9d1d9, 0xff101820)
+  s:text(10, 64, "it draws them and hands them over,", 0xffc9d1d9, 0xff101820)
+  s:text(10, 80, "and the window manager shows them.", 0xffc9d1d9, 0xff101820)
+  s:text(10, 120, ("keys received: %d"):format(presses), 0xff7ee787, 0xff101820)
+  s:text(10, 150, "Tab switches windows, arrows move one.", 0xff8b949e, 0xff101820)
+
+  local r = fs.send("/Running/wm", { type = "commit", window = handle })
+
+  draw_into = (r and r.draw_into) or (draw_into == 1 and 2 or 1)
 end
 
 draw()

@@ -2012,33 +2012,7 @@ function OUT.light(x, y, kind, lit, off, held)
   end
 end
 
---------------------------------------------------------------------------
--- The drawing commands an application may send.
---
--- A small set on purpose. Each one is a primitive that already exists in
--- C, so this table is a name-to-primitive map and not an interpreter -
--- there is nothing here that loops over pixels in Lua, which is the rule
--- `gfx.md` 19.2 exists to keep.
---
--- Anything unrecognised is skipped rather than refused. An application
--- built against a later version of this list should lose a rectangle, not
--- its window.
---------------------------------------------------------------------------
 
---
--- **A drawing command, in the screen's pixels at a scale** (`ui.md` 16.18):
--- `paint.scale`, which a window drawing itself uses the same way (`astra-display.md` D2).
---
-local paint = use("/Kosmos/Libraries/paint.lua")
-
-function scale.op(o, pct)
-  return paint.scale(o, pct, picture_named)
-end
-
--- The commands a window sends, drawn: `/Kosmos/Libraries/paint.lua`, shared with
--- `ui.paint_view` so a widget looks the same in a window that owns its
--- pixels as in one that sends drawing.
-local ops = paint.new(picture_named, sized)
 
 --------------------------------------------------------------------------
 -- The pointer.
@@ -3774,57 +3748,9 @@ handlers.open = function(req, who, cap)
            draws_itself = win.draws_itself or nil }
 end
 
-handlers.draw = function(req)
-  local win = by_handle[req.window]
-  if not win then return { ok = false, error = "no such window" } end
-
-  if not req.more then P.answered(win) end
-
-  for _, o in ipairs(req.ops or {}) do
-    local fn = ops[o.op]
-    if fn then
-      if win.pct and win.pct ~= 100 then scale.op(o, win.pct) end
-
-      fn(win.surface, o)
-    end
-  end
-
-  --
-  -- `more` means the application has not finished this frame.
-  --
-  -- A window's drawing does not fit in one message, so it arrives in
-  -- several - and damaging after each one composited the window
-  -- half-redrawn. What that looks like is a flicker on every click: the
-  -- first message clears the background and the widgets arrive over the
-  -- following two, and the screen is scanned out somewhere in the middle.
-  --
-  -- The surface is written either way. Only the *damage* waits, so what
-  -- reaches the screen is one complete frame rather than three partial
-  -- ones. That is what a backbuffer is for, applied one level up: an
-  -- application composes off-screen and says when it is done.
-  --
-  if not req.more then
-    --
-    -- One line per *finished* frame, under `wm trace`. A window that redraws
-    -- when nothing has happened is otherwise invisible: it costs too little
-    -- to move a processor meter and it puts the same pixels back, so the
-    -- screen cannot show it either. The Terminal repainted itself once a
-    -- second for months because there was nowhere to see that it did.
-    --
-    --
-    -- Behind `TRACE` here as well as inside `note`, because the string is
-    -- built before `note` can decline it, and this is every finished frame
-    -- of every window.
-    --
-    if TRACE then
-      note(("draw %s at %dus"):format(tostring(win.title), trace_us()))
-    end
-
-    damage_window(win)
-  end
-
-  return { ok = true }
-end
+-- `draw` - a frame of drawing commands carried out here - is gone since
+-- Astra's D2e (`docs/astra-display.md`): every window draws itself and
+-- commits (`handlers.commit`).
 
 --
 -- Start a program, in a window, from inside the desktop.

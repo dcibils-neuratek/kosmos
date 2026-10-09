@@ -880,17 +880,16 @@ Fluidity is consistent latency, not high throughput.
 
 ### 7.4 The drawing model
 
-Two real options, and Kosmos picks the second.
+Two real options. Kosmos picked the second, and on 9 October 2026 changed
+to the first.
 
-**A — the app draws into its own buffer and the server composes.** What every modern compositor does. Fast, but it needs shared memory between processes, which breaks share-nothing and adds a kernel primitive.
+**A — the app draws into its own buffer and the server composes.** What every modern compositor does: Wayland, today's macOS.
 
 **B — the app sends drawing commands.** `{op="rect", x=10, y=10, w=100, h=50, color=0xff0000}`. Pure message passing. It is the X11 model and the BeOS app_server model.
 
-B it is. The cost is smaller than it sounds: a typical window is ~50 commands per frame against the ~200KB of blit the server does anyway. The serialization overhead gets buried.
+**B was the choice for the first year**, on two grounds: shared memory between processes broke share-nothing and needed a kernel primitive, and a window of ~50 commands a frame cost little against the blit the server did anyway. Commands are data, too - they can be logged and replayed.
 
-And it gives something nice for free: commands are data. They can be logged, replayed, redirected to another display, or inspected from the REPL to see what an app is drawing.
-
-If video or a large canvas shows up, shared memory gets added as a special case. Never as the general case. That path is designed in [gfx.md](gfx.md).
+**A since 9 October 2026** (`docs/astra-display.md`, D1 and D2; Diego on the Kosmos Board: "Every window draws itself"). Both grounds had gone. Shared regions arrived for pixels that are produced - Paint, the 3D demo, Doom, film (`gfx.md`) - and became ordinary. And B put every window's drawing on the window manager's thread, in Lua: when the window manager is split into a window server in C and a shell in Lua (D3-D5), the commands would have had to be carried out by one of them - a drawing interpreter in C, or Lua on the frame path. So the UI kit draws a window's frame in its own process, with the same `paint.lua` the window manager used, into a region of two pictures, and commits it; the window manager composes and draws nobody's pixels. The same window drawn both ways was the same in every pixel, at 100 and 150 per cent, before the commands were retired (`testing.md` 18.501-18.507). What A costs is one more picture a window in memory.
 
 ### 7.5 Drivers
 

@@ -1,8 +1,8 @@
 # The path pixels take
 
-`design.md` §7.4 decided that the default model is **drawing commands**: the app sends `{op="rect", ...}` and the app server rasterizes. That covers buttons, lists, text and windows, which is 95% of what the system draws.
+`design.md` §7.4 decided, at first, that the default model was **drawing commands**: the app sent `{op="rect", ...}` and the window manager rasterized. This document was written for the other path: **apps that produce pixels** - Paint, the 3D demo, Doom, an image viewer, a video player - where commands are no use and a window is shared memory.
 
-This document covers the other 5%: **apps that produce pixels**. Paint, the 3D demo, Doom, an image viewer, a video player. Commands are no use there and you have to drop down to shared memory.
+**Since 9 October 2026 that path is every window's** (`docs/astra-display.md` D2): the UI kit draws a window's frame into a region of its own, with the same commands (`paint.lua`) run in its own process, and commits it. What follows is still how the pixels travel; only the 95% the commands carried has joined it.
 
 It is a different path and it has to be designed separately. What follows are the six decisions that define it.
 

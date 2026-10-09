@@ -146,7 +146,11 @@ desktop.
      tells their sizes as it tells any (`swap_surface`). Every window the
      kit makes draws itself; what still sends drawing commands is a
      program written without the kit (`hello-win`, `stuck`).
-   - **D2e** - the drawing commands retired from the window manager.
+   - **D2e, done 9 October** (`testing.md` 18.507) - the drawing commands
+     retired: the window manager's `draw` handler, its table of commands
+     and `scale.op` gone, and the kit's sending with them. `hello-win` and
+     `stuck`, the two programs written without the kit, draw into regions
+     of their own. Measured again on the M700 is D6's.
 4. **D3** - the window server: the screen, surfaces, stacking, damage and
    composing move to C; the window manager tells it through the manager
    door. `wm.lua` loses `compose.lua` and the pixel work around it.

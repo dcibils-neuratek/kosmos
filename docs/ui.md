@@ -10,7 +10,7 @@ BeOS lineage, with the corrections a microkernel and a Lua userland make possibl
 
 Two pieces, in separate processes. Same as BeOS.
 
-**The kit** (`lib/ui.lua`) is a library running **inside the app's process**. It handles the view tree, layout, event routing and the generation of drawing commands. If it has a bug, the app dies and nothing else.
+**The kit** (`lib/ui.lua`) is a library running **inside the app's process**. It handles the view tree, layout, event routing, and drawing the window's frame into the window's own pictures - its commands run through `paint.lua` in the app's own process and committed (`docs/astra-display.md` D2; until 9 October 2026 the commands were sent to the window manager to carry out). If it has a bug, the app dies and nothing else.
 
 **The app server** is a separate process. It handles windows, decoration, stacking, focus, workspaces, compositing and input routing. It knows nothing about views: to it a window is a rectangle with an endpoint on the other side.
 

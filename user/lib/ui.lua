@@ -5762,97 +5762,6 @@ local window = {}
 window.__index = window
 
 --
--- How much of a message a batch of commands may fill.
---
--- **By size, not by count.** This was sixteen commands per message, which
--- is fine for a window of buttons and wrong for a window of text: sixteen
--- `text` commands carrying seventy-character log lines is over two
--- kilobytes, the send raises, and the application dies mid-repaint. What
--- that looks like is a window that draws once and then stops, with no error
--- anywhere - the compositor owns the pixels, so the window stays exactly as
--- it was.
---
--- 1200 of the 2048 leaves room for the message's own keys and the
--- serialiser's framing. The estimate below is deliberately generous for the
--- same reason: being wrong in the cheap direction costs an extra message,
--- and being wrong in the other direction costs the application.
---
-local BATCH_BYTES = 1200
-
-local function op_cost(o)
-  --
-  -- Deliberately generous. A `text` command carries five keys and their
-  -- values - the verb, two coordinates, a colour and usually a background -
-  -- and every one of them costs a name and a tag in the message as well as
-  -- its own bytes. Guessing low here does not cost a message, it costs the
-  -- application: the send raises and the window stops repainting, with the
-  -- pixels still on screen because the compositor owns them.
-  --
-  local cost = 96
-
-  if o.s then cost = cost + #o.s end
-
-  -- An `image` carries an asset name instead of a string, and a window full
-  -- of icons is a hundred of them. Not counting it is how a batch goes over
-  -- 2048 bytes and the whole frame silently fails to draw.
-  if o.asset then cost = cost + #tostring(o.asset) end
-  if o.role then cost = cost + #tostring(o.role) end
-
-  -- A size is one more key and its number, and the generous base above is
-  -- not a licence to stop counting: this is what the send would raise on.
-  if o.px then cost = cost + 16 end
-  if o.dw then cost = cost + 32 end
-
-  -- Six coordinates and their names, which is the widest command here.
-  if o.x1 then cost = cost + 96 end
-
-  return cost
-end
-
---
--- A list of drawing commands, sent to a window in message-sized pieces.
---
--- A message is 2048 bytes. Three menu items already come close and seven go
--- over, so a menu that sent its commands in one go drew *nothing at all*
--- past a certain length - the send raised, the compositor kept the pixels it
--- had, and what appeared was an empty panel with no error anywhere. The
--- window painter has always batched; the menu painter did not, and this is
--- that code in one place so there is no second one to forget.
---
--- `more` holds the damage back until the last piece, so a window is never
--- composited half-drawn.
---
-local function send_ops(handle, ops)
-  local at = 1
-
-  while at <= #ops do
-    local batch, bytes = {}, 0
-
-    while at <= #ops do
-      local cost = op_cost(ops[at])
-
-      -- Always at least one, so a single enormous command is sent on its
-      -- own and refused by the serialiser with its own message rather than
-      -- looping here for ever.
-      if #batch > 0 and bytes + cost > BATCH_BYTES then break end
-
-      batch[#batch + 1] = ops[at]
-      bytes = bytes + cost
-      at = at + 1
-    end
-
-    local last = at > #ops
-
-    if not fs.send("/Running/wm", { type = "draw", window = handle,
-                                ops = batch,
-                                more = (not last) or nil }) then
-      return false
-    end
-  end
-
-  return true
-end
-
 -- The three faces the desktop is using, applied in this process.
 --
 -- A window that draws its own pixels rasterizes its own glyphs, so it needs
@@ -6170,11 +6079,11 @@ function ui.window(spec)
   --
   -- **Every window the kit draws** since D2d - one with the kit's header or
   -- one of its own, a popup, a tip, a banner, a strip, the backdrop, a full
-  -- screen; not a direct window, which draws itself already. The window
-  -- manager tells one it sizes to the screen its new size as it tells any
-  -- (`swap_surface`). `draws_itself = false` keeps one sending.
-  local ordinary = not spec.direct
-  local draws_itself = (ordinary and spec.draws_itself ~= false) and true or false
+  -- screen; a direct window draws itself already, by the application's own
+  -- hand. The window manager tells one it sizes to the screen its new size
+  -- as it tells any (`swap_surface`). There is no other way since D2e: the
+  -- drawing commands it would have sent are gone.
+  local draws_itself = not spec.direct
   local pct = 100
 
   if spec.direct then
@@ -6183,7 +6092,8 @@ function ui.window(spec)
     pct = scale_now()
     region, shared_cap = direct_region(at_scale(spec.w or 400, pct),
                                        at_scale((spec.h or 240) + head_h, pct))
-    draws_itself = region ~= nil
+
+    if not region then return nil, "no memory for this window's pictures" end
   end
 
   local reply, err = fs.send("/Running/wm", {
@@ -6325,11 +6235,12 @@ function ui.window(spec)
   apply_fonts(reply.fonts)
   set_double_click(reply.double_click_ms)
 
-  -- Not taken - the scale changed as it opened - and the region given back:
-  -- the window sends its drawing, as one that does not ask.
+  -- Not taken - the scale changed as it opened - and nothing else to draw
+  -- with: the window closed, and said.
   if draws_itself and not reply.draws_itself then
-    sys.release(shared_cap)
-    region, shared_cap, draws_itself = nil, nil, false
+    fs.send("/Running/wm", { type = "close", window = reply.window })
+    if shared_cap then sys.release(shared_cap) end
+    return nil, "the window manager did not take this window's pictures"
   end
 
   local w = setmetatable({
@@ -7397,18 +7308,15 @@ function window:paint_menu(m)
     end
   end
 
-  -- Drawn here and committed, when it draws itself (D2d); sent otherwise.
-  if m.region then
-    ui.paint_ops(m.region[m.region.draw_into], g.ops, m.pct)
+  -- Drawn here and committed (D2d); a menu closed has nothing to draw into.
+  if not m.region then return end
 
-    local r = fs.send("/Running/wm", { type = "commit", window = m.handle,
-                                       x = 0, y = 0, w = m.region.w, h = m.region.h })
+  ui.paint_ops(m.region[m.region.draw_into], g.ops, m.pct)
 
-    m.region.draw_into = (r and r.draw_into) or ((m.region.draw_into == 1) and 2 or 1)
-    return
-  end
+  local r = fs.send("/Running/wm", { type = "commit", window = m.handle,
+                                     x = 0, y = 0, w = m.region.w, h = m.region.h })
 
-  send_ops(m.handle, g.ops)
+  m.region.draw_into = (r and r.draw_into) or ((m.region.draw_into == 1) and 2 or 1)
 end
 
 -- A menu let go of: its region given back, when it drew itself.
@@ -7443,11 +7351,10 @@ function window:push_menu(x, y, items, above)
                                      draws_itself = region and true or nil }, cap)
 
   if not reply or not reply.ok or not reply.draws_itself then
+    if reply and reply.ok then fs.send("/Running/wm", { type = "close", window = reply.window }) end
     if cap then sys.release(cap) end
-    region, cap = nil, nil
+    return nil
   end
-
-  if not reply or not reply.ok then return nil end
 
   -- Where it actually went, which is not always where it was asked for: the
   -- window manager pulls a menu back onto the screen and says so in the
@@ -7710,76 +7617,6 @@ function window:paint()
     if self.on_paint then self.on_paint(self) end
 
     return
-  end
-
-  apply_focus(self)
-
-  local g = new_gc()
-  g.cw, g.ch = self.frame.w, self.frame.h
-
-  --
-  -- **The clear, which a window whose views cover it does not need.**
-  --
-  -- Every frame starts by filling the window and then drawing over it, and
-  -- the compositor holds the damage back until the last batch, so a repaint
-  -- is never seen half-drawn. **A drag is the exception**: it damages the
-  -- window on every step of the pointer and composites whatever is in the
-  -- surface at that instant, which for a window repainting many times a
-  -- second lands in the gap between the clear and the contents. Diego saw it
-  -- on Music on 16 September - "when dragging its all flickery the window" -
-  -- and noticed the other windows do not, which is what named the cause:
-  -- they repaint when something happens, and Music repaints to move a clock
-  -- and a meter.
-  --
-  -- So `background = false` says the views paint every pixel themselves.
-  -- Then the worst a mid-drag composite can catch is a window with some of
-  -- its parts updated, rather than an empty one.
-  --
-  if self.background ~= false then
-    g.ops[#g.ops + 1] = { op = "fill", x = 0, y = 0,
-                          w = self.frame.w, h = self.frame.h,
-                          color = self.background or theme.window }
-  end
-
-  self.frame:paint(g)
-
-  local at = 1
-
-  while at <= #g.ops do
-    local batch = {}
-    local bytes = 0
-
-    while at <= #g.ops do
-      local cost = op_cost(g.ops[at])
-
-      -- Always at least one, so a single enormous command is sent on its
-      -- own and refused by the serialiser with its own message rather than
-      -- looping here for ever.
-      if #batch > 0 and bytes + cost > BATCH_BYTES then
-        break
-      end
-
-      batch[#batch + 1] = g.ops[at]
-      bytes = bytes + cost
-      at = at + 1
-    end
-
-    -- The window manager holds the damage back until the last batch, so the
-    -- screen never shows this frame half-drawn. Without it every repaint
-    -- flickered: the first message clears the background and the widgets
-    -- arrive in the next two.
-    local last = at > #g.ops
-
-    local ok = fs.send("/Running/wm", { type = "draw", window = self.handle,
-                                    ops = batch,
-                                    more = (not last) or nil })
-
-    if not ok then
-      -- The window manager went away, which is not this program's fault
-      -- and not something it can do anything about.
-      self.running = false
-      return
-    end
   end
 end
 

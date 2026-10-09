@@ -22338,3 +22338,23 @@ already did so for a window with a region. The whole gate found one thing:
 `wm trace` said a finished frame only for drawing commands (`draw <title>
 at`), and the display harness waits for the Deskbar's to time a press on
 it; a commit says it now. Then 61 of 61 (6:30).
+
+## 18.507 Astra D2e: the drawing commands retired
+
+Every window the kit makes drew itself (18.506), and two programs written
+without the kit still sent commands: `hello-win`, the smallest window, and
+`stuck`, the hung application the display harness drags. Each draws into a
+region of two pictures it hands over with the window and commits - the
+same pictures as before, and `hello-win` saying now that its pixels are
+its own. Then the window manager's `draw` handler went, with its table of
+commands and `scale.op`, and the kit's sending, batching and its fallback:
+a window or menu whose pictures the window manager will not take does not
+open. `design.md` §7.4 says A now, with why B was chosen and why it ended.
+
+`x86-drawself` 7, rewritten: the comparison with a sending window is gone
+with the commands, so a window rescaled to 150 per cent is held to one
+opened there - a region made again at the new scale against one made at
+it - in all 235,458 pixels; its menu's mark, Calculator, and the frames
+timed (the window manager's share of a frame is composing alone now).
+**Control**: a rescaled window's region in points, shown stretched, and
+50,520 pixels differ. The whole gate, 61 of 61 (6:50).
