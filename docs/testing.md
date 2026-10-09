@@ -21952,3 +21952,19 @@ transparent" but the setting read back as not kept - and alone the suite
 passed all 52 in 194 s. Counted with the first (above, a different phase):
 two flakes under the gate's load, so the suite's waits want to wait for the
 thing rather than for a time - on the board.
+
+## 18.492 One wide picture no longer shrinks a newsletter
+
+18.491's fit, on the M700 the same afternoon: a newsletter laid out at 1090
+reached 1726 - not its text, one picture wider than its column, not yet
+loaded, so the engine knew only its `width` and `max-width` had nothing
+to act on - and the whole page was shrunk to 63%, its words tiny. **Mail now
+puts a rule of its own ahead of every message's**, as Gmail and Apple Mail
+do: `img { max-width: 100% !important; height: auto !important }`. A
+picture is no wider than what holds it, and only a layout that is itself
+too wide - another newsletter's table - is fitted.
+
+`x86-mail-4` 23: a picture of 1400 in a column of 500, "590 wide, fitted at
+100%", beside the 908 table still "fitted at 65%"; `x86-mail-3` 19, its
+picture sent inside the message still shown. **Control**: the rule left
+out, "1408 wide, fitted at 50%", it fails.

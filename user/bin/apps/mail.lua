@@ -649,10 +649,18 @@ local function remote_pictures()
   return list
 end
 
+-- **Mail's own rule ahead of every message's**: a picture no wider than
+-- what holds it, its height kept in proportion - as Gmail and Apple Mail
+-- have it. Without it, one picture wider than its column, not yet loaded
+-- so the engine knows only its `width`, made the whole page look too wide
+-- to fit, and the newsletter was shrunk to 63% (the M700, 9
+-- October); with it, only a layout that is itself too wide is fitted.
+local MAIL_SHEET = "<style>img { max-width: 100% !important; height: auto !important }</style>"
+
 local function lay_out_html(pw, ph)
   if not message.page then
     local t0 = sys.ticks()
-    local doc, why = web.parse(message.html, "utf-8")
+    local doc, why = web.parse(MAIL_SHEET .. message.html, "utf-8")
 
     if not doc then
       print("mail: its HTML would not parse: " .. tostring(why))

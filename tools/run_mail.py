@@ -883,6 +883,19 @@ WIDE = ("From: Weekly Wide <wide@example.net>\r\n"
         "</td></tr></table>\r\n").encode()
 
 
+# A picture far wider than its column, not loaded: the column is what the
+# page is, so it is not shrunk.
+PICTURE_WIDE = ("From: Picture Post <pictures@example.net>\r\n"
+                "To: lena@example.com\r\n"
+                "Subject: One big picture\r\n"
+                "Date: Fri, 9 Oct 2026 05:00:00 +0000\r\n"
+                "Message-ID: <picture@example.net>\r\n"
+                "Content-Type: text/html; charset=utf-8\r\n"
+                "\r\n"
+                "<div style=\"width:500px\"><p>A column of words.</p>"
+                "<img width=\"1400\" height=\"700\" src=\"http://10.0.2.2:9/big.png\"></div>\r\n").encode()
+
+
 def part4(image):
     """The composer: Reply All quoting and threading, a new message whose
     address is completed and whose Bcc is in no header, a draft kept on the
@@ -896,6 +909,7 @@ def part4(image):
     run_tls.pki(work, "10.0.2.2")
     peer = mailpeer.Peer(work, "good.pem", "server.key")
     peer.idle_delivers = False
+    peer.deliver("INBOX", PICTURE_WIDE)     # third
     peer.deliver("INBOX", WIDE)             # the list is by arrival: this second,
     peer.deliver("INBOX", PLANS)            # Priya's first
     imap_port, smtp_port = peer.start()
@@ -979,7 +993,7 @@ def part4(image):
         mark = len(guest.seen)
         guest.sendkey("ret")
         said["setup"] = guest.wait_for_line("mail: signed in ", "the account signed in", mark)
-        guest.wait_for("maild: %s: 5 messages kept" % who, "the Inbox kept")
+        guest.wait_for("maild: %s: 6 messages kept" % who, "the Inbox kept")
         places = guest.wait_for_line("mail: places ", "the window's places", 0)
 
         lx, ly = at("list", places)
@@ -997,6 +1011,12 @@ def part4(image):
         ww_, wh_ = (int(v) for v in re.search(r"(\d+)x(\d+)", placed).groups())
         rows_ = [rgb_[((y * w_) + wx) * 3:((y * w_) + wx + ww_) * 3] for y in range(wy, min(h_, wy + wh_))]
         V.png(os.path.join(ROOT, "build", "mail", "wide.png"), ww_, len(rows_), b"".join(rows_))
+
+        # 0b. The big picture, third: no wider than its column, not fitted.
+        mark = len(guest.seen)
+        click(lx + 100, ly + 2 * rh + rh // 2)
+        said["picture"] = guest.wait_for_line("mail: html laid out at ", "the big picture laid out", mark)
+        time.sleep(1)
 
         # 1. Reply All to Priya's: everyone but Lena, quoted, threaded.
         mark = len(guest.seen)
@@ -1157,6 +1177,9 @@ def part4(image):
             and abs(int(m.group(3)) - round(100 * int(m.group(1)) / int(m.group(2)))) <= 1):
         fails.append("a page wider than the pane was not fitted to it: %r" % said.get("wide"))
 
+    if not re.search(r"fitted at 100%", said.get("picture", "")):
+        fails.append("a picture wider than its column shrank the page: %r" % said.get("picture"))
+
     if "ana@example.com" not in said.get("suggests", ""):
         fails.append("three letters did not suggest Ana: %r" % said.get("suggests"))
     if said.get("draft_flags") != ["\\Draft", "\\Seen"]:
@@ -1172,7 +1195,7 @@ def part4(image):
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 22
+    checks = 23
 
     if fails:
         print("FAIL: %d of %d checks on Mail's composer:" % (len(fails), checks))
@@ -1184,8 +1207,8 @@ def part4(image):
           "and threaded, kept in Sent and the message flagged Answered; a new message with an "
           "address completed from three letters and a Bcc in no header; a draft closed with "
           "Super+Q, kept on the server, opened from Drafts, sent whole and its copy taken away; "
-          "a recipient refused, said, and the message kept in the Outbox; and a newsletter "
-          "wider than the pane fitted to it)." % checks)
+          "a recipient refused, said, and the message kept in the Outbox; a newsletter "
+          "wider than the pane fitted to it, and one big picture not)." % checks)
     return 0
 
 
