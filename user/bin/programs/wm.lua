@@ -3209,6 +3209,17 @@ handlers.open = function(req, who, cap)
     cap = nil
   end
 
+  --
+  -- **A kit window that draws itself** (`docs/astra-display.md` D2), at a
+  -- scale: declined, because its region is in its points and would be shown
+  -- stretched, where its drawing commands are drawn sharp at the scale. The
+  -- window is told, and sends them as before.
+  --
+  if req.draws_itself and (win.pct or 100) ~= 100 and cap and cap >= 0 then
+    sys.release(cap)
+    cap = nil
+  end
+
   if cap and cap >= 0 then
     local at, why = sys.memory_map(cap)
 
@@ -3760,7 +3771,8 @@ handlers.open = function(req, who, cap)
            palette = theme.current(), desktop = theme.desktop,
            fonts = theme.fonts, headed = win.headed or false,
            lights = OUT.lights_size(pct),
-           double_click_ms = OUT.mouse.double_click_ms }
+           double_click_ms = OUT.mouse.double_click_ms,
+           draws_itself = (req.draws_itself and win.shared ~= nil) or nil }
 end
 
 handlers.draw = function(req)

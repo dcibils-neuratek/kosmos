@@ -5985,6 +5985,16 @@ do
     return got or nil
   end
 
+  --
+  -- **A frame's commands, drawn here** (`docs/astra-display.md` D2): what a
+  -- window that draws itself does with the list it would have sent - the
+  -- same `paint.lua`, with this process's pictures and faces.
+  --
+  function ui.paint_ops(surface, ops)
+    painter = painter or use("/Kosmos/Libraries/paint.lua").new(picture, ui.sized)
+    use("/Kosmos/Libraries/paint.lua").run(surface, ops, painter)
+  end
+
   function ui.paint_view(view, surface, x, y)
     painter = painter or use("/Kosmos/Libraries/paint.lua").new(picture, ui.sized)
 
@@ -6111,8 +6121,22 @@ function ui.window(spec)
   local shared_cap = nil
   local region = nil
 
+  --
+  -- **An ordinary window that draws itself** (`docs/astra-display.md` D2,
+  -- decided 9 October: "every window draws itself"): its frame's commands
+  -- run here, into a region of its own, and committed - rather than sent
+  -- for the window manager to carry out. Asked for by `draws_itself` while
+  -- it is proved, window by window; the window manager declines it at a
+  -- scale, where the region would be shown stretched, and the window sends
+  -- its drawing as before.
+  --
+  local draws_itself = (auto_head and spec.draws_itself) and true or false
+
   if spec.direct then
     region, shared_cap = direct_region(spec.w or 400, (spec.h or 240) + head_h)
+  elseif draws_itself then
+    region, shared_cap = direct_region(spec.w or 400, (spec.h or 240) + head_h)
+    draws_itself = region ~= nil
   end
 
   local reply, err = fs.send("/Running/wm", {
@@ -6148,7 +6172,8 @@ function ui.window(spec)
 
     -- A window that draws its own pixels and can make a new region at
     -- another size, and says so: it gets a grip (`take_size`, 6zz e).
-    resizable = (spec.direct and spec.resizable) or nil,
+    resizable = (spec.direct and spec.resizable) or draws_itself or nil,
+    draws_itself = draws_itself or nil,
 
     -- And its opposite: a strip across the top, undecorated and pinned,
     -- which takes room away from the screen rather than sitting over it.
@@ -6253,6 +6278,12 @@ function ui.window(spec)
   apply_fonts(reply.fonts)
   set_double_click(reply.double_click_ms)
 
+  -- Declined, at a scale: the region given back, and the drawing sent.
+  if draws_itself and not reply.draws_itself then
+    sys.release(shared_cap)
+    region, shared_cap, draws_itself = nil, nil, false
+  end
+
   local w = setmetatable({
     handle = reply.window,
     -- Under the kit's header for a kit window; for a direct one, whose
@@ -6310,6 +6341,7 @@ function ui.window(spec)
     dirty = false,
     region = region,
     shared_cap = region and shared_cap or nil,
+    draws_itself = draws_itself or nil,
     ticking = {},
     tick_every = spec.tick_every or 0,
   }, window)
@@ -7525,6 +7557,29 @@ function window:menu_mouse(ev)
 end
 
 function window:paint()
+  --
+  -- **A window that draws itself** (D2): the same frame as below, its
+  -- commands drawn here into the buffer the screen is not showing, and that
+  -- buffer committed. The commands never leave this process.
+  --
+  if self.draws_itself then
+    apply_focus(self)
+
+    local g = new_gc()
+    g.cw, g.ch = self.frame.w, self.frame.h
+
+    if self.background ~= false then
+      g.ops[#g.ops + 1] = { op = "fill", x = 0, y = 0,
+                            w = self.frame.w, h = self.frame.h,
+                            color = self.background or theme.window }
+    end
+
+    self.frame:paint(g)
+    ui.paint_ops(self:surface(), g.ops)
+    self:commit()
+    return
+  end
+
   --
   -- A window whose pixels the application draws has nothing to send. Its
   -- views, if it has any, would be drawing into the compositor's copy -

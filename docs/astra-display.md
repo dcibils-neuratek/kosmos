@@ -108,7 +108,26 @@ desktop.
 1. **D0, done** - composing makes no garbage (0.11.43, 18.439).
 2. **D1, decided** - this design, with its diagram (`astra-display.png`).
 3. **D2** - the UI kit draws into its window's own surface: every
-   window a direct one; the drawing commands retired. Measured.
+   window a direct one; the drawing commands retired. Measured. In steps,
+   since every application stands on it:
+   - **D2a, done 9 October** - a command scaled to the screen's pixels is
+     `paint.scale`, in `paint.lua` beside the commands themselves, so a
+     window that draws itself scales them as the window manager does.
+   - **D2b, done 9 October** (`testing.md` 18.501) - a kit window asks to
+     `draws_itself`: its frame's commands run through `paint.lua` in its own
+     process, into a region of two buffers, and are committed. The same
+     window drawn that way and sent is the same in every pixel below its
+     header. Calculator is the first. At a scale other than 100 the window
+     manager declines it, because a region in points is shown stretched,
+     and the window sends its drawing as before. Measured under QEMU, 60
+     frames: drawing itself, the window manager's processor time fell from
+     25 ticks to 14 and the program spent 11; a frame 1.74 ms against 2.24.
+   - **D2c** - a window that draws itself at a scale: its region in the
+     screen's pixels, its commands scaled by `paint.scale` and its faces
+     loaded at the scale, so it is as sharp as the drawing it replaces.
+   - **D2d** - every ordinary window, then menus, banners, tips, popups and
+     strips; what each costs in memory, measured.
+   - **D2e** - the drawing commands retired from the window manager.
 4. **D3** - the window server: the screen, surfaces, stacking, damage and
    composing move to C; the window manager tells it through the manager
    door. `wm.lua` loses `compose.lua` and the pixel work around it.

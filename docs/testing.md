@@ -22238,3 +22238,34 @@ speed of 48 asked of the window manager answered by the board. **Controls**:
 the window manager not telling windows, and the fast span's two presses
 still close the folder; not reading the file at its start, and the second
 boot starts with nothing; the slider offered on a tablet, and it fails.
+
+## 18.501 Astra D2a and D2b: a window that draws itself
+
+`docs/astra-display.md` D2, decided on the board: every window draws
+itself. **D2a**: the window manager's `scale.op` - a command in a window's
+points made the screen's pixels at a scale - is `paint.scale` in
+`paint.lua`, beside the commands, one door for the window manager and a
+window drawing itself. The 150 per cent checks of `x86-display-4` pass.
+**D2b**: a kit window opened with `draws_itself` gets a region of two
+buffers like a direct window; `window:paint` runs its frame's commands
+through `paint.lua` with this process's faces and pictures (`ui.paint_ops`)
+into the buffer not shown, and commits it. The window manager takes the
+region at 100 per cent and declines it at another scale, where it would be
+shown stretched; the window is told and sends its drawing as before.
+Calculator is the first to ask.
+
+`x86-drawself` 6: one program opens the same window twice - a heading, a
+button, a ticked box, a slider, a line of text - drawing itself and
+sending; the first is given its region and the second is not; below their
+headers they are the same in all 104,648 pixels; Calculator opens. The
+first run found 92 pixels different, and they were the pointer, over the
+second window when the screen was taken; it is moved away first now.
+Sixty frames each, under QEMU: drawing itself, the window manager 14 ticks
+and the program 11, 1.74 ms a frame; sent, the window manager 25 and the
+program none, 2.24 ms. **Control**: the frame drawn and not committed, and
+103,210 pixels differ.
+In the whole gate (60 of 62) the two windows were placed over each other
+under load, since the window manager does not keep a place it judges taken,
+and the comparison failed; each now moves itself to a place of its own
+first. `x86-kernel`'s "a new thread avoids a loaded core" failed once in
+the same run - the kernel was not changed - and passes alone.

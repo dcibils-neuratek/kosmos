@@ -295,6 +295,9 @@ SUITES = [
     # window, and the pointer's kept and applied at the desktop's start,
     # on a PS/2 mouse as the M700's is relative.
     Suite("x86-mouse", ["python3", "tools/run_mouse.py", X86], x86=True),
+    # A window that draws itself (`docs/astra-display.md` D2): the same
+    # window drawn here and sent, pixel for pixel, and what each costs.
+    Suite("x86-drawself", ["python3", "tools/run_drawself.py", X86], x86=True),
 
     # **Maps** (`docs/maps.md`): the Map Kit inside the machine - Port Alder
     # carried in the image, opened, a tile decoded, drawn and labelled (M3) -
