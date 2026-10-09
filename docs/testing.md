@@ -22288,3 +22288,19 @@ per cent drawing itself. **Control**: the commands not scaled, and 152,128
 pixels differ.
 
 The whole gate, 60 of 61: `x86-share-2` read a share's status a tenth of a second after it went away, before it said when it tries next - nothing it touches changed - and passes alone.
+
+## 18.503 Astra D2d: every ordinary window draws itself
+
+`ui.window` makes every ordinary window - the kit's header or one of its
+own - draw itself; a direct window draws itself already, and the kinds
+still sent are a strip, a popup, a tip, a banner, the backdrop and a full
+screen. `draws_itself = false` keeps one sending, as `x86-drawself`'s
+second window does. Calculator's own flag went with it.
+
+The whole gate found one fault, in three suites: Mail's attach window and
+Cafesa3D's Save window, each opened inside another application, closed
+and gave its region back, and were asked to paint once more - into
+nothing (`paint.lua:33`), and the application stopped. A window sending
+its drawing had sent that last frame to a window manager that had already
+forgotten it. A closed window paints nothing now; `x86-mail-5`, `x86-script`
+and `x86-cafesa3d-2` are its test. Then the whole gate, 61 of 61, 6:28.

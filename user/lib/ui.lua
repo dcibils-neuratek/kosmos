@@ -6168,7 +6168,13 @@ function ui.window(spec)
   -- scale, where the region would be shown stretched, and the window sends
   -- its drawing as before.
   --
-  local draws_itself = (auto_head and spec.draws_itself) and true or false
+  -- **Every ordinary window** since D2d - one with the kit's header or one
+  -- of its own; not a direct window, which draws itself already, nor the
+  -- kinds still sent: a strip, a popup, a tip, a banner, the backdrop, a
+  -- full screen. `draws_itself = false` keeps one sending.
+  local ordinary = not (spec.direct or spec.backdrop or spec.fullscreen or spec.strip
+                        or spec.popup or spec.tip or spec.banner)
+  local draws_itself = (ordinary and spec.draws_itself ~= false) and true or false
   local pct = 100
 
   if spec.direct then
@@ -7612,6 +7618,10 @@ function window:paint()
   -- buffer committed. The commands never leave this process.
   --
   if self.draws_itself then
+    -- Closed, and its region given back: nothing to draw into, as a window
+    -- sending its drawing had nobody to send it to.
+    if not self.region then return end
+
     apply_focus(self)
 
     local g = new_gc()

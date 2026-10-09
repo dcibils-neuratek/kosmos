@@ -129,8 +129,14 @@ desktop.
      change of scale tells it its new size, and it makes a region at the
      new scale's pixels. At 150 per cent it is the same as the window
      manager's drawing in every pixel, opened there or rescaled.
-   - **D2d** - every ordinary window, then menus, banners, tips, popups and
-     strips; what each costs in memory, measured.
+   - **D2d, every ordinary window done 9 October** (`testing.md` 18.503) -
+     one with the kit's header or one of its own; `draws_itself = false`
+     keeps one sending. What it costs is arithmetic rather than a
+     measurement - the machine says its free memory in whole megabytes: a
+     window holds two buffers of its size where the window manager held one
+     surface, so one more a window, 0.5 MB for a 420x306 one at 100 per
+     cent and 1.2 MB for the Open window at 150. **Still sent**: menus,
+     banners, tips, popups and strips, each its own step.
    - **D2e** - the drawing commands retired from the window manager.
 4. **D3** - the window server: the screen, surfaces, stacking, damage and
    composing move to C; the window manager tells it through the manager

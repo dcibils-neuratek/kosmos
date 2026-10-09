@@ -42,10 +42,8 @@ local H = DISPLAY + PAD + 5 * KEY_H + 4 * GAP + PAD
 -- (`theme.lua`: sizes here are 1.30 times CSS's). The key faces at its 16.
 local NUMBER_PX, KEY_PX = 44, 21
 
--- The first window to draw itself (`docs/astra-display.md` D2): its
--- frame drawn here, into a region of its own, rather than sent.
 local win, err = ui.window{ title = "Calculator", w = W, h = H,
-                            x = 240, y = 140, draws_itself = true }
+                            x = 240, y = 140 }
 
 if not win then
   print("calc: " .. tostring(err))
