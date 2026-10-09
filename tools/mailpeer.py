@@ -129,8 +129,11 @@ class Box:
 
 
 class Peer:
-    def __init__(self, work, cert="server.pem", key="server.key"):
+    # `user` and `password`: whom this server takes, Lena by default - a
+    # second account is a second Peer with another (Mail M8).
+    def __init__(self, work, cert="server.pem", key="server.key", user=USER, password=PASSWORD):
         self.work = work
+        self.user, self.password = user, password
         self.lock = threading.RLock()
         self.modseq = 1
         self.boxes = {}
@@ -239,8 +242,8 @@ class Peer:
                         continue
                     blob = base64.b64decode(parts[2]) if len(parts) > 2 else b""
                     fields = blob.split(b"\0")
-                    ok = len(fields) == 3 and fields[1].decode() == USER \
-                        and fields[2].decode() == PASSWORD
+                    ok = len(fields) == 3 and fields[1].decode() == self.user \
+                        and fields[2].decode() == self.password
                     self.logins.append((fields[1].decode() if len(fields) > 1 else "", ok))
                     if ok:
                         user = fields[1].decode()
@@ -466,7 +469,7 @@ class Session:
         word = t[1] if len(t) > 1 else ""
         if word == "\0LIT\0":
             word = self.literal.decode("utf-8", "replace")
-        ok = user == USER and word == PASSWORD
+        ok = user == self.peer.user and word == self.peer.password
         self.peer.logins.append((user, ok))
         if not ok:
             self.say(tag + " NO [AUTHENTICATIONFAILED] those are not the right name and password")

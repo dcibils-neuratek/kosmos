@@ -78,6 +78,15 @@ local LABELS = { to = "To", cc = "Cc", bcc = "Bcc", subject = "Subject" }
 local C = {}
 C.__index = C
 
+-- **The accounts a message can be written from** (M8), as the application
+-- that opens composers last said: with more than one, a composer has a From
+-- row whose press chooses among them.
+local from_accounts = {}
+
+function compose.set_accounts(list)
+  from_accounts = list or {}
+end
+
 --------------------------------------------------------------------------
 -- Addresses, as typed and as kept.
 --------------------------------------------------------------------------
@@ -690,6 +699,12 @@ function C:layout()
   local x0, fw = EDGE + LABEL_W + 8, W - (EDGE + LABEL_W + 8) - EDGE
 
   self.places = {}
+  self.from_at = nil
+
+  if #from_accounts > 1 then
+    self.from_at = { x = 0, y = y, w = W, h = ROW_H, fx = x0 }
+    y = y + ROW_H
+  end
 
   for _, name in ipairs(FIELDS) do
     local row = self.rows[name]
@@ -764,6 +779,19 @@ function C:draw()
   pk.iconbutton(s, self.attach_b)
 
   local gh = gfx.height()
+
+  -- From: the account it is written from, and a press to choose another.
+  if self.from_at then
+    local p = self.from_at
+    local a = self.account or {}
+    local words = (a.name or "") ~= "" and ("%s <%s>"):format(a.name, a.address) or tostring(a.address)
+
+    s:text(EDGE, p.y + (ROW_H - gh) // 2, "From", theme.text_dim, nil, "ui")
+    s:text(p.fx, p.y + (ROW_H - gh) // 2, ui.fitted(words, self.W - p.fx - EDGE - 20, "ui"),
+           theme.text, nil, "ui")
+    pk.icon(s, "more", self.W - EDGE - 15, p.y + (ROW_H - 15) // 2, theme.text_dim)
+    s:fill(0, p.y + p.h - 1, self.W, 1, theme.line_soft)
+  end
 
   for _, name in ipairs(FIELDS) do
     local p, row = self.places[name], self.rows[name]
@@ -1037,6 +1065,29 @@ function C:press(x, y)
 
   if y < L.head then
     self.win:take_hold(x, y)
+    return
+  end
+
+  -- From: its menu, the accounts, on the press as a menu opens.
+  if self.from_at and y >= self.from_at.y and y < self.from_at.y + self.from_at.h then
+    local items = {}
+
+    for _, a in ipairs(from_accounts) do
+      items[#items + 1] = { text = a.address, on_choose = function()
+        self.account = { address = a.address, name = a.name or "" }
+        self.dirty = true
+        self:edited()
+        print(("mail: composer %s from %s"):format(self.id, a.address))
+      end }
+    end
+
+    local m = self.win:open_menu((self.win.origin_x or 0) + self.from_at.fx,
+                                 (self.win.origin_y or 0) + self.from_at.y + self.from_at.h, items)
+
+    if m then
+      print(("mail: composer %s from menu at %d,%d, rows of %d"):format(self.id, m.x, m.y, m.row))
+    end
+
     return
   end
 

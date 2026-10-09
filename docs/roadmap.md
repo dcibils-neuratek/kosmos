@@ -8269,7 +8269,9 @@ in Sent; `mail.build` in the Mail Kit.
 **M7 done** (18.493): attachments opened, saved into Downloads, attached by
 the paperclip or a drop from Tracker, carried by Forward; **Downloads a place**
 (Diego, 9 October: "Create a downloads folder", "as we have a browser now").
-Next: M8, search, several accounts, the unified Inbox.
+**M8 done** (18.496): several accounts, All Inboxes and Flagged over them,
+a search in a message's words and in all mail, the composer's From. Next:
+POP3.
 **Diego's Gmail is in**, on the
 M700 (0.11.87-0.11.88). Seen there and not yet done: some subjects begin
 with "?" where, probably, an emoji has no glyph in the UI's face - to be

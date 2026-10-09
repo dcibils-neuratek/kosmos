@@ -224,6 +224,11 @@ SUITES = [
     Suite("arm-mail-5", ["python3", "tools/run_mail.py", ARM, "--part", "5"]),
     Suite("x86-mail-5", ["python3", "tools/run_mail.py", X86, "--part", "5"],
           x86=True),
+    # Its sixth is several accounts (M8): All Inboxes, Flagged, a search
+    # in all mail, a reply and a From over two servers.
+    Suite("arm-mail-6", ["python3", "tools/run_mail.py", ARM, "--part", "6"]),
+    Suite("x86-mail-6", ["python3", "tools/run_mail.py", X86, "--part", "6"],
+          x86=True),
 
     # **smbfs connects, signed and sealed** (`docs/sharing.md` N2 and N4),
     # in one machine on ten Samba peers run as the user on this Mac: 3.1.1

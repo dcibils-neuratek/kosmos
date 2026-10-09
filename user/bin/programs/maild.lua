@@ -182,9 +182,11 @@ end
 -- the Mail Kit or this file makes of a message changes, so what was kept
 -- before is worked out again: on 8 October a newsletter's preview was its
 -- style sheet, and the messages kept then kept it until this said 2; 3 is
--- `to`, whom a message went to, for the composer's addresses (M6).
+-- `to`, whom a message went to, for the composer's addresses (M6); 4 is
+-- `words`, the start of its text, so a search finds a message by what it
+-- says without reading it (M8).
 --
-local FACTS = 3
+local FACTS = 4
 
 local function facts(path, uid, flags)
   local r, size = regions.read_whole(path)
@@ -223,7 +225,11 @@ local function facts(path, uid, flags)
       end
     end
 
-    out.to = table.concat(to, "\n")
+    -- Every attribute shares one block of the disk: a message to a crowd
+    -- keeps its first thousand bytes of them, and its text its first
+    -- thousand characters, lower case, for a search to look in.
+    out.to = table.concat(to, "\n"):sub(1, 1000)
+    out.words = m:preview(1000):lower()
   end
 
   regions.free(r)

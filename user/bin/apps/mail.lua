@@ -127,7 +127,7 @@ local said = ""                 -- the list's line under the mailbox's name
 -- The mailboxes in the drawing's order: what each is for, then the rest by
 -- name.
 local ORDER = { inbox = 1, drafts = 2, sent = 3, archive = 4, junk = 5, trash = 6 }
-local USE_ICON = { inbox = "inbox", drafts = "page", sent = "sent", archive = "archive",
+local USE_ICON = { inboxes = "inbox", inbox = "inbox", drafts = "page", sent = "sent", archive = "archive",
                    junk = "junk", trash = "trash", all = "archive", flagged = "flag",
                    important = "star" }
 
@@ -202,13 +202,19 @@ local function read_accounts()
       end
 
       out[#out + 1] = { address = account.address or name, name = account.name,
-                        host = account.imap.host, state = st.state, why = st.why,
-                        boxes = sorted_boxes(boxes) }
+                        kind = account.kind, host = account.imap.host, state = st.state,
+                        why = st.why, boxes = sorted_boxes(boxes) }
     end
   end
 
   table.sort(out, function(x, y) return x.address < y.address end)
   accounts = out
+
+  -- What a composer may write from (M8).
+  local from = {}
+
+  for _, a in ipairs(accounts) do from[#from + 1] = { address = a.address, name = a.name or "" } end
+  compose.set_accounts(from)
 
   -- Said when they change, as a person reads them: a dash a level down.
   local words = {}
@@ -302,7 +308,8 @@ local rows = {}                 -- { uid, path }, newest first
 local shown = {}                -- `rows` as the search leaves them
 local facts = {}                -- path -> attributes, read once
 local top = 1                   -- the first row drawn
-local chosen = nil              -- the uid on the right
+local chosen = nil              -- the path of the one on the right: a uid
+                                -- is a mailbox's, and a list may hold several
 local query = ""
 local listing = ""              -- the folder's names, to know it changed
 
@@ -317,24 +324,39 @@ local function facts_of(row)
   return f
 end
 
+-- **A search looks in what a message says too** (M8): its sender, its
+-- subject, and the start of its text, which `maild` keeps on the file as
+-- `words` - so nothing is read to search, and a mailbox of thousands is
+-- searched as its facts are.
 local function matches(row)
   if query == "" then return true end
 
   local f = facts_of(row)
   local q = query:lower()
 
-  for _, v in ipairs({ f.from, f.from_address, f.subject, f.preview }) do
+  for _, v in ipairs({ f.from, f.from_address, f.subject, f.preview, f.words }) do
     if tostring(v or ""):lower():find(q, 1, true) then return true end
   end
 
   return false
 end
 
+-- Searching every mailbox of every account, rather than the one shown:
+-- the All at the end of the field. The Trash and Junk are left out.
+local search_all = false
+local every_box = nil           -- set below, once the rows can be made
+
 local function filter()
   shown = {}
 
-  for _, r in ipairs(rows) do
+  local from = (search_all and query ~= "" and every_box) and every_box() or rows
+
+  for _, r in ipairs(from) do
     if matches(r) then shown[#shown + 1] = r end
+  end
+
+  if search_all and query ~= "" then
+    table.sort(shown, function(x, y) return (facts_of(x).date or 0) > (facts_of(y).date or 0) end)
   end
 
   top = math.max(1, math.min(top, #shown))
@@ -345,6 +367,46 @@ end
 -- so a mailbox opens without reading any message's attributes but the
 -- ones on the screen (`docs/mail.md`, "the list file measured at M4").
 --
+-- A mailbox's messages as rows, each knowing its account and its mailbox.
+local function box_rows(a, b, out, names_seen)
+  local names = fs.list(b.folder) or {}
+
+  names_seen[#names_seen + 1] = table.concat(names, "\0")
+
+  for _, name in ipairs(names) do
+    local uid = tonumber(name:match("^(%d+)%.eml$"))
+
+    if uid then
+      out[#out + 1] = { uid = uid, path = b.folder .. "/" .. name, account = a, box = b }
+    end
+  end
+end
+
+--
+-- **The mailboxes over every account** (M8, as `docs/mail.html` draws them):
+-- All Inboxes, and Flagged - what is flagged in any mailbox, the Trash and
+-- Junk left out. Neither is a mailbox on a server: each is the list made
+-- again from the folders it gathers.
+--
+local VIRTUAL = {
+  inboxes = { title = "All Inboxes", label = "All Inboxes", use = "inboxes", virtual = true },
+  flagged = { title = "Flagged", label = "Flagged", use = "flagged", virtual = true },
+}
+
+every_box = function()
+  local out, seen = {}, {}
+
+  for _, a in ipairs(accounts) do
+    for _, b in ipairs(a.boxes or {}) do
+      if b.selectable ~= false and b.use ~= "trash" and b.use ~= "junk" and b.folder then
+        box_rows(a, b, out, seen)
+      end
+    end
+  end
+
+  return out
+end
+
 local function read_rows(keep_facts)
   rows = {}
 
@@ -353,20 +415,50 @@ local function read_rows(keep_facts)
     return
   end
 
-  local folder = current.box.folder
-  local names = fs.list(folder) or {}
+  if not keep_facts then facts = {} end
 
-  listing = table.concat(names, "\0")
+  local names_seen = {}
+  local v = current.box.virtual and current.box.use
 
-  for _, name in ipairs(names) do
-    local uid = tonumber(name:match("^(%d+)%.eml$"))
+  if v == "inboxes" then
+    for _, a in ipairs(accounts) do
+      local inbox = box_for(a, "inbox")
 
-    if uid then rows[#rows + 1] = { uid = uid, path = folder .. "/" .. name } end
+      if inbox then box_rows(a, inbox, rows, names_seen) end
+    end
+  elseif v == "flagged" then
+    local all = {}
+
+    for _, a in ipairs(accounts) do
+      for _, b in ipairs(a.boxes or {}) do
+        if b.selectable ~= false and b.use ~= "trash" and b.use ~= "junk" and b.folder then
+          box_rows(a, b, all, names_seen)
+        end
+      end
+    end
+
+    for _, r in ipairs(all) do
+      if facts_of(r).flagged then rows[#rows + 1] = r end
+    end
+  else
+    box_rows(current.account, current.box, rows, names_seen)
   end
 
-  table.sort(rows, function(x, y) return x.uid > y.uid end)
+  listing = table.concat(names_seen, "\1")
 
-  if not keep_facts then facts = {} end
+  -- **Newest first**: by the UID in one mailbox, the order IMAP gives as
+  -- messages arrive, which needs no message read; over several mailboxes
+  -- by the date each was sent, from its facts.
+  if v then
+    table.sort(rows, function(x, y)
+      local dx, dy = facts_of(x).date or 0, facts_of(y).date or 0
+
+      if dx ~= dy then return dx > dy end
+      return x.path > y.path
+    end)
+  else
+    table.sort(rows, function(x, y) return x.uid > y.uid end)
+  end
 
   filter()
 end
@@ -816,15 +908,17 @@ end
 
 local function chosen_row()
   for i, r in ipairs(shown) do
-    if r.uid == chosen then return r, i end
+    if r.path == chosen then return r, i end
   end
 
   return nil
 end
 
-local function counts_change(by)
-  if current and current.box.unseen then
-    current.box.unseen = math.max(0, current.box.unseen + by)
+-- A message read or unread: its own mailbox's count, and the one shown
+-- when that is All Inboxes.
+local function counts_change(by, row)
+  for _, b in ipairs({ row and row.box, current and current.box }) do
+    if b and b.unseen then b.unseen = math.max(0, b.unseen + by) end
   end
 end
 
@@ -836,9 +930,9 @@ local function set_flag(row, flag, on)
   f[flag] = on
   fs.setattr(row.path, { [flag] = on })
 
-  if flag == "seen" then counts_change(on and -1 or 1) end
+  if flag == "seen" then counts_change(on and -1 or 1, row) end
 
-  ask{ type = "flag", account = current.account.address, mailbox = current.box.name,
+  ask{ type = "flag", account = row.account.address, mailbox = row.box.name,
        uids = { row.uid }, flag = flag, on = on }
   print(("mail: %s %d %s"):format(flag, row.uid, on and "on" or "off"))
 end
@@ -851,8 +945,8 @@ local function forget_message()
   band_for = nil
 end
 
-local function choose(uid)
-  chosen = uid
+local function choose(path)
+  chosen = path
   scroll = 0
   forget_message()
 
@@ -878,19 +972,19 @@ local function take_away(kind)
 
   if not row then return end
 
-  if kind == "archive" and not (box_for(current.account, "archive")
-                                or box_for(current.account, "all")) then
+  if kind == "archive" and not (box_for(row.account, "archive")
+                                or box_for(row.account, "all")) then
     said = "This account has no Archive mailbox"
     return
   end
 
-  if not facts_of(row).seen then counts_change(-1) end
+  if not facts_of(row).seen then counts_change(-1, row) end
 
   for k, r in ipairs(rows) do
-    if r.uid == row.uid then table.remove(rows, k) break end
+    if r.path == row.path then table.remove(rows, k) break end
   end
 
-  ask{ type = kind, account = current.account.address, mailbox = current.box.name,
+  ask{ type = kind, account = row.account.address, mailbox = row.box.name,
        uids = { row.uid } }
   print(("mail: %s %d"):format(kind, row.uid))
 
@@ -898,7 +992,7 @@ local function take_away(kind)
 
   local next_row = shown[i] or shown[i - 1]
 
-  if next_row then choose(next_row.uid) else chosen, message = nil, nil end
+  if next_row then choose(next_row.path) else chosen, message = nil, nil end
 end
 
 local function open_box(a, b)
@@ -906,10 +1000,14 @@ local function open_box(a, b)
   chosen, message, query, top = nil, nil, "", 1
   read_rows()
 
-  ask{ type = "open", account = a.address, mailbox = b.name }
-  print(("mail: opened %s of %s, %d messages"):format(b.title, a.address, #rows))
+  if b.virtual then
+    print(("mail: opened %s, %d messages"):format(b.title, #rows))
+  else
+    ask{ type = "open", account = a.address, mailbox = b.name }
+    print(("mail: opened %s of %s, %d messages"):format(b.title, a.address, #rows))
+  end
 
-  if shown[1] then choose(shown[1].uid) end
+  if shown[1] then choose(shown[1].path) end
 end
 
 --------------------------------------------------------------------------
@@ -1201,8 +1299,61 @@ local function draw_sidebar(s)
     s:text(18, y + 8, "No account yet", theme.text_dim, nil, "ui")
   end
 
+  -- One mailbox's row: its picture, its name, its unread count.
+  local function box_row(a, b)
+    local on = current and current.box == b
+               or current and a and current.account and not current.box.virtual
+                  and current.account.address == a.address and current.box.name == b.name
+    local h = 32
+
+    -- Only a row wholly in the column is drawn, or pressed.
+    if y < L.head or y + h > H then
+      y = y + h + 2
+      return
+    end
+
+    if on then s:fill_round(8, y, SIDE_W - 16, h, theme.line_soft, 7) end
+
+    local inset = 16 * math.min(3, b.depth or 0)
+
+    pk.icon(s, USE_ICON[b.use] or "folder", 18 + inset, y + (h - 15) // 2,
+            on and theme.accent or theme.text_dim)
+    s:text(18 + inset + 15 + 10, y + (h - gfx.height()) // 2,
+           ui.fitted(b.label or b.title or b.name, SIDE_W - 110 - inset, "ui"),
+           theme.text, nil, "ui")
+
+    if (b.unseen or 0) > 0 then
+      local n = tostring(b.unseen)
+
+      s:text(SIDE_W - 18 - gfx.measure(n), y + (h - gfx.height()) // 2, n,
+             on and theme.text or theme.text_dim, nil, "ui")
+    end
+
+    side_rows[#side_rows + 1] = { x = 8, y = y, w = SIDE_W - 16, h = h, account = a, box = b }
+    y = y + h + 2
+  end
+
+  -- **All Inboxes and Flagged first** (M8), over every account, as drawn:
+  -- All Inboxes counting what is unread in each Inbox.
+  if #accounts > 0 then
+    local unseen = 0
+
+    for _, a in ipairs(accounts) do
+      local inbox = box_for(a, "inbox")
+
+      unseen = unseen + (inbox and inbox.unseen or 0)
+    end
+
+    VIRTUAL.inboxes.unseen = unseen
+    box_row(nil, VIRTUAL.inboxes)
+    box_row(nil, VIRTUAL.flagged)
+    y = y + 10
+  end
+
   for _, a in ipairs(accounts) do
-    local words = (a.name or a.address):upper()
+    -- An account's heading: its name and what it is, "Lena · Gmail".
+    local words = ("%s \u{00b7} %s"):format(a.name or a.address,
+                                             a.kind == "google" and "Gmail" or "IMAP"):upper()
 
     if y + 8 >= L.head then
       s:text(16, y + 8, ui.fitted(words, SIDE_W - 32, "label"), theme.text_dim, nil, "label")
@@ -1218,38 +1369,7 @@ local function draw_sidebar(s)
       y = y + gfx.height("ui") + 4
     end
 
-    for _, b in ipairs(a.boxes) do
-      local on = current and current.account.address == a.address and current.box.name == b.name
-      local h = 32
-
-      -- Only a row wholly in the column is drawn, or pressed.
-      if y < L.head or y + h > H then
-        y = y + h + 2
-        goto next_box
-      end
-
-      if on then s:fill_round(8, y, SIDE_W - 16, h, theme.line_soft, 7) end
-
-      local inset = 16 * math.min(3, b.depth or 0)
-
-      pk.icon(s, USE_ICON[b.use] or "folder", 18 + inset, y + (h - 15) // 2,
-              on and theme.accent or theme.text_dim)
-      s:text(18 + inset + 15 + 10, y + (h - gfx.height()) // 2,
-             ui.fitted(b.label or b.title or b.name, SIDE_W - 110 - inset, "ui"),
-             theme.text, nil, "ui")
-
-      if (b.unseen or 0) > 0 then
-        local n = tostring(b.unseen)
-
-        s:text(SIDE_W - 18 - gfx.measure(n), y + (h - gfx.height()) // 2, n,
-               on and theme.text or theme.text_dim, nil, "ui")
-      end
-
-      side_rows[#side_rows + 1] = { x = 8, y = y, w = SIDE_W - 16, h = h, account = a, box = b }
-      y = y + h + 2
-
-      ::next_box::
-    end
+    for _, b in ipairs(a.boxes) do box_row(a, b) end
 
     y = y + 10
   end
@@ -1275,6 +1395,8 @@ end
 
 local search = { text = "" }
 local search_focused = false
+local search_scope = {}         -- the All at the field's end
+local said_search = nil
 local list_rows = {}
 
 local function when_of(epoch)
@@ -1316,6 +1438,28 @@ local function draw_list(s)
 
   search.x, search.y, search.w, search.h = x0 + 12, y0 + 46, LIST_W - 24, 30
   pk.field(s, search, search_focused)
+
+  -- All: the search over every mailbox, lit when it is.
+  search_scope.x, search_scope.y = search.x + search.w - 44, search.y + 4
+  search_scope.w, search_scope.h = 40, search.h - 8
+
+  if search_all then
+    s:fill_round(search_scope.x, search_scope.y, search_scope.w, search_scope.h, theme.accent, 6)
+  elseif search_scope.pressed then
+    s:fill_round(search_scope.x, search_scope.y, search_scope.w, search_scope.h, theme.line_soft, 6)
+  end
+
+  s:text(search_scope.x + (search_scope.w - gfx.measure("All")) // 2,
+         search_scope.y + (search_scope.h - gfx.height()) // 2, "All",
+         search_all and theme.text_on or theme.text_dim, nil, "ui")
+
+  local where = ("%d,%d all %d,%d"):format(search.x + 60, search.y + search.h // 2,
+                                           search_scope.x + 20, search_scope.y + search_scope.h // 2)
+
+  if where ~= said_search then
+    said_search = where
+    print("mail: search at " .. where)
+  end
   pk.icon(s, "search", search.x + 10, search.y + (search.h - 15) // 2, theme.text_dim)
 
   local tx, ty = search.x + 32, search.y + (search.h - gfx.height()) // 2
@@ -1334,7 +1478,7 @@ local function draw_list(s)
   for i = top, math.min(#shown, top + fits) do
     local row = shown[i]
     local f = facts_of(row)
-    local on = row.uid == chosen
+    local on = row.path == chosen
     local unread = not f.seen
 
     if on then s:fill(x0, y, LIST_W - 1, ROW_H, theme.line_soft) end
@@ -1360,7 +1504,7 @@ local function draw_list(s)
     s:text(x0 + 24, y + 9 + gfx.height("title") + gfx.height("ui"),
            ui.fitted(tostring(f.preview or ""), LIST_W - 36, "ui"), theme.text_dim, nil, "ui")
 
-    list_rows[#list_rows + 1] = { x = x0, y = y, w = LIST_W - 1, h = ROW_H, uid = row.uid }
+    list_rows[#list_rows + 1] = { x = x0, y = y, w = LIST_W - 1, h = ROW_H, path = row.path }
     y = y + ROW_H
   end
 
@@ -1507,7 +1651,7 @@ local function draw_message(s)
 
   clamp_scroll()
 
-  local key = ("%d:%d:%d:%d:%s:%d"):format(message.uid, pw, ph, scroll,
+  local key = ("%s:%d:%d:%d:%s:%d"):format(message.path, pw, ph, scroll,
                                           tostring(shows_html()), message.version or 0)
 
   if band_for ~= key then
@@ -1740,7 +1884,7 @@ local function move_choice(by)
   i = (i or 0) + by
 
   if shown[i] then
-    choose(shown[i].uid)
+    choose(shown[i].path)
 
     local fits = (H - L.head - 86) // ROW_H
 
@@ -1766,7 +1910,7 @@ local function key(c)
 
       search.text, query = now, now
       filter()
-      print(("mail: %d shown for %q"):format(#shown, query))
+      print(("mail: %d shown for %q%s"):format(#shown, query, search_all and " in all mail" or ""))
     end
 
     return true
@@ -1920,7 +2064,10 @@ local function dots_menu()
     }
   end
 
-  win:open_menu(win.origin_x + controls.dots.x, win.origin_y + L.head, items)
+  local m = win:open_menu(win.origin_x + controls.dots.x, win.origin_y + L.head, items)
+
+  -- Where it opened, for whoever drives Mail from outside.
+  if m then print(("mail: dots menu at %d,%d, %d wide, rows of %d"):format(m.x, m.y, m.w, m.row)) end
 end
 
 local function press_sheet(x, y)
@@ -1950,8 +2097,11 @@ end
 local composers = {}
 
 -- The account a message is written from: the mailbox shown's, or the first.
+-- The account a message is written from: the chosen message's - in All
+-- Inboxes, the account it came to - or the mailbox shown's, or the first.
 local function writing_account()
-  local a = current and current.account or accounts[1]
+  local row = chosen_row()
+  local a = row and row.account or current and current.account or accounts[1]
 
   return a and { address = a.address, name = a.name or "" } or nil
 end
@@ -2001,7 +2151,7 @@ local function write_answer(kind)
 
   -- Answered is a flag the server keeps, for the list's arrow.
   if kind ~= "forward" then
-    ask{ type = "flag", account = current.account.address, mailbox = current.box.name,
+    ask{ type = "flag", account = row.account.address, mailbox = row.box.name,
          uids = { row.uid }, flag = "answered", on = true }
   end
 end
@@ -2010,7 +2160,7 @@ local function write_draft(row)
   local a = writing_account()
 
   if a then
-    opened(compose.continue(row.path, current.box.name, row.uid, a, next_place()))
+    opened(compose.continue(row.path, row.box.name, row.uid, a, next_place()))
   end
 end
 
@@ -2102,6 +2252,17 @@ local function press(x, y)
   elseif y < L.head then
     win:take_hold(x, y)
   else
+    if pk.inside(search_scope, x, y) then
+      pk.hold(search_scope, function()
+        search_all = not search_all
+        search_focused = true
+        filter()
+        print(("mail: searching %s, %d shown for %q"):format(search_all and "all mail" or "this mailbox",
+              #shown, query))
+      end)
+      return
+    end
+
     search_focused = pk.inside(search, x, y)
 
     for _, r in ipairs(side_rows) do
@@ -2110,14 +2271,12 @@ local function press(x, y)
 
     for _, r in ipairs(list_rows) do
       if pk.inside(r, x, y) then
-        choose(r.uid)
+        choose(r.path)
 
         -- A draft is written on, not read.
-        if current and current.box.use == "drafts" then
-          local row = chosen_row()
+        local row = chosen_row()
 
-          if row then write_draft(row) end
-        end
+        if row and row.box.use == "drafts" then write_draft(row) end
 
         return
       end
@@ -2190,16 +2349,19 @@ local function look()
   -- The mailbox shown, as `maild` now counts it, and its messages again if
   -- its folder changed.
   if current then
-    local a = account_of(current.account.address)
-    local b = a and box_of(a, current.box.name)
+    local a = current.account and account_of(current.account.address)
+    local b = current.box.virtual and current.box or a and box_of(a, current.box.name)
 
-    if a and b then
+    if b then
       current = { account = a, box = b }
 
-      local names = table.concat(fs.list(b.folder) or {}, "\0")
+      -- Its rows again, against the accounts as they are now, when any of
+      -- the folders it gathers changed.
+      local was = listing
 
-      if names ~= listing then
-        read_rows(true)
+      read_rows(true)
+
+      if listing ~= was then
         said = ""
 
         if chosen and not chosen_row() then
@@ -2210,7 +2372,8 @@ local function look()
   elseif accounts[1] then
     local inbox = box_for(accounts[1], "inbox") or accounts[1].boxes[1]
 
-    if inbox then open_box(accounts[1], inbox) end
+    -- Several accounts open on All Inboxes, as drawn; one on its Inbox.
+    if #accounts > 1 then open_box(nil, VIRTUAL.inboxes) elseif inbox then open_box(accounts[1], inbox) end
   end
 
   return true
@@ -2227,7 +2390,7 @@ read_accounts()
 if accounts[1] then
   local inbox = box_for(accounts[1], "inbox") or accounts[1].boxes[1]
 
-  if inbox then open_box(accounts[1], inbox) end
+  if #accounts > 1 then open_box(nil, VIRTUAL.inboxes) elseif inbox then open_box(accounts[1], inbox) end
 end
 
 if #accounts == 0 or tostring(args or ""):match("%-%-add") then open_sheet() end

@@ -22113,3 +22113,26 @@ side, each on its own files, and built and gated once:
 The whole gate, 57 (Cafesa3D's two again after the fix); the AArch64 image
 builds. `x86-sysapps` 25: a Processes heading pressed and slid off sorts
 nothing. **Control**: the heading on the press, it fails.
+
+## 18.496 Mail M8: several accounts, All Inboxes, Flagged, search in all mail
+
+`docs/mail.md` M8, as `docs/mail.html` draws it. **A row knows its account
+and its mailbox**, and the message on the right is known by its path - a
+UID is a mailbox's - so one list can hold several: **All Inboxes**, every
+account's Inbox newest first by date, and **Flagged**, what is flagged in
+any mailbox but the Trash and Junk; read, flagged, archived, deleted,
+answered and replied to each on its own account. The sidebar has both
+first, then each account under "Name · Gmail" or "Name · IMAP"; several
+accounts open on All Inboxes, one on its Inbox. **Search** looks in a
+message's words too - `maild` keeps its first thousand characters as
+`words` (`FACTS` 4; `to` held to a thousand bytes, all of it sharing one
+block) - and **All** at the field's end searches every mailbox. **The
+composer** has a From row, with more than one account, whose menu chooses.
+The test's peer takes any user, so a second account is a second peer.
+
+`x86-mail-6` 12: Sam added beside Lena; All Inboxes 5, Sam's newest first;
+Flagged 1; "spreadsheet", inside Sam's message, 0 in Lena's Inbox and 1
+with All; a reply from All Inboxes sent from Sam by Sam's server; a new
+message's From changed to Lena and sent by Lena's. `x86-mail` to `-5` pass.
+**Control**: the account written from taken from the mailbox shown, the
+reply goes from Lena, and it fails.

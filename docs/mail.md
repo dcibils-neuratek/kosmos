@@ -457,7 +457,9 @@ Each step leaves the system working and a test that stays.
    (`testing.md` 18.493): saved into Downloads, which became a place for it;
    opened in what opens their kind; added by the paperclip or a drop from
    Tracker; carried by Forward.
-9. **M8 - search**, several accounts, the unified Inbox.
+9. **M8 - search**, several accounts, the unified Inbox. **Done 9 October**
+   (`testing.md` 18.496): All Inboxes and Flagged; search in what a message
+   says, and in all mail; From chosen when there are several accounts.
 10. **M9 - shipped as an example**: `/Kosmos/Apps` and `/Kosmos/Examples/Mail`,
     a copy built and run in the IDE.
 

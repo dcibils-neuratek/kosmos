@@ -989,24 +989,7 @@ def mail_window(image, deliver, kept, said):
 
         w.at, w.click, w.typed, w.key, w.composer = at, click, typed, key, composer
 
-        mark = len(guest.seen)
-        click(*at("imap", sheet))
-        sheet = guest.wait_for_line("mail: sheet ", "the IMAP fields", mark)
-        click(*at("field1", sheet))
-        typed("Lena Moreau"); key("tab")
-        typed(who); key("tab")
-        typed(mailpeer.PASSWORD); key("tab")
-        for _ in range(24): guest.sendkey("backspace")
-        typed("10.0.2.2"); key("tab")
-        for _ in range(6): guest.sendkey("backspace")
-        typed(str(imap_port)); key("tab")
-        for _ in range(24): guest.sendkey("backspace")
-        typed("10.0.2.2"); key("tab")
-        for _ in range(6): guest.sendkey("backspace")
-        typed(str(smtp_port))
-        mark = len(guest.seen)
-        guest.sendkey("ret")
-        said["setup"] = guest.wait_for_line("mail: signed in ", "the account signed in", mark)
+        said["setup"] = add_account(w, sheet, "Lena Moreau", who, mailpeer.PASSWORD, imap_port, smtp_port)
         guest.wait_for("maild: %s: %d messages kept" % (who, kept), "the Inbox kept")
         w.places = guest.wait_for_line("mail: places ", "the window's places", 0)
         w.lx, w.ly = at("list", w.places)
@@ -1018,6 +1001,30 @@ def mail_window(image, deliver, kept, said):
         raise
 
     return w
+
+
+def add_account(w, sheet, name, who, password, imap_port, smtp_port):
+    """Add Account's Other IMAP, filled in as a person fills it, from the
+    sheet's line; what Mail said when it signed in."""
+    guest, at, click, typed, key = w.guest, w.at, w.click, w.typed, w.key
+    mark = len(guest.seen)
+    click(*at("imap", sheet))
+    sheet = guest.wait_for_line("mail: sheet ", "the IMAP fields", mark)
+    click(*at("field1", sheet))
+    typed(name); key("tab")
+    typed(who); key("tab")
+    typed(password); key("tab")
+    for _ in range(24): guest.sendkey("backspace")
+    typed("10.0.2.2"); key("tab")
+    for _ in range(6): guest.sendkey("backspace")
+    typed(str(imap_port)); key("tab")
+    for _ in range(24): guest.sendkey("backspace")
+    typed("10.0.2.2"); key("tab")
+    for _ in range(6): guest.sendkey("backspace")
+    typed(str(smtp_port))
+    mark = len(guest.seen)
+    guest.sendkey("ret")
+    return guest.wait_for_line("mail: signed in ", "the account signed in", mark)
 
 
 def window_closed(w, log):
@@ -1461,8 +1468,185 @@ def part5(image):
     return 0
 
 
+# A second account's mail (M8): Sam's, at another server on this Mac.
+SAM = "sam@example.org"
+QUARTER = ("From: Priya Nair <priya.nair@example.com>\r\n"
+           "To: Sam Ortiz <sam@example.org>\r\n"
+           "Subject: Quarterly numbers\r\n"
+           "Date: Fri, 9 Oct 2026 11:00:00 +0000\r\n"
+           "Message-ID: <quarter@example.com>\r\n"
+           "Content-Type: text/plain; charset=utf-8\r\n"
+           "\r\n"
+           "Sam, the spreadsheet is attached to the shared folder.\r\n").encode()
+LUNCH = ("From: Ana Ruiz <ana@example.com>\r\n"
+         "To: Sam Ortiz <sam@example.org>\r\n"
+         "Subject: Team lunch\r\n"
+         "Date: Thu, 8 Oct 2026 12:00:00 +0000\r\n"
+         "Message-ID: <lunch@example.com>\r\n"
+         "Content-Type: text/plain; charset=utf-8\r\n"
+         "\r\n"
+         "Thursday at one.\r\n").encode()
+
+
+def part6(image):
+    """Several accounts (M8): a second added, All Inboxes over both, Flagged
+    over every mailbox, a search in a message's words, here and in all mail,
+    a reply from All Inboxes sent from the account it came to, and a new
+    message whose From was chosen."""
+    import re
+    import time
+
+    said, error, w, sam = {}, None, None, None
+
+    try:
+        w = mail_window(image, [], 3, said)
+        guest, session, R = w.guest, w.session, w.R
+        at, click, typed, key, composer = w.at, w.click, w.typed, w.key, w.composer
+        places, lx, ly, rh = w.places, w.lx, w.ly, w.rh
+
+        # Sam's server: two messages of its own, one flagged.
+        sam = mailpeer.Peer(w.peer.work, "good.pem", "server.key", user=SAM)
+        sam.idle_delivers = False
+        sam.boxes["INBOX"].messages = []
+        sam.deliver("INBOX", LUNCH)
+        sam.deliver("INBOX", QUARTER, flags=("\\Flagged",))
+        sam_imap, sam_smtp = sam.start()
+
+        # The second account, from the dots' Add Account.
+        mark = len(guest.seen)
+        click(*[v + 13 for v in at("dots", places)])
+        line = guest.wait_for_line("mail: dots menu at ", "the dots' menu", mark)
+        m = re.match(r"(\d+),(\d+), (\d+) wide, rows of (\d+)", line)
+        mx, my, _, row = (int(v) for v in m.groups())
+        time.sleep(0.6)
+        click(mx + 24, my + 2 + row // 2, ox=0, oy=0)            # Add Account...
+        sheet = guest.wait_for_line("mail: sheet ", "Add Account", mark)
+        said["sam"] = add_account(w, sheet, "Sam Ortiz", SAM, mailpeer.PASSWORD, sam_imap, sam_smtp)
+        guest.wait_for("maild: %s: 2 messages kept" % SAM, "Sam's Inbox kept")
+        time.sleep(2)
+        guest._read_available()
+        side = re.findall(r"mail: side ([^\n]*)", guest.seen)[-1]
+        said["side"] = side
+
+        # All Inboxes: both accounts' Inbox, newest first.
+        mark = len(guest.seen)
+        click(*at("inboxes", side))
+        said["all"] = guest.wait_for_line("mail: opened All Inboxes, ", "All Inboxes", mark)
+        said["first"] = guest.wait_for_line("mail: showing ", "the newest of all", mark)
+
+        # Flagged, over every mailbox.
+        mark = len(guest.seen)
+        click(*at("flagged", side))
+        said["flagged"] = guest.wait_for_line("mail: opened Flagged, ", "Flagged", mark)
+
+        # A search in Lena's Inbox for a word inside Sam's message: nothing,
+        # then All - every mailbox - finds it.
+        mark = len(guest.seen)
+        click(*at("inbox", side))
+        guest.wait_for_line("mail: opened INBOX of ", "Lena's Inbox", mark)
+        time.sleep(1)
+        search = re.findall(r"mail: search at ([^\n]*)", guest.seen)[-1]
+        click(*at("at", "at " + search))
+        typed("spreadsheet")
+        time.sleep(1)
+        guest._read_available()
+        said["here"] = re.findall(r"mail: (\d+) shown for \"spreadsheet\"", guest.seen[mark:])[-1:]
+        mark = len(guest.seen)
+        click(*at("all", search))
+        said["everywhere"] = guest.wait_for_line("mail: searching all mail, ", "All pressed", mark)
+        key("esc")
+
+        # A reply from All Inboxes to Sam's message goes from Sam, by Sam's
+        # server.
+        mark = len(guest.seen)
+        click(*at("inboxes", side))
+        guest.wait_for_line("mail: showing ", "All Inboxes again", mark)
+        mark = len(guest.seen)
+        click(*[v + 13 for v in at("reply", places)])
+        rid, _, _, _ = composer("Reply", mark)
+        typed("Thanks.")
+        key("ctrl-ret")
+        guest.wait_for("maild: sent %s" % rid, "the reply sent")
+
+        # A new message, its From chosen: Lena's.
+        mark = len(guest.seen)
+        click(*[v + 13 for v in at("compose", places)])
+        nid, nx, ny, where = composer("New Message", mark)
+        click(200, 46 + 19, ox=nx, oy=ny)                       # the From row
+        line = guest.wait_for_line("mail: composer %s from menu at " % nid, "the From menu", mark)
+        m = re.match(r"(\d+),(\d+), rows of (\d+)", line)
+        fx, fy, frow = (int(v) for v in m.groups())
+        time.sleep(0.6)
+        click(fx + 24, fy + 2 + frow // 2, ox=0, oy=0)          # lena@example.com, the first
+        said["from"] = "mail: composer %s from %s" % (nid, mailpeer.USER) in guest.seen[mark:] or \
+            guest.wait_for_line("mail: composer %s from %s" % (nid, mailpeer.USER), "From chosen", mark) is not None
+        where = re.findall(r"mail: composer %s places ([^\n]*)" % nid, guest.seen)[-1]
+        click(*at("to", where), ox=nx, oy=ny)
+        typed("ana@example.com,")
+        click(*at("subject", where), ox=nx, oy=ny)
+        typed("From Lena")
+        key("ctrl-ret")
+        guest.wait_for("maild: sent %s" % nid, "the new one sent")
+        time.sleep(1)
+    except Exception as e:                  # noqa: BLE001 - said below
+        error = "%s: %s" % (type(e).__name__, str(e).splitlines()[0])
+    finally:
+        seen = window_closed(w, "guest-6.log")
+        if sam:
+            sam.stop()
+
+    if w is None:
+        print("FAIL: Mail's accounts: the machine never came up: %s" % error)
+        return 1
+
+    fails = []
+
+    if error:
+        fails.append("the machine stopped: " + error + " ... " + seen[-1200:])
+    if not said.get("sam", "").startswith(SAM):
+        fails.append("the second account was not added: %r" % said.get("sam"))
+    if not re.search(r"\binboxes \d+,\d+ flagged \d+,\d+", said.get("side", "")):
+        fails.append("All Inboxes and Flagged not first in the sidebar: %r" % said.get("side"))
+    if not said.get("all", "").startswith("5 messages"):
+        fails.append("All Inboxes did not hold both accounts' five: %r" % said.get("all"))
+    if "Quarterly numbers" not in said.get("first", ""):
+        fails.append("All Inboxes' newest was not Sam's, the newest of all: %r" % said.get("first"))
+    if not said.get("flagged", "").startswith("1 messages"):
+        fails.append("Flagged did not hold the one flagged message: %r" % said.get("flagged"))
+    if said.get("here") != ["0"]:
+        fails.append("a word in Sam's message was found in Lena's Inbox: %r" % said.get("here"))
+    if not said.get("everywhere", "").startswith("1 shown"):
+        fails.append("All did not find the word in Sam's message: %r" % said.get("everywhere"))
+    if said.get("from") is not True:
+        fails.append("the From menu did not choose Lena: %r" % said.get("from"))
+
+    with sam.lock:
+        r = [m for m in sam.sent if "Subject: Re: Quarterly numbers\r\n" in m["data"]]
+    if not r or "From: Sam Ortiz <sam@example.org>\r\n" not in r[0]["data"]:
+        fails.append("the reply from All Inboxes did not go from Sam by Sam's server")
+    with w.peer.lock:
+        n = [m for m in w.peer.sent if "Subject: From Lena\r\n" in m["data"]]
+    if not n or "From: Lena Moreau <lena@example.com>\r\n" not in n[0]["data"]:
+        fails.append("the message whose From was chosen did not go from Lena by Lena's server")
+    if " died: " in seen:
+        fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
+
+    checks = 12
+
+    if fails:
+        print("FAIL: %d of %d checks on Mail's accounts:" % (len(fails), checks))
+        for f in fails:
+            print("  " + f)
+        return 1
+
+    print("PASS: %d checks on Mail's accounts (a second account added; All Inboxes and Flagged "
+          "first, over both; a word inside a message found only with All; a reply from All "
+          "Inboxes sent from the account it came to; a new message's From chosen)." % checks)
+    return 0
+
+
 if __name__ == "__main__":
     image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
     part = sys.argv[sys.argv.index("--part") + 1] if "--part" in sys.argv else "1"
-    sys.exit(part5(image) if part == "5" else part4(image) if part == "4" else part3(image) if part == "3"
+    sys.exit(part6(image) if part == "6" else part5(image) if part == "5" else part4(image) if part == "4" else part3(image) if part == "3"
              else part2(image) if part == "2" else part1(image))
