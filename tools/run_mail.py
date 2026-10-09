@@ -387,11 +387,16 @@ print("LOOK" .. " END")
 
 SYNC = 'local r = fs.send("/Running/maild", { type = "sync" })\nprint("SYNC " .. tostring(r and r.ok))\n'
 
+# A message's facts as an older reading worked them out.
+STALE = ('fs.setattr("/Home/Mail/USER/INBOX/1.eml", { facts = 1, preview = "stale" })\n'
+         'local r = fs.send("/Running/maild", { type = "sync" })\nprint("STALE " .. tostring(r and r.ok))\n')
+
 
 def part2(image):
     work, peer, imap_port, smtp_port = setup()
     scripts = {"setup.lua": fill(SETUP, imap_port, smtp_port),
-               "look.lua": fill(LOOK, imap_port, smtp_port), "sync.lua": SYNC}
+               "look.lua": fill(LOOK, imap_port, smtp_port), "sync.lua": SYNC,
+               "stale.lua": fill(STALE, imap_port, smtp_port)}
     guest, R = boot(image, work, scripts)
     who = mailpeer.USER
     looks, error, said = [], None, ""
@@ -421,6 +426,12 @@ def part2(image):
         guest.wait_for("maild: %s: INBOX: 1 new, 0 changed, 0 gone" % who, "the arrival fetched")
         guest.wait_for('"Bob" from /Kosmos/Programs/maild.lua', "the arrival said")
         look()
+
+        # Facts from an older reading, worked out again at the next look.
+        mark = len(guest.seen)
+        guest.type("/Home/stale.lua")
+        guest.wait_for_line("maild: %s: INBOX: 1 worked out again" % who,
+                            "an older reading's facts redone", since=mark)
 
         # Changed on the server: one message read, one deleted elsewhere.
         with peer.lock:
@@ -481,6 +492,9 @@ def part2(image):
     second = looks[1] if len(looks) > 1 else ""
     r2 = rows(second)
 
+    if r2 and not r2[0][6].startswith("Lena, Yes - at ten"):
+        fails.append("a preview from an older reading not worked out again: %r" % r2[0][6])
+
     if [r[0] for r in r2] != ["1.eml", "2.eml", "4.eml"]:
         fails.append("a message deleted on the server not taken away: %r" % [r[0] for r in r2])
     elif r2[1][3] != "true":
@@ -495,7 +509,7 @@ def part2(image):
     if " died: " in said:
         fails.append("something died: " + said[said.find(" died: ") - 80:][:300])
 
-    checks = 12
+    checks = 13
 
     if fails:
         print("FAIL: %d of %d checks on maild:" % (len(fails), checks))
@@ -547,6 +561,11 @@ def part3(image):
         peer.deliver("INBOX", ("From: Club <club@example.net>\r\nTo: lena@example.com\r\n"
                                "Subject: Notice %d\r\nDate: Mon, 5 Oct 2026 08:%02d:00 +0000\r\n"
                                "\r\nNotice %d.\r\n" % (i, i, i)).encode())
+
+    # Labels enough that the sidebar is taller than the window, as Gmail's.
+    for i in range(1, 21):
+        name = "Label %02d" % i
+        peer.boxes[name] = mailpeer.Box(name, "", 2000 + i)
 
     # The three of the drawing newest, so they stay the first rows.
     inbox = peer.boxes["INBOX"]
@@ -639,6 +658,15 @@ def part3(image):
         rh = int(re.search(r"rows (\d+)", places).group(1))
         time.sleep(2)
 
+        # The wheel over the sidebar, taller than the window, moves it on.
+        mark = len(guest.seen)
+        guest.mouse_to(*R._to_tablet(wx + 100, wy + 400, width, height))
+        time.sleep(0.4)
+        guest.mouse_button(True, "wheel-down")
+        time.sleep(0.05)
+        guest.mouse_button(False, "wheel-down")
+        said["side"] = guest.wait_for_line("mail: sidebar from ", "the wheel over the sidebar", mark)
+
         # The wheel over the Inbox moves the list a row a notch.
         mark = len(guest.seen)
         guest.mouse_to(*R._to_tablet(wx + lx + 100, wy + ly + rh, width, height))
@@ -716,12 +744,16 @@ def part3(image):
     if "10.0.2.2" not in acc or mailpeer.PASSWORD in acc:
         fails.append("the account file, its server and no password: %r" % acc[:300])
 
-    if said.get("boxes") != "Inbox, Drafts, Sent, Archive, Trash, Café, Projects, -Kosmos":
+    labels = ", ".join("Label %02d" % i for i in range(1, 21))
+    if said.get("boxes") != "Inbox, Drafts, Sent, Archive, Trash, Café, " + labels + ", Projects, -Kosmos":
         fails.append("the mailboxes as a person reads them, [Gmail] left out: %r"
                      % said.get("boxes"))
 
     if mailpeer.PASSWORD in seen:
         fails.append("the password was printed")
+
+    if said.get("side") != "102":
+        fails.append("a notch of the wheel over the sidebar: %r" % said.get("side"))
 
     if not (len(said.get("turns", [])) == 2 and said["turns"][0].startswith("mail: list from 4 ")
             and said["turns"][1].startswith("mail: list from 1 ")):
@@ -754,7 +786,7 @@ def part3(image):
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 15
+    checks = 16
 
     if fails:
         print("FAIL: %d of %d checks on Mail's window:" % (len(fails), checks))

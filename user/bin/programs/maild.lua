@@ -150,6 +150,14 @@ end
 --------------------------------------------------------------------------
 
 -- What the list shows of a message, read from its file by the Mail Kit.
+--
+-- **Which reading worked a message's facts out.** One more each time what
+-- the Mail Kit or this file makes of a message changes, so what was kept
+-- before is worked out again: on 8 October a newsletter's preview was its
+-- style sheet, and the messages kept then kept it until this said 2.
+--
+local FACTS = 2
+
 local function facts(path, uid, flags)
   local r, size = regions.read_whole(path)
 
@@ -157,7 +165,7 @@ local function facts(path, uid, flags)
 
   local m = mailkit.parse(r.at, size)
   local out = { type = "mail", uid = uid, seen = flags.seen == true,
-                flagged = flags.flagged == true }
+                flagged = flags.flagged == true, facts = FACTS }
 
   if m then
     local from = m:addresses("from")[1] or {}
@@ -286,6 +294,26 @@ local function sync(a, s, mailbox, quiet)
   end
 
   local changed, gone = 0, 0
+
+  -- Kept by an older reading: its facts worked out again, its flags kept.
+  local redone = 0
+
+  for _, name in ipairs(fs.list(folder) or {}) do
+    local uid = tonumber(name:match("^(%d+)%.eml$"))
+    local path = folder .. "/" .. name
+    local at = uid and fs.getattr(path)
+
+    if at and (tonumber(at.facts) or 0) < FACTS then
+      local f = facts(path, uid, { seen = at.seen, flagged = at.flagged })
+
+      if f then
+        fs.setattr(path, f)
+        redone = redone + 1
+      end
+    end
+  end
+
+  if redone > 0 then note(a, ("%s: %d worked out again"):format(mailbox.title or mailbox.name, redone)) end
 
   -- Changed: the flags the list shows.
   for _, m in ipairs(ch.changed) do

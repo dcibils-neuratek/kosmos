@@ -908,6 +908,10 @@ end
 
 local side_rows = {}
 
+-- How far the sidebar is turned down, in pixels, and how tall all of it
+-- is: Gmail's labels are more than a window holds.
+local side_scroll, side_total = 0, 0
+
 local function draw_sidebar(s)
   side_rows = {}
 
@@ -916,7 +920,7 @@ local function draw_sidebar(s)
   s:fill(0, L.head, SIDE_W, H - L.head, theme.window)
   s:fill(SIDE_W - 1, L.head, 1, H - L.head, theme.line_soft)
 
-  local y = L.head + 10
+  local y = L.head + 10 - side_scroll
 
   if #accounts == 0 then
     s:text(18, y + 8, "No account yet", theme.text_dim, nil, "ui")
@@ -925,17 +929,29 @@ local function draw_sidebar(s)
   for _, a in ipairs(accounts) do
     local words = (a.name or a.address):upper()
 
-    s:text(16, y + 8, ui.fitted(words, SIDE_W - 32, "label"), theme.text_dim, nil, "label")
+    if y + 8 >= L.head then
+      s:text(16, y + 8, ui.fitted(words, SIDE_W - 32, "label"), theme.text_dim, nil, "label")
+    end
+
     y = y + 8 + gfx.height("label") + 6
 
     if a.state == "error" then
-      s:text(16, y, ui.fitted(tostring(a.why), SIDE_W - 32, "ui"), theme.text_dim, nil, "ui")
+      if y >= L.head then
+        s:text(16, y, ui.fitted(tostring(a.why), SIDE_W - 32, "ui"), theme.text_dim, nil, "ui")
+      end
+
       y = y + gfx.height("ui") + 4
     end
 
     for _, b in ipairs(a.boxes) do
       local on = current and current.account.address == a.address and current.box.name == b.name
       local h = 32
+
+      -- Only a row wholly in the column is drawn, or pressed.
+      if y < L.head or y + h > H then
+        y = y + h + 2
+        goto next_box
+      end
 
       if on then s:fill_round(8, y, SIDE_W - 16, h, theme.line_soft, 7) end
 
@@ -957,11 +973,13 @@ local function draw_sidebar(s)
       side_rows[#side_rows + 1] = { x = 8, y = y, w = SIDE_W - 16, h = h, account = a, box = b }
       y = y + h + 2
 
-      if y > H - 40 then break end
+      ::next_box::
     end
 
     y = y + 10
   end
+
+  side_total = y + side_scroll - L.head
 end
 
 local search = { text = "" }
@@ -1492,6 +1510,15 @@ end
 
 local function wheel(x, y, n)
   if sheet then return end
+
+  if sidebar and x < SIDE_W then
+    -- Three rows a notch, as everything the kit scrolls, to where the last
+    -- mailbox is in view.
+    side_scroll = math.max(0, math.min(side_scroll - n * ui.WHEEL_ROWS * 34,
+                                       math.max(0, side_total - (H - L.head))))
+    print(("mail: sidebar from %d"):format(side_scroll))
+    return
+  end
 
   local px = (sidebar and SIDE_W or 0) + LIST_W
 

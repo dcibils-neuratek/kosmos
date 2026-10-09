@@ -21839,3 +21839,22 @@ a notch; Passwords' list had the same sign and was turned too.
 from 4" and a notch up "list from 1". **Control**: the run before the fix,
 "mail: list from 1 (a turn of -1 ...)" for the notch down. `arm-passwords`
 passes.
+
+## 18.488 Mail's sidebar scrolls, and old previews are worked out again
+
+Diego, 9 October: "scroll works now, do the sidebar and previews". His
+Gmail's labels are taller than the window and the sidebar did not move;
+and messages kept before 18.486 kept a newsletter's style sheet as their
+preview. The sidebar now turns three rows a notch, to where the last
+mailbox is in view, drawing and pressing only the rows wholly in it. And
+each kept message says which reading worked its facts out (`facts`, 2
+now); one an older reading did is worked out again at the next look, its
+flags kept - the number goes up whenever what the kit or `maild` makes of
+a message changes.
+
+`x86-mail-2` 13: a message's facts set back to an older reading's, "stale",
+and the next look works them out again. `x86-mail-3` 16: twenty more labels
+in the account, and a notch down over the sidebar "sidebar from 102".
+**Controls**: facts never redone, the wait for "1 worked out again" times
+out; the wheel not taken over the sidebar, the wait for "sidebar from"
+times out.
