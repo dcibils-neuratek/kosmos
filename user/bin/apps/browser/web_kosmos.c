@@ -762,7 +762,8 @@ static int l_images(lua_State *L)
 }
 
 /*
- * `doc:ns_layout(width, height, address)` -> the page's height, laid out by
+ * `doc:ns_layout(width, height, address)` -> the page's height, and how wide
+ * it reached - `width`, or more where a box overflows it - laid out by
  * NetSurf (`roadmap.md` 6zz j3); nil and why when it could not be. The
  * address is the one the page came from, which its links and its
  * stylesheets' `url()`s resolve against; the first call makes the box tree,
@@ -795,7 +796,8 @@ static int l_ns_layout(lua_State *L)
     }
 
     lua_pushinteger(L, tall);
-    return 1;
+    lua_pushinteger(L, web_ns_wide(d->ns));
+    return 2;
 }
 
 /*

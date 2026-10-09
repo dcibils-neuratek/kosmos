@@ -615,7 +615,7 @@ local function shows_html()
 end
 
 local function page_px()
-  if shows_html() then return message.html_h or 0 end
+  if shows_html() then return math.floor((message.html_h or 0) * (message.fit or 1)) end
 
   if not (message and message.set) then return 0 end
 
@@ -673,6 +673,7 @@ local function lay_out_html(pw, ph)
   message.pics.page_w, message.pics.view_h = pw, ph
 
   local tall, why = message.page:ns_layout(pw, ph, "about:blank")
+  local wide = why
 
   if not tall then
     print("mail: its HTML could not be laid out: " .. tostring(why))
@@ -697,11 +698,20 @@ local function lay_out_html(pw, ph)
   end
 
   if handed > 0 or message.relayout then
-    tall = message.page:ns_layout(pw, ph, "about:blank") or tall
+    local again, reached = message.page:ns_layout(pw, ph, "about:blank")
+
+    tall, wide = again or tall, again and reached or wide
     message.pics:to_boxes(message.page)
   end
 
   message.html_h = tall or 0
+
+  -- **A page wider than the pane is fitted to it** (the M700, 9 October:
+  -- a newsletter's table of a fixed 600 in a pane of 590 was cut off at
+  -- the right): drawn at its own width and shown smaller, as a mail reader
+  -- shows one - to half its size at most, past which it is cut rather than
+  -- made unreadable.
+  message.fit = math.max(0.5, math.min(1, pw / math.max(1, tonumber(wide) or pw)))
   message.laid_w, message.relayout = pw, false
   message.version = (message.version or 0) + 1
 
@@ -712,8 +722,9 @@ local function lay_out_html(pw, ph)
                     :format(far, far == 1 and "picture" or "pictures")
                 or nil
 
-  print(("mail: html laid out at %d in %.1f ms, %d px tall, %d sent inside, %d on the network")
-        :format(pw, (sys.ticks() - t0) * 1000 / counter_hz, message.html_h, handed, far))
+  print(("mail: html laid out at %d in %.1f ms, %d px tall, %d wide, fitted at %d%%, %d sent inside, %d on the network")
+        :format(pw, (sys.ticks() - t0) * 1000 / counter_hz, message.html_h, tonumber(wide) or pw,
+                math.floor(message.fit * 100 + 0.5), handed, far))
 
   return true
 end
@@ -811,6 +822,7 @@ end
 
 local function forget_message()
   if message and message.page then message.page:close() end
+  if message and message.wide_band then message.wide_band:free() end
 
   message = nil
   band_for = nil
@@ -1472,7 +1484,22 @@ local function draw_message(s)
 
     band = band or gfx.surface{ w = pw, h = ph }
 
-    if shows_html() then
+    if shows_html() and (message.fit or 1) < 1 then
+      -- Fitted: painted at the page's own width into a band of its own,
+      -- then drawn smaller into the paper, smoothly.
+      local f = message.fit
+      local cw, ch = math.ceil(pw / f), math.ceil(ph / f)
+
+      if not (message.wide_band and message.wide_band_w == cw and message.wide_band_h == ch) then
+        if message.wide_band then message.wide_band:free() end
+        message.wide_band = gfx.surface{ w = cw, h = ch }
+        message.wide_band_w, message.wide_band_h = cw, ch
+      end
+
+      message.wide_band:fill(0, 0, cw, ch, 0xffffffff)
+      message.page:ns_paint(message.wide_band, cw, ch, math.floor(scroll / f))
+      band:stretch(message.wide_band, 0, 0, cw, ch, 0, 0, pw, ph, nil, true)
+    elseif shows_html() then
       -- A page's own ground is white unless it says otherwise, as in a
       -- browser.
       band:fill(0, 0, pw, ph, 0xffffffff)
@@ -1903,7 +1930,9 @@ local function press(x, y)
 
     -- A link in an HTML message: what is under the point, in the browser.
     if shows_html() and message.page and paper_at and pk.inside(paper_at, x, y) then
-      local href = message.page:ns_link_at(x - paper_at.x, y - paper_at.y + scroll)
+      local f = message.fit or 1
+      local href = message.page:ns_link_at(math.floor((x - paper_at.x) / f),
+                                           math.floor((y - paper_at.y + scroll) / f))
 
       if href and tostring(href):match("^https?:") then
         print("mail: link " .. tostring(href))

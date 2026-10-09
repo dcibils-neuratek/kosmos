@@ -808,7 +808,7 @@ def part3(image):
         fails.append("the newest message first: %r" % said.get("photos"))
     if not said.get("route", "").startswith("29, This week's route"):
         fails.append("the second, in HTML: %r" % said.get("route"))
-    if not re.search(r"\d+ px tall, 1 sent inside, 1 on the network", said.get("html", "")):
+    if not re.search(r"\d+ px tall, \d+ wide, fitted at 100%, 1 sent inside, 1 on the network", said.get("html", "")):
         fails.append("the route's HTML, its own picture and one on the network: %r" % said.get("html"))
     if said.get("asked_before") != 0:
         fails.append("a picture on the network fetched before Load Pictures: %r" % said.get("asked_before"))
@@ -869,6 +869,20 @@ PLANS = ("From: Priya Nair <priya.nair@example.com>\r\n"
 
 
 
+# A newsletter whose table is a fixed 900, wider than the pane: fitted.
+WIDE = ("From: Weekly Wide <wide@example.net>\r\n"
+        "To: lena@example.com\r\n"
+        "Subject: The wide one\r\n"
+        "Date: Fri, 9 Oct 2026 06:00:00 +0000\r\n"
+        "Message-ID: <wide@example.net>\r\n"
+        "Content-Type: text/html; charset=utf-8\r\n"
+        "\r\n"
+        "<table width=\"900\" style=\"width:900px\"><tr><td style=\"background:#e8e0d0\">"
+        "<p>The left edge of a wide newsletter.</p></td>"
+        "<td style=\"text-align:right;background:#d0e0e8\"><p>The right edge, which must be seen.</p>"
+        "</td></tr></table>\r\n").encode()
+
+
 def part4(image):
     """The composer: Reply All quoting and threading, a new message whose
     address is completed and whose Bcc is in no header, a draft kept on the
@@ -882,7 +896,8 @@ def part4(image):
     run_tls.pki(work, "10.0.2.2")
     peer = mailpeer.Peer(work, "good.pem", "server.key")
     peer.idle_delivers = False
-    peer.deliver("INBOX", PLANS)
+    peer.deliver("INBOX", WIDE)             # the list is by arrival: this second,
+    peer.deliver("INBOX", PLANS)            # Priya's first
     imap_port, smtp_port = peer.start()
 
     disk = os.path.join(work, "disk.img")
@@ -964,12 +979,24 @@ def part4(image):
         mark = len(guest.seen)
         guest.sendkey("ret")
         said["setup"] = guest.wait_for_line("mail: signed in ", "the account signed in", mark)
-        guest.wait_for("maild: %s: 4 messages kept" % who, "the Inbox kept")
+        guest.wait_for("maild: %s: 5 messages kept" % who, "the Inbox kept")
         places = guest.wait_for_line("mail: places ", "the window's places", 0)
 
         lx, ly = at("list", places)
         rh = int(re.search(r"rows (\d+)", places).group(1))
         time.sleep(2)
+
+        # 0. The wide newsletter, second newest: laid out wider than the
+        #    pane and fitted to it, its right edge in the picture.
+        mark = len(guest.seen)
+        click(lx + 100, ly + rh + rh // 2)
+        said["wide"] = guest.wait_for_line("mail: html laid out at ", "the wide one laid out", mark)
+        time.sleep(1.5)
+        import kosmos_vnc as V
+        w_, h_, rgb_ = R.parse_ppm(guest.screendump())
+        ww_, wh_ = (int(v) for v in re.search(r"(\d+)x(\d+)", placed).groups())
+        rows_ = [rgb_[((y * w_) + wx) * 3:((y * w_) + wx + ww_) * 3] for y in range(wy, min(h_, wy + wh_))]
+        V.png(os.path.join(ROOT, "build", "mail", "wide.png"), ww_, len(rows_), b"".join(rows_))
 
         # 1. Reply All to Priya's: everyone but Lena, quoted, threaded.
         mark = len(guest.seen)
@@ -1125,6 +1152,11 @@ def part4(image):
         if peer.find("Drafts", "Draft plans") is not None:
             fails.append("the sent draft's copy stayed in Drafts")
 
+    m = re.match(r"(\d+) in [\d.]+ ms, \d+ px tall, (\d+) wide, fitted at (\d+)%", said.get("wide", ""))
+    if not (m and int(m.group(2)) >= 900 > int(m.group(1)) and int(m.group(3)) < 100
+            and abs(int(m.group(3)) - round(100 * int(m.group(1)) / int(m.group(2)))) <= 1):
+        fails.append("a page wider than the pane was not fitted to it: %r" % said.get("wide"))
+
     if "ana@example.com" not in said.get("suggests", ""):
         fails.append("three letters did not suggest Ana: %r" % said.get("suggests"))
     if said.get("draft_flags") != ["\\Draft", "\\Seen"]:
@@ -1140,7 +1172,7 @@ def part4(image):
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 21
+    checks = 22
 
     if fails:
         print("FAIL: %d of %d checks on Mail's composer:" % (len(fails), checks))
@@ -1152,7 +1184,8 @@ def part4(image):
           "and threaded, kept in Sent and the message flagged Answered; a new message with an "
           "address completed from three letters and a Bcc in no header; a draft closed with "
           "Super+Q, kept on the server, opened from Drafts, sent whole and its copy taken away; "
-          "a recipient refused, said, and the message kept in the Outbox)." % checks)
+          "a recipient refused, said, and the message kept in the Outbox; and a newsletter "
+          "wider than the pane fitted to it)." % checks)
     return 0
 
 

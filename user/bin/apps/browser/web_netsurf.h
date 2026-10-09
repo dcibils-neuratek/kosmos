@@ -37,6 +37,10 @@ struct web_ns_doc *web_ns_open(void *document, const char *base,
                                const char *charset);
 int         web_ns_layout(struct web_ns_doc *d, lua_State *L, int width,
                           int height);
+
+/* How wide the last layout reached: its width, or more where a box overflows
+ * it; for a reader that fits a page rather than scrolling it sideways. */
+int         web_ns_wide(const struct web_ns_doc *d);
 void        web_ns_paint(struct web_ns_doc *d, lua_State *L,
                          struct surface *s, int width, int height, long from,
                          const int *area);

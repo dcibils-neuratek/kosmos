@@ -21928,3 +21928,20 @@ with its copy gone, and nobody@refused.example.com refused with the
 server's 550 and kept in the Outbox; the composer's picture is kept in
 `build/mail/composer.png`. **Control**: the Bcc written as the Cc, it
 fails twice - "the Bcc was in the message", and the reply's real Cc gone.
+
+## 18.491 A newsletter wider than Mail's pane, fitted to it
+
+Seen on the M700 in 0.11.92 (9 October): a newsletter laid out at the
+pane's 590 was cut off at the right - "threats t", "October 09, 202" -
+because its table is a fixed width and overflowed what it was given, and
+the paint stopped at the pane. **The Web Kit now says how wide a layout
+reached** (`ns_layout`'s second answer: the width it was given, or the
+right edge of its widest box), and **Mail fits a wider page**: painted at
+its own width into a band of its own and drawn smoothly smaller into the
+paper, links and scrolling scaled with it - down to half size, past which
+it is cut rather than made unreadable. The browser is unchanged.
+
+`x86-mail-4` 22: a newsletter of a 900 table, "laid out at 590 ... 908
+wide, fitted at 65%", its right edge in `build/mail/wide.png`. `x86-mail-3`'s
+route stays "fitted at 100%". **Control**: the fit left at 100%, the check
+fails.

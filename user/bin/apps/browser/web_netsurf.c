@@ -1289,6 +1289,7 @@ struct web_ns_doc {
     int                laid_zoom;   /* the zoom it was last laid out at */
     bool               converted;   /* the box tree was made */
     const char        *why;         /* why the last layout failed */
+    int                wide;        /* how wide the last layout reached */
 
     /* Forms (`roadmap.md` 6zz j6). */
     struct box        *focus;       /* the field with the caret, or NULL */
@@ -2765,11 +2766,25 @@ int web_ns_layout(struct web_ns_doc *d, lua_State *L, int width, int height)
         tall = top->y + top->descendant_y1;
     }
 
+    /* And how wide it reached: the width it was given, or further where a
+     * box is wider than that - a newsletter's table of a fixed 600 in a
+     * pane of 590 - which a reader that cannot scroll sideways fits. */
+    d->wide = top->x + top->descendant_x1;
+
+    if (d->wide < width) {
+        d->wide = width;
+    }
+
     h->base.width = width;
     h->base.height = tall;
     faces_L = NULL;
 
     return tall;
+}
+
+int web_ns_wide(const struct web_ns_doc *d)
+{
+    return d->wide;
 }
 
 /*
