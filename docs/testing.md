@@ -21720,3 +21720,30 @@ the literal sent to a string rather than the file's region, fetch fails
 twice, "said 'nil nil', not '309 Café on Saturday'".
 
 The whole x86 gate, with `http.lua` on `netstream.lua`: 53 of 53 in 5:48.
+
+## 18.483 Mail M3: `maild`
+
+`user/bin/programs/maild.lua` (`docs/mail.md` M3), `needs keyring-mail`:
+each account in `/Home/Mail/<address>/account` signed in with the password
+the keyring keeps under `imap://<host>:<port>`, read for the sign-in and
+not held after it. Its mailboxes go into `mailboxes`, and its Inbox is kept
+as files, `INBOX/<uid>.eml`, with `from`, `subject`, `date`, `preview`,
+`seen`, `flagged`, `attachments` and `uid` as attributes, read by the Mail
+Kit. A first look keeps the newest hundred. Then IDLE, ended and begun
+again every 25 minutes: what arrives is fetched and said in a notification
+(one for all when more than five arrive at once), what changed is marked by
+CONDSTORE, and what the server no longer has is taken away. A lost
+connection is signed in again after 30 seconds and caught up from the
+mailbox's `state`. Each account is a coroutine, and one loop polls every
+connection and answers `/Running/maild` - `status`, `sync` - between.
+`maild --once` brings each account up to date and ends.
+
+`x86-mail-2`, 12 checks, `maild &` at the prompt against `mailpeer.py`:
+the Inbox kept as four files once a message is delivered during IDLE, its
+notification said as from `maild.lua`, a sender and subject out of
+Windows-1252, the date and preview, the attachment counted, nothing marked
+seen; the mailboxes; the status `idle 4 4`; then one message read and one
+deleted on the server, `sync` asked, and both caught up - `idle 3 2`; and
+no line of `maild`'s with the password in it. **Control**: a message gone
+from the server left in place, it fails twice, "a message deleted on the
+server not taken away".

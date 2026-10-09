@@ -202,9 +202,14 @@ SUITES = [
     # `smtp.lua` against `mailpeer.py` on this Mac, over TLS - signed in and
     # refused, mailboxes, a message fetched into a file and read by the Mail
     # Kit, 420 KB whole, a flag, a move and an append on the server, CONDSTORE,
-    # IDLE, and a message sent with STARTTLS.
+    # IDLE, and a message sent with STARTTLS. Its second part is `maild`
+    # (M3): an account kept as files, IDLE's arrival said, the server's
+    # changes caught up.
     Suite("arm-mail", ["python3", "tools/run_mail.py", ARM]),
     Suite("x86-mail", ["python3", "tools/run_mail.py", X86], x86=True),
+    Suite("arm-mail-2", ["python3", "tools/run_mail.py", ARM, "--part", "2"]),
+    Suite("x86-mail-2", ["python3", "tools/run_mail.py", X86, "--part", "2"],
+          x86=True),
 
     # **smbfs connects, signed and sealed** (`docs/sharing.md` N2 and N4),
     # in one machine on ten Samba peers run as the user on this Mac: 3.1.1

@@ -169,25 +169,33 @@ print("MAILCHECK" .. " END")
 '''
 
 
-def main():
-    image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
+def setup():
+    """The authority, the server, and their ports."""
     work = scratch.directory("mail")
     run_tls.pki(work)
-
     peer = mailpeer.Peer(work, "good.pem", "server.key")
     imap_port, smtp_port = peer.start()
+    return work, peer, imap_port, smtp_port
 
-    script = (CHECK.replace("IMAP", str(imap_port)).replace("SMTP", str(smtp_port))
-              .replace("USER", mailpeer.USER).replace("PASSWORD", mailpeer.PASSWORD))
 
-    with open(os.path.join(work, "mailcheck.lua"), "w") as f:
-        f.write(script)
+def fill(text, imap_port, smtp_port):
+    return (text.replace("IMAP", str(imap_port)).replace("SMTP", str(smtp_port))
+            .replace("USER", mailpeer.USER).replace("PASSWORD", mailpeer.PASSWORD))
 
+
+def boot(image, work, scripts):
+    """A disk holding the authority and `scripts`, and the machine on the
+    network with it."""
     disk = os.path.join(work, "disk.img")
+    put = [os.path.join(work, "ca.der") + ":/Home/ca.der"]
+
+    for name, text in scripts.items():
+        with open(os.path.join(work, name), "w") as f:
+            f.write(text)
+        put.append(os.path.join(work, name) + ":/Home/" + name)
+
     subprocess.run([os.path.join(ROOT, "build", "host", "lua"),
-                    os.path.join(HERE, "kfs.lua"), "create", disk, "32",
-                    os.path.join(work, "ca.der") + ":/Home/ca.der",
-                    os.path.join(work, "mailcheck.lua") + ":/Home/mailcheck.lua"],
+                    os.path.join(HERE, "kfs.lua"), "create", disk, "32", *put],
                    check=True, capture_output=True, cwd=ROOT)
     os.environ["KOSMOS_DISK"] = disk
 
@@ -204,6 +212,23 @@ def main():
     finally:
         setattr(R, board, saved)
 
+    return guest, R
+
+
+def said_lines(said, mark="M "):
+    lines = {}
+
+    for line in said.splitlines():
+        if line.startswith(mark):
+            name, _, rest = line[len(mark):].partition(" ")
+            lines[name] = rest
+
+    return lines
+
+
+def part1(image):
+    work, peer, imap_port, smtp_port = setup()
+    guest, R = boot(image, work, {"mailcheck.lua": fill(CHECK, imap_port, smtp_port)})
     said, error = "", None
 
     try:
@@ -220,13 +245,7 @@ def main():
         guest.close()
         peer.stop()
 
-    lines = {}
-
-    for line in said.splitlines():
-        if line.startswith("M "):
-            name, _, rest = line[2:].partition(" ")
-            lines[name] = rest
-
+    lines = said_lines(said)
     fails = []
 
     def expect(name, want, what):
@@ -321,5 +340,171 @@ def main():
     return 0
 
 
+
+# `maild`'s part: an account, kept, and what happens to it.
+SETUP = r"""
+local files = use("/Kosmos/Libraries/files.lua")
+files.make_folder("/Home/Mail/USER")
+local ok, why = fs.write("/Home/Mail/USER/account", {
+  address = "USER", name = "Lena Moreau",
+  imap = { host = "10.0.2.2", port = IMAP },
+  smtp = { host = "10.0.2.2", port = SMTP },
+  certificate = "/Home/ca.der", tls_name = "kosmos-test.local" })
+print("SETUP " .. tostring(ok) .. " " .. tostring(why) .. " DONE")
+"""
+
+LOOK = r"""
+local dir = "/Home/Mail/USER/INBOX"
+local names = {}
+for _, n in ipairs(fs.list(dir) or {}) do
+  if n:match("%.eml$") then names[#names + 1] = n end
+end
+table.sort(names)
+for _, n in ipairs(names) do
+  local a = fs.getattr(dir .. "/" .. n) or {}
+  print(("L %s|%s|%s|%s|%s|%s|%s"):format(n, tostring(a.from), tostring(a.subject),
+        tostring(a.seen), tostring(a.attachments), tostring(a.date), tostring(a.preview)))
+end
+local boxes = fs.read("/Home/Mail/USER/mailboxes") or {}
+local uses = {}
+for _, b in ipairs(boxes) do uses[#uses + 1] = b.title .. "=" .. tostring(b.use) end
+table.sort(uses)
+print("B " .. table.concat(uses, ","))
+local st = fs.send("/Running/maild", { type = "status" }) or {}
+local a = (st.accounts or {})[1] or {}
+print(("S %s %s %s %s"):format(tostring(st.ok), tostring(a.state), tostring(a.messages),
+      tostring(a.unseen)))
+print("LOOK" .. " END")
+"""
+
+SYNC = 'local r = fs.send("/Running/maild", { type = "sync" })\nprint("SYNC " .. tostring(r and r.ok))\n'
+
+
+def part2(image):
+    work, peer, imap_port, smtp_port = setup()
+    scripts = {"setup.lua": fill(SETUP, imap_port, smtp_port),
+               "look.lua": fill(LOOK, imap_port, smtp_port), "sync.lua": SYNC}
+    guest, R = boot(image, work, scripts)
+    who = mailpeer.USER
+    looks, error, said = [], None, ""
+
+    def look():
+        mark = len(guest.seen)
+        guest.type("/Home/look.lua")
+        guest.wait_for_line("LOOK END", "a look at what maild kept", since=mark)
+        looks.append(guest.seen[mark:].replace("\r", ""))
+
+    try:
+        guest.wait_for(R.PROMPT, "the prompt")
+        guest.wait_for("net: an address from DHCP", "a lease")
+
+        mark = len(guest.seen)
+        guest.type("/Home/setup.lua")
+        guest.wait_for_line("DONE", "the account written", since=mark)
+
+        mark = len(guest.seen)
+        guest.type("mailpass keep imap://10.0.2.2:%d %s %s" % (imap_port, who, mailpeer.PASSWORD))
+        guest.wait_for_line("mailpass: kept", "the password kept", since=mark)
+
+        guest.type("maild &")
+        guest.wait_for("maild: %s: 3 messages kept, 3 unseen" % who, "the Inbox kept")
+
+        # IDLE: the server delivers while maild waits, and it says so.
+        guest.wait_for("maild: %s: INBOX: 1 new, 0 changed, 0 gone" % who, "the arrival fetched")
+        guest.wait_for('"Bob" from /Kosmos/Programs/maild.lua', "the arrival said")
+        look()
+
+        # Changed on the server: one message read, one deleted elsewhere.
+        with peer.lock:
+            inbox = peer.boxes["INBOX"]
+            for m in inbox.messages:
+                if m["uid"] == 2:
+                    m["flags"].add("\\Seen")
+                    peer.modseq += 1
+                    m["modseq"] = peer.modseq
+            inbox.messages = [m for m in inbox.messages if m["uid"] != 3]
+
+        mark = len(guest.seen)
+        guest.type("/Home/sync.lua")
+        guest.wait_for_line("maild: %s: INBOX: 0 new, 1 changed, 1 gone" % who,
+                            "the changes caught up", since=mark)
+        look()
+    except Exception as e:                  # noqa: BLE001 - said below
+        error = "%s: %s" % (type(e).__name__, str(e).splitlines()[0])
+    finally:
+        said = guest.seen.replace("\r", "")
+        guest.close()
+        peer.stop()
+
+    fails = []
+
+    if error:
+        fails.append("the machine stopped: " + error + " ... " + said[-600:])
+
+    def rows(text):
+        return [l[2:].split("|") for l in text.splitlines() if l.startswith("L ")]
+
+    def mark_of(text, m):
+        return next((l[2:] for l in text.splitlines() if l.startswith(m + " ")), None)
+
+    first = looks[0] if looks else ""
+    r1 = rows(first)
+
+    if [r[0] for r in r1] != ["1.eml", "2.eml", "3.eml", "4.eml"]:
+        fails.append("the Inbox kept as files, and the arrival: %r" % [r[0] for r in r1])
+    else:
+        if r1[0][1] != "Tomás Ferreira" or r1[0][2] != "Café on Saturday":
+            fails.append("a message's sender and subject as attributes: %r" % r1[0][:3])
+        if r1[0][5] != "1791272467" or not r1[0][6].startswith("Lena, Yes - at ten"):
+            fails.append("a message's date and preview as attributes: %r" % r1[0][5:])
+        if r1[2][4] != "1":
+            fails.append("the attachment counted: %r" % r1[2])
+        if r1[3][1] != "Bob" or r1[3][2] != "While you were idling":
+            fails.append("the message that arrived during IDLE: %r" % r1[3][:3])
+        if any(r[3] != "false" for r in r1):
+            fails.append("messages nobody read marked seen: %r" % [r[3] for r in r1])
+
+    if mark_of(first, "B") != "Archive=archive,Café=nil,Drafts=drafts,INBOX=inbox,Sent=sent,Trash=trash":
+        fails.append("the mailboxes kept: %r" % mark_of(first, "B"))
+
+    if mark_of(first, "S") != "true idle 4 4":
+        fails.append("/Running/maild's status: %r" % mark_of(first, "S"))
+
+    second = looks[1] if len(looks) > 1 else ""
+    r2 = rows(second)
+
+    if [r[0] for r in r2] != ["1.eml", "2.eml", "4.eml"]:
+        fails.append("a message deleted on the server not taken away: %r" % [r[0] for r in r2])
+    elif r2[1][3] != "true":
+        fails.append("a message read elsewhere not marked seen: %r" % r2[1])
+
+    if mark_of(second, "S") != "true idle 3 2":
+        fails.append("the status after the changes: %r" % mark_of(second, "S"))
+
+    if any(l.startswith("maild:") and mailpeer.PASSWORD in l for l in said.splitlines()):
+        fails.append("maild printed the password")
+
+    if " died: " in said:
+        fails.append("something died: " + said[said.find(" died: ") - 80:][:300])
+
+    checks = 12
+
+    if fails:
+        print("FAIL: %d of %d checks on maild:" % (len(fails), checks))
+        for f in fails:
+            print("  " + f)
+        return 1
+
+    print("PASS: %d checks on maild against a server on this Mac (an account "
+          "signed in with the keyring's password and never printing it; the Inbox "
+          "kept as files with sender, subject, date, preview and attachments as "
+          "attributes; the mailboxes; a message delivered during IDLE fetched and "
+          "said in a notification; one read and one deleted on the server caught "
+          "up by CONDSTORE; /Running/maild's status)." % checks)
+    return 0
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
+    part = sys.argv[sys.argv.index("--part") + 1] if "--part" in sys.argv else "1"
+    sys.exit(part2(image) if part == "2" else part1(image))

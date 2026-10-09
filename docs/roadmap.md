@@ -8217,7 +8217,11 @@ keyring's door for mail first. **M0 done** (`testing.md` 18.480). **M1
 done**: the Mail Kit's reading, in C, `use("/Kosmos/Kits/mail")` (18.481).
 **M2 done**: `imap.lua` and `smtp.lua` against `tools/mailpeer.py`, the
 connection half shared with `http.lua` as `netstream.lua` (18.482). Next:
-M3, `maild`.
+M3, `maild`. **M3 done**: `maild`, the Inbox kept as files with
+their facts as attributes, IDLE, a notification for each arrival, and the
+server's changes caught up (18.483). Started by hand or by `maild &` for
+now: **starting it with the desktop goes with M4**, the window, where a
+desktop suite can hold it. Next: M4.
 
 ### The optimisation phase - after the applications
 

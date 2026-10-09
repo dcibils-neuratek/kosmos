@@ -26,11 +26,11 @@ then the split".
   Mail Kit's reading in C, `use("/Kosmos/Kits/mail")`, `test_mail` 28 and a
   guest role (18.481); **M2** `imap.lua`, `smtp.lua` and `netstream.lua`
   (the connection half out of `http.lua`), `tools/mailpeer.py`, `x86-mail`
-  20 (18.482).
+  20 (18.482); **M3** `maild`, `x86-mail-2` 12 (18.483).
 
-**Next**: Mail M3, `maild` - an account kept, its Inbox fetched into
-`/Home/Mail`, IDLE, a notification for each new message; then M4, the
-window. After Mail, the window-server split (D2 onwards). On the roadmap
+**Next**: Mail M4, the window - mailboxes, the list, a plain-text message
+set by Write's engine; read, flag, archive, delete, move - and `maild`
+started with the desktop. After Mail, the window-server split (D2 onwards). On the roadmap
 meanwhile: tooltips on the top status icons, the games' 2x and full-screen
 sizes.
 
