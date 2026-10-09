@@ -532,6 +532,18 @@ class Session:
                         m["flags"].add("\\Seen")
         self.say(tag + " OK done")
 
+    def c_FETCH(self, tag, args):
+        """By place in the mailbox, as a first look asks for the newest."""
+        t = tokens(args)
+        items = " ".join(x if isinstance(x, str) else "" for x in (t[1] if isinstance(t[1], list) else [t[1]])).upper()
+        with self.peer.lock:
+            msgs = self.box.messages
+            want = uid_set(t[0], len(msgs))
+            for seq, m in enumerate(msgs, 1):
+                if seq in want:
+                    self.fetch_line(seq, m, items, "BODY.PEEK[]" in items)
+        self.say(tag + " OK done")
+
     def c_UID_SEARCH(self, tag, args):
         t = tokens(args)
         with self.peer.lock:

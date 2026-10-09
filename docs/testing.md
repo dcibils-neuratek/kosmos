@@ -21789,3 +21789,19 @@ went. **Control**: a message shown without being marked read, it fails,
 "reading a message did not mark it seen on the server".
 
 The whole x86 gate: 55 of 55 in 5:53.
+
+## 18.485 A first look at a large mailbox, on the M700
+
+Diego's Gmail signed in on the M700 and kept nothing for minutes: a first
+look asked the server for every message's UID and flags - `UID FETCH 1:*`
+on a large Inbox - to keep the newest hundred, and `maild` grew to 185 MB
+reading the answer. Now `changes` asks a first look for the newest alone,
+by their place (`FETCH n-99:*`), and every later look asks what changed
+and what is still there of the UIDs kept here, never of the whole mailbox.
+`maild` also says the mailboxes as soon as it has them, and the Inbox ten
+messages at a time while a first look fills it, so the window's sidebar and
+list appear as they arrive. `mailpeer.py` answers FETCH by place.
+
+`x86-mail` 21 checks: a first look asked for the newest two gets the
+newest two. **Control**: `newest` ignored, it fails, "said '1,2,3', not
+'2,3'". `x86-mail-2` and `x86-mail-3` pass with the change.

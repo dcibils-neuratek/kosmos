@@ -243,7 +243,18 @@ local function sync(a, s, mailbox, quiet)
 
   local since = state and { uidvalidity = state.uidvalidity, uid_high = state.uid_high,
                             modseq = state.modseq }
-  local ch, cwhy = await(s:changes(since))
+  -- What is kept here, by UID: the server is asked about these alone.
+  local kept = {}
+
+  if state then
+    for _, name in ipairs(fs.list(folder) or {}) do
+      local uid = tonumber(name:match("^(%d+)%.eml$"))
+
+      if uid then kept[#kept + 1] = uid end
+    end
+  end
+
+  local ch, cwhy = await(s:changes(since, { newest = FIRST_KEEP, kept = kept }))
 
   if not ch then return nil, cwhy end
 
@@ -268,6 +279,9 @@ local function sync(a, s, mailbox, quiet)
 
   for i = #new, 1, -1 do
     keep(a, s, folder, new[i], state ~= nil and not quiet)
+
+    -- A long first look is seen arriving, ten at a time.
+    if (#new - i + 1) % 10 == 0 then publish() end
   end
 
   local changed, gone = 0, 0
@@ -471,6 +485,10 @@ local function run_account(a)
 
       fs.write(a.dir .. "/mailboxes", kept)
       a.list = kept
+
+      -- Said at once, so the window's sidebar has the mailboxes before the
+      -- first look at the Inbox is done.
+      publish()
 
       local inbox = { name = "INBOX", title = "INBOX" }
 

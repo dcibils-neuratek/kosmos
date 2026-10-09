@@ -752,28 +752,52 @@ end
 -- the last from which the caller learns what has gone. `since` is the last
 -- answer's `{ uidvalidity, uid_high, modseq }`: a mailbox whose UIDVALIDITY
 -- moved is a different mailbox, and everything in it is new (`reset`).
--- With CONDSTORE only what changed since `modseq` is asked for; without it,
--- every message's flags.
 --
-function S:changes(since)
+-- **Asked about what is kept, never about the whole mailbox** (the M700, 8
+-- October: a Gmail Inbox's every UID and flags, asked on a first look to
+-- keep its newest hundred, was 185 MB and minutes of reading). `opts`:
+--
+--   newest   on a first look, only the newest this many, by their place in
+--            the mailbox - the newest are the last
+--   kept     the UIDs the caller keeps: what changed and what is still
+--            there are asked of these alone
+--
+-- With CONDSTORE only what changed since `modseq` is asked for; without it,
+-- the flags of every message kept.
+--
+function S:changes(since, opts)
+  opts = opts or {}
+
   local box = self.mailbox
   local reset = not since or since.uidvalidity ~= box.uidvalidity
   local high = reset and 0 or (since.uid_high or 0)
   local result = { new = {}, changed = {}, present = {}, reset = reset }
+  local exists = box.exists or 0
+  local ask
 
-  local new = request(self, { ("UID FETCH %d:* (UID FLAGS RFC822.SIZE)"):format(high + 1) },
-                      function(_, r)
-                        for _, f in ipairs(r.fetched) do
-                          local m = message_of(f)
+  if high == 0 and opts.newest and exists > opts.newest then
+    ask = ("FETCH %d:* (UID FLAGS RFC822.SIZE)"):format(exists - opts.newest + 1)
+  else
+    ask = ("UID FETCH %d:* (UID FLAGS RFC822.SIZE)"):format(high + 1)
+  end
 
-                          if m.uid and m.uid > high then result.new[#result.new + 1] = m end
-                        end
+  local new = request(self, { ask }, function(_, r)
+    for _, f in ipairs(r.fetched) do
+      local m = message_of(f)
 
-                        return true
-                      end, { fetched = {} })
+      if m.uid and m.uid > high then result.new[#result.new + 1] = m end
+    end
 
-  if high > 0 then
-    local changed = { ("UID FETCH 1:%d (UID FLAGS)"):format(high) }
+    return true
+  end, { fetched = {} })
+
+  local kept = opts.kept
+
+  if kept == nil and high > 0 then kept = { ("1:%d"):format(high) } end
+
+  if high > 0 and kept and #kept > 0 then
+    local set = type(kept[1]) == "string" and kept[1] or imap.set(kept)
+    local changed = { ("UID FETCH %s (UID FLAGS)"):format(set) }
 
     if since.modseq and self.can.CONDSTORE then
       changed[1] = changed[1] .. (" (CHANGEDSINCE %d)"):format(since.modseq)
@@ -784,7 +808,7 @@ function S:changes(since)
       return true
     end, { fetched = {}, needs = new })
 
-    request(self, { ("UID SEARCH UID 1:%d"):format(high) }, function(_, r)
+    request(self, { ("UID SEARCH UID %s"):format(set) }, function(_, r)
       for _, u in ipairs(r.search) do
         if u <= high then result.present[#result.present + 1] = u end
       end

@@ -75,6 +75,13 @@ local function run()
   local box = s:wait(s:select("INBOX")) or {}
   say("select", tostring(box.exists), tostring(box.uidvalidity), tostring(box.highestmodseq ~= nil))
 
+  -- A first look at a large mailbox asks for its newest alone, by place.
+  local two = s:wait(s:changes(nil, { newest = 2 })) or { new = {} }
+  local newest = {}
+  for _, m in ipairs(two.new) do newest[#newest + 1] = m.uid end
+  table.sort(newest)
+  say("newest", table.concat(newest, ","))
+
   local seen = s:wait(s:changes(nil)) or { new = {} }
   local uids = {}
   for _, m in ipairs(seen.new) do uids[#uids + 1] = m.uid end
@@ -271,6 +278,7 @@ def part1(image):
     expect("status", "3 3", "the Inbox's messages and unseen")
     expect("select", "3 1000 true", "INBOX selected, with its UIDVALIDITY and a MODSEQ")
     expect("new", "1,2,3 3", "what is new in a mailbox seen for the first time")
+    expect("newest", "2,3", "a first look asking for the newest two, by place")
 
     m1 = len(mailpeer.SEED[0])
     expect("fetch1", "%d Café on Saturday" % m1,
@@ -321,7 +329,7 @@ def part1(image):
     if " died: " in said:
         fails.append("something died: " + said[said.find(" died: ") - 80:][:300])
 
-    checks = 20
+    checks = 21
 
     if fails:
         print("FAIL: %d of %d checks on mail's conversations:" % (len(fails), checks))
@@ -333,7 +341,7 @@ def part1(image):
 
     print("PASS: %d checks on mail's conversations with a server on this Mac "
           "(signed in over TLS and a wrong password refused; mailboxes by their use, "
-          "Café's name; what is new; a message fetched and read by the Mail Kit, and "
+          "Café's name; what is new, and only the newest when asked; a message fetched and read by the Mail Kit, and "
           "420 KB byte for byte; a flag, a move and an append reaching the server; "
           "what changed by CONDSTORE; IDLE told of new mail; a message sent with "
           "STARTTLS to two people, a dot kept, and a refused recipient said)." % checks)
