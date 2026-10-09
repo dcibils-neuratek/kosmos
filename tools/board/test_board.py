@@ -189,6 +189,13 @@ def main():
         def order():
             return [(e["kind"], e["card"] or e["title"]) for e in call("GET", "/api/queue")[1]["queue"]]
 
+        # Cards made into Next earlier are queued: emptied first, so these
+        # checks see only their own entries.
+        check([e["card"] for e in call("GET", "/api/queue")[1]["queue"]] == [d2, m6],
+              "cards made into Next are not the queue, in Next's order: %r" % order())
+        for e in call("GET", "/api/queue")[1]["queue"]:
+            call("DELETE", "/api/queue/%d" % e["id"])
+
         def entry(key):
             return next(e["id"] for e in call("GET", "/api/queue")[1]["queue"] if (e["card"] or e["title"]) == key)
 
@@ -268,8 +275,32 @@ def main():
         s, b = call("GET", "/api/discussions?stage=became")
         check([x["id"] for x in b["discussions"]] == [did], "discussions by stage: %r" % b)
 
+        # Dragging on the board: into Next is into the queue, where it was
+        # dropped; within Next reorders the queue; out of Next leaves it.
+        s, b = call("POST", "/api/cards", {"title": "Calendar", "column": "ideas"})
+        cal = b["card"]["id"]
+        s, b = call("POST", "/api/cards", {"title": "NTFS", "column": "agreed"})
+        ntfs2 = b["card"]["id"]
+        call("POST", "/api/queue", {"title": "a task"})
+        call("POST", "/api/cards/%s/move" % cal, {"column": "agreed"})
+        check(call("GET", "/api/cards/" + cal)[1]["card"]["col"] == "agreed", "an idea dragged to Agreed")
+        call("POST", "/api/cards/%s/move" % cal, {"column": "ideas"})
+        check(call("GET", "/api/cards/" + cal)[1]["card"]["col"] == "ideas", "and back to Ideas")
+        call("POST", "/api/cards/%s/move" % ntfs2, {"column": "next"})
+        check(order()[-1] == ("card", ntfs2), "dropped last in Next, not last in the queue: %r" % order())
+        call("POST", "/api/cards/%s/move" % cal, {"column": "next", "before": ntfs2})
+        check(order()[-2:] == [("card", cal), ("card", ntfs2)], "dropped above a card, not before it in the queue: %r" % order())
+        nxt = [c["id"] for c in call("GET", "/api/cards?column=next")[1]["cards"]]
+        check(nxt[-2:] == [cal, ntfs2], "Next not in the queue's order: %r" % nxt)
+        call("POST", "/api/cards/%s/move" % ntfs2, {"column": "next", "before": cal})
+        check(order()[-2:] == [("card", ntfs2), ("card", cal)], "reordered within Next, not in the queue: %r" % order())
+        q = {c["id"]: c["queued"] for c in call("GET", "/api/cards?column=next")[1]["cards"]}
+        check(q[ntfs2] == q[cal] - 1, "a card's place in the queue: %r" % q)
+        call("POST", "/api/cards/%s/move" % cal, {"column": "agreed"})
+        check(("card", cal) not in order(), "dragged out of Next, still queued: %r" % order())
+
         s, md = call("GET", "/api/export.md")
-        check(s == 200 and "## Next (1)" in md and "## Done (1)" in md and "**Astra split D2**" in md and "not yet in roadmap.md" in md,
+        check(s == 200 and "## Next (" in md and "## Done (" in md and "**Astra split D2**" in md and "not yet in roadmap.md" in md,
               "the Markdown export: %r" % md[:300])
 
         s, b = call("POST", "/api/cards", {"column": "next"})

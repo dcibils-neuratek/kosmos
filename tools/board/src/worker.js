@@ -150,11 +150,19 @@ async function list_cards(env, url) {
     args.push(like, like, like, like);
   }
 
-  const rows = await env.DB.prepare(`SELECT * FROM cards WHERE ${where.join(" AND ")} ORDER BY col, rank`)
+  // Next in the queue's order, each with its place in it; the rest by rank.
+  const rows = await env.DB.prepare(
+    `SELECT cards.*, q.rank AS queue_rank FROM cards LEFT JOIN queue q ON q.card = cards.id
+     WHERE ${where.join(" AND ").replace(/\b(col|area|title|detail|ref|quote|removed)\b/g, "cards.$1")}
+     ORDER BY cards.col, CASE WHEN cards.col = 'next' THEN q.rank END, cards.rank`)
     .bind(...args).all();
   const talk = await talk_states(env, "notes", "card");
 
-  return json({ cards: rows.results.map((c) => ({ ...shape(c), talk: talk.get(c.id) || null })) });
+  const queue = await env.DB.prepare("SELECT card FROM queue ORDER BY rank").all();
+  const place = new Map(queue.results.map((e, i) => [e.card, i + 1]));
+
+  return json({ cards: rows.results.map(({ queue_rank, ...c }) => ({
+    ...shape(c), talk: talk.get(c.id) || null, queued: place.get(c.id) || null })) });
 }
 
 async function new_card(env, author, body) {
@@ -168,6 +176,12 @@ async function new_card(env, author, body) {
     .bind(id, title, col, await rank_for(env, col, body.before), text(body.area, "area") || "",
           text(body.ref, "ref") || "", text(body.detail, "detail") || "", text(body.quote, "quote") || "",
           t.slice(0, 10), t, t, author).run();
+
+  // Made straight into Next, it is queued, last: Next is the queue.
+  if (col === "next") {
+    await env.DB.prepare("INSERT INTO queue (card, title, rank, added, added_by) VALUES (?, '', ?, ?, ?)")
+      .bind(id, await queue_rank(env), t, author).run();
+  }
 
   await log(env, author, "card.new", id, { title, column: col });
   return json({ card: shape(await card(env, id)) }, 201);
@@ -228,9 +242,26 @@ async function move_card(env, author, id, body) {
   await env.DB.prepare("UPDATE cards SET col = ?, rank = ?, updated = ?, updated_by = ? WHERE id = ?")
     .bind(col, r, now(), author, id).run();
 
-  // Done, parked or back to an idea: no longer in the plan.
-  if (["done", "parked", "ideas"].includes(col)) {
-    await env.DB.prepare("DELETE FROM queue WHERE card = ?").bind(id).run();
+  // **Next is Claude's queue, as cards** (Diego, 9 October: "i need to be
+  // able to drag and drop cards", "like a real kanban board"): dropped
+  // into Next, a card is queued where it was dropped - before the entry of
+  // the card it landed above, or last; moved within Next, its entry moves;
+  // taken out to anywhere but Building, it leaves the queue.
+  const queued = await env.DB.prepare("SELECT id FROM queue WHERE card = ?").bind(id).first();
+
+  if (col === "next") {
+    const above = body.before
+      ? await env.DB.prepare("SELECT id FROM queue WHERE card = ?").bind(body.before).first() : null;
+    const place = await queue_rank(env, above ? above.id : null, false, queued ? queued.id : 0);
+
+    if (queued) {
+      await env.DB.prepare("UPDATE queue SET rank = ? WHERE id = ?").bind(place, queued.id).run();
+    } else {
+      await env.DB.prepare("INSERT INTO queue (card, title, rank, added, added_by) VALUES (?, '', ?, ?, ?)")
+        .bind(id, place, now(), author).run();
+    }
+  } else if (queued && col !== "building") {
+    await env.DB.prepare("DELETE FROM queue WHERE id = ?").bind(queued.id).run();
   }
 
   await log(env, author, "card.move", id, { from: c.col, to: col, before: body.before || null });
