@@ -555,7 +555,8 @@ function list:mouse(action, x, y)
 end
 
 function list:wheel(n)
-  top = math.max(1, math.min(top + n, math.max(1, #shown - self.h // ROWH + 1)))
+  -- A turn down is negative, as the kit has it: the list moves on.
+  top = math.max(1, math.min(top - n * ui.WHEEL_ROWS, math.max(1, #shown - self.h // ROWH + 1)))
   win.dirty = true
   return true
 end

@@ -1490,16 +1490,21 @@ local function press(x, y)
   end
 end
 
-local function wheel(x, n)
+local function wheel(x, y, n)
   if sheet then return end
 
   local px = (sidebar and SIDE_W or 0) + LIST_W
 
   if x >= px then
-    scroll = scroll + n * 48
+    -- A turn down is negative, as the kit has it (`ui.WHEEL_ROWS`).
+    scroll = scroll - n * 48
     clamp_scroll()
   elseif x >= (sidebar and SIDE_W or 0) then
-    top = math.max(1, math.min(top + n, math.max(1, #shown - 2)))
+    -- To where the last message is in view, and no further.
+    local fits = (H - L.head - 86) // ROW_H
+
+    top = math.max(1, math.min(top - n * ui.WHEEL_ROWS, math.max(1, #shown - fits + 1)))
+    print(("mail: list from %d (a turn of %s at %d,%d)"):format(top, tostring(n), x, y))
   end
 end
 
@@ -1598,7 +1603,7 @@ while win.running do
         if key(c) then dirty = true end
       end
     elseif ev.type == "wheel" then
-      wheel(ev.x or 0, ev.n or 0)
+      wheel(ev.x or 0, ev.y or 0, ev.n or 0)
       dirty = true
     elseif ev.type == "mouse" and not ev.menu and ev.action == "press"
            and ev.button ~= "right" then

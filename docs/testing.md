@@ -21825,3 +21825,17 @@ openable, and `Projects/Kosmos`. **Controls**: the head not passed over,
 "Ignore td, a { font-family: Arial; } var x = 1; Real words."; the names
 as the server spells them, "INBOX, Drafts, Sent, Archive, Trash, [Gmail],
 Café, Projects, -Projects/Kosmos".
+
+## 18.487 Mail's wheel, the way the kit turns it
+
+Diego, on the M700: "scroollwheel does not work on inbox". A turn of the
+wheel down arrives as -1, and the kit moves its lists on by `ui.WHEEL_ROWS`
+for each - Mail's list and its message pane took -1 as up, so a turn down
+stayed on the first row, and its stop was two rows from the end rather than
+where the last message is in view. Both turn the kit's way now, three rows
+a notch; Passwords' list had the same sign and was turned too.
+
+`x86-mail-3` 15: an Inbox of fifteen, a notch down over the list "list
+from 4" and a notch up "list from 1". **Control**: the run before the fix,
+"mail: list from 1 (a turn of -1 ...)" for the notch down. `arm-passwords`
+passes.

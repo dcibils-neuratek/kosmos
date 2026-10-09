@@ -541,6 +541,19 @@ def part3(image):
     run_tls.pki(work, "10.0.2.2")
     peer = mailpeer.Peer(work, "good.pem", "server.key")
     peer.idle_delivers = False
+
+    # An Inbox longer than the window, for the wheel to move.
+    for i in range(12):
+        peer.deliver("INBOX", ("From: Club <club@example.net>\r\nTo: lena@example.com\r\n"
+                               "Subject: Notice %d\r\nDate: Mon, 5 Oct 2026 08:%02d:00 +0000\r\n"
+                               "\r\nNotice %d.\r\n" % (i, i, i)).encode())
+
+    # The three of the drawing newest, so they stay the first rows.
+    inbox = peer.boxes["INBOX"]
+    inbox.messages = inbox.messages[3:] + inbox.messages[:3]
+    for m in inbox.messages:
+        m["uid"] = inbox.next_uid
+        inbox.next_uid += 1
     imap_port, smtp_port = peer.start()
 
     # The test's authority trusted as a person trusts one: a file in
@@ -616,7 +629,7 @@ def part3(image):
         guest.sendkey("ret")
         said["signing"] = guest.wait_for_line("mail: signing in ", "Sign In pressed", mark)
         said["signed"] = guest.wait_for_line("mail: signed in ", "the account signed in", mark)
-        guest.wait_for("maild: %s: 3 messages kept" % who, "the Inbox kept")
+        guest.wait_for("maild: %s: 15 messages kept" % who, "the Inbox kept")
         said["account"] = session.run("cat /Home/Mail/%s/account" % who).decode(errors="replace")
         said["boxes"] = guest.wait_for_line("mail: mailboxes ", "the mailboxes listed", 0)
 
@@ -625,6 +638,21 @@ def part3(image):
         lx, ly = at("list", places)
         rh = int(re.search(r"rows (\d+)", places).group(1))
         time.sleep(2)
+
+        # The wheel over the Inbox moves the list a row a notch.
+        mark = len(guest.seen)
+        guest.mouse_to(*R._to_tablet(wx + lx + 100, wy + ly + rh, width, height))
+        time.sleep(0.4)
+        guest.mouse_button(True, "wheel-down")
+        time.sleep(0.05)
+        guest.mouse_button(False, "wheel-down")
+        said["wheel"] = guest.wait_for_line("mail: list from ", "the wheel over the list", mark).split()[0]
+        guest.mouse_button(True, "wheel-up")
+        time.sleep(0.05)
+        guest.mouse_button(False, "wheel-up")
+        time.sleep(1.5)
+        guest._read_available()
+        said["turns"] = re.findall(r"mail: list from [^\n]*", guest.seen[mark:])
 
         mark = len(guest.seen)
         click(lx + 100, ly + rh // 2)
@@ -695,11 +723,14 @@ def part3(image):
     if mailpeer.PASSWORD in seen:
         fails.append("the password was printed")
 
-    if not said.get("photos", "").startswith("3, The photos"):
+    if not (len(said.get("turns", [])) == 2 and said["turns"][0].startswith("mail: list from 4 ")
+            and said["turns"][1].startswith("mail: list from 1 ")):
+        fails.append("a notch of the wheel over the list: %r" % said.get("turns"))
+    if not said.get("photos", "").startswith("30, The photos"):
         fails.append("the newest message first: %r" % said.get("photos"))
-    if not said.get("route", "").startswith("2, This week's route"):
+    if not said.get("route", "").startswith("29, This week's route"):
         fails.append("the second, in HTML: %r" % said.get("route"))
-    if not said.get("cafe", "").startswith("1, Café on Saturday, from Tomás Ferreira"):
+    if not said.get("cafe", "").startswith("28, Café on Saturday, from Tomás Ferreira"):
         fails.append("the café message read by the Mail Kit: %r" % said.get("cafe"))
     if not re.match(r"\d+ paragraphs", said.get("set", "")):
         fails.append("its text set by Write's engine: %r" % said.get("set"))
@@ -723,7 +754,7 @@ def part3(image):
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 14
+    checks = 15
 
     if fails:
         print("FAIL: %d of %d checks on Mail's window:" % (len(fails), checks))
