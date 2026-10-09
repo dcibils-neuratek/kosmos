@@ -2026,92 +2026,19 @@ end
 --------------------------------------------------------------------------
 
 --
--- **A drawing command, in the screen's pixels at a scale** (`ui.md` 16.18).
--- A rectangle by its two edges, so neighbours still meet at a step that is
--- not whole; text at its place, since its face is already loaded at the
--- scale (`apply_fonts`, `sized`); a triangle's corners, which `gfx` takes
--- as doubles; and a picture drawn at its scaled size, averaged - an icon
--- from its 64-pixel export when there is one, which is every icon Haiku's
--- set gives, so it is shrunk rather than blown up.
+-- **A drawing command, in the screen's pixels at a scale** (`ui.md` 16.18):
+-- `paint.scale`, which a window drawing itself uses the same way (`astra-display.md` D2).
 --
+local paint = use("/Kosmos/Libraries/paint.lua")
+
 function scale.op(o, pct)
-  local kind = o.op
-
-  if kind == "fill" or kind == "fill_round" or kind == "frame_round" then
-    local x, y = tonumber(o.x) or 0, tonumber(o.y) or 0
-    local w, h = tonumber(o.w) or 0, tonumber(o.h) or 0
-    local x0, y0 = scale.px(x, pct), scale.px(y, pct)
-
-    o.x, o.y = x0, y0
-    o.w, o.h = scale.px(x + w, pct) - x0, scale.px(y + h, pct) - y0
-
-    -- The radius is a length like any other, so a control at 150 per cent
-    -- is rounded a half more rather than keeping the pixels of a smaller
-    -- screen.
-    if o.r then o.r = scale.px(o.r, pct) end
-  elseif kind == "text" then
-    o.x = scale.px(tonumber(o.x) or 0, pct)
-    o.y = scale.px(tonumber(o.y) or 0, pct)
-  elseif kind == "triangle" then
-    for _, k in ipairs({ "x1", "y1", "x2", "y2", "x3", "y3" }) do
-      o[k] = (tonumber(o[k]) or 0) * pct / 100
-    end
-  elseif kind == "tint" then
-    --
-    -- **A line icon at another size is another picture**, not this one
-    -- resampled: `tools/lineicons.py` renders each from its vectors at 15,
-    -- 19, 23 and 30, which is what 15 points comes to at 100, 125, 150 and
-    -- 200 per cent. A one-pixel line averaged into a larger box is a grey
-    -- smear; drawn again at the size, it is a line. A size with no picture
-    -- keeps the 15 at the scaled place, which is small rather than wrong.
-    --
-    local x, y = tonumber(o.x) or 0, tonumber(o.y) or 0
-    local want = scale.px(tonumber(o.w) or 0, pct)
-    local base = tostring(o.asset or ""):match("^(.-)%-%d+%.png$")
-
-    o.x, o.y = scale.px(x, pct), scale.px(y, pct)
-
-    if base and picture_named(("%s-%d.png"):format(base, want)) then
-      o.asset = ("%s-%d.png"):format(base, want)
-      o.w, o.h = want, want
-    end
-  elseif kind == "image" then
-    local x, y = tonumber(o.x) or 0, tonumber(o.y) or 0
-    local dw, dh = tonumber(o.dw) or 0, tonumber(o.dh) or 0
-
-    -- No size given is a crop drawn pixel for pixel: its size is the crop's.
-    if dw <= 0 or dh <= 0 then
-      dw, dh = tonumber(o.w) or 0, tonumber(o.h) or 0
-    end
-
-    local x0, y0 = scale.px(x, pct), scale.px(y, pct)
-
-    o.x, o.y = x0, y0
-    o.dw, o.dh = scale.px(x + dw, pct) - x0, scale.px(y + dh, pct) - y0
-    o.smooth = true
-
-    -- An icon's 64: `16x16/<name>` or a bare 32 name, when the 64 exists.
-    local asset = tostring(o.asset or "")
-    local name, from = asset:match("^16x16/(.+)$"), 16
-
-    if not name and not asset:find("/", 1, true) then
-      name, from = asset, 32
-    end
-
-    if name and picture_named("64x64/" .. name) then
-      local k = 64 // from
-
-      o.asset = "64x64/" .. name
-      o.sx, o.sy = (tonumber(o.sx) or 0) * k, (tonumber(o.sy) or 0) * k
-      o.w, o.h = (tonumber(o.w) or 0) * k, (tonumber(o.h) or 0) * k
-    end
-  end
+  return paint.scale(o, pct, picture_named)
 end
 
 -- The commands a window sends, drawn: `/Kosmos/Libraries/paint.lua`, shared with
 -- `ui.paint_view` so a widget looks the same in a window that owns its
 -- pixels as in one that sends drawing.
-local ops = use("/Kosmos/Libraries/paint.lua").new(picture_named, sized)
+local ops = paint.new(picture_named, sized)
 
 --------------------------------------------------------------------------
 -- The pointer.
