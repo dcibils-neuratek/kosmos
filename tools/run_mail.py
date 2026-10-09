@@ -1051,6 +1051,22 @@ def part4(image):
         places, placed, wx, wy, lx, ly, rh = w.places, w.placed, w.wx, w.wy, w.lx, w.ly, w.rh
         width, height = w.width, w.height
 
+        # 00. A click is a press and a release: New Message pressed, slid off
+        #     and let go opens nothing; Mail's buttons act on the release
+        #     over them (Diego, 9 October: "that is in all kosmos").
+        mark = len(guest.seen)
+        cx_, cy_ = [v + 13 for v in at("compose", places)]
+        guest.mouse_to(*R._to_tablet(wx + cx_, wy + cy_, width, height))
+        time.sleep(0.3)
+        guest.mouse_button(True)
+        time.sleep(0.3)
+        guest.mouse_to(*R._to_tablet(wx + cx_ - 300, wy + cy_ + 200, width, height))
+        time.sleep(0.3)
+        guest.mouse_button(False)
+        time.sleep(1.5)
+        guest._read_available()
+        said["slid"] = "mail: composer " in guest.seen[mark:]
+
         # 0. The wide newsletter, second newest: laid out wider than the
         #    pane and fitted to it, its right edge in the picture.
         mark = len(guest.seen)
@@ -1242,6 +1258,9 @@ def part4(image):
         fails.append("three letters did not suggest Ana: %r" % said.get("suggests"))
     if said.get("draft_flags") != ["\\Draft", "\\Seen"]:
         fails.append("the draft on the server and its flags: %r" % said.get("draft_flags"))
+    if said.get("slid") is not False:
+        fails.append("New Message pressed and slid off before the release opened a composer")
+
     order = said.get("close_order", (-1, -1))
     if not (0 <= order[0] < order[1]):
         fails.append("the composer's window did not go before its draft was written: %r" % (order,))
@@ -1256,7 +1275,7 @@ def part4(image):
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 24
+    checks = 25
 
     if fails:
         print("FAIL: %d of %d checks on Mail's composer:" % (len(fails), checks))

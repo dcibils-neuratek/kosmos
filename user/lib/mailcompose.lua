@@ -994,23 +994,34 @@ end
 function C:press(x, y)
   self.said = nil
 
+  -- Send, the paperclip, a file's x and a suggestion: held on the press,
+  -- done on the release over them (`pk.hold`).
   if pk.inside(self.send_b, x, y) then
-    self:send()
+    pk.hold(self.send_b, function() self:send() end)
     return
   end
 
   if pk.inside(self.attach_b, x, y) then
-    self:attach()
+    pk.hold(self.attach_b, function() self:attach() end)
     return
   end
 
   -- A file's x: taken off.
-  for i, chip in ipairs(self.file_chips or {}) do
+  for _, chip in ipairs(self.file_chips or {}) do
     if pk.inside(chip, x, y) then
       if x >= chip.x + chip.w - 32 then
-        print(("mail: composer %s took off %s"):format(self.id, chip.file.name))
-        table.remove(self.files, i)
-        self:edited()
+        local cross = { x = chip.x + chip.w - 32, y = chip.y, w = 32, h = chip.h }
+
+        pk.hold(cross, function()
+          for i, f in ipairs(self.files) do
+            if f == chip.file then
+              print(("mail: composer %s took off %s"):format(self.id, f.name))
+              table.remove(self.files, i)
+              self:edited()
+              break
+            end
+          end
+        end)
       end
 
       return
@@ -1019,7 +1030,7 @@ function C:press(x, y)
 
   for i, r in ipairs(self.suggest_rows or {}) do
     if pk.inside(r, x, y) then
-      self:take_suggestion(i)
+      pk.hold(r, function() self:take_suggestion(i) end)
       return
     end
   end
@@ -1108,6 +1119,8 @@ function C:tend()
     elseif ev.type == "mouse" and not ev.menu then
       if ev.action == "press" and ev.button ~= "right" then
         self:press(ev.x or 0, ev.y or 0)
+        self.dirty = true
+      elseif ev.action == "release" and pk.release(ev.x or 0, ev.y or 0) then
         self.dirty = true
       elseif self.holding and (ev.action == "move" or ev.action == "release") then
         self.page:mouse(ev.action, (ev.x or 0) - self.body_at.x, (ev.y or 0) - self.body_at.y)

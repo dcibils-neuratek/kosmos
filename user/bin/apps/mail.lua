@@ -1933,9 +1933,9 @@ local function press_sheet(x, y)
         if sheet.focus == 2 then guess_servers() end
         sheet.focus = b.field
       elseif b.action == "go" then
-        sign_in()
+        pk.hold(b, sign_in)
       elseif b.action == "cancel" then
-        close_sheet()
+        pk.hold(b, close_sheet)
       end
 
       return
@@ -2014,6 +2014,53 @@ local function write_draft(row)
   end
 end
 
+-- The link under a point of the message, HTML or text: its address, or nil.
+local function link_at(x, y)
+  if not (message and paper_at and pk.inside(paper_at, x, y)) then return nil end
+
+  if shows_html() and message.page then
+    local f = message.fit or 1
+    local href = message.page:ns_link_at(math.floor((x - paper_at.x) / f),
+                                         math.floor((y - paper_at.y + scroll) / f))
+
+    return href and tostring(href):match("^https?:") and tostring(href) or nil
+  end
+
+  if message.set then
+    local place = pageset.hit(message.set, measure, 1, (x - paper_at.x) / SCALE,
+                              (y - paper_at.y + scroll) / SCALE)
+
+    for _, l in ipairs(place and message.links[place.para] or {}) do
+      if place.at >= l.from and place.at <= l.to + 1 then return l.url end
+    end
+  end
+
+  return nil
+end
+
+-- A link pressed: opened in the browser if the button comes up over it.
+local link_held = nil
+
+local function release(x, y)
+  if pk.release(x, y) then return true end
+
+  if link_held then
+    local url = link_held
+
+    link_held = nil
+
+    if link_at(x, y) == url then
+      print("mail: link " .. url)
+      fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/browser.lua",
+                               args = url, wait = false })
+    end
+
+    return true
+  end
+
+  return false
+end
+
 local function press(x, y)
   if sheet then
     if y < L.head then win:take_hold(x, y) else press_sheet(x, y) end
@@ -2022,30 +2069,36 @@ local function press(x, y)
 
   local row = chosen_row()
 
+  -- The header's buttons: held on the press, done on the release over them
+  -- (`pk.hold`). The dots open their menu on the press, as a menu does.
   if pk.inside(controls.side, x, y) then
-    sidebar = not sidebar
-    print("mail: sidebar " .. (sidebar and "shown" or "hidden"))
+    pk.hold(controls.side, function()
+      sidebar = not sidebar
+      print("mail: sidebar " .. (sidebar and "shown" or "hidden"))
+    end)
   elseif pk.inside(controls.dots, x, y) then
     dots_menu()
   elseif pk.inside(controls.compose, x, y) then
-    write_new()
+    pk.hold(controls.compose, write_new)
   elseif row and pk.inside(controls.reply, x, y) then
-    write_answer("reply")
+    pk.hold(controls.reply, function() write_answer("reply") end)
   elseif row and pk.inside(controls.replyall, x, y) then
-    write_answer("replyall")
+    pk.hold(controls.replyall, function() write_answer("replyall") end)
   elseif row and pk.inside(controls.forward, x, y) then
-    write_answer("forward")
+    pk.hold(controls.forward, function() write_answer("forward") end)
   elseif pk.inside(controls.fetch, x, y) then
-    ask{ type = "sync" }
-    said = "Getting mail\u{2026}"
+    pk.hold(controls.fetch, function()
+      ask{ type = "sync" }
+      said = "Getting mail\u{2026}"
+    end)
   elseif row and pk.inside(controls.flag, x, y) then
-    set_flag(row, "flagged", not facts_of(row).flagged)
+    pk.hold(controls.flag, function() set_flag(row, "flagged", not facts_of(row).flagged) end)
   elseif row and pk.inside(controls.read, x, y) then
-    set_flag(row, "seen", not facts_of(row).seen)
+    pk.hold(controls.read, function() set_flag(row, "seen", not facts_of(row).seen) end)
   elseif row and pk.inside(controls.archive, x, y) then
-    take_away("archive")
+    pk.hold(controls.archive, function() take_away("archive") end)
   elseif row and pk.inside(controls.delete, x, y) then
-    take_away("delete")
+    pk.hold(controls.delete, function() take_away("delete") end)
   elseif y < L.head then
     win:take_hold(x, y)
   else
@@ -2071,7 +2124,7 @@ local function press(x, y)
     end
 
     if load_button and pk.inside(load_button, x, y) then
-      load_pictures()
+      pk.hold(load_button, load_pictures)
       return
     end
 
@@ -2082,35 +2135,8 @@ local function press(x, y)
       end
     end
 
-    -- A link in an HTML message: what is under the point, in the browser.
-    if shows_html() and message.page and paper_at and pk.inside(paper_at, x, y) then
-      local f = message.fit or 1
-      local href = message.page:ns_link_at(math.floor((x - paper_at.x) / f),
-                                           math.floor((y - paper_at.y + scroll) / f))
-
-      if href and tostring(href):match("^https?:") then
-        print("mail: link " .. tostring(href))
-        fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/browser.lua",
-                                 args = tostring(href), wait = false })
-      end
-
-      return
-    end
-
-    -- A link in the message, opened in the browser.
-    if message and message.set and paper_at and pk.inside(paper_at, x, y) then
-      local place = pageset.hit(message.set, measure, 1, (x - paper_at.x) / SCALE,
-                                (y - paper_at.y + scroll) / SCALE)
-
-      for _, l in ipairs(place and message.links[place.para] or {}) do
-        if place.at >= l.from and place.at <= l.to + 1 then
-          print("mail: link " .. l.url)
-          fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/browser.lua",
-                                   args = l.url, wait = false })
-          return
-        end
-      end
-    end
+    -- A link in the message: held, and opened on the release over it.
+    link_held = link_at(x, y)
   end
 end
 
@@ -2244,6 +2270,9 @@ while win.running do
            and ev.button ~= "right" then
       press(ev.x or 0, ev.y or 0)
       dirty = true
+    elseif ev.type == "mouse" and not ev.menu and ev.action == "release"
+           and ev.button ~= "right" then
+      if release(ev.x or 0, ev.y or 0) then dirty = true end
     end
   end
 

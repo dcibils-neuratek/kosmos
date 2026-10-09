@@ -144,9 +144,12 @@ return function(ctx)
              and by < r.y + r.h and by + bh > r.y then
             local lit = (OUT.hover_boxes == win)
 
+            local held = OUT.held_box and OUT.held_box.win == win and OUT.held_box.slot
+
             for kind, slot in pairs(OUT.SLOT) do
-              OUT.light(bx + OUT.BOX_W * slot, by, kind, lit,
-                        not focused or (kind == "maximise" and not resizable(win)))
+              OUT.light(bx + OUT.BOX_W * slot, by, kind, lit or held == kind,
+                        not focused or (kind == "maximise" and not resizable(win)),
+                        held == kind)
             end
           end
         end

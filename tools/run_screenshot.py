@@ -11042,6 +11042,28 @@ def check_clicks(guest):
            "click was dropped because the pointer was sampled rather than "
            "its transitions read. See hal/pointer_edges.c.")
 
+    #
+    # 5. The window's own close box, pressed and slid off: the window stays.
+    #    The three were acted on at the press until 9 October 2026 (Diego:
+    #    "mouse click is working in mouse down not in a real click which is
+    #    mouse down+mouse up", "that is in all kosmos"); now, as the button
+    #    in check 3, only a release over the box closes. Its middle is 22 in
+    #    from the window's right and 22 down (`OUT.lights_at`).
+    #
+    mark = len(guest.seen)
+    click(wx + gw - 22, wy + 22, release_at=(wx + gw - 160, wy + 22))
+    deadline = time.monotonic() + 10
+
+    while "wm: let go off the close box" not in guest.seen[mark:] and time.monotonic() < deadline:
+        guest._read_available()
+        time.sleep(0.2)
+
+    if "wm: let go off the close box" not in guest.seen[mark:] or "wm: closed" in guest.seen[mark:]:
+        raise Failure(
+            "the window's close box, pressed and slid off before the release, "
+            "closed the window or was not held: "
+            + guest.seen[mark:][-600:])
+
     mark = len(guest.seen)
     guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()

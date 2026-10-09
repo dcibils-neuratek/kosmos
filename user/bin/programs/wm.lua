@@ -1933,7 +1933,8 @@ end
 -- smaller than it can be clicked is fine, and the reverse is the lie `BOX`
 -- exists to prevent.
 --
-function OUT.light(x, y, kind, lit, off)
+-- `held`: pressed and not yet let go, a shade darker, as a button is held.
+function OUT.light(x, y, kind, lit, off, held)
   local c = OUT.LIGHTS[kind]
   local d = OUT.BOX - scale.px(4)
   local dx, dy = x + (OUT.BOX - d) // 2, y + (OUT.BOX - d) // 2
@@ -1944,7 +1945,7 @@ function OUT.light(x, y, kind, lit, off)
     return
   end
 
-  back:fill_round(dx, dy, d, d, c.fill, d // 2)
+  back:fill_round(dx, dy, d, d, held and theme.lift(c.fill, -40) or c.fill, d // 2)
   back:frame_round(dx, dy, d, d, c.ring, d // 2)
 
   if not lit then return end

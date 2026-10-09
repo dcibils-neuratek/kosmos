@@ -69,20 +69,63 @@ return function(ctx)
   end
 
   --
+  -- Which of the three is at `nx`, `mx` being where the first starts; nil
+  -- for none.
+  --
+  local function box_at(nx, mx)
+    local slot = nx >= mx and OUT.IN_SLOT[(nx - mx) // OUT.BOX_W]
+
+    if slot then return slot end
+    if nx >= mx + OUT.BOX_W * OUT.SLOT.close then return "close" end
+
+    return nil
+  end
+
+  --
   -- **A press on one of the three**, on a tab or over a header that is the
   -- title bar: `mx` is where the first starts. True when it landed on one,
   -- and false for the rest of a tab, which is a drag.
   --
+  -- **The press only holds it; the release over it acts** (Diego, 9 October
+  -- 2026: "mouse click is working in mouse down not in a real click which is
+  -- mouse down+mouse up", "that is in all kosmos"). Held, it is drawn
+  -- pressed; let go anywhere else and nothing happens, as everywhere else.
+  --
   local function press_box(win, nx, mx)
-    local slot = nx >= mx and OUT.IN_SLOT[(nx - mx) // OUT.BOX_W]
+    local slot = box_at(nx, mx)
+
+    if not slot then return false end
+
+    -- Greyed on a window that cannot be maximised, and then a press on it
+    -- is nothing: not a maximise, and not the start of a drag.
+    if slot ~= "maximise" or resizable(win) then
+      PT.box = { win = win, slot = slot, mx = mx }
+      OUT.held_box = PT.box
+      OUT.damage_boxes(win)
+    end
+
+    return true
+  end
+
+  -- The release that a held box was waiting for: acted on only over it.
+  local function release_box(nx, ny)
+    local held = PT.box
+
+    PT.box, OUT.held_box = nil, nil
+    OUT.damage_boxes(held.win)
+
+    if OUT.boxes_under(nx, ny) ~= held.win or box_at(nx, held.mx) ~= held.slot then
+      print(("wm: let go off the %s box of %s"):format(held.slot, tostring(held.win.title)))
+      return
+    end
+
+    local win, slot = held.win, held.slot
 
     if slot == "minimise" then
       minimise(win)
     elseif slot == "maximise" then
-      -- Greyed on a window that cannot be maximised, and then a press
-      -- on it is nothing: not a maximise, and not the start of a drag.
-      if resizable(win) then maximise(win) end
-    elseif nx >= mx + OUT.BOX_W * OUT.SLOT.close then
+      maximise(win)
+    else
       --
       -- The close box. Asked first, taken by force second.
       --
@@ -93,11 +136,7 @@ return function(ctx)
       --
       win.closing = sys.ticks() + OUT.close_grace
       post(win, { type = "close" })
-    else
-      return false
     end
-
-    return true
   end
 
   local function pointer_pass(p)
@@ -311,6 +350,8 @@ return function(ctx)
         end
       end
     elseif not is_down and was_down then
+      if PT.box then release_box(nx, ny) end
+
       if PT.grabbed then
         --
         -- **The move first, when the button came up in a pass the pointer

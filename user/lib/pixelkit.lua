@@ -19,9 +19,10 @@
 --
 -- So this is the same header and the same controls, at the same numbers
 -- (`ui.layout`, `docs/apps.html`), drawn with a surface's own primitives.
--- It keeps no state and does no input: where a control is, and whether it
--- is pressed, is the application's, because an application that draws its
--- own pixels already routes its own events.
+-- It keeps no state but the one control held between a press and its
+-- release (`pk.hold`, `pk.release`), and routes no events: where a control
+-- is is the application's, because an application that draws its own
+-- pixels already routes its own events.
 --
 -- The line icons are the kit's pictures (`tools/lineicons.py`), decoded
 -- once and painted through their coverage in a look's colour - the same
@@ -169,6 +170,46 @@ function pixelkit.new(ui)
     s:frame_round(b.x, b.y, b.w, b.h,
                   focused and theme.ring or theme.line_soft, R)
   end
+
+  --
+  -- **A click is a press and a release** (Diego, 9 October 2026: "mouse
+  -- click is working in mouse down not in a real click which is mouse
+  -- down+mouse up", "that is in all kosmos"). A window that draws its own
+  -- pixels routes its own presses, so this is the one way they all hold a
+  -- control: on the press, `pk.hold(b, act)` draws it pressed and keeps
+  -- `act`; on the release, `pk.release(x, y)` runs it if the pointer is
+  -- still over the control, and otherwise lets it go - the click taken
+  -- back, as on every desktop. True from either when it did something the
+  -- window should draw again.
+  --
+  -- What stays on the press is what does everywhere: choosing a row,
+  -- opening a menu, starting a drag, placing a caret.
+  --
+  local held = nil
+
+  function pk.hold(b, act)
+    if held then held.b.pressed = held.was end
+
+    held = { b = b, act = act, was = b.pressed }
+    b.pressed = true
+    return true
+  end
+
+  function pk.release(x, y)
+    if not held then return false end
+
+    local h = held
+
+    held = nil
+    h.b.pressed = h.was
+
+    if pk.inside(h.b, x, y) then h.act() end
+
+    return true
+  end
+
+  -- Whether a control is held, for a window deciding what a move means.
+  function pk.holding() return held ~= nil end
 
   -- Whether a point is on a control that has been drawn.
   function pk.inside(b, x, y)

@@ -1457,13 +1457,25 @@ end
 --
 -- The coordinates are the view's own, so a swatch grid can work out which
 -- swatch was hit without knowing where it sits on screen.
+--
+-- **A click is a press and a release** (Diego, 9 October 2026: "mouse click
+-- is working in mouse down not in a real click which is mouse down+mouse
+-- up", "that is in all kosmos"): the press holds the view - the window
+-- sends it everything until the button comes up - and the release acts, if
+-- it came up over the view still. Let go anywhere else and nothing happens,
+-- which is how a click is taken back on every desktop.
 function view:mouse(action, x, y)
-  if action == "press" and self.on_click then
-    self.on_click(self, x, y)
-    return true
+  if not self.on_click then return false end
+
+  if action == "press" then
+    self.clicking = true
+  elseif action == "release" and self.clicking then
+    self.clicking = nil
+
+    if x >= 0 and y >= 0 and x < self.w and y < self.h then self.on_click(self, x, y) end
   end
 
-  return false
+  return true
 end
 
 --
@@ -2903,19 +2915,35 @@ function ui.sidebar(spec)
     return c == -1 or c == -2
   end
 
+  -- A heading's link at `x, y`: its id, or nil.
+  local function link_at(self, x, y)
+    for _, r in ipairs(rows(self)) do
+      if y >= r.y and y < r.y + r.h and r.item.heading and r.item.action then
+        local ax, aw = action_span(self, r.item)
+
+        if x >= ax - 4 and x < ax + aw + 4 then return r.item.id end
+      end
+    end
+
+    return nil
+  end
+
   function v:mouse(action, x, y)
+    -- A heading's link is a link: it acts on the release over it.
+    if action == "release" and self.linking then
+      local held = self.linking
+
+      self.linking = nil
+      if link_at(self, x, y) == held and self.on_action then self.on_action(self, held) end
+      return true
+    end
+
     if action ~= "press" then return true end
 
     for _, r in ipairs(rows(self)) do
       if y >= r.y and y < r.y + r.h and r.item.heading then
-        -- A heading is chosen by nobody; its link is pressed.
-        if r.item.action and self.on_action then
-          local ax, aw = action_span(self, r.item)
-
-          if x >= ax - 4 and x < ax + aw + 4 then
-            self.on_action(self, r.item.id)
-          end
-        end
+        -- A heading is chosen by nobody; its link is pressed, and held.
+        self.linking = self.on_action and link_at(self, x, y) or nil
 
         break
       end
@@ -3064,14 +3092,30 @@ function ui.segments(spec)
     return false
   end
 
-  function v:mouse(action, x)
-    if action ~= "press" then return true end
-
+  -- The segment under `x`.
+  local function segment_at(x)
     local ws, at = widths(), 1
 
     for i, w in ipairs(ws) do
-      if x < at + w or i == #ws then choose(self, i) break end
+      if x < at + w or i == #ws then return i end
       at = at + w
+    end
+
+    return nil
+  end
+
+  -- Chosen on the release over the segment it was pressed on, as a button.
+  function v:mouse(action, x, y)
+    if action == "press" then
+      self.holding = segment_at(x)
+    elseif action == "release" and self.holding then
+      local held = self.holding
+
+      self.holding = nil
+
+      if y and y >= 0 and y < self.h and x >= 0 and x < self.w and segment_at(x) == held then
+        choose(self, held)
+      end
     end
 
     return true
@@ -3330,6 +3374,20 @@ function ui.tabs(spec)
   end
 
   function v:mouse(action, x, y)
+    -- A tab's cross closes on the release over the same cross.
+    if action == "release" and self.closing then
+      local i = self.closing
+      local p = placed[i]
+
+      self.closing = nil
+
+      if p and p.cross and x >= p.cross - 2 and x < p.cross + 12 and y >= 0 and y < self.h then
+        if self.on_close then self.on_close(self, i, self.items[i]) end
+      end
+
+      return true
+    end
+
     if action ~= "press" then return true end
 
     for i, p in ipairs(placed) do
@@ -3337,8 +3395,9 @@ function ui.tabs(spec)
         local item = self.items[i]
 
         if p.cross and x >= p.cross - 2 and x < p.cross + 12 then
-          if self.on_close then self.on_close(self, i, item) end
+          self.closing = i
         else
+          -- Choosing a tab is on the press, as in every browser.
           self.on = i
           if self.on_choose then self.on_choose(self, i, item) end
         end
@@ -4181,12 +4240,26 @@ function ui.list(spec)
     -- The flat look's box is 12 in and 18 across (`draw` above).
     local box_end = theme.flat and (12 + 18 + 4) or (4 + 16 + 2)
 
+    -- A box ticks on the release over the box it was pressed on.
     if self.checks and action == "press" and x < box_end then
-      local key = tostring(self.items[n])
+      self.ticking = n
+      return true
+    end
 
-      self.checks[key] = (not self.checks[key]) or nil
+    if self.ticking then
+      if action == "release" then
+        local held = self.ticking
 
-      if self.on_toggle then self.on_toggle(self, key, self.checks[key]) end
+        self.ticking = nil
+
+        if n == held and x >= 0 and x < box_end then
+          local key = tostring(self.items[n])
+
+          self.checks[key] = (not self.checks[key]) or nil
+
+          if self.on_toggle then self.on_toggle(self, key, self.checks[key]) end
+        end
+      end
 
       return true
     end

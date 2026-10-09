@@ -22030,3 +22030,31 @@ window goes first now, then the disk.**
 `x86-mail-4` 24: the draft closed by its red light, "wm: closed New
 Message" said before "mail: composer ... closed". **Control**: the old
 order, it fails - the composer spoke first.
+
+## 18.495 A click is a press and a release (step 1: the window manager, the kit, pixelkit, Mail)
+
+Diego, 9 October: "mouse click is working in mouse down not in a real click
+which is mouse down+mouse up", "that is in all kosmos". As every desktop
+has it, a control now shows pressed on the press and acts on a release over
+it; letting go elsewhere takes the click back. What stays on the press is
+what does everywhere: choosing a row, opening a menu, beginning a drag,
+placing a caret, switching tabs, a stepper that repeats while held.
+
+- **The window manager's three boxes** - minimise, maximise, close - are held
+  on the press, drawn a shade darker, and act on the release over the same
+  box (`release_box`); "wm: let go off the close box of ..." otherwise.
+- **The kit**: a view's `on_click`, a list's tick boxes, the sidebar's
+  heading links, segments and a tab's cross now act on the release over
+  what was pressed. Buttons, tools, icon buttons, checkboxes, switches and
+  dropdowns already did.
+- **`pixelkit`'s `pk.hold(b, act)` and `pk.release(x, y)`**: the one way a
+  window drawing its own pixels holds a control. Mail's header buttons,
+  Load Pictures, Add Account's buttons, and the composer's Send, paperclip,
+  a file's x and a suggestion are on it; a link in a message opens on the
+  release over the same link.
+
+The whole gate, 57 suites. `x86-display-4`'s clicks phase gains check 5: the
+gallery's close box pressed and slid off, the window stays. `x86-mail-4`
+25: New Message pressed and slid off opens nothing. **Controls**: the boxes
+acting wherever they are let go, check 5 fails; New Message on the press, a
+composer opens and part 4 fails.
