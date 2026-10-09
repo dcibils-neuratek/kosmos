@@ -283,7 +283,12 @@ return function(ctx)
           local kept = OUT.corners(m.x, m.y, m.w, m.h, r)
 
           OUT.keep(kept)
-          back:blit(m.surface, x0 - m.x, y0 - m.y,
+
+          -- A menu that draws itself (`docs/astra-display.md` D2d) is the
+          -- buffer it committed, not the surface this process would draw.
+          local from = m.shared and m.shared[m.shared.live] or m.surface
+
+          back:blit(from, x0 - m.x, y0 - m.y,
                     x1 - x0, y1 - y0, x0, y0)
           OUT.put_back(kept, m.x, m.y, m.w, m.h)
         end

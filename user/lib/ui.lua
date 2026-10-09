@@ -7397,7 +7397,26 @@ function window:paint_menu(m)
     end
   end
 
+  -- Drawn here and committed, when it draws itself (D2d); sent otherwise.
+  if m.region then
+    ui.paint_ops(m.region[m.region.draw_into], g.ops, m.pct)
+
+    local r = fs.send("/Running/wm", { type = "commit", window = m.handle,
+                                       x = 0, y = 0, w = m.region.w, h = m.region.h })
+
+    m.region.draw_into = (r and r.draw_into) or ((m.region.draw_into == 1) and 2 or 1)
+    return
+  end
+
   send_ops(m.handle, g.ops)
+end
+
+-- A menu let go of: its region given back, when it drew itself.
+local function let_go_menu(m)
+  if m and m.cap then
+    sys.release(m.cap)
+    m.cap, m.region = nil, nil
+  end
 end
 
 --
@@ -7412,9 +7431,21 @@ function window:push_menu(x, y, items, above)
 
   if above then y = y - h end
 
+  -- **A menu draws itself too** (`docs/astra-display.md` D2d): a region
+  -- at the scale, painted here and committed as it changes, given back
+  -- when it closes.
+  local pct = scale_now()
+  local region, cap = direct_region(at_scale(w, pct), at_scale(h, pct))
+
   local reply = fs.send("/Running/wm", { type = "open", kind = "menu",
                                      owner = self.handle,
-                                     x = x, y = y, w = w, h = h })
+                                     x = x, y = y, w = w, h = h,
+                                     draws_itself = region and true or nil }, cap)
+
+  if not reply or not reply.ok or not reply.draws_itself then
+    if cap then sys.release(cap) end
+    region, cap = nil, nil
+  end
 
   if not reply or not reply.ok then return nil end
 
@@ -7424,7 +7455,7 @@ function window:push_menu(x, y, items, above)
   -- its parent.
   local m = { handle = reply.window, items = items, row = row,
               x = reply.x, y = reply.y, w = reply.w, h = reply.h,
-              hot = nil }
+              hot = nil, region = region, cap = cap, pct = pct }
 
   self.menus[#self.menus + 1] = m
   self:paint_menu(m)
@@ -7442,7 +7473,30 @@ end
 -- pressed, and where under it the menu goes; a mouse event tagged `menu` is
 -- a menu this window has open, handled exactly as a kit window handles it.
 --
+--
+-- Menus the window manager closed - a press outside them - forgotten here,
+-- and their regions given back: from `run`, and from `direct_event` for a
+-- window that runs its own loop, which never heard of them before D2d.
+--
+function window:menus_gone(handles)
+  local went, kept = {}, {}
+
+  for _, h in ipairs(handles or {}) do went[h] = true end
+
+  for _, m in ipairs(self.menus) do
+    if went[m.handle] then let_go_menu(m) else kept[#kept + 1] = m end
+  end
+
+  for i = #self.menus, 1, -1 do self.menus[i] = nil end
+  for i, m in ipairs(kept) do self.menus[i] = m end
+end
+
 function window:direct_event(ev)
+  if ev.type == "menus_gone" then
+    self:menus_gone(ev.menus)
+    return true
+  end
+
   -- Moved, by a drag or by whoever asked: menus are windows placed on the
   -- screen from the origin, so without this every menu a direct window
   -- opens after a drag opens where the window used to be - which is what
@@ -7498,6 +7552,7 @@ function window:close_menus(from)
 
   for i = #self.menus, from, -1 do
     fs.send("/Running/wm", { type = "close", window = self.menus[i].handle })
+    let_go_menu(self.menus[i])
     self.menus[i] = nil
   end
 
@@ -8236,14 +8291,7 @@ function window:run()
         -- Menus the window manager closed - a press outside them - which
         -- this window would otherwise go on believing were open.
         --
-        local went, kept = {}, {}
-
-        for _, h in ipairs(ev.menus or {}) do went[h] = true end
-        for _, m in ipairs(self.menus) do
-          if not went[m.handle] then kept[#kept + 1] = m end
-        end
-        for i = #self.menus, 1, -1 do self.menus[i] = nil end
-        for i, m in ipairs(kept) do self.menus[i] = m end
+        self:menus_gone(ev.menus)
 
         changed = true
       elseif ev.type == "mouse" and ev.menu then

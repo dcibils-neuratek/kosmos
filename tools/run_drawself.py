@@ -77,6 +77,15 @@ local t1 = sys.ticks()
 print(("D2 cost %s: %d frames, app %d ticks, wm %d ticks, %.2f ms a frame"):format(
       itself and "itself" or "sent", FRAMES, ticks(me) - app0, ticks("wm") - wm0,
       (t1 - t0) * 1000 / hz / FRAMES))
+
+-- A menu, drawing itself, its second row marked: where it is, and whether
+-- the window manager took its region.
+if itself and not tostring(args):match("nomenu") then
+  local m = win:open_menu(win.origin_x + 200, win.origin_y + 80,
+                          { { text = "One" }, { text = "Two", mark = true }, { text = "Three" } })
+  print(("D2 menu at %d,%d %dx%d, draws itself %s"):format(m and m.x or -1, m and m.y or -1,
+        m and m.w or -1, m and m.h or -1, tostring(m and m.region ~= nil)))
+end
 win:run()
 '''.replace("FRAMES", str(FRAMES))
 
@@ -149,6 +158,39 @@ def main():
         mark = len(guest.seen)
         session.run("/Temporary/launch.lua itself")
         said["itself"] = found(r"D2 itself: draws itself (\w+)", mark)
+        said["menu"] = found(r"D2 menu at (\d+),(\d+) (\d+)x(\d+), draws itself (\w+)", mark)
+        time.sleep(1.5)
+        guest.mouse_to(200, 32000)
+        time.sleep(1)
+        w0, _, px0 = R.parse_ppm(guest.screendump())
+
+        if said["menu"]:
+            # Which rows carry the mark, read as the dock's suite reads the
+            # desktop's menu: ink in the mark's column against the menu's
+            # ground beside the first row.
+            mx, my = (int(v) for v in said["menu"][-1][:2])
+            o = ((my + 2 + R.MENU_ROW // 2) * w0 + mx + 20) * 3
+            ground = px0[o:o + 3]
+            marked = []
+
+            for row in range(1, 4):
+                top = my + 2 + (row - 1) * R.MENU_ROW
+                ink = sum(1 for yy in range(top + 6, top + 18) for xx in range(mx + 10, mx + 18)
+                          if px0[(yy * w0 + xx) * 3:(yy * w0 + xx) * 3 + 3] != ground)
+
+                if ink > 8:
+                    marked.append(row)
+
+            said["menu marked"] = marked
+
+        # The menu away by a press on the empty desk, before the comparison:
+        # an Escape would leave the window keyboard-driven, its focus ringed.
+        guest.mouse_to(30000, 30000)
+        time.sleep(0.3)
+        guest.mouse_button(True)
+        time.sleep(0.1)
+        guest.mouse_button(False)
+        time.sleep(1)
         said["cost itself"] = found(r"D2 cost itself: ([^\n]*)", mark)
         session.run("/Temporary/launch.lua sent")
         said["sent"] = found(r"D2 sent: draws itself (\w+)", mark)
@@ -191,7 +233,7 @@ def main():
 
         # And one opened at 150 per cent, its region made at the scale.
         mark = len(guest.seen)
-        session.run("/Temporary/launch.lua itself")
+        session.run("/Temporary/launch.lua itself,nomenu")
         said["opened150"] = found(r"D2 itself: draws itself (\w+)", mark)
         session.run("/Temporary/scale.lua 100")
 
@@ -228,6 +270,14 @@ def main():
         fails.append("at 150 per cent, drawn by itself, the window differs from the one sent "
                      "in %d of %d pixels, within %r" % (differ + (said.get("where150"),)))
 
+    menu = said.get("menu")
+
+    if not menu or menu[-1][4] != "true":
+        fails.append("the menu did not draw itself: %r" % menu)
+    elif said.get("menu marked") != [2]:
+        fails.append("the menu drawing itself did not show its second row marked: %r"
+                     % said.get("menu marked"))
+
     if said.get("opened150") != ["true"]:
         fails.append("a window opened at 150 per cent did not draw itself: %r"
                      % said.get("opened150"))
@@ -240,7 +290,7 @@ def main():
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 8
+    checks = 9
 
     if fails:
         print("FAIL: %d of %d checks on a window that draws itself:" % (len(fails), checks))

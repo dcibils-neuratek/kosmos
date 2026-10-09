@@ -135,8 +135,11 @@ desktop.
      measurement - the machine says its free memory in whole megabytes: a
      window holds two buffers of its size where the window manager held one
      surface, so one more a window, 0.5 MB for a 420x306 one at 100 per
-     cent and 1.2 MB for the Open window at 150. **Still sent**: menus,
-     banners, tips, popups and strips, each its own step.
+     cent and 1.2 MB for the Open window at 150. **Menus too, the same
+     day** (18.504): a region at the scale, painted and committed as the
+     pointer moves over it, given back when it closes - by the window or
+     by the window manager (`menus_gone`, which a direct window now hears
+     as well). **Still sent**: banners, tips, popups and strips.
    - **D2e** - the drawing commands retired from the window manager.
 4. **D3** - the window server: the screen, surfaces, stacking, damage and
    composing move to C; the window manager tells it through the manager

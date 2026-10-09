@@ -22304,3 +22304,21 @@ nothing (`paint.lua:33`), and the application stopped. A window sending
 its drawing had sent that last frame to a window manager that had already
 forgotten it. A closed window paints nothing now; `x86-mail-5`, `x86-script`
 and `x86-cafesa3d-2` are its test. Then the whole gate, 61 of 61, 6:28.
+
+## 18.504 Astra D2d: menus draw themselves
+
+A kit menu asks the scale, makes a region at it, and `paint_menu` draws
+into it and commits, as a window drawing itself does; the region is given
+back when the menu closes, by the window or by the window manager - whose
+`menus_gone` a direct window running its own loop now hears too
+(`window:menus_gone`), where before it went on believing such a menu open.
+
+The whole gate found the fault: the desktop's menu, opened by Tracker,
+showed none of its marks (`x86-dock`, `x86-display-4`). Menus are composed
+apart from windows, above them, by `compose.lua`, and that loop read the
+menu's own surface - which nothing drew into any more - never a region.
+It reads the committed buffer now. `x86-drawself`'s menu check had passed
+anyway, since it counted colours and a buffer nobody drew in has some; it
+reads the mark's row now, as the dock's suite does, and is the check:
+**control**, the old composing, and no row is marked. Then the whole gate,
+61 of 61.
