@@ -139,7 +139,10 @@ desktop.
      day** (18.504): a region at the scale, painted and committed as the
      pointer moves over it, given back when it closes - by the window or
      by the window manager (`menus_gone`, which a direct window now hears
-     as well). **Still sent**: banners, tips, popups and strips.
+     as well). **Popups, tips and banners too** (0.11.110): the window
+     manager has nothing of its own for them but their place. **Still
+     sent**: a strip, the backdrop and a full screen, which the window
+     manager sizes to the screen and blends.
    - **D2e** - the drawing commands retired from the window manager.
 4. **D3** - the window server: the screen, surfaces, stacking, damage and
    composing move to C; the window manager tells it through the manager

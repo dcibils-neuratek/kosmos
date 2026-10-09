@@ -22322,3 +22322,10 @@ anyway, since it counted colours and a buffer nobody drew in has some; it
 reads the mark's row now, as the dock's suite does, and is the check:
 **control**, the old composing, and no row is marked. Then the whole gate,
 61 of 61.
+
+## 18.505 Astra D2d: popups, tips and banners draw themselves
+
+Out of the kinds `ui.window` kept sending, leaving a strip, the backdrop
+and a full screen - the three the window manager sizes to the screen and
+blends. The whole gate, 61 of 61 (6:50): the launcher pad, the Deskbar's
+tips, notifications' banners and every popup in it drawing themselves.

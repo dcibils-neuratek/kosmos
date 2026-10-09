@@ -6169,11 +6169,11 @@ function ui.window(spec)
   -- its drawing as before.
   --
   -- **Every ordinary window** since D2d - one with the kit's header or one
-  -- of its own; not a direct window, which draws itself already, nor the
-  -- kinds still sent: a strip, a popup, a tip, a banner, the backdrop, a
-  -- full screen. `draws_itself = false` keeps one sending.
-  local ordinary = not (spec.direct or spec.backdrop or spec.fullscreen or spec.strip
-                        or spec.popup or spec.tip or spec.banner)
+  -- of its own, a popup, a tip, a banner; not a direct window, which draws
+  -- itself already, nor the kinds the window manager sizes to the screen
+  -- and still sent: a strip, the backdrop, a full screen. `draws_itself =
+  -- false` keeps one sending.
+  local ordinary = not (spec.direct or spec.backdrop or spec.fullscreen or spec.strip)
   local draws_itself = (ordinary and spec.draws_itself ~= false) and true or false
   local pct = 100
 
