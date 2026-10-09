@@ -8241,6 +8241,15 @@ M700 (0.11.87-0.11.88). Seen there and not yet done: some subjects begin
 with "?" where, probably, an emoji has no glyph in the UI's face - to be
 looked at with the message's own bytes before anything is changed.
 
+**Noted, 9 October - a screen that arrives after boot.** The M700 restarted
+overnight with its monitor off came up with no desktop: the firmware gave
+no framebuffer ("[6/12] display ... none attached"), and the window manager
+ended, "not given the screen". Kosmos asks the firmware for a screen once,
+at boot; a display turned on later is never seen. A screen that comes and
+goes needs Kosmos's own display driver on that machine (`docs/m700-2d.md`),
+not the firmware's - nothing to do before then but restart with the monitor
+on.
+
 ### The optimisation phase - after the applications
 
 **AGREED on 7 October - applications first, then a phase of optimising.**
