@@ -504,7 +504,229 @@ def part2(image):
     return 0
 
 
+
+# The window's part (M4): Mail on the desktop, an account added through it.
+KEYS = {".": "dot", "@": "shift-2", "-": "minus", " ": "spc", ":": "shift-semicolon",
+        "/": "slash", "_": "shift-minus"}
+
+
+def keys_for(text):
+    out = []
+    for ch in text:
+        if ch in KEYS:
+            out.append(KEYS[ch])
+        elif ch.isupper():
+            out.append("shift-" + ch.lower())
+        else:
+            out.append(ch)
+    return out
+
+
+def part3(image):
+    import importlib
+    import random
+    import re
+    import time
+
+    work = scratch.directory("mail")
+    # The certificate is for the address the guest types: 10.0.2.2.
+    run_tls.pki(work, "10.0.2.2")
+    peer = mailpeer.Peer(work, "good.pem", "server.key")
+    peer.idle_delivers = False
+    imap_port, smtp_port = peer.start()
+
+    # The test's authority trusted as a person trusts one: a file in
+    # /Home/Preferences/Authorities, which every TLS connection reads.
+    disk = os.path.join(work, "disk.img")
+    subprocess.run([os.path.join(ROOT, "build", "host", "lua"),
+                    os.path.join(HERE, "kfs.lua"), "create", disk, "32",
+                    os.path.join(work, "ca.der") + ":/Home/Preferences/Authorities/test.der"],
+                   check=True, capture_output=True, cwd=ROOT)
+    os.environ["KOSMOS_DISK"] = disk
+
+    import run_screenshot as R
+    import run_servers as S
+    importlib.reload(R)
+
+    telnet, web = random.randint(20000, 40000), random.randint(40001, 60000)
+    guest = S.boot(image, telnet, web)
+    said, error = {}, None
+    who = mailpeer.USER
+
+    try:
+        guest.wait_for("wm: window Deskbar at ", "the bar")
+        guest.wait_for("telnetd: on port ", "telnetd listening")
+        session = S.connect(telnet)
+
+        mark = len(guest.seen)
+        session.run("open mail")
+        placed = guest.wait_for_line("wm: window Mail at ", "the Mail window", mark)
+        sheet = guest.wait_for_line("mail: sheet ", "Add Account, with no account yet", mark)
+        wx, wy = (int(v) for v in re.match(r"(\d+),(\d+)", placed).groups())
+        width, height, _ = R.parse_ppm(guest.screendump())
+
+        def click(x, y):
+            guest.mouse_to(*R._to_tablet(wx + x, wy + y, width, height))
+            time.sleep(0.3)
+            guest.mouse_button(True)
+            time.sleep(0.2)
+            guest.mouse_button(False)
+            time.sleep(0.6)
+
+        def at(name, text):
+            m = re.search(r"\b" + name + r" (\d+),(\d+)", text)
+            return (int(m.group(1)), int(m.group(2))) if m else None
+
+        def typed(text):
+            for k in keys_for(text):
+                guest.sendkey(k)
+                time.sleep(0.12)
+
+        def tab():
+            guest.sendkey("tab")
+            time.sleep(0.3)
+
+        def cleared(n=24):
+            for _ in range(n):
+                guest.sendkey("backspace")
+                time.sleep(0.05)
+
+        # Other IMAP, its fields in order.
+        mark = len(guest.seen)
+        click(*at("imap", sheet))
+        sheet = guest.wait_for_line("mail: sheet ", "the IMAP fields", mark)
+        click(*at("field1", sheet))
+        typed("Lena Moreau"); tab()
+        typed(who); tab()
+        typed(mailpeer.PASSWORD); tab()
+        cleared(); typed("10.0.2.2"); tab()
+        cleared(6); typed(str(imap_port)); tab()
+        cleared(); typed("10.0.2.2"); tab()
+        cleared(6); typed(str(smtp_port))
+
+        mark = len(guest.seen)
+        guest.sendkey("ret")
+        said["signing"] = guest.wait_for_line("mail: signing in ", "Sign In pressed", mark)
+        said["signed"] = guest.wait_for_line("mail: signed in ", "the account signed in", mark)
+        guest.wait_for("maild: %s: 3 messages kept" % who, "the Inbox kept")
+        said["account"] = session.run("cat /Home/Mail/%s/account" % who).decode(errors="replace")
+
+        # The list, newest first: the photos, the route in HTML, the café.
+        places = guest.wait_for_line("mail: places ", "the window's places", 0)
+        lx, ly = at("list", places)
+        rh = int(re.search(r"rows (\d+)", places).group(1))
+        time.sleep(2)
+
+        mark = len(guest.seen)
+        click(lx + 100, ly + rh // 2)
+        said["photos"] = guest.wait_for_line("mail: showing ", "the newest shown", mark)
+
+        mark = len(guest.seen)
+        click(lx + 100, ly + rh + rh // 2)
+        said["route"] = guest.wait_for_line("mail: showing ", "the second shown", mark)
+
+        mark = len(guest.seen)
+        click(lx + 100, ly + 2 * rh + rh // 2)
+        said["cafe"] = guest.wait_for_line("mail: showing ", "the oldest shown", mark)
+        said["set"] = guest.wait_for_line("mail: set ", "its text set", mark)
+        time.sleep(2)
+
+        # The window as it looked, kept for whoever reads the run after.
+        import kosmos_vnc as V
+        w_, h_, rgb_ = R.parse_ppm(guest.screendump())
+        ww, wh = (int(v) for v in re.search(r"(\d+)x(\d+)", placed).groups())
+        rows_ = [rgb_[((y * w_) + wx) * 3:((y * w_) + wx + ww) * 3]
+                 for y in range(wy, min(h_, wy + wh))]
+        os.makedirs(os.path.join(ROOT, "build", "mail"), exist_ok=True)
+        V.png(os.path.join(ROOT, "build", "mail", "mail.png"), ww, len(rows_), b"".join(rows_))
+        said["paper"] = sum(1 for i in range(0, len(b"".join(rows_)), 3 * 7)
+                            if b"".join(rows_)[i:i + 3] == b"\xf7\xf7\xf5")
+
+        # Flag it; then delete the photos and archive the route.
+        mark = len(guest.seen)
+        click(*[v + 13 for v in at("flag", places)])
+        said["flag"] = guest.wait_for_line("mail: flagged ", "the flag pressed", mark)
+
+        mark = len(guest.seen)
+        click(lx + 100, ly + rh // 2)
+        guest.wait_for_line("mail: showing ", "the photos again", mark)
+        click(*[v + 13 for v in at("delete", places)])
+        said["delete"] = guest.wait_for_line("mail: delete ", "Delete pressed", mark)
+
+        mark = len(guest.seen)
+        click(lx + 100, ly + rh // 2)
+        guest.wait_for_line("mail: showing ", "the route at the top", mark)
+        click(*[v + 13 for v in at("archive", places)])
+        said["archive"] = guest.wait_for_line("mail: archive ", "Archive pressed", mark)
+        guest.wait_for("maild: %s: archive " % who, "the archive done on the server")
+        time.sleep(2)
+    except Exception as e:                  # noqa: BLE001 - said below
+        error = "%s: %s" % (type(e).__name__, str(e).splitlines()[0])
+    finally:
+        seen = guest.seen.replace("\r", "")
+        guest.close()
+        peer.stop()
+
+    fails = []
+
+    if error:
+        fails.append("the machine stopped: " + error + " ... " + seen[-800:])
+
+    if not said.get("signed", "").startswith(who):
+        fails.append("the account was not signed in through Add Account: %r" % said.get("signed"))
+
+    acc = said.get("account", "")
+    if "10.0.2.2" not in acc or mailpeer.PASSWORD in acc:
+        fails.append("the account file, its server and no password: %r" % acc[:300])
+
+    if mailpeer.PASSWORD in seen:
+        fails.append("the password was printed")
+
+    if not said.get("photos", "").startswith("3, The photos"):
+        fails.append("the newest message first: %r" % said.get("photos"))
+    if not said.get("route", "").startswith("2, This week's route"):
+        fails.append("the second, in HTML: %r" % said.get("route"))
+    if not said.get("cafe", "").startswith("1, Café on Saturday, from Tomás Ferreira"):
+        fails.append("the café message read by the Mail Kit: %r" % said.get("cafe"))
+    if not re.match(r"\d+ paragraphs", said.get("set", "")):
+        fails.append("its text set by Write's engine: %r" % said.get("set"))
+    if said.get("paper", 0) < 2000:
+        fails.append("the paper not drawn: %d of its pixels" % said.get("paper", 0))
+
+    with peer.lock:
+        def flags(box, subject):
+            m = peer.find(box, subject)
+            return m["flags"] if m else None
+
+        if "\\Seen" not in (flags("INBOX", "=?windows-1252?Q?Caf=E9_on_Saturday?=") or ()):
+            fails.append("reading a message did not mark it seen on the server")
+        if "\\Flagged" not in (flags("INBOX", "=?windows-1252?Q?Caf=E9_on_Saturday?=") or ()):
+            fails.append("the flag did not reach the server")
+        if peer.find("Trash", "The photos") is None or peer.find("INBOX", "The photos"):
+            fails.append("Delete did not move the message to the Trash")
+        if peer.find("Archive", "This week's route") is None or peer.find("INBOX", "This week's route"):
+            fails.append("Archive did not move the message to the Archive")
+
+    if " died: " in seen:
+        fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
+
+    checks = 13
+
+    if fails:
+        print("FAIL: %d of %d checks on Mail's window:" % (len(fails), checks))
+        for f in fails:
+            print("  " + f)
+        return 1
+
+    print("PASS: %d checks on Mail's window (an account added through Add Account "
+          "against a server on this Mac, kept without its password; the Inbox newest "
+          "first; a plain message, an HTML one and one with an attachment read by the "
+          "Mail Kit, the text set by Write's engine on its paper; read, flagged, "
+          "deleted to the Trash and archived, each on the server)." % checks)
+    return 0
+
+
 if __name__ == "__main__":
     image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
     part = sys.argv[sys.argv.index("--part") + 1] if "--part" in sys.argv else "1"
-    sys.exit(part2(image) if part == "2" else part1(image))
+    sys.exit(part3(image) if part == "3" else part2(image) if part == "2" else part1(image))

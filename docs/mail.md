@@ -454,8 +454,14 @@ Each step leaves the system working and a test that stays.
 10. **M9 - shipped as an example**: `/Kosmos/Apps` and `/Kosmos/Examples/Mail`,
     a copy built and run in the IDE.
 
-Then, each its own step: writing with style (after `textedit.lua`), OAuth,
-POP3, rules, signatures.
+**Add Account goes into M4** (Diego, 8 October: "we need a way to add
+accounts", and "IMAP first, POP3 later"): Google with an app password, or
+any IMAP server, drawn in `mail.html`; the window keeps the password in the
+keyring and `maild` signs in with it before the account is kept.
+
+Then, each its own step: POP3 (`pop3.lua`, downloading without folders or
+flags - Gmail's pop.gmail.com 995 among them), writing with style (after
+`textedit.lua`), OAuth, rules, signatures.
 
 ---
 

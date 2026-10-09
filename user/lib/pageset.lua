@@ -745,6 +745,11 @@ end
 -- chart's paragraph whose data is shown, as a table above the chart, for
 -- typing into (W7c) - the window's to choose, not the document's.
 --
+-- **`opts.endless`: one page as tall as its text** (`docs/mail.md`, M4): no
+-- page breaks at all, and the one page's height its lines' and its two
+-- margins. A message read in Mail is a page as wide as the pane and as
+-- long as what was written - the one thing the engine gained for it.
+--
 function pageset.set(doc, measure, cache, opts)
   local page_w, page_h = writedoc.page_mm(doc)
   local m = doc.margins_mm
@@ -754,6 +759,10 @@ function pageset.set(doc, measure, cache, opts)
   local left = writedoc.pt(m.left)
   local column = page_w - left - writedoc.pt(m.right)
   local top, bottom = writedoc.pt(m.top), page_h - writedoc.pt(m.bottom)
+  local endless = opts and opts.endless
+
+  if endless then bottom = math.huge end
+
   local hyphenate = doc.hyphenation and opts and opts.hyphenate or nil
   local data_at = opts and opts.data
   local geometry = ("%s:%s:%s:%s:%s"):format(left, column, tostring(doc.ligatures),
@@ -1312,6 +1321,11 @@ function pageset.set(doc, measure, cache, opts)
                     piece = { text = text, look = look,
                               x_pt = (page_w - w) / 2, width_pt = w } }
     end
+  end
+
+  -- The endless page ends where its text does.
+  if endless and pages[1] then
+    pages[1].height_pt = y + writedoc.pt(m.bottom)
   end
 
   return { looks = looks, pages = pages, ligatures = doc.ligatures,

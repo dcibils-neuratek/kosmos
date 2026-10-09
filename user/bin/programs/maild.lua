@@ -75,18 +75,45 @@ end
 -- `/Running/maild`'s status.
 --------------------------------------------------------------------------
 
+-- Where a mailbox's messages are kept: its name as a person reads it, so
+-- Gmail's `[Gmail]/Sent Mail` is a folder inside a folder.
+local function folder_of(a, mailbox)
+  return a.dir .. "/" .. (mailbox.title or mailbox.name)
+end
+
+--
+-- **The window learns what changed from here, not from a message**: Kosmos
+-- has no message that does not wait for its answer, and `maild` must never
+-- wait on a window. So each change is written whole, with `version` one
+-- more, and the window reads it on its own clock - a read of `/Temporary`,
+-- which nothing here holds up.
+--
+local version = 0
+
 local function status()
   local out = {}
 
   for _, a in ipairs(accounts) do
-    out[#out + 1] = { address = a.address, state = a.state, why = a.why,
-                      messages = a.messages, unseen = a.unseen }
+    local boxes = {}
+
+    for _, b in ipairs(a.list or {}) do
+      local c = a.counts[b.name]
+
+      boxes[#boxes + 1] = { name = b.name, title = b.title, use = b.use,
+                            folder = folder_of(a, b), kept = c ~= nil,
+                            messages = c and c.messages, unseen = c and c.unseen }
+    end
+
+    out[#out + 1] = { address = a.address, name = a.account.name, state = a.state,
+                      why = a.why, messages = a.messages, unseen = a.unseen,
+                      boxes = boxes }
   end
 
-  return { accounts = out }
+  return { accounts = out, version = version }
 end
 
 local function publish()
+  version = version + 1
   files.make_folder("/Temporary/maild")
   fs.write("/Temporary/maild/status", status())
 end
@@ -120,10 +147,6 @@ end
 --------------------------------------------------------------------------
 -- A message kept: its file, and its facts as attributes.
 --------------------------------------------------------------------------
-
-local function folder_of(a, mailbox)
-  return a.dir .. "/" .. (mailbox.title or mailbox.name)
-end
 
 -- What the list shows of a message, read from its file by the Mail Kit.
 local function facts(path, uid, flags)
@@ -291,12 +314,92 @@ local function sync(a, s, mailbox, quiet)
     end
   end
 
-  a.messages, a.unseen = messages, unseen
+  a.counts[mailbox.name] = { messages = messages, unseen = unseen }
+
+  if mailbox.use == "inbox" or mailbox.name:upper() == "INBOX" then
+    a.messages, a.unseen = messages, unseen
+  end
 
   -- Said when something moved, so a log reads as what happened.
   if state and #new + changed + gone > 0 then
     note(a, ("%s: %d new, %d changed, %d gone"):format(mailbox.title or mailbox.name,
                                                        #new, changed, gone))
+  end
+
+  return true
+end
+
+--------------------------------------------------------------------------
+-- What the window asked: done on the server between one look and the next.
+-- The window has already shown it - a message read, flagged, gone - so
+-- this is the server catching up with what a person did.
+--------------------------------------------------------------------------
+
+local function box_named(a, name)
+  for _, b in ipairs(a.list or {}) do
+    if b.name == name then return b end
+  end
+
+  return nil
+end
+
+local function box_for(a, use)
+  for _, b in ipairs(a.list or {}) do
+    if b.use == use then return b end
+  end
+
+  return nil
+end
+
+local function forget_files(a, b, uids)
+  for _, uid in ipairs(uids) do
+    files.remove(("%s/%d.eml"):format(folder_of(a, b), uid))
+  end
+end
+
+local function do_ops(a, s)
+  while #a.ops > 0 do
+    local op = table.remove(a.ops, 1)
+    local b = box_named(a, op.mailbox)
+
+    if b then
+      local _, why = await(s:select(b.name))
+
+      if why then return nil, why end
+
+      local r, done
+
+      if op.type == "flag" then
+        r = s:flag(op.uids, op.flag, op.on)
+      else
+        -- Archive and Delete are a move to the mailbox for that use; Delete
+        -- in the Trash, or with no Trash, is the server's delete.
+        local to = op.type == "move" and box_named(a, op.to)
+                   or op.type == "archive" and box_for(a, "archive")
+                   or op.type == "delete" and box_for(a, "trash")
+
+        if to and to.name ~= b.name then
+          r = s:move(op.uids, to.name)
+        elseif op.type == "delete" then
+          local mark = s:flag(op.uids, "deleted", true)
+
+          await(mark)
+          r = s:expunge(op.uids)
+        end
+
+        done = true
+      end
+
+      if r then
+        await(r)
+        note(a, ("%s %s in %s: %s"):format(op.type, imap.set(op.uids), b.title,
+                                          r.ok and "done" or tostring(r.why)))
+
+        if r.ok and done then forget_files(a, b, op.uids) end
+      else
+        note(a, ("%s in %s: nowhere to put them"):format(op.type, b.title))
+      end
+    end
   end
 
   return true
@@ -367,6 +470,7 @@ local function run_account(a)
       end
 
       fs.write(a.dir .. "/mailboxes", kept)
+      a.list = kept
 
       local inbox = { name = "INBOX", title = "INBOX" }
 
@@ -381,6 +485,19 @@ local function run_account(a)
 
       while ok and not s.broken do
         a.wake = false
+
+        -- What the window asked, then every mailbox it has open, then the
+        -- Inbox last - which is the one IDLE holds.
+        ok, swhy = do_ops(a, s)
+
+        for name in pairs(a.wanted) do
+          local b = box_named(a, name)
+
+          if ok and b and b.name ~= inbox.name then ok, swhy = sync(a, s, b, true) end
+        end
+
+        if not ok then break end
+
         ok, swhy = sync(a, s, inbox, false)
 
         if not ok then break end
@@ -402,7 +519,8 @@ local function run_account(a)
           local idle = s:idle()
           local until_ = seconds_from_now(IDLE_SECONDS)
 
-          while not s.news and not a.wake and not s.broken and sys.ticks() < until_ do
+          while not s.news and not a.wake and #a.ops == 0 and not s.broken
+                and sys.ticks() < until_ do
             coroutine.yield()
           end
 
@@ -432,22 +550,37 @@ end
 -- The accounts, from /Home/Mail.
 --------------------------------------------------------------------------
 
-for _, name in ipairs(fs.list(HOME) or {}) do
+-- An account read from its folder, ready to run; nil when the folder
+-- holds no account.
+local function account_from(name)
   local dir = HOME .. "/" .. name
   local account = fs.read(dir .. "/account")
 
-  if type(account) == "table" and type(account.imap) == "table" and account.imap.host then
-    local a = { address = account.address or name, account = account, dir = dir,
-                state = "waiting", arrived = {}, messages = 0, unseen = 0 }
-
-    a.co = coroutine.create(function() return run_account(a) end)
-    accounts[#accounts + 1] = a
+  if type(account) ~= "table" or type(account.imap) ~= "table" or not account.imap.host then
+    return nil
   end
+
+  local a = { address = account.address or name, account = account, dir = dir,
+              state = "waiting", arrived = {}, messages = 0, unseen = 0,
+              counts = {}, wanted = {}, ops = {} }
+
+  a.co = coroutine.create(function() return run_account(a) end)
+
+  return a
 end
 
+for _, name in ipairs(fs.list(HOME) or {}) do
+  local a = account_from(name)
+
+  if a then accounts[#accounts + 1] = a end
+end
+
+-- With no account, there is nothing to bring up to date; kept running, the
+-- window's Add Account has somewhere to send the first one.
 if #accounts == 0 then
-  print("maild: no accounts in " .. HOME)
-  return
+  print("maild: no accounts in " .. HOME .. " yet")
+
+  if ONCE then return end
 end
 
 publish()
@@ -457,6 +590,36 @@ local control = not ONCE and sys.endpoint() or nil
 
 if control then fs.send("/Running", { type = "register", name = "maild" }, control) end
 
+local function account_named(address)
+  for _, a in ipairs(accounts) do
+    if a.address == address then return a end
+  end
+
+  return nil
+end
+
+-- UIDs as the window sent them: whole numbers, at most a thousand.
+local function uids_of(list)
+  local out = {}
+
+  if type(list) ~= "table" then return out end
+
+  for i = 1, math.min(#list, 1000) do
+    local u = math.tointeger(list[i])
+
+    if u and u > 0 then out[#out + 1] = u end
+  end
+
+  return out
+end
+
+local FLAGGABLE = { seen = true, flagged = true }
+local MOVES = { move = true, archive = true, delete = true }
+
+-- When the window last asked: for a while after, the loop looks more often,
+-- so a press is answered in a fiftieth of a second rather than a tenth.
+local asked = 0
+
 local function answer()
   while control do
     local req, who = sys.receive(control, true)
@@ -464,20 +627,69 @@ local function answer()
     if not req then return end
 
     local reply = { ok = false }
+    local t = type(req) == "table" and req.type
+    local a = type(req) == "table" and account_named(tostring(req.account or ""))
 
-    if type(req) == "table" and req.type == "status" then
+    asked = sys.ticks()
+
+    if t == "status" then
       reply = status()
       reply.ok = true
-    elseif type(req) == "table" and req.type == "sync" then
-      for _, a in ipairs(accounts) do a.wake = true end
+    elseif t == "sync" then
+      for _, each in ipairs(accounts) do each.wake = true end
+      reply = { ok = true }
+    elseif t == "add" and type(req.account) == "string" and req.account:match("^[^/]+@[^/]+$") then
+      --
+      -- **An account the window has just written**, signed in now: its
+      -- folder read again, and one already running started over with what
+      -- the folder says - a password typed again after a refusal.
+      --
+      local fresh = account_from(req.account)
+
+      if fresh then
+        if a then
+          if a.session and not a.session.broken then a.session:fail("signing in again") end
+
+          for i, each in ipairs(accounts) do
+            if each == a then accounts[i] = fresh end
+          end
+        else
+          accounts[#accounts + 1] = fresh
+        end
+
+        note(fresh, "added")
+        publish()
+        reply = { ok = true }
+      else
+        reply = { ok = false, why = "no account in " .. HOME .. "/" .. req.account }
+      end
+    elseif t == "remove" and a then
+      if a.session and not a.session.broken then a.session:fail("removed") end
+
+      for i = #accounts, 1, -1 do
+        if accounts[i] == a then table.remove(accounts, i) end
+      end
+
+      note(a, "removed")
+      publish()
+      reply = { ok = true }
+    elseif t == "open" and a and type(req.mailbox) == "string" then
+      a.wanted[req.mailbox] = true
+      a.wake = true
+      reply = { ok = true }
+    elseif t == "flag" and a and type(req.mailbox) == "string" and FLAGGABLE[req.flag] then
+      a.ops[#a.ops + 1] = { type = "flag", mailbox = req.mailbox, uids = uids_of(req.uids),
+                            flag = req.flag, on = req.on ~= false }
+      reply = { ok = true }
+    elseif MOVES[t] and a and type(req.mailbox) == "string" then
+      a.ops[#a.ops + 1] = { type = t, mailbox = req.mailbox, uids = uids_of(req.uids),
+                            to = type(req.to) == "string" and req.to or nil }
       reply = { ok = true }
     end
 
     pcall(sys.reply, who, reply)
   end
 end
-
-local tick = math.max(1, hz // 10)
 
 while true do
   local conns, alive = {}, 0
@@ -509,9 +721,11 @@ while true do
     if coroutine.status(a.co) ~= "dead" then alive = alive + 1 end
   end
 
-  if alive == 0 then break end
+  if alive == 0 and (ONCE or not control) then break end
 
   answer()
+
+  local tick = math.max(1, (sys.ticks() - asked < 30 * counter_hz) and hz // 50 or hz // 10)
 
   if #conns > 0 then
     fs.poll("/Network", conns, {}, nil, tick)

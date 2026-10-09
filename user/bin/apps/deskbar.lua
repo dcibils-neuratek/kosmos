@@ -2526,6 +2526,28 @@ if not tostring(args or ""):match("%-%-again") then
   if started > 0 then
     say(("started %d at login"):format(started))
   end
+
+  --
+  -- **Mail's half that runs without the window** (`docs/mail.md`, M4):
+  -- `maild`, started at login when `/Home/Mail` holds an account, so new
+  -- mail is said with Mail closed. Through `launch`, as everything above,
+  -- and the window manager lends it the keyring's mail door because its
+  -- header asks for it.
+  --
+  local has_mail = false
+
+  for _, name in ipairs(fs.list("/Home/Mail") or {}) do
+    if type(fs.read("/Home/Mail/" .. name .. "/account")) == "table" then
+      has_mail = true
+      break
+    end
+  end
+
+  if has_mail and not fs.getattr("/Running/maild") then
+    local sent = fs.send("/Running/wm", { type = "launch", program = "maild" })
+
+    print(("deskbar: launch maild -> %s"):format(tostring(sent)))
+  end
 end
 
 -- Repainted every pass while a program breathes on the bar - the passes

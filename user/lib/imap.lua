@@ -19,7 +19,8 @@
 --                                         message, into the file at `path`
 --   s:flag(uids, flag, on)           flag "seen", "flagged", "answered",
 --                                    "deleted", "draft", or a keyword
---   s:move(uids, to)  s:append(name, path, flags)  s:logout()
+--   s:move(uids, to)  s:append(name, path, flags)  s:expunge(uids)
+--   s:logout()
 --   s:idle()  s:done()               held open for news; `s.news` is set
 --                                    when the mailbox changes, and `done`
 --                                    ends it
@@ -914,6 +915,12 @@ function S:done()
     self:write("DONE\r\n")
     self.idle_open = false
   end
+end
+
+-- What is marked deleted taken away: these by UID where UIDPLUS lets that
+-- touch only them, and otherwise all the mailbox's deleted.
+function S:expunge(uids)
+  return request(self, { self.can.UIDPLUS and ("UID EXPUNGE " .. imap.set(uids)) or "EXPUNGE" })
 end
 
 function S:logout()

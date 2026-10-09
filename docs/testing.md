@@ -21747,3 +21747,45 @@ deleted on the server, `sync` asked, and both caught up - `idle 3 2`; and
 no line of `maild`'s with the password in it. **Control**: a message gone
 from the server left in place, it fails twice, "a message deleted on the
 server not taken away".
+
+## 18.484 Mail M4: the window, and Add Account
+
+`user/bin/apps/mail.lua` (`docs/mail.md` M4, `docs/mail.html`): a direct
+window drawn with `pixelkit` - the mailboxes by their use with their unread
+counts, the list newest first by UID, the message on the right. Its text is
+set by Write's engine on **one page as wide as the pane and as tall as the
+text**: `pageset`'s `endless`, the one thing the engine gained, held by
+`test_pageset` (240 lines on one page, as tall as its lines and margins).
+Quoted lines are a Quote paragraph, web addresses are runs in the link
+colour, and a press on one opens it in the browser; an HTML-only message
+is shown as its text until M5, and says so. What a person does - read,
+flag, unread, archive, delete - is shown in the frame it was pressed and
+then asked of `maild`, which makes the server agree; what `maild` learns
+comes back through `/Temporary/maild/status`, with a `version`, read on the
+window's own clock, since Kosmos has no message that does not wait for its
+answer and `maild` must never wait on a window. Opening a mailbox reads
+only the attributes of the rows on the screen, so the list file the design
+left to measure is not needed.
+
+**Add Account** (Diego, 8 October: "lets configure my gmail account as
+the first account. we need a way to add accounts", and "IMAP first, POP3
+later"): Google with an app password and Google's servers shown, or any
+IMAP server, its addresses guessed from the domain. The password goes into
+the keyring from the window and is let go; `maild` - which now keeps
+running with no account, and adds or removes one when asked - signs in, and
+a refusal is shown in the server's words. Cancel keeps nothing. The Deskbar
+starts `maild` at login when `/Home/Mail` holds an account. Mail wears
+Haiku's `App_Mail`, from the same commit as the rest.
+
+`x86-mail-3`, 13 checks, on the desktop against `mailpeer.py`: Mail opened
+with no account shows Add Account; Other IMAP typed into as a person would,
+the server's certificate trusted through `/Home/Preferences/Authorities`;
+signed in, the account file holding its server and no password, and the
+password nowhere on the console; the Inbox newest first; the photos (an
+attachment), the route (HTML) and the café (Windows-1252, a quote) each
+read, the café's text set and its paper on the screen; read, flag, Delete
+and Archive each on the server - the Trash and the Archive holding what
+went. **Control**: a message shown without being marked read, it fails,
+"reading a message did not mark it seen on the server".
+
+The whole x86 gate: 55 of 55 in 5:53.

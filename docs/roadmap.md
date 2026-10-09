@@ -8223,6 +8223,21 @@ server's changes caught up (18.483). Started by hand or by `maild &` for
 now: **starting it with the desktop goes with M4**, the window, where a
 desktop suite can hold it. Next: M4.
 
+**AGREED, 8 October - accounts added in Mail, IMAP first, POP3 later.**
+Diego: "when ready lets configure my gmail account as the first account.
+we need a way to add accounts and configure pop3 settings to add the
+account", with Google's POP settings - and asked how Gmail should connect,
+"IMAP first, POP3 later". So M4 gains **Add Account** (drawn in
+`docs/mail.html`): Google with an app password and its servers shown
+(imap.gmail.com 993, smtp.gmail.com 587), or any IMAP server by its
+addresses; the password typed by Diego into the window and kept by the
+keyring; `maild` signs in before the account is kept. **POP3 is its own
+step after M9** - `pop3.lua`, POP3 in `mailpeer.py`, and a path in `maild`
+that downloads without folders or flags (pop.gmail.com 995). Diego's own
+Gmail goes in on the M700 once M4 is there, typed by him.
+**M4 done** (18.484): the window, Add Account, `maild` started at login.
+Next: M5, HTML messages in the Web Kit.
+
 ### The optimisation phase - after the applications
 
 **AGREED on 7 October - applications first, then a phase of optimising.**

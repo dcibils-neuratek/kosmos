@@ -204,11 +204,15 @@ SUITES = [
     # Kit, 420 KB whole, a flag, a move and an append on the server, CONDSTORE,
     # IDLE, and a message sent with STARTTLS. Its second part is `maild`
     # (M3): an account kept as files, IDLE's arrival said, the server's
-    # changes caught up.
+    # changes caught up. Its third is the window (M4): an account added
+    # through Add Account, messages read, flagged, deleted and archived.
     Suite("arm-mail", ["python3", "tools/run_mail.py", ARM]),
     Suite("x86-mail", ["python3", "tools/run_mail.py", X86], x86=True),
     Suite("arm-mail-2", ["python3", "tools/run_mail.py", ARM, "--part", "2"]),
     Suite("x86-mail-2", ["python3", "tools/run_mail.py", X86, "--part", "2"],
+          x86=True),
+    Suite("arm-mail-3", ["python3", "tools/run_mail.py", ARM, "--part", "3"]),
+    Suite("x86-mail-3", ["python3", "tools/run_mail.py", X86, "--part", "3"],
           x86=True),
 
     # **smbfs connects, signed and sealed** (`docs/sharing.md` N2 and N4),

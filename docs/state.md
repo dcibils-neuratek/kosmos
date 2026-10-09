@@ -28,9 +28,11 @@ then the split".
   (the connection half out of `http.lua`), `tools/mailpeer.py`, `x86-mail`
   20 (18.482); **M3** `maild`, `x86-mail-2` 12 (18.483).
 
-**Next**: Mail M4, the window - mailboxes, the list, a plain-text message
-set by Write's engine; read, flag, archive, delete, move - and `maild`
-started with the desktop. After Mail, the window-server split (D2 onwards). On the roadmap
+  **M4** the window and Add Account (IMAP first, POP3 later - Diego),
+  `x86-mail-3` 13 (18.484).
+
+**Next**: Diego adds his Gmail on the M700 through Add Account (he types
+the app password; nobody else does). Then M5, HTML messages. After Mail, the window-server split (D2 onwards). On the roadmap
 meanwhile: tooltips on the top status icons, the games' 2x and full-screen
 sizes.
 

@@ -183,11 +183,29 @@ ICONS = {
     "align-center":  ("text-align-center", None),
     "align-right":   ("text-align-end", None),
     "align-justify": ("text-align-justify", None),
+
+    # Kosmos Mail (`docs/mail.html`): the mailboxes by their use, and the
+    # header's buttons - write, reply, reply to all, forward, archive, flag,
+    # read or not - and an attachment's clip. Drafts is `page`, Trash
+    # `trash`, Get Mail `reload`, as they are.
+    "inbox":      ("inbox", None),
+    "sent":       ("send", None),
+    "archive":    ("archive", None),
+    "junk":       ("ban", None),
+    "flag":       ("flag", None),
+    "flagged":    ("flag", None),
+    "compose":    ("square-pen", None),
+    "reply":      ("reply", None),
+    "replyall":   ("reply-all", None),
+    "forwardmail": ("forward", None),
+    "mail":       ("mail", None),
+    "mailopen":   ("mail-open", None),
+    "attachment": ("paperclip", None),
 }
 
 # The ones drawn filled as well as stroked - Lucide's shapes are outlines,
 # and a star that says yes is a solid one.
-FILLED = {"starred"}
+FILLED = {"starred", "flagged"}
 
 
 def body(lucide):

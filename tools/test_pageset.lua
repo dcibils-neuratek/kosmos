@@ -1080,6 +1080,30 @@ do
         "a comment over several lines is not a rectangle on each")
 end
 
+-- 23. **One endless page** (`docs/mail.md` M4): a message in Mail, as many
+-- lines as fill four A4 pages set on one, as tall as its lines and its two
+-- margins, with nothing broken off and no footer room left.
+do
+  local body = {}
+  for i = 1, 240 do body[i] = para("Body", "line " .. i) end
+  local ldoc = doc_of(body, { footer = { on = false } })
+  local paged = pageset.set(ldoc, measure)
+  local one = pageset.set(ldoc, measure, nil, { endless = true })
+  local lines, tall = 0, 0
+
+  for _, l in ipairs(one.pages[1].lines) do
+    lines = lines + 1
+    tall = math.max(tall, l.baseline_pt - l.ascent_pt + l.height_pt)
+  end
+
+  check(#paged.pages > 1 and #one.pages == 1 and lines == 240,
+        ("an endless page broke: %d pages, %d lines"):format(#one.pages, lines))
+  -- Its text's foot, the last paragraph's space after it, and the margin.
+  local after = one.pages[1].height_pt - PT(25) - tall
+  check(after >= 0 and after <= 12,
+        ("an endless page is not as tall as its text and its margins (%.2f over)"):format(after))
+end
+
 if fails > 0 then
   print(("pageset: %d of %d checks failed"):format(fails, checks + fails))
   os.exit(1)
