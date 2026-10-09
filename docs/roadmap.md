@@ -8206,7 +8206,11 @@ tidy and elegant split so we dont mix lua and c in places where should be
 c and places where it should be lua". So: IDE tutorial part one, then Kosmos
 Mail (designed first, built as an IDE project), then the split - D2 onwards,
 with D1's remaining questions (who draws an ordinary window, the name) put
-to him when its turn comes.
+to him when its turn comes. **D1 DECIDED, 9 October**, on the Kosmos Board:
+every window draws itself - "Every window draws itself (recommended)" - and
+the server is **the window server** - "window server" - `windowserver` at
+`/Running/windowserver` (`docs/astra-display.md`, *Decided*). D2 is next
+after Mail.
 **The order again, Diego, 8 October**: "do chrome step 3 first, then mail,
 then the split" - the window manager's old chrome taken out first, which
 is the split's own direction (every window drawing itself), then Kosmos

@@ -1,15 +1,15 @@
 <!doctype html>
 <!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
 <!--
-  Astra's display server, drawn: the window manager as one Lua process
-  today, and split - a display server in C under Astra's shell in Lua - as
+  Astra's window server, drawn: the window manager as one Lua process
+  today, and split - a window server in C under Astra's shell in Lua - as
   docs/astra-display.md proposes. For Diego to decide, 7 October 2026.
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Astra's Display Server</title>
+<title>Astra's Window Server</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
@@ -84,8 +84,8 @@
 </head>
 <body>
 <div class="wrap">
-<h1>Astra's Display Server</h1>
-<p class="lead">Astra's window manager today, and split: a display server in C for everything a frame or a key waits on, under Astra's shell in Lua for everything a person decides. Blue-green is C, amber is Lua, and the new parts are outlined.</p>
+<h1>Astra's Window Server</h1>
+<p class="lead">Astra's window manager today, and split: a window server in C for everything a frame or a key waits on, under Astra's shell in Lua for everything a person decides. Blue-green is C, amber is Lua, and the new parts are outlined.</p>
 
 <div class="cols">
   <section class="col">
@@ -116,7 +116,7 @@
       <div class="row">
         <div class="box lua"><span class="lang">Lua</span><b>Astra's shell</b>
           <ul><li>placement, focus, stacking</li><li>title bars and tabs, in the look</li><li>menus, drag and drop</li><li>Super's shortcuts</li></ul></div>
-        <div class="box c new"><span class="lang">C</span><b>display server</b>
+        <div class="box c new"><span class="lang">C</span><b>window server</b>
           <ul><li>the screen, the cursor</li><li>every window's surfaces, stacking, damage</li><li>composing</li><li>input routed to windows</li><li>commit and poll, event queues</li></ul></div>
       </div>
       <div class="wire"><span class="tag msg">structs</span> the manager door: make, move, raise, focus; presses on decorations, the keys it asked for</div>
@@ -134,12 +134,12 @@
   <div class="num"><b>36 → 9</b><span>collections in 20 seconds, after D0 (QEMU)</span></div>
 </div>
 
-<h3>For Diego</h3>
+<h3>Decided by Diego, 9 October</h3>
 <ol class="q">
-  <li><b>The split, as drawn.</b> <span class="rec">Recommended: not urgent on the M700, right by the layer rule and for the Pi 5.</span></li>
-  <li><b>Who draws an ordinary window:</b> (b) every window itself, with gfx in its own process, or (a) the display server carrying out drawing commands in C. <span class="rec">Recommended: (b) - a smaller server, and no drawing commands crossing processes.</span></li>
-  <li><b>The name:</b> <code>display</code>, at <code>/Running/display</code>.</li>
-  <li><b>When:</b> after tutorial part one and Mail, or sooner.</li>
+  <li><b>The split, as drawn:</b> a window server in C, Astra's shell in Lua.</li>
+  <li><b>Who draws an ordinary window:</b> (b) every window draws itself, with gfx in its own process. <span class="rec">"Every window draws itself (recommended)".</span></li>
+  <li><b>The name:</b> the window server, <code>windowserver</code> at <code>/Running/windowserver</code>.</li>
+  <li><b>When:</b> after Mail, as the roadmap orders it.</li>
 </ol>
 </div>
 </body>

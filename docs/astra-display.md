@@ -1,4 +1,4 @@
-# Astra's display server - a design, for Diego to decide
+# Astra's window server - a design, decided
 
 Written 7 October 2026, after Astra was measured (`testing.md` 18.438) and
 composing's garbage taken away (18.439). Nothing here is built.
@@ -56,7 +56,7 @@ nine thousand lines of Lua), which:
                  ├─ commit, poll, events (structs) ───────┤
                  └─ open, menus, clipboard (tables) ──┐    │
                                                       ▼    ▼
-   Astra's shell (Lua)  ◄── manager door (structs) ── display server (C)
+   Astra's shell (Lua)  ◄── manager door (structs) ── window server (C)
    placement, focus, title bars,                       screen, surfaces,
    menus, drag and drop, the look,                     stacking, damage,
    shortcuts, the Deskbar's place                      composing, cursor,
@@ -66,7 +66,7 @@ nine thousand lines of Lua), which:
                                     console: keys, pointer ─┘
 ```
 
-**The display server, in C** (`user/servers/display.c`): owns the screen,
+**The window server, in C** (`user/servers/windowserver.c`): owns the screen,
 the back buffer and the hardware cursor; holds every window's surfaces,
 place, stacking and flags; keeps the damage and composes it; reads the
 console and routes each key and press to the window it belongs to, holding
@@ -76,7 +76,7 @@ the frame path, no Lua on it. It decides nothing a person would choose.
 **Astra's shell, in Lua** (what `wm.lua` becomes): every decision - where a
 window opens, which has the focus, what stacks over what, how a title bar
 looks and what pressing it does, menus, drag and drop, Super's shortcuts,
-the look. It tells the display server through a door of its own, the
+the look. It tells the window server through a door of its own, the
 **manager door**, in structs: make a window here, move it, raise it, focus
 it, give me presses on decorations and these keys. The tables applications
 send for policy - open, menus, the clipboard - still reach it on
@@ -84,7 +84,7 @@ send for policy - open, menus, the clipboard - still reach it on
 
 ## The one decision under the split: who draws an ordinary window
 
-The display server would have to carry out every kit window's drawing
+The window server would have to carry out every kit window's drawing
 commands, which are Lua tables today. Two ways:
 
 **(a) The server carries them out** - in C, the commands turned into a
@@ -106,23 +106,27 @@ desktop.
 ## Steps, the desktop working after each
 
 1. **D0, done** - composing makes no garbage (0.11.43, 18.439).
-2. **D1** - this design agreed, with its diagram (`astra-display.png`).
-3. **D2** - the UI kit draws into its window's own surface (if (b)): every
+2. **D1, decided** - this design, with its diagram (`astra-display.png`).
+3. **D2** - the UI kit draws into its window's own surface: every
    window a direct one; the drawing commands retired. Measured.
-4. **D3** - the display server: the screen, surfaces, stacking, damage and
+4. **D3** - the window server: the screen, surfaces, stacking, damage and
    composing move to C; the window manager tells it through the manager
    door. `wm.lua` loses `compose.lua` and the pixel work around it.
-5. **D4** - the frame path: commit and poll answered by the display server,
+5. **D4** - the frame path: commit and poll answered by the window server,
    held polls and event queues with it.
 6. **D5** - input routing: keys and presses from the console to windows in
    C; the shell given the keys and presses it asked for.
 7. **D6** - measured again: the M700, and the Pi 5 when it is here.
 
-## For Diego
+## Decided
 
-1. **The split, as drawn** - a display server in C, Astra's shell in Lua.
-2. **Who draws an ordinary window**: (b) every window itself, recommended;
-   or (a) the server carrying out the commands.
-3. **The name**: `display`, at `/Running/display` - or another.
-4. **When**: after tutorial part one and Mail, as the roadmap orders them;
-   or sooner.
+Diego answered D1 on the Kosmos Board, 9 October 2026:
+
+1. **The split, as drawn** - a window server in C, Astra's shell in Lua
+   (agreed with the order of the work, 7 and 8 October).
+2. **Who draws an ordinary window: (b), every window draws itself** - "Every
+   window draws itself (recommended)". The drawing commands stop crossing
+   processes; the server composes surfaces and routes input.
+3. **The name: the window server** - "window server". `windowserver` at
+   `/Running/windowserver`, its source `user/servers/windowserver.c`.
+4. **When**: after Mail, as the roadmap orders it (7 and 8 October).
