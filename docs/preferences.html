@@ -306,6 +306,20 @@
 
   /* Where the setting lives today. Outside the card on purpose: it is a
      note for whoever builds this, not a row somebody can press. */
+  /* the Mouse page (roadmap.md 6zi): a slider with its two ends named, and
+     a place to try a double click at the speed chosen */
+  .scale { display: flex; flex-direction: column; gap: 2px; flex: none; width: 210px; }
+  .scale input { width: 100%; accent-color: var(--w-accent); margin: 0; }
+  .scale .ends { display: flex; justify-content: space-between; color: var(--w-dim); font-size: 11px; }
+  .try {
+    display: flex; align-items: center; gap: 12px;
+    flex: none; padding: 6px 12px 6px 8px;
+    border: 1px dashed var(--w-line); border-radius: 8px;
+    color: var(--w-dim); font-size: 12px; cursor: default; user-select: none;
+  }
+  .try svg { width: 30px; height: 30px; color: var(--w-accent); }
+  .try.open { color: var(--w-ink); }
+
   .lives {
     font-family: var(--mono);
     font-size: 10.5px;
@@ -361,6 +375,12 @@ Appearance, because they are what the machine looks like.</p>
 
 </div>
 </div>
+
+<h2>The Mouse page</h2>
+<p>Diego, 27 September 2026: "preferences app need a mouse setting panel (pointer speed, mouse click speed)" (<code>roadmap.md</code> 6zi). Drawn on 9 October, beside Keyboard.</p>
+<p><b>Pointer speed</b> is the board's, and is there already: every relative device - a mouse, a TrackPoint, a touchpad - adds into one position in <code>hal/pc/pointer.c</code>, scaled by one number that <code>pointer</code> sets at the prompt and that is forgotten at a restart. The page sets the same number, keeps it in <code>/Home/Preferences/mouse</code>, and it is given back at login. Eleven steps, the middle one today's 32. <b>A tablet</b> - QEMU's pointer - says where it is rather than how far it moved, so it has no speed: the row says so rather than offering a slider that does nothing, and only then.</p>
+<p><b>Double-click speed</b> is a second today, one number in the kit that every window's double click asks (a title bar's, a list's, Tracker's), and Maps keeps 0.4 s of its own. It becomes a setting every window reads through the kit, Maps' own copy taken out: seven steps from 0.9 s to 0.2 s, 0.5 s in the middle as macOS and Windows have it. <b>Try it</b> is the folder at the end: it opens only when two clicks come within the span chosen, so the speed is felt rather than read.</p>
+<p>Both apply the moment they change, as every row here does.</p>
 
 <h2>Why this is a list and not a server</h2>
 
@@ -433,6 +453,7 @@ const CATS = [
   { id:"gap1", gap:true },
   { id:"network", name:"Network", icon:"M2 6a9 9 0 0112 0M4.5 8.5a5.5 5.5 0 017 0M8 12h.01" },
   { id:"keyboard", name:"Keyboard", icon:"M2 4h12v8H2zM4.5 6.5h.01M7 6.5h.01M9.5 6.5h.01M12 6.5h.01M5 9.5h6" },
+  { id:"mouse", name:"Mouse", icon:"M8 2a4 4 0 014 4v4a4 4 0 01-8 0V6a4 4 0 014-4zM8 2v4" },
   { id:"startup", name:"Startup", icon:"M8 2l5 3v6l-5 3-5-3V5z" },
   { id:"datetime", name:"Date & Time", icon:"M8 2a6 6 0 100 12A6 6 0 008 2zM8 5v3.2l2 1.2" },
   { id:"gap2", gap:true },
@@ -527,6 +548,20 @@ keyboard:
     row("Show all shortcuts", "", dd("Open")),
   ], "the window manager"),
 
+mouse:
+  grp("Pointer", [
+    row("Speed", "How far the arrow goes for a move of a mouse, a TrackPoint or a touchpad",
+        `<div class="scale"><input type="range" min="1" max="11" value="6" id="speed"><div class="ends"><span>Slow</span><span>Fast</span></div></div>`),
+    row("A tablet says where it is", "QEMU's pointer is one: it goes where the tablet is, and has no speed to set. Shown when there is no other",
+        `<div class="value">Not for a tablet</div>`),
+  ], "/Home/Preferences/mouse &middot; speed, given to the board at login, as <b>pointer</b> does") +
+  grp("Double click", [
+    row("Speed", "How soon the second click has to come to make one double click",
+        `<div class="scale"><input type="range" min="0" max="6" value="3" id="span"><div class="ends"><span>Slow</span><span id="span-shown">0.5 s</span><span>Fast</span></div></div>`),
+    row("Try it", "Double-click the folder; it opens only at the speed chosen",
+        `<div class="try" id="try"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M3 8a2 2 0 012-2h7l3 3h12a2 2 0 012 2v13a2 2 0 01-2 2H5a2 2 0 01-2-2z" id="folder"/></svg><span id="try-said">Closed</span></div>`),
+  ], "/Home/Preferences/mouse &middot; double_click, read by every window through the kit"),
+
 startup:
   grp("What runs when the machine starts", [
     row("Deskbar", "", sw(true)),
@@ -581,6 +616,26 @@ catsEl.addEventListener("click", e => {
   if (page) page.classList.add("on");
   titleEl.textContent = CATS.find(c => c.id === el.dataset.id).name;
 });
+
+// The Mouse page: the double click's span from its slider - 0.9 s slow to
+// 0.2 fast - and the folder that opens only when two clicks come within it.
+const SPANS = [900, 750, 600, 500, 400, 300, 200];
+let lastClick = 0;
+document.getElementById("span").addEventListener("input", e => {
+  document.getElementById("span-shown").textContent = (SPANS[e.target.value] / 1000) + " s";
+});
+document.getElementById("try").addEventListener("mousedown", () => {
+  const now = performance.now(), span = SPANS[document.getElementById("span").value];
+  const t = document.getElementById("try");
+  if (now - lastClick < span) {
+    t.classList.toggle("open");
+    document.getElementById("try-said").textContent = t.classList.contains("open") ? "Opened" : "Closed";
+    lastClick = 0;
+  } else {
+    lastClick = now;
+  }
+});
+if (location.hash === "#mouse") document.querySelector('.cat[data-id="mouse"]').click();
 
 document.addEventListener("click", e => {
   const s = e.target.closest(".sw");
