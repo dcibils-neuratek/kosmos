@@ -893,7 +893,16 @@ PICTURE_WIDE = ("From: Picture Post <pictures@example.net>\r\n"
                 "Content-Type: text/html; charset=utf-8\r\n"
                 "\r\n"
                 "<div style=\"width:500px\"><p>A column of words.</p>"
-                "<img width=\"1400\" height=\"700\" src=\"http://10.0.2.2:9/big.png\"></div>\r\n").encode()
+                "<img width=\"1400\" height=\"700\" src=\"http://10.0.2.2:9/big.png\"></div>"
+                # As newsletters are made: a table, which grows to hold its
+                # picture before a percentage can hold it back (the M700).
+                "<table><tr><td><p>And in a table.</p>"
+                "<img width=\"1456\" height=\"728\" src=\"http://10.0.2.2:9/bigger.png\"></td></tr></table>"
+                # And as Substack makes them (the M700): a table
+                # of 100% whose cell says the picture's own 1456, which a
+                # browser takes as a wish and NetSurf as a floor.
+                "<table width=\"100%\"><tr><td></td><td class=\"content\" width=\"1456\">"
+                "<img width=\"1456\" height=\"819\" src=\"http://10.0.2.2:9/biggest.png\"></td></tr></table>\r\n").encode()
 
 
 def part4(image):

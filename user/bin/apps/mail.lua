@@ -657,10 +657,25 @@ end
 -- October); with it, only a layout that is itself too wide is fitted.
 local MAIL_SHEET = "<style>img { max-width: 100% !important; height: auto !important }</style>"
 
+--
+-- **A width written as an attribute, wider than the pane, made a wish**:
+-- `width="1456"` becomes `width="100%"`. A browser takes a table cell's
+-- width as what it would like and keeps its table to 100%; NetSurf takes
+-- it as a floor, and Substack's cell holding its picture (the
+-- M700, 9 October) made the page 1476 wide. A width in a style - a
+-- newsletter's own 600 table - is the sender's layout and is left alone,
+-- and fitted. Once, when the message is opened.
+--
+local function widths_as_wishes(html, most)
+  return (html:gsub("(%s[Ww][Ii][Dd][Tt][Hh]%s*=%s*)([\"']?)(%d+)([\"']?)", function(lead, q1, n, q2)
+    if tonumber(n) > most then return lead .. '"100%"' end
+  end))
+end
+
 local function lay_out_html(pw, ph)
   if not message.page then
     local t0 = sys.ticks()
-    local doc, why = web.parse(MAIL_SHEET .. message.html, "utf-8")
+    local doc, why = web.parse(MAIL_SHEET .. widths_as_wishes(message.html, pw), "utf-8")
 
     if not doc then
       print("mail: its HTML would not parse: " .. tostring(why))

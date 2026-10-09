@@ -21968,3 +21968,14 @@ too wide - another newsletter's table - is fitted.
 100%", beside the 908 table still "fitted at 65%"; `x86-mail-3` 19, its
 picture sent inside the message still shown. **Control**: the rule left
 out, "1408 wide, fitted at 50%", it fails.
+
+**And 0.11.94 was not enough, on the M700** (0.11.95): the newsletter was still
+"1476 wide, fitted at 50%". Its HTML, read from the M700 into this Mac's
+scratch folder and nowhere else, has Substack's shape: a table of
+`width="100%"` whose cell says `width="1456"`, the picture's own width. A
+browser takes a cell's width as a wish and keeps the table to 100%; NetSurf
+takes it as a floor. **Mail now makes a width attribute wider than the pane
+`100%`** when it opens a message; a width in a style - the sender's layout -
+is left alone and fitted. `x86-mail-4` 23, its big-picture message now also
+in Substack's shape: on 0.11.94 it failed, "1472 wide, fitted at 50%" -
+the control - and on 0.11.95 it passes, "590 wide, fitted at 100%".
