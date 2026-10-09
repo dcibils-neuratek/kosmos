@@ -2,9 +2,44 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-09 (0.11.91; the Kosmos Board B1-B2)
+Last updated: 2026-10-09, night (0.11.112; Astra D2 complete)
 
 ---
+
+## 9 October, night: POP3, the Mouse page, Astra D2 - every window draws itself
+
+**Pushed: up to 0.11.103** (0ac525f5). **On `main`, not pushed:
+0.11.104-0.11.112** - a push is Diego's yes, after the scan for his data.
+
+- **Mail**: M6-M8 (0.11.92-0.11.101), POP3 (0.11.102, `pop3.lua`,
+  `x86-mail-7`), and an Escape held until the next key in Mail, its
+  composer and Maps fixed on the way. **Add Account's Cancel removed an
+  account already kept** when its address was added again - fixed in
+  0.11.104 (18.499) - and is the likely reason Diego's Gmail account on
+  the M700 lost its `account` file, its mailboxes and sixty messages after
+  the restart onto 0.11.103. **Restoring it** - the account file written
+  back, the password still in the keyring - **waits for Diego's yes.**
+- **The click** is a press and a release everywhere (0.11.98-0.11.100);
+  Groove launches clips and scenes on the press, Diego's answer
+  (0.11.103).
+- **Preferences' Mouse page** (0.11.105, 6zi, `x86-mouse`): the pointer's
+  speed kept and applied at login (not on a tablet), the double click's
+  span told to every window; the slow end 1 s, as QEMU needs.
+- **Astra D2, complete** (0.11.106-0.11.112, `testing.md` 18.501-18.507,
+  `x86-drawself`): every window draws itself into a region of its own and
+  commits; the window manager composes and draws nobody's pixels; the
+  drawing commands are retired and `design.md` §7.4 says A. Held to the
+  window manager's own drawing in every pixel at 100 and 150 per cent
+  before the commands went.
+- **The M700 runs 0.11.103**, Mail without an account (above). 0.11.104
+  onward is not on it: restart only when Diego says its monitor is on.
+
+**Next**: Diego's answers - the Gmail account restored, a push, the M700
+onto 0.11.112 (D2 measured there, the design's D6) - then Astra D3, the
+window server in C behind a manager door, which starts with its plan. The
+board's queue after the Astra card: the M700's slow TCP, SMB discovery,
+Mail's status bar.
+
 
 ## 9 October: Mail on Diego's Gmail, the live list, the Kosmos Board
 
