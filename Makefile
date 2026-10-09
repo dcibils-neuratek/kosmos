@@ -868,6 +868,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/compress/base64.c \
              user/kits/compress/base64_core.c \
              user/kits/mail/mime.c \
+             user/kits/mail/mailbuild.c \
              user/kits/mail/charset.c \
              user/kits/mail/mail_kosmos.c \
              user/kits/synth/synth_dsp.c \
@@ -2292,7 +2293,7 @@ $(HOSTDIR)/test_map: tools/test_map.c $(MAP_PURE) $(wildcard user/kits/map/*.h) 
 # **The Mail Kit's reading** (`user/kits/mail/mime.c`, `docs/mail.md` M1):
 # messages written in the test, each answer held to the byte. The charset
 # tables are libparserutils', read as they ship.
-MAIL_PURE := user/kits/mail/mime.c user/kits/mail/charset.c user/kits/compress/base64_core.c
+MAIL_PURE := user/kits/mail/mime.c user/kits/mail/mailbuild.c user/kits/mail/charset.c user/kits/compress/base64_core.c
 PARSERUTILS_TABLES := runtime/upstream/netsurf/libparserutils/src/charset/codecs
 $(HOSTDIR)/test_mail: tools/test_mail.c $(MAIL_PURE) user/kits/mail/mime.h \
                       user/kits/compress/base64_core.h

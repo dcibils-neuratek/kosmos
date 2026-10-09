@@ -21888,3 +21888,43 @@ Load Pictures, then "1 of 1 pictures came" and one request; its picture is
 kept in `build/mail/mail-html.png`. `x86-browser-1` and `-2` pass with the
 pictures moved. **Control**: the message's own picture never handed over,
 it fails, "0 sent inside".
+
+## 18.490 Mail M6: writing - the composer, Reply, Forward, drafts, sending
+
+`docs/mail.md` M6. **The Mail Kit writes a message** (`mailbuild.c`,
+`mail.build` into a region): RFC 5322's header, names and subject as
+encoded words sized to the room left on their line, a plain-text body in
+UTF-8 - as it is when it is ASCII in short lines, quoted-printable when it
+is not - and no Bcc in any header. **The composer** (`mailcompose.lua`, a
+library: whatever wants a message written opens it) is a window of its
+own, polled by Mail beside its own: To, Cc and Bcc as chips completed from
+the mail kept (`addresses.lua`, from each message's `from` and its new
+`to` attribute, `FACTS` 3), the subject, and Text Editor's page as the
+body. Reply, Reply All and Forward begin it from a message - everyone but
+the account, the subject's Re:, the text quoted under "On 9 October 2026,
+Priya Nair wrote:", In-Reply-To and References. **`maild` sends**: the
+composer writes the message and its envelope into `/Home/Mail/Outbox` and
+asks; SMTP is stepped by `maild`'s own loop beside IMAP, a copy is put in
+Sent where the server does not keep one (Gmail does), the answered message
+is flagged Answered, and a refusal is said in the header and the message
+kept to try again. **A draft** is in `Drafts here` two seconds after the
+typing stops; closed, its copy goes to the account's Drafts, replacing the
+one before; pressed in Drafts it opens in a composer again, and once sent
+its copy is taken away.
+
+Two bugs the suite found: `maild` kept its record of draft copies in a
+file named `drafts`, and the disk's names are one whatever their case -
+it was the Drafts mailbox's folder, and the Drafts mailbox could not be
+made (`drafts.kept` now); and a telnet session is not handed Mail's
+passwords, rightly, so the suite signs in through Add Account.
+
+`test_mail` 44 (14 new): a plain message to the byte, one of encoded
+names, subject and body read back whole, too little room said.
+**Control**: encoded words sized without the line's room, a line 196 long.
+`x86-mail-4` 21: Reply All to Priya's message from the Mac's peer, a new
+message to Ana completed from "ana" with Bob in Bcc, a draft closed with
+Super+Q, kept on the server as \Draft, opened from Drafts and sent whole
+with its copy gone, and nobody@refused.example.com refused with the
+server's 550 and kept in the Outbox; the composer's picture is kept in
+`build/mail/composer.png`. **Control**: the Bcc written as the Cc, it
+fails twice - "the Bcc was in the message", and the reply's real Cc gone.

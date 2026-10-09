@@ -79,4 +79,30 @@ size_t mime_preview(const struct mime_msg *m, char *out, size_t room);
  * not known is taken as UTF-8. How many bytes; never more than `room`. */
 size_t mime_to_utf8(const char *charset, const uint8_t *in, size_t n, uint8_t *out, size_t room);
 
+/*
+ * **Writing** (`mailbuild.c`, `docs/mail.md` M6): what a person wrote, as a
+ * message. Strings are UTF-8 and NUL-ended; `in_reply_to` and `references`
+ * may be NULL or "". The Bcc is not here: it is in no header.
+ */
+struct mail_draft {
+    const char *from_name, *from_address;
+    const struct mime_address *to;  size_t nto;
+    const struct mime_address *cc;  size_t ncc;
+    const char *subject;
+    const uint8_t *text;  size_t text_len;      /* lines ended by LF or CRLF */
+    int64_t date;                               /* seconds since 1970, UTC */
+    int zone;                                   /* minutes east of UTC */
+    const char *message_id;                     /* without its < > */
+    const char *in_reply_to;                    /* the id replied to, without < > */
+    const char *references;                     /* "<a@x> <b@y>", as the field holds it */
+};
+
+/* The message, into `out`; how many bytes it is. When that is more than
+ * `room`, what is in `out` is cut short and the answer is the room it needs. */
+size_t mail_build(const struct mail_draft *d, uint8_t *out, size_t room);
+
+/* A header's words: as they are when ASCII, folded at 76; encoded words
+ * when not. How many bytes, as `mail_build`. */
+size_t mail_encode_words(const char *text, char *out, size_t room);
+
 #endif

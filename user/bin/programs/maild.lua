@@ -34,12 +34,22 @@
 -- address: `mailpass keep imap://imap.example.com:993 lena@example.com ...`.
 
 local imap = use("/Kosmos/Libraries/imap.lua")
+local smtp = use("/Kosmos/Libraries/smtp.lua")
 local files = use("/Kosmos/Libraries/files.lua")
 local regions = use("/Kosmos/Libraries/regions.lua")
 local notify = use("/Kosmos/Libraries/notify.lua")
 local mailkit = use("/Kosmos/Kits/mail")
 
 local HOME = "/Home/Mail"
+
+-- **What is written is sent from here** (M6): the window puts a message in
+-- the Outbox - `<id>.eml` and `<id>.send`, its envelope - and asks; `maild`
+-- sends it, so a message is still sent when the window that wrote it has
+-- closed, and one the network refused is still there to try again. A draft
+-- is kept in `Drafts here` by the window, and its copy on the server by
+-- this. Neither folder is an account: neither has an `account` file.
+local OUTBOX = HOME .. "/Outbox"
+local DRAFTS = HOME .. "/Drafts here"
 local ONCE = tostring(args or ""):match("%-%-once") ~= nil
 
 -- A first look at a mailbox keeps its newest hundred; older mail stays on
@@ -65,6 +75,8 @@ local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local function seconds_from_now(s) return sys.ticks() + s * counter_hz end
 
 local accounts = {}
+local status, outbox_status           -- below, and each needs the other's name
+local account_named
 
 local function note(a, text)
   print(("maild: %s: %s"):format(a and a.address or "-", text))
@@ -90,7 +102,22 @@ end
 --
 local version = 0
 
-local function status()
+-- The messages being sent, by their id: { id, account, subject, state =
+-- "sending" | "failed", why, job }.
+local outbox = {}
+
+function outbox_status()
+  local out = {}
+
+  for _, o in pairs(outbox) do
+    out[#out + 1] = { id = o.id, account = o.account, subject = o.subject, state = o.state, why = o.why }
+  end
+
+  table.sort(out, function(x, y) return x.id < y.id end)
+  return out
+end
+
+function status()
   local out = {}
 
   for _, a in ipairs(accounts) do
@@ -110,7 +137,7 @@ local function status()
                       boxes = boxes }
   end
 
-  return { accounts = out, version = version }
+  return { accounts = out, version = version, outbox = outbox_status() }
 end
 
 local function publish()
@@ -154,9 +181,10 @@ end
 -- **Which reading worked a message's facts out.** One more each time what
 -- the Mail Kit or this file makes of a message changes, so what was kept
 -- before is worked out again: on 8 October a newsletter's preview was its
--- style sheet, and the messages kept then kept it until this said 2.
+-- style sheet, and the messages kept then kept it until this said 2; 3 is
+-- `to`, whom a message went to, for the composer's addresses (M6).
 --
-local FACTS = 2
+local FACTS = 3
 
 local function facts(path, uid, flags)
   local r, size = regions.read_whole(path)
@@ -184,6 +212,18 @@ local function facts(path, uid, flags)
     out.preview = m:preview(160)
     out.attachments = attachments
     out.id = m:header("message-id")
+
+    -- Whom it went to, To and Cc, a line each - "name<TAB>address" - so
+    -- what was sent completes an address as what arrived does.
+    local to = {}
+
+    for _, field in ipairs({ "to", "cc" }) do
+      for _, who in ipairs(m:addresses(field)) do
+        if #to < 50 then to[#to + 1] = (who.name or "") .. "\t" .. who.address end
+      end
+    end
+
+    out.to = table.concat(to, "\n")
   end
 
   regions.free(r)
@@ -378,6 +418,8 @@ end
 -- this is the server catching up with what a person did.
 --------------------------------------------------------------------------
 
+local forget_files
+
 local function box_named(a, name)
   for _, b in ipairs(a.list or {}) do
     if b.name == name then return b end
@@ -394,18 +436,98 @@ local function box_for(a, use)
   return nil
 end
 
-local function forget_files(a, b, uids)
+function forget_files(a, b, uids)
   for _, uid in ipairs(uids) do
     files.remove(("%s/%d.eml"):format(folder_of(a, b), uid))
+  end
+end
+
+-- Which server copy each draft has: { [draft id] = uid } in the Drafts
+-- mailbox, kept beside the account so a draft's old copy is found after a
+-- restart. Not `drafts`: names on the disk are one whatever their case,
+-- and that is the Drafts mailbox's folder.
+local function drafts_kept(a)
+  local t = fs.read(a.dir .. "/drafts.kept")
+
+  return type(t) == "table" and t or {}
+end
+
+-- A message in a mailbox, gone for good: marked deleted and expunged.
+local function erase(s, b, uids)
+  local _, why = await(s:select(b.name))
+
+  if why then return nil, why end
+
+  await(s:flag(uids, "deleted", true))
+  return await(s:expunge(uids))
+end
+
+--
+-- **What the composer leaves for the server** (M6): a copy of what was
+-- sent put in Sent, where the server does not keep one itself; a draft's
+-- copy put in Drafts in place of the one before it; a draft's copy taken
+-- away once it is sent or thrown away.
+--
+local function do_written(a, s, op)
+  local drafts = box_for(a, "drafts")
+
+  if op.type == "append" then
+    local b = box_for(a, op.use)
+
+    if b then
+      local r = s:append(b.name, op.path, op.flags)
+
+      await(r)
+      note(a, ("kept %s in %s: %s"):format(op.id or "a message", b.title, r.ok and "done" or tostring(r.why)))
+    else
+      note(a, ("no %s mailbox to keep %s in"):format(op.use, op.id or "a message"))
+    end
+
+    for _, path in ipairs(op.remove or {}) do files.remove(path) end
+  elseif op.type == "draft" and drafts then
+    local kept = drafts_kept(a)
+    local r = s:append(drafts.name, op.path, { "draft", "seen" })
+    local result = await(r)
+
+    note(a, ("draft %s kept in %s: %s"):format(op.id, drafts.title, r.ok and "done" or tostring(r.why)))
+
+    if r.ok then
+      local old = kept[op.id]
+
+      kept[op.id] = result and result.uid or nil
+      fs.write(a.dir .. "/drafts.kept", kept)
+      if old then erase(s, drafts, { old }) end
+    end
+
+    files.remove(op.path)
+  elseif op.type == "undraft" and drafts then
+    local kept = drafts_kept(a)
+    local uids = {}
+
+    -- Its copy from this machine, and the one from another it took the
+    -- place of: both go.
+    if op.id and kept[op.id] then uids[#uids + 1] = kept[op.id] end
+    if op.uid and op.mailbox == drafts.name and op.uid ~= uids[1] then uids[#uids + 1] = op.uid end
+
+    if #uids > 0 then
+      erase(s, drafts, uids)
+      forget_files(a, drafts, uids)
+      note(a, ("draft %s taken from %s"):format(op.id or imap.set(uids), drafts.title))
+    end
+
+    if op.id then kept[op.id] = nil end
+    fs.write(a.dir .. "/drafts.kept", kept)
   end
 end
 
 local function do_ops(a, s)
   while #a.ops > 0 do
     local op = table.remove(a.ops, 1)
-    local b = box_named(a, op.mailbox)
+    local b = op.mailbox and box_named(a, op.mailbox)
 
-    if b then
+    if op.type == "append" or op.type == "draft" or op.type == "undraft" then
+      do_written(a, s, op)
+    elseif b then
       local _, why = await(s:select(b.name))
 
       if why then return nil, why end
@@ -454,20 +576,35 @@ end
 -- An account, from sign-in to IDLE and round again.
 --------------------------------------------------------------------------
 
-local function session_of(a)
+-- The account's password, from the keyring - under its IMAP server, which
+-- is the one Add Account keeps; the same signs in to send (an app password
+-- for Gmail is one password for both).
+local function password_of(a)
   local acc = a.account
   local service = ("imap://%s:%d"):format(acc.imap.host, acc.imap.port or 993)
   local password, why = fs.mail_password(service, a.address)
 
   if not password then return nil, "no password kept for " .. service .. ": " .. tostring(why) end
 
-  local anchors
+  return password
+end
 
-  if acc.certificate then
-    local der = fs.read(acc.certificate)
+-- An authority of the account's own, a test's.
+local function anchors_of(a)
+  if not a.account.certificate then return nil end
 
-    if type(der) == "string" then anchors = { der } end
-  end
+  local der = fs.read(a.account.certificate)
+
+  return type(der) == "string" and { der } or nil
+end
+
+local function session_of(a)
+  local acc = a.account
+  local password, why = password_of(a)
+
+  if not password then return nil, why end
+
+  local anchors = anchors_of(a)
 
   local s, oops = imap.open{ host = acc.imap.host, port = acc.imap.port or 993,
                              tls = acc.imap.tls ~= false, name = acc.tls_name,
@@ -639,7 +776,7 @@ local control = not ONCE and sys.endpoint() or nil
 
 if control then fs.send("/Running", { type = "register", name = "maild" }, control) end
 
-local function account_named(address)
+function account_named(address)
   for _, a in ipairs(accounts) do
     if a.address == address then return a end
   end
@@ -662,7 +799,129 @@ local function uids_of(list)
   return out
 end
 
-local FLAGGABLE = { seen = true, flagged = true }
+--------------------------------------------------------------------------
+-- Sending (M6): a message from the Outbox, by SMTP, beside the accounts'
+-- IMAP and stepped by the same loop.
+--------------------------------------------------------------------------
+
+-- An id as the window makes them: letters and digits, nothing that walks
+-- out of a folder.
+local function id_ok(id)
+  return type(id) == "string" and #id > 0 and #id <= 64 and id:match("^[%w%-]+$") ~= nil
+end
+
+local function send_failed(o, why)
+  o.state, o.why, o.job = "failed", why, nil
+  print(("maild: not sent %s: %s"):format(o.id, tostring(why)))
+  publish()
+end
+
+-- A message in the Outbox, sent: its envelope read, the account's server
+-- spoken to. Nothing here waits; the loop steps the job.
+local function start_send(id)
+  if not id_ok(id) then return false, "no such message" end
+
+  local o = outbox[id]
+
+  if o and o.state == "sending" then return true end
+
+  local env = fs.read(OUTBOX .. "/" .. id .. ".send")
+  local path = OUTBOX .. "/" .. id .. ".eml"
+
+  if type(env) ~= "table" or not fs.getattr(path) then return false, "no such message in the Outbox" end
+
+  o = { id = id, account = tostring(env.account or ""), subject = tostring(env.subject or ""),
+        state = "sending", env = env, path = path }
+  outbox[id] = o
+
+  local a = account_named(o.account)
+  local rcpt = {}
+
+  for i, who in ipairs(type(env.rcpt) == "table" and env.rcpt or {}) do
+    if i <= 500 and type(who) == "string" and who:match("^[^%s<>]+@[^%s<>]+$") then rcpt[#rcpt + 1] = who end
+  end
+
+  if not a then send_failed(o, "no account " .. o.account) return true end
+  if #rcpt == 0 then send_failed(o, "it is to nobody") return true end
+
+  local acc = a.account
+  local password, why = password_of(a)
+
+  if not password then send_failed(o, why) return true end
+
+  if not (acc.smtp and acc.smtp.host) then send_failed(o, "the account has no server to send by") return true end
+
+  local job, oops = smtp.send{ host = acc.smtp.host, port = acc.smtp.port or 587,
+                               security = acc.smtp.security, name = acc.smtp_tls_name or acc.tls_name,
+                               anchors = anchors_of(a), user = acc.user or a.address,
+                               password = password, from = a.address, to = rcpt, path = path }
+
+  password = nil
+
+  if not job then send_failed(o, oops) return true end
+
+  o.job, o.a = job, a
+  print(("maild: sending %s to %d"):format(id, #rcpt))
+  publish()
+  return true
+end
+
+-- Each message being sent, stepped; one done is kept in Sent where the
+-- server does not keep it, and its draft's copy taken away.
+local function step_sending(conns)
+  for id, o in pairs(outbox) do
+    local job = o.job
+
+    if job and not job.done then
+      job:step()
+      if not job.done and job.stream and job.stream.conn then conns[#conns + 1] = job.stream.conn end
+    end
+
+    if job and job.done then
+      if job.ok then
+        local a, env = o.a, o.env
+        local remove = { o.path, OUTBOX .. "/" .. id .. ".send" }
+
+        print(("maild: sent %s"):format(id))
+        outbox[id] = nil
+
+        -- Gmail keeps what it sent by itself; any other server is given it.
+        if a.account.kind ~= "google" then
+          a.ops[#a.ops + 1] = { type = "append", use = "sent", path = o.path, flags = { "seen" },
+                                id = id, remove = remove }
+        else
+          for _, p in ipairs(remove) do files.remove(p) end
+        end
+
+        if id_ok(env.draft) or env.replaces then
+          local r = type(env.replaces) == "table" and env.replaces or {}
+
+          a.ops[#a.ops + 1] = { type = "undraft", id = id_ok(env.draft) and env.draft or nil,
+                                mailbox = type(r.mailbox) == "string" and r.mailbox or nil,
+                                uid = math.tointeger(r.uid) }
+        end
+
+        a.wake = true
+        publish()
+      else
+        send_failed(o, job.why or "the server would not take it")
+      end
+    end
+  end
+end
+
+-- What was left in the Outbox when `maild` last stopped, sent now.
+local function send_left()
+  for _, name in ipairs(fs.list(OUTBOX) or {}) do
+    local id = tostring(name):match("^(.+)%.send$")
+
+    if id and not outbox[id] then start_send(id) end
+  end
+end
+
+send_left()
+
+local FLAGGABLE = { seen = true, flagged = true, answered = true }
 local MOVES = { move = true, archive = true, delete = true }
 
 -- When the window last asked: for a while after, the loop looks more often,
@@ -686,6 +945,27 @@ local function answer()
       reply.ok = true
     elseif t == "sync" then
       for _, each in ipairs(accounts) do each.wake = true end
+      send_left()
+      reply = { ok = true }
+    elseif t == "send" then
+      local ok, why = start_send(req.name)
+
+      reply = { ok = ok, why = why }
+    elseif t == "draft" and a and id_ok(req.name) then
+      local path = DRAFTS .. "/" .. req.name .. ".eml"
+
+      if fs.getattr(path) then
+        a.ops[#a.ops + 1] = { type = "draft", id = req.name, path = path }
+        reply = { ok = true }
+      else
+        reply = { ok = false, why = "no such draft" }
+      end
+    elseif t == "undraft" and a then
+      local r = type(req.replaces) == "table" and req.replaces or {}
+
+      a.ops[#a.ops + 1] = { type = "undraft", id = id_ok(req.name) and req.name or nil,
+                            mailbox = type(r.mailbox) == "string" and r.mailbox or nil,
+                            uid = math.tointeger(r.uid) }
       reply = { ok = true }
     elseif t == "add" and type(req.account) == "string" and req.account:match("^[^/]+@[^/]+$") then
       --
@@ -769,6 +1049,8 @@ while true do
 
     if coroutine.status(a.co) ~= "dead" then alive = alive + 1 end
   end
+
+  step_sending(conns)
 
   if alive == 0 and (ONCE or not control) then break end
 

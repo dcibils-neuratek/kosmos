@@ -855,7 +855,309 @@ def part3(image):
     return 0
 
 
+# The composer's part (M6): written, completed, answered, sent and kept.
+PLANS = ("From: Priya Nair <priya.nair@example.com>\r\n"
+         "To: Lena Moreau <lena@example.com>, Tom <tomas@example.org>\r\n"
+         "Cc: Ana Ruiz <ana@example.com>\r\n"
+         "Subject: Saturday plans\r\n"
+         "Date: Fri, 9 Oct 2026 07:00:00 +0000\r\n"
+         "Message-ID: <four@example.com>\r\n"
+         "References: <one@example.org>\r\n"
+         "Content-Type: text/plain; charset=utf-8\r\n"
+         "\r\n"
+         "Who's in for Saturday?\r\n").encode()
+
+
+
+def part4(image):
+    """The composer: Reply All quoting and threading, a new message whose
+    address is completed and whose Bcc is in no header, a draft kept on the
+    server and written on again, and a recipient the server refuses."""
+    import importlib
+    import random
+    import re
+    import time
+
+    work = scratch.directory("mail")
+    run_tls.pki(work, "10.0.2.2")
+    peer = mailpeer.Peer(work, "good.pem", "server.key")
+    peer.idle_delivers = False
+    peer.deliver("INBOX", PLANS)
+    imap_port, smtp_port = peer.start()
+
+    disk = os.path.join(work, "disk.img")
+    subprocess.run([os.path.join(ROOT, "build", "host", "lua"),
+                    os.path.join(HERE, "kfs.lua"), "create", disk, "32",
+                    os.path.join(work, "ca.der") + ":/Home/Preferences/Authorities/test.der"],
+                   check=True, capture_output=True, cwd=ROOT)
+    os.environ["KOSMOS_DISK"] = disk
+
+    import run_screenshot as R
+    import run_servers as S
+    importlib.reload(R)
+
+    telnet, web = random.randint(20000, 40000), random.randint(40001, 60000)
+    guest = S.boot(image, telnet, web)
+    said, error = {}, None
+    who = mailpeer.USER
+
+    try:
+        guest.wait_for("wm: window Deskbar at ", "the bar")
+        guest.wait_for("telnetd: on port ", "telnetd listening")
+        session = S.connect(telnet)
+
+        mark = len(guest.seen)
+        session.run("open mail")
+        placed = guest.wait_for_line("wm: window Mail at ", "the Mail window", mark)
+        sheet = guest.wait_for_line("mail: sheet ", "Add Account, with no account yet", mark)
+        wx, wy = (int(v) for v in re.match(r"(\d+),(\d+)", placed).groups())
+        width, height, _ = R.parse_ppm(guest.screendump())
+
+        def at(name, text):
+            m = re.search(r"\b" + name + r" (\d+),(\d+)", text)
+            return (int(m.group(1)), int(m.group(2))) if m else None
+
+        def click(x, y, ox=None, oy=None):
+            guest.mouse_to(*R._to_tablet((wx if ox is None else ox) + x, (wy if oy is None else oy) + y,
+                                         width, height))
+            time.sleep(0.3)
+            guest.mouse_button(True)
+            time.sleep(0.2)
+            guest.mouse_button(False)
+            time.sleep(0.6)
+
+        def typed(text):
+            for k in keys_for(text):
+                guest.sendkey(k)
+                time.sleep(0.12)
+
+        def key(name):
+            guest.sendkey(name)
+            time.sleep(0.4)
+
+        def composer(title, mark):
+            line = guest.wait_for_line("mail: composer ", "a composer", mark)
+            cid = line.split()[0]
+            spot = guest.wait_for_line("wm: window %s at " % title, "the composer's window", mark)
+            cx, cy = (int(v) for v in re.match(r"(\d+),(\d+)", spot).groups())
+            where = guest.wait_for_line("mail: composer %s places " % cid, "its places", mark)
+            time.sleep(1)
+            return cid, cx, cy, where
+
+        # The account, through Add Account as a person adds one: a telnet
+        # session is not handed Mail's passwords, rightly.
+        mark = len(guest.seen)
+        click(*at("imap", sheet))
+        sheet = guest.wait_for_line("mail: sheet ", "the IMAP fields", mark)
+        click(*at("field1", sheet))
+        typed("Lena Moreau"); key("tab")
+        typed(who); key("tab")
+        typed(mailpeer.PASSWORD); key("tab")
+        for _ in range(24): guest.sendkey("backspace")
+        typed("10.0.2.2"); key("tab")
+        for _ in range(6): guest.sendkey("backspace")
+        typed(str(imap_port)); key("tab")
+        for _ in range(24): guest.sendkey("backspace")
+        typed("10.0.2.2"); key("tab")
+        for _ in range(6): guest.sendkey("backspace")
+        typed(str(smtp_port))
+        mark = len(guest.seen)
+        guest.sendkey("ret")
+        said["setup"] = guest.wait_for_line("mail: signed in ", "the account signed in", mark)
+        guest.wait_for("maild: %s: 4 messages kept" % who, "the Inbox kept")
+        places = guest.wait_for_line("mail: places ", "the window's places", 0)
+
+        lx, ly = at("list", places)
+        rh = int(re.search(r"rows (\d+)", places).group(1))
+        time.sleep(2)
+
+        # 1. Reply All to Priya's: everyone but Lena, quoted, threaded.
+        mark = len(guest.seen)
+        click(lx + 100, ly + rh // 2)
+        said["plans"] = guest.wait_for_line("mail: showing ", "the plans shown", mark)
+        mark = len(guest.seen)
+        click(*[v + 13 for v in at("replyall", places)])
+        rid, _, _, _ = composer("Reply All", mark)
+        typed("See you there.")
+        mark = len(guest.seen)
+        key("ctrl-ret")
+        said["reply_sent"] = guest.wait_for_line("mail: composer %s sent to " % rid, "Reply All sent", mark)
+        guest.wait_for("maild: sent %s" % rid, "maild sent the reply")
+        guest.wait_for("maild: %s: kept %s in Sent: done" % (who, rid), "the reply kept in Sent")
+
+        # 2. A new message: Ana completed from three letters, Bob in Bcc.
+        mark = len(guest.seen)
+        click(*[v + 13 for v in at("compose", places)])
+        nid, nx, ny, where = composer("New Message", mark)
+        mark = len(guest.seen)
+        typed("ana")
+        said["suggests"] = guest.wait_for_line("mail: composer suggests ", "Ana suggested", mark)
+        key("tab")                                   # taken; on to Cc
+        key("tab")                                   # Bcc
+        typed("bob@example.net,")
+        key("tab")                                   # Subject
+        typed("Lunch")
+        key("tab")                                   # the body
+        typed("Hello Ana.")
+        time.sleep(1.5)
+
+        # The composer as it looked, kept for whoever reads the run after.
+        import kosmos_vnc as V
+        w_, h_, rgb_ = R.parse_ppm(guest.screendump())
+        rows_ = [rgb_[((y * w_) + nx) * 3:((y * w_) + nx + 680) * 3] for y in range(ny, min(h_, ny + 560))]
+        V.png(os.path.join(ROOT, "build", "mail", "composer.png"), 680, len(rows_), b"".join(rows_))
+
+        mark = len(guest.seen)
+        click(*at("send", where), ox=nx, oy=ny)
+        said["new_sent"] = guest.wait_for_line("mail: composer %s sent to " % nid, "the new one sent", mark)
+        guest.wait_for("maild: sent %s" % nid, "maild sent the new one")
+
+        # 3. A draft: closed half written, kept on the server, opened from
+        #    Drafts and sent - its server copy gone after.
+        mark = len(guest.seen)
+        click(*[v + 13 for v in at("compose", places)])
+        did, _, _, _ = composer("New Message", mark)
+        typed("tomas@example.org")
+        key("tab"); key("tab"); key("tab")
+        typed("Draft plans")
+        key("tab")
+        typed("Half written.")
+        mark = len(guest.seen)
+        key("meta_l-q")                              # Super+Q: the window in front closed
+        said["kept"] = guest.wait_for_line("mail: composer %s closed" % did, "the draft closed", mark)
+        guest.wait_for("maild: %s: draft %s kept in Drafts: done" % (who, did), "the draft on the server")
+        with peer.lock:
+            d = peer.find("Drafts", "Draft plans")
+            said["draft_flags"] = sorted(d["flags"]) if d else None
+
+        guest.wait_for("drafts ", "the sidebar with its Drafts")
+        side = re.findall(r"mail: side ([^\n]*drafts[^\n]*)", guest.seen)[-1]
+        mark = len(guest.seen)
+        click(*at("drafts", side))
+        # The first look at a mailbox is not said in the log: its file, then.
+        for _ in range(40):
+            if ".eml" in session.run("ls /Home/Mail/%s/Drafts" % who).decode(errors="replace"):
+                break
+            time.sleep(1)
+        time.sleep(2)
+        click(lx + 100, ly + rh // 2)
+        said["reopened"] = guest.wait_for_line("mail: composer %s open" % did, "the draft opened again", mark)
+        time.sleep(1)
+        typed("Now whole. ")
+        mark = len(guest.seen)
+        key("ctrl-ret")
+        guest.wait_for_line("mail: composer %s sent to " % did, "the draft sent", mark)
+        guest.wait_for("maild: sent %s" % did, "maild sent the draft")
+        guest.wait_for("maild: %s: draft %s taken from Drafts" % (who, did), "the draft's copy taken away")
+
+        # 4. Nobody there: the server's refusal said, the message kept.
+        mark = len(guest.seen)
+        click(*[v + 13 for v in at("compose", places)])
+        fid, _, _, _ = composer("New Message", mark)
+        typed("nobody@refused.example.com")
+        key("tab"); key("tab"); key("tab")
+        typed("Nowhere")
+        mark = len(guest.seen)
+        key("ctrl-ret")
+        said["refused"] = guest.wait_for_line("maild: not sent %s: " % fid, "the refusal said", mark)
+        said["outbox"] = session.run("ls /Home/Mail/Outbox").decode(errors="replace")
+        time.sleep(1)
+    except Exception as e:                  # noqa: BLE001 - said below
+        error = "%s: %s" % (type(e).__name__, str(e).splitlines()[0])
+    finally:
+        seen = guest.seen.replace("\r", "")
+        guest.close()
+        peer.stop()
+        os.makedirs(os.path.join(ROOT, "build", "mail"), exist_ok=True)
+        with open(os.path.join(ROOT, "build", "mail", "guest-4.log"), "w") as f:
+            f.write(seen)
+
+    fails = []
+
+    if error:
+        fails.append("the machine stopped: " + error + " ... " + seen[-1200:])
+
+    if not said.get("setup", "").startswith(who):
+        fails.append("the account was not signed in: %r" % said.get("setup"))
+
+    with peer.lock:
+        def sent(subject):
+            got = [m for m in peer.sent if ("Subject: " + subject + "\r\n") in m["data"]]
+            return got[0] if got else None
+
+        r = sent("Re: Saturday plans")
+        if not r:
+            fails.append("Reply All did not reach the server: %r" % [m["data"][:200] for m in peer.sent])
+        else:
+            d = r["data"]
+            if sorted(r["to"]) != ["ana@example.com", "priya.nair@example.com", "tomas@example.org"]:
+                fails.append("Reply All went to %r, not everyone but Lena" % r["to"])
+            for want in ("To: Priya Nair <priya.nair@example.com>, Tom <tomas@example.org>\r\n",
+                         "Cc: Ana Ruiz <ana@example.com>\r\n", "In-Reply-To: <four@example.com>\r\n",
+                         "References: <one@example.org> <four@example.com>\r\n",
+                         "From: Lena Moreau <lena@example.com>\r\n",
+                         "\r\n\r\nSee you there.\r\n",
+                         "On 9 October 2026, Priya Nair wrote:\r\n> Who's in for Saturday?\r\n"):
+                if want not in d:
+                    fails.append("the reply lacked %r: %r" % (want, d[:900]))
+        if peer.find("Sent", "Re: Saturday plans") is None:
+            fails.append("the reply was not kept in Sent")
+        p = peer.find("INBOX", "Saturday plans")
+        if not p or "\\Answered" not in p["flags"]:
+            fails.append("the answered message was not flagged Answered: %r" % (p and p["flags"]))
+
+        n = sent("Lunch")
+        if not n:
+            fails.append("the new message did not reach the server")
+        else:
+            if sorted(n["to"]) != ["ana@example.com", "bob@example.net"]:
+                fails.append("the new message went to %r" % n["to"])
+            if "To: Ana Ruiz <ana@example.com>\r\n" not in n["data"]:
+                fails.append("Ana's completed address not in To: %r" % n["data"][:500])
+            if "bob@example.net" in n["data"] or "Bcc" in n["data"]:
+                fails.append("the Bcc was in the message: %r" % n["data"][:500])
+            if "Hello Ana.\r\n" not in n["data"]:
+                fails.append("the new message's text: %r" % n["data"][:600])
+
+        w = sent("Draft plans")
+        if not w or "Now whole. Half written.\r\n" not in w["data"]:
+            fails.append("the draft written on was not sent whole: %r" % (w and w["data"][:600]))
+        if peer.find("Drafts", "Draft plans") is not None:
+            fails.append("the sent draft's copy stayed in Drafts")
+
+    if "ana@example.com" not in said.get("suggests", ""):
+        fails.append("three letters did not suggest Ana: %r" % said.get("suggests"))
+    if said.get("draft_flags") != ["\\Draft", "\\Seen"]:
+        fails.append("the draft on the server and its flags: %r" % said.get("draft_flags"))
+    if not said.get("kept", "").endswith("kept as a draft"):
+        fails.append("closing the composer did not keep the draft: %r" % said.get("kept"))
+    if "550" not in said.get("refused", "") and "refused" not in said.get("refused", ""):
+        fails.append("the server's refusal not said: %r" % said.get("refused"))
+    if ".eml" not in said.get("outbox", ""):
+        fails.append("the refused message was not kept in the Outbox: %r" % said.get("outbox"))
+    if mailpeer.PASSWORD in seen:
+        fails.append("the password was printed")
+    if " died: " in seen:
+        fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
+
+    checks = 21
+
+    if fails:
+        print("FAIL: %d of %d checks on Mail's composer:" % (len(fails), checks))
+        for f in fails:
+            print("  " + f)
+        return 1
+
+    print("PASS: %d checks on Mail's composer (Reply All to everyone but the account, quoted "
+          "and threaded, kept in Sent and the message flagged Answered; a new message with an "
+          "address completed from three letters and a Bcc in no header; a draft closed with "
+          "Super+Q, kept on the server, opened from Drafts, sent whole and its copy taken away; "
+          "a recipient refused, said, and the message kept in the Outbox)." % checks)
+    return 0
+
+
 if __name__ == "__main__":
     image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
     part = sys.argv[sys.argv.index("--part") + 1] if "--part" in sys.argv else "1"
-    sys.exit(part3(image) if part == "3" else part2(image) if part == "2" else part1(image))
+    sys.exit(part4(image) if part == "4" else part3(image) if part == "3"
+             else part2(image) if part == "2" else part1(image))

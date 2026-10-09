@@ -33,6 +33,11 @@
 -- shown at once, from the Mail Kit's part; a picture on the network not
 -- fetched until Load Pictures is pressed, because fetching one tells its
 -- sender the message was read. Links open in the browser.
+--
+-- **Writing** (M6) is the composer's (`mailcompose.lua`), a window of its
+-- own for each message, polled here beside this one: New Message, Reply,
+-- Reply All and Forward open one, and a draft pressed in Drafts opens in
+-- one. What it writes `maild` sends; the Outbox's state is in the header.
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
@@ -49,6 +54,7 @@ local pk = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
 local mailkit = use("/Kosmos/Kits/mail")
 local webpictures = use("/Kosmos/Libraries/webpictures.lua")
 local http = use("/Kosmos/Libraries/http.lua")
+local compose = use("/Kosmos/Libraries/mailcompose.lua")
 
 -- **The browser's engine draws an HTML message** (M5): parsed, laid out at
 -- the paper's width and painted into it as a page is. An image built
@@ -1020,10 +1026,10 @@ end
 
 local controls = {
   side = { icon = "sidebar" },
-  compose = { icon = "compose", disabled = true },
-  reply = { icon = "reply", disabled = true },
-  replyall = { icon = "replyall", disabled = true },
-  forward = { icon = "forwardmail", disabled = true },
+  compose = { icon = "compose" },
+  reply = { icon = "reply" },
+  replyall = { icon = "replyall" },
+  forward = { icon = "forwardmail" },
   archive = { icon = "archive" },
   delete = { icon = "trash" },
   flag = { icon = "flag" },
@@ -1054,8 +1060,10 @@ local function place_controls()
     end
   end
 
-  local where = ("side %d,%d archive %d,%d delete %d,%d flag %d,%d read %d,%d fetch %d,%d dots %d,%d list %d,%d rows %d")
-    :format(controls.side.x, controls.side.y, controls.archive.x, controls.archive.y,
+  local where = ("compose %d,%d reply %d,%d replyall %d,%d forward %d,%d side %d,%d archive %d,%d delete %d,%d flag %d,%d read %d,%d fetch %d,%d dots %d,%d list %d,%d rows %d")
+    :format(controls.compose.x, controls.compose.y, controls.reply.x, controls.reply.y,
+            controls.replyall.x, controls.replyall.y, controls.forward.x, controls.forward.y,
+            controls.side.x, controls.side.y, controls.archive.x, controls.archive.y,
             controls.delete.x, controls.delete.y, controls.flag.x, controls.flag.y,
             controls.read.x, controls.read.y, controls.fetch.x, controls.fetch.y,
             controls.dots.x, controls.dots.y, sidebar and SIDE_W or 0, L.head + 86, ROW_H)
@@ -1078,10 +1086,34 @@ local function unread_total()
   return n
 end
 
+-- What the Outbox is doing, for the header: "Sending 1 message", or why
+-- one was not sent.
+local function outbox_said()
+  local sending, failed = 0, nil
+
+  for _, o in ipairs(status.outbox or {}) do
+    if o.state == "sending" then sending = sending + 1 end
+    if o.state == "failed" and not failed then failed = o end
+  end
+
+  if failed then
+    return ("Not sent: %s \u{2014} %s"):format(failed.subject ~= "" and failed.subject or "(no subject)",
+                                            tostring(failed.why))
+  end
+
+  if sending > 0 then
+    return ("Sending %d %s\u{2026}"):format(sending, sending == 1 and "message" or "messages")
+  end
+
+  return nil
+end
+
 local function draw_header(s)
   local sub = current and ("%s \u{00b7} %d unread"):format(current.box.label or current.box.title,
                                                        current.box.unseen or 0)
               or "No account yet"
+
+  sub = outbox_said() or sub
 
   pk.header(s, 0, 0, W, "Mail", sub, controls.compose.x - 12, controls.side.x + 26 + 10)
 
@@ -1093,9 +1125,11 @@ local function draw_header(s)
   controls.flag.icon = f.flagged and "flagged" or "flag"
   controls.read.icon = f.seen and "mail" or "mailopen"
 
-  for _, name in ipairs({ "archive", "delete", "flag", "read" }) do
+  for _, name in ipairs({ "archive", "delete", "flag", "read", "reply", "replyall", "forward" }) do
     controls[name].disabled = row == nil
   end
+
+  controls.compose.disabled = #accounts == 0
 
   for name, b in pairs(controls) do
     if name ~= "|" then pk.iconbutton(s, b) end
@@ -1116,6 +1150,7 @@ local side_rows = {}
 -- How far the sidebar is turned down, in pixels, and how tall all of it
 -- is: Gmail's labels are more than a window holds.
 local side_scroll, side_total = 0, 0
+local said_side = nil
 
 local function draw_sidebar(s)
   side_rows = {}
@@ -1185,6 +1220,22 @@ local function draw_sidebar(s)
   end
 
   side_total = y + side_scroll - L.head
+
+  -- Where the first mailboxes are, for whoever drives Mail from outside.
+  local where = {}
+
+  for i = 1, math.min(6, #side_rows) do
+    local r = side_rows[i]
+
+    where[#where + 1] = ("%s %d,%d"):format(r.box.use or "box", r.x + 40, r.y + r.h // 2)
+  end
+
+  where = table.concat(where, " ")
+
+  if where ~= said_side then
+    said_side = where
+    print("mail: side " .. where)
+  end
 end
 
 local search = { text = "" }
@@ -1718,6 +1769,77 @@ local function press_sheet(x, y)
   end
 end
 
+--------------------------------------------------------------------------
+-- Writing: composers, each a window of its own.
+--------------------------------------------------------------------------
+
+local composers = {}
+
+-- The account a message is written from: the mailbox shown's, or the first.
+local function writing_account()
+  local a = current and current.account or accounts[1]
+
+  return a and { address = a.address, name = a.name or "" } or nil
+end
+
+local function own_addresses()
+  local out = {}
+
+  for _, a in ipairs(accounts) do out[#out + 1] = a.address end
+  return out
+end
+
+-- Composers stand down and right of this window, each a little further.
+local function next_place()
+  local n = #composers
+
+  return { x = (win.origin_x or 0) + 140 + n * 28, y = (win.origin_y or 0) + 60 + n * 28 }
+end
+
+local function opened(c)
+  if c then composers[#composers + 1] = c end
+end
+
+local function write_new()
+  local a = writing_account()
+
+  if not a then return end
+
+  local place = next_place()
+
+  opened(compose.open{ account = a, x = place.x, y = place.y })
+end
+
+local function write_answer(kind)
+  local row = chosen_row()
+  local a = writing_account()
+
+  if not (row and a) then return end
+
+  local spec = compose.answer(row.path, kind, own_addresses())
+
+  if not spec then return end
+
+  local place = next_place()
+
+  spec.account, spec.x, spec.y = a, place.x, place.y
+  opened(compose.open(spec))
+
+  -- Answered is a flag the server keeps, for the list's arrow.
+  if kind ~= "forward" then
+    ask{ type = "flag", account = current.account.address, mailbox = current.box.name,
+         uids = { row.uid }, flag = "answered", on = true }
+  end
+end
+
+local function write_draft(row)
+  local a = writing_account()
+
+  if a then
+    opened(compose.continue(row.path, current.box.name, row.uid, a, next_place()))
+  end
+end
+
 local function press(x, y)
   if sheet then
     if y < L.head then win:take_hold(x, y) else press_sheet(x, y) end
@@ -1731,6 +1853,14 @@ local function press(x, y)
     print("mail: sidebar " .. (sidebar and "shown" or "hidden"))
   elseif pk.inside(controls.dots, x, y) then
     dots_menu()
+  elseif pk.inside(controls.compose, x, y) then
+    write_new()
+  elseif row and pk.inside(controls.reply, x, y) then
+    write_answer("reply")
+  elseif row and pk.inside(controls.replyall, x, y) then
+    write_answer("replyall")
+  elseif row and pk.inside(controls.forward, x, y) then
+    write_answer("forward")
   elseif pk.inside(controls.fetch, x, y) then
     ask{ type = "sync" }
     said = "Getting mail\u{2026}"
@@ -1752,7 +1882,18 @@ local function press(x, y)
     end
 
     for _, r in ipairs(list_rows) do
-      if pk.inside(r, x, y) then choose(r.uid) return end
+      if pk.inside(r, x, y) then
+        choose(r.uid)
+
+        -- A draft is written on, not read.
+        if current and current.box.use == "drafts" then
+          local row = chosen_row()
+
+          if row then write_draft(row) end
+        end
+
+        return
+      end
     end
 
     if load_button and pk.inside(load_button, x, y) then
@@ -1889,7 +2030,9 @@ if not draw_all() then return end
 local dirty = false
 
 while win.running do
-  local reply = wmproto.poll(win.handle, (dirty or fetching) and 1 or 12)
+  -- A composer open is typed in, so the wait is short: its keys are read
+  -- here, after this window's.
+  local reply = wmproto.poll(win.handle, (dirty or fetching or #composers > 0) and 1 or 12)
 
   if not reply then break end
 
@@ -1923,6 +2066,10 @@ while win.running do
 
   if not win.running then break end
 
+  for i = #composers, 1, -1 do
+    if not composers[i]:tend() then table.remove(composers, i) end
+  end
+
   if look() then dirty = true end
   if step_fetch() then dirty = true end
 
@@ -1934,3 +2081,7 @@ while win.running do
   -- Asked after it is shown: the press is on the screen before `maild` is.
   send_asked()
 end
+
+-- Mail closed with a message half written: kept as a draft, as closing the
+-- composer would.
+for _, c in ipairs(composers) do c:close() end

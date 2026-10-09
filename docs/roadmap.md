@@ -8237,7 +8237,11 @@ that downloads without folders or flags (pop.gmail.com 995). Diego's own
 Gmail goes in on the M700 once M4 is there, typed by him.
 **M4 done** (18.484): the window, Add Account, `maild` started at login.
 **M5 done** (18.489): HTML messages by the browser's engine, pictures
-inside shown, the network's on Load Pictures. Next: M6, writing.
+inside shown, the network's on Load Pictures.
+**M6 done** (18.490): the composer, a library any application can open -
+To, Cc and Bcc completed from the mail kept, Reply, Reply All, Forward,
+drafts kept here and on the server, sent by `maild` from an Outbox, a copy
+in Sent; `mail.build` in the Mail Kit. Next: M7, attachments.
 **Diego's Gmail is in**, on the
 M700 (0.11.87-0.11.88). Seen there and not yet done: some subjects begin
 with "?" where, probably, an emoji has no glyph in the UI's face - to be

@@ -448,7 +448,11 @@ Each step leaves the system working and a test that stays.
 6. **M5 - HTML messages** in the Web Kit, pictures inside the message
    shown, the network's on asking.
 7. **M6 - writing**: the composer, plain text, Reply, Reply All, Forward,
-   drafts, sending; `mail.build`; `addresses.lua`.
+   drafts, sending; `mail.build`; `addresses.lua`. **Done 9 October**
+   (`testing.md` 18.490): the composer is `mailcompose.lua`, a library, so
+   whatever wants a message written opens the same one; it writes into
+   `/Home/Mail/Outbox` and `maild` sends, and closes on Send. Drafts are
+   kept in `Drafts here` as typed, and on the server when closed.
 8. **M7 - attachments**, opened, saved, added, dropped.
 9. **M8 - search**, several accounts, the unified Inbox.
 10. **M9 - shipped as an example**: `/Kosmos/Apps` and `/Kosmos/Examples/Mail`,

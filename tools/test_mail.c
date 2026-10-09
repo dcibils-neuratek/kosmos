@@ -263,16 +263,151 @@ int main(void)
         check(k == 5 && memcmp(out, "a\xef\xbf\xbdz", 5) == 0, "a byte that is not UTF-8 was not replaced");
     }
 
+    /* 7. Writing (M6): a plain message to the byte, then the hard ones read
+     *    back through the reading half. */
+    {
+        static uint8_t out[16 * 1024];
+        static char text[8 * 1024];
+        struct mime_address to[2], cc[1];
+        struct mail_draft d;
+        size_t n;
+        char said[512];
+        const char *want =
+            "Date: Tue, 6 Oct 2026 09:41:07 +0200\r\n"
+            "From: Lena Moreau <lena@example.com>\r\n"
+            "To: bob@example.org\r\n"
+            "Subject: Coffee on Saturday\r\n"
+            "Message-ID: <k1.a2@example.com>\r\n"
+            "MIME-Version: 1.0\r\n"
+            "Content-Type: text/plain; charset=utf-8\r\n"
+            "Content-Transfer-Encoding: 7bit\r\n"
+            "\r\n"
+            "Hello Bob,\r\n"
+            "\r\n"
+            ". a line that begins with a dot stays as it is\r\n";
+
+        memset(to, 0, sizeof to);
+        memset(cc, 0, sizeof cc);
+        strcpy(to[0].address, "bob@example.org");
+        memset(&d, 0, sizeof d);
+        d.from_name = "Lena Moreau";
+        d.from_address = "lena@example.com";
+        d.to = to;
+        d.nto = 1;
+        d.subject = "Coffee on Saturday";
+        d.text = (const uint8_t *)"Hello Bob,\n\n. a line that begins with a dot stays as it is\n";
+        d.text_len = strlen((const char *)d.text);
+        d.date = 1791272467LL;
+        d.zone = 120;
+        d.message_id = "k1.a2@example.com";
+
+        n = mail_build(&d, out, sizeof out);
+        out[n < sizeof out ? n : sizeof out - 1] = 0;
+        snprintf(said, sizeof said, "a plain message was written as:\n%s", (char *)out);
+        check(n == strlen(want) && memcmp(out, want, n) == 0, said);
+
+        /* Too little room: the answer is the room it needs. */
+        check(mail_build(&d, out, 10) == n, "a message given too little room did not say how much it needs");
+
+        /* Now everything that must be encoded. */
+        strcpy(to[0].name, "Tom\xc3\xa1s Ferreira");
+        strcpy(to[0].address, "tomas@example.org");
+        strcpy(to[1].name, "Moreau, Lena");
+        strcpy(to[1].address, "lena@example.com");
+        strcpy(cc[0].address, "bob@example.org");
+        d.nto = 2;
+        d.cc = cc;
+        d.ncc = 1;
+        d.subject = "Re: Caf\xc3\xa9 on S\xc3\xa1" "bado, and a subject long enough that its encoded words "
+                    "must go over more than one line \xe2\x80\x93 done";
+        d.zone = -180;
+        d.in_reply_to = "orig.1@example.org";
+        d.references = "<first.0@example.org> <orig.1@example.org>";
+
+        /* A body of accents, an = sign, trailing space, a line of 200, a dot. */
+        strcpy(text, "Caf\xc3\xa9 = coffee   \r\n");
+        for (int i = 0; i < 200; i++) strcat(text, i % 10 == 9 ? " " : "x");
+        strcat(text, "\n.\nlast line with no end");
+        d.text = (const uint8_t *)text;
+        d.text_len = strlen(text);
+
+        n = mail_build(&d, out, sizeof out);
+        check(n < sizeof out, "the encoded message did not fit its test's room");
+
+        {
+            int longest = 0, col = 0, ascii_only = 1;
+
+            for (size_t i = 0; i < n; i++) {
+                if (out[i] >= 0x80) ascii_only = 0;
+                if (out[i] == '\n') { if (col > longest) longest = col; col = 0; } else col++;
+            }
+
+            snprintf(said, sizeof said, "a written line was %d long (CR counted), or not ASCII", longest);
+            check(longest <= 77 && ascii_only, said);
+        }
+
+        check(mime_parse(&msg, out, n) == 0, "a written message did not parse back");
+        check(field(0, "Subject") && strcmp(field(0, "Subject"), d.subject) == 0,
+              "the encoded subject did not read back as written");
+        check(field(0, "Bcc") == NULL, "a written message had a Bcc");
+        check(field(0, "In-Reply-To") && strcmp(field(0, "In-Reply-To"), "<orig.1@example.org>") == 0,
+              "In-Reply-To did not read back");
+        check(field(0, "Content-Transfer-Encoding")
+              && strcmp(field(0, "Content-Transfer-Encoding"), "quoted-printable") == 0,
+              "a body of accents was not sent quoted-printable");
+
+        {
+            struct mime_address a[8];
+            size_t k = mime_addresses(field(0, "To"), a, 8);
+
+            snprintf(said, sizeof said, "To read back as %zu: '%s' <%s>, '%s' <%s>", k,
+                     a[0].name, a[0].address, a[1].name, a[1].address);
+            check(k == 2 && strcmp(a[0].name, "Tom\xc3\xa1s Ferreira") == 0
+                  && strcmp(a[0].address, "tomas@example.org") == 0
+                  && strcmp(a[1].name, "Moreau, Lena") == 0, said);
+        }
+
+        {
+            int ok = 0;
+            int64_t t = mime_date(field(0, "Date"), &ok);
+
+            snprintf(said, sizeof said, "the written date %s read back as %lld", field(0, "Date"), (long long)t);
+            check(ok && t == 1791272467LL, said);
+        }
+
+        {
+            size_t k;
+            const char *body = content(0, &k);
+            char expect[8 * 1024];
+
+            strcpy(expect, "Caf\xc3\xa9 = coffee   \r\n");
+            for (int i = 0; i < 200; i++) strcat(expect, i % 10 == 9 ? " " : "x");
+            strcat(expect, "\r\n.\r\nlast line with no end\r\n");
+            snprintf(said, sizeof said, "the body read back as [%.300s]", body);
+            check(k == strlen(expect) && memcmp(body, expect, k) == 0, said);
+        }
+
+        {
+            char w[256];
+            size_t k = mail_encode_words("plain words", w, sizeof w);
+
+            check(k == 11 && memcmp(w, "plain words", 11) == 0, "ASCII words were encoded");
+            k = mail_encode_words("\xe2\x82\xac", w, sizeof w);
+            check(k == 16 && memcmp(w, "=?UTF-8?B?4oKs?=", 16) == 0, "the euro sign was not one encoded word");
+        }
+    }
+
     if (fails == 0) {
-        printf("PASS: %d checks on the Mail Kit's reading (folded fields, encoded words B and Q "
+        printf("PASS: %d checks on the Mail Kit's reading and writing (folded fields, encoded words B and Q "
                "in two charsets, addresses with a quoted comma and a group of three, a date and "
                "its zone, a mixed holding an alternative and an attachment, quoted-printable in "
                "Windows-1252 with a soft break, base64 over lines, an RFC 2231 name, previews of "
-               "text and of HTML, a message cut short, nesting held to its limit, characters)\n",
+               "text and of HTML, a message cut short, nesting held to its limit, characters; a plain message "
+               "written to the byte, and one of encoded names, subject and body read back whole)\n",
                checks);
         return 0;
     }
 
-    printf("FAIL: %d of %d checks on the Mail Kit's reading\n", fails, checks + fails);
+    printf("FAIL: %d of %d checks on the Mail Kit's reading and writing\n", fails, checks + fails);
     return 1;
 }

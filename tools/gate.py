@@ -214,6 +214,11 @@ SUITES = [
     Suite("arm-mail-3", ["python3", "tools/run_mail.py", ARM, "--part", "3"]),
     Suite("x86-mail-3", ["python3", "tools/run_mail.py", X86, "--part", "3"],
           x86=True),
+    # Its fourth is the composer (M6): Reply All, a new message completed
+    # and with a Bcc, a draft kept on the server and sent, a refusal.
+    Suite("arm-mail-4", ["python3", "tools/run_mail.py", ARM, "--part", "4"]),
+    Suite("x86-mail-4", ["python3", "tools/run_mail.py", X86, "--part", "4"],
+          x86=True),
 
     # **smbfs connects, signed and sealed** (`docs/sharing.md` N2 and N4),
     # in one machine on ten Samba peers run as the user on this Mac: 3.1.1

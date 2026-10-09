@@ -22,6 +22,16 @@
  *                                         room it needs when `cap` is less
  *   m:preview([bytes])                    the first words of its text
  *
+ *   mail.build(t, at, cap)                a message written (M6) into a
+ *                                         region: its length, or nil and the
+ *                                         room it needs. `t` = { from =, to =,
+ *                                         cc =, subject =, text =, date =,
+ *                                         zone =, id =, in_reply_to =,
+ *                                         references = }; from, and each of
+ *                                         to and cc's, an address as
+ *                                         { name =, address = } or as text
+ *   mail.encode_words(text)               a header's words, encoded if need be
+ *
  * A part's `id` is its place in `parts()`, 1 for the message itself. **Its
  * content never passes through a Lua string here**: it goes into a region,
  * and from there to the Web Kit, to a file, or - text for a page of words -
@@ -233,6 +243,134 @@ static int l_preview(lua_State *L)
     return 1;
 }
 
+/*
+ * Addresses from Lua: a list of { name =, address = } or strings, each
+ * string read as a field's value is ("Lena <lena@example.com>, bob@x"), so
+ * what a person typed goes in as typed.
+ */
+static size_t take_addresses(lua_State *L, int t, const char *key, struct mime_address *a, size_t most)
+{
+    size_t n = 0;
+
+    if (lua_getfield(L, t, key) == LUA_TNIL) {
+        lua_pop(L, 1);
+        return 0;
+    }
+
+    if (lua_type(L, -1) == LUA_TSTRING) {
+        n = mime_addresses(lua_tostring(L, -1), a, most);
+        lua_pop(L, 1);
+        return n;
+    }
+
+    luaL_argcheck(L, lua_istable(L, -1), 1, "an address list is a table");
+
+    /* One address, { name =, address = }, rather than a list of them. */
+    if (lua_getfield(L, -1, "address") == LUA_TSTRING && most > 0) {
+        memset(&a[0], 0, sizeof a[0]);
+        strncpy(a[0].address, lua_tostring(L, -1), sizeof a[0].address - 1);
+        lua_getfield(L, -2, "name");
+        strncpy(a[0].name, luaL_optstring(L, -1, ""), sizeof a[0].name - 1);
+        lua_pop(L, 3);
+        return a[0].address[0] ? 1 : 0;
+    }
+
+    lua_pop(L, 1);
+
+    for (lua_Integer i = 1; n < most; i++) {
+        int kind = lua_rawgeti(L, -1, i);
+
+        if (kind == LUA_TNIL) {
+            lua_pop(L, 1);
+            break;
+        }
+
+        if (kind == LUA_TSTRING) {
+            n += mime_addresses(lua_tostring(L, -1), a + n, most - n);
+        } else if (kind == LUA_TTABLE) {
+            memset(&a[n], 0, sizeof a[n]);
+            lua_getfield(L, -1, "name");
+            strncpy(a[n].name, luaL_optstring(L, -1, ""), sizeof a[n].name - 1);
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "address");
+            strncpy(a[n].address, luaL_checkstring(L, -1), sizeof a[n].address - 1);
+            lua_pop(L, 1);
+            if (a[n].address[0]) n++;
+        }
+
+        lua_pop(L, 1);
+    }
+
+    lua_pop(L, 1);
+    return n;
+}
+
+static const char *opt_field(lua_State *L, int t, const char *key, size_t *len)
+{
+    const char *s;
+
+    lua_getfield(L, t, key);
+    s = luaL_optlstring(L, -1, "", len);
+    lua_pop(L, 1);          /* `t` holds the string, so it outlives the pop */
+    return s;
+}
+
+static int l_build(lua_State *L)
+{
+    static struct mime_address to[64], cc[64], from[1];
+    struct mail_draft d;
+    uint8_t *at = (uint8_t *)(uintptr_t)luaL_checkinteger(L, 2);
+    size_t cap = (size_t)luaL_checkinteger(L, 3);
+    size_t n;
+
+    luaL_checktype(L, 1, LUA_TTABLE);
+    if (at == NULL) return luaL_error(L, "build: needs a mapped region");
+
+    memset(&d, 0, sizeof d);
+    luaL_argcheck(L, take_addresses(L, 1, "from", from, 1) == 1, 1, "a message needs whom it is from");
+
+    d.from_name = from[0].name;
+    d.from_address = from[0].address;
+    d.nto = take_addresses(L, 1, "to", to, 64);
+    d.ncc = take_addresses(L, 1, "cc", cc, 64);
+    d.to = to;
+    d.cc = cc;
+    d.subject = opt_field(L, 1, "subject", NULL);
+    d.text = (const uint8_t *)opt_field(L, 1, "text", &d.text_len);
+    d.message_id = opt_field(L, 1, "id", NULL);
+    d.in_reply_to = opt_field(L, 1, "in_reply_to", NULL);
+    d.references = opt_field(L, 1, "references", NULL);
+    luaL_argcheck(L, d.message_id[0], 1, "a message needs its id");
+
+    lua_getfield(L, 1, "date");
+    d.date = (int64_t)luaL_checkinteger(L, -1);
+    lua_pop(L, 1);
+    lua_getfield(L, 1, "zone");
+    d.zone = (int)luaL_optinteger(L, -1, 0);
+    lua_pop(L, 1);
+
+    n = mail_build(&d, at, cap);
+
+    if (n > cap) {
+        lua_pushnil(L);
+        lua_pushinteger(L, (lua_Integer)n);
+        return 2;
+    }
+
+    lua_pushinteger(L, (lua_Integer)n);
+    return 1;
+}
+
+static int l_encode_words(lua_State *L)
+{
+    const char *text = luaL_checkstring(L, 1);
+    char out[2048];
+    size_t n = mail_encode_words(text, out, sizeof out);
+
+    lua_pushlstring(L, out, n < sizeof out ? n : sizeof out);
+    return 1;
+}
+
 void kosmos_mail_kit(lua_State *L)
 {
     static const luaL_Reg methods[] = {
@@ -255,4 +393,8 @@ void kosmos_mail_kit(lua_State *L)
     lua_newtable(L);
     lua_pushcfunction(L, l_parse);
     lua_setfield(L, -2, "parse");
+    lua_pushcfunction(L, l_build);
+    lua_setfield(L, -2, "build");
+    lua_pushcfunction(L, l_encode_words);
+    lua_setfield(L, -2, "encode_words");
 }

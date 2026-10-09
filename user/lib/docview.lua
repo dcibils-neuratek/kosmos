@@ -166,6 +166,7 @@ function docview.new(ui, spec)
   v.style = spec.style
   v.continue = spec.continue
   v.on_change = spec.on_change
+  v.ground = spec.ground      -- the page's colour; the sunken well when not said
   v.scroll = 0                -- pixels scrolled from the top
   v.hscroll = 0               -- and from the left, when lines do not wrap
   v.version = 0
@@ -867,7 +868,7 @@ function docview.new(ui, spec)
     local sy1, sx1, sy2, sx2 = buf:selection()
     local found = self.needle and matches(self) or {}
 
-    g:fill(0, 0, self.w, self.h, theme.sunken)
+    g:fill(0, 0, self.w, self.h, self.ground or theme.sunken)
 
     -- The first row in view, by halving.
     local lo, hi = 1, #rows
