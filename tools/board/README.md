@@ -88,18 +88,21 @@ the name of the key that made it.
 | GET | `/api/changes?since=` | everything changed since a time |
 | GET | `/api/export.md` | the board as Markdown |
 
-## Setting it up - Diego's steps, once
+## Where it is
 
-1. Make a free Cloudflare account at https://dash.cloudflare.com/sign-up -
-   yours; nobody else signs up or signs in for you.
-2. In a Terminal on this Mac: `wrangler login`, and allow it in the browser
-   page it opens.
-3. Say so to Claude, who then makes the database, puts the roadmap in, makes
-   its own key into `~/.config/kosmos-board/claude.key`, and asks before the
-   first deploy.
-4. A key for each of your devices, shown once in your own Terminal:
-   `python3 tools/board/keys.py make "Diego's phone" --show` - paste it into
-   the board's page on that device.
+**the board's address (kept on the Mac, ~/.config/kosmos-board/url)**, deployed 9 October 2026 from
+Diego's own Cloudflare account. The account's number is not in this
+repository: it is in `~/.config/kosmos-board/account` on the Mac, which
+`keys.py` reads, and a deploy is
+
+    CLOUDFLARE_ACCOUNT_ID=$(cat ~/.config/kosmos-board/account) wrangler deploy
+
+from this folder - asked of Diego before each one. Claude's key is
+`~/.config/kosmos-board/claude.key`.
+
+**A key for each of Diego's devices**, shown once in his own Terminal:
+`python3 tools/board/keys.py make "Diego's phone" --show`, pasted into the
+page on that device. `keys.py list` and `keys.py revoke NAME` are the rest.
 
 ## On this Mac
 

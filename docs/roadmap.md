@@ -8306,7 +8306,10 @@ Queue, Decisions and API; cards dragged with a mouse or, on a phone, after
 a third of a second's rest, onto a column or its tab; files attached,
 pasted or dropped, pictures shown as thumbnails; refreshed from
 `/api/changes` every fifteen seconds. `test_page.mjs` drives it in
-headless Chrome from `test_board.py` (84). Next is B3, Diego's.
+headless Chrome from `test_board.py` (84). **B3 and B4 done** the same
+day: Diego's Cloudflare login, the database made, the live list imported
+(494 cards, the queue, ten decisions), Claude's key, and - Diego's yes -
+deployed to the board's address (kept on the Mac, ~/.config/kosmos-board/url). B5 from now on.
 
 ### The optimisation phase - after the applications
 

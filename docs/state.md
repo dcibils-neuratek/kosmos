@@ -20,11 +20,11 @@ is Diego's yes, after the scan for his personal data.
   roadmap "the Kosmos Board"): a Cloudflare Worker and D1, with cards, Claude's
   now and queue, discussions, talk, decisions, files and the page. B1 and B2
   are done; `python3 tools/board/test_board.py` makes 84 checks, the page's in headless
-  Chrome. **B3 is Diego's**: a Cloudflare account and `wrangler login`.
-  Then B4: the database made, the live list imported again from `build/`, Claude's
-  key made, and a deploy only when Diego says yes.
+  Chrome. **Live since 9 October at the board's address (kept on the Mac, ~/.config/kosmos-board/url)**,
+  in Diego's Cloudflare account; Claude's key is in `~/.config/kosmos-board/`.
+  Diego makes a key per device with `keys.py make NAME --show`.
 
-**Next**: B4 once Diego has logged in; Mail M6 (writing), M7, M8, then
+**Next**: work from the board's queue - the M700 onto 0.11.91 when its monitor is on, then Mail M6 (writing), M7, M8, then
 POP3; the window-server split after Mail.
 
 ## 8 October, evening: chrome step 3, then Kosmos Mail M0-M2

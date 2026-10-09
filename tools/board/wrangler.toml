@@ -1,7 +1,7 @@
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 #  The Kosmos Board on Cloudflare: one Worker for the API and the page, one
-#  D1 database. `database_id` is filled in when the database is made
-#  (`tools/board/README.md`).
+#  D1 database, made 9 October 2026. The Cloudflare account is not named here:
+#  wrangler takes it from CLOUDFLARE_ACCOUNT_ID (`tools/board/README.md`).
 
 name = "kosmos-board"
 main = "src/worker.js"
@@ -14,4 +14,4 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "kosmos-board"
-database_id = "local-until-made"
+database_id = "40f8af4b-41e9-46b6-9728-2afc8e96991e"

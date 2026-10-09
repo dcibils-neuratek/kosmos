@@ -22,6 +22,9 @@ import sys
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# Which Cloudflare account holds the board: kept on this Mac, not in the
+# public repository, and handed to wrangler when nobody else has said.
+ACCOUNT = os.path.expanduser("~/.config/kosmos-board/account")
 
 
 def d1(args, sql):
@@ -30,7 +33,10 @@ def d1(args, sql):
     cmd.append("--local" if args.local else "--remote")
     if args.persist_to:
         cmd += ["--persist-to", args.persist_to]
-    out = subprocess.run(cmd, cwd=HERE, capture_output=True, text=True)
+    env = dict(os.environ)
+    if not args.local and "CLOUDFLARE_ACCOUNT_ID" not in env and os.path.exists(ACCOUNT):
+        env["CLOUDFLARE_ACCOUNT_ID"] = open(ACCOUNT).read().strip()
+    out = subprocess.run(cmd, cwd=HERE, capture_output=True, text=True, env=env)
     if out.returncode != 0:
         sys.exit("keys: wrangler refused: " + (out.stderr or out.stdout)[-800:])
     return out.stdout
