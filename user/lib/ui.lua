@@ -6168,12 +6168,12 @@ function ui.window(spec)
   -- scale, where the region would be shown stretched, and the window sends
   -- its drawing as before.
   --
-  -- **Every ordinary window** since D2d - one with the kit's header or one
-  -- of its own, a popup, a tip, a banner; not a direct window, which draws
-  -- itself already, nor the kinds the window manager sizes to the screen
-  -- and still sent: a strip, the backdrop, a full screen. `draws_itself =
-  -- false` keeps one sending.
-  local ordinary = not (spec.direct or spec.backdrop or spec.fullscreen or spec.strip)
+  -- **Every window the kit draws** since D2d - one with the kit's header or
+  -- one of its own, a popup, a tip, a banner, a strip, the backdrop, a full
+  -- screen; not a direct window, which draws itself already. The window
+  -- manager tells one it sizes to the screen its new size as it tells any
+  -- (`swap_surface`). `draws_itself = false` keeps one sending.
+  local ordinary = not spec.direct
   local draws_itself = (ordinary and spec.draws_itself ~= false) and true or false
   local pct = 100
 

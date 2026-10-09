@@ -140,9 +140,12 @@ desktop.
      pointer moves over it, given back when it closes - by the window or
      by the window manager (`menus_gone`, which a direct window now hears
      as well). **Popups, tips and banners too** (0.11.110): the window
-     manager has nothing of its own for them but their place. **Still
-     sent**: a strip, the backdrop and a full screen, which the window
-     manager sizes to the screen and blends.
+     manager has nothing of its own for them but their place. **And the
+     rest** (0.11.111): a strip - the Deskbar - the backdrop - the desktop
+     - and a full screen, which the window manager sizes to the screen and
+     tells their sizes as it tells any (`swap_surface`). Every window the
+     kit makes draws itself; what still sends drawing commands is a
+     program written without the kit (`hello-win`, `stuck`).
    - **D2e** - the drawing commands retired from the window manager.
 4. **D3** - the window server: the screen, surfaces, stacking, damage and
    composing move to C; the window manager tells it through the manager

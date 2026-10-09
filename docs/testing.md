@@ -22329,3 +22329,12 @@ Out of the kinds `ui.window` kept sending, leaving a strip, the backdrop
 and a full screen - the three the window manager sizes to the screen and
 blends. The whole gate, 61 of 61 (6:50): the launcher pad, the Deskbar's
 tips, notifications' banners and every popup in it drawing themselves.
+
+## 18.506 Astra D2d: every window the kit makes draws itself
+
+The Deskbar's strip, the desktop's backdrop and a full-screen window too;
+the window manager tells them a new size through `swap_surface`, which
+already did so for a window with a region. The whole gate found one thing:
+`wm trace` said a finished frame only for drawing commands (`draw <title>
+at`), and the display harness waits for the Deskbar's to time a press on
+it; a commit says it now. Then 61 of 61 (6:30).

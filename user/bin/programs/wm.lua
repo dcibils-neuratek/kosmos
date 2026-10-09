@@ -4300,6 +4300,12 @@ handlers.commit = function(req)
 
   P.answered(win)
 
+  -- A finished frame, under `wm trace`, as a frame of drawing commands is
+  -- one: a window drawing itself (D2) finishes its frames here.
+  if TRACE then
+    note(("draw %s at %dus"):format(tostring(win.title), trace_us()))
+  end
+
   --
   -- **The first frame in a region handed over at a new size** (6zz e): it
   -- takes the old one's place now, and not when it was handed over, so the
