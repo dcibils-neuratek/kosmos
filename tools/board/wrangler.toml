@@ -1,0 +1,17 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+#  The Kosmos Board on Cloudflare: one Worker for the API and the page, one
+#  D1 database. `database_id` is filled in when the database is made
+#  (`tools/board/README.md`).
+
+name = "kosmos-board"
+main = "src/worker.js"
+compatibility_date = "2026-04-01"
+
+[assets]
+directory = "public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kosmos-board"
+database_id = "local-until-made"

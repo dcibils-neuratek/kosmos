@@ -37,3 +37,6 @@ tools/__pycache__/
 # rebuilt by running the skill again, and it changes on every run, so every
 # run made a diff.
 graphify-out/
+
+# The Kosmos Board: what wrangler keeps beside its project.
+tools/board/.wrangler/

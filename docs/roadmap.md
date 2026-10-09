@@ -8260,6 +8260,23 @@ https://claude.ai/artifact/DzcP4dHurAvXE4xXfU5DAp (private to Diego). A
 status he changes or an item he adds there is read back and written into
 this file; this file stays the record, with the reasoning.
 
+**Dropped, 9 October, on the live list**: Mail built as an IDE project, and
+Mail M9, shipped as an IDE example. Diego marked both dropped; Mail ends at
+M8, then POP3.
+
+**AGREED, 9 October - the Kosmos Board.** Diego: "Can we convert that into a
+kanban style simple web app I can work in and add new features and
+prioritize items?", "You need to be able to read it, modify it, mark done",
+"The app needs to be accessible over internet", "design an api to access
+it", and "start using it for our main roadmap and decisions kanban style
+management system". Drawn first (https://claude.ai/artifact/DWT7DQk8hqQv6vJnrXDpiW:
+the board, a phone, the decisions, the API); on **Cloudflare** - a Worker and
+a D1 database, free - with its code in `tools/board/` (both Diego's choices).
+Steps: B1 the API and its database, tested on this Mac; B2 the page, once the
+drawing is agreed; B3 Diego's Cloudflare account and `wrangler login`, his;
+B4 the database made, the live list imported, deployed - asked before each
+deploy; B5 this file kept in step from it. **B1 done** (`test_board.py` 26).
+
 ### The optimisation phase - after the applications
 
 **AGREED on 7 October - applications first, then a phase of optimising.**
