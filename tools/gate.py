@@ -229,6 +229,11 @@ SUITES = [
     Suite("arm-mail-6", ["python3", "tools/run_mail.py", ARM, "--part", "6"]),
     Suite("x86-mail-6", ["python3", "tools/run_mail.py", X86, "--part", "6"],
           x86=True),
+    # Its seventh is POP3: `pop3.lua` against the peer's maildrop, and
+    # `maild` keeping a POP3 account.
+    Suite("arm-mail-7", ["python3", "tools/run_mail.py", ARM, "--part", "7"]),
+    Suite("x86-mail-7", ["python3", "tools/run_mail.py", X86, "--part", "7"],
+          x86=True),
 
     # **smbfs connects, signed and sealed** (`docs/sharing.md` N2 and N4),
     # in one machine on ten Samba peers run as the user on this Mac: 3.1.1

@@ -8,7 +8,8 @@ every address is example.com, example.org or example.net.
 
 IMAP4rev1 over TLS, with what `imap.lua` uses - CONDSTORE, MOVE, UIDPLUS,
 SPECIAL-USE, IDLE - and SMTP with STARTTLS and AUTH PLAIN, which keeps what
-it is sent for the suite to look at. Enough of each to hold a client to the
+it is sent for the suite to look at; and POP3 over the same Inbox, over TLS
+and plain with STLS, for `pop3.lua`. Enough of each to hold a client to the
 protocol, not a server for anybody to use.
 
 As a module, `Peer(work, cert, key)` and `peer.start()`; the suite reads and
@@ -139,6 +140,7 @@ class Peer:
         self.boxes = {}
         self.sent = []              # [{from, to, data}] what SMTP was given
         self.logins = []            # [(user, ok)]
+        self.pop_logins = []        # [(user, ok, secure)]
         self.idle_delivers = True
         self.listeners = []
 
@@ -193,6 +195,12 @@ class Peer:
         self.imap_port = self.listen(imap_port, self.imap)
         self.smtp_port = self.listen(smtp_port, self.smtp)
         return self.imap_port, self.smtp_port
+
+    def start_pop(self, port=0, plain_port=0):
+        """POP3 over TLS from the first byte, and plain with STLS."""
+        self.pop_port = self.listen(port, lambda raw: self.pop(raw, True))
+        self.pop_plain_port = self.listen(plain_port, lambda raw: self.pop(raw, False))
+        return self.pop_port, self.pop_plain_port
 
     def stop(self):
         for s in self.listeners:
@@ -286,6 +294,132 @@ class Peer:
             pass
         finally:
             f.close()
+
+
+    # -- POP3 -----------------------------------------------------------
+
+    def pop(self, raw, tls):
+        """The Inbox as a maildrop (RFC 1939): its messages numbered for the
+        session, each's unique id its UID, and what DELE marked gone at QUIT.
+        LIST counts a line's end as one byte, as a server keeping its mail
+        with Unix line ends does - short of what RETR sends, which a client
+        has to survive."""
+        if tls:
+            try:
+                raw = self.context.wrap_socket(raw, server_side=True)
+            except (ssl.SSLError, OSError):
+                raw.close()
+                return
+        f = Lines(raw)
+        user, signed, drop, marked = None, False, None, set()
+
+        def say(text):
+            f.write((text + "\r\n").encode())
+
+        def caps():
+            return ["USER", "UIDL", "TOP"] + ([] if f.secure else ["STLS"])
+
+        def message(arg):
+            try:
+                n = int(arg)
+            except ValueError:
+                return None, None
+            if drop is None or not 1 <= n <= len(drop) or n in marked:
+                return None, n
+            return drop[n - 1], n
+
+        say("+OK mailpeer POP3 ready")
+
+        try:
+            while True:
+                line = f.line()
+                if line is None:
+                    return
+                word, _, arg = line.partition(" ")
+                word = word.upper()
+
+                if word == "CAPA":
+                    say("+OK what I can do")
+                    for c in caps():
+                        say(c)
+                    say(".")
+                elif word == "STLS" and not f.secure:
+                    say("+OK begin TLS")
+                    f.start_tls(self.context)
+                elif word == "USER":
+                    if not f.secure:
+                        say("-ERR not in the clear")
+                        continue
+                    user = arg
+                    say("+OK and the password")
+                elif word == "PASS":
+                    ok = user == self.user and arg == self.password
+                    self.pop_logins.append((user or "", ok, f.secure))
+                    if not ok:
+                        say("-ERR [AUTH] those are not the right name and password")
+                        continue
+                    signed = True
+                    with self.lock:
+                        drop = list(self.boxes["INBOX"].messages)
+                    say("+OK %d messages" % len(drop))
+                elif not signed and word != "QUIT":
+                    say("-ERR sign in first")
+                elif word == "STAT":
+                    live = [m for i, m in enumerate(drop, 1) if i not in marked]
+                    say("+OK %d %d" % (len(live), sum(self.pop_size(m) for m in live)))
+                elif word in ("LIST", "UIDL"):
+                    def item(m):
+                        return self.pop_size(m) if word == "LIST" else "uid-%d" % m["uid"]
+                    if arg:
+                        m, n = message(arg)
+                        say("+OK %d %s" % (n, item(m)) if m else "-ERR no such message")
+                        continue
+                    say("+OK")
+                    for i, m in enumerate(drop, 1):
+                        if i not in marked:
+                            say("%d %s" % (i, item(m)))
+                    say(".")
+                elif word == "RETR":
+                    m, n = message(arg)
+                    if not m:
+                        say("-ERR no such message")
+                        continue
+                    data = m["data"]
+                    if not data.endswith(b"\r\n"):
+                        data += b"\r\n"
+                    stuffed = b"\r\n".join(b"." + l if l.startswith(b".") else l
+                                            for l in data[:-2].split(b"\r\n"))
+                    f.write(b"+OK %d octets\r\n" % self.pop_size(m) + stuffed + b"\r\n.\r\n")
+                elif word == "DELE":
+                    m, n = message(arg)
+                    if not m:
+                        say("-ERR no such message")
+                        continue
+                    marked.add(n)
+                    say("+OK marked")
+                elif word == "RSET":
+                    marked.clear()
+                    say("+OK")
+                elif word == "NOOP":
+                    say("+OK")
+                elif word == "QUIT":
+                    if signed and marked:
+                        gone = {drop[n - 1]["uid"] for n in marked}
+                        with self.lock:
+                            b = self.boxes["INBOX"]
+                            b.messages = [m for m in b.messages if m["uid"] not in gone]
+                    say("+OK goodbye")
+                    return
+                else:
+                    say("-ERR not understood")
+        except (OSError, ssl.SSLError):
+            pass
+        finally:
+            f.close()
+
+    @staticmethod
+    def pop_size(m):
+        return len(m["data"]) - m["data"].count(b"\r\n")
 
 
 class Lines:

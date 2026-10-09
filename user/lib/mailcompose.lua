@@ -982,6 +982,7 @@ function C:key(c)
     self:move_focus(1)
   elseif k == keys.ESCAPE then
     self.suggestions = {}
+    print(("mail: composer %s suggestions put away"):format(self.id))
   elseif (k == keys.DOWN or k == keys.UP) and #self.suggestions > 0 then
     self.choice = (self.choice - 1 + (k == keys.DOWN and 1 or -1)) % #self.suggestions + 1
   elseif (k == 8 or k == 127) and row.text == "" and row.chips and #row.chips > 0 then
@@ -1180,6 +1181,15 @@ function C:tend()
       end
     end
 
+    if self.closed then return false end
+  end
+
+  -- The batch has ended: an Escape the decoder still holds is the key itself
+  -- (`keys.lua`).
+  do
+    local held = self.decode(nil)
+
+    if held and self:key(held) then self.dirty = true end
     if self.closed then return false end
   end
 

@@ -404,6 +404,13 @@ def main():
         said["worldcard"] = guest.wait_for_line("maps: card ", "the world's place's card", mark)
         said["worldat"] = guest.wait_for_line("maps: at ", "the map at the world's place", mark)
 
+        # An Escape alone is answered when it is pressed, not at the next key.
+        click(srch[0] + 60, srch[1] + 18)
+        time.sleep(0.5)
+        mark = len(guest.seen)
+        guest.sendkey("esc")
+        said["esc"] = guest.wait_for_line("maps: search left", "the search's Escape", mark)
+
         # ---- the look: Night chosen, and the map goes dark with it ----
         session.put(NIGHT.encode(), "/Temporary/night.lua")
         mark = len(guest.seen)
@@ -555,7 +562,10 @@ def main():
         fails.append("Night chosen, the map did not go dark with it: %r, %r"
                      % (said.get("night", "")[-100:], said.get("dark")))
 
-    checks = 25
+    if said.get("esc") is None:
+        fails.append("an Escape alone in the search waited for the next key")
+
+    checks = 26
 
     if fails:
         print("FAIL: %d of %d checks on Maps:" % (len(fails), checks))

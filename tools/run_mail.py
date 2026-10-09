@@ -1003,13 +1003,13 @@ def mail_window(image, deliver, kept, said):
     return w
 
 
-def add_account(w, sheet, name, who, password, imap_port, smtp_port):
-    """Add Account's Other IMAP, filled in as a person fills it, from the
-    sheet's line; what Mail said when it signed in."""
+def add_account(w, sheet, name, who, password, imap_port, smtp_port, kind="imap"):
+    """Add Account's Other IMAP - or POP3, `kind` - filled in as a person
+    fills it, from the sheet's line; what Mail said when it signed in."""
     guest, at, click, typed, key = w.guest, w.at, w.click, w.typed, w.key
     mark = len(guest.seen)
-    click(*at("imap", sheet))
-    sheet = guest.wait_for_line("mail: sheet ", "the IMAP fields", mark)
+    click(*at(kind, sheet))
+    sheet = guest.wait_for_line("mail: sheet ", "the %s fields" % kind, mark)
     click(*at("field1", sheet))
     typed(name); key("tab")
     typed(who); key("tab")
@@ -1470,6 +1470,7 @@ def part5(image):
 
 # A second account's mail (M8): Sam's, at another server on this Mac.
 SAM = "sam@example.org"
+PAT = "pat@example.net"
 QUARTER = ("From: Priya Nair <priya.nair@example.com>\r\n"
            "To: Sam Ortiz <sam@example.org>\r\n"
            "Subject: Quarterly numbers\r\n"
@@ -1496,7 +1497,7 @@ def part6(image):
     import re
     import time
 
-    said, error, w, sam = {}, None, None, None
+    said, error, w, sam, pat = {}, None, None, None, None
 
     try:
         w = mail_window(image, [], 3, said)
@@ -1554,7 +1555,11 @@ def part6(image):
         mark = len(guest.seen)
         click(*at("all", search))
         said["everywhere"] = guest.wait_for_line("mail: searching all mail, ", "All pressed", mark)
+        # An Escape alone is answered when it is pressed, not when the next
+        # key comes (`keys.lua`); it waited once, and closed Add Account.
+        mark = len(guest.seen)
         key("esc")
+        said["esc"] = guest.wait_for_line("mail: search left", "the search's Escape", mark) is not None
 
         # A reply from All Inboxes to Sam's message goes from Sam, by Sam's
         # server.
@@ -1582,18 +1587,47 @@ def part6(image):
             guest.wait_for_line("mail: composer %s from %s" % (nid, mailpeer.USER), "From chosen", mark) is not None
         where = re.findall(r"mail: composer %s places ([^\n]*)" % nid, guest.seen)[-1]
         click(*at("to", where), ox=nx, oy=ny)
-        typed("ana@example.com,")
+        mark = len(guest.seen)
+        typed("ana")
+        guest.wait_for_line("mail: composer suggests ana@example.com", "a suggestion", mark)
+        key("esc")
+        said["esc_composer"] = guest.wait_for_line("mail: composer %s suggestions put away" % nid,
+                                                   "the composer's Escape", mark) is not None
+        typed("@example.com,")
         click(*at("subject", where), ox=nx, oy=ny)
         typed("From Lena")
         key("ctrl-ret")
         guest.wait_for("maild: sent %s" % nid, "the new one sent")
         time.sleep(1)
+
+        # A third account, POP3's: Add Account's third choice, its mail
+        # fetched and kept here.
+        pat = mailpeer.Peer(w.peer.work, "good.pem", "server.key", user=PAT)
+        pat.boxes["INBOX"].messages = []
+        pat.deliver("INBOX", LUNCH)
+        _, pat_smtp = pat.start()
+        pat_pop, _ = pat.start_pop()
+        mark = len(guest.seen)
+        click(*[v + 13 for v in at("dots", places)])
+        line = guest.wait_for_line("mail: dots menu at ", "the dots' menu again", mark)
+        m = re.match(r"(\d+),(\d+), (\d+) wide, rows of (\d+)", line)
+        mx, my, _, row = (int(v) for v in m.groups())
+        time.sleep(0.6)
+        click(mx + 24, my + 2 + row // 2, ox=0, oy=0)            # Add Account...
+        sheet = guest.wait_for_line("mail: sheet ", "Add Account again", mark)
+        said["pat"] = add_account(w, sheet, "Pat Lee", PAT, mailpeer.PASSWORD, pat_pop, pat_smtp,
+                                  kind="pop3")
+        guest.wait_for("maild: %s: 1 messages kept" % PAT, "Pat's Inbox kept")
+        said["pat_kept"] = True
+        said["pat_logins"] = list(pat.pop_logins)
     except Exception as e:                  # noqa: BLE001 - said below
         error = "%s: %s" % (type(e).__name__, str(e).splitlines()[0])
     finally:
         seen = window_closed(w, "guest-6.log")
         if sam:
             sam.stop()
+        if pat:
+            pat.stop()
 
     if w is None:
         print("FAIL: Mail's accounts: the machine never came up: %s" % error)
@@ -1628,10 +1662,18 @@ def part6(image):
         n = [m for m in w.peer.sent if "Subject: From Lena\r\n" in m["data"]]
     if not n or "From: Lena Moreau <lena@example.com>\r\n" not in n[0]["data"]:
         fails.append("the message whose From was chosen did not go from Lena by Lena's server")
+    if not (said.get("esc") and said.get("esc_composer")):
+        fails.append("an Escape alone waited for the next key: search %r, composer %r"
+                     % (said.get("esc"), said.get("esc_composer")))
+    if not said.get("pat", "").startswith(PAT) or not said.get("pat_kept"):
+        fails.append("a POP3 account added from Add Account was not signed in and kept: %r"
+                     % (said.get("pat"),))
+    if not any(ok and secure for _, ok, secure in said.get("pat_logins", [])):
+        fails.append("the POP3 account did not sign in over TLS: %r" % said.get("pat_logins"))
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 12
+    checks = 15
 
     if fails:
         print("FAIL: %d of %d checks on Mail's accounts:" % (len(fails), checks))
@@ -1641,12 +1683,324 @@ def part6(image):
 
     print("PASS: %d checks on Mail's accounts (a second account added; All Inboxes and Flagged "
           "first, over both; a word inside a message found only with All; a reply from All "
-          "Inboxes sent from the account it came to; a new message's From chosen)." % checks)
+          "Inboxes sent from the account it came to; a new message's From chosen; a third, "
+          "POP3, added from Add Account and kept; an Escape alone answered at once)." % checks)
+    return 0
+
+
+# POP3 (`docs/mail.md`, *POP3*): `pop3.lua` against the peer's maildrop, and
+# then `maild` keeping a POP3 account.
+POPCHECK = r"""
+local pop3 = use("/Kosmos/Libraries/pop3.lua")
+local regions = use("/Kosmos/Libraries/regions.lua")
+local mail = use("/Kosmos/Kits/mail")
+
+local der = fs.read("/Home/ca.der")
+local function where(port, tls, password)
+  return { host = "10.0.2.2", port = port, tls = tls, name = "kosmos-test.local",
+           anchors = { der }, user = "USER", password = password or "PASSWORD" }
+end
+
+local function say(...) print("M " .. table.concat({ ... }, " ")) end
+
+local function run()
+  local s, why = pop3.open(where(PORTTLS, true))
+  if not s then return say("open", "failed", why) end
+
+  local caps, cwhy = s:wait(s.ready)
+  say("ready", tostring(caps ~= nil), caps and tostring(caps.UIDL ~= nil) or tostring(cwhy))
+
+  local w = pop3.open(where(PORTTLS, true, "not-it"))
+  local _, wwhy = w:wait(w.ready)
+  say("refused", tostring(wwhy))
+
+  -- Plain, on a port that is not 110: STLS before the password.
+  local p = pop3.open(where(PORTPLAIN, false))
+  local pcaps, pwhy = p:wait(p.ready)
+  say("stls", tostring(pcaps ~= nil), tostring(p.stream.tls ~= nil), tostring(pwhy))
+  if pcaps then p:wait(p:quit()) end
+
+  local list = s:wait(s:list()) or {}
+  local ids = {}
+  for _, m in ipairs(list) do ids[#ids + 1] = m.n .. "=" .. m.id end
+  say("list", table.concat(ids, ","))
+
+  local got, fwhy = s:wait(s:fetch(1, "/Home/p1.eml", list[1] and list[1].size))
+  local r, size = regions.read_whole("/Home/p1.eml")
+  local m = r and mail.parse(r.at, size)
+  say("fetch1", tostring(got and got.bytes), tostring(m and m:header("subject")) or tostring(fwhy))
+  regions.free(r)
+
+  -- 420 KB, which the server counted short: the region grows.
+  local big, bwhy = s:wait(s:fetch(3, "/Home/p3.eml", list[3] and list[3].size), 60)
+  local r3, size3 = regions.read_whole("/Home/p3.eml")
+  local m3 = r3 and mail.parse(r3.at, size3)
+  local part
+  for _, q in ipairs(m3 and m3:parts() or {}) do
+    if q.name == "photos.bin" then part = q end
+  end
+  if part then
+    local out = regions.make(part.bound)
+    local n = m3:part_into(part.id, out.at, out.size)
+    local head = sys.region_read(out.cap, 0, 4)
+    local tail = sys.region_read(out.cap, n - 4, 4)
+    say("fetch3", tostring(big and big.bytes), tostring(size3), tostring(n),
+        (head:gsub(".", function(c) return ("%02x"):format(c:byte()) end)),
+        (tail:gsub(".", function(c) return ("%02x"):format(c:byte()) end)))
+    regions.free(out)
+  else
+    say("fetch3", "no attachment", tostring(bwhy))
+  end
+  regions.free(r3)
+
+  -- Lines that begin with a dot, as they were written.
+  local dots = s:wait(s:fetch(4, "/Home/p4.eml", list[4] and list[4].size))
+  local text = fs.read("/Home/p4.eml") or ""
+  say("dots", tostring(dots and dots.bytes),
+      tostring(text:find("\r\n.a line that begins with a dot\r\n..two\r\n", 1, true) ~= nil))
+
+  local d, dwhy = s:wait(s:delete(2))
+  local q, qwhy = s:wait(s:quit())
+  say("quit", tostring(dwhy == nil), tostring(qwhy == nil), tostring(s.broken))
+end
+
+local ok, err = pcall(run)
+if not ok then say("error", tostring(err)) end
+print("POPCHECK" .. " END")
+"""
+
+POP_SETUP = r"""
+local files = use("/Kosmos/Libraries/files.lua")
+files.make_folder("/Home/Mail/USER")
+local ok, why = fs.write("/Home/Mail/USER/account", {
+  address = "USER", name = "Lena Moreau", kind = "pop3",
+  pop3 = { host = "10.0.2.2", port = PORTTLS },
+  smtp = { host = "10.0.2.2", port = SMTP },
+  certificate = "/Home/ca.der", tls_name = "kosmos-test.local" })
+print("SETUP " .. tostring(ok) .. " " .. tostring(why) .. " DONE")
+"""
+
+POP_LOOK = r"""
+for _, box in ipairs({ "INBOX", "Sent" }) do
+  local dir = "/Home/Mail/USER/" .. box
+  local names = {}
+  for _, n in ipairs(fs.list(dir) or {}) do
+    if n:match("%.eml$") then names[#names + 1] = n end
+  end
+  table.sort(names)
+  for _, n in ipairs(names) do
+    local a = fs.getattr(dir .. "/" .. n) or {}
+    print(("L %s/%s|%s|%s|%s"):format(box, n, tostring(a.from), tostring(a.subject), tostring(a.seen)))
+  end
+end
+local boxes = fs.read("/Home/Mail/USER/mailboxes") or {}
+local uses = {}
+for _, b in ipairs(boxes) do uses[#uses + 1] = b.title .. "=" .. tostring(b.use) end
+print("B " .. table.concat(uses, ","))
+local st = fs.send("/Running/maild", { type = "status" }) or {}
+local a = (st.accounts or {})[1] or {}
+print(("S %s %s %s %s"):format(tostring(st.ok), tostring(a.state), tostring(a.messages),
+      tostring(a.unseen)))
+print("LOOK" .. " END")
+"""
+
+# The second message kept here - the server's third - deleted from the window.
+POP_DELETE = ('local r = fs.send("/Running/maild", { type = "delete", account = "USER", '
+              'mailbox = "INBOX", uids = { 2 } })\nprint("DELETE " .. tostring(r and r.ok))\n')
+
+POP_SEND = r"""
+local files = use("/Kosmos/Libraries/files.lua")
+files.make_folder("/Home/Mail/Outbox")
+fs.write("/Home/Mail/Outbox/pop1.eml", "From: Lena Moreau <USER>\r\nTo: bob@example.net\r\n" ..
+         "Subject: Sent by POP3's account\r\nDate: Fri, 9 Oct 2026 10:00:00 +0000\r\n\r\nHello, Bob.\r\n")
+fs.write("/Home/Mail/Outbox/pop1.send", { account = "USER", rcpt = { "bob@example.net" },
+                                          subject = "Sent by POP3's account" })
+local r = fs.send("/Running/maild", { type = "send", name = "pop1" })
+print("SEND " .. tostring(r and r.ok))
+"""
+
+DOTS = ("From: Ana Ruiz <ana@example.com>\r\nTo: lena@example.com\r\nSubject: Dots\r\n"
+        "Date: Thu, 8 Oct 2026 09:00:00 +0000\r\n\r\n"
+        ".a line that begins with a dot\r\n..two\r\nthe end\r\n").encode()
+
+
+def part7(image):
+    """POP3: `pop3.lua` signed in over TLS and by STLS, a wrong password
+    refused, the maildrop listed by unique id, a message fetched and read,
+    420 KB whose size the server said short, lines that begin with a dot, a
+    deletion that takes at QUIT; then `maild` keeping a POP3 account - its
+    Inbox fetched, a new message found at the next look and said, one
+    deleted here deleted there, and what it sends kept in its Sent."""
+    work, peer, imap_port, smtp_port = setup()
+    peer.deliver("INBOX", DOTS)
+    pop_port, plain_port = peer.start_pop()
+
+    def popfill(text):
+        return (fill(text, imap_port, smtp_port).replace("PORTPLAIN", str(plain_port))
+                .replace("PORTTLS", str(pop_port)))
+
+    guest, R = boot(image, work, {"popcheck.lua": popfill(POPCHECK),
+                                  "setup.lua": popfill(POP_SETUP), "look.lua": popfill(POP_LOOK),
+                                  "sync.lua": SYNC, "delete.lua": popfill(POP_DELETE),
+                                  "send.lua": popfill(POP_SEND)})
+    who = mailpeer.USER
+    said, looks, error = "", [], None
+
+    def look():
+        mark = len(guest.seen)
+        guest.type("/Home/look.lua")
+        guest.wait_for_line("LOOK END", "a look at what maild kept", since=mark)
+        looks.append(guest.seen[mark:].replace("\r", ""))
+
+    try:
+        guest.wait_for(R.PROMPT, "the prompt")
+        guest.wait_for("net: an address from DHCP", "a lease")
+        mark = len(guest.seen)
+        guest.type("/Home/popcheck.lua")
+        guest.wait_for_line("POPCHECK END", "the POP3 check", since=mark)
+
+        mark = len(guest.seen)
+        guest.type("/Home/setup.lua")
+        guest.wait_for_line("DONE", "the account written", since=mark)
+        mark = len(guest.seen)
+        guest.type("mailpass keep pop3://10.0.2.2:%d %s %s" % (pop_port, who, mailpeer.PASSWORD))
+        guest.wait_for_line("mailpass: kept", "the password kept", since=mark)
+
+        guest.type("maild &")
+        guest.wait_for("maild: %s: 3 messages kept, 3 unseen" % who, "the POP3 Inbox kept")
+        look()
+
+        # Delivered on the server; found at the look the window asks for.
+        peer.deliver("INBOX", mailpeer.ARRIVING)
+        mark = len(guest.seen)
+        guest.type("/Home/sync.lua")
+        guest.wait_for_line("maild: %s: INBOX: 1 new, 0 deleted on the server" % who,
+                            "the arrival fetched", since=mark)
+        guest.wait_for('"Bob" from /Kosmos/Programs/maild.lua', "the arrival said")
+
+        mark = len(guest.seen)
+        guest.type("/Home/delete.lua")
+        guest.wait_for_line("maild: %s: INBOX: 0 new, 1 deleted on the server" % who,
+                            "a message deleted there", since=mark)
+
+        mark = len(guest.seen)
+        guest.type("/Home/send.lua")
+        guest.wait_for_line("maild: sent pop1", "a message sent", since=mark)
+        guest.wait_for_line("SEND", "the send asked", since=mark)
+        look()
+    except Exception as e:                  # noqa: BLE001 - said below
+        error = "%s: %s" % (type(e).__name__, str(e).splitlines()[0])
+    finally:
+        said = guest.seen.replace("\r", "")
+        guest.close()
+        peer.stop()
+
+    lines = said_lines(said)
+    fails = []
+
+    def expect(name, want, what):
+        got = lines.get(name)
+
+        if got != want:
+            fails.append("%s: said %r, not %r" % (what, got, want))
+
+    if error:
+        fails.append("the machine stopped: " + error + " ... " + said[-800:])
+
+    if "error" in lines:
+        fails.append("the check raised: " + lines["error"])
+
+    expect("ready", "true true", "signed in over TLS, and UIDL offered")
+
+    if "[AUTH]" not in lines.get("refused", ""):
+        fails.append("a wrong password was not refused in the server's words: %r"
+                     % lines.get("refused"))
+
+    expect("stls", "true true nil", "signed in on a plain port after STLS")
+    expect("list", "1=uid-1,2=uid-2,3=uid-3,4=uid-4", "the maildrop by unique id")
+    expect("fetch1", "%d Café on Saturday" % len(mailpeer.SEED[0]),
+           "a message fetched and its subject read by the Mail Kit")
+
+    m3, big = len(mailpeer.SEED[2]), mailpeer.BIG
+    expect("fetch3", "%d %d %d %s %s" % (m3, m3, len(big), big[:4].hex(), big[-4:].hex()),
+           "420 KB, counted short by the server, fetched whole")
+    expect("dots", "%d true" % len(DOTS), "lines that begin with a dot, as written")
+    expect("quit", "true true signed out", "a deletion, and QUIT")
+
+    pops = [l for l in peer.pop_logins]
+
+    if not any(ok and secure for _, ok, secure in pops) or any(not secure for _, _, secure in pops):
+        fails.append("a password went to the server other than over TLS: %r" % pops)
+
+    def rows(text):
+        return [l[2:].split("|") for l in text.splitlines() if l.startswith("L ")]
+
+    def mark_of(text, m):
+        return next((l[2:] for l in text.splitlines() if l.startswith(m + " ")), None)
+
+    first = looks[0] if looks else ""
+
+    if [r[0] for r in rows(first)] != ["INBOX/1.eml", "INBOX/2.eml", "INBOX/3.eml"]:
+        fails.append("the POP3 Inbox kept as files: %r" % rows(first))
+    elif rows(first)[0][1:3] != ["Tomás Ferreira", "Café on Saturday"]:
+        fails.append("a POP3 message's facts as attributes: %r" % rows(first)[0])
+
+    if mark_of(first, "B") != "INBOX=inbox,Sent=sent":
+        fails.append("a POP3 account's two folders: %r" % mark_of(first, "B"))
+
+    if mark_of(first, "S") != "true idle 3 3":
+        fails.append("/Running/maild's status for a POP3 account: %r" % mark_of(first, "S"))
+
+    second = looks[1] if len(looks) > 1 else ""
+    r2 = rows(second)
+
+    if [r[0] for r in r2] != ["INBOX/1.eml", "INBOX/3.eml", "INBOX/4.eml", "Sent/1.eml"]:
+        fails.append("after an arrival, a deletion and a send: %r" % [r[0] for r in r2])
+    else:
+        if r2[2][1:3] != ["Bob", "While you were idling"]:
+            fails.append("the message found at the next look: %r" % r2[2])
+        if r2[3][2:] != ["Sent by POP3's account", "true"]:
+            fails.append("what was sent, kept in Sent and read: %r" % r2[3])
+
+    with peer.lock:
+        subjects = [m["data"].split(b"Subject: ")[1].split(b"\r\n")[0].decode("utf-8", "replace")
+                    for m in peer.boxes["INBOX"].messages]
+        sent = [x for x in peer.sent if "Sent by POP3's account" in x["data"]]
+
+    if "The photos" in subjects or "This week's route" in subjects:
+        fails.append("deleted messages still on the server: %r" % subjects)
+
+    if "Dots" not in subjects or "While you were idling" not in subjects:
+        fails.append("messages kept here are no longer on the server: %r" % subjects)
+
+    if not sent or sent[0]["to"] != ["bob@example.net"]:
+        fails.append("the message did not go by SMTP: %r" % sent)
+
+    if any(l.startswith("maild:") and mailpeer.PASSWORD in l for l in said.splitlines()):
+        fails.append("maild printed the password")
+
+    if " died: " in said:
+        fails.append("something died: " + said[said.find(" died: ") - 80:][:300])
+
+    checks = 18
+
+    if fails:
+        print("FAIL: %d of %d checks on POP3:" % (len(fails), checks))
+        for f in fails:
+            print("  " + f)
+        return 1
+
+    print("PASS: %d checks on POP3 (pop3.lua signed in over TLS and by STLS, a wrong "
+          "password refused, never a password in the clear; the maildrop by unique id; a "
+          "message fetched and read, 420 KB counted short fetched whole, dotted lines as "
+          "written, a deletion taken at QUIT; maild keeping a POP3 account: its Inbox and "
+          "Sent, a message found at the next look and said, one deleted here deleted there, "
+          "what it sent kept in Sent)." % checks)
     return 0
 
 
 if __name__ == "__main__":
     image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
     part = sys.argv[sys.argv.index("--part") + 1] if "--part" in sys.argv else "1"
-    sys.exit(part6(image) if part == "6" else part5(image) if part == "5" else part4(image) if part == "4" else part3(image) if part == "3"
+    sys.exit(part7(image) if part == "7" else part6(image) if part == "6" else part5(image) if part == "5" else part4(image) if part == "4" else part3(image) if part == "3"
              else part2(image) if part == "2" else part1(image))

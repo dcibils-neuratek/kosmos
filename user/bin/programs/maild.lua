@@ -32,8 +32,17 @@
 --
 -- and its password is the keyring's, under `imap://<host>:<port>` and the
 -- address: `mailpass keep imap://imap.example.com:993 lena@example.com ...`.
+--
+-- **A POP3 account** has `pop3 = { host, port = 995 }` where `imap` would
+-- be, and its password under `pop3://<host>:<port>`. POP3 has one maildrop
+-- and no flags, so such an account is two folders kept here - its Inbox,
+-- fetched, and a Sent of what was sent from it - and a look every two
+-- minutes, signed out between: a POP3 server locks the maildrop while
+-- somebody is in it. Mail stays on the server, as Gmail's POP keeps it,
+-- until it is deleted here.
 
 local imap = use("/Kosmos/Libraries/imap.lua")
+local pop3 = use("/Kosmos/Libraries/pop3.lua")
 local smtp = use("/Kosmos/Libraries/smtp.lua")
 local files = use("/Kosmos/Libraries/files.lua")
 local regions = use("/Kosmos/Libraries/regions.lua")
@@ -51,6 +60,10 @@ local HOME = "/Home/Mail"
 local OUTBOX = HOME .. "/Outbox"
 local DRAFTS = HOME .. "/Drafts here"
 local ONCE = tostring(args or ""):match("%-%-once") ~= nil
+
+-- What the window may ask done to a message.
+local FLAGGABLE = { seen = true, flagged = true, answered = true }
+local MOVES = { move = true, archive = true, delete = true }
 
 -- A first look at a mailbox keeps its newest hundred; older mail stays on
 -- the server until it is asked for. Ten thousand messages fetched on the
@@ -77,6 +90,7 @@ local function seconds_from_now(s) return sys.ticks() + s * counter_hz end
 local accounts = {}
 local status, outbox_status           -- below, and each needs the other's name
 local account_named
+local keep_here, run_pop_account      -- POP3's, below the IMAP account's
 
 local function note(a, text)
   print(("maild: %s: %s"):format(a and a.address or "-", text))
@@ -278,6 +292,49 @@ local function say_arrived(a)
   end
 end
 
+-- Kept by an older reading: its facts worked out again, its flags kept.
+local function redo_facts(a, mailbox, folder)
+  local redone = 0
+
+  for _, name in ipairs(fs.list(folder) or {}) do
+    local uid = tonumber(name:match("^(%d+)%.eml$"))
+    local path = folder .. "/" .. name
+    local at = uid and fs.getattr(path)
+
+    if at and (tonumber(at.facts) or 0) < FACTS then
+      local f = facts(path, uid, { seen = at.seen, flagged = at.flagged })
+
+      if f then
+        fs.setattr(path, f)
+        redone = redone + 1
+      end
+    end
+  end
+
+  if redone > 0 then note(a, ("%s: %d worked out again"):format(mailbox.title or mailbox.name, redone)) end
+end
+
+-- What the window's row for a mailbox says: its messages, and those unseen.
+local function counted(a, mailbox, folder)
+  local messages, unseen = 0, 0
+
+  for _, name in ipairs(fs.list(folder) or {}) do
+    if name:match("%.eml$") then
+      messages = messages + 1
+
+      local at = fs.getattr(folder .. "/" .. name) or {}
+
+      if not at.seen then unseen = unseen + 1 end
+    end
+  end
+
+  a.counts[mailbox.name] = { messages = messages, unseen = unseen }
+
+  if mailbox.use == "inbox" or mailbox.name:upper() == "INBOX" then
+    a.messages, a.unseen = messages, unseen
+  end
+end
+
 --------------------------------------------------------------------------
 -- A mailbox brought up to date: what is new fetched, what changed marked,
 -- what is gone taken away.
@@ -341,25 +398,7 @@ local function sync(a, s, mailbox, quiet)
 
   local changed, gone = 0, 0
 
-  -- Kept by an older reading: its facts worked out again, its flags kept.
-  local redone = 0
-
-  for _, name in ipairs(fs.list(folder) or {}) do
-    local uid = tonumber(name:match("^(%d+)%.eml$"))
-    local path = folder .. "/" .. name
-    local at = uid and fs.getattr(path)
-
-    if at and (tonumber(at.facts) or 0) < FACTS then
-      local f = facts(path, uid, { seen = at.seen, flagged = at.flagged })
-
-      if f then
-        fs.setattr(path, f)
-        redone = redone + 1
-      end
-    end
-  end
-
-  if redone > 0 then note(a, ("%s: %d worked out again"):format(mailbox.title or mailbox.name, redone)) end
+  redo_facts(a, mailbox, folder)
 
   -- Changed: the flags the list shows.
   for _, m in ipairs(ch.changed) do
@@ -390,24 +429,7 @@ local function sync(a, s, mailbox, quiet)
   fs.write(state_path, { uidvalidity = ch.uidvalidity, uid_high = ch.uid_high,
                          modseq = ch.modseq })
 
-  -- What the window's Inbox row says.
-  local messages, unseen = 0, 0
-
-  for _, name in ipairs(fs.list(folder) or {}) do
-    if name:match("%.eml$") then
-      messages = messages + 1
-
-      local at = fs.getattr(folder .. "/" .. name) or {}
-
-      if not at.seen then unseen = unseen + 1 end
-    end
-  end
-
-  a.counts[mailbox.name] = { messages = messages, unseen = unseen }
-
-  if mailbox.use == "inbox" or mailbox.name:upper() == "INBOX" then
-    a.messages, a.unseen = messages, unseen
-  end
+  counted(a, mailbox, folder)
 
   -- Said when something moved, so a log reads as what happened.
   if state and #new + changed + gone > 0 then
@@ -582,12 +604,13 @@ end
 -- An account, from sign-in to IDLE and round again.
 --------------------------------------------------------------------------
 
--- The account's password, from the keyring - under its IMAP server, which
--- is the one Add Account keeps; the same signs in to send (an app password
--- for Gmail is one password for both).
+-- The account's password, from the keyring - under its incoming server,
+-- IMAP or POP3, which is the one Add Account keeps; the same signs in to
+-- send (an app password for Gmail is one password for both).
 local function password_of(a)
   local acc = a.account
-  local service = ("imap://%s:%d"):format(acc.imap.host, acc.imap.port or 993)
+  local service = acc.pop3 and ("pop3://%s:%d"):format(acc.pop3.host, acc.pop3.port or 995)
+                  or ("imap://%s:%d"):format(acc.imap.host, acc.imap.port or 993)
   local password, why = fs.mail_password(service, a.address)
 
   if not password then return nil, "no password kept for " .. service .. ": " .. tostring(why) end
@@ -739,6 +762,255 @@ local function run_account(a)
 end
 
 --------------------------------------------------------------------------
+-- A POP3 account (`docs/mail.md`, *POP3*): signed in, what is new fetched,
+-- what was deleted here deleted there, signed out, and again in two minutes.
+--------------------------------------------------------------------------
+
+-- Its two folders, both kept here: what arrives, and what was sent.
+local POP_BOXES = { { name = "INBOX", title = "INBOX", use = "inbox", selectable = true },
+                    { name = "Sent", title = "Sent", use = "sent", selectable = true } }
+
+-- What a folder of a POP3 account keeps of itself: `ids`, each message the
+-- server has by its unique id - the number it is kept under here, or false
+-- for one that is not (older than the first look, or deleted here) - and
+-- `next`, the number the next message kept is given.
+local function pop_state(folder)
+  local t = fs.read(folder .. "/state")
+
+  if type(t) ~= "table" then return nil end
+
+  t.ids = type(t.ids) == "table" and t.ids or {}
+  t.next = math.tointeger(t.next) or 1
+  return t
+end
+
+-- A message put into one of the account's own folders, under the next
+-- number, its facts worked out: what was sent, kept in Sent. The file is
+-- moved, not copied; its path here, or nil.
+function keep_here(a, box, from, flags)
+  if not box then return nil end
+
+  local folder = folder_of(a, box)
+
+  files.make_folder(folder)
+
+  local state = pop_state(folder) or { ids = {}, next = 1 }
+  local uid = state.next
+  local path = ("%s/%d.eml"):format(folder, uid)
+
+  if not files.move(from, path) then
+    note(a, "could not keep " .. from .. " in " .. box.title)
+    return nil
+  end
+
+  state.next = uid + 1
+  fs.write(folder .. "/state", state)
+
+  local f = facts(path, uid, flags or {})
+
+  if f then fs.setattr(path, f) end
+
+  counted(a, box, folder)
+  publish()
+  return path
+end
+
+-- The Inbox brought up to date: what the window deleted, deleted on the
+-- server; what is new, fetched. Nothing on the server is a reason to take a
+-- message away from here: the copy here is the account's mail.
+local function pop_sync(a, s, list, quiet)
+  local box = POP_BOXES[1]
+  local folder = folder_of(a, box)
+  local state = pop_state(folder)
+  local first = state == nil
+
+  files.make_folder(folder)
+  state = state or { ids = {}, next = 1 }
+
+  -- Deleted here: the server's copy marked, to go at QUIT.
+  local by_uid, deleted = {}, 0
+
+  for id, uid in pairs(state.ids) do
+    if uid then by_uid[uid] = id end
+  end
+
+  while #a.ops > 0 do
+    local op = table.remove(a.ops, 1)
+
+    if op.type == "delete" and op.mailbox == box.name then
+      for _, uid in ipairs(op.uids) do
+        local id = by_uid[uid]
+
+        for _, m in ipairs(list) do
+          if id and m.id == id then
+            local _, why = await(s:delete(m.n))
+
+            if why then return nil, why end
+
+            deleted = deleted + 1
+          end
+        end
+
+        if id then state.ids[id] = false end
+        files.remove(("%s/%d.eml"):format(folder, uid))
+      end
+    elseif op.type == "delete" and op.mailbox == "Sent" then
+      forget_files(a, POP_BOXES[2], op.uids)
+      counted(a, POP_BOXES[2], folder_of(a, POP_BOXES[2]))
+    elseif MOVES[op.type] then
+      note(a, ("%s in %s: a POP3 account has nowhere to put them"):format(op.type, op.mailbox or "?"))
+    end
+    -- A flag is the window's, on the file here; the server has none.
+  end
+
+  -- What the server has that is not known here, oldest first; on a first
+  -- look, only the newest hundred, the rest known and left there.
+  local new = {}
+
+  for _, m in ipairs(list) do
+    if state.ids[m.id] == nil then new[#new + 1] = m end
+  end
+
+  if first and #new > FIRST_KEEP then
+    for i = 1, #new - FIRST_KEEP do state.ids[new[i].id] = false end
+    table.move(new, #new - FIRST_KEEP + 1, #new, 1)
+    for i = #new, FIRST_KEEP + 1, -1 do new[i] = nil end
+  end
+
+  local why, fetched = nil, 0
+
+  for i, m in ipairs(new) do
+    local uid = state.next
+    local path = ("%s/%d.eml"):format(folder, uid)
+    local got, oops = await(s:fetch(m.n, path, m.size))
+
+    if not got then
+      why = oops
+      note(a, ("message %s not fetched: %s"):format(m.id, tostring(oops)))
+      break
+    end
+
+    state.next = uid + 1
+    state.ids[m.id] = uid
+    fetched = fetched + 1
+
+    local f = facts(path, uid, {})
+
+    if f then fs.setattr(path, f) end
+    if not first and not quiet then a.arrived[#a.arrived + 1] = { path = path, facts = f or {} } end
+
+    -- A long first look is seen arriving, ten at a time, and what it has
+    -- kept is remembered as it goes.
+    if i % 10 == 0 then
+      fs.write(folder .. "/state", state)
+      counted(a, box, folder)
+      publish()
+    end
+  end
+
+  -- What the server no longer has is no longer asked about.
+  local present = {}
+
+  for _, m in ipairs(list) do present[m.id] = true end
+
+  for id in pairs(state.ids) do
+    if not present[id] then state.ids[id] = nil end
+  end
+
+  fs.write(folder .. "/state", state)
+
+  for _, b in ipairs(POP_BOXES) do
+    redo_facts(a, b, folder_of(a, b))
+    counted(a, b, folder_of(a, b))
+  end
+
+  if not first and fetched + deleted > 0 then
+    note(a, ("INBOX: %d new, %d deleted on the server"):format(fetched, deleted))
+  end
+
+  if why then return nil, why end
+
+  return true
+end
+
+function run_pop_account(a)
+  local acc = a.account
+
+  a.list = POP_BOXES
+  a.inbox_folder = folder_of(a, POP_BOXES[1])
+  fs.write(a.dir .. "/mailboxes", POP_BOXES)
+
+  for _, b in ipairs(POP_BOXES) do
+    files.make_folder(folder_of(a, b))
+    counted(a, b, folder_of(a, b))
+  end
+
+  publish()
+
+  local first = true
+
+  while true do
+    a.wake = false
+    set_state(a, first and "signing in" or "syncing")
+
+    local password, why = password_of(a)
+    local s, can
+
+    if password then
+      s, why = pop3.open{ host = acc.pop3.host, port = acc.pop3.port or 995,
+                          tls = acc.pop3.tls ~= false, name = acc.tls_name,
+                          anchors = anchors_of(a), user = acc.user or a.address,
+                          password = password }
+      password = nil
+    end
+
+    if s then
+      a.session = s
+      can, why = await(s.ready)
+    end
+
+    local ok = can ~= nil
+
+    if ok then
+      if first then note(a, "signed in") end
+      set_state(a, "syncing")
+
+      local list
+
+      list, why = await(s:list())
+      ok = list ~= nil
+
+      if ok then ok, why = pop_sync(a, s, list, false) end
+      if ok then await(s:quit()) end
+    else
+      note(a, "could not sign in: " .. tostring(why))
+    end
+
+    if s and not s.broken then s:fail(ok and "signed out" or "given up") end
+    a.session = nil
+
+    if ok then
+      if first then
+        note(a, ("%d messages kept, %d unseen"):format(a.messages, a.unseen))
+        first = false
+      end
+
+      say_arrived(a)
+      set_state(a, "idle")
+    else
+      set_state(a, "error", tostring(why))
+    end
+
+    if ONCE then return end
+
+    -- Until the next look, or until the window asks for one or deletes.
+    local until_ = seconds_from_now(ok and POLL_SECONDS or RETRY_SECONDS)
+
+    while sys.ticks() < until_ and not a.wake and #a.ops == 0 do coroutine.yield() end
+  end
+end
+
+--------------------------------------------------------------------------
 -- The accounts, from /Home/Mail.
 --------------------------------------------------------------------------
 
@@ -747,16 +1019,16 @@ end
 local function account_from(name)
   local dir = HOME .. "/" .. name
   local account = fs.read(dir .. "/account")
+  local incoming = type(account) == "table" and (account.pop3 or account.imap)
 
-  if type(account) ~= "table" or type(account.imap) ~= "table" or not account.imap.host then
-    return nil
-  end
+  if type(incoming) ~= "table" or not incoming.host then return nil end
 
   local a = { address = account.address or name, account = account, dir = dir,
               state = "waiting", arrived = {}, messages = 0, unseen = 0,
-              counts = {}, wanted = {}, ops = {} }
+              counts = {}, wanted = {}, ops = {}, pop = account.pop3 ~= nil }
+  local run = a.pop and run_pop_account or run_account
 
-  a.co = coroutine.create(function() return run_account(a) end)
+  a.co = coroutine.create(function() return run(a) end)
 
   return a
 end
@@ -891,8 +1163,12 @@ local function step_sending(conns)
         print(("maild: sent %s"):format(id))
         outbox[id] = nil
 
-        -- Gmail keeps what it sent by itself; any other server is given it.
-        if a.account.kind ~= "google" then
+        -- Gmail keeps what it sent by itself; any other server is given
+        -- it, and a POP3 account, which has nowhere there, keeps it here.
+        if a.pop then
+          keep_here(a, box_for(a, "sent"), o.path, { seen = true })
+          for _, p in ipairs(remove) do files.remove(p) end
+        elseif a.account.kind ~= "google" then
           a.ops[#a.ops + 1] = { type = "append", use = "sent", path = o.path, flags = { "seen" },
                                 id = id, remove = remove }
         else
@@ -926,9 +1202,6 @@ local function send_left()
 end
 
 send_left()
-
-local FLAGGABLE = { seen = true, flagged = true, answered = true }
-local MOVES = { move = true, archive = true, delete = true }
 
 -- When the window last asked: for a while after, the loop looks more often,
 -- so a press is answered in a fiftieth of a second rather than a tenth.
@@ -1009,8 +1282,15 @@ local function answer()
       publish()
       reply = { ok = true }
     elseif t == "open" and a and type(req.mailbox) == "string" then
-      a.wanted[req.mailbox] = true
-      a.wake = true
+      -- A POP3 account's folders are both here; nothing to look at there.
+      if not a.pop then
+        a.wanted[req.mailbox] = true
+        a.wake = true
+      end
+
+      reply = { ok = true }
+    elseif t == "flag" and a and a.pop and FLAGGABLE[req.flag] then
+      -- Kept on the file by the window; POP3 has no flags to tell.
       reply = { ok = true }
     elseif t == "flag" and a and type(req.mailbox) == "string" and FLAGGABLE[req.flag] then
       a.ops[#a.ops + 1] = { type = "flag", mailbox = req.mailbox, uids = uids_of(req.uids),
@@ -1048,7 +1328,7 @@ while true do
         -- And started again, after the pause any failure gets.
         a.co = coroutine.create(function()
           pause(a, RETRY_SECONDS)
-          return run_account(a)
+          return (a.pop and run_pop_account or run_account)(a)
         end)
       end
     end

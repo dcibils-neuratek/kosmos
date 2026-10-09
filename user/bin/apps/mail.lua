@@ -187,7 +187,9 @@ local function read_accounts()
   for _, name in ipairs(fs.list(HOME) or {}) do
     local account = fs.read(HOME .. "/" .. name .. "/account")
 
-    if type(account) == "table" and account.imap then
+    local incoming = type(account) == "table" and (account.imap or account.pop3)
+
+    if incoming then
       local st = from_status[account.address or name] or {}
       local boxes = st.boxes
 
@@ -202,7 +204,7 @@ local function read_accounts()
       end
 
       out[#out + 1] = { address = account.address or name, name = account.name,
-                        kind = account.kind, host = account.imap.host, state = st.state,
+                        kind = account.pop3 and "pop3" or account.kind, host = incoming.host, state = st.state,
                         why = st.why, boxes = sorted_boxes(boxes) }
     end
   end
@@ -1021,10 +1023,15 @@ local sheet = nil
 local GOOGLE = { imap = { host = "imap.gmail.com", port = 993 },
                  smtp = { host = "smtp.gmail.com", port = 587 } }
 
+-- What each kind's incoming server is called and listens on, for a guess
+-- from the address.
+local INCOMING = { imap = { prefix = "imap.", port = "993" },
+                   pop3 = { prefix = "pop.", port = "995" } }
+
 local function open_sheet()
   sheet = { kind = "google", focus = 1, said = nil, waiting = nil,
             name = "", address = "", password = "",
-            imap_host = "", imap_port = "993", smtp_host = "", smtp_port = "587" }
+            in_host = "", in_port = "993", smtp_host = "", smtp_port = "587" }
   print("mail: add account")
 end
 
@@ -1037,9 +1044,9 @@ local function sheet_fields()
       secret = true },
   }
 
-  if sheet.kind == "imap" then
-    list[#list + 1] = { key = "imap_host", label = "Incoming" }
-    list[#list + 1] = { key = "imap_port", label = "Port" }
+  if INCOMING[sheet.kind] then
+    list[#list + 1] = { key = "in_host", label = "Incoming" }
+    list[#list + 1] = { key = "in_port", label = "Port" }
     list[#list + 1] = { key = "smtp_host", label = "Outgoing" }
     list[#list + 1] = { key = "smtp_port", label = "Port" }
   end
@@ -1049,17 +1056,37 @@ end
 
 local function guess_servers()
   local domain = sheet.address:match("@([%w%.%-]+)$")
+  local kind = INCOMING[sheet.kind]
 
-  if not domain then return end
+  if not (domain and kind) then return end
 
-  if sheet.imap_host == "" then sheet.imap_host = "imap." .. domain end
+  if sheet.in_host == "" then sheet.in_host = kind.prefix .. domain end
   if sheet.smtp_host == "" then sheet.smtp_host = "smtp." .. domain end
+end
+
+-- Another kind chosen: what was guessed for the one before, guessed again
+-- for this one - `imap.` becomes `pop.`, 993 becomes 995 - and what was
+-- typed by hand kept.
+local function choose_kind(kind)
+  local before, after = INCOMING[sheet.kind], INCOMING[kind]
+
+  if before and after then
+    local domain = sheet.address:match("@([%w%.%-]+)$")
+
+    if domain and sheet.in_host == before.prefix .. domain then sheet.in_host = "" end
+    if sheet.in_port == before.port then sheet.in_port = after.port end
+  elseif after then
+    sheet.in_port = after.port
+  end
+
+  sheet.kind, sheet.focus = kind, 1
+  guess_servers()
 end
 
 local function servers_of()
   if sheet.kind == "google" then return GOOGLE.imap, GOOGLE.smtp end
 
-  return { host = sheet.imap_host, port = tonumber(sheet.imap_port) or 993 },
+  return { host = sheet.in_host, port = tonumber(sheet.in_port) or tonumber(INCOMING[sheet.kind].port) },
          { host = sheet.smtp_host, port = tonumber(sheet.smtp_port) or 587 }
 end
 
@@ -1076,9 +1103,9 @@ local function sign_in()
     return
   end
 
-  local imap_s, smtp_s = servers_of()
+  local in_s, smtp_s = servers_of()
 
-  if imap_s.host == "" then
+  if in_s.host == "" then
     sheet.said = "The incoming server is empty"
     return
   end
@@ -1087,13 +1114,18 @@ local function sign_in()
   local ok, why = files.make_folder(dir)
 
   if ok then
+    -- POP3's server under its own name, so nothing reads it as IMAP's.
+    local pop = sheet.kind == "pop3"
+
     ok, why = fs.write(dir .. "/account", {
       address = address, name = sheet.name ~= "" and sheet.name or nil,
-      kind = sheet.kind, imap = imap_s, smtp = smtp_s })
+      kind = sheet.kind, imap = not pop and in_s or nil, pop3 = pop and in_s or nil,
+      smtp = smtp_s })
   end
 
   if ok then
-    ok, why = fs.mail_password_keep(("imap://%s:%d"):format(imap_s.host, imap_s.port),
+    ok, why = fs.mail_password_keep(("%s://%s:%d"):format(sheet.kind == "pop3" and "pop3" or "imap",
+                                                          in_s.host, in_s.port),
                                     address, sheet.password, "Mail: " .. address)
   end
 
@@ -1108,7 +1140,7 @@ local function sign_in()
   sheet.address, sheet.waiting, sheet.said = address, address, "Signing in\u{2026}"
   sheet.asked_at = sys.ticks()
   ask{ type = "add", account = address }
-  print(("mail: signing in %s at %s"):format(address, imap_s.host))
+  print(("mail: signing in %s at %s"):format(address, in_s.host))
 end
 
 -- Cancel: an account that never signed in is not kept.
@@ -1353,7 +1385,8 @@ local function draw_sidebar(s)
   for _, a in ipairs(accounts) do
     -- An account's heading: its name and what it is, "Lena · Gmail".
     local words = ("%s \u{00b7} %s"):format(a.name or a.address,
-                                             a.kind == "google" and "Gmail" or "IMAP"):upper()
+                                             a.kind == "google" and "Gmail"
+                                             or a.kind == "pop3" and "POP3" or "IMAP"):upper()
 
     if y + 8 >= L.head then
       s:text(16, y + 8, ui.fitted(words, SIDE_W - 32, "label"), theme.text_dim, nil, "label")
@@ -1722,17 +1755,17 @@ local function draw_sheet(s)
   -- toward its text's.
   s:fill(0, L.head, W, H - L.head, theme.mix(theme.window, theme.text, 120))
 
-  local cw, ch = 560, sheet.kind == "imap" and 470 or 380
+  local cw, ch = 560, INCOMING[sheet.kind] and 470 or 380
   local cx, cy = (W - cw) // 2, L.head + math.max(10, (H - L.head - ch) // 2)
 
   s:fill_round(cx, cy, cw, ch, theme.window, 12)
   s:frame_round(cx, cy, cw, ch, theme.line_soft, 12)
   s:text(cx + 22, cy + 16, "Add Account", theme.text, nil, "title")
 
-  -- The kinds: Google, any IMAP server, and POP3, which is later.
+  -- The kinds: Google, any IMAP server, and POP3, whose mail is kept here.
   local kinds = { { id = "google", t = "Google", d = "Gmail, with an app password" },
                   { id = "imap", t = "Other IMAP", d = "any server, by its address" },
-                  { id = "pop3", t = "POP3", d = "later" } }
+                  { id = "pop3", t = "POP3", d = "mail fetched and kept here" } }
   local kw = (cw - 44 - 20) // 3
 
   for i, k in ipairs(kinds) do
@@ -1742,15 +1775,11 @@ local function draw_sheet(s)
     s:fill_round(kx, ky, kw, 52, theme.raised, 10)
     s:frame_round(kx, ky, kw, 52, on and theme.accent or theme.line_soft, 10)
 
-    local ink = k.id == "pop3" and theme.text_dim or theme.text
-
-    s:text(kx + 12, ky + 8, k.t, ink, nil, "title")
+    s:text(kx + 12, ky + 8, k.t, theme.text, nil, "title")
     s:text(kx + 12, ky + 8 + gfx.height("title"), ui.fitted(k.d, kw - 20, "ui"), theme.text_dim,
            nil, "ui")
 
-    if k.id ~= "pop3" then
-      sheet_boxes[#sheet_boxes + 1] = { x = kx, y = ky, w = kw, h = 52, kind = k.id }
-    end
+    sheet_boxes[#sheet_boxes + 1] = { x = kx, y = ky, w = kw, h = 52, kind = k.id }
   end
 
   local y = cy + 52 + 52 + 16
@@ -1901,6 +1930,7 @@ local function key(c)
   if search_focused then
     if k == keys.ESCAPE then
       search_focused = false
+      print("mail: search left")
     elseif k == keys.ENTER or k == 10 then
       search_focused = false
     else
@@ -2074,8 +2104,7 @@ local function press_sheet(x, y)
   for _, b in ipairs(sheet_boxes) do
     if pk.inside(b, x, y) then
       if b.kind then
-        sheet.kind, sheet.focus = b.kind, 1
-        if b.kind == "imap" then guess_servers() end
+        choose_kind(b.kind)
       elseif b.field then
         if sheet.focus == 2 then guess_servers() end
         sheet.focus = b.field
@@ -2437,6 +2466,15 @@ while win.running do
            and ev.button ~= "right" then
       if release(ev.x or 0, ev.y or 0) then dirty = true end
     end
+  end
+
+  -- The batch has ended: an Escape the decoder still holds started no
+  -- sequence, and is the key itself (`keys.lua`) - without this a search's
+  -- Escape waited for the next key, and was taken by whatever had it then.
+  do
+    local held = decode(nil)
+
+    if held and key(held) then dirty = true end
   end
 
   if not win.running then break end

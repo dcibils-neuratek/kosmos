@@ -22136,3 +22136,41 @@ with All; a reply from All Inboxes sent from Sam by Sam's server; a new
 message's From changed to Lena and sent by Lena's. `x86-mail` to `-5` pass.
 **Control**: the account written from taken from the mailbox shown, the
 reply goes from Lena, and it fails.
+
+## 18.497 Mail: POP3 accounts
+
+`docs/mail.md`, *POP3*. **`pop3.lua`** is `imap.lua`'s shape - requests
+answered as the conversation goes, stepped by `maild`'s one loop - and
+speaks RFC 1939 with CAPA and STLS: TLS from the first byte on 995, STLS
+first on a plain port, a password never in the clear; USER and PASS; UIDL
+and LIST as one list; RETR into a region, the stuffed dots undone, the
+region doubled when the server's size was short; DELE taken at QUIT. **A
+POP3 account in `maild`** is its Inbox fetched by unique id and a Sent of
+its own, both here; read and flagged stay on the files; a look every two
+minutes, signed out between; a message deleted here deleted there, and one
+the server stops having kept here. **Add Account's third choice** is POP3,
+`pop.<domain>` on 995 guessed, its password under `pop3://`. The peer
+serves its Inbox as a maildrop, over TLS and plain with STLS, counting a
+line's end as one byte so a client has to survive a short size.
+
+**Found on the way: an Escape alone waited for the next key** in Mail, its
+composer and Maps, which keep decoders of their own and never told them the
+batch had ended, as the kit does (`keys.lua`, 6zz l3). Part 6's search
+Escape was held until "Pat" was typed into Add Account, where it arrived
+first and closed the sheet, and the name's letters went to the list -
+Backspace deleting messages. Each now hands its decoder nil after a batch.
+
+`x86-mail-7` 18: signed in over TLS and by STLS, a wrong password refused in
+the server's words, every password over TLS; the maildrop by unique id; a
+message fetched and read by the Mail Kit; 420 KB counted short fetched
+whole and its attachment undone; dotted lines as written; a deletion at
+QUIT; `maild` keeping the account - three kept, a delivery found at the
+next look and said, one deleted here gone there, what it sent in its Sent
+and read. `x86-mail-6` 15: a third account, POP3, added from the sheet and
+kept over TLS; an Escape alone answered in the search and in the composer
+at once. `x86-maps` 26: the search's Escape the same. `x86-mail` to `-5` and
+`host` pass. **Controls**: the stuffed dots kept, and the dotted message is
+two bytes long; the region not grown, and 420 KB is refused; DELE not sent,
+and the deleted messages are still on the server; the flush taken out of
+the three, and part 6 and Maps fail. `x86-mail-3` failed once at a row
+click with seven suites side by side and passed alone.

@@ -8272,6 +8272,10 @@ the paperclip or a drop from Tracker, carried by Forward; **Downloads a place**
 **M8 done** (18.496): several accounts, All Inboxes and Flagged over them,
 a search in a message's words and in all mail, the composer's From. Next:
 POP3.
+**POP3 done** (`docs/mail.md`, *POP3*): `pop3.lua`, POP3 in
+`mailpeer.py`, a POP3 account in `maild` - its Inbox fetched and kept here,
+a Sent of its own, a look every two minutes, a deletion here taken there -
+and Add Account's third choice.
 **Diego's Gmail is in**, on the
 M700 (0.11.87-0.11.88). Seen there and not yet done: some subjects begin
 with "?" where, probably, an emoji has no glyph in the UI's face - to be

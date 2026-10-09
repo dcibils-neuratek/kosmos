@@ -93,7 +93,7 @@ not the window is open.
   design of its own.
 - **POP3**, for an account that has nothing else - mail fetched and kept
   here, as Diego asked; after IMAP, because IMAP is what Google and almost
-  every provider speak.
+  every provider speak. **Built 9 October** (*POP3*, below).
 - **Rules**: mail from someone, or about something, filed or flagged as it
   arrives.
 - **Signatures**, one an account.
@@ -236,6 +236,44 @@ s:move(uids, to) ; s:append(name, path, flags) ; s:idle() ; s:done()
 `AUTH PLAIN`, `MAIL FROM`, `RCPT TO` for each recipient, `DATA` from the
 message's file, `QUIT`. Gmail keeps a copy of what is sent by itself; any
 other server is given one with `APPEND` to Sent.
+
+### POP3
+
+**Built 9 October, after M8**, for an account that has nothing else - mail
+fetched and kept here, as Diego asked; `pop.gmail.com` on 995 among them.
+`pop3.lua` is `imap.lua`'s shape: a session of requests answered as the
+conversation goes, stepped by `maild`'s one loop, nothing waiting.
+
+```
+local s = pop3.open{ host =, port = 995, user =, password = }
+s.ready                   -- signed in: CAPA, STLS on a plain port, USER, PASS
+s:list()                  -- -> { { n =, id =, size = } }: UIDL and LIST together
+s:fetch(n, into_path)     -- RETR, into a file
+s:delete(n) ; s:quit()    -- DELE, taken at QUIT
+```
+
+A password is never sent in the clear: TLS from the first byte on 995, and
+on a plain port STLS first or no password at all. POP3 says no size before a
+message's bytes, so RETR's lines go into a region of the size LIST gave,
+which doubles when a server counted short - one counting a line's end as a
+byte, as the test's peer does on purpose - and the dot that stuffs a line is
+undone as each piece lands.
+
+**POP3 has one maildrop and no flags**, so a POP3 account is two folders
+here: its **Inbox**, fetched, and a **Sent** of what was sent from it - the
+server has nowhere to keep that. Read and flagged are the files'
+attributes and never leave this machine. `maild` signs in, fetches what it
+has not seen by unique id (`INBOX/state`: each id and the number it is kept
+under), and signs out again, because a POP3 server locks the maildrop while
+somebody is in it; it looks again in two minutes, or when the window asks.
+**Mail stays on the server** until it is deleted here, which deletes it
+there at the next look; a message the server stops having is still kept
+here, because the copy here is the account's mail. A first look keeps the
+newest hundred, as IMAP's does, and leaves the older ones on the server.
+
+Add Account's third choice is POP3: the incoming server guessed from the
+address as `pop.<domain>` on 995, the outgoing as for IMAP, and the
+password kept by the keyring under `pop3://<host>:<port>`.
 
 ### Where mail is kept
 

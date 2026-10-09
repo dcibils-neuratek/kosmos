@@ -1333,6 +1333,7 @@ local function key(c)
 
     if k == keys.ESCAPE then
       search_focused = false
+      print("maps: search left")
     elseif k == keys.ENTER or k == 10 then
       if results[chosen_result] then
         go_to(results[chosen_result])
@@ -1504,6 +1505,14 @@ while win.running do
         dragging = nil
       end
     end
+  end
+
+  -- The batch has ended: an Escape the decoder still holds started no
+  -- sequence, and is the key itself (`keys.lua`).
+  do
+    local held = decode(nil)
+
+    if held and key(held) then dirty, moved = true, true end
   end
 
   if not win.running then break end
