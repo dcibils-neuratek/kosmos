@@ -11,7 +11,12 @@
 // that made it, and a key is withdrawn without touching the others.
 
 const COLUMNS = ["ideas", "agreed", "next", "building", "done", "parked"];
-const LIMITS = { title: 200, detail: 4000, quote: 400, area: 40, ref: 60, note: 4000, question: 600, words: 2000, step: 300, waiting: 200, task: 200, idea: 2000, purpose: 1000, summary: 4000 };
+const LIMITS = { title: 200, detail: 4000, quote: 400, area: 40, ref: 60, note: 4000, question: 600, words: 2000, step: 300, waiting: 200, task: 200, idea: 2000, purpose: 1000, summary: 4000, caption: 300, filename: 200 };
+
+// What a file may be, and how large: pictures, PDFs, short films, text.
+const FILE_TYPES = /^(image\/(png|jpeg|gif|webp)|application\/pdf|video\/(mp4|webm)|text\/(plain|markdown))$/;
+const FILE_MOST = 15 * 1024 * 1024;
+const PIECE = 512 * 1024;
 const STAGES = ["open", "shaping", "ready", "became", "parked"];
 
 // The name of Claude's key: what it writes is never "waiting for Claude".
@@ -160,9 +165,11 @@ async function list_cards(env, url) {
 
   const queue = await env.DB.prepare("SELECT card FROM queue ORDER BY rank").all();
   const place = new Map(queue.results.map((e, i) => [e.card, i + 1]));
+  const counted = await env.DB.prepare("SELECT card, COUNT(*) AS n FROM files WHERE card IS NOT NULL AND removed IS NULL GROUP BY card").all();
+  const files = new Map(counted.results.map((r) => [r.card, r.n]));
 
   return json({ cards: rows.results.map(({ queue_rank, ...c }) => ({
-    ...shape(c), talk: talk.get(c.id) || null, queued: place.get(c.id) || null })) });
+    ...shape(c), talk: talk.get(c.id) || null, queued: place.get(c.id) || null, files: files.get(c.id) || 0 })) });
 }
 
 async function new_card(env, author, body) {
@@ -197,7 +204,7 @@ async function get_card(env, id) {
   const decisions = await env.DB.prepare("SELECT * FROM decisions WHERE card = ? ORDER BY asked").bind(id).all();
 
   return json({
-    card: shape(c), notes: notes.results,
+    card: shape(c), notes: notes.results, files: await files_of(env, "card", id),
     history: history.results.map((h) => ({ ...h, data: JSON.parse(h.data) })),
     decisions: decisions.results.map((d) => ({ ...d, options: JSON.parse(d.options) })),
   });
@@ -551,7 +558,8 @@ async function get_discussion(env, id, status = 200) {
   const talk = await talk_states(env, "messages", "discussion");
 
   return json({ discussion: discussion_shape(d, talk.get(d.id)),
-                messages: msgs.results.map((m) => ({ ...m, asks: !!m.asks })), cards: cards.results }, status);
+                messages: msgs.results.map((m) => ({ ...m, asks: !!m.asks })), cards: cards.results,
+                files: await files_of(env, "discussion", id) }, status);
 }
 
 async function edit_discussion(env, author, id, body) {
@@ -636,6 +644,83 @@ async function waiting(env) {
   return json(out);
 }
 
+//
+// **Files**: a screenshot, a PDF, a film - Diego's for reference, Claude's
+// to show what it built. The bytes are the body (`Content-Type` says what
+// they are, `?name=` and `?caption=` what they are called); kept in pieces.
+//
+async function add_file(env, author, request, url, owner) {
+  const type = (request.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+
+  if (!FILE_TYPES.test(type)) return refused(415, `${type || "nothing"} is not a file the board keeps: pictures, PDFs, films and text`);
+
+  const bytes = new Uint8Array(await request.arrayBuffer());
+
+  if (bytes.length === 0) return refused(400, "the file is empty");
+  if (bytes.length > FILE_MOST) return refused(413, `the file is ${Math.round(bytes.length / 1048576)} MB; at most 15`);
+
+  if (owner.card && !(await card(env, owner.card))) return refused(404, `no card ${owner.card}`);
+  if (owner.discussion && !(await env.DB.prepare("SELECT id FROM discussions WHERE id = ?").bind(owner.discussion).first())) {
+    return refused(404, `no discussion ${owner.discussion}`);
+  }
+
+  const id = crypto.randomUUID();
+  const name = text(url.searchParams.get("name") || "file", "filename", true);
+  const caption = text(url.searchParams.get("caption") || "", "caption") || "";
+  const at = now();
+  const writes = [env.DB.prepare(
+    "INSERT INTO files (id, card, discussion, name, type, size, caption, author, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(id, owner.card || null, owner.discussion || null, name, type, bytes.length, caption, author, at)];
+
+  for (let n = 0; n * PIECE < bytes.length; n++) {
+    writes.push(env.DB.prepare("INSERT INTO file_pieces (file, n, data) VALUES (?, ?, ?)")
+      .bind(id, n, bytes.subarray(n * PIECE, (n + 1) * PIECE)));
+  }
+
+  await env.DB.batch(writes);
+  await log(env, author, "file", owner.card || null, { file: id, name, caption, discussion: owner.discussion || undefined });
+  return json({ file: { id, card: owner.card || null, discussion: owner.discussion || null, name, type, size: bytes.length, caption, author, at } }, 201);
+}
+
+async function get_file(env, id) {
+  const f = await env.DB.prepare("SELECT * FROM files WHERE id = ? AND removed IS NULL").bind(id).first();
+
+  if (!f) return refused(404, `no file ${id}`);
+
+  const pieces = await env.DB.prepare("SELECT data FROM file_pieces WHERE file = ? ORDER BY n").bind(id).all();
+  const out = new Uint8Array(f.size);
+  let at = 0;
+
+  for (const p of pieces.results) {
+    const b = new Uint8Array(p.data);
+    out.set(b, at);
+    at += b.length;
+  }
+
+  return new Response(out, { headers: {
+    "content-type": f.type, "cache-control": "private, max-age=86400",
+    "content-disposition": `inline; filename="${f.name.replace(/["\\]/g, "")}"`,
+  } });
+}
+
+async function remove_file(env, author, id) {
+  const f = await env.DB.prepare("SELECT * FROM files WHERE id = ? AND removed IS NULL").bind(id).first();
+
+  if (!f) return refused(404, `no file ${id}`);
+
+  await env.DB.prepare("UPDATE files SET removed = ? WHERE id = ?").bind(now(), id).run();
+  await env.DB.prepare("DELETE FROM file_pieces WHERE file = ?").bind(id).run();
+  await log(env, author, "file.remove", f.card, { file: id, name: f.name });
+  return json({ removed: id });
+}
+
+async function files_of(env, column, value) {
+  const rows = await env.DB.prepare(
+    `SELECT id, name, type, size, caption, author, at FROM files WHERE ${column} = ? AND removed IS NULL ORDER BY at`)
+    .bind(value).all();
+  return rows.results;
+}
+
 async function changes(env, url) {
   const since = url.searchParams.get("since") || "1970-01-01T00:00:00Z";
   const rows = await env.DB.prepare("SELECT * FROM changes WHERE at > ? ORDER BY at LIMIT 1000").bind(since).all();
@@ -675,7 +760,9 @@ async function api(request, env, url) {
   const m = request.method;
   let body = {};
 
-  if (m === "POST" || m === "PATCH" || m === "PUT") {
+  const upload = m === "POST" && parts[parts.length - 1] === "files" && parts.length === 3;
+
+  if ((m === "POST" || m === "PATCH" || m === "PUT") && !upload) {
     // No body at all is nothing to say - a take, a move to the end.
     const raw = await request.text();
 
@@ -720,6 +807,10 @@ async function api(request, env, url) {
       if (parts.length === 3 && parts[2] === "cards" && m === "POST") return await discussion_card(env, author, Number(parts[1]), body);
     }
     if (parts[0] === "waiting" && m === "GET") return await waiting(env);
+    if (upload && parts[0] === "cards") return await add_file(env, author, request, url, { card: parts[1] });
+    if (upload && parts[0] === "discussions") return await add_file(env, author, request, url, { discussion: Number(parts[1]) });
+    if (parts[0] === "files" && parts.length === 2 && m === "GET") return await get_file(env, parts[1]);
+    if (parts[0] === "files" && parts.length === 2 && m === "DELETE") return await remove_file(env, author, parts[1]);
     if (parts[0] === "now" && m === "GET") return await get_now(env);
     if (parts[0] === "now" && m === "PUT") return await set_now(env, author, body);
     if (parts[0] === "changes" && m === "GET") return await changes(env, url);

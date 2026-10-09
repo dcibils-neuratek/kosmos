@@ -8294,6 +8294,13 @@ ready, became cards, parked; the idea, what it is for, a summary Claude
 keeps, options with gains and costs, open questions, the conversation,
 Make it a card) and **talk on any card** from any device, Claude answering
 there; `/api/waiting` says who owes a reply (`test_board.py` 55).
+The mockup agreed the same day - "i like how it is right now the mockup",
+"the real chatting happens in claude code directly as it is now" - with
+two more: cards dragged between columns and within one as on Trello, Next
+being Claude's queue so a drop there queues the card where it landed
+("i need to be able to drag and drop cards", "like trello"); and files on
+cards and discussions - screenshots for reference, and Claude's of its
+progress and finished work (`test_board.py` 73).
 
 ### The optimisation phase - after the applications
 

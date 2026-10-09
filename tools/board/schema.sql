@@ -129,3 +129,32 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS messages_discussion ON messages (discussion, at);
+
+-- Files on a card or a discussion: screenshots for reference, and what
+-- Claude shows of its progress and its finished work (Diego, 9 October:
+-- "make sure our board is able to have attachments like screenshots").
+-- Kept in the database itself, in pieces of 512 KB - D1's rows hold 2 MB,
+-- and a screenshot of the M700 is often more - so the board needs no
+-- second service; at most 15 MB a file.
+CREATE TABLE IF NOT EXISTS files (
+  id          TEXT PRIMARY KEY,
+  card        TEXT,
+  discussion  INTEGER,
+  name        TEXT NOT NULL,
+  type        TEXT NOT NULL,
+  size        INTEGER NOT NULL,
+  caption     TEXT NOT NULL DEFAULT '',
+  author      TEXT NOT NULL,
+  at          TEXT NOT NULL,
+  removed     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS files_card ON files (card, at);
+CREATE INDEX IF NOT EXISTS files_discussion ON files (discussion, at);
+
+CREATE TABLE IF NOT EXISTS file_pieces (
+  file  TEXT NOT NULL,
+  n     INTEGER NOT NULL,
+  data  BLOB NOT NULL,
+  PRIMARY KEY (file, n)
+);

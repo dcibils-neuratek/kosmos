@@ -39,6 +39,13 @@ Claude keeps, the options with what each gains and costs, and the questions
 still open. Who owes a reply is worked out from the last word: Diego's
 waits for Claude, and Claude's waits for Diego only when it asks.
 
+**And files** (Diego, 9 October: "make sure our board is able to have
+attachments like screenshots for references and for claude to upload to
+cards for showing progress, finished work"): pictures, PDFs, short films
+and text on a card or a discussion, each with a caption, shown in its
+talk; at most 15 MB, kept in the database in 512 KB pieces, so no second
+service (R2 would want a payment method on the account).
+
 `docs/roadmap.md` stays the record, with the reasoning; the board is where
 the work is moved and decided, and what changes there is written back.
 
@@ -75,6 +82,9 @@ the name of the key that made it.
 | POST | `/api/discussions/:id/messages` | `{ text, asks }` |
 | POST | `/api/discussions/:id/cards` | a card made from it, linked both ways; it has become cards |
 | GET | `/api/waiting` | what waits for a reply from Claude, and from Diego |
+| POST | `/api/cards/:id/files` | a file onto a card: the bytes as the body, `Content-Type`, `?name=&caption=` |
+| POST | `/api/discussions/:id/files` | a file onto a discussion, the same way |
+| GET | `/api/files/:id` | the file; `DELETE` removes it |
 | GET | `/api/changes?since=` | everything changed since a time |
 | GET | `/api/export.md` | the board as Markdown |
 

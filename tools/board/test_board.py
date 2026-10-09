@@ -21,6 +21,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -295,9 +296,47 @@ def main():
         call("POST", "/api/cards/%s/move" % ntfs2, {"column": "next", "before": cal})
         check(order()[-2:] == [("card", ntfs2), ("card", cal)], "reordered within Next, not in the queue: %r" % order())
         q = {c["id"]: c["queued"] for c in call("GET", "/api/cards?column=next")[1]["cards"]}
-        check(q[ntfs2] == q[cal] - 1, "a card's place in the queue: %r" % q)
+        check(q.get(ntfs2) and q.get(cal) and q[ntfs2] == q[cal] - 1, "a card's place in the queue: %r" % q)
         call("POST", "/api/cards/%s/move" % cal, {"column": "agreed"})
         check(("card", cal) not in order(), "dragged out of Next, still queued: %r" % order())
+
+        # Files: a screenshot larger than a piece comes back byte for byte.
+        def put(path, data, kind, name="shot.png", caption=""):
+            req = urllib.request.Request(base + path + "?" + urllib.parse.urlencode({"name": name, "caption": caption}),
+                                         method="POST", data=data)
+            req.add_header("Authorization", "Bearer " + claude)
+            req.add_header("Content-Type", kind)
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    return r.status, json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read())
+
+        shot = bytes((i * 37 + (i >> 9)) & 0xFF for i in range(1_200_000))
+        s, b = put("/api/cards/%s/files" % d2, b"\x89PNG" + shot, "image/png", "m700.png", "Mail M5 on the M700")
+        check(s == 201 and b["file"]["size"] == len(shot) + 4 and b["file"]["author"] == "Claude",
+              "a screenshot added: %r" % ((s, b),))
+        fid = b["file"]["id"]
+        got = urllib.request.urlopen(urllib.request.Request(base + "/api/files/" + fid,
+                                                            headers={"Authorization": "Bearer " + key}), timeout=30)
+        body_ = got.read()
+        check(body_ == b"\x89PNG" + shot and got.headers["content-type"] == "image/png",
+              "the screenshot did not come back whole: %d bytes" % len(body_))
+        s, b = call("GET", "/api/cards/" + d2)
+        check([f["caption"] for f in b["files"]] == ["Mail M5 on the M700"], "a card's files: %r" % b.get("files"))
+        check(next(c["files"] for c in call("GET", "/api/cards")[1]["cards"] if c["id"] == d2) == 1, "a card's file count")
+        s, b = put("/api/discussions/%d/files" % did, b"%PDF-1.4 sketch", "application/pdf", "sketch.pdf")
+        check(s == 201 and call("GET", "/api/discussions/%d" % did)[1]["files"][0]["name"] == "sketch.pdf",
+              "a file on a discussion: %r" % ((s, b),))
+        s, b = put("/api/cards/%s/files" % d2, b"MZ\x90", "application/x-msdownload", "x.exe")
+        check(s == 415, "a program taken as a file: %r" % ((s, b),))
+        s, b = put("/api/cards/%s/files" % d2, b"\0" * (16 * 1024 * 1024), "image/png")
+        check(s == 413, "16 MB taken: %r" % ((s, b),))
+        s, _ = call("GET", "/api/files/" + fid, auth=None)
+        check(s == 401, "a file read without a key")
+        call("DELETE", "/api/files/" + fid)
+        s, _ = call("GET", "/api/files/" + fid)
+        check(s == 404, "a removed file still read")
 
         s, md = call("GET", "/api/export.md")
         check(s == 200 and "## Next (" in md and "## Done (" in md and "**Astra split D2**" in md and "not yet in roadmap.md" in md,
@@ -334,7 +373,7 @@ def main():
           "ordered, moved, edited, noted and removed; decisions asked and answered onto their card; "
           "changes since a time, signed; what Claude is doing now, its since held per card; Claude's queue fed, ordered, "
           "emptied and taken from; who owes a reply on a card; a discussion started, answered, shaped "
-          "and made a card; the Markdown "
+          "and made a card; files kept in pieces and read back whole, refused by type and size; the Markdown "
           "export; bad bodies refused)." % checks)
     return 0
 
