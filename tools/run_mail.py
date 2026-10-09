@@ -756,12 +756,20 @@ def part3(image):
         mark = len(guest.seen)
         click(lx + 100, ly + rh // 2)
         guest.wait_for_line("mail: showing ", "the photos again", mark)
+        mark = len(guest.seen)
         click(*[v + 13 for v in at("delete", places)])
         said["delete"] = guest.wait_for_line("mail: delete ", "Delete pressed", mark)
 
-        mark = len(guest.seen)
-        click(lx + 100, ly + rh // 2)
-        guest.wait_for_line("mail: showing ", "the route at the top", mark)
+        # Deleted, the next one is shown - the route, now at the top. Its
+        # "showing" can come in the same read as the delete's, so it is
+        # waited for from before the press, not clicked for again: a
+        # press on the row already chosen says nothing new.
+        deadline = time.time() + 60
+        while time.time() < deadline and "This week's route, from Greenway Rides" not in guest.seen[mark:]:
+            time.sleep(0.3)
+            guest._read_available()
+        if "This week's route, from Greenway Rides" not in guest.seen[mark:]:
+            raise RuntimeError("the route was not shown after the delete")
         click(*[v + 13 for v in at("archive", places)])
         said["archive"] = guest.wait_for_line("mail: archive ", "Archive pressed", mark)
         guest.wait_for("maild: %s: archive " % who, "the archive done on the server")
@@ -1620,6 +1628,38 @@ def part6(image):
         guest.wait_for("maild: %s: 1 messages kept" % PAT, "Pat's Inbox kept")
         said["pat_kept"] = True
         said["pat_logins"] = list(pat.pop_logins)
+
+        # An account already kept, added again and Cancelled: it stays, mail
+        # and all - a Cancel took Diego's Gmail on the M700, 9 October.
+        mark = len(guest.seen)
+        click(*[v + 13 for v in at("dots", places)])
+        line = guest.wait_for_line("mail: dots menu at ", "the dots' menu a third time", mark)
+        m = re.match(r"(\d+),(\d+), (\d+) wide, rows of (\d+)", line)
+        mx, my, _, row = (int(v) for v in m.groups())
+        time.sleep(0.6)
+        click(mx + 24, my + 2 + row // 2, ox=0, oy=0)            # Add Account...
+        sheet = guest.wait_for_line("mail: sheet ", "Add Account a third time", mark)
+        mark = len(guest.seen)
+        click(*at("imap", sheet))
+        sheet = guest.wait_for_line("mail: sheet ", "the IMAP fields again", mark)
+        click(*at("field1", sheet))
+        typed("Lena"); key("tab")
+        typed(mailpeer.USER); key("tab")
+        typed("not-the-password"); key("tab")
+        for _ in range(24): guest.sendkey("backspace")
+        typed("10.0.2.2"); key("tab")
+        for _ in range(6): guest.sendkey("backspace")
+        typed(str(w.peer.imap_port))
+        guest.sendkey("ret")
+        guest.wait_for_line("mail: signing in %s" % mailpeer.USER, "Lena signing in again", mark)
+        key("esc")
+        deadline = time.time() + 30
+        while time.time() < deadline and not re.search(r"mail: (kept as it was|not kept) ", guest.seen[mark:]):
+            time.sleep(0.3)
+            guest._read_available()
+        said["again"] = (re.findall(r"mail: kept as it was ([^\n]*)", guest.seen[mark:]) or [""])[-1]
+        time.sleep(1)
+        said["lena_kept"] = session.run("ls /Home/Mail/%s" % mailpeer.USER).decode(errors="replace")
     except Exception as e:                  # noqa: BLE001 - said below
         error = "%s: %s" % (type(e).__name__, str(e).splitlines()[0])
     finally:
@@ -1662,6 +1702,10 @@ def part6(image):
         n = [m for m in w.peer.sent if "Subject: From Lena\r\n" in m["data"]]
     if not n or "From: Lena Moreau <lena@example.com>\r\n" not in n[0]["data"]:
         fails.append("the message whose From was chosen did not go from Lena by Lena's server")
+    if not said.get("again", "").startswith(mailpeer.USER) or "account" not in said.get("lena_kept", "") \
+            or "INBOX" not in said.get("lena_kept", ""):
+        fails.append("an account kept, added again and Cancelled, was not kept: %r, %r"
+                     % (said.get("again"), said.get("lena_kept", "")[-300:]))
     if not (said.get("esc") and said.get("esc_composer")):
         fails.append("an Escape alone waited for the next key: search %r, composer %r"
                      % (said.get("esc"), said.get("esc_composer")))
@@ -1673,7 +1717,7 @@ def part6(image):
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 15
+    checks = 16
 
     if fails:
         print("FAIL: %d of %d checks on Mail's accounts:" % (len(fails), checks))
@@ -1684,7 +1728,8 @@ def part6(image):
     print("PASS: %d checks on Mail's accounts (a second account added; All Inboxes and Flagged "
           "first, over both; a word inside a message found only with All; a reply from All "
           "Inboxes sent from the account it came to; a new message's From chosen; a third, "
-          "POP3, added from Add Account and kept; an Escape alone answered at once)." % checks)
+          "POP3, added from Add Account and kept; an Escape alone answered at once; an account "
+          "added again and Cancelled, kept)." % checks)
     return 0
 
 

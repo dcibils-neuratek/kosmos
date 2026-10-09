@@ -22188,3 +22188,25 @@ fails. Two checks of `arm-synth` - Groove's three lights not found, so
 neither was its menu - fail on the code before this as well: ARM's suites
 have not run since 8 October (*x86-only*), and they are left for when ARM
 resumes.
+
+## 18.499 Add Account's Cancel takes away only what it made
+
+On the M700, after the restart onto 0.11.103, Mail had no account: Diego's
+Gmail folder had lost its `account` file, its other mailboxes and sixty of
+its messages, and only the Inbox's other hundred were left. Add Account's
+Cancel removes `/Home/Mail/<address>` for an account that never signed in -
+and an address already kept, typed into Add Account again, is that
+account. A Sign In then a Cancel took it, mail and all. The sheet now
+remembers whether the folder was there before its Sign In, and Cancel takes
+away only a folder it made itself. Its refusals - not an address, an empty
+password - are printed as well as shown, so a harness sees them.
+
+`x86-mail-6` 16: Lena, kept, added again with a wrong password and
+Cancelled: her folder, account file and Inbox still there. **Control**: the
+old Cancel, and her folder is gone, as Diego's was. **Still to do**: that
+Sign In wrote the new password into the keyring before the server took it,
+so a wrong one typed for an account already kept replaces the right one
+(`roadmap.md`). And `x86-mail-3`'s failure under load (18.497) was the
+test's: after a Delete the next message is shown at once, and its "showing"
+could arrive in the same read as the delete's, before the test looked for
+it; it now looks from before the press. Parts 3 to 6 pass side by side.

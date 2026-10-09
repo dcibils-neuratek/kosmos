@@ -1095,11 +1095,13 @@ local function sign_in()
 
   if not address:match("^[^@/%s]+@[%w%.%-]+%.%a+$") then
     sheet.said = "That is not an email address"
+    print(("mail: sheet says %s: %q"):format(sheet.said, address))
     return
   end
 
   if sheet.password == "" then
     sheet.said = "The password is empty"
+    print("mail: sheet says " .. sheet.said)
     return
   end
 
@@ -1107,10 +1109,17 @@ local function sign_in()
 
   if in_s.host == "" then
     sheet.said = "The incoming server is empty"
+    print("mail: sheet says " .. sheet.said)
     return
   end
 
   local dir = HOME .. "/" .. address
+
+  -- Whether this sheet made the account's folder: only then is it this
+  -- sheet's to take away on Cancel. An address already kept - typed again
+  -- with a new password - is that account, mail and all.
+  if sheet.made == nil then sheet.made = fs.getattr(dir) == nil end
+
   local ok, why = files.make_folder(dir)
 
   if ok then
@@ -1134,6 +1143,7 @@ local function sign_in()
 
   if not ok then
     sheet.said = "Could not keep the account: " .. tostring(why)
+    print("mail: sheet says " .. sheet.said)
     return
   end
 
@@ -1143,14 +1153,19 @@ local function sign_in()
   print(("mail: signing in %s at %s"):format(address, in_s.host))
 end
 
--- Cancel: an account that never signed in is not kept.
+-- Cancel: an account that never signed in is not kept - one this sheet
+-- made. One that was here before is left as it is: on 9 October the Gmail
+-- account on the M700 lost its account file, its mailboxes and sixty
+-- messages to a Cancel.
 local function close_sheet()
-  if sheet and sheet.waiting then
+  if sheet and sheet.waiting and sheet.made then
     local a = sheet.waiting
 
     ask{ type = "remove", account = a }
     files.remove(HOME .. "/" .. a)
     print("mail: not kept " .. a)
+  elseif sheet and sheet.waiting then
+    print("mail: kept as it was " .. sheet.waiting)
   end
 
   sheet = nil

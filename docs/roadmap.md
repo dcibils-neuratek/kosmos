@@ -8276,6 +8276,11 @@ POP3.
 `mailpeer.py`, a POP3 account in `maild` - its Inbox fetched and kept here,
 a Sent of its own, a look every two minutes, a deletion here taken there -
 and Add Account's third choice.
+**Found on the M700, 9 October**: Add Account's Cancel removed an account
+already kept when its address was added again (fixed, 0.11.104, 18.499).
+**Still to do**: Sign In writes the password into the keyring before the
+server has taken it, so a wrong one typed for an account already kept
+replaces the right one; the old one should stay until the new one signs in.
 **Diego's Gmail is in**, on the
 M700 (0.11.87-0.11.88). Seen there and not yet done: some subjects begin
 with "?" where, probably, an emoji has no glyph in the UI's face - to be
