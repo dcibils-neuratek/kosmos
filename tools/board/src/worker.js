@@ -11,7 +11,7 @@
 // that made it, and a key is withdrawn without touching the others.
 
 const COLUMNS = ["ideas", "agreed", "next", "building", "done", "parked"];
-const LIMITS = { title: 200, detail: 4000, quote: 400, area: 40, ref: 60, note: 4000, question: 600, words: 2000, step: 300, waiting: 200 };
+const LIMITS = { title: 200, detail: 4000, quote: 400, area: 40, ref: 60, note: 4000, question: 600, words: 2000, step: 300, waiting: 200, task: 200 };
 const STATES = ["working", "waiting", "idle"];
 
 const now = () => new Date().toISOString();
@@ -204,6 +204,11 @@ async function move_card(env, author, id, body) {
   await env.DB.prepare("UPDATE cards SET col = ?, rank = ?, updated = ?, updated_by = ? WHERE id = ?")
     .bind(col, r, now(), author, id).run();
 
+  // Done, parked or back to an idea: no longer in the plan.
+  if (["done", "parked", "ideas"].includes(col)) {
+    await env.DB.prepare("DELETE FROM queue WHERE card = ?").bind(id).run();
+  }
+
   await log(env, author, "card.move", id, { from: c.col, to: col, before: body.before || null });
   return json({ card: shape(await card(env, id)) });
 }
@@ -216,6 +221,7 @@ async function remove_card(env, author, id) {
   await env.DB.prepare("UPDATE cards SET removed = ?, updated = ?, updated_by = ? WHERE id = ?")
     .bind(now(), now(), author, id).run();
 
+  await env.DB.prepare("DELETE FROM queue WHERE card = ?").bind(id).run();
   await log(env, author, "card.remove", id, { title: c.title });
   return json({ removed: id });
 }
@@ -313,6 +319,126 @@ async function set_now(env, author, body) {
   return get_now(env);
 }
 
+//
+// **Claude's queue** (Diego, 9 October: "We need a queue to lay out the work
+// plan beyond the kanban cards", "The kanban basically nurtures the
+// queue"): what comes after the card Claude is on, in order. A card in it is
+// in Next; out of it, back in Agreed; a task is an entry with no card.
+//
+async function queue_rank(env, before, top, moving) {
+  if (top) {
+    const first = await env.DB.prepare("SELECT MIN(rank) AS r FROM queue WHERE id != ?").bind(moving || 0).first();
+    return (first && first.r !== null ? first.r : 1) - 1;
+  }
+
+  if (before) {
+    const b = await env.DB.prepare("SELECT rank FROM queue WHERE id = ?").bind(before).first();
+
+    if (!b) throw new Error(`no queue entry ${before}`);
+
+    const prev = await env.DB.prepare("SELECT rank FROM queue WHERE rank < ? AND id != ? ORDER BY rank DESC LIMIT 1")
+      .bind(b.rank, moving || 0).first();
+
+    return prev ? (prev.rank + b.rank) / 2 : b.rank - 1;
+  }
+
+  const last = await env.DB.prepare("SELECT MAX(rank) AS r FROM queue WHERE id != ?").bind(moving || 0).first();
+  return (last && last.r !== null ? last.r : 0) + 1;
+}
+
+async function get_queue(env) {
+  const rows = await env.DB.prepare(
+    `SELECT q.id, q.card, q.title AS task, q.rank, q.added, q.added_by, c.title, c.area, c.col, c.ref
+     FROM queue q LEFT JOIN cards c ON c.id = q.card ORDER BY q.rank`).all();
+
+  return json({ queue: rows.results.map((r, i) => ({
+    id: r.id, place: i + 1, kind: r.card ? "card" : "task", card: r.card,
+    title: r.card ? r.title : r.task, area: r.area || "", column: r.col || null, ref: r.ref || "",
+    added: r.added, added_by: r.added_by,
+  })) });
+}
+
+async function enqueue(env, author, body) {
+  const at = now();
+  let title = "";
+
+  if (body.card) {
+    const c = await card(env, body.card);
+
+    if (!c) return refused(404, `no card ${body.card}`);
+    if (c.col === "done") return refused(400, "a done card is not queued");
+
+    const there = await env.DB.prepare("SELECT id FROM queue WHERE card = ?").bind(body.card).first();
+
+    if (there) return refused(400, `${body.card} is in the queue already`);
+
+    if (c.col !== "next" && c.col !== "building") {
+      await env.DB.prepare("UPDATE cards SET col = 'next', rank = ?, updated = ?, updated_by = ? WHERE id = ?")
+        .bind(await rank_for(env, "next"), at, author, body.card).run();
+    }
+  } else {
+    title = text(body.title, "task", true);
+  }
+
+  const r = await env.DB.prepare("INSERT INTO queue (card, title, rank, added, added_by) VALUES (?, ?, ?, ?, ?)")
+    .bind(body.card || null, title, await queue_rank(env, body.before, body.top), at, author).run();
+
+  await log(env, author, "queue.add", body.card || null, { entry: r.meta.last_row_id, task: title || undefined });
+  return get_queue(env);
+}
+
+async function move_queued(env, author, id, body) {
+  const e = await env.DB.prepare("SELECT * FROM queue WHERE id = ?").bind(id).first();
+
+  if (!e) return refused(404, `no queue entry ${id}`);
+  if (body.before === id) return refused(400, "an entry cannot go before itself");
+
+  await env.DB.prepare("UPDATE queue SET rank = ? WHERE id = ?")
+    .bind(await queue_rank(env, body.before, body.top, id), id).run();
+
+  await log(env, author, "queue.move", e.card, { entry: id, before: body.before || null, top: !!body.top });
+  return get_queue(env);
+}
+
+// Out of the queue: a card that was waiting in Next goes back to Agreed.
+async function dequeue(env, author, id, reason) {
+  const e = await env.DB.prepare("SELECT * FROM queue WHERE id = ?").bind(id).first();
+
+  if (!e) return refused(404, `no queue entry ${id}`);
+
+  await env.DB.prepare("DELETE FROM queue WHERE id = ?").bind(id).run();
+
+  if (e.card && !reason) {
+    const c = await card(env, e.card);
+
+    if (c && c.col === "next") {
+      await env.DB.prepare("UPDATE cards SET col = 'agreed', rank = ?, updated = ?, updated_by = ? WHERE id = ?")
+        .bind(await rank_for(env, "agreed"), now(), author, e.card).run();
+    }
+  }
+
+  await log(env, author, "queue.remove", e.card, { entry: id, task: e.title || undefined, reason: reason || null });
+  return get_queue(env);
+}
+
+// Claude takes the top: it is what Claude is doing now, and its card is
+// in Building.
+async function take(env, author) {
+  const e = await env.DB.prepare("SELECT * FROM queue ORDER BY rank LIMIT 1").first();
+
+  if (!e) return refused(404, "the queue is empty");
+
+  await env.DB.prepare("DELETE FROM queue WHERE id = ?").bind(e.id).run();
+
+  if (e.card) {
+    await env.DB.prepare("UPDATE cards SET col = 'building', rank = ?, updated = ?, updated_by = ? WHERE id = ?")
+      .bind(await rank_for(env, "building"), now(), author, e.card).run();
+  }
+
+  await log(env, author, "queue.take", e.card, { entry: e.id, task: e.title || undefined });
+  return set_now(env, author, { card: e.card || undefined, step: e.card ? "" : e.title, state: "working" });
+}
+
 async function changes(env, url) {
   const since = url.searchParams.get("since") || "1970-01-01T00:00:00Z";
   const rows = await env.DB.prepare("SELECT * FROM changes WHERE at > ? ORDER BY at LIMIT 1000").bind(since).all();
@@ -353,8 +479,11 @@ async function api(request, env, url) {
   let body = {};
 
   if (m === "POST" || m === "PATCH" || m === "PUT") {
+    // No body at all is nothing to say - a take, a move to the end.
+    const raw = await request.text();
+
     try {
-      body = await request.json();
+      body = raw.trim() ? JSON.parse(raw) : {};
     } catch {
       return refused(400, "the body is not JSON");
     }
@@ -377,6 +506,13 @@ async function api(request, env, url) {
       if (parts.length === 1 && m === "GET") return await list_decisions(env, url);
       if (parts.length === 1 && m === "POST") return await new_decision(env, author, body);
       if (parts.length === 2 && m === "PATCH") return await answer_decision(env, author, Number(parts[1]), body);
+    }
+    if (parts[0] === "queue") {
+      if (parts.length === 1 && m === "GET") return await get_queue(env);
+      if (parts.length === 1 && m === "POST") return await enqueue(env, author, body);
+      if (parts.length === 2 && parts[1] === "take" && m === "POST") return await take(env, author);
+      if (parts.length === 2 && m === "DELETE") return await dequeue(env, author, Number(parts[1]));
+      if (parts.length === 3 && parts[2] === "move" && m === "POST") return await move_queued(env, author, Number(parts[1]), body);
     }
     if (parts[0] === "now" && m === "GET") return await get_now(env);
     if (parts[0] === "now" && m === "PUT") return await set_now(env, author, body);

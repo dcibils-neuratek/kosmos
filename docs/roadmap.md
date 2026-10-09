@@ -8280,6 +8280,12 @@ Asked the same day: "can we have a way to know what claude is working on in
 the kanban dashboard?" - so the board has a strip saying Claude's card, step
 and what it waits on, the card marked, and today's work beneath; `/api/now`,
 set by Claude at each step (`test_board.py` 32).
+Then: "Let's add a way to know what's coming next after the current card
+being worked by Claude and that can be deprioritized", "We need a queue to
+lay out the work plan beyond the kanban cards", "The kanban basically
+nurtures the queue" - so **Claude's queue**: cards and tasks in order, fed
+from the board, reordered and emptied by Diego, taken from the top by
+Claude; a queued card is Next (`test_board.py` 43).
 
 ### The optimisation phase - after the applications
 

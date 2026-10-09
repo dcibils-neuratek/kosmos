@@ -179,8 +179,49 @@ def main():
         s, b = call("GET", "/api/changes?since=" + later)
         check([c["kind"] for c in b["changes"]].count("now") == 3, "now's words not in the changes: %r" % b)
 
+        # Claude's queue: fed by the board, ordered by Diego, taken from the top.
+        s, b = call("POST", "/api/cards", {"title": "Tooltips on the status icons", "column": "agreed"})
+        tips = b["card"]["id"]
+        s, b = call("POST", "/api/cards", {"title": "Mixer devices", "column": "agreed"})
+        mixer = b["card"]["id"]
+
+        def order():
+            return [(e["kind"], e["card"] or e["title"]) for e in call("GET", "/api/queue")[1]["queue"]]
+
+        def entry(key):
+            return next(e["id"] for e in call("GET", "/api/queue")[1]["queue"] if (e["card"] or e["title"]) == key)
+
+        s, b = call("POST", "/api/queue", {"card": tips})
+        check(s == 200 and order() == [("card", tips)], "a card queued: %r" % ((s, b),))
+        check(call("GET", "/api/cards/" + tips)[1]["card"]["col"] == "next", "a queued card is not in Next")
+        task = "Put 0.11.91 on the M700"
+        call("POST", "/api/queue", {"title": task, "top": True})
+        call("POST", "/api/queue", {"card": mixer})
+        check(order() == [("task", task), ("card", tips), ("card", mixer)], "a task on top, a card last: %r" % order())
+        s, b = call("POST", "/api/queue", {"card": tips})
+        check(s == 400 and "already" in b["error"], "a card queued twice: %r" % ((s, b),))
+        call("POST", "/api/queue/%d/move" % entry(mixer), {"before": entry(tips)})
+        check(order() == [("task", task), ("card", mixer), ("card", tips)], "moved before another: %r" % order())
+        call("POST", "/api/queue/%d/move" % entry(tips), {"top": True})
+        check(order() == [("card", tips), ("task", task), ("card", mixer)], "moved to the top: %r" % order())
+        call("DELETE", "/api/queue/%d" % entry(mixer))
+        check(order() == [("card", tips), ("task", task)]
+              and call("GET", "/api/cards/" + mixer)[1]["card"]["col"] == "agreed",
+              "out of the queue, not back in Agreed: %r" % order())
+        s, b = call("POST", "/api/queue/take")
+        check(s == 200 and b["now"]["card"] == tips and call("GET", "/api/cards/" + tips)[1]["card"]["col"] == "building"
+              and order() == [("task", task)], "the top taken as now, its card Building: %r" % ((s, b),))
+        s, b = call("POST", "/api/queue/take")
+        check(s == 200 and b["now"]["card"] is None and b["now"]["step"] == task and order() == [],
+              "a task taken: %r" % ((s, b),))
+        s, b = call("POST", "/api/queue/take")
+        check(s == 404, "an empty queue gave something")
+        call("POST", "/api/queue", {"card": m6})
+        call("POST", "/api/cards/%s/move" % m6, {"column": "done"})
+        check(order() == [], "a done card stayed in the queue: %r" % order())
+
         s, md = call("GET", "/api/export.md")
-        check(s == 200 and "## Next (2)" in md and "**Astra split D2**" in md and "not yet in roadmap.md" in md,
+        check(s == 200 and "## Next (1)" in md and "## Done (1)" in md and "**Astra split D2**" in md and "not yet in roadmap.md" in md,
               "the Markdown export: %r" % md[:300])
 
         s, b = call("POST", "/api/cards", {"column": "next"})
@@ -212,7 +253,8 @@ def main():
 
     print("PASS: %d checks on the Kosmos Board's API (no key and a withdrawn key refused; cards made, "
           "ordered, moved, edited, noted and removed; decisions asked and answered onto their card; "
-          "changes since a time, signed; what Claude is doing now, its since held per card; the Markdown "
+          "changes since a time, signed; what Claude is doing now, its since held per card; Claude's queue fed, ordered, "
+          "emptied and taken from; the Markdown "
           "export; bad bodies refused)." % checks)
     return 0
 

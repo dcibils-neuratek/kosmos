@@ -83,3 +83,16 @@ CREATE TABLE IF NOT EXISTS doing (
   updated  TEXT NOT NULL,                  -- when it was last said
   author   TEXT NOT NULL
 );
+
+-- Claude's queue: the work plan, in order. An entry is a card from the
+-- board or a task that is no card ("Put 0.11.91 on the M700"). The board
+-- feeds it - a queued card is in Next, in the queue's order - and Claude
+-- takes the top when the card it is on is done.
+CREATE TABLE IF NOT EXISTS queue (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  card      TEXT UNIQUE,                   -- null for a task
+  title     TEXT NOT NULL DEFAULT '',      -- a task's words; a card's title is the card's
+  rank      REAL NOT NULL,
+  added     TEXT NOT NULL,
+  added_by  TEXT NOT NULL
+);

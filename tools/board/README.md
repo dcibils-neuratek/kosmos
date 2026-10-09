@@ -21,6 +21,14 @@ across the top with its card, its step, what it is waiting on and for how
 long, a "Claude is here" mark on that card, and today's work under it -
 said through `PUT /api/now` at each step, and kept in the changes.
 
+**And what comes after it: Claude's queue** (Diego, 9 October: "We need a
+queue to lay out the work plan beyond the kanban cards", "The kanban
+basically nurtures the queue"). The work plan in order - cards from the
+board and tasks that are no card - which Diego reorders, takes things out
+of, and adds to, and from whose top Claude takes the next piece when a card
+is done. A queued card is in Next, in the queue's order; one taken out goes
+back to Agreed; one done, parked or removed leaves it.
+
 `docs/roadmap.md` stays the record, with the reasoning; the board is where
 the work is moved and decided, and what changes there is written back.
 
@@ -45,6 +53,11 @@ the name of the key that made it.
 | PATCH | `/api/decisions/:id` | `{ answer, words }`: answered, and a note on its card |
 | GET | `/api/now` | what Claude is doing now: its card, its step, what it waits on, since when |
 | PUT | `/api/now` | `{ card, step, state, waiting }`: said by Claude at each step; `state` is working, waiting or idle |
+| GET | `/api/queue` | Claude's queue in order: cards and tasks, each with its place |
+| POST | `/api/queue` | `{ card }` or `{ title }` for a task; last, `{ before }` or `{ top: true }` |
+| POST | `/api/queue/:id/move` | `{ before }`, `{ top: true }`, or last |
+| DELETE | `/api/queue/:id` | out of the queue; a card waiting in Next goes back to Agreed |
+| POST | `/api/queue/take` | Claude takes the top: it becomes now, its card Building |
 | GET | `/api/changes?since=` | everything changed since a time |
 | GET | `/api/export.md` | the board as Markdown |
 

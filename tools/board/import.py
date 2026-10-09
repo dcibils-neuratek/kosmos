@@ -14,7 +14,7 @@ A status becomes a column - wanted and noted are Ideas, held is Parked, and
 one Diego dropped is a removed card, kept to bring back. Next keeps the
 order Diego set on 8 October: Mail, then POP3, then the Astra split. The
 decisions are the ones the roadmap records, with his words, and the two
-still open.
+still open; Claude's queue starts as Next, in that order, after a task.
 """
 
 import json
@@ -102,6 +102,15 @@ def main():
             if d.get("note"):
                 lines.append("INSERT INTO notes (card, text, author, at) VALUES (%s, %s, 'Claude', %s);"
                              % (q(d["id"]), q(d["note"]), q(at)))
+
+    # Claude's queue, first laid out: a task that waits for the M700's
+    # screen, then Next in Diego's order.
+    lines.append("DELETE FROM queue;")
+    queued = [(None, "Put 0.11.91 on the M700 (when its monitor is on)")] + [(c, "") for c in NEXT]
+
+    for place, (card, title) in enumerate(queued, 1):
+        lines.append("INSERT INTO queue (card, title, rank, added, added_by) VALUES (%s, %s, %d, %s, 'Claude');"
+                     % (q(card), q(title), place, q(at)))
 
     for day, card, question, answer, words in DECIDED:
         lines.append("INSERT INTO decisions (card, question, options, answer, words, asked, asked_by, answered) "
