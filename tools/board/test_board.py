@@ -11,7 +11,7 @@ with a withdrawn one; a card made, read, edited, moved into a column and
 before another, noted and removed; ordering in a column; decisions asked
 and answered, the answer a note on its card; what changed since a time,
 signed by the key's name; the Markdown export; and bad bodies refused
-with a reason.
+with a reason. Then the page, in headless Chrome, by test_page.mjs.
 """
 
 import json
@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(HERE))
 import scratch                                              # noqa: E402
 
 fails, checks = [], 0
+CHROME = os.environ.get("CHROME", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 
 
 def check(ok, what):
@@ -47,7 +48,18 @@ def free_port():
     return port
 
 
+def routes_agree():
+    """The page's API table is README.md's, row for row."""
+    import re
+    readme = [list(m.groups()) for m in re.finditer(r"^\| (GET|POST|PATCH|PUT|DELETE) \| `([^`]*)` \| (.*) \|$",
+                                                       open(os.path.join(HERE, "README.md")).read(), re.M)]
+    page = re.search(r"^const ROUTES = (.*);$", open(os.path.join(HERE, "public", "index.html")).read(), re.M)
+    check(page and json.loads(page.group(1)) == readme, "the page's API table is not README.md's")
+
+
 def main():
+    global checks
+    routes_agree()
     state = scratch.directory("board")
     run = lambda *a: subprocess.run(["wrangler", *a, "--local", "--persist-to", state],
                                     cwd=HERE, capture_output=True, text=True)
@@ -356,6 +368,18 @@ def main():
         check(s == 401, "a withdrawn key still answered")
         s, _ = call("GET", "/api/me")
         check(s == 200, "withdrawing one key withdrew another")
+
+        # The page itself, in headless Chrome: test_page.mjs says what it checks.
+        page = subprocess.run(["node", os.path.join(HERE, "test_page.mjs"), base, key, open(claudefile).read().strip(), CHROME],
+                              cwd=HERE, capture_output=True, text=True, timeout=180)
+        said = page.stdout.strip().splitlines()
+        for line in said:
+            if line.startswith("FAIL "):
+                check(False, "the page: " + line[5:])
+        ran = [l for l in said if l.startswith("checks ")]
+        check(page.returncode == 0 or any(l.startswith("FAIL ") for l in said),
+              "the page's test did not finish: " + (page.stderr or page.stdout)[-600:])
+        checks += int(ran[0].split()[1]) if ran else 0
     finally:
         dev.terminate()
         try:
@@ -374,7 +398,8 @@ def main():
           "changes since a time, signed; what Claude is doing now, its since held per card; Claude's queue fed, ordered, "
           "emptied and taken from; who owes a reply on a card; a discussion started, answered, shaped "
           "and made a card; files kept in pieces and read back whole, refused by type and size; the Markdown "
-          "export; bad bodies refused)." % checks)
+          "export; bad bodies refused; and the page in headless Chrome: a key asked for, cards dragged between "
+          "columns and back and within one, a picture shown, a note sent, the queue dragged)." % checks)
     return 0
 
 

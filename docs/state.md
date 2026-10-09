@@ -2,9 +2,30 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-08 (0.11.85, and Mail M0-M2 after it)
+Last updated: 2026-10-09 (0.11.91; the Kosmos Board B1-B2)
 
 ---
+
+## 9 October: Mail on Diego's Gmail, the live list, the Kosmos Board
+
+**On `main`, not pushed: 0.11.60-0.11.91 and the board's commits** - a push
+is Diego's yes, after the scan for his personal data.
+
+- **Mail through M5** (0.11.86-0.11.91): Diego's Gmail added on the M700
+  (he typed the app password), the first look keeping the newest 100,
+  Gmail's mailboxes, the wheel, and HTML messages through the Web Kit with
+  Load Pictures. **0.11.91 is not yet on the M700**: restart it only when
+  Diego says its monitor is on.
+- **The live roadmap list**, then **the Kosmos Board** (`tools/board/`,
+  roadmap "the Kosmos Board"): a Cloudflare Worker and D1, with cards, Claude's
+  now and queue, discussions, talk, decisions, files and the page. B1 and B2
+  are done; `python3 tools/board/test_board.py` makes 84 checks, the page's in headless
+  Chrome. **B3 is Diego's**: a Cloudflare account and `wrangler login`.
+  Then B4: the database made, the live list imported again from `build/`, Claude's
+  key made, and a deploy only when Diego says yes.
+
+**Next**: B4 once Diego has logged in; Mail M6 (writing), M7, M8, then
+POP3; the window-server split after Mail.
 
 ## 8 October, evening: chrome step 3, then Kosmos Mail M0-M2
 

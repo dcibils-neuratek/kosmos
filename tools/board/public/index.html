@@ -1,7 +1,977 @@
 <!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kosmos Board</title></head>
-<body style="margin:0;background:#0d121a;color:#e6edf3;font:15px system-ui,sans-serif;padding:32px">
-<p>The Kosmos Board's page comes once its drawing is agreed. The API is at <code>/api/</code>.</p>
-</body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Kosmos Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* The Kosmos Board, as drawn (https://claude.ai/artifact/DWT7DQk8hqQv6vJnrXDpiW,
+   agreed 9 October 2026): Kosmos's Night look, IBM Plex, one page with five
+   views - Discussions, Board, Queue, Decisions, API - over the board's API. */
+:root {
+  --ground: #0d121a; --bar: #121925; --card: #151c27; --raised: #1e2636; --line: #263142; --line2: #2b3548;
+  --ink: #e6edf3; --soft: #c9d3e0; --dim: #98a4b5; --accent: #a8c7fa; --on: #0a1b38;
+  --claude: #3a5ba0; --claude-ground: #142033; --claude-line: #2b4266; --diego: #0f5c4d;
+  --amber: #f0b65a; --amber-ground: #2a2412; --amber-line: #5c4a1c; --green: #8fcf86; --pink: #e58fb0;
+  --c-ideas: #f0b65a; --c-agreed: #b9a5ff; --c-next: #5fd0bd; --c-building: #8fb4ff; --c-done: #8fcf86; --c-parked: #d7a3b5;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--ground); color: var(--ink); font: 14px/1.45 var(--body); }
+body { min-height: 100vh; padding-bottom: env(safe-area-inset-bottom, 0px); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+.btn { height: 36px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--line); background: var(--bar); display: inline-flex; align-items: center; gap: 6px; }
+.btn.go { background: var(--accent); color: var(--on); border-color: transparent; font-weight: 600; }
+.btn.done { background: var(--green); color: #0d1f0b; border-color: transparent; font-weight: 600; }
+.btn.quiet { background: transparent; color: var(--dim); }
+.btn.claude { background: var(--claude-ground); border-color: var(--claude-line); }
+.field { height: 36px; border-radius: 9px; border: 1px solid var(--line); background: var(--ground); padding: 0 10px; min-width: 0; }
+textarea.field { height: auto; padding: 8px 10px; resize: vertical; width: 100%; }
+.label { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.pill { font-size: 11.5px; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.badge { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 12px; flex: none; }
+.empty { color: var(--dim); padding: 18px; border: 1px dashed var(--line); border-radius: 12px; }
+
+header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--bar); }
+.mark { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: var(--on); display: grid; place-items: center; font: 600 17px var(--display); }
+.name { font: 600 20px var(--display); }
+nav.views { display: flex; gap: 4px; flex-wrap: wrap; }
+nav.views button { padding: 7px 12px; border-radius: 8px; border: 0; background: transparent; color: var(--dim); }
+nav.views button[aria-current="page"] { background: var(--raised); color: var(--ink); font-weight: 500; }
+.search { flex: 1 1 220px; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--ground); color: var(--dim); min-width: 0; }
+.search input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; }
+.me { display: flex; gap: 6px; align-items: center; }
+
+/* Claude's strip */
+.strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 12px 20px 0; padding: 11px 14px; border-radius: 12px; background: var(--claude-ground); border: 1px solid var(--claude-line); }
+.strip .who { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.strip .live { position: relative; }
+.strip .live::after { content: ""; position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px; border-radius: 50%; background: var(--state, #5fd0bd); border: 2px solid var(--claude-ground); }
+.strip .on { border: 0; background: none; padding: 0; color: var(--ink); font-weight: 600; text-decoration: underline; text-decoration-color: var(--claude-line); text-underline-offset: 3px; text-align: left; }
+.strip .step { color: var(--soft); }
+.strip .wait { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); font-size: 13px; }
+.strip .next { color: var(--soft); font-size: 13px; border: 0; border-left: 1px solid var(--claude-line); padding: 0 0 0 14px; background: none; text-align: left; }
+.strip .since { margin-left: auto; color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+.strip ol { flex-basis: 100%; margin: 4px 0 0; padding: 10px 0 0; border-top: 1px solid var(--claude-line); list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.strip li { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 10px; font-size: 13px; }
+.strip li time { color: var(--dim); font-family: var(--mono); }
+
+/* the board */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 20px; }
+.chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--bar); font-size: 13px; }
+.chip[aria-pressed="true"] { border-color: var(--accent); background: var(--raised); }
+.chip .n { color: var(--dim); font-variant-numeric: tabular-nums; }
+.boardwrap { display: flex; flex-wrap: wrap; gap: 18px; padding: 4px 20px 28px; align-items: flex-start; }
+.columns { flex: 999 1 760px; min-width: 0; overflow-x: auto; padding-bottom: 8px; }
+.cols { display: grid; grid-auto-flow: column; grid-auto-columns: 272px; gap: 14px; align-items: start; }
+.col { background: var(--bar); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; min-height: 420px; }
+.col.over { border-color: var(--accent); }
+.colhead { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; }
+.colhead h2 { margin: 0; font: 600 16px var(--display); letter-spacing: .02em; }
+.colhead .n { color: var(--dim); font-size: 12px; }
+.colhead .hint { margin-left: auto; color: var(--dim); font-size: 12px; }
+.list { display: flex; flex-direction: column; gap: 8px; padding: 0 10px 12px; min-height: 60px; }
+.cardbox { display: flex; flex-direction: column; gap: 7px; width: 100%; text-align: left; padding: 11px 12px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line2); touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.cardbox.chosen { border-color: var(--accent); }
+.cardbox .top { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--dim); }
+.cardbox .place { margin-left: auto; font: 500 11px var(--mono); color: var(--ink); background: var(--card); border-radius: 6px; padding: 1px 6px; }
+.cardbox .title { font-weight: 600; font-size: 14px; line-height: 1.35; }
+.cardbox .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 11.5px; color: var(--dim); }
+.cardbox .ref { font-family: var(--mono); }
+.here { display: inline-flex; align-items: center; gap: 5px; color: var(--on); background: #8fb4ff; border-radius: 999px; padding: 1px 8px; font-weight: 600; }
+.needs { color: var(--on); background: var(--amber); border-radius: 999px; padding: 1px 8px; font-weight: 600; }
+.ghost { position: fixed; z-index: 100; pointer-events: none; transform: rotate(2deg); box-shadow: 0 14px 30px rgba(0,0,0,.45); opacity: .95; }
+.placeholder { border: 2px dashed var(--accent); border-radius: 10px; background: transparent; }
+.more { border: 1px dashed var(--line); background: transparent; color: var(--dim); border-radius: 10px; padding: 9px; }
+.addcard { border: 0; background: transparent; color: var(--dim); text-align: left; padding: 6px 4px; }
+.coltabs { display: none; gap: 6px; padding: 0 20px 10px; overflow-x: auto; }
+.coltabs button { flex: none; height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--bar); font-size: 13px; }
+.coltabs button[aria-selected="true"] { border-color: var(--accent); background: var(--raised); }
+.coltabs button.over { border-color: var(--accent); background: var(--claude-ground); }
+
+/* a card, opened */
+.panel { flex: 1 1 340px; max-width: 440px; min-width: 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 80px; max-height: calc(100vh - 100px); overflow-y: auto; }
+.panel h3 { margin: 0; }
+.panel .titlefield { font: 600 21px/1.2 var(--display); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 2px 4px; width: 100%; }
+.panel .titlefield:hover, .panel .titlefield:focus { border-color: var(--line); }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.grid2 label, .stack label { display: grid; gap: 4px; font-size: 12px; color: var(--dim); }
+.quote { margin: 0; padding-left: 12px; border-left: 3px solid var(--accent); color: var(--dim); font-style: italic; }
+.decide { background: var(--amber-ground); border: 1px solid var(--amber-line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.decide .q { font-weight: 600; color: var(--amber); }
+.decide .opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.decide .opts button { border: 1px solid var(--amber-line); background: var(--card); border-radius: 8px; padding: 6px 10px; }
+.thread { display: flex; flex-direction: column; gap: 10px; }
+.msg { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; }
+.bubble { line-height: 1.5; padding: 9px 12px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); overflow-wrap: anywhere; white-space: pre-wrap; }
+.bubble.c { background: var(--claude-ground); border-color: var(--claude-line); }
+.bubble .by { color: var(--dim); font-size: 12px; display: block; white-space: normal; }
+.bubble .asks { color: var(--amber); font-size: 12px; }
+.files { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.file { display: flex; flex-direction: column; gap: 4px; border: 0; background: none; padding: 0; text-align: left; }
+.file .thumb { height: 92px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised) center / cover no-repeat; display: grid; place-items: end start; padding: 6px 8px; font: 500 11px var(--mono); color: var(--dim); }
+.file .cap { font-size: 12.5px; line-height: 1.35; }
+.file .by { font-size: 11.5px; color: var(--dim); }
+.dropzone.over { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 12px; }
+.history { font-size: 12.5px; color: var(--dim); display: flex; flex-direction: column; gap: 3px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* queue, discussions, decisions */
+main.page { max-width: 1000px; margin: 0 auto; padding: 22px 20px 40px; display: flex; flex-direction: column; gap: 18px; }
+main.wide { max-width: 1440px; }
+h1.h { margin: 0; font: 600 28px var(--display); }
+h2.h { margin: 0; font: 600 18px var(--display); }
+.sub { color: var(--dim); }
+.nowcard { background: var(--claude-ground); border: 1px solid var(--claude-line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; }
+.qlist { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.qitem { display: grid; grid-template-columns: 26px 30px minmax(0, 1fr) auto; gap: 12px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; user-select: none; -webkit-user-select: none; }
+.qitem .grip { color: #4a5770; cursor: grab; font-size: 18px; text-align: center; touch-action: none; }
+.qitem .place { font: 600 15px var(--mono); color: var(--dim); text-align: center; }
+.qitem .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.qitem .acts button { height: 34px; min-width: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bar); font-size: 13px; }
+.split { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+.dlist { flex: 1 1 300px; max-width: 360px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.ditem { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px 14px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); text-align: left; }
+.ditem.chosen { border-color: var(--accent); }
+.dmain { flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+.box.c { background: var(--claude-ground); border-color: var(--claude-line); }
+.box.open { background: var(--amber-ground); border-color: var(--amber-line); }
+.opt { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.opt.rec { border-color: var(--claude-line); }
+.opt.chosen { border-color: var(--green); }
+.plus { color: var(--green); font-size: 13px; }
+.minus { color: var(--pink); font-size: 13px; }
+table.dec { width: 100%; min-width: 720px; border-collapse: collapse; background: var(--bar); }
+table.dec th { text-align: left; padding: 10px 14px; font-weight: 500; color: var(--dim); font-size: 12px; letter-spacing: .05em; text-transform: uppercase; }
+table.dec td { padding: 12px 14px; border-top: 1px solid var(--line); vertical-align: top; }
+.scrollx { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+.sheet { position: fixed; inset: 0; z-index: 60; background: rgba(5, 8, 12, .7); display: grid; place-items: center; padding: 16px; }
+.sheet form { width: min(520px, 100%); background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; z-index: 80; max-width: calc(100% - 32px); }
+.gate { max-width: 420px; margin: 12vh auto; padding: 24px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; gap: 12px; }
+
+@media (max-width: 760px) {
+  header.top { padding: 10px 14px; }
+  .strip, .chips, .boardwrap { margin-left: 0; margin-right: 0; }
+  .strip { margin: 10px 14px 0; }
+  .chips { padding: 10px 14px; }
+  .boardwrap { padding: 4px 14px 24px; }
+  .coltabs { display: flex; padding: 0 14px 10px; }
+  .cols { grid-auto-flow: row; grid-auto-columns: auto; }
+  .col { display: none; min-height: 0; }
+  .col.shown { display: flex; }
+  .panel { position: fixed; inset: auto 0 0 0; max-width: none; max-height: 82vh; border-radius: 16px 16px 0 0; z-index: 40; padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
+  .qitem { grid-template-columns: 22px 24px minmax(0, 1fr); }
+  .qitem .acts { grid-column: 1 / -1; justify-content: flex-start; }
+}
+@media (prefers-reduced-motion: no-preference) { .chip, .btn, .cardbox { transition: border-color .12s, background .12s; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+"use strict";
+
+// ---- Talking to the API ----------------------------------------------
+
+const KEY_STORE = "kosmos-board-key";
+let KEY = null;
+try { KEY = localStorage.getItem(KEY_STORE); } catch (e) {}
+
+async function api(path, opts = {}) {
+  const headers = Object.assign({ Authorization: "Bearer " + KEY }, opts.headers || {});
+  let body = opts.body;
+  if (body !== undefined && !(body instanceof Blob) && !(body instanceof ArrayBuffer)) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(body);
+  }
+  const r = await fetch(path, { method: opts.method || "GET", headers, body });
+  if (r.status === 401) { forgetKey(); throw new Error("the key was refused"); }
+  const kind = r.headers.get("content-type") || "";
+  const data = kind.includes("application/json") ? await r.json() : await r.blob();
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+
+function forgetKey() {
+  KEY = null;
+  try { localStorage.removeItem(KEY_STORE); } catch (e) {}
+  render();
+}
+
+// ---- What the page knows ------------------------------------------------
+
+const COLUMNS = [
+  ["ideas", "Ideas", "asked, not agreed"], ["agreed", "Agreed", ""], ["next", "Next", "Claude's queue"],
+  ["building", "Building", "now"], ["done", "Done", ""], ["parked", "Parked", "held"],
+];
+const COLNAME = Object.fromEntries(COLUMNS.map(([k, n]) => [k, n]));
+const STAGES = [["open", "Open", "#f0b65a"], ["shaping", "Shaping", "#5fd0bd"], ["ready", "Ready", "#8fb4ff"], ["became", "Became cards", "#8fcf86"], ["parked", "Parked", "#d7a3b5"]];
+const AREA_COLOURS = ["#a8c7fa", "#b9a5ff", "#5fd0bd", "#f0b65a", "#8fb4ff", "#e58fb0", "#a3adbf", "#8fcf86", "#d7a3b5", "#f2a37a"];
+
+const S = {
+  view: "board", me: null, cards: [], queue: [], now: null, discussions: [], decisions: [], waiting: null,
+  today: [], area: "", query: "", chosen: null, detail: null, discussion: null, discussionDetail: null,
+  stage: "", tab: "next", feedOpen: false, doneShown: 30, thumbs: {}, lastChange: null,
+};
+try { const v = localStorage.getItem("kosmos-board-view"); if (v) S.view = v; } catch (e) {}
+
+function areaColour(area) {
+  let h = 0;
+  for (const ch of area || "") h = (h * 31 + ch.charCodeAt(0)) % 997;
+  return AREA_COLOURS[h % AREA_COLOURS.length];
+}
+
+function el(tag, props, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k === "class") n.className = v;
+    else if (k === "text") n.textContent = v;
+    else if (k === "style") n.setAttribute("style", v);
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat()) if (k !== null && k !== undefined && k !== false) n.append(k);
+  return n;
+}
+
+function badge(who) {
+  return el("span", { class: "badge", style: "background:" + (who === "Claude" ? "var(--claude)" : "var(--diego)"), title: who, text: (who || "?")[0] });
+}
+
+const clip = () => {
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  s.setAttribute("width", "12"); s.setAttribute("height", "12"); s.setAttribute("viewBox", "0 0 24 24");
+  s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", "2"); s.setAttribute("aria-hidden", "true");
+  const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  p.setAttribute("d", "m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5");
+  s.append(p);
+  return s;
+};
+
+function when(iso) {
+  if (!iso) return "";
+  const d = new Date(iso), n = new Date();
+  const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (d.toDateString() === n.toDateString()) return hm;
+  return d.toLocaleDateString([], { day: "numeric", month: "short" }) + ", " + hm;
+}
+
+function minutes(fromIso) {
+  if (!fromIso) return "";
+  const m = Math.max(0, Math.round((Date.now() - new Date(fromIso)) / 60000));
+  return m < 60 ? m + " min" : Math.floor(m / 60) + " h " + (m % 60) + " min";
+}
+
+let toastTimer = null;
+function toast(text) {
+  document.querySelectorAll(".toast").forEach((t) => t.remove());
+  const t = el("div", { class: "toast", role: "status", text });
+  document.body.append(t);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.remove(), 3500);
+}
+
+async function attempt(what, fn) {
+  try { return await fn(); } catch (e) { toast(what + ": " + e.message); await load(); render(); }
+}
+
+// ---- Loading --------------------------------------------------------------
+
+async function load() {
+  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  const [cards, queue, now, discussions, decisions, waiting, today] = await Promise.all([
+    api("/api/cards"), api("/api/queue"), api("/api/now"), api("/api/discussions"),
+    api("/api/decisions"), api("/api/waiting"), api("/api/changes?since=" + midnight.toISOString()),
+  ]);
+  S.cards = cards.cards; S.queue = queue.queue; S.now = now.now; S.discussions = discussions.discussions;
+  S.decisions = decisions.decisions; S.waiting = waiting;
+  S.today = today.changes.filter((c) => c.author === "Claude" && c.kind !== "now").reverse().slice(0, 20);
+  S.lastChange = today.now;
+  if (S.chosen) S.detail = await api("/api/cards/" + encodeURIComponent(S.chosen)).catch(() => null);
+  if (S.discussion) S.discussionDetail = await api("/api/discussions/" + S.discussion).catch(() => null);
+}
+
+// Every fifteen seconds, what changed - from Claude, from another device.
+async function poll() {
+  if (!KEY || document.hidden || dragging) return;
+  try {
+    const c = await api("/api/changes?since=" + encodeURIComponent(S.lastChange || new Date().toISOString()));
+    S.lastChange = c.now;
+    if (c.changes.length) { await load(); render(); }
+  } catch (e) {}
+}
+setInterval(poll, 15000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+
+// ---- The key ----------------------------------------------------------------
+
+function gate() {
+  const input = el("input", { class: "field", id: "key", type: "password", autocomplete: "off", placeholder: "kb_…", "aria-label": "Your key" });
+  const said = el("p", { class: "sub", style: "margin:0;min-height:1.4em" });
+  const form = el("form", { class: "gate", onsubmit: async (e) => {
+    e.preventDefault();
+    KEY = input.value.trim();
+    try {
+      const me = await api("/api/me");
+      try { localStorage.setItem(KEY_STORE, KEY); } catch (err) {}
+      S.me = me.name;
+      await load();
+      render();
+    } catch (err) { said.textContent = "That key was not taken. Make one with keys.py on the Mac."; KEY = null; }
+  } },
+    el("div", { style: "display:flex;align-items:center;gap:10px" }, el("span", { class: "mark", text: "K" }), el("span", { class: "name", text: "Kosmos Board" })),
+    el("p", { class: "sub", style: "margin:0", text: "This device needs its own key, made on the Mac with tools/board/keys.py and shown once. It is kept in this browser only." }),
+    input, said, el("button", { class: "btn go", type: "submit", text: "Open the board" }));
+  return form;
+}
+
+// ---- The header and Claude's strip ------------------------------------------
+
+function header() {
+  const views = [["discussions", "Discussions"], ["board", "Board"], ["queue", "Queue"], ["decisions", "Decisions"], ["api", "API"]];
+  const search = el("input", { type: "search", value: S.query, placeholder: "Search cards", "aria-label": "Search cards",
+    oninput: (e) => { S.query = e.target.value; if (S.view !== "board") { S.view = "board"; } renderMain(); } });
+  return el("header", { class: "top" },
+    el("span", { style: "display:flex;align-items:center;gap:10px" }, el("span", { class: "mark", text: "K" }), el("span", { class: "name", text: "Kosmos Board" })),
+    el("nav", { class: "views", "aria-label": "Views" }, views.map(([k, n]) => el("button", { type: "button", "aria-current": S.view === k ? "page" : null,
+      onclick: () => { S.view = k; try { localStorage.setItem("kosmos-board-view", k); } catch (e) {} render(); } }, n,
+      k === "discussions" && waitingCount("discussions") ? el("span", { class: "dot", style: "background:var(--amber);margin-left:6px" }) : null))),
+    el("label", { class: "search" }, el("span", { "aria-hidden": "true", text: "⌕" }), search),
+    el("button", { class: "btn go", type: "button", onclick: () => newCardSheet() }, "New card"),
+    el("span", { class: "me" }, badge(S.me || "?"), el("button", { class: "btn quiet", type: "button", title: "Forget this device's key", onclick: forgetKey }, "Sign out")));
+}
+
+function waitingCount(kind) {
+  const w = S.waiting && S.waiting.diego;
+  return w ? (w[kind] || []).length : 0;
+}
+
+function strip() {
+  const now = S.now || { state: "idle" };
+  const working = now.state !== "idle" && (now.card || now.step);
+  const ahead = upcoming();
+  const upNext = ahead[0];
+  const stateColour = now.state === "waiting" ? "var(--amber)" : now.state === "idle" ? "var(--dim)" : "#5fd0bd";
+  const kids = [
+    el("span", { class: "who" }, el("span", { class: "badge live", style: "background:var(--claude);--state:" + stateColour, text: "C" }),
+      working ? (now.state === "waiting" ? "Claude is waiting" : "Claude is working") : "Claude is idle"),
+  ];
+  if (working) {
+    kids.push(now.card ? el("button", { class: "on", type: "button", onclick: () => openCard(now.card) }, now.title || now.card) : el("span", { class: "on", text: now.step }));
+    if (now.card && now.step) kids.push(el("span", { class: "step", text: "Step: " + now.step }));
+    if (now.waiting) kids.push(el("span", { class: "wait" }, el("span", { class: "dot", style: "background:var(--amber)" }), "Waiting on: " + now.waiting));
+  }
+  if (upNext) {
+    const then = ahead[1];
+    kids.push(el("button", { class: "next", type: "button", onclick: () => { S.view = "queue"; render(); } },
+      el("span", { style: "color:var(--dim)", text: "Up next " }), upNext.title + (then ? ", then " + then.title : ""),
+      el("span", { style: "color:var(--dim)", text: " · " + ahead.length + " in the queue" })));
+  }
+  kids.push(el("span", { class: "since", text: working && now.since ? "since " + when(now.since) + " · " + minutes(now.since) : (now.updated ? "last heard " + when(now.updated) : "") }));
+  kids.push(el("button", { class: "btn claude", type: "button", "aria-expanded": String(S.feedOpen), onclick: () => { S.feedOpen = !S.feedOpen; render(); } }, "Today's work"));
+  if (S.feedOpen) {
+    kids.push(el("ol", {}, S.today.length ? S.today.map((c) => el("li", {}, el("time", { text: when(c.at) }), el("span", { text: sentence(c) })))
+      : el("li", {}, el("span"), el("span", { class: "sub", text: "Nothing yet today." }))));
+  }
+  return el("section", { class: "strip", "aria-label": "What Claude is doing now" }, kids);
+}
+
+// The queue without the card Claude has in hand: that one is "now", not "next".
+function upcoming() {
+  const held = S.now && S.now.state !== "idle" ? S.now.card : null;
+  return S.queue.filter((q) => !held || q.card !== held);
+}
+
+function titleOf(id) {
+  const c = S.cards.find((x) => x.id === id);
+  return c ? c.title : id;
+}
+
+function sentence(c) {
+  const d = c.data || {};
+  const t = c.card ? "“" + titleOf(c.card) + "”" : "";
+  switch (c.kind) {
+    case "card.new": return "Made " + t;
+    case "card.move": return "Moved " + t + " to " + (COLNAME[d.to] || d.to);
+    case "card.edit": return "Changed " + t;
+    case "card.remove": return "Removed “" + (d.title || c.card) + "”";
+    case "note": return (d.asks ? "Asked on " : "Wrote on ") + t + ": " + (d.text || "").slice(0, 120);
+    case "file": return "Added " + (d.name || "a file") + (t ? " to " + t : "") + (d.caption ? ": " + d.caption : "");
+    case "queue.take": return "Took " + (t || d.task || "the next task") + " from the queue";
+    case "queue.add": return "Queued " + (t || d.task || "a task");
+    case "queue.remove": return "Took " + (t || d.task || "a task") + " out of the queue";
+    case "decision.new": return "Asked you: " + (d.question || "");
+    case "decision.answer": return "Recorded your decision: " + (d.answer || "");
+    case "discussion.new": return "Started a discussion: " + (d.title || "");
+    case "message": return "Wrote in a discussion: " + (d.text || "").slice(0, 120);
+    case "discussion.card": return "Made " + t + " from a discussion";
+    default: return c.kind;
+  }
+}
+
+// ---- The board ------------------------------------------------------------------
+
+function shownCards() {
+  const q = S.query.trim().toLowerCase();
+  return S.cards.filter((c) => (!S.area || (S.area === "__talk" ? !!c.talk : c.area === S.area))
+    && (!q || [c.title, c.detail, c.ref, c.quote, c.area].some((v) => (v || "").toLowerCase().includes(q))));
+}
+
+function board() {
+  const areas = [...new Set(S.cards.map((c) => c.area).filter(Boolean))].sort();
+  const talkN = S.cards.filter((c) => c.talk).length;
+  const chip = (key, name, colour, n) => el("button", { class: "chip", type: "button", "aria-pressed": String(S.area === key),
+    onclick: () => { S.area = S.area === key ? "" : key; renderMain(); } }, colour ? el("span", { class: "dot", style: "background:" + colour }) : null, name, el("span", { class: "n", text: String(n) }));
+  const chips = el("div", { class: "chips", role: "group", "aria-label": "Areas" },
+    chip("", "Every area", null, S.cards.length), talkN ? chip("__talk", "Waiting for a reply", "#8fb4ff", talkN) : null,
+    areas.map((a) => chip(a, a, areaColour(a), S.cards.filter((c) => c.area === a).length)));
+
+  const shown = shownCards();
+  const tabs = el("div", { class: "coltabs", role: "tablist", "aria-label": "Columns" },
+    COLUMNS.map(([k, n]) => el("button", { type: "button", role: "tab", "data-col": k, "aria-selected": String(S.tab === k),
+      onclick: () => { S.tab = k; renderMain(); } }, n + " ", el("span", { class: "sub", text: String(shown.filter((c) => c.col === k).length) }))));
+
+  const cols = el("div", { class: "cols" }, COLUMNS.map(([k, name, hint]) => {
+    let list = shown.filter((c) => c.col === k);
+    const total = list.length;
+    if (k === "done") list = list.slice(0, S.doneShown);
+    return el("section", { class: "col" + (S.tab === k ? " shown" : ""), "data-col": k, "aria-label": name },
+      el("div", { class: "colhead" }, el("span", { class: "dot", style: "width:10px;height:10px;background:var(--c-" + k + ")" }),
+        el("h2", { text: name }), el("span", { class: "n", text: String(total) }), el("span", { class: "hint", text: hint })),
+      el("div", { class: "list", "data-col": k }, list.map(cardBox),
+        total > list.length ? el("button", { class: "more", type: "button", onclick: () => { S.doneShown += 60; renderMain(); } }, "Show " + Math.min(60, total - list.length) + " more of " + (total - list.length)) : null,
+        el("button", { class: "addcard", type: "button", onclick: () => newCardSheet(k) }, "+ Add a card")));
+  }));
+
+  return el("div", {}, strip(), chips, tabs, el("div", { class: "boardwrap" }, el("div", { class: "columns" }, cols), S.chosen && S.detail ? panel() : null));
+}
+
+function cardBox(c) {
+  const meta = [];
+  if (c.ref) meta.push(el("span", { class: "ref", text: c.ref }));
+  if (S.now && S.now.card === c.id && S.now.state !== "idle") meta.push(el("span", { class: "here" }, el("span", { class: "dot", style: "width:6px;height:6px;background:var(--on)" }), "Claude is here"));
+  if (S.decisions.some((d) => d.card === c.id && !d.answer)) meta.push(el("span", { class: "needs", text: "Needs you" }));
+  if (c.talk) meta.push(el("span", { class: "pill", style: "color:" + (c.talk === "claude" ? "#8fb4ff" : "var(--amber)"), text: c.talk === "claude" ? "Waiting for Claude" : "Waiting for you" }));
+  if (c.files) meta.push(el("span", { style: "display:inline-flex;align-items:center;gap:3px" }, clip(), String(c.files)));
+  if (!c.in_roadmap) meta.push(el("span", { title: "Not yet written into docs/roadmap.md", text: "new" }));
+  return el("button", { class: "cardbox" + (S.chosen === c.id ? " chosen" : ""), type: "button", "data-id": c.id, "data-col": c.col,
+    onclick: (e) => { if (justDragged) { e.preventDefault(); return; } openCard(c.id); } },
+    el("span", { class: "top" }, c.area ? el("span", { class: "dot", style: "background:" + areaColour(c.area) }) : null, c.area || "",
+      c.queued ? el("span", { class: "place", text: "#" + c.queued }) : null),
+    el("span", { class: "title", text: c.title }),
+    meta.length ? el("span", { class: "meta" }, meta) : null);
+}
+
+async function openCard(id) {
+  S.chosen = id;
+  S.view = "board";
+  const c = S.cards.find((x) => x.id === id);
+  if (c) S.tab = c.col;
+  S.detail = await api("/api/cards/" + encodeURIComponent(id)).catch(() => null);
+  render();
+}
+
+function panel() {
+  const d = S.detail, c = d.card;
+  const save = (fields) => attempt("Not kept", async () => { await api("/api/cards/" + encodeURIComponent(c.id), { method: "PATCH", body: fields }); await load(); renderMain(); });
+  const title = el("input", { class: "titlefield", value: c.title, "aria-label": "Title", onchange: (e) => save({ title: e.target.value }) });
+  const colSel = el("select", { class: "field", "aria-label": "Column", onchange: (e) => moveCard(c.id, e.target.value, null) },
+    COLUMNS.map(([k, n]) => el("option", { value: k, selected: c.col === k, text: n })));
+  const area = el("input", { class: "field", value: c.area, list: "areas", "aria-label": "Area", onchange: (e) => save({ area: e.target.value }) });
+  const datalist = el("datalist", { id: "areas" }, [...new Set(S.cards.map((x) => x.area).filter(Boolean))].map((a) => el("option", { value: a })));
+  const detail = el("textarea", { class: "field", rows: "3", "aria-label": "Detail", onchange: (e) => save({ detail: e.target.value }) });
+  detail.value = c.detail || "";
+
+  const open = d.decisions.filter((x) => !x.answer);
+  const items = [
+    ...d.notes.map((n) => ({ at: n.at, n })),
+    ...d.files.map((f) => ({ at: f.at, f })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+
+  const text = el("textarea", { class: "field", rows: "2", placeholder: "A thought, a question, a change - Claude answers here", "aria-label": "Write to Claude about this card" });
+  const send = async () => {
+    if (!text.value.trim()) return;
+    await attempt("Not sent", async () => { await api("/api/cards/" + encodeURIComponent(c.id) + "/notes", { method: "POST", body: { text: text.value } }); text.value = ""; await load(); renderMain(); });
+  };
+  const fileInput = el("input", { type: "file", accept: "image/*,application/pdf,video/mp4,video/webm,text/plain,text/markdown", hidden: true,
+    onchange: (e) => { for (const f of e.target.files) upload("/api/cards/" + encodeURIComponent(c.id) + "/files", f); } });
+  const q = S.queue.find((e) => e.card === c.id);
+
+  const box = el("aside", { class: "panel dropzone", "aria-label": "The chosen card" },
+    el("div", { class: "row", style: "align-items:center;font-size:12px;color:var(--dim)" },
+      c.area ? el("span", { class: "dot", style: "background:" + areaColour(c.area) }) : null, c.area || "No area",
+      el("span", { style: "margin-left:auto;font-family:var(--mono)", text: c.ref }),
+      el("button", { class: "btn quiet", type: "button", "aria-label": "Close", onclick: () => { S.chosen = null; S.detail = null; renderMain(); } }, "Close")),
+    title,
+    el("div", { class: "grid2" }, el("label", {}, "Column", colSel), el("label", {}, "Area", area, datalist)),
+    el("label", { class: "stack", style: "display:grid;gap:4px;font-size:12px;color:var(--dim)" }, "Detail", detail),
+    c.quote ? el("p", { class: "quote", text: "“" + c.quote + "”" }) : null,
+    open.map((x) => el("div", { class: "decide" }, el("span", { class: "q", text: "Needs your decision" }), el("span", { text: x.question }),
+      el("div", { class: "opts" }, (x.options.length ? x.options : []).map((o) => el("button", { type: "button", onclick: () => answer(x.id, o) }, o)),
+        el("button", { type: "button", onclick: () => answerSheet(x) }, "In my own words")))),
+    d.files.some((f) => f.type.startsWith("image/")) ? el("div", { class: "files" }, d.files.filter((f) => f.type.startsWith("image/")).map(fileTile)) : null,
+    el("div", { class: "label", style: "display:flex;gap:8px" }, "Talk and history", el("span", { style: "margin-left:auto;letter-spacing:0;text-transform:none;color:#8fb4ff", text: "Claude answers here" })),
+    el("div", { class: "thread" }, items.length ? items.map((it) => it.n ? noteRow(it.n) : fileRow(it.f)) : el("span", { class: "sub", text: "Nothing said yet." })),
+    el("label", { style: "display:grid;gap:6px;font-size:12px;color:var(--dim)" }, "Write to Claude about this card", text),
+    el("div", { class: "row" },
+      el("button", { class: "btn go", type: "button", onclick: send }, "Send"),
+      el("button", { class: "btn", type: "button", onclick: () => fileInput.click() }, clip(), "Attach"), fileInput,
+      c.col !== "done" ? el("button", { class: "btn done", type: "button", onclick: () => moveCard(c.id, "done", null) }, "Mark done") : null,
+      q ? el("span", { class: "sub", style: "align-self:center", text: "#" + (S.queue.indexOf(q) + 1) + " in Claude's queue" })
+        : c.col !== "done" ? el("button", { class: "btn claude", type: "button", onclick: () => attempt("Not queued", async () => { await api("/api/queue", { method: "POST", body: { card: c.id } }); await load(); renderMain(); toast("Added to Claude's queue"); }) }, "Add to Claude's queue") : null,
+      el("button", { class: "btn quiet", type: "button", onclick: () => removeCard(c) }, "Remove")),
+    d.history.length ? el("details", {}, el("summary", { class: "sub", text: "Everything that happened to it" }),
+      el("div", { class: "history" }, d.history.map((h) => el("span", { text: when(h.at) + " · " + h.author + " · " + sentence({ ...h, card: c.id }) })))) : null);
+
+  dropFiles(box, (f) => upload("/api/cards/" + encodeURIComponent(c.id) + "/files", f));
+  return box;
+}
+
+function noteRow(n) {
+  return el("div", { class: "msg" }, badge(n.author), el("div", { class: "bubble" + (n.author === "Claude" ? " c" : "") },
+    el("span", { class: "by", text: n.author + " · " + when(n.at) }), n.text, n.asks ? el("span", { class: "asks", text: "  · waiting for your answer" }) : null));
+}
+
+function fileRow(f) {
+  return el("div", { class: "msg" }, badge(f.author), el("div", { class: "bubble" + (f.author === "Claude" ? " c" : "") },
+    el("span", { class: "by", text: f.author + " · " + when(f.at) + " · added " + f.name }), f.caption || "",
+    f.type.startsWith("image/") ? null : el("div", {}, el("button", { class: "btn", type: "button", style: "margin-top:6px", onclick: () => openFile(f) }, clip(), f.name))));
+}
+
+function fileTile(f) {
+  const t = el("span", { class: "thumb", text: f.type.split("/")[1].toUpperCase() });
+  thumb(f, t);
+  return el("button", { class: "file", type: "button", onclick: () => openFile(f) }, t,
+    el("span", { class: "cap", text: f.caption || f.name }), el("span", { class: "by", text: f.author + " · " + when(f.at) }));
+}
+
+// A file's bytes come with the key, so a picture is fetched and shown from
+// memory rather than linked.
+async function thumb(f, node) {
+  if (!S.thumbs[f.id]) {
+    try { S.thumbs[f.id] = URL.createObjectURL(await api("/api/files/" + f.id)); } catch (e) { return; }
+  }
+  node.style.backgroundImage = "url(" + S.thumbs[f.id] + ")";
+  node.textContent = "";
+}
+
+async function openFile(f) {
+  try {
+    const url = S.thumbs[f.id] || URL.createObjectURL(await api("/api/files/" + f.id));
+    S.thumbs[f.id] = url;
+    window.open(url, "_blank", "noopener");
+  } catch (e) { toast("Could not open it: " + e.message); }
+}
+
+async function upload(path, file) {
+  if (file.size > 15 * 1024 * 1024) { toast(file.name + " is larger than 15 MB"); return; }
+  const caption = file.name;
+  await attempt("Not added", async () => {
+    await api(path + "?name=" + encodeURIComponent(file.name) + "&caption=" + encodeURIComponent(caption),
+      { method: "POST", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
+    await load(); render(); toast("Added " + file.name);
+  });
+}
+
+function dropFiles(node, take) {
+  node.addEventListener("dragover", (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) { e.preventDefault(); node.classList.add("over"); } });
+  node.addEventListener("dragleave", () => node.classList.remove("over"));
+  node.addEventListener("drop", (e) => { node.classList.remove("over"); if (e.dataTransfer && e.dataTransfer.files.length) { e.preventDefault(); [...e.dataTransfer.files].forEach(take); } });
+}
+
+// A pasted screenshot goes onto the open card or discussion.
+document.addEventListener("paste", (e) => {
+  const files = [...(e.clipboardData ? e.clipboardData.files : [])];
+  if (!files.length) return;
+  if (S.view === "board" && S.chosen) { e.preventDefault(); files.forEach((f) => upload("/api/cards/" + encodeURIComponent(S.chosen) + "/files", f)); }
+  else if (S.view === "discussions" && S.discussion) { e.preventDefault(); files.forEach((f) => upload("/api/discussions/" + S.discussion + "/files", f)); }
+});
+
+async function moveCard(id, col, before) {
+  // Shown at once, then told to the board.
+  const c = S.cards.find((x) => x.id === id);
+  if (c) { c.col = col; }
+  renderMain();
+  await attempt("Not moved", async () => {
+    await api("/api/cards/" + encodeURIComponent(id) + "/move", { method: "POST", body: { column: col, before: before || undefined } });
+    await load(); renderMain();
+  });
+}
+
+function removeCard(c) {
+  sheet("Remove “" + c.title + "”?", [el("p", { class: "sub", style: "margin:0", text: "It leaves the board and Claude's queue. It is kept for 30 days and can be brought back." })],
+    "Remove", async () => { await api("/api/cards/" + encodeURIComponent(c.id), { method: "DELETE" }); S.chosen = null; S.detail = null; await load(); render(); });
+}
+
+async function answer(id, text, words) {
+  await attempt("Not kept", async () => { await api("/api/decisions/" + id, { method: "PATCH", body: { answer: text, words: words || "" } }); await load(); render(); toast("Decided"); });
+}
+
+function answerSheet(x) {
+  const a = el("input", { class: "field", placeholder: "The answer", "aria-label": "The answer" });
+  const w = el("textarea", { class: "field", rows: "3", placeholder: "In your words, as you would say it", "aria-label": "In your words" });
+  sheet(x.question, [a, w], "Decide", () => answer(x.id, a.value || w.value, w.value));
+}
+
+function sheet(title, fields, go, act) {
+  const back = el("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-label": title });
+  const close = () => back.remove();
+  back.append(el("form", { onsubmit: async (e) => { e.preventDefault(); await attempt("Not done", act); close(); } },
+    el("h2", { class: "h", text: title }), fields,
+    el("div", { class: "row", style: "justify-content:flex-end" }, el("button", { class: "btn quiet", type: "button", onclick: close }, "Cancel"), el("button", { class: "btn go", type: "submit" }, go))));
+  back.addEventListener("click", (e) => { if (e.target === back) close(); });
+  document.body.append(back);
+  const first = back.querySelector("input, textarea, select, button.go");
+  if (first) first.focus();
+}
+
+function newCardSheet(col) {
+  const title = el("input", { class: "field", required: true, placeholder: "What it is", "aria-label": "Title" });
+  const area = el("input", { class: "field", list: "areas2", placeholder: "Area", "aria-label": "Area" });
+  const list = el("datalist", { id: "areas2" }, [...new Set(S.cards.map((x) => x.area).filter(Boolean))].map((a) => el("option", { value: a })));
+  const column = el("select", { class: "field", "aria-label": "Column" }, COLUMNS.map(([k, n]) => el("option", { value: k, selected: (col || "ideas") === k, text: n })));
+  const detail = el("textarea", { class: "field", rows: "3", placeholder: "What a person can do once it exists", "aria-label": "Detail" });
+  sheet("New card", [title, el("div", { class: "grid2" }, area, column), list, detail], "Add", async () => {
+    const r = await api("/api/cards", { method: "POST", body: { title: title.value, area: area.value, column: column.value, detail: detail.value } });
+    await load(); render(); toast("Added “" + r.card.title + "”");
+  });
+}
+
+// ---- Dragging cards and queue entries ---------------------------------------
+// One way for a mouse and a finger: pointer events. A mouse drags after it
+// moves five pixels; a finger after it rests on the card a third of a second,
+// so a swipe still scrolls.
+
+let dragging = null, justDragged = false;
+
+function startDrag(e, node, kind) {
+  const rect = node.getBoundingClientRect();
+  const ghost = node.cloneNode(true);
+  ghost.classList.add("ghost");
+  ghost.style.width = rect.width + "px";
+  ghost.style.left = rect.left + "px";
+  ghost.style.top = rect.top + "px";
+  document.body.append(ghost);
+  const ph = el("div", { class: "placeholder", style: "height:" + rect.height + "px" });
+  node.after(ph);
+  node.hidden = true;
+  dragging = { kind, node, ghost, ph, dx: e.clientX - rect.left, dy: e.clientY - rect.top, pointer: e.pointerId };
+}
+
+function dragMove(e) {
+  const d = dragging;
+  d.ghost.style.left = e.clientX - d.dx + "px";
+  d.ghost.style.top = e.clientY - d.dy + "px";
+  const under = document.elementFromPoint(e.clientX, e.clientY);
+  document.querySelectorAll(".col.over, .coltabs button.over").forEach((n) => n.classList.remove("over"));
+  if (d.kind === "card") {
+    const tab = under && under.closest(".coltabs button");
+    if (tab) { tab.classList.add("over"); d.tab = tab.dataset.col; return; }
+    d.tab = null;
+    const list = under && under.closest(".list");
+    if (!list) return;
+    list.closest(".col").classList.add("over");
+    placeAmong(list, ".cardbox:not([hidden])", e.clientY, list.querySelector(".more, .addcard"));
+  } else {
+    const list = document.querySelector(".qlist");
+    if (list) placeAmong(list, ".qitem:not([hidden])", e.clientY, null);
+  }
+  // Near the edge of the columns, they scroll.
+  const cols = document.querySelector(".columns");
+  if (cols && d.kind === "card") {
+    const r = cols.getBoundingClientRect();
+    if (e.clientX > r.right - 50) cols.scrollLeft += 18;
+    if (e.clientX < r.left + 50) cols.scrollLeft -= 18;
+  }
+}
+
+function placeAmong(list, selector, y, tail) {
+  const items = [...list.querySelectorAll(selector)];
+  const after = items.find((n) => { const r = n.getBoundingClientRect(); return y < r.top + r.height / 2; });
+  if (after) after.before(dragging.ph);
+  else if (tail) tail.before(dragging.ph);
+  else list.append(dragging.ph);
+}
+
+async function endDrag() {
+  const d = dragging;
+  dragging = null;
+  d.ghost.remove();
+  document.querySelectorAll(".col.over, .coltabs button.over").forEach((n) => n.classList.remove("over"));
+  justDragged = true;
+  setTimeout(() => { justDragged = false; }, 50);
+  if (d.kind === "card") {
+    const id = d.node.dataset.id;
+    if (d.tab) { d.ph.remove(); d.node.hidden = false; await moveCard(id, d.tab, null); return; }
+    const list = d.ph.closest(".list");
+    if (!list) { d.ph.remove(); d.node.hidden = false; return; }
+    let next = d.ph.nextElementSibling;
+    while (next && !(next.classList.contains("cardbox") && !next.hidden)) next = next.nextElementSibling;
+    d.ph.replaceWith(d.node);
+    d.node.hidden = false;
+    const before = next ? next.dataset.id : null;
+    const col = list.dataset.col;
+    if (col === d.node.dataset.col && before === nextCardId(d.node)) return;
+    await moveCard(id, col, before);
+  } else {
+    let next = d.ph.nextElementSibling;
+    while (next && !(next.classList.contains("qitem") && !next.hidden)) next = next.nextElementSibling;
+    d.ph.replaceWith(d.node);
+    d.node.hidden = false;
+    const id = Number(d.node.dataset.entry);
+    await attempt("Not moved", async () => {
+      await api("/api/queue/" + id + "/move", { method: "POST", body: next ? { before: Number(next.dataset.entry) } : {} });
+      await load(); renderMain();
+    });
+  }
+}
+
+function nextCardId(node) {
+  const c = S.cards.find((x) => x.id === node.dataset.id);
+  if (!c) return null;
+  const same = S.cards.filter((x) => x.col === c.col);
+  const i = same.indexOf(c);
+  return same[i + 1] ? same[i + 1].id : null;
+}
+
+document.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0 || dragging) return;
+  const card = e.target.closest(".cardbox");
+  const grip = e.target.closest(".qitem .grip");
+  const node = card || (grip && grip.closest(".qitem"));
+  if (!node) return;
+  const kind = card ? "card" : "queue";
+  const start = { x: e.clientX, y: e.clientY };
+  let timer = null, began = false;
+  const begin = (ev) => { if (began) return; began = true; startDrag(ev, node, kind); };
+  if (e.pointerType !== "mouse") timer = setTimeout(() => { begin(e); if (navigator.vibrate) navigator.vibrate(10); }, kind === "card" ? 330 : 0);
+  const move = (ev) => {
+    if (!began) {
+      if (e.pointerType === "mouse" && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 5) begin(ev);
+      else if (e.pointerType !== "mouse" && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 10) { clearTimeout(timer); cleanup(); return; }
+      if (!began) return;
+    }
+    ev.preventDefault();
+    dragMove(ev);
+  };
+  const up = () => { clearTimeout(timer); cleanup(); if (began && dragging) endDrag(); };
+  const cleanup = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); };
+  window.addEventListener("pointermove", move, { passive: false });
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", up);
+});
+document.addEventListener("touchmove", (e) => { if (dragging) e.preventDefault(); }, { passive: false });
+
+// ---- Claude's queue ------------------------------------------------------------
+
+function queue() {
+  const now = S.now || {};
+  const ahead = upcoming();
+  const move = (entry, body) => attempt("Not moved", async () => { await api("/api/queue/" + entry.id + "/move", { method: "POST", body }); await load(); renderMain(); });
+  const task = el("input", { class: "field", style: "flex:1 1 320px", placeholder: "A task that is not a card: Put 0.11.91 on the M700", "aria-label": "A task for the queue" });
+  return el("main", { class: "page" },
+    el("div", { class: "row", style: "align-items:baseline;gap:12px" }, el("h1", { class: "h", text: "Claude's queue" }),
+      el("span", { class: "sub", text: "The work plan, in order. Claude takes the top when the card it is on is done. The board feeds it; you set the order." })),
+    el("section", { class: "nowcard", "aria-label": "Now" },
+      el("span", { class: "label", style: "color:#8fb4ff", text: now.state && now.state !== "idle" ? "Now · " + minutes(now.since) : "Claude is idle" }),
+      el("span", { style: "font:600 20px var(--display)", text: now.title || now.step || "Nothing in hand" }),
+      now.card && now.step ? el("span", { class: "step", text: "Step: " + now.step + (now.waiting ? ". Waiting on " + now.waiting + "." : "") }) : null),
+    el("div", { class: "row", style: "align-items:baseline" }, el("h2", { class: "h", text: "Up next" }), el("span", { class: "sub", text: ahead.length + " in the queue" })),
+    ahead.length ? el("ol", { class: "qlist" }, ahead.map((q, i) => el("li", { class: "qitem", "data-entry": q.id },
+      el("span", { class: "grip", "aria-hidden": "true", title: "Drag to reorder", text: "⠿" }),
+      el("span", { class: "place", text: String(i + 1) }),
+      el("span", { style: "display:flex;flex-direction:column;gap:3px;min-width:0" },
+        el("span", { class: "row", style: "gap:8px;align-items:center" },
+          q.card ? el("button", { type: "button", style: "border:0;background:none;padding:0;font-weight:600;text-align:left", onclick: () => openCard(q.card) }, q.title) : el("span", { style: "font-weight:600", text: q.title }),
+          el("span", { class: "pill", style: "color:" + (q.card ? areaColour(q.area) : "var(--dim)"), text: q.card ? (q.area || "card") : "task" })),
+        q.ref ? el("span", { class: "sub", style: "font-size:13px", text: q.ref }) : null),
+      el("span", { class: "acts" },
+        el("button", { type: "button", "aria-label": "Move up", disabled: i === 0, onclick: () => move(q, { before: ahead[i - 1].id }) }, "↑"),
+        el("button", { type: "button", "aria-label": "Move down", disabled: i === ahead.length - 1, onclick: () => move(q, ahead[i + 2] ? { before: ahead[i + 2].id } : {}) }, "↓"),
+        el("button", { type: "button", disabled: i === 0, onclick: () => move(q, { top: true }) }, "To the top"),
+        el("button", { type: "button", style: "color:var(--dim);background:transparent", onclick: () => attempt("Not taken out", async () => { await api("/api/queue/" + q.id, { method: "DELETE" }); await load(); renderMain(); toast(q.card ? "Out of the queue - back in Agreed" : "Out of the queue"); }) }, "Out of the queue")))))
+      : el("p", { class: "empty", text: "The queue is empty. Add a card from the board, or a task here." }),
+    el("form", { class: "row", onsubmit: (e) => { e.preventDefault(); if (!task.value.trim()) return; attempt("Not added", async () => { await api("/api/queue", { method: "POST", body: { title: task.value } }); task.value = ""; await load(); renderMain(); }); } },
+      task, el("button", { class: "btn go", type: "submit" }, "Add to the end"),
+      el("button", { class: "btn", type: "button", onclick: () => { S.view = "board"; render(); } }, "Add a card from the board")));
+}
+
+// ---- Discussions --------------------------------------------------------------------
+
+function discussions() {
+  const list = S.discussions.filter((d) => !S.stage || d.stage === S.stage);
+  const stageOf = (k) => STAGES.find((s) => s[0] === k) || STAGES[0];
+  const chips = el("div", { class: "row", role: "group", "aria-label": "Stages" },
+    [["", "All", null]].concat(STAGES).map(([k, n, c]) => el("button", { class: "chip", type: "button", "aria-pressed": String(S.stage === k), onclick: () => { S.stage = k; renderMain(); } },
+      c ? el("span", { class: "dot", style: "background:" + c }) : null, n, el("span", { class: "n", text: String(k ? S.discussions.filter((d) => d.stage === k).length : S.discussions.length) }))));
+  const items = list.map((d) => {
+    const [, sn, sc] = stageOf(d.stage);
+    return el("button", { class: "ditem" + (S.discussion === d.id ? " chosen" : ""), type: "button", onclick: () => openDiscussion(d.id) },
+      el("span", { class: "row", style: "gap:8px;font-size:12px;align-items:center" }, el("span", { class: "pill", style: "color:" + sc, text: sn }),
+        d.talk ? el("span", { style: "color:" + (d.talk === "claude" ? "#8fb4ff" : "var(--amber)"), text: d.talk === "claude" ? "Waiting for Claude" : "Waiting for you" }) : null,
+        el("span", { class: "sub", style: "margin-left:auto", text: when(d.updated) })),
+      el("span", { style: "font-weight:600;font-size:15px", text: d.title }),
+      d.summary ? el("span", { class: "sub", style: "font-size:13px", text: d.summary.slice(0, 120) }) : null);
+  });
+  return el("main", { class: "page wide" },
+    el("div", { class: "row", style: "align-items:baseline;gap:12px" }, el("h1", { class: "h", text: "Discussions" }),
+      el("span", { class: "sub", text: "Ideas talked through in order, before they are cards." }),
+      el("button", { class: "btn go", type: "button", style: "margin-left:auto", onclick: newDiscussionSheet }, "Start a discussion")),
+    el("div", { class: "split" }, el("aside", { class: "dlist", "aria-label": "Discussions" }, chips, items.length ? items : el("p", { class: "empty", text: "No discussion yet. Start one with an idea in your own words." })),
+      S.discussion && S.discussionDetail ? discussion() : el("div", { class: "dmain" }, el("p", { class: "empty", text: "Choose a discussion, or start one." }))));
+}
+
+async function openDiscussion(id) {
+  S.discussion = id;
+  S.discussionDetail = await api("/api/discussions/" + id).catch(() => null);
+  renderMain();
+}
+
+function discussion() {
+  const { discussion: d, messages, cards, files } = S.discussionDetail;
+  const [, sn, sc] = STAGES.find((s) => s[0] === d.stage) || STAGES[0];
+  const patch = (body) => attempt("Not kept", async () => { await api("/api/discussions/" + d.id, { method: "PATCH", body }); await load(); renderMain(); });
+  const text = el("textarea", { class: "field", rows: "3", placeholder: "Write here; Claude answers here, or brings it to the session when it needs real work", "aria-label": "Your reply" });
+  const fileInput = el("input", { type: "file", hidden: true, accept: "image/*,application/pdf,video/mp4,video/webm,text/plain,text/markdown", onchange: (e) => { for (const f of e.target.files) upload("/api/discussions/" + d.id + "/files", f); } });
+  const items = [...messages.map((m) => ({ at: m.at, m })), ...files.map((f) => ({ at: f.at, f }))].sort((a, b) => a.at.localeCompare(b.at));
+  const main = el("div", { class: "dmain dropzone" },
+    el("div", { class: "row", style: "align-items:center" }, el("span", { class: "pill", style: "color:" + sc, text: sn }),
+      el("span", { class: "sub", style: "font-size:13px", text: "Started by " + d.author + ", " + when(d.created) + " · " + messages.length + " messages" }),
+      el("span", { class: "row", style: "margin-left:auto" },
+        d.stage !== "ready" && d.stage !== "became" ? el("button", { class: "btn", type: "button", onclick: () => patch({ stage: "ready" }) }, "Mark ready") : null,
+        d.stage !== "parked" ? el("button", { class: "btn quiet", type: "button", onclick: () => patch({ stage: "parked" }) }, "Park it")
+          : el("button", { class: "btn", type: "button", onclick: () => patch({ stage: "shaping" }) }, "Take it up again"))),
+    el("h1", { class: "h", style: "text-wrap:balance", text: d.title }),
+    el("div", { class: "grid2" },
+      el("section", { class: "box" }, el("span", { class: "label", text: "The idea, in your words" }), el("span", { style: "font-style:italic;color:var(--soft)", text: d.idea ? "“" + d.idea + "”" : "-" }),
+        el("span", { class: "label", style: "margin-top:6px", text: "What it is for" }), el("span", { text: d.purpose || "-" })),
+      el("section", { class: "box c" }, el("span", { class: "label", style: "color:#8fb4ff;display:flex;gap:8px;align-items:center" }, badge("Claude"), "Where it stands, kept by Claude"),
+        el("span", { style: "line-height:1.5", text: d.summary || "Claude writes this once the idea has been talked through." }))),
+    d.options.length ? el("section", { style: "display:flex;flex-direction:column;gap:8px" }, el("h2", { class: "h", text: "Options" }),
+      el("div", { class: "grid2" }, d.options.map((o, i) => el("article", { class: "opt" + (o.recommended ? " rec" : "") + (o.chosen ? " chosen" : "") },
+        el("span", { class: "row", style: "gap:8px;align-items:center" }, el("span", { style: "font-weight:600", text: o.name }),
+          o.recommended ? el("span", { class: "pill", style: "color:#8fb4ff", text: "Claude recommends" }) : null, o.chosen ? el("span", { class: "pill", style: "color:var(--green)", text: "Chosen" }) : null),
+        o.plus ? el("span", { class: "plus", text: "+ " + o.plus }) : null, o.minus ? el("span", { class: "minus", text: "− " + o.minus }) : null,
+        o.chosen ? null : el("button", { class: "btn", type: "button", style: "align-self:flex-start;height:32px", onclick: () => patch({ options: d.options.map((x, j) => ({ ...x, chosen: j === i })) }) }, "Choose this"))))) : null,
+    d.questions.length ? el("section", { class: "box open" }, el("span", { style: "font-weight:600;color:var(--amber)", text: "Still open" }), d.questions.map((q) => el("span", { text: q }))) : null,
+    cards.length ? el("section", { class: "box" }, el("span", { class: "label", text: "Became" }), cards.map((c) => el("button", { type: "button", style: "border:0;background:none;padding:0;text-align:left;color:var(--accent)", onclick: () => openCard(c.id) }, c.title + " · " + (COLNAME[c.col] || c.col)))) : null,
+    files.some((f) => f.type.startsWith("image/")) ? el("div", { class: "files" }, files.filter((f) => f.type.startsWith("image/")).map(fileTile)) : null,
+    el("h2", { class: "h", text: "The conversation" }),
+    el("div", { class: "thread" }, items.length ? items.map((it) => it.m ? noteRow(it.m) : fileRow(it.f)) : el("span", { class: "sub", text: "Nothing said yet." })),
+    el("label", { style: "display:grid;gap:6px;font-size:12px;color:var(--dim)" }, "Your reply", text),
+    el("div", { class: "row" },
+      el("button", { class: "btn go", type: "button", onclick: () => { if (!text.value.trim()) return; attempt("Not sent", async () => { await api("/api/discussions/" + d.id + "/messages", { method: "POST", body: { text: text.value } }); text.value = ""; await load(); renderMain(); }); } }, "Send"),
+      el("button", { class: "btn", type: "button", onclick: () => fileInput.click() }, clip(), "Attach"), fileInput,
+      el("button", { class: "btn claude", type: "button", onclick: () => makeCardSheet(d) }, "Make it a card")));
+  dropFiles(main, (f) => upload("/api/discussions/" + d.id + "/files", f));
+  return main;
+}
+
+function newDiscussionSheet() {
+  const title = el("input", { class: "field", required: true, placeholder: "The idea, in a line", "aria-label": "Title" });
+  const idea = el("textarea", { class: "field", rows: "3", placeholder: "In your own words", "aria-label": "The idea" });
+  const purpose = el("input", { class: "field", placeholder: "What it is for", "aria-label": "What it is for" });
+  sheet("Start a discussion", [title, idea, purpose], "Start", async () => {
+    const r = await api("/api/discussions", { method: "POST", body: { title: title.value, idea: idea.value, for: purpose.value } });
+    await load(); await openDiscussion(r.discussion.id); render();
+  });
+}
+
+function makeCardSheet(d) {
+  const title = el("input", { class: "field", required: true, value: d.title, "aria-label": "The card's title" });
+  const area = el("input", { class: "field", list: "areas3", placeholder: "Area", "aria-label": "Area" });
+  const list = el("datalist", { id: "areas3" }, [...new Set(S.cards.map((x) => x.area).filter(Boolean))].map((a) => el("option", { value: a })));
+  const column = el("select", { class: "field", "aria-label": "Column" }, COLUMNS.slice(0, 3).map(([k, n]) => el("option", { value: k, selected: k === "agreed", text: n })));
+  sheet("Make it a card", [title, el("div", { class: "grid2" }, area, column), list], "Make the card", async () => {
+    await api("/api/discussions/" + d.id + "/cards", { method: "POST", body: { title: title.value, area: area.value, column: column.value } });
+    await load(); renderMain(); toast("A card made from it");
+  });
+}
+
+// ---- Decisions ------------------------------------------------------------------------
+
+function decisions() {
+  const open = S.decisions.filter((x) => !x.answer);
+  const done = S.decisions.filter((x) => x.answer);
+  return el("main", { class: "page wide" },
+    el("h1", { class: "h", text: "Waiting for you" }),
+    open.length ? el("div", { class: "grid2" }, open.map((x) => el("article", { class: "decide" },
+      x.card ? el("button", { type: "button", style: "border:0;background:none;padding:0;text-align:left;font-size:12px;color:var(--amber);font-weight:600", onclick: () => openCard(x.card) }, titleOf(x.card)) : null,
+      el("span", { style: "font-weight:600;font-size:16px", text: x.question }),
+      el("div", { class: "opts" }, x.options.map((o) => el("button", { type: "button", onclick: () => answer(x.id, o) }, o)),
+        el("button", { type: "button", onclick: () => answerSheet(x) }, "In my own words")))))
+      : el("p", { class: "empty", text: "Nothing is waiting for you." }),
+    el("div", { class: "row", style: "align-items:baseline;gap:12px" }, el("h2", { class: "h", text: "Decided" }), el("span", { class: "sub", text: "Each with your words. Newest first." })),
+    el("div", { class: "scrollx" }, el("table", { class: "dec" },
+      el("thead", {}, el("tr", {}, el("th", { text: "When" }), el("th", { text: "Decision" }), el("th", { text: "In your words" }), el("th", { text: "Card" }))),
+      el("tbody", {}, done.map((x) => el("tr", {},
+        el("td", { style: "font-family:var(--mono);font-size:12.5px;color:var(--dim);white-space:nowrap", text: (x.answered || x.asked || "").slice(0, 10) }),
+        el("td", {}, el("div", { style: "font-weight:500", text: x.question }), el("div", { style: "color:var(--green)", text: x.answer })),
+        el("td", { style: "font-style:italic;color:var(--soft)", text: x.words ? "“" + x.words + "”" : "" }),
+        el("td", {}, x.card ? el("button", { type: "button", style: "border:0;background:none;padding:0;color:var(--accent);text-align:left", onclick: () => openCard(x.card) }, titleOf(x.card)) : "")))))));
+}
+
+// ---- The API, for another device or a program --------------------------------------
+// The same table as README.md.
+
+const ROUTES = [["GET","/api/me","the key's name"],["GET","/api/cards?column=&area=&q=","the cards, each column in order"],["POST","/api/cards","a new card: `title`, `column` (Ideas when not said), `area`, `ref`, `detail`, `quote`, `before`"],["GET","/api/cards/:id","one card, its notes, its history, its decisions"],["PATCH","/api/cards/:id","`title`, `area`, `ref`, `detail`, `quote`, `in_roadmap`"],["POST","/api/cards/:id/move","`{ column, before }`: into a column, before a card or last"],["POST","/api/cards/:id/notes","`{ text, asks }`: a card's talk; `asks` when Claude awaits Diego's reply"],["DELETE","/api/cards/:id","removed, kept to bring back"],["GET","/api/decisions?open=true","the questions, open or all"],["POST","/api/decisions","`{ card, question, options }`"],["PATCH","/api/decisions/:id","`{ answer, words }`: answered, and a note on its card"],["GET","/api/now","what Claude is doing now: its card, its step, what it waits on, since when"],["PUT","/api/now","`{ card, step, state, waiting }`: said by Claude at each step; `state` is working, waiting or idle"],["GET","/api/queue","Claude's queue in order: cards and tasks, each with its place"],["POST","/api/queue","`{ card }` or `{ title }` for a task; last, `{ before }` or `{ top: true }`"],["POST","/api/queue/:id/move","`{ before }`, `{ top: true }`, or last"],["DELETE","/api/queue/:id","out of the queue; a card waiting in Next goes back to Agreed"],["POST","/api/queue/take","Claude takes the top: it becomes now, its card Building"],["GET","/api/discussions?stage=","open, shaping, ready, became, parked"],["POST","/api/discussions","`{ title, idea, for }` - the idea is its first message"],["GET","/api/discussions/:id","with its summary, options, open questions, conversation and cards"],["PATCH","/api/discussions/:id","`stage`, `summary`, `options`, `questions`, `title`, `idea`, `for`"],["POST","/api/discussions/:id/messages","`{ text, asks }`"],["POST","/api/discussions/:id/cards","a card made from it, linked both ways; it has become cards"],["GET","/api/waiting","what waits for a reply from Claude, and from Diego"],["POST","/api/cards/:id/files","a file onto a card: the bytes as the body, `Content-Type`, `?name=&caption=`"],["POST","/api/discussions/:id/files","a file onto a discussion, the same way"],["GET","/api/files/:id","the file; `DELETE` removes it"],["GET","/api/changes?since=","everything changed since a time"],["GET","/api/export.md","the board as Markdown"]];
+
+function apiPage() {
+  return el("main", { class: "page" },
+    el("h1", { class: "h", text: "The API" }),
+    el("p", { class: "sub", style: "margin:0", text: "Every request carries a key: Authorization: Bearer kb_… Each device and Claude have their own, made with tools/board/keys.py, and every change is signed with the key's name." }),
+    el("div", { class: "scrollx" }, el("table", { class: "dec" },
+      el("thead", {}, el("tr", {}, el("th", { text: "" }), el("th", { text: "Path" }), el("th", { text: "What it does" }))),
+      el("tbody", {}, ROUTES.map(([m, path, what]) => el("tr", {},
+        el("td", { style: "font:500 12px var(--mono);color:var(--accent)", text: m }),
+        el("td", { style: "font:12.5px var(--mono);white-space:nowrap", text: path }),
+        el("td", { text: what.replace(/`/g, "") })))))));
+}
+
+// ---- Drawing ----------------------------------------------------------------------------------
+
+function renderMain() {
+  const main = document.getElementById("main");
+  if (!main) return render();
+  const scroll = document.querySelector(".columns");
+  const left = scroll ? scroll.scrollLeft : 0;
+  const view = S.view === "queue" ? queue() : S.view === "discussions" ? discussions() : S.view === "decisions" ? decisions() : S.view === "api" ? apiPage() : board();
+  main.replaceChildren(view);
+  const again = document.querySelector(".columns");
+  if (again) again.scrollLeft = left;
+}
+
+function render() {
+  const app = document.getElementById("app");
+  if (!KEY) { app.replaceChildren(gate()); return; }
+  app.replaceChildren(header(), el("div", { id: "main" }));
+  renderMain();
+}
+
+(async () => {
+  if (!KEY) { render(); return; }
+  try {
+    S.me = (await api("/api/me")).name;
+    await load();
+  } catch (e) {}
+  render();
+})();
+</script>
+</body>
+</html>

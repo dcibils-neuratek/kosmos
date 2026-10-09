@@ -103,7 +103,16 @@ the name of the key that made it.
 
 ## On this Mac
 
-    python3 tools/board/test_board.py      the API, over a local database
+    python3 tools/board/test_board.py      the API, over a local database,
+                                           then the page in headless Chrome
+
+The page is `public/index.html`, one file, no build step: a key is asked
+for once on each device and kept in that browser. Cards drag with a mouse,
+or with a finger after resting on one a third of a second - onto a
+column, or on a phone onto its tab. A screenshot pasted while a card is
+open goes onto that card. `test_page.mjs` drives it through Chrome's
+DevTools protocol, real mouse drags included; `CHROME=` names another
+Chrome.
 
 `schema.sql` is the tables; `import.py` turned the live roadmap list into the
 first cards (9 October 2026); `keys.py` makes and withdraws keys.

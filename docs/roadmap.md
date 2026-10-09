@@ -8301,6 +8301,12 @@ being Claude's queue so a drop there queues the card where it landed
 ("i need to be able to drag and drop cards", "like trello"); and files on
 cards and discussions - screenshots for reference, and Claude's of its
 progress and finished work (`test_board.py` 73).
+**B2 done** - the page, `public/index.html`, as drawn: Discussions, Board,
+Queue, Decisions and API; cards dragged with a mouse or, on a phone, after
+a third of a second's rest, onto a column or its tab; files attached,
+pasted or dropped, pictures shown as thumbnails; refreshed from
+`/api/changes` every fifteen seconds. `test_page.mjs` drives it in
+headless Chrome from `test_board.py` (84). Next is B3, Diego's.
 
 ### The optimisation phase - after the applications
 
