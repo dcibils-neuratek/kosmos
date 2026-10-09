@@ -1114,15 +1114,21 @@ def part4(image):
         #    Drafts and sent - its server copy gone after.
         mark = len(guest.seen)
         click(*[v + 13 for v in at("compose", places)])
-        did, _, _, _ = composer("New Message", mark)
+        did, dx, dy, _ = composer("New Message", mark)
         typed("tomas@example.org")
         key("tab"); key("tab"); key("tab")
         typed("Draft plans")
         key("tab")
         typed("Half written.")
+        # Closed by its red light, as a person closes it - which gives the
+        # window a second to go - and the window gone before the draft is
+        # written (the M700, 9 October: a slow disk past that second ended
+        # the whole of Mail).
         mark = len(guest.seen)
-        key("meta_l-q")                              # Super+Q: the window in front closed
+        click(658, 22, ox=dx, oy=dy)
         said["kept"] = guest.wait_for_line("mail: composer %s closed" % did, "the draft closed", mark)
+        said["close_order"] = (guest.seen.find("wm: closed New Message", mark),
+                               guest.seen.find("mail: composer %s closed" % did, mark))
         guest.wait_for("maild: %s: draft %s kept in Drafts: done" % (who, did), "the draft on the server")
         with peer.lock:
             d = peer.find("Drafts", "Draft plans")
@@ -1236,6 +1242,9 @@ def part4(image):
         fails.append("three letters did not suggest Ana: %r" % said.get("suggests"))
     if said.get("draft_flags") != ["\\Draft", "\\Seen"]:
         fails.append("the draft on the server and its flags: %r" % said.get("draft_flags"))
+    order = said.get("close_order", (-1, -1))
+    if not (0 <= order[0] < order[1]):
+        fails.append("the composer's window did not go before its draft was written: %r" % (order,))
     if not said.get("kept", "").endswith("kept as a draft"):
         fails.append("closing the composer did not keep the draft: %r" % said.get("kept"))
     if "550" not in said.get("refused", "") and "refused" not in said.get("refused", ""):
@@ -1247,7 +1256,7 @@ def part4(image):
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 23
+    checks = 24
 
     if fails:
         print("FAIL: %d of %d checks on Mail's composer:" % (len(fails), checks))
@@ -1257,8 +1266,8 @@ def part4(image):
 
     print("PASS: %d checks on Mail's composer (Reply All to everyone but the account, quoted "
           "and threaded, kept in Sent and the message flagged Answered; a new message with an "
-          "address completed from three letters and a Bcc in no header; a draft closed with "
-          "Super+Q, kept on the server, opened from Drafts, sent whole and its copy taken away; "
+          "address completed from three letters and a Bcc in no header; a draft closed by its "
+          "red light, its window gone before it was written, kept on the server, opened from Drafts, sent whole and its copy taken away; "
           "a recipient refused, said, and the message kept in the Outbox; a newsletter "
           "wider than the pane fitted to it, and one big picture not)." % checks)
     return 0

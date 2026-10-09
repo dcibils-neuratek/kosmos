@@ -620,6 +620,14 @@ function C:close()
 
   self.closed = true
 
+  -- **The window first, then the disk** (the M700, 9 October: Mail was
+  -- ended as "New Message stopped answering"). A close button gives a
+  -- window a second to go; the draft was written to `/Home` before the
+  -- window went, and `/Home` there is a USB stick whose write took longer
+  -- than that, so the whole of Mail was ended for a draft. What is kept
+  -- below needs only what is typed, which the window does not hold.
+  if self.win and self.win.running then self.win:close() end
+
   if not self.sent then
     if self:empty() then
       files.remove(DRAFTS .. "/" .. self.id .. ".draft")
@@ -649,8 +657,6 @@ function C:close()
       print(("mail: composer %s closed, kept as a draft"):format(self.id))
     end
   end
-
-  if self.win and self.win.running then self.win:close() end
 end
 
 --------------------------------------------------------------------------

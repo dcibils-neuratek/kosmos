@@ -22013,3 +22013,20 @@ The whole x86 gate for it: 56 of 57 suites; `x86-film` failed one check
 under the gate's load - a stretch of AAC "more than two steps from FFmpeg's
 reference" - and passed all 13 alone in 15 s. Its known flake under load,
 nothing M7 touches.
+
+## 18.494 A composer closed by its red light no longer ends Mail
+
+On the M700 in 0.11.96 (Diego: "mail crashed ... when i pressed new
+message ... it opened the window and it crashed"): a New Message opened,
+moved, and closed by its red light; one second later the window manager
+ended Mail - "New Message stopped answering". A close button gives a window
+a second to go, and the composer wrote its draft to `/Home` before closing
+its window - on the M700 `/Home` is a USB stick, whose write took longer
+than the second, so the whole of Mail was ended for a draft. In QEMU the
+disk answers at once and it closed cleanly, and the suite closed composers
+with Super+Q, which closes at once and gives no second to miss. **The
+window goes first now, then the disk.**
+
+`x86-mail-4` 24: the draft closed by its red light, "wm: closed New
+Message" said before "mail: composer ... closed". **Control**: the old
+order, it fails - the composer spoke first.
