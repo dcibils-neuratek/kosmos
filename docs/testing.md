@@ -21945,3 +21945,10 @@ it is cut rather than made unreadable. The browser is unchanged.
 wide, fitted at 65%", its right edge in `build/mail/wide.png`. `x86-mail-3`'s
 route stays "fitted at 100%". **Control**: the fit left at 100%, the check
 fails.
+
+**`x86-dock` under load, the second time** (the gate before 0.11.93's
+push): one check of 52 failed - the Preferences slider made the dock "49%
+transparent" but the setting read back as not kept - and alone the suite
+passed all 52 in 194 s. Counted with the first (above, a different phase):
+two flakes under the gate's load, so the suite's waits want to wait for the
+thing rather than for a time - on the board.

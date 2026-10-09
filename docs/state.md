@@ -20,7 +20,7 @@ is Diego's yes, after the scan for his personal data.
   roadmap "the Kosmos Board"): a Cloudflare Worker and D1, with cards, Claude's
   now and queue, discussions, talk, decisions, files and the page. B1 and B2
   are done; `python3 tools/board/test_board.py` makes 84 checks, the page's in headless
-  Chrome. **Live since 9 October at the board's address (kept on the Mac, ~/.config/kosmos-board/url)**,
+  Chrome. **Live since 9 October**, its address in `~/.config/kosmos-board/url`,
   in Diego's Cloudflare account; Claude's key is in `~/.config/kosmos-board/`.
   Diego makes a key per device with `keys.py make NAME --show`.
 
@@ -40,8 +40,8 @@ then the split".
   watch clipped to the screen, and chrome step 3 - every window headed,
   Super and a drag moving any window, the old tab's code gone.
 - **The M700 runs 0.11.85** from the 0.11.83 stick: `make netboot
-  STICK=build/x86_64/kosmos-usb-0.11.83-development.img` (`/Home` 2 GB,
-  its partition named on that stick's command line).
+  STICK=build/x86_64/kosmos-usb-0.11.83-development.img` (`/Home` 2 GB, its
+  partition named on that stick's command line).
 - **Mail** (`docs/mail.md`, agreed "as recommended, go ahead and build
   it"): **M0** the keyring's `mail` door and `mailpass` (18.480); **M1** the
   Mail Kit's reading in C, `use("/Kosmos/Kits/mail")`, `test_mail` 28 and a

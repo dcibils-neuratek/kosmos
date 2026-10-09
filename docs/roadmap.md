@@ -8242,6 +8242,15 @@ Gmail goes in on the M700 once M4 is there, typed by him.
 **M4 done** (18.484): the window, Add Account, `maild` started at login.
 **M5 done** (18.489): HTML messages by the browser's engine, pictures
 inside shown, the network's on Load Pictures.
+**Agreed on 9 October, from the M700** (on the Kosmos Board): Mail's
+**settings, a window of its own** - "in fact we dont have a mail settings
+yet" - holding the accounts and **loading pictures automatically**, always
+or for a sender ("can we set an option to load images automatically on
+emails? like a setting in mail settings"), off by default because loading
+tells the sender the message was read; **a wider scroll bar in the reading
+pane**, easy to grab as macOS's ("almost impossible to grab"); and HTML
+entities (`&zwnj;`) undone in an HTML message's preview. **Done the same
+day** (0.11.93, 18.491): a newsletter wider than the pane fitted to it.
 **M6 done** (18.490): the composer, a library any application can open -
 To, Cc and Bcc completed from the mail kept, Reply, Reply All, Forward,
 drafts kept here and on the server, sent by `maild` from an Outbox, a copy
@@ -8317,7 +8326,8 @@ pasted or dropped, pictures shown as thumbnails; refreshed from
 headless Chrome from `test_board.py` (84). **B3 and B4 done** the same
 day: Diego's Cloudflare login, the database made, the live list imported
 (494 cards, the queue, ten decisions), Claude's key, and - Diego's yes -
-deployed to the board's address (kept on the Mac, ~/.config/kosmos-board/url). B5 from now on.
+deployed - its address kept on the Mac, `~/.config/kosmos-board/url`, and not in this public
+repository (Diego's choice). B5 from now on.
 The same afternoon, asked "how do i know in kosmosboard if claude code is
 waiting for me": **Needs you**, one amber button in the header counting
 what Claude stopped for, the open questions, and the cards and discussions

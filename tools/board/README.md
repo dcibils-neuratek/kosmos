@@ -90,7 +90,8 @@ the name of the key that made it.
 
 ## Where it is
 
-**the board's address (kept on the Mac, ~/.config/kosmos-board/url)**, deployed 9 October 2026 from
+**Its address is kept on the Mac, in `~/.config/kosmos-board/url`**, and not in
+this repository, which is public (Diego, 9 October). Deployed 9 October 2026 from
 Diego's own Cloudflare account. The account's number is not in this
 repository: it is in `~/.config/kosmos-board/account` on the Mac, which
 `keys.py` reads, and a deploy is
