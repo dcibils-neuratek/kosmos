@@ -8251,6 +8251,17 @@ tells the sender the message was read; **a wider scroll bar in the reading
 pane**, easy to grab as macOS's ("almost impossible to grab"); and HTML
 entities (`&zwnj;`) undone in an HTML message's preview. **Done the same
 day** (0.11.93, 18.491): a newsletter wider than the pane fitted to it.
+**Agreed on 9 October, for all of Kosmos - a click is a press and a release**
+(Diego: "mouse click is working in mouse down not in a real click which is
+mouse down+mouse up", "that is in all kosmos"): a button, a toolbar icon, a
+row or a link shows pressed on the press and acts on a release over the same
+control, moving off cancelling, as macOS, Windows and BeOS have it; menus
+open on the press and choose on the release, drags begin on the press, a
+click in text places the caret on the press. In the UI kit once, and in
+`pixelkit` as one shared press-and-release that the windows drawing
+themselves move onto. **And Mail's status bar** along the bottom, as the
+browser's, saying what Mail and `maild` are doing ("mail app needs a status
+bar at the bottom like the browser has").
 **M6 done** (18.490): the composer, a library any application can open -
 To, Cc and Bcc completed from the mail kept, Reply, Reply All, Forward,
 drafts kept here and on the server, sent by `maild` from an Outbox, a copy
