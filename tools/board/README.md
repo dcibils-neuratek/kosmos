@@ -15,6 +15,12 @@ database, both on the free tier (Diego chose Cloudflare and this folder).
 **The code is here and public; the roadmap is not**: its cards live only in
 the database, and what was imported came from `build/`, which git ignores.
 
+**What Claude is doing is on the board** (Diego, 9 October: "can we have a
+way to know what claude is working on in the kanban dashboard?"): a strip
+across the top with its card, its step, what it is waiting on and for how
+long, a "Claude is here" mark on that card, and today's work under it -
+said through `PUT /api/now` at each step, and kept in the changes.
+
 `docs/roadmap.md` stays the record, with the reasoning; the board is where
 the work is moved and decided, and what changes there is written back.
 
@@ -37,6 +43,8 @@ the name of the key that made it.
 | GET | `/api/decisions?open=true` | the questions, open or all |
 | POST | `/api/decisions` | `{ card, question, options }` |
 | PATCH | `/api/decisions/:id` | `{ answer, words }`: answered, and a note on its card |
+| GET | `/api/now` | what Claude is doing now: its card, its step, what it waits on, since when |
+| PUT | `/api/now` | `{ card, step, state, waiting }`: said by Claude at each step; `state` is working, waiting or idle |
 | GET | `/api/changes?since=` | everything changed since a time |
 | GET | `/api/export.md` | the board as Markdown |
 

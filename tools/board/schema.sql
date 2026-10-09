@@ -69,3 +69,17 @@ CREATE TABLE IF NOT EXISTS changes (
 );
 
 CREATE INDEX IF NOT EXISTS changes_at ON changes (at);
+
+-- What Claude is doing now: one row, set at each step and read by the
+-- board's strip and the card's mark. `state` is working, waiting or idle;
+-- `waiting` says on what - a test run, Diego's answer, a restart.
+CREATE TABLE IF NOT EXISTS doing (
+  id       INTEGER PRIMARY KEY CHECK (id = 1),
+  state    TEXT NOT NULL DEFAULT 'idle',
+  card     TEXT,
+  step     TEXT NOT NULL DEFAULT '',
+  waiting  TEXT NOT NULL DEFAULT '',
+  since    TEXT NOT NULL,                  -- when this card was started
+  updated  TEXT NOT NULL,                  -- when it was last said
+  author   TEXT NOT NULL
+);

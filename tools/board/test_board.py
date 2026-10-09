@@ -160,6 +160,25 @@ def main():
         s, b = call("GET", "/api/cards")
         check(ntfs not in [c["id"] for c in b["cards"]], "a removed card is still listed")
 
+        # What Claude is doing now: idle until said, then its card, step and
+        # wait; `since` held while the card is the same, moved with the card.
+        s, b = call("GET", "/api/now")
+        check(s == 200 and b["now"]["state"] == "idle" and b["now"]["card"] is None, "now, before anything: %r" % b)
+        s, b = call("PUT", "/api/now", {"card": m6, "step": "the composer's To field", "state": "working"})
+        check(s == 200 and b["now"]["card"] == m6 and b["now"]["title"] == "Mail M6: write, reply and forward"
+              and b["now"]["author"] == "Test", "now, said: %r" % ((s, b),))
+        first_since = b["now"]["since"]
+        time.sleep(1.1)
+        s, b = call("PUT", "/api/now", {"card": m6, "step": "running x86-mail-3", "state": "waiting", "waiting": "x86-mail-3"})
+        check(b["now"]["since"] == first_since and b["now"]["waiting"] == "x86-mail-3" and b["now"]["updated"] > first_since,
+              "the same card kept its since: %r" % b)
+        s, b = call("PUT", "/api/now", {"card": d2, "step": "D2", "state": "working"})
+        check(b["now"]["since"] > first_since, "a new card did not move since: %r" % b)
+        s, b = call("PUT", "/api/now", {"state": "sleeping"})
+        check(s == 400 and "state" in b["error"], "an unknown state taken: %r" % ((s, b),))
+        s, b = call("GET", "/api/changes?since=" + later)
+        check([c["kind"] for c in b["changes"]].count("now") == 3, "now's words not in the changes: %r" % b)
+
         s, md = call("GET", "/api/export.md")
         check(s == 200 and "## Next (2)" in md and "**Astra split D2**" in md and "not yet in roadmap.md" in md,
               "the Markdown export: %r" % md[:300])
@@ -193,7 +212,8 @@ def main():
 
     print("PASS: %d checks on the Kosmos Board's API (no key and a withdrawn key refused; cards made, "
           "ordered, moved, edited, noted and removed; decisions asked and answered onto their card; "
-          "changes since a time, signed; the Markdown export; bad bodies refused)." % checks)
+          "changes since a time, signed; what Claude is doing now, its since held per card; the Markdown "
+          "export; bad bodies refused)." % checks)
     return 0
 
 

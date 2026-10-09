@@ -8276,6 +8276,10 @@ Steps: B1 the API and its database, tested on this Mac; B2 the page, once the
 drawing is agreed; B3 Diego's Cloudflare account and `wrangler login`, his;
 B4 the database made, the live list imported, deployed - asked before each
 deploy; B5 this file kept in step from it. **B1 done** (`test_board.py` 26).
+Asked the same day: "can we have a way to know what claude is working on in
+the kanban dashboard?" - so the board has a strip saying Claude's card, step
+and what it waits on, the card marked, and today's work beneath; `/api/now`,
+set by Claude at each step (`test_board.py` 32).
 
 ### The optimisation phase - after the applications
 

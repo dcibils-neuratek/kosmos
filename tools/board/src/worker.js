@@ -11,7 +11,8 @@
 // that made it, and a key is withdrawn without touching the others.
 
 const COLUMNS = ["ideas", "agreed", "next", "building", "done", "parked"];
-const LIMITS = { title: 200, detail: 4000, quote: 400, area: 40, ref: 60, note: 4000, question: 600, words: 2000 };
+const LIMITS = { title: 200, detail: 4000, quote: 400, area: 40, ref: 60, note: 4000, question: 600, words: 2000, step: 300, waiting: 200 };
+const STATES = ["working", "waiting", "idle"];
 
 const now = () => new Date().toISOString();
 
@@ -272,6 +273,46 @@ async function answer_decision(env, author, id, body) {
   return json({ decision: { ...d, options: JSON.parse(d.options), answer, words, answered: at } });
 }
 
+//
+// **What Claude is doing now** (Diego, 9 October: "can we have a way to know
+// what claude is working on in the kanban dashboard?"): its card, its step,
+// what it waits on, and since when - one row, said at each step. `since`
+// moves only when the card does, so the board says how long a card has
+// taken, not how long since the last word.
+//
+async function get_now(env) {
+  const row = await env.DB.prepare("SELECT * FROM doing WHERE id = 1").first();
+
+  if (!row) return json({ now: { state: "idle", card: null, step: "", waiting: "", since: null, updated: null } });
+
+  const c = row.card ? await card(env, row.card) : null;
+
+  return json({ now: { ...row, title: c ? c.title : null } });
+}
+
+async function set_now(env, author, body) {
+  const state = body.state || "working";
+
+  if (!STATES.includes(state)) throw new Error(`a state is one of ${STATES.join(", ")}`);
+  if (body.card && !(await card(env, body.card))) return refused(404, `no card ${body.card}`);
+
+  const step = text(body.step, "step") || "";
+  const waiting = text(body.waiting, "waiting") || "";
+  const at = now();
+  const before = await env.DB.prepare("SELECT card, since FROM doing WHERE id = 1").first();
+  const since = before && before.card === (body.card || null) && before.since ? before.since : at;
+
+  await env.DB.prepare(`INSERT INTO doing (id, state, card, step, waiting, since, updated, author)
+                        VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (id) DO UPDATE SET state = excluded.state, card = excluded.card,
+                        step = excluded.step, waiting = excluded.waiting, since = excluded.since,
+                        updated = excluded.updated, author = excluded.author`)
+    .bind(state, body.card || null, step, waiting, since, at, author).run();
+
+  await log(env, author, "now", body.card || null, { state, step, waiting });
+  return get_now(env);
+}
+
 async function changes(env, url) {
   const since = url.searchParams.get("since") || "1970-01-01T00:00:00Z";
   const rows = await env.DB.prepare("SELECT * FROM changes WHERE at > ? ORDER BY at LIMIT 1000").bind(since).all();
@@ -311,7 +352,7 @@ async function api(request, env, url) {
   const m = request.method;
   let body = {};
 
-  if (m === "POST" || m === "PATCH") {
+  if (m === "POST" || m === "PATCH" || m === "PUT") {
     try {
       body = await request.json();
     } catch {
@@ -337,6 +378,8 @@ async function api(request, env, url) {
       if (parts.length === 1 && m === "POST") return await new_decision(env, author, body);
       if (parts.length === 2 && m === "PATCH") return await answer_decision(env, author, Number(parts[1]), body);
     }
+    if (parts[0] === "now" && m === "GET") return await get_now(env);
+    if (parts[0] === "now" && m === "PUT") return await set_now(env, author, body);
     if (parts[0] === "changes" && m === "GET") return await changes(env, url);
     if (parts[0] === "export.md" && m === "GET") return await export_md(env);
   } catch (e) {
