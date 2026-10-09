@@ -5990,9 +5990,34 @@ do
   -- window that draws itself does with the list it would have sent - the
   -- same `paint.lua`, with this process's pictures and faces.
   --
-  function ui.paint_ops(surface, ops)
-    painter = painter or use("/Kosmos/Libraries/paint.lua").new(picture, ui.sized)
-    use("/Kosmos/Libraries/paint.lua").run(surface, ops, painter)
+  --
+  -- At a scale (D2c), each command made the screen's pixels by `paint.scale`
+  -- - the window manager's own arithmetic - and its text drawn in its role's
+  -- face at the scale: the faces this process lays out in stay at points.
+  --
+  local scaled = {}
+
+  function ui.paint_ops(surface, ops, pct)
+    local paint = use("/Kosmos/Libraries/paint.lua")
+
+    if not pct or pct == 100 then
+      painter = painter or paint.new(picture, ui.sized)
+      paint.run(surface, ops, painter)
+      return
+    end
+
+    if not scaled[pct] then
+      scaled[pct] = paint.new(picture, function(role, px, variant)
+        local want = theme.fonts[role or "ui"]
+        local at = px or (want and want.px) or 16
+
+        return ui.sized(role, math.floor(at * pct / 100 + 0.5), variant)
+      end, true)
+    end
+
+    for _, o in ipairs(ops) do paint.scale(o, pct, picture) end
+
+    paint.run(surface, ops, scaled[pct])
   end
 
   function ui.paint_view(view, surface, x, y)
@@ -6067,8 +6092,21 @@ local function direct_region(w, h)
 
   return { [1] = gfx.wrap{ at = made.at, w = w, h = h },
            [2] = gfx.wrap{ at = made.at + bytes, w = w, h = h },
-           draw_into = 2 }, made.cap
+           draw_into = 2, w = w, h = h }, made.cap
 end
+
+--
+-- **The desktop's scale, asked**: what a window that draws itself makes its
+-- region at (D2c) - when it opens, and again when it is told a new size,
+-- which is what a change of scale tells it.
+--
+local function scale_now()
+  local r = fs.send("/Running/wm", { type = "scale" })
+
+  return (r and r.ok and math.tointeger(r.pct)) or 100
+end
+
+local function at_scale(v, pct) return math.floor(v * pct / 100 + 0.5) end
 
 
 function ui.window(spec)
@@ -6131,11 +6169,14 @@ function ui.window(spec)
   -- its drawing as before.
   --
   local draws_itself = (auto_head and spec.draws_itself) and true or false
+  local pct = 100
 
   if spec.direct then
     region, shared_cap = direct_region(spec.w or 400, (spec.h or 240) + head_h)
   elseif draws_itself then
-    region, shared_cap = direct_region(spec.w or 400, (spec.h or 240) + head_h)
+    pct = scale_now()
+    region, shared_cap = direct_region(at_scale(spec.w or 400, pct),
+                                       at_scale((spec.h or 240) + head_h, pct))
     draws_itself = region ~= nil
   end
 
@@ -6278,7 +6319,8 @@ function ui.window(spec)
   apply_fonts(reply.fonts)
   set_double_click(reply.double_click_ms)
 
-  -- Declined, at a scale: the region given back, and the drawing sent.
+  -- Not taken - the scale changed as it opened - and the region given back:
+  -- the window sends its drawing, as one that does not ask.
   if draws_itself and not reply.draws_itself then
     sys.release(shared_cap)
     region, shared_cap, draws_itself = nil, nil, false
@@ -6342,6 +6384,7 @@ function ui.window(spec)
     region = region,
     shared_cap = region and shared_cap or nil,
     draws_itself = draws_itself or nil,
+    pct = draws_itself and pct or nil,
     ticking = {},
     tick_every = spec.tick_every or 0,
   }, window)
@@ -6667,6 +6710,12 @@ function window:take_size(w, h)
 
   -- A new region: the band drawn into its buffers afresh, once it is here.
   if self.band then self.band.drawn = {} end
+
+  -- A window drawing itself, in the screen's pixels at the scale now (D2c).
+  if self.draws_itself then
+    self.pct = scale_now()
+    w, h = at_scale(w, self.pct), at_scale(h, self.pct)
+  end
 
   local region, cap = direct_region(w, h)
 
@@ -7575,8 +7624,10 @@ function window:paint()
     end
 
     self.frame:paint(g)
-    ui.paint_ops(self:surface(), g.ops)
-    self:commit()
+    ui.paint_ops(self:surface(), g.ops, self.pct)
+
+    -- The whole region, in its own pixels.
+    self:commit{ x = 0, y = 0, w = self.region.w, h = self.region.h }
     return
   end
 

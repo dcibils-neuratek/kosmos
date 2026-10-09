@@ -86,6 +86,38 @@ CALC = ('local r = fs.send("/Running/wm", { type = "launch", program = "/Kosmos/
         'print("CALC " .. tostring(r and r.ok))\n')
 
 
+SCALE = ('local r = fs.send("/Running/wm", { type = "scale", pct = tonumber(args) })\n'
+         'print("SCALE " .. tostring(r and r.ok))\n')
+
+
+def compare(rgb, width, places, k):
+    """Below the header and inside the edge, the first window's pixels
+    against the second's: how many differ of how many, and where."""
+    if len(places) < 2:
+        return None, None
+
+    (ax, ay, aw, ah), (bx, by, bw, bh) = [tuple(int(v) for v in p) for p in places[:2]]
+    differ, total, where = 0, 0, []
+    top, edge = int(48 * k), int(4 * k)
+
+    for y in range(top, min(ah, bh) - edge):
+        ra = ((ay + y) * width + ax + edge) * 3
+        rb = ((by + y) * width + bx + edge) * 3
+        n = (min(aw, bw) - 2 * edge) * 3
+        a, b = rgb[ra:ra + n], rgb[rb:rb + n]
+        total += n // 3
+
+        if a != b:
+            for i in range(0, n, 3):
+                if a[i:i + 3] != b[i:i + 3]:
+                    differ += 1
+                    where.append((edge + i // 3, y))
+
+    box = (min(p[0] for p in where), min(p[1] for p in where),
+           max(p[0] for p in where), max(p[1] for p in where)) if where else None
+    return (differ, total), box
+
+
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
     telnet, web = random.randint(20000, 40000), random.randint(40001, 60000)
@@ -136,27 +168,32 @@ def main():
             f.write(shot)
         said["places"] = places
 
-        if len(places) >= 2:
-            (ax, ay, aw, ah), (bx, by, bw, bh) = [tuple(int(v) for v in p) for p in places[:2]]
-            differ, total, where = 0, 0, []
+        said["differ"], said["where"] = compare(rgb, w_, places, 1)
 
-            # Below the header, inside the edge: the window's own drawing.
-            for y in range(48, min(ah, bh) - 4):
-                ra = ((ay + y) * w_ + ax + 4) * 3
-                rb = ((by + y) * w_ + bx + 4) * 3
-                n = (min(aw, bw) - 8) * 3
-                a, b = rgb[ra:ra + n], rgb[rb:rb + n]
-                total += n // 3
+        # **At 150 per cent** (D2c): the scale changed with both open. The
+        # one drawing itself is told its new size, makes a region in the
+        # new pixels and draws its commands scaled, its text in faces at the
+        # scale; the other is drawn by the window manager as before.
+        session.put(SCALE.encode(), "/Temporary/scale.lua")
+        mark = len(guest.seen)
+        said["scaled"] = session.run("/Temporary/scale.lua 150").decode(errors="replace")
+        found(r"wm: rescaled D2 to ", mark)
+        guest.mouse_to(200, 32000)
+        time.sleep(4)
+        shot = guest.screendump()
+        w_, h_, rgb = R.parse_ppm(shot)
+        with open(os.path.join(os.path.dirname(HERE), "build", "drawself", "screen150.ppm"), "wb") as f:
+            f.write(shot)
+        big = [(str(int(x) * 3 // 2), str(int(y) * 3 // 2), str(int(w) * 3 // 2), str(int(h) * 3 // 2))
+               for x, y, w, h in places]
+        said["places150"] = big
+        said["differ150"], said["where150"] = compare(rgb, w_, big, 1.5)
 
-                if a != b:
-                    for i in range(0, n, 3):
-                        if a[i:i + 3] != b[i:i + 3]:
-                            differ += 1
-                            where.append((4 + i // 3, y))
-
-            said["differ"] = (differ, total)
-            said["where"] = (min(p[0] for p in where), min(p[1] for p in where),
-                             max(p[0] for p in where), max(p[1] for p in where)) if where else None
+        # And one opened at 150 per cent, its region made at the scale.
+        mark = len(guest.seen)
+        session.run("/Temporary/launch.lua itself")
+        said["opened150"] = found(r"D2 itself: draws itself (\w+)", mark)
+        session.run("/Temporary/scale.lua 100")
 
         mark = len(guest.seen)
         session.run("/Temporary/calc.lua")
@@ -182,6 +219,19 @@ def main():
                      "within %r of the window; the windows at %r" % (differ + (said.get("where"),
                                                                           said.get("places"))))
 
+    differ = said.get("differ150")
+
+    if not differ or differ[1] == 0:
+        fails.append("at 150 per cent the two windows were not found to compare: %r"
+                     % said.get("places150"))
+    elif differ[0] != 0:
+        fails.append("at 150 per cent, drawn by itself, the window differs from the one sent "
+                     "in %d of %d pixels, within %r" % (differ + (said.get("where150"),)))
+
+    if said.get("opened150") != ["true"]:
+        fails.append("a window opened at 150 per cent did not draw itself: %r"
+                     % said.get("opened150"))
+
     if not said.get("cost itself") or not said.get("cost sent"):
         fails.append("the frames were not timed: %r, %r"
                      % (said.get("cost itself"), said.get("cost sent")))
@@ -190,7 +240,7 @@ def main():
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 6
+    checks = 8
 
     if fails:
         print("FAIL: %d of %d checks on a window that draws itself:" % (len(fails), checks))
@@ -200,8 +250,10 @@ def main():
 
     print("PASS: %d checks on a window that draws itself (its region taken; the same as the "
           "window sending its drawing in all %d pixels below the header; %d frames each - "
-          "drawing itself: %s; sent: %s; Calculator open, drawing itself)."
-          % (checks, differ[1], FRAMES, said["cost itself"][-1], said["cost sent"][-1]))
+          "drawing itself: %s; sent: %s; at 150 per cent the same again, in all %d pixels; "
+          "Calculator open, drawing itself)."
+          % (checks, said["differ"][1], FRAMES, said["cost itself"][-1], said["cost sent"][-1],
+             said["differ150"][1]))
     return 0
 
 

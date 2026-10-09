@@ -3194,6 +3194,13 @@ handlers.open = function(req, who, cap)
   local src_w = math.tointeger(asked_w) or given(w_, asked_w)
   local src_h = math.tointeger(asked_h) or given(h_, asked_h)
 
+  -- A kit window that draws itself (`docs/astra-display.md` D2c) makes its
+  -- region in the screen's pixels at the scale and draws its commands
+  -- scaled, as this process would: shown as it is, never stretched.
+  if req.draws_itself and src_w and src_h then
+    src_w, src_h = scale.px(src_w, pct), scale.px(src_h, pct)
+  end
+
   --
   -- **And a region too small for that is refused, not read past.** A
   -- window asking for less than the floor of 32 was given 32, and its
@@ -3205,17 +3212,6 @@ handlers.open = function(req, who, cap)
      and (sys.memory_size(cap) or 0) * 4096 < gfx.bytes(src_w, src_h) * 2 then
     print(("wm: %s's region does not hold two %dx%d pictures, so it is not "
            .. "shown"):format(tostring(req.title), src_w, src_h))
-    sys.release(cap)
-    cap = nil
-  end
-
-  --
-  -- **A kit window that draws itself** (`docs/astra-display.md` D2), at a
-  -- scale: declined, because its region is in its points and would be shown
-  -- stretched, where its drawing commands are drawn sharp at the scale. The
-  -- window is told, and sends them as before.
-  --
-  if req.draws_itself and (win.pct or 100) ~= 100 and cap and cap >= 0 then
     sys.release(cap)
     cap = nil
   end
@@ -3238,6 +3234,9 @@ handlers.open = function(req, who, cap)
       -- (`handlers.surface`, `roadmap.md` 6zz e): it asked, so it gets a
       -- grip.
       win.resizes_itself = req.resizable == true
+
+      -- A kit window drawing itself (D2): its region in the screen's pixels.
+      win.draws_itself = req.draws_itself == true
     else
       -- Said rather than silently ignored. A window that quietly refuses a
       -- shared surface is a window that opens, stays blank, and gives the
@@ -3772,7 +3771,7 @@ handlers.open = function(req, who, cap)
            fonts = theme.fonts, headed = win.headed or false,
            lights = OUT.lights_size(pct),
            double_click_ms = OUT.mouse.double_click_ms,
-           draws_itself = (req.draws_itself and win.shared ~= nil) or nil }
+           draws_itself = win.draws_itself or nil }
 end
 
 handlers.draw = function(req)
@@ -5373,6 +5372,11 @@ function scale.rescale(pct)
         if win.strip == "bottom" then place_bottom(win) end
       elseif win.backdrop then
         -- Sized from what the strip leaves, below.
+      elseif win.draws_itself then
+        -- Its region is in the old scale's pixels: told its size, it makes
+        -- one at the new scale's (D2c), stretched meanwhile.
+        resize_window(win, scale.px(scale.pt(win.w, old), pct),
+                      scale.px(scale.pt(win.h, old), pct))
       elseif win.shared then
         if win.menubar then
           win.menubar.h = strips.height()
@@ -5415,6 +5419,10 @@ function scale.rescale(pct)
 end
 
 handlers.scale = function(req)
+  -- Asked without one, the scale as it is: what a window drawing itself
+  -- makes its region at (`docs/astra-display.md` D2c).
+  if req.pct == nil then return { ok = true, pct = scale.pct } end
+
   local pct = math.tointeger(tonumber(req.pct) or 0)
 
   if not pct or not scale.valid(pct) then

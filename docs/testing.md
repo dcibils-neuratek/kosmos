@@ -22269,3 +22269,22 @@ under load, since the window manager does not keep a place it judges taken,
 and the comparison failed; each now moves itself to a place of its own
 first. `x86-kernel`'s "a new thread avoids a loaded core" failed once in
 the same run - the kernel was not changed - and passes alone.
+
+## 18.502 Astra D2c: a window that draws itself, at a scale
+
+The window manager declined a window drawing itself at any scale but 100,
+since a region in points is shown stretched. Now the window asks the scale
+(`scale` with no `pct`), makes its region in the screen's pixels, and
+`ui.paint_ops` runs each command through `paint.scale` - the window
+manager's arithmetic, D2a - and draws its text in its role's face loaded at
+the scale (`paint.new`'s `always`), while the faces it lays out in stay at
+points. The window manager takes such a region as pixels, not stretched;
+a change of scale tells the window its new size, as an ordinary window is
+told, and `take_size` makes a region at the new scale.
+
+`x86-drawself` 8: the two windows after the desktop went to 150 per cent,
+the same in all 235,458 pixels below their headers; a window opened at 150
+per cent drawing itself. **Control**: the commands not scaled, and 152,128
+pixels differ.
+
+The whole gate, 60 of 61: `x86-share-2` read a share's status a tenth of a second after it went away, before it said when it tries next - nothing it touches changed - and passes alone.

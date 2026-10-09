@@ -122,9 +122,13 @@ desktop.
      and the window sends its drawing as before. Measured under QEMU, 60
      frames: drawing itself, the window manager's processor time fell from
      25 ticks to 14 and the program spent 11; a frame 1.74 ms against 2.24.
-   - **D2c** - a window that draws itself at a scale: its region in the
-     screen's pixels, its commands scaled by `paint.scale` and its faces
-     loaded at the scale, so it is as sharp as the drawing it replaces.
+   - **D2c, done 9 October** (`testing.md` 18.502) - a window that draws
+     itself at a scale: it asks the scale, makes its region in the
+     screen's pixels, scales its commands by `paint.scale` and draws their
+     text in faces loaded at the scale, laying out in points as before. A
+     change of scale tells it its new size, and it makes a region at the
+     new scale's pixels. At 150 per cent it is the same as the window
+     manager's drawing in every pixel, opened there or rescaled.
    - **D2d** - every ordinary window, then menus, banners, tips, popups and
      strips; what each costs in memory, measured.
    - **D2e** - the drawing commands retired from the window manager.

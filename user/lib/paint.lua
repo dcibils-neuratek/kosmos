@@ -21,7 +21,13 @@
 
 local paint = {}
 
-function paint.new(picture_named, sized)
+--
+-- `always`: every piece of text through `sized`, not only one at a size of
+-- its own - a window drawing itself at a scale, whose roles' faces are at
+-- its points for laying out and whose text is drawn at the scale's pixels
+-- (`docs/astra-display.md` D2c).
+--
+function paint.new(picture_named, sized, always)
   return {
     fill = function(s, o)
       s:fill(o.x or 0, o.y or 0, o.w or 0, o.h or 0, o.color or 0xff000000)
@@ -70,7 +76,7 @@ function paint.new(picture_named, sized)
       -- `o.variant` a weight or a slant of it - Text Editor's bold.
       s:text(o.x or 0, o.y or 0, tostring(o.s or ""),
              o.color or 0xffffffff, o.bg,
-             (o.px or o.variant) and sized(o.role, o.px, o.variant) or o.role)
+             (always or o.px or o.variant) and sized(o.role, o.px, o.variant) or o.role)
     end,
 
     --
