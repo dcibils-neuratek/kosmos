@@ -356,9 +356,12 @@ function address:on_enter() win:focus_on(account) end
 function account:on_enter() win:focus_on(password) end
 function password:on_enter() begin_connect() end
 
--- The recent ones are pressed to fill the address in.
-function body:mouse(action, x, y)
-  if action ~= "press" or not layout.recent then return false end
+-- The recent ones are clicked to fill the address in: held on the press
+-- and filled on the release over the same one (`ui.click`; Diego, 9
+-- October: a click is a press and a release, "in all kosmos"). The key is
+-- the server and the share rather than the row's place.
+local function recent_at(x, y)
+  if not layout.recent then return nil end
 
   local i = (y - layout.recent_rows) // 30 + 1
 
@@ -366,16 +369,21 @@ function body:mouse(action, x, y)
      and x >= PAD and x < W - PAD then
     local r = recent[i]
 
-    address.text = netshares.url(r.address, r.share)
-    address.caret = #address.text + 1
-    account.text = r.account or account.text
-    typed_at = sys.ticks()
-    win:focus_on(password)
-    win.dirty = true
-    return true
+    return netshares.url(r.address, r.share), function()
+      address.text = netshares.url(r.address, r.share)
+      address.caret = #address.text + 1
+      account.text = r.account or account.text
+      typed_at = sys.ticks()
+      win:focus_on(password)
+      win.dirty = true
+    end
   end
 
-  return false
+  return nil
+end
+
+function body:mouse(action, x, y)
+  return ui.click(self, action, x, y, recent_at)
 end
 
 local function show_choices(list)

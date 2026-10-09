@@ -1487,22 +1487,55 @@ end
 check.on_click = function() check_now(current, true) end
 build_button.on_click = function() build_now() end
 
+--
+-- **A click on a line of a panel that goes somewhere** - Problems, Output,
+-- Search - goes on the release over the line it was pressed on (`ui.click`;
+-- Diego, 9 October: a click is a press and a release, "in all kosmos"). The
+-- editor beneath has already put its caret on the press and followed the
+-- drag, so the line under the pointer is the caret's line, and choosing it
+-- stays on the press. The key is the line's words rather than its number,
+-- since a panel is rewritten while a program runs or a check finishes.
+--
+-- `going(line)` gives what the line does, or nil when it goes nowhere. A
+-- press the editor gave to its scrollbar placed no caret - the anchor is
+-- the same table as before it - and begins no click.
+--
+local function line_click(view, action, x, y, handled, anchor, going)
+  local function line_at(px, py)
+    if px < 0 or py < 0 or px >= view.w or py >= view.h then return nil end
+
+    local line = view.buf.lines[view.buf.cy] or ""
+    local act = going(line)
+
+    if act then return line, act end
+
+    return nil
+  end
+
+  if action == "press" and view.buf.anchor == anchor then return handled end
+
+  return ui.click(view, action, x, y, line_at) or handled
+end
+
 -- A click on a problem goes to its line.
 local problems_mouse = problems.mouse
 
 function problems:mouse(action, x, y)
+  local anchor = self.buf.anchor
   local handled = problems_mouse(self, action, x, y)
 
-  if action == "press" and current then
-    local n = (self.buf.lines[self.buf.cy] or ""):match("^line (%d+)")
+  return line_click(self, action, x, y, handled, anchor, function(line)
+    local n = line:match("^line (%d+)")
 
-    if n then
+    if not (n and current) then return nil end
+
+    return function()
+      if not current then return end
+
       current.editor:go_to(tonumber(n), 1)
       win:focus_on(current.editor)
     end
-  end
-
-  return handled
+  end)
 end
 
 --------------------------------------------------------------------------
@@ -2162,13 +2195,31 @@ function find:draw(g)
   end
 end
 
-function found:mouse(action, _, y)
-  local k = self.first + (y - 4) // FIND_ROW
+-- A press chooses the file, and the release over the same one opens it
+-- (`ui.click`; Diego, 9 October: a click is a press and a release, "in all
+-- kosmos"). The key is the file's path, and the release finds its row
+-- again, since typing rebuilds the list.
+local function found_at(x, y)
+  local k = found.first + (y - 4) // FIND_ROW
+  local e = y >= 4 and y < found.h - FIND_ROW and x >= 0 and x < found.w
+            and found.items[k]
 
-  if action == "press" and y >= 4 and y < self.h - FIND_ROW and self.items[k] then
-    self.on = k
+  if not e then return nil end
+
+  return e.path, function()
+    found.on = k
     open_found()
   end
+end
+
+function found:mouse(action, x, y)
+  if action == "press" then
+    local k = self.first + (y - 4) // FIND_ROW
+
+    if y >= 4 and y < self.h - FIND_ROW and self.items[k] then self.on = k end
+  end
+
+  ui.click(self, action, x, y, found_at)
 
   return true
 end
@@ -2241,11 +2292,10 @@ end
 local output_mouse = output.mouse
 
 function output:mouse(action, x, y)
+  local anchor = self.buf.anchor
   local handled = output_mouse(self, action, x, y)
 
-  if action == "press" then
-    local line = self.buf.lines[self.buf.cy] or ""
-
+  return line_click(self, action, x, y, handled, anchor, function(line)
     for _, f in ipairs(open) do
       local n = line:match(literally(f.path) .. ":(%d+):")
 
@@ -2254,14 +2304,15 @@ function output:mouse(action, x, y)
       end
 
       if n then
-        show(f)
-        f.editor:go_to(tonumber(n), 1)
-        break
+        return function()
+          show(f)
+          f.editor:go_to(tonumber(n), 1)
+        end
       end
     end
-  end
 
-  return handled
+    return nil
+  end)
 end
 
 --------------------------------------------------------------------------
@@ -2470,12 +2521,15 @@ end
 local search_mouse = search_view.mouse
 
 function search_view:mouse(action, x, y)
+  local anchor = self.buf.anchor
   local handled = search_mouse(self, action, x, y)
 
-  if action == "press" then
-    local path, n = (self.buf.lines[self.buf.cy] or ""):match("^(.-):(%d+):  ")
+  return line_click(self, action, x, y, handled, anchor, function(line)
+    local path, n = line:match("^(.-):(%d+):  ")
 
-    if path then
+    if not path then return nil end
+
+    return function()
       local f = open_file(path:sub(1, 1) == "/" and path or (project .. "/" .. path))
 
       if f then
@@ -2489,9 +2543,7 @@ function search_view:mouse(action, x, y)
         win:focus_on(f.editor)
       end
     end
-  end
-
-  return handled
+  end)
 end
 
 function seek.on_change() if bar_mode == "file" then mark_found() end end

@@ -1252,11 +1252,27 @@ function docview.new(ui, spec)
       return true
     end
 
-    -- A box is ticked by clicking it, which writes the `x` into the file.
-    if action == "press" then
-      local n = on_box(self, x, y)
+    -- A box is ticked by clicking it, which writes the `x` into the file:
+    -- held on the press and ticked on the release over the same box
+    -- (`ui.click`; Diego, 9 October: a click is a press and a release, "in
+    -- all kosmos"). A press on a box that cannot tick places the caret, as
+    -- it always did.
+    local function box_at(px, py)
+      if px < 0 or py < 0 or px >= self.w or py >= self.h then return nil end
 
-      if n and self:toggle_check(n) then return true end
+      local n = on_box(self, px, py)
+
+      if not (n and self.style) then return nil end
+
+      local info = self.style(buf.lines[n], false)
+
+      if info.kind ~= "check" or not info.box then return nil end
+
+      return n, function() self:toggle_check(n) end
+    end
+
+    if self.click_key ~= nil or (action == "press" and box_at(x, y)) then
+      return ui.click(self, action, x, y, box_at)
     end
 
     if action == "press" or action == "move" then

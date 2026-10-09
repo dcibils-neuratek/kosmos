@@ -209,7 +209,7 @@ end
 
 local more = { icon = "more" }
 local size_box = { h = 31 }
-local record = { text = "Record", disabled = true }
+local record = { text = "Record", disabled = true, h = 31 }
 
 local function place_controls()
   -- Left of the three, which its header holds now it is the title bar.
@@ -266,7 +266,7 @@ local function draw_header(s)
     local dim = record.disabled
 
     pk.button(s, { x = record.x, y = record.y, w = record.w, text = "",
-                   disabled = dim })
+                   disabled = dim, pressed = record.pressed })
     s:fill_round(record.x + 12, record.y + (31 - 9) // 2, 9, 9,
                  dim and theme.mix(theme.sunken, 0xffe5484d, 450)
                      or 0xffe5484d, 4)
@@ -518,13 +518,22 @@ while win.running do
     elseif ev.type == "close" then
       close_stream()
       win:close()
+    elseif ev.type == "mouse" and not ev.menu and ev.action == "release" then
+      -- Record or Stop, done if the button comes up over it (`pk.hold`).
+      if pk.release(ev.x, ev.y) then draw_all() end
     elseif ev.type == "mouse" and not ev.menu and ev.action == "press" then
+      -- The size and the dots open their menus on the press, as a menu
+      -- does; Record and Stop are held, and done on the release over them
+      -- (Diego, 9 October 2026: "a real click which is mouse down+mouse up").
       if pk.inside(size_box, ev.x, ev.y) then
         if not recording then size_menu() end
       elseif pk.inside(more, ev.x, ev.y) then
         more_menu()
       elseif pk.inside(record, ev.x, ev.y) and not record.disabled then
-        if recording then stop_recording() else start_recording() end
+        pk.hold(record, function()
+          if record.disabled then return end
+          if recording then stop_recording() else start_recording() end
+        end)
         draw_all()
       elseif ev.y < L.head then
         -- The header's empty part is the title bar's: the window moved,

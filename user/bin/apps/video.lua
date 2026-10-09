@@ -483,6 +483,31 @@ end
 
 local showing, controls_at = nil, -1
 
+--
+-- **A click is a press and a release** (Diego, 9 October 2026: "mouse click
+-- is working in mouse down not in a real click which is mouse down+mouse
+-- up"). The seek bar answers the press, as a bar does; the play button, the
+-- info badge and the picture are remembered on the press and done on the
+-- release, if the button comes up over the same one.
+--
+local function pressable_at(x, y)
+  local rx, ry, rw, rh = bar_rect()
+
+  if y >= ry - 4 and y <= ry + rh + 4 and x >= rx and x <= rx + rw then
+    return "bar"
+  elseif not full and y >= scale_h and x < MARK + 8 then
+    return "play"
+  elseif full or y < scale_h then
+    if film:badge_at(x, y, picture_x, picture_y, scale_w, scale_h) then
+      return "badge"
+    end
+
+    return "picture"
+  end
+end
+
+local held = nil                        -- what the press landed on
+
 while win.running do
   -- The sound first: it has a ring to keep full, and the picture waits
   -- for it rather than the other way round.
@@ -533,18 +558,29 @@ while win.running do
     elseif ev.type == "close" then
       win:close()
     elseif ev.type == "mouse" and not ev.menu and ev.action == "press" then
-      local rx, ry, rw, rh = bar_rect()
+      held = pressable_at(ev.x, ev.y)
 
-      if ev.y >= ry - 4 and ev.y <= ry + rh + 4 and ev.x >= rx
-         and ev.x <= rx + rw then
+      if held == "bar" then
+        local rx, _, rw = bar_rect()
+
         seek_to(film.duration * (ev.x - rx) / rw)
         showing = nil
-      elseif not full and ev.y >= scale_h and ev.x < MARK + 8 then
-        play_or_pause()
-      elseif full or ev.y < scale_h then
-        -- A click on the picture pauses, as the drawing says.
-        if not film:pointer(ev.x, ev.y, picture_x, picture_y,
-                            scale_w, scale_h) then
+        held = nil
+      end
+
+      controls_at = -1
+    elseif ev.type == "mouse" and not ev.menu and ev.action == "release" then
+      local was = held
+
+      held = nil
+
+      if was and pressable_at(ev.x, ev.y) == was then
+        if was == "play" then
+          play_or_pause()
+        elseif was == "badge" then
+          film:pointer(ev.x, ev.y, picture_x, picture_y, scale_w, scale_h)
+        elseif was == "picture" then
+          -- A click on the picture pauses, as the drawing says.
           play_or_pause()
         end
       end

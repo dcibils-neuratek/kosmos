@@ -289,7 +289,7 @@ local REC_O = { glyph = "rec", color = C.rec, ic = C.rec }
 local SESSION_O, SONG_O = { color = C.blue }, { color = C.blue }
 local BPM_O, SWING_O = { wheelStep = 1 }, { wheelStep = 0.01 }
 local EXPORT_O, MIDI_O = { tc = C.accent }, {}
-local MORE_O = { glyph = "more", is = 3.5 }
+local MORE_O = { glyph = "more", is = 3.5, press = true }   -- a menu opens on the press
 
 ---------------------------------------------------------------- the window's menu
 -- **Kosmos's, not PulseMusic's** (`roadmap.md` 6zh): the three dots at the
@@ -312,17 +312,24 @@ local function menuItems()
   }
 end
 
--- The menu's click, if it has one: taken, and nothing under it sees it.
+-- The menu's click, if it has one: taken, and nothing under it sees it. A
+-- press outside puts it away; a press inside holds the row it was on, which
+-- is chosen on the release over that same row, and the menu goes then.
 local function menuInput()
-  if not menu or not U.pressed then return end
+  if not menu or not (U.pressed or U.released) then return end
   local items = menuItems()
   local inside = U.hit(menu.x, menu.y, menu.w, #items * MENU_ROW + 8)
-  if inside then
-    local i = floor((U.my - menu.y - 4) / MENU_ROW) + 1
-    local item = items[i]
+  local i = inside and floor((U.my - menu.y - 4) / MENU_ROW) + 1
+  if U.pressed then
+    U.pressed = false
+    if inside then U.active, menu.held = "menu", i; return end
+    U.down = false
+  elseif U.active == "menu" then
+    local item = i and i == menu.held and items[i]
     if item and not item.on and app.onSize then app.onSize(item.size) end
+  else
+    return
   end
-  U.pressed, U.down = false, false
   menu = nil
 end
 
@@ -453,18 +460,22 @@ local function drawTrackColumn(ti, x)
         local _, pos = heardPos(ti)
         if pos then U.rect(x, y + sh - 3, w * pos / clip.len, 3, C.dark, 0, 0.75) end
       end
+      -- A press chooses the slot; its play mark launches it, on the release over the mark.
       if hot and U.pressed then
         sel.track, sel.scene = ti, sc
-        if U.mx < x + 20 then E.launchClip(ti, sc) end
+        if U.mx < x + 20 then U.hold(x, y, 20, sh) end
         U.pressed = false
       end
+      if U.clicked(x, y, 20, sh) then E.launchClip(ti, sc) end
     else
       U.rect(x, y, w, sh, C.panel, 3)
       if hot then U.text("+", x, y + (sh - 14) / 2, C.dim, U.fM, w) end
+      -- A press chooses the slot; a click on the chosen one makes a clip in it, on the release.
       if hot and U.pressed then
-        if isSel then createClip(ti, sc) end
+        if isSel then U.hold(x, y, w, sh) end
         sel.track, sel.scene = ti, sc; U.pressed = false
       end
+      if U.clicked(x, y, w, sh) then createClip(ti, sc) end
     end
     if isSel then
       U.col(C.text); U.frame(x, y, w, sh, 3); U.frame(x + 1, y + 1, w - 2, sh - 2, 2)
@@ -520,10 +531,11 @@ local function drawSceneColumn(x)
     U.rect(x, y, w, sh, hot and C.panel3 or C.panel2, 3)
     U.col(C.play); U.icon("play", x + 10, y + sh / 2, 4.5)
     U.text(E.song.scenes[sc], x + 20, y + (sh - 12) / 2, sel.scene == sc and C.text or C.dim, U.fS, nil, nil, w - 22)
-    if hot and U.pressed then
-      sel.scene = sc; E.launchScene(sc)
+    -- A press chooses the scene; it is launched on the release over it.
+    if hot and U.pressed then sel.scene = sc; U.hold(x, y, w, sh) end
+    if U.clicked(x, y, w, sh) then
+      E.launchScene(sc)
       if not E.playing then E.play() end
-      U.pressed = false
     end
   end
   if U.button(x, L.stopY + 1, w, L.stopH - 3, "STOP ALL", STOPALL_O) then
@@ -640,7 +652,7 @@ local function drawSongPanel()
 end
 
 ---------------------------------------------------------------- clip editors
-local ROW_O = {}
+local ROW_O = { press = true }    -- a drum pad sounds when struck, on the press
 
 local function drawDrumEditor(x, y, w, h, tr, clip, ti)
   local keyW = 64
@@ -936,7 +948,7 @@ local function drawEditor()
 end
 
 ---------------------------------------------------------------- device panel
-local DEV_ROW_O = {}
+local DEV_ROW_O = { press = true }
 
 local function drawDevice()
   local x, y, w, h = L.W - L.devW, L.H - L.botH, L.devW, L.botH

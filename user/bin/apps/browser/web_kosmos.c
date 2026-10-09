@@ -964,14 +964,16 @@ static int l_ns_paint(lua_State *L)
     return 0;
 }
 
-/* `doc:ns_click(x, y)` -> what a press there did to a form field - "field",
+/* `doc:ns_click(x, y, release)` -> what a press there, or with `release`
+ * its release, did to a form field - "field", "select", "pressed",
  * "toggled", "sent" - or nil (`roadmap.md` 6zz j6). */
 static int l_ns_click(lua_State *L)
 {
     struct doc *d = checkdoc(L);
     const char *did = d->ns == NULL ? NULL
                       : web_ns_click(d->ns, L, (int)luaL_checkinteger(L, 2),
-                                     (int)luaL_checkinteger(L, 3));
+                                     (int)luaL_checkinteger(L, 3),
+                                     lua_toboolean(L, 4));
 
     if (did == NULL) {
         lua_pushnil(L);

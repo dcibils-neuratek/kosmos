@@ -367,19 +367,55 @@ local function icon(kind, cx, cy, s)
 end
 U.icon = icon
 
+-- **A click is a press and a release over the same thing** (Diego, 9 October
+-- 2026), as Dear ImGui has it: the press makes the thing it was on the active
+-- one - "button", and where it is, since a button here has no id but its
+-- place - and the release answers true only over the thing that was pressed.
+-- Let go anywhere else and nothing happens. A knob, a fader and a number are
+-- drags and keep the press; so does a drum pad, which sounds when struck.
+local function held(x, y, w, h)
+  return U.active == "button" and U.bx == x and U.by == y and U.bw == w and U.bh == h
+end
+
+-- The press, taken and held on (x, y, w, h).
+function U.hold(x, y, w, h)
+  U.active, U.bx, U.by, U.bw, U.bh = "button", x, y, w, h
+  U.pressed = false
+end
+
+-- The release over (x, y, w, h), when that is where the press was held.
+function U.clicked(x, y, w, h)
+  if U.released and U.hit(x, y, w, h) and held(x, y, w, h) then U.bx = nil; return true end
+  return false
+end
+
+-- Both: a press there is held, and true on the release over it.
+function U.click(x, y, w, h)
+  if U.pressed and not U.active and U.hit(x, y, w, h) then U.hold(x, y, w, h) end
+  return U.clicked(x, y, w, h)
+end
+
+-- `o.press` for the few that act on the press: a pad that sounds, a menu that opens.
 function U.button(x, y, w, h, label, o)
   o = o or {}
-  local hot = U.hit(x, y, w, h) and not U.active
-  local bg = o.on and (o.color or C.accent) or (hot and C.panel3 or (o.bg or C.panel2))
-  U.rect(x, y, w, h, bg, o.r or 3)
+  local over, fired = U.hit(x, y, w, h), false
+  if o.press then
+    fired = over and U.pressed and not U.active
+    if fired then U.pressed = false end
+  else
+    fired = U.click(x, y, w, h)
+  end
+  local down = over and held(x, y, w, h)      -- pressed, and the pointer still on it
+  local hot = over and (not U.active or down)
+  local bg = o.on and (o.color or C.accent) or (down and C.panel or (hot and C.panel3 or (o.bg or C.panel2)))
+  U.rect(x, y, w, h, bg, o.r or 3, (o.on and down) and 0.75 or nil)
   local tc = o.on and C.dark or (o.tc or C.text)
   if o.glyph then U.col(o.on and C.dark or (o.ic or C.text)); icon(o.glyph, x + w / 2, y + h / 2, o.is or 5)
   elseif label then
     local f = o.font or U.fS
     U.text(label, x, y + (h - f:getHeight()) / 2, tc, f, w, "center")
   end
-  if hot and U.pressed then U.pressed = false; return true end
-  return false
+  return fired
 end
 
 ---------------------------------------------------------------- value mapping

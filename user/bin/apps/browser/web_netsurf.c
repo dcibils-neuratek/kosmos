@@ -1307,6 +1307,10 @@ struct web_ns_doc {
     struct form_control *select_open;
     int                select_x, select_y, select_w, select_h;
 
+    /* The control a press is held on - a checkbox, a radio button, a
+     * submit or image button - which acts on the release over it. */
+    struct form_control *pressed;
+
     struct web_ns_costs costs;      /* what the last paint spent */
 };
 
@@ -1917,13 +1921,30 @@ bool web_ns_key(struct web_ns_doc *d, lua_State *L, int key)
 }
 
 /*
- * A press at (x, y) on the page, for a form field there - as NetSurf's
- * `html_mouse_action` treats one: a text field takes the caret where the
- * press was, a checkbox turns over, a radio button is chosen from its
- * group, and a submit button sends its form. What it did, or NULL when
- * there is no field there - which takes the caret out of any that had it.
+ * Whether a control does something - turns over, is chosen, sends its
+ * form - rather than taking the caret or opening a menu. Those act on a
+ * click, which is a press and a release over the same control, as
+ * NetSurf's `html_mouse_action` acts on `BROWSER_MOUSE_CLICK_1`, which its
+ * front ends send on the release.
  */
-const char *web_ns_click(struct web_ns_doc *d, lua_State *L, int x, int y)
+static bool web_ns_acts(const struct form_control *g)
+{
+    return g->type == GADGET_CHECKBOX || g->type == GADGET_RADIO
+           || g->type == GADGET_SUBMIT || g->type == GADGET_IMAGE;
+}
+
+/*
+ * A press at (x, y) on the page, or its release, for a form field there -
+ * as NetSurf's `html_mouse_action` treats one: a text field takes the
+ * caret where the press was and a select is opened, on the press; a
+ * checkbox turns over, a radio button is chosen from its group, and a
+ * submit button sends its form, on the release over the control the press
+ * was on - the press only holds it, and says "pressed". What it did, or
+ * NULL when there is no field there - which, on a press, takes the caret
+ * out of any that had it. A release anywhere lets go of what was held.
+ */
+const char *web_ns_click(struct web_ns_doc *d, lua_State *L, int x, int y,
+                         bool release)
 {
     struct box *box = d->html.layout, *gadget_box = NULL;
     struct form_control *gadget;
@@ -1943,6 +1964,18 @@ const char *web_ns_click(struct web_ns_doc *d, lua_State *L, int x, int y)
         }
     }
 
+    if (release) {
+        struct form_control *held = d->pressed;
+
+        d->pressed = NULL;
+
+        if (held == NULL || gadget_box == NULL || gadget_box->gadget != held) {
+            return NULL;
+        }
+    }
+
+    d->pressed = NULL;
+
     if (gadget_box == NULL) {
         web_ns_blur(d, L);
         return NULL;
@@ -1952,6 +1985,11 @@ const char *web_ns_click(struct web_ns_doc *d, lua_State *L, int x, int y)
 
     if (d->focus != NULL && d->focus != gadget_box) {
         web_ns_blur(d, L);
+    }
+
+    if (!release && web_ns_acts(gadget)) {
+        d->pressed = gadget;
+        return "pressed";
     }
 
     faces_L = L;

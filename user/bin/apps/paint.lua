@@ -182,6 +182,41 @@ end
 local drawing = false
 local last_x, last_y
 
+--
+-- What in the palette is under a point: a key naming it, and what choosing
+-- it does. **A click is a press and a release** (Diego, 9 October 2026:
+-- "mouse click is working in mouse down not in a real click which is mouse
+-- down+mouse up"), so the key is remembered on the press and the choice
+-- made on the release, if the button comes up over the same one.
+--
+local function palette_at(x, y)
+  if x >= PAL_W then return nil end
+
+  local col = (x - 8) // 28
+  local row = (y - 8) // 28
+  local i = row * 3 + col + 1
+
+  if x >= 8 and col < 3 and COLOURS[i] and y >= 8 and row < 4 then
+    return "colour " .. i, function() colour = COLOURS[i] end
+  end
+
+  local top = 8 + 4 * 28 + 12
+
+  for n, r in ipairs(SIZES) do
+    local ty = top + (n - 1) * 34
+
+    if y >= ty and y < ty + 30 then return "size " .. n, function() size = r end end
+  end
+
+  local foot = top + 3 * 34 + 8
+
+  if y >= foot and y < foot + 22 then
+    return "smooth", function() smooth = not smooth end
+  end
+end
+
+local held = nil                        -- the palette's key pressed
+
 while win.running do
   -- Both buffers need every stroke, so the dirty box is repaired in this
   -- one and kept until the other has had it too.
@@ -227,33 +262,25 @@ while win.running do
 
       if ev.action == "press" then
         if x < PAL_W then
-          -- The palette.
-          local col = (x - 8) // 28
-          local row = (y - 8) // 28
-          local i = row * 3 + col + 1
-
-          if x >= 8 and col < 3 and COLOURS[i] and y >= 8 and row < 4 then
-            colour = COLOURS[i]
-          end
-
-          local top = 8 + 4 * 28 + 12
-
-          for n, r in ipairs(SIZES) do
-            local ty = top + (n - 1) * 34
-
-            if y >= ty and y < ty + 30 then size = r end
-          end
-
-          local foot = top + 3 * 34 + 8
-
-          if y >= foot and y < foot + 22 then smooth = not smooth end
+          -- The palette: held, and chosen on the release.
+          held = palette_at(x, y)
         elseif y < CANVAS_H then
           drawing = true
           last_x, last_y = x - PAL_W, y
           stroke(last_x, last_y, last_x, last_y)
         end
       elseif ev.action == "release" then
+        -- The end of a stroke, or a colour, a size or smoothing chosen if
+        -- the button comes up over what it went down on.
         drawing = false
+
+        if held then
+          local key, act = palette_at(x, y)
+
+          if key == held then act() end
+
+          held = nil
+        end
       elseif ev.action == "move" and drawing then
         local cx, cy = x - PAL_W, y
 

@@ -1095,11 +1095,11 @@ function film:info(dest, x, y, w, h)
 end
 
 --
--- **A click, for the badge.** True when it was the badge's, so a caller can
--- say `if not film:pointer(x, y) then ... end` and go on treating the rest
--- of the picture as its own.
+-- **Whether a point is on the badge**, opening or closing nothing: what a
+-- caller asks on the press, to remember that the badge was what was
+-- pressed, and again on the release.
 --
-function film:pointer(px, py, x, y, w, h)
+function film:badge_at(px, py, x, y, w, h)
   if not self.debuginfo then return false end
 
   x, y = x or 0, y or 0
@@ -1108,7 +1108,22 @@ function film:pointer(px, py, x, y, w, h)
   local bx, by = x + w - 8 - BADGE // 2, y + 8 + BADGE // 2
   local dx, dy = px - bx, py - by
 
-  if dx * dx + dy * dy > (BADGE // 2 + 2) ^ 2 then return false end
+  return dx * dx + dy * dy <= (BADGE // 2 + 2) ^ 2
+end
+
+--
+-- **A click, for the badge.** True when it was the badge's, so a caller can
+-- say `if not film:pointer(x, y) then ... end` and go on treating the rest
+-- of the picture as its own.
+--
+-- A click is a press and a release (Diego, 9 October 2026: "mouse click is
+-- working in mouse down not in a real click which is mouse down+mouse
+-- up"), so this is called on the *release*, by a caller that saw the press
+-- land on the badge too (`badge_at`): the panel opens or closes when the
+-- button comes up over it, and not if it is let go anywhere else.
+--
+function film:pointer(px, py, x, y, w, h)
+  if not self:badge_at(px, py, x, y, w, h) then return false end
 
   self.info_open = not self.info_open
 

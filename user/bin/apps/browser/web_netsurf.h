@@ -68,14 +68,17 @@ bool   web_ns_picture(struct web_ns_doc *d, lua_State *L, size_t k,
 void        web_ns_close(struct web_ns_doc *d, lua_State *L);
 
 /*
- * Its forms (`roadmap.md` 6zz j6). A press on the page - what it did:
- * "field" when a text field took the caret, "toggled", "select" when a
- * select was pressed and its menu is the browser's to show, "sent" when a
- * form was sent, or NULL where there is no field. A key for the field with the
+ * Its forms (`roadmap.md` 6zz j6). A press on the page, or its release -
+ * what it did: "field" when a text field took the caret, "select" when a
+ * select was pressed and its menu is the browser's to show, "pressed" when
+ * a control that acts on the release was pressed, and on that release
+ * over it "toggled" or "sent" when a form was sent; or NULL where there is
+ * no field. A key for the field with the
  * caret - whether it was taken. A form sent, taken: its address, and for a
  * POST its body and type. And what changed on the page since last asked.
  */
-const char *web_ns_click(struct web_ns_doc *d, lua_State *L, int x, int y);
+const char *web_ns_click(struct web_ns_doc *d, lua_State *L, int x, int y,
+                         bool release);
 bool        web_ns_key(struct web_ns_doc *d, lua_State *L, int key);
 int         web_ns_select(struct web_ns_doc *d, lua_State *L);
 bool        web_ns_select_choose(struct web_ns_doc *d, lua_State *L, int i);

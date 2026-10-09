@@ -568,14 +568,23 @@ local function swatches(it)
     return true
   end
 
-  function v:mouse(action, x, y)
-    if action ~= "press" then return true end
-
+  -- A tile is put in force on the release over the one it was pressed on
+  -- (`ui.click`; Diego, 9 October: a click is a press and a release, "in
+  -- all kosmos"), and let go anywhere else the look in force stays.
+  local function tile_at(x, y)
     for i, name in ipairs(names) do
       local tx, ty = at(i)
 
-      if x >= tx and x < tx + tile_w and y >= ty and y < ty + tile_h then pick(self, name) end
+      if x >= tx and x < tx + tile_w and y >= ty and y < ty + tile_h then
+        return name, function() pick(v, name) end
+      end
     end
+
+    return nil
+  end
+
+  function v:mouse(action, x, y)
+    ui.click(self, action, x, y, tile_at)
 
     return true
   end

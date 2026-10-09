@@ -199,6 +199,20 @@ local function strip(key)
     return false
   end
 
+  -- The switch is a button: it turns on the release over it (`ui.click`;
+  -- Diego, 9 October: a click is a press and a release, "in all kosmos"),
+  -- from the state as it is then. The fader is a drag and starts on the
+  -- press.
+  local function switch_at(x, y)
+    if x < v.w - SWITCH_W or x >= v.w or y < 0 or y >= v.h then return nil end
+
+    return "mute", function()
+      local now = state(key)
+
+      if now then set_muted(key, not now.muted) end
+    end
+  end
+
   function v:mouse(action, x, y)
     local r = state(key)
 
@@ -206,10 +220,10 @@ local function strip(key)
 
     if action == "press" then
       self.dragging = x < fader_w(self)
+    end
 
-      if not self.dragging and x >= self.w - SWITCH_W then
-        set_muted(key, not r.muted)
-      end
+    if not self.dragging then
+      ui.click(self, action, x, y, switch_at)
     end
 
     if self.dragging and (action == "press" or action == "move") then

@@ -552,10 +552,17 @@ function table_view:mouse(action, x, y)
   -- sample a second away - and the view goes to the selection, which has
   -- just moved somewhere else in the list.
   --
-  if y < 1 + ROW then
-    if action == "press" then
-      for _, c in ipairs(COLUMNS) do
-        if x >= c.x - GAP // 2 and x < c.x + c.cw + GAP // 2 then
+  -- A heading is a button, so it sorts on the release over the heading it
+  -- was pressed on (`ui.click`; Diego, 9 October: a click is a press and a
+  -- release, "in all kosmos"). The key is the column's, which the rows
+  -- refreshing underneath do not move.
+  --
+  local function heading_at(px, py)
+    if py < 0 or py >= 1 + ROW then return nil end
+
+    for _, c in ipairs(COLUMNS) do
+      if px >= c.x - GAP // 2 and px < c.x + c.cw + GAP // 2 then
+        return "column:" .. c.key, function()
           if sort_key == c.key then
             sort_down = not sort_down
           else
@@ -566,10 +573,15 @@ function table_view:mouse(action, x, y)
           followed = nil
           say_rows(("sorted by %s, %s"):format(sort_key,
                    sort_down and "descending" or "ascending"))
-          break
         end
       end
     end
+
+    return nil
+  end
+
+  if self.click_key ~= nil or y < 1 + ROW then
+    ui.click(self, action, x, y, heading_at)
 
     return true
   end

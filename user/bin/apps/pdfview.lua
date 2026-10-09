@@ -339,18 +339,25 @@ BUTTONS[1].on = function () chooser() end
 BUTTONS[2].on = function () show(current - 1) end
 BUTTONS[3].on = function () show(current + 1) end
 
-function sink:mouse(action, x, y)
-  if action ~= "press" then return true end
+-- What a click at `x, y` does: a bar button, `key, act` - acted on the
+-- release over the same one (`ui.click`; Diego, 9 October 2026: "mouse
+-- click is working in mouse down not in a real click which is mouse
+-- down+mouse up").
+local function target_at(x, y)
+  if y < H - BAR then return nil end
 
-  if y >= H - BAR then
-    for _, b in ipairs(BUTTONS) do
-      if x >= b.x and x < b.x + b.w then
+  for i, b in ipairs(BUTTONS) do
+    if x >= b.x and x < b.x + b.w then
+      return i, function()
         b.on()
         frame()
-        return true
       end
     end
   end
+end
+
+function sink:mouse(action, x, y)
+  ui.click(self, action, x, y, target_at)
 
   return true
 end

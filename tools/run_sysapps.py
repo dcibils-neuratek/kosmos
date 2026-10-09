@@ -178,6 +178,22 @@ def main():
             guest.mouse_button(False)
             time.sleep(0.5)
 
+        # A heading pressed and slid off before the release sorts nothing: a
+        # click is a press and a release (Diego, 9 October, "in all kosmos").
+        if "name" in heads:
+            x, y = heads["name"]
+            mark = len(guest.seen)
+            guest.mouse_to(*R._to_tablet(ox + x, oy + y, width, height))
+            time.sleep(0.4)
+            guest.mouse_button(True)
+            time.sleep(0.3)
+            guest.mouse_to(*R._to_tablet(ox + x, oy + y + 200, width, height))
+            time.sleep(0.3)
+            guest.mouse_button(False)
+            time.sleep(1.0)
+            check(said("procs: sorted by ", mark, 1) is None,
+                  "a heading pressed and slid off before the release sorted the rows")
+
         # Each heading, and one of them twice. The order is checked against
         # the rows the same line printed, so a process that came or went
         # between presses cannot make it wrong.

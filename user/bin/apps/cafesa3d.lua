@@ -751,9 +751,15 @@ end
 
 local controls = {}                         -- name -> { x, y, w, h }, as drawn
 
+-- The same table for a name from one drawing to the next, moved to where it
+-- is drawn now: a control held between a press and its release (`pk.hold`)
+-- is the one drawn, and drawn held.
 local function control(name, x, y, w, h)
-  controls[name] = { x = x, y = y, w = w, h = h }
-  return controls[name]
+  local c = controls[name] or {}
+
+  c.x, c.y, c.w, c.h = x, y, w, h
+  controls[name] = c
+  return c
 end
 
 local DIM = theme.mix(theme.sunken, theme.text_dim, 350)
@@ -776,8 +782,12 @@ local function segmented(s, x, y, parts)
   for i, p in ipairs(parts) do
     local w = widths[i]
 
+    local c = controls[p.name]
+
     if p.on then
       s:fill(px, y + 1, w, h, theme.mix(theme.sunken, theme.accent, 110))
+    elseif c and c.pressed then
+      s:fill(px, y + 1, w, h, theme.line_soft)
     end
 
     if i > 1 then s:fill(px, y + 1, 1, h, theme.line_soft) end
@@ -840,7 +850,7 @@ local function draw_header(s)
   local add_w = pk.button_width("Add") + 22 + gfx.measure("Shift A", small) + 8
   local addb = control("add", x, cy, add_w, 31)
 
-  pk.button(s, { x = addb.x, y = addb.y, w = addb.w, text = "" })
+  pk.button(s, { x = addb.x, y = addb.y, w = addb.w, text = "", pressed = addb.pressed })
   line(s, addb.x + 13, addb.y + 15.5, addb.x + 22, addb.y + 15.5, theme.text)
   line(s, addb.x + 17.5, addb.y + 11, addb.x + 17.5, addb.y + 20, theme.text)
   s:text(addb.x + 29, addb.y + (31 - gfx.height()) // 2, "Add", theme.text, nil, "ui")
@@ -852,7 +862,7 @@ local function draw_header(s)
   local dup_w = 12 + gfx.measure("Duplicate") + 8 + gfx.measure("Shift D", small) + 12
   local db = control("duplicate", addb.x + addb.w + 6, cy, dup_w, 31)
 
-  pk.button(s, { x = db.x, y = db.y, w = db.w, text = "" })
+  pk.button(s, { x = db.x, y = db.y, w = db.w, text = "", pressed = db.pressed })
   s:text(db.x + 12, db.y + (31 - gfx.height()) // 2, "Duplicate",
          selected and theme.text or theme.text_dim, nil, "ui")
   s:text(db.x + 12 + gfx.measure("Duplicate") + 8, db.y + (31 - gfx.height(small)) // 2,
@@ -866,7 +876,7 @@ local function draw_header(s)
     s:fill_round(sb.x, sb.y, sb.w, 31, theme.mix(theme.sunken, theme.accent, 120), 7)
     s:frame_round(sb.x, sb.y, sb.w, 31, theme.mix(theme.line_soft, theme.accent, 300), 7)
   else
-    pk.button(s, { x = sb.x, y = sb.y, w = sb.w, text = "" })
+    pk.button(s, { x = sb.x, y = sb.y, w = sb.w, text = "", pressed = sb.pressed })
   end
 
   s:text(sb.x + 12, sb.y + (31 - gfx.height()) // 2, "Script",
@@ -877,7 +887,8 @@ local function draw_header(s)
   segmented(s, shade_x, (HEAD - 1 - 31) // 2, shade_parts)
 
   -- Render, the verb, filled.
-  s:fill_round(render.x, render.y, render.w, 31, theme.accent, 7)
+  s:fill_round(render.x, render.y, render.w, 31,
+               render.pressed and theme.lift(theme.accent, -24) or theme.accent, 7)
   s:text(render.x + 12, render.y + (31 - gfx.height()) // 2, "Render",
          theme.text_on, nil, "ui")
   s:text(render.x + 12 + gfx.measure("Render") + 7,
@@ -888,7 +899,7 @@ local function draw_header(s)
   if KEYS.open then
     s:fill_round(keysb.x, keysb.y, keysb.w, 31, theme.mix(theme.sunken, theme.accent, 120), 7)
   else
-    pk.button(s, { x = keysb.x, y = keysb.y, w = keysb.w, text = "" })
+    pk.button(s, { x = keysb.x, y = keysb.y, w = keysb.w, text = "", pressed = keysb.pressed })
   end
 
   s:text(keysb.x + 12, keysb.y + (31 - gfx.height()) // 2, "Keys",
@@ -1013,10 +1024,15 @@ local function draw_tools(s)
       local on = tool == t.name
       local c = t.later and DIM or (on and theme.text_on or theme.text)
 
-      if on then s:fill_round(6, y, 34, 34, theme.accent, 8) end
+      local b = control("tool:" .. t.name, 6, y, 34, 34)
+
+      if on then
+        s:fill_round(6, y, 34, 34, theme.accent, 8)
+      elseif b.pressed then
+        s:fill_round(6, y, 34, 34, theme.line_soft, 8)
+      end
 
       GLYPH[t.glyph](s, 6 + 8, y + 8, c)
-      control("tool:" .. t.name, 6, y, 34, 34)
       y = y + 38
     end
   end
@@ -1696,16 +1712,18 @@ function chip.row(s, x, y, w, items)
 
     if cx + cw > x + w then cx, y = x, y + 30 end
 
+    local held = controls[it.key] and controls[it.key].pressed
+
     if it.swatch then
       if it.on then s:frame_round(cx - 2, y, 26, 26, theme.accent, 7) end
 
       s:fill_round(cx, y + 2, 22, 22, 0xff000000 | it.swatch, 5)
-      s:frame_round(cx, y + 2, 22, 22, theme.line_soft, 5)
+      s:frame_round(cx, y + 2, 22, 22, held and theme.text_dim or theme.line_soft, 5)
     else
       local tx = cx + 10
 
       s:fill_round(cx, y, cw, 26, it.on and theme.mix(theme.sunken, theme.accent, 110)
-                   or theme.sunken, 13)
+                   or held and theme.line_soft or theme.sunken, 13)
       s:frame_round(cx, y, cw, 26, it.on and theme.accent or theme.line_soft, 13)
 
       if it.dot then
@@ -2024,7 +2042,8 @@ function SCRIPT.draw(s)
   local run_w = 10 + gfx.measure("Run") + 7 + gfx.measure("Ctrl Enter", small) + 10
   local run = control("script:run", x0 + w - 8 - run_w, y0 + (PANEL_T - 1 - 24) // 2, run_w, 24)
 
-  s:fill_round(run.x, run.y, run.w, 24, theme.accent, 6)
+  s:fill_round(run.x, run.y, run.w, 24,
+               run.pressed and theme.lift(theme.accent, -24) or theme.accent, 6)
   s:text(run.x + 10, run.y + (24 - gfx.height()) // 2, "Run", theme.text_on, nil, "ui")
   s:text(run.x + 10 + gfx.measure("Run") + 7, run.y + (24 - gfx.height(small)) // 2,
          "Ctrl Enter", theme.mix(theme.accent, theme.text_on, 600), nil, small)
@@ -2037,7 +2056,7 @@ function SCRIPT.draw(s)
     local bw = gfx.measure(b[2]) + 20
     local c = control("script:" .. b[1], bx - bw, run.y, bw, 24)
 
-    s:fill_round(c.x, c.y, bw, 24, theme.window, 6)
+    s:fill_round(c.x, c.y, bw, 24, c.pressed and theme.line_soft or theme.window, 6)
     s:frame_round(c.x, c.y, bw, 24, theme.line_soft, 6)
     s:text(c.x + 10, c.y + (24 - gfx.height()) // 2, b[2], theme.text, nil, "ui")
     bx = c.x - 6
@@ -2398,12 +2417,18 @@ function final.draw()
   -- so the header does not move under the pointer as it changes.
   pk.header(s, 0, 0, final.W, "Render", ("%s \u{b7} Camera \u{b7} %d \u{d7} %d"):format(
     FILE.name, pw, ph), again_x - 8)
-  final.controls.again = { x = again_x, y = pk.centre(31), w = again_w, h = 31 }
-  final.controls.save = { x = save_x, y = pk.centre(31), w = save_w, h = 31 }
-  pk.button(s, { x = again_x, y = pk.centre(31), w = again_w,
+  -- The same two tables from one drawing to the next, so a button held
+  -- between a press and its release stays drawn held (`pk.hold`).
+  local again = final.controls.again or {}
+  local save = final.controls.save or {}
+
+  again.x, again.y, again.w, again.h = again_x, pk.centre(31), again_w, 31
+  save.x, save.y, save.w, save.h = save_x, pk.centre(31), save_w, 31
+  final.controls.again, final.controls.save = again, save
+  pk.button(s, { x = again_x, y = pk.centre(31), w = again_w, pressed = again.pressed,
                  text = final.running() and "Stop" or "Render again" })
   pk.button(s, { x = save_x, y = pk.centre(31), text = "Save as PNG...",
-                 disabled = passes == 0 or nil })
+                 pressed = save.pressed, disabled = passes == 0 or nil })
 
   -- The picture: at its own size, or shrunk to the window's, smoothly.
   s:fill(0, L.head, final.dw, final.H - L.head, 0xff1d1f24)
@@ -2608,21 +2633,32 @@ function final.tend()
     elseif ev.type == "mouse" and ev.action == "press"
            and pk.inside(final.controls.again, ev.x, ev.y) then
       -- Stop while it renders; after, opened again rather than begun, in
-      -- case the size was changed.
-      if final.running() then
-        final.stop()
-      else
-        final.open()
-      end
-
-      return
+      -- case the size was changed. Held on the press and done on the
+      -- release over it, so which of the two is asked of it then.
+      pk.hold(final.controls.again, function()
+        if final.running() then
+          final.stop()
+        else
+          final.open()
+        end
+      end)
+      final.draw()
     elseif ev.type == "rawkey" and ev.down and ev.code == 1 then
       final.stop()                -- Esc, as Blender's render window has it
     elseif ev.type == "mouse" and ev.action == "press"
            and pk.inside(final.controls.save, ev.x, ev.y)
            and ((final.job and final.job:passes() > 0)
                 or (final.stopped and final.stopped.passes > 0)) then
-      final.save()
+      pk.hold(final.controls.save, final.save)
+      final.draw()
+    elseif ev.type == "mouse" and ev.action == "release" and pk.holding() then
+      -- The button let go: done if over it, and drawn up again either way.
+      -- Opened again may have made the window anew, so nothing after it.
+      pk.release(ev.x, ev.y)
+
+      if final.win and final.pic then final.draw() end
+
+      return
     elseif ev.type == "mouse" and ev.action == "press" and ev.y < L.head then
       -- The header's empty part, which is the title bar.
       final.win:take_hold(ev.x, ev.y)
@@ -4218,22 +4254,38 @@ local function press(x, y)
 
   -- The Keys sheet closes on a click anywhere, which does nothing else.
   if KEYS.open then return KEYS.toggle() end
-  if inside(controls.keys, x, y) then return KEYS.toggle() end
+
+  --
+  -- **A button is held on the press and done on the release over it**
+  -- (`pk.hold`; Diego, 9 October 2026: "mouse click is working in mouse
+  -- down not in a real click"). What stays on the press is what does
+  -- everywhere: a row chosen, a tab, a menu opened, a field, a drag begun.
+  --
+  if inside(controls.keys, x, y) then return pk.hold(controls.keys, KEYS.toggle) end
 
   -- Duplicate, as Shift D does: the copy follows the pointer at once.
   if inside(controls.duplicate, x, y) then
-    if duplicate_selected() then begin("grab") end
-    return true
+    return pk.hold(controls.duplicate, function()
+      if duplicate_selected() then begin("grab") end
+    end)
   end
 
   -- The Script button and the panel: a press in the code gives it the
   -- keyboard, a press anywhere else takes the keyboard back.
-  if inside(controls.script, x, y) then return SCRIPT.toggle() end
+  if inside(controls.script, x, y) then return pk.hold(controls.script, SCRIPT.toggle) end
 
   if SCRIPT.open then
-    if inside(controls["script:run"], x, y) then return SCRIPT.run() end
-    if inside(controls["script:open"], x, y) then return SCRIPT.open_file() end
-    if inside(controls["script:save"], x, y) then return SCRIPT.save_file() end
+    for _, name in ipairs({ "run", "open", "save" }) do
+      local c = controls["script:" .. name]
+
+      if inside(c, x, y) then
+        return pk.hold(c, function()
+          if name == "run" then SCRIPT.run()
+          elseif name == "open" then SCRIPT.open_file()
+          else SCRIPT.save_file() end
+        end)
+      end
+    end
 
     local c = controls["script:code"]
 
@@ -4260,11 +4312,15 @@ local function press(x, y)
     return true
   end
 
-  -- A chip: a preset, a swatch, a pattern.
-  for key, go in pairs(chip.actions) do
+  -- A chip: a preset, a swatch, a pattern - found again by its name on
+  -- the release, as what it does is what is drawn then.
+  for key in pairs(chip.actions) do
     if inside(controls[key], x, y) then
-      go()
-      return true
+      return pk.hold(controls[key], function()
+        local go = chip.actions[key]
+
+        if go then go() end
+      end)
     end
   end
 
@@ -4278,19 +4334,25 @@ local function press(x, y)
 
   if inside(controls.add, x, y) then add_menu(controls.add.x, HEAD) return true end
   if inside(controls.more, x, y) then more_menu(controls.more.x + 26 - 190, HEAD) return true end
-  if inside(controls.wire, x, y) then set_shading("wire") return true end
-  if inside(controls.solid, x, y) then set_shading("solid") return true end
-  if inside(controls.rendered, x, y) then set_shading("rendered") return true end
-  if inside(controls.render, x, y) then final.open() return true end
+
+  for _, way in ipairs({ "wire", "solid", "rendered" }) do
+    if inside(controls[way], x, y) then
+      return pk.hold(controls[way], function() set_shading(way) end)
+    end
+  end
+
+  if inside(controls.render, x, y) then return pk.hold(controls.render, final.open) end
 
   for _, t in ipairs(TOOL_LIST) do
-    if t.name and not t.later and inside(controls["tool:" .. t.name], x, y) then
-      if tool ~= t.name then
-        tool = t.name
-        print("cafesa3d: tool " .. tool)
-      end
+    local c = controls["tool:" .. (t.name or "")]
 
-      return true
+    if t.name and not t.later and inside(c, x, y) then
+      return pk.hold(c, function()
+        if tool ~= t.name then
+          tool = t.name
+          print("cafesa3d: tool " .. tool)
+        end
+      end)
     end
   end
 
@@ -4304,10 +4366,23 @@ local function press(x, y)
 
           SCRIPT.focused = true
         elseif x >= SX + SIDE - 36 then
-          will((r.thing.hidden and "showed " or "hid ") .. r.thing.name)
-          r.thing.hidden = not r.thing.hidden
-          sync(r.thing)
-          print(("cafesa3d: %s %s"):format(r.thing.hidden and "hid" or "showed", r.thing.name))
+          -- The eye is a toggle: held, and turned on the release - on the
+          -- row of that name then, as the rows may be made again between.
+          local thing, name = r.thing, r.thing.name
+
+          return pk.hold({ x = SX + SIDE - 36, y = r.y, w = 36, h = ROW }, function()
+            for _, now in ipairs(OUTLINER.rows) do
+              local t = now.thing
+
+              if t and (t == thing or t.name == name) then
+                will((t.hidden and "showed " or "hid ") .. t.name)
+                t.hidden = not t.hidden
+                sync(t)
+                print(("cafesa3d: %s %s"):format(t.hidden and "hid" or "showed", t.name))
+                break
+              end
+            end
+          end)
         else
           select(r.thing)
         end
@@ -4320,7 +4395,10 @@ local function press(x, y)
   if in_view(x, y) then
     local a = gizmo_hit(x, y)
 
-    if a then axis_view(a) return true end
+    if a then
+      return pk.hold({ x = a.x - 10, y = a.y - 10, w = 20, h = 20 },
+                     function() axis_view(a) end)
+    end
 
     local h = handle_at(x, y)
 
@@ -4409,6 +4487,9 @@ local function move(x, y)
 end
 
 local function release(x, y)
+  -- A button held on the press: done if the pointer is still over it.
+  if pk.release(x, y) then return true end
+
   if SCRIPT.pressing then
     local c = controls["script:code"]
 
@@ -4912,7 +4993,9 @@ local function pass()
       -- A press or a release that changed something says where things are
       -- afterwards; they may come in two polls, so each says it for itself.
       if ev.action == "press" then
-        if press(ev.x, ev.y) then dirty, said_where = true, true end
+        -- A press that only holds a button changed nothing yet: drawn
+        -- pressed, and said on the release that does it.
+        if press(ev.x, ev.y) then dirty, said_where = true, not pk.holding() end
       elseif ev.action == "move" then
         dirty = move(ev.x, ev.y) or dirty
       elseif ev.action == "release" then

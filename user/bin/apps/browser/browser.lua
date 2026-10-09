@@ -3340,12 +3340,31 @@ end
 -- document was laid out into, which is `top` pixels above the top of the
 -- view - and `link_at` answers with whatever href covers it.
 --
+-- **A click is a press and a release**: the press holds the link it was
+-- on, and the link is followed on the release only if the pointer is
+-- still on it - let go anywhere else and nothing happens, as in every
+-- browser. A form's button is held the same way, by NetSurf's side
+-- (`ns_click`); a text field takes the caret, and a select opens, on the
+-- press.
+--
 -- Following it is a `visit`, so it joins the history like anything typed.
 --
+local link_held
+
+local function link_under(x, y)
+  if current.ns_doc then
+    return current.doc:ns_link_at(x - VIEW_X - PAD, y - VIEW_Y + current.top)
+  end
+
+  return current.doc:link_at(x - VIEW_X - PAD, y - VIEW_Y + current.top)
+end
+
 local function page_press(x, y)
+  link_held = nil
+
   if not current.doc or not current.paper then return end
 
-  -- A form's field first: a click there is the field's, and a click
+  -- A form's field first: a press there is the field's, and a press
   -- anywhere else takes the caret out of whichever had it.
   if current.ns_doc then
     local did = current.doc:ns_click(x - VIEW_X - PAD, y - VIEW_Y + current.top)
@@ -3357,15 +3376,41 @@ local function page_press(x, y)
     if did then return end
   end
 
-  local href
+  local href = link_under(x, y)
 
+  if href then link_held = { doc = current.doc, href = href } end
+end
+
+local function page_release(x, y)
+  local held = link_held
+
+  link_held = nil
+
+  if not current.doc or not current.paper then return end
+
+  local over = y >= VIEW_Y and y < VIEW_Y + VIEW_H and x >= VIEW_X and x < W - SBAR
+
+  -- A form's button held by the press acts here, over itself; let go
+  -- anywhere else and it is only let go of - at a point on no page.
   if current.ns_doc then
-    href = current.doc:ns_link_at(x - VIEW_X - PAD, y - VIEW_Y + current.top)
-  else
-    href = current.doc:link_at(x - VIEW_X - PAD, y - VIEW_Y + current.top)
+    local did
+
+    if over then
+      did = current.doc:ns_click(x - VIEW_X - PAD, y - VIEW_Y + current.top, true)
+    else
+      did = current.doc:ns_click(-1, -1, true)
+    end
+
+    form_changed()
+
+    if did then return end
   end
 
-  if not href then return end
+  if not over or not held or held.doc ~= current.doc then return end
+
+  local href = link_under(x, y)
+
+  if href ~= held.href then return end
 
   -- The refused page's two links, which are this browser's rather than
   -- anybody's address.
@@ -3458,6 +3503,8 @@ function sink:mouse(action, x, y)
            and x >= W - 10 - gfx.measure(current.timing) then
       breakdown(x)
     end
+  elseif action == "release" then
+    page_release(x, y)
   end
 
   -- Taken, so the kit repaints: `on_paint`, below.

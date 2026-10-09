@@ -1252,6 +1252,78 @@ local function inside_map(x, y)
   return x >= mx and x < mx + mw and y >= my and y < my + mh
 end
 
+-- **A click is a press and a release** (Diego, 9 October 2026: "mouse
+-- click is working in mouse down not in a real click which is mouse
+-- down+mouse up"). A button is held on the press (`pk.hold`) and done on
+-- the release over it; a row or a label is remembered by its place and
+-- gone to on the release if the same place is under the pointer still -
+-- found again then, since rows and labels are made anew on every draw and
+-- a search's answer can rebuild them between the two.
+local clicked_moved = false             -- a held control moved the map
+local place_held = nil                  -- { from = "row" or "label", key = ... }
+
+local function place_key(p)
+  return ("%s@%s,%s"):format(p.name or "", tostring(p.x), tostring(p.y))
+end
+
+local function row_at(x, y)
+  for _, r in ipairs(rows) do
+    if pk.inside(r, x, y) then return r.place end
+  end
+end
+
+local function label_at(x, y)
+  local on_label = nil
+
+  for _, box in ipairs(placed_labels) do
+    if box.place and pk.inside(box, x, y) then on_label = box.place end
+  end
+
+  return on_label
+end
+
+-- The card opened on a place, and it at the top of Recently viewed.
+local function open_card(p)
+  card = p
+  toggle_in(kept.recent, card, 8)
+  if find_in(kept.recent, card) == nil then toggle_in(kept.recent, card, 8) end
+  keep()
+  print("maps: card " .. card.name)
+end
+
+-- The button come up: a held control done if it is under the pointer, a
+-- held place gone to if it is the same one. True when there is anything
+-- to draw again.
+local function release(x, y)
+  if pk.release(x, y) then return true end
+
+  if place_held then
+    local held = place_held
+    local p = nil
+
+    place_held = nil
+
+    if held.from == "row" then
+      p = sidebar and x < SIDE_W and row_at(x, y)
+    else
+      p = inside_map(x, y) and label_at(x, y)
+    end
+
+    if p and place_key(p) == held.key then
+      if held.from == "row" then
+        go_to(p)
+        clicked_moved = true
+      else
+        open_card(p)
+      end
+    end
+
+    return true
+  end
+
+  return false
+end
+
 local function key(c)
   local k, mods = keys.parts(c)
   local step = 120
@@ -1355,62 +1427,62 @@ while win.running do
 
         last_press, last_x, last_y = t, x, y
 
+        -- The buttons are held, and done on the release over them; the
+        -- dots open their menu on the press, as a menu does.
         if pk.inside(side_button, x, y) then
-          toggle_sidebar()
+          pk.hold(side_button, toggle_sidebar)
           dirty = true
         elseif pk.inside(dots, x, y) then
           dots_menu()
         elseif y < L.head then
           win:take_hold(x, y)
         elseif card and pk.inside(close_button, x, y) then
-          card = nil
+          pk.hold(close_button, function() card = nil end)
           dirty = true
         elseif card and pk.inside(save_button, x, y) then
-          local now = toggle_in(kept.saved, card, 50)
-          keep()
-          print(("maps: %s %s"):format(now and "saved" or "unsaved", card.name))
+          pk.hold(save_button, function()
+            if not card then return end
+
+            local now = toggle_in(kept.saved, card, 50)
+            keep()
+            print(("maps: %s %s"):format(now and "saved" or "unsaved", card.name))
+          end)
           dirty = true
         elseif card and pk.inside(pin_button, x, y) then
-          local now = toggle_in(kept.pinned, card, 4)
-          keep()
-          print(("maps: %s %s"):format(now and "pinned" or "unpinned", card.name))
+          pk.hold(pin_button, function()
+            if not card then return end
+
+            local now = toggle_in(kept.pinned, card, 4)
+            keep()
+            print(("maps: %s %s"):format(now and "pinned" or "unpinned", card.name))
+          end)
           dirty = true
         elseif pk.inside(zoom_in, x, y) then
-          zoom_by(1)
-          dirty, moved = true, true
+          pk.hold(zoom_in, function() zoom_by(1) clicked_moved = true end)
         elseif pk.inside(zoom_out, x, y) then
-          zoom_by(-1)
-          dirty, moved = true, true
+          pk.hold(zoom_out, function() zoom_by(-1) clicked_moved = true end)
         elseif sidebar and x < SIDE_W then
+          -- The field takes the caret on the press; a row goes to its
+          -- place on the release.
           search_focused = pk.inside(search, x, y)
 
-          for _, r in ipairs(rows) do
-            if pk.inside(r, x, y) then
-              go_to(r.place)
-              moved = true
-            end
-          end
+          local p = row_at(x, y)
+
+          if p then place_held = { from = "row", key = place_key(p) } end
 
           dirty = true
         elseif inside_map(x, y) then
           search_focused = false
 
-          local on_label = nil
+          local on_label = label_at(x, y)
 
-          for _, box in ipairs(placed_labels) do
-            if box.place and pk.inside(box, x, y) then on_label = box.place end
-          end
-
+          -- A double press zooms on the second press, and a press
+          -- anywhere else on the map begins a pan.
           if double then
             zoom_by(1, x, y)
             dirty, moved = true, true
           elseif on_label then
-            card = on_label
-            toggle_in(kept.recent, card, 8)
-            if find_in(kept.recent, card) == nil then toggle_in(kept.recent, card, 8) end
-            keep()
-            print("maps: card " .. card.name)
-            dirty = true
+            place_held = { from = "label", key = place_key(on_label) }
           else
             dragging = { x = x, y = y }
           end
@@ -1420,6 +1492,13 @@ while win.running do
         dragging.x, dragging.y = x, y
         dirty, moved = true, true
       elseif ev.action == "release" then
+        if release(x, y) then dirty = true end
+
+        if clicked_moved then
+          clicked_moved = false
+          moved = true
+        end
+
         -- Where a drag ended is said once it has, as a zoom's is.
         if dragging then dirty, moved = true, true end
         dragging = nil

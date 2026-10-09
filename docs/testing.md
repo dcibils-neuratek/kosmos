@@ -22079,3 +22079,37 @@ entry: the window was raised and the bar drew nothing (`x86-display-3`,
 The whole gate, 57 - `x86-display-3` once more after the fix. `x86-dock` 53:
 the Kosmos button pressed and slid off opens nothing. **Control**: the
 button on the press, the launcher opens and it fails.
+
+**Step 3 (0.11.100): every other application.** Done by four agents side by
+side, each on its own files, and built and gated once:
+
+- **Cafesa3D**: its buttons, toggles, shading, Render, the tools, the chips,
+  Duplicate, the Script panel's buttons, the Outliner's eye, the axis ball,
+  and the Render window's two - each held and drawn held on the press, done
+  on the release. Controls are one table each now, so a held one is drawn
+  pressed. A press that only holds no longer counts as a change, so the
+  places are said on the release that changed something - found by the
+  gate: `x86-cafesa3d-1` read the press's line where it wanted "hid Gold".
+- **Maps** (sidebar, close, Save, Pin, zoom, a row, a label - found again by
+  name and place at the release), **Camera** (Record; its `h` was missing,
+  so a press at Record's height would have raised an error - fixed),
+  **Video** and `play` (play, pause, the badge, the picture), **Paint**
+  (colours, sizes, smoothing), **PDF** (its bar).
+- **The browser**: a link followed, and a checkbox, radio button, submit or
+  image button acted on, on the release over the same one (`ns_click`'s
+  release, `web_netsurf.c`); a text field still takes the caret on the
+  press.
+- **Groove**: every `U.button` on the release over itself, as an immediate
+  mode does it (the button held as the active one); knobs, faders, number
+  boxes, the drum pads and painting the grids on the press; the menu's
+  rows on the release; launching a clip or a scene on the release - asked
+  of Diego, since Ableton launches on the press.
+- **Processes**' headings, **Connect**'s recent rows, **Preferences**' looks,
+  the **IDE**'s Problems, Output, Search and found lists, **Mixer**'s mute, a
+  checklist's box in `docview`, and **Music**'s transport (one view of
+  seven: each its own now, so a press on Play let go over Shuffle shuffles
+  nothing). **Drives** and **Music**'s lists keep choosing on the press.
+
+The whole gate, 57 (Cafesa3D's two again after the fix); the AArch64 image
+builds. `x86-sysapps` 25: a Processes heading pressed and slid off sorts
+nothing. **Control**: the heading on the press, it fails.

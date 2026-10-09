@@ -78,6 +78,7 @@ if not win or not win:surface() then print("play: no window") return end
 film:play(0)
 
 local showing = nil
+local badge_held = false               -- the press was on the kit's badge
 
 while win.running do
   film:tick()
@@ -120,9 +121,13 @@ while win.running do
       -- Space, as every player has it.
       if film:playing() then film:pause() else film:play() end
     elseif ev.type == "mouse" and not ev.menu and ev.action == "press" then
-      -- The kit's badge, if the click was on it; otherwise this film has
-      -- nothing to say about where it was pressed.
-      film:pointer(ev.x, ev.y)
+      -- The kit's badge, if the press was on it: held, and opened or closed
+      -- on the release over it. Anywhere else this film has nothing to say
+      -- about where it was pressed.
+      badge_held = film:badge_at(ev.x, ev.y)
+    elseif ev.type == "mouse" and not ev.menu and ev.action == "release" then
+      if badge_held then film:pointer(ev.x, ev.y) end
+      badge_held = false
     end
   end
 

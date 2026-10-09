@@ -106,13 +106,20 @@ local drive_rows = ui.view{
     end
   end,
 
-  on_click = function(self, x, y)
+  -- A drive is chosen on the press, as a row is everywhere: the kit's
+  -- `on_click` waits for the release (Diego, 9 October: a click is a press
+  -- and a release), and choosing is not a click's action but a selection.
+  mouse = function(self, action, x, y)
+    if action ~= "press" then return true end
+
     local i = (y - ROW - 1) // ROW + 1
 
     if drives[i] then
       chosen, part = i, 1
       win:paint()
     end
+
+    return true
   end,
 }
 
@@ -171,10 +178,13 @@ local map = ui.view{
     end
   end,
 
-  on_click = function(self, x)
+  -- A partition is chosen on the press, as the rows below choose it.
+  mouse = function(self, action, x)
+    if action ~= "press" then return true end
+
     local d = drive_of()
 
-    if not d or #d.volumes == 0 then return end
+    if not d or #d.volumes == 0 then return true end
 
     local count = #d.volumes + (((d.unclaimed or 0) > 1024 * 1024) and 1 or 0)
     local i = x // ((self.w + 7) // count) + 1
@@ -183,6 +193,8 @@ local map = ui.view{
       part = i
       win:paint()
     end
+
+    return true
   end,
 }
 
@@ -228,7 +240,10 @@ local part_rows = ui.view{
     end
   end,
 
-  on_click = function(self, x, y)
+  -- A partition's row is chosen on the press, as the drives' rows are.
+  mouse = function(self, action, x, y)
+    if action ~= "press" then return true end
+
     local d = drive_of()
     local i = (y - ROW - 1) // ROW + 1
 
@@ -236,6 +251,8 @@ local part_rows = ui.view{
       part = i
       win:paint()
     end
+
+    return true
   end,
 }
 

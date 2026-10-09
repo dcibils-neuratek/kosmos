@@ -458,15 +458,19 @@ end
 
 --
 -- A click on the bar is a place to go; the knob is drawn on it and is not a
--- separate thing to hit.
+-- separate thing to hit. On the press, as a slider moves: the kit's
+-- `on_click` waits for the release (Diego, 9 October: a click is a press
+-- and a release), and a place on a bar is not a button.
 --
-function now:on_click(x, y)
-  if not player or y < SEEK_Y - 6 or y > SEEK_Y + 12 then return end
+function now:mouse(action, x, y)
+  if action ~= "press" then return true end
+  if not player or y < SEEK_Y - 6 or y > SEEK_Y + 12 then return true end
 
   local frac = math.max(0, math.min(1, (x - PAD) / (self.w - PAD * 2)))
 
   player:seek(frac * (player.info.seconds or 0))
   win:paint()
+  return true
 end
 
 --------------------------------------------------------------------------
@@ -507,11 +511,10 @@ function transport:draw(g)
          math.floor((self.w - PAD * 2 - 22) * 0.72), 3, P.dim)
 end
 
-function transport:on_click(x, y)
-  if y > TRANS_H then return end
-
-  local which = math.min(7, math.max(1, math.floor(x / (W / 7)) + 1))
-
+-- One of the seven, pressed: done on the release over the same one - a click
+-- is a press and a release (Diego, 9 October, "in all kosmos"), and one view
+-- holds all seven, so the slot is the thing held.
+local function transport_act(which)
   if which == 4 then
     if player then
       if player.playing then player:pause() else player:play() end
@@ -544,6 +547,16 @@ function transport:on_click(x, y)
   end
 
   win:paint()
+end
+
+function transport:mouse(action, x, y)
+  return ui.click(self, action, x, y, function(px, py)
+    if py > TRANS_H then return nil end
+
+    local which = math.min(7, math.max(1, math.floor(px / (W / 7)) + 1))
+
+    return which, function() transport_act(which) end
+  end)
 end
 
 --------------------------------------------------------------------------
@@ -620,7 +633,11 @@ function list:draw(g)
   end
 end
 
-function list:on_click(x, y)
+-- A song is chosen on the press, as a row is everywhere: choosing is a
+-- selection, not a click's action, so it does not wait for the release.
+function list:mouse(action, x, y)
+  if action ~= "press" then return true end
+
   local i = math.floor(y / ROW_H) + 1
 
   if tracks[i] then
@@ -628,6 +645,8 @@ function list:on_click(x, y)
     cover_for(i)
     win:paint()
   end
+
+  return true
 end
 
 local foot = ui.view{ x = 0, y = H - FOOT_H, w = W, h = FOOT_H }
