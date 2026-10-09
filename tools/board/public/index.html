@@ -54,6 +54,10 @@ nav.views button[aria-current="page"] { background: var(--raised); color: var(--
 .search { flex: 1 1 220px; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--ground); color: var(--dim); min-width: 0; }
 .search input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; }
 .me { display: flex; gap: 6px; align-items: center; }
+.needsyou { height: 36px; padding: 0 14px; border-radius: 999px; border: 0; background: var(--amber); color: var(--on); font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.needlist { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.needlist li button { width: 100%; display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; align-items: baseline; text-align: left; padding: 12px 14px; border-radius: 12px; background: var(--amber-ground); border: 1px solid var(--amber-line); }
+.needlist .kind { font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--amber); }
 
 /* Claude's strip */
 .strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 12px 20px 0; padding: 11px 14px; border-radius: 12px; background: var(--claude-ground); border: 1px solid var(--claude-line); }
@@ -75,9 +79,20 @@ nav.views button[aria-current="page"] { background: var(--raised); color: var(--
 .chip[aria-pressed="true"] { border-color: var(--accent); background: var(--raised); }
 .chip .n { color: var(--dim); font-variant-numeric: tabular-nums; }
 .boardwrap { display: flex; flex-wrap: wrap; gap: 18px; padding: 4px 20px 28px; align-items: flex-start; }
-.columns { flex: 999 1 760px; min-width: 0; overflow-x: auto; padding-bottom: 8px; }
-.cols { display: grid; grid-auto-flow: column; grid-auto-columns: 272px; gap: 14px; align-items: start; }
-.col { background: var(--bar); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; min-height: 420px; }
+/* The board fits the window: each column scrolls its own cards, and the
+   columns scroll sideways under a bar that is always shown (a Mac hides an
+   overlay scroll bar until it is used, and at the foot of the longest
+   column it was 143 cards down). --above is measured when drawn. */
+.columns { flex: 999 1 760px; min-width: 0; overflow-x: scroll; overflow-y: hidden; padding-bottom: 6px;
+  height: calc(100dvh - var(--above, 260px) - 16px); min-height: 360px;
+  scrollbar-color: #4a5770 var(--bar); }
+.columns::-webkit-scrollbar { height: 14px; }
+.columns::-webkit-scrollbar-track { background: var(--bar); border-radius: 7px; }
+.columns::-webkit-scrollbar-thumb { background: #4a5770; border-radius: 7px; border: 3px solid var(--bar); }
+.columns::-webkit-scrollbar-thumb:hover { background: #6a7a96; }
+.cols { display: grid; grid-auto-flow: column; grid-auto-columns: 272px; gap: 14px; height: 100%; }
+.col { background: var(--bar); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; min-height: 0; }
+.col .list { flex: 1 1 auto; overflow-y: auto; min-height: 0; scrollbar-width: thin; scrollbar-color: #3a4558 transparent; }
 .col.over { border-color: var(--accent); }
 .colhead { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; }
 .colhead h2 { margin: 0; font: 600 16px var(--display); letter-spacing: .02em; }
@@ -103,6 +118,7 @@ nav.views button[aria-current="page"] { background: var(--raised); color: var(--
 .coltabs button.over { border-color: var(--accent); background: var(--claude-ground); }
 
 /* a card, opened */
+.boardwrap { padding-bottom: 12px !important; }
 .panel { flex: 1 1 340px; max-width: 440px; min-width: 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 80px; max-height: calc(100vh - 100px); overflow-y: auto; }
 .panel h3 { margin: 0; }
 .panel .titlefield { font: 600 21px/1.2 var(--display); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 2px 4px; width: 100%; }
@@ -171,7 +187,9 @@ table.dec td { padding: 12px 14px; border-top: 1px solid var(--line); vertical-a
   .chips { padding: 10px 14px; }
   .boardwrap { padding: 4px 14px 24px; }
   .coltabs { display: flex; padding: 0 14px 10px; }
-  .cols { grid-auto-flow: row; grid-auto-columns: auto; }
+  .columns { height: auto; overflow: visible; }
+  .cols { grid-auto-flow: row; grid-auto-columns: auto; height: auto; }
+  .col .list { overflow: visible; }
   .col { display: none; min-height: 0; }
   .col.shown { display: flex; }
   .panel { position: fixed; inset: auto 0 0 0; max-width: none; max-height: 82vh; border-radius: 16px 16px 0 0; z-index: 40; padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
@@ -317,6 +335,10 @@ async function poll() {
   } catch (e) {}
 }
 setInterval(poll, 15000);
+window.addEventListener("resize", () => {
+  const c = document.querySelector(".columns");
+  if (c) document.documentElement.style.setProperty("--above", Math.round(c.getBoundingClientRect().top + window.scrollY) + "px");
+});
 document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
 
 // ---- The key ----------------------------------------------------------------
@@ -353,8 +375,32 @@ function header() {
       onclick: () => { S.view = k; try { localStorage.setItem("kosmos-board-view", k); } catch (e) {} render(); } }, n,
       k === "discussions" && waitingCount("discussions") ? el("span", { class: "dot", style: "background:var(--amber);margin-left:6px" }) : null))),
     el("label", { class: "search" }, el("span", { "aria-hidden": "true", text: "⌕" }), search),
+    needs().length ? el("button", { class: "needsyou", type: "button", "aria-current": S.view === "needs" ? "page" : null,
+      onclick: () => { S.view = "needs"; render(); } }, el("span", { class: "dot", style: "background:var(--on)" }), "Needs you · " + needs().length) : null,
     el("button", { class: "btn go", type: "button", onclick: () => newCardSheet() }, "New card"),
     el("span", { class: "me" }, badge(S.me || "?"), el("button", { class: "btn quiet", type: "button", title: "Forget this device's key", onclick: forgetKey }, "Sign out")));
+}
+
+// Everything waiting on Diego, in one list: Claude stopped for him, the
+// questions open, and the cards and discussions where Claude asked.
+function needs() {
+  const out = [];
+  const now = S.now || {};
+  if (now.state === "waiting") out.push({ kind: "Claude waits", text: now.waiting || now.step || "Claude is waiting", go: () => now.card ? openCard(now.card) : (S.view = "queue", render()) });
+  const w = (S.waiting && S.waiting.diego) || {};
+  for (const d of w.decisions || []) out.push({ kind: "Decision", text: d.question + (d.card ? " · " + titleOf(d.card) : ""), go: () => { S.view = "decisions"; render(); } });
+  for (const c of w.cards || []) out.push({ kind: "Card", text: c.title, go: () => openCard(c.id) });
+  for (const d of w.discussions || []) out.push({ kind: "Discussion", text: d.title, go: () => { S.view = "discussions"; openDiscussion(d.id); } });
+  return out;
+}
+
+function needsPage() {
+  const list = needs();
+  return el("main", { class: "page" },
+    el("h1", { class: "h", text: "Waiting for you" }),
+    el("p", { class: "sub", style: "margin:0", text: "What Claude has stopped for, the questions it asked, and the cards and discussions where it wants your answer. Prompts inside Claude Code itself are not here." }),
+    list.length ? el("ol", { class: "needlist" }, list.map((n) => el("li", {}, el("button", { type: "button", onclick: n.go }, el("span", { class: "kind", text: n.kind }), el("span", { text: n.text })))))
+      : el("p", { class: "empty", text: "Nothing is waiting for you." }));
 }
 
 function waitingCount(kind) {
@@ -687,6 +733,9 @@ function dragMove(e) {
     const list = under && under.closest(".list");
     if (!list) return;
     list.closest(".col").classList.add("over");
+    const lr = list.getBoundingClientRect();
+    if (e.clientY > lr.bottom - 40) list.scrollTop += 14;
+    if (e.clientY < lr.top + 40) list.scrollTop -= 14;
     placeAmong(list, ".cardbox:not([hidden])", e.clientY, list.querySelector(".more, .addcard"));
   } else {
     const list = document.querySelector(".qlist");
@@ -951,10 +1000,15 @@ function renderMain() {
   if (!main) return render();
   const scroll = document.querySelector(".columns");
   const left = scroll ? scroll.scrollLeft : 0;
-  const view = S.view === "queue" ? queue() : S.view === "discussions" ? discussions() : S.view === "decisions" ? decisions() : S.view === "api" ? apiPage() : board();
+  const tops = Object.fromEntries([...document.querySelectorAll(".col .list")].map((l) => [l.dataset.col, l.scrollTop]));
+  const view = S.view === "queue" ? queue() : S.view === "discussions" ? discussions() : S.view === "decisions" ? decisions() : S.view === "api" ? apiPage() : S.view === "needs" ? needsPage() : board();
   main.replaceChildren(view);
   const again = document.querySelector(".columns");
-  if (again) again.scrollLeft = left;
+  if (again) {
+    again.scrollLeft = left;
+    document.querySelectorAll(".col .list").forEach((l) => { l.scrollTop = tops[l.dataset.col] || 0; });
+    document.documentElement.style.setProperty("--above", Math.round(again.getBoundingClientRect().top + window.scrollY) + "px");
+  }
 }
 
 function render() {

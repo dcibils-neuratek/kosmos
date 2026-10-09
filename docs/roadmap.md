@@ -8310,6 +8310,12 @@ headless Chrome from `test_board.py` (84). **B3 and B4 done** the same
 day: Diego's Cloudflare login, the database made, the live list imported
 (494 cards, the queue, ten decisions), Claude's key, and - Diego's yes -
 deployed to the board's address (kept on the Mac, ~/.config/kosmos-board/url). B5 from now on.
+The same afternoon, asked "how do i know in kosmosboard if claude code is
+waiting for me": **Needs you**, one amber button in the header counting
+what Claude stopped for, the open questions, and the cards and discussions
+where Claude asked, listed together; and - "it needs a horizontal
+scrollbar" - the board fitted to the window, each column scrolling its own
+cards under a sideways bar always shown (`test_board.py` 87).
 
 ### The optimisation phase - after the applications
 

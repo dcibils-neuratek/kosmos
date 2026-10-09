@@ -10,7 +10,8 @@
 // out of Up next; a card dragged with the mouse from Ideas to Agreed and
 // back again, and above another in its column, each kept by the board; a
 // card opened shows its picture, fetched with the key; a note sent from
-// the card; and an entry in Claude's queue dragged above another. Prints
+// the card; an entry in Claude's queue dragged above another; and Needs you
+// counting and listing what waits for Diego. Prints
 // one line a failure and "checks N" at the end; exits 1 on any failure.
 
 import { spawn } from "node:child_process";
@@ -70,13 +71,14 @@ async function js(expression) {
   return r.result.result.value;
 }
 
+// `what` empty: the caller says what failed, once it has looked.
 async function until(expression, what, ms = 8000) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
     try { if (await js(expression)) return true; } catch (e) {}
     await sleep(100);
   }
-  check(false, what);
+  if (what) check(false, what);
   return false;
 }
 
@@ -118,6 +120,8 @@ try {
   const second = await made("Page test: agreed second", "agreed");
   const hand = await made("Page test: in hand", "next");
   const after = await made("Page test: after it", "next");
+  // A column longer than the window, as Done is on the real board.
+  for (let i = 1; i <= 30; i++) await made("Page test: done " + i, "done");
   await api("PUT", "/api/now", { state: "working", card: hand, step: "the page's test" }, CLAUDE);
   const task = (await api("POST", "/api/queue", { title: "Page test: a task" })).queue.find((q) => q.title === "Page test: a task").id;
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGNkYPjPwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==", "base64");
@@ -132,6 +136,11 @@ try {
   await send("Page.reload");
   await until(`document.querySelectorAll(".col").length === 6`, "with a key the six columns were not drawn");
   await until(`!!document.querySelector('.list[data-col="ideas"] .cardbox[data-id="${idea}"]')`, "a card in Ideas was not in the Ideas column");
+  check(await js(`(() => { const c = document.querySelector(".columns"), r = c.getBoundingClientRect();
+    const done = document.querySelector('.list[data-col="done"]');
+    return r.bottom <= innerHeight && done.scrollHeight > done.clientHeight && c.scrollWidth > c.clientWidth && getComputedStyle(c).overflowX === "scroll"; })()`),
+    "the board did not end inside the window with its columns scrolling sideways");
+  check(await js(`getComputedStyle(document.querySelector(".col .list")).overflowY === "auto"`), "a column does not scroll its own cards");
   check(await js(`document.querySelector(".strip .on")?.textContent === "Page test: in hand"`), "Claude's strip did not name the card in hand");
   const ahead = (await api("GET", "/api/queue")).queue.filter((q) => q.card !== hand);
   check(await js(`(() => { const t = document.querySelector(".strip .next")?.textContent || ""; return t.startsWith("Up next " + ${JSON.stringify(ahead[0].title)}) && !t.includes("in hand"); })()`),
@@ -176,6 +185,22 @@ try {
   await drag(from, { x: from.x, y: afterBox.top + 4 });
   const order = (await api("GET", "/api/queue")).queue.map((q) => q.id);
   check(order.indexOf(task) < order.indexOf(afterEntry), "a queue entry dragged above another was not kept above it: " + JSON.stringify(order));
+
+  // What waits for Diego, in one place: Claude stopped for him, a question,
+  // and a card where Claude asked.
+  await api("PUT", "/api/now", { state: "waiting", card: hand, step: "the page's test", waiting: "Diego's answer" }, CLAUDE);
+  await api("POST", "/api/decisions", { card: second, question: "Page test: which one?", options: ["This", "That"] }, CLAUDE);
+  await api("POST", "/api/cards/" + idea + "/notes", { text: "Page test: shall I?", asks: true }, CLAUDE);
+  const w = (await api("GET", "/api/waiting")).diego;
+  const owed = 1 + w.decisions.length + w.cards.length + w.discussions.length;
+  await send("Page.reload");
+  await until(`!!document.querySelector("header.top")`, "the page did not come back after a reload");
+  await until(`document.querySelector(".needsyou")?.textContent === "Needs you · ${owed}"`, "", 4000) ||
+    check(false, "the header did not say Needs you · " + owed + ": " + await js(`document.querySelector(".needsyou")?.textContent || "no button"`));
+  await js(`document.querySelector(".needsyou").click(); true`);
+  await until(`document.querySelectorAll(".needlist li").length === ${owed}`, "Needs you did not list " + owed + " things");
+  check(await js(`(() => { const t = document.querySelector(".needlist").textContent; return t.includes("Diego's answer") && t.includes("Page test: which one?") && t.includes("Page test: an idea"); })()`),
+    "Needs you did not list Claude's wait, the question and the card");
 
   check(!thrown.length, "the page threw: " + JSON.stringify(thrown));
 } catch (e) {
