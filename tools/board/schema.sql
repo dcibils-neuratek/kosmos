@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS cards (
   created     TEXT NOT NULL,
   updated     TEXT NOT NULL,
   updated_by  TEXT NOT NULL DEFAULT '',
-  removed     TEXT                          -- set when removed; kept 30 days
+  removed     TEXT,                         -- set when removed; kept 30 days
+  discussion  INTEGER                       -- the discussion it came from, if one
 );
 
 CREATE INDEX IF NOT EXISTS cards_col ON cards (col, rank);
@@ -29,7 +30,8 @@ CREATE TABLE IF NOT EXISTS notes (
   card  TEXT NOT NULL,
   text  TEXT NOT NULL,
   author TEXT NOT NULL,
-  at    TEXT NOT NULL
+  at    TEXT NOT NULL,
+  asks  INTEGER NOT NULL DEFAULT 0          -- Claude asking Diego something: his reply is awaited
 );
 
 CREATE INDEX IF NOT EXISTS notes_card ON notes (card, at);
@@ -96,3 +98,34 @@ CREATE TABLE IF NOT EXISTS queue (
   added     TEXT NOT NULL,
   added_by  TEXT NOT NULL
 );
+
+-- Discussions: ideas talked through in order before they are cards
+-- (Diego, 9 October: "a discussions page where we can brainstorm ideas in
+-- an orderly way and structure that then the become features"). A stage
+-- - open, shaping, ready, became, parked - the idea in Diego's words and
+-- what it is for, a summary Claude keeps, the options with what each gains
+-- and costs, the questions still open, and the conversation.
+CREATE TABLE IF NOT EXISTS discussions (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  title     TEXT NOT NULL,
+  idea      TEXT NOT NULL DEFAULT '',
+  purpose   TEXT NOT NULL DEFAULT '',
+  stage     TEXT NOT NULL DEFAULT 'open',
+  summary   TEXT NOT NULL DEFAULT '',
+  options   TEXT NOT NULL DEFAULT '[]',     -- [{ name, plus, minus, recommended, chosen }]
+  questions TEXT NOT NULL DEFAULT '[]',     -- the questions still open
+  created   TEXT NOT NULL,
+  author    TEXT NOT NULL,
+  updated   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  discussion  INTEGER NOT NULL,
+  text        TEXT NOT NULL,
+  author      TEXT NOT NULL,
+  at          TEXT NOT NULL,
+  asks        INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS messages_discussion ON messages (discussion, at);

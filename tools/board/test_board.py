@@ -57,7 +57,8 @@ def main():
 
     keyfile = os.path.join(state, "test.key")
     other = os.path.join(state, "other.key")
-    for name, path in (("Test", keyfile), ("Other", other)):
+    claudefile = os.path.join(state, "claude.key")
+    for name, path in (("Test", keyfile), ("Other", other), ("Claude", claudefile)):
         k = subprocess.run([sys.executable, "keys.py", "--local", "--persist-to", state, "make", name, "--to", path],
                            cwd=HERE, capture_output=True, text=True)
         if k.returncode != 0:
@@ -220,6 +221,53 @@ def main():
         call("POST", "/api/cards/%s/move" % m6, {"column": "done"})
         check(order() == [], "a done card stayed in the queue: %r" % order())
 
+        # Talking on a card: Diego's word waits for Claude; Claude's answer
+        # waits for nobody unless it asks.
+        claude = open(claudefile).read().strip()
+
+        def talk(card_id):
+            return next(c["talk"] for c in call("GET", "/api/cards")[1]["cards"] if c["id"] == card_id)
+
+        call("POST", "/api/cards/%s/notes" % d2, {"text": "Could the split wait until Mail is done?"})
+        check(talk(d2) == "claude", "Diego's word does not wait for Claude: %r" % talk(d2))
+        call("POST", "/api/cards/%s/notes" % d2, {"text": "Yes - it is after Mail in the queue."}, auth=claude)
+        check(talk(d2) is None, "Claude's plain answer waits for someone: %r" % talk(d2))
+        call("POST", "/api/cards/%s/notes" % d2, {"text": "Which comes first, D1's questions or D2?", "asks": True}, auth=claude)
+        check(talk(d2) == "diego", "Claude's question does not wait for Diego: %r" % talk(d2))
+
+        # A discussion: started, answered, shaped, made a card.
+        s, b = call("POST", "/api/discussions", {"title": "A radio from my own library",
+                                                 "idea": "music that learns what I skip", "for": "music all day"})
+        check(s == 201 and b["discussion"]["stage"] == "open" and len(b["messages"]) == 1
+              and b["discussion"]["talk"] == "claude", "a discussion started: %r" % ((s, b),))
+        did = b["discussion"]["id"]
+        s, b = call("POST", "/api/discussions/%d/messages" % did, {"text": "From skips, or from the sound?", "asks": True}, auth=claude)
+        check(s == 201 and b["discussion"]["talk"] == "diego", "Claude's question in a discussion: %r" % b["discussion"])
+        s, b = call("GET", "/api/waiting")
+        check([x["id"] for x in b["diego"]["discussions"]] == [did] and [x["id"] for x in b["diego"]["cards"]] == [d2],
+              "what waits for Diego: %r" % b)
+        call("POST", "/api/discussions/%d/messages" % did, {"text": "From skips."})
+        s, b = call("GET", "/api/waiting")
+        check([x["id"] for x in b["claude"]["discussions"]] == [did], "what waits for Claude: %r" % b)
+        s, b = call("PATCH", "/api/discussions/%d" % did, {
+            "stage": "shaping", "summary": "A playlist kit, fed by plays and skips.",
+            "options": [{"name": "Skips", "plus": "day one", "minus": "learns slowly", "recommended": True},
+                        {"name": "Sound", "plus": "good at once", "minus": "slow to build"}],
+            "questions": ["Ever the network?"]}, auth=claude)
+        d = b["discussion"]
+        check(s == 200 and d["stage"] == "shaping" and d["options"][0]["recommended"] and d["questions"] == ["Ever the network?"],
+              "a discussion shaped: %r" % ((s, b),))
+        s, b = call("PATCH", "/api/discussions/%d" % did, {"stage": "someday"})
+        check(s == 400 and "stage" in b["error"], "an unknown stage taken: %r" % ((s, b),))
+        s, b = call("POST", "/api/discussions/%d/cards" % did, {"title": "Playlist kit", "column": "agreed", "area": "Audio"})
+        check(s == 201 and b["discussion"]["stage"] == "became" and len(b["cards"]) == 1, "a card made from it: %r" % ((s, b),))
+        made = b["cards"][0]["id"]
+        s, b = call("GET", "/api/cards/" + made)
+        check(b["card"]["discussion"] == did and b["card"]["detail"] == "A playlist kit, fed by plays and skips.",
+              "the card is not linked to its discussion: %r" % b["card"])
+        s, b = call("GET", "/api/discussions?stage=became")
+        check([x["id"] for x in b["discussions"]] == [did], "discussions by stage: %r" % b)
+
         s, md = call("GET", "/api/export.md")
         check(s == 200 and "## Next (1)" in md and "## Done (1)" in md and "**Astra split D2**" in md and "not yet in roadmap.md" in md,
               "the Markdown export: %r" % md[:300])
@@ -254,7 +302,8 @@ def main():
     print("PASS: %d checks on the Kosmos Board's API (no key and a withdrawn key refused; cards made, "
           "ordered, moved, edited, noted and removed; decisions asked and answered onto their card; "
           "changes since a time, signed; what Claude is doing now, its since held per card; Claude's queue fed, ordered, "
-          "emptied and taken from; the Markdown "
+          "emptied and taken from; who owes a reply on a card; a discussion started, answered, shaped "
+          "and made a card; the Markdown "
           "export; bad bodies refused)." % checks)
     return 0
 

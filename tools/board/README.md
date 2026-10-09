@@ -29,6 +29,16 @@ of, and adds to, and from whose top Claude takes the next piece when a card
 is done. A queued card is in Next, in the queue's order; one taken out goes
 back to Agreed; one done, parked or removed leaves it.
 
+**And where ideas are talked through first: Discussions** (Diego, 9
+October: "a discussions page where we can brainstorm ideas in an orderly way
+and structure that then the become features"), and **talk on any card**
+from any device ("write a thought on a card from your phone, Claude answers
+on the card"). A discussion goes open, shaping, ready, then becomes cards
+or is parked; it holds the idea in Diego's words, what it is for, a summary
+Claude keeps, the options with what each gains and costs, and the questions
+still open. Who owes a reply is worked out from the last word: Diego's
+waits for Claude, and Claude's waits for Diego only when it asks.
+
 `docs/roadmap.md` stays the record, with the reasoning; the board is where
 the work is moved and decided, and what changes there is written back.
 
@@ -46,7 +56,7 @@ the name of the key that made it.
 | GET | `/api/cards/:id` | one card, its notes, its history, its decisions |
 | PATCH | `/api/cards/:id` | `title`, `area`, `ref`, `detail`, `quote`, `in_roadmap` |
 | POST | `/api/cards/:id/move` | `{ column, before }`: into a column, before a card or last |
-| POST | `/api/cards/:id/notes` | `{ text }` |
+| POST | `/api/cards/:id/notes` | `{ text, asks }`: a card's talk; `asks` when Claude awaits Diego's reply |
 | DELETE | `/api/cards/:id` | removed, kept to bring back |
 | GET | `/api/decisions?open=true` | the questions, open or all |
 | POST | `/api/decisions` | `{ card, question, options }` |
@@ -58,6 +68,13 @@ the name of the key that made it.
 | POST | `/api/queue/:id/move` | `{ before }`, `{ top: true }`, or last |
 | DELETE | `/api/queue/:id` | out of the queue; a card waiting in Next goes back to Agreed |
 | POST | `/api/queue/take` | Claude takes the top: it becomes now, its card Building |
+| GET | `/api/discussions?stage=` | open, shaping, ready, became, parked |
+| POST | `/api/discussions` | `{ title, idea, for }` - the idea is its first message |
+| GET | `/api/discussions/:id` | with its summary, options, open questions, conversation and cards |
+| PATCH | `/api/discussions/:id` | `stage`, `summary`, `options`, `questions`, `title`, `idea`, `for` |
+| POST | `/api/discussions/:id/messages` | `{ text, asks }` |
+| POST | `/api/discussions/:id/cards` | a card made from it, linked both ways; it has become cards |
+| GET | `/api/waiting` | what waits for a reply from Claude, and from Diego |
 | GET | `/api/changes?since=` | everything changed since a time |
 | GET | `/api/export.md` | the board as Markdown |
 

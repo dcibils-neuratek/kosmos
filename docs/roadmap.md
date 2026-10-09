@@ -8286,6 +8286,14 @@ lay out the work plan beyond the kanban cards", "The kanban basically
 nurtures the queue" - so **Claude's queue**: cards and tasks in order, fed
 from the board, reordered and emptied by Diego, taken from the top by
 Claude; a queued card is Next (`test_board.py` 43).
+Then, asked where things are discussed before they become features: here,
+in the session, and - "Yes do that", "I love the idea of a discussions
+page where we can brainstorm ideas in an orderly way and structure that
+then the become features" - **Discussions** on the board (open, shaping,
+ready, became cards, parked; the idea, what it is for, a summary Claude
+keeps, options with gains and costs, open questions, the conversation,
+Make it a card) and **talk on any card** from any device, Claude answering
+there; `/api/waiting` says who owes a reply (`test_board.py` 55).
 
 ### The optimisation phase - after the applications
 

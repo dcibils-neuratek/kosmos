@@ -11,7 +11,11 @@
 // that made it, and a key is withdrawn without touching the others.
 
 const COLUMNS = ["ideas", "agreed", "next", "building", "done", "parked"];
-const LIMITS = { title: 200, detail: 4000, quote: 400, area: 40, ref: 60, note: 4000, question: 600, words: 2000, step: 300, waiting: 200, task: 200 };
+const LIMITS = { title: 200, detail: 4000, quote: 400, area: 40, ref: 60, note: 4000, question: 600, words: 2000, step: 300, waiting: 200, task: 200, idea: 2000, purpose: 1000, summary: 4000 };
+const STAGES = ["open", "shaping", "ready", "became", "parked"];
+
+// The name of Claude's key: what it writes is never "waiting for Claude".
+const CLAUDE = "Claude";
 const STATES = ["working", "waiting", "idle"];
 
 const now = () => new Date().toISOString();
@@ -106,6 +110,25 @@ async function rank_for(env, col, before, moving) {
   return (last && last.r !== null ? last.r : 0) + 1;
 }
 
+//
+// **Who owes a reply**, from the last word in each thread: Diego's (or any
+// key but Claude's) waits for Claude; Claude's waits for Diego only when it
+// asked something - a note saying what was built waits for nobody.
+//
+async function talk_states(env, table, key) {
+  const rows = await env.DB.prepare(
+    `SELECT t.${key} AS k, t.author, t.asks FROM ${table} t
+     JOIN (SELECT ${key}, MAX(id) AS id FROM ${table} GROUP BY ${key}) last ON last.id = t.id`).all();
+  const out = new Map();
+
+  for (const r of rows.results) {
+    if (r.author !== CLAUDE) out.set(r.k, "claude");
+    else if (r.asks) out.set(r.k, "diego");
+  }
+
+  return out;
+}
+
 function shape(c) {
   return { ...c, in_roadmap: !!c.in_roadmap };
 }
@@ -129,8 +152,9 @@ async function list_cards(env, url) {
 
   const rows = await env.DB.prepare(`SELECT * FROM cards WHERE ${where.join(" AND ")} ORDER BY col, rank`)
     .bind(...args).all();
+  const talk = await talk_states(env, "notes", "card");
 
-  return json({ cards: rows.results.map(shape) });
+  return json({ cards: rows.results.map((c) => ({ ...shape(c), talk: talk.get(c.id) || null })) });
 }
 
 async function new_card(env, author, body) {
@@ -230,11 +254,12 @@ async function add_note(env, author, id, body) {
   if (!(await card(env, id))) return refused(404, `no card ${id}`);
 
   const t = text(body.text, "note", true);
+  const asks = body.asks ? 1 : 0;
   const at = now();
 
-  await env.DB.prepare("INSERT INTO notes (card, text, author, at) VALUES (?, ?, ?, ?)").bind(id, t, author, at).run();
-  await log(env, author, "note", id, { text: t });
-  return json({ note: { card: id, text: t, author, at } }, 201);
+  await env.DB.prepare("INSERT INTO notes (card, text, author, at, asks) VALUES (?, ?, ?, ?, ?)").bind(id, t, author, at, asks).run();
+  await log(env, author, "note", id, { text: t, asks: !!asks });
+  return json({ note: { card: id, text: t, author, at, asks: !!asks } }, 201);
 }
 
 async function list_decisions(env, url) {
@@ -439,6 +464,147 @@ async function take(env, author) {
   return set_now(env, author, { card: e.card || undefined, step: e.card ? "" : e.title, state: "working" });
 }
 
+function discussion_shape(d, talk) {
+  return { ...d, options: JSON.parse(d.options), questions: JSON.parse(d.questions), talk: talk || null };
+}
+
+function options_of(v) {
+  if (!Array.isArray(v)) throw new Error("options are a list");
+
+  return v.slice(0, 8).map((o) => ({
+    name: text(o && o.name, "title", true), plus: text(o.plus, "purpose") || "", minus: text(o.minus, "purpose") || "",
+    recommended: !!o.recommended, chosen: !!o.chosen,
+  }));
+}
+
+function questions_of(v) {
+  if (!Array.isArray(v)) throw new Error("questions are a list");
+  return v.slice(0, 12).map((q) => text(q, "question", true));
+}
+
+async function list_discussions(env, url) {
+  const stage = url.searchParams.get("stage");
+
+  if (stage && !STAGES.includes(stage)) throw new Error(`a stage is one of ${STAGES.join(", ")}`);
+
+  const rows = await env.DB.prepare(`SELECT * FROM discussions ${stage ? "WHERE stage = ?" : ""} ORDER BY updated DESC`)
+    .bind(...(stage ? [stage] : [])).all();
+  const talk = await talk_states(env, "messages", "discussion");
+
+  return json({ discussions: rows.results.map((d) => discussion_shape(d, talk.get(d.id))) });
+}
+
+async function new_discussion(env, author, body) {
+  const t = now();
+  const r = await env.DB.prepare(
+    "INSERT INTO discussions (title, idea, purpose, created, author, updated) VALUES (?, ?, ?, ?, ?, ?)")
+    .bind(text(body.title, "title", true), text(body.idea, "idea") || "", text(body.for, "purpose") || "", t, author, t).run();
+  const id = r.meta.last_row_id;
+
+  if (body.idea) {
+    await env.DB.prepare("INSERT INTO messages (discussion, text, author, at) VALUES (?, ?, ?, ?)")
+      .bind(id, text(body.idea, "idea"), author, t).run();
+  }
+
+  await log(env, author, "discussion.new", null, { discussion: id, title: body.title });
+  return get_discussion(env, id, 201);
+}
+
+async function get_discussion(env, id, status = 200) {
+  const d = await env.DB.prepare("SELECT * FROM discussions WHERE id = ?").bind(id).first();
+
+  if (!d) return refused(404, `no discussion ${id}`);
+
+  const msgs = await env.DB.prepare("SELECT id, text, author, at, asks FROM messages WHERE discussion = ? ORDER BY id").bind(id).all();
+  const cards = await env.DB.prepare("SELECT id, title, col FROM cards WHERE discussion = ? AND removed IS NULL").bind(id).all();
+  const talk = await talk_states(env, "messages", "discussion");
+
+  return json({ discussion: discussion_shape(d, talk.get(d.id)),
+                messages: msgs.results.map((m) => ({ ...m, asks: !!m.asks })), cards: cards.results }, status);
+}
+
+async function edit_discussion(env, author, id, body) {
+  const d = await env.DB.prepare("SELECT * FROM discussions WHERE id = ?").bind(id).first();
+
+  if (!d) return refused(404, `no discussion ${id}`);
+
+  const fields = {};
+
+  if (body.title !== undefined) fields.title = text(body.title, "title", true);
+  if (body.idea !== undefined) fields.idea = text(body.idea, "idea");
+  if (body.for !== undefined) fields.purpose = text(body.for, "purpose");
+  if (body.summary !== undefined) fields.summary = text(body.summary, "summary");
+  if (body.options !== undefined) fields.options = JSON.stringify(options_of(body.options));
+  if (body.questions !== undefined) fields.questions = JSON.stringify(questions_of(body.questions));
+  if (body.stage !== undefined) {
+    if (!STAGES.includes(body.stage)) throw new Error(`a stage is one of ${STAGES.join(", ")}`);
+    fields.stage = body.stage;
+  }
+
+  const names = Object.keys(fields);
+
+  if (!names.length) return refused(400, "nothing to change");
+
+  await env.DB.prepare(`UPDATE discussions SET ${names.map((n) => `${n} = ?`).join(", ")}, updated = ? WHERE id = ?`)
+    .bind(...names.map((n) => fields[n]), now(), id).run();
+
+  await log(env, author, "discussion.edit", null, { discussion: id, fields: names });
+  return get_discussion(env, id);
+}
+
+async function add_message(env, author, id, body) {
+  if (!(await env.DB.prepare("SELECT id FROM discussions WHERE id = ?").bind(id).first())) {
+    return refused(404, `no discussion ${id}`);
+  }
+
+  const t = text(body.text, "note", true);
+  const at = now();
+
+  await env.DB.prepare("INSERT INTO messages (discussion, text, author, at, asks) VALUES (?, ?, ?, ?, ?)")
+    .bind(id, t, author, at, body.asks ? 1 : 0).run();
+  await env.DB.prepare("UPDATE discussions SET updated = ? WHERE id = ?").bind(at, id).run();
+  await log(env, author, "message", null, { discussion: id, text: t, asks: !!body.asks });
+  return get_discussion(env, id, 201);
+}
+
+// A card made from a discussion: linked both ways, and the discussion has
+// become cards.
+async function discussion_card(env, author, id, body) {
+  const d = await env.DB.prepare("SELECT * FROM discussions WHERE id = ?").bind(id).first();
+
+  if (!d) return refused(404, `no discussion ${id}`);
+
+  const res = await new_card(env, author, { ...body, detail: body.detail || d.summary, quote: body.quote || d.idea });
+  const made = (await res.clone().json()).card;
+
+  await env.DB.prepare("UPDATE cards SET discussion = ? WHERE id = ?").bind(id, made.id).run();
+  await env.DB.prepare("UPDATE discussions SET stage = 'became', updated = ? WHERE id = ?").bind(now(), id).run();
+  await log(env, author, "discussion.card", made.id, { discussion: id });
+  return get_discussion(env, id, 201);
+}
+
+// What waits for a reply, and from whom: Claude's first look.
+async function waiting(env) {
+  const cards = await talk_states(env, "notes", "card");
+  const talks = await talk_states(env, "messages", "discussion");
+  const out = { claude: { cards: [], discussions: [] }, diego: { cards: [], discussions: [] } };
+
+  for (const [id, who] of cards) {
+    const c = await card(env, id);
+    if (c) out[who].cards.push({ id, title: c.title });
+  }
+
+  for (const [id, who] of talks) {
+    const d = await env.DB.prepare("SELECT id, title FROM discussions WHERE id = ?").bind(id).first();
+    if (d) out[who].discussions.push(d);
+  }
+
+  const open = await env.DB.prepare("SELECT id, card, question FROM decisions WHERE answer IS NULL").all();
+
+  out.diego.decisions = open.results;
+  return json(out);
+}
+
 async function changes(env, url) {
   const since = url.searchParams.get("since") || "1970-01-01T00:00:00Z";
   const rows = await env.DB.prepare("SELECT * FROM changes WHERE at > ? ORDER BY at LIMIT 1000").bind(since).all();
@@ -514,6 +680,15 @@ async function api(request, env, url) {
       if (parts.length === 2 && m === "DELETE") return await dequeue(env, author, Number(parts[1]));
       if (parts.length === 3 && parts[2] === "move" && m === "POST") return await move_queued(env, author, Number(parts[1]), body);
     }
+    if (parts[0] === "discussions") {
+      if (parts.length === 1 && m === "GET") return await list_discussions(env, url);
+      if (parts.length === 1 && m === "POST") return await new_discussion(env, author, body);
+      if (parts.length === 2 && m === "GET") return await get_discussion(env, Number(parts[1]));
+      if (parts.length === 2 && m === "PATCH") return await edit_discussion(env, author, Number(parts[1]), body);
+      if (parts.length === 3 && parts[2] === "messages" && m === "POST") return await add_message(env, author, Number(parts[1]), body);
+      if (parts.length === 3 && parts[2] === "cards" && m === "POST") return await discussion_card(env, author, Number(parts[1]), body);
+    }
+    if (parts[0] === "waiting" && m === "GET") return await waiting(env);
     if (parts[0] === "now" && m === "GET") return await get_now(env);
     if (parts[0] === "now" && m === "PUT") return await set_now(env, author, body);
     if (parts[0] === "changes" && m === "GET") return await changes(env, url);
