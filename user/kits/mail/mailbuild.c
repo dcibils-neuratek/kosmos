@@ -7,6 +7,13 @@
  * half is `mime.c`; `tools/test_mail.c` holds this one to the byte and reads
  * every message it makes back through the other.
  *
+ * **With attachments** (M7) it is `multipart/mixed`: the text first, then
+ * each file in base64 in lines of 76, a name that is not ASCII written as
+ * RFC 2231 has it.
+ * The boundary begins `=_`, which quoted-printable never writes, so the
+ * text is sent quoted-printable whenever there are files and no line of it
+ * can be mistaken for the boundary.
+ *
  * A Bcc is in no header - `smtp.lua` gives its addresses to the server -
  * and a line beginning with a dot is left as it is: doubling it is the
  * SMTP conversation's business, not the message's.
@@ -356,10 +363,80 @@ static void body_lines(struct out *o, const uint8_t *s, size_t len,
     } while (i < len);
 }
 
+/* A parameter's value: quoted when it is plain ASCII, and otherwise as
+ * RFC 2231 has it - `key*=UTF-8''caf%C3%A9.txt`. */
+static void name_param(struct out *o, const char *key, const char *value)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    size_t len = strlen(value);
+    int plain = ascii(value, len);
+
+    for (size_t i = 0; plain && i < len; i++) {
+        if (value[i] == '"' || value[i] == '\\') plain = 0;
+    }
+
+    put(o, ";", 1);
+    fold(o);
+    puts_(o, key);
+
+    if (plain) {
+        puts_(o, "=\"");
+        put(o, value, len);
+        put(o, "\"", 1);
+        return;
+    }
+
+    puts_(o, "*=UTF-8''");
+
+    for (size_t i = 0; i < len; i++) {
+        uint8_t c = (uint8_t)value[i];
+
+        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+            || c == '.' || c == '-' || c == '_') {
+            put(o, &value[i], 1);
+        } else {
+            char e[3] = { '%', hex[c >> 4], hex[c & 15] };
+
+            put(o, e, 3);
+        }
+    }
+}
+
+/* A file's bytes as base64 in lines of 76. */
+static void base64_lines(struct out *o, const uint8_t *b, size_t len)
+{
+    char line[80];
+
+    for (size_t i = 0; i < len; i += 57) {
+        size_t n = len - i < 57 ? len - i : 57;
+        size_t k = base64_encode(b + i, n, line);
+
+        put(o, line, k);
+        crlf(o);
+    }
+}
+
+/* The boundary between the parts, from the message's id: unique to it. */
+static void boundary(char *out, size_t room, const char *id)
+{
+    uint32_t h = 2166136261u;
+    static const char hex[] = "0123456789abcdef";
+    size_t n = 0;
+
+    for (const char *p = id; *p; p++) h = (h ^ (uint8_t)*p) * 16777619u;
+
+    for (const char *p = "=_kosmos_"; *p && n + 1 < room; p++) out[n++] = *p;
+    for (int i = 7; i >= 0 && n + 1 < room; i--) out[n++] = hex[(h >> (i * 4)) & 15];
+    out[n] = '\0';
+}
+
 size_t mail_build(const struct mail_draft *d, uint8_t *out, size_t room)
 {
     struct out o = { out, room, 0, 0 };
-    int qp = !seven_bit(d->text, d->text_len);
+    int qp = d->natt > 0 || !seven_bit(d->text, d->text_len);
+    char bound[40];
+
+    boundary(bound, sizeof bound, d->message_id ? d->message_id : "");
 
     date_field(&o, d->date, d->zone);
 
@@ -404,6 +481,18 @@ size_t mail_build(const struct mail_draft *d, uint8_t *out, size_t room)
 
     puts_(&o, "MIME-Version: 1.0");
     crlf(&o);
+
+    if (d->natt > 0) {
+        puts_(&o, "Content-Type: multipart/mixed; boundary=\"");
+        puts_(&o, bound);
+        puts_(&o, "\"");
+        crlf(&o);
+        crlf(&o);
+        puts_(&o, "--");
+        puts_(&o, bound);
+        crlf(&o);
+    }
+
     puts_(&o, "Content-Type: text/plain; charset=utf-8");
     crlf(&o);
     puts_(&o, qp ? "Content-Transfer-Encoding: quoted-printable" : "Content-Transfer-Encoding: 7bit");
@@ -411,5 +500,33 @@ size_t mail_build(const struct mail_draft *d, uint8_t *out, size_t room)
     crlf(&o);
 
     body_lines(&o, d->text, d->text_len, qp ? qp_line : plain_line);
+
+    for (size_t i = 0; i < d->natt; i++) {
+        const struct mail_attachment *a = &d->att[i];
+        const char *name = a->name && a->name[0] ? a->name : "attachment";
+
+        puts_(&o, "--");
+        puts_(&o, bound);
+        crlf(&o);
+        puts_(&o, "Content-Type: ");
+        puts_(&o, a->type && a->type[0] ? a->type : "application/octet-stream");
+        name_param(&o, "name", name);
+        crlf(&o);
+        puts_(&o, "Content-Disposition: attachment");
+        name_param(&o, "filename", name);
+        crlf(&o);
+        puts_(&o, "Content-Transfer-Encoding: base64");
+        crlf(&o);
+        crlf(&o);
+        base64_lines(&o, a->bytes, a->len);
+    }
+
+    if (d->natt > 0) {
+        puts_(&o, "--");
+        puts_(&o, bound);
+        puts_(&o, "--");
+        crlf(&o);
+    }
+
     return o.n;
 }

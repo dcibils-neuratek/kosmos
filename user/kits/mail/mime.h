@@ -84,6 +84,15 @@ size_t mime_to_utf8(const char *charset, const uint8_t *in, size_t n, uint8_t *o
  * message. Strings are UTF-8 and NUL-ended; `in_reply_to` and `references`
  * may be NULL or "". The Bcc is not here: it is in no header.
  */
+/* A file a message carries: its bytes, which the caller keeps while the
+ * message is built, its name as the person sees it, and its type. */
+struct mail_attachment {
+    const char    *name;                        /* UTF-8; "" is "attachment" */
+    const char    *type;                        /* "image/png"; "" is octet-stream */
+    const uint8_t *bytes;
+    size_t         len;
+};
+
 struct mail_draft {
     const char *from_name, *from_address;
     const struct mime_address *to;  size_t nto;
@@ -95,6 +104,7 @@ struct mail_draft {
     const char *message_id;                     /* without its < > */
     const char *in_reply_to;                    /* the id replied to, without < > */
     const char *references;                     /* "<a@x> <b@y>", as the field holds it */
+    const struct mail_attachment *att;  size_t natt;  /* M7: none, or files after the text */
 };
 
 /* The message, into `out`; how many bytes it is. When that is more than

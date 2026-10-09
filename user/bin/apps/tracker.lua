@@ -217,8 +217,8 @@ if backdrop then
 end
 
 --
--- **The places a person keeps** - Documents, Photos, Movies, Captures and
--- Music (`places.STANDARD`, `roadmap.md` 6w) - made whenever a Tracker finds
+-- **The places a person keeps** - Documents, Downloads, Photos, Movies,
+-- Captures and Music (`places.STANDARD`, `roadmap.md` 6w) - made whenever a Tracker finds
 -- one missing, as the desktop makes `Desktop`: a folder that only exists
 -- once somebody thinks to make it is a folder nobody makes.
 --
@@ -968,7 +968,7 @@ local function place_items()
 
   --
   -- **As the drawings order them** (`docs/rightclick.html`, `roadmap.md`
-  -- 6w): Home and Desktop, the five places a person keeps, what they
+  -- 6w): Home and Desktop, the six places a person keeps, what they
   -- pinned, and the Trash last - the place things go out of.
   --
   add("Home", "/Home", "home")

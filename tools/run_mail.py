@@ -905,22 +905,26 @@ PICTURE_WIDE = ("From: Picture Post <pictures@example.net>\r\n"
                 "<img width=\"1456\" height=\"819\" src=\"http://10.0.2.2:9/biggest.png\"></td></tr></table>\r\n").encode()
 
 
-def part4(image):
-    """The composer: Reply All quoting and threading, a new message whose
-    address is completed and whose Bcc is in no header, a draft kept on the
-    server and written on again, and a recipient the server refuses."""
+def mail_window(image, deliver, kept, said):
+    """Mail on the desktop against the peer on this Mac, an account added
+    through Add Account as a person adds one - a telnet session is not
+    handed Mail's passwords, rightly - and `deliver` in its Inbox first,
+    oldest first. What parts 4 and 5 stand on; on a failure the machine and
+    the peer are stopped before it is raised."""
     import importlib
     import random
     import re
     import time
+    import types
 
     work = scratch.directory("mail")
     run_tls.pki(work, "10.0.2.2")
     peer = mailpeer.Peer(work, "good.pem", "server.key")
     peer.idle_delivers = False
-    peer.deliver("INBOX", PICTURE_WIDE)     # third
-    peer.deliver("INBOX", WIDE)             # the list is by arrival: this second,
-    peer.deliver("INBOX", PLANS)            # Priya's first
+
+    for data in deliver:
+        peer.deliver("INBOX", data)
+
     imap_port, smtp_port = peer.start()
 
     disk = os.path.join(work, "disk.img")
@@ -936,28 +940,29 @@ def part4(image):
 
     telnet, web = random.randint(20000, 40000), random.randint(40001, 60000)
     guest = S.boot(image, telnet, web)
-    said, error = {}, None
     who = mailpeer.USER
+    w = types.SimpleNamespace(guest=guest, peer=peer, who=who, R=R, imap_port=imap_port,
+                              smtp_port=smtp_port)
 
     try:
         guest.wait_for("wm: window Deskbar at ", "the bar")
         guest.wait_for("telnetd: on port ", "telnetd listening")
-        session = S.connect(telnet)
+        w.session = S.connect(telnet)
 
         mark = len(guest.seen)
-        session.run("open mail")
-        placed = guest.wait_for_line("wm: window Mail at ", "the Mail window", mark)
+        w.session.run("open mail")
+        w.placed = guest.wait_for_line("wm: window Mail at ", "the Mail window", mark)
         sheet = guest.wait_for_line("mail: sheet ", "Add Account, with no account yet", mark)
-        wx, wy = (int(v) for v in re.match(r"(\d+),(\d+)", placed).groups())
-        width, height, _ = R.parse_ppm(guest.screendump())
+        w.wx, w.wy = (int(v) for v in re.match(r"(\d+),(\d+)", w.placed).groups())
+        w.width, w.height, _ = R.parse_ppm(guest.screendump())
 
         def at(name, text):
             m = re.search(r"\b" + name + r" (\d+),(\d+)", text)
             return (int(m.group(1)), int(m.group(2))) if m else None
 
         def click(x, y, ox=None, oy=None):
-            guest.mouse_to(*R._to_tablet((wx if ox is None else ox) + x, (wy if oy is None else oy) + y,
-                                         width, height))
+            guest.mouse_to(*R._to_tablet((w.wx if ox is None else ox) + x, (w.wy if oy is None else oy) + y,
+                                         w.width, w.height))
             time.sleep(0.3)
             guest.mouse_button(True)
             time.sleep(0.2)
@@ -982,8 +987,8 @@ def part4(image):
             time.sleep(1)
             return cid, cx, cy, where
 
-        # The account, through Add Account as a person adds one: a telnet
-        # session is not handed Mail's passwords, rightly.
+        w.at, w.click, w.typed, w.key, w.composer = at, click, typed, key, composer
+
         mark = len(guest.seen)
         click(*at("imap", sheet))
         sheet = guest.wait_for_line("mail: sheet ", "the IMAP fields", mark)
@@ -1002,12 +1007,49 @@ def part4(image):
         mark = len(guest.seen)
         guest.sendkey("ret")
         said["setup"] = guest.wait_for_line("mail: signed in ", "the account signed in", mark)
-        guest.wait_for("maild: %s: 6 messages kept" % who, "the Inbox kept")
-        places = guest.wait_for_line("mail: places ", "the window's places", 0)
-
-        lx, ly = at("list", places)
-        rh = int(re.search(r"rows (\d+)", places).group(1))
+        guest.wait_for("maild: %s: %d messages kept" % (who, kept), "the Inbox kept")
+        w.places = guest.wait_for_line("mail: places ", "the window's places", 0)
+        w.lx, w.ly = at("list", w.places)
+        w.rh = int(re.search(r"rows (\d+)", w.places).group(1))
         time.sleep(2)
+    except BaseException:
+        guest.close()
+        peer.stop()
+        raise
+
+    return w
+
+
+def window_closed(w, log):
+    """The machine and the peer stopped, the transcript kept; what it said."""
+    seen = w.guest.seen.replace("\r", "") if w else ""
+
+    if w:
+        w.guest.close()
+        w.peer.stop()
+
+    os.makedirs(os.path.join(ROOT, "build", "mail"), exist_ok=True)
+    with open(os.path.join(ROOT, "build", "mail", log), "w") as f:
+        f.write(seen)
+
+    return seen
+
+
+def part4(image):
+    """The composer: Reply All quoting and threading, a new message whose
+    address is completed and whose Bcc is in no header, a draft kept on the
+    server and written on again, and a recipient the server refuses."""
+    import re
+    import time
+
+    said, error, w = {}, None, None
+
+    try:
+        w = mail_window(image, [PICTURE_WIDE, WIDE, PLANS], 6, said)
+        guest, peer, session, who, R = w.guest, w.peer, w.session, w.who, w.R
+        at, click, typed, key, composer = w.at, w.click, w.typed, w.key, w.composer
+        places, placed, wx, wy, lx, ly, rh = w.places, w.placed, w.wx, w.wy, w.lx, w.ly, w.rh
+        width, height = w.width, w.height
 
         # 0. The wide newsletter, second newest: laid out wider than the
         #    pane and fitted to it, its right edge in the picture.
@@ -1121,12 +1163,13 @@ def part4(image):
     except Exception as e:                  # noqa: BLE001 - said below
         error = "%s: %s" % (type(e).__name__, str(e).splitlines()[0])
     finally:
-        seen = guest.seen.replace("\r", "")
-        guest.close()
-        peer.stop()
-        os.makedirs(os.path.join(ROOT, "build", "mail"), exist_ok=True)
-        with open(os.path.join(ROOT, "build", "mail", "guest-4.log"), "w") as f:
-            f.write(seen)
+        seen = window_closed(w, "guest-4.log")
+
+    if w is None:
+        print("FAIL: Mail's composer: the machine never came up: %s" % error)
+        return 1
+
+    peer, who = w.peer, w.who
 
     fails = []
 
@@ -1221,8 +1264,177 @@ def part4(image):
     return 0
 
 
+# A message carrying a text file, which opens in the Text Editor.
+NOTES = ("From: Tom <tomas@example.org>\r\n"
+         "To: lena@example.com\r\n"
+         "Subject: The notes\r\n"
+         "Date: Fri, 9 Oct 2026 08:00:00 +0000\r\n"
+         "Message-ID: <notes@example.org>\r\n"
+         "MIME-Version: 1.0\r\n"
+         "Content-Type: multipart/mixed; boundary=n\r\n"
+         "\r\n"
+         "--n\r\nContent-Type: text/plain\r\n\r\nThe notes, attached.\r\n"
+         "--n\r\nContent-Type: text/plain; name=\"notes.txt\"\r\n"
+         "Content-Disposition: attachment; filename=\"notes.txt\"\r\n\r\n"
+         "Bring the map.\r\n--n--\r\n").encode()
+
+
+def part5(image):
+    """Attachments (M7): a message's file saved through the Save window,
+    whole; a text file opened in the Text Editor; a file attached with the
+    paperclip and the Open window and sent, arriving byte for byte; and
+    Forward carrying the message's own file."""
+    import email
+    import re
+    import time
+    from email import policy
+
+    said, error, w = {}, None, None
+
+    try:
+        w = mail_window(image, [NOTES], 4, said)
+        guest, session = w.guest, w.session
+        at, click, typed, key, composer = w.at, w.click, w.typed, w.key, w.composer
+        places, lx, ly, rh = w.places, w.lx, w.ly, w.rh
+
+        def menu_item(n, mark):
+            line = guest.wait_for_line("mail: attachment menu at ", "the attachment's menu", mark)
+            m = re.match(r"(\d+),(\d+), (\d+) wide, rows of (\d+)", line)
+            mx, my, _, row = (int(v) for v in m.groups())
+            time.sleep(0.6)
+            click(mx + 24, my + 2 + (n - 1) * row + row // 2, ox=0, oy=0)
+
+        # 1. The photos, second: its file saved into Downloads, whole.
+        mark = len(guest.seen)
+        click(lx + 100, ly + rh + rh // 2)
+        guest.wait_for_line("mail: showing ", "the photos shown", mark)
+        chip = guest.wait_for_line("mail: attachments ", "its file's chip", mark)
+        time.sleep(1)
+        click(*at("at", chip))
+        menu_item(2, mark)                       # Save...
+        guest.wait_for_line("mail: save panel at ", "the Save window", mark)
+        time.sleep(1.5)
+        key("ret")                               # its own name, in Downloads
+        said["saved"] = guest.wait_for_line("mail: saved photos.bin to ", "the file saved", mark)
+        said["downloads"] = session.run("ls /Home/Downloads").decode(errors="replace")
+
+        # 2. The notes, first: its text file opened in the Text Editor.
+        mark = len(guest.seen)
+        click(lx + 100, ly + rh // 2)
+        guest.wait_for_line("mail: showing ", "the notes shown", mark)
+        chip = guest.wait_for_line("mail: attachments ", "its file's chip", mark)
+        time.sleep(1)
+        click(*at("at", chip))
+        menu_item(1, mark)                       # Open
+        said["opened"] = guest.wait_for_line("mail: opening notes.txt with ", "the notes opened", mark)
+        said["editor"] = guest.wait_for_line("wm: window ", "a window for the notes", mark)
+        time.sleep(2)
+
+        # 3. A new message with a file from Documents, by the paperclip.
+        session.run("cp /Home/Downloads/photos.bin /Home/Documents/photos.bin")
+        mark = len(guest.seen)
+        click(*[v + 13 for v in at("compose", places)])
+        cid, cx, cy, where = composer("New Message", mark)
+        typed("ana@example.com,")
+        key("tab"); key("tab"); key("tab")
+        typed("With the photos")
+        key("tab")
+        typed("Here.")
+        mark = len(guest.seen)
+        click(*at("attach", where), ox=cx, oy=cy)
+        guest.wait_for_line("mail: composer %s attach panel at " % cid, "the Open window", mark)
+        time.sleep(1.5)
+        key("ret")                               # the one file there
+        said["attached"] = guest.wait_for_line("mail: composer %s attached " % cid, "the file attached", mark)
+        time.sleep(1.5)
+        import kosmos_vnc as V
+        w_, h_, rgb_ = w.R.parse_ppm(guest.screendump())
+        rows_ = [rgb_[((y * w_) + cx) * 3:((y * w_) + cx + 680) * 3] for y in range(cy, min(h_, cy + 560))]
+        V.png(os.path.join(ROOT, "build", "mail", "composer-files.png"), 680, len(rows_), b"".join(rows_))
+        mark = len(guest.seen)
+        key("ctrl-ret")
+        guest.wait_for("maild: sent %s" % cid, "the photos sent")
+
+        # 4. Forward the photos: its file goes with it.
+        mark = len(guest.seen)
+        click(lx + 100, ly + rh + rh // 2)
+        guest.wait_for_line("mail: showing ", "the photos again", mark)
+        mark = len(guest.seen)
+        click(*[v + 13 for v in at("forward", places)])
+        fid, _, _, _ = composer("Forward", mark)
+        said["carried"] = guest.wait_for_line("mail: composer %s attached " % fid, "its file carried", mark)
+        typed("bob@example.net,")
+        mark = len(guest.seen)
+        key("ctrl-ret")
+        guest.wait_for("maild: sent %s" % fid, "the forward sent")
+        time.sleep(1)
+    except Exception as e:                  # noqa: BLE001 - said below
+        error = "%s: %s" % (type(e).__name__, str(e).splitlines()[0])
+    finally:
+        seen = window_closed(w, "guest-5.log")
+
+    if w is None:
+        print("FAIL: Mail's attachments: the machine never came up: %s" % error)
+        return 1
+
+    fails = []
+
+    if error:
+        fails.append("the machine stopped: " + error + " ... " + seen[-1200:])
+
+    if not said.get("saved", "").endswith("/Home/Downloads/photos.bin: %d bytes" % len(mailpeer.BIG)):
+        fails.append("the photos' file not saved whole into Downloads: %r" % said.get("saved"))
+    if "photos.bin" not in said.get("downloads", ""):
+        fails.append("Downloads did not hold the file: %r" % said.get("downloads"))
+    if not said.get("opened", "").startswith("texteditor"):
+        fails.append("the notes did not open in the Text Editor: %r" % said.get("opened"))
+    if not said.get("attached", "").startswith("photos.bin, %d bytes" % len(mailpeer.BIG)):
+        fails.append("the paperclip did not attach the file: %r" % said.get("attached"))
+    if not said.get("carried", "").startswith("photos.bin, %d bytes" % len(mailpeer.BIG)):
+        fails.append("Forward did not carry the message's file: %r" % said.get("carried"))
+
+    def carried(subject):
+        with w.peer.lock:
+            got = [m for m in w.peer.sent if ("Subject: " + subject + "\r\n") in m["data"]]
+        if not got:
+            return None, None
+        msg = email.message_from_string(got[0]["data"], policy=policy.default)
+        files = [(p.get_filename(), p.get_content()) for p in msg.iter_attachments()]
+        return msg, files
+
+    msg, files = carried("With the photos")
+    if not msg:
+        fails.append("the message with the photos did not reach the server")
+    elif files != [("photos.bin", mailpeer.BIG)]:
+        fails.append("the photos did not arrive byte for byte: %r" % [(n, len(b)) for n, b in (files or [])])
+    elif "Here." not in msg.get_body(("plain",)).get_content():
+        fails.append("the text beside the file was lost")
+
+    msg, files = carried("Fwd: The photos")
+    if not msg or files != [("photos.bin", mailpeer.BIG)]:
+        fails.append("the forward did not carry the photos whole: %r"
+                     % [(n, len(b)) for n, b in (files or [])])
+
+    if " died: " in seen:
+        fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
+
+    checks = 9
+
+    if fails:
+        print("FAIL: %d of %d checks on Mail's attachments:" % (len(fails), checks))
+        for f in fails:
+            print("  " + f)
+        return 1
+
+    print("PASS: %d checks on Mail's attachments (a message's file saved through the Save "
+          "window into Downloads, whole; a text file opened in the Text Editor; a file attached "
+          "with the paperclip and the Open window, sent and arriving byte for byte beside its "
+          "text; Forward carrying the message's own file)." % checks)
+    return 0
+
+
 if __name__ == "__main__":
     image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
     part = sys.argv[sys.argv.index("--part") + 1] if "--part" in sys.argv else "1"
-    sys.exit(part4(image) if part == "4" else part3(image) if part == "3"
+    sys.exit(part5(image) if part == "5" else part4(image) if part == "4" else part3(image) if part == "3"
              else part2(image) if part == "2" else part1(image))

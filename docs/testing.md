@@ -21979,3 +21979,37 @@ takes it as a floor. **Mail now makes a width attribute wider than the pane
 is left alone and fitted. `x86-mail-4` 23, its big-picture message now also
 in Substack's shape: on 0.11.94 it failed, "1472 wide, fitted at 50%" -
 the control - and on 0.11.95 it passes, "590 wide, fitted at 100%".
+
+## 18.493 Mail M7: attachments - saved, opened, attached, forwarded
+
+`docs/mail.md` M7. **Reading**: a file under a message is a chip, and a
+press on it offers Open - written to `/Temporary/Mail/<uid>/` and handed to
+what opens its kind (`filetypes.how_to_open`) - or Save, through the Save
+window, starting in **Downloads**, a place now (Diego, 9 October: "Create a
+downloads folder", "as we have a browser now"; `places.STANDARD`, with its
+own line icon). The part is read out of the message's file again by the
+Mail Kit into a region and written from there: never a Lua string. **Writing**:
+the paperclip opens the Open window in Documents; files dropped from
+Tracker are taken too (the window asks for drops); each is a chip with its
+size and an x, 25 MB in all; a draft keeps them; Forward carries the
+message's own, written into a folder of the draft's. **The Mail Kit writes
+them**: `multipart/mixed`, the text quoted-printable so the boundary - which
+begins `=_` - cannot be mistaken in it, each file base64 in lines of 76, a
+name not ASCII as RFC 2231 has it. **One MIME table**: `filetypes.mime_type`,
+moved out of `httpd.lua`, which uses it now.
+
+`test_mail` 49 (5 new): two files, one named "fotos de Sábado.jpg", read back
+byte for byte, a text line that looks like the boundary kept. **Control**:
+base64 cut at 58 bytes, padding mid-stream, the picture comes back short.
+`x86-mail-5` 9: The photos' 300 KB file saved into Downloads, 307200 bytes;
+a text file opened in the Text Editor; a file attached by the paperclip and
+sent, arriving byte for byte beside its text; Forward carrying the file -
+`build/mail/composer-files.png`. **Control**: the files left out of the built
+message, two checks fail. `test_places` 28 with Downloads among the places.
+**Not covered by a suite**: a drop from Tracker onto the composer - no
+harness drags across windows yet; to be tried on the M700.
+
+The whole x86 gate for it: 56 of 57 suites; `x86-film` failed one check
+under the gate's load - a stretch of AAC "more than two steps from FFmpeg's
+reference" - and passed all 13 alone in 15 s. Its known flake under load,
+nothing M7 touches.

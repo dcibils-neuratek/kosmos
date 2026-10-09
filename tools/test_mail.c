@@ -387,6 +387,51 @@ int main(void)
             check(k == strlen(expect) && memcmp(body, expect, k) == 0, said);
         }
 
+        /* With files (M7): multipart/mixed, each file whole again, its
+         * name read back, the text kept - and a line of the text that
+         * looks like the boundary does not end a part. */
+        {
+            static uint8_t pic[5000];
+            struct mail_attachment att[2];
+            const char *t2 = "Here they are.\n--=_kosmos_ is not a boundary here\n";
+            size_t k2;
+            const char *body2;
+            long jp = -1, tp = -1;
+
+            for (size_t i = 0; i < sizeof pic; i++) pic[i] = (uint8_t)((i * 37 + 11) & 0xff);
+
+            att[0].name = "fotos de S\xc3\xa1" "bado.jpg";
+            att[0].type = "image/jpeg";
+            att[0].bytes = pic;
+            att[0].len = sizeof pic;
+            att[1].name = "notes.txt";
+            att[1].type = "text/plain";
+            att[1].bytes = (const uint8_t *)"a short note\r\n";
+            att[1].len = 14;
+            d.att = att;
+            d.natt = 2;
+            d.text = (const uint8_t *)t2;
+            d.text_len = strlen(t2);
+
+            n = mail_build(&d, out, sizeof out);
+            check(n < sizeof out && mime_parse(&msg, out, n) == 0, "a message with files did not parse back");
+            snprintf(said, sizeof said, "a message with two files parsed as %zu parts", msg.nparts);
+            check(msg.nparts == 4 && msg.part[0].multipart, said);
+            jp = find("image/jpeg");
+            tp = find("text/plain");
+            check(jp > 0 && strcmp(msg.part[jp].name, "fotos de S\xc3\xa1" "bado.jpg") == 0
+                  && strcmp(msg.part[jp].disposition, "attachment") == 0,
+                  "the picture's name or disposition did not read back");
+            body2 = jp > 0 ? content((size_t)jp, &k2) : "";
+            check(jp > 0 && k2 == sizeof pic && memcmp(body2, pic, sizeof pic) == 0,
+                  "the picture's bytes did not come back whole");
+            body2 = tp > 0 ? content((size_t)tp, &k2) : "";
+            check(tp > 0 && strstr(body2, "--=_kosmos_ is not a boundary here") != NULL,
+                  "the text with a boundary-like line did not come back");
+            d.att = NULL;
+            d.natt = 0;
+        }
+
         {
             char w[256];
             size_t k = mail_encode_words("plain words", w, sizeof w);
@@ -403,7 +448,8 @@ int main(void)
                "its zone, a mixed holding an alternative and an attachment, quoted-printable in "
                "Windows-1252 with a soft break, base64 over lines, an RFC 2231 name, previews of "
                "text and of HTML, a message cut short, nesting held to its limit, characters; a plain message "
-               "written to the byte, and one of encoded names, subject and body read back whole)\n",
+               "written to the byte, and one of encoded names, subject and body read back whole; "
+               "one with two files, a name not ASCII, read back byte for byte)\n",
                checks);
         return 0;
     }

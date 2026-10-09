@@ -272,10 +272,10 @@ for _, p in ipairs(places.STANDARD) do
   paths = paths and p.path == "/Home/" .. p.name and type(p.icon) == "string"
 end
 
-check(table.concat(names, ",") == "Documents,Photos,Movies,Captures,Music"
+check(table.concat(names, ",") == "Documents,Downloads,Photos,Movies,Captures,Music"
       and paths,
-      "the places a person keeps are not Documents, Photos, Movies, Captures "
-      .. "and Music, each a folder in /Home with a picture: "
+      "the places a person keeps are not Documents, Downloads, Photos, Movies, "
+      .. "Captures and Music, each a folder in /Home with a picture: "
       .. table.concat(names, ","))
 
 if failed == 0 then

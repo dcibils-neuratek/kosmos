@@ -80,28 +80,8 @@ end
 -- text or an image that downloads. What is not here is `application/octet-
 -- stream`, which is the honest answer for anything else.
 --
-local TYPES = {
-  html = "text/html",
-  htm  = "text/html",
-  css  = "text/css",
-  js   = "text/javascript",
-  txt  = "text/plain",
-  md   = "text/plain",
-  png  = "image/png",
-  jpg  = "image/jpeg",
-  jpeg = "image/jpeg",
-  gif  = "image/gif",
-  ico  = "image/x-icon",
-  pdf  = "application/pdf",
-  wav  = "audio/wav",
-  mp3  = "audio/mpeg",
-}
-
-local function content_type(path)
-  local ext = path:match("%.([%w]+)$")
-
-  return (ext and TYPES[ext:lower()]) or "application/octet-stream"
-end
+-- The table is `filetypes.lua`'s, one for whatever hands a file over.
+local content_type = use("/Kosmos/Libraries/filetypes.lua").mime_type
 
 --
 -- A path from a request, made safe.

@@ -512,7 +512,7 @@ local function read_message(row)
 
       if attached then
         attachments[#attachments + 1] = { name = p.name ~= "" and p.name or p.type,
-                                          bytes = p.bytes }
+                                          bytes = p.bytes, id = p.id, type = p.type }
       elseif p.type == "text/plain" and not plain then
         plain = p
       elseif p.type == "text/html" and not html then
@@ -1382,6 +1382,7 @@ local function disc_of(name)
 end
 
 local attachment_chips = {}
+local said_chips = nil
 local paper_at = nil
 local load_button = nil
 local said_load = nil
@@ -1483,8 +1484,19 @@ local function draw_message(s)
       pk.icon(s, "attachment", cxp + 10, ay + 8, theme.text_dim)
       s:text(cxp + 30, ay + (32 - gfx.height()) // 2, ui.fitted(words, cw - 38, "ui"),
              theme.text, nil, "ui")
-      attachment_chips[#attachment_chips + 1] = { x = cxp, y = ay, w = cw, h = 32 }
+      attachment_chips[#attachment_chips + 1] = { x = cxp, y = ay, w = cw, h = 32, a = a }
       cxp = cxp + cw + 8
+    end
+  end
+
+  if #attachment_chips > 0 then
+    local first = attachment_chips[1]
+    local where = ("%d of message %d, the first at %d,%d"):format(#attachment_chips, message.uid or 0,
+                                                                  first.x + 20, first.y + 16)
+
+    if where ~= said_chips then
+      said_chips = where
+      print("mail: attachments " .. where)
     end
   end
 
@@ -1779,6 +1791,118 @@ local function key(c)
   return true
 end
 
+--------------------------------------------------------------------------
+-- A message's files (M7): opened in the application for their kind, or
+-- saved where the Save window says. The part is read out of the message's
+-- file again by the Mail Kit, into a region and from there to a file - its
+-- bytes never a Lua string, whatever its size.
+--------------------------------------------------------------------------
+
+local panel = use("/Kosmos/Libraries/panel.lua")
+local filetypes = use("/Kosmos/Libraries/filetypes.lua")
+
+-- Where a message's files are saved: Downloads, one of the places Tracker
+-- keeps (`places.lua`).
+local DOWNLOADS = "/Home/Downloads"
+
+-- Part `id` of the message in `path`, written to `to`; true, or nil and why.
+local function part_to_file(path, id, to)
+  local r, size = regions.read_whole(path)
+
+  if not r then return nil, "the message could not be read" end
+
+  local m = mailkit.parse(r.at, size)
+  local p = m and m:parts()[id]
+
+  if not p then
+    regions.free(r)
+    return nil, "the message has no such part"
+  end
+
+  local out = regions.make(math.max(p.bound, 1))
+
+  if not out then
+    regions.free(r)
+    return nil, "no memory for it"
+  end
+
+  local n = m:part_into(id, out.at, out.size) or 0
+  local ok, why = regions.write_file(to, out, n)
+
+  regions.free(out, r)
+  return ok, why, n
+end
+
+-- A name as a file can have it: no folder in it.
+local function file_name(name)
+  name = tostring(name or ""):gsub("[/\\]", "-"):gsub("^%.+", "")
+
+  return name ~= "" and name or "attachment"
+end
+
+local function save_attachment(a)
+  local path = message and message.path
+
+  if not path then return end
+
+  files.make_folder(DOWNLOADS)
+
+  local chooser = panel.save{ title = "Save Attachment", start = DOWNLOADS, name = file_name(a.name),
+    on_choose = function(to)
+      local ok, why, n = part_to_file(path, a.id, to)
+
+      print(("mail: saved %s to %s: %s"):format(a.name, to, ok and (tostring(n) .. " bytes") or tostring(why)))
+      said = ok and ("Saved " .. a.name) or ("Not saved: " .. tostring(why))
+    end }
+
+  if chooser then
+    print(("mail: save panel at %d,%d"):format(chooser.origin_x or 0, (chooser.origin_y or 0) + (chooser.head_h or 0)))
+    chooser:run()
+  end
+end
+
+-- Opened: written to /Temporary, then handed to what opens its kind.
+local function open_attachment(a)
+  local path = message and message.path
+
+  if not path then return end
+
+  local folder = ("/Temporary/Mail/%d"):format(message.uid or 0)
+
+  files.make_folder(folder)
+
+  local to = folder .. "/" .. file_name(a.name)
+  local ok, why = part_to_file(path, a.id, to)
+
+  if not ok then
+    said = "Not opened: " .. tostring(why)
+    return
+  end
+
+  local how = filetypes.how_to_open(to)
+
+  if not how then
+    said = ("Nothing opens a .%s file - Save it instead"):format(tostring(filetypes.kind_of(to) or "?"))
+    print("mail: nothing opens " .. a.name)
+    return
+  end
+
+  print(("mail: opening %s with %s"):format(a.name, how.program))
+  fs.send("/Running/wm", { type = "launch", program = how.program, args = how.args, wait = false })
+end
+
+local function attachment_menu(chip)
+  local m = win:open_menu(win.origin_x + chip.x, win.origin_y + chip.y + chip.h, {
+    { text = "Open", on_choose = function() open_attachment(chip.a) end },
+    { text = "Save\u{2026}", on_choose = function() save_attachment(chip.a) end },
+  })
+
+  -- Where it opened, for whoever drives Mail from outside.
+  if m then
+    print(("mail: attachment menu at %d,%d, %d wide, rows of %d"):format(m.x, m.y, m.w, m.row))
+  end
+end
+
 local function dots_menu()
   local items = {
     { text = "Add Account\u{2026}", on_choose = function() open_sheet() end },
@@ -1949,6 +2073,13 @@ local function press(x, y)
     if load_button and pk.inside(load_button, x, y) then
       load_pictures()
       return
+    end
+
+    for _, chip in ipairs(attachment_chips) do
+      if pk.inside(chip, x, y) then
+        attachment_menu(chip)
+        return
+      end
     end
 
     -- A link in an HTML message: what is under the point, in the browser.

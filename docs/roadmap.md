@@ -8254,7 +8254,11 @@ day** (0.11.93, 18.491): a newsletter wider than the pane fitted to it.
 **M6 done** (18.490): the composer, a library any application can open -
 To, Cc and Bcc completed from the mail kept, Reply, Reply All, Forward,
 drafts kept here and on the server, sent by `maild` from an Outbox, a copy
-in Sent; `mail.build` in the Mail Kit. Next: M7, attachments.
+in Sent; `mail.build` in the Mail Kit.
+**M7 done** (18.493): attachments opened, saved into Downloads, attached by
+the paperclip or a drop from Tracker, carried by Forward; **Downloads a place**
+(Diego, 9 October: "Create a downloads folder", "as we have a browser now").
+Next: M8, search, several accounts, the unified Inbox.
 **Diego's Gmail is in**, on the
 M700 (0.11.87-0.11.88). Seen there and not yet done: some subjects begin
 with "?" where, probably, an emoji has no glyph in the UI's face - to be

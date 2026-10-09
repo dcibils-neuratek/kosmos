@@ -563,4 +563,33 @@ function filetypes.how_to_open(path, attrs, source)
   return program and { program = program, args = quoted(path) } or nil
 end
 
+--
+-- **What a file is called on the network**: its MIME type from its name,
+-- `application/octet-stream` when the name says nothing this knows - which
+-- is the honest answer. One table, for whatever hands a file to another
+-- machine: the web server serving one, Mail attaching one (M7). It lived in
+-- `httpd.lua` until Mail needed the same answer.
+--
+local MIME = {
+  html = "text/html", htm = "text/html", css = "text/css", js = "text/javascript",
+  txt = "text/plain", md = "text/plain", lua = "text/plain", c = "text/plain",
+  h = "text/plain", csv = "text/csv", json = "application/json", xml = "application/xml",
+  png = "image/png", jpg = "image/jpeg", jpeg = "image/jpeg", gif = "image/gif",
+  ico = "image/x-icon", svg = "image/svg+xml", webp = "image/webp", bmp = "image/bmp",
+  pdf = "application/pdf", zip = "application/zip", gz = "application/gzip",
+  wav = "audio/wav", mp3 = "audio/mpeg", flac = "audio/flac", ogg = "audio/ogg",
+  mp4 = "video/mp4", mov = "video/quicktime", webm = "video/webm",
+  docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx = "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  odt = "application/vnd.oasis.opendocument.text", eml = "message/rfc822",
+  ics = "text/calendar", vcf = "text/vcard",
+}
+
+function filetypes.mime_type(path)
+  local ext = tostring(path or ""):match("%.([%w]+)$")
+
+  return (ext and MIME[ext:lower()]) or "application/octet-stream"
+end
+
 return filetypes

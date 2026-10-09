@@ -27,9 +27,13 @@
  *                                         room it needs. `t` = { from =, to =,
  *                                         cc =, subject =, text =, date =,
  *                                         zone =, id =, in_reply_to =,
- *                                         references = }; from, and each of
- *                                         to and cc's, an address as
- *                                         { name =, address = } or as text
+ *                                         references =, attachments = };
+ *                                         from, and each of to and cc's, an
+ *                                         address as { name =, address = }
+ *                                         or as text; each attachment
+ *                                         { name =, type =, at =, bytes = },
+ *                                         its bytes in a region the caller
+ *                                         keeps while this runs (M7)
  *   mail.encode_words(text)               a header's words, encoded if need be
  *
  * A part's `id` is its place in `parts()`, 1 for the message itself. **Its
@@ -341,6 +345,41 @@ static int l_build(lua_State *L)
     d.in_reply_to = opt_field(L, 1, "in_reply_to", NULL);
     d.references = opt_field(L, 1, "references", NULL);
     luaL_argcheck(L, d.message_id[0], 1, "a message needs its id");
+
+    /* Files: up to 32, each in a region whose address and size are given. */
+    {
+        static struct mail_attachment att[32];
+        size_t n = 0;
+
+        if (lua_getfield(L, 1, "attachments") == LUA_TTABLE) {
+            for (lua_Integer i = 1; n < 32; i++) {
+                if (lua_rawgeti(L, -1, i) != LUA_TTABLE) {
+                    lua_pop(L, 1);
+                    break;
+                }
+
+                lua_getfield(L, -1, "name");
+                att[n].name = luaL_optstring(L, -1, "");
+                lua_getfield(L, -2, "type");
+                att[n].type = luaL_optstring(L, -1, "");
+                lua_getfield(L, -3, "at");
+                att[n].bytes = (const uint8_t *)(uintptr_t)luaL_checkinteger(L, -1);
+                lua_getfield(L, -4, "bytes");
+                att[n].len = (size_t)luaL_checkinteger(L, -1);
+                lua_pop(L, 4);
+
+                /* The strings stay alive: `t` holds the tables that hold them. */
+                if (att[n].bytes == NULL && att[n].len > 0) return luaL_error(L, "build: a file needs a mapped region");
+
+                n++;
+                lua_pop(L, 1);
+            }
+        }
+
+        lua_pop(L, 1);
+        d.att = att;
+        d.natt = n;
+    }
 
     lua_getfield(L, 1, "date");
     d.date = (int64_t)luaL_checkinteger(L, -1);

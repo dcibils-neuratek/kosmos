@@ -453,7 +453,10 @@ Each step leaves the system working and a test that stays.
    whatever wants a message written opens the same one; it writes into
    `/Home/Mail/Outbox` and `maild` sends, and closes on Send. Drafts are
    kept in `Drafts here` as typed, and on the server when closed.
-8. **M7 - attachments**, opened, saved, added, dropped.
+8. **M7 - attachments**, opened, saved, added, dropped. **Done 9 October**
+   (`testing.md` 18.493): saved into Downloads, which became a place for it;
+   opened in what opens their kind; added by the paperclip or a drop from
+   Tracker; carried by Forward.
 9. **M8 - search**, several accounts, the unified Inbox.
 10. **M9 - shipped as an example**: `/Kosmos/Apps` and `/Kosmos/Examples/Mail`,
     a copy built and run in the IDE.

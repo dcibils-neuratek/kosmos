@@ -12,6 +12,9 @@
 --                                                 false once it has closed
 --
 -- Ctrl+Return sends; closing it - its light, or Super+Q - keeps it as a draft.
+-- Files are added with the paperclip (the Open window) or by dropping them
+-- from Tracker, each a chip with its size that a press on its x takes off;
+-- Forward carries the message's own.
 --
 -- To, Cc and Bcc, each a row of addresses become chips as they are typed
 -- and completed from the mail kept (`addresses.lua`); the subject; and the
@@ -42,6 +45,8 @@ local regions = use("/Kosmos/Libraries/regions.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
 local docview = use("/Kosmos/Libraries/docview.lua")
 local addresses = use("/Kosmos/Libraries/addresses.lua")
+local filetypes = use("/Kosmos/Libraries/filetypes.lua")
+local panel = use("/Kosmos/Libraries/panel.lua")
 local mailkit = use("/Kosmos/Kits/mail")
 local pk = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
 
@@ -59,6 +64,13 @@ local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local EDGE, LABEL_W, ROW_H, CHIP_H = 18, 70, 38, 24
 local SUGGEST_W, SUGGEST_ROW = 300, 44
 local QUIET_SECONDS = 2
+
+-- **Files a message carries** (M7): 25 MB in all, which is Gmail's limit
+-- and most servers'. A file is read into a region when the message is
+-- built, never into a Lua string. Attaching starts in Documents.
+local FILES_MOST = 25 * 1024 * 1024
+local FILE_H = 34
+local ATTACH_FROM = "/Home/Documents"
 
 local FIELDS = { "to", "cc", "bcc", "subject" }
 local LABELS = { to = "To", cc = "Cc", bcc = "Bcc", subject = "Subject" }
@@ -141,11 +153,13 @@ function compose.open(spec)
     reopened = spec.reopened,
     focus = #plain_list(spec.to) == 0 and "to" or "body",
     W = W, H = H, decode = keys.decoder(), dirty = true, changed = false,
-    choice = 1, suggestions = {}, said = nil,
+    choice = 1, suggestions = {}, said = nil, files = {},
   }, C)
 
+  for _, path in ipairs(spec.attachments or {}) do c:add_file(path, true) end
+
   c.win = ui.window{ title = c.title, w = W, h = H, direct = true, header = true, resizable = true,
-                     x = spec.x, y = spec.y, centre = spec.x == nil }
+                     x = spec.x, y = spec.y, centre = spec.x == nil, drops = true }
 
   if not c.win or not c.win:surface() then
     print("mail: no window to write in")
@@ -157,7 +171,7 @@ function compose.open(spec)
                              on_change = function() c:edited() end })
   c.book = addresses.gather({ c.account and c.account.address })
   c.send_b = { text = "Send", go = true }
-  c.attach_b = { icon = "attachment", disabled = true }    -- M7
+  c.attach_b = { icon = "attachment" }
   c.focused_at = sys.ticks()
 
   print(("mail: composer %s open, %s"):format(c.id, c.title))
@@ -271,6 +285,31 @@ function compose.answer(path, kind, own)
   if kind == "forward" then
     local to = {}
 
+    -- Its files, carried: each written out of the message into a folder
+    -- of this draft's own, which goes when the draft does.
+    spec.id = random_id()
+    spec.attachments = {}
+
+    for _, p in ipairs(m:parts()) do
+      if not p.multipart and (p.disposition == "attachment" or p.name ~= "") then
+        local folder = DRAFTS .. "/" .. spec.id .. "-files"
+        local name = (p.name ~= "" and p.name or "attachment"):gsub("[/\\]", "-")
+        local out = regions.make(math.max(p.bound, 1))
+
+        if out then
+          files.make_folder(folder)
+
+          local n = m:part_into(p.id, out.at, out.size) or 0
+
+          if regions.write_file(folder .. "/" .. name, out, n) then
+            spec.attachments[#spec.attachments + 1] = folder .. "/" .. name
+          end
+
+          regions.free(out)
+        end
+      end
+    end
+
     for _, a in ipairs(m:addresses("to")) do to[#to + 1] = written(a) end
 
     spec.title = "Forward"
@@ -377,7 +416,9 @@ end
 function C:state()
   local out = { account = self.account, title = self.title, subject = self.rows.subject.text,
                 body = self.page:content(), in_reply_to = self.in_reply_to,
-                references = self.references, replaces = self.replaces }
+                references = self.references, replaces = self.replaces, attachments = {} }
+
+  for i, f in ipairs(self.files) do out.attachments[i] = f.path end
 
   for _, name in ipairs({ "to", "cc", "bcc" }) do
     local list = {}
@@ -394,7 +435,61 @@ function C:empty()
   local s = self:state()
 
   return #s.to == 0 and #s.cc == 0 and #s.bcc == 0 and s.subject == ""
-         and s.body:match("^%s*$") ~= nil
+         and s.body:match("^%s*$") ~= nil and #self.files == 0
+end
+
+-- A file added: a whole path, a file and not a folder, within what a
+-- message may carry. `quiet` when it comes with a draft or a Forward.
+function C:add_file(path, quiet)
+  local at = fs.getattr(path)
+
+  if not at then
+    self.said = ("%s is not there any more"):format(tostring(path):match("[^/]+$") or path)
+    return false
+  end
+
+  if at.kind == "directory" then
+    self.said = "A folder cannot be attached - compress it first"
+    return false
+  end
+
+  local total = 0
+
+  for _, f in ipairs(self.files) do
+    if f.path == path then return true end
+    total = total + f.size
+  end
+
+  if total + (at.size or 0) > FILES_MOST then
+    self.said = ("%s would make it more than 25 MB"):format(path:match("[^/]+$"))
+    return false
+  end
+
+  self.files[#self.files + 1] = { path = path, name = path:match("[^/]+$") or path, size = at.size or 0 }
+  print(("mail: composer %s attached %s, %d bytes"):format(self.id, self.files[#self.files].name, at.size or 0))
+
+  if not quiet then self:edited() end
+
+  return true
+end
+
+-- The paperclip: the Open window, in Documents first.
+function C:attach()
+  files.make_folder(ATTACH_FROM)
+
+  local chooser = panel.open{ title = "Attach a File", start = self.attach_from or ATTACH_FROM,
+    on_choose = function(path)
+      self.attach_from = path:match("^(.*)/[^/]+$")
+      self:add_file(path)
+    end }
+
+  if chooser then
+    print(("mail: composer %s attach panel at %d,%d"):format(self.id, chooser.origin_x or 0,
+          (chooser.origin_y or 0) + (chooser.head_h or 0)))
+    chooser:run()
+  end
+
+  self.dirty = true
 end
 
 function C:edited()
@@ -419,24 +514,47 @@ function C:build(path)
                  to = self.rows.to.chips, cc = self.rows.cc.chips, subject = s.subject,
                  text = s.body, date = now and now.epoch or 0, zone = clock.offset(),
                  id = self.id .. "@" .. domain, in_reply_to = self.in_reply_to,
-                 references = self.references }
-  local room = #s.body * 3 + 16384
-  local r = regions.make(room)
+                 references = self.references, attachments = {} }
+  local held, carried = {}, 0
 
-  if not r then return nil, "no memory to write it in" end
+  -- Each file into a region for the kit to read; base64 is a third more.
+  for _, f in ipairs(self.files) do
+    local fr, size = regions.read_whole(f.path)
 
-  local n, need = mailkit.build(spec, r.at, r.size)
+    if not fr then
+      for _, h in ipairs(held) do regions.free(h) end
+      return nil, f.name .. " could not be read"
+    end
 
-  if not n then
-    regions.free(r)
-    r = regions.make(need)
-    if not r then return nil, "no memory to write it in" end
-    n = mailkit.build(spec, r.at, r.size)
+    held[#held + 1] = fr
+    spec.attachments[#spec.attachments + 1] = { name = f.name, type = filetypes.mime_type(f.name),
+                                                at = fr.at, bytes = size }
+    carried = carried + size
   end
 
-  local ok, why = regions.write_file(path, r, n)
+  local room = #s.body * 3 + carried * 4 // 3 + carried // 38 + 16384 + #self.files * 1024
+  local r = regions.make(room)
+  local n, need, ok, why
 
-  regions.free(r)
+  if r then
+    n, need = mailkit.build(spec, r.at, r.size)
+
+    if not n then
+      regions.free(r)
+      r = regions.make(need)
+      n = r and mailkit.build(spec, r.at, r.size)
+    end
+  end
+
+  if r and n then
+    ok, why = regions.write_file(path, r, n)
+  else
+    ok, why = nil, "no memory to write it in"
+  end
+
+  if r then regions.free(r) end
+  for _, h in ipairs(held) do regions.free(h) end
+
   return ok, why
 end
 
@@ -484,6 +602,7 @@ function C:send()
   fs.write(OUTBOX .. "/" .. self.id .. ".send", { account = self.account.address, rcpt = rcpt,
            subject = self.rows.subject.text, draft = self.id, replaces = self.replaces })
   files.remove(DRAFTS .. "/" .. self.id .. ".draft")
+  if fs.getattr(DRAFTS .. "/" .. self.id .. "-files") then files.remove(DRAFTS .. "/" .. self.id .. "-files") end
   self.sent = true
 
   local asked, no = ask{ type = "send", name = self.id }
@@ -504,6 +623,7 @@ function C:close()
   if not self.sent then
     if self:empty() then
       files.remove(DRAFTS .. "/" .. self.id .. ".draft")
+      if fs.getattr(DRAFTS .. "/" .. self.id .. "-files") then files.remove(DRAFTS .. "/" .. self.id .. "-files") end
       -- A draft opened again and emptied: its copy on the server goes too.
       if self.reopened or self.replaces then
         ask{ type = "undraft", account = self.account.address, name = self.id, replaces = self.replaces }
@@ -579,6 +699,26 @@ function C:layout()
     y = y + p.h
   end
 
+  -- The files, a row of chips under the subject, as many lines as they need.
+  self.file_chips = {}
+
+  if #self.files > 0 then
+    local x, line = EDGE, 0
+
+    for i, f in ipairs(self.files) do
+      local label = ("%s  %s"):format(f.name, files.size(f.size))
+      local cw = math.min(gfx.measure(label) + 58, W - 2 * EDGE)
+
+      if x > EDGE and x + cw > W - EDGE then x, line = EDGE, line + 1 end
+
+      self.file_chips[i] = { x = x, y = y + 6 + line * (FILE_H + 6), w = cw, h = FILE_H,
+                             label = label, file = f }
+      x = x + cw + 8
+    end
+
+    y = y + 12 + (line + 1) * (FILE_H + 6) - 6
+  end
+
   self.body_at = { x = 0, y = y, w = W, h = math.max(40, self.H - y) }
   self.page.x, self.page.y, self.page.w, self.page.h = 0, 0, W, self.body_at.h
 
@@ -589,11 +729,12 @@ function C:layout()
   self.send_b.y = pk.centre(31)
   self.attach_b.x, self.attach_b.y = self.send_b.x - 36, pk.centre(26)
 
-  local where = ("to %d,%d cc %d,%d bcc %d,%d subject %d,%d body %d,%d send %d,%d")
+  local where = ("to %d,%d cc %d,%d bcc %d,%d subject %d,%d body %d,%d send %d,%d attach %d,%d files %d")
     :format(self.places.to.fx, self.places.to.y + 19, self.places.cc.fx, self.places.cc.y + 19,
             self.places.bcc.fx, self.places.bcc.y + 19, self.places.subject.fx,
             self.places.subject.y + 19, 40, self.body_at.y + 20,
-            self.send_b.x + self.send_b.w // 2, self.send_b.y + 15)
+            self.send_b.x + self.send_b.w // 2, self.send_b.y + 15,
+            self.attach_b.x + 13, self.attach_b.y + 13, #self.files)
 
   if where ~= self.said_where then
     self.said_where = where
@@ -642,6 +783,22 @@ function C:draw()
     end
 
     s:fill(0, p.y + p.h - 1, self.W, 1, theme.line_soft)
+  end
+
+  -- The files: each a chip, its name and size, an x to take it off.
+  for _, chip in ipairs(self.file_chips or {}) do
+    s:fill_round(chip.x, chip.y, chip.w, chip.h, theme.raised, 9)
+    s:frame_round(chip.x, chip.y, chip.w, chip.h, theme.line_soft, 9)
+    pk.icon(s, "attachment", chip.x + 10, chip.y + (chip.h - 15) // 2, theme.text_dim)
+    s:text(chip.x + 30, chip.y + (chip.h - gh) // 2, ui.fitted(chip.label, chip.w - 58, "ui"),
+           theme.text, nil, "ui")
+    pk.icon(s, "close", chip.x + chip.w - 24, chip.y + (chip.h - 15) // 2, theme.text_dim)
+  end
+
+  if #(self.file_chips or {}) > 0 then
+    local last = self.file_chips[#self.file_chips]
+
+    s:fill(0, last.y + last.h + 5, self.W, 1, theme.line_soft)
   end
 
   self.page.focused = self.focus == "body"
@@ -836,6 +993,24 @@ function C:press(x, y)
     return
   end
 
+  if pk.inside(self.attach_b, x, y) then
+    self:attach()
+    return
+  end
+
+  -- A file's x: taken off.
+  for i, chip in ipairs(self.file_chips or {}) do
+    if pk.inside(chip, x, y) then
+      if x >= chip.x + chip.w - 32 then
+        print(("mail: composer %s took off %s"):format(self.id, chip.file.name))
+        table.remove(self.files, i)
+        self:edited()
+      end
+
+      return
+    end
+  end
+
   for i, r in ipairs(self.suggest_rows or {}) do
     if pk.inside(r, x, y) then
       self:take_suggestion(i)
@@ -901,6 +1076,16 @@ function C:tend()
         if self:key(ch) then self.dirty = true end
         if self.closed then return false end
       end
+    elseif ev.type == "drop" and ev.kind == "files" then
+      -- Files dropped from Tracker: a path a line.
+      local n = 0
+
+      for path in tostring(ev.payload or ""):gmatch("[^\n]+") do
+        if self:add_file(path) then n = n + 1 end
+      end
+
+      pcall(ui.dropped, self.win, n > 0, n)
+      self.dirty = true
     elseif ev.type == "paste" then
       if self.focus == "body" then
         self.page:edit("paste")

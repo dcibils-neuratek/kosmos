@@ -41,10 +41,13 @@ places.DIR = "/Home/Places"
 -- applications keep what they make and look first in them, each naming its
 -- own: the Camera's recordings in `/Home/Captures`, Music and Video starting
 -- in `/Home/Music` and `/Home/Movies`, Cafesa3D's scenes and renders in
--- `/Home/Documents`.
+-- `/Home/Documents`. **Downloads** since 9 October (Diego: "Create a
+-- downloads folder", "as we have a browser now"): what Mail saves of a
+-- message's files, and what the browser downloads.
 --
 places.STANDARD = {
   { name = "Documents", path = "/Home/Documents", icon = "document" },
+  { name = "Downloads", path = "/Home/Downloads", icon = "downloads" },
   { name = "Photos",    path = "/Home/Photos",    icon = "pictures" },
   { name = "Movies",    path = "/Home/Movies",    icon = "movies" },
   { name = "Captures",  path = "/Home/Captures",  icon = "captures" },

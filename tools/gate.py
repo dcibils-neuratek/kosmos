@@ -219,6 +219,11 @@ SUITES = [
     Suite("arm-mail-4", ["python3", "tools/run_mail.py", ARM, "--part", "4"]),
     Suite("x86-mail-4", ["python3", "tools/run_mail.py", X86, "--part", "4"],
           x86=True),
+    # Its fifth is attachments (M7): saved, opened, attached and sent,
+    # carried by Forward.
+    Suite("arm-mail-5", ["python3", "tools/run_mail.py", ARM, "--part", "5"]),
+    Suite("x86-mail-5", ["python3", "tools/run_mail.py", X86, "--part", "5"],
+          x86=True),
 
     # **smbfs connects, signed and sealed** (`docs/sharing.md` N2 and N4),
     # in one machine on ten Samba peers run as the user on this Mac: 3.1.1
