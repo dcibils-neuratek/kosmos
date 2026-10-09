@@ -30,8 +30,22 @@ import time
 USER = "lena@example.com"
 PASSWORD = "test-only-word"
 
-# A picture sent inside a message: eight bytes standing for one.
-PICTURE = base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()
+def png(width, height, rgb):
+    """A real PNG of one colour, for a picture a message carries."""
+    import struct
+    import zlib
+
+    def chunk(tag, data):
+        return (struct.pack(">I", len(data)) + tag + data
+                + struct.pack(">I", zlib.crc32(tag + data) & 0xffffffff))
+
+    raw = b"".join(b"\0" + bytes(rgb) * width for _ in range(height))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+# A picture sent inside a message: the route's map, 40 by 20, green.
+PICTURE = base64.b64encode(png(40, 20, (0x0f, 0x5c, 0x4d))).decode()
 
 # An attachment large enough that its literal comes in many reads: 300 KB
 # of bytes, base64 in lines of 76.

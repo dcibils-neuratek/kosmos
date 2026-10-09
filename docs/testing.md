@@ -21858,3 +21858,33 @@ in the account, and a notch down over the sidebar "sidebar from 102".
 **Controls**: facts never redone, the wait for "1 worked out again" times
 out; the wheel not taken over the sidebar, the wait for "sidebar from"
 times out.
+
+## 18.489 Mail M5: HTML messages, drawn by the browser's engine
+
+`docs/mail.md` M5. A message with an HTML part is drawn as its sender drew
+it: its part made UTF-8 by the Mail Kit, parsed by the Web Kit, laid out by
+NetSurf at the paper's width and painted into the paper's band, the
+engine set up once with its own stylesheets as the browser sets it up.
+No scripts run and forms do nothing. A picture sent inside the message
+(`cid:`) is handed over at once, from the Mail Kit's part; a picture on the
+network is not fetched until Load Pictures is pressed, since fetching it
+tells its sender the message was read - and then it is fetched beside the
+window's loop, a pass at a time, through `http.get_many`. Links open in
+the browser. The dots offer the plain text instead. An image with no Web
+Kit (`FULL=0`) shows the text, and says so.
+
+**A page's pictures are one copy now**: decoding PNG, JPEG and SVG, and
+keeping each at its box's size, moved out of `browser.lua` into
+`webpictures.lua`, which the browser and Mail both use.
+
+Two bugs the suite found on the way: the plain page's `writedoc` and the
+HTML document shared one name, and moving from a plain message to an HTML
+one closed the wrong thing; and NetSurf lays nothing out until `web.setup`
+has given it its default stylesheets - a 0-pixel page, said now as why.
+
+`x86-mail-3` 19: the route newsletter laid out "571 px tall, 1 sent
+inside, 1 on the network", nothing asked of the Mac's picture server until
+Load Pictures, then "1 of 1 pictures came" and one request; its picture is
+kept in `build/mail/mail-html.png`. `x86-browser-1` and `-2` pass with the
+pictures moved. **Control**: the message's own picture never handed over,
+it fails, "0 sent inside".

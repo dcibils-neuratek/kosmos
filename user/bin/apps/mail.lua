@@ -27,6 +27,12 @@
 --
 -- A window that draws its own pixels (`pixelkit`), as Maps and Write are:
 -- a message's page is drawn into a surface of its own and copied in.
+--
+-- **An HTML message is drawn as its sender drew it** (M5): by the browser's
+-- engine, with no scripts and no forms; a picture sent inside it (`cid:`)
+-- shown at once, from the Mail Kit's part; a picture on the network not
+-- fetched until Load Pictures is pressed, because fetching one tells its
+-- sender the message was read. Links open in the browser.
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
@@ -41,6 +47,26 @@ local pagedraw = use("/Kosmos/Libraries/pagedraw.lua")
 local faces = use("/Kosmos/Libraries/faces.lua")
 local pk = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
 local mailkit = use("/Kosmos/Kits/mail")
+local webpictures = use("/Kosmos/Libraries/webpictures.lua")
+local http = use("/Kosmos/Libraries/http.lua")
+
+-- **The browser's engine draws an HTML message** (M5): parsed, laid out at
+-- the paper's width and painted into it as a page is. An image built
+-- without it (`FULL=0`) shows the message as its text, and says so.
+local web_found, web = pcall(use, "/Kosmos/Kits/web")
+
+if not web_found or type(web) ~= "table" then web = nil end
+
+-- The engine set up once with its own default stylesheets, as the browser
+-- sets it up; without them it lays nothing out, and the message is text.
+if web then
+  local sheet = sys.asset("netsurf/default.css")
+
+  if not (web.setup and sheet and web.setup(sheet, sys.asset("netsurf/quirks.css")) == true) then
+    print("mail: the browser's engine would not set up; HTML is shown as text")
+    web = nil
+  end
+end
 local theme = ui.theme
 local L = ui.layout
 
@@ -490,18 +516,37 @@ local function read_message(row)
   end
 
   local text, as_html = "", false
+  local html_source = html and part_text(m, html) or nil
 
   if plain then
     text = part_text(m, plain)
-  elseif html then
-    text, as_html = html_text(part_text(m, html)), true
+  elseif html_source then
+    text, as_html = html_text(html_source), true
+  end
+
+  -- The pictures sent inside it, by their Content-ID, for its HTML to
+  -- name - sixteen megabytes of them at most.
+  local cids, cid_bytes = {}, 0
+
+  if html_source and web then
+    for _, p in ipairs(m:parts()) do
+      if not p.multipart and p.cid ~= "" and cid_bytes + p.bytes < 16 * 1024 * 1024 then
+        local bytes = part_text(m, p)
+
+        cids[p.cid] = bytes
+        cid_bytes = cid_bytes + #bytes
+      end
+    end
   end
 
   local out = {
     uid = row.uid, path = row.path,
     from = from.name ~= "" and from.name or from.address, address = from.address,
     to = table.concat(to, ", "), subject = m:header("subject") or "",
-    date = m:date(), attachments = attachments, as_html = as_html,
+    date = m:date(), attachments = attachments,
+    -- Drawn as HTML when the engine is here; its text otherwise.
+    html = web and html_source or nil, cids = cids, tried = {},
+    as_html = as_html and not web,
   }
 
   out.body, out.links = paragraphs(text)
@@ -523,7 +568,7 @@ end
 local function paper_box()
   local x, y, w, h = pane()
   local top_y = y + HEAD_H + (message and #message.attachments > 0 and 44 or 0)
-               + (message and message.as_html and 34 or 0)
+               + (message and (message.as_html or message.bar) and 34 or 0)
 
   return x + 20, top_y + 10, math.max(80, w - 40), math.max(40, y + h - top_y - 20)
 end
@@ -549,7 +594,7 @@ local function set_message()
 
   local t0 = sys.ticks()
 
-  message.doc = doc
+  message.text_doc = doc
   message.set = pageset.set(doc, measure, nil, { endless = true })
   message.width_mm = width_mm
   band_for = nil
@@ -559,7 +604,13 @@ local function set_message()
         math.floor(message.set.pages[1].height_pt * SCALE)))
 end
 
+local function shows_html()
+  return message and message.html and not message.as_text
+end
+
 local function page_px()
+  if shows_html() then return message.html_h or 0 end
+
   if not (message and message.set) then return 0 end
 
   return math.floor(message.set.pages[1].height_pt * SCALE + 0.5)
@@ -569,6 +620,154 @@ local function clamp_scroll()
   local _, _, _, ph = paper_box()
 
   scroll = math.max(0, math.min(scroll, page_px() - ph))
+end
+
+--------------------------------------------------------------------------
+-- An HTML message: laid out by the browser's engine at the paper's width.
+--------------------------------------------------------------------------
+
+local function unescaped(cid)
+  return (cid:gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end))
+end
+
+-- The pictures on the network it names and has not got.
+local function remote_pictures()
+  local list = {}
+
+  for k, o in ipairs(message.page:ns_objects()) do
+    local url = tostring(o.url or "")
+
+    if not o.arrived and url:match("^https?:") then list[#list + 1] = { k = k, url = url } end
+  end
+
+  return list
+end
+
+local function lay_out_html(pw, ph)
+  if not message.page then
+    local t0 = sys.ticks()
+    local doc, why = web.parse(message.html, "utf-8")
+
+    if not doc then
+      print("mail: its HTML would not parse: " .. tostring(why))
+      message.html, message.as_html = nil, true
+      return false
+    end
+
+    message.page = doc
+    message.pics = webpictures.new(web, pw, ph)
+    message.laid_w = nil
+    message.parse_ms = (sys.ticks() - t0) * 1000 / counter_hz
+  end
+
+  if message.laid_w == pw and not message.relayout then return true end
+
+  local t0 = sys.ticks()
+
+  message.pics.page_w, message.pics.view_h = pw, ph
+
+  local tall, why = message.page:ns_layout(pw, ph, "about:blank")
+
+  if not tall then
+    print("mail: its HTML could not be laid out: " .. tostring(why))
+    message.html, message.as_html = nil, true
+    return false
+  end
+
+  -- Its own pictures, at once: then laid out again, as a picture the page
+  -- gave no size to takes its own.
+  local handed = 0
+
+  for k, o in ipairs(message.page:ns_objects()) do
+    local cid = tostring(o.url or ""):match("^cid:(.+)$")
+
+    if cid and not o.arrived and not message.tried[k] then
+      message.tried[k] = true
+
+      local bytes = message.cids[cid] or message.cids[unescaped(cid)]
+
+      if bytes and message.pics:hand(message.page, k, bytes) then handed = handed + 1 end
+    end
+  end
+
+  if handed > 0 or message.relayout then
+    tall = message.page:ns_layout(pw, ph, "about:blank") or tall
+    message.pics:to_boxes(message.page)
+  end
+
+  message.html_h = tall or 0
+  message.laid_w, message.relayout = pw, false
+  message.version = (message.version or 0) + 1
+
+  local far = #remote_pictures()
+
+  message.bar = (far > 0 and not message.loading)
+                and ("%d %s from the network not loaded, so its sender cannot see it was read")
+                    :format(far, far == 1 and "picture" or "pictures")
+                or nil
+
+  print(("mail: html laid out at %d in %.1f ms, %d px tall, %d sent inside, %d on the network")
+        :format(pw, (sys.ticks() - t0) * 1000 / counter_hz, message.html_h, handed, far))
+
+  return true
+end
+
+-- Load Pictures: those on the network fetched beside the window's own
+-- loop, a pass at a time, so nothing here waits on the network.
+local fetching = nil
+
+local function load_pictures()
+  if not (message and message.page) or fetching then return end
+
+  local list = remote_pictures()
+
+  if #list == 0 then return end
+
+  local urls = {}
+
+  for i, w in ipairs(list) do urls[i] = w.url end
+
+  local m = message
+
+  m.loading, m.bar = true, ("Loading %d pictures\u{2026}"):format(#list)
+  fetching = { message = m, list = list,
+               co = coroutine.create(function()
+                 return http.get_many(urls, { pause = function() coroutine.yield() end })
+               end) }
+  print(("mail: loading %d pictures"):format(#list))
+end
+
+-- One pass of the fetch; true when it ended and the page changed.
+local function step_fetch()
+  if not fetching then return false end
+
+  local ok, results = coroutine.resume(fetching.co)
+
+  if ok and coroutine.status(fetching.co) ~= "dead" then return false end
+
+  local f = fetching
+
+  fetching = nil
+
+  local m = f.message
+  local came = 0
+
+  if ok and m.page then
+    for i, w in ipairs(f.list) do
+      local reply = results and results[i] and results[i][1]
+
+      if reply then
+        local status, _, body = http.parse(reply)
+
+        if status == 200 and m.pics:hand(m.page, w.k, body) then came = came + 1 end
+      end
+    end
+  end
+
+  m.loading, m.relayout, m.bar = false, true, nil
+  print(("mail: %d of %d pictures came"):format(came, #f.list))
+
+  return m == message
 end
 
 --------------------------------------------------------------------------
@@ -604,11 +803,17 @@ local function set_flag(row, flag, on)
   print(("mail: %s %d %s"):format(flag, row.uid, on and "on" or "off"))
 end
 
+local function forget_message()
+  if message and message.page then message.page:close() end
+
+  message = nil
+  band_for = nil
+end
+
 local function choose(uid)
   chosen = uid
   scroll = 0
-  message = nil
-  band_for = nil
+  forget_message()
 
   local row = chosen_row()
 
@@ -1092,6 +1297,8 @@ end
 
 local attachment_chips = {}
 local paper_at = nil
+local load_button = nil
+local said_load = nil
 
 local function draw_message(s)
   local x, y, w, h = pane()
@@ -1134,11 +1341,45 @@ local function draw_message(s)
 
   local ay = y + HEAD_H + 8
 
-  if message.as_html then
+  load_button = nil
+
+  -- Laid out first: what it says about its pictures is the bar above it.
+  if shows_html() then
+    local _, _, lpw, lph = paper_box()
+
+    lay_out_html(lpw, lph)
+  end
+
+  if message.as_html or message.bar then
+    local words = message.bar or "Written in HTML, shown as its text: this Kosmos has no browser engine"
+
     s:fill_round(x + 20, ay, w - 40, 28, theme.sunken, 8)
-    s:text(x + 32, ay + (28 - gfx.height()) // 2,
-           ui.fitted("Written in HTML, shown as its text until Mail draws HTML", w - 64, "ui"),
+
+    local room = w - 64
+
+    if message.bar and not message.loading then
+      load_button = { text = "Load Pictures" }
+      load_button.w = pk.button_width(load_button.text)
+      load_button.h = 24
+      load_button.x, load_button.y = x + w - 24 - load_button.w, ay + 2
+      room = room - load_button.w - 12
+    end
+
+    s:text(x + 32, ay + (28 - gfx.height()) // 2, ui.fitted(words, room, "ui"),
            theme.text_dim, nil, "ui")
+
+    if load_button then
+      pk.button(s, load_button)
+
+      local where = ("%d,%d"):format(load_button.x + load_button.w // 2,
+                                     load_button.y + load_button.h // 2)
+
+      if where ~= said_load then
+        said_load = where
+        print("mail: load pictures at " .. where)
+      end
+    end
+
     ay = ay + 34
   end
 
@@ -1164,10 +1405,12 @@ local function draw_message(s)
   -- The paper: the page, drawn into a band the paper's size when it moved.
   local px, py, pw, ph = paper_box()
 
-  set_message()
+  if not shows_html() then set_message() end
+
   clamp_scroll()
 
-  local key = ("%d:%d:%d:%d"):format(message.uid, pw, ph, scroll)
+  local key = ("%d:%d:%d:%d:%s:%d"):format(message.uid, pw, ph, scroll,
+                                          tostring(shows_html()), message.version or 0)
 
   if band_for ~= key then
     if band then
@@ -1177,10 +1420,18 @@ local function draw_message(s)
     end
 
     band = band or gfx.surface{ w = pw, h = ph }
-    band:fill(0, 0, pw, ph, PAPER)
 
-    if message.set then
-      drawer:page(message.set, message.set.pages[1], band, SCALE, 0, -scroll, PAPER)
+    if shows_html() then
+      -- A page's own ground is white unless it says otherwise, as in a
+      -- browser.
+      band:fill(0, 0, pw, ph, 0xffffffff)
+      message.page:ns_paint(band, pw, ph, scroll)
+    else
+      band:fill(0, 0, pw, ph, PAPER)
+
+      if message.set then
+        drawer:page(message.set, message.set.pages[1], band, SCALE, 0, -scroll, PAPER)
+      end
     end
 
     band_for = key
@@ -1193,7 +1444,9 @@ local function draw_message(s)
   -- How far down, when there is more than shows.
   local total = page_px()
 
-  if total > ph then
+  -- More than a row or two more: the engine lays a page out at least as
+  -- tall as its view, and a bar for one row is a bar for nothing.
+  if total > ph + 4 then
     local bar = math.max(24, ph * ph // total)
     local by = py + (ph - bar) * scroll // math.max(1, total - ph)
 
@@ -1431,6 +1684,17 @@ local function dots_menu()
     { text = "Get Mail", on_choose = function() ask{ type = "sync" } end },
   }
 
+  if message and message.html then
+    items[#items + 1] = {
+      text = message.as_text and "Show as HTML" or "Show as Plain Text",
+      on_choose = function()
+        message.as_text = not message.as_text
+        scroll, band_for = 0, nil
+        print("mail: shown as " .. (message.as_text and "text" or "HTML"))
+      end,
+    }
+  end
+
   win:open_menu(win.origin_x + controls.dots.x, win.origin_y + L.head, items)
 end
 
@@ -1489,6 +1753,24 @@ local function press(x, y)
 
     for _, r in ipairs(list_rows) do
       if pk.inside(r, x, y) then choose(r.uid) return end
+    end
+
+    if load_button and pk.inside(load_button, x, y) then
+      load_pictures()
+      return
+    end
+
+    -- A link in an HTML message: what is under the point, in the browser.
+    if shows_html() and message.page and paper_at and pk.inside(paper_at, x, y) then
+      local href = message.page:ns_link_at(x - paper_at.x, y - paper_at.y + scroll)
+
+      if href and tostring(href):match("^https?:") then
+        print("mail: link " .. tostring(href))
+        fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/browser.lua",
+                                 args = tostring(href), wait = false })
+      end
+
+      return
     end
 
     -- A link in the message, opened in the browser.
@@ -1607,7 +1889,7 @@ if not draw_all() then return end
 local dirty = false
 
 while win.running do
-  local reply = wmproto.poll(win.handle, dirty and 0 or 12)
+  local reply = wmproto.poll(win.handle, (dirty or fetching) and 1 or 12)
 
   if not reply then break end
 
@@ -1617,7 +1899,7 @@ while win.running do
     elseif ev.type == "resize" then
       W, H = ev.w, ev.h
       band_for = nil
-      if message then message.set = nil end
+      if message then message.set, message.laid_w = nil, nil end
       dirty = true
     elseif ev.type == "close" then
       win:close()
@@ -1642,6 +1924,7 @@ while win.running do
   if not win.running then break end
 
   if look() then dirty = true end
+  if step_fetch() then dirty = true end
 
   if dirty then
     dirty = false

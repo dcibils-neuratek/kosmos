@@ -8236,7 +8236,9 @@ step after M9** - `pop3.lua`, POP3 in `mailpeer.py`, and a path in `maild`
 that downloads without folders or flags (pop.gmail.com 995). Diego's own
 Gmail goes in on the M700 once M4 is there, typed by him.
 **M4 done** (18.484): the window, Add Account, `maild` started at login.
-Next: M5, HTML messages in the Web Kit. **Diego's Gmail is in**, on the
+**M5 done** (18.489): HTML messages by the browser's engine, pictures
+inside shown, the network's on Load Pictures. Next: M6, writing.
+**Diego's Gmail is in**, on the
 M700 (0.11.87-0.11.88). Seen there and not yet done: some subjects begin
 with "?" where, probably, an emoji has no glyph in the UI's face - to be
 looked at with the message's own bytes before anything is changed.
@@ -8249,6 +8251,14 @@ at boot; a display turned on later is never seen. A screen that comes and
 goes needs Kosmos's own display driver on that machine (`docs/m700-2d.md`),
 not the firmware's - nothing to do before then but restart with the monitor
 on.
+
+**The live list, 9 October.** Diego: "Let's keep a live list of items we
+can see and maintain as our roadmap", "So you have the full list i can
+check". Every item of this file - 494 of them on the day, done ones too -
+is kept as a page he can open, filter, and change:
+https://claude.ai/artifact/DzcP4dHurAvXE4xXfU5DAp (private to Diego). A
+status he changes or an item he adds there is read back and written into
+this file; this file stays the record, with the reasoning.
 
 ### The optimisation phase - after the applications
 

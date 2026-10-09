@@ -567,6 +567,33 @@ def part3(image):
         name = "Label %02d" % i
         peer.boxes[name] = mailpeer.Box(name, "", 2000 + i)
 
+    # A picture on the network the route names, served from this Mac -
+    # fetched only when Load Pictures is pressed.
+    import http.server
+    import threading
+
+    asked_far = []
+
+    class Far(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            asked_far.append(self.path)
+            body = mailpeer.png(60, 30, (0xc8, 0x40, 0x30))
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    far = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Far)
+    threading.Thread(target=far.serve_forever, daemon=True).start()
+    route = peer.find("INBOX", "This week's route")
+    route["data"] = route["data"].replace(
+        b'<img src="cid:map@example.net">',
+        b'<img src="cid:map@example.net"> <img src="http://10.0.2.2:%d/far.png">' % far.server_address[1])
+
     # The three of the drawing newest, so they stay the first rows.
     inbox = peer.boxes["INBOX"]
     inbox.messages = inbox.messages[3:] + inbox.messages[:3]
@@ -612,6 +639,16 @@ def part3(image):
             time.sleep(0.2)
             guest.mouse_button(False)
             time.sleep(0.6)
+
+        def keep_window(name):
+            import kosmos_vnc as V
+            w_, h_, rgb_ = R.parse_ppm(guest.screendump())
+            ww, wh = (int(v) for v in re.search(r"(\d+)x(\d+)", placed).groups())
+            rows_ = [rgb_[((y * w_) + wx) * 3:((y * w_) + wx + ww) * 3]
+                     for y in range(wy, min(h_, wy + wh))]
+            os.makedirs(os.path.join(ROOT, "build", "mail"), exist_ok=True)
+            V.png(os.path.join(ROOT, "build", "mail", name), ww, len(rows_), b"".join(rows_))
+            return b"".join(rows_)
 
         def at(name, text):
             m = re.search(r"\b" + name + r" (\d+),(\d+)", text)
@@ -689,6 +726,16 @@ def part3(image):
         mark = len(guest.seen)
         click(lx + 100, ly + rh + rh // 2)
         said["route"] = guest.wait_for_line("mail: showing ", "the second shown", mark)
+        said["html"] = guest.wait_for_line("mail: html laid out at ", "the route's HTML laid out", mark)
+        said["asked_before"] = len(asked_far)
+        load = guest.wait_for_line("mail: load pictures at ", "Load Pictures shown", mark)
+        lpx, lpy = (int(v) for v in load.split(","))
+        click(lpx, lpy)
+        guest.wait_for_line(" pictures came", "the pictures fetched", mark)
+        said["came"] = re.findall(r"mail: (\d+ of \d+) pictures came", guest.seen[mark:])[-1:]
+        said["asked_after"] = len(asked_far)
+        time.sleep(1.5)
+        keep_window("mail-html.png")
 
         mark = len(guest.seen)
         click(lx + 100, ly + 2 * rh + rh // 2)
@@ -697,15 +744,9 @@ def part3(image):
         time.sleep(2)
 
         # The window as it looked, kept for whoever reads the run after.
-        import kosmos_vnc as V
-        w_, h_, rgb_ = R.parse_ppm(guest.screendump())
-        ww, wh = (int(v) for v in re.search(r"(\d+)x(\d+)", placed).groups())
-        rows_ = [rgb_[((y * w_) + wx) * 3:((y * w_) + wx + ww) * 3]
-                 for y in range(wy, min(h_, wy + wh))]
-        os.makedirs(os.path.join(ROOT, "build", "mail"), exist_ok=True)
-        V.png(os.path.join(ROOT, "build", "mail", "mail.png"), ww, len(rows_), b"".join(rows_))
-        said["paper"] = sum(1 for i in range(0, len(b"".join(rows_)), 3 * 7)
-                            if b"".join(rows_)[i:i + 3] == b"\xf7\xf7\xf5")
+        rows_ = keep_window("mail.png")
+        said["paper"] = sum(1 for i in range(0, len(rows_), 3 * 7)
+                            if rows_[i:i + 3] == b"\xf7\xf7\xf5")
 
         # Flag it; then delete the photos and archive the route.
         mark = len(guest.seen)
@@ -731,6 +772,11 @@ def part3(image):
         seen = guest.seen.replace("\r", "")
         guest.close()
         peer.stop()
+
+        # The whole transcript, kept for whoever reads a failure after.
+        os.makedirs(os.path.join(ROOT, "build", "mail"), exist_ok=True)
+        with open(os.path.join(ROOT, "build", "mail", "guest.log"), "w") as f:
+            f.write(seen)
 
     fails = []
 
@@ -762,6 +808,13 @@ def part3(image):
         fails.append("the newest message first: %r" % said.get("photos"))
     if not said.get("route", "").startswith("29, This week's route"):
         fails.append("the second, in HTML: %r" % said.get("route"))
+    if not re.search(r"\d+ px tall, 1 sent inside, 1 on the network", said.get("html", "")):
+        fails.append("the route's HTML, its own picture and one on the network: %r" % said.get("html"))
+    if said.get("asked_before") != 0:
+        fails.append("a picture on the network fetched before Load Pictures: %r" % said.get("asked_before"))
+    if said.get("came") != ["1 of 1"] or said.get("asked_after") != 1:
+        fails.append("Load Pictures fetched the one picture: %r, asked %r"
+                     % (said.get("came"), said.get("asked_after")))
     if not said.get("cafe", "").startswith("28, Café on Saturday, from Tomás Ferreira"):
         fails.append("the café message read by the Mail Kit: %r" % said.get("cafe"))
     if not re.match(r"\d+ paragraphs", said.get("set", "")):
@@ -786,7 +839,7 @@ def part3(image):
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 16
+    checks = 19
 
     if fails:
         print("FAIL: %d of %d checks on Mail's window:" % (len(fails), checks))
