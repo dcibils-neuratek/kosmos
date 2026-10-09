@@ -368,24 +368,32 @@ local function banners()
       end
     end
 
-    function view:mouse(action, x, y)
-      if action ~= "press" then return false end
-
+    -- A banner, or its x: done on the release over the same one - a click
+    -- is a press and a release (Diego, 9 October, "in all kosmos").
+    local function target_at(x, y)
       local i, on_x = hit(x, y)
 
-      if not i then return false end
+      if not i then return nil end
 
-      local s = table.remove(stack, i)
+      local s = stack[i]
 
-      if on_x then
-        print(("notifications: closed %d"):format(s.e.id))
-      else
-        act(s.e)
+      return (on_x and "x:" or "act:") .. tostring(s.e.id), function()
+        for k, each in ipairs(stack) do
+          if each == s then table.remove(stack, k) break end
+        end
+
+        if on_x then
+          print(("notifications: closed %d"):format(s.e.id))
+        else
+          act(s.e)
+        end
+
+        if #stack == 0 then win:close() else fit() end
       end
+    end
 
-      if #stack == 0 then win:close() else fit() end
-
-      return true
+    function view:mouse(action, x, y)
+      return ui.click(self, action, x, y, target_at)
     end
 
     win:add(view)
@@ -591,32 +599,36 @@ local function history()
     return true
   end
 
-  function view:mouse(action, x, y)
-    if action ~= "press" then return false end
-
-    for _, s in ipairs(spans) do
+  -- Clear, Do Not Disturb, or one of what was said: done on the release
+  -- over the same one.
+  local function target_at(x, y)
+    for i, s in ipairs(spans) do
       if x >= s.x and x < s.x + s.w and y >= s.y and y < s.y + s.h then
-        if s.what == "clear" then
-          notify.clear()
-          all = {}
-          group()
-          print("notifications: the history cleared")
-          win.dirty = true
-        elseif s.what == "dnd" then
-          r.dnd = not r.dnd
-          save_rule("dnd", r.dnd)
-          print("notifications: Do Not Disturb " .. (r.dnd and "on" or "off"))
-          win.dirty = true
-        elseif s.what == "item" then
-          act(s.e)
-          win:close()
+        return s.what .. ":" .. tostring(s.e and s.e.id or i), function()
+          if s.what == "clear" then
+            notify.clear()
+            all = {}
+            group()
+            print("notifications: the history cleared")
+            win.dirty = true
+          elseif s.what == "dnd" then
+            r.dnd = not r.dnd
+            save_rule("dnd", r.dnd)
+            print("notifications: Do Not Disturb " .. (r.dnd and "on" or "off"))
+            win.dirty = true
+          elseif s.what == "item" then
+            act(s.e)
+            win:close()
+          end
         end
-
-        return true
       end
     end
 
-    return false
+    return nil
+  end
+
+  function view:mouse(action, x, y)
+    return ui.click(self, action, x, y, target_at)
   end
 
   function view:key(c)

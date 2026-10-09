@@ -1458,6 +1458,41 @@ end
 -- The coordinates are the view's own, so a swatch grid can work out which
 -- swatch was hit without knowing where it sits on screen.
 --
+-- **A click for a view with several things to press** (step 2 of the same):
+-- `target_at(x, y)` names what is under a point and what pressing it does -
+-- `key, act` - and this holds the key on the press and runs `act` on the
+-- release if the same key is under the pointer then. A view's `mouse`
+-- returns what this returns:
+--
+--   function v:mouse(action, x, y)
+--     return ui.click(self, action, x, y, function(px, py) ... return key, act end)
+--   end
+--
+-- Anything the view does on the press itself - a menu opening, a drag
+-- beginning - it does before asking this.
+--
+function ui.click(self, action, x, y, target_at)
+  if action == "press" then
+    local key, act = target_at(x, y)
+
+    self.click_key, self.click_act = key, act
+    return key ~= nil
+  end
+
+  if self.click_key == nil then return false end
+
+  if action == "release" then
+    local held, act = self.click_key, self.click_act
+
+    self.click_key, self.click_act = nil, nil
+
+    if target_at(x, y) == held then act() end
+  end
+
+  return true
+end
+
+--
 -- **A click is a press and a release** (Diego, 9 October 2026: "mouse click
 -- is working in mouse down not in a real click which is mouse down+mouse
 -- up", "that is in all kosmos"): the press holds the view - the window

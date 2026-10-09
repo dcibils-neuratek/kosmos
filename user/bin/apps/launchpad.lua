@@ -411,31 +411,39 @@ local function grid_mode(ax, ay)
     end
   end
 
-  function view:mouse(action, x, y)
-    if action ~= "press" then return false end
-
-    -- A press on a section does what resting on it does, so a click is
-    -- never wrong either.
-    local cat = grid.side_hit(side, x, y)
-
-    if cat then
-      where = "side"
-      choose(cat)
-      return true
-    end
-
+  -- What a click at `x, y` does: a power button or an application, `key,
+  -- act` - acted on the release over the same one (`ui.click`; Diego, 9
+  -- October: a click is a press and a release, "in all kosmos").
+  local function target_at(x, y)
     local p = grid.foot_hit(foot, x, y)
 
-    if p then
-      power(p)
-      return true
+    if p then return "power:" .. tostring(p.name or p), function() power(p) end end
+
+    local i = grid.hit(#list, top, view.w, view.h, x, y)
+
+    if i then
+      local item = list[i]
+
+      return "app:" .. tostring(item.program or item.name or i), function() open(item) end
     end
 
-    local i = grid.hit(#list, top, self.w, self.h, x, y)
+    return nil
+  end
 
-    if i then open(list[i]) end
+  function view:mouse(action, x, y)
+    -- A press on a section does what resting on it does, so a click is
+    -- never wrong either - a section is browsed, not acted on.
+    if action == "press" then
+      local cat = grid.side_hit(side, x, y)
 
-    return true
+      if cat then
+        where = "side"
+        choose(cat)
+        return true
+      end
+    end
+
+    return ui.click(self, action, x, y, target_at) or action == "press"
   end
 
   --

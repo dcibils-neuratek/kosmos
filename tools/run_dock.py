@@ -457,6 +457,21 @@ def main():
         _, _, at = R.pixel_reader(guest.screendump())
         said["dismissed"] = at(bx, by)
 
+        # ---- 3a: pressed and slid off, it opens nothing - a click is a
+        # press and a release (Diego, 9 October: "that is in all kosmos") ----
+        mark = len(guest.seen)
+        kx, ky = kosmos_button()
+        guest.mouse_to(*R._to_tablet(kx, ky, width, height))
+        time.sleep(0.3)
+        guest.mouse_button(True)
+        time.sleep(0.3)
+        guest.mouse_to(*R._to_tablet(kx + 300, ky - 300, width, height))
+        time.sleep(0.3)
+        guest.mouse_button(False)
+        time.sleep(2)
+        guest._read_available()
+        said["slid off"] = "launchpad: the grid at " in guest.seen[mark:]
+
         # ---- 3b: the launcher, the left button's ----
         mark = len(guest.seen)
         click(*kosmos_button(), width, height)
@@ -837,6 +852,9 @@ def main():
                      "%d coloured pixels where the three cubes go"
                      % said.get("power pictures", 0))
 
+    if said.get("slid off") is not False:
+        fails.append("the Kosmos button, pressed and slid off before the release, opened the launcher")
+
     if not said.get("lit") or said.get("lit") == said.get("unlit"):
         fails.append("the Kosmos button was not lit while its menu was open: "
                      "%r, then %r" % (said.get("unlit"), said.get("lit")))
@@ -1035,7 +1053,7 @@ def main():
                      "the new height - its sidebar's ground near the new bottom "
                      "%r, near the old %r: %r" % (g1, g0, said.get("prefs resized")))
 
-    checks = 52
+    checks = 53
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))

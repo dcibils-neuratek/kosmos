@@ -22058,3 +22058,24 @@ gallery's close box pressed and slid off, the window stays. `x86-mail-4`
 25: New Message pressed and slid off opens nothing. **Controls**: the boxes
 acting wherever they are let go, check 5 fails; New Message on the press, a
 composer opens and part 4 fails.
+
+**Step 2 (0.11.99): the Deskbar, the launcher pad, Notifications.** The kit
+gains `ui.click(view, action, x, y, target_at)`: `target_at` names what is
+under a point and what pressing it does, and the click is held on the press
+and done on the release over the same thing - one way, for any view with
+several things to press. On it: the Deskbar's bar (the indicators, the
+clock, a window's button - the Kosmos menu still opening on the press), its
+strip, the dock's Kosmos button (its applications already acted on the
+release), the launcher pad's applications and power row (a section still
+shown on the press, as resting on it does), and Notifications' banners,
+their x, Clear, Do Not Disturb and each item.
+
+**A bug the gate found**: a window's button on the bar was found at the
+press and acted on at the release - and the press focuses the bar, which
+reads its list of windows again, so the release acted on the old list's
+entry: the window was raised and the bar drew nothing (`x86-display-3`,
+"deskbar focus"). It is found again by its window at the release now.
+
+The whole gate, 57 - `x86-display-3` once more after the fix. `x86-dock` 53:
+the Kosmos button pressed and slid off opens nothing. **Control**: the
+button on the press, the launcher opens and it fails.

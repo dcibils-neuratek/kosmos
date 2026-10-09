@@ -524,15 +524,18 @@ local function draw_reach(self, g, x, ly, gap, ink)
 end
 
 -- Whether a press at `x` is on one of them: Servers opened.
-local function reach_press(self, x)
+-- The sharing indicators under `x`: their key and what a click on them
+-- does - Servers, where the sharing is - or nil.
+local function reach_at(self, x)
   local function on(at_) return at_ and x >= at_ - 6 and x < at_ + LINE + 6 end
 
   if on(self.vnc_x) or on(self.telnet_x) then
-    fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/servers.lua" })
-    return true
+    return "reach", function()
+      fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/servers.lua" })
+    end
   end
 
-  return false
+  return nil
 end
 local W = sw
 
@@ -1757,12 +1760,64 @@ end
 -- What a click on the bar does.
 --------------------------------------------------------------------------
 
+--
+-- **What is under `x` on the bar, and what a click there does** - `key, act`,
+-- or nil. A click is a press and a release (Diego, 9 October: "that is in
+-- all kosmos"), so `bar:mouse` holds the key on the press and does `act` on
+-- the release over the same thing (`ui.click`); only the Kosmos menu opens
+-- on the press, as a menu does.
+--
+local bar_task
+
+local function opens(program)
+  return function() fs.send("/Running/wm", { type = "launch", program = program }) end
+end
+
+local function bar_target(self, x)
+  if self.volume_x and x >= self.volume_x - 4 and x < self.volume_x + LINE + 4 then
+    return "volume", opens("/Kosmos/Apps/mixer.lua")
+  end
+
+  if self.network_x and x >= self.network_x - 4 and x < self.network_x + LINE + 4 then
+    return "network", opens("/Kosmos/Apps/network.lua")
+  end
+
+  local reach, reach_act = reach_at(self, x)
+
+  if reach then return reach, reach_act end
+
+  if self.meters_x and x >= self.meters_x and x < self.meters_x + 26 then
+    return "meters", opens("/Kosmos/Apps/sysmon.lua")
+  end
+
+  if x >= right_x then
+    -- The clock and the date open what has been said, as macOS's and
+    -- Googlebook's do (`docs/notifications.html`); the date and time
+    -- themselves are set in Preferences, Date & Time.
+    return "clock", open_history
+  end
+
+  for _, s in ipairs(task_spans()) do
+    if x >= s.x and x < s.x + s.w then
+      local handle = s.w_.handle
+
+      -- Found again by its window at the release: the press focused the
+      -- bar, and the list of windows it was found in may have been read
+      -- again since - a button acting on the old list's entry raised the
+      -- window and drew nothing (the gate, 9 October).
+      return "task:" .. tostring(handle), function()
+        for _, now in ipairs(task_spans()) do
+          if now.w_.handle == handle then bar_task(now) return end
+        end
+      end
+    end
+  end
+
+  return nil
+end
+
 function bar:mouse(action, x, y)
-  local _ = y
-
-  if action ~= "press" then return false end
-
-  if x < kosmos_w() then
+  if action == "press" and x < kosmos_w() then
     -- Lit by the repaint this press causes: returning true is what repaints,
     -- and by then the menu is open and `#win.menus` says so. See "Instant
     -- feedback" in `ui.md` §16.13.
@@ -1770,95 +1825,67 @@ function bar:mouse(action, x, y)
     return true
   end
 
-  if self.volume_x and x >= self.volume_x - 4 and x < self.volume_x + LINE + 4 then
-    fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/mixer.lua" })
-    return true
+  return ui.click(self, action, x, y, function(px) return bar_target(self, px) end)
+end
+
+-- A task's button, clicked.
+bar_task = function(s)
+  --
+  -- **A second click on the window you are already in puts it away.**
+  --
+  -- Which is what every taskbar does and is the only gesture on this
+  -- bar that is not obvious from looking at it. The alternative - a
+  -- click always raises - makes the button under a focused window do
+  -- nothing at all, and a control that does nothing is worse than one
+  -- that does something you have to learn once.
+  --
+  -- `focused` and `hidden` both come from the window manager rather
+  -- than from anything remembered here: a second memory of one fact is
+  -- a second thing to be wrong.
+  --
+  local w_ = s.w_
+
+  -- Still starting: there is no window to raise, and it is on its way.
+  if w_.starting then return end
+
+  local what = selected(w_) and "minimise" or "raise"
+
+  --
+  -- **The button changes on this click, not when somebody says so.**
+  --
+  -- It is the control you press when you cannot find a window, so it has
+  -- to answer at once or you press it again. So the bar draws what it is
+  -- about to ask for, out of what it already knows, and the repaint that
+  -- returning true causes shows it. The `windows` event the request
+  -- causes arrives after and finds nothing to change.
+  --
+  -- One answer is waited for first, the request's own, which is a pass
+  -- of the window manager. Painting before asking would put the bar's
+  -- frame ahead of the raise in the window manager's queue and bring the
+  -- window up later by the same few milliseconds, and the window coming
+  -- up is the larger part of what a person is watching. Measured under
+  -- QEMU with `trace` on: about a tenth of a second from the window
+  -- manager moving the focus to the bar's finished frame, on this path
+  -- and on a window's tab alike.
+  --
+  -- Not a second memory of the focus: the window manager's list still
+  -- wins. A refused request - the window closed in between - asks for
+  -- the list again at once, so the guess does not stick.
+  --
+  for _, other in ipairs(running) do other.focused = nil end
+
+  if what == "raise" then
+    w_.focused = true
+    w_.hidden = nil
+  else
+    w_.hidden = true
   end
 
-  if self.network_x and x >= self.network_x - 4 and x < self.network_x + LINE + 4 then
-    fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/network.lua" })
-    return true
+  local ok = fs.send("/Running/wm", { type = what, window = w_.handle })
+
+  if not ok then
+    refresh()
   end
-
-  if reach_press(self, x) then return true end
-
-  if self.meters_x and x >= self.meters_x and x < self.meters_x + 26 then
-    fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/sysmon.lua" })
-    return true
-  end
-
-  if x >= right_x then
-    -- The clock and the date open what has been said, as macOS's and
-    -- Googlebook's do (`docs/notifications.html`); the date and time
-    -- themselves are set in Preferences, Date & Time.
-    open_history()
-    return true
-  end
-
-  for _, s in ipairs(task_spans()) do
-    if x >= s.x and x < s.x + s.w then
-      --
-      -- **A second click on the window you are already in puts it away.**
-      --
-      -- Which is what every taskbar does and is the only gesture on this
-      -- bar that is not obvious from looking at it. The alternative - a
-      -- click always raises - makes the button under a focused window do
-      -- nothing at all, and a control that does nothing is worse than one
-      -- that does something you have to learn once.
-      --
-      -- `focused` and `hidden` both come from the window manager rather
-      -- than from anything remembered here: a second memory of one fact is
-      -- a second thing to be wrong.
-      --
-      local w_ = s.w_
-
-      -- Still starting: there is no window to raise, and it is on its way.
-      if w_.starting then return true end
-
-      local what = selected(w_) and "minimise" or "raise"
-
-      --
-      -- **The button changes on this press, not when somebody says so.**
-      --
-      -- It is the control you press when you cannot find a window, so it has
-      -- to answer at once or you press it again. So the bar draws what it is
-      -- about to ask for, out of what it already knows, and the repaint that
-      -- returning true causes shows it. The `windows` event the request
-      -- causes arrives after and finds nothing to change.
-      --
-      -- One answer is waited for first, the request's own, which is a pass
-      -- of the window manager. Painting before asking would put the bar's
-      -- frame ahead of the raise in the window manager's queue and bring the
-      -- window up later by the same few milliseconds, and the window coming
-      -- up is the larger part of what a person is watching. Measured under
-      -- QEMU with `trace` on: about a tenth of a second from the window
-      -- manager moving the focus to the bar's finished frame, on this path
-      -- and on a window's tab alike.
-      --
-      -- Not a second memory of the focus: the window manager's list still
-      -- wins. A refused request - the window closed in between - asks for
-      -- the list again at once, so the guess does not stick.
-      --
-      for _, other in ipairs(running) do other.focused = nil end
-
-      if what == "raise" then
-        w_.focused = true
-        w_.hidden = nil
-      else
-        w_.hidden = true
-      end
-
-      local ok = fs.send("/Running/wm", { type = what, window = w_.handle })
-
-      if not ok then
-        refresh()
-      end
-
-      return true
-    end
-  end
-
-  return false
 end
 
 --
@@ -2049,6 +2076,7 @@ if DOCKED then
   -- drag without opening what it pressed on.
   --
   local DRAG_FROM = 6
+  local kosmos_held = nil
 
   function bar:mouse(action, x, y)
     if action == "move" and drag then
@@ -2066,6 +2094,17 @@ if DOCKED then
       elseif dock_tip_hide then
         dock_tip_hide()
       end
+
+      return true
+    end
+
+    -- The Kosmos button: the launcher, on the release over it.
+    if action == "release" and kosmos_held then
+      kosmos_held = nil
+
+      local it = dock.hit(items, x - (self.offset or 0))
+
+      if it and it.kind == "kosmos" and y >= 0 and y < self.h then dock_open_launcher() end
 
       return true
     end
@@ -2106,7 +2145,7 @@ if DOCKED then
     -- right button's (`on_context`).
     --
     if it.kind == "kosmos" then
-      dock_open_launcher()
+      kosmos_held = true
       return true
     end
 
@@ -2400,27 +2439,24 @@ if DOCKED then
     x = draw_reach(self, g, x, ly, 14, ink)
   end
 
-  -- What a press on the strip opens, as the bar's indicators do.
-  local function strip_press(x)
+  -- What is under `x` on the strip and what a click there opens, as the
+  -- bar's indicators do: `key, act`, or nil. Done on the release over it.
+  local function strip_target(x)
     local function near(at_) return at_ and x >= at_ - 6 and x < at_ + LINE + 6 end
-    local program = nil
 
-    if near(strip.bell_x) then
-      open_history()
-      return
-    elseif reach_press(strip, x) then
-      return
-    elseif near(strip.volume_x) then
-      program = "/Kosmos/Apps/mixer.lua"
-    elseif near(strip.network_x) then
-      program = "/Kosmos/Apps/network.lua"
-    elseif x < (strip.clock_w or 0) + 16 then
-      open_history()
-      return
-    end
+    if near(strip.bell_x) then return "bell", open_history end
 
-    if program then fs.send("/Running/wm", { type = "launch", program = program }) end
+    local reach, reach_act = reach_at(strip, x)
+
+    if reach then return reach, reach_act end
+    if near(strip.volume_x) then return "volume", opens("/Kosmos/Apps/mixer.lua") end
+    if near(strip.network_x) then return "network", opens("/Kosmos/Apps/network.lua") end
+    if x < (strip.clock_w or 0) + 16 then return "clock", open_history end
+
+    return nil
   end
+
+  local strip_held = {}
 
   if topstrip then
     topstrip:add(strip)
@@ -2442,7 +2478,9 @@ if DOCKED then
       local reply = wmproto.poll(topstrip.handle, 0)
 
       for _, ev in ipairs(reply and reply.events or {}) do
-        if ev.type == "mouse" and ev.action == "press" then strip_press(ev.x) end
+        if ev.type == "mouse" and (ev.action == "press" or ev.action == "release") then
+          ui.click(strip_held, ev.action, ev.x or 0, ev.y or 0, strip_target)
+        end
       end
 
       local now = table.concat({ heard.now and clock.time_string(heard.now) or "",
