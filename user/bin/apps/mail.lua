@@ -99,21 +99,40 @@ local USE_ICON = { inbox = "inbox", drafts = "page", sent = "sent", archive = "a
                    junk = "junk", trash = "trash", all = "archive", flagged = "flag",
                    important = "star" }
 
+--
+-- **A mailbox as a person reads it** (the M700, 8 October: Gmail's came out
+-- as `[Gmail]/Sent Mail` and `[Airmail]/Done`): its last name, indented
+-- under its parent - and Gmail's own `[Gmail]`, which holds Gmail's
+-- mailboxes and cannot be opened, left out of the path and the list. A
+-- mailbox kept for a use is named by its last name alone and comes first.
+--
+local function shaped(b)
+  local path = tostring(b.title or b.name):gsub("^%[Gmail%]/", "")
+  local parts = {}
+
+  for part in path:gmatch("[^/]+") do parts[#parts + 1] = part end
+
+  b.path = path
+  b.label = b.use == "inbox" and "Inbox" or parts[#parts] or path
+  b.depth = b.use and 0 or math.max(0, #parts - 1)
+
+  return b
+end
+
 local function sorted_boxes(boxes)
   local out = {}
 
   for _, b in ipairs(boxes or {}) do
-    -- IMAP names it INBOX on every server; a person reads Inbox.
-    if b.use == "inbox" then b.title = "Inbox" end
-
-    if b.selectable ~= false then out[#out + 1] = b end
+    if b.selectable ~= false and tostring(b.name) ~= "[Gmail]" then
+      out[#out + 1] = shaped(b)
+    end
   end
 
   table.sort(out, function(x, y)
-    local ox, oy = ORDER[x.use] or 99, ORDER[y.use] or 99
+    local ox, oy = ORDER[x.use] or (x.use and 50) or 99, ORDER[y.use] or (y.use and 50) or 99
 
     if ox ~= oy then return ox < oy end
-    return tostring(x.title):lower() < tostring(y.title):lower()
+    return x.path:lower() < y.path:lower()
   end)
 
   return out
@@ -124,6 +143,8 @@ end
 -- account's folder keeps when it is not - so a window opened with `maild`
 -- stopped still shows the mail already kept.
 --
+local said_boxes = nil
+
 local function read_accounts()
   local from_status = {}
 
@@ -156,6 +177,22 @@ local function read_accounts()
 
   table.sort(out, function(x, y) return x.address < y.address end)
   accounts = out
+
+  -- Said when they change, as a person reads them: a dash a level down.
+  local words = {}
+
+  for _, acc in ipairs(accounts) do
+    for _, b in ipairs(acc.boxes) do
+      words[#words + 1] = ("-"):rep(b.depth or 0) .. tostring(b.label)
+    end
+  end
+
+  words = table.concat(words, ", ")
+
+  if words ~= said_boxes and words ~= "" then
+    said_boxes = words
+    print("mail: mailboxes " .. words)
+  end
 end
 
 local function account_of(address)
@@ -595,7 +632,8 @@ local function take_away(kind)
 
   if not row then return end
 
-  if kind == "archive" and not box_for(current.account, "archive") then
+  if kind == "archive" and not (box_for(current.account, "archive")
+                                or box_for(current.account, "all")) then
     said = "This account has no Archive mailbox"
     return
   end
@@ -836,7 +874,7 @@ local function unread_total()
 end
 
 local function draw_header(s)
-  local sub = current and ("%s \u{00b7} %d unread"):format(current.box.title,
+  local sub = current and ("%s \u{00b7} %d unread"):format(current.box.label or current.box.title,
                                                        current.box.unseen or 0)
               or "No account yet"
 
@@ -901,10 +939,13 @@ local function draw_sidebar(s)
 
       if on then s:fill_round(8, y, SIDE_W - 16, h, theme.line_soft, 7) end
 
-      pk.icon(s, USE_ICON[b.use] or "folder", 18, y + (h - 15) // 2,
+      local inset = 16 * math.min(3, b.depth or 0)
+
+      pk.icon(s, USE_ICON[b.use] or "folder", 18 + inset, y + (h - 15) // 2,
               on and theme.accent or theme.text_dim)
-      s:text(18 + 15 + 10, y + (h - gfx.height()) // 2,
-             ui.fitted(b.title or b.name, SIDE_W - 110, "ui"), theme.text, nil, "ui")
+      s:text(18 + inset + 15 + 10, y + (h - gfx.height()) // 2,
+             ui.fitted(b.label or b.title or b.name, SIDE_W - 110 - inset, "ui"),
+             theme.text, nil, "ui")
 
       if (b.unseen or 0) > 0 then
         local n = tostring(b.unseen)
@@ -955,7 +996,7 @@ local function draw_list(s)
   s:fill(x0, y0, LIST_W - 1, 86, theme.window)
   s:fill(x0, y0 + 85, LIST_W - 1, 1, theme.line_soft)
 
-  local title = current and current.box.title or "Mail"
+  local title = current and (current.box.label or current.box.title) or "Mail"
   local line = said ~= "" and said
                or current and ("%d messages \u{00b7} %d unread"):format(#rows, current.box.unseen or 0)
                or "Add an account from the dots in the header"

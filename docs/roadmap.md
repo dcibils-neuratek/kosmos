@@ -8236,7 +8236,10 @@ step after M9** - `pop3.lua`, POP3 in `mailpeer.py`, and a path in `maild`
 that downloads without folders or flags (pop.gmail.com 995). Diego's own
 Gmail goes in on the M700 once M4 is there, typed by him.
 **M4 done** (18.484): the window, Add Account, `maild` started at login.
-Next: M5, HTML messages in the Web Kit.
+Next: M5, HTML messages in the Web Kit. **Diego's Gmail is in**, on the
+M700 (0.11.87-0.11.88). Seen there and not yet done: some subjects begin
+with "?" where, probably, an emoji has no glyph in the UI's face - to be
+looked at with the message's own bytes before anything is changed.
 
 ### The optimisation phase - after the applications
 

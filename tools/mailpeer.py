@@ -101,7 +101,10 @@ ARRIVING = ("From: Bob <bob@example.net>\r\n"
 # Mailboxes, their SPECIAL-USE, and a name outside ASCII (`Café`, in
 # IMAP's modified UTF-7).
 BOXES = [("INBOX", ""), ("Sent", "\\Sent"), ("Drafts", "\\Drafts"),
-         ("Trash", "\\Trash"), ("Archive", "\\Archive"), ("Caf&AOk-", "")]
+         ("Trash", "\\Trash"), ("Archive", "\\Archive"), ("Caf&AOk-", ""),
+         # A folder inside a folder, and Gmail's own parent, which holds
+         # mailboxes and cannot be opened.
+         ("Projects", ""), ("Projects/Kosmos", ""), ("[Gmail]", "\\Noselect")]
 
 
 class Box:
@@ -466,6 +469,8 @@ class Session:
         with self.peer.lock:
             for name, b in self.peer.boxes.items():
                 attrs = "\\HasNoChildren" + (" " + b.use if b.use else "")
+                if b.use == "\\Noselect":
+                    attrs = "\\Noselect \\HasChildren"
                 self.say('* LIST (%s) "/" "%s"' % (attrs, name))
         self.say(tag + " OK done")
 

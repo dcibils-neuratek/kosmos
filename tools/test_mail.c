@@ -213,6 +213,21 @@ int main(void)
         check(strcmp(pv, "Shipped Two brackets & screws, caf\xc3\xa9 sold separately.") == 0, said);
     }
 
+    /* 3b. A newsletter's head and style are not its words. */
+    parse("Subject: News\r\n"
+          "Content-Type: text/html; charset=utf-8\r\n"
+          "\r\n"
+          "<html><head><title>Ignore</title><STYLE type=\"text/css\">td, a { font-family: Arial; }"
+          "</STYLE></head><body><script>var x = 1;</script><p>Real words.</p></body></html>\r\n");
+
+    {
+        char pv[120];
+
+        mime_preview(&msg, pv, sizeof pv);
+        snprintf(said, sizeof said, "a newsletter's preview was \"%s\"", pv);
+        check(strcmp(pv, "Real words.") == 0, said);
+    }
+
     /* 4. Cut short: no closing boundary. The parts there were are kept. */
     parse("Content-Type: multipart/mixed; boundary=b\n\n--b\n\nfirst\n--b\n\nsecond, and then noth");
     check(msg.nparts == 3, "a multipart cut short did not keep the parts it had");

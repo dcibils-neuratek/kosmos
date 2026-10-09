@@ -21805,3 +21805,23 @@ list appear as they arrive. `mailpeer.py` answers FETCH by place.
 `x86-mail` 21 checks: a first look asked for the newest two gets the
 newest two. **Control**: `newest` ignored, it fails, "said '1,2,3', not
 '2,3'". `x86-mail-2` and `x86-mail-3` pass with the change.
+
+## 18.486 Gmail's mailboxes as a person reads them; a newsletter's preview
+
+From Diego's Gmail on the M700: the sidebar said `[Gmail]/Sent Mail`,
+`[Airmail]/Done` and listed `[Gmail]` itself, which cannot be opened; and an
+HTML-only newsletter's preview was its style sheet, "td, a { font-family...".
+Now a mailbox is shown by its last name, indented under its parent, with
+Gmail's `[Gmail]` left out of the path and of the list (`maild`'s status
+now carries whether a mailbox can be opened); and a preview passes over a
+head, a style sheet, a script and a title to their closing tags. Archive on
+Gmail, which has no Archive mailbox, moves to All Mail, which is what
+archiving there means.
+
+`test_mail` 30: a newsletter's head and style are not its preview.
+`x86-mail-3` 14: the mailboxes said as "Inbox, Drafts, Sent, Archive,
+Trash, Café, Projects, -Kosmos" - `mailpeer.py` now has `[Gmail]`, not
+openable, and `Projects/Kosmos`. **Controls**: the head not passed over,
+"Ignore td, a { font-family: Arial; } var x = 1; Real words."; the names
+as the server spells them, "INBOX, Drafts, Sent, Archive, Trash, [Gmail],
+Café, Projects, -Projects/Kosmos".

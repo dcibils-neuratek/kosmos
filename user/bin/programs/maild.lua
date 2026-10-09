@@ -100,6 +100,7 @@ local function status()
       local c = a.counts[b.name]
 
       boxes[#boxes + 1] = { name = b.name, title = b.title, use = b.use,
+                            selectable = b.selectable,
                             folder = folder_of(a, b), kept = c ~= nil,
                             messages = c and c.messages, unseen = c and c.unseen }
     end
@@ -389,7 +390,9 @@ local function do_ops(a, s)
         -- Archive and Delete are a move to the mailbox for that use; Delete
         -- in the Trash, or with no Trash, is the server's delete.
         local to = op.type == "move" and box_named(a, op.to)
-                   or op.type == "archive" and box_for(a, "archive")
+                   -- Gmail has no Archive: archiving there is All Mail
+                   -- keeping it and the Inbox not.
+                   or op.type == "archive" and (box_for(a, "archive") or box_for(a, "all"))
                    or op.type == "delete" and box_for(a, "trash")
 
         if to and to.name ~= b.name then

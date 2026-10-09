@@ -273,7 +273,7 @@ def part1(image):
         fails.append("a wrong password was not refused in the server's words: %r"
                      % lines.get("refused"))
 
-    expect("boxes", "Archive=archive,Café=nil,Drafts=drafts,INBOX=inbox,Sent=sent,Trash=trash",
+    expect("boxes", "Archive=archive,Café=nil,Drafts=drafts,INBOX=inbox,Projects/Kosmos=nil,Projects=nil,Sent=sent,Trash=trash,[Gmail]=nil",
            "the mailboxes by their use")
     expect("status", "3 3", "the Inbox's messages and unseen")
     expect("select", "3 1000 true", "INBOX selected, with its UIDVALIDITY and a MODSEQ")
@@ -472,7 +472,7 @@ def part2(image):
         if any(r[3] != "false" for r in r1):
             fails.append("messages nobody read marked seen: %r" % [r[3] for r in r1])
 
-    if mark_of(first, "B") != "Archive=archive,Café=nil,Drafts=drafts,INBOX=inbox,Sent=sent,Trash=trash":
+    if mark_of(first, "B") != "Archive=archive,Café=nil,Drafts=drafts,INBOX=inbox,Projects/Kosmos=nil,Projects=nil,Sent=sent,Trash=trash,[Gmail]=nil":
         fails.append("the mailboxes kept: %r" % mark_of(first, "B"))
 
     if mark_of(first, "S") != "true idle 4 4":
@@ -618,6 +618,7 @@ def part3(image):
         said["signed"] = guest.wait_for_line("mail: signed in ", "the account signed in", mark)
         guest.wait_for("maild: %s: 3 messages kept" % who, "the Inbox kept")
         said["account"] = session.run("cat /Home/Mail/%s/account" % who).decode(errors="replace")
+        said["boxes"] = guest.wait_for_line("mail: mailboxes ", "the mailboxes listed", 0)
 
         # The list, newest first: the photos, the route in HTML, the café.
         places = guest.wait_for_line("mail: places ", "the window's places", 0)
@@ -687,6 +688,10 @@ def part3(image):
     if "10.0.2.2" not in acc or mailpeer.PASSWORD in acc:
         fails.append("the account file, its server and no password: %r" % acc[:300])
 
+    if said.get("boxes") != "Inbox, Drafts, Sent, Archive, Trash, Café, Projects, -Kosmos":
+        fails.append("the mailboxes as a person reads them, [Gmail] left out: %r"
+                     % said.get("boxes"))
+
     if mailpeer.PASSWORD in seen:
         fails.append("the password was printed")
 
@@ -718,7 +723,7 @@ def part3(image):
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 13
+    checks = 14
 
     if fails:
         print("FAIL: %d of %d checks on Mail's window:" % (len(fails), checks))

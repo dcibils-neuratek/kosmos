@@ -900,6 +900,19 @@ static long reading_part(const struct mime_msg *m, const char *type)
     return -1;
 }
 
+/* Whether `p` starts with `word`, in any case. */
+static int lower_is(const uint8_t *p, const char *word, size_t len)
+{
+    for (size_t i = 0; i < len; i++) {
+        uint8_t c = p[i];
+
+        if (c >= 'A' && c <= 'Z') c = (uint8_t)(c + 32);
+        if (c != (uint8_t)word[i]) return 0;
+    }
+
+    return 1;
+}
+
 size_t mime_preview(const struct mime_msg *m, char *out, size_t room)
 {
     static uint8_t buf[256 * 1024];
@@ -935,7 +948,37 @@ size_t mime_preview(const struct mime_msg *m, char *out, size_t room)
         uint8_t c = buf[i];
 
         if (html) {
-            if (c == '<') { in_tag = 1; space = 1; continue; }
+            if (c == '<') {
+                /* What a head, a style sheet or a script holds is not words
+                 * anybody wrote: the whole of it is passed over, to its
+                 * closing tag. */
+                static const char *const skip[] = { "head", "style", "script", "title" };
+                size_t after = i;
+
+                for (size_t k = 0; k < sizeof skip / sizeof skip[0] && after == i; k++) {
+                    size_t l = strlen(skip[k]);
+
+                    if (i + 1 + l < n && lower_is(buf + i + 1, skip[k], l)
+                        && (buf[i + 1 + l] == '>' || buf[i + 1 + l] == ' '
+                            || buf[i + 1 + l] == '\t' || buf[i + 1 + l] == '\n'
+                            || buf[i + 1 + l] == '\r')) {
+                        for (size_t j = i + 1 + l; j + 2 + l < n; j++) {
+                            if (buf[j] == '<' && buf[j + 1] == '/'
+                                && lower_is(buf + j + 2, skip[k], l)) {
+                                after = j + 2 + l;
+                                break;
+                            }
+                        }
+
+                        if (after == i) after = n;      /* never closed: the rest */
+                    }
+                }
+
+                if (after != i) i = after;              /* on its close's name */
+                in_tag = 1;
+                space = 1;
+                continue;
+            }
             if (in_tag) { if (c == '>') in_tag = 0; continue; }
             if (c == '&') {
                 static const struct { const char *e; char c; } ents[] = {
