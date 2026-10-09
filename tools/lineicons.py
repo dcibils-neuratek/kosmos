@@ -94,6 +94,10 @@ ICONS = {
     # have a browser now") - what the browser fetches, what Mail saves.
     "downloads":  ("download", None),
 
+    # Preferences' Mouse page (9 October, roadmap 6zi): pointer speed and
+    # double-click speed.
+    "mouse":      ("mouse", None),
+
     # The kit's checkbox, ticked: white on the accent, so heavier than the
     # rest - at 15 pixels Lucide's own 2 on a filled box reads as a scratch.
     "check":      ("check", "3"),

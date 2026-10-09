@@ -491,7 +491,7 @@ while win.running do
         local t = sys.ticks()
         local presses = 1
 
-        if b == 1 and (t - lastPress) < hz * 0.4 and math.abs(x - lastX) < 6 and math.abs(y - lastY) < 6 then
+        if b == 1 and (t - lastPress) < ui.double_click_ticks() and math.abs(x - lastX) < 6 and math.abs(y - lastY) < 6 then
           presses = 2
         end
 

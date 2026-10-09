@@ -5469,6 +5469,12 @@ processors, and still what follows USB:
    by the counter today (`ui.md` 16.8c), a number in the kit, so it becomes
    a setting every window reads. Both kept in `/Home/Preferences` (6s d).
    **Drawn first**, as a page beside the others in `docs/preferences.html`.
+   **Agreed on 9 October, on the Kosmos Board, "Build it as drawn"; built the
+   same day** (`testing.md` 18.500): the Mouse page, the speed kept in
+   `/Home/Preferences/mouse` and applied by the window manager at the
+   desktop's start, no slider on a tablet, the double click told to every
+   window, and a folder to try it. The slow end is 1 s rather than the 0.9
+   drawn, and the default until moved, because of QEMU (`ui.md` 16.8c).
 
 6zh. **WANTED on 27 September - "Grooves", Diego's LÖVE audio production
    app, brought to Kosmos.** Diego: "i have a lua love2d audio production

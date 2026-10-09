@@ -434,6 +434,17 @@ local APPLY = {
   focus_delay_ms = function(ms)
     return fs.send("/Running/wm", { type = "keys", focus_delay_ms = ms })
   end,
+
+  -- The Mouse page (`roadmap.md` 6zi): the speed set on the board and the
+  -- double-click span told to every window, both by the manager, which
+  -- reads the same file when it starts.
+  speed = function(units)
+    return fs.send("/Running/wm", { type = "mouse", speed = units })
+  end,
+
+  double_click_ms = function(ms)
+    return fs.send("/Running/wm", { type = "mouse", double_click_ms = ms })
+  end,
 }
 
 --
@@ -663,6 +674,93 @@ local function control_for(it, x, y, changed)
     return box
   end
 
+  --
+  -- **The Mouse page's two speeds, each a slider of steps** with its ends
+  -- named under it (`docs/preferences.html`, `settings.POINTER_SPEEDS` and
+  -- `DOUBLE_CLICK_MS`): the step nearest what the file says is shown, and the
+  -- step's own number is what is written and applied as it moves. A tablet
+  -- has no speed - it says where it is - so its row has words instead.
+  --
+  if it.kind == "pointer_speed" or it.kind == "double_click" then
+    local steps = it.kind == "pointer_speed" and settings.POINTER_SPEEDS
+                  or settings.DOUBLE_CLICK_MS
+
+    if it.kind == "pointer_speed" and sys.pointer_speed() == 0 then return nil end
+
+    local now, at = tonumber(settings.get(it)) or it.default, 1
+
+    for i, v in ipairs(steps) do
+      if math.abs(v - now) < math.abs(steps[at] - now) then at = i end
+    end
+
+    local lh = gfx.height()
+    local box = ui.view{ x = x, y = y, w = 200, h = 20 + lh }
+    local function seconds(ms) return ("%g s"):format(ms / 1000) end
+    -- The span chosen, centred under the slider and centred again as it
+    -- changes: a label is as wide as its words when it is given no width.
+    local middle = ui.label{ x = 0, y = 20, text = "", color = theme.text_dim, role = "ui" }
+    local function show(ms)
+      middle.text = seconds(ms)
+      middle.x = 100 - gfx.measure(middle.text, "ui") // 2
+    end
+
+    if it.kind == "double_click" then show(steps[at]) end
+
+    local slider = ui.slider{ x = 0, y = 0, w = 200, max = #steps - 1, value = at - 1,
+                              on_change = function(_, v)
+                                local value = steps[v + 1]
+
+                                if it.kind == "double_click" then show(value) end
+                                if live(it, value) then settings.set(it, value) end
+                                print(("preferences: %s %d"):format(it.key, value))
+                                if changed then changed() end
+                              end }
+
+    box:add(slider)
+    box:add(ui.label{ x = 0, y = 20, w = 60, text = "Slow", color = theme.text_dim, role = "ui" })
+    box:add(middle)
+    box:add(ui.label{ x = 200 - gfx.measure("Fast", "ui"), y = 20, text = "Fast",
+                      color = theme.text_dim, role = "ui" })
+    return box
+  end
+
+  --
+  -- **Try it**: a folder that opens on a double click at the speed chosen -
+  -- the kit's own span, as every window has it from the manager - so the
+  -- speed is felt rather than read.
+  --
+  if it.kind == "try_double_click" then
+    local box = ui.view{ x = x, y = y, w = 120, h = 34 }
+    local said = ui.label{ x = 42, y = (34 - gfx.height()) // 2, w = 72, text = "Closed",
+                           color = theme.text_dim, role = "ui" }
+    local folder = ui.view{ x = 4, y = 2, w = 30, h = 30 }
+    local open, last = false, nil
+
+    function folder:draw(g)
+      g:line_icon(0, 0, "folder", open and theme.accent or theme.text_dim, 30)
+    end
+
+    function folder:mouse(action)
+      if action ~= "press" then return true end
+
+      local t = sys.ticks()
+
+      if last and t - last < ui.double_click_ticks() then
+        open, last = not open, nil
+        said.text = open and "Opened" or "Closed"
+        print("preferences: the folder " .. (open and "opened" or "closed"))
+      else
+        last = t
+      end
+
+      return true
+    end
+
+    box:add(folder)
+    box:add(said)
+    return box
+  end
+
   if it.kind == "brightness" then
     local now = backlight_ok and backlight.get() or nil
 
@@ -860,6 +958,7 @@ local function value_text(it)
   if it.kind == "value" then return tostring(it.value or "") end
   if it.kind == "volume" or it.kind == "mute" then return "No sound device" end
   if it.kind == "brightness" then return "Not on this screen" end
+  if it.kind == "pointer_speed" then return "Not for a tablet" end
 
   --
   -- **A row with nothing on the right is a row that looks broken**, and two
@@ -1017,6 +1116,11 @@ rebuild = function()
         if it.kind == "percent" then
           print(("preferences slider: %s at %d,%d, %d wide"):format(
                 it.key, SIDE + c.x, c.y + c.h // 2, 200))
+        elseif it.kind == "pointer_speed" or it.kind == "double_click" then
+          print(("preferences slider: %s at %d,%d, %d wide"):format(
+                it.key, SIDE + c.x, c.y + 10, 200))
+        elseif it.kind == "try_double_click" then
+          print(("preferences folder at %d,%d"):format(SIDE + c.x + 19, c.y + 17))
         end
       elseif taken > 0 then
         local shown = ui.label{ x = right - taken, y = y + (h - ch) // 2,

@@ -51,19 +51,36 @@ local function ui_tick_hz()
 end
 
 --
--- **How long "again" is**, for a second click: a second of the counter, read
--- from the machine rather than assumed. The tree measured why it is a whole
--- second and not half of one (its comment, and `ui.md` 16.8c); the list uses
--- the same number, so a second click means the same thing in both.
+-- **How long "again" is**, for a second click: Preferences' double-click
+-- speed (its Mouse page, `roadmap.md` 6zi), in the counter's ticks, read
+-- from the machine rather than assumed. The window manager tells a window
+-- the span when it opens and again when it changes (`clicks`), so nothing
+-- here asks in the middle of a click. **A second until it is set**: the tree
+-- measured why it is a whole second and not half of one under QEMU (its
+-- comment, and `ui.md` 16.8c). Every double click in the kit - a tree's, a
+-- list's, a header's - and those applications count themselves read this.
 --
-local cached_again
+local double_click_ms = 1000
+local cached_counter_hz
 
 local function ui_again()
-  if not cached_again then
-    cached_again = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+  if not cached_counter_hz then
+    cached_counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
   end
 
-  return cached_again
+  return cached_counter_hz * double_click_ms // 1000
+end
+
+-- The same span for an application that counts its own presses - Maps' map,
+-- Groove's knobs - so a double click is one speed everywhere.
+function ui.double_click_ticks() return ui_again() end
+
+-- The span, set: what the window manager said, held to what a person could
+-- mean by a double click.
+local function set_double_click(ms)
+  ms = math.tointeger(tonumber(ms))
+
+  if ms and ms >= 100 and ms <= 2000 then double_click_ms = ms end
 end
 
 local function ui_per_tick()
@@ -1176,8 +1193,6 @@ function ui.tree(spec)
   -- second is what a person manages on an emulated desktop and is still far
   -- below two clicks meant as two.
   --
-  local AGAIN = ui_again()
-
   function v:mouse(action, x, y)
     local to = ui.scrollbar_mouse(self, action, x, y, self.w, self.h,
                                   #(self.rows or {}), self.shown or 1,
@@ -1238,7 +1253,7 @@ function ui.tree(spec)
     --
     local now = sys.ticks()
 
-    if r.node == self.last_row and (now - (self.last_press or 0)) < AGAIN
+    if r.node == self.last_row and (now - (self.last_press or 0)) < ui_again()
        and (r.node.children or r.node.kids) then
       if r.node.open then
         r.node.open = false
@@ -6236,6 +6251,7 @@ function ui.window(spec)
   if reply.palette then theme.apply(reply.palette) end
   if reply.desktop then theme.override { desktop = reply.desktop } end
   apply_fonts(reply.fonts)
+  set_double_click(reply.double_click_ms)
 
   local w = setmetatable({
     handle = reply.window,
@@ -7380,6 +7396,12 @@ function window:direct_event(ev)
     return false
   end
 
+  -- A new double-click speed, from Preferences: nothing to draw.
+  if ev.type == "clicks" then
+    set_double_click(ev.double_click_ms)
+    return true
+  end
+
   return false
 end
 
@@ -8016,6 +8038,9 @@ function window:run()
         if self.running then self:close() end
 
         return
+      elseif ev.type == "clicks" then
+        -- Preferences' double-click speed, for every double click here.
+        set_double_click(ev.double_click_ms)
       elseif ev.type == "theme" then
         --
         -- The desktop changed its appearance and every window is being told.

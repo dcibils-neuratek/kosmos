@@ -1423,7 +1423,7 @@ while win.running do
 
       if ev.action == "press" and ev.button ~= "right" then
         local t = sys.ticks()
-        local double = (t - last_press) < counter_hz * 0.4
+        local double = (t - last_press) < ui.double_click_ticks()
                        and math.abs(x - last_x) < 6 and math.abs(y - last_y) < 6
 
         last_press, last_x, last_y = t, x, y

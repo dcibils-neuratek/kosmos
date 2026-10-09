@@ -58,6 +58,7 @@ settings.CATEGORIES = {
   { id = "power",      name = "Power",       icon = "power", gap_after = true },
   { id = "network",    name = "Network",     icon = "network" },
   { id = "keyboard",   name = "Keyboard",    icon = "keyboard" },
+  { id = "mouse",      name = "Mouse",       icon = "mouse" },
   { id = "startup",    name = "Startup",     icon = "startup" },
   --
   -- **File types** (`roadmap.md` 6z): what opens what, whose rows are not
@@ -83,6 +84,20 @@ settings.CLOCK      = "clock"
 settings.STARTUP    = "startup"
 settings.POWER      = "power"
 settings.KEYBOARD   = "keyboard"
+settings.MOUSE      = "mouse"
+
+--
+-- **The Mouse page's two scales** (`roadmap.md` 6zi, `docs/preferences.html`):
+-- each a slider of steps, the value kept being the step's own number - the
+-- board's units per count, a span in milliseconds - so the file says what it
+-- does without the slider beside it. The pointer's middle is today's 32; the
+-- double click's slow end is the second it has always been, because under
+-- QEMU a quick double click arrives three quarters of a second apart by the
+-- machine's clock (`ui.md` 16.8c), and its middle half a second, as macOS and
+-- Windows have it.
+--
+settings.POINTER_SPEEDS = { 8, 12, 16, 20, 26, 32, 40, 48, 60, 72, 90 }
+settings.DOUBLE_CLICK_MS = { 1000, 800, 650, 500, 400, 300, 200 }
 settings.NOTIFICATIONS = "notifications"
 
 -- The settings kit's whole-file read and write, by name: what `get` and
@@ -356,6 +371,18 @@ settings.ITEMS = {
         label = "Every shortcut",
         note = "Each key the desktop keeps, and what it does",
         kind = "open", program = "shortcuts" },
+
+  ------------------------------------------------------------------- mouse
+  item{ category = "mouse", group = "Pointer", label = "Speed",
+        note = "How far the arrow goes for a move of a mouse, a TrackPoint or a touchpad",
+        kind = "pointer_speed", file = settings.MOUSE, key = "speed", default = 32 },
+  item{ category = "mouse", group = "Double click", label = "Speed",
+        note = "How soon the second click has to come to make one double click",
+        kind = "double_click", file = settings.MOUSE, key = "double_click_ms",
+        default = 1000 },
+  item{ category = "mouse", group = "Double click", label = "Try it",
+        note = "Double-click the folder; it opens only at the speed chosen",
+        kind = "try_double_click" },
 
   ------------------------------------------------------------------ startup
   item{ category = "startup", group = "Open when the desktop starts",

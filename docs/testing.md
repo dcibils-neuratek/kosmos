@@ -22210,3 +22210,31 @@ so a wrong one typed for an account already kept replaces the right one
 test's: after a Delete the next message is shown at once, and its "showing"
 could arrive in the same read as the delete's, before the test looked for
 it; it now looks from before the press. Parts 3 to 6 pass side by side.
+
+## 18.500 Preferences' Mouse page: pointer speed and double-click speed
+
+`roadmap.md` 6zi, as `docs/preferences.html` draws it and Diego agreed on
+the board. **Pointer speed** is the board's - every relative device scaled
+by one number in `hal/pc/pointer.c`, which `pointer` set at the prompt and
+a restart forgot - so the page is a slider of eleven steps, 8 to 90 units
+a count with today's 32 in the middle, kept in `/Home/Preferences/mouse`
+as `speed`; the window manager sets it when the desktop starts and when
+Preferences asks (`mouse`). A tablet says where it is, so on one the row
+says "Not for a tablet" rather than offering a slider. **Double-click
+speed** was a second in the kit; it is `double_click_ms` now, seven steps
+from 1 s to 0.2 s, told to a window when it opens and to every window when
+it changes (`clicks`), and Maps and Groove, which counted their own 0.4 s,
+read the kit's. **Try it** is a folder that opens on a double click at the
+span chosen. A second until it is moved: under QEMU a quick double click
+arrives about 0.75 s apart by the machine's clock (`ui.md` 16.8c), so the
+drawing's 0.9 s slow end became 1 s.
+
+`x86-mouse` 9, two boots on one disk. With the tablet: no speed slider; the
+folder opened by two presses 0.45 s apart; the slider's fast end written as
+200, the window manager saying so, and the same two presses then two
+clicks. With a PS/2 mouse alone: the desktop starting with "speed 60,
+double click 200 ms" from the file the first boot left; a speed slider; a
+speed of 48 asked of the window manager answered by the board. **Controls**:
+the window manager not telling windows, and the fast span's two presses
+still close the folder; not reading the file at its start, and the second
+boot starts with nothing; the slider offered on a tablet, and it fails.

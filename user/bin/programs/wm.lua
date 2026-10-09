@@ -1604,6 +1604,46 @@ end
 
 OUT.load_keys()
 
+--
+-- **The mouse, as Preferences' Mouse page sets it** (`roadmap.md` 6zi,
+-- `/Home/Preferences/mouse`): the pointer's speed, which is the board's -
+-- `sys.pointer_speed`, as `pointer` sets it at the prompt - and how soon a
+-- second click makes a double one, which every window is told when it
+-- opens and when it changes (`clicks`), so none asks in a click. Read once
+-- here, so a speed chosen outlives a restart, which `pointer`'s never did.
+--
+-- The speed in the board's own units per count, and the span in
+-- milliseconds; a second until it is set (`ui.lua`, `ui.md` 16.8c).
+--
+OUT.mouse = { double_click_ms = 1000 }
+
+local function mouse_set(speed, double_click_ms)
+  local said = {}
+
+  if math.type(speed) == "integer" and speed >= 1 and speed <= 256 then
+    -- Nought back is a tablet, which says where it is: nothing to scale.
+    OUT.mouse.speed = sys.pointer_speed(speed)
+    said[#said + 1] = OUT.mouse.speed == 0 and "a tablet, no speed"
+                      or ("speed %d"):format(OUT.mouse.speed)
+  end
+
+  if math.type(double_click_ms) == "integer" and double_click_ms >= 100
+     and double_click_ms <= 2000 then
+    OUT.mouse.double_click_ms = double_click_ms
+    said[#said + 1] = ("double click %d ms"):format(double_click_ms)
+  end
+
+  if #said > 0 then print("wm: mouse " .. table.concat(said, ", ")) end
+end
+
+do
+  local mouse = prefs.read("mouse")
+
+  if type(mouse) == "table" then
+    mouse_set(math.tointeger(mouse.speed), math.tointeger(mouse.double_click_ms))
+  end
+end
+
 function OUT.shadowed(win)
   local fx, fy, fw, fh = frame_of(win)
 
@@ -3792,7 +3832,8 @@ handlers.open = function(req, who, cap)
            screen_w = scale.pt(W, pct), screen_h = scale.pt(H, pct),
            palette = theme.current(), desktop = theme.desktop,
            fonts = theme.fonts, headed = win.headed or false,
-           lights = OUT.lights_size(pct) }
+           lights = OUT.lights_size(pct),
+           double_click_ms = OUT.mouse.double_click_ms }
 end
 
 handlers.draw = function(req)
@@ -5472,6 +5513,27 @@ handlers.keys = function(req)
   end
 
   return { ok = true }
+end
+
+--
+-- Preferences' Mouse page: the pointer's speed set on the board, and the
+-- double-click span told to every window. What the speed is now comes back -
+-- nought on a tablet, which the page says rather than offering a slider
+-- that would do nothing.
+--
+handlers.mouse = function(req)
+  local before = OUT.mouse.double_click_ms
+
+  mouse_set(math.tointeger(req.speed), math.tointeger(req.double_click_ms))
+
+  if OUT.mouse.double_click_ms ~= before then
+    for _, win in ipairs(windows) do
+      post(win, { type = "clicks", double_click_ms = OUT.mouse.double_click_ms })
+    end
+  end
+
+  return { ok = true, speed = sys.pointer_speed(),
+           double_click_ms = OUT.mouse.double_click_ms }
 end
 
 handlers.theme = function(req)

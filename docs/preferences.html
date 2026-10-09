@@ -379,7 +379,7 @@ Appearance, because they are what the machine looks like.</p>
 <h2>The Mouse page</h2>
 <p>Diego, 27 September 2026: "preferences app need a mouse setting panel (pointer speed, mouse click speed)" (<code>roadmap.md</code> 6zi). Drawn on 9 October, beside Keyboard.</p>
 <p><b>Pointer speed</b> is the board's, and is there already: every relative device - a mouse, a TrackPoint, a touchpad - adds into one position in <code>hal/pc/pointer.c</code>, scaled by one number that <code>pointer</code> sets at the prompt and that is forgotten at a restart. The page sets the same number, keeps it in <code>/Home/Preferences/mouse</code>, and it is given back at login. Eleven steps, the middle one today's 32. <b>A tablet</b> - QEMU's pointer - says where it is rather than how far it moved, so it has no speed: the row says so rather than offering a slider that does nothing, and only then.</p>
-<p><b>Double-click speed</b> is a second today, one number in the kit that every window's double click asks (a title bar's, a list's, Tracker's), and Maps keeps 0.4 s of its own. It becomes a setting every window reads through the kit, Maps' own copy taken out: seven steps from 0.9 s to 0.2 s, 0.5 s in the middle as macOS and Windows have it. <b>Try it</b> is the folder at the end: it opens only when two clicks come within the span chosen, so the speed is felt rather than read.</p>
+<p><b>Double-click speed</b> is a second today, one number in the kit that every window's double click asks (a title bar's, a list's, Tracker's), and Maps keeps 0.4 s of its own. It becomes a setting every window reads through the kit, Maps' own copy taken out: seven steps from 1 s to 0.2 s, 0.5 s in the middle as macOS and Windows have it. <b>Built on 9 October with the slow end at 1 s rather than the 0.9 drawn</b>, and 1 s until it is moved: under QEMU a quick double click arrives three quarters of a second apart by the machine's clock (<code>ui.md</code> 16.8c), so anything shorter as the default would make the gesture impossible there. <b>Try it</b> is the folder at the end: it opens only when two clicks come within the span chosen, so the speed is felt rather than read.</p>
 <p>Both apply the moment they change, as every row here does.</p>
 
 <h2>Why this is a list and not a server</h2>
@@ -617,9 +617,9 @@ catsEl.addEventListener("click", e => {
   titleEl.textContent = CATS.find(c => c.id === el.dataset.id).name;
 });
 
-// The Mouse page: the double click's span from its slider - 0.9 s slow to
+// The Mouse page: the double click's span from its slider - 1 s slow to
 // 0.2 fast - and the folder that opens only when two clicks come within it.
-const SPANS = [900, 750, 600, 500, 400, 300, 200];
+const SPANS = [1000, 800, 650, 500, 400, 300, 200];
 let lastClick = 0;
 document.getElementById("span").addEventListener("input", e => {
   document.getElementById("span-shown").textContent = (SPANS[e.target.value] / 1000) + " s";

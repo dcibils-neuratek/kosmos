@@ -485,6 +485,12 @@ first (§16.8b).
 
 ## 16.8c Clicking a row again opens it
 
+**The span is Preferences' since 9 October** (Mouse, `roadmap.md` 6zi): the
+window manager tells every window the double-click speed when it opens and
+when it changes (`clicks`), and every double click in the kit - and Maps'
+and Groove's, which count their own - reads it. A second until it is moved,
+for the reason below.
+
 **The kit had no notion of a double click, and that was a deliberate
 refusal.** `tracker.lua` wrote it down where its file list wanted one: "A
 double click would be the BeOS answer and this kit has no notion of one;
