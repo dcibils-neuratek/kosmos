@@ -424,6 +424,24 @@ def main():
             time.sleep(0.15)
 
         click(60, 200)                       # a clip of the kick's, which stays selected
+
+        # **A scene launches on the press**, as Ableton's does (Diego, 9
+        # October: played live, the press is the moment): said while the
+        # button is still down.
+        guest._read_available()
+        scenes = re.findall(r"groove: scenes at (\d+),(\d+), rows of (\d+)", guest.seen[mark:])
+        launched_on_press = None
+        if scenes:
+            sx, sy, sh = (int(v) for v in scenes[-1])
+            at(sx + 10, sy + sh // 2)
+            time.sleep(0.2)
+            down_at = len(guest.seen)
+            guest.mouse_button(True)
+            time.sleep(1.0)
+            guest._read_available()
+            launched_on_press = "groove: scene 1 launched" in guest.seen[down_at:]
+            guest.mouse_button(False)
+            time.sleep(0.6)
         lights = re.search(r"Groove's three at (\d+),15 in it", guest.seen[mark:])
 
         if lights:
@@ -448,6 +466,8 @@ def main():
                            % (checked.group(1), checked.group(2), share.group(3)))
         check(share and int(share.group(2)) <= 6 and float(share.group(3)) < 30,
               "Groove still draws most of its window a frame: %s" % (share and share.group(0)))
+        check(launched_on_press is True,
+              "a scene was not launched on the press: %r" % launched_on_press)
         check("playing into the audio stream" in said,
               "Groove did not open playing into the audio stream:\n" + said[-800:])
         check("window Groove at 0,0 1920x1080, its header the title bar" in said,

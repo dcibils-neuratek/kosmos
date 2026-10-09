@@ -22174,3 +22174,17 @@ two bytes long; the region not grown, and 420 KB is refused; DELE not sent,
 and the deleted messages are still on the server; the flush taken out of
 the three, and part 6 and Maps fail. `x86-mail-3` failed once at a row
 click with seven suites side by side and passed alone.
+
+## 18.498 Groove launches clips and scenes on the press
+
+The one exception to a click being a press and a release (18.495), and
+Diego's on the board: a clip's play mark and a scene's launcher act on the
+press, as Ableton's do, since played live the press is the moment. Groove
+says where its scenes are, and "scene N launched" when one is.
+
+`arm-synth` 23: a press held a second on scene 1 launches it while the
+button is still down. **Control**: the scene back on the release, and it
+fails. Two checks of `arm-synth` - Groove's three lights not found, so
+neither was its menu - fail on the code before this as well: ARM's suites
+have not run since 8 October (*x86-only*), and they are left for when ARM
+resumes.

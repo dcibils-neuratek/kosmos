@@ -460,13 +460,13 @@ local function drawTrackColumn(ti, x)
         local _, pos = heardPos(ti)
         if pos then U.rect(x, y + sh - 3, w * pos / clip.len, 3, C.dark, 0, 0.75) end
       end
-      -- A press chooses the slot; its play mark launches it, on the release over the mark.
+      -- A press chooses the slot, and on its play mark launches it at once, as
+      -- Ableton does: played live, the press is the moment (Diego, 9 October).
       if hot and U.pressed then
         sel.track, sel.scene = ti, sc
-        if U.mx < x + 20 then U.hold(x, y, 20, sh) end
+        if U.mx < x + 20 then E.launchClip(ti, sc) end
         U.pressed = false
       end
-      if U.clicked(x, y, 20, sh) then E.launchClip(ti, sc) end
     else
       U.rect(x, y, w, sh, C.panel, 3)
       if hot then U.text("+", x, y + (sh - 14) / 2, C.dim, U.fM, w) end
@@ -517,8 +517,13 @@ local STOPALL_O = { bg = C.panel, tc = C.dim }
 local HELP = { "SPACE  play / stop", "1-8  launch scene", "0  stop all clips", "TAB  session / song", "A..L  play notes",
   "Z X  octave", "ENTER  new clip", "CTRL C V D  clip", "DEL  delete clip", "SHIFT  accent / fine" }
 
+-- Where the scenes are, said once a change, for whoever drives Groove from outside.
+local saidScenes = nil
+
 local function drawSceneColumn(x)
   local w = L.sceneW - 2
+  local where = ("groove: scenes at %d,%d, rows of %d"):format(floor(x), floor(L.slotY), floor(L.slotH))
+  if where ~= saidScenes then saidScenes = where; print(where) end
   -- same header box geometry as the track columns, so the column reads as header + 8 rows
   U.rect(x, L.sesY + 2, w, L.headH - 4, C.panel2, 3)
   U.text("SCENES", x, L.sesY + 8, C.dim, U.fS, w)
@@ -531,11 +536,13 @@ local function drawSceneColumn(x)
     U.rect(x, y, w, sh, hot and C.panel3 or C.panel2, 3)
     U.col(C.play); U.icon("play", x + 10, y + sh / 2, 4.5)
     U.text(E.song.scenes[sc], x + 20, y + (sh - 12) / 2, sel.scene == sc and C.text or C.dim, U.fS, nil, nil, w - 22)
-    -- A press chooses the scene; it is launched on the release over it.
-    if hot and U.pressed then sel.scene = sc; U.hold(x, y, w, sh) end
-    if U.clicked(x, y, w, sh) then
+    -- A press chooses the scene and launches it at once, as a clip's play mark
+    -- does: played live, the press is the moment (Diego, 9 October).
+    if hot and U.pressed then
+      sel.scene = sc; U.pressed = false
       E.launchScene(sc)
       if not E.playing then E.play() end
+      print(("groove: scene %d launched"):format(sc))
     end
   end
   if U.button(x, L.stopY + 1, w, L.stopH - 3, "STOP ALL", STOPALL_O) then
