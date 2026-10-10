@@ -207,7 +207,9 @@ by the window manager; Control is local, each application's: N new, O
 open, S save, F find. Not Control W (the desktop's prefix) nor C, X, V and
 A (text editing's); the Terminal's own keys are Control Shift, since Control
 is the program's inside it. Mail's Control N for a new message first, then
-one application at a time. Not listed in Shortcuts (`docs/shortcuts.md`,
+one application at a time. **The browser's keys move with it**: its tabs are
+on Super today - Super W closes one, Super D keeps the page, Super Shift ]
+goes to the next (`tools/run_browser.py`) - and become Control's. Not listed in Shortcuts (`docs/shortcuts.md`,
 *Global and local*).
 
 **The app switcher, Alt+Tab** - Diego, 10 October 2026: "lets add alt+tab

@@ -254,4 +254,90 @@ function keys.decoder()
   end
 end
 
+--
+-- **A chord as words** (`docs/shortcuts.md`): how a key combination is
+-- written wherever a person reads one - Shortcuts, its setting, a menu.
+--
+--   "Super+Shift+3"    one chord: the keys held together, `+` between them
+--   "Ctrl+W,Q"         a sequence: one chord, then the next, `,` between
+--
+-- `keys.caps` takes one apart into what is drawn - a list of steps, each the
+-- keycaps pressed together, each cap spelled the one way it is shown - so
+-- "control+w,q" and "Ctrl+W,Q" draw the same. `keys.spelling` is the same
+-- spelling for a word somebody typed into a search: "control", "cmd" and
+-- "win" are what this calls Ctrl and Super.
+--
+local SPELLED = {
+  super = "Super", cmd = "Super", command = "Super", win = "Super",
+  windows = "Super", meta = "Super",
+  ctrl = "Ctrl", control = "Ctrl",
+  alt = "Alt", option = "Alt",
+  shift = "Shift",
+  esc = "Esc", escape = "Esc",
+  enter = "Enter", ["return"] = "Enter",
+  tab = "Tab", space = "Space",
+  left = "Left", right = "Right", up = "Up", down = "Down",
+  arrows = "Arrows", drag = "Drag",
+  home = "Home", ["end"] = "End", delete = "Delete", backspace = "Backspace",
+}
+
+-- One cap, as it is shown; nil for an empty one.
+local function cap(word)
+  word = word:match("^%s*(.-)%s*$")
+
+  if word == "" then return nil end
+
+  local known = SPELLED[word:lower()]
+
+  if known then return known end
+
+  -- A function key, F1 to F12.
+  local f = word:match("^[fF](%d%d?)$")
+
+  if f and tonumber(f) >= 1 and tonumber(f) <= 12 then return "F" .. f end
+
+  -- A letter is shown as it is printed on the key, in capitals.
+  if #word == 1 then return word:upper() end
+
+  -- Anything else is one character as it is printed (`/`, `º`), or a word
+  -- this does not know - refused rather than drawn as a key nobody has.
+  if utf8.len(word) == 1 then return word end
+
+  return nil
+end
+
+-- The steps a chord is made of, each a list of caps; nil and why when it
+-- is not one.
+function keys.caps(chord)
+  if type(chord) ~= "string" or chord == "" then return nil, "no keys" end
+
+  local steps = {}
+
+  -- `,` and `+` are keys too, written as the word: "Ctrl+Plus" is not
+  -- needed yet, so neither is the word.
+  for step in (chord .. ","):gmatch("([^,]*),") do
+    local caps = {}
+
+    for word in (step .. "+"):gmatch("([^+]*)%+") do
+      local c = cap(word)
+
+      if not c then return nil, ("%q is not a key"):format(word) end
+
+      caps[#caps + 1] = c
+    end
+
+    steps[#steps + 1] = caps
+  end
+
+  return steps
+end
+
+-- A word as this spells a key, lower case, for matching; the word itself
+-- when it is not a key's.
+function keys.spelling(word)
+  local known = SPELLED[tostring(word):lower()]
+
+  return known and known:lower() or tostring(word):lower()
+end
+
 return keys

@@ -94,8 +94,8 @@
     </div>
     <div class="layer lua"><h2>Lua libraries and the UI kit (in the application's process)</h2>
       <div class="row" style="grid-template-columns:1.6fr 1fr">
-        <div class="box new"><span class="tag">NEW</span><b>UI kit - <code>ui.lua</code></b><p><code>g:keycaps</code> a chord as keys <span class="f">S2</span><br><code>ui.TEXT_KEYS</code>: the text keys, which the field dispatches from<br><code>ui.sheet</code>, out of Mail, now shared<br><code>ui.sidebar</code>, <code>ui.field</code>, <code>ui.list</code> as they are</p></div>
-        <div class="box new"><span class="tag">NEW</span><b>keys.lua</b><p><code>keys.spellings</code>: ctrl and Control, cmd, win and Super as one <span class="f">S1</span></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>UI kit - <code>ui.lua</code></b><p><code>g:keycaps</code> a chord as keys <span class="f">S2</span><br><code>ui.sheet</code>, out of Mail, now shared<br><code>ui.sidebar</code>, <code>ui.field</code>, <code>ui.list</code> as they are</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>keys.lua</b><p><code>keys.caps</code>, <code>keys.spelling</code>: a chord as words; ctrl and Control, cmd, win and Super as one <span class="f">S1</span></p></div>
       </div>
       <div class="row" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:10px">
         <div class="box"><b>prefs.lua</b><p><code>shortcuts</code>: what was made or changed <span class="f">M2</span></p></div>
@@ -123,7 +123,7 @@
   <div class="side">
     <div class="card"><h3>S - a key typed into the search</h3>
       <ol>
-        <li><b>S1</b> The query in words, each with its spellings from <code>keys.spellings</code>; about thirty rows matched.</li>
+        <li><b>S1</b> The query in words, each with its spellings from <code>keys.spelling</code>; about thirty rows matched.</li>
         <li><b>S2</b> The rows that fit drawn: keycaps and a line of text each, the matched words lit.</li>
         <li><b>S3</b> One commit; the window manager composes.</li>
       </ol>
@@ -137,13 +137,13 @@
     </div>
     <div class="card"><h3>O - opening, under 100 ms</h3>
       <ol>
-        <li><b>O1</b> One message: the window manager's keys and their groups; the kit's text keys are a table already in the process.</li>
+        <li><b>O1</b> One message: the window manager's keys and their groups; the text keys among them.</li>
       </ol>
     </div>
     <div class="card"><h3>One list, held</h3>
       <table>
         <tr><td>Desktop keys</td><td>the window manager's dispatch arrays</td></tr>
-        <tr><td>Text keys</td><td><code>ui.TEXT_KEYS</code>, the field's dispatch</td></tr>
+        <tr><td>Text keys</td><td><code>EDIT_BINDINGS</code>, the window manager's dispatch</td></tr>
         <tr><td>Yours and changes</td><td>the <code>shortcuts</code> setting: only differences, each in full</td></tr>
         <tr><td>Applications' own keys</td><td>not in it - system-wide keys only</td></tr>
       </table>

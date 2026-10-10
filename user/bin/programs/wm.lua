@@ -82,13 +82,21 @@ local KEY_PREFIX = 23      -- Control-W
 -- A table rather than a chain of comparisons because it is a lookup. There
 -- is no upper case here and there does not need to be: Control plus a
 -- letter is one control character whichever way the shift key is held.
+--
+-- **Declared with their words**, as the Super keys are (`wm/keys.lua`), so
+-- Shortcuts lists them from here: the list it showed was a copy kept beside
+-- this one, `EDIT_BINDINGS`, which a key added here would have missed.
 --------------------------------------------------------------------------
-local EDIT_KEYS = {
-  [1]  = "selectall",     -- Control-A
-  [3]  = "copy",          -- Control-C
-  [24] = "cut",           -- Control-X
-  [22] = "paste",         -- Control-V
+local EDIT_BINDINGS = {
+  { code = 1,  kind = "selectall", keys = "Ctrl+A", what = "Select everything" },
+  { code = 3,  kind = "copy",      keys = "Ctrl+C", what = "Copy" },
+  { code = 24, kind = "cut",       keys = "Ctrl+X", what = "Cut" },
+  { code = 22, kind = "paste",     keys = "Ctrl+V", what = "Paste" },
 }
+
+local EDIT_KEYS = {}
+
+for _, b in ipairs(EDIT_BINDINGS) do EDIT_KEYS[b.code] = b.kind end
 
 local theme = use("/Kosmos/Libraries/theme.lua")
 
@@ -6239,7 +6247,7 @@ OUT.switcher = use("/Kosmos/Libraries/wm/switcher.lua"){
 }
 
 local key = use("/Kosmos/Libraries/wm/keys.lua"){
-  EDIT_KEYS = EDIT_KEYS,
+  EDIT_KEYS = EDIT_KEYS, EDIT_BINDINGS = EDIT_BINDINGS,
   KEY_CTRL_C = KEY_CTRL_C,
   KEY_ESC = KEY_ESC,
   KEY_PREFIX = KEY_PREFIX,

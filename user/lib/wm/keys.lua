@@ -8,8 +8,8 @@
 --
 
 return function(ctx)
-  local EDIT_KEYS, KEY_CTRL_C, KEY_ESC, KEY_PREFIX =
-    ctx.EDIT_KEYS, ctx.KEY_CTRL_C, ctx.KEY_ESC, ctx.KEY_PREFIX
+  local EDIT_KEYS, EDIT_BINDINGS, KEY_CTRL_C, KEY_ESC, KEY_PREFIX =
+    ctx.EDIT_KEYS, ctx.EDIT_BINDINGS, ctx.KEY_CTRL_C, ctx.KEY_ESC, ctx.KEY_PREFIX
   local KEY_TAB, OUT, focused_window, handlers =
     ctx.KEY_TAB, ctx.OUT, ctx.focused_window, ctx.handlers
   local move_window, post, raise, to_focused =
@@ -314,11 +314,11 @@ return function(ctx)
       end,
     },
 
-    { key = 32, shown = "Super + Space",
+    { key = 32, shown = "Super+Space",
       what = "Start something by typing part of its name",
       run = function() open_launchpad() end },
 
-    { key = 47, shown = "Super + /",
+    { key = 47, shown = "Super+/",
       what = "This window",
       run = function() handlers.launch{ program = "shortcuts" } end },
 
@@ -328,11 +328,11 @@ return function(ctx)
     -- has (`hal/keys.c`, US) reads as the grave accent, so it is bound by
     -- that: the same key whatever is printed on it.
     --
-    { key = 35, shown = "Super + Shift + 3",
+    { key = 35, shown = "Super+Shift+3",
       what = "A picture of the whole screen, into Captures - Print Screen and Control Alt 1 too",
       run = function() handlers.launch{ program = "screenshot" } end },
 
-    { key = 96, shown = "Super + º",
+    { key = 96, shown = "Super+º",
       what = "Every shortcut, over everything until Escape",
       run = function() handlers.launch{ program = "shortcuts", args = "--modal" } end },
 
@@ -342,15 +342,15 @@ return function(ctx)
     -- the character Super+Tab also makes does nothing here but be kept from
     -- the window. Alt+Tab steps the windows, which Super+Tab used to.
     --
-    { key = 9, shown = "Super + Tab",
+    { key = 9, shown = "Super+Tab",
       what = "Show the running applications, last used first",
       run = function() end },
 
-    { key = 113, also = 81, shown = "Super + Q",
+    { key = 113, also = 81, shown = "Super+Q",
       what = "Close the window in front",
       run = function() close_focused() end },
 
-    { key = 104, also = 72, shown = "Super + H",
+    { key = 104, also = 72, shown = "Super+H",
       what = "Get the window in front out of the way",
       run = function() minimise_focused() end },
   }
@@ -366,25 +366,20 @@ return function(ctx)
   local PREFIX_BINDINGS = {
     -- And Alt+Tab, dispatched in `alt_tab` and named here for the same
     -- reason as the prefix's.
-    { shown = "Alt + Tab",        what = "Go round the open windows" },
-    { shown = "Alt + Shift + Tab", what = "Back round the open windows" },
-    { shown = "Control-W Q",      what = "End the desktop" },
-    { shown = "Control-W Tab",    what = "Go round the open windows" },
-    { shown = "Control-W arrows", what = "Move the window in front" },
-    { shown = "Control-W C",      what = "Send a real Control-C through" },
-    { shown = "Control-W Control-W", what = "Send a real Control-W through" },
+    { shown = "Alt+Tab",         what = "Go round the open windows" },
+    { shown = "Alt+Shift+Tab",   what = "Back round the open windows" },
+    { shown = "Ctrl+W,Q",        what = "End the desktop" },
+    { shown = "Ctrl+W,Tab",      what = "Go round the open windows" },
+    { shown = "Ctrl+W,Arrows",   what = "Move the window in front" },
+    { shown = "Ctrl+W,C",        what = "Send a real Control-C through" },
+    { shown = "Ctrl+W,Ctrl+W",   what = "Send a real Control-W through" },
   }
 
   --
-  -- And the ordinary ones, which are here so the window says what the whole
-  -- keyboard does rather than only the unusual half of it.
+  -- And the ordinary ones, so the window says what the whole keyboard does
+  -- rather than only the unusual half of it, are `EDIT_BINDINGS`, declared
+  -- with `wm.lua`'s dispatch of them rather than copied here.
   --
-  local EDIT_BINDINGS = {
-    { shown = "Control-A", what = "Select everything" },
-    { shown = "Control-C", what = "Copy" },
-    { shown = "Control-X", what = "Cut" },
-    { shown = "Control-V", what = "Paste" },
-  }
 
   SUPER_KEYS = {}
 
@@ -409,7 +404,7 @@ return function(ctx)
     end
 
     -- Not a key's, so not in the table keys are looked up in: the pointer's.
-    keys[#keys + 1] = { shown = "Super + Control + drag",
+    keys[#keys + 1] = { shown = "Super+Ctrl+Drag",
                         what = "Move a window from anywhere in it" }
 
     for _, b in ipairs(PREFIX_BINDINGS) do
@@ -417,7 +412,7 @@ return function(ctx)
     end
 
     for _, b in ipairs(EDIT_BINDINGS) do
-      edits[#edits + 1] = { shown = b.shown, what = b.what }
+      edits[#edits + 1] = { shown = b.keys, what = b.what }
     end
 
     return { ok = true, super = keys, prefix = prefixes, edit = edits }

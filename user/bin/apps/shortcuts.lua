@@ -31,6 +31,7 @@
 --------------------------------------------------------------------------
 
 local ui = use("/Kosmos/Libraries/ui.lua")
+local keys = use("/Kosmos/Libraries/keys.lua")
 
 --
 -- Wide enough for the longest sentence in the list, which is a thing to
@@ -38,7 +39,7 @@ local ui = use("/Kosmos/Libraries/ui.lua")
 -- right edge and were clipped mid-word, and a window whose whole purpose is
 -- to be read is the worst place for that.
 --
-local W, H = 580, 420
+local W, H = 720, 640
 
 --
 -- **Modal, from Super and º** (Diego, 3 October 2026: "pressing º should show
@@ -96,12 +97,10 @@ end
 -- worked out here anyway, and there would be sixty of them to keep in step
 -- when the list from the window manager changes length.
 --
--- The key goes in the mono face and the description in the interface one,
--- because a key is a thing you press and a sentence is a thing you read -
--- the same distinction the Terminal draws, for the same reason.
+-- The key is drawn as keycaps and the description as text, because a key
+-- is a thing you press and a sentence is a thing you read.
 --------------------------------------------------------------------------
 local PAD = 14
-local KEY_W = 170
 
 local view = ui.view{ x = 0, y = 0, w = W, h = H,
                       follow = { left = true, right = true,
@@ -116,6 +115,40 @@ function view:draw(g)
     return
   end
 
+  -- The words start where the widest row's keys end, measured as they are
+  -- drawn, since a cap's width is its word's in the face of the day.
+  local KEY_W = 0
+
+  for _, group in ipairs(groups) do
+    for _, row in ipairs(group.rows) do
+      KEY_W = math.max(KEY_W, ui.keycaps_width(tostring(row.shown or "?")))
+    end
+  end
+
+  KEY_W = KEY_W + 18
+
+  -- Said once, for `tools/run_dock.py`: how many keys, and how many of them
+  -- were not chords `keys.caps` could draw - which a list spelling a key
+  -- wrongly would show as words rather than as keys.
+  if not self.said then
+    local count, refused = 0, {}
+
+    for _, group in ipairs(groups) do
+      for _, row in ipairs(group.rows) do
+        count = count + 1
+
+        if not keys.caps(tostring(row.shown or "")) then
+          refused[#refused + 1] = tostring(row.shown)
+        end
+      end
+    end
+
+    self.said = true
+    print(("shortcuts: %d keys in %d groups, drawn as keycaps; %d not keys%s"):format(
+          count, #groups, #refused,
+          #refused > 0 and (": " .. table.concat(refused, ", ")) or ""))
+  end
+
   for _, group in ipairs(groups) do
     g:text(PAD, y, group.title, "text_dim")
     y = y + GH + 4
@@ -126,10 +159,12 @@ function view:draw(g)
     g:fill(PAD, y, self.w - PAD * 2, 1, "line")
     y = y + 6
 
+    -- Each key drawn as the keys themselves (`g:keycaps`), and its words
+    -- on the caps' line.
     for _, row in ipairs(group.rows) do
-      g:text(PAD, y, tostring(row.shown or "?"), "text", nil, "mono")
-      g:text(PAD + KEY_W, y, tostring(row.what or ""), "text")
-      y = y + GH + 3
+      g:keycaps(PAD, y, tostring(row.shown or "?"))
+      g:text(PAD + KEY_W, y + 2, tostring(row.what or ""), "text")
+      y = y + ui.keycaps_height() + 4
     end
 
     y = y + PAD

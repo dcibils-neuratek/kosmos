@@ -182,6 +182,37 @@ check(round, "keys.parts did not undo keys.with for every key and modifier")
 check(keys.with(keys.UP, 0) == -1 and keys.UP == -1 and keys.LEFT == -4,
       "an unmodified arrow is not the number it has always been")
 
+-- **A chord as words** (`docs/shortcuts.md`): taken apart into the caps
+-- drawn, spelled one way whatever way it was written, and a word that is
+-- not a key refused rather than drawn.
+local function caps_of(chord)
+  local steps = keys.caps(chord)
+
+  if not steps then return nil end
+
+  local out = {}
+
+  for _, s in ipairs(steps) do out[#out + 1] = table.concat(s, " ") end
+
+  return table.concat(out, " then ")
+end
+
+check(caps_of("Super+Shift+3") == "Super Shift 3", "Super+Shift+3 is not three caps")
+check(caps_of("Ctrl+W,Q") == "Ctrl W then Q", "Ctrl+W,Q is not a sequence")
+check(caps_of("control+w,q") == "Ctrl W then Q", "control+w,q is not spelled as Ctrl+W,Q")
+check(caps_of("cmd+t") == "Super T" and caps_of("Win+T") == "Super T",
+      "cmd and Win are not Super")
+check(caps_of("Super+º") == "Super º" and caps_of("Super+/") == "Super /",
+      "a key printed as one character is not itself")
+check(caps_of("Alt+Shift+Tab") == "Alt Shift Tab" and caps_of("F5") == "F5",
+      "Tab or a function key is not spelled as shown")
+check(keys.caps("Super+") == nil and keys.caps("") == nil and keys.caps("Super+Frobnicate") == nil
+      and keys.caps("F13") == nil,
+      "an empty cap, no keys, a word that is not a key or F13 was drawn")
+check(keys.spelling("Control") == "ctrl" and keys.spelling("cmd") == "super"
+      and keys.spelling("screen") == "screen",
+      "a searched word is not spelled as the key it names")
+
 if failed > 0 then
   print(("FAIL: %d of %d checks on the keys"):format(failed, passed + failed))
   os.exit(1)
@@ -190,4 +221,4 @@ end
 print(("PASS: %d checks on the keys (%d sequences the board makes, each read "
        .. "back as its key and modifiers; nothing typed that was not; unknown "
        .. "dropped whole; Super's held with Super, its tap the manager's; every "
-       .. "key's number taken apart as it was made)"):format(passed, #SEQUENCES))
+       .. "key's number taken apart as it was made; chords as words, spelled one way)"):format(passed, #SEQUENCES))

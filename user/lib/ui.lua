@@ -994,6 +994,87 @@ ui.keyparts, ui.keywith = keys.parts, keys.with
 ui.key_decoder = keys.decoder
 
 --------------------------------------------------------------------------
+-- **Keycaps**: a chord drawn as the keys themselves (`docs/shortcuts.md`).
+--
+--   g:keycaps(x, y, "Super+Tab")        two raised keys
+--   g:keycaps(x, y, "Ctrl+W,Q")         Ctrl W, then Q
+--   ui.keycaps_width("Super+Shift+3")   how wide, without drawing
+--
+-- Shortcuts draws every row with it, and a menu, Preferences or a lesson
+-- that names a key will want the same picture rather than a second one.
+-- The chord is `keys.caps`'s, so it is spelled the one way however it was
+-- written. A chord that is not one is drawn as its words, in the dim
+-- colour, so a mistake in a list shows as text rather than vanishing.
+--
+-- `y` is the top of the caps, which stand `ui.keycaps_height()` tall: the
+-- text's line and two points of key around it.
+--------------------------------------------------------------------------
+local CAP_PAD, CAP_GAP, CAP_R = 7, 4, 5
+
+function ui.keycaps_height()
+  return gfx.height() + 4
+end
+
+-- Each piece's place: a cap with its word and width, or the word "then".
+local function keycaps_layout(chord)
+  local steps = keys.caps(chord)
+
+  if not steps then return nil, gfx.measure(tostring(chord)) end
+
+  local h = ui.keycaps_height()
+  local out, x = {}, 0
+
+  for i, step in ipairs(steps) do
+    if i > 1 then
+      local w = gfx.measure("then")
+
+      out[#out + 1] = { x = x, w = w, word = "then", between = true }
+      x = x + w + CAP_GAP
+    end
+
+    for _, c in ipairs(step) do
+      local w = math.max(h, gfx.measure(c) + 2 * CAP_PAD)
+
+      out[#out + 1] = { x = x, w = w, word = c }
+      x = x + w + CAP_GAP
+    end
+  end
+
+  return out, x - CAP_GAP
+end
+
+function ui.keycaps_width(chord)
+  local _, w = keycaps_layout(chord)
+
+  return w
+end
+
+function gc:keycaps(x, y, chord)
+  local parts, width = keycaps_layout(chord)
+  local h = ui.keycaps_height()
+
+  if not parts then
+    self:text(x, y + 2, tostring(chord), "text_dim")
+    return width
+  end
+
+  for _, p in ipairs(parts) do
+    if p.between then
+      self:text(x + p.x, y + 2, p.word, "text_dim")
+    else
+      -- The key's lower edge a point deeper than its sides: what makes a
+      -- rectangle read as a key you press rather than a label.
+      self:fill_round(x + p.x, y, p.w, h, "line", CAP_R)
+      self:fill_round(x + p.x + 1, y + 1, p.w - 2, h - 3, "raised", CAP_R - 1)
+      self:text(x + p.x + (p.w - gfx.measure(p.word)) // 2, y + 2, p.word,
+                "text", "raised")
+    end
+  end
+
+  return width
+end
+
+--------------------------------------------------------------------------
 -- Trees.
 --
 -- A hierarchy you can open and close, which is the other half of what a file

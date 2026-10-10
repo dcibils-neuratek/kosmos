@@ -22874,3 +22874,26 @@ and of the whole. `x86-maps` 27: after the drag, the map zoomed in a step and
 out again - the same place, drawn whole - and its pixels held to the dragged
 ones, at least 97% the same. **Control**: the layer shifted the wrong way,
 27.4% the same.
+
+## 18.525 Shortcuts K1: a chord as words, drawn as keycaps
+
+The first step of Shortcuts (`docs/shortcuts.md`). `keys.caps` takes a chord
+written as words - `Super+Shift+3`, `Ctrl+W,Q` for a sequence - into the
+caps drawn, each spelled one way however it was written ("control", "cmd"
+and "win" are Ctrl and Super), and refuses a word that is not a key;
+`keys.spelling` does the same for a word typed into a search. `g:keycaps`
+in the UI kit draws one as raised keys with "then" between steps. The
+window manager's edit keys are declared once, with their words, in
+`wm.lua`'s `EDIT_BINDINGS`, which its dispatch is built from - the list
+`wm/keys.lua` kept beside it is gone - and every key it lists is spelled as
+a chord. The current Shortcuts window draws them as keycaps, and says how
+many it drew and how many were not keys.
+
+Smaller than the design first said: the text keys that work everywhere are
+the window manager's four, so there is no `ui.TEXT_KEYS`.
+
+`host` (`test_keys.lua`, 72): chords as caps, sequences, aliases, a
+character key, function keys, refusals. **Control**: "control" dropped from
+the spellings, 2 checks fail. `x86-dock` 54: the modal Shortcuts window
+drew 20 keys in 3 groups as keycaps, none refused. **Control**: `Ctrl+W,Q`
+spelled back as `Control-W Q`, "1 not keys: Control-W Q".

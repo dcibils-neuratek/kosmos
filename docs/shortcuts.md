@@ -85,7 +85,9 @@ Mail's Control N first (`roadmap.md`).
   - Windows: Alt+Tab, Control-W's commands, moving a window, and Magnet's
     keys when Magnet is built;
   - The screen: captures;
-  - Text: what every field and editor answers - copy, paste, select, words
+  - Text: what every window answers - select everything, copy, cut,
+    paste. An editor's own keys, such as undo and a word at a time, work
+    only in editors, so they are not here.
     and lines.
 - **Read a key as a key.** Each shortcut is drawn as keycaps (Super, then
   Tab) with what it does in words beside it. A sequence reads as one:
@@ -135,8 +137,8 @@ Mail's Control N first (`roadmap.md`).
 | Piece | Supplied by | New? |
 |---|---|---|
 | The desktop's, windows' and screen's keys, with their words and group | **window manager**: `handlers.shortcuts` in `wm/keys.lua`, from the arrays it dispatches from | exists; each binding gains its group |
-| Text editing's keys | **UI kit**: `ui.TEXT_KEYS`, declared beside the text field's key handling, which dispatches from it | new, in the kit; replaces the window manager's `EDIT_BINDINGS`, which was a copy |
-| A chord's spellings for search: "ctrl" is Control, "cmd" and "win" are Super | **keys.lua**: `keys.spellings` | new, in `keys.lua`; Preferences' Keyboard pane will want it too |
+| Text editing's keys: select everything, copy, cut, paste | **window manager**: `EDIT_BINDINGS` in `wm.lua`, the table its dispatch is built from, each with its chord and words | changed: it was `EDIT_KEYS` with no words, and `wm/keys.lua` kept a copy with them |
+| A chord as words: "Ctrl+W,Q" taken apart into the caps drawn, and a searched word spelled as the key it names ("control", "cmd", "win") | **keys.lua**: `keys.caps`, `keys.spelling` | new, in `keys.lua`; Preferences' Keyboard pane and the setting's reader will want it too |
 | Keycaps: a chord drawn as raised keys, a sequence with "then" | **UI kit**: `g:keycaps(x, y, chord)` and `ui.keycaps_width` | new, in the kit; the switcher's hint, Preferences and the IDE's lessons want it too |
 | The sidebar, the search field, the list of keys | **UI kit**: `ui.sidebar`, `ui.field`, `ui.list` | exists |
 | The cheat sheet as a document | **writedoc.lua**, the Write document | exists |
@@ -149,9 +151,9 @@ Mail's Control N first (`roadmap.md`).
 | The sheet over the window | **UI kit**: `ui.sheet`, moved out of Mail, whose Add Account draws one of its own today | new in the kit; Shortcuts is its second user, so it is a kit piece and Mail moves onto it |
 | The sheet's choices and buttons | **UI kit**: `ui.dropdown`, `ui.button` | exists |
 
-**Two copies this removes.** The current window's "Editing" group comes from
-a list the window manager keeps of keys the UI kit answers
-(`EDIT_BINDINGS`); the kit's own table replaces it. And
+**Two copies this removes.** The current window's "Editing" group came
+from a list `wm/keys.lua` kept beside the table `wm.lua` dispatches the
+same keys from; the table now carries the words and the copy is gone. And
 `docs/cheatsheet.html` is replaced by what Print writes, from the same
 lists, so it can never again be missing the Super keys as it was on 3
 October.
@@ -163,11 +165,10 @@ October.
      the window, the sidebar of groups, search, Print
          |
          |  fs.send("/Running/wm", {type="shortcuts"})   once, at open
-         |  ui.TEXT_KEYS                                  a table in the kit
          |  g:keycaps(x, y, chord)                        each row drawn
          v
-   UI kit (Lua)    ui.sidebar, ui.field, ui.list, keycaps, TEXT_KEYS
-   keys.lua        keys.spellings - ctrl and Control as one
+   UI kit (Lua)    ui.sidebar, ui.field, ui.list, keycaps
+   keys.lua        keys.caps, keys.spelling - a chord as words
    writedoc / pageset / pdfwrite   the cheat sheet, as a PDF
          |
          v
@@ -229,13 +230,17 @@ the M700.
 
 ## Steps
 
-- **K1** - the pieces in the kit:
-  - `g:keycaps` and `ui.keycaps_width`;
-  - `ui.TEXT_KEYS`, which the text field dispatches from;
-  - `keys.spellings`.
+- **K1** - the pieces:
+  - `keys.caps` and `keys.spelling`, a chord as words;
+  - `g:keycaps`, `ui.keycaps_width` and `ui.keycaps_height` in the UI kit;
+  - the edit keys declared once, with their words, in `wm.lua`;
+  - every key the window manager lists spelled as a chord ("Ctrl+W,Q");
+  - the current window drawing them as keycaps.
 
-  The window manager's `EDIT_BINDINGS` goes. Held on the Mac by
-  `tools/test_keys.lua` and by the display harness.
+  Smaller than first written: the text keys that work everywhere are the
+  window manager's four, not the UI kit's, so there is no `ui.TEXT_KEYS`.
+  Held on the Mac by `tools/test_keys.lua`, and by `tools/run_dock.py`
+  checking that the window draws every key as keycaps with none refused.
 - **K2** - the window manager:
   - each binding gains its group (desktop, windows or screen) and its
     `action` name;
