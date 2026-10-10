@@ -172,6 +172,7 @@
 
 #define RCTL_EN         (1u << 1)
 #define RCTL_BAM        (1u << 15)  /* broadcast accept */
+#define RCTL_MPE        (1u << 4)   /* every multicast frame (E1000_RCTL_MPE) */
 #define RCTL_BSIZE_2048 0u          /* bits 17:16 = 00 with BSEX clear */
 #define RCTL_SECRC      (1u << 26)  /* strip the CRC the card checked */
 
@@ -499,7 +500,14 @@ static void rings_start(void)
 
     card.started_at = kosmos_ticks();
 
-    reg_write(REG_RCTL, RCTL_EN | RCTL_BAM | RCTL_BSIZE_2048 | RCTL_SECRC);
+    /*
+     * **Every multicast frame as well** (`docs/sharing.md` N11a): multicast
+     * DNS is a group's, and rather than program the card's table of groups
+     * as programs join and leave them, the card passes them all and the
+     * stack keeps those of a group joined here. A home network's multicast
+     * is a trickle; a busy one would be the reason for the table.
+     */
+    reg_write(REG_RCTL, RCTL_EN | RCTL_BAM | RCTL_MPE | RCTL_BSIZE_2048 | RCTL_SECRC);
 
     /*
      * **The descriptors handed over once the receiver is on**, in

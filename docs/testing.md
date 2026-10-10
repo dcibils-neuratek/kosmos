@@ -22634,3 +22634,44 @@ finished, and frames past a minute. The whole gate, 63 of 63 in 6:55.
 What bounds it next is the ring: 16 KB each way (`tcpring.h`, whose comment
 says its size was never measured), so at most 16 KB in flight - about 16 MB a
 second at a millisecond. The M700 is the measurement.
+
+## 18.518 Datagrams, and a multicast group joined (N11a)
+
+`docs/sharing.md` N11a, the first step of finding SMB servers on the network.
+The stack had UDP "as far as DNS and DHCP need it, and no further". Now
+`NET_OP_UDP_BIND` binds a port - any free one for 0 - and joins a multicast
+group when one is named, and answers like a connection made at once: a
+handle and a region of the two rings in `tcpring.h`, in which whole
+datagrams travel, each a `struct net_datagram` (who sent it, or where it
+goes, its port and length) and its bytes, published once all of it is
+there; `PUSH`, `WAIT`, `POLL` and `CLOSE` mean what they mean for a
+connection. A datagram that finds its ring full is dropped, as UDP may; one
+to an address whose Ethernet address is not known yet waits a second for
+the answer. A group joined is reported with IGMPv2 (to the group, a time to
+live of one) and left on close when nobody else here is in it; a router's
+query - which carries the Router Alert option, so IP options are taken for
+IGMP alone - is answered for each group still joined. Datagrams to a group
+go to its own Ethernet address (01:00:5e and its low 23 bits) with a time to
+live of 255, multicast DNS's. The Intel card takes every multicast frame
+(RCTL.MPE) and the stack keeps those of a group joined. `opt/kosmos/net_address`
+gives a machine its address at boot where no DHCP answers. The network kit's
+`net.udp`, the namespace's `fs.udp`, and `udp`, a program: `send`, `listen`
+and `echo`.
+
+**`x86-udp`** (new, 6 checks): QEMU's user network carries no multicast, so
+the machine is put on a wire of its own - `-netdev dgram`, each frame a UDP
+datagram between two ports on the Mac's loopback - with `10.9.0.2/24` from
+the boot, running `udp echo 5353 224.0.0.251`; `tools/run_udp.py` is the
+other machine on it, answering ARP and speaking IPv4 and UDP in Python: the
+IGMP report for 224.0.0.251 seen; the hello to the group on the group's
+Ethernet address, with a time to live of 255; a datagram to the group said
+by the program and echoed to its sender after an ARP question; one to the
+machine's address echoed to port 7777; one to 224.0.0.252, not joined, left
+alone. **Controls**, in one run: no report on joining, and every group taken
+as joined - "no IGMP report" and "a datagram to a group the machine did not
+join was taken". `-netdev socket,mcast=` was tried first: QEMU's own
+recording (`filter-dump`) showed the machine sending, and on this Mac none
+of it reached a listener on the group.
+The whole gate, 63 of 64: `x86-film`, whose sound gaps under load are carded,
+failed once alone as well (1300 samples, a run of zeros at 1.62 s) and then
+passed twice alone.

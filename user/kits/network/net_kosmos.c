@@ -97,6 +97,7 @@ static const char *sentence(uint32_t status)
     case NET_ERR_NO_HANDLE:   return "no such connection";
     case NET_ERR_NO_RESOLVER: return "no DNS server is configured";
     case NET_ERR_NO_NAME:     return "there is no such name";
+    case NET_ERR_IN_USE:      return "that port is bound already";
     default:                  return "the network stack did not answer";
     }
 }
@@ -351,6 +352,8 @@ struct ring_handle {
     uint64_t         handle;
     long             net_cap;
     int              closed;        /* `close` was asked for */
+    int              datagram;      /* a port bound (`net.udp`), not a stream */
+    uint32_t         port;          /* and which */
 
     /* Where it is in the poll set this call is building, and which call
      * that is, so a connection named for reading and for writing is one
@@ -460,6 +463,9 @@ static int l_connect(lua_State *L)
 static int l_write(lua_State *L)
 {
     struct ring_handle *h = checkring(L, 1);
+
+    luaL_argcheck(L, !h->datagram, 1, "a port for datagrams is written with send");
+
     size_t len = 0;
     const char *text = luaL_checklstring(L, 2, &len);
     struct net_request req;
@@ -502,6 +508,9 @@ static int l_write(lua_State *L)
 static int l_read(lua_State *L)
 {
     struct ring_handle *h = checkring(L, 1);
+
+    luaL_argcheck(L, !h->datagram, 1, "a port for datagrams is read with receive");
+
     uint32_t read = h->ring->in_read;
     uint32_t ready = tcp_ring_ready(tcp_ring_acquire(&h->ring->in_write),
                                     read);
@@ -947,6 +956,180 @@ static int l_poll(lua_State *L)
 }
 
 
+/*
+ * **Datagrams** (`docs/sharing.md` N11a): `net.udp(cap, port [, group])` -
+ * a port bound, `0` for any free one, and a multicast group joined when
+ * one is named (four bytes, 224.0.0.0 to 239.255.255.255). The handle is a
+ * connection's - `wait`, `close` and `net.poll` work on it - with `send`
+ * and `receive` in place of `write` and `read`, since what travels is
+ * whole datagrams, each a `struct net_datagram` and its bytes in the ring.
+ */
+static int l_udp(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    struct net_request req;
+    struct net_reply rep;
+    struct message msg, out;
+    struct ring_handle *h;
+    long region, at;
+
+    memset(&req, 0, sizeof(req));
+    req.op   = NET_OP_UDP_BIND;
+    req.port = (uint32_t)luaL_optinteger(L, 2, 0);
+    take_addr(L, 3, &req.to);
+
+    memset(&msg, 0, sizeof(msg));
+    msg.length = sizeof(req);
+    memcpy(msg.data, &req, sizeof(req));
+
+    if (kosmos_call(cap, &msg, &out) != 0 || out.length < sizeof(rep)) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "the network stack did not answer");
+        return 2;
+    }
+
+    memcpy(&rep, out.data, sizeof(rep));
+
+    if (rep.status != NET_OK) {
+        return failed(L, rep.status);
+    }
+
+    if (out.cap_plus_one == 0) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "the stack bound it but sent no rings");
+        return 2;
+    }
+
+    region = (long)out.cap_plus_one - 1;
+    at = kosmos_mem_map(region);
+
+    if (at < 0) {
+        (void)kosmos_cap_drop(region);
+        lua_pushnil(L);
+        lua_pushliteral(L, "the rings could not be mapped");
+        return 2;
+    }
+
+    h = (struct ring_handle *)lua_newuserdatauv(L, sizeof(*h), 0);
+    memset(h, 0, sizeof(*h));
+    h->ring     = (struct tcp_ring *)(uintptr_t)at;
+    h->cap      = region;
+    h->handle   = rep.handle;
+    h->net_cap  = cap;
+    h->datagram = 1;
+    h->port     = rep.state;
+
+    luaL_setmetatable(L, "kosmos.tcp");
+    return 1;
+}
+
+static struct ring_handle *checkdatagram(lua_State *L)
+{
+    struct ring_handle *h = checkring(L, 1);
+
+    luaL_argcheck(L, h->datagram, 1, "a connection is a stream: write and read");
+    luaL_argcheck(L, h->ring != NULL, 1, "that port has been let go");
+    return h;
+}
+
+/* `port:send(address, port, bytes)` - true, or false when the ring has no
+ * room for it now; a datagram too large for one frame is an error. */
+static int l_send(lua_State *L)
+{
+    struct ring_handle *h = checkdatagram(L);
+    struct net_datagram d;
+    struct net_request req;
+    struct message msg, out;
+    size_t len = 0;
+    const char *bytes;
+    uint32_t write, space, i;
+
+    memset(&d, 0, sizeof(d));
+    take_addr(L, 2, &d.addr);
+    d.port = (uint16_t)luaL_checkinteger(L, 3);
+    bytes = luaL_checklstring(L, 4, &len);
+    luaL_argcheck(L, len <= NET_DATAGRAM_MAX, 4, "more than one datagram carries");
+    d.length = (uint16_t)len;
+
+    write = h->ring->out_write;
+    space = tcp_ring_space(h->ring->bytes, write, tcp_ring_acquire(&h->ring->out_read));
+
+    if (space < sizeof(d) + len) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+
+    for (i = 0; i < sizeof(d); i++) {
+        tcp_ring_out(h->ring)[(write + i) % h->ring->bytes] = ((const uint8_t *)&d)[i];
+    }
+
+    for (i = 0; i < len; i++) {
+        tcp_ring_out(h->ring)[(write + (uint32_t)sizeof(d) + i) % h->ring->bytes]
+            = (uint8_t)bytes[i];
+    }
+
+    tcp_ring_publish(&h->ring->out_write, write + (uint32_t)sizeof(d) + (uint32_t)len);
+
+    memset(&req, 0, sizeof(req));
+    req.op     = NET_OP_PUSH;
+    req.handle = h->handle;
+    memset(&msg, 0, sizeof(msg));
+    msg.length = sizeof(req);
+    memcpy(msg.data, &req, sizeof(req));
+    (void)kosmos_call(h->net_cap, &msg, &out);
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/* `port:receive()` - the next datagram, who sent it and from which port;
+ * nil when none is waiting. */
+static int l_receive(lua_State *L)
+{
+    struct ring_handle *h = checkdatagram(L);
+    uint32_t read = h->ring->in_read;
+    uint32_t ready = tcp_ring_ready(tcp_ring_acquire(&h->ring->in_write), read);
+    struct net_datagram d;
+    luaL_Buffer b;
+    uint32_t i;
+
+    if (ready < sizeof(d)) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    for (i = 0; i < sizeof(d); i++) {
+        ((uint8_t *)&d)[i] = tcp_ring_in(h->ring)[(read + i) % h->ring->bytes];
+    }
+
+    if (sizeof(d) + d.length > ready) {
+        lua_pushnil(L);                 /* not all there: the stack publishes whole ones */
+        return 1;
+    }
+
+    luaL_buffinit(L, &b);
+
+    for (i = 0; i < d.length; i++) {
+        luaL_addchar(&b, (char)tcp_ring_in(h->ring)[(read + (uint32_t)sizeof(d) + i)
+                                                    % h->ring->bytes]);
+    }
+
+    tcp_ring_publish(&h->ring->in_read, read + (uint32_t)sizeof(d) + d.length);
+    luaL_pushresult(&b);
+    push_addr(L, &d.addr);
+    lua_pushinteger(L, d.port);
+    return 3;
+}
+
+/* `port:port()` - which port it is, the one asked for or the one given. */
+static int l_port(lua_State *L)
+{
+    struct ring_handle *h = checkdatagram(L);
+
+    lua_pushinteger(L, (lua_Integer)h->port);
+    return 1;
+}
+
 void kosmos_net_kit(lua_State *L)
 {
     static const luaL_Reg api[] = {
@@ -959,6 +1142,7 @@ void kosmos_net_kit(lua_State *L)
         { "accept",    l_accept },
         { "poll",      l_poll },
         { "resolve",   l_resolve },
+        { "udp",       l_udp },
         { NULL, NULL }
     };
 
@@ -968,6 +1152,9 @@ void kosmos_net_kit(lua_State *L)
         { "wait",   l_wait },
         { "closed", l_closed },
         { "close",  l_close },
+        { "send",   l_send },
+        { "receive", l_receive },
+        { "port",   l_port },
         { "__gc",   l_gc },
         { NULL, NULL }
     };

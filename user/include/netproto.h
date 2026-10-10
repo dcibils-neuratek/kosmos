@@ -157,6 +157,26 @@
  */
 #define NET_OP_DHCP     13u
 
+/*
+ * **Datagrams** (`docs/sharing.md` N11a, 10 October 2026): a port bound,
+ * and - when `to` is a multicast group, 224.0.0.0 to 239.255.255.255 - that
+ * group joined (IGMPv2), which is what multicast DNS needs, and NTP and a
+ * stream of sound over the network after it. `port` 0 is any free one.
+ *
+ * Answered like a connection made at once: a handle and a region of the
+ * two rings in `tcpring.h`, with `PUSH`, `WAIT`, `POLL` and `CLOSE` meaning
+ * what they mean for a connection. What travels in a ring is not a stream
+ * but whole datagrams, each a `struct net_datagram` and its bytes: in `in`,
+ * written by the stack, who sent it; in `out`, written by the program,
+ * where it goes. A datagram is written whole and published once, so the
+ * other side never sees half of one; one that arrives to a full ring is
+ * dropped, as UDP may.
+ */
+#define NET_OP_UDP_BIND 14u
+
+/* The most a datagram carries: an Ethernet frame's, less IP and UDP. */
+#define NET_DATAGRAM_MAX  1472u
+
 /* How the address in `NET_OP_INFO` was come by. */
 #define NET_ADDRESS_NONE    0u      /* none yet */
 #define NET_ADDRESS_GIVEN   1u      /* `NET_OP_CONFIG`, by hand */
@@ -176,6 +196,7 @@
 #define NET_ERR_NO_HANDLE   10u   /* no such connection */
 #define NET_ERR_NO_RESOLVER 11u   /* no DNS server is configured */
 #define NET_ERR_NO_NAME     12u   /* the resolver said there is no such name */
+#define NET_ERR_IN_USE      13u   /* that port is bound already */
 
 /*
  * **How many connections at once: as many as the machine will hold.**
@@ -246,6 +267,14 @@ struct net_addr {
     uint8_t byte[4];
 };
 
+/* A datagram's header in a ring (`NET_OP_UDP_BIND`). */
+struct net_datagram {
+    struct net_addr addr;           /* in: who sent it; out: where it goes */
+    uint16_t port;                  /* the far end's port */
+    uint16_t length;                /* the bytes that follow */
+};
+
+
 struct net_request {
     uint32_t op;
     uint32_t seq;                   /* the echo's sequence number */
@@ -308,7 +337,8 @@ struct net_reply {
     uint32_t status;
     uint32_t seq;
     uint64_t handle;                /* the connection this is about */
-    uint32_t state;                 /* NET_TCP_*, for a connection */
+    uint32_t state;                 /* NET_TCP_*, for a connection; for
+                                       NET_OP_UDP_BIND, the port bound */
 
     /* For NET_OP_POLL: how many of the entries have something to say. */
     uint32_t ready;

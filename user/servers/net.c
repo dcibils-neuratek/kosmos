@@ -109,11 +109,15 @@
 #define IP_HEADER       20
 
 #define IP_PROTO_ICMP   1u
+#define IP_PROTO_IGMP   2u
 #define IP_PROTO_TCP    6u
 #define IP_PROTO_UDP   17u
 
 /* Defined below, beside DNS - the only thing that sends one. */
 static void udp_receive(const uint8_t *packet, unsigned total);
+static bool udp_deliver(const uint8_t *packet, unsigned total);
+static void igmp_receive(const uint8_t *packet, unsigned total);
+static bool joined(const uint8_t *group);
 static void dhcp_receive(const uint8_t *m, unsigned length);
 
 #define DHCP_SERVER_PORT  67u
@@ -177,6 +181,7 @@ static void dhcp_receive(const uint8_t *m, unsigned length);
 #define ST_CLOSE_WAIT   4       /* they sent FIN, we may still send */
 #define ST_LAST_ACK     5       /* both sent; waiting to be acknowledged */
 #define ST_DEAD         6
+#define ST_UDP          9       /* a port bound for datagrams (N11a) */
 
 /* RFC 792. */
 #define ICMP_TYPE       0
@@ -339,6 +344,13 @@ struct conn {
     /* The region, and where it is mapped in this process. */
     long     region;
     struct tcp_ring *ring;
+
+    /* For datagrams (`ST_UDP`): the multicast group joined, if one was,
+     * and since when the datagram at the front of `out` has waited for an
+     * address's answer. */
+    struct net_addr group;
+    bool     grouped;
+    uint64_t out_waiting;
 };
 
 static struct {
@@ -351,6 +363,10 @@ static struct {
     uint32_t drop_every;
     uint32_t drop_count;
     uint32_t dropped;
+
+    /* `opt/kosmos/net_address=A.B.C.D/N`: an address from the boot, for a
+     * network where no DHCP answers - a test's multicast segment. */
+    bool     fixed;
     uint32_t mtu;
 
     struct net_addr address;
@@ -954,8 +970,23 @@ static const struct net_addr *next_hop(const struct net_addr *to)
  * IPv4 and ICMP.
  *----------------------------------------------------------------------*/
 
+/* A multicast group's address: 224.0.0.0 to 239.255.255.255. */
+static bool multicast(const struct net_addr *a)
+{
+    return (a->byte[0] & 0xf0u) == 0xe0u;
+}
+
+static bool send_ip_ttl(const struct net_addr *to, uint8_t protocol,
+                        const uint8_t *body, unsigned length, uint8_t ttl);
+
 static bool send_ip(const struct net_addr *to, uint8_t protocol,
                     const uint8_t *body, unsigned length)
+{
+    return send_ip_ttl(to, protocol, body, length, 64);
+}
+
+static bool send_ip_ttl(const struct net_addr *to, uint8_t protocol,
+                        const uint8_t *body, unsigned length, uint8_t ttl)
 {
     /*
      * A whole datagram, not a whole ping.
@@ -983,10 +1014,23 @@ static bool send_ip(const struct net_addr *to, uint8_t protocol,
      * questions go to 255.255.255.255 before this machine has an address
      * to be answered at, and an ARP for "everybody" has no answer.
      */
-    hop = everybody(to) ? to : next_hop(to);
-    e = everybody(to) ? NULL : arp_find(hop);
+    /*
+     * **To a multicast group: an address of its own on the wire**, the
+     * group's low 23 bits under 01:00:5e (RFC 1112), and no question asked
+     * about it - every member takes that address (N11a).
+     */
+    uint8_t group_mac[6] = { 0x01, 0x00, 0x5e, 0, 0, 0 };
 
-    if (e == NULL && !everybody(to)) {
+    if (multicast(to)) {
+        group_mac[3] = to->byte[1] & 0x7fu;
+        group_mac[4] = to->byte[2];
+        group_mac[5] = to->byte[3];
+    }
+
+    hop = everybody(to) || multicast(to) ? to : next_hop(to);
+    e = everybody(to) || multicast(to) ? NULL : arp_find(hop);
+
+    if (e == NULL && !everybody(to) && !multicast(to)) {
         /*
          * Nobody knows where that is yet. The question goes out and this
          * fails - it does not queue the packet waiting for an answer.
@@ -1008,7 +1052,7 @@ static bool send_ip(const struct net_addr *to, uint8_t protocol,
     put_be16(packet + IP_LENGTH, (uint16_t)(IP_HEADER + length));
     put_be16(packet + IP_ID, net.next_id++);
     put_be16(packet + IP_FLAGS, 0x4000u);   /* don't fragment, offset zero */
-    packet[IP_TTL]     = 64;
+    packet[IP_TTL]     = ttl;
     packet[IP_PROTO]   = protocol;
 
     memcpy(packet + IP_SRC, net.address.byte, 4);
@@ -1021,8 +1065,8 @@ static bool send_ip(const struct net_addr *to, uint8_t protocol,
 
     memcpy(packet + IP_HEADER, body, length);
 
-    return send_frame(e != NULL ? e->mac : BROADCAST, ETHERTYPE_IP, packet,
-                      IP_HEADER + length);
+    return send_frame(e != NULL ? e->mac : multicast(to) ? group_mac : BROADCAST,
+                      ETHERTYPE_IP, packet, IP_HEADER + length);
 }
 
 static struct pending *pending_find(uint16_t id, uint16_t seq)
@@ -1164,7 +1208,14 @@ static void ip_receive(const uint8_t *packet, unsigned length)
      * stack that ignores what it does not understand is a stack that
      * silently accepts what it should have questioned. Nothing sends them.
      */
-    if (header != IP_HEADER) {
+    /*
+     * **But IGMP's are taken** (N11a): RFC 2236 has every IGMPv2 message
+     * carry the Router Alert option, so a router's query - asking who is
+     * still in a group - arrives with one, and refusing it would leave the
+     * network's switches forgetting this machine's groups.
+     */
+    if (header != IP_HEADER
+        && (packet[IP_PROTO] != IP_PROTO_IGMP || header < IP_HEADER || header > length)) {
         return;
     }
 
@@ -1187,7 +1238,7 @@ static void ip_receive(const uint8_t *packet, unsigned length)
 
     /* The header carries its own checksum, so running it over the whole
      * header including the field gives zero. */
-    if (checksum(packet, IP_HEADER) != 0) {
+    if (checksum(packet, header) != 0) {
         return;
     }
 
@@ -1195,9 +1246,20 @@ static void ip_receive(const uint8_t *packet, unsigned length)
     memcpy(to.byte, packet + IP_DST, 4);
 
     /* To everybody is ours as well: a DHCP server's answer is, while a
-     * lease is renewed. */
-    if (net.configured && !same_addr(&to, &net.address) && !everybody(&to)) {
+     * lease is renewed. And a group this machine joined, and every host's
+     * (224.0.0.1), where a router asks about groups (N11a). */
+    if (net.configured && !same_addr(&to, &net.address) && !everybody(&to)
+        && !(multicast(&to) && joined(to.byte))) {
         return;                     /* somebody else's, on a shared wire */
+    }
+
+    if (packet[IP_PROTO] == IP_PROTO_IGMP) {
+        igmp_receive(packet, total);
+        return;
+    }
+
+    if (header != IP_HEADER) {
+        return;
     }
 
     if (packet[IP_PROTO] == IP_PROTO_ICMP) {
@@ -1210,15 +1272,13 @@ static void ip_receive(const uint8_t *packet, unsigned length)
 }
 
 /*------------------------------------------------------------------------
- * UDP, and exactly as much of it as a resolver needs.
+ * UDP: the stack's own - DNS and DHCP - and a program's, through a port it
+ * bound (`NET_OP_UDP_BIND`, below with the connections).
  *
- * There are no UDP sockets here: no bind, no sendto, no recvfrom. Nothing
- * has asked for them. What DNS needs is to send one datagram and recognise
- * the answer, and building the general interface first would be inventing
- * the shape of a caller that does not exist - the same argument `hal.md`
- * makes about not expanding the HAL before there is a second board.
- *
- * When something else wants UDP, the interface it wants will be visible.
+ * There were no UDP sockets here for a long time - "When something else
+ * wants UDP, the interface it wants will be visible" - and multicast DNS
+ * was that something (`docs/sharing.md` N11a): a port, a group joined, and
+ * whole datagrams each way in a ring, as a connection's bytes are.
  *----------------------------------------------------------------------*/
 
 #define UDP_HEADER   8u
@@ -1250,7 +1310,7 @@ static bool udp_send(const struct net_addr *to, uint16_t from_port,
 {
     /* A DHCP message may be 548 bytes, the most a client has to take
      * (RFC 2131 2); a DNS question is much less. */
-    uint8_t datagram[UDP_HEADER + 548];
+    uint8_t datagram[UDP_HEADER + NET_DATAGRAM_MAX];
     uint32_t sum = 0;
     unsigned total = UDP_HEADER + length;
     unsigned i;
@@ -1300,7 +1360,9 @@ static bool udp_send(const struct net_addr *to, uint16_t from_port,
      * one case RFC 768 spells out. */
     put_be16(datagram + UDP_SUM, (uint16_t)(sum == 0 ? 0xffff : sum));
 
-    return send_ip(to, IP_PROTO_UDP, datagram, total);
+    /* To a group with a time to live of 255, which multicast DNS asks of
+     * everything it sends (RFC 6762) and nothing else here minds. */
+    return send_ip_ttl(to, IP_PROTO_UDP, datagram, total, multicast(to) ? 255 : 64);
 }
 
 /*
@@ -1506,6 +1568,11 @@ static void udp_receive(const uint8_t *packet, unsigned total)
     length = get_be16(udp + UDP_LEN);
 
     if (length < UDP_HEADER || header + length > total) {
+        return;
+    }
+
+    /* A port a program bound (N11a), before the stack's own two. */
+    if (udp_deliver(packet, total)) {
         return;
     }
 
@@ -2197,6 +2264,217 @@ static void wake_waiter(struct conn *c)
     c->waiter = 0;
 }
 
+/*------------------------------------------------------------------------
+ * Datagrams: a port a program bound (`NET_OP_UDP_BIND`, `docs/sharing.md`
+ * N11a). Whole datagrams in the two rings of `tcpring.h`, each a
+ * `struct net_datagram` and its bytes, published once it is all there.
+ *----------------------------------------------------------------------*/
+
+static void ring_put(struct tcp_ring *r, uint8_t *base, uint32_t at,
+                     const void *from, uint32_t n)
+{
+    const uint8_t *p = from;
+    uint32_t i;
+
+    for (i = 0; i < n; i++) {
+        base[(at + i) % r->bytes] = p[i];
+    }
+}
+
+static void ring_get(const struct tcp_ring *r, const uint8_t *base,
+                     uint32_t at, void *to, uint32_t n)
+{
+    uint8_t *p = to;
+    uint32_t i;
+
+    for (i = 0; i < n; i++) {
+        p[i] = base[(at + i) % r->bytes];
+    }
+}
+
+/* Whether a program here joined `group` - or it is every host's, 224.0.0.1,
+ * where a router asks who is in which group. */
+static bool joined(const uint8_t *group)
+{
+    static const uint8_t ALL_HOSTS[4] = { 224, 0, 0, 1 };
+    unsigned i;
+
+    if (memcmp(group, ALL_HOSTS, 4) == 0) {
+        return true;
+    }
+
+    for (i = 0; i < conn_count(); i++) {
+        const struct conn *c = conn_slot(i);
+
+        if (c->state == ST_UDP && c->grouped && memcmp(c->group.byte, group, 4) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/* The binding a datagram to `port` at `to` is for: to a group, one that
+ * joined it; otherwise the port's. */
+static struct conn *udp_bound(uint16_t port, const struct net_addr *to)
+{
+    unsigned i;
+
+    for (i = 0; i < conn_count(); i++) {
+        struct conn *c = conn_slot(i);
+
+        if (c->state != ST_UDP || c->local_port != port) {
+            continue;
+        }
+
+        if (!multicast(to) || (c->grouped && same_addr(&c->group, to))) {
+            return c;
+        }
+    }
+
+    return NULL;
+}
+
+/*
+ * A datagram for a port a program bound: into its ring whole, and the
+ * program woken - or dropped, when the ring has no room for all of it,
+ * which UDP allows and a half datagram would not be. False when no program
+ * has the port, and the stack's own two are asked.
+ */
+static bool udp_deliver(const uint8_t *packet, unsigned total)
+{
+    unsigned header = (unsigned)(packet[0] & 0x0fu) * 4u;
+    const uint8_t *udp = packet + header;
+    struct net_datagram d;
+    struct net_addr to;
+    struct conn *c;
+    uint32_t n, write, space;
+
+    memcpy(to.byte, packet + IP_DST, 4);
+    c = udp_bound(get_be16(udp + UDP_DST), &to);
+
+    if (c == NULL || c->ring == NULL) {
+        return false;
+    }
+
+    n = get_be16(udp + UDP_LEN) - UDP_HEADER;
+
+    if (n > NET_DATAGRAM_MAX || header + UDP_HEADER + n > total) {
+        return true;
+    }
+
+    write = c->ring->in_write;
+    space = tcp_ring_space(c->ring->bytes, write, tcp_ring_acquire(&c->ring->in_read));
+
+    if (space < sizeof(d) + n) {
+        return true;                    /* no room for all of it */
+    }
+
+    memset(&d, 0, sizeof(d));
+    memcpy(d.addr.byte, packet + IP_SRC, 4);
+    d.port = get_be16(udp + UDP_SRC);
+    d.length = (uint16_t)n;
+
+    ring_put(c->ring, tcp_ring_in(c->ring), write, &d, sizeof(d));
+    ring_put(c->ring, tcp_ring_in(c->ring), write + sizeof(d), udp + UDP_HEADER, n);
+    tcp_ring_publish(&c->ring->in_write, write + (uint32_t)sizeof(d) + n);
+    wake_waiter(c);
+    return true;
+}
+
+/*
+ * What a program wrote, sent: each whole datagram in `out`, in order. One
+ * to an address whose Ethernet address is not known yet waits for the
+ * answer - the question is asked as it is tried - and is dropped after a
+ * second, so one unreachable address does not hold up the rest for ever.
+ */
+static void udp_drain(struct conn *c)
+{
+    uint8_t body[NET_DATAGRAM_MAX];
+
+    while (c->ring != NULL) {
+        uint32_t read = c->ring->out_read;
+        uint32_t write = tcp_ring_acquire(&c->ring->out_write);
+        uint32_t have = tcp_ring_ready(write, read);
+        struct net_datagram d;
+
+        if (have < sizeof(d)) {
+            return;
+        }
+
+        ring_get(c->ring, tcp_ring_out(c->ring), read, &d, sizeof(d));
+
+        /* A program that wrote something that is not a datagram has its
+         * ring emptied rather than read as one. */
+        if (d.length > NET_DATAGRAM_MAX || sizeof(d) + d.length > have) {
+            tcp_ring_publish(&c->ring->out_read, write);
+            return;
+        }
+
+        ring_get(c->ring, tcp_ring_out(c->ring), read + sizeof(d), body, d.length);
+
+        if (!udp_send(&d.addr, c->local_port, d.port, body, d.length)) {
+            uint64_t now = kosmos_ticks();
+
+            if (c->out_waiting == 0) {
+                c->out_waiting = now;
+            }
+
+            if (now - c->out_waiting < net.hz) {
+                return;                 /* asked where it is; again next pass */
+            }
+        }
+
+        c->out_waiting = 0;
+        tcp_ring_publish(&c->ring->out_read, read + (uint32_t)sizeof(d) + d.length);
+    }
+}
+
+/*
+ * IGMPv2 (RFC 2236): a group joined is said - a membership report to the
+ * group itself - so the network's switches send its traffic here; one left
+ * is said to every router (224.0.0.2); and a router's query is answered
+ * with a report for each group still joined. Sent with a time to live of
+ * one, as the RFC has it. Not with its Router Alert option, which this
+ * stack does not put on what it sends; switches take the reports without.
+ */
+#define IGMP_QUERY   0x11u
+#define IGMP_REPORT  0x16u
+#define IGMP_LEAVE   0x17u
+
+static void igmp_send(uint8_t type, const struct net_addr *group,
+                      const struct net_addr *to)
+{
+    uint8_t m[8];
+
+    memset(m, 0, sizeof(m));
+    m[0] = type;
+    memcpy(m + 4, group->byte, 4);
+    put_be16(m + 2, checksum(m, sizeof(m)));
+    (void)send_ip_ttl(to, IP_PROTO_IGMP, m, sizeof(m), 1);
+}
+
+static void igmp_receive(const uint8_t *packet, unsigned total)
+{
+    unsigned header = (unsigned)(packet[0] & 0x0fu) * 4u;
+    const uint8_t *m = packet + header;
+    unsigned i;
+
+    if (total < header + 8 || checksum(m, total - header) != 0 || m[0] != IGMP_QUERY) {
+        return;
+    }
+
+    for (i = 0; i < conn_count(); i++) {
+        struct conn *c = conn_slot(i);
+        static const uint8_t NONE[4] = { 0, 0, 0, 0 };
+
+        if (c->state == ST_UDP && c->grouped
+            && (memcmp(m + 4, NONE, 4) == 0 || memcmp(m + 4, c->group.byte, 4) == 0)) {
+            igmp_send(IGMP_REPORT, &c->group, &c->group);
+        }
+    }
+}
+
 static void conn_die(struct conn *c, uint32_t status)
 {
     /* One nobody was ever handed - refused, timed out, or never accepted -
@@ -2258,7 +2536,7 @@ static void window_updates(void)
     unsigned i;
 
     for (i = 0; i < conn_count(); i++) {
-        if (conn_slot(i)->state != ST_FREE) {
+        if (conn_slot(i)->state != ST_FREE && conn_slot(i)->state != ST_UDP) {
             window_update(conn_slot(i));
         }
     }
@@ -2311,7 +2589,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         struct conn *k = conn_slot(i);
 
         if (k->state != ST_FREE && k->state != ST_DEAD
-            && k->state != ST_LISTEN
+            && k->state != ST_LISTEN && k->state != ST_UDP
             && k->local_port == get_be16(tcp + TCP_DPORT)
             && k->remote_port == get_be16(tcp + TCP_SPORT)
             && same_addr(&k->remote, from)) {
@@ -2997,7 +3275,11 @@ static void serve(const struct message *msg, uint64_t sender)
         return;
 
     case NET_OP_DHCP:
-        dhcp_start();
+        /* Not over an address the machine was booted with. */
+        if (!net.fixed) {
+            dhcp_start();
+        }
+
         reply.status = NET_OK;
         answer(sender, &reply);
         return;
@@ -3239,11 +3521,16 @@ static void serve(const struct message *msg, uint64_t sender)
             return;
         }
 
-        tcp_pump(c);
+        if (c->state == ST_UDP) {
+            udp_drain(c);
+        } else {
+            tcp_pump(c);
+        }
 
         reply.status = NET_OK;
         reply.handle = req.handle;
-        reply.state  = (c->state == ST_OPEN || c->state == ST_CLOSE_WAIT)
+        reply.state  = (c->state == ST_OPEN || c->state == ST_CLOSE_WAIT
+                        || c->state == ST_UDP)
                        ? NET_TCP_OPEN : NET_TCP_CLOSED;
         answer(sender, &reply);
         return;
@@ -3318,12 +3605,141 @@ static void serve(const struct message *msg, uint64_t sender)
          * So this records the wish and `tcp_pump` acts on it once there is
          * nothing left to send.
          */
+        /* A port bound for datagrams has nothing to finish: let go now,
+         * and its group left when nobody else here is in it. */
+        if (c->state == ST_UDP) {
+            bool was = c->grouped;
+            struct net_addr group = c->group;
+            static const struct net_addr ROUTERS = { { 224, 0, 0, 2 } };
+
+            c->grouped = false;
+            conn_free(c);
+
+            if (was && !joined(group.byte)) {
+                igmp_send(IGMP_LEAVE, &group, &ROUTERS);
+            }
+
+            reply.status = NET_OK;
+            reply.handle = req.handle;
+            answer(sender, &reply);
+            return;
+        }
+
         c->want_close = true;
         tcp_pump(c);
 
         reply.status = NET_OK;
         reply.handle = req.handle;
         answer(sender, &reply);
+        return;
+    }
+
+    case NET_OP_UDP_BIND: {
+        struct conn *c;
+        uint32_t port = req.port;
+        long region, at;
+        unsigned i;
+
+        if (!net.has_card || !net.configured) {
+            fail(sender, net.has_card ? NET_ERR_NO_ROUTE : NET_ERR_NO_CARD);
+            return;
+        }
+
+        if (port > 65535u || (req.to.byte[0] != 0 && !multicast(&req.to))) {
+            fail(sender, NET_ERR_BAD_ADDRESS);
+            return;
+        }
+
+        /* Any free one, from the range IANA leaves to whoever asks. */
+        if (port == 0) {
+            port = net.next_port++;
+
+            if (net.next_port < 49152u) {
+                net.next_port = 49152u;
+            }
+        }
+
+        /* One binding a port, and never the stack's own two. */
+        if (port == DNS_FROM || port == DHCP_CLIENT_PORT) {
+            fail(sender, NET_ERR_IN_USE);
+            return;
+        }
+
+        for (i = 0; i < conn_count(); i++) {
+            if (conn_slot(i)->state == ST_UDP && conn_slot(i)->local_port == port) {
+                fail(sender, NET_ERR_IN_USE);
+                return;
+            }
+        }
+
+        c = conn_claim();
+
+        if (c == NULL) {
+            fail(sender, NET_ERR_FULL);
+            return;
+        }
+
+        region = kosmos_mem_create((TCP_RING_REGION + 4095u) / 4096u);
+        at = region >= 0 ? kosmos_mem_map(region) : -1;
+
+        if (at < 0) {
+            if (region >= 0) {
+                (void)kosmos_cap_drop(region);
+            }
+
+            conn_clear(c);
+            fail(sender, NET_ERR_FULL);
+            return;
+        }
+
+        c->region = region;
+        c->ring   = (struct tcp_ring *)(uintptr_t)at;
+        memset(c->ring, 0, TCP_RING_DATA);
+        c->ring->magic = TCP_RING_MAGIC;
+        c->ring->bytes = TCP_RING_BYTES;
+
+        c->state         = ST_UDP;
+        c->local_port    = (uint16_t)port;
+        c->from_listener = -1;
+
+        if (multicast(&req.to)) {
+            c->group   = req.to;
+            c->grouped = true;
+            igmp_send(IGMP_REPORT, &c->group, &c->group);
+        }
+
+        {
+            struct say_line line;
+
+            say_begin(&line);
+            say_text(&line, "net: port ");
+            say_dec(&line, port);
+            say_text(&line, " bound for datagrams");
+
+            if (c->grouped) {
+                say_text(&line, ", group ");
+                say_addr(&line, &c->group);
+                say_text(&line, " joined");
+            }
+
+            say_send(net.console, &line);
+        }
+
+        {
+            struct message msg;
+
+            memset(&reply, 0, sizeof(reply));
+            reply.status = NET_OK;
+            reply.handle = c->handle;
+            reply.state  = port;
+
+            memset(&msg, 0, sizeof(msg));
+            msg.length = sizeof(reply);
+            msg.cap_plus_one = (uint32_t)c->region + 1u;
+            memcpy(msg.data, &reply, sizeof(reply));
+            (void)kosmos_reply(sender, &msg);
+        }
+
         return;
     }
 
@@ -3593,6 +4009,13 @@ static void expire(uint64_t hz)
             continue;
         }
 
+        /* A port bound for datagrams: what waits for an address, tried
+         * again, and nothing of TCP's below. */
+        if (c->state == ST_UDP) {
+            udp_drain(c);
+            continue;
+        }
+
         /* Anything the client wrote while a segment was in flight. */
         tcp_pump(c);
 
@@ -3685,6 +4108,62 @@ void net_server(long endpoint, long console, long frames, long frames2)
             say_text(&line, "net: one data segment in ");
             say_dec(&line, every);
             say_text(&line, " lost on purpose (opt/kosmos/net_drop)");
+            say_send(net.console, &line);
+        }
+    }
+
+    {
+        char text[24];
+        long n = kosmos_boot_option("opt/kosmos/net_address", text, sizeof text - 1);
+        unsigned part = 0, value = 0, bits = 24;
+        uint8_t got[4] = { 0, 0, 0, 0 };
+        bool ok = n > 0;
+        long k;
+
+        for (k = 0; ok && k < n; k++) {
+            char ch = text[k];
+
+            if (ch >= '0' && ch <= '9') {
+                value = value * 10u + (unsigned)(ch - '0');
+                ok = value <= 255u || part == 4u;
+            } else if (ch == '.' && part < 3u) {
+                got[part++] = (uint8_t)value;
+                value = 0;
+            } else if (ch == '/' && part == 3u) {
+                got[part++] = (uint8_t)value;
+                value = 0;
+            } else {
+                ok = false;
+            }
+        }
+
+        if (ok && part == 3u) {
+            got[3] = (uint8_t)value;
+        } else if (ok && part == 4u && value >= 8u && value <= 30u) {
+            bits = value;
+        } else {
+            ok = false;
+        }
+
+        if (ok) {
+            struct say_line line;
+            unsigned i;
+
+            memcpy(net.address.byte, got, 4);
+
+            for (i = 0; i < 4; i++) {
+                unsigned have = bits > i * 8u ? bits - i * 8u : 0u;
+
+                net.netmask.byte[i] = (uint8_t)(have >= 8u ? 0xffu : (0xffu << (8u - have)) & 0xffu);
+            }
+
+            net.configured   = true;
+            net.fixed        = true;
+            net.addressed_by = NET_ADDRESS_GIVEN;
+            say_begin(&line);
+            say_text(&line, "net: the address ");
+            say_addr(&line, &net.address);
+            say_text(&line, " from the boot (opt/kosmos/net_address)");
             say_send(net.console, &line);
         }
     }

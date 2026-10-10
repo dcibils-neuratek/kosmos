@@ -1135,6 +1135,31 @@ Then, each when its time comes:
 - **N11 - discovery**: the stack's datagrams (`udpring.h`, IGMP), the DNS
   message coding shared out of `net.c`, `mdnsd` browsing; the Network group's
   servers seen; `.local` names. On a multicast segment.
+  **In four steps, planned 10 October 2026**, each with its suite:
+  - **N11a - datagrams** (built 10 October, 0.11.123, `testing.md`
+    18.518; tested on a `-netdev dgram` wire, since QEMU's multicast
+    segment delivered nothing on this Mac). `NET_OP_UDP_BIND` - a port, and optionally a
+    multicast group to join - answers with a region of two rings of whole
+    datagrams (`udpring.h`, beside `tcpring.h`: `in` written by the stack,
+    each record its sender's address and port and its bytes; `out` written
+    by the client, each its destination and bytes), with `NET_OP_PUSH`,
+    `NET_OP_WAIT`, `NET_OP_POLL` and `NET_OP_CLOSE` meaning for it what they
+    mean for a connection. A group joined is reported with IGMPv2 and left
+    on close; the card takes multicast frames (the e1000's RCTL.MPE).
+    Tested on QEMU's `-netdev socket,mcast=` segment, which QEMU's user
+    network cannot be, with `opt/kosmos/net_address` for an address where
+    no DHCP answers and a Python peer on the Mac speaking the segment's
+    Ethernet frames: a datagram each way, one to a group, a report sent.
+  - **N11b - the DNS message in one place**: names, compression and
+    records out of `net.c` into a file the stack and `mdnsd` both link,
+    held by a host test, as `fat_decode.c` is.
+  - **N11c - `mdnsd`**, a server in C with a declared shape (`mdnsproto.h`):
+    browse a service type (`_smb._tcp`) - its instances, each with a host,
+    port and address, kept as they are announced and forgotten when their
+    time is up - and resolve a `.local` name. Held by the Python peer
+    announcing a server and answering for a name.
+  - **N11d - seen**: Tracker's Network group lists the SMB servers `mdnsd`
+    has seen, and Connect takes a `.local` name; the M700 finds the Mac.
 - **N12 - smbd, read-only**: the Servers window's File sharing page as drawn;
   `smbclient` and the Mac's `mount_smbfs` through a forwarded port list and
   read what `/Home` holds; a wrong password and a guest refused. **Needs the

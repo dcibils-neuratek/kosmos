@@ -1464,6 +1464,17 @@ local function new_namespace()
     return net.connect(capability, to, port, at_once)
   end
 
+  -- A port for datagrams, and a multicast group joined if one is named
+  -- (`docs/sharing.md` N11a): the handle a connection is, with `send` and
+  -- `receive` for whole datagrams.
+  function ns.udp(path, port, group)
+    local net, capability, why = net_at(path or "/Network")
+
+    if not net then return nil, why end
+
+    return net.udp(capability, port, group)
+  end
+
   -- Answering on a port, and taking whoever arrives. The listener is a
   -- number because it holds nothing; what `accept` hands back is a
   -- connection, which is a region somebody was given.
