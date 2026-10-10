@@ -207,6 +207,31 @@ desktop.
        manager that ends or crashes, keeping the screen; with none
        connected the console has the screen as it does today, and init
        hands the manager door only to the window manager.
+       **In four steps**, the desktop working after each:
+       1. **The door** (0.11.116, `testing.md` 18.511): init starts
+          `windowserver` with the screen, lends its door to the window
+          manager alone, and the window manager greets it.
+       2. **It composes** (0.11.119, `testing.md` 18.514). The window
+          manager hands it the back buffer and a region for the scene, and
+          every picture the scene names by a slot - a window's two
+          buffers, and the window manager's own wallpaper, stamp, menu
+          bars, level bar, arrow and a drag's label, each now a surface
+          made `shared` (`gfx.surface{ shared = true }`, `s:region()`).
+          Each pass the scene is described by slot, written into the
+          shared region (`scene:wire`) with the damage, and one
+          `WS_OP_COMPOSE` composes it into the back buffer and puts it on
+          the screen. A picture whose surface is freed or collected is
+          forgotten on the next pass. The server holds every count, slot
+          and source rectangle to what it was given. Without a window
+          server the window manager composes in its own process as before;
+          `wm compose-check` composes each pass there and again in Lua,
+          and `x86-scene` holds the two to the same pixels.
+       3. **The console's screen handed over**: the window server, not
+          the window manager, takes the screen from the console when the
+          window manager connects and gives it back when it goes.
+       4. **The window manager's own composing gone**: the screen, the
+          Lua composing and its check leave `wm.lua`; the watcher's copy
+          (VNC) and the screenshot are taken from the window server.
 5. **D4** - the frame path: commit and poll answered by the window server,
    held polls and event queues with it.
 6. **D5** - input routing: keys and presses from the console to windows in

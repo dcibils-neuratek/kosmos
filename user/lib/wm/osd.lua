@@ -104,7 +104,7 @@ return function(ctx)
   --
   function osd.show(which, level, muted)
     if not osd.surface then
-      osd.surface = gfx.surface{ w = osd.W, h = osd.H }
+      osd.surface = gfx.surface{ w = osd.W, h = osd.H, shared = true }
 
       if not osd.surface then return end
     end

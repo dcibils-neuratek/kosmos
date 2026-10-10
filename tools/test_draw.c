@@ -12,7 +12,8 @@
  * scene of two windows over each other and a menu over both, composed:
  * the desktop where neither is, the upper window where they overlap, the
  * menu over everything, a hidden window not drawn, a rounded corner
- * showing what is under it, and a rectangle composed again giving the same
+ * showing what is under it, a drag's label drawn last and only inside the
+ * rectangle composed, and a rectangle composed again giving the same
  * pixels.
  */
 
@@ -114,6 +115,7 @@ static void scene(void)
     struct surface w1 = make(100, 60, 0xff0000ffu);      /* blue, behind */
     struct surface w2 = make(100, 60, 0xffff0000u);      /* red, in front */
     struct surface menu = make(40, 30, 0xff00ff00u);     /* green, over all */
+    struct surface badge = make(12, 8, 0xffffff00u);     /* yellow, a label */
     struct surface ref = make(200, 120, 0);
     struct scene *sc = malloc(sizeof(*sc));
     long drawn;
@@ -124,10 +126,10 @@ static void scene(void)
     sc->corner = 8;
     check(scene_set_windows(sc, 3) && scene_set_menus(sc, 1), "room for three windows and a menu");
 
-    sc->win[0] = (struct sc_window){ 10, 10, 100, 60, SC_ROUNDED, &w1, 100, 60, NULL, 0, 0, 0, -1 };
-    sc->win[1] = (struct sc_window){ 60, 40, 100, 60, SC_ROUNDED, &w2, 100, 60, NULL, 0, 0, 0, -1 };
-    sc->win[2] = (struct sc_window){ 150, 5, 40, 40, SC_HIDDEN, &w1, 100, 60, NULL, 0, 0, 0, -1 };
-    sc->menu[0] = (struct sc_menu){ 140, 80, 40, 30, &menu };
+    sc->win[0] = (struct sc_window){ 10, 10, 100, 60, SC_ROUNDED, &w1, 100, 60, NULL, 0, 0, 0, -1, -1, -1 };
+    sc->win[1] = (struct sc_window){ 60, 40, 100, 60, SC_ROUNDED, &w2, 100, 60, NULL, 0, 0, 0, -1, -1, -1 };
+    sc->win[2] = (struct sc_window){ 150, 5, 40, 40, SC_HIDDEN, &w1, 100, 60, NULL, 0, 0, 0, -1, -1, -1 };
+    sc->menu[0] = (struct sc_menu){ 140, 80, 40, 30, &menu, -1 };
 
     drawn = scene_compose(sc, 0, 0, 200, 120);
     check(drawn > 0, "the scene composed");
@@ -138,6 +140,17 @@ static void scene(void)
     check(at(&back, 170, 20) == 0xff808080u, "a hidden window not drawn");
     check(at(&back, 60, 40) != 0xffff0000u,
           "the front window's corner rounded, showing what is under it");
+
+    /* A drag's label, last of all, and only inside the rectangle composed. */
+    sc->badge = &badge;
+    sc->badge_x = 4;
+    sc->badge_y = 100;
+    (void)scene_compose(sc, 0, 0, 8, 120);
+    check(at(&back, 6, 104) == 0xffffff00u, "a drag's label over the desktop");
+    check(at(&back, 10, 104) == 0xff808080u, "and not past the rectangle composed");
+    (void)scene_compose(sc, 0, 0, 200, 120);
+    sc->badge = NULL;
+    (void)scene_compose(sc, 0, 0, 200, 120);
 
     memcpy(ref.pixels, back.pixels, (size_t)200 * 120 * 4);
     fill_on(&back, 0, 0, 200, 120, 0xffff00ffu);
@@ -157,6 +170,7 @@ static void scene(void)
     free(w1.pixels);
     free(w2.pixels);
     free(menu.pixels);
+    free(badge.pixels);
     free(ref.pixels);
 }
 
@@ -172,7 +186,7 @@ int main(void)
     }
 
     printf("PASS: %d checks on the primitives and the scene (fills, copies, a blend, a stretch "
-           "and a triangle; two windows, a menu and a hidden one composed, a corner rounded, "
-           "and the same again)\n", passed);
+           "and a triangle; two windows, a menu and a hidden one composed, a corner rounded, a "
+           "drag's label, and the same again)\n", passed);
     return 0;
 }

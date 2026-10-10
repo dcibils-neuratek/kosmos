@@ -98,12 +98,13 @@ return function(ctx)
     ctx.windows
 
   -- **The scene** (`docs/astra-display.md` D3a): the desktop composed in C,
-  -- described by the window manager before each pass (`describe`); a drag's
-  -- label is drawn after it (`draw_badge`). With `checking` - `wm
-  -- compose-check` - each pass is composed by the scene and again by the
-  -- Lua below over it, and the pixels that differ are counted.
-  local scene, describe, draw_badge, checking =
-    ctx.scene, ctx.describe, ctx.draw_badge, ctx.checking
+  -- described by the window manager before each pass (`describe`) - by the
+  -- window server when there is one (`ws`, D3b-2), which puts it on the
+  -- screen as well, and in this process when there is not. With `checking`
+  -- - `wm compose-check` - each pass is composed by the scene and again by
+  -- the Lua below over it, and the pixels that differ are counted.
+  local scene, describe, checking, ws =
+    ctx.scene, ctx.describe, ctx.checking, ctx.ws
   local check = { passes = 0, differ = 0, ref = nil }
 
   --
@@ -338,7 +339,8 @@ return function(ctx)
 
   -- What was composed of `r`, onto the screen and to whoever watches it.
   local function show(r)
-
+    -- **The window server puts it on the screen itself** when it composes
+    -- (D3b-2); a pass composed here, or checked, is shown from here.
     screen:blit(back, r.x, r.y, r.w, r.h, r.x, r.y)
 
     -- And said: on virtio-gpu nothing drawn is shown until it is sent, and
@@ -360,33 +362,55 @@ return function(ctx)
 
     describe()
 
-    for _, r in ipairs(damage) do
-      --
-      -- **`px` is what the compositor was asked for; `drawn` is what it did.**
-      --
-      -- They used to be one number, and that number was this one - the area
-      -- of the damage rectangle - which cannot see occlusion culling by
-      -- construction. It reported 170714 pixels a frame before culling and
-      -- 170395 after, identical to the noise, because the damage did not
-      -- change: what changed was how much of it got painted more than once.
-      --
-      -- A metric that answers a different question than the one being asked
-      -- is worse than no metric, because it is read as an answer. So both are
-      -- reported now, and the ratio between them is the interesting figure:
-      -- overdraw.
-      --
-      if P.measuring then P.prof.px = P.prof.px + r.w * r.h end
-      -- Checking, the rectangle starts as a colour nothing draws: what the
+    if ws.on then
+      -- Checking, each rectangle starts as a colour nothing draws: what the
       -- scene leaves undrawn is then a difference, not last frame's pixels.
-      if checking() then back:fill(r.x, r.y, r.w, r.h, 0xffff00ff) end
+      if checking() then
+        for _, r in ipairs(damage) do back:fill(r.x, r.y, r.w, r.h, 0xffff00ff) end
+      end
 
-      local drawn = scene:compose(r.x, r.y, r.w, r.h)
+      if P.measuring then
+        for _, r in ipairs(damage) do P.prof.px = P.prof.px + r.w * r.h end
+      end
 
-      if P.measuring then P.prof.drawn = P.prof.drawn + drawn end
+      local drawn, held = ws.compose(scene, damage, not checking())
 
-      draw_badge()
+      if not drawn then
+        print("wm: the window server did not compose: " .. tostring(held))
+      else
+        check.held = held
 
-      if not checking() then show(r) end
+        if P.measuring then P.prof.drawn = P.prof.drawn + drawn end
+      end
+
+      -- On the screen already; to whoever watches it from here.
+      if not checking() then
+        for _, r in ipairs(damage) do mirror(r) end
+      end
+    else
+      for _, r in ipairs(damage) do
+        --
+        -- **`px` is what the compositor was asked for; `drawn` is what it did.**
+        --
+        -- They used to be one number, and that number was this one - the area
+        -- of the damage rectangle - which cannot see occlusion culling by
+        -- construction. It reported 170714 pixels a frame before culling and
+        -- 170395 after, identical to the noise, because the damage did not
+        -- change: what changed was how much of it got painted more than once.
+        --
+        -- A metric that answers a different question than the one being asked
+        -- is worse than no metric, because it is read as an answer. So both are
+        -- reported now, and the ratio between them is the interesting figure:
+        -- overdraw.
+        --
+        if P.measuring then P.prof.px = P.prof.px + r.w * r.h end
+        if checking() then back:fill(r.x, r.y, r.w, r.h, 0xffff00ff) end
+
+        local drawn = scene:compose(r.x, r.y, r.w, r.h)
+
+        if P.measuring then P.prof.drawn = P.prof.drawn + drawn end
+        if not checking() then show(r) end
+      end
     end
 
     if checking() then
@@ -426,8 +450,9 @@ return function(ctx)
       check.passes, check.differ = check.passes + 1, check.differ + n
 
       if n ~= 0 or check.passes % 50 == 0 then
-        print(("wm: compose check: %d passes composed both ways, %d pixels differ")
-              :format(check.passes, check.differ))
+        print(("wm: compose check: %d passes composed both ways, %d pixels differ, "
+               .. "%s pictures held"):format(check.passes, check.differ,
+                                             tostring(check.held or "no")))
       end
 
       for _, r in ipairs(damage) do show(r) end

@@ -598,7 +598,7 @@ local screen = gfx.screen()
 --
 local wallpaper, wall_x, wall_y, wall_w, wall_h = nil, 0, 0, 0, 0
 local wall_fit = "fill"           -- or "centre"
-local wall_filled = nil           -- the picture made the screen's size
+local wall_filled = nil           -- the picture as shown, in a region
 
 --
 -- Read a picture and make it the desktop.
@@ -764,7 +764,7 @@ local function wallpaper_place()
     end
 
     -- On the desktop colour, for a picture with transparent parts.
-    wall_filled = gfx.surface{ w = sw, h = sh }
+    wall_filled = gfx.surface{ w = sw, h = sh, shared = true }
     wall_filled:fill(0, 0, sw, sh, desktop_colour())
     wall_filled:stretch(wallpaper, (pw - cw) // 2, (ph - ch) // 2, cw, ch,
                 0, 0, sw, sh, nil, true)
@@ -777,6 +777,11 @@ local function wallpaper_place()
   wall_w, wall_h = pw, ph
   wall_x = (sw - wall_w) // 2
   wall_y = (sh - wall_h) // 2
+
+  -- In a region of its own as it stands, for the window server to compose
+  -- from (D3b-2): the picture as it was read is this process's alone.
+  wall_filled = gfx.surface{ w = pw, h = ph, shared = true }
+  wall_filled:blit(wallpaper, 0, 0, pw, ph, 0, 0)
 end
 
 if not screen then
@@ -793,7 +798,7 @@ local W, H = screen:size()
 -- frame is never seen half-composed, and it is the shape the hardware
 -- needs. On a real board the scanout buffer is often uncached, where
 -- drawing into it directly is the mistake that costs 10-50x.
-local back = gfx.surface{ w = W, h = H }
+local back = gfx.surface{ w = W, h = H, shared = true }
 
 --
 -- The screen is this process's now.
@@ -812,22 +817,12 @@ sys.screen_take(true)
 
 --
 -- **The window server** (`docs/astra-display.md` D3b-2): started by init at
--- boot, and its manager door lent to this program alone. Greeted here; the
--- desktop is still composed in this process until the next step moves it.
+-- boot, and its manager door lent to this program alone. Greeted, and
+-- handed the back buffer; from then on it composes what this process
+-- describes and puts it on the screen (`wm/windowserver.lua`). Without one,
+-- this process composes as it did.
 --
-do
-  local ok, reply = pcall(fs.raw, "/Windowserver", string.pack("<I4I4", 1, 0), nil,
-                          "windowserver")
-
-  if ok and type(reply) == "string" and #reply >= 16 then
-    local err, w, h = string.unpack("<I4I4I4", reply)
-
-    print(err == 0 and ("wm: the window server answers, the screen %dx%d"):format(w, h)
-          or ("wm: the window server answers, error %d"):format(err))
-  else
-    print("wm: no window server: " .. tostring(reply))
-  end
-end
+local WS = use("/Kosmos/Libraries/wm/windowserver.lua"){ back = back }
 
 --
 -- **What the desktop is doing, in the kernel's log, whether or not the
@@ -2232,21 +2227,22 @@ local P = use("/Kosmos/Libraries/wm/profile.lua")
 -- `flat` has nothing to say about which way a surface faces, so what
 -- separates a control from the bar it sits on is the line alone.
 --
-local function raised_box(x, y, w, h, face)
-  back:fill(x, y, w, h, face)
+local function raised_box(x, y, w, h, face, on)
+  on = on or back
+  on:fill(x, y, w, h, face)
 
   if theme.flat then
-    back:fill(x, y, w, 1, theme.line_soft)
-    back:fill(x, y + h - 1, w, 1, theme.line_soft)
-    back:fill(x, y, 1, h, theme.line_soft)
-    back:fill(x + w - 1, y, 1, h, theme.line_soft)
+    on:fill(x, y, w, 1, theme.line_soft)
+    on:fill(x, y + h - 1, w, 1, theme.line_soft)
+    on:fill(x, y, 1, h, theme.line_soft)
+    on:fill(x + w - 1, y, 1, h, theme.line_soft)
     return
   end
 
-  back:fill(x, y, w - 1, 1, theme.edge_light)
-  back:fill(x, y, 1, h - 1, theme.edge_light)
-  back:fill(x, y + h - 1, w, 1, theme.edge_dark)
-  back:fill(x + w - 1, y, 1, h, theme.edge_dark)
+  on:fill(x, y, w - 1, 1, theme.edge_light)
+  on:fill(x, y, 1, h - 1, theme.edge_light)
+  on:fill(x, y + h - 1, w, 1, theme.edge_dark)
+  on:fill(x + w - 1, y, 1, h, theme.edge_dark)
 end
 
 --
@@ -2320,8 +2316,41 @@ local function draw_cursor()
   OUT.draw_badge()
 end
 
--- A drag's label beside the arrow, when there is one: drawn after the
--- scene composes a rectangle (`compose.lua`), and by `draw_cursor` above.
+--
+-- **A drag's label as a picture of its own** (D3b-2), for the scene to
+-- compose last of all: made again only when what it says or looks like
+-- changes, in a region, so the window server can be handed it. The Lua
+-- composing draws it straight onto the back buffer (`draw_cursor`).
+--
+local badge_made = {}
+
+function OUT.badge_now()
+  local bw, bh = badge_size()
+
+  if bw == 0 then return nil, 0, 0 end
+
+  local label = PT.drag.label
+
+  local badge_picture = badge_made.picture
+
+  if not badge_picture or badge_made.label ~= label or badge_made.w ~= bw
+     or badge_made.h ~= bh or badge_made.face ~= theme.raised or badge_made.text ~= theme.text
+     or badge_made.flat ~= theme.flat then
+    if badge_picture then badge_picture:free() end
+
+    badge_picture = gfx.surface{ w = bw, h = bh, shared = true }
+    badge_made.picture = badge_picture
+    raised_box(0, 0, bw, bh, theme.raised, badge_picture)
+    badge_picture:text(BADGE_PAD, BADGE_PAD // 2, label, theme.text, theme.raised)
+    badge_made.label, badge_made.w, badge_made.h = label, bw, bh
+    badge_made.face, badge_made.text, badge_made.flat = theme.raised, theme.text, theme.flat
+  end
+
+  return badge_picture, PT.x + BADGE_DX, PT.y + BADGE_DY
+end
+
+-- A drag's label beside the arrow, when there is one: drawn by
+-- `draw_cursor` above, for the composing in Lua the scene is checked against.
 function OUT.draw_badge()
   local bw, bh = badge_size()
 
@@ -2344,7 +2373,7 @@ end
 -- log (`tools/run_screenshot.py`'s cursor phase).
 --
 do
-  local picture = gfx.surface{ w = 64, h = 64 }       -- zeroed: transparent
+  local picture = gfx.surface{ w = 64, h = 64, shared = true }   -- zeroed: transparent
 
   for row = 0, CURSOR_H - 1 do
     local line = CURSOR[row + 1]
@@ -2557,8 +2586,8 @@ local scene = gfx.scene(back)
 local compose = use("/Kosmos/Libraries/wm/compose.lua"){
   scene = scene,
   describe = function() return OUT.describe() end,
-  draw_badge = function() return OUT.draw_badge() end,
   checking = function() return COMPOSE_CHECK end,
+  ws = WS,
   OUT = OUT,
   OUTLINE = OUTLINE,
   P = P,
@@ -2608,7 +2637,7 @@ local function stamp_now()
      or stamp_made.h ~= gfx.font.h then
     if stamp_picture then stamp_picture:free() end
 
-    stamp_picture = gfx.surface{ w = math.max(1, w), h = gfx.font.h }
+    stamp_picture = gfx.surface{ w = math.max(1, w), h = gfx.font.h, shared = true }
     stamp_picture:fill(0, 0, w, gfx.font.h, bg)
     stamp_picture:text(0, 0, stamp, fg, bg)
     stamp_made.fg, stamp_made.bg, stamp_made.w, stamp_made.h = fg, bg, w, gfx.font.h
@@ -2617,9 +2646,30 @@ local function stamp_now()
   return stamp_picture, W - w - 10, H - reserved_bottom - gfx.font.h - 8
 end
 
+--
+-- A picture as the scene is told it: the surface itself, or - composed by
+-- the window server - the slot it was handed over in (`WS.pic`).
+--
+function OUT.pic(s)
+  if WS.on then return WS.pic(s) end
+
+  return s
+end
+
+--
+-- A window's two buffers let go, and their region: freed first, so the
+-- window server is told on the next pass to let go of them too.
+--
+function OUT.let_go_buffers(t)
+  t[1]:free()
+  t[2]:free()
+  sys.release(t.cap)
+end
+
 function OUT.describe()
   local L = OUT.LIGHTS
   local lift = theme.lift
+  local pic = OUT.pic
 
   scene:look(OUT.corner, OUT.shadow, OUT.GRIP, theme.edge_light, theme.edge_dark,
              OUT.BOX, OUT.BOX_W, OUT.RUN, OUT.BOX - scale.px(4), theme.track,
@@ -2628,10 +2678,10 @@ function OUT.describe()
              L.minimise.fill, L.minimise.ring, L.minimise.mark, lift(L.minimise.fill, -40),
              L.close.fill, L.close.ring, L.close.mark, lift(L.close.fill, -40))
 
-  local pic, sx, sy = stamp_now()
+  local stamped, sx, sy = stamp_now()
 
-  scene:desktop(desktop_colour(), wallpaper and (wall_filled or wallpaper) or nil,
-                wall_x, wall_y, wall_w, wall_h, pic, sx, sy)
+  scene:desktop(desktop_colour(), pic(wallpaper and (wall_filled or wallpaper) or nil),
+                wall_x, wall_y, wall_w, wall_h, pic(stamped), sx, sy)
 
   local order = OUT.order()
   local count = order and #order or #windows
@@ -2676,28 +2726,29 @@ function OUT.describe()
     local shown = win.shared and win.shared[win.shared.live] or win.surface
     local lower = bar and (win.h - bar.h) or win.h
 
-    scene:window(k, win.x, win.y, win.w, win.h, flags, shown,
+    scene:window(k, win.x, win.y, win.w, win.h, flags, pic(shown),
                  win.src_w or win.w, win.src_h or lower,
-                 bar and bar.surface or nil, bar and bar.h or 0, bx, by, held)
+                 pic(bar and bar.surface or nil), bar and bar.h or 0, bx, by, held)
   end
 
   scene:menus(#menus)
 
   for k, m in ipairs(menus) do
-    scene:menu(k, m.x, m.y, m.w, m.h, m.shared and m.shared[m.shared.live] or m.surface)
+    scene:menu(k, m.x, m.y, m.w, m.h, pic(m.shared and m.shared[m.shared.live] or m.surface))
   end
 
   local o = PT.outline
   local alpha = osd.shown and osd.alpha(sys.ticks()) or 0
+  local badge, bx, by = OUT.badge_now()
 
   if o then
     scene:above(o.x, o.y, o.w, o.h, focused_colour(),
-                alpha > 0 and osd.surface or nil, osd.x, osd.y, alpha,
-                OUT.cursor_picture, PT.x, PT.y)
+                pic(alpha > 0 and osd.surface or nil), osd.x, osd.y, alpha,
+                pic(OUT.cursor_picture), PT.x, PT.y, pic(badge), bx, by)
   else
     scene:above(nil, 0, 0, 0, 0,
-                alpha > 0 and osd.surface or nil, osd.x, osd.y, alpha,
-                OUT.cursor_picture, PT.x, PT.y)
+                pic(alpha > 0 and osd.surface or nil), osd.x, osd.y, alpha,
+                pic(OUT.cursor_picture), PT.x, PT.y, pic(badge), bx, by)
   end
 end
 
@@ -2842,7 +2893,7 @@ local function swap_surface(win, w, h)
 
     if win.menubar then
       win.menubar.surface:free()
-      win.menubar.surface = gfx.surface{ w = w, h = win.menubar.h }
+      win.menubar.surface = gfx.surface{ w = w, h = win.menubar.h, shared = true }
       strips.paint(win)
     end
 
@@ -2862,7 +2913,7 @@ local function swap_surface(win, w, h)
   -- screen went with it. A window that will not resize is a window that did
   -- not resize; it is not a reason to end the session.
   --
-  local ok, fresh = pcall(gfx.surface, { w = w, h = h })
+  local ok, fresh = pcall(gfx.surface, { w = w, h = h, shared = true })
 
   if not ok or not fresh then
     print("wm: " .. tostring(fresh))
@@ -3281,7 +3332,7 @@ handlers.open = function(req, who, cap)
     w       = w_,
     h       = h_,
     pct     = pct,
-    surface = gfx.surface{ w = w_, h = h_ },
+    surface = gfx.surface{ w = w_, h = h_, shared = true },
     events  = {},
 
     --
@@ -3357,8 +3408,8 @@ handlers.open = function(req, who, cap)
       win.src_w, win.src_h = src_w, src_h
       win.shared = {
         cap = cap,
-        [1] = gfx.wrap{ at = at, w = src_w, h = src_h },
-        [2] = gfx.wrap{ at = at + bytes, w = src_w, h = src_h },
+        [1] = gfx.wrap{ at = at, w = src_w, h = src_h, region = cap },
+        [2] = gfx.wrap{ at = at + bytes, w = src_w, h = src_h, region = cap, offset = bytes },
         live = 1,
       }
 
@@ -4402,7 +4453,7 @@ handlers.commit = function(req)
     win.shared, win.shared_next = win.shared_next, nil
     win.src_w, win.src_h = win.shared.w, win.shared.h
     win.shared.live = 2
-    sys.release(old.cap)
+    OUT.let_go_buffers(old)
     damage_window(win)
   end
 
@@ -4562,12 +4613,12 @@ handlers.surface = function(req, _, cap)
   if not at then return refuse("it could not be mapped: " .. tostring(why)) end
 
   -- One handed over before this and never drawn in goes; this replaces it.
-  if win.shared_next then sys.release(win.shared_next.cap) end
+  if win.shared_next then OUT.let_go_buffers(win.shared_next) end
 
   win.shared_next = {
     cap = cap, w = w, h = h,
-    [1] = gfx.wrap{ at = at, w = w, h = h },
-    [2] = gfx.wrap{ at = at + bytes, w = w, h = h },
+    [1] = gfx.wrap{ at = at, w = w, h = h, region = cap },
+    [2] = gfx.wrap{ at = at + bytes, w = w, h = h, region = cap, offset = bytes },
     live = 1,
   }
 
@@ -5296,13 +5347,13 @@ handlers.close = function(req)
   -- read, dressed up as a bad file, which is a separate thing to fix.
   --
   if win.shared and win.shared.cap then
-    sys.release(win.shared.cap)
+    OUT.let_go_buffers(win.shared)
     win.shared = nil
   end
 
   -- And a region handed over at a new size and never drawn in (6zz e).
   if win.shared_next then
-    sys.release(win.shared_next.cap)
+    OUT.let_go_buffers(win.shared_next)
     win.shared_next = nil
   end
 
@@ -5494,7 +5545,7 @@ function scale.rescale(pct)
           win.menubar.h = strips.height()
           win.menubar.surface:free()
           win.menubar.surface = gfx.surface{ w = scale.px(win.src_w, pct),
-                                             h = win.menubar.h }
+                                             h = win.menubar.h, shared = true }
         end
 
         win.w = scale.px(win.src_w, pct)

@@ -2,9 +2,36 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-10, early morning (0.11.115; Astra D3a and D3b-1)
+Last updated: 2026-10-10, midday (0.11.119; Astra D3b-2 step 2)
 
 ---
+
+## 10 October, morning to midday: the window server, the launcher, focus
+
+**Pushed: up to 0.11.112.** **On `main`, not pushed: 0.11.113-0.11.119.**
+
+- **Decided (Diego)**: init starts the window server at boot (option a).
+- **D3b-2 step 1** (0.11.116, 18.511): `windowserver`, role 27, started by
+  init with the screen; its door lent to `wm.lua` alone, mounted at
+  `/Windowserver`, greeted.
+- **The launcher** opens without waiting for the Deskbar (0.11.117): the wm
+  answers `dock` itself. Diego: "launcher feels good now".
+- **Focus following the pointer** kept across a restart (0.11.118, 18.513).
+  Diego: "focus works great now after reboot". Card in Done.
+- **D3b-2 step 2** (0.11.119, 18.514): the window server composes. The
+  back buffer, the scene's region and every picture handed over as regions
+  (`gfx.surface{ shared = true }`, `s:region()`, `scene:wire`); one
+  `WS_OP_COMPOSE` a pass. `x86-scene` holds it to the Lua composing, no pixel
+  different over 1950 passes, and sees a closed window's picture let go.
+  Under QEMU it costs a round trip, about 0.27 ms a pass: composing itself is
+  the same speed in either process. The M700 is the measurement that decides.
+- **The M700** runs 0.11.118 (monitor on). Not yet given 0.11.119.
+
+**Next**: the M700 on 0.11.119, with `frames` (needs Diego's yes for the
+restart); then D3b-2 step 3, the console's screen handed over by the window
+server; then step 4, the Lua composing removed. The PDF reader's redesign is
+queued (design first: feature set, mockup, architecture, diagram).
+
 
 ## 10 October, early morning: Gmail restored, a push, Astra D3a and D3b-1
 

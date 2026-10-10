@@ -25,6 +25,17 @@ struct surface {
     unsigned  pitch;        /* bytes per row, never assume width * 4 */
     size_t    pages;        /* what to hand back; 0 for the screen */
     bool      owned;        /* false for the screen: not ours to free */
+
+    /*
+     * **The region the pixels lie in, when another process may be handed
+     * them** (Astra's D3b-2): its capability plus one - 0 for pixels that
+     * are this process's alone, so a zeroed surface is a private one - and
+     * where in it the first row starts. A window's buffers and the window
+     * manager's own pictures are surfaces like this, and the window server
+     * composes them from the same pages.
+     */
+    long      region_plus_one;
+    size_t    offset;
 };
 
 /* The start of a row. The one place row arithmetic happens. */

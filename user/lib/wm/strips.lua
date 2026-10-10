@@ -88,7 +88,7 @@ return function(ctx)
     local h = strips.height()
 
     win.menubar = { titles = kept, h = h,
-                    surface = gfx.surface{ w = win.w, h = h } }
+                    surface = gfx.surface{ w = win.w, h = h, shared = true } }
     win.h = win.h + h
     strips.paint(win)
   end

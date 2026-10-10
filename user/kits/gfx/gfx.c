@@ -316,6 +316,46 @@ static int l_new(lua_State *L)
         return luaL_error(L, "that surface is larger than this system allows");
     }
 
+    /*
+     * **`shared = true`: in a region of its own** (Astra's D3b-2), so the
+     * pixels can be handed to another process by its capability -
+     * `s:region()` - as the window manager hands its pictures to the
+     * window server. Zeroed, as a region's new pages are.
+     */
+    lua_getfield(L, 1, "shared");
+
+    if (lua_toboolean(L, -1)) {
+        long cap, at;
+
+        lua_pop(L, 1);
+        pitch = surface_pitch((unsigned long)width);
+        pages = ((size_t)pitch * (size_t)height + KOSMOS_PAGE_SIZE - 1) / KOSMOS_PAGE_SIZE;
+        cap = kosmos_mem_create(pages);
+
+        if (cap < 0) {
+            return luaL_error(L, "no region for a shared %dx%d surface (%d)", (int)width,
+                              (int)height, (int)cap);
+        }
+
+        at = kosmos_mem_map(cap);
+
+        if (at < 0) {
+            (void)kosmos_cap_drop(cap);
+            return luaL_error(L, "a shared %dx%d surface's region could not be mapped (%d)",
+                              (int)width, (int)height, (int)at);
+        }
+
+        {
+            struct surface *made = push_surface(L, (uint32_t *)(uintptr_t)at, (unsigned)width,
+                                                (unsigned)height, pitch, pages, 0);
+
+            made->region_plus_one = cap + 1;
+        }
+
+        return 1;
+    }
+
+    lua_pop(L, 1);
     pixels = gfx_surface_map((unsigned)width, (unsigned)height, &pitch, &pages);
 
     if (pixels == NULL) {
@@ -332,6 +372,27 @@ static int l_new(lua_State *L)
     return 1;
 }
 
+/*
+ * A surface's pages handed back, when they are its own: a private
+ * surface's to the kernel, a shared one's (`shared = true`) out of the
+ * share window, and its capability let go - the region lives on only while
+ * another process still holds one, as the window server does a picture it
+ * was handed.
+ */
+static void release(struct surface *s)
+{
+    if (s->pixels != NULL && s->owned) {
+        if (s->region_plus_one != 0) {
+            (void)kosmos_share_unmap((uintptr_t)s->pixels, s->pages);
+            (void)kosmos_cap_drop(s->region_plus_one - 1);
+        } else {
+            (void)kosmos_unmap((uintptr_t)s->pixels, s->pages);
+        }
+    }
+
+    s->pixels = NULL;
+}
+
 static int l_free(lua_State *L)
 {
     struct surface *s = luaL_checkudata(L, 1, SURFACE_MT);
@@ -339,12 +400,39 @@ static int l_free(lua_State *L)
     /* Idempotent, and not an error: freeing twice is what a cleanup path
      * does when it cannot be sure. Using a freed surface is the error, and
      * check_surface raises it. */
-    if (s->pixels != NULL && s->owned) {
-        (void)kosmos_unmap((uintptr_t)s->pixels, s->pages);
+    release(s);
+    return 0;
+}
+
+/* `s:alive()` - false once freed, where every other method would raise:
+ * for a caller keeping a list of surfaces to notice the ones gone. */
+static int l_alive(lua_State *L)
+{
+    struct surface *s = luaL_checkudata(L, 1, SURFACE_MT);
+
+    lua_pushboolean(L, s->pixels != NULL);
+    return 1;
+}
+
+/*
+ * `s:region()` -> the capability of the region its pixels lie in, where
+ * in it they start, and the pitch; nil for a private surface. For handing
+ * the pixels to another process - the window server - by the region's
+ * capability and a place in it, never by an address.
+ */
+static int l_region(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+
+    if (s->region_plus_one == 0) {
+        lua_pushnil(L);
+        return 1;
     }
 
-    s->pixels = NULL;
-    return 0;
+    lua_pushinteger(L, (lua_Integer)(s->region_plus_one - 1));
+    lua_pushinteger(L, (lua_Integer)s->offset);
+    lua_pushinteger(L, (lua_Integer)s->pitch);
+    return 3;
 }
 
 static int l_gc(lua_State *L)
@@ -356,11 +444,7 @@ static int l_gc(lua_State *L)
      */
     struct surface *s = luaL_checkudata(L, 1, SURFACE_MT);
 
-    if (s->pixels != NULL && s->owned) {
-        (void)kosmos_unmap((uintptr_t)s->pixels, s->pages);
-        s->pixels = NULL;
-    }
-
+    release(s);
     return 0;
 }
 
@@ -3228,6 +3312,8 @@ static const luaL_Reg surface_methods[] = {
     { "pack",   l_pack },
     { "zrle",   l_zrle },
     { "free",   l_free },
+    { "alive",  l_alive },
+    { "region", l_region },
     { NULL, NULL }
 };
 
@@ -3253,7 +3339,7 @@ static const luaL_Reg surface_methods[] = {
  */
 static int l_wrap(lua_State *L)
 {
-    lua_Integer at, width, height;
+    lua_Integer at, width, height, region, offset;
 
     luaL_checktype(L, 1, LUA_TTABLE);
 
@@ -3263,9 +3349,15 @@ static int l_wrap(lua_State *L)
     width = luaL_checkinteger(L, -1);
     lua_getfield(L, 1, "h");
     height = luaL_checkinteger(L, -1);
-    lua_pop(L, 3);
+    /* And, for pixels another process may be handed, the region they lie
+     * in and where (`s:region()`). The wrap does not own it. */
+    lua_getfield(L, 1, "region");
+    region = luaL_optinteger(L, -1, -1);
+    lua_getfield(L, 1, "offset");
+    offset = luaL_optinteger(L, -1, 0);
+    lua_pop(L, 5);
 
-    if (at == 0 || width <= 0 || height <= 0) {
+    if (at == 0 || width <= 0 || height <= 0 || offset < 0) {
         return luaL_error(L, "gfx.wrap needs an address and a size");
     }
 
@@ -3279,8 +3371,17 @@ static int l_wrap(lua_State *L)
      * apart - which is what lets the compositor treat both alike. No pages:
      * they are the region's, not ours.
      */
-    gfx_surface_new(L, (uint32_t *)(uintptr_t)at, (unsigned)width,
-                    (unsigned)height, surface_pitch((unsigned long)width), 0);
+    {
+        struct surface *made = push_surface(L, (uint32_t *)(uintptr_t)at, (unsigned)width,
+                                            (unsigned)height,
+                                            surface_pitch((unsigned long)width), 0, 0);
+
+        if (region >= 0) {
+            made->region_plus_one = (long)region + 1;
+            made->offset = (size_t)offset;
+        }
+    }
+
     return 1;
 }
 

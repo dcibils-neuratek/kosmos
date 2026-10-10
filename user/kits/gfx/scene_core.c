@@ -595,5 +595,19 @@ long scene_compose(struct scene *sc, long rx, long ry, long rw, long rh)
                  (long)sc->cursor->height, sc->cursor_x, sc->cursor_y, 255);
     }
 
+    /* And a drag's label beside it, clipped to the rectangle like the rest. */
+    if (sc->badge != NULL) {
+        long bw = (long)sc->badge->width, bh = (long)sc->badge->height;
+        long x0 = r.x > sc->badge_x ? r.x : sc->badge_x;
+        long y0 = r.y > sc->badge_y ? r.y : sc->badge_y;
+        long x1 = r.x + r.w < sc->badge_x + bw ? r.x + r.w : sc->badge_x + bw;
+        long y1 = r.y + r.h < sc->badge_y + bh ? r.y + r.h : sc->badge_y + bh;
+
+        if (x1 > x0 && y1 > y0) {
+            blit_on(sc->back, sc->badge, x0 - sc->badge_x, y0 - sc->badge_y, x1 - x0, y1 - y0,
+                    x0, y0);
+        }
+    }
+
     return drawn;
 }

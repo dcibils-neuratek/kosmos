@@ -22495,3 +22495,48 @@ ms, and the second boot's window manager, asked, has it on at 250 ms.
 that only printed as the setting was read passed the control - it was
 before the line that undid it - and was replaced by asking. The whole gate,
 61 of 62: `x86-film`'s sound under load again, which passes alone.
+
+## 18.514 Astra D3b-2, step 2: the window server composes
+
+`docs/astra-display.md` D3b-2 step 2. The window manager hands the window
+server, each once and as a region, the back buffer, a region the scene is
+written in, and every picture the scene names under a slot it chooses: a
+window's two buffers (`gfx.wrap{ region = cap, offset = }`), and its own
+wallpaper, version stamp, menu bars, level bar, arrow and a drag's label -
+each now `gfx.surface{ shared = true }`, which `s:region()` names. A pass
+is described by slot, `scene:wire` writes it with the damage into the
+shared region (`windowproto.h`'s `ws_scene_head`, windows, menus and
+rectangles), and one `WS_OP_COMPOSE` composes it into the back buffer and
+puts it on the screen; the watcher's copy (VNC) is still taken here. A
+drag's label is a picture of the scene's now, composed last, rather than
+drawn by the window manager after it. A picture whose surface is freed or
+collected is forgotten on the next pass; a window's buffers are freed with
+their region. The server holds every count to its region, every slot to
+the pictures it has, every picture to the region it came in and a source
+rectangle to its picture. Without a window server the window manager
+composes in its own process as before.
+
+`x86-scene` 6: the window server greeted and composing, and every picture
+in a region of its own; 1950 passes composed by the window server and again
+by the Lua, and not one pixel differs; a window shown for three seconds and
+closed - 20 pictures held before it, 22 while it was open, 20 after.
+**Controls**, in one run, three failures: the server's desktop colour off by
+one bit, and 18,830,786 pixels differ; the forgetting switched off, and the
+pictures held went 54, 56, 56; the stamp made private, and "a 503x18
+picture with no region of its own". `test_draw` 16: a drag's label drawn
+last and only inside the rectangle composed; **control**: the label not
+drawn. The whole gate, 62 of 62, in 7:00.
+
+**Measured, and it costs a round trip.** `frames`, 0.11.118 against this,
+under QEMU on one processor: a composing pass 0.97 to 3.54 ms idle, 0.48 to
+0.95 with a cube turning, 1.59 to 2.37 with four stacked; the window
+manager's busy time 336 to 382, 744 to 1041 and 1377 to 1607 ms - because
+it waits while the server composes. Timed inside, with a cube turning, in
+counter ticks a pass: composing and showing 757,000 in the window manager's
+process, 740,000 in the window server's - the same work at the same speed -
+and 1,160,000 for the call around it, so the round trip is 420,000 a pass,
+about a quarter of a millisecond, and writing the scene 43,000. That is
+QEMU switching address spaces, where every switch empties its whole
+translation cache and both sides walk their pages in again; the number
+that decides is the M700's (D6). What takes the window manager out of the
+wait is D4, where commits go to the window server and a pass is not a call.

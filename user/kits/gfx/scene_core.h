@@ -41,11 +41,16 @@ struct sc_window {
     long bar_h;
     long bx, by;
     int held;                   /* the light pressed, its slot, or -1 */
+
+    /* Described for the window server (`scene.c`), the pictures by slot -
+     * `WS_NONE` for none - in place of the surfaces above. */
+    int picture_slot, bar_slot;
 };
 
 struct sc_menu {
     long x, y, w, h;
     struct surface *picture;
+    int picture_slot;
 };
 
 struct sc_rect {
@@ -80,6 +85,13 @@ struct scene {
     struct surface *osd, *cursor;
     long osd_x, osd_y, cursor_x, cursor_y;
     uint32_t osd_alpha;
+
+    /* A drag's label beside the pointer, last of all. */
+    struct surface *badge;
+    long badge_x, badge_y;
+
+    /* The pictures above, by slot, when described for the window server. */
+    int wallpaper_slot, stamp_slot, osd_slot, cursor_slot, badge_slot;
 
     /* Scratch: the pieces of a rectangle not yet covered, two lists that
      * alternate, each `cap_pieces` long, and what each window shows of it -
