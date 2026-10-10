@@ -8309,6 +8309,17 @@ https://claude.ai/artifact/DzcP4dHurAvXE4xXfU5DAp (private to Diego). A
 status he changes or an item he adds there is read back and written into
 this file; this file stays the record, with the reasoning.
 
+**Found, 10 October - a question to an application waits for its tick.**
+The launcher waited 840 ms of every press for the Deskbar to say where the
+dock is (`testing.md` 18.512): a kit window answers `/Running/<name>` only
+between its waits for events, and a window's wait is its tick - a second
+for the Deskbar's clock. The launcher asks the window manager now; what is
+left is every other question to an application - Preferences' writes to the
+Deskbar as a slider moves among them - which want the window woken by the
+question, not by its clock. To be designed: the window manager's held poll
+answered early when the window's own door has a question waiting, or the
+two waits made one.
+
 **Dropped, 9 October, on the live list**: Mail built as an IDE project, and
 Mail M9, shipped as an IDE example. Diego marked both dropped; Mail ends at
 M8, then POP3.

@@ -5019,6 +5019,28 @@ end
 -- know the size first (Cafesa3D, 26 September: "3d tools are mostly used
 -- maximized"). The window's contents, in the screen's points.
 --
+--
+-- **Where the launcher goes, when the bar is a dock**: the middle of the
+-- dock's top edge, in points - what the Deskbar publishes as its `anchor`,
+-- answered here, where every window's place is known. The launcher asked
+-- the Deskbar, and a window answers questions only between its waits for
+-- events - a second for the Deskbar, whose clock is its tick - so every
+-- press on the Kosmos button waited most of a second before the launcher
+-- could open (Diego, 10 October: "the app launcher takes like a full second
+-- to show"). Nothing when the bar is across the top.
+--
+handlers.dock = function()
+  for _, win in ipairs(windows) do
+    if win.strip == "bottom" then
+      local pct = win.pct or scale.pct
+
+      return { ok = true, x = scale.pt(win.x + win.w // 2, pct), y = scale.pt(win.y, pct) }
+    end
+  end
+
+  return { ok = true }
+end
+
 handlers.workarea = function(req)
   -- Asked by a window that will have its header for a title bar, in a look
   -- where it will: no tab and no border to leave room for (`OUT.room`).

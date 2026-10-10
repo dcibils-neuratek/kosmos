@@ -90,8 +90,8 @@ local shown = {}
 --------------------------------------------------------------------------
 -- **The grid, when the bar is a dock** (`roadmap.md`, a dock at the
 -- bottom, step 4; `docs/dock.html`, agreed by Diego on 3 October - "like
--- the googlebook has"). The Deskbar says where its dock is in
--- `/Running/Deskbar/anchor`, the middle of the dock's top edge; with it,
+-- the googlebook has"). The window manager says where the dock is
+-- (`dock`), the middle of its top edge; with it,
 -- this is a panel above the dock - the search first, then every
 -- application A to Z in round tiles - and without it, the list below.
 --
@@ -645,11 +645,20 @@ local function grid_mode(ax, ay)
 end
 
 do
-  local anchor = fs.read("/Running/Deskbar/anchor")
-  local ax, ay = tostring(anchor or ""):match("^(%-?%d+),(%-?%d+)$")
+  --
+  -- Where the dock is, from the window manager, which answers at once -
+  -- not from the Deskbar's `anchor`, which a Deskbar between its waits for
+  -- events answered most of a second later, on every press of the Kosmos
+  -- button (`wm.lua`, `handlers.dock`).
+  --
+  local asked = sys.ticks()
+  local dock = fs.send("/Running/wm", { type = "dock" })
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
-  if ax then
-    grid_mode(tonumber(ax), tonumber(ay))
+  print(("launchpad: the dock's place in %d ms"):format((sys.ticks() - asked) * 1000 // hz))
+
+  if dock and math.type(dock.x) == "integer" and math.type(dock.y) == "integer" then
+    grid_mode(dock.x, dock.y)
     return
   end
 end

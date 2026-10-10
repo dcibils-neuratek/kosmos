@@ -476,6 +476,7 @@ def main():
         mark = len(guest.seen)
         click(*kosmos_button(), width, height)
         said["grid"] = guest.wait_for_line("launchpad: the grid at ", "the launcher grid", mark)
+        said["dock place"] = re.findall(r"launchpad: the dock's place in (\d+) ms", guest.seen[mark:])
         time.sleep(2)
         _, _, at = R.pixel_reader(guest.screendump())
         said["grid lit"] = at(bx, by)
@@ -913,6 +914,15 @@ def main():
         fails.append("the launcher grid was not above the dock, centred on it, "
                      "with every application: %r, the dock %r" % (said.get("grid"), gd))
 
+    # **The launcher finds the dock at once** (Diego, 10 October: "the app
+    # launcher takes like a full second to show"): from the window manager,
+    # which answers as it runs, and not from the Deskbar, which answered
+    # between its waits - 840 ms of every press.
+    place = said.get("dock place") or []
+
+    if not place or int(place[-1]) > 100:
+        fails.append("the launcher waited to learn where the dock is: %r ms" % (place,))
+
     if not said.get("grid lit") or said.get("grid lit") != said.get("lit"):
         fails.append("the Kosmos button was not lit while the launcher was open: %r"
                      % (said.get("grid lit"),))
@@ -1053,7 +1063,7 @@ def main():
                      "the new height - its sidebar's ground near the new bottom "
                      "%r, near the old %r: %r" % (g1, g0, said.get("prefs resized")))
 
-    checks = 53
+    checks = 54
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))

@@ -22454,3 +22454,27 @@ refused, and `start` ends init when a spawn fails. It starts only where
 there is a screen now, and a failure is a line in the log, as the power
 button's is; the eight pass. `x86-scene` 4: `windowserver: the screen,
 1920x1080` and `wm: the window server answers, the screen 1920x1080`.
+
+## 18.512 The launcher opens without waiting for the Deskbar
+
+Diego, 10 October: "when clicking the kosmos button in the dock, the app
+launcher takes like a full second to show". Measured, under QEMU, from the
+press: the launcher's process started at 37 ms, the kit loaded by 98, every
+application listed by 200, and then **840 ms reading where the dock is** -
+`/Running/Deskbar/anchor`, a question to the Deskbar, which a kit window
+answers only between its waits for events, and the Deskbar's wait is its
+clock's second. Its window opened 50 ms after, and its first frame 20 after
+that. Loading the applications was a tenth of it.
+
+The window manager answers it now (`dock`): the middle of the dock window's
+top edge, in points, which is what the Deskbar published - every window's
+place is known there, and the window manager answers as it runs. The
+launcher says how long the question took. `x86-dock` 54: the launcher
+learnt where the dock is in at most 100 ms. **Control**: the Deskbar asked
+again, and 872 ms. The whole gate, 61 of 62: `x86-maps` waited for its
+machine's Telnet under load and passes alone.
+
+**What this showed is wider** (`roadmap.md`): anything that asks a running
+application through `/Running/<name>` waits for that application's next
+turn, up to its tick - a second for the Deskbar, whose writes Preferences
+makes as a slider moves.

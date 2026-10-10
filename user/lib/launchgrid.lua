@@ -6,7 +6,7 @@
 -- and agreed by Diego on 3 October: above the dock's Kosmos button, a
 -- panel with its search first, then every application A to Z in round
 -- tiles - beside the sections' column since 7 October, five to a row. `launchpad` draws it when the Deskbar is a dock and
--- says where (`/Running/Deskbar/anchor`), and its list of names otherwise.
+-- says where (the window manager's `dock`), and its list of names otherwise.
 --
 -- **Arithmetic here, pixels in `launchpad`**, as `dock.lua` and the
 -- Deskbar divide it: which applications match, where each tile is, what a
