@@ -22437,3 +22437,20 @@ it shows, the menu on top, the hidden one not drawn, a corner rounded - and
 the same pixels composed again over magenta. **Control**: the menus not
 composed, and it fails. The AArch64 image builds. The whole gate, 61 of 62:
 `x86-film`'s sound, which has failed under load before, passes alone.
+
+## 18.511 Astra D3b-2, step 1: the window server, started at boot
+
+`user/servers/windowserver.c`, a role of the init image (27), started by
+init at boot with the screen and the console's endpoint (Diego, 10
+October: option (a)). Its manager door is `windowproto.h`, a greeting for
+now that answers the screen's size; the shell lends the door only to
+`/Kosmos/Programs/wm.lua`, which declares `needs windowserver` and finds it
+at `/Windowserver`. The window manager greets it as it starts; the desktop
+is still composed in its process.
+
+The whole gate stopped eight suites at boot - every machine without a
+display: init asked to hand the server a screen it did not have, was
+refused, and `start` ends init when a spawn fails. It starts only where
+there is a screen now, and a failure is a line in the log, as the power
+button's is; the eight pass. `x86-scene` 4: `windowserver: the screen,
+1920x1080` and `wm: the window server answers, the screen 1920x1080`.

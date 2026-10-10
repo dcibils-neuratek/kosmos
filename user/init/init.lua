@@ -44,6 +44,7 @@ local ROLE_NOTIFY     = 23 -- serves /Notifications: what applications have said
 local ROLE_SMBFS      = 24 -- shares over the network: SMB 2 and 3 (`sharing.md`)
 local ROLE_KEYRING    = 25 -- the passwords Kosmos keeps, sealed (`keyring.md`)
 local ROLE_TILES      = 26 -- the map's tiles from the network: /Tiles (`maps.md`)
+local ROLE_WINDOWSERVER = 27 -- holds the screen, composes (`astra-display.md` D3b-2)
 
 --
 -- **A program's own image** (`docs/elf.md` step 4). A program whose header
@@ -3815,6 +3816,17 @@ local RUNNER_ROLE = ROLE_RUNNER
 -- file in `/Home` is a request nobody grants. A path with `.` or `..` in it,
 -- or an empty component, is not taken at its word.
 --
+--
+-- **Whether the window server's manager door goes to `path`**
+-- (`docs/astra-display.md` D3b-2): only to the system's window manager, the
+-- file the image serves at `/Kosmos/Programs/wm.lua` - a program that holds
+-- this door decides what the screen shows, so no other is given it, whatever
+-- it declares.
+--
+local function windowserver_grant(path)
+  return path == "/Kosmos/Programs/wm.lua"
+end
+
 local function keyring_grant(path)
   if type(path) ~= "string" or path:find("//", 1, true)
      or path:find("/%.%.?/") or path:find("/%.%.?$") then
@@ -3829,7 +3841,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap,
                           midi_cap, notify_cap, share_cap, keyring_cap, tiles_cap,
-                          mail_keys_cap)
+                          mail_keys_cap, window_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -4656,7 +4668,7 @@ query. `find` and `watch` are built on exactly these two calls.
     --
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
-    local camera, midi, keyring, tiles, mailkeys = nil, nil, nil, nil, nil
+    local camera, midi, keyring, tiles, mailkeys, window = nil, nil, nil, nil, nil, nil
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -4674,6 +4686,9 @@ query. `find` and `watch` are built on exactly these two calls.
       -- Mail's passwords (`docs/mail.md` M0): the system's own, as `keyring`.
       if want == "keyring-mail" and mail_keys_cap and keyring_grant(path) then
         mailkeys = mail_keys_cap
+      end
+      if want == "windowserver" and window_cap and windowserver_grant(path) then
+        window = window_cap
       end
     end
 
@@ -4694,6 +4709,8 @@ query. `find` and `watch` are built on exactly these two calls.
     if tiles then caps[#caps + 1] = tiles; tiles_at = #caps - 1 end
     local mailkeys_at = nil
     if mailkeys then caps[#caps + 1] = mailkeys; mailkeys_at = #caps - 1 end
+    local window_at = nil
+    if window then caps[#caps + 1] = window; window_at = #caps - 1 end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
     local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags)
@@ -4710,7 +4727,7 @@ query. `find` and `watch` are built on exactly these two calls.
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       backlight = 12, notify = 13, share = share_cap and 14 or nil,
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
-      mailkeys = mailkeys_at,
+      mailkeys = mailkeys_at, windowserver = window_at,
       home_in_memory = home_in_memory or nil,
       protostamp = sys.protostamp,
     })
@@ -5378,6 +5395,8 @@ if role == ROLE_INIT then
   -- `/Home/Cache/Maps` alone.
   local MAPS_CACHE_DISK_EP = sys.endpoint()
   local TILES_EP = sys.endpoint()
+  -- The window server's manager door (`docs/astra-display.md` D3b-2).
+  local WINDOW_EP = sys.endpoint()
   local KEYRING_SMB_EP = sys.endpoint()
   local KEYRING_MANAGE_EP = sys.endpoint()
   local KEYRING_MAIL_EP = sys.endpoint()     -- the keyring's `mail` door (`mail.md` M0)
@@ -5664,6 +5683,28 @@ if role == ROLE_INIT then
                                          CONSOLE_EP })
 
   --
+  -- **The window server** (`docs/astra-display.md` D3b-2; Diego, 10 October:
+  -- started by init at boot), with the screen and the console's endpoint.
+  -- It outlives any window manager; the one that may describe the desktop
+  -- to it is the one the shell lends its door to (`windowserver_grant`).
+  --
+  -- **Only where there is a screen, and not through `start`**: a machine
+  -- with no display is a supported way to run, and asking to hand it a
+  -- screen it does not have was refused - and `start` ends init when a
+  -- spawn fails, which stopped every headless machine at boot. A window
+  -- server that cannot start is a line in the log, as the power button is.
+  --
+  if may_pass_screen() then
+    local id, err = sys.spawn(ROLE_WINDOWSERVER, { WINDOW_EP, CONSOLE_EP }, SPAWN_SCREEN)
+
+    if id then
+      names[id] = "the window server"
+    else
+      line("init: no window server: " .. tostring(err))
+    end
+  end
+
+  --
   -- **The power button**, the first driver outside the kernel.
   --
   -- Handed the console server's endpoint and nothing else, so it can report
@@ -5837,7 +5878,7 @@ if role == ROLE_INIT then
                         APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP, BLOCKS_EP,
                         DRIVES_EP, BACKLIGHT_EP, CAMERA_EP, MIDI_EP,
                         NOTIFY_EP, SMBFS_EP, KEYRING_MANAGE_EP, TILES_EP,
-                        KEYRING_MAIL_EP },
+                        KEYRING_MAIL_EP, WINDOW_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -5910,7 +5951,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19)
   return
 end
 
@@ -6101,6 +6142,9 @@ if role == ROLE_RUNNER then
   if req.keyring then ns.keyring_door(req.keyring) end
   if req.tiles   then ns.mount("/Tiles",           req.tiles, nil, "tiles") end
   if req.mailkeys then ns.mail_keys_door(req.mailkeys) end
+  if req.windowserver then
+    ns.mount("/Windowserver", req.windowserver, nil, "windowserver")
+  end
 
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started

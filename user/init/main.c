@@ -90,6 +90,10 @@ void drives_server(long endpoint, long blocks, long console);
 void diskfs_server(long endpoint, long blocks_read, long blocks_write,
                    long devices, long console, long keyring, long maps_cache);
 void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep);
+
+/* The window server (`docs/astra-display.md` D3b-2): its endpoint, the
+ * manager door, and the console's. Given the screen when it is spawned. */
+void windowserver_server(long endpoint, long console_ep);
 void keyring_server(long smb_door, long manage_door, long disk, long devices,
                     long console, long mail_door);
 
@@ -119,6 +123,7 @@ void smbfs_server(long endpoint, long net, long console, long keyring);
 #define ROLE_SMBFS    24UL
 #define ROLE_KEYRING  25UL
 #define ROLE_TILES    26UL
+#define ROLE_WINDOWSERVER 27UL
 
 static void say(const char *s)
 {
@@ -803,6 +808,11 @@ int main(unsigned long arg)
     if (arg == ROLE_TILES) {
         named("tiles");
         tiles_server(0, 1, 2, 3);
+    }
+
+    if (arg == ROLE_WINDOWSERVER) {
+        named("windowserver");
+        windowserver_server(0, 1);
     }
 
     L = kosmos_lua_open();

@@ -150,16 +150,22 @@ def main():
 
     if not said.get("menu"):
         fails.append("the menu did not open")
+    # The window server (D3b-2): started by init, its door lent to the
+    # window manager alone, which greets it.
+    if not re.search(r"windowserver: the screen, \d+x\d+", seen) \
+            or not re.search(r"wm: the window server answers, the screen \d+x\d+", seen):
+        fails.append("the window manager did not greet the window server: %r"
+                     % re.findall(r"[^\n]*window ?server[^\n]*", seen)[:4])
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
     if fails:
-        print("FAIL: %d of 3 checks on the desktop composed in C:" % len(fails))
+        print("FAIL: %d of 4 checks on the desktop composed in C:" % len(fails))
         for f in fails:
             print("  " + f)
         return 1
 
-    print("PASS: 3 checks on the desktop composed in C (%s passes composed by the scene and by "
+    print("PASS: 4 checks on the desktop composed in C (the window server greeted; %s passes composed by the scene and by "
           "the Lua it replaced - the Deskbar, the desktop, Calculator, Preferences, a cube "
           "turning, a menu, a window moved, 150 per cent and back - and not one "
           "pixel differs)." % checks[-1][0])

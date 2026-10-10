@@ -1,6 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: server
--- kosmos: needs processes screen network audio camera midi profile keyring tiles keyring-mail
+-- kosmos: needs processes screen network audio camera midi profile keyring tiles keyring-mail windowserver
 --
 -- `network` is here so the desktop can *pass it on*. The kernel refuses a
 -- spawn that hands over authority the parent does not hold, so without this
@@ -801,6 +801,25 @@ local back = gfx.surface{ w = W, h = H }
 -- from, and a panic takes the screen back regardless.
 --
 sys.screen_take(true)
+
+--
+-- **The window server** (`docs/astra-display.md` D3b-2): started by init at
+-- boot, and its manager door lent to this program alone. Greeted here; the
+-- desktop is still composed in this process until the next step moves it.
+--
+do
+  local ok, reply = pcall(fs.raw, "/Windowserver", string.pack("<I4I4", 1, 0), nil,
+                          "windowserver")
+
+  if ok and type(reply) == "string" and #reply >= 16 then
+    local err, w, h = string.unpack("<I4I4I4", reply)
+
+    print(err == 0 and ("wm: the window server answers, the screen %dx%d"):format(w, h)
+          or ("wm: the window server answers, error %d"):format(err))
+  else
+    print("wm: no window server: " .. tostring(reply))
+  end
+end
 
 --
 -- **What the desktop is doing, in the kernel's log, whether or not the
