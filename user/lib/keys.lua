@@ -279,6 +279,7 @@ local SPELLED = {
   left = "Left", right = "Right", up = "Up", down = "Down",
   arrows = "Arrows", drag = "Drag",
   home = "Home", ["end"] = "End", delete = "Delete", backspace = "Backspace",
+  prtsc = "PrtSc", printscreen = "PrtSc", print = "PrtSc",
 }
 
 -- One cap, as it is shown; nil for an empty one.

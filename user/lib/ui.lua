@@ -201,6 +201,22 @@ function gc:fill(x, y, w, h, color)
                               w = x1 - x0, h = y1 - y0, color = color }
 end
 
+-- A colour over what is already drawn, by its own alpha: `0x80000000` is
+-- the view half darkened. Clipped as `fill` is.
+function gc:wash(x, y, w, h, color)
+  color = shade(color)
+  local ax, ay = self.ox + x, self.oy + y
+  local x0 = (ax > self.cx) and ax or self.cx
+  local y0 = (ay > self.cy) and ay or self.cy
+  local x1 = math.min(ax + w, self.cx + self.cw)
+  local y1 = math.min(ay + h, self.cy + self.ch)
+
+  if x1 <= x0 or y1 <= y0 then return end
+
+  self.ops[#self.ops + 1] = { op = "wash", x = x0, y = y0,
+                              w = x1 - x0, h = y1 - y0, color = color }
+end
+
 --
 -- A rounded rectangle, filled or outlined.
 --
@@ -2838,6 +2854,12 @@ function ui.sidebar(spec)
   -- never chosen, by a press or an arrow - and its `action`, words at its
   -- right in the accent, calls `on_action(self, id)` when pressed.
   --
+  -- **`picture`**, an icon of the shipped set (its file, `Misc_Book.png`)
+  -- drawn in its own colours
+  -- where `icon` is a line icon in the look's, and **`filled = true`** on
+  -- the sidebar, the chosen row filled with the accent and its words white
+  -- - both as `docs/shortcuts.html` draws its groups.
+  --
   -- And what a row may carry at its right, each as the drawing has it: a
   -- `dot` - "live", "warn" or "none" - for a server's state, a `lock` for
   -- one not signed into, and a `note` in the dim face ("no shares"). A
@@ -2973,7 +2995,8 @@ function ui.sidebar(spec)
       end
 
       if on then
-        g:fill_round(SIDE_INSET, r.y, w, PITCH, theme.line_soft, SIDE_R)
+        g:fill_round(SIDE_INSET, r.y, w, PITCH,
+                     self.filled and theme.accent or theme.line_soft, SIDE_R)
       end
 
       --
@@ -2992,10 +3015,15 @@ function ui.sidebar(spec)
         local indent = it.indent and 24 or 0
         local right = self.w - SIDE_INSET - 10
 
-        if it.icon then
+        if it.picture then
+          g:icon(SIDE_INSET + SIDE_ICON - 2 + indent, r.y + (PITCH - 20) // 2,
+                 it.picture, 20)
+        elseif it.icon then
           g:line_icon(SIDE_INSET + SIDE_ICON + indent, r.y + (PITCH - 15) // 2,
                       it.icon, (on or it.accent) and theme.accent or theme.text_dim)
         end
+
+        local bright = on and self.filled
 
         -- What it says at its right: a dot, a lock, a note.
         if it.dot then
@@ -3013,7 +3041,8 @@ function ui.sidebar(spec)
           local nw = gfx.measure(tostring(it.note), small())
 
           g:text(right - nw, r.y + (PITCH - gfx.height(small())) // 2,
-                 tostring(it.note), theme.text_dim, nil, small())
+                 tostring(it.note), bright and theme.text_on or theme.text_dim,
+                 nil, small())
           right = right - nw - 6
         end
 
@@ -3024,7 +3053,8 @@ function ui.sidebar(spec)
 
         g:text(x, r.y + (PITCH - gfx.height(face)) // 2,
                ui.fitted(it.name or "", right - x, face),
-               it.accent and theme.accent
+               bright and theme.text_on
+               or it.accent and theme.accent
                or (it.quiet or it.dim) and theme.text_dim or theme.text,
                nil, face)
       end
@@ -3550,6 +3580,76 @@ function ui.tabs(spec)
     end
 
     return out
+  end
+
+  return v
+end
+
+--
+-- **A sheet**: a panel over the window, the window dimmed behind it, which
+-- takes every press until it is put away (`docs/shortcuts.html`'s "Add a
+-- shortcut").
+--
+--   local s = ui.sheet{ title = "Add a shortcut", w = 400, h = 300,
+--                       on_close = function() ... end }
+--   s:put(ui.button{ x = 16, y = 240, text = "Cancel" })   -- the panel's own
+--   win:add(s)  ...  s:close()
+--
+-- The panel's place is the middle of the window, worked out when it is
+-- drawn, so a window resized under it keeps it there. A press on the dim
+-- part does nothing - a sheet is put away by what is on it - and Escape is
+-- the window's to give it, as `on_key` gives any key (`close`).
+--
+-- Mail draws one of its own: it is a window that draws its own pixels
+-- (`pixelkit`), where a view cannot go, so this is the sheet of every window
+-- built of views.
+--
+function ui.sheet(spec)
+  spec.follow = spec.follow or { "left", "right", "top", "bottom" }
+
+  local v = ui.view{ x = 0, y = 0, w = 1, h = 1, follow = spec.follow }
+  local panel = ui.view{ x = 0, y = 0, w = spec.w or 400, h = spec.h or 260 }
+
+  v.title, v.on_close, v.panel = spec.title, spec.on_close, panel
+  v:add(panel)
+
+  function v:put(child) return panel:add(child) end
+
+  -- Fills the window it is in, and centres the panel, every time it draws.
+  local function place(self)
+    local win = self.window
+
+    if win then
+      self.w, self.h = win.w, win.h
+    end
+
+    panel.x = (self.w - panel.w) // 2
+    panel.y = math.max(L.head, (self.h - panel.h) * 2 // 5)
+  end
+
+  function v:draw(g)
+    place(self)
+
+    g:wash(0, 0, self.w, self.h, 0x73050810)
+  end
+
+  function panel:draw(g)
+    g:fill_round(0, 0, self.w, self.h, theme.line, 12)
+    g:fill_round(1, 1, self.w - 2, self.h - 2, theme.raised, 11)
+
+    if v.title then
+      g:text(18, 16, tostring(v.title), theme.text, nil, "label")
+    end
+  end
+
+  function panel:mouse() return true end
+  function v:mouse() return true end
+
+  function v:close()
+    local win = self.window
+
+    if win then win:remove(self) end
+    if self.on_close then self.on_close(self) end
   end
 
   return v

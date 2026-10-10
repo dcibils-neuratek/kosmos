@@ -148,7 +148,8 @@ Mail's Control N first (`roadmap.md`).
 | What each system key does, by name - `close`, `hide`, `switcher`, `capture`, `open` - so a shortcut can point at it | **window manager**: each binding in `wm/keys.lua` gains an `action` name; the dispatch table is built from the defaults and then the user's setting | new, in the window manager |
 | Listening for keys the window manager would otherwise act on | **window manager**: `{type="keys", listen=true}` - the next Super chord is posted to the asking window instead of acted on, until it stops listening or the window loses the keys | new, in the window manager |
 | The user's shortcuts, kept | **settings kit** (`prefs.lua`), as `shortcuts`; the window manager reads it when it starts and is told when it changes, as it is told about the Super key's "Pressed alone" | exists; a new setting |
-| The sheet over the window | **UI kit**: `ui.sheet`, moved out of Mail, whose Add Account draws one of its own today | new in the kit; Shortcuts is its second user, so it is a kit piece and Mail moves onto it |
+| The sheet over the window | **UI kit**: `ui.sheet`, the window dimmed by a new `wash` (`gfx_wash_row`, in the lanes) | new in the kit, for every window built of views. Mail's Add Account stays its own: Mail draws its own pixels (`pixelkit`), where a view cannot go |
+| The groups' pictures and the filled chosen row | **UI kit**: `ui.sidebar`'s `picture` and `filled` | new in the kit |
 | The sheet's choices and buttons | **UI kit**: `ui.dropdown`, `ui.button` | exists |
 
 **Two copies this removes.** The current window's "Editing" group came
@@ -266,18 +267,21 @@ the M700.
   - the setting is read when the desktop starts again.
 - **K3** - the window, as drawn:
   - the sidebar, keycaps and search;
-  - `ui.sheet`, out of Mail, with Mail's Add Account moved onto it and its
-    suite run;
+  - `ui.sheet`, over a window dimmed by `wash` - an alpha fill gfx did not
+    have (`paint.lua` said it was wanted, and that it would be "new C in
+    `gfx.c` plus a verb in the kit") - held by `tools/test_rows.c`;
+  - `ui.sidebar` with pictures and a filled chosen row;
   - Add a shortcut and Change;
   - in the dock by default, named Shortcuts and listed among the
     applications rather than in Preferences;
   - Super+/ and Super+º as now.
 
-  `tools/run_shortcuts.py` checks that:
-  - Add a shortcut, with Super and T pressed while the sheet listens, makes
-    a Terminal open on the next Super T, and again after a restart;
-  - Change, with keys another shortcut has, says so and takes them only on
-    the choice;
+  `tools/run_shortcuts.py` checks, by the keys and the pointer as a person
+  uses them, that:
+  - Super+/ opens it with every group and Super Tab among the desktop's;
+  - Control-N, Super J and Enter make Super J open a Terminal;
+  - Change on hiding with Super Q says the keys are another's and Use it
+    here takes them;
   - Default puts a key back;
   - every group is there;
   - Super+Tab's row reads as two keycaps;

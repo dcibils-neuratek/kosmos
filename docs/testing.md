@@ -22923,3 +22923,38 @@ refused; listening over once another window had it; the setting read when
 the desktop started again. **Controls**, together: the focus check taken
 out of listening, and the setting not read at the start - 4 checks fail,
 the two of each.
+
+## 18.527 Shortcuts K3: the window, as drawn
+
+Shortcuts redrawn as `docs/shortcuts.html` has it: the header with the
+book, the title and the search; the sidebar's groups with their pictures
+and counts, the chosen one filled, and Yours under Made here; each group's
+title with its picture, its rows - what a key does on the left, its keycaps
+on the right, every other row shaded, Change beside a key that can move,
+"changed from" under one that has; the foot with the count and Print as a
+cheat sheet. Add a shortcut is a sheet (`ui.sheet`, new in the kit) that
+listens for the keys and says whether they are free; Change makes a row
+listen, says whose keys they are, and Use it here takes them; Default puts
+a key back. In the dock by default, named Shortcuts.
+
+New underneath: `wash`, an alpha fill (`gfx_wash_row` in the lanes, `wash_on`,
+`s:wash`, the paint command, `g:wash`), which dims the window behind the
+sheet; `ui.sidebar`'s `picture` and `filled`. The window manager's words
+for its keys took the drawing's - the switcher's note, Print Screen and
+Control Alt 1 as rows of The screen, End the desktop in The desktop.
+
+Found by looking at it beside the drawing, each fixed: icons named without
+`.png` drew nothing; `theme.mix` counts in thousandths toward its second
+colour, so the changing row and the warning came out solid; the search had
+the keyboard at the start, which hid its hint; a word naming a key matched
+any row with that letter in its words, so "ctrl w" found Super Ctrl drag.
+
+`host` (`test_rows`, 8): a wash in the lanes is the scalar loop's and a
+glyph's coverage of that alpha, every alpha over every ground, nothing past
+the row. **Control**: one off in the lanes' `255 - a`, alpha 1 wrong.
+`x86-shortcuts` 16: the window with every group; "ctrl w" finding only the
+Control-W rows and Escape clearing it; Control-N, Super J, Enter making
+Super J open a Terminal; Change with Super Q said taken, Use it here taking
+it; Default. **Control**: a key's word matched in the words again, "ctrl w"
+found Super Ctrl drag and Control Alt 1. `x86-dock` 54: the window's groups
+said, none refused.

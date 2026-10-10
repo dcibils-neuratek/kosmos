@@ -132,3 +132,54 @@ void gfx_cover_row(uint32_t *dst, const uint8_t *coverage, long n,
         dst[i] = cover1(dst[i], ink, coverage[i]);
     }
 }
+
+/*
+ * A wash: `colour` laid over a row by its own alpha, the same for every
+ * pixel - a dimmed window behind a sheet, a tint over a picture. A run of
+ * coverage that never changes, so the same lanes and the same rounding as
+ * `gfx_cover_row`, and `tools/test_rows.c` holds it to that function given
+ * a row of one byte.
+ */
+void gfx_wash_row(uint32_t *dst, long n, uint32_t colour, bool vectors)
+{
+    unsigned a = colour >> 24;
+    uint32_t ink = 0xff000000u | (colour & 0x00ffffffu);
+    long i = 0;
+
+    if (a == 0) {
+        return;
+    }
+
+    if (a == 255) {
+        gfx_fill_row(dst, n, ink, vectors);
+        return;
+    }
+
+    if (vectors) {
+        const u32x4 inv = { 255 - a, 255 - a, 255 - a, 255 - a };
+        const u32x4 ir = { ((ink >> 16) & 0xff) * a, ((ink >> 16) & 0xff) * a,
+                           ((ink >> 16) & 0xff) * a, ((ink >> 16) & 0xff) * a };
+        const u32x4 ig = { ((ink >> 8) & 0xff) * a, ((ink >> 8) & 0xff) * a,
+                           ((ink >> 8) & 0xff) * a, ((ink >> 8) & 0xff) * a };
+        const u32x4 ib = { (ink & 0xff) * a, (ink & 0xff) * a,
+                           (ink & 0xff) * a, (ink & 0xff) * a };
+        const u32x4 opaque = { 0xff000000u, 0xff000000u, 0xff000000u,
+                               0xff000000u };
+
+        for (; i + 4 <= n; i += 4) {
+            u32x4 d;
+
+            __builtin_memcpy(&d, dst + i, sizeof(d));
+
+            d = opaque
+                | div255(ir + ((d >> 16) & 0xff) * inv) << 16
+                | div255(ig + ((d >> 8) & 0xff) * inv) << 8
+                | div255(ib + (d & 0xff) * inv);
+            __builtin_memcpy(dst + i, &d, sizeof(d));
+        }
+    }
+
+    for (; i < n; i++) {
+        dst[i] = cover1(dst[i], ink, a);
+    }
+}

@@ -472,6 +472,16 @@ static int l_pitch(lua_State *L)
 }
 
 
+static int l_wash(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+
+    wash_on(s, (long)luaL_checkinteger(L, 2), (long)luaL_checkinteger(L, 3),
+            (long)luaL_checkinteger(L, 4), (long)luaL_checkinteger(L, 5),
+            (uint32_t)luaL_checkinteger(L, 6));
+    return 0;
+}
+
 static int l_fill(lua_State *L)
 {
     struct surface *s = check_surface(L, 1);
@@ -3291,6 +3301,7 @@ static const luaL_Reg surface_methods[] = {
     { "differs", l_differs },
     { "pitch",  l_pitch },
     { "fill",   l_fill },
+    { "wash",   l_wash },
     { "span",   l_span },
     { "triangle", l_triangle },
     { "disc",   l_disc },

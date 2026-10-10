@@ -336,7 +336,7 @@ return function(ctx)
     -- that: the same key whatever is printed on it.
     --
     { key = 35, shown = "Super+Shift+3", action = "capture", group = "screen",
-      what = "A picture of the whole screen, into Captures - Print Screen and Control Alt 1 too",
+      what = "A picture of the whole screen, into Captures",
       run = function() handlers.launch{ program = "screenshot" } end },
 
     { key = 96, shown = "Super+º", action = "shortcuts_over", group = "desktop",
@@ -350,7 +350,7 @@ return function(ctx)
     -- the window. Alt+Tab steps the windows, which Super+Tab used to.
     --
     { key = 9, shown = "Super+Tab", action = "switcher", group = "desktop", fixed = true,
-      what = "Show the running applications, last used first",
+      what = "Show the running applications", note = "the app switcher",
       run = function() end },
 
     { key = 113, shown = "Super+Q", action = "close", group = "desktop",
@@ -375,11 +375,17 @@ return function(ctx)
     -- reason as the prefix's.
     { shown = "Alt+Tab",         group = "windows", what = "Go round the open windows" },
     { shown = "Alt+Shift+Tab",   group = "windows", what = "Back round the open windows" },
-    { shown = "Ctrl+W,Q",        group = "windows", what = "End the desktop" },
+    { shown = "Ctrl+W,Q",        group = "desktop", what = "End the desktop" },
     { shown = "Ctrl+W,Tab",      group = "windows", what = "Go round the open windows" },
     { shown = "Ctrl+W,Arrows",   group = "windows", what = "Move the window in front" },
     { shown = "Ctrl+W,C",        group = "windows", what = "Send a real Control-C through" },
     { shown = "Ctrl+W,Ctrl+W",   group = "windows", what = "Send a real Control-W through" },
+
+    -- And a capture's other two keys (`capture_key` in `wm.lua`): Print
+    -- Screen, a full-size keyboard's, and Control Alt 1, Diego's of 22
+    -- September for a keyboard without one.
+    { shown = "PrtSc",           group = "screen",  what = "A picture of the whole screen, into Captures" },
+    { shown = "Ctrl+Alt+1",      group = "screen",  what = "The same, for a keyboard without Print Screen" },
   }
 
   --
@@ -609,8 +615,9 @@ return function(ctx)
     local rows = {}
 
     for _, b in ipairs(SUPER_BINDINGS) do
-      rows[#rows + 1] = { keys = now_keys[b.action], what = b.what, group = b.group,
-                          action = b.action, default = b.shown, fixed = b.fixed == true }
+      rows[#rows + 1] = { keys = now_keys[b.action], what = b.what, note = b.note,
+                          group = b.group, action = b.action, default = b.shown,
+                          fixed = b.fixed == true }
     end
 
     -- Not a key's, so not in the table keys are looked up in: the pointer's.

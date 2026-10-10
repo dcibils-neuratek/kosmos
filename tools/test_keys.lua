@@ -204,6 +204,8 @@ check(caps_of("cmd+t") == "Super T" and caps_of("Win+T") == "Super T",
       "cmd and Win are not Super")
 check(caps_of("Super+º") == "Super º" and caps_of("Super+/") == "Super /",
       "a key printed as one character is not itself")
+check(caps_of("PrtSc") == "PrtSc" and caps_of("Print") == "PrtSc",
+      "Print Screen is not one cap")
 check(caps_of("Alt+Shift+Tab") == "Alt Shift Tab" and caps_of("F5") == "F5",
       "Tab or a function key is not spelled as shown")
 check(keys.caps("Super+") == nil and keys.caps("") == nil and keys.caps("Super+Frobnicate") == nil

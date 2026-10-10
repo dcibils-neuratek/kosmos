@@ -29,4 +29,10 @@ void gfx_fill_row(uint32_t *p, long n, uint32_t colour, bool vectors);
 void gfx_cover_row(uint32_t *dst, const uint8_t *coverage, long n,
                    uint32_t ink, bool vectors);
 
+/*
+ * `colour` over `n` pixels at `dst` by its own alpha - 0 leaves them, 255
+ * fills - each mixed as `gfx_cover_row` mixes, rounded, and opaque.
+ */
+void gfx_wash_row(uint32_t *dst, long n, uint32_t colour, bool vectors);
+
 #endif /* KOSMOS_GFX_ROWS_H */

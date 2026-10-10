@@ -68,7 +68,7 @@ function dock.sized(name)
 end
 
 dock.PINS = { "tracker", "browser", "terminal", "music", "groove",
-              "cafesa3d", "ide", "preferences" }
+              "cafesa3d", "ide", "shortcuts", "preferences" }
 
 -- An application's name from the program the window manager reports:
 -- `/Kosmos/Apps/groove.lua` is `groove`, and so is `groove`.

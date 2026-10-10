@@ -531,7 +531,7 @@ def main():
         mark = len(guest.seen)
         guest.sendkey("meta_l-grave_accent")
         said["modal"] = guest.wait_for_line("wm: window Shortcuts at ", "the shortcuts, modal", mark)
-        said["keycaps"] = guest.wait_for_line("shortcuts: ", "the shortcuts drawn", mark)
+        said["keycaps"] = guest.wait_for_line("shortcuts: groups ", "the shortcuts drawn", mark)
         time.sleep(2)
         # Kept for a person to look at, as the gallery's pictures are.
         R.write_png("build/x86_64/dock-shortcuts.png", guest.screendump())
@@ -968,9 +968,9 @@ def main():
     # Every key drawn as keycaps (`g:keycaps`, `docs/shortcuts.md` K1): the
     # window manager's lists spelled as chords `keys.caps` reads, the edit
     # keys among them from `wm.lua`'s own table.
-    caps = re.search(r"(\d+) keys in (\d+) groups, drawn as keycaps; (\d+) not keys",
-                     said.get("keycaps") or "")
-    if not caps or int(caps.group(1)) < 20 or caps.group(2) != "3" or caps.group(3) != "0":
+    caps = re.search(r"All (\d+), The desktop \d+, Windows \d+, The screen \d+, "
+                     r"Text \d+, Yours \d+; (\d+) not keys", said.get("keycaps") or "")
+    if not caps or int(caps.group(1)) < 20 or caps.group(2) != "0":
         fails.append("the shortcuts were not every key drawn as keycaps: %r" % said.get("keycaps"))
 
     if "wm: closed Open" not in said.get("outside", ""):

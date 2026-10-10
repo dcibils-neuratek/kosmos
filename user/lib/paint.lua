@@ -33,6 +33,12 @@ function paint.new(picture_named, sized, always)
       s:fill(o.x or 0, o.y or 0, o.w or 0, o.h or 0, o.color or 0xff000000)
     end,
 
+    -- A colour over what is there by its own alpha: the wash a sheet dims
+    -- its window with (`ui.sheet`), `rows.c`'s in the lanes.
+    wash = function(s, o)
+      s:wash(o.x or 0, o.y or 0, o.w or 0, o.h or 0, o.color or 0x80000000)
+    end,
+
     --
     -- **A rounded rectangle, filled or outlined**, for the controls a flat
     -- look draws (`ui.lua`, `gc:raised`). Blended at the arc, so a button
@@ -214,7 +220,7 @@ end
 function paint.scale(o, pct, picture_named)
   local kind = o.op
 
-  if kind == "fill" or kind == "fill_round" or kind == "frame_round" then
+  if kind == "fill" or kind == "wash" or kind == "fill_round" or kind == "frame_round" then
     local x, y = tonumber(o.x) or 0, tonumber(o.y) or 0
     local w, h = tonumber(o.w) or 0, tonumber(o.h) or 0
     local x0, y0 = px(x, pct), px(y, pct)

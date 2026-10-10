@@ -33,9 +33,10 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
 
-CHECKS = 9
+CHECKS = 16
 
 SETTING = '''local prefs = use("/Kosmos/Libraries/prefs.lua")
 local entries = {
@@ -103,6 +104,10 @@ def main():
         keys(True, *names)
         keys(False, *reversed(names))
         keys(False, "meta_l")
+
+    # Pictures kept for a person to hold beside `docs/shortcuts.html`.
+    def keep(name):
+        R.write_png("build/x86_64/shortcuts-%s.png" % name, guest.screendump())
 
     def line(pattern, mark, seconds=12):
         end = time.time() + seconds
@@ -199,6 +204,129 @@ def main():
         if "listener: heard" in guest.seen[mark:]:
             fails.append("the listening window still heard chords without the keyboard")
 
+        # ---- K3: the window, as drawn (`docs/shortcuts.html`) ----
+        mark = len(guest.seen)
+        super_("slash")
+        groups = line(r"shortcuts: groups All (\d+), The desktop (\d+), Windows (\d+), "
+                      r"The screen (\d+), Text (\d+), Yours (\d+); (\d+) not keys", mark, 20)
+        shown = line(r"shortcuts: showing desktop: ([^\r\n]*)", mark, 10)
+        if not groups or groups.group(6) != "1" or groups.group(7) != "0" \
+           or int(groups.group(1)) < 20:
+            fails.append("Shortcuts did not open with every group, Yours holding Super T: %r"
+                         % (groups and groups.group(0)))
+        time.sleep(1.5)
+        keep("opened")
+        if not shown or "Super+Tab" not in shown.group(1):
+            fails.append("the desktop's keys did not include Super Tab: %r"
+                         % (shown and shown.group(1)))
+        time.sleep(1.5)
+
+        def type_(text):
+            for ch in text:
+                name = {" ": "spc"}.get(ch, ch)
+                keys(True, name)
+                keys(False, name)
+
+        mark = len(guest.seen)
+        type_("ctrl w")
+        found = line(r"shortcuts: showing search \"ctrl w\": ([^\r\n]*)", mark, 10)
+        time.sleep(1)
+        keep("searched")
+        listed = re.findall(r"\(([^)]*)\)", found.group(1)) if found else []
+        every = " ".join(listed).split()
+        if not every or not all(k.startswith("Ctrl+W") for k in every):
+            fails.append("searching \"ctrl w\" did not find only the Control-W rows: %r"
+                         % (found and found.group(1)))
+        else:
+            said["search"] = len(every)
+        mark = len(guest.seen)
+        tap = lambda *n: (keys(True, *n), keys(False, *reversed(n)))
+        tap("esc")
+        if not line(r"shortcuts: showing desktop: ", mark, 10):
+            fails.append("Escape did not clear the search")
+
+        # Control-N, Super J, Enter: a shortcut of one's own, which opens a
+        # Terminal the moment it is added.
+        mark = len(guest.seen)
+        tap("ctrl", "n")
+        sheet = line(r"shortcuts: the sheet open", mark, 10)
+        time.sleep(1)
+        super_("j")
+        heard = line(r"shortcuts: heard Super\+J", mark, 10)
+        time.sleep(1)
+        keep("sheet")
+        tap("ret")
+        added = line(r"shortcuts: added Super\+J, (\S+)", mark, 10)
+        saved = line(r"shortcuts: saved, (\d+) entries", mark, 10)
+        time.sleep(1.5)
+        mark2 = len(guest.seen)
+        super_("j")
+        opened = line(r"wm: window Terminal at ", mark2, 20)
+        if not (sheet and heard and added and saved and opened) \
+           or "terminal" not in added.group(1):
+            fails.append("Add a shortcut did not make Super J open a Terminal: sheet %s, "
+                         "heard %s, added %r, saved %r, opened %s"
+                         % (bool(sheet), bool(heard), added and added.group(1),
+                            saved and saved.group(1), bool(opened)))
+        time.sleep(1.5)
+
+        # Change on "out of the way", Super Q pressed: taken, said, and Use
+        # it here takes it - Close the window in front is left without keys.
+        # The Terminal it opened closed again, so Shortcuts is in front.
+        mark = len(guest.seen)
+        super_("q")
+        line(r"wm: closed Terminal", mark, 10)
+        time.sleep(1.5)
+        links = re.findall(r"shortcuts: links ([^\r\n]*)", guest.seen)
+        at = re.search(r"change hide at (\d+),(\d+)", links[-1]) if links else None
+        took = None
+        if at:
+            width, height, _ = R.parse_ppm(guest.screendump())
+
+            def click(x, y):
+                guest.mouse_to(*R._to_tablet(x, y, width, height))
+                time.sleep(0.3)
+                guest.mouse_button(True)
+                time.sleep(0.1)
+                guest.mouse_button(False)
+
+            mark = len(guest.seen)
+            click(int(at.group(1)), int(at.group(2)))
+            line(r"shortcuts: changing hide", mark, 10)
+            time.sleep(0.5)
+            super_("q")
+            taken = line(r"shortcuts: Super Q is already for close the window in front", mark, 10)
+            use = line(r"shortcuts: links [^\r\n]*use at (\d+),(\d+)", mark, 10)
+            time.sleep(1)
+            keep("changing")
+            if use:
+                click(int(use.group(1)), int(use.group(2)))
+                took = line(r"shortcuts: hide took Super\+Q", mark, 10)
+            if not (taken and took):
+                fails.append("Change with Super Q did not say it was taken and take it: "
+                             "said %s, use %s, took %s" % (bool(taken), bool(use), bool(took)))
+        else:
+            fails.append("Shortcuts did not say where Change for hiding is: %r" % links[-1:])
+
+        # Default: back to Super H.
+        if took:
+            time.sleep(1)
+            mark = len(guest.seen)
+            links = re.findall(r"shortcuts: links ([^\r\n]*)", guest.seen)
+            at = re.search(r"change hide at (\d+),(\d+)", links[-1]) if links else None
+            if at:
+                click(int(at.group(1)), int(at.group(2)))
+                line(r"shortcuts: changing hide", mark, 10)
+                time.sleep(0.5)
+                d = line(r"shortcuts: links [^\r\n]*default hide at (\d+),(\d+)", mark, 10)
+                if d:
+                    click(int(d.group(1)), int(d.group(2)))
+            if not line(r"shortcuts: back to its default, hide", mark, 10):
+                fails.append("Default did not put hiding back")
+            else:
+                said["default"] = True
+        time.sleep(1)
+
         # ---- the desktop again: the setting read at its start ----
         mark = len(guest.seen)
         guest.proc.stdin.write(b"\x17q")
@@ -210,7 +338,7 @@ def main():
         again = line(r"wm: shortcuts: (\d+) keys, (\d+) of them a person's own", mark, 60)
         line(r"wm: window Deskbar at ", mark, 60)
         time.sleep(4)
-        if not again or again.group(2) != "1":
+        if not again or again.group(2) != "2":
             fails.append("the setting was not read when the desktop started: %r"
                          % (again and again.group(0)))
         mark = len(guest.seen)
@@ -241,7 +369,11 @@ def main():
           "nothing - %s hidden; the switcher's entry and a Control one set aside; Super Q "
           "and Super Tab posted to the listening window and not acted on; a window "
           "without the keyboard refused; listening over once another window had it; and "
-          "the setting read when the desktop started again)" % (CHECKS, said.get("hid")))
+          "the setting read when the desktop started again; and the window as drawn - every "
+          "group, Super Tab among the desktop's keys, \"ctrl w\" finding %s Control-W rows "
+          "and Escape clearing it, Control-N, Super J and Enter making Super J open a "
+          "Terminal, Change with Super Q said taken and Use it here taking it, and Default "
+          "putting it back)" % (CHECKS, said.get("hid"), said.get("search")))
     return 0
 
 

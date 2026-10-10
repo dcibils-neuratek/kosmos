@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * `gfx_fill_row` and `gfx_cover_row` against themselves a pixel at a time
+ * `gfx_fill_row`, `gfx_cover_row` and `gfx_wash_row` against themselves a pixel at a time
  * (`user/kits/gfx/rows.c`, `roadmap.md` 6zz h).
  *
  *   - every coverage over every pair of ink and ground, channel values 0 to
@@ -117,6 +117,52 @@ int main(void)
                     "every coverage over every ink and ground");
         check(right, "and the scalar loop is gfx.c's mix, 0 and 255 its "
                      "two ends");
+    }
+
+    /*
+     * **A wash** (`gfx_wash_row`): a colour over a row by its own alpha,
+     * every alpha over every ground, in the lanes and one at a time, and
+     * both the same as a glyph's coverage of that alpha everywhere - which
+     * is what a wash is. Odd widths, so the tail runs, and nothing past the
+     * end touched.
+     */
+    {
+        static uint32_t vec[259], one[259], ref[259];
+        static uint8_t cover[259];
+        bool same = true, kept = true;
+        unsigned a;
+
+        for (a = 0; a < 256 && same; a++) {
+            uint32_t colour = a << 24 | 0x2a6bdcu;
+            unsigned k;
+
+            memset(cover, (int)a, sizeof(cover));
+
+            for (k = 0; k < 259; k++) {
+                vec[k] = one[k] = ref[k] = 0xff000000u | (k * 37 & 0xff) << 16
+                                           | (k * 11 & 0xff) << 8 | (k & 0xff);
+            }
+
+            gfx_wash_row(vec, 257, colour, true);
+            gfx_wash_row(one, 257, colour, false);
+            gfx_cover_row(ref, cover, 257, 0xff000000u | (colour & 0xffffffu), false);
+
+            for (k = 0; k < 259 && same; k++) {
+                if (vec[k] != one[k] || one[k] != ref[k]) {
+                    printf("  alpha %u, pixel %u: four at a time %08x, one at "
+                           "a time %08x, a coverage of it %08x\n", a, k, vec[k],
+                           one[k], ref[k]);
+                    same = false;
+                }
+            }
+
+            if (vec[257] != ref[257] || vec[258] != ref[258]) kept = false;
+        }
+
+        check(same, "a wash in the lanes is the scalar loop's, and both are a "
+                    "glyph's coverage of that alpha, every alpha over every "
+                    "ground");
+        check(kept, "a wash touched nothing past the row's end");
     }
 
     /* Random rows of every width, and nothing past their end. */

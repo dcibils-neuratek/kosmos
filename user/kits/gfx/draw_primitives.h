@@ -17,6 +17,10 @@ void blend_row(uint32_t *dp, const uint32_t *sp, long w,
 void fill_on(struct surface *s, long x, long y, long w, long h,
                     uint32_t colour);
 
+/* `colour` over the rectangle by its own alpha (`gfx_wash_row`). */
+void wash_on(struct surface *s, long x, long y, long w, long h,
+             uint32_t colour);
+
 void triangle_on(struct surface *s, double vx[3], double vy[3],
                         uint32_t colour);
 

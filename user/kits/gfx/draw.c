@@ -110,6 +110,24 @@ void fill_on(struct surface *s, long x, long y, long w, long h,
 }
 
 /*
+ * A wash: `colour` laid over the rectangle by its own alpha - a window
+ * dimmed behind a sheet (`ui.sheet`). The row is `rows.c`'s, in the lanes.
+ */
+void wash_on(struct surface *s, long x, long y, long w, long h,
+             uint32_t colour)
+{
+    long row;
+
+    if (!clip(s, &x, &y, &w, &h, NULL, NULL)) {
+        return;
+    }
+
+    for (row = 0; row < h; row++) {
+        gfx_wash_row(row_of(s, (unsigned)(y + row)) + x, w, colour, true);
+    }
+}
+
+/*
  * A filled triangle.
  *
  * The one primitive the 3D engine needs that the others could not fake. A
