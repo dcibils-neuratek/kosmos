@@ -226,9 +226,11 @@ desktop.
           server the window manager composes in its own process as before;
           `wm compose-check` composes each pass there and again in Lua,
           and `x86-scene` holds the two to the same pixels.
-       3. **The console's screen handed over**: the window server, not
-          the window manager, takes the screen from the console when the
-          window manager connects and gives it back when it goes.
+       3. **The console's screen handed over** (0.11.120, `testing.md`
+          18.515): the window server, not the window manager, takes the
+          screen from the console when handed the back buffer, and gives
+          it back when the endpoint the window manager greeted with names
+          nothing - it ended or crashed.
        4. **The window manager's own composing gone**: the screen, the
           Lua composing and its check leave `wm.lua`; the watcher's copy
           (VNC) and the screenshot are taken from the window server.

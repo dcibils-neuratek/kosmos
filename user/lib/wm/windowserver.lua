@@ -197,7 +197,15 @@ return function(ctx)
   -- Greeted, then handed the back buffer and a scene's region. Anything
   -- refused leaves `on` false, and the desktop is composed here.
   --
-  local hello, w, h = ask(request(OP.hello))
+  --
+  -- **With an endpoint of this process's own**, which goes when it does:
+  -- the window server watches it, and gives the screen back to the
+  -- console when it names nothing - a window manager that crashed cannot
+  -- give anything back itself.
+  --
+  WS.alive = sys.endpoint()
+
+  local hello, w, h = ask(request(OP.hello), WS.alive)
 
   if not hello then
     print("wm: no window server: " .. tostring(w))

@@ -25,9 +25,14 @@
  * wrong composes wrong, and nothing here reads or writes past what it was
  * given.
  *
+ * **It holds the screen for as long as the window manager is there**: it
+ * takes it from the console when handed the back buffer, and gives it
+ * back when the endpoint the manager greeted with names nothing - the
+ * manager ended, or crashed - letting go of everything it was handed.
+ *
  * Built in steps, the desktop working after each (`docs/astra-display.md`):
- * the door and a greeting; then this, composing; then the console's screen
- * handed over; then the window manager's own composing gone.
+ * the door and a greeting; composing; the console's screen handed over;
+ * then the window manager's own composing gone.
  */
 
 #include <stdbool.h>
@@ -45,6 +50,12 @@
 
 static long console = -1;
 static bool have_screen;
+static bool screen_taken;           /* from the console, for the manager */
+
+/* The window manager's own endpoint, handed over with its greeting: while
+ * it names something the manager is there, and once it does not - the
+ * manager ended or crashed - the screen goes back to the console. */
+static long manager = -1;
 static struct screen_info screen;
 static struct surface screen_surface;
 
@@ -409,6 +420,15 @@ static void answer(const struct message *in, uint64_t sender)
             break;
         }
 
+        if (cap >= 0) {
+            if (manager >= 0) {
+                (void)kosmos_cap_drop(manager);
+            }
+
+            manager = cap;
+            cap = -1;
+        }
+
         rep->width = (uint32_t)screen.width;
         rep->height = (uint32_t)screen.height;
         break;
@@ -445,6 +465,17 @@ static void answer(const struct message *in, uint64_t sender)
         }
 
         sc->back = &back;
+
+        /*
+         * **The screen taken from the console** (step 3): it stops printing
+         * on it, and prints again when the manager goes (`manager_gone`).
+         * The window manager does not take it itself when it has a window
+         * server.
+         */
+        if (have_screen && !screen_taken) {
+            screen_taken = kosmos_screen_take(1) >= 0;
+        }
+
         break;
     }
 
@@ -523,8 +554,51 @@ static void answer(const struct message *in, uint64_t sender)
     (void)kosmos_reply(sender, &out);
 }
 
+/*
+ * **The window manager gone**: everything it handed over let go, the
+ * display's pointer hidden, and the screen given back to the console,
+ * which clears it and prints from the top. A window manager started again
+ * greets and hands everything over afresh.
+ */
+static void manager_gone(void)
+{
+    unsigned k;
+
+    (void)kosmos_cap_drop(manager);
+    manager = -1;
+
+    for (k = 0; k < npictures; k++) {
+        forget(k);
+    }
+
+    let_go(&scene_region);
+    let_go(&back_region);
+
+    if (sc != NULL) {
+        scene_free(sc);
+        free(sc);
+        sc = NULL;
+    }
+
+    if (screen_taken) {
+        (void)kosmos_cursor_hide();
+        (void)kosmos_screen_take(0);
+        screen_taken = false;
+    }
+
+    {
+        struct say_line line;
+
+        say_begin(&line);
+        say_text(&line, "windowserver: the window manager is gone; the screen is the console's");
+        say_send(console, &line);
+    }
+}
+
 void windowserver_server(long endpoint, long console_cap)
 {
+    struct schedinfo info;
+    unsigned long watch_ticks = 50;     /* scheduler ticks: a fifth of a second at 250 */
     console = console_cap;
     memset(&screen, 0, sizeof(screen));
     have_screen = kosmos_screen(&screen) >= 0;
@@ -551,14 +625,25 @@ void windowserver_server(long endpoint, long console_cap)
         say_send(console, &line);
     }
 
+    /* How long to wait for a request before looking at the manager: a
+     * fifth of a second, however fast the scheduler ticks. */
+    if (kosmos_sched_info(&info) == 0 && info.tick_hz >= 5) {
+        watch_ticks = info.tick_hz / 5;
+    }
+
     for (;;) {
         struct message msg;
         uint64_t sender = 0;
+        long got = kosmos_receive(endpoint, &msg, &sender, 0, manager >= 0 ? watch_ticks : 0);
 
-        if (kosmos_receive(endpoint, &msg, &sender, 0, 0) != 0) {
+        if (got == 0) {
+            answer(&msg, sender);
+        } else if (got != -7) {
             return;
         }
 
-        answer(&msg, sender);
+        if (manager >= 0 && kosmos_cap_check(manager) < 0) {
+            manager_gone();
+        }
     }
 }

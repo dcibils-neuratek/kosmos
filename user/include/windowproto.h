@@ -19,7 +19,8 @@
  * handed over once, and composing.
  */
 
-#define WS_OP_HELLO        1u   /* -> the screen's size; the door works */
+#define WS_OP_HELLO        1u   /* + the window manager's own endpoint:
+                                   the screen's size; the door works */
 #define WS_OP_BACK         2u   /* + a region: the back buffer, `width` by
                                    `height` at `pitch`, composed into */
 #define WS_OP_SCENE        3u   /* + a region: where the scene is written */

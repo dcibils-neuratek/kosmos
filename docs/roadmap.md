@@ -112,6 +112,59 @@ unblocks.
 
 ### Being built now
 
+**About this machine, again** - Diego, 10 October 2026: the "About this
+machine" app "is very raw", "we need a way to show all devices connected to
+this machine, with as much info as possible for every device in a visual and
+technical way", and the question, with macOS's About as the picture: "does
+it makes sense to throw the app and just create a new 'About this machine'
+in preferences like macos? with a 'system info' button that shows all the
+raw info ... with the possibility to save all that text into a
+system-info.txt file to send for inspection or debugging?" To be designed
+as an app is (feature set, mockup, architecture, diagram) and agreed before
+code; the answer to his question goes with the design.
+
+**Magnet: windows snapped to halves, quarters and the whole screen** -
+Diego, 10 October 2026, after Magnet for the Mac (magnet.crowdcafe.com):
+"dragging a window to the right of the screen will show that it can be
+docked and occupy that half of the screen", "dragging a window to the top of
+the monitor will allow you to maximise it", "is called 'magnet' and i like
+that as a feature and a preferences pane to configure it", "it can be turned
+on and off, etc", and "should be used with shortcuts from the keyboard as
+well", "dock a window to the right can be used with a key combination like
+super+right arrow". So: a window dragged to an edge or corner shows where it
+would land - a half, a quarter, a third, the whole room - and is put there
+when let go; Super with the arrows (and more) does the same from the
+keyboard; a Magnet page in Preferences turns it on and off and sets what the
+edges and keys do. The window manager's, since placing windows is. Mockup
+first, as always, before any code.
+
+**Maps, finished, and dragging made smooth** - Diego, 10 October 2026:
+"the maps app needs to be finished, also its slow to drag the map around, it
+might need some optimizations on drawing and else"; its log says what each
+tile took to load, "but the real issue is dragging around feels sluggish".
+Measured first - where a dragged frame goes - and made smooth; then what is
+left of Maps (M6d's cache ceiling and source name, borders by admin level,
+the tiles server's HTTPS suite).
+
+**Shortcuts, an app** - Diego, 10 October 2026: "a better shortcut app to
+show all available shortcuts in a nice way", "right now is very raw", "a
+real app that can be launched from the dock, called Shortcuts, which shows
+all available commands in kosmos os", "can be also extended as a help,
+cheatsheet window in the future", "make it look nice". Mockup first, then
+its card, for today.
+
+**The app switcher, Alt+Tab** - Diego, 10 October 2026: "lets add alt+tab
+app switching like macos and windows to the queue for today", with macOS's
+switcher as the picture of it, and "first mockup before coding". Then:
+"we can do super+tab to show the app switcher and alt+tab cicle windows as
+today". So **Super+Tab**, held, brings up a translucent rounded panel in the
+middle of the screen with one large icon for each running application, in
+the order they were last used, the current one highlighted and its name
+under it; Tab moves forward, Shift+Tab back, and letting go of Super brings
+that application's windows to the front. **Alt+Tab** steps through the open
+windows with nothing shown, which is what Super+Tab does today. Drawn as `docs/switcher.html` and agreed before any
+code; the window manager owns it, since the keys are the system's.
+
 **Diego's order, 4 October 2026**: "Then do notifications system", "Then
 finish storage in C", "Then kosmos write" - so **Notifications** (below),
 then storage, then **Kosmos Write** from its drawing, whose four questions
@@ -9067,6 +9120,16 @@ should be the default, and `make usb` should write the image that was
 checked rather than a new one.
 
 ## Known and unexplained
+
+**The console's shell does not answer after the window manager is killed**
+(found 10 October 2026, D3b-2 step 3). Booted with `opt/kosmos/boot=wm`,
+`kill wm` from Telnet: the window server gives the screen back and the
+console clears it, but a line typed at the serial console afterwards -
+`echo`, `wm` - is never answered, and the same on 0.11.118, before the
+window server took part. So a desktop that crashes leaves a console that
+shows but does not listen. Where the line goes is the question: the shell
+waits in `ns.read("/Devices/console")`, and the console server's `edit`
+reads the serial line.
 
 **The M700 stopped, whole, while `make m700` ended its applications** (3
 October, 0.10.216). The suite had opened its second dozen - the seven GL

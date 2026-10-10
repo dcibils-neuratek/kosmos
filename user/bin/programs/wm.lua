@@ -801,21 +801,6 @@ local W, H = screen:size()
 local back = gfx.surface{ w = W, h = H, shared = true }
 
 --
--- The screen is this process's now.
---
--- Until this call the kernel console is also drawing here, and the two
--- cannot share: printing one line scrolls the whole display, which drags
--- every window up sixteen pixels and leaves a copy of its tab behind. It
--- reads as a compositor bug and is not - the console's scroll moves every
--- pixel, because as far as it knows every pixel is text.
---
--- Nothing stops being reported. The console keeps writing to the serial
--- line, which is where a system with a window manager on it is debugged
--- from, and a panic takes the screen back regardless.
---
-sys.screen_take(true)
-
---
 -- **The window server** (`docs/astra-display.md` D3b-2): started by init at
 -- boot, and its manager door lent to this program alone. Greeted, and
 -- handed the back buffer; from then on it composes what this process
@@ -823,6 +808,26 @@ sys.screen_take(true)
 -- this process composes as it did.
 --
 local WS = use("/Kosmos/Libraries/wm/windowserver.lua"){ back = back }
+
+--
+-- The screen is the desktop's now.
+--
+-- Until this call the kernel console is also drawing here, and the two
+-- cannot share: printing one line scrolls the whole display, which drags
+-- every window up sixteen pixels and leaves a copy of its tab behind. It
+-- reads as a compositor bug and is not - the console's scroll moves every
+-- pixel, because as far as it knows every pixel is text.
+--
+-- **The window server takes it** when it is handed the back buffer, and
+-- gives it back when this process ends or crashes (D3b-2 step 3) - which
+-- this process could not do for itself when it crashed. Only without one
+-- is it taken here.
+--
+-- Nothing stops being reported. The console keeps writing to the serial
+-- line, which is where a system with a window manager on it is debugged
+-- from, and a panic takes the screen back regardless.
+--
+if not WS.on then sys.screen_take(true) end
 
 --
 -- **What the desktop is doing, in the kernel's log, whether or not the
@@ -7173,10 +7178,11 @@ end
 
 -- Given back, which repaints: the console has no scrollback, so it starts
 -- again from the top rather than restoring something nobody kept - and the
--- display's pointer with it, which the console has no use for.
+-- display's pointer with it, which the console has no use for. By the
+-- window server when there is one, as soon as this process has ended.
 if OUT.hw_cursor then gfx.cursor_hide() end
 
-sys.screen_take(false)
+if not WS.on then sys.screen_take(false) end
 
 back:free()
 

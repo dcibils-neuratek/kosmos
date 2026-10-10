@@ -22548,3 +22548,27 @@ window manager's busy time 220 to 239 ms over 3100 passes, the worst pass
 anything. **The round trip is about 20 microseconds on the machine**,
 against a quarter of a millisecond under QEMU - the emulator's number was
 the emulator's, as `CLAUDE.md` says they are.
+
+## 18.515 Astra D3b-2, step 3: the screen given back when the window manager goes
+
+`docs/astra-display.md` D3b-2 step 3. The window manager greets the window
+server with an endpoint of its own (`WS.alive`), which goes when its process
+does. The window server takes the screen from the console when it is handed
+the back buffer - the window manager no longer takes it itself when there is
+a window server - and while it has a manager it waits for requests at most a
+fifth of a second before asking whether that endpoint still names anything.
+When it does not - the window manager ended or crashed - the server lets go of
+every picture, the scene and the back buffer, hides the display's pointer and
+gives the screen back, and the console clears it and prints from the top.
+Before this, a window manager that crashed left its last frame on the screen,
+since only it could give the screen back.
+
+`x86-scene` 7: `kill wm` from Telnet, "the window manager is gone; the screen
+is the console's", and the screen 100% one colour where the desktop was 31%.
+**Control**: the server not looking at the endpoint, and the screen is never
+given back. Starting the window manager again is not checked: from Telnet it
+is not lent the door, which is right, and the console's shell does not answer
+after the kill - on 0.11.118 as well, so older than this; `roadmap.md`, *Known
+and unexplained*. The whole gate, 62 of 62 in 6:35 - after a first run that
+failed 17 suites on a full disk, 600 MB free, which a baseline build of mine
+in the scratchpad had taken.

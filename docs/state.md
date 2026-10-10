@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-10, midday (0.11.119; Astra D3b-2 step 2)
+Last updated: 2026-10-10, afternoon (0.11.120; Astra D3b-2 step 3)
 
 ---
 
@@ -27,10 +27,21 @@ Last updated: 2026-10-10, midday (0.11.119; Astra D3b-2 step 2)
   the same speed in either process. On the M700 (Diego's yes, restarted
   onto 0.11.119) the round trip is about 20 us: a composing pass with a cube
   0.14 to 0.16 ms.
+- **D3b-2 step 3** (0.11.120, 18.515): the window server gives the screen
+  back to the console when the window manager ends or crashes. Found on the
+  way: the console's shell does not answer after the window manager is
+  killed (older; roadmap, Known and unexplained).
+- **Diego's requests, 10 October**, on the roadmap and the board: the app
+  switcher (Super+Tab; Alt+Tab steps windows) - `docs/switcher.html`;
+  Shortcuts as an app - `docs/shortcuts.html`, queued; Magnet -
+  `docs/magnet.html`; About this machine in Preferences (his existing card,
+  notes added); Maps dragging and finishing, queued. Mockups wait on his
+  answers.
+- **Disk**: 2 GB free; old stick images (8 x 704 MB) are Diego's to decide.
 - **The M700** runs 0.11.119 (monitor on).
 
-**Next**: D3b-2 step 3, the console's screen handed over by the window
-server; then step 4, the Lua composing removed. The PDF reader's redesign is
+**Next**: D3b-2 step 4, the Lua composing removed from the window manager;
+Diego's answers on the three mockups. The PDF reader's redesign is
 queued (design first: feature set, mockup, architecture, diagram).
 
 

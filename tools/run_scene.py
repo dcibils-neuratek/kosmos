@@ -28,6 +28,8 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+import collections                                          # noqa: E402
+
 import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
 
@@ -75,6 +77,14 @@ SHADOW = ('local r = fs.send("/Running/wm", { type = "theme", shadow = true })\n
           'print("SHADOW " .. tostring(r and r.ok))\n')
 SCALE = ('local r = fs.send("/Running/wm", { type = "scale", pct = tonumber(args) })\n'
          'print("SCALE " .. tostring(r and r.ok))\n')
+
+
+def plain(guest):
+    """How much of the screen is its commonest colour: nearly all of it for
+    the console, cleared and printing from the top; far less for a desktop."""
+    w, h, px = R.parse_ppm(guest.screendump())
+    counts = collections.Counter(px[i:i + 3] for i in range(0, len(px), 3 * 7))
+    return counts.most_common(1)[0][1] / max(1, sum(counts.values()))
 
 
 def boot(image, telnet, web):
@@ -147,6 +157,19 @@ def main():
 
         said["checks"] = checks
         said["seen"] = guest.seen
+
+        # **The screen given back** (step 3): the window manager killed, and
+        # the window server gives the screen to the console, which clears
+        # it and prints from the top. (Starting it again is not checked: a
+        # window manager started from Telnet is not lent the door, which is
+        # right, and the console's own shell does not answer after the kill,
+        # which is older than this and on `roadmap.md`.)
+        said["desktop"] = plain(guest)
+        session.run("kill wm")
+        guest.wait_for("the window manager is gone; the screen is the console's",
+                       "the screen given back")
+        time.sleep(2)
+        said["console"] = plain(guest)
         said["menu"] = "SCENE menu true" in guest.seen
     except Exception as e:                  # noqa: BLE001 - said below
         fails.append("the machine stopped: %s: %s" % (type(e).__name__, str(e).splitlines()[0]))
@@ -186,6 +209,13 @@ def main():
         else:
             said["held"] = (before[-1], max(during), after[-1])
 
+    if "console" not in said:
+        fails.append("the window manager was not killed, or the screen not given back")
+    elif not (said["console"] > 0.9 and said["desktop"] < 0.8):
+        fails.append("the screen was not given back: the commonest colour %.0f%% of the "
+                     "desktop, %.0f%% after the kill" % (said["desktop"] * 100,
+                                                       said["console"] * 100))
+
     if not said.get("menu"):
         fails.append("the menu did not open")
     # The window server (D3b-2): started by init, its door lent to the
@@ -210,16 +240,18 @@ def main():
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
     if fails:
-        print("FAIL: %d of 6 checks on the desktop composed in C:" % len(fails))
+        print("FAIL: %d of 7 checks on the desktop composed in C:" % len(fails))
         for f in fails:
             print("  " + f)
         return 1
 
-    print("PASS: 6 checks on the desktop composed in C (the window server greeted and composing; %s passes composed by the window server and by "
+    print("PASS: 7 checks on the desktop composed in C (the window server greeted and composing; %s passes composed by the window server and by "
           "the Lua it replaced - the Deskbar, the desktop, Calculator, Preferences, a cube "
           "turning, a menu, a window moved, 150 per cent and back - and not one "
           "pixel differs; a window's picture held while it was open and let go after it "
-          "closed, %d, %d, %d)." % ((checks[-1][0],) + said["held"]))
+          "closed, %d, %d, %d; the window manager killed and the screen the console's, %.0f%% one "
+          "colour)." % ((checks[-1][0],) + said["held"]
+                                                             + (said["console"] * 100,)))
     return 0
 
 
