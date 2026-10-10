@@ -1,0 +1,178 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
+/*
+ * The Graphics Kit's primitives and the scene, on this Mac (Astra's D3b-1,
+ * `docs/astra-display.md`).
+ *
+ *   build/host/test_draw
+ *
+ * `draw.c` and `scene_core.c` need no Lua since D3b-1 - the kit binds them
+ * and the window server will hold them - so they are tested here, as C:
+ * a fill and a copy clipped at the edges, a blend at half strength, a
+ * stretch doubled, a rounded corner put back, a triangle's rows; and a
+ * scene of two windows over each other and a menu over both, composed:
+ * the desktop where neither is, the upper window where they overlap, the
+ * menu over everything, a hidden window not drawn, a rounded corner
+ * showing what is under it, and a rectangle composed again giving the same
+ * pixels.
+ */
+
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "surface.h"
+#include "draw_primitives.h"
+#include "scene_core.h"
+
+static int failed, passed;
+
+static void check(bool ok, const char *what)
+{
+    if (ok) {
+        passed++;
+    } else {
+        failed++;
+        printf("  FAIL: %s\n", what);
+    }
+}
+
+static struct surface make(unsigned w, unsigned h, uint32_t colour)
+{
+    struct surface s;
+    unsigned x, y;
+
+    s.width = w;
+    s.height = h;
+    s.pitch = w * 4;
+    s.pixels = malloc((size_t)w * h * 4);
+    s.pages = 0;
+    s.owned = false;
+
+    for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+            s.pixels[y * w + x] = colour;
+        }
+    }
+
+    return s;
+}
+
+static uint32_t at(const struct surface *s, unsigned x, unsigned y)
+{
+    return row_of(s, y)[x];
+}
+
+static void primitives(void)
+{
+    struct surface a = make(16, 16, 0xff000000u);
+    struct surface b = make(8, 8, 0xff00ff00u);
+    struct surface half = make(4, 4, 0x80ffffffu);
+    struct surface big = make(8, 8, 0xff000000u);
+    struct surface two = make(2, 2, 0xff112233u);
+    double vx[3] = { 0.0, 16.0, 0.0 }, vy[3] = { 0.0, 0.0, 16.0 };
+    unsigned n = 0, x, y;
+
+    fill_on(&a, -4, -4, 8, 8, 0xffff0000u);
+    check(at(&a, 3, 3) == 0xffff0000u && at(&a, 4, 4) == 0xff000000u,
+          "a fill off the top-left edge clipped to what is on the surface");
+
+    blit_on(&a, &b, 0, 0, 8, 8, 12, 12);
+    check(at(&a, 15, 15) == 0xff00ff00u && at(&a, 11, 11) == 0xff000000u,
+          "a copy off the bottom-right edge clipped");
+
+    blend_on(&a, &half, 0, 0, 4, 4, 6, 6, 255);
+    check((at(&a, 6, 6) & 0xffu) >= 0x7e && (at(&a, 6, 6) & 0xffu) <= 0x81,
+          "white at half alpha over black is half grey");
+
+    stretch_into(&big, &two, 0, 0, 2, 2, 0, 0, 8, 8, -1, false, 0, 0, 8, 8);
+    check(at(&big, 7, 7) == 0xff112233u && at(&big, 0, 0) == 0xff112233u,
+          "two pixels stretched to eight cover them");
+
+    fill_on(&a, 0, 0, 16, 16, 0xff000000u);
+    triangle_on(&a, vx, vy, 0xffffffffu);
+
+    for (y = 0; y < 16; y++) {
+        for (x = 0; x < 16; x++) {
+            n += at(&a, x, y) == 0xffffffffu;
+        }
+    }
+
+    check(n >= 120 && n <= 136, "a right triangle of side 16 fills half of 256");
+
+    free(a.pixels);
+    free(b.pixels);
+    free(half.pixels);
+    free(big.pixels);
+    free(two.pixels);
+}
+
+static void scene(void)
+{
+    struct surface back = make(200, 120, 0xff000000u);
+    struct surface w1 = make(100, 60, 0xff0000ffu);      /* blue, behind */
+    struct surface w2 = make(100, 60, 0xffff0000u);      /* red, in front */
+    struct surface menu = make(40, 30, 0xff00ff00u);     /* green, over all */
+    struct surface ref = make(200, 120, 0);
+    struct scene *sc = malloc(sizeof(*sc));
+    long drawn;
+    unsigned x, y, same = 1;
+
+    scene_init(sc, &back);
+    sc->desktop = 0xff808080u;
+    sc->corner = 8;
+    check(scene_set_windows(sc, 3) && scene_set_menus(sc, 1), "room for three windows and a menu");
+
+    sc->win[0] = (struct sc_window){ 10, 10, 100, 60, SC_ROUNDED, &w1, 100, 60, NULL, 0, 0, 0, -1 };
+    sc->win[1] = (struct sc_window){ 60, 40, 100, 60, SC_ROUNDED, &w2, 100, 60, NULL, 0, 0, 0, -1 };
+    sc->win[2] = (struct sc_window){ 150, 5, 40, 40, SC_HIDDEN, &w1, 100, 60, NULL, 0, 0, 0, -1 };
+    sc->menu[0] = (struct sc_menu){ 140, 80, 40, 30, &menu };
+
+    drawn = scene_compose(sc, 0, 0, 200, 120);
+    check(drawn > 0, "the scene composed");
+    check(at(&back, 2, 2) == 0xff808080u, "the desktop where no window is");
+    check(at(&back, 20, 20) == 0xff0000ffu, "the window behind where only it is");
+    check(at(&back, 70, 50) == 0xffff0000u, "the window in front where they overlap");
+    check(at(&back, 150, 90) == 0xff00ff00u, "the menu over the window in front");
+    check(at(&back, 170, 20) == 0xff808080u, "a hidden window not drawn");
+    check(at(&back, 60, 40) != 0xffff0000u,
+          "the front window's corner rounded, showing what is under it");
+
+    memcpy(ref.pixels, back.pixels, (size_t)200 * 120 * 4);
+    fill_on(&back, 0, 0, 200, 120, 0xffff00ffu);
+    (void)scene_compose(sc, 0, 0, 200, 120);
+
+    for (y = 0; y < 120; y++) {
+        for (x = 0; x < 200; x++) {
+            same &= at(&back, x, y) == at(&ref, x, y);
+        }
+    }
+
+    check(same, "composed again over another colour, the same pixels");
+
+    scene_free(sc);
+    free(sc);
+    free(back.pixels);
+    free(w1.pixels);
+    free(w2.pixels);
+    free(menu.pixels);
+    free(ref.pixels);
+}
+
+int main(void)
+{
+    primitives();
+    scene();
+
+    if (failed) {
+        printf("FAIL: %d of %d checks on the primitives and the scene\n", failed,
+               failed + passed);
+        return 1;
+    }
+
+    printf("PASS: %d checks on the primitives and the scene (fills, copies, a blend, a stretch "
+           "and a triangle; two windows, a menu and a hidden one composed, a corner rounded, "
+           "and the same again)\n", passed);
+    return 0;
+}

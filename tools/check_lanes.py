@@ -25,7 +25,10 @@ LANES = [
     ("user/kits/gfx/rows.c.o", None),
     ("user/kits/gfx/pack.c.o", None),
     ("user/kits/gfx/raster.c.o", None),
-    ("user/kits/gfx/gfx.c.o", "l_blend"),
+    # The blend's lanes, in `blend_row` since the primitives left `gfx.c`
+    # for `draw.c` (Astra's D3b-1); `draw.c` as a whole copies rows with
+    # the libc's `memcpy` on purpose (`blit_on`).
+    ("user/kits/gfx/draw.c.o", "blend_row"),
 ]
 
 MACHINES = [

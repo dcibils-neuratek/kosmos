@@ -22416,3 +22416,24 @@ one pixel different. **Control**: the scene casting no shadow, and
 QEMU: a composing pass 1.35 to 1.01 ms idle, 0.80 to 0.47 with one window
 animating, 3.53 to 1.59 with four stacked; the window manager's busy time
 347 to 293, 955 to 714 and 2121 to 1423 ms. The whole gate, 62 of 62.
+
+## 18.510 Astra D3b-1: the primitives and the scene with no Lua
+
+For the window server, which is C and has no Lua, to compose with the same
+code the window manager's scene does. `draw.c` holds the kit's primitives -
+fill, copy, blend, stretch, a rounded copy, rounded fills and frames, a
+triangle - moved out of `gfx.c` as they were, behind `draw_primitives.h`;
+`surface.h` holds a surface's shape and the inline helpers every loop over
+pixels uses (`row_of`, `clip`, `over`); `scene_core.c` holds the scene and
+its composing, and `scene.c` is the Lua binding over it. `gfx_draw.h` still
+keeps the shape from every other kit. `check_lanes.py` reads `blend_row` in
+`draw.c` now: since 0.11.114 the lanes it meant were no longer in `l_blend`,
+which it was still reading.
+
+`test_draw` 14, on this Mac: a fill and a copy clipped at the edges, a blend
+at half, a stretch, a triangle's rows; a scene of two windows overlapping, a
+menu over them and a hidden one, composed - the desktop, each window where
+it shows, the menu on top, the hidden one not drawn, a corner rounded - and
+the same pixels composed again over magenta. **Control**: the menus not
+composed, and it fails. The AArch64 image builds. The whole gate, 61 of 62:
+`x86-film`'s sound, which has failed under load before, passes alone.

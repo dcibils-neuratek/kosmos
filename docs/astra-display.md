@@ -190,10 +190,12 @@ desktop.
      window manager's own pictures are regions it shares with it. Commit
      and poll still come to the window manager until D4.
      **In two parts** (planned 10 October):
-     - **D3b-1** - the drawing primitives and the scene's composing in C
-       that needs no Lua (`user/kits/gfx/draw.c`, `scene_core.c`), so the
-       Graphics Kit and a server share one copy; the kit's Lua methods and
-       `gfx.scene` become thin bindings over them.
+     - **D3b-1, done 10 October** (0.11.115, `testing.md` 18.510) - the
+       drawing primitives and the scene's composing in C that needs no Lua
+       (`user/kits/gfx/draw.c`, `scene_core.c`, with `surface.h` and
+       `draw_primitives.h`), so the Graphics Kit and a server share one
+       copy; the kit's Lua methods and `gfx.scene` are thin bindings over
+       them, and `test_draw` holds them on this Mac.
      - **D3b-2** - `windowserver`, a role of the init image like every C
        server: it holds the screen and the back buffer; the window manager
        writes its scene into a region they share - it changes every pass,
