@@ -2,9 +2,33 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-09, night (0.11.112; Astra D2 complete)
+Last updated: 2026-10-10, early morning (0.11.115; Astra D3a and D3b-1)
 
 ---
+
+## 10 October, early morning: Gmail restored, a push, Astra D3a and D3b-1
+
+**Pushed: up to 0.11.112** (2515f0d1). **On `main`, not pushed:
+0.11.113-0.11.115.**
+
+- **Diego's Gmail on the M700**: the account file written back (his yes);
+  `maild` signed in with the keyring's password. Its list showed "?" - a
+  message's facts with its words were more than one request to the disk
+  carries, refused since M8; fixed in 0.11.113 (18.508).
+- **The M700** was restarted onto 0.11.113 and **came up with no display**
+  ("Display none") - its monitor asleep or off at boot, the known case in
+  `roadmap.md`. It needs the monitor on and a restart.
+- **Astra D3a** (0.11.114, 18.509): the desktop composed in C, `gfx.scene`;
+  held to the old Lua composing by `wm compose-check` and `x86-scene`, 1500
+  passes, no pixel different; a composing pass of four stacked windows 3.53
+  to 1.59 ms under QEMU. The Lua composing stays as the reference until
+  D3b-2.
+- **Astra D3b-1** (0.11.115, 18.510): `draw.c` and `scene_core.c`, the
+  primitives and the scene with no Lua; `test_draw` on the Mac.
+
+**Next**: Diego's answer on the board - who starts the window server, init
+at boot (recommended) or the window manager - then D3b-2, `windowserver`.
+
 
 ## 9 October, night: POP3, the Mouse page, Astra D2 - every window draws itself
 
