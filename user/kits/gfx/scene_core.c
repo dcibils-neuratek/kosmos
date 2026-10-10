@@ -589,6 +589,20 @@ long scene_compose(struct scene *sc, long rx, long ry, long rw, long rh)
         }
     }
 
+    /* A panel over every window - the app switcher - by its own alpha. */
+    if (sc->panel != NULL) {
+        long pw = (long)sc->panel->width, ph = (long)sc->panel->height;
+        long x0 = r.x > sc->panel_x ? r.x : sc->panel_x;
+        long y0 = r.y > sc->panel_y ? r.y : sc->panel_y;
+        long x1 = r.x + r.w < sc->panel_x + pw ? r.x + r.w : sc->panel_x + pw;
+        long y1 = r.y + r.h < sc->panel_y + ph ? r.y + r.h : sc->panel_y + ph;
+
+        if (x1 > x0 && y1 > y0) {
+            blend_on(sc->back, sc->panel, x0 - sc->panel_x, y0 - sc->panel_y, x1 - x0, y1 - y0,
+                     x0, y0, 255);
+        }
+    }
+
     /* The pointer, where the display does not draw it. */
     if (sc->cursor != NULL) {
         blend_on(sc->back, sc->cursor, 0, 0, (long)sc->cursor->width,

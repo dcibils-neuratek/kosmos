@@ -152,6 +152,7 @@ static void dhcp_receive(const uint8_t *m, unsigned length);
  * before the last.
  */
 #define TCP_MSS              1460u
+#define TCP_RECEIVE_WINDOW   16384u     /* offered, at most: see `window_of` */
 #define TCP_INITIAL_WINDOW   (10u * TCP_MSS)
 #define TCP_MAX_WINDOW       (1024u * 1024u)
 
@@ -1963,7 +1964,21 @@ static uint16_t window_of(const struct conn *c)
     space = tcp_ring_space(c->ring->bytes, c->ring->in_write,
                            tcp_ring_acquire(&c->ring->in_read));
 
-    return (space > 65535u) ? 65535u : (uint16_t)space;
+    /*
+     * **But never more than 16 KB** (10 October 2026), whatever the ring:
+     * this stack keeps nothing that arrives out of order, so one segment
+     * lost in a window means everything after it is dropped and sent again.
+     * At 64 KB a far end sends some forty-five at once, and under load a
+     * 64 MB read from a share stalled on the losses until smbfs gave up
+     * (`testing.md` 18.523); at 16 KB it never had. Sending keeps the
+     * whole ring - that is what made the M700 4.3 times as fast - and
+     * receiving more waits for out-of-order segments to be kept.
+     */
+    if (space > TCP_RECEIVE_WINDOW) {
+        space = TCP_RECEIVE_WINDOW;
+    }
+
+    return (uint16_t)space;
 }
 
 /*

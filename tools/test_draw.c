@@ -116,6 +116,7 @@ static void scene(void)
     struct surface w2 = make(100, 60, 0xffff0000u);      /* red, in front */
     struct surface menu = make(40, 30, 0xff00ff00u);     /* green, over all */
     struct surface badge = make(12, 8, 0xffffff00u);     /* yellow, a label */
+    struct surface panel = make(8, 40, 0x80ffffffu);     /* half white, a panel */
     struct surface ref = make(200, 120, 0);
     struct scene *sc = malloc(sizeof(*sc));
     long drawn;
@@ -150,6 +151,23 @@ static void scene(void)
     check(at(&back, 10, 104) == 0xff808080u, "and not past the rectangle composed");
     (void)scene_compose(sc, 0, 0, 200, 120);
     sc->badge = NULL;
+
+    /* A panel over everything, by its own alpha: half white over the
+     * desktop's grey is a lighter grey, and nothing where it is clear. */
+    for (unsigned yy = 20; yy < 40; yy++) {
+        for (unsigned xx = 0; xx < 8; xx++) {
+            row_of(&panel, yy)[xx] = 0;
+        }
+    }
+
+    sc->panel = &panel;
+    sc->panel_x = 0;
+    sc->panel_y = 0;
+    (void)scene_compose(sc, 0, 0, 200, 120);
+    check((at(&back, 4, 4) & 0xffu) > 0xb0 && (at(&back, 4, 4) & 0xffu) < 0xd0,
+          "a panel blended by its own alpha over the desktop");
+    check(at(&back, 4, 30) == 0xff808080u, "and the desktop where the panel is clear");
+    sc->panel = NULL;
     (void)scene_compose(sc, 0, 0, 200, 120);
 
     memcpy(ref.pixels, back.pixels, (size_t)200 * 120 * 4);
@@ -171,6 +189,7 @@ static void scene(void)
     free(w2.pixels);
     free(menu.pixels);
     free(badge.pixels);
+    free(panel.pixels);
     free(ref.pixels);
 }
 
@@ -187,6 +206,6 @@ int main(void)
 
     printf("PASS: %d checks on the primitives and the scene (fills, copies, a blend, a stretch "
            "and a triangle; two windows, a menu and a hidden one composed, a corner rounded, a "
-           "drag's label, and the same again)\n", passed);
+           "drag's label, a panel by its own alpha, and the same again)\n", passed);
     return 0;
 }

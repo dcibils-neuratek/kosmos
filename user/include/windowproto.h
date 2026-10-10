@@ -105,6 +105,7 @@ struct ws_scene_head {
     uint32_t osd_alpha;
     int32_t  cursor, cursor_x, cursor_y;
     int32_t  badge, badge_x, badge_y;
+    int32_t  panel, panel_x, panel_y;
 };
 
 struct ws_scene_window {

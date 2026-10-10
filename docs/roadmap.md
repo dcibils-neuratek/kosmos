@@ -176,7 +176,8 @@ windows with nothing shown, which is what Super+Tab does today. Drawn as `docs/s
 code; the window manager owns it, since the keys are the system's.
 **Agreed as drawn, 10 October** ("All mockups are perfect"): applications in
 the order last used; Q quits the lit one while it shows; the down arrow's row
-of windows built with it.
+of windows built with it. **Built the same day** (0.11.128, `testing.md` 18.523):
+`user/lib/wm/switcher.lua`, held by `x86-switcher`.
 
 **Diego's order, 4 October 2026**: "Then do notifications system", "Then
 finish storage in C", "Then kosmos write" - so **Notifications** (below),

@@ -90,8 +90,13 @@ struct scene {
     struct surface *badge;
     long badge_x, badge_y;
 
+    /* A panel over every window and under the pointer - the app switcher
+     * (`docs/switcher.html`) - blended by its own alpha. */
+    struct surface *panel;
+    long panel_x, panel_y;
+
     /* The pictures above, by slot, when described for the window server. */
-    int wallpaper_slot, stamp_slot, osd_slot, cursor_slot, badge_slot;
+    int wallpaper_slot, stamp_slot, osd_slot, cursor_slot, badge_slot, panel_slot;
 
     /* Scratch: the pieces of a rectangle not yet covered, two lists that
      * alternate, each `cap_pieces` long, and what each window shows of it -

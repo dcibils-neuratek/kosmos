@@ -11,7 +11,8 @@
  *             bar, bar_h, bx, by, held)                 the k-th from the back
  *   sc:menus(n)  sc:menu(k, x, y, w, h, picture)        above every window
  *   sc:above(outline x, y, w, h, colour | nil, osd, ox, oy, alpha | nil,
- *            cursor, cx, cy | nil, badge, bx, by | nil) over everything
+ *            cursor, cx, cy | nil, badge, bx, by | nil,
+ *            panel, px, py | nil)                       over everything
  *   sc:compose(x, y, w, h)  -> pixels drawn             one damaged rectangle
  *   sc:wire(at, bytes, damage) -> true | false, need    for the window server
  *
@@ -43,7 +44,7 @@
 
 /* The user value's slots: what the scene names, kept alive. */
 enum { UV_WINDOWS = 1, UV_BARS, UV_MENUS, UV_MISC, UV_COUNT = UV_MISC };
-enum { MISC_WALLPAPER = 1, MISC_STAMP, MISC_OSD, MISC_CURSOR, MISC_BADGE };
+enum { MISC_WALLPAPER = 1, MISC_STAMP, MISC_OSD, MISC_CURSOR, MISC_BADGE, MISC_PANEL };
 
 static struct scene *check_scene(lua_State *L)
 {
@@ -117,7 +118,7 @@ static int l_scene(lua_State *L)
 
     scene_init(sc, back);
     sc->wallpaper_slot = sc->stamp_slot = sc->osd_slot = WS_NONE;
-    sc->cursor_slot = sc->badge_slot = WS_NONE;
+    sc->cursor_slot = sc->badge_slot = sc->panel_slot = WS_NONE;
 
     lua_createtable(L, UV_COUNT, 0);
 
@@ -295,10 +296,14 @@ static int l_scene_above(lua_State *L)
     sc->badge = opt_picture(L, 14, &sc->badge_slot);
     sc->badge_x = (long)luaL_optinteger(L, 15, 0);
     sc->badge_y = (long)luaL_optinteger(L, 16, 0);
+    sc->panel = opt_picture(L, 17, &sc->panel_slot);
+    sc->panel_x = (long)luaL_optinteger(L, 18, 0);
+    sc->panel_y = (long)luaL_optinteger(L, 19, 0);
 
     hold(L, UV_MISC, MISC_OSD, 7);
     hold(L, UV_MISC, MISC_CURSOR, 11);
     hold(L, UV_MISC, MISC_BADGE, 14);
+    hold(L, UV_MISC, MISC_PANEL, 17);
     return 0;
 }
 
@@ -417,6 +422,9 @@ static int l_scene_wire(lua_State *L)
     head->badge = (int32_t)sc->badge_slot;
     head->badge_x = (int32_t)sc->badge_x;
     head->badge_y = (int32_t)sc->badge_y;
+    head->panel = (int32_t)sc->panel_slot;
+    head->panel_x = (int32_t)sc->panel_x;
+    head->panel_y = (int32_t)sc->panel_y;
 
     for (k = 0; k < sc->nwin; k++) {
         const struct sc_window *w = &sc->win[k];

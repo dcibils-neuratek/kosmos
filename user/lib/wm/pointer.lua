@@ -229,6 +229,15 @@ return function(ctx)
     -- edge. Without a grab, releasing outside would deliver the release to
     -- whatever happened to be underneath.
     --------------------------------------------------------------------------
+    -- The app switcher, while it shows: the pointer lights an icon, and a
+    -- press chooses one or puts it away, reaching nothing under it.
+    if moved_this_pass and OUT.switcher then OUT.switcher.hover(nx, ny) end
+
+    if is_down and not was_down and OUT.switcher and OUT.switcher.press(nx, ny) then
+      PT.buttons = p.buttons
+      return
+    end
+
     if is_down and not was_down then
       --
       -- Menus first, and they take the press whatever is under them.

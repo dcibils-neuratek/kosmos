@@ -2449,15 +2449,20 @@ function OUT.describe()
   local o = PT.outline
   local alpha = osd.shown and osd.alpha(sys.ticks()) or 0
   local badge, bx, by = OUT.badge_now()
+  local panel, panel_x, panel_y = nil, 0, 0
+
+  if OUT.switcher then panel, panel_x, panel_y = OUT.switcher.picture() end
 
   if o then
     scene:above(o.x, o.y, o.w, o.h, focused_colour(),
                 pic(alpha > 0 and osd.surface or nil), osd.x, osd.y, alpha,
-                pic(OUT.cursor_picture), PT.x, PT.y, pic(badge), bx, by)
+                pic(OUT.cursor_picture), PT.x, PT.y, pic(badge), bx, by,
+                pic(panel), panel_x, panel_y)
   else
     scene:above(nil, 0, 0, 0, 0,
                 pic(alpha > 0 and osd.surface or nil), osd.x, osd.y, alpha,
-                pic(OUT.cursor_picture), PT.x, PT.y, pic(badge), bx, by)
+                pic(OUT.cursor_picture), PT.x, PT.y, pic(badge), bx, by,
+                pic(panel), panel_x, panel_y)
   end
 end
 
@@ -5589,6 +5594,11 @@ local KEY_SYSRQ, KEY_1 = 99, 2
 
 local function capture_key(code, down)
   local held = OUT.chord.held
+
+  -- The switcher's first: a Tab with Super held, and every key while it
+  -- shows (`wm/switcher.lua`).
+  if OUT.switcher and OUT.switcher.key_event(code, down) then return true end
+
   local chord = code == KEY_1 and (held[29] or held[97]) and (held[56] or held[100])
 
   if code ~= KEY_SYSRQ and not chord then return false end
@@ -6221,6 +6231,13 @@ local pointer_pass = use("/Kosmos/Libraries/wm/pointer.lua"){
 -- Keys the window manager keeps - `/Kosmos/Libraries/wm/keys.lua`
 -- (`roadmap.md` 6zn).
 --
+-- The app switcher, Super+Tab (`docs/switcher.html`): its keys come to it
+-- first, through `capture_key`, and its panel is the scene's.
+OUT.switcher = use("/Kosmos/Libraries/wm/switcher.lua"){
+  OUT = OUT, windows = windows, raise = raise, post = post, add_damage = add_damage,
+  picture_from = picture_from, px = function(n) return scale.px(n) end, W = W, H = H,
+}
+
 local key = use("/Kosmos/Libraries/wm/keys.lua"){
   EDIT_KEYS = EDIT_KEYS,
   KEY_CTRL_C = KEY_CTRL_C,

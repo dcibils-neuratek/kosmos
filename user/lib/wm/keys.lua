@@ -336,9 +336,15 @@ return function(ctx)
       what = "Every shortcut, over everything until Escape",
       run = function() handlers.launch{ program = "shortcuts", args = "--modal" } end },
 
+    --
+    -- **The app switcher** (`docs/switcher.html`, Diego, 10 October): its
+    -- Tab is the event's, taken by `wm/switcher.lua` before any of this, so
+    -- the character Super+Tab also makes does nothing here but be kept from
+    -- the window. Alt+Tab steps the windows, which Super+Tab used to.
+    --
     { key = 9, shown = "Super + Tab",
-      what = "Go round the open windows",
-      run = function() cycle_windows() end },
+      what = "Show the running applications, last used first",
+      run = function() end },
 
     { key = 113, also = 81, shown = "Super + Q",
       what = "Close the window in front",
@@ -358,6 +364,10 @@ return function(ctx)
   -- already live in `CLIP_KEYS`.
   --
   local PREFIX_BINDINGS = {
+    -- And Alt+Tab, dispatched in `alt_tab` and named here for the same
+    -- reason as the prefix's.
+    { shown = "Alt + Tab",        what = "Go round the open windows" },
+    { shown = "Alt + Shift + Tab", what = "Back round the open windows" },
     { shown = "Control-W Q",      what = "End the desktop" },
     { shown = "Control-W Tab",    what = "Go round the open windows" },
     { shown = "Control-W arrows", what = "Move the window in front" },
@@ -413,7 +423,96 @@ return function(ctx)
     return { ok = true, super = keys, prefix = prefixes, edit = edits }
   end
 
+  --
+  -- **Alt+Tab** (`docs/switcher.html`): the windows stepped, with nothing
+  -- shown - what Super+Tab did before the switcher. The keyboard sends Alt
+  -- as nothing, so Alt+Tab arrives as a Tab, and Alt+Shift+Tab as Shift+Tab's
+  -- `ESC [ Z`: both kept from the window while the left Alt is held - not the
+  -- right, which is AltGr on a Spanish keyboard and types @ - and acted on
+  -- here. **Not with Super held**: every Super chord begins `ESC [ 1 ; 9`,
+  -- and holding its `ESC [` back as a possible Shift+Tab broke them all -
+  -- the switcher, once open, takes every character anyway.
+  --
+  local alt_seq = 0
+
+  -- Back one: the window in front under every other - each other raised in
+  -- its order, which is the inverse of `cycle_windows` raising the bottom.
+  local function cycle_back()
+    local front = focused_window()
+    local order = {}
+
+    if not front then return end
+
+    for _, other in ipairs(windows) do
+      if other ~= front and not (other.backdrop or other.strip or other.kind == "menu"
+                                 or other.popup or other.tip) then
+        order[#order + 1] = other
+      end
+    end
+
+    for _, other in ipairs(order) do raise(other) end
+  end
+
+  local function alt_tab(c)
+    local left_alt = OUT.chord.held[56]
+
+    if not left_alt then
+      if alt_seq > 0 then
+        local was = alt_seq
+
+        alt_seq = 0
+        to_focused(27)
+        if was > 1 then to_focused(91) end
+      end
+
+      return false
+    end
+
+    if c == 9 then
+      cycle_windows()
+      print("wm: Alt+Tab")
+      return true
+    end
+
+    if alt_seq == 0 and c == 27 then alt_seq = 1 return true end
+    if alt_seq == 1 and c == 91 then alt_seq = 2 return true end
+
+    if alt_seq == 2 and c == 90 then
+      alt_seq = 0
+      cycle_back()
+      print("wm: Alt+Shift+Tab")
+      return true
+    end
+
+    -- Not Shift+Tab after all: what was kept goes on to the window.
+    if alt_seq > 0 then
+      local was = alt_seq
+
+      alt_seq = 0
+      to_focused(27)
+      if was > 1 then to_focused(91) end
+    end
+
+    return false
+  end
+
   local function key(c)
+    -- While the app switcher shows, every character is its - its keys are
+    -- the events' - and none reaches the window under it.
+    if OUT.switcher and OUT.switcher.showing then return end
+
+    if c ~= nil and alt_tab(c) then return end
+
+    -- The end of what was read, with Shift+Tab's start held back: it was an
+    -- Escape after all, and goes on.
+    if c == nil and alt_seq > 0 then
+      local was = alt_seq
+
+      alt_seq = 0
+      to_focused(27)
+      if was > 1 then to_focused(91) end
+    end
+
     --
     -- **Given nil, the input just read has ended** (`roadmap.md` 6zz l3):
     -- Super's sequence only begun was not Super - the board writes its

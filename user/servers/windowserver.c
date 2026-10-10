@@ -289,6 +289,9 @@ static bool read_scene(const struct ws_rect **rects, uint32_t *nrect)
     sc->badge = picture(h.badge);
     sc->badge_x = h.badge_x;
     sc->badge_y = h.badge_y;
+    sc->panel = picture(h.panel);
+    sc->panel_x = h.panel_x;
+    sc->panel_y = h.panel_y;
 
     win = (const struct ws_scene_window *)(head + 1);
     menu = (const struct ws_scene_menu *)(win + h.nwin);

@@ -22801,3 +22801,50 @@ The whole gate, 62 of 65: `x86-share-2` (the Mac's peer "not answering"
 partway through a 64 MB read), `x86-mdns` (Tracker not yet listing in 60 s -
 the desktop boot now has two minutes) and `x86-display-1`, all three passing
 alone. `x86-share-2` under load is the one to watch after the TCP changes.
+
+## 18.523 The app switcher, Super+Tab, and Alt+Tab
+
+`docs/switcher.html`, agreed as drawn on 10 October ("All mockups are
+perfect"). `user/lib/wm/switcher.lua`, a part of the window manager:
+Super+Tab, held, shows the running applications - each its icon, the
+windows of one process together, in the order last used, which is the
+stack's - in a panel in the middle of the screen, the second lit and named.
+Tab moves on and Shift+Tab or the left arrow back; the down arrow opens a
+row of the lit application's windows, each a small picture of the buffer it
+committed, and the up arrow closes it; Esc puts it away; Q asks the lit
+application's windows to close, as their close box does; letting go of
+Super brings the lit application forward, back to front so the window used
+last has the keys, or the one window chosen. The pointer lights an icon and
+a click chooses it. Its keys are the events', taken first by `capture_key`;
+while it shows, every key and character is its own. The panel is a picture
+in a region the scene blends over every window and under the pointer - the
+scene grew a panel (`scene_core.c`, the wire, the window server), and
+`test_draw` 18 holds it: by its own alpha, and nothing where it is clear.
+Icons are stretched with an alpha of 255 - without it `stretch` copies, and
+their clear corners came out black on the first look.
+
+**Alt+Tab** steps the windows with nothing shown, which Super+Tab did
+before; Alt+Shift+Tab steps back. The keyboard sends no Alt, so Alt+Tab
+arrives as a Tab and Alt+Shift+Tab as `ESC [ Z`; both are kept from the
+window while the left Alt is held - not the right, which is AltGr on a
+Spanish keyboard and types @.
+
+**`x86-switcher`** (new, 11 checks): Calculator and Preferences opened on a
+desktop, keys as QEMU's events - Super held, Tab pressed and let go, Super
+let go - "Preferences, [Calculator], Log, Processes, Tracker, Monitor", the
+panel's dark on the screen; Tab on, Shift+Tab back, the windows row and out;
+Super let go and Calculator has the keys; Esc changing nothing; a click on
+the second icon choosing what is listed second; Q quitting Calculator, its
+process ending; Alt+Tab stepping the windows with no panel. **Controls**, in
+one run: Super+Tab opening nothing, and Alt+Tab stepping nothing - 10 of 11
+fail.
+The gate found two of its own on the way. **Super chords broken**: Alt+Tab's
+holding back of `ESC [` (a possible Shift+Tab) also ran with Super held, and
+every Super chord begins `ESC [ 1 ; 9` - `x86-dock` and `x86-display-3`
+stopped at theirs; only the left Alt starts it now. **`x86-share-2` under
+load**, the second time since 18.521: a 64 MB read from the Mac's Samba
+stalled "not answering". This stack keeps nothing out of order, and the 64 KB
+ring had become a 64 KB window offered - some forty-five segments a burst,
+one lost and the rest dropped and sent again; the window offered is 16 KB
+again (`TCP_RECEIVE_WINDOW`), as it was while it never failed, and sending
+keeps the whole ring. The whole gate, 66 of 66 in 6:56.
