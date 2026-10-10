@@ -292,7 +292,7 @@ static void light(struct scene *sc, long x, long y, int slot, bool lit, bool off
     }
 }
 
-/* A window's part of `r` (`drawwindow.lua`). */
+/* A window's part of `r` (what `drawwindow.lua` did, before D3b-2). */
 static void draw_window(struct scene *sc, const struct sc_window *w, const struct sc_rect *r)
 {
     long kept[4][6];

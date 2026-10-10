@@ -2,7 +2,7 @@
 -- The window manager's menu bar over a window that draws its own pixels, a
 -- part of `wm.lua` in a file of its own (`roadmap.md` 6zn). The section as
 -- it stood there, in a function handed what it reads of the rest: the
--- backbuffer, the look, `post` and `add_damage` - none of them ever replaced
+-- look, `post` and `add_damage` - none of them ever replaced
 -- while the window manager runs, so each is kept as it is handed (`post` as
 -- a function that finds it, since its body comes later in `wm.lua`).
 --
@@ -26,7 +26,7 @@
 --
 
 return function(ctx)
-  local back, theme = ctx.back, ctx.theme
+  local theme = ctx.theme
   local post, add_damage = ctx.post, ctx.add_damage
 
   local strips = {}
@@ -111,32 +111,6 @@ return function(ctx)
         post(win, { type = "menubar", index = i, title = mb.titles[i],
                     x = win.x + sp.x, y = win.y + mb.h })
         return
-      end
-    end
-  end
-
-  -- The strip from its own surface, and the application's pixels below it.
-  function strips.compose(win, from, x0, y0, x1, y1)
-    local split = win.y + win.menubar.h
-
-    if y0 < split then
-      local yb = math.min(y1, split)
-
-      back:blit(win.menubar.surface, x0 - win.x, y0 - win.y,
-                x1 - x0, yb - y0, x0, y0)
-    end
-
-    if y1 > split then
-      local ya = math.max(y0, split)
-
-      local lower = win.h - win.menubar.h
-
-      if win.src_w and (win.src_w ~= win.w or win.src_h ~= lower) then
-        back:stretch(from, 0, 0, win.src_w, win.src_h,
-                     win.x, split, win.w, lower, nil, false,
-                     x0, ya, x1 - x0, y1 - ya)
-      else
-        back:blit(from, x0 - win.x, ya - split, x1 - x0, y1 - ya, x0, ya)
       end
     end
   end

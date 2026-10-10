@@ -22572,3 +22572,29 @@ after the kill - on 0.11.118 as well, so older than this; `roadmap.md`, *Known
 and unexplained*. The whole gate, 62 of 62 in 6:35 - after a first run that
 failed 17 suites on a full disk, 600 MB free, which a baseline build of mine
 in the scratchpad had taken.
+
+## 18.516 Astra D3b-2, step 4: the window manager composes nothing
+
+`docs/astra-display.md` D3b-2 step 4. The window manager's Lua composing is
+gone: the passes in `compose.lua` (what each window shows of a rectangle,
+then the desktop and the windows back to front), `drawwindow.lua`, the Lua
+drawing of the desktop, the arrow, a drag's label, shadows and kept corners,
+the strips' own composing, `wm compose-check`, and the fallback to composing
+in its own process. `compose.lua` describes the scene, makes one call, and
+copies the damage to a watcher. The window manager no longer maps the
+screen: its size comes from the window server's greeting, and with no window
+server it says so and starts no desktop. It says how many pictures the
+window server holds whenever that changes. 1046 lines out, 113 in.
+
+`x86-scene` 7, reworked now that there is no Lua composing to compare
+against (`test_draw` holds the scene on the Mac): the window server greeted
+and composing, every picture handed over and no pass refused, through the
+same desktop as before; the desktop on the screen, 31% one colour; a window's
+pictures 20, 22 and 20; the screen the console's after `kill wm`, 100% one
+colour. **Controls**, in one run: the server never putting what it composed
+on the screen - 96% one colour with the desktop up, and the give-back check
+fails with it; the forgetting off - the pictures held climb from 43 to 59
+and never come down.
+The whole gate, 61 of 62: `x86-display-4` read a screendump shorter than
+its size (`IndexError` in `_colour_area`) with 1.7 GB free on the disk; alone,
+79 of 79 in 3:08.

@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-10, afternoon (0.11.120; Astra D3b-2 step 3)
+Last updated: 2026-10-10, afternoon (0.11.121; Astra D3b-2 done)
 
 ---
 
@@ -31,6 +31,12 @@ Last updated: 2026-10-10, afternoon (0.11.120; Astra D3b-2 step 3)
   back to the console when the window manager ends or crashes. Found on the
   way: the console's shell does not answer after the window manager is
   killed (older; roadmap, Known and unexplained).
+- **D3b-2 step 4** (0.11.121, 18.516): the window manager composes nothing
+  and does not map the screen; its Lua composing, `compose-check` and
+  `drawwindow.lua` gone (1046 lines out). D3b is done; next in the display
+  plan is D4, commit and poll answered by the window server.
+- **The three mockups agreed as drawn** ("All mockups are perfect"); the six
+  old development stick images moved to the Trash (Diego empties it).
 - **Diego's requests, 10 October**, on the roadmap and the board: the app
   switcher (Super+Tab; Alt+Tab steps windows) - `docs/switcher.html`;
   Shortcuts as an app - `docs/shortcuts.html`, queued; Magnet -
@@ -40,8 +46,9 @@ Last updated: 2026-10-10, afternoon (0.11.120; Astra D3b-2 step 3)
 - **Disk**: 2 GB free; old stick images (8 x 704 MB) are Diego's to decide.
 - **The M700** runs 0.11.119 (monitor on).
 
-**Next**: D3b-2 step 4, the Lua composing removed from the window manager;
-Diego's answers on the three mockups. The PDF reader's redesign is
+**Next**: the queue - M700 slow TCP, SMB discovery, Mail's status bar, the
+PDF reader, the app switcher, Shortcuts (its feature set, architecture and
+diagram first), Maps; then D4. The PDF reader's redesign is
 queued (design first: feature set, mockup, architecture, diagram).
 
 

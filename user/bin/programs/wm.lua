@@ -573,7 +573,14 @@ local function load_appearance()
   saved_fit = saved.wallpaper_fit
 end
 
-local screen = gfx.screen()
+--
+-- **The window server** (`docs/astra-display.md` D3b-2): started by init at
+-- boot, and its manager door lent to this program alone. It holds the
+-- screen and composes what this process describes; this process neither
+-- composes nor touches the screen (step 4). Greeted here for the screen's
+-- size, and handed the back buffer below (`wm/windowserver.lua`).
+--
+local WS = use("/Kosmos/Libraries/wm/windowserver.lua")()
 --
 -- The wallpaper, if there is one.
 --
@@ -750,7 +757,7 @@ local function wallpaper_place()
 
   if not wallpaper then return end
 
-  local sw, sh = screen:size()
+  local sw, sh = WS.w, WS.h
   local pw, ph = wallpaper:size()
 
   if wall_fit == "fill" and (pw ~= sw or ph ~= sh) then
@@ -784,12 +791,12 @@ local function wallpaper_place()
   wall_filled:blit(wallpaper, 0, 0, pw, ph, 0, 0)
 end
 
-if not screen then
-  print("wm: this process was not given the screen")
+if not WS.w then
+  print("wm: no window server, so no desktop: " .. tostring(WS.why))
   return
 end
 
-local W, H = screen:size()
+local W, H = WS.w, WS.h
 
 -- The backbuffer. Everything is composed here and only rectangles that
 -- changed are copied out - `ui.md` 16.7. Under QEMU the framebuffer is
@@ -801,33 +808,28 @@ local W, H = screen:size()
 local back = gfx.surface{ w = W, h = H, shared = true }
 
 --
--- **The window server** (`docs/astra-display.md` D3b-2): started by init at
--- boot, and its manager door lent to this program alone. Greeted, and
--- handed the back buffer; from then on it composes what this process
--- describes and puts it on the screen (`wm/windowserver.lua`). Without one,
--- this process composes as it did.
+-- **The back buffer handed to the window server**, which composes into it
+-- and puts it on the screen. It takes the screen from the kernel console
+-- when it has it, and gives it back when this process ends or crashes
+-- (D3b-2 step 3) - which this process could not do for itself when it
+-- crashed.
 --
-local WS = use("/Kosmos/Libraries/wm/windowserver.lua"){ back = back }
+-- Until then the console was also drawing here, and the two cannot share:
+-- printing one line scrolls the whole display, which drags every window up
+-- sixteen pixels and leaves a copy of its tab behind. Nothing stops being
+-- reported: the console keeps writing to the serial line, which is where a
+-- system with a window manager on it is debugged from, and a panic takes
+-- the screen back regardless.
+--
+do
+  local ok, why = WS.connect(back)
 
---
--- The screen is the desktop's now.
---
--- Until this call the kernel console is also drawing here, and the two
--- cannot share: printing one line scrolls the whole display, which drags
--- every window up sixteen pixels and leaves a copy of its tab behind. It
--- reads as a compositor bug and is not - the console's scroll moves every
--- pixel, because as far as it knows every pixel is text.
---
--- **The window server takes it** when it is handed the back buffer, and
--- gives it back when this process ends or crashes (D3b-2 step 3) - which
--- this process could not do for itself when it crashed. Only without one
--- is it taken here.
---
--- Nothing stops being reported. The console keeps writing to the serial
--- line, which is where a system with a window manager on it is debugged
--- from, and a panic takes the screen back regardless.
---
-if not WS.on then sys.screen_take(true) end
+  if not ok then
+    print("wm: the window server does not compose, so no desktop: " .. tostring(why))
+    back:free()
+    return
+  end
+end
 
 --
 -- **What the desktop is doing, in the kernel's log, whether or not the
@@ -874,10 +876,6 @@ if not WS.on then sys.screen_take(true) end
 -- so `wm trace` opens the same desktop `wm` does.
 --
 local TRACE = false
-
--- `wm compose-check`: every pass composed by the scene and by the Lua it
--- replaces, and the pixels that differ said (Astra's D3a).
-local COMPOSE_CHECK = false
 
 -- Forward-declared: `step` below needs it and the definition is further
 -- down the file, next to the rest of the clock arithmetic.
@@ -1042,8 +1040,8 @@ end
 
 
 -- Whatever appearance was chosen last time, before the first pixel is
--- drawn. After `screen_take` because a failure to read it must not stop the
--- desktop starting, and before compositing because otherwise the first
+-- drawn. After the window server has the back buffer, because a failure
+-- to read it must not stop the desktop starting, and before compositing because otherwise the first
 -- frame is the default palette and the second is the chosen one.
 load_appearance()
 
@@ -1457,155 +1455,6 @@ end
 -- was already true: it is the only place that has to know.
 --
 --
--- **Rounding a window, by keeping its corners and putting them back.**
---
--- Everything a window puts on the screen goes through half a dozen calls -
--- a gradient for the tab, fills for the border and the controls, a blit or
--- a stretch for the content - and rounding each of them would be six places
--- to keep in step and six chances to miss one. A window that was rounded in
--- five of them has a square notch, which is worse than a square window.
---
--- So the corners are *saved* from the backbuffer before the window is
--- painted and copied back afterwards over the pixels outside the arc. The
--- backbuffer at that moment holds everything behind this window, because
--- the desktop composes back to front - so what goes back is exactly what
--- should show through, whatever it is, and no drawing call has to know any
--- of this is happening.
---
--- Four squares of `corner` a side, clipped to the damaged rectangle: 256
--- pixels at the default radius, saved and restored once per window per
--- rectangle. Against a window of half a million it does not appear in a
--- profile.
---
-OUT.keep_surface = gfx.surface{ w = 64, h = 64 }
-
---
--- The four corner squares of a frame, clipped to `r`, as
--- `{ sx, sy, w, h, kx, ky }` - where in the backbuffer, and where in the
--- scratch it goes. Empty when the rectangle touches no corner, which is the
--- common case for a window being dragged across the middle of the screen.
---
---
--- **One list, refilled at each call** (`compose.lua`, 18.439): its caller
--- keeps the corners, draws, and puts them back with no other call between,
--- so the list and its four entries are this function's, made once.
---
-local corner_list, corner_entries = {}, { {}, {}, {}, {} }
-local corner_at = { {}, {}, {}, {} }
-
-function OUT.corners(fx, fy, fw, fh, r)
-  local c = OUT.corner
-  local out = corner_list
-
-  for i = #out, 1, -1 do out[i] = nil end
-
-  if c <= 0 or c > 32 then return out end
-
-  local a = corner_at
-
-  a[1][1], a[1][2], a[1][3], a[1][4] = fx, fy, 0, 0
-  a[2][1], a[2][2], a[2][3], a[2][4] = fx + fw - c, fy, c, 0
-  a[3][1], a[3][2], a[3][3], a[3][4] = fx, fy + fh - c, 0, c
-  a[4][1], a[4][2], a[4][3], a[4][4] = fx + fw - c, fy + fh - c, c, c
-
-  for k = 1, 4 do
-    local at = a[k]
-    local x0 = math.max(at[1], r.x)
-    local y0 = math.max(at[2], r.y)
-    local x1 = math.min(at[1] + c, r.x + r.w)
-    local y1 = math.min(at[3] and at[2] + c or 0, r.y + r.h)
-
-    if x1 > x0 and y1 > y0 then
-      local e = corner_entries[#out + 1]
-
-      e[1], e[2], e[3], e[4] = x0, y0, x1 - x0, y1 - y0
-      e[5], e[6] = at[3] + (x0 - at[1]), at[4] + (y0 - at[2])
-      out[#out + 1] = e
-    end
-  end
-
-  return out
-end
-
-function OUT.keep(list)
-  for _, c in ipairs(list) do
-    OUT.keep_surface:blit(back, c[1], c[2], c[3], c[4], c[5], c[6])
-  end
-end
-
-function OUT.put_back(list, fx, fy, fw, fh)
-  for _, c in ipairs(list) do
-    back:blit_round(OUT.keep_surface, c[5], c[6], c[3], c[4], c[1], c[2],
-                    fx, fy, fw, fh, OUT.corner, true)
-  end
-end
-
---
--- **The page rounded inside the frame**, at its two bottom corners: the
--- frame's colour painted over the page's pixels outside an arc of the
--- corner less the border, anti-aliased by the same coverage that rounds the
--- frame itself. So the frame is a band of one width all the way round the
--- curve, where the page used to show through the frame's arc as a dark
--- sliver with a square line beside it. The top corners of the page meet
--- the title bar and are square, as a page under a bar is.
---
--- Through `blit_round` from a square of the frame's colour, filled again
--- only when the colour changes - focused and unfocused are the two.
---
-OUT.frame_fill = gfx.surface{ w = 64, h = 64 }
-
-
---
--- **A rounded window does not cover its corners**, so they are not cut out
--- of what is painted behind it. The pass below cut the frame's whole
--- rectangle away, which was exact while windows were square; with a corner
--- the desktop - or the window behind - was then never painted under the
--- arc, and `put_back` restored whatever the backbuffer last held there.
--- Diego photographed it on 24 September: Photo's own dark page outside its
--- bottom-right curve, left from where the window was before `tile` moved
--- it. Only a window that moved onto its own old pixels showed it, which is
--- why Tracker beside it looked right.
---
--- The four squares of `corner` a side, when this window is rounded -
--- the same condition `OUT.corners` rounds it under.
---
-function OUT.corner_squares(win)
-  local c = OUT.corner
-
-  if c <= 0 or c > 32 then return nil end
-
-  local fx, fy, fw, fh = frame_of(win)
-
-  -- Kept on the window and refilled, rather than five tables a pass.
-  local s = win.corner_squares or { 0, {}, {}, {}, {} }
-
-  win.corner_squares = s
-  s[1] = c
-  s[2][1], s[2][2] = fx, fy
-  s[3][1], s[3][2] = fx + fw - c, fy
-  s[4][1], s[4][2] = fx, fy + fh - c
-  s[5][1], s[5][2] = fx + fw - c, fy + fh - c
-
-  return s
-end
-
--- What of those squares lies inside `x0, y0 - x1, y1`, the part of a piece
--- the window was cut from, handed back to be painted behind it.
-function OUT.uncover(keep, round, x0, y0, x1, y1, rect)
-  local c = round[1]
-
-  for k = 2, 5 do
-    local sx, sy = round[k][1], round[k][2]
-    local ix0, iy0 = math.max(sx, x0), math.max(sy, y0)
-    local ix1, iy1 = math.min(sx + c, x1), math.min(sy + c, y1)
-
-    if ix1 > ix0 and iy1 > iy0 then
-      keep[#keep + 1] = rect(ix0, iy0, ix1 - ix0, iy1 - iy0)
-    end
-  end
-end
-
---
 -- **What the power button and the Super key do**, as Preferences' Power
 -- and Keyboard pages set them (`/Home/Preferences/power`, `/Home/Preferences/keyboard`). Read
 -- once at the start and told again by `handlers.keys` when a row changes,
@@ -1745,7 +1594,7 @@ local function bottom_room(win)
   return win.h + (win.floating and scale.px(DOCK_GAP) * 2 or 0)
 end
 
--- The stamp in the corner sits above the dock (`draw_desktop`), so where it
+-- The stamp in the corner sits above the dock (`stamp_now`), so where it
 -- was and where it is are both drawn again when the dock's room changes.
 local function bottom_changed(was)
   if was == reserved_bottom then return end
@@ -2281,51 +2130,9 @@ local function cursor_size()
 end
 
 --
--- Into the backbuffer, clipped by the surface primitives like anything
--- else. A run of identical pixels at a time rather than one fill per pixel:
--- the arrow is ten columns wide and mostly runs.
---
-local function draw_cursor()
-  for row = 0, OUT.hw_cursor and -1 or CURSOR_H - 1 do
-    local line = CURSOR[row + 1]
-    local col = 0
-
-    while col < CURSOR_W do
-      local ch = line:sub(col + 1, col + 1)
-
-      if ch == "." then
-        col = col + 1
-      else
-        local run = 1
-
-        while line:sub(col + run + 1, col + run + 1) == ch do
-          run = run + 1
-        end
-
-        back:fill(PT.x + col, PT.y + row, run, 1,
-                  (ch == "X") and 0xff000000 or 0xffffffff)
-        col = col + run
-      end
-    end
-  end
-
-  --
-  -- What is being carried, in a word, beside the arrow.
-  --
-  -- BeOS drew the icons themselves, half transparent, and that is nicer and
-  -- is also a picture this process would have to be given and hold. A label
-  -- says the one thing the person actually needs while the pointer is
-  -- moving - that a drag is happening at all, and how much of one - and it
-  -- costs a fill and a string.
-  --
-  OUT.draw_badge()
-end
-
---
 -- **A drag's label as a picture of its own** (D3b-2), for the scene to
 -- compose last of all: made again only when what it says or looks like
--- changes, in a region, so the window server can be handed it. The Lua
--- composing draws it straight onto the back buffer (`draw_cursor`).
+-- changes, in a region, so the window server can be handed it.
 --
 local badge_made = {}
 
@@ -2352,20 +2159,6 @@ function OUT.badge_now()
   end
 
   return badge_picture, PT.x + BADGE_DX, PT.y + BADGE_DY
-end
-
--- A drag's label beside the arrow, when there is one: drawn by
--- `draw_cursor` above, for the composing in Lua the scene is checked against.
-function OUT.draw_badge()
-  local bw, bh = badge_size()
-
-  if bw > 0 then
-    raised_box(PT.x + BADGE_DX, PT.y + BADGE_DY, bw, bh,
-               theme.raised)
-    back:text(PT.x + BADGE_DX + BADGE_PAD,
-              PT.y + BADGE_DY + BADGE_PAD // 2,
-              PT.drag.label, theme.text, theme.raised)
-  end
 end
 
 --
@@ -2395,7 +2188,7 @@ do
   OUT.hw_cursor = gfx.cursor and gfx.cursor(picture, 0, 0, PT.x, PT.y) == true
 
   -- Kept where the display does not draw it: the scene composes the arrow
-  -- from this (D3a), over everything, as `draw_cursor` drew it.
+  -- from this, over everything.
   if OUT.hw_cursor then picture:free() else OUT.cursor_picture = picture end
   print(OUT.hw_cursor and "wm: the pointer drawn by the display"
         or "wm: the pointer composited")
@@ -2412,67 +2205,6 @@ end
 -- is here are the pieces it draws with.
 --------------------------------------------------------------------------
 
---
--- The desktop under everything: the wallpaper, or the flat colour, and the
--- stamp in the corner.
---
--- Split out of `compose_rect` when occlusion culling arrived, because it
--- stopped being something that happens once per damage rectangle and became
--- something that happens once per *piece of a rectangle that no window
--- covers*. On a busy screen that is often nothing at all.
---
-local function draw_desktop(r)
-  --
-  -- The desktop: a picture if there is one, the flat colour if not.
-  --
-  -- **The fill is skipped when the picture covers this rectangle**, which
-  -- is every rectangle when the wallpaper is the size of the screen - the
-  -- case worth having, and the one the Appearance app tells you to aim for.
-  -- Filling first and blitting over it wrote every damaged pixel twice, and
-  -- composing is already eighty-odd per cent of a pass.
-  --
-  -- Only the part this rectangle covers, in any case: the compositor draws
-  -- in damaged pieces, and blitting the whole picture for a ten-pixel change
-  -- would cost the whole screen every time the clock ticked.
-  --
-  -- **No message anywhere near this.** The wallpaper is asked for once, when
-  -- somebody picks one, and lives here as a surface from then on. What
-  -- happens per frame is one `blit`, which is C.
-  --
-  local covered = wallpaper
-                  and r.x >= wall_x and r.y >= wall_y
-                  and (r.x + r.w) <= wall_x + wall_w
-                  and (r.y + r.h) <= wall_y + wall_h
-
-  if not covered then
-    back:fill(r.x, r.y, r.w, r.h, desktop_colour())
-  end
-
-  if wallpaper then
-    -- `blit` clips against both surfaces, so a rectangle that misses the
-    -- picture copies nothing and one that runs off its edge stops there.
-    back:blit(wall_filled or wallpaper, r.x - wall_x, r.y - wall_y, r.w, r.h, r.x, r.y)
-  end
-
-  -- What is running, bottom right, on the desktop and under everything
-  -- else. Drawn as part of the composite rather than once at startup, so a
-  -- window dragged over it and away again leaves it intact.
-  --
-  -- And only when this rectangle actually reaches that corner. The
-  -- primitives clip to the backbuffer, so a rectangle in the top left was
-  -- still paying for every glyph of it.
-  -- Measured rather than counted: the interface font need not be monospaced,
-  -- and a stamp positioned by character count would drift off the corner the
-  -- moment it is not.
-  -- Above the dock when there is one, which would otherwise sit on it.
-  local sx, sy = W - gfx.measure(stamp) - 10, H - reserved_bottom - gfx.font.h - 8
-
-  if r.x < W and r.x + r.w > sx and r.y < H and r.y + r.h > sy then
-    back:text(sx, sy, stamp, stamp_colour(), desktop_colour())
-  end
-
-end
-
 --------------------------------------------------------------------------
 -- A menu bar above a window that draws its own pixels -
 -- `/Kosmos/Libraries/wm/strips.lua` (`roadmap.md` 6zn).
@@ -2481,18 +2213,8 @@ end
 -- as a function that asks for it when called: handed as it is here, it
 -- would be nil.
 local strips = use("/Kosmos/Libraries/wm/strips.lua"){
-  back = back, theme = theme, add_damage = add_damage,
+  theme = theme, add_damage = add_damage,
   post = function(win, event) return post(win, event) end,
-}
-
--- One window, clipped - `/Kosmos/Libraries/wm/drawwindow.lua`
--- (`roadmap.md` 6zn). `resizable` is declared above and given its body
--- below, so it is handed as a function that asks for it when called.
---
-local draw_window = use("/Kosmos/Libraries/wm/drawwindow.lua"){
-  OUT = OUT, back = back, theme = theme, windows = windows,
-  strips = strips, frame_of = frame_of,
-  resizable = function(win) return resizable(win) end,
 }
 
 --------------------------------------------------------------------------
@@ -2580,35 +2302,19 @@ end
 
 -- Compositing - `/Kosmos/Libraries/wm/compose.lua` (`roadmap.md` 6zn).
 --
---
--- **The scene** (`docs/astra-display.md` D3a): the desktop composed in C,
--- described before each pass by `OUT.describe` - below, where everything it
--- reads is defined. `wm compose-check` composes each pass the old way too
--- and counts the pixels that differ.
+-- **The scene** (`docs/astra-display.md` D3a, D3b-2): described before each
+-- pass by `OUT.describe` - below, where everything it reads is defined -
+-- and composed by the window server, which puts it on the screen.
 --
 local scene = gfx.scene(back)
 
 local compose = use("/Kosmos/Libraries/wm/compose.lua"){
   scene = scene,
   describe = function() return OUT.describe() end,
-  checking = function() return COMPOSE_CHECK end,
   ws = WS,
-  OUT = OUT,
-  OUTLINE = OUTLINE,
   P = P,
-  PT = PT,
-  back = back,
   damage = damage,
   mirror = mirror,
-  draw_cursor = draw_cursor,
-  draw_desktop = draw_desktop,
-  draw_window = draw_window,
-  focused_colour = focused_colour,
-  frame_of = frame_of,
-  menus = menus,
-  osd = osd,
-  screen = screen,
-  windows = windows,
 }
 
 --------------------------------------------------------------------------
@@ -2656,9 +2362,7 @@ end
 -- the window server - the slot it was handed over in (`WS.pic`).
 --
 function OUT.pic(s)
-  if WS.on then return WS.pic(s) end
-
-  return s
+  return WS.pic(s)
 end
 
 --
@@ -2888,7 +2592,7 @@ local function swap_surface(win, w, h)
   --
   -- **One that draws its own pixels** (`roadmap.md` 6zz e): the frame takes
   -- its new size now, and the picture it has is shown stretched into it
-  -- (`drawwindow`, which stretches whenever `src_w` is not the width) until
+  -- (the scene stretches whenever `src_w` is not the width) until
   -- the application hands over a region the new size and draws in it. It
   -- is told the size of its own pixels, in its points - the window less a
   -- menu bar - which is what it makes the region for.
@@ -6441,49 +6145,6 @@ local function window_at(x, y)
   return nil
 end
 
---
--- **A window's shadow, in the rectangle being composed**, drawn just before
--- the window itself so everything above it paints over it.
---
--- Here and not in `draw_window`, because the shadow lies *outside* the
--- frame and `draw_window` is handed only the frame's visible part - which
--- held a shadow clipped to it to nothing at all (Diego, 24 September: "the
--- new drop shadow does not work"). Clipped to all of `r` instead, and cast
--- by a window whose frame is hidden too, since its shadow can still show
--- beside whatever hides it.
---
--- A bare window casts none: the backdrop is the thing everything sits on
--- and the strip is chrome, and a shadow under either would be a dark band
--- across a desktop that has nothing above it. Nor does a menu or a window
--- that fills the screen.
---
-function OUT.cast_shadow(win, r)
-  if OUT.shadow <= 0 or win.hidden or win.backdrop or win.strip
-     or win.fullscreen or win.kind == "menu" or win.tip then
-    return
-  end
-
-  local sx, sy, sw, sh = OUT.shadowed(win)
-
-  if sx >= r.x + r.w or sx + sw <= r.x or sy >= r.y + r.h
-     or sy + sh <= r.y then
-    return
-  end
-
-  local fx, fy, fw, fh = frame_of(win)
-
-  --
-  -- **Deeper in front, for a window with no tab** (`roadmap.md` 6zj): a
-  -- tab's colour said which window has the focus, and without one the
-  -- three and the shadow say it - the front one's as it always was, the
-  -- rest lighter. The same spread, so what a shadow damages is unchanged.
-  --
-  local alpha = (win.headed and win ~= focused_window()) and 55 or nil
-
-  back:shadow(fx, fy, fw, fh, OUT.corner, OUT.shadow, alpha,
-              r.x, r.y, r.w, r.h)
-end
-
 -- The window whose contents are under a point, for the wheel: none over a
 -- title bar or a menu.
 function OUT.wheel_target(x, y)
@@ -6655,8 +6316,6 @@ do
 
     if entry == "trace" then
       TRACE = true
-    elseif entry == "compose-check" then
-      COMPOSE_CHECK = true
     elseif entry ~= "" then
       rest[#rest + 1] = entry
     end
@@ -7182,7 +6841,6 @@ end
 -- window server when there is one, as soon as this process has ended.
 if OUT.hw_cursor then gfx.cursor_hide() end
 
-if not WS.on then sys.screen_take(false) end
 
 back:free()
 

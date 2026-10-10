@@ -16,9 +16,10 @@
 -- held and lets the server forget those, so it never holds a region this
 -- process has finished with for longer than a pass.
 --
--- With no window server - a machine with no screen for it, or a door that
--- did not answer - `on` is false and the window manager composes in its
--- own process, as it did before.
+-- **There is no desktop without one** (step 4): the window manager no
+-- longer composes or touches the screen itself, so with no window server -
+-- a machine with no screen, or a window manager started where the door is
+-- not lent - `WS.w` is nil and it ends, saying why.
 --
 
 local REQUEST = "<I4I4I4I4I4I4I8"
@@ -39,8 +40,8 @@ local ERRORS = {
 -- The pages a region of `bytes` takes.
 local function pages(bytes) return (bytes + 4095) // 4096 end
 
-return function(ctx)
-  local back = ctx.back
+return function()
+  local back
   local WS = { on = false }
 
   -- One request: true and its reply's three words, or nil and why.
@@ -189,13 +190,20 @@ return function(ctx)
 
     if not done then return nil, why end
 
-    -- And how many pictures it holds now, the first word of the reply.
+    -- And how many pictures it holds now, the first word of the reply -
+    -- said when it changes, which a window opened or closed does: what the
+    -- window server holds should come back down when the window goes.
+    if why ~= WS.held then
+      WS.held = why
+      print(("wm: the window server holds %d pictures"):format(why))
+    end
+
     return drawn, why
   end
 
   --
-  -- Greeted, then handed the back buffer and a scene's region. Anything
-  -- refused leaves `on` false, and the desktop is composed here.
+  -- Greeted first, for the screen's size, which the back buffer is made
+  -- at; then handed it (`WS.connect`) and a scene's region.
   --
   --
   -- **With an endpoint of this process's own**, which goes when it does:
@@ -208,25 +216,33 @@ return function(ctx)
   local hello, w, h = ask(request(OP.hello), WS.alive)
 
   if not hello then
-    print("wm: no window server: " .. tostring(w))
+    WS.why = tostring(w)
     return WS
   end
 
+  WS.w, WS.h = w, h
   print(("wm: the window server answers, the screen %dx%d"):format(w, h))
 
-  local cap, _, pitch = back:region()
-  local bw, bh = back:size()
-  local ok, why = nil, "the back buffer has no region of its own"
+  --
+  -- The back buffer handed over, and a region for the scene: true, or
+  -- false and why.
+  --
+  function WS.connect(surface)
+    back = surface
 
-  if cap then ok, why = ask(request(OP.back, 0, bw, bh, pitch), cap) end
-  if ok then ok, why = scene_region(16384) end
+    local cap, _, pitch = back:region()
+    local bw, bh = back:size()
+    local ok, why = nil, "the back buffer has no region of its own"
 
-  if not ok then
-    print("wm: the window server does not compose: " .. tostring(why))
-    return WS
-  end
+    if cap then ok, why = ask(request(OP.back, 0, bw, bh, pitch), cap) end
+    if ok then ok, why = scene_region(16384) end
 
-  WS.on = true
-  print(("wm: the window server composes, %dx%d"):format(bw, bh))
+    if not ok then return false, why end
+
+    WS.on = true
+    print(("wm: the window server composes, %dx%d"):format(bw, bh))
+    return true
+    end
+
   return WS
 end

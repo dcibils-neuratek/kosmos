@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""The desktop composed in C (`docs/astra-display.md` D3a, D3b-2).
+"""The desktop composed by the window server (`docs/astra-display.md` D3b-2).
 
 The window manager describes its scene before each pass - every window's
 place, stacking, picture and what it wears, the menus, the pointer - and
 the window server composes it (`user/servers/windowserver.c`), from the
 pictures it was handed as regions and the scene written into a region they
-share. Booted as `wm compose-check`, each pass is composed there and again
-by the Lua it replaced, over it, and the pixels that differ are counted.
+share, and puts it on the screen. Since step 4 the window manager has no
+composing of its own; until then `wm compose-check` held the two to the
+same pixels here, over two thousand passes, and `test_draw` holds the scene
+on the Mac.
 
 One desktop, as much of it as can be put in front of the composer: the
 Deskbar, the desktop's icons and wallpaper, Calculator and Preferences
 (their shadows, corners and three lights), a cube turning (a pass every
 frame), a menu, a window moved over another, and the scale changed to 150
-per cent and back. Every pass composed the same both
-ways: not one pixel differs, over at least two hundred passes.
+per cent and back: every picture handed over and no pass refused, the
+desktop on the screen, a closed window's pictures let go, and the screen
+given back to the console when the window manager is killed.
 
 Usage: run_scene.py IMAGE
 """
@@ -96,7 +99,7 @@ def boot(image, telnet, web):
         "-netdev", "user,id=net0," + forward,
         "-device", R.device(image, "net") + ",netdev=net0",
         "-fw_cfg", "name=opt/kosmos/telnetd,string=23",
-        "-fw_cfg", "name=opt/kosmos/boot,string=wm compose-check",
+        "-fw_cfg", "name=opt/kosmos/boot,string=wm",
     ])
 
     try:
@@ -120,6 +123,9 @@ def main():
                            ("scale", SCALE), ("shadow", SHADOW)):
             session.put(text.encode(), "/Temporary/%s.lua" % name)
 
+        # A desktop with as much as can be put in front of the window
+        # server: shadows on, windows with their lights, a cube turning, a
+        # menu, a window moved over another, 150 per cent and back.
         session.run("/Temporary/shadow.lua")
 
         for program in ("/Kosmos/Apps/calc.lua", "/Kosmos/Apps/preferences.lua",
@@ -135,28 +141,30 @@ def main():
         time.sleep(5)
         session.run("/Temporary/scale.lua 100")
         time.sleep(5)
+        said["desktop"] = plain(guest)
+
+        # A window shown and closed: the pictures the window server holds
+        # go up while it is open and come back down after.
         guest._read_available()
         said["before"] = len(guest.seen)
         session.run("/Temporary/launch.lua /Temporary/closer.lua")
         guest.wait_for("CLOSER closed", "the window that closes")
-        said["closed"] = len(guest.seen)
-
-        deadline = time.time() + 60
+        # Where the line is, not how much has been read: what follows it
+        # may already have arrived with it.
+        said["closed"] = guest.seen.find("CLOSER closed", said["before"])
+        deadline = time.time() + 30
 
         while time.time() < deadline:
             guest._read_available()
-            checks = re.findall(r"wm: compose check: (\d+) passes composed both ways, "
-                                r"(-?\d+) pixels differ", guest.seen)
 
-            later = re.findall(r"pictures held", guest.seen[said["closed"] + 200:])
-
-            if checks and int(checks[-1][0]) >= 200 and len(later) >= 2:
+            if "pictures" in guest.seen[said["closed"]:]:
+                time.sleep(2)
+                guest._read_available()
                 break
 
-            time.sleep(1)
+            time.sleep(0.5)
 
-        said["checks"] = checks
-        said["seen"] = guest.seen
+        said["menu"] = "SCENE menu true" in guest.seen
 
         # **The screen given back** (step 3): the window manager killed, and
         # the window server gives the screen to the console, which clears
@@ -164,43 +172,43 @@ def main():
         # window manager started from Telnet is not lent the door, which is
         # right, and the console's own shell does not answer after the kill,
         # which is older than this and on `roadmap.md`.)
-        said["desktop"] = plain(guest)
         session.run("kill wm")
         guest.wait_for("the window manager is gone; the screen is the console's",
                        "the screen given back")
         time.sleep(2)
         said["console"] = plain(guest)
-        said["menu"] = "SCENE menu true" in guest.seen
     except Exception as e:                  # noqa: BLE001 - said below
         fails.append("the machine stopped: %s: %s" % (type(e).__name__, str(e).splitlines()[0]))
     finally:
         seen = guest.seen
         guest.close()
 
-    checks = said.get("checks") or []
+    # The window server greeted and composing, and every picture handed over.
+    if not re.search(r"windowserver: the screen, \d+x\d+", seen) \
+            or not re.search(r"wm: the window server answers, the screen \d+x\d+", seen):
+        fails.append("the window manager did not greet the window server: %r"
+                     % re.findall(r"[^\n]*window ?server[^\n]*", seen)[:4])
+    if not re.search(r"wm: the window server composes, \d+x\d+", seen):
+        fails.append("the window server does not compose: %r"
+                     % re.findall(r"wm: [^\n]*window server[^\n]*", seen)[:4])
+    for refused in ("with no region of its own", "the window server did not compose",
+                    "the window server was not given", "no desktop"):
+        if refused in seen:
+            at = seen.find(refused)
+            fails.append("a picture or a pass refused: " + seen[seen.rfind("\n", 0, at) + 1:][:200])
 
-    if not checks:
-        fails.append("the window manager never said its compose check")
-    else:
-        passes, differ = (int(v) for v in checks[-1])
-
-        if passes < 200:
-            fails.append("only %d passes were composed both ways" % passes)
-
-        if differ != 0:
-            first = next((c for c in checks if int(c[1]) != 0), checks[-1])
-            where = re.findall(r"wm: compose check: (\d+ differ in [^\n]*)", seen)
-            fails.append("the scene and the Lua differ in %d pixels over %d passes (first at "
-                         "pass %s): %s" % (differ, passes, first[0], "; ".join(where[:8])))
+    # What it composed is on the screen: a desktop, not one colour.
+    if "desktop" in said and said["desktop"] >= 0.8:
+        fails.append("the screen is %.0f%% one colour with the desktop up" % (said["desktop"] * 100))
 
     # The pictures held: before the window, while it was open, and after.
-    seen_then = said.get("seen") or ""
     held = [(m.start(), int(m.group(1))) for m in
-            re.finditer(r"pixels differ, (\d+) pictures held", seen_then)]
+            re.finditer(r"wm: the window server holds (\d+) pictures", seen)]
+    said["held"] = None
     if "before" in said and "closed" in said:
         before = [n for at, n in held if at < said["before"]]
         during = [n for at, n in held if said["before"] <= at < said["closed"]]
-        after = [n for at, n in held if at > said["closed"] + 200]
+        after = [n for at, n in held if at >= said["closed"]]
         if not before or not during or not after:
             fails.append("the pictures held were not said around the window: %r" % held[-12:])
         elif not (max(during) > before[-1] and after[-1] == before[-1]):
@@ -211,47 +219,29 @@ def main():
 
     if "console" not in said:
         fails.append("the window manager was not killed, or the screen not given back")
-    elif not (said["console"] > 0.9 and said["desktop"] < 0.8):
+    elif not (said["console"] > 0.9 and said.get("desktop", 1) < 0.8):
         fails.append("the screen was not given back: the commonest colour %.0f%% of the "
-                     "desktop, %.0f%% after the kill" % (said["desktop"] * 100,
+                     "desktop, %.0f%% after the kill" % (said.get("desktop", 0) * 100,
                                                        said["console"] * 100))
 
     if not said.get("menu"):
         fails.append("the menu did not open")
-    # The window server (D3b-2): started by init, its door lent to the
-    # window manager alone, which greets it.
-    if not re.search(r"windowserver: the screen, \d+x\d+", seen) \
-            or not re.search(r"wm: the window server answers, the screen \d+x\d+", seen):
-        fails.append("the window manager did not greet the window server: %r"
-                     % re.findall(r"[^\n]*window ?server[^\n]*", seen)[:4])
-    # And composing there (step two): the back buffer and the scene's
-    # region handed over, every picture the scene names in a region of its
-    # own, and no pass refused - so the pixels the check compared are the
-    # window server's.
-    if not re.search(r"wm: the window server composes, \d+x\d+", seen):
-        fails.append("the window server does not compose: %r"
-                     % re.findall(r"wm: [^\n]*window server[^\n]*", seen)[:4])
-    for refused in ("with no region of its own", "the window server did not compose",
-                    "the window server was not given"):
-        if refused in seen:
-            at = seen.find(refused)
-            fails.append("a picture or a pass refused: " + seen[seen.rfind("\n", 0, at) + 1:][:200])
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
     if fails:
-        print("FAIL: %d of 7 checks on the desktop composed in C:" % len(fails))
+        print("FAIL: %d of 7 checks on the desktop composed by the window server:" % len(fails))
         for f in fails:
             print("  " + f)
         return 1
 
-    print("PASS: 7 checks on the desktop composed in C (the window server greeted and composing; %s passes composed by the window server and by "
-          "the Lua it replaced - the Deskbar, the desktop, Calculator, Preferences, a cube "
-          "turning, a menu, a window moved, 150 per cent and back - and not one "
-          "pixel differs; a window's picture held while it was open and let go after it "
-          "closed, %d, %d, %d; the window manager killed and the screen the console's, %.0f%% one "
-          "colour)." % ((checks[-1][0],) + said["held"]
-                                                             + (said["console"] * 100,)))
+    print("PASS: 7 checks on the desktop composed by the window server (greeted and composing; "
+          "every picture in a region of its own and no pass refused - the Deskbar, the desktop, "
+          "Calculator, Preferences, a cube turning, a menu, a window moved, 150 per cent and "
+          "back; the desktop on the screen, %.0f%% one colour; a window's pictures held while "
+          "it was open and let go after it closed, %d, %d, %d; the window manager killed and "
+          "the screen the console's, %.0f%% one colour)."
+          % ((said["desktop"] * 100,) + said["held"] + (said["console"] * 100,)))
     return 0
 
 
