@@ -76,10 +76,20 @@ struct browse {
     unsigned asks;
 };
 
+/*
+ * A name asked for. **The question outlives the wait**: a caller that asked
+ * with a short wait - a window asking on its clock, which may not wait in
+ * a paint - is told "not yet" when its wait ends (`waited`), and the
+ * question goes on being asked until `until`, so the answer is kept for its
+ * next look rather than read and forgotten.
+ */
+#define ASKED_FOR     5u            /* seconds a name is asked for */
+
 struct resolving {
     char name[MDNS_NAME_MAX + 1];
-    uint64_t who;
-    uint64_t until;
+    uint64_t who;                   /* the caller still parked, or 0 */
+    uint64_t waited;                /* when its wait ends */
+    uint64_t until;                 /* when the question does */
     uint64_t next_ask;
     unsigned asks;
 };
@@ -396,7 +406,11 @@ static void host_known(const char *host, const uint8_t *a, uint32_t ttl)
             rep.has_address = 1;
             memcpy(rep.address.byte, a, 4);
             strncpy(rep.host, host, MDNS_NAME_MAX);
-            answer(resolvings[i].who, &rep);
+
+            if (resolvings[i].who != 0) {
+                answer(resolvings[i].who, &rep);
+            }
+
             remove_at(resolvings, &resolvings_n, i, sizeof(*resolvings));
         } else {
             i++;
@@ -633,12 +647,16 @@ static void tick(void)
     while (i < resolvings_n) {
         struct resolving *r = &resolvings[i];
 
-        if (t >= r->until) {
+        if (r->who != 0 && t >= r->waited) {
             struct mdns_reply rep;
 
             memset(&rep, 0, sizeof(rep));
             rep.error = MDNS_ERR_TIMEOUT;
             answer(r->who, &rep);
+            r->who = 0;                 /* told; the question goes on */
+        }
+
+        if (t >= r->until) {
             remove_at(resolvings, &resolvings_n, i, sizeof(*resolvings));
             continue;
         }
@@ -810,19 +828,37 @@ static void serve(const struct message *msg, uint64_t sender)
             break;
         }
 
-        if (!ROOM(resolvings)) {
-            rep.error = MDNS_ERR_FULL;
-            break;
+        /* Asked already, by somebody whose wait ended: parked on that
+         * question, which is still being asked. */
+        r = NULL;
+
+        {
+            unsigned k;
+
+            for (k = 0; k < resolvings_n; k++) {
+                if (same_name(resolvings[k].name, req.name) && resolvings[k].who == 0) {
+                    r = &resolvings[k];
+                }
+            }
+        }
+
+        if (r == NULL) {
+            if (!ROOM(resolvings)) {
+                rep.error = MDNS_ERR_FULL;
+                break;
+            }
+
+            r = &resolvings[resolvings_n++];
+            memset(r, 0, sizeof(*r));
+            strncpy(r->name, req.name, MDNS_NAME_MAX);
+            r->next_ask = now();
         }
 
         /* Parked: answered when the address comes or the wait ends. */
-        r = &resolvings[resolvings_n++];
-        memset(r, 0, sizeof(*r));
-        strncpy(r->name, req.name, MDNS_NAME_MAX);
         r->who = sender;
-        r->until = now() + (uint64_t)(req.wait_ticks ? req.wait_ticks : 5u * tick_hz)
-                           * hz / tick_hz;
-        r->next_ask = now();
+        r->waited = now() + (uint64_t)(req.wait_ticks ? req.wait_ticks : 5u * tick_hz)
+                            * hz / tick_hz;
+        r->until = r->waited > now() + ASKED_FOR * hz ? r->waited : now() + ASKED_FOR * hz;
         tick();
         return;
     }

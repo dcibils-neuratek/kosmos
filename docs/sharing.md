@@ -1178,8 +1178,21 @@ Then, each when its time comes:
     `_smb._tcp.local` with a PTR, SRV, TXT and A, compressed, and for a
     name; `mdns browse _smb._tcp` and `mdns resolve studio.local` at the
     prompt say what it found.
-  - **N11d - seen**: Tracker's Network group lists the SMB servers `mdnsd`
-    has seen, and Connect takes a `.local` name; the M700 finds the Mac.
+  - **N11d - seen** (built 10 October, 0.11.127, `testing.md` 18.522):
+    Tracker's Network group lists the SMB servers `mdnsd` has seen, and
+    Connect takes a `.local` name; the M700 finds the Mac. **A departure
+    from *At a glance* above, which had `/Network`'s own listing - smbfs's -
+    carry the servers seen**: Tracker asks `/Discovery` itself, with the
+    pass it already makes, and adds those `smbfs` does not have as "seen,
+    not signed in" - the page that offers Sign in, with what the server
+    calls itself and no Forget, since it would only be seen again. Why: a
+    server seen is not a path until it is signed into, so it was never
+    `smbfs`'s to list; and `smbfs` would have held a capability and asked a
+    second server for something only a window shows (*kits supply, apps
+    orchestrate*). Connect asks `/Discovery` for a `.local` name with a
+    wait of one tick and again on its clock - `mdnsd` keeps the question
+    alive for five seconds after a short wait ends - and hands `smbfs` the
+    address.
 - **N12 - smbd, read-only**: the Servers window's File sharing page as drawn;
   `smbclient` and the Mac's `mount_smbfs` through a forwarded port list and
   read what `/Home` holds; a wrong password and a guest refused. **Needs the

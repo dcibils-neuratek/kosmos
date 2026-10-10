@@ -22775,3 +22775,29 @@ own: a Mac's file sharing on port 445 with its address, and three AirPlay
 receivers (N11c, on real hardware; their names are Diego's and not here).
 The whole gate, 64 of 65: `x86-film`, which passes alone - and which has
 failed in every whole gate of 10 October, so its card says so.
+
+## 18.522 Servers seen, in Tracker, and reached by name (N11d)
+
+`docs/sharing.md` N11d, which closes N11. Tracker, with the network pass it
+already makes, asks `/Discovery` for `_smb._tcp` - answered at once from what
+`mdnsd` keeps, and keeping it asking - and its Network group lists each
+server heard of that `smbfs` does not already have, as seen and not signed
+into: its page says what it calls itself, its address and port, and offers
+Sign in, which opens Connect at its address. Connect takes a `.local` name:
+asked of `/Discovery` with a wait of one tick, so the window never waits,
+and again on its clock; `mdnsd` now keeps a question alive five seconds after
+a short wait has been answered "not yet", so the answer is there for the
+next look. `smbfs` is given the address.
+
+`x86-mdns` 7, a fourth boot: the desktop on the wire, Tracker's Network group
+"Studio seen", and Connect given `smb://studio.local` saying "studio.local
+is 10.9.0.1". **Controls**, in one run: Tracker not passing what it heard -
+"tracker: network none"; Connect handing the name to `smbfs` as typed -
+"Asking studio.local". The same run failed the stranger check through a
+race in the test, not the server: the peer's unasked record could arrive
+after the program had asked for that name, when keeping it is right; `mdns
+after 3 resolve` asks three seconds on, and the suite passed twice after.
+The whole gate, 62 of 65: `x86-share-2` (the Mac's peer "not answering"
+partway through a 64 MB read), `x86-mdns` (Tracker not yet listing in 60 s -
+the desktop boot now has two minutes) and `x86-display-1`, all three passing
+alone. `x86-share-2` under load is the one to watch after the TCP changes.

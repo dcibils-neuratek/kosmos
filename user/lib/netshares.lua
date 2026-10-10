@@ -88,8 +88,16 @@ end
 -- asked; a server refused, or remembered and not signed into, is `lock`ed
 -- - the drawing's "seen, not signed in", whose page offers Sign in.
 --
-function netshares.servers(status, listing, shares_of, recent)
+function netshares.servers(status, listing, shares_of, recent, discovered)
   local out, seen = {}, {}
+
+  -- An address as smbfs keeps it - "10.9.0.1", or "10.9.0.1:4466" for
+  -- another port - known whichever way it was written.
+  local function known(address)
+    local host = tostring(address):match("^(.-):445$") or tostring(address)
+
+    return seen[host] or seen[host .. ":445"]
+  end
 
   for _, rec in ipairs(status or {}) do
     if not rec.probe and not seen[rec.address] then
@@ -127,10 +135,29 @@ function netshares.servers(status, listing, shares_of, recent)
   end
 
   for _, r in ipairs(recent or {}) do
-    if r.address and not seen[r.address] then
+    if r.address and not known(r.address) then
       seen[r.address] = true
       out[#out + 1] = { address = r.address, name = r.address, lock = true,
                         state = "remembered", shares = {}, remembered = r }
+    end
+  end
+
+  --
+  -- **And what is on the network** (`docs/sharing.md` N11d): every SMB
+  -- server `mdnsd` has heard of - `/Discovery`, a list of `{ name, host,
+  -- port, address }` - that is none of the above, by the name it gives
+  -- itself, not signed into. Its page offers Sign in, as a remembered
+  -- one's does.
+  --
+  for _, d in ipairs(discovered or {}) do
+    if d.address then
+      local address = d.address .. ((d.port and d.port ~= 445) and (":" .. d.port) or "")
+
+      if not known(address) then
+        seen[address] = true
+        out[#out + 1] = { address = address, name = d.name or address, lock = true,
+                          state = "seen", shares = {}, discovered = d }
+      end
     end
   end
 

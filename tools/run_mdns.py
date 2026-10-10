@@ -22,6 +22,7 @@ Usage: run_mdns.py IMAGE
 
 import os
 import random
+import re
 import struct
 import sys
 
@@ -95,7 +96,11 @@ def questions(packet):
     return out
 
 
-def boot(image, command, setup=None):
+def boot(image, command, setup=None, done=None):
+    """One boot running `command`, the peer answering, until `done(seen)` -
+    by default, until the `mdns` program has said something."""
+    done = done or (lambda seen: "mdns: " in seen.split("mdnsd: listening")[-1])
+
     ours, theirs = random.randint(20000, 40000), random.randint(40001, 60000)
     seg = U.Segment(ours, theirs)
     board = "X86_ARGS" if R.machine(image) == "x86_64" else "QEMU_ARGS"
@@ -105,7 +110,8 @@ def boot(image, command, setup=None):
                    "remote.type=inet,remote.host=127.0.0.1,remote.port=%d" % (theirs, ours),
         "-device", R.device(image, "net") + ",netdev=net0",
         "-fw_cfg", "name=opt/kosmos/net_address,string=10.9.0.2/24",
-        "-fw_cfg", "name=opt/kosmos/boot,string=" + command,
+        # A comma in a QEMU option's value is written twice.
+        "-fw_cfg", "name=opt/kosmos/boot,string=" + command.replace(",", ",,"),
     ])
     try:
         guest = R.Guest(image, 120)
@@ -119,8 +125,10 @@ def boot(image, command, setup=None):
         guest.wait_for("mdnsd: listening on 224.0.0.251 port 5353", "mdnsd listening")
         if setup:
             setup(seg)
-        end = R.time.monotonic() + 25
-        while R.time.monotonic() < end and "mdns: " not in guest.seen.split("mdnsd: listening")[-1]:
+        # Two minutes: the desktop's boot under the whole gate's load is
+        # slow to start Tracker, and its network pass is every five seconds.
+        end = R.time.monotonic() + 120
+        while R.time.monotonic() < end and not done(guest.seen):
             seg.pump(0.2)
             for dst, packet in seg.frames:
                 for q, kind in questions(packet):
@@ -168,7 +176,9 @@ def main():
         seg.udp(U.group_mac(MDNS), MDNS, 5353, 5353, a_answer("stranger.local", bytes([10, 9, 0, 66])))
         seg.pump(1)
 
-    seen, _ = boot(image, "mdns resolve stranger.local", unasked)
+    # Asked three seconds on, so the record nobody asked for is certainly
+    # there first: asked for before it came, keeping it would be right.
+    seen, _ = boot(image, "mdns after 3 resolve stranger.local", unasked)
     if "mdns: stranger.local: nobody answered for that name" not in seen:
         fails.append("a name nobody asked about was kept, or the wait did not end: %r"
                      % [l for l in seen.splitlines() if l.startswith("mdns")][:4])
@@ -176,16 +186,34 @@ def main():
     if " died: " in seen:
         fails.append("something died")
 
+    # **Seen in Tracker, and reached by name** (N11d): the desktop, its
+    # Tracker listing Studio in the Network group as seen and not signed
+    # into, and Connect given `smb://studio.local`, finding its address.
+    def desktop_done(seen):
+        return (re.search(r"tracker: network [^\n]*Studio seen", seen) is not None
+                and "connect: studio.local is 10.9.0.1" in seen)
+
+    seen, _ = boot(image, "wm notifications,desktop,deskbar,connect:smb://studio.local",
+                   done=desktop_done)
+    if not re.search(r"tracker: network [^\n]*Studio seen", seen):
+        fails.append("Tracker's Network group did not list Studio as seen: %r"
+                     % re.findall(r"tracker: network [^\n]*", seen)[-3:])
+    if "connect: studio.local is 10.9.0.1" not in seen:
+        fails.append("Connect did not find studio.local: %r"
+                     % re.findall(r"connect: [^\n]*", seen)[-3:])
+
     if fails:
-        print("FAIL: %d of 5 checks on finding what is on the network by name:" % len(fails))
+        print("FAIL: %d of 7 checks on finding what is on the network by name:" % len(fails))
         for f in fails:
             print("  " + f)
         return 1
 
-    print("PASS: 5 checks on finding what is on the network by name (mdnsd on a wire with a "
+    print("PASS: 7 checks on finding what is on the network by name (mdnsd on a wire with a "
           "file server called Studio: _smb._tcp.local asked of the group at a time to live of "
           "255; Studio listed with studio.local:445 and 10.9.0.1 from its PTR, SRV and A, "
-          "compressed; studio.local resolved; an A nobody asked for not kept)")
+          "compressed; studio.local resolved; an A nobody asked for not kept; Studio in "
+          "Tracker's Network group, seen and not signed into; and Connect given "
+          "smb://studio.local finding 10.9.0.1)")
     return 0
 
 

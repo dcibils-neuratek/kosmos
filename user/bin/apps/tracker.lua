@@ -55,6 +55,7 @@ local placelib = use("/Kosmos/Libraries/places.lua")
 local filemenu = use("/Kosmos/Libraries/filemenu.lua")
 local sidebar  = use("/Kosmos/Libraries/sidebar.lua")
 local netshares = use("/Kosmos/Libraries/netshares.lua")
+local mdns, ipv4 = use("/Kosmos/Libraries/mdns.lua"), use("/Kosmos/Libraries/ipv4.lua")
 local clock    = use("/Kosmos/Libraries/clock.lua")
 local prefs    = use("/Kosmos/Libraries/prefs.lua")
 local theme = ui.theme
@@ -1258,8 +1259,9 @@ end
 -- **A server seen and not signed into** (`docs/sharing.html`'s third
 -- state): one remembered from Connect to Server, or one that refused, as
 -- a card of what is known of it - asking it nothing - with Sign in... and
--- Forget. Until mDNS (step N11) a server is "seen" by having been asked
--- for before; the drawing's "Calls itself Synology DS220+" waits for that.
+-- Forget - or one heard of on the network (`docs/sharing.md` N11d), with
+-- what it calls itself and Sign in, and no Forget, since it would only be
+-- heard of again.
 --
 local seen_card = ui.view{ x = SIDE_W, y = CONTENT_Y, w = W - SIDE_W,
                            h = H - CONTENT_Y - FOOT_H, hidden = true,
@@ -1281,6 +1283,10 @@ local function seen_facts(s)
     { "Guests", "this machine does not try them" },
   }
 
+  if s.discovered and s.discovered.host then
+    table.insert(out, 1, { "Calls itself", s.discovered.host })
+  end
+
   if s.rec and s.rec.why and s.rec.why ~= "" then
     out[#out + 1] = { "Last said", s.rec.why }
   end
@@ -1295,10 +1301,12 @@ function seen_card:draw(g)
 
   if not s then return end
 
+  -- As tall as what it says: the facts, and the buttons under them.
+  local card_h = math.max(CARD_H, 108 + #seen_facts(s) * 28 + 8 + 16 + sign_in.h + 20)
   local cx = (self.w - CARD_W) // 2
-  local cy = math.max(16, (self.h - CARD_H) // 2)
+  local cy = math.max(16, (self.h - card_h) // 2)
 
-  g:fill_round(cx, cy, CARD_W, CARD_H, theme.raised, 18)
+  g:fill_round(cx, cy, CARD_W, card_h, theme.raised, 18)
   g:line_icon(cx + (CARD_W - 30) // 2, cy + 20, "server", theme.text_dim, 30)
 
   local title = s.name or s.address
@@ -1307,6 +1315,7 @@ function seen_card:draw(g)
          theme.text, theme.raised, "heading")
 
   local sub = s.remembered and "Remembered \u{b7} not signed in"
+              or s.discovered and "Seen on the network \u{b7} not signed in"
               or "Not signed in"
 
   g:text(cx + (CARD_W - gfx.measure(sub)) // 2, cy + 58 + gfx.height("heading") + 2,
@@ -1335,7 +1344,14 @@ function seen_card:draw(g)
   local by = fy + fh + 16
 
   sign_in.y, forget.y = by, by
-  sign_in.x = cx + (CARD_W - sign_in.w - 10 - forget.w) // 2
+  forget.hidden = s.discovered ~= nil
+
+  if forget.hidden then
+    sign_in.x = cx + (CARD_W - sign_in.w) // 2
+  else
+    sign_in.x = cx + (CARD_W - sign_in.w - 10 - forget.w) // 2
+  end
+
   forget.x = sign_in.x + sign_in.w + 10
 end
 
@@ -3108,7 +3124,8 @@ local function net_told()
 
     for _, sh in ipairs(sv.shares) do names[#names + 1] = sh.name end
 
-    said[#said + 1] = ("%s %s: %s"):format(sv.name, sv.dot or (sv.lock and "locked") or "-",
+    said[#said + 1] = ("%s %s: %s"):format(sv.name, sv.dot or (sv.state == "seen" and "seen")
+                                          or (sv.lock and "locked") or "-",
                                           table.concat(names, ", "))
   end
 
@@ -3208,10 +3225,26 @@ local function net_frame()
     net.quick = quick
   end
 
+  --
+  -- **What is on the network** (`docs/sharing.md` N11d): the SMB servers
+  -- `/Discovery` has heard of, asked with this pass - answered at once from
+  -- what `mdnsd` keeps, and keeping it asking - never in a paint.
+  --
+  local discovered = {}
+
+  if mdns.browse("_smb._tcp") then
+    for _, d in ipairs(mdns.instances("_smb._tcp")) do
+      if d.address then
+        discovered[#discovered + 1] = { name = d.name, host = d.host, port = d.port,
+                                        address = ipv4.text(d.address) }
+      end
+    end
+  end
+
   local was_here = net.here and net.here.state
   local servers = netshares.servers(list, listing, function(label)
     return fs.list(netshares.ROOT .. "/" .. label) or {}
-  end, net.recent)
+  end, net.recent, discovered)
   local key = net_key(servers)
 
   net.servers = servers

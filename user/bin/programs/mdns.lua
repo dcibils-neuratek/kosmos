@@ -4,6 +4,9 @@
 --   mdns browse _smb._tcp           who shares files here, after three seconds
 --   mdns browse _smb._tcp 10        after ten
 --   mdns resolve studio.local       a .local name's address
+--   mdns after 3 resolve x.local    the same, three seconds from now - for
+--                                   a test that puts something on the
+--                                   network first (`tools/run_mdns.py`)
 --
 -- Through `/Discovery`, `mdnsd`, which asks the network and keeps what it
 -- says (`user/lib/mdns.lua`). `browse` asks, waits, and lists what has come
@@ -16,6 +19,12 @@ local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
 local words = {}
 
 for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
+
+if words[1] == "after" and tonumber(words[2]) then
+  sys.sleep(math.floor(tonumber(words[2]) * (sys.info().tick_hz or 250)))
+  table.remove(words, 1)
+  table.remove(words, 1)
+end
 
 local verb, what = words[1], words[2]
 

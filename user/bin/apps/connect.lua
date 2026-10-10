@@ -44,6 +44,33 @@ local ui = use("/Kosmos/Libraries/ui.lua")
 local prefs = use("/Kosmos/Libraries/prefs.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
 local netshares = use("/Kosmos/Libraries/netshares.lua")
+local mdns, ipv4 = use("/Kosmos/Libraries/mdns.lua"), use("/Kosmos/Libraries/ipv4.lua")
+
+--
+-- **A `.local` name, to an address** (`docs/sharing.md` N11d): what the
+-- network calls a machine, which only multicast DNS knows - `/Discovery`,
+-- asked with a wait of one tick so this window never waits, and asked again
+-- on its clock until the answer has come (`mdnsd` keeps asking meanwhile).
+-- smbfs is then given the address; anything else is given as typed.
+--
+local found = {}
+local looking = false               -- a `.local` name asked for, not yet found
+
+local function reach(server)
+  local host, port = tostring(server):match("^(.-)(:%d+)$")
+
+  host, port = host or server, port or ""
+
+  if not host:lower():match("%.local$") then return server end
+
+  if not found[server] then
+    local address = mdns.resolve(host, 1)
+
+    if address then found[server] = ipv4.text(address) .. port end
+  end
+
+  return found[server]
+end
 local files = use("/Kosmos/Libraries/files.lua")
 local theme = ui.theme
 
@@ -320,6 +347,13 @@ local function begin_connect(share)
     return
   end
 
+  if not reach(server) then
+    say("asking", ("Still looking for %s on the network\u{2026}"):format(server))
+    return
+  end
+
+  server = reach(server)
+
   if account.text == "" then
     say("refused", "A name is needed: guests are not let in.")
     win:focus_on(account)
@@ -537,6 +571,21 @@ local function probe_typed()
 
   if not server then return end
 
+  -- A `.local` name looked for first; asked again on the next pass.
+  if not reach(server) then
+    say("asking", ("Looking for %s on the network\u{2026}"):format(server))
+    probed, looking = nil, true
+    return
+  end
+
+  looking = false
+
+  if reach(server) ~= server then
+    print(("connect: %s is %s"):format(server, reach(server)))
+  end
+
+  server = reach(server)
+
   local s = record(server)
 
   if s and s.state == "connected" and not s.probe then
@@ -608,7 +657,7 @@ function win:on_frame()
 
   -- Asked a few times a second while something is under way, and on the
   -- default quarter second otherwise.
-  self.poll_wait_ticks = (asked or typed_at) and 25 or nil
+  self.poll_wait_ticks = (asked or typed_at or looking) and 25 or nil
 
   if now - looked_at < counter_hz // 4 then return false end
 
@@ -619,7 +668,7 @@ function win:on_frame()
   elseif typed_at and now - typed_at > counter_hz * 6 // 10 then
     typed_at = nil
     probe_typed()
-  elseif probed and said.kind == "asking" then
+  elseif (probed or looking) and said.kind == "asking" then
     probe_typed()
   end
 
