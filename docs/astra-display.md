@@ -154,6 +154,32 @@ desktop.
 4. **D3** - the window server: the screen, surfaces, stacking, damage and
    composing move to C; the window manager tells it through the manager
    door. `wm.lua` loses `compose.lua` and the pixel work around it.
+   **Planned 10 October**, in two steps, the desktop working after each:
+   - **D3a - composing in C, still in the window manager's process.** A
+     *scene* in the Graphics Kit (`gfx.scene`): every window's place, size,
+     stacking, kind (backdrop, strip, menu, tip, full screen), whether it
+     blends, its rounding and shadow, and its picture - a window's
+     committed buffer, or a surface the window manager draws, the menu
+     bars' and the lights' among them. The window manager keeps the scene
+     up to date as it decides - a window opened, moved, raised, hidden,
+     committed - and asks it to compose the damage; the scene does what
+     `compose.lua` and `drawwindow.lua` do now, per damaged rectangle, in
+     C: which windows show, the desktop under them, each window's picture
+     copied, blended or stretched, its corners and shadow, then what is
+     over everything - the menus, the resize outline, the volume display,
+     the cursor - and the screen, flushed, and the watcher's copy (VNC).
+     What the decorations look like stays the window manager's: it draws
+     the three lights, a menu bar and the volume display into pictures of
+     its own and hands the scene those; the scene composes, and decides
+     nothing a person would choose. Measured with `frames` before and
+     after: the window manager's Lua per busy pass, and what it allocates.
+   - **D3b - the scene in a process of its own**, `windowserver`
+     (`user/servers/windowserver.c`, `/Running/windowserver`): it takes
+     the screen; the scene's calls become the **manager door**, a declared
+     shape (`user/include/windowproto.h`) only the window manager holds;
+     an application's region is handed on to it with the window; the
+     window manager's own pictures are regions it shares with it. Commit
+     and poll still come to the window manager until D4.
 5. **D4** - the frame path: commit and poll answered by the window server,
    held polls and event queues with it.
 6. **D5** - input routing: keys and presses from the console to windows in
