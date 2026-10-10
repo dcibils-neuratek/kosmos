@@ -246,12 +246,24 @@ the M700.
     `action` name;
   - the dispatch table is built from the defaults and the `shortcuts`
     setting;
-  - `listen`, and reading the setting again when told.
+  - the setting handed over in `handlers.keys` (`shortcuts =`), each entry
+    checked and anything else set aside and said;
+  - `listen`, for the window with the keyboard only.
+
+  Super alone (the menu) and Super Tab (the switcher) are fixed: those two
+  are read as held keys, not as a chord. A letter without Shift answers with
+  Shift too, unless that chord is someone else's.
 
   When Magnet arrives its keys go in the same arrays and appear here with
-  nothing else done. Its test boots with a `shortcuts` setting holding Super
-  T and checks that the chord opens a Terminal, then moves Super H to Super
-  M and checks that the old chord does nothing and the new one hides.
+  nothing else done. `tools/run_shortcuts.py` checks that:
+  - the setting is saved and applied, and Super T opens a Terminal;
+  - hiding moved from Super H to Super M leaves the old chord doing nothing;
+  - an entry moving the switcher and one on Control are set aside;
+  - a listening window is posted Super Q and Super Tab, and nothing acts on
+    them;
+  - a window without the keyboard is refused, and listening ends once
+    another window has it;
+  - the setting is read when the desktop starts again.
 - **K3** - the window, as drawn:
   - the sidebar, keycaps and search;
   - `ui.sheet`, out of Mail, with Mail's Add Account moved onto it and its

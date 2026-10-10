@@ -22897,3 +22897,29 @@ character key, function keys, refusals. **Control**: "control" dropped from
 the spellings, 2 checks fail. `x86-dock` 54: the modal Shortcuts window
 drew 20 keys in 3 groups as keycaps, none refused. **Control**: `Ctrl+W,Q`
 spelled back as `Control-W Q`, "1 not keys: Control-W Q".
+
+## 18.526 Shortcuts K2: a person's own keys, in the window manager
+
+The window manager's half of making and changing shortcuts
+(`docs/shortcuts.md`). Each Super binding has an `action` and a `group`;
+Super alone and Super Tab are fixed. The dispatch table is built from the
+defaults and the setting `/Home/Preferences/shortcuts` - only what differs,
+each entry in full (`{ keys = "Super+T", action = "open", program = ... }`,
+`{ keys = "Super+M", action = "hide" }`) - read when the window manager
+starts and handed again by Shortcuts in `handlers.keys`, each entry checked
+and anything else set aside and said. A window with the keyboard may
+listen: the next Super chords are posted to it as `chord` events, not acted
+on, the switcher included, and listening ends when it loses the keyboard;
+a window without it is refused, and the refusal said. The answer to
+`shortcuts` is paged, as the window list is (`wmproto.shortcuts`): with
+groups and actions it no longer fit one message - "value does not fit in a
+message", and the window drew nothing, found by `x86-dock`.
+
+`x86-shortcuts` 9, new: the setting saved and applied; Super T a Terminal;
+hiding moved from Super H to Super M, the old chord doing nothing; the
+switcher's entry and a Control one set aside; Super Q and Super Tab heard
+by the listening window and not acted on; a window without the keyboard
+refused; listening over once another window had it; the setting read when
+the desktop started again. **Controls**, together: the focus check taken
+out of listening, and the setting not read at the start - 4 checks fail,
+the two of each.

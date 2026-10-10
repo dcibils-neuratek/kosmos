@@ -317,7 +317,9 @@ return function(ctx)
     local shift = held[42] or held[54]
 
     if not S.showing then
-      if code == TAB and super then
+      -- Not while Shortcuts listens: Super+Tab is then a chord it is told
+      -- about (`wm/keys.lua`), not the switcher.
+      if code == TAB and super and not OUT.listening then
         if down then S.open(shift) end
         return true
       end

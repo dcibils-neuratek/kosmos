@@ -17,6 +17,9 @@ return function(ctx)
   local windows =
     ctx.windows
 
+  local keys = use("/Kosmos/Libraries/keys.lua")
+  local prefs = use("/Kosmos/Libraries/prefs.lua")
+
   local STEP = 16
   local prefix = false
   local pending_escape = {}
@@ -276,13 +279,17 @@ return function(ctx)
   -- has `docs/cheatsheet.html`, written before any of these keys existed and
   -- silently missing all of them.
   --
-  -- `also` is the other case of a letter. Both dispatch; only one is shown,
-  -- because "Super + Q or Super + Shift + Q" is noise in a list somebody is
-  -- reading to learn one thing.
+  -- Each has an `action`, the name a person's shortcut points at
+  -- (`docs/shortcuts.md`), and a `group` for Shortcuts' sidebar; `fixed` is
+  -- one that cannot be moved - Super alone and Super+Tab, which the menu and
+  -- the switcher read as held keys rather than as a chord. A letter without
+  -- Shift also answers with it, unless that chord is somebody else's
+  -- (`build_super_keys`): "Super+Q or Super+Shift+Q" is noise in a list
+  -- somebody is reading to learn one thing.
   --------------------------------------------------------------------------
   local SUPER_BINDINGS = {
     {
-      key = 126, shown = "Super",
+      key = 126, shown = "Super", action = "menu", group = "desktop", fixed = true,
       what = "Open the Kosmos menu",
       run = function()
         --
@@ -314,12 +321,12 @@ return function(ctx)
       end,
     },
 
-    { key = 32, shown = "Super+Space",
+    { key = 32, shown = "Super+Space", action = "launchpad", group = "desktop",
       what = "Start something by typing part of its name",
       run = function() open_launchpad() end },
 
-    { key = 47, shown = "Super+/",
-      what = "This window",
+    { key = 47, shown = "Super+/", action = "shortcuts", group = "desktop",
+      what = "Shortcuts, this window",
       run = function() handlers.launch{ program = "shortcuts" } end },
 
     --
@@ -328,11 +335,11 @@ return function(ctx)
     -- has (`hal/keys.c`, US) reads as the grave accent, so it is bound by
     -- that: the same key whatever is printed on it.
     --
-    { key = 35, shown = "Super+Shift+3",
+    { key = 35, shown = "Super+Shift+3", action = "capture", group = "screen",
       what = "A picture of the whole screen, into Captures - Print Screen and Control Alt 1 too",
       run = function() handlers.launch{ program = "screenshot" } end },
 
-    { key = 96, shown = "Super+º",
+    { key = 96, shown = "Super+º", action = "shortcuts_over", group = "desktop",
       what = "Every shortcut, over everything until Escape",
       run = function() handlers.launch{ program = "shortcuts", args = "--modal" } end },
 
@@ -342,15 +349,15 @@ return function(ctx)
     -- the character Super+Tab also makes does nothing here but be kept from
     -- the window. Alt+Tab steps the windows, which Super+Tab used to.
     --
-    { key = 9, shown = "Super+Tab",
+    { key = 9, shown = "Super+Tab", action = "switcher", group = "desktop", fixed = true,
       what = "Show the running applications, last used first",
       run = function() end },
 
-    { key = 113, also = 81, shown = "Super+Q",
+    { key = 113, shown = "Super+Q", action = "close", group = "desktop",
       what = "Close the window in front",
       run = function() close_focused() end },
 
-    { key = 104, also = 72, shown = "Super+H",
+    { key = 104, shown = "Super+H", action = "hide", group = "desktop",
       what = "Get the window in front out of the way",
       run = function() minimise_focused() end },
   }
@@ -366,13 +373,13 @@ return function(ctx)
   local PREFIX_BINDINGS = {
     -- And Alt+Tab, dispatched in `alt_tab` and named here for the same
     -- reason as the prefix's.
-    { shown = "Alt+Tab",         what = "Go round the open windows" },
-    { shown = "Alt+Shift+Tab",   what = "Back round the open windows" },
-    { shown = "Ctrl+W,Q",        what = "End the desktop" },
-    { shown = "Ctrl+W,Tab",      what = "Go round the open windows" },
-    { shown = "Ctrl+W,Arrows",   what = "Move the window in front" },
-    { shown = "Ctrl+W,C",        what = "Send a real Control-C through" },
-    { shown = "Ctrl+W,Ctrl+W",   what = "Send a real Control-W through" },
+    { shown = "Alt+Tab",         group = "windows", what = "Go round the open windows" },
+    { shown = "Alt+Shift+Tab",   group = "windows", what = "Back round the open windows" },
+    { shown = "Ctrl+W,Q",        group = "windows", what = "End the desktop" },
+    { shown = "Ctrl+W,Tab",      group = "windows", what = "Go round the open windows" },
+    { shown = "Ctrl+W,Arrows",   group = "windows", what = "Move the window in front" },
+    { shown = "Ctrl+W,C",        group = "windows", what = "Send a real Control-C through" },
+    { shown = "Ctrl+W,Ctrl+W",   group = "windows", what = "Send a real Control-W through" },
   }
 
   --
@@ -381,41 +388,254 @@ return function(ctx)
   -- with `wm.lua`'s dispatch of them rather than copied here.
   --
 
-  SUPER_KEYS = {}
+  --------------------------------------------------------------------------
+  -- **A person's shortcuts** (`docs/shortcuts.md`, K2): made and changed in
+  -- Shortcuts and kept as the setting `/Home/Preferences/shortcuts`, which
+  -- holds only what differs from the bindings above, one entry each, each
+  -- saying in full what it does:
+  --
+  --   { keys = "Super+T", action = "open", program = "/Kosmos/Apps/terminal.lua" }
+  --   { keys = "Super+M", action = "hide" }          a system key moved
+  --   { keys = "",        action = "close" }         one left without keys
+  --
+  -- Only Super chords: Control is each application's own. Read when the
+  -- window manager starts, and handed again by Shortcuts in a message when
+  -- it changes (`handlers.keys`), never read from the disk in a key path.
+  --------------------------------------------------------------------------
+  local SHIFTED = {}                   -- a byte typed with Shift, to its key
 
-  for _, b in ipairs(SUPER_BINDINGS) do
-    SUPER_KEYS[b.key] = b.run
+  do
+    local pairs_ = "1!2@3#4$5%6^7&8*9(0)-_=+[{]}\\|;:'\",<.>/?`~"
 
-    if b.also then SUPER_KEYS[b.also] = b.run end
+    for i = 1, #pairs_, 2 do SHIFTED[pairs_:byte(i + 1)] = pairs_:sub(i, i) end
   end
+
+  -- The key after Super, as a chord's last word, and back. º is the key
+  -- left of 1, which the one keymap (US) reads as the grave accent.
+  local function key_word(byte)
+    if byte == 32 then return "Space", false end
+    if byte == 9 then return "Tab", false end
+    if byte == 96 then return "º", false end
+    if byte >= 65 and byte <= 90 then return string.char(byte), true end
+    if byte >= 97 and byte <= 122 then return string.char(byte - 32), false end
+    if SHIFTED[byte] then
+      local k = SHIFTED[byte]
+
+      return (k == "`") and "º" or k, true
+    end
+    if byte > 32 and byte < 127 then return string.char(byte), false end
+
+    return nil
+  end
+
+  -- A byte after `ESC [ 1 ; 9`, as the chord a person pressed.
+  local function byte_chord(byte)
+    if byte == 126 then return "Super" end
+
+    local word, shift = key_word(byte)
+
+    if not word then return nil end
+
+    return shift and ("Super+Shift+" .. word) or ("Super+" .. word)
+  end
+
+  -- And a chord back into its byte; nil for one that is not Super and one
+  -- more key, with or without Shift.
+  local BYTE_OF = {}
+
+  for byte = 32, 126 do
+    local chord = byte_chord(byte)
+
+    if chord then BYTE_OF[chord] = byte end
+  end
+
+  BYTE_OF["Super+Tab"] = 9
+
+  local function chord_byte(chord)
+    local steps = keys.caps(chord)
+
+    if not steps or #steps ~= 1 then return nil end
+
+    return BYTE_OF[table.concat(steps[1], "+")]
+  end
+
+  local ACTION = {}
+
+  for _, b in ipairs(SUPER_BINDINGS) do ACTION[b.action] = b end
+
+  -- What each action's keys are now, and the person's own: rebuilt whenever
+  -- the setting changes, and read by the key path as one table lookup.
+  local now_keys, theirs = {}, {}
+
+  -- An entry as it may stand: fixed fields, a chord this can dispatch, an
+  -- action that exists and may be moved, a program that is a path. Anything
+  -- else is dropped and said, never half applied.
+  local function checked(e)
+    if type(e) ~= "table" or type(e.keys) ~= "string" or type(e.action) ~= "string" then
+      return nil, "not an entry"
+    end
+
+    if e.keys ~= "" and not chord_byte(e.keys) then
+      return nil, e.keys .. " is not Super and one key"
+    end
+
+    if e.action == "open" then
+      if e.keys == "" or type(e.program) ~= "string" or e.program:sub(1, 1) ~= "/"
+         or e.program:find("%c") then
+        return nil, "an open needs keys and a program's path"
+      end
+
+      return { keys = e.keys, action = "open", program = e.program }
+    end
+
+    local b = ACTION[e.action]
+
+    if not b or b.fixed then return nil, e.action .. " cannot be moved" end
+
+    return { keys = e.keys, action = e.action }
+  end
+
+  local function build_super_keys(entries)
+    local table_, by_chord = {}, {}
+
+    now_keys, theirs = {}, {}
+
+    for _, b in ipairs(SUPER_BINDINGS) do now_keys[b.action] = b.shown end
+
+    for _, raw in ipairs(type(entries) == "table" and entries or {}) do
+      local e, why = checked(raw)
+
+      if not e then
+        print("wm: a shortcut set aside: " .. tostring(why))
+      elseif e.action == "open" then
+        theirs[#theirs + 1] = e
+      else
+        now_keys[e.action] = e.keys
+      end
+    end
+
+    local function claim(chord, run, name)
+      local byte = chord_byte(chord)
+
+      if not byte then return end
+
+      if by_chord[byte] then
+        print(("wm: %s is both %s and %s; %s has it"):format(chord, by_chord[byte], name, name))
+      end
+
+      table_[byte], by_chord[byte] = run, name
+    end
+
+    for _, b in ipairs(SUPER_BINDINGS) do
+      if now_keys[b.action] ~= "" then claim(now_keys[b.action], b.run, b.action) end
+    end
+
+    for _, e in ipairs(theirs) do
+      claim(e.keys, function() handlers.launch{ program = e.program } end,
+            "open " .. e.program)
+    end
+
+    -- A letter without Shift answers with it too, where nobody has that.
+    for byte, run in pairs(table_) do
+      if byte >= 97 and byte <= 122 and not table_[byte - 32] then
+        table_[byte - 32] = run
+      end
+    end
+
+    SUPER_KEYS = table_
+    print(("wm: shortcuts: %d keys, %d of them a person's own"):format(
+          #SUPER_BINDINGS, #theirs))
+  end
+
+  OUT.set_shortcuts = build_super_keys
+  build_super_keys(prefs.read("shortcuts"))
+
+  --
+  -- **Listening** (`docs/shortcuts.md`): a Super chord is the window
+  -- manager's and never reaches a window, so Shortcuts, recording one, asks
+  -- for the next to be posted to it rather than acted on. Only the window
+  -- with the keyboard may ask, and listening ends the moment it does not
+  -- have it - so no window in the background can read a person's chords.
+  --
+  OUT.listening = nil
+
+  function OUT.listen(win)
+    OUT.listening = win
+    print(win and ("wm: listening for keys for " .. tostring(win.title))
+              or "wm: not listening for keys")
+  end
+
+  local function listened(byte)
+    local win = OUT.listening
+
+    if not win then return false end
+
+    if win ~= focused_window() then
+      OUT.listen(nil)
+      return false
+    end
+
+    local chord = byte_chord(byte)
+
+    if chord then
+      post(win, { type = "chord", keys = chord })
+      print("wm: heard " .. chord .. " for " .. tostring(win.title))
+    end
+
+    return true
+  end
+
+  OUT.listened = listened
 
   --
   -- What the keyboard does, for whoever asks.
   --
   -- The window manager answers because the window manager is what decides:
   -- these keys are taken before any application sees them, so a list compiled
-  -- anywhere else would be a guess about another process's behaviour.
+  -- anywhere else would be a guess about another process's behaviour. Each
+  -- row with the keys in force, its group, and for a Super key its action,
+  -- its default and whether it can be moved; then the person's own.
   --
-  handlers.shortcuts = function()
-    local keys, prefixes, edits = {}, {}, {}
+  -- **In pages**, as the window list is (`wmproto.windows`): a row with its
+  -- group, action and default is about two hundred bytes, and twenty-odd of
+  -- them do not fit in one message - the first version said so as "value
+  -- does not fit in a message" and the window drew nothing. A person's own
+  -- shortcuts are rows of the group `yours`. `wmproto.shortcuts` gathers
+  -- the pages.
+  --
+  local SHORTCUTS_PAGE = 6
+
+  handlers.shortcuts = function(req)
+    local rows = {}
 
     for _, b in ipairs(SUPER_BINDINGS) do
-      keys[#keys + 1] = { shown = b.shown, what = b.what }
+      rows[#rows + 1] = { keys = now_keys[b.action], what = b.what, group = b.group,
+                          action = b.action, default = b.shown, fixed = b.fixed == true }
     end
 
     -- Not a key's, so not in the table keys are looked up in: the pointer's.
-    keys[#keys + 1] = { shown = "Super+Ctrl+Drag",
-                        what = "Move a window from anywhere in it" }
+    rows[#rows + 1] = { keys = "Super+Ctrl+Drag", what = "Move a window from anywhere in it",
+                        group = "windows", fixed = true }
 
     for _, b in ipairs(PREFIX_BINDINGS) do
-      prefixes[#prefixes + 1] = { shown = b.shown, what = b.what }
+      rows[#rows + 1] = { keys = b.shown, what = b.what, group = b.group, fixed = true }
     end
 
     for _, b in ipairs(EDIT_BINDINGS) do
-      edits[#edits + 1] = { shown = b.keys, what = b.what }
+      rows[#rows + 1] = { keys = b.keys, what = b.what, group = "text", fixed = true }
     end
 
-    return { ok = true, super = keys, prefix = prefixes, edit = edits }
+    for _, e in ipairs(theirs) do
+      rows[#rows + 1] = { keys = e.keys, action = "open", program = e.program, group = "yours" }
+    end
+
+    local from = math.max(1, math.floor(tonumber(req and req.from) or 1))
+    local last = math.min(#rows, from + SHORTCUTS_PAGE - 1)
+    local page = {}
+
+    for i = from, last do page[#page + 1] = rows[i] end
+
+    return { ok = true, rows = page, more = (last < #rows) and (last + 1) or nil }
   end
 
   --
@@ -536,6 +756,11 @@ return function(ctx)
         local was = super_at
 
         super_at = 0
+
+        -- Shortcuts recording a chord has it, rather than its action.
+        if listened(c) then
+          return
+        end
 
         if super_command(c) then
           return

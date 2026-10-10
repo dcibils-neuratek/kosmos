@@ -73,6 +73,28 @@ function wmproto.windows(watch)
 end
 
 --
+-- Every key the window manager answers, and a person's own (`docs/shortcuts.md`):
+-- each row its chord, words, group, and for a Super key its action, its
+-- default and whether it can be moved. Gathered from pages, as `windows` is.
+--
+function wmproto.shortcuts()
+  local all, from = {}, 1
+
+  while from do
+    local reply, why = fs.send(wmproto.WM, { type = "shortcuts", from = from })
+
+    if not reply then return nil, why end
+    if not reply.ok then return nil, reply.error end
+
+    for _, r in ipairs(reply.rows or {}) do all[#all + 1] = r end
+
+    from = tonumber(reply.more)
+  end
+
+  return all
+end
+
+--
 -- The pointer's movement with no button held, while `on` - for an
 -- operation that follows the pointer until a click, as Blender's G does.
 --

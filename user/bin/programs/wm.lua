@@ -5344,9 +5344,28 @@ handlers.keys = function(req)
     if v ~= nil and pair[2][v] then OUT.keys[pair[1]] = v end
   end
 
+  -- **Shortcuts** (`docs/shortcuts.md`, K2): the person's shortcuts, as the
+  -- setting holds them, which Shortcuts has just saved - applied entry by
+  -- entry, each checked (`wm/keys.lua`); and listening for the next Super
+  -- chord, for the window that asks only while it has the keyboard.
+  if type(req.shortcuts) == "table" then OUT.set_shortcuts(req.shortcuts) end
+
+  if req.listen ~= nil then
+    local win = req.listen and by_handle[req.listen]
+
+    if req.listen and win ~= focused_window() then
+      print(("wm: listening refused for %s, which does not have the keyboard"):format(
+            tostring(win and win.title)))
+      return { ok = false, error = "only the window with the keyboard may listen" }
+    end
+
+    OUT.listen(win or nil)
+  end
+
   -- What is in force now, which is also how a test asks it.
   return { ok = true, focus_follows = OUT.focus_follows, focus_delay_ms = OUT.focus_delay_ms,
-           power = OUT.keys.power, super = OUT.keys.super }
+           power = OUT.keys.power, super = OUT.keys.super,
+           listening = OUT.listening ~= nil }
 end
 
 --

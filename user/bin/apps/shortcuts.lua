@@ -73,7 +73,8 @@ end
 -- they are compiled into the window manager - so polling for them would be
 -- work with a constant answer.
 --
-local reply = fs.send("/Running/wm", { type = "shortcuts" })
+local rows = use("/Kosmos/Libraries/wmproto.lua").shortcuts()
+local reply = rows and { ok = true, rows = rows } or nil
 
 local groups = {}
 
@@ -81,12 +82,37 @@ if reply and reply.ok then
   --
   -- Editing first, because it is the half somebody already knows and the
   -- fastest way to see that this machine does not want to be learnt from
-  -- scratch. The unusual keys come after.
+  -- scratch. The unusual keys come after. Each row says its group
+  -- (`wm/keys.lua`); this window, until it is redrawn as `docs/shortcuts.html`
+  -- has it, shows them in these three.
   --
-  groups[#groups + 1] = { title = "Editing", rows = reply.edit or {} }
-  groups[#groups + 1] = { title = "The Super key", rows = reply.super or {} }
-  groups[#groups + 1] = { title = "Control-W, which introduces a command",
-                          rows = reply.prefix or {} }
+  local titles = { { "text", "Editing" },
+                   { "desktop", "The Super key" }, { "screen", "The Super key" },
+                   { "windows", "Control-W, which introduces a command" } }
+  local by_title = {}
+
+  for _, pair in ipairs(titles) do
+    local g = by_title[pair[2]]
+
+    if not g then
+      g = { title = pair[2], rows = {} }
+      by_title[pair[2]] = g
+      groups[#groups + 1] = g
+    end
+
+    for _, row in ipairs(reply.rows or {}) do
+      if row.group == pair[1] and row.keys ~= "" then
+        g.rows[#g.rows + 1] = { shown = row.keys, what = row.what }
+      end
+    end
+  end
+
+  for _, row in ipairs(reply.rows) do
+    if row.group == "yours" then
+      by_title["The Super key"].rows[#by_title["The Super key"].rows + 1] =
+        { shown = row.keys, what = "Open " .. tostring(row.program) }
+    end
+  end
 end
 
 --------------------------------------------------------------------------
