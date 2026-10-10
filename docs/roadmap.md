@@ -212,6 +212,31 @@ on Super today - Super W closes one, Super D keeps the page, Super Shift ]
 goes to the next (`tools/run_browser.py`) - and become Control's. Not listed in Shortcuts (`docs/shortcuts.md`,
 *Global and local*).
 
+**Quick Look in Tracker: the space bar previews a file** - Diego, 10
+October 2026, on the M700: "when im on tracker viewing files, pressing
+spacebar on a file should open a preview like macos", "like an image, i
+need to be able to spacebar to quick the contents", "lets do it with
+images now", "but then we will add pdf, mp3, mp4, etc files to be able to
+quick preview those without opening the full viewer", "a quick modal
+window that opens and closes with space bar". Images first; then
+PDF, sound and film, each through the kit that already reads it (the
+image translators, the PDF Kit, the Media Kit), so a preview is the kit's
+picture in a panel rather than a second reader. Drawn before it is built.
+
+**Mail: always show a sender's pictures** - Diego, 10 October 2026: "mail
+app needs a way to set 'always show images from this sender' somehere
+because i cant click load images for every email". A choice beside Load
+images, kept per sender with Mail's settings.
+
+**Bugs found on the M700, 10 October 2026, to fix first:**
+- **Print Screen saves a black picture** - "printi screen saves a black
+  image, not the actual screenshot. that worked in the past". Most likely
+  since the window server took the screen (Astra D3b-2, 0.11.119-0.11.121):
+  `screenshot` reads a screen the window manager no longer draws into.
+- **A window being resized shows its old picture stretched** for a moment
+  before it draws at the new size - "it looks that the app streches to the
+  new dimensions and then redraws in the new size which looks weird".
+
 **The app switcher, Alt+Tab** - Diego, 10 October 2026: "lets add alt+tab
 app switching like macos and windows to the queue for today", with macOS's
 switcher as the picture of it, and "first mockup before coding". Then:
