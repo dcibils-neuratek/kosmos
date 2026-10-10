@@ -22358,3 +22358,26 @@ it - in all 235,458 pixels; its menu's mark, Calculator, and the frames
 timed (the window manager's share of a frame is composing alone now).
 **Control**: a rescaled window's region in points, shown stretched, and
 50,520 pixels differ. The whole gate, 61 of 61 (6:50).
+
+## 18.508 A message's facts, kept in requests the disk takes
+
+On the M700, once Diego's Gmail account was restored (18.499), 107 of its
+messages showed "?" in the list, and `maild` said "107 worked out again" at
+every look. Since M8 a message's facts carry the start of its text,
+`words`, for search (18.496): with a newsletter's sender, subject, preview,
+recipients and a thousand bytes of words they come to about 1,460 bytes, and
+a request to the disk carries 1024 (`DISK_DATA_MAX`). Every such `setattr`
+was refused - "more than one request to the disk carries" - and nobody
+looked at the answer. While the facts the messages had from before stayed,
+the list read them and nothing showed; the loss took them, and the rows
+went blank. The test's messages were all short.
+
+`keep_facts` writes them in three requests - the list's, then whom it went
+to, then the words with the version last, so facts that did not all arrive
+are worked out again - each long one kept to 900 bytes, cut at a whole
+character; a refusal is said. `x86-mail-2` 15: a newsletter of sixty
+recipients and three thousand accented characters delivered, its sender,
+subject and version kept and its words there, and nothing refused.
+**Control**: the facts in one request, and the letter has no subject in the
+list and `maild` says it could not keep them. Mail's seven suites and
+`host` pass.

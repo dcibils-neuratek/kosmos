@@ -202,6 +202,19 @@ end
 --
 local FACTS = 4
 
+-- What one of the long facts may hold: a request to the disk carries 1024
+-- bytes, its key and the serialiser's framing among them.
+local WORDS_BYTES = 900
+
+-- `text` cut to at most `bytes`, never inside a character.
+local function whole_chars(text, bytes)
+  text = text:sub(1, bytes)
+
+  while #text > 0 and not utf8.len(text) do text = text:sub(1, -2) end
+
+  return text
+end
+
 local function facts(path, uid, flags)
   local r, size = regions.read_whole(path)
 
@@ -239,16 +252,43 @@ local function facts(path, uid, flags)
       end
     end
 
-    -- Every attribute shares one block of the disk: a message to a crowd
-    -- keeps its first thousand bytes of them, and its text its first
-    -- thousand characters, lower case, for a search to look in.
-    out.to = table.concat(to, "\n"):sub(1, 1000)
-    out.words = m:preview(1000):lower()
+    -- Every attribute shares one block of the disk, and a request to it
+    -- carries 1024 bytes: whom it went to, and the start of its text, lower
+    -- case, for a search to look in, each kept to what one request takes
+    -- (`keep_facts`).
+    out.to = whole_chars(table.concat(to, "\n"), WORDS_BYTES)
+    out.words = whole_chars(m:preview(1000):lower(), WORDS_BYTES)
   end
 
   regions.free(r)
 
   return out
+end
+
+--
+-- **A message's facts, kept in three requests** (`docs/mail.md`): one to the
+-- disk carries 1024 bytes (`DISK_DATA_MAX`), and a newsletter's facts with
+-- its words are half as many again - so on 9 October every write of them
+-- was refused, `maild` worked them out again at every look, and a message
+-- whose older facts had gone showed "?" in the list. The list's facts
+-- first, then whom it went to, then the words with `facts` - the version -
+-- last, so facts that did not all arrive are worked out again next time.
+-- True, or nil and why.
+--
+local function keep_facts(path, f)
+  local words, to, version = f.words, f.to, f.facts
+  local first = {}
+
+  for k, v in pairs(f) do
+    if k ~= "words" and k ~= "to" and k ~= "facts" then first[k] = v end
+  end
+
+  local ok, why = fs.setattr(path, first)
+
+  if ok and to then ok, why = fs.setattr(path, { to = to }) end
+  if ok then ok, why = fs.setattr(path, { words = words, facts = version }) end
+
+  return ok, why
 end
 
 local function keep(a, s, folder, m, fresh)
@@ -262,7 +302,11 @@ local function keep(a, s, folder, m, fresh)
 
   local f = facts(path, m.uid, got.flags or m.flags or {})
 
-  if f then fs.setattr(path, f) end
+  if f then
+    local ok, why = keep_facts(path, f)
+
+    if not ok then note(a, ("message %d's facts not kept: %s"):format(m.uid, tostring(why))) end
+  end
 
   if fresh then a.arrived[#a.arrived + 1] = { path = path, facts = f or {} } end
 
@@ -304,10 +348,7 @@ local function redo_facts(a, mailbox, folder)
     if at and (tonumber(at.facts) or 0) < FACTS then
       local f = facts(path, uid, { seen = at.seen, flagged = at.flagged })
 
-      if f then
-        fs.setattr(path, f)
-        redone = redone + 1
-      end
+      if f and keep_facts(path, f) then redone = redone + 1 end
     end
   end
 
@@ -808,7 +849,7 @@ function keep_here(a, box, from, flags)
 
   local f = facts(path, uid, flags or {})
 
-  if f then fs.setattr(path, f) end
+  if f then keep_facts(path, f) end
 
   counted(a, box, folder)
   publish()
@@ -896,7 +937,7 @@ local function pop_sync(a, s, list, quiet)
 
     local f = facts(path, uid, {})
 
-    if f then fs.setattr(path, f) end
+    if f then keep_facts(path, f) end
     if not first and not quiet then a.arrived[#a.arrived + 1] = { path = path, facts = f or {} } end
 
     -- A long first look is seen arriving, ten at a time, and what it has

@@ -370,8 +370,9 @@ end
 table.sort(names)
 for _, n in ipairs(names) do
   local a = fs.getattr(dir .. "/" .. n) or {}
-  print(("L %s|%s|%s|%s|%s|%s|%s"):format(n, tostring(a.from), tostring(a.subject),
-        tostring(a.seen), tostring(a.attachments), tostring(a.date), tostring(a.preview)))
+  print(("L %s|%s|%s|%s|%s|%s|%s|%s|%s"):format(n, tostring(a.from), tostring(a.subject),
+        tostring(a.seen), tostring(a.attachments), tostring(a.date), tostring(a.preview),
+        tostring(a.facts), tostring(a.words and #a.words)))
 end
 local boxes = fs.read("/Home/Mail/USER/mailboxes") or {}
 local uses = {}
@@ -386,6 +387,16 @@ print("LOOK" .. " END")
 """
 
 SYNC = 'local r = fs.send("/Running/maild", { type = "sync" })\nprint("SYNC " .. tostring(r and r.ok))\n'
+
+# A newsletter's shape: a crowd it went to and three thousand characters of
+# text, accented - facts and words more than one request to the disk takes
+# (`maild`'s `keep_facts`; on the M700, 9 October, every such write failed).
+LONG = ("From: Weekly Digest <digest@example.org>\r\n"
+        "To: " + ", ".join("Reader %d <reader%d@example.org>" % (i, i) for i in range(60)) + "\r\n"
+        "Subject: A long letter\r\n"
+        "Date: Fri, 9 Oct 2026 07:00:00 +0000\r\n"
+        "Content-Type: text/plain; charset=utf-8\r\n"
+        "\r\n" + "Café society, résumé and naïve façades. " * 80 + "\r\n").encode()
 
 # A message's facts as an older reading worked them out.
 STALE = ('fs.setattr("/Home/Mail/USER/INBOX/1.eml", { facts = 1, preview = "stale" })\n'
@@ -448,6 +459,14 @@ def part2(image):
         guest.wait_for_line("maild: %s: INBOX: 0 new, 1 changed, 1 gone" % who,
                             "the changes caught up", since=mark)
         look()
+
+        # A newsletter's facts, longer than one request to the disk.
+        peer.deliver("INBOX", LONG)
+        mark = len(guest.seen)
+        guest.type("/Home/sync.lua")
+        guest.wait_for_line("maild: %s: INBOX: 1 new, 0 changed, 0 gone" % who,
+                            "the long letter fetched", since=mark)
+        look()
     except Exception as e:                  # noqa: BLE001 - said below
         error = "%s: %s" % (type(e).__name__, str(e).splitlines()[0])
     finally:
@@ -503,13 +522,25 @@ def part2(image):
     if mark_of(second, "S") != "true idle 3 2":
         fails.append("the status after the changes: %r" % mark_of(second, "S"))
 
+    third = rows(looks[2]) if len(looks) > 2 else []
+    long_row = next((r for r in third if r[2] == "A long letter"), None)
+
+    if not long_row or long_row[1] != "Weekly Digest" or long_row[7] != "4" \
+            or not long_row[8].isdigit() or int(long_row[8]) < 800:
+        fails.append("a newsletter's facts, longer than one request to the disk, not kept: %r"
+                     % (long_row,))
+
+    if "facts not kept" in said:
+        fails.append("maild said it could not keep a message's facts: "
+                     + said[said.find("facts not kept") - 80:][:200])
+
     if any(l.startswith("maild:") and mailpeer.PASSWORD in l for l in said.splitlines()):
         fails.append("maild printed the password")
 
     if " died: " in said:
         fails.append("something died: " + said[said.find(" died: ") - 80:][:300])
 
-    checks = 13
+    checks = 15
 
     if fails:
         print("FAIL: %d of %d checks on maild:" % (len(fails), checks))
