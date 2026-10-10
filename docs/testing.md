@@ -22540,3 +22540,11 @@ QEMU switching address spaces, where every switch empties its whole
 translation cache and both sides walk their pages in again; the number
 that decides is the M700's (D6). What takes the window manager out of the
 wait is D4, where commits go to the window server and a pass is not a call.
+
+**On the M700** (i7-6700, eight cores, 1720x1440), `frames 8`, 0.11.118
+against 0.11.119: a cube turning, a composing pass 0.14 to 0.16 ms and the
+window manager's busy time 220 to 239 ms over 3100 passes, the worst pass
+1.19 to 1.26 ms; idle, 0.71 to 0.91 ms over the 25 passes that composed
+anything. **The round trip is about 20 microseconds on the machine**,
+against a quarter of a millisecond under QEMU - the emulator's number was
+the emulator's, as `CLAUDE.md` says they are.

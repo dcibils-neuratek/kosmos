@@ -24,11 +24,12 @@ Last updated: 2026-10-10, midday (0.11.119; Astra D3b-2 step 2)
   `WS_OP_COMPOSE` a pass. `x86-scene` holds it to the Lua composing, no pixel
   different over 1950 passes, and sees a closed window's picture let go.
   Under QEMU it costs a round trip, about 0.27 ms a pass: composing itself is
-  the same speed in either process. The M700 is the measurement that decides.
-- **The M700** runs 0.11.118 (monitor on). Not yet given 0.11.119.
+  the same speed in either process. On the M700 (Diego's yes, restarted
+  onto 0.11.119) the round trip is about 20 us: a composing pass with a cube
+  0.14 to 0.16 ms.
+- **The M700** runs 0.11.119 (monitor on).
 
-**Next**: the M700 on 0.11.119, with `frames` (needs Diego's yes for the
-restart); then D3b-2 step 3, the console's screen handed over by the window
+**Next**: D3b-2 step 3, the console's screen handed over by the window
 server; then step 4, the Lua composing removed. The PDF reader's redesign is
 queued (design first: feature set, mockup, architecture, diagram).
 
