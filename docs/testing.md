@@ -22478,3 +22478,20 @@ machine's Telnet under load and passes alone.
 application through `/Running/<name>` waits for that application's next
 turn, up to its tick - a second for the Deskbar, whose writes Preferences
 makes as a slider moves.
+
+## 18.513 Focus following the pointer, kept across a restart
+
+Diego, 10 October: "the only thing that is not working across reboots is
+the focus follow mouse setting", "i have to enable it again every reboot to
+work". Preferences kept it in `/Home/Preferences/appearance` and the window
+manager read it at its start (`load_appearance`) - and then, six hundred
+lines further down the same start, set it off and its delay to a second
+again, where its default had been written. The defaults are in `OUT`'s
+table now, before anything is read. `keys` answers what is in force.
+
+`x86-mouse` 10: the first boot keeps focus following the pointer at 250
+ms, and the second boot's window manager, asked, has it on at 250 ms.
+**Control**: the late defaults put back, and `FOCUS false 1000`. A check
+that only printed as the setting was read passed the control - it was
+before the line that undid it - and was replaced by asking. The whole gate,
+61 of 62: `x86-film`'s sound under load again, which passes alone.

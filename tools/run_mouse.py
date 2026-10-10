@@ -57,7 +57,16 @@ KEPT = ('local f = fs.read("/Home/Preferences/mouse")\n'
 KEEP_SPEED = ('local prefs = use("/Kosmos/Libraries/prefs.lua")\n'
               'local f = prefs.read("mouse") or {}\n'
               'f.speed = 60\n'
-              'print("KEEP " .. tostring(prefs.write("mouse", f)))\n')
+              'print("KEEP " .. tostring(prefs.write("mouse", f)))\n'
+              # And focus following the pointer, as Preferences keeps it, for
+              # the second boot to start with (Diego, 10 October: "i have to
+              # enable it again every reboot").
+              'local a = prefs.read("appearance") or {}\n'
+              'a.focus_follows, a.focus_delay_ms = true, 250\n'
+              'print("KEEP FOCUS " .. tostring(prefs.write("appearance", a)))\n')
+# What the running window manager has in force: focus following the pointer.
+FOCUS = ('local r = fs.send("/Running/wm", { type = "keys" }) or {}\n'
+         'print(("FOCUS %s %s"):format(tostring(r.focus_follows), tostring(r.focus_delay_ms)))\n')
 ASK = ('local r = fs.send("/Running/wm", { type = "mouse", speed = 48 })\n'
        'print(("ASKED %s %s %s"):format(tostring(r and r.ok), tostring(r and r.speed), '
        'tostring(sys.pointer_speed())))\n')
@@ -173,9 +182,10 @@ def second(image, fails, said):
         guest._read_available()
         m = re.findall(r"wm: mouse ([^\n]*)", guest.seen)
         said["at the start"] = m[0].strip() if m else None
+
         session = S.connect(telnet)
 
-        for name, text in (("prefs", PREFS), ("ask", ASK)):
+        for name, text in (("prefs", PREFS), ("ask", ASK), ("focus", FOCUS)):
             session.put(text.encode(), "/Temporary/%s.lua" % name)
 
         mark = len(guest.seen)
@@ -188,6 +198,7 @@ def second(image, fails, said):
 
         said["speed slider on a mouse"] = "preferences slider: speed at" in guest.seen[mark:]
         said["asked"] = session.run("/Temporary/ask.lua").decode(errors="replace")
+        said["focus at the start"] = session.run("/Temporary/focus.lua").decode(errors="replace")
     except Exception as e:                  # noqa: BLE001 - said below
         fails.append("the second boot stopped: %s: %s" % (type(e).__name__, str(e).splitlines()[0]))
     finally:
@@ -220,6 +231,9 @@ def main():
     if said.get("at the start") != "speed 60, double click 200 ms":
         fails.append("the desktop did not apply the mouse settings it was left with: %r"
                      % said.get("at the start"))
+    if "FOCUS true 250" not in said.get("focus at the start", ""):
+        fails.append("focus following the pointer, kept by the first boot, was not on at the "
+                     "second's start: %r" % said.get("focus at the start"))
     if said.get("speed slider on a mouse") is not True:
         fails.append("a relative mouse was not offered a speed slider")
     if "ASKED true 48 48" not in said.get("asked", ""):
@@ -232,7 +246,7 @@ def main():
         if " died: " in seen:
             fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 9
+    checks = 10
 
     if fails:
         print("FAIL: %d of %d checks on the Mouse page:" % (len(fails), checks))
@@ -243,7 +257,8 @@ def main():
     print("PASS: %d checks on the Mouse page (a tablet offered no speed; the folder opened by a "
           "double click at the slow span; the fast end written, told to every window, and two "
           "presses then two clicks; both settings applied at the next desktop's start on a PS/2 "
-          "mouse, which has a speed slider; a speed asked of the window manager on the board)."
+          "mouse, which has a speed slider; a speed asked of the window manager on the board; "
+          "focus following the pointer kept across the restart)."
           % checks)
     return 0
 

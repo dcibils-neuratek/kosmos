@@ -8309,6 +8309,20 @@ https://claude.ai/artifact/DzcP4dHurAvXE4xXfU5DAp (private to Diego). A
 status he changes or an item he adds there is read back and written into
 this file; this file stays the record, with the reasoning.
 
+**AGREED, 10 October - the PDF reader made again.** Diego: "we need to
+revisit our pdf reader which hasnt been updated since the first kosmos
+builds", "it needs a menu, zoom, better navigation, window resizing, etc".
+`pdfview.lua` is 370 lines from the first builds: no menu, no zoom, a page
+at a time, a window that does not resize. **Designed first, as any app**
+(`CLAUDE.md`): its feature set, a mockup in `docs/pdfview.html`, and its
+architecture and diagram - what the PDF Kit, `pdfpage.lua`, the kit's
+menus and the Open window already supply - shown to Diego before code.
+To start with: a menu bar (File, View, Go), zoom (in, out, fit width, fit
+page, actual size), scrolling through the document rather than a page at a
+time, page thumbnails in a sidebar, go to page, the window resizable with
+the pages laid out again, search in the text, and remembering where each
+document was left.
+
 **Found, 10 October - a question to an application waits for its tick.**
 The launcher waited 840 ms of every press for the Deskbar to say where the
 dock is (`testing.md` 18.512): a kit window answers `/Running/<name>` only

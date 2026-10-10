@@ -123,6 +123,14 @@ local theme = use("/Kosmos/Libraries/theme.lua")
 --
 local OUT = { want_corner = true,
               want_shadow = false,
+              -- Focus following the pointer: off until Preferences turns it
+              -- on, a second by default (`load_appearance`, `handlers.keys`,
+              -- `wm/pointer.lua`). Here, before the saved setting is read:
+              -- they were set again 600 lines after it, so the setting was
+              -- forgotten at every start (Diego, 10 October: "i have to
+              -- enable it again every reboot").
+              focus_follows = false,
+              focus_delay_ms = 1000,
               corner  = theme.metrics.corner or 0,
               shadow  = 0,
               -- How far each new window steps from the last, when the
@@ -1607,10 +1615,6 @@ end
 -- menu.
 --
 OUT.keys = { power = "off", super = "menu" }
-
--- Focus following the pointer: off until Preferences turns it on, a second
--- by default (`load_appearance`, `handlers.keys`, `wm/pointer.lua`).
-OUT.focus_follows, OUT.focus_delay_ms = false, 1000
 
 function OUT.load_keys()
   local power = prefs.read("power")
@@ -5567,7 +5571,9 @@ handlers.keys = function(req)
     if v ~= nil and pair[2][v] then OUT.keys[pair[1]] = v end
   end
 
-  return { ok = true }
+  -- What is in force now, which is also how a test asks it.
+  return { ok = true, focus_follows = OUT.focus_follows, focus_delay_ms = OUT.focus_delay_ms,
+           power = OUT.keys.power, super = OUT.keys.super }
 end
 
 --
