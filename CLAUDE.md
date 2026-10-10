@@ -120,6 +120,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - The desktop on the M700's GPU, 2D first - the plan, for Diego to decide: `docs/m700-2d.md`
 - `diskfs` in C and speaking a declared shape, written before it is built: `docs/diskfs.md`
 - Maps - its feature set and architecture, the window, the diagram, before it is built: `docs/maps.md`, `docs/maps.html`, `docs/maps-architecture.png`
+- Shortcuts - every key, grouped and searchable; how an application declares its keys - before it is built: `docs/shortcuts.md`, `docs/shortcuts.html`, `docs/shortcuts-architecture.png`
 - Kosmos Write as drawn: `docs/write.html`; its kits - the document, its file, pages, PDF - before they are built: `docs/write.md`
 - What a target is, and what a new machine costs: `docs/targets.md`
 - UI kit and window manager: `docs/ui.md`

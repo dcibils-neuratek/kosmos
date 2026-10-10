@@ -1,0 +1,157 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Shortcuts, and what it stands on, as one picture: the application on top
+  with every application's header beside it, the UI kit's keycaps and
+  menus' keys, keys.lua and appkeys.lua marked new, the window manager and
+  the stores as they are, and Nebula at the bottom. The busiest path - a key
+  typed into the search (S) - and opening (O) drawn through it. Drawn on 10
+  October 2026, before any of it is built; `docs/shortcuts.md` is the
+  argument and `docs/shortcuts.html` the window.
+
+  Rendered to docs/shortcuts-architecture.png by headless Chrome at twice
+  its size, as docs/maps-architecture.png is:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --disable-gpu --screenshot=docs/shortcuts-architecture.png \
+      --window-size=1400,H --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/shortcuts-architecture.html
+
+  where H is the page's height, which the script at the end puts in the
+  title.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Shortcuts architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Shortcuts - what it stands on</h1>
+<p class="sub">Every key Kosmos answers to, in one window. Nothing in it is a list of its own: the desktop's keys come from the window manager that takes them, text's from the UI kit that answers them, and an application's from its own header, which the kit also uses to draw its menus and answer its keys. Shortcuts is Lua, and the thinnest layer there is.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>application</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries and kit</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>C kits</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">S</span><span>a key typed into the search</span>
+  <span class="f">O</span><span>opening</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Shortcuts - <code>shortcuts.lua</code></b><p>The window as drawn: the sidebar of groups and applications, keycaps, search <span class="f">S1</span>, Print as a cheat sheet. In the dock; Super+/, and Super+&ordm; over everything.</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>every application's header</b><p><code>-- kosmos: key Ctrl+R Reply</code><br>one line a key; its menu item says <code>keys = "Ctrl+R"</code></p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries and the UI kit (in the application's process)</h2>
+      <div class="row" style="grid-template-columns:1.4fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>UI kit - <code>ui.lua</code></b><p><code>g:keycaps</code> a chord as keys <span class="f">S2</span><br>a menu item's <code>keys</code>: drawn in the menu, answered before <code>on_key</code><br><code>ui.TEXT_KEYS</code>: the field dispatches from it<br><code>ui.sidebar</code>, <code>ui.field</code>, <code>ui.list</code> as they are</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>keys.lua</b><p><code>keys.chord</code>, <code>keys.spell</code>: "Ctrl+Shift+S" to a key and back; ctrl, control; cmd, win, super <span class="f">S1</span></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>appkeys.lua</b><p>a program's <code>kosmos: key</code> lines, read to the end of its header <span class="f">O2</span></p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr;margin-top:10px">
+        <div class="box"><b>writedoc.lua</b><p>the cheat sheet as a Write document</p></div>
+        <div class="box"><b>pageset.lua</b><p>its pages</p></div>
+        <div class="box"><b>filetypes.lua</b><p>the PDF opened in its viewer</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>C kits (in the application's process)</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box"><b>gfx</b><p>text, round fills, icons decoded <span class="f">S2</span></p></div>
+        <div class="box"><b>PDF Kit - <code>pdfwrite</code></b><p>the cheat sheet written, its faces embedded</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers</h2>
+      <div class="row" style="grid-template-columns:1.3fr 1fr">
+        <div class="box"><b>window manager</b><p><code>handlers.shortcuts</code>: the desktop's, windows' and screen's keys, from the arrays it dispatches <span class="f">O1</span>; composes <span class="f">S3</span>. Its <code>EDIT_BINDINGS</code> copy goes.</p></div>
+        <div class="box"><b>binfs / diskfs</b><p><code>/Kosmos/Apps</code>, <code>/Home/Apps</code>: headers, icons, names <span class="f">O2</span>; the PDF into <code>/Home/Documents</code></p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr"><div class="box"><b>threads, address spaces, IPC, capabilities</b><p>one message to the window manager; file reads; the window's region</p></div></div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>S - a key typed into the search</h3>
+      <ol>
+        <li><b>S1</b> The query in words, each with its spellings from <code>keys.chord</code>; a few hundred rows matched - under a millisecond.</li>
+        <li><b>S2</b> The twenty rows that fit drawn: keycaps and a line of text each, the matched words lit.</li>
+        <li><b>S3</b> One commit; the window manager composes.</li>
+      </ol>
+    </div>
+    <div class="card"><h3>O - opening, under 200 ms</h3>
+      <ol>
+        <li><b>O1</b> One message: the window manager's keys.</li>
+        <li><b>O2</b> About sixty headers, each read to its first line of code; icons decoded once.</li>
+      </ol>
+      <p style="font-size:13px;color:var(--dim);margin-top:6px">If headers are where the time goes, binfs answers a program's <code>key</code> lines as it answers its <code>needs</code>.</p>
+    </div>
+    <div class="card"><h3>One list, held</h3>
+      <table>
+        <tr><td>Desktop keys</td><td>the window manager's dispatch arrays</td></tr>
+        <tr><td>Text keys</td><td><code>ui.TEXT_KEYS</code>, the field's dispatch</td></tr>
+        <tr><td>An application's keys</td><td>its header; its menu items name them</td></tr>
+        <tr><td><code>check_appkeys.py</code></td><td>every <code>keys =</code> declared; none twice; none the window manager takes first</td></tr>
+      </table>
+    </div>
+    <div class="card"><h3>C or Lua</h3>
+      <table>
+        <tr><td>Everything here</td><td>Lua - a few hundred rows, no loop over bytes</td></tr>
+        <tr><td>Pixels, the PDF</td><td>C, in gfx and the PDF Kit, as they are</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

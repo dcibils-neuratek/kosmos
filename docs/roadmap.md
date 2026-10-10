@@ -186,8 +186,12 @@ its card, for today.
 **The mockup, `docs/shortcuts.html`, agreed as drawn, 10 October** ("All
 mockups are perfect"): the dark window; menu items get a shortcut field and
 each application declares its keys, as part of this; Print as a cheat sheet
-now. Being an app, its feature set, architecture and diagram come next
-(`docs/shortcuts.md`, `shortcuts-architecture.png`), before code.
+now. **Designed, 10 October**: feature set and architecture in
+`docs/shortcuts.md`, the picture `docs/shortcuts-architecture.png` - an
+application's keys declared in its header (`kosmos: key Ctrl+R Reply`),
+menu items naming them and the kit drawing and answering them, held by
+`tools/check_appkeys.py`; steps K1-K6; three questions for Diego before
+code.
 
 **The app switcher, Alt+Tab** - Diego, 10 October 2026: "lets add alt+tab
 app switching like macos and windows to the queue for today", with macOS's
