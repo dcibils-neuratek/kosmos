@@ -186,12 +186,18 @@ its card, for today.
 **The mockup, `docs/shortcuts.html`, agreed as drawn, 10 October** ("All
 mockups are perfect"): the dark window; menu items get a shortcut field and
 each application declares its keys, as part of this; Print as a cheat sheet
-now. **Designed, 10 October**: feature set and architecture in
-`docs/shortcuts.md`, the picture `docs/shortcuts-architecture.png` - an
-application's keys declared in its header (`kosmos: key Ctrl+R Reply`),
-menu items naming them and the kit drawing and answering them, held by
-`tools/check_appkeys.py`; steps K1-K6; three questions for Diego before
-code.
+now. **Designed, 10 October**: `docs/shortcuts.md` and
+`docs/shortcuts-architecture.png`, steps K1-K4. **System-wide keys only**
+(Diego, the same evening: "The shortcuts app it's just an index of all
+system wide key combinations", "Why would i add an entry in every app for
+shortcuts?") - the first design's per-application declarations are gone.
+**And made and changed there**, kept as a user setting (Diego: "we could
+define and create new ones on that app or remap existing ones", "Like
+Super+t opens a new terminal", "And changes should persist", "So it's a
+user setting"): Add a shortcut and Change drawn into `shortcuts.html` and
+agreed ("Mockup looks great") - Super chords only, `/Home/Preferences/
+shortcuts` holding only what was made or changed, the window manager
+building its table from its defaults and that setting.
 
 **The app switcher, Alt+Tab** - Diego, 10 October 2026: "lets add alt+tab
 app switching like macos and windows to the queue for today", with macOS's

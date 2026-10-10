@@ -2,8 +2,7 @@
 <!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
 <!--
   Shortcuts, and what it stands on, as one picture: the application on top
-  with every application's header beside it, the UI kit's keycaps and
-  menus' keys, keys.lua and appkeys.lua marked new, the window manager and
+  the UI kit's keycaps and text keys and keys.lua's spellings marked new, the window manager and
   the stores as they are, and Nebula at the bottom. The busiest path - a key
   typed into the search (S) - and opening (O) drawn through it. Drawn on 10
   October 2026, before any of it is built; `docs/shortcuts.md` is the
@@ -74,7 +73,7 @@
 </head>
 <body>
 <h1>Shortcuts - what it stands on</h1>
-<p class="sub">Every key Kosmos answers to, in one window. Nothing in it is a list of its own: the desktop's keys come from the window manager that takes them, text's from the UI kit that answers them, and an application's from its own header, which the kit also uses to draw its menus and answer its keys. Shortcuts is Lua, and the thinnest layer there is.</p>
+<p class="sub">An index of every key that works everywhere in Kosmos, in one window. Nothing in it is a list of its own: the desktop's and windows' keys come from the window manager that takes them, and text's from the UI kit that answers them. Applications' own keys are not in it. Shortcuts is also where a person makes a shortcut (Super T opens a Terminal) or changes one, kept as a user setting the window manager reads. Shortcuts is Lua, and the thinnest layer there is.</p>
 <div class="legend">
   <span><i style="border-color:var(--new);background:#fff"></i>new</span>
   <span><i style="border-color:var(--app-line);background:var(--app)"></i>application</span>
@@ -84,22 +83,22 @@
   <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
   <span class="f">S</span><span>a key typed into the search</span>
   <span class="f">O</span><span>opening</span>
+  <span class="f">M</span><span>making a shortcut</span>
 </div>
 <div class="grid">
   <div>
     <div class="layer app"><h2>Applications</h2>
-      <div class="row" style="grid-template-columns:2fr 1fr">
-        <div class="box new"><span class="tag">NEW</span><b>Shortcuts - <code>shortcuts.lua</code></b><p>The window as drawn: the sidebar of groups and applications, keycaps, search <span class="f">S1</span>, Print as a cheat sheet. In the dock; Super+/, and Super+&ordm; over everything.</p></div>
-        <div class="box new"><span class="tag">NEW</span><b>every application's header</b><p><code>-- kosmos: key Ctrl+R Reply</code><br>one line a key; its menu item says <code>keys = "Ctrl+R"</code></p></div>
+      <div class="row" style="grid-template-columns:1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Shortcuts - <code>shortcuts.lua</code></b><p>The window as drawn: the sidebar of groups - The desktop, Windows, The screen, Text - keycaps, search <span class="f">S1</span>, Print as a cheat sheet. <i>Add a shortcut</i> and <i>Change</i>: keys listened for <span class="f">M1</span>, saved <span class="f">M2</span>, the window manager told <span class="f">M3</span>. In the dock; Super+/, and Super+&ordm; over everything.</p></div>
       </div>
     </div>
     <div class="layer lua"><h2>Lua libraries and the UI kit (in the application's process)</h2>
-      <div class="row" style="grid-template-columns:1.4fr 1fr 1fr">
-        <div class="box new"><span class="tag">NEW</span><b>UI kit - <code>ui.lua</code></b><p><code>g:keycaps</code> a chord as keys <span class="f">S2</span><br>a menu item's <code>keys</code>: drawn in the menu, answered before <code>on_key</code><br><code>ui.TEXT_KEYS</code>: the field dispatches from it<br><code>ui.sidebar</code>, <code>ui.field</code>, <code>ui.list</code> as they are</p></div>
-        <div class="box new"><span class="tag">NEW</span><b>keys.lua</b><p><code>keys.chord</code>, <code>keys.spell</code>: "Ctrl+Shift+S" to a key and back; ctrl, control; cmd, win, super <span class="f">S1</span></p></div>
-        <div class="box new"><span class="tag">NEW</span><b>appkeys.lua</b><p>a program's <code>kosmos: key</code> lines, read to the end of its header <span class="f">O2</span></p></div>
+      <div class="row" style="grid-template-columns:1.6fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>UI kit - <code>ui.lua</code></b><p><code>g:keycaps</code> a chord as keys <span class="f">S2</span><br><code>ui.TEXT_KEYS</code>: the text keys, which the field dispatches from<br><code>ui.sheet</code>, out of Mail, now shared<br><code>ui.sidebar</code>, <code>ui.field</code>, <code>ui.list</code> as they are</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>keys.lua</b><p><code>keys.spellings</code>: ctrl and Control, cmd, win and Super as one <span class="f">S1</span></p></div>
       </div>
-      <div class="row" style="grid-template-columns:1fr 1fr 1fr;margin-top:10px">
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:10px">
+        <div class="box"><b>prefs.lua</b><p><code>shortcuts</code>: what was made or changed <span class="f">M2</span></p></div>
         <div class="box"><b>writedoc.lua</b><p>the cheat sheet as a Write document</p></div>
         <div class="box"><b>pageset.lua</b><p>its pages</p></div>
         <div class="box"><b>filetypes.lua</b><p>the PDF opened in its viewer</p></div>
@@ -113,8 +112,8 @@
     </div>
     <div class="layer srv"><h2>Servers</h2>
       <div class="row" style="grid-template-columns:1.3fr 1fr">
-        <div class="box"><b>window manager</b><p><code>handlers.shortcuts</code>: the desktop's, windows' and screen's keys, from the arrays it dispatches <span class="f">O1</span>; composes <span class="f">S3</span>. Its <code>EDIT_BINDINGS</code> copy goes.</p></div>
-        <div class="box"><b>binfs / diskfs</b><p><code>/Kosmos/Apps</code>, <code>/Home/Apps</code>: headers, icons, names <span class="f">O2</span>; the PDF into <code>/Home/Documents</code></p></div>
+        <div class="box"><b>window manager</b><p><code>handlers.shortcuts</code>: the desktop's, windows' and screen's keys with their groups, from the arrays it dispatches <span class="f">O1</span>; composes <span class="f">S3</span>. Its <code>EDIT_BINDINGS</code> copy goes; Magnet's keys join when built.<br><i>New:</i> each binding's <code>action</code>; the table built from the defaults and the <code>shortcuts</code> setting <span class="f">M3</span>; <code>listen</code>, the next Super chord posted to the window <span class="f">M1</span>.</p></div>
+        <div class="box"><b>diskfs</b><p><code>/Home/Preferences/shortcuts</code>; the cheat sheet's PDF into <code>/Home/Documents</code></p></div>
       </div>
     </div>
     <div class="layer kern"><h2>Nebula</h2>
@@ -124,29 +123,34 @@
   <div class="side">
     <div class="card"><h3>S - a key typed into the search</h3>
       <ol>
-        <li><b>S1</b> The query in words, each with its spellings from <code>keys.chord</code>; a few hundred rows matched - under a millisecond.</li>
-        <li><b>S2</b> The twenty rows that fit drawn: keycaps and a line of text each, the matched words lit.</li>
+        <li><b>S1</b> The query in words, each with its spellings from <code>keys.spellings</code>; about thirty rows matched.</li>
+        <li><b>S2</b> The rows that fit drawn: keycaps and a line of text each, the matched words lit.</li>
         <li><b>S3</b> One commit; the window manager composes.</li>
       </ol>
     </div>
-    <div class="card"><h3>O - opening, under 200 ms</h3>
+    <div class="card"><h3>M - making Super T open a Terminal</h3>
       <ol>
-        <li><b>O1</b> One message: the window manager's keys.</li>
-        <li><b>O2</b> About sixty headers, each read to its first line of code; icons decoded once.</li>
+        <li><b>M1</b> The sheet asks the window manager to listen; Super T is posted to Shortcuts, not acted on.</li>
+        <li><b>M2</b> Add: <code>{keys="Super+T", action="open", program=terminal}</code> saved by the settings kit.</li>
+        <li><b>M3</b> The window manager is posted <code>{type="keys", shortcuts=true}</code>, reads the setting and builds its table again - never waiting in its key path.</li>
       </ol>
-      <p style="font-size:13px;color:var(--dim);margin-top:6px">If headers are where the time goes, binfs answers a program's <code>key</code> lines as it answers its <code>needs</code>.</p>
+    </div>
+    <div class="card"><h3>O - opening, under 100 ms</h3>
+      <ol>
+        <li><b>O1</b> One message: the window manager's keys and their groups; the kit's text keys are a table already in the process.</li>
+      </ol>
     </div>
     <div class="card"><h3>One list, held</h3>
       <table>
         <tr><td>Desktop keys</td><td>the window manager's dispatch arrays</td></tr>
         <tr><td>Text keys</td><td><code>ui.TEXT_KEYS</code>, the field's dispatch</td></tr>
-        <tr><td>An application's keys</td><td>its header; its menu items name them</td></tr>
-        <tr><td><code>check_appkeys.py</code></td><td>every <code>keys =</code> declared; none twice; none the window manager takes first</td></tr>
+        <tr><td>Yours and changes</td><td>the <code>shortcuts</code> setting: only differences, each in full</td></tr>
+        <tr><td>Applications' own keys</td><td>not in it - system-wide keys only</td></tr>
       </table>
     </div>
     <div class="card"><h3>C or Lua</h3>
       <table>
-        <tr><td>Everything here</td><td>Lua - a few hundred rows, no loop over bytes</td></tr>
+        <tr><td>Everything here</td><td>Lua - about thirty rows, no loop over bytes</td></tr>
         <tr><td>Pixels, the PDF</td><td>C, in gfx and the PDF Kit, as they are</td></tr>
       </table>
     </div>
