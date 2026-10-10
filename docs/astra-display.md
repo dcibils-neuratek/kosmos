@@ -201,10 +201,12 @@ desktop.
        writes its scene into a region they share - it changes every pass,
        so it is data, not messages - and sends one `compose` with the
        damage; a window's region, and the window manager's own pictures,
-       are handed over once each, by slot. **Yours to decide**: who starts
-       it - init at boot, holding the screen for whichever window manager
-       connects, or the window manager when it starts, ending with it
-       (asked on the Kosmos Board).
+       are handed over once each, by slot. **Decided by Diego, 10
+       October: init starts it at boot** ("Let's go with option a as you
+       recommended"), as it starts every C server. It outlives a window
+       manager that ends or crashes, keeping the screen; with none
+       connected the console has the screen as it does today, and init
+       hands the manager door only to the window manager.
 5. **D4** - the frame path: commit and poll answered by the window server,
    held polls and event queues with it.
 6. **D5** - input routing: keys and presses from the console to windows in
