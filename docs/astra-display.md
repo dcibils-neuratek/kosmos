@@ -189,6 +189,20 @@ desktop.
      an application's region is handed on to it with the window; the
      window manager's own pictures are regions it shares with it. Commit
      and poll still come to the window manager until D4.
+     **In two parts** (planned 10 October):
+     - **D3b-1** - the drawing primitives and the scene's composing in C
+       that needs no Lua (`user/kits/gfx/draw.c`, `scene_core.c`), so the
+       Graphics Kit and a server share one copy; the kit's Lua methods and
+       `gfx.scene` become thin bindings over them.
+     - **D3b-2** - `windowserver`, a role of the init image like every C
+       server: it holds the screen and the back buffer; the window manager
+       writes its scene into a region they share - it changes every pass,
+       so it is data, not messages - and sends one `compose` with the
+       damage; a window's region, and the window manager's own pictures,
+       are handed over once each, by slot. **Yours to decide**: who starts
+       it - init at boot, holding the screen for whichever window manager
+       connects, or the window manager when it starts, ending with it
+       (asked on the Kosmos Board).
 5. **D4** - the frame path: commit and poll answered by the window server,
    held polls and event queues with it.
 6. **D5** - input routing: keys and presses from the console to windows in
