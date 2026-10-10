@@ -35,35 +35,44 @@ stands on.
 ## Global and local
 
 Diego, the same evening: "Shortcuts are global keys mapping", "Then every
-app has its own local app key shortcuts like super+n in mail app to create
-a new email". So there are two layers, and Super is in both, as a Mac's
-Command key is:
+app has its own local app key shortcuts", and then "We can use ctrl as the
+super key for local key mappings?", "Ctrl+n in mail app for new mail?".
 
-- **Global**: the keys in Shortcuts. They do the same thing whatever window
-  is in front, and the window manager answers them before any application
-  sees them.
-- **Local**: an application's own keys, such as Mail's Super N for a new
-  message. They work only while that application has the keyboard and are
-  answered by the application. They are not listed in Shortcuts.
+So there are two layers, and each has a key of its own:
 
-**A Super chord nobody made global reaches the application in front.** That
-is already how the window manager behaves: a chord it has no binding for is
-handed to the focused window untouched (`super_command` and `flush_super` in
-`wm/keys.lua`). So an application can answer Super N today without asking
-anyone.
+- **Global keys are Super's.** They are the keys in Shortcuts, made and
+  changed there. They do the same thing whichever window is in front, and
+  the window manager answers them before any application sees them.
+- **Local keys are Control's.** An application's own keys, such as Mail's
+  Control N for a new message. They work only while that application has
+  the keyboard, the application answers them, and Shortcuts does not list
+  them. Applications already work this way: the IDE runs a program on
+  Control Enter and completes a word on Control Space.
 
-**Global wins, and that has a cost.** Making Super N global would take it
-from Mail everywhere. Shortcuts cannot warn about that, because
-applications do not declare their local keys, by design. The sheet says it
-in words when the keys are not taken globally: "free here - an application
-that uses Super T for itself will not see it any more". The way to keep
-collisions rare is a convention rather than a mechanism:
-- the system keeps few global keys;
-- applications choose local keys the way a Mac's do (N new, O open, S
-  save, F find, W close), and the system keeps away from those letters.
+**The two cannot collide**, because they are on different keys. That is why
+it is better than Super for both, which was written here first:
+- a global key made in Shortcuts could have silently taken a key from an
+  application;
+- Shortcuts could not have warned about it, since applications do not
+  declare their keys.
 
-Applications' local keys on Super are their own work, one application at a
-time: Mail's Super N first (`roadmap.md`).
+**What Control is not free for**:
+- **Control W** is the desktop's prefix (Control-W Q ends the desktop,
+  Control-W and an arrow moves a window). An application never sees it;
+  Control-W Control-W sends one through.
+- **Control C, X, V and A** are text editing's: copy, cut, paste, select
+  everything. An application uses them for exactly that and nothing else.
+- **In the Terminal**, Control belongs to the program running inside it:
+  Control C stops it and Control D ends input. The Terminal's own keys are
+  Control Shift (Control Shift T for a new tab), as a terminal's are
+  elsewhere.
+
+**And Super stays the system's**: a Super chord that nobody made global
+still reaches the window in front (`super_command` and `flush_super` in
+`wm/keys.lua`), but applications do not use it for their own keys.
+
+Applications' local keys are their own work, one application at a time:
+Mail's Control N first (`roadmap.md`).
 
 ## What a person can do
 
@@ -117,8 +126,7 @@ time: Mail's Super N first (`roadmap.md`).
 - changing text editing's keys (Control-C and the rest) or Control-W's:
   they are shown here, and changing them would change every application;
 - chords with Control or Alt as new shortcuts. Only Super chords can be
-  made, because those are the system's to give out (*Global and local*
-  below);
+  made: Control is the applications' (*Global and local* above);
 - Help, the "help, cheatsheet window in the future". The sidebar has room
   for it to become another group.
 
