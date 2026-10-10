@@ -137,6 +137,11 @@ when let go; Super with the arrows (and more) does the same from the
 keyboard; a Magnet page in Preferences turns it on and off and sets what the
 edges and keys do. The window manager's, since placing windows is. Mockup
 first, as always, before any code.
+**The mockup, `docs/magnet.html`, agreed as drawn, 10 October** ("All mockups
+are perfect"): halves from the left and right edges, the whole room from the
+top, quarters from the corners; Super with the arrows for halves, the whole
+room and back, Super+Alt with the arrows for quarters, thirds by number; a gap
+of 6 points; the Magnet page in Preferences.
 
 **Maps, finished, and dragging made smooth** - Diego, 10 October 2026:
 "the maps app needs to be finished, also its slow to drag the map around, it
@@ -152,6 +157,11 @@ real app that can be launched from the dock, called Shortcuts, which shows
 all available commands in kosmos os", "can be also extended as a help,
 cheatsheet window in the future", "make it look nice". Mockup first, then
 its card, for today.
+**The mockup, `docs/shortcuts.html`, agreed as drawn, 10 October** ("All
+mockups are perfect"): the dark window; menu items get a shortcut field and
+each application declares its keys, as part of this; Print as a cheat sheet
+now. Being an app, its feature set, architecture and diagram come next
+(`docs/shortcuts.md`, `shortcuts-architecture.png`), before code.
 
 **The app switcher, Alt+Tab** - Diego, 10 October 2026: "lets add alt+tab
 app switching like macos and windows to the queue for today", with macOS's
@@ -164,6 +174,9 @@ under it; Tab moves forward, Shift+Tab back, and letting go of Super brings
 that application's windows to the front. **Alt+Tab** steps through the open
 windows with nothing shown, which is what Super+Tab does today. Drawn as `docs/switcher.html` and agreed before any
 code; the window manager owns it, since the keys are the system's.
+**Agreed as drawn, 10 October** ("All mockups are perfect"): applications in
+the order last used; Q quits the lit one while it shows; the down arrow's row
+of windows built with it.
 
 **Diego's order, 4 October 2026**: "Then do notifications system", "Then
 finish storage in C", "Then kosmos write" - so **Notifications** (below),
