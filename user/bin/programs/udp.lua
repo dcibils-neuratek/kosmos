@@ -3,7 +3,7 @@
 --
 --   udp send 192.168.1.38 9000 hello       one datagram, and done
 --   udp listen 9000                        each one that arrives, said
---   udp listen 5353 224.0.0.251            the same, a group joined
+--   udp listen 9000 239.255.0.1            the same, a group joined
 --   udp echo 9000 [GROUP]                  said, and sent back to its sender
 --
 -- What `ping` is for ICMP: the first thing to try when something speaking
@@ -40,10 +40,10 @@ if verb == "send" then
 
   if not to or not port then return usage() end
 
-  local sock, why = fs.udp("/Network", 0)
+  local sock, code, why = fs.udp("/Network", 0)
 
   if not sock then
-    print("udp: " .. tostring(why))
+    print("udp: " .. tostring(why or code))
     return
   end
 
@@ -65,10 +65,10 @@ local group = words[3] and ipv4.bytes(words[3])
 
 if not port or (words[3] and not group) then return usage() end
 
-local sock, why = fs.udp("/Network", port, group)
+local sock, code, why = fs.udp("/Network", port, group)
 
 if not sock then
-  print("udp: " .. tostring(why))
+  print("udp: " .. tostring(why or code))
   return
 end
 

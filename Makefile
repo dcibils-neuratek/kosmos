@@ -894,6 +894,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/network/httpc.c \
              user/servers/tiles.c \
              user/servers/windowserver.c \
+             user/servers/mdnsd.c \
              user/kits/tls/tls_kosmos.c \
              $(TINYGL_SRCS) \
              $(TINYGL_DEMO_SRCS) \

@@ -22698,3 +22698,39 @@ could; the check now reads into room enough, and fails without the rule.
 The whole gate, 62 of 64: `x86-film`'s carded flake, and `x86-kernel`'s "smp:
 a new thread avoids a loaded core", a placement test that reads the load;
 both pass alone, the kernel's 198 of 198.
+
+## 18.520 mdnsd: what is on the network, by name (N11c)
+
+`docs/sharing.md` N11c. `mdnsd` (`user/servers/mdnsd.c`), a server in C
+started by init after the network stack, binds port 5353 and the group
+224.0.0.251 (N11a) once the machine has an address - trying every second
+until it does - and answers `/Discovery`, mounted for every program as
+`/Network` is, in a declared shape (`mdnsproto.h`): `BROWSE` a service type,
+answered at once with how many instances are known and asking the network
+at once and after one, two and four seconds, then every minute, while it is
+asked about in the last ten seconds; `INSTANCE` n of a type - its name, host,
+port and address - an item a message; `RESOLVE` a `.local` name, the caller
+parked until the address comes or its wait ends. Answers are read with
+`dnsmsg.c`, twice over - names and services, then addresses - so an
+address is taken whatever order a message lists its records in; an instance
+whose SRV or address did not come is asked for after the message. Kept for
+the time to live given, a goodbye (a time to live of 0) taken at once, and
+**only what somebody here asked about**: a stranger's records are read and
+forgotten. `mdns.lua` for programs and `mdns`, a program: `browse TYPE
+[SECONDS]` and `resolve NAME`.
+
+**`x86-mdns`** (new, 5 checks, three boots): the wire and the Python peer of
+`x86-udp`, the peer now a file server called Studio answering as a Mac or a
+NAS does - a PTR, SRV, TXT and A in one message, compressed. `mdns browse
+_smb._tcp`: the question to the group at a time to live of 255, and "Studio
+studio.local:445 10.9.0.1"; `mdns resolve studio.local`: 10.9.0.1; and
+`stranger.local`, whose A the peer sent before anybody asked and then does
+not answer for: "nobody answered for that name". **Controls**, in one run:
+every A kept, and the SRV's port read two bytes early - "studio.local:?"
+and "stranger.local is 10.9.0.66".
+The whole gate, 63 of 65: `x86-film`'s carded flake, and **`x86-udp`, a
+real one** - it ran `udp echo 5353 224.0.0.251`, and port 5353 is
+`mdnsd`'s from boot now, so the program was refused, and said only "udp: 13"
+since it printed the code and not the sentence. The suite has a port and a
+group of its own (9000, 239.255.0.1), `udp` prints the sentence, and
+`x86-udp` passes 6 of 6 again.

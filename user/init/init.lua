@@ -45,6 +45,7 @@ local ROLE_SMBFS      = 24 -- shares over the network: SMB 2 and 3 (`sharing.md`
 local ROLE_KEYRING    = 25 -- the passwords Kosmos keeps, sealed (`keyring.md`)
 local ROLE_TILES      = 26 -- the map's tiles from the network: /Tiles (`maps.md`)
 local ROLE_WINDOWSERVER = 27 -- holds the screen, composes (`astra-display.md` D3b-2)
+local ROLE_MDNSD      = 28 -- /Discovery: multicast DNS (`sharing.md` N11c)
 
 --
 -- **A program's own image** (`docs/elf.md` step 4). A program whose header
@@ -3852,7 +3853,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap,
                           midi_cap, notify_cap, share_cap, keyring_cap, tiles_cap,
-                          mail_keys_cap, window_cap)
+                          mail_keys_cap, window_cap, mdns_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -3928,6 +3929,9 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- N3 a share's files - about what is under it, and the two never overlap.
   --
   if net_cap then ns.mount("/Network", net_cap, nil, "net", share_cap) end
+
+  -- And what is on it, by name (`docs/sharing.md` N11c).
+  if mdns_cap then ns.mount("/Discovery", mdns_cap, nil, "mdns") end
 
   -- The programs this image carries. Read-only, and served by a process of
   -- its own like everything else.
@@ -4680,6 +4684,9 @@ query. `find` and `watch` are built on exactly these two calls.
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
     local camera, midi, keyring, tiles, mailkeys, window = nil, nil, nil, nil, nil, nil
+    -- /Discovery (`docs/sharing.md` N11c) to every program, as `/Network`
+    -- is: what is on the network is part of having it.
+    local mdns = mdns_cap
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -4688,6 +4695,7 @@ query. `find` and `watch` are built on exactly these two calls.
       if want == "network" and may_pass_net() then
         flags = flags | SPAWN_NET
       end
+
       if want == "camera" then camera = camera_cap end
       if want == "midi" then midi = midi_cap end
       if want == "keyring" and keyring_cap and keyring_grant(path) then
@@ -4722,6 +4730,8 @@ query. `find` and `watch` are built on exactly these two calls.
     if mailkeys then caps[#caps + 1] = mailkeys; mailkeys_at = #caps - 1 end
     local window_at = nil
     if window then caps[#caps + 1] = window; window_at = #caps - 1 end
+    local mdns_at = nil
+    if mdns then caps[#caps + 1] = mdns; mdns_at = #caps - 1 end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
     local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags)
@@ -4738,7 +4748,7 @@ query. `find` and `watch` are built on exactly these two calls.
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       backlight = 12, notify = 13, share = share_cap and 14 or nil,
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
-      mailkeys = mailkeys_at, windowserver = window_at,
+      mailkeys = mailkeys_at, windowserver = window_at, mdns = mdns_at,
       home_in_memory = home_in_memory or nil,
       protostamp = sys.protostamp,
     })
@@ -5408,6 +5418,10 @@ if role == ROLE_INIT then
   local TILES_EP = sys.endpoint()
   -- The window server's manager door (`docs/astra-display.md` D3b-2).
   local WINDOW_EP = sys.endpoint()
+
+  -- **/Discovery** (`docs/sharing.md` N11c): `mdnsd`, what is on the
+  -- network by name, for every program, as `/Network` is.
+  local MDNS_EP = sys.endpoint()
   local KEYRING_SMB_EP = sys.endpoint()
   local KEYRING_MANAGE_EP = sys.endpoint()
   local KEYRING_MAIL_EP = sys.endpoint()     -- the keyring's `mail` door (`mail.md` M0)
@@ -5705,6 +5719,11 @@ if role == ROLE_INIT then
   -- spawn fails, which stopped every headless machine at boot. A window
   -- server that cannot start is a line in the log, as the power button is.
   --
+  -- **mdnsd** (`docs/sharing.md` N11c), after the network stack it binds
+  -- its port through; on a machine with no card it answers that there is
+  -- no network, and asks nothing.
+  start("the discovery server", ROLE_MDNSD, { MDNS_EP, NET_EP, CONSOLE_EP })
+
   if may_pass_screen() then
     local id, err = sys.spawn(ROLE_WINDOWSERVER, { WINDOW_EP, CONSOLE_EP }, SPAWN_SCREEN)
 
@@ -5889,7 +5908,7 @@ if role == ROLE_INIT then
                         APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP, BLOCKS_EP,
                         DRIVES_EP, BACKLIGHT_EP, CAMERA_EP, MIDI_EP,
                         NOTIFY_EP, SMBFS_EP, KEYRING_MANAGE_EP, TILES_EP,
-                        KEYRING_MAIL_EP, WINDOW_EP },
+                        KEYRING_MAIL_EP, WINDOW_EP, MDNS_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -5962,7 +5981,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
   return
 end
 
@@ -6152,6 +6171,7 @@ if role == ROLE_RUNNER then
   if req.notify  then ns.mount("/Notifications",   req.notify, nil, "notify") end
   if req.keyring then ns.keyring_door(req.keyring) end
   if req.tiles   then ns.mount("/Tiles",           req.tiles, nil, "tiles") end
+  if req.mdns    then ns.mount("/Discovery",       req.mdns, nil, "mdns") end
   if req.mailkeys then ns.mail_keys_door(req.mailkeys) end
   if req.windowserver then
     ns.mount("/Windowserver", req.windowserver, nil, "windowserver")
@@ -6322,6 +6342,13 @@ if role == ROLE_RUNNER then
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
     local camera_at, midi_at, keyring_at, tiles_at, mailkeys_at = nil, nil, nil, nil, nil
+    local mdns_at = nil
+
+    -- /Discovery on, to whatever this starts, as `/Network` is (N11c).
+    if req.mdns then
+      caps[#caps + 1] = req.mdns
+      mdns_at = #caps - 1
+    end
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -6364,6 +6391,8 @@ if role == ROLE_RUNNER then
         tiles_at = #caps - 1
       end
 
+
+
       -- Mail's passwords, only from a launcher that holds them, and only
       -- to a file the image serves (`keyring_grant`, `docs/mail.md` M0).
       if want == "keyring-mail" and req.mailkeys and keyring_grant(path) then
@@ -6387,7 +6416,7 @@ if role == ROLE_RUNNER then
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       backlight = 12, notify = 13, share = req.share and 14 or nil,
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
-      mailkeys = mailkeys_at,
+      mailkeys = mailkeys_at, mdns = mdns_at,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Which protocols the system speaks, for an image built for others

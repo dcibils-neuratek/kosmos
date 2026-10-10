@@ -1154,10 +1154,11 @@ Then, each when its time comes:
     `testing.md` 18.519): `user/servers/dnsmsg.c`, names written, skipped
     and read with their pointers - which must point backwards, so no loop
     can be read - a header, questions and records; `tools/test_dnsmsg.c`.
-  - **N11c - `mdnsd`**, a server in C with a declared shape (`mdnsproto.h`),
+  - **N11c - `mdnsd`** (built 10 October, 0.11.125, `testing.md` 18.520),
+    a server in C with a declared shape (`mdnsproto.h`),
     started by init at boot when the machine has a network, holding port
     5353 and the group 224.0.0.251 through `NET_OP_UDP_BIND`, and mounted
-    at `/Discovery`. **What it keeps**: every instance of a service type it
+    at `/Discovery` - for every program, as `/Network` is. **What it keeps**: every instance of a service type it
     has been asked about - its name (`Studio`), host (`studio.local`),
     port and address - and every `.local` name's address, each for the
     time to live its answer gave, forgotten after. **What it is asked**, a
