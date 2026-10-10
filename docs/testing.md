@@ -22848,3 +22848,29 @@ ring had become a 64 KB window offered - some forty-five segments a burst,
 one lost and the rest dropped and sent again; the window offered is 16 KB
 again (`TCP_RECEIVE_WINDOW`), as it was while it never failed, and sending
 keeps the whole ring. The whole gate, 66 of 66 in 6:56.
+
+## 18.524 Maps: a drag moves the map rather than drawing it again
+
+The card "Maps: dragging the map feels sluggish". Measured first: a dragged
+frame took 840 ms under QEMU, of which 840 were the map's tiles drawn from
+their vectors - the names 3 to 6 ms, the window's chrome and commit nothing.
+Two changes, each measured:
+
+- **A tile kept as a picture** at a size of whole pixels, every whole zoom:
+  a network tile's on the land's colour, copied; the region's clear,
+  blended over - 840 to 565 ms, since the region's tiles past its deepest
+  zoom are drawn 2048 pixels a side at zoom 16 and too big to keep (16 MB).
+- **The map kept as a layer, which a drag shifts**: drawing one of those
+  big tiles cost 120 ms whole and 1 ms into a one-pixel clip - the cost is
+  pixels - so the tiles drawn last are kept in two map-sized pictures that
+  take turns, a frame that only moved the centre shifts them by whole pixels
+  and draws the strip that came into view, and anything else (a zoom, the
+  look, the window's size, a tile arriving) draws all of it. **A dragged
+  frame 840 ms to 56 ms, fifteen times**, and a frame drawn again in place
+  9 to 15 ms. The names go on top each frame.
+
+Maps says, when a drag ends, its frames and the mean and worst of the map
+and of the whole. `x86-maps` 27: after the drag, the map zoomed in a step and
+out again - the same place, drawn whole - and its pixels held to the dragged
+ones, at least 97% the same. **Control**: the layer shifted the wrong way,
+27.4% the same.

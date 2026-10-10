@@ -143,6 +143,32 @@ top, quarters from the corners; Super with the arrows for halves, the whole
 room and back, Super+Alt with the arrows for quarters, thirds by number; a gap
 of 6 points; the Magnet page in Preferences.
 
+**Maps: a satellite view, and directions** - Diego, 10 October 2026: "Maps
+need a switch to satellite view", "As most maps", "And directions". A
+switch between the drawn map and photographs from above - imagery tiles,
+raster, from a source that allows it, cached as the vector tiles are, with
+the names drawn over - and directions from one place to another: a route
+on the roads (the network's data, or a routing service), drawn on the map
+with its turns listed beside it. Each designed before it is built, as Maps
+was (`docs/maps.md`); directions was already in Maps' ideas, after M6e.
+
+**AirPlay: the screen to a television** - Diego, 10 October 2026: "Is it
+possible to add AirPlay screen sharing to kosmos so it can stream the screen
+to an AirPlay compatible receiver? Like a lg tv?" A question; nothing
+decided. What is known: `mdnsd` already sees AirPlay receivers on Diego's
+network (`_airplay._tcp`, N11c). **Sound** to an AirPlay 2 receiver is
+documented by others' open work (pyatv, shairport-sync's reverse): the
+pairing - SRP and Ed25519, a PIN shown on the television - and an
+encrypted RTP stream, all of which the Crypto Kit's primitives cover.
+**Mirroring the screen** is the hard part: Apple's sender side of screen
+mirroring runs through FairPlay, which is not public, and no open sender
+mirrors to a television's AirPlay 2 receiver that I know of - so it may not
+be reachable at all. **The screen to an LG television another way** is: its
+DLNA/UPnP player plays a live H.264 stream over HTTP, and the Record Kit
+already encodes H.264 - a "cast the screen" that finds the television by
+UPnP's discovery (datagrams, N11a) and serves it the desktop as a stream.
+To be looked into and written up before anything is built.
+
 **Maps, finished, and dragging made smooth** - Diego, 10 October 2026:
 "the maps app needs to be finished, also its slow to drag the map around, it
 might need some optimizations on drawing and else"; its log says what each

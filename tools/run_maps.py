@@ -320,6 +320,30 @@ def main():
             time.sleep(0.25)
         guest.mouse_button(False)
         said["dragged"] = guest.wait_for_line("maps: at ", "dragged", mark)
+        said["drag_frames"] = re.findall(r"maps: a drag, ([^\r\n]*)", guest.seen[mark:])
+
+        # **A drag moves the kept map and draws only what came into view**
+        # (the card "dragging feels sluggish"): what it shows must be the
+        # map drawn whole. Zoomed in a step and out again - the same place,
+        # drawn whole - and the map's pixels held to the dragged ones.
+        time.sleep(1.5)
+        mx_, my_, mw_, mh_ = (int(v) for v in m2.groups())
+        _, _, after_drag = R.parse_ppm(guest.screendump())
+        mark = len(guest.seen)
+        guest.sendkey("equal")
+        guest.wait_for_line("maps: at ", "zoomed in to look again", mark)
+        mark = len(guest.seen)
+        guest.sendkey("minus")
+        guest.wait_for_line("maps: at ", "and out again", mark)
+        time.sleep(1.5)
+        _, _, whole = R.parse_ppm(guest.screendump())
+        same = total = 0
+        for y_ in range(wy + my_ + 4, wy + my_ + mh_ - 4, 3):
+            for x_ in range(wx + mx_ + 4, wx + mx_ + mw_ - 4, 3):
+                at_ = (y_ * width + x_) * 3
+                total += 1
+                same += after_drag[at_:at_ + 3] == whole[at_:at_ + 3]
+        said["drag_same"] = same / max(1, total)
 
         # ---- M5: search, the card, Save ----
         # The sidebar back first, then the search field pressed and typed in.
@@ -477,6 +501,12 @@ def main():
         fails.append("the + button did not zoom in a whole step: %r then %r"
                      % (said.get("first"), said.get("zoomed")))
 
+    # The dragged map, the map drawn whole: nearly every pixel the same - a
+    # name may sit a pixel apart, the map is moved by whole pixels.
+    if said.get("drag_same", 0) < 0.97:
+        fails.append("the map after a drag is not the map drawn whole there: %.1f%% the same "
+                     "(%r)" % (100 * said.get("drag_same", 0), said.get("drag_frames")))
+
     dragged = re.match(r"(\S+) (\S+), zoom", said.get("dragged", ""))
 
     if not zoomed or not dragged or not float(dragged.group(1)) < float(said["zoomed"].split()[0]):
@@ -565,7 +595,7 @@ def main():
     if said.get("esc") is None:
         fails.append("an Escape alone in the search waited for the next key")
 
-    checks = 26
+    checks = 27
 
     if fails:
         print("FAIL: %d of %d checks on Maps:" % (len(fails), checks))
@@ -580,7 +610,7 @@ def main():
           "Map Kit, its header, the market's tile at zoom 16 decoded, drawn in a style of "
           "two rules%s, labelled, the projection there and back, a tile off the region refused; "
           "M4: the window opened with the city drawn, the sidebar's button hiding it, + zooming "
-          "a step, a drag moving the map; M5: a search finding the market, its card opened "
+          "a step, a drag moving the map and what it shows the map drawn whole there; M5: a search finding the market, its card opened "
           "with names on the map, Save keeping it; M6d: a TileJSON read, %d tiles fetched "
           "into /Home/Cache/Maps and said to have come, the world at 10 drawn from the "
           "network alone, a tile with nothing in it kept empty and asked for once; M6e: "

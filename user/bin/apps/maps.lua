@@ -352,6 +352,10 @@ end
 
 -- On Maps' own clock, while anything is to come: what came. True when
 -- something did, and the map is to be drawn again.
+-- Tiles come from the network, counted: the map's kept layer (`draw_map`)
+-- is drawn whole again when one has.
+local arrivals = 0
+
 local function poll_arrived()
   if not net or (net.outstanding == 0 and net.sent == "" and not net.finding) then return false end
 
@@ -382,6 +386,7 @@ local function poll_arrived()
 
     net.asked[key] = nil
     cache[key] = nil
+    arrivals = arrivals + 1         -- the kept layer drawn whole again
   end
 
   -- A failed fetch is tried again at the next ask.
@@ -1080,16 +1085,145 @@ local function over_tiles(z, mx, my, mw, mh, each)
   return n
 end
 
+--
+-- **Each tile drawn once, and kept as a picture** (the card "dragging feels
+-- sluggish", 10 October 2026). A dragged frame drew every visible tile from
+-- its vectors again - 840 ms of a frame's 841 under QEMU, ten tiles - when
+-- a drag changes nothing but where they are. So a tile is drawn into a
+-- picture of its size once, and a frame copies the pictures: a network
+-- tile's on the land's colour, copied; the region's clear, blended over,
+-- as its vectors were drawn over the network's.
+--
+-- **Only at a size of whole pixels**, which every whole zoom gives (256,
+-- 512): then every tile shares the one fraction of a pixel the centre
+-- puts them at, and placing all of them rounded moves the map by under
+-- half a pixel with no seam between two. At a zoom between, tiles are
+-- drawn from their vectors as before. Forgotten in the order they were
+-- made past what a screen of them holds twice, and all of them when the
+-- look changes.
+--
+local pictures, picture_order, picture_style = {}, {}, nil
+local PICTURES_MOST = 160
+
+local function tile_picture(key, t, size, clear)
+  if picture_style ~= style then
+    for _, p in pairs(pictures) do p:free() end
+
+    pictures, picture_order, picture_style = {}, {}, style
+  end
+
+  local k = key .. "@" .. size
+  local p = pictures[k]
+
+  if p then return p end
+
+  p = gfx.surface{ w = size, h = size }
+
+  if not clear then p:fill(0, 0, size, size, 0xff000000 | colours.land) end
+
+  t:draw(p, 0, 0, size, zoom, style, 0, 0, size, size)
+  pictures[k] = p
+  picture_order[#picture_order + 1] = k
+
+  while #picture_order > PICTURES_MOST do
+    local old = table.remove(picture_order, 1)
+
+    if pictures[old] then pictures[old]:free() end
+
+    pictures[old] = nil
+  end
+
+  return p
+end
+
+-- A tile onto the map: its kept picture where its size is whole pixels,
+-- its vectors otherwise.
+local function put_tile(s, key, t, ox, oy, size, clear, mx, my, mw, mh)
+  if size == math.floor(size) and size <= 1024 then
+    local p = tile_picture(key, t, size, clear)
+    local x, y = math.floor(ox + 0.5), math.floor(oy + 0.5)
+    local x0, y0 = math.max(x, mx), math.max(y, my)
+    local x1, y1 = math.min(x + size, mx + mw), math.min(y + size, my + mh)
+
+    if x1 > x0 and y1 > y0 then
+      if clear then
+        s:blend(p, x0 - x, y0 - y, x1 - x0, y1 - y0, x0, y0, 255)
+      else
+        s:blit(p, x0 - x, y0 - y, x1 - x0, y1 - y0, x0, y0)
+      end
+    end
+
+    return
+  end
+
+  t:draw(s, ox, oy, size, zoom, style, mx, my, mx + mw, my + mh)
+end
+
+--
+-- **The map's tiles kept as a layer, and a drag only shifts it** (the same
+-- card). A tile kept as a picture serves a network tile, but the region's
+-- own tiles past its deepest zoom are drawn large - 2048 pixels a side at
+-- zoom 16, too big to keep - and drawing one cost 120 ms of which a
+-- one-pixel clip cost one: the cost is the pixels. So the tiles drawn last
+-- are kept, in map-sized pictures that take turns, and a frame whose only
+-- change is where the centre is moves them by as much and draws the strip
+-- that came into view. Anything else - a zoom, the look, the window's size,
+-- a tile arriving - draws all of it again. The names go on top each frame,
+-- as before.
+--
+local layer, spare, kept_at = nil, nil, {}
+
 local function draw_map(s)
   local mx, my, mw, mh = map_box()
   local t0 = sys.ticks()
   local drawn = {}
+  local ws = TILE * 2 ^ zoom
 
-  s:fill(mx, my, mw, mh, 0xff000000 | colours.land)
   drawn_tiles = 0
 
+  if not layer or kept_at.w ~= mw or kept_at.h ~= mh then
+    if layer then layer:free() spare:free() end
+
+    layer = gfx.surface{ w = mw, h = mh }
+    spare = gfx.surface{ w = mw, h = mh }
+    kept_at = { w = mw, h = mh }
+  end
+
+  -- Where the layer can be moved rather than drawn: the same zoom, look and
+  -- tiles, and a shift of whole pixels smaller than it.
+  local dx = kept_at.cx and math.floor((kept_at.cx - cx) * ws + 0.5) or nil
+  local dy = kept_at.cy and math.floor((kept_at.cy - cy) * ws + 0.5) or nil
+  local clips
+
+  if dx and kept_at.zoom == zoom and kept_at.style == style and kept_at.arrivals == arrivals
+     and math.abs(dx) < mw and math.abs(dy) < mh then
+    layer, spare = spare, layer
+    layer:fill(0, 0, mw, mh, 0xff000000 | colours.land)
+    layer:blit(spare, 0, 0, mw, mh, dx, dy)
+    clips = {}
+
+    if dy > 0 then clips[#clips + 1] = { 0, 0, mw, dy } end
+    if dy < 0 then clips[#clips + 1] = { 0, mh + dy, mw, -dy } end
+    if dx > 0 then clips[#clips + 1] = { 0, 0, dx, mh } end
+    if dx < 0 then clips[#clips + 1] = { mw + dx, 0, -dx, mh } end
+  else
+    layer:fill(0, 0, mw, mh, 0xff000000 | colours.land)
+    clips = { { 0, 0, mw, mh } }
+  end
+
+  kept_at.cx, kept_at.cy, kept_at.zoom = cx, cy, zoom
+  kept_at.style, kept_at.arrivals = style, arrivals
+
+  -- Onto the layer, in its own place (the map box's corner at 0, 0), within
+  -- each clip.
+  local function onto(each)
+    for _, c in ipairs(clips) do each(c[1], c[2], c[3], c[4]) end
+  end
+
   -- The world beneath, from the network: at its own deepest past 14, and
-  -- a tile not here yet as its nearest ancestor drawn larger.
+  -- a tile not here yet as its nearest ancestor drawn larger. Every
+  -- visible tile is asked about - that is what asks the network for it -
+  -- and drawn where a clip is.
   if net then
     local z = math.max(0, math.min(NET_MAX, math.floor(zoom)))
 
@@ -1097,9 +1231,15 @@ local function draw_map(s)
 
     local n = over_tiles(z, mx, my, mw, mh, function(tx, ty, ox, oy, size, n)
       local t = net_tile(z, tx, ty)
+      local lx, ly = ox - mx, oy - my
 
       if t then
-        t:draw(s, ox, oy, size, zoom, style, mx, my, mx + mw, my + mh)
+        onto(function(x, y, w, h)
+          if lx < x + w and lx + size > x and ly < y + h and ly + size > y then
+            put_tile(layer, "n" .. z .. "/" .. tx .. "/" .. ty, t, lx, ly, size, false,
+                     x, y, w, h)
+          end
+        end)
         drawn[#drawn + 1] = { t = t, key = "n" .. z .. "/" .. tx .. "/" .. ty,
                               ox = ox, oy = oy, size = size, n = n, tx = tx, ty = ty }
         drawn_tiles = drawn_tiles + 1
@@ -1110,9 +1250,15 @@ local function draw_map(s)
           local big = size * (1 << up)
           local mask = (1 << up) - 1
 
-          p:draw(s, ox - (tx & mask) * size, oy - (ty & mask) * size, big, zoom, style,
-                 math.max(mx, ox), math.max(my, oy),
-                 math.min(mx + mw, ox + size), math.min(my + mh, oy + size))
+          onto(function(x, y, w, h)
+            local x0, y0 = math.max(x, lx), math.max(y, ly)
+            local x1, y1 = math.min(x + w, lx + size), math.min(y + h, ly + size)
+
+            if x1 > x0 and y1 > y0 then
+              p:draw(layer, lx - (tx & mask) * size, ly - (ty & mask) * size, big, zoom,
+                     style, x0, y0, x1, y1)
+            end
+          end)
         end
       end
     end)
@@ -1128,9 +1274,14 @@ local function draw_map(s)
 
     over_tiles(z, mx, my, mw, mh, function(tx, ty, ox, oy, size, n)
       local t = tile_at(z, tx, ty)
+      local lx, ly = ox - mx, oy - my
 
       if t then
-        t:draw(s, ox, oy, size, zoom, style, mx, my, mx + mw, my + mh)
+        onto(function(x, y, w, h)
+          if lx < x + w and lx + size > x and ly < y + h and ly + size > y then
+            put_tile(layer, z .. "/" .. tx .. "/" .. ty, t, lx, ly, size, true, x, y, w, h)
+          end
+        end)
         drawn[#drawn + 1] = { t = t, key = z .. "/" .. tx .. "/" .. ty,
                               ox = ox, oy = oy, size = size, n = n, tx = tx, ty = ty }
         drawn_tiles = drawn_tiles + 1
@@ -1138,6 +1289,7 @@ local function draw_map(s)
     end)
   end
 
+  s:blit(layer, 0, 0, mw, mh, mx, my)
   draw_labels(s, drawn, mx, my, mw, mh)
 
   drawn_ms = (sys.ticks() - t0) * 1000 / counter_hz
@@ -1243,6 +1395,23 @@ end
 
 local decode = keys.decoder()
 local dragging = nil
+
+--
+-- **A drag, measured** (the card "dragging feels sluggish", 10 October):
+-- each frame drawn while it lasts - the map's part and the whole with its
+-- commit - said when it ends, so where a dragged frame goes is a number.
+--
+local drag_frames = nil
+
+local function drag_said()
+  local f = drag_frames
+
+  if not f or f.n == 0 then return end
+
+  print(("maps: a drag, %d frames, the map %.1f ms mean and %.1f worst, the whole "
+         .. "%.1f mean and %.1f worst, %d tiles"):format(
+        f.n, f.map / f.n, f.map_worst, f.all / f.n, f.all_worst, drawn_tiles))
+end
 local dirty = true
 local last_press, last_x, last_y = 0, 0, 0
 
@@ -1486,6 +1655,7 @@ while win.running do
             place_held = { from = "label", key = place_key(on_label) }
           else
             dragging = { x = x, y = y }
+            drag_frames = { n = 0, map = 0, map_worst = 0, all = 0, all_worst = 0 }
           end
         end
       elseif ev.action == "move" and dragging then
@@ -1501,8 +1671,12 @@ while win.running do
         end
 
         -- Where a drag ended is said once it has, as a zoom's is.
-        if dragging then dirty, moved = true, true end
-        dragging = nil
+        if dragging then
+          dirty, moved = true, true
+          drag_said()
+        end
+
+        dragging, drag_frames = nil, nil
       end
     end
   end
@@ -1518,8 +1692,21 @@ while win.running do
   if not win.running then break end
 
   if dirty then
+    local t0 = sys.ticks()
+
     dirty = false
     if not draw_all() then break end
+
+    if dragging and drag_frames then
+      local f = drag_frames
+      local all = (sys.ticks() - t0) * 1000 / counter_hz
+
+      f.n = f.n + 1
+      f.map = f.map + drawn_ms
+      f.all = f.all + all
+      f.map_worst = math.max(f.map_worst, drawn_ms)
+      f.all_worst = math.max(f.all_worst, all)
+    end
     if moved and not dragging then say_where() end
   end
 end
