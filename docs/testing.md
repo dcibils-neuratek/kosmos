@@ -22675,3 +22675,26 @@ of it reached a listener on the group.
 The whole gate, 63 of 64: `x86-film`, whose sound gaps under load are carded,
 failed once alone as well (1300 samples, a run of zeros at 1.62 s) and then
 passed twice alone.
+
+## 18.519 The DNS message in one place (N11b)
+
+`docs/sharing.md` N11b. The resolver's names - written as labels, stepped
+over - leave `net.c` for `user/servers/dnsmsg.c`, which multicast DNS will
+share, and grow what `mdnsd` needs: a name read back with its compression
+pointers followed, a header, a question and a record with its data held
+inside the message. **A pointer must point backwards**, to a name before it,
+which is how every encoder writes them and which makes a loop impossible to
+read rather than something to count.
+
+`tools/test_dnsmsg.c` (host, 19 checks): a name written and read; a
+multicast DNS answer as a printer or a Mac sends one - PTR, SRV, TXT and A,
+each name compressed against another - read record by record to the
+message's last byte; and refused: a pointer onto itself, one forward, one
+back to its own name's start, a label past the end, a reserved label type, a
+name of 320 bytes, a record that says it is longer than the message.
+**Control**: the 255-byte limit taken out - which first did *not* bite,
+since the test's 256-byte buffer refused the long name before the rule
+could; the check now reads into room enough, and fails without the rule.
+The whole gate, 62 of 64: `x86-film`'s carded flake, and `x86-kernel`'s "smp:
+a new thread avoids a loaded core", a placement test that reads the load;
+both pass alone, the kernel's 198 of 198.

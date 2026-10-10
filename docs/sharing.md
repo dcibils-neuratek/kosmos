@@ -1150,14 +1150,33 @@ Then, each when its time comes:
     network cannot be, with `opt/kosmos/net_address` for an address where
     no DHCP answers and a Python peer on the Mac speaking the segment's
     Ethernet frames: a datagram each way, one to a group, a report sent.
-  - **N11b - the DNS message in one place**: names, compression and
-    records out of `net.c` into a file the stack and `mdnsd` both link,
-    held by a host test, as `fat_decode.c` is.
-  - **N11c - `mdnsd`**, a server in C with a declared shape (`mdnsproto.h`):
-    browse a service type (`_smb._tcp`) - its instances, each with a host,
-    port and address, kept as they are announced and forgotten when their
-    time is up - and resolve a `.local` name. Held by the Python peer
-    announcing a server and answering for a name.
+  - **N11b - the DNS message in one place** (built 10 October, 0.11.124,
+    `testing.md` 18.519): `user/servers/dnsmsg.c`, names written, skipped
+    and read with their pointers - which must point backwards, so no loop
+    can be read - a header, questions and records; `tools/test_dnsmsg.c`.
+  - **N11c - `mdnsd`**, a server in C with a declared shape (`mdnsproto.h`),
+    started by init at boot when the machine has a network, holding port
+    5353 and the group 224.0.0.251 through `NET_OP_UDP_BIND`, and mounted
+    at `/Discovery`. **What it keeps**: every instance of a service type it
+    has been asked about - its name (`Studio`), host (`studio.local`),
+    port and address - and every `.local` name's address, each for the
+    time to live its answer gave, forgotten after. **What it is asked**, a
+    message each, nothing parked longer than the caller said:
+    - `BROWSE` a type (`_smb._tcp`): asked of the network at once and again
+      after one, two and four seconds (RFC 6762 5.2), answering whatever
+      comes for as long as somebody keeps asking; answered at once with
+      how many instances are known.
+    - `INSTANCE` n of a type: its name, host, port and address - one a
+      message, so a list of any length never has to fit in one.
+    - `RESOLVE` a `.local` name: an address, from what is kept or asked of
+      the network, the caller parked until it comes or its wait ends.
+    Answers come in as multicast to the group or as unicast to the port;
+    both are read, and a record anybody sends is kept when it answers what
+    somebody here asked - not otherwise, so a stranger cannot fill the
+    table. Held by `x86-mdns`: the Python peer on the wire answering for
+    `_smb._tcp.local` with a PTR, SRV, TXT and A, compressed, and for a
+    name; `mdns browse _smb._tcp` and `mdns resolve studio.local` at the
+    prompt say what it found.
   - **N11d - seen**: Tracker's Network group lists the SMB servers `mdnsd`
     has seen, and Connect takes a `.local` name; the M700 finds the Mac.
 - **N12 - smbd, read-only**: the Servers window's File sharing page as drawn;

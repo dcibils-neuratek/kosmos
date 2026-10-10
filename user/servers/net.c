@@ -57,6 +57,7 @@
 #include "ethring.h"
 #include "netproto.h"
 #include "tcpring.h"
+#include "dnsmsg.h"
 #include "../init/say.h"
 
 /*------------------------------------------------------------------------
@@ -1365,42 +1366,6 @@ static bool udp_send(const struct net_addr *to, uint16_t from_port,
     return send_ip_ttl(to, IP_PROTO_UDP, datagram, total, multicast(to) ? 255 : 64);
 }
 
-/*
- * A name, as DNS writes one: each label with its length in front, and a
- * zero to end. `www.example.com` becomes 3www7example3com0.
- *
- * Returns the bytes written, or 0 if the name will not fit or has a label
- * longer than DNS allows.
- */
-static unsigned dns_name(uint8_t *out, unsigned room,
-                         const char *name, unsigned len)
-{
-    unsigned at = 0, start = 0, i;
-
-    for (i = 0; i <= len; i++) {
-        if (i == len || name[i] == '.') {
-            unsigned label = i - start;
-
-            if (label == 0 || label > 63 || at + label + 1 >= room) {
-                return 0;
-            }
-
-            out[at++] = (uint8_t)label;
-            memcpy(out + at, name + start, label);
-            at += label;
-            start = i + 1;
-        }
-    }
-
-    if (at + 1 > room) {
-        return 0;
-    }
-
-    out[at++] = 0;
-
-    return at;
-}
-
 /* Somewhere to record a question. NULL when there is no room. */
 static struct asking *asking_free(void)
 {
@@ -1439,7 +1404,7 @@ static bool dns_ask(const char *name, unsigned len, uint16_t id)
     put_be16(query + 8, 0);
     put_be16(query + 10, 0);
 
-    at = dns_name(query + 12, sizeof(query) - 12 - 4, name, len);
+    at = dns_put_name(query + 12, sizeof(query) - 12 - 4, name, len);
 
     if (at == 0) {
         return false;
@@ -1454,34 +1419,8 @@ static bool dns_ask(const char *name, unsigned len, uint16_t id)
 }
 
 /*
- * Past a name in a message, which is not simply "to the next zero".
- *
- * A name may end in a *pointer* into the message - two bytes with the top
- * two bits set - which is how DNS avoids repeating the question in every
- * answer. Following one is not needed here, because nothing reads the names
- * back; stepping over one is, because the fields after it are what matter.
- */
-static unsigned dns_skip(const uint8_t *msg, unsigned len, unsigned at)
-{
-    while (at < len) {
-        unsigned label = msg[at];
-
-        if (label == 0) {
-            return at + 1;
-        }
-
-        if ((label & 0xc0u) == 0xc0u) {
-            return at + 2;          /* a pointer, and it ends the name */
-        }
-
-        at += label + 1;
-    }
-
-    return len;
-}
-
-/*
- * An answer came back. Find the first A record in it and hand the address
+ * An answer came back. (Names are written and stepped over by `dnsmsg.c`,
+ * which multicast DNS shares - `docs/sharing.md` N11b.) Find the first A record in it and hand the address
  * to whoever asked.
  */
 static void dns_receive(const uint8_t *msg, unsigned len)
@@ -1517,13 +1456,13 @@ static void dns_receive(const uint8_t *msg, unsigned len)
     at = 12;
 
     for (i = 0; i < questions && at < len; i++) {
-        at = dns_skip(msg, len, at) + 4;        /* and its type and class */
+        at = dns_skip_name(msg, len, at) + 4;   /* and its type and class */
     }
 
     for (i = 0; i < answers && at + 10 <= len; i++) {
         unsigned type, length;
 
-        at = dns_skip(msg, len, at);
+        at = dns_skip_name(msg, len, at);
 
         if (at + 10 > len) {
             break;
