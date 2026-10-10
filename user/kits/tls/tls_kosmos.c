@@ -71,15 +71,22 @@ static size_t lua_read(void *user, unsigned char *buf, size_t max)
     lua_rawgeti(L, LUA_REGISTRYINDEX, t->conn);
     lua_getfield(L, -1, "read");
     lua_pushvalue(L, -2);
-    lua_call(L, 1, 1);
+    lua_pushinteger(L, (lua_Integer)max);    /* no more than `buf` holds */
+    lua_call(L, 2, 1);
 
     s = lua_tolstring(L, -1, &n);
 
     if (s == NULL) {
         n = 0;
     } else {
+        /*
+         * Never more than asked for, now that the connection is told how
+         * much: this kept the first `max` and dropped the rest - "a ring
+         * holds no more than this" - which was true of a 16 KB ring and
+         * stopped being true of a 64 KB one (`testing.md` 18.521).
+         */
         if (n > max) {
-            n = max;            /* a ring holds no more than this */
+            n = max;
         }
 
         memcpy(buf, s, n);

@@ -337,6 +337,13 @@ struct conn {
     uint64_t sent_total;            /* bytes sent, again included */
     uint32_t most_in_flight;        /* the window's high water */
     bool     said_sent;             /* its four megabytes said */
+
+    /* Why sending stopped, counted until the four megabytes are said: the
+     * ring had nothing more (the program is behind), or the window was
+     * full (the network is); and the segments and acknowledgements, and
+     * when the first byte went. */
+    uint32_t stop_empty, stop_window, segments, acks;
+    uint64_t first_sent;
     bool     fin_sent;
     bool     want_close;            /* asked to close; waiting for the ring */
     bool     held;                  /* the SYN waits for an address */
@@ -2062,6 +2069,12 @@ static void tcp_pump(struct conn *c)
         uint32_t send;
 
         if (flight >= have || flight >= allowed) {
+            if (flight >= have) {
+                c->stop_empty++;
+            } else {
+                c->stop_window++;
+            }
+
             return;                 /* all of it in flight, or all the window */
         }
 
@@ -2092,6 +2105,11 @@ static void tcp_pump(struct conn *c)
         }
 
         c->snd_nxt += send;
+        c->segments++;
+
+        if (c->first_sent == 0) {
+            c->first_sent = kosmos_ticks();
+        }
 
         if (!seq_ge(c->snd_max, c->snd_nxt)) {
             c->snd_max = c->snd_nxt;
@@ -2114,16 +2132,25 @@ static void tcp_pump(struct conn *c)
 
             c->said_sent = true;
             say_begin(&line);
-            say_text(&line, "net: a connection to ");
+            say_text(&line, "net: 4 MB to ");
             say_addr(&line, &c->remote);
-            say_text(&line, " has sent 4 MB, at most ");
+            say_text(&line, ", at most ");
             say_dec(&line, c->most_in_flight);
-            say_text(&line, " bytes in flight");
+            say_text(&line, " in flight, ");
+            say_dec(&line, (unsigned long)((kosmos_ticks() - c->first_sent) * 1000u / net.hz));
+            say_text(&line, " ms, ");
+            say_dec(&line, c->segments);
+            say_text(&line, " sent, ");
+            say_dec(&line, c->acks);
+            say_text(&line, " acked; stops: ");
+            say_dec(&line, c->stop_empty);
+            say_text(&line, " ring, ");
+            say_dec(&line, c->stop_window);
+            say_text(&line, " window");
 
             if (net.drop_every != 0) {
-                say_text(&line, "; ");
+                say_text(&line, "; lost ");
                 say_dec(&line, net.dropped);
-                say_text(&line, " segments lost on purpose so far");
             }
 
             say_send(net.console, &line);
@@ -2757,6 +2784,8 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
          */
         if (acked > 0) {
             uint32_t grow = acked < TCP_MSS ? acked : TCP_MSS;
+
+            c->acks++;
 
             if (c->cwnd < c->ssthresh) {
                 c->cwnd += grow;

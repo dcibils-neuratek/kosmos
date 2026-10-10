@@ -22734,3 +22734,44 @@ real one** - it ran `udp echo 5353 224.0.0.251`, and port 5353 is
 since it printed the code and not the sentence. The suite has a port and a
 group of its own (9000, 239.255.0.1), `udp` prints the sentence, and
 `x86-udp` passes 6 of 6 again.
+
+## 18.521 The TCP ring, measured: 64 KB each way
+
+18.517 gave TCP a window and could not show its speed under QEMU; on the
+M700 (Diego, 10 October: "You can restart the m700 whenever you like to
+test") it did not change much: a whole 9.9 MB frame in 6.5 s, 1.5 MB a
+second, at most 7 KB in flight. So the stack now says, once a connection has
+sent 4 MB, why sending stopped as well as the most in flight: the ring empty
+(the program behind) or the window full (the network behind), with the
+segments, the acknowledgements and the time. On the M700: **663 stops with
+the ring empty in 4 MB, and none with the window full** - the program
+refilled the 16 KB ring about once a scheduler tick, so what went was a
+ring a tick. `tcpring.h` had said its size was a guess that "a measurement
+of throughput against window size" should decide.
+
+The ring is 64 KB each way now - the most the far end can be offered
+without window scaling, the window being sixteen bits - and a connection a
+132 KB region. On the M700: **a whole frame in 1.53 s, from 6.6; 6.5 MB a
+second, 4.3 times as fast.** The ring still runs empty (194 stops in 4 MB),
+so what limits it next is how soon the writer is woken to refill it, and
+after that window scaling.
+
+The stack's line had grown past the 160 bytes a console line holds, so
+`x86-tcploss` read "lost 1" off a line that said "lost 106": it is shorter
+now - "net: 4 MB to ADDRESS, at most N in flight, T ms, S sent, A acked;
+stops: R ring, W window; lost L" - and both suites read it.
+
+**The gate found what the bigger ring broke**: `x86-tls` and all seven mail
+suites - a 200 KB page over TLS "cut short: 15360 of the 204800 bytes", with
+a TLS error. The TLS Kit read the connection into its 16 KB buffer by asking
+for everything that had come and keeping the first 16 KB - "a ring holds no
+more than this", its comment said, true of a 16 KB ring - and dropping the
+rest. `conn:read(most)` now takes at most what the reader holds and leaves
+the rest in the ring, and the TLS Kit says how much. The failing suite was
+the control: `x86-tls` 9 and `x86-mail` 21 pass with the fix.
+
+On the M700, `mdns browse _smb._tcp` and `_airplay._tcp` found the network's
+own: a Mac's file sharing on port 445 with its address, and three AirPlay
+receivers (N11c, on real hardware; their names are Diego's and not here).
+The whole gate, 64 of 65: `x86-film`, which passes alone - and which has
+failed in every whole gate of 10 October, so its card says so.

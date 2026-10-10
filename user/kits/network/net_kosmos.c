@@ -498,7 +498,8 @@ static int l_write(lua_State *L)
 }
 
 /*
- * `conn:read()` - whatever has arrived, or nil.
+ * `conn:read([most])` - whatever has arrived, or at most `most` of it; nil
+ * when nothing has.
  *
  * Nil means nothing is waiting, which is not an error and not the end: a
  * closed connection is `conn:closed()`, and the bytes already in the ring
@@ -514,12 +515,21 @@ static int l_read(lua_State *L)
     uint32_t read = h->ring->in_read;
     uint32_t ready = tcp_ring_ready(tcp_ring_acquire(&h->ring->in_write),
                                     read);
+    lua_Integer most = luaL_optinteger(L, 2, 0);
     luaL_Buffer b;
     uint32_t i;
 
     if (ready == 0) {
         lua_pushnil(L);
         return 1;
+    }
+
+    /* At most `most`, when asked: the rest stays in the ring for the next
+     * read. A caller with a buffer of its own size says so - the TLS kit's
+     * is 16 KB, and it kept the first 16 KB of whatever came and dropped
+     * the rest while the ring was no bigger than that (10 October 2026). */
+    if (most > 0 && (lua_Integer)ready > most) {
+        ready = (uint32_t)most;
     }
 
     luaL_buffinit(L, &b);

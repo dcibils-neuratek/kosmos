@@ -60,15 +60,20 @@
 #define TCP_RING_MAGIC   0x4b543152u        /* 'R1TK' */
 
 /*
- * Sixteen kilobytes each way.
+ * **Sixty-four kilobytes each way**, measured (10 October 2026,
+ * `testing.md` 18.521).
  *
- * Bigger than a window needs to be for a line protocol, and small enough
- * that a connection costs a 36 KB region, which is what the stack counts
- * against the machine's memory as its tables grow (`netproto.h`). What
- * decides it properly is a measurement of throughput against window size,
- * and that has not been taken.
+ * It was sixteen - "small enough that a connection costs a 36 KB region"
+ * - with the note that a measurement of throughput against size had not
+ * been taken. On the M700, sending a 9.9 MB screen at 1.5 MB a second, the
+ * stack counted why it stopped: 663 times in 4 MB with the ring empty and
+ * never with the window full - the program refilled it about once a
+ * scheduler tick, so what went was a ring a tick. Sixty-four is the most
+ * the far end can be offered without window scaling (the window field is
+ * sixteen bits), so more would sit unused, and a connection now costs a
+ * 132 KB region.
  */
-#define TCP_RING_BYTES   16384u
+#define TCP_RING_BYTES   65536u
 
 /* The data starts a page in, so the indices never share a cache line with
  * the bytes. The machine runs on every core it has, and with the two sides

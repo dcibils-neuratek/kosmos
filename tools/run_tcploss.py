@@ -81,7 +81,7 @@ def main():
         seen = guest.seen
         guest.close()
 
-    lost = [int(n) for n in re.findall(r"(\d+) segments lost on purpose so far", seen)]
+    lost = [int(n) for n in re.findall(r"net: 4 MB to .*; lost (\d+)", seen)]
 
     if len(times) < FRAMES:
         fails.append("only %d of %d whole frames arrived" % (len(times), FRAMES))

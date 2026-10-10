@@ -312,15 +312,13 @@ def look(guest, telnet, vnc, seen, fails):
     # had in flight - which was one segment, 1460 bytes, while it waited for
     # each to be acknowledged. QEMU's network acknowledges at once, so the
     # speed cannot show here; that more than a segment went out can.
-    flight = re.search(r"net: a connection to [\d.]+ has sent 4 MB, at most (\d+) bytes in "
-                       r"flight", guest.seen)
+    flight = re.search(r"net: 4 MB to [\d.]+, at most (\d+) in flight", guest.seen)
     deadline = time.monotonic() + 10
 
     while not flight and time.monotonic() < deadline:
         guest._read_available()
         time.sleep(0.3)
-        flight = re.search(r"net: a connection to [\d.]+ has sent 4 MB, at most (\d+) bytes "
-                           r"in flight", guest.seen)
+        flight = re.search(r"net: 4 MB to [\d.]+, at most (\d+) in flight", guest.seen)
 
     if not flight or int(flight.group(1)) <= 1460:
         fails.append("the frame went out a segment at a time: %r"
