@@ -8571,6 +8571,36 @@ the applications make the system useful, and is not pulled forward.
 
 ### The system
 
+**Android applications, in a virtual machine** - Diego, 10 October 2026:
+"can we create a virtual machine environment to run android apps?" Asked as
+a roadmap question; nothing decided. What it would take, honestly:
+
+- **Android is Linux underneath** - its apps run on ART over a Linux kernel
+  with Binder, ashmem and SELinux - and Kosmos owes POSIX nothing and will
+  not grow a Linux personality (`design.md` 17). So the only fitting shape
+  is **a whole Android, Linux kernel and all, as a guest**: Kosmos a
+  hypervisor host, the way a Mac runs Android in its emulator.
+- **Nebula would gain virtualization**: VT-x/AMD-V on x86-64 (the M700 and
+  the ThinkPad have VT-x), EL2 on AArch64 - a guest's own page tables
+  (EPT), its exits handled. That is mechanism and belongs in the kernel: a
+  virtual CPU as a capability, run by a user process the way a thread is.
+- **A machine monitor in user space**, as QEMU or Firecracker are to KVM:
+  virtio devices for the guest - block for its disk image, net through the
+  stack, input from a window, and a display whose frames land in a region
+  the window server composes like any window's. Sound through the audio
+  server's rings.
+- **An Android image for x86-64** - Android-x86 or AOSP's Cuttlefish built
+  for virtio, the one used by the Android emulator - and its apps installed
+  inside it; Google's own apps need its licensing.
+- **The cost**: a hypervisor and a device model is a project the size of a
+  good part of Kosmos so far - months, not a weekend - and its speed is the
+  hardware's virtualization, which is near native for a CPU and slower for
+  graphics until a GPU is shared (`docs/m700-gpu.md`).
+- **The first step, if wanted**: the same thing for a *Linux* guest - a
+  minimal VT-x path and a serial console - which proves the hypervisor
+  before Android's graphics and input are asked of it. A design document
+  first, for Diego to decide on.
+
 - **WANTED on 6 October - a virtual machine: Linux running inside Kosmos.**
   Diego: "Is there a way que could port qemu to kosmos? There is a web
   version callee jslinux that runs Linux virtualization in the browser",
