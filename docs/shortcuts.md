@@ -32,6 +32,39 @@ This document is the feature set and the architecture. `shortcuts.html` is
 the window, and `shortcuts-architecture.png` is the picture of what it
 stands on.
 
+## Global and local
+
+Diego, the same evening: "Shortcuts are global keys mapping", "Then every
+app has its own local app key shortcuts like super+n in mail app to create
+a new email". So there are two layers, and Super is in both, as a Mac's
+Command key is:
+
+- **Global**: the keys in Shortcuts. They do the same thing whatever window
+  is in front, and the window manager answers them before any application
+  sees them.
+- **Local**: an application's own keys, such as Mail's Super N for a new
+  message. They work only while that application has the keyboard and are
+  answered by the application. They are not listed in Shortcuts.
+
+**A Super chord nobody made global reaches the application in front.** That
+is already how the window manager behaves: a chord it has no binding for is
+handed to the focused window untouched (`super_command` and `flush_super` in
+`wm/keys.lua`). So an application can answer Super N today without asking
+anyone.
+
+**Global wins, and that has a cost.** Making Super N global would take it
+from Mail everywhere. Shortcuts cannot warn about that, because
+applications do not declare their local keys, by design. The sheet says it
+in words when the keys are not taken globally: "free here - an application
+that uses Super T for itself will not see it any more". The way to keep
+collisions rare is a convention rather than a mechanism:
+- the system keeps few global keys;
+- applications choose local keys the way a Mac's do (N new, O open, S
+  save, F find, W close), and the system keeps away from those letters.
+
+Applications' local keys on Super are their own work, one application at a
+time: Mail's Super N first (`roadmap.md`).
+
 ## What a person can do
 
 - **Open it** from the dock, the Kosmos menu, or Super+/. Super+º opens the
@@ -84,8 +117,8 @@ stands on.
 - changing text editing's keys (Control-C and the rest) or Control-W's:
   they are shown here, and changing them would change every application;
 - chords with Control or Alt as new shortcuts. Only Super chords can be
-  made, because no application ever receives those, so a shortcut there
-  can never take a key an application wanted;
+  made, because those are the system's to give out (*Global and local*
+  below);
 - Help, the "help, cheatsheet window in the future". The sidebar has room
   for it to become another group.
 

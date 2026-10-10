@@ -199,6 +199,16 @@ agreed ("Mockup looks great") - Super chords only, `/Home/Preferences/
 shortcuts` holding only what was made or changed, the window manager
 building its table from its defaults and that setting.
 
+**Applications' own keys, on Super** - Diego, 10 October 2026: "Shortcuts
+are global keys mapping", "Then every app has its own local app key
+shortcuts like super+n in mail app to create a new email". Global keys are
+Shortcuts' and answered by the window manager first; a Super chord nobody
+made global reaches the application in front (it already does), and each
+application answers its own, as a Mac's Command key works: N new, O open,
+S save, F find, W close. Mail's Super N for a new message first, then one
+application at a time. Not listed in Shortcuts (`docs/shortcuts.md`,
+*Global and local*).
+
 **The app switcher, Alt+Tab** - Diego, 10 October 2026: "lets add alt+tab
 app switching like macos and windows to the queue for today", with macOS's
 switcher as the picture of it, and "first mockup before coding". Then:
