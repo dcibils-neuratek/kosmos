@@ -298,6 +298,9 @@ SUITES = [
     # A window that draws itself (`docs/astra-display.md` D2): the same
     # window drawn here and sent, pixel for pixel, and what each costs.
     Suite("x86-drawself", ["python3", "tools/run_drawself.py", X86], x86=True),
+    # The desktop composed in C (`docs/astra-display.md` D3a): every pass
+    # composed by the scene and by the Lua it replaced, and compared.
+    Suite("x86-scene", ["python3", "tools/run_scene.py", X86], x86=True),
 
     # **Maps** (`docs/maps.md`): the Map Kit inside the machine - Port Alder
     # carried in the image, opened, a tile decoded, drawn and labelled (M3) -

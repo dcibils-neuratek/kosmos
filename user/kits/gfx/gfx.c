@@ -612,24 +612,32 @@ static int l_pitch(lua_State *L)
     return 1;
 }
 
-static int l_fill(lua_State *L)
+/*
+ * **Each primitive is a C function on surfaces**, and the Lua method only
+ * reads its arguments and calls it - so the scene (`scene.c`, Astra's D3a)
+ * draws with the same code a window manager in Lua did, not a second copy.
+ */
+static void fill_on(struct surface *s, long x, long y, long w, long h,
+                    uint32_t colour)
 {
-    struct surface *s = check_surface(L, 1);
-    long x = (long)luaL_checkinteger(L, 2);
-    long y = (long)luaL_checkinteger(L, 3);
-    long w = (long)luaL_checkinteger(L, 4);
-    long h = (long)luaL_checkinteger(L, 5);
-    uint32_t colour = (uint32_t)luaL_checkinteger(L, 6);
     long row;
 
     if (!clip(s, &x, &y, &w, &h, NULL, NULL)) {
-        return 0;
+        return;
     }
 
     for (row = 0; row < h; row++) {
         gfx_fill_row(row_of(s, (unsigned)(y + row)) + x, w, colour, true);
     }
+}
 
+static int l_fill(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+
+    fill_on(s, (long)luaL_checkinteger(L, 2), (long)luaL_checkinteger(L, 3),
+            (long)luaL_checkinteger(L, 4), (long)luaL_checkinteger(L, 5),
+            (uint32_t)luaL_checkinteger(L, 6));
     return 0;
 }
 
@@ -835,19 +843,11 @@ static void fill_span(struct surface *s, long y, double xa, double xb,
     }
 }
 
-static int l_triangle(lua_State *L)
+static void triangle_on(struct surface *s, double vx[3], double vy[3],
+                        uint32_t colour)
 {
-    struct surface *s = check_surface(L, 1);
-    double vx[3], vy[3];
-    uint32_t colour = (uint32_t)luaL_checkinteger(L, 8);
     unsigned a = 0, b = 1, c = 2, t;
     long y, y_first, y_last;
-    int i;
-
-    for (i = 0; i < 3; i++) {
-        vx[i] = (double)luaL_checknumber(L, 2 + i * 2);
-        vy[i] = (double)luaL_checknumber(L, 3 + i * 2);
-    }
 
     /* Sorted by y, as indices, so the coordinates are not copied around. */
     if (vy[a] > vy[b]) { t = a; a = b; b = t; }
@@ -855,7 +855,7 @@ static int l_triangle(lua_State *L)
     if (vy[a] > vy[b]) { t = a; a = b; b = t; }
 
     if (vy[c] - vy[a] <= 0.0) {
-        return 0;               /* zero height: nothing to fill */
+        return;                 /* zero height: nothing to fill */
     }
 
     y_first = -ifloor(-(vy[a] - 0.5));
@@ -892,7 +892,21 @@ static int l_triangle(lua_State *L)
 
         fill_span(s, y, xl, xs, colour);
     }
+}
 
+static int l_triangle(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    double vx[3], vy[3];
+    uint32_t colour = (uint32_t)luaL_checkinteger(L, 8);
+    int i;
+
+    for (i = 0; i < 3; i++) {
+        vx[i] = (double)luaL_checknumber(L, 2 + i * 2);
+        vy[i] = (double)luaL_checknumber(L, 3 + i * 2);
+    }
+
+    triangle_on(s, vx, vy, colour);
     return 0;
 }
 
@@ -927,27 +941,20 @@ static int l_span(lua_State *L)
  * clipping is against the receiver, which is the surface that can actually
  * be overrun.
  */
-static int l_blit(lua_State *L)
+static void blit_on(struct surface *dst, struct surface *src,
+                    long sx, long sy, long w, long h, long dx, long dy)
 {
-    struct surface *dst = check_surface(L, 1);
-    struct surface *src = check_surface(L, 2);
-    long sx = (long)luaL_checkinteger(L, 3);
-    long sy = (long)luaL_checkinteger(L, 4);
-    long w  = (long)luaL_checkinteger(L, 5);
-    long h  = (long)luaL_checkinteger(L, 6);
-    long dx = (long)luaL_checkinteger(L, 7);
-    long dy = (long)luaL_checkinteger(L, 8);
     long row;
 
     /* Clipped against the source first, so a rectangle that runs off the
      * edge of what is being copied from cannot read past it. The destination
      * origin moves with it. */
     if (!clip(src, &sx, &sy, &w, &h, &dx, &dy)) {
-        return 0;
+        return;
     }
 
     if (!clip(dst, &dx, &dy, &w, &h, &sx, &sy)) {
-        return 0;
+        return;
     }
 
     for (row = 0; row < h; row++) {
@@ -960,7 +967,16 @@ static int l_blit(lua_State *L)
          * would need a direction choice. */
         memcpy(dp, sp, (size_t)w * 4);
     }
+}
 
+static int l_blit(lua_State *L)
+{
+    struct surface *dst = check_surface(L, 1);
+    struct surface *src = check_surface(L, 2);
+
+    blit_on(dst, src, (long)luaL_checkinteger(L, 3), (long)luaL_checkinteger(L, 4),
+            (long)luaL_checkinteger(L, 5), (long)luaL_checkinteger(L, 6),
+            (long)luaL_checkinteger(L, 7), (long)luaL_checkinteger(L, 8));
     return 0;
 }
 
@@ -1008,32 +1024,18 @@ static int l_blit(lua_State *L)
  * which rounds the whole thing in one place and needs no drawing call to
  * know it is happening.
  */
-static int l_blit_round(lua_State *L)
+static void blit_round_on(struct surface *dst, struct surface *src,
+                          long sx, long sy, long w, long h, long dx, long dy,
+                          long rx, long ry, long rw, long rh, long r, int outside)
 {
-    struct surface *dst = check_surface(L, 1);
-    struct surface *src = check_surface(L, 2);
-    long sx = (long)luaL_checkinteger(L, 3);
-    long sy = (long)luaL_checkinteger(L, 4);
-    long w  = (long)luaL_checkinteger(L, 5);
-    long h  = (long)luaL_checkinteger(L, 6);
-    long dx = (long)luaL_checkinteger(L, 7);
-    long dy = (long)luaL_checkinteger(L, 8);
-    long rx = (long)luaL_checkinteger(L, 9);
-    long ry = (long)luaL_checkinteger(L, 10);
-    long rw = (long)luaL_checkinteger(L, 11);
-    long rh = (long)luaL_checkinteger(L, 12);
-    long r  = (long)luaL_checkinteger(L, 13);
-    /* `outside` inverts the test, which is what puts a corner back: the
-     * same geometry, copying exactly the pixels the other call skipped. */
-    int outside = lua_toboolean(L, 14);
     long row;
 
     if (!clip(src, &sx, &sy, &w, &h, &dx, &dy)) {
-        return 0;
+        return;
     }
 
     if (!clip(dst, &dx, &dy, &w, &h, &sx, &sy)) {
-        return 0;
+        return;
     }
 
     for (row = 0; row < h; row++) {
@@ -1072,6 +1074,22 @@ static int l_blit_round(lua_State *L)
         }
     }
 
+}
+
+static int l_blit_round(lua_State *L)
+{
+    struct surface *dst = check_surface(L, 1);
+    struct surface *src = check_surface(L, 2);
+
+    /* `outside` inverts the test, which is what puts a corner back: the
+     * picture kept from under a window drawn over what the window does not
+     * cover (`blit_round_on`). */
+    blit_round_on(dst, src, (long)luaL_checkinteger(L, 3), (long)luaL_checkinteger(L, 4),
+                  (long)luaL_checkinteger(L, 5), (long)luaL_checkinteger(L, 6),
+                  (long)luaL_checkinteger(L, 7), (long)luaL_checkinteger(L, 8),
+                  (long)luaL_checkinteger(L, 9), (long)luaL_checkinteger(L, 10),
+                  (long)luaL_checkinteger(L, 11), (long)luaL_checkinteger(L, 12),
+                  (long)luaL_checkinteger(L, 13), lua_toboolean(L, 14));
     return 0;
 }
 
@@ -1278,19 +1296,13 @@ static int l_line(lua_State *L)
     return 0;
 }
 
-static int l_fill_round(lua_State *L)
+static void fill_round_on(struct surface *dst, long x, long y, long w, long h,
+                          uint32_t colour, long r)
 {
-    struct surface *dst = check_surface(L, 1);
-    long x = (long)luaL_checkinteger(L, 2);
-    long y = (long)luaL_checkinteger(L, 3);
-    long w = (long)luaL_checkinteger(L, 4);
-    long h = (long)luaL_checkinteger(L, 5);
-    uint32_t colour = (uint32_t)luaL_checkinteger(L, 6);
-    long r = (long)luaL_optinteger(L, 7, 0);
     long row;
 
     if (w <= 0 || h <= 0) {
-        return 0;
+        return;
     }
 
     if (r * 2 > w) { r = w / 2; }
@@ -1323,7 +1335,14 @@ static int l_fill_round(lua_State *L)
             round_put(p, colour, cover);
         }
     }
+}
 
+static int l_fill_round(lua_State *L)
+{
+    fill_round_on(check_surface(L, 1), (long)luaL_checkinteger(L, 2),
+                  (long)luaL_checkinteger(L, 3), (long)luaL_checkinteger(L, 4),
+                  (long)luaL_checkinteger(L, 5), (uint32_t)luaL_checkinteger(L, 6),
+                  (long)luaL_optinteger(L, 7, 0));
     return 0;
 }
 
@@ -1338,19 +1357,13 @@ static int l_fill_round(lua_State *L)
  * Drawing it as four fills and four arcs would be the same picture with a
  * seam at each corner.
  */
-static int l_frame_round(lua_State *L)
+static void frame_round_on(struct surface *dst, long x, long y, long w, long h,
+                           uint32_t colour, long r)
 {
-    struct surface *dst = check_surface(L, 1);
-    long x = (long)luaL_checkinteger(L, 2);
-    long y = (long)luaL_checkinteger(L, 3);
-    long w = (long)luaL_checkinteger(L, 4);
-    long h = (long)luaL_checkinteger(L, 5);
-    uint32_t colour = (uint32_t)luaL_checkinteger(L, 6);
-    long r = (long)luaL_optinteger(L, 7, 0);
     long row;
 
     if (w <= 2 || h <= 2) {
-        return 0;
+        return;
     }
 
     if (r * 2 > w) { r = w / 2; }
@@ -1394,41 +1407,51 @@ static int l_frame_round(lua_State *L)
             round_put(p, colour, ring);
         }
     }
+}
 
+static int l_frame_round(lua_State *L)
+{
+    frame_round_on(check_surface(L, 1), (long)luaL_checkinteger(L, 2),
+                   (long)luaL_checkinteger(L, 3), (long)luaL_checkinteger(L, 4),
+                   (long)luaL_checkinteger(L, 5), (uint32_t)luaL_checkinteger(L, 6),
+                   (long)luaL_optinteger(L, 7, 0));
     return 0;
+}
+
+static void blend_on(struct surface *dst, struct surface *src, long sx, long sy,
+                     long w, long h, long dx, long dy, uint32_t global)
+{
+    long row;
+
+    if (!clip(src, &sx, &sy, &w, &h, &dx, &dy)) {
+        return;
+    }
+
+    if (!clip(dst, &dx, &dy, &w, &h, &sx, &sy)) {
+        return;
+    }
+
+    for (row = 0; row < h; row++) {
+        const uint32_t *sp = row_of(src, (unsigned)(sy + row)) + sx;
+        uint32_t *dp = row_of(dst, (unsigned)(dy + row)) + dx;
+        blend_row(dp, sp, w, global);
+    }
 }
 
 static int l_blend(lua_State *L)
 {
     struct surface *dst = check_surface(L, 1);
     struct surface *src = check_surface(L, 2);
-    long sx = (long)luaL_checkinteger(L, 3);
-    long sy = (long)luaL_checkinteger(L, 4);
-    long w  = (long)luaL_checkinteger(L, 5);
-    long h  = (long)luaL_checkinteger(L, 6);
-    long dx = (long)luaL_checkinteger(L, 7);
-    long dy = (long)luaL_checkinteger(L, 8);
     lua_Integer global = luaL_optinteger(L, 9, 255);
-    long row;
 
     if (global < 0 || global > 255) {
         return luaL_error(L, "alpha is 0 to 255, not %d", (int)global);
     }
 
-    if (!clip(src, &sx, &sy, &w, &h, &dx, &dy)) {
-        return 0;
-    }
-
-    if (!clip(dst, &dx, &dy, &w, &h, &sx, &sy)) {
-        return 0;
-    }
-
-    for (row = 0; row < h; row++) {
-        const uint32_t *sp = row_of(src, (unsigned)(sy + row)) + sx;
-        uint32_t *dp = row_of(dst, (unsigned)(dy + row)) + dx;
-        blend_row(dp, sp, w, (uint32_t)global);
-    }
-
+    blend_on(dst, src, (long)luaL_checkinteger(L, 3), (long)luaL_checkinteger(L, 4),
+             (long)luaL_checkinteger(L, 5), (long)luaL_checkinteger(L, 6),
+             (long)luaL_checkinteger(L, 7), (long)luaL_checkinteger(L, 8),
+             (uint32_t)global);
     return 0;
 }
 
@@ -3961,6 +3984,9 @@ static int l_polyline(lua_State *L)
     return 0;
 }
 
+/* The scene: the desktop composed with these primitives (Astra's D3a). */
+#include "scene.c"
+
 static const luaL_Reg surface_methods[] = {
     { "polygon",  l_polygon },
     { "polyline", l_polyline },
@@ -4282,6 +4308,7 @@ static const luaL_Reg gfx_functions[] = {
     { "font_prefer",   l_font_prefer },
     { "fallbacks",     l_fallbacks },
     { "surface", l_new },
+    { "scene",   l_scene },
     { "wrap",    l_wrap },
     { "zrle_bound", l_zrle_bound },
     { "bytes",   l_surface_bytes },
@@ -4317,6 +4344,8 @@ int luaopen_gfx(lua_State *L)
 
     luaL_setfuncs(L, surface_methods, 0);
     lua_pop(L, 1);
+
+    scene_open(L);
 
     luaL_newlib(L, gfx_functions);
 

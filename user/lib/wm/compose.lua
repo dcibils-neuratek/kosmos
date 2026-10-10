@@ -97,6 +97,15 @@ return function(ctx)
   local windows =
     ctx.windows
 
+  -- **The scene** (`docs/astra-display.md` D3a): the desktop composed in C,
+  -- described by the window manager before each pass (`describe`); a drag's
+  -- label is drawn after it (`draw_badge`). With `checking` - `wm
+  -- compose-check` - each pass is composed by the scene and again by the
+  -- Lua below over it, and the pixels that differ are counted.
+  local scene, describe, draw_badge, checking =
+    ctx.scene, ctx.describe, ctx.draw_badge, ctx.checking
+  local check = { passes = 0, differ = 0, ref = nil }
+
   --
   -- Everything that is visible in one damage rectangle, and nothing that is
   -- not.
@@ -325,6 +334,10 @@ return function(ctx)
     -- Last, so it is on top of everything, and before the blit, so what
     -- reaches the screen is a frame with a cursor in it.
     draw_cursor()
+  end
+
+  -- What was composed of `r`, onto the screen and to whoever watches it.
+  local function show(r)
 
     screen:blit(back, r.x, r.y, r.w, r.h, r.x, r.y)
 
@@ -345,6 +358,8 @@ return function(ctx)
       P.prof.rects  = P.prof.rects + #damage
     end
 
+    describe()
+
     for _, r in ipairs(damage) do
       --
       -- **`px` is what the compositor was asked for; `drawn` is what it did.**
@@ -361,7 +376,61 @@ return function(ctx)
       -- overdraw.
       --
       if P.measuring then P.prof.px = P.prof.px + r.w * r.h end
-      compose_rect(r)
+      -- Checking, the rectangle starts as a colour nothing draws: what the
+      -- scene leaves undrawn is then a difference, not last frame's pixels.
+      if checking() then back:fill(r.x, r.y, r.w, r.h, 0xffff00ff) end
+
+      local drawn = scene:compose(r.x, r.y, r.w, r.h)
+
+      if P.measuring then P.prof.drawn = P.prof.drawn + drawn end
+
+      draw_badge()
+
+      if not checking() then show(r) end
+    end
+
+    if checking() then
+      local w, h = back:size()
+
+      check.ref = check.ref or gfx.surface{ w = w, h = h }
+      check.ref:blit(back, 0, 0, w, h, 0, 0)
+
+      for _, r in ipairs(damage) do compose_rect(r) end
+
+      -- **Only what is shown is compared**: the damaged rectangles, which
+      -- is all a pass puts on the screen. The Lua drew the version stamp
+      -- and the arrow whole, past the rectangle it was composing, where
+      -- nothing is shown until that part is damaged and composed again;
+      -- the scene clips them, so outside the damage the two may differ and
+      -- nobody can see it.
+      local n = 0
+
+      for _, r in ipairs(damage) do
+        local a = gfx.surface{ w = r.w, h = r.h }
+        local b = gfx.surface{ w = r.w, h = r.h }
+
+        a:blit(back, r.x, r.y, r.w, r.h, 0, 0)
+        b:blit(check.ref, r.x, r.y, r.w, r.h, 0, 0)
+
+        local d = a:differs(b) or -1
+
+        if d ~= 0 then
+          print(("wm: compose check: %d differ in %d,%d %dx%d"):format(d, r.x, r.y, r.w, r.h))
+          n = n + d
+        end
+
+        a:free()
+        b:free()
+      end
+
+      check.passes, check.differ = check.passes + 1, check.differ + n
+
+      if n ~= 0 or check.passes % 50 == 0 then
+        print(("wm: compose check: %d passes composed both ways, %d pixels differ")
+              :format(check.passes, check.differ))
+      end
+
+      for _, r in ipairs(damage) do show(r) end
     end
 
     -- Emptied where it is rather than replaced: `add_damage` in `wm.lua`

@@ -173,6 +173,15 @@ desktop.
      its own and hands the scene those; the scene composes, and decides
      nothing a person would choose. Measured with `frames` before and
      after: the window manager's Lua per busy pass, and what it allocates.
+     **Done 10 October** (0.11.114, `testing.md` 18.509): `gfx.scene` in
+     `user/kits/gfx/scene.c`, compiled inside `gfx.c` with the kit's own
+     primitives - each now a C function on surfaces the Lua method calls.
+     Under QEMU a composing pass of four stacked animating windows went from
+     3.53 ms to 1.59, of one from 0.80 to 0.47, and the window manager's busy
+     time fell by a quarter to a third. **The Lua composing stays until D3b**,
+     as the reference: `wm compose-check` composes every pass both ways, and
+     `x86-scene` holds the two to the same pixels over 1500 passes. It goes
+     when the scene leaves this process, where the Lua could not follow it.
    - **D3b - the scene in a process of its own**, `windowserver`
      (`user/servers/windowserver.c`, `/Running/windowserver`): it takes
      the screen; the scene's calls become the **manager door**, a declared

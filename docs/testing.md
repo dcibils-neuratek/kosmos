@@ -22381,3 +22381,38 @@ subject and version kept and its words there, and nothing refused.
 **Control**: the facts in one request, and the letter has no subject in the
 list and `maild` says it could not keep them. Mail's seven suites and
 `host` pass.
+
+## 18.509 Astra D3a: the desktop composed in C
+
+`docs/astra-display.md` D3a. **`gfx.scene`** (`user/kits/gfx/scene.c`),
+compiled inside `gfx.c`: the window manager describes, before each pass,
+everything it composes - the look, the desktop's colour, wallpaper and
+version stamp (a picture, made when it changes), each window in drawing
+order with its place, flags, picture, menu bar and lights' state, the
+menus, the resize outline, the volume display and the pointer's picture -
+a call a window and no tables; the scene composes each damaged rectangle
+into the back buffer as `compose.lua` and `drawwindow.lua` did: which
+windows show, the desktop under the rest, shadows, each window copied,
+blended or stretched, its grip, its three lights and rounded corners, the
+menus, the outline, the volume display and the arrow. A drag's label is
+drawn after it in Lua, and the screen is the window manager's. The kit's
+primitives became C functions on surfaces - `fill_on`, `blit_on`,
+`blend_on`, `blit_round_on`, `fill_round_on`, `frame_round_on`,
+`triangle_on` - which the Lua methods call, so the scene draws with them
+rather than a copy.
+
+**`wm compose-check`** composes each pass by the scene and again by the Lua
+over it and counts the pixels that differ in what was damaged - the part a
+pass puts on the screen; the Lua drew the stamp and the arrow past the
+rectangle, where nothing is shown, and the scene clips them. Two controls
+did not bite at first: shadows are off in the default look, and the back
+buffer kept the last frame where the scene drew nothing; each rectangle
+now starts magenta in the check, and the suite turns shadows on.
+
+`x86-scene` 3: the Deskbar, the desktop, Calculator, Preferences, a cube
+turning, a menu, a window moved, 150 per cent and back - 1500 passes, not
+one pixel different. **Control**: the scene casting no shadow, and
+10,867,485 pixels differ over 1446 passes. `frames` before and after, under
+QEMU: a composing pass 1.35 to 1.01 ms idle, 0.80 to 0.47 with one window
+animating, 3.53 to 1.59 with four stacked; the window manager's busy time
+347 to 293, 955 to 714 and 2121 to 1423 ms. The whole gate, 62 of 62.

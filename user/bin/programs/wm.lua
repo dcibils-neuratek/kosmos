@@ -848,6 +848,10 @@ sys.screen_take(true)
 --
 local TRACE = false
 
+-- `wm compose-check`: every pass composed by the scene and by the Lua it
+-- replaces, and the pixels that differ said (Astra's D3a).
+local COMPOSE_CHECK = false
+
 -- Forward-declared: `step` below needs it and the definition is further
 -- down the file, next to the rest of the clock arithmetic.
 local counter_per_tick
@@ -2290,6 +2294,12 @@ local function draw_cursor()
   -- moving - that a drag is happening at all, and how much of one - and it
   -- costs a fill and a string.
   --
+  OUT.draw_badge()
+end
+
+-- A drag's label beside the arrow, when there is one: drawn after the
+-- scene composes a rectangle (`compose.lua`), and by `draw_cursor` above.
+function OUT.draw_badge()
   local bw, bh = badge_size()
 
   if bw > 0 then
@@ -2326,7 +2336,10 @@ do
   end
 
   OUT.hw_cursor = gfx.cursor and gfx.cursor(picture, 0, 0, PT.x, PT.y) == true
-  picture:free()
+
+  -- Kept where the display does not draw it: the scene composes the arrow
+  -- from this (D3a), over everything, as `draw_cursor` drew it.
+  if OUT.hw_cursor then picture:free() else OUT.cursor_picture = picture end
   print(OUT.hw_cursor and "wm: the pointer drawn by the display"
         or "wm: the pointer composited")
 end
@@ -2510,7 +2523,19 @@ end
 
 -- Compositing - `/Kosmos/Libraries/wm/compose.lua` (`roadmap.md` 6zn).
 --
+--
+-- **The scene** (`docs/astra-display.md` D3a): the desktop composed in C,
+-- described before each pass by `OUT.describe` - below, where everything it
+-- reads is defined. `wm compose-check` composes each pass the old way too
+-- and counts the pixels that differ.
+--
+local scene = gfx.scene(back)
+
 local compose = use("/Kosmos/Libraries/wm/compose.lua"){
+  scene = scene,
+  describe = function() return OUT.describe() end,
+  draw_badge = function() return OUT.draw_badge() end,
+  checking = function() return COMPOSE_CHECK end,
   OUT = OUT,
   OUTLINE = OUTLINE,
   P = P,
@@ -2541,6 +2566,116 @@ local function focused_window()
   end
 
   return nil
+end
+
+--
+-- **The scene described** (D3a): everything a pass composes, as it is now -
+-- the look, the desktop, each window in drawing order with its picture and
+-- what it wears, the menus, and what is over everything. Called before each
+-- pass, a call a window and no tables made, so the scene cannot fall out of
+-- step with what this process decided.
+--
+local SCENE_SLOT = { maximise = 0, minimise = 1, close = 2 }
+local stamp_picture, stamp_made = nil, {}
+
+local function stamp_now()
+  local fg, bg, w = stamp_colour(), desktop_colour(), gfx.measure(stamp)
+
+  if not stamp_picture or stamp_made.fg ~= fg or stamp_made.bg ~= bg or stamp_made.w ~= w
+     or stamp_made.h ~= gfx.font.h then
+    if stamp_picture then stamp_picture:free() end
+
+    stamp_picture = gfx.surface{ w = math.max(1, w), h = gfx.font.h }
+    stamp_picture:fill(0, 0, w, gfx.font.h, bg)
+    stamp_picture:text(0, 0, stamp, fg, bg)
+    stamp_made.fg, stamp_made.bg, stamp_made.w, stamp_made.h = fg, bg, w, gfx.font.h
+  end
+
+  return stamp_picture, W - w - 10, H - reserved_bottom - gfx.font.h - 8
+end
+
+function OUT.describe()
+  local L = OUT.LIGHTS
+  local lift = theme.lift
+
+  scene:look(OUT.corner, OUT.shadow, OUT.GRIP, theme.edge_light, theme.edge_dark,
+             OUT.BOX, OUT.BOX_W, OUT.RUN, OUT.BOX - scale.px(4), theme.track,
+             theme.line_soft, OUTLINE,
+             L.maximise.fill, L.maximise.ring, L.maximise.mark, lift(L.maximise.fill, -40),
+             L.minimise.fill, L.minimise.ring, L.minimise.mark, lift(L.minimise.fill, -40),
+             L.close.fill, L.close.ring, L.close.mark, lift(L.close.fill, -40))
+
+  local pic, sx, sy = stamp_now()
+
+  scene:desktop(desktop_colour(), wallpaper and (wall_filled or wallpaper) or nil,
+                wall_x, wall_y, wall_w, wall_h, pic, sx, sy)
+
+  local order = OUT.order()
+  local count = order and #order or #windows
+  local front = focused_window()
+
+  scene:windows(count)
+
+  for k = 1, count do
+    local i = order and order[k] or k
+    local win = windows[i]
+    local framed = not (win.backdrop or win.strip or win.fullscreen or win.tip)
+    local flags = 0
+
+    if win.hidden then flags = flags | 1 end
+    if win.backdrop or win.blend then flags = flags | 2 end
+    if framed then flags = flags | 4 | 8 end
+    if framed and win.headed and win ~= front then flags = flags | 16 end
+
+    local can = resizable(win)
+
+    if can then flags = flags | 32 | 512 end
+    if i == #windows then flags = flags | 256 end
+
+    local bx, by, held = 0, 0, -1
+
+    if win.headed and not win.pinned then
+      local x, y = OUT.boxes_rect(win)
+
+      if x then
+        bx, by = x, y
+        flags = flags | 64
+
+        if OUT.hover_boxes == win then flags = flags | 128 end
+
+        if OUT.held_box and OUT.held_box.win == win then
+          held = SCENE_SLOT[OUT.held_box.slot] or -1
+        end
+      end
+    end
+
+    local bar = win.menubar
+    local shown = win.shared and win.shared[win.shared.live] or win.surface
+    local lower = bar and (win.h - bar.h) or win.h
+
+    scene:window(k, win.x, win.y, win.w, win.h, flags, shown,
+                 win.src_w or win.w, win.src_h or lower,
+                 bar and bar.surface or nil, bar and bar.h or 0, bx, by, held)
+  end
+
+  scene:menus(#menus)
+
+  for k, m in ipairs(menus) do
+    scene:menu(k, m.x, m.y, m.w, m.h, m.shared and m.shared[m.shared.live] or m.surface)
+  end
+
+  local o = PT.outline
+  local alpha = osd.shown and osd.alpha(sys.ticks()) or 0
+
+  if o then
+    scene:above(o.x, o.y, o.w, o.h, focused_colour(),
+                alpha > 0 and osd.surface or nil, osd.x, osd.y, alpha,
+                OUT.cursor_picture, PT.x, PT.y)
+  else
+    scene:above(nil, 0, 0, 0, 0,
+                alpha > 0 and osd.surface or nil, osd.x, osd.y, alpha,
+                OUT.cursor_picture, PT.x, PT.y)
+  end
 end
 
 --
@@ -6417,6 +6552,8 @@ do
 
     if entry == "trace" then
       TRACE = true
+    elseif entry == "compose-check" then
+      COMPOSE_CHECK = true
     elseif entry ~= "" then
       rest[#rest + 1] = entry
     end
