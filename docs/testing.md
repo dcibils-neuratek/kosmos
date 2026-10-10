@@ -22598,3 +22598,39 @@ and never come down.
 The whole gate, 61 of 62: `x86-display-4` read a screendump shorter than
 its size (`IndexError` in `_colour_area`) with 1.7 GB free on the disk; alone,
 79 of 79 in 3:08.
+
+## 18.517 TCP sends a window of segments, not one at a time
+
+The M700 sent a whole VNC frame, 1720x1440 and 9.9 MB, in 7.2 s: 1.4 MB a
+second over a gigabit card (`roadmap.md`, remote 8). Timed from the Mac,
+the request was answered in 44 ms and the bytes took 7.04 s - so the time was
+the sending, and `net.c` said why in its own words: "one segment in flight,
+retransmitted on a timer". One 1460-byte segment a round trip of about a
+millisecond is exactly 1.4 MB a second.
+
+Now a window: as many segments as the congestion window, the far end's
+window and the ring allow; RFC 5681's slow start from ten segments, then a
+segment a round trip; on three repeated acknowledgements everything from
+`snd_una` goes again at once and the window halves; on the timer, the same
+with the window back to a segment. Two things the loss suite found on the
+way: QEMU's network shrinks its window while it holds segments past a gap,
+so repeated acknowledgements are counted whatever the window (RFC 5681 asks
+it unchanged, and no loss was seen before the one-second timer); and after
+going back, the far end acknowledges past where `snd_nxt` has got to again,
+which was refused as impossible and stopped the connection - so `snd_max`,
+the highest byte sent, bounds what is taken.
+
+**QEMU cannot show the speed**: its network acknowledges at once, and a frame
+takes 0.47 s with one segment in flight or many. What it can show:
+`x86-servers` 35 now has the stack's own line - "has sent 4 MB, at most N
+bytes in flight" - say more than a segment: 9368 bytes. **Control**: the
+window held to one segment, and "at most 1460 bytes in flight" fails it.
+**`x86-tcploss`** (new, 4 checks, 40 s): booted with `opt/kosmos/net_drop=37`,
+which leaves one data segment in 37 unsent as if lost, three whole frames by
+VNC arrive in 8 to 11 s each and match the screen, with 107 segments lost.
+Its controls were the two faults above, each found by it: a frame that never
+finished, and frames past a minute. The whole gate, 63 of 63 in 6:55.
+
+What bounds it next is the ring: 16 KB each way (`tcpring.h`, whose comment
+says its size was never measured), so at most 16 KB in flight - about 16 MB a
+second at a millisecond. The M700 is the measurement.

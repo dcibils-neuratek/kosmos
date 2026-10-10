@@ -139,6 +139,17 @@ static void dhcp_receive(const uint8_t *m, unsigned length);
 #define TCP_URGENT      18
 #define TCP_HEADER      20
 
+/*
+ * Sending (`struct conn`): a segment's payload at most - what the SYN says
+ * this end takes - the congestion window a connection starts with, ten
+ * segments as RFC 6928 has it, and the most it may grow to. The far end's
+ * window and the ring (`TCP_RING_BYTES`) bound what is in flight long
+ * before the last.
+ */
+#define TCP_MSS              1460u
+#define TCP_INITIAL_WINDOW   (10u * TCP_MSS)
+#define TCP_MAX_WINDOW       (1024u * 1024u)
+
 #define TCP_FIN         0x01u
 #define TCP_SYN         0x02u
 #define TCP_RST         0x04u
@@ -266,12 +277,18 @@ struct poller {
  * far end. Those three names are RFC 793's and are worth keeping: every
  * sentence in that document about what is legal is written in them.
  *
- * **One segment in flight, retransmitted on a timer.** A real stack keeps a
- * queue of unacknowledged segments and slides a window over it; this sends
- * what fits, remembers where it started, and sends it again if nothing
- * acknowledges it. That costs throughput on a long fat link and costs
- * nothing on a line protocol, which is what this is for - and it is one
- * timer to get right instead of four.
+ * **A window of segments in flight** (10 October 2026). This sent one
+ * segment and waited for it to be acknowledged before the next - "costs
+ * throughput on a long fat link and costs nothing on a line protocol" - and
+ * a gigabit link one millisecond long is a long fat link for that rule: the
+ * M700 sent a 9.9 MB screen in 7 s, 1.4 MB a second, one segment a round
+ * trip. Now as many go as the congestion window (`cwnd`, RFC 5681: slow
+ * start, then a segment a round trip), the far end's window and the ring
+ * allow. The bytes still stay in the ring until acknowledged, which is what
+ * makes sending again simple: on the timer, or three acknowledgements
+ * repeating, everything from `snd_una` goes again (go-back-N - the far end
+ * keeps what it already had), and the window starts small again. One timer,
+ * for the oldest byte in flight.
  */
 struct conn {
     unsigned state;
@@ -302,11 +319,18 @@ struct conn {
 
     uint32_t snd_una;
     uint32_t snd_nxt;
+    uint32_t snd_max;               /* the highest `snd_nxt` has been */
     uint32_t rcv_nxt;
     uint32_t peer_window;
 
-    uint64_t sent_at;               /* when the unacknowledged segment went */
+    uint64_t sent_at;               /* when the oldest byte in flight went */
     uint32_t tries;
+    uint32_t cwnd;                  /* bytes the congestion window allows */
+    uint32_t ssthresh;              /* slow start up to here */
+    uint32_t dupacks;               /* the same acknowledgement, again */
+    uint64_t sent_total;            /* bytes sent, again included */
+    uint32_t most_in_flight;        /* the window's high water */
+    bool     said_sent;             /* its four megabytes said */
     bool     fin_sent;
     bool     want_close;            /* asked to close; waiting for the ring */
     bool     held;                  /* the SYN waits for an address */
@@ -320,6 +344,13 @@ struct conn {
 static struct {
     bool     has_card;
     uint8_t  mac[6];
+
+    /* `opt/kosmos/net_drop=N`: every Nth data segment not sent, as if the
+     * wire had lost it - for a suite to see the stack send it again
+     * (`tools/run_tcploss.py`). 0, the default, drops nothing. */
+    uint32_t drop_every;
+    uint32_t drop_count;
+    uint32_t dropped;
     uint32_t mtu;
 
     struct net_addr address;
@@ -1977,24 +2008,24 @@ static bool tcp_send(struct conn *c, uint32_t flags, uint32_t seq,
 /*
  * Whatever is waiting in `out`, up to what the far end will take.
  *
- * Nothing is sent while a segment is unacknowledged: this is the one-in-
- * flight rule the structure comment describes, and it is what makes a single
- * retransmission timer sufficient.
+ * As much as the window allows (`struct conn`): every byte the client has
+ * written that is not yet in flight, a segment at a time, while what is in
+ * flight stays under both the congestion window and the far end's. The
+ * timer starts with the first byte in flight and is the oldest byte's.
  */
 static void tcp_pump(struct conn *c)
 {
     uint32_t have;
     uint32_t read;
-    uint32_t send;
     unsigned i;
-    uint8_t  piece[1460];
+    uint8_t  piece[TCP_MSS];
 
     if (c->ring == NULL || (c->state != ST_OPEN && c->state != ST_CLOSE_WAIT)) {
         return;
     }
 
-    if (c->snd_nxt != c->snd_una) {
-        return;                     /* something is already in flight */
+    if (c->fin_sent) {
+        return;                     /* everything was sent; only the FIN is left */
     }
 
     read = c->ring->out_read;
@@ -2006,9 +2037,10 @@ static void tcp_pump(struct conn *c)
          * becomes legal: every byte is sent and acknowledged, so the FIN's
          * sequence number is the one after the last of them.
          */
-        if (c->want_close && !c->fin_sent) {
+        if (c->want_close && c->snd_nxt == c->snd_una) {
             (void)tcp_send(c, TCP_ACK_FLAG | TCP_FIN, c->snd_nxt, NULL, 0);
             c->snd_nxt++;
+            c->snd_max = c->snd_nxt;
             c->fin_sent = true;
             c->sent_at = kosmos_ticks();
             c->tries = 0;
@@ -2018,31 +2050,79 @@ static void tcp_pump(struct conn *c)
         return;
     }
 
-    send = have;
+    for (;;) {
+        uint32_t flight = c->snd_nxt - c->snd_una;
+        uint32_t allowed = c->cwnd < c->peer_window ? c->cwnd : c->peer_window;
+        uint32_t send;
 
-    if (send > sizeof(piece)) {
-        send = sizeof(piece);
+        if (flight >= have || flight >= allowed) {
+            return;                 /* all of it in flight, or all the window */
+        }
+
+        send = have - flight;
+
+        if (send > allowed - flight) {
+            send = allowed - flight;
+        }
+
+        if (send > sizeof(piece)) {
+            send = sizeof(piece);
+        }
+
+        for (i = 0; i < send; i++) {
+            piece[i] = tcp_ring_out(c->ring)[(read + flight + i) % c->ring->bytes];
+        }
+
+        if (net.drop_every != 0 && ++net.drop_count % net.drop_every == 0) {
+            /* Lost on the way, on purpose: counted as sent, and not sent. */
+            net.dropped++;
+        } else if (!tcp_send(c, TCP_ACK_FLAG | TCP_PSH, c->snd_nxt, piece, send)) {
+            return;
+        }
+
+        if (flight == 0) {
+            c->sent_at = kosmos_ticks();
+            c->tries = 0;
+        }
+
+        c->snd_nxt += send;
+
+        if (!seq_ge(c->snd_max, c->snd_nxt)) {
+            c->snd_max = c->snd_nxt;
+        }
+
+        if (flight + send > c->most_in_flight) {
+            c->most_in_flight = flight + send;
+        }
+
+        /*
+         * **Said once a connection has sent four megabytes** - a screen to a
+         * viewer, a file - with the most it ever had in flight: the window
+         * is working when that is more than a segment. Bytes sent again
+         * count again.
+         */
+        c->sent_total += send;
+
+        if (!c->said_sent && c->sent_total >= 4u * 1024u * 1024u) {
+            struct say_line line;
+
+            c->said_sent = true;
+            say_begin(&line);
+            say_text(&line, "net: a connection to ");
+            say_addr(&line, &c->remote);
+            say_text(&line, " has sent 4 MB, at most ");
+            say_dec(&line, c->most_in_flight);
+            say_text(&line, " bytes in flight");
+
+            if (net.drop_every != 0) {
+                say_text(&line, "; ");
+                say_dec(&line, net.dropped);
+                say_text(&line, " segments lost on purpose so far");
+            }
+
+            say_send(net.console, &line);
+        }
     }
-
-    if (send > c->peer_window) {
-        send = c->peer_window;
-    }
-
-    if (send == 0) {
-        return;                     /* the far end has nowhere to put it */
-    }
-
-    for (i = 0; i < send; i++) {
-        piece[i] = tcp_ring_out(c->ring)[(read + i) % c->ring->bytes];
-    }
-
-    if (!tcp_send(c, TCP_ACK_FLAG | TCP_PSH, c->snd_nxt, piece, send)) {
-        return;
-    }
-
-    c->snd_nxt += send;
-    c->sent_at = kosmos_ticks();
-    c->tries = 0;
 
     /*
      * The bytes stay in the ring until they are acknowledged, which is what
@@ -2314,6 +2394,9 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         made->snd_una       = net.next_seq;
         made->snd_nxt       = net.next_seq;
         made->peer_window   = get_be16(tcp + TCP_WINDOW);
+        made->cwnd          = TCP_INITIAL_WINDOW;
+        made->ssthresh      = 0xffffffffu;
+        made->dupacks       = 0;
         made->state         = ST_SYN_RCVD;
         made->from_listener = (int)listener->slot;
         made->sent_at       = kosmos_ticks();
@@ -2322,6 +2405,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
 
         (void)tcp_send(made, TCP_SYN | TCP_ACK_FLAG, made->snd_nxt, NULL, 0);
         made->snd_nxt++;            /* our SYN takes one too */
+        made->snd_max = made->snd_nxt;
 
         return;
     }
@@ -2400,8 +2484,14 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         return;
     }
 
+    /*
+     * Up to the highest byte ever sent, not `snd_nxt`: sending again goes
+     * back to `snd_una`, and the far end, holding what came after the gap,
+     * then acknowledges past where `snd_nxt` has got to again - which this
+     * used to refuse, and a connection that lost one segment stopped.
+     */
     if ((flags & TCP_ACK_FLAG) != 0 && seq_ge(ack, c->snd_una)
-        && seq_ge(c->snd_nxt, ack)) {
+        && seq_ge(c->snd_max, ack)) {
         uint32_t acked = ack - c->snd_una;
 
         /*
@@ -2436,7 +2526,49 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
             }
         }
 
+        /*
+         * **The congestion window** (RFC 5681): a segment's worth for each
+         * acknowledgement in slow start, which doubles it every round
+         * trip, and about a segment a round trip after. Three
+         * acknowledgements of the same byte, with more in flight and
+         * nothing else in them, say a segment went missing: everything
+         * from it goes again now rather than at the timer, and the window
+         * halves. Not also asking that the window be unchanged, as RFC
+         * 5681 does: a far end holding what came after the hole shrinks
+         * its window as it holds it - QEMU's does - and then no loss was
+         * ever seen before the one-second timer (`run_tcploss.py`).
+         */
+        if (acked > 0) {
+            uint32_t grow = acked < TCP_MSS ? acked : TCP_MSS;
+
+            if (c->cwnd < c->ssthresh) {
+                c->cwnd += grow;
+            } else {
+                c->cwnd += (TCP_MSS * TCP_MSS) / (c->cwnd ? c->cwnd : 1u);
+            }
+
+            if (c->cwnd > TCP_MAX_WINDOW) {
+                c->cwnd = TCP_MAX_WINDOW;
+            }
+
+            c->dupacks = 0;
+            c->sent_at = kosmos_ticks();        /* the timer, for what is left */
+            c->tries = 0;
+        } else if (payload == 0 && c->snd_nxt != c->snd_una && !c->fin_sent
+                   && (flags & (TCP_SYN | TCP_FIN)) == 0 && ++c->dupacks == 3) {
+            uint32_t flight = c->snd_nxt - c->snd_una;
+
+            c->ssthresh = flight / 2 > 2 * TCP_MSS ? flight / 2 : 2 * TCP_MSS;
+            c->cwnd = c->ssthresh;
+            c->snd_nxt = c->snd_una;
+            c->sent_at = kosmos_ticks();
+        }
+
         c->snd_una = ack;
+
+        if (!seq_ge(c->snd_nxt, ack)) {
+            c->snd_nxt = ack;           /* past what was being sent again */
+        }
 
         if (c->state == ST_LAST_ACK && seq_ge(ack, c->snd_nxt)) {
             conn_die(c, NET_OK);
@@ -3036,6 +3168,9 @@ static void serve(const struct message *msg, uint64_t sender)
         c->snd_una     = net.next_seq;
         c->snd_nxt     = net.next_seq;
         c->peer_window = 1460;
+        c->cwnd        = TCP_INITIAL_WINDOW;
+        c->ssthresh    = 0xffffffffu;
+        c->dupacks     = 0;
         c->state         = ST_SYN_SENT;
         c->from_listener = -1;
         c->opened_by     = sender;
@@ -3056,6 +3191,8 @@ static void serve(const struct message *msg, uint64_t sender)
         } else {
             c->snd_nxt++;           /* our SYN takes one sequence number */
         }
+
+        c->snd_max = c->snd_nxt;
 
         /*
          * **At once, when asked** (`NET_CONNECT_AT_ONCE`): the rings now,
@@ -3485,29 +3622,25 @@ static void expire(uint64_t hz)
          * retransmission is the same bytes at the same sequence number, and
          * a stack that resent from `snd_nxt` would be sending new data with
          * an old segment's number.
+         *
+         * A FIN goes alone, since it is sent only once every byte is
+         * acknowledged. Bytes go back to `snd_una` and are pumped again
+         * from there - all that was in flight, as the window allows, with
+         * the window back to one segment (RFC 5681's loss window).
          */
         if (c->state == ST_SYN_SENT) {
             (void)tcp_send(c, TCP_SYN, c->snd_una, NULL, 0);
+        } else if (c->fin_sent) {
+            (void)tcp_send(c, TCP_ACK_FLAG | TCP_FIN, c->snd_una, NULL, 0);
         } else {
-            uint32_t behind = c->snd_nxt - c->snd_una;
-            uint8_t  piece[1460];
-            uint32_t read = c->ring->out_read;
-            unsigned k;
+            uint32_t flight = c->snd_nxt - c->snd_una;
 
-            if (c->fin_sent && behind > 0) {
-                behind--;           /* the FIN is not a byte in the ring */
-            }
-
-            if (behind > sizeof(piece)) {
-                behind = sizeof(piece);
-            }
-
-            for (k = 0; k < behind; k++) {
-                piece[k] = tcp_ring_out(c->ring)[(read + k) % c->ring->bytes];
-            }
-
-            (void)tcp_send(c, TCP_ACK_FLAG | (c->fin_sent ? TCP_FIN : 0u),
-                           c->snd_una, behind ? piece : NULL, behind);
+            c->ssthresh = flight / 2 > 2 * TCP_MSS ? flight / 2 : 2 * TCP_MSS;
+            c->cwnd = TCP_MSS;
+            c->dupacks = 0;
+            c->snd_nxt = c->snd_una;
+            tcp_pump(c);
+            c->sent_at = now;
         }
     }
 }
@@ -3533,6 +3666,28 @@ void net_server(long endpoint, long console, long frames, long frames2)
     net.console = console;
     wire.cap = -1;
     wire.region = -1;
+
+    {
+        char drop[12];
+        long n = kosmos_boot_option("opt/kosmos/net_drop", drop, sizeof drop - 1);
+        uint32_t every = 0;
+        long k;
+
+        for (k = 0; k < n && drop[k] >= '0' && drop[k] <= '9'; k++) {
+            every = every * 10u + (uint32_t)(drop[k] - '0');
+        }
+
+        if (n > 0 && every > 1 && every < 1000000u) {
+            struct say_line line;
+
+            net.drop_every = every;
+            say_begin(&line);
+            say_text(&line, "net: one data segment in ");
+            say_dec(&line, every);
+            say_text(&line, " lost on purpose (opt/kosmos/net_drop)");
+            say_send(net.console, &line);
+        }
+    }
 
     if (frames >= 0) {
         wire.caps[wire.count++] = frames;

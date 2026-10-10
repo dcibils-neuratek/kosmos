@@ -283,6 +283,7 @@ SUITES = [
     # with the machine serving a page after the next boot.
     Suite("arm-servers", ["python3", "tools/run_servers.py", ARM]),
     Suite("x86-servers", ["python3", "tools/run_servers.py", X86], x86=True),
+    Suite("x86-tcploss", ["python3", "tools/run_tcploss.py", X86], x86=True),
 
     # **The Deskbar as a dock, in Night** (`roadmap.md`, a dock at the
     # bottom): moved there as Preferences moves it, floating and centred

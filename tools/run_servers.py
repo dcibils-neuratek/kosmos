@@ -307,6 +307,27 @@ def look(guest, telnet, vnc, seen, fails):
                      "difference within %s (both in %s*.png)"
                      % (seen["whole"], where_differs(viewer.frame, width, height, px), kept))
 
+    # **The send window** (10 October 2026): a whole frame is megabytes, and
+    # the stack says, once a connection has sent four of them, the most it
+    # had in flight - which was one segment, 1460 bytes, while it waited for
+    # each to be acknowledged. QEMU's network acknowledges at once, so the
+    # speed cannot show here; that more than a segment went out can.
+    flight = re.search(r"net: a connection to [\d.]+ has sent 4 MB, at most (\d+) bytes in "
+                       r"flight", guest.seen)
+    deadline = time.monotonic() + 10
+
+    while not flight and time.monotonic() < deadline:
+        guest._read_available()
+        time.sleep(0.3)
+        flight = re.search(r"net: a connection to [\d.]+ has sent 4 MB, at most (\d+) bytes "
+                           r"in flight", guest.seen)
+
+    if not flight or int(flight.group(1)) <= 1460:
+        fails.append("the frame went out a segment at a time: %r"
+                     % (flight.group(0) if flight else "the stack never said what it sent"))
+    else:
+        seen["flight"] = flight.group(1)
+
     # A window opened after: it arrives as an update of what changed.
     mark = len(guest.seen)
     session.run("open calc")
@@ -838,7 +859,7 @@ def main():
         fails.append("a window past the screen's left edge, watched by a viewer, made the screen "
                      "be watched again %d times: %r" % (edge[1], edge[0][:80]))
 
-    checks = 34
+    checks = 35
 
     if fails:
         print("FAIL: %d of %d checks on the Servers window:" % (len(fails), checks))
@@ -856,7 +877,7 @@ def main():
           "the web server kept to start with the machine serving its page "
           "with the Deskbar showing a viewer and a session beside its bell "
           "after a boot; and the screen by VNC started with it - its size, a "
-          "whole frame as QEMU scans it out (%s), a window opened after "
+          "whole frame as QEMU scans it out (%s), at most %s bytes in flight, a window opened after "
           "arriving as an update (%s), 565 (%s), by ZRLE a whole frame (%s) and "
           "565 on the same stream (%s), a click that went nowhere "
           "with no control kept, a Disconnect, the copy let go, a password "
@@ -867,7 +888,7 @@ def main():
           "opt/kosmos/vnc=control alone; a direct window granted less than "
           "it asked drawing upright at the granted size; and Groove resized "
           "by its grip)."
-          % (checks, seen.get("whole"), seen.get("update"), seen.get("565"),
+          % (checks, seen.get("whole"), seen.get("flight"), seen.get("update"), seen.get("565"),
              seen.get("zrle"), seen.get("zrle565")))
     return 0
 

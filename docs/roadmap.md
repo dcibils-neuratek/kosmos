@@ -349,7 +349,11 @@ manager's `power`) - and what is missing is the joining:
    nothing has to ask for it; and **the M700 sends slowly** - a whole
    1720x1440 frame, 9.9 MB, takes 7.2 s, 1.4 MB a second over a gigabit
    card. The TCP send path, measured from both ends, before the 7c
-   compressed encoding is reached for.
+   compressed encoding is reached for. **Found and built 10 October**
+   (0.11.122, `testing.md` 18.517): the stack sent one segment and waited
+   for its acknowledgement; now a window of segments with slow start and
+   fast retransmit, held by `x86-tcploss`. Next: the M700's number, then
+   the ring's size (16 KB each way caps what is in flight).
 
 **A VNC viewer in Kosmos**, to use other machines from this one. Diego, 3
 October 2026: "Then we can do a vnc client for kosmos as well so we can
