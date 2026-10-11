@@ -53,11 +53,13 @@
 #include "smbpath.h"
 
 #include "smb_kit.h"
+#include "kits/network/netclient.h"
 #include "md4.h"
 
 static long console = -1;
 static long disk = -1;
 static uint32_t connections;        /* clients connected now */
+static bool local_only;             /* This network only, as START said */
 
 /* The one account N12a knows: its name, and "ntlm:" and its NT hash. */
 static char account[64];
@@ -352,6 +354,101 @@ static struct handle *handle_of(struct smb2_context *smb2, const smb2_file_id id
 
 /*
  * ------------------------------------------------------------------------
+ * Who is connected (N12c-3): for the window's Connected now, its
+ * Disconnect, and This network only.
+ * ------------------------------------------------------------------------
+ */
+
+struct visitor {
+    bool used;
+    uint32_t id;                    /* from 1, never reused while serving */
+    struct smb2_context *smb2;
+    uint8_t address[4];
+    uint64_t since;                 /* counter ticks */
+    char account[64];
+    char share[64];
+};
+
+/*
+ * **In slabs that never move and are never freed**, linked as they are made:
+ * the door's thread walks them to answer CONNECTION at once while the
+ * serving thread fills them, so a slab is linked only once it is whole
+ * (a release store; the walk an acquire load), and a visitor's words read
+ * half-written say a moment's state, asked again half a second later.
+ */
+#define VISITORS_A_SLAB 16
+
+struct visitor_slab {
+    struct visitor v[VISITORS_A_SLAB];
+    struct visitor_slab *next;
+};
+
+static struct visitor_slab first_slab;
+static uint32_t next_visitor = 1;
+
+static struct visitor_slab *slab_after(struct visitor_slab *slab)
+{
+    return __atomic_load_n(&slab->next, __ATOMIC_ACQUIRE);
+}
+
+static struct visitor *visitor_of(struct smb2_context *smb2)
+{
+    struct visitor_slab *slab;
+    size_t i;
+
+    for (slab = &first_slab; slab != NULL; slab = slab_after(slab)) {
+        for (i = 0; i < VISITORS_A_SLAB; i++) {
+            if (slab->v[i].used && slab->v[i].smb2 == smb2) {
+                return &slab->v[i];
+            }
+        }
+    }
+
+    return NULL;
+}
+
+/* A place for one more: an unused one, or a new slab linked at the end. */
+static struct visitor *visitor_new(void)
+{
+    struct visitor_slab *slab, *last = NULL, *made;
+    size_t i;
+
+    for (slab = &first_slab; slab != NULL; last = slab, slab = slab_after(slab)) {
+        for (i = 0; i < VISITORS_A_SLAB; i++) {
+            if (!slab->v[i].used) {
+                return &slab->v[i];
+            }
+        }
+    }
+
+    made = calloc(1, sizeof *made);
+    if (made == NULL) {
+        return NULL;
+    }
+
+    __atomic_store_n(&last->next, made, __ATOMIC_RELEASE);
+    return &made->v[0];
+}
+
+static void visitors_gone(void)
+{
+    struct visitor_slab *slab;
+    size_t i;
+
+    for (slab = &first_slab; slab != NULL; slab = slab_after(slab)) {
+        for (i = 0; i < VISITORS_A_SLAB; i++) {
+            slab->v[i].used = false;
+        }
+    }
+}
+
+static void address_text(const uint8_t a[4], char *out, size_t size)
+{
+    snprintf(out, size, "%u.%u.%u.%u", a[0], a[1], a[2], a[3]);
+}
+
+/*
+ * ------------------------------------------------------------------------
  * Answers.
  * ------------------------------------------------------------------------
  */
@@ -420,6 +517,37 @@ static int authorize(struct smb2_server *server, struct smb2_context *smb2,
         said("refused ", user != NULL ? user : "a guest",
              ", who is not this machine's account");
         return -1;
+    }
+
+    /* This network only: an address outside this machine's own subnet is
+     * refused before its answer is checked, as a logon failure. */
+    if (local_only) {
+        struct visitor *v = visitor_of(smb2);
+        uint8_t here[4], mask[4];
+        int i;
+
+        if (v == NULL || net_client_address(here, mask) != NET_OK) {
+            said("refused a visitor whose network is not known", NULL, NULL);
+            return -1;
+        }
+
+        for (i = 0; i < 4; i++) {
+            if ((v->address[i] & mask[i]) != (here[i] & mask[i])) {
+                char from[16];
+
+                address_text(v->address, from, sizeof from);
+                said("refused ", from, ", which is not on this network");
+                return -1;
+            }
+        }
+    }
+
+    {
+        struct visitor *v = visitor_of(smb2);
+
+        if (v != NULL) {
+            put_text(v->account, sizeof v->account, user);
+        }
     }
 
     smb2_set_user(smb2, user);
@@ -514,6 +642,15 @@ static int tree_connect(struct smb2_server *server, struct smb2_context *smb2,
     smb2_set_pdu_message_id(smb2, pdu, smb2->message_id);
     smb2_queue_pdu(smb2, pdu);
     said("opened the share ", shares[i].name, ", read only");
+
+    {
+        struct visitor *v = visitor_of(smb2);
+
+        if (v != NULL) {
+            put_text(v->share, sizeof v->share, shares[i].name);
+        }
+    }
+
     return 1;
 }
 
@@ -1190,6 +1327,14 @@ static int gone(struct smb2_server *server, struct smb2_context *smb2)
         connections--;
     }
 
+    {
+        struct visitor *v = visitor_of(smb2);
+
+        if (v != NULL) {
+            v->used = false;
+        }
+    }
+
     said("a connection ended", NULL, NULL);
     return 0;
 }
@@ -1421,6 +1566,70 @@ static uint32_t add_share(const struct smbd_share *sh)
     return 0;
 }
 
+/* The connection after `after`, by id, as the window lists them. */
+static uint64_t counter_hz;
+
+static uint32_t next_connection(uint32_t after, struct smbd_connection *out)
+{
+    const struct visitor *best = NULL;
+    struct visitor_slab *slab;
+    size_t i;
+
+    for (slab = &first_slab; slab != NULL; slab = slab_after(slab)) {
+        for (i = 0; i < VISITORS_A_SLAB; i++) {
+            const struct visitor *v = &slab->v[i];
+
+            if (__atomic_load_n(&v->used, __ATOMIC_ACQUIRE) && v->id > after
+                && (best == NULL || v->id < best->id)) {
+                best = v;
+            }
+        }
+    }
+
+    if (best == NULL) {
+        return SMBD_ERR_NONE;
+    }
+
+    if (counter_hz == 0) {
+        struct sysinfo info;
+
+        counter_hz = kosmos_sysinfo(&info) == 0 && info.counter_hz != 0 ? info.counter_hz
+                                                                       : 62500000ull;
+    }
+
+    out->id = best->id;
+    memcpy(out->address, best->address, 4);
+    out->for_ms = (kosmos_ticks() - best->since) * 1000u / counter_hz;
+    put_text(out->account, sizeof out->account, best->account);
+    put_text(out->share, sizeof out->share, best->share);
+    return 0;
+}
+
+/* Disconnect: its socket closed; libsmb2's next pass lets it go, and `gone`
+ * forgets it. */
+static uint32_t disconnect(uint32_t id)
+{
+    struct visitor_slab *slab;
+    size_t i;
+
+    for (slab = &first_slab; slab != NULL; slab = slab_after(slab)) {
+      for (i = 0; i < VISITORS_A_SLAB; i++) {
+        struct visitor *v = &slab->v[i];
+
+        if (v->used && v->id == id) {
+            char from[16];
+
+            address_text(v->address, from, sizeof from);
+            said("disconnected ", from, NULL);
+            smb2_close_context(v->smb2);
+            return 0;
+        }
+      }
+    }
+
+    return SMBD_ERR_NONE;
+}
+
 static uint32_t start(const struct smbd_start *st)
 {
     if (wanted) {
@@ -1445,6 +1654,7 @@ static uint32_t start(const struct smbd_start *st)
     }
 
     asked = *st;
+    local_only = (st->flags & SMBD_LOCAL_ONLY) != 0;
     wanted = true;
     listen_error = 0;
     return 0;
@@ -1506,8 +1716,10 @@ static void answer(struct message *msg, uint64_t sender)
             rp->error = set_account(&rq->u.account);
             break;
         case SMBD_OP_CONNECTION:
+            rp->error = next_connection(rq->u.after, &rp->connection);
+            break;
         case SMBD_OP_DISCONNECT:
-            rp->error = SMBD_ERR_NONE;          /* N12c-3 */
+            rp->error = disconnect(rq->u.after);
             break;
         default:
             rp->error = SMBD_ERR_BAD_OP;
@@ -1548,10 +1760,18 @@ static void door_main(unsigned long unused)
             in.cap_plus_one = 0;
         }
 
-        if (in.length == sizeof *rq && rq->op == SMBD_OP_STATE) {
+        if (in.length == sizeof *rq
+            && (rq->op == SMBD_OP_STATE || rq->op == SMBD_OP_CONNECTION)) {
+            struct smbd_reply *rp = (struct smbd_reply *)out.data;
+
             memset(&out, 0, sizeof out);
-            out.length = sizeof(struct smbd_reply);
-            state_into((struct smbd_reply *)out.data);
+            out.length = sizeof *rp;
+
+            if (rq->op == SMBD_OP_CONNECTION) {
+                rp->error = next_connection(rq->u.after, &rp->connection);
+            }
+
+            state_into(rp);
             (void)kosmos_reply(sender, &out);
             continue;
         }
@@ -1591,10 +1811,29 @@ static void door_between_passes(struct smb2_server *srv, fd_set *rfds, fd_set *w
 
 static void arrived(struct smb2_context *smb2, void *data)
 {
+    struct visitor *v = visitor_new();
+    char from[16] = "somebody";
+
     (void)data;
     smb2_set_version(smb2, SMB2_VERSION_ANY);
     connections++;
-    said("somebody connected", NULL, NULL);
+
+    if (v != NULL) {
+        memset(v->account, 0, sizeof v->account);
+        memset(v->share, 0, sizeof v->share);
+        v->id = next_visitor++;
+        v->smb2 = smb2;
+        v->since = kosmos_ticks();
+
+        if (smb_kosmos_peer(smb2_get_fd(smb2), v->address)) {
+            address_text(v->address, from, sizeof from);
+        }
+
+        /* Last, so a walk never sees it used and half made. */
+        __atomic_store_n(&v->used, true, __ATOMIC_RELEASE);
+    }
+
+    said(from, " connected", NULL);
 }
 
 /* Ticks of the scheduler's clock in a second, for the wait between tries
@@ -1649,6 +1888,7 @@ void smbd_server(long net_cap, long console_cap, long disk_cap, long door_cap,
         listen_error = smb2_serve_port(&server, 16, arrived, NULL);
         forget_everything();
         connections = 0;
+        visitors_gone();
 
         if (!wanted) {
             said("stopped sharing", NULL, NULL);

@@ -28,10 +28,15 @@ Then Samba's own `smbclient` - a client that is not Kosmos - asking:
   - the right account and a wrong password: a logon failure;
   - another account: refused before any answer is checked;
   - `sharing stop`: nothing answers; `sharing start kosmos` again: it does;
+  - who is connected (N12c-3): an smbclient that stays, listed by `sharing
+    who` as kosmos in Projects, and gone at `sharing disconnect`; This
+    network only, with a netmask of one address the Mac refused, and with
+    its network's back, let in;
   - the Servers window's File sharing page (N12c-2): the account's name
     typed, a new password set through its sheet, Projects chosen in the Open
     window's folder mode, the switch on - the new password signs in and the
-    old one does not - and off again;
+    old one does not - a visitor under Connected now, ended by its
+    Disconnect, and off again;
   - and a machine whose `sharing` was never started: nothing answers on the
     port at all.
 
@@ -51,7 +56,7 @@ sys.path.insert(0, HERE)
 
 import scratch                                              # noqa: E402
 
-CHECKS = 23
+CHECKS = 31
 PASSWORD = "test-only-word"
 NEW_PASSWORD = "second-test-word"
 SMBCLIENT = "/opt/homebrew/bin/smbclient"
@@ -120,6 +125,111 @@ def read(path):
             return f.read()
     except OSError:
         return None
+
+
+def visitor(port, password):
+    """An smbclient that stays connected, for Connected now and Disconnect -
+    on a terminal of its own, since on a pipe it holds its output back until
+    a buffer fills."""
+    import pty
+
+    master, slave = pty.openpty()
+    p = subprocess.Popen([SMBCLIENT, "//127.0.0.1/Projects", "-p", str(port), "-m", "SMB3",
+                          "-U", "kosmos%" + password],
+                         stdin=slave, stdout=slave, stderr=slave, close_fds=True)
+    os.close(slave)
+    os.set_blocking(master, False)
+    p.terminal = master
+    p.heard = b""
+    return p
+
+
+def visitor_says(p, command, until, seconds=20):
+    """`command` sent, and what it said up to `until`, or all it said if it
+    stopped or the time ran out."""
+    mark = len(p.heard)
+
+    try:
+        os.write(p.terminal, (command + "\n").encode())
+    except OSError:
+        pass
+
+    deadline = time.monotonic() + seconds
+
+    while time.monotonic() < deadline:
+        try:
+            chunk = os.read(p.terminal, 65536)
+        except (BlockingIOError, OSError):
+            chunk = None
+        if chunk:
+            p.heard += chunk
+        if until.encode() in p.heard[mark:] or p.poll() is not None:
+            break
+        time.sleep(0.1)
+
+    return p.heard[mark:].decode("utf-8", "replace")
+
+
+def connections(R, guest, port, check):
+    """N12c-3 at the prompt: who is connected, Disconnect, This network only."""
+    v = visitor(port, PASSWORD)
+
+    try:
+        first = visitor_says(v, "ls", "blocks available")
+        mark = len(guest.seen)
+        guest.type("sharing who")
+        guest.wait_for_line("10.0.2.2", "the visitor listed", mark)
+        time.sleep(0.5)
+        guest._read_available()
+        m = re.search(r"^\s*(\d+)\s+10\.0\.2\.2\s+as kosmos in Projects, for \d+ s",
+                      guest.seen[mark:], re.M)
+        check("hello.txt" in first, "the staying visitor did not list Projects: %r" % first[-300:])
+        check(m is not None, "`sharing who` did not list the visitor as kosmos in Projects:\n"
+              + guest.seen[mark:][-300:])
+
+        mark = len(guest.seen)
+        guest.type("sharing disconnect %s" % (m.group(1) if m else "0"))
+        guest.wait_for_line("smbd: disconnected 10.0.2.2", "the visitor disconnected", mark)
+        # smbclient says so, then shows what it last listed with the error
+        # after it - its cache, not an answer.
+        after = visitor_says(v, "ls", "listing", 15)
+        check("NT_STATUS_CONNECTION_DISCONNECTED" in after,
+              "a disconnected visitor was not told: %r" % after[-300:])
+    finally:
+        v.kill()
+        v.wait()
+        os.close(v.terminal)
+
+    # This network only: with a netmask of one address, the Mac at 10.0.2.2
+    # is somewhere else - refused; with its own network's back, let in, since
+    # the network is asked at each sign-in.
+    guest.type("sharing stop")
+    guest.wait_for("smbd: stopped sharing", "smbd stopped for This network only")
+
+    def netmask(mask):
+        mark = len(guest.seen)
+        four = lambda text: "string.char(%s)" % text.replace(".", ",")
+        guest.type('print("net" .. "mask", fs.net_configure("/Network", %s, %s, %s, %s))'
+                   % (four("10.0.2.15"), four(mask), four("10.0.2.2"), four("10.0.2.3")))
+        # Its answer, not the echo of the line typed, which says `"net" .. "mask"`.
+        said = guest.wait_for_line("netmask\t", "the netmask set", mark)
+        check(said.startswith("true"), "the netmask %s was not set: %r" % (mask, said))
+
+    netmask("255.255.255.255")
+    mark = len(guest.seen)
+    guest.type("sharing start kosmos local")
+    guest.wait_for_line("smbd: sharing on port 445", "smbd serving this network only", mark)
+    time.sleep(1)
+    far = ask(port, "Projects", "kosmos", PASSWORD, "ls")
+    guest._read_available()
+    check("NT_STATUS_LOGON_FAILURE" in far
+          and "smbd: refused 10.0.2.2, which is not on this network" in guest.seen[mark:],
+          "a visitor from outside this network was not refused: %r" % far[-200:])
+
+    netmask("255.255.255.0")
+    near = ask(port, "Projects", "kosmos", PASSWORD, "ls")
+    check("hello.txt" in near,
+          "with its network back, the same visitor was not let in: %r" % near[-200:])
 
 
 def window_page(R, guest, port, check):
@@ -216,6 +326,26 @@ def window_page(R, guest, port, check):
           "the old password still signed in after the window changed it: %r" % old[-200:])
     check(on.startswith("sharing 1 folder") and kept is not None,
           "the page did not say it was sharing one folder: %r" % on)
+
+    # Connected now: a visitor listed with its Disconnect, which ends it.
+    v = visitor(port, NEW_PASSWORD)
+
+    try:
+        mark = len(guest.seen)
+        visitor_says(v, "ls", "blocks available")
+        row = guest.wait_for_line("servers: connected 10.0.2.2 as kosmos in Projects; "
+                                  "disconnect at ", "the visitor on the page", mark)
+        dx, dy = (int(n) for n in row.split(","))
+        mark = len(guest.seen)
+        click(sx + dx, sy + dy)
+        guest.wait_for_line("smbd: disconnected 10.0.2.2", "the page's Disconnect", mark)
+        after = visitor_says(v, "ls", "listing", 15)
+        check("NT_STATUS_CONNECTION_DISCONNECTED" in after,
+              "the page's Disconnect left the visitor connected: %r" % after[-300:])
+    finally:
+        v.kill()
+        v.wait()
+        os.close(v.terminal)
 
     # Off, by its switch.
     mark = len(guest.seen)
@@ -362,6 +492,10 @@ def main():
         check("hello.txt" in restarted, "smbd did not serve when started again: %r"
               % restarted[-200:])
 
+        # N12c-3 at the prompt: who is connected, Disconnect, This network
+        # only.
+        connections(R, guest, port, check)
+
         # N12c-2: the Servers window's File sharing page, driven as a person
         # would - the account's name typed, a new password in the sheet, a
         # folder chosen in the Open window's folder mode, the switch.
@@ -410,7 +544,10 @@ def main():
           "the server answering after all of it; stopped, nothing answering, and started "
           "again, serving; the Servers window's page - the account typed, a new password "
           "through its sheet that signs in where the old one no longer does, Projects "
-          "chosen in the folder window, its switch on serving and off stopping; a machine "
+          "chosen in the folder window, its switch on serving and off stopping, a visitor "
+          "under Connected now ended by its Disconnect; who is connected at the prompt "
+          "and disconnected; This network only refusing the Mac outside it and letting "
+          "it in with the network back; a machine "
           "whose sharing was never started answering nothing)" % (CHECKS, said.get("dialect")))
     return 0
 

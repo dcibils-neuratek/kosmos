@@ -2294,6 +2294,28 @@ local function new_namespace()
     return r
   end
 
+  -- Who is connected now (N12c-3): a list of { id, address, for_ms,
+  -- account, share }, walked one at a time as the keyring's entries are.
+  function ns.sharing_connections()
+    local out, after = {}, 0
+
+    while true do
+      local r, why, code = smbd_call("connection", string.pack("<I4", after))
+
+      if not r then
+        if code == 9 then return out end
+        return nil, why
+      end
+
+      out[#out + 1] = r.connection
+      after = r.connection.id
+    end
+  end
+
+  function ns.sharing_disconnect(id)
+    return smbd_call("disconnect", string.pack("<I4", tonumber(id) or 0))
+  end
+
   -- Whether a password is kept for `name`: true, or nil and why.
   function ns.sharing_kept(name)
     local why
@@ -5324,7 +5346,8 @@ query. `find` and `watch` are built on exactly these two calls.
 
       if ok then
         ok, why = ns.sharing_start{ account = c.account, hostname = c.hostname,
-                                    port = tonumber(c.port) or 445 }
+                                    port = tonumber(c.port) or 445,
+                                    local_only = c.local_only ~= false }
       end
 
       if not ok then out("boot: file sharing: " .. tostring(why) .. "\n") end

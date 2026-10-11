@@ -20,7 +20,7 @@
  * The shares are set one a message, a share being a name and a folder of
  * `/Home`; the window keeps them, and sends them again at each START.
  *
- * **STATE is answered at once**, by a thread of `smbd`'s own that reads what
+ * **STATE and CONNECTION are answered at once**, by a thread of `smbd`'s own that reads what
  * the serving thread last wrote; everything else is handed to the serving
  * thread, which reads it between libsmb2's passes - at most 100 ms - so the
  * window asking how it is twice a second never waits on the network.

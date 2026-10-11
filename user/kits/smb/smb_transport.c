@@ -603,6 +603,21 @@ int smb_kosmos_listen(int fd, int most)
     return 0;
 }
 
+/* Who an accepted connection is from, as the stack said at `accept` -
+ * smbd's Connected now and its This network only (`docs/sharing.md`
+ * N12c-3). False for a socket that is not one. */
+bool smb_kosmos_peer(int fd, uint8_t address[4])
+{
+    struct sock *s = sock_at(fd);
+
+    if (s == NULL || !s->connected) {
+        return false;
+    }
+
+    memcpy(address, s->conn.peer, 4);
+    return true;
+}
+
 int smb_kosmos_accept(int fd, struct sockaddr *from, socklen_t *len)
 {
     struct sock *s = sock_at(fd);

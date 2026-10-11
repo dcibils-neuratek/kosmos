@@ -324,7 +324,31 @@ uint32_t net_client_accept(uint64_t listener, uint32_t wait_ticks, struct net_co
     c->ring = (struct tcp_ring *)(uintptr_t)at;
     c->handle = rep.handle;
     c->open = 1;
+    memcpy(c->peer, rep.from.byte, sizeof c->peer);
     return NET_OK;
+}
+
+uint32_t net_client_address(uint8_t address[4], uint8_t netmask[4])
+{
+    struct net_request req;
+    struct net_reply rep;
+    struct message out;
+
+    memset(address, 0, 4);
+    memset(netmask, 0, 4);
+    memset(&req, 0, sizeof(req));
+    req.op = NET_OP_INFO;
+
+    if (!ask(&req, &rep, &out)) {
+        return last;
+    }
+
+    if (rep.status == NET_OK) {
+        memcpy(address, rep.address.byte, 4);
+        memcpy(netmask, rep.netmask.byte, 4);
+    }
+
+    return rep.status;
 }
 
 /*

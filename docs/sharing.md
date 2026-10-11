@@ -1255,7 +1255,12 @@ Then, each when its time comes:
       folder mode (`panel.folder`, `ui.md` 16.8f); a password goes through a
       sheet, once. `smbd` answers STATE from a thread of its own at once, so
       the window asking twice a second never waits on the network.
-    - **N12c-3** - Connected now, with Disconnect; This network only.
+    - **N12c-3 - built, 11 October** (`testing.md` 18.540) - Connected
+      now, with Disconnect; This network only, on by default, asked of the
+      network stack at each sign-in. `smbd` keeps who is connected in
+      slabs that never move, so its door thread answers the window at once.
+      A client told it is disconnected may sign in again - smbclient
+      does at its next command, and the Mac's Finder will.
   - **N12d** - the Mac's own client: `mount_smbfs` and Finder, each thing
     they ask that the example server did not answer found and answered.
 

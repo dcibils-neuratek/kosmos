@@ -24,11 +24,16 @@ struct net_conn {
     uint64_t         handle;        /* the stack's name for it */
     uint64_t         received;      /* bytes read so far */
     int              open;
+    uint8_t          peer[4];       /* accepted: who it is from (smbd's Connected now) */
 };
 
 /* The capability to the network server this process was given. Every
  * call below refuses until it has one. */
 void     net_client_start(long net_cap);
+
+/* This machine's address and netmask, as NET_OP_INFO says them: NET_OK, or
+ * why not. All zeroes while it has none. */
+uint32_t net_client_address(uint8_t address[4], uint8_t netmask[4]);
 
 /* The last answer the network server gave, `NET_OK` or a `NET_ERR_*`. */
 uint32_t net_client_last(void);

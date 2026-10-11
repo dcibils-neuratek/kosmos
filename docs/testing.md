@@ -23248,3 +23248,29 @@ shown instead of the one selected - "/Home as Home". The first run found the
 folder window drawn empty: it is run as the Open window always is,
 `chooser:run()`, and its button's place said with its title bar
 (`win.head_h`) as Connect to Server's are.
+
+## 18.540 Who is connected, and This network only: N12c-3
+
+`docs/sharing.md` N12c-3. `smbd` keeps a visitor for each connection - its
+address, which the Network Kit's accept now keeps (`net_conn.peer`), when it
+came, the account it signed in as and the share it last opened - in slabs
+that never move and are never freed, so the door's thread answers
+CONNECTION at once while the serving thread fills them. DISCONNECT closes
+the visitor's connection; the next pass lets it go. With This network only,
+a sign-in from an address outside this machine's subnet - asked of the stack
+(`net_client_address`) at each sign-in - is refused as a logon failure.
+`sharing who` and `sharing disconnect ID` at the prompt; the page's Connected
+now, each with Disconnect, and its This network only switch, on by default.
+
+`x86-smbd` 31, was 23: an smbclient that stays, on a terminal of its own -
+on a pipe it holds its output back - listed by `sharing who` as kosmos in
+Projects, and told NT_STATUS_CONNECTION_DISCONNECTED at `sharing
+disconnect`; the netmask set to one address, the Mac refused, and set back,
+let in; in the window, the visitor under Connected now and its Disconnect.
+
+Two things the first runs taught: `use` is not at the prompt, so the suite
+writes an address with `string.char`; and a line waited for by a word the
+typed command also contains is found in the command's echo.
+
+**Controls**: sign-in not asking the network - the Mac outside it let in;
+Disconnect closing nothing - both visitors not told.

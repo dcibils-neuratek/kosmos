@@ -6,7 +6,10 @@
 --   sharing account NAME PASSWORD        NAME's password kept, as its NT hash
 --   sharing folders NAME:/Home/FOLDER ...
 --                                        what is shared, in place of what was
---   sharing start ACCOUNT [port N] [name HOST]
+--   sharing start ACCOUNT [port N] [name HOST] [local]
+--                                        local: this network only
+--   sharing who                          who is connected
+--   sharing disconnect ID                that one, ended
 --   sharing stop
 --
 -- `docs/sharing.md` N12c: smbd's own door, the one the Servers window holds,
@@ -83,17 +86,36 @@ elseif verb == "start" and words[2] then
   local i = 3
 
   while words[i] do
-    if words[i] == "port" then o.port = tonumber(words[i + 1])
-    elseif words[i] == "name" then o.hostname = words[i + 1]
+    if words[i] == "port" then o.port = tonumber(words[i + 1]); i = i + 2
+    elseif words[i] == "name" then o.hostname = words[i + 1]; i = i + 2
+    elseif words[i] == "local" then o.local_only = true; i = i + 1
     else
-      print("sharing: start ACCOUNT [port N] [name HOST], not " .. words[i])
+      print("sharing: start ACCOUNT [port N] [name HOST] [local], not " .. words[i])
       return
     end
-    i = i + 2
   end
 
   local r, why = fs.sharing_start(o)
   if said(r, why) then show(r) end
+
+elseif verb == "who" then
+  local list, why = fs.sharing_connections()
+
+  if not list then
+    print("sharing: " .. tostring(why))
+  elseif #list == 0 then
+    print("sharing: nobody connected")
+  else
+    for _, c in ipairs(list) do
+      print(("%4d  %-15s as %s%s, for %d s"):format(c.id, c.address,
+            c.account ~= "" and c.account or "nobody yet",
+            c.share ~= "" and (" in " .. c.share) or "", c.for_ms // 1000))
+    end
+  end
+
+elseif verb == "disconnect" and tonumber(words[2]) then
+  local r, why = fs.sharing_disconnect(tonumber(words[2]))
+  if said(r, why) then print("sharing: disconnected " .. words[2]) end
 
 elseif verb == "stop" then
   local r, why = fs.sharing_stop()
@@ -101,5 +123,6 @@ elseif verb == "stop" then
 
 else
   print("usage: sharing [account NAME PASSWORD | folders NAME:/Home/FOLDER ... |")
-  print("                start ACCOUNT [port N] [name HOST] | stop]")
+  print("                start ACCOUNT [port N] [name HOST] [local] | who |")
+  print("                disconnect ID | stop]")
 end

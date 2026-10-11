@@ -83,7 +83,7 @@ local SERVERS = {
   { id = "sharing", name = "File sharing", icon = "folder", door = true,
     what = "SMB",
     defaults = { port = 445, at_start = false, account = "", hostname = "KOSMOS",
-                 shares = {} },
+                 shares = {}, local_only = true },
     reach = function(a) return ("smb://%s"):format(a) end },
 }
 
@@ -174,7 +174,8 @@ local function start_sharing(c)
   ok, why = fs.sharing_shares(c.shares)
 
   if ok then
-    ok, why = fs.sharing_start{ account = c.account, hostname = c.hostname, port = c.port }
+    ok, why = fs.sharing_start{ account = c.account, hostname = c.hostname, port = c.port,
+                                local_only = c.local_only }
   end
 
   said = ok and "" or ("could not share: " .. tostring(why))
@@ -507,6 +508,7 @@ end
 --
 local panel = use("/Kosmos/Libraries/panel.lua")
 local sharing_switch, share_button, password_button, account_field = nil, nil, nil, nil
+local disconnects = {}
 local sheet = nil
 
 -- Whether the account has a password, asked of smbd once a name and kept:
@@ -676,6 +678,33 @@ local function page_sharing(s)
 
   password_button = ui.button{ text = "Change...", on_click = function() change_password(s) end }
 
+  -- Who is connected, as smbd says it at once; Disconnect ends one.
+  local who = {}
+
+  disconnects = {}
+
+  for _, v in ipairs((running(s) and fs.sharing_connections()) or {}) do
+    local mins = v.for_ms // 60000
+
+    who[#who + 1] = {
+      label = v.address,
+      note = ("As %s%s · for %s"):format(v.account ~= "" and v.account or "nobody yet",
+                                         v.share ~= "" and (" · in " .. v.share) or "",
+                                         mins > 0 and (mins .. " min") or ((v.for_ms // 1000) .. " s")),
+      control = ui.button{ text = "Disconnect", on_click = function()
+        local ok, why = fs.sharing_disconnect(v.id)
+
+        said = ok and "" or ("could not disconnect: " .. tostring(why))
+        sharing_state(true)
+        rebuild()
+      end } }
+    disconnects[#disconnects + 1] = { who = v, button = who[#who].control }
+  end
+
+  if #who == 0 then
+    who[1] = { label = "Nobody", note = "A visitor is listed here, with a Disconnect" }
+  end
+
   return {
     { name = "", rows = {
         { label = "File sharing", control = sharing_switch,
@@ -683,13 +712,22 @@ local function page_sharing(s)
                  .. "else that speaks SMB"
                  .. (a and (" - " .. s.reach(a) .. " · seen as " .. c.hostname) or "") } } },
     { name = "Shared folders", rows = folders },
+    { name = "Connected now", rows = who },
     { name = "Who may connect", rows = {
         { label = "Name", note = "The one account a visitor signs in with",
           control = account_field_of(c) },
         { label = "Password", value = kept and "Set" or "Not set",
           note = "Kept only as NTLMv2 needs it", control = password_button },
         { label = "Guests", value = "Off",
-          note = "Nobody reaches a folder without the name and password" } } },
+          note = "Nobody reaches a folder without the name and password" },
+        { label = "This network only",
+          note = c.local_only and "Others are turned away, from the next start"
+                 or "Anywhere this machine can be reached, from the next start",
+          control = ui.switch{ on = c.local_only == true,
+                               on_change = function(_, on)
+                                 c.local_only = on
+                                 keep()
+                               end } } } },
     { name = "Set up", rows = {
         { label = "Name on the network", note = "What Finder lists under Locations",
           control = ui.field{ w = 160, text = c.hostname,
@@ -752,6 +790,12 @@ rebuild = function()
            .. "name at %s"):format(
           state_of(s), at(sharing_switch), sharing_switch.disabled and "disabled" or "enabled",
           at(share_button), at(password_button), at(account_field)))
+
+    for _, d in ipairs(disconnects) do
+      print(("servers: connected %s as %s in %s; disconnect at %s"):format(
+            d.who.address, d.who.account, d.who.share ~= "" and d.who.share or "nothing",
+            at(d.button)))
+    end
   end
 
   -- The log, under the cards, for a server that keeps one.

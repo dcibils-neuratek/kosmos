@@ -32,6 +32,10 @@
  * `/Network`'s server, which the process was handed. Before any connect. */
 void smb_kit_start(long net_cap);
 
+/* Who an accepted connection on socket `fd` is from: false when it is not
+ * one (`smb_transport.c`). */
+bool smb_kosmos_peer(int fd, uint8_t address[4]);
+
 /*
  * What is known of one connection, for the process that owns it to say why
  * it ended and to wait on it.
