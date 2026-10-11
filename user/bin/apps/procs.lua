@@ -131,14 +131,17 @@ local sampled = {}       -- what `share.rows` keeps from one sample to the next
 --
 -- How each process gets its pixels, asked of the desktop.
 --
--- Three answers, and the difference is the whole of `gfx.md` 19.4:
+-- Since every window paints its own pixels (`docs/astra-display.md` D2c)
+-- there is no "commands" any more - the window manager used to carry out a
+-- window's drawing commands - and every application said "direct". So the
+-- column says what differs now (Diego, on the M700, 10 October 2026: "the
+-- draws column now is empty in most of the processes", "now deskbar says
+-- direct in draws? why?"):
 --
---   direct     it owns a region the compositor blits from. A whole surface
---              changes every frame and describing it would cost more than
---              copying it - a rendered scene, a video frame.
---   commands   it sends drawing commands and the compositor owns every
---              pixel. This is what lets a hung application keep a window.
---   (blank)    it has no window at all.
+--   kit        the UI kit draws it, in the application's own process
+--   pixels     it draws every pixel itself - a map, a page, a game
+--   screen     the window server, which composes them all onto the screen
+--   (blank)    it has no window at all - a server, a driver, the kernel.
 --
 -- The kernel does not know this and should not: which of two ways an
 -- application draws is a fact about the desktop, so the desktop is asked.
@@ -318,6 +321,16 @@ local function say_rows(what)
   end
 
   print(("procs: %s: %s"):format(what, table.concat(out, "; ")))
+
+  -- And each one's kind and how it draws, a line of its own so the rows'
+  -- shape stays what readers of it know: `name:kind:draws`.
+  local how = {}
+
+  for _, r in ipairs(rows) do
+    how[#how + 1] = ("%s:%s:%s"):format(r.name, r.kind or "-", r.video or "-")
+  end
+
+  print("procs: drawn: " .. table.concat(how, "; "))
 end
 
 -- The list in its order, and the selection found again in it. It may have
@@ -881,13 +894,11 @@ function sampler:tick()
 
   for _, w in ipairs(desktop and desktop.windows or {}) do
     if w.pid then
-      -- A process with two windows counts as direct if either of them is:
-      -- what the column answers is "does this map the framebuffer", and one
-      -- direct window is enough for that to be true.
-      if w.direct or video[w.pid] == "direct" then
-        video[w.pid] = "direct"
+      -- A process with two windows draws its pixels if either does.
+      if (w.direct and not w.kit) or video[w.pid] == "pixels" then
+        video[w.pid] = "pixels"
       else
-        video[w.pid] = "commands"
+        video[w.pid] = "kit"
       end
     end
   end
@@ -906,13 +917,14 @@ function sampler:tick()
     local p = r.process
 
     if r.kernel then
-      fresh[#fresh + 1] = { id = 0, name = "kernel", kind = "threads",
+      fresh[#fresh + 1] = { id = 0, name = "nebula", kind = "kernel",
                             band = "", kb = 0, pct = r.pct,
                             level = KERNEL_LEVEL, synthetic = true }
     else
       fresh[#fresh + 1] = {
         id = p.id, name = p.name, pages = p.pages, caps = p.caps,
-        owns = p.owns, kind = kind_of(p), video = video[p.id],
+        owns = p.owns, kind = kind_of(p),
+        video = video[p.id] or (p.name == "windowserver" and "screen" or nil),
         band = BANDS[p.priority or 2] or tostring(p.priority),
         kb = ((p.held or p.pages or 0) * 4096) // 1024,
         exited = p.exited,
@@ -947,7 +959,7 @@ function sampler:tick()
   -- and a row that arrived a second after the window opened moved every
   -- row under it while somebody was reading them.
   if not kernel_row then
-    kernel_row = { id = 0, name = "kernel", kind = "threads", band = "",
+    kernel_row = { id = 0, name = "nebula", kind = "kernel", band = "",
                    kb = 0, pct = 0, level = KERNEL_LEVEL, synthetic = true }
     fresh[#fresh + 1] = kernel_row
   end

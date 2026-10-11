@@ -3808,6 +3808,10 @@ handlers.windows = function(req)
                pid = win.pid,
                direct = (win.shared ~= nil) or nil,
 
+               -- Drawn by the UI kit in its own process, rather than every
+               -- pixel by the application (`docs/astra-display.md` D2c).
+               kit = win.draws_itself or nil,
+
                -- Chrome rather than an application: the desktop underneath
                -- everything and the bar across the top. The Deskbar lists
                -- what is *running* and neither of these is something you

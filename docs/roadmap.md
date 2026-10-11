@@ -242,6 +242,15 @@ one account the Servers window sets. Telnet's `get` and `put` stop being how
 files travel; and a Telnet session stuck sending must not lock out the next
 one (it did, 10 October). An SSH server, to replace Telnet, is an idea.
 
+**Tracker's list view, made right** - Diego, on the M700, 10 October 2026:
+"The tracker list view needs some work", "for big files the name overlaps
+the size", "the columns are not resizable", "it needs more columns like
+created at, modified at (Date time) fields". A name cut with an ellipsis at
+its column's edge, never under the next; columns resized by dragging their
+headings' edges, and kept per folder or for all; Created and Modified with
+date and time for every folder (a share's Modified exists already, from the
+server). Drawn first, beside `docs/tracker2.html`.
+
 **Bugs found on the M700, 10 October 2026, to fix first:**
 - **Print Screen's pictures shown black** - "printi screen saves a black
   image, not the actual screenshot. that worked in the past". The files are

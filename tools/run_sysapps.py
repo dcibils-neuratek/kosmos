@@ -155,14 +155,31 @@ def main():
         check(me is not None and me["threads"] == 1,
               "Processes, which has no workers, says %r threads"
               % (me and me["threads"]))
-        kernel = by_name.get("kernel")
+        kernel = by_name.get("nebula")
         check(kernel is not None and kernel["threads"] is not None
               and kernel["threads"] >= 1,
               "the kernel's row has no threads of its own: %r" % kernel)
 
+        # **What each is and how it draws** (Diego, on the M700, 10
+        # October): the kernel by its name, Nebula, and its kind; the
+        # window server composing the screen; Processes drawn by the kit;
+        # a server, with no window, blank.
+        drawn = {}
+        for item in (said("procs: drawn: ", mark) or "").split("; "):
+            parts = item.strip().split(":")
+            if len(parts) == 3:
+                drawn[parts[0]] = (parts[1], parts[2])
+        check(drawn.get("nebula", ("", ""))[0] == "kernel",
+              "the kernel's row is not Nebula, of kind kernel: %r" % (drawn.get("nebula"),))
+        check(drawn.get("windowserver", ("", ""))[1] == "screen"
+              and drawn.get("procs", ("", ""))[1] == "kit"
+              and drawn.get("binfs", ("", "x"))[1] == "-",
+              "draws does not say screen, kit and nothing: windowserver %r, procs %r, binfs %r"
+              % (drawn.get("windowserver"), drawn.get("procs"), drawn.get("binfs")))
+
         # The privilege each runs at.
         user_word, kernel_word = ("ring 3", "ring 0") if x86 else ("EL0", "EL1")
-        wrong = [r for r in rows if r["name"] != "kernel" and r["priv"] != user_word]
+        wrong = [r for r in rows if r["name"] != "nebula" and r["priv"] != user_word]
         check(not wrong, "a process not at %s: %r" % (user_word, wrong[:3]))
         check(kernel is not None and kernel["priv"] == kernel_word,
               "the kernel is not at %s: %r" % (kernel_word, kernel))

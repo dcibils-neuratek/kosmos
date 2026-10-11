@@ -23000,3 +23000,20 @@ window that cannot make a new region is still stretched, as before.
 room below its last row column for column, the corner its last pixel,
 nothing past the frame; without the flag, stretched. **Control**: the stale
 branch taken out, 3 checks fail. Gate 67 of 67.
+
+## 18.530 Processes: Nebula, and what draws means now
+
+Diego, on the M700: the kernel's row should be "nebula", of kind
+"kernel"; "the draws column now is empty in most of the processes", "now
+deskbar says direct in draws? why?". Blank was always a process with no
+window - most of them, servers and drivers - and since every window paints
+its own pixels there was no "commands" left, so every application said
+"direct". The column now says what differs: `kit` for a window the UI kit
+draws in its own process, `pixels` for one that draws every pixel itself,
+`screen` for the window server, blank for no window - the window list
+carries `kit` (a window's `draws_itself`). The row Nebula, kind kernel.
+
+`x86-sysapps` 27: Processes says, beside its rows, each one's kind and how
+it draws - Nebula a kernel; the window server the screen, Processes the
+kit, `binfs` nothing. **Control**: the window server's `screen` taken out,
+"windowserver ('server', '-')".
