@@ -3633,6 +3633,13 @@ function ui.sheet(spec)
     g:wash(0, 0, self.w, self.h, 0x73050810)
   end
 
+  -- Placed the moment it is added (`window:add`): Quick Look's panel was
+  -- painted empty, its contents laid out while it still sat at 0,0, until
+  -- something else made the window paint again (11 October 2026).
+  function v:on_added()
+    place(self)
+  end
+
   function panel:draw(g)
     g:fill_round(0, 0, self.w, self.h, theme.line, 12)
     g:fill_round(1, 1, self.w - 2, self.h - 2, theme.raised, 11)
@@ -6996,6 +7003,11 @@ function window:add(child)
   -- own window is.
   if type(child) == "table" then
     child.window = self
+
+    -- A view that places itself by its window - a sheet, centring its
+    -- panel - does so now, before its first paint, rather than in that
+    -- paint: what it holds was laid out by where it was before.
+    if child.on_added then child:on_added(self) end
   end
 
   if type(child) == "table" and child.tick then

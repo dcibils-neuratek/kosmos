@@ -23360,3 +23360,37 @@ ignored - libsmb2's stat failed (found by accident first: a control's
 image left unrebuilt); taking back never tried - 2 of 20.
 `smbclient allinfo` turned out not to send a related compound, so it is
 not the check.
+
+## 18.543 Quick Look, Q1: Space shows a picture, or what a file is
+
+`docs/quicklook.html`, agreed 11 October 2026 ("Mockup is perfect", "That's
+why we did the kits - we can reuse all of them for this"). In Tracker,
+Space on a file opens a panel over the window: a picture fitted to it and
+never enlarged past its own size, through the kit's `ui.image` as Photo
+shows one; anything else its icon, large, with its kind, size, when it was
+changed and where it is. Its name, an Open with button naming the
+application that opens it, and its facts beneath. Space or Escape closes
+it; the arrows move through the folder with Tracker's selection following;
+Return opens the file. What it shows is `/Kosmos/Libraries/preview.lua`,
+a library - the Open window and Mail's attachments are its next users - and
+it decodes nothing itself.
+
+**A sheet over Tracker's own window**, not a window of its own: a
+window's loop serves that window alone, so a second would leave Tracker
+unpainted while it was open, and the arrows would move a selection nobody
+could see.
+
+**Found by the suite: a sheet painted empty.** `ui.sheet` centred its panel
+in its own `draw`, after what it holds was laid out at 0,0, so the panel's
+first paint had no title, no button and no picture, until something else
+made the window paint again. `window:add` now calls a view's `on_added`,
+and a sheet places itself there - Shortcuts' sheet with it.
+
+`x86-quicklook` new, 6: a red PNG of 64 x 48 made by the suite - Space
+shows it as a picture, 64 x 48, and 3,072 red pixels are on the screen, so
+it is at its own size; Down shows a text file as its facts; Up the picture
+again; Escape closes it and the red is gone; Return opens it in Photo.
+
+**Controls**: the sheet placed only when drawn - 0 red pixels, the panel
+empty, which is how it was found; the picture drawn to the panel's size -
+229,824 red pixels, failed.

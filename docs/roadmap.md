@@ -222,6 +222,14 @@ window that opens and closes with space bar". Images first; then
 PDF, sound and film, each through the kit that already reads it (the
 image translators, the PDF Kit, the Media Kit), so a preview is the kit's
 picture in a panel rather than a second reader. Drawn before it is built.
+**Drawn and agreed, 11 October** (`docs/quicklook.html`; Diego: "Mockup is
+perfect", "That's why we did the kits - we can reuse all of them for
+this"): a panel over Tracker, Space or Escape closing it, the arrows moving
+through the folder with Tracker's selection following, Return opening;
+songs and films playing as they are shown. In `preview.lua`, a library the
+Open window and Mail's attachments will use next. Steps: **Q1** pictures,
+and anything else as its icon and its facts - **built 11 October**
+(`testing.md` 18.543); **Q2** PDF; **Q3** songs; **Q4** films.
 
 **Mail: always show a sender's pictures** - Diego, 10 October 2026: "mail
 app needs a way to set 'always show images from this sender' somehere

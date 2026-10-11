@@ -634,6 +634,12 @@ reach the files.
 **Cancel calls `on_cancel`.** The old panel's header promised it and nothing
 ever called it.
 
+**`window:add` calls a view's `on_added`** (11 October 2026), so a view
+that places itself by its window - `ui.sheet`, centring its panel - does so
+before its first paint. A sheet that placed itself only in `draw` painted
+its panel's contents where the panel had been, at 0,0, and Quick Look's
+showed empty.
+
 **`panel.folder` chooses a folder** (`docs/sharing.md` N12c-2, the Servers
 window's Share a folder of /Home): only folders are listed, a second click
 or Return goes into one, and the button - `button`, "Choose" when not named

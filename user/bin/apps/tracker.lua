@@ -2227,7 +2227,117 @@ function rows:drop(kind, payload, x, y)
   return true
 end
 
+--------------------------------------------------------------------------
+-- **Quick Look** (`docs/quicklook.html`, agreed 11 October 2026): Space on
+-- a file shows it in a panel over the window, without opening anything.
+-- Space or Escape closes it; the arrows move through the folder with it
+-- open, Tracker's selection following, so closing leaves the last file
+-- looked at selected; Return opens it, as the panel's button does.
+--
+-- **A sheet over Tracker's own window**, not a window of its own: a
+-- window's loop serves that window alone (`window:run`), so a second one
+-- would leave Tracker unpainted while it was open - and the point of the
+-- arrows is to watch the selection move behind it.
+--
+-- What it shows is `preview.lua`'s - the library the Open window and Mail's
+-- attachments will use next - and it decodes nothing itself.
+--------------------------------------------------------------------------
+
+local preview = use("/Kosmos/Libraries/preview.lua")
+local looking = nil             -- the open panel: its sheet and what is in it
+
+local function look_at()
+  local e = rows.shown and rows.shown[selected]
+
+  if not (looking and e) then return end
+
+  local attrs = {}
+
+  for k, v in pairs(e.attrs or {}) do attrs[k] = v end
+  attrs.kind, attrs.size = e.kind, e.size
+
+  local shown = looking.view:show(path_of(e), attrs)
+  local opener = looking.view.opener
+
+  looking.sheet.title = e.name
+  looking.open.text = e.kind == "directory" and "Open"
+                      or ("Open with " .. (opener or "Text Editor"))
+  looking.foot.text = ("%s     %d of %d · ↑ ↓ the others · Space closes"):format(
+                      looking.view.facts, selected, #rows.shown)
+
+  -- For the display harness: what is shown, and where the button is.
+  print(("tracker: quick look %s - %s, %s; open at %d,%d"):format(
+        e.name, shown and looking.view.kind or "facts", looking.view.facts,
+        looking.sheet.panel.x + looking.open.x + looking.open.w // 2,
+        looking.sheet.panel.y + looking.open.y + looking.open.h // 2))
+end
+
+local function close_look()
+  if looking then looking.sheet:close() end
+end
+
+local function quick_look()
+  if looking then
+    close_look()
+    return
+  end
+
+  local e = rows.shown and rows.shown[selected]
+
+  if not e then
+    status.text = "nothing is selected"
+    return
+  end
+
+  local W = math.max(360, win.w - 80)
+  local H = math.max(280, win.h - 90)
+  local sheet = ui.sheet{ title = e.name, w = W, h = H,
+                          on_close = function()
+                            looking = nil
+                            print("tracker: quick look closed")
+                          end }
+  local view = preview.new{ x = 14, y = 50, w = W - 28, h = H - 50 - 38 }
+  local open = ui.button{ x = W - 14 - 170, y = 10, w = 170, h = 26, text = "Open",
+                          on_click = function()
+                            close_look()
+                            open_selected()
+                          end }
+  local foot = ui.label{ x = 16, y = H - 30, w = W - 32, text = "",
+                         color = "text_dim", role = "ui" }
+
+  sheet:put(view)
+  sheet:put(open)
+  sheet:put(foot)
+  win:add(sheet)
+  looking = { sheet = sheet, view = view, open = open, foot = foot }
+  look_at()
+end
+
 function rows:key(c)
+  --
+  -- With Quick Look open, the keys are its: Space and Escape close it, the
+  -- arrows move through the folder with it, Return opens the file.
+  --
+  if looking then
+    if c == 32 or c == 27 then
+      close_look()
+    elseif c == -2 or c == -1 then
+      mark_only(c == -2 and math.min(selected + 1, #(self.shown or {}))
+                or math.max(selected - 1, 1), self.shown)
+      look_at()
+    elseif c == 13 or c == 10 then
+      close_look()
+      open_selected()
+    end
+
+    return true
+  end
+
+  if c == 32 then                      -- Space: Quick Look
+    quick_look()
+    return true
+  end
+
   --
   -- Control plus a letter is the only modifier this hardware gives - see
   -- `wm.lua` - so the shortcuts are the ones that fit in it. Control-W is

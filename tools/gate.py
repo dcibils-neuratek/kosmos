@@ -293,6 +293,10 @@ SUITES = [
     Suite("x86-switcher", ["python3", "tools/run_switcher.py", X86], x86=True),
     Suite("x86-shortcuts", ["python3", "tools/run_shortcuts.py", X86], x86=True),
     Suite("x86-tracker", ["python3", "tools/run_tracker.py", X86], x86=True),
+    # Quick Look (`docs/quicklook.html`, Q1): Space shows a file in a panel
+    # over Tracker - a picture at its own size, anything else as its facts,
+    # the arrows through the folder, Escape and Return.
+    Suite("x86-quicklook", ["python3", "tools/run_quicklook.py", X86], x86=True),
     Suite("x86-smbd", ["python3", "tools/run_smbd.py", X86], x86=True),
 
     # **The Deskbar as a dock, in Night** (`roadmap.md`, a dock at the
