@@ -22981,3 +22981,22 @@ Gate: 66 of 67, and `x86-mdns` alone 7 of 7 straight after. Its fourth boot,
 the desktop's, listed no network at all inside two minutes under the whole
 gate's load - Tracker's network pass had not run - which is the slow start
 that boot was already given 120 s for. Flaky under load; on the board.
+
+## 18.529 A window being resized keeps its picture's size
+
+Diego, on the M700: "when resizing a window, for a couple of milliseconds
+it looks that the app stretches to the new dimensions and then redraws in
+the new size". The frame took its new size at once and the scene stretched
+the old picture into it until the application drew again. Now a window
+that makes a region at the new size is marked `stale` from the resize to
+its first picture at the new size (`SC_STALE`, `scene_core.c`'s
+`stale_into`): the old picture is shown as it is in the frame's top left,
+its last column drawn on across the new room, its last row down, the
+corner from its last pixel - the window's background, nearly always. A
+window that cannot make a new region is still stretched, as before.
+
+`host` (`test_draw`, 25): a 40 by 30 picture of all different pixels in a
+60 by 50 frame - shown pixel for pixel, the room right its last column, the
+room below its last row column for column, the corner its last pixel,
+nothing past the frame; without the flag, stretched. **Control**: the stale
+branch taken out, 3 checks fail. Gate 67 of 67.

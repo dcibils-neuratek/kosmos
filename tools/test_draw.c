@@ -193,10 +193,64 @@ static void scene(void)
     free(ref.pixels);
 }
 
+/*
+ * **A picture from before a resize** (`SC_STALE`): a 40 by 30 picture whose
+ * every pixel is its own, in a frame resized to 60 by 50. Shown at its size,
+ * pixel for pixel, its last column drawn on across the new room and its
+ * last row down - and without the flag, stretched, which is what the person
+ * resizing saw.
+ */
+static void stale(void)
+{
+    struct surface back = make(100, 80, 0xff000000u);
+    struct surface pic = make(40, 30, 0);
+    struct scene *sc = malloc(sizeof(*sc));
+    unsigned x, y;
+    bool as_is = true;
+
+    for (y = 0; y < 30; y++) {
+        for (x = 0; x < 40; x++) {
+            row_of(&pic, y)[x] = 0xff000000u | x << 16 | y << 8 | 0x5a;
+        }
+    }
+
+    scene_init(sc, &back);
+    sc->desktop = 0xff808080u;
+    check(scene_set_windows(sc, 1) && scene_set_menus(sc, 0), "room for one window");
+    sc->win[0] = (struct sc_window){ 10, 10, 60, 50, SC_STALE, &pic, 40, 30, NULL, 0, 0, 0, -1, -1, -1 };
+    (void)scene_compose(sc, 0, 0, 100, 80);
+
+    for (y = 0; y < 30; y++) {
+        for (x = 0; x < 40; x++) {
+            as_is &= at(&back, 10 + x, 10 + y) == at(&pic, x, y);
+        }
+    }
+
+    check(as_is, "a stale picture shown at its own size, pixel for pixel");
+    check(at(&back, 10 + 55, 10 + 12) == at(&pic, 39, 12),
+          "the new room to its right its last column drawn on");
+    check(at(&back, 10 + 20, 10 + 45) == at(&pic, 20, 29),
+          "the new room below its last row drawn down");
+    check(at(&back, 10 + 59, 10 + 49) == at(&pic, 39, 29),
+          "and the corner the last row's last pixel");
+    check(at(&back, 75, 10) == 0xff808080u, "nothing drawn past the frame");
+
+    sc->win[0].flags = 0;
+    (void)scene_compose(sc, 0, 0, 100, 80);
+    check(at(&back, 10 + 30, 10 + 20) != at(&pic, 30, 20),
+          "without the flag it is stretched to the frame, as before");
+
+    scene_free(sc);
+    free(sc);
+    free(back.pixels);
+    free(pic.pixels);
+}
+
 int main(void)
 {
     primitives();
     scene();
+    stale();
 
     if (failed) {
         printf("FAIL: %d of %d checks on the primitives and the scene\n", failed,
@@ -206,6 +260,6 @@ int main(void)
 
     printf("PASS: %d checks on the primitives and the scene (fills, copies, a blend, a stretch "
            "and a triangle; two windows, a menu and a hidden one composed, a corner rounded, a "
-           "drag's label, a panel by its own alpha, and the same again)\n", passed);
+           "drag's label, a panel by its own alpha, and the same again; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
     return 0;
 }

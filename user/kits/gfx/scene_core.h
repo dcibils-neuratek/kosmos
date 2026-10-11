@@ -27,6 +27,7 @@ enum {
     SC_LIT      = 1u << 7,      /* the pointer over them */
     SC_FOCUSED  = 1u << 8,
     SC_MAXIMISE = 1u << 9,      /* it can be maximised */
+    SC_STALE    = 1u << 10,     /* its picture is from before a resize */
 };
 
 /* The lights, from the left: maximise, minimise, close (`OUT.SLOT`). */

@@ -2313,6 +2313,7 @@ function OUT.describe()
 
     if can then flags = flags | 32 | 512 end
     if i == #windows then flags = flags | 256 end
+    if win.stale then flags = flags | 1024 end
 
     local bx, by, held = 0, 0, -1
 
@@ -2504,6 +2505,12 @@ local function swap_surface(win, w, h)
   --
   if win.shared then
     win.w, win.h = w, h
+
+    -- Its picture is the old size's until a new one comes: shown as it
+    -- is, the new room filled from its edges, never stretched (`SC_STALE`)
+    -- - for a window that makes a region at the new size, which is the one
+    -- whose new picture will come. Any other is still stretched to fit.
+    win.stale = win.resizes_itself or nil
 
     if win.menubar then
       win.menubar.surface:free()
@@ -4066,6 +4073,7 @@ handlers.commit = function(req)
 
     win.shared, win.shared_next = win.shared_next, nil
     win.src_w, win.src_h = win.shared.w, win.shared.h
+    win.stale = nil
     win.shared.live = 2
     OUT.let_go_buffers(old)
     damage_window(win)

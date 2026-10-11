@@ -293,6 +293,63 @@ static void light(struct scene *sc, long x, long y, int slot, bool lit, bool off
 }
 
 /* A window's part of `r` (what `drawwindow.lua` did, before D3b-2). */
+/*
+ * **A picture from before a resize** (`SC_STALE`): shown at its own size in
+ * the frame's top left, and the new room beyond it filled by drawing the
+ * picture's last column across to the right and its last row down - which
+ * is the window's own background nearly always - until the application
+ * draws at the new size. It was stretched to the frame, and every window
+ * being resized swelled for a moment and then snapped back (Diego, on the
+ * M700, 10 October 2026: "it looks that the app streches to the new
+ * dimensions and then redraws in the new size which looks weird").
+ *
+ * `top` and `tall` are where the picture's part of the frame begins and
+ * how tall it is - below a menu bar, when there is one; `x0`..`y1` the
+ * rectangle being composed, which nothing here draws outside.
+ */
+static void stale_into(struct scene *sc, const struct sc_window *w, long top, long tall,
+                       long x0, long y0, long x1, long y1)
+{
+    long pw = w->src_w < w->w ? w->src_w : w->w;
+    long ph = w->src_h < tall ? w->src_h : tall;
+
+    if (pw <= 0 || ph <= 0) {
+        return;
+    }
+
+    /* The picture as it is, where it overlaps the rectangle. */
+    {
+        long ax0 = x0 > w->x ? x0 : w->x;
+        long ay0 = y0 > top ? y0 : top;
+        long ax1 = x1 < w->x + pw ? x1 : w->x + pw;
+        long ay1 = y1 < top + ph ? y1 : top + ph;
+
+        if (ax1 > ax0 && ay1 > ay0) {
+            blit_on(sc->back, w->picture, ax0 - w->x, ay0 - top, ax1 - ax0, ay1 - ay0,
+                    ax0, ay0);
+        }
+    }
+
+    /* Its last column, across the room to the right. */
+    if (w->w > pw) {
+        stretch_into(sc->back, w->picture, pw - 1, 0, 1, ph,
+                     w->x + pw, top, w->w - pw, ph, -1, false, x0, y0, x1, y1);
+    }
+
+    /* Its last row, down the room below, column for column. */
+    if (tall > ph) {
+        stretch_into(sc->back, w->picture, 0, ph - 1, pw, 1,
+                     w->x, top + ph, pw, tall - ph, -1, false, x0, y0, x1, y1);
+    }
+
+    /* And the corner beyond both, its last pixel. */
+    if (w->w > pw && tall > ph) {
+        stretch_into(sc->back, w->picture, pw - 1, ph - 1, 1, 1,
+                     w->x + pw, top + ph, w->w - pw, tall - ph, -1, false,
+                     x0, y0, x1, y1);
+    }
+}
+
 static void draw_window(struct scene *sc, const struct sc_window *w, const struct sc_rect *r)
 {
     long kept[4][6];
@@ -332,7 +389,9 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
                 long ya = y0 > split ? y0 : split;
                 long lower = w->h - w->bar_h;
 
-                if (w->src_w != w->w || w->src_h != lower) {
+                if (w->flags & SC_STALE) {
+                    stale_into(sc, w, split, lower, x0, ya, x1, y1);
+                } else if (w->src_w != w->w || w->src_h != lower) {
                     stretch_into(sc->back, w->picture, 0, 0, w->src_w, w->src_h,
                                  w->x, split, w->w, lower, -1, false,
                                  x0, ya, x1, y1);
@@ -341,6 +400,8 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
                             x0, ya);
                 }
             }
+        } else if (w->flags & SC_STALE) {
+            stale_into(sc, w, w->y, w->h, x0, y0, x1, y1);
         } else if (w->src_w != w->w || w->src_h != w->h) {
             stretch_into(sc->back, w->picture, 0, 0, w->src_w, w->src_h,
                          w->x, w->y, w->w, w->h, -1, false, x0, y0, x1, y1);
