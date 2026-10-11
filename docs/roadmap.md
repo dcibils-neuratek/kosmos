@@ -251,6 +251,33 @@ headings' edges, and kept per folder or for all; Created and Modified with
 date and time for every folder (a share's Modified exists already, from the
 server). Drawn first, beside `docs/tracker2.html`.
 
+**Wallpapers: a folder, any picture, and seen before chosen** - Diego, 10
+October 2026, asking where Preferences finds its list (`settings.wallpapers`:
+the pictures at the top of `/Home` and the image's photographs, nothing in a
+folder - so the ones he copied into Downloads were never offered): "yes to
+/home/wallpapers and yes to choose a picture", "yes to small preview of the
+picture is great as now is impossible to tell which is which. we can do like
+a carrousel of cards of thumbnails of the images in /home/wallpapers and the
+ones added by the user". So `/Home/Wallpapers`, in Tracker's places beside
+Photos; Choose a picture... through the Open window; and the Wallpaper row
+a carousel of thumbnail cards - the folder's, the image's photographs, and
+any chosen from elsewhere. Drawn first.
+
+**Nebula's own memory in Processes** - Diego, 10 October 2026: "why does
+the kernel does not show any memory consumption in processes?". Its row is
+made up by Processes, and Nebula reports only the machine's total and free
+pages; what it holds for itself - its image, page tables, stacks, the pools
+of threads and endpoints - is counted by nobody. The kernel counts the pages
+it takes for itself and says so beside total and free; the row shows it.
+
+**An ended background program collected** - Diego, 10 October 2026: "there
+is a ready.lua process in the process viewer app that says 'gone'". A
+process that ends keeps its slot until its parent collects its exit code;
+`ready`'s parent is the boot shell, which is waiting for the desktop and
+collects nothing until a command is typed - so a program started in the
+background at boot is "gone" for as long as the desktop runs. The shell
+collects its background children while a foreground one runs.
+
 **Bugs found on the M700, 10 October 2026, to fix first:**
 - **Print Screen's pictures shown black** - "printi screen saves a black
   image, not the actual screenshot. that worked in the past". The files are
