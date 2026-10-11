@@ -278,6 +278,21 @@ collects nothing until a command is typed - so a program started in the
 background at boot is "gone" for as long as the desktop runs. The shell
 collects its background children while a foreground one runs.
 
+**The Scheduler: its policy changeable again, a game mode, and a window
+that explains** - Diego, 11 October 2026: "I cant change the scheduler
+policy any more", "i want to add a new policy that is 'game mode' that
+prioritizes single threaded apps like games. You need to investigate what is
+the best scheduler for this", "the app is very raw. it should be redesigned
+to better explain what it does, how changing the scheduler affects
+performance and responsiveness, and else in a visual way", "mockup first".
+- **The policy refused since 0.10.22**: `sched_switch_to` says no once more
+  than one processor schedules, and every machine has run four or more
+  since spreading became the default; the window only said "could not".
+  Since a thread never leaves its core, each core can change its own queue
+  to the new policy at its next decision, and none touches another's.
+- **Game mode**: researched and written for Diego to decide, beside the
+  window's mockup (`docs/scheduler.md`, `docs/scheduler.html`).
+
 **Bugs found on the M700, 10 October 2026, to fix first:**
 - **Print Screen's pictures shown black** - "printi screen saves a black
   image, not the actual screenshot. that worked in the past". The files are
