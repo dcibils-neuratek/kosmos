@@ -120,6 +120,54 @@ int main(void)
     }
 
     /*
+     * **A glyph on a transparent ground** - the desktop's names, which the
+     * compositor lays over the wallpaper. A white edge at coverage `a` on
+     * nothing is white at alpha `a`, never an opaque grey mixed with the
+     * transparent black underneath (Diego's T14, 11 October 2026). And a
+     * row that is half ground and half nothing - a name half over an
+     * icon's shadow - the same in the lanes as one at a time.
+     */
+    {
+        static uint32_t vec[259], one[259];
+        static uint8_t cover[259];
+        bool white = true, same = true;
+        unsigned a, k;
+
+        for (a = 1; a < 255; a++) {
+            uint32_t p = 0;
+
+            memset(cover, (int)a, 1);
+            gfx_cover_row(&p, cover, 1, 0xffffffffu, false);
+
+            if (p != (a << 24 | 0x00ffffffu) && white) {
+                printf("  coverage %u on nothing: %08x\n", a, p);
+                white = false;
+            }
+        }
+
+        for (k = 0; k < 259; k++) {
+            cover[k] = (uint8_t)(k * 37);
+            vec[k] = one[k] = (k / 3) % 2 ? 0xff3060a0u : (k * 11 % 256) << 24;
+        }
+
+        gfx_cover_row(vec, cover, 259, 0xffe0e0e0u, true);
+        gfx_cover_row(one, cover, 259, 0xffe0e0e0u, false);
+
+        for (k = 0; k < 259; k++) {
+            if (vec[k] != one[k] && same) {
+                printf("  pixel %u: four at a time %08x, one at a time %08x\n",
+                       k, vec[k], one[k]);
+                same = false;
+            }
+        }
+
+        check(white, "a glyph's edge on a transparent ground is its ink at "
+                     "the coverage's alpha, not a grey made opaque");
+        check(same, "and a row of grounds both opaque and not is the same in "
+                    "the lanes as one at a time");
+    }
+
+    /*
      * **A wash** (`gfx_wash_row`): a colour over a row by its own alpha,
      * every alpha over every ground, in the lanes and one at a time, and
      * both the same as a glyph's coverage of that alpha everywhere - which

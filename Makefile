@@ -2262,11 +2262,11 @@ $(HOSTDIR)/test_raster: tools/test_raster.c user/kits/gfx/raster.c user/kits/gfx
 ROWS_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -O2 -fno-vectorize \
                    -fno-slp-vectorize -Iuser/kits/gfx
 
-$(HOSTDIR)/test_rows: tools/test_rows.c user/kits/gfx/rows.c user/kits/gfx/rows.h
+$(HOSTDIR)/test_rows: tools/test_rows.c user/kits/gfx/rows.c user/kits/gfx/rows.h user/kits/gfx/surface.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) $(ROWS_TEST_FLAGS) -o $@ tools/test_rows.c user/kits/gfx/rows.c
 
-$(HOSTDIR)/test_rows_x86: tools/test_rows.c user/kits/gfx/rows.c user/kits/gfx/rows.h
+$(HOSTDIR)/test_rows_x86: tools/test_rows.c user/kits/gfx/rows.c user/kits/gfx/rows.h user/kits/gfx/surface.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -arch x86_64 $(ROWS_TEST_FLAGS) -o $@ tools/test_rows.c user/kits/gfx/rows.c
 

@@ -231,6 +231,21 @@ Open window and Mail's attachments will use next. Steps: **Q1** pictures,
 and anything else as its icon and its facts - **built 11 October**
 (`testing.md` 18.543); **Q2** PDF; **Q3** songs; **Q4** films.
 
+**The processor's speed: measured, then asked for** - Diego, 11 October
+2026, with Cafesa3D rendering the same scene on both machines: "Why is the
+m700 faster if it's an older i7 than the thinkpad which is a newer i5" -
+21.7 million rays a second on the M700's i7-6700 against 16.8 on the T14's
+i5-1145G7. Nothing in Kosmos sets a processor's speed - no `IA32_PERF_CTL`,
+no HWP - so each runs where its firmware left it, most likely its base
+clock: 3.4 GHz against 2.6, a ratio of 1.31 beside the 1.29 measured.
+"Yes do it after quick look". Two steps: **first measure** - the running
+clock of each core from `APERF`/`MPERF`, shown in Monitor's rows, so the
+cause is a number rather than an inference; **then ask** - HWP on the
+T14's Tiger Lake (`IA32_PM_ENABLE`, `IA32_HWP_REQUEST`) and P-states with
+turbo on the M700's Skylake (`IA32_PERF_CTL`), in the board's code, with the
+render on both machines as the measurement before and after. Registers
+checked against Intel's SDM when written, not from memory.
+
 **Mail: always show a sender's pictures** - Diego, 10 October 2026: "mail
 app needs a way to set 'always show images from this sender' somehere
 because i cant click load images for every email". A choice beside Load

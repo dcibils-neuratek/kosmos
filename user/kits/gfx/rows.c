@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "rows.h"
+#include "surface.h"
 
 /*
  * The lanes load and store through `__builtin_memcpy` of a vector's size,
@@ -64,6 +65,21 @@ static uint32_t cover1(uint32_t dst, uint32_t ink, unsigned a)
 
     if (a == 255) {
         return ink;
+    }
+
+    /*
+     * **A destination that is not opaque gets the compositor's `over`**,
+     * with the coverage as the ink's alpha. The mix below stamps the pixel
+     * opaque after mixing the ink with whatever colour was there - which on
+     * the desktop, a transparent surface laid over the wallpaper, is
+     * transparent black. Every soft edge of a white name became an opaque
+     * dark grey, and with the shadow under it thin text read as black with
+     * a fringe (Diego's T14, 11 October 2026: "Text has some weird black
+     * shadow in the desktop"). `blend_row` learnt this for Haiku's icon
+     * shadows; text had not.
+     */
+    if ((dst >> 24) != 255u) {
+        return over((ink & 0x00ffffffu) | ((uint32_t)a << 24), dst, 255u);
     }
 
     r = ((((ink >> 16) & 0xff) * a) + (((dst >> 16) & 0xff) * inv) + 127)
@@ -113,6 +129,18 @@ void gfx_cover_row(uint32_t *dst, const uint8_t *coverage, long n,
             a = __builtin_convertvector(c8, u32x4);
             inv = 255 - a;
             __builtin_memcpy(&d, dst + i, sizeof(d));
+
+            /* The lanes mix onto an opaque ground, which is a window's;
+             * anything else - the desktop - goes a pixel at a time. */
+            if (((d[0] & d[1] & d[2] & d[3]) >> 24) != 255u) {
+                long k;
+
+                for (k = 0; k < 4; k++) {
+                    dst[i + k] = cover1(dst[i + k], ink, coverage[i + k]);
+                }
+
+                continue;
+            }
 
             mixed = opaque
                     | div255(ir * a + ((d >> 16) & 0xff) * inv) << 16

@@ -805,6 +805,10 @@ end
 
 ui.SCROLL_W = SCROLL_W
 
+-- Where the thumb is - its top and its size - for a view that has to say so
+-- (a harness can press and cannot aim), or nil when there is no bar.
+ui.scrollbar_thumb = thumb_of
+
 --
 -- **The pill, for a view of its own**: `ui.scrollbar(g, w, h, total, shown,
 -- top)` draws it and says whether there was one to draw, and

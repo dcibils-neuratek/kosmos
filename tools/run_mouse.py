@@ -45,6 +45,12 @@ os.environ["KOSMOS_DISK"] = _DISK
 import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
 
+# Appearance, the page taller than its window: the scrollbar a machine with
+# no wheel scrolls it by (Diego, 11 October: "It does not have a scroll bar",
+# "It should").
+LOOKS = ('local r = fs.send("/Running/wm", { type = "launch", '
+         'program = "/Kosmos/Apps/preferences.lua", args = "appearance" })\n'
+         'print("LOOKS " .. tostring(r and r.ok))\n')
 PREFS = ('local r = fs.send("/Running/wm", { type = "launch", '
          'program = "/Kosmos/Apps/preferences.lua", args = "mouse" })\n'
          'print("PREFS " .. tostring(r and r.ok))\n')
@@ -115,7 +121,8 @@ def first(image, fails, said):
         session = S.connect(telnet)
         size["w"], size["h"] = R.parse_ppm(guest.screendump())[:2]
 
-        for name, text in (("prefs", PREFS), ("kept", KEPT), ("keep", KEEP_SPEED)):
+        for name, text in (("prefs", PREFS), ("kept", KEPT), ("keep", KEEP_SPEED),
+                           ("looks", LOOKS)):
             session.put(text.encode(), "/Temporary/%s.lua" % name)
 
         mark = len(guest.seen)
@@ -157,6 +164,30 @@ def first(image, fails, said):
         said["closed at the fast span"] = "the folder closed" in guest.seen[mark:]
 
         said["keep"] = session.run("/Temporary/keep.lua").decode(errors="replace")
+
+        # Appearance, dragged by its scrollbar's thumb: the page follows.
+        mark = len(guest.seen)
+        session.run("/Temporary/looks.lua")
+        win = found(r"wm: window Preferences at (\d+),(\d+)", mark)
+        thumb = found(r"preferences scrollbar: thumb at (\d+),(\d+), (\d+) tall, 0 of (\d+)", mark)
+        said["thumb"] = thumb
+
+        if win and thumb:
+            time.sleep(1)
+            tx, ty = int(win[0]) + int(thumb[0]), int(win[1]) + int(thumb[1])
+            guest.mouse_to(*R._to_tablet(tx, ty, size["w"], size["h"]))
+            time.sleep(0.3)
+            mark = len(guest.seen)
+            guest.mouse_button(True)
+            time.sleep(0.1)
+
+            # Down, and drifting left off the bar as a hand does.
+            for step in range(1, 9):
+                guest.mouse_to(*R._to_tablet(tx - 3 * step, ty + 15 * step, size["w"], size["h"]))
+                time.sleep(0.1)
+
+            guest.mouse_button(False)
+            said["scrolled"] = found(r"preferences: scrolled to (\d+) of (\d+)", mark, 10)
     except Exception as e:                  # noqa: BLE001 - said below
         fails.append("the first boot stopped: %s: %s" % (type(e).__name__, str(e).splitlines()[0]))
     finally:
@@ -240,13 +271,19 @@ def main():
         fails.append("a speed asked of the window manager did not reach the board: %r"
                      % said.get("asked", "")[-200:])
 
+    scrolled = said.get("scrolled")
+    if not said.get("thumb"):
+        fails.append("Appearance, taller than its window, showed no scrollbar")
+    elif not scrolled or int(scrolled[0]) < 60:
+        fails.append("dragging the scrollbar's thumb did not scroll the page: %r" % (scrolled,))
+
     for which in ("first seen", "second seen"):
         seen = said.get(which, "")
 
         if " died: " in seen:
             fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 10
+    checks = 12
 
     if fails:
         print("FAIL: %d of %d checks on the Mouse page:" % (len(fails), checks))
@@ -258,8 +295,9 @@ def main():
           "double click at the slow span; the fast end written, told to every window, and two "
           "presses then two clicks; both settings applied at the next desktop's start on a PS/2 "
           "mouse, which has a speed slider; a speed asked of the window manager on the board; "
-          "focus following the pointer kept across the restart)."
-          % checks)
+          "focus following the pointer kept across the restart; Appearance's scrollbar shown and "
+          "its thumb dragged, the page scrolled %s px)."
+          % (checks, (said.get("scrolled") or ("?",))[0]))
     return 0
 
 

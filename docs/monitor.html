@@ -1,0 +1,226 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Monitor, refreshed. Drawn on 11 October 2026 from Diego's ask, with the
+  M700 and the T14 rendering side by side: "cpu monitor app needs a
+  refresh", "Put the cpu name and model in the app not in the title as it
+  can't be shown entirely", "each core bar is unnecessary", "Just leave the
+  graphs with its history, cpu speed, kernel and user colors and core
+  number", "Show the cpu name and model in a nice way", "Bars are a 'show
+  cores bars' option", "Mockup first". The page to build it from, once
+  agreed. The numbers in it are made up, in the shape of the M700's.
+-->
+<title>Monitor, refreshed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* Astra's dark look, as the M700 shows Monitor. */
+  --a-win: #1f2430; --a-raised: #262c39; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-graph: #16181d; --user: #34c759; --kernel: #ff453a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 28px; max-width: 72ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 74ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 80ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 780px; }
+.q b { font-family: var(--display); }
+.pair { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+
+/* The window, at the machine's own size. */
+.win { width: 620px; background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line);
+       border-radius: 12px; box-shadow: 0 14px 40px rgba(0,0,0,.28); position: relative; font-size: 13px; flex: none; }
+.head { display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 14px; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 14px; }
+.head .s { color: var(--a-dim); flex: 1; }
+.legend { display: flex; gap: 14px; color: var(--a-dim); }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; background: var(--c); }
+.dots { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; color: var(--a-dim); font-weight: 700; letter-spacing: 1px; }
+.dots.on { background: var(--a-raised); color: var(--a-ink); }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.body { padding: 16px 18px 14px; }
+
+/* The processor, said once and whole. */
+.chip { display: grid; grid-template-columns: 58px 1fr auto; gap: 16px; align-items: center;
+        background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 10px; padding: 14px 16px; }
+.die { width: 58px; height: 58px; border-radius: 8px; position: relative;
+       background: linear-gradient(145deg, #3c4556, #262c39); border: 1px solid #4a5468; }
+.die::before { content: ""; position: absolute; inset: 12px; border-radius: 4px; background: linear-gradient(145deg, #5b6a86, #3a4459); }
+.die::after { content: ""; position: absolute; inset: -5px; border-radius: 10px;
+              background:
+                repeating-linear-gradient(90deg, transparent 0 7px, #6b768a 7px 9px) top / 100% 3px no-repeat,
+                repeating-linear-gradient(90deg, transparent 0 7px, #6b768a 7px 9px) bottom / 100% 3px no-repeat,
+                repeating-linear-gradient(0deg, transparent 0 7px, #6b768a 7px 9px) left / 3px 100% no-repeat,
+                repeating-linear-gradient(0deg, transparent 0 7px, #6b768a 7px 9px) right / 3px 100% no-repeat;
+              z-index: -1; }
+.die { z-index: 0; isolation: isolate; }
+.chip .maker { color: var(--a-dim); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+.chip .model { font-family: var(--display); font-size: 22px; font-weight: 600; line-height: 1.15; }
+.chip .facts { color: var(--a-dim); font-size: 12px; margin-top: 3px; }
+.chip .now { text-align: right; font-variant-numeric: tabular-nums; }
+.chip .now b { display: block; font-size: 22px; font-family: var(--display); }
+.chip .now span { color: var(--a-dim); font-size: 12px; }
+
+.heading { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 2px 8px; }
+.heading b { font-size: 14px; }
+.heading span { color: var(--a-dim); font-size: 12px; }
+
+/* A graph a core: its number, its speed, its share, and the minute. */
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px 12px; }
+.core .top { display: flex; justify-content: space-between; align-items: baseline; margin: 0 2px 4px;
+             font-variant-numeric: tabular-nums; }
+.core .top b { font-weight: 600; }
+.core .top span { color: var(--a-dim); font-size: 12px; }
+.core .top span em { font-style: normal; color: var(--a-ink); }
+.graph { height: 84px; background: var(--a-graph); border-radius: 8px; display: flex; align-items: flex-end;
+         gap: 1px; padding: 2px; overflow: hidden; }
+.graph i { flex: 1; display: flex; flex-direction: column-reverse; min-width: 0; }
+.graph i u { background: var(--kernel); display: block; }
+.graph i s { background: var(--user); display: block; }
+.foot { color: var(--a-dim); font-size: 12px; margin: 10px 2px 0; }
+
+/* The bars, when asked for: the card that is there today. */
+.bars { background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 10px; margin-top: 14px; }
+.bars .r { display: grid; grid-template-columns: 150px 1fr 70px 44px; gap: 12px; align-items: center;
+           padding: 7px 14px; border-top: 1px solid var(--a-line); font-variant-numeric: tabular-nums; }
+.bars .r:first-child { border-top: 0; }
+.bars .r small { display: block; color: var(--a-dim); font-size: 12px; }
+.bars .track { height: 6px; background: #3a4252; border-radius: 3px; display: flex; overflow: hidden; }
+.bars .track u { background: var(--kernel); } .bars .track s { background: var(--user); }
+.bars .r .ghz, .bars .r .pct { text-align: right; color: var(--a-dim); }
+.bars .r .pct { color: var(--a-ink); }
+
+/* The dots' menu. */
+.menu { position: absolute; right: 44px; top: 42px; width: 236px; background: #2a3140; border: 1px solid #424b5d;
+        border-radius: 9px; padding: 5px; box-shadow: 0 16px 40px rgba(0,0,0,.5); z-index: 3; }
+.menu div { padding: 5px 10px 5px 28px; border-radius: 6px; position: relative; }
+.menu div.mark::before { content: "\2713"; position: absolute; left: 10px; color: var(--a-ink); }
+.menu div.hi { background: #2f6bdc; }
+.menu hr { border: 0; border-top: 1px solid #424b5d; margin: 5px 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Monitor, refreshed</h1>
+<p class="sub">The processor named whole, in the window rather than squeezed into its title; a graph a core with the core's number, its speed and its share; and each core's bar as an option in the dots' menu, off by default.</p>
+
+<div class="q"><b>Diego, 11 October 2026</b>: "Put the cpu name and model in the app not in the title as it can't be shown entirely", "each core bar is unnecessary", "Just leave the graphs with its history, cpu speed, kernel and user colors and core number", "Show the cpu name and model in a nice way", "Bars are a 'show cores bars' option".</div>
+
+<h2>As it opens: the processor, then a graph a core</h2>
+<div class="scroller"><div class="win" id="w1"></div></div>
+<p class="cap">The M700, rendering. The title bar says only <b>Monitor</b> and the legend; the processor has a card of its own at the top, its name as the firmware gives it with the trademarks taken off (<code>Intel(R) Core(TM) i7-6700 CPU @ 3.40GHz</code> becomes <b>Intel</b> above <b>Core i7-6700</b>), how many processors and its rated clock under it, and on the right what the machine is running at now, across every core. Each core's graph keeps the minute it shows today, with its number and, above the graph, its speed and its share.</p>
+
+<h2>The dots' menu: the pace, and the bars</h2>
+<div class="scroller"><div class="win" id="w2"></div></div>
+<p class="cap">The three paces stay as they are. Under a rule, <b>Show each core's bar</b>, unticked to start with. It is the window's own choice, as the pace is: a Monitor opens without bars every time.</p>
+
+<h2>With the bars shown</h2>
+<div class="scroller"><div class="win" id="w3"></div></div>
+<p class="cap">The bars are today's rows, between the processor and the graphs, with the speed in a column of their own. The window grows to hold them and shrinks again when they are put away.</p>
+
+<h2>The T14's name, for comparison</h2>
+<div class="scroller"><div class="win" id="w4"></div></div>
+<p class="cap"><code>11th Gen Intel(R) Core(TM) i5-1145G7 @ 2.60GHz</code> reads as <b>Intel · 11th Gen</b> above <b>Core i5-1145G7</b>. Under QEMU, whose processor gives a plain name, the name is shown as it comes. On an ARM board, with no brand string, the maker and the part are shown the same way they are now.</p>
+
+<h2>What it is made of</h2>
+<ul>
+  <li><b>The name</b> is <code>/Devices/cpu</code>'s, as now (<code>pulse.name()</code>). Making it neat is a few lines in <code>pulse.lua</code>, beside <code>name</code>, so About and neofetch can use the same split rather than each writing their own.</li>
+  <li><b>The speed is new.</b> Kosmos does not measure it yet. It comes from the processor-speed card queued after Quick Look: each core's running clock from <code>APERF</code>/<code>MPERF</code>, read by the kernel, which only it can do, and handed to Monitor beside the load it already reads. So this refresh and that measurement land together. Until a core reports a speed, the card shows the rated clock and the graphs show only the share.</li>
+  <li><b>The bars</b> are the card Monitor draws today, kept behind the option rather than removed.</li>
+</ul>
+</div>
+
+<script>
+// Made-up numbers in the M700's shape: a render that started 35 s ago.
+function seeded(n) { let s = n * 9301 + 49297; return () => (s = (s * 9301 + 49297) % 233280) / 233280; }
+
+const CORES = 8;
+const GHZ = [3.70, 3.70, 3.69, 3.70, 3.68, 3.70, 3.70, 3.69];
+const PCT = [100, 100, 75, 100, 100, 100, 100, 100];
+
+function history(c) {
+  const r = seeded(c + 1), cols = [];
+  for (let i = 0; i < 60; i++) {
+    let u, k;
+    if (i < 24) { u = Math.round(r() * 6); k = Math.round(r() * 3); }
+    else { k = c === 0 ? 2 + Math.round(r() * 2) : Math.round(r() * 1.4); u = (c === 2 ? 72 : 96) + Math.round(r() * 4) - k; }
+    cols.push([u, k]);
+  }
+  return cols;
+}
+
+function graph(c) {
+  return '<div class="graph">' + history(c).map(([u, k]) =>
+    `<i><u style="height:${k}%"></u><s style="height:${u}%"></s></i>`).join("") + "</div>";
+}
+
+function head(menu) {
+  return `<div class="head"><span class="t">Monitor</span><span class="s"></span>
+    <span class="legend"><span style="--c:var(--user)">User</span><span style="--c:var(--kernel)">Kernel</span></span>
+    <span class="dots${menu ? " on" : ""}">&middot;&middot;&middot;</span>
+    <span class="lights"><i style="background:#3fbf4f"></i><i style="background:#f2b233"></i><i style="background:#ee5048"></i></span></div>`;
+}
+
+function chip(maker, model, facts, now, nowNote) {
+  return `<div class="chip"><div class="die"></div>
+    <div><div class="maker">${maker}</div><div class="model">${model}</div><div class="facts">${facts}</div></div>
+    <div class="now"><b>${now}</b><span>${nowNote}</span></div></div>`;
+}
+
+function cores(n, ghz, pct) {
+  let out = '<div class="heading"><b>The last minute</b><span>8 processors &middot; 96% busy</span></div><div class="grid">';
+  for (let c = 0; c < n; c++) {
+    out += `<div class="core"><div class="top"><b>Core ${c + 1}</b><span>${ghz[c].toFixed(2)} GHz &middot; <em>${pct[c]}%</em></span></div>${graph(c)}</div>`;
+  }
+  return out + '</div><div class="foot">A column a second; the newest at the right.</div>';
+}
+
+function bars(n, ghz, pct) {
+  let out = '<div class="bars">';
+  for (let c = 0; c < n; c++) {
+    const k = c === 0 ? 1 : 0, u = pct[c] - k;
+    out += `<div class="r"><span><b>Core ${c + 1}</b><small>${u}% user &middot; ${k}% kernel</small></span>
+      <span class="track"><u style="width:${k}%"></u><s style="width:${u}%"></s></span>
+      <span class="ghz">${ghz[c].toFixed(2)} GHz</span><span class="pct">${pct[c]}%</span></div>`;
+  }
+  return out + "</div>";
+}
+
+const M700 = chip("Intel", "Core i7-6700", "8 processors &middot; rated 3.40 GHz", "3.70 GHz", "now, across all cores");
+
+document.getElementById("w1").innerHTML = head(false) + '<div class="body">' + M700 + cores(CORES, GHZ, PCT) + "</div>";
+
+document.getElementById("w2").innerHTML = head(true) + '<div class="body">' + M700 + cores(CORES, GHZ, PCT) + "</div>" +
+  `<div class="menu"><div>Update every 0.5 s</div><div class="mark">Update every 1 s</div><div>Update every 2 s</div><hr>
+   <div class="hi">Show each core's bar</div></div>`;
+
+document.getElementById("w3").innerHTML = head(false) + '<div class="body">' + M700 + bars(CORES, GHZ, PCT) + cores(CORES, GHZ, PCT) + "</div>";
+
+const T14G = [2.61, 2.60, 2.60, 2.61, 2.60, 2.60, 2.60, 2.61], T14P = [100, 100, 100, 100, 100, 100, 78, 100];
+document.getElementById("w4").innerHTML = head(false) + '<div class="body">' +
+  chip("Intel &middot; 11th Gen", "Core i5-1145G7", "8 processors &middot; rated 2.60 GHz", "2.60 GHz", "now, across all cores") +
+  cores(CORES, T14G, T14P) + "</div>";
+</script>
+</body>
+</html>

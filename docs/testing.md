@@ -23394,3 +23394,37 @@ again; Escape closes it and the red is gone; Return opens it in Photo.
 **Controls**: the sheet placed only when drawn - 0 red pixels, the panel
 empty, which is how it was found; the picture drawn to the panel's size -
 229,824 red pixels, failed.
+
+## 18.544 Preferences scrolls by a bar; the desktop's names lose their black
+
+Two things Diego met on the T14 on 11 October 2026.
+
+**Preferences had no scrollbar.** "I can't scroll the panel in my thinkpad
+as it does not have a scroll wheel", "It does not have a scroll bar", "It
+should". A page taller than the window scrolled by the wheel alone, and a
+TrackPoint has none. The page now carries the kit's pill along its right
+edge below the header, drawn and dragged by `ui.scrollbar` and
+`ui.scrollbar_mouse` - the same bar Processes and Log View have, so a drag
+that drifts off it carries on, and the trough pages. `ui.scrollbar_thumb`
+says where the thumb is, so the page can tell a harness.
+
+`x86-mouse` 10 -> 12: Appearance, taller than its window, shows the bar;
+its thumb pressed and dragged down, drifting left off the bar as a hand
+does, scrolls the page - 254 px.
+
+**The desktop's names were nearly black** ("Text has some weird black
+shadow in the desktop"). The desktop is a transparent surface laid over the
+wallpaper, and a glyph's soft edge was mixed with the colour under it and
+stamped opaque - on a transparent pixel, black. So every edge of a white
+name became an opaque dark grey, and with the shadow beneath, thin text at
+1x read as black with a light fringe. `blend_row` learnt this for Haiku's
+icon shadows long ago (`surface.h`, `over`); `gfx_cover_row` had not. A
+ground that is not opaque now takes `over`, with the coverage as the ink's
+alpha; the lanes keep their speed on a window's opaque ground, 3.4x.
+
+`host` (`test_rows`) 8 -> 10: a white edge at every coverage on nothing is
+white at that alpha; and a row mixing opaque and transparent grounds is the
+same in the lanes as one at a time.
+
+**Control**: the old `rows.c` - "a glyph's edge on a transparent ground"
+fails, 1 of 10.

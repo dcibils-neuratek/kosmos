@@ -994,6 +994,47 @@ function page:wheel(n)
 end
 
 --
+-- **And a scrollbar**, the system's pill along the page's right edge below
+-- the header, dragged or pressed above and below its thumb a page at a
+-- time (`ui.scrollbar_mouse`). Diego, on the ThinkPad, 11 October 2026: "I
+-- can't scroll the panel in my thinkpad as it does not have a scroll
+-- wheel" - the wheel was the only way down a page taller than its window.
+-- Made once and added again at each rebuild, so a drag outlives the
+-- rebuilds it causes.
+--
+local bar = ui.view{ x = 0, y = HEAD, w = ui.SCROLL_W + 4, h = 10 }
+
+local function bar_numbers()
+  local shown = page.h - HEAD
+  local total = math.max(shown, page_h - HEAD)
+
+  return total, shown, scroll + 1
+end
+
+function bar:draw(g)
+  local total, shown, top = bar_numbers()
+
+  ui.scrollbar(g, self.w, self.h, total, shown, top)
+end
+
+function bar:mouse(action, x, y)
+  local total, shown, top = bar_numbers()
+  local to = ui.scrollbar_mouse(self, action, x, y, self.w, self.h, total, shown, top)
+
+  if to == nil then return false end
+
+  to = math.max(0, math.min(total - shown, to - 1))
+
+  if to ~= scroll then
+    scroll = to
+    rebuild()
+    print(("preferences: scrolled to %d of %d"):format(scroll, total - shown))
+  end
+
+  return true
+end
+
+--
 -- **File types' Find**, the drawing's field above its groups: the rows whose
 -- type, name or application has the words in them. Kept across rebuilds, so
 -- what is typed and where the caret is survive each one.
@@ -1236,6 +1277,22 @@ rebuild = function()
   end
 
   page_h = y + scroll + BODY_TOP
+
+  -- The scrollbar, over the page's right edge, when there is more page.
+  bar.x, bar.y = page.w - bar.w, HEAD
+  bar.h = page.h - HEAD
+  if page_h > page.h then
+    page:add(bar)
+
+    -- The thumb's middle, in the window's points, for a harness.
+    local total, shown, top = bar_numbers()
+    local ty, size = ui.scrollbar_thumb(bar.h, total, shown, top)
+
+    if ty then
+      print(("preferences scrollbar: thumb at %d,%d, %d tall, %d of %d"):format(
+            SIDE + bar.x + bar.w - 8, HEAD + ty + size // 2, size, scroll, total - shown))
+    end
+  end
 
   win:paint()
 end
