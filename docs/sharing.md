@@ -1193,7 +1193,26 @@ Then, each when its time comes:
     wait of one tick and again on its clock - `mdnsd` keeps the question
     alive for five seconds after a short wait ends - and hands `smbfs` the
     address.
-- **N12 - smbd, read-only**: the Servers window's File sharing page as drawn;
+- **N12 - smbd, read-only**, in steps (11 October 2026, after the network
+  measured 50 MB/s each way on the M700 - `testing.md` 18.533 - which this
+  said N12 waited for):
+  - **N12a** - the SMB Kit's socket gains a server's half - `bind`,
+    `listen`, `accept` on `NET_OP_LISTEN` and `ACCEPT`, and `select` on the
+    stack's `NET_OP_POLL` over every connection - so libsmb2's own
+    `smb2_serve_port` runs on Kosmos unchanged; `smbd`, a role of
+    `init.elf`, answering NEGOTIATE and an NTLMv2 sign-in with one test
+    account. `smbclient` through a forwarded port signs in, and a wrong
+    password is refused.
+  - **N12b** - a share is a folder of `/Home`, reached as a client of
+    `diskfs` (`diskproto.h`): TREE_CONNECT, CREATE, QUERY_DIRECTORY,
+    QUERY_INFO, READ and CLOSE. `smbclient` lists and fetches; a read held
+    to the file's bytes.
+  - **N12c** - the Servers window's File sharing page: which folders, the
+    account, its password into the keyring as an NT hash, who is connected.
+  - **N12d** - the Mac's own client: `mount_smbfs` and Finder, each thing
+    they ask that the example server did not answer found and answered.
+
+  The page as first written: the Servers window's File sharing page as drawn;
   `smbclient` and the Mac's `mount_smbfs` through a forwarded port list and
   read what `/Home` holds; a wrong password and a guest refused. **Needs the
   M700's TCP send** - today one segment in flight, 1.4 MB/s
