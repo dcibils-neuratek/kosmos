@@ -8710,7 +8710,12 @@ watched, with its graphs, what it was given and its console; New sandbox,
 a task or a service; `sandbox` at the Terminal; and each one a `vmm`
 process in Processes. Services too (Diego: "can firecracker launch long
 lasting processes. like a http server in linux?") - ports forwarded from
-Kosmos into the guest.
+Kosmos into the guest. **The mockup agreed, 11 October** ("sandbox mockup is
+perfect"), and queued after everything in the queue that night: "lets add
+sandbox to tomorrows queue after we finish all thats in the current queue".
+The design's questions (`docs/virtualization.md`: ARM in QEMU or x86 on the
+M700 first, the first guest, 9p or virtio-fs) and the mockup's three are
+asked when it begins.
 This and the Android card below are the same work.
 
 **Android applications, in a virtual machine** - Diego, 10 October 2026:
