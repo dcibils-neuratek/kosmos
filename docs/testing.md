@@ -23068,3 +23068,19 @@ On the M700 the first boot told to say it was ready did not: `ready` ran at
 router - "no route to it: this machine has no address". A test's machine is
 given one on its command line, so the suite could not see it. `ready` now
 tries once a second, for two minutes, until a datagram leaves.
+
+## 18.533 The network measured: 50 MB/s each way on the M700
+
+Diego, 11 October 2026: "can you measure how much it takes to send a 100 mb
+to kosmos from the mac?". `netspeed` (`user/bin/programs/netspeed.lua`)
+reads a connection to its end keeping nothing, or writes N MB; its peer on
+the Mac (`tools/netspeed_peer.py`) serves bytes on 47701 and swallows them
+on 47702, and times its own end. On the M700 (0.11.138, I219, gigabit to
+the Mac through the house's switch):
+
+    Mac to M700   100 MB in 1.92 s   52 MB/s   (both ends agree)
+    M700 to Mac   100 MB in 2.06 s   49 MB/s
+
+About half of what the wire carries (~112 MB/s). The 6 MB/s said that
+evening was a figure from before the 64 KB ring; what was slow was Telnet's
+`get`, base64 printed through the shell.
