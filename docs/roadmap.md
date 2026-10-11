@@ -8695,6 +8695,17 @@ the applications make the system useful, and is not pulled forward.
 
 ### The system
 
+**Sandboxes: small operating systems for a task, in virtual machines** -
+Diego, 11 October 2026: "i want to explore adding virtualization support to
+kosmos", "to launch sandboxes to run small OSes like linux for specific
+tasks". Explored in `docs/virtualization.md`, for Diego to decide on: the
+hardware's virtualization (VT-x on the M700, EL2 on ARM) as two new kinds of
+object in Nebula - a virtual CPU and guest memory, by capability - and a
+machine monitor per guest in user space; a sandbox booted in under a second
+for one command, given one folder of `/Home` and the network only if asked,
+and thrown away. Steps V1-V6; four questions his before anything is built.
+This and the Android card below are the same work.
+
 **Android applications, in a virtual machine** - Diego, 10 October 2026:
 "can we create a virtual machine environment to run android apps?" Asked as
 a roadmap question; nothing decided. What it would take, honestly:
