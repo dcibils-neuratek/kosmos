@@ -8704,6 +8704,13 @@ object in Nebula - a virtual CPU and guest memory, by capability - and a
 machine monitor per guest in user space; a sandbox booted in under a second
 for one command, given one folder of `/Home` and the network only if asked,
 and thrown away. Steps V1-V6; four questions his before anything is built.
+Drawn on 11 October as `docs/sandboxes.html`: the Sandboxes application -
+cards with each sandbox's state, processors, memory, ports and folders; one
+watched, with its graphs, what it was given and its console; New sandbox,
+a task or a service; `sandbox` at the Terminal; and each one a `vmm`
+process in Processes. Services too (Diego: "can firecracker launch long
+lasting processes. like a http server in linux?") - ports forwarded from
+Kosmos into the guest.
 This and the Android card below are the same work.
 
 **Android applications, in a virtual machine** - Diego, 10 October 2026:
