@@ -50,7 +50,7 @@
 #include "keyfile.h"
 
 void keyring_server(long smb_door, long manage_door, long disk, long devices,
-                    long console, long mail_door);
+                    long console, long mail_door, long sharing_door);
 
 static const char KEY_PATH[] = "/Keyring/machine-key";
 static const char FILE_PATH[] = "/Keyring/keyring";
@@ -76,9 +76,11 @@ static uint32_t next_id = 1;
 
 /*
  * **The doors after the first**, each forwarding to the first with a word of
- * its own stamped on: `manage`, Passwords', which sees every kind; and
+ * its own stamped on: `manage`, Passwords', which sees every kind;
  * `mail` (`docs/mail.md` M0, 8 October), Mail's, which is `smb`'s twin for
- * mail's kind - keep, read and forget its own entries and see nothing else.
+ * mail's kind - keep, read and forget its own entries and see nothing else;
+ * and `sharing` (`docs/sharing.md` N12c), smbd's, the same for the account
+ * a visitor signs in to this machine with.
  * The first endpoint is `smb`'s, untagged.
  */
 struct door {
@@ -90,8 +92,9 @@ struct door {
 };
 
 static struct door doors[] = {
-    { "manage", -1, 0, false, 0 },
-    { "mail",   -1, 0, false, KEY_KIND_MAIL },
+    { "manage",  -1, 0, false, 0 },
+    { "mail",    -1, 0, false, KEY_KIND_MAIL },
+    { "sharing", -1, 0, false, KEY_KIND_SHARING },
 };
 
 #define DOORS (sizeof doors / sizeof doors[0])
@@ -801,11 +804,12 @@ static void door_main(unsigned long which)
 }
 
 void keyring_server(long smb_door, long manage_door, long disk_door, long devices_ep,
-                    long console_ep, long mail_door)
+                    long console_ep, long mail_door, long sharing_door)
 {
     smb = smb_door;
     doors[0].ep = manage_door;
     doors[1].ep = mail_door;
+    doors[2].ep = sharing_door;
     disk = disk_door;
     devices = devices_ep;
     console = console_ep;

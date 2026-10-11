@@ -95,7 +95,7 @@ void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep);
  * manager door, and the console's. Given the screen when it is spawned. */
 void windowserver_server(long endpoint, long console_ep);
 void keyring_server(long smb_door, long manage_door, long disk, long devices,
-                    long console, long mail_door);
+                    long console, long mail_door, long sharing_door);
 
 /* /Notifications (`roadmap.md`, *Notifications*): its own endpoint, and the
  * console's to say what it was told. */
@@ -108,7 +108,7 @@ void smbfs_server(long endpoint, long net, long console, long keyring);
 /* /Discovery (`docs/sharing.md` N11c): its own endpoint, the network
  * stack's to bind its port through, and the console's. */
 void mdnsd_server(long endpoint, long net, long console);
-void smbd_server(long net, long console, long disk);
+void smbd_server(long net, long console, long disk, long door, long keyring);
 
 #define ROLE_AUDIO    16UL
 #define ROLE_DEVICES   9UL
@@ -809,7 +809,8 @@ int main(unsigned long arg)
 
     if (arg == ROLE_KEYRING) {
         named("keyring");
-        keyring_server(0, 1, 2, 3, 4, kosmos_cap_check(5) == 0 ? 5 : -1);
+        keyring_server(0, 1, 2, 3, 4, kosmos_cap_check(5) == 0 ? 5 : -1,
+                       kosmos_cap_check(6) == 0 ? 6 : -1);
     }
 
     if (arg == ROLE_TILES) {
@@ -829,7 +830,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_SMBD) {
         named("smbd");
-        smbd_server(0, 1, 2);
+        smbd_server(0, 1, 2, 3, kosmos_cap_check(4) == 0 ? 4 : -1);
         kosmos_exit(0);
     }
 

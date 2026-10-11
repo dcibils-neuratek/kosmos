@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""smbd, the server side of sharing (`docs/sharing.md` N12a and N12b):
-signing in, and folders of /Home shared read only.
+"""smbd, the server side of sharing (`docs/sharing.md` N12a-N12c):
+signing in, folders of /Home shared read only, and smbd told what to share
+through its own door.
 
-A machine told to share (`opt/kosmos/smbd=445,kosmos,HASH`, the NT hash of
-the fixture word, and `opt/kosmos/smbd_shares=Projects:/Home/Projects,
-Notes:/Home/Notes`), a disk made here with made-up files on it, its port
-445 forwarded to this Mac, and Samba's own `smbclient` - a client that is
-not Kosmos - asking:
+A disk made here with made-up files on it, port 445 forwarded to this Mac,
+and at the prompt the `sharing` program, which holds smbd's door (N12c):
+
+  - a copy of `sharing` run from /Home: not handed the door;
+  - `sharing folders Projects:/Home/Projects Notes:/Home/Notes`, then
+    `sharing start kosmos` before any password is kept: refused;
+  - `sharing account kosmos <the fixture word>`, `sharing start kosmos`:
+    serving on 445, and the keyring keeping the account under its own kind.
+
+Then Samba's own `smbclient` - a client that is not Kosmos - asking:
 
   - the account and the right password: signed in, and `Projects` listed -
     a file, a larger one, a folder, with their sizes;
@@ -21,7 +27,9 @@ not Kosmos - asking:
   - a share not offered: "bad network name";
   - the right account and a wrong password: a logon failure;
   - another account: refused before any answer is checked;
-  - and a machine not told to share: nothing answers on the port at all.
+  - `sharing stop`: nothing answers; `sharing start kosmos` again: it does;
+  - and a machine whose `sharing` was never started: nothing answers on the
+    port at all.
 
 Usage: run_smbd.py IMAGE
 """
@@ -29,7 +37,6 @@ Usage: run_smbd.py IMAGE
 import os
 import random
 import re
-import struct
 import subprocess
 import sys
 import time
@@ -40,7 +47,7 @@ sys.path.insert(0, HERE)
 
 import scratch                                              # noqa: E402
 
-CHECKS = 13
+CHECKS = 18
 PASSWORD = "test-only-word"
 SMBCLIENT = "/opt/homebrew/bin/smbclient"
 LUA = os.path.join(ROOT, "build", "host", "lua")
@@ -51,32 +58,6 @@ HELLO = b"Hello from a Kosmos share.\n"
 INNER = b"A note inside a folder of the share.\n"
 NOTE = b"The second share's only file.\n"
 SECRET = b"Not shared: this must never leave the machine.\n"
-
-
-def md4(data):
-    """RFC 1320, for the NT hash; this Python's hashlib has none."""
-    def f(x, y, z): return (x & y) | (~x & z)
-    def g(x, y, z): return (x & y) | (x & z) | (y & z)
-    def h(x, y, z): return x ^ y ^ z
-    def rol(v, s): v &= 0xffffffff; return ((v << s) | (v >> (32 - s))) & 0xffffffff
-    msg = data + b"\x80" + b"\0" * ((55 - len(data)) % 64) + struct.pack("<Q", len(data) * 8)
-    a, b, c, d = 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476
-    for i in range(0, len(msg), 64):
-        x = list(struct.unpack("<16I", msg[i:i + 64]))
-        aa, bb, cc, dd = a, b, c, d
-        for k in range(16):
-            s = (3, 7, 11, 19)[k % 4]
-            a, b, c, d = d, rol(a + f(b, c, d) + x[k], s), b, c
-        for k in range(16):
-            s = (3, 5, 9, 13)[k % 4]
-            idx = (k % 4) * 4 + k // 4
-            a, b, c, d = d, rol(a + g(b, c, d) + x[idx] + 0x5a827999, s), b, c
-        for k in range(16):
-            s = (3, 9, 11, 15)[k % 4]
-            idx = (0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15)[k]
-            a, b, c, d = d, rol(a + h(b, c, d) + x[idx] + 0x6ed9eba1, s), b, c
-        a, b, c, d = (a + aa) & 0xffffffff, (b + bb) & 0xffffffff, (c + cc) & 0xffffffff, (d + dd) & 0xffffffff
-    return struct.pack("<4I", a, b, c, d)
 
 
 def kfs(*args):
@@ -104,22 +85,16 @@ def make_disk(work):
         w("big.bin") + ":/Home/Projects/big.bin",
         w("inner.txt") + ":/Home/Projects/Sub/inner.txt",
         w("note.txt") + ":/Home/Notes/note.txt",
-        w("secret.txt") + ":/Home/Private/secret.txt")
+        w("secret.txt") + ":/Home/Private/secret.txt",
+        os.path.join(ROOT, "user/bin/programs/sharing.lua") + ":/Home/sharing.lua")
     return disk, big
 
 
-def boot(R, image, port, share):
+def boot(R, image, port):
     board = "X86_ARGS" if R.machine(image) == "x86_64" else "QEMU_ARGS"
     saved = getattr(R, board)
     extra = ["-netdev", "user,id=net0,hostfwd=tcp:127.0.0.1:%d-:445" % port,
              "-device", R.device(image, "net") + ",netdev=net0"]
-    if share:
-        nt = md4(PASSWORD.encode("utf-16-le")).hex()
-        # Commas, as a real machine's command line must have them; QEMU's
-        # option parser takes ",," for a comma.
-        extra += ["-fw_cfg", "name=opt/kosmos/smbd,string=445,,kosmos,," + nt,
-                  "-fw_cfg", "name=opt/kosmos/smbd_shares,"
-                             "string=Projects:/Home/Projects,,Notes:/Home/Notes"]
     setattr(R, board, saved + extra)
     try:
         return R.Guest(image, 120)
@@ -158,11 +133,44 @@ def main():
             fails.append(what)
 
     port = random.randint(20000, 40000)
-    guest = boot(R, image, port, True)
+    guest = boot(R, image, port)
     seen = ""
     try:
+        guest.wait_for("kosmos> ", "a prompt")
+
+        # N12c: the door, only to the image's own `sharing`.
+        mark = len(guest.seen)
+        guest.type("run /Home/sharing.lua")
+        guest.wait_for_line("sharing:", "the copy in /Home answering", since=mark)
+        check("not handed smbd's door" in guest.seen[mark:],
+              "a copy of sharing in /Home was handed smbd's door:\n"
+              + guest.seen[mark:][-300:])
+
+        guest.type("sharing folders Projects:/Home/Projects Notes:/Home/Notes")
+        guest.wait_for("2 folders, 0 connected", "two folders set")
+
+        mark = len(guest.seen)
+        guest.type("sharing start kosmos")
+        guest.wait_for_line("sharing:", "a start with no account kept", since=mark)
+        check("no account by that name is kept" in guest.seen[mark:],
+              "a start before any password was kept was not refused:\n"
+              + guest.seen[mark:][-300:])
+
+        guest.type("sharing account kosmos " + PASSWORD)
+        guest.wait_for("password kept, as its NT hash", "the account kept")
+        guest.type("sharing start kosmos")
         guest.wait_for("smbd: sharing on port 445", "smbd listening")
         time.sleep(1)
+
+        mark = len(guest.seen)
+        guest.type("keyring")
+        guest.wait_for_line(", the file ", "the keyring listed", since=mark)
+        time.sleep(1)
+        guest._read_available()
+        check(re.search(r"^\s*\d+\s+sharing\s+this machine\s+kosmos", guest.seen[mark:], re.M)
+              and PASSWORD not in guest.seen[mark:],
+              "the keyring does not keep the account under its own kind:\n"
+              + guest.seen[mark:][-500:])
 
         # 1-2. Signed in, and the share listed.
         listing = ask(port, "Projects", "kosmos", PASSWORD, "ls")
@@ -229,6 +237,21 @@ def main():
         again = ask(port, "Projects", "kosmos", PASSWORD, "ls")
         check("hello.txt" in again, "the server did not answer after the others: %r"
               % again[-200:])
+
+        # N12c: stopped, nothing; started again, it serves.
+        guest.type("sharing stop")
+        guest.wait_for("smbd: stopped sharing", "smbd stopped")
+        stopped = ask(port, "Projects", "kosmos", PASSWORD, "ls")
+        check("hello.txt" not in stopped and "Anonymous" not in stopped,
+              "smbd answered after it was stopped: %r" % stopped[-200:])
+
+        mark = len(guest.seen)
+        guest.type("sharing start kosmos")
+        guest.wait_for_line("smbd: sharing on port 445", "smbd serving again", since=mark)
+        time.sleep(1)
+        restarted = ask(port, "Projects", "kosmos", PASSWORD, "ls")
+        check("hello.txt" in restarted, "smbd did not serve when started again: %r"
+              % restarted[-200:])
     except Exception as e:                  # noqa: BLE001 - said below
         fails.append("the machine stopped: %s: %s" % (type(e).__name__, str(e).splitlines()[0]))
     finally:
@@ -237,7 +260,7 @@ def main():
 
     # 13. Not asked to share: nothing on the port.
     port = random.randint(40001, 60000)
-    guest = boot(R, image, port, False)
+    guest = boot(R, image, port)
     try:
         guest.wait_for("kosmos> ", "a prompt")
         time.sleep(1)
@@ -262,14 +285,16 @@ def main():
                 print("  | " + l.strip()[:160])
         return 1
 
-    print("PASS: %d checks on smbd (Samba's smbclient through a forwarded port: the "
-          "account and the fixture word signed in, SMB dialect %s; Projects listed with "
+    print("PASS: %d checks on smbd (told through its door by `sharing`, which a copy "
+          "in /Home is not handed; a start before any password refused; the account "
+          "kept in the keyring under its own kind; Samba's smbclient through a forwarded "
+          "port: the account and the fixture word signed in, SMB dialect %s; Projects listed with "
           "its sizes and folder; hello.txt, a 1.5 MB file over more than one read, and a "
           "file in a folder fetched byte for byte; the second share listed; a put refused "
           "as read only; a climb to a folder not shared never served; a share not offered "
           "'bad network name'; a wrong password a logon failure; another account refused; "
-          "the server answering after all of it; a machine not told to share answering "
-          "nothing)" % (CHECKS, said.get("dialect")))
+          "the server answering after all of it; stopped, nothing answering, and started "
+          "again, serving; a machine whose sharing was never started answering nothing)" % (CHECKS, said.get("dialect")))
     return 0
 
 

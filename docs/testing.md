@@ -23192,3 +23192,31 @@ sentence, no prompt after it.
 **Control**: the loader's buffer back at 200 bytes - over the network the
 line did not arrive, `tail: nil`, "the disk: none": the M700's evening,
 under OVMF.
+
+## 18.538 smbd told through its own door: N12c-1
+
+`docs/sharing.md` N12c-1. init starts `smbd` at every boot, idle; it holds
+no port until its door (`user/include/smbdproto.h`) says START. The door is
+lent as the keyring's doors are - by the shell and the desktop, to a
+program the image serves that declares `kosmos: needs sharing` - and the
+`sharing` program at the prompt is its first holder, the Servers window
+the next (N12c-2). ACCOUNT carries a password once: `smbd` takes MD4 of its
+UTF-16 and keeps that NT hash in the keyring, under KEY_KIND_SHARING
+through the keyring's new `sharing` door, which sees that kind alone.
+SHARES_CLEAR and SHARE set the folders one at a time, a folder of `/Home`
+that exists. Serving, `smbd` reads its door from libsmb2's `extra_service`
+hook, between passes at most 100 ms apart; STOP sets libsmb2's
+`stop_requested`, and the loop's end lets every handle and share go. The
+boot options `opt/kosmos/smbd` and `smbd_shares` are gone.
+
+`x86-smbd` 18, was 13: a copy of `sharing` in `/Home` not handed the door;
+a start before any password refused; the account in the keyring under its
+own kind, the password nowhere in its listing; then the thirteen; then
+stopped, nothing answering, and started again, serving.
+
+**Controls**: the hash taken of the password's UTF-8 rather than UTF-16 -
+every sign-in a logon failure, nine checks; STOP not setting
+`stop_requested` - smbd never stopped. The door lent without
+`keyring_grant`'s rule did **not** bite: a file in `/Home` carries no
+`needs` words at all, since only the image's store reads them, so on that
+path the rule is a second guard and the first is the store.

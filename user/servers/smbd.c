@@ -15,26 +15,26 @@
  * **N12a**: signing in. One account, whose NT hash is all a sign-in needs
  * (NTLMv2 is computed from the hash, never the password).
  *
- * **N12b, as built**: folders of `/Home` as shares, **read only** - a
- * client connects to one, lists its folders, reads its files' facts and
- * fetches their bytes, and anything that would change a byte is refused as
- * "access denied". The files come from `diskfs` through the door every
- * program reaches `/Home` by, as `diskproto.h` asks them, so a share can
- * never show more than `/Home` - and a name that climbs ("..") or names a
- * stream (":") is refused here before it is asked. The account and the
- * shares from the Servers window, the hash in the keyring, are N12c.
+ * **N12b**: folders of `/Home` as shares, **read only** - a client
+ * connects to one, lists its folders, reads its files' facts and fetches
+ * their bytes, and anything that would change a byte is refused as "access
+ * denied". The files come from `diskfs` through the door every program
+ * reaches `/Home` by, as `diskproto.h` asks them, so a share can never show
+ * more than `/Home` - and a name that climbs ("..") or names a stream (":")
+ * is refused before it is asked (`smbpath.c`).
  *
- * **Started only when asked**: the boot's `opt/kosmos/smbd=PORT,ACCOUNT,
- * HASH` - a port, an account, and the account's NT hash as 32 hex digits,
- * by commas or spaces -
- * and `opt/kosmos/smbd_shares=NAME:/Home/FOLDER,...`, which a test
- * machine's command line carries. A machine not told to share shares
- * nothing. The hash on a command line is for a test account only; the
- * Servers window keeps the real one in the keyring (N12c).
+ * **N12c, as built: told through a door of its own** (`smbdproto.h`).
+ * init starts it at every boot, and it holds no port until the Servers
+ * window or the `sharing` program says START - with the shares they set
+ * one at a time and the account they named. The account's password crosses
+ * once, in ACCOUNT, and only its NT hash is kept, in the keyring under
+ * KEY_KIND_SHARING through the keyring's `sharing` door. Stopped, it waits
+ * on its door; serving, it reads the door between libsmb2's passes.
  *
  * It is handed, at boot: the stack's capability, as a client of it; the
- * console's, so what it does is said in the log; and the disk's main door,
- * which reaches `/Home` and nothing else.
+ * console's, so what it does is said in the log; the disk's main door,
+ * which reaches `/Home` and nothing else; its own door; and the keyring's
+ * `sharing` door.
  */
 
 #include <stdbool.h>
@@ -47,13 +47,17 @@
 
 #include "kosmos.h"
 #include "diskproto.h"
+#include "keyproto.h"
+#include "smbdproto.h"
 #include "init/say.h"
 #include "smbpath.h"
 
 #include "smb_kit.h"
+#include "md4.h"
 
 static long console = -1;
 static long disk = -1;
+static uint32_t connections;        /* clients connected now */
 
 /* The one account N12a knows: its name, and "ntlm:" and its NT hash. */
 static char account[64];
@@ -1182,6 +1186,10 @@ static int gone(struct smb2_server *server, struct smb2_context *smb2)
         }
     }
 
+    if (connections > 0) {
+        connections--;
+    }
+
     said("a connection ended", NULL, NULL);
     return 0;
 }
@@ -1208,157 +1216,385 @@ static struct smb2_server_request_handlers handlers = {
 
 static struct smb2_server server;
 
+/*
+ * ------------------------------------------------------------------------
+ * The door (`smbdproto.h`, N12c): started, stopped and told what to share.
+ * ------------------------------------------------------------------------
+ */
+
+static long door = -1;
+static long keyring = -1;
+
+static bool wanted;                 /* asked to serve, and not since to stop */
+static int listen_error;            /* what the last try at the port said */
+static struct smbd_start asked;     /* the last START's port, account and name */
+
+/* Every share and every handle let go: after the loop, or the shares reset. */
+static void forget_everything(void)
+{
+    size_t i;
+
+    for (i = 0; i < handle_count; i++) {
+        if (handles[i].used) {
+            forget(&handles[i]);
+        }
+    }
+
+    link_count = 0;
+}
+
+static bool ended(const char *field, size_t size)
+{
+    return memchr(field, '\0', size) != NULL;
+}
+
+/* The keyring, through its `sharing` door: this machine's account and its
+ * NT hash, kept under a kind no other door sees. */
+static struct message kmsg, krep;
+
+#define SERVICE "this machine"
+
+static uint32_t keyring_ask(uint32_t op, const char *name, const uint8_t *secret,
+                            uint32_t bytes)
+{
+    struct key_request *rq = (struct key_request *)kmsg.data;
+    const struct key_reply *rp = (const struct key_reply *)krep.data;
+    uint32_t error;
+
+    if (keyring < 0) {
+        return KEY_ERR_SEALED;
+    }
+
+    memset(&kmsg, 0, sizeof kmsg);
+    memset(&krep, 0, sizeof krep);
+    kmsg.length = sizeof *rq;
+    rq->op = op;
+    rq->entry.kind = KEY_KIND_SHARING;
+    put_text(rq->entry.service, sizeof rq->entry.service, SERVICE);
+    put_text(rq->entry.account, sizeof rq->entry.account, name);
+    put_text(rq->entry.title, sizeof rq->entry.title, "Sharing this machine's folders");
+
+    if (secret != NULL) {
+        memcpy(rq->secret, secret, bytes);
+        rq->secret_bytes = bytes;
+    }
+
+    if (kosmos_call(keyring, &kmsg, &krep) != 0 || krep.length < sizeof *rp) {
+        error = KEY_ERR_SEALED;
+    } else {
+        error = rp->error;
+    }
+
+    memset(kmsg.data, 0, sizeof kmsg.data);
+    return error;
+}
+
+/* The account's hash, from the keyring into `hashed` as libsmb2 takes it. */
+static bool account_from_keyring(const char *name)
+{
+    const struct key_reply *rp = (const struct key_reply *)krep.data;
+    static const char hex[] = "0123456789abcdef";
+    int i;
+
+    if (name[0] == '\0' || keyring_ask(KEY_OP_GET, name, NULL, 0) != 0
+        || rp->secret_bytes != 16) {
+        memset(krep.data, 0, sizeof krep.data);
+        return false;
+    }
+
+    put_text(account, sizeof account, name);
+    memcpy(hashed, "ntlm:", 5);
+
+    for (i = 0; i < 16; i++) {
+        hashed[5 + 2 * i] = hex[rp->secret[i] >> 4];
+        hashed[6 + 2 * i] = hex[rp->secret[i] & 15];
+    }
+
+    hashed[37] = '\0';
+    memset(krep.data, 0, sizeof krep.data);
+    return true;
+}
+
+/* ACCOUNT: the password's NT hash - MD4 of its UTF-16 - kept, the password
+ * itself never. */
+static uint32_t set_account(const struct smbd_account *a)
+{
+    char password[SMBD_PASSWORD_MAX + 1];
+    struct smb2_utf16 *wide;
+    MD4_CTX ctx;
+    uint8_t hash[16];
+    uint32_t error;
+
+    if (!ended(a->name, sizeof a->name) || a->name[0] == '\0') {
+        return SMBD_ERR_NO_ACCOUNT;
+    }
+
+    if (a->password_bytes == 0 || a->password_bytes > SMBD_PASSWORD_MAX) {
+        return SMBD_ERR_PASSWORD;
+    }
+
+    memcpy(password, a->password, a->password_bytes);
+    password[a->password_bytes] = '\0';
+    wide = smb2_utf8_to_utf16(password);
+    memset(password, 0, sizeof password);
+
+    if (wide == NULL) {
+        return SMBD_ERR_PASSWORD;
+    }
+
+    MD4Init(&ctx);
+    MD4Update(&ctx, (unsigned char *)wide->val, (unsigned)wide->len * 2u);
+    MD4Final(hash, &ctx);
+    memset(wide->val, 0, (size_t)wide->len * 2u);
+    free(wide);
+
+    error = keyring_ask(KEY_OP_PUT, a->name, hash, sizeof hash);
+    memset(hash, 0, sizeof hash);
+
+    if (error != 0) {
+        return SMBD_ERR_KEYRING;
+    }
+
+    said("kept the account ", a->name, "'s password, as its NT hash");
+
+    /* Serving as it already: the new password from the next sign-in. */
+    if (wanted && strcasecmp(a->name, account) == 0) {
+        account_from_keyring(a->name);
+    }
+
+    return 0;
+}
+
+/* SHARE: a name nobody has taken, and a folder of `/Home` that exists. */
+static size_t share_room;
+
+static uint32_t add_share(const struct smbd_share *sh)
+{
+    struct facts f;
+    struct share *s;
+    size_t i, n;
+
+    if (!ended(sh->name, sizeof sh->name) || !ended(sh->path, sizeof sh->path)
+        || sh->name[0] == '\0' || strpbrk(sh->name, "\\/:*?\"<>|") != NULL
+        || strncmp(sh->path, "/Home", 5) != 0
+        || (sh->path[5] != '\0' && sh->path[5] != '/')
+        || strstr(sh->path, "/..") != NULL || strstr(sh->path, "/./") != NULL) {
+        return SMBD_ERR_SHARE;
+    }
+
+    if (sh->flags & SMBD_SHARE_WRITE) {
+        return SMBD_ERR_LATER;
+    }
+
+    for (i = 0; i < share_count; i++) {
+        if (strcasecmp(shares[i].name, sh->name) == 0) {
+            return SMBD_ERR_SHARE;
+        }
+    }
+
+    if (!facts_of(sh->path, &f) || !f.dir) {
+        return SMBD_ERR_NO_FOLDER;
+    }
+
+    if (!grow((void **)&shares, &share_room, share_count, sizeof *shares)) {
+        return SMBD_ERR_SHARE;
+    }
+
+    s = &shares[share_count++];
+    put_text(s->name, sizeof s->name, sh->name);
+    put_text(s->path, sizeof s->path, sh->path);
+
+    while ((n = strlen(s->path)) > 5 && s->path[n - 1] == '/') {
+        s->path[n - 1] = '\0';
+    }
+
+    said("sharing ", s->name, " - read only");
+    return 0;
+}
+
+static uint32_t start(const struct smbd_start *st)
+{
+    if (wanted) {
+        return SMBD_ERR_SERVING;
+    }
+
+    if (!ended(st->account, sizeof st->account) || !ended(st->hostname, sizeof st->hostname)) {
+        return SMBD_ERR_BAD_OP;
+    }
+
+    if (st->flags & SMBD_ENCRYPT) {
+        return SMBD_ERR_LATER;
+    }
+
+    if (share_count == 0) {
+        return SMBD_ERR_NO_SHARES;
+    }
+
+    if (!account_from_keyring(st->account)) {
+        return st->account[0] == '\0' || keyring >= 0 ? SMBD_ERR_NO_ACCOUNT
+                                                      : SMBD_ERR_KEYRING;
+    }
+
+    asked = *st;
+    wanted = true;
+    listen_error = 0;
+    return 0;
+}
+
+static void answer(struct message *msg, uint64_t sender)
+{
+    static struct message out;
+    const struct smbd_request *rq = (const struct smbd_request *)msg->data;
+    struct smbd_reply *rp = (struct smbd_reply *)out.data;
+
+    memset(&out, 0, sizeof out);
+    out.length = sizeof *rp;
+
+    if (msg->cap_plus_one) {
+        kosmos_cap_drop((long)msg->cap_plus_one - 1);
+    }
+
+    if (msg->length != sizeof *rq) {
+        rp->error = SMBD_ERR_BAD_OP;
+    } else {
+        switch (rq->op) {
+        case SMBD_OP_STATE:
+            break;
+        case SMBD_OP_START:
+            rp->error = start(&rq->u.start);
+            break;
+        case SMBD_OP_STOP:
+            if (wanted) {
+                said("asked to stop sharing", NULL, NULL);
+            }
+            wanted = false;
+            server.stop_requested = 1;
+            break;
+        case SMBD_OP_SHARES_CLEAR:
+            forget_everything();
+            share_count = 0;
+            break;
+        case SMBD_OP_SHARE:
+            rp->error = add_share(&rq->u.share);
+            break;
+        case SMBD_OP_ACCOUNT:
+            rp->error = set_account(&rq->u.account);
+            break;
+        case SMBD_OP_CONNECTION:
+        case SMBD_OP_DISCONNECT:
+            rp->error = SMBD_ERR_NONE;          /* N12c-3 */
+            break;
+        default:
+            rp->error = SMBD_ERR_BAD_OP;
+            break;
+        }
+    }
+
+    /* The password, if it came, gone from this process's copy of it. */
+    memset(msg->data, 0, sizeof msg->data);
+
+    rp->state = !wanted ? SMBD_STOPPED : server.listener_ready ? SMBD_SERVING
+                                                               : SMBD_WAITING;
+    rp->port = wanted ? asked.port : 0;
+    rp->flags = wanted ? asked.flags : 0;
+    rp->shares = (uint32_t)share_count;
+    rp->connections = connections;
+    rp->listen_error = listen_error;
+    put_text(rp->account, sizeof rp->account, wanted ? account : "");
+    put_text(rp->hostname, sizeof rp->hostname, wanted ? asked.hostname : "");
+    (void)kosmos_reply(sender, &out);
+}
+
+/*
+ * **Between libsmb2's passes, the door** - at most 100 ms apart, its
+ * `select`'s bound - so the one thread that holds every share and handle
+ * is the one that changes them, and nothing takes a lock.
+ */
+static void door_between_passes(struct smb2_server *srv, fd_set *rfds, fd_set *wfds)
+{
+    static struct message msg;
+    uint64_t sender;
+
+    (void)srv;
+    (void)rfds;
+    (void)wfds;
+
+    while (kosmos_receive(door, &msg, &sender, 1, 0) == 0) {
+        answer(&msg, sender);
+    }
+}
+
 static void arrived(struct smb2_context *smb2, void *data)
 {
     (void)data;
     smb2_set_version(smb2, SMB2_VERSION_ANY);
+    connections++;
     said("somebody connected", NULL, NULL);
 }
 
-/* `PORT ACCOUNT HASH` from the boot, or false and why. */
-static bool configure(const char **why)
+/* Ticks of the scheduler's clock in a second, for the wait between tries
+ * at a port that would not open. */
+#define A_SECOND  250u
+
+void smbd_server(long net_cap, long console_cap, long disk_cap, long door_cap,
+                 long keyring_cap)
 {
-    char text[160];
-    char name[64], hash[40];
-    unsigned port = 0;
-    long n = kosmos_boot_option("opt/kosmos/smbd", text, sizeof text - 1);
-    int i;
-
-    if (n <= 0) {
-        *why = "not asked to share (opt/kosmos/smbd)";
-        return false;
-    }
-
-    text[n] = '\0';
-
-    /* Commas as well as spaces: a machine's command line splits its words
-     * at spaces, so a value there has none (`hal/pc/boot_option.c`). */
-    for (i = 0; text[i] != '\0'; i++) {
-        if (text[i] == ',') {
-            text[i] = ' ';
-        }
-    }
-
-    if (sscanf(text, "%u %63s %39s", &port, name, hash) != 3 || port == 0 || port > 65535
-        || strlen(hash) != 32) {
-        *why = "opt/kosmos/smbd is PORT,ACCOUNT,32 hex digits";
-        return false;
-    }
-
-    for (i = 0; i < 32; i++) {
-        char c = hash[i];
-
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
-            *why = "the hash is not 32 hex digits";
-            return false;
-        }
-    }
-
-    server.port = (uint16_t)port;
-    snprintf(account, sizeof account, "%s", name);
-    snprintf(hashed, sizeof hashed, "ntlm:%s", hash);
-    return true;
-}
-
-/*
- * The shares, from `opt/kosmos/smbd_shares=NAME:/Home/FOLDER,...`: each a
- * name and a folder of `/Home` - `/Home` itself, or under it. A share
- * outside `/Home` is not one this door could reach, so it is refused here
- * with a sentence rather than at every request.
- */
-static void shares_from_boot(void)
-{
-    char text[1024];
-    char *item, *rest;
-    long n = kosmos_boot_option("opt/kosmos/smbd_shares", text, sizeof text - 1);
-    size_t room = 0;
-
-    if (n <= 0) {
-        said("no folders are shared (opt/kosmos/smbd_shares)", NULL, NULL);
-        return;
-    }
-
-    text[n] = '\0';
-
-    for (item = text; item != NULL && *item != '\0'; item = rest) {
-        char *colon;
-        struct share *s;
-
-        rest = strchr(item, ',');
-        if (rest != NULL) {
-            *rest++ = '\0';
-        }
-
-        colon = strchr(item, ':');
-        if (colon == NULL || colon == item) {
-            said("a share is NAME:/Home/FOLDER, not ", item, NULL);
-            continue;
-        }
-        *colon = '\0';
-
-        if (strncmp(colon + 1, "/Home", 5) != 0
-            || (colon[6] != '\0' && colon[6] != '/')
-            || strstr(colon + 1, "/..") != NULL || strstr(colon + 1, "/./") != NULL) {
-            said("refused the share ", item, ": its folder is not in /Home");
-            continue;
-        }
-
-        if (!grow((void **)&shares, &room, share_count, sizeof *shares)) {
-            return;
-        }
-
-        s = &shares[share_count++];
-        put_text(s->name, sizeof s->name, item);
-        put_text(s->path, sizeof s->path, colon + 1);
-
-        while (strlen(s->path) > 5 && s->path[strlen(s->path) - 1] == '/') {
-            s->path[strlen(s->path) - 1] = '\0';
-        }
-
-        said("sharing ", s->name, " - read only");
-    }
-}
-
-void smbd_server(long net_cap, long console_cap, long disk_cap)
-{
-    const char *why = NULL;
-    char port[8];
+    static struct message msg;
+    uint64_t sender;
 
     console = console_cap;
     disk = disk_cap;
+    door = door_cap;
+    keyring = keyring_cap;
     smb_kit_start(net_cap);
 
     memset(&server, 0, sizeof(server));
-
-    if (!configure(&why)) {
-        said(why, NULL, NULL);
-        return;
-    }
-
-    shares_from_boot();
-
     server.handlers = &handlers;
     server.signing_enabled = 1;
     server.allow_anonymous = 0;
     server.max_transact_size = READ_MOST;
     server.max_read_size = READ_MOST;
     server.max_write_size = READ_MOST;
-    snprintf(server.hostname, sizeof server.hostname, "KOSMOS");
-    snprintf(port, sizeof port, "%u", (unsigned)server.port);
+    server.extra_service = door_between_passes;
+
+    if (door < 0) {
+        said("no door to be told what to share; sharing nothing", NULL, NULL);
+        return;
+    }
 
     for (;;) {
-        int err;
+        char port[8], code[16];
 
-        said("sharing on port ", port, ", SMB 2 and 3");
-        err = smb2_serve_port(&server, 16, arrived, NULL);
-
-        {
-            char code[16];
-
-            snprintf(code, sizeof code, "%d", err);
-            said("the server loop ended (", code, "); again in a second");
+        if (!wanted) {
+            if (kosmos_receive(door, &msg, &sender, 0, 0) == 0) {
+                answer(&msg, sender);
+            }
+            continue;
         }
 
-        kosmos_sleep(250);
+        server.port = asked.port;
+        server.stop_requested = 0;
+        snprintf(server.hostname, sizeof server.hostname, "%s",
+                 asked.hostname[0] != '\0' ? asked.hostname : "KOSMOS");
+        snprintf(port, sizeof port, "%u", (unsigned)server.port);
+        said("sharing on port ", port, ", SMB 2 and 3");
+
+        listen_error = smb2_serve_port(&server, 16, arrived, NULL);
+        forget_everything();
+        connections = 0;
+
+        if (!wanted) {
+            said("stopped sharing", NULL, NULL);
+            continue;
+        }
+
+        /* It would not listen - no address yet, or the port taken: said,
+         * and tried again in a second, answering the door meanwhile. */
+        snprintf(code, sizeof code, " (%d)", listen_error);
+        said("could not serve on port ", port, code);
+
+        if (kosmos_receive(door, &msg, &sender, 0, A_SECOND) == 0) {
+            answer(&msg, sender);
+        }
     }
 }

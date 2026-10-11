@@ -2184,7 +2184,7 @@ local function new_namespace()
                        "it could not be written to the disk",
                        "the keyring did not open", "a secret that long" }
   local KEY_FILES = { [0] = "new", "opened", "set aside", "no disk" }
-  local KEY_KINDS = { "smb", "wifi", "web", "mail" }
+  local KEY_KINDS = { "smb", "wifi", "web", "mail", "sharing" }
   local keyring_cap = nil
   local mail_keys_cap = nil         -- the keyring's `mail` door (`docs/mail.md` M0)
 
@@ -2192,6 +2192,120 @@ local function new_namespace()
   function ns.has_keyring() return keyring_cap ~= nil end
   function ns.mail_keys_door(cap) mail_keys_cap = cap end
   function ns.has_mail_keys() return mail_keys_cap ~= nil end
+
+  --
+  -- **smbd's door** (`docs/sharing.md` N12c, `smbdproto.h`): lent to the
+  -- image's Servers window and `sharing` program alone, as the keyring's
+  -- doors are (`keyring_grant`), and to the desktop that starts them. Whoever
+  -- holds it decides what this machine offers the network. `smbdproto.h`'s
+  -- shapes, as `string.pack` writes them; a field too long for its room is
+  -- refused here rather than cut, since a cut name is another name.
+  --
+  local sharing_cap = nil
+
+  function ns.sharing_door(cap) sharing_cap = cap end
+  function ns.has_sharing() return sharing_cap ~= nil end
+
+  local SMBD_OP = { state = 1, start = 2, stop = 3, clear = 4, share = 5,
+                    account = 6, connection = 7, disconnect = 8 }
+  local SMBD_STATES = { [0] = "stopped", "serving", "waiting" }
+  local SMBD_ERRORS = {
+    "not something smbd is asked",
+    "a share needs a name nobody else has, without \\ / : * ? \" < > |, and a folder in /Home",
+    "that is not a folder on this machine's disk",
+    "no account by that name is kept - give it a password first",
+    "the keyring would not keep it",
+    "no folders are shared",
+    "a password is 1 to 128 bytes",
+    "already sharing - stop first",
+    "no connection after that one",
+    "read and write comes in a later step",
+  }
+
+  local function fits(text, room, what)
+    text = tostring(text or "")
+    if #text >= room then return nil, what .. " is longer than " .. (room - 1) .. " bytes" end
+    return text
+  end
+
+  local function zero_ended(text) return (text:gsub("%z.*$", "")) end
+
+  local function smbd_call(op, body)
+    if not sharing_cap then return nil, "this program was not handed smbd's door" end
+
+    body = body or ""
+    local raw, err = sys.call_raw(sharing_cap, string.pack("<I4I4", SMBD_OP[op], 0)
+                                  .. body .. string.rep("\0", 584 - #body))
+    body = nil
+
+    if not raw then return nil, tostring(err) end
+    if #raw < 248 then return nil, "a reply from smbd of the wrong size" end
+
+    local f = { string.unpack("<I4I4I2I2I4I4i4c64c16I4c4I8c64c64", raw) }
+
+    if f[1] ~= 0 then return nil, SMBD_ERRORS[f[1]] or ("error " .. f[1]), f[1] end
+
+    local a = f[11]
+    return {
+      state = SMBD_STATES[f[2]] or tostring(f[2]), port = f[3],
+      flags = f[4], shares = f[5], connections = f[6], listen_error = f[7],
+      account = zero_ended(f[8]), hostname = zero_ended(f[9]),
+      connection = f[10] ~= 0 and {
+        id = f[10], address = ("%d.%d.%d.%d"):format(a:byte(1, 4)),
+        for_ms = f[12], account = zero_ended(f[13]), share = zero_ended(f[14]),
+      } or nil,
+    }
+  end
+
+  function ns.sharing_state() return smbd_call("state") end
+  function ns.sharing_stop() return smbd_call("stop") end
+
+  function ns.sharing_start(o)
+    o = o or {}
+    local account, why = fits(o.account, 64, "the account's name")
+    if not account then return nil, why end
+    local host
+    host, why = fits(o.hostname or "", 16, "the name on the network")
+    if not host then return nil, why end
+
+    return smbd_call("start", string.pack("<I2I2I4c64c16", o.port or 445,
+                                          (o.encrypt and 1 or 0) | (o.local_only and 2 or 0),
+                                          0, account, host))
+  end
+
+  -- The shares, all of them, in place of what smbd had: a list of
+  -- { name = "Music", path = "/Home/Music" }. Which one was refused is said.
+  function ns.sharing_shares(list)
+    local r, why = smbd_call("clear")
+    if not r then return nil, why end
+
+    for _, sh in ipairs(list or {}) do
+      local name, path
+      name, why = fits(sh.name, 64, "a share's name")
+      if not name then return nil, why end
+      path, why = fits(sh.path, 512, "a share's folder")
+      if not path then return nil, why end
+
+      r, why = smbd_call("share", string.pack("<c64c512I4I4", name, path,
+                                              sh.write and 1 or 0, 0))
+      if not r then return nil, sh.name .. ": " .. why end
+    end
+
+    return r
+  end
+
+  -- The account's password, once: smbd keeps its NT hash and nothing else.
+  function ns.sharing_account(name, password)
+    local why
+    name, why = fits(name, 64, "the account's name")
+    if not name then return nil, why end
+    password = tostring(password or "")
+    if #password == 0 or #password > 128 then return nil, SMBD_ERRORS[7] end
+
+    local body = string.pack("<c64I4I4c128", name, #password, 0, password)
+    password = nil
+    return smbd_call("account", body)
+  end
 
   local function ended(text)
     return (text:gsub("%z.*$", ""))
@@ -3854,7 +3968,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap,
                           midi_cap, notify_cap, share_cap, keyring_cap, tiles_cap,
-                          mail_keys_cap, window_cap, mdns_cap)
+                          mail_keys_cap, window_cap, mdns_cap, sharing_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -3933,6 +4047,9 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
 
   -- And what is on it, by name (`docs/sharing.md` N11c).
   if mdns_cap then ns.mount("/Discovery", mdns_cap, nil, "mdns") end
+  -- smbd's door (`docs/sharing.md` N12c): the shell holds it to pass on,
+  -- and to send what is to be shared when it starts with the machine.
+  if sharing_cap then ns.sharing_door(sharing_cap) end
 
   -- The programs this image carries. Read-only, and served by a process of
   -- its own like everything else.
@@ -4685,6 +4802,7 @@ query. `find` and `watch` are built on exactly these two calls.
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
     local camera, midi, keyring, tiles, mailkeys, window = nil, nil, nil, nil, nil, nil
+    local sharing = nil
     -- /Discovery (`docs/sharing.md` N11c) to every program, as `/Network`
     -- is: what is on the network is part of having it.
     local mdns = mdns_cap
@@ -4710,6 +4828,10 @@ query. `find` and `watch` are built on exactly these two calls.
       if want == "windowserver" and window_cap and windowserver_grant(path) then
         window = window_cap
       end
+      -- smbd's door (`docs/sharing.md` N12c): the system's own, as `keyring`.
+      if want == "sharing" and sharing_cap and keyring_grant(path) then
+        sharing = sharing_cap
+      end
     end
 
     -- The camera and MIDI last, and only when declared: everything before
@@ -4733,6 +4855,8 @@ query. `find` and `watch` are built on exactly these two calls.
     if window then caps[#caps + 1] = window; window_at = #caps - 1 end
     local mdns_at = nil
     if mdns then caps[#caps + 1] = mdns; mdns_at = #caps - 1 end
+    local sharing_at = nil
+    if sharing then caps[#caps + 1] = sharing; sharing_at = #caps - 1 end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
     local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags)
@@ -4750,6 +4874,7 @@ query. `find` and `watch` are built on exactly these two calls.
       backlight = 12, notify = 13, share = share_cap and 14 or nil,
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
       mailkeys = mailkeys_at, windowserver = window_at, mdns = mdns_at,
+      sharing = sharing_at,
       home_in_memory = home_in_memory or nil,
       protostamp = sys.protostamp,
     })
@@ -5444,6 +5569,10 @@ if role == ROLE_INIT then
   local KEYRING_SMB_EP = sys.endpoint()
   local KEYRING_MANAGE_EP = sys.endpoint()
   local KEYRING_MAIL_EP = sys.endpoint()     -- the keyring's `mail` door (`mail.md` M0)
+  -- The keyring's `sharing` door, smbd's (`docs/sharing.md` N12c), and
+  -- smbd's own door, through which it is started and told what to share.
+  local KEYRING_SHARING_EP = sys.endpoint()
+  local SMBD_EP = sys.endpoint()
   local AUDIO_EP = sys.endpoint()
   local NET_EP = sys.endpoint()
   local BLOCKS_EP = sys.endpoint()
@@ -5709,7 +5838,7 @@ if role == ROLE_INIT then
   --
   start("the keyring", ROLE_KEYRING, { KEYRING_SMB_EP, KEYRING_MANAGE_EP,
                                        KEYRING_DISK_EP, DEVICES_EP, CONSOLE_EP,
-                                       KEYRING_MAIL_EP })
+                                       KEYRING_MAIL_EP, KEYRING_SHARING_EP })
 
   --
   -- And the keyring's `smb` door, the one that answers passwords (K5): a
@@ -5743,13 +5872,12 @@ if role == ROLE_INIT then
   -- no network, and asks nothing.
   start("the discovery server", ROLE_MDNSD, { MDNS_EP, NET_EP, CONSOLE_EP })
 
-  -- **smbd** (`docs/sharing.md` N12), only when the boot asks it to share
-  -- (`opt/kosmos/smbd`): a machine not told to share opens no port.
-  local share_asked = sys.boot("opt/kosmos/smbd")
-
-  if share_asked and share_asked ~= "" then
-    start("the file sharing server", ROLE_SMBD, { NET_EP, CONSOLE_EP, DISKFS_EP })
-  end
+  -- **smbd** (`docs/sharing.md` N12c), at every boot and idle: it opens no
+  -- port until its own door, lent to the Servers window and `sharing`
+  -- alone, says START - with the shares they set and the account whose NT
+  -- hash it keeps through the keyring's `sharing` door.
+  start("the file sharing server", ROLE_SMBD, { NET_EP, CONSOLE_EP, DISKFS_EP,
+                                                SMBD_EP, KEYRING_SHARING_EP })
 
   if may_pass_screen() then
     local id, err = sys.spawn(ROLE_WINDOWSERVER, { WINDOW_EP, CONSOLE_EP }, SPAWN_SCREEN)
@@ -5935,7 +6063,7 @@ if role == ROLE_INIT then
                         APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP, BLOCKS_EP,
                         DRIVES_EP, BACKLIGHT_EP, CAMERA_EP, MIDI_EP,
                         NOTIFY_EP, SMBFS_EP, KEYRING_MANAGE_EP, TILES_EP,
-                        KEYRING_MAIL_EP, WINDOW_EP, MDNS_EP },
+                        KEYRING_MAIL_EP, WINDOW_EP, MDNS_EP, SMBD_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -6008,7 +6136,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21)
   return
 end
 
@@ -6200,6 +6328,7 @@ if role == ROLE_RUNNER then
   if req.tiles   then ns.mount("/Tiles",           req.tiles, nil, "tiles") end
   if req.mdns    then ns.mount("/Discovery",       req.mdns, nil, "mdns") end
   if req.mailkeys then ns.mail_keys_door(req.mailkeys) end
+  if req.sharing then ns.sharing_door(req.sharing) end
   if req.windowserver then
     ns.mount("/Windowserver", req.windowserver, nil, "windowserver")
   end
@@ -6369,7 +6498,7 @@ if role == ROLE_RUNNER then
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
     local camera_at, midi_at, keyring_at, tiles_at, mailkeys_at = nil, nil, nil, nil, nil
-    local mdns_at = nil
+    local mdns_at, sharing_at = nil, nil
 
     -- /Discovery on, to whatever this starts, as `/Network` is (N11c).
     if req.mdns then
@@ -6426,6 +6555,12 @@ if role == ROLE_RUNNER then
         caps[#caps + 1] = req.mailkeys
         mailkeys_at = #caps - 1
       end
+
+      -- smbd's door, the same way (`docs/sharing.md` N12c).
+      if want == "sharing" and req.sharing and keyring_grant(path) then
+        caps[#caps + 1] = req.sharing
+        sharing_at = #caps - 1
+      end
     end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
@@ -6443,7 +6578,7 @@ if role == ROLE_RUNNER then
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       backlight = 12, notify = 13, share = req.share and 14 or nil,
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
-      mailkeys = mailkeys_at, mdns = mdns_at,
+      mailkeys = mailkeys_at, mdns = mdns_at, sharing = sharing_at,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Which protocols the system speaks, for an image built for others

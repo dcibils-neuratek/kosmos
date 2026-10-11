@@ -56,9 +56,11 @@ end
 -- What is kept, as the keyring says it.
 --------------------------------------------------------------------------
 
-local KINDS = { smb = "Shared folders", wifi = "Wi-Fi", web = "Websites", mail = "Mail" }
-local KIND_ICON = { smb = "folder", wifi = "wifi", web = "globe", mail = "comment" }
-local USERS = { smbfs = "smbfs, the SMB client" }
+local KINDS = { smb = "Shared folders", wifi = "Wi-Fi", web = "Websites", mail = "Mail",
+                sharing = "This machine's sharing" }
+local KIND_ICON = { smb = "folder", wifi = "wifi", web = "globe", mail = "comment",
+                    sharing = "network" }
+local USERS = { smbfs = "smbfs, the SMB client", smbd = "smbd, the file sharing server" }
 local SORTS = { "Last changed", "Title", "Kind", "Last used" }
 
 local entries, shown = {}, {}
@@ -177,7 +179,7 @@ local function sides()
 
   -- A kind with nothing in it is not listed; Shared folders always is,
   -- being the one kind there is.
-  for _, k in ipairs({ "smb", "wifi", "web", "mail" }) do
+  for _, k in ipairs({ "smb", "wifi", "web", "mail", "sharing" }) do
     if k == "smb" or (counts[k] or 0) > 0 then
       items[#items + 1] = { id = k, name = ("%s  %d"):format(KINDS[k], counts[k] or 0),
                             icon = KIND_ICON[k] }

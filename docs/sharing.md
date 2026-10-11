@@ -1223,6 +1223,35 @@ Then, each when its time comes:
     sending it, so no test over the wire reaches the refusal.
   - **N12c** - the Servers window's File sharing page: which folders, the
     account, its password into the keyring as an NT hash, who is connected.
+    **How it is started changes from what *the server side* below says**
+    (11 October): "a role of `init.elf` started through the desktop's
+    launch" has no mechanism behind it - the window manager's `launch`
+    starts a Lua program, and nothing but init can hand a C role the
+    network, the disk's door and the keyring. So **init starts `smbd` at
+    every boot, idle**: it holds no port until told, and it is told through
+    a door of its own, `smbdproto.h` - start, stop, the shares one at a
+    time, the account and its password, who is connected, disconnect. The
+    door is lent by the namespace only to the image's Servers window and its
+    `sharing` program, as the keyring's `manage` door goes only to
+    Passwords. **The password crosses once**, in the account's message, and
+    `smbd` keeps only its NT hash, in the keyring under a kind of its own
+    through a door of its own (`sharing`), as smbfs keeps a share's password
+    through `smb`. The shares and the switches are the window's settings
+    (`/Home/Preferences/servers`), sent to `smbd` when it is started; and
+    *Start with the machine* is the shell sending them at boot. Serving,
+    `smbd` reads its door between libsmb2's passes - at most 100 ms apart -
+    so one thread holds every share and handle and nothing takes a lock.
+    In three steps:
+    - **N12c-1 - built, 11 October** (`testing.md` 18.538) - the door, the
+      keyring's kind and door, `smbd` idle and started through them, and
+      the `sharing` program at the prompt; the boot's test account gone,
+      `x86-smbd` driving `sharing` instead. Encryption is answered "later":
+      libsmb2's server has no switch that asks a client to seal.
+    - **N12c-2** - the page as drawn: the switch, the folders with Share a
+      folder of /Home, the account and Change password, the name on the
+      network, Start with the machine; read and write drawn and kept off
+      until N14.
+    - **N12c-3** - Connected now, with Disconnect; This network only.
   - **N12d** - the Mac's own client: `mount_smbfs` and Finder, each thing
     they ask that the example server did not answer found and answered.
 

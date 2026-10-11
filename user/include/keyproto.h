@@ -37,6 +37,9 @@
 #define KEY_KIND_WIFI   2u  /* later */
 #define KEY_KIND_WEB    3u  /* later */
 #define KEY_KIND_MAIL   4u  /* later */
+#define KEY_KIND_SHARING 5u /* this machine's own account, the one a visitor signs
+                             * in to smbd with: its NT hash, never the password
+                             * (`docs/sharing.md` N12c) */
 
 #define KEY_AT_START    1u  /* smb: connect its shares when Kosmos starts */
 
