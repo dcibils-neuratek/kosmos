@@ -1112,21 +1112,42 @@ static void digits5(char *at, uint64_t v)
  * The command line.
  *----------------------------------------------------------------------*/
 
-#define CMDLINE_MAX 384u
+/*
+ * **The words a stick or the network gives, and room for the loader's own
+ * after them** (`kosmos-boot/...`, about 140 characters). The words were
+ * read into 200 bytes while the line was 384: from a stick a longer file
+ * was cut silently, and over the network its read failed and the kernel was
+ * told nothing - on 11 October the M700 came up with no `/Home`, no desktop
+ * and no Telnet, from a line of 278. `tools/mkusb_image.py` and
+ * `tools/netboot.py` refuse words over `CMDLINE_WORDS` when they write
+ * them; this refuses them when it reads them.
+ */
+#define CMDLINE_WORDS 384u
+#define CMDLINE_MAX   640u
 
 /*
  * `\boot\kosmos.cmdline`, when there is one: the words GRUB's `multiboot2`
  * line used to carry. Only the characters `mkusb_image.py` allows through;
  * anything else ends the line.
  */
-static unsigned read_cmdline(const struct source *src, char *out, unsigned max)
+static bool read_cmdline(const struct source *src, char *out, unsigned max,
+                         unsigned *got)
 {
     uint64_t size = 0;
-    uint8_t text[200];
+    uint8_t text[CMDLINE_WORDS + 2];        /* the words, a newline, and one more */
     unsigned n = 0, i;
+    efi_status status = source_read(src, u"\\boot\\kosmos.cmdline", "boot/kosmos.cmdline",
+                                    text, sizeof(text), &size);
 
-    if (source_read(src, u"\\boot\\kosmos.cmdline", "boot/kosmos.cmdline",
-                    text, sizeof(text), &size) == EFI_SUCCESS) {
+    /* Too long: a stick's read is cut at the buffer, and the network's
+     * fails saying how big the file is. Either way, not a line to boot by. */
+    *got = 0;
+
+    if (size > CMDLINE_WORDS + 1u) {
+        return false;
+    }
+
+    if (status == EFI_SUCCESS) {
         for (i = 0; i < size && n + 1 < max; i++) {
             char c = (char)text[i];
 
@@ -1145,7 +1166,8 @@ static unsigned read_cmdline(const struct source *src, char *out, unsigned max)
         n--;
     }
 
-    return n;
+    *got = n;
+    return true;
 }
 
 static void append(char *line, unsigned *n, const char *text)
@@ -1926,7 +1948,12 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
     }
 
     /* The command line, and four fields filled in as the facts arrive. */
-    cmdline_n = read_cmdline(&src, cmdline, CMDLINE_MAX);
+    if (!read_cmdline(&src, cmdline, CMDLINE_MAX, &cmdline_n)) {
+        return refuse("\\boot\\kosmos.cmdline is longer than the 384 "
+                      "characters the loader reads; a line cut short would "
+                      "lose the words at its end, /Home's among them",
+                      EFI_BUFFER_TOO_SMALL);
+    }
     cmdline[cmdline_n] = '\0';
 
     /*

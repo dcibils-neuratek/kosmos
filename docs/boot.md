@@ -168,7 +168,11 @@ order, and why each step is there:
    are 32 bits, holds it to `\boot\disk.sums` the same way, and fingerprints
    it.
 5. **Reads `\boot\kosmos.cmdline`**, keeping only the characters
-   `mkusb_image.py` allows, and appends five words of its own.
+   `mkusb_image.py` allows, and appends five words of its own. **At most
+   384 characters of words**, and a longer file is refused rather than cut,
+   since its last words - `/Home`'s among them - are what a cut loses
+   (`testing.md` 18.537: read into 200 bytes, a netbooted line of 278 never
+   arrived at all).
 6. **Finds the screen** - the firmware's current GOP mode, as GRUB passed on -
    **ACPI's root pointer** from the configuration table, the newer revision
    first, and **copies the trampoline** to a page below 4 GB allocated as

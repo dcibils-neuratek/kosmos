@@ -126,13 +126,14 @@ static unsigned low_region_count;
  * at all.
  *
  * **Longer than any line the loader passes** - `CMDLINE_MAX` in
- * `boot/efi/loader.c` is 384 - because a line cut here is cut silently at
+ * `boot/efi/loader.c` is 640, 384 of a stick's words and room for its own
+ * after them - because a line cut here is cut silently at
  * its end, and the end is where the loader's own `kosmos-boot/...` words go,
  * after the stick's. It was 256, which 200 characters of a stick's words and
  * the loader's 117 did not fit (USB step 5f, `tools/run_x86.py`'s
  * `cmdline_long`).
  */
-static char loader_cmdline[512];
+static char loader_cmdline[1024];
 
 static void keep_cmdline(const char *from, size_t max)
 {

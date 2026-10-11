@@ -423,9 +423,10 @@ def main():
     if args and not re.fullmatch(r"[A-Za-z0-9_./=,:-]+( [A-Za-z0-9_./=,:-]+)*", args):
         sys.exit("mkusb_image: %r is not a list of name=value words" % args)
 
-    if len(args) > 200:
-        sys.exit("mkusb_image: the loader reads 200 characters of the command "
-                 "line, and these words are %d" % len(args))
+    if len(args) > 384:
+        sys.exit("mkusb_image: the loader reads 384 characters of the command "
+                 "line (CMDLINE_WORDS, boot/efi/loader.c), and these words are %d"
+                 % len(args))
 
     if not os.path.exists(kernel):
         sys.exit("mkusb_image: no %s. Run `make x86-build`." % kernel)

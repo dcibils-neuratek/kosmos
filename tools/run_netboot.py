@@ -18,7 +18,12 @@ boots. Checked, in the order it happens:
 - the firmware fetched the loader over the network, not off the stick;
 - the loader said where it came from and fetched the kernel from there;
 - the kernel was the build's, page for page, and said so on its own line;
-- `/Home` is the stick's Kosmos partition, where its command line points.
+- `/Home` is the stick's Kosmos partition, where its command line points;
+- a command line longer than 200 characters reaches the kernel to its last
+  word - the loader read 200 bytes of it, and over the network a longer
+  file failed to read at all, so on 11 October the M700 came up with no
+  `/Home`, no desktop and no Telnet from a line of 278;
+- and a line longer than the loader's 384 is refused in words, not cut.
 
 **OVMF's network stack starts only with a source of randomness** - EDK II
 has required one since its TCP and DHCP were made unpredictable - and
@@ -73,6 +78,20 @@ def main():
     writable = os.path.join(work, "vars.fd")
     shutil.copy(varsfd, writable)
 
+    # The folder as laid out, its command line made long: padding, then a
+    # word at the very end the machine is asked for.
+    served = os.path.join(work, "served")
+    shutil.copytree(folder, served)
+    line_file = os.path.join(served, "boot", "kosmos.cmdline")
+    with open(line_file) as f:
+        words = f.read().strip()
+    pad = " ".join("opt/kosmos/pad%02d=%s" % (n, "x" * 8) for n in range(1, 99))
+    room = 384 - len(words) - len(" opt/kosmos/tail=reached") - 1
+    long_words = (words + " " + pad[:room].rsplit(" ", 1)[0]
+                  + " opt/kosmos/tail=reached")
+    with open(line_file, "w") as f:
+        f.write(long_words + "\n")
+
     # The partition the stick names, off its GPT as `run_uefi.py` reads it.
     with open(stick, "rb") as f:
         f.seek(512)
@@ -87,7 +106,7 @@ def main():
            "-drive", "if=pflash,format=raw,unit=0,readonly=on,file=" + code,
            "-drive", "if=pflash,format=raw,unit=1,file=" + writable,
            "-netdev", "user,id=n0,tftp=%s,bootfile=bootx64.efi"
-           % os.path.abspath(folder),
+           % os.path.abspath(served),
            "-device", "virtio-net-pci,netdev=n0,romfile=,bootindex=0",
            "-device", "virtio-rng-pci",
            "-device", "qemu-xhci,id=xhci",
@@ -114,9 +133,14 @@ def main():
             if not typed and b"kosmos>" in out and time.time() - quiet > 0.5:
                 p.stdin.write(b"diskinfo\n")
                 p.stdin.flush()
-                typed = True
+                typed = 1
 
-            if typed and out.count(b"kosmos>") >= 2:
+            if typed == 1 and out.count(b"kosmos>") >= 2:
+                p.stdin.write(b'print("tail:", sys.boot("opt/kosmos/tail"))\n')
+                p.stdin.flush()
+                typed = 2
+
+            if typed == 2 and out.count(b"kosmos>") >= 3:
                 time.sleep(0.5)
                 out += p.stdout.read() or b""
                 break
@@ -156,7 +180,37 @@ def main():
           "/Home was not the stick's Kosmos partition, blocks %d to %d:\n    %s"
           % (first, last, shown))
 
+    check("tail:\treached" in said,
+          "a word at the end of a %d-character command line did not reach the "
+          "kernel:\n    %s" % (len(long_words), "\n    ".join(
+              l.strip() for l in said.splitlines() if "tail" in l or "cmdline" in l)))
+
     elapsed = time.time() - start
+
+    # Longer than the loader reads: refused, with its sentence, and no
+    # kernel started.
+    with open(line_file, "w") as f:
+        f.write(long_words + " opt/kosmos/over=" + "y" * 40 + "\n")
+    shutil.copy(varsfd, writable)
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
+    os.set_blocking(p.stdout.fileno(), False)
+    out, begun = b"", time.time()
+    try:
+        while time.time() - begun < 90.0 and b"longer than the 384" not in out:
+            out += p.stdout.read() or b""
+            time.sleep(0.1)
+        time.sleep(0.5)
+        out += p.stdout.read() or b""
+    finally:
+        p.kill()
+        p.wait()
+    over = re.sub(r"\x1b\[[0-9;=?]*[A-Za-z]", "",
+                  out.decode("utf-8", "replace")).replace("\r", "")
+    check("longer than the 384 characters the loader reads" in over
+          and "kosmos>" not in over,
+          "a command line over 384 characters was not refused before the kernel:"
+          "\n    " + "\n    ".join(over.strip().splitlines()[-6:]))
 
     if failed:
         print("FAIL: %d of %d checks on booting over the network:"
@@ -167,7 +221,8 @@ def main():
 
     print("PASS: %d checks on booting over the network (the loader by PXE, "
           "the kernel by TFTP and held to the build's sums, /Home on the "
-          "stick), %.0f s to the prompt." % (checks, elapsed))
+          "stick, a command line of %d characters to its last word, a longer "
+          "one refused), %.0f s to the prompt." % (checks, len(long_words), elapsed))
     return 0
 
 

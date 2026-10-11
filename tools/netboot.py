@@ -129,6 +129,14 @@ def main():
     with open(os.path.join(boot, "kosmos.sums"), "wb") as f:
         f.write(page_sums(kernel))
 
+    # The loader reads 384 characters of words (CMDLINE_WORDS,
+    # boot/efi/loader.c) and refuses a longer line; a line of 278 read into
+    # its old 200 bytes failed over the network, and the M700 was told
+    # nothing (11 October 2026).
+    if len(words) > 384:
+        sys.exit("netboot: the loader reads 384 characters of the command line, "
+                 "and these words are %d" % len(words))
+
     with open(os.path.join(boot, "kosmos.cmdline"), "w") as f:
         f.write(words + "\n")
 

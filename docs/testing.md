@@ -23164,3 +23164,31 @@ each, so a read from anywhere gave the right bytes. Made from one generator,
 it bites. `smbpath.c` without its ".." refusal: 5 of 20 failed. The listing's
 control is the first run, on libsmb2's encoder: "." and ".." and a mismatch.
 
+
+## 18.537 A command line longer than 200 characters, over the network
+
+On 11 October the M700, netbooted into 0.11.142 with smbd's two options on
+its command line, came up at a bare `kosmos>` - no `/Home` from its stick,
+no desktop, no Telnet, no smbd, no ready datagram - though it answered
+ping. None of the line's words had arrived: the loader read
+`kosmos.cmdline` into 200 bytes while `CMDLINE_MAX` was 384, and the line
+was 278. From a stick a longer file is cut at the buffer, silently; over
+the network the firmware's TFTP read fails when the buffer is too small,
+and the kernel was told nothing. `mkusb_image.py` refused a stick's words
+over 200, so sticks never met it; `netboot.py` checked nothing.
+
+Now: the loader reads 384 characters of words (`CMDLINE_WORDS`) and keeps
+room for its own after them (`CMDLINE_MAX` 640), and **refuses a longer
+file in words** rather than boot with a line cut short - a cut line loses
+its last words, and `/Home`'s GUID is among them. The kernel keeps 1,024
+bytes of it (`hal/pc/memory.c`). `mkusb_image.py` and `netboot.py` both
+refuse words over 384 when they write them.
+
+`x86-netboot` 7, was 5: the line served padded to 362 characters with
+`opt/kosmos/tail=reached` at its end, and the machine asked for it -
+`tail: reached`; and a line over 384 refused by the loader with its
+sentence, no prompt after it.
+
+**Control**: the loader's buffer back at 200 bytes - over the network the
+line did not arrive, `tail: nil`, "the disk: none": the M700's evening,
+under OVMF.
