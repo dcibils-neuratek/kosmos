@@ -707,17 +707,17 @@ local function page_sharing(s)
 
   return {
     { name = "", rows = {
+        -- As drawn: the state, then where it is reached and its name -
+        -- what Finder and Windows are told - in the one line there is.
         { label = "File sharing", control = sharing_switch,
-          note = state .. ": folders of /Home, to the Mac's Finder, Windows and anything "
-                 .. "else that speaks SMB"
-                 .. (a and (" - " .. s.reach(a) .. " · seen as " .. c.hostname) or "") } } },
+          note = state .. (a and (" · " .. s.reach(a) .. " · seen as " .. c.hostname) or "") } } },
     { name = "Shared folders", rows = folders },
     { name = "Connected now", rows = who },
     { name = "Who may connect", rows = {
         { label = "Name", note = "The one account a visitor signs in with",
           control = account_field_of(c) },
-        { label = "Password", value = kept and "Set" or "Not set",
-          note = "Kept only as NTLMv2 needs it", control = password_button },
+        { label = "Password", control = password_button,
+          note = (kept and "Set" or "Not set") .. "; kept only as NTLMv2 needs it" },
         { label = "Guests", value = "Off",
           note = "Nobody reaches a folder without the name and password" },
         { label = "This network only",
