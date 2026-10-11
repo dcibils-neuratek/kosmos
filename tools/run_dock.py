@@ -714,6 +714,52 @@ def main():
             m = re.search(r"PNGHEAD ([0-9a-f]+)", out)
             said["png"] = bytes.fromhex(m.group(1)) if m else out.encode()
 
+            # **And shown**: the capture opened in Photo, and its picture on
+            # the screen rather than a black frame - which is what every
+            # capture looked like on the M700 once windows painted
+            # themselves and the kit could not read a file (10 October).
+            mark = len(guest.seen)
+            session.put(('local r = fs.send("/Running/wm", { type = "launch", program = "photo", '
+                         'args = %r })\nprint("PHOTO " .. tostring(r and r.ok))\n'
+                         % first.group(1)).encode(), "/Temporary/photo.lua")
+            session.run("/Temporary/photo.lua")
+            at = re.search(r"wm: window Photo at (\d+),(\d+) (\d+)x(\d+)",
+                           guest.seen[mark:]) or None
+            deadline = time.monotonic() + 30
+            while not at and time.monotonic() < deadline:
+                time.sleep(0.5)
+                guest._read_available()
+                at = re.search(r"wm: window Photo at (\d+),(\d+) (\d+)x(\d+)",
+                               guest.seen[mark:])
+            said["photo said"] = [l for l in guest.seen[mark:].splitlines()
+                                  if "hoto" in l or "PHOTO" in l][-6:]
+            if at:
+                time.sleep(4)
+                sw, sh, px = R.parse_ppm(guest.screendump())
+                x0, y0, ww, wh = (int(v) for v in at.groups())
+                colours = set()
+                for gy in range(y0 + 60, y0 + wh - 10, max(1, (wh - 70) // 12)):
+                    for gx in range(x0 + 10, x0 + ww - 10, max(1, (ww - 20) // 12)):
+                        k = (gy * sw + gx) * 3
+                        colours.add(bytes(px[k:k + 3]))
+                said["photo colours"] = len(colours)
+                # Closed again, so what follows sees the desktop it expects:
+                # by its handle, and waited for, rather than a key that
+                # closes whatever happens to be in front.
+                session.put(('local wm = use("/Kosmos/Libraries/wmproto.lua")\n'
+                             'for _, w in ipairs((wm.windows() or {}).windows or {}) do\n'
+                             '  if tostring(w.title):match("^Photo") then\n'
+                             '    fs.send("/Running/wm", { type = "close", window = w.handle })\n'
+                             '  end\n'
+                             'end\n').encode(), "/Temporary/close_photo.lua")
+                gone = len(guest.seen)
+                session.run("/Temporary/close_photo.lua")
+                deadline = time.monotonic() + 15
+                while "wm: closed Photo" not in guest.seen[gone:] and time.monotonic() < deadline:
+                    time.sleep(0.3)
+                    guest._read_available()
+                time.sleep(1)
+
         # Where the window manager put the dock: a floating one is "the dock
         # at", one the whole width is the Deskbar's window - either is
         # "x,y WxH" after it.
@@ -996,6 +1042,10 @@ def main():
         fails.append("a screenshot's notification does not open its picture: %r"
                      % said.get("shot opens", "")[-300:])
 
+    if said.get("photo colours", 0) < 8:
+        fails.append("a capture opened in Photo was not drawn - %r colours in its frame: %r"
+                     % (said.get("photo colours"), said.get("photo said")))
+
     png = said.get("png") or b""
 
     if png[:8] != b"\x89PNG\r\n\x1a\n" or png[16:24] != struct.pack(">II", width, height):
@@ -1074,7 +1124,7 @@ def main():
                      "the new height - its sidebar's ground near the new bottom "
                      "%r, near the old %r: %r" % (g1, g0, said.get("prefs resized")))
 
-    checks = 54
+    checks = 55
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))

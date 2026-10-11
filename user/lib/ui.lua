@@ -6054,8 +6054,18 @@ do
   local pictures = {}
   local DECODE = { png = "png", jpg = "jpeg", jpeg = "jpeg" }
 
-  -- A picture carried in the image, decoded once: a line icon, an icon.
+  -- A file on the disk, a photograph Photo shows: `pictures.lua`'s, read
+  -- into pages and decoded there, the last four kept (`pictures.kept`).
+  local files_kept = nil
+
+  -- A picture carried in the image, decoded once: a line icon, an icon -
+  -- or, named by a path, a file.
   local function picture(name)
+    if tostring(name):sub(1, 1) == "/" then
+      files_kept = files_kept or use("/Kosmos/Libraries/pictures.lua").kept(4)
+      return files_kept:get(name)
+    end
+
     local got = pictures[name]
 
     if got ~= nil then return got or nil end

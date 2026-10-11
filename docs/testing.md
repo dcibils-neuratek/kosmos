@@ -22958,3 +22958,26 @@ Super J open a Terminal; Change with Super Q said taken, Use it here taking
 it; Default. **Control**: a key's word matched in the words again, "ctrl w"
 found Super Ctrl drag and Control Alt 1. `x86-dock` 54: the window's groups
 said, none refused.
+
+## 18.528 A capture shown black: the kit could not read a file's picture
+
+Diego, on the M700: "printi screen saves a black image, not the actual
+screenshot. that worked in the past". The files were right - one fetched
+from the M700 was the whole desktop, 1720x1440 - and what drew them black
+was Photo. Since windows paint themselves (`docs/astra-display.md` D2c), a
+picture named to `ui.image` is found by the kit's own lookup, which knew
+only the image's assets; a path, `/Home/Captures/...`, found nothing and
+the frame stayed black. The window manager's reader - a file into pages,
+decoded from there, the last four kept - is now `pictures.lua`, one door,
+and the kit and the window manager both use it (`pictures.from`,
+`pictures.kept`); the window manager's copy and its stale comment are gone.
+
+Nothing had looked inside Photo since the change. `x86-dock` 55: a capture
+taken by the keys is opened in Photo and its frame sampled on a 12 by 12
+grid - many colours, not one - then closed by its handle and waited for.
+**Control**: the kit's file branch taken out, 1 colour in the frame.
+
+Gate: 66 of 67, and `x86-mdns` alone 7 of 7 straight after. Its fourth boot,
+the desktop's, listed no network at all inside two minutes under the whole
+gate's load - Tracker's network pass had not run - which is the slow start
+that boot was already given 120 s for. Flaky under load; on the board.
