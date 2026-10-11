@@ -133,6 +133,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - Threads in a process, written before they are built: `docs/threads.md`
 - LuaJIT, measured against Lua 5.4 for Diego to decide: `docs/luajit.md`
 - Virtual machines and sandboxes - small operating systems for a task - explored for Diego to decide: `docs/virtualization.md`, drawn in `docs/sandboxes.html`
+- The Scheduler redesigned and a game mode, investigated for Diego to decide: `docs/scheduler.md`, drawn in `docs/scheduler.html`
 - Glossary: `docs/glossary.md`
 
 ---

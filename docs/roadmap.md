@@ -288,8 +288,11 @@ performance and responsiveness, and else in a visual way", "mockup first".
 - **The policy refused since 0.10.22**: `sched_switch_to` says no once more
   than one processor schedules, and every machine has run four or more
   since spreading became the default; the window only said "could not".
-  Since a thread never leaves its core, each core can change its own queue
-  to the new policy at its next decision, and none touches another's.
+  Diego: "perhaps changing policy needs a restart of the machine?", "i
+  dont care if it changes it on real time", "it just might need a reboot" -
+  so the policy is chosen in the window, kept as a setting and applied when
+  Kosmos starts, with Restart now beside it. Game mode, being Balanced with
+  a band and a core given to one application, turns on and off at once.
 - **Game mode**: researched and written for Diego to decide, beside the
   window's mockup (`docs/scheduler.md`, `docs/scheduler.html`).
 
