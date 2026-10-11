@@ -36,7 +36,7 @@ sys.path.insert(0, HERE)
 import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
 
-CHECKS = 16
+CHECKS = 18
 
 SETTING = '''local prefs = use("/Kosmos/Libraries/prefs.lua")
 local entries = {
@@ -69,6 +69,18 @@ function win:on_event(ev)
   return false
 end
 
+win:run()
+'''
+
+# A window that takes three seconds to draw its first frame: made, then
+# asleep before its loop, which is what paints.
+SLOW = '''-- kosmos: application
+local ui = use("/Kosmos/Libraries/ui.lua")
+local win = ui.window{ title = "Slow", w = 400, h = 300, centre = true }
+local v = ui.view{ x = 0, y = 0, w = 400, h = 300 }
+function v:draw(g) g:fill(0, 0, self.w, self.h, 0xff2a9d4e) end
+win:add(v)
+sys.sleep(3 * (sys.info().tick_hz or 250))
 win:run()
 '''
 
@@ -203,6 +215,51 @@ def main():
             fails.append("with another window in front Super Q did not close it")
         if "listener: heard" in guest.seen[mark:]:
             fails.append("the listening window still heard chords without the keyboard")
+
+        # ---- a new window not shown before it has drawn ----
+        # Diego, on the M700, 10 October: the launcher "draws a black
+        # rectangle and then on top it draws the actual app drawer". Quick
+        # draws within a fifth of a second: shown when it has drawn, never
+        # before. Slow waits three seconds: shown at half a second anyway -
+        # a hung application keeps a window - in the window's colour, never
+        # black, and its own picture once it draws.
+        session.put(SLOW.replace("Slow", "Quick").replace("3 *", "0.2 *").encode(),
+                    "/Temporary/quick.lua")
+        session.put(SLOW.encode(), "/Temporary/slow.lua")
+        mark = len(guest.seen)
+        session.run("/Temporary/launch.lua /Temporary/quick.lua")
+        quick = line(r"wm: Quick (drawn, shown after (\d+) ms|shown before it had drawn)", mark, 20)
+        if not quick or not quick.group(1).startswith("drawn"):
+            fails.append("a window drawing at once was shown before it drew: %r"
+                         % (quick and quick.group(0)))
+        mark = len(guest.seen)
+        session.run("/Temporary/launch.lua /Temporary/slow.lua")
+        placed = line(r"wm: window Slow at (\d+),(\d+) (\d+)x(\d+)", mark, 20)
+        early = line(r"wm: Slow shown before it had drawn", mark, 20)
+        if placed and early:
+            x, y, w, h = (int(v) for v in placed.groups())
+            time.sleep(0.5)
+            during = R.parse_ppm(guest.screendump())
+            # Shown already, so no "drawn" line comes: its own picture is
+            # the proof, three seconds on.
+            time.sleep(3.5)
+            after = R.parse_ppm(guest.screendump())
+
+            def middle(shot):
+                sw, _, px = shot
+                k = ((y + h // 2) * sw + x + w // 2) * 3
+                return bytes(px[k:k + 3])
+
+            if middle(during) == b"\x00\x00\x00":
+                fails.append("a window shown before it drew was black")
+            if middle(after) != bytes.fromhex("2a9d4e"):
+                fails.append("the slow window's own picture did not come: %s"
+                             % middle(after).hex())
+            else:
+                said["slow"] = quick.group(2) if quick else "?"
+        else:
+            fails.append("a window three seconds from drawing was not shown at half a "
+                         "second: %r, %r" % (placed and placed.group(0), early and early.group(0)))
 
         # ---- K3: the window, as drawn (`docs/shortcuts.html`) ----
         mark = len(guest.seen)

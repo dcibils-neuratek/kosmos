@@ -879,6 +879,7 @@ KIT_HEAD = 46
 
 # An ordinary window, as the window manager says it opened.
 OPENED = re.compile(r"wm: window .+? at -?\d+,-?\d+ \d+x\d+")
+SHOWN = re.compile(r"wm: [^\r\n]* (?:drawn, shown after \d+ ms|shown before it had drawn)")
 
 
 def windows_on(guest):
@@ -937,10 +938,27 @@ def started(guest, windows=1, seconds=25):
 
         return len(OPENED.findall(tail))
 
+    # **And shown, not only opened** (0.11.136): a window is on the screen
+    # from its first frame - `wm: hung drawn, shown after 1 ms`, or `shown
+    # before it had drawn` half a second on - and a picture taken between
+    # the two caught the hung application's window not there yet, under the
+    # whole gate's load, with it spinning beside the window manager.
+    def shown():
+        start = guest.seen.rfind("wm: faces ")
+        tail = guest.seen[start:] if start >= 0 else guest.seen
+
+        return len(SHOWN.findall(tail))
+
     deadline = time.monotonic() + seconds
 
     while time.monotonic() < deadline:
         if opened() >= windows:
+            want = opened()
+
+            while shown() < want and time.monotonic() < deadline:
+                time.sleep(0.2)
+                guest._read_available()
+
             time.sleep(0.6)
             return parse_ppm(guest.screendump())
 
@@ -11218,10 +11236,24 @@ def check_window_manager(guest):
     guest.type("wm hello-win,stuck")
     started(guest)
 
-    width, height, px = parse_ppm(guest.screendump())
-    before = find_colour_anywhere(width, height, px, HUNG_TITLE)
+    # **Waited for, not taken once** (0.11.136): a window is shown from its
+    # first frame now, and this one's begins its spin straight after it - so
+    # the pass that puts it on the screen shares the processor with a
+    # program that never stops, and under the whole gate's load that is
+    # sometimes more than a moment.
+    deadline = time.monotonic() + 15
+    before = None
+
+    while before is None and time.monotonic() < deadline:
+        width, height, px = parse_ppm(guest.screendump())
+        before = find_colour_anywhere(width, height, px, HUNG_TITLE)
+
+        if before is None:
+            time.sleep(0.5)
 
     if before is None:
+        # Kept, so a failure here can be looked at rather than guessed at.
+        write_png("build/harness-failure-hung.png", guest.screendump())
         raise Failure(
             "the hung application's window is not on screen at all, so "
             "there is nothing here to drag. Either `wm` did not start, or "

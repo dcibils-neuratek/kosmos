@@ -23017,3 +23017,28 @@ carries `kit` (a window's `draws_itself`). The row Nebula, kind kernel.
 it draws - Nebula a kernel; the window server the screen, Processes the
 kit, `binfs` nothing. **Control**: the window server's `screen` taken out,
 "windowserver ('server', '-')".
+
+## 18.531 A new window shown only once it has drawn
+
+Diego, on the M700, opening the launcher: "for some milliseconds it draws a
+black rectangle and then on top it draws the actual app drawer", "its like
+its drawing twice something". A window was shown the moment it was made,
+and its region is empty - black - until the application's first frame; the
+launcher's first paint is long enough to see. A window with a region of its
+own is now held back until its first commit (`win.drawn`), then shown
+frame, shadow and all ("wm: Quick drawn, shown after 214 ms") - **but at
+most half a second**: one that has not drawn by then is shown anyway, so a
+hung application keeps a window to move and close, and its buffers start in
+the look's window colour rather than the black of fresh pages. The first
+version held a window back for good, and `x86-display-4`'s hung application
+had none; the harness then waits for a window to be *shown*, not opened,
+and for the hung one's title rather than looking once - its spin now begins
+before the pass that shows it.
+
+`x86-shortcuts` 18: Quick, drawing at once, shown when it has drawn and not
+before; Slow, three seconds from drawing, shown at half a second in the
+window colour - not black - and its own picture once it draws. **Control**
+(the first version, before the limit): shown at once again, "a window not
+yet drawn was shown: 000000 where the desktop was f6f5f4".
+
+Gate: 66 of 67, `x86-film` the one that fails under the whole gate's load (on the board), and alone 13 of 13 an hour before.

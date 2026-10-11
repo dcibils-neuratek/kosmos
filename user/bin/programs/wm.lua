@@ -2304,7 +2304,7 @@ function OUT.describe()
     local framed = not (win.backdrop or win.strip or win.fullscreen or win.tip)
     local flags = 0
 
-    if win.hidden then flags = flags | 1 end
+    if win.hidden or win.drawn == false then flags = flags | 1 end
     if win.backdrop or win.blend then flags = flags | 2 end
     if framed then flags = flags | 4 | 8 end
     if framed and win.headed and win ~= front then flags = flags | 16 end
@@ -3033,6 +3033,24 @@ handlers.open = function(req, who, cap)
         [2] = gfx.wrap{ at = at + bytes, w = src_w, h = src_h, region = cap, offset = bytes },
         live = 1,
       }
+
+      -- **Not shown until it has drawn** (Diego, on the M700, 10 October
+      -- 2026, opening the launcher: "for some milliseconds it draws a black
+      -- rectangle and then on top it draws the actual app drawer"). Its
+      -- region is empty until the application's first frame, and a window
+      -- shown at once showed that - black - for as long as the first paint
+      -- took. It appears with its first commit (`handlers.commit`).
+      win.drawn = false
+      win.born = sys.ticks()
+
+      -- **But never held back for good**: a window that has not drawn in
+      -- half a second is shown anyway (the main loop), so an application
+      -- hung before its first frame still has a window to move and close -
+      -- the promise a hung application keeps one (`x86-display-4`). Its
+      -- buffers start in the look's window colour, not the black of fresh
+      -- pages, filled here before the reply that lets it draw.
+      win.shared[1]:fill(0, 0, src_w, src_h, theme.window)
+      win.shared[2]:fill(0, 0, src_w, src_h, theme.window)
 
       -- And whether it can make a region at another size when told one
       -- (`handlers.surface`, `roadmap.md` 6zz e): it asked, so it gets a
@@ -4059,6 +4077,14 @@ handlers.commit = function(req)
   end
 
   P.answered(win)
+
+  -- Its first frame: the window is shown from now, frame, shadow and all.
+  if win.drawn == false then
+    win.drawn = true
+    damage_window(win)
+    print(("wm: %s drawn, shown after %d ms"):format(tostring(win.title),
+          (sys.ticks() - (win.born or sys.ticks())) * 1000 // COUNTER_HZ))
+  end
 
   -- A finished frame, under `wm trace`, as a frame of drawing commands is
   -- one: a window drawing itself (D2) finishes its frames here.
@@ -6520,6 +6546,17 @@ while OUT.running do
   -- Idle, and charged as such: this is the loop asleep with nothing to do,
   -- and counting it as work would make an empty desktop look busy.
   if P.measuring then t, heap = P.charge("wait", t, heap, true) end
+
+  -- A new window that has not drawn within half a second, shown anyway
+  -- (`win.drawn`): a few windows looked at, every pass.
+  for _, win in ipairs(windows) do
+    if win.drawn == false and sys.ticks() - win.born > COUNTER_HZ // 2 then
+      win.drawn = true
+      damage_window(win)
+      print(("wm: %s shown before it had drawn, after half a second"):format(
+            tostring(win.title)))
+    end
+  end
 
   step("keys")
   for _, c in ipairs(input.keys or {}) do
