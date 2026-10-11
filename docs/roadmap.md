@@ -293,6 +293,11 @@ performance and responsiveness, and else in a visual way", "mockup first".
   so the policy is chosen in the window, kept as a setting and applied when
   Kosmos starts, with Restart now beside it. Game mode, being Balanced with
   a band and a core given to one application, turns on and off at once.
+- **Drawn and agreed, 11 October** ("Perfect"): `docs/scheduler.html`, with
+  the investigation's recommendations taken - game mode for the
+  application in front that is marked a game or chosen in the window; its
+  normal threads moved off its core once when game mode starts; 1000 Hz
+  while a game plays, measured first. Steps G1-G5 (`docs/scheduler.md`).
 - **Game mode**: researched and written for Diego to decide, beside the
   window's mockup (`docs/scheduler.md`, `docs/scheduler.html`).
 
