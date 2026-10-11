@@ -763,7 +763,7 @@ LIBSMB2_CFLAGS := -w -Wno-error $(SMB_IFLAGS)
 # headers, so its warnings stay its own, and every warning on for ours.
 SMB_KOSMOS := user/kits/smb/smb_transport.c user/kits/smb/smb_crypto.c \
               user/kits/smb/smb_signing.c user/kits/smb/ntlm_name.c \
-              user/servers/smbfs.c
+              user/servers/smbfs.c user/servers/smbd.c
 
 TINYGL_CFLAGS := -w -Wno-error \
                  -Iruntime/upstream/tinygl/include \

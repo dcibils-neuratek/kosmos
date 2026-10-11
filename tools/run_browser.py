@@ -2936,10 +2936,12 @@ def main():
                        'print("plex" .. "-set")')
             guest.wait_for("plex-set", "Plex chosen for the window manager")
 
-            # Tracker on /Home/Favorites, and its first row - the favorite,
-            # selected when the folder is shown - clicked: the browser opens on
-            # the page it keeps. Tracker passed a file's attributes to nothing
-            # when it opened one, and a favorite has no extension.
+            # Tracker on /Home/Favorites, and its first row - the favorite -
+            # double clicked: the browser opens on the page it keeps. Tracker
+            # passed a file's attributes to nothing when it opened one, and a
+            # favorite has no extension. One click opened it while a row
+            # chosen when a folder was shown opened on any click - the bug of
+            # 11 October (`testing.md` 18.534); it takes two now.
             mark = len(guest.seen)
             guest.type("wm tracker:/Home/Favorites")
             tline = guest.wait_for_line("wm: window Tracker at ",
@@ -2953,9 +2955,11 @@ def main():
             mark = len(guest.seen)
             guest.mouse_to(*_to_tablet(tx + 260, ty + row_y, wp, hp))
             time.sleep(0.4)
-            guest.mouse_button(True)
-            time.sleep(0.1)
-            guest.mouse_button(False)
+            for _ in range(2):
+                guest.mouse_button(True)
+                time.sleep(0.05)
+                guest.mouse_button(False)
+                time.sleep(0.12)
             guest.wait_for_line("browser: showing " + long_url,
                                 "the favorite opened from Tracker to show its page",
                                 since=mark)

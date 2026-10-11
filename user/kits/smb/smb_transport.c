@@ -80,6 +80,10 @@ struct sock {
     bool             connected;     /* the stack gave it a ring */
     struct net_conn  conn;
 
+    bool             listening;     /* a server's: answering on `port` */
+    uint16_t         port;          /* `bind`'s, for `listen` */
+    uint64_t         listener;      /* the stack's name for it */
+
     bool             listened;      /* a challenge read, or given up on */
     uint8_t         *heard;         /* what arrived, until then */
     uint32_t         heard_len;
@@ -550,3 +554,268 @@ int smb2_close(struct smb2_context *smb2, struct smb2fh *fh)
     smb2_set_error(smb2, "the synchronous API is not in Kosmos's libsmb2");
     return -ENOSYS;
 }
+
+/*
+ * **A server's half** (`docs/sharing.md` N12a): `bind`, `listen`, `accept`,
+ * `poll` and `select`, so libsmb2's own `smb2_serve_port` runs on the stack
+ * unchanged - for `smbd`, the server side of sharing. Each is the Network
+ * Kit's C door (`netclient.h`): `listen` the stack's `NET_OP_LISTEN` on the
+ * port `bind` named, `accept` its `NET_OP_ACCEPT` into a new socket of this
+ * table, and `poll` and `select` one `NET_OP_POLL` over every socket they
+ * name - a listener waited on for somebody arriving, a connection for
+ * bytes to read or room to write.
+ */
+int smb_kosmos_bind(int fd, const struct sockaddr *at, socklen_t len)
+{
+    struct sock *s = sock_at(fd);
+    const struct sockaddr_in *in = (const struct sockaddr_in *)(const void *)at;
+
+    if (s == NULL || s->connected || len < sizeof(*in) || in->sin_family != AF_INET) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    s->port = ntohs(in->sin_port);
+    return 0;
+}
+
+int smb_kosmos_listen(int fd, int most)
+{
+    struct sock *s = sock_at(fd);
+    uint32_t status;
+
+    (void)most;
+
+    if (s == NULL || s->connected || s->port == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    status = net_client_listen(s->port, &s->listener);
+    last_refusal = status;
+
+    if (status != NET_OK) {
+        errno = status == NET_ERR_IN_USE ? EADDRINUSE : ENETDOWN;
+        return -1;
+    }
+
+    s->listening = true;
+    return 0;
+}
+
+int smb_kosmos_accept(int fd, struct sockaddr *from, socklen_t *len)
+{
+    struct sock *s = sock_at(fd);
+    struct sock *c;
+    struct net_conn conn;
+    uint32_t status;
+    int got;
+
+    (void)from;
+
+    if (len != NULL) {
+        *len = 0;
+    }
+
+    if (s == NULL || !s->listening) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    /* A tick at most: `poll` or `select` said somebody is there. */
+    status = net_client_accept(s->listener, 1, &conn);
+
+    if (status != NET_OK) {
+        errno = status == NET_ERR_TIMEOUT ? EAGAIN : ECONNABORTED;
+        return -1;
+    }
+
+    got = smb_kosmos_socket(AF_INET, SOCK_STREAM, 0);
+
+    if (got < 0) {
+        net_client_close(&conn);
+        return -1;
+    }
+
+    c = &socks[got];
+    c->conn = conn;
+    c->connected = true;
+
+    /* A server has nothing to hear a challenge in: it sends one. */
+    c->listened = true;
+    return got;
+}
+
+/*
+ * What each socket of a wait is waiting for, as the stack's entries; the
+ * answer back into `revents` or the sets. Grown as asked, kept.
+ */
+static struct net_poll_entry *waits;
+static int *wait_fd;
+static uint32_t wait_room;
+
+static bool wait_grow(uint32_t n)
+{
+    struct net_poll_entry *w;
+    int *f;
+
+    if (n <= wait_room) {
+        return true;
+    }
+
+    w = realloc(waits, n * sizeof(*w));
+
+    if (w == NULL) {
+        return false;
+    }
+
+    waits = w;
+    f = realloc(wait_fd, n * sizeof(*f));
+
+    if (f == NULL) {
+        return false;
+    }
+
+    wait_fd = f;
+    wait_room = n;
+    return true;
+}
+
+static uint32_t want_of(const struct sock *s, bool read, bool write)
+{
+    if (s->listening) {
+        return read ? NET_WANT_ACCEPT : 0;
+    }
+
+    return (read ? NET_WANT_READ : 0) | (write ? NET_WANT_WRITE : 0);
+}
+
+/* Milliseconds as scheduler ticks, rounded up; negative is for ever (0). */
+static uint32_t ticks_of(long ms)
+{
+    if (ms < 0) {
+        return 0;
+    }
+
+    return (uint32_t)((ms * 250 + 999) / 1000) + 1u;
+}
+
+static int wait_on(uint32_t n, long ms)
+{
+    uint32_t status;
+
+    if (n == 0) {
+        kosmos_sleep(ticks_of(ms));
+        return 0;
+    }
+
+    status = net_client_poll(waits, n, ticks_of(ms));
+
+    if (status != NET_OK && status != NET_ERR_TIMEOUT) {
+        errno = ENETDOWN;
+        return -1;
+    }
+
+    return 0;
+}
+
+int smb_kosmos_poll(struct pollfd *set, unsigned long count, int ms)
+{
+    uint32_t n = 0;
+    unsigned long i;
+    int ready = 0;
+
+    if (!wait_grow((uint32_t)count)) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    for (i = 0; i < count; i++) {
+        struct sock *s = sock_at(set[i].fd);
+
+        set[i].revents = 0;
+
+        if (s == NULL || (!s->connected && !s->listening)) {
+            continue;
+        }
+
+        waits[n].handle = s->listening ? s->listener : s->conn.handle;
+        waits[n].want = want_of(s, (set[i].events & POLLIN) != 0,
+                                (set[i].events & POLLOUT) != 0);
+        waits[n].got = 0;
+        wait_fd[n] = (int)i;
+        n++;
+    }
+
+    if (wait_on(n, ms) != 0) {
+        return -1;
+    }
+
+    for (i = 0; i < n; i++) {
+        struct pollfd *p = &set[wait_fd[i]];
+        uint32_t got = waits[i].got;
+
+        if (got & (NET_WANT_READ | NET_WANT_ACCEPT)) p->revents |= POLLIN;
+        if (got & NET_WANT_WRITE) p->revents |= POLLOUT;
+        if (got & NET_GOT_OVER) p->revents |= POLLIN | POLLHUP;
+        if (p->revents) ready++;
+    }
+
+    return ready;
+}
+
+int smb_kosmos_select(int most, fd_set *read, fd_set *write, fd_set *bad, struct timeval *wait)
+{
+    uint32_t n = 0;
+    int fd, ready = 0;
+    long ms = wait == NULL ? -1 : wait->tv_sec * 1000 + wait->tv_usec / 1000;
+
+    if (!wait_grow((uint32_t)(most > 0 ? most : 1))) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    for (fd = 0; fd < most; fd++) {
+        bool r = read != NULL && FD_ISSET(fd, read);
+        bool w = write != NULL && FD_ISSET(fd, write);
+        struct sock *s = sock_at(fd);
+
+        if (!(r || w) || s == NULL || (!s->connected && !s->listening)) {
+            continue;
+        }
+
+        waits[n].handle = s->listening ? s->listener : s->conn.handle;
+        waits[n].want = want_of(s, r, w);
+        waits[n].got = 0;
+        wait_fd[n] = fd;
+        n++;
+    }
+
+    if (wait_on(n, ms) != 0) {
+        return -1;
+    }
+
+    if (read != NULL) FD_ZERO(read);
+    if (write != NULL) FD_ZERO(write);
+    if (bad != NULL) FD_ZERO(bad);
+
+    for (uint32_t i = 0; i < n; i++) {
+        uint32_t got = waits[i].got;
+        bool any = false;
+
+        if (read != NULL && (got & (NET_WANT_READ | NET_WANT_ACCEPT | NET_GOT_OVER))) {
+            FD_SET(wait_fd[i], read);
+            any = true;
+        }
+
+        if (write != NULL && (got & NET_WANT_WRITE)) {
+            FD_SET(wait_fd[i], write);
+            any = true;
+        }
+
+        if (any) ready++;
+    }
+
+    return ready;
+}
+

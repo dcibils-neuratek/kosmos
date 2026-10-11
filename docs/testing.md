@@ -23100,3 +23100,25 @@ where its rows are when it shows a folder, for a test to click them.
 straight after only choosing its row; two clicks two seconds apart not
 opening it; a double click opening it. **Control**: the old rule back, 2
 checks fail.
+
+## 18.535 smbd signs in: the server side of sharing, N12a
+
+`docs/sharing.md` N12a. The SMB Kit's socket gained a server's half -
+`bind`, `listen`, `accept`, `poll` and `select`, each the Network Kit's C
+door (`netclient.c` gained `net_client_listen`, `accept` and `poll` over the
+stack's `NET_OP_LISTEN`, `ACCEPT` and `POLL`) - so libsmb2's own
+`smb2_serve_port` runs on Kosmos with libsmb2 untouched. `smbd`
+(`user/servers/smbd.c`), a role of `init.elf` started only when the boot
+says `opt/kosmos/smbd=PORT ACCOUNT HASH`, answers NEGOTIATE and an NTLMv2
+sign-in for one account against its NT hash, and refuses every share as
+"bad network name" - by queuing that reply itself, since libsmb2's own for a
+refusal is "not implemented". Shares are N12b.
+
+`x86-smbd` 4, new: Samba's `smbclient` through a forwarded port signed in
+with the account and the fixture word - **SMB 3.1.1** - and was told no share
+is offered; a wrong password a logon failure; another account refused before
+any answer is checked; a machine not told to share answering nothing.
+**Control**: `smbd` holding the wrong hash, the right password a logon
+failure.
+
+Gate: 68 of 69, `x86-browser-2` the one: it opened a favorite with one click on the row a folder had chosen - tonight's double-click bug, which it relied on (18.534). Double clicked now, and it passes.

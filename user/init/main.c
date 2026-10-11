@@ -108,6 +108,7 @@ void smbfs_server(long endpoint, long net, long console, long keyring);
 /* /Discovery (`docs/sharing.md` N11c): its own endpoint, the network
  * stack's to bind its port through, and the console's. */
 void mdnsd_server(long endpoint, long net, long console);
+void smbd_server(long net, long console);
 
 #define ROLE_AUDIO    16UL
 #define ROLE_DEVICES   9UL
@@ -129,6 +130,7 @@ void mdnsd_server(long endpoint, long net, long console);
 #define ROLE_TILES    26UL
 #define ROLE_WINDOWSERVER 27UL
 #define ROLE_MDNSD    28UL
+#define ROLE_SMBD     29UL
 
 static void say(const char *s)
 {
@@ -823,6 +825,12 @@ int main(unsigned long arg)
     if (arg == ROLE_MDNSD) {
         named("mdnsd");
         mdnsd_server(0, 1, 2);
+    }
+
+    if (arg == ROLE_SMBD) {
+        named("smbd");
+        smbd_server(0, 1);
+        kosmos_exit(0);
     }
 
     L = kosmos_lua_open();

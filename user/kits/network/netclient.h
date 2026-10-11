@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "netproto.h"
 #include "tcpring.h"
 
 struct net_conn {
@@ -56,5 +57,25 @@ void     net_client_close(struct net_conn *c);
 /* A name's address, waiting at most `wait_ticks` scheduler ticks for the
  * resolver. A name that is four numbers is answered without asking. */
 uint32_t net_client_resolve(const char *name, uint8_t address[4], uint32_t wait_ticks);
+
+/*
+ * **A server's half** (`docs/sharing.md` N12a, for `smbd`): answering on a
+ * port, taking who arrives, and waiting on many connections at once - the
+ * stack's `NET_OP_LISTEN`, `ACCEPT` and `POLL`, as `net_kosmos.c` asks them
+ * for Lua.
+ */
+
+/* Answer on `port`: `NET_OK` and the listener's handle, or the refusal. */
+uint32_t net_client_listen(uint16_t port, uint64_t *listener);
+
+/* Who arrived on `listener`, waiting at most `wait_ticks` scheduler ticks
+ * (0 for ever): `NET_OK` and an open connection with its rings, or the
+ * stack's answer - `NET_ERR_TIMEOUT` when nobody came. */
+uint32_t net_client_accept(uint64_t listener, uint32_t wait_ticks, struct net_conn *c);
+
+/* Wait until any of `n` entries has what it wants, at most `wait_ticks`
+ * (0 for ever): each entry's `got` written, and `NET_OK`; the entries are
+ * the caller's, copied into a region kept here and grown as asked. */
+uint32_t net_client_poll(struct net_poll_entry *set, uint32_t n, uint32_t wait_ticks);
 
 #endif

@@ -46,6 +46,7 @@ local ROLE_KEYRING    = 25 -- the passwords Kosmos keeps, sealed (`keyring.md`)
 local ROLE_TILES      = 26 -- the map's tiles from the network: /Tiles (`maps.md`)
 local ROLE_WINDOWSERVER = 27 -- holds the screen, composes (`astra-display.md` D3b-2)
 local ROLE_MDNSD      = 28 -- /Discovery: multicast DNS (`sharing.md` N11c)
+local ROLE_SMBD       = 29 -- this machine's folders, shared over SMB (`sharing.md` N12)
 
 --
 -- **A program's own image** (`docs/elf.md` step 4). A program whose header
@@ -5741,6 +5742,14 @@ if role == ROLE_INIT then
   -- its port through; on a machine with no card it answers that there is
   -- no network, and asks nothing.
   start("the discovery server", ROLE_MDNSD, { MDNS_EP, NET_EP, CONSOLE_EP })
+
+  -- **smbd** (`docs/sharing.md` N12), only when the boot asks it to share
+  -- (`opt/kosmos/smbd`): a machine not told to share opens no port.
+  local share_asked = sys.boot("opt/kosmos/smbd")
+
+  if share_asked and share_asked ~= "" then
+    start("the file sharing server", ROLE_SMBD, { NET_EP, CONSOLE_EP })
+  end
 
   if may_pass_screen() then
     local id, err = sys.spawn(ROLE_WINDOWSERVER, { WINDOW_EP, CONSOLE_EP }, SPAWN_SCREEN)

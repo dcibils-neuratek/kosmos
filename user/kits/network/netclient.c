@@ -267,3 +267,140 @@ uint32_t net_client_resolve(const char *name, uint8_t address[4], uint32_t wait_
 
     return rep.status;
 }
+
+uint32_t net_client_listen(uint16_t port, uint64_t *listener)
+{
+    struct net_request req;
+    struct net_reply rep;
+    struct message out;
+
+    memset(&req, 0, sizeof(req));
+    req.op   = NET_OP_LISTEN;
+    req.port = port;
+
+    if (!ask(&req, &rep, &out)) {
+        return last;
+    }
+
+    if (rep.status == NET_OK) {
+        *listener = rep.handle;
+    }
+
+    return rep.status;
+}
+
+uint32_t net_client_accept(uint64_t listener, uint32_t wait_ticks, struct net_conn *c)
+{
+    struct net_request req;
+    struct net_reply rep;
+    struct message out;
+    long at;
+
+    memset(c, 0, sizeof(*c));
+    c->region = -1;
+
+    memset(&req, 0, sizeof(req));
+    req.op         = NET_OP_ACCEPT;
+    req.handle     = listener;
+    req.wait_ticks = wait_ticks;
+
+    if (!ask(&req, &rep, &out)) {
+        return last;
+    }
+
+    if (rep.status != NET_OK || out.cap_plus_one == 0) {
+        return rep.status != NET_OK ? rep.status : NET_ERR_CLOSED;
+    }
+
+    c->region = (long)out.cap_plus_one - 1;
+    at = kosmos_mem_map(c->region);
+
+    if (at < 0) {
+        (void)kosmos_cap_drop(c->region);
+        c->region = -1;
+        return NET_ERR_FULL;
+    }
+
+    c->ring = (struct tcp_ring *)(uintptr_t)at;
+    c->handle = rep.handle;
+    c->open = 1;
+    return NET_OK;
+}
+
+/*
+ * The poll set's region: made the first time, made again twice as big when
+ * a wait asks for more entries than it holds, never given back - one per
+ * process, the size of the most it ever waited on.
+ */
+static struct net_poll_entry *poll_at;
+static long poll_region = -1;
+static uint32_t poll_room;
+
+uint32_t net_client_poll(struct net_poll_entry *set, uint32_t n, uint32_t wait_ticks)
+{
+    struct net_request req;
+    struct net_reply rep;
+    struct message msg, out;
+    uint32_t i;
+
+    if (n > poll_room) {
+        unsigned long pages = ((unsigned long)n * sizeof(*set) + 4095u) / 4096u;
+        long region, at;
+
+        if (pages < 1) {
+            pages = 1;
+        }
+
+        region = kosmos_mem_create(pages);
+
+        if (region < 0) {
+            return last = NET_ERR_FULL;
+        }
+
+        at = kosmos_mem_map(region);
+
+        if (at < 0) {
+            (void)kosmos_cap_drop(region);
+            return last = NET_ERR_FULL;
+        }
+
+        if (poll_region >= 0) {
+            (void)kosmos_cap_drop(poll_region);
+        }
+
+        poll_region = region;
+        poll_at = (struct net_poll_entry *)(uintptr_t)at;
+        poll_room = (uint32_t)(pages * 4096u / sizeof(*set));
+    }
+
+    for (i = 0; i < n; i++) {
+        poll_at[i] = set[i];
+        poll_at[i].got = 0;
+    }
+
+    memset(&req, 0, sizeof(req));
+    req.op         = NET_OP_POLL;
+    req.wait_ticks = wait_ticks;
+    req.length     = n;
+
+    memset(&msg, 0, sizeof(msg));
+    msg.length = sizeof(req);
+    msg.cap_plus_one = (uint32_t)(poll_region + 1);
+    memcpy(msg.data, &req, sizeof(req));
+
+    if (net < 0 || kosmos_call(net, &msg, &out) != 0 || out.length < sizeof(rep)) {
+        return last = ~0u;
+    }
+
+    memcpy(&rep, out.data, sizeof(rep));
+    last = rep.status;
+
+    if (rep.status == NET_OK) {
+        for (i = 0; i < n; i++) {
+            set[i].got = poll_at[i].got;
+        }
+    }
+
+    return rep.status;
+}
+

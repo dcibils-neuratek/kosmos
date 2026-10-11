@@ -1196,7 +1196,8 @@ Then, each when its time comes:
 - **N12 - smbd, read-only**, in steps (11 October 2026, after the network
   measured 50 MB/s each way on the M700 - `testing.md` 18.533 - which this
   said N12 waited for):
-  - **N12a** - the SMB Kit's socket gains a server's half - `bind`,
+  - **N12a - built, 11 October** (`testing.md` 18.535): Samba's
+    `smbclient` signs in over SMB 3.1.1. The SMB Kit's socket gains a server's half - `bind`,
     `listen`, `accept` on `NET_OP_LISTEN` and `ACCEPT`, and `select` on the
     stack's `NET_OP_POLL` over every connection - so libsmb2's own
     `smb2_serve_port` runs on Kosmos unchanged; `smbd`, a role of

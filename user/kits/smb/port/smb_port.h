@@ -42,6 +42,7 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/types.h>
+#include <sys/select.h>
 
 typedef long ssize_t;
 typedef uint32_t socklen_t;
@@ -74,6 +75,9 @@ typedef uint32_t in_addr_t;
 #endif
 #ifndef ENETDOWN
 #define ENETDOWN      100
+#endif
+#ifndef ECONNABORTED
+#define ECONNABORTED  103
 #endif
 #ifndef EADDRINUSE
 #define EADDRINUSE     98
@@ -207,6 +211,15 @@ int     smb_kosmos_getaddrinfo(const char *node, const char *service,
                                struct addrinfo **out);
 void    smb_kosmos_freeaddrinfo(struct addrinfo *list);
 
+/* A server's half (`docs/sharing.md` N12a): answering on a port, taking
+ * who arrives, and waiting on many at once. */
+int     smb_kosmos_bind(int fd, const struct sockaddr *at, socklen_t len);
+int     smb_kosmos_listen(int fd, int most);
+int     smb_kosmos_accept(int fd, struct sockaddr *from, socklen_t *len);
+int     smb_kosmos_poll(struct pollfd *set, unsigned long count, int ms);
+int     smb_kosmos_select(int most, fd_set *read, fd_set *write, fd_set *bad,
+                          struct timeval *wait);
+
 /* What is not here: answered "no", and never reached in Kosmos. */
 int     smb_kosmos_refused(void);
 
@@ -230,12 +243,11 @@ int     smb_kosmos_asprintf(char **out, const char *format, ...)
 #define writev(fd, iov, n)           smb_kosmos_writev((fd), (iov), (n))
 #define getaddrinfo(n, s, h, out)    smb_kosmos_getaddrinfo((n), (s), (h), (out))
 #define freeaddrinfo(list)           smb_kosmos_freeaddrinfo(list)
-#define bind(fd, a, l)               ((void)(fd), (void)(a), (void)(l), smb_kosmos_refused())
-#define listen(fd, n)                ((void)(fd), (void)(n), smb_kosmos_refused())
-#define accept(fd, a, l)             ((void)(fd), (void)(a), (void)(l), smb_kosmos_refused())
-#define poll(set, n, t)              ((void)(set), (void)(n), (void)(t), smb_kosmos_refused())
-#define select(n, r, w, e, t)        ((void)(n), (void)(r), (void)(w), (void)(e), (void)(t), \
-                                      smb_kosmos_refused())
+#define bind(fd, a, l)               smb_kosmos_bind((fd), (a), (l))
+#define listen(fd, n)                smb_kosmos_listen((fd), (n))
+#define accept(fd, a, l)             smb_kosmos_accept((fd), (a), (l))
+#define poll(set, n, t)              smb_kosmos_poll((set), (n), (t))
+#define select(n, r, w, e, t)        smb_kosmos_select((n), (r), (w), (e), (t))
 #define getlogin_r(b, n)             smb_kosmos_getlogin_r((b), (n))
 #define gethostname(b, n)            smb_kosmos_gethostname((b), (n))
 #define asprintf                     smb_kosmos_asprintf
