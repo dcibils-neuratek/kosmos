@@ -140,6 +140,8 @@ def main():
         "-device", R.device(image, "net") + ",netdev=net0",
         "-fw_cfg", "name=opt/kosmos/net_address,string=10.9.0.2/24",
         "-fw_cfg", "name=opt/kosmos/boot,string=udp echo %d 239.255.0.1" % PORT,
+        # And word, once up, to the machine at the other end (`ready.lua`).
+        "-fw_cfg", "name=opt/kosmos/ready,string=10.9.0.1:47700",
     ])
     try:
         guest = R.Guest(image, 120)
@@ -198,6 +200,17 @@ def main():
         guest._read_available()
         if "not yours" in guest.seen[mark:]:
             fails.append("a datagram to a group the machine did not join was taken")
+
+        # **Ready**: the machine's word that it is up, to the address the
+        # command line named - the build in it, from the machine's own
+        # address, as a Mac restarting it waits for (`kosmos_telnet.py`).
+        ready = seg.wait(lambda dst, p: (udp_of(p) or (0, 0, 0, 0, b""))[3] == 47700, 20)
+        words = udp_of(ready[1])[4].decode(errors="replace") if ready else ""
+        if not ready or udp_of(ready[1])[1] != PEER_IP or \
+           not re.match(r"kosmos ready \d+\.\d+\.\d+ build \S+ up [\d.]+ s no desktop$", words):
+            fails.append("no word that the machine was ready came to 10.9.0.1:47700: %r" % words)
+        else:
+            said["ready"] = words
     except Exception as e:                      # noqa: BLE001 - said below
         fails.append("the machine stopped: %s: %s" % (type(e).__name__, str(e).splitlines()[0]))
     finally:
@@ -208,18 +221,19 @@ def main():
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
     if fails:
-        print("FAIL: %d of 6 checks on datagrams and a multicast group:" % len(fails))
+        print("FAIL: %d of 7 checks on datagrams and a multicast group:" % len(fails))
         for f in fails:
             print("  " + f)
         tail = [l for l in seen.splitlines() if re.match(r"(udp|net):", l)]
         print("  the machine said: " + " | ".join(tail[-8:]))
         return 1
 
-    print("PASS: 6 checks on datagrams and a multicast group (on a wire of its own, the "
+    print("PASS: 7 checks on datagrams and a multicast group (on a wire of its own, the "
           "address from the boot: 239.255.0.1 joined and reported; a hello to the group on "
           "its own Ethernet address with a time to live of 255; a datagram to the group said and echoed to its sender "
           "after an ARP question; one to the machine's address echoed to its port; one to a "
-          "group not joined left alone)")
+          "group not joined left alone; and the machine's word that it was up, %r, to the address "
+          "its command line named)" % said.get("ready"))
     return 0
 
 

@@ -23042,3 +23042,23 @@ window colour - not black - and its own picture once it draws. **Control**
 yet drawn was shown: 000000 where the desktop was f6f5f4".
 
 Gate: 66 of 67, `x86-film` the one that fails under the whole gate's load (on the board), and alone 13 of 13 an hour before.
+
+## 18.532 The machine says when it is ready
+
+Diego, 10 October 2026: "Why don't you do a small script that when kosmos
+boots it send a small message to the mac over udp or tcp to let it know the
+kosmos is booted and ready". The Mac restarting the M700 watched Telnet go
+away and come back, and missed the going on a quick restart - "did not go
+away" about a machine that had, twice that evening. Now `ready` (a program,
+`user/bin/programs/ready.lua`) is started by init from the command line's
+`opt/kosmos/ready=ADDRESS:PORT`, waits for the desktop on a boot to one,
+and sends three datagrams a second apart: `kosmos ready 0.11.137 build ...
+up 14.2 s desktop`. `make netboot` adds the word with this Mac's address and
+port 47700, and `kosmos_telnet.py restart` listens there rather than guessing
+when to look.
+
+`x86-udp` 7: on its own wire, a machine told `ready=10.9.0.1:47700` says
+"kosmos ready 0.11.136 build ... up 1.1 s no desktop" to that address and
+port. **Control**: init not starting it, nothing came.
+
+Gate: 65 of 67; `x86-film` and `x86-sound` (a captured tone 418 Hz for 440, under the whole gate's load) both pass alone straight after.

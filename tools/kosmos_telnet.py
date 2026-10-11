@@ -211,15 +211,23 @@ def main(argv):
         session.close()
 
 
+READY_PORT = 47700
+
+
 def restart(address, seconds):
-    """**Restart the machine, and wait for it to come back** (`roadmap.md`,
+    """**Restart the machine, and wait for it to say it is ready** (`roadmap.md`,
     build, boot and test the M700 in a loop; `testing.md` 18.352).
 
-    `restart` at its prompt, then the machine gone - `telnetd` not answering
-    - and then answering again, with the build its banner names. A machine
-    on network boot comes back with whatever the Mac serves now, so the
-    version is the proof that the new build is the one running. Not coming
-    back within `seconds` is a result too, and said.
+    `restart` at its prompt, then the machine's own word that it is back:
+    `ready.lua` sends `kosmos ready 0.11.136 build ... up 14.2 s desktop` to
+    this Mac's port 47700 once the network and the desktop are up, when the
+    command line says to (`make netboot` puts it there). A machine on network
+    boot comes back with whatever the Mac serves, so the build it names is
+    the proof the new one is running.
+
+    It watched Telnet go away and come back, and missed the going on a
+    machine that restarts quickly - "did not go away" about a machine that
+    had (10 October). Listening needs no guess at when to look.
     """
     host = address.partition(":")[0]
     before = answers(host)
@@ -228,39 +236,40 @@ def restart(address, seconds):
         print("restart: no Kosmos telnetd at %s" % host)
         return 1
 
-    # The banner is `neofetch`, which takes a dozen seconds on the M700 with
-    # `/Home` on its stick; a shorter wait gave up before asking.
+    listen = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    listen.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listen.bind(("0.0.0.0", READY_PORT))
+    listen.settimeout(2.0)
+
     session = Session(address, timeout=60.0)
     asked = time.monotonic()
     session.sock.sendall(b"restart\r\n")
-
-    try:
-        session.until_prompt()
-    except (ConnectionError, TimeoutError, OSError):
-        pass                                # gone, which is the point
 
     try:
         session.sock.close()
     except OSError:
         pass
 
-    started = asked                         # from the asking, not the hanging up
-    gone = False
+    try:
+        while time.monotonic() - asked < seconds:
+            try:
+                data, peer = listen.recvfrom(512)
+            except socket.timeout:
+                continue
 
-    while time.monotonic() - started < seconds:
-        now = answers(host)
+            said = data.decode(errors="replace").strip()
 
-        if now is None:
-            gone = True
-        elif gone:
-            print("restart: Kosmos %s -> Kosmos %s, answering again after %.0f s"
-                  % (before[1], now[1], time.monotonic() - started))
-            return 0
+            # A word from the machine asked, after it was asked: three come,
+            # a second apart, and the first is enough.
+            if peer[0] == host and said.startswith("kosmos ready "):
+                print("restart: Kosmos %s -> %s, after %.0f s"
+                      % (before[1], said[len("kosmos ready "):], time.monotonic() - asked))
+                return 0
+    finally:
+        listen.close()
 
-        time.sleep(2.0)
-
-    print("restart: %s did not %s within %.0f s"
-          % (host, "come back" if gone else "go away", seconds))
+    print("restart: %s did not say it was ready within %.0f s - is `opt/kosmos/ready` "
+          "on its command line (make netboot)?" % (host, seconds))
     return 1
 
 

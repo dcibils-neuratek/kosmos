@@ -4225,8 +4225,14 @@ USB_TELNETD ?= 23
 
 # `NETBOOT_ADD` - words after the stick's: the screen's keys and pointer lent
 # to a viewer from boot, for the build, boot and test loop (Diego, 3
-# October). `make netboot NETBOOT_ADD=` serves the stick's words alone.
-NETBOOT_ADD ?= opt/kosmos/vnc=control
+# October), and **word to this Mac once the machine is up** (`ready.lua`,
+# Diego, 10 October: "send a small message to the mac ... to let it know
+# the kosmos is booted and ready") - to this Mac's address on its network,
+# port `READY_PORT`, where `kosmos_telnet.py restart` listens. `make netboot
+# NETBOOT_ADD=` serves the stick's words alone.
+READY_PORT ?= 47700
+MAC_ADDRESS := $(shell ipconfig getifaddr en0 2>/dev/null)
+NETBOOT_ADD ?= opt/kosmos/vnc=control $(if $(MAC_ADDRESS),opt/kosmos/ready=$(MAC_ADDRESS):$(READY_PORT))
 
 netboot: x86-build $(EFI_LOADER)
 	python3 tools/netboot.py $(X86_BUILD)/kosmos.bin --loader $(EFI_LOADER) $(if $(STICK),--stick $(STICK)) $(if $(NETBOOT_ADD),--add "$(NETBOOT_ADD)") --out build/netboot

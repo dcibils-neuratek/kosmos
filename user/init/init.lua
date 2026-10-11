@@ -5121,6 +5121,24 @@ query. `find` and `watch` are built on exactly these two calls.
   end
 
   --
+  -- **And word that the machine is up**, to whoever the command line names:
+  -- `opt/kosmos/ready=192.168.1.38:47700`, which a network boot carries
+  -- (`ready.lua`, `tools/netboot.py`). In the background, waiting for the
+  -- desktop when this boot is for one.
+  --
+  local ready_to = sys.boot("opt/kosmos/ready")
+
+  if ready_to and ready_to ~= "" then
+    local boot_word = tostring(sys.boot("opt/kosmos/boot") or ""):match("^(%S+)")
+    local ok, why = run_program("ready", ready_to .. (boot_word == "wm" and " desktop" or ""),
+                                true)
+
+    if not ok then
+      out("boot: ready: " .. tostring(why) .. "\n")
+    end
+  end
+
+  --
   -- **And the servers the Servers window marked to start with the machine**
   -- (`/Home/Preferences/servers`, `user/bin/apps/servers.lua`): each by its
   -- program, in the background, before the desktop. The command line is not
