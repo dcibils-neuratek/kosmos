@@ -41,6 +41,12 @@
                              * in to smbd with: its NT hash, never the password
                              * (`docs/sharing.md` N12c) */
 
+/* The last kind: what the file's reader holds an entry to (`keyfile.c`). A
+ * kind added above moves this, or every keyring holding one is set aside at
+ * the next boot as "not a keyring this reads" - which is what KEY_KIND_SHARING
+ * did on the M700, 11 October 2026, before this existed. */
+#define KEY_KIND_LAST    KEY_KIND_SHARING
+
 #define KEY_AT_START    1u  /* smb: connect its shares when Kosmos starts */
 
 #define KEY_SERVICE_MAX 128u    /* "smb://192.168.1.38:445", as smbfs spells it */

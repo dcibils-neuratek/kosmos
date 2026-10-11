@@ -23318,3 +23318,45 @@ rocket has. **Control**: the cubes back - 7 blue pixels, failed.
 Gate 68 of 69: `x86-mdns`, which then failed alone once and passed alone
 once on the same image - Tracker had not said its Network group at all
 within the wait. On the roadmap.
+
+## 18.542 Finder mounts a share; Start with the machine; the keyring taken back
+
+`docs/sharing.md` N12d. On the M700, Diego, 11 October: "it works!" - the
+Mac's Finder connected to `smb://192.168.1.40` as diego and showed Music.
+Found one refusal at a time, with `smbd` now saying every request it
+refuses and what was asked (all but the normal ends - no more names, the
+end of a file, an empty pipe):
+
+- **`lsarpc`**, opened after the share list: LsarOpenPolicy(2) and
+  LsarClose a handle; LsarGetUserName the account and this machine as its
+  domain; LsarLookupNames (opnum 14, the one Finder asked, twice) the
+  account's SID - S-1-5-21 and three fixed numbers, RID 1000 - and any
+  other name not mapped. Any operation still not answered is a fault and
+  said with its number.
+- **A compound's related file id**: CREATE, QUERY_INFO and CLOSE in one,
+  the last two naming the file as all ones. `smbd` keeps the last file each
+  connection opened, and forgets it when a CREATE fails.
+
+**Start with the machine did not**: at boot it asked the keyring for the
+account before `/Home`, on the stick, was there. A start from the boot is now
+patient - `smbd` waits and asks again each second, and serves when it
+answers. And under that, worse: **the keyring set aside the M700's whole
+file** - the reader in `keyfile.c` held an entry's kind to SMB..MAIL, and
+the sharing account is kind 5. Fixed with `KEY_KIND_LAST` in `keyproto.h`;
+and since `keyring.md` promises nothing is lost by trying again, a keyring
+that opens empty now takes back the newest set-aside file that opens with
+this machine's key - which on the M700 brought the file back.
+
+`host`: `test_smbrpc` 24, was 18 - lsarpc's bind, OpenPolicy2,
+GetUserName, LookupNames, an operation not answered; `test_keyfile`'s 200
+entries now cycle through every kind up to `KEY_KIND_LAST`. `x86-smbd` 34,
+was 32: a patient start waiting for the keyring and serving when the
+password is kept; libsmb2's own stat (`smb2-stat-sync`), a related
+compound, answered. `x86-keyring` new, 20: the ARM suite on x86, and a
+fourth case - a set-aside keyring holding mail's entry taken back.
+
+**Controls**: the reader's old limit - 2 of 5,500 failed; the related id
+ignored - libsmb2's stat failed (found by accident first: a control's
+image left unrebuilt); taking back never tried - 2 of 20.
+`smbclient allinfo` turned out not to send a related compound, so it is
+not the check.

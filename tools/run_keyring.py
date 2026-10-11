@@ -150,6 +150,10 @@ def main():
           "the second boot did not open the first's file:\n" + said[-600:])
     check("a key made" not in said, "the second boot made another key")
 
+    # The keyring as it is now, holding mail's entry - for 4, below.
+    holding = os.path.join(work, "holding.out")
+    kfs("get", disk, "/Keyring/keyring", holding)
+
     # 2b. Forgotten through mail's own door, and gone.
     entry = re.search(r"mailpass: kept, entry (\d+)", said)
     said = boot(R, image, ["mailpass forget %s" % (entry.group(1) if entry else "0"),
@@ -180,6 +184,20 @@ def main():
         with open(back, "rb") as f:
             check(f.read() == GARBAGE, "the set-aside file is not the bytes put there")
 
+    # 4. **Taken back** (11 October 2026): a keyring set aside - by a reader
+    # that refused a kind it had not been told of, on the M700 - beside an
+    # empty one, is tried again, and taken back when it opens. Here the
+    # step-2 file, holding mail's entry, is all there is besides the key.
+    os.remove(disk)
+    kfs("create", disk, "32", key + ":/Keyring/machine-key",
+        holding + ":/Keyring/keyring.unopened-1700000000")
+    said = boot(R, image, ["keyring", "echo DONE-FOUR"], "DONE-FOUR")
+    check("took back the keyring kept aside as /Keyring/keyring.unopened-1700000000" in said,
+          "a set-aside keyring that opens was not taken back:\n" + said[-600:])
+    check(re.search(r"^1 entry, the file opened", said, re.M) is not None
+          and re.search(r"^\s*\d+\s+mail\s+imap://imap\.example\.com:993", said, re.M),
+          "the keyring taken back does not hold mail's entry:\n" + said[-600:])
+
     if fails:
         print("FAIL: %d of %d checks on the keyring:\n  %s"
               % (len(fails), checks, "\n  ".join(fails)))
@@ -191,7 +209,8 @@ def main():
           "opened again on the next boot; a keyring that did not open kept "
           "aside byte for byte and an empty one begun; mail's door keeping, checking, "
           "listing and forgetting an account's password, Passwords seeing it, and a "
-          "copy in /Home handed nothing)" % checks)
+          "copy in /Home handed nothing; a set-aside keyring that opens taken back, "
+          "mail's entry and all)" % checks)
     return 0
 
 

@@ -1273,6 +1273,14 @@ Then, each when its time comes:
     connection runs in libsmb2's passthrough, without which an IOCTL's
     pipe TRANSCEIVE is dropped on the way in and refused on the way out.
     `smbclient -L` lists the shares.
+    **Then Finder mounted Music** (11 October, `testing.md` 18.542): it
+    also opens `lsarpc` to learn who it signed in as - LsarOpenPolicy2,
+    LsarGetUserName, LsarLookupNames, the account mapped to RID 1000 in a
+    domain named for this machine - and sends CREATE, QUERY_INFO and CLOSE
+    as one compound, the last two naming "the file just opened". What it
+    asks and is still refused does not stop it: Spotlight's `mdssvc` and
+    `MsFteWds`, the network interfaces (multichannel), `.hidden` for
+    writing, CHANGE_NOTIFY.
 
   The page as first written: the Servers window's File sharing page as drawn;
   `smbclient` and the Mac's `mount_smbfs` through a forwarded port list and

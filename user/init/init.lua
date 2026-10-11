@@ -2269,7 +2269,8 @@ local function new_namespace()
     if not host then return nil, why end
 
     return smbd_call("start", string.pack("<I2I2I4c64c16", o.port or 445,
-                                          (o.encrypt and 1 or 0) | (o.local_only and 2 or 0),
+                                          (o.encrypt and 1 or 0) | (o.local_only and 2 or 0)
+                                          | (o.patient and 4 or 0),
                                           0, account, host))
   end
 
@@ -5347,7 +5348,10 @@ query. `find` and `watch` are built on exactly these two calls.
       if ok then
         ok, why = ns.sharing_start{ account = c.account, hostname = c.hostname,
                                     port = tonumber(c.port) or 445,
-                                    local_only = c.local_only ~= false }
+                                    local_only = c.local_only ~= false,
+                                    -- `/Home`, and the keyring's file on it,
+                                    -- may come after this: waited for.
+                                    patient = true }
       end
 
       if not ok then out("boot: file sharing: " .. tostring(why) .. "\n") end

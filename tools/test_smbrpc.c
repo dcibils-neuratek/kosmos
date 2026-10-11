@@ -33,6 +33,8 @@ static const uint8_t NDR32[16] = { 0x04, 0x5d, 0x88, 0x8a, 0xeb, 0x1c, 0xc9, 0x1
                                    0x9f, 0xe8, 0x08, 0x00, 0x2b, 0x10, 0x48, 0x60 };
 static const uint8_t FEATURES[16] = { 0x2c, 0x1c, 0xb7, 0x6c, 0x12, 0x98, 0x40, 0x45,
                                       0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+static const uint8_t LSARPC[16] = { 0x78, 0x57, 0x34, 0x12, 0x34, 0x12, 0xcd, 0xab,
+                                    0xef, 0x00, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab };
 static const uint8_t OTHER[16] = { 0x78, 0x57, 0x34, 0x12, 0x34, 0x12, 0xcd, 0xab,
                                    0xef, 0x00, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab };
 
@@ -90,7 +92,7 @@ static const struct smb_rpc_share SHARES[] = {
     { "Music",    SMB_RPC_DISK, "" },
     { "IPC$",     SMB_RPC_IPC,  "IPC Service" },
 };
-static const struct smb_rpc_server SERVER = { "KOSMOS-TEST", SHARES, 3 };
+static const struct smb_rpc_server SERVER = { SMB_RPC_SRVSVC, "KOSMOS-TEST", SHARES, 3, NULL, NULL };
 
 static uint8_t out[8192];
 
@@ -255,6 +257,111 @@ int main(void)
     (void)ask(&x, &rc, &used, 100);
     check(rc == -1, "an answer too big for its room was not refused");
 
+    /*
+     * lsarpc, which the Mac's Finder opens after the share list to learn
+     * who it signed in as (MS-LSAT).
+     */
+    {
+        int unknown = -1;
+        const struct smb_rpc_server lsa = { SMB_RPC_LSARPC, "KOSMOS-TEST", SHARES, 3,
+                                            "diego", &unknown };
+        size_t u;
+
+        memset(&x, 0, sizeof x);
+        header(&x, 11, 1);
+        u16(&x, 4280); u16(&x, 4280); u32(&x, 0);
+        u8(&x, 1); u8(&x, 0); u16(&x, 0);
+        u16(&x, 0); u8(&x, 1); u8(&x, 0); bytes(&x, LSARPC, 16); u32(&x, 0); bytes(&x, NDR32, 16); u32(&x, 2);
+        length(&x);
+        u = 0;
+        rc = smb_rpc_answer(&lsa, x.b, x.n, &used, out, sizeof out, &u);
+        at = 16 + 8;
+        check(rc == 0 && rd16(out + at) == 12 && memcmp(out + at + 2, "\\PIPE\\lsass", 12) == 0,
+              "the lsarpc BIND_ACK did not name \\PIPE\\lsass");
+        at += 2 + rd16(out + at);
+        while (at % 4) at++;
+        check(out[at] == 1 && rd16(out + at + 4) == 0, "lsarpc in NDR was not accepted");
+
+        /* LsarOpenPolicy2: a handle, success. */
+        memset(&x, 0, sizeof x);
+        request(&x, 44);
+        u32(&x, 0); u32(&x, 24); u32(&x, 0); u32(&x, 0); u32(&x, 0); u32(&x, 0); u32(&x, 0);
+        u32(&x, 0x02000000);
+        length(&x);
+        u = 0;
+        rc = smb_rpc_answer(&lsa, x.b, x.n, &used, out, sizeof out, &u);
+        check(rc == 0 && out[2] == 2 && memcmp(out + 28, (uint8_t[16]){ 0 }, 16) != 0
+              && rd32(out + 44) == 0, "LsarOpenPolicy2 did not answer a handle and success");
+
+        /* LsarGetUserName: diego, and this machine. */
+        memset(&x, 0, sizeof x);
+        request(&x, 45);
+        u32(&x, 0); u32(&x, 0); u32(&x, 0x20000); u32(&x, 0);
+        length(&x);
+        u = 0;
+        rc = smb_rpc_answer(&lsa, x.b, x.n, &used, out, sizeof out, &u);
+        {
+            char user[16] = "", domain[16] = "";
+            size_t i, n = rd32(out + 24 + 12 + 8);
+
+            for (i = 0; i < n && i + 1 < sizeof user; i++) user[i] = (char)out[24 + 12 + 12 + 2 * i];
+            at = 24 + 12 + 12 + 2 * n;
+            while ((at - 24) % 4) at++;
+            at += 8 + 8;                    /* DomainName's two pointers, its fields */
+            n = rd32(out + at + 8);
+            for (i = 0; i < n && i + 1 < sizeof domain; i++) domain[i] = (char)out[at + 12 + 2 * i];
+            check(rc == 0 && strcmp(user, "diego") == 0 && strcmp(domain, "KOSMOS-TEST") == 0,
+                  "LsarGetUserName did not say diego of KOSMOS-TEST");
+        }
+
+        /* LsarLookupNames: DIEGO a user, RID 1000; somebody else not mapped. */
+        memset(&x, 0, sizeof x);
+        request(&x, 14);
+        stub = x.n;
+        bytes(&x, (uint8_t[20]){ 0 }, 20);
+        u32(&x, 2);
+        u32(&x, 2);
+        u16(&x, 10); u16(&x, 10); u32(&x, 0x20000);
+        u16(&x, 18); u16(&x, 18); u32(&x, 0x20004);
+        {
+            const char *names[2] = { "DIEGO", "somebody" };
+            int k;
+            size_t i;
+
+            for (k = 0; k < 2; k++) {
+                size_t n2 = strlen(names[k]);
+
+                pad4(&x, stub);
+                u32(&x, (uint32_t)n2); u32(&x, 0); u32(&x, (uint32_t)n2);
+                for (i = 0; i < n2; i++) u16(&x, (uint8_t)names[k][i]);
+            }
+        }
+        pad4(&x, stub);
+        u32(&x, 0); u32(&x, 0); u16(&x, 1); u16(&x, 0); u32(&x, 0);
+        length(&x);
+        u = 0;
+        rc = smb_rpc_answer(&lsa, x.b, x.n, &used, out, sizeof out, &u);
+        {
+            size_t end = u;
+
+            /* The tail: TranslatedSids' two entries, MappedCount, the status. */
+            check(rc == 0 && rd32(out + end - 4) == 0x00000107u && rd32(out + end - 8) == 1
+                  && rd16(out + end - 8 - 24) == 1 && rd32(out + end - 8 - 20) == 1000
+                  && rd16(out + end - 8 - 12) == 8,
+                  "LsarLookupNames did not map DIEGO to RID 1000 and leave somebody unknown");
+        }
+
+        /* Something lsarpc does not answer: a fault, and said. */
+        memset(&x, 0, sizeof x);
+        request(&x, 76);
+        u32(&x, 0);
+        length(&x);
+        u = 0;
+        rc = smb_rpc_answer(&lsa, x.b, x.n, &used, out, sizeof out, &u);
+        check(rc == 0 && out[2] == 3 && unknown == 76,
+              "an lsarpc operation not answered was not a fault, said as 76");
+    }
+
     if (fails > 0) {
         printf("FAIL: %d of %d checks on the srvsvc pipe\n", fails, checks);
         return 1;
@@ -264,6 +371,8 @@ int main(void)
            "feature negotiation acknowledged, a stranger refused; the share list at levels 1 "
            "and 0 read back; one share by name in any case, one not shared not found; this "
            "machine's name; an unknown operation a fault; half a PDU waited for, a wrong one "
-           "refused, an answer too big refused)\n", checks);
+           "refused, an answer too big refused; lsarpc's bind, LsarOpenPolicy2, LsarGetUserName "
+           "and LsarLookupNames - diego RID 1000, somebody unknown - and an operation "
+           "not answered said)\n", checks);
     return 0;
 }

@@ -10,13 +10,18 @@ and at the prompt the `sharing` program, which holds smbd's door (N12c):
   - a copy of `sharing` run from /Home: not handed the door;
   - `sharing folders Projects:/Home/Projects Notes:/Home/Notes`, then
     `sharing start kosmos` before any password is kept: refused;
-  - `sharing account kosmos <the fixture word>`, `sharing start kosmos`:
+  - `sharing start kosmos patient`, as Start with the machine is at boot:
+    waiting for the keyring; then `sharing account kosmos <the fixture
+    word>`, and it serves - the wait over by itself:
     serving on 445, and the keyring keeping the account under its own kind.
 
 Then Samba's own `smbclient` - a client that is not Kosmos - asking:
 
   - the share list (N12d), over IPC$'s srvsvc pipe as the Mac's Finder
     asks it before it mounts anything: Projects, Notes and IPC$;
+  - a compound, as Finder sends them: libsmb2's own stat, CREATE,
+    QUERY_INFO and CLOSE in one, the last two naming the file the first
+    opened;
 
   - the account and the right password: signed in, and `Projects` listed -
     a file, a larger one, a folder, with their sizes;
@@ -59,10 +64,11 @@ sys.path.insert(0, HERE)
 
 import scratch                                              # noqa: E402
 
-CHECKS = 32
+CHECKS = 34
 PASSWORD = "test-only-word"
 NEW_PASSWORD = "second-test-word"
 SMBCLIENT = "/opt/homebrew/bin/smbclient"
+STAT = os.path.join(ROOT, "build", "host", "libsmb2", "smb2-stat-sync")
 LUA = os.path.join(ROOT, "build", "host", "lua")
 KFS = os.path.join(HERE, "kfs.lua")
 
@@ -398,10 +404,16 @@ def main():
               "a start before any password was kept was not refused:\n"
               + guest.seen[mark:][-300:])
 
+        # Patient, as Start with the machine is at boot: before /Home - and
+        # the keyring's file on it - has the password, it waits; then serves.
+        mark = len(guest.seen)
+        guest.type("sharing start kosmos patient")
+        guest.wait_for_line("smbd: waiting for the keyring to hold kosmos", "a patient start", mark)
         guest.type("sharing account kosmos " + PASSWORD)
         guest.wait_for("password kept, as its NT hash", "the account kept")
-        guest.type("sharing start kosmos")
-        guest.wait_for("smbd: sharing on port 445", "smbd listening")
+        guest.wait_for_line("smbd: the keyring holds kosmos", "the wait over", mark)
+        guest.wait_for_line("smbd: sharing on port 445", "smbd listening", mark)
+        check(True, "")
         time.sleep(1)
 
         mark = len(guest.seen)
@@ -450,6 +462,20 @@ def main():
               % (len(b) if b is not None else "no", len(big), fetched[-300:]))
         check(read(os.path.join(got, "inner.txt")) == INNER,
               "Sub\\inner.txt did not arrive as it is: %r" % fetched[-300:])
+
+        # A compound - CREATE, QUERY_INFO and CLOSE in one, the last two
+        # naming "the file just opened" - as Finder sends them: libsmb2's own
+        # stat sends exactly that (`smb2-stat-sync`, built for this Mac).
+        users = os.path.join(work, "ntlm_user")
+        with open(users, "w") as f:
+            f.write(":kosmos:%s\n" % PASSWORD)
+        stat = subprocess.run([STAT, "smb://kosmos@127.0.0.1:%d/Projects/hello.txt" % port],
+                              capture_output=True, text=True, timeout=60,
+                              env=dict(os.environ, NTLM_USER_FILE=users))
+        info = stat.stdout + stat.stderr
+        check(stat.returncode == 0 and re.search(r"Size:\s*%d\b" % len(HELLO), info) is not None,
+              "a compound's related CREATE, QUERY_INFO and CLOSE were not answered: %r"
+              % info[-300:])
 
         # 6. The second share, so the list was read past its first.
         notes = ask(port, "Notes", "kosmos", PASSWORD, "ls")

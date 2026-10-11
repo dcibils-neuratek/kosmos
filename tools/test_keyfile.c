@@ -69,7 +69,9 @@ static void fill(struct key_record *r, size_t count)
         struct key_entry *e = &r[i].entry;
 
         e->id = (uint32_t)(i * 3 + 1);
-        e->kind = KEY_KIND_SMB;
+        /* Every kind there is, in turn: a reader that refuses a kind it
+         * was not told of sets a whole keyring aside (11 October 2026). */
+        e->kind = (uint16_t)(KEY_KIND_SMB + i % KEY_KIND_LAST);
         e->flags = i % 2 ? KEY_AT_START : 0;
         e->created_unix = 1790000000ull + i;
         e->modified_unix = 1790000100ull + i;

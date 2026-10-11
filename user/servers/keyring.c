@@ -454,6 +454,113 @@ static void open_file(void)
 }
 
 /*
+ * **Trying a set-aside keyring again** (`docs/keyring.md`, *When the file
+ * does not open*: "nothing is lost by trying again later"). Nothing did,
+ * until 11 October 2026: the reader refused a kind it was not told of, the
+ * M700's keyring - its share, mail and sharing passwords - was set aside,
+ * and an empty one begun. So a keyring that opens *empty* looks at what
+ * was set aside, newest first, and takes back the first that now opens with
+ * this machine's key and holds anything. An empty keyring has nothing to
+ * lose; the set-aside file stays where it is.
+ */
+static void take_back(void)
+{
+    char best[DISK_PATH_MAX] = "";
+    char tried[DISK_PATH_MAX] = "";
+    uint64_t offset = 0;
+
+    if (!disk_ok || !have_key || count != 0) {
+        return;
+    }
+
+    for (;;) {
+        /* The newest name not yet tried: the names end in a date, so the
+         * greatest of equal length is the latest. */
+        best[0] = '\0';
+        offset = 0;
+
+        for (;;) {
+            const struct disk_reply *rp;
+            uint32_t used = 0;
+
+            if (disk_ask(DISK_OP_LIST, "/Keyring", 0, offset, 0, NULL, 0, -1) != 0) {
+                return;
+            }
+
+            rp = disk_said();
+
+            while (used < rp->length) {
+                const char *name = rp->u.data + used;
+                const char *end = memchr(name, '\0', rp->length - used);
+                size_t len = end != NULL ? (size_t)(end - name) : rp->length - used;
+
+                if (strncmp(name, "keyring.unopened-", 17) == 0 && len < 64
+                    && (tried[0] == '\0' || strlen(name) < strlen(tried)
+                        || (strlen(name) == strlen(tried) && strcmp(name, tried) < 0))
+                    && (best[0] == '\0' || strlen(name) > strlen(best)
+                        || (strlen(name) == strlen(best) && strcmp(name, best) > 0))) {
+                    put_text(best, sizeof best, name);
+                }
+
+                used += (uint32_t)len + 1;
+            }
+
+            if (!rp->more) {
+                break;
+            }
+
+            offset = rp->offset;
+        }
+
+        if (best[0] == '\0') {
+            return;
+        }
+
+        put_text(tried, sizeof tried, best);
+
+        {
+            char path[DISK_PATH_MAX];
+            struct region r;
+            size_t bytes;
+            long holds;
+            size_t got = 0;
+            uint32_t next = 1;
+
+            put_text(path, sizeof path, "/Keyring/");
+            put_text(path + 9, sizeof path - 9, best);
+
+            if (!file_read(path, &r, &bytes)) {
+                continue;
+            }
+
+            holds = keyfile_count(bytes);
+
+            if (holds > 0 && grow((size_t)holds)
+                && keyfile_open(key, r.at, bytes, records, room, &got, &next) == KEYFILE_OK
+                && got > 0) {
+                region_free(&r);
+                count = got;
+                next_id = next;
+
+                if (save()) {
+                    file_state = KEY_FILE_OPENED;
+                    tell("took back the keyring kept aside as /Keyring/", 0, false, best);
+                    tell("it holds ", count, true, count == 1 ? " entry" : " entries");
+                } else {
+                    count = 0;
+                    next_id = 1;
+                }
+                return;
+            }
+
+            region_free(&r);
+            count = 0;
+            next_id = 1;
+        }
+    }
+}
+
+/*
  * ------------------------------------------------------------------------
  * The operations.
  * ------------------------------------------------------------------------
@@ -834,6 +941,7 @@ void keyring_server(long smb_door, long manage_door, long disk_door, long device
     have_key = disk_ok && load_key();
     if (have_key) {
         open_file();
+        take_back();
     }
 
     for (size_t d = 0; d < DOORS; d++) {

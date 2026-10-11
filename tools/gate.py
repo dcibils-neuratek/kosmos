@@ -149,6 +149,10 @@ SUITES = [
     # /Keyring, the same disk opened again, a keyring that does not open kept
     # aside - and its doors.
     Suite("arm-keyring", ["python3", "tools/run_keyring.py", ARM]),
+    # And on x86 (11 October 2026): the keyring set aside the M700's whole
+    # file over a kind its reader had not been told of, and the x86 gate had
+    # no keyring suite to notice; taking a set-aside one back is its fourth.
+    Suite("x86-keyring", ["python3", "tools/run_keyring.py", X86], x86=True),
 
     # Passwords (K6): a keyring made on the Mac, the window used as a person
     # would - sorted, a row, Show, a note, search, Delete asked and done.

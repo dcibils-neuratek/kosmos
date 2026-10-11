@@ -309,6 +309,7 @@ struct handle {
     /* IPC$'s srvsvc pipe (N12d): what was written and not yet a whole
      * request, and the answers not yet read. */
     bool pipe;
+    int rpc;                    /* SMB_RPC_SRVSVC or SMB_RPC_LSARPC */
     uint8_t *in, *out;
     size_t in_len, out_len;
 };
@@ -371,13 +372,34 @@ static struct handle *handle_new(struct smb2_context *smb2, uint32_t tree, smb2_
     return h;
 }
 
-static struct handle *handle_of(struct smb2_context *smb2, const smb2_file_id id)
+static bool last_opened(struct smb2_context *smb2, smb2_file_id out);
+static void none_opened(struct smb2_context *smb2);
+
+static struct handle *handle_of(struct smb2_context *smb2, const smb2_file_id given)
 {
     uint32_t place, generation, tree;
     struct handle *h;
+    const uint8_t *id = given;
+    smb2_file_id last;
+    static const smb2_file_id RELATED = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                                          0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
     if (!linked(smb2, &tree)) {
         return NULL;
+    }
+
+    /*
+     * **A compound's "the file just opened"** (MS-SMB2 3.3.5.2.7.2): the
+     * Mac's Finder sends CREATE, QUERY_INFO and CLOSE in one, the last two
+     * naming the file as all ones - meaning the one the CREATE before them
+     * opened. libsmb2 hands them over as they are, so this keeps it.
+     */
+    if (memcmp(given, RELATED, sizeof RELATED) == 0) {
+        if (!last_opened(smb2, last)) {
+            return NULL;
+        }
+
+        id = last;
     }
 
     memcpy(&place, id, 4);
@@ -411,6 +433,8 @@ struct visitor {
     uint64_t since;                 /* counter ticks */
     char account[64];
     char share[64];
+    smb2_file_id last;              /* the last file it opened, for a compound */
+    bool has_last;
 };
 
 /*
@@ -486,6 +510,28 @@ static void visitors_gone(void)
     }
 }
 
+/* A CREATE that failed: what follows it in a compound has no file. */
+static void none_opened(struct smb2_context *smb2)
+{
+    struct visitor *v = visitor_of(smb2);
+
+    if (v != NULL) {
+        v->has_last = false;
+    }
+}
+
+static bool last_opened(struct smb2_context *smb2, smb2_file_id out)
+{
+    struct visitor *v = visitor_of(smb2);
+
+    if (v == NULL || !v->has_last) {
+        return false;
+    }
+
+    memcpy(out, v->last, SMB2_FD_SIZE);
+    return true;
+}
+
 static void address_text(const uint8_t a[4], char *out, size_t size)
 {
     snprintf(out, size, "%u.%u.%u.%u", a[0], a[1], a[2], a[3]);
@@ -499,10 +545,40 @@ static void address_text(const uint8_t a[4], char *out, size_t size)
 
 /* A refusal with its own status, queued here (a handler's `> 0`): left
  * to libsmb2, every refusal is "not implemented". */
+/*
+ * **Every refusal said**, but the ones that are a conversation's normal end
+ * - no more names, the end of a file, an empty pipe: what a client asks
+ * that this does not answer is how the next thing to build is found (N12d,
+ * the Mac's Finder). `refusing` names what was asked, when a caller knows.
+ */
+static char refusing[160];
+
+static const char *command_name(uint16_t c)
+{
+    static const char *const names[] = {
+        "NEGOTIATE", "SESSION_SETUP", "LOGOFF", "TREE_CONNECT", "TREE_DISCONNECT",
+        "CREATE", "CLOSE", "FLUSH", "READ", "WRITE", "LOCK", "IOCTL", "CANCEL",
+        "ECHO", "QUERY_DIRECTORY", "CHANGE_NOTIFY", "QUERY_INFO", "SET_INFO",
+        "OPLOCK_BREAK" };
+
+    return c < sizeof names / sizeof names[0] ? names[c] : "a command";
+}
+
 static int refuse(struct smb2_context *smb2, uint16_t command, uint32_t status)
 {
     struct smb2_error_reply err;
     struct smb2_pdu *pdu;
+
+    if (status != SMB2_STATUS_NO_MORE_FILES && status != SMB2_STATUS_END_OF_FILE
+        && status != SMB2_STATUS_PIPE_EMPTY) {
+        char what[200];
+
+        snprintf(what, sizeof what, "%s with %08x%s%s", command_name(command),
+                 (unsigned)status, refusing[0] ? ": " : "", refusing);
+        said("refused ", what, NULL);
+    }
+
+    refusing[0] = '\0';
 
     memset(&err, 0, sizeof(err));
     pdu = smb2_cmd_error_reply_async(smb2, &err, command, status, NULL, NULL);
@@ -769,6 +845,7 @@ static bool pipe_in(struct handle *h, const uint8_t *data, size_t len)
 {
     struct smb_rpc_share *list;
     struct smb_rpc_server srv;
+    int unknown = -1;
     uint8_t *bigger;
     size_t i, used;
 
@@ -795,9 +872,18 @@ static bool pipe_in(struct handle *h, const uint8_t *data, size_t len)
     list[share_count].name = "IPC$";
     list[share_count].type = SMB_RPC_IPC;
     list[share_count].comment = "IPC Service";
+    srv.pipe = h->rpc;
     srv.hostname = server.hostname;
     srv.shares = list;
     srv.count = share_count + 1;
+    srv.user = NULL;
+    srv.unknown = &unknown;
+
+    {
+        struct visitor *v = visitor_of(h->smb2);
+
+        srv.user = v != NULL ? v->account : "";
+    }
 
     for (;;) {
         size_t room = h->out_len + 65536;
@@ -814,6 +900,15 @@ static bool pipe_in(struct handle *h, const uint8_t *data, size_t len)
             h->in_len = 0;
             free(list);
             return false;
+        }
+
+        if (unknown >= 0) {
+            char what[48];
+
+            snprintf(what, sizeof what, "%d on %s", unknown,
+                     h->rpc == SMB_RPC_LSARPC ? "lsarpc" : "srvsvc");
+            said("answered with a fault: operation ", what, NULL);
+            unknown = -1;
         }
 
         if (used == 0) {
@@ -839,7 +934,7 @@ static size_t pipe_out(struct handle *h, uint8_t *to, size_t room)
     return n;
 }
 
-/* CREATE on IPC$: `srvsvc`, and no other pipe. */
+/* CREATE on IPC$: `srvsvc` and `lsarpc`, and no other pipe. */
 static int create_pipe(struct smb2_context *smb2, struct smb2_create_request *req,
                        struct smb2_create_reply *rep)
 {
@@ -851,8 +946,11 @@ static int create_pipe(struct smb2_context *smb2, struct smb2_create_request *re
         name++;
     }
 
-    if (strcasecmp(name, "srvsvc") != 0 || !linked(smb2, &tree)
+    if ((strcasecmp(name, "srvsvc") != 0 && strcasecmp(name, "lsarpc") != 0)
+        || !linked(smb2, &tree)
         || (h = handle_new(smb2, tree, rep->file_id)) == NULL) {
+        snprintf(refusing, sizeof refusing, "the pipe \"%s\" on IPC$", name);
+        none_opened(smb2);
         if (req->name != NULL) {
             smb2_free_data(smb2, (void *)req->name);
             req->name = NULL;
@@ -861,11 +959,23 @@ static int create_pipe(struct smb2_context *smb2, struct smb2_create_request *re
     }
 
     h->pipe = true;
-    put_text(h->path, sizeof h->path, "\\PIPE\\srvsvc");
+    h->rpc = strcasecmp(name, "lsarpc") == 0 ? SMB_RPC_LSARPC : SMB_RPC_SRVSVC;
+
+    {
+        struct visitor *v = visitor_of(smb2);
+
+        if (v != NULL) {
+            memcpy(v->last, rep->file_id, sizeof v->last);
+            v->has_last = true;
+        }
+    }
+    put_text(h->path, sizeof h->path,
+             h->rpc == SMB_RPC_LSARPC ? "\\PIPE\\lsarpc" : "\\PIPE\\srvsvc");
     memset(&h->facts, 0, sizeof h->facts);
     rep->create_action = FILE_OPENED;
     rep->file_attributes = SMB2_FILE_ATTRIBUTE_NORMAL;
-    said("opened the srvsvc pipe, for the share list", NULL, NULL);
+    said(h->rpc == SMB_RPC_LSARPC ? "opened the lsarpc pipe, for who signed in"
+                                  : "opened the srvsvc pipe, for the share list", NULL, NULL);
     return 0;
 }
 
@@ -908,12 +1018,23 @@ static int create(struct smb2_server *server, struct smb2_context *smb2,
         if (h == NULL) {
             status = SMB2_STATUS_INSUFFICIENT_RESOURCES;
         } else {
+            struct visitor *v = visitor_of(smb2);
+
             put_text(h->path, sizeof h->path, path);
             h->facts = f;
+
+            if (v != NULL) {
+                memcpy(v->last, rep->file_id, sizeof v->last);
+                v->has_last = true;
+            }
         }
     }
 
     if (status != 0) {
+        none_opened(smb2);
+        snprintf(refusing, sizeof refusing, "\"%s\" access %08x disposition %u options %08x",
+                 req->name != NULL ? req->name : "", (unsigned)req->desired_access,
+                 (unsigned)req->create_disposition, (unsigned)req->create_options);
         /* libsmb2 frees the name only with a reply of its own making. */
         if (req->name != NULL) {
             smb2_free_data(smb2, (void *)req->name);
@@ -1383,6 +1504,8 @@ static int query_info(struct smb2_server *server, struct smb2_context *smb2,
     }
 
     if (length == 0) {
+        snprintf(refusing, sizeof refusing, "info type %u class %u",
+                 (unsigned)req->info_type, (unsigned)req->file_info_class);
         return refuse(smb2, SMB2_QUERY_INFO, SMB2_STATUS_NOT_SUPPORTED);
     }
 
@@ -1523,6 +1646,7 @@ static int refuse_ioctl(struct smb2_server *server, struct smb2_context *smb2,
         return refuse(smb2, SMB2_IOCTL, SMB2_STATUS_NOT_FOUND);
     }
 
+    snprintf(refusing, sizeof refusing, "control code %08x", (unsigned)req->ctl_code);
     return refuse(smb2, SMB2_IOCTL, SMB2_STATUS_NOT_SUPPORTED);
 }
 
@@ -1621,6 +1745,7 @@ static long door = -1;
 static long keyring = -1;
 
 static bool wanted;                 /* asked to serve, and not since to stop */
+static bool account_pending;        /* PATIENT: the keyring could not answer for it yet */
 static int listen_error;            /* what the last try at the port said */
 static struct smbd_start asked;     /* the last START's port, account and name */
 
@@ -1898,9 +2023,18 @@ static uint32_t start(const struct smbd_start *st)
         return SMBD_ERR_NO_SHARES;
     }
 
+    account_pending = false;
+
     if (!account_from_keyring(st->account)) {
-        return st->account[0] == '\0' || keyring >= 0 ? SMBD_ERR_NO_ACCOUNT
-                                                      : SMBD_ERR_KEYRING;
+        if ((st->flags & SMBD_PATIENT) && st->account[0] != '\0') {
+            /* At boot `/Home`, where the keyring keeps its file, may not be
+             * there yet: asked again each second until it answers. */
+            account_pending = true;
+            said("waiting for the keyring to hold ", st->account, "'s password");
+        } else {
+            return st->account[0] == '\0' || keyring >= 0 ? SMBD_ERR_NO_ACCOUNT
+                                                          : SMBD_ERR_KEYRING;
+        }
     }
 
     asked = *st;
@@ -2081,6 +2215,7 @@ static void arrived(struct smb2_context *smb2, void *data)
 
     if (v != NULL) {
         memset(v->account, 0, sizeof v->account);
+        v->has_last = false;
         memset(v->share, 0, sizeof v->share);
         v->id = next_visitor++;
         v->smb2 = smb2;
@@ -2137,6 +2272,18 @@ void smbd_server(long net_cap, long console_cap, long disk_cap, long door_cap,
                 answer(&msg, sender);
             }
             continue;
+        }
+
+        if (account_pending) {
+            if (account_from_keyring(asked.account)) {
+                account_pending = false;
+                said("the keyring holds ", asked.account, "'s password now");
+            } else {
+                if (kosmos_receive(inner, &msg, &sender, 0, A_SECOND) == 0) {
+                    answer(&msg, sender);
+                }
+                continue;
+            }
         }
 
         server.port = asked.port;

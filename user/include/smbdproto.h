@@ -42,6 +42,9 @@
 
 #define SMBD_ENCRYPT     1u     /* SMB 3's AES on the wire, asked of every client */
 #define SMBD_LOCAL_ONLY  2u     /* only from this machine's own network (N12c-3) */
+#define SMBD_PATIENT     4u     /* at boot: an account the keyring cannot answer for yet -
+                                 * /Home not there yet - waited for, a second at a time,
+                                 * rather than refused */
 
 #define SMBD_SHARE_WRITE 1u     /* read and write (N14); refused until then */
 

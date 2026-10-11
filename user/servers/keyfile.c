@@ -131,7 +131,7 @@ static int well_formed(const struct key_record *r, size_t count, uint32_t next_i
         const struct key_entry *e = &r[i].entry;
 
         if (e->id == 0 || e->id >= next_id
-            || e->kind < KEY_KIND_SMB || e->kind > KEY_KIND_MAIL
+            || e->kind < KEY_KIND_SMB || e->kind > KEY_KIND_LAST
             || r[i].secret_bytes > KEY_SECRET_MAX || r[i].reserved != 0
             || !ended(e->used_by_name, sizeof e->used_by_name)
             || !ended(e->service, sizeof e->service)

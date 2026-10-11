@@ -19,10 +19,16 @@ struct smb_rpc_share {
     const char *comment;
 };
 
+#define SMB_RPC_SRVSVC    0             /* the share list */
+#define SMB_RPC_LSARPC    1             /* who a client signed in as */
+
 struct smb_rpc_server {
+    int         pipe;                   /* SMB_RPC_SRVSVC or SMB_RPC_LSARPC */
     const char *hostname;               /* NetBIOS's, as NetServerGetInfo says it */
     const struct smb_rpc_share *shares;
     size_t      count;
+    const char *user;                   /* lsarpc: the account signed in */
+    int        *unknown;                /* set to an operation not answered, when not NULL */
 };
 
 /*

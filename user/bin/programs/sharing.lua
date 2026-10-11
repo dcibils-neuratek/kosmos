@@ -6,8 +6,9 @@
 --   sharing account NAME PASSWORD        NAME's password kept, as its NT hash
 --   sharing folders NAME:/Home/FOLDER ...
 --                                        what is shared, in place of what was
---   sharing start ACCOUNT [port N] [name HOST] [local]
---                                        local: this network only
+--   sharing start ACCOUNT [port N] [name HOST] [local] [patient]
+--                                        local: this network only; patient:
+--                                        wait for the keyring, as at boot
 --   sharing who                          who is connected
 --   sharing disconnect ID                that one, ended
 --   sharing stop
@@ -89,8 +90,9 @@ elseif verb == "start" and words[2] then
     if words[i] == "port" then o.port = tonumber(words[i + 1]); i = i + 2
     elseif words[i] == "name" then o.hostname = words[i + 1]; i = i + 2
     elseif words[i] == "local" then o.local_only = true; i = i + 1
+    elseif words[i] == "patient" then o.patient = true; i = i + 1
     else
-      print("sharing: start ACCOUNT [port N] [name HOST] [local], not " .. words[i])
+      print("sharing: start ACCOUNT [port N] [name HOST] [local] [patient], not " .. words[i])
       return
     end
   end
