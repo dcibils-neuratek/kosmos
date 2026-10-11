@@ -28,6 +28,10 @@ Then Samba's own `smbclient` - a client that is not Kosmos - asking:
   - the right account and a wrong password: a logon failure;
   - another account: refused before any answer is checked;
   - `sharing stop`: nothing answers; `sharing start kosmos` again: it does;
+  - the Servers window's File sharing page (N12c-2): the account's name
+    typed, a new password set through its sheet, Projects chosen in the Open
+    window's folder mode, the switch on - the new password signs in and the
+    old one does not - and off again;
   - and a machine whose `sharing` was never started: nothing answers on the
     port at all.
 
@@ -47,8 +51,9 @@ sys.path.insert(0, HERE)
 
 import scratch                                              # noqa: E402
 
-CHECKS = 18
+CHECKS = 23
 PASSWORD = "test-only-word"
+NEW_PASSWORD = "second-test-word"
 SMBCLIENT = "/opt/homebrew/bin/smbclient"
 LUA = os.path.join(ROOT, "build", "host", "lua")
 KFS = os.path.join(HERE, "kfs.lua")
@@ -115,6 +120,110 @@ def read(path):
             return f.read()
     except OSError:
         return None
+
+
+def window_page(R, guest, port, check):
+    from run_share import keys_for
+
+    def line(text, what, since):
+        return guest.wait_for_line(text, what, since)
+
+    def window_at(title, since):
+        found = line("wm: window %s at " % title, "the %s window" % title, since)
+        return tuple(int(v) for v in re.match(r"(\d+),(\d+)", found).groups())
+
+    def page(since, ok=lambda t: True, seconds=30):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            for f in re.finditer(r"servers: file sharing - (.*)\n", guest.seen[since:]):
+                if ok(f.group(1)):
+                    return f.group(1)
+            time.sleep(0.2)
+        raise R.Failure("the page never said that within %d s:\n%s"
+                        % (seconds, guest.seen[since:][-600:]))
+
+    def places(text):
+        m = re.search(r"its switch at (\d+),(\d+), \w+; share at (\d+),(\d+); "
+                      r"password at (\d+),(\d+); name at (\d+),(\d+)", text)
+        v = [int(x) for x in m.groups()]
+        return (v[0], v[1]), (v[2], v[3]), (v[4], v[5]), (v[6], v[7])
+
+    guest.type("sharing stop")
+    guest.wait_for("smbd: stopped sharing", "smbd stopped before the window")
+
+    mark = len(guest.seen)
+    guest.type("wm servers:sharing")
+    sx, sy = window_at("Servers", mark)
+    told = page(mark, lambda t: t.startswith("stopped"))
+    switch, share, password, name = places(told)
+    time.sleep(2.0)
+    width, height, _ = R.parse_ppm(guest.screendump())
+
+    def click(x, y):
+        guest.mouse_to(*R._to_tablet(x, y, width, height))
+        time.sleep(0.25)
+        guest.mouse_button(True, "left")
+        time.sleep(0.1)
+        guest.mouse_button(False, "left")
+        time.sleep(0.3)
+
+    def type_keys(text):
+        for k in keys_for(text):
+            guest.sendkey(k)
+
+    # The account's name, and a password of its own through the sheet.
+    click(sx + name[0], sy + name[1])
+    type_keys("kosmos")
+    time.sleep(0.5)
+    mark = len(guest.seen)
+    click(sx + password[0], sy + password[1])
+    guest.wait_for_line("servers: the password sheet open", "the sheet", mark)
+    type_keys(NEW_PASSWORD)
+    guest.sendkey("ret")
+    kept = guest.wait_for_line("servers: kosmos's password kept", "the new password", mark)
+
+    # A folder, chosen in the folder window: down to Projects, then Share.
+    mark = len(guest.seen)
+    click(sx + share[0], sy + share[1])
+    px, py = window_at("Share a folder of /Home", mark)
+    said = guest.wait_for_line("panel: Share a folder of /Home at ", "the folder window", mark)
+    # Its list has the keyboard from the moment it opens.
+    for _ in range(12):
+        if ", Projects selected" in said:
+            break
+        mark = len(guest.seen)
+        guest.sendkey("down")
+        said = guest.wait_for_line("panel: Share a folder of /Home at ", "the next folder", mark)
+    bx, by = (int(v) for v in re.search(r"button at (\d+),(\d+)", said).groups())
+    mark = len(guest.seen)
+    click(px + bx, py + by)
+    chosen = guest.wait_for_line("servers: sharing ", "the folder shared", mark)
+    check(chosen.startswith("/Home/Projects as Projects"),
+          "the folder window did not share Projects: %r" % chosen)
+
+    # On, by its switch: serving, the window's password signing in and the
+    # old one not.
+    mark = len(guest.seen)
+    click(sx + switch[0], sy + switch[1])
+    on = page(mark, lambda t: t.startswith("sharing 1 folder"))
+    time.sleep(1)
+    listing = ask(port, "Projects", "kosmos", NEW_PASSWORD, "ls")
+    old = ask(port, "Projects", "kosmos", PASSWORD, "ls")
+    check("hello.txt" in listing,
+          "the switch on, Projects was not listed with the window's password: %r"
+          % listing[-300:])
+    check("NT_STATUS_LOGON_FAILURE" in old,
+          "the old password still signed in after the window changed it: %r" % old[-200:])
+    check(on.startswith("sharing 1 folder") and kept is not None,
+          "the page did not say it was sharing one folder: %r" % on)
+
+    # Off, by its switch.
+    mark = len(guest.seen)
+    click(sx + switch[0], sy + switch[1])
+    page(mark, lambda t: t.startswith("stopped"))
+    time.sleep(1)
+    off = ask(port, "Projects", "kosmos", NEW_PASSWORD, "ls")
+    check("hello.txt" not in off, "the switch off, smbd still answered: %r" % off[-200:])
 
 
 def main():
@@ -252,6 +361,11 @@ def main():
         restarted = ask(port, "Projects", "kosmos", PASSWORD, "ls")
         check("hello.txt" in restarted, "smbd did not serve when started again: %r"
               % restarted[-200:])
+
+        # N12c-2: the Servers window's File sharing page, driven as a person
+        # would - the account's name typed, a new password in the sheet, a
+        # folder chosen in the Open window's folder mode, the switch.
+        window_page(R, guest, port, check)
     except Exception as e:                  # noqa: BLE001 - said below
         fails.append("the machine stopped: %s: %s" % (type(e).__name__, str(e).splitlines()[0]))
     finally:
@@ -281,7 +395,7 @@ def main():
         for f in fails:
             print("  " + f)
         for l in seen.splitlines():
-            if l.startswith("smbd") or "net:" in l and "445" in l:
+            if l.startswith(("smbd", "servers:", "panel:", "wm: window")) or "net:" in l and "445" in l:
                 print("  | " + l.strip()[:160])
         return 1
 
@@ -294,7 +408,10 @@ def main():
           "as read only; a climb to a folder not shared never served; a share not offered "
           "'bad network name'; a wrong password a logon failure; another account refused; "
           "the server answering after all of it; stopped, nothing answering, and started "
-          "again, serving; a machine whose sharing was never started answering nothing)" % (CHECKS, said.get("dialect")))
+          "again, serving; the Servers window's page - the account typed, a new password "
+          "through its sheet that signs in where the old one no longer does, Projects "
+          "chosen in the folder window, its switch on serving and off stopping; a machine "
+          "whose sharing was never started answering nothing)" % (CHECKS, said.get("dialect")))
     return 0
 
 

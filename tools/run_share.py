@@ -108,8 +108,8 @@ held apart from its paints - smbfs counts the STATUS asks, and twenty
 repaints by the arrow keys do not move it; the peer paused and the amber
 band "MACPEER is not answering" with Try now, within smbfs's ten seconds
 of silence; resumed and Try now, the band gone and the folder fresh; a
-remembered server not signed into, as its page; and the Servers window's
-File sharing, its switch drawn disabled, pressed, and unmoved.
+remembered server not signed into, as its page. The Servers window's File
+sharing page is `run_smbd.py`'s, since it shares (`docs/sharing.md` N12c-2).
 
 Usage: run_share.py IMAGE [--part 1|2|3] [--measure]
 """
@@ -1587,35 +1587,6 @@ def windows(image):
         click(tx + 100, ty + int(seen_y))
         said["seen"] = line("tracker: seen ", "the server's page", mark, 10)
 
-        # **File sharing in the Servers window**: drawn, its switch disabled
-        # and unmoved by a press.
-        mark = len(guest.seen)
-        guest.proc.stdin.write(R.STOP_DESKTOP)
-        guest.proc.stdin.flush()
-        deadline = time.monotonic() + 20
-
-        while R.PROMPT not in guest.seen[mark:] and time.monotonic() < deadline:
-            time.sleep(0.2)
-
-        mark = len(guest.seen)
-        guest.type("wm servers:sharing")
-        sx, sy, _, _ = window_at("Servers", mark)
-        said["sharing"] = line("servers: file sharing - ", "the File sharing page", mark, 30)
-        m = re.search(r"its switch at (\d+),(\d+), (\w+)", said["sharing"])
-        swx, swy = int(m.group(1)), int(m.group(2))
-        # The pointer away from the switch for both pictures: the screen
-        # carries it, and it is not the switch.
-        away_from = R._to_tablet(sx + 10, sy + 400, width, height)
-        guest.mouse_to(*away_from)
-        time.sleep(1.5)
-        _, _, before = R.parse_ppm(guest.screendump())
-        mark = len(guest.seen)
-        click(sx + swx, sy + swy)
-        guest.mouse_to(*away_from)
-        time.sleep(1.5)
-        _, _, after = R.parse_ppm(guest.screendump())
-        said["after switch"] = guest.seen[mark:]
-        shots["switch"] = (before, after, sx + swx, sy + swy, m.group(3))
     except Exception as e:                  # noqa: BLE001 - said below
         said["error"] = "%s: %s" % (type(e).__name__, str(e)[:1500])
     finally:
@@ -1734,24 +1705,10 @@ def windows(image):
           "a remembered server let go of is not a page of a server not signed "
           "into: %r %r" % (text("remembered"), text("seen")))
 
-    sharing = shots.get("switch")
-    check(text("sharing").startswith("Sharing this machine's folders comes in a later step")
-          and sharing is not None and sharing[4] == "disabled",
-          "the File sharing page does not say it comes later, its switch "
-          "disabled: %r" % text("sharing"))
-
-    if sharing:
-        before, after_px, x, y, _ = sharing
-        moved = sum(1 for yy in range(y - 12, y + 12) for xx in range(x - 22, x + 22)
-                    if before[(yy * width + xx) * 3:(yy * width + xx) * 3 + 3]
-                    != after_px[(yy * width + xx) * 3:(yy * width + xx) * 3 + 3])
-        check(moved == 0 and "switch moved" not in text("after switch"),
-              "the disabled switch moved when pressed: %d pixels changed" % moved)
-
     check(" died" not in transcript and "smbfs exited" not in transcript,
           "something died: %r" % transcript[transcript.find(" died") - 200:][:400])
 
-    checks = 21
+    checks = 19
     log = os.path.join(ROOT, "build", "%s-serial.log" % instance)
 
     with open(log, "w") as f:
@@ -1773,7 +1730,7 @@ def windows(image):
           "Modified the server's date; a second share chosen from the server's "
           "list on the same session; %s; the amber band %.1f s after a paused "
           "server was asked, Try now and back in %.1f s; a remembered server's "
-          "page; File sharing's switch disabled and unmoved)."
+          "page)."
           % (checks, took.get("answered", -1), text("shapes"), took.get("connect", -1),
              text("measure"), took.get("away", -1), took.get("back", -1)))
     return 0

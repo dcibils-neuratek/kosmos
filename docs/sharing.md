@@ -1247,10 +1247,14 @@ Then, each when its time comes:
       the `sharing` program at the prompt; the boot's test account gone,
       `x86-smbd` driving `sharing` instead. Encryption is answered "later":
       libsmb2's server has no switch that asks a client to seal.
-    - **N12c-2** - the page as drawn: the switch, the folders with Share a
-      folder of /Home, the account and Change password, the name on the
-      network, Start with the machine; read and write drawn and kept off
-      until N14.
+    - **N12c-2 - built, 11 October** (`testing.md` 18.539) - the page as
+      drawn: the switch, the folders with Share a folder of /Home, the
+      account and Change password, the name on the network, Start with the
+      machine; read and write drawn and kept off until N14, encryption until
+      smbd can ask for it. A folder is chosen in the Open window's new
+      folder mode (`panel.folder`, `ui.md` 16.8f); a password goes through a
+      sheet, once. `smbd` answers STATE from a thread of its own at once, so
+      the window asking twice a second never waits on the network.
     - **N12c-3** - Connected now, with Disconnect; This network only.
   - **N12d** - the Mac's own client: `mount_smbfs` and Finder, each thing
     they ask that the example server did not answer found and answered.

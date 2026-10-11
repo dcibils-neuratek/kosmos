@@ -19,6 +19,11 @@
  *
  * The shares are set one a message, a share being a name and a folder of
  * `/Home`; the window keeps them, and sends them again at each START.
+ *
+ * **STATE is answered at once**, by a thread of `smbd`'s own that reads what
+ * the serving thread last wrote; everything else is handed to the serving
+ * thread, which reads it between libsmb2's passes - at most 100 ms - so the
+ * window asking how it is twice a second never waits on the network.
  */
 
 #define SMBD_OP_STATE        1u  /* how it is */
@@ -26,7 +31,8 @@
 #define SMBD_OP_STOP         3u  /* stop serving; every connection ends */
 #define SMBD_OP_SHARES_CLEAR 4u  /* no shares */
 #define SMBD_OP_SHARE        5u  /* u.share: one more */
-#define SMBD_OP_ACCOUNT      6u  /* u.account: a name, and a password whose NT hash is kept */
+#define SMBD_OP_ACCOUNT      6u  /* u.account: a name, and a password whose NT hash is kept;
+                                  * with no password, whether one is kept: 0, or NO_ACCOUNT */
 #define SMBD_OP_CONNECTION   7u  /* the connection after u.after (N12c-3) */
 #define SMBD_OP_DISCONNECT   8u  /* the connection u.after names (N12c-3) */
 

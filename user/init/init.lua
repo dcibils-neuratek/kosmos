@@ -2294,6 +2294,17 @@ local function new_namespace()
     return r
   end
 
+  -- Whether a password is kept for `name`: true, or nil and why.
+  function ns.sharing_kept(name)
+    local why
+    name, why = fits(name, 64, "the account's name")
+    if not name then return nil, why end
+    local r
+    r, why = smbd_call("account", string.pack("<c64I4I4c128", name, 0, 0, ""))
+    if not r then return nil, why end
+    return true
+  end
+
   -- The account's password, once: smbd keeps its NT hash and nothing else.
   function ns.sharing_account(name, password)
     local why
@@ -5298,6 +5309,25 @@ query. `find` and `watch` are built on exactly these two calls.
           out("boot: " .. program .. ": " .. tostring(why) .. "\n")
         end
       end
+    end
+
+    -- File sharing (`docs/sharing.md` N12c): not a program but `smbd`,
+    -- already running and idle, told what to share through its door - the
+    -- folders, then the account. Without an address yet it waits, and tries
+    -- the port again each second.
+    local c = servers.sharing
+
+    if type(c) == "table" and c.at_start == true and type(c.shares) == "table" then
+      out("starting file sharing\n")
+
+      local ok, why = ns.sharing_shares(c.shares)
+
+      if ok then
+        ok, why = ns.sharing_start{ account = c.account, hostname = c.hostname,
+                                    port = tonumber(c.port) or 445 }
+      end
+
+      if not ok then out("boot: file sharing: " .. tostring(why) .. "\n") end
     end
   end
 

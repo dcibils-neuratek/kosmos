@@ -1329,7 +1329,16 @@ static uint32_t set_account(const struct smbd_account *a)
         return SMBD_ERR_NO_ACCOUNT;
     }
 
-    if (a->password_bytes == 0 || a->password_bytes > SMBD_PASSWORD_MAX) {
+    /* No password: whether one is kept for this name, for the window. */
+    if (a->password_bytes == 0) {
+        const struct key_reply *rp = (const struct key_reply *)krep.data;
+        bool kept = keyring_ask(KEY_OP_GET, a->name, NULL, 0) == 0 && rp->secret_bytes == 16;
+
+        memset(krep.data, 0, sizeof krep.data);
+        return kept ? 0 : SMBD_ERR_NO_ACCOUNT;
+    }
+
+    if (a->password_bytes > SMBD_PASSWORD_MAX) {
         return SMBD_ERR_PASSWORD;
     }
 
@@ -1441,6 +1450,22 @@ static uint32_t start(const struct smbd_start *st)
     return 0;
 }
 
+/* How it is, as STATE says it - read by the door's thread as the serving
+ * thread writes it; a word read half-changed says a moment's state, and is
+ * asked again half a second later. */
+static void state_into(struct smbd_reply *rp)
+{
+    rp->state = !wanted ? SMBD_STOPPED : server.listener_ready ? SMBD_SERVING
+                                                               : SMBD_WAITING;
+    rp->port = wanted ? asked.port : 0;
+    rp->flags = wanted ? asked.flags : 0;
+    rp->shares = (uint32_t)share_count;
+    rp->connections = connections;
+    rp->listen_error = listen_error;
+    put_text(rp->account, sizeof rp->account, wanted ? account : "");
+    put_text(rp->hostname, sizeof rp->hostname, wanted ? asked.hostname : "");
+}
+
 static void answer(struct message *msg, uint64_t sender)
 {
     static struct message out;
@@ -1493,16 +1518,56 @@ static void answer(struct message *msg, uint64_t sender)
     /* The password, if it came, gone from this process's copy of it. */
     memset(msg->data, 0, sizeof msg->data);
 
-    rp->state = !wanted ? SMBD_STOPPED : server.listener_ready ? SMBD_SERVING
-                                                               : SMBD_WAITING;
-    rp->port = wanted ? asked.port : 0;
-    rp->flags = wanted ? asked.flags : 0;
-    rp->shares = (uint32_t)share_count;
-    rp->connections = connections;
-    rp->listen_error = listen_error;
-    put_text(rp->account, sizeof rp->account, wanted ? account : "");
-    put_text(rp->hostname, sizeof rp->hostname, wanted ? asked.hostname : "");
+    state_into(rp);
     (void)kosmos_reply(sender, &out);
+}
+
+/*
+ * **The door's own thread**: STATE answered here at once; everything else
+ * handed to the serving thread through `inner`, a private endpoint, and its
+ * answer handed back - so what changes shares and handles is one thread.
+ */
+static long inner = -1;
+
+static void door_main(unsigned long unused)
+{
+    static struct message in, back, out;
+    uint64_t sender;
+
+    (void)unused;
+
+    for (;;) {
+        const struct smbd_request *rq = (const struct smbd_request *)in.data;
+
+        if (kosmos_receive(door, &in, &sender, 0, 0) != 0) {
+            continue;
+        }
+
+        if (in.cap_plus_one) {
+            kosmos_cap_drop((long)in.cap_plus_one - 1);
+            in.cap_plus_one = 0;
+        }
+
+        if (in.length == sizeof *rq && rq->op == SMBD_OP_STATE) {
+            memset(&out, 0, sizeof out);
+            out.length = sizeof(struct smbd_reply);
+            state_into((struct smbd_reply *)out.data);
+            (void)kosmos_reply(sender, &out);
+            continue;
+        }
+
+        memset(&back, 0, sizeof back);
+        if (kosmos_call(inner, &in, &back) != 0) {
+            struct smbd_reply *rp = (struct smbd_reply *)back.data;
+
+            memset(&back, 0, sizeof back);
+            back.length = sizeof *rp;
+            rp->error = SMBD_ERR_BAD_OP;
+        }
+
+        memset(in.data, 0, sizeof in.data);
+        (void)kosmos_reply(sender, &back);
+    }
 }
 
 /*
@@ -1519,7 +1584,7 @@ static void door_between_passes(struct smb2_server *srv, fd_set *rfds, fd_set *w
     (void)rfds;
     (void)wfds;
 
-    while (kosmos_receive(door, &msg, &sender, 1, 0) == 0) {
+    while (kosmos_receive(inner, &msg, &sender, 1, 0) == 0) {
         answer(&msg, sender);
     }
 }
@@ -1557,7 +1622,9 @@ void smbd_server(long net_cap, long console_cap, long disk_cap, long door_cap,
     server.max_write_size = READ_MOST;
     server.extra_service = door_between_passes;
 
-    if (door < 0) {
+    inner = kosmos_endpoint();
+
+    if (door < 0 || inner < 0 || kosmos_thread_start(door_main, 0) < 0) {
         said("no door to be told what to share; sharing nothing", NULL, NULL);
         return;
     }
@@ -1566,7 +1633,7 @@ void smbd_server(long net_cap, long console_cap, long disk_cap, long door_cap,
         char port[8], code[16];
 
         if (!wanted) {
-            if (kosmos_receive(door, &msg, &sender, 0, 0) == 0) {
+            if (kosmos_receive(inner, &msg, &sender, 0, 0) == 0) {
                 answer(&msg, sender);
             }
             continue;
@@ -1593,7 +1660,7 @@ void smbd_server(long net_cap, long console_cap, long disk_cap, long door_cap,
         snprintf(code, sizeof code, " (%d)", listen_error);
         said("could not serve on port ", port, code);
 
-        if (kosmos_receive(door, &msg, &sender, 0, A_SECOND) == 0) {
+        if (kosmos_receive(inner, &msg, &sender, 0, A_SECOND) == 0) {
             answer(&msg, sender);
         }
     }

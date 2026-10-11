@@ -29,6 +29,13 @@
 --               on_choose = function(path) ... end }
 --   panel.save{ start = "/Home", name = "untitled.lua",
 --               on_choose = function(path) ... end }
+--   panel.folder{ start = "/Home", title = "Share a folder", button = "Share",
+--                 on_choose = function(path) ... end }
+--
+-- **A folder is chosen as a file is opened** (`docs/sharing.md` N12c-2, the
+-- Servers window's Share a folder of /Home): only folders are listed, a
+-- second click or Return goes into one, and the button chooses the one
+-- selected - or, with none to select, the folder the list is showing.
 --
 -- The callback gets a whole path or is never called: Cancel closes the
 -- window and calls `on_cancel`, for a caller that wants to know. `filter`
@@ -55,7 +62,8 @@ local fitted = ui.fitted
 
 local function open(spec, mode)
   local win, err = ui.window{
-    title = spec.title or (mode == "save" and "Save" or "Open"),
+    title = spec.title or (mode == "save" and "Save" or mode == "folder" and "Choose a folder"
+                           or "Open"),
     w = W, h = H,
     x = spec.x or 200, y = spec.y or 120,
   }
@@ -112,6 +120,18 @@ local function open(spec, mode)
     g:text(KIND_X, y, fitted(kind, list_w - KIND_X - 16), dim)
   end
 
+  -- In folder mode, for whoever drives the window from outside: where it
+  -- is, what is selected, and where its button is in the window.
+  local function told()
+    if mode ~= "folder" or not panel.button_at then return end
+
+    local e = entries[listing.selected]
+
+    print(("panel: %s at %s, %s selected; button at %d,%d"):format(
+          spec.title or "Choose a folder", where, e and e.name or "nothing",
+          panel.button_at.x, (win.head_h or 0) + panel.button_at.y))
+  end
+
   local function show(path)
     local found, why = files.entries(path)
 
@@ -123,7 +143,8 @@ local function open(spec, mode)
     local shown = {}
 
     for _, e in ipairs(placelib.files_only(path, found)) do
-      if e.kind == "directory" or not spec.filter or spec.filter(e.name) then
+      if e.kind == "directory"
+         or (mode ~= "folder" and (not spec.filter or spec.filter(e.name))) then
         shown[#shown + 1] = e
       end
     end
@@ -133,7 +154,9 @@ local function open(spec, mode)
     listing.items    = shown
     listing.selected = 1
     listing.top      = 1
-    status.text      = (#shown == 0) and "empty" or ""
+    status.text      = (#shown == 0) and (mode == "folder" and "no folders in it" or "empty")
+                       or ""
+    told()
   end
 
   local function finish(path)
@@ -159,8 +182,12 @@ local function open(spec, mode)
 
   listing.on_select = function(_, e)
     if mode == "save" and e and e.kind ~= "directory" then name.text = e.name end
+    told()
   end
 
+  -- In folder mode the arrows report where they are, for the button's
+  -- sake: `on_select` there only tells, and chooses nothing.
+  listing.arrows_choose = mode == "folder"
   listing.on_open  = function(_, e) act(e) end
   trail.on_visit   = function(path) show(path) end
   tree.on_select   = function(_, node) if node.path then show(node.path) end end
@@ -200,6 +227,19 @@ local function open(spec, mode)
       x = bx, y = H - FOOT + 10, w = 96, h = 24, text = "Save",
       on_click = function() save() end,
     })
+  elseif mode == "folder" then
+    -- The folder selected, or the one shown when there is none in it.
+    local chooser = ui.button{
+      x = bx, y = H - FOOT + 10, w = 96, h = 24, text = spec.button or "Choose",
+      on_click = function()
+        local e = entries[listing.selected]
+
+        finish(e and files.join(where, e.name) or where)
+      end,
+    }
+
+    win:add(chooser)
+    panel.button_at = { x = chooser.x + chooser.w // 2, y = chooser.y + chooser.h // 2 }
   else
     win:add(ui.button{
       x = bx, y = H - FOOT + 10, w = 96, h = 24, text = "Open",
@@ -225,5 +265,6 @@ end
 
 function panel.save(spec)  return open(spec, "save") end
 function panel.open(spec)  return open(spec, "open") end
+function panel.folder(spec) return open(spec, "folder") end
 
 return panel

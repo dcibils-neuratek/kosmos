@@ -23220,3 +23220,31 @@ every sign-in a logon failure, nine checks; STOP not setting
 `keyring_grant`'s rule did **not** bite: a file in `/Home` carries no
 `needs` words at all, since only the image's store reads them, so on that
 path the rule is a second guard and the first is the store.
+
+## 18.539 The Servers window shares: N12c-2
+
+`docs/sharing.md` N12c-2. The Servers window's File sharing page is built as
+`docs/sharing.html` draws it: a switch that starts and stops `smbd` through
+its door; the shared folders, each with Remove, and Share a folder of
+/Home... through the Open window's new folder mode (`panel.folder`); the
+account's name; the password, Set or Not set, changed through a sheet that
+sends it once; Guests off; the name on the network; Start with the machine,
+which the shell honours at boot by telling `smbd` the folders and the
+account. Read and write and encryption are drawn and kept off. `smbd`
+answers STATE from a door thread of its own at once and hands everything
+else to the serving thread, so the window's twice-a-second question never
+waits up to libsmb2's 100 ms pass.
+
+`x86-smbd` 23, was 18: after the prompt's checks, `wm servers:sharing` -
+the account typed into its field, a new password through the sheet, Projects
+chosen by the arrows in the folder window and Share pressed, the switch on:
+`smbclient` lists Projects with the window's password and the old one is a
+logon failure; the switch off and nothing answers. `x86-share` drops its
+check of the old disabled switch, 19 checks, was 21.
+
+**Controls**: the sheet sending nothing - the window's password a logon
+failure, the old one past its sign-in; the folder window choosing the folder
+shown instead of the one selected - "/Home as Home". The first run found the
+folder window drawn empty: it is run as the Open window always is,
+`chooser:run()`, and its button's place said with its title bar
+(`win.head_h`) as Connect to Server's are.

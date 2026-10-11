@@ -3,12 +3,12 @@
 -- kosmos: icon App_Poorman
 -- kosmos: name Servers
 -- kosmos: section system
--- kosmos: needs processes
+-- kosmos: needs processes sharing
 -- Every network server this machine can run, in one window.
 --
 --   wm servers
 --   wm servers:telnet        open on that server's page
---   wm servers:sharing       File sharing, drawn and not built yet
+--   wm servers:sharing       File sharing: folders of /Home over SMB
 --
 -- **As `docs/servers.html` draws it**, and Diego's word on the drawing:
 -- "The mockup looks great". His ask, 29 September: "a servers app that hold
@@ -55,14 +55,14 @@ end
 --------------------------------------------------------------------------
 
 --
--- **File sharing** (`docs/sharing.md`, `docs/sharing.html`'s fifth state):
--- folders of `/Home` offered to the Mac's Finder and Windows over SMB. Its
--- page is drawn as agreed - and its switch drawn disabled, saying that
--- sharing this machine's folders comes in a later step: the server side is
--- `smbd`, step N12, and nothing here pretends it exists. No `program`, so
--- nothing starts it and it is never "running".
+-- **File sharing** (`docs/sharing.md` N12c, `docs/sharing.html`'s fifth
+-- state): folders of `/Home` offered to the Mac's Finder and Windows over
+-- SMB. Not a program this window starts: `smbd` is a server init starts at
+-- every boot, idle, and this tells it what to share through its door
+-- (`smbdproto.h`), which the namespace lends this window because the image
+-- serves it and it says `kosmos: needs sharing`. So it is `door`, not
+-- `program`, and running is what `smbd` says rather than a process existing.
 --
-local SHARING_LATER = "Sharing this machine's folders comes in a later step"
 
 local SERVERS = {
   { id = "web", name = "Web", icon = "network", program = "httpd",
@@ -80,9 +80,10 @@ local SERVERS = {
     defaults = { port = 5900, at_start = false, password = "", control = false },
     args = function(c) return tostring(c.port) end,
     reach = function(a, c) return ("vnc://%s%s"):format(a, c.port == 5900 and "" or (":" .. c.port)) end },
-  { id = "sharing", name = "File sharing", icon = "folder", program = nil,
-    what = "SMB", later = SHARING_LATER,
-    defaults = { port = 445, at_start = false },
+  { id = "sharing", name = "File sharing", icon = "folder", door = true,
+    what = "SMB",
+    defaults = { port = 445, at_start = false, account = "", hostname = "KOSMOS",
+                 shares = {} },
     reach = function(a) return ("smb://%s"):format(a) end },
 }
 
@@ -114,7 +115,23 @@ end
 
 local netprogram = use("/Kosmos/Libraries/netprogram.lua")
 
+-- What `smbd` last said, asked once a pass: its door answers at once.
+local smbd_state = nil
+
+local function sharing_state(fresh)
+  if fresh or not smbd_state then
+    smbd_state = fs.has_sharing() and fs.sharing_state() or nil
+  end
+
+  return smbd_state
+end
+
 local function running(s)
+  if s.door then
+    local st = sharing_state()
+    return (st and st.state ~= "stopped") and true or nil
+  end
+
   return s.program and netprogram.running(s.program) or nil
 end
 
@@ -129,11 +146,46 @@ end
 
 local said = ""                     -- the last thing a verb said, for a moment
 
+-- File sharing, started: the folders and then the account, as `smbd`
+-- wants them - each refusal said as it comes.
+local function start_sharing(c)
+  if not fs.has_sharing() then
+    said = "this window was not handed smbd's door"
+    return
+  end
+
+  if #c.shares == 0 then
+    said = "share a folder of /Home first"
+    return
+  end
+
+  if c.account == "" then
+    said = "name the account a visitor signs in with first"
+    return
+  end
+
+  local ok, why = fs.sharing_kept(c.account)
+
+  if not ok then
+    said = "give " .. c.account .. " a password first"
+    return
+  end
+
+  ok, why = fs.sharing_shares(c.shares)
+
+  if ok then
+    ok, why = fs.sharing_start{ account = c.account, hostname = c.hostname, port = c.port }
+  end
+
+  said = ok and "" or ("could not share: " .. tostring(why))
+  sharing_state(true)
+end
+
 local function start(s)
   local c = config(s)
 
-  if not s.program then
-    said = s.name .. " is drawn and not built yet"
+  if s.door then
+    start_sharing(c)
     return
   end
 
@@ -157,6 +209,14 @@ local function start(s)
 end
 
 local function stop(s)
+  if s.door then
+    local ok, why = fs.sharing_stop()
+
+    said = ok and "" or ("could not stop " .. s.name .. ": " .. tostring(why))
+    sharing_state(true)
+    return
+  end
+
   local id = running(s)
 
   if not id then return end
@@ -268,6 +328,19 @@ local function state_of(s)
 
   status = type(status) == "table" and status or {}
 
+  if s.door then
+    local st = sharing_state()
+
+    if not st then return "not handed smbd's door", status end
+    if st.state == "stopped" then return "stopped", status end
+    if st.state == "waiting" then
+      return "waiting for the network to let it listen", status
+    end
+
+    return ("sharing %d folder%s · %d connected"):format(st.shares, st.shares == 1 and "" or "s",
+                                                       st.connections), status
+  end
+
   if not s.program then return "not built yet", status end
   if not id then return "stopped", status end
 
@@ -302,10 +375,10 @@ local function page_all()
     -- control that moves and does nothing is the thing this window must not
     -- have, and a disabled one does not move.
     rows[#rows + 1] = { label = s.name,
-                        control = s.program and run_switch(s)
+                        control = (s.program or s.door) and run_switch(s)
                                   or ui.switch{ disabled = true },
-                        note = s.what .. " · " .. (s.later or state)
-                               .. ((a and s.program) and (" · " .. s.reach(a, config(s))) or "") }
+                        note = s.what .. " · " .. state
+                               .. ((a and (s.program or s.door)) and (" · " .. s.reach(a, config(s))) or "") }
   end
 
   return {
@@ -427,44 +500,211 @@ end
 
 --
 -- **File sharing, as drawn** (`docs/sharing.html`): on or off, the address,
--- which folders of `/Home` and how, who may sign in, and how it is set up -
--- every part of it the mockup's, and every one saying it is not built:
--- the switch disabled, the folders none, nothing to choose. When `smbd`
--- arrives (step N12) this page gains its controls and keeps its shape.
+-- which folders of `/Home`, who may sign in, and how it is set up. Read and
+-- write is drawn and kept off until smbd writes (N14); encryption until
+-- libsmb2's server can ask a client to seal; This network only and who is
+-- connected come with N12c-3.
 --
-local sharing_switch = nil
+local panel = use("/Kosmos/Libraries/panel.lua")
+local sharing_switch, share_button, password_button, account_field = nil, nil, nil, nil
+local sheet = nil
+
+-- Whether the account has a password, asked of smbd once a name and kept:
+-- a question that is not STATE waits for smbd's serving thread, up to a
+-- tenth of a second, which is no thing to ask at every repaint.
+local kept_for = nil
+
+local function password_kept(name)
+  if name == "" or not fs.has_sharing() then return false end
+
+  if not kept_for or kept_for.name ~= name then
+    kept_for = { name = name, kept = fs.sharing_kept(name) and true or false }
+  end
+
+  return kept_for.kept
+end
+
+-- The folders, sent again when sharing is on: smbd takes them one at a time
+-- and a change while serving takes effect from the next connection.
+local function shares_changed(s)
+  keep()
+
+  if running(s) then
+    local ok, why = fs.sharing_shares(config(s).shares)
+
+    said = ok and "" or ("the folders: " .. tostring(why))
+  end
+end
+
+-- A folder chosen in the Open window's folder mode: its last name, made
+-- unique, is the share's name - "Music", then "Music 2".
+local function share_folder(s, path)
+  local c = config(s)
+
+  if path ~= "/Home" and path:sub(1, 6) ~= "/Home/" then
+    said = path .. " is not in /Home"
+    return
+  end
+
+  for _, sh in ipairs(c.shares) do
+    if sh.path == path then
+      said = path .. " is shared already, as " .. sh.name
+      return
+    end
+  end
+
+  local base = path:match("([^/]+)$") or "Home"
+  local name, n = base, 1
+  local taken = function(x)
+    for _, sh in ipairs(c.shares) do
+      if sh.name:lower() == x:lower() then return true end
+    end
+    return false
+  end
+
+  while taken(name) do
+    n = n + 1
+    name = base .. " " .. n
+  end
+
+  c.shares[#c.shares + 1] = { name = name, path = path }
+  shares_changed(s)
+  print(("servers: sharing %s as %s"):format(path, name))
+end
+
+-- The password, typed once into a sheet and sent: smbd keeps its NT hash,
+-- and nothing here keeps anything.
+local function change_password(s)
+  local c = config(s)
+
+  if c.account == "" then
+    said = "name the account first"
+    rebuild()
+    return
+  end
+
+  sheet = ui.sheet{ title = "A password for " .. c.account, w = 380, h = 190,
+                    on_close = function() sheet = nil end }
+
+  local field
+  local function set()
+    local ok, why = fs.sharing_account(c.account, field.text or "")
+
+    field.text = ""
+
+    if not ok then
+      said = tostring(why)
+    else
+      said = ""
+      print("servers: " .. c.account .. "'s password kept")
+    end
+
+    kept_for = nil
+    sheet:close()
+    rebuild()
+  end
+
+  field = ui.field{ x = 18, y = 64, w = 344, h = 26, text = "", secret = true,
+                    hint = "password", on_enter = set }
+
+  sheet:put(ui.label{ x = 18, y = 100, w = 344,
+                      text = "Kept only as NTLMv2 needs it: its hash, never the words" })
+  sheet:put(field)
+  sheet:put(ui.button{ x = 380 - 18 - 96, y = 140, w = 96, h = 26, text = "Set",
+                       on_click = set })
+  sheet:put(ui.button{ x = 380 - 18 - 96 - 104, y = 140, w = 96, h = 26, text = "Cancel",
+                       on_click = function() field.text = ""; sheet:close() end })
+  win:add(sheet)
+  win:focus_on(field)
+  print("servers: the password sheet open")
+end
+
+-- The account's name, kept as it is typed: a name without spaces or the
+-- characters a path uses, shorter than smbd's 64.
+local function account_field_of(c)
+  account_field = ui.field{ w = 160, text = c.account,
+                            on_change = function(_, text)
+                              local v = text:match("^%s*(.-)%s*$")
+
+                              if #v < 64 and not v:find("[%s\\/:]") then
+                                c.account = v
+                                keep()
+                              end
+                            end }
+  return account_field
+end
 
 local function page_sharing(s)
+  local c = config(s)
   local a = address()
-  local off = function() return ui.switch{ disabled = true } end
+  local state = state_of(s)
+  local kept = password_kept(c.account)
 
-  -- The switch of the page, said where it is once the cards are laid out
-  -- (`rebuild`); a press on it is to change nothing, and if it ever did
-  -- this says so.
-  sharing_switch = off()
-  sharing_switch.on_change = function()
-    print("servers: file sharing switch moved")
+  sharing_switch = run_switch(s)
+
+  local folders = {}
+
+  for i, sh in ipairs(c.shares) do
+    local size = fs.getattr(sh.path)
+
+    folders[#folders + 1] = {
+      label = sh.name,
+      note = sh.path .. (size and "" or " · not there now") .. " · Read only",
+      control = ui.button{ text = "Remove", on_click = function()
+        table.remove(c.shares, i)
+        shares_changed(s)
+        rebuild()
+      end } }
   end
+
+  -- The folder window runs as the Open window always does, until it is
+  -- closed - this window waits behind it.
+  share_button = ui.button{ text = "Share a folder of /Home...", on_click = function()
+    local chooser = panel.folder{ start = "/Home", title = "Share a folder of /Home",
+                                  button = "Share",
+                                  on_choose = function(path)
+                                    share_folder(s, path)
+                                    rebuild()
+                                  end }
+
+    if chooser then chooser:run() end
+  end }
+
+  folders[#folders + 1] = { label = #c.shares == 0 and "None yet" or "",
+                            note = "Read and write comes in a later step",
+                            control = share_button }
+
+  password_button = ui.button{ text = "Change...", on_click = function() change_password(s) end }
 
   return {
     { name = "", rows = {
         { label = "File sharing", control = sharing_switch,
-          note = SHARING_LATER .. ": folders of /Home, to the Mac's Finder, "
-                 .. "Windows and anything else that speaks SMB"
-                 .. (a and (" - " .. s.reach(a)) or "") } } },
-    { name = "Shared folders", rows = {
-        { label = "None yet", note = "Folders of /Home are chosen here, read "
-                                     .. "only or read and write, when sharing arrives" } } },
+          note = state .. ": folders of /Home, to the Mac's Finder, Windows and anything "
+                 .. "else that speaks SMB"
+                 .. (a and (" - " .. s.reach(a) .. " · seen as " .. c.hostname) or "") } } },
+    { name = "Shared folders", rows = folders },
     { name = "Who may connect", rows = {
-        { label = "Name", value = "Not set",
-          note = "The one account a visitor signs in with" },
+        { label = "Name", note = "The one account a visitor signs in with",
+          control = account_field_of(c) },
+        { label = "Password", value = kept and "Set" or "Not set",
+          note = "Kept only as NTLMv2 needs it", control = password_button },
         { label = "Guests", value = "Off",
-          note = "Nobody reaches a folder without the name and password" },
-        { label = "From", value = "This network only" } } },
+          note = "Nobody reaches a folder without the name and password" } } },
     { name = "Set up", rows = {
-        { label = "Encrypt everything", control = off(),
-          note = "SMB 3's AES on the wire; a Mac and Windows 10 and later speak it" },
-        { label = "Start with the machine", control = off() } } },
+        { label = "Name on the network", note = "What Finder lists under Locations",
+          control = ui.field{ w = 160, text = c.hostname,
+                              on_change = function(_, text)
+                                local v = text:match("^%s*(.-)%s*$"):upper()
+
+                                if #v > 0 and #v <= 15 and v:match("^[%w%-]+$") then
+                                  c.hostname = v
+                                  keep()
+                                end
+                              end } },
+        { label = "Encrypt everything",
+          note = "SMB 3's AES on the wire - comes in a later step",
+          control = ui.switch{ disabled = true } },
+        { label = "Start with the machine", control = start_switch(s) } } },
   }
 end
 
@@ -502,12 +742,16 @@ rebuild = function()
   cards:set(PAGES[showing](s))
 
   -- File sharing's page, for the display harness: what it says and where
-  -- its switch is, in the window.
+  -- its switch and its two buttons are, in the window.
   if showing == "sharing" and sharing_switch then
-    print(("servers: file sharing - %s; its switch at %d,%d, %s"):format(
-          SHARING_LATER, cards.x + sharing_switch.x + sharing_switch.w // 2,
-          cards.y + sharing_switch.y + sharing_switch.h // 2,
-          sharing_switch.disabled and "disabled" or "enabled"))
+    local at = function(v)
+      return ("%d,%d"):format(cards.x + v.x + v.w // 2, cards.y + v.y + v.h // 2)
+    end
+
+    print(("servers: file sharing - %s; its switch at %s, %s; share at %s; password at %s; "
+           .. "name at %s"):format(
+          state_of(s), at(sharing_switch), sharing_switch.disabled and "disabled" or "enabled",
+          at(share_button), at(password_button), at(account_field)))
   end
 
   -- The log, under the cards, for a server that keeps one.
@@ -547,6 +791,8 @@ function win:on_frame()
   if now - last < hz // 2 then return false end
 
   last = now
+
+  sharing_state(true)
 
   local state = states() .. said
   local changed = false

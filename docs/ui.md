@@ -634,6 +634,13 @@ reach the files.
 **Cancel calls `on_cancel`.** The old panel's header promised it and nothing
 ever called it.
 
+**`panel.folder` chooses a folder** (`docs/sharing.md` N12c-2, the Servers
+window's Share a folder of /Home): only folders are listed, a second click
+or Return goes into one, and the button - `button`, "Choose" when not named
+- chooses the one selected, or the folder shown when it has none. The arrows
+report where they are (`arrows_choose`), since there `on_select` only says.
+It runs as the Open window does, `chooser:run()` until it closes.
+
 **Three things moved into the kit, each because it had a second user.**
 
 - **`ui.trail`**, Tracker's path line, with its two rules from 16.8d: a
