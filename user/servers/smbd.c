@@ -24,8 +24,9 @@
  * stream (":") is refused here before it is asked. The account and the
  * shares from the Servers window, the hash in the keyring, are N12c.
  *
- * **Started only when asked**: the boot's `opt/kosmos/smbd=PORT ACCOUNT
- * HASH` - a port, an account, and the account's NT hash as 32 hex digits -
+ * **Started only when asked**: the boot's `opt/kosmos/smbd=PORT,ACCOUNT,
+ * HASH` - a port, an account, and the account's NT hash as 32 hex digits,
+ * by commas or spaces -
  * and `opt/kosmos/smbd_shares=NAME:/Home/FOLDER,...`, which a test
  * machine's command line carries. A machine not told to share shares
  * nothing. The hash on a command line is for a test account only; the
@@ -1230,9 +1231,17 @@ static bool configure(const char **why)
 
     text[n] = '\0';
 
+    /* Commas as well as spaces: a machine's command line splits its words
+     * at spaces, so a value there has none (`hal/pc/boot_option.c`). */
+    for (i = 0; text[i] != '\0'; i++) {
+        if (text[i] == ',') {
+            text[i] = ' ';
+        }
+    }
+
     if (sscanf(text, "%u %63s %39s", &port, name, hash) != 3 || port == 0 || port > 65535
         || strlen(hash) != 32) {
-        *why = "opt/kosmos/smbd is PORT ACCOUNT and 32 hex digits";
+        *why = "opt/kosmos/smbd is PORT,ACCOUNT,32 hex digits";
         return false;
     }
 

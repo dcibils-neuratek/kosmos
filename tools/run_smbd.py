@@ -3,7 +3,7 @@
 """smbd, the server side of sharing (`docs/sharing.md` N12a and N12b):
 signing in, and folders of /Home shared read only.
 
-A machine told to share (`opt/kosmos/smbd=445 kosmos HASH`, the NT hash of
+A machine told to share (`opt/kosmos/smbd=445,kosmos,HASH`, the NT hash of
 the fixture word, and `opt/kosmos/smbd_shares=Projects:/Home/Projects,
 Notes:/Home/Notes`), a disk made here with made-up files on it, its port
 445 forwarded to this Mac, and Samba's own `smbclient` - a client that is
@@ -115,8 +115,9 @@ def boot(R, image, port, share):
              "-device", R.device(image, "net") + ",netdev=net0"]
     if share:
         nt = md4(PASSWORD.encode("utf-16-le")).hex()
-        extra += ["-fw_cfg", "name=opt/kosmos/smbd,string=445 kosmos " + nt,
-                  # QEMU's option parser takes ",," for a comma.
+        # Commas, as a real machine's command line must have them; QEMU's
+        # option parser takes ",," for a comma.
+        extra += ["-fw_cfg", "name=opt/kosmos/smbd,string=445,,kosmos,," + nt,
                   "-fw_cfg", "name=opt/kosmos/smbd_shares,"
                              "string=Projects:/Home/Projects,,Notes:/Home/Notes"]
     setattr(R, board, saved + extra)
