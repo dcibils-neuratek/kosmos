@@ -23062,3 +23062,9 @@ when to look.
 port. **Control**: init not starting it, nothing came.
 
 Gate: 65 of 67; `x86-film` and `x86-sound` (a captured tone 418 Hz for 440, under the whole gate's load) both pass alone straight after.
+
+On the M700 the first boot told to say it was ready did not: `ready` ran at
+1.9 s, the desktop already up, and the machine had no address yet from the
+router - "no route to it: this machine has no address". A test's machine is
+given one on its command line, so the suite could not see it. `ready` now
+tries once a second, for two minutes, until a datagram leaves.

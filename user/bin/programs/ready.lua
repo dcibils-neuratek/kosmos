@@ -67,20 +67,52 @@ if words[2] == "desktop" then
   end
 end
 
-local sock, code, why = fs.udp("/Network", 0)
+--
+-- **And the network with an address**, which on a real machine comes later
+-- than the desktop: the M700 asked its router and had none yet at 1.9 s -
+-- "no route to it: this machine has no address" - where a test's machine
+-- is given one on its command line (10 October). Tried once a second until
+-- a datagram leaves, for two minutes, saying why once if it cannot.
+--
+local b = sys.build()
+local sock, said_why = nil, nil
+local deadline = sys.ticks() + 120 * hz
+local text
 
-if not sock then
-  print("ready: " .. tostring(why or code))
-  return
+while true do
+  local code, why
+
+  sock, code, why = fs.udp("/Network", 0)
+
+  if sock then
+    text = ("kosmos ready %s build %s up %.1f s %s"):format(
+      b.version or "?", b.build or "?", sys.ticks() / hz, desktop)
+
+    if sock:send(to, port, text) then break end
+
+    why = "it would not leave"
+    sock:close()
+    sock = nil
+  end
+
+  why = tostring(why or code)
+
+  if why ~= said_why then
+    print("ready: not yet - " .. why)
+    said_why = why
+  end
+
+  if sys.ticks() >= deadline then
+    print("ready: gave up after two minutes")
+    return
+  end
+
+  sys.sleep(tick_hz)
 end
 
-local b = sys.build()
-local text = ("kosmos ready %s build %s up %.1f s %s"):format(
-  b.version or "?", b.build or "?", sys.ticks() / hz, desktop)
-
-for i = 1, 3 do
+for _ = 2, 3 do
+  sys.sleep(tick_hz)
   sock:send(to, port, text)
-  if i < 3 then sys.sleep(tick_hz) end
 end
 
 print(("ready: said to %s:%d - %s"):format(host, port, text))
