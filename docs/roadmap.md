@@ -228,11 +228,25 @@ app needs a way to set 'always show images from this sender' somehere
 because i cant click load images for every email". A choice beside Load
 images, kept per sender with Mail's settings.
 
+**The network at full speed, then files to and from the Mac by SMB** -
+Diego, 10 October 2026: "why is the network slow?", "We need to make our
+network fast", "Can we do a file transfer like ftp or scp to increase file
+sending and receiving instead of using telnet for that?" - and yes to the
+order: the network first, aiming at 50 MB/s or more on the M700 where it
+sends about 6 today (the sender woken once a tick, no window scaling,
+out-of-order segments dropped, a 16 KB advertised window - each measured on
+the M700 as it is changed); then **`smbd`** (`docs/sharing.md`, "the server
+side"), pulled forward: chosen folders of `/Home` shared, the M700 announced
+by mDNS, Finder and `smbclient` on the Mac reaching it, signed in with the
+one account the Servers window sets. Telnet's `get` and `put` stop being how
+files travel; and a Telnet session stuck sending must not lock out the next
+one (it did, 10 October). An SSH server, to replace Telnet, is an idea.
+
 **Bugs found on the M700, 10 October 2026, to fix first:**
-- **Print Screen saves a black picture** - "printi screen saves a black
-  image, not the actual screenshot. that worked in the past". Most likely
-  since the window server took the screen (Astra D3b-2, 0.11.119-0.11.121):
-  `screenshot` reads a screen the window manager no longer draws into.
+- **Print Screen's pictures shown black** - "printi screen saves a black
+  image, not the actual screenshot. that worked in the past". The files are
+  right - one fetched from the M700 is the whole desktop - so it is the
+  viewer, Photo or the notification that opens it, that draws them black.
 - **A window being resized shows its old picture stretched** for a moment
   before it draws at the new size - "it looks that the app streches to the
   new dimensions and then redraws in the new size which looks weird".
