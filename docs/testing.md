@@ -23122,3 +23122,45 @@ any answer is checked; a machine not told to share answering nothing.
 failure.
 
 Gate: 68 of 69, `x86-browser-2` the one: it opened a favorite with one click on the row a folder had chosen - tonight's double-click bug, which it relied on (18.534). Double clicked now, and it passes.
+
+## 18.536 smbd shares folders of /Home, read only: N12b
+
+`docs/sharing.md` N12b. `smbd` is handed the disk's main door, which reaches
+`/Home` and nothing else, and shares the folders the boot names
+(`opt/kosmos/smbd_shares=Projects:/Home/Projects,Notes:/Home/Notes`): a
+tree connect by name, any case; CREATE opening a file or folder that exists
+and refusing write access, a delete on close and every disposition but open
+as "access denied"; QUERY_DIRECTORY in pages that fit the client's room,
+"." and ".." first, a pattern matched without case; QUERY_INFO's basic,
+standard, all, network-open and attribute-tag facts, and the volume's;
+READ from the disk into one region and out in the reply, up to 1 MB a read;
+CLOSE; and an open file's id good only on its own connection and tree.
+
+**libsmb2's directory encoder is wrong, and is left alone.** It writes each
+entry's NextEntryOffset as the entry's place in the buffer, where MS-FSCC
+2.4 counts from the entry itself, and pads to four where entries align to
+eight. `smbclient` showed "." and "..", then `NT_STATUS_INFO_LENGTH_MISMATCH`.
+`smbd` encodes FileIdBothDirectoryInformation and FileIdFullDirectoryInformation
+itself and sends them through libsmb2's passthrough mode, on for the one
+reply and off again.
+
+`x86-smbd` 13, was 4: Samba's `smbclient` through a forwarded port, on a
+disk made by the suite with made-up files: signed in over SMB 3.1.1;
+`Projects` listed with its sizes and folder; `hello.txt`, a 1.5 MB file and
+a file in a folder fetched byte for byte; the second share listed; a put
+refused as read only; a climb never served; a share not offered "bad network
+name"; a wrong password and another account refused; the server answering
+after all of it; a machine not told to share answering nothing.
+
+`host` gains `test_smbpath` 20: a name in a share as a path - backslashes
+and slashes, the root, "." and ".." anywhere refused, a stream refused, a
+long path refused, "..." and ".hidden" kept. `smbclient` cleans ".." before
+it sends a name, so this is where the refusal is held.
+
+**Controls**: every read at offset 0 - the 1.5 MB file did not arrive as it
+is. That control first *passed*, and showed the test was what was wrong: the
+file's "random" bytes were one byte repeated, a generator seeded afresh for
+each, so a read from anywhere gave the right bytes. Made from one generator,
+it bites. `smbpath.c` without its ".." refusal: 5 of 20 failed. The listing's
+control is the first run, on libsmb2's encoder: "." and ".." and a mismatch.
+

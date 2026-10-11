@@ -5748,7 +5748,7 @@ if role == ROLE_INIT then
   local share_asked = sys.boot("opt/kosmos/smbd")
 
   if share_asked and share_asked ~= "" then
-    start("the file sharing server", ROLE_SMBD, { NET_EP, CONSOLE_EP })
+    start("the file sharing server", ROLE_SMBD, { NET_EP, CONSOLE_EP, DISKFS_EP })
   end
 
   if may_pass_screen() then

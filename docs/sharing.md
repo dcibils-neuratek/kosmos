@@ -1204,10 +1204,23 @@ Then, each when its time comes:
     `init.elf`, answering NEGOTIATE and an NTLMv2 sign-in with one test
     account. `smbclient` through a forwarded port signs in, and a wrong
     password is refused.
-  - **N12b** - a share is a folder of `/Home`, reached as a client of
-    `diskfs` (`diskproto.h`): TREE_CONNECT, CREATE, QUERY_DIRECTORY,
-    QUERY_INFO, READ and CLOSE. `smbclient` lists and fetches; a read held
-    to the file's bytes.
+  - **N12b - built, 11 October** (`testing.md` 18.536): a share is a
+    folder of `/Home`, read only, reached as a client of `diskfs` through
+    the door every program reaches `/Home` by (`diskproto.h`):
+    TREE_CONNECT, CREATE, QUERY_DIRECTORY, QUERY_INFO, READ and CLOSE, and
+    everything that would change a byte refused as "access denied".
+    `smbclient` lists and fetches, a 1.5 MB file over more than one read
+    byte for byte. Which folders, until N12c, from the boot's
+    `opt/kosmos/smbd_shares=NAME:/Home/FOLDER,...`. **A listing is
+    encoded by `smbd`, not by libsmb2**: libsmb2's encoder writes each
+    entry's NextEntryOffset from the start of the buffer, where MS-FSCC
+    2.4 has it from the start of the entry, so a client read "." and ".."
+    and then garbage. libsmb2 is not modified; its passthrough mode sends
+    `smbd`'s bytes as they are, switched on for that one reply. A name is
+    turned into a path by `smbpath.c`, which refuses "." and "..", a
+    stream's ":" and a path too long, and is held by the Mac
+    (`tools/test_smbpath.c`) - `smbclient` cleans ".." out of a name before
+    sending it, so no test over the wire reaches the refusal.
   - **N12c** - the Servers window's File sharing page: which folders, the
     account, its password into the keyring as an NT hash, who is connected.
   - **N12d** - the Mac's own client: `mount_smbfs` and Finder, each thing
