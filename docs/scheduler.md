@@ -125,8 +125,9 @@ shows the same numbers live.
 - **G2** - the window redesigned as drawn (`docs/scheduler.html`): the
   modes as cards, a timeline of who ran on each core, the bands as a
   ladder, the quantum with what it trades, and the numbers that matter.
-- **G3** - the `GAME` band and its guard; game mode for the application in
-  front, chosen in the window.
+- **G3** - the `GAME` band and its guard; game mode for one application -
+  a header's `kosmos: game` while in front, Super+G for the one in front,
+  or chosen in the window - and a notification as it starts and ends.
 - **G4** - a core of its own: placement kept off it, and the one move of a
   sleeping thread.
 - **G5** - 1000 Hz while it is on; measured against Doom, Quake and the Super
@@ -147,4 +148,27 @@ shows the same numbers live.
 core once when game mode starts; 3 - yes, 1000 Hz while a game plays,
 measured first. 1 asked back ("You mean to have a per app scheduling game
 mode instead of a system wide setting?") and answered in conversation.
+
+**Question 1, decided** (Diego, 11 October 2026): "Let's do per app game
+mode yes", and how an application comes to have it:
+
+- **A game says so in its header**: `-- kosmos: game`, as an application
+  declares its icon. Doom, Quake and the Super Nintendo carry it; while game
+  mode is on, one of them in front has the band and the core.
+- **Super+G** - "Windows has this super+g key shortcut that sets game mode
+  for the app in front" - turns game mode on or off for **whatever
+  application is in front**, game or not. A global key, so it is the window
+  manager's, listed in Shortcuts and changeable there like the others.
+- **A notification** when it starts and when it ends: "Game mode on for
+  Doom - core 4 is its own", and "Game mode off".
+- **In the Scheduler, choosing Game mode asks which application**: the
+  running ones and those that say they are games, and any can be chosen -
+  "I might want use a audio production app in game mode that is not really
+  a game but I want a full core for me and better responsiveness". Its
+  sound thread keeps the audio band, which is above the game's; game mode
+  gives the rest of it a core of its own.
+
+So **game mode belongs to an application**, never to the machine: the
+policy stays Balanced, and one application at a time has the band and the
+core.
 

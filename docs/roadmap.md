@@ -298,6 +298,12 @@ performance and responsiveness, and else in a visual way", "mockup first".
   application in front that is marked a game or chosen in the window; its
   normal threads moved off its core once when game mode starts; 1000 Hz
   while a game plays, measured first. Steps G1-G5 (`docs/scheduler.md`).
+- **Per application** (Diego, 11 October: "Let's do per app game mode
+  yes"): a game says so in its header (`kosmos: game`); **Super+G** gives
+  game mode to the application in front, game or not, and takes it away; a
+  notification says when it starts and ends; and the Scheduler asks which
+  application - "an audio production app ... I want a full core for me and
+  better responsiveness".
 - **Game mode**: researched and written for Diego to decide, beside the
   window's mockup (`docs/scheduler.md`, `docs/scheduler.html`).
 
