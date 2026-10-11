@@ -23084,3 +23084,19 @@ the Mac through the house's switch):
 About half of what the wire carries (~112 MB/s). The 6 MB/s said that
 evening was a figure from before the 64 KB ring; what was slow was Telnet's
 `get`, base64 printed through the shell.
+
+## 18.534 Tracker opens a row on a double click, and only on one
+
+Diego, on the M700: "if i double click to open a folder, and in the next
+instant, i single click one of its inner folders or files it counts it as a
+double click". Tracker opened a row on any click on the row already chosen,
+however long after, and a folder just opened has a row chosen - so one
+click opened it. Now two clicks on the same row of the same folder within
+the double-click span (Preferences' Mouse page) open it; entering a folder
+forgets the last click; Enter still opens the row chosen. Tracker says
+where its rows are when it shows a folder, for a test to click them.
+
+`x86-tracker` 4, new: a double click opening a folder; one click in it
+straight after only choosing its row; two clicks two seconds apart not
+opening it; a double click opening it. **Control**: the old rule back, 2
+checks fail.

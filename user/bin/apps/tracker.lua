@@ -356,6 +356,19 @@ local followed = nil       -- the cursor the view last scrolled to
 -- number every desktop has settled on and there is no reason to differ.
 --
 local pending  = nil       -- { n, x, y, cursor } between press and release
+
+--
+-- **The last click on a row, for a double click** (Diego, on the M700, 11
+-- October 2026: "if i double click to open a folder, and in the next
+-- instant, i single click one of its inner folders or files it counts it
+-- as a double click"). A row opened on any click on the row already
+-- chosen, however long after - and a folder just opened has a row chosen,
+-- so one click opened it. Now it opens when the two clicks are on the same
+-- row of the same folder within the double-click span (Preferences'
+-- Mouse page, `ui.double_click_ticks`), and entering a folder forgets the
+-- last click.
+--
+local last_click = nil     -- { n, where, at }
 local carrying = false     -- a drag of our own is in progress
 local dragged  = nil       -- where that drag was pressed, until it lands
 
@@ -1653,6 +1666,16 @@ function rows:draw(g)
   self.per_page = per
   self.top_row  = top
 
+  -- Where the first row's middle is on the screen, and how far apart they
+  -- are, said once a folder: what `tools/run_tracker.py` clicks.
+  if not backdrop and self.said_rows ~= where then
+    local vx, vy = self:in_window()
+
+    self.said_rows = where
+    print(("tracker: rows of %s at %d,%d, %d apart"):format(where,
+          (win.origin_x or 0) + vx + 60, (win.origin_y or 0) + vy + top + LROW // 2, LROW))
+  end
+
   local list = shown
 
   --
@@ -1942,18 +1965,24 @@ function rows:mouse(action, x, y)
     if action == "release" then
       if not carrying then
         --
-        -- A click after all. The cursor row opens; any other row collapses
-        -- the selection onto itself, which is what a plain click means.
+        -- A click after all: the row chosen, and opened when it is the
+        -- second click of a double one (`last_click`). Enter opens the row
+        -- chosen too, without a second click.
         --
-        -- A double click would be the BeOS answer and this kit has no
-        -- notion of one; adding it to serve a single caller would be a
-        -- widget change made for an application, which is the wrong way
-        -- round.
-        --
-        if pending.cursor then
+        local now = sys.ticks()
+        local again = last_click and last_click.n == pending.n
+                      and last_click.where == where
+                      and now - last_click.at <= ui.double_click_ticks()
+
+        if again then
+          last_click = nil
+          print(("tracker: double click on row %d, opened"):format(pending.n))
           open_selected()
         else
-          mark_only(pending.n, self.shown)
+          if not pending.cursor then mark_only(pending.n, self.shown) end
+
+          last_click = { n = pending.n, where = where, at = now }
+          print(("tracker: click on row %d"):format(pending.n))
         end
       end
 
@@ -2354,6 +2383,9 @@ function visit(path)
   -- The same folder again is nothing to do - unless a page stands in its
   -- place (a server not signed into), which going there puts away.
   if path == where and not net.seen then return end
+
+  -- A click in the folder left behind is not half of one here.
+  last_click = nil
 
   local from = where
 

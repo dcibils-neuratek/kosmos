@@ -288,6 +288,7 @@ SUITES = [
     Suite("x86-mdns", ["python3", "tools/run_mdns.py", X86], x86=True),
     Suite("x86-switcher", ["python3", "tools/run_switcher.py", X86], x86=True),
     Suite("x86-shortcuts", ["python3", "tools/run_shortcuts.py", X86], x86=True),
+    Suite("x86-tracker", ["python3", "tools/run_tracker.py", X86], x86=True),
 
     # **The Deskbar as a dock, in Night** (`roadmap.md`, a dock at the
     # bottom): moved there as Preferences moves it, floating and centred
