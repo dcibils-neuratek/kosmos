@@ -430,6 +430,20 @@ def main():
         bx, by = dx + PAD + 8, dy + dh // 2         # inside the button, clear of its words
         _, _, at = R.pixel_reader(guest.screendump())
         said["unlit"] = at(bx, by)
+
+        # The button wears the rocket (Haiku's Launchbox; Diego, 11
+        # October), not the three cubes: red where its picture is, and none
+        # of the cubes' strong blue.
+        left = button_left(at, said["dock"], said["unlit"])
+        said["rocket"] = [0, 0]
+        if left is not None:
+            for yy in range(by - 16, by + 16):
+                for xx in range(left + 8, left + 16 + 34):
+                    r, g, b = at(xx, yy)[:3]
+                    if b > 140 and b > r + 60 and b > g + 20:
+                        said["rocket"][0] += 1
+                    if r > 150 and r > g + 60 and r > b + 60:
+                        said["rocket"][1] += 1
         mark = len(guest.seen)
         click(dx + PAD + 40, by, width, height, "right")       # the right button: the menu
         said["menu"] = guest.wait_for_line("wm: menu of Deskbar at ", "the Kosmos menu", mark)
@@ -897,6 +911,11 @@ def main():
                      "its button: the menu %r, the button from %r"
                      % (said.get("whole menu"), said.get("whole button")))
 
+    blue, red = said.get("rocket", [0, 0])
+    if blue > 4 or red < 10:
+        fails.append("the dock's Kosmos button does not wear the rocket: %d blue "
+                     "pixels where its picture is, %d red" % (blue, red))
+
     if said.get("power pictures", 0) < 50:
         fails.append("Restart and Shut Down wore no picture in the Kosmos menu: "
                      "%d coloured pixels where the three cubes go"
@@ -1124,7 +1143,7 @@ def main():
                      "the new height - its sidebar's ground near the new bottom "
                      "%r, near the old %r: %r" % (g1, g0, said.get("prefs resized")))
 
-    checks = 55
+    checks = 56
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))

@@ -51,6 +51,7 @@
 #include "smbdproto.h"
 #include "init/say.h"
 #include "smbpath.h"
+#include "smbrpc.h"
 
 #include "smb_kit.h"
 #include "kits/network/netclient.h"
@@ -60,6 +61,7 @@ static long console = -1;
 static long disk = -1;
 static uint32_t connections;        /* clients connected now */
 static bool local_only;             /* This network only, as START said */
+static struct smb2_server server;   /* the one this serves; its name for the share list */
 
 /* The one account N12a knows: its name, and "ntlm:" and its NT hash. */
 static char account[64];
@@ -204,8 +206,10 @@ struct share {
 static struct share *shares;
 static size_t share_count;
 
-/* A tree id is a share's place plus this, so none is ever 0. */
+/* A tree id is a share's place plus this, so none is ever 0; IPC$'s is
+ * below them all (N12d). */
 #define TREE_BASE  0x100u
+#define IPC_TREE   0x0ffu
 
 /* A connection's trees: which shares it has connected, by tree id. */
 struct link {
@@ -238,7 +242,9 @@ static bool grow(void **list, size_t *room, size_t used, size_t each)
 }
 
 /* The share this request's tree is, when this connection connected it. */
-static const struct share *share_here(struct smb2_context *smb2, uint32_t *tree)
+/* Whether this request's tree is one this connection connected: a share,
+ * or IPC$. */
+static bool linked(struct smb2_context *smb2, uint32_t *tree)
 {
     uint32_t id = smb2->hdr.sync.tree_id;
     size_t i;
@@ -248,11 +254,35 @@ static const struct share *share_here(struct smb2_context *smb2, uint32_t *tree)
             if (tree != NULL) {
                 *tree = id;
             }
-            return &shares[id - TREE_BASE];
+            return true;
         }
     }
 
-    return NULL;
+    return false;
+}
+
+/* The share this request's tree is, when this connection connected it -
+ * none for IPC$, which is pipes rather than a folder. */
+static const struct share *share_here(struct smb2_context *smb2, uint32_t *tree)
+{
+    uint32_t id;
+
+    if (!linked(smb2, &id) || id == IPC_TREE || id - TREE_BASE >= share_count) {
+        return NULL;
+    }
+
+    if (tree != NULL) {
+        *tree = id;
+    }
+
+    return &shares[id - TREE_BASE];
+}
+
+static bool ipc_here(struct smb2_context *smb2)
+{
+    uint32_t id;
+
+    return linked(smb2, &id) && id == IPC_TREE;
 }
 
 /*
@@ -275,6 +305,12 @@ struct handle {
     uint32_t name_count;
     uint32_t cursor;            /* the next entry: 0 ".", 1 "..", then names */
     bool listed;
+
+    /* IPC$'s srvsvc pipe (N12d): what was written and not yet a whole
+     * request, and the answers not yet read. */
+    bool pipe;
+    uint8_t *in, *out;
+    size_t in_len, out_len;
 };
 
 static struct handle *handles;
@@ -283,7 +319,12 @@ static size_t handle_count, handle_room;
 static void forget(struct handle *h)
 {
     free(h->names);
+    free(h->in);
+    free(h->out);
     h->names = NULL;
+    h->in = h->out = NULL;
+    h->in_len = h->out_len = 0;
+    h->pipe = false;
     h->used = false;
 }
 
@@ -318,6 +359,9 @@ static struct handle *handle_new(struct smb2_context *smb2, uint32_t tree, smb2_
     h->name_count = 0;
     h->cursor = 0;
     h->listed = false;
+    h->pipe = false;
+    h->in = h->out = NULL;
+    h->in_len = h->out_len = 0;
 
     memset(id, 0, SMB2_FD_SIZE);
     memcpy(id, &place, 4);
@@ -332,7 +376,7 @@ static struct handle *handle_of(struct smb2_context *smb2, const smb2_file_id id
     uint32_t place, generation, tree;
     struct handle *h;
 
-    if (share_here(smb2, &tree) == NULL) {
+    if (!linked(smb2, &tree)) {
         return NULL;
     }
 
@@ -608,6 +652,32 @@ static int tree_connect(struct smb2_server *server, struct smb2_context *smb2,
     name = full != NULL ? strrchr(full, '\\') : NULL;
     name = name != NULL ? name + 1 : full;
 
+    /* IPC$: the pipe share every client asks for after signing in, to ask
+     * by DCE/RPC what is shared (N12d). */
+    if (name != NULL && strcasecmp(name, "IPC$") == 0) {
+        free((void *)full);
+
+        if (!grow((void **)&links, &link_room, link_count, sizeof *links)) {
+            return refuse(smb2, SMB2_TREE_CONNECT, SMB2_STATUS_INSUFFICIENT_RESOURCES);
+        }
+
+        memset(&ok, 0, sizeof ok);
+        ok.share_type = SMB2_SHARE_TYPE_PIPE;
+        ok.maximal_access = 0x0012019fu;        /* read and write a pipe */
+
+        pdu = smb2_cmd_tree_connect_reply_async(smb2, &ok, IPC_TREE, NULL, NULL);
+        if (pdu == NULL) {
+            return -1;
+        }
+
+        links[link_count].smb2 = smb2;
+        links[link_count].tree = IPC_TREE;
+        link_count++;
+        smb2_set_pdu_message_id(smb2, pdu, smb2->message_id);
+        smb2_queue_pdu(smb2, pdu);
+        return 1;
+    }
+
     for (i = 0; name != NULL && i < share_count; i++) {
         if (strcasecmp(name, shares[i].name) == 0) {
             break;
@@ -687,6 +757,118 @@ static int tree_disconnect(struct smb2_server *server, struct smb2_context *smb2
 
 #define FILE_OPENED  1u
 
+/*
+ * ------------------------------------------------------------------------
+ * IPC$'s srvsvc pipe (N12d): the share list, answered by `smbrpc.c`.
+ * ------------------------------------------------------------------------
+ */
+
+/* Requests written into the pipe, answered into its output as each is
+ * whole: the shares as they are now, IPC$ last. */
+static bool pipe_in(struct handle *h, const uint8_t *data, size_t len)
+{
+    struct smb_rpc_share *list;
+    struct smb_rpc_server srv;
+    uint8_t *bigger;
+    size_t i, used;
+
+    bigger = realloc(h->in, h->in_len + len);
+    if (bigger == NULL) {
+        return false;
+    }
+
+    h->in = bigger;
+    memcpy(h->in + h->in_len, data, len);
+    h->in_len += len;
+
+    list = calloc(share_count + 1, sizeof *list);
+    if (list == NULL) {
+        return false;
+    }
+
+    for (i = 0; i < share_count; i++) {
+        list[i].name = shares[i].name;
+        list[i].type = SMB_RPC_DISK;
+        list[i].comment = "";
+    }
+
+    list[share_count].name = "IPC$";
+    list[share_count].type = SMB_RPC_IPC;
+    list[share_count].comment = "IPC Service";
+    srv.hostname = server.hostname;
+    srv.shares = list;
+    srv.count = share_count + 1;
+
+    for (;;) {
+        size_t room = h->out_len + 65536;
+
+        bigger = realloc(h->out, room);
+        if (bigger == NULL) {
+            free(list);
+            return false;
+        }
+        h->out = bigger;
+
+        if (smb_rpc_answer(&srv, h->in, h->in_len, &used, h->out, room, &h->out_len) != 0) {
+            said("a request on the srvsvc pipe it could not answer", NULL, NULL);
+            h->in_len = 0;
+            free(list);
+            return false;
+        }
+
+        if (used == 0) {
+            break;
+        }
+
+        memmove(h->in, h->in + used, h->in_len - used);
+        h->in_len -= used;
+    }
+
+    free(list);
+    return true;
+}
+
+/* What the pipe has to say, up to `room`, taken from it. */
+static size_t pipe_out(struct handle *h, uint8_t *to, size_t room)
+{
+    size_t n = h->out_len < room ? h->out_len : room;
+
+    memcpy(to, h->out, n);
+    memmove(h->out, h->out + n, h->out_len - n);
+    h->out_len -= n;
+    return n;
+}
+
+/* CREATE on IPC$: `srvsvc`, and no other pipe. */
+static int create_pipe(struct smb2_context *smb2, struct smb2_create_request *req,
+                       struct smb2_create_reply *rep)
+{
+    const char *name = req->name != NULL ? req->name : "";
+    struct handle *h;
+    uint32_t tree;
+
+    while (*name == '\\') {
+        name++;
+    }
+
+    if (strcasecmp(name, "srvsvc") != 0 || !linked(smb2, &tree)
+        || (h = handle_new(smb2, tree, rep->file_id)) == NULL) {
+        if (req->name != NULL) {
+            smb2_free_data(smb2, (void *)req->name);
+            req->name = NULL;
+        }
+        return refuse(smb2, SMB2_CREATE, SMB2_STATUS_OBJECT_NAME_NOT_FOUND);
+    }
+
+    h->pipe = true;
+    put_text(h->path, sizeof h->path, "\\PIPE\\srvsvc");
+    memset(&h->facts, 0, sizeof h->facts);
+    rep->create_action = FILE_OPENED;
+    rep->file_attributes = SMB2_FILE_ATTRIBUTE_NORMAL;
+    said("opened the srvsvc pipe, for the share list", NULL, NULL);
+    return 0;
+}
+
 static int create(struct smb2_server *server, struct smb2_context *smb2,
                   struct smb2_create_request *req, struct smb2_create_reply *rep)
 {
@@ -697,6 +879,11 @@ static int create(struct smb2_server *server, struct smb2_context *smb2,
     uint32_t tree, status = 0;
 
     (void)server;
+
+    if (ipc_here(smb2)) {
+        return create_pipe(smb2, req, rep);
+    }
+
     s = share_here(smb2, &tree);
 
     if (s == NULL) {
@@ -1023,9 +1210,13 @@ static int query_directory(struct smb2_server *server, struct smb2_context *smb2
     out.output_buffer = listing;
     out.output_buffer_length = end;
 
-    smb2->passthrough = 1;
-    pdu = smb2_cmd_query_directory_reply_async(smb2, req, &out, NULL, NULL);
-    smb2->passthrough = 0;
+    {
+        int was = smb2->passthrough;
+
+        smb2->passthrough = 1;
+        pdu = smb2_cmd_query_directory_reply_async(smb2, req, &out, NULL, NULL);
+        smb2->passthrough = was;
+    }
 
     if (pdu == NULL) {
         return -1;
@@ -1103,7 +1294,8 @@ static int query_info(struct smb2_server *server, struct smb2_context *smb2,
 
     (void)server;
 
-    if (h == NULL || s == NULL) {
+    /* A file in a share, or the pipe, whose facts are a file's with none. */
+    if (h == NULL || (s == NULL && !h->pipe)) {
         return refuse(smb2, SMB2_QUERY_INFO, SMB2_STATUS_FILE_CLOSED);
     }
 
@@ -1146,8 +1338,9 @@ static int query_info(struct smb2_server *server, struct smb2_context *smb2,
         switch (req->file_info_class) {
         case SMB2_FILE_FS_VOLUME_INFORMATION:
             info.volume.volume_serial_number = 0x4b4f534du;
-            info.volume.volume_label = (const uint8_t *)s->name;
-            info.volume.volume_label_length = (uint32_t)strlen(s->name) * 2;
+            info.volume.volume_label = (const uint8_t *)(s != NULL ? s->name : "IPC$");
+            info.volume.volume_label_length = (uint32_t)strlen((const char *)
+                                                               info.volume.volume_label) * 2;
             length = sizeof info.volume;
             break;
         case SMB2_FILE_FS_SIZE_INFORMATION:
@@ -1216,6 +1409,25 @@ static int read_file(struct smb2_server *server, struct smb2_context *smb2,
         return refuse(smb2, SMB2_READ, SMB2_STATUS_FILE_CLOSED);
     }
 
+    /* The pipe: its answers, as much as asked; nothing yet, "empty". */
+    if (h->pipe) {
+        size_t n = h->out_len < req->length ? h->out_len : req->length;
+
+        if (n == 0) {
+            return refuse(smb2, SMB2_READ, SMB2_STATUS_PIPE_EMPTY);
+        }
+
+        data = malloc(n);
+        if (data == NULL) {
+            return refuse(smb2, SMB2_READ, SMB2_STATUS_INSUFFICIENT_RESOURCES);
+        }
+
+        rep->data_length = (uint32_t)pipe_out(h, data, n);
+        rep->data = data;
+        rep->data_remaining = 0;
+        return 0;
+    }
+
     if (h->facts.dir) {
         return refuse(smb2, SMB2_READ, SMB2_STATUS_INVALID_DEVICE_REQUEST);
     }
@@ -1253,9 +1465,21 @@ static int read_file(struct smb2_server *server, struct smb2_context *smb2,
 static int write_file(struct smb2_server *server, struct smb2_context *smb2,
                       struct smb2_write_request *req, struct smb2_write_reply *rep)
 {
+    struct handle *h = handle_of(smb2, req->file_id);
+
     (void)server;
-    (void)req;
-    (void)rep;
+
+    /* The pipe takes a request; a file in a share takes nothing. */
+    if (h != NULL && h->pipe) {
+        if (req->buf == NULL || !pipe_in(h, req->buf, req->length)) {
+            return refuse(smb2, SMB2_WRITE, SMB2_STATUS_INVALID_PARAMETER);
+        }
+
+        rep->count = req->length;
+        rep->remaining = 0;
+        return 0;
+    }
+
     return refuse(smb2, SMB2_WRITE, SMB2_STATUS_ACCESS_DENIED);
 }
 
@@ -1267,12 +1491,38 @@ static int set_info(struct smb2_server *server, struct smb2_context *smb2,
     return refuse(smb2, SMB2_SET_INFO, SMB2_STATUS_ACCESS_DENIED);
 }
 
+/* A pipe's answer for TRANSCEIVE, kept until libsmb2 has copied it. */
+static uint8_t transceived[65536];
+
 static int refuse_ioctl(struct smb2_server *server, struct smb2_context *smb2,
                  struct smb2_ioctl_request *req, struct smb2_ioctl_reply *rep)
 {
+    struct handle *h;
+
     (void)server;
-    (void)req;
-    (void)rep;
+
+    /* TRANSCEIVE: a request written and its answer read, in one. */
+    if (req->ctl_code == SMB2_FSCTL_PIPE_TRANSCEIVE) {
+        h = handle_of(smb2, req->file_id);
+
+        if (h == NULL || !h->pipe || req->input == NULL
+            || !pipe_in(h, req->input, req->input_count)) {
+            return refuse(smb2, SMB2_IOCTL, SMB2_STATUS_INVALID_PARAMETER);
+        }
+
+        rep->output_count = (uint32_t)pipe_out(h, transceived,
+                                               req->max_output_response < sizeof transceived
+                                               ? req->max_output_response
+                                               : sizeof transceived);
+        rep->output = transceived;
+        return 0;
+    }
+
+    /* No DFS here: "not found", as a server without it says. */
+    if (req->ctl_code == 0x00060194u || req->ctl_code == 0x000601b0u) {
+        return refuse(smb2, SMB2_IOCTL, SMB2_STATUS_NOT_FOUND);
+    }
+
     return refuse(smb2, SMB2_IOCTL, SMB2_STATUS_NOT_SUPPORTED);
 }
 
@@ -1816,6 +2066,17 @@ static void arrived(struct smb2_context *smb2, void *data)
 
     (void)data;
     smb2_set_version(smb2, SMB2_VERSION_ANY);
+
+    /*
+     * **Passthrough, for every connection** (N12d): without it libsmb2
+     * drops an IOCTL's input and refuses to encode its output for any
+     * control code but VALIDATE_NEGOTIATE_INFO - so a pipe's TRANSCEIVE,
+     * which is how a client asks IPC$ for the share list, could not be
+     * read or answered, and the connection was closed. Every other place
+     * passthrough changes is a client's path (a request encoded, a reply
+     * read) or something smbd refuses or encodes itself.
+     */
+    smb2_set_passthrough(smb2, 1);
     connections++;
 
     if (v != NULL) {

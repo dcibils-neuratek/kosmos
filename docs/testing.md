@@ -23274,3 +23274,47 @@ typed command also contains is found in the command's echo.
 
 **Controls**: sign-in not asking the network - the Mac outside it let in;
 Disconnect closing nothing - both visitors not told.
+
+## 18.541 The share list over IPC$: N12d's first step, and the dock's rocket
+
+`docs/sharing.md` N12d. On the M700 the Mac's Finder signed in to `smbd` -
+SMB 3.1.1, the password right - and then asked for `IPC$`, the pipe share
+a client asks what is shared through; refused, it gave up, even given a
+share by name (`smb://192.168.1.40/Music` opened Music and still asked).
+`smbd` now offers `IPC$` and its `srvsvc` pipe: what is written into it, or
+sent through FSCTL_PIPE_TRANSCEIVE, is answered by `smbrpc.c` - a BIND for
+srvsvc in NDR accepted, MS-RPCE's bind time feature negotiation
+acknowledged with no features, NetrShareEnum (levels 0 and 1, IPC$ among
+the shares), NetrShareGetInfo, NetrServerGetInfo 101, and anything else
+the fault "operation out of range". Over IPC$, no DFS: "not found".
+
+**libsmb2's ioctl is passthrough or nothing**: without it the request's
+input is dropped for every control code but VALIDATE_NEGOTIATE_INFO, and
+the reply's output refused - smbclient's bind on the pipe ended
+NT_STATUS_CONNECTION_DISCONNECTED. Every connection now runs in
+passthrough; each other place it changes is a client's path or something
+`smbd` refuses or encodes itself.
+
+`host` gains `test_smbrpc` 18: a BIND of three contexts - srvsvc in NDR
+accepted, the feature negotiation acknowledged, a stranger refused; the
+share list at levels 1 and 0, every name read back out of the NDR;
+NetrShareGetInfo by "music" finding Music, and "Private" WERR 0x906;
+NetrServerGetInfo's name; an unknown operation a fault; half a PDU waited
+for; a non-DCE one refused; an answer too big for its room refused.
+`x86-smbd` 32, was 31: `smbclient -L` lists Projects and Notes as Disk and
+IPC$ as IPC.
+
+**Controls**: each entry's comment pointer left out at level 1 - four of
+the eighteen failed, and `smbclient -L` listed nothing. The suite's has
+both changes in one image; the evidence for passthrough is the run before
+it, the bind's connection dropped.
+
+**The dock's Kosmos button wears the rocket** - Haiku's Launchbox, as
+`docs/sandboxes.html` drew it; Diego, 11 October: "can we use the rocket
+icon for the kosmos button in the dock?". `x86-dock` 56, was 55: no blue
+in the button's picture, which the three cubes have, and red, which the
+rocket has. **Control**: the cubes back - 7 blue pixels, failed.
+
+Gate 68 of 69: `x86-mdns`, which then failed alone once and passed alone
+once on the same image - Tracker had not said its Network group at all
+within the wait. On the roadmap.

@@ -15,6 +15,9 @@ and at the prompt the `sharing` program, which holds smbd's door (N12c):
 
 Then Samba's own `smbclient` - a client that is not Kosmos - asking:
 
+  - the share list (N12d), over IPC$'s srvsvc pipe as the Mac's Finder
+    asks it before it mounts anything: Projects, Notes and IPC$;
+
   - the account and the right password: signed in, and `Projects` listed -
     a file, a larger one, a folder, with their sizes;
   - a file fetched, byte for byte; one of 1.5 MB, which takes more than one
@@ -56,7 +59,7 @@ sys.path.insert(0, HERE)
 
 import scratch                                              # noqa: E402
 
-CHECKS = 31
+CHECKS = 32
 PASSWORD = "test-only-word"
 NEW_PASSWORD = "second-test-word"
 SMBCLIENT = "/opt/homebrew/bin/smbclient"
@@ -421,6 +424,17 @@ def main():
               and re.search(r"^\s+big\.bin\s+\w*\s+%d\s" % len(big), listing, re.M)
               and re.search(r"^\s+Sub\s+D\s+0\s", listing, re.M),
               "Projects was not listed with its files, sizes and folder:\n" + listing[-600:])
+
+        # N12d: the share list, as Finder asks it - IPC$, the srvsvc pipe,
+        # NetShareEnumAll - which `smbclient -L` asks the same way.
+        run = subprocess.run([SMBCLIENT, "-L", "//127.0.0.1", "-p", str(port), "-m", "SMB3",
+                              "-U", "kosmos%" + PASSWORD], capture_output=True, text=True,
+                             timeout=60)
+        listed = run.stdout + run.stderr
+        check(re.search(r"^\s*Projects\s+Disk", listed, re.M)
+              and re.search(r"^\s*Notes\s+Disk", listed, re.M)
+              and re.search(r"^\s*IPC\$\s+IPC", listed, re.M),
+              "the share list over IPC$ was not Projects, Notes and IPC$:\n" + listed[-600:])
 
         # 3-5. Files fetched, byte for byte.
         for n in ("hello.txt", "big.bin", "inner.txt"):

@@ -242,6 +242,12 @@ one account the Servers window sets. Telnet's `get` and `put` stop being how
 files travel; and a Telnet session stuck sending must not lock out the next
 one (it did, 10 October). An SSH server, to replace Telnet, is an idea.
 
+**`x86-mdns` flakes** (found 11 October 2026): failed in three of four full
+gates that day and once alone, then passed alone on the same image. When it
+fails, Tracker has said nothing about its Network group within the desktop
+boot's wait (`tools/run_mdns.py`, the last check). Find whether Tracker is
+late or its group is never told, and fix that - not the wait.
+
 **Tracker's list view, made right** - Diego, on the M700, 10 October 2026:
 "The tracker list view needs some work", "for big files the name overlaps
 the size", "the columns are not resizable", "it needs more columns like

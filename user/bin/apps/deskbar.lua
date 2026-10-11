@@ -2019,7 +2019,10 @@ if DOCKED then
         local bh = dock.KOSMOS_H
 
         g:fill_round(x, cy - bh // 2, it.w, bh, open and theme.accent or theme.raised, bh // 2)
-        g:icon(x + dock.KOSMOS_IN, cy - dock.MARK // 2, "App_Deskbar.png", dock.MARK)
+        -- The rocket (Haiku's Launchbox), as `docs/sandboxes.html` drew the
+        -- dock; Diego, 11 October: "can we use the rocket icon for the
+        -- kosmos button in the dock?"
+        g:icon(x + dock.KOSMOS_IN, cy - dock.MARK // 2, "App_Launchbox.png", dock.MARK)
         g:text(x + dock.KOSMOS_IN + dock.MARK + 8, cy - gfx.font.h // 2, "Kosmos",
                open and theme.text_on or theme.text)
       elseif it.kind == "separator" then

@@ -1263,6 +1263,16 @@ Then, each when its time comes:
       does at its next command, and the Mac's Finder will.
   - **N12d** - the Mac's own client: `mount_smbfs` and Finder, each thing
     they ask that the example server did not answer found and answered.
+    **First found, 11 October, on the M700**: Finder signs in (SMB 3.1.1,
+    the password right), then opens `IPC$` to ask what is shared - even
+    when given a share by name - and, refused, says "There was a problem
+    connecting". **Built** (`testing.md` 18.541): `IPC$` as a pipe share,
+    its `srvsvc` pipe, and DCE/RPC's bind and NetrShareEnum,
+    NetrShareGetInfo and NetrServerGetInfo answered by `smbrpc.c` - bytes
+    in and bytes out, held by the Mac (`tools/test_smbrpc.c`). Every
+    connection runs in libsmb2's passthrough, without which an IOCTL's
+    pipe TRANSCEIVE is dropped on the way in and refused on the way out.
+    `smbclient -L` lists the shares.
 
   The page as first written: the Servers window's File sharing page as drawn;
   `smbclient` and the Mac's `mount_smbfs` through a forwarded port list and
