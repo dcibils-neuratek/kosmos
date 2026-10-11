@@ -142,3 +142,9 @@ shows the same numbers live.
    core truly the game's), or only keep new threads off the core?
 3. **1000 Hz while a game plays**: yes (recommended, measured first), or
    wait for the one-shot timer?
+
+**Answered, 11 October**: 2 - yes, the normal threads moved off the game's
+core once when game mode starts; 3 - yes, 1000 Hz while a game plays,
+measured first. 1 asked back ("You mean to have a per app scheduling game
+mode instead of a system wide setting?") and answered in conversation.
+
