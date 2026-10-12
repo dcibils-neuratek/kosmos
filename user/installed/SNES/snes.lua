@@ -4,6 +4,8 @@
 -- kosmos: icon App_Generic
 -- kosmos: name Super Nintendo
 -- kosmos: section applications
+-- kosmos: kind emulator
+-- kosmos: about a Super Nintendo, for the ROMs in /Home/roms/snes
 -- kosmos: opens sfc smc
 -- kosmos: image snes.elf
 --

@@ -24258,3 +24258,29 @@ reading of `reader`'s to subtract from; it takes `reader`'s own highest now.
 And two things seen in that picture, fixed: the list's small graphs drawn on
 the big graph's dark ground, which read as black bars, and a total's words
 cut. Disk Monitor joins the dated picture, twenty-one windows.
+
+## 18.572 Packages P1: manifests, sums and the protocols they are for
+
+`docs/packages.md` step P1. A package is now a zip of its folder with
+`package.txt` inside - what it is, its version and build, **the protocols
+it was made for** (`sys.protostamp`'s value for the tree, computed by
+`tools/packages.py` as `tools/protostamp.py` computes it), where it goes, its
+icon, needs and dependencies, and every file with its size and SHA-256 - and
+the index is the manifests without their files, a package a paragraph.
+Written from the application's header: Doom, Quake and the SNES gained
+`-- kosmos: kind` and `-- kosmos: about`, so `packages.py` keeps no facts of
+theirs. A line a fact, a file's path last because a path may have spaces.
+
+`/Kosmos/Libraries/packages.lua` begins as the design has it - the one copy
+`pkg`, `install` and the window will share: the index and manifests read,
+and a package put in place only after its manifest says this build's
+protocols and every file has its size and sum; the manifest kept in
+`/Home/Packages` as the record of what is installed. `install` is a thin
+program over it.
+
+**Tests.** `x86-install` 5 -> 8: the server now offers manifests in the new
+shape, and a package whose file's bytes are not what its sum says and one
+made for other protocols are each refused with why, leaving no folder.
+**Control**: the sum not checked - the tampered package is installed, and the
+suite fails. `x86-game` and `x86-nogame` unchanged with the new header
+words.

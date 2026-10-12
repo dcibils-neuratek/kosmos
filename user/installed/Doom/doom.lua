@@ -4,6 +4,8 @@
 -- kosmos: icon App_Generic
 -- kosmos: name Doom
 -- kosmos: section applications
+-- kosmos: kind game
+-- kosmos: about id Software's Doom, the shareware episode, at the screen's size
 -- kosmos: opens wad
 -- kosmos: image doom.elf
 --

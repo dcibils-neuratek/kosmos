@@ -4,6 +4,8 @@
 -- kosmos: icon App_Generic
 -- kosmos: name Quake
 -- kosmos: section applications
+-- kosmos: kind game
+-- kosmos: about id Software's Quake, the shareware episode
 -- kosmos: image quake.elf
 --
 --   wm quake                       the id1/pak0.pak beside this file

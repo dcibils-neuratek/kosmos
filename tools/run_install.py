@@ -30,27 +30,57 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import run_screenshot as R                                   # noqa: E402
 
 
-def package(folder, files):
+import hashlib                                               # noqa: E402
+
+import packages as P                                         # noqa: E402
+
+STAMP = P.stamp()
+
+
+def facts(name, title, into, protocols=None):
+    return {"name": name, "title": title, "kind": "application", "about": "a test's",
+            "version": "1.0", "build": "test", "protocols": protocols or STAMP,
+            "into": into, "icon": "", "needs": "", "depends": ""}
+
+
+def package(folder, files, f, tamper=False):
+    """A zip in `tools/packages.py`'s shape: the folder, and its manifest -
+    with `tamper`, one file's bytes changed after its sum was taken."""
     out = io.BytesIO()
+    lines = "".join("file        %d %s %s\n" % (len(t), hashlib.sha256(t.encode()).hexdigest(), n)
+                    for n, t in sorted(files.items()))
+    f = dict(f, bytes=sum(len(t) for t in files.values()))
+    manifest = P.facts_text(f) + lines
 
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-        for name, text in files.items():
-            z.writestr(folder + "/" + name, text)
+        z.writestr(folder + "/package.txt", manifest)
 
-    return out.getvalue()
+        for name, text in files.items():
+            z.writestr(folder + "/" + name, (text.upper() if tamper else text))
+
+    return out.getvalue(), f
 
 
 def main():
     image = sys.argv[1]
-    served = {
-        "hello.zip": package("Hello", {"hello.txt": "the first\n"}),
-        "broken.zip": b"PK\x03\x04 this is not a zip",
-    }
+    offered = {}
+    served = {}
+
+    def offer(name, zipped, f):
+        served[name + ".zip"] = zipped
+        offered[name] = dict(f, zip=len(zipped))
+
+    offer("hello", *package("Hello", {"hello.txt": "the first\n"}, facts("hello", "Hello", "/Home/Apps/Hello")))
+    served["broken.zip"] = b"PK\x03\x04 this is not a zip"
+    offered["broken"] = dict(facts("broken", "Broken", "/Home/Apps/Broken"), bytes=0, zip=28)
+    offer("bent", *package("Bent", {"bent.txt": "as it was made\n"},
+                           facts("bent", "Bent", "/Home/Apps/Bent"), tamper=True))
+    offer("other", *package("Other", {"other.txt": "elsewhere\n"},
+                            facts("other", "Other", "/Home/Apps/Other", protocols="0123456789abcdef")))
 
     def index():
-        return ("hello\tHello\t/Home/Apps/Hello\t%d\tbuild-one\ta greeting\n"
-                "broken\tBroken\t/Home/Apps/Broken\t%d\tbuild-one\tnot a zip\n"
-                % (len(served["hello.zip"]), len(served["broken.zip"]))).encode()
+        return "".join("\n" + P.facts_text(f) + "zip         %d\n" % f["zip"]
+                       for f in offered.values()).encode()
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
@@ -106,13 +136,13 @@ def main():
 
         listed = run("install", "install <name> to install one")
         check(re.search(r"install:\s+hello\s+Hello\s+\S+ \w+\s+not installed", listed) is not None
-              and "2 packages from 10.0.2.2:%d" % port in listed,
+              and "4 packages from 10.0.2.2:%d" % port in listed,
               "the list did not offer hello, not installed, from the boot's server: %r"
               % listed[-600:])
 
         once = run("install hello", "install: hello")
         got = run('print("GOT " .. tostring(fs.read("/Home/Apps/Hello/hello.txt")))', "GOT ")
-        check("install: hello - " in once and "from build-one" in once
+        check("install: hello - " in once and ", 1.0" in once
               and "GOT the first" in got,
               "hello was not installed with its file: %r %r" % (once[-300:], got[-200:]))
 
@@ -120,7 +150,8 @@ def main():
         check(re.search(r"hello\s+Hello\s+\S+ \w+\s+installed - ", again_list) is not None,
               "the list did not say hello is installed: %r" % again_list[-600:])
 
-        served["hello.zip"] = package("Hello", {"hello.txt": "the second\n"})
+        offer("hello", *package("Hello", {"hello.txt": "the second\n"},
+                                facts("hello", "Hello", "/Home/Apps/Hello")))
         run("install hello", "install: hello")
         got = run('print("GOT " .. tostring(fs.read("/Home/Apps/Hello/hello.txt")))', "GOT ")
         check("GOT the second" in got and "Hello.old" not in run("ls /Home/Apps", "kosmos> ", 10),
@@ -133,6 +164,19 @@ def main():
         check("not installed: it would not open" in broken and "KEPT kept" in kept,
               "a zip that would not open was not refused, or what was there went: %r %r"
               % (broken[-300:], kept[-200:]))
+
+        # **Checked before anything is touched** (`packages.lua`): a file
+        # whose bytes are not what its sum says, and a package made for
+        # other protocols, each refused with why, and nothing installed.
+        bent = run("install bent", "install: bent")
+        check("not installed: bent.txt is not what was made" in bent,
+              "a file whose SHA-256 differs was not refused: %r" % bent[-300:])
+        other = run("install other", "install: other")
+        check("not installed: it was made for other protocols" in other,
+              "a package for other protocols was not refused: %r" % other[-300:])
+        gone = run('print("GONE " .. tostring(fs.getattr("/Home/Apps/Bent")) .. " " '
+                   '.. tostring(fs.getattr("/Home/Apps/Other")))', "GONE ")
+        check("GONE nil nil" in gone, "a refused package left its folder: %r" % gone[-200:])
     finally:
         transcript = guest.seen
         guest.close()
@@ -147,8 +191,9 @@ def main():
 
     print("PASS: %d checks on install (packages listed from the boot's server, one "
           "installed with its file and said installed, installed again over itself "
-          "with nothing left behind, and a zip that would not open refused with what "
-          "was there kept)" % checks)
+          "with nothing left behind, a zip that would not open refused with what was "
+          "there kept, and a file whose SHA-256 differs and a package for other "
+          "protocols refused, leaving nothing)" % checks)
     return 0
 
 
