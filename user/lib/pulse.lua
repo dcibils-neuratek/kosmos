@@ -155,7 +155,10 @@ function pulse.speeds(a, b, counter_hz)
     local dr = x and y and (y.clock_reference or 0) - (x.clock_reference or 0) or 0
 
     if x and y and ((y.clock_reference or 0) ~= 0) then any = true end
-    out[c] = (dr > 0 and da > 0) and (counter_hz * da / dr / 1e6) or nil
+    -- The ratio first, in floating point: `counter_hz * da` is past 2^63
+    -- after a few seconds of a busy core - 3.4 GHz times ten billion - and
+    -- integers wrap; the M700 read -172 MHz on every loaded core.
+    out[c] = (dr > 0 and da > 0) and (counter_hz * (da / dr) / 1e6) or nil
   end
 
   return any and out or nil

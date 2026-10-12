@@ -23760,3 +23760,21 @@ show.
 
 Next: the leaning as a Power setting in Preferences, which needs a call a
 privileged program makes to change it while the machine runs.
+
+## 18.557 The M700's speed, measured: the base clock, never turbo
+
+On the M700 (i7-6700, 0.11.155, the speed the firmware's), each core's own
+counters over three seconds. **Idle**: between 1.3 and 3.4 GHz, never above
+the 3.40 GHz base. **Under load**, eight `spin`s at once: **every core at
+3,410 MHz exactly** - the base clock, while the i7-6700 runs all four cores
+at about 3.7 GHz on turbo. So nothing asks it for more, and yesterday's
+explanation of the M700 against the T14 (21.7 against 16.8 million rays a
+second, 1.29 to 1, their base clocks 1.31 to 1) is now a measurement.
+
+**Found by it: `pulse.speeds` overflowed.** `counter_hz * da` is past 2^63
+after a few seconds of a busy core - 3.41 GHz times ten billion - and Lua's
+integers wrap: every loaded core read -172 MHz. Idle cores were small
+enough. The ratio is taken first, in floating point. `test_pulse` 10 -> 11,
+with the M700's own numbers. **Control**: the old order - -196 MHz.
+
+Next, the same machine booted with `opt/kosmos/speed=balanced`.

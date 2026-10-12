@@ -53,6 +53,18 @@ do
         "an idle core beside a busy one: " .. tostring(s and s[1]) .. ", " .. tostring(s and s[2]))
 end
 
+-- 3b. A busy core over a few seconds, as the M700 read it: ten billion
+-- counts each way at 3.41 GHz, where counter_hz times the actual count is
+-- past 2^63 - it read -172 MHz while the ratio was taken last.
+do
+  local a = core(4000000000000, 4000000000000)
+  local b = core(4000000000000 + 10230000000, 4000000000000 + 10230000000)
+  local s = pulse.speeds({ a }, { b }, 3410000000)
+
+  check(s and math.abs(s[1] - 3410) < 0.001, "a busy core over three seconds at 3.41 GHz was "
+        .. tostring(s and s[1]) .. " MHz")
+end
+
 -- 4. A processor that keeps no counters: both zero always, and no speeds at
 -- all - not a table of nothing, which a window would draw as "idle".
 do
