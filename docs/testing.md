@@ -23786,3 +23786,13 @@ at 3,709 MHz**, the i7-6700's all-core turbo, against 3,410 - 8.8% more on
 every core, with nothing else changed. `clocks` says "the processor chooses
 its own speed, leaning 128 of 255". What it is worth in a render is
 Cafesa3D's to say, against 21.7 million rays a second before.
+
+**And over a render it does not last.** Diego, watching Monitor while
+Cafesa3D rendered: "the processor went to 3.7ghz and then stabilized at 3.41
+ghz", "it might be the cooling". The render read 21.0 million rays a second,
+where it read 21.7 the day before at the firmware's speed. The M700 is a
+Tiny: either the package reaches its temperature limit, or the firmware's
+long-term power limit (PL1, with turbo allowed past it for a window of
+typically 28 s) is set low for the case - the processor's thermal status
+and power-limit registers would say which. Turbo is real and short; the
+gain that lasts is the idle cores at 1.3 GHz.
