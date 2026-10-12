@@ -1241,6 +1241,21 @@ static int l_info(lua_State *L)
         SET("battery_percent",     info.battery_percent);
     }
 
+    /* The package's heat and power: the temperature only where it has its
+     * own sensor, `held_hot` and `held_power` as it is held now. */
+    if (info.heat_known) {
+        if (info.package_c != HEAT_NONE) {
+            SET("package_c",   info.package_c);
+        }
+        SET("limit_c",         info.limit_c);
+        SET("held_hot",        (info.held & HELD_HOT) ? 1 : 0);
+        SET("held_power",      (info.held & HELD_POWER) ? 1 : 0);
+        SET("power_limit_mw",  info.power_limit_mw);
+        SET("power_burst_mw",  info.power_burst_mw);
+        SET("power_window_ms", info.power_window_ms);
+        SET("energy_uj",       info.energy_uj);
+    }
+
     /*
      * What the firmware says the machine is. `machine_source` is always
      * there: where the three names were read, or why there are none.
@@ -2502,7 +2517,8 @@ static int l_pointer(lua_State *L)
  * that is the *count* and this is the detail.
  *
  * An array of `{ index, idle, busy, user_counter, kernel_counter,
- * held_off_counter, clock_actual, clock_reference }`, one per core: `idle` and `busy` in scheduler ticks,
+ * held_off_counter, clock_actual, clock_reference, speed_leaning, temp_c }`,
+ * one per core - the last two only where they are known: `idle` and `busy` in scheduler ticks,
  * and busy split into a thread's own time and the kernel's in the counter's
  * units (`sys.info()`'s `counter_hz`), which the names say because the two
  * clocks differ; and how long the core's ticks were held off, in the same
@@ -2535,7 +2551,7 @@ static int l_cpuload(lua_State *L)
     lua_createtable(L, (int)info.cpus, 0);
 
     for (i = 0; i < info.cpus && i < CPUS_MAX; i++) {
-        lua_createtable(L, 0, 9);
+        lua_createtable(L, 0, 11);
 
         lua_pushinteger(L, (lua_Integer)i);
         lua_setfield(L, -2, "index");
@@ -2564,6 +2580,11 @@ static int l_cpuload(lua_State *L)
         if (info.cpu[i].speed_leaning >= 0) {
             lua_pushinteger(L, (lua_Integer)info.cpu[i].speed_leaning);
             lua_setfield(L, -2, "speed_leaning");
+        }
+
+        if (info.cpu[i].temp_c != HEAT_NONE) {
+            lua_pushinteger(L, (lua_Integer)info.cpu[i].temp_c);
+            lua_setfield(L, -2, "temp_c");
         }
 
         lua_rawseti(L, -2, (lua_Integer)i + 1);

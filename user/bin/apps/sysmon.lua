@@ -105,7 +105,7 @@ local per_core = not MACHINE
 -- each of the last sixty, for its graph: `{ user, kernel }` in per cent.
 -- And how fast each ran, in MHz, or nil where nobody can say.
 --
-local now, history, speeds = {}, {}, nil
+local now, history, speeds, heat = {}, {}, nil, nil
 local all_now, all_history = { 0, 0 }, {}
 
 for c = 1, CORES do
@@ -285,6 +285,16 @@ local function draw_chip(g, x, y, w)
   local ghz = machine_speed()
   local big = ghz and ("%.2f GHz"):format(ghz) or RATED or ""
   local note = ghz and "now, across all cores" or (RATED and "rated" or "")
+
+  -- How hot and how much power, where the processor says: "62 °C · 28 W",
+  -- and why it is held when it is, in place of the note.
+  if heat then
+    local parts = { heat.temp_c and ("%d °C"):format(heat.temp_c) or nil }
+
+    if heat.watts then parts[#parts + 1] = ("%.0f W"):format(heat.watts) end
+    if heat.held then parts[#parts + 1] = heat.held == "hot" and "held: too hot" or "held: power limit" end
+    if #parts > 0 then note = table.concat(parts, " · ") end
+  end
   local bw = math.max(gfx.measure(big, BIG), gfx.measure(note, "ui"))
   local room = right - bw - 16 - tx
   local th, uh, lh = gfx.height(BIG), gfx.height("ui"), gfx.height("label")
@@ -514,6 +524,10 @@ end
 
 local last = load0
 
+-- The heat beside the speed (`pulse.heat`): two readings of `sys.info()` a
+-- sample apart, on the counter's clock.
+local info_last, info_at = sys.info(), sys.ticks()
+
 local sampler = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
 function sampler:tick()
@@ -542,6 +556,11 @@ function sampler:tick()
 
   speeds = pulse.speeds(last, load, counter_hz)
   last = load
+
+  local info, at = sys.info(), sys.ticks()
+
+  heat = pulse.heat(info_last, info, counter_hz > 0 and (at - info_at) / counter_hz or nil, load)
+  info_last, info_at = info, at
   samples = samples + 1
 end
 

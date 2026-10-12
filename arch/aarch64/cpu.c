@@ -218,6 +218,20 @@ bool cpu_clock_counts(uint64_t *actual, uint64_t *reference)
     return false;
 }
 
+/* No sensor an EL1 kernel can read on either core here: the Pi's is the
+ * firmware's, through the mailbox, which is a board's question. */
+bool cpu_core_temperature(int *celsius)
+{
+    (void)celsius;
+    return false;
+}
+
+bool cpu_package_heat(struct cpu_heat *out)
+{
+    (void)out;
+    return false;
+}
+
 unsigned cpu_raw(const struct cpu_info *cpu, uint64_t *out, unsigned max)
 {
     const uint64_t words[] = {

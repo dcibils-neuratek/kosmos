@@ -17,15 +17,39 @@ local seconds = tonumber((args or ""):match("%d+")) or 1
 local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 0
 local name = pulse.name()
 
-local a = sys.cpuload()
+local a, ia = sys.cpuload(), sys.info()
 local started = sys.ticks()
 
 while sys.ticks() - started < seconds * hz do sys.sleep(10) end
 
-local b = sys.cpuload()
+local b, ib = sys.cpuload(), sys.info()
+local heat = pulse.heat(ia, ib, (sys.ticks() - started) / math.max(hz, 1), b)
 local speeds = a and b and hz > 0 and pulse.speeds(a, b, hz)
 
 print(name ~= "" and name or "This processor")
+
+-- How hot it is and what it draws, before the speeds, because on a machine
+-- that keeps them they are what says why the speed is what it is.
+if heat then
+  local hot = {}
+
+  for c = 1, #b do hot[#hot + 1] = b[c].temp_c and tostring(b[c].temp_c) or "-" end
+
+  print(("  %s C, slows at %s C; cores %s"):format(tostring(heat.temp_c or "?"),
+        tostring(heat.limit_c or "?"), table.concat(hot, " ")))
+
+  if heat.limit_w then
+    print(("  drawing %s, may draw %.0f W sustained and %s a burst"):format(
+          heat.watts and ("%.1f W"):format(heat.watts) or "an unknown power",
+          heat.limit_w, heat.burst_w and ("%.0f W"):format(heat.burst_w) or "no more"))
+  end
+
+  print(heat.held == "hot" and "  held back now: too hot"
+        or heat.held == "power" and "  held back now: at its power limit"
+        or "  held back by neither its heat nor its power limit")
+else
+  print("  says nothing of its heat or its power to this kernel")
+end
 
 if not speeds then
   print("  does not say how fast it runs: it keeps no APERF and MPERF, or")

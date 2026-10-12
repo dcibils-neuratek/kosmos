@@ -23826,3 +23826,43 @@ nothing saved starts with the bar at the bottom, the whole width (12 -> 13;
 which Monitor and `clocks` use - the kit's `ui.leds`, and the display
 harness's "cores" phase and its meter helpers. Monitor's own phases check
 the same path from the kernel's counters to the screen.
+
+## 18.559 The processor's heat and power, read
+
+Diego, 12 October, after the M700's turbo lasted a burst and settled at its
+base clock under a render ("it might be the cooling at work"): "yes read the
+temperature and power limit".
+
+**What is read** (`arch/x86_64/cpu.c`, the registers checked against
+Linux's `msr-index.h`): each core's temperature from its own sensor
+(IA32_THERM_STATUS, 0x19C), on its own tick - the register is the core's;
+and on core 0's tick the package's - its temperature (0x1B1), the limit it
+slows at (TjMax, 0x1A2), whether it is held now by heat (bit 0) or by a power
+limit (bit 10), its sustained and burst limits and PL1's window (0x610, in
+the units of 0x606), and the energy counter (0x611), which wraps in about a
+minute and so is gathered into a 64-bit total of microjoules a tick at a
+time. A power is two readings of that total over the time between them.
+
+**Only where it is known to be there.** Reading a register the processor
+does not have is a #GP in the kernel, so nothing is probed: GenuineIntel,
+family 6, a digital sensor (CPUID.06H:EAX bit 0), a model on the list
+Linux's RAPL driver keeps (Sandy Bridge to Arrow Lake, cores only), and not
+under a hypervisor, which can name a model without giving its registers.
+ARM says nothing: the Pi's sensor is the firmware's, a board's question.
+
+**Where it shows.** `sys.cpuload()` gains each core's `temp_c`, `sys.info()`
+the package's (`package_c`, `limit_c`, `held_hot`, `held_power`,
+`power_limit_mw`, `power_burst_mw`, `power_window_ms`, `energy_uj`), all
+only where known; `pulse.heat` turns two readings into a temperature, a
+power, the limits and why it is held; `clocks` prints them before the
+speeds, and Monitor's processor card shows "62 °C · 28 W" under the speed,
+and "held: power limit" or "held: too hot" while it is.
+
+**Tests.** `host`'s `test_pulse.lua` 11 -> 18: a power from two readings,
+the limits, why it is held, the hottest core when the package has no sensor
+of its own, no power from one reading, and nil on QEMU's processor
+(**control**: the power not divided by the time - it fails, "30 J over 2 s
+was not 15 W: 30.0"). `x86-sysapps` runs `clocks` first and reads that
+QEMU's processor says nothing of its heat or its power - every core's tick
+has asked and been answered no, without a fault (34 -> 35). The gate: 70 of 71, `x86-film` its known flake under load, alone 13 of 13. The numbers
+themselves can only be seen on the M700 and the T14.

@@ -628,6 +628,13 @@ void thread_clock_cpu(unsigned index, uint64_t *actual, uint64_t *reference);
 void thread_set_speed(unsigned leaning);
 int  thread_speed_cpu(unsigned index);
 
+/* How hot a core is, in Celsius, or CPU_HEAT_NONE; and the package's heat,
+ * limits and energy since boot in microjoules - false where none is kept
+ * (`cpu_package_heat`). */
+struct cpu_heat;
+int  thread_temp_cpu(unsigned index);
+bool thread_heat(struct cpu_heat *out, uint64_t *energy_uj);
+
 /* One tick in the counter's units, once the clock has one (`main.c`), and
  * how long a processor's ticks were held off past it (`percpu.h`). */
 void thread_set_tick_interval(uint64_t counts);

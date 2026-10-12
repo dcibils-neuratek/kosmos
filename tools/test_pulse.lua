@@ -98,10 +98,37 @@ do
         "an ARM core with no brand string: " .. said("", { implementer = "ARM", part = "Cortex-A72" }))
 end
 
+-- The heat: the M700's numbers - 35 W sustained, 65 W a burst, TjMax 100 -
+-- and 30 joules over two seconds is 15 W.
+do
+  local a = { limit_c = 100, package_c = 60, energy_uj = 5000000000, power_limit_mw = 35000,
+              power_burst_mw = 65000, held_hot = 0, held_power = 0 }
+  local b = { limit_c = 100, package_c = 71, energy_uj = 5030000000, power_limit_mw = 35000,
+              power_burst_mw = 65000, held_hot = 0, held_power = 1 }
+  local h = pulse.heat(a, b, 2, { { temp_c = 69 }, { temp_c = 73 } })
+
+  check(h and h.temp_c == 71, "the package's temperature was not the one shown: " .. tostring(h and h.temp_c))
+  check(h and math.abs(h.watts - 15) < 1e-9, "30 J over 2 s was not 15 W: " .. tostring(h and h.watts))
+  check(h and h.limit_w == 35 and h.burst_w == 65, "the limits were not 35 W and 65 W")
+  check(h and h.held == "power", "held by its power limit was not said: " .. tostring(h and h.held))
+
+  -- A package with no sensor of its own: the hottest core speaks for it.
+  b.package_c = nil
+  check(pulse.heat(a, b, 2, { { temp_c = 69 }, { temp_c = 73 } }).temp_c == 73,
+        "with no package sensor the hottest core was not shown")
+
+  -- A first reading has nothing to subtract: no power, and no error.
+  check(pulse.heat(nil, b, 2, {}).watts == nil, "a power was made up from one reading")
+
+  -- QEMU's processor: nothing known, and nil rather than a table of nils.
+  check(pulse.heat({}, {}, 1, { { idle = 1 } }) == nil, "QEMU's processor was given a heat")
+end
+
 if fails == 0 then
-  print(("PASS: %d checks on pulse.speeds and pulse.split_name (turbo, a core at its reference, an idle core "
+  print(("PASS: %d checks on pulse.speeds, pulse.split_name and pulse.heat (turbo, a core at its reference, an idle core "
          .. "beside a busy one, none where the processor keeps no counters; and the "
-         .. "processor's name split, Intel's two shapes, AMD's, QEMU's and an ARM core's)"):format(checks))
+         .. "processor's name split, Intel's two shapes, AMD's, QEMU's and an ARM core's; and its heat: a power from two "
+         .. "readings, its limits, why it is held, none on QEMU)"):format(checks))
 else
   print(("FAIL: %d of %d checks on pulse.speeds"):format(fails, checks))
   os.exit(1)

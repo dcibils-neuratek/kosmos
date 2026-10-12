@@ -5,6 +5,7 @@
 --   pulse.name()                     the firmware's brand string
 --   pulse.processor()                maker, model, rated clock
 --   pulse.speeds(before, after, hz)  each core's MHz between two readings
+--   pulse.heat(before, after, seconds, load)  how hot, how much power, why held
 --
 -- Monitor and `clocks` use it; About and neofetch can say the name the same
 -- way. It was also the panel BeOS's Pulse drew - a bar a processor - for
@@ -123,6 +124,42 @@ function pulse.speeds(a, b, counter_hz)
   end
 
   return any and out or nil
+end
+
+--
+-- **How hot the processor is and what it draws** between two readings of
+-- `sys.info()` taken `seconds` apart, with `sys.cpuload()`'s latest beside
+-- them for each core's own sensor (`roadmap.md`, "The processor's heat and
+-- power"). nil where nothing is known - every processor the kernel does
+-- not know to keep these, and QEMU's - otherwise a table:
+--
+--   temp_c      the package's temperature, or the hottest core's
+--   limit_c     where it slows to cool (TjMax)
+--   watts       what the package drew between the readings, or nil
+--   limit_w     what it may draw sustained (PL1); burst_w a burst (PL2)
+--   held        "hot" or "power" when it is held below its speed now
+--
+function pulse.heat(a, b, seconds, load)
+  local hottest
+
+  for _, c in ipairs(load or {}) do
+    if c.temp_c and (not hottest or c.temp_c > hottest) then hottest = c.temp_c end
+  end
+
+  if not (b and b.limit_c) and not hottest then return nil end
+
+  local out = { temp_c = b and b.package_c or hottest, limit_c = b and b.limit_c }
+
+  if b and b.limit_c then
+    local da = a and a.energy_uj and b.energy_uj and b.energy_uj - a.energy_uj
+
+    out.watts = da and da >= 0 and seconds and seconds > 0 and da / 1e6 / seconds or nil
+    out.limit_w = (b.power_limit_mw or 0) > 0 and b.power_limit_mw / 1000 or nil
+    out.burst_w = (b.power_burst_mw or 0) > 0 and b.power_burst_mw / 1000 or nil
+    out.held = (b.held_hot == 1 and "hot") or (b.held_power == 1 and "power") or nil
+  end
+
+  return out
 end
 
 return pulse

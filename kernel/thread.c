@@ -1460,6 +1460,57 @@ int thread_speed_cpu(unsigned index)
     return cpus[index].speed_leaning;
 }
 
+/*
+ * **The package's heat and power** (`roadmap.md`, "The processor's heat and
+ * power"), read by core 0 on its tick. The energy counter is 32 bits and
+ * wraps in about a minute at 60 W on a 61 microjoule unit, so it is
+ * gathered here into a 64-bit total of microjoules, a tick's difference at
+ * a time; a tick's is far below a wrap. Read without a lock: one writer,
+ * and a reader that sees a field from one tick and the next beside it is
+ * showing a person two numbers 4 ms apart.
+ */
+static struct cpu_heat heat_now;
+static bool heat_known;
+static uint64_t heat_energy_uj;
+
+static void heat_tick(void)
+{
+    struct cpu_heat h;
+
+    if (!cpu_package_heat(&h)) {
+        return;
+    }
+
+    if (heat_known) {
+        uint64_t used = (uint32_t)(h.energy_raw - heat_now.energy_raw);
+
+        heat_energy_uj += (used * 1000000u) >> h.energy_shift;
+    }
+
+    heat_now = h;
+    __atomic_store_n(&heat_known, true, __ATOMIC_RELEASE);
+}
+
+bool thread_heat(struct cpu_heat *out, uint64_t *energy_uj)
+{
+    if (!__atomic_load_n(&heat_known, __ATOMIC_ACQUIRE)) {
+        return false;
+    }
+
+    *out = heat_now;
+    *energy_uj = heat_energy_uj;
+    return true;
+}
+
+int thread_temp_cpu(unsigned index)
+{
+    if (index >= NR_CPUS || cpus[index].last_tick_at == 0) {
+        return CPU_HEAT_NONE;
+    }
+
+    return cpus[index].temp_c;
+}
+
 void thread_clock_cpu(unsigned index, uint64_t *actual, uint64_t *reference)
 {
     *actual = index < NR_CPUS ? cpus[index].clock_actual : 0;
@@ -1501,6 +1552,15 @@ void thread_tick(void)
 
         /* And how fast it is running, from its own counters. */
         cpu_clock_counts(&c->clock_actual, &c->clock_reference);
+
+        /* And how hot it is; and the package, by the first core alone. */
+        if (!cpu_core_temperature(&c->temp_c)) {
+            c->temp_c = CPU_HEAT_NONE;
+        }
+
+        if (c->index == 0) {
+            heat_tick();
+        }
 
         /* And the speed it was asked to choose, once each time it changes:
          * the registers are this core's own, so this core writes them. */

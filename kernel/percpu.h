@@ -129,6 +129,12 @@ struct percpu {
     int      speed_leaning;
 
     /*
+     * **How hot it is**, in degrees Celsius, read by the core on its tick
+     * from its own sensor (`cpu_core_temperature`), or `CPU_HEAT_NONE`.
+     */
+    int      temp_c;
+
+    /*
      * **And the busy time split by whose it was**, in the counter's units
      * (`counter_hz`), measured at each crossing rather than sampled at the
      * tick (`roadmap.md` 5zx; `thread.c` has the crossings).

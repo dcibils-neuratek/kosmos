@@ -116,6 +116,33 @@ bool cpu_clock_counts(uint64_t *actual, uint64_t *reference);
  */
 bool cpu_speed_set(unsigned leaning);
 
+/*
+ * **How hot it is, and what it may draw** (`roadmap.md`, "The processor's
+ * heat and power"). `cpu_core_temperature` reads the calling core's own
+ * sensor, in degrees Celsius; `cpu_package_heat` the package's - its
+ * temperature, the limit it slows at, whether it is held now and by what,
+ * its sustained and burst power limits and the energy counter with its
+ * unit. False, and nothing written, where the processor keeps none of it
+ * or this kernel does not know that it does.
+ */
+#define CPU_HEAT_NONE  (-1000)
+#define CPU_HELD_HOT   1u
+#define CPU_HELD_POWER 2u
+
+struct cpu_heat {
+    int      package_c;         /* CPU_HEAT_NONE when the package has no sensor */
+    int      limit_c;           /* TjMax: where it slows to cool */
+    unsigned held;              /* CPU_HELD_HOT, CPU_HELD_POWER */
+    uint32_t pl1_mw;            /* sustained */
+    uint32_t pl2_mw;            /* a burst */
+    uint32_t pl1_window_ms;     /* how long PL1 is averaged over */
+    uint32_t energy_raw;        /* a running total that wraps at 32 bits */
+    unsigned energy_shift;      /* its unit, 1/2^shift joules */
+};
+
+bool cpu_core_temperature(int *celsius);
+bool cpu_package_heat(struct cpu_heat *out);
+
 unsigned cpu_arch(void);
 unsigned cpu_raw(const struct cpu_info *cpu, uint64_t *out, unsigned max);
 

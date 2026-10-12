@@ -130,6 +130,20 @@ def main():
 
     try:
         guest.wait_for("kosmos> ", "reached a prompt")
+
+        # **The processor's heat and power** (`roadmap.md`): QEMU's processor
+        # is not an Intel the kernel knows to keep them, so every core's tick
+        # has asked and been told no - without a fault - and `clocks` says
+        # so rather than showing a temperature nobody read.
+        heard = len(guest.seen)
+        guest.type("clocks")
+        check(said("says nothing of its heat or its power to this kernel", heard, 30) is not None,
+              "clocks did not say QEMU's processor keeps no heat or power")
+        # And the prompt back after it, before the next command is typed.
+        deadline = time.monotonic() + 30
+        while guest.seen.find("kosmos> ", heard) < 0 and time.monotonic() < deadline:
+            time.sleep(0.1)
+
         start = len(guest.seen)
         mark = start
         guest.type("wm sysmon,procs")

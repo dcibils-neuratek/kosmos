@@ -814,6 +814,24 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
             thread_clock_cpu(c, &info.cpu[c].clock_actual,
                              &info.cpu[c].clock_reference);
             info.cpu[c].speed_leaning = thread_speed_cpu(c);
+            info.cpu[c].temp_c = thread_temp_cpu(c);
+        }
+    }
+
+    {
+        struct cpu_heat h;
+
+        _Static_assert(HEAT_NONE == CPU_HEAT_NONE && HELD_HOT == CPU_HELD_HOT
+                       && HELD_POWER == CPU_HELD_POWER, "one meaning each side");
+
+        if (thread_heat(&h, &info.energy_uj)) {
+            info.heat_known      = 1;
+            info.package_c       = h.package_c;
+            info.limit_c         = h.limit_c;
+            info.held            = h.held;
+            info.power_limit_mw  = h.pl1_mw;
+            info.power_burst_mw  = h.pl2_mw;
+            info.power_window_ms = h.pl1_window_ms;
         }
     }
 

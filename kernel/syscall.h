@@ -1073,8 +1073,16 @@ struct cpuload {
     /* The leaning the core chooses its own speed by, 0 (speed) to 255
      * (saving power) - or -1 when its speed is the firmware's. */
     int32_t  speed_leaning;
-    uint32_t reserved;
+
+    /* How hot the core is, in degrees Celsius, as it last read its own
+     * sensor - or HEAT_NONE where it has none this kernel reads. */
+    int32_t  temp_c;
 };
+
+/* A temperature nobody read, and why a package is held below its speed. */
+#define HEAT_NONE       (-1000)
+#define HELD_HOT        1u
+#define HELD_POWER      2u
 
 /*
  * How many processors this interface can describe.
@@ -1317,6 +1325,27 @@ struct sysinfo {
      * string on x86, implementer and part on ARM; empty for none. Last, so
      * nothing above moves. */
     char cpu_name[64];
+
+    /*
+     * **The package's heat and power** (`roadmap.md`, "The processor's heat
+     * and power"), as core 0 last read them; all zero when `heat_known` is
+     * 0, which is every processor this kernel does not know to keep them.
+     * `package_c` is HEAT_NONE where the package has no sensor of its own;
+     * `limit_c` is where it slows to cool; `held` is HELD_HOT and HELD_POWER
+     * as it is now; the limits are milliwatts - PL1 sustained, averaged over
+     * `power_window_ms`, PL2 a burst; and `energy_uj` the microjoules it has
+     * used since boot, so a power is two readings' difference over the time
+     * between them.
+     */
+    uint32_t heat_known;
+    int32_t  package_c;
+    int32_t  limit_c;
+    uint32_t held;
+    uint32_t power_limit_mw;
+    uint32_t power_burst_mw;
+    uint32_t power_window_ms;
+    uint32_t heat_reserved;
+    uint64_t energy_uj;
 };
 
 /*

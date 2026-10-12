@@ -2,8 +2,8 @@
 <!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
 <!--
   Network Monitor, and what it stands on: the application on top, the kit's
-  new graph, the network server's new counters and request, the kernel's new
-  SYS_SENDER, and the driver as it is. The busiest path - a frame - drawn
+  new graph, the network server's new counters and request, the kernel's
+  SYS_SENDER as Notifications made it, and the driver as it is. The busiest path - a frame - drawn
   through it (F), and the window's once-a-pace request (W). Drawn on 12
   October 2026, before any of it is built; `docs/netmonitor.md` is the
   argument and `docs/netmonitor.html` the window.
@@ -96,7 +96,7 @@
     </div>
     <div class="layer kern"><h2>Nebula</h2>
       <div class="row" style="grid-template-columns:2fr 1fr">
-        <div class="box new"><span class="tag">NEW</span><b>SYS_SENDER</b><p>the process behind a reply token a server holds - asked once, when a connection is opened. A process id is in <code>sys.processes()</code> already; this names only a server's own callers.</p></div>
+        <div class="box"><b>SYS_SENDER</b><p>who sent the message a server last received, as Notifications asks it - asked once, when a connection is opened. A process id is in <code>sys.processes()</code> already; this names only a server's own callers.</p></div>
         <div class="box"><b>IPC, regions</b><p>the frame ring between driver and server</p></div>
       </div>
     </div>
@@ -120,7 +120,6 @@
       <table>
         <tr><td>ui.history</td><td>Monitor; any meter of a minute</td></tr>
         <tr><td>The counters</td><td>the Deskbar's network indicator; Processes, a program's traffic</td></tr>
-        <tr><td>SYS_SENDER</td><td>any server that wants to say whose a request is</td></tr>
       </table></div>
   </div>
 </div>

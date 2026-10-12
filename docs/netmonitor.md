@@ -39,7 +39,7 @@ on.
 | **The two colours** - in or read, out or written | **the theme's `io_in` and `io_out`**, blue and orange | **new**, one pair for every monitor |
 | **The counters**: bytes and packets each way, dropped | **the network server** (`net.c`), counted where a frame comes in and where it goes out, in total and on each connection | **new** |
 | **The connections**: each one's program, where it goes, its state, its bytes | **the network server**, `NET_OP_STATS`, a declared shape in `netproto.h`, a page of connections a request | **new** |
-| **Which program opened a connection** | **the kernel**: `SYS_SENDER`, the process behind a reply token a server holds - as QNX's `MsgInfo` says it | **new**, small |
+| **Which program opened a connection** | **the kernel**: `SYS_SENDER`, who sent the message a server last received - as QNX's `_msg_info` says it | as it is: it arrived with Notifications, and the network server asks it on `NET_OP_CONNECT`, `NET_OP_LISTEN` and `NET_OP_UDP_BIND` |
 | A program's name from its process id | `sys.processes()`, as Processes reads it | as it is |
 | The card's maker, model and link speed | the driver, through `NET_OP_INFO` as Network's window already shows | as it is |
 
@@ -51,12 +51,14 @@ it keeps anyway, and nothing is sent to it unasked. No bytes of traffic go
 anywhere near it.
 
 **`SYS_SENDER` and what it gives away.** A server receives a token for each
-caller - what it replies to - and nothing more; a process id is already in
-`sys.processes()` for anybody to read, so saying which process a token
-belongs to names nothing that was hidden. It is asked of a token the server
-holds, never of an arbitrary thread, so a server learns about its own
-callers and no others. The network server asks once, when a connection is
-opened, and keeps the id with the connection.
+caller - what it replies to - and nothing more about it; `SYS_SENDER` says
+whose process the message it last received came from, which the
+notification server already asks (`syscall.h`). A process id is already in
+`sys.processes()` for anybody to read, so saying which process asked names
+nothing that was hidden, and a server learns only about its own callers. The
+network server asks once, when a connection is opened, and keeps the id with
+the connection. (This said `SYS_SENDER` was new; it was written before
+anybody looked, and it had been there since Notifications' first step.)
 
 **C or Lua.** Counting is C, in the network server, on every frame - a
 handful of additions, nothing that allocates. The window is Lua: a request a
@@ -76,8 +78,9 @@ next to Monitor's own sampling.
 ## Steps
 
 1. **N1 - the counters and the request**: the network server counts, in
-   total and per connection; `NET_OP_STATS` answers them; `SYS_SENDER` names
-   a connection's process. A guest test: bytes moved over a connection to a
+   total and per connection; `NET_OP_STATS` answers them, into a region the
+   caller owns as `NET_OP_POLL`'s list is; `SYS_SENDER` names a connection's
+   process. A guest test: bytes moved over a connection to a
    peer on the Mac, counted within a frame's worth each way, and the
    connection named with the test's own process.
 2. **N2 - the meters in the kit**: `ui.history` (Monitor's graph moved into

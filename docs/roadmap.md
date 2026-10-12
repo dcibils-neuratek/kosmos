@@ -371,6 +371,8 @@ limits (PL1, its window, PL2), and the power drawn, from the energy counter
 - in `clocks` and Monitor. Read only where the processor says the registers
 are there: the thermal ones by CPUID, the power ones on Intel models known
 to have them.
+**Built in 0.11.166** (`testing.md` 18.559); seen on QEMU as "nothing
+known", and to be measured on the M700 under a render.
 
 **The meters in the UI kit, and one pair of colours** - Diego, 12 October
 2026: "why are we changing the colr shemes for reading and writing in network

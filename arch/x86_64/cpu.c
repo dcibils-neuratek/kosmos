@@ -365,6 +365,133 @@ bool cpu_clock_counts(uint64_t *actual, uint64_t *reference)
     return true;
 }
 
+/*
+ * **How hot it is, and what it is allowed to draw** (`roadmap.md`, "The
+ * processor's heat and power"). Intel only, and only on the models below:
+ * reading an MSR a processor does not have is a #GP in the kernel, so the
+ * numbers are asked of a processor known to keep them rather than probed.
+ * The registers, checked against Linux's `msr-index.h` and the SDM vol. 4:
+ *
+ *   IA32_THERM_STATUS (0x19C)          this core: bits 22:16 how many degrees
+ *                                      under the limit, bit 31 that it is valid
+ *   MSR_TEMPERATURE_TARGET (0x1A2)     bits 23:16 the limit, TjMax, in C
+ *   IA32_PACKAGE_THERM_STATUS (0x1B1)  the package: the same readout, bit 0
+ *                                      hot now, bit 10 held by a power limit
+ *   MSR_RAPL_POWER_UNIT (0x606)        units: power 1/2^(3:0) W, energy
+ *                                      1/2^(12:8) J, time 1/2^(19:16) s
+ *   MSR_PKG_POWER_LIMIT (0x610)        PL1 in 14:0, its window as 2^(21:17)
+ *                                      times (1 + (23:22)/4) time units;
+ *                                      PL2 in 46:32
+ *   MSR_PKG_ENERGY_STATUS (0x611)      energy used, 32 bits, wrapping
+ *
+ * Never under a hypervisor (CPUID.1:ECX bit 31): a guest can be told it is
+ * an Intel model and not be given the registers that model has.
+ */
+#define MSR_IA32_THERM_STATUS         0x19Cu
+#define MSR_TEMPERATURE_TARGET        0x1A2u
+#define MSR_IA32_PACKAGE_THERM_STATUS 0x1B1u
+#define MSR_RAPL_POWER_UNIT           0x606u
+#define MSR_PKG_POWER_LIMIT           0x610u
+#define MSR_PKG_ENERGY_STATUS         0x611u
+
+/* Family 6 models with a digital sensor, TjMax and package RAPL - Sandy
+ * Bridge on - as Linux's `intel_rapl_common.c` lists them, cores only. */
+static const uint8_t heat_models[] = {
+    0x2A, 0x2D, 0x3A, 0x3E,                     /* Sandy Bridge, Ivy Bridge */
+    0x3C, 0x3F, 0x45, 0x46,                     /* Haswell */
+    0x3D, 0x47, 0x4F, 0x56,                     /* Broadwell */
+    0x4E, 0x5E, 0x55, 0x8E, 0x9E, 0xA5, 0xA6,   /* Skylake to Comet Lake */
+    0x66, 0x6A, 0x6C, 0x7D, 0x7E, 0xA7,         /* Cannon, Ice, Rocket Lake */
+    0x8C, 0x8D, 0x8F, 0x97, 0x9A,               /* Tiger, Sapphire, Alder Lake */
+    0xB7, 0xBA, 0xBF, 0xAA, 0xAC, 0xBD,         /* Raptor, Meteor, Lunar Lake */
+    0xC5, 0xC6,                                 /* Arrow Lake */
+};
+
+static int heat_kept;                   /* 0 not asked, 1 kept, 2 not */
+static int heat_limit_c;                /* TjMax, read once */
+static unsigned heat_power_units;       /* bits 3:0, 12:8, 19:16 of 0x606 */
+static bool heat_package_sensor;        /* CPUID.06H:EAX bit 6, PTM */
+
+static bool heat_asked(void)
+{
+    int kept = __atomic_load_n(&heat_kept, __ATOMIC_ACQUIRE);
+
+    if (kept == 0) {
+        struct regs r0 = cpuid(0, 0);
+        struct regs r1 = cpuid(1, 0);
+        unsigned family = (r1.eax >> 8) & 0xfu;
+        unsigned model = ((r1.eax >> 4) & 0xfu) | (((r1.eax >> 16) & 0xfu) << 4);
+        bool known = false;
+
+        kept = 2;
+
+        /* "GenuineIntel", in EBX, EDX, ECX. */
+        if (r0.ebx == 0x756e6547u && r0.edx == 0x49656e69u && r0.ecx == 0x6c65746eu
+            && r0.eax >= 6 && family == 6 && (r1.ecx & (1u << 31)) == 0
+            && (cpuid(6, 0).eax & 1u)) {
+            for (unsigned i = 0; i < sizeof(heat_models); i++) {
+                known = known || heat_models[i] == model;
+            }
+        }
+
+        if (known) {
+            heat_limit_c = (int)((read_msr(MSR_TEMPERATURE_TARGET) >> 16) & 0xffu);
+            heat_power_units = (unsigned)read_msr(MSR_RAPL_POWER_UNIT);
+            heat_package_sensor = (cpuid(6, 0).eax & (1u << 6)) != 0;
+            kept = heat_limit_c > 0 ? 1 : 2;
+        }
+
+        __atomic_store_n(&heat_kept, kept, __ATOMIC_RELEASE);
+    }
+
+    return kept == 1;
+}
+
+bool cpu_core_temperature(int *celsius)
+{
+    if (!heat_asked()) {
+        return false;
+    }
+
+    uint64_t status = read_msr(MSR_IA32_THERM_STATUS);
+
+    if ((status & (1ull << 31)) == 0) {
+        return false;
+    }
+
+    *celsius = heat_limit_c - (int)((status >> 16) & 0x7fu);
+    return true;
+}
+
+bool cpu_package_heat(struct cpu_heat *out)
+{
+    if (!heat_asked()) {
+        return false;
+    }
+
+    uint64_t status = read_msr(MSR_IA32_PACKAGE_THERM_STATUS);
+    uint64_t limit = read_msr(MSR_PKG_POWER_LIMIT);
+    unsigned power_shift = heat_power_units & 0xfu;
+    unsigned time_shift = (heat_power_units >> 16) & 0xfu;
+    unsigned y = (unsigned)(limit >> 17) & 0x1fu;
+    unsigned z = (unsigned)(limit >> 22) & 0x3u;
+
+    /* Bit 31 is "valid" in the core's register and reserved in the
+     * package's, which is valid whenever the processor has one (PTM). */
+    out->package_c = heat_package_sensor
+                   ? heat_limit_c - (int)((status >> 16) & 0x7fu) : CPU_HEAT_NONE;
+    out->limit_c = heat_limit_c;
+    out->held = ((status & 1u) ? CPU_HELD_HOT : 0)
+              | ((status & (1u << 10)) ? CPU_HELD_POWER : 0);
+    out->pl1_mw = (uint32_t)(((limit & 0x7fffu) * 1000u) >> power_shift);
+    out->pl2_mw = (uint32_t)((((limit >> 32) & 0x7fffu) * 1000u) >> power_shift);
+    /* 2^Y (1 + Z/4) time units, in ms: (1000 << Y) (4 + Z) / 4 / 2^time. */
+    out->pl1_window_ms = (uint32_t)((((uint64_t)1000u << y) * (4u + z) / 4u) >> time_shift);
+    out->energy_raw = (uint32_t)read_msr(MSR_PKG_ENERGY_STATUS);
+    out->energy_shift = (heat_power_units >> 8) & 0x1fu;
+    return true;
+}
+
 unsigned cpu_raw(const struct cpu_info *cpu, uint64_t *out, unsigned max)
 {
     const uint64_t words[] = {
