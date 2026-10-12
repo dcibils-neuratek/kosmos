@@ -92,6 +92,7 @@ next to Monitor's own sampling.
    part of the uikit so another app can make use of it?", and "we should
    stick to a single color schemem for all reading/writing in all monitoring
    apps".
+   **Done in 0.11.168** (`testing.md` 18.561).
 3. **N3 - the window**: as drawn, the pace and bytes or bits in the menu; its
    suite reading the rates while a transfer runs.
 

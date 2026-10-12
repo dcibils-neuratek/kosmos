@@ -3948,6 +3948,167 @@ function ui.wrapped(text, room, role, most)
   return lines
 end
 
+--------------------------------------------------------------------------
+-- **Meters** (`docs/netmonitor.md` N2): a minute of a rate as a graph, and
+-- a device's card. Diego, 12 October 2026: "can we make those cpu, disk,
+-- network meters part of the uikit so another app can make use of it?" -
+-- Monitor's graph and its processor card, moved here, so Monitor, Network
+-- Monitor and Disk Monitor draw with one copy and anything else can.
+--------------------------------------------------------------------------
+
+ui.history = {}
+
+--
+-- **A sample added to a history**, the oldest let go of past `columns`
+-- (sixty, a minute at a second's pace). A sample is a list of numbers, one
+-- a series.
+--
+function ui.history.push(list, sample, columns)
+  list[#list + 1] = sample
+
+  while #list > (columns or 60) do table.remove(list, 1) end
+
+  return list
+end
+
+--
+-- **The largest value in a history**, for a mirrored graph's scale: the
+-- busiest moment either way, so the graph is fitted to what it shows.
+--
+function ui.history.most(list)
+  local most = 0
+
+  for _, s in ipairs(list) do
+    for _, v in ipairs(s) do
+      if v > most then most = v end
+    end
+  end
+
+  return most
+end
+
+--
+-- **A history drawn**, the newest sample at the right edge and each a
+-- column - a sixtieth of the width for sixty - with a pixel of ground
+-- between two when there is room for one.
+--
+-- `spec`:
+--   colours  one a series
+--   mode     "stacked": percentages, the first series at the floor and each
+--            next on top of it - Monitor's kernel and user time;
+--            "mirrored": two series about a centre line, the first above
+--            it and the second below - in and out - on one scale
+--   most     a mirrored graph's scale; its busiest value when not given
+--   columns  how many samples fill the width (60)
+--   ground   the graph's own colour behind the columns
+--   radius   its corners (8)
+--
+-- Returns the scale a mirrored graph was drawn to, for its caller to say.
+--
+function ui.history.draw(g, x, y, w, h, list, spec)
+  local columns = spec.columns or 60
+  local colours = spec.colours or { theme.io_in, theme.io_out }
+  local mirrored = spec.mode == "mirrored"
+  local most = mirrored and (spec.most or ui.history.most(list)) or 100
+
+  g:fill_round(x, y, w, h, spec.ground or theme.sunken, spec.radius or 8)
+
+  local inner = h - 4
+  local base = y + h - 2
+  local centre = y + 2 + inner // 2
+
+  if mirrored then g:fill(x + 2, centre, w - 4, 1, theme.line_soft) end
+  if most <= 0 then return most end
+
+  for i = 1, #list do
+    local slot = columns - #list + i - 1
+    local x0 = x + 2 + (slot * (w - 4)) // columns
+    local x1 = x + 2 + ((slot + 1) * (w - 4)) // columns
+    local cw = math.max(1, x1 - x0 - 1)
+    local s = list[i]
+
+    if mirrored then
+      local half = inner // 2
+      local up = math.min(half, math.floor(half * (s[1] or 0) / most + 0.5))
+      local down = math.min(half, math.floor(half * (s[2] or 0) / most + 0.5))
+
+      if up > 0 then g:fill(x0, centre - up, cw, up, colours[1]) end
+      if down > 0 then g:fill(x0, centre + 1, cw, down, colours[2]) end
+    else
+      local at = base
+
+      for k, v in ipairs(s) do
+        local part = (inner * v) // 100
+
+        if part > 0 then
+          g:fill(x0, at - part, cw, part, colours[k])
+          at = at - part
+        end
+      end
+    end
+  end
+
+  return most
+end
+
+--
+-- **A device's card**: its picture at the left, its maker small above its
+-- model large and a line of facts under them, and at the right what it is
+-- doing now - a list of lines, each `{ text, colour, face }`, the first the
+-- largest - as Monitor's processor card has it. Network Monitor's card is
+-- the network's, with its two rates; Disk Monitor's a drive's.
+--
+-- `spec`:
+--   picture   function(g, x, y) drawing a `size` square, or nil
+--   size      the picture's side (56)
+--   maker, model, facts
+--   now       the lines at the right
+--   model_face  the model's face (the title's at 24)
+--
+function ui.meter_card(g, x, y, w, h, spec)
+  local size = spec.size or 56
+  local big = spec.model_face or ui.sized("title", 24)
+
+  g:fill_round(x, y, w, h, theme.raised, ui.layout.card_r)
+  g:frame_round(x, y, w, h, theme.line_soft, ui.layout.card_r)
+
+  local tx = x + 20
+
+  if spec.picture then
+    spec.picture(g, x + 20, y + (h - size) // 2)
+    tx = x + 20 + size + 20
+  end
+
+  local right = x + w - ui.layout.row_in
+  local lines = spec.now or {}
+  local widest, tall = 0, 0
+
+  for _, l in ipairs(lines) do
+    widest = math.max(widest, gfx.measure(l[1], l[3] or "ui"))
+    tall = tall + gfx.height(l[3] or "ui")
+  end
+
+  local room = right - (widest > 0 and widest + 16 or 0) - tx
+  local th, uh, lh = gfx.height(big), gfx.height("ui"), gfx.height("label")
+  local top = y + (h - (lh + th + uh + 4)) // 2
+
+  if (spec.maker or "") ~= "" then
+    g:text(tx, top, ui.fitted(spec.maker:upper(), room, "label"), theme.text_dim, theme.raised, "label")
+  end
+
+  g:text(tx, top + lh, ui.fitted(spec.model or "", room, big), theme.text, theme.raised, big)
+  g:text(tx, top + lh + th + 4, ui.fitted(spec.facts or "", room, "ui"), theme.text_dim, theme.raised, "ui")
+
+  local ly = y + (h - tall) // 2
+
+  for _, l in ipairs(lines) do
+    local face = l[3] or "ui"
+
+    g:text(right - gfx.measure(l[1], face), ly, l[1], l[2] or theme.text, theme.raised, face)
+    ly = ly + gfx.height(face)
+  end
+end
+
 --
 -- **A page of cards**: groups of rows, each a name above a rounded card,
 -- every row the drawings' 11 + what is in it + 11 and 48 at the least, its

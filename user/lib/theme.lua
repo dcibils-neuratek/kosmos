@@ -111,6 +111,12 @@ theme.palettes.dark = {
   ring      = 0xff58a6ff,
 
   stamp     = 0xff3d4a58,
+
+  -- **A rate's two ways** (`docs/netmonitor.md` N2): blue for what comes
+  -- in or is read, orange for what goes out or is written - every monitor
+  -- and any application that shows a rate, so a colour means one thing.
+  io_in     = 0xff4fb3ff,
+  io_out    = 0xffffa64d,
 }
 
 -- Light: the 1998 one, on purpose.
@@ -164,6 +170,10 @@ theme.palettes.light = {
   ring      = 0xff2d5faf,
 
   stamp     = 0xff97b4d1,
+
+  -- Darker on a light panel, the same two hues.
+  io_in     = 0xff1f7fd0,
+  io_out    = 0xffd9771a,
 }
 
 --------------------------------------------------------------------------
@@ -243,6 +253,12 @@ theme.tokens = {
   "swatch",
   "console", "console_text",
   "accent", "good", "bad", "ring", "stamp",
+  --
+  -- **`io_in` and `io_out`: a rate's two ways** - in or read, out or
+  -- written. Diego, 12 October 2026: "we should stick to a single color
+  -- schemem for all reading/writing in all monitoring apps".
+  --
+  "io_in", "io_out",
 
   --
   -- **`flat` is not a colour, and it is the only one.**

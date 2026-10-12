@@ -273,15 +273,6 @@ end
 local BIG = ui.sized("title", 24)
 
 local function draw_chip(g, x, y, w)
-  g:fill_round(x, y, w, CHIP_H, theme.raised, L.card_r)
-  g:frame_round(x, y, w, CHIP_H, theme.line_soft, L.card_r)
-
-  local dx, dy = x + 20, y + (CHIP_H - DIE) // 2
-
-  die(g, dx, dy)
-
-  local tx = dx + DIE + 20
-  local right = x + w - L.row_in
   local ghz = machine_speed()
   local big = ghz and ("%.2f GHz"):format(ghz) or RATED or ""
   local note = ghz and "now, across all cores" or (RATED and "rated" or "")
@@ -295,24 +286,13 @@ local function draw_chip(g, x, y, w)
     if heat.held then parts[#parts + 1] = heat.held == "hot" and "held: too hot" or "held: power limit" end
     if #parts > 0 then note = table.concat(parts, " · ") end
   end
-  local bw = math.max(gfx.measure(big, BIG), gfx.measure(note, "ui"))
-  local room = right - bw - 16 - tx
-  local th, uh, lh = gfx.height(BIG), gfx.height("ui"), gfx.height("label")
-  local top = y + (CHIP_H - (lh + th + uh + 4)) // 2
 
-  if MAKER ~= "" then
-    g:text(tx, top, ui.fitted(MAKER:upper(), room, "label"), theme.text_dim, theme.raised, "label")
-  end
-
-  g:text(tx, top + lh, ui.fitted(MODEL, room, BIG), theme.text, theme.raised, BIG)
-  g:text(tx, top + lh + th + 4, ui.fitted(FACTS, room, "ui"), theme.text_dim, theme.raised, "ui")
-
-  if big ~= "" then
-    local by = y + (CHIP_H - (th + uh)) // 2
-
-    g:text(right - gfx.measure(big, BIG), by, big, theme.text, theme.raised, BIG)
-    g:text(right - gfx.measure(note, "ui"), by + th, note, theme.text_dim, theme.raised, "ui")
-  end
+  -- The kit's card (`ui.meter_card`), with the die as its picture.
+  ui.meter_card(g, x, y, w, CHIP_H, {
+    picture = die, size = DIE, model_face = BIG,
+    maker = MAKER, model = MODEL, facts = FACTS,
+    now = big ~= "" and { { big, theme.text, BIG }, { note, theme.text_dim, "ui" } } or nil,
+  })
 end
 
 --------------------------------------------------------------------------
@@ -404,26 +384,12 @@ local function draw_graph(g, px, py, pw, ph, name, words, h)
     end
   end
 
-  local top = py + GRAPH_TOP
-
-  g:fill_round(px, top, pw, ph, GRAPH_GROUND, 8)
-
-  -- The newest at the right edge; each column a sixtieth of the graph, and
-  -- a pixel of ground between two when there is room for one.
-  local inner = ph - 4
-
-  for i = 1, #h do
-    local slot = COLUMNS - #h + i - 1
-    local x0 = px + 2 + (slot * (pw - 4)) // COLUMNS
-    local x1 = px + 2 + ((slot + 1) * (pw - 4)) // COLUMNS
-    local cw = math.max(1, x1 - x0 - 1)
-    local kh = (inner * h[i][2]) // 100
-    local uh = (inner * h[i][1]) // 100
-    local base = top + ph - 2
-
-    if kh > 0 then g:fill(x0, base - kh, cw, kh, KERNEL_COL) end
-    if uh > 0 then g:fill(x0, base - kh - uh, cw, uh, USER_COL) end
-  end
+  -- The kit's graph of a minute (`ui.history`): kernel time at the floor,
+  -- user time on top of it.
+  ui.history.draw(g, px, py + GRAPH_TOP, pw, ph, h, {
+    mode = "stacked", columns = COLUMNS, ground = GRAPH_GROUND,
+    colours = { KERNEL_COL, USER_COL },
+  })
 end
 
 local function busy_now()
@@ -544,15 +510,12 @@ function sampler:tick()
 
       now[c][1], now[c][2] = u, k
       su, sk = su + u, sk + k
-      h[#h + 1] = { u, k }
-
-      if #h > COLUMNS then table.remove(h, 1) end
+      ui.history.push(h, { k, u }, COLUMNS)
     end
   end
 
-  all_now = { su // CORES, sk // CORES }
-  all_history[#all_history + 1] = all_now
-  if #all_history > COLUMNS then table.remove(all_history, 1) end
+  all_now = { sk // CORES, su // CORES }
+  ui.history.push(all_history, all_now, COLUMNS)
 
   speeds = pulse.speeds(last, load, counter_hz)
   last = load

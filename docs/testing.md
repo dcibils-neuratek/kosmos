@@ -23901,3 +23901,30 @@ answer thrown away - the program finds no connection of its own, and the
 suite fails.
 The gate: 70 of 71, `x86-film` its silence under load (`roadmap.md` 6zw),
 alone 13 of 13 - its sixth failure in seventeen gates this session.
+
+## 18.561 Network Monitor N2: the meters in the UI kit, and one pair of colours
+
+`docs/netmonitor.md` step N2. Diego, 12 October: "can we make those cpu,
+disk, network meters part of the uikit so another app can make use of it?",
+and "we should stick to a single color schemem for all reading/writing in
+all monitoring apps".
+
+- **`ui.history`** - Monitor's graph of a minute, moved into the kit:
+  `push` (a sample in, the oldest out past sixty), `most` (the busiest
+  value, a mirrored graph's scale) and `draw`, either **stacked**
+  percentages - the first series at the floor, Monitor's kernel time under
+  its user time - or **mirrored**, two series about a centre line on one
+  scale, in above and out below, for Network Monitor and Disk Monitor.
+- **`ui.meter_card`** - Monitor's processor card made general: a picture,
+  the maker small above the model large, a line of facts, and at the right
+  the lines of what it is doing now.
+- **The theme's `io_in` and `io_out`**, blue and orange (darker in the
+  light palette), a new pair of tokens every look inherits.
+
+**Monitor draws with them** and looks as it did, which a screendump with a
+spinner running showed: red kernel time at the floor, green user time on
+it, the die in the kit's card. `x86-sysapps` 35 of 35 and the display
+harness's Monitor phase unchanged. The mirrored mode has its first user and
+its suite in N3.
+The gate: 69 of 71 - `x86-film` (6zw) and `x86-mdns`, which took 144 s
+under the gate's load against 30 s alone; both pass alone.
