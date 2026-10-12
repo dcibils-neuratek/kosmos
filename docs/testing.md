@@ -23928,3 +23928,39 @@ harness's Monitor phase unchanged. The mirrored mode has its first user and
 its suite in N3.
 The gate: 69 of 71 - `x86-film` (6zw) and `x86-mdns`, which took 144 s
 under the gate's load against 30 s alone; both pass alone.
+
+## 18.562 Network Monitor N3: the window
+
+`wm netmon` (`user/bin/apps/netmon.lua`), as `docs/netmonitor.html` draws
+it: the card - its picture a port, the card's name, this machine's address
+and MTU, and in and out now in the theme's two colours (`ui.meter_card`'s
+new `rates`, columns side by side); the last minute mirrored about a line
+(`ui.history`), its scale said at the left end so the words never sit on
+what is happening now; the totals - received, sent, packets each way,
+dropped; the connections, busiest first, each with its program's name, where
+it goes, its state and its rates; the pace and bytes or bits from the dots.
+It asks `fs.net_stats` once a pace and takes differences.
+
+**Found while it was being tested**: a connection that opened and closed
+between two readings never had a rate - a request a connection, as a
+fetch is, was never seen twice. A connection not there at the last reading
+now counts every byte it has as new. What it still cannot see is one that
+also *closed* in between; that is on the roadmap.
+
+**`x86-netmon`**, new, 7 checks: a server on this Mac answers a megabyte a
+request and a program named `pull` asks again and again, started before the
+desktop takes the prompt. Network Monitor names the card with its address
+and MTU; its rate in goes well past 200 KB/s - about 25 MB/s under TCG - and
+the busiest connection is `pull`'s, by its program's name, with the rate on
+it; its graph has `io_in` blue above the centre line and none below; and
+Bits a second from the dots is heard. The screendump is kept as
+`build/gate/x86-netmon.ppm`. **Controls**: the first runs failed it three
+ways for reasons that were real - the puller typed after `wm` took the
+prompt and never ran (no rate); the short connections had none (pull never
+the busiest); and the dark palette's blue looked for on the light look's
+graph (no blue).
+
+It joins the dated screenshot (`run_gallery.py`'s `OPEN`), twenty windows.
+The gate: 71 of 72 - `x86-mdns` at 145 s under load, the second gate
+running at that figure (its Tracker check waits on a deadline the gate's
+load outlasts); alone 7 of 7.

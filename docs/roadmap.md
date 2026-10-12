@@ -409,6 +409,20 @@ bytes - so the server counts, per connection and in total, and answers a
 new request in a declared shape. Designed before it is built: its feature
 set, mockup, architecture and diagram. **Drawn and agreed the same day**
 (`docs/netmonitor.html`; Diego: "mockup is perfect! go ahead and build it").
+**Built in 0.11.167 to 0.11.169** (`testing.md` 18.560 to 18.562): the
+server's counts and `netstat`, the meters in the kit, and the window
+(`wm netmon`). Left, each a step of its own:
+- **the link's speed** on the card ("1 Gb/s, full duplex" in the drawing):
+  neither the stack nor the driver protocol (`ethproto.h`) carries it; a
+  field in the driver's reply, read from the card's status register;
+- **what the card dropped**, beside what the stack did: a counter in the
+  same reply;
+- **a short connection's bytes**: one opened and closed between two
+  readings is never listed, so a program fetching a page a connection at a
+  time reads below the machine's total - the server could keep a closed
+  connection's counts for one reading more;
+- **a name for an address** where the machine knows one (mDNS, DNS answers
+  it has seen), as the drawing has `studio.local:445`.
 
 **Nebula's own memory in Processes** - Diego, 10 October 2026: "why does
 the kernel does not show any memory consumption in processes?". Its row is

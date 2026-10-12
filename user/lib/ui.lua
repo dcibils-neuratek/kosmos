@@ -4063,6 +4063,9 @@ end
 --   size      the picture's side (56)
 --   maker, model, facts
 --   now       the lines at the right
+--   rates     or, in their place, columns side by side, each `{ value,
+--             caption, colour }` - the value large in its colour and the
+--             caption small under it: Network Monitor's in and out
 --   model_face  the model's face (the title's at 24)
 --
 function ui.meter_card(g, x, y, w, h, spec)
@@ -4086,6 +4089,25 @@ function ui.meter_card(g, x, y, w, h, spec)
   for _, l in ipairs(lines) do
     widest = math.max(widest, gfx.measure(l[1], l[3] or "ui"))
     tall = tall + gfx.height(l[3] or "ui")
+  end
+
+  -- The rates, right to left, each as wide as its wider line and a gap of
+  -- 24 between two.
+  if spec.rates then
+    local at = right
+
+    for i = #spec.rates, 1, -1 do
+      local r = spec.rates[i]
+      local cw = math.max(gfx.measure(r[1], big), gfx.measure(r[2] or "", "ui"))
+      local ry = y + (h - gfx.height(big) - gfx.height("ui")) // 2
+
+      g:text(at - gfx.measure(r[1], big), ry, r[1], r[3] or theme.text, theme.raised, big)
+      g:text(at - gfx.measure(r[2] or "", "ui"), ry + gfx.height(big), r[2] or "",
+             theme.text_dim, theme.raised, "ui")
+      at = at - cw - 24
+    end
+
+    widest = right - at - 24
   end
 
   local room = right - (widest > 0 and widest + 16 or 0) - tx

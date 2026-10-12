@@ -360,6 +360,7 @@ SUITES = [
     # level on one and a ring on the other.
     Suite("arm-sysapps", ["python3", "tools/run_sysapps.py", ARM]),
     Suite("x86-sysapps", ["python3", "tools/run_sysapps.py", X86], x86=True),
+    Suite("x86-netmon", ["python3", "tools/run_netmon.py", X86], x86=True),
 
     # **The editor, typed at through a keyboard** (`roadmap.md` 6n, steps 0
     # and 1): QEMU's own keys - the virtio keyboard on one board, the PS/2

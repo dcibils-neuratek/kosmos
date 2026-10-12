@@ -95,5 +95,7 @@ next to Monitor's own sampling.
    **Done in 0.11.168** (`testing.md` 18.561).
 3. **N3 - the window**: as drawn, the pace and bytes or bits in the menu; its
    suite reading the rates while a transfer runs.
+   **Done in 0.11.169** (`testing.md` 18.562); what is left is in
+   `roadmap.md` under Network Monitor.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`).

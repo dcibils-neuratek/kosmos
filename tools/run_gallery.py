@@ -102,13 +102,13 @@ ABS = 32767
 # the prompt's: a title, a table and a chart.
 #
 OPEN = ["tracker", "gallery", "music", "preferences", "terminal", "calc",
-        "glgears", "machine", "procs", "sysmon", "cube3d",
+        "glgears", "machine", "procs", "sysmon", "netmon", "cube3d",
         "cafesa3d:--rendered", "ide:/Kosmos/Libraries/files.lua",
         "texteditor:/Temporary/Grooves.md", "groove:--play", "servers",
         "writer:/Temporary/Gallery.write", "passwords", "maps"]
 
 # `tile` last, told how many windows to wait for: sixteen applications
-# starting at once under QEMU - eighteen now - do not all open inside the three still
+# starting at once under QEMU - twenty now - do not all open inside the three still
 # seconds it otherwise takes for "done", and on 28 September Groove,
 # maximised, opened after the rest were arranged and lay over all of them.
 OPEN.append("tile:%d" % len(OPEN))
