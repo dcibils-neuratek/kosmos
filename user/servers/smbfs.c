@@ -89,6 +89,7 @@
 #include <string.h>
 
 #include "kosmos.h"
+#include "progcount.h"
 #include "netproto.h"
 #include "shareproto.h"
 #include "keyproto.h"
@@ -292,6 +293,7 @@ struct server {
     struct folder *folders;
     struct handle *handles;
     struct disk_device cost;        /* `.device` */
+    struct progcount programs;      /* `.programs`: which read it (D2) */
 
     /* An answer that arrived changed (step N4): ALTERED_SIGNED or
      * ALTERED_SEALED, and the connection ended for it. */
@@ -348,6 +350,7 @@ struct held {
     struct held *next;
     struct server *server;
     uint64_t sender;
+    uint32_t process;               /* who asked, for `.programs` (D2) */
     uint32_t kind;
     struct disk_request req;
 
@@ -754,6 +757,7 @@ static void server_free(struct server *s)
         (void)kosmos_cap_drop(s->poll_region);
     }
 
+    free(s->programs.rows);
     memset(s, 0, sizeof(*s));
     free(s);
 }
@@ -2576,6 +2580,14 @@ static struct held *held_add(struct server *s, uint32_t kind,
     h->req = *rq;
     h->sender = sender;
     h->cap = -1;
+
+    /* Who asked, while this thread's last message is still theirs: the
+     * answer comes later, when the network has, and is put to them. */
+    {
+        struct sender_info who;
+
+        h->process = kosmos_sender(&who) == 0 ? who.id : 0;
+    }
     h->since = kosmos_ticks();
     h->next = helds;
     helds = h;
@@ -2783,6 +2795,7 @@ static void piece_read(struct smb2_context *smb2, int status, void *data,
     } else {
         h->done += (uint64_t)status;
         s->cost.read_bytes += (uint64_t)status;
+        progcount_note(&s->programs, h->process, false, (uint64_t)status, h->req.path);
 
         if ((uint32_t)status < p->count && !s->closing) {
             /* A short answer - fewer credits than asked for: the rest of
@@ -3785,7 +3798,8 @@ static bool files_op(const struct disk_request *rq, uint64_t sender, long *cap,
     }
 
     if (w.s == NULL || !w.share) {
-        if (rq->op == DISK_OP_SUPER || rq->op == DISK_OP_DEVICE) {
+        if (rq->op == DISK_OP_SUPER || rq->op == DISK_OP_DEVICE
+            || rq->op == DISK_OP_PROGRAMS) {
             rp->error = DISK_ERR_RESERVED;
             return false;
         }
@@ -3801,6 +3815,13 @@ static bool files_op(const struct disk_request *rq, uint64_t sender, long *cap,
 
     case DISK_OP_READ:
         return read_op(rq, &w, sender, cap, rp);
+
+    case DISK_OP_PROGRAMS:
+        rp->count = progcount_page(&w.s->programs, (unsigned)rq->offset,
+                                   (struct disk_program *)(void *)rp->u.data,
+                                   DEVICE_PROGRAMS_PAGE, &rp->more);
+        rp->length = rp->count * (uint32_t)sizeof(struct disk_program);
+        return false;
 
     case DISK_OP_DEVICE:
         rp->u.device = w.s->cost;

@@ -39,4 +39,29 @@ struct disk_device {
 
 _Static_assert(sizeof(struct disk_device) == 96, "twelve counters");
 
+/*
+ * **Which programs, `.programs`** (Disk Monitor's D2): a row for each
+ * process that has read or written this drive, its totals and the last path
+ * it touched, eight rows a page - a request's `offset` the first row
+ * wanted, the reply's `count` the rows in it and `more` whether others
+ * follow. Rows in the order the server first met each program; the reader
+ * sorts them. `process` is the id `SYS_SENDER` named, which is
+ * `sys.processes()`'s; a process that has ended keeps its row, its name
+ * gone from that list.
+ */
+#define DEVICE_LAST_MAX       64u
+#define DEVICE_PROGRAMS_PAGE   8u
+
+struct disk_program {
+    uint32_t process;
+    uint32_t reserved;
+    uint64_t reads, writes;
+    uint64_t read_bytes, write_bytes;
+    char     last[DEVICE_LAST_MAX];     /* the path, its end kept if cut */
+};
+
+_Static_assert(sizeof(struct disk_program) == 104, "a program's row is 104 bytes");
+_Static_assert(DEVICE_PROGRAMS_PAGE * sizeof(struct disk_program) <= 1024,
+               "a page of programs fits where a page of bytes does");
+
 #endif /* KOSMOS_DEVICEPROTO_H */

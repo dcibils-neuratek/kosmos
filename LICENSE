@@ -123,10 +123,10 @@ Vendored third-party code keeps its own licence, which travels beside it:
       2026 to the browser's User-Agent, unmodified: the browser's standing
       large page. The article's history names its authors
 
-  The wallpapers, photographs from Unsplash, under the Unsplash License
-      assets/wallpapers/, under the LICENSE beside them, each credited to
-      its photographer in the README there. Scaled to 1920x1080 by
-      tools/wallpapers.sh. In `FULL=1` images only
+  The wallpapers, twelve abstract pictures chosen by Diego Cibils
+      assets/wallpapers/, as he gave them, at their own resolutions, from
+      WallpaperAccess for personal use; each one's id there is in the
+      README. In `FULL=1` images only
 
   Project Wycheproof's test vectors, by Google and C2SP, Apache 2.0
       tools/vectors/wycheproof/, under the LICENSE beside them, the commit

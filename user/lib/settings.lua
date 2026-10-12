@@ -530,32 +530,27 @@ end
 --
 -- **The wallpapers there are to choose from**, as `{ value, name }` pairs
 -- for the Wallpaper row: none, then the pictures in `/Home`, then the
--- photographs the image carries.
+-- pictures the image carries.
 --
 -- The value is what `/Home/Preferences/appearance` keeps and what the window manager
 -- is sent - a path in `/Home`, or `wallpaper/<file>` in the image - and ""
 -- for the look's own desk. The name is what a person reads.
 --
--- A carried photograph is named after the photographer:
--- `alexander-slattery-LI748t0BK8w.jpg` is Alexander Slattery, the words
--- before Unsplash's eleven-character photo id, each capitalised unless it
--- has a digit in it, which is how a username like `v2osk` is written. This
--- lived in the Appearance panel until 0.10.148, which is where the list was
--- drawn; it is here because Preferences draws it now and a rule written
--- twice is two rules.
+-- **A carried picture is named from its file**: `wallpaper/glass-wave.jpg`
+-- is Glass Wave - the words between the hyphens, each capitalised. The
+-- pictures were Unsplash photographs named for their photographers until 12
+-- October 2026, and the name was the photographer's; Diego replaced them
+-- with abstract pictures of his own choosing, named for what they show.
 --
-local UNSPLASH_ID = string.rep("[%w_%-]", 11)
+function settings.wallpaper_name(name)
+  local stem = tostring(name or ""):match("^wallpaper/(.+)%.[jJ][pP][eE]?[gG]$")
 
-function settings.photographer(name)
-  local who = name:match("^wallpaper/(.+)%-" .. UNSPLASH_ID .. "%.jpg$")
-
-  if not who then return nil end
+  if not stem then return nil end
 
   local words = {}
 
-  for word in who:gmatch("[^%-]+") do
-    words[#words + 1] = word:find("%d") and word
-                        or (word:sub(1, 1):upper() .. word:sub(2))
+  for word in stem:gmatch("[^%-_]+") do
+    words[#words + 1] = word:sub(1, 1):upper() .. word:sub(2)
   end
 
   return table.concat(words, " ")
@@ -574,11 +569,11 @@ function settings.wallpapers()
   end
 
   for _, name in ipairs(sys.asset() or {}) do
-    local who = settings.photographer(name)
+    local called = settings.wallpaper_name(name)
 
-    if who and not seen[who] then
-      out[#out + 1] = { name, who }
-      seen[who] = true
+    if called and not seen[called] then
+      out[#out + 1] = { name, called }
+      seen[called] = true
     end
   end
 

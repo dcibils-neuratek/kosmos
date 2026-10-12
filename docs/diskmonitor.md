@@ -90,6 +90,8 @@ reads at a second's pace, each a message answered from counters.
 2. **D2 - which programs**: the four servers count by caller and answer
    `.programs`; a program `diskstat` prints it all, as `netstat` does; the
    suite's own program found by its own process id.
+   **Done in 0.11.174** (`testing.md` 18.568), with `progcount.c` the one
+   table the four servers keep.
 3. **D3 - the window**: as drawn, its suite reading the rates while a
    program writes and reads, and its picture in the dated screenshot.
 

@@ -58,6 +58,7 @@
 #include "clock_epoch.h"
 #include "diskcache.h"
 #include "diskdoor.h"
+#include "progcount.h"
 #include "drives_decode.h"
 #include "drivers/usb/storage_decode.h"
 #include "kfs.h"
@@ -143,11 +144,20 @@ struct door {
     long        ep;
     uint64_t    token;
     bool        open;
+    uint32_t    caller;     /* who sent what this door is forwarding (D2) */
 };
 
+/*
+ * **Which programs read and wrote the disk** (`.programs`, Disk Monitor's
+ * D2). The caller is `SYS_SENDER`'s - except through a door, where the
+ * message reaching the main thread is the door thread's own forward, so the
+ * door thread asks who sent it and leaves the answer in `caller`.
+ */
+static struct progcount programs;
+
 static struct door doors[] = {
-    { "Keyring", -1, 0, false },
-    { "Home/Cache/Maps", -1, 0, false },
+    { "Keyring", -1, 0, false, 0 },
+    { "Home/Cache/Maps", -1, 0, false, 0 },
 };
 
 #define DOORS (sizeof doors / sizeof doors[0])
@@ -1578,6 +1588,11 @@ static void answer(const struct message *msg, uint64_t sender)
         op_super(rp);
     } else if (rq->op == DISK_OP_DEVICE) {
         op_device(rp);
+    } else if (rq->op == DISK_OP_PROGRAMS) {
+        rp->count = progcount_page(&programs, (unsigned)rq->offset,
+                                   (struct disk_program *)(void *)rp->u.data,
+                                   DEVICE_PROGRAMS_PAGE, &rp->more);
+        rp->length = rp->count * (uint32_t)sizeof(struct disk_program);
     } else if (rq->op == DISK_OP_FORMAT) {
         op_format(rq, rp);
     } else if (rq->op == DISK_OP_GETATTR) {
@@ -1595,6 +1610,22 @@ static void answer(const struct message *msg, uint64_t sender)
         case DISK_OP_SETATTR: op_setattr(rq, rp); break;
         case DISK_OP_QUERY:   op_query(rq, rp); break;
         default:              rp->error = DISK_ERR_BAD_OP; break;
+        }
+    }
+
+    /* A read or a write answered, put to its program's row: what it was
+     * given or what it gave - a small read's bytes are in `length`, one into
+     * a region in `bytes`, and a write says `bytes` either way. */
+    if (rp->error == 0 && (rq->op == DISK_OP_READ || rq->op == DISK_OP_WRITE)) {
+        struct sender_info who;
+        bool wrote = rq->op == DISK_OP_WRITE;
+        uint64_t bytes = wrote ? rp->bytes
+                       : ((rq->flags & DISK_REGION) ? rp->bytes : rp->length);
+
+        if (through != NULL) {
+            progcount_note(&programs, through->caller, wrote, bytes, rq->path);
+        } else if (kosmos_sender(&who) == 0) {
+            progcount_note(&programs, who.id, wrote, bytes, rq->path);
         }
     }
 
@@ -1633,6 +1664,13 @@ static void door_main(unsigned long which)
 
         cap = in[which].cap_plus_one ? (long)in[which].cap_plus_one - 1 : -1;
         in[which].tag = d->token;
+
+        /* Who is really asking: the main thread will see this thread. */
+        {
+            struct sender_info who;
+
+            d->caller = kosmos_sender(&who) == 0 ? who.id : 0;
+        }
 
         if (kosmos_call(main_door, &in[which], &back[which]) != 0) {
             memset(&back[which], 0, sizeof back[which]);

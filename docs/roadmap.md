@@ -407,6 +407,21 @@ every drive - `.device` and `.programs` under its path - answered by
 `diskfs` and `smbfs` as now and by the drive server and `ramfs` new; steps
 D1 (every drive counts), D2 (which programs, `diskstat`), D3 (the window).
 
+**Kosmos App Store** - Diego, 12 October 2026, asking that the M700 fetch
+Doom, Quake, the SNES and the developer files from the Mac when it needs
+them rather than have them pushed after every netboot: "perhaps add a
+program in kosmos that requests those from the mac as needed?", "like a app
+store kind of thing?", "Kosmos App Store?". The first brick now: the Mac
+serves each build's installed applications and developer files over HTTP
+beside the netboot, and a program, `install`, fetches one by name and puts
+it in place (`install apps`, `install developer`) - on demand ("i need them
+on demand"). **Packages**, each installable thing one - "where we show all
+available packages", "and we can install them on demand": the server keeps
+an index of them, `install` alone lists it, `install doom` installs one.
+The App Store is a window over that: what there is, what is
+installed and at which build, Install and Update. A design first - feature
+set, mockup, architecture, diagram - when its turn comes.
+
 **Applications keep their state when closed, as on a phone** - Diego, 12
 October 2026: "what if all apps in kosmos have a state like apps do on
 mobile that upon closing that state is saved to disk and then when opening

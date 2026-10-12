@@ -47,6 +47,8 @@
                                  * directory */
 #define DRIVES_OP_DEVICE    5u  /* a volume's reading so far, `.device`:
                                  * a `struct disk_device` in `u.data` */
+#define DRIVES_OP_PROGRAMS  6u  /* which programs read a volume, `.programs`:
+                                 * `struct disk_program` rows from `offset` */
 
 #define DRIVES_OK              0u
 #define DRIVES_ERR_NO_PATH     1u  /* no such volume, directory or file */

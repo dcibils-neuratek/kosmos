@@ -208,6 +208,16 @@ def main():
             'string.rep(string.char(65 + i % 26), 4096)) end '
             'print("BIGWROTE", fs.write_from("/Home/big", buf, 200 * 1024))',
             "ls /Home",
+            # **Which programs** (`.programs`, Disk Monitor's D2): the
+            # shell's own row on /Home, read before and after 2000 bytes
+            # written and read back - grown by exactly that, with the file
+            # as its last path. Typed lines run in the shell's process.
+            'local me for _, p in ipairs(sys.processes()) do if p.name == "shell" then me = p.id end end '
+            'local function row() for _, r in ipairs(fs.read("/Home/.programs") or {}) do '
+            'if r.process == me then return r end end return { read_bytes = 0, write_bytes = 0 } end '
+            'local a = row() fs.write("/Home/counted.bin", string.rep("c", 2000)) '
+            'local b = fs.read("/Home/counted.bin") local z = row() '
+            'print("PROGRAMS", z.write_bytes - a.write_bytes, z.read_bytes - a.read_bytes, #b, z.last)',
         ], trace=started)
 
         #
@@ -599,6 +609,17 @@ def main():
                 "not stored on the node at all, it comes from the "
                 "directory entry during the scan.\n" + second
             )
+
+        checks += 1
+
+        # ---- which programs read and wrote the disk (D2) ----
+        programs = first.replace("\t", " ").split("PROGRAMS")[-1].split()
+
+        if programs[:4] != ["2000", "2000", "2000", "/Home/counted.bin"]:
+            raise Failure(
+                "/Home's .programs did not grow the shell's row by the 2000 "
+                "bytes it wrote and read back, with the file last: %r\n%s"
+                % (programs[:4], first[-600:]))
 
         checks += 1
 

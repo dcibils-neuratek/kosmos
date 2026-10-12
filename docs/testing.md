@@ -24125,3 +24125,62 @@ The gate: 70 of 72 - **`x86-mdns` passed, in 32 s**, after five failures
 running; `x86-network` typed a command that arrived as `host` alone (its
 words lost under load; alone it passes), and `x86-film` (6zw), which failed
 again beside one other suite and passed twice alone.
+
+## 18.568 Disk Monitor D2: which programs read and wrote each drive
+
+`docs/diskmonitor.md` step D2. Every drive's server keeps a row for each
+program that read or wrote it - its requests and bytes each way and the
+last path it touched - and answers `.programs` under the drive's path, a
+page at a time.
+
+- **One table, `progcount.c`**, used by the four servers rather than four
+  copies: a row a process, grown as processes arrive (no fixed number), a
+  long path cut keeping its end. Held on the Mac by `test_progcount` (8
+  checks; **control**: paging that says no more follow - twenty-one rows page
+  as eight, and it fails).
+- **Who asked is `SYS_SENDER`'s**, asked as a read or write is answered -
+  except through `diskfs`'s doors, whose thread forwards the request and so
+  is what the main thread hears; the door thread asks who sent it and leaves
+  the answer beside the door. `smbfs` holds a read until the network
+  answers, so it notes the program as the request arrives and puts each
+  piece's bytes to it as they come.
+- **One shape, `struct disk_program`** in `deviceproto.h`, and one function
+  in the namespace that pages it into a list; `diskstat` prints every
+  drive's totals and its programs, as `netstat` does the network's.
+
+**Tests.** `x86-usb-2` 85 -> 88: a program names itself, reads the stick's
+3000-byte file and writes and reads back 3000 bytes on `/Temporary`, and
+finds its own row on each by its process id - the stick's 3000 bytes with
+the file's name, `/Temporary`'s 3000 written and 3677 read, which is the
+3000 and the program's own 677-byte source, read from `/Temporary` to run
+it - and `diskstat` prints the stick. **Control**: the drive server crediting
+every read to nobody - "programs nil nil", and it fails. `x86-disk` 33 ->
+34: the shell's row on `/Home` grown by exactly the 2000 bytes it wrote and
+read back, its last path `/Home/counted.bin`.
+
+## 18.569 The wallpapers: twelve abstract pictures at their own size
+
+Diego, 12 October: "replace the current wallpapers bundled in kosmos with
+the ones in kosmos-abastract-wallpapers.zip", "from now on the bundled
+system available wallpapers are these new ones", "i want the wallpapers to
+maintain its current resolution", "as my monitor is a ultra wide 3440
+monitor". The 24 Unsplash photographs, their licence and the script that
+scaled them went; the twelve came in byte for byte, named for what they show
+("those names are great"), listed by `settings.wallpaper_name` from the file
+(`assets/wallpapers/README.md`). 7.9 MB, where the photographs were 9.2.
+
+**And a picture that covers the screen is never shrunk** - "for 1920 we
+dont need to scale it, we just render the part that fits in 1920", "so just
+fit whatever fits in the resolution that the user has": its middle is shown
+at its own size. Fill the screen stretches only a picture smaller than the
+screen, evenly, cropped to its shape first, so nothing is deformed.
+
+**Tests.** The display harness's wallpaper phase counts twelve, decodes the
+first, Cloud Pigment, at 3440x1440, and finds three of its pixels on the
+1920x1080 screen exactly, half its overhang in from each side - the default
+fit, no longer stretched. `x86-dock`, on the M700's 1720x1440: the 1920x1080
+test picture filled and centred as before, and White Turbine, 5120x1440, at
+its own size covering the screen, which the window manager now says.
+`x86-dock`'s transparency slider check failed once in three runs today
+(49%, "CLEAR false") and passed alone - on the roadmap with the others.
+The gate: **72 of 72**, the first whole gate in a day - `x86-mdns`, `x86-film` and `x86-network` all passing in it.

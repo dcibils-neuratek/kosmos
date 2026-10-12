@@ -1123,6 +1123,24 @@ def usb_drives(image, check):
         '.. " read " .. (t1.read_bytes - t0.read_bytes) .. " of " .. #back)'
     )
 
+    # **And which programs** (`.programs`, D2): this program, named, found
+    # in each drive's rows by its own process id - the stick's bytes exactly
+    # the file it read, /Temporary's exactly what it wrote and read back,
+    # and each row's last path the file it touched.
+    programs = (
+        'sys.name("devcount") local me = 0 '
+        'for _, p in ipairs(sys.processes()) do if p.name == "devcount" then me = p.id end end '
+        'local x = fs.read("/Drives/PHOTOS/A Long File Name.txt") '
+        'fs.write("/Temporary/mine.txt", string.rep("m", 3000)) '
+        'local y = fs.read("/Temporary/mine.txt") '
+        'local function row(where) for _, r in ipairs(fs.read(where .. "/.programs") or {}) do '
+        'if r.process == me then return r end end end '
+        'local s, t = row("/Drives/PHOTOS"), row("/Temporary") '
+        'print("drives" .. ": programs " .. tostring(s and s.read_bytes) .. " " .. tostring(s and s.last) '
+        '.. " temporary " .. tostring(t and t.write_bytes) .. " " .. tostring(t and t.read_bytes) '
+        '.. " " .. tostring(t and t.last))'
+    )
+
     # **Not `its backup`, which every other USB phase waits for.** That line
     # comes from a stick laid out with a GPT, and this one has an MBR - as a
     # camera or a Windows box writes - so the driver prints "no GUID
@@ -1137,7 +1155,10 @@ def usb_drives(image, check):
                       "fs.write('/Temporary/k.lua', %r)" % kinds,
                       "/Temporary/k.lua",
                       "fs.write('/Temporary/v.lua', %r)" % device,
-                      "/Temporary/v.lua"),
+                      "/Temporary/v.lua",
+                      "fs.write('/Temporary/p.lua', %r)" % programs,
+                      "/Temporary/p.lua",
+                      "diskstat"),
                extra=extra, after="watching for devices")
 
     if out is None:
@@ -1167,6 +1188,22 @@ def usb_drives(image, check):
     check(dev is not None and dev.group(4) == "5000" and dev.group(5) == dev.group(6) == "5000",
           "/Temporary's .device did not count 5000 bytes written and read back: %r"
           % (dev.group(0) if dev else None))
+
+    progs = re.search(r"drives: programs (\S+) (.*?) temporary (\S+) (\S+) (\S+)", out)
+    check(progs is not None and progs.group(1) == "3000"
+          and progs.group(2).endswith("A Long File Name.txt"),
+          "the stick's .programs did not hold this program's 3000 bytes and its file: %r"
+          % (progs.group(0) if progs else [l for l in lines if "programs" in l]))
+    # Read: the 3000 bytes it wrote and read back, and its own source - the
+    # program was run from /Temporary, and its process read itself first.
+    check(progs is not None and progs.group(3) == "3000"
+          and progs.group(4) == str(3000 + len(programs))
+          and progs.group(5).endswith("mine.txt"),
+          "/Temporary's .programs did not hold this program's 3000 written and "
+          "3000 read beside its own %d-byte source: %r"
+          % (len(programs), progs.group(0) if progs else None))
+    check(re.search(r"diskstat: /Drives/PHOTOS read \d+ bytes in \d+", out) is not None,
+          "diskstat did not print the stick's totals")
 
     top = said("top")
 

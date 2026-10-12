@@ -61,6 +61,11 @@
  * disk_device` in `u.data`, as every drive answers (`deviceproto.h`). */
 #define RAM_OP_DEVICE   12u
 
+/* Which programs read and wrote /Temporary, `.programs`: a page of `struct
+ * disk_program` in `u.data` from row `offset`, `count` of them, `more` if
+ * others follow (`deviceproto.h`). */
+#define RAM_OP_PROGRAMS 13u
+
 #define RAM_OK               0u
 #define RAM_ERR_NO_PATH      1u
 #define RAM_ERR_NOT_DIR      2u

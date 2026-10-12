@@ -44,6 +44,7 @@
 #define DISK_OP_SUPER    10u    /* `u.super` */
 #define DISK_OP_DEVICE   11u    /* `u.device` */
 #define DISK_OP_FORMAT   12u    /* `u.data`: the words that say it may */
+#define DISK_OP_PROGRAMS 13u    /* `.programs`: `struct disk_program` rows from `offset` */
 
 /* The request's region is the bytes: read into it, or written from it. */
 #define DISK_REGION       1u

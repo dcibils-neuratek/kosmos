@@ -18,6 +18,7 @@
  * receiving, replying, and how much the store may hold.
  */
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -25,6 +26,10 @@
 #include "kosmos.h"
 #include "ramproto.h"
 #include "ramstore.h"
+#include "progcount.h"
+
+/* Which programs read and wrote /Temporary (`.programs`, Disk Monitor D2). */
+static struct progcount programs;
 
 void ram_reply(uint64_t to, const struct ram_reply *rep)
 {
@@ -77,21 +82,54 @@ void ramfs_server(long endpoint)
         }
 
         /* A read or a write timed around its answer, on the counter, for
-         * `.device` (`ram_counts`): the op is the request's first word. */
+         * `.device` (`ram_counts`); and put to its program's row for
+         * `.programs` - the bytes the store counted while it answered, so
+         * what a program read is exactly what it was given. The op is the
+         * request's first word. */
         {
-            uint32_t op = 0;
+            struct ram_request req;
             uint64_t started = kosmos_ticks();
+            uint64_t read_before = ram_counts()->read_bytes;
+            uint64_t wrote_before = ram_counts()->write_bytes;
+            bool whole = msg.length >= sizeof(req);
 
-            if (msg.length >= sizeof(op)) {
-                memcpy(&op, msg.data, sizeof(op));
+            memset(&req, 0, sizeof(req));
+
+            if (whole) {
+                memcpy(&req, msg.data, sizeof(req));
+                req.path[RAM_PATH_MAX - 1] = '\0';
+            }
+
+            if (whole && req.op == RAM_OP_PROGRAMS) {
+                struct ram_reply rep;
+
+                memset(&rep, 0, sizeof(rep));
+                rep.count = progcount_page(&programs, req.offset,
+                                           (struct disk_program *)(void *)rep.u.data,
+                                           DEVICE_PROGRAMS_PAGE, &rep.more);
+                rep.length = rep.count * (uint32_t)sizeof(struct disk_program);
+                ram_reply(sender, &rep);
+                continue;
             }
 
             ram_answer(msg.data, msg.length, sender);
 
-            if (op == RAM_OP_READ) {
-                ram_counts()->read_counter_ticks += kosmos_ticks() - started;
-            } else if (op == RAM_OP_WRITE) {
-                ram_counts()->write_counter_ticks += kosmos_ticks() - started;
+            if (whole && (req.op == RAM_OP_READ || req.op == RAM_OP_WRITE)) {
+                bool wrote = req.op == RAM_OP_WRITE;
+                struct sender_info who;
+
+                if (wrote) {
+                    ram_counts()->write_counter_ticks += kosmos_ticks() - started;
+                } else {
+                    ram_counts()->read_counter_ticks += kosmos_ticks() - started;
+                }
+
+                if (kosmos_sender(&who) == 0) {
+                    progcount_note(&programs, who.id, wrote,
+                                   wrote ? ram_counts()->write_bytes - wrote_before
+                                         : ram_counts()->read_bytes - read_before,
+                                   req.path);
+                }
             }
         }
     }

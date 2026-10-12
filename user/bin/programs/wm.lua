@@ -660,7 +660,18 @@ local function wallpaper_place()
   local sw, sh = WS.w, WS.h
   local pw, ph = wallpaper:size()
 
-  if wall_fit == "fill" and (pw ~= sw or ph ~= sh) then
+  --
+  -- **A picture at least as large as the screen is never shrunk**: its
+  -- middle is shown at its own size, the part that fits. Diego, 12 October
+  -- 2026, of wallpapers made for his 3440 by 1440 screen: "for 1920 we dont
+  -- need to scale it, we just render the part that fits in 1920". So
+  -- filling stretches only a picture that has to grow to cover the screen,
+  -- and a larger one is placed as `centre` places it - which, larger than
+  -- the screen both ways, covers it.
+  --
+  local covers = pw >= sw and ph >= sh
+
+  if wall_fit == "fill" and not covers then
     -- The part of the picture with the screen's shape, from its middle.
     local cw, ch = pw, ph
 
@@ -684,6 +695,11 @@ local function wallpaper_place()
   wall_w, wall_h = pw, ph
   wall_x = (sw - wall_w) // 2
   wall_y = (sh - wall_h) // 2
+
+  if covers then
+    print(("wm: the wallpaper, %dx%d, at its own size, its middle %dx%d showing")
+          :format(pw, ph, sw, sh))
+  end
 
   -- In a region of its own as it stands, for the window server to compose
   -- from (D3b-2): the picture as it was read is this process's alone.

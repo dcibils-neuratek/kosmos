@@ -3975,15 +3975,16 @@ def check_faces(guest):
 def check_wallpapers(guest):
     """The desktop's wallpapers are in the image, and one reaches the screen.
 
-    Twenty-four photographs from Unsplash, added on 18 September at Diego's
-    asking, carried in a `FULL=1` image as `wallpaper/<file>`
+    Twelve abstract pictures Diego chose on 12 October, at their own
+    resolutions, carried in a `FULL=1` image as `wallpaper/<file>`
     (`assets/wallpapers/README.md`) - the image this harness boots. A program
     at the prompt counts them, decodes the first and says three of its
     pixels, and names it the wallpaper in `/Home/Preferences/appearance`, which is where
     Appearance saves a choice. Then the desktop starts, and the screen at
     those three points has to be exactly the decoded pixels: the window
-    manager draws a picture the size of the screen one to one, with the same
-    decoder, so any difference is a fault rather than a rounding. The points
+    manager draws a picture at least the size of the screen one to one, its
+    middle, with the same decoder, so any difference is a fault rather than
+    a rounding. The points
     are clear of the desktop's icons, the stamp, and the middle of the screen,
     where the pointer starts - the first choice put one there, and read the
     pointer's outline.
@@ -4002,10 +4003,12 @@ def check_wallpapers(guest):
         "if names[1] then "
         "local p = gfx.jpeg(sys.asset(names[1])) "
         "local w, h = p:size() "
+        "local sc = fs.read('/Devices/screen') or {} "
+        "local dx, dy = (w - (sc.width or w)) // 2, (h - (sc.height or h)) // 2 "
         "print('walls' .. ': size ' .. w .. 'x' .. h) "
         "for _, xy in ipairs{ {300, 600}, {1400, 300}, {700, 850} } do "
         "print(string.format('walls' .. ': at %d %d %08x', xy[1], xy[2], "
-        "p:get(xy[1], xy[2]))) end "
+        "p:get(xy[1] + dx, xy[2] + dy))) end "
         + appearance("wallpaper = names[1]") + " " 
         "end "
         "print('walls' .. ': done')"
@@ -4024,13 +4027,22 @@ def check_wallpapers(guest):
     said = guest.seen[mark:]
     counted = re.search(r"walls: (\d+) (\S+)", said)
 
-    if not counted or int(counted.group(1)) != 24:
-        raise Failure("the image does not carry the desktop's 24 wallpapers:\n"
+    # **Twelve, at their own resolutions** (Diego, 12 October 2026: "the
+    # bundled system available wallpapers are these new ones", "i want the
+    # wallpapers to maintain its current resolution"). The first by name is
+    # Cloud Pigment, 3440 by 1440 - wider and taller than this screen, so
+    # filling it shows its middle at its own size and never shrinks it
+    # (Diego: "for 1920 we dont need to scale it, we just render the part
+    # that fits in 1920"): a picture's pixel lands on the screen exactly,
+    # half its overhang in from each side, and the three points are the
+    # screen's, read from the picture there. Shrunk, no pixel would be one.
+    if not counted or int(counted.group(1)) != 12:
+        raise Failure("the image does not carry the desktop's 12 wallpapers:\n"
                       + said[-800:])
 
-    if "walls: size 1920x1080" not in said:
-        raise Failure("the first wallpaper did not decode at 1920x1080:\n"
-                      + said[-800:])
+    if "walls: size 3440x1440" not in said:
+        raise Failure("the first wallpaper, Cloud Pigment, did not decode at "
+                      "3440x1440, its own size:\n" + said[-800:])
 
     points = [(int(x), int(y), int(v, 16)) for x, y, v in
               re.findall(r"walls: at (\d+) (\d+) ([0-9a-f]{8})", said)]

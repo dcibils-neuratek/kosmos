@@ -35,6 +35,7 @@
 #include "drives_decode.h"
 #include "fat_decode.h"
 #include "kfs.h"
+#include "progcount.h"
 #include "drivers/usb/storage_decode.h"
 #include "init/say.h"
 
@@ -111,6 +112,7 @@ static struct volume volumes[VOLUMES_MOST];
 static struct {
     char               name[DRIVES_NAME_BYTES];
     struct disk_device d;
+    struct progcount   programs;    /* which read it (`.programs`, D2) */
 } counted[VOLUMES_MOST];
 static unsigned volume_count;
 static unsigned long scanned_at;        /* ticks, 0 for never */
@@ -641,6 +643,22 @@ static struct volume *volume_for(const char *path, const char **rest,
         if (len_of(volumes[i].name) == n
             && strncasecmp(volumes[i].name, at, n) == 0) {
             return &volumes[i];
+        }
+    }
+
+    return NULL;
+}
+
+static struct disk_device *counts_for(const struct volume *v);
+
+/* A volume's programs: the row beside its totals. */
+static struct progcount *programs_for(const struct volume *v)
+{
+    struct disk_device *d = counts_for(v);
+
+    for (unsigned i = 0; d != NULL && i < VOLUMES_MOST; i++) {
+        if (&counted[i].d == d) {
+            return &counted[i].programs;
         }
     }
 
@@ -1195,7 +1213,8 @@ static void answer(const struct message *msg, uint64_t sender)
     }
 
     if (req.op != DRIVES_OP_LIST && req.op != DRIVES_OP_READ
-        && req.op != DRIVES_OP_GETATTR && req.op != DRIVES_OP_DEVICE) {
+        && req.op != DRIVES_OP_GETATTR && req.op != DRIVES_OP_DEVICE
+        && req.op != DRIVES_OP_PROGRAMS) {
         fail(sender, DRIVES_ERR_BAD_OP);
         return;
     }
@@ -1224,6 +1243,22 @@ static void answer(const struct message *msg, uint64_t sender)
 
     /* `.device`: what this volume has been read so far - readable or not,
      * since a volume nothing could read has read nothing, which is true. */
+    if (req.op == DRIVES_OP_PROGRAMS) {
+        struct progcount *p = programs_for(v);
+
+        zero(&rep, sizeof(rep));
+
+        if (p != NULL) {
+            rep.count = progcount_page(p, req.offset,
+                                       (struct disk_program *)(void *)rep.u.data,
+                                       DEVICE_PROGRAMS_PAGE, &rep.more);
+        }
+
+        rep.length = rep.count * (uint32_t)sizeof(struct disk_program);
+        reply_with(sender, &rep);
+        return;
+    }
+
     if (req.op == DRIVES_OP_DEVICE) {
         struct disk_device *d = counts_for(v);
 
@@ -1291,7 +1326,20 @@ static void answer(const struct message *msg, uint64_t sender)
             return;
         }
 
-        answer_read(sender, v, &e, req.at, req.length);
+        {
+            /* And put to the program that read it (`.programs`): the bytes
+             * the read counted, so a program's is exactly what it got. */
+            struct disk_device *d = counts_for(v);
+            struct progcount *p = programs_for(v);
+            uint64_t before = d ? d->read_bytes : 0;
+            struct sender_info who;
+
+            answer_read(sender, v, &e, req.at, req.length);
+
+            if (d != NULL && p != NULL && kosmos_sender(&who) == 0) {
+                progcount_note(p, who.id, false, d->read_bytes - before, req.path);
+            }
+        }
     }
 }
 

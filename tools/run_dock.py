@@ -90,10 +90,10 @@ LOOK = ('local ui = use("/Kosmos/Libraries/ui.lua")\n'
 
 # What a maximised window is given: its place and size, in the screen's
 # points - which at this screen's scale are its pixels.
-# The wallpaper as Preferences sets it, and its fit as Appearance's
-# Wallpaper size does - then a word that is neither.
+# The wallpaper as Preferences sets it, by the name given, and its fit as
+# Appearance's Wallpaper size does - then a word that is neither.
 WALL = ('local r, why = fs.send("/Running/wm", { type = "wallpaper", '
-        'path = "wallpaper/alexander-slattery-LI748t0BK8w.jpg" })\n'
+        'path = args })\n'
         'print("WALL " .. tostring(r and r.ok) .. " " .. tostring(why))\n')
 FIT = ('local r, why = fs.send("/Running/wm", { type = "wallpaper_fit", fit = args })\n'
        'print("FIT " .. tostring(r and r.ok) .. " " .. tostring(why))\n')
@@ -700,7 +700,10 @@ def main():
         session.put(WALL.encode(), "/Temporary/wall.lua")
         session.put(FIT.encode(), "/Temporary/fit.lua")
         corner = (6, height - 6)                  # clear of the dock, the stamp and the icons
-        said["wall"] = session.run("/Temporary/wall.lua").decode(errors="replace")
+        # A picture shorter than this screen - the image's 1920 by 1080 test
+        # picture, since every wallpaper it carries is at least 1440 tall -
+        # filled, then centred.
+        said["wall"] = session.run("/Temporary/wall.lua test-screen.jpg").decode(errors="replace")
         time.sleep(2)
         _, _, at = R.pixel_reader(guest.screendump())
         said["filled"] = at(*corner)
@@ -709,6 +712,18 @@ def main():
         _, _, at = R.pixel_reader(guest.screendump())
         said["centred"] = at(*corner)
         said["sideways"] = session.run("/Temporary/fit.lua sideways").decode(errors="replace")
+
+        # And the widest the image carries, 5120 by 1440, filling again: never
+        # shrunk, its middle at its own size - Diego, 12 October: "for 1920 we
+        # dont need to scale it, we just render the part that fits".
+        mark = len(guest.seen)
+        session.run("/Temporary/fit.lua fill")
+        said["wide"] = session.run("/Temporary/wall.lua wallpaper/white-turbine.jpg").decode(errors="replace")
+        said["wide line"] = guest.wait_for_line("wm: the wallpaper, 5120x1440, at its own size",
+                                                "the wide wallpaper", mark)
+        time.sleep(2)
+        _, _, at = R.pixel_reader(guest.screendump())
+        said["wide corner"] = at(*corner)
 
         # ---- 6b: a picture of the screen, by Print Screen, Control Alt 1
         # and Super Shift 3 - each saved into /Home/Captures ----
@@ -979,12 +994,18 @@ def main():
     if "WALL true" not in said.get("wall", "") \
        or "fills the screen from 1290x1080 of it" not in seen \
        or not said.get("filled") or said.get("filled") == desk:
-        fails.append("a 1920x1080 wallpaper did not fill a 1720x1440 screen: %r, "
+        fails.append("a 1920x1080 picture did not fill a 1720x1440 screen: %r, "
                      "the corner %r" % (said.get("wall"), said.get("filled")))
 
     if "FIT true" not in said.get("centre", "") or said.get("centred") != desk:
         fails.append("the wallpaper centred did not leave the desktop's colour "
                      "below it: %r, the corner %r" % (said.get("centre"), said.get("centred")))
+
+    if "WALL true" not in said.get("wide", "") or said.get("wide line") is None \
+       or not said.get("wide corner") or said.get("wide corner") == desk:
+        fails.append("the 5120x1440 wallpaper was not shown at its own size covering "
+                     "the screen: %r, %r, the corner %r"
+                     % (said.get("wide"), said.get("wide line"), said.get("wide corner")))
 
     if "a wallpaper fills or is centred" not in said.get("sideways", ""):
         fails.append("a wallpaper fit that is neither was not refused: %r"

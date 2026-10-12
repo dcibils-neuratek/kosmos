@@ -962,7 +962,41 @@ local function new_namespace()
     }
   end
 
-  local DRIVES_OPS = { volumes = 1, list = 2, read = 3, getattr = 4, device = 5 }
+  --
+  -- **A drive's `.programs`, as a list**: every page a server answers, from
+  -- row 0 until it says no more follow, each `struct disk_program`
+  -- (`deviceproto.h`; Disk Monitor's D2) a table. `fetch(from)` asks one
+  -- page of whichever server it is, and gives back its bytes, how many
+  -- rows and whether more follow.
+  --
+  local DEVICE_PROGRAM = "<I4I4I8I8I8I8c64"
+  local DEVICE_PROGRAM_BYTES = string.packsize(DEVICE_PROGRAM)
+
+  local function device_programs(fetch)
+    local out, from = {}, 0
+
+    repeat
+      local blob, count, more = fetch(from)
+
+      if not blob then return nil, count end
+
+      for i = 1, count do
+        local process, _, reads, writes, read_bytes, write_bytes, last =
+          string.unpack(DEVICE_PROGRAM, blob, (i - 1) * DEVICE_PROGRAM_BYTES + 1)
+
+        out[#out + 1] = { process = process, reads = reads, writes = writes,
+                          read_bytes = read_bytes, write_bytes = write_bytes,
+                          last = (last:gsub("%z.*$", "")) }
+      end
+
+      from = from + count
+    until not more or count == 0
+
+    return out
+  end
+
+  local DRIVES_OPS = { volumes = 1, list = 2, read = 3, getattr = 4, device = 5,
+                       programs = 6 }
   local DRIVES_PATH_MAX, DRIVES_DATA_MAX = 256, 1024
   local DRIVES_ENTRIES_MAX, DRIVES_VOLUMES_MAX = 12, 8
 
@@ -1023,6 +1057,22 @@ local function new_namespace()
       op, rest = "device", rest:sub(1, -#"/.device" - 1)
     end
 
+    -- `<volume>/.programs`: which programs read it, every page.
+    if op == "read" and (rest or ""):lower():match("/%.programs$") then
+      local volume = rest:sub(1, -#"/.programs" - 1)
+      local rows, why = device_programs(function(from)
+        local r, err = drives_request(capability, "programs", volume, { offset = from })
+
+        if not r then return nil, err end
+
+        return r.blob, r.count, r.more
+      end)
+
+      if not rows then return nil, why end
+
+      return { ok = true, value = rows }
+    end
+
     local code = DRIVES_OPS[op]
 
     if not code then
@@ -1052,7 +1102,8 @@ local function new_namespace()
                                                 -- starting at zero, and a
                                                 -- 3000-byte file came back
                                                 -- as nothing at all.
-                                                (code == DRIVES_OPS.list)
+                                                (code == DRIVES_OPS.list
+                                                 or code == DRIVES_OPS.programs)
                                                   and (tonumber(extra.offset) or 0)
                                                   or 0,
                                                 (code == DRIVES_OPS.read)
@@ -1090,6 +1141,10 @@ local function new_namespace()
 
     if op == "device" then
       return { ok = true, value = device_counts(blob) }
+    end
+
+    if op == "programs" then
+      return { ok = true, blob = blob, count = count, more = more ~= 0 }
     end
 
     if op == "volumes" then
@@ -1675,7 +1730,8 @@ local function new_namespace()
 
   local RAM_OPS = { list = 1, read = 2, write = 3, getattr = 4,
                     setattr = 5, query = 6, watch = 7,
-                    delete = 9, rename = 10, mkdir = 11, device = 12 }
+                    delete = 9, rename = 10, mkdir = 11, device = 12,
+                    programs = 13 }
 
   local RAM_ERRORS = {
     [1] = "no such path",
@@ -1798,6 +1854,22 @@ local function new_namespace()
       if not r then return nil, err end
 
       return { ok = true, value = device_counts(r.blob) }
+    end
+
+    -- And `.programs`: which programs read and wrote it, every page.
+    if op == "read" and (rest or ""):lower():match("^/?%.programs$") then
+      local rows, why = device_programs(function(from)
+        local r, err = ram_call(capability, ".programs",
+                                ram_pack(RAM_OPS.programs, "/", from))
+
+        if not r then return nil, err end
+
+        return r.blob, r.count, r.more
+      end)
+
+      if not rows then return nil, why end
+
+      return { ok = true, value = rows }
     end
 
     local code = RAM_OPS[op]
@@ -2113,7 +2185,7 @@ local function new_namespace()
 
   local DISK_OPS = { list = 1, read = 2, write = 3, delete = 4, rename = 5,
                      mkdir = 6, getattr = 7, setattr = 8, query = 9 }
-  local DISK_OP_SUPER, DISK_OP_DEVICE, DISK_OP_FORMAT = 10, 11, 12
+  local DISK_OP_SUPER, DISK_OP_DEVICE, DISK_OP_FORMAT, DISK_OP_PROGRAMS = 10, 11, 12, 13
 
   local DISK_ERRORS = {
     [1]  = "/Home did not understand that",
@@ -2812,6 +2884,22 @@ local function new_namespace()
 
     local name = (tostring(rest or "")):match("([^/]+)$")
     local special = name and name:lower()
+
+    -- `.programs`: which programs read and wrote this disk or share, every
+    -- page (Disk Monitor's D2).
+    if op == "read" and special == ".programs" then
+      local rows, why = device_programs(function(from)
+        local r, err = disk_call(capability, DISK_OP_PROGRAMS, rest, from)
+
+        if not r then return nil, err end
+
+        return r.blob, r.count, r.more
+      end)
+
+      if not rows then return nil, why end
+
+      return { ok = true, value = rows }
+    end
 
     if op == "read" and (special == ".super" or special == ".device") then
       local r, e = disk_call(capability, (special == ".super") and DISK_OP_SUPER
