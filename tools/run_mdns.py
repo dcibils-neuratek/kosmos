@@ -198,6 +198,11 @@ def main():
     if not re.search(r"tracker: network [^\n]*Studio seen", seen):
         fails.append("Tracker's Network group did not list Studio as seen: %r"
                      % re.findall(r"tracker: network [^\n]*", seen)[-3:])
+        # What the desktop was doing instead, for whoever reads the failure.
+        print("--- the desktop's last words ---\n" + "\n".join(
+            [l for l in seen.splitlines()
+             if l.startswith(("tracker", "desktop", "connect", "wm: started", "wm: launching", "process", "mdns"))
+             or "already starting" in l][-25:]))
     if "connect: studio.local is 10.9.0.1" not in seen:
         fails.append("Connect did not find studio.local: %r"
                      % re.findall(r"connect: [^\n]*", seen)[-3:])

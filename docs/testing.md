@@ -24096,3 +24096,32 @@ three 1024-byte requests with time counted, and 5000 bytes written to
 `/Temporary` and read back. **Control**: `/Temporary`'s writes not counted -
 "temporary wrote 0 read 5000 of 5000", and it fails.
 The gate: 71 of 72 - `x86-mdns` at 143 s, its fifth gate running.
+
+## 18.567 The desktop's backdrop refused as "already starting"
+
+`x86-mdns` failed in every gate from 0.11.168 - five running, each at about
+143 s, where it takes 30 alone: "Tracker's Network group did not list Studio
+as seen", and no line from that Tracker at all. Reproduced beside five heavy
+suites, with the suite now printing the desktop's last words when it fails:
+`desktop` ended at once, before Connect had even started, and no Tracker was
+ever started.
+
+**The cause was the window manager's rule against a second click** (29
+September, `docs/launching.html`): a program still starting is not started
+again. It compared the program's file and not its words - so the Deskbar's
+login set opening Tracker as a window made the desktop's request for
+`tracker desktop`, the backdrop, "already starting" whenever that Tracker
+had not reached its window yet. `desktop` asks for an answer when what it
+launched has started; an answer that fast is that refusal, and it ended
+having started nothing. Alone, the login set's Tracker was up first; under
+the gate's load, never. Nothing in 0.11.168 touched it - that build only made
+the gate slow enough. Now **the same program with the same words** is what
+is already starting.
+
+Under the same load with the fix, `x86-mdns` passed twice in two; the gate
+below is the evidence that matters, since the race also passed once without
+it.
+The gate: 70 of 72 - **`x86-mdns` passed, in 32 s**, after five failures
+running; `x86-network` typed a command that arrived as `host` alone (its
+words lost under load; alone it passes), and `x86-film` (6zw), which failed
+again beside one other suite and passed twice alone.

@@ -3704,8 +3704,18 @@ handlers.launch = function(req, who)
   --
   -- Still starting from a click a moment ago: this one starts nothing, and
   -- the answer says so rather than failing (`docs/launching.html`).
+  --
+  -- **The same program with the same words**, not the same program: Tracker
+  -- as a window and `tracker desktop`, the backdrop, are one file and two
+  -- things to start. Compared by file alone, the Deskbar's login set opening
+  -- Tracker made the desktop's request for the backdrop "already starting"
+  -- whenever that Tracker had not reached its window yet - under the gate's
+  -- load, every time from 0.11.168: no backdrop, and `x86-mdns` waiting two
+  -- minutes for a Tracker that was never started (12 October).
+  --
   for _, s in ipairs(starting) do
-    if s.path == path and not s.failed then
+    if s.path == path and not s.failed
+       and tostring(s.launch and s.launch.args or "") == tostring(req.args or "") then
       print(("wm: %s is already starting"):format(tostring(req.program)))
       return { ok = true, starting = true }
     end
