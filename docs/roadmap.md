@@ -431,7 +431,10 @@ rather than typed again; the server's index is built from the manifests;
 and the system is APT's shape - install with dependencies, remove exactly
 what was installed, update everything newer. Proposed names, for Diego:
 the application **Packages**, the program **`pkg`** (`install` kept as its
-short form). The window over that: what there is, what is
+short form). **Drawn and agreed** (`docs/packages.html`; Diego, 12
+October: "Mockup is perfect") - the application Packages and the program
+`pkg`, as drawn; its feature set, architecture and diagram before its code,
+queued after Sandboxes. The window over that: what there is, what is
 installed and at which build, Install and Update. A design first - feature
 set, mockup, architecture, diagram - when its turn comes.
 
