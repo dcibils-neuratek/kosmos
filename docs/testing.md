@@ -23461,3 +23461,28 @@ which four stray ones once satisfied.
 
 **Control**: the ramfs path as it was - "no %PDF header; this is not a PDF",
 the PDF shown as its facts.
+
+## 18.546 Quick Look, Q3: a song plays as it is shown
+
+Space on an MP3 or a WAV in Tracker shows it as a song - its cover from the
+tags, or its icon; its title, artist and album, or its name and "Unknown
+artist"; a play button and a bar to seek on - and it plays at once, as
+agreed in `docs/quicklook.html`. The arrows moving on, Escape and Space
+stop it. All of it is `media.lua`'s, as Music plays: `preview.lua` opens a
+player and feeds it, and the tag reader gives the names and the cover.
+
+**A song needs feeding, and the view could not be fed.** A window ticks
+only the views added to it directly, and the preview sits inside the
+sheet's panel. So Tracker adds a ticker of its own while the panel is open,
+which calls the preview's `tick`, and quickens the window's clock only while
+the song sounds (`on_sound`), as Music paces itself; both are given back
+when the panel closes.
+
+`x86-quicklook` 9 -> 12, the machine given an HDA card whose output QEMU
+writes to a file, as `run_film.py` hears a film: a WAV of 440 Hz made by
+the suite shown as a song of 0:03; playing as soon as it is shown - Tracker
+says it at 1 s, and the recording's loudest sample is 11,999 of the tone's
+12,000; and Up to the PDF stopping it.
+
+**Control**: the ticker not feeding the preview - "the song did not play
+when shown", loudest sample 0.

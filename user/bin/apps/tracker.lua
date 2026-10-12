@@ -2313,10 +2313,50 @@ local function quick_look()
   local foot = ui.label{ x = 16, y = H - 30, w = W - 32, text = "",
                          color = "text_dim", role = "ui" }
 
+  --
+  -- **A song needs feeding** (Q3), and the view sits inside the sheet where
+  -- the window's ticks do not reach. So a ticker of the window's own while
+  -- the panel is open, the window's clock quickened only while a song
+  -- sounds - as Music paces itself - and given back after.
+  --
+  local ticker = ui.view{ x = 0, y = 0, w = 0, h = 0 }
+  local slow, said_at = win.tick_every, -1
+
+  function ticker:tick()
+    if not looking or looking.view ~= view then return end
+
+    view:tick()
+
+    -- Where the song has got to, once a second, for the display harness.
+    if view.kind == "song" and view:sounding() then
+      local s = math.floor(view.song_position and view:song_position() or 0)
+
+      if s ~= said_at then
+        said_at = s
+        print(("tracker: quick look sounding %s at %d s"):format(
+              tostring(view.path):match("([^/]+)$") or "", s))
+      end
+    end
+  end
+
+  view.on_sound = function(on)
+    win.poll_wait_ticks = on and 1 or nil
+    win.tick_every = on and (job_hz // 250) or slow
+  end
+
+  local closing = sheet.on_close
+
+  sheet.on_close = function(...)
+    view.on_sound(false)
+    win:remove(ticker)
+    return closing(...)
+  end
+
   sheet:put(view)
   sheet:put(open)
   sheet:put(foot)
   win:add(sheet)
+  win:add(ticker)
   looking = { sheet = sheet, view = view, open = open, foot = foot }
   look_at()
 end

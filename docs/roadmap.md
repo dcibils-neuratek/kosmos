@@ -229,7 +229,7 @@ through the folder with Tracker's selection following, Return opening;
 songs and films playing as they are shown. In `preview.lua`, a library the
 Open window and Mail's attachments will use next. Steps: **Q1** pictures,
 and anything else as its icon and its facts - **built 11 October**
-(`testing.md` 18.543); **Q2** PDF - **built 11 October** (18.545; text only, as the PDF Kit draws); **Q3** songs; **Q4** films.
+(`testing.md` 18.543); **Q2** PDF - **built 11 October** (18.545; text only, as the PDF Kit draws); **Q3** songs - **built 11 October** (18.546); **Q4** films.
 
 **The processor's speed: measured, then asked for** - Diego, 11 October
 2026, with Cafesa3D rendering the same scene on both machines: "Why is the

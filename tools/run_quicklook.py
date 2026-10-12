@@ -13,6 +13,9 @@ file, Tracker opened on it, the picture chosen, and the keys:
   - Down twice: a PDF of three pages of words made here - shown as its
     pages, the first's paper and its words on the screen, and the wheel
     bringing the second into view (Q2);
+  - Down once more: a WAV made here, shown as a song of 0:03 and playing as
+    soon as it is shown - heard, in what QEMU's sound card wrote - and Up
+    stopping it (Q3);
   - Escape: closed, and the red gone from the screen;
   - Space and Return: closed, and the picture opened in Photo.
 
@@ -22,7 +25,9 @@ Usage: run_quicklook.py IMAGE
 import os
 import random
 import re
+import math
 import struct
+import wave
 import subprocess
 import sys
 import time
@@ -35,7 +40,7 @@ import scratch                                             # noqa: E402
 import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
 
-CHECKS = 9
+CHECKS = 12
 PIC_W, PIC_H = 64, 48
 RED = (220, 30, 40)
 
@@ -85,6 +90,29 @@ def count(px, width, height, rgb, near=12):
     return n
 
 
+def tone(path, seconds=3, rate=44100):
+    """A tone of 440 Hz, stereo, sixteen bits: made here, nobody's."""
+    with wave.open(path, "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        frames = bytearray()
+        for i in range(rate * seconds):
+            v = int(12000 * math.sin(2 * math.pi * 440 * i / rate))
+            frames += struct.pack("<hh", v, v)
+        w.writeframes(bytes(frames))
+    with open(path, "rb") as f:
+        return f.read()
+
+
+def loudest_since(path, mark):
+    """The loudest sample QEMU has written to the recording since `mark`."""
+    with open(path, "rb") as f:
+        data = f.read()[max(mark, 44):]
+    n = len(data) // 2
+    return max((abs(v) for v in struct.unpack("<%dh" % n, data[:n * 2])), default=0)
+
+
 def dark(px, width, height):
     """How many pixels are dark - a word's stems, at a size where few are
     the ink's colour exactly."""
@@ -108,6 +136,11 @@ def reds(px, width, height):
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
     telnet, web = random.randint(20000, 40000), random.randint(40001, 60000)
+    work = scratch.directory("quicklook")
+    heard = os.path.join(work, "heard.wav")
+    # What the machine plays, written to a file (as `run_film.py` hears it).
+    R.extra_args(image, ["-audiodev", "wav,id=snd0,path=%s" % heard,
+                         "-device", "ich9-intel-hda", "-device", "hda-output,audiodev=snd0"])
     guest = S.boot(image, telnet, web)
     fails = []
     said = {}
@@ -135,7 +168,8 @@ def main():
         time.sleep(1)
         session.put(png(PIC_W, PIC_H, RED), "/Home/Looks/a-red.png")
         session.put(b"A note, made up for the test.\n", "/Home/Looks/b-notes.txt")
-        session.put(pdf_pages(scratch.directory("quicklook")), "/Home/Looks/c-pages.pdf")
+        session.put(pdf_pages(work), "/Home/Looks/c-pages.pdf")
+        session.put(tone(os.path.join(work, "tone.wav")), "/Home/Looks/d-tone.wav")
         session.put(LAUNCH.encode(), "/Temporary/launch.lua")
         time.sleep(1)
         mark = len(guest.seen)
@@ -243,6 +277,35 @@ def main():
               "the wheel did not bring the PDF's second page into view: %r, %d more of the ink"
               % (paged and paged.group(0), said["ink 2"]))
         guest.mouse_to(*R._to_tablet(5, height - 5, width, height))
+
+        # Down: the song (Q3) - shown as one, three seconds long, playing as
+        # soon as it is shown, and heard: the recording holds the tone.
+        heard_at = os.path.getsize(heard) if os.path.exists(heard) else 44
+        mark = len(guest.seen)
+        guest.sendkey("down")
+        shown = line(r"tracker: quick look d-tone.wav - (\w+), ([^;]*);", mark)
+        said["song"] = shown and shown.group(0)
+        check(shown and shown.group(1) == "song" and "0:03" in shown.group(2),
+              "Down to the WAV did not show it as a song of 0:03: %r" % said["song"])
+        sounding = line(r"tracker: quick look sounding d-tone.wav at ([12]) s", mark, 15)
+        time.sleep(0.5)
+        said["loudest"] = loudest_since(heard, heard_at) if os.path.exists(heard) else 0
+        if os.environ.get("QL_SHOT"):         # a picture of the song's view, to look at
+            open(os.environ["QL_SHOT"], "wb").write(guest.screendump())
+        check(sounding and said["loudest"] > 2000,
+              "the song did not play when shown: %r, loudest sample %d"
+              % (sounding and sounding.group(0), said["loudest"]))
+
+        # Up: another file, and the song stops - no more of it said.
+        mark = len(guest.seen)
+        guest.sendkey("up")
+        line(r"tracker: quick look c-pages.pdf", mark)
+        time.sleep(2)
+        guest._read_available()
+        said["stopped"] = guest.seen[mark:].count("sounding d-tone.wav")
+        check(said["stopped"] <= 1, "the song went on playing after the arrows moved on: "
+              "%d more seconds of it" % said["stopped"])
+
         mark = len(guest.seen)
         guest.sendkey("up")
         guest.sendkey("up")
@@ -284,9 +347,9 @@ def main():
           "pixels on the screen %.1f s after - its own size, not enlarged; Down a text file as its facts; "
           "Up the picture again; a PDF of three pages shown as its pages, %d paper pixels and "
           "%d of ink, the wheel to the second, %d of ink; Escape closing it; Return opening "
-          "the picture in Photo)"
+          "the picture in Photo; a WAV shown as a song, heard at %d, and stopped by Up)"
           % (CHECKS, said.get("red", 0), said.get("red after", 0), said.get("paper", 0),
-             said.get("ink", 0), said.get("ink 2", 0)))
+             said.get("ink", 0), said.get("ink 2", 0), said.get("loudest", 0)))
     return 0
 
 
