@@ -366,6 +366,19 @@ process that ends keeps its slot until its parent collects its exit code;
 collects nothing until a command is typed - so a program started in the
 background at boot is "gone" for as long as the desktop runs. The shell
 collects its background children while a foreground one runs.
+**Reproduced 12 October** (a boot with `opt/kosmos/ready`: `ready`, the
+shell's child, "gone" 15 s after the desktop): the shell is not in its
+`sys.wait()` at all - a foreground program's runner answers the shell's
+`sys.call` only when the program ends, and the desktop never ends, so the
+shell spends the session inside that call. **Two ways to fix it, Diego's to
+choose**, because the first changes how a program's error reaches the
+console: (1) the runner answers at once for every program, as it does for a
+background one, and the shell waits for its child by id with `sys.wait()`,
+collecting any other child that ends meanwhile - a program's error then
+printed by its runner, as a background program's is; (2) a background
+program spawned with init as its parent (a spawn flag), which collects its
+children already - a small kernel change, the shell's foreground path
+untouched. Recommended: (1), one way a program is waited for.
 
 **The Scheduler: its policy changeable again, a game mode, and a window
 that explains** - Diego, 11 October 2026: "I cant change the scheduler
