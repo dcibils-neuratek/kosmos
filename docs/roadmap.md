@@ -353,7 +353,9 @@ picture... as the last card and a button that is always there - one click
 setting it at once; the Open window filtered to pictures, and a picture
 chosen from elsewhere copied into `/Home/Wallpapers` so the folder is the
 whole list. Thumbnails made once at the size drawn; the row a kit piece,
-`ui.carousel`.
+`ui.carousel`. **Drawn and agreed** -
+`docs/wallpapers.html`; Diego, 12 October 2026: "Wallpapers mockup is
+perfect". Built after Tracker's list view.
 
 **The bar at the bottom by default, and Processor Cores gone** - Diego, 12
 October 2026: "by default the bottom bar should be in the bottom setting,
