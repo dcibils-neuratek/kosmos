@@ -418,6 +418,20 @@ which of it is C (hashing and inflating packs are loops over bytes) and
 which Lua. Whether to port libgit2 or write Kosmos's own is the first
 question it answers.
 
+**A Notes app** - Diego, 12 October 2026: "add to the roadmap: Notes app",
+with a picture of macOS Notes beside it: notes in a list on the left,
+pinned ones first, then grouped by when they were last changed (Today,
+Previous 7 Days, Previous 30 Days, by month), each with its title, its time
+and the start of its text; the note being written on the right, with its
+date above it; a search field; and a menu for the note - pin, lock, find in
+the note, move to a folder, delete - with checklists, tables and attachments
+in its toolbar. Not queued. When its turn comes it is designed first (a
+feature set, a mockup, an architecture and its diagram, `CLAUDE.md`), and
+the first question that design asks is what already supplies it: the text
+editing is the UI kit's editor, a note's rich text may be Kosmos Write's
+document kit (`docs/write.md`), and a locked note's encryption is the Crypto
+Kit's - the Passwords app's vault is the nearest thing that exists.
+
 **Kosmos packages (was "Kosmos App Store")** - Diego, 12 October 2026, asking that the M700 fetch
 Doom, Quake, the SNES and the developer files from the Mac when it needs
 them rather than have them pushed after every netboot: "perhaps add a

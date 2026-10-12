@@ -24304,3 +24304,27 @@ installed with `hello` brought first; `pkg remove hello` refused while
 together, a file a person put in Hello's folder kept; and a newer `hello` on
 the server installed by `pkg update`. **Control**: nothing ever said to need
 `hello` - the removal goes through, and the suite fails.
+
+## 18.574 Packages P3: the window
+
+`docs/packages.md` step P3, `user/bin/apps/packages.lua`, as
+`docs/packages.html` draws it: kinds and states in the sidebar with their
+counts, a row a package with its state's button - Install, Update, or
+Installed - and the chosen one's facts in the details, with Install, Update
+and Remove. **It shows and asks; it installs nothing itself.** The index is
+read with `http.get` in a coroutine stepped on the window's clock (`pause`),
+and an action is `pkg` in a process of its own, started through the window
+manager without waiting, whose `--report` file the window reads each tick
+until its last line says `done ok` or `done failed` - then it reads the
+index again. Install asks first when it brings dependencies ("Install 2",
+with each and the total), and Remove when an installed package needs what
+goes ("Remove 2"), as the drawing has them.
+
+**Tests.** `x86-packages`, new, 11 checks: three packages listed from the
+boot's server; Update on `hello`'s row runs `pkg` and follows its report to
+1.0 -> 2.0, and the window reads the index again; Install on `addon`'s row
+asks first with `base` beside it and installs both; Remove in `base`'s
+details asks to take `addon` too and removes both, after which the window
+reads `hello` 2.0 installed and the others absent. **Control**: the
+dependency's question skipped (`ask_install` installing at once) - "Install
+2" is never offered, and the suite fails.

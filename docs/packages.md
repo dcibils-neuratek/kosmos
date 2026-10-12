@@ -116,7 +116,10 @@ a second adds a fraction of that.
    `install` over it; `x86-install` grown to dependencies, removal and
    refusals.
    **P1 done in 0.11.177, P2 in 0.11.178** (`testing.md` 18.572, 18.573).
-3. **P3 - the window**, as drawn.
+3. **P3 - the window**, as drawn: it reads the index in a coroutine on its
+   own clock, and runs `pkg --report` in a process of its own for every
+   action, following the report - nothing in the window waits on the server.
+   **Done in 0.11.179** (`testing.md` 18.574).
 4. **P4 - powers asked for**, with Automations' consent step.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`).
