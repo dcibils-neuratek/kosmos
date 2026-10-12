@@ -2501,7 +2501,7 @@ static int l_pointer(lua_State *L)
  * that is the *count* and this is the detail.
  *
  * An array of `{ index, idle, busy, user_counter, kernel_counter,
- * held_off_counter }`, one per core: `idle` and `busy` in scheduler ticks,
+ * held_off_counter, clock_actual, clock_reference }`, one per core: `idle` and `busy` in scheduler ticks,
  * and busy split into a thread's own time and the kernel's in the counter's
  * units (`sys.info()`'s `counter_hz`), which the names say because the two
  * clocks differ; and how long the core's ticks were held off, in the same
@@ -2534,7 +2534,7 @@ static int l_cpuload(lua_State *L)
     lua_createtable(L, (int)info.cpus, 0);
 
     for (i = 0; i < info.cpus && i < CPUS_MAX; i++) {
-        lua_createtable(L, 0, 6);
+        lua_createtable(L, 0, 8);
 
         lua_pushinteger(L, (lua_Integer)i);
         lua_setfield(L, -2, "index");
@@ -2553,6 +2553,12 @@ static int l_cpuload(lua_State *L)
 
         lua_pushinteger(L, (lua_Integer)info.cpu[i].held_off_counter);
         lua_setfield(L, -2, "held_off_counter");
+
+        lua_pushinteger(L, (lua_Integer)info.cpu[i].clock_actual);
+        lua_setfield(L, -2, "clock_actual");
+
+        lua_pushinteger(L, (lua_Integer)info.cpu[i].clock_reference);
+        lua_setfield(L, -2, "clock_reference");
 
         lua_rawseti(L, -2, (lua_Integer)i + 1);
     }

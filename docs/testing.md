@@ -23508,3 +23508,33 @@ plays; and the song before it stopped by Down, no more of it said.
 
 **Control**: the frame never drawn into the preview's surface - "the film's
 picture did not play in the panel: ['dark']".
+
+## 18.548 Each processor says how fast it ran
+
+Diego asked why the M700's older i7 renders faster than the T14's newer i5
+(21.7 against 16.8 million rays a second, 1.29 to 1). Nothing in Kosmos sets
+a processor's speed, so each runs where its firmware left it - most likely
+its base clock, 3.4 GHz against 2.6, which is 1.31 - and that stayed an
+inference until the cores could say.
+
+**Now they can.** Each core reads its own IA32_APERF (0xE8), which counts at
+the speed the core ran, and IA32_MPERF (0xE7), which counts at a fixed
+reference rate, on its own tick - nowhere else can read them - into its
+`percpu`; `sysinfo` carries both per core in `struct cpuload`, and
+`sys.cpuload()` hands them on. Between two readings a core ran at
+`counter_hz` times the ratio of the two differences (`pulse.speeds`). They
+exist when CPUID.06H:ECX[0] says so, asked once rather than on every tick,
+which under a hypervisor would be an exit a tick; the numbers checked
+against Linux's `msr-index.h`. AArch64 has nothing like them on QEMU's
+Cortex-A72 or the Pi's A76, and says so.
+
+`clocks` prints each core's speed over a second, or that the processor
+does not say - which is what QEMU's does.
+
+`host` gains `test_pulse.lua`, 5: turbo (37 against 34 at 3.4 GHz is
+3,700 MHz), a core at its reference, an idle core beside a busy one, and
+no speeds at all where the processor keeps no counters. **Control**: the
+ratio inverted - 2 of 5 fail.
+
+What QEMU cannot show - the counters themselves - is read on the M700 and
+the T14, and recorded here when it is.

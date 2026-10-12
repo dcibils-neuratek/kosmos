@@ -199,6 +199,18 @@ unsigned cpu_arch(void)
     return CPU_ARCH_AARCH64;
 }
 
+/*
+ * A core here keeps nothing like x86's APERF and MPERF: the Activity
+ * Monitors (FEAT_AMUv1) would, and neither QEMU's Cortex-A72 nor the Pi 5's
+ * Cortex-A76 has them. So the speed is not known, and says so.
+ */
+bool cpu_clock_counts(uint64_t *actual, uint64_t *reference)
+{
+    (void)actual;
+    (void)reference;
+    return false;
+}
+
 unsigned cpu_raw(const struct cpu_info *cpu, uint64_t *out, unsigned max)
 {
     const uint64_t words[] = {

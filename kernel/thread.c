@@ -1435,6 +1435,12 @@ uint64_t thread_held_off_cpu(unsigned index)
     return index < NR_CPUS ? cpus[index].held_off_counter : 0;
 }
 
+void thread_clock_cpu(unsigned index, uint64_t *actual, uint64_t *reference)
+{
+    *actual = index < NR_CPUS ? cpus[index].clock_actual : 0;
+    *reference = index < NR_CPUS ? cpus[index].clock_reference : 0;
+}
+
 void thread_time_cpu(unsigned index, uint64_t *user, uint64_t *kernel)
 {
     if (index >= NR_CPUS) {
@@ -1467,6 +1473,9 @@ void thread_tick(void)
         }
 
         c->last_tick_at = now;
+
+        /* And how fast it is running, from its own counters. */
+        cpu_clock_counts(&c->clock_actual, &c->clock_reference);
     }
 
     /* Before thread_init has run there is nothing to preempt, and the timer

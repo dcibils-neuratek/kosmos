@@ -112,6 +112,15 @@ struct percpu {
     uint64_t held_off_counter;
 
     /*
+     * **How fast it really ran**: the processor's own two totals - one at
+     * the speed it ran, one at a fixed rate - read by it on each tick, the
+     * only place they can be read (`cpu_clock_counts`). Zero both where the
+     * processor keeps none.
+     */
+    uint64_t clock_actual;
+    uint64_t clock_reference;
+
+    /*
      * **And the busy time split by whose it was**, in the counter's units
      * (`counter_hz`), measured at each crossing rather than sampled at the
      * tick (`roadmap.md` 5zx; `thread.c` has the crossings).

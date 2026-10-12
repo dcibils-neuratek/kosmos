@@ -619,6 +619,9 @@ void thread_load_cpu(unsigned index, unsigned long *idle, unsigned long *busy);
 /* One processor's busy time split in two, in counter units (`percpu.h`). */
 void thread_time_cpu(unsigned index, uint64_t *user, uint64_t *kernel);
 
+/* A processor's own speed counters as it last read them (`percpu.h`). */
+void thread_clock_cpu(unsigned index, uint64_t *actual, uint64_t *reference);
+
 /* One tick in the counter's units, once the clock has one (`main.c`), and
  * how long a processor's ticks were held off past it (`percpu.h`). */
 void thread_set_tick_interval(uint64_t counts);

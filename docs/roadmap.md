@@ -245,6 +245,23 @@ T14's Tiger Lake (`IA32_PM_ENABLE`, `IA32_HWP_REQUEST`) and P-states with
 turbo on the M700's Skylake (`IA32_PERF_CTL`), in the board's code, with the
 render on both machines as the measurement before and after. Registers
 checked against Intel's SDM when written, not from memory.
+**Step 1 built 11 October** (`testing.md` 18.548): each core reads its own
+APERF and MPERF on its tick, `sys.cpuload()` carries them, `pulse.speeds`
+turns two readings into MHz and `clocks` prints them; on the M700 and the
+T14 next.
+**Step 2, the speed changing as needed** - Diego, the same evening: "what
+about the need to change clock on cpus as needed". So not a fixed speed but
+the processor's own: **HWP** (Intel Speed Shift, `IA32_PM_ENABLE` 0x770,
+`IA32_HWP_REQUEST` 0x774), which both machines have - Skylake brought it, so
+the M700's i7-6700 as well as the T14's Tiger Lake. Enabled on each core at
+boot with the whole range, lowest to highest turbo, and the core picks its
+own speed by its load within a millisecond; what Kosmos sets is the leaning,
+the energy-performance preference, which becomes a Power setting in
+Preferences - Performance, Balanced (the default), Battery - and later
+something a game mode or the sound band can ask for while it runs. A
+processor without HWP falls back to `IA32_PERF_CTL`, where choosing a speed
+by load is a decision a server makes and the kernel only writes; neither
+machine here needs it, so it waits for one that does.
 
 **Monitor, refreshed** - Diego, 11 October 2026: "cpu monitor app needs a
 refresh", "Put the cpu name and model in the app not in the title as it

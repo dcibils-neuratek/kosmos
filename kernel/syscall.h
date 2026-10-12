@@ -1058,6 +1058,17 @@ struct cpuload {
      * scheduler (`kernel/percpu.h`, `roadmap.md` 4i-f). Only rises.
      */
     uint64_t held_off_counter;
+
+    /*
+     * **How fast it really ran**: two running totals, one at the speed the
+     * core ran and one at a fixed reference rate - x86's APERF and MPERF -
+     * as last read by the core on its tick. Between two readings the core
+     * ran at (actual difference / reference difference) times the reference
+     * rate, which on x86 is the counter's, `counter_hz`. Both zero where
+     * the processor keeps none.
+     */
+    uint64_t clock_actual;
+    uint64_t clock_reference;
 };
 
 /*

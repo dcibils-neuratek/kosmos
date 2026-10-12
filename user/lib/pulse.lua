@@ -80,6 +80,29 @@ function pulse.name()
   return (("%s %s"):format(cpu.implementer or "", cpu.part or "")):match("^%s*(.-)%s*$")
 end
 
+--
+-- **How fast each processor ran between two readings of `sys.cpuload()`**,
+-- in MHz: its own two counters - one at the speed it ran, one at a fixed
+-- reference rate, which on x86 is the counter's, `counter_hz` - read by it
+-- on its ticks (`kernel/percpu.h`). An array a core, nil for a core that
+-- did not run in between, and nil altogether where the processor keeps no
+-- such counters - an ARM core, or a hypervisor that does not pass them on.
+--
+function pulse.speeds(a, b, counter_hz)
+  local out, any = {}, false
+
+  for c = 1, math.max(#(a or {}), #(b or {})) do
+    local x, y = a[c], b[c]
+    local da = x and y and (y.clock_actual or 0) - (x.clock_actual or 0) or 0
+    local dr = x and y and (y.clock_reference or 0) - (x.clock_reference or 0) or 0
+
+    if x and y and ((y.clock_reference or 0) ~= 0) then any = true end
+    out[c] = (dr > 0 and da > 0) and (counter_hz * da / dr / 1e6) or nil
+  end
+
+  return any and out or nil
+end
+
 function pulse.identity()
   local cpu  = fs.read("/Devices/cpu") or {}
   local out  = {}

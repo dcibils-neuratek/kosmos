@@ -96,6 +96,16 @@ void cpu_identify(struct cpu_info *out);
  */
 void cpu_set_counter_hz(uint64_t hz);
 
+/*
+ * **How fast this processor really ran** (`roadmap.md`, "The processor's
+ * speed"): two running totals read on the processor that calls this, which
+ * is the only one that can read them. `actual` counts at the speed the core
+ * ran, `reference` at a fixed one, so over any interval the core ran at
+ * (actual / reference) times the reference rate. False, and nothing
+ * written, where the processor keeps no such counters.
+ */
+bool cpu_clock_counts(uint64_t *actual, uint64_t *reference);
+
 unsigned cpu_arch(void);
 unsigned cpu_raw(const struct cpu_info *cpu, uint64_t *out, unsigned max);
 

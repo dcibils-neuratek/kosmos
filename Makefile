@@ -4647,6 +4647,9 @@ host-check: $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/
 	@# And how big the icons are where a grid of them is drawn: the three
 	@# Haiku exports and nothing else, kept per place in one file.
 	$(HOSTDIR)/lua tools/test_iconsize.lua
+	@# And how fast each processor ran, from its own two counters: QEMU's
+	@# keeps none, so the arithmetic is held here (pulse.speeds).
+	$(HOSTDIR)/lua tools/test_pulse.lua
 	@# And the list Preferences draws itself from: every setting in a
 	@# category that exists, every default on its own list of choices, and
 	@# a write that keeps what another program put in the same file.

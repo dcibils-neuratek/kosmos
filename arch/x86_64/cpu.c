@@ -272,6 +272,51 @@ unsigned cpu_arch(void)
     return CPU_ARCH_X86_64;
 }
 
+/*
+ * IA32_APERF (0xE8) counts at the speed the core actually ran and
+ * IA32_MPERF (0xE7) at its fixed reference rate - the invariant TSC's -
+ * while the core is in C0; they exist when CPUID.06H:ECX[0] says so, and
+ * reading one where they do not is a #GP. (Intel SDM vol. 4, table 2-2;
+ * the numbers checked against Linux's `msr-index.h`.)
+ *
+ * Whether they exist is asked once, by the first processor to want them:
+ * every processor gives the same answer, so a second asking in the same
+ * instant writes the same value, and a CPUID on every tick would be a VM
+ * exit on every tick under a hypervisor.
+ */
+#define MSR_IA32_MPERF 0xE7u
+#define MSR_IA32_APERF 0xE8u
+
+static int clock_counts_kept;           /* 0 not asked, 1 kept, 2 not */
+
+static uint64_t read_msr(uint32_t msr)
+{
+    uint32_t lo, hi;
+
+    __asm__ volatile("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
+    return ((uint64_t)hi << 32) | lo;
+}
+
+bool cpu_clock_counts(uint64_t *actual, uint64_t *reference)
+{
+    int kept = __atomic_load_n(&clock_counts_kept, __ATOMIC_RELAXED);
+
+    if (kept == 0) {
+        kept = (cpuid(0, 0).eax >= 6 && (cpuid(6, 0).ecx & 1u)) ? 1 : 2;
+        __atomic_store_n(&clock_counts_kept, kept, __ATOMIC_RELAXED);
+    }
+
+    if (kept != 1) {
+        return false;
+    }
+
+    /* MPERF first: an interval read this way round can only make the ratio
+     * a hair high, never divide by a reference that has not moved. */
+    *reference = read_msr(MSR_IA32_MPERF);
+    *actual = read_msr(MSR_IA32_APERF);
+    return true;
+}
+
 unsigned cpu_raw(const struct cpu_info *cpu, uint64_t *out, unsigned max)
 {
     const uint64_t words[] = {

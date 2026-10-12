@@ -350,8 +350,10 @@ def main():
         mark = len(guest.seen)
         press("ctrl-p", "shift-c", "l", "o", "c")
         listed = said("ide: find Cloc: ", mark, 30)
-        check(listed == "3 files: /Kosmos/Apps/clock.lua application, /Kosmos/Libraries/clock.lua library, "
-                        "/Kosmos/Libraries/clock-replicant.lua library",
+        # Four since `clocks` (11 October), the shorter of the two longer
+        # names and so the third shown.
+        check(listed == "4 files: /Kosmos/Apps/clock.lua application, /Kosmos/Libraries/clock.lua library, "
+                        "/Kosmos/Programs/clocks.lua program",
               "Cloc did not find the Clock, then the library, then the longer name, "
               "whatever the case: %r" % listed)
 
