@@ -1748,7 +1748,13 @@ $(GEN)/tabletext_lua.c: user/init/tabletext.lua tools/bin2c.py $(HOSTDIR)/lua.ok
 # Which protocols an image speaks, as one word (`tools/protostamp.py`): in the
 # system's image and every installed application's, compared when one starts
 # the other, so an application built for another Kosmos says so.
-PROTO_HEADERS := $(wildcard user/include/*proto.h) $(wildcard user/include/*ring.h)
+#
+# **And the system calls' shapes** (`kernel/syscall.h`), since 11 October: a
+# struct the kernel copies out is written at the kernel's size, not the
+# caller's, so `struct cpuload` growing two fields would have had the kernel
+# write past the end of an older Doom's `sysinfo` rather than refuse it.
+PROTO_HEADERS := $(wildcard user/include/*proto.h) $(wildcard user/include/*ring.h) \
+                 kernel/syscall.h
 
 $(GEN)/protostamp.c: $(PROTO_HEADERS) tools/protostamp.py
 	@mkdir -p $(dir $@)

@@ -12,7 +12,8 @@ deep inside the kit, and nothing said why (`roadmap.md`, an installed
 application built for older protocols says so).
 
 So every image carries this: the first sixteen hex digits of a SHA-256 over
-the protocol headers, sorted by name, each as its bytes. The launcher puts
+the protocol headers - and `kernel/syscall.h`, whose structs the kernel
+copies out at its own size - sorted by name, each as its bytes. The launcher puts
 its own in the request that starts a program, and the program's runtime
 compares it with the one it was built with before running anything; a
 mismatch is refused with a sentence that says to build it again.
