@@ -407,6 +407,17 @@ every drive - `.device` and `.programs` under its path - answered by
 `diskfs` and `smbfs` as now and by the drive server and `ramfs` new; steps
 D1 (every drive counts), D2 (which programs, `diskstat`), D3 (the window).
 
+**A Git client for Kosmos** - Diego, 12 October 2026: "lets add git to the
+roadmap. we need a git client for kosmos." To clone, pull, commit and push a
+repository from Kosmos itself - the IDE's projects and Kosmos's own source
+among them - over HTTPS, which the TLS Kit already speaks. Not queued; when
+its turn comes, a design first: what a person can do (at the prompt, and in
+the IDE), and what it is made of - the object store, packfiles and their
+deltas (zlib, which the compression kit has), the smart HTTP protocol, and
+which of it is C (hashing and inflating packs are loops over bytes) and
+which Lua. Whether to port libgit2 or write Kosmos's own is the first
+question it answers.
+
 **Kosmos packages (was "Kosmos App Store")** - Diego, 12 October 2026, asking that the M700 fetch
 Doom, Quake, the SNES and the developer files from the Mac when it needs
 them rather than have them pushed after every netboot: "perhaps add a
