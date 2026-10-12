@@ -333,7 +333,8 @@ the headings' right-click shows and hides columns and chooses where widths
 are kept - the same for every folder (recommended) or a folder its own, as
 an attribute on it. The columns written once in the kit, Tracker first,
 Processes and Mail after. Created kept as an attribute `diskfs` writes when
-a file is made, so the disk's format does not change.
+a file is made, so the disk's format does not change. **Agreed** - Diego, 12 October 2026:
+"Tracker mockup is perfect". Built after Disk Monitor's first step.
 
 **Wallpapers: a folder, any picture, and seen before chosen** - Diego, 10
 October 2026, asking where Preferences finds its list (`settings.wallpapers`:
