@@ -192,12 +192,29 @@ def main():
         guest.type("wm deskbar," + names)
 
         #
-        # One long wait rather than a poll. Every application here draws
-        # something different on its first pass - Tracker reads a directory,
-        # the cube builds a mesh - and a poll would have to know what each of
-        # them looks like when it is finished, which is six checks that go
-        # stale independently.
+        # **Until `tile` has arranged them**, and then a still moment for
+        # every application to draw its first frame. This was forty seconds
+        # alone, while `tile` waits up to two minutes for all of them to
+        # open: with twenty under QEMU the picture was taken before anything
+        # was arranged, Groove maximised over the rest, on 11 and 12 October.
+        # What each application looks like when it is finished is still not
+        # polled for - six checks that go stale independently - so the settle
+        # stays, after the arrangement rather than instead of it.
         #
+        deadline = time.monotonic() + 180
+
+        while "tile: " not in guest.seen and time.monotonic() < deadline:
+            time.sleep(1.0)
+            guest._read_available()
+
+        arranged = [int(l.split()[1]) for l in guest.seen.splitlines()
+                    if l.startswith("tile: ") and l.split()[1].isdigit()]
+
+        if not arranged or arranged[-1] < len(OPEN) - 1:
+            said = [l for l in guest.seen.splitlines() if l.startswith("tile: ")]
+            raise Failure("tile did not arrange all %d windows: %s"
+                          % (len(OPEN) - 1, said or "it said nothing in three minutes"))
+
         time.sleep(args.settle)
         guest._read_available()
 

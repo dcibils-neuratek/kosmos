@@ -103,9 +103,14 @@ end
 
 local driven = hardware.network(sys.bus())
 local CARD = driven[1] and driven[1].name or "No network card"
-local MAKER, MODEL = CARD:match("^(%S+)%s+(.+)$")
+-- The maker split off only from a card's name: "No network card" is a
+-- sentence, and split it read "NO" over "network card".
+local MAKER, MODEL = "", CARD
 
-if not MAKER then MAKER, MODEL = "", CARD end
+if driven[1] then
+  MAKER, MODEL = CARD:match("^(%S+)%s+(.+)$")
+  if not MAKER then MAKER, MODEL = "", CARD end
+end
 
 local info = fs.net_info("/Network") or {}
 local FACTS = info.card and ("%s \u{b7} MTU %d"):format(address(info.address), info.mtu or 0)
