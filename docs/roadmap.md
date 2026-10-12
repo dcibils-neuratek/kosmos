@@ -229,7 +229,7 @@ through the folder with Tracker's selection following, Return opening;
 songs and films playing as they are shown. In `preview.lua`, a library the
 Open window and Mail's attachments will use next. Steps: **Q1** pictures,
 and anything else as its icon and its facts - **built 11 October**
-(`testing.md` 18.543); **Q2** PDF; **Q3** songs; **Q4** films.
+(`testing.md` 18.543); **Q2** PDF - **built 11 October** (18.545; text only, as the PDF Kit draws); **Q3** songs; **Q4** films.
 
 **The processor's speed: measured, then asked for** - Diego, 11 October
 2026, with Cafesa3D rendering the same scene on both machines: "Why is the
@@ -245,6 +245,23 @@ T14's Tiger Lake (`IA32_PM_ENABLE`, `IA32_HWP_REQUEST`) and P-states with
 turbo on the M700's Skylake (`IA32_PERF_CTL`), in the board's code, with the
 render on both machines as the measurement before and after. Registers
 checked against Intel's SDM when written, not from memory.
+
+**Monitor, refreshed** - Diego, 11 October 2026: "cpu monitor app needs a
+refresh", "Put the cpu name and model in the app not in the title as it
+can't be shown entirely", "each core bar is unnecessary", "Just leave the
+graphs with its history, cpu speed, kernel and user colors and core
+number", "Show the cpu name and model in a nice way", "Bars are a 'show
+cores bars' option", "Mockup first". The processor in a card of its own,
+its name split by `pulse.lua` for About and neofetch too; a graph a core
+with its number, speed and share; each core's bar behind "Show each core's
+bar" in the dots' menu, off by default. Drawn as `docs/monitor.html`;
+**agreed the same evening**: "mockup is perfect". And his question, "what
+if the processor has 16 cores?" - answered in the drawing, after 6h: the
+window never taller than the screen; four across at 84 tall up to 8 cores,
+at 60 from 9 to 16 (fits 1280x720), eight across in a window twice as wide
+from 17 to 32, and past 32 one graph for the machine with a graph a core
+one choice away; the bars, when shown above 8, in two columns. The speed comes from the measurement above, so the
+two land together.
 
 **Mail: always show a sender's pictures** - Diego, 10 October 2026: "mail
 app needs a way to set 'always show images from this sender' somehere
@@ -9092,7 +9109,10 @@ a roadmap question; nothing decided. What it would take, honestly:
 
 - `tools/mkusb.sh`'s closing message still calls the stick's loader unsigned
   GRUB, which it has not been since 13 September.
-- Doom's sound, behind a hook that already exists.
+- **Doom's and Quake's sound** - Diego, 11 October 2026: "doom and quake
+  need sound support". Doom's is behind a hook that already exists; both
+  play through the Synth Kit's ring as every other sound does, a game being
+  one more voice. On the queue after Monitor's refresh.
 - **The display harness finds things by an assumed font width.** `kosmos_w`
   in the focus phase is `len("Kosmos") * GLYPH_W`, the bitmap's 8-pixel cell,
   while the Deskbar sizes that button with `gfx.measure("Kosmos")` in whatever
@@ -9163,6 +9183,22 @@ a roadmap question; nothing decided. What it would take, honestly:
   mini player. Diego chose that over vendoring more, which would be a licence
   and a pinned commit to keep in step for shapes that are four lines of Lua
   each (`docs/music.html`).
+
+  **Redesigned in Kosmos's own look, 11 October** - Diego: "lets redesign
+  the music app with a more native music app with the ui style of kosmos",
+  "it needs to support mp3, wav, flac", "album view as well", "song view as
+  now", "a small uv meter", "equializer", "mockup first". The VOX pilot's
+  own palette goes; Music becomes a Kosmos window - Tracker's sidebar
+  (Songs, Albums, Artists; Places), the header as the title bar, what is
+  playing on top as now, with a meter of two rows of lamps, left and right,
+  the volume and the equaliser's button. Albums as a grid of covers, one
+  opened as its cover, facts and songs. **The equaliser is a kit**, not
+  Music's - Video, Groove and the Mixer want one: ten biquad bands in C in
+  the sound path, ±12 dB, a preamp and named presets, set by message. The
+  meter wants left and right, where the server publishes one peak a stream.
+  FLAC as above. `docs/music.html` drawn again and **agreed the same evening**
+  ("music mockup is perfect"); `docs/music.md` and its diagram next, before
+  code. On the queue after Doom's and Quake's sound.
 
   **And drawing them needs a triangle command**, found while building: an
   application that draws through commands has `fill`, `text` and `image` and

@@ -10,6 +10,9 @@ file, Tracker opened on it, the picture chosen, and the keys:
     smaller than the panel is shown at its own size, never enlarged;
   - Down: the text file, shown as its facts, and Tracker's selection with it;
   - Up: the picture again;
+  - Down twice: a PDF of three pages of words made here - shown as its
+    pages, the first's paper and its words on the screen, and the wheel
+    bringing the second into view (Q2);
   - Escape: closed, and the red gone from the screen;
   - Space and Return: closed, and the picture opened in Photo.
 
@@ -20,6 +23,7 @@ import os
 import random
 import re
 import struct
+import subprocess
 import sys
 import time
 import zlib
@@ -27,10 +31,11 @@ import zlib
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+import scratch                                             # noqa: E402
 import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
 
-CHECKS = 6
+CHECKS = 9
 PIC_W, PIC_H = 64, 48
 RED = (220, 30, 40)
 
@@ -50,6 +55,44 @@ def png(w, h, rgb):
     raw = b"".join(b"\0" + bytes(rgb) * w for _ in range(h))
     return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
             + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+def pdf_pages(work):
+    """A PDF of three pages of words, through `tools/mkpdf.py`, which embeds
+    a font: the PDF Kit draws text from an embedded face and nothing it
+    only names, and draws no shapes yet - so a page of coloured squares, the
+    first version of this, was blank paper in Quick Look and in the PDF
+    viewer alike. Made here, nobody's."""
+    text = os.path.join(work, "pages.txt")
+    out = os.path.join(work, "pages.pdf")
+    line = "Quick Look shows a document as its pages, one under another."    # one line: 46 a page
+    with open(text, "w") as f:
+        f.write("\n".join(line for _ in range(46 * 3)))
+    subprocess.run([sys.executable, os.path.join(HERE, "mkpdf.py"), text, out],
+                   check=True, capture_output=True, cwd=os.path.dirname(HERE))
+    with open(out, "rb") as f:
+        return f.read()
+
+
+PAPER = (0xf4, 0xf1, 0xea)    # preview.lua's
+
+
+def count(px, width, height, rgb, near=12):
+    n = 0
+    for i in range(0, width * height * 3, 3):
+        if abs(px[i] - rgb[0]) < near and abs(px[i + 1] - rgb[1]) < near and abs(px[i + 2] - rgb[2]) < near:
+            n += 1
+    return n
+
+
+def dark(px, width, height):
+    """How many pixels are dark - a word's stems, at a size where few are
+    the ink's colour exactly."""
+    n = 0
+    for i in range(0, width * height * 3, 3):
+        if px[i] < 110 and px[i + 1] < 110 and px[i + 2] < 110:
+            n += 1
+    return n
 
 
 def reds(px, width, height):
@@ -92,6 +135,7 @@ def main():
         time.sleep(1)
         session.put(png(PIC_W, PIC_H, RED), "/Home/Looks/a-red.png")
         session.put(b"A note, made up for the test.\n", "/Home/Looks/b-notes.txt")
+        session.put(pdf_pages(scratch.directory("quicklook")), "/Home/Looks/c-pages.pdf")
         session.put(LAUNCH.encode(), "/Temporary/launch.lua")
         time.sleep(1)
         mark = len(guest.seen)
@@ -127,10 +171,13 @@ def main():
         while time.time() - start < 10:
             _, _, px = R.parse_ppm(guest.screendump())
             n = reds(px, width, height)
-            if n > 0:
+            # The picture, not the first red pixel: four stray ones once
+            # ended the wait before it was painted.
+            if n >= PIC_W * PIC_H * 0.8:
                 break
             time.sleep(0.25)
         said["red"], said["red after"] = n, time.time() - start
+        ink_before = dark(px, width, height)
         check(PIC_W * PIC_H * 0.8 <= n <= PIC_W * PIC_H * 1.2,
               "the picture was not on the screen at its own size: %d red pixels, %d expected"
               % (n, PIC_W * PIC_H))
@@ -148,6 +195,58 @@ def main():
         shown = line(r"tracker: quick look (\S+) - (\w+)", mark)
         check(shown and shown.group(1) == "a-red.png" and shown.group(2) == "picture",
               "Up did not come back to the picture: %r" % (shown and shown.group(0)))
+
+        # Down twice: the PDF, as its pages.
+        mark = len(guest.seen)
+        guest.sendkey("down")
+        guest.sendkey("down")
+        shown = line(r"tracker: quick look c-pages.pdf - (\w+), ([^;]*);", mark)
+        said["pdf"] = shown and shown.group(0)
+        check(shown and shown.group(1) == "pdf" and "3 pages" in shown.group(2),
+              "Down to the PDF did not show it as its pages, 3 of them: %r" % said["pdf"])
+        # The first page: its paper, and words on it - more of the ink's
+        # colour on the screen than there was before the PDF was shown.
+        start, paper, ink = time.time(), 0, 0
+        while time.time() - start < 15:
+            _, _, px = R.parse_ppm(guest.screendump())
+            paper, ink = count(px, width, height, PAPER, 4), dark(px, width, height)
+            if paper > 30000 and ink - ink_before > 1500:
+                break
+            time.sleep(0.5)
+        said["paper"], said["ink"] = paper, ink - ink_before
+        check(paper > 30000 and ink - ink_before > 1500,
+              "the PDF's first page was not drawn: %d paper pixels, %d more of the ink"
+              % (paper, ink - ink_before))
+        # The wheel over the pages: the panel's middle, which Tracker says in
+        # its window's points, and where the window is.
+        at = re.findall(r"wm: window Tracker at (\d+),(\d+)", guest.seen)
+        middle = re.findall(r"quick look c-pages.pdf .*middle at (\d+),(\d+)", guest.seen)
+        if at and middle:
+            mx, my = int(at[-1][0]) + int(middle[-1][0]), int(at[-1][1]) + int(middle[-1][1])
+        else:
+            mx, my = width // 2, height // 2
+        guest.mouse_to(*R._to_tablet(mx, my, width, height))
+        time.sleep(0.3)
+        mark = len(guest.seen)
+        # A notch is 60 points and a page at the panel's width nearly a
+        # thousand: twenty to be past the first.
+        for _ in range(20):
+            guest.mouse_button(True, "wheel-down")
+            time.sleep(0.05)
+            guest.mouse_button(False, "wheel-down")
+            time.sleep(0.15)
+        paged = line(r"tracker: quick look page 2 of 3", mark)
+        time.sleep(1)
+        _, _, px = R.parse_ppm(guest.screendump())
+        said["ink 2"] = dark(px, width, height) - ink_before
+        check(paged and said["ink 2"] > 1500,
+              "the wheel did not bring the PDF's second page into view: %r, %d more of the ink"
+              % (paged and paged.group(0), said["ink 2"]))
+        guest.mouse_to(*R._to_tablet(5, height - 5, width, height))
+        mark = len(guest.seen)
+        guest.sendkey("up")
+        guest.sendkey("up")
+        line(r"tracker: quick look a-red.png", mark)
 
         # Escape: closed, and the red gone.
         mark = len(guest.seen)
@@ -183,8 +282,11 @@ def main():
 
     print("PASS: %d checks on Quick Look (Space showing a PNG 64 x 48 as a picture, %d red "
           "pixels on the screen %.1f s after - its own size, not enlarged; Down a text file as its facts; "
-          "Up the picture again; Escape closing it; Return opening the picture in Photo)"
-          % (CHECKS, said.get("red", 0), said.get("red after", 0)))
+          "Up the picture again; a PDF of three pages shown as its pages, %d paper pixels and "
+          "%d of ink, the wheel to the second, %d of ink; Escape closing it; Return opening "
+          "the picture in Photo)"
+          % (CHECKS, said.get("red", 0), said.get("red after", 0), said.get("paper", 0),
+             said.get("ink", 0), said.get("ink 2", 0)))
     return 0
 
 

@@ -565,6 +565,45 @@ function gc:picture(x, y, w, h, name)
   }
 end
 
+--
+-- **A lent surface, drawn at a size** (`ui.lend_picture`): its own width and
+-- height given, since the window manager has never seen it to say them.
+--
+function gc:lent(x, y, w, h, name, sw, sh)
+  if not name or w <= 0 or h <= 0 or (sw or 0) <= 0 or (sh or 0) <= 0 then return end
+
+  local ax, ay = self.ox + x, self.oy + y
+
+  if ax + w <= self.cx or ax >= self.cx + self.cw
+     or ay + h <= self.cy or ay >= self.cy + self.ch then
+    return
+  end
+
+  -- At its own size, cut to what is inside the clip: a command carries its
+  -- source rectangle and is not clipped for it, so a page scrolled half out
+  -- of its view would otherwise draw over what is above it.
+  if w == sw and h == sh then
+    local x0, y0 = math.max(ax, self.cx), math.max(ay, self.cy)
+    local x1 = math.min(ax + w, self.cx + self.cw)
+    local y1 = math.min(ay + h, self.cy + self.ch)
+
+    if x1 <= x0 or y1 <= y0 then return end
+
+    self.ops[#self.ops + 1] = {
+      op = "image", asset = name,
+      sx = x0 - ax, sy = y0 - ay, w = x1 - x0, h = y1 - y0,
+      x = x0, y = y0,
+    }
+    return
+  end
+
+  self.ops[#self.ops + 1] = {
+    op = "image", asset = name,
+    sx = 0, sy = 0, w = sw, h = sh,
+    x = ax, y = ay, dw = w, dh = h,
+  }
+end
+
 function gc:frame(x, y, w, h, color)
   color = shade(color)
   self:fill(x, y, w, 1, color)
@@ -6069,9 +6108,25 @@ do
   -- into pages and decoded there, the last four kept (`pictures.kept`).
   local files_kept = nil
 
+  --
+  -- **A surface this process lent the painter, by a name** (Quick Look's
+  -- PDF pages, `docs/quicklook.html`): something drawn here in C - a page
+  -- the PDF Kit rendered - drawn into a kit window by the same `image`
+  -- command a picture is, with no copy. A window paints itself in its own
+  -- process (`docs/astra-display.md` D2c), so the surface never leaves it.
+  -- Lent with `ui.lend_picture(name, s)`, given back with `nil`.
+  --
+  local lent = {}
+
+  function ui.lend_picture(name, surface)
+    lent[name] = surface
+  end
+
   -- A picture carried in the image, decoded once: a line icon, an icon -
   -- or, named by a path, a file.
   local function picture(name)
+    if lent[name] then return lent[name] end
+
     if tostring(name):sub(1, 1) == "/" then
       files_kept = files_kept or use("/Kosmos/Libraries/pictures.lua").kept(4)
       return files_kept:get(name)

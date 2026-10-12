@@ -23428,3 +23428,36 @@ same in the lanes as one at a time.
 
 **Control**: the old `rows.c` - "a glyph's edge on a transparent ground"
 fails, 1 of 10.
+
+## 18.545 Quick Look, Q2: a PDF as its pages; a read into a region from memory
+
+Space on a PDF in Tracker shows it as its pages, one under another, as the
+PDF viewer draws them - through the PDF Kit (`pdf.open`, `pdf.render`) into
+a surface a page at the panel's width, lent to the painter by name
+(`ui.lend_picture`, `gc:lent`) so the window draws it without a copy. Pages
+are drawn as they come into view and the four nearest kept; the wheel
+scrolls, and a badge says which page is at the top.
+
+**Found by the suite: `fs.read_into` did nothing on ramfs.** On a machine
+with no disk `/Home` is served from memory, as `/Temporary` always is, and
+ramfs answers a read with the bytes; it has no pages to lend. The
+namespace's ramfs path took a read into a region as an ordinary read, and
+`read_into` - which looks for a count, not a value - said nil with no
+reason. So the PDF had "no %PDF header". `ram_request` now reads the pieces
+and writes them into the caller's region itself, at its start, as the
+disk's server does. On a disk this never happened, which is why the M700
+and the T14 never showed it.
+
+**And a test that drew nothing.** The suite's first PDF was coloured
+squares with no font, so its pixels could be counted; the PDF Kit draws text
+from an embedded face and no shapes yet - the PDF viewer the same - so it
+was blank paper. The suite now makes its PDF with `tools/mkpdf.py`, which
+embeds one: three pages of words, the paper and the darker pixels counted.
+
+`x86-quicklook` 6 -> 9: the PDF shown as 3 pages; its first page's paper
+and words on the screen; the wheel bringing the second into view. The
+picture's wait is for the picture rather than for the first red pixel,
+which four stray ones once satisfied.
+
+**Control**: the ramfs path as it was - "no %PDF header; this is not a PDF",
+the PDF shown as its facts.

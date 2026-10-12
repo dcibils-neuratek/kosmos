@@ -2266,10 +2266,12 @@ local function look_at()
                       looking.view.facts, selected, #rows.shown)
 
   -- For the display harness: what is shown, and where the button is.
-  print(("tracker: quick look %s - %s, %s; open at %d,%d"):format(
+  print(("tracker: quick look %s - %s, %s; open at %d,%d; middle at %d,%d"):format(
         e.name, shown and looking.view.kind or "facts", looking.view.facts,
         looking.sheet.panel.x + looking.open.x + looking.open.w // 2,
-        looking.sheet.panel.y + looking.open.y + looking.open.h // 2))
+        looking.sheet.panel.y + looking.open.y + looking.open.h // 2,
+        looking.sheet.panel.x + looking.view.x + looking.view.w // 2,
+        looking.sheet.panel.y + looking.view.y + looking.view.h // 2))
 end
 
 local function close_look()
@@ -2291,12 +2293,18 @@ local function quick_look()
 
   local W = math.max(360, win.w - 80)
   local H = math.max(280, win.h - 90)
+  local view = preview.new{ x = 14, y = 50, w = W - 28, h = H - 50 - 38 }
   local sheet = ui.sheet{ title = e.name, w = W, h = H,
                           on_close = function()
+                            view:release()
                             looking = nil
                             print("tracker: quick look closed")
                           end }
-  local view = preview.new{ x = 14, y = 50, w = W - 28, h = H - 50 - 38 }
+
+  -- A PDF's page in view, as the wheel turns it - for the display harness.
+  view.on_page = function(at, of)
+    print(("tracker: quick look page %d of %d"):format(at, of))
+  end
   local open = ui.button{ x = W - 14 - 170, y = 10, w = 170, h = 26, text = "Open",
                           on_click = function()
                             close_look()

@@ -5,348 +5,365 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!--
-  How Kosmos's Music app should look, before any of it is built: VOX for the
-  Mac as the reference Diego gave, on 14 September 2026 - now playing on top,
-  the library underneath, a mini player, dark and light, and WAV and MP3 -
-  FLAC later, at Diego's word - and one engine under it that a video app can
-  share later. Every track but Diego's Basket Case is an example.
+  Music, redesigned in Kosmos's own look. Drawn on 11 October 2026 from
+  Diego's ask: "lets redesign the music app with a more native music app
+  with the ui style of kosmos", "it needs to support mp3, wav, flac",
+  "album view as well", "song view as now", "a small uv meter",
+  "equializer", "mockup first", "make it look nice and native for kosmos".
+
+  This replaces the page of 14 September, which drew Music after VOX - its
+  own dark-and-orange palette, a pilot of a look the rest of the system
+  never took. That page is in git history. Every song, album and artist
+  here is made up.
 -->
 <title>Kosmos Music</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --ground: #f3f4f7;
-    --ink: #1b2330;
-    --muted: #5b6677;
-    --rule: #dde2ea;
-    --accent: #2a55c9;
-    --card: #ffffff;
-    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
-    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* Astra's dark look - the system's, as Monitor and Tracker have it. */
+  --a-win: #1f2430; --a-side: #1a1e28; --a-raised: #262c39; --a-hover: #2c3342;
+  --a-line: #333b4a; --a-ink: #e9ecf1; --a-dim: #9aa3b2; --a-faint: #6b7486;
+  --a-sel: #2f6bdc; --a-sel-soft: rgba(47,107,220,.22);
+  --vu-g: #34c759; --vu-y: #ffcc33; --vu-r: #ff453a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1160px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 28px; max-width: 74ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 76ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 84ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 820px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 8px; }
+table.plain { border-collapse: collapse; margin: 10px 0; max-width: 860px; width: 100%; }
+table.plain td, table.plain th { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+table.plain th { font-size: 13px; color: var(--muted); font-weight: 600; }
 
-    /* The Kosmos desktop, as drives.html draws it. */
-    --k-desk: #3d63b8;
-    --k-tab: #f2c230;
-    --k-tab-ink: #3a2e00;
+/* ---- The window ---- */
+.win { width: 1100px; height: 680px; background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line);
+       border-radius: 12px; box-shadow: 0 16px 44px rgba(0,0,0,.3); position: relative; font-size: 13px; overflow: hidden;
+       display: grid; grid-template-columns: 196px 1fr; grid-template-rows: 46px 92px 1fr; }
 
-    /* The player's own look, VOX's: the same in either page theme. */
-    --p-ground: #242426;
-    --p-panel: #2e2e31;
-    --p-raised: #38383c;
-    --p-line: #3f3f44;
-    --p-ink: #ececec;
-    --p-dim: #9a9aa0;
-    --p-faint: #6d6d73;
-    --p-accent: #f28a2e;
-    --p-accent-dim: #7a4a1f;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --ground: #0f141b;
-      --ink: #e6edf3;
-      --muted: #97a3b4;
-      --rule: #283241;
-      --accent: #85a8ff;
-      --card: #171e28;
-    }
-  }
-  :root[data-theme="dark"] {
-    --ground: #0f141b;
-    --ink: #e6edf3;
-    --muted: #97a3b4;
-    --rule: #283241;
-    --accent: #85a8ff;
-    --card: #171e28;
-  }
+/* The header is the title bar, as every Kosmos window's is. */
+.head { grid-column: 1 / 3; display: grid; grid-template-columns: 196px 1fr auto; align-items: center; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 14px; padding-left: 18px; background: var(--a-side); height: 100%; display: flex; align-items: center; border-right: 1px solid var(--a-line); }
+.head .mid { display: flex; align-items: center; gap: 12px; padding: 0 16px; }
+.head .mid b { font-size: 14px; }
+.head .mid span { color: var(--a-dim); }
+.search { margin-left: auto; width: 230px; height: 28px; border-radius: 7px; background: var(--a-raised); border: 1px solid var(--a-line);
+          color: var(--a-faint); display: flex; align-items: center; padding: 0 10px; gap: 7px; }
+.search::before { content: ""; width: 10px; height: 10px; border: 1.6px solid var(--a-faint); border-radius: 50%; }
+.head .right { display: flex; align-items: center; gap: 12px; padding-right: 14px; }
+.dots { color: var(--a-dim); font-weight: 700; letter-spacing: 1px; }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
 
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
-  main { max-width: 900px; margin: 0 auto; padding: 44px 22px 72px; }
-  h1 { font: 600 clamp(30px, 5vw, 42px)/1.1 var(--display); margin: 0 0 12px; text-wrap: balance; }
-  h2 { font: 600 24px/1.2 var(--display); margin: 52px 0 10px; text-wrap: balance; }
-  p { margin: 0 0 12px; max-width: 66ch; }
-  .lede { font-size: 19px; color: var(--muted); max-width: 60ch; }
-  .note { font-size: 13px; color: var(--muted); margin-top: 10px; max-width: 72ch; }
-  code { font: 0.88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+/* What is playing - on top, as Music has it now. */
+.now { grid-column: 1 / 3; display: grid; grid-template-columns: 196px 1fr 300px; align-items: center; border-bottom: 1px solid var(--a-line);
+       background: linear-gradient(180deg, #232938, #1f2430); }
+.now .who { display: flex; gap: 12px; align-items: center; padding: 0 0 0 16px; grid-column: 1 / 2; }
+.cover { border-radius: 6px; flex: none; box-shadow: 0 4px 14px rgba(0,0,0,.4); position: relative; overflow: hidden; }
+.cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(160deg, rgba(255,255,255,.18), transparent 45%); }
+.now .playing { display: grid; grid-template-columns: 64px 1fr; gap: 14px; align-items: center; padding: 0 22px 0 16px; grid-column: 1 / 3; }
+.now .title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.now .meta { color: var(--a-dim); white-space: nowrap; }
+.fmt { display: inline-block; font-family: var(--mono); font-size: 10.5px; font-weight: 500; padding: 0 6px; border-radius: 4px; line-height: 17px;
+       border: 1px solid; letter-spacing: .04em; }
+.fmt.flac { color: #7fd6a0; border-color: #3c6d50; background: rgba(52,199,89,.08); }
+.fmt.mp3 { color: var(--a-dim); border-color: #465063; }
+.fmt.wav { color: #8fb6f5; border-color: #3d5680; background: rgba(47,107,220,.08); }
+.ctl { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; align-items: center; margin-top: 6px; }
+.transport { display: flex; align-items: center; gap: 14px; }
+.tb { width: 22px; height: 22px; display: grid; place-items: center; color: var(--a-dim); }
+.tb svg { width: 16px; height: 16px; fill: currentColor; }
+.tb.on { color: var(--a-sel); }
+.play { width: 34px; height: 34px; border-radius: 50%; background: var(--a-ink); display: grid; place-items: center; }
+.play svg { width: 14px; height: 14px; fill: #1f2430; }
+.seek { display: grid; grid-template-columns: 38px 1fr 38px; gap: 10px; align-items: center; color: var(--a-dim); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.seek span:last-child { text-align: right; }
+.bar { height: 4px; border-radius: 2px; background: #3a4252; position: relative; }
+.bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--a-ink); }
+.bar b { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
 
-  .desk { background: var(--k-desk); border-radius: 10px; padding: 26px 22px 30px; overflow-x: auto; margin-top: 20px; display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
-  .tab { display: inline-block; background: var(--k-tab); color: var(--k-tab-ink); font: 500 13px/1.35 var(--mono); padding: 4px 16px 3px 10px; border: 1px solid #b08a10; border-bottom: 0; }
+.now .tools { display: grid; grid-template-columns: auto auto; gap: 8px 14px; align-items: center; justify-content: end; padding-right: 18px; }
+/* The meter: two rows of lamps, left and right, as a deck's. */
+.vu { display: grid; grid-template-rows: auto auto auto; gap: 3px; }
+.vu .ch { display: grid; grid-template-columns: 10px repeat(20, 5px); gap: 2px; align-items: center; color: var(--a-faint); font-size: 9.5px; font-family: var(--mono); }
+.vu .ch i { height: 7px; border-radius: 1.5px; background: #2d3442; }
+.vu .ch i.g { background: var(--vu-g); } .vu .ch i.y { background: var(--vu-y); } .vu .ch i.r { background: var(--vu-r); }
+.vu .ch i.pk { box-shadow: 0 0 0 1px rgba(255,255,255,.55) inset; }
+.vu .scale { display: grid; grid-template-columns: 10px repeat(20, 5px); gap: 2px; color: var(--a-faint); font-size: 8.5px; font-family: var(--mono); }
+.vu .scale span { grid-column: span 5; }
+.vol { display: flex; align-items: center; gap: 8px; color: var(--a-dim); }
+.vol svg { width: 15px; height: 15px; fill: currentColor; }
+.vol .bar { width: 96px; }
+.eqb { justify-self: end; border: 1px solid var(--a-line); background: var(--a-raised); border-radius: 6px; padding: 2px 10px; color: var(--a-ink); font-size: 12px; display: flex; gap: 6px; align-items: center; }
+.eqb.on { border-color: #3d5680; background: var(--a-sel-soft); }
+.eqb::before { content: ""; width: 12px; height: 10px; background:
+  linear-gradient(var(--a-ink), var(--a-ink)) 1px 4px / 2px 6px no-repeat,
+  linear-gradient(var(--a-ink), var(--a-ink)) 5px 0 / 2px 10px no-repeat,
+  linear-gradient(var(--a-ink), var(--a-ink)) 9px 2px / 2px 8px no-repeat; }
+.eqb.on::after { content: "On"; color: #8fb6f5; font-size: 11px; }
 
-  /* ---- the player window ---- */
-  .player.light, .mini.light { --p-ground: #f6f6f4; --p-panel: #ecebe8; --p-raised: #dcdbd7; --p-line: #d6d5d1; --p-ink: #1e1e1e; --p-dim: #6c6c68; --p-faint: #9a9a95; --p-accent: #e07a1f; --p-accent-dim: #e8b98c; border-color: #7c7c78; }
-  .player { width: 380px; background: var(--p-ground); color: var(--p-ink); border: 1px solid #111; box-shadow: 3px 3px 0 rgba(0,0,0,.3); font: 13px/1.35 var(--body); }
-  .now { padding: 12px 14px 0; display: grid; grid-template-columns: 78px 1fr; gap: 12px; }
-  .art { width: 78px; height: 78px; border-radius: 3px; display: grid; place-items: center; font: 600 22px/1 var(--display); color: rgba(255,255,255,.9); }
-  .art.gd { background: linear-gradient(135deg, #3b3b3b 0 30%, #b7412e 30% 58%, #e8c24a 58%); }
-  .art.small { width: 44px; height: 44px; font-size: 13px; }
-  .art.df { background: linear-gradient(160deg, #1b1b1b, #6e5a2c); }
-  .art.wv { background: repeating-linear-gradient(90deg, #2c4a6e 0 4px, #4f7fd8 4px 8px); }
-  .art.nb { background: linear-gradient(135deg, #2f8a55, #9be38b); }
-  .art.none { background: var(--p-raised); color: var(--p-faint); }
-  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 5px; }
-  .chip { font: 500 10.5px/1 var(--mono); color: var(--p-dim); border: 1px solid var(--p-line); padding: 3px 5px; border-radius: 3px; white-space: nowrap; }
-  .chip.fmt { color: var(--p-accent); border-color: var(--p-accent-dim); }
-  .who { color: var(--p-dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .title { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .times { display: flex; justify-content: space-between; color: var(--p-dim); font: 11.5px var(--mono); font-variant-numeric: tabular-nums; padding: 8px 14px 3px; }
-  .seek { position: relative; height: 4px; margin: 0 14px; background: var(--p-raised); border-radius: 2px; }
-  .seek i { position: absolute; inset: 0 auto 0 0; width: 38%; background: var(--p-accent); border-radius: 2px; }
-  .seek b { position: absolute; left: 38%; top: 50%; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; background: #fff; border-radius: 50%; box-shadow: 0 0 0 3px rgba(242,138,46,.35); }
-  .transport { display: grid; grid-template-columns: repeat(7, 1fr); align-items: center; padding: 8px 8px 10px; border-bottom: 1px solid var(--p-line); }
-  .transport svg { width: 18px; height: 18px; justify-self: center; fill: var(--p-ink); }
-  .transport svg.big { width: 30px; height: 30px; }
-  .transport svg.dim { fill: var(--p-faint); }
-  .transport svg.on { fill: var(--p-accent); }
-  .vol { display: flex; align-items: center; gap: 8px; padding: 0 14px 10px; color: var(--p-dim); font-size: 11px; }
-  .vol .bar { flex: 1; height: 3px; background: var(--p-raised); position: relative; }
-  .vol .bar i { position: absolute; inset: 0 auto 0 0; width: 72%; background: var(--p-dim); }
-  .meter { display: flex; gap: 2px; align-items: flex-end; height: 12px; }
-  .meter span { width: 3px; background: var(--p-accent); }
+/* The sidebar: the library, and where it comes from. */
+.side { background: var(--a-side); border-right: 1px solid var(--a-line); padding: 12px 10px; }
+.side h5 { margin: 10px 8px 4px; font-size: 11px; color: var(--a-faint); text-transform: uppercase; letter-spacing: .07em; font-weight: 600; }
+.side div { display: flex; justify-content: space-between; padding: 5px 9px; border-radius: 7px; color: var(--a-dim); }
+.side div.on { background: var(--a-hover); color: var(--a-ink); }
+.side div span { color: var(--a-faint); font-variant-numeric: tabular-nums; }
+.side .foot { position: absolute; left: 0; bottom: 0; width: 196px; padding: 10px 18px; color: var(--a-faint); font-size: 11.5px; border-top: 1px solid var(--a-line); background: var(--a-side); }
 
-  .sources { display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--p-line); }
-  .sources div { text-align: center; padding: 8px 2px 6px; color: var(--p-dim); font-size: 11px; border-bottom: 2px solid transparent; }
-  .sources div.on { color: var(--p-ink); border-bottom-color: var(--p-accent); }
-  .sources div.later { color: var(--p-faint); }
-  .sources svg { display: block; width: 18px; height: 18px; margin: 0 auto 3px; fill: currentColor; }
-  .sub { display: flex; gap: 16px; align-items: center; padding: 9px 14px 6px; font-size: 12.5px; color: var(--p-dim); }
-  .sub .on { color: var(--p-accent); }
-  .find { margin-left: auto; background: var(--p-panel); border: 1px solid var(--p-line); color: var(--p-faint); padding: 2px 8px; border-radius: 3px; font-size: 11.5px; }
+.main { overflow: hidden; position: relative; }
 
-  .tracks { list-style: none; margin: 0; padding: 0 0 6px; }
-  .tracks li { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; padding: 7px 14px; border-top: 1px solid var(--p-line); }
-  .tracks li.playing { background: var(--p-panel); box-shadow: inset 3px 0 0 var(--p-accent); }
-  .tracks .t { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tracks .a { color: var(--p-dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tracks .r { text-align: right; font: 11.5px var(--mono); color: var(--p-dim); font-variant-numeric: tabular-nums; }
-  .tracks .r .chip { display: inline-block; margin-top: 3px; }
-  .foot .look { display: inline-flex; align-items: center; cursor: pointer; }
-  .foot .look svg { width: 13px; height: 13px; fill: var(--p-faint); }
-  .foot .look:hover svg { fill: var(--p-accent); }
-  .foot { display: flex; justify-content: space-between; padding: 6px 14px 8px; color: var(--p-faint); font-size: 11px; border-top: 1px solid var(--p-line); }
+/* Songs: the list Music has now. */
+.songs { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.songs th { text-align: left; color: var(--a-faint); font-weight: 500; font-size: 12px; padding: 9px 12px 7px; border-bottom: 1px solid var(--a-line); }
+.songs td { padding: 0 12px; height: 32px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; color: var(--a-dim); }
+.songs td:nth-child(2) { color: var(--a-ink); }
+.songs tr:nth-child(even) td { background: rgba(255,255,255,.018); }
+.songs tr.playing td { background: var(--a-sel-soft); color: var(--a-ink); }
+.songs tr.sel td { background: var(--a-sel); color: #fff; }
+.songs tr.sel td .fmt { color: #fff; border-color: rgba(255,255,255,.5); background: none; }
+.songs td.n { width: 44px; text-align: right; color: var(--a-faint); }
+.songs td.t { width: 64px; text-align: right; }
+.eqbars { display: inline-flex; gap: 2px; align-items: flex-end; height: 11px; }
+.eqbars i { width: 3px; background: var(--a-sel); border-radius: 1px; }
 
-  /* ---- the mini player and the Deskbar ---- */
-  .side { display: flex; flex-direction: column; gap: 22px; }
-  .mini { width: 330px; background: var(--p-ground); color: var(--p-ink); border: 1px solid #111; box-shadow: 3px 3px 0 rgba(0,0,0,.3); font: 13px/1.35 var(--body); }
-  .mini .row { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; padding: 10px 12px 8px; }
-  .mini .ctl { display: flex; gap: 10px; }
-  .mini .ctl svg { width: 16px; height: 16px; fill: var(--p-ink); }
-  .mini .seek { margin: 0 12px 10px; }
-  .deskbar { width: 330px; background: #f2c230; border: 1px solid #b08a10; font: 12px/1 var(--mono); color: #3a2e00; display: flex; align-items: center; gap: 10px; padding: 5px 8px; }
-  .deskbar .np { background: #262628; color: #ececec; padding: 4px 8px; display: flex; gap: 8px; align-items: center; border-radius: 2px; }
-  .deskbar .np i { font-style: normal; color: #f28a2e; }
-  .deskbar .clock { margin-left: auto; }
-  .caption { color: #eaf0ff; font-size: 12px; margin-top: 6px; max-width: 330px; }
+/* Albums: covers in a grid. */
+.albums { display: grid; grid-template-columns: repeat(5, 1fr); gap: 22px 18px; padding: 18px 20px; }
+.album .cover { width: 100%; aspect-ratio: 1; border-radius: 8px; }
+.album b { display: block; margin-top: 8px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.album span { color: var(--a-dim); font-size: 12px; }
+.album.playing .cover { outline: 2px solid var(--a-sel); outline-offset: 2px; }
 
-  /* ---- one engine, two apps ---- */
-  .engine { margin-top: 18px; display: grid; gap: 10px; }
-  .apps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .app { border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px; background: var(--card); }
-  .app b { display: block; font: 600 17px/1.2 var(--display); }
-  .app span { color: var(--muted); font-size: 14px; }
-  .app.now { box-shadow: inset 4px 0 0 var(--accent); }
-  .app.later { border-style: dashed; background: transparent; }
-  .app.later b { color: var(--muted); }
-  .kit { border: 2px solid var(--ink); border-radius: 10px; padding: 12px 14px 8px; background: var(--card); }
-  .kit-name { font: 600 16px/1.3 var(--display); margin-bottom: 8px; }
-  .calls { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-  .layer { display: grid; grid-template-columns: 64px 1fr auto; gap: 2px 12px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--rule); }
-  .layer b { font: 600 14px var(--mono); }
-  .layer span { font-size: 14.5px; }
-  .layer em { font-style: normal; justify-self: end; }
-  .layer small { grid-column: 2 / 4; color: var(--muted); font-size: 13px; }
-  .video-later { border: 1px dashed var(--rule); border-radius: 8px; padding: 10px 14px; }
-  .video-later b { display: block; font: 600 15px/1.3 var(--display); color: var(--muted); }
-  .video-later span { font-size: 14.5px; color: var(--muted); }
-  .table-wrap { overflow-x: auto; }
-  .paths { width: 100%; border-collapse: collapse; font-size: 15px; margin-top: 14px; }
-  .paths th, .paths td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
-  .paths th { font: 600 13px/1.3 var(--display); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-  .state { font: 500 12px/1.2 var(--mono); padding: 2px 6px; border-radius: 3px; white-space: nowrap; }
-  .state.built { background: #dff3e6; color: #1f6b3e; }
-  .state.new { background: #fbefdc; color: #8a4f00; }
-  .state.later { background: #eceef2; color: #5b6677; }
+/* An album, opened. */
+.opened { display: grid; grid-template-columns: 230px 1fr; gap: 26px; padding: 22px 24px; }
+.opened .cover { width: 230px; height: 230px; border-radius: 10px; }
+.opened .back { color: var(--a-dim); font-size: 12px; margin-bottom: 8px; }
+.opened h3 { font-family: var(--display); font-size: 26px; margin: 0; line-height: 1.15; }
+.opened .by { color: var(--a-dim); font-size: 14px; margin: 2px 0 6px; }
+.opened .facts { color: var(--a-faint); font-size: 12px; }
+.btns { display: flex; gap: 10px; margin: 14px 0 12px; }
+.btn { border-radius: 7px; padding: 5px 16px; font-weight: 500; border: 1px solid var(--a-line); background: var(--a-raised); }
+.btn.primary { background: var(--a-sel); border-color: var(--a-sel); color: #fff; }
 
-  ul.keys { list-style: none; padding: 0; margin: 12px 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 6px 22px; max-width: 72ch; }
-  ul.keys li { display: flex; gap: 10px; align-items: baseline; border-bottom: 1px solid var(--rule); padding: 5px 0; }
-  ul.keys kbd { font: 500 12px var(--mono); background: var(--card); border: 1px solid var(--rule); border-radius: 4px; padding: 1px 6px; min-width: 64px; text-align: center; }
-
-  ol.decide { padding-left: 22px; max-width: 66ch; }
-  ol.decide li { margin-bottom: 10px; }
-  ol.decide b { display: block; }
-  ol.decide span { color: var(--muted); }
+/* The equaliser: a panel under its button. */
+.eqpanel { position: absolute; right: 16px; top: 132px; width: 560px; background: #262c39; border: 1px solid #424b5d; border-radius: 12px;
+           box-shadow: 0 22px 54px rgba(0,0,0,.55); padding: 14px 18px 16px; z-index: 4; }
+.eqpanel .top { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.eqpanel .top b { font-size: 14px; flex: 1; }
+.switch { width: 34px; height: 20px; border-radius: 10px; background: var(--a-sel); position: relative; }
+.switch::after { content: ""; position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; }
+.drop { border: 1px solid var(--a-line); background: var(--a-win); border-radius: 6px; padding: 2px 26px 2px 10px; position: relative; }
+.drop::after { content: ""; position: absolute; right: 9px; top: 9px; border: 4px solid transparent; border-top-color: var(--a-dim); }
+.bands { position: relative; display: grid; grid-template-columns: 46px repeat(10, 1fr); gap: 0; height: 190px; padding-top: 6px; }
+.bands svg.curve { position: absolute; left: 46px; right: 0; top: 6px; height: 150px; width: calc(100% - 46px); pointer-events: none; }
+.band { display: grid; grid-template-rows: 150px auto auto; justify-items: center; gap: 4px; font-size: 11px; color: var(--a-dim); font-variant-numeric: tabular-nums; }
+.band .rail { width: 4px; height: 150px; border-radius: 2px; background: #3a4252; position: relative; }
+.band .rail::before { content: ""; position: absolute; left: -5px; right: -5px; top: 50%; height: 1px; background: #4e576a; }
+.band .knob { position: absolute; left: 50%; width: 18px; height: 10px; margin: -5px 0 0 -9px; border-radius: 4px; background: #e9ecf1; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+.band .fill { position: absolute; left: 0; right: 0; background: var(--a-sel); border-radius: 2px; }
+.band small { color: var(--a-faint); font-size: 10px; }
+.band.pre .rail { background: #3a4252; }
+.dbs { display: grid; grid-template-rows: repeat(3, 1fr); height: 150px; color: var(--a-faint); font-size: 10px; text-align: right; padding-right: 10px; font-family: var(--mono); }
+.dbs span:nth-child(2) { align-self: center; } .dbs span:nth-child(3) { align-self: end; }
+.eqpanel .note { color: var(--a-faint); font-size: 11.5px; margin-top: 4px; }
 </style>
 </head>
 <body>
-<main>
-  <h1>Kosmos Music</h1>
-  <p class="note" style="margin:-2px 0 16px">A design, 14 September 2026, with Diego's four answers from the same day. Nothing here is built yet. The reference is <b>VOX</b> for the Mac. Basket Case is Diego's own file, on the disk now; every other track is an example.</p>
-  <p class="lede">What is playing on top, with what the file is and where you are in it; your music underneath, with the artist, album and cover read from each file; a dark look and a light one; and a mini player for when the music is all you want.</p>
+<div class="wrap">
+<h1>Kosmos Music</h1>
+<p class="sub">Music in the system's own look: Tracker's sidebar, the header as the title bar, the theme every window shares. MP3, WAV and FLAC; songs as now and albums as covers; a small meter beside what is playing; and an equaliser one button away.</p>
 
-  <h2>The window</h2>
-  <p>VOX's shape, kept: the format across the top, the title large, a thin orange bar you can drag, the controls in one row, then where the music comes from and the list. The Library is every song on <code>/home</code> and on any drive plugged in, with its tags read straight from the file. <b>Dark and light, both</b>: <b>View</b> switches, and the choice is kept.</p>
+<div class="q"><b>Diego, 11 October 2026</b>: "lets redesign the music app with a more native music app with the ui style of kosmos", "it needs to support mp3, wav, flac", "album view as well", "song view as now", "a small uv meter", "equializer", "make it look nice and native for kosmos".</div>
 
-  <div class="desk">
-    <div>
-      <span class="tab">Music</span>
-      <div class="player">
-        <div class="now">
-          <div class="art gd">GD</div>
-          <div style="min-width:0">
-            <div class="chips"><span class="chip fmt">MP3</span><span class="chip">197 kbps VBR</span><span class="chip">44.1 kHz</span><span class="chip">#punk</span></div>
-            <div class="who">Green Day &middot; Dookie</div>
-            <div class="title">Basket Case</div>
-          </div>
-        </div>
-        <div class="times"><span>1:52</span><span class="meter"><span style="height:5px"></span><span style="height:11px"></span><span style="height:8px"></span><span style="height:12px"></span><span style="height:6px"></span></span><span>-3:07</span></div>
-        <div class="seek"><i></i><b></b></div>
-        <div class="transport">
-          <svg class="dim" viewBox="0 0 24 24" aria-label="shuffle"><path d="M4 7h3l7 10h3v-2l3 3-3 3v-2h-4L6 9H4zm13-2V3l3 3-3 3V7h-3l-2.2 3.1-1.2-1.7L13 5z"/></svg>
-          <svg viewBox="0 0 24 24" aria-label="previous"><path d="M6 5h2v14H6zm3 7 10-7v14z"/></svg>
-          <svg class="big" viewBox="0 0 24 24" aria-label="pause"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg>
-          <svg viewBox="0 0 24 24" aria-label="next"><path d="M16 5h2v14h-2zM5 5l10 7-10 7z"/></svg>
-          <svg class="on" viewBox="0 0 24 24" aria-label="repeat"><path d="M7 7h10V4l4 4-4 4V9H7v3H5V9a2 2 0 0 1 2-2zm10 10H7v3l-4-4 4-4v3h10v-3h2v3a2 2 0 0 1-2 2z"/></svg>
-          <svg class="dim" viewBox="0 0 24 24" aria-label="queue"><path d="M4 6h12v2H4zm0 5h12v2H4zm0 5h8v2H4zm14-1v-5l5 3.5z"/></svg>
-          <svg class="dim" viewBox="0 0 24 24" aria-label="mini player"><path d="M4 5h16v14H4zm2 8v4h12v-4z"/></svg>
-        </div>
-        <div class="vol"><svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:#9a9aa0"><path d="M4 9h4l5-4v14l-5-4H4z"/></svg><span class="bar"><i></i></span></div>
+<h2>Songs, as Music opens</h2>
+<div class="scroller"><div class="win" id="w1"></div></div>
+<p class="cap">What is playing stays on top, as now: the cover, the song, its artist and album, its format and quality, the transport, and a bar you can drag. On the right, the meter: left and right as two rows of twenty lamps, green to −12 dB, yellow to −3, red above, the highest lamp of the last second held as a peak. Under it the volume and the equaliser's button, which says <b>On</b> when it is. The list is today's, with Format as a column of its own; the song playing has three moving bars where its number was.</p>
 
-        <div class="sources">
-          <div class="on"><svg viewBox="0 0 24 24"><path d="M9 3h11v13.5a3.5 3.5 0 1 1-2-3.2V7h-7v11.5A3.5 3.5 0 1 1 9 15.3z"/></svg>Library</div>
-          <div><svg viewBox="0 0 24 24"><path d="M3 5h7l2 2h9v12H3z"/></svg>Folders</div>
-          <div><svg viewBox="0 0 24 24"><path d="M3 5h14v2H3zm0 4h14v2H3zm0 4h9v2H3zm12 0 6 3.5-6 3.5z"/></svg>Playlists</div>
-          <div><svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg>Queue</div>
-          <div class="later"><svg viewBox="0 0 24 24"><path d="M12 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM6.3 6.3l1.4 1.4a6 6 0 0 0 0 8.6l-1.4 1.4a8 8 0 0 1 0-11.4zm11.4 0a8 8 0 0 1 0 11.4l-1.4-1.4a6 6 0 0 0 0-8.6z"/></svg>Radio</div>
-        </div>
-        <div class="sub"><span class="on">Songs</span><span>Albums</span><span>Artists</span><span class="find">Search</span></div>
-        <ul class="tracks">
-          <li class="playing"><div class="art gd small">GD</div><div style="min-width:0"><div class="t">Basket Case</div><div class="a">Green Day &middot; Dookie</div></div><div class="r">3:14<br><span class="chip fmt">MP3</span></div></li>
-          <li><div class="art df small">EA</div><div style="min-width:0"><div class="t">Example Track</div><div class="a">Example Artist &middot; Example Album</div></div><div class="r">6:09<br><span class="chip fmt">MP3</span></div></li>
-          <li><div class="art wv small">WV</div><div style="min-width:0"><div class="t">Kosmos startup chime</div><div class="a">Kosmos &middot; /home/sounds</div></div><div class="r">0:03<br><span class="chip fmt">WAV</span></div></li>
-          <li><div class="art none small">?</div><div style="min-width:0"><div class="t">recording-2026-09-14</div><div class="a">no tags &middot; named by its file</div></div><div class="r">1:12<br><span class="chip fmt">WAV</span></div></li>
-        </ul>
-        <div class="foot"><span>4 songs &middot; 12 min</span><span class="look" title="Light or dark"><svg viewBox="0 0 24 24" aria-label="light or dark"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg></span><span>on /home and 1 drive</span></div>
-      </div>
-    </div>
+<h2>Albums</h2>
+<div class="scroller"><div class="win" id="w2"></div></div>
+<p class="cap">Every album in the library as its cover, from the file's own picture: an MP3's tag, FLAC's picture block, or a <code>cover.jpg</code> beside the songs. An album with no picture gets one drawn from its name's letters on a colour, so the grid never has holes. The album playing is outlined.</p>
 
-    <div>
-      <span class="tab">Music</span>
-      <div class="player light">
-        <div class="now">
-          <div class="art gd">GD</div>
-          <div style="min-width:0">
-            <div class="chips"><span class="chip fmt">MP3</span><span class="chip">197 kbps VBR</span><span class="chip">44.1 kHz</span><span class="chip">#punk</span></div>
-            <div class="who">Green Day &middot; Dookie</div>
-            <div class="title">Basket Case</div>
-          </div>
-        </div>
-        <div class="times"><span>1:52</span><span class="meter"><span style="height:5px"></span><span style="height:11px"></span><span style="height:8px"></span><span style="height:12px"></span><span style="height:6px"></span></span><span>-3:07</span></div>
-        <div class="seek"><i></i><b></b></div>
-        <div class="transport">
-          <svg class="dim" viewBox="0 0 24 24" aria-label="shuffle"><path d="M4 7h3l7 10h3v-2l3 3-3 3v-2h-4L6 9H4zm13-2V3l3 3-3 3V7h-3l-2.2 3.1-1.2-1.7L13 5z"/></svg>
-          <svg viewBox="0 0 24 24" aria-label="previous"><path d="M6 5h2v14H6zm3 7 10-7v14z"/></svg>
-          <svg class="big" viewBox="0 0 24 24" aria-label="pause"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg>
-          <svg viewBox="0 0 24 24" aria-label="next"><path d="M16 5h2v14h-2zM5 5l10 7-10 7z"/></svg>
-          <svg class="on" viewBox="0 0 24 24" aria-label="repeat"><path d="M7 7h10V4l4 4-4 4V9H7v3H5V9a2 2 0 0 1 2-2zm10 10H7v3l-4-4 4-4v3h10v-3h2v3a2 2 0 0 1-2 2z"/></svg>
-          <svg class="dim" viewBox="0 0 24 24" aria-label="queue"><path d="M4 6h12v2H4zm0 5h12v2H4zm0 5h8v2H4zm14-1v-5l5 3.5z"/></svg>
-          <svg class="dim" viewBox="0 0 24 24" aria-label="mini player"><path d="M4 5h16v14H4zm2 8v4h12v-4z"/></svg>
-        </div>
-        <div class="vol"><svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:#9a9aa0"><path d="M4 9h4l5-4v14l-5-4H4z"/></svg><span class="bar"><i></i></span></div>
+<h2>An album, opened</h2>
+<div class="scroller"><div class="win" id="w3"></div></div>
+<p class="cap">One click on a cover. The cover large, the album's facts beneath it, <b>Play</b> and <b>Shuffle</b>, and its songs in order. <b>‹ Albums</b>, or Escape, goes back.</p>
 
-        <div class="sources">
-          <div class="on"><svg viewBox="0 0 24 24"><path d="M9 3h11v13.5a3.5 3.5 0 1 1-2-3.2V7h-7v11.5A3.5 3.5 0 1 1 9 15.3z"/></svg>Library</div>
-          <div><svg viewBox="0 0 24 24"><path d="M3 5h7l2 2h9v12H3z"/></svg>Folders</div>
-          <div><svg viewBox="0 0 24 24"><path d="M3 5h14v2H3zm0 4h14v2H3zm0 4h9v2H3zm12 0 6 3.5-6 3.5z"/></svg>Playlists</div>
-          <div><svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg>Queue</div>
-          <div class="later"><svg viewBox="0 0 24 24"><path d="M12 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM6.3 6.3l1.4 1.4a6 6 0 0 0 0 8.6l-1.4 1.4a8 8 0 0 1 0-11.4zm11.4 0a8 8 0 0 1 0 11.4l-1.4-1.4a6 6 0 0 0 0-8.6z"/></svg>Radio</div>
-        </div>
-        <div class="sub"><span class="on">Songs</span><span>Albums</span><span>Artists</span><span class="find">Search</span></div>
-        <ul class="tracks">
-          <li class="playing"><div class="art gd small">GD</div><div style="min-width:0"><div class="t">Basket Case</div><div class="a">Green Day &middot; Dookie</div></div><div class="r">3:14<br><span class="chip fmt">MP3</span></div></li>
-          <li><div class="art df small">EA</div><div style="min-width:0"><div class="t">Example Track</div><div class="a">Example Artist &middot; Example Album</div></div><div class="r">6:09<br><span class="chip fmt">MP3</span></div></li>
-        </ul>
-        <div class="foot"><span>The light look</span><span>View &rsaquo; Light</span></div>
-      </div>
-    </div>
+<h2>The equaliser</h2>
+<div class="scroller"><div class="win" id="w4"></div></div>
+<p class="cap">Ten bands an octave apart, 32 Hz to 16 kHz, each ±12 dB, with a preamp to keep a boost from clipping. The curve behind the sliders is what the ten together do. Presets: Flat, Bass, Treble, Vocal, Rock, Classical, Late night, and what you made yourself, kept by name. On or off with the switch; the button in the header remembers which. It shapes what Music plays and nothing else.</p>
 
-    <div class="side">
+<h2>What it plays</h2>
+<table class="plain">
+  <tr><th>Format</th><th>Read by</th><th>Shown as</th></tr>
+  <tr><td><span class="fmt mp3" style="color:#5a6474;border-color:#c5ccd6">MP3</span></td><td><code>media.lua</code>, minimp3, as now</td><td>its bit rate: <i>MP3 · 320 kbps</i></td></tr>
+  <tr><td><span class="fmt wav" style="color:#2f6bdc;border-color:#9db9ec">WAV</span></td><td><code>media.lua</code>, as now</td><td>its depth and rate: <i>WAV · 16-bit · 44.1 kHz</i></td></tr>
+  <tr><td><span class="fmt flac" style="color:#1f8a4c;border-color:#94cfa8">FLAC</span></td><td>new: FFmpeg's FLAC decoder, already in the Video app's kit, behind the same door in <code>media.lua</code></td><td><i>FLAC · 24-bit · 96 kHz</i>; 24-bit is dithered to the 16 the sound path carries until it carries more</td></tr>
+</table>
+
+<h2>What it is made of, before the architecture is drawn</h2>
+<ul>
+  <li><b>The window</b> is the UI kit's: <code>ui.sidebar</code>, the header as the title bar, a list, a grid of cards. Nothing drawn in a palette of its own, which is the point of the redesign.</li>
+  <li><b>Playing, seeking and the meter</b> are <code>media.lua</code>'s, as now. The meter wants <b>left and right</b>, where the audio server publishes one peak a stream today: a second number in the stream's ring, beside the first.</li>
+  <li><b>The equaliser is a kit, not Music's.</b> Video, Groove and the Mixer all want one, so it is C in the sound path: ten biquad filters a channel over each period, in the vector unit, set by a message and never by a sample crossing Lua. Music is its first user.</li>
+  <li><b>FLAC</b> goes through FFmpeg, which the Video app already links; its tags and picture through the tag reader that reads MP3's.</li>
+  <li><b>Albums</b> are the library grouped by the album tag, with the covers decoded once and kept small.</li>
+</ul>
+<p>Once this page is agreed, the rest of what a new design needs follows before any code: the feature list and architecture in <code>docs/music.md</code>, and its diagram.</p>
+</div>
+
+<script>
+const ICON = {
+  shuffle: '<svg viewBox="0 0 16 16"><path d="M1 4h3l6 8h3v-2l3 2.5L13 15v-2H9.5l-6-8H1zM1 12h3l1.6-2.1.9 1.3L4.5 13H1zM9.5 4H13V2l3 2.5L13 7V5h-3l-1.6 2.1-.9-1.3z"/></svg>',
+  prev: '<svg viewBox="0 0 16 16"><path d="M3 2h2v12H3zM14 2v12L6 8z"/></svg>',
+  next: '<svg viewBox="0 0 16 16"><path d="M11 2h2v12h-2zM2 2v12l8-6z"/></svg>',
+  play: '<svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z"/></svg>',
+  pause: '<svg viewBox="0 0 16 16"><path d="M3 2h4v12H3zM9 2h4v12H9z"/></svg>',
+  repeat: '<svg viewBox="0 0 16 16"><path d="M3 6a3 3 0 0 1 3-3h6V1l3 3-3 3V5H6a1 1 0 0 0-1 1v2H3zM13 10a3 3 0 0 1-3 3H4v2l-3-3 3-3v2h6a1 1 0 0 0 1-1V8h2z"/></svg>',
+  speaker: '<svg viewBox="0 0 16 16"><path d="M1 5h3l4-3v12l-4-3H1zM10 5.5a3.5 3.5 0 0 1 0 5l-1-1a2 2 0 0 0 0-3zM11.8 3.5a6 6 0 0 1 0 9l-1-1a4.6 4.6 0 0 0 0-7z"/></svg>',
+};
+
+// Made-up albums, each a cover drawn from gradients.
+const ALBUMS = [
+  { a: "Night Ferry", by: "Ana Lindqvist", y: 2021, f: "flac", n: 11, c: "radial-gradient(circle at 30% 35%, #ffd27a 0 14%, transparent 15%), linear-gradient(170deg, #1b2a5c, #3d4f9a 55%, #d9785a)" },
+  { a: "Copper Season", by: "Low Meridian", y: 2019, f: "mp3", n: 9, c: "linear-gradient(135deg, #c8622d, #e9a35a 50%, #5b2a1a)" },
+  { a: "Glass Weather", by: "Mirae", y: 2023, f: "flac", n: 12, c: "conic-gradient(from 200deg at 60% 40%, #8fe3ff, #b59cff, #ff9ccf, #8fe3ff)" },
+  { a: "Slow Orbit", by: "The Quiet Engines", y: 2017, f: "mp3", n: 10, c: "radial-gradient(circle at 50% 50%, #f4f1ea 0 18%, #1a1d26 19% 30%, #f4f1ea 31% 32%, #1a1d26 33%)" },
+  { a: "Saltmarsh", by: "Delia Frost", y: 2020, f: "wav", n: 8, c: "linear-gradient(180deg, #cfe3e8 0 45%, #6f9a8d 46% 70%, #2f4a45)" },
+  { a: "North of Noon", by: "Kestrel & Vine", y: 2022, f: "flac", n: 13, c: "linear-gradient(160deg, #f6e27a, #f2a65a 40%, #c94f4f 75%, #5a2140)" },
+  { a: "Harbour Lights", by: "The Tidewater Set", y: 2018, f: "mp3", n: 10, c: "repeating-linear-gradient(90deg, #0f2238 0 18px, #f2c14e 18px 20px), #0f2238" },
+  { a: "Field Notes, Vol. 2", by: "Orrin Hale", y: 2016, f: "wav", n: 7, c: "linear-gradient(120deg, #3b5d3a, #8fb36b 50%, #e7e3c4)" },
+  { a: "Paper Moons", by: "Ilse Brandt", y: 2024, f: "flac", n: 9, c: "radial-gradient(circle at 70% 30%, #fff6d8 0 22%, transparent 23%), linear-gradient(200deg, #262a4f, #5b4b8a)" },
+  { a: "Undertow", by: "Marrow Club", y: 2015, f: "mp3", n: 11, c: "linear-gradient(0deg, #091b2b, #155a6d 60%, #6fd1c4)" },
+];
+
+const SONGS = [
+  [1, "Lanterns on the Water", 0, "3:58"], [2, "Night Ferry", 0, "4:41"], [3, "Kept Warm", 0, "3:12"],
+  [4, "Copper Season", 1, "5:03"], [5, "Small Hours", 1, "3:47"], [6, "Glass Weather", 2, "4:20"],
+  [7, "Static Bloom", 2, "3:35"], [8, "Slow Orbit", 3, "6:12"], [9, "Saltmarsh", 4, "4:09"],
+  [10, "North of Noon", 5, "3:51"], [11, "Harbour Lights", 6, "4:33"], [12, "The Long Field", 7, "7:02"],
+  [13, "Paper Moons", 8, "3:26"], [14, "Undertow", 9, "4:58"], [15, "Lighthouse Keeper", 6, "3:44"],
+];
+const PLAYING = 1, SELECTED = 5;
+const FMT = { flac: "FLAC", mp3: "MP3", wav: "WAV" };
+
+function fmt(f) { return `<span class="fmt ${f}">${FMT[f]}</span>`; }
+
+function head(sub) {
+  return `<div class="head"><div class="t">Music</div>
+    <div class="mid"><b>${sub[0]}</b><span>${sub[1]}</span><div class="search">Search the library</div></div>
+    <div class="right"><span class="dots">&middot;&middot;&middot;</span>
+      <span class="lights"><i style="background:#3fbf4f"></i><i style="background:#f2b233"></i><i style="background:#ee5048"></i></span></div></div>`;
+}
+
+function vu(l, r) {
+  const lamps = (lvl, peak) => Array.from({ length: 20 }, (_, i) => {
+    const on = i < lvl, col = i >= 18 ? "r" : i >= 14 ? "y" : "g";
+    return `<i class="${on ? col : ""}${i === peak ? " pk " + col : ""}"></i>`;
+  }).join("");
+  return `<div class="vu"><div class="ch"><span>L</span>${lamps(l, 15)}</div><div class="ch"><span>R</span>${lamps(r, 14)}</div>
+    <div class="scale"><span></span><span>−30</span><span>−18</span><span>−9</span><span>0</span></div></div>`;
+}
+
+function now(eqOn) {
+  const al = ALBUMS[0];
+  return `<div class="now"><div class="playing">
+      <div class="cover" style="width:64px;height:64px;background:${al.c}"></div>
       <div>
-        <span class="tab">Music</span>
-        <div class="mini">
-          <div class="row"><div class="art gd small">GD</div><div style="min-width:0"><div class="title" style="font-size:13.5px">Basket Case</div><div class="who">Green Day</div></div><div class="ctl"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zm3 7 10-7v14z"/></svg><svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM5 5l10 7-10 7z"/></svg></div></div>
-          <div class="seek"><i></i></div>
-        </div>
-        <div class="caption">The mini player: the same window with its list folded away, as VOX folds.</div>
-      </div>
-      <div>
-        <div class="deskbar"><span>Kosmos</span><span class="np"><i>&#9654;</i> Basket Case &middot; 1:52</span><span class="clock">22:52</span></div>
-        <div class="caption">And in the Deskbar, as a replicant: what is playing, and a click to pause - after the player, at Diego's word.</div>
-      </div>
-    </div>
-  </div>
-  <p class="note">A drawing, not a screenshot. The cover is drawn from the file's tags when it has a picture, and from the first letters of the artist when it has none; nothing here is album artwork. Basket Case is 3:14 at 197 kbps on average, read from the Xing header its encoder wrote - which is what the player does since 15 September, after it had shown 9:58 at 64 kbps by taking that header frame for the music (<code>testing.md</code> §18.77).</p>
+        <div class="title">Night Ferry</div>
+        <div class="meta">Ana Lindqvist · ${al.a} &nbsp;${fmt("flac")} <span style="color:var(--a-faint)">24-bit · 96 kHz</span></div>
+        <div class="ctl"><div class="transport">
+            <span class="tb">${ICON.shuffle}</span><span class="tb">${ICON.prev}</span>
+            <span class="play">${ICON.pause}</span>
+            <span class="tb">${ICON.next}</span><span class="tb on">${ICON.repeat}</span></div>
+          <div class="seek"><span>1:52</span><div class="bar"><i style="width:40%"></i><b style="left:40%"></b></div><span>4:41</span></div></div>
+      </div></div>
+    <div class="tools">
+      ${vu(15, 13)}
+      <span></span>
+      <div class="vol">${ICON.speaker}<div class="bar"><i style="width:70%"></i><b style="left:70%"></b></div></div>
+      <span class="eqb${eqOn ? " on" : ""}">Equaliser</span>
+    </div></div>`;
+}
 
-  <h2>One engine, two apps</h2>
-  <p>Playing a file is the same work whether it holds a song or a film: read it a window at a time, take it apart, decode it, keep time, let a person seek, and hand the sound to the audio server. So that work is one library, <code>/lib/media.lua</code>, and Music is its first face. A video app, later, is its second - there the window is the picture, where Music's window is a library - and it adds to the engine rather than copying it. BeOS split it the same way, with MediaPlayer for anything and SoundPlay for music.</p>
+function side(on) {
+  const row = (k, label, n) => `<div class="${on === k ? "on" : ""}">${label}<span>${n}</span></div>`;
+  return `<div class="side"><h5>Library</h5>${row("songs", "Songs", 103)}${row("albums", "Albums", 10)}${row("artists", "Artists", 10)}
+    <h5>Places</h5>${row("music", "Music", "")}${row("downloads", "Downloads", "")}
+    <div class="foot">103 songs · 7 h 12 min</div></div>`;
+}
 
-  <div class="engine">
-    <div class="apps">
-      <div class="app now"><b>Music</b><span>the library, the queue, the dark and light looks</span></div>
-      <div class="app later"><b>Video</b><span>later: the picture, and controls that hide</span></div>
-    </div>
-    <div class="kit">
-      <div class="kit-name"><code>/lib/media.lua</code> - what both of them ask for</div>
-      <div class="calls"><code>media.open(path)</code><code>:play()</code><code>:pause()</code><code>:seek(seconds)</code><code>:position()</code><code>:volume(level)</code><code>:tick()</code><code>media.tags(path)</code></div>
-      <div class="layer"><b>read</b><span>the file a window at a time, into shared pages</span><em class="state built">built</em><small><code>fs.read_into</code></small></div>
-      <div class="layer"><b>tags</b><span>ID3v2, ID3v1 and <code>LIST INFO</code>, and the cover's bytes for <code>jpeg.c</code> or <code>png.c</code></span><em class="state new">new</em><small>the small reader above</small></div>
-      <div class="layer"><b>decode</b><span>MP3 and WAV, to samples</span><em class="state built">built</em><small><code>/kits/mp3</code> and <code>wav.lua</code></small></div>
-      <div class="layer"><b>time</b><span>where the sound is, which is where everything is; seeking moves it</span><em class="state new">new</em><small>what lets the bar be dragged</small></div>
-      <div class="layer"><b>out</b><span>samples at the device's rate, into the audio server's ring</span><em class="state built">built</em><small><code>sys.pcm_into</code></small></div>
-    </div>
-    <div class="video-later"><b>What a video app adds, later</b><span>taking an MP4 apart, H.264 for its picture and AAC for its sound, and each frame drawn onto a shared surface when the sound's clock reaches it.</span></div>
-  </div>
-  <p class="note"><b>The clock is the sound's</b>, and that one rule is what makes the second app possible: the audio server says how much it has played, the picture follows it, and nothing drifts. Decoding stays in C; what to decode next, and when, is Lua.</p>
+function songs() {
+  let rows = SONGS.map(([n, t, a, len]) => {
+    const al = ALBUMS[a], cls = n === PLAYING + 1 ? "playing" : n === SELECTED + 1 ? "sel" : "";
+    const num = cls === "playing" ? `<span class="eqbars"><i style="height:6px"></i><i style="height:11px"></i><i style="height:8px"></i></span>` : n;
+    return `<tr class="${cls}"><td class="n">${num}</td><td>${t}</td><td>${al.by}</td><td>${al.a}</td><td>${fmt(al.f)}</td><td class="t">${len}</td></tr>`;
+  }).join("");
+  return `<table class="songs"><tr><th style="text-align:right">#</th><th>Title</th><th>Artist</th><th>Album</th><th>Format</th><th style="text-align:right">Time</th></tr>${rows}</table>`;
+}
 
-  <h2>What it plays</h2>
-  <p>Every format ends in the same place: sixteen-bit samples at the sound device's own rate, 44.1 kHz, which is all the audio server takes. <code>sys.pcm</code> already converts rate and channels on the way, in C, by interpolating between samples.</p>
-  <div class="table-wrap">
-    <table class="paths">
-      <tr><th>format</th><th>decoded by</th><th>its tags</th><th>state</th></tr>
-      <tr><td>MP3</td><td>minimp3, public domain, already in the tree</td><td>ID3v2: title, artist, album, genre, year, track, and the cover</td><td><span class="state built">plays</span> tags new</td></tr>
-      <tr><td>WAV</td><td><code>wav.lua</code>, already in the tree</td><td>the <code>LIST INFO</code> chunk, when there is one</td><td><span class="state built">plays</span> tags new</td></tr>
-      <tr><td>FLAC</td><td>not now, at Diego's word</td><td>-</td><td><span class="state later">later</span></td></tr>
-    </table>
-  </div>
-  <p class="note"><b>FLAC is left for later.</b> When it comes, much of it is 24-bit, which <code>sys.pcm</code> does not take yet - written here so it is not found again.</p>
+function albums() {
+  return '<div class="albums">' + ALBUMS.map((al, i) =>
+    `<div class="album${i === 0 ? " playing" : ""}"><div class="cover" style="background:${al.c}"></div><b>${al.a}</b><span>${al.by} · ${al.y}</span></div>`).join("") + "</div>";
+}
 
-  <h2>Tags, read from the file</h2>
-  <p>A small reader, beside the decoder, reads what a file says about itself: an MP3's ID3v2 tag at its start - title, artist, album, genre, year, track and the cover - or ID3v1's last 128 bytes when there is no ID3v2, and a WAV's <code>LIST INFO</code> chunk. The Library reads the start of each file as it builds the list, and keeps what it found while the app runs. <b>Nothing is written onto your files.</b></p>
-  <p>What that gives up, said plainly: Tracker shows no artist column, and a playlist is a list you make rather than a search that fills itself. Both can come later from the same reader, by writing what it read as attributes, if they are wanted.</p>
+function opened() {
+  const al = ALBUMS[0];
+  const list = [["Lanterns on the Water", "3:58"], ["Night Ferry", "4:41"], ["Kept Warm", "3:12"], ["Thin Ice", "4:05"],
+                ["Departures", "3:30"], ["The Ninth Bell", "5:14"], ["Out Past the Breakwater", "4:47"], ["Harbourmaster", "3:22"]];
+  const rows = list.map(([t, len], i) => `<tr class="${i === 1 ? "playing" : ""}"><td class="n">${i === 1 ? '<span class="eqbars"><i style="height:6px"></i><i style="height:11px"></i><i style="height:8px"></i></span>' : i + 1}</td><td>${t}</td><td class="t">${len}</td></tr>`).join("");
+  return `<div class="opened"><div><div class="back">‹ Albums</div><div class="cover" style="background:${al.c}"></div></div>
+    <div><h3>${al.a}</h3><div class="by">${al.by}</div>
+      <div class="facts">${al.y} · ${al.n} songs · 47 min · ${fmt("flac")} 24-bit · 96 kHz</div>
+      <div class="btns"><span class="btn primary">▶&nbsp; Play</span><span class="btn">Shuffle</span></div>
+      <table class="songs">${rows}</table></div></div>`;
+}
 
-  <h2>From the keyboard</h2>
-  <ul class="keys">
-    <li><kbd>Space</kbd> play and pause</li>
-    <li><kbd>&larr; &rarr;</kbd> back and forward five seconds</li>
-    <li><kbd>Super-&larr; &rarr;</kbd> previous and next song</li>
-    <li><kbd>Control-F</kbd> search the list</li>
-    <li><kbd>Control-M</kbd> the mini player</li>
-    <li><kbd>&uarr; &darr;</kbd> the volume</li>
-  </ul>
+function eqpanel() {
+  const F = ["32", "64", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
+  const G = [5, 4, 2, 0, -1, -1, 0, 2, 3, 3];   // dB, a "Late night"-ish shape
+  const y = g => 75 - (g / 12) * 75;          // within 150
+  const pts = G.map((g, i) => [(i + 0.5) * 50.4, y(g)]);
+  let d = `M0 ${pts[0][1]} L${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], mx = (x0 + x1) / 2;
+    d += ` C${mx} ${y0} ${mx} ${y1} ${x1} ${y1}`;
+  }
+  d += ` L504 ${pts[pts.length - 1][1]}`;
+  const bands = G.map((g, i) => {
+    const top = y(g), mid = 75, fillTop = Math.min(top, mid), fillH = Math.abs(top - mid);
+    return `<div class="band"><div class="rail"><div class="fill" style="top:${fillTop}px;height:${fillH}px"></div><div class="knob" style="top:${top}px"></div></div>
+      <span>${F[i]}</span><small>${g > 0 ? "+" : ""}${g}</small></div>`;
+  }).join("");
+  return `<div class="eqpanel"><div class="top"><b>Equaliser</b><span class="drop">Late night</span><span style="color:var(--a-dim)">Preamp −4 dB</span><span class="switch"></span></div>
+    <div class="bands"><div class="dbs"><span>+12</span><span>0</span><span>−12</span></div>
+      <svg class="curve" viewBox="0 0 504 150" preserveAspectRatio="none"><path d="${d} L504 150 L0 150 Z" fill="rgba(47,107,220,.16)"/><path d="${d}" fill="none" stroke="#6d9cf5" stroke-width="2"/></svg>
+      ${bands}</div>
+    <div class="note">Shapes what Music plays. Kept by name in Presets.</div></div>`;
+}
 
-  <h2>Left for later</h2>
-  <p><b>FLAC</b>, and the Deskbar replicant, at Diego's word. <b>A video app</b>, on the same engine. <b>Radio</b> is drawn and greyed: internet radio is an MP3 stream over HTTP, which the network stack can carry and nothing reads yet. Crossfade, the equaliser - on the roadmap already, in the mixer - and gapless playback come after the player has been used for a while.</p>
+function win(id, sideOn, sub, main, eq) {
+  document.getElementById(id).innerHTML = head(sub) + now(eq !== false) + side(sideOn) + `<div class="main">${main}</div>` + (eq === "open" ? eqpanel() : "");
+}
 
-  <h2>Decided</h2>
-  <ol class="decide">
-    <li><b>Dark and light, both.</b><span>Diego: "dark and light look". VOX's dark and orange, and a light look beside the desktop's own themes; View switches between them.</span></li>
-    <li><b>No FLAC for now.</b><span>Diego: "dont do flac for now". WAV and MP3; FLAC stays on the roadmap.</span></li>
-    <li><b>Tags read from the file by a reader, and not written onto it.</b><span>Diego: "cant we just gget the attributes from the mp3 file with a reader?" Yes - and that reader is needed either way, since attributes could only be written from what it reads.</span></li>
-    <li><b>The Deskbar replicant after the player.</b><span>Diego: "after".</span></li>
-    <li><b>One engine that a video app can share.</b><span>Diego, asked whether Music could play video too: "yes add the shared engine to the design". Two apps, one <code>/lib/media.lua</code>.</span></li>
-    <li><b>Haiku's icons where they fit, and the transport drawn.</b><span>15 September. Diego: "use the haiku icons" - and the 51 vendored ones are applications, files, folders, devices and preferences, with no play, pause, next, previous, shuffle, repeat or queue among them. So <code>App_MediaPlayer</code> for the window and the Deskbar button, <code>File_Audio</code> for a track whose file carries no cover, <code>Misc_Speaker</code> beside the volume; and the seven controls drawn. <b>Which needed one more thing, found while building:</b> a window that draws through commands has only rectangles, text and pictures - the triangle and disc primitives exist in the graphics layer and are reachable only by a window that draws its own pixels. Pause, the skip bars, the queue lines and the mini-player glyph are rectangles and were always fine; the play arrow was not, and a staircase of thin fills is visibly stepped at 18 pixels. So Diego chose to add a <b>triangle command</b> beside fill, text and image - the primitive is already there in C - which every restyled app gets for menus, sliders and disclosure arrows.</span></li>
-  </ol>
-</main>
+win("w1", "songs", ["Songs", "103 songs"], songs());
+win("w2", "albums", ["Albums", "10 albums"], albums());
+win("w3", "albums", ["Night Ferry", "Ana Lindqvist"], opened());
+win("w4", "songs", ["Songs", "103 songs"], songs(), "open");
+</script>
 </body>
 </html>

@@ -1892,6 +1892,48 @@ local function new_namespace()
       return { ok = true, paths = ram_entries(r.blob, r.count) }
     end
 
+    --
+    -- **A read into the caller's region** (`fs.read_into`), which ramfs
+    -- cannot do: it has no pages to lend, and answers a read with the bytes.
+    -- So the pieces come as they always do and are written into the region
+    -- here, at its start as the disk's server writes them. Without this a
+    -- read into a region on `/Temporary` - or on `/Home`, on a machine with
+    -- no disk - was answered as an ordinary read, with the bytes as a value
+    -- that `read_into` does not look at, and said nil with no reason: a PDF
+    -- there had "no %PDF header" (Quick Look's suite, 11 October 2026).
+    -- The bytes pass through this process on the way, which costs nothing a
+    -- read from memory did not already cost.
+    --
+    if op == "read" and extra.into then
+      local from = tonumber(extra.offset) or 0
+      local want = tonumber(extra.bytes) or math.maxinteger
+      local done = 0
+
+      while done < want do
+        local r, err = ram_call(capability, shown,
+                                ram_pack(code, rest, from + done, 0, 0, nil, nil, 0))
+
+        if not r then return nil, err end
+        if r.packed then return nil, shown .. " holds a value, not bytes" end
+
+        local piece = r.blob:sub(1, math.min(r.length, want - done))
+
+        if #piece > 0 then
+          local put, why = sys.region_write(pass, done, piece)
+
+          if not put then return nil, why end
+        end
+
+        done = done + #piece
+
+        if not r.more or #piece == 0 then break end
+      end
+
+      local a = ram_request(capability, "getattr", rest, nil, nil, shown)
+
+      return { ok = true, bytes = done, size = a and a.attrs and a.attrs.size }
+    end
+
     local offset = tonumber(extra.offset) or 0
     local nterms = 0
 
