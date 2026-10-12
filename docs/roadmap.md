@@ -143,6 +143,27 @@ top, quarters from the corners; Super with the arrows for halves, the whole
 room and back, Super+Alt with the arrows for quarters, thirds by number; a gap
 of 6 points; the Magnet page in Preferences.
 
+**SATA (AHCI), and `/Home` on the M700's own drive** - Diego, 12 October
+2026, after his preferences came back from a stick and he asked "when do we
+plan to have nvme access so we can have local storage?", then "the m700 has
+a nvme and has windows installed on it", and on what was found, "yes add it
+to the roadmap and queue after magnet". What the M700's bus shows (`sys.bus`,
+that evening): an Intel SATA controller in AHCI mode at 00:17.0 (8086:a102,
+class 01.06.01) with nothing driving it, no NVMe controller, and no PCIe
+root port for one to sit behind - so its Windows drive is SATA, M.2 or 2.5
+inch, which Windows shows as a disk either way (to confirm from its model).
+`hal/pc/nvme.c` is no help there. So: **an AHCI driver**, a process as
+xHCI's is - one port's command list and received-FIS area in memory, read
+and write by block, handed to the system as `/Devices/blocks` already serves
+a stick - and `diskfs` on it unchanged; then **`/Home` in a partition of its
+own on that drive**, made in space Diego frees by shrinking Windows in Disk
+Management. Never a format of what is there: a disk is formatted only when
+its first block is all zeros, and Windows' partition table is not. Tested
+under QEMU first (`-device ahci` with a drive holding a GPT and a Windows-like
+partition, untouched after), then on the M700. The real answer to
+preferences that need a stick to survive; Kosmos Cloud stays an idea for
+sharing them between machines.
+
 **Maps: a satellite view, and directions** - Diego, 10 October 2026: "Maps
 need a switch to satellite view", "As most maps", "And directions". A
 switch between the drawn map and photographs from above - imagery tiles,
