@@ -4,6 +4,8 @@
 
 #include <stdint.h>
 
+#include "deviceproto.h"
+
 /*
  * /Temporary: a filesystem that lives in memory, written down.
  *
@@ -54,6 +56,10 @@
 #define RAM_OP_DELETE    9u
 #define RAM_OP_RENAME   10u
 #define RAM_OP_MKDIR    11u
+
+/* What /Temporary has read and written so far, `.device`: a `struct
+ * disk_device` in `u.data`, as every drive answers (`deviceproto.h`). */
+#define RAM_OP_DEVICE   12u
 
 #define RAM_OK               0u
 #define RAM_ERR_NO_PATH      1u

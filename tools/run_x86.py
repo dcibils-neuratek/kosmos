@@ -1105,6 +1105,24 @@ def usb_drives(image, check):
         '.. table.concat(v, ",") .. "|" .. d.unclaimed) end'
     )
 
+    # **What a drive says it read** (`.device`, `deviceproto.h`; Disk
+    # Monitor's D1): the stick's volume and /Temporary asked before and
+    # after known work - the 3000-byte file read, 5000 bytes written to
+    # /Temporary and read back - and the differences exactly that.
+    device = (
+        'local a = fs.read("/Drives/PHOTOS/.device") '
+        'local x = fs.read("/Drives/PHOTOS/A Long File Name.txt") '
+        'local b = fs.read("/Drives/PHOTOS/.device") '
+        'local t0 = fs.read("/Temporary/.device") '
+        'fs.write("/Temporary/counted.txt", string.rep("k", 5000)) '
+        'local back = fs.read("/Temporary/counted.txt") '
+        'local t1 = fs.read("/Temporary/.device") '
+        'print("drives" .. ": device " .. (b.read_bytes - a.read_bytes) .. " in " '
+        '.. (b.reads - a.reads) .. " timed " .. tostring(b.read_counter_ticks > a.read_counter_ticks) '
+        '.. " temporary wrote " .. (t1.write_bytes - t0.write_bytes) '
+        '.. " read " .. (t1.read_bytes - t0.read_bytes) .. " of " .. #back)'
+    )
+
     # **Not `its backup`, which every other USB phase waits for.** That line
     # comes from a stick laid out with a GPT, and this one has an MBR - as a
     # camera or a Windows box writes - so the driver prints "no GUID
@@ -1117,7 +1135,9 @@ def usb_drives(image, check):
                       "fs.write('/Temporary/m.lua', %r)" % model,
                       "/Temporary/m.lua",
                       "fs.write('/Temporary/k.lua', %r)" % kinds,
-                      "/Temporary/k.lua"),
+                      "/Temporary/k.lua",
+                      "fs.write('/Temporary/v.lua', %r)" % device,
+                      "/Temporary/v.lua"),
                extra=extra, after="watching for devices")
 
     if out is None:
@@ -1136,6 +1156,17 @@ def usb_drives(image, check):
           "/Drives did not list the stick's volume under its label PHOTOS - "
           "a volume with no label is Untitled, so this is the label being "
           "read rather than a default:\n    " + shown)
+
+    dev = re.search(r"drives: device (\d+) in (\d+) timed (\w+) temporary wrote (\d+) read (\d+) of (\d+)",
+                    out)
+    check(dev is not None and dev.group(1) == "3000" and int(dev.group(2)) >= 3
+          and dev.group(3) == "true",
+          "the stick's .device did not count the 3000-byte file - its bytes, at "
+          "least three requests of 1024, and time spent: %r"
+          % (dev.group(0) if dev else [l for l in lines if "device" in l]))
+    check(dev is not None and dev.group(4) == "5000" and dev.group(5) == dev.group(6) == "5000",
+          "/Temporary's .device did not count 5000 bytes written and read back: %r"
+          % (dev.group(0) if dev else None))
 
     top = said("top")
 

@@ -25,6 +25,10 @@ void ram_store_init(size_t ceiling);
  */
 void ram_answer(const void *data, size_t length, uint64_t sender);
 
+/* What the store has read and written (`.device`): the server adds the time
+ * each read and write took, which only it can measure. */
+struct disk_device *ram_counts(void);
+
 /*
  * How the store answers somebody. The server's sends the reply with
  * `kosmos_reply`; a test's keeps what it was told.

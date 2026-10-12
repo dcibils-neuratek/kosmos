@@ -76,6 +76,23 @@ void ramfs_server(long endpoint)
             return;
         }
 
-        ram_answer(msg.data, msg.length, sender);
+        /* A read or a write timed around its answer, on the counter, for
+         * `.device` (`ram_counts`): the op is the request's first word. */
+        {
+            uint32_t op = 0;
+            uint64_t started = kosmos_ticks();
+
+            if (msg.length >= sizeof(op)) {
+                memcpy(&op, msg.data, sizeof(op));
+            }
+
+            ram_answer(msg.data, msg.length, sender);
+
+            if (op == RAM_OP_READ) {
+                ram_counts()->read_counter_ticks += kosmos_ticks() - started;
+            } else if (op == RAM_OP_WRITE) {
+                ram_counts()->write_counter_ticks += kosmos_ticks() - started;
+            }
+        }
     }
 }

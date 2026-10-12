@@ -4,6 +4,8 @@
 
 #include <stdint.h>
 
+#include "deviceproto.h"
+
 /*
  * /Drives: every volume on every drive, read only (USB step 6b,
  * `docs/drives.html`).
@@ -43,6 +45,8 @@
 #define DRIVES_OP_READ      3u  /* bytes of a file, from an offset */
 #define DRIVES_OP_GETATTR   4u  /* one entry: its size, and whether it is a
                                  * directory */
+#define DRIVES_OP_DEVICE    5u  /* a volume's reading so far, `.device`:
+                                 * a `struct disk_device` in `u.data` */
 
 #define DRIVES_OK              0u
 #define DRIVES_ERR_NO_PATH     1u  /* no such volume, directory or file */

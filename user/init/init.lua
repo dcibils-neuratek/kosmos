@@ -941,7 +941,28 @@ local function new_namespace()
     return text .. string.rep("\0", n - #text)
   end
 
-  local DRIVES_OPS = { volumes = 1, list = 2, read = 3, getattr = 4 }
+  --
+  -- **A drive's `.device`, as a table**, from the `struct disk_device` every
+  -- drive's server answers it in (`deviceproto.h`; Disk Monitor's D1):
+  -- `/Home`'s and a share's in the disk protocol, a stick's in the drive
+  -- server's, `/Temporary`'s in its own - one shape, read in one place.
+  --
+  local DEVICE_COUNTS = "<" .. string.rep("I8", 12)
+
+  local function device_counts(blob)
+    local d = { string.unpack(DEVICE_COUNTS, blob) }
+
+    return {
+      reads = d[1], writes = d[2], read_bytes = d[3], write_bytes = d[4],
+      read_counter_ticks = d[5], write_counter_ticks = d[6],
+      cache_hits = d[7], cache_misses = d[8],
+      -- A share's (`deviceproto.h`): what the network was asked.
+      requests = d[9], listings = d[10], listing_requests = d[11],
+      listing_counter_ticks = d[12],
+    }
+  end
+
+  local DRIVES_OPS = { volumes = 1, list = 2, read = 3, getattr = 4, device = 5 }
   local DRIVES_PATH_MAX, DRIVES_DATA_MAX = 256, 1024
   local DRIVES_ENTRIES_MAX, DRIVES_VOLUMES_MAX = 12, 8
 
@@ -996,6 +1017,12 @@ local function new_namespace()
   -- would carry it.
   --
   local function drives_request(capability, op, rest, extra)
+    -- `<volume>/.device`: what that volume has been read so far, asked as
+    -- the drive server's own operation on the volume's path.
+    if op == "read" and (rest or ""):lower():match("/%.device$") then
+      op, rest = "device", rest:sub(1, -#"/.device" - 1)
+    end
+
     local code = DRIVES_OPS[op]
 
     if not code then
@@ -1059,6 +1086,10 @@ local function new_namespace()
 
     if op == "read" then
       return { ok = true, value = blob:sub(1, length), more = more ~= 0 }
+    end
+
+    if op == "device" then
+      return { ok = true, value = device_counts(blob) }
     end
 
     if op == "volumes" then
@@ -1644,7 +1675,7 @@ local function new_namespace()
 
   local RAM_OPS = { list = 1, read = 2, write = 3, getattr = 4,
                     setattr = 5, query = 6, watch = 7,
-                    delete = 9, rename = 10, mkdir = 11 }
+                    delete = 9, rename = 10, mkdir = 11, device = 12 }
 
   local RAM_ERRORS = {
     [1] = "no such path",
@@ -1759,6 +1790,16 @@ local function new_namespace()
   end
 
   local function ram_request(capability, op, rest, extra, pass, shown)
+    -- `.device` at the top of /Temporary: what it has read and written so
+    -- far (`deviceproto.h`), one store for the whole of it.
+    if op == "read" and (rest or ""):lower():match("^/?%.device$") then
+      local r, err = ram_call(capability, ".device", ram_pack(RAM_OPS.device, "/"))
+
+      if not r then return nil, err end
+
+      return { ok = true, value = device_counts(r.blob) }
+    end
+
     local code = RAM_OPS[op]
 
     shown = shown or rest
@@ -2060,7 +2101,6 @@ local function new_namespace()
   local DISK_REPLY   = "<I4I4I4I4I8I8I8I4I4I8I8I8I4I4c1024I4I4I8"
   local DISK_SUPER   = "<I8I8I4I4I4I4I8" .. string.rep("I4", 10) .. "I8I4I4"
                        .. string.rep("I4", 11) .. "I4I8I8c128c128c96c96"
-  local DISK_DEVICE  = "<" .. string.rep("I8", 12)
 
   local DISK_DATA_MAX, DISK_PATH_MAX, DISK_REGION = 1024, 512, 1
 
@@ -2781,15 +2821,7 @@ local function new_namespace()
 
       if special == ".super" then return { ok = true, value = disk_super(r.blob) } end
 
-      local d = { string.unpack(DISK_DEVICE, r.blob) }
-
-      return { ok = true, value = {
-        reads = d[1], writes = d[2], read_bytes = d[3], write_bytes = d[4],
-        read_counter_ticks = d[5], write_counter_ticks = d[6],
-        cache_hits = d[7], cache_misses = d[8],
-        -- A share's (`diskproto.h`): what the network was asked.
-        requests = d[9], listings = d[10], listing_requests = d[11],
-        listing_counter_ticks = d[12] } }
+      return { ok = true, value = device_counts(r.blob) }
     end
 
     if op == "write" and special == ".format" then

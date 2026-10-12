@@ -85,6 +85,8 @@ reads at a second's pace, each a message answered from counters.
    answer `.device` as `diskfs` and `smbfs` do; a guest suite writes and
    reads known amounts on `/Home`, `/Temporary` and a stick and reads them
    back counted, within a request's worth.
+   **Done in 0.11.172** (`testing.md` 18.566), with `deviceproto.h`
+   the one shape every drive answers in.
 2. **D2 - which programs**: the four servers count by caller and answer
    `.programs`; a program `diskstat` prints it all, as `netstat` does; the
    suite's own program found by its own process id.

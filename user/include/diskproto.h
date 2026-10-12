@@ -4,6 +4,8 @@
 
 #include <stdint.h>
 
+#include "deviceproto.h"
+
 /*
  * The disk: `/Home`, a kfs volume, served by `user/servers/diskfs.c`
  * (`docs/diskfs.md` step 3).
@@ -161,16 +163,8 @@ struct disk_super {
  * the network's - every SMB request sent, the folder listings asked for,
  * the requests those took and the time they took.
  */
-struct disk_device {
-    uint64_t reads, writes;
-    uint64_t read_bytes, write_bytes;
-    uint64_t read_counter_ticks, write_counter_ticks;
-    uint64_t cache_hits, cache_misses;
-    uint64_t requests;          /* a share's: SMB requests sent */
-    uint64_t listings;          /* a share's: folder listings asked for */
-    uint64_t listing_requests;  /* the SMB requests those took */
-    uint64_t listing_counter_ticks;
-};
+/* `struct disk_device` is in `deviceproto.h`: every drive's server answers
+ * `.device` in it, whatever its own protocol (`docs/diskmonitor.md`). */
 
 struct disk_reply {
     uint32_t error;

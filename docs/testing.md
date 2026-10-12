@@ -24067,3 +24067,32 @@ by making the picture say what it saw:
 And **an application that ends on the way fails the picture**, with the
 lines it said before it went: `tile` counts windows, and it had counted
 twenty while Cafesa3D and Groove had opened and gone.
+
+## 18.566 Disk Monitor D1: every drive says what it read and wrote
+
+`docs/diskmonitor.md` step D1. `.device` under a drive's path answered for
+`/Home` (`diskfs`) and a share (`smbfs`), for Disk Benchmark; now a stick's
+volumes (`drives`) and `/Temporary` (`ramfs`) answer it too, so every drive
+Disk Monitor shows can say what it did.
+
+- **One shape**: `struct disk_device` moved out of `diskproto.h` into
+  `deviceproto.h`, which the disk, drive and memory protocols include - so
+  the four servers answer in the same struct, and the protocol stamp covers
+  it (a header outside `*proto.h` would have escaped it).
+- **The drive server** counts each volume's reads, bytes and the time each
+  took, in a table kept by the volume's name rather than in the volumes
+  themselves, which a rescan rebuilds; `DRIVES_OP_DEVICE` answers it. A
+  stick is never written here, so its writes stay zero.
+- **`ramfs`** counts requests and bytes in the store (`ram_counts`), which
+  is also built on the Mac, and the server adds the time each read and write
+  took around it; `RAM_OP_DEVICE` answers it.
+- **The namespace** reads every one of them through one function,
+  `device_counts`, where the disk side had its own unpacking.
+
+**Tests.** `x86-usb-2`'s `usb_drives` part 83 -> 85: a program reads the
+stick's and `/Temporary`'s `.device` before and after known work, and the
+differences are exact - "device 3000 in 3 timed true", the 3000-byte file in
+three 1024-byte requests with time counted, and 5000 bytes written to
+`/Temporary` and read back. **Control**: `/Temporary`'s writes not counted -
+"temporary wrote 0 read 5000 of 5000", and it fails.
+The gate: 71 of 72 - `x86-mdns` at 143 s, its fifth gate running.

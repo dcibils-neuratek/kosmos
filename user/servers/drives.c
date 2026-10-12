@@ -100,6 +100,18 @@ static uint8_t *region;         /* where the driver's bytes arrive */
 static uint32_t handle;         /* what BLOCK_OP_OPEN answered */
 
 static struct volume volumes[VOLUMES_MOST];
+
+/*
+ * **What each volume has been read** (`.device`, `deviceproto.h`; Disk
+ * Monitor's D1). Kept apart from `volumes`, by name, because a rescan
+ * (`fresh`) rebuilds that array: a stick that is still there keeps its
+ * totals, and one plugged in again under the same name goes on from them.
+ * A volume this table has no room for is not counted - it is still read.
+ */
+static struct {
+    char               name[DRIVES_NAME_BYTES];
+    struct disk_device d;
+} counted[VOLUMES_MOST];
 static unsigned volume_count;
 static unsigned long scanned_at;        /* ticks, 0 for never */
 
@@ -635,6 +647,28 @@ static struct volume *volume_for(const char *path, const char **rest,
     return NULL;
 }
 
+/* A volume's totals, its row made the first time it is read. */
+static struct disk_device *counts_for(const struct volume *v)
+{
+    unsigned i;
+
+    for (i = 0; i < VOLUMES_MOST; i++) {
+        if (counted[i].name[0] != '\0' && strcasecmp(counted[i].name, v->name) == 0) {
+            return &counted[i].d;
+        }
+    }
+
+    for (i = 0; i < VOLUMES_MOST; i++) {
+        if (counted[i].name[0] == '\0') {
+            copy(counted[i].name, v->name, DRIVES_NAME_BYTES);
+            counted[i].name[DRIVES_NAME_BYTES - 1u] = '\0';
+            return &counted[i].d;
+        }
+    }
+
+    return NULL;
+}
+
 /* The volumes themselves, a page at a time. */
 static void answer_volumes(uint64_t sender, const struct drives_request *req)
 {
@@ -1063,8 +1097,9 @@ static void answer_read(uint64_t sender, const struct volume *v,
     struct drives_reply rep;
     struct dirwalk w;
     unsigned long steps = 0;
-    uint64_t skip_sectors, seen = 0;
+    uint64_t skip_sectors, seen = 0, started;
     uint32_t took = 0;
+    struct disk_device *d;
 
     zero(&rep, sizeof(rep));
     rep.size = e->size;
@@ -1083,6 +1118,7 @@ static void answer_read(uint64_t sender, const struct volume *v,
     }
 
     skip_sectors = at / SECTOR;
+    started = kosmos_ticks();
 
     walk_start(&w, v, e->first_cluster, false);
 
@@ -1114,6 +1150,17 @@ static void answer_read(uint64_t sender, const struct volume *v,
 
     rep.length = took;
     rep.more = (at + took < e->size) ? 1u : 0u;
+
+    /* Counted as it is answered: one request, its bytes, and how long the
+     * walk and the drive took (the counter's ticks). */
+    d = counts_for(v);
+
+    if (d != NULL) {
+        d->reads++;
+        d->read_bytes += took;
+        d->read_counter_ticks += kosmos_ticks() - started;
+    }
+
     reply_with(sender, &rep);
 }
 
@@ -1148,7 +1195,7 @@ static void answer(const struct message *msg, uint64_t sender)
     }
 
     if (req.op != DRIVES_OP_LIST && req.op != DRIVES_OP_READ
-        && req.op != DRIVES_OP_GETATTR) {
+        && req.op != DRIVES_OP_GETATTR && req.op != DRIVES_OP_DEVICE) {
         fail(sender, DRIVES_ERR_BAD_OP);
         return;
     }
@@ -1172,6 +1219,22 @@ static void answer(const struct message *msg, uint64_t sender)
         }
 
         fail(sender, DRIVES_ERR_NO_PATH);
+        return;
+    }
+
+    /* `.device`: what this volume has been read so far - readable or not,
+     * since a volume nothing could read has read nothing, which is true. */
+    if (req.op == DRIVES_OP_DEVICE) {
+        struct disk_device *d = counts_for(v);
+
+        zero(&rep, sizeof(rep));
+
+        if (d != NULL) {
+            copy(rep.u.data, d, sizeof(*d));
+        }
+
+        rep.length = (uint32_t)sizeof(struct disk_device);
+        reply_with(sender, &rep);
         return;
     }
 

@@ -668,6 +668,22 @@ static void notify(void)
  * The operations.
  *----------------------------------------------------------------------*/
 
+/*
+ * **What /Temporary has read and written** (`.device`, `deviceproto.h`;
+ * Disk Monitor's D1): requests and bytes, counted here as they are answered;
+ * the time each took is the server's to add (`ram_counts`), since the clock
+ * is the machine's and this store is also run on the host.
+ */
+static struct disk_device counted;
+
+_Static_assert(sizeof(((struct ram_reply *)0)->u.data) >= sizeof(struct disk_device),
+               "the counts fit where a read's bytes do");
+
+struct disk_device *ram_counts(void)
+{
+    return &counted;
+}
+
 void ram_answer(const void *data, size_t length, uint64_t sender)
 {
     struct ram_request req;
@@ -796,6 +812,8 @@ void ram_answer(const void *data, size_t length, uint64_t sender)
 
         rep.length = take;
         rep.packed = n->packed;
+        counted.reads++;
+        counted.read_bytes += take;
         break;
     }
 
@@ -879,6 +897,8 @@ void ram_answer(const void *data, size_t length, uint64_t sender)
             (void)set_attr(n, &size);
         }
 
+        counted.writes++;
+        counted.write_bytes += req.length;
         notify();
         break;
     }
@@ -1127,6 +1147,11 @@ void ram_answer(const void *data, size_t length, uint64_t sender)
         notify();
         break;
     }
+
+    case RAM_OP_DEVICE:
+        memcpy(rep.u.data, &counted, sizeof(counted));
+        rep.length = (uint32_t)sizeof(counted);
+        break;
 
     default:
         fail(sender, RAM_ERR_BAD_OP);
