@@ -291,6 +291,43 @@ static int first_leaves_role(void)
 }
 
 /*
+ * **A thread on the core asked for** (`THREAD_START_ON`; `roadmap.md`, the
+ * Scheduler, "a core left idle by placement"). A core past the last is
+ * refused as no such thing; core bits without the flag are refused as a
+ * word left over; and a thread asked onto the last core sleeps there long
+ * enough for the kernel suite to read its home, then ends with 7. Its code
+ * names the first thing answered wrongly.
+ */
+#define CTEST_THREAD_ON         908UL
+
+static int thread_on_role(void)
+{
+    struct sysinfo info;
+    long index;
+
+    if (kosmos_sysinfo(&info) != 0 || info.cpus == 0) {
+        return 1;
+    }
+
+    if (kosmos_thread_start_on(sleeps, 1, info.cpus) != SYS_ERR_NO_DEVICE) {
+        return 2;
+    }
+
+    if (sys3(SYS_THREAD_CREATE, (long)(uintptr_t)sleeps, 1L,
+             (long)THREAD_START_CORE(1)) != SYS_ERR_DENIED) {
+        return 3;
+    }
+
+    index = kosmos_thread_start_on(sleeps, 50, info.cpus - 1);
+
+    if (index < 0) {
+        return 4;
+    }
+
+    return kosmos_thread_wait((unsigned long)index) == 0 ? 0 : 5;
+}
+
+/*
  * **What the process table says about a process with a file and a worker**
  * (`roadmap.md` 6m). Processes shows each one's threads and the file it
  * runs, and both come from `struct proc_info`: this names itself with a
@@ -686,6 +723,10 @@ int main(unsigned long arg)
 
     if (arg == CTEST_TABLE) {
         return table_role();
+    }
+
+    if (arg == CTEST_THREAD_ON) {
+        return thread_on_role();
     }
 
     if (arg == CTEST_IMAGE) {

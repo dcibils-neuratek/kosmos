@@ -463,6 +463,19 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  * read as a request.
  */
 #define THREAD_START_AUDIO 1u
+
+/*
+ * **On a core of the creator's choosing** (`roadmap.md`, the Scheduler, "a
+ * core left idle by placement"): the core in bits 15:8, from 0 to one less
+ * than `sysinfo.cpus`, and refused past that. A thread is otherwise placed
+ * where the fewest threads want to run at the instant it is made, and never
+ * moves; a set of workers made in one loop could land two on one core and
+ * leave another idle for the whole of their work, as Cafesa3D's render did
+ * on the M700 on 12 October. A kit that starts a worker a core says which.
+ */
+#define THREAD_START_ON          2u
+#define THREAD_START_CORE(n)     (((unsigned long)(n) & 0xffu) << 8)
+#define THREAD_START_CORE_OF(f)  (((unsigned long)(f) >> 8) & 0xffu)
 #define SYS_THREAD_EXIT   57 /* (code)                -> does not return    */
 #define SYS_THREAD_WAIT   58 /* (index)               -> its code or error  */
 

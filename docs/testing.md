@@ -23990,3 +23990,43 @@ the fewest threads want to run at the instant it is made, and never moves.
 The gate: 69 of 72 - `x86-film` and `x86-mdns` as before, and
 `x86-telnetd`, whose client timed out before its banner while the gate ran
 beside four hundred file sends to the M700; all three pass alone.
+
+## 18.564 A worker a core: the 3D Kit's render threads where it says
+
+Diego, 12 October, Monitor beside a Cafesa3D render on the M700: "why core
+3 is not being used". The 3D Kit starts a worker per processor in one loop,
+and each was placed where the fewest threads wanted to run at the instant
+it was made; something on core 3 then put two workers on another core, and
+a thread never moves, so core 3 sat idle for the whole render. Asked why
+threads do not move, the answer is `docs/smp.md`'s: a fixed home is what
+lets IPC release its lock before the switch, and what keeps lazily saved
+floating-point registers on the core that owns them - correctness, more than
+speed. Moving threads stays with the Scheduler's work (`roadmap.md`); this
+is the narrow answer Diego chose meanwhile ("Yes").
+
+- **`THREAD_START_ON`**, a flag of `SYS_THREAD_CREATE` with the core in
+  bits 15:8: the new thread's home set between creating and waking it, the
+  one moment `thread_create_on` says a home can be set. A core past the
+  last given threads is `SYS_ERR_NO_DEVICE`; core bits without the flag are
+  refused as a word left over. `kosmos_thread_start_on` is its door.
+- **The 3D Kit** starts worker i on core i, round the cores; a core refused
+  falls back to placement.
+
+**Tests.** `x86-kernel` 198 -> 199, "thread: on the core its process asked
+for": a C role in init asks for a thread on the last core, which the test
+has first loaded with three parked fillers - placement's worst choice - and
+reads the thread's home while it sleeps; the role's code says a core past
+the last and bits without the flag were both refused. **Control**: the home
+not set - it fails. The first version of the test asked for the last core
+of an idle machine, and its control *passed*: placement's rotation had put
+the unasked thread there too. Loading the core is what made it bite.
+
+**`smp: a new thread avoids a loaded core` failed 3 of 13 runs alone**
+today, and 0 of 3 on the tree before this - too few to say this caused it,
+and its own comment records the same failure on 4 and 6 October under load.
+Its question needs every other core free of ready threads at the instant
+it places one; a diagnostic printing what was ready made it pass four times
+in four. On the roadmap.
+The gate: 71 of 72 - `x86-mdns` at 143 s, its fourth gate running at that
+figure since 0.11.168 moved the meters into the kit; it passes alone. Four
+in a row is a pattern rather than load, and it is on the roadmap.

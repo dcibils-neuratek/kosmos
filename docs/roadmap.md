@@ -491,7 +491,20 @@ performance and responsiveness, and else in a visual way", "mockup first".
   core 3 none for the whole render (`testing.md` 18.563). The general
   answer is the one `place_new_thread` names, moving a thread, which is
   this work's to weigh; a narrower one is a kit placing a set of workers
-  one a core on purpose (`thread_create_on`). For Diego to choose.
+  one a core on purpose. **Diego chose both** - the narrow one now,
+  migration with the Scheduler: the 3D Kit's workers ask for a core each
+  since 0.11.171 (`THREAD_START_ON`, `testing.md` 18.564). Why a thread
+  does not move today is `docs/smp.md`'s: a fixed home lets IPC release its
+  lock before the switch, and keeps lazily saved FP registers on their core.
+- **`x86-mdns` fails in every gate since 0.11.168** (`testing.md` 18.564),
+  at about 143 s where it takes 30 alone: "Tracker's Network group did not
+  list Studio". 0.11.168 moved Monitor's meters into `ui.lua`, which
+  Tracker draws with; whether that is the cause or the gate's load is the
+  first question.
+- **`smp: a new thread avoids a loaded core` is intermittent** (`testing.md`
+  18.564): it needs every other core free of ready threads at the instant
+  it places one, and fails about one run in five alone; the question wants
+  asking in a way that does not depend on that instant.
 
 **Bugs found on the M700, 10 October 2026, to fix first:**
 - **Print Screen's pictures shown black** - "printi screen saves a black

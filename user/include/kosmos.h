@@ -429,6 +429,16 @@ static inline long kosmos_thread_start_audio(void (*entry)(unsigned long),
                 (long)THREAD_START_AUDIO);
 }
 
+/* The same, on core `core` (`THREAD_START_ON`): from 0 to one less than
+ * `sysinfo.cpus`, and `SYS_ERR_NO_DEVICE` past it. For a set of workers a
+ * core, which placement alone can land two to a core. */
+static inline long kosmos_thread_start_on(void (*entry)(unsigned long),
+                                          unsigned long arg, unsigned core)
+{
+    return sys3(SYS_THREAD_CREATE, (long)(uintptr_t)entry, (long)arg,
+                (long)(THREAD_START_ON | THREAD_START_CORE(core)));
+}
+
 static inline void kosmos_thread_exit(int code)
 {
     (void)sys1(SYS_THREAD_EXIT, (long)code);

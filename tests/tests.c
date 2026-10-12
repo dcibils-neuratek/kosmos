@@ -4296,6 +4296,117 @@ static bool test_a_process_with_two_threads(void)
 }
 
 /*
+ * **A thread on the core its process asked for** (`THREAD_START_ON`).
+ *
+ * Has to match `user/init/main.c`. The role asks for a thread on the last
+ * core that is given threads and has it sleep; this reads that thread's home
+ * while it sleeps, and the role's code says the two refusals were refused.
+ *
+ * **Asked for where placement would not put it**, or the test could pass by
+ * coincidence - and it did, the first time its control ran: on an idle
+ * machine the rotation landed an unasked thread on the last core too. So
+ * that core is loaded first with three parked fillers, which makes it
+ * strictly placement's worst choice (`test_placement_avoids_a_loaded_
+ * processor`), and placement across the cores is turned on for the length
+ * of the test, the suite pinning itself to one otherwise.
+ *
+ * The 3D Kit asks for a worker a core this way, since eight placed in one
+ * loop left a core of the M700 idle for a whole render.
+ */
+#define CTEST_THREAD_ON 908UL
+
+static bool test_a_thread_on_the_core_asked_for(void)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    unsigned cores = smp_online();
+    unsigned want = cores - 1;
+    unsigned seen = ~0u;
+    struct thread *fill[3];
+    struct process *p;
+    unsigned long start;
+    unsigned i;
+    int code;
+
+    if (cores < 2) {
+        return true;              /* nothing to choose between */
+    }
+
+    thread_place_across(cores);
+
+    for (i = 0; i < 3; i++) {
+        fill[i] = thread_create_on(want, "fill", parks, NULL);
+
+        if (fill[i] == NULL) {
+            thread_place_across(1);
+            return false;
+        }
+    }
+
+    for (start = hal_ticks(); hal_ticks() - start < 10UL * TICK_HZ; ) {
+        if (fill[0]->state == THREAD_BLOCKED && fill[1]->state == THREAD_BLOCKED
+            && fill[2]->state == THREAD_BLOCKED) {
+            break;
+        }
+
+        thread_yield();
+        cpu_relax();
+    }
+
+    p = process_create("t-thread-on", init_image, (size_t)init_image_len,
+                       CTEST_THREAD_ON);
+
+    if (p != NULL) {
+        process_grant_console(p);
+        process_start(p);
+        start = hal_ticks();
+
+        /* By the clock, not by yields: a yield with nothing else ready comes
+         * straight back, and the worker sleeps a fifth of a second. */
+        while (!p->exited && hal_ticks() - start < 10UL * TICK_HZ) {
+            /* The worker is every thread but the first; read while it lives. */
+            for (struct thread *t = p->threads; t != NULL; t = t->sibling) {
+                if (t != p->thread) {
+                    seen = t->sched.cpu;
+                }
+            }
+
+            thread_yield();
+        }
+    }
+
+    for (i = 0; i < 3; i++) {
+        thread_wake(fill[i]);
+    }
+
+    for (i = 0; i < 64; i++) {
+        thread_yield();
+    }
+
+    thread_place_across(1);
+
+    if (p == NULL || !p->exited) {
+        return false;
+    }
+
+    code = p->exit_code;
+    process_reap(p);
+
+    if (code != 0 || seen != want) {
+        kputs("\n   (the role said ");
+        kputu((unsigned long)(code < 0 ? -code : code));
+        kputs("; its worker lived on core ");
+        kputu(seen);
+        kputs(", asked for ");
+        kputu(want);
+        kputs(")\n");
+        return false;
+    }
+
+    return true;
+}
+
+/*
  * **A process ended from any of its threads** (`threads.md` step 6).
  *
  * Has to match `user/init/main.c`. Each role ends while one of its threads
@@ -9864,6 +9975,7 @@ static const struct test tests[] = {
     { "thread: its own pointer survives a switch", test_a_threads_pointer_survives_a_switch },
     { "proc: the pool grows, and gives everything back", test_the_process_pool_grows },
     { "thread: a process with two threads", test_a_process_with_two_threads },
+    { "thread: on the core its process asked for", test_a_thread_on_the_core_asked_for },
     { "thread: a worker faults while the first sleeps", test_a_worker_faults },
     { "thread: a worker faults while the first waits", test_a_fault_while_joined },
     { "thread: the first returns, a worker asleep", test_the_first_thread_leaves },

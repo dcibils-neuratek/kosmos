@@ -492,7 +492,7 @@ static void user_thread_main(void *arg)
  * threads; nothing else may make one.
  */
 int process_thread_create(struct process *p, unsigned long entry,
-                          unsigned long arg, bool audio)
+                          unsigned long arg, bool audio, int cpu)
 {
     unsigned long flags;
     struct thread *t;
@@ -566,6 +566,12 @@ int process_thread_create(struct process *p, unsigned long entry,
      * allowed (`THREAD_START_AUDIO`): before it is ever queued. */
     if (audio) {
         thread_enter_audio_band(t);
+    }
+
+    /* On the core asked for (`THREAD_START_ON`): between creating and
+     * waking, the one moment a home can be set (`thread_create_on`). */
+    if (cpu >= 0) {
+        t->sched.cpu = (unsigned)cpu;
     }
 
     thread_wake(t);

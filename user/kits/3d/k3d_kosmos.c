@@ -853,6 +853,7 @@ static int l_render(lua_State *L)
     struct k3d_light lights[16];
     struct k3d_render_setup how;
     struct sysinfo info;
+    unsigned cores;
     struct job *j;
     int want, i;
 
@@ -885,8 +886,8 @@ static int l_render(lua_State *L)
     how.lights = lights;
 
     /* Every processor that runs threads, unless asked for fewer. */
-    want = kosmos_sysinfo(&info) == 0 && info.cpus > 0 ? (int)info.cpus : 1;
-    want = (int)opt_number(L, 2, "threads", (float)want, 1, WORKERS_MAX);
+    cores = kosmos_sysinfo(&info) == 0 && info.cpus > 0 ? info.cpus : 1;
+    want = (int)opt_number(L, 2, "threads", (float)cores, 1, WORKERS_MAX);
 
     j = (struct job *)lua_newuserdatauv(L, sizeof(*j), 0);
     memset(j, 0, sizeof(*j));
@@ -901,8 +902,22 @@ static int l_render(lua_State *L)
         return 2;
     }
 
+    /*
+     * **A worker a core, said rather than left to placement** (`roadmap.md`,
+     * the Scheduler, "a core left idle by placement"): eight made in one loop
+     * were placed where the fewest threads wanted to run at each instant, and
+     * on the M700 on 12 October that put two on one core and none on core 3
+     * for the whole render - a thread never moves. So worker i asks for core
+     * i, round the cores this machine gives threads to; and where a core is
+     * refused, it is placed as any thread is.
+     */
     for (i = 0; i < want; i++) {
-        long index = kosmos_thread_start(worker, (unsigned long)(uintptr_t)j->r);
+        long index = kosmos_thread_start_on(worker, (unsigned long)(uintptr_t)j->r,
+                                            (unsigned)i % cores);
+
+        if (index < 0) {
+            index = kosmos_thread_start(worker, (unsigned long)(uintptr_t)j->r);
+        }
 
         if (index < 0) {
             break;                      /* as many as the machine would give */

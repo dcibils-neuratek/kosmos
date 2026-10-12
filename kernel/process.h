@@ -768,12 +768,13 @@ bool process_should_die(void);
  * **Threads of a process that is already running** (`threads.md` step 3).
  *
  * `process_thread_create` makes one at `entry` with `arg` and its own stack,
- * answering with its index in this process; `process_thread_ended` takes one
+ * answering with its index in this process - homed on `cpu`, or placed as
+ * every thread is when that is -1; `process_thread_ended` takes one
  * off and keeps its code for whoever waits; `process_thread_wait` is that
  * wait, and hands the slot back.
  */
 int  process_thread_create(struct process *p, unsigned long entry,
-                           unsigned long arg, bool audio);
+                           unsigned long arg, bool audio, int cpu);
 void process_thread_ended(struct process *p, struct thread *t, int code);
 int  process_thread_wait(struct process *p, unsigned index);
 

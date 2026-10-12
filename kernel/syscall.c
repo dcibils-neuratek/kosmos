@@ -1531,14 +1531,26 @@ void syscall_dispatch(struct syscall_frame *sc)
         break;
 
     case SYS_THREAD_CREATE:
-        if ((sc->arg[2] & ~(unsigned long)THREAD_START_AUDIO) != 0
+        if ((sc->arg[2] & ~(unsigned long)(THREAD_START_AUDIO | THREAD_START_ON
+                                           | THREAD_START_CORE(0xff))) != 0
+            || ((sc->arg[2] & THREAD_START_ON) == 0
+                && THREAD_START_CORE_OF(sc->arg[2]) != 0)
             || ((sc->arg[2] & THREAD_START_AUDIO) != 0 && !p->owns_audio_band)) {
             result = SYS_ERR_DENIED;
             break;
         }
 
+        /* A core this machine gives threads to, or nothing of that kind. */
+        if ((sc->arg[2] & THREAD_START_ON) != 0
+            && THREAD_START_CORE_OF(sc->arg[2]) >= thread_cpu_count()) {
+            result = SYS_ERR_NO_DEVICE;
+            break;
+        }
+
         result = process_thread_create(p, sc->arg[0], sc->arg[1],
-                                       (sc->arg[2] & THREAD_START_AUDIO) != 0);
+                                       (sc->arg[2] & THREAD_START_AUDIO) != 0,
+                                       (sc->arg[2] & THREAD_START_ON) != 0
+                                       ? (int)THREAD_START_CORE_OF(sc->arg[2]) : -1);
 
         if (result < 0) {
             result = (result == -2) ? SYS_ERR_NO_ROOM : SYS_ERR_NO_ROOM;
