@@ -23673,3 +23673,22 @@ from the window's loop and not its drawing, and the bar does not ask.
 sender kept when it is pressed; away to another message and back, the
 pictures come with nothing pressed and Load is not offered. **Control**:
 no sender ever kept - the pictures never came by themselves.
+
+## 18.554 Mail's status bar
+
+Diego, 9 October: "mail app needs a status bar at the bottom like the
+browser has". Along the bottom, 26 high as the browser's, what Mail and
+`maild` are doing, from `maild`'s own status file: signing in to an
+account, checking it, sending (or a message not sent and why), an
+account's error in the error colour - and when nothing is happening, "Up to
+date", or "Not checking" when `maild` is not running. How many messages and
+how many unread stay the header's and the list's to say. The list, the
+message and the sidebar end above it.
+
+Found on the way: Mail's main chunk was at Lua's limit of 200 local
+variables, and the status bar and the kept senders went into two tables
+(`statusbar`, `senders`) rather than five more names.
+
+`x86-mail-3` 21 -> 22: the bar said it was checking the account while it
+synced and up to date once it had. **Control**: a bar that only ever says
+"Up to date" - it never said it was checking.

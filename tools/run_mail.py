@@ -750,6 +750,10 @@ def part3(image):
         guest._read_available()
         said["turns"] = re.findall(r"mail: list from [^\n]*", guest.seen[mark:])
 
+        # **The status bar** (9 October): what Mail and maild are doing -
+        # checking the account while it syncs, up to date once it has.
+        said["status"] = re.findall(r"mail: status ([^\r\n]*)", guest.seen)
+
         mark = len(guest.seen)
         click(lx + 100, ly + rh // 2)
         said["photos"] = guest.wait_for_line("mail: showing ", "the newest shown", mark)
@@ -870,6 +874,10 @@ def part3(image):
         fails.append("the second, in HTML: %r" % said.get("route"))
     if not re.search(r"\d+ px tall, \d+ wide, fitted at 100%, 1 sent inside, 1 on the network", said.get("html", "")):
         fails.append("the route's HTML, its own picture and one on the network: %r" % said.get("html"))
+    statuses = said.get("status") or []
+    if not any(t.startswith("Checking ") for t in statuses) or not any("up to date" in t.lower() for t in statuses):
+        fails.append("the status bar did not say it was checking the account and then that it was "
+                     "up to date: %r" % statuses[-6:])
     if not said.get("always_shown") or not said.get("trusted"):
         fails.append("Always from This Sender was not offered beside Load Pictures, or did not keep "
                      "the sender: %r, %r" % (said.get("always_shown"), said.get("trusted")))
@@ -905,7 +913,7 @@ def part3(image):
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 21
+    checks = 22
 
     if fails:
         print("FAIL: %d of %d checks on Mail's window:" % (len(fails), checks))

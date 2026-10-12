@@ -94,6 +94,9 @@ if screen then sw, sh = screen:size() end
 local W = math.min(1220, sw - 60)
 local H = math.min(740, sh - 100)
 
+-- The status bar along the bottom, as the browser's (`STAT` there too).
+local STAT = 26
+
 local win = ui.window{ title = "Mail", w = W, h = H, direct = true, header = true,
                        resizable = true, centre = true }
 
@@ -663,7 +666,7 @@ local HEAD_H = 104
 local function pane()
   local x = (sidebar and SIDE_W or 0) + LIST_W
 
-  return x, L.head, W - x, H - L.head
+  return x, L.head, W - x, H - STAT - L.head
 end
 
 local function paper_box()
@@ -775,7 +778,9 @@ end
 -- in Mail's settings as `pictures_from`; a message from one of them loads
 -- its pictures as soon as it is laid out, and the bar never asks.
 --
-local function trusted(address)
+local senders = {}
+
+function senders.trusted(address)
   local list = (prefs.read("mail") or {}).pictures_from or {}
   local want = tostring(address or ""):lower()
 
@@ -786,10 +791,10 @@ local function trusted(address)
   return false
 end
 
-local function trust(address)
+function senders.trust(address)
   address = tostring(address or "")
 
-  if address == "" or trusted(address) then return end
+  if address == "" or senders.trusted(address) then return end
 
   local settings = prefs.read("mail") or {}
 
@@ -869,7 +874,7 @@ local function lay_out_html(pw, ph)
 
   -- A sender whose pictures always load: fetched now, once a message, and
   -- the bar says it is loading rather than asking.
-  if far > 0 and not message.loading and not message.auto_loaded and trusted(message.address) then
+  if far > 0 and not message.loading and not message.auto_loaded and senders.trusted(message.address) then
     message.auto_loaded = true
     message.wants_pictures = true
   end
@@ -1378,8 +1383,8 @@ local function draw_sidebar(s)
 
   if not sidebar then return end
 
-  s:fill(0, L.head, SIDE_W, H - L.head, theme.window)
-  s:fill(SIDE_W - 1, L.head, 1, H - L.head, theme.line_soft)
+  s:fill(0, L.head, SIDE_W, H - STAT - L.head, theme.window)
+  s:fill(SIDE_W - 1, L.head, 1, H - STAT - L.head, theme.line_soft)
 
   local y = L.head + 10 - side_scroll
 
@@ -1509,8 +1514,8 @@ local function draw_list(s)
   local x0 = sidebar and SIDE_W or 0
   local y0 = L.head
 
-  s:fill(x0, y0, LIST_W, H - y0, theme.sunken)
-  s:fill(x0 + LIST_W - 1, y0, 1, H - y0, theme.line_soft)
+  s:fill(x0, y0, LIST_W, H - STAT - y0, theme.sunken)
+  s:fill(x0 + LIST_W - 1, y0, 1, H - STAT - y0, theme.line_soft)
 
   -- The mailbox's name, its counts, and the search.
   s:fill(x0, y0, LIST_W - 1, 86, theme.window)
@@ -1562,7 +1567,7 @@ local function draw_list(s)
   end
 
   local y = y0 + 86
-  local fits = (H - y) // ROW_H
+  local fits = (H - STAT - y) // ROW_H
 
   for i = top, math.min(#shown, top + fits) do
     local row = shown[i]
@@ -1927,6 +1932,56 @@ local function draw_sheet(s)
   end
 end
 
+--
+-- **The status bar** (Diego, 9 October 2026: "mail app needs a status bar at
+-- the bottom like the browser has"): what Mail and `maild` are doing, from
+-- `maild`'s own status - signing in, checking, sending, an account's error
+-- - and when nothing is happening, that every account is up to date. How
+-- many messages and how many unread are the header's and the list's to say,
+-- and are not said a second time here.
+--
+local statusbar = { said = nil }
+
+function statusbar.words()
+  local busy, broken = {}, nil
+
+  for _, a in ipairs(status.accounts or {}) do
+    if a.state == "signing in" then
+      busy[#busy + 1] = "Signing in to " .. tostring(a.address)
+    elseif a.state == "syncing" then
+      busy[#busy + 1] = "Checking " .. tostring(a.address)
+    elseif a.state == "error" and not broken then
+      broken = ("%s: %s"):format(tostring(a.address), tostring(a.why or "an error"))
+    end
+  end
+
+  local sending = outbox_said()
+
+  if sending then return sending, sending:match("^Not sent") ~= nil end
+  if #busy > 0 then return busy[1] .. "\u{2026}", false end
+  if broken then return broken, true end
+
+  if not fs.getattr("/Running/maild") then return "Not checking: maild is not running", false end
+  if #(status.accounts or {}) == 0 then return "No accounts yet", false end
+
+  return #status.accounts == 1 and "Up to date" or "Every account up to date", false
+end
+
+function statusbar.draw(s)
+  local y = H - STAT
+  local left, bad = statusbar.words()
+  local ty = y + (STAT - gfx.height()) // 2
+
+  s:fill(0, y, W, STAT, theme.window)
+  s:fill(0, y, W, 1, theme.line_soft)
+  s:text(10, ty, ui.fitted(left, W - 20), bad and (theme.bad or theme.text) or theme.text_dim)
+
+  if left ~= statusbar.said then
+    statusbar.said = left
+    print("mail: status " .. left)
+  end
+end
+
 local function draw_all()
   local s = win:surface()
 
@@ -1935,6 +1990,7 @@ local function draw_all()
   draw_message(s)
   draw_sidebar(s)
   draw_header(s)
+  statusbar.draw(s)
   draw_sheet(s)
 
   return win:commit{ x = 0, y = 0, w = W, h = H }
@@ -1987,7 +2043,7 @@ local function move_choice(by)
   if shown[i] then
     choose(shown[i].path)
 
-    local fits = (H - L.head - 86) // ROW_H
+    local fits = (H - STAT - L.head - 86) // ROW_H
 
     if i < top then top = i end
     if i >= top + fits then top = i - fits + 1 end
@@ -2390,7 +2446,7 @@ local function press(x, y)
 
     if always_button and pk.inside(always_button, x, y) then
       pk.hold(always_button, function()
-        trust(message and message.address)
+        senders.trust(message and message.address)
         load_pictures()
       end)
       return
@@ -2415,7 +2471,7 @@ local function wheel(x, y, n)
     -- Three rows a notch, as everything the kit scrolls, to where the last
     -- mailbox is in view.
     side_scroll = math.max(0, math.min(side_scroll - n * ui.WHEEL_ROWS * 34,
-                                       math.max(0, side_total - (H - L.head))))
+                                       math.max(0, side_total - (H - STAT - L.head))))
     print(("mail: sidebar from %d"):format(side_scroll))
     return
   end
@@ -2428,7 +2484,7 @@ local function wheel(x, y, n)
     clamp_scroll()
   elseif x >= (sidebar and SIDE_W or 0) then
     -- To where the last message is in view, and no further.
-    local fits = (H - L.head - 86) // ROW_H
+    local fits = (H - STAT - L.head - 86) // ROW_H
 
     top = math.max(1, math.min(top - n * ui.WHEEL_ROWS, math.max(1, #shown - fits + 1)))
     print(("mail: list from %d (a turn of %s at %d,%d)"):format(top, tostring(n), x, y))

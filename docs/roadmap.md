@@ -8578,7 +8578,8 @@ click in text places the caret on the press. In the UI kit once, and in
 `pixelkit` as one shared press-and-release that the windows drawing
 themselves move onto. **And Mail's status bar** along the bottom, as the
 browser's, saying what Mail and `maild` are doing ("mail app needs a status
-bar at the bottom like the browser has").
+bar at the bottom like the browser has"). **Built 12 October**
+(`testing.md` 18.554).
 **M6 done** (18.490): the composer, a library any application can open -
 To, Cc and Bcc completed from the mail kept, Reply, Reply All, Forward,
 drafts kept here and on the server, sent by `maild` from an Outbox, a copy
