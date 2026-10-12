@@ -434,7 +434,7 @@ the application **Packages**, the program **`pkg`** (`install` kept as its
 short form). **Drawn and agreed** (`docs/packages.html`; Diego, 12
 October: "Mockup is perfect") - the application Packages and the program
 `pkg`, as drawn; its feature set, architecture and diagram before its code,
-queued after Sandboxes. The window over that: what there is, what is
+next after Disk Monitor (Diego: "Finish disk monitor and then packages"). The window over that: what there is, what is
 installed and at which build, Install and Update. A design first - feature
 set, mockup, architecture, diagram - when its turn comes.
 

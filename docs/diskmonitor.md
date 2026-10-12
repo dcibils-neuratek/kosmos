@@ -94,5 +94,6 @@ reads at a second's pace, each a message answered from counters.
    table the four servers keep.
 3. **D3 - the window**: as drawn, its suite reading the rates while a
    program writes and reads, and its picture in the dated screenshot.
+   **Done in 0.11.176** (`testing.md` 18.571).
 
 Only x86-64 runs the tests for now (`CLAUDE.md`).

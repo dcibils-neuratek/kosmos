@@ -24231,3 +24231,30 @@ network driver's first line printed into its middle (alone, 74 of 74), and
 the Deskbar was told and before Preferences had written it - 3 runs in 5
 today. It waits for the value now, as the checks here wait for the thing,
 and passes.
+
+## 18.571 Disk Monitor D3: the window
+
+`wm diskmon` (`user/bin/apps/diskmon.lua`), as `docs/diskmonitor.html` draws
+it: every drive down the left - `/Home`, each stick's volumes, each share
+connected (never connecting one by looking), and memory - drawn as what it
+is, with its rates and a small graph of the minute; the chosen one on the
+right, its card, the minute mirrored (reading above, writing below), how
+long a read and a write take, how often the cache answered, what it has read
+and written, and the programs using it, busiest first, with the last file
+each touched; the pace and bytes or bits from the dots. It reads `.device`
+and `.programs` under each drive's path once a pace (D1, D2) and takes
+differences; the graphs and the card are the kit's.
+
+**`x86-diskmon`**, new, 7 checks: the guest boots with a FAT stick and a
+program named `reader` reads its 3000-byte file again and again in the
+background; Disk Monitor is opened, the stick chosen by a click on its row,
+and the window says the stick is read at about 100 KB/s with `reader` the
+busiest program at the same rate, by its name; its graph is blue above its
+line and not below; Bits a second from the dots is heard. The screendump is
+kept as `build/gate/x86-diskmon.ppm`. The first run failed a check whose
+own logic was wrong - it took the line where the drive's rate was highest,
+which was the first reading after the stick was chosen, with no earlier
+reading of `reader`'s to subtract from; it takes `reader`'s own highest now.
+And two things seen in that picture, fixed: the list's small graphs drawn on
+the big graph's dark ground, which read as black bars, and a total's words
+cut. Disk Monitor joins the dated picture, twenty-one windows.
