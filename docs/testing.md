@@ -23486,3 +23486,25 @@ says it at 1 s, and the recording's loudest sample is 11,999 of the tone's
 
 **Control**: the ticker not feeding the preview - "the song did not play
 when shown", loudest sample 0.
+
+## 18.547 Quick Look, Q4: a film plays as it is shown - Quick Look done
+
+Space on an MP4 in Tracker shows it as a film, fitted to the panel above a
+play button and a seek bar, and it plays at once - its sound too, when it
+has one. `media.open` hands it to `video.lua` as the Video Player opens one;
+each tick draws the frame of the moment into a surface of the preview's,
+lent to the painter by name as a PDF's page is. Songs and films share one
+button and one bar (`draw_controls`) and one clock (`playing_now`), so
+neither has its own copy.
+
+With this the four steps agreed in `docs/quicklook.html` are built:
+pictures and anything else as its facts (18.543), PDFs (18.545), songs
+(18.546) and films.
+
+`x86-quicklook` 12 -> 14: an MJPEG of 64 x 48, three seconds - dark,
+light, dark - made by the suite with `run_media.mjpeg_mp4`, shown as a film
+of 64 x 48 and 0:03, and the panel's middle seen dark and then light as it
+plays; and the song before it stopped by Down, no more of it said.
+
+**Control**: the frame never drawn into the preview's surface - "the film's
+picture did not play in the panel: ['dark']".

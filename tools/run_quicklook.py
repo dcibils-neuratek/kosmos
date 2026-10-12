@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""Quick Look in Tracker (`docs/quicklook.html`, Q1): Space shows a file.
+"""Quick Look in Tracker (`docs/quicklook.html`, Q1-Q4): Space shows a file.
 
 A desktop, `/Home/Looks` holding a red picture 64 by 48 made here and a text
 file, Tracker opened on it, the picture chosen, and the keys:
@@ -15,7 +15,9 @@ file, Tracker opened on it, the picture chosen, and the keys:
     bringing the second into view (Q2);
   - Down once more: a WAV made here, shown as a song of 0:03 and playing as
     soon as it is shown - heard, in what QEMU's sound card wrote - and Up
-    stopping it (Q3);
+    the arrows stopping it (Q3);
+  - Down once more: an MP4 made here, shown as a film of 64 x 48 and 0:03,
+    its picture playing in the panel - dark, then light (Q4);
   - Escape: closed, and the red gone from the screen;
   - Space and Return: closed, and the picture opened in Photo.
 
@@ -37,10 +39,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import scratch                                             # noqa: E402
+from run_media import mjpeg_mp4                             # noqa: E402
 import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
 
-CHECKS = 12
+CHECKS = 14
 PIC_W, PIC_H = 64, 48
 RED = (220, 30, 40)
 
@@ -170,6 +173,11 @@ def main():
         session.put(b"A note, made up for the test.\n", "/Home/Looks/b-notes.txt")
         session.put(pdf_pages(work), "/Home/Looks/c-pages.pdf")
         session.put(tone(os.path.join(work, "tone.wav")), "/Home/Looks/d-tone.wav")
+        # A film of three seconds, a second dark, a second light, a second
+        # dark: MJPEG at 10 frames a second, no sound, made here.
+        mjpeg_mp4(os.path.join(work, "film.mp4"), [40] * 10 + [210] * 10 + [40] * 10, 64, 48, 10)
+        with open(os.path.join(work, "film.mp4"), "rb") as f:
+            session.put(f.read(), "/Home/Looks/e-film.mp4")
         session.put(LAUNCH.encode(), "/Temporary/launch.lua")
         time.sleep(1)
         mark = len(guest.seen)
@@ -296,19 +304,43 @@ def main():
               "the song did not play when shown: %r, loudest sample %d"
               % (sounding and sounding.group(0), said["loudest"]))
 
-        # Up: another file, and the song stops - no more of it said.
+        # Down: the film (Q4), and the song stops - no more of it said.
         mark = len(guest.seen)
-        guest.sendkey("up")
-        line(r"tracker: quick look c-pages.pdf", mark)
-        time.sleep(2)
+        guest.sendkey("down")
+        shown = line(r"tracker: quick look e-film.mp4 - (\w+), ([^;]*);", mark)
+        said["film"] = shown and shown.group(0)
+        check(shown and shown.group(1) == "film" and "64 x 48" in shown.group(2)
+              and "0:03" in shown.group(2),
+              "Down to the MP4 did not show it as a film of 64 x 48, 0:03: %r" % said["film"])
+
+        # Its picture, at the panel's middle, dark and then light as it
+        # plays: watched for four seconds.
+        at = re.findall(r"wm: window Tracker at (\d+),(\d+)", guest.seen)
+        middle = re.findall(r"quick look e-film.mp4 .*middle at (\d+),(\d+)", guest.seen)
+        seen_levels = set()
+        if at and middle:
+            mx, my = int(at[-1][0]) + int(middle[-1][0]), int(at[-1][1]) + int(middle[-1][1]) - 25
+            start = time.time()
+            while time.time() - start < 4:
+                _, _, px = R.parse_ppm(guest.screendump())
+                i = (my * width + mx) * 3
+                r, g, b = px[i], px[i + 1], px[i + 2]
+                if abs(r - g) < 12 and abs(g - b) < 12:
+                    seen_levels.add("dark" if r < 90 else "light" if r > 170 else "grey")
+                time.sleep(0.2)
+        said["levels"] = sorted(seen_levels)
+        if os.environ.get("QL_SHOT"):         # a picture of the film's view, to look at
+            open(os.environ["QL_SHOT"] + "-film.ppm", "wb").write(guest.screendump())
+        check("dark" in seen_levels and "light" in seen_levels,
+              "the film's picture did not play in the panel: %r" % said["levels"])
         guest._read_available()
         said["stopped"] = guest.seen[mark:].count("sounding d-tone.wav")
-        check(said["stopped"] <= 1, "the song went on playing after the arrows moved on: "
+        check(said["stopped"] == 0, "the song went on playing after the arrows moved on: "
               "%d more seconds of it" % said["stopped"])
 
         mark = len(guest.seen)
-        guest.sendkey("up")
-        guest.sendkey("up")
+        for _ in range(4):
+            guest.sendkey("up")
         line(r"tracker: quick look a-red.png", mark)
 
         # Escape: closed, and the red gone.
@@ -347,9 +379,11 @@ def main():
           "pixels on the screen %.1f s after - its own size, not enlarged; Down a text file as its facts; "
           "Up the picture again; a PDF of three pages shown as its pages, %d paper pixels and "
           "%d of ink, the wheel to the second, %d of ink; Escape closing it; Return opening "
-          "the picture in Photo; a WAV shown as a song, heard at %d, and stopped by Up)"
+          "the picture in Photo; a WAV shown as a song, heard at %d; an MP4 as a film, seen %s, "
+          "and the song stopped by moving on)"
           % (CHECKS, said.get("red", 0), said.get("red after", 0), said.get("paper", 0),
-             said.get("ink", 0), said.get("ink 2", 0), said.get("loudest", 0)))
+             said.get("ink", 0), said.get("ink 2", 0), said.get("loudest", 0),
+             " and ".join(said.get("levels", []))))
     return 0
 
 

@@ -17,12 +17,12 @@
 -- the file and has `pictures.lua` read it into pages and the C decoders turn
 -- it into a surface - the same way Photo shows one. A PDF's pages are the
 -- PDF Kit's (Q2), as the PDF viewer draws them; a song is `media.lua`'s
--- (Q3), as Music plays it, with its cover and names from the tag reader.
--- Films come next (Q4) through `video.lua`. Anything it cannot show is its
--- icon, large, and what is known about it.
+-- (Q3), as Music plays it, with its cover and names from the tag reader; a
+-- film is `video.lua`'s (Q4), as the Video Player plays it. Anything it
+-- cannot show is its icon, large, and what is known about it.
 --
--- **A song plays as soon as it is shown**, and stops when another file is
--- or the view is released. It needs feeding: whoever holds the view calls
+-- **A song or a film plays as soon as it is shown**, and stops when another
+-- file is or the view is released. It needs feeding: whoever holds the view calls
 -- `p:tick()` often while `p:sounding()` - Tracker from a ticker of its own,
 -- since the view sits inside a sheet.
 
@@ -38,6 +38,8 @@ local preview = {}
 
 -- What `media.lua` plays (Q3): the songs it has decoders for.
 local SONGS = { mp3 = true, wav = true }
+-- And the films it opens through `video.lua` (Q4).
+local FILMS = { mp4 = true, m4v = true, mov = true }
 local media = nil
 
 -- What a file shows as: "picture" when a decoder reads it, "pdf" for a
@@ -46,7 +48,10 @@ function preview.kind(path, attrs)
   if attrs and attrs.kind and attrs.kind ~= "file" then return "facts" end
   if pictures.decoder(path) then return "picture" end
   if types.kind_of(path, attrs) == "pdf" then return "pdf" end
-  if SONGS[(tostring(path):lower():match("%.(%w+)$") or "")] then return "song" end
+  local ext = tostring(path):lower():match("%.(%w+)$") or ""
+
+  if SONGS[ext] then return "song" end
+  if FILMS[ext] then return "film" end
   return "facts"
 end
 
@@ -90,6 +95,8 @@ function preview.new(spec)
   local named = "preview" .. lends .. ":page"
   local doc = nil               -- the open PDF: { pdf, n, w, h, scale, made, top }
   local song = nil              -- the song: { player, tags, cover, seconds }
+  local reel = nil              -- the film: { film, surface, x, y, w, h, seconds }
+  local let_film                -- the film given back; below, with the film
 
   -- The PDF given back - its pages unlent and freed, its file closed - and
   -- the song stopped.
@@ -98,6 +105,8 @@ function preview.new(spec)
       song.player:close()
       song = nil
     end
+
+    let_film()
 
     if not doc then return end
 
@@ -197,32 +206,130 @@ function preview.new(spec)
              seconds = player.info.seconds or 0 }
   end
 
-  -- Seconds heard of the song shown, or nil.
-  function v:song_position()
-    return song and song.player:position() or nil
-  end
+  --
+  -- **A film** (Q4): `media.open` hands it to `video.lua`, as the Video
+  -- Player opens one. It draws its frame into a surface of this view's, at
+  -- the size it fits the panel above its controls, and the surface is lent
+  -- to the painter as a PDF's page is - each tick a frame, each paint the
+  -- frame there.
+  --
+  local CONTROLS = 50
 
-  -- Whether there is a song to feed, and feeding it: true while it plays.
-  function v:sounding()
-    return song ~= nil and song.player.playing
-  end
+  local function open_film(path)
+    media = media or use("/Kosmos/Libraries/media.lua")
 
-  function v:tick()
-    if not song then return false end
+    local film, why = media.open(path)
 
-    local p = song.player
+    if not film then return nil, why end
 
-    p:tick()
+    local fx, fy, fw, fh = film:fit(v.w - 48, v.h - CONTROLS - 24)
 
-    if p.error then
-      print(("preview: %s stopped: %s"):format(tostring(self.path), tostring(p.error)))
-      p.playing = false
-    elseif p:finished() then
-      p:pause()
-      p:seek(0)
+    if fw <= 0 or fh <= 0 then
+      film:close()
+      return nil, "it has no picture"
     end
 
-    return p.playing
+    local ok, surface = pcall(gfx.surface, { w = fw, h = fh })
+
+    if not ok or not surface then
+      film:close()
+      return nil, "no memory for its picture"
+    end
+
+    surface:fill(0, 0, fw, fh, 0xff000000)
+    ui.lend_picture(named .. "film", surface)
+    film:play(0)
+
+    return { film = film, surface = surface, x = 24 + fx, y = 12 + fy, w = fw, h = fh,
+             seconds = film.duration or 0 }
+  end
+
+  let_film = function()
+    if not reel then return end
+
+    reel.film:close()
+    ui.lend_picture(named .. "film", nil)
+    reel.surface:free()
+    reel = nil
+  end
+
+  -- What plays, whichever it is: the song or the film, as one thing with a
+  -- clock and a button.
+  local function playing_now()
+    if song then
+      return { on = song.player.playing, at = song.player:position(), total = song.seconds,
+               play = function() song.player:play() end,
+               pause = function() song.player:pause() end,
+               seek = function(t) song.player:seek(t) end }
+    end
+
+    if reel then
+      local f = reel.film
+
+      return { on = f:playing(), at = f:position(), total = reel.seconds,
+               play = function() f:play() end, pause = function() f:pause() end,
+               seek = function(t) f:seek(t) end }
+    end
+  end
+
+  -- Seconds heard or seen of what is shown, or nil.
+  function v:song_position()
+    local p = playing_now()
+
+    return p and p.at or nil
+  end
+
+  -- Whether something is playing and wants feeding.
+  function v:sounding()
+    local p = playing_now()
+
+    return p ~= nil and p.on
+  end
+
+  -- Feeding it: true while it plays.
+  function v:tick()
+    if song then
+      local p = song.player
+
+      p:tick()
+
+      if p.error then
+        print(("preview: %s stopped: %s"):format(tostring(self.path), tostring(p.error)))
+        p.playing = false
+      elseif p:finished() then
+        p:pause()
+        p:seek(0)
+      end
+
+      return p.playing
+    end
+
+    if reel then
+      local f = reel.film
+
+      if not f:playing() then return false end
+
+      f:tick()
+
+      local at = f:position()
+
+      if reel.seconds > 0 and at >= reel.seconds then
+        f:pause()
+        f:seek(0)
+        return false
+      end
+
+      f:draw(reel.surface, at, 0, 0, reel.w, reel.h)
+      return true
+    end
+
+    return false
+  end
+
+  -- The play button and the bar: beside a song's cover, under a film.
+  local function controls_at(x, y, w)
+    return { button = { x = x, y = y, d = 34 },
+             bar = { x = x + 34 + 12 + 40, y = y + 17, w = math.max(40, w - 34 - 12 - 80) } }
   end
 
   -- Where things are in a song's view, for the drawing and the pointer.
@@ -232,11 +339,15 @@ function preview.new(spec)
     local tx = x + cover + 26
     local tw = math.max(120, math.min(360, w - tx - 24))
     local y = (h - cover) // 2
+    local L = controls_at(tx, y + cover // 2 + 6, tw)
 
-    return { cover = cover, x = x, y = y, tx = tx, tw = tw,
-             button = { x = tx, y = y + cover // 2 + 6, d = 34 },
-             bar = { x = tx + 34 + 12 + 40, y = y + cover // 2 + 6 + 17,
-                     w = math.max(40, tw - 34 - 12 - 80) } }
+    L.cover, L.x, L.y, L.tx, L.tw = cover, x, y, tx, tw
+    return L
+  end
+
+  -- And in a film's: the controls along the bottom.
+  local function film_layout(w, h)
+    return controls_at(24, h - CONTROLS + 6, w - 48)
   end
 
   local function clock_of(seconds)
@@ -244,24 +355,46 @@ function preview.new(spec)
     return ("%d:%02d"):format(seconds // 60, seconds % 60)
   end
 
+  -- The button and the bar, drawn.
+  local function draw_controls(g, L, p)
+    local b, bar = L.button, L.bar
+
+    g:fill_round(b.x, b.y, b.d, b.d, theme.text, b.d // 2)
+
+    if p.on then
+      g:fill(b.x + 11, b.y + 10, 4, 14, theme.window)
+      g:fill(b.x + 19, b.y + 10, 4, 14, theme.window)
+    else
+      g:triangle(b.x + 13, b.y + 9, b.x + 13, b.y + 25, b.x + 25, b.y + 17, theme.window)
+    end
+
+    local at = math.min(p.total, p.at)
+    local done = p.total > 0 and math.floor(bar.w * at / p.total) or 0
+
+    g:text(bar.x - 40, bar.y - gfx.font.h // 2, clock_of(at), theme.text_dim)
+    g:fill_round(bar.x, bar.y - 2, bar.w, 4, theme.line_soft, 2)
+    g:fill_round(bar.x, bar.y - 2, math.max(4, done), 4, theme.text, 2)
+    g:text(bar.x + bar.w + 8, bar.y - gfx.font.h // 2, clock_of(p.total), theme.text_dim)
+  end
+
   -- The play button pauses and plays; the bar takes you where you press.
   function v:mouse(action, x, y)
-    if action ~= "press" or self.kind ~= "song" or not song then return false end
+    local p = playing_now()
 
-    local L = song_layout(self.w, self.h)
+    if action ~= "press" or not p then return false end
+
+    local L = song and song_layout(self.w, self.h) or film_layout(self.w, self.h)
     local b, bar = L.button, L.bar
 
     if x >= b.x and x < b.x + b.d and y >= b.y and y < b.y + b.d then
-      if song.player.playing then song.player:pause() else song.player:play() end
-      print(("preview: %s %s"):format(song.player.playing and "playing" or "paused",
-                                      tostring(self.path)))
-      if self.on_sound then self.on_sound(song.player.playing) end
+      if p.on then p.pause() else p.play() end
+      print(("preview: %s %s"):format(p.on and "paused" or "playing", tostring(self.path)))
+      if self.on_sound then self.on_sound(not p.on) end
       return true
     end
 
-    if song.seconds > 0 and x >= bar.x and x < bar.x + bar.w
-       and math.abs(y - bar.y) <= 8 then
-      song.player:seek(song.seconds * (x - bar.x) / bar.w)
+    if p.total > 0 and x >= bar.x and x < bar.x + bar.w and math.abs(y - bar.y) <= 8 then
+      p.seek(p.total * (x - bar.x) / bar.w)
       return true
     end
 
@@ -318,6 +451,20 @@ function preview.new(spec)
 
       if song then
         said[#said + 1] = clock_of(song.seconds)
+      else
+        self.kind = "facts"
+        said[#said + 1] = "it would not play: " .. tostring(why)
+      end
+    elseif self.kind == "film" then
+      picture.hidden = true
+
+      local why
+
+      reel, why = open_film(path)
+
+      if reel then
+        said[#said + 1] = ("%d x %d"):format(reel.film.width or 0, reel.film.height or 0)
+        said[#said + 1] = clock_of(reel.seconds)
       else
         self.kind = "facts"
         said[#said + 1] = "it would not play: " .. tostring(why)
@@ -391,25 +538,15 @@ function preview.new(spec)
              theme.text, nil, "heading")
       g:text(L.tx, L.y + L.cover // 2 - gfx.font.h - 6, ui.fitted(who, L.tw), theme.text_dim)
 
-      local b, bar = L.button, L.bar
-      local r = b.d // 2
+      draw_controls(g, L, playing_now())
+      return
+    end
 
-      g:fill_round(b.x, b.y, b.d, b.d, theme.text, r)
-
-      if song.player.playing then
-        g:fill(b.x + 11, b.y + 10, 4, 14, theme.window)
-        g:fill(b.x + 19, b.y + 10, 4, 14, theme.window)
-      else
-        g:triangle(b.x + 13, b.y + 9, b.x + 13, b.y + 25, b.x + 25, b.y + 17, theme.window)
-      end
-
-      local at = math.min(song.seconds, song.player:position())
-      local done = song.seconds > 0 and (bar.w * at // song.seconds) or 0
-
-      g:text(bar.x - 40, bar.y - gfx.font.h // 2, clock_of(at), theme.text_dim)
-      g:fill_round(bar.x, bar.y - 2, bar.w, 4, theme.line_soft, 2)
-      g:fill_round(bar.x, bar.y - 2, math.max(4, done), 4, theme.text, 2)
-      g:text(bar.x + bar.w + 8, bar.y - gfx.font.h // 2, clock_of(song.seconds), theme.text_dim)
+    -- A film: its frame, fitted above its controls.
+    if self.kind == "film" and reel then
+      g:fill_round(reel.x - 1, reel.y - 1, reel.w + 2, reel.h + 2, 0xff000000, 4)
+      g:lent(reel.x, reel.y, reel.w, reel.h, named .. "film", reel.w, reel.h)
+      draw_controls(g, film_layout(self.w, self.h), playing_now())
       return
     end
 
