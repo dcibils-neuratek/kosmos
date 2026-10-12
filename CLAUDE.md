@@ -973,8 +973,11 @@ arm tests" - and "we need to be clever about what to test and the platforms
 we need to test, right now we are working on intel so we might focus on
 that". So `make test` runs the x86-64 suites and the host's and leaves every
 `arm-` suite out; `make test ARM=1` puts them back, and an `arm-` suite named
-in `ONLY=` still runs. The AArch64 build still has to compile. When Diego says
-to resume ARM, this paragraph goes.
+in `ONLY=` still runs. The AArch64 build still has to compile. **The one
+exception is Sandboxes'** (`docs/virtualization.md`): Diego chose ARM in QEMU
+first on 12 October, because QEMU emulates EL2 and not VT-x, so its suites -
+`arm-sandbox-*` - run in every gate. When Diego says to resume ARM, this
+paragraph goes.
 
 **One thing at a time.** `docs/state.md` is where the work is; `docs/roadmap.md`
 is what is built and what is wanted. Do not pull something forward off the

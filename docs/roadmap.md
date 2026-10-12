@@ -9095,6 +9095,10 @@ sandbox to tomorrows queue after we finish all thats in the current queue".
 The design's questions (`docs/virtualization.md`: ARM in QEMU or x86 on the
 M700 first, the first guest, 9p or virtio-fs) and the mockup's three are
 asked when it begins.
+**Begun 12 October**, with Diego's answers (`docs/virtualization.md`,
+*Decided*): ARM in QEMU first, Alpine to a serial prompt the first goal ("the
+initial goal for sandboxes is to run a linux distro like alpine"), 9p for
+folders, images as packages.
 This and the Android card below are the same work.
 
 **Android applications, in a virtual machine** - Diego, 10 October 2026:

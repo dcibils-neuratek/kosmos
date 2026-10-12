@@ -137,7 +137,28 @@ decides more than anything else.
 **Size, honestly**: V1 to V3 several weeks of focused work; V4 and V5 about
 as much again; Android a project of its own on top.
 
-## For Diego to decide
+## Decided, 12 October 2026
+
+Diego, as Sandboxes began: "the initial goal for sandboxes is to run a linux
+distro like alpine", and to the questions below -
+
+1. **ARM in QEMU first.** V1 to V3 are built on AArch64 at EL2 under QEMU's
+   `virt` board with `virtualization=on`, so each step has a suite in the
+   gate; VT-x on the M700 follows with the design proven. The ARM suites
+   stay off as he said on 8 October, **except the sandbox's own**, which run
+   in every gate (`CLAUDE.md`, *x86-64 only, for now*).
+2. **Alpine Linux** is the first guest, to its prompt on a serial console.
+3. **9p first** for a shared folder, virtio-fs later.
+4. **Images come as packages**: the package server offers them and `pkg` or
+   the Packages window installs them into `/Home/Sandboxes`.
+5. **Now** - the top of the queue.
+
+The mockup's own three (`docs/sandboxes.html`) are settled by the same
+answers where they overlap - images as packages - and a sandbox's screen is a
+console first, as recommended; the window's shape is asked again at V5, when
+there is a window.
+
+## For Diego to decide, as it was asked
 
 1. **x86 on the M700 first, or ARM in QEMU first?** Recommended: **ARM in
    QEMU** for V1-V3, because every step can be held by a suite in the gate
