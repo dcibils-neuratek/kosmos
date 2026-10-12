@@ -1,0 +1,139 @@
+<!doctype html>
+<!--
+  Automations, and what it stands on: the application on top, the background
+  program that runs automations, the verbs every step is, the kit's controls
+  published by name, and what already exists beneath. A trigger's path drawn
+  through it (T), and a press (P). Drawn on 12 October 2026, before any of it
+  is built; `docs/automations.md` is the argument and `docs/automations.html`
+  the window. Rendered to docs/automations-architecture.png by headless
+  Chrome at twice its size, as docs/netmonitor-architecture.png is.
+-->
+<!--
+  Network Monitor, and what it stands on: the application on top, the kit's
+  new graph, the network server's new counters and request, the kernel's
+  SYS_SENDER as Notifications made it, and the driver as it is. The busiest path - a frame - drawn
+  through it (F), and the window's once-a-pace request (W). Drawn on 12
+  October 2026, before any of it is built; `docs/netmonitor.md` is the
+  argument and `docs/netmonitor.html` the window.
+
+  Rendered to docs/netmonitor-architecture.png by headless Chrome at twice
+  its size, as docs/music-architecture.png is.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Automations architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Automations - what it stands on</h1>
+<p class="sub">The window only shows and edits automations. A background program, autod, runs them on their triggers, each step a verb from a library any program can use. A step that presses a button reaches the application through the UI kit, which publishes every control by name. That is the larger new piece, and it makes every application scriptable.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications and programs</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">T</span><span>a trigger fires</span><span class="f">P</span><span>a step presses a button</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications and programs</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Automations</b><p>the list, the editor, the controls picker, the history; reads and writes <code>/Home/Automations</code></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>autod</b><p>started by the desktop as <code>maild</code> is; waits on every trigger <span class="f">T1</span>, runs the steps <span class="f">T2</span>, writes the history</p></div>
+        <div class="box"><b>Mail, Music, Tracker, any app</b><p>drawn with the kit, so scriptable without a line written for it <span class="f">P2</span></p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in each process)</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>automate.lua</b><p>the verbs: open, press, type, read, mail, check a page, copy, move, notify, wait, run <span class="f">T2</span></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>ui.lua: controls by name</b><p>every button, menu item, list and field at <code>/Running/&lt;app&gt;/controls</code>; a press runs the click's own handler <span class="f">P1</span></p></div>
+        <div class="box new"><span class="tag">MOVED</span><b>mailout.lua</b><p>a message into the Outbox and <code>maild</code> asked - out of Mail's compose window, which uses it too</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr; margin-top:10px">
+        <div class="box"><b>http.lua</b><p>a page fetched, for "check a page"</p></div>
+        <div class="box"><b>files.lua</b><p><code>copy</code>, <code>move</code>, listings for a folder trigger</p></div>
+        <div class="box"><b>notify.lua</b><p>a banner</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>the window manager</b><p><code>launch</code>, as <code>open</code> asks it; <code>/Running</code> names</p></div>
+        <div class="box"><b>maild</b><p>sends the Outbox; gains "tell me what arrives", for a mail trigger</p></div>
+        <div class="box"><b>diskfs, drives, the network</b><p>files, sticks appearing in <code>/Drives</code>, shares</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box"><b>IPC and capabilities</b><p>a press is one message to the application's name, and only a holder of that name may send it, given once by the person</p></div>
+        <div class="box"><b>the scheduler's clock</b><p>autod asleep until the nearest time</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>T - a trigger fires</h3><ol>
+      <li><span class="f">T1</span> autod wakes: the time came, a listing it watches changed, a stick appeared in <code>/Drives</code>, or maild said a mail arrived.</li>
+      <li><span class="f">T2</span> each step in turn, a call into <code>automate.lua</code>; what a step found passed to the next.</li>
+      <li><span class="f">T3</span> a line of history a step, and a banner if it failed.</li></ol></div>
+    <div class="card"><h3>P - a step presses a button</h3><ol>
+      <li><span class="f">P1</span> <code>press</code> on <code>/Running/mail/controls/Get Mail</code>: one message, which only a holder of Mail's name may send.</li>
+      <li><span class="f">P2</span> Mail's kit runs the button's own click handler, so the press does exactly what a click does.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3><table>
+      <tr><td>An automation</td><td>a file of its trigger and steps; nothing executable</td></tr>
+      <tr><td>A press, a read, a write</td><td>a message to the application's name</td></tr>
+      <tr><td>A mail's arrival</td><td>told by maild; folders and drives looked at</td></tr></table></div>
+    <div class="card"><h3>Who else uses what is new</h3><table>
+      <tr><td>Controls by name</td><td>the IDE, a Terminal, the suites, an agent driving Kosmos</td></tr>
+      <tr><td>automate.lua</td><td>any program; Shortcuts, a key that runs one</td></tr>
+      <tr><td>mailout.lua</td><td>Mail, and anything that sends a mail</td></tr></table></div>
+  </div>
+</div>
+</body>
+</html>

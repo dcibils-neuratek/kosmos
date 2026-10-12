@@ -399,6 +399,26 @@ bytes, the time they took, the cache's hits). Designed before it is built.
 disk is perfect", and each drive drawn as what it is - an SSD, a USB stick,
 a share, memory - not the network's port). Built after Network Monitor.
 
+**Automations, an app** - Diego, 12 October 2026: "It's a new app that
+allows us to automate certain tasks in Kosmos, like open an app, send an
+email, check a website, copy a file. So let's design an app called
+Automations, which is intended for a user like me to automate certain tasks
+in the OS. I'm basing my premise that every app is scriptable, meaning we
+can press a button, we can click an item, we can do whatever we want right
+now with the UI kit, right? From a script." **The premise is half true
+today**: every `ui.window` publishes itself at `/Running/<name>` - title,
+place and size, read and written like files (`docs/beos.md`, "a scripting
+architecture") - and only the Deskbar and Music publish more; a control
+cannot be pressed, nor a menu item chosen nor a row clicked, from a script.
+So the first piece is the kit's: **every control published by name**, as
+BeOS's hooks were, so that any application is scriptable without its author
+writing anything; then the system's own verbs (open, send mail, fetch, copy,
+notify) beside them; then the app that strings them together, on a trigger.
+Designed before it is built: feature set, mockup, architecture, diagram.
+**Drawn the same day**, for Diego to agree: `docs/automations.md`,
+`docs/automations.html`, `docs/automations-architecture.png` - steps A1
+(every control published by name, the kit's) to A5 (consent).
+
 **Network Monitor, an app** - Diego, 12 October 2026: "i realizsed we need
 network monitor app as well to see network input and output". What goes in
 and out, now and over the last minute, as Monitor shows the processors: the

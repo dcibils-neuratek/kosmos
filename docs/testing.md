@@ -24030,3 +24030,11 @@ in four. On the roadmap.
 The gate: 71 of 72 - `x86-mdns` at 143 s, its fourth gate running at that
 figure since 0.11.168 moved the meters into the kit; it passes alone. Four
 in a row is a pattern rather than load, and it is on the roadmap.
+
+**On the M700, 0.11.171 netbooted with `opt/kosmos/speed=performance`**, the
+same F12 render of `still-life.scene` (640 x 360, 256 samples, 7.7 s), its
+busiest two seconds read by a program over Telnet: **every core 67-68% busy
+and at 3.60 GHz**, the package at 68 C and 38.9 W - core 3 working with the
+rest, and the speed held where `balanced` had settled at 3.41 GHz at 81 C
+and 45 W. So the settling was the speed leaning, not heat and not the power
+limit: 65 W sustained and 100 C were never near.
