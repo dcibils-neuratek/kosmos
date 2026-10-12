@@ -178,14 +178,69 @@ return automation {
 
 ## Publishing every control
 
-The kit names a control from what a person sees:
+### How a control is named
 
+Diego, 12 October 2026: "How are ui kit elements addressed in Lua
+automations?" **By what a person sees, never by where it is on the
+screen**, in three levels:
+
+**1. The application, by its name in `/Running`.** A window registers under
+its title, and a second window of the same application under the same name
+and a number, as `/Running` already does (`wm`, `wm2`):
+
+```lua
+local mail  = auto.app("Mail")                      -- the first Mail window
+local notes = auto.app("Text Editor", { file = "Notes.md" })  -- one of several
+auto.windows("Text Editor")                         -- every one, with its title
 ```
-/Running/mail/controls/Send                 a button, by its label
-/Running/mail/controls/menu/File/Save       a menu item, by its path
-/Running/mail/controls/list/Inbox/selected  a list's selected row
-/Running/mail/controls/field/To             a field, by its label
+
+**2. A control, by its kind and its label**, as a path under the window:
+
+| Control | Its address | What it can be asked |
+|---|---|---|
+| a button | `button/Send` - its words | `press` |
+| an icon button | `button/more` - its icon's name, or the name the application gave it | `press` |
+| a menu item | `menu/Message/Reply`; the dots' menu is `menu/more/Bytes a second` | `press` |
+| a field | `field/To` - the label beside it, or its placeholder | `read`, `type` |
+| a list | `list/Messages`; a row `list/Messages/3`, or the row whose text matches | `read`, `choose`, `press` (a double-click) |
+| a tab, a segment | `tab/Rendered`, `segment/Markdown` | `choose`, `read` |
+| a switch, a checkbox | `switch/Wi-Fi`, `checkbox/Remember` | `read`, `set` |
+| a dropdown | `dropdown/Theme`, chosen by an item's words | `read`, `choose` |
+| a slider | `slider/Volume`, a number | `read`, `set` |
+
+**3. When two controls would share an address**, the card or group around
+them names them apart - `Network/field/Address` and `Proxy/field/Address`,
+by their cards' headings - and only if that is still not enough, the order
+they are read in: `button/OK#2`. **An application may name a control
+itself** (`name = "Get Mail"` in its spec), and that name wins over its
+words: it stays the same when the words change, which an address an
+automation depends on should.
+
+**In a script, the label alone is enough when it is unambiguous**:
+
+```lua
+mail:press("Send")                       -- the one control labelled Send
+mail:press("button/Send")                -- the same, said exactly
+mail:menu("Message", "Reply")            -- menu/Message/Reply
+mail:type("To", "dcibils@gmail.com")     -- field/To
+mail:choose("Messages", { from = "Ana" })  -- the first row whose From is Ana
+local rows = mail:read("Messages")       -- the rows, as a table of tables
 ```
+
+and a label that names two controls is refused with both addresses, so the
+script is told how to say which rather than pressing one at random.
+
+**Finding the addresses.** `mail:controls()` lists them; `ls
+/Running/mail/controls` at the prompt does the same; and the window's
+controls picker shows them by window part (`automations.html`). A later
+step could let a person point at any control - a key held while hovering -
+and see its address, as a browser's inspector does.
+
+**Timing.** A press is answered when the control's own handler has run, so
+the next line sees its result. A control not there yet - a window still
+opening, a dialog not shown - is waited for up to a few seconds
+(`mail:wait("button/Send")` says how long), and a disabled control refuses
+with "disabled" rather than doing nothing.
 
 Each answers what it can be asked: `read` says what it shows; `write`
 types into a field or chooses a row; `press` - a new request on the same

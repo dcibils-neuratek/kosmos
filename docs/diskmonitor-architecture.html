@@ -1,0 +1,133 @@
+<!doctype html>
+<!--
+  Disk Monitor, and what it stands on: the application on top, the kit's
+  meters as Network Monitor made them, the four servers behind the drives
+  each answering one door - .device and .programs - and the kernel's
+  SYS_SENDER. A request's path drawn through it (R), and the window's
+  once-a-pace reads (W). Drawn on 12 October 2026, before any of it is
+  built; docs/diskmonitor.md is the argument and docs/diskmonitor.html the
+  window. Rendered to docs/diskmonitor-architecture.png by headless Chrome
+  at twice its size.
+-->
+<!--
+  Network Monitor, and what it stands on: the application on top, the kit's
+  new graph, the network server's new counters and request, the kernel's
+  SYS_SENDER as Notifications made it, and the driver as it is. The busiest path - a frame - drawn
+  through it (F), and the window's once-a-pace request (W). Drawn on 12
+  October 2026, before any of it is built; `docs/netmonitor.md` is the
+  argument and `docs/netmonitor.html` the window.
+
+  Rendered to docs/netmonitor-architecture.png by headless Chrome at twice
+  its size, as docs/music-architecture.png is.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Disk Monitor architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Disk Monitor - what it stands on</h1>
+<p class="sub">It counts nothing itself. Each server that holds a drive counts what it reads and writes, in total and for each program that asks, and answers one door under the drive's path: <code>.device</code> and <code>.programs</code>. The graphs and the card are the kit's, as Network Monitor made them. Disk Monitor reads each drive once a pace and draws.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>application</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">R</span><span>a read or a write</span><span class="f">W</span><span>the window, once a pace</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Application</h2>
+      <div class="row" style="grid-template-columns:1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Disk Monitor - <code>diskmon.lua</code></b><p>every drive down the left with a small graph; the chosen one's card, the minute, how long a request takes, the cache, the totals and the programs; the pace and bytes or bits. Reads <code>.device</code> and <code>.programs</code> <span class="f">W1</span>, takes the differences <span class="f">W2</span>, draws <span class="f">W3</span>.</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in its process)</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>ui.history, ui.meter_card</b><p>the minute and the card, with <code>io_in</code> and <code>io_out</code> - Network Monitor's N2</p></div>
+        <div class="box"><b>drivelist.lua, netshares.lua</b><p>the drives: the machine's disk, sticks and their volumes, shares - as Tracker's Drives has them</p></div>
+        <div class="box"><b>sys.processes()</b><p>a program's name from its id</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers - one door each: <code>.device</code> and <code>.programs</code></h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr 1fr">
+        <div class="box"><span class="tag">+ .programs</span><b>diskfs</b><p><code>/Home</code>; <code>.device</code> as it is <span class="f">R1</span></p></div>
+        <div class="box"><span class="tag">+ .programs</span><b>smbfs</b><p>a share; <code>.device</code> as it is</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>drives</b><p>a stick's volumes: both doors, in <code>drivesproto.h</code></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>ramfs</b><p><code>/Temporary</code>: both doors, in <code>ramproto.h</code></p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box"><b>SYS_SENDER</b><p>who sent the request a server is answering - a program's row found by it <span class="f">R2</span></p></div>
+        <div class="box"><b>IPC, regions</b><p>a request's bytes in its region, as now</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>R - a read or a write</h3><ol>
+      <li><span class="f">R1</span> the server adds the bytes and the time taken to the drive's totals, as <code>diskfs</code> does for Disk Benchmark.</li>
+      <li><span class="f">R2</span> and to its caller's row, by the process id it learned when that program first asked, with the path - nothing allocated per request.</li></ol></div>
+    <div class="card"><h3>W - the window, once a pace</h3><ol>
+      <li><span class="f">W1</span> <code>.device</code> for each drive in the list, <code>.programs</code> for the one shown.</li>
+      <li><span class="f">W2</span> rates as the difference between two readings; time a request as time over requests.</li>
+      <li><span class="f">W3</span> a column on each graph, the programs busiest first, a paint.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3><table>
+      <tr><td>The bytes read and written</td><td>never near the window: only counts</td></tr>
+      <tr><td>A drive's counts</td><td>a reply to one read, in the server's declared shape</td></tr>
+      <tr><td>The programs</td><td>a page at a time, as a listing</td></tr></table></div>
+    <div class="card"><h3>Who else uses what is new</h3><table>
+      <tr><td><code>.device</code> on every drive</td><td>Disk Benchmark, Tracker's rate under a share, <code>diskstat</code></td></tr>
+      <tr><td><code>.programs</code></td><td>Processes: what a program is reading and writing</td></tr></table></div>
+  </div>
+</div>
+</body>
+</html>

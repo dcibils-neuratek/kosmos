@@ -397,7 +397,12 @@ server's counters, which partly exist (`DISK_OP_DEVICE`: reads, writes,
 bytes, the time they took, the cache's hits). Designed before it is built.
 **Drawn and agreed the same day** (`docs/diskmonitor.html`; Diego: "mockup for
 disk is perfect", and each drive drawn as what it is - an SSD, a USB stick,
-a share, memory - not the network's port). Built after Network Monitor.
+a share, memory - not the network's port). Built after Network Monitor. **Its feature set,
+architecture and diagram written** after Network Monitor was built
+(`docs/diskmonitor.md`, `docs/diskmonitor-architecture.png`): one door for
+every drive - `.device` and `.programs` under its path - answered by
+`diskfs` and `smbfs` as now and by the drive server and `ramfs` new; steps
+D1 (every drive counts), D2 (which programs, `diskstat`), D3 (the window).
 
 **Automations, an app** - Diego, 12 October 2026: "It's a new app that
 allows us to automate certain tasks in Kosmos, like open an app, send an
