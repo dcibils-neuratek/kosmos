@@ -354,6 +354,16 @@ chosen from elsewhere copied into `/Home/Wallpapers` so the folder is the
 whole list. Thumbnails made once at the size drawn; the row a kit piece,
 `ui.carousel`.
 
+**Network Monitor, an app** - Diego, 12 October 2026: "i realizsed we need
+network monitor app as well to see network input and output". What goes in
+and out, now and over the last minute, as Monitor shows the processors: the
+rates in and out, a graph of each, totals since the machine started,
+packets and what was dropped, and which programs' connections the traffic
+is. Nothing counts it today - the network server reports addresses and no
+bytes - so the server counts, per connection and in total, and answers a
+new request in a declared shape. Designed before it is built: its feature
+set, mockup, architecture and diagram.
+
 **Nebula's own memory in Processes** - Diego, 10 October 2026: "why does
 the kernel does not show any memory consumption in processes?". Its row is
 made up by Processes, and Nebula reports only the machine's total and free

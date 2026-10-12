@@ -372,13 +372,26 @@ end
 -- The graphs: a core each, or the machine's when there are too many.
 --------------------------------------------------------------------------
 
+--
+-- `words` is a list, longest first: the first that fits beside the name is
+-- drawn, and the name always wins. On the M700, four graphs across, "3.41
+-- GHz · 100%" ran over "Core 1" - measured in the default face, drawn in
+-- the interface's - which QEMU's processor, saying no speed, never showed.
+--
 local function draw_graph(g, px, py, pw, ph, name, words, h)
   g:text(px + 2, py + (GRAPH_TOP - 4 - gfx.height("label")) // 2, name,
          theme.text, theme.window, "label")
 
-  if words then
-    g:text(px + pw - 2 - gfx.measure(words), py + (GRAPH_TOP - 4 - gfx.height()) // 2,
-           words, theme.text_dim, theme.window, "ui")
+  local room = pw - 4 - gfx.measure(name, "label") - 10
+
+  for _, w in ipairs(words or {}) do
+    local ww = gfx.measure(w, "ui")
+
+    if ww <= room then
+      g:text(px + pw - 2 - ww, py + (GRAPH_TOP - 4 - gfx.height("ui")) // 2,
+             w, theme.text_dim, theme.window, "ui")
+      break
+    end
   end
 
   local top = py + GRAPH_TOP
@@ -447,17 +460,23 @@ function body:draw(g)
       local row = (c - 1) // M.across
       local px = x + col * (M.graph_w + GAP_X)
       local py = M.graphs + row * (GRAPH_TOP + M.graph_h + GAP_Y)
-      local ghz = speed_text(c)
+      local mhz = speeds and speeds[c]
       local pct = ("%d%%"):format(now[c][1] + now[c][2])
+      local words = mhz and {
+        ("%.2f GHz \u{b7} %s"):format(mhz / 1000, pct),
+        ("%.1f GHz \u{b7} %s"):format(mhz / 1000, pct),
+        ("%.1f GHz"):format(mhz / 1000),
+        pct,
+      } or { pct }
 
-      draw_graph(g, px, py, M.graph_w, M.graph_h, "Core " .. c,
-                 ghz and (ghz .. " \u{b7} " .. pct) or pct, history[c])
+      draw_graph(g, px, py, M.graph_w, M.graph_h, "Core " .. c, words, history[c])
     end
   else
     local ghz = machine_speed()
 
     draw_graph(g, x, M.graphs, M.inner, M.graph_h, "Every core",
-               (ghz and ("%.2f GHz \u{b7} "):format(ghz) or "") .. busy_now() .. "%", all_history)
+               { (ghz and ("%.2f GHz \u{b7} "):format(ghz) or "") .. busy_now() .. "%",
+                 busy_now() .. "%" }, all_history)
   end
 
   g:text(x + 3, M.foot, pace.foot, theme.text_dim, theme.window, "ui")

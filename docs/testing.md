@@ -23778,3 +23778,11 @@ enough. The ratio is taken first, in floating point. `test_pulse` 10 -> 11,
 with the M700's own numbers. **Control**: the old order - -196 MHz.
 
 Next, the same machine booted with `opt/kosmos/speed=balanced`.
+
+**And with it on** - the M700 booted with `opt/kosmos/speed=balanced`,
+0.11.163: idle, **every core about 1.3 GHz** (against 1.3 to 3.4 before -
+the processor letting an idle core down); under eight `spin`s, **every core
+at 3,709 MHz**, the i7-6700's all-core turbo, against 3,410 - 8.8% more on
+every core, with nothing else changed. `clocks` says "the processor chooses
+its own speed, leaning 128 of 255". What it is worth in a render is
+Cafesa3D's to say, against 21.7 million rays a second before.
