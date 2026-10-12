@@ -2,51 +2,50 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-12, early morning (0.11.157; Doom and Quake heard; Music designed)
+Last updated: 2026-10-12, early morning (0.11.162; a night of the queue)
 
 ---
 
-## 11 October, evening into the night: Quick Look, the processor's speed, Monitor, game sound
+## 11-12 October, evening through the night: a lot built while Diego slept
 
-**Pushed: up to 0.11.155** (2ef3cd6e). **On `main`, not pushed: 0.11.156
-(Monitor), 0.11.157 (Doom and Quake sound).**
+**Pushed: up to 0.11.155** (2ef3cd6e). **On `main`, not pushed:
+0.11.156-0.11.162**, each with its suites and the whole gate where shared
+pieces changed. Diego went to sleep with the M700's monitor off, so nothing
+was restarted there.
 
-- **SMB sharing, N12**: Finder on the Mac mounts the M700's shares (pushed
-  earlier, 0.11.148).
-- **Quick Look done** (0.11.150-0.11.154, 18.543-18.547): pictures, facts,
-  a PDF as its pages, songs and films playing as shown. Diego on the M700:
-  "quick view works fine" (through 0.11.152; songs and films not yet seen
-  there). Found: `fs.read_into` did nothing on ramfs.
-- **Preferences scrollbar** for the T14, **desktop names white again**
-  (glyph edges on a transparent surface; 0.11.151). Diego: "all other fixes
-  are in!".
-- **The processor's speed, step 1** (0.11.155, 18.548): each core reads its
-  own APERF and MPERF; `clocks` prints MHz. **Waiting on the M700**: restart
-  it (monitor on; Diego went to sleep with it off) onto the netboot already
-  laid out (0.11.155, `build/netboot`), run `clocks` over Telnet, then send
-  the apps and `/Home/Developer` again (`make ARCH=x86_64 apps`, the send
-  script's way - the protocol stamp now covers `kernel/syscall.h`).
-  **Step 2** after that: HWP on both machines, the speed changing as needed,
-  a Power setting (roadmap). Diego: "what about the need to change clock on
-  cpus as needed".
-- **Monitor refreshed** (0.11.156, 18.549) to `docs/monitor.html`; Diego to
-  look at it on the M700.
-- **Doom and Quake heard** (0.11.157, 18.550): sound effects through the
-  audio ring from C, one shared `audio_ring_feed`. Music is a later step.
-- **Mockups agreed**: Monitor (and sixteen cores), Music redesigned
-  (`docs/music.html`). **Music's feature set and architecture written**
-  (`docs/music.md`, `music-architecture.png`): a FLAC Kit, a library kit,
-  and the equaliser and the meter per stream in the audio server. On the
-  board, waiting for Diego before any code.
-- **Asked of Diego, unanswered**: queue T14 Wi-Fi (AX201)? Is 0.11.149 the
-  T14's stable? Does the M700's Passwords have all its entries? An Apple
-  silicon Mac mini as a target (offered to write it up).
-
-**Next**: the M700 in the morning (clocks, apps), push 0.11.156-157 on his
-word, step 2 of the processor's speed; then the queue - Music redesigned
-(its feature set, architecture and diagram first), Tracker list view,
-Wallpapers, Shortcuts, Maps.
-
+- **Built and pushed earlier**: Quick Look Q1-Q2 (0.11.150-152; Diego on the
+  M700: "quick view works fine"), Preferences' scrollbar and the desktop's
+  names (0.11.151; "all other fixes are in!"), each core's measured speed
+  and `clocks` (0.11.155), the protocol stamp covering `kernel/syscall.h`.
+- **Built tonight, local**:
+  - Quick Look Q3 songs and Q4 films (0.11.153-154) - Quick Look done;
+  - Monitor refreshed to `docs/monitor.html` (0.11.156);
+  - Doom and Quake heard, one shared `audio_ring_feed` (0.11.157);
+  - Shortcuts K4, Print as a cheat sheet (0.11.158) - Shortcuts done;
+  - Maps' borders by level, Mail's Always from This Sender (0.11.159);
+  - Mail's status bar (0.11.160);
+  - Nebula's own memory counted and shown in Processes (0.11.161);
+  - the processor choosing its own speed, behind `opt/kosmos/speed`
+    (0.11.162, if its gate passes).
+- **Drawn or designed, waiting for Diego**: Music's feature set,
+  architecture and diagram (`docs/music.md`); Tracker's list view
+  (`docs/tracker-list.html`); Wallpapers (`docs/wallpapers.html`).
+- **Waiting for Diego's choice**: the ended background program - the cause
+  found (the shell sits in its call to the desktop's runner), two fixes on
+  the roadmap; `docs/cheatsheet.html` (the desktop icon) to go or stay; Wi-Fi
+  for the T14; 0.11.149 as the T14's stable; the M700's Passwords entries.
+- **The M700 in the morning**: push 0.11.156+ on his word; `make netboot
+  STICK=build/x86_64/kosmos-usb-0.11.83-development.img` (already laid out
+  for 0.11.155 - redo for the newest); restart with the monitor on; `clocks`
+  over Telnet for the "before"; send the apps and `/Home/Developer` again
+  (stamp changed); then add `opt/kosmos/speed=balanced` to
+  `build/netboot/boot/kosmos.cmdline` for the "after", Cafesa3D's render
+  both times.
+- **Found and fixed on the way**: `fs.read_into` on ramfs; the console's
+  spill ring 4 KB -> 64 KB; the SNES, Doom and Quake suites hearing x86;
+  `x86-dock` assuming where Preferences opens; Mail at Lua's 200-local limit.
+- **Flakes seen**: `x86-mdns` (known), and a guest not reaching Telnet in
+  120 s under the whole gate (roadmap).
 
 ## 10 October, morning to midday: the window server, the launcher, focus
 

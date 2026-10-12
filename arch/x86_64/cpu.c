@@ -297,6 +297,54 @@ static uint64_t read_msr(uint32_t msr)
     return ((uint64_t)hi << 32) | lo;
 }
 
+/*
+ * HWP's three registers (Intel SDM vol. 3, 15.4; the numbers and fields
+ * checked against Linux's `msr-index.h`): IA32_PM_ENABLE (0x770) bit 0 turns
+ * it on, and once on it stays on until reset; IA32_HWP_CAPABILITIES (0x771)
+ * says the highest performance in bits 7:0 and the lowest in 31:24; and
+ * IA32_HWP_REQUEST (0x774) asks for a minimum in 7:0, a maximum in 15:8, a
+ * desired level in 23:16 - 0, the processor's own choice - and the energy-
+ * performance preference in 31:24. CPUID.06H:EAX bit 7 says HWP is there,
+ * bit 10 that the preference is.
+ */
+#define MSR_IA32_PM_ENABLE        0x770u
+#define MSR_IA32_HWP_CAPABILITIES 0x771u
+#define MSR_IA32_HWP_REQUEST      0x774u
+
+static void write_msr(uint32_t msr, uint64_t value)
+{
+    __asm__ volatile("wrmsr" :: "c"(msr), "a"((uint32_t)value),
+                                "d"((uint32_t)(value >> 32)));
+}
+
+bool cpu_speed_set(unsigned leaning)
+{
+    if (cpuid(0, 0).eax < 6) {
+        return false;
+    }
+
+    uint32_t eax = cpuid(6, 0).eax;
+
+    if ((eax & (1u << 7)) == 0) {
+        return false;
+    }
+
+    uint64_t caps, request;
+
+    write_msr(MSR_IA32_PM_ENABLE, 1);
+    caps = read_msr(MSR_IA32_HWP_CAPABILITIES);
+
+    request = ((caps >> 24) & 0xffu)            /* minimum: the lowest */
+            | ((caps & 0xffu) << 8);            /* maximum: the highest */
+
+    if (eax & (1u << 10)) {
+        request |= (uint64_t)(leaning & 0xffu) << 24;
+    }
+
+    write_msr(MSR_IA32_HWP_REQUEST, request);
+    return true;
+}
+
 bool cpu_clock_counts(uint64_t *actual, uint64_t *reference)
 {
     int kept = __atomic_load_n(&clock_counts_kept, __ATOMIC_RELAXED);

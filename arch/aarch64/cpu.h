@@ -111,6 +111,16 @@ void cpu_identify(struct cpu_info *out);
  */
 bool cpu_clock_counts(uint64_t *actual, uint64_t *reference);
 
+/*
+ * **The processor choosing its own speed** (`roadmap.md`, "The processor's
+ * speed", step 2): on x86-64 Intel's HWP (Speed Shift), switched on for the
+ * core that calls this, its whole range allowed - lowest to highest turbo -
+ * and `leaning` its energy-performance preference, 0 for speed to 255 for
+ * saving power. The core then picks its speed by its load. False, and
+ * nothing written, where the processor has no such control.
+ */
+bool cpu_speed_set(unsigned leaning);
+
 unsigned cpu_arch(void);
 unsigned cpu_raw(const struct cpu_info *cpu, uint64_t *out, unsigned max);
 

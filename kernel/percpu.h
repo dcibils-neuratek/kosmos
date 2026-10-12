@@ -121,6 +121,14 @@ struct percpu {
     uint64_t clock_reference;
 
     /*
+     * **The speed it was asked to choose for itself**: the wanted setting's
+     * generation this core last applied (`thread_set_speed`), and the
+     * leaning it applied, or -1 where its processor has no such control.
+     */
+    unsigned speed_applied;
+    int      speed_leaning;
+
+    /*
      * **And the busy time split by whose it was**, in the counter's units
      * (`counter_hz`), measured at each crossing rather than sampled at the
      * tick (`roadmap.md` 5zx; `thread.c` has the crossings).

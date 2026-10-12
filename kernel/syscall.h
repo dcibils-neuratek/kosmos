@@ -1069,6 +1069,11 @@ struct cpuload {
      */
     uint64_t clock_actual;
     uint64_t clock_reference;
+
+    /* The leaning the core chooses its own speed by, 0 (speed) to 255
+     * (saving power) - or -1 when its speed is the firmware's. */
+    int32_t  speed_leaning;
+    uint32_t reserved;
 };
 
 /*

@@ -204,6 +204,13 @@ unsigned cpu_arch(void)
  * Monitors (FEAT_AMUv1) would, and neither QEMU's Cortex-A72 nor the Pi 5's
  * Cortex-A76 has them. So the speed is not known, and says so.
  */
+/* The speed here is the firmware's: nothing a core can be asked from EL1. */
+bool cpu_speed_set(unsigned leaning)
+{
+    (void)leaning;
+    return false;
+}
+
 bool cpu_clock_counts(uint64_t *actual, uint64_t *reference)
 {
     (void)actual;

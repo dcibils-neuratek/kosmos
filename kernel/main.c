@@ -1213,6 +1213,46 @@ void kmain(void)
     }
 
     /*
+     * **The processor choosing its own speed**, when the command line asks:
+     * `opt/kosmos/speed=performance`, `balanced` or `battery` - or a leaning
+     * from 0 to 255 - and each core turns its own speed control on at its
+     * next tick (`thread_set_speed`, `cpu_speed_set`). Without the word the
+     * speed is the firmware's, as it always was: it is how the before and
+     * after are measured on the same build (`roadmap.md`, step 2).
+     */
+    {
+        char value[16];
+
+        if (hal_boot_option("opt/kosmos/speed", value, sizeof(value))) {
+            unsigned leaning = 0x80u;      /* balanced: Linux's balance_performance */
+            bool known = true;
+
+            if (value[0] >= '0' && value[0] <= '9') {
+                leaning = 0;
+                for (unsigned i = 0; value[i] >= '0' && value[i] <= '9'; i++) {
+                    leaning = leaning * 10 + (unsigned)(value[i] - '0');
+                }
+                if (leaning > 255) leaning = 255;
+            } else if (value[0] == 'p') {
+                leaning = 0x00u;           /* performance */
+            } else if (value[0] == 'b' && value[1] == 'a' && value[2] == 't') {
+                leaning = 0xC0u;           /* battery: balance_power */
+            } else if (value[0] != 'b') {
+                known = false;
+            }
+
+            if (known) {
+                thread_set_speed(leaning);
+                kputs("       -> the processor chooses its own speed, leaning ");
+                kputu(leaning);
+                kputs(" of 255 to saving power\n");
+            } else {
+                kputs("       -> opt/kosmos/speed: not performance, balanced, battery or 0-255\n");
+            }
+        }
+    }
+
+    /*
      * Said only when there is something to say. On a machine with one
      * processor the line would be "1 of them in the kernel", which is the
      * previous line again in different words - and a boot log that repeats

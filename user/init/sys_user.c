@@ -2535,7 +2535,7 @@ static int l_cpuload(lua_State *L)
     lua_createtable(L, (int)info.cpus, 0);
 
     for (i = 0; i < info.cpus && i < CPUS_MAX; i++) {
-        lua_createtable(L, 0, 8);
+        lua_createtable(L, 0, 9);
 
         lua_pushinteger(L, (lua_Integer)i);
         lua_setfield(L, -2, "index");
@@ -2560,6 +2560,11 @@ static int l_cpuload(lua_State *L)
 
         lua_pushinteger(L, (lua_Integer)info.cpu[i].clock_reference);
         lua_setfield(L, -2, "clock_reference");
+
+        if (info.cpu[i].speed_leaning >= 0) {
+            lua_pushinteger(L, (lua_Integer)info.cpu[i].speed_leaning);
+            lua_setfield(L, -2, "speed_leaning");
+        }
 
         lua_rawseti(L, -2, (lua_Integer)i + 1);
     }

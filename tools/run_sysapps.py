@@ -97,6 +97,13 @@ def expected(rows, key, down):
 def main():
     image = sys.argv[1]
     x86 = "x86_64" in image
+    # **The processor choosing its own speed**, asked for on the command
+    # line (`roadmap.md`, "The processor's speed", step 2): the kernel says
+    # it heard, and a machine whose processor has no such control - QEMU's -
+    # comes up as it always did, every core saying its speed is the
+    # firmware's.
+    R.extra_args(image, ["-fw_cfg", "name=opt/kosmos/speed,string=battery"])
+
     guest = R.Guest(image, 120)
     failed = []
     checks = 0
@@ -243,6 +250,9 @@ def main():
             gone = [r["file"] is None for r in files]
             check(gone == sorted(gone),
                   "sorted by file, a row with no file came before one with a file")
+
+        check("the processor chooses its own speed, leaning 192 of 255" in guest.seen,
+              "opt/kosmos/speed=battery was not heard at boot as a leaning of 192")
 
         # **Nebula's own memory** (10 October: "why does the kernel does not
         # show any memory consumption in processes?"): its row holds what

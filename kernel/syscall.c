@@ -813,6 +813,7 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
             info.cpu[c].held_off_counter = thread_held_off_cpu(c);
             thread_clock_cpu(c, &info.cpu[c].clock_actual,
                              &info.cpu[c].clock_reference);
+            info.cpu[c].speed_leaning = thread_speed_cpu(c);
         }
     }
 

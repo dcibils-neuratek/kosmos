@@ -622,6 +622,12 @@ void thread_time_cpu(unsigned index, uint64_t *user, uint64_t *kernel);
 /* A processor's own speed counters as it last read them (`percpu.h`). */
 void thread_clock_cpu(unsigned index, uint64_t *actual, uint64_t *reference);
 
+/* Every core asked to choose its own speed, leaning 0 (speed) to 255
+ * (saving power), applied on each core's next tick; and what one core
+ * applied, -1 when it has not or its processor cannot. */
+void thread_set_speed(unsigned leaning);
+int  thread_speed_cpu(unsigned index);
+
 /* One tick in the counter's units, once the clock has one (`main.c`), and
  * how long a processor's ticks were held off past it (`percpu.h`). */
 void thread_set_tick_interval(uint64_t counts);

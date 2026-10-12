@@ -23726,3 +23726,37 @@ bottom, the window manager kept it on the screen, and the pixel the check
 reads was outside the picture. The suite moves it up by its header first
 when there is not room below, which is the check's assumption made true
 rather than hoped for.
+
+## 18.556 The processor chooses its own speed, when asked (step 2)
+
+Diego, 11 October: "what about the need to change clock on cpus as
+needed". Intel's HWP (Speed Shift), which both machines have - Skylake
+brought it - lets the processor choose each core's speed by its load
+within a millisecond; what software chooses is the range and the leaning.
+
+`cpu_speed_set` on x86-64 turns it on for the calling core
+(IA32_PM_ENABLE, 0x770), reads the core's lowest and highest performance
+(IA32_HWP_CAPABILITIES, 0x771) and asks for the whole range, turbo
+included, with the processor choosing within it and the leaning as its
+energy-performance preference (IA32_HWP_REQUEST, 0x774) - when CPUID.06H
+says HWP is there (EAX bit 7) and the preference is (bit 10). The fields
+are checked against Linux's `msr-index.h`. AArch64 has nothing a core can
+be asked from EL1, and says so.
+
+**The registers are each core's own**, so a core applies the wanted
+leaning on its own tick, once each time it changes (`thread_set_speed`, a
+generation), exactly as each reads its own speed counters (18.548). It is
+asked for at boot by `opt/kosmos/speed=performance`, `balanced` (0x80),
+`battery` (0xC0) or a number; **without the word the speed is the
+firmware's, as it always was**, so the M700 can be measured before and
+after on one build by its command line alone. HWP, once on, stays on until
+the machine restarts. Each core reports its leaning in `sys.cpuload()`, and
+`clocks` says who chooses the speed.
+
+`x86-sysapps` 33 -> 34, booted with `opt/kosmos/speed=battery`: the kernel
+says it heard a leaning of 192, and a machine whose processor has no HWP -
+QEMU's - comes up as before. What HWP does to a render is the M700's to
+show.
+
+Next: the leaning as a Power setting in Preferences, which needs a call a
+privileged program makes to change it while the machine runs.

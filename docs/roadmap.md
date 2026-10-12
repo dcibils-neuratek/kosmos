@@ -267,7 +267,11 @@ Preferences - Performance, Balanced (the default), Battery - and later
 something a game mode or the sound band can ask for while it runs. A
 processor without HWP falls back to `IA32_PERF_CTL`, where choosing a speed
 by load is a decision a server makes and the kernel only writes; neither
-machine here needs it, so it waits for one that does.
+machine here needs it, so it waits for one that does. **Built 12 October
+behind the command line** (`testing.md` 18.556): `opt/kosmos/speed=
+performance|balanced|battery` turns HWP on, each core on its own tick;
+without it the speed is the firmware's, for the before-and-after. The Power
+setting in Preferences next - a privileged call to change it running.
 
 **Monitor, refreshed** - Diego, 11 October 2026: "cpu monitor app needs a
 refresh", "Put the cpu name and model in the app not in the title as it

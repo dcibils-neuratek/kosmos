@@ -39,3 +39,10 @@ for c = 1, #b do
 end
 
 print(("  over %d s, against a reference of %.0f MHz"):format(seconds, hz / 1e6))
+
+-- Who chooses the speed: the processor itself (`opt/kosmos/speed`), or the
+-- firmware's setting as it was left.
+local leaning = b[1] and b[1].speed_leaning
+
+print(leaning and ("  the processor chooses its own speed, leaning %d of 255 to saving power"):format(leaning)
+      or "  the speed is the firmware's: opt/kosmos/speed is not set")

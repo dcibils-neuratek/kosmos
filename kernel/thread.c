@@ -1435,6 +1435,31 @@ uint64_t thread_held_off_cpu(unsigned index)
     return index < NR_CPUS ? cpus[index].held_off_counter : 0;
 }
 
+/*
+ * **The speed every core is asked to choose for itself** (`roadmap.md`,
+ * "The processor's speed", step 2): a leaning from 0, speed, to 255, saving
+ * power, which each core applies on its next tick - its registers are its
+ * own - when the generation moves. Generation 0 is "as the firmware left
+ * it", which is where every core starts.
+ */
+static unsigned speed_generation;
+static unsigned speed_leaning_wanted;
+
+void thread_set_speed(unsigned leaning)
+{
+    speed_leaning_wanted = leaning & 0xffu;
+    __atomic_store_n(&speed_generation, speed_generation + 1, __ATOMIC_RELEASE);
+}
+
+int thread_speed_cpu(unsigned index)
+{
+    if (index >= NR_CPUS || cpus[index].speed_applied == 0) {
+        return -1;
+    }
+
+    return cpus[index].speed_leaning;
+}
+
 void thread_clock_cpu(unsigned index, uint64_t *actual, uint64_t *reference)
 {
     *actual = index < NR_CPUS ? cpus[index].clock_actual : 0;
@@ -1476,6 +1501,15 @@ void thread_tick(void)
 
         /* And how fast it is running, from its own counters. */
         cpu_clock_counts(&c->clock_actual, &c->clock_reference);
+
+        /* And the speed it was asked to choose, once each time it changes:
+         * the registers are this core's own, so this core writes them. */
+        unsigned wanted = __atomic_load_n(&speed_generation, __ATOMIC_ACQUIRE);
+
+        if (c->speed_applied != wanted) {
+            c->speed_applied = wanted;
+            c->speed_leaning = cpu_speed_set(speed_leaning_wanted) ? (int)speed_leaning_wanted : -1;
+        }
     }
 
     /* Before thread_init has run there is nothing to preempt, and the timer
