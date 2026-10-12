@@ -1,0 +1,128 @@
+<!doctype html>
+<!--
+  Packages, and what it stands on: the window and `pkg` on top, the library
+  that installs, the kits it uses, the server on the Mac and what makes the
+  packages there. An install's path drawn through it (I). Drawn on 12
+  October 2026, before the window is built; docs/packages.md is the
+  argument and docs/packages.html the window. Rendered to
+  docs/packages-architecture.png by headless Chrome at twice its size.
+-->
+<!--
+  Network Monitor, and what it stands on: the application on top, the kit's
+  new graph, the network server's new counters and request, the kernel's
+  SYS_SENDER as Notifications made it, and the driver as it is. The busiest path - a frame - drawn
+  through it (F), and the window's once-a-pace request (W). Drawn on 12
+  October 2026, before any of it is built; `docs/netmonitor.md` is the
+  argument and `docs/netmonitor.html` the window.
+
+  Rendered to docs/netmonitor-architecture.png by headless Chrome at twice
+  its size, as docs/music-architecture.png is.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Packages architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Packages - what it stands on</h1>
+<p class="sub">The window and <code>pkg</code> only show and ask. Installing belongs to one library, <code>packages.lua</code>: it fetches the index and a package, checks every file against its manifest, puts it in place without a moment of nothing there, and keeps the manifest, which is how Remove knows exactly what to take. Packages are made on the Mac from each application's own header.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications and programs</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>kits in C</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>the server, on the Mac</span>
+  <span class="f">I</span><span>an install</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications and programs</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Packages</b><p>every package, installed and not; a package's details from its manifest; Install, Update all, Remove, the questions about dependencies <span class="f">I1</span></p></div>
+        <div class="box new"><span class="tag">GROWS</span><b>pkg, and install</b><p><code>pkg</code>, <code>pkg install</code>, <code>pkg remove</code>, <code>pkg update</code>; <code>install</code> its short form, built in 0.11.175</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in each process)</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>packages.lua</b><p>the index and manifests; dependencies in order; each file's sum held to its manifest; swapped in; the manifest kept in <code>/Home/Packages</code> <span class="f">I2 I3 I4</span></p></div>
+        <div class="box"><b>http.lua</b><p>the index and the zip <span class="f">I2</span></p></div>
+        <div class="box"><b>zip.lua, files.lua</b><p>unpacked beside the installed folder, renamed in, the old removed <span class="f">I4</span></p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>Kits, in C</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box"><b>the Crypto Kit</b><p>SHA-256 of each file, against the manifest <span class="f">I3</span></p></div>
+        <div class="box"><b>sys.protostamp</b><p>which protocols this build speaks; a package for others refused</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>The package server - the Mac, for now</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box new"><span class="tag">GROWS</span><b>tools/packages.py</b><p>a zip each, with <code>package.txt</code> written from the application's header - name, icon, needs, image, depends - its files' sizes and sums, the version and the stamp; the index from the manifests</p></div>
+        <div class="box"><b>tools/packages_serve.py</b><p>the folder over HTTP, reading only, on 47701; named on the netboot's command line</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>I - an install</h3><ol>
+      <li><span class="f">I1</span> Install pressed, or <code>pkg install quake</code>: what it depends on found in the index and installed first.</li>
+      <li><span class="f">I2</span> the zip fetched into <code>/Temporary</code>.</li>
+      <li><span class="f">I3</span> its manifest read: refused if for other protocols, or a file's size or sum is not the manifest's.</li>
+      <li><span class="f">I4</span> unpacked beside the installed folder, swapped in by renames on one disk, the old removed, the manifest kept.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3><table>
+      <tr><td>The index</td><td>one small text file, a package a paragraph</td></tr>
+      <tr><td>A package</td><td>one zip: its folder and package.txt</td></tr>
+      <tr><td>What is installed</td><td>each package's manifest, kept in /Home/Packages</td></tr></table></div>
+    <div class="card"><h3>Who else uses what is new</h3><table>
+      <tr><td>packages.lua</td><td>pkg, install, the window; later, an update banner in the Deskbar</td></tr>
+      <tr><td>package.txt</td><td>Remove; Processes, a program's package and version</td></tr></table></div>
+  </div>
+</div>
+</body>
+</html>
