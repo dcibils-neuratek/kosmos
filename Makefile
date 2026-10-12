@@ -4897,12 +4897,16 @@ prepush:
 
 
 .PHONY: shot web browser tutorial-shots ide-tutorial-shots
+# **On x86-64**, where the suites run since 8 October, and where the
+# machine's memory is read from the firmware: the ARM board assumes 512 MB
+# whatever `-m` says (`hal/qemu-virt/memory.c`), and twenty applications
+# did not fit in it - Cafesa3D's view refused, Groove's window, Maps gone
+# (12 October). The gallery gives its machine a gigabyte.
 shot:
-	@$(MAKE) --no-print-directory FB=1920x1080 $(TARGET)
+	@$(MAKE) --no-print-directory x86-build
 	@mkdir -p $(SHOTDIR)
-	python3 tools/run_gallery.py $(TARGET) \
+	python3 tools/run_gallery.py build/x86_64/kosmos.elf \
 	  --out $(SHOTDIR)/$$(date +%Y-%m-%d-%H%M)-$$(git rev-parse --short HEAD).png
-	@$(MAKE) --no-print-directory $(TARGET)
 
 # Where a window manager pass goes, under an idle desktop, an animating one
 # and a drag. Not gated and deliberately not: these are QEMU numbers and

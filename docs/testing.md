@@ -24038,3 +24038,32 @@ and at 3.60 GHz**, the package at 68 C and 38.9 W - core 3 working with the
 rest, and the speed held where `balanced` had settled at 3.41 GHz at 81 C
 and 45 W. So the settling was the speed leaning, not heat and not the power
 limit: 65 W sustained and 100 C were never near.
+
+## 18.565 The dated picture: every application in it, arranged, on x86
+
+`make shot` had been writing a picture of a desktop nobody arranged: on 11
+and 12 October Groove lay maximised over the rest. Four causes, each found
+by making the picture say what it saw:
+
+- **It did not wait for the arrangement**: forty seconds, while `tile`
+  waits up to two minutes for every window. `run_gallery.py` now waits for
+  `tile` to say it arranged them, and fails if it did not.
+- **`tile` gave up on one unanswered question**: with twenty applications
+  starting, the desktop did not answer one `windows` in time and the whole
+  wait ended - "the desktop did not answer" with every window open. No
+  answer is now "ask again next second"; and it waits four minutes for a
+  count it was given.
+- **The picture's machine was too small**: the ARM board assumes 512 MB
+  whatever `-m` says (`hal/qemu-virt/memory.c`), and Groove's window was
+  refused and Maps ended. The picture is taken on x86-64 now - where the
+  suites run since 8 October and the memory is read from the firmware -
+  with a gigabyte and four processors.
+- **Cafesa3D laid itself out at the size it asked for**, and when the window
+  manager granted another its 3D view did not fit the surface - "a view of
+  1534 by 1004 does not fit the surface at 46, 46" - and it ended. It takes
+  the granted size before making the view now, as `FULL.fit` does on a
+  change of window. `x86-cafesa3d-1` and `-2` 72 and 55, as before.
+
+And **an application that ends on the way fails the picture**, with the
+lines it said before it went: `tile` counts windows, and it had counted
+twenty while Cafesa3D and Groove had opened and gone.

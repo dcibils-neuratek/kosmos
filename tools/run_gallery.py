@@ -29,6 +29,22 @@ import zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from run_screenshot import Guest, Failure, PROMPT, parse_ppm   # noqa: E402
+import run_screenshot                                         # noqa: E402
+
+# **A gigabyte**, not the suites' 512 MB. Twenty applications at once -
+# Cafesa3D, Maps, the IDE and a full-screen Groove among them - did not fit
+# in half that: on 12 October Groove's window was refused and Maps ended
+# while the picture was being set up. The picture is of the system on a
+# machine it fits on; the suites keep the small machine, where running out
+# is what they look for.
+for _args in (run_screenshot.QEMU_ARGS, run_screenshot.X86_ARGS):
+    if "-m" in _args:
+        _args[_args.index("-m") + 1] = "1G"
+
+# And four processors on x86, as the ARM board has: twenty applications
+# starting at once on one emulated core did not all open in four minutes.
+if "-smp" not in run_screenshot.X86_ARGS:
+    run_screenshot.X86_ARGS += ["-smp", "4"]
 
 # The tablet's own range, which is what `mouse_to` speaks.
 ABS = 32767
@@ -201,7 +217,7 @@ def main():
         # polled for - six checks that go stale independently - so the settle
         # stays, after the arrangement rather than instead of it.
         #
-        deadline = time.monotonic() + 180
+        deadline = time.monotonic() + 300
 
         while "tile: " not in guest.seen and time.monotonic() < deadline:
             time.sleep(1.0)
@@ -212,11 +228,41 @@ def main():
 
         if not arranged or arranged[-1] < len(OPEN) - 1:
             said = [l for l in guest.seen.splitlines() if l.startswith("tile: ")]
+            opened = [l.split(" at ")[0][len("wm: window "):] for l in guest.seen.splitlines()
+                      if l.startswith("wm: window ") and " at " in l]
+            trouble = [l for l in guest.seen.splitlines()
+                       if "error" in l.lower() or "not enough" in l.lower() or "died" in l.lower()
+                       or l.startswith("maps") or l.startswith("writer") or "(maps)" in l or "(writer)" in l]
+            print("opened: %s\ntrouble: %s" % (opened, trouble[-12:]), file=sys.stderr)
             raise Failure("tile did not arrange all %d windows: %s"
-                          % (len(OPEN) - 1, said or "it said nothing in three minutes"))
+                          % (len(OPEN) - 1, said or "it said nothing in five minutes"))
 
         time.sleep(args.settle)
         guest._read_available()
+
+        # **And none of them ended** on the way. `tile` counts windows, and
+        # on 12 October it counted twenty while Cafesa3D and Groove had
+        # opened and gone: a picture without them passed for one with them.
+        import re as _re
+        apps = {o.split(":")[0] for o in OPEN if not o.startswith("tile")}
+        gone = sorted({m for m in _re.findall(r"process \d+ \(([^)]+)\) ended", guest.seen)
+                       if m in apps})
+
+        if gone:
+            said = [l for l in guest.seen.splitlines()
+                    if any(l.startswith(g + ":") or "(" + g + ")" in l for g in gone)]
+            print("\n".join(said[-30:]), file=sys.stderr)
+
+            # And what came just before each ended: an error a program does
+            # not prefix with its name is printed by the shell for it.
+            lines = guest.seen.splitlines()
+
+            for g in gone:
+                at = max(i for i, l in enumerate(lines) if "(" + g + ") ended" in l)
+                print("--- before %s ended ---\n%s" % (g, "\n".join(lines[max(0, at - 25):at + 1])),
+                      file=sys.stderr)
+
+            raise Failure("these ended before the picture: %s" % ", ".join(gone))
 
         # Out of the way, so the arrow is not sitting on top of a window in
         # the picture that goes in the repository.

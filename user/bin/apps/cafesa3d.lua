@@ -85,6 +85,19 @@ if not win or not win:surface() then
   return
 end
 
+-- **Laid out at the size granted, not the size asked** (`ui.lua`,
+-- `take_size`). Maximised into the screen's free area, the window manager
+-- may give another size than the area this read - and the view, made at
+-- the asked one, did not fit the surface: "a view of 1534 by 1004 does not
+-- fit the surface at 46, 46", Cafesa3D gone from the dated picture on 12
+-- October. The rest of the layout follows `W` and `H`, as `FULL.fit` has it.
+if win.w ~= W or win.h ~= H then
+  print(("cafesa3d: asked %dx%d, given %dx%d"):format(W, H, win.w, win.h))
+  W, H = win.w, win.h
+  VW, VH = W - TOOLS - SIDE, H - HEAD - FOOT
+  SX = W - SIDE
+end
+
 local scene = k3.scene()
 local view, why = k3.view(VW, VH)
 

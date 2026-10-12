@@ -59,16 +59,20 @@ local function settled()
   local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
   local tick_hz = (fs.read("/Devices/kernel") or {}).tick_hz or 250
   local last, steady = -1, 0
-  local giveup = sys.ticks() + hz * (wanted and 120 or 30)
+  local giveup = sys.ticks() + hz * (wanted and 240 or 30)
 
   while sys.ticks() < giveup do
     local r = use("/Kosmos/Libraries/wmproto.lua").windows()
 
-    if not r or not r.windows then return nil end
+    -- **No answer is "not yet", not "never"**: with twenty applications
+    -- starting at once the desktop is busy, and one question it did not
+    -- answer in time ended the whole wait - "the desktop did not answer",
+    -- on 12 October, with every window open. Asked again next second.
+    local n = r and r.windows and #r.windows or -1
 
-    local n = #r.windows
-
-    if wanted and counted(r.windows) < wanted then
+    if n < 0 then
+      last, steady = -1, 0
+    elseif wanted and counted(r.windows) < wanted then
       last, steady = -1, 0
     elseif n == last and n > 1 then
       steady = steady + 1
