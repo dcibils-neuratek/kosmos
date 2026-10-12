@@ -404,6 +404,17 @@ every drive - `.device` and `.programs` under its path - answered by
 `diskfs` and `smbfs` as now and by the drive server and `ramfs` new; steps
 D1 (every drive counts), D2 (which programs, `diskstat`), D3 (the window).
 
+**Applications keep their state when closed, as on a phone** - Diego, 12
+October 2026: "what if all apps in kosmos have a state like apps do on
+mobile that upon closing that state is saved to disk and then when opening
+again is restored?" - and, the same day, "saving application state is not
+urgent, so we can leave that for the roadmap". The kit already knows each
+window's size and place and every control's value (the same tree
+Automations publishes by name), so it could keep those for every
+application without its author writing anything, and an application add
+what is its own - an open document, a place in a list. Not queued; a design
+first when its turn comes.
+
 **Automations, an app** - Diego, 12 October 2026: "It's a new app that
 allows us to automate certain tasks in Kosmos, like open an app, send an
 email, check a website, copy a file. So let's design an app called
