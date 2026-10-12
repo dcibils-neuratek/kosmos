@@ -314,7 +314,14 @@ created at, modified at (Date time) fields". A name cut with an ellipsis at
 its column's edge, never under the next; columns resized by dragging their
 headings' edges, and kept per folder or for all; Created and Modified with
 date and time for every folder (a share's Modified exists already, from the
-server). Drawn first, beside `docs/tracker2.html`.
+server). Drawn first, beside `docs/tracker2.html`. **Drawn 12 October** in
+`docs/tracker-list.html`, for Diego to agree: Name, Size, Kind, Modified,
+Created; an edge dragged with a guide and the width, a double-click fits;
+the headings' right-click shows and hides columns and chooses where widths
+are kept - the same for every folder (recommended) or a folder its own, as
+an attribute on it. The columns written once in the kit, Tracker first,
+Processes and Mail after. Created kept as an attribute `diskfs` writes when
+a file is made, so the disk's format does not change.
 
 **Wallpapers: a folder, any picture, and seen before chosen** - Diego, 10
 October 2026, asking where Preferences finds its list (`settings.wallpapers`:
@@ -326,7 +333,14 @@ a carrousel of cards of thumbnails of the images in /home/wallpapers and the
 ones added by the user". So `/Home/Wallpapers`, in Tracker's places beside
 Photos; Choose a picture... through the Open window; and the Wallpaper row
 a carousel of thumbnail cards - the folder's, the image's photographs, and
-any chosen from elsewhere. Drawn first.
+any chosen from elsewhere. Drawn first. **Drawn 12 October** in
+`docs/wallpapers.html`, for Diego to agree: the Appearance page's Wallpaper
+card - None, the folder's newest first, the carried photographs, Choose a
+picture... as the last card and a button that is always there - one click
+setting it at once; the Open window filtered to pictures, and a picture
+chosen from elsewhere copied into `/Home/Wallpapers` so the folder is the
+whole list. Thumbnails made once at the size drawn; the row a kit piece,
+`ui.carousel`.
 
 **Nebula's own memory in Processes** - Diego, 10 October 2026: "why does
 the kernel does not show any memory consumption in processes?". Its row is

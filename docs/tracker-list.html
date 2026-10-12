@@ -1,0 +1,210 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Tracker's list view, made right. Drawn on 12 October 2026 from Diego's ask
+  on the M700 (10 October): "The tracker list view needs some work", "for
+  big files the name overlaps the size", "the columns are not resizable",
+  "it needs more columns like created at, modified at (Date time) fields".
+  roadmap.md, "Tracker's list view, made right". The page to build it from,
+  once agreed; beside docs/tracker2.html. Every file in it is made up.
+-->
+<title>Tracker's list view</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+  --accent: #2a55c9; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* Tracker, in Kosmos's light look. */
+  --w-side: #f1f2f4; --w-body: #ffffff; --w-line: #e0e2e6; --w-ink: #1d1f24;
+  --w-dim: #74787f; --w-sel: #2a55c9; --w-zebra: #f8f9fb; --w-head: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 30px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 26px; max-width: 74ch; }
+h2 { font-family: var(--display); font-size: 19px; margin: 42px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 76ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 84ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 820px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 8px; }
+table.plain { border-collapse: collapse; margin: 10px 0; width: 100%; max-width: 820px; font-size: 14px; }
+table.plain td, table.plain th { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+table.plain th { font-family: var(--display); font-weight: 600; }
+
+/* The window. */
+.win { width: 1000px; height: 470px; background: var(--w-body); color: var(--w-ink); border: 1px solid #cfd3da;
+       border-radius: 12px; box-shadow: 0 14px 40px rgba(20,30,50,.18); overflow: hidden; position: relative;
+       display: grid; grid-template-columns: 186px 1fr; grid-template-rows: 46px 1fr 28px; font-size: 13px; }
+.top { grid-column: 1 / 3; display: grid; grid-template-columns: 186px 1fr; border-bottom: 1px solid var(--w-line); }
+.top .t { background: var(--w-side); display: flex; align-items: center; padding-left: 16px; font-weight: 600; border-right: 1px solid var(--w-line); }
+.top .bar { display: flex; align-items: center; gap: 10px; padding: 0 14px; }
+.crumb { border: 1px solid var(--w-line); border-radius: 7px; padding: 2px 10px; font-weight: 500; }
+.crumb::before { content: ""; display: inline-block; width: 13px; height: 10px; border-radius: 2px; background: #4f7fe0; margin-right: 7px; vertical-align: -1px; }
+.views { margin-left: 8px; display: flex; border: 1px solid var(--w-line); border-radius: 7px; overflow: hidden; }
+.views span { padding: 2px 9px; color: var(--w-dim); }
+.views span.on { background: #e9edf6; color: var(--w-ink); }
+.search { margin-left: auto; width: 200px; border: 1px solid var(--w-line); border-radius: 7px; padding: 2px 10px; color: #9aa0a8; }
+.lights { display: flex; gap: 7px; margin-left: 10px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.side { background: var(--w-side); border-right: 1px solid var(--w-line); padding: 10px 8px; grid-row: 2 / 4; }
+.side div { padding: 4px 10px; border-radius: 6px; color: #3d434c; }
+.side div.on { background: #e1e5ec; color: var(--w-ink); font-weight: 500; }
+.side h6 { margin: 12px 10px 4px; font-size: 11px; color: var(--w-dim); text-transform: uppercase; letter-spacing: .07em; font-weight: 600; }
+
+.list { position: relative; overflow: hidden; }
+.heads, .row { display: grid; align-items: center; }
+.heads { height: 30px; border-bottom: 1px solid var(--w-line); color: var(--w-dim); font-size: 12px; font-weight: 500; position: relative; }
+.heads span { padding: 0 10px; position: relative; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 100%; display: flex; align-items: center; }
+.heads span + span { border-left: 1px solid transparent; }
+.heads span::after { content: ""; position: absolute; right: 0; top: 8px; bottom: 8px; width: 1px; background: var(--w-line); }
+.heads span.num { justify-content: flex-end; }
+.heads span.sorted { color: var(--w-ink); }
+.heads span.sorted::before { content: "\25B4"; font-size: 10px; margin-left: 4px; order: 2; }
+.row { height: 30px; }
+.row:nth-child(even) { background: var(--w-zebra); }
+.row span { padding: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #4b525c; }
+.row span:first-child { color: var(--w-ink); display: flex; align-items: center; gap: 8px; }
+.row span:first-child em { font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row span.num { text-align: right; font-variant-numeric: tabular-nums; }
+.row span.date { font-variant-numeric: tabular-nums; }
+.row.sel { background: var(--w-sel) !important; }
+.row.sel span { color: #fff; }
+.ic { width: 16px; height: 16px; border-radius: 3px; flex: none; }
+.ic.f { background: #4f7fe0; } .ic.i { background: linear-gradient(135deg,#5aa0e8,#2d6bb8); } .ic.v { background: #3fae7c; }
+.ic.a { background: #9b6bd9; } .ic.p { background: #d9514a; } .ic.z { background: #c9ced6; } .ic.t { background: #e8eaee; border: 1px solid #c9ced6; }
+.status { grid-column: 2; border-top: 1px solid var(--w-line); display: flex; align-items: center; padding: 0 14px; color: var(--w-dim); font-size: 12px; }
+
+/* Resizing: the edge under the pointer, the guide down the list, the width. */
+.guide { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--w-sel); opacity: .8; }
+.grip { position: absolute; top: 4px; width: 9px; height: 22px; margin-left: -4px; border-radius: 3px; background: rgba(42,85,201,.16); border: 1px solid var(--w-sel); }
+.tip { position: absolute; top: 34px; background: #1d1f24; color: #fff; font-size: 11.5px; padding: 2px 8px; border-radius: 5px; font-variant-numeric: tabular-nums; }
+.pointer { position: absolute; width: 18px; height: 14px; }
+.pointer::before { content: "\2194"; font-size: 17px; line-height: 14px; color: #1d1f24; text-shadow: 0 0 2px #fff, 0 0 2px #fff; }
+
+/* The headings' menu. */
+.menu { position: absolute; width: 270px; background: #fff; border: 1px solid #cfd3da; border-radius: 9px; padding: 5px;
+        box-shadow: 0 16px 40px rgba(20,30,50,.22); z-index: 3; font-size: 13px; }
+.menu div { padding: 4px 10px 4px 28px; border-radius: 6px; position: relative; }
+.menu div.mark::before { content: "\2713"; position: absolute; left: 10px; }
+.menu div.dim { color: #9aa0a8; }
+.menu div.hi { background: var(--w-sel); color: #fff; }
+.menu hr { border: 0; border-top: 1px solid var(--w-line); margin: 5px 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Tracker's list view</h1>
+<p class="sub">Every name cut cleanly at its column's edge, never under the next one; columns that are dragged wider and narrower by their headings' edges; and Created and Modified, date and time, for every folder.</p>
+
+<div class="q"><b>Diego, on the M700, 10 October 2026</b>: "The tracker list view needs some work", "for big files the name overlaps the size", "the columns are not resizable", "it needs more columns like created at, modified at (Date time) fields".</div>
+
+<h2>As it opens</h2>
+<div class="scroller"><div class="win" id="w1"></div></div>
+<p class="cap"><b>Name, Size, Kind, Modified, Created</b>. A long name ends in an ellipsis at its own column's edge - the full name is in the status bar when it is chosen, and in a tooltip after half a second over it. Sizes right-aligned, so the digits line up. Dates in a sentence a person reads at a glance: <i>Today, 21:34</i>, <i>Yesterday, 09:12</i>, then <i>8 Oct 2026, 14:05</i>; this year's dates without the year would be shorter, and is left out on purpose, because a column whose rows are differently shaped is harder to read down.</p>
+
+<h2>A column dragged wider</h2>
+<div class="scroller"><div class="win" id="w2"></div></div>
+<p class="cap">The pointer over the line between two headings becomes a two-way arrow; pressing and dragging moves that edge, with a guide down the whole list and the width beside it. Every column to the right moves with it; none of them changes size. A double-click on an edge fits the column to its widest entry. Name never gets narrower than 120, the others than 60; the list scrolls sideways when the columns are wider than the window, rather than squeezing.</p>
+
+<h2>The headings' menu</h2>
+<div class="scroller"><div class="win" id="w3"></div></div>
+<p class="cap">A right click on any heading. Each column shown or hidden - Name always shown, so it is greyed - and a few more a person might want: <b>Added</b> (when it arrived in this folder), <b>Location</b> in a search's results. Then where the widths are kept.</p>
+
+<h2>Where the widths are kept</h2>
+<table class="plain">
+  <tr><th>Choice</th><th>What it does</th></tr>
+  <tr><td><b>The same for every folder</b> (recommended, the default)</td><td>A width changed in one folder is that width everywhere - one set of columns, kept in Tracker's settings. Most folders want the same columns, and a person learns one list.</td></tr>
+  <tr><td><b>This folder keeps its own</b></td><td>Ticked in the menu, the folder's columns and widths are kept as an attribute on the folder itself, beside where Tracker already keeps its icons' positions, and it travels with the folder.</td></tr>
+  <tr><td><b>Reset columns</b></td><td>Back to the five as they open.</td></tr>
+</table>
+
+<h2>Where Created and Modified come from</h2>
+<ul>
+  <li><b>On the disk</b> (<code>/Home</code>, <code>diskfs</code>): Modified is the inode's <code>mtime</code>. <b>Created is new</b>, and kept as an <b>attribute</b> the disk server writes once when a file is made - <code>kfs</code> already keeps attributes on every inode, so the disk's format does not change. A file made before has none and shows its Modified, in grey.</li>
+  <li><b>On a share</b> (SMB): the server says both, and the SMB client passes them on.</li>
+  <li><b>On a drive</b> (FAT32, exFAT): both are in the directory entry already.</li>
+  <li><b>In memory</b> (`/Temporary`) and the program store: Modified only; Created shows a dash.</li>
+</ul>
+
+<h2>What it is made of</h2>
+<ul>
+  <li><b>Columns become one piece of the UI kit</b>: headings whose edges drag, a cell cut with an ellipsis, widths kept. Tracker draws its own rows today, as Processes and Mail draw theirs - three copies of the same idea - so the columns are written once in the kit and Tracker is its first user; Processes and Mail move onto it after.</li>
+  <li><b>Cut with an ellipsis</b> by <code>ui.fitted</code>, which exists and measures in the face's own pixels.</li>
+  <li><b>The dates</b> through <code>clock.lua</code>, which already says today and yesterday for Mail.</li>
+  <li><b>The widths</b> in Tracker's settings (<code>prefs.lua</code>), or as an attribute on a folder that keeps its own.</li>
+</ul>
+</div>
+
+<script>
+const ROWS = [
+  ["f", "Concert recordings", "--", "Folder", "Today, 21:34", "3 Oct 2026, 10:02"],
+  ["f", "Holiday 2026 - Lisbon, Porto and the coast", "--", "Folder", "Yesterday, 09:12", "21 Aug 2026, 18:40"],
+  ["v", "Rehearsal take 4, full band, room microphones and the click track muted.mp4", "1.84 GB", "Film", "Today, 20:58", "Today, 20:41"],
+  ["i", "Harbour at dusk.jpg", "4.2 MB", "Picture", "9 Oct 2026, 19:15", "9 Oct 2026, 19:15"],
+  ["a", "Mixdown - Night Ferry (24-bit master, no limiter).flac", "212.6 MB", "Sound", "8 Oct 2026, 14:05", "8 Oct 2026, 13:58"],
+  ["p", "Lease agreement, signed.pdf", "386 KB", "PDF document", "2 Oct 2026, 11:20", "2 Oct 2026, 11:20"],
+  ["z", "Project backup - 2026-10-01.zip", "3.07 GB", "Archive", "1 Oct 2026, 23:59", "1 Oct 2026, 23:47"],
+  ["t", "notes.txt", "2 KB", "Text", "28 Sep 2026, 08:30", "14 Sep 2026, 16:22"],
+  ["i", "scan_0001.png", "1.1 MB", "Picture", "25 Sep 2026, 12:00", "25 Sep 2026, 12:00"],
+  ["t", "todo.md", "640 B", "Text", "Yesterday, 22:47", "5 Sep 2026, 09:01"],
+  ["f", "Taxes", "--", "Folder", "12 Sep 2026, 17:33", "1 Jan 2026, 10:00"],
+];
+const SEL = 2;
+
+function chrome(view) {
+  return `<div class="top"><div class="t">Files</div>
+    <div class="bar"><span class="crumb">Music</span>
+      <span class="views"><span>Icons</span><span class="on">List</span></span>
+      <span class="search">Search</span>
+      <span class="lights"><i style="background:#3fbf4f"></i><i style="background:#f2b233"></i><i style="background:#ee5048"></i></span></div></div>
+    <div class="side"><div>Home</div><div>Desktop</div><div>Documents</div><div>Downloads</div><div class="on">Music</div>
+      <div>Photos</div><div>Movies</div><div>Trash</div><h6>Network</h6><div>Studio</div></div>
+    <div class="list">${view}</div>
+    <div class="status">${ROWS[SEL][1]} · ${ROWS[SEL][2]}&nbsp;&nbsp;&nbsp;11 items</div>`;
+}
+
+function list(cols) {
+  const tmpl = cols.map(c => c + "px").join(" ") + " 1fr";
+  const heads = `<div class="heads" style="grid-template-columns:${tmpl}">
+      <span class="sorted">Name</span><span class="num">Size</span><span>Kind</span><span>Modified</span><span>Created</span><span></span></div>`;
+  const rows = ROWS.map(([ic, name, size, kind, mod, cre], i) =>
+    `<div class="row${i === SEL ? " sel" : ""}" style="grid-template-columns:${tmpl}">
+      <span><i class="ic ${ic}"></i><em>${name}</em></span><span class="num">${size}</span><span>${kind}</span>
+      <span class="date">${mod}</span><span class="date">${cre}</span><span></span></div>`).join("");
+  return heads + rows;
+}
+
+const COLS = [330, 80, 110, 150, 150];
+document.getElementById("w1").innerHTML = chrome(list(COLS));
+
+// Name dragged from 330 to 420.
+const wider = [420, 80, 110, 150, 150];
+document.getElementById("w2").innerHTML = chrome(list(wider) +
+  `<div class="guide" style="left:419px"></div><div class="grip" style="left:420px"></div>
+   <div class="pointer" style="left:414px;top:9px"></div><div class="tip" style="left:428px">Name 420</div>`);
+
+document.getElementById("w3").innerHTML = chrome(list(COLS) +
+  `<div class="menu" style="left:520px;top:22px">
+     <div class="mark dim">Name</div><div class="mark">Size</div><div class="mark">Kind</div>
+     <div class="mark hi">Modified</div><div class="mark">Created</div><div>Added</div><div class="dim">Location (in a search)</div>
+     <hr><div class="mark">The same for every folder</div><div>This folder keeps its own</div>
+     <hr><div>Fit every column</div><div>Reset columns</div></div>`);
+</script>
+</body>
+</html>

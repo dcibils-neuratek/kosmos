@@ -1,0 +1,188 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Wallpapers: a folder, any picture, and seen before chosen. Drawn on 12
+  October 2026 from Diego's answers of 10 October, after asking why the
+  pictures he copied into Downloads were never offered: "yes to
+  /home/wallpapers and yes to choose a picture", "yes to small preview of
+  the picture is great as now is impossible to tell which is which. we can
+  do like a carrousel of cards of thumbnails of the images in
+  /home/wallpapers and the ones added by the user". roadmap.md,
+  "Wallpapers". The page to build it from, once agreed. The pictures in it
+  are drawn, not anybody's.
+-->
+<title>Wallpapers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+  --accent: #2a55c9; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* Preferences and Tracker in Kosmos's light look. */
+  --w-side: #f1f2f4; --w-body: #f7f7f8; --w-card: #ffffff; --w-line: #e0e2e6;
+  --w-ink: #1d1f24; --w-dim: #74787f; --w-sel: #2a55c9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1060px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 30px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 26px; max-width: 74ch; }
+h2 { font-family: var(--display); font-size: 19px; margin: 42px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 76ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 84ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 820px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 8px; }
+
+.win { width: 960px; background: var(--w-body); color: var(--w-ink); border: 1px solid #cfd3da; border-radius: 12px;
+       box-shadow: 0 14px 40px rgba(20,30,50,.18); overflow: hidden; position: relative; font-size: 13px;
+       display: grid; grid-template-columns: 200px 1fr; }
+.side { background: var(--w-side); border-right: 1px solid var(--w-line); padding: 10px 8px 16px; }
+.side .t { font-weight: 600; padding: 6px 10px 12px; }
+.side div.i { padding: 5px 10px; border-radius: 6px; color: #3d434c; display: flex; gap: 9px; align-items: center; }
+.side div.i::before { content: ""; width: 14px; height: 14px; border-radius: 4px; background: #c9ced6; }
+.side div.on { background: #e1e5ec; color: var(--w-ink); font-weight: 500; }
+.side div.new { color: var(--w-ink); }
+.side div.new::before { background: linear-gradient(135deg,#f2a65a,#5b4b8a); }
+.side h6 { margin: 12px 10px 4px; font-size: 11px; color: var(--w-dim); text-transform: uppercase; letter-spacing: .07em; font-weight: 600; }
+.main { min-width: 0; }
+.head { height: 46px; display: flex; align-items: center; padding: 0 18px; border-bottom: 1px solid var(--w-line); background: #fff; }
+.head b { font-size: 14px; }
+.head .lights { margin-left: auto; display: flex; gap: 7px; }
+.head .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.page { padding: 18px 22px 22px; }
+.group { font-weight: 600; margin: 0 2px 8px; }
+.cardp { background: var(--w-card); border: 1px solid var(--w-line); border-radius: 10px; }
+.rowp { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-top: 1px solid var(--w-line); }
+.rowp:first-child { border-top: 0; }
+.rowp small { display: block; color: var(--w-dim); font-size: 12px; }
+.seg { display: flex; border: 1px solid var(--w-line); border-radius: 7px; overflow: hidden; }
+.seg span { padding: 3px 12px; color: var(--w-dim); }
+.seg span.on { background: #e9edf6; color: var(--w-ink); font-weight: 500; }
+
+/* The carousel. */
+.wall { padding: 12px 14px 14px; }
+.wall .top { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+.wall .top small { color: var(--w-dim); font-size: 12px; }
+.strip { position: relative; display: flex; gap: 12px; overflow: hidden; padding: 4px 2px 2px; }
+.wc { flex: none; width: 150px; }
+.wc .pic { width: 150px; height: 94px; border-radius: 8px; position: relative; overflow: hidden; border: 1px solid rgba(0,0,0,.08); }
+.wc.on .pic { outline: 3px solid var(--w-sel); outline-offset: 2px; }
+.wc.on .pic::after { content: "\2713"; position: absolute; right: 6px; bottom: 6px; width: 20px; height: 20px; border-radius: 50%;
+                     background: var(--w-sel); color: #fff; font-size: 12px; display: grid; place-items: center; }
+.wc b { display: block; font-weight: 500; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wc span { color: var(--w-dim); font-size: 11.5px; }
+.wc.add .pic { border: 1.5px dashed #b9bfc8; background: #fafbfc; display: grid; place-items: center; color: var(--w-dim); font-size: 28px; }
+.arrow { position: absolute; top: 40px; width: 28px; height: 28px; border-radius: 50%; background: #fff; border: 1px solid var(--w-line);
+         box-shadow: 0 2px 6px rgba(0,0,0,.12); display: grid; place-items: center; color: var(--w-ink); font-size: 14px; z-index: 2; }
+.fade { position: absolute; top: 0; bottom: 0; right: 0; width: 60px; background: linear-gradient(90deg, transparent, var(--w-card)); }
+
+/* The Open window, over Preferences. */
+.dim { position: absolute; inset: 0; background: rgba(20,24,32,.25); }
+.open { position: absolute; left: 150px; top: 40px; width: 660px; background: #fff; border: 1px solid #cfd3da; border-radius: 12px;
+        box-shadow: 0 22px 54px rgba(0,0,0,.3); overflow: hidden; display: grid; grid-template-columns: 150px 1fr; grid-template-rows: 40px 1fr 46px; }
+.open .h { grid-column: 1 / 3; display: flex; align-items: center; padding: 0 14px; font-weight: 600; border-bottom: 1px solid var(--w-line); }
+.open .s { background: var(--w-side); border-right: 1px solid var(--w-line); padding: 8px 6px; }
+.open .s div { padding: 4px 9px; border-radius: 6px; color: #3d434c; }
+.open .s div.on { background: #e1e5ec; color: var(--w-ink); }
+.open .g { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 12px; }
+.open .g div { text-align: center; font-size: 11.5px; color: #3d434c; }
+.open .g i { display: block; height: 70px; border-radius: 6px; margin-bottom: 4px; }
+.open .g div.on i { outline: 3px solid var(--w-sel); outline-offset: 1px; }
+.open .f { grid-column: 1 / 3; display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 0 14px; border-top: 1px solid var(--w-line); }
+.open .f span.n { margin-right: auto; color: var(--w-dim); }
+.btn { border: 1px solid var(--w-line); border-radius: 7px; padding: 4px 14px; background: #fff; }
+.btn.p { background: var(--w-sel); border-color: var(--w-sel); color: #fff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Wallpapers</h1>
+<p class="sub">A folder of your own, <code>/Home/Wallpapers</code>; any picture chosen from anywhere; and every one seen as a small picture before it is chosen, in a row of cards along Preferences' Appearance page.</p>
+
+<div class="q"><b>Diego, 10 October 2026</b>: "yes to /home/wallpapers and yes to choose a picture", "yes to small preview of the picture is great as now is impossible to tell which is which. we can do like a carrousel of cards of thumbnails of the images in /home/wallpapers and the ones added by the user".</div>
+
+<h2>The Appearance page</h2>
+<div class="scroller"><div class="win" id="w1"></div></div>
+<p class="cap">The Wallpaper row is a card of its own: <b>None</b> first, the desk's own colour; then the pictures in <code>/Home/Wallpapers</code>, newest first, each under its name; then the photographs Kosmos carries, under their photographers' names; and last, <b>Choose a picture...</b> as a card - which is also a button at the top right, so it is there whichever way the row is scrolled. One click sets it at once - the desk changes behind the window while it is open - and the card is outlined and ticked. The row scrolls by the wheel, by dragging, or by its arrows, and opens scrolled to the one in use. <b>Wallpaper size</b> stays beneath it.</p>
+
+<h2>Choose a picture...</h2>
+<div class="scroller"><div class="win" id="w2"></div></div>
+<p class="cap">The Open window, showing pictures only, starting in Photos. <b>Use as wallpaper</b> sets it and <b>copies it into <code>/Home/Wallpapers</code></b>, so it is in the row next time and stays there when the original is moved or deleted - the folder is the whole list, and a person can see and tidy it in Tracker. A picture already in the folder is not copied again.</p>
+
+<h2>In Tracker</h2>
+<p><b>Wallpapers</b> joins the sidebar's places, beside Photos, so the folder is somewhere to drop pictures by dragging as well as by choosing. It is made the first time Kosmos starts with a <code>/Home</code> that has none - empty, so nothing is put there on a person's behalf.</p>
+
+<h2>What it is made of</h2>
+<ul>
+  <li><b>The list</b> is <code>settings.wallpapers</code>, as now, reading <code>/Home/Wallpapers</code> where it read the top of <code>/Home</code>. A picture there from before still works, as a chosen file is a path.</li>
+  <li><b>The cards' pictures</b> are thumbnails the window manager makes once a picture - decoded at 150 by 94, the size they are drawn, and kept while Preferences is open - through the same door <code>ui.image</code> uses. Twenty full photographs decoded at their own size to be drawn the size of a stamp would be most of a second and most of a gigabyte.</li>
+  <li><b>The row of cards</b> is a kit piece, <code>ui.carousel</code>: a strip of cards that scrolls, one chosen. The Shortcuts app's sections and Music's albums on a narrow window want the same.</li>
+  <li><b>Choose a picture...</b> is the Open window (<code>docs/drives.html</code>), filtered to pictures.</li>
+</ul>
+</div>
+
+<script>
+const PICS = [
+  ["None", "the desk's colour", "#5a6474"],
+  ["Lisbon rooftops", "Wallpapers", "linear-gradient(170deg,#f6b37a 0%,#e9846a 35%,#8a5c8f 60%,#2c3e6b 100%)"],
+  ["Pine ridge", "Wallpapers", "linear-gradient(180deg,#bcd8e8 0 45%,#3b5d3a 46% 75%,#1f3320)"],
+  ["Night ferry", "Wallpapers", "radial-gradient(circle at 70% 30%,#ffe7a6 0 8%,transparent 9%),linear-gradient(200deg,#16224a,#2c4f86 60%,#0b1430)"],
+  ["Salt flats", "Wallpapers", "linear-gradient(180deg,#9fc3e6 0 50%,#f2efe8 51%)"],
+  ["Lake at dawn", "Alexander Slattery", "linear-gradient(180deg,#f4c8a8,#c99fb8 40%,#6d7fa8 60%,#2d3b5c)"],
+  ["Dunes", "Kosmos", "linear-gradient(160deg,#f6e27a,#f2a65a 45%,#b8603a)"],
+];
+const ON = 3;
+
+function prefs(extra) {
+  const cards = PICS.map(([n, from, bg], i) =>
+    `<div class="wc${i === ON ? " on" : ""}"><div class="pic" style="background:${bg}"></div><b>${n}</b><span>${from}</span></div>`).join("") +
+    `<div class="wc add"><div class="pic">+</div><b>Choose a picture...</b><span>from anywhere</span></div>`;
+  return `<div class="side"><div class="t">Preferences</div>
+      <div class="i on">Appearance</div><div class="i">Displays</div><div class="i">Notifications</div><div class="i">Sound</div>
+      <div class="i">Power</div><div class="i">Network</div><div class="i">Keyboard</div><div class="i">Mouse</div></div>
+    <div class="main"><div class="head"><b>Appearance</b><span class="lights"><i style="background:#3fbf4f"></i><i style="background:#f2b233"></i><i style="background:#ee5048"></i></span></div>
+      <div class="page"><div class="group">Wallpaper</div>
+        <div class="cardp"><div class="wall"><div class="top"><span>Night ferry, from <code>/Home/Wallpapers</code></span><span style="display:flex;gap:12px;align-items:center"><small>4 in Wallpapers · 2 carried with Kosmos</small><span class="btn">Choose a picture...</span></span></div>
+          <div class="strip">${cards}<div class="fade"></div></div>
+          <span class="arrow" style="right:22px;top:auto;margin-top:-62px;position:relative;float:right">&rsaquo;</span></div>
+          <div class="rowp"><span>Wallpaper size<small>Filling the screen, its middle kept, or as it is in the middle</small></span>
+            <span class="seg"><span class="on">Fill the screen</span><span>Centred</span></span></div></div>
+        <div class="group" style="margin-top:18px">Look</div>
+        <div class="cardp"><div class="rowp"><span>Theme<small>The colours of every window</small></span><span class="seg"><span class="on">Light</span><span>Dark</span></span></div></div>
+      </div></div>${extra || ""}`;
+}
+
+document.getElementById("w1").innerHTML = prefs();
+
+const PHOTOS = [
+  ["harbour.jpg", "linear-gradient(170deg,#f6b37a,#8a5c8f 60%,#2c3e6b)"],
+  ["garden.jpg", "linear-gradient(180deg,#cfe8b0,#6f9a4d)"],
+  ["snow day.jpg", "linear-gradient(180deg,#e8eef5,#b9c8d8)"],
+  ["concert.jpg", "radial-gradient(circle at 50% 30%,#ffcf6b 0 12%,#3a1c4a 13%)"],
+  ["coast road.jpg", "linear-gradient(160deg,#9fd4e8 0 40%,#e7d3a8 41% 60%,#6b8f5a)"],
+  ["old town.jpg", "linear-gradient(180deg,#e9c9a0,#a5653f)"],
+  ["the dog.jpg", "linear-gradient(135deg,#c9a77a,#6b4b30)"],
+  ["sunset.jpg", "linear-gradient(180deg,#f9d27a,#e8664a 50%,#5a2a4a)"],
+];
+const openWin = `<div class="dim"></div><div class="open"><div class="h">Choose a picture</div>
+  <div class="s"><div>Home</div><div>Desktop</div><div>Downloads</div><div class="on">Photos</div><div>Wallpapers</div><div>Drives</div></div>
+  <div class="g">${PHOTOS.map(([n, bg], i) => `<div class="${i === 7 ? "on" : ""}"><i style="background:${bg}"></i>${n}</div>`).join("")}</div>
+  <div class="f"><span class="n">sunset.jpg · 3.1 MB · 4032 x 3024</span><span class="btn">Cancel</span><span class="btn p">Use as wallpaper</span></div></div>`;
+document.getElementById("w2").innerHTML = prefs(openWin);
+</script>
+</body>
+</html>
