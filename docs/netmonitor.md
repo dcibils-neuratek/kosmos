@@ -83,6 +83,8 @@ next to Monitor's own sampling.
    process. A guest test: bytes moved over a connection to a
    peer on the Mac, counted within a frame's worth each way, and the
    connection named with the test's own process.
+   **Done in 0.11.167** (`testing.md` 18.560), with `netstat` printing
+   what the server counts; a byte TCP sends again is counted once.
 2. **N2 - the meters in the kit**: `ui.history` (Monitor's graph moved into
    the kit) and `ui.meter_card` (its processor card, made general), with the
    theme's `io_in` and `io_out`; Monitor drawn with them and its suite

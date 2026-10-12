@@ -336,6 +336,9 @@ struct conn {
     uint32_t ssthresh;              /* slow start up to here */
     uint32_t dupacks;               /* the same acknowledgement, again */
     uint64_t sent_total;            /* bytes sent, again included */
+    uint64_t bytes_in;              /* payload delivered to its ring */
+    uint64_t bytes_out;             /* payload sent, once: not again */
+    uint32_t process;               /* who opened it (`SYS_SENDER`) */
     uint32_t most_in_flight;        /* the window's high water */
     bool     said_sent;             /* its four megabytes said */
 
@@ -852,6 +855,21 @@ static bool wire_attach(void)
     return false;
 }
 
+/*
+ * **What went in and out** (`NET_OP_STATS`): every frame, counted where it
+ * enters and leaves this process, and what the stack itself had no room
+ * for. Additions on a path that copies the frame anyway.
+ */
+static struct net_stats counted;
+
+/* Who sent the request being served, for a connection to remember. */
+static uint32_t asker(void)
+{
+    struct sender_info who;
+
+    return kosmos_sender(&who) == 0 ? who.id : 0;
+}
+
 static bool send_frame(const uint8_t *dst, uint16_t type,
                        const uint8_t *body, unsigned length)
 {
@@ -871,8 +889,12 @@ static bool send_frame(const uint8_t *dst, uint16_t type,
         unsigned bytes = ETH_HEADER + length;
 
         if (eth_ring_space(write, read) == 0 || bytes > ETH_RING_SLOT) {
+            counted.dropped_out++;
             return false;
         }
+
+        counted.frames_out++;
+        counted.bytes_out += bytes;
 
         memcpy(eth_ring_out(wire.ring, write), net.frame, bytes);
         wire.ring->out_length[write % ETH_RING_SLOTS] = bytes;
@@ -886,7 +908,14 @@ static bool send_frame(const uint8_t *dst, uint16_t type,
         return wire_ask(ETH_OP_SEND, -1, &rep);
     }
 
-    return kosmos_net_send(net.frame, ETH_HEADER + length) == 0;
+    if (kosmos_net_send(net.frame, ETH_HEADER + length) != 0) {
+        counted.dropped_out++;
+        return false;
+    }
+
+    counted.frames_out++;
+    counted.bytes_out += ETH_HEADER + length;
+    return true;
 }
 
 static bool arp_ask(const struct net_addr *ip)
@@ -2126,7 +2155,11 @@ static void tcp_pump(struct conn *c)
             c->first_sent = kosmos_ticks();
         }
 
+        /* Only what is new counts as the connection's: a byte sent again
+         * is the network's cost, in the frame totals, not more of what its
+         * program sent. */
         if (!seq_ge(c->snd_max, c->snd_nxt)) {
+            c->bytes_out += c->snd_nxt - c->snd_max;
             c->snd_max = c->snd_nxt;
         }
 
@@ -2348,8 +2381,11 @@ static bool udp_deliver(const uint8_t *packet, unsigned total)
     space = tcp_ring_space(c->ring->bytes, write, tcp_ring_acquire(&c->ring->in_read));
 
     if (space < sizeof(d) + n) {
+        counted.dropped_in++;
         return true;                    /* no room for all of it */
     }
+
+    c->bytes_in += n;
 
     memset(&d, 0, sizeof(d));
     memcpy(d.addr.byte, packet + IP_SRC, 4);
@@ -2394,7 +2430,11 @@ static void udp_drain(struct conn *c)
 
         ring_get(c->ring, tcp_ring_out(c->ring), read + sizeof(d), body, d.length);
 
-        if (!udp_send(&d.addr, c->local_port, d.port, body, d.length)) {
+        bool sent = udp_send(&d.addr, c->local_port, d.port, body, d.length);
+
+        if (sent) {
+            c->bytes_out += d.length;
+        } else {
             uint64_t now = kosmos_ticks();
 
             if (c->out_waiting == 0) {
@@ -2658,6 +2698,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         made->dupacks       = 0;
         made->state         = ST_SYN_RCVD;
         made->from_listener = (int)listener->slot;
+        made->process       = listener->process;
         made->sent_at       = kosmos_ticks();
 
         net.next_seq += 0x01000000u;
@@ -2860,6 +2901,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
 
         tcp_ring_publish(&c->ring->in_write, write + take);
         c->rcv_nxt += take;
+        c->bytes_in += take;
 
         (void)tcp_send(c, TCP_ACK_FLAG, c->snd_nxt, NULL, 0);
         wake_waiter(c);
@@ -3063,6 +3105,8 @@ static void drain(void)
             return;
         }
 
+        counted.frames_in++;
+        counted.bytes_in += (uint64_t)got;
         type = get_be16(net.frame + ETH_TYPE);
 
         if (type == ETHERTYPE_ARP) {
@@ -3230,11 +3274,12 @@ static void serve(const struct message *msg, uint64_t sender)
     memset(&reply, 0, sizeof(reply));
 
     /*
-     * **A capability comes only with a poll** - its set's region - and one
+     * **A capability comes only with a poll or a count** - the region its
+     * list or its answer goes in - and one
      * sent with anything else is let go of at once rather than kept: this
      * process's table would otherwise fill with whatever callers sent.
      */
-    if (cap >= 0 && req.op != NET_OP_POLL) {
+    if (cap >= 0 && req.op != NET_OP_POLL && req.op != NET_OP_STATS) {
         (void)kosmos_cap_drop(cap);
         cap = -1;
     }
@@ -3438,6 +3483,7 @@ static void serve(const struct message *msg, uint64_t sender)
         c->dupacks     = 0;
         c->state         = ST_SYN_SENT;
         c->from_listener = -1;
+        c->process       = asker();
         c->opened_by     = sender;
         c->sent_at     = kosmos_ticks();
 
@@ -3684,6 +3730,7 @@ static void serve(const struct message *msg, uint64_t sender)
         c->state         = ST_UDP;
         c->local_port    = (uint16_t)port;
         c->from_listener = -1;
+        c->process       = asker();
 
         if (multicast(&req.to)) {
             c->group   = req.to;
@@ -3761,6 +3808,7 @@ static void serve(const struct message *msg, uint64_t sender)
         c->state         = ST_LISTEN;
         c->local_port    = (uint16_t)req.port;
         c->from_listener = -1;
+        c->process       = asker();
 
         reply.status = NET_OK;
         reply.handle = c->handle;
@@ -3821,6 +3869,74 @@ static void serve(const struct message *msg, uint64_t sender)
     case NET_OP_RESOLVE:
         resolve(&req, sender);
         return;                     /* parked; answered later or expired */
+
+    case NET_OP_STATS: {
+        long pages, at;
+        unsigned long room;
+        uint32_t there = 0, written = 0;
+
+        /* The answer into the caller's region, held to the kernel's word
+         * for its size, mapped while it is written and let go of then. */
+        if (cap < 0) {
+            fail(sender, NET_ERR_BAD_OP);
+            return;
+        }
+
+        pages = kosmos_mem_size(cap);
+        at = pages > 0 ? kosmos_mem_map(cap) : -1;
+
+        if (at < 0) {
+            (void)kosmos_cap_drop(cap);
+            fail(sender, pages > 0 ? NET_ERR_FULL : NET_ERR_BAD_ADDRESS);
+            return;
+        }
+
+        room = ((unsigned long)pages * 4096u - sizeof(struct net_stats))
+             / sizeof(struct net_stats_conn);
+        memcpy((void *)(uintptr_t)at, &counted, sizeof(counted));
+
+        for (unsigned i = 0; i < conn_count(); i++) {
+            const struct conn *c = conn_slot(i);
+            struct net_stats_conn e;
+
+            if (c->state == ST_FREE || c->state == ST_DEAD) {
+                continue;
+            }
+
+            there++;
+
+            if (written >= room) {
+                continue;
+            }
+
+            memset(&e, 0, sizeof(e));
+            e.handle      = c->handle;
+            e.bytes_in    = c->bytes_in;
+            e.bytes_out   = c->bytes_out;
+            e.process     = c->process;
+            e.kind        = c->state == ST_LISTEN ? NET_KIND_LISTENER
+                          : c->state == ST_UDP ? NET_KIND_UDP : NET_KIND_TCP;
+            e.state       = (c->state == ST_SYN_SENT || c->state == ST_SYN_RCVD)
+                          ? NET_TCP_OPENING
+                          : (c->state == ST_OPEN || c->state == ST_CLOSE_WAIT)
+                          ? NET_TCP_OPEN : NET_TCP_CLOSED;
+            e.remote      = c->remote;
+            e.local_port  = c->local_port;
+            e.remote_port = c->remote_port;
+            memcpy((uint8_t *)(uintptr_t)at + sizeof(struct net_stats)
+                   + written * sizeof(e), &e, sizeof(e));
+            written++;
+        }
+
+        (void)kosmos_share_unmap((unsigned long)at, (unsigned long)pages);
+        (void)kosmos_cap_drop(cap);
+
+        reply.status = NET_OK;
+        reply.ready  = written;
+        reply.length = there;
+        answer(sender, &reply);
+        return;
+    }
 
     case NET_OP_POLL: {
         struct poller *p;

@@ -768,6 +768,25 @@ def main():
                      'print("FRESH " .. "POLL " .. #cs .. " opened, " .. done .. " seen to finish by poll")')
             write_fresh = f'fs.write("/Temporary/fresh.lua", [==[{fresh}]==])'
 
+            #
+            # **Counted, and by whom** (`NET_OP_STATS`, `docs/netmonitor.md`
+            # N1): a program names itself, fetches over one connection, and
+            # asks the stack what that connection carried. Its bytes in are
+            # every byte it read, its bytes out its request, and it is found
+            # by the process the stack holds for it - asked of the kernel when
+            # it was opened - which is this program's. (Other programs in this
+            # boot spoke to the same port; only this one has this process.)
+            #
+            counted = ('sys.name("netcount") local me, n, q = 0, 0, "GET /c HTTP/1.0\\r\\n\\r\\n" '
+                       'for _, p in ipairs(sys.processes()) do if p.name == "netcount" then me = p.id end end '
+                       f'local c = fs.connect("/Network", "\\10\\0\\2\\2", {port}) c:write(q) '
+                       'for _ = 1, 200 do n = n + #(c:read() or "") if c:closed() then break end c:wait(25) end '
+                       'n = n + #(c:read() or "") local s, e = fs.net_stats("/Network") '
+                       f'for _, x in ipairs(s.connections) do if x.remote_port == {port} and x.process == me then e = x end end '
+                       'print("COUN".."TED "..e.bytes_in.." of "..n..", out "..e.bytes_out.." of "..#q '
+                       '..", by me "..tostring(me > 0)..", frames "..tostring(s.frames_out > 0)) c:close()')
+            write_counted = f'fs.write("/Temporary/counted.lua", [==[{counted}]==])'
+
             out = boot(image, [
                 "-netdev", "user,id=net0",
                 "-device", run_screenshot.device(image, "net") + ",netdev=net0",
@@ -780,10 +799,29 @@ def main():
                 write_kept,
                 ("/Temporary/kept.lua", "KEPT "),
                 write_fresh,
-                ("/Temporary/fresh.lua", "FRESH POLL ")], seconds=180)
+                ("/Temporary/fresh.lua", "FRESH POLL "),
+                write_counted,
+                ("/Temporary/counted.lua", "COUNTED "),
+                ("netstat", "netstat: dropped ")], seconds=180)
         finally:
             httpd.shutdown()
             keeps.shutdown()
+
+        found = re.search(r"COUNTED (\d+) of (\d+), out (\d+) of (\d+), by me (\w+), frames (\w+)", out)
+
+        if (found is None or found.group(1) != found.group(2) or int(found.group(2)) < len(body)
+                or found.group(3) != found.group(4) or found.group(5) != "true"
+                or found.group(6) != "true"):
+            raise Failure(
+                "the stack did not count a connection's bytes, or name its program: "
+                f"{found.group(0) if found else 'nothing counted'}\n" + out[-900:])
+
+        checks += 1
+
+        if not re.search(r"netstat: in \d+ bytes in \d+ frames, out \d+ bytes", out):
+            raise Failure("netstat did not print the totals\n" + out[-900:])
+
+        checks += 1
 
         found = re.search(r"MANY CONNECTIONS (\d+) of 40, regions (\d+) then (\d+)", out)
 

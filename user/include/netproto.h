@@ -174,6 +174,23 @@
  */
 #define NET_OP_UDP_BIND 14u
 
+/*
+ * **What has gone in and out, and over what** (`docs/netmonitor.md`, N1):
+ * the totals since the stack started and every connection there is, for
+ * Network Monitor - asked once a pace, answered with numbers, and nothing
+ * kept for the asker.
+ *
+ * The answer goes in a region the caller owns and sends with the request,
+ * as `NET_OP_POLL`'s list does, because the connections are as many as the
+ * machine holds and no message is that big: a `struct net_stats` at the
+ * start, then a `struct net_stats_conn` for each connection that fits. The
+ * reply's `ready` is how many were written and `length` how many there are,
+ * so a caller whose region was too small knows it and asks with a larger.
+ * The region is let go of when this is answered.
+ */
+#define NET_OP_STATS    15u     /* its shapes are below `struct net_addr` */
+
+
 /* The most a datagram carries: an Ethernet frame's, less IP and UDP. */
 #define NET_DATAGRAM_MAX  1472u
 
@@ -274,6 +291,37 @@ struct net_datagram {
     uint16_t length;                /* the bytes that follow */
 };
 
+
+/* What `NET_OP_STATS` writes: the totals, then a connection each. */
+struct net_stats {
+    uint64_t bytes_in;              /* every frame's, headers included */
+    uint64_t bytes_out;
+    uint64_t frames_in;
+    uint64_t frames_out;
+    uint64_t dropped_in;            /* by the stack: no room in a ring */
+    uint64_t dropped_out;           /* by the stack: the card's ring full */
+};
+
+/* What a connection is, beside its TCP state. */
+#define NET_KIND_TCP       1u
+#define NET_KIND_LISTENER  2u
+#define NET_KIND_UDP       3u
+
+struct net_stats_conn {
+    uint64_t handle;
+    uint64_t bytes_in;              /* its payload, delivered to its program */
+    uint64_t bytes_out;             /* its payload sent, each byte once */
+    uint32_t process;               /* who opened it, as `SYS_SENDER` said */
+    uint32_t kind;                  /* NET_KIND_* */
+    uint32_t state;                 /* NET_TCP_*, for NET_KIND_TCP */
+    struct net_addr remote;
+    uint16_t local_port;
+    uint16_t remote_port;
+    uint32_t reserved;
+};
+
+_Static_assert(sizeof(struct net_stats) == 48, "net_stats is six counters");
+_Static_assert(sizeof(struct net_stats_conn) == 48, "net_stats_conn is 48 bytes");
 
 struct net_request {
     uint32_t op;

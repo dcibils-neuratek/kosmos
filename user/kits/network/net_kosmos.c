@@ -1140,6 +1140,133 @@ static int l_port(lua_State *L)
     return 1;
 }
 
+/*
+ * **`net.stats(cap)` - what has gone in and out, and over what**
+ * (`netproto.h`, `NET_OP_STATS`; `docs/netmonitor.md` N1): the totals since
+ * the stack started - `bytes_in`, `bytes_out`, `frames_in`, `frames_out`,
+ * `dropped_in`, `dropped_out` - and `connections`, a list of `{ handle,
+ * process, kind ("tcp", "listener", "udp"), state ("opening", "open",
+ * "closed"), remote, local_port, remote_port, bytes_in, bytes_out }`.
+ * Running totals, never rates: a rate is two readings' difference, and only
+ * the caller knows how far apart it wants them.
+ *
+ * The answer comes back in a region this process keeps, as the poll set's
+ * does, made larger and asked again when there were more connections than
+ * it held - so a monitor asking once a second makes no region a second.
+ */
+static struct {
+    long          region;
+    uint8_t      *at;
+    unsigned long pages;
+} statsroom = { -1, NULL, 0 };
+
+static bool statsroom_make(unsigned long pages)
+{
+    long region = kosmos_mem_create(pages), at;
+
+    if (region < 0) {
+        return false;
+    }
+
+    at = kosmos_mem_map(region);
+
+    if (at < 0) {
+        (void)kosmos_cap_drop(region);
+        return false;
+    }
+
+    if (statsroom.at != NULL
+        && kosmos_share_unmap((unsigned long)(uintptr_t)statsroom.at, statsroom.pages) == 0) {
+        (void)kosmos_cap_drop(statsroom.region);
+    }
+
+    statsroom.region = region;
+    statsroom.at     = (uint8_t *)(uintptr_t)at;
+    statsroom.pages  = pages;
+    return true;
+}
+
+static int l_stats(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    struct net_request req;
+    struct net_reply rep;
+    struct message msg, out;
+    struct net_stats totals;
+
+    for (int tries = 0; ; tries++) {
+        if (statsroom.at == NULL && !statsroom_make(1)) {
+            return failed(L, NET_ERR_FULL);
+        }
+
+        memset(&req, 0, sizeof(req));
+        req.op = NET_OP_STATS;
+
+        memset(&msg, 0, sizeof(msg));
+        msg.length = sizeof(req);
+        msg.cap_plus_one = (uint32_t)(statsroom.region + 1);
+        memcpy(msg.data, &req, sizeof(req));
+
+        if (kosmos_call(cap, &msg, &out) != 0 || out.length < sizeof(rep)) {
+            return failed(L, ~0u);
+        }
+
+        memcpy(&rep, out.data, sizeof(rep));
+
+        if (rep.status != NET_OK) {
+            return failed(L, rep.status);
+        }
+
+        if (rep.ready >= rep.length || tries > 0) {
+            break;
+        }
+
+        /* More than it held: room for all of them and a few more. */
+        if (!statsroom_make((sizeof(struct net_stats)
+                             + (rep.length + 16u) * sizeof(struct net_stats_conn)
+                             + 4095u) / 4096u)) {
+            break;
+        }
+    }
+
+    memcpy(&totals, statsroom.at, sizeof(totals));
+    lua_createtable(L, 0, 8);
+    set_int(L, "bytes_in",    (lua_Integer)totals.bytes_in);
+    set_int(L, "bytes_out",   (lua_Integer)totals.bytes_out);
+    set_int(L, "frames_in",   (lua_Integer)totals.frames_in);
+    set_int(L, "frames_out",  (lua_Integer)totals.frames_out);
+    set_int(L, "dropped_in",  (lua_Integer)totals.dropped_in);
+    set_int(L, "dropped_out", (lua_Integer)totals.dropped_out);
+    set_int(L, "there",       (lua_Integer)rep.length);
+
+    lua_createtable(L, (int)rep.ready, 0);
+
+    for (uint32_t i = 0; i < rep.ready; i++) {
+        struct net_stats_conn e;
+
+        memcpy(&e, statsroom.at + sizeof(totals) + i * sizeof(e), sizeof(e));
+        lua_createtable(L, 0, 9);
+        set_int(L, "handle",      (lua_Integer)e.handle);
+        set_int(L, "process",     (lua_Integer)e.process);
+        set_int(L, "bytes_in",    (lua_Integer)e.bytes_in);
+        set_int(L, "bytes_out",   (lua_Integer)e.bytes_out);
+        set_int(L, "local_port",  (lua_Integer)e.local_port);
+        set_int(L, "remote_port", (lua_Integer)e.remote_port);
+        lua_pushstring(L, e.kind == NET_KIND_LISTENER ? "listener"
+                        : e.kind == NET_KIND_UDP ? "udp" : "tcp");
+        lua_setfield(L, -2, "kind");
+        lua_pushstring(L, e.state == NET_TCP_OPENING ? "opening"
+                        : e.state == NET_TCP_OPEN ? "open" : "closed");
+        lua_setfield(L, -2, "state");
+        push_addr(L, &e.remote);
+        lua_setfield(L, -2, "remote");
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+
+    lua_setfield(L, -2, "connections");
+    return 1;
+}
+
 void kosmos_net_kit(lua_State *L)
 {
     static const luaL_Reg api[] = {
@@ -1151,6 +1278,7 @@ void kosmos_net_kit(lua_State *L)
         { "listen",    l_listen },
         { "accept",    l_accept },
         { "poll",      l_poll },
+        { "stats",     l_stats },
         { "resolve",   l_resolve },
         { "udp",       l_udp },
         { NULL, NULL }

@@ -23866,3 +23866,38 @@ was not 15 W: 30.0"). `x86-sysapps` runs `clocks` first and reads that
 QEMU's processor says nothing of its heat or its power - every core's tick
 has asked and been answered no, without a fault (34 -> 35). The gate: 70 of 71, `x86-film` its known flake under load, alone 13 of 13. The numbers
 themselves can only be seen on the M700 and the T14.
+
+## 18.560 Network Monitor N1: the network server counts, and says over what
+
+`docs/netmonitor.md` step N1. The network server (`net.c`) counts every
+frame in and out with its bytes, where it enters and leaves the process,
+and what the stack itself had no room for - a datagram with no room in its
+ring, a frame the card's ring would not take. Each connection keeps its
+payload in and out and the process that opened it, asked of the kernel with
+`SYS_SENDER` on `NET_OP_CONNECT`, `NET_OP_LISTEN` and `NET_OP_UDP_BIND`; a
+connection a listener made is its listener's.
+
+**`NET_OP_STATS`** answers into a region the caller sends, as `NET_OP_POLL`'s
+list is: a `struct net_stats` and a `struct net_stats_conn` a connection,
+`ready` written of `length` there are. The kit keeps one region and grows it
+when there were more (`net.stats`); the namespace has `fs.net_stats`; and
+`netstat` prints the totals and every connection with its program's name.
+
+**A byte sent again is not counted again.** The first run read 38 bytes out
+for a 19-byte request: TCP had sent it twice, and the count followed every
+send. A connection's `bytes_out` is now the advance of the highest sequence
+sent, so it says what its program sent; what the network cost - resends
+included - is in the frame totals.
+
+**What is not counted yet: the card's own drops.** The driver protocol
+(`ethproto.h`) carries no counter, so "dropped" is the stack's; a card's is a
+field in the driver's reply, for N3 or later.
+
+**Tests.** `x86-network` 34 -> 36: a program names itself, fetches over one
+connection from a server on the Mac and asks the stack, finding its
+connection by its own process - 491 bytes in of 491 read, 19 out of 19
+written; and `netstat` prints the totals. **Control**: `SYS_SENDER`'s
+answer thrown away - the program finds no connection of its own, and the
+suite fails.
+The gate: 70 of 71, `x86-film` its silence under load (`roadmap.md` 6zw),
+alone 13 of 13 - its sixth failure in seventeen gates this session.

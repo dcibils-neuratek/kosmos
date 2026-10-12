@@ -1510,6 +1510,19 @@ local function new_namespace()
   -- questions with different answers - `netproto.h` records what the single
   -- list cost. A connection may be in both.
   --
+  --
+  -- What has gone in and out, and over what (`netproto.h`, `NET_OP_STATS`):
+  -- the stack's running totals and every connection, each with the process
+  -- that opened it. Network Monitor asks it once a pace.
+  --
+  function ns.net_stats(path)
+    local net, capability, why = net_at(path or "/Network")
+
+    if not net then return nil, why end
+
+    return net.stats(capability)
+  end
+
   function ns.poll(path, reading, writing, listener, ticks)
     local net, capability, why = net_at(path or "/Network")
 
