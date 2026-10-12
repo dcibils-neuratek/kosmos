@@ -201,6 +201,12 @@ def second(image, fails, said):
     saved = list(R.X86_ARGS)
     i = R.X86_ARGS.index("virtio-tablet-pci")
     del R.X86_ARGS[i - 1:i + 1]
+    # And no word about the bar, which the harness gives every other guest:
+    # this machine starts as a person's does, with the default (Diego, 12
+    # October: "by default the bottom bar should be in the bottom setting,
+    # not top and floating").
+    j = R.X86_ARGS.index("name=opt/kosmos/bar,string=top")
+    del R.X86_ARGS[j - 1:j + 1]
 
     try:
         guest = S.boot(image, telnet, web)
@@ -211,6 +217,14 @@ def second(image, fails, said):
         guest.wait_for("wm: window Deskbar at ", "the bar")
         guest.wait_for("telnetd: on port ", "telnetd listening")
         guest._read_available()
+        # Waited for: the Deskbar says how it placed itself a moment after
+        # its window appears, later under load.
+        deadline = time.time() + 15
+        while time.time() < deadline and "deskbar: a dock" not in guest.seen \
+                and "deskbar: across the top" not in guest.seen:
+            time.sleep(0.3)
+            guest._read_available()
+        said["default bar"] = "deskbar: a dock, the whole width" in guest.seen
         m = re.findall(r"wm: mouse ([^\n]*)", guest.seen)
         said["at the start"] = m[0].strip() if m else None
 
@@ -265,6 +279,9 @@ def main():
     if "FOCUS true 250" not in said.get("focus at the start", ""):
         fails.append("focus following the pointer, kept by the first boot, was not on at the "
                      "second's start: %r" % said.get("focus at the start"))
+    if said.get("default bar") is not True:
+        fails.append("a machine with nothing saved did not start with the bar at the bottom, "
+                     "the whole width")
     if said.get("speed slider on a mouse") is not True:
         fails.append("a relative mouse was not offered a speed slider")
     if "ASKED true 48 48" not in said.get("asked", ""):
@@ -283,7 +300,7 @@ def main():
         if " died: " in seen:
             fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 12
+    checks = 13
 
     if fails:
         print("FAIL: %d of %d checks on the Mouse page:" % (len(fails), checks))

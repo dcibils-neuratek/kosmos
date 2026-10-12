@@ -210,6 +210,9 @@ def main():
 
         # ---- 1, 2: the dock, floating ----
         mark = len(guest.seen)
+        # Floating asked for first: the dock is the whole width unless said
+        # since 12 October, and floating is the case checked first here.
+        session.run("setprop /Running/Deskbar/dock floating")
         said["bar"] = session.run("setprop /Running/Deskbar/bar dock").decode(errors="replace")
         guest.wait_for("deskbar: a dock, floating", "the dock")
         said["strip"] = guest.wait_for_line("wm: window Deskbar strip at ", "the strip", mark)

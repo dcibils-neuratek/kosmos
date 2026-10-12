@@ -231,6 +231,11 @@ _VIRTIO_GPU = os.environ.get("KOSMOS_GPU") == "virtio"
 X86_ARGS = [
     "-M", "q35",
     "-m", "512M",
+    # **The bar at the top**, which every suite here was written against: the
+    # desktop's default became a dock at the bottom on 12 October (Diego),
+    # and the Deskbar takes this word from the command line as it takes
+    # `--bar`. A suite about the dock asks for it in Appearance as it did.
+    "-fw_cfg", "name=opt/kosmos/bar,string=top",
     "-fw_cfg", "name=opt/kosmos/camera,string=pattern+silent",   # `QEMU_ARGS` says
     "-fw_cfg", "name=opt/kosmos/midi,string=virtual",            # and MIDI's
     "-display", "none",
@@ -258,6 +263,7 @@ X86_ARGS = [
 
 QEMU_ARGS = [
     "-M", "virt,gic-version=3",
+    "-fw_cfg", "name=opt/kosmos/bar,string=top",   # as X86_ARGS says
     "-cpu", "cortex-a72",
     "-m", "512M",
     #
@@ -7376,25 +7382,6 @@ def _highlight_area(width, height, px):
     return total
 
 
-#
-# What a filled meter looks like, and it is two colours.
-#
-# `theme.good` below 80% and `theme.bad` above it - which is the whole
-# reason both are here. Written against the green alone this found nothing
-# and said the meter had not moved, because one spinner on one core settles
-# at *100%* and the bar had already turned red. A test that knows only the
-# calm colour fails exactly when the machine is busiest, which is the case
-# it exists to check.
-#
-METER_CALM = (0x3f, 0xb9, 0x50)     # theme.good
-METER_BUSY = (0xda, 0x36, 0x33)     # theme.bad
-
-
-def _meter_area(width, height, px):
-    return (_colour_area(width, height, px, METER_CALM)
-            + _colour_area(width, height, px, METER_BUSY))
-
-
 def check_cpu_split(guest):
     """**A processor's busy time, split into a thread's own and the kernel's.**
 
@@ -7769,251 +7756,6 @@ def check_camera(guest):
         stop_desktop(guest)
 
     return 8
-
-
-def check_cores(guest):
-    """A meter that moves when the machine is given something to do.
-
-    **`cores` is an instrument built before the thing it measures.** There
-    is one processor; `docs/smp.md` is the plan for more and step one of it
-    is done. What this checks is the whole path from the kernel's per-CPU
-    counters to a bar on the screen - `struct percpu`, `sysinfo`'s `cpu[]`
-    array, `sys.cpuload`, and the subtraction every meter in this system
-    makes - because until that path works there is nothing to watch SMP
-    arrive on.
-
-    It found a bug the day it was written, which is the argument for it: the
-    loop filling `sysinfo.cpu[]` was bounded by `info.cpus`, a field
-    assigned seventy lines further down, so the array stayed as `memset`
-    left it and every core read 0% with two spinners running. Nothing else
-    in the suite would have noticed - the *total* was right, and the total
-    is what four other programs read.
-
-    A worker is `/Kosmos/Programs/spin.lua`, which exists for exactly this and
-    deliberately does not yield. So this is also a check on the priority
-    bands: the window is DISPLAY and the spinner is NORMAL, and if the
-    button stopped answering while a core was pinned the screenshot below
-    would not change at all.
-    """
-    guest.type("wm cores")
-    started(guest)
-    time.sleep(2.0)
-
-    width, height, px = parse_ppm(guest.screendump())
-    before = _meter_area(width, height, px)
-
-    # "Add a worker", by the keyboard: it is the first control in the window,
-    # so it holds the focus when the window opens and Enter presses it.
-    #
-    # **It was a click at (188, 126)**, which worked while the buttons sat
-    # at a fixed offset above the panel - and they were put there because a
-    # test could not aim at them under it, where their y depended on how
-    # many processors the machine has. Since 0.10.149 they are the header's
-    # (`docs/apps.html`), placed from the right edge by the widths of their
-    # words, which depend on the face. The keyboard aims at nothing, which
-    # is the property the first move was after.
-    guest.sendkey("ret")
-
-    #
-    # Waited *for*, not waited out.
-    #
-    # This was `sleep(5)` and one reading, which is a fixed count standing in
-    # for a duration - the same shape as the twelve `thread_yield()` calls
-    # that made a kernel test flake on both boards. It held for as long as
-    # the bar was a solid fill: a spinner takes a second or two to move the
-    # average, and a filled rectangle crosses a hundred sampled pixels the
-    # moment it starts.
-    #
-    # A segmented bar does not. Six pixels lit and two dark is three
-    # quarters of the pixels, the reading climbs a segment at a time, and at
-    # five seconds it was at a tenth of the width - real, visible on screen,
-    # and under the threshold. The check then reported that the meter had
-    # not moved, which was false, and sent an afternoon after a bug that was
-    # not there.
-    #
-    # So: read until it has moved, and give up on the clock rather than on a
-    # count. Twenty seconds is far longer than it needs and costs nothing
-    # when it passes on the second read.
-    #
-    after = before
-    deadline = time.monotonic() + 20.0
-
-    while time.monotonic() < deadline:
-        time.sleep(1.0)
-        width, height, px = parse_ppm(guest.screendump())
-        after = _meter_area(width, height, px)
-
-        if after > before + 100:
-            break
-
-    if after <= before + 100:
-        raise Failure(
-            f"the processor meter did not move when a worker was started: "
-            f"{before} filled pixels before and {after} after. Either "
-            "`sys.cpuload` is not reporting, or the click never reached the "
-            "button - which on a machine with one core pinned by a spinner "
-            "would mean the priority bands are not holding."
-        )
-
-    checks = 1
-
-    #
-    # And take it off again, which is a check and a tidy-up at once.
-    #
-    # **The tidy-up is not optional.** A worker is `spin 600` - ten minutes,
-    # because a person looking at this window should not have it evaporate -
-    # and it is *detached*, so Control-C to the window manager does not
-    # touch it. Leaving one running poisons every phase after this one:
-    # written without this, the next phase's window never appeared and the
-    # harness blamed the window rather than the spinner still burning the
-    # core behind it.
-    #
-    # It is also the better assertion. Watching the meter fall proves the
-    # kill reached a process this program started, which is the other half
-    # of what the buttons claim.
-    #
-    # "Take one off": the next control along.
-    guest.sendkey("tab")
-    time.sleep(0.4)
-    guest.sendkey("ret")
-
-    #
-    # Waited for, on the way down as well as on the way up.
-    #
-    # This half was still `sleep(4)` and one reading after the other half
-    # was fixed, and it failed on the very next run: 716 pixels with the
-    # worker running and 716 four seconds after killing it. A meter that
-    # climbs a segment at a time falls a segment at a time, and the average
-    # it is showing has to decay before any of them go out.
-    #
-    # Worth writing down because the first fix looked complete. The reading
-    # rises slowly *and* falls slowly - one property, two places - and
-    # fixing the first without the second is the shape of bug that gets
-    # called flakiness for a week.
-    #
-    ended = after
-    deadline = time.monotonic() + 20.0
-
-    while time.monotonic() < deadline:
-        time.sleep(1.0)
-        width, height, px = parse_ppm(guest.screendump())
-        ended = _meter_area(width, height, px)
-
-        if ended < after - 100:
-            break
-
-    if ended >= after - 100:
-        raise Failure(
-            f"the worker was not taken off: {after} filled pixels with it "
-            f"running and {ended} after asking for it to stop. A spinner "
-            "left behind here runs for ten minutes, and every phase after "
-            "this one would share a core with it."
-        )
-
-    checks += 1
-
-    #
-    # **Two workers, taken off one at a time - and the count is the check.**
-    #
-    # The pair above passed for months while the button was broken, because
-    # one add and one remove is the single sequence that cannot meet the
-    # bug. A killed process keeps its row in `sys.processes()` until it is
-    # reaped - name, id and all - and `cores` counted by name, taking
-    # `ids[#ids]` as the one to end.
-    #
-    # With one worker that is the live one and it works. With two, the first
-    # removal ends the *last* started, and its corpse stays at the end of
-    # the list - so every removal after that aims at the same dead process.
-    # `sys.kill` answers *true* for one of those, the kernel's "already
-    # gone; nothing to do", so the button reports success for ever while the
-    # remaining worker keeps its core.
-    #
-    # Measured on the machine with five workers: the first click took one
-    # off, and clicks two through five all aimed at id 17, which had died on
-    # click one. The count stuck at four and the meter never came down -
-    # which is what a person reports as not being able to take workers off.
-    #
-    # Three seconds apart, not one. Two presses in quick succession on the
-    # same control are a double-click to anything that looks for one, and
-    # this needs two separate presses to be seen as two.
-    #
-    # **By the keyboard, as the pair above is**, since the buttons moved into
-    # the header (0.10.149): these were clicks at 188,126 and 308,126, where
-    # the buttons had been a row above the panel, and pressed the panel. The
-    # focus is on Take one off after the pair; Tab wraps to Add a worker.
-    guest.sendkey("tab")
-    time.sleep(0.5)
-
-    for _ in range(2):
-        guest.sendkey("ret")
-        time.sleep(3.0)
-
-    two = ended
-    deadline = time.monotonic() + 20.0
-
-    while time.monotonic() < deadline:
-        time.sleep(1.0)
-        width, height, px = parse_ppm(guest.screendump())
-        two = _meter_area(width, height, px)
-
-        if two > ended + 100:
-            break
-
-    if two <= ended + 100:
-        raise Failure(
-            f"two workers did not start: {ended} filled pixels before and "
-            f"{two} after. The first add/remove pair worked, so this is "
-            "about the state they left behind rather than about the button."
-        )
-
-    # And Take one off, the next along.
-    guest.sendkey("tab")
-    time.sleep(0.5)
-
-    for _ in range(2):
-        guest.sendkey("ret")
-        time.sleep(3.0)
-
-    settled = two
-    deadline = time.monotonic() + 40.0
-
-    while time.monotonic() < deadline:
-        time.sleep(1.0)
-        width, height, px = parse_ppm(guest.screendump())
-        settled = _meter_area(width, height, px)
-
-        if settled < ended + 100:
-            break
-
-    if settled >= ended + 100:
-        raise Failure(
-            f"the second worker could not be taken off: {two} filled pixels "
-            f"with two running, {settled} after asking for both to stop, "
-            f"against {ended} with none. One came off and one did not - "
-            "which is `cores` aiming its second kill at the corpse of the "
-            "first, because an exited process keeps its row in "
-            "`sys.processes()` and it was counting by name."
-        )
-
-    checks += 1
-
-    mark = len(guest.seen)
-    guest.proc.stdin.write(STOP_DESKTOP)
-    guest.proc.stdin.flush()
-
-    deadline = time.monotonic() + 15
-
-    while time.monotonic() < deadline:
-        guest._read_available()
-
-        if PROMPT in guest.seen[mark:]:
-            break
-
-        time.sleep(0.3)
-    else:
-        raise Failure("Control-C did not get the screen back from `cores`.")
-
-    return checks
 
 
 def check_clipboard(guest):
@@ -11834,7 +11576,6 @@ def main():
         places_checks = phase("places", check_places)
         panel_checks = phase("panel", check_panel)
         clip_checks = phase("clipboard", check_clipboard)
-        cores_checks = phase("cores", check_cores)
         split_checks = phase("cpu split", check_cpu_split)
         monitor_checks = phase("monitor", check_monitor)
         camera_checks = phase("camera", check_camera)
@@ -11889,7 +11630,7 @@ def main():
              + graphical_checks + click_checks + deskbar_checks
              + focus_checks + starting_checks + desktop_checks + places_checks
              + panel_checks
-             + clip_checks + cores_checks + reaped_checks
+             + clip_checks + reaped_checks
              + idle_checks + terminal_checks + log_view_checks
              + icon_size_checks
              + sized_checks + fold_checks + tri_checks
@@ -11959,8 +11700,6 @@ def main():
           f"another and on This Machine's report following its window, "
           f"{reaped_checks} on an application that dies saying why and "
           "losing its window, "
-          f"{cores_checks} on a processor meter moving when the machine is "
-          f"given work, "
           f"{idle_checks} on an idle desktop being idle, "
           f"{terminal_checks} on a terminal window (a program printing into "
           f"one, and its character grid following the window when it is "

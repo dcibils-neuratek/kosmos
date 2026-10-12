@@ -620,7 +620,7 @@ DISPLAY_PARTS = [
      "deskbar", "deskbar focus", "starting", "deskbar layers",
      "desktop",
      "places", "panel"],
-    ["clipboard", "cores", "cpu split", "monitor", "camera", "reaped",
+    ["clipboard", "cpu split", "monitor", "camera", "reaped",
      "clicks", "graphical", "replicants", "window_manager", "drives app",
      "scale", "scale changed", "icon sizes"],
 

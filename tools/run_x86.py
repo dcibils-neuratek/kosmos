@@ -38,6 +38,11 @@ QEMU = "qemu-system-x86_64"
 
 # `make x86`'s own line. What a person runs, not a shape invented for a test.
 ARGS = [
+    # The bar at the top, which these suites were written against: the
+    # desktop's default became a dock at the bottom on 12 October (as
+    # `run_screenshot.py`'s X86_ARGS says). The lists built by hand below
+    # carry it too.
+    "-fw_cfg", "name=opt/kosmos/bar,string=top",
     "-M", "q35",
     "-m", "512M",
     "-nographic",
@@ -325,7 +330,7 @@ def qemu_usb(extra):
     """
     work = scratch.directory("infousb")
     path = os.path.join(work, "monitor")
-    cmd = [QEMU, "-M", "q35", "-m", "512M", "-S", "-no-reboot",
+    cmd = [QEMU, "-fw_cfg", "name=opt/kosmos/bar,string=top", "-M", "q35", "-m", "512M", "-S", "-no-reboot",
            "-display", "none", "-serial", "none",
            "-monitor", "unix:%s,server,nowait" % path] + list(extra)
 
@@ -1961,7 +1966,7 @@ def usb_hotplug(image, check):
     with open(stick, "wb") as handle:
         handle.truncate(16 * 1024 * 1024)
 
-    cmd = [QEMU, "-M", "q35", "-m", "512M", "-no-reboot",
+    cmd = [QEMU, "-fw_cfg", "name=opt/kosmos/bar,string=top", "-M", "q35", "-m", "512M", "-no-reboot",
            "-display", "none", "-serial", "stdio",
            "-monitor", "unix:%s,server,nowait" % path,
            "-device", "qemu-xhci,id=usb0",
@@ -2567,7 +2572,7 @@ def pointer(image, check):
 
     def start(serial):
         path = os.path.join(work, "monitor-" + serial)
-        cmd = [QEMU, "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
+        cmd = [QEMU, "-fw_cfg", "name=opt/kosmos/bar,string=top", "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
                "-display", "none", "-vga", "none", "-device", "ramfb",
                "-monitor", "unix:%s,server,nowait" % path,
                "-serial", serial,
@@ -2747,7 +2752,7 @@ def power_button(image, check):
     binary = os.path.join(os.path.dirname(image), "kosmos.bin")
     work = scratch.directory("x86-power")
     path = os.path.join(work, "monitor")
-    cmd = [QEMU, "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
+    cmd = [QEMU, "-fw_cfg", "name=opt/kosmos/bar,string=top", "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
            "-display", "none", "-vga", "none", "-device", "ramfb",
            "-monitor", "unix:%s,server,nowait" % path,
            "-serial", "stdio",
@@ -2898,7 +2903,7 @@ def battery(image, check):
     def desktop(value, label, extra=(), network=None):
         work = scratch.directory("x86-battery")
         path = os.path.join(work, "monitor")
-        cmd = [QEMU, "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
+        cmd = [QEMU, "-fw_cfg", "name=opt/kosmos/bar,string=top", "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
                "-display", "none", "-vga", "none", "-device", "ramfb",
                "-monitor", "unix:%s,server,nowait" % path,
                "-serial", "stdio",
@@ -3061,7 +3066,7 @@ def usb_mouse(image, check):
     traced = os.path.join(work, "trace")
     plugs = []
     endpoint = 0
-    cmd = [QEMU, "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
+    cmd = [QEMU, "-fw_cfg", "name=opt/kosmos/bar,string=top", "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
            "-display", "none", "-vga", "none", "-device", "ramfb",
            "-monitor", "unix:%s,server,nowait" % path,
            "-serial", "stdio",

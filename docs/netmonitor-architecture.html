@@ -1,0 +1,129 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Network Monitor, and what it stands on: the application on top, the kit's
+  new graph, the network server's new counters and request, the kernel's new
+  SYS_SENDER, and the driver as it is. The busiest path - a frame - drawn
+  through it (F), and the window's once-a-pace request (W). Drawn on 12
+  October 2026, before any of it is built; `docs/netmonitor.md` is the
+  argument and `docs/netmonitor.html` the window.
+
+  Rendered to docs/netmonitor-architecture.png by headless Chrome at twice
+  its size, as docs/music-architecture.png is.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Network Monitor architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Network Monitor - what it stands on</h1>
+<p class="sub">It counts nothing itself: the network server counts every frame in and out, in total and on each connection, and answers one new request; the kernel says which program opened a connection; the graph is Monitor's, moved into the kit. Network Monitor asks once a pace and draws.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>application</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers and drivers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">F</span><span>a frame</span><span class="f">W</span><span>the window, once a pace</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Application</h2>
+      <div class="row" style="grid-template-columns:1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Network Monitor - <code>netmon.lua</code></b><p>The card with in and out now, the minute's graph, the totals, the connections with their programs; the pace and bytes or bits. Asks <code>NET_OP_STATS</code> once a pace <span class="f">W1</span>, takes the differences <span class="f">W3</span>, draws <span class="f">W4</span>.</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in its process)</h2>
+      <div class="row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="box"><b>ui.lua</b><p>window, header, card, list, menu</p></div>
+        <div class="box new"><span class="tag">MOVED</span><b>ui.history</b><p>Monitor's graph of a minute, in the kit: a column a sample, two series stacked or mirrored - Monitor draws with it too</p></div>
+        <div class="box"><b>sys.processes()</b><p>a program's name from its id <span class="f">W2</span></p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers and drivers</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>network server - <code>net.c</code></b><p>counts each frame's bytes and the packet, in total and on its connection <span class="f">F2</span>; <code>NET_OP_STATS</code>, a declared shape in <code>netproto.h</code>: the totals, dropped, and a page of connections - each its process, where it goes, its state, its bytes each way <span class="f">W1</span></p></div>
+        <div class="box"><b>the card's driver</b><p><code>e1000</code>, the USB Ethernet driver: frames in a ring <span class="f">F1</span>; what was dropped</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>SYS_SENDER</b><p>the process behind a reply token a server holds - asked once, when a connection is opened. A process id is in <code>sys.processes()</code> already; this names only a server's own callers.</p></div>
+        <div class="box"><b>IPC, regions</b><p>the frame ring between driver and server</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>F - a frame</h3>
+      <ol><li><b>F1</b> The driver hands the frame through its ring, as now.</li>
+          <li><b>F2</b> The server adds its length to the total and to its connection, and counts the packet - two or three additions on a path that already copies the frame.</li></ol></div>
+    <div class="card"><h3>W - the window, once a pace</h3>
+      <ol><li><b>W1</b> One <code>NET_OP_STATS</code>: the totals and the first page of connections.</li>
+          <li><b>W2</b> The programs' names, from their ids.</li>
+          <li><b>W3</b> Rates as the difference between this reading and the last.</li>
+          <li><b>W4</b> A column on the graph, the list sorted by what is busiest, a paint.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3>
+      <table>
+        <tr><td>Traffic</td><td>never near the window: only counts</td></tr>
+        <tr><td>The counts</td><td>a reply to one request, asked once a pace</td></tr>
+        <tr><td>A connection's program</td><td>its process id, kept by the server from <code>SYS_SENDER</code></td></tr>
+      </table></div>
+    <div class="card"><h3>Who else uses what is new</h3>
+      <table>
+        <tr><td>ui.history</td><td>Monitor; any meter of a minute</td></tr>
+        <tr><td>The counters</td><td>the Deskbar's network indicator; Processes, a program's traffic</td></tr>
+        <tr><td>SYS_SENDER</td><td>any server that wants to say whose a request is</td></tr>
+      </table></div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

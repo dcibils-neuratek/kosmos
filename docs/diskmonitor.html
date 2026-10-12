@@ -1,0 +1,224 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Disk Monitor, Network Monitor's sibling. Drawn on 12 October 2026 from
+  Diego's ask: "we will need to do another app called Disk Monitor to
+  moniutor input ouptput like we do for network to show all devices and its
+  input output bandwtudh, procesees using io, etc". roadmap.md, "Disk
+  Monitor, an app". The page to build it from, once agreed. The drives, the
+  numbers and the programs in it are made up, in the shape of the M700's.
+-->
+<title>Disk Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* Astra's dark look, as Monitor is drawn. */
+  --a-win: #1f2430; --a-raised: #262c39; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-faint: #6b7486; --a-graph: #16181d;
+  --in: #4fb3ff; --out: #ffa64d;   /* the kit's io_in and io_out: Network Monitor's too */
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 28px; max-width: 72ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 76ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 84ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 780px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+table.plain { border-collapse: collapse; margin: 10px 0; width: 100%; max-width: 820px; font-size: 14px; }
+table.plain td, table.plain th { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+table.plain th { font-family: var(--display); font-weight: 600; }
+
+.win { width: 980px; background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line);
+       border-radius: 12px; box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; flex: none; position: relative; }
+.head { display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 14px; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 14px; flex: 1; }
+.legend { display: flex; gap: 14px; color: var(--a-dim); }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; background: var(--c); }
+.dots { color: var(--a-dim); font-weight: 700; letter-spacing: 1px; }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.body { padding: 16px 18px 16px; }
+
+.card { display: grid; grid-template-columns: 58px 1fr auto auto; gap: 18px; align-items: center;
+        background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 10px; padding: 14px 16px; }
+.port { width: 58px; height: 58px; border-radius: 8px; background: linear-gradient(145deg,#3c4556,#262c39); border: 1px solid #4a5468; position: relative; }
+.port::before { content: ""; position: absolute; left: 15px; top: 14px; width: 28px; height: 22px; background: #16181d; border-radius: 3px; }
+.port::after { content: ""; position: absolute; left: 23px; top: 36px; width: 12px; height: 7px; background: #16181d; }
+.card .maker { color: var(--a-dim); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+.card .model { font-family: var(--display); font-size: 21px; font-weight: 600; line-height: 1.15; }
+.card .facts { color: var(--a-dim); font-size: 12px; margin-top: 3px; font-variant-numeric: tabular-nums; }
+.rate { text-align: right; font-variant-numeric: tabular-nums; }
+.rate b { display: block; font-family: var(--display); font-size: 22px; }
+.rate span { font-size: 12px; color: var(--a-dim); }
+.rate.in b { color: var(--in); } .rate.out b { color: var(--out); }
+
+.heading { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 2px 8px; }
+.heading b { font-size: 14px; }
+.heading span { color: var(--a-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+.graph { position: relative; height: 150px; background: var(--a-graph); border-radius: 8px; overflow: hidden; }
+.graph .mid { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: #2a303c; }
+.graph .cols { position: absolute; inset: 4px; display: flex; gap: 1px; }
+.graph .cols i { flex: 1; position: relative; }
+.graph .cols i u, .graph .cols i s { position: absolute; left: 0; right: 0; display: block; }
+.graph .cols i u { bottom: 50%; background: var(--in); }
+.graph .cols i s { top: 50%; background: var(--out); }
+.graph .scale { position: absolute; right: 8px; font-size: 10.5px; color: var(--a-faint); font-family: var(--mono); }
+.totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
+.totals div { background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 8px; padding: 8px 12px; font-variant-numeric: tabular-nums; }
+.totals small { display: block; color: var(--a-dim); font-size: 11.5px; }
+.totals b { font-size: 15px; }
+
+.conns { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; margin-top: 4px; }
+.conns th { text-align: left; color: var(--a-faint); font-weight: 500; font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--a-line); }
+.conns td { padding: 0 8px; height: 30px; color: var(--a-dim); white-space: nowrap; }
+.conns td:first-child { color: var(--a-ink); }
+.conns tr:nth-child(even) td { background: rgba(255,255,255,.018); }
+.conns td.r, .conns th.r { text-align: right; }
+.conns td.in { color: var(--in); } .conns td.out { color: var(--out); }
+.st { font-size: 11px; border: 1px solid #3d4556; border-radius: 4px; padding: 0 6px; }
+.foot { color: var(--a-dim); font-size: 12px; margin: 10px 2px 0; }
+.menu { position: absolute; right: 44px; top: 42px; width: 240px; background: #2a3140; border: 1px solid #424b5d;
+        border-radius: 9px; padding: 5px; box-shadow: 0 16px 40px rgba(0,0,0,.5); z-index: 3; }
+.menu div { padding: 5px 10px 5px 28px; border-radius: 6px; position: relative; }
+.menu div.mark::before { content: "\2713"; position: absolute; left: 10px; }
+.menu hr { border: 0; border-top: 1px solid #424b5d; margin: 5px 4px; }
+
+.split { display: grid; grid-template-columns: 290px 1fr; }
+.devs { border-right: 1px solid var(--a-line); padding: 12px 10px; background: #1b2029; }
+.devs h5 { margin: 4px 8px 8px; font-size: 11px; color: var(--a-faint); text-transform: uppercase; letter-spacing: .07em; }
+.dev { display: grid; grid-template-columns: 34px 1fr; gap: 10px; padding: 9px 10px; border-radius: 8px; margin-bottom: 4px; }
+.dev.on { background: #2c3342; }
+.dev .ic { width: 34px; height: 34px; border-radius: 7px; background: linear-gradient(145deg,#3c4556,#262c39); border: 1px solid #4a5468; }
+.dev b { display: block; font-size: 13px; }
+.dev small { color: var(--a-dim); font-size: 11.5px; display: block; font-variant-numeric: tabular-nums; }
+.spark { height: 22px; margin-top: 5px; display: flex; gap: 1px; align-items: flex-end; }
+.spark i { flex: 1; background: var(--in); opacity: .8; }
+.spark i.w { background: var(--out); }
+.right { padding: 16px 18px; }
+/* A drive drawn as what it is. */
+.dk { width: 58px; height: 58px; position: relative; flex: none; }
+.dev .dk { width: 34px; height: 34px; }
+.dk.ssd::before { content: ""; position: absolute; inset: 14% 4%; border-radius: 3px; background: #2b3a4d; border: 1px solid #5b6d88; }
+.dk.ssd::after { content: ""; position: absolute; left: 16%; right: 30%; top: 32%; bottom: 32%;
+  background: repeating-linear-gradient(90deg, #8fa3c2 0 18%, transparent 18% 26%); border-radius: 1px; }
+.dk.usb::before { content: ""; position: absolute; left: 30%; right: 30%; top: 26%; bottom: 6%; border-radius: 4px; background: #c9ced6; }
+.dk.usb::after { content: ""; position: absolute; left: 38%; right: 38%; top: 6%; height: 22%; border-radius: 2px 2px 0 0;
+  background: #9aa3b2; box-shadow: inset 0 3px 0 #6b7486; }
+.dk.share::before { content: ""; position: absolute; left: 10%; right: 10%; top: 12%; height: 52%; border-radius: 4px; background: #4f7fe0; border: 1px solid #7aa2f0; }
+.dk.share::after { content: ""; position: absolute; left: 30%; right: 30%; bottom: 8%; height: 18%;
+  border-top: 3px solid #9aa3b2; border-left: 2px solid transparent; border-right: 2px solid transparent; }
+.dk.mem::before { content: ""; position: absolute; left: 4%; right: 4%; top: 28%; height: 36%; border-radius: 2px; background: #2f8a5a; }
+.dk.mem::after { content: ""; position: absolute; left: 12%; right: 12%; top: 34%; height: 24%;
+  background: repeating-linear-gradient(90deg, #1b2029 0 14%, transparent 14% 22%); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Disk Monitor</h1>
+<p class="sub">Every drive this machine is using - the disk <code>/Home</code> is on, a stick, a share on another computer, the memory <code>/Temporary</code> is kept in - with what each is reading and writing now and over the last minute, how long it takes to answer, the totals, and which programs are doing it.</p>
+
+<div class="q"><b>Diego, 12 October 2026</b>: "we will need to do another app called Disk Monitor to moniutor input ouptput like we do for network to show all devices and its input output bandwtudh, procesees using io, etc".</div>
+
+<h2>As it opens</h2>
+<div class="scroller"><div class="win" id="w1"></div></div>
+<p class="cap"><b>Every drive on the left</b>, each drawn as what it is - an SSD, a USB stick, a share on another computer, memory - and each with its reading and writing now and a small graph of the minute - reading in blue, writing in orange - the same two colours as Network Monitor, coming in and going out, the kit's own. <b>The chosen one on the right</b>: what it is and where it is mounted, its rates now, the minute's graph with reading above the line and writing below, then <b>how long a request takes</b> - its average over the last second, reading and writing apart - and <b>how often the cache answered</b> without asking the drive; the totals since the machine started; and <b>the programs</b> reading and writing it now, the busiest first, with the file each touched last.</p>
+
+<h2>What it is made of</h2>
+<table class="plain">
+  <tr><th>Piece</th><th>Supplied by</th><th>New or as it is</th></tr>
+  <tr><td>The window, the list of drives, the menu</td><td>the UI kit</td><td>as it is</td></tr>
+  <tr><td>The graphs</td><td><code>ui.history</code>, as Network Monitor's and Monitor's</td><td>from Network Monitor (its step N2)</td></tr>
+  <tr><td>A drive's reads, writes, bytes, time taken, the cache's hits</td><td>each disk server's <code>DISK_OP_DEVICE</code> - <code>/Home</code>'s, a stick's, a share's</td><td><b>there already</b>, for Disk Benchmark</td></tr>
+  <tr><td><b>A program's reading and writing, and its last file</b></td><td><b>the disk servers</b>, counted per caller; the caller named by <code>SYS_SENDER</code></td><td><b>new</b> - and the kernel call from Network Monitor (its step N1)</td></tr>
+  <tr><td>The list of drives</td><td>the mounts and <code>/Devices/blocks</code>, as Tracker's Drives has them</td><td>as it is</td></tr>
+  <tr><td>Memory's (<code>/Temporary</code>)</td><td>ramfs, counted as the disk servers count</td><td><b>new</b>, small</td></tr>
+</table>
+<p>Built after Network Monitor, whose graph and kernel call it uses. Its feature set, architecture and diagram before the code, in <code>docs/diskmonitor.md</code>.</p>
+</div>
+
+<script>
+function seeded(n) { let s = n * 9301 + 49297; return () => (s = (s * 9301 + 49297) % 233280) / 233280; }
+
+function head() {
+  return `<div class="head"><span class="t">Disk Monitor</span>
+    <span class="legend"><span style="--c:var(--in)">Reading</span><span style="--c:var(--out)">Writing</span></span>
+    <span class="dots">&middot;&middot;&middot;</span>
+    <span class="lights"><i style="background:#3fbf4f"></i><i style="background:#f2b233"></i><i style="background:#ee5048"></i></span></div>`;
+}
+
+function spark(seed, busy) {
+  const r = seeded(seed); let out = "";
+  for (let i = 0; i < 30; i++) {
+    const v = busy ? (i > 12 && i < 24 ? 40 + r() * 60 : r() * 15) : r() * 8;
+    out += `<i class="${i % 3 === 2 ? "w" : ""}" style="height:${Math.max(4, v)}%"></i>`;
+  }
+  return `<div class="spark">${out}</div>`;
+}
+
+const DEVS = [
+  ["Samsung SSD 970 EVO", "NVMe · /Home", "41.2 MB/s read · 3.1 MB/s write", 1, true, "ssd"],
+  ["Kingston DataTraveler", "USB stick · /Drives/KINGSTON", "0 read · 0 write", 2, false, "usb"],
+  ["Studio", "a share on studio.local · SMB", "8.4 MB/s read · 96 KB/s write", 3, true, "share"],
+  ["Memory", "/Temporary", "120 KB/s read · 2.4 MB/s write", 4, false, "mem"],
+];
+
+function graph() {
+  const r = seeded(9); let cols = "";
+  for (let i = 0; i < 60; i++) {
+    let rd = i > 20 && i < 46 ? 50 + r() * 45 : r() * 10, wr = i > 30 && i < 40 ? 20 + r() * 20 : r() * 6;
+    cols += `<i><u style="height:${rd / 2}%"></u><s style="height:${wr / 2}%"></s></i>`;
+  }
+  return `<div class="graph"><div class="cols">${cols}</div><div class="mid"></div>
+    <span class="scale" style="top:6px">96 MB/s reading</span><span class="scale" style="bottom:6px">96 MB/s writing</span></div>`;
+}
+
+const PROGS = [
+  ["Cafesa3D", "41.0 MB/s", "0", "/Home/Scenes/textures/oak.png"],
+  ["Tracker", "180 KB/s", "0", "/Home/Photos"],
+  ["maild", "0", "2.9 MB/s", "/Home/Mail/gmail/INBOX/18342.eml"],
+  ["Music", "64 KB/s", "0", "/Home/Music/Night Ferry.flac"],
+  ["diskfs (its journal)", "0", "210 KB/s", "the journal"],
+];
+
+document.getElementById("w1").innerHTML = head() + `<div class="split">
+  <div class="devs"><h5>Drives</h5>${DEVS.map(([n, w, r, s, b, k], i) =>
+    `<div class="dev${i === 0 ? " on" : ""}"><span class="dk ${k}"></span><span><b>${n}</b><small>${w}</small><small>${r}</small>${spark(s, b)}</span></div>`).join("")}</div>
+  <div class="right">
+    <div class="card"><div class="dk ssd"></div>
+      <div><div class="maker">Samsung</div><div class="model">SSD 970 EVO</div><div class="facts">NVMe · 500 GB · /Home, 61% used</div></div>
+      <div class="rate in"><b>41.2 MB/s</b><span>reading, now</span></div>
+      <div class="rate out"><b>3.1 MB/s</b><span>writing, now</span></div></div>
+    <div class="heading"><b>The last minute</b><span>peak 92 MB/s reading, 24 MB/s writing</span></div>
+    ${graph()}
+    <div class="totals">
+      <div><small>A read takes</small><b>0.21 ms</b></div><div><small>A write takes</small><b>0.64 ms</b></div>
+      <div><small>Cache answered</small><b>78%</b></div><div><small>Read · written since start</small><b>3.8 GB · 412 MB</b></div></div>
+    <div class="heading"><b>Programs using it</b><span>5 now</span></div>
+    <table class="conns"><tr><th>Program</th><th class="r">Reading</th><th class="r">Writing</th><th>Last file</th></tr>
+      ${PROGS.map(([p, r, w, f]) => `<tr><td>${p}</td><td class="r in">${r}</td><td class="r out">${w}</td><td>${f}</td></tr>`).join("")}
+    </table>
+    <div class="foot">A column a second; the newest at the right.</div>
+  </div></div>`;
+</script>
+</body>
+</html>

@@ -354,6 +354,49 @@ chosen from elsewhere copied into `/Home/Wallpapers` so the folder is the
 whole list. Thumbnails made once at the size drawn; the row a kit piece,
 `ui.carousel`.
 
+**The bar at the bottom by default, and Processor Cores gone** - Diego, 12
+October 2026: "by default the bottom bar should be in the bottom setting,
+not top and floating", and "also remove the processor cores app which is
+useless now". The Deskbar starts as a dock at the bottom the whole width
+unless Appearance says otherwise; Processor Cores (`cores.lua`) is removed,
+with what only it used - `pulse.lua`'s panel and the kit's `ui.leds` -
+Monitor showing every core better since its refresh.
+
+**The processor's temperature and power limit, read** - Diego, 12 October
+2026, after the M700's turbo lasted a burst and settled at base under a
+render ("it might be the cooling at work"): "yes read the temperature and
+power limit". Each core's temperature, the package's and its limit (TjMax),
+whether it is held now by heat or by its power limit, the firmware's power
+limits (PL1, its window, PL2), and the power drawn, from the energy counter
+- in `clocks` and Monitor. Read only where the processor says the registers
+are there: the thermal ones by CPUID, the power ones on Intel models known
+to have them.
+
+**The meters in the UI kit, and one pair of colours** - Diego, 12 October
+2026: "why are we changing the colr shemes for reading and writing in network
+and disk? we should stick to a single color schemem for all reading/writing
+in all monitoring apps", and "can we make those cpu, disk, network meters part
+of the uikit so another app can make use of it?". So `ui.history` (a minute,
+a column a sample) and `ui.meter_card` (a device's picture, name, facts and
+its two rates) are kit pieces, and the theme carries `io_in` and `io_out` -
+blue for coming in or read, orange for going out or written - for every
+monitor and any application that shows a rate. Monitor's green and red stay:
+they say whose time it was, not which way bytes went. Network Monitor's step
+N2.
+
+**Disk Monitor, an app** - Diego, 12 October 2026: "we will need to do
+another app called Disk Monitor to moniutor input ouptput like we do for
+network to show all devices and its input output bandwtudh, procesees using
+io, etc". Every drive - the disk `/Home` is on, a stick, a share - with what
+it is reading and writing now and over the last minute, totals, and which
+programs are doing it. Network Monitor's sibling: the same graph
+(`ui.history`), the same way of naming a caller (`SYS_SENDER`), and the disk
+server's counters, which partly exist (`DISK_OP_DEVICE`: reads, writes,
+bytes, the time they took, the cache's hits). Designed before it is built.
+**Drawn and agreed the same day** (`docs/diskmonitor.html`; Diego: "mockup for
+disk is perfect", and each drive drawn as what it is - an SSD, a USB stick,
+a share, memory - not the network's port). Built after Network Monitor.
+
 **Network Monitor, an app** - Diego, 12 October 2026: "i realizsed we need
 network monitor app as well to see network input and output". What goes in
 and out, now and over the last minute, as Monitor shows the processors: the
@@ -362,7 +405,8 @@ packets and what was dropped, and which programs' connections the traffic
 is. Nothing counts it today - the network server reports addresses and no
 bytes - so the server counts, per connection and in total, and answers a
 new request in a declared shape. Designed before it is built: its feature
-set, mockup, architecture and diagram.
+set, mockup, architecture and diagram. **Drawn and agreed the same day**
+(`docs/netmonitor.html`; Diego: "mockup is perfect! go ahead and build it").
 
 **Nebula's own memory in Processes** - Diego, 10 October 2026: "why does
 the kernel does not show any memory consumption in processes?". Its row is

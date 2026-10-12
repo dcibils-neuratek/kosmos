@@ -544,18 +544,29 @@ local W = sw
 -- October: "an appearance setting to place the taskbar on the bottom
 -- center"): across the top, as it has been, or a dock at the foot of the
 -- screen with a strip across the top for the time and the indicators -
--- Appearance's `bar`, the dock floating unless `dock` says the whole
--- width. `--bar dock` or `--bar top` says so for one start, as a test asks.
+-- Appearance's `bar`, the dock the whole width unless `dock` says
+-- floating. `--bar dock` or `--bar top` says so for one start, as a test asks.
 --
 local prefs = use("/Kosmos/Libraries/prefs.lua")
 local appearance = prefs.read("appearance")
 
 local asked_bar = tostring(args or ""):match("%-%-bar%s+(%a+)")
+
+-- **And the machine's own default**, from its command line -
+-- `opt/kosmos/bar=top`, which the test harness gives every guest, its suites
+-- having been written against the bar at the top, the default until 12
+-- October. Beneath what Appearance saved: a choice a person made wins.
+local boot_bar = sys.boot and sys.boot("opt/kosmos/bar") or nil
+
+if boot_bar == "" then boot_bar = nil end
 local asked_dock = tostring(args or ""):match("%-%-dock%s+(%a+)")
 local asked_size = tostring(args or ""):match("%-%-size%s+(%a+)")
 local DOCK_SIZE = asked_size or appearance.dock_size or "medium"
-local DOCKED = (asked_bar or appearance.bar) == "dock"
-local FLOATING = (asked_dock or appearance.dock) ~= "whole"
+-- **At the bottom and the whole width unless said** (Diego, 12 October
+-- 2026: "by default the bottom bar should be in the bottom setting, not top
+-- and floating"), as `settings.lua` declares them.
+local DOCKED = (asked_bar or appearance.bar or boot_bar or "dock") == "dock"
+local FLOATING = (asked_dock or appearance.dock or "whole") == "floating"
 
 --
 -- **How much of what is behind shows through the dock** (Diego, 4 October:

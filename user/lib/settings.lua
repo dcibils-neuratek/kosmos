@@ -180,13 +180,13 @@ settings.ITEMS = {
   item{ category = "appearance", group = "Look",
         label = "The bar", note = "Across the top, or a dock at the foot of the screen",
         kind = "choice", file = settings.APPEARANCE, key = "bar",
-        default = "top",
+        default = "dock",           -- Diego, 12 October: the bottom by default
         choices = { { "top", "Top" }, { "dock", "Bottom, centred" } } },
 
   item{ category = "appearance", group = "Look",
         label = "The dock", note = "Floating above the edge, or the whole width",
         kind = "choice", file = settings.APPEARANCE, key = "dock",
-        default = "floating",
+        default = "whole",          -- and the whole width, not floating
         choices = { { "floating", "Floating" }, { "whole", "Whole width" } } },
 
   --

@@ -23796,3 +23796,33 @@ long-term power limit (PL1, with turbo allowed past it for a window of
 typically 28 s) is set low for the case - the processor's thermal status
 and power-limit registers would say which. Turbo is real and short; the
 gain that lasts is the idle cores at 1.3 GHz.
+
+## 18.558 The bar at the bottom by default; Processor Cores removed
+
+Diego, 12 October: "by default the bottom bar should be in the bottom
+setting, not top and floating", and "also remove the processor cores app
+which is useless now".
+
+**The default.** With nothing saved, the Deskbar starts as a dock at the
+bottom, the whole width (`settings.lua` says so, and the Deskbar reads it
+the same way). What it takes, in order: what it was started with
+(`--bar`), what Appearance saved, the machine's command line
+(`opt/kosmos/bar`), and the default. A person's choice wins.
+
+**And the suites, which were written against the top bar.** Nine failed at
+once, each looking for the Deskbar - its battery, its network, its clock -
+where the top bar puts them. Rather than nine files each knowing the old
+default, the harness says it once: every guest is given
+`opt/kosmos/bar=top` (`run_screenshot.py`'s `X86_ARGS` and `QEMU_ARGS`,
+`run_x86.py`'s `ARGS` and the command lines it builds by hand), and a suite
+about the dock asks for it as it always did - `x86-dock` now asks for a
+floating dock before turning the dock on, the whole width being the
+default. `x86-mouse`'s second boot drops the word and checks a machine with
+nothing saved starts with the bar at the bottom, the whole width (12 -> 13;
+**control**: the old default - it fails).
+
+**Processor Cores removed** (`cores.lua`), with what only it used:
+`pulse.lua`'s panel - `pulse.lua` keeps the processor's name and speeds,
+which Monitor and `clocks` use - the kit's `ui.leds`, and the display
+harness's "cores" phase and its meter helpers. Monitor's own phases check
+the same path from the kernel's counters to the screen.
