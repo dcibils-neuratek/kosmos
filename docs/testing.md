@@ -23964,3 +23964,29 @@ It joins the dated screenshot (`run_gallery.py`'s `OPEN`), twenty windows.
 The gate: 71 of 72 - `x86-mdns` at 145 s under load, the second gate
 running at that figure (its Tracker check waits on a deadline the gate's
 load outlasts); alone 7 of 7.
+
+## 18.563 The network card by its name, and Network Monitor quiet in the log
+
+Seen on the M700 on 12 October, Network Monitor open beside a render:
+
+- **The card read "INTEL 8086:15b8"**, its PCI numbers, in Network
+  Monitor and in Network. `hardware.lua` now names the chips the e1000
+  driver drives (`hardware.NETWORK_NAMES`), as Linux's `e1000e` and `e1000`
+  name them in `hw.h` - "Ethernet I219-V", QEMU's "82574L Gigabit
+  Ethernet" - and keeps the numbers for a card it does not know, rather than
+  guessing a model. `x86-display`'s neofetch check now expects the name.
+- **Network Monitor wrote a line a second to the system log** for as long
+  as it was open - what its suite reads the rates from. It says them only
+  when started with `--tell`, which `x86-netmon` does.
+
+And two things seen that are not bugs here, recorded so they are not looked
+for again: the red kernel time was missing from Monitor's graphs during the
+render because the render's kernel share was under 2% - a column is 80
+pixels and a whole percentage, so it rounds to none, and it showed as soon
+as the render ended (Diego: "so it was just there wasnt a lot of kernel
+time being used"); and core 3 sat idle through the render because two of
+Cafesa3D's eight workers were placed on one core - a thread is placed where
+the fewest threads want to run at the instant it is made, and never moves.
+The gate: 69 of 72 - `x86-film` and `x86-mdns` as before, and
+`x86-telnetd`, whose client timed out before its banner while the gate ran
+beside four hundred file sends to the M700; all three pass alone.

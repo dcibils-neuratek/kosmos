@@ -83,7 +83,7 @@ def main():
         time.sleep(1)
 
         start = len(guest.seen)
-        guest.type("wm netmon")
+        guest.type("wm netmon:--tell")
         opened = said("netmon: window at ", start, 90)
         m = re.match(r"(\d+),(\d+); more at (\d+),(\d+); graph at (\d+),(\d+), (\d+)x(\d+)",
                      opened or "")

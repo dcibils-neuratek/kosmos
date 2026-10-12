@@ -37,6 +37,11 @@ local PACES = {
     foot = "A column every two seconds; the newest at the right." },
 }
 local pace = PACES[2]
+
+-- `--tell`: a line a sample, for `tools/run_netmon.py` to read the rates
+-- off. Not without it: a line a second for as long as the window is open
+-- filled the M700's log on 12 October.
+local TELL = (tostring(args or "")):find("%-%-tell") ~= nil
 local bits = false                      -- rates in bits a second, from the menu
 
 local W        = 660
@@ -176,6 +181,8 @@ local function sample()
   last, last_at, last_conn = s, at, seen
 
   local top = rows[1]
+
+  if not TELL then return end
 
   print(("netmon: in %d B/s, out %d B/s; %d open; busiest %s %d %d")
         :format(math.floor(now_in), math.floor(now_out), open,

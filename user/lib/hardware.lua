@@ -113,13 +113,33 @@ end
 -- A device is a network controller when its PCI class says so, 02h, or on a
 -- board whose bus is device-tree windows when its virtio type is 1. `name`
 -- is "virtio-net" for virtio's, and the vendor with both numbers otherwise -
--- `Intel 8086:15fc` - because this system has no table of Intel's device ids
--- and a guess at a model would be the kind of row this file exists to stop.
+-- `Intel 8086:15fc` - unless it is a card in `hardware.NETWORK_NAMES`, the
+-- ones this system drives, because a guess at a model would be the kind of
+-- row this file exists to stop.
 --
 -- **The undriven list is the point.** A laptop's Ethernet is found on the
 -- bus whether or not anything drives it, and "no card" beside it is absence
 -- and silence read alike - `hal_bus_scan`'s comment is the long version.
 --
+--
+-- **The network cards this system drives, by name** - the chips the e1000
+-- driver takes (`user/drivers/net/e1000.c`), named as Linux's `e1000e` and
+-- `e1000` name them in `hw.h`. Only these: a card not here keeps its vendor
+-- and two numbers, which is true, rather than a guessed model, which is not.
+-- The M700 read "Intel 8086:15b8" in Network Monitor's card on 12 October.
+--
+hardware.NETWORK_NAMES = {
+  [0x8086] = {
+    [0x100e] = "82540EM Gigabit Ethernet",      -- QEMU's e1000
+    [0x10d3] = "82574L Gigabit Ethernet",       -- QEMU's e1000e
+    [0x156f] = "Ethernet I219-LM", [0x1570] = "Ethernet I219-V",
+    [0x15b7] = "Ethernet I219-LM", [0x15b8] = "Ethernet I219-V",
+    [0x15b9] = "Ethernet I219-LM",
+    [0x15d7] = "Ethernet I219-LM", [0x15d8] = "Ethernet I219-V",
+    [0x15e3] = "Ethernet I219-LM", [0x15d6] = "Ethernet I219-V",
+  },
+}
+
 function hardware.network(bus)
   local driven, undriven = {}, {}
 
@@ -129,7 +149,10 @@ function hardware.network(bus)
     if d.class == 0 then
       if d.device == 1 then name = hardware.VIRTIO[1] end
     elseif (d.class >> 16) == 0x02 then
+      local known = (hardware.NETWORK_NAMES[d.vendor] or {})[d.device]
+
       name = (d.vendor == 0x1af4) and hardware.VIRTIO[1]
+             or known and ("%s %s"):format(hardware.vendor(d), known)
              or ("%s %04x:%04x"):format(hardware.vendor(d), d.vendor, d.device)
     end
 

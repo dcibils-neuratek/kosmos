@@ -482,6 +482,16 @@ performance and responsiveness, and else in a visual way", "mockup first".
   better responsiveness".
 - **Game mode**: researched and written for Diego to decide, beside the
   window's mockup (`docs/scheduler.md`, `docs/scheduler.html`).
+- **A core left idle by placement** - Diego, 12 October 2026, Monitor
+  beside a Cafesa3D render on the M700: "why core 3 is not being used".
+  The 3D kit starts a worker per processor, eight, in one loop, and each is
+  placed where the fewest threads want to run at the instant it is made;
+  something running on core 3 at that instant put two workers on another
+  core, and a thread never moves - so one core did two workers' share and
+  core 3 none for the whole render (`testing.md` 18.563). The general
+  answer is the one `place_new_thread` names, moving a thread, which is
+  this work's to weigh; a narrower one is a kit placing a set of workers
+  one a core on purpose (`thread_create_on`). For Diego to choose.
 
 **Bugs found on the M700, 10 October 2026, to fix first:**
 - **Print Screen's pictures shown black** - "printi screen saves a black

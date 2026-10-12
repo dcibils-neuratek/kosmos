@@ -3589,7 +3589,9 @@ def identity(image, check):
     # sentence this asked for until 0.10.127. The second boot below keeps
     # that sentence tested with a card nothing here drives.
     # **From DHCP** since 29 September, which says how the address came.
-    check(re.match(r"Intel 8086:10d3 at \d+\.\d+\.\d+\.\d+, from DHCP$", network)
+    # **By its name** since 12 October (`hardware.NETWORK_NAMES`): the
+    # numbers stay only for a card this system does not drive.
+    check(re.match(r"Intel 82574L Gigabit Ethernet at \d+\.\d+\.\d+\.\d+, from DHCP$", network)
           is not None,
           "neofetch's Network is %r on a machine whose e1000e this system "
           "drives" % network)
