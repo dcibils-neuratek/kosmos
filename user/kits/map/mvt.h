@@ -30,6 +30,7 @@ struct mvt_feature {
     uint8_t  type;          /* enum mvt_type */
     uint8_t  brunnel;       /* 1 bridge, 2 tunnel, 0 neither */
     int32_t  rank;          /* `rank`, 0 when it has none */
+    uint8_t  admin;         /* `admin_level`: 2 a country, 4 a province; 0 none */
     const char *klass;      /* `class`, "" when it has none */
     const char *subclass;   /* `subclass`, "" when it has none */
     const char *name;       /* `name`, NULL when it has none */

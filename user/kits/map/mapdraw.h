@@ -32,6 +32,7 @@ struct map_rule {
     char     classes[MAP_CLASSES];  /* "" for every class */
     uint32_t colour;            /* 0xRRGGBB */
     float    minzoom, maxzoom;  /* drawn from, and before */
+    uint8_t  admin_min, admin_max;  /* a border's levels it takes; 0, 0 every one */
     float    stops[2 * MAP_STOPS];  /* zoom, width in pixels, ... */
     int      nstops;
 };
@@ -56,6 +57,10 @@ struct map_matches {
 };
 
 void map_matches_free(struct map_matches *m);
+
+/* Whether a rule takes a feature of its layer: its class, and for a border
+ * its level. Asked once a tile and a style meet, never in a frame. */
+int map_takes(const struct map_rule *r, const struct mvt_feature *f);
 
 /* A rule's width at `zoom`: between its stops, straight; held at the ends. */
 float map_width(const struct map_rule *r, float zoom);

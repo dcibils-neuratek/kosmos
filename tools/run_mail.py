@@ -760,13 +760,34 @@ def part3(image):
         said["html"] = guest.wait_for_line("mail: html laid out at ", "the route's HTML laid out", mark)
         said["asked_before"] = len(asked_far)
         load = guest.wait_for_line("mail: load pictures at ", "Load Pictures shown", mark)
-        lpx, lpy = (int(v) for v in load.split(","))
-        click(lpx, lpy)
+        # **Always from This Sender** (10 October): pressed rather than Load
+        # Pictures, it loads them as Load does and remembers the sender.
+        always = re.search(r"always at (\d+),(\d+)", load or "")
+        said["always_shown"] = always is not None
+        if always:
+            click(int(always.group(1)), int(always.group(2)))
+            said["trusted"] = guest.wait_for_line("mail: pictures always from ", "the sender kept", mark)
+        else:
+            lpx, lpy = (int(v) for v in load.split(";")[0].split(","))
+            click(lpx, lpy)
         guest.wait_for_line(" pictures came", "the pictures fetched", mark)
         said["came"] = re.findall(r"mail: (\d+ of \d+) pictures came", guest.seen[mark:])[-1:]
         said["asked_after"] = len(asked_far)
         time.sleep(1.5)
         keep_window("mail-html.png")
+
+        # Away and back to the same message: its pictures load with nothing
+        # pressed, and Load Pictures is not offered.
+        mark = len(guest.seen)
+        click(lx + 100, ly + rh // 2)
+        guest.wait_for_line("mail: showing ", "the newest shown again", mark)
+        time.sleep(1)
+        mark = len(guest.seen)
+        click(lx + 100, ly + rh + rh // 2)
+        guest.wait_for_line("mail: showing ", "the second shown again", mark)
+        guest.wait_for_line(" pictures came", "a trusted sender's pictures fetched", mark)
+        said["again"] = re.findall(r"mail: (\d+ of \d+) pictures came", guest.seen[mark:])[-1:]
+        said["offered_again"] = "mail: load pictures at" in guest.seen[mark:]
 
         mark = len(guest.seen)
         click(lx + 100, ly + 2 * rh + rh // 2)
@@ -849,6 +870,12 @@ def part3(image):
         fails.append("the second, in HTML: %r" % said.get("route"))
     if not re.search(r"\d+ px tall, \d+ wide, fitted at 100%, 1 sent inside, 1 on the network", said.get("html", "")):
         fails.append("the route's HTML, its own picture and one on the network: %r" % said.get("html"))
+    if not said.get("always_shown") or not said.get("trusted"):
+        fails.append("Always from This Sender was not offered beside Load Pictures, or did not keep "
+                     "the sender: %r, %r" % (said.get("always_shown"), said.get("trusted")))
+    if not said.get("again") or said.get("offered_again"):
+        fails.append("a trusted sender's message did not load its pictures by itself: came %r, "
+                     "Load offered again %r" % (said.get("again"), said.get("offered_again")))
     if said.get("asked_before") != 0:
         fails.append("a picture on the network fetched before Load Pictures: %r" % said.get("asked_before"))
     if said.get("came") != ["1 of 1"] or said.get("asked_after") != 1:
@@ -878,7 +905,7 @@ def part3(image):
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:300])
 
-    checks = 19
+    checks = 21
 
     if fails:
         print("FAIL: %d of %d checks on Mail's window:" % (len(fails), checks))

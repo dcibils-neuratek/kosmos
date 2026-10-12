@@ -550,6 +550,22 @@ static int l_style(lua_State *L)
         lua_getfield(L, -1, "minzoom");
         r->minzoom = (float)luaL_optnumber(L, -1, 0);
         lua_pop(L, 1);
+
+        /* `admin = { 2, 2 }`: a border's levels, lowest and highest. */
+        lua_getfield(L, -1, "admin");
+        if (lua_istable(L, -1)) {
+            lua_rawgeti(L, -1, 1);
+            lua_rawgeti(L, -2, 2);
+            lua_Integer lo = luaL_optinteger(L, -2, 0), hi = luaL_optinteger(L, -1, lo);
+
+            if (lo < 1 || hi < lo || hi > 255) {
+                return luaL_error(L, "rule %d: admin is { lowest, highest }, 1 to 255", (int)i + 1);
+            }
+
+            r->admin_min = (uint8_t)lo, r->admin_max = (uint8_t)hi;
+            lua_pop(L, 2);
+        }
+        lua_pop(L, 1);
         lua_getfield(L, -1, "maxzoom");
         r->maxzoom = (float)luaL_optnumber(L, -1, 99);
         lua_pop(L, 1);

@@ -175,7 +175,10 @@ might need some optimizations on drawing and else"; its log says what each
 tile took to load, "but the real issue is dragging around feels sluggish".
 Measured first - where a dragged frame goes - and made smooth; then what is
 left of Maps (M6d's cache ceiling and source name, borders by admin level,
-the tiles server's HTTPS suite).
+the tiles server's HTTPS suite). **The drag done** (18.524, fifteen times
+faster), **borders by level done** (18.552); the cache's ceiling wants a
+design of its own, since Maps reads cached tiles itself and the server never
+sees which it read last.
 
 **Shortcuts, an app** - Diego, 10 October 2026: "a better shortcut app to
 show all available shortcuts in a nice way", "right now is very raw", "a
@@ -288,7 +291,9 @@ two land together.
 **Mail: always show a sender's pictures** - Diego, 10 October 2026: "mail
 app needs a way to set 'always show images from this sender' somehere
 because i cant click load images for every email". A choice beside Load
-images, kept per sender with Mail's settings.
+images, kept per sender with Mail's settings. **Built 12 October**
+(`testing.md` 18.553): Always from This Sender beside Load Pictures. Taking
+a sender back off the list is for Mail's settings when it has a page.
 
 **The network at full speed, then files to and from the Mac by SMB** -
 Diego, 10 October 2026: "why is the network slow?", "We need to make our

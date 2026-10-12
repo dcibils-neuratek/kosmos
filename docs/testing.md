@@ -23638,3 +23638,38 @@ sheet written with at least every row the window lists, and opened.
 `docs/cheatsheet.html`, which `docs/shortcuts.md` says this retires, is
 kept for now: it is the icon on every desktop, and taking it away is
 Diego's to decide.
+
+## 18.552 Maps: borders by level
+
+What was left of Maps' M6d included "country and province borders drawn
+alike, the style needing a rule on `admin_level`". The Map Kit's reader
+keeps a feature's `admin_level` (2 a country, 4 a province; OpenMapTiles'
+boundary layer), a style's rule can name a range of levels -
+`admin = { 1, 2 }` - and `map_takes` is the one place a rule decides what
+it takes, used where a tile and a style meet. Maps draws a country's border
+wider and stronger, and a province's lighter and narrower from zoom 4.
+
+The drag (18.524) was already fifteen times faster; what remains of Maps'
+leftovers is the cache's 256 MB ceiling, which needs to know what Maps read
+last - it reads cached tiles itself, so the tiles server never sees a read
+- and so wants a design of its own; the source's name found without
+waiting; and the tiles server's HTTPS suite.
+
+`host` `test_map` 31 -> 35: a tile of three borders - a country's, a
+province's, one with no level - each with its level kept; a rule for 1 to
+2 taking the country's alone, one for 3 to 8 the province's, one naming no
+level all three. **Control**: the level not looked at - 2 of 35 fail.
+
+## 18.553 Mail: always show a sender's pictures
+
+Diego, 10 October: "mail app needs a way to set 'always show images from
+this sender' somehere because i cant click load images for every email".
+Beside Load Pictures, **Always from This Sender**: it loads them as Load
+does and keeps the sender's address in Mail's settings (`pictures_from`).
+A message from a kept sender loads its pictures as soon as it is laid out,
+from the window's loop and not its drawing, and the bar does not ask.
+
+`x86-mail-3` 19 -> 21: the button offered beside Load Pictures and the
+sender kept when it is pressed; away to another message and back, the
+pictures come with nothing pressed and Load is not offered. **Control**:
+no sender ever kept - the pictures never came by themselves.

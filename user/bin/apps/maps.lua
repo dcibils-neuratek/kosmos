@@ -121,11 +121,11 @@ local function style_for(dark)
     -- there at zoom 3.
     land = 0x283142, block = 0x2d3749, park = 0x24423a, water = 0x0c1828,
     building = 0x36415a, casing = 0x1a2130, minor = 0x445168, major = 0x5e6d87,
-    motor = 0x8a6f3e, path = 0x4a5568, border = 0x6b5f8a,
+    motor = 0x8a6f3e, path = 0x4a5568, border = 0x8a7bb0, border_minor = 0x4f4868,
   } or {
     land = 0xf2efe9, block = 0xe8e3da, park = 0xcfe8c8, water = 0xaad3f2,
     building = 0xdcd5c9, casing = 0xd9d2c6, minor = 0xffffff, major = 0xfde8a8,
-    motor = 0xf6bb6a, path = 0xc8bfae, border = 0xb9a6c9,
+    motor = 0xf6bb6a, path = 0xc8bfae, border = 0x9c84b3, border_minor = 0xcfc3da,
   }
 
   return c, map.style{ background = c.land, rules = {
@@ -134,7 +134,11 @@ local function style_for(dark)
     { layer = "park", fill = c.park },
     { layer = "water", fill = c.water },
     { layer = "waterway", line = c.water, width = { 12, 1, 18, 8 } },
-    { layer = "boundary", line = c.border, width = { 2, 0.8, 10, 1.5 } },
+    -- Borders by level (OpenMapTiles' `admin_level`): a country's wider and
+    -- stronger than a province's, which waits for zoom 4 to be drawn at all.
+    { layer = "boundary", admin = { 3, 8 }, line = c.border_minor, width = { 4, 0.5, 10, 1 },
+      minzoom = 4 },
+    { layer = "boundary", admin = { 1, 2 }, line = c.border, width = { 2, 1, 10, 2.5 } },
     { layer = "building", fill = c.building, minzoom = 14 },
     { layer = "transportation", classes = "path,track", line = c.path,
       width = { 15, 0.6, 18, 2 }, minzoom = 15 },

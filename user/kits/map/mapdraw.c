@@ -74,6 +74,15 @@ static int takes(const struct map_rule *r, const char *klass)
     return 0;
 }
 
+int map_takes(const struct map_rule *r, const struct mvt_feature *f)
+{
+    if (r->admin_max != 0 && (f->admin < r->admin_min || f->admin > r->admin_max)) {
+        return 0;
+    }
+
+    return takes(r, f->klass);
+}
+
 static int match(const struct mvt_tile *t, struct map_matches *m, const struct map_style *s)
 {
     size_t n = 0;
@@ -104,7 +113,7 @@ static int match(const struct mvt_tile *t, struct map_matches *m, const struct m
                 if (f->layer != rule->layer) continue;
                 if (want && f->type != want) continue;
                 if (!want && f->type == MVT_POINT) continue;
-                if (!takes(rule, f->klass)) continue;
+                if (!map_takes(rule, f)) continue;
 
                 if (pass == 1) m->list[n] = (uint32_t)i;
                 n++;

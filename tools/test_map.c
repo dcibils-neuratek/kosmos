@@ -403,11 +403,72 @@ int main(int argc, char **argv)
         mvt_free(&t);
     }
 
+    /* 9. Borders by level: a country's, a province's and one with no level,
+     * each kept with what `admin_level` said, and a rule naming a range of
+     * levels taking only those in it - a rule naming none taking all three. */
+    {
+        struct pbw layer = { .n = 0 }, tile = { .n = 0 };
+        struct pbw v;
+        static const uint8_t country[]  = { 0, 0 };   /* admin_level 2 */
+        static const uint8_t province[] = { 0, 1 };   /* admin_level 4 */
+        static const uint8_t none[]     = { 1, 2 };   /* maritime, a string */
+
+        pbw_varint(&layer, 15 << 3);
+        pbw_varint(&layer, 2);
+        pbw_bytes(&layer, 1, "boundary", 8);
+        pbw_point(&layer, country, sizeof country);
+        pbw_point(&layer, province, sizeof province);
+        pbw_point(&layer, none, sizeof none);
+        pbw_bytes(&layer, 3, "admin_level", 11);
+        pbw_bytes(&layer, 3, "maritime", 8);
+
+        v.n = 0;                                      /* 2, as a uint */
+        pbw_varint(&v, 5 << 3);
+        pbw_varint(&v, 2);
+        pbw_bytes(&layer, 4, v.b, v.n);
+        v.n = 0;                                      /* 4, as a sint */
+        pbw_varint(&v, 6 << 3);
+        pbw_varint(&v, 8);
+        pbw_bytes(&layer, 4, v.b, v.n);
+        v.n = 0;
+        pbw_bytes(&v, 1, "no", 2);
+        pbw_bytes(&layer, 4, v.b, v.n);
+
+        pbw_varint(&layer, 5 << 3);
+        pbw_varint(&layer, 4096);
+        pbw_bytes(&tile, 3, layer.b, layer.n);
+
+        int r = mvt_decode(&t, tile.b, tile.n);
+
+        check(r == MVT_OK && t.nfeatures == 3, "the tile of three borders did not decode");
+
+        if (r == MVT_OK && t.nfeatures == 3) {
+            struct map_rule countries = { .layer = L_BOUNDARY, .kind = MAP_LINE,
+                                          .admin_min = 1, .admin_max = 2 };
+            struct map_rule provinces = { .layer = L_BOUNDARY, .kind = MAP_LINE,
+                                          .admin_min = 3, .admin_max = 8 };
+            struct map_rule every = { .layer = L_BOUNDARY, .kind = MAP_LINE };
+
+            check(t.features[0].admin == 2 && t.features[1].admin == 4 && t.features[2].admin == 0,
+                  "the borders' levels were not kept as 2, 4 and none");
+            check(map_takes(&countries, &t.features[0]) && !map_takes(&countries, &t.features[1])
+                  && !map_takes(&countries, &t.features[2]),
+                  "a rule for levels 1 to 2 did not take the country's border alone");
+            check(!map_takes(&provinces, &t.features[0]) && map_takes(&provinces, &t.features[1]),
+                  "a rule for levels 3 to 8 did not take the province's border alone");
+            check(map_takes(&every, &t.features[0]) && map_takes(&every, &t.features[1])
+                  && map_takes(&every, &t.features[2]),
+                  "a rule naming no level did not take every border");
+        }
+
+        mvt_free(&t);
+    }
+
     if (fails == 0) {
         printf("PASS: %d checks on the Map Kit's reading (the specification's tile numbers, "
                "Port Alder's header and directory, its zoom 11 and zoom 16 tiles decoded, "
                "zoom 16 drawn in a style, what is not there, bad bytes refused, a place named in "
-               "English, else in Latin, else in its own script)\n", checks);
+               "English, else in Latin, else in its own script; borders by level)\n", checks);
         return 0;
     }
 

@@ -55,6 +55,7 @@ local mailkit = use("/Kosmos/Kits/mail")
 local webpictures = use("/Kosmos/Libraries/webpictures.lua")
 local http = use("/Kosmos/Libraries/http.lua")
 local compose = use("/Kosmos/Libraries/mailcompose.lua")
+local prefs = use("/Kosmos/Libraries/prefs.lua")
 
 -- **The browser's engine draws an HTML message** (M5): parsed, laid out at
 -- the paper's width and painted into it as a page is. An image built
@@ -766,6 +767,38 @@ local function widths_as_wishes(html, most)
   end))
 end
 
+--
+-- **The senders whose pictures always load** (Diego, 10 October 2026:
+-- "mail app needs a way to set 'always show images from this sender'
+-- somehere because i cant click load images for every email"). Their
+-- addresses, as they are written in mail and compared without case, kept
+-- in Mail's settings as `pictures_from`; a message from one of them loads
+-- its pictures as soon as it is laid out, and the bar never asks.
+--
+local function trusted(address)
+  local list = (prefs.read("mail") or {}).pictures_from or {}
+  local want = tostring(address or ""):lower()
+
+  for _, a in ipairs(list) do
+    if tostring(a):lower() == want and want ~= "" then return true end
+  end
+
+  return false
+end
+
+local function trust(address)
+  address = tostring(address or "")
+
+  if address == "" or trusted(address) then return end
+
+  local settings = prefs.read("mail") or {}
+
+  settings.pictures_from = settings.pictures_from or {}
+  settings.pictures_from[#settings.pictures_from + 1] = address
+  prefs.write("mail", settings)
+  print("mail: pictures always from " .. address)
+end
+
 local function lay_out_html(pw, ph)
   if not message.page then
     local t0 = sys.ticks()
@@ -834,7 +867,14 @@ local function lay_out_html(pw, ph)
 
   local far = #remote_pictures()
 
-  message.bar = (far > 0 and not message.loading)
+  -- A sender whose pictures always load: fetched now, once a message, and
+  -- the bar says it is loading rather than asking.
+  if far > 0 and not message.loading and not message.auto_loaded and trusted(message.address) then
+    message.auto_loaded = true
+    message.wants_pictures = true
+  end
+
+  message.bar = (far > 0 and not message.loading and not message.wants_pictures)
                 and ("%d %s from the network not loaded, so its sender cannot see it was read")
                     :format(far, far == 1 and "picture" or "pictures")
                 or nil
@@ -849,6 +889,7 @@ end
 -- Load Pictures: those on the network fetched beside the window's own
 -- loop, a pass at a time, so nothing here waits on the network.
 local fetching = nil
+
 
 local function load_pictures()
   if not (message and message.page) or fetching then return end
@@ -1577,6 +1618,7 @@ local attachment_chips = {}
 local said_chips = nil
 local paper_at = nil
 local load_button = nil
+local always_button = nil
 local said_load = nil
 
 local function draw_message(s)
@@ -1620,7 +1662,7 @@ local function draw_message(s)
 
   local ay = y + HEAD_H + 8
 
-  load_button = nil
+  load_button, always_button = nil, nil
 
   -- Laid out first: what it says about its pictures is the bar above it.
   if shows_html() then
@@ -1642,6 +1684,15 @@ local function draw_message(s)
       load_button.h = 24
       load_button.x, load_button.y = x + w - 24 - load_button.w, ay + 2
       room = room - load_button.w - 12
+
+      -- And always, from whoever sent it.
+      if message.address and message.address ~= "" then
+        always_button = { text = "Always from This Sender" }
+        always_button.w = pk.button_width(always_button.text)
+        always_button.h = 24
+        always_button.x, always_button.y = load_button.x - 8 - always_button.w, ay + 2
+        room = room - always_button.w - 8
+      end
     end
 
     s:text(x + 32, ay + (28 - gfx.height()) // 2, ui.fitted(words, room, "ui"),
@@ -1649,9 +1700,15 @@ local function draw_message(s)
 
     if load_button then
       pk.button(s, load_button)
+      if always_button then pk.button(s, always_button) end
 
       local where = ("%d,%d"):format(load_button.x + load_button.w // 2,
                                      load_button.y + load_button.h // 2)
+
+      if always_button then
+        where = where .. ("; always at %d,%d"):format(always_button.x + always_button.w // 2,
+                                                       always_button.y + always_button.h // 2)
+      end
 
       if where ~= said_load then
         said_load = where
@@ -2331,6 +2388,14 @@ local function press(x, y)
       return
     end
 
+    if always_button and pk.inside(always_button, x, y) then
+      pk.hold(always_button, function()
+        trust(message and message.address)
+        load_pictures()
+      end)
+      return
+    end
+
     for _, chip in ipairs(attachment_chips) do
       if pk.inside(chip, x, y) then
         attachment_menu(chip)
@@ -2499,6 +2564,14 @@ while win.running do
   end
 
   if look() then dirty = true end
+
+  -- A trusted sender's pictures, asked for while the message was laid out.
+  if message and message.wants_pictures and not fetching then
+    message.wants_pictures = false
+    load_pictures()
+    dirty = true
+  end
+
   if step_fetch() then dirty = true end
 
   if dirty then

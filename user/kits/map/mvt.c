@@ -335,6 +335,10 @@ static int layer(struct mvt_tile *t, struct pb l, struct pending **pend, size_t 
                         }
                     } else if (val->is_int && is_key(k, "rank")) {
                         ft->rank = (int32_t)val->i;
+                    } else if (val->is_int && is_key(k, "admin_level")) {
+                        /* A border's level: 2 a country's, 4 a province's
+                         * (OpenMapTiles' boundary layer). */
+                        ft->admin = (uint8_t)(val->i > 0 && val->i < 256 ? val->i : 0);
                     }
                 }
             }
