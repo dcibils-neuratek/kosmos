@@ -36,7 +36,7 @@ sys.path.insert(0, HERE)
 import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
 
-CHECKS = 18
+CHECKS = 2 + 18
 
 SETTING = '''local prefs = use("/Kosmos/Libraries/prefs.lua")
 local entries = {
@@ -382,6 +382,36 @@ def main():
                 fails.append("Default did not put hiding back")
             else:
                 said["default"] = True
+        time.sleep(1)
+
+        # **Print as a cheat sheet** (K4): a press, the sheet written into
+        # Documents with a row for every key the window lists, and opened.
+        printed = None
+        at = re.findall(r"shortcuts: print at (\d+),(\d+)", guest.seen)
+        listed = re.findall(r"shortcuts: groups ([^;\r\n]*);", guest.seen)
+        if at and listed:
+            width, height, _ = R.parse_ppm(guest.screendump())
+            mark = len(guest.seen)
+            guest.mouse_to(*R._to_tablet(int(at[-1][0]), int(at[-1][1]), width, height))
+            time.sleep(0.3)
+            guest.mouse_button(True)
+            time.sleep(0.1)
+            guest.mouse_button(False)
+            printed = line(r"shortcuts: cheat sheet /Home/Documents/Shortcuts\.pdf, (\d+) rows, "
+                           r"(\d+) pages, (\d+) bytes", mark, 60)
+            # Every key that works everywhere - the window's "All" as it
+            # opened - and the one made here since, at least.
+            every = re.search(r"All (\d+)", listed[-1])
+            shown = int(every.group(1)) if every else 0
+            opened = line(r"wm: window (?!Shortcuts )[^\r\n]* at ", mark, 30)
+            said["sheet"] = printed and printed.group(0)
+            if not (printed and int(printed.group(1)) > shown and int(printed.group(2)) >= 1):
+                fails.append("Print as a cheat sheet did not write every row: %r, %d listed"
+                             % (printed and printed.group(0), shown))
+            if not opened:
+                fails.append("the cheat sheet was not opened once written")
+        else:
+            fails.append("Shortcuts did not say where Print is: %r" % (at,))
         time.sleep(1)
 
         # ---- the desktop again: the setting read at its start ----

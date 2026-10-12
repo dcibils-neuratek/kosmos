@@ -23618,3 +23618,23 @@ loudest 20,526; `run_quake.py` 6 -> 8, its sound opened and its card found,
 and heard; `run_snes.py` 7, sound out of the device, on x86 for the first
 time. **Controls**: Doom not handed its ring - loudest sample 0; Quake not
 handed it - "No sound: Quake was not given a stream".
+
+## 18.551 Shortcuts K4: Print as a cheat sheet
+
+The footer's **Print as a cheat sheet** writes every key the desktop answers
+to as a Write document - a title, then a heading and a two-column table a
+group, the keys in bold as the window spells them ("Ctrl + W, then Q") and
+what they do - set by Write's engine (`pageset`) in Write's own styles and
+written by its PDF writer into `/Home/Documents/Shortcuts.pdf`, then opened
+in whatever opens a PDF. Nothing in Shortcuts sets a line or knows what a
+PDF is. A person's own shortcuts are in it, under Yours.
+
+Under QEMU: 22 rows over two pages, 53 KB, the PDF Viewer opening it.
+
+`x86-shortcuts` 18 -> 20: Print pressed where Shortcuts says it is, the
+sheet written with at least every row the window lists, and opened.
+**Control**: Print doing nothing - both fail.
+
+`docs/cheatsheet.html`, which `docs/shortcuts.md` says this retires, is
+kept for now: it is the icon on every desktop, and taking it away is
+Diego's to decide.

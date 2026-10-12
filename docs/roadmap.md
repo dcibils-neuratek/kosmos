@@ -197,7 +197,10 @@ Super+t opens a new terminal", "And changes should persist", "So it's a
 user setting"): Add a shortcut and Change drawn into `shortcuts.html` and
 agreed ("Mockup looks great") - Super chords only, `/Home/Preferences/
 shortcuts` holding only what was made or changed, the window manager
-building its table from its defaults and that setting.
+building its table from its defaults and that setting. **K4 built 12
+October** (`testing.md` 18.551): Print as a cheat sheet, a Write document
+as a PDF in Documents, opened; `docs/cheatsheet.html`, the desktop's icon,
+kept until Diego says it goes. **Shortcuts K1-K4 done.**
 
 **Applications' own keys, on Control** - Diego, 10 October 2026:
 "Shortcuts are global keys mapping", "Then every app has its own local app

@@ -861,6 +861,16 @@ function foot:draw(g)
 
   print_button.x = self.w - PAD - print_button.w
   print_button.y = (self.h - print_button.h) // 2
+
+  -- Where Print is on the screen, once, for the display harness.
+  if not self.told and win.origin_x then
+    local ox, oy = self:in_window()
+
+    self.told = true
+    print(("shortcuts: print at %d,%d"):format(
+          win.origin_x + ox + print_button.x + print_button.w // 2,
+          win.origin_y + oy + print_button.y + print_button.h // 2))
+  end
 end
 
 --------------------------------------------------------------------------
@@ -981,7 +991,91 @@ do
         #refused > 0 and (": " .. table.concat(refused, ", ")) or ""))
 end
 
--- Print as a cheat sheet comes with K4 (`docs/shortcuts.md`).
-win.cheat_sheet = nil
+--------------------------------------------------------------------------
+-- **Print as a cheat sheet** (K4, `docs/shortcuts.md`): the groups as a
+-- Write document - a heading each and a table of keys and what they do -
+-- set by Write's engine and written as a PDF into Documents, then opened.
+-- Write's own door, `pageset` and `pdf.write`, and its own styles, so the
+-- sheet looks like anything Write prints and nothing here sets a line.
+-- Replaces `docs/cheatsheet.html`, which was a page kept by hand.
+--------------------------------------------------------------------------
+
+local CHEAT_SHEET = "/Home/Documents/Shortcuts.pdf"
+
+-- The keys as a sheet spells them: "Super + T", "Ctrl + W, then Q".
+local function keys_words(chord)
+  return (tostring(chord):gsub("%+", " + "):gsub(",", ", then "))
+end
+
+win.cheat_sheet = function()
+  local writedoc = use("/Kosmos/Libraries/writedoc.lua")
+  local richtext = use("/Kosmos/Libraries/richtext.lua")
+  local pageset = use("/Kosmos/Libraries/pageset.lua")
+  local faces = use("/Kosmos/Libraries/faces.lua")
+  local pdf = use("/Kosmos/Libraries/pdf.lua")
+  local files = use("/Kosmos/Libraries/files.lua")
+  local types = use("/Kosmos/Libraries/filetypes.lua")
+
+  local doc = writedoc.new()
+  local styles, by_name = richtext.styles(writedoc.STYLES, writedoc.STYLES)
+  local body, printed = {}, 0
+
+  doc.styles = styles
+  doc.header.on = false
+
+  local function para(style, runs) body[#body + 1] = richtext.paragraph({ style = style, runs = runs }, by_name, "Body") end
+
+  para("Title", { { text = "Kosmos shortcuts" } })
+  para("Subtitle", { { text = "Every key the desktop answers to" } })
+
+  for _, id in ipairs({ "desktop", "windows", "screen", "text", "yours" }) do
+    local table_rows = { { { runs = { { text = "Keys", weight = "SemiBold" } } },
+                           { runs = { { text = "What it does", weight = "SemiBold" } } } } }
+
+    for _, r in ipairs(rows) do
+      if r.group == id and tostring(r.keys or "") ~= "" then
+        table_rows[#table_rows + 1] = {
+          { runs = { { text = keys_words(r.keys), weight = "SemiBold" } } },
+          { runs = { { text = (does(r):gsub("^%l", string.upper)) } } } }
+        printed = printed + 1
+      end
+    end
+
+    if #table_rows > 1 then
+      para("Heading 2", { { text = GROUP[id].name } })
+      body[#body + 1] = richtext.paragraph({ style = "Body",
+                                             table = { columns = 2, header = true, rows = table_rows } },
+                                           by_name, "Body")
+    end
+  end
+
+  doc.body = body
+
+  local measure = faces.measure(faces.catalogue(gfx.typefaces()), gfx.typeface)
+  local set = pageset.set(doc, measure)
+
+  files.make_folder("/Home/Documents")
+
+  local ok, notes = pdf.write(CHEAT_SHEET, set, measure, { title = "Kosmos shortcuts" })
+
+  if not ok then
+    status = "Not printed: " .. tostring(notes)
+    print("shortcuts: cheat sheet not written: " .. tostring(notes))
+    win:paint()
+    return
+  end
+
+  print(("shortcuts: cheat sheet %s, %d rows, %d pages, %d bytes"):format(
+        CHEAT_SHEET, printed, notes.pages, notes.bytes))
+  status = ("Printed %d shortcuts to Documents/Shortcuts.pdf"):format(printed)
+
+  local opener = types.opener(CHEAT_SHEET)
+
+  if opener then
+    fs.send("/Running/wm", { type = "launch", program = opener, args = files.quote(CHEAT_SHEET) })
+  end
+
+  win:paint()
+end
 
 win:run()
