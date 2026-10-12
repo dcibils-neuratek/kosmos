@@ -55,6 +55,15 @@ void pmm_free_page(void *page);
 size_t pmm_free_pages(void);
 size_t pmm_total_pages(void);
 
+/* The same, for a page the kernel takes for its own use - a page table, a
+ * pool's slab, a capability table, a kernel stack - so that what Nebula
+ * holds can be said (`pmm_kernel_pages`). A page that backs a process's
+ * memory goes through the plain calls above. */
+void  *pmm_alloc_kernel_page(void);
+void  *pmm_alloc_kernel_contiguous(size_t count);
+void   pmm_free_kernel_page(void *page);
+size_t pmm_kernel_pages(void);
+
 /* The pages at the bottom that only the kernel's own allocations may reach,
  * and whether a program may be given this many without eating them. See
  * `pmm.c`: this is what replaced every per-process cap on memory. */

@@ -15,6 +15,10 @@
  * bitmap goes immediately after it. */
 extern char __image_end[];
 
+/* What Nebula holds for itself: see `pmm_kernel_pages`. */
+static size_t at_boot;
+static size_t kernel_taken;
+
 /*
  * A set bit means the page is free.
  *
@@ -204,6 +208,10 @@ void pmm_init(void)
             set_free(i);
         }
     }
+
+    /* What is in use now is the kernel's image and this bitmap: the first
+     * of what Nebula holds for itself (`pmm_kernel_pages`). */
+    at_boot = managed - freecount;
 }
 
 /*
@@ -356,6 +364,67 @@ void pmm_free_page(void *page)
 size_t pmm_free_pages(void)
 {
     return freecount;
+}
+
+/*
+ * **What Nebula holds for itself** (Diego, 10 October 2026: "why does the
+ * kernel does not show any memory consumption in processes?"): its image and
+ * this bitmap, taken at boot, and every page since taken by the kernel for
+ * its own use - page tables, the pools' slabs, the capability tables, kernel
+ * stacks, the profiler's ring - through the three calls below rather than
+ * the plain ones. A page that backs a process's memory is that process's
+ * and is not counted here.
+ *
+ * The count is kept under the allocator's lock - the kernel uses no atomic
+ * read-modify-write, which on AArch64 GCC makes a call into a library this
+ * freestanding kernel does not link.
+ *
+ * Counted where the page is taken rather than worked out from what
+ * processes hold, because a region shared by two processes would be counted
+ * twice by any sum and nothing else knows which pages are whose.
+ */
+void *pmm_alloc_kernel_page(void)
+{
+    void *page = pmm_alloc_page();
+
+    if (page != NULL) {
+        unsigned long flags = spin_lock(&pmm_lock);
+
+        kernel_taken++;
+        spin_unlock(&pmm_lock, flags);
+    }
+
+    return page;
+}
+
+void *pmm_alloc_kernel_contiguous(size_t count)
+{
+    void *pages = pmm_alloc_contiguous(count);
+
+    if (pages != NULL) {
+        unsigned long flags = spin_lock(&pmm_lock);
+
+        kernel_taken += count;
+        spin_unlock(&pmm_lock, flags);
+    }
+
+    return pages;
+}
+
+void pmm_free_kernel_page(void *page)
+{
+    unsigned long flags;
+
+    pmm_free_page(page);
+    flags = spin_lock(&pmm_lock);
+    kernel_taken--;
+    spin_unlock(&pmm_lock, flags);
+}
+
+size_t pmm_kernel_pages(void)
+{
+    /* An aligned word read once: a report, never a decision. */
+    return at_boot + __atomic_load_n(&kernel_taken, __ATOMIC_RELAXED);
 }
 
 size_t pmm_total_pages(void)

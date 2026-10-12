@@ -137,7 +137,7 @@ static void rings_free(void)
 
         if (s != NULL) {
             for (unsigned page = 0; page < RING_PAGES; page++) {
-                pmm_free_page((uint8_t *)s + page * 4096u);
+                pmm_free_kernel_page((uint8_t *)s + page * 4096u);
             }
         }
     }
@@ -161,7 +161,7 @@ static long start(struct process *p)
     memset(spent, 0, sizeof(spent));
 
     for (unsigned i = 0; i < NR_CPUS; i++) {
-        void *pages = pmm_alloc_contiguous(RING_PAGES);
+        void *pages = pmm_alloc_kernel_contiguous(RING_PAGES);
 
         if (pages == NULL) {
             rings_free();

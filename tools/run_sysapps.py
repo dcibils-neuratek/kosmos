@@ -244,6 +244,15 @@ def main():
             check(gone == sorted(gone),
                   "sorted by file, a row with no file came before one with a file")
 
+        # **Nebula's own memory** (10 October: "why does the kernel does not
+        # show any memory consumption in processes?"): its row holds what
+        # the kernel counts for itself - more than its image, less than the
+        # machine.
+        held = said("procs: nebula holds ", 0, 10)
+        n = re.match(r"(\d+) KB of (\d+) KB", held or "")
+        check(n is not None and 1024 < int(n.group(1)) < int(n.group(2)),
+              "Processes' Nebula row did not hold the kernel's own memory: %r" % held)
+
         # **Monitor**, under Processes, brought forward by a click on the
         # part of it Processes does not cover - found from the desktop's own
         # account of where each window is.

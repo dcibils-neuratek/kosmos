@@ -632,7 +632,7 @@ static void *stack_top_of(void *base)
 
 static void *alloc_stack(void **base_out)
 {
-    void *base = pmm_alloc_contiguous(THREAD_STACK_PAGES + 1);
+    void *base = pmm_alloc_kernel_contiguous(THREAD_STACK_PAGES + 1);
 
     if (base == NULL) {
         return NULL;

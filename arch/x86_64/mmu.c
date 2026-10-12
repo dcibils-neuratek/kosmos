@@ -60,7 +60,7 @@ static uint64_t *kernel_pdpt;
 
 static uint64_t *alloc_table(void)
 {
-    uint64_t *table = pmm_alloc_page();
+    uint64_t *table = pmm_alloc_kernel_page();
     unsigned i;
 
     if (table == NULL) {
@@ -1163,7 +1163,7 @@ again:
         space(i)->pdpt = NULL;
         spin_unlock(&spaces_lock, flags);
 
-        space(i)->pml4 = pmm_alloc_page();
+        space(i)->pml4 = pmm_alloc_kernel_page();
         if (space(i)->pml4 == NULL) {
             unsigned long back = spin_lock(&spaces_lock);
 
@@ -1172,11 +1172,11 @@ again:
             return NULL;
         }
 
-        space(i)->pdpt = pmm_alloc_page();
+        space(i)->pdpt = pmm_alloc_kernel_page();
         if (space(i)->pdpt == NULL) {
             unsigned long back;
 
-            pmm_free_page(space(i)->pml4);
+            pmm_free_kernel_page(space(i)->pml4);
             space(i)->pml4 = NULL;
 
             back = spin_lock(&spaces_lock);
@@ -1439,15 +1439,15 @@ void as_destroy(struct addrspace *as)
 
         for (pdi = 0; pdi < ENTRIES_PER_TABLE; pdi++) {
             if ((pd[pdi] & PTE_P) != 0 && (pd[pdi] & PTE_PS) == 0) {
-                pmm_free_page(phys_to_virt(pd[pdi] & PTE_ADDR_MASK));
+                pmm_free_kernel_page(phys_to_virt(pd[pdi] & PTE_ADDR_MASK));
             }
         }
 
-        pmm_free_page(pd);
+        pmm_free_kernel_page(pd);
     }
 
-    pmm_free_page(as->pdpt);
-    pmm_free_page(as->pml4);
+    pmm_free_kernel_page(as->pdpt);
+    pmm_free_kernel_page(as->pml4);
 
     as->pdpt = NULL;
     as->pml4 = NULL;

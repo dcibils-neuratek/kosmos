@@ -778,6 +778,7 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
     info.ram_size    = ram.size;
     info.pages_total = (uint32_t)pmm_total_pages();
     info.pages_free  = (uint32_t)pmm_free_pages();
+    info.pages_kernel = (uint32_t)pmm_kernel_pages();
 
     {
         unsigned long idle, busy;

@@ -883,6 +883,8 @@ win:add(header)
 
 sampler = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
+local said_kernel_kb = false
+
 function sampler:tick()
   local k = fs.read("/Devices/kernel")
   local list = sys.processes()
@@ -917,8 +919,11 @@ function sampler:tick()
     local p = r.process
 
     if r.kernel then
+      -- **What Nebula holds for itself** (Diego, 10 October: "why does the
+      -- kernel does not show any memory consumption in processes?"): its
+      -- image, page tables, pools and stacks, as the kernel counts them.
       fresh[#fresh + 1] = { id = 0, name = "nebula", kind = "kernel",
-                            band = "", kb = 0, pct = r.pct,
+                            band = "", kb = k and k.memory_kb or 0, pct = r.pct,
                             level = KERNEL_LEVEL, synthetic = true }
     else
       fresh[#fresh + 1] = {
@@ -960,7 +965,7 @@ function sampler:tick()
   -- row under it while somebody was reading them.
   if not kernel_row then
     kernel_row = { id = 0, name = "nebula", kind = "kernel", band = "",
-                   kb = 0, pct = 0, level = KERNEL_LEVEL, synthetic = true }
+                   kb = k and k.memory_kb or 0, pct = 0, level = KERNEL_LEVEL, synthetic = true }
     fresh[#fresh + 1] = kernel_row
   end
 
@@ -969,6 +974,13 @@ function sampler:tick()
   totals.kernel = math.max(0, totals.threads - theirs)
 
   if kernel_row then kernel_row.threads = totals.kernel end
+
+  -- What Nebula holds, said once, for the display harness.
+  if kernel_row and kernel_row.kb > 0 and not said_kernel_kb then
+    said_kernel_kb = true
+    print(("procs: nebula holds %d KB of %d KB"):format(kernel_row.kb,
+          ((fs.read("/Devices/memory") or {}).total_mb or 0) * 1024))
+  end
 
   rows = fresh
   sort_rows()

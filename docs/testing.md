@@ -23692,3 +23692,37 @@ variables, and the status bar and the kept senders went into two tables
 `x86-mail-3` 21 -> 22: the bar said it was checking the account while it
 synced and up to date once it had. **Control**: a bar that only ever says
 "Up to date" - it never said it was checking.
+
+## 18.555 Nebula's own memory, counted
+
+Diego, 10 October: "why does the kernel does not show any memory
+consumption in processes?". Its row was made up by Processes, at 0, and
+the kernel reported only the machine's total and free pages.
+
+**Counted where a page is taken.** `pmm` keeps what is in use when it
+starts - the kernel's image and its own bitmap - and every page taken
+since by the kernel for itself, through three calls beside the plain ones:
+`pmm_alloc_kernel_page`, `pmm_alloc_kernel_contiguous` and
+`pmm_free_kernel_page`. Page tables on both architectures, the pools'
+slabs, the capability tables, kernel stacks and the profiler's ring go
+through them; a page backing a process's memory does not, and is in no
+count of the kernel's. Worked out from what processes hold instead, a
+region two of them share would be counted twice. The count is kept under
+the allocator's lock: an atomic add on AArch64 is a call into a library
+the freestanding kernel does not link, which the first build found.
+
+`sysinfo` carries `pages_kernel`; `/Devices/memory` says `pages_kernel` and
+`kernel_mb`, `/Devices/kernel` `memory_kb`, and Processes' Nebula row shows
+it. Under QEMU, 512 MB: about 62 MB, most of it the 38 MB image, which
+carries the userland's too.
+
+`x86-sysapps` 32 -> 33: the row holds more than a megabyte and less than
+the machine.
+
+**And `x86-dock`, which the gate failed after it.** Preferences opened at
+y 734 of the M700-sized 1440 screen - a window opens where there is room,
+and the windows around it had changed - so made 160 taller it ran off the
+bottom, the window manager kept it on the screen, and the pixel the check
+reads was outside the picture. The suite moves it up by its header first
+when there is not room below, which is the check's assumption made true
+rather than hoped for.

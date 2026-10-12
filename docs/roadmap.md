@@ -356,6 +356,8 @@ made up by Processes, and Nebula reports only the machine's total and free
 pages; what it holds for itself - its image, page tables, stacks, the pools
 of threads and endpoints - is counted by nobody. The kernel counts the pages
 it takes for itself and says so beside total and free; the row shows it.
+**Built 12 October** (`testing.md` 18.555): about 62 MB under QEMU, most of
+it the image.
 
 **An ended background program collected** - Diego, 10 October 2026: "there
 is a ready.lua process in the process viewer app that says 'gone'". A

@@ -412,6 +412,21 @@ def main():
 
         if win_:
             wx, wy, ww, wh = (int(v) for v in win_.groups())
+
+            # Room below it to grow into: where a window opens depends on
+            # what else is open (on 12 October it opened at 734 of a 1440
+            # screen, and 160 taller ran off it), so it is moved up by its
+            # header first when there is not.
+            if wy + wh + 200 > height:
+                mark = len(guest.seen)
+                drag_from_to(wx + ww // 2, wy + 20, wx + ww // 2, 140)
+                moved_ = re.match(r"(\d+),(\d+)",
+                                  maybe("wm: moved Preferences by its header to ",
+                                        "Preferences moved up", mark) or "")
+                if moved_:
+                    wx, wy = int(moved_.group(1)), int(moved_.group(2))
+                time.sleep(1)
+
             _, _, at_ = R.pixel_reader(guest.screendump())
             ground = at_(wx + 12, wy + wh - 30)
             mark = len(guest.seen)

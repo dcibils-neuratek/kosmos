@@ -1101,6 +1101,9 @@ struct sysinfo {
     uint64_t ram_size;
     uint32_t pages_total;
     uint32_t pages_free;
+    /* Held by Nebula for itself: its image, page tables, pools, stacks
+     * (`pmm_kernel_pages`). Not a process's, and in no process's count. */
+    uint32_t pages_kernel;
 
     /* The pools, and how full they are: in use, and the ceiling each may
      * grow to. Both halves matter: "3 processes" says nothing without "of

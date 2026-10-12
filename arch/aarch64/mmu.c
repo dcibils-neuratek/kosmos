@@ -45,7 +45,7 @@ static uint64_t *kernel_l1;
 
 static uint64_t *alloc_table(void)
 {
-    uint64_t *table = pmm_alloc_page();
+    uint64_t *table = pmm_alloc_kernel_page();
     unsigned i;
 
     if (table == NULL) {
@@ -512,7 +512,7 @@ again:
         space(i)->root = NULL;
         spin_unlock(&spaces_lock, flags);
 
-        space(i)->root = pmm_alloc_page();
+        space(i)->root = pmm_alloc_kernel_page();
 
         if (space(i)->root == NULL) {
             unsigned long back = spin_lock(&spaces_lock);
@@ -727,14 +727,14 @@ void as_destroy(struct addrspace *as)
 
         for (l2i = 0; l2i < ENTRIES_PER_TABLE; l2i++) {
             if ((l2[l2i] & 3) == DESC_TABLE) {
-                pmm_free_page(phys_to_virt(l2[l2i] & DESC_ADDR_MASK));
+                pmm_free_kernel_page(phys_to_virt(l2[l2i] & DESC_ADDR_MASK));
             }
         }
 
-        pmm_free_page(l2);
+        pmm_free_kernel_page(l2);
     }
 
-    pmm_free_page(as->root);
+    pmm_free_kernel_page(as->root);
     as->root = NULL;
     as->in_use = false;
 }

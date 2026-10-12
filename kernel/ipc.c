@@ -569,7 +569,7 @@ static bool captable_grow(struct captable *c)
     }
 
     if (want_dir) {
-        dir = pmm_alloc_page();
+        dir = pmm_alloc_kernel_page();
 
         if (dir == NULL) {
             return false;
@@ -578,11 +578,11 @@ static bool captable_grow(struct captable *c)
         memset(dir, 0, PAGE_SIZE);
     }
 
-    chunk = pmm_alloc_page();
+    chunk = pmm_alloc_kernel_page();
 
     if (chunk == NULL) {
         if (dir != NULL) {
-            pmm_free_page(dir);
+            pmm_free_kernel_page(dir);
         }
 
         return false;
@@ -608,11 +608,11 @@ static bool captable_grow(struct captable *c)
     spin_unlock(&c->lock, flags);
 
     if (dir != NULL) {
-        pmm_free_page(dir);
+        pmm_free_kernel_page(dir);
     }
 
     if (chunk != NULL) {
-        pmm_free_page(chunk);
+        pmm_free_kernel_page(chunk);
     }
 
     return added;
@@ -1042,11 +1042,11 @@ void ipc_caps_release(struct captable *c)
     spin_unlock(&c->lock, flags);
 
     for (i = 0; i < chunks; i++) {
-        pmm_free_page(chunk[i]);
+        pmm_free_kernel_page(chunk[i]);
     }
 
     if (chunk != NULL) {
-        pmm_free_page(chunk);
+        pmm_free_kernel_page(chunk);
     }
 }
 

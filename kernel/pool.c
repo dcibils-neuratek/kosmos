@@ -70,7 +70,7 @@ bool pool_grow(struct pool *p)
         return false;
     }
 
-    slab = pmm_alloc_contiguous(p->slab_pages);
+    slab = pmm_alloc_kernel_contiguous(p->slab_pages);
 
     if (slab == NULL) {
         return false;
@@ -99,7 +99,7 @@ bool pool_grow(struct pool *p)
         size_t i;
 
         for (i = 0; i < p->slab_pages; i++) {
-            pmm_free_page(slab + i * PAGE_SIZE);
+            pmm_free_kernel_page(slab + i * PAGE_SIZE);
         }
     }
 
@@ -129,7 +129,7 @@ void pool_init(struct pool *p, const char *name, size_t size,
     p->slabs_max = (ceiling + p->per_slab - 1) / p->per_slab;
 
     dir_pages = (p->slabs_max * sizeof(void *) + PAGE_SIZE - 1) / PAGE_SIZE;
-    p->slab = pmm_alloc_contiguous(dir_pages);
+    p->slab = pmm_alloc_kernel_contiguous(dir_pages);
 
     if (p->slab == NULL) {
         panic("pool: no pages for a pool's directory");

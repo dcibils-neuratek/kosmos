@@ -1190,6 +1190,7 @@ static int l_info(lua_State *L)
     SET("ram_size",         info.ram_size);
     SET("pages_total",      info.pages_total);
     SET("pages_free",       info.pages_free);
+    SET("pages_kernel",     info.pages_kernel);
     SET("page_size",        info.page_size);
 
     SET("threads_used",     info.threads_used);

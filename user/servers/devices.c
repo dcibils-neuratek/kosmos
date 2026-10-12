@@ -369,6 +369,8 @@ static void node_memory(const struct sysinfo *i, struct dev_reply *r)
     put_num(r, "free_mb",  ((uint64_t)i->pages_free  * i->page_size) / mb);
     put_num(r, "pages_total", i->pages_total);
     put_num(r, "pages_free", i->pages_free);
+    put_num(r, "pages_kernel", i->pages_kernel);
+    put_num(r, "kernel_mb", ((uint64_t)i->pages_kernel * i->page_size) / mb);
     put_num(r, "page_size", i->page_size);
     put_num(r, "base", i->ram_base);
 }
@@ -386,6 +388,8 @@ static void node_kernel(const struct sysinfo *i, struct dev_reply *r)
     put_num(r, "spaces", i->spaces_used);
     put_num(r, "spaces_max", i->spaces_total);
     put_num(r, "tick_hz", i->tick_hz);
+    /* What it holds for itself, for Processes' Nebula row. */
+    put_num(r, "memory_kb", ((uint64_t)i->pages_kernel * i->page_size) / 1024u);
 }
 
 /*
