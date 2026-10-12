@@ -134,7 +134,7 @@ def main():
             'if i and i.address and i.address ~= "\\0\\0\\0\\0" then break end sys.sleep(25) end '
             'print("NET" .. "-UP")', "NET-UP", 60)
 
-        listed = run("install", "install <name> to install one")
+        listed = run("install", "\nkosmos> ")
         check(re.search(r"install:\s+hello\s+Hello\s+\S+ \w+\s+not installed", listed) is not None
               and "4 packages from 10.0.2.2:%d" % port in listed,
               "the list did not offer hello, not installed, from the boot's server: %r"
@@ -142,11 +142,11 @@ def main():
 
         once = run("install hello", "install: hello")
         got = run('print("GOT " .. tostring(fs.read("/Home/Apps/Hello/hello.txt")))', "GOT ")
-        check("install: hello - " in once and ", 1.0" in once
+        check("install: hello - 1.0 in /Home/Apps/Hello" in once
               and "GOT the first" in got,
               "hello was not installed with its file: %r %r" % (once[-300:], got[-200:]))
 
-        again_list = run("install", "install <name> to install one")
+        again_list = run("install", "\nkosmos> ")
         check(re.search(r"hello\s+Hello\s+\S+ \w+\s+installed - ", again_list) is not None,
               "the list did not say hello is installed: %r" % again_list[-600:])
 
@@ -177,6 +177,41 @@ def main():
         gone = run('print("GONE " .. tostring(fs.getattr("/Home/Apps/Bent")) .. " " '
                    '.. tostring(fs.getattr("/Home/Apps/Other")))', "GONE ")
         check("GONE nil nil" in gone, "a refused package left its folder: %r" % gone[-200:])
+
+        # **Dependencies, removal and update** (P2): `addon` depends on
+        # `hello`, which is removed first so that installing `addon` has to
+        # bring it; removing `hello` alone is refused while `addon` needs it,
+        # and both go together, a file a person put beside them kept; then a
+        # newer `hello` on the server is what `pkg update` installs.
+        offer("addon", *package("Addon", {"addon.txt": "needs hello\n"},
+                                dict(facts("addon", "Addon", "/Home/Apps/Addon"), depends="hello")))
+        run("pkg remove hello", "\nkosmos> ")
+        dep = run("pkg install addon", "pkg: addon - ")
+        have = run('print("HAVE " .. tostring(fs.read("/Home/Apps/Hello/hello.txt")) .. tostring(fs.read("/Home/Apps/Addon/addon.txt")))', "HAVE ")
+        check("pkg: hello first, which another depends on" in dep and "HAVE the second\nneeds hello" in have.replace("\r", ""),
+              "installing addon did not bring hello first: %r %r" % (dep[-400:], have[-200:]))
+
+        refused = run("pkg remove hello", "\nkosmos> ")
+        check("hello is needed by addon - remove both with: pkg remove hello addon" in refused,
+              "removing hello while addon needs it was not refused: %r" % refused[-300:])
+
+        run('fs.write("/Home/Apps/Hello/mine.txt", "a person\'s")', "\nkosmos> ")
+        both = run("pkg remove hello addon", "\nkosmos> ")
+        after = run('print("AFTER " .. tostring(fs.getattr("/Home/Apps/Addon")) .. " " '
+                    '.. tostring(fs.read("/Home/Apps/Hello/hello.txt")) .. " " '
+                    '.. tostring(fs.read("/Home/Apps/Hello/mine.txt")))', "AFTER ")
+        check("pkg: hello - removed from /Home/Apps/Hello" in both
+              and "AFTER nil nil a person's" in after,
+              "pkg remove did not take exactly what each installed, keeping what was "
+              "put beside them: %r %r" % (both[-400:], after[-200:]))
+
+        run("pkg install hello", "pkg: hello - ")
+        offer("hello", *package("Hello", {"hello.txt": "the third\n"},
+                                dict(facts("hello", "Hello", "/Home/Apps/Hello"), version="2.0")))
+        updated = run("pkg update", "\nkosmos> ")
+        got = run('print("GOT " .. tostring(fs.read("/Home/Apps/Hello/hello.txt")))', "GOT ")
+        check("pkg: hello - 1.0 -> 2.0 in /Home/Apps/Hello" in updated and "GOT the third" in got,
+              "pkg update did not bring hello from 1.0 to 2.0: %r %r" % (updated[-300:], got[-200:]))
     finally:
         transcript = guest.seen
         guest.close()
@@ -193,7 +228,9 @@ def main():
           "installed with its file and said installed, installed again over itself "
           "with nothing left behind, a zip that would not open refused with what was "
           "there kept, and a file whose SHA-256 differs and a package for other "
-          "protocols refused, leaving nothing)" % checks)
+          "protocols refused, leaving nothing; a dependency installed first, a removal "
+          "refused while another needs it, both removed together keeping what a "
+          "person put beside them, and pkg update bringing a newer version)" % checks)
     return 0
 
 

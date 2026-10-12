@@ -24284,3 +24284,23 @@ made for other protocols are each refused with why, leaving no folder.
 **Control**: the sum not checked - the tampered package is installed, and the
 suite fails. `x86-game` and `x86-nogame` unchanged with the new header
 words.
+
+## 18.573 Packages P2: `pkg` - dependencies, removal, update
+
+`docs/packages.md` step P2, in `packages.lua`: `plan` - what was asked and
+what it depends on, the dependencies first, each once, a missing one or a
+circle refused with why; `remove` - exactly the files the kept manifest
+lists and its `package.txt`, then each folder they leave empty, deepest
+first, and the record, so a file a person put beside them stays;
+`needed_by`; and `command`, the text at the prompt - `pkg`, `pkg install`,
+`pkg remove`, `pkg update` - which `pkg` and `install`, now its short form,
+both are. A removal is refused while an installed package depends on what
+goes, unless both go in one command; `pkg update` installs every installed
+package whose version or build on the server differs, saying 1.0 -> 2.0.
+
+**Tests.** `x86-install` 8 -> 12: `addon`, which depends on `hello`,
+installed with `hello` brought first; `pkg remove hello` refused while
+`addon` needs it, naming the command that removes both; both removed
+together, a file a person put in Hello's folder kept; and a newer `hello` on
+the server installed by `pkg update`. **Control**: nothing ever said to need
+`hello` - the removal goes through, and the suite fails.

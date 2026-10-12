@@ -115,6 +115,7 @@ a second adds a fraction of that.
    resolved in order, Remove by the kept manifest, Update; `pkg` and
    `install` over it; `x86-install` grown to dependencies, removal and
    refusals.
+   **P1 done in 0.11.177, P2 in 0.11.178** (`testing.md` 18.572, 18.573).
 3. **P3 - the window**, as drawn.
 4. **P4 - powers asked for**, with Automations' consent step.
 

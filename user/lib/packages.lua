@@ -8,6 +8,11 @@
 --   packages.index(server)              the packages offered, or nil, why
 --   packages.installed(name)            what is installed, its manifest, or nil
 --   packages.install(p, server)         fetched, checked, put in place
+--   packages.plan(names, by_name)       those and what they depend on, in order
+--   packages.needed_by(name)            installed packages that depend on it
+--   packages.remove(name)               exactly the files it installed
+--   packages.command(words, say)        `pkg`, at the prompt: list, install,
+--                                       remove, update
 --
 -- **What a package is**: a zip of its folder with `package.txt` inside - a
 -- line a fact, a key, spaces, the value; a file's line its size, its
@@ -217,6 +222,284 @@ function packages.install(p, server)
   files.make_folder(packages.KEPT)
   fs.write(packages.KEPT .. "/" .. p.name, text)
   return true, manifest
+end
+
+-- One file or one empty folder gone, as `files.remove` deletes each.
+local function delete(path)
+  return fs.send(path, { type = "delete" })
+end
+
+local function words_of(text)
+  local out = {}
+
+  for w in tostring(text or ""):gmatch("%S+") do out[#out + 1] = w:lower() end
+
+  return out
+end
+
+--
+-- **What to install, in order**: each name and what it depends on, the
+-- dependencies first, each once - and nothing already installed at the
+-- version offered unless it was asked for by name. Nil and why for a name or
+-- a dependency the server does not offer, or a circle of them.
+--
+function packages.plan(names, by_name)
+  local out, placed, visiting = {}, {}, {}
+
+  local function visit(name, asked)
+    if placed[name] then return true end
+    if visiting[name] then return nil, name .. " depends on itself, by way of others" end
+
+    local p = by_name[name]
+
+    if not p then return nil, name .. " - the server offers no such package" end
+
+    visiting[name] = true
+
+    for _, dep in ipairs(words_of(p.depends)) do
+      local ok, why = visit(dep, false)
+
+      if not ok then return nil, ("%s needs %s: %s"):format(name, dep, why) end
+    end
+
+    visiting[name] = nil
+    placed[name] = true
+
+    if asked or not packages.current(p) then out[#out + 1] = p end
+
+    return true
+  end
+
+  for _, name in ipairs(names) do
+    local ok, why = visit(name, true)
+
+    if not ok then return nil, why end
+  end
+
+  return out
+end
+
+-- Every package installed here, by its kept manifest.
+function packages.all_installed()
+  local out = {}
+
+  for _, name in ipairs(fs.list(packages.KEPT) or {}) do
+    local m = packages.installed(name)
+
+    if m then out[#out + 1] = m end
+  end
+
+  return out
+end
+
+-- The installed packages that depend on `name`.
+function packages.needed_by(name)
+  local out = {}
+
+  for _, m in ipairs(packages.all_installed()) do
+    for _, dep in ipairs(words_of(m.depends)) do
+      if dep == name then out[#out + 1] = m.name end
+    end
+  end
+
+  return out
+end
+
+--
+-- **Exactly the files it installed**, by its kept manifest, and its own
+-- `package.txt`; then each folder they leave empty, deepest first, and the
+-- record. A file a person put beside them stays, and so does its folder.
+--
+function packages.remove(name)
+  local m = packages.installed(name)
+
+  if not m then return nil, name .. " is not installed" end
+
+  if not m.into then
+    return nil, name .. " was installed before manifests, so what it put there is not known - install it again first"
+  end
+
+  local folders = {}
+
+  for _, f in ipairs(m.files) do
+    local where = files.join(m.into, f.path)
+
+    if fs.getattr(where) then delete(where) end
+
+    local dir = files.parent(where)
+
+    while dir and #dir > #m.into do
+      folders[dir] = true
+      dir = files.parent(dir)
+    end
+  end
+
+  if fs.getattr(files.join(m.into, "package.txt")) then delete(files.join(m.into, "package.txt")) end
+
+  local deepest = {}
+
+  for dir in pairs(folders) do deepest[#deepest + 1] = dir end
+  table.sort(deepest, function(a, b) return #a > #b end)
+  deepest[#deepest + 1] = m.into
+
+  for _, dir in ipairs(deepest) do
+    local inside = fs.list(dir)
+
+    if inside and #inside == 0 then delete(dir) end
+  end
+
+  delete(packages.KEPT .. "/" .. name)
+  return true, m
+end
+
+--
+-- **`pkg`, at the prompt** - and `install`, its short form: what is asked in
+-- `words`, said through `say`, and whether all of it went. The window calls
+-- the functions above; this is their text.
+--
+--   pkg                       every package and its state
+--   pkg install NAME...       those and what they depend on; `all` for every one
+--   pkg remove NAME...        refused while an installed package needs one
+--   pkg update                every installed package with another version
+--   ... --from ADDRESS:PORT   a server other than the boot's
+--
+function packages.command(words, say)
+  local server, rest = packages.server(), {}
+  local i = 1
+
+  while i <= #words do
+    if words[i] == "--from" then
+      server, i = words[i + 1], i + 2
+    else
+      rest[#rest + 1], i = words[i]:lower(), i + 1
+    end
+  end
+
+  local verb = rest[1] or "list"
+
+  table.remove(rest, 1)
+
+  -- Removing asks nothing of the server.
+  if verb == "remove" then
+    if #rest == 0 then say("which package? pkg remove <name>") return false end
+
+    local going, all = {}, true
+
+    for _, name in ipairs(rest) do going[name] = true end
+
+    for _, name in ipairs(rest) do
+      local still = {}
+
+      for _, other in ipairs(packages.needed_by(name)) do
+        if not going[other] then still[#still + 1] = other end
+      end
+
+      if #still > 0 then
+        say(("%s is needed by %s - remove both with: pkg remove %s %s")
+            :format(name, table.concat(still, ", "), name, table.concat(still, " ")))
+        return false
+      end
+    end
+
+    for _, name in ipairs(rest) do
+      local ok, why = packages.remove(name)
+
+      if ok then
+        say(("%s - removed from %s"):format(name, why.into))
+      else
+        say(("%s - not removed: %s"):format(name, tostring(why)))
+        all = false
+      end
+    end
+
+    return all
+  end
+
+  if not server then
+    say("no package server - the boot names none (opt/kosmos/packages); say one with --from <address:port>")
+    return false
+  end
+
+  local list, by_name = packages.index(server)
+
+  if not list then
+    say("the package server at " .. server .. " did not answer: " .. tostring(by_name))
+    return false
+  end
+
+  if verb == "list" then
+    say(("%d packages from %s"):format(#list, server))
+
+    for _, p in ipairs(list) do
+      local m = packages.installed(p.name)
+      local state = not m and "not installed"
+                    or packages.current(p) and "installed"
+                    or ("%s installed, %s here"):format(m.version, p.version)
+      local deps = p.depends ~= "" and (" - depends on " .. p.depends) or ""
+
+      say(("  %-10s %-16s %9s  %s%s - %s"):format(p.name, p.title, files.size(p.zip),
+                                                state, deps, p.about))
+    end
+
+    return true
+  end
+
+  local names
+
+  if verb == "update" then
+    names = {}
+
+    for _, p in ipairs(list) do
+      if packages.installed(p.name) and not packages.current(p) then names[#names + 1] = p.name end
+    end
+
+    if #names == 0 then say("everything installed is the version offered") return true end
+  elseif verb == "install" then
+    names = rest
+
+    if names[1] == "all" then
+      names = {}
+      for _, p in ipairs(list) do names[#names + 1] = p.name end
+    end
+
+    if #names == 0 then say("which package? pkg install <name>") return false end
+  else
+    say("pkg: list, install, remove or update - not " .. verb)
+    return false
+  end
+
+  local plan, why = packages.plan(names, by_name)
+
+  if not plan then say(why) return false end
+
+  local asked = {}
+
+  for _, n in ipairs(names) do asked[n] = true end
+
+  for _, p in ipairs(plan) do
+    if not asked[p.name] then say(("%s first, which another depends on"):format(p.name)) end
+  end
+
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
+  local all = true
+
+  for _, p in ipairs(plan) do
+    local before = packages.installed(p.name)
+    local started = sys.ticks()
+    local ok, err = packages.install(p, server)
+
+    if ok then
+      say(("%s - %s%s in %s, %.1f s"):format(p.name,
+          before and (before.version .. " -> ") or "", p.version, p.into,
+          (sys.ticks() - started) / hz))
+    else
+      say(("%s - not installed: %s"):format(p.name, tostring(err)))
+      all = false
+      break
+    end
+  end
+
+  return all
 end
 
 return packages
