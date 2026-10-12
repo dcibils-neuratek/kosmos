@@ -1,0 +1,241 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Packages, drawn on 12 October 2026 from Diego's ask: "a mockup of the App
+  Store application where the user sees all available packages and chooses
+  to install", then "app store is very apple, so we need a new name",
+  "where we can see all installed packages, remove them, install new ones,
+  update packages to new versions", "packages might have dependencies?",
+  "like an APT package system?". roadmap.md, "Kosmos packages". The
+  packages in it are this build's four and some made up to show what a
+  dependency looks like.
+-->
+<title>Packages</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --a-win: #1f2430; --a-raised: #262c39; --a-sunk: #191d26; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-faint: #6b7486; --a-accent: #3b82f6; --a-sel: #2a3a5c;
+  --good: #3fb950; --warn: #d4a72c; --bad: #e5484d;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 28px; max-width: 76ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 78ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 86ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 860px; }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 8px; }
+table.plain { border-collapse: collapse; margin: 10px 0; width: 100%; max-width: 900px; font-size: 14px; }
+table.plain td, table.plain th { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+table.plain th { font-family: var(--display); font-weight: 600; }
+
+.win { background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line); border-radius: 12px;
+       box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; flex: none; overflow: hidden; }
+.head { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 14px; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 14px; }
+.head .crumb { color: var(--a-dim); flex: 1; }
+.search { border: 1px solid var(--a-line); background: var(--a-sunk); color: var(--a-faint); border-radius: 7px; padding: 4px 10px; width: 200px; }
+.btn { border: 1px solid var(--a-line); background: var(--a-raised); color: var(--a-ink); border-radius: 7px; padding: 4px 11px; font-size: 13px; white-space: nowrap; display: inline-block; }
+.btn.primary { background: var(--a-accent); border-color: var(--a-accent); color: #fff; }
+.btn.danger { color: #ff9b9e; }
+.dots { color: var(--a-dim); font-weight: 700; letter-spacing: 1px; padding: 0 4px; }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+
+.main { display: grid; grid-template-columns: 200px 1fr 340px; min-height: 600px; }
+.side { border-right: 1px solid var(--a-line); background: var(--a-sunk); padding: 10px 8px; }
+.side .group { color: var(--a-faint); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding: 12px 10px 6px; }
+.side div.it { display: flex; justify-content: space-between; padding: 6px 10px; border-radius: 7px; }
+.side div.it.on { background: var(--a-sel); }
+.side div.it span { color: var(--a-dim); font-variant-numeric: tabular-nums; }
+.side div.it span.up { color: var(--warn); }
+.list { padding: 8px 0; }
+.row { display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid #2a303d; }
+.row.on { background: var(--a-sel); }
+.ic { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; font-size: 22px; background: var(--a-raised); border: 1px solid var(--a-line); }
+.row b { font-weight: 600; font-size: 14px; }
+.row .about { color: var(--a-dim); font-size: 12px; }
+.row .meta { color: var(--a-faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.state { font-size: 12px; text-align: right; white-space: nowrap; }
+.state .ok { color: var(--good); }
+.state .up { color: var(--warn); }
+.detail { border-left: 1px solid var(--a-line); padding: 18px; }
+.detail .top { display: flex; gap: 14px; align-items: center; margin-bottom: 12px; }
+.detail .top .ic { width: 64px; height: 64px; font-size: 32px; border-radius: 14px; }
+.detail h3 { font-family: var(--display); font-size: 22px; margin: 0; }
+.detail .by { color: var(--a-dim); }
+.detail .acts { display: flex; gap: 8px; margin: 12px 0 16px; }
+.facts { display: grid; grid-template-columns: 110px 1fr; gap: 6px 10px; font-size: 12.5px; }
+.facts dt { color: var(--a-faint); }
+.facts dd { margin: 0; }
+.chip { display: inline-block; border: 1px solid var(--a-line); border-radius: 999px; padding: 0 8px; margin: 0 4px 4px 0; font-size: 11.5px; color: var(--a-dim); }
+.chip.need { border-color: #4d5a7a; color: #c6d4f5; }
+.foot { padding: 10px 16px; border-top: 1px solid var(--a-line); color: var(--a-dim); font-size: 12px; display: flex; justify-content: space-between; }
+
+.row2 { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+.ask .body { padding: 18px 20px; width: 440px; }
+.ask h4 { margin: 0 0 6px; font-size: 15px; }
+.ask p { color: var(--a-dim); margin: 0 0 12px; font-size: 13px; }
+.ask ul { margin: 0 0 14px; padding-left: 18px; color: var(--a-ink); font-size: 13px; }
+.ask .bt { display: flex; gap: 8px; justify-content: flex-end; }
+pre.term { margin: 0; padding: 14px 18px; font: 12.5px/1.6 var(--mono); color: #d7dde8; background: #11141b; overflow-x: auto; }
+pre.term .p { color: #82aaff; }
+pre.term .d { color: #6b7486; }
+pre.man { margin: 0; padding: 14px 18px; font: 12.5px/1.6 var(--mono); color: #d7dde8; background: #181c25; overflow-x: auto; }
+pre.man .k { color: #82aaff; }
+pre.man .c { color: #6b7486; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Packages</h1>
+  <p class="sub">Everything Kosmos can install, from a package server (the Mac, for now): what is installed and from which build, what has a newer version, and what is not installed yet. Install, Update and Remove each a click. A package carries a manifest saying what it is, which build it is for, its files and where they go, what powers it needs, and what other packages it depends on. Installing one brings what it depends on, and removing one says what still needs it: APT's shape, for Kosmos.</p>
+  <div class="q"><b>Diego, 12 October 2026:</b> "i think app store is very apple, so we need a new name like 'Install Packages'? or something like that where we can see all installed packages, remove them, install new ones, update packages to new versions", "and packages might have dependencies?", "like an APT package system?"</div>
+
+  <h2>As it opens: every package, the installed and the rest</h2>
+  <div class="scroller">
+  <div class="win" style="width:1080px">
+    <div class="head"><span class="t">Packages</span><span class="crumb">&middot; from the Mac, 192.168.1.38 &middot; looked 2 minutes ago</span>
+      <span class="search">Search packages</span><span class="btn primary">Update all (2)</span><span class="dots">&middot;&middot;&middot;</span>
+      <span class="lights"><i style="background:#3fb950"></i><i style="background:#f0b429"></i><i style="background:#e5484d"></i></span></div>
+    <div class="main">
+      <div class="side">
+        <div class="it on">All <span>7</span></div>
+        <div class="it">Installed <span>4</span></div>
+        <div class="it">Updates <span class="up">2</span></div>
+        <div class="it">Not installed <span>3</span></div>
+        <div class="group">Kinds</div>
+        <div class="it">Games <span>3</span></div>
+        <div class="it">Emulators <span>1</span></div>
+        <div class="it">Developer <span>2</span></div>
+        <div class="it">Data <span>1</span></div>
+      </div>
+      <div class="list">
+        <div class="row"><span class="ic">&#128127;</span><div><b>Doom</b><div class="about">id Software's Doom, the shareware episode, at the screen's size</div><div class="meta">10 MB &middot; 0.11.174</div></div><div class="state"><span class="ok">&#10003; Installed</span></div></div>
+        <div class="row on"><span class="ic">&#9876;</span><div><b>Quake</b><div class="about">id Software's Quake, the shareware episode</div><div class="meta">17 MB &middot; 0.11.172 installed, 0.11.174 here</div></div><div class="state"><span class="up">Update available</span><br><span class="btn">Update</span></div></div>
+        <div class="row"><span class="ic">&#127918;</span><div><b>SNES</b><div class="about">a Super Nintendo, for the ROMs in /Home/roms/snes</div><div class="meta">8.4 MB &middot; 0.11.172 installed, 0.11.174 here</div></div><div class="state"><span class="up">Update available</span><br><span class="btn">Update</span></div></div>
+        <div class="row"><span class="ic">&#128295;</span><div><b>Developer files</b><div class="about">what New Project builds a C program with: the runtime and the headers</div><div class="meta">9.1 MB &middot; 0.11.174</div></div><div class="state"><span class="ok">&#10003; Installed</span></div></div>
+        <div class="row"><span class="ic">&#128737;</span><div><b>Quake: Scourge of Armagon</b><div class="about">the first mission pack - needs Quake</div><div class="meta">32 MB &middot; 0.11.174 &middot; depends on Quake</div></div><div class="state"><span class="btn primary">Install</span></div></div>
+        <div class="row"><span class="ic">&#128218;</span><div><b>TinyCC examples</b><div class="about">a dozen small C programs to open in the IDE - needs the developer files</div><div class="meta">0.4 MB &middot; 0.11.174 &middot; depends on Developer files</div></div><div class="state"><span class="btn primary">Install</span></div></div>
+        <div class="row"><span class="ic">&#127925;</span><div><b>Freedoom</b><div class="about">a free set of Doom's levels, monsters and sounds - needs Doom</div><div class="meta">28 MB &middot; 0.11.174 &middot; depends on Doom</div></div><div class="state"><span class="btn primary">Install</span></div></div>
+      </div>
+      <div class="detail">
+        <div class="top"><span class="ic">&#9876;</span><div><h3>Quake</h3><div class="by">a game &middot; id Software</div></div></div>
+        <div>id Software's Quake, the shareware episode: the engine, Kosmos's way of drawing it and playing its sound, and its first episode's data.</div>
+        <div class="acts"><span class="btn primary">Update to 0.11.174</span><span class="btn danger">Remove</span></div>
+        <dl class="facts">
+          <dt>Installed</dt><dd>0.11.172, in /Home/Apps/Quake</dd>
+          <dt>Here</dt><dd>0.11.174 - for this system's protocols</dd>
+          <dt>Size</dt><dd>17 MB, 4 files</dd>
+          <dt>Needs</dt><dd><span class="chip need">sound</span><span class="chip need">the screen</span><span class="chip need">the keyboard and mouse</span></dd>
+          <dt>Depends on</dt><dd><span class="chip">nothing else</span></dd>
+          <dt>Needed by</dt><dd><span class="chip">Quake: Scourge of Armagon</span> <span style="color:var(--a-faint)">(not installed)</span></dd>
+          <dt>Files</dt><dd><code>quake.lua</code>, <code>quake.elf</code>, <code>id1/pak0.pak</code>, <code>package.txt</code></dd>
+        </dl>
+      </div>
+    </div>
+    <div class="foot"><span>7 packages &middot; 4 installed, 2 with updates &middot; 37 MB installed</span><span>pkg, at the prompt, does all of this too</span></div>
+  </div>
+  </div>
+  <p class="cap">On the left, what to look at: all, installed, updates, not installed, and by kind. In the middle, the packages, each with its size and version and what it is. An installed one says so, a newer one on the server says <b>Update available</b>, and the rest have <b>Install</b>. On the right, the chosen one's manifest: what is installed and what is offered, its files and where, the powers it <b>needs</b>, what it <b>depends on</b> and what <b>needs it</b>. <b>Update all</b> updates every installed package with a newer version, as <code>apt upgrade</code> does.</p>
+
+  <h2>Installing what something depends on, and removing what something needs</h2>
+  <div class="row2">
+  <div class="win ask">
+    <div class="head"><span class="t">Packages</span></div>
+    <div class="body"><h4>Install Quake: Scourge of Armagon?</h4>
+      <p>It depends on a package that is not installed, which is installed first:</p>
+      <ul><li><b>Quake</b> - 17 MB</li><li><b>Quake: Scourge of Armagon</b> - 32 MB</li></ul>
+      <p>49 MB in all, into /Home/Apps. It will be able to use sound, the screen, the keyboard and mouse.</p>
+      <div class="bt"><span class="btn">Cancel</span><span class="btn primary">Install both</span></div></div>
+  </div>
+  <div class="win ask">
+    <div class="head"><span class="t">Packages</span></div>
+    <div class="body"><h4>Remove Doom?</h4>
+      <p>Freedoom is installed and needs it. Removing Doom leaves Freedoom unable to start.</p>
+      <ul><li><b>Doom</b> - 10 MB, /Home/Apps/Doom, 3 files</li></ul>
+      <p>Only the files Doom installed go. A saved game in /Home/Saves/Doom is yours and stays.</p>
+      <div class="bt"><span class="btn">Cancel</span><span class="btn">Remove Doom and Freedoom</span><span class="btn danger">Remove Doom</span></div></div>
+  </div>
+  </div>
+  <p class="cap">Dependencies as APT has them: installing a package installs what it depends on first, in one confirmation that lists everything and the total. Removing one that another installed package needs says so and offers both. Remove takes exactly the files the manifest lists, never a whole folder's contents: what a person made beside them is theirs.</p>
+
+  <h2>What a package is: its manifest</h2>
+  <div class="scroller">
+  <div class="win" style="width:760px">
+    <div class="head"><span class="t">package.txt</span><span class="crumb">&middot; inside quake.zip</span></div>
+<pre class="man"><span class="c"># Made by tools/packages.py from user/installed/Quake/quake.lua's header</span>
+<span class="k">name</span>        quake
+<span class="k">title</span>       Quake
+<span class="k">kind</span>        game
+<span class="k">about</span>       id Software's Quake, the shareware episode
+<span class="k">version</span>     0.11.174
+<span class="k">protocols</span>   7f3c9a1e        <span class="c"># this build's protocol stamp: refused by another</span>
+<span class="k">into</span>        /Home/Apps/Quake
+<span class="k">needs</span>       audio display input
+<span class="k">depends</span>     <span class="c"># nothing</span>
+<span class="k">file</span>        quake.lua        13 102  sha256 9b1e...
+<span class="k">file</span>        quake.elf    11 422 864  sha256 51c0...
+<span class="k">file</span>        id1/pak0.pak 18 689 235  sha256 e3a7...</pre>
+  </div>
+  </div>
+  <p class="cap">A zip with its folder and this file. Plain text, a line a fact, so another machine can check it: the files with their sizes and sums, so a download that was cut short is known before anything is replaced. <b>Not typed by hand</b>: name, title, icon and needs are already in the application's header (<code>-- kosmos: name</code>, <code>icon</code>, <code>needs</code>, <code>image</code>), and the build writes the manifest from them, so the two cannot disagree. The server's index is every manifest's first lines, as APT's Packages file is.</p>
+
+  <h2>The same, at the prompt</h2>
+  <div class="scroller">
+  <div class="win" style="width:760px">
+    <div class="head"><span class="t">Terminal</span><span class="crumb">&middot; /Home</span></div>
+<pre class="term"><span class="p">kosmos&gt;</span> pkg
+pkg: 7 packages from 192.168.1.38:47701
+  doom        Doom                   10 MB  installed
+  quake       Quake                  17 MB  0.11.172 installed, 0.11.174 here
+  snes        SNES                  8.4 MB  0.11.172 installed, 0.11.174 here
+  developer   Developer files       9.1 MB  installed
+  armagon     Quake: Scourge of...   32 MB  not installed - depends on quake
+<span class="p">kosmos&gt;</span> pkg update
+pkg: quake 0.11.172 -&gt; 0.11.174, 17 MB in 1.8 s
+pkg: snes  0.11.172 -&gt; 0.11.174, 8.4 MB in 0.9 s
+<span class="p">kosmos&gt;</span> pkg install armagon
+pkg: armagon depends on quake - installed already
+pkg: armagon - 32 MB in /Home/Apps/Armagon, 3.1 s
+<span class="p">kosmos&gt;</span> pkg remove doom
+pkg: freedoom needs doom - remove both with: pkg remove doom freedoom
+<span class="d"># install doom works too: `install` is pkg install's short form</span></pre>
+  </div>
+  </div>
+  <p class="cap"><code>pkg</code> is the window's other face, as <code>netstat</code> is Network Monitor's: <code>pkg</code> lists, <code>pkg install</code>, <code>pkg remove</code>, <code>pkg update</code>. The window calls the same library, so the two cannot disagree.</p>
+
+  <h2>What it is made of</h2>
+  <table class="plain">
+    <tr><th>Piece</th><th>Supplied by</th><th>New or as it is</th></tr>
+    <tr><td>The window, the list, the details, the questions</td><td>the UI kit</td><td>as it is</td></tr>
+    <tr><td>Reading the index and manifests, installing with dependencies, removing exactly what was installed, updating</td><td><b><code>packages.lua</code></b>, a library: what <code>install</code> does today, moved out of the program so the window and <code>pkg</code> both use it</td><td><b>new</b>, from <code>install</code></td></tr>
+    <tr><td>Fetching from the server</td><td><code>http.lua</code></td><td>as it is</td></tr>
+    <tr><td>Unpacking, and checking each file's sum</td><td><code>zip.lua</code>, and the Crypto Kit's SHA-256</td><td>as they are</td></tr>
+    <tr><td>Making packages and their manifests from each application's header</td><td><code>tools/packages.py</code>, on the Mac</td><td><b>grows</b>: manifests, sums, dependencies</td></tr>
+    <tr><td>Serving them</td><td><code>tools/packages_serve.py</code> on the Mac; later any machine</td><td>as it is</td></tr>
+    <tr><td>Asking before a package that needs powers is installed</td><td>the consent step <code>roadmap.md</code> wants for launchers</td><td>new, shared with Automations</td></tr>
+  </table>
+  <p class="cap">Lua, all of it: a package is installed a few times a day at most, and its byte work, unzipping and hashing, is already C in the kits.</p>
+</div>
+</body>
+</html>

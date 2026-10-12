@@ -407,7 +407,7 @@ every drive - `.device` and `.programs` under its path - answered by
 `diskfs` and `smbfs` as now and by the drive server and `ramfs` new; steps
 D1 (every drive counts), D2 (which programs, `diskstat`), D3 (the window).
 
-**Kosmos App Store** - Diego, 12 October 2026, asking that the M700 fetch
+**Kosmos packages (was "Kosmos App Store")** - Diego, 12 October 2026, asking that the M700 fetch
 Doom, Quake, the SNES and the developer files from the Mac when it needs
 them rather than have them pushed after every netboot: "perhaps add a
 program in kosmos that requests those from the mac as needed?", "like a app
@@ -418,7 +418,20 @@ it in place (`install apps`, `install developer`) - on demand ("i need them
 on demand"). **Packages**, each installable thing one - "where we show all
 available packages", "and we can install them on demand": the server keeps
 an index of them, `install` alone lists it, `install doom` installs one.
-The App Store is a window over that: what there is, what is
+**Not "App Store"** - Diego, the same day: "i think app store is very
+apple, so we need a new name like 'Install Packages'? or something like that
+where we can see all installed packages, remove them, install new ones,
+update packages to new versions", "and packages might have dependencies?",
+"like an APT package system?" - and, asked what a package is, "a zip file
+containing an app with a manifest on what the app is? its files and where
+are they located?". So: **a package carries its manifest** (what it is,
+the build and protocol stamp it is for, its files and where they go, what it
+needs, what it depends on), generated from an application's own header
+rather than typed again; the server's index is built from the manifests;
+and the system is APT's shape - install with dependencies, remove exactly
+what was installed, update everything newer. Proposed names, for Diego:
+the application **Packages**, the program **`pkg`** (`install` kept as its
+short form). The window over that: what there is, what is
 installed and at which build, Install and Update. A design first - feature
 set, mockup, architecture, diagram - when its turn comes.
 

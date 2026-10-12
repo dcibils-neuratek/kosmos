@@ -137,7 +137,12 @@ CLOSE = ('local r = use("/Kosmos/Libraries/wmproto.lua").windows()\n'
          'end\n')
 FOLLOW = ('local on = args == "on"\n'
           'fs.send("/Running/wm", { type = "keys", focus_follows = on, focus_delay_ms = 250 })\n')
-CLEAR = ('local f = fs.read("/Home/Preferences/appearance")\n'
+# Waits for the value rather than reading once: Preferences writes the file
+# just after it has told the Deskbar, and a read in that instant found the
+# change shown and not yet kept - 3 runs in 5 on 12 October.
+CLEAR = ('local f\n'
+         'for _ = 1, 40 do f = fs.read("/Home/Preferences/appearance") '
+         'if type(f) == "table" and f.dock_transparency then break end sys.sleep(25) end\n'
          'print("CLEAR " .. tostring(type(f) == "table" and f.dock_transparency))\n')
 
 

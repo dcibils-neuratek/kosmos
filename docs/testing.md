@@ -24184,3 +24184,50 @@ its own size covering the screen, which the window manager now says.
 `x86-dock`'s transparency slider check failed once in three runs today
 (49%, "CLEAR false") and passed alone - on the roadmap with the others.
 The gate: **72 of 72**, the first whole gate in a day - `x86-mdns`, `x86-film` and `x86-network` all passing in it.
+
+## 18.570 `install`: packages from the Mac, on demand - and the shell after `sys.exit`
+
+Diego, 12 October: "perhaps add a program in kosmos that requests those from
+the mac as needed?", "where we show all available packages", "and we can
+install them on demand", "from the server (which is the mac now)" - in place
+of pushing Doom, Quake, the SNES and the developer files over Telnet after
+every netboot, ten minutes when the developer files went too.
+
+- **The Mac's side**: `make packages` (`tools/packages.py`) zips each of
+  them from this tree, its folder inside, with an index - name, title, where
+  it installs, size, build, a sentence; `make packages-serve`
+  (`tools/packages_serve.py`) serves that folder on port 47701, reading only.
+  `make netboot` names it on the command line, `opt/kosmos/packages`.
+- **Kosmos's side**: `install` lists the server's packages and which are
+  installed from which build (`/Home/Packages`), and installs by name or
+  `all` - downloaded to /Temporary, unpacked beside the installed folder on
+  the same disk, the old renamed away, the new renamed in, the old removed,
+  so a failure leaves what was there.
+- **On the M700**: Doom, 10 MB, installed in 1.2 s, Quake in 1.8 and the
+  SNES in 0.9, against about a minute pushed; Doom then ran at 62 to 70
+  frames a second from its package.
+
+**And the shell after `sys.exit`.** `install` refusing a broken package
+ended with `sys.exit(1)`, and the machine's own shell never prompted again:
+a program runs in a process of its own that answers the shell when it
+finishes, `sys.exit` ended that process on the spot, and the shell waited
+for the answer on an endpoint that outlives it. Reproduced with a one-line
+program that prints and exits 1. Telnet's shell copes, so the M700 never
+showed it. Now, while a program runs in the shell's foreground, `sys.exit`
+ends the program as an error does, the shell hears its code, and the
+process ends with it; and the shell says "run: ..." only for an error, not
+an exit with a code the program has explained itself.
+
+**Tests.** `x86-install`, new, 5 checks: a server on this Mac offers two
+packages and the guest, its server named on the command line, lists them,
+installs one with its file, says it installed, installs it again over
+itself with nothing left behind, and is refused a zip that will not open
+with what was there kept - the check after that refusal is the one the
+shell's fix is held to: it was never reached before, the prompt never coming
+back.
+The gate: 71 of 73 - `x86-display-1`, whose keyboard echo "2+2" had the
+network driver's first line printed into its middle (alone, 74 of 74), and
+`x86-dock`, whose slider check read the settings file in the instant after
+the Deskbar was told and before Preferences had written it - 3 runs in 5
+today. It waits for the value now, as the checks here wait for the thing,
+and passes.

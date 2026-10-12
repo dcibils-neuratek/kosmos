@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+"""`install`: packages fetched from a server, on demand.
+
+A server on this Mac offers two packages in `tools/packages.py`'s shape - an
+index and a zip each - and the guest, its server named on the command line
+as `make netboot` names the Mac (`opt/kosmos/packages`):
+
+  * **lists them**, each "not installed";
+  * **installs one** - its file where the index says, readable, and the list
+    saying it is installed from the build the index gave;
+  * **installs it again** over itself, the file replaced by the new one's;
+  * **is offered a zip that will not open** for the other, and leaves what
+    was there as it was, saying why.
+
+Usage: run_install.py <image>
+"""
+
+import http.server
+import io
+import os
+import re
+import sys
+import threading
+import time
+import zipfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import run_screenshot as R                                   # noqa: E402
+
+
+def package(folder, files):
+    out = io.BytesIO()
+
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, text in files.items():
+            z.writestr(folder + "/" + name, text)
+
+    return out.getvalue()
+
+
+def main():
+    image = sys.argv[1]
+    served = {
+        "hello.zip": package("Hello", {"hello.txt": "the first\n"}),
+        "broken.zip": b"PK\x03\x04 this is not a zip",
+    }
+
+    def index():
+        return ("hello\tHello\t/Home/Apps/Hello\t%d\tbuild-one\ta greeting\n"
+                "broken\tBroken\t/Home/Apps/Broken\t%d\tbuild-one\tnot a zip\n"
+                % (len(served["hello.zip"]), len(served["broken.zip"]))).encode()
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = index() if self.path == "/index.txt" else served.get(self.path[1:])
+
+            if body is None:
+                self.send_error(404)
+                return
+
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    httpd = http.server.ThreadingHTTPServer(("0.0.0.0", 0), Handler)
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    R.extra_args(image, ["-netdev", "user,id=net0",
+                         "-device", R.device(image, "net") + ",netdev=net0",
+                         "-fw_cfg", "name=opt/kosmos/packages,string=10.0.2.2:%d" % port])
+    guest = R.Guest(image, 120)
+    failed, checks = [], 0
+
+    def check(ok, complaint):
+        nonlocal checks
+        checks += 1
+        if not ok:
+            failed.append(complaint)
+
+    def run(command, until, seconds=60):
+        mark = len(guest.seen)
+        guest.type(command)
+        deadline = time.monotonic() + seconds
+
+        while until not in guest.seen[mark:] and time.monotonic() < deadline:
+            time.sleep(0.2)
+            guest._read_available()
+
+        time.sleep(0.5)
+        guest._read_available()
+        return guest.seen[mark:]
+
+    try:
+        guest.wait_for("kosmos> ", "reached a prompt")
+        # The network's address first: `install` asks as soon as it starts.
+        run('for _ = 1, 100 do local i = fs.net_info("/Network") '
+            'if i and i.address and i.address ~= "\\0\\0\\0\\0" then break end sys.sleep(25) end '
+            'print("NET" .. "-UP")', "NET-UP", 60)
+
+        listed = run("install", "install <name> to install one")
+        check(re.search(r"install:\s+hello\s+Hello\s+\S+ \w+\s+not installed", listed) is not None
+              and "2 packages from 10.0.2.2:%d" % port in listed,
+              "the list did not offer hello, not installed, from the boot's server: %r"
+              % listed[-600:])
+
+        once = run("install hello", "install: hello")
+        got = run('print("GOT " .. tostring(fs.read("/Home/Apps/Hello/hello.txt")))', "GOT ")
+        check("install: hello - " in once and "from build-one" in once
+              and "GOT the first" in got,
+              "hello was not installed with its file: %r %r" % (once[-300:], got[-200:]))
+
+        again_list = run("install", "install <name> to install one")
+        check(re.search(r"hello\s+Hello\s+\S+ \w+\s+installed - ", again_list) is not None,
+              "the list did not say hello is installed: %r" % again_list[-600:])
+
+        served["hello.zip"] = package("Hello", {"hello.txt": "the second\n"})
+        run("install hello", "install: hello")
+        got = run('print("GOT " .. tostring(fs.read("/Home/Apps/Hello/hello.txt")))', "GOT ")
+        check("GOT the second" in got and "Hello.old" not in run("ls /Home/Apps", "kosmos> ", 10),
+              "installing again did not replace the file, or left the old folder: %r"
+              % got[-200:])
+
+        run('fs.write("/Home/Apps/Broken/kept.txt", "kept")', "kosmos> ", 10)
+        broken = run("install broken", "install: broken")
+        kept = run('print("KEPT " .. tostring(fs.read("/Home/Apps/Broken/kept.txt")))', "KEPT ")
+        check("not installed: it would not open" in broken and "KEPT kept" in kept,
+              "a zip that would not open was not refused, or what was there went: %r %r"
+              % (broken[-300:], kept[-200:]))
+    finally:
+        transcript = guest.seen
+        guest.close()
+        httpd.shutdown()
+
+    if failed:
+        print("FAIL: %d of %d checks on install:" % (len(failed), checks))
+        for f in failed:
+            print("  " + f)
+        print("--- the guest said ---\n" + transcript[-2500:])
+        return 1
+
+    print("PASS: %d checks on install (packages listed from the boot's server, one "
+          "installed with its file and said installed, installed again over itself "
+          "with nothing left behind, and a zip that would not open refused with what "
+          "was there kept)" % checks)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

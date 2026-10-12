@@ -4264,13 +4264,27 @@ USB_TELNETD ?= 23
 # NETBOOT_ADD=` serves the stick's words alone.
 READY_PORT ?= 47700
 MAC_ADDRESS := $(shell ipconfig getifaddr en0 2>/dev/null)
-NETBOOT_ADD ?= opt/kosmos/vnc=control $(if $(MAC_ADDRESS),opt/kosmos/ready=$(MAC_ADDRESS):$(READY_PORT))
+PACKAGES_PORT ?= 47701
+NETBOOT_ADD ?= opt/kosmos/vnc=control $(if $(MAC_ADDRESS),opt/kosmos/ready=$(MAC_ADDRESS):$(READY_PORT) opt/kosmos/packages=$(MAC_ADDRESS):$(PACKAGES_PORT))
 
 netboot: x86-build $(EFI_LOADER)
 	python3 tools/netboot.py $(X86_BUILD)/kosmos.bin --loader $(EFI_LOADER) $(if $(STICK),--stick $(STICK)) $(if $(NETBOOT_ADD),--add "$(NETBOOT_ADD)") --out build/netboot
 
 netboot-serve:
 	bash tools/netboot-serve.sh build/netboot
+
+# **The packages this build offers** (`roadmap.md`, Kosmos App Store): Doom,
+# Quake, the SNES and the developer files, each a zip of its folder made from
+# this tree, with an index - for a Kosmos machine to fetch with `install`
+# when it wants them, rather than have them pushed after every netboot
+# (Diego, 12 October 2026: "i need them on demand"). `packages-serve` serves
+# them on PACKAGES_PORT, which `make netboot` names on the command line.
+packages:
+	@$(MAKE) --no-print-directory ARCH=x86_64 apps
+	python3 tools/packages.py $(HOME_DIR)
+
+packages-serve:
+	python3 tools/packages_serve.py $(PACKAGES_PORT)
 
 # **The M700's suite** (`roadmap.md`, a suite on the M700; Diego, 3
 # October: "a subset of tests on the m700 mostly for performance tests and
@@ -4908,7 +4922,7 @@ prepush:
 	@echo "ready to push: suites green and $(SHOTDIR) has today's picture."
 
 
-.PHONY: shot web browser tutorial-shots ide-tutorial-shots
+.PHONY: shot web browser tutorial-shots ide-tutorial-shots packages packages-serve
 # **On x86-64**, where the suites run since 8 October, and where the
 # machine's memory is read from the firmware: the ARM board assumes 512 MB
 # whatever `-m` says (`hal/qemu-virt/memory.c`), and twenty applications

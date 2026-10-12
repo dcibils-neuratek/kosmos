@@ -5124,7 +5124,9 @@ query. `find` and `watch` are built on exactly these two calls.
 
     local ok, err = run_program(name, argument, detach)
 
-    if not ok then out("run: " .. tostring(err) .. "\n") end
+    -- A program that ended with `sys.exit` and a code has said why itself;
+    -- only an error is the shell's to say.
+    if not ok and err ~= nil then out("run: " .. tostring(err) .. "\n") end
   end
 
   commands.clear = function()
@@ -5614,7 +5616,7 @@ query. `find` and `watch` are built on exactly these two calls.
 
             if not started then
               out("run: " .. tostring(ok) .. "\n")
-            elseif not ok then
+            elseif not ok and err ~= nil then
               out("run: " .. tostring(err) .. "\n")
             end
           end
@@ -5685,7 +5687,7 @@ query. `find` and `watch` are built on exactly these two calls.
 
           if not started then
             out("run: " .. tostring(ok) .. "\n")
-          elseif not ok then
+          elseif not ok and err ~= nil then
             out("run: " .. tostring(err) .. "\n")
           end
           reap()
@@ -7094,11 +7096,34 @@ if role == ROLE_RUNNER then
   -- pcall, so a program that raises reports it instead of taking this
   -- process down without a word. It is its own process either way; this
   -- just means the shell hears why - and its code says it failed.
+  --
+  -- **And `sys.exit` answers the shell first.** It ended this process on
+  -- the spot, before the reply below, and the shell was waiting for that
+  -- reply on an endpoint that outlives the process: the prompt never came
+  -- back after any program that said `sys.exit(1)` (`install`, refusing a
+  -- broken package, on 12 October). So while the program runs, `sys.exit`
+  -- ends *it* - unwinding as an error does, to here - and the shell hears
+  -- its code before the process ends with it. A program that wraps its own
+  -- `sys.exit` in a `pcall` catches it, which is the one cost.
+  local really_exit = sys.exit
+  local exiting = setmetatable({}, { __tostring = function() return "exit" end })
+
+  sys.exit = function(code)
+    exiting.code = math.tointeger(code) or 0
+    error(exiting, 0)
+  end
+
   local ok, e = pcall(chunk)
 
-  sys.reply(who, { ok = ok, error = not ok and tostring(e) or nil })
+  sys.exit = really_exit
 
-  if not ok then sys.exit(1) end
+  local code = (e == exiting) and exiting.code or (ok and 0 or 1)
+
+  if e == exiting then ok, e = code == 0, nil end
+
+  sys.reply(who, { ok = ok, error = not ok and e and tostring(e) or nil, code = code })
+
+  if code ~= 0 then sys.exit(code) end
 
   return
 end
