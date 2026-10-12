@@ -77,6 +77,18 @@ want the same door.
   and the reason for any that failed, in words.
 - **Keep them as files** in `/Home/Automations`, one each, which Tracker
   shows and a double-click runs, and which can be copied to another machine.
+- **Write one as a Lua script** instead of cards - Diego, 12 October 2026,
+  agreeing the design: "I would add is a way to script those automations
+  via Lua scripts as well ... like we do with Cafesa 3D, which we have like
+  a design, but also you can actually do that by script", "a script that
+  automates things and a script that you can use to open programs, click
+  buttons, open menus". The editor has **Steps** and **Script**; a script is
+  run on a trigger like any other automation, with the same history.
+- **Turn cards into a script** - "Copy as script" writes the Lua the cards
+  were doing, so an automation can start as cards and grow into code.
+- **Drive Kosmos from any Lua program**: the same verbs, `use`d by a program
+  at the prompt, the IDE or a test, to open applications, press buttons and
+  choose menu items.
 
 ## What it is made of
 
@@ -95,6 +107,8 @@ something another program could use.
 | Checking a web page | `http.lua` | as it is |
 | Copying and moving | `files.copy`, `files.move` | as it is |
 | A banner | `notify.lua`, `/Notifications` | as it is |
+| **A script's editor** | the IDE's editor (`ui.editor`), Lua's colours, errors by line | as it is |
+| **A script run on its own** | `autod` starting a process with the script and `auto`, as the IDE's Run starts one | new, in `autod` |
 | **Running them on their triggers** | **`autod`**, a background program the desktop starts, as it starts `maild`: reads `/Home/Automations`, waits on every trigger at once, runs each automation's steps, writes its history | **new** |
 | A file appearing or a drive arriving | `autod` looking every few seconds at the folder's listing and at `/Drives` - a small cost, and nothing new in a server | new, in `autod` |
 | A mail arriving | `maild`, telling `autod` - its `/Running/maild` name gains one request, "tell me what arrives" | **new**, small |
@@ -111,6 +125,56 @@ frame's or a period's deadline: an automation runs a few steps a minute at
 most. The one cost worth watching is `autod` looking at folders - a listing
 every few seconds - and that is a number to measure on the M700, not a
 reason for C.
+
+## Scripts
+
+A script is the same automation written as Lua, and it calls the same verbs
+the cards do - the cards are a script whose lines are chosen from menus:
+
+```lua
+-- Good morning, as a script.
+return automation {
+  when = auto.at("8:00", { "mon", "tue", "wed", "thu", "fri" }),
+
+  run = function()
+    local mail = auto.open("Mail")
+    mail:press("Get Mail")
+
+    local page = auto.check("https://kosmos-os.org/builds", { has = "-stable" })
+    if not page then return end              -- "stop unless", in Lua
+
+    mail:menu("Message", "New Message")
+    mail:type("To", "dcibils@gmail.com")
+    mail:type("Subject", "A stable build: " .. page.title)
+    mail:press("Send")
+
+    auto.notify("Good morning - " .. page.title)
+  end,
+}
+```
+
+- **What a script is handed**: `auto` - its verbs and the applications it
+  opens or finds (`auto.open`, `auto.app`), each with `press`, `menu`,
+  `type`, `choose` and `read` on its published controls - and Lua's own
+  `string`, `table` and `math`. Not `fs`, `sys` or `use`: as a Cafesa3D
+  script is handed the scene and nothing else (`roadmap.md`, Cafesa3D
+  scripting), what it was not handed it cannot reach. A step that copies a
+  file goes through `auto.copy`, which is what lets the history say what a
+  script did and the consent step mean something.
+- **Each run is a process of its own**, started by `autod` with the script
+  and `auto`: a script that loops for ever or faults ends itself and is
+  written in the history with its line, and `autod` and every other
+  automation go on.
+- **Errors come back with their line**, in the history and under the editor,
+  as the IDE shows them.
+- **Copy as script**: every card is one line of a script, so the cards can
+  always be written as one; a script cannot always be shown as cards - a
+  loop has no card - so the editor shows a script as a script from then on.
+- **The same verbs outside an automation**: `use("/Kosmos/Libraries/
+  automate.lua")` in a program gives the same `auto`, with the program's
+  own powers beside it - so a program at the prompt, the IDE's console or a
+  suite can open Mail and press Send by name. A program pressing another
+  application's controls asks as an automation does, the first time.
 
 ## Publishing every control
 
@@ -167,6 +231,10 @@ nothing beside a Tracker window that is open.
 4. **A4 - the window**: as drawn - the list, the editor, the controls
    picker, the history.
 5. **A5 - consent**: the first press in an application asks, and remembers.
+6. **A6 - scripts**: the Script side of the editor, a script run as a
+   process of its own on its trigger, Copy as script; and `automate.lua`
+   documented as the way any program drives an application, with the IDE's
+   tutorial gaining a lesson that opens Calculator and presses its buttons.
 
 ## For Diego to decide
 

@@ -418,6 +418,14 @@ Designed before it is built: feature set, mockup, architecture, diagram.
 **Drawn the same day**, for Diego to agree: `docs/automations.md`,
 `docs/automations.html`, `docs/automations-architecture.png` - steps A1
 (every control published by name, the kit's) to A5 (consent).
+**Agreed, with scripts** - Diego, the same day: "The design is right for
+automations. What I would add is a way to script those automations via Lua
+scripts as well", "like we do with Cafesa 3D", "a script that automates
+things and a script that you can use to open programs, click buttons, open
+menus". So an automation is cards or a Lua script handed `auto` - the same
+verbs - and nothing else, run as a process of its own; cards can be copied
+as a script; and `automate.lua` is how any program drives an application
+by its controls' names. Step A6.
 
 **Network Monitor, an app** - Diego, 12 October 2026: "i realizsed we need
 network monitor app as well to see network input and output". What goes in

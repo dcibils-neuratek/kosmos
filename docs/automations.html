@@ -104,13 +104,15 @@ table.plain th { font-family: var(--display); font-weight: 600; }
 .ask .body { padding: 18px 20px; max-width: 400px; }
 .ask h4 { margin: 0 0 6px; font-size: 15px; }
 .ask p { color: var(--a-dim); margin: 0 0 16px; font-size: 13px; }
+.code pre { margin: 0; padding: 16px 20px; font: 13px/1.6 var(--mono); color: #d7dde8; background: #181c25; overflow-x: auto; }
+.code .k { color: #c792ea; } .code .s { color: #a5d6a7; } .code .f { color: #82aaff; } .code .c { color: #6b7486; }
 .ask .bt { display: flex; gap: 8px; justify-content: flex-end; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Automations</h1>
-  <p class="sub">Tasks strung together and run on a trigger: open an application, press one of its buttons, send a mail, look at a web page, copy a file. Each automation is a trigger and a list of steps, chosen from menus and said in sentences. A background program runs them whether the window is open or not. What it is made of, and why every application has to become scriptable first, is in <code>docs/automations.md</code>.</p>
+  <p class="sub">Tasks strung together and run on a trigger: open an application, press one of its buttons, send a mail, look at a web page, copy a file. Each automation is a trigger and a list of steps, chosen from menus and said in sentences, or the same written as a Lua script. A background program runs them whether the window is open or not. What it is made of, and why every application has to become scriptable first, is in <code>docs/automations.md</code>.</p>
   <div class="q"><b>Diego, 12 October 2026:</b> "let's design an app called Automations, which is intended for a user like me to automate certain tasks in the OS. I'm basing my premise that every app is scriptable, meaning we can press a button, we can click an item, we can do whatever we want right now with the UI kit, right? From a script."</div>
 
   <h2>As it opens</h2>
@@ -149,6 +151,37 @@ table.plain th { font-family: var(--display); font-weight: 600; }
   </div>
   </div>
   <p class="cap">On the left, every automation, grouped by what starts it, each with when it last ran and how it went, and a switch. On the right, the one chosen: <b>When</b> is its trigger, and <b>Do</b> is its steps in order, each a card that says in a sentence what it does. A word in a blue box is a choice, made from a menu and never typed as code. After a run, each card says how long its step took. "Run now" runs it with the cards lighting as each step runs.</p>
+
+  <h2>The same automation as a script</h2>
+  <div class="scroller">
+  <div class="win" style="width:1060px">
+    <div class="head"><span class="t">Automations</span><span class="crumb">&middot; Good morning</span>
+      <span class="btn">Steps</span><span class="btn primary">Script</span><span class="btn">&#9654; Run now</span><span class="dots">&middot;&middot;&middot;</span>
+      <span class="lights"><i style="background:#3fb950"></i><i style="background:#f0b429"></i><i style="background:#e5484d"></i></span></div>
+    <div class="code"><pre><span class="c">-- Good morning, as a script.</span>
+<span class="k">return</span> automation {
+  when = auto.<span class="f">at</span>(<span class="s">"8:00"</span>, { <span class="s">"mon"</span>, <span class="s">"tue"</span>, <span class="s">"wed"</span>, <span class="s">"thu"</span>, <span class="s">"fri"</span> }),
+
+  run = <span class="k">function</span>()
+    <span class="k">local</span> mail = auto.<span class="f">open</span>(<span class="s">"Mail"</span>)
+    mail:<span class="f">press</span>(<span class="s">"Get Mail"</span>)
+
+    <span class="k">local</span> page = auto.<span class="f">check</span>(<span class="s">"https://kosmos-os.org/builds"</span>, { has = <span class="s">"-stable"</span> })
+    <span class="k">if not</span> page <span class="k">then return end</span>              <span class="c">-- "stop unless", in Lua</span>
+
+    mail:<span class="f">menu</span>(<span class="s">"Message"</span>, <span class="s">"New Message"</span>)
+    mail:<span class="f">type</span>(<span class="s">"To"</span>, <span class="s">"dcibils@gmail.com"</span>)
+    mail:<span class="f">type</span>(<span class="s">"Subject"</span>, <span class="s">"A stable build: "</span> .. page.title)
+    mail:<span class="f">press</span>(<span class="s">"Send"</span>)
+
+    auto.<span class="f">notify</span>(<span class="s">"Good morning - "</span> .. page.title)
+  <span class="k">end</span>,
+}</pre>
+    <div class="foot" style="margin:0;padding:10px 16px"><span>Last run today at 8:00: done in 2.1 s. &nbsp;&middot;&nbsp; Ctrl+Enter runs it now.</span><span class="btn">History</span></div>
+    </div>
+  </div>
+  </div>
+  <p class="cap"><b>Steps</b> and <b>Script</b> are two ways to write the same automation, as Cafesa3D has panels and a Script editor. A script calls the verbs the cards use, through <code>auto</code>: open an application, press its buttons, choose its menu items and type into its fields by name, check a page, send a mail, copy files, notify. It is handed <code>auto</code> and nothing else, runs as a process of its own so a loop cannot take anything down, and an error comes back with its line. <b>Copy as script</b> in the dots' menu turns cards into these lines. A Lua program at the prompt can <code>use</code> the same library to drive Kosmos.</p>
 
   <h2>A step that presses a button: the controls of an application</h2>
   <div class="row">

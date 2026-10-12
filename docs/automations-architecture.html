@@ -86,14 +86,14 @@
   <div>
     <div class="layer app"><h2>Applications and programs</h2>
       <div class="row" style="grid-template-columns:1fr 1fr 1fr">
-        <div class="box new"><span class="tag">NEW</span><b>Automations</b><p>the list, the editor, the controls picker, the history; reads and writes <code>/Home/Automations</code></p></div>
-        <div class="box new"><span class="tag">NEW</span><b>autod</b><p>started by the desktop as <code>maild</code> is; waits on every trigger <span class="f">T1</span>, runs the steps <span class="f">T2</span>, writes the history</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>Automations</b><p>the list, the editor - Steps or Script - the controls picker, the history; reads and writes <code>/Home/Automations</code></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>autod</b><p>started by the desktop as <code>maild</code> is; waits on every trigger <span class="f">T1</span>, runs the steps - a script as a process of its own <span class="f">T2</span> - writes the history</p></div>
         <div class="box"><b>Mail, Music, Tracker, any app</b><p>drawn with the kit, so scriptable without a line written for it <span class="f">P2</span></p></div>
       </div>
     </div>
     <div class="layer lua"><h2>Lua libraries (in each process)</h2>
       <div class="row" style="grid-template-columns:1fr 1fr 1fr">
-        <div class="box new"><span class="tag">NEW</span><b>automate.lua</b><p>the verbs: open, press, type, read, mail, check a page, copy, move, notify, wait, run <span class="f">T2</span></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>automate.lua</b><p>the verbs - open, press, menu, type, read, mail, check a page, copy, notify, wait, run - for cards, scripts and any program <span class="f">T2</span></p></div>
         <div class="box new"><span class="tag">NEW</span><b>ui.lua: controls by name</b><p>every button, menu item, list and field at <code>/Running/&lt;app&gt;/controls</code>; a press runs the click's own handler <span class="f">P1</span></p></div>
         <div class="box new"><span class="tag">MOVED</span><b>mailout.lua</b><p>a message into the Outbox and <code>maild</code> asked - out of Mail's compose window, which uses it too</p></div>
       </div>
@@ -131,7 +131,7 @@
       <tr><td>A mail's arrival</td><td>told by maild; folders and drives looked at</td></tr></table></div>
     <div class="card"><h3>Who else uses what is new</h3><table>
       <tr><td>Controls by name</td><td>the IDE, a Terminal, the suites, an agent driving Kosmos</td></tr>
-      <tr><td>automate.lua</td><td>any program; Shortcuts, a key that runs one</td></tr>
+      <tr><td>automate.lua</td><td>scripts, any program at the prompt, the IDE, the suites; Shortcuts, a key that runs one</td></tr>
       <tr><td>mailout.lua</td><td>Mail, and anything that sends a mail</td></tr></table></div>
   </div>
 </div>
