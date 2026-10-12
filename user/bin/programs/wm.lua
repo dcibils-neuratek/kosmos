@@ -1015,6 +1015,30 @@ if saved_wallpaper then
   else
     print("wm: wallpaper " .. tostring(saved_wallpaper)
           .. " would not load: " .. tostring(why))
+
+    --
+    -- **A carried picture that the image stopped carrying** gives way to
+    -- one it carries now, rather than the plain desk. Diego, 12 October
+    -- 2026, the day the bundled pictures were replaced: his saved one had
+    -- been among the old, and the desktop came back bare - which read as
+    -- his preferences not being restored at all. A picture of his own in
+    -- `/Home` that has gone is his to put back, so that stays bare.
+    --
+    if tostring(saved_wallpaper):match("^wallpaper/") then
+      local carried = {}
+
+      for _, name in ipairs(sys.asset() or {}) do
+        if name:match("^wallpaper/.+%.[jJ][pP][eE]?[gG]$") then carried[#carried + 1] = name end
+      end
+
+      table.sort(carried)
+
+      if carried[1] and wallpaper_load(carried[1]) then
+        wallpaper_place()
+        print("wm: wallpaper " .. carried[1] .. ", in place of " .. tostring(saved_wallpaper)
+              .. ", which this image no longer carries")
+      end
+    end
   end
 end
 

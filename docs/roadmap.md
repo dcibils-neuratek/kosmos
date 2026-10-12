@@ -5709,6 +5709,16 @@ processors, and still what follows USB:
    or the Deskbar asking the program's header whether it is an
    application, would leave it off.
 
+**FOUND on 12 October - two suites that fail under the gate's load and pass
+alone**, each once, in the gate that proved the wallpaper fallback (0.11.180):
+`x86-netmon`, whose `pull` connection read a rate of 0 in the sample the
+suite chose - it picks the sample with the most bytes, and under load the
+connection's whole transfer can fall between two samples; and `x86-disk`,
+"the query returned a file that does not match it". Both passed alone at
+once. Each wants the reason found rather than a retry: netmon's check
+should choose by the connection's own rate, as `x86-diskmon` learned to;
+the query's wants its guest log kept when it fails.
+
 6zw. **FOUND on 29 September - `x86-film` goes silent for a moment under
    the gate's load**, twice in one day: samples of zero where FFmpeg's
    reference has sound, 1,226 of 266,240 the second time, and three passes

@@ -24328,3 +24328,25 @@ details asks to take `addon` too and removes both, after which the window
 reads `hello` 2.0 installed and the others absent. **Control**: the
 dependency's question skipped (`ask_install` installing at once) - "Install
 2" is never offered, and the suite fails.
+
+## 18.575 A wallpaper the image stopped carrying
+
+Diego, on the M700, 12 October 2026: "my prerefences like wallpaper and else
+are not being restored from the usb stick upon restarting". Two causes, one
+of them mine. The netboot's command line named the `/Home` of 0.11.83's stick
+rather than the 0.11.149 stick in the machine, so `/Home` came up in memory
+("Disk none") - corrected by hand from a stale note, and put back. With it
+back, every preference returned but the wallpaper: his named
+`wallpaper/cristina-gottardi-CSpjU6hYo_0.jpg`, one of the pictures his twelve
+replaced that day, and the desktop came back bare.
+
+**A carried picture the image no longer carries now gives way to the first
+it carries**, and the window manager says so on the line after the refusal;
+a picture of his own in `/Home` that has gone stays bare, being his to put
+back.
+
+**Tests.** The display harness's wallpaper phase saves the gone Unsplash
+name rather than the first picture, and holds the screen to the first
+picture's decoded pixels at three points, with both lines in the log.
+**Control**: without the fallback the desk is bare and the phase fails at
+its pixels.

@@ -4009,7 +4009,7 @@ def check_wallpapers(guest):
         "for _, xy in ipairs{ {300, 600}, {1400, 300}, {700, 850} } do "
         "print(string.format('walls' .. ': at %d %d %08x', xy[1], xy[2], "
         "p:get(xy[1] + dx, xy[2] + dy))) end "
-        + appearance("wallpaper = names[1]") + " " 
+        + appearance("wallpaper = 'wallpaper/cristina-gottardi-CSpjU6hYo_0.jpg'") + " " 
         "end "
         "print('walls' .. ': done')"
     )
@@ -4072,11 +4072,19 @@ def check_wallpapers(guest):
         # to say nothing either way, so a saved wallpaper that would not
         # load - Diego's plain-colour PNGs, on 21 September - left nothing
         # to search for; the refusal names its reason on the same line.
-        restored = "wm: wallpaper " + counted.group(2)
+        #
+        # **The saved one is a picture the image no longer carries** - an
+        # Unsplash photograph of the set Diego's twelve replaced, on 12
+        # October, which is what his stick still named that evening and
+        # why his desktop came back bare. A carried picture that has gone
+        # gives way to the first one carried now, and says so.
         told = guest.seen[mark:]
+        gone = "wallpaper/cristina-gottardi-CSpjU6hYo_0.jpg"
+        restored = "wm: wallpaper %s, in place of %s" % (counted.group(2), gone)
 
-        if restored not in told or " would not load: " in told:
-            raise Failure("the desktop did not say it restored %s:\n%s"
+        if (gone + " would not load: ") not in told or restored not in told:
+            raise Failure("a saved wallpaper the image no longer carries did not "
+                          "give way to %s, saying so:\n%s"
                           % (counted.group(2), told[-800:]))
     finally:
         back = len(guest.seen)
