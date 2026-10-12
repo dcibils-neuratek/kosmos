@@ -81,6 +81,64 @@ function pulse.name()
 end
 
 --
+-- **The processor's name, split to be shown** (`docs/monitor.html`): the
+-- firmware's brand string with the trademarks taken off, as a maker, a
+-- model and the clock it is rated at -
+--
+--   "Intel(R) Core(TM) i7-6700 CPU @ 3.40GHz"
+--       -> "Intel", "Core i7-6700", "3.40 GHz"
+--   "11th Gen Intel(R) Core(TM) i5-1145G7 @ 2.60GHz"
+--       -> "Intel \u{b7} 11th Gen", "Core i5-1145G7", "2.60 GHz"
+--   "AMD Ryzen 9 5950X 16-Core Processor" -> "AMD", "Ryzen 9 5950X", nil
+--
+-- A name from a maker it does not know is the model whole, with no maker;
+-- an ARM core, with no brand string, is its implementer and its part. Here
+-- rather than in Monitor because About and neofetch say the same thing.
+--
+local MAKERS = { Intel = true, AMD = true, VIA = true, Zhaoxin = true, Hygon = true }
+
+function pulse.split_name(name, cpu)
+  name = tostring(name or "")
+  cpu = cpu or {}
+
+  if name == "" then
+    return tostring(cpu.implementer or ""), tostring(cpu.part or "processor"), nil
+  end
+
+  local s = name:gsub("%((%a+)%)", function(mark)
+    return (mark == "R" or mark:upper() == "TM") and "" or nil
+  end)
+
+  local rated = s:match("@%s*([%d%.]+)%s*GHz")
+
+  s = s:gsub("%s*@.*$", "")
+  s = s:gsub("%s+[Pp]rocessor%s*$", ""):gsub("%s+%d+%-[Cc]ore%s*$", "")
+  s = s:gsub("%s+CPU%s*$", "")
+  s = s:gsub("%s+", " "):match("^%s*(.-)%s*$")
+
+  local gen, rest = s:match("^(%d+%a%a Gen) (.+)$")
+
+  if gen then s = rest end
+
+  local maker, model = s:match("^(%S+) (.+)$")
+
+  if not maker or not MAKERS[maker] then
+    maker, model = "", s
+  end
+
+  if gen then maker = maker .. " \u{b7} " .. gen end
+
+  return maker, model, rated and (rated .. " GHz") or nil
+end
+
+-- This machine's, from `/Devices/cpu`.
+function pulse.processor()
+  local cpu = fs.read("/Devices/cpu") or {}
+
+  return pulse.split_name(cpu.name, cpu)
+end
+
+--
 -- **How fast each processor ran between two readings of `sys.cpuload()`**,
 -- in MHz: its own two counters - one at the speed it ran, one at a fixed
 -- reference rate, which on x86 is the counter's, `counter_hz` - read by it

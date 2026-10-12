@@ -277,7 +277,9 @@ if the processor has 16 cores?" - answered in the drawing, after 6h: the
 window never taller than the screen; four across at 84 tall up to 8 cores,
 at 60 from 9 to 16 (fits 1280x720), eight across in a window twice as wide
 from 17 to 32, and past 32 one graph for the machine with a graph a core
-one choice away; the bars, when shown above 8, in two columns. The speed comes from the measurement above, so the
+one choice away; the bars, when shown above 8, in two columns. **Built 11
+October** (`testing.md` 18.549); each core's speed shows where the processor
+says it (18.548), which the M700 and the T14 will, and QEMU does not. The speed comes from the measurement above, so the
 two land together.
 
 **Mail: always show a sender's pictures** - Diego, 10 October 2026: "mail

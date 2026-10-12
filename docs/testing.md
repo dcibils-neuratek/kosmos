@@ -23538,3 +23538,35 @@ ratio inverted - 2 of 5 fail.
 
 What QEMU cannot show - the counters themselves - is read on the M700 and
 the T14, and recorded here when it is.
+
+## 18.549 Monitor, refreshed
+
+Built to `docs/monitor.html`, agreed 11 October ("mockup is perfect"). The
+processor has a card of its own instead of a place in the title bar it did
+not fit: its maker small above its model large, how many processors and
+the clock it is rated at, and on the right how fast the machine is running
+now - the mean of what the cores say (18.548), or the rated clock where
+nobody can say, which under QEMU is always. A graph a core, its number, its
+speed and its share above it. Each core's bar - what Monitor was - is
+behind "Show each core's bar" in the dots' menu, off as it opens, and the
+window grows to hold the bars and shrinks when they are put away.
+
+**How many there are decides the shape**, as Diego asked: four across at 84
+tall up to eight cores, at 60 from nine to sixteen, eight across in a
+window twice as wide to thirty-two, and past that one graph for the machine
+with "Show a graph a core" in the menu; the bars in two columns above eight.
+One function, `measure`, says where everything is, so the bars change only
+what it answers.
+
+The name is split by `pulse.split_name` - "Intel(R) Core(TM) i7-6700 CPU @
+3.40GHz" to Intel, Core i7-6700, 3.40 GHz; "11th Gen Intel(R) Core(TM)
+i5-1145G7 @ 2.60GHz" to Intel · 11th Gen, Core i5-1145G7, 2.60 GHz - in
+`pulse.lua` beside `pulse.name`, so About and neofetch can say it the same
+way.
+
+`host` `test_pulse.lua` 5 -> 10: the brand strings of the M700, the T14, an
+AMD, QEMU's and an ARM core's, split. `x86-sysapps` 29 -> 32: the processor
+named in a card; the bars shown, the window taller; put away, as it was.
+
+**Control**: the bars never laid out - "the bars did not grow the window
+and put away shrink it: [355]".

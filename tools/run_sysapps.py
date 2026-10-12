@@ -331,6 +331,35 @@ def main():
                 time.sleep(wait)
                 at = menu(pace)
 
+            # **The processor said once and whole** (`docs/monitor.html`),
+            # and **each core's bar an option**: off as it opens, the
+            # window growing to hold them when chosen - below the three
+            # paces and a separator a third of a row - and back when they
+            # are put away.
+            named = said("sysmon: processor ", start, 5)
+            check(named is not None and named.count("|") == 2 and "processor" in named,
+                  "Monitor did not name its processor in a card: %r" % named)
+
+            sizes = []
+
+            for want in ("bars shown", "bars hidden"):
+                if at is None:
+                    break
+
+                x, y, rh = at
+                mark = len(guest.seen)
+                click(x + 30, y + 2 + 3 * rh + rh // 3 + rh // 2)
+                got = said("sysmon: " + want + ", ", mark)
+                size = re.match(r"(\d+)x(\d+)", got or "")
+                check(size is not None, "choosing each core's bar did not say %r: %r"
+                      % (want, got))
+                sizes.append(int(size.group(2)) if size else 0)
+                time.sleep(1)
+                at = menu(1) if want == "bars shown" else None
+
+            check(len(sizes) == 2 and sizes[0] > sizes[1] > 0,
+                  "the bars did not grow the window and put away shrink it: %r" % sizes)
+
             guest.sendkey("esc")
             time.sleep(0.5)
 
@@ -360,7 +389,8 @@ def main():
 
     print("PASS: %d checks on Processes and Monitor (its file, its threads and its "
           "privilege in every row; six presses on five headings, each order as the "
-          "column sorts; each of Monitor's three paces kept by the clock)" % checks)
+          "column sorts; each of Monitor's three paces kept by the clock; its processor "
+          "named in a card, and each core's bar shown and put away, the window with it)" % checks)
     return 0
 
 

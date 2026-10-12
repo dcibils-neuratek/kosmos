@@ -62,9 +62,34 @@ do
         "a reading from a kernel before these fields was given speeds")
 end
 
+-- 5. The processor's name, split: the three machines Kosmos runs on, an
+-- AMD, and a name from nobody it knows.
+do
+  local function said(name, cpu)
+    local maker, model, rated = pulse.split_name(name, cpu)
+    return maker .. "|" .. model .. "|" .. tostring(rated)
+  end
+
+  local cases = {
+    { "Intel(R) Core(TM) i7-6700 CPU @ 3.40GHz", "Intel|Core i7-6700|3.40 GHz" },
+    { "11th Gen Intel(R) Core(TM) i5-1145G7 @ 2.60GHz",
+      "Intel \u{b7} 11th Gen|Core i5-1145G7|2.60 GHz" },
+    { "AMD Ryzen 9 5950X 16-Core Processor", "AMD|Ryzen 9 5950X|nil" },
+    { "QEMU Virtual CPU version 2.5+", "|QEMU Virtual CPU version 2.5+|nil" },
+  }
+
+  for _, c in ipairs(cases) do
+    check(said(c[1]) == c[2], ("%q split as %q, not %q"):format(c[1], said(c[1]), c[2]))
+  end
+
+  check(said("", { implementer = "ARM", part = "Cortex-A72" }) == "ARM|Cortex-A72|nil",
+        "an ARM core with no brand string: " .. said("", { implementer = "ARM", part = "Cortex-A72" }))
+end
+
 if fails == 0 then
-  print(("PASS: %d checks on pulse.speeds (turbo, a core at its reference, an idle core "
-         .. "beside a busy one, and none where the processor keeps no counters)"):format(checks))
+  print(("PASS: %d checks on pulse.speeds and pulse.split_name (turbo, a core at its reference, an idle core "
+         .. "beside a busy one, none where the processor keeps no counters; and the "
+         .. "processor's name split, Intel's two shapes, AMD's, QEMU's and an ARM core's)"):format(checks))
 else
   print(("FAIL: %d of %d checks on pulse.speeds"):format(fails, checks))
   os.exit(1)

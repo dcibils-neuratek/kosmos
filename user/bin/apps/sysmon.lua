@@ -6,35 +6,39 @@
 -- The processors, in a window: what each is doing now, and for the last
 -- minute.
 --
--- **As `docs/apps.html` draws it** (`roadmap.md` 5zx). Diego, 24 September,
--- with macOS's CPU History beside it: "the monitor app needds some
--- historical graph data like we have on mac os", "its good to have the
--- current usage but historical graph data is also required and also havint
--- the kernel and user space times is great in red and green".
+-- **As `docs/monitor.html` draws it**, agreed 11 October 2026. Diego: "cpu
+-- monitor app needs a refresh", "Put the cpu name and model in the app not
+-- in the title as it can't be shown entirely", "each core bar is
+-- unnecessary", "Just leave the graphs with its history, cpu speed, kernel
+-- and user colors and core number", "Show the cpu name and model in a nice
+-- way", "Bars are a 'show cores bars' option". So:
 --
--- So: a row a core, its bar the kernel's time in red under the thread's own
--- in green; and under the card a panel a core on a dark ground, a column a
--- sample, newest at the right, the same two colours stacked the same way.
+--   - **the processor in a card of its own**, its maker small above its
+--     model large, how many processors and the clock it is rated at under
+--     them, and on the right how fast the machine is running now;
+--   - **a graph a core**, its number, its speed and its share above it, the
+--     last minute in it - the kernel's time in red under the thread's own in
+--     green, as 24 September asked: "historical graph data ... and the
+--     kernel and user space times is great in red and green";
+--   - **each core's bar**, what this window was before, behind "Show each
+--     core's bar" in the dots' menu, off every time a Monitor opens.
+--
+-- **How many there are decides the shape** - "what if the processor has 16
+-- cores?" - and the window is never taller than the screen: four across at
+-- 84 tall up to eight, at 60 from nine to sixteen, eight across in a window
+-- twice as wide to thirty-two, and past that one graph for the machine.
 --
 -- **How often it samples is chosen in the dots' menu** (`roadmap.md` 6p):
--- Diego, 26 September, "monitor needs an option to update every 0.5 sec, 1
--- sec and 2 sec". The rows and the history move together, so the history's
--- sixty columns are the last thirty seconds, minute or two minutes, and the
--- words above and below it say which.
+-- every half second, second or two seconds, and the history's sixty columns
+-- are that many of them.
 --
--- **Busy is ticks; the split is counters.** `sys.cpuload` says a core's
--- busy and idle in scheduler ticks, and its busy time split into user and
--- kernel in the counter's units, measured at each crossing between a
--- thread's code and the kernel (`kernel/thread.c`, `time_cross`). The share
--- of busy that was the kernel's is the ratio of the two counters, and the
--- two clocks never meet in one sum.
---
--- The care every reader of these counters needs once: **a percentage is
--- the difference between two readings.** Totals since boot, per core; the
--- subtractions below are the whole of what makes them a meter.
---
--- The processor meters this replaced were BeOS's Pulse (`/Kosmos/Libraries/pulse.lua`),
--- which `cores` still draws.
+-- **Busy is ticks; the split is counters; the speed is the core's own.**
+-- `sys.cpuload` says a core's busy and idle in scheduler ticks, its busy time
+-- split into user and kernel in the counter's units, and the two totals the
+-- core keeps of how fast it ran (`pulse.speeds`) - which QEMU's processor
+-- does not keep, so there the card says the rated clock and the graphs only
+-- their share. **A percentage or a speed is the difference between two
+-- readings.**
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 -- The kit's palette, not a copy: only the one `ui.lua` holds is the one it
@@ -46,8 +50,9 @@ local L = ui.layout
 local load0 = sys.cpuload() or {}
 local CORES = math.max(1, #load0)
 
--- The counter's rate, for the window's clock, read where it is used as
--- every piece of counter arithmetic here does (`architecture.md` §5).
+-- The counter's rate, for the window's clock and for the speeds, read where
+-- it is used as every piece of counter arithmetic here does
+-- (`architecture.md` §5).
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
 --
@@ -66,54 +71,42 @@ local PACES = {
 local pace = PACES[2]
 
 --
--- The drawing's measures. A row is the kit's least, 48, for two lines of
--- words; the history is two panels across, 84 tall, with 10 between rows of
--- them and 12 between the two in a row.
+-- The drawing's measures, from the core count (`docs/monitor.html`,
+-- "Sixteen cores").
 --
--- **The name's column is as wide as the widest note it can hold**, not the
--- drawing's 118: that was 12-point words, and at the machine's 18 the note
--- ran under the start of the bar.
---
-local W        = 560
-local ROW      = L.row_min
-local NAME_W   = gfx.measure("100% user \u{b7} 100% kernel") + L.row_in
-local PCT_W    = 40
-local COLUMNS  = 60          -- a column a sample; a minute, at a second
-local PANEL_H  = 84
-local PANEL_GAP_X = 12
-local PANEL_GAP_Y = 10
-local PANEL_NAME  = 18
-local ACROSS   = (CORES <= 4) and 2 or 4
-local DOWN     = (CORES + ACROSS - 1) // ACROSS
+local WIDE     = CORES > 16 and CORES <= 32
+local MACHINE  = CORES > 32           -- one graph for all, a graph a core on asking
+local W        = WIDE and 1180 or 620
+local ACROSS   = WIDE and 8 or 4
+local GRAPH_H  = (CORES <= 8) and 84 or 60
+local GRAPH_TOP = 22                  -- a graph's line of words above it
+local GAP_X, GAP_Y = 12, 12
+local COLUMNS  = 60                   -- a column a sample
+local CHIP_H   = 90
+local DIE      = 58
+local BAR_ROW  = 40                   -- a row of the bars, when they are shown
+local BAR_SPLIT = CORES > 8           -- the bars in two columns
 
 -- Fixed colours, as the drawing has them: red and green are a sign here,
--- the same in every look, and the history's ground is dark in all of them
+-- the same in every look, and a graph's ground is dark in all of them
 -- because that is what makes a column of colour readable at a glance.
 local USER_BAR    = 0xff2fa84f
 local KERNEL_BAR  = 0xffe5484d
 local USER_COL    = 0xff34c759
 local KERNEL_COL  = 0xffff453a
-local PANEL_GROUND = 0xff16181d
+local GRAPH_GROUND = 0xff16181d
 
-local card_h = CORES * ROW + (CORES - 1) + 2
-local hist_top = L.head + L.page_top + card_h + L.between
-local hist_h = DOWN * (PANEL_NAME + PANEL_H) + (DOWN - 1) * PANEL_GAP_Y
-local H = hist_top + L.to_card + hist_h + 30 + L.page_foot
-
-local win, err = ui.window{ title = "Monitor", w = W, h = H, x = 90, y = 130,
-                            header = true }
-
-if not win then
-  print("sysmon: " .. tostring(err))
-  return
-end
+-- What the window shows, which the menu changes.
+local show_bars = false
+local per_core = not MACHINE
 
 --
--- What each core did since the last sample, for its row, and in each of the
--- last sixty, for its panel: `{ user, kernel }` in per cent.
+-- What each core did since the last sample, for its line and its bar, and in
+-- each of the last sixty, for its graph: `{ user, kernel }` in per cent.
+-- And how fast each ran, in MHz, or nil where nobody can say.
 --
-local now = {}
-local history = {}
+local now, history, speeds = {}, {}, nil
+local all_now, all_history = { 0, 0 }, {}
 
 for c = 1, CORES do
   now[c] = { 0, 0 }
@@ -121,13 +114,60 @@ for c = 1, CORES do
 end
 
 --------------------------------------------------------------------------
--- The header: the subject, the processor, and what the two colours mean.
+-- Where everything goes, for the window's height and for the drawing, from
+-- one function: the bars shown or not change only what this says.
 --------------------------------------------------------------------------
 
-local processor = pulse.name()
-local sub = ("%d %s"):format(CORES, CORES == 1 and "core" or "cores")
+local function graphs_shown()
+  return per_core and CORES or 1
+end
 
-if processor ~= "" then sub = sub .. " \u{b7} " .. processor end
+local function measure()
+  local inner = W - 2 * L.page_side
+  local m = { inner = inner }
+  local y = L.page_top
+
+  m.chip = y
+  y = y + CHIP_H + L.between
+
+  if show_bars then
+    local rows = BAR_SPLIT and (CORES + 1) // 2 or CORES
+
+    m.bars, m.bar_rows = y, rows
+    y = y + rows * BAR_ROW + (rows - 1) + 2 + L.between
+  end
+
+  m.heading = y
+  y = y + L.group + 8
+
+  local n = graphs_shown()
+  local across = (n == 1) and 1 or ACROSS
+  local down = (n + across - 1) // across
+
+  m.graphs, m.across, m.down = y, across, down
+  m.graph_w = (inner - (across - 1) * GAP_X) // across
+  m.graph_h = (n == 1) and 120 or GRAPH_H
+  y = y + down * (GRAPH_TOP + m.graph_h) + (down - 1) * GAP_Y
+
+  m.foot = y + 10
+  m.h = m.foot + gfx.height() + L.page_foot
+  return m
+end
+
+local M = measure()
+
+local win, err = ui.window{ title = "Monitor", w = W, h = L.head + M.h, x = 90, y = 130,
+                            header = true }
+
+if not win then
+  print("sysmon: " .. tostring(err))
+  return
+end
+
+--------------------------------------------------------------------------
+-- The header: the window's name, what the two colours mean, and the dots.
+-- The processor is not here any more; it has a card of its own.
+--------------------------------------------------------------------------
 
 local legend = ui.view{ w = 2 * (10 + 6) + 14 + gfx.measure("User")
                              + gfx.measure("Kernel"), h = 26 }
@@ -146,19 +186,28 @@ function legend:draw(g)
   end
 end
 
--- Declared here and defined with the sampling, which is what it changes.
-local set_pace
+-- Declared here and defined with the sampling, which is what they change.
+local set_pace, set_bars, set_per_core
 local samples, paced_at = 0, sys.ticks()
 
 local more = ui.iconbutton{ icon = "more" }
 
--- Rebuilt on every press, so the mark is on the pace in use.
+-- Rebuilt on every press, so each mark is on what is in use.
 more.on_click = function()
   local items = {}
 
   for _, p in ipairs(PACES) do
     items[#items + 1] = { text = p.menu, mark = (p == pace),
                           on_choose = function() set_pace(p) end }
+  end
+
+  items[#items + 1] = { separator = true }
+  items[#items + 1] = { text = "Show each core's bar", mark = show_bars,
+                        on_choose = function() set_bars(not show_bars) end }
+
+  if MACHINE then
+    items[#items + 1] = { text = "Show a graph a core", mark = per_core,
+                          on_choose = function() set_per_core(not per_core) end }
   end
 
   local m = win:open_menu(win.origin_x + more.x, win.origin_y + L.head, items)
@@ -174,84 +223,201 @@ more.on_click = function()
   end
 end
 
-win:add(ui.header{ x = 0, y = 0, w = W, title = "Monitor", sub = sub,
+win:add(ui.header{ x = 0, y = 0, w = W, title = "Monitor",
                    right = { legend, more },
                    title_bar = true })
 
 --------------------------------------------------------------------------
--- The card: a row a core.
+-- The processor, said once and whole.
 --------------------------------------------------------------------------
 
-local rows = ui.view{ x = L.page_side, y = L.head + L.page_top,
-                      w = W - 2 * L.page_side, h = card_h }
+local MAKER, MODEL, RATED = pulse.processor()
+local FACTS = ("%d %s"):format(CORES, CORES == 1 and "processor" or "processors")
 
-function rows:draw(g)
-  local w = self.w
+if RATED then FACTS = FACTS .. " \u{b7} rated " .. RATED end
 
-  g:fill_round(0, 0, w, self.h, theme.raised, L.card_r)
-  g:frame_round(0, 0, w, self.h, theme.line_soft, L.card_r)
+print(("sysmon: processor %s | %s | %s"):format(MAKER, MODEL, FACTS))
 
-  local lh, nh = gfx.height("label"), gfx.height()
-  local words = L.line + L.note
+-- A die on its pins, drawn: the processor's icon, the same in every look.
+local function die(g, x, y)
+  local pin = 0xff6b768a
+
+  for i = 0, 5 do
+    local at = 7 + i * 8
+    g:fill(x + at, y - 4, 2, 4, pin)
+    g:fill(x + at, y + DIE, 2, 4, pin)
+    g:fill(x - 4, y + at, 4, 2, pin)
+    g:fill(x + DIE, y + at, 4, 2, pin)
+  end
+
+  g:fill_round(x, y, DIE, DIE, 0xff323a4a, 8)
+  g:frame_round(x, y, DIE, DIE, 0xff4a5468, 8)
+  g:fill_round(x + 12, y + 12, DIE - 24, DIE - 24, 0xff4b5873, 4)
+end
+
+-- How fast the machine runs now: the mean of the cores that said, in GHz.
+local function machine_speed()
+  if not speeds then return nil end
+
+  local sum, n = 0, 0
 
   for c = 1, CORES do
-    local y = 1 + (c - 1) * (ROW + 1)
+    if speeds[c] then sum, n = sum + speeds[c], n + 1 end
+  end
+
+  return n > 0 and (sum / n / 1000) or nil
+end
+
+-- The model and the speed large, as the drawing has them: the title's face
+-- at 24, asked for once.
+local BIG = ui.sized("title", 24)
+
+local function draw_chip(g, x, y, w)
+  g:fill_round(x, y, w, CHIP_H, theme.raised, L.card_r)
+  g:frame_round(x, y, w, CHIP_H, theme.line_soft, L.card_r)
+
+  local dx, dy = x + 20, y + (CHIP_H - DIE) // 2
+
+  die(g, dx, dy)
+
+  local tx = dx + DIE + 20
+  local right = x + w - L.row_in
+  local ghz = machine_speed()
+  local big = ghz and ("%.2f GHz"):format(ghz) or RATED or ""
+  local note = ghz and "now, across all cores" or (RATED and "rated" or "")
+  local bw = math.max(gfx.measure(big, BIG), gfx.measure(note, "ui"))
+  local room = right - bw - 16 - tx
+  local th, uh, lh = gfx.height(BIG), gfx.height("ui"), gfx.height("label")
+  local top = y + (CHIP_H - (lh + th + uh + 4)) // 2
+
+  if MAKER ~= "" then
+    g:text(tx, top, ui.fitted(MAKER:upper(), room, "label"), theme.text_dim, theme.raised, "label")
+  end
+
+  g:text(tx, top + lh, ui.fitted(MODEL, room, BIG), theme.text, theme.raised, BIG)
+  g:text(tx, top + lh + th + 4, ui.fitted(FACTS, room, "ui"), theme.text_dim, theme.raised, "ui")
+
+  if big ~= "" then
+    local by = y + (CHIP_H - (th + uh)) // 2
+
+    g:text(right - gfx.measure(big, BIG), by, big, theme.text, theme.raised, BIG)
+    g:text(right - gfx.measure(note, "ui"), by + th, note, theme.text_dim, theme.raised, "ui")
+  end
+end
+
+--------------------------------------------------------------------------
+-- Each core's bar, when asked for: what this window was before.
+--------------------------------------------------------------------------
+
+local function speed_text(c)
+  return speeds and speeds[c] and ("%.2f GHz"):format(speeds[c] / 1000) or nil
+end
+
+local function draw_bars(g, x, y, w)
+  local rows = M.bar_rows
+  local h = rows * BAR_ROW + (rows - 1) + 2
+
+  g:fill_round(x, y, w, h, theme.raised, L.card_r)
+  g:frame_round(x, y, w, h, theme.line_soft, L.card_r)
+
+  local cols = BAR_SPLIT and 2 or 1
+  local cw = w // cols
+  local lh, nh = gfx.height("label"), gfx.height()
+  local name_w = gfx.measure("100% user \u{b7} 100% kernel") + L.row_in
+  local ghz_w = gfx.measure("0.00 GHz") + 8
+  local pct_w = gfx.measure("100%")
+
+  for c = 1, CORES do
+    local col = (c - 1) // rows
+    local r = (c - 1) % rows
+    local rx = x + col * cw
+    local ry = y + 1 + r * (BAR_ROW + 1)
     local u, k = now[c][1], now[c][2]
 
-    if c > 1 then g:fill(1, y - 1, w - 2, 1, theme.line_soft) end
+    if r > 0 then g:fill(rx + 1, ry - 1, cw - 2, 1, theme.line_soft) end
+    if col > 0 and r == 0 then g:fill(rx, y + 1, 1, h - 2, theme.line_soft) end
 
-    local top = y + (ROW - words) // 2
+    local top = ry + (BAR_ROW - (lh + nh)) // 2
 
-    g:text(L.row_in, top + (L.line - lh) // 2, "Core " .. c,
-           theme.text, theme.raised, "label")
-    g:text(L.row_in, top + L.line + (L.note - nh) // 2,
-           ("%d%% user \u{b7} %d%% kernel"):format(u, k),
+    g:text(rx + L.row_in, top, "Core " .. c, theme.text, theme.raised, "label")
+    g:text(rx + L.row_in, top + lh, ("%d%% user \u{b7} %d%% kernel"):format(u, k),
            theme.text_dim, theme.raised, "ui")
 
     -- The bar: the kernel's part first, from the left, and the thread's
     -- own after it - `docs/apps.html`'s `.bar i.k` and `.bar i.u`.
-    local bx = L.row_in + NAME_W
-    local bw = w - bx - L.row_in - PCT_W - L.row_in
-    local by = y + (ROW - 8) // 2
+    local bx = rx + L.row_in + name_w
+    local bw = cw - (bx - rx) - ghz_w - pct_w - 3 * L.row_in
+    local by = ry + (BAR_ROW - 6) // 2
     local kw = (bw * k) // 100
     local uw = (bw * u) // 100
 
-    g:fill_round(bx, by, bw, 8, theme.track, 4)
+    g:fill_round(bx, by, bw, 6, theme.track, 3)
+    if kw + uw > 0 then g:fill_round(bx, by, math.max(kw + uw, 6), 6, USER_BAR, 3) end
+    if kw > 0 then g:fill_round(bx, by, math.max(kw, 6), 6, KERNEL_BAR, 3) end
 
-    if kw + uw > 0 then
-      g:fill_round(bx, by, math.max(kw + uw, 8), 8, USER_BAR, 4)
-    end
-
-    if kw > 0 then
-      g:fill_round(bx, by, math.max(kw, 8), 8, KERNEL_BAR, 4)
-    end
-
+    local ghz = speed_text(c)
     local pct = ("%d%%"):format(u + k)
+    local ty = ry + (BAR_ROW - nh) // 2
 
-    g:text(w - L.row_in - gfx.measure(pct), y + (ROW - nh) // 2, pct,
-           theme.text_dim, theme.raised, "ui")
+    if ghz then
+      g:text(rx + cw - L.row_in - pct_w - L.row_in - gfx.measure(ghz), ty, ghz,
+             theme.text_dim, theme.raised, "ui")
+    end
+
+    g:text(rx + cw - L.row_in - gfx.measure(pct), ty, pct, theme.text, theme.raised, "ui")
   end
 end
 
-win:add(rows)
-
-local heading = ui.label{ x = L.page_side + 3,
-                          y = hist_top + (L.group - gfx.height("heading")) // 2,
-                          w = W - 2 * L.page_side, text = pace.heading,
-                          role = "heading" }
-
-win:add(heading)
-
 --------------------------------------------------------------------------
--- The history: a panel a core, a column a sample.
+-- The graphs: a core each, or the machine's when there are too many.
 --------------------------------------------------------------------------
 
-local panels = ui.view{ x = L.page_side, y = hist_top + L.to_card,
-                        w = W - 2 * L.page_side, h = hist_h }
+local function draw_graph(g, px, py, pw, ph, name, words, h)
+  g:text(px + 2, py + (GRAPH_TOP - 4 - gfx.height("label")) // 2, name,
+         theme.text, theme.window, "label")
 
-function panels:draw(g)
-  local pw = (self.w - (ACROSS - 1) * PANEL_GAP_X) // ACROSS
+  if words then
+    g:text(px + pw - 2 - gfx.measure(words), py + (GRAPH_TOP - 4 - gfx.height()) // 2,
+           words, theme.text_dim, theme.window, "ui")
+  end
 
+  local top = py + GRAPH_TOP
+
+  g:fill_round(px, top, pw, ph, GRAPH_GROUND, 8)
+
+  -- The newest at the right edge; each column a sixtieth of the graph, and
+  -- a pixel of ground between two when there is room for one.
+  local inner = ph - 4
+
+  for i = 1, #h do
+    local slot = COLUMNS - #h + i - 1
+    local x0 = px + 2 + (slot * (pw - 4)) // COLUMNS
+    local x1 = px + 2 + ((slot + 1) * (pw - 4)) // COLUMNS
+    local cw = math.max(1, x1 - x0 - 1)
+    local kh = (inner * h[i][2]) // 100
+    local uh = (inner * h[i][1]) // 100
+    local base = top + ph - 2
+
+    if kh > 0 then g:fill(x0, base - kh, cw, kh, KERNEL_COL) end
+    if uh > 0 then g:fill(x0, base - kh - uh, cw, uh, USER_COL) end
+  end
+end
+
+local function busy_now()
+  local sum = 0
+
+  for c = 1, CORES do sum = sum + now[c][1] + now[c][2] end
+
+  return sum // CORES
+end
+
+--------------------------------------------------------------------------
+-- The page, as one view laid out by `measure`.
+--------------------------------------------------------------------------
+
+local body = ui.view{ x = 0, y = L.head, w = W, h = M.h }
+
+function body:draw(g)
   -- Where the window and its dots are, for whoever drives Monitor from
   -- outside: once, at the first paint, when the header has placed them.
   if not self.told and more.x then
@@ -260,59 +426,49 @@ function panels:draw(g)
           more.x + more.w // 2, more.y + more.h // 2))
     self.told = true
   end
-  local nh = gfx.height()
 
-  for c = 1, CORES do
-    local col = (c - 1) % ACROSS
-    local row = (c - 1) // ACROSS
-    local px = col * (pw + PANEL_GAP_X)
-    local py = row * (PANEL_NAME + PANEL_H + PANEL_GAP_Y)
+  local x = L.page_side
 
-    g:text(px, py + (PANEL_NAME - 4 - nh) // 2, "Core " .. c,
-           theme.text_dim, theme.window, "ui")
+  draw_chip(g, x, M.chip, M.inner)
 
-    local top = py + PANEL_NAME
+  if show_bars then draw_bars(g, x, M.bars, M.inner) end
 
-    g:fill_round(px, top, pw, PANEL_H, PANEL_GROUND, 8)
+  local right = ("%d %s \u{b7} %d%% busy"):format(CORES, CORES == 1 and "processor" or "processors",
+                                                  busy_now())
 
-    -- The newest at the right edge; each column a sixtieth of the panel,
-    -- and a pixel of ground between two when there is room for one.
-    local h = history[c]
-    local inner = PANEL_H - 4
+  g:text(x + 3, M.heading + (L.group - gfx.height("heading")) // 2, pace.heading,
+         theme.text, theme.window, "heading")
+  g:text(x + M.inner - gfx.measure(right), M.heading + (L.group - gfx.height()) // 2, right,
+         theme.text_dim, theme.window, "ui")
 
-    for i = 1, #h do
-      local slot = COLUMNS - #h + i - 1
-      local x0 = px + (slot * pw) // COLUMNS
-      local x1 = px + ((slot + 1) * pw) // COLUMNS
-      local cw = math.max(1, x1 - x0 - 1)
-      local kh = (inner * h[i][2]) // 100
-      local uh = (inner * h[i][1]) // 100
-      local base = top + PANEL_H - 2
+  if per_core then
+    for c = 1, CORES do
+      local col = (c - 1) % M.across
+      local row = (c - 1) // M.across
+      local px = x + col * (M.graph_w + GAP_X)
+      local py = M.graphs + row * (GRAPH_TOP + M.graph_h + GAP_Y)
+      local ghz = speed_text(c)
+      local pct = ("%d%%"):format(now[c][1] + now[c][2])
 
-      if kh > 0 then g:fill(x0, base - kh, cw, kh, KERNEL_COL) end
-      if uh > 0 then g:fill(x0, base - kh - uh, cw, uh, USER_COL) end
+      draw_graph(g, px, py, M.graph_w, M.graph_h, "Core " .. c,
+                 ghz and (ghz .. " \u{b7} " .. pct) or pct, history[c])
     end
+  else
+    local ghz = machine_speed()
+
+    draw_graph(g, x, M.graphs, M.inner, M.graph_h, "Every core",
+               (ghz and ("%.2f GHz \u{b7} "):format(ghz) or "") .. busy_now() .. "%", all_history)
   end
+
+  g:text(x + 3, M.foot, pace.foot, theme.text_dim, theme.window, "ui")
 end
 
-win:add(panels)
-
-local foot = ui.label{ x = L.page_side + 3, y = hist_top + L.to_card + hist_h + 10,
-                       w = W - 2 * L.page_side, text = pace.foot,
-                       color = "text_dim", role = "ui" }
-
-win:add(foot)
+win:add(body)
 
 --------------------------------------------------------------------------
 -- The sampling, on the window kit's own clock set to the pace: a sample a
--- tick, for the rows and a column of the history both. A tick repaints the
--- window by itself (`window:run`), so nothing here asks for it.
---
--- **It counted two ticks to a column**, from when the kit ticked twice a
--- second. The kit has ticked once a second since (`ui.lua`, `tick_every`),
--- so the history drew a column every two seconds under a caption saying one
--- a second, and its "last minute" was two. A column a tick, on a clock this
--- window sets, cannot drift from what the words say.
+-- tick, for the lines, the bars and a column of each graph. A tick repaints
+-- the window by itself (`window:run`), so nothing here asks for it.
 --------------------------------------------------------------------------
 
 --
@@ -346,23 +502,55 @@ function sampler:tick()
 
   if not load then return end
 
+  local su, sk = 0, 0
+
   for c = 1, CORES do
     if load[c] and last[c] then
       local u, k = split(last[c], load[c])
       local h = history[c]
 
       now[c][1], now[c][2] = u, k
+      su, sk = su + u, sk + k
       h[#h + 1] = { u, k }
 
       if #h > COLUMNS then table.remove(h, 1) end
     end
   end
 
+  all_now = { su // CORES, sk // CORES }
+  all_history[#all_history + 1] = all_now
+  if #all_history > COLUMNS then table.remove(all_history, 1) end
+
+  speeds = pulse.speeds(last, load, counter_hz)
   last = load
   samples = samples + 1
 end
 
 win:add(sampler)
+
+--
+-- The window grown or shrunk to what is shown, and everything placed again
+-- by `measure`.
+--
+local function relayout(why)
+  M = measure()
+  body.h = M.h
+
+  local ok, w, h = win:resize(W, M.h)
+
+  print(("sysmon: %s, %s"):format(why, ok and ("%dx%d"):format(w, h) or "not resized"))
+  win:paint()
+end
+
+function set_bars(on)
+  show_bars = on
+  relayout(on and "bars shown" or "bars hidden")
+end
+
+function set_per_core(on)
+  per_core = on
+  relayout(on and "a graph a core" or "one graph")
+end
 
 --
 -- A pace chosen: the window's clock set to it, and the history begun
@@ -378,9 +566,8 @@ function set_pace(p)
   samples, paced_at = 0, win.last_tick
 
   for c = 1, CORES do history[c] = {} end
+  all_history = {}
 
-  heading.text = p.heading
-  foot.text = p.foot
   print(("sysmon: %s, %s"):format(p.menu:lower(), p.heading:lower()))
 end
 
