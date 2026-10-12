@@ -106,38 +106,13 @@ static double console_rate(void)
 }
 
 /*
- * Frames into the ring, a slot at a time. Returns how many did not fit - none,
- * unless a frame was run that the ring had not asked for.
- *
- * `audio_ring_space` before every slot, and not only before the first: a full
- * ring's `write` slot *is* the slot at `read`, which the server may be mixing.
+ * Frames into the ring, a slot at a time (`audio_ring_feed`). Returns how
+ * many did not fit - none, unless a frame was run that the ring had not
+ * asked for.
  */
 static unsigned feed(const int16_t *in, unsigned frames)
 {
-    uint32_t period = ring->period_bytes / 4u;
-    unsigned done = 0;
-
-    while (done < frames && audio_ring_space(ring) > 0) {
-        uint8_t *slot = audio_ring_slot(ring, ring->write);
-        uint32_t take = period - partial;
-
-        if (take > frames - done) {
-            take = frames - done;
-        }
-
-        memcpy(slot + (size_t)partial * 4u, in + (size_t)done * 2u,
-               (size_t)take * 4u);
-
-        partial += take;
-        done += take;
-
-        if (partial == period) {
-            audio_ring_publish(ring, ring->write + 1);
-            partial = 0;
-        }
-    }
-
-    return frames - done;
+    return audio_ring_feed(ring, &partial, in, frames);
 }
 
 /*

@@ -9128,10 +9128,22 @@ a roadmap question; nothing decided. What it would take, honestly:
 
 - `tools/mkusb.sh`'s closing message still calls the stick's loader unsigned
   GRUB, which it has not been since 13 September.
+- **A guest that does not reach Telnet in 120 s under the whole gate.**
+  11 October: `x86-shortcuts`, then `x86-servers`, each failed once with
+  "the guest never telnetd listening within 120s" and passed alone in a
+  minute and a half. The gate runs every suite side by side, and a boot
+  under that load is slower than the wait. Measure how long a boot takes
+  there, and wait for the thing - the line - with a bound from that, not a
+  number that fits a quiet machine.
 - **Doom's and Quake's sound** - Diego, 11 October 2026: "doom and quake
   need sound support". Doom's is behind a hook that already exists; both
   play through the Synth Kit's ring as every other sound does, a game being
-  one more voice. On the queue after Monitor's refresh.
+  one more voice. On the queue after Monitor's refresh. **Sound effects built
+  11 October** (`testing.md` 18.550): Doom's through a sound module of its
+  own, Quake's through its DMA layer, both into the audio ring from C.
+  **Music next**: Doom's is MUS, a score, which wants a synthesiser (OPL
+  emulation, or MIDI through the Synth Kit Groove uses); Quake's is CD tracks
+  or OGG files, which want a reader.
 - **The display harness finds things by an assumed font width.** `kosmos_w`
   in the focus phase is `len("Kosmos") * GLYPH_W`, the bitmap's 8-pixel cell,
   while the Deskbar sizes that button with `gfx.measure("Kosmos")` in whatever

@@ -19,8 +19,9 @@
  *   the window's surface at twice the size, through the palette.
  * - **`IN_*` and `Sys_SendKeyEvents`**: the keys and mouse movement the Lua
  *   side queued since the last frame.
- * - **`SNDDMA_*`, `BGMusic_*`, `S_Codec*`**: silence, for now. The engine
- *   runs its sound code, finds no device, and says so.
+ * - **`SNDDMA_*`**: the engine's sound, into the audio server's ring (below).
+ *   **`BGMusic_*`, `S_Codec*`**: silence, for now - Quake's music is CD
+ *   tracks or OGG files, which come later.
  * - **A network driver table with only Loopback in it**, which is all a game
  *   on one machine uses.
  * - **A stack of its own** for the engine, a megabyte with a guard page under
@@ -44,6 +45,7 @@
 #include "sys.h"
 #include "vid.h"
 #include "zone.h"
+#include "console.h"
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -60,6 +62,8 @@
 /* `kosmos_surface_pixels`, from `gfx.c`, the one file allowed to know how a
  * surface is laid out. */
 #include "kits/gfx/gfx_draw.h"
+
+#include "audioring.h"
 
 /* The ring `printf` spills into for a process without the console. */
 size_t kosmos_spill_drain(char *out, size_t max);
@@ -528,23 +532,100 @@ void D_EndDirectRect(i32 x, i32 y, i32 width, i32 height)
 }
 
 /*--------------------------------------------------------------------------
- * Sound, music and the codecs music needs: none yet.
+ * Sound (Diego, 11 October 2026: "doom and quake need sound support").
+ *
+ * **Quake mixes its own sound** into a circular buffer it believes belongs to
+ * a sound card, a tenth of a second ahead of where the card has got to, and
+ * asks the card where that is (`SNDDMA_GetDMAPos`). So here, each time it
+ * asks, what it has painted since the last time goes from that buffer into
+ * the audio server's ring (`audio_ring_feed`) - as far as `AHEAD` periods
+ * ahead of the speaker and no further - and where the "card" has got to is
+ * where that left off. The position moves at exactly the speed the speaker
+ * drains, which is the one thing a card's position has to do, and Quake's
+ * own mixing, resampling and spatialising are untouched.
+ *
+ * Its music - CD audio or OGG files - is a later step.
  *------------------------------------------------------------------------*/
+
+#define QSND_SAMPLES 32768u        /* mono samples, a power of two: 0.37 s at 44.1 kHz */
+#define QSND_AHEAD   6u            /* periods kept ahead of the speaker */
+
+static int16_t            qsnd_buffer[QSND_SAMPLES];
+static struct audio_ring *qsnd_ring;
+static uint32_t           qsnd_rate;
+static uint32_t           qsnd_partial;
+static uint32_t           qsnd_pos;     /* in mono samples, as Quake counts */
+static dma_t             *qsnd_dma;
 
 qboolean SNDDMA_Init(dma_t *dma)
 {
-    (void)dma;
+    if (qsnd_ring == NULL || qsnd_rate == 0) {
+        Con_Printf("No sound: Quake was not given a stream\n");
+        return false;
+    }
 
-    return false;
+    memset(dma, 0, sizeof *dma);
+    memset(qsnd_buffer, 0, sizeof qsnd_buffer);
+    dma->samplebits = 16;
+    dma->channels = 2;
+    dma->speed = (i32)qsnd_rate;
+    dma->samples = (i32)QSND_SAMPLES;
+    dma->submission_chunk = 1;
+    dma->buffer = (byte *)qsnd_buffer;
+    qsnd_dma = dma;
+
+    /* The engine reads its card through `shm`, which each backend sets -
+     * SDL's in `SNDDMA_InitAudio` - and nothing else does. */
+    shm = dma;
+    qsnd_pos = 0;
+    qsnd_partial = 0;
+
+    Con_Printf("Kosmos sound: %d Hz, stereo, 16 bits\n", dma->speed);
+    return true;
 }
 
 i32 SNDDMA_GetDMAPos(void)
 {
-    return 0;
+    struct audio_ring *r = qsnd_ring;
+
+    if (r == NULL || qsnd_dma == NULL) {
+        return 0;
+    }
+
+    uint32_t period = r->period_bytes / 4u;
+    uint32_t queued = audio_ring_ready(r) * period + qsnd_partial;
+    uint32_t want = QSND_AHEAD * period;
+    uint32_t frames = queued < want ? want - queued : 0;
+    uint32_t room = audio_ring_room(r, qsnd_partial);
+
+    if (frames > room) {
+        frames = room;
+    }
+
+    /* At most twice round: up to the buffer's end, then from its start. */
+    while (frames > 0) {
+        uint32_t at = qsnd_pos / 2u;
+        uint32_t to_end = QSND_SAMPLES / 2u - at;
+        uint32_t n = frames < to_end ? frames : to_end;
+        uint32_t left = audio_ring_feed(r, &qsnd_partial, qsnd_buffer + qsnd_pos, n);
+
+        n -= left;
+        qsnd_pos = (qsnd_pos + n * 2u) & (QSND_SAMPLES - 1u);
+        frames -= n;
+
+        if (left > 0) {
+            break;
+        }
+    }
+
+    qsnd_dma->samplepos = (i32)qsnd_pos;
+    return (i32)qsnd_pos;
 }
 
 void SNDDMA_Shutdown(void)
 {
+    qsnd_dma = NULL;
+    shm = NULL;
 }
 
 void SNDDMA_LockBuffer(void)
@@ -864,7 +945,27 @@ static int l_log(lua_State *L)
     return 1;
 }
 
+/*
+ * quake.sound(ring, rate) - where the sound goes, and how fast the device
+ * plays it: the ring `audio.open` made, by address, and the stream's rate.
+ * Before `quake.start`, which is where Quake looks for its sound card.
+ */
+static int l_sound(lua_State *L)
+{
+    struct audio_ring *r = (struct audio_ring *)(uintptr_t)luaL_checkinteger(L, 1);
+    lua_Integer rate = luaL_checkinteger(L, 2);
+
+    if (!audio_ring_valid(r) || r->period_bytes % 4u != 0 || rate <= 0) {
+        return luaL_error(L, "that is not a stereo sound ring");
+    }
+
+    qsnd_ring = r;
+    qsnd_rate = (uint32_t)rate;
+    return 0;
+}
+
 static const luaL_Reg quake_lib[] = {
+    { "sound", l_sound },
     { "start", l_start },
     { "frame", l_frame },
     { "key",   l_key },

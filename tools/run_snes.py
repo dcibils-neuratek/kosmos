@@ -153,7 +153,15 @@ def main():
     os.environ["KOSMOS_DISK"] = DISK
     os.environ["KOSMOS_AUDIO_WAV"] = WAV
     sys.path.insert(0, HERE)
+    import run_screenshot as R                                  # noqa: E402
     from run_screenshot import Guest, Failure, PROMPT, parse_ppm   # noqa: E402
+
+    # On x86-64 the recording is an HDA card's, as `run_film.py` gives one:
+    # `KOSMOS_AUDIO_WAV` alone adds a sound device to the ARM board only, so
+    # here the console found none and paced itself by the clock.
+    if "x86_64" in image:
+        R.extra_args(image, ["-audiodev", "wav,id=snd0,path=%s" % WAV,
+                             "-device", "ich9-intel-hda", "-device", "hda-output,audiodev=snd0"])
 
     guest = Guest(image, 600)
     checks = 0

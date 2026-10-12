@@ -2,9 +2,51 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-10, afternoon (0.11.121; Astra D3b-2 done)
+Last updated: 2026-10-12, early morning (0.11.157; Doom and Quake heard; Music designed)
 
 ---
+
+## 11 October, evening into the night: Quick Look, the processor's speed, Monitor, game sound
+
+**Pushed: up to 0.11.155** (2ef3cd6e). **On `main`, not pushed: 0.11.156
+(Monitor), 0.11.157 (Doom and Quake sound).**
+
+- **SMB sharing, N12**: Finder on the Mac mounts the M700's shares (pushed
+  earlier, 0.11.148).
+- **Quick Look done** (0.11.150-0.11.154, 18.543-18.547): pictures, facts,
+  a PDF as its pages, songs and films playing as shown. Diego on the M700:
+  "quick view works fine" (through 0.11.152; songs and films not yet seen
+  there). Found: `fs.read_into` did nothing on ramfs.
+- **Preferences scrollbar** for the T14, **desktop names white again**
+  (glyph edges on a transparent surface; 0.11.151). Diego: "all other fixes
+  are in!".
+- **The processor's speed, step 1** (0.11.155, 18.548): each core reads its
+  own APERF and MPERF; `clocks` prints MHz. **Waiting on the M700**: restart
+  it (monitor on; Diego went to sleep with it off) onto the netboot already
+  laid out (0.11.155, `build/netboot`), run `clocks` over Telnet, then send
+  the apps and `/Home/Developer` again (`make ARCH=x86_64 apps`, the send
+  script's way - the protocol stamp now covers `kernel/syscall.h`).
+  **Step 2** after that: HWP on both machines, the speed changing as needed,
+  a Power setting (roadmap). Diego: "what about the need to change clock on
+  cpus as needed".
+- **Monitor refreshed** (0.11.156, 18.549) to `docs/monitor.html`; Diego to
+  look at it on the M700.
+- **Doom and Quake heard** (0.11.157, 18.550): sound effects through the
+  audio ring from C, one shared `audio_ring_feed`. Music is a later step.
+- **Mockups agreed**: Monitor (and sixteen cores), Music redesigned
+  (`docs/music.html`). **Music's feature set and architecture written**
+  (`docs/music.md`, `music-architecture.png`): a FLAC Kit, a library kit,
+  and the equaliser and the meter per stream in the audio server. On the
+  board, waiting for Diego before any code.
+- **Asked of Diego, unanswered**: queue T14 Wi-Fi (AX201)? Is 0.11.149 the
+  T14's stable? Does the M700's Passwords have all its entries? An Apple
+  silicon Mac mini as a target (offered to write it up).
+
+**Next**: the M700 in the morning (clocks, apps), push 0.11.156-157 on his
+word, step 2 of the processor's speed; then the queue - Music redesigned
+(its feature set, architecture and diagram first), Tracker list view,
+Wallpapers, Shortcuts, Maps.
+
 
 ## 10 October, morning to midday: the window server, the launcher, focus
 

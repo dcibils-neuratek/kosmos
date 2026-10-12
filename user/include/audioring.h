@@ -270,4 +270,57 @@ static inline int audio_ring_valid(const struct audio_ring *r)
            && r->period_bytes > 0;
 }
 
+/*
+ * **Stereo frames into the ring, a slot at a time** - sixteen bits a
+ * sample, two samples a frame, the format every stream here is in. Written
+ * into the slot at `write`, which the server cannot be reading, since it
+ * never reads an index this side has not published; a slot is published only
+ * once it is full, and `*partial` is how many frames are already in the one
+ * being filled, kept by the caller between calls. Returns how many frames
+ * did not fit.
+ *
+ * `audio_ring_space` before every slot, and not only before the first: a full
+ * ring's `write` slot *is* the slot at `read`, which the server may be mixing.
+ *
+ * Here rather than in each program because three wanted it - the Super
+ * Nintendo first, then Doom and Quake (11 October 2026) - and the first copy
+ * was the only one that had been right.
+ */
+static inline unsigned audio_ring_feed(struct audio_ring *r, uint32_t *partial,
+                                       const int16_t *in, unsigned frames)
+{
+    uint32_t period = r->period_bytes / 4u;
+    unsigned done = 0;
+
+    while (done < frames && audio_ring_space(r) > 0) {
+        uint8_t *slot = audio_ring_slot(r, r->write);
+        uint32_t take = period - *partial;
+
+        if (take > frames - done) {
+            take = frames - done;
+        }
+
+        __builtin_memcpy(slot + (size_t)*partial * 4u, in + (size_t)done * 2u,
+                         (size_t)take * 4u);
+
+        *partial += take;
+        done += take;
+
+        if (*partial == period) {
+            audio_ring_publish(r, r->write + 1);
+            *partial = 0;
+        }
+    }
+
+    return frames - done;
+}
+
+/* How many frames the ring would take now, with `partial` already in hand. */
+static inline unsigned audio_ring_room(const struct audio_ring *r, uint32_t partial)
+{
+    uint32_t space = audio_ring_space(r);
+
+    return space == 0 ? 0 : space * (r->period_bytes / 4u) - partial;
+}
+
 #endif /* KOSMOS_AUDIORING_H */

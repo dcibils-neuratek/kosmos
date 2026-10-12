@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""Doom plays at its speed, and sleeps while it waits rather than spinning.
+"""Doom plays at its speed, sleeps while it waits rather than spinning, and is
+heard.
 
 **Found by the profiler on the M700** (`roadmap.md`, FOUND on 29
 September): `DG_SleepMs` yielded until the counter passed its deadline, and
@@ -21,6 +22,7 @@ Usage: run_doom.py IMAGE WAD
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
 import time
@@ -34,6 +36,7 @@ import scratch                                              # noqa: E402
 SECONDS = 30            # the profile's; Doom's first report comes at ten
 LEAST_FPS = 30.0        # of the thirty-five it holds itself to
 MOST_SLEEPING = 0.10    # of Doom's samples, on the way back from its sleep
+LOUDEST = 0             # the loudest sample the demo made
 
 
 def main():
@@ -61,7 +64,15 @@ def main():
                    check=True, capture_output=True, cwd=ROOT)
 
     os.environ["KOSMOS_DISK"] = disk
+    # What the machine plays, written to a file (`run_film.py`'s way): the
+    # demo fires and opens doors, and its sound has to be in here.
+    heard = os.path.join(work, "heard.wav")
+    os.environ["KOSMOS_AUDIO_WAV"] = heard
     import run_screenshot as R                                  # noqa: E402
+
+    if arch == "x86_64":
+        R.extra_args(image, ["-audiodev", "wav,id=snd0,path=%s" % heard,
+                             "-device", "ich9-intel-hda", "-device", "hda-output,audiodev=snd0"])
 
     guest = R.Guest(image, 180)
     fails = []
@@ -84,6 +95,25 @@ def main():
 
     if " died: " in said:
         fails.append("something died: " + said[said.find(" died: ") - 80:][:400])
+
+    # **Its sound** (11 October 2026): the stream opened, and in what the
+    # sound card wrote, more than silence.
+    if not re.search(r"doom: sound, \d+ Hz", said):
+        fails.append("Doom did not open its sound: %r"
+                     % re.findall(r"doom: [^\n]*sound[^\n]*", said))
+
+    loudest = 0
+    if os.path.exists(heard):
+        with open(heard, "rb") as f:
+            data = f.read()[44:]
+        n = len(data) // 2
+        loudest = max((abs(v) for v in struct.unpack("<%dh" % n, data[:n * 2])), default=0)
+
+    if loudest < 1000:
+        fails.append("Doom's demo was not heard: the loudest sample was %d" % loudest)
+
+    global LOUDEST
+    LOUDEST = loudest
 
     rates = [float(x) for x in re.findall(r"doom: ([\d.]+) frames a second", said)]
 
@@ -124,7 +154,7 @@ def main():
 
 
 def report(fails, rates, sleep):
-    checks = 3
+    checks = 5
 
     if fails:
         print("FAIL: %d of %d checks on Doom playing (%s frames a second):"
@@ -136,8 +166,9 @@ def report(fails, rates, sleep):
         return 1
 
     print("PASS: %d checks on Doom playing (%s frames a second; %.1f%% of its "
-          "%d samples in its sleep; nothing dead)."
-          % (checks, ", ".join("%.1f" % r for r in rates), 100 * sleep[0], sleep[1]))
+          "%d samples in its sleep; nothing dead; its sound opened and the demo heard, "
+          "loudest %d)."
+          % (checks, ", ".join("%.1f" % r for r in rates), 100 * sleep[0], sleep[1], LOUDEST))
     return 0
 
 

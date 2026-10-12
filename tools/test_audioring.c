@@ -363,6 +363,56 @@ int main(void)
         machine_free(m);
     }
 
+    /*----------------------------- frames in, a slot at a time (`feed`) */
+    {
+        /*
+         * `audio_ring_feed`, which the Super Nintendo, Doom and Quake share:
+         * frames in pieces that do not line up with a period, each slot
+         * published only when full, the frames in order across slots, and
+         * what does not fit said rather than written over the slot the
+         * server is reading.
+         */
+        struct machine *m = machine_new(PERIODS);
+        uint32_t partial = 0;
+        static int16_t in[PERIODS * PERIOD_FRAMES * 2u + 600u];
+        unsigned i, left;
+        bool same = true;
+
+        for (i = 0; i < sizeof(in) / sizeof(in[0]); i++) {
+            in[i] = (int16_t)(i * 7u);
+        }
+
+        eq(audio_ring_room(m->ring, 0), PERIODS * PERIOD_FRAMES,
+           "an empty ring takes all its periods");
+
+        left = audio_ring_feed(m->ring, &partial, in, 100);
+        eq(left, 0, "a hundred frames fit");
+        eq(audio_ring_ready(m->ring), 0, "and a part-filled slot is not published");
+        eq(partial, 100, "and is remembered as a hundred in hand");
+        eq(audio_ring_room(m->ring, partial), PERIODS * PERIOD_FRAMES - 100,
+           "the room is the ring's less what is in hand");
+
+        left = audio_ring_feed(m->ring, &partial, in + 200, 300);
+        eq(left, 0, "three hundred more fit");
+        eq(audio_ring_ready(m->ring), 1, "and the first slot, full, is published");
+        eq(partial, 400 - PERIOD_FRAMES, "with the rest in hand in the next");
+
+        for (i = 0; i < PERIOD_FRAMES * 2u; i++) {
+            if (((int16_t *)audio_ring_slot(m->ring, 0))[i] != in[i]) {
+                same = false;
+            }
+        }
+
+        ok(same, "the published slot holds the frames in order");
+
+        left = audio_ring_feed(m->ring, &partial, in, PERIODS * PERIOD_FRAMES);
+        eq(left, 400, "a ring's worth more leaves what did not fit");
+        eq(audio_ring_space(m->ring), 0, "and the ring is full");
+        eq(audio_ring_room(m->ring, partial), 0, "and takes nothing");
+
+        machine_free(m);
+    }
+
     if (failures == 0) {
         printf("PASS: %d checks on the audio ring's position, on this "
                "machine.\n", checks);

@@ -1,0 +1,163 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Music, and what it stands on, as one picture: the application on top, the
+  libraries and kits it uses, the audio server with the equaliser and the
+  meter marked new, the FLAC kit and the library kit marked new, and Nebula
+  at the bottom. The busiest path - a period of a song - drawn through it
+  (P). Drawn on 12 October 2026, before any of it is built; `docs/music.md`
+  is the argument and `docs/music.html` the window.
+
+  Rendered to docs/music-architecture.png by headless Chrome at twice its
+  size, as docs/maps-architecture.png is:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --disable-gpu --screenshot=docs/music-architecture.png \
+      --window-size=1400,H --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/music-architecture.html
+
+  where H is the page's height, which the script at the end puts in the
+  title.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Music architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Music - what it stands on</h1>
+<p class="sub">A music player in the system's own look. It decodes nothing and filters nothing: songs are read and decoded by <code>media.lua</code> and the decoding kits, the equaliser and the meter are the audio server's, per stream, and the library is a kit Video and the Open window can use too. Music itself is Lua - what a person does - and the thinnest layer there is.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>application</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>C kits</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">P</span><span>a period of a song</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Application</h2>
+      <div class="row" style="grid-template-columns:1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Music - <code>music.lua</code></b><p>The window in the kit's look: what is playing on top, Songs, Albums and an album opened, Artists, search; the meter's two rows of lamps and the equaliser's panel, drawn from what the server says; presets kept as <code>music</code>.</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in Music's process)</h2>
+      <div class="row" style="grid-template-columns:repeat(4,1fr)">
+        <div class="box"><b>ui.lua</b><p>sidebar, header as title bar, list, cards, menus</p></div>
+        <div class="box"><b>media.lua</b><p>open, feed <span class="f">P1</span>, the clock, seek, <code>media.cover</code></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>library.lua</b><p>a folder's songs and their tags, kept in <code>.library</code>, grouped into albums</p></div>
+        <div class="box"><b>tags.lua</b><p>ID3 now; <span style="font-weight:600">grows</span>: FLAC's Vorbis comments and picture</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:repeat(4,1fr);margin-top:10px">
+        <div class="box"><b>audio.lua</b><p>a stream: open, set, streams</p></div>
+        <div class="box"><b>prefs.lua</b><p><code>music</code>: presets, the equaliser, the folder</p></div>
+        <div class="box"><b>files.lua</b><p>Places, Open</p></div>
+        <div class="box"><b>wav reader</b><p>in <code>media.lua</code></p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>C kits (in Music's process)</h2>
+      <div class="row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="box"><b>MP3 Kit - <code>/Kosmos/Kits/mp3</code></b><p>minimp3, a frame at a time <span class="f">P1</span></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>FLAC Kit - <code>/Kosmos/Kits/flac</code></b><p>FFmpeg's FLAC decoder, as the AAC Kit wraps its AAC; 24-bit dithered to 16 <span class="f">P1</span></p></div>
+        <div class="box"><b>gfx</b><p>surfaces, text, the pictures the kit draws</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>audio server - <code>audio.c</code></b><p>mixes every stream's ring <span class="f">P2</span>; <span style="font-weight:600">new, per stream</span>: ten biquad peaking filters a channel and a preamp, set by <code>AUDIO_OP_SET</code> <span class="f">P3</span>; a peak a channel, <code>peak_left</code> and <code>peak_right</code>, in the <code>streams</code> reply <span class="f">P4</span>; the device <span class="f">P5</span></p></div>
+        <div class="box"><b>window manager</b><p>composes; holds the covers by name</p></div>
+        <div class="box"><b>diskfs</b><p><code>/Home/Music</code>, the songs and <code>.library</code></p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr"><div class="box"><b>threads, address spaces, IPC, capabilities</b><p>the stream's ring, a region Music writes and the audio server reads; the sound band the server's mixing thread runs in</p></div></div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>P - a period of a song</h3>
+      <ol>
+        <li><b>P1</b> <code>media.lua</code>'s feed decodes - minimp3, the FLAC Kit, or a WAV's samples - into the stream's ring, as far ahead as the ring allows. C; no Lua string a period.</li>
+        <li><b>P2</b> The server mixes the stream with gain and balance, as now.</li>
+        <li><b>P3</b> Its equaliser, if on: ten biquads a channel, coefficients worked out when a setting arrives, never in the mix. Off, it costs a comparison.</li>
+        <li><b>P4</b> Its peak, a channel each, kept for the next <code>streams</code> reply.</li>
+        <li><b>P5</b> The period to the device.</li>
+      </ol>
+      <p style="font-size:13px;color:var(--dim);margin-top:6px">Music's window is not on this path: it asks the server ten times a second for the meter and the position, and paints a strip.</p>
+    </div>
+    <div class="card"><h3>What crosses where</h3>
+      <table>
+        <tr><td>Samples</td><td>the stream's ring, a region - never a message</td></tr>
+        <tr><td>Equaliser settings</td><td><code>AUDIO_OP_SET</code>: ten gains and a preamp, a declared shape</td></tr>
+        <tr><td>The meter</td><td>the <code>streams</code> reply, asked ten times a second</td></tr>
+        <tr><td>A cover</td><td>once, a region to the window manager; drawn by name after</td></tr>
+        <tr><td>The library</td><td><code>/Home/Music/.library</code>, read in one go</td></tr>
+      </table>
+    </div>
+    <div class="card"><h3>C or Lua</h3>
+      <table>
+        <tr><td>Decoding, the equaliser, the mix</td><td>C - every sample, inside a 5.8 ms period</td></tr>
+        <tr><td>The library, the window</td><td>Lua - paths, tags and what is drawn</td></tr>
+      </table>
+    </div>
+    <div class="card"><h3>Who else uses what is new</h3>
+      <table>
+        <tr><td>The equaliser</td><td>Video, Groove, the Mixer - by asking the server</td></tr>
+        <tr><td>The meter a channel</td><td>the Mixer, Groove</td></tr>
+        <tr><td>The FLAC Kit</td><td>Quick Look, Video's sound</td></tr>
+        <tr><td>The library kit</td><td>Video, the Open window's preview</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

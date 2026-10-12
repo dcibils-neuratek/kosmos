@@ -1064,7 +1064,7 @@ DOOM_SRCS := $(addprefix runtime/upstream/doom/,$(addsuffix .c,$(DOOM_NAMES))) \
 #
 DOOM_CFLAGS := -DKOSMOS_DOOM -w -Wno-error -Iruntime/upstream/doom \
                -DNORMALUNIX -DLINUX -DDOOMGENERIC_RESX=640 \
-               -DDOOMGENERIC_RESY=400
+               -DDOOMGENERIC_RESY=400 -DFEATURE_SOUND -Iuser/installed/Doom/include
 
 #
 # `make WEB=1 qemu` builds an image with the NetSurf parsing stack in it.

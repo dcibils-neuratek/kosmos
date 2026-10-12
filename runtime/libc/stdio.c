@@ -304,7 +304,15 @@ char *strerror(int errnum)
  * and ordered. Losing the oldest is the right end to lose: the last thing
  * printed before a failure is the one that says what happened.
  */
-#define SPILL_MAX 4096
+/*
+ * **Sixty-four kilobytes, since a level load said more than four** (11
+ * October 2026): Quake given a sound card precaches its sounds when a map
+ * loads, a line each, eighty and more in one frame - and with a ring of
+ * 4096 the line saying which demo it was playing was gone before the Lua
+ * side drained it once. A frame's worth is what this has to hold; sixty-four
+ * is a game's longest frame with room, and in a process's own BSS.
+ */
+#define SPILL_MAX 65536
 
 static char   spill[SPILL_MAX];
 static size_t spill_head, spill_tail;

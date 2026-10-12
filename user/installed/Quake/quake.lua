@@ -105,6 +105,33 @@ local function drained()
   end
 end
 
+--
+-- **Its sound** (11 October 2026): a stream from the audio server, whose
+-- ring Quake's own mixer fills from C as it asks where its sound card has
+-- got to (`quake_kosmos.c`) - eight periods, the six it keeps ahead and two
+-- of slack. Before Quake starts, since that is where it looks for a card.
+--
+local audio = use("/Kosmos/Libraries/audio.lua")
+local sound
+
+do
+  local fmt = audio.format()
+
+  if fmt.period == 0 then
+    print("quake: no sound device, so silent")
+  else
+    local stream, oops = audio.open("Quake", 8)
+
+    if stream then
+      quake.sound(stream.ring, stream.rate)
+      sound = stream
+      print(("quake: sound, %d Hz, in a ring of %d periods"):format(stream.rate, stream.ring_periods))
+    else
+      print("quake: no sound (" .. tostring(oops) .. ")")
+    end
+  end
+end
+
 local ok, started, reason = pcall(quake.start, at, size)
 
 drained()
@@ -235,3 +262,5 @@ while win.running do
 end
 
 win:close()
+
+if sound then sound:close() end

@@ -23570,3 +23570,51 @@ named in a card; the bars shown, the window taller; put away, as it was.
 
 **Control**: the bars never laid out - "the bars did not grow the window
 and put away shrink it: [355]".
+
+## 18.550 Doom and Quake are heard
+
+Diego, 11 October 2026: "doom and quake need sound support". Both now play
+their sound effects through the audio server, written from C straight into
+the stream's ring, as the Super Nintendo's sound always was - no Lua string
+at either end, so a minute of gunfire allocates nothing.
+
+**Doom** gets the sound module doomgeneric leaves to the platform
+(`DG_sound_module`, with `FEATURE_SOUND` on and an empty `SDL_mixer.h`
+standing in for the one `i_sound.c` includes, so id's file is not edited).
+It claims the Sound Blaster Doom's settings choose; reads each effect's DMX
+lump - three, the rate, the length, sixteen bytes skipped at either end,
+8-bit unsigned samples - as Chocolate Doom does; steps sixteen channels
+through them at their own rate against the device's in 16.16, with Doom's
+volume and separation; and mixes six periods ahead of the speaker once a
+tic, a tic and a little, about 35 ms. Music is a later step: it is MUS, a
+score, and wants a synthesiser.
+
+**Quake** mixes its own sound into a circular buffer it believes is a card's,
+a tenth of a second ahead, and asks the card where it has got to; so each
+time it asks, what it painted goes from the buffer into the ring, six
+periods ahead and no more, and where that stopped is the card's position.
+The engine reads its card through `shm`, which every backend sets itself -
+the first run faulted at address 0x24 for want of it.
+
+**One ring writer, not three.** The Super Nintendo's `feed` moved into
+`audioring.h` as `audio_ring_feed`, with `audio_ring_room` beside it, and all
+three use it. `test_audioring` 41 -> 53: frames in pieces that do not line up
+with a period, a slot published only when full, in order, and what did not
+fit said rather than written over the slot the server reads.
+
+**Found by Quake's suite: the console's log was 4 KB.** Quake given a card
+precaches its sounds when a map loads, a line each - eighty in one frame -
+and the line saying which demo it played was overwritten before the Lua
+side drained it. The spill ring in `stdio.c` is 64 KB.
+
+**And the Super Nintendo had not been heard on x86.** Its suite set
+`KOSMOS_AUDIO_WAV`, which adds a sound device to the ARM board alone, so on
+x86-64 the console found none and paced by the clock. It, Doom's and Quake's
+suites give the x86 machine an HDA card whose output QEMU writes to a file.
+
+Out of the gate, each needing the game (`make doom-check`, `quake-check`,
+`snes-check`): `run_doom.py` 3 -> 5, its sound opened and the demo heard,
+loudest 20,526; `run_quake.py` 6 -> 8, its sound opened and its card found,
+and heard; `run_snes.py` 7, sound out of the device, on x86 for the first
+time. **Controls**: Doom not handed its ring - loudest sample 0; Quake not
+handed it - "No sound: Quake was not given a stream".

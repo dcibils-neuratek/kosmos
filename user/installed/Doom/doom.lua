@@ -159,6 +159,35 @@ local function drained()
   end
 end
 
+--
+-- **Its sound** (11 October 2026): a stream from the audio server, whose
+-- ring Doom's own mixer writes into from C once a tic (`doom_kosmos.c`), as
+-- the Super Nintendo's does - eight periods, the six it keeps ahead and two
+-- of slack. Before Doom starts, since starting is where it asks for its
+-- sound module. A machine with no sound device plays Doom silent, which is
+-- what it did before.
+--
+local audio = use("/Kosmos/Libraries/audio.lua")
+local sound
+
+do
+  local fmt = audio.format()
+
+  if fmt.period == 0 then
+    print("doom: no sound device, so silent")
+  else
+    local stream, oops = audio.open("Doom", 8)
+
+    if stream then
+      doom.sound(stream.ring, stream.rate)
+      sound = stream
+      print(("doom: sound, %d Hz, in a ring of %d periods"):format(stream.rate, stream.ring_periods))
+    else
+      print("doom: no sound (" .. tostring(oops) .. ")")
+    end
+  end
+end
+
 local ok, started, why = pcall(doom.start, at, size)
 
 -- Before the verdict, because whatever Doom said about it is in the ring
@@ -342,3 +371,5 @@ while win.running do
 end
 
 win:close()
+
+if sound then sound:close() end

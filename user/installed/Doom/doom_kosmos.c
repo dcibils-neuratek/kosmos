@@ -60,6 +60,11 @@ void doomgeneric_Tick(void);
  * how a surface is laid out: `kosmos_surface_pixels`. */
 #include "kits/gfx/gfx_draw.h"
 
+#include "audioring.h"
+#include "i_sound.h"
+#include "w_wad.h"
+#include "z_zone.h"
+
 /*--------------------------------------------------------------------------
  * The WAD, in memory.
  *------------------------------------------------------------------------*/
@@ -459,7 +464,262 @@ static int l_log(lua_State *L)
     return 1;
 }
 
+/*--------------------------------------------------------------------------
+ * Sound (Diego, 11 October 2026: "doom and quake need sound support").
+ *
+ * **Doom's sound module, ours**: doomgeneric names `DG_sound_module` when
+ * `FEATURE_SOUND` is on and leaves it to the platform, and this is it. It
+ * claims the Sound Blaster, which is what Doom's settings choose unless
+ * told otherwise.
+ *
+ * Doom's effects are lumps in the WAD - DMX's format: three, the rate, the
+ * length, sixteen bytes DMX skipped, eight-bit unsigned samples, sixteen
+ * more - and Doom asks for one on a channel with a volume from 0 to 127 and a
+ * separation from 0 (left) to 254 (right). Each channel steps through its
+ * effect at its own rate against the device's, in 16.16, and the channels
+ * are summed into stereo frames that go straight into the audio server's ring
+ * (`audio_ring_feed`) - no Lua string at either end, as the Super Nintendo's
+ * sound does.
+ *
+ * **Mixed when Doom updates its sound**, once a game tic, as far ahead as
+ * `AHEAD` periods: a tic is 28.6 ms and a period here about 6, so six
+ * periods ahead is a tic and a little, enough that one late tic is not a
+ * gap, and no more, so a shot is heard within about 35 ms of being fired.
+ *
+ * Music is a later step: Doom's is MUS, a score, and it wants a synthesiser
+ * to be heard (`roadmap.md`, Doom and Quake with sound).
+ *------------------------------------------------------------------------*/
+
+#define CHANNELS   16
+#define AHEAD      6u              /* periods mixed ahead of the speaker */
+#define MIX_MAX    2048u           /* frames mixed at a time */
+
+struct voice {
+    const uint8_t *data;           /* the samples, 8-bit unsigned */
+    uint32_t       length;         /* how many */
+    uint32_t       at;             /* where, in 16.16 */
+    uint32_t       step;           /* how far a device frame moves it, 16.16 */
+    int            left, right;    /* 0 to 127 each */
+    boolean        playing;
+};
+
+static struct voice        voices[CHANNELS];
+static struct audio_ring  *sound_ring;
+static uint32_t            sound_rate;
+static uint32_t            sound_partial;
+static int16_t             mixed[MIX_MAX * 2u];
+
+/* Two numbers libsamplerate would read, which an SDL build defines. */
+int use_libsamplerate = 0;
+float libsamplerate_scale = 0.65f;
+
+static snddevice_t claimed[] = { SNDDEVICE_SB, SNDDEVICE_PAS, SNDDEVICE_GUS,
+                                 SNDDEVICE_WAVEBLASTER, SNDDEVICE_SOUNDCANVAS,
+                                 SNDDEVICE_AWE32 };
+
+static boolean sfx_prefixed;
+
+static boolean dg_sound_init(boolean use_sfx_prefix)
+{
+    sfx_prefixed = use_sfx_prefix;
+    memset(voices, 0, sizeof voices);
+    return true;
+}
+
+static void dg_sound_shutdown(void)
+{
+    sound_ring = NULL;
+}
+
+static int dg_sound_lump(sfxinfo_t *sfx)
+{
+    char name[16];
+
+    if (sfx->link != NULL) {
+        sfx = sfx->link;
+    }
+
+    snprintf(name, sizeof name, sfx_prefixed ? "ds%s" : "%s", sfx->name);
+    return W_GetNumForName(name);
+}
+
+static void dg_sound_params(int channel, int vol, int sep)
+{
+    if (channel < 0 || channel >= CHANNELS) {
+        return;
+    }
+
+    if (vol < 0) vol = 0;
+    if (vol > 127) vol = 127;
+    if (sep < 0) sep = 0;
+    if (sep > 254) sep = 254;
+
+    voices[channel].left = (vol * (254 - sep)) / 254;
+    voices[channel].right = (vol * sep) / 254;
+}
+
+static int dg_sound_start(sfxinfo_t *sfx, int channel, int vol, int sep)
+{
+    if (channel < 0 || channel >= CHANNELS || sound_rate == 0) {
+        return -1;
+    }
+
+    int lump = sfx->lumpnum;
+    unsigned lumplen = W_LumpLength(lump);
+    const uint8_t *data = W_CacheLumpNum(lump, PU_STATIC);
+
+    /* DMX's header, held to what Chocolate Doom holds it to. */
+    if (lumplen < 8 || data[0] != 0x03 || data[1] != 0x00) {
+        return -1;
+    }
+
+    uint32_t rate = (uint32_t)(data[3] << 8 | data[2]);
+    uint32_t length = (uint32_t)data[7] << 24 | (uint32_t)data[6] << 16
+                      | (uint32_t)data[5] << 8 | data[4];
+
+    if (length > lumplen - 8 || length <= 48 || rate == 0) {
+        return -1;
+    }
+
+    struct voice *v = &voices[channel];
+
+    v->data = data + 24;           /* past the header and DMX's sixteen */
+    v->length = length - 32;       /* and its sixteen at the end */
+    v->at = 0;
+    v->step = (uint32_t)(((uint64_t)rate << 16) / sound_rate);
+    v->playing = true;
+    dg_sound_params(channel, vol, sep);
+
+    return channel;
+}
+
+static void dg_sound_stop(int channel)
+{
+    if (channel >= 0 && channel < CHANNELS) {
+        voices[channel].playing = false;
+    }
+}
+
+static boolean dg_sound_playing(int channel)
+{
+    return channel >= 0 && channel < CHANNELS && voices[channel].playing;
+}
+
+static void dg_sound_cache(sfxinfo_t *sounds, int num)
+{
+    (void)sounds;
+    (void)num;
+}
+
+/* The channels summed into `frames` stereo frames. */
+static void mix(unsigned frames)
+{
+    for (unsigned f = 0; f < frames; f++) {
+        int32_t l = 0, r = 0;
+
+        for (int c = 0; c < CHANNELS; c++) {
+            struct voice *v = &voices[c];
+
+            if (!v->playing) {
+                continue;
+            }
+
+            uint32_t i = v->at >> 16;
+
+            if (i >= v->length) {
+                v->playing = false;
+                continue;
+            }
+
+            int32_t sample = ((int32_t)v->data[i] - 128) << 8;
+
+            l += sample * v->left / 127;
+            r += sample * v->right / 127;
+            v->at += v->step;
+        }
+
+        if (l > 32767) l = 32767;
+        if (l < -32768) l = -32768;
+        if (r > 32767) r = 32767;
+        if (r < -32768) r = -32768;
+
+        mixed[2 * f] = (int16_t)l;
+        mixed[2 * f + 1] = (int16_t)r;
+    }
+}
+
+/* Once a tic: the ring kept `AHEAD` periods ahead of the speaker. */
+static void dg_sound_update(void)
+{
+    struct audio_ring *r = sound_ring;
+
+    if (r == NULL) {
+        return;
+    }
+
+    uint32_t period = r->period_bytes / 4u;
+    uint32_t queued = audio_ring_ready(r) * period + sound_partial;
+    uint32_t want = AHEAD * period;
+    uint32_t room = audio_ring_room(r, sound_partial);
+
+    while (queued < want && room > 0) {
+        unsigned n = want - queued;
+
+        if (n > room) n = room;
+        if (n > MIX_MAX) n = MIX_MAX;
+
+        mix(n);
+        audio_ring_feed(r, &sound_partial, mixed, n);
+        queued += n;
+        room -= n;
+    }
+}
+
+sound_module_t DG_sound_module = {
+    claimed, sizeof claimed / sizeof claimed[0],
+    dg_sound_init, dg_sound_shutdown, dg_sound_lump, dg_sound_update,
+    dg_sound_params, dg_sound_start, dg_sound_stop, dg_sound_playing,
+    dg_sound_cache,
+};
+
+/* No music yet: a module that takes every call and plays nothing. */
+static boolean dg_music_init(void) { return true; }
+static void dg_music_nothing(void) { }
+static void dg_music_volume(int volume) { (void)volume; }
+static void *dg_music_register(void *data, int len) { (void)data; (void)len; return NULL; }
+static void dg_music_unregister(void *handle) { (void)handle; }
+static void dg_music_play(void *handle, boolean looping) { (void)handle; (void)looping; }
+static boolean dg_music_playing(void) { return false; }
+
+music_module_t DG_music_module = {
+    NULL, 0,
+    dg_music_init, dg_music_nothing, dg_music_volume, dg_music_nothing,
+    dg_music_nothing, dg_music_register, dg_music_unregister, dg_music_play,
+    dg_music_nothing, dg_music_playing, dg_music_nothing,
+};
+
+/*
+ * doom.sound(ring, rate) - where the sound goes, and how fast the device
+ * plays it: the ring `audio.open` made, by address, and
+ * `audio.format().rate`. Before it, Doom is silent.
+ */
+static int l_sound(lua_State *L)
+{
+    struct audio_ring *r = (struct audio_ring *)(uintptr_t)luaL_checkinteger(L, 1);
+    lua_Integer rate = luaL_checkinteger(L, 2);
+
+    if (!audio_ring_valid(r) || r->period_bytes % 4u != 0 || rate <= 0) {
+        return luaL_error(L, "that is not a stereo sound ring");
+    }
+
+    sound_ring = r;
+    sound_rate = (uint32_t)rate;
+    sound_partial = 0;
+    return 0;
+}
+
 static const luaL_Reg doom_lib[] = {
+    { "sound", l_sound },
     { "start", l_start },
     { "log",   l_log },
     { "frame", l_frame },

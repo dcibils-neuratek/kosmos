@@ -27,6 +27,7 @@ Usage: run_quake.py [image] [pak]
 
 import os
 import re
+import struct
 import subprocess
 import sys
 import time
@@ -124,8 +125,17 @@ def main():
 
     # Read by run_screenshot when it is imported, so it is set first.
     os.environ["KOSMOS_DISK"] = DISK
+    # What the machine plays, written to a file (`run_film.py`'s way): the
+    # demo fights, and its sound has to be in here.
+    heard = os.path.join(os.path.dirname(DISK), "heard.wav")
+    os.environ["KOSMOS_AUDIO_WAV"] = heard
     sys.path.insert(0, HERE)
+    import run_screenshot as R                                  # noqa: E402
     from run_screenshot import Guest, Failure, PROMPT, parse_ppm   # noqa: E402
+
+    if "x86_64" in image:
+        R.extra_args(image, ["-audiodev", "wav,id=snd0,path=%s" % heard,
+                             "-device", "ich9-intel-hda", "-device", "hda-output,audiodev=snd0"])
 
     guest = Guest(image, 600)
     checks = 0
@@ -150,6 +160,25 @@ def main():
         checks += 1
 
         soak(guest, 20)
+
+        # **Its sound** (11 October 2026): the stream opened, Quake's engine
+        # found its card, and in what the card wrote, more than silence.
+        if not (re.search(r"quake: sound, \d+ Hz", guest.seen[mark:])
+                and "Kosmos sound: " in guest.seen[mark:]):
+            raise Failure("Quake did not open its sound: %r"
+                          % re.findall(r"[^\n]*[Ss]ound[^\n]*", guest.seen[mark:])[-4:])
+        checks += 1
+
+        loudest = 0
+        if os.path.exists(heard):
+            with open(heard, "rb") as f:
+                data = f.read()[44:]
+            n = len(data) // 2
+            loudest = max((abs(v) for v in struct.unpack("<%dh" % n, data[:n * 2])), default=0)
+
+        if loudest < 1000:
+            raise Failure("Quake's demo was not heard: the loudest sample was %d" % loudest)
+        checks += 1
 
         where = re.search(r"wm: window Quake at (\d+),(\d+) (\d+)x(\d+)",
                           guest.seen[mark:])
@@ -208,9 +237,15 @@ def main():
     finally:
         guest.close()
 
+        # The whole of what the machine said, when asked: a failure prints
+        # its tail, and Quake says a great deal.
+        if os.environ.get("QUAKE_SEEN"):
+            with open(os.environ["QUAKE_SEEN"], "w") as f:
+                f.write(guest.seen)
+
     print("PASS: %d checks on Quake (a window, the engine started, a demo and "
-          "its map, the game drawn, a console command run, and closed "
-          "without a fault)." % checks)
+          "its map, its sound opened and heard, the game drawn, a console command "
+          "run, and closed without a fault)." % checks)
     return 0
 
 
