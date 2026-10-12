@@ -164,6 +164,22 @@ partition, untouched after), then on the M700. The real answer to
 preferences that need a stick to survive; Kosmos Cloud stays an idea for
 sharing them between machines.
 
+**A VNC client: the Mac's screen in a Kosmos window** - Diego, 12 October
+2026: "is there any way we can create a quick vnc client for kosmos so i can
+access my mac over vnc from kosmos?", then "yes add the vnc client to the
+queue after sata". The other side of what `vncd` already speaks: a window
+showing a VNC server's screen, with this machine's keys and pointer sent
+back. First, signing in with the VNC password macOS Screen Sharing offers
+("VNC viewers may control screen with password") - RFB's VNC authentication,
+which wants DES in the Crypto Kit, held to its vectors; Apple's sign-in with
+the Mac's account (Diffie-Hellman, then AES) later. The picture by changed
+rectangles in ZRLE (zlib, which the compression kit has) as well as raw -
+the Mac's 3440x1440 is 20 MB a frame raw - decoded in C straight into the
+window's surface, never through Lua. **One RFB kit for both sides**: the
+pixel formats, encodings and messages that `vncd` holds today move into a
+kit the client uses too, rather than a second copy of the protocol. Designed
+before it is built - feature set, mockup, architecture, diagram.
+
 **Maps: a satellite view, and directions** - Diego, 10 October 2026: "Maps
 need a switch to satellite view", "As most maps", "And directions". A
 switch between the drawn map and photographs from above - imagery tiles,
