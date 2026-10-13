@@ -2478,6 +2478,163 @@ local function maximise(win)
   return true
 end
 
+--------------------------------------------------------------------------
+-- **Magnet** (`docs/magnet.html`, agreed as drawn on 10 October 2026): a
+-- window dragged to the left or right edge takes that half of the room, to
+-- the top the whole room, to a corner a quarter - shown as a lit outline
+-- while the pointer is there, done when it is let go, and undone by
+-- dragging the window away, which gives it back its size. Diego, after
+-- Magnet for the Mac: "dragging a window to the right of the screen will
+-- show that it can be docked and occupy that half of the screen", "dragging
+-- a window to the top of the monitor will allow you to maximise it".
+--
+-- **The room** is what a maximised window has - the screen less the strip
+-- and the dock - and a snapped window leaves a gap of `gap` points round it
+-- and between it and its neighbour. `win.restore` is where it was, as it is
+-- for a maximised one: one record of "it can go back", whichever put it
+-- there.
+--
+-- Kept in `/Home/Preferences/magnet`, read here at the start and changed
+-- live by the Magnet page (`handlers.magnet`).
+--------------------------------------------------------------------------
+
+local magnet = { on = true, drag = true, outline = true, back = true, gap = 6 }
+
+do
+  local kept = prefs.read("magnet")
+
+  if type(kept) == "table" then
+    for k, v in pairs(kept) do
+      if magnet[k] ~= nil and type(v) == type(magnet[k]) then magnet[k] = v end
+    end
+  end
+end
+
+-- How near an edge the pointer is on it, and how big a corner's square is.
+local MAGNET_EDGE, MAGNET_CORNER = 2, 48
+
+--
+-- **Where a window dropped at `x`, `y` would go**: "left", "right",
+-- "whole", or a quarter - "top_left" and the rest - or nil for nowhere. A
+-- corner is a square either side of the screen's corner, so the edges stay
+-- easy to hit; the bottom edge, between its corners, is nothing.
+--
+function OUT.magnet_zone(x, y)
+  if not (magnet.on and magnet.drag) then return nil end
+
+  local corner = scale.px(MAGNET_CORNER)
+  local left, right = x <= MAGNET_EDGE, x >= W - 1 - MAGNET_EDGE
+  local top, bottom = y <= MAGNET_EDGE, y >= H - 1 - MAGNET_EDGE
+  local near_left, near_right = x <= corner, x >= W - 1 - corner
+  local near_top, near_bottom = y <= corner, y >= H - 1 - corner
+
+  if (left and near_top) or (top and near_left) then return "top_left" end
+  if (right and near_top) or (top and near_right) then return "top_right" end
+  if (left and near_bottom) or (bottom and near_left) then return "bottom_left" end
+  if (right and near_bottom) or (bottom and near_right) then return "bottom_right" end
+  if top then return "whole" end
+  if left then return "left" end
+  if right then return "right" end
+
+  return nil
+end
+
+--
+-- **The rectangle a zone is**, in the room, with the gap round it: halves
+-- and quarters splitting what is left after the gaps, the odd pixel to the
+-- right and the bottom. The whole room has no gap - it is maximising.
+--
+function OUT.magnet_rect(zone)
+  local g = scale.px(magnet.gap)
+  local x0, y0 = 0, top_limit()
+  local rw, rh = W, H - reserved_top - reserved_bottom
+
+  if zone == "whole" then return x0, y0, rw, rh end
+
+  local lw = (rw - 3 * g) // 2
+  local th = (rh - 3 * g) // 2
+  local left = { x0 + g, lw }
+  local right = { x0 + 2 * g + lw, rw - 3 * g - lw }
+  local full_h = { y0 + g, rh - 2 * g }
+  local upper = { y0 + g, th }
+  local lower = { y0 + 2 * g + th, rh - 3 * g - th }
+  local across, down
+
+  if zone == "left" then across, down = left, full_h
+  elseif zone == "right" then across, down = right, full_h
+  elseif zone == "top_left" then across, down = left, upper
+  elseif zone == "top_right" then across, down = right, upper
+  elseif zone == "bottom_left" then across, down = left, lower
+  elseif zone == "bottom_right" then across, down = right, lower
+  else return nil end
+
+  return across[1], down[1], across[2], down[2]
+end
+
+--
+-- **A window put into a zone.** The whole room is `maximise`, not done
+-- twice. Otherwise where it was is kept - unless it already went somewhere
+-- it can come back from - and it is moved and resized as one: a window that
+-- cannot be resized is only moved, and a resize that fails puts it back
+-- where it was, as `maximise` does. True when it went.
+--
+function OUT.magnet_put(win, zone)
+  if zone == "whole" then
+    if win.restore then return true end
+
+    local done = maximise(win)
+
+    if done then print(("wm: magnet put %s in the whole room"):format(tostring(win.title))) end
+
+    return done
+  end
+
+  local x, y, w, h = OUT.magnet_rect(zone)
+
+  if not x then return false end
+
+  local was = { x = win.x, y = win.y, w = win.w, h = win.h }
+
+  damage_window(win)
+  win.x, win.y = x, y
+
+  if resizable(win) and not resize_window(win, w, h) then
+    win.x, win.y = was.x, was.y
+    damage_window(win)
+    return false
+  end
+
+  win.restore = win.restore or was
+  damage_window(win)
+  post(win, { type = "moved", x = win.x, y = win.y })
+  print(("wm: magnet put %s at the %s, %d,%d %dx%d"):format(
+        tostring(win.title), zone:gsub("_", " "), win.x, win.y, win.w, win.h))
+
+  return true
+end
+
+--
+-- **Dragged out of a zone**: back to the size it had, the point it was
+-- held by kept under the pointer in proportion. Nil when it was not in one
+-- or Magnet is not to undo it.
+--
+function OUT.magnet_unsnap(win, held_x)
+  if not (magnet.on and magnet.back and win.restore and resizable(win)) then return nil end
+
+  local r = win.restore
+  local x = math.floor(held_x * r.w / math.max(1, win.w))
+
+  win.restore = nil
+  damage_window(win)
+
+  if not resize_window(win, r.w, r.h) then return nil end
+
+  print(("wm: magnet gave %s back its size, %dx%d"):format(tostring(win.title), r.w, r.h))
+  return x
+end
+
+function OUT.magnet_shows() return magnet.on and magnet.outline end
+
 --
 -- Out of sight, and the Deskbar is how it comes back.
 --
@@ -4538,6 +4695,26 @@ handlers.move_begin = function(req)
   PT.dragging = { win = win, dx = x, dy = y, header = true }
 
   return { ok = true }
+end
+
+--
+-- **The Magnet page's changes**, live: each one it names, of the type it
+-- has, kept and in force at once.
+--
+handlers.magnet = function(req)
+  local changed = {}
+
+  for k, v in pairs(req.set or {}) do
+    if magnet[k] ~= nil and type(v) == type(magnet[k]) then
+      magnet[k] = (k == "gap") and math.max(0, math.min(48, math.tointeger(v) or magnet.gap)) or v
+      changed[#changed + 1] = ("%s=%s"):format(k, tostring(magnet[k]))
+    end
+  end
+
+  prefs.write("magnet", magnet)
+  print("wm: magnet " .. table.concat(changed, ", "))
+
+  return { ok = true, magnet = magnet }
 end
 
 --

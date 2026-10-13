@@ -444,8 +444,15 @@ return function(ctx)
       end
 
       -- The end of a drag is where the application is told, once, rather
-      -- than on every step of it.
+      -- than on every step of it - and where Magnet puts a window let go
+      -- in a zone, which tells it itself.
       if PT.dragging then
+        if PT.dragging.zone then
+          damage_outline(PT.outline)
+          PT.outline = nil
+          OUT.magnet_put(PT.dragging.win, PT.dragging.zone)
+        end
+
         post(PT.dragging.win, { type = "moved",
                              x = PT.dragging.win.x, y = PT.dragging.win.y })
 
@@ -524,7 +531,37 @@ return function(ctx)
     end
 
     if PT.dragging and is_down then
-      move_window(PT.dragging.win, nx - PT.dragging.dx, ny - PT.dragging.dy, true)
+      local d = PT.dragging
+
+      --
+      -- **Magnet** (`docs/magnet.html`): a window in a zone, or maximised,
+      -- dragged away has its size back on the first move - the point it is
+      -- held by kept under the pointer, in proportion.
+      --
+      if d.win.restore and not d.unsnapped and moved_this_pass then
+        d.unsnapped = true
+        d.dx = OUT.magnet_unsnap(d.win, d.dx) or d.dx
+      end
+
+      move_window(d.win, nx - d.dx, ny - d.dy, true)
+
+      -- And where it would land, an outline while the pointer is at an
+      -- edge or in a corner, gone when it leaves.
+      local zone = OUT.magnet_zone(nx, ny)
+
+      if zone ~= d.zone then
+        d.zone = zone
+        damage_outline(PT.outline)
+        PT.outline = nil
+        print("wm: magnet shows " .. (zone and zone:gsub("_", " ") or "nothing"))
+
+        if zone and OUT.magnet_shows() then
+          local x, y, w, h = OUT.magnet_rect(zone)
+
+          PT.outline = { x = x, y = y, w = w, h = h }
+          damage_outline(PT.outline)
+        end
+      end
     end
 
     --

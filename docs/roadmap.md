@@ -142,6 +142,17 @@ are perfect"): halves from the left and right edges, the whole room from the
 top, quarters from the corners; Super with the arrows for halves, the whole
 room and back, Super+Alt with the arrows for quarters, thirds by number; a gap
 of 6 points; the Magnet page in Preferences.
+**By dragging, built 0.11.196** (`testing.md` 18.590, `ui.md` 16.31): a
+window dragged by its header or by Super to the left or right edge shows a
+lit outline of that half and takes it when let go; the top edge, the whole
+room; a corner - a square of 48 points either side of the screen's corner -
+a quarter; a gap of 6 round each; dragged away again, its size back, held
+where it was held. Kept in `/Home/Preferences/magnet`, changed live by
+`handlers.magnet`. **Left**: **the keys** - Super+arrow does not reach the
+window manager at all: `hal/keys.c` sends an arrow's sequence before it
+looks at Super, Alt is not tracked, and `ESC [ 1 ; 9 C` would be Super+→
+and Super+Shift+C alike, so the encoding is decided first, on both boards;
+and **the Magnet page** in Preferences.
 
 **SATA (AHCI), and `/Home` on the M700's own drive** - Diego, 12 October
 2026, after his preferences came back from a stick and he asked "when do we

@@ -24758,3 +24758,21 @@ sliders' are; and x86-packages, once, read the others still installed after
 a removal under the gate's load - passing alone, and watched for a second
 time.
 
+## 18.590 Magnet, by dragging
+
+`docs/magnet.html`, `ui.md` 16.31. The window manager's `OUT.magnet_zone`
+says where a window dropped at the pointer would go - left, right, the
+whole room, or a quarter - `OUT.magnet_rect` what that is in the room with
+a 6-point gap, `OUT.magnet_put` puts it there, and `OUT.magnet_unsnap` gives
+a dragged-out window its size back; the pointer module calls them during a
+drag, showing the zone as the resize outline and saying "wm: magnet shows
+...".
+
+**Tests.** `x86-magnet`, new, 5 checks, Tracker dragged by its header: to
+the right edge, the outline shown and the right half taken - 963,38 at
+951x1036 on a 1920 screen under a 32-pixel strip, the gaps to the pixel;
+dragged away, its 1060x520 back; to the top edge, the whole room; away and
+into the bottom left corner, that quarter at 6,559, 951x515. **Control**:
+no zone ever found - all five fail. Whole gate: 80 of 81, x86-film the
+known flake, passing alone.
+

@@ -2043,3 +2043,30 @@ waits on a server*).
 row is scrolled. The words stop short of it - added after it and as wide as
 the row, the label lay over the button and took its press.
 
+## 16.31 Magnet: a window put where it is dropped
+
+`docs/magnet.html`, agreed as drawn on 10 October 2026, after Magnet for
+the Mac. **The window manager's**, since placing windows is: a window
+dragged - by its header, or anywhere with Super held - to the left or right
+edge takes that half of the room, to the top edge the whole room, into a
+corner a quarter. While the pointer is there the half or the quarter is
+shown as the lit outline a resize draws (`PT.outline`, composed by the
+window server), gone the moment the pointer leaves; letting go puts the
+window there (`OUT.magnet_put`), resized and moved as one, or only moved if
+it cannot be resized, and put back where it was if the resize fails - as
+`maximise` is. **The room** is a maximised window's - the screen less the
+strip and the dock - with a gap of 6 points round a snapped window and
+between two; the whole room has none, being maximising. **A corner** is a
+square of 48 points either side of the screen's corner, so the edges stay
+easy to hit; the bottom edge between its corners does nothing.
+
+**Back out**: a window in a zone - or maximised - dragged away has its size
+back on the first movement, the point it is held by kept under the pointer
+in proportion (`OUT.magnet_unsnap`). `win.restore` is the one record of "it
+can go back" for both.
+
+**Settings**, `/Home/Preferences/magnet`: on, by dragging, the outline, back
+to size, the gap - read at the window manager's start and changed live by
+`handlers.magnet`, which the Magnet page will send. The keys and the page
+are the next steps (`roadmap.md`).
+
