@@ -89,7 +89,14 @@ struct vmm_setup {
         uint16_t from;                  /* Kosmos's */
         uint16_t to;                    /* the guest's */
     } ports[VMM_PORTS];
-    uint8_t  ports_reserved[8];
+
+    /*
+     * **The time, as it was started**: seconds since 1970, UTC, from
+     * `/Devices/clock` - so the guest's clock reads the date and not a fixed
+     * one, which a certificate is checked against. 0: not known. The
+     * monitor counts on from it with its own counter.
+     */
+    uint64_t epoch;
 };
 
 #define VMM_NET_NONE        0u
@@ -98,7 +105,7 @@ struct vmm_setup {
 #define VMM_NET_IRQ         (VMM_SHARE_IRQ + VMM_SHARES)
 
 _Static_assert(sizeof(struct vmm_setup) == 600 + VMM_SHARES * 264 + 8 + VMM_PORTS * 4 + 8,
-               "six words, a magic, a version, a line, a name, a token, its folders, its network, its ports");
+               "six words, a magic, a version, a line, a name, a token, its folders, its network, its ports, the time");
 _Static_assert(sizeof(struct vmm_setup) <= 4096, "a setup is a page");
 
 /*

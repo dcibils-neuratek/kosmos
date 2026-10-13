@@ -23,6 +23,13 @@ sandboxes.IMAGES = "/Home/Sandboxes/Images"
 
 local MB, ALIGN = 1024 * 1024, 2 * 1024 * 1024
 
+-- The time now, seconds since 1970 in UTC, for a guest's clock; 0 unknown.
+local function clock_epoch()
+  local dev = fs.read("/Devices/clock")
+
+  return type(dev) == "table" and tonumber(dev.epoch) or 0
+end
+
 -- vmmproto.h
 local OP_STATE, OP_READ, OP_KEYS, OP_STOP = 1, 2, 3, 4
 local RUNNING = 1
@@ -428,7 +435,8 @@ function sandboxes.start(s)
                              .. token .. ("\0"):rep(24 - #token)
                              .. shares .. ("\0"):rep((4 - #(s.folders or {})) * 264)
                              .. string.pack("<I4I4", outgoing and 1 or 0, 0)
-                             .. ports .. ("\0"):rep(16 - #ports + 8))
+                             .. ports .. ("\0"):rep(16 - #ports)
+                             .. string.pack("<I8", math.tointeger(clock_epoch()) or 0))
 
   local id, why = fs.vm_start(ram, setup, #(s.folders or {}) > 0, outgoing or #ports > 0)
 

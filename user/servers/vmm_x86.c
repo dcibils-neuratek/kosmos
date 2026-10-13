@@ -82,6 +82,7 @@ static struct x86_uart uart;
 static struct x86_boot boot;
 static uint64_t pat = 0x0007040600070406ull;    /* the reset value */
 static uint8_t cmos_index;
+static uint64_t rtc_started;               /* the counter when the guest was laid out */
 static char line[X86_BOOT_CMDLINE_MAX];
 
 static bool uart_ready(void) { return !vmm_rx_empty(); }
@@ -157,6 +158,7 @@ bool vmm_machine_prepare(void)
     const char *why = "";
 
     x86_pit_reset(&pit, vmm_counter_hz);
+    rtc_started = kosmos_ticks();
     memset(line, 0, sizeof(line));
     append(vmm_cfg.cmdline);
     append(" noapic nolapic acpi=off pci=off nokaslr tsc=reliable 8250.nr_uarts=1");
@@ -182,23 +184,21 @@ bool vmm_machine_prepare(void)
 
 /* ------------------------------------------------------------- the ports */
 
+/*
+ * **The real-time clock**, as Linux reads it at boot (`mc146818_get_time`):
+ * the time the sandbox was started (`vmm_cfg.epoch`, from `/Devices/clock`)
+ * and the monitor's counter since (`x86_rtc`). A setup with no time says
+ * 1 January 2026, so a date is still a date.
+ */
 static uint8_t cmos_read(void)
 {
-    /*
-     * The real-time clock, as a fixed moment until the monitor reads
-     * Kosmos's own: 1 January 2026, 00:00:00, BCD, 24-hour, its battery
-     * good - so Linux reads a date that is a date and goes on.
-     */
-    switch (cmos_index & 0x7f) {
-    case 0x07: return 0x01;             /* day of the month */
-    case 0x08: return 0x01;             /* month */
-    case 0x09: return 0x26;             /* year */
-    case 0x0a: return 0x26;             /* no update in progress */
-    case 0x0b: return 0x02;             /* 24-hour, BCD */
-    case 0x0d: return 0x80;             /* its battery is good */
-    case 0x32: return 0x20;             /* century */
-    default:   return 0x00;
+    uint64_t t = vmm_cfg.epoch != 0 ? vmm_cfg.epoch : 1767225600ull;   /* 2026-01-01 */
+
+    if (vmm_cfg.epoch != 0 && vmm_counter_hz != 0) {
+        t += (kosmos_ticks() - rtc_started) / vmm_counter_hz;
     }
+
+    return x86_rtc(t, cmos_index & 0x7f);
 }
 
 static uint32_t port_in(uint16_t port, unsigned size)

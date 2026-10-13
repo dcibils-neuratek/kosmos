@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-13, afternoon (0.11.203; Alpine x86-64 in a sandbox on the M700)
+Last updated: 2026-10-13, afternoon (0.11.205; apk works in a sandbox on the M700)
 
 ---
 
@@ -24,8 +24,12 @@ M700: "vm: VT-x, locked on by the firmware"), **0.11.201** (X1),
   shell in the window. The monitor is `vmm.c` + `vmm_arm.c` + `vmm_x86.c`,
   the PC's devices `x86dev.c` (host test, 91 checks); the `alpine`
   package is x86-64 now. `tools/run_m700.py` checks sandboxes (6).
-  Left: a sandbox's clock (roadmap), more than one processor, the help
-  screen (to be drawn).
+  Then (0.11.204-205): the console echoes at once and obeys Backspace;
+  **Kosmos's TCP fits a narrow router** - segments the far end's MSS, and
+  ICMP "fragmentation needed" heard (Diego's line is PPPoE, MTU 1492;
+  every full segment was lost) - so `apk add` works in a sandbox, with the
+  guest's date from `/Devices/clock`. Left: ARM's guest clock (a PL031),
+  more than one processor, the help screen (to be drawn).
 - **Magnet's keys (0.11.202)** (`testing.md` 18.596): Diego said yes to
   the encoding - Super and Alt in a sequence's modifier number, a character
   with Super as `ESC [ 27 ; 9 ; c ~` - and Super with the arrows, Super+Alt

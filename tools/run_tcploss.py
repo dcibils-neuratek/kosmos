@@ -10,7 +10,13 @@ data segment unsent as if the wire had lost it, and a whole screen is taken
 by VNC three times: each must arrive whole and match what QEMU scans out,
 in a bounded time, with segments said lost along the way.
 
-Usage: run_tcploss.py IMAGE
+**And through a narrow router** (`--mtu`, 13 October): booted with
+`opt/kosmos/net_mtu=1400`, a router on the path that passes nothing over
+1400 bytes and answers "fragmentation needed" - as a PPPoE line's does at
+1492, which dropped every full segment Kosmos sent past it. The frames must
+arrive whole all the same, the connection's segments made 1360.
+
+Usage: run_tcploss.py IMAGE [--mtu]
 """
 
 import os
@@ -31,16 +37,23 @@ FRAMES = 3
 SECONDS = 30            # a whole frame, at most, with the losses
 
 
+MTU = 1400
+
+
 def main():
-    image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
+    narrow = "--mtu" in sys.argv[1:]
+    named = [a for a in sys.argv[1:] if not a.startswith("--")]
+    image = named[0] if named else "build/x86_64/kosmos.elf"
     telnet, web, vnc = (random.randint(20000, 30000), random.randint(30001, 40000),
                         random.randint(40001, 50000))
     guest = S.boot(image, telnet, web, vnc=vnc,
-                   extra=["-fw_cfg", "name=opt/kosmos/net_drop,string=%d" % DROP])
+                   extra=["-fw_cfg", ("name=opt/kosmos/net_mtu,string=%d" % MTU) if narrow
+                          else ("name=opt/kosmos/net_drop,string=%d" % DROP)])
     fails, times, matched, where = [], [], [], []
 
     try:
-        guest.wait_for("lost on purpose (opt/kosmos/net_drop)", "the stack told to lose")
+        guest.wait_for("on purpose (opt/kosmos/net_mtu)" if narrow
+                       else "lost on purpose (opt/kosmos/net_drop)", "the stack told to lose")
         guest.wait_for("wm: window Deskbar at ", "the bar")
         guest.wait_for("telnetd: on port ", "telnetd listening")
         session = S.connect(telnet)
@@ -82,6 +95,29 @@ def main():
         guest.close()
 
     lost = [int(n) for n in re.findall(r"net: 4 MB to .*; lost (\d+)", seen)]
+
+    if narrow:
+        if len(times) < FRAMES:
+            fails.append("only %d of %d whole frames arrived through a %d-byte router"
+                         % (len(times), FRAMES, MTU))
+        if any(t > SECONDS for t in times):
+            fails.append("a whole frame took %s s through a %d-byte router"
+                         % (", ".join("%.1f" % t for t in times), MTU))
+        if any(m < 0.999 for m in matched):
+            fails.append("a frame did not arrive whole through a %d-byte router: %s" % (MTU, "; ".join(where)))
+        if "segments made %d" % (MTU - 40) not in seen:
+            fails.append("the stack never made a connection's segments %d" % (MTU - 40))
+
+        if fails:
+            print("FAIL: %d of 4 checks on TCP through a narrow router:" % len(fails))
+            for f in fails:
+                print("  " + f)
+            return 1
+
+        print("PASS: 4 checks on TCP through a narrow router (a %d-byte path saying fragmentation "
+              "needed; segments made %d; %d whole frames by VNC, each the screen QEMU scans out, "
+              "in %s s)" % (MTU, MTU - 40, FRAMES, ", ".join("%.1f" % t for t in times)))
+        return 0
 
     if len(times) < FRAMES:
         fails.append("only %d of %d whole frames arrived" % (len(times), FRAMES))

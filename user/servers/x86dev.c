@@ -574,6 +574,57 @@ bool x86_uart_raised(const struct x86_uart *u, const struct x86_uart_io *io)
     return (u->mcr & MCR_OUT2) && (iir_of(u, io) & 1) == 0;
 }
 
+/* ================================================================== RTC */
+
+/*
+ * The MC146818's registers, as a PC's CMOS keeps them and Linux's
+ * `mc146818_get_time` reads them: seconds, minutes, hours, the weekday,
+ * the day, the month, the year and the century (0x32), binary-coded
+ * decimal, 24-hour; status A with no update in progress, B saying BCD and
+ * 24-hour, D its battery good.
+ */
+static uint8_t bcd(unsigned v)
+{
+    return (uint8_t)((v / 10 % 10) << 4 | v % 10);
+}
+
+static bool leap(unsigned y)
+{
+    return y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+}
+
+uint8_t x86_rtc(uint64_t t, unsigned index)
+{
+    static const unsigned char months[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    uint64_t days = t / 86400, secs = t % 86400;
+    unsigned year = 1970, month = 1;
+
+    while (days >= (leap(year) ? 366u : 365u)) {
+        days -= leap(year) ? 366u : 365u;
+        year++;
+    }
+
+    while (days >= (uint64_t)(months[month - 1] + (month == 2 && leap(year)))) {
+        days -= months[month - 1] + (month == 2 && leap(year));
+        month++;
+    }
+
+    switch (index) {
+    case 0x00: return bcd((unsigned)(secs % 60));
+    case 0x02: return bcd((unsigned)(secs / 60 % 60));
+    case 0x04: return bcd((unsigned)(secs / 3600));
+    case 0x06: return bcd((unsigned)((t / 86400 + 4) % 7 + 1));     /* 1 January 1970: a Thursday */
+    case 0x07: return bcd((unsigned)days + 1);
+    case 0x08: return bcd(month);
+    case 0x09: return bcd(year % 100);
+    case 0x0a: return 0x26;
+    case 0x0b: return 0x02;
+    case 0x0d: return 0x80;
+    case 0x32: return bcd(year / 100);
+    default:   return 0x00;
+    }
+}
+
 /* ================================================================= CPUID */
 
 /*

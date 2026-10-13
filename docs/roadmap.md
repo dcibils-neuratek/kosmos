@@ -358,8 +358,9 @@ two land together.
 **A sandbox's clock** - found building X2, 13 October 2026: a guest reads
 its date from the monitor - a fixed 1 January 2026 on a PC's RTC, nothing
 on ARM - so a sandbox's `date`, and anything that checks a certificate,
-is wrong. The monitor reads Kosmos's own clock (`clock_epoch`) and gives
-it: the CMOS registers on a PC, a PL031 on ARM.
+is wrong. **The PC's done, 0.11.205** (`testing.md` 18.599): the setup
+carries `/Devices/clock`'s time and the RTC answers it. **Left: ARM**, a
+PL031 in the device tree answering the same.
 
 **Monitor: the processor's features** - Diego, 13 October 2026: "can we add
 the CPU features to the CPU monitor app below the processors count and

@@ -333,6 +333,7 @@ struct conn {
     uint64_t sent_at;               /* when the oldest byte in flight went */
     uint32_t tries;
     uint32_t cwnd;                  /* bytes the congestion window allows */
+    uint32_t mss;                   /* the most one segment carries, to them */
     uint32_t ssthresh;              /* slow start up to here */
     uint32_t dupacks;               /* the same acknowledgement, again */
     uint64_t sent_total;            /* bytes sent, again included */
@@ -375,6 +376,12 @@ static struct {
     uint32_t drop_every;
     uint32_t drop_count;
     uint32_t dropped;
+
+    /* `opt/kosmos/net_mtu=N`: a router on the path that passes no packet
+     * over N bytes and says so, as a PPPoE line's does - for a suite to see
+     * a connection's segments made to fit (`tools/run_tcploss.py`). 0, the
+     * default, is no such router. */
+    uint32_t path_mtu;
 
     /* `opt/kosmos/net_address=A.B.C.D/N`: an address from the boot, for a
      * network where no DHCP answers - a test's multicast segment. */
@@ -1150,6 +1157,58 @@ static void fail(uint64_t who, uint32_t status)
  * Matching on sequence alone would have two programs pinging two hosts
  * answer each other's.
  */
+static void tcp_pump(struct conn *c);
+
+/*
+ * **"Fragmentation needed"** (ICMP type 3, code 4; RFC 1191): a router
+ * between here and there cannot pass a packet this size, and every packet
+ * this stack sends says not to fragment it. It names its MTU and quotes the
+ * IP header and the first eight bytes of what it dropped - the ports - so
+ * the connection is found, its segments made to fit, and what was in
+ * flight sent again in the new size rather than waited on to time out.
+ */
+static void too_big(const uint8_t *icmp, unsigned icmp_len)
+{
+    const uint8_t *quoted = icmp + ICMP_HEADER;
+    unsigned ihl, i;
+    uint32_t mtu = get_be16(icmp + 6), mss;
+    struct net_addr to;
+
+    if (icmp_len < ICMP_HEADER + IP_HEADER + 8 || quoted[IP_PROTO] != IP_PROTO_TCP) {
+        return;
+    }
+
+    ihl = (unsigned)(quoted[IP_VER_IHL] & 0x0fu) * 4u;
+
+    if (ihl < IP_HEADER || icmp_len < ICMP_HEADER + ihl + 8) {
+        return;
+    }
+
+    memcpy(to.byte, quoted + IP_DST, 4);
+    mss = mtu > IP_HEADER + TCP_HEADER + 536 ? mtu - IP_HEADER - TCP_HEADER : 536;
+
+    for (i = 0; i < conn_count(); i++) {
+        struct conn *k = conn_slot(i);
+
+        if ((k->state == ST_OPEN || k->state == ST_CLOSE_WAIT)
+            && k->local_port == get_be16(quoted + ihl + TCP_SPORT)
+            && k->remote_port == get_be16(quoted + ihl + TCP_SPORT + 2)
+            && same_addr(&k->remote, &to) && mss < k->mss) {
+            struct say_line line;
+
+            k->mss = mss;
+            k->snd_nxt = k->snd_una;            /* again, in pieces that fit */
+            say_begin(&line);
+            say_text(&line, "net: a router can pass only ");
+            say_dec(&line, mtu);
+            say_text(&line, " bytes: a connection's segments made ");
+            say_dec(&line, mss);
+            say_send(net.console, &line);
+            tcp_pump(k);
+        }
+    }
+}
+
 static void icmp_receive(const uint8_t *packet, unsigned length,
                          const struct net_addr *from, uint8_t ttl)
 {
@@ -1161,6 +1220,11 @@ static void icmp_receive(const uint8_t *packet, unsigned length,
     }
 
     icmp_len = length - IP_HEADER;
+
+    if (icmp[ICMP_TYPE] == 3 && icmp[ICMP_CODE] == 4) {
+        too_big(icmp, icmp_len);
+        return;
+    }
 
     if (icmp[ICMP_TYPE] == ICMP_ECHO_REQUEST) {
         /*
@@ -2017,6 +2081,47 @@ static uint16_t window_of(const struct conn *c)
  * RFC 793 says and also the only option this stack sends. Without it a far
  * end assumes 536 bytes, which works and wastes most of every frame.
  */
+/*
+ * **The most a segment to them may carry**: the MSS their SYN or SYN-ACK
+ * announced (RFC 9293 3.7.1, option kind 2), never more than this stack's
+ * own, never less than the 536 every host must take; 536 when they said
+ * nothing, as the RFC has it. It was `TCP_MSS` whatever they said, and a
+ * PPPoE line's router - MTU 1492, which rewrites the MSS in every SYN it
+ * passes to 1452 - dropped each full segment: a request over one segment to
+ * anywhere past it never arrived (13 October, a sandbox's TLS hello).
+ */
+static uint32_t mss_of(const uint8_t *tcp, unsigned header)
+{
+    unsigned at = TCP_HEADER;
+
+    while (at < header) {
+        uint8_t kind = tcp[at];
+
+        if (kind == 0) {
+            break;                              /* the end of the options */
+        }
+
+        if (kind == 1) {
+            at++;                               /* a no-op, for alignment */
+            continue;
+        }
+
+        if (at + 1 >= header || tcp[at + 1] < 2 || at + tcp[at + 1] > header) {
+            break;                              /* malformed: stop reading */
+        }
+
+        if (kind == 2 && tcp[at + 1] == 4) {
+            uint32_t mss = get_be16(tcp + at + 2);
+
+            return mss < 536 ? 536 : mss > TCP_MSS ? TCP_MSS : mss;
+        }
+
+        at += tcp[at + 1];
+    }
+
+    return 536;
+}
+
 static bool tcp_send(struct conn *c, uint32_t flags, uint32_t seq,
                      const uint8_t *data, unsigned length)
 {
@@ -2128,12 +2233,33 @@ static void tcp_pump(struct conn *c)
             send = allowed - flight;
         }
 
-        if (send > sizeof(piece)) {
-            send = sizeof(piece);
+        if (send > c->mss) {
+            send = c->mss;
         }
 
         for (i = 0; i < send; i++) {
             piece[i] = tcp_ring_out(c->ring)[(read + flight + i) % c->ring->bytes];
+        }
+
+        if (net.path_mtu != 0 && IP_HEADER + TCP_HEADER + send > net.path_mtu) {
+            /*
+             * Too big for the router on purpose: not sent, and its "too
+             * big" given back as the router would send it - our IP header
+             * quoted, and the first eight bytes of the segment.
+             */
+            uint8_t icmp[ICMP_HEADER + IP_HEADER + 8];
+
+            memset(icmp, 0, sizeof icmp);
+            icmp[ICMP_TYPE] = 3;
+            icmp[ICMP_CODE] = 4;
+            put_be16(icmp + 6, (uint16_t)net.path_mtu);
+            icmp[ICMP_HEADER + IP_VER_IHL] = 0x45;
+            icmp[ICMP_HEADER + IP_PROTO] = IP_PROTO_TCP;
+            memcpy(icmp + ICMP_HEADER + IP_DST, c->remote.byte, 4);
+            put_be16(icmp + ICMP_HEADER + IP_HEADER + TCP_SPORT, c->local_port);
+            put_be16(icmp + ICMP_HEADER + IP_HEADER + TCP_DPORT, c->remote_port);
+            too_big(icmp, sizeof icmp);
+            return;
         }
 
         if (net.drop_every != 0 && ++net.drop_count % net.drop_every == 0) {
@@ -2213,8 +2339,6 @@ static void tcp_pump(struct conn *c)
 }
 
 static void wake_waiter(struct conn *c);
-static void tcp_pump(struct conn *c);
-
 /*
  * A connection is open and nobody has it yet: give it to whoever is parked
  * in `accept` on its listener, or leave it for whoever asks next.
@@ -2694,6 +2818,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         made->snd_nxt       = net.next_seq;
         made->peer_window   = get_be16(tcp + TCP_WINDOW);
         made->cwnd          = TCP_INITIAL_WINDOW;
+        made->mss           = mss_of(tcp, header);
         made->ssthresh      = 0xffffffffu;
         made->dupacks       = 0;
         made->state         = ST_SYN_RCVD;
@@ -2757,6 +2882,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         c->rcv_nxt = seq + 1;
         c->snd_una = ack;
         c->peer_window = get_be16(tcp + TCP_WINDOW);
+        c->mss = mss_of(tcp, header);
         c->state = ST_OPEN;
 
         (void)tcp_send(c, TCP_ACK_FLAG, c->snd_nxt, NULL, 0);
@@ -3479,6 +3605,7 @@ static void serve(const struct message *msg, uint64_t sender)
         c->snd_nxt     = net.next_seq;
         c->peer_window = 1460;
         c->cwnd        = TCP_INITIAL_WINDOW;
+        c->mss         = TCP_MSS;           /* until their SYN-ACK says */
         c->ssthresh    = 0xffffffffu;
         c->dupacks     = 0;
         c->state         = ST_SYN_SENT;
@@ -4207,6 +4334,28 @@ void net_server(long endpoint, long console, long frames, long frames2)
             say_text(&line, "net: one data segment in ");
             say_dec(&line, every);
             say_text(&line, " lost on purpose (opt/kosmos/net_drop)");
+            say_send(net.console, &line);
+        }
+    }
+
+    {
+        char text[12];
+        long n = kosmos_boot_option("opt/kosmos/net_mtu", text, sizeof text - 1);
+        uint32_t mtu = 0;
+        long k;
+
+        for (k = 0; k < n && text[k] >= '0' && text[k] <= '9'; k++) {
+            mtu = mtu * 10u + (uint32_t)(text[k] - '0');
+        }
+
+        if (n > 0 && mtu >= 576 && mtu < 1500) {
+            struct say_line line;
+
+            net.path_mtu = mtu;
+            say_begin(&line);
+            say_text(&line, "net: a router that passes only ");
+            say_dec(&line, mtu);
+            say_text(&line, " bytes, on purpose (opt/kosmos/net_mtu)");
             say_send(net.console, &line);
         }
     }

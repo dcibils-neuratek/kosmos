@@ -229,6 +229,27 @@ static void test_uart(void)
     check(!x86_uart_raised(&u, &io), "the interrupt went out without OUT2");
 }
 
+/* ------------------------------------------------------------- the RTC */
+
+static void test_rtc(void)
+{
+    /* 13 October 2026, 15:04:05 UTC, a Tuesday: 1791903845. */
+    uint64_t t = 1791903845ull;
+
+    check(x86_rtc(t, 0x00) == 0x05 && x86_rtc(t, 0x02) == 0x04 && x86_rtc(t, 0x04) == 0x15,
+          "15:04:05 was not read back in BCD");
+    check(x86_rtc(t, 0x07) == 0x13 && x86_rtc(t, 0x08) == 0x10 && x86_rtc(t, 0x09) == 0x26
+          && x86_rtc(t, 0x32) == 0x20, "13 October 2026 was not read back in BCD");
+    check(x86_rtc(t, 0x06) == 0x03, "a Tuesday is not weekday 3");
+    /* 29 February 2028, the day after 28 February. */
+    check(x86_rtc(1835395200ull, 0x07) == 0x29 && x86_rtc(1835395200ull, 0x08) == 0x02,
+          "29 February 2028 was not a leap day");
+    check(x86_rtc(0, 0x09) == 0x70 && x86_rtc(0, 0x32) == 0x19 && x86_rtc(0, 0x07) == 0x01,
+          "1 January 1970 was not the epoch");
+    check((x86_rtc(t, 0x0a) & 0x80) == 0 && x86_rtc(t, 0x0b) == 0x02,
+          "the RTC said an update in progress, or not BCD and 24-hour");
+}
+
 /* ----------------------------------------------------------------- CPUID */
 
 static void test_cpuid(void)
@@ -432,6 +453,7 @@ int main(void)
     test_pic();
     test_pit();
     test_uart();
+    test_rtc();
     test_cpuid();
     test_boot();
     test_decode();
@@ -443,7 +465,7 @@ int main(void)
 
     printf("PASS: %d checks on the sandbox's PC (the 8259s as Linux programs and probes them, "
            "levels and the cascade; the 8254's periodic and one-shot ticks and channel 2 behind "
-           "port 0x61; the 16550 found, its THRE test passed, a byte out and a key in; CPUID "
+           "port 0x61; the 16550 found, its THRE test passed, a byte out and a key in; the RTC's date; CPUID "
            "without APIC, XSAVE or VMX; Linux's 64-bit boot - zero page, e820, GDT, page tables; "
            "the guest's tables walked; the MMIO movs decoded)\n", checks);
     return 0;

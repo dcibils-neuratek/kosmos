@@ -11,7 +11,8 @@ not - and the window opened beside them. Held to:
   * **Start on a card**: shell1 started by `sandbox start` in a process of
     its own, and the window seeing it arrive, running;
   * **one sandbox watched**: shell1 opened by a double click, its Console
-    tab chosen, and what is typed there answered by Alpine's shell;
+    tab chosen, and what is typed there answered by Alpine's shell - two
+    backspaces stepping the shown line back, with nothing drawn for them;
   * **New sandbox**: the sheet filled - a name - and Create and start
     making it and starting it;
   * **Stop on a card**: web stopped, and the card saying so.
@@ -148,6 +149,26 @@ def main():
                 guest.type("echo $((6*7))")
                 check(until(r"sandboxes: console shell1: 42\n", at, 30) is not None,
                       "what was typed in the Console tab was not answered: %r" % guest.seen[-500:])
+
+                # Two backspaces: the shell's `\b \b` echo steps back over
+                # what was typed, and nothing is drawn for it (13 October).
+                at = len(guest.seen)
+                for key in ("e", "c", "h", "o", "spc", "a", "b", "c", "d"):
+                    guest.sendkey(key)
+
+                time.sleep(0.5)
+                guest.sendkey("backspace")
+                guest.sendkey("backspace")
+                time.sleep(1)
+                time.sleep(1)
+                guest._read_available()
+                lines = [l.rstrip("\r") for l in
+                         re.findall(r"sandboxes: shown shell1: ([^\n]*)\n", guest.seen[at:])]
+                check(lines != [] and lines[-1].endswith("# echo ab"),
+                      "two backspaces did not step the shown line back to 'echo ab': %r" % lines[-3:])
+                guest.sendkey("ret")
+                check(until(r"sandboxes: console shell1: ab\n", at, 15) is not None,
+                      "the shell did not run 'echo ab'")
 
             if "‹ All" in spots:
                 click(ox + spots["‹ All"][0], oy + spots["‹ All"][1])

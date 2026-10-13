@@ -48,6 +48,7 @@ import os
 import re
 import shutil
 import socket
+import ssl
 import subprocess
 import sys
 import threading
@@ -121,6 +122,23 @@ def main():
         ("0.0.0.0", 0), functools.partial(http.server.SimpleHTTPRequestHandler, directory=www))
     port = httpd.server_address[1]
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    # **And the same over TLS** (13 October): a sandbox's HTTPS through the
+    # gateway - `apk`'s way to its packages - with a certificate made here,
+    # since what is tested is the connection and not who signed it.
+    tls_dir = scratch.path("sandbox-tls")
+    os.makedirs(tls_dir, exist_ok=True)
+    key, cert = os.path.join(tls_dir, "key.pem"), os.path.join(tls_dir, "cert.pem")
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2",
+                    "-subj", "/CN=10.0.2.2", "-keyout", key, "-out", cert],
+                   check=True, capture_output=True)
+    httpsd = http.server.ThreadingHTTPServer(
+        ("0.0.0.0", 0), functools.partial(http.server.SimpleHTTPRequestHandler, directory=www))
+    tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls.load_cert_chain(cert, key)
+    httpsd.socket = tls.wrap_socket(httpsd.socket, server_side=True)
+    tls_port = httpsd.server_address[1]
+    threading.Thread(target=httpsd.serve_forever, daemon=True).start()
 
     # And this Mac's port into Kosmos's 8081, which a sandbox's port is
     # carried from (S4, ports).
@@ -252,12 +270,16 @@ def main():
            'and i.address ~= "\\0\\0\\0\\0" then break end sys.sleep(25) end print("NET" .. "-UP")',
            "NET-UP", 60)
         said = do("sandbox run alpine --network -- ping -c 1 10.0.3.2; "
-                  "wget -q -O- http://10.0.2.2:%d/hello.txt; nslookup nothing.invalid" % port,
+                  "wget -q -O- http://10.0.2.2:%d/hello.txt; nslookup nothing.invalid; "
+                  "wget -q --no-check-certificate -O- https://10.0.2.2:%d/hello.txt | sed s/^/tls:/"
+                  % (port, tls_port),
                   "the sandbox is gone", 240)
         check("64 bytes from 10.0.3.2" in said, "the gateway did not answer a ping: %r" % said[-500:])
         check("\nhello from this Mac, through Kosmos\n" in said,
               "a page on this Mac was not fetched through Kosmos: %r" % said[-500:])
         check("NXDOMAIN" in said, "the name server did not answer a name that cannot exist: %r" % said[-400:])
+        check("\ntls:hello from this Mac, through Kosmos\n" in said,
+              "a page on this Mac was not fetched over HTTPS through Kosmos: %r" % said[-500:])
 
         # What it carried, counted by the gateway and said at the end: the
         # page in at least, and the request for it out.

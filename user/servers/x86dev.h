@@ -97,6 +97,11 @@ void    x86_uart_write(struct x86_uart *u, unsigned off, uint8_t value, const st
 uint8_t x86_uart_read(struct x86_uart *u, unsigned off, const struct x86_uart_io *io);
 bool    x86_uart_raised(const struct x86_uart *u, const struct x86_uart_io *io);
 
+/* ------------------------------------------------------------ the RTC */
+
+/* MC146818 register `index` for the time `t`, seconds since 1970 in UTC. */
+uint8_t x86_rtc(uint64_t t, unsigned index);
+
 /* ----------------------------------------------------------------- CPUID */
 
 /* The host's answer to `leaf`, `sub` in r[0..3] (eax ebx ecx edx), filtered in place. */

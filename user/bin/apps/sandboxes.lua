@@ -57,6 +57,33 @@ local reports = {}                      -- name -> the file its start says in
 -- half-second clock the rest is refreshed on, which made a key's echo wait
 -- up to half a second to appear (Diego, 13 October: "shouldnt be instant?").
 --
+--
+-- **What arrived, added to what is shown - a backspace stepping back.**
+-- Linux's shell echoes an erased character as 0x08 - with a space and
+-- another 0x08 to blank it, `\b \b` - which Kosmos's console has always
+-- obeyed (`console.c`) and this window drew as a glyph each (Diego, 13
+-- October: "backspace is not working, is printing some weird characters").
+-- It goes back over the last character, a whole UTF-8 one, and never past
+-- the start of the line.
+--
+local function added(shown, more)
+  if not more:find("\b", 1, true) then return shown .. more end
+
+  for piece, back in more:gmatch("([^\b]*)(\b?)") do
+    shown = shown .. piece
+
+    if back ~= "" and #shown > 0 and shown:sub(-1) ~= "\n" then
+      local cut = #shown
+
+      while cut > 1 and shown:byte(cut) >= 0x80 and shown:byte(cut) < 0xc0 do cut = cut - 1 end
+
+      shown = shown:sub(1, cut - 1)
+    end
+  end
+
+  return shown
+end
+
 local function read_console()
   if not watched then return false end
 
@@ -65,14 +92,17 @@ local function read_console()
   local arrived = text ~= nil and #text > 0
 
   if arrived then
-    c.text = (c.text .. text):sub(-24000)
+    c.text = added(c.text, text):sub(-24000)
     c.at = next_at
 
-    -- For its suite: each line of what arrived, as it arrives.
+    -- For its suite: each line of what arrived, as it arrives, and the
+    -- last line as it is shown.
     if TELL then
       for line in text:gmatch("[^\n]+") do
         print("sandboxes: console " .. watched .. ": " .. line)
       end
+
+      print("sandboxes: shown " .. watched .. ": " .. (c.text:match("([^\n]*)$") or ""))
     end
   end
 

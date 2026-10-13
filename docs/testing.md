@@ -24999,3 +24999,56 @@ something arrived; and the monitor looks every tick on both machines. A
 key's round trip is a few milliseconds of waiting at most, two ticks.
 arm-sandboxwin and arm-sandbox-linux pass; on the M700 (0.11.204) for
 Diego to feel.
+
+## 18.599 A backspace in a sandbox's console; TCP through a narrow router; a guest's date
+
+Three things Diego found using an x86 sandbox on the M700, 13 October.
+
+**"backspace is not working, is printing some weird characters".** The
+guest's shell erased correctly; Linux echoes an erase as `\b \b`, which
+Kosmos's console has always obeyed and the Sandboxes window drew as a
+glyph each. The window now steps back over a character, a whole UTF-8 one,
+never past a line's start (`added`). `arm-sandboxwin` 9 -> 11: `echo abcd`,
+two Backspaces, the shown line `echo ab`, and the shell running `echo ab`.
+Control: the window adding bytes as they come - "shell1:~# echo abcd\x08\x08".
+
+**"does the linux client has internet access? to download packages?"**
+Plain HTTP did (Alpine's 528 KB index); HTTPS to anywhere past the house
+did not - `apk` said "TLS: unspecified error" and nothing came back. Not
+the sandbox: **Kosmos's TCP sent 1460-byte segments with don't-fragment
+set whatever the far end said, and ignored ICMP "fragmentation needed".**
+Diego's line is PPPoE - `ping -D -s 1472` from the Mac: "frag needed and
+DF set (MTU 1492)" from 192.168.1.1 - so every full segment Kosmos sent to
+the internet was dropped, and a request over one segment never arrived. A
+GET fits in one, and so does Kosmos's own TLS hello, which is why nothing
+had shown it; a guest's OpenSSL hello, with a server name and a
+post-quantum key share, does not. `net.c`: a connection's segments are
+the MSS the far end's SYN or SYN-ACK announced (`mss_of`, 536 when it said
+nothing, never over 1460), and "fragmentation needed" (`too_big`, RFC
+1191) makes them fit the router and sends again what was in flight.
+**`x86-tcpmtu`, new**: `opt/kosmos/net_mtu=1400` puts a router on the
+path that passes nothing over 1400 bytes and says so; three whole screens
+by VNC must cross it, the segments made 1360. Control: the stack hearing
+the router and changing nothing - "only 0 of 3 whole frames arrived".
+
+**The guest's date**: it read 1 January 2026 on a PC (a fixed RTC) and
+1970 on ARM (none), and a certificate is checked against it. The setup
+page carries the time (`vmm_setup.epoch`, from `/Devices/clock`, in what
+was 8 reserved bytes), and the x86 monitor's RTC answers it, counted on by
+its own counter, in BCD (`x86_rtc`; `test_x86dev` 91 -> 97: 13 October 2026
+15:04:05, a Tuesday, 29 February 2028, the epoch). ARM's guest has no RTC
+yet - roadmap.
+
+**On the M700 (0.11.205)**: `sandbox run alpine --network -- date; apk add
+htop` - "Tue Oct 13 15:10:48 UTC 2026", htop 3.5.3 installed from Alpine's
+HTTPS mirror, 3.3 MB in 5 s.
+
+Whole gate: 81 of 84 - x86-maps, x86-mail-5 and x86-smbd. Maps and Mail's
+attachments pass alone. **x86-smbd failed three runs in a row with the
+new `net.c` and passed with the old**, so it was not waved through: its
+visitor (an `smbclient` on a pseudo-terminal) signed in and its connection
+ended during its first `ls`. Every incoming connection's MSS was 1460, the
+same segments as before; one line of logging at accept made it pass; then
+two more runs of the new `net.c` passed (90 s each), and it had failed once
+in 0.11.203's gate before `net.c` changed. A race in that step, not the
+MSS - watched, with the serial capture to take next time it fails.
