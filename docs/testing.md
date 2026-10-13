@@ -25122,3 +25122,16 @@ half-second clock.
 
 **Tests.** `arm-sandboxwin` 14 -> 16: the help row says where it is, and
 pressed, the page shows its five cards.
+
+## 18.603 The Sandboxes window: the machine's whole memory
+
+On the M700 the sidebar said "0.3 of 3 GB given" and the title "of 2894 MB"
+on a machine with 8 GB. The window read `ram_size` from `sys.info()`, which
+is `hal_ram_range` - the first range of RAM, and on a PC that range ends at
+the hole below 4 GB. It now reads the pages the kernel hands out,
+`pages_total` times `page_size`, which is what Machine calls Installed and
+`/Devices/memory` calls `total_mb`.
+
+**Tests.** None that bites: QEMU's ARM board has one range, so `ram_size`
+and the pages agree there, and `arm-sandboxwin` (16) cannot tell them apart.
+Seen instead on the M700 over VNC: "0.0 of 8 GB given", "0 MB of 8049 MB".

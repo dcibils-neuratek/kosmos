@@ -9195,7 +9195,7 @@ Kosmos), written to its definition and taking effect at its next start;
 and the help screen below. **Built 0.11.207** (`testing.md` 18.601): the
 drawing's pictures (App_Playground, Device_Harddisk, Folder_generic,
 Prefs_Network) on the title, the sidebar, the cards and the chips; image
-titles; the machine as "1 of 8 processors", "0.3 of 3 GB given",
+titles; the machine as "1 of 8 processors", "0.3 of 8 GB given" (3 GB until 0.11.209, 18.603),
 "Virtualization: VT-x, EPT"; the watched sandbox's group lit; its header
 with Console, Stop, Restart and "..." (Every sandbox, Delete); the Given
 panel's rows as drawn; the New sheet as drawn - 128 MB, 512 MB, 1 GB, 2 GB,

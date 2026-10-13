@@ -127,7 +127,11 @@ local function refresh(full)
 
     local info = sys.info() or {}
 
-    machine = { cpus = info.cpus or 1, ram = info.ram_size or 0, guests = info.guests == 1,
+    -- The pages the kernel hands out, as Machine's "Installed" says it, and
+    -- not `ram_size`: that is the first range of RAM, which on a PC ends at
+    -- the hole below 4 GB - 3 GB of the M700's 8.
+    machine = { cpus = info.cpus or 1, ram = (info.pages_total or 0) * (info.page_size or 4096),
+                guests = info.guests == 1,
                 virt = info.virt or 0 }
   end
 
