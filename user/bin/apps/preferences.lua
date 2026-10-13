@@ -371,6 +371,11 @@ local APPLY = {
     return fs.send("/Running/wm", { type = "wallpaper_fit", fit = fit })
   end,
 
+  -- Every Magnet row (`live = "magnet"`): its own key and the value.
+  magnet = function(value, it)
+    return fs.send("/Running/wm", { type = "magnet", set = { [it.key] = value } })
+  end,
+
   -- One field each, and the manager ignores a field it does not know - so
   -- another of these is one line.
   corner = function(on)
@@ -457,11 +462,11 @@ local APPLY = {
 -- is not stored and the reason reaches the log.
 --
 local function live(it, value)
-  local apply = APPLY[it.key]
+  local apply = APPLY[it.live or it.key]
 
   if not apply then return true end
 
-  local ok, why = apply(value)
+  local ok, why = apply(value, it)
 
   if not ok then
     print("preferences: " .. tostring(it.key) .. ": " .. tostring(why))

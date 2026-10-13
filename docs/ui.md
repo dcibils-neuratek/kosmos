@@ -2067,6 +2067,11 @@ can go back" for both.
 
 **Settings**, `/Home/Preferences/magnet`: on, by dragging, the outline, back
 to size, the gap - read at the window manager's start and changed live by
-`handlers.magnet`, which the Magnet page will send. The keys and the page
-are the next steps (`roadmap.md`).
+`handlers.magnet`, which the Magnet page sends. **The page** (0.11.197),
+beside Appearance in Preferences: Magnet, Snap when dragged, Show where it
+will land, Back to its size, and the space between snapped windows - each
+row `live = "magnet"`, so `live` sends its key and value to the window
+manager before it is kept (`APPLY` now looks a row up by its `live`, then
+its key). The keys' group arrives with the keys: a row naming Super+← that
+does nothing would be a row that says what is not so.
 

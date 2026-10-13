@@ -45,6 +45,11 @@ local settings = {}
 --
 settings.CATEGORIES = {
   { id = "appearance", name = "Appearance",  icon = "appearance" },
+  --
+  -- **Magnet** (`docs/magnet.html`): windows snapped to halves, quarters
+  -- and the whole room - beside Appearance, as the drawing has it.
+  --
+  { id = "magnet",     name = "Magnet",      icon = "sidebar" },
   { id = "displays",   name = "Displays",    icon = "display" },
   --
   -- **Notifications** (`roadmap.md`, *Notifications*, step 3): Do Not
@@ -84,6 +89,7 @@ settings.CLOCK      = "clock"
 settings.STARTUP    = "startup"
 settings.POWER      = "power"
 settings.KEYBOARD   = "keyboard"
+settings.MAGNET     = "magnet"
 settings.MOUSE      = "mouse"
 
 --
@@ -411,6 +417,30 @@ settings.ITEMS = {
   item{ category = "system", group = "About",
         label = "Licences", note = "What is in this image and under what terms",
         kind = "open", program = "about" },
+  ------------------------------------------------------------------ magnet
+  --
+  -- **Magnet** (`docs/magnet.html`, `ui.md` 16.31): kept in
+  -- `/Home/Preferences/magnet`, which the window manager reads at its start,
+  -- and each told to it the moment it changes (`live = "magnet"`). The
+  -- keys' group comes with the keys: listing Super+arrows here before the
+  -- keyboard sends them would say something that is not so.
+  --
+  item{ category = "magnet", group = "Magnet",
+        label = "Magnet", note = "Windows snap into halves, quarters and the whole room",
+        kind = "switch", file = settings.MAGNET, key = "on", default = true, live = "magnet" },
+  item{ category = "magnet", group = "Magnet",
+        label = "Snap when dragged", note = "A window dragged to an edge or a corner",
+        kind = "switch", file = settings.MAGNET, key = "drag", default = true, live = "magnet" },
+  item{ category = "magnet", group = "Magnet",
+        label = "Show where it will land", note = "An outline, before letting go",
+        kind = "switch", file = settings.MAGNET, key = "outline", default = true, live = "magnet" },
+  item{ category = "magnet", group = "Magnet",
+        label = "Back to its size", note = "When it is dragged out again",
+        kind = "switch", file = settings.MAGNET, key = "back", default = true, live = "magnet" },
+  item{ category = "magnet", group = "Magnet",
+        label = "Space between snapped windows", note = "Round each, and between two",
+        kind = "choice", file = settings.MAGNET, key = "gap", default = 6, live = "magnet",
+        choices = { { 0, "None" }, { 4, "4 points" }, { 6, "6 points" }, { 10, "10 points" } } },
 }
 
 --

@@ -28,11 +28,18 @@ sys.path.insert(0, HERE)
 import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
 
-CHECKS = 5
+CHECKS = 8
 GAP = 6
 
 OPEN = ('local r = fs.send("/Running/wm", { type = "launch", program = "tracker", args = "/Home" })\n'
         'print("OPENED " .. tostring(r and r.ok))\n')
+# What the Magnet page sends when "Snap when dragged" is turned off, and the
+# file it is kept in, read back.
+OFF = ('local r = fs.send("/Running/wm", { type = "magnet", set = { drag = false } })\n'
+       'local kept = use("/Kosmos/Libraries/prefs.lua").read("magnet") or {}\n'
+       'print("OFF " .. tostring(r and r.ok) .. " kept " .. tostring(kept.drag))\n')
+PAGE = ('local r = fs.send("/Running/wm", { type = "launch", program = "preferences", args = "magnet" })\n'
+        'print("PAGE " .. tostring(r and r.ok))\n')
 
 
 def main():
@@ -60,6 +67,8 @@ def main():
         guest.wait_for("telnetd: on port ", "telnetd listening")
         session = S.connect(telnet)
         session.put(OPEN.encode(), "/Temporary/open.lua")
+        session.put(OFF.encode(), "/Temporary/off.lua")
+        session.put(PAGE.encode(), "/Temporary/page.lua")
         time.sleep(1)
         mark = len(guest.seen)
         session.run("/Temporary/open.lua")
@@ -133,6 +142,29 @@ def main():
         check(quarter is not None and int(quarter.group(1)) == GAP and int(quarter.group(3)) == lw,
               "let go in the bottom left corner, Tracker was not given that quarter: %r"
               % (quarter and quarter.group(0)))
+
+        # "Snap when dragged" off, as the Magnet page turns it off: kept, and
+        # a window dropped at the right edge stays where it was dropped.
+        off = session.run("/Temporary/off.lua").decode(errors="replace")
+        check("OFF true kept false" in off, "turning dragging off was not done and kept: %r"
+              % off.strip()[-80:])
+        moved = line(r"wm: moved Tracker by its header to (\d+),(\d+)", 0, 1)
+        mark = len(guest.seen)
+        drag(6 + bx, int(quarter.group(2)) + by if quarter else sh // 2, sw - 1, sh // 2)
+        time.sleep(1)
+        guest._read_available()
+        snapped = re.findall(r"wm: magnet (?:shows|put)[^\r\n]*", guest.seen[mark:])
+        check(not snapped, "with dragging off, a drop at the edge still snapped: %r" % snapped)
+
+        # The Magnet page opens, its rows built.
+        mark = len(guest.seen)
+        session.run("/Temporary/page.lua")
+        opened = line(r"wm: window Preferences at", mark, 30)
+        time.sleep(2)
+        guest._read_available()
+        check(opened is not None and "traceback" not in guest.seen[mark:]
+              and "attempt to" not in guest.seen[mark:],
+              "the Magnet page did not open cleanly: %r" % guest.seen[mark:][-300:])
     except Exception as e:                  # noqa: BLE001 - said below
         fails.append("the machine stopped: %s: %s" % (type(e).__name__, str(e).splitlines()[0]))
     finally:
@@ -155,7 +187,7 @@ def main():
 
     print("PASS: %d checks on Magnet (the right edge's outline and the right half, the gaps to "
           "the pixel; dragged away, its size back; the top edge, the whole room; a corner, a "
-          "quarter)" % CHECKS)
+          "quarter; dragging turned off and kept, and nothing snapping; the Magnet page)" % CHECKS)
     return 0
 
 

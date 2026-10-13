@@ -151,8 +151,13 @@ where it was held. Kept in `/Home/Preferences/magnet`, changed live by
 `handlers.magnet`. **Left**: **the keys** - Super+arrow does not reach the
 window manager at all: `hal/keys.c` sends an arrow's sequence before it
 looks at Super, Alt is not tracked, and `ESC [ 1 ; 9 C` would be Super+→
-and Super+Shift+C alike, so the encoding is decided first, on both boards;
-and **the Magnet page** in Preferences.
+and Super+Shift+C alike, so the encoding is decided first, on both boards
+(asked of Diego on the card, 13 October, with a proposal: xterm's form for
+both - Super+arrows `ESC [ 1 ; 9 C`, Alt adding 2, and Super with a
+character as `ESC [ 27 ; 9 ; code ~`). **The Magnet page, built 0.11.197**
+(`testing.md` 18.591): on, by dragging, the outline, back to size and the
+gap, each told to the window manager as it changes; its Keys group comes
+with the keys.
 
 **SATA (AHCI), and `/Home` on the M700's own drive** - Diego, 12 October
 2026, after his preferences came back from a stick and he asked "when do we

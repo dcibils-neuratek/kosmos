@@ -24776,3 +24776,18 @@ into the bottom left corner, that quarter at 6,559, 951x515. **Control**:
 no zone ever found - all five fail. Whole gate: 80 of 81, x86-film the
 known flake, passing alone.
 
+## 18.591 Magnet's page in Preferences
+
+`ui.md` 16.31. A Magnet category beside Appearance, its five rows kept in
+`/Home/Preferences/magnet` and each sent to the window manager as it
+changes (`live = "magnet"`, `handlers.magnet`). Its rows went at the end of
+`settings.ITEMS` - first, they moved the Theme row from where
+`test_settings.lua` looks for it, and eight of its checks failed.
+
+**Tests.** `x86-magnet` 5 -> 8: "Snap when dragged" turned off as the page
+turns it off - done, and kept in the file; Tracker then dropped at the right
+edge stays where it is dropped, no zone shown and nothing put; and
+Preferences opened on the Magnet page with no error. **Control**: the zone
+not asking whether dragging is on - Tracker snapped to the right half, and
+the suite fails. Whole gate: all 81 suites, 8:24.
+
