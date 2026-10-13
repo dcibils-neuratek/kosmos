@@ -24865,3 +24865,54 @@ says "nothing to run a guest with" at boot and goes on to its prompt - the
 probe neither faults nor stays silent. The other answers are the M700's to
 give.
 
+**On the M700, netbooted, 13 October**: "vm: VT-x, locked on by the
+firmware" - an i7-6700 whose setup has Intel Virtualization Technology on,
+so nothing there needs changing - and the Sandboxes window says "VT-x is on;
+Kosmos does not drive it yet". The same boot made its stick's `/Home` kfs
+version 2 ("the disk is kfs version 2 now"), and the SATA driver's first
+real disk: 8086:a102, AHCI 1.3, port 0 a Samsung MZ7LN256HCHP (PM871b,
+256 GB SATA in M.2), 500118192 sectors of 512, a protective MBR and a GPT -
+read, not written.
+
+
+## 18.595 VT-x in the kernel (X1), proved on the M700
+
+`docs/sandboxes.md`, X1. The kernel enters a guest on x86-64 behind the
+same four syscalls as on ARM (`arch/x86_64/vcpu.c`, `vmx.S`). The probe
+reads what the processor offers once at boot - a VMCS of a page,
+write-back; EPT walked in four levels, write-back, with an all-context
+INVEPT; and the TRUE control MSRs, which let CR3 loads and stores go
+unexited - and a machine short of any of them cannot run a guest. A core
+enters VMX operation (CR0 and CR4 into the fixed bits, CR4.VMXE, `vmxon`)
+the first time a vCPU runs there. A vCPU is three pages - its VMCS, an MSR
+bitmap, and its FP registers and the five `syscall` MSRs the VMCS does not
+swap - and its VMCS is cleared after every run, so every entry is a
+`vmlaunch` and the next run may be on any core. Host state is read as it
+is at each entry, and what an exit leaves wrong is put back by hand: the
+GDT's and IDT's limits, DS and ES. The guest's FP registers are swapped
+eagerly, as the context switch does; external interrupts exit without
+being acknowledged, so the host takes its own as soon as the flags are
+restored. `struct vcpu_regs` on x86-64 is 33 words: the sixteen registers
+in the instruction set's order, RIP, RFLAGS, CR0, CR3, CR4, EFER, the
+GDT, and the exit's reason, qualification, guest physical address,
+length, whether the guest can take an interrupt, and the VM instruction
+error. The monitor's ARM machine is guarded to ARM; its x86-64 half is X2.
+
+**Tests.** The miniature monitor moved from `main.c` to `vmtest.c` and grew
+an x86-64 half: five pages at 0x10000 - code, data, and the guest's own
+PML4, PDPT and directory of 2 MB pages - entered in long mode; it reads
+0x1234, writes 0x1235 beside it, stops on an EPT violation reading 0x200000
+(qualification: a read; RIP at the load), is stepped past it and stops on
+`hlt`. `CTEST_GUEST` runs it in the kernel suites (ARM: the guest runs;
+x86 under TCG: 50, "cannot enter a guest"), and `ROLE_VMTEST` in the image
+a machine boots, when the boot line says `opt/kosmos/vmtest`. Suites:
+arm-kernel 203/203, x86-kernel 200/200, arm-sandbox, arm-sandbox-linux,
+arm-sandboxwin, x86-virtprobe.
+
+**On the M700, netbooted, 13 October (0.11.201)**: "vmtest: a guest ran
+and stopped as it should", the first try, and the desktop came up after it.
+**Control**: a kernel whose EPT leaves the data page out -
+"vmtest: failed at 5, reason 00000030, error 0, address
+0000000000011000, at 0000000000010000": an EPT violation, on the guest's
+first instruction, at the page it was not given. The real kernel booted
+again afterwards and passed.

@@ -1487,6 +1487,53 @@ _Static_assert(sizeof(struct sender_info) == 152, "a sender is two words and two
  * FAR_EL2 - the guest's own virtual address, when there is one - and `ipa`
  * the guest physical page from HPFAR_EL2, for a stage-2 fault.
  */
+#if defined(__x86_64__)
+/*
+ * **On x86-64, VT-x's** (`docs/sandboxes.md`, X1): the sixteen general
+ * registers in the instruction set's order - rax, rcx, rdx, rbx, rsp, rbp,
+ * rsi, rdi, r8 to r15 - RIP and RFLAGS, read before the guest runs and
+ * written after, and so are the control registers and EFER. The segments -
+ * flat, 64-bit, `VCPU_SEL_CODE` and `VCPU_SEL_DATA` as Linux's 64-bit boot
+ * protocol asks - and the GDT are written only when `flags` says
+ * `VCPU_SET_SYSTEM`, on its first run; after that they are the guest's. `inject` asks for an external interrupt -
+ * its vector with `VCPU_INJECT` - delivered as the guest is entered, and is
+ * 0 again once it was; `VCPU_WANT_WINDOW` asks for an exit as soon as the
+ * guest can take one, when it could not now (`interruptible` says which).
+ * `reason` is the basic exit reason (SDM vol. 3, appendix C),
+ * `qualification` and `gpa` what that exit says, `length` the instruction's
+ * that caused it - for the monitor to step past - and `error` the VM
+ * instruction error of an entry that failed.
+ */
+struct vcpu_regs {
+    uint64_t gpr[16];
+    uint64_t rip;
+    uint64_t rflags;
+    uint64_t cr0, cr3, cr4, efer;
+    uint64_t gdt_base, gdt_limit;       /* written with VCPU_SET_SYSTEM */
+    uint64_t flags;                     /* VCPU_SET_SYSTEM, VCPU_WANT_WINDOW */
+    uint64_t inject;                    /* vector | VCPU_INJECT, or 0 */
+    uint64_t exit;                      /* VCPU_EXIT_* */
+    uint64_t reason;
+    uint64_t qualification;
+    uint64_t gpa;
+    uint64_t length;
+    uint64_t interruptible;
+    uint64_t error;
+};
+
+_Static_assert(sizeof(struct vcpu_regs) == 33 * 8, "thirty-three words");
+
+#define VCPU_GPR_RAX        0
+#define VCPU_GPR_RCX        1
+#define VCPU_GPR_RDX        2
+#define VCPU_GPR_RBX        3
+#define VCPU_GPR_RSP        4
+#define VCPU_SET_SYSTEM     1u          /* flat segments and the GDT, as Linux boots */
+#define VCPU_SEL_CODE       0x10        /* __BOOT_CS */
+#define VCPU_SEL_DATA       0x18        /* __BOOT_DS */
+#define VCPU_WANT_WINDOW    2u
+#define VCPU_INJECT         (1u << 31)
+#else
 struct vcpu_regs {
     uint64_t x[31];
     uint64_t pc;
@@ -1511,6 +1558,7 @@ struct vcpu_regs {
 };
 
 _Static_assert(sizeof(struct vcpu_regs) == 344, "43 words");
+#endif
 
 #define VCPU_EXIT_TRAP      1           /* the guest did something EL2 traps */
 #define VCPU_EXIT_HOST      2           /* the host's interrupt: run it again */

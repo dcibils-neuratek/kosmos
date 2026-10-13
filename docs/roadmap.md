@@ -9153,6 +9153,29 @@ the applications make the system useful, and is not pulled forward.
 
 ### The system
 
+**Sandboxes' help screen** - Diego, 13 October 2026: "the sandboxes app
+needs a help screen that tells the user how it operates and works", after
+asking whether sandboxes behave like QEMU: "we need to tell the user that
+sandboxes does not behave like qemu that emulates a full pc". A page in
+the Sandboxes window - from a Help button in its header - saying what a
+sandbox is and is not: **a microVM**, as Firecracker is - the guest's code
+runs on the real processor (VT-x, EL2), not emulated - inside a machine
+kept deliberately small: no BIOS or UEFI, no PCI, no graphics, USB, disk
+controller or sound; a serial console, an interrupt controller and a
+timer, and virtio devices for folders and the network. So what runs is an
+operating system that boots from a kernel image with virtio drivers -
+Linux, Alpine first - and not one that expects a PC (Windows, an installer
+ISO), which QEMU or VirtualBox emulate and Sandboxes does not, on purpose:
+it is why one starts in about a second. **Only for this machine's
+processor** - x86-64 Linux on a PC, ARM64 on an ARM board; translating
+another's is QEMU's emulation, not this. **What it is for and why**: a
+program from elsewhere kept apart, Linux's software without porting it, a
+task thrown away, a service kept running, the processor's speed, little
+memory and little to attack (`sandboxes.md`). Then how it works: images,
+definitions in `/Home/Sandboxes`, tasks and services, folders read only or
+read and write, the network outgoing or by ports, the console, and
+`sandbox` at the prompt. Drawn first, beside `docs/sandboxes.html`.
+
 **Sandboxes: small operating systems for a task, in virtual machines** -
 Diego, 11 October 2026: "i want to explore adding virtualization support to
 kosmos", "to launch sandboxes to run small OSes like linux for specific

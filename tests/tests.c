@@ -10052,7 +10052,7 @@ static bool test_a_guest_runs_and_stops(void)
 /*
  * **A monitor runs a guest, by capability** - `docs/virtualization.md` V2.
  *
- * Has to match `user/init/main.c`'s `guest_role`: a user process makes a
+ * Has to match `user/init/vmtest.c`'s `vm_selftest`: a user process makes a
  * guest, gives it a region, runs a vCPU in it and reads back what the guest
  * wrote. Its code is 0 where this core can enter a guest and 50 where it
  * cannot - x86-64 before VT-x, and ARM started below EL2 - and anything

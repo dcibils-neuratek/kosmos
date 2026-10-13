@@ -832,6 +832,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/drivers/display/backlight_decode.c \
              user/drivers/power/powerbutton.c \
              user/init/say.c \
+             user/init/vmtest.c \
              user/kits/network/net_kosmos.c \
              user/kits/crypto/crypto.c \
              user/kits/crypto/crypto_kosmos.c \
@@ -3814,6 +3815,7 @@ X86_SRCS  := boot/x86_64/start.S \
              arch/x86_64/mmu.c \
              arch/x86_64/cpu.c \
              arch/x86_64/vcpu.c \
+             arch/x86_64/vmx.S \
              arch/x86_64/switch.S \
              arch/x86_64/fp.c \
              arch/x86_64/gdt.c \

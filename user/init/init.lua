@@ -41,6 +41,7 @@ local ROLE_DRIVES     = 20 -- serves /Drives: every volume on every drive, read 
 local ROLE_BACKLIGHT  = 21 -- Intel's backlight PWMs: /Devices/backlight
 local ROLE_E1000      = 22 -- an Intel Ethernet controller, where there is one
 local ROLE_AHCI       = 31 -- a SATA controller, where there is one
+local ROLE_VMTEST     = 32 -- a guest entered and left, said (`vmtest.c`)
 local ROLE_NOTIFY     = 23 -- serves /Notifications: what applications have said
 local ROLE_SMBFS      = 24 -- shares over the network: SMB 2 and 3 (`sharing.md`)
 local ROLE_KEYRING    = 25 -- the passwords Kosmos keeps, sealed (`keyring.md`)
@@ -6083,6 +6084,18 @@ if role == ROLE_INIT then
     local _, err = sys.spawn(ROLE_AHCI, { CONSOLE_EP }, SPAWN_DEVICES)
 
     if err then line("init: no SATA driver: " .. tostring(err)) end
+  end
+
+  -- **A guest, entered and left, when the boot line asks**
+  -- (`opt/kosmos/vmtest`; `docs/sandboxes.md`, X1): the kernel's VT-x is
+  -- proved on a real PC or not at all, since QEMU's TCG does not emulate
+  -- it, so a machine booted from the network can be told to try and says
+  -- what happened on its console, which `log` shows.
+  --
+  if sys.boot("opt/kosmos/vmtest") then
+    local _, err = sys.spawn(ROLE_VMTEST, { CONSOLE_EP })
+
+    if err then line("init: no vmtest: " .. tostring(err)) end
   end
 
   local ether_driver = false

@@ -135,6 +135,11 @@ void vmm_server(long running, long ram, long setup, long more1, long more2);
 #define ROLE_SMBD     29UL
 #define ROLE_VMM      30UL    /* a sandbox's monitor (`docs/virtualization.md`) */
 #define ROLE_AHCI     31UL    /* a SATA controller, where there is one */
+#define ROLE_VMTEST   32UL    /* a guest entered and left, said (`vmtest.c`) */
+
+/* `vmtest.c`: a guest made, run and stopped twice; 0, or the first check failed. */
+int vm_selftest(uint64_t detail[4]);
+void vmtest_role(long console);
 
 static void say(const char *s)
 {
@@ -418,92 +423,8 @@ static int spawn_image_role(void)
  * with the mapping. Ends still holding three, for the suite to see given
  * back at exit. Its code names the first check that failed.
  */
-/*
- * **A monitor in miniature** (`docs/virtualization.md` V2): a guest made
- * empty, a two-page region given to it at guest address 0x40000000 - code,
- * then data - and the code written through this process's own mapping of
- * the same region. The guest reads the number the monitor left in its data
- * page, writes one more beside it, and loads from 0x50000000, which nothing
- * maps: it stops with that address, and the monitor sees the guest's write
- * in its own memory. Stepped past the load, it stops on `hvc #7`. A region
- * capability that names nothing is refused. The code names the first thing
- * answered wrongly; 50 is "this machine cannot enter a guest", the answer
- * on one started below EL2.
- */
+/* A monitor in miniature, on either architecture (`vmtest.c`). */
 #define CTEST_GUEST             909UL
-
-static long run_guest(long vcpu, struct vcpu_regs *r)
-{
-    long why;
-
-    while ((why = kosmos_vcpu_run(vcpu, r)) == VCPU_EXIT_HOST) {
-        /* The host's tick: taken on the way back here; run it again. */
-    }
-
-    return why;
-}
-
-static int guest_role(void)
-{
-    static const uint32_t code[] = {
-        0xf9400022,                     /* ldr x2, [x1]     the monitor's   */
-        0x91000442,                     /* add x2, x2, #1                   */
-        0xf9000422,                     /* str x2, [x1, #8] the guest's     */
-        0xf9400083,                     /* ldr x3, [x4]     nothing there   */
-        0xd40000e2,                     /* hvc #7                           */
-    };
-    struct vcpu_regs r;
-    long guest, region, at, vcpu;
-    volatile uint64_t *data;
-
-    guest = kosmos_guest_create();
-
-    if (guest == SYS_ERR_NO_DEVICE) {
-        return 50;
-    }
-
-    if (guest < 0 || (region = kosmos_mem_create(2)) < 0
-        || (at = kosmos_mem_map(region)) < 0) {
-        return 1;
-    }
-
-    memcpy((void *)at, code, sizeof(code));
-    data = (volatile uint64_t *)(at + 4096);
-    data[0] = 0x1234;
-
-    if (kosmos_guest_map(guest, 999, 0x40000000UL) != SYS_ERR_DENIED) {
-        return 2;
-    }
-
-    if (kosmos_guest_map(guest, region, 0x40000000UL) != 0
-        || (vcpu = kosmos_vcpu_create(guest)) < 0) {
-        return 3;
-    }
-
-    memset(&r, 0, sizeof r);
-    r.pc = 0x40000000UL;
-    r.pstate = 0x3c5;                   /* EL1h, D A I F masked */
-    r.x[1] = 0x40001000UL;              /* its data page */
-    r.x[4] = 0x50000000UL;              /* nothing */
-
-    if (run_guest(vcpu, &r) != VCPU_EXIT_TRAP || (r.syndrome >> 26) != 0x24
-        || r.ipa != 0x50000000UL || r.pc != 0x4000000cUL) {
-        return 4;
-    }
-
-    if (data[1] != 0x1235) {
-        return 5;
-    }
-
-    r.pc += 4;
-
-    if (run_guest(vcpu, &r) != VCPU_EXIT_TRAP || (r.syndrome >> 26) != 0x16
-        || (r.syndrome & 0xffff) != 7) {
-        return 6;
-    }
-
-    return 0;
-}
 
 #define CTEST_SHARE             907UL
 
@@ -833,7 +754,7 @@ int main(unsigned long arg)
     }
 
     if (arg == CTEST_GUEST) {
-        return guest_role();
+        return vm_selftest(NULL);
     }
 #endif
 
@@ -926,6 +847,16 @@ int main(unsigned long arg)
         named("ahci");
         ahci_server(0);
         kosmos_exit(0);             /* never into init's chunk below */
+    }
+
+    if (arg == ROLE_VMTEST) {
+        named("vmtest");
+        vmtest_role(0);             /* and exits */
+    }
+
+    if (arg == ROLE_VMTEST) {
+        named("vmtest");
+        vmtest_role(0);             /* and exits */
     }
 
     if (arg == ROLE_DRIVES) {

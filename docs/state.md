@@ -2,9 +2,31 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-13, early morning (0.11.199; kfs version 2, after a push of the night's work)
+Last updated: 2026-10-13, afternoon (0.11.201; VT-x in the kernel, proved on the M700)
 
 ---
+
+## 13 October, afternoon: sandboxes on x86-64
+
+**Pushed: up to 0.11.198** (1ee26bee). **Not pushed: 0.11.199** (kfs
+version 2, a file's Created), **0.11.200** (the virtualization probe - the
+M700: "vm: VT-x, locked on by the firmware"), **0.11.201** (X1).
+
+- **X1, VT-x in the kernel (0.11.201)** (`docs/sandboxes.md` S5,
+  `testing.md` 18.595): `arch/x86_64/vcpu.c` and `vmx.S` behind the same
+  four syscalls; `vmtest.c` the miniature monitor for both architectures,
+  run on a real machine by `opt/kosmos/vmtest`. **On the M700, first try:
+  "vmtest: a guest ran and stopped as it should"**; its control (the data
+  page left out of EPT) failed at 5 with an EPT violation at 0x11000.
+- **Next: X2**, the monitor's x86-64 half - Linux's 64-bit direct boot, a
+  16550, the PIC and PIT, CPUID and MSRs, virtio-mmio by decoding the
+  instruction that stopped - then **X3**, Alpine x86-64 as a package.
+  `vmm.c` should be split into what both machines share and one file a
+  machine when X2 starts.
+- **Waiting on Diego**: Super+arrow for Magnet (the proposal on the
+  board); the Sandboxes help screen is to be drawn first (`roadmap.md`).
+- The M700 is netbooted with `opt/kosmos/vmtest=1` on its command line;
+  `make netboot` without it drops the word, which is fine.
 
 ## 12-13 October: Packages, then Sandboxes, through to Alpine on the network
 

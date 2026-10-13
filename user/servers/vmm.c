@@ -101,10 +101,12 @@ static uint64_t counter_hz = 62500000, tick_hz = 250;
 
 static uint8_t *gicd;
 static uint8_t *gicr;
+#if defined(__aarch64__)
 static uint64_t gic_enabled;            /* a bit an interrupt */
 
 /* The PL011's interrupt state: what is masked in, and what is raised. */
 static uint32_t uart_imsc;
+#endif
 
 /*
  * What was typed and the guest has not read yet: a ring this process's
@@ -115,7 +117,8 @@ static uint32_t uart_imsc;
 static uint8_t rx[256];
 static unsigned rx_head, rx_tail;
 
-static bool rx_empty(void)
+/* The x86-64 machine's too, from X2. */
+__attribute__((unused)) static bool rx_empty(void)
 {
     return __atomic_load_n(&rx_head, __ATOMIC_ACQUIRE)
            == __atomic_load_n(&rx_tail, __ATOMIC_ACQUIRE);
@@ -132,7 +135,8 @@ static void rx_put(uint8_t c)
     }
 }
 
-static int rx_take(void)
+/* The x86-64 machine's too, from X2. */
+__attribute__((unused)) static int rx_take(void)
 {
     unsigned tail = __atomic_load_n(&rx_tail, __ATOMIC_RELAXED);
     uint8_t c;
@@ -263,7 +267,8 @@ static void flush_out(void)
  */
 static enum { PLAIN, ESCAPE, CSI } out_state = PLAIN;
 
-static void guest_byte(char c)
+/* The x86-64 machine's too, from X2. */
+__attribute__((unused)) static void guest_byte(char c)
 {
     if (out_state == ESCAPE) {
         out_state = c == '[' ? CSI : PLAIN;
@@ -303,7 +308,8 @@ static void note(const char *text)
     ring_put("\n", 1);
 }
 
-static void tell(const char *what, unsigned long a, unsigned long b)
+/* The x86-64 machine's too, from X2. */
+__attribute__((unused)) static void tell(const char *what, unsigned long a, unsigned long b)
 {
     struct say_line line;
 
@@ -464,6 +470,7 @@ static size_t write_tree(uint8_t *at, size_t cap)
     return fdt_finish(&f);
 }
 
+#if defined(__aarch64__)
 /*
  * **The PL011**, as far as a console needs it: a byte written to its data
  * register is a byte in the console's ring, a byte read from it is the
@@ -842,7 +849,8 @@ static bool psci(struct vcpu_regs *r)
     }
 }
 
-/* The vCPU's thread: run, answer, run again, until the guest stops. */
+#endif /* __aarch64__ */
+
 /* The guest has ended - by itself, or because it was asked to. */
 static void finish(void)
 {
@@ -851,6 +859,20 @@ static void finish(void)
     kosmos_thread_exit(0);
 }
 
+#if defined(__x86_64__)
+/*
+ * **On x86-64 the kernel enters a guest (X1) and this half is not written
+ * yet**: a 64-bit direct boot, a 16550 on ports, the PIC and the PIT, and
+ * MMIO decoded from the instruction - `docs/sandboxes.md` X2. Until then
+ * the guest is made, so the kernel's half is exercised, and stopped.
+ */
+static void run(unsigned long unused)
+{
+    (void)unused;
+    note("x86-64 guests are not run by this monitor yet (docs/sandboxes.md, X2)");
+    finish();
+}
+#else
 /* The vCPU's thread: run, answer, run again, until the guest stops. */
 static void run(unsigned long unused)
 {
@@ -920,6 +942,8 @@ static void run(unsigned long unused)
         }
     }
 }
+
+#endif
 
 /* What a request is answered with. */
 static void answer(const struct vmm_request *req, struct vmm_reply *rep)

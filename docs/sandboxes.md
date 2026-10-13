@@ -173,6 +173,83 @@ PL011's nature; a busy console is what virtio-console is for, later.
    --at-start` - and `init` runs `sandbox start` for it in the background at
    boot, as it starts the servers the Servers window ticked. **VT-x** is
    left: QEMU cannot emulate it, so it is built and tried on the M700, with
-   Diego there.
+   Diego there. **The probe, 0.11.200** (`testing.md` 18.594): the M700
+   says "vm: VT-x, locked on by the firmware". Then in three steps, each
+   tried on the M700 before the next (Diego, 13 October: "Go ahead with
+   sandboxes on x86"):
+
+   - **X1 - VT-x in the kernel**, behind the same four syscalls: `vmxon`
+     per core the first time a vCPU runs there, a VMCS a vCPU cleared after
+     every run so the next may be on any core, EPT in four levels, the
+     guest's `syscall` MSRs and FP registers swapped around each entry, and
+     every exit but the host's interrupt handed to the monitor with its
+     reason, qualification and guest physical address
+     (`arch/x86_64/vcpu.c`, `vmx.S`). `struct vcpu_regs` has an x86-64
+     shape: the sixteen registers in the instruction set's order, RIP,
+     RFLAGS, the control registers and EFER, and the GDT. Proved by
+     `vmtest.c` - the same miniature monitor as ARM's `CTEST_GUEST`, in
+     long mode with page tables of its own - run on the M700 by the boot
+     line's `opt/kosmos/vmtest`.
+   - **X2 - the monitor's x86-64 half**: Linux's 64-bit direct boot (the
+     bzImage's protected-mode kernel loaded, `boot_params` with an e820 map
+     and the command line, identity page tables, a GDT with `__BOOT_CS` and
+     `__BOOT_DS`); a 16550 on ports 0x3F8; the 8259 PICs and the 8254 PIT
+     through port I/O, so Linux runs `noapic nolapic`; CPUID answered with
+     what the guest may use (no XSAVE, no AVX, no RDTSCP); MSRs; and the
+     virtio-mmio devices found by EPT violations, decoded from the
+     instruction the guest stopped on - a small decoder for the `mov` forms
+     Linux's `readl` and `writel` compile to - and announced on the command
+     line as `virtio_mmio.device=`.
+   - **X3 - Alpine x86-64 as a package**, as `alpine-arm64` is: its kernel
+     and initramfs, and a sandbox the same definition on either machine.
+
+**What a sandbox is, and is not** (Diego, 13 October 2026: "we need to tell
+the user that sandboxes does not behave like qemu that emulates a full
+pc"). A **microVM**, as Firecracker and Apple's Virtualization framework
+make: the guest's code runs on the real processor - EL2 on ARM, VT-x on a
+PC - and is not emulated, so it runs at the processor's speed, and an
+ordinary Linux kernel runs unmodified. What is small, on purpose, is the
+machine around it: no BIOS or UEFI, no PCI bus, no graphics card, USB, disk
+controller or sound - a serial console, an interrupt controller and a
+timer, and virtio devices, virtio-fs for folders and virtio-net for the
+network. So a sandbox runs an operating system that boots from a kernel
+image and has virtio drivers - Linux: Alpine, Debian, a minimal Ubuntu -
+and not one that expects a whole PC: Windows, DOS, an installer ISO, which
+QEMU and VirtualBox emulate and Sandboxes does not. That is what lets one
+start in about a second and cost almost nothing while it waits.
+
+**And only for this machine's processor** (Diego, the same day: "it also
+runs only oses that are targeted for the host architecture, x86 on intel,
+arm on arm raspberry pi"). The guest's instructions are the processor's
+own, so a PC runs x86-64 Linux and an ARM board ARM64 Linux; running one
+architecture's code on the other means translating every instruction,
+which is what QEMU's emulation does and what makes it many times slower.
+Alpine is published for both, so a sandbox's definition is the same on
+either and its image is the one for the machine.
+
+**What it is for, and why this shape** (Diego: "we also need to explain the
+uses and benefits of this architecture"):
+
+- **A program from elsewhere, kept apart.** A Linux tool, a compiler, a web
+  server, a script found on the internet: it runs, and it reaches only the
+  folders it was given - read only if so - and the network only if asked,
+  outgoing or by ports. A sandbox's kernel and everything in it are behind
+  the processor's own wall, not a promise of the software.
+- **Linux's programs on Kosmos without porting them.** Kosmos owes POSIX
+  nothing and has no POSIX personality (`CLAUDE.md`); the Linux world's
+  software runs in a sandbox instead, as itself.
+- **A task, thrown away.** `sandbox run alpine -- make` starts in about a
+  second, does one thing, says its exit code and is gone - nothing left
+  behind on the machine.
+- **A service, kept running**, started with Kosmos: a small server in Alpine
+  answering on a port Kosmos carries in.
+- **The processor's speed.** Not emulated, so compiling or compressing in a
+  sandbox is about as fast as on Linux itself.
+- **Little memory, little to attack.** No firmware, no PCI, no emulated
+  devices: a sandbox costs the memory it is given, and the surface between
+  it and Kosmos is a serial port, a timer and a few virtio queues.
+
+The window's help screen says all of this to a person (`roadmap.md`,
+*Sandboxes' help screen*).
 
 Only x86-64 runs the tests, except Sandboxes' own (`CLAUDE.md`).
