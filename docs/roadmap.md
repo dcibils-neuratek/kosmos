@@ -373,11 +373,13 @@ decided, EL2; security: AES, SHA, RDRAND, SMEP, SMAP; and the rest), each
 named as a person knows it. Decoding the words is a small kit, since About
 and neofetch want the same list. A change to an agreed window, so drawn in
 `docs/monitor.html` first and agreed before it is built. **Drawn 13
-October** (`docs/monitor.html`, *The processor's features*): a row of
-headline features under the count and clock, VT-x green when on; *Every
-feature* opening the card in place, four groups, what is missing struck
-through; the kernel reading six more raw words (`CPU_RAW_WORDS` 10 -> 16)
-and `user/lib/cpufeatures.lua` naming them. Waiting for Diego's word.
+October** (`docs/monitor.html`, *The processor's features*), and made
+smaller at his word - "too big", "It's just one row of features", "It's a
+almost subtitle kind of thing": one quiet line under the count and the
+clock, `VT-x on · SSE4.2 · AVX2 · FMA · AES-NI · RDRAND`, the
+virtualization in green when on. Nothing new in the kernel - every name is
+in `sysinfo.cpu_raw` and `sysinfo.virt` already - and the names in
+`pulse.lua` beside the processor's name. Waiting for Diego's word.
 
 **Mail: always show a sender's pictures** - Diego, 10 October 2026: "mail
 app needs a way to set 'always show images from this sender' somehere
