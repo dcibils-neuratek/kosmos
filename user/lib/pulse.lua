@@ -93,6 +93,80 @@ function pulse.split_name(name, cpu)
   return maker, model, rated and (rated .. " GHz") or nil
 end
 
+--
+-- **What the processor can do, in one line** (`docs/monitor.html`, "The
+-- processor's features"; Diego, 13 October: "It's just one row of
+-- features", "It's a almost subtitle kind of thing"): its virtualization
+-- and whether it is on, its vector instructions to the widest it has, and
+-- the ones Kosmos's own kits use - as a list of `{ word, on }`, `on` for
+-- the virtualization that is switched on, which Monitor shows in green.
+-- Only what it has.
+--
+-- Read from the raw words the kernel hands over (`sysinfo.cpu_raw`, which
+-- it does not decode, since they mean something else on each machine) and
+-- the kernel's own virtualization probe (`sysinfo.virt`, which knows what
+-- the firmware decided as well as what the processor has):
+--
+--   a PC   CPUID leaf 1's ECX (word 5) and leaf 7's EBX (word 7) - Intel
+--          SDM vol. 2A, CPUID, tables 3-10 and 3-8
+--   ARM    ID_AA64PFR0_EL1 (word 4) and ID_AA64ISAR0_EL1 (word 5) - Arm ARM,
+--          D19.2, their fields four bits each
+--
+local VIRT_OFF, VIRT_ON, VIRT_UNLOCKED, VIRT_EL2 = 1, 2, 3, 4
+
+local function bit(word, n) return word ~= nil and (word >> n) & 1 == 1 end
+local function field(word, at) return word ~= nil and (word >> at) & 0xf or 0 end
+
+function pulse.features(arch, raw, virt)
+  local out = {}
+  local function say(word, on) out[#out + 1] = { word, on == true } end
+
+  raw = raw or {}
+
+  if arch == 2 then                                     -- x86-64
+    local ecx, ebx7 = raw[5], raw[7]
+
+    if virt == VIRT_ON then say("VT-x on", true)
+    elseif virt == VIRT_OFF then say("VT-x off")
+    elseif virt == VIRT_UNLOCKED or bit(ecx, 5) then say("VT-x") end
+
+    if bit(ecx, 20) then say("SSE4.2") end
+
+    if bit(ebx7, 16) then say("AVX-512")
+    elseif bit(ebx7, 5) then say("AVX2")
+    elseif bit(ecx, 28) then say("AVX") end
+
+    if bit(ecx, 12) then say("FMA") end
+    if bit(ecx, 25) then say("AES-NI") end
+    if bit(ebx7, 29) then say("SHA") end
+    if bit(ecx, 30) then say("RDRAND") end
+  elseif arch == 1 then                                 -- AArch64
+    local pfr0, isar0 = raw[4], raw[5]
+    local simd = field(pfr0, 20)
+
+    if virt == VIRT_EL2 then say("EL2", true)
+    elseif field(pfr0, 8) ~= 0 then say("EL2") end
+
+    if simd ~= 0xf then say("Neon") end
+    if simd == 1 then say("FP16") end
+    if field(pfr0, 32) ~= 0 then say("SVE") end
+    if field(isar0, 4) >= 1 then say("AES") end
+    if field(isar0, 12) >= 1 then say("SHA-2") end
+    if field(isar0, 32) >= 1 then say("SHA-3") end
+    if field(isar0, 16) >= 1 then say("CRC32") end
+    if field(isar0, 20) >= 2 then say("LSE atomics") end
+  end
+
+  return out
+end
+
+-- This machine's, from `sys.info()`.
+function pulse.processor_features()
+  local info = sys.info() or {}
+
+  return pulse.features(info.cpu_arch, info.cpu_raw, info.virt)
+end
+
 -- This machine's, from `/Devices/cpu`.
 function pulse.processor()
   local cpu = fs.read("/Devices/cpu") or {}

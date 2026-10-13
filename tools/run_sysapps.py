@@ -407,6 +407,12 @@ def main():
             check(named is not None and named.count("|") == 2 and "processor" in named,
                   "Monitor did not name its processor in a card: %r" % named)
 
+            # **Its features, in one line under the facts** (13 October):
+            # said, and with no VT-x under QEMU, whose processor has none.
+            feats = said("sysmon: features", start, 5)
+            check(feats is not None and "VT-x on" not in feats,
+                  "Monitor did not say its processor's features, or claimed what QEMU has not: %r" % feats)
+
             sizes = []
 
             for want in ("bars shown", "bars hidden"):

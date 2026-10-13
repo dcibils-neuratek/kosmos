@@ -25052,3 +25052,32 @@ same segments as before; one line of logging at accept made it pass; then
 two more runs of the new `net.c` passed (90 s each), and it had failed once
 in 0.11.203's gate before `net.c` changed. A race in that step, not the
 MSS - watched, with the serial capture to take next time it fails.
+
+## 18.600 Monitor: the processor's features, and its card condensed
+
+`docs/monitor.html`, agreed on 13 October ("Perfect") after two rounds of
+"too big". One quiet line under the count and the clock -
+`pulse.features`, from `sysinfo.cpu_raw` (CPUID leaves 1 and 7 on a PC,
+ID_AA64PFR0 and ISAR0 on ARM) and the kernel's own virtualization probe
+(`sysinfo.virt`): its virtualization, green when it is on; SSE4.2; the
+widest AVX; FMA; AES-NI, SHA, RDRAND - only what it has. Nothing new in the
+kernel. And the card condensed: `ui.meter_card` gains `inline` - the maker
+beside the model, the facts and `line` under them, 14 in from the edge
+rather than 20 - which Network and Disk Monitor, not asking for it, do
+not get; Monitor's die 42 from 58, its model at 21 from 24.
+
+**Tests.** `tools/test_pulse.lua` 18 -> 24: the M700's own words, read from
+it (`77fafbff`, `029c6fbf`, VT-x on) give "VT-x on, SSE4.2, AVX2, FMA,
+AES-NI, RDRAND"; VT-x off said; an AVX-512 processor with SHA; QEMU's plain
+one; a Cortex-A76 at EL2. `x86-sysapps` and `arm-sysapps`: Monitor says
+its features, and no VT-x under QEMU. **On the M700 (0.11.206)**: "VT-x on
+· SSE4.2 · AVX2 · FMA · AES-NI · RDRAND", the card about 78 points tall
+with three lines, where it was 90 with two.
+
+Whole gate: 79 of 84. Each of the five passed alone: arm-sandbox (the
+receive-deadline timing test again), x86-virtio-gpu, x86-network (one of
+twenty connections reset under the gate's load), x86-maps, and
+x86-display-4, which failed once on its shift-H check and once on a
+truncated screen dump, then passed; display-1, which holds the keyboard
+phase the shifted keys are in, passed twice. Diego on the M700: "the cpu
+monitor app looks perfect!"

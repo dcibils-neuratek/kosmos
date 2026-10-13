@@ -124,11 +124,50 @@ do
   check(pulse.heat({}, {}, 1, { { idle = 1 } }) == nil, "QEMU's processor was given a heat")
 end
 
+-- The processor's features, in one line (`docs/monitor.html`).
+do
+  local function line(list)
+    local words = {}
+
+    for _, f in ipairs(list) do words[#words + 1] = f[1] .. (f[2] and "*" or "") end
+
+    return table.concat(words, " / ")
+  end
+
+  -- The M700's own words, read from it on 13 October: an i7-6700, VT-x on.
+  local m700 = { 0, 0, 0, 0, 0x77fafbff, 0xbfebfbff, 0x029c6fbf, 0 }
+
+  check(line(pulse.features(2, m700, 2)) == "VT-x on* / SSE4.2 / AVX2 / FMA / AES-NI / RDRAND",
+        "the M700's line is not VT-x on, SSE4.2, AVX2, FMA, AES-NI, RDRAND: " .. line(pulse.features(2, m700, 2)))
+  check(line(pulse.features(2, m700, 1)):sub(1, 9) == "VT-x off ",
+        "VT-x off in the firmware's setup was not said: " .. line(pulse.features(2, m700, 1)))
+
+  -- An 11th-generation Core: AVX-512 and SHA as well (leaf 7 EBX bits 16, 29).
+  local t14 = { 0, 0, 0, 0, 0x7ffafbff, 0xbfebfbff, 0x20000000 | 0x10000 | 0x20, 0 }
+
+  check(line(pulse.features(2, t14, 2)) == "VT-x on* / SSE4.2 / AVX-512 / FMA / AES-NI / SHA / RDRAND",
+        "an AVX-512 processor's line is wrong: " .. line(pulse.features(2, t14, 2)))
+
+  -- QEMU's processor with no VMX: no virtualization said at all.
+  local qemu = { 0, 0, 0, 0, 0x80102001, 0, 0, 0 }      -- SSE3, CX16, SSE4.2, a hypervisor
+
+  check(line(pulse.features(2, qemu, 0)) == "SSE4.2",
+        "QEMU's plain processor said more than SSE4.2: " .. line(pulse.features(2, qemu, 0)))
+
+  -- A Cortex-A76 at EL2: PFR0 AdvSIMD 1 (with FP16), EL2 1; ISAR0 AES 2, SHA2 1, CRC32 1, atomics 2.
+  local a76 = { 0, 0, 0, (1 << 20) | (1 << 16) | (1 << 8), (2 << 4) | (1 << 8) | (1 << 12) | (1 << 16) | (2 << 20) }
+
+  check(line(pulse.features(1, a76, 4)) == "EL2* / Neon / FP16 / AES / SHA-2 / CRC32 / LSE atomics",
+        "a Cortex-A76's line is wrong: " .. line(pulse.features(1, a76, 4)))
+  check(#pulse.features(nil, nil, nil) == 0, "an unknown machine was given features")
+end
+
 if fails == 0 then
   print(("PASS: %d checks on pulse.speeds, pulse.split_name and pulse.heat (turbo, a core at its reference, an idle core "
          .. "beside a busy one, none where the processor keeps no counters; and the "
          .. "processor's name split, Intel's two shapes, AMD's, QEMU's and an ARM core's; and its heat: a power from two "
-         .. "readings, its limits, why it is held, none on QEMU)"):format(checks))
+         .. "readings, its limits, why it is held, none on QEMU; and its features in one line - the M700's, an AVX-512 "
+         .. "processor's, QEMU's and a Cortex-A76's)"):format(checks))
 else
   print(("FAIL: %d of %d checks on pulse.speeds"):format(fails, checks))
   os.exit(1)

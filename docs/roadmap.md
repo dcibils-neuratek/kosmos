@@ -379,7 +379,10 @@ almost subtitle kind of thing": one quiet line under the count and the
 clock, `VT-x on · SSE4.2 · AVX2 · FMA · AES-NI · RDRAND`, the
 virtualization in green when on. Nothing new in the kernel - every name is
 in `sysinfo.cpu_raw` and `sysinfo.virt` already - and the names in
-`pulse.lua` beside the processor's name. Waiting for Diego's word.
+`pulse.lua` beside the processor's name. **And the card condensed** with
+it ("25% less tall and more condensed"): the maker beside the model, a
+smaller die and type, less padding - 83 points from 116 in the drawing.
+**Agreed ("Perfect") and built 0.11.206** (`testing.md` 18.600).
 
 **Mail: always show a sender's pictures** - Diego, 10 October 2026: "mail
 app needs a way to set 'always show images from this sender' somehere

@@ -4071,15 +4071,16 @@ end
 function ui.meter_card(g, x, y, w, h, spec)
   local size = spec.size or 56
   local big = spec.model_face or ui.sized("title", 24)
+  local pad, gap = spec.inline and 14 or 20, spec.inline and 12 or 20
 
   g:fill_round(x, y, w, h, theme.raised, ui.layout.card_r)
   g:frame_round(x, y, w, h, theme.line_soft, ui.layout.card_r)
 
-  local tx = x + 20
+  local tx = x + pad
 
   if spec.picture then
-    spec.picture(g, x + 20, y + (h - size) // 2)
-    tx = x + 20 + size + 20
+    spec.picture(g, x + pad, y + (h - size) // 2)
+    tx = x + pad + size + gap
   end
 
   local right = x + w - ui.layout.row_in
@@ -4114,12 +4115,52 @@ function ui.meter_card(g, x, y, w, h, spec)
   local th, uh, lh = gfx.height(big), gfx.height("ui"), gfx.height("label")
   local top = y + (h - (lh + th + uh + 4)) // 2
 
-  if (spec.maker or "") ~= "" then
+  --
+  -- **Condensed** (`spec.inline`, Monitor's card, `docs/monitor.html`, 13
+  -- October: "25% less tall and more condensed"): the maker small beside
+  -- the model on one line rather than above it, the facts under them, and
+  -- `spec.line` under those - a subtitle of words, each `{ text, colour }`,
+  -- a middle dot between them, cut where the room ends.
+  --
+  if spec.inline then
+    local parts = spec.line or {}
+    local mx = tx
+
+    top = y + (h - (th + uh + (#parts > 0 and uh or 0))) // 2
+
+    if (spec.maker or "") ~= "" then
+      local maker = spec.maker:upper()
+
+      g:text(tx, top + th - lh - 1, maker, theme.text_dim, theme.raised, "label")
+      mx = tx + gfx.measure(maker, "label") + 6
+    end
+
+    g:text(mx, top, ui.fitted(spec.model or "", math.max(0, room - (mx - tx)), big), theme.text, theme.raised, big)
+    g:text(tx, top + th, ui.fitted(spec.facts or "", room, "ui"), theme.text_dim, theme.raised, "ui")
+
+    local lx, dot = tx, " \u{b7} "
+
+    for i, part in ipairs(parts) do
+      local word = (i > 1 and dot or "") .. part[1]
+
+      if lx + gfx.measure(word, "ui") > tx + room then break end
+
+      if i > 1 then
+        g:text(lx, top + th + uh, dot, theme.text_dim, theme.raised, "ui")
+        lx = lx + gfx.measure(dot, "ui")
+      end
+
+      g:text(lx, top + th + uh, part[1], part[2] or theme.text_dim, theme.raised, "ui")
+      lx = lx + gfx.measure(part[1], "ui")
+    end
+  elseif (spec.maker or "") ~= "" then
     g:text(tx, top, ui.fitted(spec.maker:upper(), room, "label"), theme.text_dim, theme.raised, "label")
   end
 
-  g:text(tx, top + lh, ui.fitted(spec.model or "", room, big), theme.text, theme.raised, big)
-  g:text(tx, top + lh + th + 4, ui.fitted(spec.facts or "", room, "ui"), theme.text_dim, theme.raised, "ui")
+  if not spec.inline then
+    g:text(tx, top + lh, ui.fitted(spec.model or "", room, big), theme.text, theme.raised, big)
+    g:text(tx, top + lh + th + 4, ui.fitted(spec.facts or "", room, "ui"), theme.text_dim, theme.raised, "ui")
+  end
 
   local ly = y + (h - tall) // 2
 
