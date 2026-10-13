@@ -9903,6 +9903,151 @@ static bool test_a_slot_is_reused_only_once_its_thread_has_left(void)
     return ok;
 }
 
+#if defined(__aarch64__)
+#include "hyp.h"
+
+/*
+ * **A guest's first instructions** - `docs/virtualization.md` step V1.
+ *
+ * On a machine started at EL2 (`-M virt,virtualization=on`, the
+ * `arm-sandbox` suite), a page of guest code is mapped at guest address
+ * 0x40000000 through a second stage of its own, and run three ways:
+ *
+ * - ten instructions that count x0 to 9, then `hvc #0x4b`: the guest stops,
+ *   EL2 says why (EC 0x16, an HVC, immediate 0x4b), x0 is 9 and the guest's
+ *   PC is past the `hvc`;
+ * - a load from 0x80000000, which nothing maps: it stops with a data abort
+ *   from a lower level (EC 0x24) and HPFAR_EL2 naming the page - the guest
+ *   reached nothing it was not given;
+ * - a loop of `hvc`s, entered and left a few hundred times, which is one
+ *   exit's round trip, said in counter ticks.
+ *
+ * And afterwards the host's own EL1 registers are what they were. On a
+ * machine started at EL1 there is no EL2 to ask, and the test says so and
+ * passes; the suite that boots at EL2 refuses that line.
+ */
+#define GUEST_IPA       0x40000000ul
+#define GUEST_HOLE      0x80000000ul
+
+static unsigned long run_until_stopped(struct hyp_vcpu *v)
+{
+    unsigned long why;
+
+    /* The host's tick stops a guest too (HCR.IMO); that is not its exit. */
+    do {
+        why = hyp_run(v);
+    } while (why == HYP_EXIT_IRQ);
+
+    return why;
+}
+
+static bool test_a_guest_runs_and_stops(void)
+{
+    static const uint32_t code[] = {
+        0xd2800000,                         /* mov x0, #0 */
+        0x91000400, 0x91000400, 0x91000400, /* add x0, x0, #1, nine times */
+        0x91000400, 0x91000400, 0x91000400,
+        0x91000400, 0x91000400, 0x91000400,
+        0xd4000962,                         /* hvc #0x4b */
+    };
+    uint32_t *page;
+    uint64_t *s2;
+    struct hyp_vcpu *v;
+    uint64_t sctlr_before, sctlr_after, tpidr_before, tpidr_after;
+    unsigned long why, i, ticks, hz;
+    char line[160];
+    bool ok = true;
+
+    if (!hyp_present()) {
+        kputs("\n   (no EL2 on this core: nothing to enter a guest with)\n");
+        return true;
+    }
+
+    if (hyp_call(HYP_PING) != HYP_PING_ANSWER) {
+        return false;
+    }
+
+    page = pmm_alloc_page();
+    v = pmm_alloc_page();
+    s2 = stage2_new();
+
+    if (page == NULL || v == NULL || s2 == NULL) {
+        return false;
+    }
+
+    memset(page, 0, PAGE_SIZE);
+    memset(v, 0, sizeof(*v));
+    memcpy(page, code, sizeof(code));
+    page[0x40 / 4] = 0xf9400041;            /* ldr x1, [x2] */
+    page[0x80 / 4] = 0xd4000022;            /* hvc #1 */
+    page[0x84 / 4] = 0x17ffffff;            /* b .-4 */
+    stage2_code_written(page, PAGE_SIZE);
+
+    ok = stage2_map(s2, GUEST_IPA, virt_to_phys(page));
+
+    v->vttbr = virt_to_phys(s2) | (1ul << 48);   /* VMID 1; the host is 0 */
+    v->flush = 1;
+    v->pc = GUEST_IPA;
+    v->pstate = 0x3c5;                      /* EL1h, D A I F masked */
+    v->sys[HYP_SCTLR] = 0x30d00800;         /* its translation off */
+
+    __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr_before));
+    __asm__ volatile("mrs %0, tpidr_el1" : "=r"(tpidr_before));
+
+    /* Ten instructions and an HVC. */
+    why = run_until_stopped(v);
+    ok = ok && why == HYP_EXIT_SYNC
+         && (v->esr >> 26) == 0x16 && (v->esr & 0xffff) == 0x4b
+         && v->gp[0] == 9 && v->pc == GUEST_IPA + sizeof(code);
+
+    snprintf(line, sizeof(line),
+             "\n   (stopped: exit %lu, EC %#lx, imm %#lx, x0 %lu, pc %#lx)",
+             why, (unsigned long)(v->esr >> 26), (unsigned long)(v->esr & 0xffff),
+             (unsigned long)v->gp[0], (unsigned long)v->pc);
+    kputs(line);
+
+    /* A load from what nothing maps. */
+    v->pc = GUEST_IPA + 0x40;
+    v->gp[2] = GUEST_HOLE;
+    why = run_until_stopped(v);
+    ok = ok && why == HYP_EXIT_SYNC && (v->esr >> 26) == 0x24
+         && ((v->hpfar >> 4) << 12) == GUEST_HOLE && v->pc == GUEST_IPA + 0x40;
+
+    snprintf(line, sizeof(line), "\n   (a load from %#lx: EC %#lx, HPFAR's page %#lx)",
+             GUEST_HOLE, (unsigned long)(v->esr >> 26),
+             (unsigned long)((v->hpfar >> 4) << 12));
+    kputs(line);
+
+    /* An exit's round trip, a few hundred times. */
+    v->pc = GUEST_IPA + 0x80;
+    ticks = cpu_cycles();
+
+    for (i = 0; i < 300 && ok; i++) {
+        why = run_until_stopped(v);
+        ok = why == HYP_EXIT_SYNC && (v->esr >> 26) == 0x16 && (v->esr & 0xffff) == 1;
+    }
+
+    ticks = cpu_cycles() - ticks;
+    __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(hz));
+    snprintf(line, sizeof(line),
+             "\n   (an exit's round trip: %lu counter ticks at %lu Hz, under TCG)",
+             ticks / 300, hz);
+    kputs(line);
+
+    __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr_after));
+    __asm__ volatile("mrs %0, tpidr_el1" : "=r"(tpidr_after));
+    ok = ok && sctlr_after == sctlr_before && tpidr_after == tpidr_before;
+
+    kputs(ok ? "\n   (vcpu: a guest ran and stopped, and the host is as it was)\n" : "\n");
+
+    stage2_free(s2);
+    pmm_free_page(page);
+    pmm_free_page(v);
+
+    return ok;
+}
+#endif /* __aarch64__ */
+
 static const struct test tests[] = {
     { "boot: .bss is zeroed",                  test_bss_zeroed          },
     { "boot: .bss bounds are 16-byte aligned", test_bss_bounds_aligned  },
@@ -9976,6 +10121,9 @@ static const struct test tests[] = {
     { "proc: the pool grows, and gives everything back", test_the_process_pool_grows },
     { "thread: a process with two threads", test_a_process_with_two_threads },
     { "thread: on the core its process asked for", test_a_thread_on_the_core_asked_for },
+#if defined(__aarch64__)
+    { "vcpu: a guest runs ten instructions and stops", test_a_guest_runs_and_stops },
+#endif
     { "thread: a worker faults while the first sleeps", test_a_worker_faults },
     { "thread: a worker faults while the first waits", test_a_fault_while_joined },
     { "thread: the first returns, a worker asleep", test_the_first_thread_leaves },

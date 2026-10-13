@@ -56,6 +56,15 @@ _start:
     b.ne    park                    /* EL3, or something unexpected */
 
 drop_to_el1:
+    /*
+     * Leave Nebula's piece of EL2 behind first (`arch/aarch64/hyp.S`,
+     * `docs/virtualization.md`): the stub a guest is entered through, and
+     * the EL2 settings EL1 needs to run as it always has. Core zero's
+     * index is 0. It spends x0 to x3 and needs no stack of ours.
+     */
+    mov     x0, #0
+    bl      hyp_install
+
     /* HCR_EL2.RW = 1: EL1 runs AArch64, not AArch32. Leaving this clear is
      * how you end up executing your 64-bit kernel as ARM32 and faulting on
      * the first instruction. */
@@ -170,6 +179,28 @@ at_el1:
  */
 .global _secondary_start
 _secondary_start:
+    /*
+     * **A core may arrive at EL2**, if whoever started it starts cores
+     * there - a board's firmware does; QEMU's PSCI starts one at the level
+     * its caller runs at, which is EL1. At EL2 it installs the stub as
+     * core zero did and drops to EL1 with its index still in x0, which
+     * survives the `eret`.
+     */
+    mrs     x1, CurrentEL
+    lsr     x1, x1, #2
+    cmp     x1, #2
+    b.ne    1f
+    mov     x19, x0
+    bl      hyp_install
+    mov     x0, x19
+    movz    x1, #0x8000, lsl #16    /* HCR_EL2.RW: EL1 is AArch64 */
+    msr     hcr_el2, x1
+    movz    x1, #0x3c5              /* EL1h, D A I F masked */
+    msr     spsr_el2, x1
+    adr     x1, 1f
+    msr     elr_el2, x1
+    eret
+1:
     /* The same known SCTLR_EL1 core 0 writes: MMU off, caches off, little
      * endian, RES1 bits set. The reset value is UNKNOWN on several cores
      * and PSCI does not promise one. */

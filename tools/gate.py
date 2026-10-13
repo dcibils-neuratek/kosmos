@@ -81,6 +81,11 @@ SUITES = [
     # that exercises the kernel from inside it.
     Suite("arm-kernel", ["python3", "tools/run_tests.py", ARM_TEST]),
 
+    # The same suite on a machine started at EL2, with the processor's
+    # virtualization on: Nebula leaves its stub there, and a guest runs ten
+    # instructions and stops (`docs/virtualization.md` V1).
+    Suite("arm-sandbox", ["python3", "tools/run_tests.py", ARM_TEST, "--virt"]),
+
     # And the same machine with nothing plugged into it. A second boot, but
     # of the ordinary image rather than the test one: what it checks is init
     # and the shell, which the test image replaces.
@@ -841,9 +846,16 @@ def main():
     # the M700, a PC, and the AArch64 suites doubled every wait. They run
     # with `--arm` (`make test ARM=1`), or when named in `--only`.
     #
+    # **Except Sandboxes'**: Diego chose ARM in QEMU first for it on 12
+    # October, because QEMU emulates EL2 and not VT-x - so `arm-sandbox`
+    # runs in every gate (`docs/virtualization.md`, *Decided*).
+    #
     if not args.arm and not args.only:
-        held = [s.name for s in chosen if s.name.startswith("arm-")]
-        chosen = [s for s in chosen if not s.name.startswith("arm-")]
+        def paused(s):
+            return s.name.startswith("arm-") and not s.name.startswith("arm-sandbox")
+
+        held = [s.name for s in chosen if paused(s)]
+        chosen = [s for s in chosen if not paused(s)]
 
         if held:
             print("SKIP: %d AArch64 suites - x86-64 only for now; ARM=1 runs them."

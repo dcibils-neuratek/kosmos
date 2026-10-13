@@ -241,6 +241,8 @@ SRCS := boot/start.S \
         arch/aarch64/fp.S \
         arch/aarch64/fp.c \
         arch/aarch64/el0.S \
+        arch/aarch64/hyp.S \
+        arch/aarch64/vcpu.c \
         hal/qemu-virt/uart.c \
         hal/qemu-virt/memory.c \
         hal/qemu-virt/gic.c \

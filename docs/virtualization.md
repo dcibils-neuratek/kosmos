@@ -115,6 +115,26 @@ Nebula's part, while the monitor and the window are shared.
 
 - **V1** - a virtual CPU that runs ten guest instructions and stops: the
   exit seen, its reason said. Measured: one exit's round trip.
+  **Done in 0.11.181** (`testing.md` 18.576), in the shape Linux uses on
+  cores without VHE: Nebula stays at EL1, and a core that arrives at EL2
+  leaves a stub there (`arch/aarch64/hyp.S`) - its vector, a stack, and the
+  EL2 settings EL1 needs to run as before (the counter and its timer, the
+  GIC's system registers, VPIDR and VMPIDR, no FP traps). An `hvc` from
+  the kernel with a `hyp_vcpu` puts the host's 23 EL1 registers and its
+  x19-x30 aside, loads the guest's, turns on the second stage (a 39-bit
+  guest space walked from level 1, `vcpu.c`) and enters; anything EL2 traps
+  - an HVC, a stage-2 fault, the host's tick (HCR.IMO) - comes back as the
+  `hvc`'s answer. A guest counts x0 to 9 and stops on `hvc #0x4b`; a load
+  from an unmapped page stops with EC 0x24 and HPFAR naming it; an exit's
+  round trip is about 1,300 counter ticks under TCG (a regression number,
+  not a speed). The whole kernel suite passes booted at EL2 as at EL1.
+  **Learned**: QEMU's PSCI starts a secondary core at its caller's level,
+  EL1, so only core zero has the stub under QEMU; a vCPU runs on a core
+  that does (`hyp_present` is per core), and a board's firmware that starts
+  cores at EL2 gives every core one. **Owed before a real board**: EL2's
+  own translation - with it off EL2 reads memory uncached, and QEMU models
+  no caches to show the difference - and the FP registers, the GIC's
+  virtual interface and the guest's timer, which Linux needs at V3.
 - **V2** - guest memory: a guest with its own page tables reading and
   writing what the monitor gave it, and a fault on anything else.
 - **V3** - `vmm` with a serial console: a small Linux kernel booting to

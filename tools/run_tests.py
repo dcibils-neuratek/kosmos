@@ -179,6 +179,9 @@ def fail(message):
     sys.stderr.flush()
 
 
+VIRT = False
+
+
 def run_qemu(image, timeout):
     """Boot the image and return (output, exit_code).
 
@@ -192,6 +195,14 @@ def run_qemu(image, timeout):
     x86 = machine(image) == "x86_64"
     binary = X86_QEMU if x86 else QEMU
     args = X86_ARGS if x86 else QEMU_ARGS
+
+    # **Started at EL2** (`--virt`, the `arm-sandbox` suite): the same
+    # machine with the processor's virtualization on, so Nebula arrives at
+    # EL2, leaves its stub there and runs at EL1 as ever - and the guest
+    # test has something to enter a guest with (`docs/virtualization.md`).
+    if VIRT and not x86:
+        args = [("virt,gic-version=3,virtualization=on" if a == "virt,gic-version=3" else a)
+                for a in args]
 
     try:
         proc = subprocess.Popen(
@@ -360,7 +371,12 @@ def main():
         default=30.0,
         help="seconds before the guest is considered hung (default: 30)",
     )
+    ap.add_argument("--virt", action="store_true",
+                    help="start the processor at EL2, with virtualization on")
     args = ap.parse_args()
+
+    global VIRT
+    VIRT = args.virt
 
     try:
         output, exit_code = run_qemu(args.image, args.timeout)
@@ -376,6 +392,12 @@ def main():
         passed = check(output, exit_code)
     except Failure as e:
         fail(e)
+        return 1
+
+    # At EL2 the guest test must have run, not stood aside: the line it
+    # prints only when a guest ran and stopped and the host came back whole.
+    if args.virt and "(vcpu: a guest ran and stopped, and the host is as it was)" not in output:
+        fail(Failure("started at EL2, and the guest test did not run a guest"))
         return 1
 
     print(f"\nPASS: {passed}/{passed}")

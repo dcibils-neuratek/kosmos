@@ -24350,3 +24350,28 @@ name rather than the first picture, and holds the screen to the first
 picture's decoded pixels at three points, with both lines in the log.
 **Control**: without the fallback the desk is bare and the phase fails at
 its pixels.
+
+## 18.576 Sandboxes V1: a guest runs ten instructions and stops
+
+`docs/virtualization.md` step V1, on AArch64 under QEMU with the processor's
+virtualization on - Diego's choice that morning, because QEMU emulates EL2
+and not VT-x. Nebula stays at EL1; a core that arrives at EL2 leaves a stub
+there (`arch/aarch64/hyp.S`, installed by `boot/start.S` on core zero and on
+any secondary started at EL2), and the kernel enters a guest with an `hvc`
+carrying a `hyp_vcpu` (`hyp.h`): the host's EL1 registers and callee-saved
+registers put aside, the guest's loaded, stage 2 on (`vcpu.c`: 39 bits from
+level 1, 4 KB pages), and whatever EL2 traps returned as the `hvc`'s answer.
+
+**Tests.** `vcpu: a guest runs ten instructions and stops`, in the kernel's
+suite: a page of guest code at guest address 0x40000000 counts x0 to 9 and
+stops on `hvc #0x4b` (EC 0x16, the immediate, x0 9, PC past it); a load from
+0x80000000, mapped by nothing, stops with EC 0x24 and HPFAR naming the page;
+three hundred `hvc` exits give the round trip - 1,286 counter ticks at
+62.5 MHz under TCG, kept as a regression number only; and the host's
+SCTLR_EL1 and TPIDR_EL1 are what they were. On a machine started at EL1 it
+says there is no EL2 and passes. **`arm-sandbox`**, new, boots the whole
+kernel suite at EL2 (`run_tests.py --virt`, `virtualization=on`) and refuses
+a run where the guest test stood aside: 202/202 in 8 s, beside `arm-kernel`'s
+202/202 at EL1. It runs in every gate, the one ARM suite that does while the
+rest stay paused. **Control**: the guest's x0 and x1 not kept at its exit -
+x0 reads 0, and the test fails.
