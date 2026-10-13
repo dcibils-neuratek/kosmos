@@ -28,7 +28,7 @@ local OP_STATE, OP_READ, OP_KEYS, OP_STOP = 1, 2, 3, 4
 local RUNNING = 1
 local TEXT_MAX = 1536
 local REQUEST = "<I4I4I8c" .. TEXT_MAX
-local REPLY = "<I4I4i4I4I8I8I8I8I8I8c16"     -- and the text after it
+local REPLY = "<I4I4i4I4I8I8I8I8I8I8I8I8c16" -- and the text after it
 local REPLY_HEAD = string.packsize(REPLY)
 
 -- The monitor's exit codes before its guest ran, as sentences (`vmm.c`).
@@ -154,13 +154,13 @@ local function ask(name, op, offset, text)
 
   if not reply or #reply < REPLY_HEAD then return nil, why end
 
-  local err, state, code, length, at, written, ram, up, guest, exits, called =
+  local err, state, code, length, at, written, ram, up, guest, exits, net_in, net_out, called =
     string.unpack(REPLY, reply)
 
   return { error = err, running = state == RUNNING, exit_code = code >= 0 and code or nil,
            text = reply:sub(REPLY_HEAD + 1, REPLY_HEAD + length), offset = at,
            written = written, ram = ram, up_ticks = up, guest_ticks = guest,
-           exits = exits, name = called:gsub("%z.*", "") }
+           exits = exits, net_in = net_in, net_out = net_out, name = called:gsub("%z.*", "") }
 end
 
 -- How it is doing, or nil when it is not running.
@@ -459,7 +459,7 @@ function sandboxes.run(image, command, memory, say, folders, network, ports)
   until not r.running and #text == 0
 
   sandboxes.stop(name)                -- its monitor may go
-  return last and last.exit_code or nil, up, (sys.ticks() - began) / hz
+  return last and last.exit_code or nil, up, (sys.ticks() - began) / hz, last
 end
 
 -- Processor time the guest has had, as a share of `seconds` - for a card.

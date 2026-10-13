@@ -66,10 +66,20 @@ local function refresh(full)
 
   for _, s in ipairs(all) do
     if s.now then
-      busy[s.name] = sandboxes.busy(before[s.name], s.now)
+      local was = before[s.name]
+
+      busy[s.name] = sandboxes.busy(was, s.now)
       before[s.name] = s.now
-      history[s.name] = history[s.name] or { cpu = {} }
+      history[s.name] = history[s.name] or { cpu = {}, net = {} }
       ui.history.push(history[s.name].cpu, { math.floor(busy[s.name] * 100 + 0.5) }, 60)
+
+      -- Its network, in bytes a second each way, over the time between asks.
+      if was and s.now.up_ticks > was.up_ticks then
+        local secs = (s.now.up_ticks - was.up_ticks) / counter_hz
+
+        ui.history.push(history[s.name].net, { math.floor((s.now.net_in - was.net_in) / secs),
+                                               math.floor((s.now.net_out - was.net_out) / secs) }, 60)
+      end
     else
       busy[s.name], before[s.name] = nil, nil
     end
@@ -715,12 +725,22 @@ function detail:draw(g)
     g:text(34, top_y + gh + 46, "What the guest uses needs the guest to say - later.",
            theme.text_dim, nil, "label")
 
-    panel(g, 20, top_y + 2 * (gh + 12), lw, gh, "Network")
-    g:text(34, top_y + 2 * (gh + 12) + 34, ({
+    local net = (history[s.name] or {}).net or {}
+    local last = net[#net]
+
+    panel(g, 20, top_y + 2 * (gh + 12), lw, gh, last and network_words(s) ~= "none"
+          and ("Network \u{b7} %s/s in \u{b7} %s/s out"):format(files.size(last[1]), files.size(last[2]))
+          or "Network")
+
+    if last and network_words(s) ~= "none" then
+      ui.history.draw(g, 34, top_y + 2 * (gh + 12) + 34, lw - 28, gh - 46, net, { mode = "mirrored" })
+    else
+      g:text(34, top_y + 2 * (gh + 12) + 34, ({
              ["outgoing only"] = "Outgoing only, through Kosmos's - a gateway at 10.0.3.2.",
              ["outgoing, and ports in"] = "Outgoing through Kosmos's, and its ports carried in.",
              ["ports in only"] = "Its ports carried in, and nothing out.",
            })[network_words(s)] or "None - it reaches nothing.", theme.text_dim, nil, "label")
+    end
 
     local gx = 40 + lw
     local given = {

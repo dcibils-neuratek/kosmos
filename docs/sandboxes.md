@@ -162,8 +162,11 @@ PL011's nature; a busy console is what virtio-console is for, later.
    sandbox answers what is carried in and opens nothing of its own: its
    SYNs are answered with a reset and its names are not looked up. The
    sheet's three choices are a ladder - None, Outgoing only, Ports (and
-   outgoing) - and `sandbox` keeps the narrower ports-only. The Network
-   tab's graph is left, its counters (`vmmnet_counted`) already kept.
+   outgoing) - and `sandbox` keeps the narrower ports-only. **What it
+   carried, 0.11.191** (`testing.md` 18.586): the gateway's two counters in
+   the monitor's state reply, drawn on the Overview's Network panel as
+   Network Monitor draws a card - in above the line, out below - and said
+   at the end of a task, "it carried 1.2 KB in and 99 B out".
 5. **S5 - started with Kosmos**, and **VT-x** - sandboxes on the M700.
    **Started with Kosmos, 0.11.188** (`testing.md` 18.583): a definition's
    `starts with Kosmos` - the sheet's "with Kosmos", `sandbox new

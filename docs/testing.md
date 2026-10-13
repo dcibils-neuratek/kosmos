@@ -24647,3 +24647,18 @@ handed to the guest's thread - the fetch times out; the guest's FIN not
 closing Kosmos's side - the fetch times out with the page unfinished; the
 sheet's port field ignored - `made1` written with no port. Each fails its
 suite.
+
+## 18.586 Sandboxes S4: what a sandbox's network carried
+
+The gateway counts the bytes it carries each way (`vmmnet_counted`, relaxed
+atomics: written on the guest's thread, read on the one answering
+`/Running`), and the monitor's state reply carries them (`vmm_reply.net_in`,
+`net_out`). The Sandboxes window samples them with the processor's time and
+draws the Overview's Network panel as a mirrored history - `ui.history`'s,
+Network Monitor's colours - titled with the last second's rate each way;
+`sandbox run` with `--network` or `--port` ends saying what was carried.
+
+**Tests.** `arm-sandbox-linux` 24 -> 25: the network task ends saying it
+carried at least the 36-byte page in and its request out. **Control**: the
+count in never read - "it carried 0 B in and 99 B out", and the suite
+fails.

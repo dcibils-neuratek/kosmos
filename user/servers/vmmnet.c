@@ -87,7 +87,8 @@ static struct link *links;
 static unsigned links_n;
 static uint16_t ip_id = 1;
 static uint32_t dns_wait_ticks = 500;
-static uint64_t counted_in, counted_out;    /* bytes, for a window's graph */
+static uint64_t counted_in, counted_out;    /* bytes, for a window's graph: __atomic,
+                                             * written here and read by `/Running`'s thread */
 
 /*
  * **Ports carried in.** Each a listener of Kosmos's; what arrives is
@@ -516,7 +517,7 @@ static void tcp(const uint8_t dst[4], const uint8_t *t, uint32_t n)
             }
 
             l->rcv_nxt += (uint32_t)took;
-            counted_out += (uint64_t)took;
+            __atomic_store_n(&counted_out, counted_out + (uint64_t)took, __ATOMIC_RELAXED);
         }
 
         tcp_to_guest(l, TCP_ACK, NULL, 0, false);
@@ -671,7 +672,7 @@ bool vmmnet_pump(void)
             if (got > 0) {
                 tcp_to_guest(l, TCP_PSH | TCP_ACK, data, (uint32_t)got, false);
                 l->snd_nxt += (uint32_t)got;
-                counted_in += (uint64_t)got;
+                __atomic_store_n(&counted_in, counted_in + (uint64_t)got, __ATOMIC_RELAXED);
                 any = true;
             } else if (got < 0) {
                 /* Over at Kosmos's end, and nothing left: its FIN. */
@@ -818,6 +819,6 @@ bool vmmnet_raised(void)
 
 void vmmnet_counted(uint64_t *in, uint64_t *out)
 {
-    *in = counted_in;
-    *out = counted_out;
+    *in = __atomic_load_n(&counted_in, __ATOMIC_RELAXED);
+    *out = __atomic_load_n(&counted_out, __ATOMIC_RELAXED);
 }

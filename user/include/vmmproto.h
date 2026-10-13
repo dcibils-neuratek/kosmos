@@ -150,6 +150,8 @@ struct vmm_reply {
     uint64_t up_counter_ticks;          /* since it started */
     uint64_t guest_counter_ticks;       /* of those, in the guest */
     uint64_t exits;
+    uint64_t net_in;                    /* bytes carried to the guest, and from it */
+    uint64_t net_out;
     char     name[VMM_NAME_MAX];
     char     text[VMM_TEXT_MAX];
 };

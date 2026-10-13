@@ -259,6 +259,14 @@ def main():
               "a page on this Mac was not fetched through Kosmos: %r" % said[-500:])
         check("NXDOMAIN" in said, "the name server did not answer a name that cannot exist: %r" % said[-400:])
 
+        # What it carried, counted by the gateway and said at the end: the
+        # page in at least, and the request for it out.
+        carried = re.search(r"it carried ([\d.]+) (B|KB) in and ([\d.]+) (B|KB) out", said)
+        check(carried is not None
+              and float(carried.group(1)) * (1024 if carried.group(2) == "KB" else 1) >= 36
+              and float(carried.group(3)) * (1024 if carried.group(4) == "KB" else 1) >= 40,
+              "what the network carried was not counted: %r" % (carried.group(0) if carried else said[-300:]))
+
         # **A port carried in**: a sandbox given only Kosmos's 8081, for its
         # 80, answering once with busybox's `nc` - fetched from this Mac
         # through QEMU, Kosmos's stack, the monitor and the guest, and ended

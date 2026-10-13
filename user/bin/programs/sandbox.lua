@@ -119,16 +119,24 @@ if verb == "run" then
 
   if command then
     local began = sys.ticks()
-    local code, up, took = sandboxes.run(image, command, memory, say, options.shares, options.network,
-                                               options.ports)
+    local code, up, took, last = sandboxes.run(image, command, memory, say, options.shares,
+                                                     options.network, options.ports)
 
     if code == nil and up == nil then
       print("sandbox: " .. tostring(took or "it would not start"))
       sys.exit(1)
     end
 
-    print(("sandbox: %s exited %s after %.1f s, up in %.1f s; the sandbox is gone")
-          :format(command:match("^%S+") or command, tostring(code or "without saying"), took or 0, up or 0))
+    -- And what its network carried, when it had one.
+    local carried = ""
+
+    if last and (options.network or options.ports) then
+      carried = ("; it carried %s in and %s out"):format(files.size(last.net_in), files.size(last.net_out))
+    end
+
+    print(("sandbox: %s exited %s after %.1f s, up in %.1f s%s; the sandbox is gone")
+          :format(command:match("^%S+") or command, tostring(code or "without saying"), took or 0, up or 0,
+                  carried))
     sys.exit(code or 1)
   end
 

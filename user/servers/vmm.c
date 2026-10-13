@@ -933,6 +933,7 @@ static void answer(const struct vmm_request *req, struct vmm_reply *rep)
     rep->up_counter_ticks = kosmos_ticks() - started;
     rep->guest_counter_ticks = guest_ticks;
     rep->exits = exits;
+    vmmnet_counted(&rep->net_in, &rep->net_out);
     memcpy(rep->name, setup.name, VMM_NAME_MAX);
 
     switch (req->op) {
