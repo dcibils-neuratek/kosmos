@@ -402,6 +402,19 @@ void trap_handle(struct trapframe *f)
     __asm__ volatile("movq %%cr2, %0" : "=r"(cr2));
 
     /*
+     * **A first touch, not a fault**: ring 3, a page not present, in the
+     * process's own memory that nothing is behind yet - its image's
+     * writable half, its heap, its stack (`process_fill`). Given a page,
+     * and `iretq` runs the instruction again. Anywhere else it is what it
+     * looks like. Before the expected-fault unwinding, which is for the
+     * kernel's own tests of faults that are meant to happen.
+     */
+    if (f->vector == VECTOR_PAGE_FAULT && (f->cs & 3) != 0 && (f->error & 1) == 0
+        && process_current() != NULL && process_fill(process_current(), (uintptr_t)cr2)) {
+        return;
+    }
+
+    /*
      * An expected fault: record it and unwind, rather than report and stop.
      *
      * Before the report and before the ring test, because an armed fault is

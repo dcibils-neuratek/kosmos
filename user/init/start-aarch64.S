@@ -11,27 +11,18 @@
 .global _start
 
 _start:
-    /* The boot word the kernel put in x0, kept safe across the loop below,
-     * which needs x0 and x1 for the addresses. */
-    mov     x19, x0
-
     /*
-     * Zero .bss. The image is a flat binary and the linker script emits .bss
-     * as zeroes, so this is already true; doing it anyway costs a handful of
-     * instructions once and means the image stops depending on that
-     * particular property of how it was built.
+     * **.bss is not zeroed here, and it was.** The image carries it as
+     * zeroes (`user.ld` emits it rather than leaving it NOLOAD) and the
+     * kernel gives each page of the writable half as a copy of the image's
+     * page there the first time it is touched (`process_fill`), so it is
+     * already zero. A loop writing it again touched every page of it in
+     * every process - 3.4 MB each, most of it FFmpeg's tables in processes
+     * that never decode anything - so as not to depend on how the image was
+     * built. That is the kernel's guarantee now, and the kernel suite's
+     * `el0: memory is given on first touch` holds it. The boot word is
+     * still where the kernel put it, since nothing here uses a register.
      */
-    adrp    x0, __bss_start
-    add     x0, x0, :lo12:__bss_start
-    adrp    x1, __bss_end
-    add     x1, x1, :lo12:__bss_end
-1:
-    cmp     x0, x1
-    b.hs    2f
-    str     xzr, [x0], #8
-    b       1b
-2:
-    mov     x0, x19
     bl      main
 
     /* main returned. Exit with whatever it gave back rather than falling

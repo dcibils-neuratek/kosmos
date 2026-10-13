@@ -7152,8 +7152,11 @@ not static**, since a static one is in every process.
    no round trip at all. QEMU's numbers, so the ThinkPad decides whether it
    matters - but it is the larger half of a frame here.
 
-6j. **FOUND on 24 September - every process pays for FFmpeg's empty
-   tables.** The userland image's writable half went from 0.80 to 1.57 MB
+6j. **DONE on 13 October (0.11.210)** - a process's image, heap and stack
+   are given a page at a time on first touch, and `_start` no longer
+   zeroes `.bss`: the M700's desktop 682 -> 524 MB with a 256 MB sandbox
+   running, a C server 5816 -> 16 KB (`testing.md` 18.604). **FOUND on 24
+   September - every process pays for FFmpeg's empty tables.** The userland image's writable half went from 0.80 to 1.57 MB
    with the H.264 Kit, and to **2.79 MB with AAC** (25 September): `.bss`
    is inside the image here, and a process's writable half is a copy of it
    (`process_create`), so every process on the desktop - about twenty-five

@@ -16,28 +16,18 @@
 .global _start
 
 _start:
-    /* The boot word the kernel put in rdi, kept somewhere the zeroing loop
-     * below will not touch. rbx is callee-saved, so `main` would preserve
-     * it too - but nothing has been called yet and this is simply a
-     * register that the loop does not want. */
-    movq    %rdi, %rbx
-
     /*
-     * Zero .bss. The image is a flat binary and the linker script emits
-     * .bss as zeroes, so this is already true; doing it anyway costs a
-     * handful of instructions once and means the image stops depending on
-     * that particular property of how it was built.
-     *
-     * `rep stosq` rather than a loop, because on this architecture the loop
-     * *is* an instruction. The count is in quadwords, and the linker
-     * aligns both ends to 8 so the division is exact.
+     * **.bss is not zeroed here, and it was.** The image carries it as
+     * zeroes (`user.ld` emits it rather than leaving it NOLOAD) and the
+     * kernel gives each page of the writable half as a copy of the image's
+     * page there the first time it is touched (`process_fill`), so it is
+     * already zero. A loop writing it again touched every page of it in
+     * every process - 3.4 MB each, most of it FFmpeg's tables in processes
+     * that never decode anything - so as not to depend on how the image was
+     * built. That is the kernel's guarantee now, and the kernel suite's
+     * `el0: memory is given on first touch` holds it. The boot word is
+     * still where the kernel put it, since nothing here uses a register.
      */
-    leaq    __bss_start(%rip), %rdi
-    leaq    __bss_end(%rip), %rcx
-    subq    %rdi, %rcx
-    shrq    $3, %rcx
-    xorq    %rax, %rax
-    rep stosq
 
     /*
      * The stack, aligned before the call rather than after.
@@ -51,7 +41,6 @@ _start:
      */
     andq    $-16, %rsp
 
-    movq    %rbx, %rdi
     call    main
 
     /*

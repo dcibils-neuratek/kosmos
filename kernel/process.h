@@ -45,18 +45,21 @@ struct thread;
  * than slots.
  *
  * The cost is not the slot, which is about 1.6 KB in a slab. It is what a
- * process is made of, and that is charged only when one exists:
+ * process is made of, and that is charged only as it is used - a page at
+ * a time, the first time each is touched (`process_fill`):
  *
- *   image     its writable half, copied. The code is mapped where it lies -
- *             the system's image, the same pages in every process - or, for
- *             an image from a file, from the kernel's own copy of it.
- *   heap      2 MB, fixed, because `design.md` §5.2 wants a bounded one: a
- *             small heap collects quickly and the maximum GC pause is what
- *             decides whether the system stutters.
- *   stack     256 KB (`USER_STACK_PAGES`).
+ *   image     its writable half, a copy of each page touched. The code is
+ *             mapped where it lies - the system's image, the same pages in
+ *             every process - or, for an image from a file, from the
+ *             kernel's own copy of it.
+ *   heap      at most 2 MB, because `design.md` §5.2 wants a bounded one:
+ *             a small heap collects quickly and the maximum GC pause is
+ *             what decides whether the system stutters.
+ *   stack     at most 256 KB (`USER_STACK_PAGES`).
  *
- * So roughly 2.5 MB a process, and it is the heap that dominates - which is
- * the same 2 MB that stops a full-screen surface fitting in one.
+ * Those are the most a process can hold, and until 0.11.210 they were what
+ * every process held from its start: about 5.7 MB each, 3.4 of it the
+ * image's `.bss` - FFmpeg's tables, in processes that decode nothing.
  *
  * **There is no number of processes any more** (`threads.md` step 1b): the
  * pool grows, a slot for every `PROCESS_RAM_EACH` of memory, and at 2.5 MB a
@@ -144,18 +147,12 @@ struct thread;
  * That is the guard doing its whole job, and it is why the number could be
  * raised in confidence rather than guessed at: the fault named the address.
  *
- * **The cost is real memory, not merely address space**, and the first
- * version of this comment said otherwise. A stack is mapped when the
- * process is made rather than on the fault that touches it, so every
- * process pays all of it: `make stress` reports 117406 free pages where it
- * reported 117999, which is 2.4 MB across the thirteen processes a running
- * desktop has - 48 pages each, exactly the increase.
- *
- * Worth the arithmetic rather than an assurance. On a 512 MB machine that
- * is half a per cent and the editor could not run without it; on a machine
- * with 32 MB it would be eight per cent and the answer would have to be a
- * per-process size instead of one constant. There is no such thing today,
- * and this is the note that says what to build if it is ever needed.
+ * **The cost is the pages a process touches, not the 256 KB.** It was all
+ * of it, once: a stack was mapped when the process was made, and `make
+ * stress` read 117406 free pages where it had read 117999 - 48 pages each
+ * across thirteen processes, exactly the increase. Since 0.11.210 a page
+ * of it is given on the fault that first touches it (`process_fill`), so
+ * a deep stack costs only the processes that go deep.
  */
 #define USER_STACK_PAGES 64                                 /* 256 KB     */
 
@@ -385,12 +382,24 @@ struct process {
     unsigned          next_index;
     unsigned          live_threads;
 
-    /* The physical pages behind each region, so they can be returned when
-     * the process dies. */
-    void             *image_pages;
+    /*
+     * **Its own memory, given a page at a time as it is first touched**
+     * (`process_fill`): the image's writable half - `image_page_count`
+     * pages from `rw_va`, each a copy of the image's page there - the heap
+     * and the stack, zeroed. Nothing is behind them until then, so the
+     * page tables are the only record and `touched_pages` the count.
+     *
+     * They were all allocated when the process was made, and a desktop of
+     * forty-odd processes held about 5.7 MB each whether it used it or
+     * not: 3.4 MB of an image's `.bss`, most of it FFmpeg's tables in
+     * processes that never decode anything, the 2 MB heap and 256 KB of
+     * stack. `fill_lock` keeps two threads of one process from filling the
+     * same page twice.
+     */
+    uintptr_t         rw_va;
     size_t            image_page_count;
-    void             *heap_pages;
-    void             *stack_pages;
+    size_t            touched_pages;
+    struct spinlock   fill_lock;
 
     unsigned long     arg;      /* the one word it is told at entry */
 
@@ -812,6 +821,14 @@ int process_describe(unsigned id, struct sender_info *out);
  * unprintable. */
 void process_set_name(struct process *p, const char *name, size_t len);
 void process_set_from(struct process *p, const char *from, size_t len);
+
+/*
+ * **A page of `p`'s own memory, given on first touch**: true when `va` is
+ * in its image's writable half, its heap or its stack and has a page now -
+ * a translation fault there is retried, not fatal. False anywhere else,
+ * the guard pages included, which is what keeps an overflow a fault.
+ */
+bool process_fill(struct process *p, uintptr_t va);
 
 /*
  * Whether a process may read, or write, `len` bytes at `va`.

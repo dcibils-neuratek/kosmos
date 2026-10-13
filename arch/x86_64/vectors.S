@@ -192,7 +192,23 @@ isr_common:
      * ticks correctly - and ignored everything typed at it, because the
      * console server was never scheduled to notice.
      */
+    /*
+     * **Never from the exception stack.** #PF and #DF land on `tss.ist[0]`
+     * (`trap.c`), one stack per core that the processor loads afresh for
+     * every such fault - so a thread switched away here would leave its
+     * frame where the next page fault on this core writes its own. A page
+     * fault from ring 3 used to end its process and never come back; since
+     * a process's memory is given on first touch (`process_fill`) it comes
+     * back all the time. The switch that was owed is not lost: the flag
+     * stands and the next interrupt on this core acts on it, the timer's
+     * at the latest. The vector is the word above the fifteen registers.
+     */
+    cmpq    $14, 120(%rsp)
+    je      1f
+    cmpq    $8, 120(%rsp)
+    je      1f
     call    thread_preempt_if_needed
+1:
 
     /*
      * Whether the frame about to be resumed is ring 3's - its CS, past the

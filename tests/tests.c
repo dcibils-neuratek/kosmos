@@ -1334,6 +1334,105 @@ static int run_user(const char *name, const char *start, const char *end)
 }
 
 /*
+ * **A process's own memory is given on first touch** (`process_fill`), and
+ * given right: the system's image, made into a process that never runs,
+ * holds nothing of its writable half, heap or stack until each page is
+ * touched; a touched page of the image is the image's bytes there, and the
+ * first page with any - a page of nothing but `.bss` reads the same filled
+ * or not, which is how the first version of this check let a fill that
+ * copied nothing pass; a heap page is zeroes; the guards on either side
+ * get nothing; a pointer a syscall is handed is filled by the check
+ * itself; and everything touched goes back when the process does.
+ */
+static bool test_memory_is_given_on_first_touch(void)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    size_t free_before = pmm_free_pages(), kept;
+    struct process *p;
+    uintptr_t stack_bottom = USER_STACK_TOP - USER_STACK_PAGES * PAGE_SIZE;
+    size_t len = (size_t)init_image_len, at, n = 0, i;
+    uintptr_t phys;
+    bool found = false, ok, zero = true;
+    uint64_t *e;
+
+    /*
+     * **What a process made and abandoned keeps anyway**, measured rather
+     * than assumed: its thread's slot is recycled with its kernel stacks
+     * still allocated (`thread_abandon`), ten pages on x86 when this was
+     * written. Every page touched below must come back on top of that.
+     */
+    {
+        struct process *q = process_create("t-touch", init_image, len, 0);
+
+        if (q == NULL) {
+            return false;
+        }
+
+        process_abandon(q);
+        kept = free_before - pmm_free_pages();
+        free_before = pmm_free_pages();
+    }
+
+    p = process_create("t-touch", init_image, len, 0);
+
+    if (p == NULL) {
+        return false;
+    }
+
+    e = as_page_entry(p->space, USER_HEAP_VA);
+    ok = p->touched_pages == 0 && p->image_page_count > 0
+      && (e == NULL || !test_pte_is_mapped(*e))
+      && as_page_phys(p->space, p->rw_va) == 0;
+
+    for (at = p->rw_va - USER_TEXT_VA; !found && at < len; at += PAGE_SIZE) {
+        n = len - at < PAGE_SIZE ? len - at : PAGE_SIZE;
+
+        for (i = 0; i < n && !found; i++) {
+            found = init_image[at + i] != 0;
+        }
+    }
+
+    at -= PAGE_SIZE;
+    ok = ok && found
+      && process_fill(p, USER_TEXT_VA + at + 12)
+      && (phys = as_page_phys(p->space, USER_TEXT_VA + at)) != 0
+      && memcmp(phys_to_virt(phys), init_image + at, n) == 0;
+
+    ok = ok && process_fill(p, USER_HEAP_VA + 7 * PAGE_SIZE)
+      && (phys = as_page_phys(p->space, USER_HEAP_VA + 7 * PAGE_SIZE)) != 0;
+
+    for (i = 0; ok && i < PAGE_SIZE; i++) {
+        zero = zero && ((const char *)phys_to_virt(phys))[i] == 0;
+    }
+
+    ok = ok && zero
+      && !process_fill(p, USER_HEAP_VA + USER_HEAP_PAGES * PAGE_SIZE)
+      && !process_fill(p, stack_bottom - PAGE_SIZE)
+      && !process_fill(p, USER_STACK_TOP)
+      && process_fill(p, stack_bottom)
+      && p->touched_pages == 3
+      && process_may_write(p, USER_HEAP_VA + 20 * PAGE_SIZE - 8, 16)
+      && p->touched_pages == 5
+      && !process_may_write(p, USER_HEAP_VA + USER_HEAP_PAGES * PAGE_SIZE - 8, 16);
+
+    process_abandon(p);
+
+    if (pmm_free_pages() + kept != free_before) {
+        kputs("\n   (free pages: ");
+        kputu(free_before);
+        kputs(" before, ");
+        kputu(pmm_free_pages());
+        kputs(" after, ");
+        kputu(kept);
+        kputs(" kept by an untouched one)\n");
+        ok = false;
+    }
+
+    return ok;
+}
+
+/*
  * A parent waiting for children that end on other processors.
  *
  * **`process_wait` and `process_exit` meeting across cores.** The child set
@@ -1966,13 +2065,32 @@ static bool test_processes_have_separate_address_spaces(void)
     /* Their stacks and their heaps are different pages, which is the claim
      * the code page used to stand in for: writable memory is never shared,
      * and nothing is shared by accident rather than only the thing that was
-     * checked first. */
+     * checked first.
+     *
+     * **Nothing is behind them until they are touched** (`process_fill`),
+     * so that is asserted first - a process that has not run holds none of
+     * its heap or stack - and then the touch the fault would make, from
+     * the kernel. The page below the stack is a guard and gets nothing. */
     {
         uintptr_t stack_page = USER_STACK_TOP - PAGE_SIZE;
+        uintptr_t below = USER_STACK_TOP - USER_STACK_PAGES * PAGE_SIZE - PAGE_SIZE;
         uint64_t *sa = as_page_entry(a->space, stack_page);
-        uint64_t *sb = as_page_entry(b->space, stack_page);
         uint64_t *ha = as_page_entry(a->space, USER_HEAP_VA);
-        uint64_t *hb = as_page_entry(b->space, USER_HEAP_VA);
+        uint64_t *sb;
+        uint64_t *hb;
+
+        ok = ok && (sa == NULL || !test_pte_is_mapped(*sa))
+                && (ha == NULL || !test_pte_is_mapped(*ha))
+                && a->touched_pages == 0
+                && !process_fill(a, below)
+                && process_fill(a, stack_page) && process_fill(b, stack_page)
+                && process_fill(a, USER_HEAP_VA) && process_fill(b, USER_HEAP_VA)
+                && a->touched_pages == 2;
+
+        sa = as_page_entry(a->space, stack_page);
+        sb = as_page_entry(b->space, stack_page);
+        ha = as_page_entry(a->space, USER_HEAP_VA);
+        hb = as_page_entry(b->space, USER_HEAP_VA);
 
         ok = ok && sa != NULL && sb != NULL
                 && test_pte_is_mapped(*sa) && test_pte_is_mapped(*sb)
@@ -10177,6 +10295,7 @@ static const struct test tests[] = {
     { "el0: it cannot write its own code",     test_a_process_cannot_write_its_own_code },
     { "el0: a syscall refuses a kernel ptr",   test_a_syscall_refuses_a_kernel_pointer },
     { "el0: code shared, writable not",        test_processes_have_separate_address_spaces },
+    { "el0: memory is given on first touch",   test_memory_is_given_on_first_touch },
     { "as: a new space contains the kernel",   test_a_new_space_contains_the_kernel },
     { "as: map and unmap",                     test_a_space_maps_and_unmaps },
     { "as: the kernel region is refused",      test_a_space_refuses_the_kernel_region },

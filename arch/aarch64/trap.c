@@ -454,6 +454,21 @@ void trap_handler(unsigned index, struct trapframe *tf)
             return;
         }
 
+        /*
+         * **A first touch, not a fault**: a translation fault on a page of
+         * the process's own memory that nothing is behind yet - its image's
+         * writable half, its heap, its stack (`process_fill`). Given a page,
+         * and the instruction runs again. Anywhere else it is what it looks
+         * like, and the process dies below.
+         */
+        if (index == 8 && p != NULL && ESR_EC(tf->esr) == EC_DABT_LOWER
+            && ISS_DABT_DFSC(ESR_ISS(tf->esr)) >= 0x04
+            && ISS_DABT_DFSC(ESR_ISS(tf->esr)) <= 0x07
+            && process_fill(p, tf->far)) {
+            die_if_killed();
+            return;
+        }
+
         if (p != NULL) {
             /*
              * Reported before it is killed. A process dying silently is a

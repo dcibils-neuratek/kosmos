@@ -1208,3 +1208,42 @@ pages, and those two windows were second copies of them.
 **Why it matters.** The cutting helpers were the clearest case: most of the
 dozen copies could cut a letter like "é" in half and print a broken
 character. Fixed once, it is fixed everywhere.
+
+## 13 October - memory a program has used, not memory it might use
+
+**In short:** every program used to take about 5.7 MB the moment it
+started, whether it needed it or not. Now it takes memory a page at a time,
+as it actually uses it. The M700's desktop went from 682 MB to 524 MB, and
+a small server from about 5.8 MB to 16 KB.
+
+**What.** A program is given three pieces of private memory: room for its
+own variables, a heap for what it creates as it runs, and a stack. All
+three used to be set aside in full, and cleared, before the program ran
+its first instruction. Now the kernel only notes where they are. The first
+time the program touches a page of one of them, the processor stops it,
+the kernel gives that one page, and the program carries on without knowing
+anything happened. The edges stay forbidden, so a program that runs off
+the end of its stack or heap is still caught at once.
+
+**The surprise.** The first try saved only the heap and the stack. Every
+program still took 3.4 MB of variable space, because its first few
+instructions cleared that whole area to zero, page by page, "to be sure".
+The area already holds zeros, so clearing it again bought nothing and made
+every program use every page of it. That clearing is gone.
+
+**Why it matters.** Most of the 3.4 MB is decoding tables for films and
+music, sitting in every program because every program is built from the
+same image. A file server never plays a film, so it never touches them
+now. With forty programs on the desktop, that is a lot of memory that was
+never used.
+
+**What you see.** The Processes window's memory column: small servers now
+show tens of kilobytes instead of 5.8 MB, and the total at the top fell by
+about 160 MB on the same desktop.
+
+**How it is checked.** The whole test run, 84 suites, passed. A new kernel
+test makes a program that never runs and checks that it holds nothing
+until touched, that a touched page holds exactly the right bytes, that the
+edges are refused, and that every page comes back when the program ends.
+It was deliberately broken twice to be sure it notices: once by copying
+nothing, once by not giving the heap back.

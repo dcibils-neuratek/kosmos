@@ -184,8 +184,7 @@ unsigned process_table(struct proc_info *out, unsigned max)
          * what the machine actually holds and is where the two reconcile.
          */
         out[n].pages     = (uint32_t)p->mapped_pages;
-        out[n].held      = (uint32_t)(p->mapped_pages + p->image_page_count
-                                      + USER_HEAP_PAGES + USER_STACK_PAGES);
+        out[n].held      = (uint32_t)(p->mapped_pages + p->touched_pages);
         out[n].caps      = captable_count(&p->caps);
         out[n].priority  = (p->thread != NULL)
                            ? thread_effective_priority(p->thread)
@@ -973,46 +972,19 @@ static struct process *create(const char *name, const void *image,
         return give_back(p);
     }
 
+    /*
+     * **The writable half, the heap and the stack are not made here.** Each
+     * page is given the first time the process touches it, a copy of the
+     * image's page or zeroes (`process_fill`), so what a process holds is
+     * what it has used. All that is recorded is where they are.
+     */
     p->image_page_count = pages - rx_pages;
-
-    if (p->image_page_count > 0) {
-        p->image_pages = pmm_alloc_contiguous(p->image_page_count);
-
-        if (p->image_pages == NULL) {
-            as_destroy(p->space);
-            return give_back(p);
-        }
-
-        /* A page at a time, because a copy the kernel made of a region is
-         * pages of its own rather than one run. The read-only half is whole
-         * pages, so the data starts at the top of one. */
-        for (i = 0; rx_bytes + i * PAGE_SIZE < len; i++) {
-            size_t n = len - rx_bytes - i * PAGE_SIZE;
-
-            memcpy((char *)p->image_pages + i * PAGE_SIZE,
-                   image_page(image, obj, rx_pages + i),
-                   n < PAGE_SIZE ? n : PAGE_SIZE);
-        }
-
-        /* The tail of the last page holds whatever the previous owner left,
-         * which this process would otherwise be able to read. */
-        memset((char *)p->image_pages + (len - rx_bytes), 0,
-               p->image_page_count * PAGE_SIZE - (len - rx_bytes));
-    }
-
-    p->heap_pages = pmm_alloc_contiguous(USER_HEAP_PAGES);
-    p->stack_pages = pmm_alloc_contiguous(USER_STACK_PAGES);
-
-    if (p->heap_pages == NULL || p->stack_pages == NULL) {
-        goto fail;
-    }
-
-    memset(p->heap_pages, 0, USER_HEAP_PAGES * PAGE_SIZE);
-    memset(p->stack_pages, 0, USER_STACK_PAGES * PAGE_SIZE);
+    p->rw_va = USER_TEXT_VA + rx_bytes;
+    p->touched_pages = 0;
 
     /*
-     * Three mappings and three different sets of permissions. Code is read
-     * only and executable; everything else is writable and never executable.
+     * One mapping made now, the code: read only and executable. Everything
+     * else is writable and never executable, and is mapped as it is touched.
      * A page is executable by exactly one exception level and writable by at
      * most one purpose.
      */
@@ -1041,27 +1013,9 @@ static struct process *create(const char *name, const void *image,
         }
     }
 
-    if (p->image_page_count > 0
-        && as_map(p->space, USER_TEXT_VA + rx_bytes,
-                  virt_to_phys(p->image_pages),
-                  p->image_page_count, MAP_USER_RW) != AS_OK) {
-        goto fail;
-    }
-
     p->next_map     = USER_MAP_VA;
     p->shares       = NULL;
     p->mapped_pages = 0;
-
-    if (as_map(p->space, USER_HEAP_VA, virt_to_phys(p->heap_pages),
-               USER_HEAP_PAGES, MAP_USER_RW) != AS_OK) {
-        goto fail;
-    }
-
-    if (as_map(p->space, USER_STACK_TOP - USER_STACK_PAGES * PAGE_SIZE,
-               virt_to_phys(p->stack_pages), USER_STACK_PAGES,
-               MAP_USER_RW) != AS_OK) {
-        goto fail;
-    }
 
     /*
      * `in_use` is already true - `alloc_process` set it when it claimed the
@@ -1121,19 +1075,8 @@ static struct process *create(const char *name, const void *image,
     return p;
 
 fail:
-    if (p->stack_pages != NULL) {
-        for (i = 0; i < USER_STACK_PAGES; i++) {
-            pmm_free_page((char *)p->stack_pages + i * PAGE_SIZE);
-        }
-    }
-    if (p->heap_pages != NULL) {
-        for (i = 0; i < USER_HEAP_PAGES; i++) {
-            pmm_free_page((char *)p->heap_pages + i * PAGE_SIZE);
-        }
-    }
-    for (i = 0; p->image_pages != NULL && i < p->image_page_count; i++) {
-        pmm_free_page((char *)p->image_pages + i * PAGE_SIZE);
-    }
+    /* Nothing has run, so none of its own memory was touched and there is
+     * none to give back: only the tables. */
     as_destroy(p->space);
 
     if (p->image_obj != NULL) {
@@ -1903,6 +1846,20 @@ void process_start(struct process *p)
     }
 }
 
+/* Whatever of `pages` pages from `va` the process touched, given back. */
+static void free_touched(struct process *p, uintptr_t va, size_t pages)
+{
+    size_t i;
+
+    for (i = 0; i < pages; i++) {
+        uintptr_t phys = as_page_phys(p->space, va + i * PAGE_SIZE);
+
+        if (phys != 0) {
+            pmm_free_page(phys_to_virt(phys));
+        }
+    }
+}
+
 /* Frees the memory a process owns. Shared by exiting and abandoning, which
  * differ only in whose thread ends. */
 static void release_memory(struct process *p)
@@ -1922,26 +1879,19 @@ static void release_memory(struct process *p)
         spin_unlock(&processes_lock, flags);
     }
 
-    size_t i;
     uintptr_t va;
 
-    for (i = 0; i < USER_STACK_PAGES; i++) {
-        pmm_free_page((char *)p->stack_pages + i * PAGE_SIZE);
-    }
-
-    for (i = 0; i < USER_HEAP_PAGES; i++) {
-        pmm_free_page((char *)p->heap_pages + i * PAGE_SIZE);
-    }
-
     /*
-     * The writable half only. The read-only half is the kernel's own image,
-     * mapped rather than copied, and freeing it would return the pages the
-     * kernel is running out of - or the kernel's copy of a file's, which is
-     * let go below, once nothing maps it.
+     * Its own memory: whatever of the writable half, the heap and the stack
+     * it touched, found the way the mappings below are, in the page tables.
+     * Never the read-only half, which is the kernel's own image, mapped
+     * rather than copied - or the kernel's copy of a file's, which is let
+     * go below, once nothing maps it.
      */
-    for (i = 0; p->image_pages != NULL && i < p->image_page_count; i++) {
-        pmm_free_page((char *)p->image_pages + i * PAGE_SIZE);
-    }
+    free_touched(p, p->rw_va, p->image_page_count);
+    free_touched(p, USER_HEAP_VA, USER_HEAP_PAGES);
+    free_touched(p, USER_STACK_TOP - USER_STACK_PAGES * PAGE_SIZE, USER_STACK_PAGES);
+    p->touched_pages = 0;
 
     /*
      * And whatever it mapped with SYS_MAP and never unmapped.
@@ -1984,9 +1934,6 @@ static void release_memory(struct process *p)
     }
 
     p->space = NULL;
-    p->image_pages = NULL;
-    p->heap_pages = NULL;
-    p->stack_pages = NULL;
 }
 
 /*
@@ -2246,6 +2193,80 @@ void process_reap(struct process *p)
 }
 
 /*
+ * **A page of a process's own memory, the first time it is touched.**
+ *
+ * The writable half of the image, the heap and the stack are address space
+ * when a process is made and nothing more. The first load or store to a
+ * page of them faults, and this gives it one: a copy of the image's page
+ * there - its `.data`, or the zeroes the image carries for `.bss` - or, in
+ * the heap and the stack, zeroes. The fault is then retried, and the
+ * process never knows. A syscall handed a pointer into a page not touched
+ * yet gets the same, from `range_ok`, before the kernel reads or writes it.
+ *
+ * **Only those three ranges.** The gap above the heap and the page below
+ * the stack stay unmapped, so running off either end is still a fault that
+ * names the address, which is what the guards are for.
+ *
+ * Under the process's `fill_lock`, and the page looked at again inside it:
+ * two threads of one process can fault on the same page on two cores, and
+ * the second must find the first's page rather than map another over it.
+ * Mapping where nothing was mapped needs no TLB maintenance on either
+ * architecture - neither caches a translation that faulted.
+ */
+bool process_fill(struct process *p, uintptr_t va)
+{
+    uintptr_t page = va & ~(uintptr_t)PAGE_MASK;
+    uintptr_t stack_bottom = USER_STACK_TOP - USER_STACK_PAGES * PAGE_SIZE;
+    unsigned long flags;
+    char *mem;
+    bool image, ok = true;
+
+    if (p == NULL || p->space == NULL) {
+        return false;
+    }
+
+    image = page >= p->rw_va && page < p->rw_va + p->image_page_count * PAGE_SIZE;
+
+    if (!image
+        && !(page >= USER_HEAP_VA && page < USER_HEAP_VA + USER_HEAP_PAGES * PAGE_SIZE)
+        && !(page >= stack_bottom && page < USER_STACK_TOP)) {
+        return false;
+    }
+
+    flags = spin_lock(&p->fill_lock);
+
+    if (as_page_phys(p->space, page) == 0) {
+        mem = pmm_alloc_page();
+
+        if (mem == NULL) {
+            ok = false;
+        } else {
+            size_t at = page - USER_TEXT_VA;     /* bytes into the image */
+            size_t n = 0;
+
+            if (image && at < p->image_len) {
+                n = p->image_len - at < PAGE_SIZE ? p->image_len - at : PAGE_SIZE;
+                memcpy(mem, image_page(p->image, p->image_obj, at / PAGE_SIZE), n);
+            }
+
+            /* Past the image's bytes, and all of a heap or stack page: what
+             * the previous owner left must not be readable. */
+            memset(mem + n, 0, PAGE_SIZE - n);
+
+            if (as_map(p->space, page, virt_to_phys(mem), 1, MAP_USER_RW) != AS_OK) {
+                pmm_free_page(mem);
+                ok = false;
+            } else {
+                p->touched_pages++;
+            }
+        }
+    }
+
+    spin_unlock(&p->fill_lock, flags);
+    return ok;
+}
+
+/*
  * Whether an address range belongs to the process.
  *
  * This is the check that stands between a syscall and an arbitrary read of
@@ -2293,7 +2314,12 @@ static bool range_ok(const struct process *p, uintptr_t va, size_t len,
          * bits mean something else it would not crash; it would answer
          * wrongly.
          */
-        if (!as_user_may(p->space, page, need_write)) {
+        if (!as_user_may(p->space, page, need_write)
+            /* Not yet touched is not the same as not there: the one
+             * place a check gives a process something, and why the
+             * pointer loses its `const` here. */
+            && !(process_fill((struct process *)p, page)
+                 && as_user_may(p->space, page, need_write))) {
             return false;
         }
     }

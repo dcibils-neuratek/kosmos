@@ -25135,3 +25135,60 @@ the hole below 4 GB. It now reads the pages the kernel hands out,
 **Tests.** None that bites: QEMU's ARM board has one range, so `ram_size`
 and the pages agree there, and `arm-sandboxwin` (16) cannot tell them apart.
 Seen instead on the M700 over VNC: "0.0 of 8 GB given", "0 MB of 8049 MB".
+
+## 18.604 A process's own memory, given on first touch
+
+Roadmap 6j, found 24 September: every process held its image's writable
+half (3.4 MB, most of it FFmpeg's tables), a 2 MB heap and a 256 KB stack
+from the moment it was made - `process_create` allocated, copied and zeroed
+them all. Now they are address space at spawn and a page each the first
+time it is touched (`process_fill`): a copy of the image's page there, or
+zeroes in the heap and the stack. A translation fault from EL0 on AArch64,
+or a not-present fault from ring 3 on x86-64, in one of those three ranges
+is given the page and retried; a pointer a syscall is handed is filled by
+`range_ok` before the kernel touches it. The page above the heap and the
+one below the stack get nothing, so an overflow is still a fault.
+
+**The kernel was half of it.** The first M700 boot with only that freed
+the heap and the stack and nothing else: every process still held 3.4 MB,
+the whole writable image - because `_start` zeroed `.bss` again, on both
+architectures, "so the image stops depending on how it was built", and that
+loop touched every page. The image carries `.bss` as zeroes and the fill
+copies them, so the loop went.
+
+**x86's page fault runs on `tss.ist[0]`**, the stack that makes a kernel
+stack overflow survivable, and one stack per core is not somewhere a thread
+can be switched away from. A ring-3 page fault used to end its process;
+now it returns all the time. So `vectors.S` does not act on a pending
+preemption after #PF or #DF: the flag stands and the next interrupt acts
+on it, the timer's at the latest.
+
+**Measured on the M700**, the same windows open (Files, Sandboxes,
+Monitor, Processes, VNC) and shell86 running with its 256 MB:
+
+| | in use |
+|---|---|
+| 0.11.209, as it was | 682 MB |
+| heap and stack on first touch | 652 MB |
+| and `_start` not zeroing `.bss` | 524 MB |
+
+After boot alone, before any window: 332 MB with the kernel change only,
+224 MB with both. A C server - `devices`, `binfs`, `libfs` - holds 16 to
+24 KB where it held 5816; `init` 612 KB, `diskfs` 3.2 MB.
+
+**Tests.** `x86-kernel` and `arm-sandbox` (the AArch64 kernel suite at EL2)
+gain `el0: memory is given on first touch`: the system image made into a
+process that never runs holds nothing of its writable half, heap or stack;
+the first page of the writable half with a non-zero byte, touched, is the
+image's bytes; a heap page is zeroes; the page past the heap, the one below
+the stack and the one above it are refused; a pointer handed to
+`process_may_write` is filled by the check; and the pages come back when
+the process is abandoned, on top of the ten an untouched one keeps in its
+thread's slot. `el0: code shared, writable not` now asserts the heap and
+the stack are unmapped until touched, and different pages after.
+**Controls**: a fill that copied nothing failed the new test, and with it
+`mail: a message read through the kit` - the first version of the check
+looked at the first page, all `.bss`, and passed; not freeing the heap at
+exit failed it by exactly the four heap pages it touches. The gate: 84
+suites, `x86-network` failing once under load on a lookup and passing three
+times alone.
