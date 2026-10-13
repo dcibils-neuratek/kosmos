@@ -1,0 +1,122 @@
+<!doctype html>
+<!--
+  Sandboxes, and what it stands on: the window and `sandbox` on top, one
+  library, each sandbox's monitor as a server, and Nebula's guests. A guest
+  printing drawn through it (P). Drawn on 12 October 2026, before the window
+  is built; docs/sandboxes.md is the argument and docs/sandboxes.html the
+  window. Rendered to docs/sandboxes-architecture.png by headless Chrome at
+  twice its size.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Sandboxes architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Sandboxes - what it stands on</h1>
+<p class="sub">The window and <code>sandbox</code> only show and ask; one library, <code>sandboxes.lua</code>, starts, stops, lists and attaches. Each running sandbox is one process - its monitor, <code>vmm</code> - registered in <code>/Running</code>, keeping its guest's console in a ring anybody may read. Under it, Nebula's guests and vCPUs (V1, V2) and the processor's EL2.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--later);background:#fff;border-style:dashed"></i>later step</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications and programs</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers, in C</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">P</span><span>a guest printing</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications and programs</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Sandboxes</b><p>the cards, groups, images and machine; New sandbox; a sandbox watched - its graphs, what it was given, its console typed into <span class="f">P4</span></p></div>
+        <div class="box new"><span class="tag">GROWS</span><b>sandbox</b><p><code>run</code> for a task, <code>list</code>, <code>start</code>, <code>stop</code>, <code>console</code> - from V3's <code>sandbox run</code></p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in each process)</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>sandboxes.lua</b><p>definitions in <code>/Home/Sandboxes/&lt;name&gt;/sandbox.txt</code>; images in <code>Images/</code>; the kernel read into the guest's RAM through a window; start, stop, list, the console by offset <span class="f">P3</span></p></div>
+        <div class="box"><b>the namespace</b><p><code>fs.vm_start</code>: a monitor started with the regions and its name in <code>/Running</code></p></div>
+        <div class="box"><b>packages.lua</b><p>an image installed: <code>pkg install alpine</code></p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers, in C</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box new"><span class="tag">GROWS</span><b>vmm, one a sandbox</b><p><code>/Running/sandbox-&lt;name&gt;</code>, answering <code>vmmproto.h</code>: state, console from an offset, keys in, stop; the PL011, GICv3, timer, PSCI of V3 <span class="f">P1 P2</span></p></div>
+        <div class="box later-box"><span class="tag later">S3</span><b>virtio-fs in vmm</b><p>a folder of <code>/Home</code>, read only or not, through the namespace it was handed</p></div>
+        <div class="box later-box"><span class="tag later">S4</span><b>virtio-net in vmm</b><p>outgoing through Kosmos's network stack; ports forwarded in</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>guests and vCPUs</b><p><code>CAP_GUEST</code>, <code>CAP_VCPU</code>; a region as a guest's RAM (V2)</p></div>
+        <div class="box"><b>EL2's stub</b><p>entering a guest, its exits, its interrupts and timer, its FP lent (V1, V3)</p></div>
+        <div class="box later-box"><span class="tag later">S5</span><b>VT-x</b><p>the same on the M700: VMXON, a VMCS a vCPU, EPT</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>P - a guest printing</h3><ol>
+      <li><span class="f">P1</span> the guest writes its serial port's data register, which nothing maps: it stops, an exit.</li>
+      <li><span class="f">P2</span> <code>vmm</code> puts the byte in its console ring and runs it again.</li>
+      <li><span class="f">P3</span> a window watching asks for what is new, twice a second; a Terminal attached, when it has drawn - a message each, whatever the guest prints.</li>
+      <li><span class="f">P4</span> the last lines on the card; the whole console in its tab.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3><table>
+      <tr><td>The guest's RAM</td><td>a region, given at the start</td></tr>
+      <tr><td>Its console</td><td>text, asked for by offset - a message</td></tr>
+      <tr><td>Keys</td><td>a message</td></tr>
+      <tr><td>Its definition</td><td>sandbox.txt, a line a fact</td></tr></table></div>
+    <div class="card"><h3>Who else uses what is new</h3><table>
+      <tr><td>sandboxes.lua</td><td>the window, <code>sandbox</code>, the startup list; Automations, later</td></tr>
+      <tr><td>vmm's ring</td><td>the window, a Terminal attached, its Log tab</td></tr>
+      <tr><td>Images as packages</td><td>Debian, Node on Alpine - the mockup's others</td></tr></table></div>
+  </div>
+</div>
+</body>
+</html>

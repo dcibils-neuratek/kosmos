@@ -213,7 +213,13 @@ distro like alpine", and to the questions below -
    stay off as he said on 8 October, **except the sandbox's own**, which run
    in every gate (`CLAUDE.md`, *x86-64 only, for now*).
 2. **Alpine Linux** is the first guest, to its prompt on a serial console.
-3. **9p first** for a shared folder, virtio-fs later.
+3. ~~9p first for a shared folder, virtio-fs later~~ - **virtio, changed the
+   same evening** (Diego: "Perhaps virtio makes sense?"): a folder by
+   **virtio-fs** and the network by **virtio-net**, one transport -
+   virtio-mmio - in the monitor for both. What decided it was found by
+   booting: Alpine's `virt` kernel has 9p only as a module in its modloop,
+   a squashfs this Mac cannot open without another tool, while its own
+   initramfs already carries `virtio_mmio`, `virtiofs` and `virtio_net`.
 4. **Images come as packages**: the package server offers them and `pkg` or
    the Packages window installs them into `/Home/Sandboxes`.
 5. **Now** - the top of the queue.
