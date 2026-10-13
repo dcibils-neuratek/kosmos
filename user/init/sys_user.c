@@ -633,9 +633,13 @@ static int l_spawn(lua_State *L)
 
     if (id < 0) {
         lua_pushnil(L);
-        lua_pushstring(L, (id == SYS_ERR_DENIED)
-                              ? "this process does not hold that device"
-                              : "could not spawn");
+
+        if (id == SYS_ERR_DENIED) {
+            lua_pushstring(L, "this process does not hold that device");
+        } else {
+            lua_pushfstring(L, "could not spawn (%d)", (int)id);
+        }
+
         return 2;
     }
 
@@ -1255,6 +1259,9 @@ static int l_info(lua_State *L)
         SET("power_window_ms", info.power_window_ms);
         SET("energy_uj",       info.energy_uj);
     }
+
+    /* Whether a guest can run here: a sandbox's (`vm.h`). */
+    SET("guests", info.guests);
 
     /*
      * What the firmware says the machine is. `machine_source` is always

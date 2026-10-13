@@ -99,6 +99,12 @@ def main():
         guest.wait_for("kosmos> ", "reached a prompt")
         start = len(guest.seen)
 
+        # The machine's RAM, asked of QEMU rather than assumed (SMBIOS type
+        # 19, `hal/qemu-virt/memory.c`): it was 512 MB whatever `-m` said.
+        check(re.search(r"Memory\s+\d+ of 1024 MB used", guest.seen) is not None,
+              "a 1 GB machine was not seen as 1024 MB: %r"
+              % re.findall(r"Memory\s+[^\n]*", guest.seen)[:1])
+
         said = do("sandbox images", "\nkosmos> ", 30)
         check(re.search(r"\nalpine\s+Alpine Linux\s+\d+ MB", said) is not None,
               "sandbox images did not name Alpine: %r" % said[-300:])

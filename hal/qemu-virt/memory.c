@@ -7,28 +7,120 @@
  * PL011 at 0x09000000.
  */
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #include "hal.h"
+#include "fwcfg.h"
 
 #define RAM_BASE    0x40000000UL
 
 /*
- * The size is not discovered, it is assumed, and it has to match the `-m` on
- * the QEMU line in the Makefile and in tools/run_tests.py. Claiming more RAM
- * than QEMU was given means handing out pages that are not there, and the
- * first write to one is a fault a long way from the cause.
+ * **The size is asked of QEMU**, not assumed: the SMBIOS tables it publishes
+ * through its firmware configuration device (`etc/smbios/smbios-tables`,
+ * `hal/fwcfg/fwcfg.c`) carry a type 19 structure - Memory Array Mapped
+ * Address - for the RAM `-m` gave, and their sizes add up to it. The DMTF's
+ * SMBIOS specification, 7.20: the starting and ending address in kilobytes
+ * at 4 and 8, and - when those read 0xFFFFFFFF - in bytes at 0x0F and 0x17.
  *
- * The honest answer is the device tree: QEMU leaves a DTB at the base of RAM
- * with the real size in it. Parsing it is a few hundred lines, and it is also
- * how a Pi's memory map would be discovered rather than guessed - so it
- * belongs to the day that board arrives, and until then this constant is the
- * answer.
+ * It was 512 MB, compiled in, matching every `-m` this project used - and a
+ * constant is exactly what `CLAUDE.md` says the machine should be asked
+ * instead. It bit on 13 October 2026: a sandbox test given 1 GB and then
+ * 2 GB saw 512 MB, and a second guest's RAM could not be had
+ * (`docs/sandboxes.md`). Neither of the other answers is there for a
+ * kernel QEMU loads as an ELF: its `FW_CFG_RAM_SIZE` item is the PC's, and
+ * reads zero on this board; and it leaves no device tree at the base of RAM
+ * - both tried, and found empty, before this. The device tree is how a
+ * Pi's memory will be found, on the day there is one.
+ *
+ * Read once, at the first ask - which is `pmm_init`, before any page is
+ * handed out, so into a buffer of its own. 512 MB stays the answer for a
+ * machine that says nothing, and a total below 64 MB is not believed.
  */
-#define RAM_SIZE    (512UL * 1024 * 1024)
+#define RAM_SIZE_ASSUMED    (512UL * 1024 * 1024)
+#define SMBIOS_MAX          8192u
+
+static uint8_t smbios[SMBIOS_MAX];
+
+static uint64_t le(const uint8_t *p, unsigned n)
+{
+    uint64_t v = 0;
+
+    while (n-- > 0) {
+        v = (v << 8) | p[n];
+    }
+
+    return v;
+}
+
+/* The bytes type 19 says there are, added up; 0 if it says nothing. */
+static uint64_t smbios_ram(const uint8_t *t, uint32_t len)
+{
+    uint64_t total = 0;
+    uint32_t at = 0;
+
+    while (at + 4 <= len) {
+        uint8_t type = t[at], flen = t[at + 1];
+        uint32_t next;
+
+        if (flen < 4 || at + flen > len || type == 127) {
+            break;
+        }
+
+        if (type == 19 && flen >= 0x0f) {
+            uint64_t from = le(t + at + 4, 4), to = le(t + at + 8, 4);
+
+            if (from == 0xffffffffu && flen >= 0x1f) {
+                from = le(t + at + 0x0f, 8);
+                to = le(t + at + 0x17, 8);
+                total += to >= from ? to - from + 1 : 0;
+            } else {
+                total += to >= from ? (to - from + 1) * 1024 : 0;
+            }
+        }
+
+        /* Past the formatted part and its strings, which end in two NULs. */
+        next = at + flen;
+
+        while (next + 1 < len && !(t[next] == 0 && t[next + 1] == 0)) {
+            next++;
+        }
+
+        at = next + 2;
+    }
+
+    return total;
+}
+
+static unsigned long ram_size(void)
+{
+    static unsigned long known;
+    uint16_t select;
+    uint32_t size;
+    uint64_t bytes = 0;
+
+    if (known != 0) {
+        return known;
+    }
+
+    if (fwcfg_present() && fwcfg_find("etc/smbios/smbios-tables", &select, &size)) {
+        if (size > SMBIOS_MAX) {
+            size = SMBIOS_MAX;
+        }
+
+        if (fwcfg_read(select, smbios, size)) {
+            bytes = smbios_ram(smbios, size);
+        }
+    }
+
+    known = bytes >= 64UL * 1024 * 1024 ? (unsigned long)bytes : RAM_SIZE_ASSUMED;
+    return known;
+}
 
 void hal_ram_range(struct memrange *out)
 {
     out->base = RAM_BASE;
-    out->size = RAM_SIZE;
+    out->size = ram_size();
 }
 
 /*

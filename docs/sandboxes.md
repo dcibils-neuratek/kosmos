@@ -112,6 +112,14 @@ PL011's nature; a busy console is what virtio-console is for, later.
    console, and `fs.raw` forgets a registry name whose process has gone.
 2. **S2 - the window**, as drawn: cards, groups, images, machine, New
    sandbox, the watched sandbox with its console typed into.
+   **Done in 0.11.186** (`testing.md` 18.581): `user/bin/apps/sandboxes.lua`,
+   drawn by hand where the mockup's cards are a grid and the kit's where it
+   has the piece. Start and Restart run `sandbox start --report` in a process
+   of their own and read the outcome on the window's clock, so a start that
+   fails says why rather than "starting" for ever; Stop is one message to
+   the monitor. The Console tab takes the keyboard when clicked into. The
+   machine's memory had been 512 MB on the ARM board whatever QEMU gave,
+   which the second guest found - it is asked of QEMU now.
 3. **S3 - folders** (V4c): virtio-mmio and virtio-fs in `vmm`.
 4. **S4 - the network** (V4d): virtio-net, outgoing through Kosmos's stack,
    and ports forwarded.

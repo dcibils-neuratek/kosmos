@@ -24505,3 +24505,39 @@ started, listed running, its console attached and printing, Control-W D
 leaving it running, stopped and listed stopped; no escape on the console.
 18 s. **Control**: the end line never read - it reaches the console and the
 task "exited without saying"; two checks fail.
+
+## 18.581 Sandboxes S2: the window, and the ARM board's memory asked for
+
+`docs/sandboxes.md` S2, `user/bin/apps/sandboxes.lua`, as `docs/sandboxes.html`
+draws it: the sidebar's groups with their counts (All, Running, Stopped,
+Tasks), the images, and the machine - its processors, the memory given of
+what it has, and whether it can run a guest at all (`sysinfo.guests`, new,
+`arch_vm_available`); every sandbox a card with its state's pill, its
+processor share and memory, what it was given and its buttons; a double
+click opens one - its processor graph, what it was given, the last lines of
+its console - and its tabs: the whole console, typed into when clicked
+into; folders and ports (said to be S3 and S4); its log (the monitor's and
+the kernel's lines); its settings (its `sandbox.txt`). New sandbox is a
+sheet: a name, an image, a task, a service or a shell, the command, memory,
+and whether to open its console. **Nothing on the desktop waits on a
+start**: Start and Restart run `sandbox start NAME --report FILE` in a
+process of their own, and the window reads the report on its clock and
+says why a start failed; Stop is one message to the monitor.
+
+**Found by the window's suite, and fixed where it was**: the ARM board's
+memory was 512 MB compiled in (`hal/qemu-virt/memory.c`), whatever `-m`
+said - a second guest "could not spawn (-105)" on a machine given 1 and
+then 2 GB. QEMU's `FW_CFG_RAM_SIZE` reads zero on this board and it leaves
+no device tree at RAM's base for an ELF kernel - both tried - so the size
+is the SMBIOS tables' type 19 regions, read over fw_cfg into a buffer of
+its own before the page allocator asks. And `sys.spawn` now says its error
+number rather than only "could not spawn".
+
+**Tests.** `arm-sandboxwin`, new, in every gate: two sandboxes made at the
+prompt and one started; the window shows web running and shell1 stopped;
+Start on shell1's card is heard and shell1 arrives running; a double click
+opens it, its Console tab is clicked into and `echo $((6*7))` typed there
+answers 42; New sandbox's sheet is filled - 128 MB, a name - and Create and
+start makes it and it arrives running. 8 checks, 20 s. **Control**: the
+card's Start doing nothing - four checks fail. `arm-sandbox-linux` 13 -> 14:
+a 1 GB machine is seen as 1024 MB.

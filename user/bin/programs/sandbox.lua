@@ -184,14 +184,31 @@ end
 
 if verb == "start" then
   local s = sandboxes.definition(name)
+  local why
 
-  if not s then print(("sandbox: there is no sandbox called %s - sandbox list"):format(name)) sys.exit(1) end
+  -- `--report FILE`: the outcome written there too, for a window that
+  -- started this in a process of its own and reads it on its clock.
+  local function report(line)
+    if type(options.report) == "string" then fs.write(options.report, line .. "\n") end
+  end
 
-  local id, why = sandboxes.start(s)
+  if not s then
+    why = ("there is no sandbox called %s - sandbox list"):format(name)
+  else
+    local id
 
-  print(id and ("sandbox: %s started - sandbox console %s"):format(name, name) or ("sandbox: " .. tostring(why)))
-  if not id then sys.exit(1) end
-  return
+    id, why = sandboxes.start(s)
+
+    if id then
+      print(("sandbox: %s started - sandbox console %s"):format(name, name))
+      report("started")
+      return
+    end
+  end
+
+  print("sandbox: " .. tostring(why))
+  report("failed: " .. tostring(why))
+  sys.exit(1)
 end
 
 if verb == "stop" then

@@ -90,6 +90,9 @@ SUITES = [
     # with Alpine's kernel and userland on a disk (`docs/virtualization.md` V3).
     Suite("arm-sandbox-linux", ["python3", "tools/run_sandbox.py", ARM]),
 
+    # And the Sandboxes window, by the pointer and the keyboard (S2).
+    Suite("arm-sandboxwin", ["python3", "tools/run_sandboxwin.py", ARM]),
+
     # And the same machine with nothing plugged into it. A second boot, but
     # of the ordinary image rather than the test one: what it checks is init
     # and the shell, which the test image replaces.

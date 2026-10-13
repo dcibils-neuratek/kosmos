@@ -1380,6 +1380,15 @@ struct sysinfo {
     uint32_t power_window_ms;
     uint32_t heat_reserved;
     uint64_t energy_uj;
+
+    /*
+     * **Whether this machine can run a guest** (`vm.h`, `docs/sandboxes.md`):
+     * 1 where a core can enter one - ARM started at EL2 - and 0 where none
+     * can: ARM started at EL1, and x86-64 until VT-x. What the Sandboxes
+     * window says in its Machine panel, rather than finding out by failing.
+     */
+    uint32_t guests;
+    uint32_t guests_reserved;
 };
 
 /*
