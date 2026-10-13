@@ -462,12 +462,12 @@ static void deliver(struct vcpu_regs *r)
 /*
  * **The guest is waiting** (`hlt` with interrupts on): back at once if
  * something is already there for it, otherwise asleep until its timer is
- * due - two scheduler ticks at the most, which is how soon a key typed is
- * seen, since keys arrive on the other thread.
+ * due - one scheduler tick at the most, 4 ms, which is how soon a key
+ * typed is seen, since keys arrive on the other thread.
  */
 static void wait_for_guest(struct vcpu_regs *r)
 {
-    uint64_t now = kosmos_ticks(), next, ticks = vmmnet_busy() ? 1 : 2;
+    uint64_t now = kosmos_ticks(), next, ticks = 1;
 
     vmm_flush_out();
     deliver(r);

@@ -24984,3 +24984,18 @@ through the network; a page served on port 8081 fetched from the Mac. And
 by hand, a shell in the Sandboxes window answering `uname -a`. Linux asked
 seven MSRs nobody answers (0x8b, 0x3a, 0x140, 0xce, 0x64e, 0x34,
 0xc0011029) and booted on the zeros.
+
+## 18.598 A sandbox's console, answering as it is typed
+
+Diego, 13 October, typing into an x86 sandbox's console on the M700: "it
+take several miliseconds to show the characteres", "shouldnt be instant?".
+A key went to the monitor at once; the guest's echo then waited for the
+Sandboxes window, which read a sandbox's console only on its half-second
+clock - up to 500 ms - and before that for the monitor, which looked for
+keys every two scheduler ticks while the guest idled - up to 8 ms. Now the
+window reads the open sandbox's console on every pass of its loop while it
+runs (`win.on_frame`), a pass every scheduler tick, painting only when
+something arrived; and the monitor looks every tick on both machines. A
+key's round trip is a few milliseconds of waiting at most, two ticks.
+arm-sandboxwin and arm-sandbox-linux pass; on the M700 (0.11.204) for
+Diego to feel.

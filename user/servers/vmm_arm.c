@@ -556,7 +556,7 @@ static bool deliver(struct vcpu_regs *r)
  */
 static void wait_for_guest(const struct vcpu_regs *r)
 {
-    uint64_t now = kosmos_ticks(), ticks = vmmnet_busy() ? 1 : 2;
+    uint64_t now = kosmos_ticks(), ticks = 1;
 
     /* A prompt has no newline after it: what the guest said goes in the
      * ring now, before it is waited on. */
@@ -568,9 +568,10 @@ static void wait_for_guest(const struct vcpu_regs *r)
     }
 
     /*
-     * Until its timer is due, and two scheduler ticks at the most - 8 ms -
+     * Until its timer is due, and one scheduler tick at the most - 4 ms -
      * which is how soon a key typed is seen: keys arrive on the other
-     * thread, which has no way to wake this one but to be looked at.
+     * thread, which has no way to wake this one but to be looked at. It was
+     * two, and a key could wait 8 ms before the guest saw it (13 October).
      */
     if ((r->timer_ctl & 1) != 0 && (r->timer_ctl & 2) == 0 && r->timer_cval > now) {
         uint64_t wait = (r->timer_cval - now) * vmm_tick_hz / vmm_counter_hz;

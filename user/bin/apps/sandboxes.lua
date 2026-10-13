@@ -50,6 +50,36 @@ local start                             -- forward: a restart calls it
 local folder_words                      -- forward: the cards say folders
 local reports = {}                      -- name -> the file its start says in
 
+--
+-- **What the sandbox open in the window has said since it last looked**,
+-- kept in `console`: true when something arrived. Read on every pass of the
+-- window's loop while one is open (`win.on_frame`, below) - not on the
+-- half-second clock the rest is refreshed on, which made a key's echo wait
+-- up to half a second to appear (Diego, 13 October: "shouldnt be instant?").
+--
+local function read_console()
+  if not watched then return false end
+
+  local c = console[watched] or { at = 0, text = "" }
+  local text, next_at = sandboxes.read(watched, c.at)
+  local arrived = text ~= nil and #text > 0
+
+  if arrived then
+    c.text = (c.text .. text):sub(-24000)
+    c.at = next_at
+
+    -- For its suite: each line of what arrived, as it arrives.
+    if TELL then
+      for line in text:gmatch("[^\n]+") do
+        print("sandboxes: console " .. watched .. ": " .. line)
+      end
+    end
+  end
+
+  console[watched] = c
+  return arrived
+end
+
 local function refresh(full)
   local now = sys.ticks()
 
@@ -111,24 +141,7 @@ local function refresh(full)
     end
   end
 
-  if watched then
-    local c = console[watched] or { at = 0, text = "" }
-    local text, next_at = sandboxes.read(watched, c.at)
-
-    if text and #text > 0 then
-      c.text = (c.text .. text):sub(-24000)
-      c.at = next_at
-
-      -- For its suite: each line of what arrived, as it arrives.
-      if TELL then
-        for line in text:gmatch("[^\n]+") do
-          print("sandboxes: console " .. watched .. ": " .. line)
-        end
-      end
-    end
-
-    console[watched] = c
-  end
+  read_console()
 end
 
 local function state_of(s)
@@ -1061,4 +1074,22 @@ if TELL then
 end
 
 win.tick_every = counter_hz // 2
+
+--
+-- **While a running sandbox is open, a pass every scheduler tick** - 4 ms - each
+-- asking its monitor for what is new, and painting only when something
+-- was; with none open, the window waits on its clock as before.
+--
+function win:on_frame()
+  local running = false
+
+  for _, s in ipairs(all) do
+    if s.name == watched and s.now then running = true end
+  end
+
+  self.poll_wait_ticks = running and 1 or nil
+
+  return running and read_console()
+end
+
 win:run()
