@@ -24690,3 +24690,9 @@ and the folder that keeps its own both open at the defaults. Each fails the
 suite. Whole gate: 77 of 79, x86-smbd and x86-film the known load flakes,
 both passing alone.
 
+**Then, 0.11.193: Kind in Info's words.** The column said a file's
+extension - "jpg", "mp4" - where the drawing says "Photograph", "Film";
+it now says `filetypes.describe`'s words, as Info does, worked out once a
+listing and sorted by. `x86-trackerlist` 8 -> 9: the film's kind is
+"Film". **Control**: the extension again - "mp4", and the suite fails.
+

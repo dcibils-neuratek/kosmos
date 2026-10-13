@@ -888,7 +888,7 @@ local function sorted()
       x, y = a.size, b.size
       if x == y then x, y = a.name, b.name end
     elseif sort_by == "kind" then
-      x, y = a.kind, b.kind
+      x, y = a.kind_words or a.kind, b.kind_words or b.kind
       if x == y then x, y = a.name, b.name end
     elseif sort_by == "modified" then
       x = a.attrs and a.attrs.modified or 0
@@ -1177,7 +1177,7 @@ cols = ui.columns{
       elseif col.key == "size" then
         text = (e.kind == "directory") and "--" or files.size(e.size)
       elseif col.key == "kind" then
-        text = (e.kind == "directory") and "folder" or (types.kind_of(e.name, e.attrs) or "file")
+        text = e.kind_words or types.describe(e.name, e.attrs)
       elseif col.key == "modified" then
         text = e.when or "\u{2013}"
       else
@@ -1880,8 +1880,7 @@ function rows:draw(g)
     -- all saying "file", all 0 B, with nothing on screen to say what they
     -- were.
     --
-    cols:cell(g, "kind", y, (e.kind == "directory") and "folder"
-              or (types.kind_of(e.name, e.attrs) or "file"), fg, bg, wide)
+    cols:cell(g, "kind", y, e.kind_words or types.describe(e.name, e.attrs), fg, bg, wide)
     cols:cell(g, "modified", y, e.when or "\u{2013}", fg, bg, wide)
     cols:cell(g, "created", y, e.made or "\u{2013}",
               (e.made_guessed and not on) and theme.text_dim or fg, bg, wide)
@@ -2621,6 +2620,10 @@ function show(path)
       local a = e.attrs or {}
       local m, c = a.modified, a.created
 
+      -- What it is, in Info's words - "Photograph", "PDF document" - not
+      -- its extension read aloud (`filetypes.describe`).
+      e.kind_words = types.describe(e.name, a)
+
       e.when = math.type(m) == "integer" and clock.relative(m, now, offset) or nil
 
       if math.type(c) == "integer" then
@@ -2640,6 +2643,7 @@ function show(path)
       else
         print(("tracker: dates of %s: modified %s, created %s%s"):format(e.name, e.when or "-",
               e.made or "-", e.made_guessed and " (its modified)" or ""))
+        print(("tracker: kind of %s: %s"):format(e.name, e.kind_words))
       end
 
       break

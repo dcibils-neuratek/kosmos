@@ -8,7 +8,7 @@ at, modified at (Date time) fields". A folder holding a folder, a short
 file and a film with the drawing's long name, Tracker opened on it, and:
 
   - the first file's dates: Modified today, and Created its Modified, since
-    the disk keeps none for it yet;
+    the disk keeps none for it yet; and its kind in Info's words, "Film";
   - the columns as they open: Name, Size, Kind, Modified, Created;
   - the long name cut at its own column's edge: the stretch of its row
     between the name's room and the size holds one colour;
@@ -34,7 +34,7 @@ import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
 import scratch                                              # noqa: E402
 
-CHECKS = 8
+CHECKS = 9
 LONG = "Rehearsal take 4, full band, room microphones and the click track muted.mp4"
 
 MAKE = ('local files = use("/Kosmos/Libraries/files.lua")\n'
@@ -108,6 +108,10 @@ def main():
               and dates.group(3) == dates.group(2) + " (its modified)",
               "the first file's dates were not today's, and Created its Modified: %r"
               % (dates and dates.group(0)))
+
+        kind = line(r"tracker: kind of ([^:\n]*): ([^\r\n]*)", mark, 5)
+        check(kind is not None and kind.group(1) == LONG and kind.group(2) == "Film",
+              "Kind did not say what the film is, in Info's words: %r" % (kind and kind.group(0)))
 
         opened = line(r"tracker: columns for /Home/Lists: ([^\n]*)", mark, 5)
         check(opened is not None
@@ -227,7 +231,7 @@ def main():
                 print("  | " + l.strip()[:200])
         return 1
 
-    print("PASS: %d checks on Tracker's list view (the dates; the columns as drawn; a long name "
+    print("PASS: %d checks on Tracker's list view (the dates; the kind in words; the columns as drawn; a long name "
           "cut at its own edge; Name dragged wider and kept; Size fitted by a double-click; the "
           "headings' menu; the widths read back by a second Tracker; a folder's own columns)" % CHECKS)
     return 0
