@@ -11,6 +11,8 @@ its kernel and an initramfs of its userland, made by `tools/alpine.py` from
 Alpine's published files, held to their sums - and `sandbox` is typed at
 the prompt. Held to:
 
+  * **a sandbox that starts with Kosmos**: `boot1`, on the disk with
+    `starts with Kosmos`, running without anyone starting it;
   * **its images**: `sandbox images` names Alpine;
   * **a task**: `sandbox run alpine -- echo $((6*7)); uname -m; exit 3` -
     the command's output, and its exit code, 3, taken from the guest's end
@@ -67,6 +69,13 @@ def main():
     with open(os.path.join(folder, "Projects", "site", "pages", "one.txt"), "w") as f:
         f.write("page one\n")
 
+    # A sandbox that starts with Kosmos (S5): nobody starts it here.
+    os.makedirs(os.path.join(folder, "Sandboxes", "boot1"))
+
+    with open(os.path.join(folder, "Sandboxes", "boot1", "sandbox.txt"), "w") as f:
+        f.write("image       alpine\nkind        service\nmemory      128\n"
+                "command     while true; do echo booted; sleep 2; done\nstarts      with Kosmos\n")
+
     # What `pkg install alpine` leaves beside an image: its manifest, which
     # is where its title comes from (`packages.lua`, `tools/packages.py`).
     with open(os.path.join(alpine, "package.txt"), "w") as f:
@@ -116,6 +125,20 @@ def main():
         check(re.search(r"Memory\s+\d+ of 1024 MB used", guest.seen) is not None,
               "a 1 GB machine was not seen as 1024 MB: %r"
               % re.findall(r"Memory\s+[^\n]*", guest.seen)[:1])
+
+        # Started at boot, by `init`, and running by the time it is asked.
+        found = None
+        deadline = time.monotonic() + 180
+
+        while found is None and time.monotonic() < deadline:
+            said = do("sandbox list", "\nkosmos> ", 30)
+            found = re.search(r"\nboot1\s+alpine\s+running", said)
+
+            if found is None:
+                time.sleep(3)
+
+        check(found is not None, "boot1, which starts with Kosmos, was not running: %r" % said[-400:])
+        do("sandbox stop boot1", "\nkosmos> ", 30)
 
         said = do("sandbox images", "\nkosmos> ", 30)
         check(re.search(r"\nalpine\s+Alpine Linux\s+\d+ MB", said) is not None,

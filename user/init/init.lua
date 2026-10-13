@@ -5525,6 +5525,26 @@ query. `find` and `watch` are built on exactly these two calls.
   end
 
   --
+  -- **And the sandboxes that start with Kosmos** (`docs/sandboxes.md` S5):
+  -- each definition in `/Home/Sandboxes` whose `starts` line says so,
+  -- started by `sandbox start` in the background - its image read into its
+  -- RAM there, not here, so the boot does not wait for it.
+  --
+  for _, name in ipairs(ns.list("/Home/Sandboxes") or {}) do
+    local text = name ~= "Images" and ns.read("/Home/Sandboxes/" .. name .. "/sandbox.txt")
+
+    if type(text) == "string" and text:match("\nstarts%s+with Kosmos") then
+      out("starting the sandbox " .. name .. "\n")
+
+      local ok, why = run_program("sandbox", "start " .. name, true)
+
+      if not ok then
+        out("boot: sandbox " .. name .. ": " .. tostring(why) .. "\n")
+      end
+    end
+  end
+
+  --
   -- **And the servers the Servers window marked to start with the machine**
   -- (`/Home/Preferences/servers`, `user/bin/apps/servers.lua`): each by its
   -- program, in the background, before the desktop. The command line is not

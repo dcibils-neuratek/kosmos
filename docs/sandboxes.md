@@ -138,5 +138,11 @@ PL011's nature; a busy console is what virtio-console is for, later.
 4. **S4 - the network** (V4d): virtio-net, outgoing through Kosmos's stack,
    and ports forwarded.
 5. **S5 - started with Kosmos**, and **VT-x** - sandboxes on the M700.
+   **Started with Kosmos, 0.11.188** (`testing.md` 18.583): a definition's
+   `starts with Kosmos` - the sheet's "with Kosmos", `sandbox new
+   --at-start` - and `init` runs `sandbox start` for it in the background at
+   boot, as it starts the servers the Servers window ticked. **VT-x** is
+   left: QEMU cannot emulate it, so it is built and tried on the M700, with
+   Diego there.
 
 Only x86-64 runs the tests, except Sandboxes' own (`CLAUDE.md`).

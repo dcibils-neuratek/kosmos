@@ -6,7 +6,7 @@
 --                                       ... given a folder of /Home (`:ro`: read only)
 --   sandbox run alpine                  a shell in a new one, until it ends
 --   sandbox list                        every sandbox, and how it is doing
---   sandbox new web --image alpine [--memory 256] [--service] [-- COMMAND]
+--   sandbox new web --image alpine [--memory 256] [--service] [--at-start] [-- COMMAND]
 --   sandbox start web | stop web | console web | delete web
 --   sandbox images                      the images there are to start from
 --
@@ -182,6 +182,7 @@ if verb == "new" then
   s.image = options.image or "alpine"
   s.memory = math.tointeger(tonumber(options.memory or "")) or 256
   s.kind = options.service and "service" or (command and "task" or "shell")
+  s.starts = options["at-start"] and "with Kosmos" or "by hand"
   s.command = command or ""
 
   for _, text in ipairs(options.shares or {}) do

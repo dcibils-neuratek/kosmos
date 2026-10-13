@@ -870,9 +870,10 @@ local function new_sandbox()
   sheet:put(ui.label{ x = 140, y = y + 5, w = SW - 160, text = "none - virtio-net, S4", role = "ui", color = "text_dim" })
   y = y + 34
 
-  local console_box = ui.checkbox{ x = 140, y = y, text = "open its console", checked = true }
+  local at_start = ui.checkbox{ x = 140, y = y, text = "with Kosmos", checked = false }
+  local console_box = ui.checkbox{ x = 290, y = y, text = "open its console", checked = true }
 
-  row(y, "Starts") sheet:put(console_box) y = y + 44
+  row(y, "Starts") sheet:put(at_start) sheet:put(console_box) y = y + 44
 
   local function close()
     win:remove(sheet)
@@ -887,6 +888,7 @@ local function new_sandbox()
                          s.kind = ({ "task", "service", "shell" })[kind.on]
                          s.command = command.text or ""
                          s.memory = MEMORY[memory.on] or 256
+                         s.starts = at_start.checked and "with Kosmos" or "by hand"
 
                          if (folder.text or "") ~= "" then
                            local f, bad = sandboxes.folder(folder.text .. " " .. (folder_at.text ~= "" and folder_at.text or "/work")

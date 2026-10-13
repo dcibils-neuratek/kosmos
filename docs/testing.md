@@ -24572,3 +24572,16 @@ refused "Read-only file system" - and read and write - a file and a folder
 made in it, and the file read back at Kosmos's prompt, "made in alpine".
 24 s. **Control**: reads answered with nothing - the folder lists but its
 file does not read, and the suite fails.
+
+## 18.583 Sandboxes S5, its first half: started with Kosmos
+
+A sandbox whose `sandbox.txt` says `starts with Kosmos` - the New sandbox
+sheet's "with Kosmos", or `sandbox new --at-start` - is started at boot by
+`init`, which runs `sandbox start NAME` in the background beside the servers
+the Servers window marked, so the boot does not wait for its image to be
+read. VT-x, S5's other half, needs the M700.
+
+**Tests.** `arm-sandbox-linux` 18 -> 19: `boot1` on the disk, marked to
+start with Kosmos, is running when `sandbox list` first asks, nobody having
+started it. **Control**: the definition never taken as starting with
+Kosmos - `boot1` is stopped, and the suite fails.
