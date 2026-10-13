@@ -1638,6 +1638,15 @@ void syscall_dispatch(struct syscall_frame *sc);
  */
 #define DEV_INTEL_ETHERNET   4u
 
+/*
+ * A SATA controller in AHCI mode (`docs/roadmap.md`, SATA): `base` and
+ * `size` are its register window - BAR5, the ABAR, not the first BAR the
+ * kinds above give - `intid` the interrupt it raises, `where` its address on
+ * PCI and `line` its device identifier. The M700's drive is behind one
+ * (8086:a102), and q35's own ICH9 (8086:2922) is the one QEMU gives.
+ */
+#define DEV_AHCI             5u
+
 struct dev_info {
     uint32_t kind;
     uint32_t intid;         /* for SYS_IRQ_CLAIM */

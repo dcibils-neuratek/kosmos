@@ -40,6 +40,7 @@ local ROLE_XHCI       = 19 -- drives the USB host controllers, where there are a
 local ROLE_DRIVES     = 20 -- serves /Drives: every volume on every drive, read only
 local ROLE_BACKLIGHT  = 21 -- Intel's backlight PWMs: /Devices/backlight
 local ROLE_E1000      = 22 -- an Intel Ethernet controller, where there is one
+local ROLE_AHCI       = 31 -- a SATA controller, where there is one
 local ROLE_NOTIFY     = 23 -- serves /Notifications: what applications have said
 local ROLE_SMBFS      = 24 -- shares over the network: SMB 2 and 3 (`sharing.md`)
 local ROLE_KEYRING    = 25 -- the passwords Kosmos keeps, sealed (`keyring.md`)
@@ -6068,6 +6069,20 @@ if role == ROLE_INIT then
   -- On a machine with no such card it asks, is told so, and answers the
   -- stack that there is none.
   --
+  --
+  -- **A SATA controller's driver** (`roadmap.md`, *SATA (AHCI)*): device
+  -- authority and the console, as the Ethernet card's. For now it finds
+  -- the disks behind the controller, reads what they are and whether they
+  -- hold a GPT, and says so - it writes nothing - and ends; serving their
+  -- blocks is its next step. On a machine without one it is told so and
+  -- says nothing.
+  --
+  do
+    local _, err = sys.spawn(ROLE_AHCI, { CONSOLE_EP }, SPAWN_DEVICES)
+
+    if err then line("init: no SATA driver: " .. tostring(err)) end
+  end
+
   local ether_driver = false
 
   do

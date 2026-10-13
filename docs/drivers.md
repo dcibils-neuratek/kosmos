@@ -358,6 +358,24 @@ generalises: a device a firmware has *used* - for its own network boot, its
 own disk - carries that use in state no register dump shows, and QEMU's
 models carry none of it.
 
+### SATA (AHCI) - the M700's drive, found and read
+
+`user/drivers/storage/ahci.c`, a process with device authority as the
+Ethernet card's driver is, from the specification (Serial ATA AHCI 1.3.1,
+ACS-3) and checked against QEMU's `hw/ide/ahci-internal.h`. The board finds
+the controller by class 01.06.01 and gives its register window from BAR5,
+the ABAR, rather than the first BAR (`HAL_DEV_AHCI`, `DEV_AHCI`); the ABAR
+need not begin a page - Intel's is 2 KB - so the driver maps the page holding
+it. **Its first step, 0.11.198, finds and reads and writes nothing**: the
+controller taken from the firmware (§10.6) and put in AHCI mode, each port
+with a disk on it brought up in §10.1.2's order, IDENTIFY DEVICE asked, and
+the first two sectors read to say whether there is a GPT. The FIS, the
+command header and IDENTIFY's page are `ahci_decode.c`, held on the host by
+`test_ahcidecode` to the standards' bytes. Polled with a deadline, as a
+probe before it serves anyone; serving `/Devices/blocks`' protocol - which
+has one server today, xHCI, so diskfs and drives will ask two - waits on the
+controller's interrupt, and is the next step (`roadmap.md`).
+
 ### WiFi - OpenBSD, not FreeBSD
 
 The card is an **Intel AX201**, `VEN_8086&DEV_A0F0`. It is **CNVi**: the MAC

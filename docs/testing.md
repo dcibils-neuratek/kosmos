@@ -24791,3 +24791,34 @@ Preferences opened on the Magnet page with no error. **Control**: the zone
 not asking whether dragging is on - Tracker snapped to the right half, and
 the suite fails. Whole gate: all 81 suites, 8:24.
 
+## 18.592 SATA (AHCI), A1: a disk behind the controller found and read
+
+`drivers.md`, *SATA (AHCI)*. The board finds an AHCI controller by its
+class and gives the ABAR (`HAL_DEV_AHCI`); `ahci.c` runs at every boot, takes
+the controller from the firmware where it offers, enables AHCI, brings up
+each implemented port with a device present (DET 3, IPM 1), checks its
+signature is a disk's once FIS receive is on, asks IDENTIFY DEVICE and reads
+LBA 0-1 into contiguous memory whose bus address it knows. Polled, with a
+deadline: a probe before it serves anything.
+
+**Tests.** `test_ahcidecode` (host), 16 checks against the standards'
+bytes: READ and WRITE DMA EXT's FIS, a 65536-sector count as 0, the command
+header's word and the PRDT's count, a disk's model, serial and size by LBA
+48 and by LBA 28, a 4K logical sector, an invalid word 106 not believed, an
+ATAPI page refused, GPT's signature. `x86-ahci`, new, 5 checks: q35's ICH9
+(8086:2922) found in AHCI 1.0 with six ports and 32 slots; a 64 MB disk on
+its first port - a protective MBR, a GPT and a Microsoft basic data
+partition beginning with an NTFS boot sector - answering IDENTIFY as QEMU
+HARDDISK, 131072 sectors of 512; its MBR and GPT read; one disk said; and
+the image's SHA-256 the same afterwards. **Control**: the disk never looked
+at - no IDENTIFY line, and the suite fails.
+
+**Found by the first whole gate, and worth keeping**: the driver *returned*
+when it had said its piece, and a role that returns falls through
+`main.c` into init's own chunk - a second init, which took the screen from
+the shell; thirty suites failed at once, and the gate ran 25 minutes. It ends
+with `kosmos_exit` now, as the power button's does, and `main.c` exits after
+it whatever it does. `x86-ahci` 5 -> 6: the driver ends with 0. **Control**:
+both exits taken out - the driver never ends, and the suite fails. Whole
+gate then: 81 of 82 in 8:27, x86-film the known flake, passing alone.
+

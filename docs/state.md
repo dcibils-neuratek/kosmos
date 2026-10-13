@@ -2,14 +2,14 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-13, early morning (0.11.197; Sandboxes, the list columns, Wallpapers and Magnet, through the night)
+Last updated: 2026-10-13, early morning (0.11.198; Sandboxes, the list columns, Wallpapers, Magnet and SATA's first step, through the night)
 
 ---
 
 ## 12-13 October: Packages, then Sandboxes, through to Alpine on the network
 
 **Pushed: up to 0.11.184** (de21dac4). **On `main`, not pushed:
-0.11.185-0.11.197** and the commits between them, each with its suites and
+0.11.185-0.11.198** and the commits between them, each with its suites and
 its controls. Diego went to sleep saying "keep building", "overnight"; the
 M700 was not touched.
 
@@ -56,6 +56,9 @@ M700 was not touched.
   the window manager - `hal/keys.c` sends an arrow before it looks at
   Super, and the encoding has to be decided on both boards - asked on the
   card) - the Preferences page is built (0.11.197).
+- **SATA (AHCI), A1 (0.11.198)**: the driver finds the controller and its
+  disks, IDENTIFY and the first sectors, nothing written. Next A2, serving
+  the blocks on the controller's interrupt; then `/Home` on that disk.
   Then the queue: Tracker's list view, Wallpapers, Magnet, SATA, the VNC
   client, Shortcuts.
 - **Disk on this Mac: about 3 GB free.** The two development sticks in

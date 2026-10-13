@@ -179,6 +179,15 @@ under QEMU first (`-device ahci` with a drive holding a GPT and a Windows-like
 partition, untouched after), then on the M700. The real answer to
 preferences that need a stick to survive; Kosmos Cloud stays an idea for
 sharing them between machines.
+**A1, the driver finds and reads, built 0.11.198** (`testing.md` 18.592,
+`drivers.md`): `HAL_DEV_AHCI` from the ABAR, `user/drivers/storage/ahci.c`
+started by init at every boot - the controller in AHCI mode, its disks
+brought up, IDENTIFY, and the first sectors read for a GPT, all said and
+nothing written. **Next**: A2, serving the blocks - on the controller's
+interrupt, through `blockproto.h` on endpoints of its own, which diskfs and
+drives learn to ask beside xHCI's; A3, `/Home` in a partition of its own on
+that disk, by its GUID as a stick's is (`opt/kosmos/home`), on space Diego
+frees in Windows - never formatting what is there; then the M700.
 
 **A VNC client: the Mac's screen in a Kosmos window** - Diego, 12 October
 2026: "is there any way we can create a quick vnc client for kosmos so i can

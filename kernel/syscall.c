@@ -116,6 +116,8 @@ _Static_assert(DEV_INTEL_BACKLIGHT == HAL_DEV_INTEL_BACKLIGHT,
                "a device kind must mean the same thing on both sides");
 _Static_assert(DEV_INTEL_ETHERNET == HAL_DEV_INTEL_ETHERNET,
                "the Ethernet controller's kind differs across the boundary");
+_Static_assert(DEV_AHCI == HAL_DEV_AHCI,
+               "the SATA controller's kind differs across the boundary");
 
 bool dev_range_ok(uintptr_t phys, size_t pages)
 {

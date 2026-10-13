@@ -87,11 +87,48 @@
 #define SUBCLASS_ETHERNET   0x00u
 #define ETHERNET_KEPT       2u
 
+/*
+ * **A SATA controller in AHCI mode**: class 01 (mass storage), subclass 06
+ * (SATA), interface 01 (AHCI 1.0) - PCI's class codes, as `lspci` and
+ * Linux's `ahci` match them. Its registers are BAR5, the ABAR (AHCI 1.3.1
+ * §2.1.11); the BARs below it are the legacy IDE windows, which this does
+ * not use.
+ */
+#define CLASS_STORAGE       0x01u
+#define SUBCLASS_SATA       0x06u
+#define INTERFACE_AHCI      0x01u
+#define AHCI_ABAR           5u
+#define AHCI_KEPT           2u
+
 static struct spinlock devices_lock = SPINLOCK("devices");
 static struct hal_device xhci_kept[XHCI_KEPT];
 static bool xhci_known[XHCI_KEPT];
 static struct hal_device ether_kept[ETHERNET_KEPT];
 static bool ether_known[ETHERNET_KEPT];
+static struct hal_device ahci_kept[AHCI_KEPT];
+static bool ahci_known[AHCI_KEPT];
+
+static bool nth_ahci(unsigned index, struct pci_device *out)
+{
+    unsigned from = 0, at, seen = 0;
+
+    while (pci_find_class(CLASS_STORAGE, SUBCLASS_SATA, from, out, &at)) {
+        uint32_t word = pci_config_read(out->bus, out->slot, out->function,
+                                        PCI_CLASS_WORD);
+
+        if (((word >> 8) & 0xFFu) == INTERFACE_AHCI) {
+            if (seen == index) {
+                return true;
+            }
+
+            seen++;
+        }
+
+        from = at + 1;
+    }
+
+    return false;
+}
 
 static bool nth_xhci(unsigned index, struct pci_device *out)
 {
@@ -218,6 +255,40 @@ bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out)
         return found;
     }
 
+    /* The same for a SATA controller, from its ABAR rather than BAR0. */
+    if (out != NULL && kind == HAL_DEV_AHCI && index < AHCI_KEPT) {
+        flags = spin_lock(&devices_lock);
+
+        if (!ahci_known[index]) {
+            struct pci_device pci;
+            uint64_t size;
+
+            if (nth_ahci(index, &pci) && pci.bar[AHCI_ABAR] != 0
+                && (size = pci_bar_size(&pci, AHCI_ABAR)) != 0) {
+                pci_enable(&pci);
+
+                ahci_kept[index].base  = (unsigned long)pci.bar[AHCI_ABAR];
+                ahci_kept[index].size  = (unsigned long)size;
+                ahci_kept[index].intid = pci.irq;
+                ahci_kept[index].line  = pci.device;
+                ahci_kept[index].where = ((unsigned)pci.bus << 8)
+                                       | ((unsigned)pci.slot << 3)
+                                       | (unsigned)pci.function;
+                ahci_kept[index].id    = ((unsigned)pci.vendor << 16)
+                                       | pci.device;
+                ahci_known[index] = true;
+            }
+        }
+
+        if (ahci_known[index]) {
+            *out = ahci_kept[index];
+            found = true;
+        }
+
+        spin_unlock(&devices_lock, flags);
+        return found;
+    }
+
     if (out == NULL || kind != HAL_DEV_XHCI || index >= XHCI_KEPT) {
         return false;
     }
@@ -282,6 +353,9 @@ bool hal_device_config(unsigned kind, unsigned index, unsigned offset,
         known = true;
     } else if (kind == HAL_DEV_XHCI && index < XHCI_KEPT && xhci_known[index]) {
         where = xhci_kept[index].where;
+        known = true;
+    } else if (kind == HAL_DEV_AHCI && index < AHCI_KEPT && ahci_known[index]) {
+        where = ahci_kept[index].where;
         known = true;
     }
 

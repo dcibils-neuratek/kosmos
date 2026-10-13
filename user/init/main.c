@@ -78,6 +78,7 @@ void backlight_server(long console, long endpoint);
 void xhci_server(long console, long blocks, long writes, long frames,
                  long camera, long midi, long notify);
 void e1000_server(long console, long frames);
+void ahci_server(long console);
 
 /* Its own endpoint, the USB driver's *read* endpoint, and the console's.
  * Never the write endpoint: `/Drives` is read-only by what it was handed
@@ -133,6 +134,7 @@ void vmm_server(long running, long ram, long setup, long more1, long more2);
 #define ROLE_MDNSD    28UL
 #define ROLE_SMBD     29UL
 #define ROLE_VMM      30UL    /* a sandbox's monitor (`docs/virtualization.md`) */
+#define ROLE_AHCI     31UL    /* a SATA controller, where there is one */
 
 static void say(const char *s)
 {
@@ -918,6 +920,12 @@ int main(unsigned long arg)
     if (arg == ROLE_E1000) {
         named("e1000");
         e1000_server(0, 1);
+    }
+
+    if (arg == ROLE_AHCI) {
+        named("ahci");
+        ahci_server(0);
+        kosmos_exit(0);             /* never into init's chunk below */
     }
 
     if (arg == ROLE_DRIVES) {
