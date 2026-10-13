@@ -3194,8 +3194,8 @@ handlers.open = function(req, who, cap)
           -- offered to the next one.
           --
           -- A third rather than a half, and the difference is a real
-          -- window: the log is 620x420 and Tracker is 780x520, so opening
-          -- one over the other buries 48% of it - under a half by two
+          -- window: the log is 620x420 and Tracker was 780x520, so opening
+          -- one over the other buried 48% of it - under a half by two
           -- points, and unreadable by any standard a person would use.
           -- A third is about where "I cannot see it" starts.
           if ox > 0 and oy > 0 and ox * oy * 3 > win.w * win.h then

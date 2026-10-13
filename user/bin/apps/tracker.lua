@@ -60,7 +60,9 @@ local clock    = use("/Kosmos/Libraries/clock.lua")
 local prefs    = use("/Kosmos/Libraries/prefs.lua")
 local theme = ui.theme
 
-local W, H = 780, 520
+-- Wide enough for the list's five columns as `docs/tracker-list.html`
+-- draws them - 820 of them beside the sidebar - which 780 was not.
+local W, H = 1060, 520
 
 --
 -- The bands the window is divided into, measured from the top.
@@ -433,6 +435,7 @@ local start_drag
 -- And the one that changes directory, because the places tree calls it and
 -- is built above it.
 local show, visit
+local columns_save, columns_for     -- the list's columns, kept and read back
 
 -- And the network's three (N6): what a folder shown is of it, a server
 -- not signed into as a page, and Connect to Server - each called from
@@ -821,25 +824,25 @@ search = ui.field{ w = 200, text = "", hint = "Search", icon = "search" }
 -- repaint.
 --------------------------------------------------------------------------
 
-local COLUMNS = {
-  { key = "name", title = "Name", x = 10,  w = 210 },
-  { key = "size", title = "Size", x = 226, w = 90  },
-  { key = "kind", title = "Kind", x = 322, w = 90  },
-}
-
 --
--- **Modified, for a share** (`docs/sharing.html`): the server's date of
--- each file, "Today, 11:20" or "3 Oct 2026, 22:14" - worked out once a
--- listing, in `show`, and only drawn here. `dated` says whether the folder
--- shown is one whose dates are real.
+-- **The kit's columns** (`ui.columns`, `docs/tracker-list.html`): Name,
+-- Size, Kind, Modified and Created, each cut with an ellipsis at its own
+-- edge, dragged wider by its heading's edge, fitted by a double-click
+-- there, shown or hidden from the headings' menu. They were three fixed
+-- columns at 10, 226 and 322, and a long name ran under the size - Diego,
+-- on the M700, 10 October 2026: "for big files the name overlaps the size".
 --
-local MODIFIED = { key = "modified", title = "Modified", x = 418, w = 160 }
-local WITH_MODIFIED = { COLUMNS[1], COLUMNS[2], COLUMNS[3], MODIFIED }
-local dated = false
+-- **The dates** are each file's, said once a listing in `show` (`e.when`,
+-- `e.made`) and only drawn here. Created is an attribute where the disk
+-- keeps one; a file without one shows its Modified, in grey
+-- (`e.made_guessed`), and one with neither a dash.
+--
+local NAME_INDENT = 24      -- the icon, at 16, and the gap after it
+local COL_LEFT = 10         -- where the first column starts
+local cols                  -- made below, once `widest` can see the rows
 
-local function columns()
-  return dated and WITH_MODIFIED or COLUMNS
-end
+local columns_keep = { per_folder = false }   -- prefs: where widths are kept
+local columns_from = nil    -- the folder whose own columns are in force
 
 --
 -- What the view shows, which is not always what the directory holds.
@@ -890,6 +893,9 @@ local function sorted()
     elseif sort_by == "modified" then
       x = a.attrs and a.attrs.modified or 0
       y = b.attrs and b.attrs.modified or 0
+      if x == y then x, y = a.name, b.name end
+    elseif sort_by == "created" then
+      x, y = a.made_at or 0, b.made_at or 0
       if x == y then x, y = a.name, b.name end
     else
       x, y = a.name, b.name
@@ -1146,6 +1152,109 @@ end
 local rows = ui.view{ x = SIDE_W, y = CONTENT_Y, w = W - SIDE_W,
                       h = H - CONTENT_Y - FOOT_H,
                       follow = { "left", "right", "top", "bottom" } }
+
+--
+-- **The columns, made** now that `rows` can be measured: `widest` is what
+-- a double-click on an edge fits a column to - its widest entry among the
+-- rows shown, or its title.
+--
+cols = ui.columns{
+  columns = {
+    { key = "name",     title = "Name",     w = 330, always = true },
+    { key = "size",     title = "Size",     w = 80,  align = "right" },
+    { key = "kind",     title = "Kind",     w = 110 },
+    { key = "modified", title = "Modified", w = 150 },
+    { key = "created",  title = "Created",  w = 150 },
+  },
+  widest = function(col)
+    local most = gfx.measure(col.title .. " \u{2191}")
+
+    for _, e in ipairs(rows.shown or {}) do
+      local text
+
+      if col.key == "name" then
+        text = files.label(e)
+      elseif col.key == "size" then
+        text = (e.kind == "directory") and "--" or files.size(e.size)
+      elseif col.key == "kind" then
+        text = (e.kind == "directory") and "folder" or (types.kind_of(e.name, e.attrs) or "file")
+      elseif col.key == "modified" then
+        text = e.when or "\u{2013}"
+      else
+        text = e.made or "\u{2013}"
+      end
+
+      most = math.max(most, gfx.measure(text) + (col.key == "name" and NAME_INDENT or 0))
+    end
+
+    return most
+  end,
+  on_change = function(c) columns_save(c) end,
+}
+
+--
+-- **Where the widths are kept**: the same for every folder, in Tracker's
+-- settings (the default and the drawing's recommendation) - or, for a
+-- folder that keeps its own, as an attribute on the folder, beside its
+-- icons' places, so it travels with it.
+--
+local COLUMNS_START = cols:text()
+
+function columns_save(c)
+  local line = c:text()
+
+  if columns_from and columns_from == where then
+    local ok, why = fs.setattr(where, { columns = line })
+
+    if not ok then status.text = "Could not keep this folder's columns: " .. tostring(why) end
+  else
+    local kept = prefs.read("tracker") or {}
+
+    kept.columns = line
+    prefs.write("tracker", kept)
+  end
+
+  print("tracker: columns " .. line)
+end
+
+function columns_for(path)
+  local own = (fs.getattr(path) or {}).columns
+
+  if type(own) == "string" and own ~= "" then
+    columns_from = path
+    cols:set_text(own)
+  else
+    columns_from = nil
+    cols:set_text((prefs.read("tracker") or {}).columns or COLUMNS_START)
+  end
+
+  if not backdrop then
+    print(("tracker: columns for %s%s: %s"):format(path, columns_from and " (its own)" or "", cols:text()))
+  end
+end
+
+-- The headings' menu: the kit's, and where the widths are kept.
+local function columns_menu(sx, sy)
+  local own = columns_from == where
+
+  win:open_menu(sx, sy, cols:menu({
+    { text = "The same for every folder", mark = not own, on_choose = function()
+        if own then
+          fs.setattr(where, { columns = "" })
+          columns_from = nil
+          columns_save(cols)
+        end
+      end },
+    { text = "This folder keeps its own", mark = own, on_choose = function()
+        if not own then
+          columns_from = where
+          columns_save(cols)
+        end
+      end },
+  }))
+  print("tracker: the headings' menu")
+end
+
 
 --
 -- The pane's ground to the window's bottom, under the foot line as well,
@@ -1655,12 +1764,11 @@ function rows:draw(g)
   g:fill(1, 1, self.w - 2, LROW - 1, ground)
   g:fill(1, LROW, self.w - 2, 1, theme.line_soft)
 
-  for _, c in ipairs(columns()) do
-    local mark = (sort_by == c.key) and (reversed and " v" or " ^") or ""
-    g:text(c.x, wy, c.title .. mark, theme.text_dim, ground)
-  end
-
   local top = LROW + 1
+  local right = self.w - 2 - ui.SCROLL_W - 2
+
+  cols:headings(g, COL_LEFT, 0, LROW, right, ground, sort_by, reversed)
+
   local per = math.max(1, (self.h - top - 2) // LROW)
 
   self.per_page = per
@@ -1674,6 +1782,16 @@ function rows:draw(g)
     self.said_rows = where
     print(("tracker: rows of %s at %d,%d, %d apart"):format(where,
           (win.origin_x or 0) + vx + 60, (win.origin_y or 0) + vy + top + LROW // 2, LROW))
+
+    -- And each heading's right edge, where a drag begins.
+    local edges = {}
+
+    for _, c in ipairs(cols:shown(COL_LEFT)) do
+      edges[#edges + 1] = ("%s@%d"):format(c.key, (win.origin_x or 0) + vx + c.x + c.w - 4)
+    end
+
+    print(("tracker: headings at %d: %s"):format((win.origin_y or 0) + vy + LROW // 2,
+                                                 table.concat(edges, " ")))
   end
 
   local list = shown
@@ -1746,11 +1864,11 @@ function rows:draw(g)
     -- tracker wont show folder icons in list view? it just shows a blue
     -- square beside folders", "we do have small icon set right?".
     --
-    files.icon(g, COLUMNS[1].x, ry + (LROW - 16) // 2, e, path_of(e), 16)
+    local name_x = cols:cell(g, "name", y, files.label(e), fg, bg, wide, nil, NAME_INDENT)
 
-    g:text(COLUMNS[1].x + 24, y, files.label(e), fg, bg)
-    g:text(COLUMNS[2].x, y,
-           (e.kind == "directory") and "--" or files.size(e.size), fg, bg)
+    if name_x then files.icon(g, name_x, ry + (LROW - 16) // 2, e, path_of(e), 16) end
+
+    cols:cell(g, "size", y, (e.kind == "directory") and "--" or files.size(e.size), fg, bg, wide)
     --
     -- The attributes go with the name, or the Kind column can only ever
     -- read an extension.
@@ -1762,15 +1880,15 @@ function rows:draw(g)
     -- all saying "file", all 0 B, with nothing on screen to say what they
     -- were.
     --
-    g:text(COLUMNS[3].x, y,
-           (e.kind == "directory") and "folder"
-           or (types.kind_of(e.name, e.attrs) or "file"), fg, bg)
-
-    if dated then
-      g:text(MODIFIED.x, y, ui.fitted(e.when or "", wide - MODIFIED.x - 4),
-             fg, bg)
-    end
+    cols:cell(g, "kind", y, (e.kind == "directory") and "folder"
+              or (types.kind_of(e.name, e.attrs) or "file"), fg, bg, wide)
+    cols:cell(g, "modified", y, e.when or "\u{2013}", fg, bg, wide)
+    cols:cell(g, "created", y, e.made or "\u{2013}",
+              (e.made_guessed and not on) and theme.text_dim or fg, bg, wide)
   end
+
+  -- An edge being dragged: its guide down the list, and its width.
+  cols:guide(g, 1, self.h - 1)
 
   draw_band()
 end
@@ -1875,6 +1993,12 @@ end
 -- local coordinates, so `at_point` is the same function a left press uses.
 --
 function rows:on_context(x, y)
+  -- The headings: which columns, and where their widths are kept.
+  if mode ~= "icons" and y < (self.top_row or 0) then
+    columns_menu(win.origin_x + self.x + x, win.origin_y + self.y + y)
+    return true
+  end
+
   local n = at_point(self, x, y)
   local e = n and self.shown and self.shown[n]
 
@@ -1885,6 +2009,25 @@ function rows:on_context(x, y)
 end
 
 function rows:mouse(action, x, y)
+  --
+  -- **An edge of the headings, held** (`ui.columns`): it follows the
+  -- pointer, and is kept where it is let go.
+  --
+  if cols.drag then
+    if action == "move" then
+      cols:move(x)
+      return true
+    end
+
+    if action == "release" then
+      local c = cols.drag.col
+
+      cols:release()
+      print(("tracker: column %s now %d"):format(c.key, c.w))
+      return true
+    end
+  end
+
   --
   -- The bar first, and it takes moves and releases as well as presses -
   -- everything else in this view only cares about a press, which is why the
@@ -2000,13 +2143,20 @@ function rows:mouse(action, x, y)
   -- are no columns.
   --
   if mode ~= "icons" and y < (self.top_row or 0) then
-    for _, c in ipairs(columns()) do
-      if x >= c.x - 4 and x < c.x + c.w then
-        if sort_by == c.key then reversed = not reversed
-        else sort_by, reversed = c.key, false end
+    if cols:arrows_press(x) then
+      print(("tracker: columns from %d"):format(cols.first))
+      return true
+    end
 
-        return true
+    local what, c = cols:press(x)
+
+    if what == "edge" then
+      if not cols.drag then
+        print(("tracker: column %s fitted to %d"):format(c.key, c.w))
       end
+    elseif c then
+      if sort_by == c.key then reversed = not reversed
+      else sort_by, reversed = c.key, false end
     end
 
     return true
@@ -2452,37 +2602,51 @@ function show(path)
   listed = placelib.files_only(path, listed)
 
   --
-  -- **A share's folder** (N6): its dates are the server's, so the Modified
-  -- column is drawn, each date in words once here rather than in every
-  -- paint; and whether it is as last heard - its server away - which greys
-  -- it under the band.
+  -- **Every file's dates, in words**, once a listing here rather than in
+  -- every paint: Modified from the disk or the server, Created where it is
+  -- kept - and a file without a Created shows its Modified in grey, one
+  -- with neither a dash (`docs/tracker-list.html`). And whether a share's
+  -- folder is as last heard - its server away - which greys it under the
+  -- band.
   --
   local server_label, share_name = netshares.under(path)
 
-  dated = share_name ~= nil and share_name ~= ""
   stale = listed.last_heard_ms ~= nil
 
-  if dated then
+  do
     local now = (fs.read("/Devices/clock") or {}).epoch or 0
     local offset = clock.offset()
 
     for _, e in ipairs(listed) do
-      local m = e.attrs and e.attrs.modified
+      local a = e.attrs or {}
+      local m, c = a.modified, a.created
 
-      e.when = math.type(m) == "integer" and clock.relative(m, now, offset) or ""
-    end
+      e.when = math.type(m) == "integer" and clock.relative(m, now, offset) or nil
 
-    -- The first file's, for the display harness, which holds it to the
-    -- server's own date for that file.
-    for _, e in ipairs(listed) do
-      if e.kind ~= "directory" then
-        print(("tracker: modified %s %s"):format(e.name, e.when))
-        break
+      if math.type(c) == "integer" then
+        e.made_at, e.made, e.made_guessed = c, clock.relative(c, now, offset), false
+      else
+        e.made_at, e.made, e.made_guessed = e.when and m or nil, e.when, e.when ~= nil
       end
     end
-  elseif sort_by == "modified" then
-    sort_by, reversed = "name", false
   end
+
+  -- The first file's dates, for the harnesses: a share's held to the
+  -- server's own date for that file, the disk's to today.
+  for _, e in ipairs(listed) do
+    if e.kind ~= "directory" and not backdrop then
+      if share_name ~= nil and share_name ~= "" then
+        print(("tracker: modified %s %s"):format(e.name, e.when or ""))
+      else
+        print(("tracker: dates of %s: modified %s, created %s%s"):format(e.name, e.when or "-",
+              e.made or "-", e.made_guessed and " (its modified)" or ""))
+      end
+
+      break
+    end
+  end
+
+  columns_for(path)
 
   net.seen = nil
   seen_card.hidden = true

@@ -24662,3 +24662,31 @@ Network Monitor's colours - titled with the last second's rate each way;
 carried at least the 36-byte page in and its request out. **Control**: the
 count in never read - "it carried 0 B in and 99 B out", and the suite
 fails.
+
+## 18.587 Tracker's list view on the kit's columns
+
+`docs/tracker-list.html`, `ui.md` 16.29. Tracker's three fixed columns -
+Name at 10, Size at 226, Kind at 322, a long name running under the size -
+became `ui.columns`: Name, Size, Kind, Modified and Created, each cell cut
+by `ui.fitted` at its own edge; an edge dragged with a guide and its width,
+the columns to its right moving with it; a double-click on an edge fitting
+the column to its widest entry; the headings' menu by a right click; and
+the arrangement kept as a line - in Tracker's settings, or as a `columns`
+attribute on a folder that keeps its own, read back when it is opened.
+Every folder's dates are worked out once a listing, not only a share's: a
+file in memory has none and shows a dash. Tracker opens 1060 wide.
+
+**Tests.** `x86-trackerlist`, new, 8 checks, with `/Home` on a disk so its
+files are dated (in memory they are not, and the suite's first run showed
+the dash, rightly): the first file Modified today and Created its Modified;
+the columns as they open; the long name's row holding one colour between
+Name's edge and the size; Name dragged 90 wider, to 420, and kept; Size
+fitted by a double-click on its edge to its widest entry, 60; the
+headings' menu by a right click; a second Tracker opening with the kept
+widths; and a folder carrying its own `columns` opened with them.
+**Controls**: cells not cut at their edge - 95 colours in the long name's
+row where one belongs; the kept line never read back - the second Tracker
+and the folder that keeps its own both open at the defaults. Each fails the
+suite. Whole gate: 77 of 79, x86-smbd and x86-film the known load flakes,
+both passing alone.
+

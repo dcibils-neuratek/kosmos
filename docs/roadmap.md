@@ -372,6 +372,25 @@ an attribute on it. The columns written once in the kit, Tracker first,
 Processes and Mail after. Created kept as an attribute `diskfs` writes when
 a file is made, so the disk's format does not change. **Agreed** - Diego, 12 October 2026:
 "Tracker mockup is perfect". Built after Disk Monitor's first step.
+**Built, 0.11.192** (`testing.md` 18.587, `ui.md` 16.29): `ui.columns` in
+the kit and Tracker's list on it - names cut at their own edge, edges
+dragged with a guide and fitted by a double-click, the headings' menu, the
+widths in Tracker's settings or on a folder that keeps its own, Modified
+for every folder on the disk, and Created where it is kept, else Modified
+in grey. Tracker opens 1060 wide, which holds the five columns as drawn.
+**Left**:
+- **Created on `/Home`** - asked of Diego on the card, 13 October: kfs keeps
+  attributes in a block of their own and the inode's 128 bytes are full, so
+  writing Created on every file made costs a block and a journalled write
+  each. Until he chooses (as agreed, with that cost; Created in the inode in
+  a new kfs version; or only where it already exists), `/Home`'s files show
+  their Modified there, in grey.
+- **The pointer's shape over an edge** - a two-way arrow needs the window
+  manager to take a shape from an application, which it cannot yet.
+- **Processes and Mail onto `ui.columns`**, as the drawing says.
+- Added and Location, the drawing's extra columns - nothing records when a
+  file arrived in a folder, and a search's results have no list of their
+  own yet.
 
 **Wallpapers: a folder, any picture, and seen before chosen** - Diego, 10
 October 2026, asking where Preferences finds its list (`settings.wallpapers`:

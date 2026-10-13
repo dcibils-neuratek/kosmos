@@ -1939,3 +1939,48 @@ says where an action is, as `row_of` says where a row is.
 **The amber has one door**: `ui.warning_colours()` - the code look's warning
 and its ground, chosen by the ground it sits on - which the sidebar's dot
 for a server not answering and Tracker's gone-away band both ask.
+
+## 16.29 Columns: a list's headings and cells, written once
+
+`docs/tracker-list.html`, agreed by Diego on 12 October 2026 ("Tracker
+mockup is perfect"). Tracker drew its own three fixed columns, at 10, 226
+and 322, and a long name ran under the size - Diego, on the M700, 10
+October: "for big files the name overlaps the size", "the columns are not
+resizable". Processes and Mail draw their own the same way, so the piece is
+the kit's, **`ui.columns`**, with Tracker its first user and those two to
+follow.
+
+It lays the shown columns out from a list's left edge (`cols:shown`) and
+draws **the headings** - each title cut to its column, the sort's arrow,
+a hairline at each edge - and **each cell** (`cols:cell`), cut with an
+ellipsis by `ui.fitted` at its own column's edge, numbers against the
+right. **An edge pressed and dragged** (`press`, `move`, `release`) moves
+that edge, every column to its right moving and none changing size, with a
+guide down the list and the column's name and width beside it
+(`cols:guide`); **a double-click on an edge** fits that column to its
+widest entry, which the list says through `widest`. Name never goes under
+120, the others under 60.
+
+**Wider than the list**, it scrolls a column at a time, the first held in
+place as a spreadsheet holds its first column: "‹ ›" at the headings'
+right end, each dim when there is nothing that way (`arrows`,
+`arrows_press`). **A column the list's edge would cut is left out whole**,
+heading and cells, so nothing is ever drawn cut by the window rather than
+by an ellipsis - a stub of a date reading "Tod..." looked like a fault. The
+drawing scrolled a pixel at a time; the drawing primitives cut text only to
+a width, not to a rectangle, and whole columns are what keeps every cell
+readable.
+
+**The headings' menu** (`cols:menu`) ticks each column shown, the first
+always and so greyed, then whatever the list adds - Tracker's "The same
+for every folder" and "This folder keeps its own" - then Fit every column
+and Reset columns. **The arrangement is a line of text** (`cols:text`,
+`set_text`): each key and width in order, a hidden one with a minus -
+`name 420 size 60 kind 110 modified 150 created 150` - which the list keeps
+where it likes: Tracker in its settings, or as a `columns` attribute on a
+folder that keeps its own.
+
+**Not done**: the pointer as a two-way arrow over an edge. The window
+manager draws one pointer and an application cannot ask for another shape
+yet; the guide and the width say where the edge is meanwhile
+(`roadmap.md`).

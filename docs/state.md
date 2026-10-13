@@ -2,14 +2,14 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-13, early morning (0.11.191; Sandboxes through the night)
+Last updated: 2026-10-13, early morning (0.11.192; Sandboxes, then Tracker's list, through the night)
 
 ---
 
 ## 12-13 October: Packages, then Sandboxes, through to Alpine on the network
 
 **Pushed: up to 0.11.184** (de21dac4). **On `main`, not pushed:
-0.11.185-0.11.191** and the commits between them, each with its suites and
+0.11.185-0.11.192** and the commits between them, each with its suites and
 its controls. Diego went to sleep saying "keep building", "overnight"; the
 M700 was not touched.
 
@@ -42,6 +42,12 @@ M700 was not touched.
     task's last line.
 - **Next in Sandboxes**: VT-x on the M700 with Diego there (S5's other
   half) - nothing else of `docs/sandboxes.md` is left on ARM.
+- **Tracker's list view (0.11.192)**, the queue's next: `ui.columns` in the
+  kit and Tracker on it - names cut at their edge, edges dragged and
+  fitted, the headings' menu, widths kept, Modified everywhere, Created
+  where kept. **Waiting on Diego**: Created on `/Home` costs a block a file
+  (asked on the card, with three choices). Processes and Mail move onto the
+  columns next; then Wallpapers.
   Then the queue: Tracker's list view, Wallpapers, Magnet, SATA, the VNC
   client, Shortcuts.
 - **Disk on this Mac: about 3 GB free.** The two development sticks in

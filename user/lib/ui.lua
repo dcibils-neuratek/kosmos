@@ -4674,6 +4674,416 @@ function ui.list(spec)
   return v
 end
 
+--------------------------------------------------------------------------
+-- **Columns** (`docs/tracker-list.html`): a list's headings and its
+-- cells, written once. Tracker drew its own, as Processes and Mail draw
+-- theirs - three copies of one idea, each with the long-name-under-the-
+-- next-column bug the drawing began from. Diego, on the M700, 10 October
+-- 2026: "for big files the name overlaps the size", "the columns are not
+-- resizable".
+--
+--   local cols = ui.columns{
+--     columns = { { key = "name", title = "Name", w = 330, always = true },
+--                 { key = "size", title = "Size", w = 80, align = "right" },
+--                 { key = "added", title = "Added", w = 150, hidden = true } },
+--     widest = function(col) return pixels end,   -- for a double-click's fit
+--     on_change = function(cols) end,             -- widths or columns changed
+--   }
+--
+-- **What it does**: lays the shown columns out from a list's left edge;
+-- draws the headings and each cell cut with an ellipsis at its own edge,
+-- numbers to the right; takes a press on a heading's edge and drags it,
+-- with a guide down the list and the width beside it, every column to its
+-- right moving and none changing size; fits a column to its widest entry
+-- on a double-click there; offers the headings' menu - each column shown or
+-- hidden, Name always - and says the whole arrangement as a line of text a
+-- caller keeps where it likes (`cols:text()`, `cols:set_text()`).
+--
+-- **What it leaves to the list**: the rows, the selection, sorting, and
+-- where the arrangement is kept. Name never goes narrower than 120 and the
+-- rest than 60; wider than the list, it scrolls a column at a time with the
+-- first held in place, so nothing is ever drawn cut by the list's edge
+-- rather than by an ellipsis.
+--------------------------------------------------------------------------
+
+function ui.columns(spec)
+  local c = { all = {}, first = 1, drag = nil, last_edge = nil,
+              widest = spec.widest, on_change = spec.on_change }
+  local PAD, SLOP = 8, 4
+
+  for i, d in ipairs(spec.columns or {}) do
+    local min = d.min or (i == 1 and 120 or 60)
+
+    c.all[i] = { key = d.key, title = d.title, align = d.align or "left",
+                 min = min, w = math.max(min, d.w or 100), always = d.always or i == 1,
+                 shown = not d.hidden, start_w = math.max(min, d.w or 100),
+                 start_shown = not d.hidden }
+  end
+
+  local function changed()
+    if c.on_change then c.on_change(c) end
+  end
+
+  -- The columns shown, in order, each with its `x` from the list's left.
+  -- The first is always there; after it, those scrolled past are not.
+  function c:shown(left)
+    local out, x, n = {}, left or 0, 0
+
+    self.left = left or 0
+
+    for _, col in ipairs(self.all) do
+      if col.shown then
+        n = n + 1
+
+        if n == 1 or n > self.first then
+          col.x = x
+          out[#out + 1] = col
+          x = x + col.w
+        else
+          col.x = nil
+        end
+      end
+    end
+
+    return out, x - (left or 0)
+  end
+
+  function c:get(key)
+    for _, col in ipairs(self.all) do
+      if col.key == key then return col end
+    end
+  end
+
+  -- How far past the first column the list is scrolled, kept to what
+  -- leaves the last column in `room`; true when it moved.
+  function c:scroll(by, room)
+    local count = 0
+
+    for _, col in ipairs(self.all) do
+      if col.shown then count = count + 1 end
+    end
+
+    local was = self.first
+
+    self.first = math.max(1, math.min(self.first + by, count))
+
+    -- No further than shows the last column whole.
+    while self.first > 1 do
+      local _, total = self:shown(0)
+
+      if total >= room then break end
+
+      self.first = self.first - 1
+    end
+
+    return self.first ~= was
+  end
+
+  -- Whether the columns are wider than `room`, so the list can scroll.
+  function c:overflows(room)
+    local total = 0
+
+    for _, col in ipairs(self.all) do
+      if col.shown then total = total + col.w end
+    end
+
+    return total > room or self.first > 1
+  end
+
+  --
+  -- **A cell**: `text` in column `key` of a row at `y`, cut with an
+  -- ellipsis at the column's edge - or at `right`, the list's, if that
+  -- comes first - and against the column's right edge for numbers.
+  -- `indent` leaves room at its left, for an icon. Its `x`, or nil when
+  -- the column is not shown.
+  --
+  function c:cell(g, key, y, text, fg, bg, right, role, indent)
+    local col = self:get(key)
+
+    if not col or not col.x then return nil end
+
+    local x = col.x + (indent or 0)
+    local room = col.x + col.w - PAD - x
+
+    -- Past the list's edge: the first column cut there, any other left
+    -- out whole - the arrows say there is more - rather than a stub.
+    if right and col.x + col.w > right then
+      if col ~= self.all[1] then return nil end
+
+      room = right - x - PAD
+    end
+
+    if room < 8 then return col.x end
+
+    text = ui.fitted(text, room, role)
+
+    if col.align == "right" then
+      g:text(col.x + col.w - PAD - gfx.measure(text, role), y, text, fg, bg, role)
+    else
+      g:text(x, y, text, fg, bg, role)
+    end
+
+    return col.x
+  end
+
+  --
+  -- **The headings**, in a band `h` tall at `y`: each title cut to its
+  -- column, the sort's mark on the one sorted by, and a hairline at each
+  -- edge so there is something to see where a drag begins.
+  --
+  function c:headings(g, left, y, h, right, ground, sort_by, reversed)
+    local shown = self:shown(left)
+
+    self.right = right
+    local ty = y + (h - gfx.height()) // 2
+
+    for i, col in ipairs(shown) do
+      if col.x >= right or (i > 1 and col.x + col.w > right) then break end
+
+      local title = col.title .. ((sort_by == col.key) and (reversed and " \u{2193}" or " \u{2191}") or "")
+      local room = math.min(col.w, right - col.x) - PAD
+
+      if room > 8 then
+        title = ui.fitted(title, room)
+
+        if col.align == "right" then
+          g:text(col.x + col.w - PAD - gfx.measure(title), ty, title, theme.text_dim, ground)
+        else
+          g:text(col.x, ty, title, theme.text_dim, ground)
+        end
+      end
+
+      local edge = col.x + col.w - PAD // 2
+
+      if edge < right then g:fill(edge, y + 5, 1, h - 10, theme.line_soft) end
+    end
+
+    self:arrows(g, y, h, right, ground)
+  end
+
+  --
+  -- **Sideways, a column at a time**: "‹ ›" at the headings' right end
+  -- when the columns are wider than the list or it has scrolled - each
+  -- dim when there is nothing that way - and pressed by `arrows_press`.
+  --
+  function c:arrows(g, y, h, right, ground)
+    local shown = self:shown(self.left or 0)
+    local last = shown[#shown]
+    local more = last and last.x + last.w > right
+
+    self.arrows_at = nil
+
+    if not more and self.first == 1 then return end
+
+    local back, on = "\u{2039}", "\u{203a}"
+    local bw, ow = gfx.measure(back) + 10, gfx.measure(on) + 10
+    local x0 = right - bw - ow
+    local ty = y + (h - gfx.height()) // 2
+
+    g:fill(x0 - 4, y + 1, right - x0 + 4, h - 2, ground)
+    g:fill(x0 - 4, y + 5, 1, h - 10, theme.line_soft)
+    g:text(x0 + 5, ty, back, self.first > 1 and theme.text or theme.line_soft, ground)
+    g:text(x0 + bw + 5, ty, on, more and theme.text or theme.line_soft, ground)
+    self.arrows_at = { x0 = x0 - 4, mid = x0 + bw, x1 = right, room = right - (self.left or 0),
+                       more = more }
+  end
+
+  -- A press at `x` on the arrows: true when it was there, scrolled or not.
+  function c:arrows_press(x)
+    local a = self.arrows_at
+
+    if not a or x < a.x0 or x >= a.x1 then return false end
+
+    if x < a.mid then
+      self:scroll(-1, a.room)
+    elseif a.more then
+      self.first = self.first + 1
+    end
+
+    return true
+  end
+
+  -- The column whose right edge is under `x`, within a few pixels.
+  function c:edge_at(x)
+    for _, col in ipairs(self.all) do
+      if col.x and math.abs(x - (col.x + col.w - PAD // 2)) <= SLOP then return col end
+    end
+  end
+
+  -- The column under `x`.
+  function c:at(x)
+    for _, col in ipairs(self.all) do
+      if col.x and x >= col.x - PAD // 2 and x < col.x + col.w - PAD // 2 then return col end
+    end
+  end
+
+  --
+  -- **A press in the headings**: "edge" when it began a drag, or fitted a
+  -- column on the second press of a double-click there; the column pressed
+  -- on otherwise, for sorting; nil for nothing.
+  --
+  function c:press(x)
+    local col = self:edge_at(x)
+
+    if col then
+      local now = sys.ticks()
+      local again = self.last_edge and self.last_edge.key == col.key
+                    and now - self.last_edge.at <= ui.double_click_ticks()
+
+      if again and self.widest then
+        self.last_edge = nil
+        col.w = math.max(col.min, math.floor(self.widest(col) + PAD + 0.5))
+        changed()
+        return "edge", col
+      end
+
+      self.last_edge = { key = col.key, at = now }
+      self.drag = { col = col, from = x, w = col.w }
+      return "edge", col
+    end
+
+    return "column", self:at(x)
+  end
+
+  -- The pointer moved with an edge held: true while it is.
+  function c:move(x)
+    if not self.drag then return false end
+
+    local d = self.drag
+
+    d.col.w = math.max(d.col.min, d.w + (x - d.from))
+    return true
+  end
+
+  function c:release()
+    if not self.drag then return false end
+
+    local moved = self.drag.col.w ~= self.drag.w
+
+    self.drag = nil
+
+    if moved then changed() end
+
+    return true
+  end
+
+  --
+  -- **While an edge is dragged**: a guide down the list from `top` to
+  -- `bottom`, and the column's name and width beside it at the top.
+  --
+  function c:guide(g, top, bottom)
+    if not self.drag or not self.drag.col.x then return end
+
+    local col = self.drag.col
+    local x = col.x + col.w - PAD // 2
+    local said = ("%s %d"):format(col.title, col.w)
+    local w = gfx.measure(said, "label") + 12
+    local lh = gfx.height("label") + 6
+
+    g:fill(x, top, 1, bottom - top, theme.accent)
+    g:fill_round(x + 6, top + 4, w, lh, theme.accent, 4)
+    g:text(x + 12, top + 7, said, theme.text_on, theme.accent, "label")
+  end
+
+  -- Every shown column fitted to its widest entry.
+  function c:fit_all()
+    if not self.widest then return end
+
+    for _, col in ipairs(self.all) do
+      if col.shown then col.w = math.max(col.min, math.floor(self.widest(col) + PAD + 0.5)) end
+    end
+
+    changed()
+  end
+
+  function c:reset()
+    for _, col in ipairs(self.all) do col.w, col.shown = col.start_w, col.start_shown end
+
+    self.first = 1
+    changed()
+  end
+
+  --
+  -- **The headings' menu**: each column, ticked when shown - the first
+  -- always, so greyed - then Fit every column and Reset columns, and
+  -- whatever the list adds after (`extra`: where the widths are kept,
+  -- in Tracker).
+  --
+  function c:menu(extra)
+    local items = {}
+
+    for _, col in ipairs(self.all) do
+      items[#items + 1] = { text = col.title, mark = col.shown, disabled = col.always or nil,
+                            on_choose = function()
+                              col.shown = not col.shown
+                              self.first = 1
+                              changed()
+                            end }
+    end
+
+    items[#items + 1] = { separator = true }
+
+    for _, it in ipairs(extra or {}) do items[#items + 1] = it end
+
+    if extra and #extra > 0 then items[#items + 1] = { separator = true } end
+
+    items[#items + 1] = { text = "Fit every column", disabled = (not self.widest) or nil,
+                          on_choose = function() self:fit_all() end }
+    items[#items + 1] = { text = "Reset columns", on_choose = function() self:reset() end }
+    return items
+  end
+
+  --
+  -- **The arrangement as a line**: each column's key and width in order, a
+  -- hidden one marked with a minus - "name 330 size 80 -added 150". What a
+  -- caller keeps; read back by `set_text`, which ignores a column it does
+  -- not know and leaves one the line does not mention as it was.
+  --
+  function c:text()
+    local out = {}
+
+    for _, col in ipairs(self.all) do
+      out[#out + 1] = ("%s%s %d"):format(col.shown and "" or "-", col.key, col.w)
+    end
+
+    return table.concat(out, " ")
+  end
+
+  function c:set_text(line)
+    local order, seen = {}, {}
+
+    for hidden, key, w in tostring(line or ""):gmatch("(%-?)([%w_]+) (%d+)") do
+      local col = self:get(key)
+
+      if col and not seen[key] then
+        seen[key] = true
+        col.w = math.max(col.min, math.tointeger(tonumber(w)) or col.w)
+        col.shown = col.always or hidden ~= "-"
+        order[#order + 1] = col
+      end
+    end
+
+    -- In the order the line says, then any it did not mention - and the
+    -- first, which is always shown, first whatever the line said.
+    for _, col in ipairs(self.all) do
+      if not seen[col.key] then order[#order + 1] = col end
+    end
+
+    for i, col in ipairs(order) do
+      if col == self.all[1] and i > 1 then
+        table.remove(order, i)
+        table.insert(order, 1, col)
+        break
+      end
+    end
+
+    self.all = order
+    self.first = 1
+  end
+
+  return c
+end
+
 --
 -- Editable text, over several lines.
 --
