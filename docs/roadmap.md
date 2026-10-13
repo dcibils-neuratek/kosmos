@@ -9544,6 +9544,21 @@ a roadmap question; nothing decided. What it would take, honestly:
 
 ### Smaller, and wanted
 
+- **AGREED on 13 October - a graph as squares, like a meter's lights.**
+  Diego, with a picture of a green-over-red LED meter: "i want try a small
+  change the graph widget to be little square rather than a full bar",
+  "the bars should be the same width as right now but just not a full
+  bar". The kit's history graph (`ui.history.draw`) - Monitor's cores,
+  Sandboxes' panels, the network's mirrored in and out - draws each column
+  as a stack of squares the column's width, a pixel apart, each the colour
+  of the series it falls in. A try: Diego decides whether it stays.
+
+- **AGREED on 13 October - the processor maker's logo in Monitor's chip.**
+  Diego, with a picture of BeOS's CPU Monitor, a PowerPC chip with its
+  logo and speed on it: "can we try adding the processor brand logo inside
+  the chip of our cpu monitor?", "in this case the Intel logo", "can we
+  mock it up first?". Drawn in `docs/monitor.html` first.
+
 - **DONE on 13 October (0.11.212) - a person's looks, editable, under
   Preferences.** Diego: "all settings and preferences files should be
   editable as per our premise", "add /Home/Themes to the roadmap and build

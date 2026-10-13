@@ -124,6 +124,25 @@ code { font-family: var(--mono); font-size: 13px; }
 /* The processor's features: one line under the facts, as quiet as they are. */
 .chip .feats { color: var(--a-dim); font-size: 12px; line-height: 1.35; }
 .chip .feats em { font-style: normal; color: #8fd6a4; }
+/* The maker's mark on the chip (13 October): the die as a lid with the maker's word on it. */
+.die.mark { display: grid; place-items: center; }
+.die.mark::before { inset: 5px; background: linear-gradient(150deg, #8e98aa, #5d6779); }
+.lid { position: relative; z-index: 1; display: grid; justify-items: center; line-height: 1; color: #fff;
+       text-shadow: 0 1px 0 rgba(0,0,0,.35); }
+.wm { font-family: "Inter", "Helvetica Neue", Arial, sans-serif; font-weight: 700; letter-spacing: -.04em; position: relative; }
+.wm.intel .i { position: relative; }
+.wm.intel .i::after { content: ""; position: absolute; left: 50%; top: -.02em; width: .2em; height: .2em; transform: translateX(-50%);
+                      background: #9fd4ff; }
+.wm.intel .i { color: transparent; }
+.wm.intel .i::before { content: "\0131"; position: absolute; left: 0; color: #fff; }
+.wm.amd { letter-spacing: .02em; font-weight: 800; }
+.wm.arm { font-weight: 600; letter-spacing: -.02em; }
+.lid small { font-family: var(--body); font-weight: 600; font-size: 8.5px; letter-spacing: .02em; opacity: .9; margin-top: 3px; }
+.die.mark.b, .die.mark.c { width: 64px; height: 64px; }
+.chip.big { grid-template-columns: 64px 1fr auto; }
+.die.mark.c::before, .die.mark.b::before { inset: 7px; }
+.opts { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.opt b.tag { display: inline-block; font-size: 12px; color: var(--a-dim); margin: 0 0 6px; }
 </style>
 </head>
 <body>
@@ -168,6 +187,26 @@ code { font-family: var(--mono); font-size: 13px; }
   <li><b>The names in one place</b>, <code>pulse.lua</code> beside the processor's name - which word, which bit, what it is called - so About and neofetch can show the same row. Read once when the window opens: a processor's features do not change.</li>
 </ul>
 
+
+<h2 id="mark">The maker's mark on the chip</h2>
+<div class="q"><b>Diego, 13 October 2026</b>, with a picture of BeOS's CPU Monitor - a PowerPC chip with its logo, "604e" and "200 MHz" on it: "can we try adding the processor brand logo inside the chip of our cpu monitor?", "in this case the Intel logo", "can we mock it up first?".</div>
+<div class="opts">
+<div class="opt"><b class="tag">A - the chip as it is, its mark on it</b><div class="scroller"><div class="win" id="wa"></div></div></div>
+<div class="opt"><b class="tag">B - a chip half as large again, the mark and the model on it, as BeOS's was</b><div class="scroller"><div class="win" id="wb"></div></div></div>
+<div class="opt"><b class="tag">C - as B, and the rated clock on it too</b><div class="scroller"><div class="win" id="wc"></div></div></div>
+</div>
+<p class="cap"><b>A</b> keeps the card's height (83 points); the mark is small but reads at a glance, and the words beside it stay as they are. <b>B</b> makes the card 8 points taller and the chip the thing the eye lands on, BeOS's way; the maker's word beside the model goes, since the chip says it. <b>C</b> puts the clock on the chip too, as the PowerPC had "200 MHz", and the line beside it keeps only the count and the features.</p>
+<h3 style="margin:14px 0 6px;font-size:14px">The others, drawn B's way</h3>
+<div class="pair">
+<div class="scroller"><div class="win" id="wd"></div></div>
+<div class="scroller"><div class="win" id="we"></div></div>
+</div>
+<div class="scroller" style="margin-top:12px"><div class="win" id="wf"></div></div>
+<p class="cap">AMD, an ARM board and QEMU. A maker Kosmos has no mark for - QEMU's processor, or one it does not know - gets its name set plainly on the lid in the same place, so a chip is never blank.</p>
+<ul>
+  <li><b>The marks are drawings, not pictures</b>: each maker's word set in a face the image carries, with the little that makes it that maker's - Intel's square over the i - drawn by the kit, so it is sharp at every scale and in every look. A handful: Intel, AMD, Arm, Apple, and the plain name for the rest.</li>
+  <li><b>Which maker</b> is the vendor <code>pulse.lua</code> already reads, CPUID's vendor string on a PC and MIDR's implementer on ARM - so About and neofetch can draw the same chip.</li>
+</ul>
 <h2>What it is made of</h2>
 <ul>
   <li><b>The name</b> is <code>/Devices/cpu</code>'s, as now (<code>pulse.name()</code>). Making it neat is a few lines in <code>pulse.lua</code>, beside <code>name</code>, so About and neofetch can use the same split rather than each writing their own.</li>
@@ -270,6 +309,35 @@ document.getElementById("w8").innerHTML = head(false) + '<div class="body">' +
 document.getElementById("w9").innerHTML = head(false) + '<div class="body">' +
   chipf("Arm", "Cortex-A76", "4 processors &middot; rated 2.40 GHz", "2.40 GHz", "now",
         pills([["EL2", true], ["Neon"], ["FP16"], ["AES"], ["SHA-2"], ["CRC32"]])) + "</div>";
+
+// ---- the maker's mark on the chip (13 October): A, B, C ----
+const INTEL = '<span class="wm intel"><span class="i">i</span>ntel</span>';
+function marked(cls, lid, maker, model, facts, now, nowNote, row) {
+  return `<div class="chip${cls === "a" ? "" : " big"}"><div class="die mark ${cls}"><div class="lid">${lid}</div></div>
+    <div><div class="model">${maker ? `<span class="maker">${maker}</span>` : ""}${model}</div><div class="facts">${facts}</div>${row}</div>
+    <div class="now"><b>${now}</b><span>${nowNote}</span></div></div>`;
+}
+const FEATS = pills([["VT-x on", true], ["SSE4.2"], ["AVX2"], ["FMA"], ["AES-NI"], ["RDRAND"]]);
+document.getElementById("wa").innerHTML = head(false) + '<div class="body">' +
+  marked("a", `<span style="font-size:13px">${INTEL}</span>`, "Intel", "Core i7-6700",
+         "8 processors &middot; rated 3.40 GHz", "3.70 GHz", "now, across all cores", FEATS) + "</div>";
+document.getElementById("wb").innerHTML = head(false) + '<div class="body">' +
+  marked("b", `<span style="font-size:18px">${INTEL}</span><small>i7-6700</small>`, "", "Core i7-6700",
+         "8 processors &middot; rated 3.40 GHz", "3.70 GHz", "now, across all cores", FEATS) + "</div>";
+document.getElementById("wc").innerHTML = head(false) + '<div class="body">' +
+  marked("c", `<span style="font-size:17px">${INTEL}</span><small>i7-6700</small><small>3.40 GHz</small>`, "", "Core i7-6700",
+         "8 processors", "3.70 GHz", "now, across all cores", FEATS) + "</div>";
+document.getElementById("wd").innerHTML = head(false) + '<div class="body">' +
+  marked("b", '<span class="wm amd" style="font-size:15px">AMD</span><small>5950X</small>', "", "Ryzen 9 5950X",
+         "16 processors &middot; rated 3.40 GHz", "3.05 GHz", "now",
+         pills([["AMD-V on", true], ["AVX2"], ["FMA"], ["AES-NI"], ["SHA"]])) + "</div>";
+document.getElementById("we").innerHTML = head(false) + '<div class="body">' +
+  marked("b", '<span class="wm arm" style="font-size:17px">arm</span><small>A76</small>', "", "Cortex-A76",
+         "4 processors &middot; rated 2.40 GHz", "2.40 GHz", "now",
+         pills([["EL2", true], ["Neon"], ["AES"], ["SHA-2"]])) + "</div>";
+document.getElementById("wf").innerHTML = head(false) + '<div class="body">' +
+  marked("b", '<span class="wm" style="font-size:12px;font-weight:600">QEMU</span><small>Virtual</small>', "", "QEMU Virtual CPU",
+         "4 processors", "2.00 GHz", "now", pills([["SSE4.2"], ["AES-NI"]])) + "</div>";
 </script>
 </body>
 </html>
