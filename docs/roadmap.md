@@ -9183,6 +9183,26 @@ the applications make the system useful, and is not pulled forward.
 
 ### The system
 
+**The Sandboxes window, as drawn, and every setting editable** - Diego,
+13 October 2026, using it on the M700: "the sandboxes app still is not
+pixel perfect per the mockup proposed. is lacking the help section, the
+settings for a machine is non editable, it should be all editable, etc".
+So: the window held view by view against `docs/sandboxes.html` - the grid,
+one sandbox watched and each of its tabs, the sheet - and every difference
+listed and closed; a sandbox's Settings tab editable in full (its image,
+memory, command, kind, folders, network and ports, whether it starts with
+Kosmos), written to its definition and taking effect at its next start;
+and the help screen below.
+
+**The keyboard in a sandbox's console** - Diego, 13 October 2026: "the
+console in sandboxes is missing some keystrokes from my keyboard and also
+repeating others". Typed by VNC, a long line arrives whole; from the
+M700's USB keyboard, "cd lib" arrived as "cd ib" and as "cd liinnnn" - a
+key press never seen and a key held past the half second that repeats,
+which is the shape of the USB driver collecting the keyboard's reports
+late. The driver and a sandbox's vCPU thread are both on processor 0.
+Measured before it is fixed.
+
 **Sandboxes' help screen** - Diego, 13 October 2026: "the sandboxes app
 needs a help screen that tells the user how it operates and works", after
 asking whether sandboxes behave like QEMU: "we need to tell the user that
