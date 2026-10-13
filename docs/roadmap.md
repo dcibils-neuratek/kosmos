@@ -9192,7 +9192,25 @@ one sandbox watched and each of its tabs, the sheet - and every difference
 listed and closed; a sandbox's Settings tab editable in full (its image,
 memory, command, kind, folders, network and ports, whether it starts with
 Kosmos), written to its definition and taking effect at its next start;
-and the help screen below.
+and the help screen below. **Built 0.11.207** (`testing.md` 18.601): the
+drawing's pictures (App_Playground, Device_Harddisk, Folder_generic,
+Prefs_Network) on the title, the sidebar, the cards and the chips; image
+titles; the machine as "1 of 8 processors", "0.3 of 3 GB given",
+"Virtualization: VT-x, EPT"; the watched sandbox's group lit; its header
+with Console, Stop, Restart and "..." (Every sandbox, Delete); the Given
+panel's rows as drawn; the New sheet as drawn - 128 MB, 512 MB, 1 GB, 2 GB,
+folders as chips from the Open window's folder mode with "+ Add a folder",
+ports as chips with "+ Port"; and **the Settings tab the same form, filled,
+with Save and Save and restart**. Left of the drawing: the Memory panel's
+graph, which wants the guest to say what it uses (virtio-balloon's
+statistics); more than one processor.
+
+**VNC's pointer lands off where it is pointed** - found on the M700, 13
+October 2026, driving the Sandboxes window: on its 1720 by 1440 screen a
+click sent at (880, 422) arrived at (844, 467) - 36 to the left, and the
+height stretched by about 1.07 and moved 15 down - so a tab was missed for
+the panel under it. `vncd`'s scaling of the viewer's position into the
+pointer's range, held to a test that clicks each corner of the screen.
 
 **The keyboard in a sandbox's console** - Diego, 13 October 2026: "the
 console in sandboxes is missing some keystrokes from my keyboard and also

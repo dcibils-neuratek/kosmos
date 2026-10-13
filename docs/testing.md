@@ -25081,3 +25081,27 @@ x86-display-4, which failed once on its shift-H check and once on a
 truncated screen dump, then passed; display-1, which holds the keyboard
 phase the shifted keys are in, passed twice. Diego on the M700: "the cpu
 monitor app looks perfect!"
+
+## 18.601 The Sandboxes window, as drawn, and every setting editable
+
+Diego, 13 October, using it on the M700: "the sandboxes app still is not
+pixel perfect per the mockup proposed. is lacking the help section, the
+settings for a machine is non editable, it should be all editable". The
+window held to `docs/sandboxes.html` view by view (rendered by headless
+Chrome beside VNC pictures of the M700) and the differences closed: the
+drawing's pictures on the title, the sidebar's groups and images, the cards
+and their chips; images by their titles; the machine's lines as drawn; the
+watched sandbox's group lit in the sidebar, and back to every sandbox from
+a group or the "..." menu rather than a "< All" button; its header with
+Console, Stop, Restart and "..."; the Given panel's rows; the New sheet's
+rows as drawn - memory 128 MB to 2 GB, folders and ports as chips with
+"+ Add a folder" (the Open window's folder mode) and "+ Port". **One form,
+`make_form`, is the sheet and the Settings tab**: the tab shows it filled
+with the sandbox's definition, its name fixed, and Save writes it (the
+change at its next start) or Save and restart.
+
+**Tests.** `arm-sandboxwin` 11 -> 14: the Settings tab's form shown, 128 MB
+chosen and saved, and the definition read back from the disk saying 128.
+On the M700 (0.11.207) by VNC: the grid, shell86's Overview, its Settings
+form and the New sheet. Left of the drawing: the Memory panel's graph (the
+guest does not say what it uses yet) and more than one processor.

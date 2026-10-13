@@ -13,6 +13,8 @@ not - and the window opened beside them. Held to:
   * **one sandbox watched**: shell1 opened by a double click, its Console
     tab chosen, and what is typed there answered by Alpine's shell - two
     backspaces stepping the shown line back, with nothing drawn for them;
+  * **its settings**: the Settings tab's form, 128 MB chosen and saved, and
+    the definition on the disk saying so;
   * **New sandbox**: the sheet filled - a name - and Create and start
     making it and starting it;
   * **Stop on a card**: web stopped, and the card saying so.
@@ -170,9 +172,32 @@ def main():
                 check(until(r"sandboxes: console shell1: ab\n", at, 15) is not None,
                       "the shell did not run 'echo ab'")
 
-            if "‹ All" in spots:
-                click(ox + spots["‹ All"][0], oy + spots["‹ All"][1])
-                time.sleep(1)
+            # **Its settings, editable** (Diego, 13 October: "it should be
+            # all editable"): the Settings tab's form, 128 MB chosen, Save -
+            # and the definition on the disk says 128.
+            if "Settings" in spots:
+                at = len(guest.seen)
+                click(ox + spots["Settings"][0], oy + spots["Settings"][1])
+                form = until(r"sandboxes: settings of shell1, memory at (\d+),(\d+), save at (\d+),(\d+)", at, 15)
+                check(form is not None, "the Settings tab did not show shell1's form")
+
+                if form:
+                    mx, my, sx, sy = (int(v) for v in form.groups())
+                    click(ox + mx, oy + my)
+                    time.sleep(0.5)
+                    at = len(guest.seen)
+                    click(ox + sx, oy + sy)
+                    saved = until(r"sandboxes: shell1 settings saved, memory (\d+)", at, 15)
+                    check(saved is not None and saved.group(1) == "128",
+                          "Save in shell1's settings did not keep 128 MB: %r" % (saved and saved.group(0)))
+                    kept = until(r"sandboxes: shell1 kept, memory (\d+)", at, 15)
+                    check(kept is not None and kept.group(1) == "128",
+                          "shell1's definition, read back from the disk, did not say 128 MB: %r"
+                          % (kept and kept.group(0)))
+
+            # Back to every sandbox: a group in the sidebar, as the drawing has it.
+            click(ox + 60, oy + 100)
+            time.sleep(1)
 
         at = len(guest.seen)
         click(ox + nx, oy + ny)

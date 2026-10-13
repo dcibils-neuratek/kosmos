@@ -35,6 +35,11 @@ local MB = 1024 * 1024
 
 local GREEN, BLUE, GREY = 0xff2e9e5b, 0xff2f6fdc, 0xff6b7280
 
+-- The drawing's pictures (`docs/sandboxes.html`), from the shipped set: a
+-- sandbox, an image, a folder, a network.
+local ICON_SANDBOX, ICON_IMAGE = "App_Playground.png", "Device_Harddisk.png"
+local ICON_FOLDER, ICON_NETWORK = "Folder_generic.png", "Prefs_Network.png"
+
 --------------------------------------------------------------------------
 -- What there is, asked on the window's own clock.
 --------------------------------------------------------------------------
@@ -48,6 +53,7 @@ local pending = {}                      -- name -> "starting" | "restarting"
 local last_full = 0
 local start                             -- forward: a restart calls it
 local folder_words                      -- forward: the cards say folders
+local amount_of                         -- forward: the sidebar says memory
 local reports = {}                      -- name -> the file its start says in
 
 --
@@ -285,10 +291,36 @@ if not win then
 end
 
 local new_button = ui.button{ text = "+ New sandbox", go = true }
-local head = ui.header{ x = 0, y = 0, w = W, title = "Sandboxes", sub = "", right = { new_button },
-                        title_bar = true }
+local head_icon = ui.view{ w = 26, h = 26 }
+
+function head_icon:draw(g) g:icon(0, 0, ICON_SANDBOX, 26) end
+
+local head = ui.header{ x = 0, y = 0, w = W, title = "Sandboxes", sub = "", left = { head_icon },
+                        right = { new_button }, title_bar = true }
 
 win:add(head)
+
+-- "256 MB of 2894 MB" as the drawing says it: "0.3 of 2.8 GB" once either is a gigabyte.
+amount_of = function(mb, of)
+  if of >= 1024 then return ("%.1f of %.0f GB"):format(mb / 1024, of / 1024) end
+
+  return ("%d of %d MB"):format(mb, of)
+end
+
+local function find(name)
+  for _, s in ipairs(all) do
+    if s.name == name then return s end
+  end
+end
+
+-- An image's name for a person: its package's title, else its folder's name.
+local function image_title(id)
+  for _, i in ipairs(images) do
+    if i.name == id then return i.title, i.bytes end
+  end
+
+  return id, nil
+end
 
 --
 -- **The sidebar**: the groups, the images there are, and the machine.
@@ -311,14 +343,26 @@ function side:draw(g)
 
   y = draw_group(g, y, "Sandboxes")
 
+  -- Watching one, its own group is the one lit, as the drawing has it.
+  local lit = group
+
+  if watched then
+    local w = find(watched)
+    local st = w and state_of(w)
+
+    lit = (st == "task") and "tasks" or (st == "running" or st == "starting" or st == "restarting")
+          and "running" or "stopped"
+  end
+
   for _, it in ipairs({ { "all", "All" }, { "running", "Running" }, { "stopped", "Stopped" }, { "tasks", "Tasks" } }) do
-    local on = group == it[1]
+    local on = lit == it[1]
 
     if on then g:fill_round(8, y, self.w - 16, 30, theme.accent, 7) end
 
     local ink = on and 0xffffffff or theme.text
 
-    g:text(20, y + (30 - gfx.height()) // 2, it[2], ink, nil, "ui")
+    g:icon(16, y + 5, ICON_SANDBOX, 20)
+    g:text(44, y + (30 - gfx.height()) // 2, it[2], ink, nil, "ui")
 
     local n = tostring(c[it[1]] or 0)
 
@@ -336,12 +380,17 @@ function side:draw(g)
   end
 
   for _, i in ipairs(images) do
-    g:text(20, y, ui.fitted(i.title, self.w - 90, "ui"), theme.text, nil, "ui")
-
     local size = ("%d MB"):format(i.bytes // MB)
+    local lines = ui.wrapped(i.title, self.w - 44 - 22 - gfx.measure(size, "label") - 8, "ui", 2)
+
+    g:icon(16, y + 1, ICON_IMAGE, 20)
+
+    for k, line in ipairs(lines) do
+      g:text(44, y + (k - 1) * (gfx.height() + 2), line, theme.text, nil, "ui")
+    end
 
     g:text(self.w - 22 - gfx.measure(size, "label"), y + 2, size, theme.text_dim, nil, "label")
-    y = y + gfx.height() + 8
+    y = y + #lines * (gfx.height() + 2) + 8
   end
 
   g:text(20, y, "+ Get an image", theme.accent, nil, "ui")
@@ -349,17 +398,17 @@ function side:draw(g)
   y = y + gfx.height() + 22
 
   y = draw_group(g, y, "Machine")
-  g:text(20, y, ("%d processor%s"):format(machine.cpus or 1, (machine.cpus or 1) == 1 and "" or "s"),
+  g:text(20, y, ("%d of %d processors"):format(c.running + c.tasks, machine.cpus or 1),
          theme.text_dim, nil, "ui")
   y = y + gfx.height() + 4
-  g:text(20, y, ("%d MB of %d MB given"):format(given_mb(), (machine.ram or 0) // MB),
+  g:text(20, y, ("%s given"):format(amount_of(given_mb(), (machine.ram or 0) // MB)),
          theme.text_dim, nil, "ui")
   y = y + gfx.height() + 4
 
   -- What the processor and its firmware allow (`sysinfo.virt`, probed at
   -- boot): on a PC, whether VT-x is there and what its setup decided.
-  local virt = machine.guests and machine.virt == 4 and "Virtualization: EL2, a guest a core"
-               or machine.guests and "Virtualization: VT-x, a guest a core"
+  local virt = machine.guests and machine.virt == 4 and "Virtualization: EL2"
+               or machine.guests and "Virtualization: VT-x, EPT"
                or ({ [1] = "VT-x is off in this machine's setup: turn on Intel Virtualization Technology",
                      [2] = "VT-x is on and this processor lacks what Kosmos needs of it (EPT)",
                      [3] = "VT-x is here and not locked; Kosmos does not drive it yet" })[machine.virt]
@@ -424,11 +473,16 @@ local function button(g, x, y, text, act, primary)
   return x + w + 8
 end
 
-local function chip(g, x, y, text)
-  local w = gfx.measure(text, "label") + 18
+-- What a sandbox was given, as a chip with its picture: a folder, a port, its network.
+local function chip(g, x, y, text, icon)
+  local inset = icon and 26 or 9
+  local w = gfx.measure(text, "label") + inset + 9
 
-  g:fill_round(x, y, w, 24, theme.raised, 6)
-  g:text(x + 9, y + (24 - gfx.height("label")) // 2, text, theme.text, nil, "label")
+  g:fill_round(x, y, w, 24, theme.mix(theme.raised, theme.line_soft, 500), 6)
+
+  if icon then g:icon(x + 6, y + 4, icon, 16) end
+
+  g:text(x + inset, y + (24 - gfx.height("label")) // 2, text, theme.text, nil, "label")
   return x + w + 8
 end
 
@@ -469,7 +523,7 @@ local function up_for(s)
 end
 
 local function subtitle(s)
-  local image = s.task and "a task" or s.image
+  local image = image_title(s.image)
   local what = s.command ~= "" and s.command or (s.task and "" or "a shell")
   local up = up_for(s)
   local parts = { image }
@@ -491,9 +545,7 @@ local function draw_card(g, s, x, y, w)
 
   local ix = x + 18
 
-  g:fill_round(ix, y + 18, 36, 36, 0xff3b5a8f, 8)
-  g:text(ix + (36 - gfx.measure("S", "title")) // 2, y + 18 + (36 - gfx.height("title")) // 2,
-         "S", 0xffffffff, nil, "title")
+  g:icon(ix, y + 16, ICON_SANDBOX, 36)
 
   local tx, room = ix + 50, w - 50 - 18 - 110
 
@@ -528,13 +580,13 @@ local function draw_card(g, s, x, y, w)
   -- What it was given.
   local cx = ix
 
-  for _, f in ipairs(s.folders or {}) do cx = chip(g, cx, y + 104, folder_words(f)) end
-  for _, p2 in ipairs(s.ports or {}) do cx = chip(g, cx, y + 104, port_words(p2)) end
+  for _, p2 in ipairs(s.ports or {}) do cx = chip(g, cx, y + 104, "port " .. port_words(p2), ICON_NETWORK) end
+  for _, f in ipairs(s.folders or {}) do cx = chip(g, cx, y + 104, folder_words(f), ICON_FOLDER) end
 
   if s.network == "outgoing" then
-    chip(g, cx, y + 104, #(s.ports or {}) > 0 and "outgoing" or "outgoing only")
+    chip(g, cx, y + 104, #(s.ports or {}) > 0 and "outgoing" or "outgoing only", ICON_NETWORK)
   elseif #(s.ports or {}) == 0 then
-    chip(g, cx, y + 104, "no network")
+    chip(g, cx, y + 104, "no network", ICON_NETWORK)
   end
 
   local bx, by = ix, y + CARD_H - 46
@@ -633,12 +685,6 @@ local detail_buttons = {}
 
 detail.focusable = true
 
-local function find(name)
-  for _, s in ipairs(all) do
-    if s.name == name then return s end
-  end
-end
-
 -- The console's lines, from its text: the last `n`, and the line being
 -- written - a prompt - as the last.
 local function last_lines(text, n)
@@ -702,14 +748,17 @@ function detail:draw(g)
     return w
   end
 
-  -- Back to every sandbox; its name, what it runs; its buttons.
-  act("\u{2039} All", function() watched = nil print("sandboxes: back") end, false, x, y)
-  g:text(x + 80, y - 2, s.name, theme.text, nil, "title")
-  g:text(x + 80, y + gfx.height("title"), ui.fitted(subtitle(s), self.w - 460, "label"),
+  -- Its picture, its name and what it runs, as the drawing has them; back
+  -- to every sandbox is a group in the sidebar, or the "..." menu.
+  g:icon(x, y - 4, ICON_SANDBOX, 40)
+  g:text(x + 52, y - 4, s.name, theme.text, nil, "title")
+  g:text(x + 52, y - 2 + gfx.height("title"), ui.fitted(subtitle(s) .. (s.now and s.now.pid
+         and (" \u{b7} vmm process %d"):format(s.now.pid) or ""), self.w - 440, "label"),
          theme.text_dim, nil, "label")
 
   local st = state_of(s)
   local rx = self.w - 20
+  local rx_more = rx - 40
 
   local function right(text, fn, primary)
     local w = gfx.measure(text) + 24
@@ -719,11 +768,24 @@ function detail:draw(g)
     rx = rx - 8
   end
 
+  -- "...": what is not a button - the sandbox's deletion, and back.
+  right("...", function()
+    local items = { { text = "Every sandbox", on_choose = function() watched = nil print("sandboxes: back") end } }
+
+    if st ~= "running" and st ~= "task" and not s.task then
+      items[#items + 1] = { separator = true }
+      items[#items + 1] = { text = "Delete " .. s.name, on_choose = function() delete(s.name) watched = nil end }
+    end
+
+    win:open_menu(win.origin_x + SIDE + rx_more, win.origin_y + L.head + y + 30, items)
+  end)
+  rx_more = rx + 8
+
   if st == "running" or st == "task" then
     if not s.task then right("Restart", function() restart(s.name) end) end
     right("Stop", function() stop(s.name) end)
+    right("Console", function() tab = 2 print("sandboxes: tab Console") end)
   elseif not s.task then
-    right("Delete", function() delete(s.name) end)
     right("Start", function() start(s.name) end, true)
   end
 
@@ -795,14 +857,19 @@ function detail:draw(g)
     end
 
     local gx = 40 + lw
+    local title, bytes = image_title(s.image)
+    local ports = {}
+
+    for _, p2 in ipairs(s.ports or {}) do ports[#ports + 1] = "port " .. port_words(p2) end
+
     local given = {
-      { "Image", s.task and "-" or s.image },
-      { "Memory", ("%d MB"):format(s.now and s.now.ram // MB or s.memory) },
-      { "Folders", #(s.folders or {}) > 0 and folder_words(s.folders[1]) .. (#s.folders > 1 and (" and " .. (#s.folders - 1) .. " more") or "") or "none" },
-      { "Network", network_words(s) },
-      { "Command", s.command ~= "" and s.command or "a shell" },
-      { "Starts", s.starts or "by hand" },
-      { "Stops", (s.command or "") ~= "" and "when its command ends" or "when its shell ends" },
+      { "Image", bytes and ("%s, %d MB"):format(title, bytes // MB) or title },
+      { "Folder", #(s.folders or {}) > 0 and folder_words(s.folders[1]) .. (#s.folders > 1 and (" and " .. (#s.folders - 1) .. " more") or "") or "none" },
+      { "Network", #ports > 0 and table.concat(ports, ", ") .. (s.network == "outgoing" and ", outgoing" or "")
+                   or network_words(s) },
+      { "Starts", s.starts == "with Kosmos" and "with Kosmos" or "by hand" },
+      { "Stops", s.kind == "service" and "never on its own" or (s.command or "") ~= "" and "when its command ends"
+                 or "when its shell ends" },
     }
     local gh2 = 34 + #given * (gfx.height() + 6) + 8
 
@@ -864,14 +931,8 @@ function detail:draw(g)
     terminal(g, 20, top_y, self.w - 40, body_h - 8, #log > 0 and table.concat(log, "\n")
              or "nothing from its monitor or its kernel yet", false)
   else
-    local lines = {}
-
-    for line in sandboxes.format(s):gmatch("[^\n]+") do lines[#lines + 1] = line end
-
-    terminal(g, 20, top_y, self.w - 40, math.min(body_h - 8, (#lines + 1) * (gfx.height("mono") + 2) + 16),
-             table.concat(lines, "\n"), false)
-    g:text(20, top_y + math.min(body_h - 8, (#lines + 1) * (gfx.height("mono") + 2) + 16) + 10,
-           "/Home/Sandboxes/" .. s.name .. "/sandbox.txt", theme.text_dim, nil, "label")
+    -- The form is on the window (`settings_open`); under it, where it is kept.
+    g:text(20, self.h - 26, "Kept in /Home/Sandboxes/" .. s.name .. "/sandbox.txt", theme.text_dim, nil, "label")
   end
 end
 
@@ -915,6 +976,280 @@ end
 win:add(foot)
 
 --------------------------------------------------------------------------
+-- **A sandbox's definition, as a form** - the New sheet as drawn
+-- (`docs/sandboxes.html`, "A new one"), and the same rows in a sandbox's
+-- Settings tab, filled with what it has: Diego, 13 October, "the settings
+-- for a machine is non editable, it should be all editable". Its image, its
+-- kind and command, its memory, its folders and its network, and whether it
+-- starts with Kosmos; its name only when it is new, since the name is its
+-- folder in /Home/Sandboxes.
+--------------------------------------------------------------------------
+
+local panel_kit = use("/Kosmos/Libraries/panel.lua")
+local KINDS = { "task", "service", "shell" }
+local MEMORY_CHOICES = { 128, 512, 1024, 2048 }
+
+local function memory_words(mb)
+  return mb >= 1024 and ("%d GB"):format(mb // 1024) or ("%d MB"):format(mb)
+end
+
+--
+-- A row of chips - a folder, a port - each with its picture and an x that
+-- takes it away, then the drawing's "+ Add a folder" or "+ Port" in the
+-- accent. A chip pressed elsewhere than its x is `on_click`ed: a folder's
+-- turns between read only and read and write.
+--
+local function chip_row(spec)
+  local v = ui.view{ x = spec.x, y = spec.y, w = spec.w, h = 28 }
+  local spots = {}
+
+  function v:draw(g)
+    local x = 0
+
+    spots = {}
+
+    for i, it in ipairs(spec.items()) do
+      local inset = it[2] and 26 or 9
+      local w = gfx.measure(it[1], "label") + inset + 26
+
+      if x + w > self.w then break end
+
+      g:fill_round(x, 2, w, 24, theme.mix(theme.raised, theme.line_soft, 500), 6)
+
+      if it[2] then g:icon(x + 6, 6, it[2], 16) end
+
+      g:text(x + inset, 2 + (24 - gfx.height("label")) // 2, it[1], theme.text, nil, "label")
+      g:text(x + w - 15, 2 + (24 - gfx.height("label")) // 2, "\u{d7}", theme.text_dim, nil, "label")
+      spots[#spots + 1] = { x = x, w = w, i = i }
+      x = x + w + 8
+    end
+
+    if spec.add_text and x + gfx.measure(spec.add_text) <= self.w then
+      g:text(x + 2, (28 - gfx.height()) // 2, spec.add_text, theme.accent, nil, "ui")
+      spots[#spots + 1] = { x = x, w = gfx.measure(spec.add_text) + 4, add = true }
+    end
+  end
+
+  function v:mouse(action, px, py)
+    return ui.click(self, action, px, py, function(cx)
+      for _, sp in ipairs(spots) do
+        if cx >= sp.x and cx < sp.x + sp.w then
+          if sp.add then return "add", function() spec.on_add() end end
+
+          if cx >= sp.x + sp.w - 20 then
+            return "remove " .. sp.i, function() spec.on_remove(sp.i) end
+          end
+
+          return "chip " .. sp.i, function() if spec.on_click then spec.on_click(sp.i) end end
+        end
+      end
+    end)
+  end
+
+  return v
+end
+
+--
+-- The form, its rows put by `put` at `ox`, `oy`, `fw` wide, filled from `s`
+-- - a definition, or a new one's defaults. `form.read()` is the definition
+-- the rows say, or nil and why.
+--
+local function make_form(put, ox, oy, fw, s, editing)
+  local f = { widgets = {} }
+  local cx, cw = ox + 120, fw - 120
+  local y = 0
+
+  local function add(w) f.widgets[#f.widgets + 1] = w put(w) return w end
+  local function label(at, text)
+    add(ui.label{ x = ox, y = oy + at + 5, w = 112, text = text, role = "ui", color = "text_dim" })
+  end
+
+  if not editing then
+    f.name = add(ui.field{ x = cx, y = oy + y, w = cw, h = 28, text = "" })
+    label(y, "Name") y = y + 40
+  end
+
+  local choices, found = {}, false
+
+  for _, i in ipairs(images) do
+    choices[#choices + 1] = { i.name, i.title .. " \u{b7} " .. (i.bytes // MB) .. " MB" }
+    found = found or i.name == s.image
+  end
+
+  if s.image and not found then choices[#choices + 1] = { s.image, s.image .. " - not installed" } end
+
+  f.image = add(ui.dropdown{ x = cx, y = oy + y, w = cw, choices = choices,
+                             value = s.image or (choices[1] and choices[1][1]) or nil })
+  label(y, "Image") y = y + 40
+
+  local kind_on = 3
+
+  for i, k in ipairs(KINDS) do if s.kind == k then kind_on = i end end
+
+  f.kind = add(ui.segments{ x = cx, y = oy + y, on = kind_on,
+                            items = { "A task: run once, then thrown away", "A service: keeps running", "A shell" } })
+  label(y, "Kind") y = y + 40
+
+  f.command = add(ui.field{ x = cx, y = oy + y, w = cw, h = 28, text = s.command or "", mono = true })
+  label(y, "Command") y = y + 40
+
+  f.processors = add(ui.segments{ x = cx, y = oy + y, items = { "1" }, on = 1 })
+  add(ui.label{ x = cx + f.processors.w + 10, y = oy + y + 5, w = 260, role = "label", color = "text_dim",
+                text = ("of %d - one a sandbox, for now"):format(machine.cpus or 1) })
+  label(y, "Processors") y = y + 40
+
+  local mem = {}
+  local mem_on = 2
+
+  for _, mb in ipairs(MEMORY_CHOICES) do mem[#mem + 1] = mb end
+
+  if s.memory then
+    local known = false
+
+    for _, mb in ipairs(mem) do known = known or mb == s.memory end
+
+    if not known then mem[#mem + 1] = s.memory table.sort(mem) end
+
+    for i, mb in ipairs(mem) do if mb == s.memory then mem_on = i end end
+  end
+
+  local mem_words = {}
+
+  for i, mb in ipairs(mem) do mem_words[i] = memory_words(mb) end
+
+  f.memory = add(ui.segments{ x = cx, y = oy + y, items = mem_words, on = mem_on })
+  f.memory_values = mem
+  label(y, "Memory") y = y + 40
+
+  -- Its folders, each from the Open window's folder mode, where the guest
+  -- sees it, and read only or not - the chip pressed turns it.
+  f.folders = {}
+
+  for _, text in ipairs(s.folders or {}) do
+    local one = sandboxes.folder(text)
+
+    if one then f.folders[#f.folders + 1] = one end
+  end
+
+  local folder_row
+  folder_row = add(chip_row{ x = cx, y = oy + y, w = cw,
+    items = function()
+      local out = {}
+
+      for _, one in ipairs(f.folders) do
+        out[#out + 1] = { ("%s \u{2192} %s, %s"):format(one.host, one.at,
+                          one.read_only and "read only" or "read and write"), ICON_FOLDER }
+      end
+
+      return out
+    end,
+    add_text = #f.folders < 4 and "+ Add a folder" or nil,
+    on_click = function(i) f.folders[i].read_only = not f.folders[i].read_only end,
+    on_remove = function(i) table.remove(f.folders, i) end,
+    on_add = function()
+      local chooser = panel_kit.folder{ start = "/Home", title = "A folder for the sandbox", button = "Give",
+        on_choose = function(path)
+          local taken, at = {}, "/srv"
+
+          for _, one in ipairs(f.folders) do taken[one.at] = true end
+
+          for n = 2, 9 do if taken[at] then at = "/srv" .. n end end
+
+          if #f.folders < 4 and path:match("^/Home/") then
+            f.folders[#f.folders + 1] = { host = path, at = at, read_only = false }
+            print("sandboxes: folder " .. path .. " at " .. at)
+          end
+        end }
+
+      if chooser then chooser:run() end
+    end })
+  label(y, "Folders") y = y + 40
+
+  -- Its network: none, outgoing, or ports carried in - each port a chip,
+  -- typed into the field and added with Return or "+ Port".
+  f.ports = {}
+
+  for _, text in ipairs(s.ports or {}) do f.ports[#f.ports + 1] = text end
+
+  local net_on = (#f.ports > 0) and 3 or (s.network == "outgoing" and 2 or 1)
+
+  f.network = add(ui.segments{ x = cx, y = oy + y, items = { "None", "Outgoing only", "Ports" }, on = net_on })
+  label(y, "Network")
+
+  local px = cx + f.network.w + 10
+  local port_field = add(ui.field{ x = px, y = oy + y, w = 96, h = 28, text = "", hint = "3001:3000" })
+
+  local function add_port()
+    local from, to = sandboxes.port(port_field.text or "")
+
+    if not from then said = tostring(to) print("sandboxes: " .. said) return end
+
+    if #f.ports < 4 then f.ports[#f.ports + 1] = ("%d:%d"):format(from, to) end
+
+    port_field.text = ""
+    f.network.on = 3
+  end
+
+  port_field.on_enter = function() add_port() end
+  f.port_field = port_field
+  f.port_row = add(chip_row{ x = px + 106, y = oy + y, w = cx + cw - px - 106,
+    items = function()
+      local out = {}
+
+      for _, text in ipairs(f.ports) do out[#out + 1] = { port_words(text), ICON_NETWORK } end
+
+      return out
+    end,
+    add_text = "+ Port",
+    on_remove = function(i) table.remove(f.ports, i) end,
+    on_add = add_port })
+  y = y + 40
+
+  f.at_start = add(ui.checkbox{ x = cx, y = oy + y + 4, text = "with Kosmos", checked = s.starts == "with Kosmos" })
+
+  if not editing then
+    f.console = add(ui.checkbox{ x = cx + 150, y = oy + y + 4, text = "open its console", checked = true })
+  end
+
+  label(y, "Starts") y = y + 40
+  f.h = y
+
+  function f.read(base)
+    local d = base or sandboxes.parse("", f.name and f.name.text or "")
+
+    d.image = f.image.value or d.image or "alpine"
+    d.kind = KINDS[f.kind.on]
+    d.command = f.command.text or ""
+    d.memory = f.memory_values[f.memory.on] or 512
+    d.starts = f.at_start.checked and "with Kosmos" or "by hand"
+    d.network = f.network.on == 2 and "outgoing" or (f.network.on == 3 and #f.ports == 0 and "none") or
+                (f.network.on == 1 and "none") or d.network or "none"
+
+    if f.network.on == 3 then
+      if (f.port_field.text or "") ~= "" then add_port() end
+      if #f.ports == 0 then return nil, "Ports wants a port - 3001:3000" end
+
+      -- Ports, new, reach out as well, as the sheet always had it; an
+      -- edited sandbox keeps whether it reached out.
+      d.network = (not editing or s.network == "outgoing") and "outgoing" or "none"
+      d.ports = {}
+
+      for _, p2 in ipairs(f.ports) do d.ports[#d.ports + 1] = p2 end
+    else
+      d.ports = {}
+    end
+
+    d.folders = {}
+
+    for _, one in ipairs(f.folders) do d.folders[#d.folders + 1] = sandboxes.folder_text(one) end
+
+    return d
+  end
+
+  return f
+end
+
+--------------------------------------------------------------------------
 -- New sandbox, as drawn: nothing given that is not chosen here.
 --------------------------------------------------------------------------
 
@@ -923,69 +1258,22 @@ local sheet
 local function new_sandbox()
   if sheet then return end
 
-  local SW, SH = 620, 476
-  local MEMORY = { 128, 256, 512, 1024 }
-  local image_names = {}
+  local SW = 720
+  local form
 
-  for _, i in ipairs(images) do image_names[#image_names + 1] = { i.name, i.title .. " \u{b7} " .. (i.bytes // MB) .. " MB" } end
-
-  sheet = ui.sheet{ title = "New sandbox", w = SW, h = SH }
-
-  local function row(y, text)
-    sheet:put(ui.label{ x = 20, y = y + 5, w = 110, text = text, role = "ui", color = "text_dim" })
-  end
-
+  sheet = ui.sheet{ w = SW, h = 560 }                  -- its heading below, as drawn
   sheet:put(ui.label{ x = 20, y = 18, w = SW - 40, text = "New sandbox", role = "heading" })
   sheet:put(ui.label{ x = 20, y = 44, w = SW - 40, text = "A small operating system, given only what you choose here.",
                       role = "label", color = "text_dim" })
 
-  local y = 80
-  local name = ui.field{ x = 140, y = y, w = SW - 160, h = 28, text = "" }
+  form = make_form(function(w) sheet:put(w) end, 20, 80, SW - 40,
+                   { image = images[1] and images[1].name, kind = "shell", memory = 512, network = "none" }, false)
 
-  row(y, "Name") sheet:put(name) y = y + 40
+  local SH = 80 + form.h + 52
 
-  local image = ui.dropdown{ x = 140, y = y, w = SW - 160, choices = image_names,
-                             value = image_names[1] and image_names[1][1] or nil }
+  sheet.h = SH
 
-  row(y, "Image") sheet:put(image) y = y + 40
-
-  local kind = ui.segments{ x = 140, y = y, items = { "A task: run once", "A service: keeps running", "A shell" }, on = 3 }
-
-  row(y, "Kind") sheet:put(kind) y = y + 40
-
-  local command = ui.field{ x = 140, y = y, w = SW - 160, h = 28, text = "", mono = true }
-
-  row(y, "Command") sheet:put(command) y = y + 40
-
-  local processors = ui.segments{ x = 140, y = y, items = { "1" }, on = 1 }
-
-  row(y, "Processors") sheet:put(processors)
-  sheet:put(ui.label{ x = 200, y = y + 5, w = 300, text = "one, for now", role = "label", color = "text_dim" })
-  y = y + 40
-
-  local memory = ui.segments{ x = 140, y = y, items = { "128 MB", "256 MB", "512 MB", "1 GB" }, on = 2 }
-
-  row(y, "Memory") sheet:put(memory) y = y + 40
-
-  -- A folder of /Home, where the guest sees it, and whether only to read.
-  local folder = ui.field{ x = 140, y = y, w = 230, h = 28, text = "", hint = "/Home/..." }
-  local folder_at = ui.field{ x = 380, y = y, w = 110, h = 28, text = "/work" }
-  local folder_ro = ui.checkbox{ x = 500, y = y + 4, text = "read only", checked = false }
-
-  row(y, "Folder") sheet:put(folder) sheet:put(folder_at) sheet:put(folder_ro)
-  y = y + 40
-  row(y, "Network")
-  local network = ui.segments{ x = 140, y = y, items = { "None", "Outgoing only", "Ports" }, on = 1 }
-  local ports = ui.field{ x = 140 + network.w + 10, y = y, w = SW - 160 - network.w - 10, h = 28,
-                          text = "", hint = "3001:3000 - Kosmos's:its" }
-
-  sheet:put(network) sheet:put(ports)
-  y = y + 40
-
-  local at_start = ui.checkbox{ x = 140, y = y, text = "with Kosmos", checked = false }
-  local console_box = ui.checkbox{ x = 290, y = y, text = "open its console", checked = true }
-
-  row(y, "Starts") sheet:put(at_start) sheet:put(console_box) y = y + 44
+  if sheet.panel then sheet.panel.h = SH end
 
   local function close()
     win:remove(sheet)
@@ -994,47 +1282,20 @@ local function new_sandbox()
 
   sheet:put(ui.button{ x = SW - 20 - 150, y = SH - 48, w = 150, h = 30, text = "Create and start", go = true,
                        on_click = function()
-                         local s = sandboxes.parse("", name.text)
+                         local s, why = form.read()
 
-                         s.image = image.value or "alpine"
-                         s.kind = ({ "task", "service", "shell" })[kind.on]
-                         s.command = command.text or ""
-                         s.memory = MEMORY[memory.on] or 256
-                         s.starts = at_start.checked and "with Kosmos" or "by hand"
-                         s.network = network.on >= 2 and "outgoing" or "none"
+                         if not s then said = tostring(why) print("sandboxes: " .. said) return end
 
-                         -- Ports: Kosmos's carried in, and out as well.
-                         if network.on == 3 then
-                           for text in (ports.text or ""):gmatch("[^%s,]+") do
-                             local from, to = sandboxes.port(text)
+                         local ok, bad = sandboxes.save(s)
 
-                             if not from then said = to print("sandboxes: " .. said) return end
-
-                             s.ports[#s.ports + 1] = ("%d:%d"):format(from, to)
-                           end
-
-                           if #s.ports == 0 then said = "Ports wants a port - 3001:3000" print("sandboxes: " .. said) return end
-                         end
-
-                         if (folder.text or "") ~= "" then
-                           local f, bad = sandboxes.folder(folder.text .. " " .. (folder_at.text ~= "" and folder_at.text or "/work")
-                                                          .. (folder_ro.checked and " ro" or " rw"))
-
-                           if not f then said = tostring(bad) print("sandboxes: " .. said) return end
-
-                           s.folders = { sandboxes.folder_text(f) }
-                         end
-
-                         local ok, why = sandboxes.save(s)
-
-                         if not ok then said = tostring(why) print("sandboxes: " .. said) return end
+                         if not ok then said = tostring(bad) print("sandboxes: " .. said) return end
 
                          close()
                          refresh(true)
                          chosen = s.name
                          start(s.name)
 
-                         if console_box.checked then open(s.name, 2) end
+                         if form.console.checked then open(s.name, 2) end
 
                          print("sandboxes: made " .. s.name)
 
@@ -1052,11 +1313,77 @@ local function new_sandbox()
   if TELL then
     print(("sandboxes: new sandbox sheet, name at %d,%d, create at %d,%d, memory at %d,%d, "
            .. "ports at %d,%d, port field at %d,%d"):format(
-          sheet.panel.x + 140 + 20, sheet.panel.y + 80 + 14,
+          sheet.panel.x + form.name.x + 20, sheet.panel.y + form.name.y + 14,
           sheet.panel.x + SW - 20 - 75, sheet.panel.y + SH - 33,
-          sheet.panel.x + memory.x + 20, sheet.panel.y + memory.y + memory.h // 2,
-          sheet.panel.x + network.x + network.w - 20, sheet.panel.y + network.y + network.h // 2,
-          sheet.panel.x + ports.x + 20, sheet.panel.y + ports.y + 14))
+          sheet.panel.x + form.memory.x + 20, sheet.panel.y + form.memory.y + form.memory.h // 2,
+          sheet.panel.x + form.network.x + form.network.w - 20, sheet.panel.y + form.network.y + form.network.h // 2,
+          sheet.panel.x + form.port_field.x + 20, sheet.panel.y + form.port_field.y + 14))
+  end
+end
+
+--------------------------------------------------------------------------
+-- **Settings**, the fifth tab: the same form, on the window, filled with
+-- the sandbox's own; Save writes its definition and says when it takes
+-- effect - at its next start, or now with Save and restart.
+--------------------------------------------------------------------------
+
+local settings = { name = nil, form = nil, widgets = {} }
+
+local function settings_close()
+  for _, w in ipairs(settings.widgets) do win:remove(w) end
+
+  settings = { name = nil, form = nil, widgets = {} }
+end
+
+local function settings_open(s)
+  settings_close()
+  settings.name = s.name
+
+  local ox, oy = SIDE + 20, L.head + 110
+  local function put(w) settings.widgets[#settings.widgets + 1] = w win:add(w) end
+
+  settings.form = make_form(put, ox, oy, math.min(760, W - SIDE - 40), s, true)
+
+  local by = oy + settings.form.h + 6
+  local function save(and_restart)
+    local d, why = settings.form.read(sandboxes.definition(s.name) or s)
+
+    if not d then said = tostring(why) print("sandboxes: " .. said) return end
+
+    d.name = s.name
+
+    local ok, bad = sandboxes.save(d)
+
+    if not ok then said = tostring(bad) print("sandboxes: " .. said) return end
+
+    refresh(true)
+
+    local running = s.now ~= nil
+
+    said = running and not and_restart and (s.name .. " saved - it takes effect at its next start")
+           or (s.name .. " saved")
+    print(("sandboxes: %s settings saved, memory %d, network %s, ports %s, folders %d"):format(
+          s.name, d.memory, d.network, table.concat(d.ports, " "), #d.folders))
+
+    if TELL then
+      local back = sandboxes.definition(s.name)
+
+      print(("sandboxes: %s kept, memory %s"):format(s.name, back and back.memory or "?"))
+    end
+
+    if and_restart and running then restart(s.name) end
+  end
+
+  put(ui.button{ x = ox + 120, y = by, w = 90, h = 30, text = "Save", go = true, on_click = function() save(false) end })
+
+  if s.now then
+    put(ui.button{ x = ox + 220, y = by, w = 150, h = 30, text = "Save and restart",
+                   on_click = function() save(true) end })
+  end
+
+  if TELL then
+    print(("sandboxes: settings of %s, memory at %d,%d, save at %d,%d"):format(s.name,
+          settings.form.memory.x + 20, settings.form.memory.y + settings.form.memory.h // 2, ox + 165, by + 15))
   end
 end
 
@@ -1111,6 +1438,12 @@ win.tick_every = counter_hz // 2
 -- was; with none open, the window waits on its clock as before.
 --
 function win:on_frame()
+  local want = (watched and tab == 5) and watched or nil
+
+  if want ~= settings.name then
+    if want and find(want) then settings_open(find(want)) else settings_close() end
+  end
+
   local running = false
 
   for _, s in ipairs(all) do
