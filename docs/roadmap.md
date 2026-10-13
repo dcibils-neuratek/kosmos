@@ -9242,7 +9242,11 @@ task thrown away, a service kept running, the processor's speed, little
 memory and little to attack (`sandboxes.md`). Then how it works: images,
 definitions in `/Home/Sandboxes`, tasks and services, folders read only or
 read and write, the network outgoing or by ports, the console, and
-`sandbox` at the prompt. Drawn first, beside `docs/sandboxes.html`.
+`sandbox` at the prompt. Drawn first, beside `docs/sandboxes.html`. **Drawn 13 October** (`docs/sandboxes.html`, *How
+sandboxes work: the help*): a page of the window, from a ? beside New
+sandbox and a "How sandboxes work" row under the machine - what a sandbox
+is, not a whole PC, only for this machine's processor, what it is for, how
+it works, and the commands at the prompt. Waiting for Diego's word.
 
 **Sandboxes: small operating systems for a task, in virtual machines** -
 Diego, 11 October 2026: "i want to explore adding virtualization support to
