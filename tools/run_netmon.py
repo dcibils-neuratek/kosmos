@@ -100,7 +100,11 @@ def main():
         # The window watched while the pulling runs.
         mark = len(guest.seen)
 
-        best = None
+        # The card's rate in and pull's connection's own, each at its best:
+        # under the gate's load a sample with the most bytes can fall where
+        # pull's connection is between requests - it failed twice that way,
+        # 12 and 13 October - and the two claims are about different things.
+        best, best_conn = None, None
         deadline = time.monotonic() + 90
         while time.monotonic() < deadline:
             for line in re.findall(r"netmon: in (\d+) B/s, out (\d+) B/s; (\d+) open; "
@@ -108,14 +112,16 @@ def main():
                 rin, busiest = int(line[0]), line[3]
                 if busiest == "pull" and (best is None or rin > best[0]):
                     best = (rin, line)
-            if best and best[0] > 200000:
+                if busiest == "pull" and (best_conn is None or int(line[4]) > int(best_conn[4])):
+                    best_conn = line
+            if best and best[0] > 200000 and best_conn and int(best_conn[4]) > 100000:
                 break
             time.sleep(0.5)
 
         check(best is not None and best[0] > 200000,
               "Network Monitor never saw a rate in from pull's megabytes: %r" % (best,))
-        check(best is not None and int(best[1][4]) > 100000,
-              "pull's connection did not carry the rate: %r" % (best,))
+        check(best_conn is not None and int(best_conn[4]) > 100000,
+              "pull's connection did not carry the rate: %r" % (best_conn,))
 
         # The graph: blue columns above the centre line, none below it.
         shot = guest.screendump()

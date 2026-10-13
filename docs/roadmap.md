@@ -5753,8 +5753,11 @@ suite chose - it picks the sample with the most bytes, and under load the
 connection's whole transfer can fall between two samples; and `x86-disk`,
 "the query returned a file that does not match it". Both passed alone at
 once. Each wants the reason found rather than a retry: netmon's check
-should choose by the connection's own rate, as `x86-diskmon` learned to;
-the query's wants its guest log kept when it fails. **Two more the same
+should choose by the connection's own rate, as `x86-diskmon` learned to -
+**done 13 October**, after a second failure the same shape (the card's best
+sample and pull's connection's best sample are each kept, since they are
+claims about different things); the query's wants its guest log kept when
+it fails. **Two more the same
 evening** (0.11.183's gate, 8:37 with Alpine booting in `arm-sandbox-linux`
 beside everything): `x86-shortcuts` waiting 120 s for telnetd to listen and
 `x86-smbd` for its visitor's page - the network coming up late under load,
