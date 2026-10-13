@@ -122,7 +122,7 @@ struct disk_node {
     uint64_t mtime;             /* the stamp */
     uint64_t modified;          /* seconds since 1970, when `dated` */
     uint32_t dated;
-    uint32_t reserved;
+    uint32_t created;           /* seconds since 1970 it was made, or 0: not known (kfs 2) */
 };
 
 /* `.super`: the disk and the filesystem on it. */

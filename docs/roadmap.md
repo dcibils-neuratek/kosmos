@@ -404,12 +404,11 @@ widths in Tracker's settings or on a folder that keeps its own, Modified
 for every folder on the disk, and Created where it is kept, else Modified
 in grey. Tracker opens 1060 wide, which holds the five columns as drawn.
 **Left**:
-- **Created on `/Home`** - asked of Diego on the card, 13 October: kfs keeps
-  attributes in a block of their own and the inode's 128 bytes are full, so
-  writing Created on every file made costs a block and a journalled write
-  each. Until he chooses (as agreed, with that cost; Created in the inode in
-  a new kfs version; or only where it already exists), `/Home`'s files show
-  their Modified there, in grey.
+- ~~Created on `/Home`~~ - **done, 0.11.199**: Diego, 13 October, "Do the
+  created_at, modified_at change to the file system". kfs version 2 keeps
+  when a node was made in the inode's unused link-count word, at no cost; a
+  version 1 disk is upgraded by its superblock alone (`diskfs.md`, *Version
+  2*). Files from before show their Modified, in grey.
 - **The pointer's shape over an edge** - a two-way arrow needs the window
   manager to take a shape from an application, which it cannot yet.
 - ~~Processes and Mail onto `ui.columns`~~ - **Processes moved, 0.11.194**

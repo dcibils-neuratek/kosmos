@@ -311,7 +311,7 @@ static void get_node(lua_State *L, int idx, struct kfs_inode *node)
     luaL_checktype(L, idx, LUA_TTABLE);
     memset(node, 0, sizeof *node);
     node->kind = (uint32_t)field_u64(L, idx, "kind");
-    node->links = (uint32_t)field_u64(L, idx, "links");
+    node->created = (uint32_t)field_u64(L, idx, "created");
     node->size = field_u64(L, idx, "size");
     node->mtime = field_u64(L, idx, "mtime");
     node->attrs = (uint32_t)field_u64(L, idx, "attrs");
@@ -349,7 +349,7 @@ static void get_node(lua_State *L, int idx, struct kfs_inode *node)
 static void fill_node(lua_State *L, const struct kfs_inode *node)
 {
     set_int(L, "kind", node->kind);
-    set_int(L, "links", node->links);
+    set_int(L, "created", node->created);
     set_int(L, "size", node->size);
     set_int(L, "mtime", node->mtime);
     set_int(L, "attrs", node->attrs);
@@ -1189,6 +1189,27 @@ static int l_mkfs(lua_State *L)
     return 1;
 }
 
+/* Mounted and, a version 1 disk, made version 2 (`kfs_upgrade`). */
+static int l_upgrade(lua_State *L)
+{
+    struct kfs_super sb;
+    int r;
+
+    enter(L);
+    r = kfs_mount(K, &sb);
+
+    if (r == KFS_OK) {
+        r = kfs_upgrade(K, &sb);
+    }
+
+    if (r != KFS_OK) {
+        return answer(L, r);
+    }
+
+    push_sb(L, &sb);
+    return 1;
+}
+
 static int l_mount(lua_State *L)
 {
     struct kfs_super sb;
@@ -1274,6 +1295,7 @@ static int luaopen_kfsc(lua_State *L)
         { "unlink",          l_unlink },
         { "mkfs",            l_mkfs },
         { "mount",           l_mount },
+        { "upgrade",         l_upgrade },
         { "use_cache",       l_use_cache },
         { "cache_clear",     l_cache_clear },
         { NULL, NULL },

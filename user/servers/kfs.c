@@ -123,7 +123,7 @@ static int unpack_super(const uint8_t *block, struct kfs_super *sb)
         return KFS_E_NOT_KFS;
     }
 
-    if (sb->version != KFS_VERSION) {
+    if (sb->version < KFS_VERSION_OLDEST || sb->version > KFS_VERSION) {
         return KFS_E_VERSION;
     }
 
@@ -156,11 +156,26 @@ static int unpack_super(const uint8_t *block, struct kfs_super *sb)
  * ------------------------------------------------------------------------
  */
 
+/*
+ * When a node made at the stamp `now` was made, in seconds: the stamp's
+ * epoch, or 0 - not known - for one with no date, a count from a boot.
+ */
+static uint32_t created_from(uint64_t now)
+{
+    uint64_t epoch;
+
+    if (now == KFS_NO_TIME || !kfs_modified(now, &epoch) || epoch > UINT32_MAX) {
+        return 0;
+    }
+
+    return (uint32_t)epoch;
+}
+
 static void pack_inode(uint8_t *p, const struct kfs_inode *node)
 {
     memset(p, 0, KFS_INODE_SIZE);
     put_le32(p + 0, node->kind);
-    put_le32(p + 4, node->links);
+    put_le32(p + 4, node->created);
     put_le64(p + 8, node->size);
     put_le64(p + 16, node->mtime);
     put_le32(p + 24, node->attrs);
@@ -175,7 +190,7 @@ static void pack_inode(uint8_t *p, const struct kfs_inode *node)
 static int unpack_inode(const uint8_t *p, struct kfs_inode *node)
 {
     node->kind = get_le32(p + 0);
-    node->links = get_le32(p + 4);
+    node->created = get_le32(p + 4);
     node->size = get_le64(p + 8);
     node->mtime = get_le64(p + 16);
     node->attrs = get_le32(p + 24);
@@ -1771,7 +1786,7 @@ int kfs_mkdir(struct kfs *k, const struct kfs_super *sb, const char *path,
 
     memset(&node, 0, sizeof node);
     node.kind = KFS_KIND_DIR;
-    node.links = 2;
+    node.created = created_from(now);
     node.mtime = now == KFS_NO_TIME ? 0 : now;
     r = kfs_write_inode(k, sb, number, &node);
 
@@ -1841,7 +1856,7 @@ int kfs_store(struct kfs *k, const struct kfs_super *sb, const char *path,
 
     memset(&node, 0, sizeof node);
     node.kind = KFS_KIND_FILE;
-    node.links = 1;
+    node.created = created_from(now);
     node.mtime = now == KFS_NO_TIME ? 0 : now;
     r = kfs_write_file(k, sb, *number, &node, bytes, size);
 
@@ -2112,7 +2127,7 @@ int kfs_mkfs(struct kfs *k, uint64_t sectors, uint64_t now,
 
             memset(&root, 0, sizeof root);
             root.kind = KFS_KIND_DIR;
-            root.links = 2;
+            root.created = created_from(sb->created);
             root.mtime = sb->created;
             pack_inode(k->ino + (KFS_ROOT_INODE % INODES_A_BLOCK) * KFS_INODE_SIZE,
                        &root);
@@ -2162,4 +2177,34 @@ int kfs_mount(struct kfs *k, struct kfs_super *sb)
     }
 
     return unpack_super(k->head, sb);
+}
+
+/*
+ * **Version 1 to 2**, by the superblock's version word and nothing else
+ * (`kfs.h`): the block is read, that word changed, and the block written
+ * back, so a write torn by the power going leaves either version in it and
+ * every other byte as it was - both of which this reads.
+ */
+int kfs_upgrade(struct kfs *k, struct kfs_super *sb)
+{
+    int r;
+
+    if (sb->version == KFS_VERSION) {
+        return KFS_OK;
+    }
+
+    r = kfs_read_block(k, 0, k->head);
+
+    if (r != KFS_OK) {
+        return r;
+    }
+
+    put_le32(k->head + 4, KFS_VERSION);
+    r = kfs_write_block(k, 0, k->head, KFS_BLOCK);
+
+    if (r == KFS_OK) {
+        sb->version = KFS_VERSION;
+    }
+
+    return r;
 }

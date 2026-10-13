@@ -42,7 +42,18 @@
 #include <stdint.h>
 
 #define KFS_MAGIC           0x4b464f53u     /* "KFOS", little endian */
-#define KFS_VERSION         1u
+/*
+ * **Version 2, 13 October 2026** (Diego: "Do the created_at, modified_at
+ * change to the file system"): an inode's word at offset 4 is when it was
+ * made, in seconds since 1970 - it was a link count, written as 1 or 2 and
+ * never read, the 128 bytes being otherwise full. A version 1 disk is read
+ * as it is and becomes version 2 by its superblock alone (`kfs_upgrade`):
+ * its inodes' 1 and 2 are before `KFS_CREATED_FIRST`, which is "not known",
+ * so not one of them has to be rewritten.
+ */
+#define KFS_VERSION         2u
+#define KFS_VERSION_OLDEST  1u
+#define KFS_CREATED_FIRST   946684800u      /* 2000-01-01: before it, not known */
 #define KFS_BLOCK           4096u
 #define KFS_SECTOR          512u
 #define KFS_PER_BLOCK       (KFS_BLOCK / KFS_SECTOR)
@@ -178,7 +189,7 @@ struct kfs_extent {
 
 struct kfs_inode {
     uint32_t kind;
-    uint32_t links;
+    uint32_t created;                   /* seconds since 1970; below KFS_CREATED_FIRST, not known */
     uint64_t size;
     uint64_t mtime;
     uint32_t attrs;                     /* its attribute block, or 0 */
@@ -240,6 +251,21 @@ void kfs_init(struct kfs *k, const struct kfs_disk *disk);
 
 /* The superblock, read and held to what one must be. */
 int kfs_mount(struct kfs *k, struct kfs_super *sb);
+
+/* A version 1 disk made version 2, by its superblock's version word alone;
+ * KFS_OK and nothing done for one that is already. */
+int kfs_upgrade(struct kfs *k, struct kfs_super *sb);
+
+/* When an inode was made, in seconds since 1970, or false: not known. */
+static inline bool kfs_created(const struct kfs_inode *node, uint64_t *epoch)
+{
+    if (node->created < KFS_CREATED_FIRST) {
+        return false;
+    }
+
+    *epoch = node->created;
+    return true;
+}
 
 /*
  * **For a reader that only recognises a volume** - the drive server, which

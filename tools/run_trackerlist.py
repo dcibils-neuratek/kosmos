@@ -7,8 +7,8 @@ size", "the columns are not resizable", "it needs more columns like created
 at, modified at (Date time) fields". A folder holding a folder, a short
 file and a film with the drawing's long name, Tracker opened on it, and:
 
-  - the first file's dates: Modified today, and Created its Modified, since
-    the disk keeps none for it yet; and its kind in Info's words, "Film";
+  - the first file's dates: Modified today, and Created today - its own,
+    which kfs 2 keeps; and its kind in Info's words, "Film";
   - the columns as they open: Name, Size, Kind, Modified, Created;
   - the long name cut at its own column's edge: the stretch of its row
     between the name's room and the size holds one colour;
@@ -34,7 +34,7 @@ import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
 import scratch                                              # noqa: E402
 
-CHECKS = 9
+CHECKS = 11
 LONG = "Rehearsal take 4, full band, room microphones and the click track muted.mp4"
 
 MAKE = ('local files = use("/Kosmos/Libraries/files.lua")\n'
@@ -68,6 +68,13 @@ def main():
         print("FAIL: homeimage.py would not make a /Home:\n" + made.stdout + made.stderr)
         return 1
 
+    # A version 1 disk, as a stick's /Home made before 13 October is: its
+    # superblock's version word, at byte 4, set back to 1. diskfs is to make
+    # it version 2 at boot (`kfs_upgrade`).
+    with open(disk, "r+b") as f:
+        f.seek(4)
+        f.write((1).to_bytes(4, "little"))
+
     guest = S.boot(image, telnet, web, extra=["-drive", "file=%s,format=raw,if=none,id=home" % disk,
                                               "-device", "virtio-blk-pci,drive=home"])
     fails = []
@@ -96,6 +103,9 @@ def main():
         mark = len(guest.seen)
         session.run("/Temporary/make.lua")
 
+        upgraded = "disk: the disk is kfs version 2 now" in guest.seen
+        check(upgraded, "a version 1 /Home was not said to be made version 2 at boot")
+
         rows = line(r"tracker: rows of /Home/Lists at (\d+),(\d+), (\d+) apart", mark, 30)
         heads = line(r"tracker: headings at (\d+): ([^\n]*)", mark, 10)
 
@@ -104,9 +114,11 @@ def main():
 
         # The dates, and the columns as they open.
         dates = line(r"tracker: dates of ([^:\n]*): modified ([^,\n]*, \d\d:\d\d), created ([^\r\n]*)", mark, 5)
+        # kfs 2 keeps when a file was made: its own Created, not its
+        # Modified standing in for it.
         check(dates is not None and dates.group(2).startswith("Today, ")
-              and dates.group(3) == dates.group(2) + " (its modified)",
-              "the first file's dates were not today's, and Created its Modified: %r"
+              and dates.group(3).startswith("Today, ") and "(its modified)" not in dates.group(3),
+              "the first file's dates were not today's, with a Created of its own: %r"
               % (dates and dates.group(0)))
 
         kind = line(r"tracker: kind of ([^:\n]*): ([^\r\n]*)", mark, 5)
@@ -222,6 +234,13 @@ def main():
             pass
         guest.close()
 
+    with open(disk, "rb") as f:
+        f.seek(4)
+        version = int.from_bytes(f.read(4), "little")
+
+    if version != 2:
+        fails.append("the /Home image is version %d after the boot, not 2" % version)
+
     if fails:
         print("FAIL: %d of %d checks on Tracker's list view:" % (len(fails), CHECKS))
         for f in fails:
@@ -231,7 +250,7 @@ def main():
                 print("  | " + l.strip()[:200])
         return 1
 
-    print("PASS: %d checks on Tracker's list view (the dates; the kind in words; the columns as drawn; a long name "
+    print("PASS: %d checks on Tracker's list view (a version 1 /Home made version 2 at boot, and on its disk; the dates; the kind in words; the columns as drawn; a long name "
           "cut at its own edge; Name dragged wider and kept; Size fitted by a double-click; the "
           "headings' menu; the widths read back by a second Tracker; a folder's own columns)" % CHECKS)
     return 0

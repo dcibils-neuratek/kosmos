@@ -24822,3 +24822,29 @@ it whatever it does. `x86-ahci` 5 -> 6: the driver ends with 0. **Control**:
 both exits taken out - the driver never ends, and the suite fails. Whole
 gate then: 81 of 82 in 8:27, x86-film the known flake, passing alone.
 
+## 18.593 kfs version 2: when a file was made
+
+`diskfs.md`, *Version 2*. The inode's word at offset 4 - a link count,
+never read - is when the node was made, in seconds since 1970, from its
+stamp; below the first second of 2000 it is not known, which is what
+version 1's 1 and 2 read as. `kfs_upgrade` makes a version 1 disk version 2
+by its superblock's version word; `diskfs` calls it at mount, after the
+journal. `disk_node.created` carries it, `getattr` says it as `created`,
+`setattr` refuses it, a query may ask for it.
+
+**Tests.** `test_kfs.lua` 101 -> 111, run twice, the second through the
+block cache: a new disk version 2; a file stored at a dated stamp keeping
+that second; one stored without a date keeping none; a folder the same; a
+file written over keeping its Created and taking a new Modified; a version 1
+disk - superblock word 1, an inode's word 1 - mounting as version 1,
+upgraded by its superblock (the word on the disk 2), its inode and its bytes
+as they were, a second upgrade doing nothing, and a version 3 disk refused.
+`x86-trackerlist` 9 -> 11: its `/Home` booted as version 1 is said to be
+made version 2 and is version 2 on the image afterwards; and a file made in
+Kosmos shows a Created of its own, not "its modified". **Controls**:
+Created never kept - three of the format's checks fail; `diskfs` never
+upgrading - the two new checks of Tracker's suite fail. Whole gate: 81 of
+82 - arm-sandbox's "ipc: a receive with a deadline gives up", a timing test
+nothing here touches, late once under the gate's load and 203 of 203 alone;
+watched for a second time.
+

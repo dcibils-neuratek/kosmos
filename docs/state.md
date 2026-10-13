@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-13, early morning (0.11.198; Sandboxes, the list columns, Wallpapers, Magnet and SATA's first step, through the night)
+Last updated: 2026-10-13, early morning (0.11.199; kfs version 2, after a push of the night's work)
 
 ---
 
@@ -56,6 +56,9 @@ M700 was not touched.
   the window manager - `hal/keys.c` sends an arrow before it looks at
   Super, and the encoding has to be decided on both boards - asked on the
   card) - the Preferences page is built (0.11.197).
+- **Pushed 0.11.185-0.11.198** on 13 October (1ee26bee).
+- **kfs version 2 (0.11.199)**: Created kept in the inode, a version 1
+  `/Home` upgraded at mount by its superblock alone.
 - **SATA (AHCI), A1 (0.11.198)**: the driver finds the controller and its
   disks, IDENTIFY and the first sectors, nothing written. Next A2, serving
   the blocks on the controller's interrupt; then `/Home` on that disk.

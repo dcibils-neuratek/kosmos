@@ -279,3 +279,37 @@ Then "we format the stick to a certain size and thats it", "we dont need to
 dinamycally grow the fs", "8gb", and "we can do a 2gb stick now": `/Home`
 is made at 2 GB when a stick is written (`STICK_HOME_MB`), sparse on the
 Mac, and that is its size. G4's filling the whole stick is not built.
+
+## Version 2: when a file was made (13 October 2026)
+
+Diego, after Tracker's list view drew a Created column (`docs/tracker-list.html`):
+"Do the created_at, modified_at change to the file system". Modified was
+always there - the inode's `mtime`, a stamp of seconds and a count within
+the second. Created was not, and the inode's 128 bytes were full: 32 of
+facts and twelve 8-byte extents.
+
+**What it costs nothing to keep it in**: the word at offset 4, which was a
+link count - written as 1 for a file and 2 for a folder, and never read,
+since kfs has no hard links. In **kfs version 2** that word is when the
+node was made, in seconds since 1970 (`struct kfs_inode.created`), taken
+from the stamp it was made at; a node made with no clock keeps 0. Writing a
+file over keeps its Created and gives it a new Modified. 32 bits of seconds
+last until 2106.
+
+**Version 1 needs no rewriting**: anything below `KFS_CREATED_FIRST`, the
+first second of 2000, is "not known" (`kfs_created`), and version 1's link
+counts are 1 and 2. So a version 1 disk - every stick's `/Home` before this -
+is read as it is, and `diskfs` makes it version 2 at mount, after the
+journal, by its superblock's version word alone (`kfs_upgrade`): one block,
+every other byte of which is rewritten the same, so a torn write leaves
+either version and both are read. Files from before say they do not know
+when they were made, and Tracker shows their Modified there in grey; every
+file made after has its own.
+
+**The protocol** carries it in `disk_node.created`, which was a reserved
+word - the struct's size is the same, so an installed application built
+before (`doom.elf` and the rest) reads it as the zero it always was.
+`created` is what a node *is*, so a `setattr` of it is refused, and a query
+can ask for it as for `modified`. A version 3 disk is refused, as an unknown
+one always was.
+

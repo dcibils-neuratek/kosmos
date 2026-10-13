@@ -681,6 +681,19 @@ static bool mounted(void)
         tell("the last write did not finish; ", replayed, true, " block(s) replayed");
     }
 
+    /*
+     * **A version 1 disk made version 2** (`kfs.h`): its superblock's
+     * version word, once, after the journal - so every node made from now
+     * on keeps when it was made, and those made before say they do not know.
+     */
+    if (SB.version < KFS_VERSION) {
+        if (kfs_upgrade(&A->kfs, &SB) == KFS_OK) {
+            tell("the disk is kfs version 2 now: what is made on it keeps when", 0, false, NULL);
+        } else {
+            tell("the disk could not be made kfs version 2; it is read as version 1", 0, false, NULL);
+        }
+    }
+
     mounted_ok = true;
     return true;
 }
@@ -1011,6 +1024,7 @@ static void node_facts(const struct kfs_inode *node, struct disk_node *out)
     out->mtime = node->mtime;
     out->dated = kfs_modified(node->mtime, &epoch) ? 1u : 0u;
     out->modified = out->dated ? epoch : 0;
+    out->created = kfs_created(node, &epoch) ? (uint32_t)epoch : 0u;
 }
 
 static void op_getattr(const struct disk_request *rq, struct disk_reply *rp)
@@ -1070,6 +1084,7 @@ static bool key_is(const struct packflat_value *k, const char *name)
 static bool derived(const struct packflat_value *k, const struct kfs_inode *node)
 {
     return key_is(k, "size") || key_is(k, "mtime") || key_is(k, "extents")
+           || key_is(k, "created")
            || (key_is(k, "kind") && node->kind == KFS_KIND_DIR);
 }
 
@@ -1191,6 +1206,13 @@ static size_t fact_text(const char *key, uint32_t key_len,
         v = packflat_int((int64_t)node->extents);
     } else if (IS("modified")) {
         if (!kfs_modified(node->mtime, &epoch)) {
+            memcpy(out, "nil", 3);
+            return 3;
+        }
+
+        v = packflat_int((int64_t)epoch);
+    } else if (IS("created")) {
+        if (!kfs_created(node, &epoch)) {
             memcpy(out, "nil", 3);
             return 3;
         }

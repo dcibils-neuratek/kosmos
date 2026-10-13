@@ -1024,6 +1024,77 @@ do
 end
 
 --------------------------------------------------------------------------
+-- **Version 2: when a node was made** (13 October 2026; Diego: "Do the
+-- created_at, modified_at change to the file system"). The inode's word at
+-- offset 4 - a link count in version 1, written and never read - is the
+-- second it was made, from the stamp it was made at; a version 1 disk is
+-- read as it is and becomes version 2 by its superblock's word alone.
+--------------------------------------------------------------------------
+
+do
+  local sb = fresh()
+  local made = 1791900000                       -- 13 October 2026, in seconds
+
+  check(sb.version == 2, "a disk made now is not kfs version 2: " .. tostring(sb.version))
+
+  assert(kfs.store(sb, "/dated", "made then", kfs.stamp(made, 3)))
+  local _, dated = kfs.find(sb, "/dated")
+  check(dated and dated.created == made,
+        "a file stored at a dated stamp did not keep that second as when it was made: "
+        .. tostring(dated and dated.created))
+
+  assert(kfs.store(sb, "/undated", "no clock", 1))
+  local _, undated = kfs.find(sb, "/undated")
+  check(undated and undated.created == 0, "a file stored with no date said when it was made")
+
+  assert(kfs.mkdir(sb, "/folder", kfs.stamp(made + 60, 0)))
+  local _, folder = kfs.find(sb, "/folder")
+  check(folder and folder.created == made + 60, "a folder did not keep when it was made")
+
+  -- Replaced later: still when it was first made, with a newer mtime.
+  assert(kfs.store(sb, "/dated", "made again", kfs.stamp(made + 3600, 0)))
+  local _, again = kfs.find(sb, "/dated")
+  check(again and again.created == made and kfs.modified(again) == made + 3600,
+        ("a file written over kept neither its making and its new change: made %s, modified %s")
+        :format(tostring(again and again.created), tostring(again and kfs.modified(again))))
+end
+
+do
+  -- A version 1 disk: the superblock's word 1, and an inode's link count 1
+  -- where version 2 keeps its making.
+  local sb = fresh()
+
+  assert(kfs.store(sb, "/old", "from before", kfs.stamp(1791900000, 0)))
+  local number, old = kfs.find(sb, "/old")
+
+  old.created = 1
+  assert(kfs.begin())
+  assert(kfs.write_inode(sb, number, old))
+  assert(kfs.commit(sb))
+  disk[0] = disk[0]:sub(1, 4) .. string.pack("<I4", 1) .. disk[0]:sub(9)
+  disk_changed()
+
+  local v1 = kfs.mount()
+  check(v1 and v1.version == 1, "a version 1 disk did not mount as one")
+
+  local up = kfs.upgrade()
+  check(up and up.version == 2 and string.unpack("<I4", disk[0], 5) == 2,
+        "a version 1 disk was not made version 2 by its superblock")
+
+  local _, still = kfs.find(up, "/old")
+  check(still and still.created == 1 and kfs.read_file(up, still) == "from before",
+        "upgrading rewrote an inode or lost a file's bytes")
+
+  local again = kfs.upgrade()
+  check(again and again.version == 2, "upgrading a version 2 disk did not leave it as it was")
+
+  -- Version 3, from a format this does not know: refused.
+  disk[0] = disk[0]:sub(1, 4) .. string.pack("<I4", 3) .. disk[0]:sub(9)
+  disk_changed()
+  check(not kfs.mount(), "a version 3 disk was mounted")
+end
+
+--------------------------------------------------------------------------
 
 if failed > 0 then
   print(("\nFAIL: %d of %d checks on the format failed (kfs.c%s).")

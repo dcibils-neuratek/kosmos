@@ -2286,7 +2286,7 @@ local function new_namespace()
     if #raw < 1120 then return nil, "a disk server's reply of the wrong size" end
 
     local err, more, count, length, next_at, moved, size, kind, extents, nsize,
-          mtime, modified, dated, _, blob, heard, _, heard_ms =
+          mtime, modified, dated, created, blob, heard, _, heard_ms =
       string.unpack(DISK_REPLY, raw)
 
     if err ~= 0 then return nil, disk_error(err, blob, length) end
@@ -2295,7 +2295,8 @@ local function new_namespace()
              offset = next_at, bytes = moved, size = size, blob = blob,
              heard_ms = (heard ~= 0) and heard_ms or nil,
              node = { kind = kind, extents = extents, size = nsize,
-                      mtime = mtime, modified = modified, dated = dated ~= 0 } }
+                      mtime = mtime, modified = modified, dated = dated ~= 0,
+                      created = created ~= 0 and created or nil } }
   end
 
   --------------------------------------------------------------------------
@@ -3111,6 +3112,7 @@ local function new_namespace()
       attrs.size = node.size
       attrs.mtime = node.mtime
       attrs.modified = node.dated and node.modified or nil
+      attrs.created = node.created        -- kfs 2: when it was made, if known
       attrs.extents = node.extents
       attrs.last_heard_ms = r.heard_ms
 
