@@ -96,7 +96,24 @@ local function read_console()
   if not watched then return false end
 
   local c = console[watched] or { at = 0, text = "" }
-  local text, next_at = sandboxes.read(watched, c.at)
+  local text, next_at, r = sandboxes.read(watched, c.at)
+
+  --
+  -- **A console that has said less than we have read is a new one**: the
+  -- sandbox was started again, by Restart or by anybody, and its monitor's
+  -- console begins at nothing. Read from where this one was, it showed
+  -- nothing until the new boot had said as much as the old one had - so a
+  -- restart looked like no restart at all (Diego, 13 October 2026: "does
+  -- restarting a sandbox work? i dont see linux restarting at all"). Read
+  -- from its start, under a line that says what happened.
+  --
+  if r and r.written < c.at then
+    c.at = 0
+    c.text = added(c.text, (c.text == "" or c.text:sub(-1) == "\n") and "" or "\n")
+    c.text = added(c.text, "--- started again ---\n")
+    text, next_at, r = sandboxes.read(watched, 0)
+  end
+
   local arrived = text ~= nil and #text > 0
 
   if arrived then
@@ -178,8 +195,13 @@ local function refresh(full)
       end
     end
 
-    -- A restart: once it has gone, started again.
-    if pending[s.name] == "restarting" and not s.now then
+    -- A restart: once it has gone, started again. Its monitor stays a
+    -- while after the guest ends so its last lines can be read - ten
+    -- seconds, or until it is told to go - and a restart has nobody to read
+    -- them for, so it is told.
+    if pending[s.name] == "restarting" and s.now and not s.now.running then
+      sandboxes.stop(s.name)
+    elseif pending[s.name] == "restarting" and not s.now then
       pending[s.name] = nil
       start(s.name)
     elseif pending[s.name] == "starting" and s.now then

@@ -25234,3 +25234,49 @@ fill that never kept its page failed it. `arm-sandbox-linux` 26 -> 27:
 use; made whole at the start it read "256 of 256 MB in use" and failed.
 The x86 path, EPT, is not in any suite - QEMU's TCG has no VT-x - and was
 seen on the M700.
+
+## 18.606 A person's looks, in Preferences' Themes folder
+
+The looks that ship live in `/Kosmos/Themes`, in the image, where nobody
+edits them. A person's own were read from `/Home/Themes`, by the window
+manager alone and only for a name nobody shipped; Preferences, whose list
+came from `themes.lua`, never offered one, and its Theme row kept a second
+copy of the shipped names. Diego, 13 October: "all preferences should be
+under preferences".
+
+Now `themes.lua` reads `/Home/Preferences/Themes` (the folder named
+through `prefs.DIR`, since only the settings kit names it) once, when it is
+first used: a `.theme` there whose name, in lower case without spaces, is a
+shipped look's key is that look - its place, its title, its file - and any
+other is one more look after them, titled by its file's name. The window
+manager's `find_theme` asks `themes.lua` alone; Preferences makes the
+folder when it opens; and the Theme row's choices are built from
+`themes.order`.
+
+**Tests.** `tools/test_theme.lua` (host) 389 -> 396: with a folder holding
+`Night.theme`, `Plex Night.theme`, `My Night.theme` and `notes.txt`, Night
+and Plex Night are the folder's files under their own names, My Night is
+one more look last and reads as a palette, Plex is still the system's, the
+default has not moved, and the text file is no look. **Control**: `themes.file`
+ignoring the folder failed three of them. `tools/test_settings.lua` still
+holds the Theme row to `themes.order`, now true by construction.
+
+## 18.607 Restart in the Sandboxes window, seen
+
+Diego, 13 October: "does restarting a sandbox work? i dont see linux
+restarting at all". It did restart, and the window could not show it, for
+two reasons. The window reads a console from the offset it last reached,
+and a restarted sandbox is a new monitor whose console begins at nothing -
+so the new boot showed nothing until it had said as much as the old one,
+and then from the middle. And Restart waited for the old monitor to go,
+which stays ten seconds after its guest ends so its last lines can be read.
+
+Now a console that has said less than the window has read is a new one,
+read from its start under "--- started again ---"; and a restarting
+sandbox whose guest has ended is told to go at once.
+
+**Tests.** `arm-sandboxwin` 16 -> 18: Restart in the watched sandbox's
+header, then the first console line shown, past the old monitor's "vmm:
+stopped, as asked", is the first line the first boot showed; and shell1
+running again. **Control**: without the new-console check it showed
+nothing within two minutes and failed.

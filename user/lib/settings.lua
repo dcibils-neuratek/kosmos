@@ -154,20 +154,24 @@ settings.ITEMS = {
         -- `themes.order[1]`, which `test_settings.lua` holds this to.
         default = "endeavour",
         --
-        -- **The looks that ship, and it has to be all of them.** Endeavour
-        -- arrived in `themes.lua` and not here, so the dropdown showed the
-        -- four it knew and the fifth as the raw word `endeavour` - which is
-        -- what `name_of` falls back to and exactly what it should have
-        -- looked like. `tools/test_settings.lua` holds this list to
-        -- `themes.order` now, because a list of the same thing in two files
-        -- is a list that drifts.
+        -- **Every look there is, from the one list of them** (`themes.lua`):
+        -- the ones that ship and a person's own in Preferences' Themes
+        -- folder. This was the shipped ones written out again here, which
+        -- `tools/test_settings.lua` held to `themes.order` because a list of
+        -- the same thing in two files drifts - Endeavour once arrived in
+        -- `themes.lua` and not here and showed as the raw word - and a list
+        -- written out could never hold a look a person adds.
         --
-        choices = { { "endeavour", "Endeavour" }, { "plex", "Plex" },
-                    { "plexnight", "Plex Night" }, { "classic", "Classic" },
-                    { "studio", "Studio" }, { "night", "Night" },
-                    { "aurora", "Aurora" }, { "amethyst", "Amethyst" },
-                    { "ember", "Ember" }, { "sakura", "Sakura" },
-                    { "meadow", "Meadow" } },
+        choices = (function()
+          local ok, looks = pcall(use, "/Kosmos/Libraries/themes.lua")
+          local out = {}
+
+          for _, key in ipairs(ok and type(looks) == "table" and looks.order or {}) do
+            out[#out + 1] = { key, looks.titles[key] or key }
+          end
+
+          return out
+        end)(),
         --
         -- **Written by name even when it is the default**, which no other
         -- row is: the file is what a desktop starting up reads, and a

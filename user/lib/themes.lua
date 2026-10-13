@@ -1,5 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
--- The looks that ship: their order and their names. Each look itself is a
+-- The looks: the ones that ship, their order and their names, and a
+-- person's own from the Themes folder of their preferences (below). Each look itself is a
 -- file, `/Kosmos/Themes/<Name>.theme` - `user/themes/` in the tree, carried in
 -- the image beside the applications (`roadmap.md` 6s c3b; Diego, 27
 -- September: "Themes in /Kosmos/Themes, yes").
@@ -67,8 +68,61 @@ themes.titles = {
 --
 themes.DIR = "/Kosmos/Themes"
 
+--
+-- **And a person's own, in their preferences' `Themes` folder**
+-- (`/Home/Preferences/Themes`). Diego, 13 October 2026: "all settings and
+-- preferences files should be editable as per our premise", "add
+-- /Home/Themes to the roadmap and build it", and then "all preferences
+-- should be under preferences". The looks above are in the system's image,
+-- which nobody edits; a `.theme` file there is text a person writes, in the
+-- same format, read by the same parser:
+--
+--   - **named like one that ships** - `Night.theme` - it is that look, in
+--     its place in the list and under its name: copy `/Kosmos/Themes/
+--     Night.theme` there and change it, and Night is changed; delete the
+--     copy and Night is the system's again;
+--   - **named anything else** - `My Night.theme` - it is one more look,
+--     after the ones that ship, called by its file's name.
+--
+-- A look's key is its file's name in lower case without spaces, as the
+-- ones that ship are (`plexnight` for `PlexNight.theme`), so a copy finds
+-- its original whichever way it is spelled. Read once, when this file is
+-- first used: a look added is offered from the next time Preferences opens.
+-- The folder is named by the settings kit, which alone names that folder;
+-- Preferences makes it, so it is there to be found.
+--
+local prefs_ok, prefs = pcall(use, "/Kosmos/Libraries/prefs.lua")
+
+themes.HOME = prefs_ok and type(prefs) == "table" and prefs.DIR and (prefs.DIR .. "/Themes") or nil
+
+local own = {}                      -- key -> its file in the Themes folder
+
+local function key_of(stem)
+  return (stem:lower():gsub("[^%w]", ""))
+end
+
+for _, file in ipairs((themes.HOME and fs and fs.list and fs.list(themes.HOME)) or {}) do
+  local stem = type(file) == "string" and file:match("^(.+)%.theme$")
+  local key = stem and key_of(stem)
+
+  if key and key ~= "" and not own[key] then
+    own[key] = themes.HOME .. "/" .. file
+
+    if not themes.titles[key] then
+      themes.order[#themes.order + 1] = key
+      themes.titles[key] = stem
+    end
+  end
+end
+
+-- Whether a look is a person's file rather than the system's, for whoever
+-- wants to say so.
+function themes.own(key) return own[key] ~= nil end
+
 function themes.file(key)
   local title = themes.titles[key]
+
+  if own[key] then return own[key] end
 
   return title and (themes.DIR .. "/" .. title:gsub(" ", "") .. ".theme") or nil
 end

@@ -13,6 +13,7 @@ not - and the window opened beside them. Held to:
   * **one sandbox watched**: shell1 opened by a double click, its Console
     tab chosen, and what is typed there answered by Alpine's shell - two
     backspaces stepping the shown line back, with nothing drawn for them;
+  * **Restart**: the new boot shown from its first line;
   * **its settings**: the Settings tab's form, 128 MB chosen and saved, and
     the definition on the disk saying so;
   * **how sandboxes work**: the help, from its row under the machine;
@@ -172,6 +173,25 @@ def main():
                 guest.sendkey("ret")
                 check(until(r"sandboxes: console shell1: ab\n", at, 15) is not None,
                       "the shell did not run 'echo ab'")
+
+            # **Restart, and the new boot seen from its start** (Diego, 13
+            # October: "does restarting a sandbox work? i dont see linux
+            # restarting at all"): the window kept reading from where the old
+            # console was, so the new one showed nothing until it had said as
+            # much. The first line shown after Restart is the first line the
+            # first boot showed.
+            first_line = re.search(r"sandboxes: console shell1: ([^\n]*)\n", guest.seen)
+
+            if "Restart" in spots and first_line:
+                at = len(guest.seen)
+                click(ox + spots["Restart"][0], oy + spots["Restart"][1])
+                # The old monitor's last word first ("vmm: stopped, as asked").
+                again = until(r"sandboxes: console shell1: (?!vmm: )([^\n]*)\n", at, 120)
+                check(again is not None and again.group(1).rstrip("\r") == first_line.group(1).rstrip("\r"),
+                      "after Restart the console did not show the new boot from its start: %r, not %r"
+                      % (again and again.group(1), first_line.group(1)))
+                check(until(r"sandboxes: states [^\n]*shell1=running", at, 120) is not None,
+                      "shell1 was not running again after Restart")
 
             # **Its settings, editable** (Diego, 13 October: "it should be
             # all editable"): the Settings tab's form, 128 MB chosen, Save -

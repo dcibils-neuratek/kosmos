@@ -516,26 +516,16 @@ local function load_appearance()
     if type(name) ~= "string" then return nil, "no name" end
     if theme.palettes[name] then return theme.palettes[name] end
 
-    local ok, shipped = pcall(use, "/Kosmos/Libraries/themes.lua")
+    -- The system's looks and a person's own in Preferences' Themes, one list
+    -- (`themes.lua`): a file there named like one that ships is that look.
+    local ok, looks = pcall(use, "/Kosmos/Libraries/themes.lua")
 
-    if ok and type(shipped) == "table" and type(shipped[name]) == "string" then
-      return theme.install(name, (theme.read(shipped[name], "dark")))
-    end
-
-    -- A look somebody added is theirs, so it is in `/Home/Themes`; `/system`
-    -- held them until it went (`roadmap.md` 6s c3).
-    for _, file in ipairs(fs.list("/Home/Themes") or {}) do
-      if file:match("%.theme$") then
-        local p = theme.load("/Home/Themes/" .. file, "dark")
-
-        if p and (p.name or file:gsub("%.theme$", "")) == name then
-          return theme.install(name, p)
-        end
-      end
+    if ok and type(looks) == "table" and type(looks[name]) == "string" then
+      return theme.install(name, (theme.read(looks[name], "dark")))
     end
 
     return nil, "no theme called " .. name .. " in /Kosmos/Themes or "
-                .. "/Home/Themes"
+                .. tostring(ok and type(looks) == "table" and looks.HOME or "a person's Themes folder")
   end
 
   if saved.palette then

@@ -6774,7 +6774,7 @@ not static**, since a static one is in every process.
    working; **DONE the same evening** (18.230), **(c)** the `/Kosmos` tree - (c1) `/lib` to `/Kosmos/Libraries`,
    `/kits` to `/Kosmos/Kits` - **DONE** (18.232) - (c2) `/bin` split into `/Kosmos/Apps` and
    `/Kosmos/Programs` - **DONE** (18.233), `/system/themes` to `/Kosmos/Themes` (Diego: "Themes
-   in /Kosmos/Themes, yes"), `/system` and `/user` gone - **DONE** (18.234), a look somebody adds in `/Home/Themes`; `/Kosmos/Themes`, the looks as files, **DONE** (18.235); **(d)** the dotfiles at
+   in /Kosmos/Themes, yes"), `/system` and `/user` gone - **DONE** (18.234), a look somebody adds in `/Home/Themes` - in `/Home/Preferences/Themes` since 13 October, below; `/Kosmos/Themes`, the looks as files, **DONE** (18.235); **(d)** the dotfiles at
    the top of `/home` into `/Home/Preferences`; **(e)** `layout.md`, the
    layout in words, rewritten to the agreed root - it still describes the
    plan before it, with `/tmp` and `/system/libraries`. **(e) DONE on 28
@@ -9543,6 +9543,21 @@ a roadmap question; nothing decided. What it would take, honestly:
   the second may be QEMU's x86-64 TSC under TCG and nothing of ours.
 
 ### Smaller, and wanted
+
+- **DONE on 13 October (0.11.212) - a person's looks, editable, under
+  Preferences.** Diego: "all settings and preferences files should be
+  editable as per our premise", "add /Home/Themes to the roadmap and build
+  it", then "why not /home/preferences/themes?" and "all preferences should
+  be under preferences". The looks that ship are in the image, which nobody
+  edits; `/Home/Themes` was read only for a name nobody shipped, by the
+  window manager alone, and Preferences could not offer it. Now
+  `/Home/Preferences/Themes` is part of the one list (`themes.lua`): a
+  `.theme` named like one that ships is that look - copy `Night.theme`
+  there, change it, and Night is changed; delete it and Night is the
+  system's - and any other name is one more look, offered in Preferences
+  after the rest. Preferences makes the folder when it opens; its Theme
+  row's choices come from the same list rather than a copy of it
+  (`testing.md` 18.606).
 
 - **FOUND on 8 October - Scheduler's Policy cannot be changed, and says
   the wrong thing** (Diego, on the M700: "the scheduler app cant change

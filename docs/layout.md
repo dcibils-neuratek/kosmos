@@ -149,7 +149,7 @@ the image.
 | applications and programs | inside the image, served by `binfs` as `/Kosmos/Apps` and `/Kosmos/Programs`; installed ones in `/Home/Apps` - Doom, in its own image (6t, `elf.md` step 5) | Quake and the Super Nintendo, the same way |
 | the Deskbar's menu | `/Kosmos/Deskbar`, a view of the same store, merged with `/Home/Deskbar` (6zd) | done |
 | libraries and kits | `/Kosmos/Libraries` served from the image, `/Kosmos/Kits` answered in-process | done |
-| the looks | `/Kosmos/Themes`, a file each; a person's in `/Home/Themes` | done |
+| the looks | `/Kosmos/Themes`, a file each; a person's in `/Home/Preferences/Themes`, where one named like a look that ships replaces it (13 October) | done |
 | the servers and drivers | one C file each in `user/servers/` and `user/drivers/`, roles of the one image | files of their own, after the loader |
 | `/Home` | the disk Kosmos started from, journalled - or memory, on a machine with none | done |
 | a person's preferences | `/Home/Preferences`: the look, the keyboard, Tracker's, the Terminal's, what starts at login, what opens what - moved there from dotfiles at the top of `/Home` by the shell, once (6s d) | done |

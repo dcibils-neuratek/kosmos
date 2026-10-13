@@ -338,6 +338,67 @@ do
         .. table.concat(said, "; "))
 end
 
+--
+-- **A person's own looks, in their preferences' Themes folder**
+-- (`themes.lua`): a file named like one that ships is that look, in its
+-- place and under its name, however its name is spaced; any other name is
+-- one more look after them; anything not a `.theme` is not a look. Read
+-- here through a `use` that names the settings folder and an `fs` that
+-- holds four files there.
+--
+do
+  local was_use, was_fs = use, fs
+  local folder = "/Home/Preferences/Themes"
+  local files = {
+    ["Night.theme"] = "desktop = #123456\n",
+    ["Plex Night.theme"] = "desktop = #654321\n",
+    ["My Night.theme"] = "desktop = #abcdef\n",
+    ["notes.txt"] = "not a look",
+  }
+
+  use = function(path)
+    if path == "/Kosmos/Libraries/prefs.lua" then return { DIR = "/Home/Preferences" } end
+    error("no " .. path)
+  end
+  fs = {
+    list = function(dir)
+      if dir ~= folder then return nil end
+      local out = {}
+      for name in pairs(files) do out[#out + 1] = name end
+      table.sort(out)
+      return out
+    end,
+    read = function(path)
+      local name = path:match("^" .. folder:gsub("%p", "%%%0") .. "/(.+)$")
+      if name then return files[name] end
+      return was_fs.read(path)
+    end,
+  }
+
+  local own = dofile("user/lib/themes.lua")
+  local shipped = #themes.order
+
+  check(own.HOME == folder, "a person's looks are not in " .. folder .. ": " .. tostring(own.HOME))
+  check(#own.order == shipped + 1 and own.order[#own.order] == "mynight"
+        and own.titles.mynight == "My Night",
+        "My Night.theme is not one more look, last, called My Night: "
+        .. table.concat(own.order, " "))
+  check(own.file("night") == folder .. "/Night.theme" and own.night == files["Night.theme"]
+        and own.titles.night == "Night" and own.own("night"),
+        "Night.theme in the folder is not Night: " .. tostring(own.file("night")))
+  check(own.file("plexnight") == folder .. "/Plex Night.theme"
+        and own.plexnight == files["Plex Night.theme"],
+        "Plex Night.theme, spaced, did not find PlexNight: " .. tostring(own.file("plexnight")))
+  check(own.file("plex") == "/Kosmos/Themes/Plex.theme" and not own.own("plex"),
+        "Plex, which nobody copied, is not the system's: " .. tostring(own.file("plex")))
+  check(own.order[1] == themes.order[1], "the default moved: " .. tostring(own.order[1]))
+
+  local p = theme.read(own.mynight, "dark")
+  check(p ~= nil and p.desktop == 0xffabcdef, "My Night did not read as a look")
+
+  use, fs = was_use, was_fs
+end
+
 if fails == 0 then
   print(("PASS: %d checks on the themes that ship (every face carried, the "
          .. "the looks sharing their faces, legible and fitting the fixed layout, Plex as docs/plex.html has it, a bad "

@@ -51,6 +51,14 @@ local theme = ui.theme
 -- Appearance panel had these six lines from the day it was written, and it
 -- folded into this window on 24 September (`roadmap.md` 5zp).
 --
+--
+-- **A person's own looks are in their preferences' Themes folder**
+-- (`themes.lua`), made here if it is not there so it can be found: a copy
+-- of `/Kosmos/Themes/Night.theme` put in it is Night, changed; a file of
+-- another name is one more look.
+--
+use("/Kosmos/Libraries/prefs.lua").folder("Themes")
+
 local LOOKS = use("/Kosmos/Libraries/themes.lua")
 
 for _, name in ipairs(LOOKS.order) do
