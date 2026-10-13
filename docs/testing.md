@@ -24617,3 +24617,33 @@ outgoing`. **Controls**: frames never delivered to the guest - the ping is
 lost, the host unreachable and no name server reached, three checks failing;
 the sheet's choice ignored - `made1` written with `network none`, and the
 window's suite fails.
+
+## 18.585 Sandboxes S4, ports: Kosmos's port carried into a sandbox
+
+`docs/sandboxes.md` S4. `sandbox run|new --port N:M`, a definition's
+`port N:M`, and the New sandbox sheet's Ports with its field: the setup page
+carries four (`vmm_setup.ports`), the guest has the network device whenever
+it has a port, and the monitor listens on each N (`net_client_listen`). A
+thread of the monitor's own (`waiter` in `vmmnet.c`) polls the listeners
+with `NET_WANT_ACCEPT` a second at a time, accepts who arrived, and leaves
+the connection in an eight-slot ring whose head only it writes; the guest's
+thread takes it on its next pump, sends the guest a SYN to port M from
+10.0.3.2 and an unused port of the gateway's, and carries bytes once the
+SYN-ACK comes. The guest's FIN now closes Kosmos's side as well, after
+every byte written - so a server that ends its answer by closing ends the
+connection, both ways. A sandbox with ports and without `network
+outgoing` has its own SYNs refused with a reset and its DNS unanswered.
+
+**Tests.** `arm-sandbox-linux` 22 -> 24, with QEMU forwarding a port of
+this Mac to Kosmos's 8081: a sandbox given only `--port 8081:80` and a
+shared folder holding a one-answer script runs `nc -l -p 80 -e` under
+`timeout`; the suite fetches it from this Mac and gets exactly `HTTP/1.0
+200 OK`, a blank line and "served by alpine", the connection ended by the
+guest; and the same sandbox's `wget` to this Mac is refused. Busybox in
+Alpine's minimal root has no `httpd`, which is why `nc`. `arm-sandboxwin`'s
+last check now picks Ports and types `8082:80`, and `made1` is read back
+with `network outgoing` and `port 8082:80`. **Controls**: arrivals never
+handed to the guest's thread - the fetch times out; the guest's FIN not
+closing Kosmos's side - the fetch times out with the page unfinished; the
+sheet's port field ignored - `made1` written with no port. Each fails its
+suite.

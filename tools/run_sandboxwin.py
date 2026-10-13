@@ -156,15 +156,19 @@ def main():
         at = len(guest.seen)
         click(ox + nx, oy + ny)
         sheet = until(r"sandboxes: new sandbox sheet, name at (\d+),(\d+), create at (\d+),(\d+), "
-                      r"memory at (\d+),(\d+), outgoing at (\d+),(\d+)", at, 15)
+                      r"memory at (\d+),(\d+), ports at (\d+),(\d+), port field at (\d+),(\d+)", at, 15)
         check(sheet is not None, "+ New sandbox did not open the sheet")
 
         if sheet:
-            fx, fy, bx, by, mx, my, wx, wy = (int(v) for v in sheet.groups())
+            fx, fy, bx, by, mx, my, wx, wy, px, py = (int(v) for v in sheet.groups())
             click(ox + mx, oy + my)                     # 128 MB, the first
             time.sleep(0.3)
-            click(ox + wx, oy + wy)                     # the network: outgoing only
+            click(ox + wx, oy + wy)                     # the network: Ports
             time.sleep(0.3)
+            click(ox + px, oy + py)
+            time.sleep(0.3)
+            guest.type("8082:80")
+            time.sleep(0.5)
             click(ox + fx, oy + fy)
             time.sleep(0.3)
             guest.type("made1")
@@ -176,9 +180,9 @@ def main():
                   "made1 never arrived running")
 
             # What the sheet chose is what was written: its network included.
-            written = until(r"sandboxes: made1 written, network (\S+)", 0, 15)
-            check(written is not None and written.group(1) == "outgoing",
-                  "made1 was not written with its network outgoing: %r"
+            written = until(r"sandboxes: made1 written, network (\S+), ports ([^\n]*)", 0, 15)
+            check(written is not None and written.group(1) == "outgoing" and written.group(2).strip() == "8082:80",
+                  "made1 was not written with its network outgoing and its port 8082:80: %r"
                   % (written.group(0) if written else guest.seen[-300:]))
 
         with open(os.path.join("build", "gate", "arm-sandboxwin.ppm"), "wb") as f:
@@ -196,7 +200,7 @@ def main():
 
     print("PASS: %d checks on the Sandboxes window (its cards, web running and shell1 "
           "stopped; Start on a card, the sandbox arriving running; one opened by a double "
-          "click and its Console tab typed into and answered; New sandbox made and started, its network chosen and written)"
+          "click and its Console tab typed into and answered; New sandbox made and started, its network and a port chosen and written)"
           % checks)
     return 0
 

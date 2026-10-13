@@ -2,14 +2,14 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-13, early morning (0.11.189; Sandboxes through the night)
+Last updated: 2026-10-13, early morning (0.11.190; Sandboxes through the night)
 
 ---
 
 ## 12-13 October: Packages, then Sandboxes, through to Alpine on the network
 
 **Pushed: up to 0.11.184** (de21dac4). **On `main`, not pushed:
-0.11.185-0.11.189** and the commits between them, each with its suites and
+0.11.185-0.11.190** and the commits between them, each with its suites and
 its controls. Diego went to sleep saying "keep building", "overnight"; the
 M700 was not touched.
 
@@ -34,9 +34,12 @@ M700 was not touched.
   - **S4, outgoing (0.11.189)**: virtio-net and a gateway in the monitor -
     ping, DNS by Kosmos's resolver, every TCP connection carried over one
     Kosmos opens. `sandbox run alpine --network -- wget ...` fetches a page
-    from this Mac through Kosmos.
-- **Next in Sandboxes**: ports forwarded in (S4's other half) and the
-  Network tab's graph; VT-x on the M700 with Diego there (S5's other half).
+    from this Mac through Kosmos;
+  - **S4, ports (0.11.190)**: `--port 8081:80` and the sheet's Ports - a
+    page served by `nc` in a sandbox, fetched from this Mac through
+    Kosmos's port.
+- **Next in Sandboxes**: the Network tab's graph; VT-x on the M700 with
+  Diego there (S5's other half).
   Then the queue: Tracker's list view, Wallpapers, Magnet, SATA, the VNC
   client, Shortcuts.
 - **Disk on this Mac: about 3 GB free.** The two development sticks in

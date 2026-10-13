@@ -32,6 +32,7 @@
 #define VMM_NAME_MAX        16u         /* `/Running/sandbox-<name>` fits APP_NAME_MAX */
 #define VMM_TOKEN_MAX       24u
 #define VMM_SHARES          4u
+#define VMM_PORTS           4u
 #define VMM_SHARE_BASE      0x0a000000ul    /* virtio-mmio, 0x200 apart */
 #define VMM_SHARE_IRQ       48u             /* SPI 16, as QEMU's first virtio-mmio */
 
@@ -76,9 +77,19 @@ struct vmm_setup {
      * `VMM_NET_OUT` - a virtio-net device, and behind it a gateway in the
      * monitor through which the guest's connections become Kosmos's. The
      * monitor is handed `/Network` only when it is to have one.
+     *
+     * **And its ports**: each Kosmos's port `from` answered by the monitor
+     * and carried to the guest's port `to`, as though from the gateway. A
+     * `from` of 0 is none. Ports want the network.
      */
     uint32_t network;
     uint32_t network_reserved;
+
+    struct vmm_port {
+        uint16_t from;                  /* Kosmos's */
+        uint16_t to;                    /* the guest's */
+    } ports[VMM_PORTS];
+    uint8_t  ports_reserved[8];
 };
 
 #define VMM_NET_NONE        0u
@@ -86,8 +97,8 @@ struct vmm_setup {
 #define VMM_NET_BASE        (VMM_SHARE_BASE + 0x200ul * VMM_SHARES)
 #define VMM_NET_IRQ         (VMM_SHARE_IRQ + VMM_SHARES)
 
-_Static_assert(sizeof(struct vmm_setup) == 600 + VMM_SHARES * 264 + 8,
-               "six words, a magic, a version, a line, a name, a token, its folders and its network");
+_Static_assert(sizeof(struct vmm_setup) == 600 + VMM_SHARES * 264 + 8 + VMM_PORTS * 4 + 8,
+               "six words, a magic, a version, a line, a name, a token, its folders, its network, its ports");
 _Static_assert(sizeof(struct vmm_setup) <= 4096, "a setup is a page");
 
 /*

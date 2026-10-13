@@ -17,9 +17,18 @@
  *   ways, ended by either side's FIN or RST. The gateway's own address
  *   means this machine.
  *
+ * **And ports carried in**: Kosmos's port answered here, and each
+ * connection that arrives on it opened to the guest's port, from the
+ * gateway's address - as QEMU's `hostfwd` does. Arrivals are waited for on
+ * a thread of their own (`waiter`), so neither the guest's thread nor the
+ * one answering `/Running` waits on a listener; each is handed across in a
+ * ring the waiter only writes and the guest's thread only reads.
+ *
  * Nothing else crosses. The guest reaches only what Kosmos's own network
  * reaches, as Kosmos's process does, and only when its sandbox was given
- * the network; no packet of the guest's is put on a wire as it is.
+ * the network - or, given only ports, nothing at all: it answers what is
+ * carried in and opens nothing of its own. No packet of the guest's is put
+ * on a wire as it is.
  *
  * **The link to the guest loses nothing**: a segment is sent only when the
  * guest has a buffer posted for it, and bytes are read from Kosmos's side
@@ -62,6 +71,7 @@ static const uint8_t DNS_IP[4]    = { 10, 0, 3, 3 };
 
 struct link {
     bool     used;
+    bool     opening, syn_sent;             /* carried in: our SYN, its answer awaited */
     uint16_t gport, dport;                  /* the guest's port, and where it went */
     uint8_t  dip[4];
     uint32_t rcv_nxt;                       /* the next byte expected of the guest */
@@ -72,12 +82,34 @@ struct link {
 };
 
 static struct vdev dev;
-static bool on;
+static bool on, outgoing;
 static struct link *links;
 static unsigned links_n;
 static uint16_t ip_id = 1;
 static uint32_t dns_wait_ticks = 500;
 static uint64_t counted_in, counted_out;    /* bytes, for a window's graph */
+
+/*
+ * **Ports carried in.** Each a listener of Kosmos's; what arrives is
+ * accepted by the waiter and left in `arrived`, which it alone writes
+ * `head` of and the guest's thread alone `tail` of.
+ */
+#define FORWARDS    4u
+#define ARRIVALS    8u
+
+static struct forward {
+    uint16_t from, to;
+    uint64_t listener;
+} forwards[FORWARDS];
+static unsigned forwards_n;
+
+static struct arrival {
+    struct net_conn conn;
+    uint16_t        to;
+} arrived[ARRIVALS];
+static uint32_t arrived_head, arrived_tail;  /* __atomic */
+static uint16_t next_port = 49152;          /* the gateway's side of one carried in */
+static uint32_t tick_hz_here = 250;
 
 /* ---------------------------------------------------------------------
  * Sums and headers.
@@ -382,6 +414,19 @@ static void tcp(const uint8_t dst[4], const uint8_t *t, uint32_t n)
     l = link_find(sport, dst, dport);
 
     if ((flags & TCP_SYN) != 0 && (flags & TCP_ACK) == 0) {
+        if (l == NULL && !outgoing) {
+            struct link stray;
+
+            /* Given only ports: it opens nothing of its own. */
+            memset(&stray, 0, sizeof(stray));
+            stray.gport = sport;
+            stray.dport = dport;
+            memcpy(stray.dip, dst, 4);
+            stray.rcv_nxt = seq + 1;
+            tcp_to_guest(&stray, TCP_RST | TCP_ACK, NULL, 0, false);
+            return;
+        }
+
         if (l == NULL) {
             /* The gateway's address is this machine. */
             if (memcmp(dst, GATE_IP, 4) == 0) {
@@ -440,6 +485,19 @@ static void tcp(const uint8_t dst[4], const uint8_t *t, uint32_t n)
         return;
     }
 
+    /* One carried in: the guest's SYN-ACK to ours, and it is open. */
+    if (l->opening) {
+        if ((flags & (TCP_SYN | TCP_ACK)) == (TCP_SYN | TCP_ACK) && l->syn_sent && ack == l->snd_nxt) {
+            l->rcv_nxt = seq + 1;
+            l->snd_una = ack;
+            l->wnd = rd16(t + 14);
+            l->opening = false;
+            tcp_to_guest(l, TCP_ACK, NULL, 0, false);
+        }
+
+        return;
+    }
+
     if ((flags & TCP_ACK) != 0 && (int32_t)(ack - l->snd_una) > 0
         && (int32_t)(ack - l->snd_nxt) <= 0) {
         l->snd_una = ack;
@@ -468,6 +526,16 @@ static void tcp(const uint8_t dst[4], const uint8_t *t, uint32_t n)
         l->guest_fin = true;
         l->rcv_nxt++;
         tcp_to_guest(l, TCP_ACK, NULL, 0, false);
+
+        /*
+         * Done sending, so Kosmos's side is told - its FIN follows every
+         * byte already written - and is over for the guest too: a server in
+         * the guest that closes after its answer is waited on by nobody.
+         * Unless Kosmos's end had already said all it had to.
+         */
+        if (!l->fin_sent) {
+            net_client_close(&l->conn);     /* and the pump says FIN for it */
+        }
     }
 
     if (l->guest_fin && l->fin_sent && l->snd_una == l->snd_nxt) {
@@ -509,7 +577,7 @@ static void from_guest(const uint8_t *f, uint32_t n)
         }
         break;
     case 17:
-        if (memcmp(ip + 16, DNS_IP, 4) == 0 && total - hl >= 8 && rd16(ip + hl + 2) == 53) {
+        if (outgoing && memcmp(ip + 16, DNS_IP, 4) == 0 && total - hl >= 8 && rd16(ip + hl + 2) == 53) {
             dns(rd16(ip + hl), ip + hl + 8, total - hl - 8);
         }
         break;
@@ -556,8 +624,38 @@ bool vmmnet_pump(void)
         return false;
     }
 
+    /* Carried in since: each a link, its SYN to the guest's port. */
+    while (arrived_tail != __atomic_load_n(&arrived_head, __ATOMIC_ACQUIRE)) {
+        struct arrival *a = &arrived[arrived_tail % ARRIVALS];
+        struct link *l = link_new();
+
+        if (l == NULL) {
+            net_client_close(&a->conn);
+        } else {
+            l->opening = true;
+            l->gport = a->to;
+            l->dport = next_port;
+            memcpy(l->dip, GATE_IP, 4);
+            l->snd_nxt = l->snd_una = (uint32_t)kosmos_ticks();
+            l->conn = a->conn;
+            next_port = next_port == 65535 ? 49152 : (uint16_t)(next_port + 1);
+        }
+
+        __atomic_store_n(&arrived_tail, arrived_tail + 1, __ATOMIC_RELEASE);
+    }
+
     for (i = 0; i < links_n; i++) {
         struct link *l = &links[i];
+
+        if (l->used && l->opening) {
+            if (!l->syn_sent && tcp_to_guest(l, TCP_SYN, NULL, 0, true)) {
+                l->syn_sent = true;
+                l->snd_nxt++;
+                any = true;
+            }
+
+            continue;                       /* nothing to carry until it answers */
+        }
 
         while (l->used && !l->fin_sent && vdev_waiting(&dev, RX)) {
             uint32_t flight = l->snd_nxt - l->snd_una;
@@ -568,7 +666,7 @@ bool vmmnet_pump(void)
                 break;
             }
 
-            got = net_client_read(&l->conn, data, room < MSS ? room : MSS);
+            got = l->conn.open ? net_client_read(&l->conn, data, room < MSS ? room : MSS) : -1;
 
             if (got > 0) {
                 tcp_to_guest(l, TCP_PSH | TCP_ACK, data, (uint32_t)got, false);
@@ -618,10 +716,64 @@ static void config(struct vdev *d, uint64_t off, uint8_t *out, unsigned size)
     }
 }
 
-void vmmnet_start(long net_cap, uint32_t tick_hz)
+/*
+ * **The waiter**: Kosmos's listeners, waited on a second at a time, and
+ * whoever arrived accepted and left for the guest's thread. When the ring
+ * is full it waits a tick for room rather than accepting what it could not
+ * hand on.
+ */
+static void waiter(unsigned long unused)
 {
+    struct net_poll_entry set[FORWARDS];
+
+    (void)unused;
+
+    for (;;) {
+        unsigned i;
+
+        for (i = 0; i < forwards_n; i++) {
+            set[i].handle = forwards[i].listener;
+            set[i].want = NET_WANT_ACCEPT;
+            set[i].got = 0;
+        }
+
+        if (net_client_poll(set, forwards_n, tick_hz_here) != NET_OK) {
+            kosmos_sleep(1);
+            continue;
+        }
+
+        for (i = 0; i < forwards_n; i++) {
+            uint32_t head = arrived_head;
+            struct arrival *a;
+
+            if ((set[i].got & NET_WANT_ACCEPT) == 0) {
+                continue;
+            }
+
+            if (head - __atomic_load_n(&arrived_tail, __ATOMIC_ACQUIRE) >= ARRIVALS) {
+                kosmos_sleep(1);
+                break;
+            }
+
+            a = &arrived[head % ARRIVALS];
+
+            if (net_client_accept(forwards[i].listener, 1, &a->conn) == NET_OK) {
+                a->to = forwards[i].to;
+                __atomic_store_n(&arrived_head, head + 1, __ATOMIC_RELEASE);
+            }
+        }
+    }
+}
+
+unsigned vmmnet_start(long net_cap, uint32_t tick_hz, bool out,
+                      const uint16_t *from, const uint16_t *to, unsigned n)
+{
+    unsigned refused = 0;
+
     net_client_start(net_cap);
     dns_wait_ticks = tick_hz * 2;
+    tick_hz_here = tick_hz;
+    outgoing = out;
     memset(&dev, 0, sizeof(dev));
     dev.id = VIRTIO_ID_NET;
     dev.features = VIRTIO_NET_F_MAC;
@@ -629,6 +781,29 @@ void vmmnet_start(long net_cap, uint32_t tick_hz)
     dev.config = config;
     dev.notify = notify;
     on = true;
+
+    for (unsigned i = 0; i < n && i < FORWARDS; i++) {
+        struct forward *f = &forwards[forwards_n];
+
+        if (from[i] == 0) {
+            continue;
+        }
+
+        if (net_client_listen(from[i], &f->listener) != NET_OK) {
+            refused |= 1u << i;
+            continue;
+        }
+
+        f->from = from[i];
+        f->to = to[i];
+        forwards_n++;
+    }
+
+    if (forwards_n > 0 && kosmos_thread_start(waiter, 0) < 0) {
+        refused = (1u << n) - 1;
+    }
+
+    return refused;
 }
 
 bool vmmnet_mmio(uint64_t off, unsigned size, bool write, uint64_t *value)

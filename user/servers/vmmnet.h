@@ -12,7 +12,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-void vmmnet_start(long net_cap, uint32_t tick_hz);
+/*
+ * Started with `/Network`: `outgoing` whether the guest may open
+ * connections of its own and ask names, and `n` ports Kosmos answers on -
+ * `from[i]`, carried to the guest's `to[i]`, a `from` of 0 none. What it
+ * answers: a bit for each port Kosmos would not answer on.
+ */
+unsigned vmmnet_start(long net_cap, uint32_t tick_hz, bool outgoing,
+                  const uint16_t *from, const uint16_t *to, unsigned n);
 bool vmmnet_mmio(uint64_t off, unsigned size, bool write, uint64_t *value);
 bool vmmnet_raised(void);
 

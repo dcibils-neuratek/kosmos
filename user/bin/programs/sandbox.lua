@@ -6,9 +6,12 @@
 --                                       ... given a folder of /Home (`:ro`: read only)
 --   sandbox run alpine --network -- wget -O- http://example.com/
 --                                       ... and the network, outgoing
+--   sandbox run alpine --port 8080:80 -- httpd -f -p 80
+--                                       ... Kosmos's port 8080 carried to its 80
 --   sandbox run alpine                  a shell in a new one, until it ends
 --   sandbox list                        every sandbox, and how it is doing
---   sandbox new web --image alpine [--memory 256] [--service] [--at-start] [--network] [-- COMMAND]
+--   sandbox new web --image alpine [--memory 256] [--service] [--at-start] [--network]
+--                   [--share FOLDER] [--port N:M] [-- COMMAND]
 --   sandbox start web | stop web | console web | delete web
 --   sandbox images                      the images there are to start from
 --
@@ -39,6 +42,11 @@ do
       -- More than one: each a folder of /Home, `path[:at][:ro]`.
       options.shares = options.shares or {}
       options.shares[#options.shares + 1] = words[i + 1]
+      i = i + 2
+    elseif w == "--port" then
+      -- More than one: each Kosmos's port and the guest's, `N:M` or `N`.
+      options.ports = options.ports or {}
+      options.ports[#options.ports + 1] = words[i + 1]
       i = i + 2
     elseif w:sub(1, 2) == "--" then
       options[w:sub(3)] = (words[i + 1] and words[i + 1]:sub(1, 2) ~= "--") and words[i + 1] or true
@@ -111,7 +119,8 @@ if verb == "run" then
 
   if command then
     local began = sys.ticks()
-    local code, up, took = sandboxes.run(image, command, memory, say, options.shares, options.network)
+    local code, up, took = sandboxes.run(image, command, memory, say, options.shares, options.network,
+                                               options.ports)
 
     if code == nil and up == nil then
       print("sandbox: " .. tostring(took or "it would not start"))
@@ -129,6 +138,7 @@ if verb == "run" then
   s.image, s.memory = image, memory
   s.folders = options.shares or {}
   s.network = options.network and "outgoing" or "none"
+  s.ports = options.ports or {}
 
   local id, why = sandboxes.start(s)
 
@@ -195,6 +205,14 @@ if verb == "new" then
     if not f then print("sandbox: " .. why) sys.exit(1) end
 
     s.folders[#s.folders + 1] = sandboxes.folder_text(f)
+  end
+
+  for _, text in ipairs(options.ports or {}) do
+    local from, to = sandboxes.port(text)
+
+    if not from then print("sandbox: " .. to) sys.exit(1) end
+
+    s.ports[#s.ports + 1] = ("%d:%d"):format(from, to)
   end
 
   local ok, why = sandboxes.save(s)

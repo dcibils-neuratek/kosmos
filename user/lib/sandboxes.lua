@@ -265,6 +265,22 @@ function sandboxes.folder_text(f)
   return ("%s %s %s"):format(f.host, f.at, f.read_only and "ro" or "rw")
 end
 
+-- A port forwarded in, as a definition's `port` line or `--port` says it:
+-- `8080:80` - Kosmos's 8080 carried to the guest's 80 - or `80`, the same
+-- number on both sides. Its two numbers, or nil and why not.
+function sandboxes.port(text)
+  local from, to = tostring(text or ""):match("^%s*(%d+)%s*:?%s*(%d*)%s*$")
+
+  from = math.tointeger(tonumber(from or ""))
+  to = math.tointeger(tonumber(to ~= "" and to or "")) or from
+
+  if not from or from < 1 or from > 65535 or to < 1 or to > 65535 then
+    return nil, ("a port is a number, or Kosmos's:the guest's - not %q"):format(tostring(text))
+  end
+
+  return from, to
+end
+
 -- Bytes as hexadecimal, which a kernel's command line carries whole.
 local function hex(text)
   return (text:gsub(".", function(c) return ("%02x"):format(c:byte()) end))
@@ -353,10 +369,22 @@ function sandboxes.start(s)
     line = line .. (" kosmos.share%d=%s:%s"):format(i - 1, hex(f.at), f.read_only and "ro" or "rw")
   end
 
-  -- Its network: none, or outgoing through the monitor's gateway (S4).
+  -- Its network: none, or outgoing through the monitor's gateway (S4) -
+  -- and its ports, Kosmos's carried to the guest's, which want the device
+  -- whether or not it may reach out.
   local outgoing = s.network == "outgoing"
+  local ports = ""
 
-  if outgoing then line = line .. " kosmos.net=1" end
+  for i, text in ipairs(s.ports or {}) do
+    local from, to = sandboxes.port(text)
+
+    if not from then return nil, to end
+    if i > 4 then return nil, "four ports at most" end
+
+    ports = ports .. string.pack("<I2I2", from, to)
+  end
+
+  if outgoing or #ports > 0 then line = line .. " kosmos.net=1" end
 
   if #line > 511 then return nil, "its command and folders are too long for a kernel's command line" end
 
@@ -366,9 +394,10 @@ function sandboxes.start(s)
                              .. s.name .. ("\0"):rep(16 - #s.name)
                              .. token .. ("\0"):rep(24 - #token)
                              .. shares .. ("\0"):rep((4 - #(s.folders or {})) * 264)
-                             .. string.pack("<I4I4", outgoing and 1 or 0, 0))
+                             .. string.pack("<I4I4", outgoing and 1 or 0, 0)
+                             .. ports .. ("\0"):rep(16 - #ports + 8))
 
-  local id, why = fs.vm_start(ram, setup, #(s.folders or {}) > 0, outgoing)
+  local id, why = fs.vm_start(ram, setup, #(s.folders or {}) > 0, outgoing or #ports > 0)
 
   if not id then return nil, why end
 
@@ -393,7 +422,7 @@ end
 -- given the guest's console as it comes; answers the command's exit code,
 -- and how long the sandbox took to come up and to finish, in seconds.
 --
-function sandboxes.run(image, command, memory, say, folders, network)
+function sandboxes.run(image, command, memory, say, folders, network, ports)
   local name = ("task-%d"):format(sys.ticks() % 100000)
   local s = sandboxes.parse("", name)
   local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
@@ -402,6 +431,7 @@ function sandboxes.run(image, command, memory, say, folders, network)
   s.image, s.command, s.kind, s.memory = image, command or "", "task", memory or 256
   s.folders = folders or {}
   s.network = network and "outgoing" or "none"
+  s.ports = ports or {}
 
   local id, why = sandboxes.start(s)
 

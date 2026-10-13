@@ -149,8 +149,21 @@ PL011's nature; a busy console is what virtio-console is for, later.
    wire. The monitor is handed `/Network` only when its sandbox was given
    the network - `sandbox run --network`, a definition's `network
    outgoing`, the sheet's "Outgoing only" - and the card says "outgoing
-   only". **Ports forwarded** in are left, and with them the Network tab's
-   graph, whose counters (`vmmnet_counted`) are already kept.
+   only". **Ports carried in, 0.11.190** (`testing.md` 18.585): `--port
+   8081:80`, a definition's `port` lines, the sheet's third choice, Ports,
+   with its field - Kosmos's port answered by the monitor and each
+   connection that arrives opened to the guest's port from the gateway's
+   address, as QEMU's `hostfwd` does. Arrivals are waited for on a thread
+   of the monitor's own and handed to the guest's thread in a ring each
+   side only writes one index of, so neither the guest nor `/Running` waits
+   on a listener. When the guest closes, Kosmos's side is closed after
+   every byte it sent - a server in the guest that ends its answer by
+   closing is waited on by nobody. **Given ports and not the network**, a
+   sandbox answers what is carried in and opens nothing of its own: its
+   SYNs are answered with a reset and its names are not looked up. The
+   sheet's three choices are a ladder - None, Outgoing only, Ports (and
+   outgoing) - and `sandbox` keeps the narrower ports-only. The Network
+   tab's graph is left, its counters (`vmmnet_counted`) already kept.
 5. **S5 - started with Kosmos**, and **VT-x** - sandboxes on the M700.
    **Started with Kosmos, 0.11.188** (`testing.md` 18.583): a definition's
    `starts with Kosmos` - the sheet's "with Kosmos", `sandbox new

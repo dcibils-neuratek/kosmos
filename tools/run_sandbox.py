@@ -31,7 +31,10 @@ the prompt. Held to:
     back by Kosmos at the prompt;
   * **the network**, by virtio-net and the monitor's gateway: its gateway
     pinged, a page on this Mac fetched through Kosmos's own TCP, and a name
-    that cannot exist answered NXDOMAIN by its name server;
+    that cannot exist answered NXDOMAIN by its name server; and a port
+    carried in - busybox's nc in a sandbox given only Kosmos's 8081,
+    its page fetched from this Mac and its connection ended by the guest,
+    and nothing reached out from it;
   * no terminal escape reaching Kosmos's console in any of it.
 
 The screen at the end is kept in `build/gate/arm-sandbox-linux.ppm`.
@@ -44,6 +47,7 @@ import http.server
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -74,6 +78,15 @@ def main():
 
     with open(os.path.join(folder, "Projects", "site", "pages", "one.txt"), "w") as f:
         f.write("page one\n")
+
+    # A server of one answer, for a port carried in (S4): busybox's `nc`
+    # runs it for the connection, and it reads the request before answering
+    # so the guest closes it with a FIN rather than a reset.
+    os.makedirs(os.path.join(folder, "Projects", "serve"))
+
+    with open(os.path.join(folder, "Projects", "serve", "serve.sh"), "w") as f:
+        f.write("while read -r l; do l=$(echo \"$l\" | tr -d '\\r'); [ -z \"$l\" ] && break; done\n"
+                "printf 'HTTP/1.0 200 OK\\r\\n\\r\\nserved by alpine\\n'\n")
 
     # A sandbox that starts with Kosmos (S5): nobody starts it here.
     os.makedirs(os.path.join(folder, "Sandboxes", "boot1"))
@@ -109,10 +122,16 @@ def main():
     port = httpd.server_address[1]
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
+    # And this Mac's port into Kosmos's 8081, which a sandbox's port is
+    # carried from (S4, ports).
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        forwarded = probe.getsockname()[1]
+
     R.virtualize("1G")
     R.extra_args(image, ["-drive", "file=%s,format=raw,if=none,id=home" % disk,
                          "-device", R.device(image, "blk") + ",drive=home",
-                         "-netdev", "user,id=net0",
+                         "-netdev", "user,id=net0,hostfwd=tcp:127.0.0.1:%d-:8081" % forwarded,
                          "-device", R.device(image, "net") + ",netdev=net0"])
     guest = R.Guest(image, 120)
     failed, checks = [], 0
@@ -240,6 +259,45 @@ def main():
               "a page on this Mac was not fetched through Kosmos: %r" % said[-500:])
         check("NXDOMAIN" in said, "the name server did not answer a name that cannot exist: %r" % said[-400:])
 
+        # **A port carried in**: a sandbox given only Kosmos's 8081, for its
+        # 80, answering once with busybox's `nc` - fetched from this Mac
+        # through QEMU, Kosmos's stack, the monitor and the guest, and ended
+        # by the guest closing it. Given no network beyond that, it cannot
+        # reach out.
+        at = len(guest.seen)
+        guest.type("sandbox run alpine --port 8081:80 --share /Home/Projects/serve:/srv:ro -- "
+                   "timeout 60 nc -l -p 80 -e sh /srv/serve.sh & sleep 1; "
+                   "wget -q -T 3 -O- http://10.0.2.2:%d/hello.txt || echo NO-OUT\"\"GOING; "
+                   "echo SERV\"\"ING; wait" % port)
+        said = until("\nSERVING\n", at, 120)
+        check("\nNO-OUTGOING\n" in said, "a sandbox given only a port reached out: %r" % said[-400:])
+        page = b""
+
+        for _ in range(10):
+            try:
+                with socket.create_connection(("127.0.0.1", forwarded), timeout=10) as c:
+                    c.sendall(b"GET /index.html HTTP/1.0\r\n\r\n")
+                    page = b""
+
+                    while True:
+                        got = c.recv(4096)
+
+                        if not got:
+                            break
+
+                        page += got
+            except OSError as e:
+                page = repr(e).encode()
+
+            if b"served by alpine" in page:
+                break
+
+            time.sleep(1)
+
+        check(page == b"HTTP/1.0 200 OK\r\n\r\nserved by alpine\n",
+              "a page in a sandbox was not fetched through Kosmos's port: %r" % page[-300:])
+        until("the sandbox is gone", at, 60)
+
         check("\x1b" not in guest.seen[start:], "a terminal escape reached Kosmos's console")
 
         with open(os.path.join("build", "gate", "arm-sandbox-linux.ppm"), "wb") as f:
@@ -261,7 +319,8 @@ def main():
           "was typed and ending with exit; a service started, found running, its "
           "console attached and left with Control-W D, and stopped; a folder of "
           "/Home read only and read-write, by virtio-fs; the network - a ping, a page "
-          "fetched through Kosmos, a name answered)" % checks)
+          "fetched through Kosmos, a name answered; a port carried in, a page served from "
+          "the guest)" % checks)
     return 0
 
 

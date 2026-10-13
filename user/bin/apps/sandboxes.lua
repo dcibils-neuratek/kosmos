@@ -379,6 +379,22 @@ function folder_words(text)
   return ("%s \u{2192} %s%s"):format(f.host, f.at, f.read_only and ", read only" or "")
 end
 
+-- "8081:80" as the drawing says it: "8081 -> 80", Kosmos's port and the guest's.
+local function port_words(text)
+  local from, to = sandboxes.port(text)
+
+  return from and ("%d \u{2192} %d"):format(from, to) or tostring(text)
+end
+
+-- Its network in a few words: what it may reach, and what reaches it.
+local function network_words(s)
+  local ports = #(s.ports or {}) > 0
+
+  if s.network == "outgoing" then return ports and "outgoing, and ports in" or "outgoing only" end
+
+  return ports and "ports in only" or "none"
+end
+
 local function up_for(s)
   if not s.now then return nil end
 
@@ -451,8 +467,13 @@ local function draw_card(g, s, x, y, w)
   local cx = ix
 
   for _, f in ipairs(s.folders or {}) do cx = chip(g, cx, y + 104, folder_words(f)) end
-  for _, p2 in ipairs(s.ports or {}) do cx = chip(g, cx, y + 104, "port " .. p2) end
-  chip(g, cx, y + 104, s.network == "outgoing" and "outgoing only" or "no network")
+  for _, p2 in ipairs(s.ports or {}) do cx = chip(g, cx, y + 104, port_words(p2)) end
+
+  if s.network == "outgoing" then
+    chip(g, cx, y + 104, #(s.ports or {}) > 0 and "outgoing" or "outgoing only")
+  elseif #(s.ports or {}) == 0 then
+    chip(g, cx, y + 104, "no network")
+  end
 
   local bx, by = ix, y + CARD_H - 46
 
@@ -695,16 +716,18 @@ function detail:draw(g)
            theme.text_dim, nil, "label")
 
     panel(g, 20, top_y + 2 * (gh + 12), lw, gh, "Network")
-    g:text(34, top_y + 2 * (gh + 12) + 34, s.network == "outgoing"
-           and "Outgoing only, through Kosmos's - a gateway at 10.0.3.2." or "None - it reaches nothing.",
-           theme.text_dim, nil, "label")
+    g:text(34, top_y + 2 * (gh + 12) + 34, ({
+             ["outgoing only"] = "Outgoing only, through Kosmos's - a gateway at 10.0.3.2.",
+             ["outgoing, and ports in"] = "Outgoing through Kosmos's, and its ports carried in.",
+             ["ports in only"] = "Its ports carried in, and nothing out.",
+           })[network_words(s)] or "None - it reaches nothing.", theme.text_dim, nil, "label")
 
     local gx = 40 + lw
     local given = {
       { "Image", s.task and "-" or s.image },
       { "Memory", ("%d MB"):format(s.now and s.now.ram // MB or s.memory) },
       { "Folders", #(s.folders or {}) > 0 and folder_words(s.folders[1]) .. (#s.folders > 1 and (" and " .. (#s.folders - 1) .. " more") or "") or "none" },
-      { "Network", s.network == "outgoing" and "outgoing only" or "none" },
+      { "Network", network_words(s) },
       { "Command", s.command ~= "" and s.command or "a shell" },
       { "Starts", s.starts or "by hand" },
       { "Stops", (s.command or "") ~= "" and "when its command ends" or "when its shell ends" },
@@ -747,9 +770,18 @@ function detail:draw(g)
 
     fy = fy + 16
     g:text(20, fy, "PORTS AND THE NETWORK", theme.text_dim, nil, "label")
-    g:text(20, fy + gfx.height("label") + 8, s.network == "outgoing"
-           and "outgoing only - it reaches out through Kosmos's connections, and nothing reaches in"
-           or "none - nothing reaches it, and it reaches nothing", theme.text_dim, nil, "ui")
+    fy = fy + gfx.height("label") + 8
+
+    for _, p2 in ipairs(s.ports or {}) do
+      chip(g, 20, fy, port_words(p2))
+      fy = fy + 32
+    end
+
+    g:text(20, fy, ({
+             ["outgoing only"] = "outgoing only - it reaches out through Kosmos's connections, and nothing reaches in",
+             ["outgoing, and ports in"] = "Kosmos's ports above carried in, and it reaches out through Kosmos's connections",
+             ["ports in only"] = "Kosmos's ports above carried in, and it reaches nothing itself",
+           })[network_words(s)] or "none - nothing reaches it, and it reaches nothing", theme.text_dim, nil, "ui")
   elseif tab == 4 then
     local log = {}
 
@@ -871,9 +903,11 @@ local function new_sandbox()
   row(y, "Folder") sheet:put(folder) sheet:put(folder_at) sheet:put(folder_ro)
   y = y + 40
   row(y, "Network")
-  local network = ui.segments{ x = 140, y = y, items = { "None", "Outgoing only" }, on = 1 }
+  local network = ui.segments{ x = 140, y = y, items = { "None", "Outgoing only", "Ports" }, on = 1 }
+  local ports = ui.field{ x = 140 + network.w + 10, y = y, w = SW - 160 - network.w - 10, h = 28,
+                          text = "", hint = "3001:3000 - Kosmos's:its" }
 
-  sheet:put(network)
+  sheet:put(network) sheet:put(ports)
   y = y + 40
 
   local at_start = ui.checkbox{ x = 140, y = y, text = "with Kosmos", checked = false }
@@ -895,7 +929,20 @@ local function new_sandbox()
                          s.command = command.text or ""
                          s.memory = MEMORY[memory.on] or 256
                          s.starts = at_start.checked and "with Kosmos" or "by hand"
-                         s.network = network.on == 2 and "outgoing" or "none"
+                         s.network = network.on >= 2 and "outgoing" or "none"
+
+                         -- Ports: Kosmos's carried in, and out as well.
+                         if network.on == 3 then
+                           for text in (ports.text or ""):gmatch("[^%s,]+") do
+                             local from, to = sandboxes.port(text)
+
+                             if not from then said = to print("sandboxes: " .. said) return end
+
+                             s.ports[#s.ports + 1] = ("%d:%d"):format(from, to)
+                           end
+
+                           if #s.ports == 0 then said = "Ports wants a port - 3001:3000" print("sandboxes: " .. said) return end
+                         end
 
                          if (folder.text or "") ~= "" then
                            local f, bad = sandboxes.folder(folder.text .. " " .. (folder_at.text ~= "" and folder_at.text or "/work")
@@ -922,7 +969,8 @@ local function new_sandbox()
                          if TELL then
                            local back = sandboxes.definition(s.name)
 
-                           print(("sandboxes: %s written, network %s"):format(s.name, back and back.network or "?"))
+                           print(("sandboxes: %s written, network %s, ports %s"):format(s.name,
+                                 back and back.network or "?", back and table.concat(back.ports, " ") or "?"))
                          end
                        end })
   sheet:put(ui.button{ x = SW - 20 - 150 - 100, y = SH - 48, w = 90, h = 30, text = "Cancel",
@@ -930,11 +978,13 @@ local function new_sandbox()
   win:add(sheet)
 
   if TELL then
-    print(("sandboxes: new sandbox sheet, name at %d,%d, create at %d,%d, memory at %d,%d, outgoing at %d,%d"):format(
+    print(("sandboxes: new sandbox sheet, name at %d,%d, create at %d,%d, memory at %d,%d, "
+           .. "ports at %d,%d, port field at %d,%d"):format(
           sheet.panel.x + 140 + 20, sheet.panel.y + 80 + 14,
           sheet.panel.x + SW - 20 - 75, sheet.panel.y + SH - 33,
           sheet.panel.x + memory.x + 20, sheet.panel.y + memory.y + memory.h // 2,
-          sheet.panel.x + network.x + network.w - 20, sheet.panel.y + network.y + network.h // 2))
+          sheet.panel.x + network.x + network.w - 20, sheet.panel.y + network.y + network.h // 2,
+          sheet.panel.x + ports.x + 20, sheet.panel.y + ports.y + 14))
   end
 end
 

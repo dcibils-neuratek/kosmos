@@ -65,6 +65,18 @@
 static long guest_ram = -1;
 static uint8_t *ram;
 static struct vmm_setup setup;
+
+/* Whether it has a network device: outgoing, or ports carried in. */
+static bool networked(void)
+{
+    for (unsigned i = 0; i < VMM_PORTS; i++) {
+        if (setup.ports[i].from != 0) {
+            return true;
+        }
+    }
+
+    return setup.network != VMM_NET_NONE;
+}
 static long vcpu = -1;
 
 /* The machine's two clocks, from `sysinfo`: the counter the guest's timer
@@ -436,7 +448,7 @@ static size_t write_tree(uint8_t *at, size_t cap)
     }
 
     /* Its network: one more virtio-mmio device, after its folders. */
-    if (setup.network != VMM_NET_NONE) {
+    if (networked()) {
         uint32_t reg[4] = { 0, (uint32_t)VMM_NET_BASE, 0, 0x200 };
         uint32_t irq[3] = { 0, VMM_NET_IRQ - 32, 1 };
 
@@ -1067,14 +1079,35 @@ void vmm_server(long running_cap, long ram_cap, long setup_cap, long more1, long
         }
 
         home_cap = folders ? more1 : -1;
-        net_cap = setup.network != VMM_NET_NONE ? (folders ? more2 : more1) : -1;
+        net_cap = networked() ? (folders ? more2 : more1) : -1;
 
-        if (setup.network != VMM_NET_NONE) {
+        if (networked()) {
+            uint16_t from[VMM_PORTS], to[VMM_PORTS];
+
             if (net_cap < 0) {
                 kosmos_exit(VMM_BAD_SHARE);
             }
 
-            vmmnet_start(net_cap, (uint32_t)tick_hz);
+            for (unsigned i = 0; i < VMM_PORTS; i++) {
+                from[i] = setup.ports[i].from;
+                to[i] = setup.ports[i].to;
+            }
+
+            unsigned refused = vmmnet_start(net_cap, (uint32_t)tick_hz,
+                                            setup.network == VMM_NET_OUT, from, to, VMM_PORTS);
+
+            for (unsigned i = 0; i < VMM_PORTS; i++) {
+                if ((refused >> i & 1u) != 0) {
+                    struct say_line line;
+
+                    say_begin(&line);
+                    say_text(&line, "Kosmos would not answer on port ");
+                    say_dec(&line, from[i]);
+                    say_text(&line, ", for the guest's ");
+                    say_dec(&line, to[i]);
+                    note(line.text);
+                }
+            }
         }
     }
 
