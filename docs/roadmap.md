@@ -9246,7 +9246,8 @@ read and write, the network outgoing or by ports, the console, and
 sandboxes work: the help*): a page of the window, from a ? beside New
 sandbox and a "How sandboxes work" row under the machine - what a sandbox
 is, not a whole PC, only for this machine's processor, what it is for, how
-it works, and the commands at the prompt. Waiting for Diego's word.
+it works, and the commands at the prompt. **Agreed ("How sandboxes
+work") and built 0.11.208** (`testing.md` 18.602).
 
 **Sandboxes: small operating systems for a task, in virtual machines** -
 Diego, 11 October 2026: "i want to explore adding virtualization support to

@@ -25105,3 +25105,20 @@ chosen and saved, and the definition read back from the disk saying 128.
 On the M700 (0.11.207) by VNC: the grid, shell86's Overview, its Settings
 form and the New sheet. Left of the drawing: the Memory panel's graph (the
 guest does not say what it uses yet) and more than one processor.
+
+## 18.602 How sandboxes work: the help
+
+`docs/sandboxes.html`, agreed 13 October. A page of the Sandboxes window in
+place of the cards, from a ? beside New sandbox and a "How sandboxes work"
+row under the machine, lit while it shows: a lead - a small machine of its
+own, on this processor, inside walls the processor keeps - then five cards
+in two columns: Not a whole PC (QEMU and VirtualBox imitate one; a sandbox
+has a console, a clock and virtio, so Linux and not Windows or an ISO), Only
+for this machine's processor (x86-64 on a PC, ARM64 on an ARM board), What
+it is for, How it works (images, a sandbox's definition, its kind, folders,
+network), and At the prompt. Scrolled with the wheel. The cards, a sandbox
+and the help are switched where they are chosen rather than on the window's
+half-second clock.
+
+**Tests.** `arm-sandboxwin` 14 -> 16: the help row says where it is, and
+pressed, the page shows its five cards.

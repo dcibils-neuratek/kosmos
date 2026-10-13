@@ -15,6 +15,7 @@ not - and the window opened beside them. Held to:
     backspaces stepping the shown line back, with nothing drawn for them;
   * **its settings**: the Settings tab's form, 128 MB chosen and saved, and
     the definition on the disk saying so;
+  * **how sandboxes work**: the help, from its row under the machine;
   * **New sandbox**: the sheet filled - a name - and Create and start
     making it and starting it;
   * **Stop on a card**: web stopped, and the card saying so.
@@ -197,6 +198,20 @@ def main():
 
             # Back to every sandbox: a group in the sidebar, as the drawing has it.
             click(ox + 60, oy + 100)
+            time.sleep(1)
+
+        # **How sandboxes work** (13 October): the row under the machine
+        # opens the help in place of the cards, every card of it drawn.
+        row = until(r"sandboxes: help row at (\d+),(\d+)", 0, 10)
+        check(row is not None, "the sidebar did not say where its help row is")
+
+        if row:
+            at = len(guest.seen)
+            click(ox + int(row.group(1)), oy + int(row.group(2)))
+            shown = until(r"sandboxes: help shown, (\d+) cards, (\d+) tall", at, 10)
+            check(shown is not None and shown.group(1) == "5",
+                  "the help did not show its five cards: %r" % (shown and shown.group(0)))
+            click(ox + 60, oy + 100)                    # All: the cards again
             time.sleep(1)
 
         at = len(guest.seen)

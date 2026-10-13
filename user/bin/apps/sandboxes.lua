@@ -47,6 +47,8 @@ local ICON_FOLDER, ICON_NETWORK = "Folder_generic.png", "Prefs_Network.png"
 local all, images, machine = {}, {}, {}
 local before, busy, history = {}, {}, {}
 local group, chosen, watched, tab = "all", nil, nil, 1
+local helping = false                   -- the help page shown, in place of the cards
+local apply_views                       -- forward: which of cards, a sandbox or the help shows
 local console = {}                      -- name -> { at, text }
 local said = nil                        -- the foot's line
 local pending = {}                      -- name -> "starting" | "restarting"
@@ -274,8 +276,12 @@ local function delete(name)
 end
 
 local function open(name, which)
+  helping = false
   watched, tab = name, which or 1
   console[name] = console[name] or { at = 0, text = "" }
+
+  if apply_views then apply_views() end
+
   print("sandboxes: watching " .. name .. ", tab " .. tab)
 end
 
@@ -295,8 +301,26 @@ local head_icon = ui.view{ w = 26, h = 26 }
 
 function head_icon:draw(g) g:icon(0, 0, ICON_SANDBOX, 26) end
 
+-- The drawing's ?, a ring round it: the help, as the row under the machine opens it.
+local help_button = ui.view{ w = 24, h = 24 }
+
+function help_button:draw(g)
+  g:frame_round(0, 0, 24, 24, theme.line, 12)
+  g:text((24 - gfx.measure("?", "ui")) // 2, (24 - gfx.height("ui")) // 2, "?", theme.text_dim, nil, "ui")
+end
+
+function help_button:mouse(action, x, y)
+  return ui.click(self, action, x, y, function()
+    return "help", function()
+      helping, watched = true, nil
+      apply_views()
+      print("sandboxes: help")
+    end
+  end)
+end
+
 local head = ui.header{ x = 0, y = 0, w = W, title = "Sandboxes", sub = "", left = { head_icon },
-                        right = { new_button }, title_bar = true }
+                        right = { help_button, new_button }, title_bar = true }
 
 win:add(head)
 
@@ -355,7 +379,7 @@ function side:draw(g)
   end
 
   for _, it in ipairs({ { "all", "All" }, { "running", "Running" }, { "stopped", "Stopped" }, { "tasks", "Tasks" } }) do
-    local on = lit == it[1]
+    local on = lit == it[1] and not helping
 
     if on then g:fill_round(8, y, self.w - 16, 30, theme.accent, 7) end
 
@@ -418,12 +442,29 @@ function side:draw(g)
     g:text(20, y, line, machine.guests and theme.text_dim or theme.io_out, nil, "ui")
     y = y + gfx.height() + 2
   end
+
+  -- The help, a row of its own, lit while it is shown.
+  y = y + 10
+
+  if helping then g:fill_round(8, y, self.w - 16, 30, theme.accent, 7) end
+
+  g:text(20, y + (30 - gfx.height()) // 2, "How sandboxes work", helping and 0xffffffff or theme.text, nil, "ui")
+  side_rows[#side_rows + 1] = { y = y, h = 30, help = true }
+
+  if TELL and side.told_help ~= y then
+    side.told_help = y
+    print(("sandboxes: help row at %d,%d"):format(60, L.head + y + 15))
+  end
 end
 
 function side:mouse(action, x, y)
   return ui.click(self, action, x, y, function(_, py)
     for _, r in ipairs(side_rows) do
       if py >= r.y and py < r.y + r.h then
+        if r.help then
+          return "help", function() helping, watched = true, nil apply_views() print("sandboxes: help") end
+        end
+
         if r.get_image then
           return "get", function()
             fs.send("/Running/wm", { type = "launch", program = "packages", wait = false })
@@ -432,7 +473,8 @@ function side:mouse(action, x, y)
         end
 
         return r.group, function()
-          group, watched = r.group, nil
+          group, watched, helping = r.group, nil, false
+          apply_views()
           print("sandboxes: showing " .. r.group)
         end
       end
@@ -961,6 +1003,182 @@ end
 
 win:add(detail)
 
+
+--------------------------------------------------------------------------
+-- **How sandboxes work** - the help, as drawn (`docs/sandboxes.html`, "How
+-- sandboxes work: the help"; Diego, 13 October: "the sandboxes app needs a
+-- help screen that tells the user how it operates and works", "we need to
+-- tell the user that sandboxes does not behave like qemu that emulates a
+-- full pc", "it also runs only oses that are targeted for the host
+-- architecture", "we also need to explain the uses and benefits"). A page
+-- in place of the cards, scrolled with the wheel.
+--------------------------------------------------------------------------
+
+local LEAD = "A sandbox is a small machine of its own, with one operating system in it. Its programs run on "
+  .. "this processor directly, at its speed, inside walls the processor itself keeps - Intel's VT-x on a PC, "
+  .. "EL2 on an ARM board - and they reach only what you gave it."
+
+-- Each card: its title, then paragraphs, bullets ({ lead, rest }) or rows ({ term, words, true }).
+local HELP = {
+  left = {
+    { "Not a whole PC", {
+      "QEMU and VirtualBox imitate a whole computer - its firmware, graphics card, disks and USB - so they "
+      .. "can start anything, slowly. A sandbox does not: it has a console, a clock and a few virtio devices "
+      .. "for folders and the network, and nothing else.",
+      "So it runs a system that starts from a kernel and has virtio drivers - Linux: Alpine, Debian, a "
+      .. "minimal Ubuntu - and not Windows or an installer's ISO. That is why one starts in under a second "
+      .. "and costs almost nothing while it waits." } },
+    { "Only for this machine's processor", {
+      "The guest's instructions are this processor's own: x86-64 Linux on a PC, ARM64 Linux on an ARM "
+      .. "board such as a Raspberry Pi. Running the other kind would mean translating every instruction, "
+      .. "which is what emulators do and why they are slow. Alpine comes for both, so a sandbox is defined "
+      .. "the same way on either." } },
+    { "What it is for", {
+      { "Something from elsewhere, kept apart", "a tool, a compiler, a script from the internet. It sees "
+        .. "only the folders you give it, read only if you say, and the network only if you allow it." },
+      { "Linux's programs without porting them", "Kosmos is not Unix; Linux's software runs here as itself." },
+      { "A task, thrown away", "starts in about a second, does one thing, says how it ended, and is gone." },
+      { "A service, kept running", "a small server answering on a port Kosmos carries in, started with "
+        .. "Kosmos if you like." },
+      { "Fast and light", "nothing is emulated, and a sandbox costs the memory you give it." } } },
+  },
+  right = {
+    { "How it works", {
+      { "Images", "the systems you can start, installed like any package with + Get an image. Kept in "
+        .. "/Home/Sandboxes/Images.", true },
+      { "A sandbox", "a name, an image and what it is given - its definition, in /Home/Sandboxes/<name>. "
+        .. "Change it in its Settings; it takes effect at its next start.", true },
+      { "Its kind", "a task runs one command and is thrown away; a service keeps running; a shell is a "
+        .. "prompt you type into, in its Console.", true },
+      { "Folders", "a folder of /Home, seen inside where you choose - read only, or read and write.", true },
+      { "Network", "none; outgoing only, through Kosmos's own connections; or ports, Kosmos's carried in "
+        .. "to the guest's.", true } } },
+    { "At the prompt", { mono = true,
+      "sandbox run alpine -- uname -a",
+      "sandbox new web --image alpine --service \\",
+      "    --port 8080:80 -- httpd -f -p 80",
+      "sandbox list",
+      "sandbox console web",
+      "sandbox stop web" } },
+  },
+}
+
+local help_view = ui.view{ x = SIDE, y = L.head, w = W - SIDE, h = H - L.head - 34,
+                           follow = { "left", "right", "top", "bottom" }, hidden = true }
+local help_top, help_tall = 0, 0
+
+-- A card at `x`, `y`, `w` wide: drawn when `g` is given, measured always; its height.
+local function help_card(g, card, x, y, w)
+  local body = card[2]
+  local tx, room = x + 14, w - 28
+  local cy = y + 12 + gfx.height("heading") + 6
+  local lh = gfx.height("label") + 3
+  local ops = {}
+
+  local function line(at, text, ink, face) ops[#ops + 1] = { at, text, ink, face } end
+
+  if body.mono then
+    for _, text in ipairs(body) do line(cy, text, 0xffd7dde8, "mono") cy = cy + gfx.height("mono") + 3 end
+
+    cy = cy + 4
+  else
+    for _, item in ipairs(body) do
+      if type(item) == "string" then
+        for _, l in ipairs(ui.wrapped(item, room, "label", 40)) do line(cy, l, theme.text_dim, "label") cy = cy + lh end
+
+        cy = cy + 6
+      elseif item[3] then                                   -- a row: its term, then its words
+        local words = ui.wrapped(item[2], room - 84, "label", 20)
+
+        ops[#ops + 1] = { cy, item[1], theme.text_dim, "label", 0 }
+
+        for k, l in ipairs(words) do ops[#ops + 1] = { cy + (k - 1) * lh, l, theme.text, "label", 84 } end
+
+        cy = cy + #words * lh + 5
+      else                                                  -- a bullet: its lead, then the rest
+        local words = ui.wrapped(item[1] .. " - " .. item[2], room - 14, "label", 20)
+
+        ops[#ops + 1] = { cy, "\u{2022}", theme.text_dim, "label", 0 }
+
+        for k, l in ipairs(words) do
+          ops[#ops + 1] = { cy + (k - 1) * lh, l, k == 1 and theme.text or theme.text_dim, "label", 14 }
+        end
+
+        cy = cy + #words * lh + 5
+      end
+    end
+  end
+
+  local h = cy - y + 8
+
+  if g then
+    g:fill_round(x, y, w, h, theme.raised, 10)
+    g:frame_round(x, y, w, h, theme.line_soft, 10)
+    g:text(tx, y + 12, card[1], theme.text, nil, "heading")
+
+    if body.mono then
+      g:fill_round(tx - 4, y + 12 + gfx.height("heading") + 2, room + 8, h - gfx.height("heading") - 22, 0xff0f141c, 8)
+    end
+
+    for _, op in ipairs(ops) do
+      g:text(tx + (op[5] or 0) + (body.mono and 6 or 0), op[1], op[2], op[3],
+             body.mono and 0xff0f141c or nil, op[4])
+    end
+  end
+
+  return h
+end
+
+function help_view:draw(g)
+  g:fill(0, 0, self.w, self.h, theme.window)
+
+  local x, y = 22, 18 - help_top
+
+  g:text(x, y, "How sandboxes work", theme.text, nil, "title")
+  y = y + gfx.height("title") + 6
+
+  for _, l in ipairs(ui.wrapped(LEAD, self.w - 44, "ui", 6)) do
+    g:text(x, y, l, theme.text_dim, nil, "ui")
+    y = y + gfx.height() + 2
+  end
+
+  y = y + 12
+
+  local cw = (self.w - 44 - 12) // 2
+  local tall = 0
+
+  for side_i, list in ipairs({ HELP.left, HELP.right }) do
+    local cx, cy = x + (side_i - 1) * (cw + 12), y
+
+    for _, card in ipairs(list) do
+      cy = cy + help_card(g, card, cx, cy, cw) + 12
+    end
+
+    tall = math.max(tall, cy)
+  end
+
+  help_tall = tall + help_top + 12
+
+  if TELL and not self.told then
+    self.told = true
+    print(("sandboxes: help shown, %d cards, %d tall"):format(#HELP.left + #HELP.right, help_tall))
+  end
+end
+
+function help_view:wheel(n)
+  help_top = math.max(0, math.min(help_top + n * 60, math.max(0, help_tall - self.h)))
+  return true
+end
+
+win:add(help_view)
+
+-- The cards, one sandbox, or the help: switched where it is chosen, not on the next tick.
+apply_views = function()
+  grid.hidden = watched ~= nil or helping
+  detail.hidden = watched == nil or helping
+  help_view.hidden = not helping
+end
+
 --
 -- **The foot**: what was last said.
 --
@@ -1403,8 +1621,7 @@ function clock:tick()
 
   head.sub = ("%d running \u{b7} %d task%s \u{b7} %d MB of %d MB"):format(c.running, c.tasks,
              c.tasks == 1 and "" or "s", given_mb(), (machine.ram or 0) // MB)
-  grid.hidden = watched ~= nil
-  detail.hidden = watched == nil
+  apply_views()
 
   if TELL then
     local line = {}
