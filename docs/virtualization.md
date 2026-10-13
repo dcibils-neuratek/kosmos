@@ -175,8 +175,16 @@ Nebula's part, while the monitor and the window are shared.
   switches the machine off through PSCI. **Two things it took of the
   kernel**: a spawn may now hand the child a region, not only an endpoint
   (`ipc_cap_grant`), and the console is handed to `vmm` by the namespace,
-  never held raw by the program. **Left for V3c**: the keyboard - the PL011's
-  receiver, fed from the console - so the prompt answers.
+  never held raw by the program. **V3c, the keyboard, 0.11.184** (`testing.md`
+  18.579): what is typed at Kosmos's console goes to the PL011's receiver -
+  the monitor takes it with `CON_OP_KEYS`, and when the guest idles it waits
+  on the console with `CON_OP_WAIT`, so a key or the guest's timer wakes it,
+  whichever comes first - and the guest's terminal escapes are dropped on
+  the way out, since Kosmos's console has no escape language by design. A
+  sandbox whose `/init` ends in `sh` on `ttyAMA0` (`tools/alpine.py
+  --shell`) is an Alpine prompt that answers. **V3 is done: Alpine Linux at
+  a prompt, on Kosmos.** The time from asking to the prompt is about 14 s
+  under TCG, which says nothing of the M700 and is not yet measured there.
 - **V4** - **the sandbox**: virtio block for its image, a folder of `/Home`
   shared into it (virtio-fs, or 9p, which is smaller), the network through
   Kosmos's stack only when asked, and `sandbox run IMAGE -- COMMAND`

@@ -20,9 +20,12 @@ their sums - and `sandbox run alpine` is typed at the prompt. Held to:
   * **Alpine's userland**: its `/init` saying which Alpine and which kernel,
     and that it has one processor;
   * **switching itself off**: PSCI's SYSTEM_OFF, the monitor stopping, and
-    the `sandbox` program back at the prompt with code 0.
+    the `sandbox` program back at the prompt with code 0;
+  * **a shell, typed into**: a second sandbox whose `/init` ends in one -
+    commands typed at Kosmos's console answered (`3.24.2`, `42`, `aarch64`),
+    no escape sequence reaching the console, and `poweroff -f` ending it.
 
-The screen at the end is kept in `build/gate/arm-sandbox-linux.ppm`.
+The screen of the shell is kept in `build/gate/arm-sandbox-linux.ppm`.
 
 Usage: run_sandbox.py <image>
 """
@@ -51,14 +54,16 @@ def main():
     shutil.rmtree(folder, ignore_errors=True)
     os.makedirs(alpine)
 
-    made = subprocess.run([sys.executable, os.path.join(HERE, "alpine.py"), alpine],
-                          capture_output=True, text=True)
+    for where, more in ((alpine, []), (alpine + "-shell", ["--shell"])):
+        os.makedirs(where, exist_ok=True)
+        made = subprocess.run([sys.executable, os.path.join(HERE, "alpine.py"), where] + more,
+                              capture_output=True, text=True)
 
-    if made.returncode != 0:
-        print("FAIL: tools/alpine.py would not make Alpine's files:\n" + made.stdout + made.stderr)
-        return 1
+        if made.returncode != 0:
+            print("FAIL: tools/alpine.py would not make Alpine's files:\n" + made.stdout + made.stderr)
+            return 1
 
-    made = subprocess.run([sys.executable, os.path.join(HERE, "homeimage.py"), folder, disk, "128"],
+    made = subprocess.run([sys.executable, os.path.join(HERE, "homeimage.py"), folder, disk, "256"],
                           capture_output=True, text=True)
 
     if made.returncode != 0:
@@ -91,9 +96,6 @@ def main():
         guest._read_available()
         said = guest.seen[mark:].replace("\r", "")
 
-        with open(os.path.join("build", "gate", "arm-sandbox-linux.ppm"), "wb") as f:
-            f.write(guest.screendump())
-
         check(re.search(r"Linux version 6\.18\.\S+-virt .*Alpine", said) is not None,
               "Linux's banner, with Alpine's build in it, never came")
         check("ttyAMA0 at MMIO 0x9000000" in said,
@@ -104,6 +106,46 @@ def main():
         check("vmm: the guest switched itself off" in said
               and "sandbox: alpine ended, code 0" in said,
               "the guest did not switch itself off and leave the sandbox with code 0")
+
+        # **And typed into** (V3c): a sandbox whose /init ends in a shell on
+        # ttyAMA0. What is typed at Kosmos's console reaches the guest's
+        # serial receiver, its answers come back without the terminal's
+        # escape sequences, and `poweroff -f` ends it.
+        def until(text, since, seconds):
+            # The same text the checks read: the serial line ends in "\r\n".
+            end = time.monotonic() + seconds
+            while (text not in guest.seen[since:].replace("\r", "")
+                   and time.monotonic() < end):
+                time.sleep(0.3)
+                guest._read_available()
+            return guest.seen[since:].replace("\r", "")
+
+        mark = len(guest.seen)
+        guest.type("sandbox run alpine-shell")
+        prompt = until("alpine:~# ", mark, 240)
+        check("alpine:~# " in prompt, "the shell's prompt never came: %r" % prompt[-400:])
+
+        answers = {}
+        for command, wanted in (("cat /etc/alpine-release", "3.24.2"),
+                                ("echo $((6*7))", "42"),
+                                ("uname -m", "aarch64")):
+            at = len(guest.seen)
+            guest.type(command)
+            answers[command] = until("\n" + wanted + "\n", at, 30)
+            check("\n" + wanted + "\n" in answers[command],
+                  "%s did not answer %s: %r" % (command, wanted, answers[command][-200:]))
+
+        check("\x1b" not in guest.seen[mark:],
+              "the guest's terminal escapes reached Kosmos's console")
+
+        with open(os.path.join("build", "gate", "arm-sandbox-linux.ppm"), "wb") as f:
+            f.write(guest.screendump())
+
+        at = len(guest.seen)
+        guest.type("poweroff -f")
+        gone = until("sandbox: alpine-shell ended", at, 60)
+        check("sandbox: alpine-shell ended, code 0" in gone,
+              "poweroff -f typed at the prompt did not end the sandbox: %r" % gone[-300:])
     finally:
         transcript = guest.seen
         guest.close()
@@ -117,8 +159,9 @@ def main():
 
     print("PASS: %d checks on a sandbox (Alpine Linux 3.24.2 booted at EL2 under "
           "Kosmos: Linux's banner, ttyAMA0 through the emulated GICv3, Alpine's "
-          "/init - reached only with the virtual timer - saying what it is, and the "
-          "guest switching itself off through PSCI)" % checks)
+          "/init - reached only with the virtual timer - saying what it is, the "
+          "guest switching itself off through PSCI, and a shell answering what "
+          "was typed at Kosmos's console)" % checks)
     return 0
 
 

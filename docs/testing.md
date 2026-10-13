@@ -24440,3 +24440,27 @@ is kept beside the log. **Control**: the timer's interrupt never offered -
 Linux stops before its userland and the suite fails. **A check that did not
 bite, found by that control and removed**: "the guest's clock moved" passed
 without the timer, because a timestamp is read from the counter.
+
+## 18.579 Sandboxes V3c: an Alpine prompt that answers
+
+What is typed at Kosmos's console reaches the sandbox: `vmm` takes the
+console's bytes (`CON_OP_KEYS`) into the PL011's receiver, whose data
+register, flag register and receive interrupt now say so, Enter as a
+carriage return and Backspace as DEL; when the guest idles, the monitor
+waits on the console itself (`CON_OP_WAIT`) for a key or until the guest's
+timer is due. A prompt has no newline, so what the guest said is written out
+before it is waited on. **A terminal's escape sequences are dropped** on
+the way out - busybox asks where the cursor is and `ls` colours its names,
+and Kosmos's console carries colour as a field, not as bytes in the text.
+`tools/alpine.py --shell` makes an initramfs whose `/init` names the host
+`alpine` and ends in `setsid sh -l` on `ttyAMA0`, with job control.
+
+**Tests.** `arm-sandbox-linux` 5 -> 11: a second sandbox, `alpine-shell`,
+reaches `alpine:~# `; `cat /etc/alpine-release`, `echo $((6*7))` and `uname
+-m` typed at Kosmos's console answer `3.24.2`, `42` and `aarch64`; no escape
+byte reaches the console; `poweroff -f` ends the sandbox with code 0. 19 s.
+**Control**: the console's keys never taken - the prompt comes and nothing
+typed is answered, four checks fail. **Found on the way, in the suite**: its
+waits compared the raw serial text, whose lines end `\r\n`, with patterns
+the checks matched after stripping `\r` - so each wait ran its whole 30 s
+and the check passed after it, 107 s for 19.

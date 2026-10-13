@@ -89,9 +89,10 @@ INIT = b"""#!/bin/sh
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev 2>/dev/null
+hostname alpine
 echo "alpine: Alpine Linux $(cat /etc/alpine-release), $(uname -sr), in a Kosmos sandbox"
 echo "alpine: $(grep -c ^processor /proc/cpuinfo) processor, $(awk '/MemTotal/ {print $2}' /proc/meminfo) kB"
-if [ -e /sandbox-shell ]; then exec /bin/sh -l; fi
+if [ -e /sandbox-shell ]; then exec setsid sh -c 'exec sh -l <>/dev/ttyAMA0 >&0 2>&0'; fi
 echo "alpine: switching off"
 exec poweroff -f
 """

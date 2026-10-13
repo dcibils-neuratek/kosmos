@@ -37,6 +37,7 @@
 
 #include "kosmos.h"
 #include "vmmproto.h"
+#include "conproto.h"
 #include "fdt.h"
 #include "init/say.h"
 
@@ -83,6 +84,16 @@ static uint64_t gic_enabled;            /* a bit an interrupt */
 /* The PL011's interrupt state: what is masked in, and what is raised. */
 static uint32_t uart_imsc;
 
+/* What was typed and the guest has not read yet: a ring the console fills
+ * and the PL011's data register empties. */
+static uint8_t rx[256];
+static unsigned rx_head, rx_tail;
+
+static bool rx_empty(void)
+{
+    return rx_head == rx_tail;
+}
+
 /* The guest's serial output, a line at a time. */
 static char out[257];
 static size_t out_len;
@@ -98,8 +109,37 @@ static void flush_out(void)
     out_len = 0;
 }
 
+/*
+ * **A terminal's control sequences, dropped.** Linux's programs assume a
+ * VT100 on the other end of a serial port - busybox's shell asks where the
+ * cursor is (ESC [ 6 n) and `ls` colours its names - and Kosmos's console
+ * has no escape language by design: a colour is a field of a write
+ * (`conproto.h`), not bytes inside the text. So an escape and everything to
+ * the end of its sequence - a CSI's final byte, 0x40 to 0x7e - goes no
+ * further than here.
+ */
+static enum { PLAIN, ESCAPE, CSI } out_state = PLAIN;
+
 static void guest_byte(char c)
 {
+    if (out_state == ESCAPE) {
+        out_state = c == '[' ? CSI : PLAIN;
+        return;
+    }
+
+    if (out_state == CSI) {
+        if (c >= 0x40 && c <= 0x7e) {
+            out_state = PLAIN;
+        }
+
+        return;
+    }
+
+    if (c == 0x1b) {
+        out_state = ESCAPE;
+        return;
+    }
+
     if (c == '\r') {
         return;
     }
@@ -235,16 +275,19 @@ static size_t write_tree(uint8_t *at, size_t cap)
 
 /*
  * **The PL011**, as far as a console needs it: a byte written to its data
- * register is a byte on this process's console, the transmitter is always
- * empty and the receiver always so (input is V3c), and its interrupt is
+ * register is a byte on this process's console, a byte read from it is the
+ * next one typed, and the transmitter is always empty. Its interrupt is
  * raised while the transmitter is empty and the guest asked to hear that
- * (TXIM) - which is how Linux's driver finishes a write.
+ * (TXIM) - which is how Linux's driver finishes a write - and while
+ * something typed is waiting and it asked to hear that (RXIM, RTIM).
  */
+#define UART_RXIS       (1u << 4)
 #define UART_TXIS       (1u << 5)
+#define UART_RTIS       (1u << 6)
 
 static uint32_t uart_raw(void)
 {
-    return UART_TXIS;                       /* RIS: the transmitter is empty */
+    return UART_TXIS | (rx_empty() ? 0 : UART_RXIS | UART_RTIS);
 }
 
 static bool uart_raised(void)
@@ -257,7 +300,19 @@ static uint64_t uart_read(uint64_t offset)
     static const uint8_t ids[8] = { 0x11, 0x10, 0x14, 0x00, 0x0d, 0xf0, 0x05, 0xb1 };
 
     switch (offset) {
-    case 0x018: return 0x90;                /* FR: transmit empty, nothing in */
+    case 0x000:                             /* DR: the next byte typed */
+        if (rx_empty()) {
+            return 0;
+        }
+
+        {
+            uint8_t c = rx[rx_tail];
+
+            rx_tail = (rx_tail + 1) % sizeof(rx);
+            return c;
+        }
+    case 0x018:                             /* FR: transmit empty; RXFE */
+        return 0x80 | (rx_empty() ? 0x10 : 0);
     case 0x038: return uart_imsc;           /* IMSC */
     case 0x03c: return uart_raw();          /* RIS */
     case 0x040: return uart_raw() & uart_imsc;  /* MIS */
@@ -279,6 +334,46 @@ static void uart_write(uint64_t offset, uint64_t value)
     } else if (offset == 0x038) {
         uart_imsc = (uint32_t)value & 0x7ff;
     }
+}
+
+/*
+ * **What was typed, into the receiver.** `CON_OP_KEYS` takes what is there
+ * and returns at once; with `ticks`, `CON_OP_WAIT` sleeps until a key comes
+ * or they pass - which is how an idle guest waits for both its timer and its
+ * keyboard at once. Enter is a carriage return and Backspace is DEL, as a
+ * serial terminal sends them. Answers whether anything came.
+ */
+static bool take_keys(unsigned long ticks)
+{
+    struct message msg, rep;
+    struct con_request *req = (struct con_request *)msg.data;
+    const struct con_reply *got = (const struct con_reply *)rep.data;
+    unsigned i, n;
+
+    memset(&msg, 0, sizeof(msg));
+    msg.length = sizeof(*req);
+    req->op = ticks > 0 ? CON_OP_WAIT : CON_OP_KEYS;
+    req->ticks = (uint32_t)ticks;
+
+    if (kosmos_call(console, &msg, &rep) < 0 || got->error != CON_OK) {
+        return false;
+    }
+
+    n = got->nkeys < CON_KEYS_MAX ? got->nkeys : CON_KEYS_MAX;
+
+    for (i = 0; i < n; i++) {
+        uint8_t c = got->keys[i];
+        unsigned next = (rx_head + 1) % sizeof(rx);
+
+        c = c == '\n' ? '\r' : c == 8 ? 127 : c;
+
+        if (next != rx_tail) {
+            rx[rx_head] = c;
+            rx_head = next;
+        }
+    }
+
+    return n > 0;
 }
 
 /* A little-endian value of `size` bytes at `p`, and the other way. */
@@ -525,7 +620,12 @@ static void wait_for_guest(const struct vcpu_regs *r)
 {
     uint64_t now = kosmos_ticks(), ticks = tick_hz / 10;
 
-    if (deliver((struct vcpu_regs *)r) || (r->lr[0] | r->lr[1] | r->lr[2] | r->lr[3]) >> 62) {
+    /* A prompt has no newline after it: what the guest said goes out now,
+     * before it is waited on. */
+    flush_out();
+
+    if (take_keys(0) || deliver((struct vcpu_regs *)r)
+        || (r->lr[0] | r->lr[1] | r->lr[2] | r->lr[3]) >> 62) {
         return;
     }
 
@@ -535,7 +635,7 @@ static void wait_for_guest(const struct vcpu_regs *r)
         ticks = wait < ticks ? wait : ticks;
     }
 
-    kosmos_sleep(ticks > 0 ? (unsigned long)ticks : 1);
+    (void)take_keys(ticks > 0 ? (unsigned long)ticks : 1);
 }
 
 /* A PSCI call, in x0, answered in x0. False: the guest asked to stop. */
