@@ -97,6 +97,21 @@ mount -t devtmpfs devtmpfs /dev 2>/dev/null
 arg() { sed -n "s/.*$1=\\([^ ]*\\).*/\\1/p" /proc/cmdline; }
 name=$(arg kosmos.name)
 hostname "${name:-alpine}"
+unhex() { echo "$1" | awk '{ h = "0123456789abcdef"
+    for (i = 1; i < length($0); i += 2)
+        printf "%c", (index(h, substr($0, i, 1)) - 1) * 16 + index(h, substr($0, i + 1, 1)) - 1 }'; }
+# Its folders: share<i>, each a virtio-fs device the monitor serves, at the
+# path and in the mode its command line says.
+if grep -q kosmos.share /proc/cmdline; then
+    insmod /kosmos/modules/virtio_mmio.ko && insmod /kosmos/modules/fuse.ko && insmod /kosmos/modules/virtiofs.ko
+    for i in 0 1 2 3; do
+        share=$(arg kosmos.share$i)
+        [ -n "$share" ] || continue
+        at=$(unhex "${share%%:*}")
+        mkdir -p "$at"
+        mount -t virtiofs "share$i" "$at" -o "${share##*:}" || echo "alpine: share$i would not mount at $at"
+    done
+fi
 run=$(arg kosmos.run)
 if [ -z "$run" ]; then
     echo "alpine: Alpine Linux $(cat /etc/alpine-release), $(uname -sr), in a Kosmos sandbox"
@@ -104,15 +119,57 @@ if [ -z "$run" ]; then
     sh -c 'exec setsid -c sh -l <>/dev/ttyAMA0 >&0 2>&0'
     exec poweroff -f
 fi
-command=$(echo "$run" | awk '{ h = "0123456789abcdef"
-    for (i = 1; i < length($0); i += 2)
-        printf "%c", (index(h, substr($0, i, 1)) - 1) * 16 + index(h, substr($0, i + 1, 1)) - 1 }')
+command=$(unhex "$run")
 cd /root
 sh -c "$command" <>/dev/ttyAMA0 >&0 2>&0
 code=$?
 echo "$(arg kosmos.end) $code"
 exec poweroff -f
 """
+
+
+# **The modules a sandbox's devices need**, from Alpine's own initramfs for
+# its `virt` kernel - where `fuse`, `virtiofs` and `virtio_mmio` are modules
+# rather than built in. Copied whole, and loaded by `/init` in this order
+# (`modules.dep`: virtiofs needs fuse; the rest need nothing of these).
+MODULES = ("kernel/drivers/virtio/virtio_mmio.ko", "kernel/fs/fuse/fuse.ko",
+           "kernel/fs/fuse/virtiofs.ko")
+KERNEL_VERSION = "6.18.52-0-virt"
+
+
+def modules():
+    """{name: bytes} of `MODULES`, out of the netboot's `initramfs-virt` -
+    a gzip of a newc archive."""
+    import gzip
+
+    with tarfile.open(fetched(*NETBOOT)) as t:
+        archive = gzip.decompress(t.extractfile("boot/initramfs-virt").read())
+
+    found, i = {}, 0
+    wanted = {"usr/lib/modules/%s/%s" % (KERNEL_VERSION, m): m.rsplit("/", 1)[1] for m in MODULES}
+
+    while archive[i:i + 6] == b"070701":
+        namesize = int(archive[i + 94:i + 102], 16)
+        filesize = int(archive[i + 54:i + 62], 16)
+        name = archive[i + 110:i + 110 + namesize - 1].decode()
+        j = i + 110 + namesize
+        j += (-j) % 4
+
+        if name in wanted:
+            found[wanted[name]] = archive[j:j + filesize]
+
+        if name == "TRAILER!!!":
+            break
+
+        i = j + filesize
+        i += (-i) % 4
+
+    missing = [m for m in wanted.values() if m not in found]
+
+    if missing:
+        raise SystemExit("alpine: initramfs-virt has no %s" % ", ".join(missing))
+
+    return found
 
 
 def newc(name, mode, data=b"", ino=0, nlink=1, mtime=0, rdev=(0, 0)):
@@ -164,6 +221,15 @@ def initramfs():
             ino += 1
 
     parts.append(newc("init", 0o100755, INIT, ino=ino))
+
+    # In a folder of their own: Alpine's `/lib` is a link to `usr/lib`,
+    # which the kernel's unpacker does not follow - archived under it, they
+    # were not there.
+    parts.append(newc("kosmos", 0o040755, ino=ino + 8, nlink=2))
+    parts.append(newc("kosmos/modules", 0o040755, ino=ino + 9, nlink=2))
+
+    for k, (module, data) in enumerate(sorted(modules().items())):
+        parts.append(newc("kosmos/modules/" + module, 0o100644, data, ino=ino + 10 + k))
 
     # **`/dev/console`, which the archive must carry itself**: the kernel
     # opens it for PID 1 before anything has mounted devtmpfs, and without

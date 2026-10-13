@@ -24,6 +24,9 @@ the prompt. Held to:
     found in `/Running`, `list`ed as running, its console attached and
     printing, Control-W then D leaving it running, `stop`ped, and `list`ed
     as stopped;
+  * **a folder of `/Home`**, by virtio-fs: read only - listed, read, and a
+    write refused - and read and write, a file the guest made there read
+    back by Kosmos at the prompt;
   * no terminal escape reaching Kosmos's console in any of it.
 
 The screen at the end is kept in `build/gate/arm-sandbox-linux.ppm`.
@@ -54,6 +57,15 @@ def main():
 
     shutil.rmtree(folder, ignore_errors=True)
     os.makedirs(alpine)
+
+    # A project to share: a file and a folder in it (S3).
+    os.makedirs(os.path.join(folder, "Projects", "site", "pages"))
+
+    with open(os.path.join(folder, "Projects", "site", "hello.txt"), "w") as f:
+        f.write("hello from Kosmos\n")
+
+    with open(os.path.join(folder, "Projects", "site", "pages", "one.txt"), "w") as f:
+        f.write("page one\n")
 
     # What `pkg install alpine` leaves beside an image: its manifest, which
     # is where its title comes from (`packages.lua`, `tools/packages.py`).
@@ -150,6 +162,25 @@ def main():
         check(re.search(r"\nweb\s+alpine\s+stopped", said) is not None,
               "web was not stopped: %r" % said[-300:])
 
+        # **A folder of /Home** (S3), by virtio-fs: read only - listed, read,
+        # a write refused - then read and write, a file the guest made read
+        # back by Kosmos.
+        said = do("sandbox run alpine --share /Home/Projects/site:/work:ro -- "
+                  "ls -R /work; cat /work/hello.txt; echo x > /work/new.txt",
+                  "the sandbox is gone", 240)
+        check("/work/pages:\none.txt" in said and "\nhello from Kosmos\n" in said,
+              "a read-only folder was not listed and read: %r" % said[-500:])
+        check("Read-only file system" in said, "a write to a read-only folder was not refused: %r" % said[-300:])
+        said = do("sandbox run alpine --share /Home/Projects/site:/work -- "
+                  "echo made in alpine > /work/out.txt; mkdir /work/d; ls /work",
+                  "the sandbox is gone", 240)
+        check(re.search(r"\nd\s+hello.txt\s+out.txt\s+pages\n", said) is not None,
+              "a file and a folder made in a read-write folder were not there: %r" % said[-400:])
+        # 120 s, not 30: under the whole gate's load a first `cat` answered
+        # after 30 (13 October), with the right bytes.
+        said = do("cat /Home/Projects/site/out.txt", "\nkosmos> ", 120)
+        check("\nmade in alpine\n" in said, "what the guest wrote did not reach /Home: %r" % said[-300:])
+
         check("\x1b" not in guest.seen[start:], "a terminal escape reached Kosmos's console")
 
         with open(os.path.join("build", "gate", "arm-sandbox-linux.ppm"), "wb") as f:
@@ -168,7 +199,8 @@ def main():
     print("PASS: %d checks on sandboxes (Alpine Linux 3.24.2 at EL2 under Kosmos: its "
           "image listed; a task's output and its exit code, 3; a shell answering what "
           "was typed and ending with exit; a service started, found running, its "
-          "console attached and left with Control-W D, and stopped)" % checks)
+          "console attached and left with Control-W D, and stopped; a folder of "
+          "/Home read only and read-write, by virtio-fs)" % checks)
     return 0
 
 

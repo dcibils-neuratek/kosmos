@@ -5763,6 +5763,18 @@ beside everything): `x86-shortcuts` waiting 120 s for telnetd to listen and
 `x86-smbd` for its visitor's page - the network coming up late under load,
 both passing alone at once (82 s, 89 s).
 
+**FOUND on 13 October - a cliff in the system image's size.** `x86-dock`'s
+Photo drew nothing of a 1720x1440 capture - deterministically, alone too -
+once Sandboxes S3 put 530 KB more static data into the userland image every
+process is made from (35.3 MB of code and data, 4.0 MB of `.bss`, against a
+heap that begins 40 MB in), and drew it again the moment that data moved to
+the monitor's own heap. So something between an image's end and what a
+process can have is a fixed number, and the image is near it: find it -
+what Photo's decode was refused, and why the margin is not the 2.5 MB the
+arithmetic says - before the next thing grows the image and finds it
+again. Meanwhile: **a server's large buffers are allocated when it starts,
+not static**, since a static one is in every process.
+
 6zw. **FOUND on 29 September - `x86-film` goes silent for a moment under
    the gate's load**, twice in one day: samples of zero where FFmpeg's
    reference has sound, 1,226 of 266,240 the second time, and three passes

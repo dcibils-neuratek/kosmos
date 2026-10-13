@@ -121,6 +121,20 @@ PL011's nature; a busy console is what virtio-console is for, later.
    machine's memory had been 512 MB on the ARM board whatever QEMU gave,
    which the second guest found - it is asked of QEMU now.
 3. **S3 - folders** (V4c): virtio-mmio and virtio-fs in `vmm`.
+   **Done in 0.11.187** (`testing.md` 18.582). Each folder is a virtio-fs
+   device on virtio-mmio (`user/servers/vmmfs.c`): its registers emulated by
+   their stage-2 faults, its split queues read and written in the guest's
+   RAM, FUSE 7.31 answered over `diskproto.h`. **The monitor is handed
+   `/Home`** by the namespace when it has folders - as `smbd` is, since a
+   door a folder would need the disk server to grow doors at run time - and
+   it is the boundary: every path is the folder's with a name appended, a
+   name with `/`, `.` or `..` refused, and a read-only folder refuses every
+   change (the guest mounts it read only too). A file being written is kept
+   whole in memory and written back on flush or close, `diskproto.h`'s write
+   being a replacement - 16 MB at most, for now. Alpine's `fuse`,
+   `virtiofs` and `virtio_mmio` modules come from its own initramfs into
+   ours, in `/kosmos/modules` (its `/lib` is a link the kernel's unpacker
+   does not follow).
 4. **S4 - the network** (V4d): virtio-net, outgoing through Kosmos's stack,
    and ports forwarded.
 5. **S5 - started with Kosmos**, and **VT-x** - sandboxes on the M700.

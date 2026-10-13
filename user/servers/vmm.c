@@ -35,12 +35,14 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "kosmos.h"
 #include "vmmproto.h"
 #include "appproto.h"
 #include "fdt.h"
+#include "vmmfs.h"
 #include "init/say.h"
 
 #define DTB_SPACE       0x200000ul          /* the top 2 MB of RAM */
@@ -78,8 +80,13 @@ static uint64_t counter_hz = 62500000, tick_hz = 250;
 #define IRQ_TIMER       27u
 #define IRQ_UART        33u
 
-static uint8_t gicd[0x10000];
-static uint8_t gicr[0x20000];
+/* Allocated when the monitor starts, not in the system image's static data,
+ * which every process carries. */
+#define GICD_BYTES      0x10000u
+#define GICR_BYTES      0x20000u
+
+static uint8_t *gicd;
+static uint8_t *gicr;
 static uint64_t gic_enabled;            /* a bit an interrupt */
 
 /* The PL011's interrupt state: what is masked in, and what is raised. */
@@ -133,7 +140,7 @@ static int rx_take(void)
  */
 #define CON_RING        65536u
 
-static char con[CON_RING];
+static char *con;                           /* allocated at the start, as gicd is */
 static uint64_t con_written;
 static char con_lock;
 
@@ -398,6 +405,34 @@ static size_t write_tree(uint8_t *at, size_t cap)
     fdt_prop(&f, "clock-names", "uartclk\0apb_pclk", 17);
     fdt_end_node(&f);
 
+    /* Its folders: a virtio-mmio device each, 0x200 apart, edge-triggered
+     * from SPI 16 - QEMU `virt`'s own arrangement. */
+    for (unsigned i = 0; i < VMM_SHARES; i++) {
+        char node[32] = "virtio_mmio@a000000";
+        uint64_t at = VMM_SHARE_BASE + 0x200ul * i;
+        static const char hex[] = "0123456789abcdef";
+
+        if (setup.shares[i].root[0] == '\0') {
+            continue;
+        }
+
+        for (unsigned k = 0; k < 7; k++) {
+            node[12 + k] = hex[(at >> (4 * (6 - k))) & 15];
+        }
+
+        fdt_node(&f, node);
+        fdt_prop_str(&f, "compatible", "virtio,mmio");
+        {
+            uint32_t reg[4] = { 0, (uint32_t)at, 0, 0x200 };
+            uint32_t irq[3] = { 0, VMM_SHARE_IRQ - 32 + i, 1 };
+
+            fdt_prop_cells(&f, "reg", reg, 4);
+            fdt_prop_cells(&f, "interrupts", irq, 3);
+        }
+        fdt_prop_empty(&f, "dma-coherent");
+        fdt_end_node(&f);
+    }
+
     fdt_end_node(&f);
     return fdt_finish(&f);
 }
@@ -600,13 +635,22 @@ static bool emulate(struct vcpu_regs *r)
         } else {
             got = uart_read(at - VMM_UART_BASE);
         }
-    } else if (at >= VMM_GICD_BASE && at + size <= VMM_GICD_BASE + sizeof(gicd)) {
+    } else if (at >= VMM_SHARE_BASE && at < VMM_SHARE_BASE + 0x200ul * VMM_SHARES) {
+        uint64_t v = value;
+        unsigned i = (unsigned)((at - VMM_SHARE_BASE) / 0x200);
+
+        if (!vmmfs_mmio(i, (at - VMM_SHARE_BASE) % 0x200, size, write, &v)) {
+            return false;
+        }
+
+        got = v;
+    } else if (at >= VMM_GICD_BASE && at + size <= VMM_GICD_BASE + GICD_BYTES) {
         if (write) {
             gicd_write(at - VMM_GICD_BASE, size, value);
         } else {
             got = gicd_read(at - VMM_GICD_BASE, size);
         }
-    } else if (at >= VMM_GICR_BASE && at + size <= VMM_GICR_BASE + sizeof(gicr)) {
+    } else if (at >= VMM_GICR_BASE && at + size <= VMM_GICR_BASE + GICR_BYTES) {
         if (write) {
             gicr_write(at - VMM_GICR_BASE, size, value);
         } else {
@@ -688,6 +732,13 @@ static bool deliver(struct vcpu_regs *r)
     if (uart_raised()) {
         offer(r, IRQ_UART);
         any = true;
+    }
+
+    for (unsigned i = 0; i < VMM_SHARES; i++) {
+        if (vmmfs_raised(i)) {
+            offer(r, VMM_SHARE_IRQ + i);
+            any = true;
+        }
     }
 
     return any;
@@ -883,6 +934,7 @@ static void answer(const struct vmm_request *req, struct vmm_reply *rep)
 #define VMM_REFUSED         17
 #define VMM_NO_THREAD       18
 #define VMM_NO_NAME         19
+#define VMM_BAD_SHARE       20
 
 /*
  * **Registered in `/Running` as `sandbox-<name>`**, with an endpoint of its
@@ -920,7 +972,7 @@ static long register_name(long running)
     return endpoint;
 }
 
-void vmm_server(long running_cap, long ram_cap, long setup_cap)
+void vmm_server(long running_cap, long ram_cap, long setup_cap, long home_cap)
 {
     long at, guest, thread, endpoint;
     const struct vmm_setup *s;
@@ -929,6 +981,13 @@ void vmm_server(long running_cap, long ram_cap, long setup_cap)
 
     guest_ram = ram_cap;
     started = kosmos_ticks();
+    gicd = calloc(1, GICD_BYTES);
+    gicr = calloc(1, GICR_BYTES);
+    con = malloc(CON_RING);
+
+    if (gicd == NULL || gicr == NULL || con == NULL) {
+        kosmos_exit(VMM_NO_GUEST);
+    }
 
     {
         struct sysinfo info;
@@ -966,6 +1025,27 @@ void vmm_server(long running_cap, long ram_cap, long setup_cap)
     }
 
     ram = (uint8_t *)at;
+
+    /* Its folders, served from `/Home` - which it was handed only if it has
+     * any (`fs.vm_start`). */
+    vmmfs_start(home_cap, ram, setup.ram_bytes, VMM_RAM_BASE);
+
+    for (unsigned i = 0; i < VMM_SHARES; i++) {
+        char tag[8] = "share0";
+
+        setup.shares[i].root[sizeof(setup.shares[i].root) - 1] = '\0';
+
+        if (setup.shares[i].root[0] == '\0') {
+            continue;
+        }
+
+        tag[5] = (char)('0' + i);
+
+        if (home_cap < 0 || !vmmfs_add(i, tag, setup.shares[i].root, setup.shares[i].read_only != 0)) {
+            kosmos_exit(VMM_BAD_SHARE);
+        }
+    }
+
     tree = write_tree(ram + setup.ram_bytes - DTB_SPACE, DTB_SPACE);
 
     if (tree == 0) {

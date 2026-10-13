@@ -42,6 +42,7 @@ local MONITOR_SAYS = {
   [17] = "the guest's RAM or its processor was refused",
   [18] = "it could not start a thread on processor 0",
   [19] = "its name was taken in /Running - is it running already?",
+  [20] = "a folder it was given is not one it can serve",
 }
 
 --------------------------------------------------------------------------
@@ -231,6 +232,39 @@ end
 -- Starting one.
 --------------------------------------------------------------------------
 
+--
+-- **A folder, read**: `folder /Home/www /srv ro` in a definition, or
+-- `--share /Home/www:/srv:ro` at the prompt - the folder in `/Home`, where
+-- the guest sees it (`/work` unless said), and `ro` or `rw` (`rw` unless
+-- said). Nil and why for one outside `/Home`.
+--
+function sandboxes.folder(text)
+  local host, rest = tostring(text or ""):match("^(%S+)%s*(.-)$")
+  local at, mode
+
+  if host and host:find(":", 1, true) and rest == "" then
+    host, at, mode = host:match("^([^:]+):?([^:]*):?([^:]*)$")
+  else
+    at, mode = rest:match("^(%S*)%s*(%S*)$")
+  end
+
+  host = host and host:gsub("/+$", "")
+
+  if not host or not host:match("^/Home/[^/]") or host:find("/%.%.") then
+    return nil, ("a folder is in /Home, and not %s"):format(tostring(host))
+  end
+
+  at = (at and at ~= "") and at or "/work"
+
+  if not at:match("^/[%w/._%-]*$") then return nil, "where the guest sees it is a path: " .. at end
+
+  return { host = host, at = at, read_only = mode == "ro" }
+end
+
+function sandboxes.folder_text(f)
+  return ("%s %s %s"):format(f.host, f.at, f.read_only and "ro" or "rw")
+end
+
 -- Bytes as hexadecimal, which a kernel's command line carries whole.
 local function hex(text)
   return (text:gsub(".", function(c) return ("%02x"):format(c:byte()) end))
@@ -304,15 +338,31 @@ function sandboxes.start(s)
     line = line .. " kosmos.run=" .. hex(s.command) .. " kosmos.end=" .. token
   end
 
-  if #line > 511 then return nil, "its command is too long for a kernel's command line" end
+  -- Its folders: each a `share<i>` the monitor serves, and where the guest
+  -- mounts it, said on its command line.
+  local shares = ""
+
+  for i, text in ipairs(s.folders or {}) do
+    local f, why = sandboxes.folder(text)
+
+    if not f then return nil, why end
+    if i > 4 then return nil, "four folders at most" end
+    if not fs.getattr(f.host) then return nil, f.host .. " is not there" end
+
+    shares = shares .. f.host .. ("\0"):rep(256 - #f.host) .. string.pack("<I4I4", f.read_only and 1 or 0, 0)
+    line = line .. (" kosmos.share%d=%s:%s"):format(i - 1, hex(f.at), f.read_only and "ro" or "rw")
+  end
+
+  if #line > 511 then return nil, "its command and folders are too long for a kernel's command line" end
 
   sys.region_write(setup, 0, string.pack("<I4I4I8I8I8I8I8", 0x4b766d6d, 1, ram_bytes,
                                           0, kernel.size, initrd_at, initrd_bytes)
                              .. line .. ("\0"):rep(512 - #line)
                              .. s.name .. ("\0"):rep(16 - #s.name)
-                             .. token .. ("\0"):rep(24 - #token))
+                             .. token .. ("\0"):rep(24 - #token)
+                             .. shares)
 
-  local id, why = fs.vm_start(ram, setup)
+  local id, why = fs.vm_start(ram, setup, #(s.folders or {}) > 0)
 
   if not id then return nil, why end
 
@@ -337,13 +387,14 @@ end
 -- given the guest's console as it comes; answers the command's exit code,
 -- and how long the sandbox took to come up and to finish, in seconds.
 --
-function sandboxes.run(image, command, memory, say)
+function sandboxes.run(image, command, memory, say, folders)
   local name = ("task-%d"):format(sys.ticks() % 100000)
   local s = sandboxes.parse("", name)
   local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
   local began = sys.ticks()
 
   s.image, s.command, s.kind, s.memory = image, command or "", "task", memory or 256
+  s.folders = folders or {}
 
   local id, why = sandboxes.start(s)
 

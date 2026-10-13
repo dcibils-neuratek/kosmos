@@ -5,9 +5,10 @@
 /*
  * **What a sandbox's monitor is handed** - `docs/virtualization.md` V3.
  *
- * `vmm` is started with three capabilities: `/Running`, where it registers
+ * `vmm` is started with three capabilities - `/Running`, where it registers
  * itself, a region that is the guest's RAM with its kernel (and initramfs)
- * already in it, and a page holding one of these. Whoever starts it - the
+ * already in it, and a page holding one of these - and a fourth, `/Home`,
+ * when it is given folders. Whoever starts it - the
  * `sandbox` program, through `fs.vm_start` - reads the files into the RAM
  * region itself, so a kernel's bytes go from the disk server into a region
  * and are never a Lua string.
@@ -30,6 +31,9 @@
 
 #define VMM_NAME_MAX        16u         /* `/Running/sandbox-<name>` fits APP_NAME_MAX */
 #define VMM_TOKEN_MAX       24u
+#define VMM_SHARES          4u
+#define VMM_SHARE_BASE      0x0a000000ul    /* virtio-mmio, 0x200 apart */
+#define VMM_SHARE_IRQ       48u             /* SPI 16, as QEMU's first virtio-mmio */
 
 struct vmm_setup {
     uint32_t magic;
@@ -53,9 +57,24 @@ struct vmm_setup {
      * console's. Empty: none.
      */
     char     end_token[VMM_TOKEN_MAX];
+
+    /*
+     * **Its folders** (`docs/sandboxes.md` S3): each a path in `/Home` the
+     * monitor serves to the guest as virtio-fs, tagged `share<i>` - where
+     * the guest mounts it is the guest's command line's to say
+     * (`kosmos.share<i>=`). An empty `root` is none. The monitor refuses
+     * anything outside it, and every change when `read_only`.
+     */
+    struct vmm_share {
+        char     root[256];
+        uint32_t read_only;
+        uint32_t reserved;
+    } shares[VMM_SHARES];
 };
 
-_Static_assert(sizeof(struct vmm_setup) == 600, "six words, a magic, a version, a line, a name and a token");
+_Static_assert(sizeof(struct vmm_setup) == 600 + VMM_SHARES * 264,
+               "six words, a magic, a version, a line, a name, a token and its folders");
+_Static_assert(sizeof(struct vmm_setup) <= 4096, "a setup is a page");
 
 /*
  * **What a running sandbox answers** (`docs/sandboxes.md` S1). Each `vmm`

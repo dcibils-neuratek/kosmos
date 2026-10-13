@@ -24541,3 +24541,34 @@ answers 42; New sandbox's sheet is filled - 128 MB, a name - and Create and
 start makes it and it arrives running. 8 checks, 20 s. **Control**: the
 card's Start doing nothing - four checks fail. `arm-sandbox-linux` 13 -> 14:
 a 1 GB machine is seen as 1024 MB.
+
+## 18.582 Sandboxes S3: a folder of /Home in a sandbox, by virtio-fs
+
+`docs/sandboxes.md` S3, Diego's virtio choice of 12 October. `sandbox run
+IMAGE --share /Home/x[:/at][:ro]`, a definition's `folder` lines and the
+window's sheet give a sandbox up to four folders of `/Home`; each is
+`share<i>` on the guest's command line (`kosmos.share<i>=`) and in its setup
+page (`vmmproto.h`), and `fs.vm_start` hands the monitor `/Home` - only
+then. In the monitor (`user/servers/vmmfs.c`) each folder is a virtio-fs
+device on virtio-mmio at 0x0a000000 + 0x200 i, SPI 16 + i, in the device
+tree: registers emulated, the split queues served in the guest's RAM on a
+notify, FUSE 7.31 answered over `diskproto.h` - init, lookup, getattr,
+access, statfs, opendir, readdir, releasedir, open, read, write, flush,
+fsync, release, create, mkdir, unlink, rmdir, rename, setattr (a size).
+Every path is the folder's with one name appended, a name with `/`, `.` or
+`..` refused; a read-only folder refuses every change. A file opened for
+writing is kept whole and written back on flush or close. Alpine's `/init`
+loads `virtio_mmio`, `fuse` and `virtiofs` - carried into the initramfs
+from Alpine's own, in `/kosmos/modules`, since its `/lib` is a link the
+unpacker does not follow - and mounts each folder where it was asked to.
+
+**Found on the way**: the handle table counted from 0 where 0 means none,
+so the first `opendir` wrote 56 bytes past a NULL table - the monitor died
+at address 0x38, which `addr2line` put in `memset`.
+
+**Tests.** `arm-sandbox-linux` 14 -> 18: a project folder on the disk,
+shared read only - `ls -R` lists it, `cat` reads Kosmos's file, a write is
+refused "Read-only file system" - and read and write - a file and a folder
+made in it, and the file read back at Kosmos's prompt, "made in alpine".
+24 s. **Control**: reads answered with nothing - the folder lists but its
+file does not read, and the suite fails.

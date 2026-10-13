@@ -3900,12 +3900,27 @@ local function new_namespace()
   -- namespace, so the program never holds it raw. The monitor keeps its
   -- guest's console, and outlives whoever started it. Its id, or nil and why.
   --
-  function ns.vm_start(ram, setup)
+  --
+  -- **And `/Home`, when it has folders** (`docs/sandboxes.md` S3): the
+  -- monitor serves them from it, refusing anything outside each and every
+  -- change to one given read only - as `smbd` serves shares. Handed only to
+  -- a monitor with folders to serve.
+  --
+  function ns.vm_start(ram, setup, folders)
     local running = resolve("/Running")
+    local caps = { running, ram, setup }
 
     if not running then return nil, "no /Running for its monitor to be found in" end
 
-    local id, why = sys.spawn(ROLE_VMM, { running, ram, setup })
+    if folders then
+      local home = resolve("/Home")
+
+      if not home then return nil, "no /Home for its folders to come from" end
+
+      caps[4] = home
+    end
+
+    local id, why = sys.spawn(ROLE_VMM, caps)
 
     if not id then return nil, "could not start its monitor: " .. tostring(why) end
 

@@ -2,6 +2,8 @@
 -- sandbox: small operating systems, each in a virtual machine of its own.
 --
 --   sandbox run alpine -- uname -a      a task: run once, said, thrown away
+--   sandbox run alpine --share /Home/Projects/site:/work -- make
+--                                       ... given a folder of /Home (`:ro`: read only)
 --   sandbox run alpine                  a shell in a new one, until it ends
 --   sandbox list                        every sandbox, and how it is doing
 --   sandbox new web --image alpine [--memory 256] [--service] [-- COMMAND]
@@ -31,6 +33,11 @@ do
     if w == "--" then
       command = table.concat(words, " ", i + 1)
       break
+    elseif w == "--share" then
+      -- More than one: each a folder of /Home, `path[:at][:ro]`.
+      options.shares = options.shares or {}
+      options.shares[#options.shares + 1] = words[i + 1]
+      i = i + 2
     elseif w:sub(1, 2) == "--" then
       options[w:sub(3)] = (words[i + 1] and words[i + 1]:sub(1, 2) ~= "--") and words[i + 1] or true
       i = i + ((options[w:sub(3)] == true) and 1 or 2)
@@ -102,7 +109,7 @@ if verb == "run" then
 
   if command then
     local began = sys.ticks()
-    local code, up, took = sandboxes.run(image, command, memory, say)
+    local code, up, took = sandboxes.run(image, command, memory, say, options.shares)
 
     if code == nil and up == nil then
       print("sandbox: " .. tostring(took or "it would not start"))
@@ -118,6 +125,7 @@ if verb == "run" then
   local s = sandboxes.parse("", ("shell-%d"):format(sys.ticks() % 100000))
 
   s.image, s.memory = image, memory
+  s.folders = options.shares or {}
 
   local id, why = sandboxes.start(s)
 
@@ -175,6 +183,14 @@ if verb == "new" then
   s.memory = math.tointeger(tonumber(options.memory or "")) or 256
   s.kind = options.service and "service" or (command and "task" or "shell")
   s.command = command or ""
+
+  for _, text in ipairs(options.shares or {}) do
+    local f, why = sandboxes.folder(text)
+
+    if not f then print("sandbox: " .. why) sys.exit(1) end
+
+    s.folders[#s.folders + 1] = sandboxes.folder_text(f)
+  end
 
   local ok, why = sandboxes.save(s)
 

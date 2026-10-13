@@ -47,6 +47,7 @@ local said = nil                        -- the foot's line
 local pending = {}                      -- name -> "starting" | "restarting"
 local last_full = 0
 local start                             -- forward: a restart calls it
+local folder_words                      -- forward: the cards say folders
 local reports = {}                      -- name -> the file its start says in
 
 local function refresh(full)
@@ -369,6 +370,15 @@ local function chip(g, x, y, text)
   return x + w + 8
 end
 
+-- "/Home/www /srv ro" as the drawing says it: "/Home/www -> /srv, read only".
+function folder_words(text)
+  local f = sandboxes.folder(text)
+
+  if not f then return tostring(text) end
+
+  return ("%s \u{2192} %s%s"):format(f.host, f.at, f.read_only and ", read only" or "")
+end
+
 local function up_for(s)
   if not s.now then return nil end
 
@@ -440,7 +450,7 @@ local function draw_card(g, s, x, y, w)
   -- What it was given.
   local cx = ix
 
-  for _, f in ipairs(s.folders or {}) do cx = chip(g, cx, y + 104, f) end
+  for _, f in ipairs(s.folders or {}) do cx = chip(g, cx, y + 104, folder_words(f)) end
   for _, p2 in ipairs(s.ports or {}) do cx = chip(g, cx, y + 104, "port " .. p2) end
   chip(g, cx, y + 104, "no network")
 
@@ -691,7 +701,7 @@ function detail:draw(g)
     local given = {
       { "Image", s.task and "-" or s.image },
       { "Memory", ("%d MB"):format(s.now and s.now.ram // MB or s.memory) },
-      { "Folders", #(s.folders or {}) > 0 and table.concat(s.folders, ", ") or "none" },
+      { "Folders", #(s.folders or {}) > 0 and folder_words(s.folders[1]) .. (#s.folders > 1 and (" and " .. (#s.folders - 1) .. " more") or "") or "none" },
       { "Network", "none" },
       { "Command", s.command ~= "" and s.command or "a shell" },
       { "Starts", s.starts or "by hand" },
@@ -718,11 +728,24 @@ function detail:draw(g)
            s.now and s.now.running and "Typing here goes to the sandbox - click in it first"
            or "Not running", theme.text_dim, nil, "label")
   elseif tab == 3 then
-    g:text(20, top_y, "Folders of /Home come with virtio-fs (S3), and ports and the network with",
-           theme.text_dim, nil, "ui")
-    g:text(20, top_y + gfx.height() + 4, "virtio-net (S4). This sandbox has neither: nothing of this machine",
-           theme.text_dim, nil, "ui")
-    g:text(20, top_y + 2 * (gfx.height() + 4), "reaches it but its console.", theme.text_dim, nil, "ui")
+    local fy = top_y
+
+    g:text(20, fy, "FOLDERS", theme.text_dim, nil, "label")
+    fy = fy + gfx.height("label") + 8
+
+    if #(s.folders or {}) == 0 then
+      g:text(20, fy, "none - nothing of /Home reaches it", theme.text_dim, nil, "ui")
+      fy = fy + gfx.height() + 6
+    end
+
+    for _, f in ipairs(s.folders or {}) do
+      chip(g, 20, fy, folder_words(f))
+      fy = fy + 32
+    end
+
+    fy = fy + 16
+    g:text(20, fy, "PORTS AND THE NETWORK", theme.text_dim, nil, "label")
+    g:text(20, fy + gfx.height("label") + 8, "none yet - virtio-net, S4", theme.text_dim, nil, "ui")
   elseif tab == 4 then
     local log = {}
 
@@ -792,7 +815,7 @@ local sheet
 local function new_sandbox()
   if sheet then return end
 
-  local SW, SH = 620, 470
+  local SW, SH = 620, 476
   local MEMORY = { 128, 256, 512, 1024 }
   local image_names = {}
 
@@ -836,9 +859,13 @@ local function new_sandbox()
 
   row(y, "Memory") sheet:put(memory) y = y + 40
 
-  row(y, "Folders")
-  sheet:put(ui.label{ x = 140, y = y + 5, w = SW - 160, text = "not yet - virtio-fs, S3", role = "ui", color = "text_dim" })
-  y = y + 34
+  -- A folder of /Home, where the guest sees it, and whether only to read.
+  local folder = ui.field{ x = 140, y = y, w = 230, h = 28, text = "", hint = "/Home/..." }
+  local folder_at = ui.field{ x = 380, y = y, w = 110, h = 28, text = "/work" }
+  local folder_ro = ui.checkbox{ x = 500, y = y + 4, text = "read only", checked = false }
+
+  row(y, "Folder") sheet:put(folder) sheet:put(folder_at) sheet:put(folder_ro)
+  y = y + 40
   row(y, "Network")
   sheet:put(ui.label{ x = 140, y = y + 5, w = SW - 160, text = "none - virtio-net, S4", role = "ui", color = "text_dim" })
   y = y + 34
@@ -860,6 +887,15 @@ local function new_sandbox()
                          s.kind = ({ "task", "service", "shell" })[kind.on]
                          s.command = command.text or ""
                          s.memory = MEMORY[memory.on] or 256
+
+                         if (folder.text or "") ~= "" then
+                           local f, bad = sandboxes.folder(folder.text .. " " .. (folder_at.text ~= "" and folder_at.text or "/work")
+                                                          .. (folder_ro.checked and " ro" or " rw"))
+
+                           if not f then said = tostring(bad) print("sandboxes: " .. said) return end
+
+                           s.folders = { sandboxes.folder_text(f) }
+                         end
 
                          local ok, why = sandboxes.save(s)
 
