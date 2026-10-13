@@ -137,6 +137,24 @@ Nebula's part, while the monitor and the window are shared.
   virtual interface and the guest's timer, which Linux needs at V3.
 - **V2** - guest memory: a guest with its own page tables reading and
   writing what the monitor gave it, and a fault on anything else.
+  **Done in 0.11.182** (`testing.md` 18.577): a guest and a vCPU are two new
+  capability kinds (`CAP_GUEST`, `CAP_VCPU`, `kernel/vm.h`), owned by the
+  process that made them as an interrupt line is and ended with it, each
+  from a pool that grows. **A guest's memory is a region**: the monitor
+  makes one, maps it into itself, and gives it to the guest at a guest
+  physical address (`SYS_GUEST_MAP`) - so loading a kernel is writing to
+  its own memory, and the guest holds the region until it ends. A VMID a
+  guest, of 255 or 65,535 as the core says; a vCPU's translations dropped
+  on its first entry. `SYS_VCPU_RUN` enters **once** and returns every exit,
+  the host's own tick included (`VCPU_EXIT_HOST`, "run it again"): the
+  interrupt is taken on the way back to user level and a kill takes effect
+  there, as for any syscall, which a loop in the kernel would have had to
+  reinvent - and syscalls on this board run with interrupts masked. The
+  arch half is `arch_vm_*`; x86-64 answers `SYS_ERR_NO_DEVICE` until VT-x.
+  **Owed**: a guest's code written by the monitor reaches a guest running
+  uncached only after a clean to the point of coherency, which the
+  monitor cannot do from EL0 and QEMU does not need - the kernel will do it
+  on `SYS_GUEST_MAP` or at entry, before a real board.
 - **V3** - `vmm` with a serial console: a small Linux kernel booting to
   its prompt in a Terminal window. Measured: the time from asking to the
   prompt - under a second is the sandbox's mark.

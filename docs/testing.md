@@ -24375,3 +24375,31 @@ a run where the guest test stood aside: 202/202 in 8 s, beside `arm-kernel`'s
 202/202 at EL1. It runs in every gate, the one ARM suite that does while the
 rest stay paused. **Control**: the guest's x0 and x1 not kept at its exit -
 x0 reads 0, and the test fails.
+
+## 18.577 Sandboxes V2: a guest and a vCPU, by capability
+
+`docs/virtualization.md` step V2. A guest and a vCPU are Nebula objects
+(`kernel/vm.c`, `vm.h`): two capability kinds, `CAP_GUEST` and `CAP_VCPU`,
+owned by the process that made them - as an interrupt line is - and ended
+with it, before its capabilities; each from a pool that grows. Four
+syscalls: `SYS_GUEST_CREATE`; `SYS_GUEST_MAP`, a region at a guest physical
+address, held by the guest until it ends; `SYS_VCPU_CREATE`; and
+`SYS_VCPU_RUN`, once into the guest with a `struct vcpu_regs` and back with
+why - every exit, the host's own tick included, so the interrupt is taken
+on the way back to user level and a kill works as for any syscall. The
+architecture's half is `arch_vm_*`: the stage-2 tables, VMIDs and
+`hyp_vcpu` on ARM, and `SYS_ERR_NO_DEVICE` on x86-64 until VT-x.
+
+**Tests.** `vm: a monitor runs a guest, by capability`, in the kernel's
+suite on both machines: a user process (`guest_role`, `user/init/main.c`)
+makes a guest, refuses a region capability that names nothing, maps a
+two-page region it also maps itself at 0x40000000 and writes the guest's
+code into it; the guest reads the monitor's 0x1234, writes 0x1235 beside
+it and loads from 0x50000000 - it stops there with EC 0x24 and that address,
+and the monitor reads 0x1235 in its own memory; stepped on, it stops on
+`hvc #7`. After the process ends, no guest, no vCPU and no region of it
+are left. Code 0 at EL2, 50 ("cannot enter a guest") at EL1 and on x86-64.
+`arm-sandbox` refuses a run without the monitor's line. 203/203 at EL2 and
+EL1, 200/200 on x86-64. **Control**: the release at process exit taken out
+- a guest and its region outlive the monitor ("guests left 1, regions 1 of
+0"), and the test fails.

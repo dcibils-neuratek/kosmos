@@ -286,6 +286,7 @@ SRCS := boot/start.S \
         kernel/sched_prio.c \
         kernel/ipc.c \
         kernel/memobj.c \
+        kernel/vm.c \
         kernel/sharemap.c \
         kernel/irq.c \
         kernel/process.c \
@@ -3800,6 +3801,7 @@ X86_SRCS  := boot/x86_64/start.S \
              arch/x86_64/trap.c \
              arch/x86_64/mmu.c \
              arch/x86_64/cpu.c \
+             arch/x86_64/vcpu.c \
              arch/x86_64/switch.S \
              arch/x86_64/fp.c \
              arch/x86_64/gdt.c \
@@ -3871,6 +3873,7 @@ X86_SRCS  := boot/x86_64/start.S \
              kernel/sched_prio.c \
              kernel/ipc.c \
              kernel/memobj.c \
+             kernel/vm.c \
              kernel/sharemap.c \
              kernel/irq.c \
              kernel/process.c \

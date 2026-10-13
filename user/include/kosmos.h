@@ -674,6 +674,32 @@ static inline long kosmos_mem_phys(long cap)
 }
 
 /*
+ * **Guests and their vCPUs** (`kernel/vm.h`, `docs/virtualization.md` V2).
+ * A guest made empty, a region mapped into it at a guest physical address,
+ * a vCPU made in it and run - once, back with why, as `SYS_VCPU_RUN` says:
+ * `VCPU_EXIT_HOST` means the host's own interrupt, and to run it again.
+ */
+static inline long kosmos_guest_create(void)
+{
+    return sys0(SYS_GUEST_CREATE);
+}
+
+static inline long kosmos_guest_map(long guest, long region, unsigned long ipa)
+{
+    return sys3(SYS_GUEST_MAP, guest, region, (long)ipa);
+}
+
+static inline long kosmos_vcpu_create(long guest)
+{
+    return sys1(SYS_VCPU_CREATE, guest);
+}
+
+static inline long kosmos_vcpu_run(long vcpu, struct vcpu_regs *regs)
+{
+    return sys2(SYS_VCPU_RUN, vcpu, (long)(uintptr_t)regs);
+}
+
+/*
  * The disk, in sectors.
  *
  * `kosmos_disk_info` is readable by anybody: it says whether there is a

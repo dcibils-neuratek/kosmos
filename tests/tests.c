@@ -27,6 +27,7 @@
 #include "syscall.h"
 #include "irq.h"
 #include "keys.h"
+#include "vm.h"
 
 #include <string.h>
 #include <setjmp.h>
@@ -10048,6 +10049,69 @@ static bool test_a_guest_runs_and_stops(void)
 }
 #endif /* __aarch64__ */
 
+/*
+ * **A monitor runs a guest, by capability** - `docs/virtualization.md` V2.
+ *
+ * Has to match `user/init/main.c`'s `guest_role`: a user process makes a
+ * guest, gives it a region, runs a vCPU in it and reads back what the guest
+ * wrote. Its code is 0 where this core can enter a guest and 50 where it
+ * cannot - x86-64 before VT-x, and ARM started below EL2 - and anything
+ * else names what went wrong. And when it has gone, so have its guest and
+ * vCPU, and every region it made, the one the guest held included.
+ */
+#define CTEST_GUEST 909UL
+
+static bool test_a_monitor_runs_a_guest(void)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    unsigned regions = memobj_in_use();
+    int want = arch_vm_here() ? 0 : 50;
+    unsigned long start;
+    struct process *p;
+    int code;
+
+    p = process_create("t-guest", init_image, (size_t)init_image_len, CTEST_GUEST);
+
+    if (p == NULL) {
+        return false;
+    }
+
+    process_grant_console(p);
+    process_start(p);
+
+    for (start = hal_ticks(); !p->exited && hal_ticks() - start < 20UL * TICK_HZ; ) {
+        thread_yield();
+    }
+
+    if (!p->exited) {
+        return false;
+    }
+
+    code = p->exit_code;
+    process_reap(p);
+
+    if (code != want || vm_guests_in_use() != 0 || vm_vcpus_in_use() != 0
+        || memobj_in_use() != regions) {
+        kputs("\n   (the monitor said ");
+        kputu((unsigned long)(code < 0 ? -code : code));
+        kputs(", wanted ");
+        kputu((unsigned long)want);
+        kputs("; guests left ");
+        kputu(vm_guests_in_use());
+        kputs(", regions ");
+        kputu(memobj_in_use());
+        kputs(" of ");
+        kputu(regions);
+        kputs(")\n");
+        return false;
+    }
+
+    kputs(want == 0 ? "\n   (vm: a monitor ran a guest by capability, and all of it went with it)\n"
+                    : "\n   (vm: no guests on this core, and all four calls said so)\n");
+    return true;
+}
+
 static const struct test tests[] = {
     { "boot: .bss is zeroed",                  test_bss_zeroed          },
     { "boot: .bss bounds are 16-byte aligned", test_bss_bounds_aligned  },
@@ -10124,6 +10188,7 @@ static const struct test tests[] = {
 #if defined(__aarch64__)
     { "vcpu: a guest runs ten instructions and stops", test_a_guest_runs_and_stops },
 #endif
+    { "vm: a monitor runs a guest, by capability", test_a_monitor_runs_a_guest },
     { "thread: a worker faults while the first sleeps", test_a_worker_faults },
     { "thread: a worker faults while the first waits", test_a_fault_while_joined },
     { "thread: the first returns, a worker asleep", test_the_first_thread_leaves },

@@ -596,7 +596,28 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  */
 #define SYS_SENDER      66  /* (&sender_info)         -> 0 or error         */
 
-#define SYS_MAX         67
+/*
+ * **Guests and virtual CPUs** (`docs/virtualization.md` step V2, `vm.h`).
+ *
+ * A guest is made empty, given regions at guest physical addresses, and run
+ * by its vCPUs. `SYS_VCPU_RUN` takes the guest's general registers, its PC
+ * and PSTATE in a `struct vcpu_regs`, enters it **once**, and writes them
+ * back with why it stopped - every exit, the host's own interrupt included,
+ * comes back to the monitor, which runs it again. That is what lets the
+ * interrupt be taken on the way back to user level, and a kill take effect
+ * there, exactly as for any other syscall; a loop inside the kernel would
+ * have to reinvent both.
+ *
+ * `SYS_ERR_NO_DEVICE` from all four on a machine that cannot enter a guest
+ * - started below EL2, or x86-64 before VT-x - and from `SYS_VCPU_RUN` on a
+ * core that cannot; `SYS_ERR_BUSY` from a vCPU another thread is running.
+ */
+#define SYS_GUEST_CREATE 67 /* ()                     -> guest cap or error */
+#define SYS_GUEST_MAP   68  /* (guest, region, ipa)   -> 0 or error         */
+#define SYS_VCPU_CREATE 69  /* (guest)                -> vcpu cap or error  */
+#define SYS_VCPU_RUN    70  /* (vcpu, &vcpu_regs)     -> VCPU_EXIT_* or error */
+
+#define SYS_MAX         71
 
 #define PROFILE_START   1u
 #define PROFILE_READ    2u  /* up to `max` samples into `buf`: how many */
@@ -1436,6 +1457,28 @@ struct sender_info {
 };
 
 _Static_assert(sizeof(struct sender_info) == 152, "a sender is two words and two names");
+
+/*
+ * **A vCPU's registers across `SYS_VCPU_RUN`**, in and out. `x`, `pc` and
+ * `pstate` are the guest's, read before it runs and written after; the
+ * rest says why it stopped. On AArch64 `syndrome` is ESR_EL2, `address`
+ * FAR_EL2 - the guest's own virtual address, when there is one - and `ipa`
+ * the guest physical page from HPFAR_EL2, for a stage-2 fault.
+ */
+struct vcpu_regs {
+    uint64_t x[31];
+    uint64_t pc;
+    uint64_t pstate;
+    uint64_t exit;                      /* VCPU_EXIT_* */
+    uint64_t syndrome;
+    uint64_t address;
+    uint64_t ipa;
+};
+
+_Static_assert(sizeof(struct vcpu_regs) == 296, "37 words");
+
+#define VCPU_EXIT_TRAP      1           /* the guest did something EL2 traps */
+#define VCPU_EXIT_HOST      2           /* the host's interrupt: run it again */
 
 struct diskinfo {
     uint64_t sectors;

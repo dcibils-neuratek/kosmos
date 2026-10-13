@@ -174,6 +174,14 @@ struct irq_line;
 #define CAP_IRQ       3
 
 /*
+ * A guest and a virtual CPU (`kernel/vm.h`, `docs/virtualization.md` V2).
+ * Owned by the process that made them, as a line is, so a capability names
+ * one without counting toward its life; the slot keeps it as `object`.
+ */
+#define CAP_GUEST     4
+#define CAP_VCPU      5
+
+/*
  * **A capability table, and whose it is.**
  *
  * A capability names one of three kinds of thing: an endpoint, a region of
@@ -203,6 +211,7 @@ struct cap {
     struct endpoint *endpoint;
     struct memobj   *memory;
     struct irq_line *irq;
+    void            *object;    /* CAP_GUEST, CAP_VCPU */
     unsigned         generation;
 };
 
@@ -258,6 +267,15 @@ struct irq_line;
 struct irq_line *ipc_resolve_irq(struct thread *t, cap_t index);
 cap_t ipc_install_irq(struct thread *t, struct irq_line *line);
 cap_t ipc_install_memory(struct thread *t, struct memobj *m);
+
+/* A guest or a vCPU into a free slot, and back out of one: `kind` is
+ * CAP_GUEST or CAP_VCPU, and resolving answers NULL for any other kind.
+ * Whether the object is still the one the generation names is `vm.c`'s to
+ * say, under its own lock. */
+cap_t ipc_install_object(struct thread *t, unsigned kind, void *object,
+                         unsigned generation);
+void *ipc_resolve_object(struct thread *t, cap_t index, unsigned kind,
+                         unsigned *generation);
 
 /* One capability back. Dropping is not destroying: see ipc.c. */
 int  ipc_cap_drop(struct thread *t, cap_t index);

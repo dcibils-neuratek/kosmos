@@ -33,6 +33,7 @@
 #include "thread.h"
 #include "ipc.h"
 #include "memobj.h"
+#include "vm.h"
 #include "sharemap.h"
 #include "console.h"
 #include "screen.h"
@@ -2770,6 +2771,23 @@ void syscall_dispatch(struct syscall_frame *sc)
 
     case SYS_SENDER:
         result = sys_sender(p, sc->arg[0]);
+        break;
+
+    case SYS_GUEST_CREATE:
+        result = vm_guest_create(thread_current());
+        break;
+
+    case SYS_GUEST_MAP:
+        result = vm_guest_map(thread_current(), (long)sc->arg[0],
+                              (long)sc->arg[1], (uint64_t)sc->arg[2]);
+        break;
+
+    case SYS_VCPU_CREATE:
+        result = vm_vcpu_create(thread_current(), (long)sc->arg[0]);
+        break;
+
+    case SYS_VCPU_RUN:
+        result = vm_vcpu_run(thread_current(), (long)sc->arg[0], sc->arg[1]);
         break;
 
     case SYS_WAIT: {

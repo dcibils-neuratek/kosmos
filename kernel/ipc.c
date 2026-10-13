@@ -842,6 +842,59 @@ again:
     return -1;
 }
 
+cap_t ipc_install_object(struct thread *t, unsigned kind, void *object,
+                         unsigned generation)
+{
+    struct captable *c;
+    unsigned long flags;
+    cap_t i;
+
+    if (t == NULL || object == NULL || (kind != CAP_GUEST && kind != CAP_VCPU)) {
+        return -1;
+    }
+
+    c = t->caps;
+
+again:
+    flags = spin_lock(&c->lock);
+
+    for (i = 0; (unsigned)i < table_slots(c); i++) {
+        struct cap *slot = cap_slot(c, i);
+
+        if (slot->kind == CAP_NONE) {
+            slot->endpoint = NULL;
+            slot->memory = NULL;
+            slot->irq = NULL;
+            slot->object = object;
+            slot->generation = generation;
+            slot_set_kind(slot, (unsigned char)kind);   /* last: `slot_kind` */
+            spin_unlock(&c->lock, flags);
+            return i;
+        }
+    }
+
+    spin_unlock(&c->lock, flags);
+
+    if (captable_grow(c)) {
+        goto again;
+    }
+
+    return -1;
+}
+
+void *ipc_resolve_object(struct thread *t, cap_t index, unsigned kind,
+                         unsigned *generation)
+{
+    struct cap *slot = cap_slot(t->caps, index);
+
+    if (slot == NULL || slot_kind(slot) != kind || slot->object == NULL) {
+        return NULL;
+    }
+
+    *generation = slot->generation;
+    return slot->object;
+}
+
 /*
  * A region into a free slot, with a reference - **taken only if the region
  * is still the one `generation` names** (`memobj_ref_as`).
@@ -951,6 +1004,7 @@ static struct memobj *empty_slot(struct cap *slot)
     slot->endpoint = NULL;
     slot->memory = NULL;
     slot->irq = NULL;
+    slot->object = NULL;
     slot->generation = 0;
 
     return m;

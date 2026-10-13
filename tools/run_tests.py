@@ -396,7 +396,8 @@ def main():
 
     # At EL2 the guest test must have run, not stood aside: the line it
     # prints only when a guest ran and stopped and the host came back whole.
-    if args.virt and "(vcpu: a guest ran and stopped, and the host is as it was)" not in output:
+    if args.virt and ("(vcpu: a guest ran and stopped, and the host is as it was)" not in output
+                      or "(vm: a monitor ran a guest by capability" not in output):
         fail(Failure("started at EL2, and the guest test did not run a guest"))
         return 1
 

@@ -18,6 +18,8 @@
 #include "page.h"
 #include "../../kernel/percpu.h"
 #include "../../kernel/pmm.h"
+#include "../../kernel/syscall.h"
+#include "../../kernel/vm.h"
 
 _Static_assert(HYP_CORES >= NR_CPUS, "hyp.S keeps a flag and a stack per core");
 _Static_assert(offsetof(struct hyp_vcpu, pc) == HYP_OFF_PC, "hyp.h");
@@ -173,4 +175,118 @@ void stage2_code_written(const void *start, unsigned long bytes)
     }
 
     __asm__ volatile("dsb ish\n\tic iallu\n\tdsb ish\n\tisb" ::: "memory");
+}
+
+/*
+ * **The architecture's half of `kernel/vm.h`**: a guest's tables are a
+ * stage-2 root, its tag a VMID, and a vCPU's state a `hyp_vcpu` in a page
+ * of its own - EL2 reads it with its translation off, at the address the
+ * identity map gives it.
+ */
+bool arch_vm_available(void)
+{
+    unsigned i;
+
+    for (i = 0; i < HYP_CORES; i++) {
+        if (hyp_ready[i] != 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool arch_vm_here(void)
+{
+    return hyp_present();
+}
+
+/* 8 or 16 bits of VMID, as ID_AA64MMFR1_EL1.VMIDBits says - and 0 is the
+ * host's, which is why it is one fewer. */
+unsigned arch_vm_tags(void)
+{
+    uint64_t mmfr1;
+
+    __asm__ volatile("mrs %0, id_aa64mmfr1_el1" : "=r"(mmfr1));
+
+    return ((mmfr1 >> 4) & 0xf) == 2 ? 65535u : 255u;
+}
+
+void *arch_guest_tables(void)
+{
+    return stage2_new();
+}
+
+bool arch_guest_map(void *tables, uint64_t ipa, uintptr_t pa)
+{
+    return stage2_map(tables, ipa, pa);
+}
+
+void arch_guest_free(void *tables)
+{
+    if (tables != NULL) {
+        stage2_free(tables);
+    }
+}
+
+/*
+ * A vCPU as reset: at EL1 with its own translation off, every interrupt
+ * masked, and SCTLR_EL1 holding only its RES1 bits - where an operating
+ * system expects to be started. Its tables' translations dropped on its
+ * first entry, since its VMID may have been somebody else's.
+ */
+void *arch_vcpu_new(void *tables, unsigned tag)
+{
+    struct hyp_vcpu *v = pmm_alloc_page();
+    unsigned char *b = (unsigned char *)v;
+    unsigned i;
+
+    if (v == NULL) {
+        return NULL;
+    }
+
+    for (i = 0; i < sizeof(*v); i++) {
+        b[i] = 0;
+    }
+
+    v->vttbr = virt_to_phys(tables) | ((uint64_t)tag << 48);
+    v->flush = 1;
+    v->pstate = 0x3c5;                  /* EL1h, D A I F masked */
+    v->sys[HYP_SCTLR] = 0x30d00800;
+    return v;
+}
+
+void arch_vcpu_free(void *state)
+{
+    if (state != NULL) {
+        pmm_free_page(state);
+    }
+}
+
+long arch_vcpu_run(void *state, struct vcpu_regs *io)
+{
+    struct hyp_vcpu *v = state;
+    unsigned long why;
+    unsigned i;
+
+    for (i = 0; i < 31; i++) {
+        v->gp[i] = io->x[i];
+    }
+
+    v->pc = io->pc;
+    v->pstate = io->pstate;
+
+    why = hyp_run(v);
+
+    for (i = 0; i < 31; i++) {
+        io->x[i] = v->gp[i];
+    }
+
+    io->pc = v->pc;
+    io->pstate = v->pstate;
+    io->exit = why == HYP_EXIT_SYNC ? VCPU_EXIT_TRAP : VCPU_EXIT_HOST;
+    io->syndrome = v->esr;
+    io->address = v->far;
+    io->ipa = (v->hpfar >> 4) << 12;
+    return (long)io->exit;
 }

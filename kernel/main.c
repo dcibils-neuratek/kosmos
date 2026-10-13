@@ -22,6 +22,7 @@
 #include "sched.h"
 #include "ipc.h"
 #include "memobj.h"
+#include "vm.h"
 #include "sharemap.h"
 #include "irq.h"
 #include "process.h"
@@ -1117,6 +1118,7 @@ void kmain(void)
 
     ipc_init();
     memobj_init();
+    vm_init();
     sharemap_init();
     irq_init();
     boot_stage("IPC and capabilities");

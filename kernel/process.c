@@ -6,6 +6,7 @@
 
 #include "process.h"
 #include "irq.h"
+#include "vm.h"
 #include "spinlock.h"
 #include "screen.h"
 #include "syscall.h"
@@ -2137,6 +2138,14 @@ void process_exit(struct process *p, int code)
      * Before the capabilities, because those name these.
      */
     irq_release_owned_by(p);
+
+    /*
+     * **Its guests and their vCPUs** (`vm.h`): owned as a line is, so they
+     * end here, with every thread already gone and before the capabilities
+     * that name them. A guest lets go of the regions it held, which the
+     * capability release below may then free.
+     */
+    vm_release_owned_by(p);
 
     /*
      * **And the pointer's buttons, for the same reason**: a driver that
