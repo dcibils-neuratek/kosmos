@@ -7,8 +7,8 @@
  *
  * `vmm` is started with three capabilities - `/Running`, where it registers
  * itself, a region that is the guest's RAM with its kernel (and initramfs)
- * already in it, and a page holding one of these - and a fourth, `/Home`,
- * when it is given folders. Whoever starts it - the
+ * already in it, and a page holding one of these - and after them `/Home`,
+ * when it is given folders, and `/Network`, when it is given the network. Whoever starts it - the
  * `sandbox` program, through `fs.vm_start` - reads the files into the RAM
  * region itself, so a kernel's bytes go from the disk server into a region
  * and are never a Lua string.
@@ -70,10 +70,24 @@ struct vmm_setup {
         uint32_t read_only;
         uint32_t reserved;
     } shares[VMM_SHARES];
+
+    /*
+     * **Its network** (`docs/sandboxes.md` S4): `VMM_NET_NONE`, or
+     * `VMM_NET_OUT` - a virtio-net device, and behind it a gateway in the
+     * monitor through which the guest's connections become Kosmos's. The
+     * monitor is handed `/Network` only when it is to have one.
+     */
+    uint32_t network;
+    uint32_t network_reserved;
 };
 
-_Static_assert(sizeof(struct vmm_setup) == 600 + VMM_SHARES * 264,
-               "six words, a magic, a version, a line, a name, a token and its folders");
+#define VMM_NET_NONE        0u
+#define VMM_NET_OUT         1u
+#define VMM_NET_BASE        (VMM_SHARE_BASE + 0x200ul * VMM_SHARES)
+#define VMM_NET_IRQ         (VMM_SHARE_IRQ + VMM_SHARES)
+
+_Static_assert(sizeof(struct vmm_setup) == 600 + VMM_SHARES * 264 + 8,
+               "six words, a magic, a version, a line, a name, a token, its folders and its network");
 _Static_assert(sizeof(struct vmm_setup) <= 4096, "a setup is a page");
 
 /*

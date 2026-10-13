@@ -903,6 +903,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/vmm.c \
              user/servers/vmmfs.c \
              user/servers/vdev.c \
+             user/servers/vmmnet.c \
              user/servers/fdt.c \
              user/kits/tls/tls_kosmos.c \
              $(TINYGL_SRCS) \

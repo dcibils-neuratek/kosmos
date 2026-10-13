@@ -24585,3 +24585,35 @@ read. VT-x, S5's other half, needs the M700.
 start with Kosmos, is running when `sandbox list` first asks, nobody having
 started it. **Control**: the definition never taken as starting with
 Kosmos - `boot1` is stopped, and the suite fails.
+
+## 18.584 Sandboxes S4, outgoing: a sandbox's network through Kosmos's
+
+`docs/sandboxes.md` S4. A sandbox given the network - `sandbox run
+--network`, `sandbox new --network`, a definition's `network outgoing`, the
+New sandbox sheet's "Outgoing only" - has a virtio-net device at
+0x0a000800, SPI 20, on the virtio-mmio transport its folders use
+(`user/servers/vdev.c`, moved out of `vmmfs.c` when the second device
+arrived), and `kosmos.net=1` on its command line. Alpine's `/init` loads
+`virtio_net` and the two modules it needs (`failover`, `net_failover`),
+takes 10.0.3.15/24 with a route through 10.0.3.2, and asks 10.0.3.3 for
+names. Behind the device, in the monitor, is a gateway
+(`user/servers/vmmnet.c`): ARP and ping answered for its two addresses,
+DNS answered by Kosmos's resolver (`net_client_resolve`), and each TCP
+connection the guest opens carried over one Kosmos opens to the same
+address and port. A segment goes to the guest only into a buffer it has
+posted, and bytes are taken from Kosmos's side only then, so the gateway
+never sends a byte twice and keeps no copy. The monitor is handed
+`/Network` by the namespace only when its sandbox has the network, and
+waits a tick at a time, rather than for the guest, while a connection has
+something to carry.
+
+**Tests.** `arm-sandbox-linux` 19 -> 22, with a network card and an HTTP
+server on this Mac: from `sandbox run alpine --network`, the gateway
+pinged; a page on this Mac fetched by `wget` through Kosmos's own TCP,
+"hello from this Mac, through Kosmos"; and `nothing.invalid` answered
+NXDOMAIN by the name server. `arm-sandboxwin` 8 -> 9: the sheet's
+"Outgoing only" clicked, and `made1` read back from the disk with `network
+outgoing`. **Controls**: frames never delivered to the guest - the ping is
+lost, the host unreachable and no name server reached, three checks failing;
+the sheet's choice ignored - `made1` written with `network none`, and the
+window's suite fails.

@@ -353,6 +353,11 @@ function sandboxes.start(s)
     line = line .. (" kosmos.share%d=%s:%s"):format(i - 1, hex(f.at), f.read_only and "ro" or "rw")
   end
 
+  -- Its network: none, or outgoing through the monitor's gateway (S4).
+  local outgoing = s.network == "outgoing"
+
+  if outgoing then line = line .. " kosmos.net=1" end
+
   if #line > 511 then return nil, "its command and folders are too long for a kernel's command line" end
 
   sys.region_write(setup, 0, string.pack("<I4I4I8I8I8I8I8", 0x4b766d6d, 1, ram_bytes,
@@ -360,9 +365,10 @@ function sandboxes.start(s)
                              .. line .. ("\0"):rep(512 - #line)
                              .. s.name .. ("\0"):rep(16 - #s.name)
                              .. token .. ("\0"):rep(24 - #token)
-                             .. shares)
+                             .. shares .. ("\0"):rep((4 - #(s.folders or {})) * 264)
+                             .. string.pack("<I4I4", outgoing and 1 or 0, 0))
 
-  local id, why = fs.vm_start(ram, setup, #(s.folders or {}) > 0)
+  local id, why = fs.vm_start(ram, setup, #(s.folders or {}) > 0, outgoing)
 
   if not id then return nil, why end
 
@@ -387,7 +393,7 @@ end
 -- given the guest's console as it comes; answers the command's exit code,
 -- and how long the sandbox took to come up and to finish, in seconds.
 --
-function sandboxes.run(image, command, memory, say, folders)
+function sandboxes.run(image, command, memory, say, folders, network)
   local name = ("task-%d"):format(sys.ticks() % 100000)
   local s = sandboxes.parse("", name)
   local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
@@ -395,6 +401,7 @@ function sandboxes.run(image, command, memory, say, folders)
 
   s.image, s.command, s.kind, s.memory = image, command or "", "task", memory or 256
   s.folders = folders or {}
+  s.network = network and "outgoing" or "none"
 
   local id, why = sandboxes.start(s)
 

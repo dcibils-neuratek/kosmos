@@ -136,7 +136,21 @@ PL011's nature; a busy console is what virtio-console is for, later.
    ours, in `/kosmos/modules` (its `/lib` is a link the kernel's unpacker
    does not follow).
 4. **S4 - the network** (V4d): virtio-net, outgoing through Kosmos's stack,
-   and ports forwarded.
+   and ports forwarded. **Outgoing, 0.11.189** (`testing.md` 18.584): a
+   virtio-net device on the same virtio-mmio transport as the folders
+   (`user/servers/vdev.c`, shared since S3's second device), and behind it a
+   gateway in the monitor (`user/servers/vmmnet.c`) - what QEMU's user-mode
+   network does for its guest, done for a sandbox. The guest is 10.0.3.15
+   on a network of its own; the gateway, 10.0.3.2, answers ARP and ping,
+   and the name server, 10.0.3.3, answers each question with Kosmos's
+   resolver. **Every TCP connection the guest opens is one Kosmos opens**
+   (`netclient.h`), its bytes carried both ways, so the guest reaches what
+   Kosmos reaches and nothing else, and no packet of its own is put on a
+   wire. The monitor is handed `/Network` only when its sandbox was given
+   the network - `sandbox run --network`, a definition's `network
+   outgoing`, the sheet's "Outgoing only" - and the card says "outgoing
+   only". **Ports forwarded** in are left, and with them the Network tab's
+   graph, whose counters (`vmmnet_counted`) are already kept.
 5. **S5 - started with Kosmos**, and **VT-x** - sandboxes on the M700.
    **Started with Kosmos, 0.11.188** (`testing.md` 18.583): a definition's
    `starts with Kosmos` - the sheet's "with Kosmos", `sandbox new

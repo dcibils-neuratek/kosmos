@@ -2,7 +2,48 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-12, early morning (0.11.162; a night of the queue)
+Last updated: 2026-10-13, early morning (0.11.189; Sandboxes through the night)
+
+---
+
+## 12-13 October: Packages, then Sandboxes, through to Alpine on the network
+
+**Pushed: up to 0.11.184** (de21dac4). **On `main`, not pushed:
+0.11.185-0.11.189** and the commits between them, each with its suites and
+its controls. Diego went to sleep saying "keep building", "overnight"; the
+M700 was not touched.
+
+- **Between the last update and this one, pushed**: the M700's clocks and
+  heat (0.11.163-166), Network Monitor (0.11.167-170), the 3D Kit's workers
+  a core (0.11.171), Disk Monitor (0.11.172, 0.11.176), `install` from the
+  Mac (0.11.175), Packages P1-P3 (0.11.177-179; Diego on the M700: "packages
+  work great!"), a saved wallpaper the image no longer carries giving way
+  (0.11.180), the roadmap's SATA after Magnet and a VNC client after SATA.
+- **Sandboxes** (`docs/sandboxes.md`, `docs/virtualization.md`), ARM under
+  QEMU first, Alpine the first guest, virtio for folders and the network:
+  - V1-V3c (0.11.181-184, pushed): EL2 and a vCPU in Nebula by capability,
+    the monitor `vmm` in C, Alpine Linux 6.18 booting to a prompt that
+    answers;
+  - S1 (0.11.185): `vmm` a server in `/Running`, `user/lib/sandboxes.lua`,
+    the `sandbox` program;
+  - S2 (0.11.186): the Sandboxes window as `docs/sandboxes.html` draws it;
+    the ARM board's memory read from QEMU's SMBIOS rather than assumed;
+  - S3 (0.11.187): folders of `/Home` by virtio-fs, read only or not;
+  - S5's first half (0.11.188): a sandbox started with Kosmos;
+  - the virtio-mmio transport in one place, `vdev.c`;
+  - **S4, outgoing (0.11.189)**: virtio-net and a gateway in the monitor -
+    ping, DNS by Kosmos's resolver, every TCP connection carried over one
+    Kosmos opens. `sandbox run alpine --network -- wget ...` fetches a page
+    from this Mac through Kosmos.
+- **Next in Sandboxes**: ports forwarded in (S4's other half) and the
+  Network tab's graph; VT-x on the M700 with Diego there (S5's other half).
+  Then the queue: Tracker's list view, Wallpapers, Magnet, SATA, the VNC
+  client, Shortcuts.
+- **Disk on this Mac: about 3 GB free.** The two development sticks in
+  `build/x86_64` (0.11.83, the netboot layout; 0.11.149, the T14's stable
+  candidate) are 2.2 GB each and Diego's to keep or not.
+- **Flaky under load, on the roadmap**: x86-film, x86-network, x86-shortcuts,
+  x86-smbd.
 
 ---
 

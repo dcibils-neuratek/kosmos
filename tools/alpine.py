@@ -100,10 +100,23 @@ hostname "${name:-alpine}"
 unhex() { echo "$1" | awk '{ h = "0123456789abcdef"
     for (i = 1; i < length($0); i += 2)
         printf "%c", (index(h, substr($0, i, 1)) - 1) * 16 + index(h, substr($0, i + 1, 1)) - 1 }'; }
+# The transport its folders and its network both stand on.
+if grep -q "kosmos.share\\|kosmos.net" /proc/cmdline; then
+    insmod /kosmos/modules/virtio_mmio.ko
+fi
+# Its network, when it was given one: virtio-net, and the monitor's gateway
+# at 10.0.3.2 with its name server at 10.0.3.3.
+if grep -q kosmos.net /proc/cmdline; then
+    insmod /kosmos/modules/failover.ko && insmod /kosmos/modules/net_failover.ko \
+        && insmod /kosmos/modules/virtio_net.ko
+    ip link set lo up
+    ip link set eth0 up && ip addr add 10.0.3.15/24 dev eth0 && ip route add default via 10.0.3.2
+    echo "nameserver 10.0.3.3" > /etc/resolv.conf
+fi
 # Its folders: share<i>, each a virtio-fs device the monitor serves, at the
 # path and in the mode its command line says.
 if grep -q kosmos.share /proc/cmdline; then
-    insmod /kosmos/modules/virtio_mmio.ko && insmod /kosmos/modules/fuse.ko && insmod /kosmos/modules/virtiofs.ko
+    insmod /kosmos/modules/fuse.ko && insmod /kosmos/modules/virtiofs.ko
     for i in 0 1 2 3; do
         share=$(arg kosmos.share$i)
         [ -n "$share" ] || continue
@@ -129,11 +142,13 @@ exec poweroff -f
 
 
 # **The modules a sandbox's devices need**, from Alpine's own initramfs for
-# its `virt` kernel - where `fuse`, `virtiofs` and `virtio_mmio` are modules
-# rather than built in. Copied whole, and loaded by `/init` in this order
-# (`modules.dep`: virtiofs needs fuse; the rest need nothing of these).
+# its `virt` kernel - where `virtio_mmio`, `fuse`, `virtiofs` and
+# `virtio_net` are modules rather than built in. Copied whole, and loaded by
+# `/init` in their order (`modules.dep`: virtiofs needs fuse, virtio_net
+# needs net_failover, which needs failover).
 MODULES = ("kernel/drivers/virtio/virtio_mmio.ko", "kernel/fs/fuse/fuse.ko",
-           "kernel/fs/fuse/virtiofs.ko")
+           "kernel/fs/fuse/virtiofs.ko", "kernel/net/core/failover.ko",
+           "kernel/drivers/net/net_failover.ko", "kernel/drivers/net/virtio_net.ko")
 KERNEL_VERSION = "6.18.52-0-virt"
 
 

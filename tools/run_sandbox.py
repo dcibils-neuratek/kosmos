@@ -29,6 +29,9 @@ the prompt. Held to:
   * **a folder of `/Home`**, by virtio-fs: read only - listed, read, and a
     write refused - and read and write, a file the guest made there read
     back by Kosmos at the prompt;
+  * **the network**, by virtio-net and the monitor's gateway: its gateway
+    pinged, a page on this Mac fetched through Kosmos's own TCP, and a name
+    that cannot exist answered NXDOMAIN by its name server;
   * no terminal escape reaching Kosmos's console in any of it.
 
 The screen at the end is kept in `build/gate/arm-sandbox-linux.ppm`.
@@ -36,11 +39,14 @@ The screen at the end is kept in `build/gate/arm-sandbox-linux.ppm`.
 Usage: run_sandbox.py <image>
 """
 
+import functools
+import http.server
 import os
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -90,9 +96,24 @@ def main():
             print("FAIL: %s would not run:\n%s%s" % (os.path.basename(step[1]), made.stdout, made.stderr))
             return 1
 
+    # A page on this Mac, for a sandbox's network to fetch through Kosmos's
+    # (S4): QEMU gives Kosmos this Mac at 10.0.2.2.
+    www = scratch.path("sandbox-www")
+    os.makedirs(www, exist_ok=True)
+
+    with open(os.path.join(www, "hello.txt"), "w") as f:
+        f.write("hello from this Mac, through Kosmos\n")
+
+    httpd = http.server.ThreadingHTTPServer(
+        ("0.0.0.0", 0), functools.partial(http.server.SimpleHTTPRequestHandler, directory=www))
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
     R.virtualize("1G")
     R.extra_args(image, ["-drive", "file=%s,format=raw,if=none,id=home" % disk,
-                         "-device", R.device(image, "blk") + ",drive=home"])
+                         "-device", R.device(image, "blk") + ",drive=home",
+                         "-netdev", "user,id=net0",
+                         "-device", R.device(image, "net") + ",netdev=net0"])
     guest = R.Guest(image, 120)
     failed, checks = [], 0
 
@@ -204,6 +225,21 @@ def main():
         said = do("cat /Home/Projects/site/out.txt", "\nkosmos> ", 120)
         check("\nmade in alpine\n" in said, "what the guest wrote did not reach /Home: %r" % said[-300:])
 
+        # **The network** (S4): the gateway pinged, a page on this Mac
+        # fetched through Kosmos's own connection, and a name that cannot
+        # exist answered NXDOMAIN by the monitor's name server - a question
+        # asked of Kosmos's resolver, needing nothing beyond this Mac.
+        do('for _ = 1, 100 do local i = fs.net_info("/Network") if i and i.address '
+           'and i.address ~= "\\0\\0\\0\\0" then break end sys.sleep(25) end print("NET" .. "-UP")',
+           "NET-UP", 60)
+        said = do("sandbox run alpine --network -- ping -c 1 10.0.3.2; "
+                  "wget -q -O- http://10.0.2.2:%d/hello.txt; nslookup nothing.invalid" % port,
+                  "the sandbox is gone", 240)
+        check("64 bytes from 10.0.3.2" in said, "the gateway did not answer a ping: %r" % said[-500:])
+        check("\nhello from this Mac, through Kosmos\n" in said,
+              "a page on this Mac was not fetched through Kosmos: %r" % said[-500:])
+        check("NXDOMAIN" in said, "the name server did not answer a name that cannot exist: %r" % said[-400:])
+
         check("\x1b" not in guest.seen[start:], "a terminal escape reached Kosmos's console")
 
         with open(os.path.join("build", "gate", "arm-sandbox-linux.ppm"), "wb") as f:
@@ -211,6 +247,7 @@ def main():
     finally:
         transcript = guest.seen
         guest.close()
+        httpd.shutdown()
 
     if failed:
         print("FAIL: %d of %d checks on sandboxes:" % (len(failed), checks))
@@ -223,7 +260,8 @@ def main():
           "image listed; a task's output and its exit code, 3; a shell answering what "
           "was typed and ending with exit; a service started, found running, its "
           "console attached and left with Control-W D, and stopped; a folder of "
-          "/Home read only and read-write, by virtio-fs)" % checks)
+          "/Home read only and read-write, by virtio-fs; the network - a ping, a page "
+          "fetched through Kosmos, a name answered)" % checks)
     return 0
 
 

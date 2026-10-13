@@ -452,7 +452,7 @@ local function draw_card(g, s, x, y, w)
 
   for _, f in ipairs(s.folders or {}) do cx = chip(g, cx, y + 104, folder_words(f)) end
   for _, p2 in ipairs(s.ports or {}) do cx = chip(g, cx, y + 104, "port " .. p2) end
-  chip(g, cx, y + 104, "no network")
+  chip(g, cx, y + 104, s.network == "outgoing" and "outgoing only" or "no network")
 
   local bx, by = ix, y + CARD_H - 46
 
@@ -695,14 +695,16 @@ function detail:draw(g)
            theme.text_dim, nil, "label")
 
     panel(g, 20, top_y + 2 * (gh + 12), lw, gh, "Network")
-    g:text(34, top_y + 2 * (gh + 12) + 34, "No network yet - virtio-net, S4.", theme.text_dim, nil, "label")
+    g:text(34, top_y + 2 * (gh + 12) + 34, s.network == "outgoing"
+           and "Outgoing only, through Kosmos's - a gateway at 10.0.3.2." or "None - it reaches nothing.",
+           theme.text_dim, nil, "label")
 
     local gx = 40 + lw
     local given = {
       { "Image", s.task and "-" or s.image },
       { "Memory", ("%d MB"):format(s.now and s.now.ram // MB or s.memory) },
       { "Folders", #(s.folders or {}) > 0 and folder_words(s.folders[1]) .. (#s.folders > 1 and (" and " .. (#s.folders - 1) .. " more") or "") or "none" },
-      { "Network", "none" },
+      { "Network", s.network == "outgoing" and "outgoing only" or "none" },
       { "Command", s.command ~= "" and s.command or "a shell" },
       { "Starts", s.starts or "by hand" },
       { "Stops", (s.command or "") ~= "" and "when its command ends" or "when its shell ends" },
@@ -745,7 +747,9 @@ function detail:draw(g)
 
     fy = fy + 16
     g:text(20, fy, "PORTS AND THE NETWORK", theme.text_dim, nil, "label")
-    g:text(20, fy + gfx.height("label") + 8, "none yet - virtio-net, S4", theme.text_dim, nil, "ui")
+    g:text(20, fy + gfx.height("label") + 8, s.network == "outgoing"
+           and "outgoing only - it reaches out through Kosmos's connections, and nothing reaches in"
+           or "none - nothing reaches it, and it reaches nothing", theme.text_dim, nil, "ui")
   elseif tab == 4 then
     local log = {}
 
@@ -867,8 +871,10 @@ local function new_sandbox()
   row(y, "Folder") sheet:put(folder) sheet:put(folder_at) sheet:put(folder_ro)
   y = y + 40
   row(y, "Network")
-  sheet:put(ui.label{ x = 140, y = y + 5, w = SW - 160, text = "none - virtio-net, S4", role = "ui", color = "text_dim" })
-  y = y + 34
+  local network = ui.segments{ x = 140, y = y, items = { "None", "Outgoing only" }, on = 1 }
+
+  sheet:put(network)
+  y = y + 40
 
   local at_start = ui.checkbox{ x = 140, y = y, text = "with Kosmos", checked = false }
   local console_box = ui.checkbox{ x = 290, y = y, text = "open its console", checked = true }
@@ -889,6 +895,7 @@ local function new_sandbox()
                          s.command = command.text or ""
                          s.memory = MEMORY[memory.on] or 256
                          s.starts = at_start.checked and "with Kosmos" or "by hand"
+                         s.network = network.on == 2 and "outgoing" or "none"
 
                          if (folder.text or "") ~= "" then
                            local f, bad = sandboxes.folder(folder.text .. " " .. (folder_at.text ~= "" and folder_at.text or "/work")
@@ -911,16 +918,23 @@ local function new_sandbox()
                          if console_box.checked then open(s.name, 2) end
 
                          print("sandboxes: made " .. s.name)
+
+                         if TELL then
+                           local back = sandboxes.definition(s.name)
+
+                           print(("sandboxes: %s written, network %s"):format(s.name, back and back.network or "?"))
+                         end
                        end })
   sheet:put(ui.button{ x = SW - 20 - 150 - 100, y = SH - 48, w = 90, h = 30, text = "Cancel",
                        on_click = close })
   win:add(sheet)
 
   if TELL then
-    print(("sandboxes: new sandbox sheet, name at %d,%d, create at %d,%d, memory at %d,%d"):format(
+    print(("sandboxes: new sandbox sheet, name at %d,%d, create at %d,%d, memory at %d,%d, outgoing at %d,%d"):format(
           sheet.panel.x + 140 + 20, sheet.panel.y + 80 + 14,
           sheet.panel.x + SW - 20 - 75, sheet.panel.y + SH - 33,
-          sheet.panel.x + memory.x + 20, sheet.panel.y + memory.y + memory.h // 2))
+          sheet.panel.x + memory.x + 20, sheet.panel.y + memory.y + memory.h // 2,
+          sheet.panel.x + network.x + network.w - 20, sheet.panel.y + network.y + network.h // 2))
   end
 end
 

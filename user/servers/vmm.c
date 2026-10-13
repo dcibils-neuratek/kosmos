@@ -44,6 +44,7 @@
 #include "fdt.h"
 #include "vdev.h"
 #include "vmmfs.h"
+#include "vmmnet.h"
 #include "init/say.h"
 
 #define DTB_SPACE       0x200000ul          /* the top 2 MB of RAM */
@@ -434,6 +435,19 @@ static size_t write_tree(uint8_t *at, size_t cap)
         fdt_end_node(&f);
     }
 
+    /* Its network: one more virtio-mmio device, after its folders. */
+    if (setup.network != VMM_NET_NONE) {
+        uint32_t reg[4] = { 0, (uint32_t)VMM_NET_BASE, 0, 0x200 };
+        uint32_t irq[3] = { 0, VMM_NET_IRQ - 32, 1 };
+
+        fdt_node(&f, "virtio_mmio@a000800");
+        fdt_prop_str(&f, "compatible", "virtio,mmio");
+        fdt_prop_cells(&f, "reg", reg, 4);
+        fdt_prop_cells(&f, "interrupts", irq, 3);
+        fdt_prop_empty(&f, "dma-coherent");
+        fdt_end_node(&f);
+    }
+
     fdt_end_node(&f);
     return fdt_finish(&f);
 }
@@ -636,6 +650,14 @@ static bool emulate(struct vcpu_regs *r)
         } else {
             got = uart_read(at - VMM_UART_BASE);
         }
+    } else if (at >= VMM_NET_BASE && at < VMM_NET_BASE + 0x200) {
+        uint64_t v = value;
+
+        if (!vmmnet_mmio(at - VMM_NET_BASE, size, write, &v)) {
+            return false;
+        }
+
+        got = v;
     } else if (at >= VMM_SHARE_BASE && at < VMM_SHARE_BASE + 0x200ul * VMM_SHARES) {
         uint64_t v = value;
         unsigned i = (unsigned)((at - VMM_SHARE_BASE) / 0x200);
@@ -735,6 +757,13 @@ static bool deliver(struct vcpu_regs *r)
         any = true;
     }
 
+    vmmnet_pump();
+
+    if (vmmnet_raised()) {
+        offer(r, VMM_NET_IRQ);
+        any = true;
+    }
+
     for (unsigned i = 0; i < VMM_SHARES; i++) {
         if (vmmfs_raised(i)) {
             offer(r, VMM_SHARE_IRQ + i);
@@ -753,7 +782,7 @@ static bool deliver(struct vcpu_regs *r)
  */
 static void wait_for_guest(const struct vcpu_regs *r)
 {
-    uint64_t now = kosmos_ticks(), ticks = 2;
+    uint64_t now = kosmos_ticks(), ticks = vmmnet_busy() ? 1 : 2;
 
     /* A prompt has no newline after it: what the guest said goes in the
      * ring now, before it is waited on. */
@@ -973,8 +1002,9 @@ static long register_name(long running)
     return endpoint;
 }
 
-void vmm_server(long running_cap, long ram_cap, long setup_cap, long home_cap)
+void vmm_server(long running_cap, long ram_cap, long setup_cap, long more1, long more2)
 {
+    long home_cap = -1, net_cap = -1;
     long at, guest, thread, endpoint;
     const struct vmm_setup *s;
     unsigned long linger = 0;
@@ -1026,6 +1056,27 @@ void vmm_server(long running_cap, long ram_cap, long setup_cap, long home_cap)
     }
 
     ram = (uint8_t *)at;
+
+    /* What it was handed after its first three: `/Home` if it has folders,
+     * then `/Network` if it has the network (`fs.vm_start`). */
+    {
+        bool folders = false;
+
+        for (unsigned i = 0; i < VMM_SHARES; i++) {
+            folders = folders || setup.shares[i].root[0] != '\0';
+        }
+
+        home_cap = folders ? more1 : -1;
+        net_cap = setup.network != VMM_NET_NONE ? (folders ? more2 : more1) : -1;
+
+        if (setup.network != VMM_NET_NONE) {
+            if (net_cap < 0) {
+                kosmos_exit(VMM_BAD_SHARE);
+            }
+
+            vmmnet_start(net_cap, (uint32_t)tick_hz);
+        }
+    }
 
     /* Its folders, served from `/Home` - which it was handed only if it has
      * any (`fs.vm_start`). */

@@ -3906,7 +3906,7 @@ local function new_namespace()
   -- change to one given read only - as `smbd` serves shares. Handed only to
   -- a monitor with folders to serve.
   --
-  function ns.vm_start(ram, setup, folders)
+  function ns.vm_start(ram, setup, folders, network)
     local running = resolve("/Running")
     local caps = { running, ram, setup }
 
@@ -3917,7 +3917,17 @@ local function new_namespace()
 
       if not home then return nil, "no /Home for its folders to come from" end
 
-      caps[4] = home
+      caps[#caps + 1] = home
+    end
+
+    -- And `/Network`, when it is to have one (S4): its gateway's
+    -- connections are Kosmos's.
+    if network then
+      local net = resolve("/Network")
+
+      if not net then return nil, "no /Network for it to reach" end
+
+      caps[#caps + 1] = net
     end
 
     local id, why = sys.spawn(ROLE_VMM, caps)

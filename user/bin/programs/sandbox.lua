@@ -4,9 +4,11 @@
 --   sandbox run alpine -- uname -a      a task: run once, said, thrown away
 --   sandbox run alpine --share /Home/Projects/site:/work -- make
 --                                       ... given a folder of /Home (`:ro`: read only)
+--   sandbox run alpine --network -- wget -O- http://example.com/
+--                                       ... and the network, outgoing
 --   sandbox run alpine                  a shell in a new one, until it ends
 --   sandbox list                        every sandbox, and how it is doing
---   sandbox new web --image alpine [--memory 256] [--service] [--at-start] [-- COMMAND]
+--   sandbox new web --image alpine [--memory 256] [--service] [--at-start] [--network] [-- COMMAND]
 --   sandbox start web | stop web | console web | delete web
 --   sandbox images                      the images there are to start from
 --
@@ -109,7 +111,7 @@ if verb == "run" then
 
   if command then
     local began = sys.ticks()
-    local code, up, took = sandboxes.run(image, command, memory, say, options.shares)
+    local code, up, took = sandboxes.run(image, command, memory, say, options.shares, options.network)
 
     if code == nil and up == nil then
       print("sandbox: " .. tostring(took or "it would not start"))
@@ -126,6 +128,7 @@ if verb == "run" then
 
   s.image, s.memory = image, memory
   s.folders = options.shares or {}
+  s.network = options.network and "outgoing" or "none"
 
   local id, why = sandboxes.start(s)
 
@@ -183,6 +186,7 @@ if verb == "new" then
   s.memory = math.tointeger(tonumber(options.memory or "")) or 256
   s.kind = options.service and "service" or (command and "task" or "shell")
   s.starts = options["at-start"] and "with Kosmos" or "by hand"
+  s.network = options.network and "outgoing" or "none"
   s.command = command or ""
 
   for _, text in ipairs(options.shares or {}) do
