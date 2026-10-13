@@ -142,3 +142,32 @@ void fp_reset(void)
     owner = NULL;
     fpen_trap();
 }
+
+/*
+ * **A guest's FP registers, in the hardware for one entry** (`vcpu.c`,
+ * `docs/virtualization.md` V3). While a guest runs, the core's FP and SIMD
+ * registers are its - Linux uses NEON in its kernel - so whoever owned them
+ * here is saved first and loses them, the guest's go in, and after the exit
+ * the guest's are saved back and FP is trapped again, so the next thread
+ * to use them restores its own. The caller keeps interrupts masked across
+ * all three, or a switch in between would hand the registers to somebody
+ * else halfway.
+ */
+void fp_lend(struct context *guest)
+{
+    fpen_allow();
+
+    if (owner != NULL) {
+        fp_save(&owner->ctx);
+        owner = NULL;
+    }
+
+    fp_restore(guest);
+}
+
+void fp_take_back(struct context *guest)
+{
+    fpen_allow();
+    fp_save(guest);
+    fpen_trap();
+}

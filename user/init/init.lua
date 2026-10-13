@@ -47,6 +47,7 @@ local ROLE_TILES      = 26 -- the map's tiles from the network: /Tiles (`maps.md
 local ROLE_WINDOWSERVER = 27 -- holds the screen, composes (`astra-display.md` D3b-2)
 local ROLE_MDNSD      = 28 -- /Discovery: multicast DNS (`sharing.md` N11c)
 local ROLE_SMBD       = 29 -- this machine's folders, shared over SMB (`sharing.md` N12)
+local ROLE_VMM        = 30 -- a sandbox's monitor (`docs/virtualization.md` V3)
 
 --
 -- **A program's own image** (`docs/elf.md` step 4). A program whose header
@@ -3889,6 +3890,25 @@ local function new_namespace()
     if not capability then return nil, "no such path: " .. tostring(path) end
 
     return capability
+  end
+
+  --
+  -- **A sandbox's monitor, started** (`docs/virtualization.md` V3): `vmm`
+  -- handed this program's console, the guest's RAM and its setup page -
+  -- two regions the program made and filled itself (`vmmproto.h`). The
+  -- console goes from here, through the namespace, so the program never
+  -- holds it raw. The monitor's id, or nil and why.
+  --
+  function ns.vm_start(ram, setup)
+    local console = resolve("/Devices/console")
+
+    if not console then return nil, "no console for the guest to speak on" end
+
+    local id, why = sys.spawn(ROLE_VMM, { console, ram, setup })
+
+    if not id then return nil, "could not start its monitor: " .. tostring(why) end
+
+    return id
   end
 
   function ns.raw(path, bytes, pass, proto)

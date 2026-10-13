@@ -13,6 +13,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "context.h"
+#include "cpu.h"
 #include "hyp.h"
 #include "mmu.h"
 #include "page.h"
@@ -35,10 +37,17 @@ _Static_assert(offsetof(struct hyp_vcpu, exit) == HYP_OFF_EXIT, "hyp.h");
 _Static_assert(offsetof(struct hyp_vcpu, esr) == HYP_OFF_ESR, "hyp.h");
 _Static_assert(offsetof(struct hyp_vcpu, far) == HYP_OFF_FAR, "hyp.h");
 _Static_assert(offsetof(struct hyp_vcpu, hpfar) == HYP_OFF_HPFAR, "hyp.h");
+_Static_assert(offsetof(struct hyp_vcpu, lr) == HYP_OFF_LR, "hyp.h");
+_Static_assert(offsetof(struct hyp_vcpu, vmcr) == HYP_OFF_VMCR, "hyp.h");
+_Static_assert(offsetof(struct hyp_vcpu, cntv_ctl) == HYP_OFF_CNTV_CTL, "hyp.h");
+_Static_assert(offsetof(struct hyp_vcpu, cntv_cval) == HYP_OFF_CNTV_CVAL, "hyp.h");
 _Static_assert(sizeof(struct hyp_vcpu) == HYP_VCPU_BYTES, "hyp.h");
 _Static_assert(HYP_CSSELR == 22, "hyp.S saves 23 registers");
 
 extern volatile uint8_t hyp_ready[HYP_CORES];      /* hyp.S */
+
+void fp_lend(struct context *guest);                /* fp.c */
+void fp_take_back(struct context *guest);
 
 /*
  * **Per core, not per machine.** A core is started at EL2 or not by
@@ -253,6 +262,7 @@ void *arch_vcpu_new(void *tables, unsigned tag)
     v->flush = 1;
     v->pstate = 0x3c5;                  /* EL1h, D A I F masked */
     v->sys[HYP_SCTLR] = 0x30d00800;
+    v->vmcr = 0;                        /* everything masked until it says */
     return v;
 }
 
@@ -263,10 +273,19 @@ void arch_vcpu_free(void *state)
     }
 }
 
+/* The guest's FP and SIMD registers, kept in its page after the vCPU. */
+#define GUEST_FP_AT     1024u
+
+_Static_assert(GUEST_FP_AT >= sizeof(struct hyp_vcpu)
+               && GUEST_FP_AT + sizeof(struct context) <= PAGE_SIZE,
+               "a vCPU and its FP registers share a page");
+
 long arch_vcpu_run(void *state, struct vcpu_regs *io)
 {
     struct hyp_vcpu *v = state;
+    struct context *fp = (struct context *)((char *)state + GUEST_FP_AT);
     unsigned long why;
+    uint64_t daif;
     unsigned i;
 
     for (i = 0; i < 31; i++) {
@@ -276,7 +295,15 @@ long arch_vcpu_run(void *state, struct vcpu_regs *io)
     v->pc = io->pc;
     v->pstate = io->pstate;
 
+    for (i = 0; i < HYP_LRS; i++) {
+        v->lr[i] = io->lr[i];
+    }
+
+    daif = cpu_interrupts_save();
+    fp_lend(fp);
     why = hyp_run(v);
+    fp_take_back(fp);
+    cpu_interrupts_restore(daif);
 
     for (i = 0; i < 31; i++) {
         io->x[i] = v->gp[i];
@@ -284,6 +311,13 @@ long arch_vcpu_run(void *state, struct vcpu_regs *io)
 
     io->pc = v->pc;
     io->pstate = v->pstate;
+
+    for (i = 0; i < HYP_LRS; i++) {
+        io->lr[i] = v->lr[i];
+    }
+
+    io->timer_ctl = v->cntv_ctl;
+    io->timer_cval = v->cntv_cval;
     io->exit = why == HYP_EXIT_SYNC ? VCPU_EXIT_TRAP : VCPU_EXIT_HOST;
     io->syndrome = v->esr;
     io->address = v->far;

@@ -158,6 +158,25 @@ Nebula's part, while the monitor and the window are shared.
 - **V3** - `vmm` with a serial console: a small Linux kernel booting to
   its prompt in a Terminal window. Measured: the time from asking to the
   prompt - under a second is the sandbox's mark.
+  **Alpine runs, 0.11.183** (`testing.md` 18.578): `sandbox run alpine` reads
+  Alpine 3.24.2's kernel (Linux 6.18, unwrapped from its EFI zboot by
+  `tools/alpine.py`) and an initramfs of its minirootfs into a region that
+  becomes the guest's RAM, and `fs.vm_start` starts `vmm` (C, a role) with
+  it, a setup page (`vmmproto.h`) and the program's console. The monitor
+  writes a device tree (`fdt.c`) - one CPU, PSCI over `hvc`, the generic
+  timer, a GICv3, a PL011 - and runs the vCPU: the PL011 and the GIC's
+  distributor and redistributor are emulated by their stage-2 faults, and
+  interrupts reach the guest through the processor's own virtual CPU
+  interface (four list registers, loaded and saved at EL2 with ICH_VMCR);
+  its virtual timer is its own while it runs and off while the host does;
+  its `wfi` is trapped and the monitor sleeps until its timer is due; its FP
+  registers are lent to it around each entry (`fp_lend`). Linux boots,
+  claims `ttyAMA0`, runs Alpine's `/init`, which says what it is and
+  switches the machine off through PSCI. **Two things it took of the
+  kernel**: a spawn may now hand the child a region, not only an endpoint
+  (`ipc_cap_grant`), and the console is handed to `vmm` by the namespace,
+  never held raw by the program. **Left for V3c**: the keyboard - the PL011's
+  receiver, fed from the console - so the prompt answers.
 - **V4** - **the sandbox**: virtio block for its image, a folder of `/Home`
   shared into it (virtio-fs, or 9p, which is smaller), the network through
   Kosmos's stack only when asked, and `sandbox run IMAGE -- COMMAND`

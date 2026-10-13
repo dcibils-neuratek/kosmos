@@ -86,6 +86,10 @@ SUITES = [
     # instructions and stops (`docs/virtualization.md` V1).
     Suite("arm-sandbox", ["python3", "tools/run_tests.py", ARM_TEST, "--virt"]),
 
+    # And Alpine Linux in one: the ordinary image at EL2, `sandbox run alpine`
+    # with Alpine's kernel and userland on a disk (`docs/virtualization.md` V3).
+    Suite("arm-sandbox-linux", ["python3", "tools/run_sandbox.py", ARM]),
+
     # And the same machine with nothing plugged into it. A second boot, but
     # of the ordinary image rather than the test one: what it checks is init
     # and the shell, which the test image replaces.

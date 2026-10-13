@@ -109,6 +109,7 @@ void smbfs_server(long endpoint, long net, long console, long keyring);
  * stack's to bind its port through, and the console's. */
 void mdnsd_server(long endpoint, long net, long console);
 void smbd_server(long net, long console, long disk, long door, long keyring);
+void vmm_server(long console, long ram, long setup);
 
 #define ROLE_AUDIO    16UL
 #define ROLE_DEVICES   9UL
@@ -131,6 +132,7 @@ void smbd_server(long net, long console, long disk, long door, long keyring);
 #define ROLE_WINDOWSERVER 27UL
 #define ROLE_MDNSD    28UL
 #define ROLE_SMBD     29UL
+#define ROLE_VMM      30UL    /* a sandbox's monitor (`docs/virtualization.md`) */
 
 static void say(const char *s)
 {
@@ -963,6 +965,12 @@ int main(unsigned long arg)
     if (arg == ROLE_SMBD) {
         named("smbd");
         smbd_server(0, 1, 2, 3, kosmos_cap_check(4) == 0 ? 4 : -1);
+        kosmos_exit(0);
+    }
+
+    if (arg == ROLE_VMM) {
+        named("vmm");
+        vmm_server(0, 1, 2);
         kosmos_exit(0);
     }
 

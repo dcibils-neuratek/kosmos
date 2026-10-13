@@ -1473,9 +1473,22 @@ struct vcpu_regs {
     uint64_t syndrome;
     uint64_t address;
     uint64_t ipa;
+
+    /*
+     * **Its interrupts and its timer** (V3b). `lr` are the GIC's list
+     * registers, in and out: the monitor writes an interrupt it wants the
+     * guest to take into a free one (state pending), and reads back what the
+     * guest has done with each - an ended one reads as free. `timer_ctl`
+     * and `timer_cval` are the guest's virtual timer as it left it, so the
+     * monitor can tell when it is due: enabled, not masked, and the counter
+     * at or past the compare value.
+     */
+    uint64_t lr[4];
+    uint64_t timer_ctl;
+    uint64_t timer_cval;
 };
 
-_Static_assert(sizeof(struct vcpu_regs) == 296, "37 words");
+_Static_assert(sizeof(struct vcpu_regs) == 344, "43 words");
 
 #define VCPU_EXIT_TRAP      1           /* the guest did something EL2 traps */
 #define VCPU_EXIT_HOST      2           /* the host's interrupt: run it again */

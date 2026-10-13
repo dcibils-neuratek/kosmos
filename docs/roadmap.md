@@ -5754,7 +5754,11 @@ connection's whole transfer can fall between two samples; and `x86-disk`,
 "the query returned a file that does not match it". Both passed alone at
 once. Each wants the reason found rather than a retry: netmon's check
 should choose by the connection's own rate, as `x86-diskmon` learned to;
-the query's wants its guest log kept when it fails.
+the query's wants its guest log kept when it fails. **Two more the same
+evening** (0.11.183's gate, 8:37 with Alpine booting in `arm-sandbox-linux`
+beside everything): `x86-shortcuts` waiting 120 s for telnetd to listen and
+`x86-smbd` for its visitor's page - the network coming up late under load,
+both passing alone at once (82 s, 89 s).
 
 6zw. **FOUND on 29 September - `x86-film` goes silent for a moment under
    the gate's load**, twice in one day: samples of zero where FFmpeg's

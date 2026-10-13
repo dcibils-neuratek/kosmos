@@ -18,10 +18,12 @@
  * **The guest's EL1 registers are the processor's EL1 registers** while it
  * runs. That is why the list below exists twice: a guest kernel writes its
  * own SCTLR_EL1, TTBR0_EL1 and the rest, and every one of them is also one
- * Nebula depends on. What is not here yet, and V3 needs before Linux: the
- * FP and SIMD registers (a guest's first FP instruction exits, `CPTR_EL2.TFP`,
- * rather than touching the host's), the GIC's virtual interface, and the
- * guest's own timer.
+ * Nebula depends on. **Its FP and SIMD registers** are not here: they are
+ * in the hardware while it runs, lent by `fp_lend` around each entry
+ * (`fp.c`, `vcpu.c`). **Its interrupts** go through the GIC's virtual CPU
+ * interface - the list registers and ICH_VMCR, below - and **its timer** is
+ * the core's virtual one, the guest's while it runs and switched off while
+ * the host does.
  *
  * The offsets are written out because the assembly reads them; the static
  * assertions in `vcpu.c` hold the struct to them.
@@ -38,6 +40,15 @@
 #define HYP_EXIT_IRQ        2           /* the host's interrupt arrived */
 #define HYP_EXIT_FIQ        3
 #define HYP_EXIT_SERROR     4
+
+/*
+ * **The GIC's list registers a vCPU uses**: an interrupt the monitor wants
+ * the guest to take is written into one, and the processor's virtual CPU
+ * interface delivers it - the guest acknowledges and ends it through its
+ * ordinary ICC registers, which HCR.IMO turns into the virtual ones. Four is
+ * what QEMU's GICv3 and most cores have (ICH_VTR_EL2.ListRegs + 1).
+ */
+#define HYP_LRS             4
 
 /* The EL1 registers a guest and the host each have their own of. */
 #define HYP_SYS_COUNT       24          /* 23 and one to keep 16-byte pairs */
@@ -56,7 +67,11 @@
 #define HYP_OFF_ESR         (HYP_OFF_EXIT + 8)
 #define HYP_OFF_FAR         (HYP_OFF_ESR + 8)
 #define HYP_OFF_HPFAR       (HYP_OFF_FAR + 8)
-#define HYP_VCPU_BYTES      (HYP_OFF_HPFAR + 8)                     /* 816 */
+#define HYP_OFF_LR          (HYP_OFF_HPFAR + 8)                     /* 816: four */
+#define HYP_OFF_VMCR        (HYP_OFF_LR + 8 * HYP_LRS)              /* 848 */
+#define HYP_OFF_CNTV_CTL    (HYP_OFF_VMCR + 8)
+#define HYP_OFF_CNTV_CVAL   (HYP_OFF_CNTV_CTL + 8)
+#define HYP_VCPU_BYTES      (HYP_OFF_CNTV_CVAL + 16)                /* 880, with a pad */
 
 /* How many cores the stub keeps a stack and a flag for; `vcpu.c` holds it
  * to NR_CPUS, which the assembly cannot include. */
@@ -81,6 +96,10 @@ struct hyp_vcpu {
     uint64_t vttbr;                     /* stage 2's table, and the VMID at 48 */
     uint64_t flush;                     /* nonzero: drop this VMID's TLB first */
     uint64_t exit, esr, far, hpfar;     /* why it last stopped */
+    uint64_t lr[HYP_LRS];               /* ICH_LR0-3_EL2, in and out */
+    uint64_t vmcr;                      /* ICH_VMCR_EL2: its priority mask, groups on */
+    uint64_t cntv_ctl, cntv_cval;       /* its virtual timer */
+    uint64_t pad;                       /* to the struct's 16-byte alignment */
 } __attribute__((aligned(16)));
 
 /* The index of each EL1 register in `sys[]`, as `hyp.S` saves them. */

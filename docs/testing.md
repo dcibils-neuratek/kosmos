@@ -24403,3 +24403,40 @@ are left. Code 0 at EL2, 50 ("cannot enter a guest") at EL1 and on x86-64.
 EL1, 200/200 on x86-64. **Control**: the release at process exit taken out
 - a guest and its region outlive the monitor ("guests left 1, regions 1 of
 0"), and the test fails.
+
+## 18.578 Sandboxes V3: Alpine Linux runs in a sandbox
+
+`docs/virtualization.md` V3, toward Diego's "the initial goal for sandboxes
+is to run a linux distro like alpine". `sandbox run alpine` (a program)
+reads `/Home/Sandboxes/alpine` - `Image` and `initramfs` - into a region
+through a 256 KB window, so the 36 MB kernel is never a Lua string, writes a
+setup page (`vmmproto.h`) and asks the namespace to start `vmm`
+(`fs.vm_start`), which spawns the role with the program's console and the
+two regions. **Spawn hands a child a region now**, not only an endpoint
+(`ipc_cap_grant`): the first thing that needed one at birth.
+
+`vmm` (`user/servers/vmm.c`) writes the guest's device tree (`fdt.c`),
+makes the guest and its vCPU (V2's syscalls) and runs it on core zero,
+answering: the PL011 and GICv3 distributor and redistributor by their
+stage-2 faults (ESR's ISV: register, size, direction); PSCI by `hvc`; `wfi`
+(trapped, HCR.TWI) by sleeping until the guest's timer is due; interrupts
+by the list registers, which EL2 loads and saves with ICH_VMCR around each
+entry, beside the guest's virtual timer. The guest's FP registers are lent
+to it around each entry (`fp_lend`, `fp_take_back`), with interrupts masked.
+
+`tools/alpine.py` fetches Alpine 3.24.2's netboot tarball and minirootfs
+once into `build/downloads/alpine` (436 MB the first time), holds each to
+the SHA-256 Alpine publishes, unwraps the kernel from its EFI zboot, and
+writes the minirootfs as a newc archive with our `/init` and the
+`/dev/console` an initramfs has to carry itself.
+
+**Tests.** `arm-sandbox-linux`, new, in every gate: the ordinary ARM image
+started at EL2 with 1 GB and a `/Home` disk holding Alpine, `sandbox run
+alpine` typed - Linux's banner with Alpine's build, `ttyAMA0` claimed
+through the emulated GIC, Alpine's `/init` saying "Alpine Linux 3.24.2,
+Linux 6.18.52-0-virt, in a Kosmos sandbox" and one processor, and the guest
+switching itself off with the sandbox ending 0; 5 checks in 10 s. The screen
+is kept beside the log. **Control**: the timer's interrupt never offered -
+Linux stops before its userland and the suite fails. **A check that did not
+bite, found by that control and removed**: "the guest's clock moved" passed
+without the timer, because a timestamp is read from the counter.

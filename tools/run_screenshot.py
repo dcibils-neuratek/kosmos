@@ -198,6 +198,23 @@ def device(image, kind):
     return "virtio-%s-%s" % (kind, tail)
 
 
+def virtualize(memory="1G"):
+    """The ARM machine started at EL2, with the processor's virtualization on
+    and room for a guest beside it (`docs/virtualization.md`): a sandbox's
+    harness, before its `Guest` is made."""
+    global QEMU_ARGS
+    args = []
+
+    for a in QEMU_ARGS:
+        if a == "virt,gic-version=3":
+            a = "virt,gic-version=3,virtualization=on"
+        elif a == "512M":
+            a = memory
+        args.append(a)
+
+    QEMU_ARGS = args
+
+
 def extra_args(image, more):
     """Append device arguments to whichever board's list is in force."""
     if machine(image) == "x86_64":

@@ -900,6 +900,8 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/tiles.c \
              user/servers/windowserver.c \
              user/servers/mdnsd.c \
+             user/servers/vmm.c \
+             user/servers/fdt.c \
              user/kits/tls/tls_kosmos.c \
              $(TINYGL_SRCS) \
              $(TINYGL_DEMO_SRCS) \

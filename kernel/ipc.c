@@ -1168,9 +1168,20 @@ cap_t ipc_cap_grant(struct thread *to, cap_t from_index)
 {
     unsigned generation = 0;
     struct endpoint *ep = resolve_as(thread_current(), from_index, &generation);
+    struct memobj *m;
 
+    /*
+     * **Or a region**, with a reference of its own: what a process starting
+     * another hands it at birth (`SYS_SPAWN`). Until 12 October only an
+     * endpoint could be, so a region reached a child only in a message
+     * after it started - and a sandbox's monitor is started with its
+     * guest's RAM (`docs/virtualization.md` V3). Taken only if the region is
+     * still the one the slot names, as every region capability is.
+     */
     if (ep == NULL) {
-        return IPC_ERR_BAD_CAP;
+        m = resolve_memory_as(thread_current(), from_index, &generation);
+
+        return m != NULL ? install_memory(to, m, generation) : IPC_ERR_BAD_CAP;
     }
 
     /* The index the recipient gets is unrelated to the one the granter used.

@@ -34,14 +34,16 @@
 /*
  * And while a guest does: RW, TSC (its SMC to EL2), AMO IMO FMO (every
  * physical interrupt to EL2, so a guest that never stops is still stopped
- * by the host's tick), SWIO, and VM - the second stage of translation on.
+ * by the host's tick), SWIO, TWI (a guest waiting for an interrupt stops,
+ * so its monitor can wait for it rather than the core spinning in the
+ * guest), and VM - the second stage of translation on.
  */
-#define HCR_GUEST_LO    0x003b
+#define HCR_GUEST_LO    0x203b          /* ... and TWI: its `wfi` stops it */
 #define HCR_GUEST_HI    0x8008
-/* CPTR_EL2: the RES1 bits, and TFP while a guest runs - its first FP
- * instruction stops it rather than touching the host's registers. */
+/* CPTR_EL2: the RES1 bits and no traps, for both - a guest's FP registers
+ * are in the hardware while it runs, put there by `fp_lend` (`fp.c`). */
 #define CPTR_HOST       0x33ff
-#define CPTR_GUEST      0x37ff
+#define CPTR_GUEST      0x33ff
 /* CNTHCTL_EL2: EL1PCTEN and EL1PCEN for the host; a guest reads the
  * counter but its use of the physical timer - the host's - stops it. */
 #define CNTHCTL_HOST    3
@@ -50,6 +52,11 @@
 /* GICv3's EL2 registers, by encoding: older assemblers lack the names. */
 #define ICC_SRE_EL2     S3_4_C12_C9_5
 #define ICH_HCR_EL2     S3_4_C12_C11_0
+#define ICH_VMCR_EL2    S3_4_C12_C11_7
+#define ICH_LR0_EL2     S3_4_C12_C12_0
+#define ICH_LR1_EL2     S3_4_C12_C12_1
+#define ICH_LR2_EL2     S3_4_C12_C12_2
+#define ICH_LR3_EL2     S3_4_C12_C12_3
 
 /*
  * The 23 EL1 registers a guest and the host each keep, in `hyp.h`'s order,
@@ -181,6 +188,9 @@ hyp_install:
     mrs     x1, id_aa64pfr0_el1
     ubfx    x1, x1, #24, #4
     cbz     x1, 1f
+    adrp    x2, hyp_gic
+    mov     x3, #1
+    strb    w3, [x2, :lo12:hyp_gic]
     mrs     x1, ICC_SRE_EL2
     orr     x1, x1, #0x1               /* SRE */
     orr     x1, x1, #0x8               /* Enable: EL1 may use SRE */
@@ -383,6 +393,29 @@ enter_guest:
     dsb     nsh
     str     xzr, [x1, #HYP_OFF_FLUSH]
 1:
+    /* Its virtual timer, as it left it. */
+    ldr     x3, [x1, #HYP_OFF_CNTV_CVAL]
+    msr     cntv_cval_el0, x3
+    ldr     x3, [x1, #HYP_OFF_CNTV_CTL]
+    msr     cntv_ctl_el0, x3
+
+    /* Its interrupts: the list registers and its interface's state, and
+     * the virtual interface on - where the core has a GICv3 interface. */
+    adrp    x3, hyp_gic
+    ldrb    w3, [x3, :lo12:hyp_gic]
+    cbz     w3, 2f
+    add     x5, x1, #HYP_OFF_LR         /* past ldp's reach from x1 */
+    ldp     x3, x4, [x5]
+    msr     ICH_LR0_EL2, x3
+    msr     ICH_LR1_EL2, x4
+    ldp     x3, x4, [x5, #16]
+    msr     ICH_LR2_EL2, x3
+    msr     ICH_LR3_EL2, x4
+    ldr     x3, [x1, #HYP_OFF_VMCR]
+    msr     ICH_VMCR_EL2, x3
+    mov     x3, #1                      /* En */
+    msr     ICH_HCR_EL2, x3
+2:
     movz    x3, #HCR_GUEST_LO
     movk    x3, #HCR_GUEST_HI, lsl #16
     msr     hcr_el2, x3
@@ -455,6 +488,31 @@ guest_exit:
 
     add     x2, x0, #HYP_OFF_SYS
     save_el1 x2
+
+    /* Its timer kept and switched off: the host does not use the virtual
+     * timer, and the guest's must not fire while the guest is not there. */
+    mrs     x3, cntv_ctl_el0
+    mrs     x4, cntv_cval_el0
+    str     x3, [x0, #HYP_OFF_CNTV_CTL]
+    str     x4, [x0, #HYP_OFF_CNTV_CVAL]
+    msr     cntv_ctl_el0, xzr
+
+    /* Its interrupts kept - an ended one reads back as free - and the
+     * virtual interface off. */
+    adrp    x3, hyp_gic
+    ldrb    w3, [x3, :lo12:hyp_gic]
+    cbz     w3, 3f
+    add     x5, x0, #HYP_OFF_LR
+    mrs     x3, ICH_LR0_EL2
+    mrs     x4, ICH_LR1_EL2
+    stp     x3, x4, [x5]
+    mrs     x3, ICH_LR2_EL2
+    mrs     x4, ICH_LR3_EL2
+    stp     x3, x4, [x5, #16]
+    mrs     x3, ICH_VMCR_EL2
+    str     x3, [x0, #HYP_OFF_VMCR]
+    msr     ICH_HCR_EL2, xzr
+3:
     add     x2, x0, #HYP_OFF_HOST_SYS
     load_el1 x2
 
@@ -492,6 +550,8 @@ guest_exit:
 .global hyp_ready
 hyp_ready:
     .fill   HYP_CORES, 1, 0
+hyp_gic:
+    .byte   0                           /* the core has GICv3 system registers */
 .balign 8
 hyp_stuck_esr:
     .quad   0
