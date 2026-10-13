@@ -65,7 +65,7 @@ local line = ""
 while not conn:closed() do
   local text = conn:read()
 
-  if text then io.write(text) end
+  if text then fs.write("/Devices/console", text) end
 
   if fs.interrupted and fs.interrupted("/Devices/console") then
     print("")

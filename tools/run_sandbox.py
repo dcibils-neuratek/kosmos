@@ -1,31 +1,32 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""Sandboxes: Alpine Linux, booted in a virtual machine on Kosmos.
+"""Sandboxes: Alpine Linux in virtual machines on Kosmos, through `sandbox`.
 
-`docs/virtualization.md` V3 - Diego, 12 October 2026: "the initial goal for
-sandboxes is to run a linux distro like alpine". The ARM machine is started
-at EL2 with the processor's virtualization on and a `/Home` disk holding
-`Sandboxes/alpine` - Alpine 3.24.2's kernel and an initramfs of its
-userland, made by `tools/alpine.py` from Alpine's published files, held to
-their sums - and `sandbox run alpine` is typed at the prompt. Held to:
+`docs/virtualization.md` V3 and `docs/sandboxes.md` S1 - Diego, 12 October
+2026: "the initial goal for sandboxes is to run a linux distro like alpine",
+then "continue with the sandbox app", "as designed in the mockup". The ARM
+machine is started at EL2 with the processor's virtualization on and a
+`/Home` disk with Alpine installed as an image - `Sandboxes/Images/alpine`,
+its kernel and an initramfs of its userland, made by `tools/alpine.py` from
+Alpine's published files, held to their sums - and `sandbox` is typed at
+the prompt. Held to:
 
-  * **Linux booting**: its banner, with Alpine's build in it;
-  * **its interrupt controller**: the PL011 claimed as `ttyAMA0` through the
-    emulated GICv3;
-  * **its timer**, by what needs it: without the virtual timer's interrupt
-    Linux stops before its userland, and the lines below never come. A
-    timestamp is not the proof - it is read from the counter, which moves
-    with no interrupt at all, and the first version of this suite checked
-    it and passed without the timer;
-  * **Alpine's userland**: its `/init` saying which Alpine and which kernel,
-    and that it has one processor;
-  * **switching itself off**: PSCI's SYSTEM_OFF, the monitor stopping, and
-    the `sandbox` program back at the prompt with code 0;
-  * **a shell, typed into**: a second sandbox whose `/init` ends in one -
-    commands typed at Kosmos's console answered (`3.24.2`, `42`, `aarch64`),
-    no escape sequence reaching the console, and `poweroff -f` ending it.
+  * **its images**: `sandbox images` names Alpine;
+  * **a task**: `sandbox run alpine -- echo $((6*7)); uname -m; exit 3` -
+    the command's output, and its exit code, 3, taken from the guest's end
+    line (which never reaches the console) and made the program's own; the
+    guest booted, ran and switched itself off through PSCI, which needs its
+    timer, its interrupt controller and its serial port all working;
+  * **a shell**: `sandbox run alpine` reaches a prompt named for the
+    sandbox and answers what is typed at Kosmos's console - `cat
+    /etc/alpine-release`, 3.24.2 - and `exit` ends it;
+  * **a service**: `sandbox new web --service -- <a loop>`, then `start` -
+    found in `/Running`, `list`ed as running, its console attached and
+    printing, Control-W then D leaving it running, `stop`ped, and `list`ed
+    as stopped;
+  * no terminal escape reaching Kosmos's console in any of it.
 
-The screen of the shell is kept in `build/gate/arm-sandbox-linux.ppm`.
+The screen at the end is kept in `build/gate/arm-sandbox-linux.ppm`.
 
 Usage: run_sandbox.py <image>
 """
@@ -49,26 +50,24 @@ def main():
     image = sys.argv[1]
     folder = scratch.path("sandbox-home")
     disk = scratch.path("sandbox-home.img")
-    alpine = os.path.join(folder, "Sandboxes", "alpine")
+    alpine = os.path.join(folder, "Sandboxes", "Images", "alpine")
 
     shutil.rmtree(folder, ignore_errors=True)
     os.makedirs(alpine)
 
-    for where, more in ((alpine, []), (alpine + "-shell", ["--shell"])):
-        os.makedirs(where, exist_ok=True)
-        made = subprocess.run([sys.executable, os.path.join(HERE, "alpine.py"), where] + more,
-                              capture_output=True, text=True)
+    # What `pkg install alpine` leaves beside an image: its manifest, which
+    # is where its title comes from (`packages.lua`, `tools/packages.py`).
+    with open(os.path.join(alpine, "package.txt"), "w") as f:
+        f.write("name        alpine\ntitle       Alpine Linux\nkind        sandbox\n"
+                "about       Alpine Linux 3.24.2 for a sandbox\n")
+
+    for step in ([sys.executable, os.path.join(HERE, "alpine.py"), alpine],
+                 [sys.executable, os.path.join(HERE, "homeimage.py"), folder, disk, "128"]):
+        made = subprocess.run(step, capture_output=True, text=True)
 
         if made.returncode != 0:
-            print("FAIL: tools/alpine.py would not make Alpine's files:\n" + made.stdout + made.stderr)
+            print("FAIL: %s would not run:\n%s%s" % (os.path.basename(step[1]), made.stdout, made.stderr))
             return 1
-
-    made = subprocess.run([sys.executable, os.path.join(HERE, "homeimage.py"), folder, disk, "256"],
-                          capture_output=True, text=True)
-
-    if made.returncode != 0:
-        print("FAIL: homeimage.py would not make the disk:\n" + made.stdout + made.stderr)
-        return 1
 
     R.virtualize("1G")
     R.extra_args(image, ["-drive", "file=%s,format=raw,if=none,id=home" % disk,
@@ -82,86 +81,88 @@ def main():
         if not ok:
             failed.append(complaint)
 
+    def until(text, since, seconds):
+        # The serial line ends "\r\n"; what is matched is what is checked.
+        end = time.monotonic() + seconds
+        while (text not in guest.seen[since:].replace("\r", "")
+               and time.monotonic() < end):
+            time.sleep(0.3)
+            guest._read_available()
+        return guest.seen[since:].replace("\r", "")
+
+    def do(command, wait_for, seconds=60):
+        at = len(guest.seen)
+        guest.type(command)
+        return until(wait_for, at, seconds)
+
     try:
         guest.wait_for("kosmos> ", "reached a prompt")
-        mark = len(guest.seen)
-        guest.type("sandbox run alpine")
-        deadline = time.monotonic() + 240
+        start = len(guest.seen)
 
-        while "sandbox: alpine ended" not in guest.seen[mark:] and time.monotonic() < deadline:
-            time.sleep(0.5)
-            guest._read_available()
+        said = do("sandbox images", "\nkosmos> ", 30)
+        check(re.search(r"\nalpine\s+Alpine Linux\s+\d+ MB", said) is not None,
+              "sandbox images did not name Alpine: %r" % said[-300:])
 
-        time.sleep(1)
-        guest._read_available()
-        said = guest.seen[mark:].replace("\r", "")
+        said = do("sandbox run alpine -- echo $((6*7)); uname -m; exit 3",
+                  "the sandbox is gone", 240)
+        check("\n42\n" in said and "\naarch64\n" in said,
+              "the task's output did not come back: %r" % said[-600:])
+        check(re.search(r"sandbox: echo exited 3 after [\d.]+ s, up in [\d.]+ s; the sandbox is gone",
+                        said) is not None and "ended, code 3" in said,
+              "the task's exit code, 3, was not the program's: %r" % said[-400:])
+        check("kosmos-end-" not in said, "the guest's end line reached the console")
 
-        check(re.search(r"Linux version 6\.18\.\S+-virt .*Alpine", said) is not None,
-              "Linux's banner, with Alpine's build in it, never came")
-        check("ttyAMA0 at MMIO 0x9000000" in said,
-              "the PL011 was never claimed as ttyAMA0 - no interrupt controller for it")
-        check(re.search(r"alpine: Alpine Linux 3\.24\.2, Linux 6\.18\.\S+-virt, in a Kosmos sandbox", said)
-              is not None, "Alpine's /init never said what it is")
-        check("alpine: 1 processor" in said, "Alpine did not see its one processor")
-        check("vmm: the guest switched itself off" in said
-              and "sandbox: alpine ended, code 0" in said,
-              "the guest did not switch itself off and leave the sandbox with code 0")
+        said = do("sandbox run alpine", ":~# ", 240)
+        check(re.search(r"\nshell-\d+:~# ", said) is not None,
+              "a shell sandbox's prompt never came: %r" % said[-400:])
+        said = do("cat /etc/alpine-release", "\n3.24.2\n", 30)
+        check("\n3.24.2\n" in said, "the shell did not answer cat: %r" % said[-300:])
+        said = do("exit", "\nkosmos> ", 60)
+        check("\nkosmos> " in said, "exit did not end the shell's sandbox: %r" % said[-300:])
 
-        # **And typed into** (V3c): a sandbox whose /init ends in a shell on
-        # ttyAMA0. What is typed at Kosmos's console reaches the guest's
-        # serial receiver, its answers come back without the terminal's
-        # escape sequences, and `poweroff -f` ends it.
-        def until(text, since, seconds):
-            # The same text the checks read: the serial line ends in "\r\n".
-            end = time.monotonic() + seconds
-            while (text not in guest.seen[since:].replace("\r", "")
-                   and time.monotonic() < end):
-                time.sleep(0.3)
-                guest._read_available()
-            return guest.seen[since:].replace("\r", "")
+        do("sandbox new web --image alpine --service -- while true; do echo tick; sleep 1; done",
+           "\nkosmos> ", 30)
+        said = do("sandbox start web", "\nkosmos> ", 240)
+        check("sandbox: web started" in said, "the service would not start: %r" % said[-300:])
+        said = do("sandbox list", "\nkosmos> ", 30)
+        check(re.search(r"\nweb\s+alpine\s+running\s+256 MB", said) is not None,
+              "sandbox list did not show web running: %r" % said[-400:])
 
-        mark = len(guest.seen)
-        guest.type("sandbox run alpine-shell")
-        prompt = until("alpine:~# ", mark, 240)
-        check("alpine:~# " in prompt, "the shell's prompt never came: %r" % prompt[-400:])
+        at = len(guest.seen)
+        guest.type("sandbox console web")
+        said = until("tick\ntick\n", at, 60)
+        check("tick\ntick\n" in said, "the service's console did not come, attached: %r" % said[-300:])
+        guest.sendkey("ctrl-w")
+        time.sleep(0.3)
+        guest.type("d")
+        said = until("\nkosmos> ", at, 30)
+        check("left web running" in said, "Control-W then D did not leave it running: %r" % said[-300:])
 
-        answers = {}
-        for command, wanted in (("cat /etc/alpine-release", "3.24.2"),
-                                ("echo $((6*7))", "42"),
-                                ("uname -m", "aarch64")):
-            at = len(guest.seen)
-            guest.type(command)
-            answers[command] = until("\n" + wanted + "\n", at, 30)
-            check("\n" + wanted + "\n" in answers[command],
-                  "%s did not answer %s: %r" % (command, wanted, answers[command][-200:]))
+        do("sandbox stop web", "\nkosmos> ", 30)
+        time.sleep(3)
+        said = do("sandbox list", "\nkosmos> ", 30)
+        check(re.search(r"\nweb\s+alpine\s+stopped", said) is not None,
+              "web was not stopped: %r" % said[-300:])
 
-        check("\x1b" not in guest.seen[mark:],
-              "the guest's terminal escapes reached Kosmos's console")
+        check("\x1b" not in guest.seen[start:], "a terminal escape reached Kosmos's console")
 
         with open(os.path.join("build", "gate", "arm-sandbox-linux.ppm"), "wb") as f:
             f.write(guest.screendump())
-
-        at = len(guest.seen)
-        guest.type("poweroff -f")
-        gone = until("sandbox: alpine-shell ended", at, 60)
-        check("sandbox: alpine-shell ended, code 0" in gone,
-              "poweroff -f typed at the prompt did not end the sandbox: %r" % gone[-300:])
     finally:
         transcript = guest.seen
         guest.close()
 
     if failed:
-        print("FAIL: %d of %d checks on a sandbox:" % (len(failed), checks))
+        print("FAIL: %d of %d checks on sandboxes:" % (len(failed), checks))
         for f in failed:
             print("  " + f)
         print("--- the guest said ---\n" + transcript[-4000:])
         return 1
 
-    print("PASS: %d checks on a sandbox (Alpine Linux 3.24.2 booted at EL2 under "
-          "Kosmos: Linux's banner, ttyAMA0 through the emulated GICv3, Alpine's "
-          "/init - reached only with the virtual timer - saying what it is, the "
-          "guest switching itself off through PSCI, and a shell answering what "
-          "was typed at Kosmos's console)" % checks)
+    print("PASS: %d checks on sandboxes (Alpine Linux 3.24.2 at EL2 under Kosmos: its "
+          "image listed; a task's output and its exit code, 3; a shell answering what "
+          "was typed and ending with exit; a service started, found running, its "
+          "console attached and left with Control-W D, and stopped)" % checks)
     return 0
 
 

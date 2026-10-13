@@ -100,6 +100,16 @@ PL011's nature; a busy console is what virtio-console is for, later.
    operations, `/Running/sandbox-<name>`; `sandboxes.lua`; definitions in
    `/Home/Sandboxes/<name>/sandbox.txt` and images in `Images/`; Alpine as a
    package; `sandbox run`, `list`, `start`, `stop`, `console`.
+   **Done in 0.11.185** (`testing.md` 18.580). As built: `vmm` keeps its
+   guest's console in a 64 KB ring read by offset and takes keys by message
+   (its vCPU's thread and its serving thread share an SPSC ring for them),
+   lingers ten seconds after its guest ends so the last lines and the exit
+   code can be read, and goes at once when asked to stop; a task's exit code
+   comes on a line marked with a token the starter put on the guest's
+   command line (`kosmos.end=`), which the monitor keeps off the console;
+   the command goes as hexadecimal (`kosmos.run=`); one initramfs serves a
+   task, a service and a shell. A spawn hands `vmm` `/Running`, not a
+   console, and `fs.raw` forgets a registry name whose process has gone.
 2. **S2 - the window**, as drawn: cards, groups, images, machine, New
    sandbox, the watched sandbox with its console typed into.
 3. **S3 - folders** (V4c): virtio-mmio and virtio-fs in `vmm`.

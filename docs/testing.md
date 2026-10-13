@@ -24464,3 +24464,44 @@ typed is answered, four checks fail. **Found on the way, in the suite**: its
 waits compared the raw serial text, whose lines end `\r\n`, with patterns
 the checks matched after stripping `\r` - so each wait ran its whole 30 s
 and the check passed after it, 107 s for 19.
+
+## 18.580 Sandboxes S1: the monitor as a server, and `sandbox`
+
+`docs/sandboxes.md` S1. **Each running sandbox is its monitor, registered
+in `/Running`**: `vmm` makes its own endpoint, registers it as
+`sandbox-<name>` (`appproto.h`) and answers `vmmproto.h` - its state, its
+console from an offset, keys in, stop - on one thread while its vCPU runs on
+another. The guest's console is a 64 KB ring kept by the monitor, so a
+service outlives whoever started it and anyone may attach later; keys come
+by message into a single-producer, single-consumer ring the PL011 empties.
+Once its guest ends it waits ten seconds for its last lines and exit code
+to be read, and goes at once when asked to stop. Its exit codes before the
+guest runs are numbers `sandboxes.lua` turns into sentences.
+
+**One library, `sandboxes.lua`**, for the window to come and `sandbox`:
+definitions in `/Home/Sandboxes/<name>/sandbox.txt` (a line a fact), images
+in `Images/`, start (the image read into the RAM region through a window),
+stop, state, the console by offset, keys, a task run and thrown away.
+**`sandbox`**: `run IMAGE -- COMMAND`, `run IMAGE` (a shell), `list`, `new`,
+`start`, `stop`, `console` (Control-W then D leaves it running), `delete`,
+`images`. **Alpine's `/init`** names the machine after the sandbox and, given
+a command (`kosmos.run=`, hexadecimal), runs it and says its exit code on a
+line beginning with the starter's token (`kosmos.end=`), which the monitor
+reads and keeps off the console; given none, it is a shell with job control
+whose end switches the machine off. **Alpine is a package** (`tools/
+packages.py`, into `/Home/Sandboxes/Images/alpine`).
+
+**Found on the way**: a Lua program has no `io` - `sandbox` and `telnet`
+both called `io.write`; `telnet` would have died at its first answer. Both
+write to `/Devices/console` now. And `fs.raw` now forgets a name `/Running`
+gave once its process has ended, as `request` already did.
+
+**Tests.** `arm-sandbox-linux` 11 -> 13, rewritten around `sandbox`: the
+image listed; `sandbox run alpine -- echo $((6*7)); uname -m; exit 3` -
+`42`, `aarch64`, "echo exited 3", the program's own code 3, and the end line
+nowhere on the console; `sandbox run alpine` - a prompt named `shell-N`,
+`cat /etc/alpine-release` answered, `exit` ending it; a service made,
+started, listed running, its console attached and printing, Control-W D
+leaving it running, stopped and listed stopped; no escape on the console.
+18 s. **Control**: the end line never read - it reaches the console and the
+task "exited without saying"; two checks fail.

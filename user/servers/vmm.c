@@ -11,7 +11,9 @@
  * - **a PL011 serial port** at `VMM_UART_BASE`, which nothing maps, so every
  *   touch of it stops the guest with a stage-2 fault that says the register,
  *   the size and whether it was a write (ESR's ISV): a byte written to its
- *   data register is a byte on this process's console;
+ *   data register is a byte in the console this process keeps, which the
+ *   window and `sandbox` read from it (`vmmproto.h`), and what they type
+ *   comes back to its receiver;
  * - **PSCI**, by `hvc`, the firmware calls Linux makes - its version, and
  *   switching the machine off;
  * - and everything else is said and stops the guest, so what V3 has left to
@@ -37,7 +39,7 @@
 
 #include "kosmos.h"
 #include "vmmproto.h"
-#include "conproto.h"
+#include "appproto.h"
 #include "fdt.h"
 #include "init/say.h"
 
@@ -56,7 +58,6 @@
 #define PSCI_FEATURES       0x8400000au
 #define PSCI_NOT_SUPPORTED  ((uint64_t)-1)
 
-static long console = -1;
 static long guest_ram = -1;
 static uint8_t *ram;
 static struct vmm_setup setup;
@@ -84,28 +85,149 @@ static uint64_t gic_enabled;            /* a bit an interrupt */
 /* The PL011's interrupt state: what is masked in, and what is raised. */
 static uint32_t uart_imsc;
 
-/* What was typed and the guest has not read yet: a ring the console fills
- * and the PL011's data register empties. */
+/*
+ * What was typed and the guest has not read yet: a ring this process's
+ * serving thread fills from `VMM_OP_KEYS` and the PL011's data register,
+ * on the vCPU's thread, empties. One writes `rx_head`, the other `rx_tail`,
+ * and nobody takes a lock - the discipline every ring here keeps.
+ */
 static uint8_t rx[256];
 static unsigned rx_head, rx_tail;
 
 static bool rx_empty(void)
 {
-    return rx_head == rx_tail;
+    return __atomic_load_n(&rx_head, __ATOMIC_ACQUIRE)
+           == __atomic_load_n(&rx_tail, __ATOMIC_ACQUIRE);
 }
+
+static void rx_put(uint8_t c)
+{
+    unsigned head = __atomic_load_n(&rx_head, __ATOMIC_RELAXED);
+    unsigned next = (head + 1) % sizeof(rx);
+
+    if (next != __atomic_load_n(&rx_tail, __ATOMIC_ACQUIRE)) {
+        rx[head] = c;
+        __atomic_store_n(&rx_head, next, __ATOMIC_RELEASE);
+    }
+}
+
+static int rx_take(void)
+{
+    unsigned tail = __atomic_load_n(&rx_tail, __ATOMIC_RELAXED);
+    uint8_t c;
+
+    if (tail == __atomic_load_n(&rx_head, __ATOMIC_ACQUIRE)) {
+        return -1;
+    }
+
+    c = rx[tail];
+    __atomic_store_n(&rx_tail, (tail + 1) % sizeof(rx), __ATOMIC_RELEASE);
+    return c;
+}
+
+/*
+ * **The guest's console, kept**: its last 64 KB, and how much it has ever
+ * said, so a reader asks from an offset and learns when it fell behind
+ * (`VMM_OP_READ`). Written a line at a time by the vCPU's thread and read
+ * by the serving one, under a lock held for a copy and nothing else.
+ */
+#define CON_RING        65536u
+
+static char con[CON_RING];
+static uint64_t con_written;
+static char con_lock;
+
+static void ring_lock(void)
+{
+    while (__atomic_test_and_set(&con_lock, __ATOMIC_ACQUIRE)) {
+        /* the other thread is copying a line; it is a few hundred bytes */
+    }
+}
+
+static void ring_unlock(void)
+{
+    __atomic_clear(&con_lock, __ATOMIC_RELEASE);
+}
+
+static void ring_put(const char *text, size_t n)
+{
+    size_t i;
+
+    ring_lock();
+
+    for (i = 0; i < n; i++) {
+        con[(con_written + i) % CON_RING] = text[i];
+    }
+
+    con_written += n;
+    ring_unlock();
+}
+
+/* From `offset`, up to `max` bytes; answers where they began. */
+static uint64_t ring_get(uint64_t offset, char *into, size_t max, size_t *got)
+{
+    uint64_t from, n, i;
+
+    ring_lock();
+    from = offset;
+
+    if (con_written > CON_RING && from < con_written - CON_RING) {
+        from = con_written - CON_RING;      /* fell behind: the oldest kept */
+    }
+
+    if (from > con_written) {
+        from = con_written;
+    }
+
+    n = con_written - from < max ? con_written - from : max;
+
+    for (i = 0; i < n; i++) {
+        into[i] = con[(from + i) % CON_RING];
+    }
+
+    ring_unlock();
+    *got = (size_t)n;
+    return from;
+}
+
+/* What the serving thread and the vCPU's thread tell each other. */
+static volatile bool stop_asked;            /* VMM_OP_STOP while it runs */
+static volatile bool ended;                 /* the guest is gone */
+static volatile int exit_code = -1;         /* its command's, by its end line */
+static volatile uint64_t guest_ticks, exits, started;
 
 /* The guest's serial output, a line at a time. */
 static char out[257];
 static size_t out_len;
 
+/*
+ * A line, or what there is of one, into the console's ring - unless it is
+ * the guest's end line: `end_token`, a space and its command's exit code,
+ * which is the monitor's to read and not anybody's to see.
+ */
 static void flush_out(void)
 {
+    size_t token = strlen(setup.end_token);
+
     if (out_len == 0) {
         return;
     }
 
-    out[out_len] = '\0';
-    say(console, out);
+    if (token > 0 && out_len > token && memcmp(out, setup.end_token, token) == 0
+        && out[token] == ' ') {
+        int code = 0;
+        size_t i = token + 1;
+
+        while (i < out_len && out[i] >= '0' && out[i] <= '9') {
+            code = code * 10 + (out[i++] - '0');
+        }
+
+        exit_code = code;
+        out_len = 0;
+        return;
+    }
+
+    ring_put(out, out_len);
     out_len = 0;
 }
 
@@ -151,18 +273,25 @@ static void guest_byte(char c)
     }
 }
 
+/* A line of the monitor's own, into the console's ring. */
+static void note(const char *text)
+{
+    flush_out();
+    ring_put("vmm: ", 5);
+    ring_put(text, strlen(text));
+    ring_put("\n", 1);
+}
+
 static void tell(const char *what, unsigned long a, unsigned long b)
 {
     struct say_line line;
 
-    flush_out();
     say_begin(&line);
-    say_text(&line, "vmm: ");
     say_text(&line, what);
     say_hex(&line, a, 0);
     say_text(&line, " ");
     say_hex(&line, b, 0);
-    say_send(console, &line);
+    note(line.text);
 }
 
 /*
@@ -275,7 +404,7 @@ static size_t write_tree(uint8_t *at, size_t cap)
 
 /*
  * **The PL011**, as far as a console needs it: a byte written to its data
- * register is a byte on this process's console, a byte read from it is the
+ * register is a byte in the console's ring, a byte read from it is the
  * next one typed, and the transmitter is always empty. Its interrupt is
  * raised while the transmitter is empty and the guest asked to hear that
  * (TXIM) - which is how Linux's driver finishes a write - and while
@@ -300,17 +429,11 @@ static uint64_t uart_read(uint64_t offset)
     static const uint8_t ids[8] = { 0x11, 0x10, 0x14, 0x00, 0x0d, 0xf0, 0x05, 0xb1 };
 
     switch (offset) {
-    case 0x000:                             /* DR: the next byte typed */
-        if (rx_empty()) {
-            return 0;
-        }
+    case 0x000: {                           /* DR: the next byte typed */
+        int c = rx_take();
 
-        {
-            uint8_t c = rx[rx_tail];
-
-            rx_tail = (rx_tail + 1) % sizeof(rx);
-            return c;
-        }
+        return c < 0 ? 0 : (uint64_t)c;
+    }
     case 0x018:                             /* FR: transmit empty; RXFE */
         return 0x80 | (rx_empty() ? 0x10 : 0);
     case 0x038: return uart_imsc;           /* IMSC */
@@ -334,46 +457,6 @@ static void uart_write(uint64_t offset, uint64_t value)
     } else if (offset == 0x038) {
         uart_imsc = (uint32_t)value & 0x7ff;
     }
-}
-
-/*
- * **What was typed, into the receiver.** `CON_OP_KEYS` takes what is there
- * and returns at once; with `ticks`, `CON_OP_WAIT` sleeps until a key comes
- * or they pass - which is how an idle guest waits for both its timer and its
- * keyboard at once. Enter is a carriage return and Backspace is DEL, as a
- * serial terminal sends them. Answers whether anything came.
- */
-static bool take_keys(unsigned long ticks)
-{
-    struct message msg, rep;
-    struct con_request *req = (struct con_request *)msg.data;
-    const struct con_reply *got = (const struct con_reply *)rep.data;
-    unsigned i, n;
-
-    memset(&msg, 0, sizeof(msg));
-    msg.length = sizeof(*req);
-    req->op = ticks > 0 ? CON_OP_WAIT : CON_OP_KEYS;
-    req->ticks = (uint32_t)ticks;
-
-    if (kosmos_call(console, &msg, &rep) < 0 || got->error != CON_OK) {
-        return false;
-    }
-
-    n = got->nkeys < CON_KEYS_MAX ? got->nkeys : CON_KEYS_MAX;
-
-    for (i = 0; i < n; i++) {
-        uint8_t c = got->keys[i];
-        unsigned next = (rx_head + 1) % sizeof(rx);
-
-        c = c == '\n' ? '\r' : c == 8 ? 127 : c;
-
-        if (next != rx_tail) {
-            rx[rx_head] = c;
-            rx_head = next;
-        }
-    }
-
-    return n > 0;
 }
 
 /* A little-endian value of `size` bytes at `p`, and the other way. */
@@ -618,24 +701,29 @@ static bool deliver(struct vcpu_regs *r)
  */
 static void wait_for_guest(const struct vcpu_regs *r)
 {
-    uint64_t now = kosmos_ticks(), ticks = tick_hz / 10;
+    uint64_t now = kosmos_ticks(), ticks = 2;
 
-    /* A prompt has no newline after it: what the guest said goes out now,
-     * before it is waited on. */
+    /* A prompt has no newline after it: what the guest said goes in the
+     * ring now, before it is waited on. */
     flush_out();
 
-    if (take_keys(0) || deliver((struct vcpu_regs *)r)
+    if (!rx_empty() || deliver((struct vcpu_regs *)r)
         || (r->lr[0] | r->lr[1] | r->lr[2] | r->lr[3]) >> 62) {
         return;
     }
 
+    /*
+     * Until its timer is due, and two scheduler ticks at the most - 8 ms -
+     * which is how soon a key typed is seen: keys arrive on the other
+     * thread, which has no way to wake this one but to be looked at.
+     */
     if ((r->timer_ctl & 1) != 0 && (r->timer_ctl & 2) == 0 && r->timer_cval > now) {
         uint64_t wait = (r->timer_cval - now) * tick_hz / counter_hz;
 
         ticks = wait < ticks ? wait : ticks;
     }
 
-    (void)take_keys(ticks > 0 ? (unsigned long)ticks : 1);
+    kosmos_sleep(ticks > 0 ? (unsigned long)ticks : 1);
 }
 
 /* A PSCI call, in x0, answered in x0. False: the guest asked to stop. */
@@ -653,8 +741,7 @@ static bool psci(struct vcpu_regs *r)
         return true;
     case PSCI_SYSTEM_OFF:
     case PSCI_SYSTEM_RESET:
-        flush_out();
-        say(console, "vmm: the guest switched itself off\n");
+        note("the guest switched itself off");
         return false;
     default:
         r->x[0] = PSCI_NOT_SUPPORTED;
@@ -663,10 +750,20 @@ static bool psci(struct vcpu_regs *r)
 }
 
 /* The vCPU's thread: run, answer, run again, until the guest stops. */
+/* The guest has ended - by itself, or because it was asked to. */
+static void finish(void)
+{
+    flush_out();
+    ended = true;
+    kosmos_thread_exit(0);
+}
+
+/* The vCPU's thread: run, answer, run again, until the guest stops. */
 static void run(unsigned long unused)
 {
     struct vcpu_regs r;
     uint64_t dtb_at = setup.ram_bytes - DTB_SPACE;
+    uint64_t before;
     long why;
 
     (void)unused;
@@ -676,8 +773,16 @@ static void run(unsigned long unused)
     r.x[0] = VMM_RAM_BASE + dtb_at;         /* the device tree, as Linux wants */
 
     for (;;) {
+        if (stop_asked) {
+            note("stopped, as asked");
+            finish();
+        }
+
         deliver(&r);
+        before = kosmos_ticks();
         why = kosmos_vcpu_run(vcpu, &r);
+        guest_ticks += kosmos_ticks() - before;
+        exits++;
 
         if (why == VCPU_EXIT_HOST) {
             continue;
@@ -685,7 +790,7 @@ static void run(unsigned long unused)
 
         if (why != VCPU_EXIT_TRAP) {
             tell("the vCPU would not run: ", (unsigned long)why, 0);
-            kosmos_thread_exit(3);
+            finish();
         }
 
         switch ((unsigned)(r.syndrome >> 26)) {
@@ -701,36 +806,129 @@ static void run(unsigned long unused)
             break;
         case EC_HVC:
             if (!psci(&r)) {
-                kosmos_thread_exit(0);
+                finish();
             }
             break;
         case EC_SMC:
             r.pc += 4;
             if (!psci(&r)) {
-                kosmos_thread_exit(0);
+                finish();
             }
             break;
         case EC_DABT_LOW:
             if (!emulate(&r)) {
                 tell("the guest touched what is not there, at ", r.ipa | (r.address & 0xfff), r.pc);
-                kosmos_thread_exit(2);
+                finish();
             }
             break;
         default:
             tell("the guest stopped: syndrome and pc ", r.syndrome, r.pc);
-            kosmos_thread_exit(2);
+            finish();
         }
     }
 }
 
-void vmm_server(long console_cap, long ram_cap, long setup_cap)
+/* What a request is answered with. */
+static void answer(const struct vmm_request *req, struct vmm_reply *rep)
 {
-    long at, guest, thread;
+    size_t got = 0, i;
+
+    memset(rep, 0, sizeof(*rep));
+    rep->state = ended ? VMM_ENDED : VMM_RUNNING;
+    rep->exit_code = exit_code;
+    rep->ram_bytes = setup.ram_bytes;
+    rep->up_counter_ticks = kosmos_ticks() - started;
+    rep->guest_counter_ticks = guest_ticks;
+    rep->exits = exits;
+    memcpy(rep->name, setup.name, VMM_NAME_MAX);
+
+    switch (req->op) {
+    case VMM_OP_STATE:
+        break;
+    case VMM_OP_READ:
+        rep->offset = ring_get(req->offset, rep->text, VMM_TEXT_MAX, &got);
+        rep->length = (uint32_t)got;
+        break;
+    case VMM_OP_KEYS:
+        for (i = 0; i < req->length && i < VMM_TEXT_MAX; i++) {
+            uint8_t c = (uint8_t)req->text[i];
+
+            /* Enter is a carriage return and Backspace DEL, as a serial
+             * terminal sends them. */
+            rx_put(c == '\n' ? '\r' : c == 8 ? 127 : c);
+        }
+        break;
+    case VMM_OP_STOP:
+        stop_asked = true;
+        break;
+    default:
+        rep->error = VMM_ERR_BAD_OP;
+        break;
+    }
+
+    rep->written = con_written;
+}
+
+/*
+ * The monitor's exit codes before its guest runs, each a sentence for
+ * whoever started it (`sandboxes.lua`): an error here is a number, and the
+ * words are composed by whoever shows it to a person.
+ */
+#define VMM_NO_SETUP        11
+#define VMM_BAD_SETUP       12
+#define VMM_NO_RAM          13
+#define VMM_NO_TREE         14
+#define VMM_NO_EL2          15
+#define VMM_NO_GUEST        16
+#define VMM_REFUSED         17
+#define VMM_NO_THREAD       18
+#define VMM_NO_NAME         19
+
+/*
+ * **Registered in `/Running` as `sandbox-<name>`**, with an endpoint of its
+ * own: from then on the window and `sandbox` find it there and ask it, and
+ * the name goes when this process does.
+ */
+static long register_name(long running)
+{
+    struct message msg, rep;
+    struct app_request *req = (struct app_request *)msg.data;
+    const struct app_reply *got = (const struct app_reply *)rep.data;
+    long endpoint = kosmos_endpoint();
+    char name[APP_NAME_MAX];
+
+    if (endpoint < 0) {
+        return -1;
+    }
+
+    memset(name, 0, sizeof(name));
+    memcpy(name, "sandbox-", 8);
+    memcpy(name + 8, setup.name, strlen(setup.name) < APP_NAME_MAX - 9
+                                 ? strlen(setup.name) : APP_NAME_MAX - 9);
+
+    memset(&msg, 0, sizeof(msg));
+    msg.length = sizeof(*req);
+    msg.cap_plus_one = (uint32_t)endpoint + 1;
+    req->op = APP_OP_REGISTER;
+    memcpy(req->name, name, APP_NAME_MAX);
+
+    if (kosmos_call(running, &msg, &rep) < 0 || got->error != APP_OK
+        || strncmp(got->name, name, APP_NAME_MAX) != 0) {
+        return -1;
+    }
+
+    return endpoint;
+}
+
+void vmm_server(long running_cap, long ram_cap, long setup_cap)
+{
+    long at, guest, thread, endpoint;
     const struct vmm_setup *s;
+    unsigned long linger = 0;
     size_t tree;
 
-    console = console_cap;
     guest_ram = ram_cap;
+    started = kosmos_ticks();
 
     {
         struct sysinfo info;
@@ -744,52 +942,48 @@ void vmm_server(long console_cap, long ram_cap, long setup_cap)
     }
 
     if ((at = kosmos_mem_map(setup_cap)) < 0) {
-        say(console, "vmm: no setup page\n");
-        kosmos_exit(1);
+        kosmos_exit(VMM_NO_SETUP);
     }
 
     s = (const struct vmm_setup *)at;
     setup = *s;
     setup.cmdline[VMM_CMDLINE_MAX - 1] = '\0';
+    setup.name[VMM_NAME_MAX - 1] = '\0';
+    setup.end_token[VMM_TOKEN_MAX - 1] = '\0';
 
     if (setup.magic != VMM_SETUP_MAGIC || setup.version != VMM_SETUP_VERSION
+        || setup.name[0] == '\0'
         || setup.ram_bytes != (uint64_t)kosmos_mem_size(ram_cap) * 4096u
         || setup.ram_bytes < 4 * DTB_SPACE
         || (setup.kernel_offset & (DTB_SPACE - 1)) != 0
         || setup.kernel_offset + setup.kernel_bytes > setup.ram_bytes - DTB_SPACE
         || setup.initrd_offset + setup.initrd_bytes > setup.ram_bytes - DTB_SPACE) {
-        say(console, "vmm: the setup does not describe this RAM\n");
-        kosmos_exit(1);
+        kosmos_exit(VMM_BAD_SETUP);
     }
 
     if ((at = kosmos_mem_map(ram_cap)) < 0) {
-        say(console, "vmm: could not map the guest's RAM\n");
-        kosmos_exit(1);
+        kosmos_exit(VMM_NO_RAM);
     }
 
     ram = (uint8_t *)at;
     tree = write_tree(ram + setup.ram_bytes - DTB_SPACE, DTB_SPACE);
 
     if (tree == 0) {
-        say(console, "vmm: the device tree did not fit\n");
-        kosmos_exit(1);
+        kosmos_exit(VMM_NO_TREE);
     }
 
     if ((guest = kosmos_guest_create()) < 0) {
-        say(console, guest == SYS_ERR_NO_DEVICE
-                     ? "vmm: this machine cannot run a guest - it was not started at EL2\n"
-                     : "vmm: no guest\n");
-        kosmos_exit(1);
+        kosmos_exit(guest == SYS_ERR_NO_DEVICE ? VMM_NO_EL2 : VMM_NO_GUEST);
     }
 
     if (kosmos_guest_map(guest, ram_cap, VMM_RAM_BASE) != 0
         || (vcpu = kosmos_vcpu_create(guest)) < 0) {
-        say(console, "vmm: the guest's RAM or its vCPU was refused\n");
-        kosmos_exit(1);
+        kosmos_exit(VMM_REFUSED);
     }
 
-    tell("starting, RAM and kernel bytes ", (unsigned long)setup.ram_bytes,
-         (unsigned long)setup.kernel_bytes);
+    if ((endpoint = register_name(running_cap)) < 0) {
+        kosmos_exit(VMM_NO_NAME);
+    }
 
     /*
      * **On core zero**, which is the one core every way of starting this
@@ -800,9 +994,39 @@ void vmm_server(long console_cap, long ram_cap, long setup_cap)
     thread = kosmos_thread_start_on(run, 0, 0);
 
     if (thread < 0) {
-        say(console, "vmm: no thread on core zero\n");
-        kosmos_exit(1);
+        kosmos_exit(VMM_NO_THREAD);
     }
 
-    kosmos_exit((int)kosmos_thread_wait((unsigned long)thread));
+    /*
+     * **Serving, on this thread**, while the vCPU's runs the guest. Once
+     * the guest has ended, the monitor stays a little - ten seconds, or
+     * until somebody says it may go (`VMM_OP_STOP`) - so whoever is
+     * attached reads its last lines and its exit code.
+     */
+    for (;;) {
+        struct message msg, rep;
+        uint64_t sender = 0;
+        long got = kosmos_receive(endpoint, &msg, &sender, 0, tick_hz / 4);
+
+        if (got >= 0) {
+            const struct vmm_request *req = (const struct vmm_request *)msg.data;
+            bool going = ended && req->op == VMM_OP_STOP;
+
+            memset(&rep, 0, sizeof(rep));
+            rep.length = sizeof(struct vmm_reply);
+            answer(req, (struct vmm_reply *)rep.data);
+            kosmos_reply(sender, &rep);
+
+            if (going) {
+                break;
+            }
+        }
+
+        /* Asked to stop by somebody not reading it: no need to stay. */
+        if (ended && (stop_asked || ++linger > 40)) {
+            break;                          /* ten seconds, nobody asking */
+        }
+    }
+
+    kosmos_exit(exit_code < 0 ? 0 : exit_code);
 }

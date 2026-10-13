@@ -47,6 +47,16 @@ import installed as I                                         # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "build", "packages")
 
+# **A sandbox's image** (`docs/sandboxes.md` S1): Alpine Linux's kernel and
+# an initramfs of its userland, made by `tools/alpine.py` from Alpine's
+# published files and installed where `sandbox` and the Sandboxes window
+# find images.
+ALPINE = {
+    "name": "alpine", "title": "Alpine Linux", "kind": "sandbox",
+    "about": "Alpine Linux 3.24.2 for a sandbox: Linux 6.18 and Alpine's userland",
+    "icon": "", "needs": "", "depends": "",
+}
+
 DEVELOPER = {
     "name": "developer", "title": "Developer files", "kind": "developer",
     "about": "what New Project builds a C program with: the runtime and the headers",
@@ -169,6 +179,12 @@ def main():
     dev = [(p.split(":", 1)[0], p.split(":", 1)[1][len("/Home/Developer/"):])
            for p in I.developer("x86_64")]
     made.append(make(dict(common, into="/Home/Developer", **DEVELOPER), "Developer", dev))
+
+    alpine = os.path.join(ROOT, "build", "sandboxes", "alpine")
+    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "alpine.py"), alpine], check=True,
+                   stdout=subprocess.DEVNULL)
+    made.append(make(dict(common, into="/Home/Sandboxes/Images/alpine", **ALPINE), "alpine",
+                     [(os.path.join(alpine, f), f) for f in ("Image", "initramfs")]))
 
     with open(os.path.join(OUT, "index.txt"), "w") as f:
         f.write("# The packages, a paragraph each; tools/packages.py.\n")

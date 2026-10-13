@@ -3893,18 +3893,19 @@ local function new_namespace()
   end
 
   --
-  -- **A sandbox's monitor, started** (`docs/virtualization.md` V3): `vmm`
-  -- handed this program's console, the guest's RAM and its setup page -
-  -- two regions the program made and filled itself (`vmmproto.h`). The
-  -- console goes from here, through the namespace, so the program never
-  -- holds it raw. The monitor's id, or nil and why.
+  -- **A sandbox's monitor, started** (`docs/sandboxes.md` S1): `vmm` handed
+  -- `/Running`, where it registers itself as `sandbox-<name>`, the guest's
+  -- RAM and its setup page - two regions the program made and filled
+  -- itself (`vmmproto.h`). `/Running` goes from here, through the
+  -- namespace, so the program never holds it raw. The monitor keeps its
+  -- guest's console, and outlives whoever started it. Its id, or nil and why.
   --
   function ns.vm_start(ram, setup)
-    local console = resolve("/Devices/console")
+    local running = resolve("/Running")
 
-    if not console then return nil, "no console for the guest to speak on" end
+    if not running then return nil, "no /Running for its monitor to be found in" end
 
-    local id, why = sys.spawn(ROLE_VMM, { console, ram, setup })
+    local id, why = sys.spawn(ROLE_VMM, { running, ram, setup })
 
     if not id then return nil, "could not start its monitor: " .. tostring(why) end
 
@@ -3924,7 +3925,20 @@ local function new_namespace()
       return nil, "no such path: " .. path
     end
 
-    return sys.call_raw(capability, bytes, pass)
+    local reply, err = sys.call_raw(capability, bytes, pass)
+
+    -- A name a registry gave, whose process has ended since: forgotten,
+    -- and asked once more, as `request` does (`forget_if_gone`) - a
+    -- sandbox stopped and started again is a new monitor under the old name.
+    if not reply and forget_if_gone(path, err) then
+      capability = resolve(path)
+
+      if not capability then return nil, "no such path: " .. path end
+
+      return sys.call_raw(capability, bytes, pass)
+    end
+
+    return reply, err
   end
 
   --

@@ -1,140 +1,220 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
--- sandbox: a small operating system, in a virtual machine of its own.
+-- sandbox: small operating systems, each in a virtual machine of its own.
 --
---   sandbox run alpine               /Home/Sandboxes/alpine, on this console
---   sandbox run alpine --memory 512  with 512 MB of RAM (256 otherwise)
+--   sandbox run alpine -- uname -a      a task: run once, said, thrown away
+--   sandbox run alpine                  a shell in a new one, until it ends
+--   sandbox list                        every sandbox, and how it is doing
+--   sandbox new web --image alpine [--memory 256] [--service] [-- COMMAND]
+--   sandbox start web | stop web | console web | delete web
+--   sandbox images                      the images there are to start from
 --
--- `docs/virtualization.md` V3, toward Diego's first goal for Sandboxes: "the
--- initial goal for sandboxes is to run a linux distro like alpine". A
--- sandbox is a folder in /Home/Sandboxes holding `Image`, an arm64 Linux
--- kernel, and optionally `initramfs` and `cmdline`; Alpine's comes as a
--- package (`pkg install alpine`).
---
--- **It reads and hands over; `vmm` runs the machine.** The kernel and the
--- initramfs are read into a region that becomes the guest's RAM - through
--- a small window, so their bytes go from the disk server into regions and
--- are never a Lua string - a setup page says where they are
--- (`vmmproto.h`), and `fs.vm_start` starts the monitor with both and this
--- console. Then this waits for it.
+-- `docs/sandboxes.md` S1 - Diego, 12 October 2026: "continue with the sandbox
+-- app", "as designed in the mockup", whose last page is this program. It
+-- shows and asks; `sandboxes.lua` does everything, and is what the Sandboxes
+-- window uses too. In a console, Control-W then D leaves a sandbox running.
 
 local files = use("/Kosmos/Libraries/files.lua")
+local sandboxes = use("/Kosmos/Libraries/sandboxes.lua")
 
 local words = files.words(args)
-local name, ram_mb = nil, 256
+local verb = words[1]
 
-local i = 1
+-- The words after `--`, as one command; and the options before it.
+local options, command = {}, nil
 
-while i <= #words do
-  local w = words[i]
+do
+  local i = 2
 
-  if w == "run" then
-    name = words[i + 1]
-    i = i + 2
-  elseif w == "--memory" then
-    ram_mb = math.tointeger(tonumber(words[i + 1] or "")) or ram_mb
-    i = i + 2
-  else
-    i = i + 1
+  while i <= #words do
+    local w = words[i]
+
+    if w == "--" then
+      command = table.concat(words, " ", i + 1)
+      break
+    elseif w:sub(1, 2) == "--" then
+      options[w:sub(3)] = (words[i + 1] and words[i + 1]:sub(1, 2) ~= "--") and words[i + 1] or true
+      i = i + ((options[w:sub(3)] == true) and 1 or 2)
+    else
+      options[#options + 1] = w
+      i = i + 1
+    end
   end
 end
 
-if not name then
-  print("sandbox: sandbox run <name> [--memory MB] - a folder of /Home/Sandboxes")
+-- Text as it comes, without a newline: a program has no `io`; its console
+-- is written to as a file is.
+local function say(text) fs.write("/Devices/console", text) end
+
+local function megabytes(bytes) return ("%d MB"):format((bytes or 0) // (1024 * 1024)) end
+
+--
+-- **A console, attached**: what the guest says, as it says it, and what is
+-- typed here, to it - until it ends, or Control-W then D, which leaves it
+-- running. Answers its exit code when it ended.
+--
+local function attach(name)
+  local at, armed = 0, false
+
+  for _ = 1, 3 do                      -- its console from the start of what is kept
+    local _, next_at, r = sandboxes.read(name, 0)
+
+    if r then at = r.offset break end
+
+    sys.sleep(5)
+  end
+
+  while true do
+    local text, next_at, r = sandboxes.read(name, at)
+
+    if not text then return nil end
+
+    if #text > 0 then say(text) end
+
+    at = next_at
+
+    if not r.running and #text == 0 then
+      sandboxes.stop(name)            -- ended: its monitor may go
+      return r.exit_code
+    end
+
+    local typed = {}
+
+    for _, code in ipairs(fs.keys("/Devices/console") or {}) do
+      if armed and (code == 100 or code == 68) then
+        print("\nsandbox: left " .. name .. " running - sandbox console " .. name .. " to come back")
+        return nil
+      end
+
+      armed = code == 23            -- Control-W
+
+      if not armed then typed[#typed + 1] = string.char(code) end
+    end
+
+    if #typed > 0 then sandboxes.type(name, table.concat(typed)) end
+
+    if #text == 0 then sys.sleep(2) end
+  end
+end
+
+if verb == "run" then
+  local image = options[1] or "alpine"
+  local memory = math.tointeger(tonumber(options.memory or "")) or 256
+
+  if command then
+    local began = sys.ticks()
+    local code, up, took = sandboxes.run(image, command, memory, say)
+
+    if code == nil and up == nil then
+      print("sandbox: " .. tostring(took or "it would not start"))
+      sys.exit(1)
+    end
+
+    print(("sandbox: %s exited %s after %.1f s, up in %.1f s; the sandbox is gone")
+          :format(command:match("^%S+") or command, tostring(code or "without saying"), took or 0, up or 0))
+    sys.exit(code or 1)
+  end
+
+  -- No command: a shell in a sandbox of its own, until it ends.
+  local s = sandboxes.parse("", ("shell-%d"):format(sys.ticks() % 100000))
+
+  s.image, s.memory = image, memory
+
+  local id, why = sandboxes.start(s)
+
+  if not id then print("sandbox: " .. tostring(why)) sys.exit(1) end
+
+  print(("sandbox: %s in %s, %d MB - Control-W then D leaves it running"):format(image, s.name, memory))
+  attach(s.name)
   return
 end
 
-local folder = "/Home/Sandboxes/" .. name
-local MB, ALIGN = 1024 * 1024, 2 * 1024 * 1024
+if verb == "list" or verb == nil then
+  local all = sandboxes.all()
 
-local function size_of(path)
-  local a = fs.getattr(path)
-
-  return a and math.tointeger(a.size) or nil
-end
-
-local kernel_bytes = size_of(folder .. "/Image")
-
-if not kernel_bytes then
-  print(("sandbox: %s has no Image - a sandbox is a folder with an arm64 kernel in it"):format(folder))
-  sys.exit(1)
-end
-
-local initrd_bytes = size_of(folder .. "/initramfs") or 0
-local cmdline = fs.read(folder .. "/cmdline")
-
-cmdline = type(cmdline) == "string" and cmdline:gsub("%s+$", "")
-          or "console=ttyAMA0 earlycon=pl011,0x9000000 panic=-1"
-
-local ram_bytes = ram_mb * MB
-local ram = sys.memory(ram_bytes // 4096)
-local window = sys.memory(64)
-
-if not ram or not window then
-  print(("sandbox: no room for %d MB of RAM"):format(ram_mb))
-  sys.exit(1)
-end
-
--- A file into the RAM at `at`, a window at a time.
-local function load(path, bytes, at)
-  local done, step = 0, 64 * 4096
-
-  while done < bytes do
-    local want = math.min(step, bytes - done)
-
-    if fs.read_into(path, window, done, want) ~= want then
-      return false
-    end
-
-    sys.region_copy(ram, at + done, window, 0, want)
-    done = done + want
+  if #all == 0 then
+    print("sandbox: none yet - sandbox new <name> --image alpine, or sandbox run alpine")
+    return
   end
 
-  return true
-end
+  print(("%-14s %-10s %-9s %-9s %s"):format("NAME", "IMAGE", "STATE", "MEMORY", "COMMAND"))
 
-if not load(folder .. "/Image", kernel_bytes, 0) then
-  print("sandbox: could not read " .. folder .. "/Image")
-  sys.exit(1)
-end
+  for _, s in ipairs(all) do
+    local state = s.now and (s.now.running and "running" or "ended") or "stopped"
 
--- The kernel's own idea of how much room it needs, from its header (the
--- arm64 boot protocol: `image_size` at 16, the magic "ARM\x64" at 56).
-local head = sys.region_read(ram, 0, 64)
-
-if head:sub(57, 60) ~= "ARM\x64" then
-  print("sandbox: " .. folder .. "/Image is not an arm64 Linux kernel")
-  sys.exit(1)
-end
-
-local image_size = math.max(string.unpack("<I8", head, 17), kernel_bytes)
-local initrd_at = 0
-
-if initrd_bytes > 0 then
-  initrd_at = (image_size + ALIGN - 1) // ALIGN * ALIGN
-
-  if initrd_at + initrd_bytes > ram_bytes - ALIGN
-     or not load(folder .. "/initramfs", initrd_bytes, initrd_at) then
-    print("sandbox: the initramfs would not fit, or could not be read")
-    sys.exit(1)
+    print(("%-14s %-10s %-9s %-9s %s"):format(s.name, s.task and "-" or s.image, state,
+          s.now and megabytes(s.now.ram) or ("%d MB"):format(s.memory),
+          s.task and "(a task)" or (s.command ~= "" and s.command or "a shell")))
   end
+
+  return
 end
 
-local setup = sys.memory(1)
+if verb == "images" then
+  local images = sandboxes.images()
 
-sys.region_write(setup, 0, string.pack("<I4I4I8I8I8I8I8", 0x4b766d6d, 1, ram_bytes,
-                                        0, kernel_bytes, initrd_at, initrd_bytes)
-                           .. cmdline:sub(1, 511) .. "\0")
+  if #images == 0 then print("sandbox: no images - pkg install alpine") return end
 
-print(("sandbox: %s, %d MB, a %d KB kernel%s"):format(name, ram_mb, kernel_bytes // 1024,
-      initrd_bytes > 0 and (" and a %d KB initramfs"):format(initrd_bytes // 1024) or ""))
+  for _, i in ipairs(images) do
+    print(("%-10s %-20s %s  %s"):format(i.name, i.title, megabytes(i.bytes), i.about))
+  end
 
-local id, why = fs.vm_start(ram, setup)
+  return
+end
 
-if not id then
-  print("sandbox: " .. tostring(why))
+local name = options[1]
+
+if not name then
+  print("sandbox: run, list, new, start, stop, console, delete or images - sandbox.lua says how")
   sys.exit(1)
 end
 
-local _, code = sys.wait()
+if verb == "new" then
+  local s = sandboxes.parse("", name)
 
-print(("sandbox: %s ended, code %s"):format(name, tostring(code)))
+  s.image = options.image or "alpine"
+  s.memory = math.tointeger(tonumber(options.memory or "")) or 256
+  s.kind = options.service and "service" or (command and "task" or "shell")
+  s.command = command or ""
+
+  local ok, why = sandboxes.save(s)
+
+  print(ok and ("sandbox: %s made - sandbox start %s"):format(name, name) or ("sandbox: " .. tostring(why)))
+  return
+end
+
+if verb == "start" then
+  local s = sandboxes.definition(name)
+
+  if not s then print(("sandbox: there is no sandbox called %s - sandbox list"):format(name)) sys.exit(1) end
+
+  local id, why = sandboxes.start(s)
+
+  print(id and ("sandbox: %s started - sandbox console %s"):format(name, name) or ("sandbox: " .. tostring(why)))
+  if not id then sys.exit(1) end
+  return
+end
+
+if verb == "stop" then
+  local r = sandboxes.stop(name)
+
+  print(r and ("sandbox: %s stopping"):format(name) or ("sandbox: %s is not running"):format(name))
+  return
+end
+
+if verb == "console" then
+  if not sandboxes.state(name) then print(("sandbox: %s is not running"):format(name)) sys.exit(1) end
+
+  print(("sandbox: the console of %s - Control-W then D to leave it running"):format(name))
+  attach(name)
+  return
+end
+
+if verb == "delete" then
+  local ok, why = sandboxes.delete(name)
+
+  print(ok and ("sandbox: %s deleted"):format(name) or ("sandbox: " .. tostring(why)))
+  return
+end
+
+print("sandbox: no such thing as sandbox " .. tostring(verb))
+sys.exit(1)
