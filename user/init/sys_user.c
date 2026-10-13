@@ -1552,9 +1552,22 @@ static int l_disk(lua_State *L)
 static bool region_of(long cap, uintptr_t *at, size_t *bytes);
 static const char *region_fail;
 
+/*
+ * `sys.memory(pages)` - a region of zeroed pages; `sys.memory(pages, "on
+ * touch")` one whose pages are given the first time something touches them
+ * (`MEM_ON_TOUCH`), which is what a sandbox's memory is.
+ */
 static int l_memory(lua_State *L)
 {
-    long cap = kosmos_mem_create((unsigned long)luaL_checkinteger(L, 1));
+    const char *how = luaL_optstring(L, 2, "");
+    long cap;
+
+    if (how[0] != '\0' && strcmp(how, "on touch") != 0) {
+        return luaL_error(L, "sys.memory: a region is given at once, or \"on touch\"");
+    }
+
+    cap = kosmos_mem_create_flags((unsigned long)luaL_checkinteger(L, 1),
+                                  how[0] != '\0' ? MEM_ON_TOUCH : 0);
 
     if (cap < 0) {
         return fail(L, cap);

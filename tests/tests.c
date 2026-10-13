@@ -4753,7 +4753,7 @@ static bool test_an_image_from_a_region_runs(void)
     size_t pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
     unsigned before = process_count();
     unsigned regions_before = memobj_in_use();
-    struct memobj *region = memobj_create(pages, false);
+    struct memobj *region = memobj_create(pages, false, false);
     struct process *p;
     bool not_image = false;
     bool own_code;
@@ -4836,7 +4836,7 @@ static bool test_bytes_that_are_not_an_image_are_refused(void)
 {
     unsigned before = process_count();
     size_t pages_before = pmm_free_pages();
-    struct memobj *region = memobj_create(2, false);
+    struct memobj *region = memobj_create(2, false, false);
     uint64_t *h;
     bool not_image = false;
     bool ok = true;
@@ -5168,7 +5168,7 @@ static bool test_memobj_holds_a_pak(void)
 {
     enum { PAK_PAGES = 4563 };          /* 18,689,235 bytes, rounded up */
     size_t before = pmm_free_pages();
-    struct memobj *m = memobj_create(PAK_PAGES, false);
+    struct memobj *m = memobj_create(PAK_PAGES, false, false);
     bool reached;
 
     if (m == NULL) {
@@ -5182,7 +5182,7 @@ static bool test_memobj_holds_a_pak(void)
 
     return reached
         && pmm_free_pages() == before
-        && memobj_create(memobj_pages_max() + 1, false) == NULL;
+        && memobj_create(memobj_pages_max() + 1, false, false) == NULL;
 }
 
 /*
@@ -5207,7 +5207,7 @@ static bool test_a_region_larger_than_the_old_cap(void)
         return true;                    /* this machine is too small to say */
     }
 
-    m = memobj_create(BIG_PAGES, false);
+    m = memobj_create(BIG_PAGES, false, false);
 
     if (m == NULL) {
         return false;
@@ -5221,8 +5221,8 @@ static bool test_a_region_larger_than_the_old_cap(void)
     return reached
         && pmm_free_pages() == before
         && memobj_pages_max() > 8192
-        && memobj_create(memobj_pages_max() + 1, false) == NULL
-        && memobj_create(pmm_free_pages(), false) == NULL
+        && memobj_create(memobj_pages_max() + 1, false, false) == NULL
+        && memobj_create(pmm_free_pages(), false, false) == NULL
         && pmm_reserve_pages() >= (8u * 1024u * 1024u) / PAGE_SIZE;
 }
 
@@ -6206,8 +6206,8 @@ static bool test_a_region_can_be_one_physical_run(void)
 {
     enum { RING_PAGES = 4 };
     size_t before = pmm_free_pages();
-    struct memobj *run = memobj_create(RING_PAGES, true);
-    struct memobj *scattered = memobj_create(RING_PAGES, false);
+    struct memobj *run = memobj_create(RING_PAGES, true, false);
+    struct memobj *scattered = memobj_create(RING_PAGES, false, false);
     uintptr_t base;
     bool consecutive = true;
     size_t i;
@@ -6235,6 +6235,61 @@ static bool test_a_region_can_be_one_physical_run(void)
         && consecutive
         && memobj_phys(scattered) == 0      /* the refusal */
         && pmm_free_pages() == before;      /* and both given back whole */
+}
+
+/*
+ * **A region given on touch** (`MEM_ON_TOUCH`): nothing behind it when it
+ * is made; a page given the first time it is asked for, zeroed, and the
+ * same page every time after - the monitor and the guest touching one page
+ * must see one page; `memobj_touched` counting exactly those; and only
+ * those going back when the region does.
+ */
+static bool test_a_region_given_on_touch(void)
+{
+    size_t free_before = pmm_free_pages();
+    struct memobj *m = memobj_create(1000, false, true);
+    char *page;
+    bool ok, zero = true;
+    size_t i;
+
+    if (m == NULL) {
+        return false;
+    }
+
+    ok = m->on_touch && memobj_touched(m) == 0
+      && memobj_page(m, 0) == NULL && memobj_page(m, 999) == NULL
+      /* the index and its directory, and not the thousand pages */
+      && free_before - pmm_free_pages() < 8;
+
+    page = memobj_fill(m, 700);
+
+    for (i = 0; page != NULL && i < PAGE_SIZE; i++) {
+        zero = zero && page[i] == 0;
+    }
+
+    ok = ok && page != NULL && zero
+      && memobj_page(m, 700) == page
+      && memobj_fill(m, 700) == page
+      && memobj_fill(m, 3) != NULL
+      && memobj_fill(m, 1000) == NULL
+      && memobj_touched(m) == 2
+      && memobj_page(m, 699) == NULL
+      /* no region of nothing, and no run given a page at a time */
+      && memobj_create(0, false, true) == NULL
+      && memobj_create(4, true, true) == NULL;
+
+    memobj_unref(m);
+
+    if (pmm_free_pages() != free_before) {
+        kputs("\n   (free pages: ");
+        kputu(free_before);
+        kputs(" before, ");
+        kputu(pmm_free_pages());
+        kputs(" after)\n");
+        ok = false;
+    }
+
+    return ok;
 }
 
 /*
@@ -6286,7 +6341,7 @@ static bool test_a_regions_count_holds_on_every_core(void)
         return true;            /* one processor; nothing to race */
     }
 
-    counted = memobj_create(1, false);
+    counted = memobj_create(1, false, false);
 
     if (counted == NULL) {
         return false;
@@ -6618,7 +6673,7 @@ static bool test_one_core_at_a_time_splits_the_kernels_map(void)
  */
 static bool test_a_reference_is_taken_only_for_the_region_it_names(void)
 {
-    struct memobj *m = memobj_create(1, false);
+    struct memobj *m = memobj_create(1, false, false);
     unsigned g;
     bool right, wrong, gone;
 
@@ -9705,7 +9760,7 @@ static bool grow_processes_once(size_t *free_after)
             break;
         }
 
-        region = memobj_create(4, false);
+        region = memobj_create(4, false, false);
 
         if (region == NULL || ipc_install_memory(made[n]->thread, region) < 0) {
             ok = false;
@@ -9825,7 +9880,7 @@ static bool test_endpoints_and_regions_grow(void)
     peak_ep = ipc_endpoints_in_use();
 
     for (i = 0; i < GROWN_REGIONS; i++) {
-        regions[i] = memobj_create(1, false);
+        regions[i] = memobj_create(1, false, false);
         regions_made += (regions[i] != NULL);
     }
 
@@ -9885,7 +9940,7 @@ static void holds_many_caps(void *arg)
     (void)arg;
 
     for (i = 0; i < HELD_CAPS; i++) {
-        struct memobj *m = memobj_create(1, false);
+        struct memobj *m = memobj_create(1, false, false);
 
         mine[i] = (m != NULL) ? ipc_install_memory(self, m) : -1;
 
@@ -10434,6 +10489,7 @@ static const struct test tests[] = {
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
     { "mem: a region larger than the old cap",  test_a_region_larger_than_the_old_cap },
     { "mem: a region's count holds on every core", test_a_regions_count_holds_on_every_core },
+    { "mem: a region given on touch",          test_a_region_given_on_touch },
     { "mem: a reference is taken only for the region it names", test_a_reference_is_taken_only_for_the_region_it_names },
     { "proc: a refused image gives its slot back", test_a_refused_image_gives_its_slot_back },
     { "ipc: endpoints made at once are each their own", test_endpoints_made_at_once_are_each_their_own },

@@ -35,7 +35,7 @@ local OP_STATE, OP_READ, OP_KEYS, OP_STOP = 1, 2, 3, 4
 local RUNNING = 1
 local TEXT_MAX = 1536
 local REQUEST = "<I4I4I8c" .. TEXT_MAX
-local REPLY = "<I4I4i4I4I8I8I8I8I8I8I8I8c16" -- and the text after it
+local REPLY = "<I4I4i4I4I8I8I8I8I8I8I8I8I8c16" -- and the text after it
 local REPLY_HEAD = string.packsize(REPLY)
 
 -- The monitor's exit codes before its guest ran, as sentences (`vmm.c`).
@@ -161,12 +161,12 @@ local function ask(name, op, offset, text)
 
   if not reply or #reply < REPLY_HEAD then return nil, why end
 
-  local err, state, code, length, at, written, ram, up, guest, exits, net_in, net_out, called =
+  local err, state, code, length, at, written, ram, used, up, guest, exits, net_in, net_out, called =
     string.unpack(REPLY, reply)
 
   return { error = err, running = state == RUNNING, exit_code = code >= 0 and code or nil,
            text = reply:sub(REPLY_HEAD + 1, REPLY_HEAD + length), offset = at,
-           written = written, ram = ram, up_ticks = up, guest_ticks = guest,
+           written = written, ram = ram, ram_used = used, up_ticks = up, guest_ticks = guest,
            exits = exits, net_in = net_in, net_out = net_out, name = called:gsub("%z.*", "") }
 end
 
@@ -310,8 +310,10 @@ function sandboxes.start(s)
   if sandboxes.state(s.name) then return nil, s.name .. " is running already" end
   if not kernel then return nil, ("no image called %s - pkg install %s"):format(s.image, s.image) end
 
+  -- Its RAM given on touch: a page at a time as Linux or its monitor first
+  -- touches it, so a sandbox given 256 MB costs what it uses.
   local ram_bytes = s.memory * MB
-  local ram, window, setup = sys.memory(ram_bytes // 4096), sys.memory(64), sys.memory(1)
+  local ram, window, setup = sys.memory(ram_bytes // 4096, "on touch"), sys.memory(64), sys.memory(1)
 
   if not ram or not window or not setup then
     return nil, ("no room for %d MB of RAM"):format(s.memory)

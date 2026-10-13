@@ -1130,7 +1130,7 @@ struct process *process_spawn_image(struct process *parent,
         return NULL;
     }
 
-    copy = memobj_create(pages, false);
+    copy = memobj_create(pages, false, false);
 
     if (copy == NULL) {
         return NULL;
@@ -2227,10 +2227,12 @@ bool process_fill(struct process *p, uintptr_t va)
 
     image = page >= p->rw_va && page < p->rw_va + p->image_page_count * PAGE_SIZE;
 
+    /* Anywhere else, a region it mapped that is given on touch - a
+     * sandbox's memory, in its monitor (`sharemap_fill`) - or nothing. */
     if (!image
         && !(page >= USER_HEAP_VA && page < USER_HEAP_VA + USER_HEAP_PAGES * PAGE_SIZE)
         && !(page >= stack_bottom && page < USER_STACK_TOP)) {
-        return false;
+        return sharemap_fill(p, page);
     }
 
     flags = spin_lock(&p->fill_lock);

@@ -224,8 +224,15 @@ def main():
         said = do("sandbox start web", "\nkosmos> ", 240)
         check("sandbox: web started" in said, "the service would not start: %r" % said[-300:])
         said = do("sandbox list", "\nkosmos> ", 30)
-        check(re.search(r"\nweb\s+alpine\s+running\s+256 MB", said) is not None,
-              "sandbox list did not show web running: %r" % said[-400:])
+        listed = re.search(r"\nweb\s+alpine\s+running\s+(\d+) of 256 MB", said)
+        check(listed is not None, "sandbox list did not show web running: %r" % said[-400:])
+
+        # **Its RAM given on touch** (`MEM_ON_TOUCH`): of the 256 MB it was
+        # given, a running Alpine has touched a fraction - all 256 when the
+        # region was made whole at the start.
+        check(listed is not None and 0 < int(listed.group(1)) < 128,
+              "web's RAM was not given on touch - %s of 256 MB in use"
+              % (listed.group(1) if listed else "?"))
 
         at = len(guest.seen)
         guest.type("sandbox console web")

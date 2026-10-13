@@ -9204,9 +9204,13 @@ with Console, Stop, Restart and "..." (Every sandbox, Delete); the Given
 panel's rows as drawn; the New sheet as drawn - 128 MB, 512 MB, 1 GB, 2 GB,
 folders as chips from the Open window's folder mode with "+ Add a folder",
 ports as chips with "+ Port"; and **the Settings tab the same form, filled,
-with Save and Save and restart**. Left of the drawing: the Memory panel's
-graph, which wants the guest to say what it uses (virtio-balloon's
-statistics); more than one processor.
+with Save and Save and restart**. Left of the drawing: more than one
+processor. **The Memory panel's graph, built 0.11.211** (`testing.md`
+18.605) without the guest saying anything: a sandbox's RAM is given on
+touch (`MEM_ON_TOUCH`), so the pages behind it are what it uses - "84 of
+256 MB" on the card, the panel's graph, and `sandbox list` - and what it
+costs the machine. A high-water mark: Linux freeing memory does not give
+it back, which virtio-balloon's free page reporting would.
 
 **VNC's pointer lands off where it is pointed** - found on the M700, 13
 October 2026, driving the Sandboxes window: on its 1720 by 1440 screen a

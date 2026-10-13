@@ -25192,3 +25192,45 @@ looked at the first page, all `.bss`, and passed; not freeing the heap at
 exit failed it by exactly the four heap pages it touches. The gate: 84
 suites, `x86-network` failing once under load on a lookup and passing three
 times alone.
+
+## 18.605 A sandbox's memory, given on touch
+
+The second half of 18.604, for a sandbox. Its RAM was a region of 256 MB
+(or whatever it was given) allocated and zeroed when it started, so a shell
+sandbox doing nothing cost the machine all 256 MB. A region can now be made
+**given on touch** (`MEM_ON_TOUCH`, `sys.memory(pages, "on touch")`): its
+index starts empty and a zeroed page goes into a slot the first time
+anything touches it (`memobj_fill`), one page to everybody - which is what
+lets two sides share it:
+
+- **the monitor**, which maps the region to load the kernel and to read
+  and write virtio's rings: a fault in a mapped region given on touch is
+  answered by `sharemap_fill`, under the lock that taking a mapping down
+  holds, so a page never lands in a range on its way out;
+- **the guest**: an EPT violation on an entry that is not there at all
+  (basic reason 48, qualification bits 3-5 clear) or a stage-2 translation
+  fault (EC 0x20 or 0x24, fault status 4-7) is `arch_vcpu_missed`; if the
+  address is in a region given on touch, `vm_vcpu_run` fills it, puts it in
+  the second stage and goes straight back into the guest, without the
+  monitor hearing. The same page missed twice running goes to the monitor.
+
+`SYS_MEM_SIZE` with a second argument of 1 answers the pages behind a
+region, and the monitor's reply carries it as `ram_used`: the card says
+"84 of 256 MB", the Overview's Memory panel graphs it as the drawing has it
+("Memory · 38 of 256 MB", green), and `sandbox list` prints it. It is a
+high-water mark: memory Linux frees stays given.
+
+**Measured on the M700**: shell86 started with 84 of 256 MB in use and the
+machine's free memory fell by 87 MB, not 256; `dd` of 60 MB into its
+`/tmp` took it to 131, and the graph stepped with it. Alpine's `free -m`
+agrees with what it was doing throughout.
+
+**Tests.** `mem: a region given on touch` in both kernel suites: nothing
+behind a region of a thousand pages but its index; a page given zeroed, the
+same page on every later fill, two counted, nothing past the end, no region
+of nothing and no run given on touch, and every page back when it goes. A
+fill that never kept its page failed it. `arm-sandbox-linux` 26 -> 27:
+`sandbox list` shows web, running, with fewer than 128 of its 256 MB in
+use; made whole at the start it read "256 of 256 MB in use" and failed.
+The x86 path, EPT, is not in any suite - QEMU's TCG has no VT-x - and was
+seen on the M700.

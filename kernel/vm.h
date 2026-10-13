@@ -77,5 +77,8 @@ void  arch_guest_free(void *tables);
 void *arch_vcpu_new(void *tables, unsigned tag);
 void  arch_vcpu_free(void *state);
 long  arch_vcpu_run(void *state, struct vcpu_regs *io);
+/* Whether the exit in `io` is the second stage finding nothing at a guest
+ * address - its page, in `ipa` - rather than anything the monitor answers. */
+bool  arch_vcpu_missed(const struct vcpu_regs *io, uint64_t *ipa);
 
 #endif /* KERNEL_VM_H */

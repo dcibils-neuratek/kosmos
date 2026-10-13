@@ -1915,7 +1915,8 @@ void syscall_dispatch(struct syscall_frame *sc)
          * no business asking for a run and would sometimes fail if it did.
          */
         struct memobj *m = memobj_create((size_t)sc->arg[0],
-                                         (sc->arg[1] & MEM_CONTIGUOUS) != 0);
+                                         (sc->arg[1] & MEM_CONTIGUOUS) != 0,
+                                         (sc->arg[1] & MEM_ON_TOUCH) != 0);
 
         if (m == NULL) {
             result = SYS_ERR_NO_ROOM;
@@ -1987,10 +1988,13 @@ void syscall_dispatch(struct syscall_frame *sc)
 
         base = s->va;
 
+        /* Only the pages it has: a region given on touch is mapped a page
+         * at a time as this process touches it (`sharemap_fill`). */
         for (i = 0; i < m->pages; i++) {
-            if (as_map(p->space, base + i * PAGE_SIZE,
-                       virt_to_phys(memobj_page(m, i)),
-                       1, MAP_USER_RW) != AS_OK) {
+            if (memobj_page(m, i) != NULL
+                && as_map(p->space, base + i * PAGE_SIZE,
+                          virt_to_phys(memobj_page(m, i)),
+                          1, MAP_USER_RW) != AS_OK) {
                 break;
             }
         }
@@ -2301,7 +2305,10 @@ void syscall_dispatch(struct syscall_frame *sc)
         struct memobj *m = ipc_resolve_memory(thread_current(),
                                               (cap_t)sc->arg[0]);
 
-        result = (m == NULL) ? SYS_ERR_DENIED : (long)m->pages;
+        /* `arg[1]` 1: how many pages are behind it, which for a region
+         * given on touch is what it has cost so far (`memobj_touched`). */
+        result = (m == NULL) ? SYS_ERR_DENIED
+               : sc->arg[1] == 1 ? (long)memobj_touched(m) : (long)m->pages;
         break;
     }
 

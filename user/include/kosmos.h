@@ -653,7 +653,14 @@ static inline long kosmos_mem_map(long cap)
 
 static inline long kosmos_mem_size(long cap)
 {
-    return sys1(SYS_MEM_SIZE, cap);
+    return sys2(SYS_MEM_SIZE, cap, 0);
+}
+
+/* The pages behind a region: for one given on touch (`MEM_ON_TOUCH`), the
+ * pages touched so far; for any other, all of them. */
+static inline long kosmos_mem_touched(long cap)
+{
+    return sys2(SYS_MEM_SIZE, cap, 1);
 }
 
 /*

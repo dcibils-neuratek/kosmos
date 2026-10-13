@@ -70,6 +70,48 @@ void *memobj_page(const struct memobj *m, size_t i)
 }
 
 /*
+ * **The lock a first touch takes**, so two touches of one page - the
+ * monitor's and the guest's, on two cores - give it one page and not two.
+ * One for every region: a fill is an allocation and a page of zeroes, and
+ * two at once on different regions is not a case worth a lock each.
+ */
+static struct spinlock fill_lock = SPINLOCK("region fill");
+
+void *memobj_fill(struct memobj *m, size_t i)
+{
+    void **slot;
+    void *page;
+    unsigned long flags;
+
+    if (m == NULL || i >= m->pages) {
+        return NULL;
+    }
+
+    slot = &m->dir[i / MEMOBJ_PER_INDEX][i % MEMOBJ_PER_INDEX];
+
+    if ((page = __atomic_load_n(slot, __ATOMIC_ACQUIRE)) != NULL) {
+        return page;
+    }
+
+    flags = spin_lock(&fill_lock);
+
+    if ((page = *slot) == NULL && (page = pmm_alloc_page()) != NULL) {
+        /* Zeroed before anybody can see it, as every region is. */
+        memset(page, 0, PAGE_SIZE);
+        __atomic_store_n(slot, page, __ATOMIC_RELEASE);
+        m->touched++;
+    }
+
+    spin_unlock(&fill_lock, flags);
+    return page;
+}
+
+size_t memobj_touched(const struct memobj *m)
+{
+    return m == NULL ? 0 : m->on_touch ? m->touched : m->pages;
+}
+
+/*
  * Everything a half-built region has taken, given back, and the slot with
  * it. Called only from `memobj_create`, which claims the slot before it
  * starts - so releasing it is this function's job and not the caller's.
@@ -79,7 +121,9 @@ static void unwind(struct memobj *m, size_t built)
     size_t i;
 
     for (i = 0; i < built; i++) {
-        pmm_free_page(memobj_page(m, i));
+        if (memobj_page(m, i) != NULL) {
+            pmm_free_page(memobj_page(m, i));
+        }
     }
 
     for (i = 0; i < m->indexes; i++) {
@@ -95,6 +139,8 @@ static void unwind(struct memobj *m, size_t built)
     m->indexes = 0;
     m->pages = 0;
     m->contiguous = false;
+    m->on_touch = false;
+    m->touched = 0;
     release(m);
 }
 
@@ -124,7 +170,7 @@ static void release(struct memobj *m)
     spin_unlock(&objects_lock, flags);
 }
 
-struct memobj *memobj_create(size_t pages, bool contiguous)
+struct memobj *memobj_create(size_t pages, bool contiguous, bool on_touch)
 {
     unsigned i;
 
@@ -134,7 +180,11 @@ struct memobj *memobj_create(size_t pages, bool contiguous)
 
     /* The pages themselves and the index pages above them, against the
      * reserve the kernel keeps for its own allocations (`pmm.c`). */
-    if (!pmm_room_for_user(pages + pages / MEMOBJ_PER_INDEX + 2)) {
+    if (contiguous && on_touch) {
+        return NULL;                    /* a run is had at once or not at all */
+    }
+
+    if (!pmm_room_for_user((on_touch ? 0 : pages) + pages / MEMOBJ_PER_INDEX + 2)) {
         return NULL;
     }
 
@@ -170,6 +220,8 @@ again:
         m->pages = pages;
         m->indexes = 0;
         m->contiguous = false;
+        m->on_touch = false;
+        m->touched = 0;
         m->dir = pmm_alloc_page();      /* the page of index pages */
 
         if (m->dir == NULL) {
@@ -188,6 +240,19 @@ again:
             }
 
             m->indexes = k + 1;
+
+            /* Empty slots read NULL, which a region given on touch relies
+             * on and every other kind fills straight over. */
+            memset(m->dir[k], 0, PAGE_SIZE);
+        }
+
+        /* **Given on touch**: the index is all there is until somebody
+         * touches a page (`memobj_fill`). */
+        if (on_touch) {
+            m->on_touch = true;
+            m->refs = 1;
+
+            return m;
         }
 
         /*
@@ -385,7 +450,9 @@ void memobj_unref(struct memobj *m)
         size_t i;
 
         for (i = 0; i < m->pages; i++) {
-            pmm_free_page(memobj_page(m, i));
+            if (memobj_page(m, i) != NULL) {      /* given on touch, or not */
+                pmm_free_page(memobj_page(m, i));
+            }
         }
     }
 

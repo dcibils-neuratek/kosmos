@@ -314,6 +314,7 @@ static void answer(const struct vmm_request *req, struct vmm_reply *rep)
     rep->state = ended ? VMM_ENDED : VMM_RUNNING;
     rep->exit_code = exit_code;
     rep->ram_bytes = vmm_cfg.ram_bytes;
+    rep->ram_used = (uint64_t)kosmos_mem_touched(guest_ram) * 4096u;
     rep->up_counter_ticks = kosmos_ticks() - started;
     rep->guest_counter_ticks = vmm_guest_ticks;
     rep->exits = vmm_exits;

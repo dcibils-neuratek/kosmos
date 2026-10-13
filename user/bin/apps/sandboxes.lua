@@ -143,8 +143,13 @@ local function refresh(full)
 
       busy[s.name] = sandboxes.busy(was, s.now)
       before[s.name] = s.now
-      history[s.name] = history[s.name] or { cpu = {}, net = {} }
+      history[s.name] = history[s.name] or { cpu = {}, net = {}, mem = {} }
       ui.history.push(history[s.name].cpu, { math.floor(busy[s.name] * 100 + 0.5) }, 60)
+
+      -- Its memory in use, as a share of what it was given: given on touch,
+      -- so what the guest has touched is what it costs.
+      ui.history.push(history[s.name].mem, { s.now.ram > 0
+        and math.floor((s.now.ram_used or 0) * 100 / s.now.ram + 0.5) or 0 }, 60)
 
       -- Its network, in bytes a second each way, over the time between asks.
       if was and s.now.up_ticks > was.up_ticks then
@@ -606,8 +611,8 @@ local function draw_card(g, s, x, y, w)
   pill(g, x + w - 18, y + 22, p[1], p[2])
 
   -- Processors and memory, as used now: the guest's share of the time its
-  -- monitor has run, and the memory it was given (what it *uses* needs the
-  -- guest to say, which is later).
+  -- monitor has run, and how much of the memory it was given it has
+  -- touched - which, given on touch, is what it costs.
   local my, half = y + 70, (w - 36 - 20) // 2
   local cpu = busy[s.name]
 
@@ -617,11 +622,12 @@ local function draw_card(g, s, x, y, w)
   bar(g, ix, my + 20, half, cpu or 0, BLUE)
 
   local mx = ix + half + 20
-  local mem_text = s.now and ("%d MB given"):format(s.now.ram // MB) or ("%d MB"):format(s.memory)
+  local mem_text = s.now and ("%d of %d MB"):format((s.now.ram_used or 0) // MB, s.now.ram // MB)
+                   or ("%d MB"):format(s.memory)
 
   g:text(mx, my, "Memory", theme.text_dim, nil, "label")
   g:text(mx + half - gfx.measure(mem_text, "label"), my, mem_text, theme.text, nil, "label")
-  bar(g, mx, my + 20, half, s.now and machine.ram > 0 and s.now.ram / machine.ram or 0, BLUE)
+  bar(g, mx, my + 20, half, s.now and s.now.ram > 0 and (s.now.ram_used or 0) / s.now.ram or 0, BLUE)
 
   -- What it was given.
   local cx = ix
@@ -880,10 +886,11 @@ function detail:draw(g)
     ui.history.draw(g, 34, top_y + 34, lw - 28, gh - 46, (history[s.name] or {}).cpu or {},
                     { colours = { BLUE } })
 
-    panel(g, 20, top_y + gh + 12, lw, gh, ("Memory \u{b7} %d MB given"):format(
-          s.now and s.now.ram // MB or s.memory))
-    g:text(34, top_y + gh + 46, "What the guest uses needs the guest to say - later.",
-           theme.text_dim, nil, "label")
+    panel(g, 20, top_y + gh + 12, lw, gh, s.now
+          and ("Memory \u{b7} %d of %d MB"):format((s.now.ram_used or 0) // MB, s.now.ram // MB)
+          or ("Memory \u{b7} %d MB"):format(s.memory))
+    ui.history.draw(g, 34, top_y + gh + 46, lw - 28, gh - 58, (history[s.name] or {}).mem or {},
+                    { colours = { GREEN } })
 
     local net = (history[s.name] or {}).net or {}
     local last = net[#net]

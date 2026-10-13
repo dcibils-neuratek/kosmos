@@ -848,3 +848,21 @@ long arch_vcpu_run(void *state, struct vcpu_regs *io)
     cpu_interrupts_restore(flags);
     return (long)io->exit;
 }
+
+/*
+ * **An EPT violation on a page with no entry at all** - basic reason 48,
+ * and the qualification's bits 3 to 5, what the entry allowed, all clear -
+ * is a guest touching memory nothing is behind yet: a region given on
+ * touch (`vm.c`, `fill_guest`). With any of them set the entry is there and
+ * refused the access, which is the monitor's to answer, as MMIO is.
+ */
+bool arch_vcpu_missed(const struct vcpu_regs *io, uint64_t *ipa)
+{
+    if (io->exit != VCPU_EXIT_TRAP || (io->reason & 0xffff) != 48
+        || (io->qualification & 0x38) != 0) {
+        return false;
+    }
+
+    *ipa = io->gpa & ~(uint64_t)(PAGE_SIZE - 1);
+    return true;
+}

@@ -154,6 +154,7 @@ struct vmm_reply {
     uint64_t offset;                    /* where `text` begins */
     uint64_t written;                   /* all its console has ever said */
     uint64_t ram_bytes;
+    uint64_t ram_used;                  /* of those, pages behind them: what it has touched */
     uint64_t up_counter_ticks;          /* since it started */
     uint64_t guest_counter_ticks;       /* of those, in the guest */
     uint64_t exits;

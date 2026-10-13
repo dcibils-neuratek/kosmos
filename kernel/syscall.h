@@ -193,6 +193,9 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 /* Flags for SYS_MEM_CREATE's second argument. Zero is the old behaviour and
  * what every caller but a driver wants. */
 #define MEM_CONTIGUOUS  1u
+/* Pages given as they are first touched, by a process mapping the region
+ * or a guest holding it, rather than all at once: a sandbox's memory. */
+#define MEM_ON_TOUCH    2u
 #define SYS_SCHED_SET  33   /* (what, value)          -> 0 or error         */
 
 /*

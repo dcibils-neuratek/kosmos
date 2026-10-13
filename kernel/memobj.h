@@ -136,6 +136,17 @@ struct memobj {
      * three pages it owns and the rest of somebody's heap.
      */
     bool     contiguous;
+
+    /*
+     * **Or given a page at a time, as it is first touched** (`MEM_ON_TOUCH`):
+     * the index starts empty, and `memobj_fill` puts a zeroed page in a slot
+     * the first time a process or a guest that maps the region touches it.
+     * A sandbox's memory is the case: a guest given 256 MB uses what Linux
+     * touches, which idle is a fraction of it. `touched` is how many pages
+     * are behind it, which is also what it costs.
+     */
+    bool     on_touch;
+    size_t   touched;
 };
 
 /*
@@ -159,7 +170,7 @@ void memobj_init(void);
  * while the pages exist - and is worth it only because a ring is a handful
  * of pages where a window's double buffer was nine hundred.
  */
-struct memobj *memobj_create(size_t pages, bool contiguous);
+struct memobj *memobj_create(size_t pages, bool contiguous, bool on_touch);
 
 /*
  * Page `i` of the region, or NULL if there is no such page.
@@ -169,6 +180,16 @@ struct memobj *memobj_create(size_t pages, bool contiguous);
  * what changed when regions stopped being contiguous.
  */
 void *memobj_page(const struct memobj *m, size_t i);
+
+/*
+ * Page `i`, given now if it was not: the page a first touch is answered
+ * with, the same one to everybody who maps the region. NULL past the end,
+ * or when there is no page to give.
+ */
+void *memobj_fill(struct memobj *m, size_t i);
+
+/* The pages behind a region: all of them, unless it is given on touch. */
+size_t memobj_touched(const struct memobj *m);
 
 /* Reference counting. A region's pages go back when the last capability to
  * it does. */

@@ -167,13 +167,16 @@ if verb == "list" or verb == nil then
     return
   end
 
-  print(("%-14s %-10s %-9s %-9s %s"):format("NAME", "IMAGE", "STATE", "MEMORY", "COMMAND"))
+  print(("%-14s %-10s %-9s %-16s %s"):format("NAME", "IMAGE", "STATE", "MEMORY", "COMMAND"))
 
   for _, s in ipairs(all) do
     local state = s.now and (s.now.running and "running" or "ended") or "stopped"
 
-    print(("%-14s %-10s %-9s %-9s %s"):format(s.name, s.task and "-" or s.image, state,
-          s.now and megabytes(s.now.ram) or ("%d MB"):format(s.memory),
+    -- Running, what it uses of what it was given: its RAM is given on
+    -- touch, so the first is what it costs.
+    print(("%-14s %-10s %-9s %-16s %s"):format(s.name, s.task and "-" or s.image, state,
+          s.now and ("%d of %s"):format((s.now.ram_used or 0) // (1024 * 1024), megabytes(s.now.ram))
+                 or ("%d MB"):format(s.memory),
           s.task and "(a task)" or (s.command ~= "" and s.command or "a shell")))
   end
 

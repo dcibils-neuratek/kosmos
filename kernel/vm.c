@@ -25,10 +25,20 @@
 #include "syscall.h"
 #include "thread.h"
 
-/* The regions one guest can hold: a page of pointers. A guest maps a
- * handful - its RAM, a ring or two - so a page is room to spare, and the
- * refusal past it is a sentence rather than a wall nobody will reach. */
-#define GUEST_MAPS_MAX  (PAGE_SIZE / sizeof(struct memobj *))
+/*
+ * A region a guest holds, and where in the guest's memory it begins - the
+ * second so a page of a region given on touch can be put where the guest
+ * touched it (`fill_guest`).
+ */
+struct guest_map {
+    struct memobj *region;
+    uint64_t       ipa;
+};
+
+/* The regions one guest can hold: a page of them. A guest maps a handful -
+ * its RAM, a ring or two - so a page is room to spare, and the refusal
+ * past it is a sentence rather than a wall nobody will reach. */
+#define GUEST_MAPS_MAX  (PAGE_SIZE / sizeof(struct guest_map))
 
 struct guest {
     bool             in_use;
@@ -36,7 +46,7 @@ struct guest {
     struct process  *owner;
     unsigned         tag;               /* its VMID */
     void            *tables;            /* the architecture's second stage */
-    struct memobj  **maps;              /* the regions it holds */
+    struct guest_map *maps;             /* the regions it holds */
     unsigned         nmaps;
 };
 
@@ -233,6 +243,7 @@ long vm_guest_map(struct thread *t, long guest, long region, uint64_t ipa)
 {
     struct guest *g = guest_of(t, guest);
     struct memobj *m;
+    unsigned long flags;
     size_t i;
 
     if (g == NULL) {
@@ -251,18 +262,74 @@ long vm_guest_map(struct thread *t, long guest, long region, uint64_t ipa)
         return SYS_ERR_DENIED;
     }
 
+    /*
+     * Held first, so a page the guest touches while the rest go in finds
+     * its region (`fill_guest`). What is mapped stays mapped, and held,
+     * even when a page will not go in: the guest's tables are the guest's,
+     * and the region goes with it.
+     */
+    flags = spin_lock(&vm_lock);
+    g->maps[g->nmaps].region = m;
+    g->maps[g->nmaps].ipa = ipa;
+    g->nmaps++;
+    spin_unlock(&vm_lock, flags);
+
+    /*
+     * Only the pages it has: one given on touch is put in a page at a time,
+     * as the guest touches it. A page at a time under the lock `fill_guest`
+     * takes, so the two never build one table at once - and never the
+     * whole of a large region with interrupts masked.
+     */
     for (i = 0; i < m->pages; i++) {
-        if (!arch_guest_map(g->tables, ipa + i * PAGE_SIZE,
-                            virt_to_phys(memobj_page(m, i)))) {
-            /* What was mapped stays mapped, and held: the guest's tables
-             * are the guest's, and the region goes with it. */
-            g->maps[g->nmaps++] = m;
+        bool ok = true;
+
+        flags = spin_lock(&vm_lock);
+
+        if (memobj_page(m, i) != NULL) {
+            ok = arch_guest_map(g->tables, ipa + i * PAGE_SIZE,
+                                virt_to_phys(memobj_page(m, i)));
+        }
+
+        spin_unlock(&vm_lock, flags);
+
+        if (!ok) {
             return SYS_ERR_NO_ROOM;
         }
     }
 
-    g->maps[g->nmaps++] = m;
     return 0;
+}
+
+/*
+ * **A guest's first touch of a page given on touch**: the page of whichever
+ * region it holds at `ipa`, from the region - so the guest sees what its
+ * monitor already wrote there, or a new zeroed page the monitor will see -
+ * put into the guest's second stage. False when `ipa` is in no such region,
+ * and the exit goes to the monitor as before.
+ *
+ * Under `vm_lock`, so the list of regions is read whole and two vCPUs of
+ * one guest do not build the same table at once.
+ */
+static bool fill_guest(struct guest *g, uint64_t ipa)
+{
+    bool ok = false;
+    unsigned k;
+    unsigned long flags = spin_lock(&vm_lock);
+
+    for (k = 0; k < g->nmaps; k++) {
+        struct memobj *m = g->maps[k].region;
+        uint64_t at = g->maps[k].ipa;
+
+        if (m->on_touch && ipa >= at && ipa < at + m->pages * PAGE_SIZE) {
+            void *page = memobj_fill(m, (size_t)((ipa - at) / PAGE_SIZE));
+
+            ok = page != NULL && arch_guest_map(g->tables, ipa, virt_to_phys(page));
+            break;
+        }
+    }
+
+    spin_unlock(&vm_lock, flags);
+    return ok;
 }
 
 long vm_vcpu_create(struct thread *t, long guest)
@@ -338,7 +405,28 @@ long vm_vcpu_run(struct thread *t, long vcpu, uintptr_t regs)
     spin_unlock(&vm_lock, flags);
 
     io = *(const struct vcpu_regs *)regs;
-    why = arch_vcpu_run(v->state, &io);
+
+    /*
+     * **And in again at once after a first touch**, which is not the
+     * monitor's business: the guest touched a page of memory given on
+     * touch, the page is given (`fill_guest`), and the instruction runs
+     * again. The same page missed twice running is something else - the
+     * monitor hears it.
+     */
+    {
+        uint64_t ipa, last = ~(uint64_t)0;
+
+        for (;;) {
+            why = arch_vcpu_run(v->state, &io);
+
+            if (!arch_vcpu_missed(&io, &ipa) || ipa == last || !fill_guest(v->guest, ipa)) {
+                break;
+            }
+
+            last = ipa;
+        }
+    }
+
     *(struct vcpu_regs *)regs = io;
 
     flags = spin_lock(&vm_lock);
@@ -388,7 +476,7 @@ void vm_release_owned_by(struct process *p)
         arch_guest_free(g->tables);
 
         for (k = 0; k < g->nmaps; k++) {
-            memobj_unref(g->maps[k]);
+            memobj_unref(g->maps[k].region);
         }
 
         pmm_free_page(g->maps);

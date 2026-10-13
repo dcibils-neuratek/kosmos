@@ -177,6 +177,45 @@ bool sharemap_take(struct process *p, uintptr_t va, size_t pages,
     return true;
 }
 
+/*
+ * **A first touch in a region given on touch** (`MEM_ON_TOUCH`): the page
+ * of it at `va`, from the region - so the process sees the page the guest
+ * or another process already filled, or a new one everybody will see -
+ * mapped here. False when `va` is in no such mapping.
+ *
+ * Under `maps_lock` from the lookup to the mapping, which is what makes it
+ * safe: `sharemap_take` takes a mapping off the list under the same lock
+ * before it is unmapped, so a page is never mapped into a range that is
+ * on its way out, holding a page of a region about to be freed.
+ */
+bool sharemap_fill(struct process *p, uintptr_t va)
+{
+    struct sharemap *s;
+    uintptr_t page = va & ~(uintptr_t)(PAGE_SIZE - 1);
+    bool ok = false;
+    unsigned long flags = spin_lock(&maps_lock);
+
+    for (s = p->shares; s != NULL && s->va <= page; s = s->next) {
+        if (page < s->va + s->pages * PAGE_SIZE) {
+            break;
+        }
+    }
+
+    if (s != NULL && s->va <= page && s->ready
+        && s->region != NULL && s->region->on_touch) {
+        void *mem;
+
+        if (as_page_phys(p->space, page) != 0) {
+            ok = true;                  /* another thread of it, just now */
+        } else if ((mem = memobj_fill(s->region, (page - s->va) / PAGE_SIZE)) != NULL) {
+            ok = as_map(p->space, page, virt_to_phys(mem), 1, MAP_USER_RW) == AS_OK;
+        }
+    }
+
+    spin_unlock(&maps_lock, flags);
+    return ok;
+}
+
 void sharemap_release_all(struct process *p)
 {
     struct sharemap *s;

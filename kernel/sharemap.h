@@ -74,6 +74,10 @@ bool sharemap_take(struct process *p, uintptr_t va, size_t pages,
                    struct memobj **region);
 
 /* Every mapping a process has, let go of - after its address space is. */
+/* A first touch in a mapped region given on touch, answered: true when
+ * `va` was in one and has its page now. */
+bool sharemap_fill(struct process *p, uintptr_t va);
+
 void sharemap_release_all(struct process *p);
 
 /* Records in use, across every process. */

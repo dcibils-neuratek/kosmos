@@ -331,3 +331,25 @@ long arch_vcpu_run(void *state, struct vcpu_regs *io)
     io->ipa = (v->hpfar >> 4) << 12;
     return (long)io->exit;
 }
+
+/*
+ * **A stage-2 translation fault** - a data or instruction abort from the
+ * guest (EC 0x24, 0x20) whose fault status is a translation fault at any
+ * level (0x04 to 0x07) - is a guest touching memory nothing is behind yet:
+ * a region given on touch (`vm.c`, `fill_guest`). HPFAR_EL2 gives the
+ * page, also when the guest was walking its own tables (S1PTW). Anything
+ * else - a permission fault, an access with no IPA - is the monitor's.
+ */
+bool arch_vcpu_missed(const struct vcpu_regs *io, uint64_t *ipa)
+{
+    unsigned ec = (unsigned)(io->syndrome >> 26) & 0x3f;
+    unsigned fsc = (unsigned)io->syndrome & 0x3f;
+
+    if (io->exit != VCPU_EXIT_TRAP || (ec != 0x24 && ec != 0x20)
+        || fsc < 0x04 || fsc > 0x07) {
+        return false;
+    }
+
+    *ipa = io->ipa & ~(uint64_t)(PAGE_SIZE - 1);
+    return true;
+}
