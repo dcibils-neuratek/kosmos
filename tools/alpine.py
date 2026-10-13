@@ -2,7 +2,8 @@
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """Alpine Linux for a sandbox: its kernel, unwrapped, from a pinned release.
 
-    python3 tools/alpine.py build/sandboxes/alpine
+    python3 tools/alpine.py build/sandboxes/alpine                  aarch64
+    python3 tools/alpine.py --arch x86_64 build/sandboxes/alpine-x86_64
 
 `docs/virtualization.md` V3 - Diego, 12 October 2026: "the initial goal for
 sandboxes is to run a linux distro like alpine". Alpine 3.24.2 for aarch64,
@@ -15,6 +16,13 @@ for it (`latest-releases.yaml`) before anything is read out of it:
     and size at 8). Unwrapped here, so a sandbox loads a plain Image and its
     monitor needs no decompressor;
   * the minirootfs, Alpine's userland - for the initramfs, V3c.
+
+**And for x86-64** (`docs/sandboxes.md` X2, X3; 13 October), the same
+release for a PC: its `vmlinuz-virt` is a bzImage, which a sandbox's
+monitor boots as it is (`x86dev.c`), so nothing is unwrapped; `/init` is the
+same but for its console, the 16550's `ttyS0`; and `virtio_mmio` is built
+into that kernel rather than a module. The sums are Alpine's, from its
+`latest-releases.yaml` for x86_64, read 13 October.
 
 Fetched into `build/downloads/alpine` once and kept; written to the folder
 given as `Image` and `initramfs` - the minirootfs as a newc archive with an
@@ -32,12 +40,32 @@ import zlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOWNLOADS = os.path.join(ROOT, "build", "downloads", "alpine")
-MIRROR = "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/"
+RELEASES = {
+    "aarch64": {
+        "netboot": ("alpine-netboot-3.24.2-aarch64.tar.gz",
+                    "124087f5df9ac698bb4e942d603eaae96721e451cdc4706c71a5e42ff863b589"),
+        "minirootfs": ("alpine-minirootfs-3.24.2-aarch64.tar.gz",
+                       "9bf70a7f18ea44094cbb5f70c58f9af129c8214745743db0e68e5502cc2ce773"),
+        "console": "ttyAMA0",
+    },
+    "x86_64": {
+        "netboot": ("alpine-netboot-3.24.2-x86_64.tar.gz",
+                    "bbdd643360fac384a7933d8bebc7132eb720002e58d1321edcde4a5a3c3b83c6"),
+        "minirootfs": ("alpine-minirootfs-3.24.2-x86_64.tar.gz",
+                       "c5ca053cfe1d85c5b96dff8b9bc57045f7f184a30ffb6b65776409ca90388677"),
+        "console": "ttyS0",
+    },
+}
 
-NETBOOT = ("alpine-netboot-3.24.2-aarch64.tar.gz",
-           "124087f5df9ac698bb4e942d603eaae96721e451cdc4706c71a5e42ff863b589")
-MINIROOTFS = ("alpine-minirootfs-3.24.2-aarch64.tar.gz",
-              "9bf70a7f18ea44094cbb5f70c58f9af129c8214745743db0e68e5502cc2ce773")
+ARCH = "aarch64"
+
+
+def mirror():
+    return "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/%s/" % ARCH
+
+
+def release(what):
+    return RELEASES[ARCH][what]
 
 
 def fetched(name, sha):
@@ -47,7 +75,7 @@ def fetched(name, sha):
     if not os.path.exists(path):
         os.makedirs(DOWNLOADS, exist_ok=True)
         print("alpine: fetching %s" % name, flush=True)
-        urllib.request.urlretrieve(MIRROR + name, path + ".part")
+        urllib.request.urlretrieve(mirror() + name, path + ".part")
         os.replace(path + ".part", path)
 
     h = hashlib.sha256()
@@ -64,9 +92,16 @@ def fetched(name, sha):
 
 
 def kernel():
-    """The arm64 Image inside the netboot tarball's zboot `vmlinuz-virt`."""
-    with tarfile.open(fetched(*NETBOOT)) as t:
+    """The arm64 Image inside the netboot tarball's zboot `vmlinuz-virt` -
+    or, for x86-64, the bzImage itself."""
+    with tarfile.open(fetched(*release("netboot"))) as t:
         zboot = t.extractfile("boot/vmlinuz-virt").read()
+
+    if ARCH == "x86_64":
+        if zboot[0x202:0x206] != b"HdrS" or not (zboot[0x236] & 1):
+            raise SystemExit("alpine: vmlinuz-virt is not a bzImage with a 64-bit entry")
+
+        return zboot
 
     if zboot[0:2] != b"MZ" or zboot[4:8] != b"zimg" or zboot[24:28] != b"gzip":
         raise SystemExit("alpine: vmlinuz-virt is not a gzip zboot image")
@@ -101,7 +136,7 @@ unhex() { echo "$1" | awk '{ h = "0123456789abcdef"
     for (i = 1; i < length($0); i += 2)
         printf "%c", (index(h, substr($0, i, 1)) - 1) * 16 + index(h, substr($0, i + 1, 1)) - 1 }'; }
 # The transport its folders and its network both stand on.
-if grep -q "kosmos.share\\|kosmos.net" /proc/cmdline; then
+if grep -q "kosmos.share\\|kosmos.net" /proc/cmdline && [ -f /kosmos/modules/virtio_mmio.ko ]; then
     insmod /kosmos/modules/virtio_mmio.ko
 fi
 # Its network, when it was given one: virtio-net, and the monitor's gateway
@@ -129,12 +164,12 @@ run=$(arg kosmos.run)
 if [ -z "$run" ]; then
     echo "alpine: Alpine Linux $(cat /etc/alpine-release), $(uname -sr), in a Kosmos sandbox"
     echo "alpine: $(grep -c ^processor /proc/cpuinfo) processor, $(awk '/MemTotal/ {print $2}' /proc/meminfo) kB"
-    sh -c 'exec setsid -c sh -l <>/dev/ttyAMA0 >&0 2>&0'
+    sh -c 'exec setsid -c sh -l <>/dev/@CONSOLE@ >&0 2>&0'
     exec poweroff -f
 fi
 command=$(unhex "$run")
 cd /root
-sh -c "$command" <>/dev/ttyAMA0 >&0 2>&0
+sh -c "$command" <>/dev/@CONSOLE@ >&0 2>&0
 code=$?
 echo "$(arg kosmos.end) $code"
 exec poweroff -f
@@ -157,11 +192,12 @@ def modules():
     a gzip of a newc archive."""
     import gzip
 
-    with tarfile.open(fetched(*NETBOOT)) as t:
+    with tarfile.open(fetched(*release("netboot"))) as t:
         archive = gzip.decompress(t.extractfile("boot/initramfs-virt").read())
 
     found, i = {}, 0
-    wanted = {"usr/lib/modules/%s/%s" % (KERNEL_VERSION, m): m.rsplit("/", 1)[1] for m in MODULES}
+    wanted = {"usr/lib/modules/%s/%s" % (KERNEL_VERSION, m): m.rsplit("/", 1)[1] for m in MODULES
+              if not (ARCH == "x86_64" and m.endswith("virtio_mmio.ko"))}
 
     while archive[i:i + 6] == b"070701":
         namesize = int(archive[i + 94:i + 102], 16)
@@ -209,7 +245,7 @@ def initramfs():
     minirootfs has none, and `/dev` is devtmpfs's."""
     parts, ino, files = [], 1, {}
 
-    with tarfile.open(fetched(*MINIROOTFS)) as t:
+    with tarfile.open(fetched(*release("minirootfs"))) as t:
         for m in t.getmembers():
             name = m.name.lstrip("./")
 
@@ -235,7 +271,8 @@ def initramfs():
 
             ino += 1
 
-    parts.append(newc("init", 0o100755, INIT, ino=ino))
+    parts.append(newc("init", 0o100755, INIT.replace(b"@CONSOLE@", release("console").encode()),
+                      ino=ino))
 
     # In a folder of their own: Alpine's `/lib` is a link to `usr/lib`,
     # which the kernel's unpacker does not follow - archived under it, they
@@ -257,7 +294,19 @@ def initramfs():
 
 
 def main():
-    named = [a for a in sys.argv[1:] if not a.startswith("--")]
+    global ARCH
+
+    args = sys.argv[1:]
+
+    if "--arch" in args:
+        at = args.index("--arch")
+        ARCH = args[at + 1] if at + 1 < len(args) else ""
+        del args[at:at + 2]
+
+    if ARCH not in RELEASES:
+        raise SystemExit("alpine: --arch is aarch64 or x86_64")
+
+    named = [a for a in args if not a.startswith("--")]
     out = named[0] if named else os.path.join(ROOT, "build", "sandboxes", "alpine")
     os.makedirs(out, exist_ok=True)
     image = kernel()
@@ -270,8 +319,8 @@ def main():
     with open(os.path.join(out, "initramfs"), "wb") as f:
         f.write(archive)
 
-    print("alpine: Image, %d bytes, and initramfs, %d bytes - Alpine 3.24.2, in %s"
-          % (len(image), len(archive), out))
+    print("alpine: Image, %d bytes, and initramfs, %d bytes - Alpine 3.24.2 for %s, in %s"
+          % (len(image), len(archive), ARCH, out))
 
 
 if __name__ == "__main__":

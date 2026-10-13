@@ -316,7 +316,7 @@ function side:draw(g)
   -- What the processor and its firmware allow (`sysinfo.virt`, probed at
   -- boot): on a PC, whether VT-x is there and what its setup decided.
   local virt = machine.guests and machine.virt == 4 and "Virtualization: EL2, a guest a core"
-               or machine.guests and "Virtualization: VT-x. Kosmos enters a guest; Linux in one is the next step"
+               or machine.guests and "Virtualization: VT-x, a guest a core"
                or ({ [1] = "VT-x is off in this machine's setup: turn on Intel Virtualization Technology",
                      [2] = "VT-x is on and this processor lacks what Kosmos needs of it (EPT)",
                      [3] = "VT-x is here and not locked; Kosmos does not drive it yet" })[machine.virt]

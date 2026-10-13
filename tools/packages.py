@@ -53,7 +53,7 @@ OUT = os.path.join(ROOT, "build", "packages")
 # find images.
 ALPINE = {
     "name": "alpine", "title": "Alpine Linux", "kind": "sandbox",
-    "about": "Alpine Linux 3.24.2 for a sandbox: Linux 6.18 and Alpine's userland",
+    "about": "Alpine Linux 3.24.2 for a sandbox on a PC: Linux 6.18 and Alpine's userland",
     "icon": "", "needs": "", "depends": "",
 }
 
@@ -180,9 +180,10 @@ def main():
            for p in I.developer("x86_64")]
     made.append(make(dict(common, into="/Home/Developer", **DEVELOPER), "Developer", dev))
 
-    alpine = os.path.join(ROOT, "build", "sandboxes", "alpine")
-    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "alpine.py"), alpine], check=True,
-                   stdout=subprocess.DEVNULL)
+    # For a PC, as every package here is: the M700 runs it (`docs/sandboxes.md` X3).
+    alpine = os.path.join(ROOT, "build", "sandboxes", "alpine-x86_64")
+    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "alpine.py"), "--arch", "x86_64",
+                    alpine], check=True, stdout=subprocess.DEVNULL)
     made.append(make(dict(common, into="/Home/Sandboxes/Images/alpine", **ALPINE), "alpine",
                      [(os.path.join(alpine, f), f) for f in ("Image", "initramfs")]))
 

@@ -122,8 +122,10 @@ if verb == "run" then
     local code, up, took, last = sandboxes.run(image, command, memory, say, options.shares,
                                                      options.network, options.ports)
 
-    if code == nil and up == nil then
-      print("sandbox: " .. tostring(took or "it would not start"))
+    -- Refused before it started: `sandboxes.run` answers nil and why - a
+    -- folder outside /Home, a name in use - and the why is its second value.
+    if code == nil and type(up) ~= "number" then
+      print("sandbox: " .. tostring(up or took or "it would not start"))
       sys.exit(1)
     end
 

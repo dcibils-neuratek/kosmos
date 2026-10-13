@@ -165,6 +165,62 @@ class Suite:
 
     # ---- real hardware ----
 
+    def sandboxes(self):
+        """**A sandbox on VT-x** (`docs/sandboxes.md` X1-X3), which only a PC
+        can try: the kernel's own guest, then Alpine x86-64 - a task's exit
+        code, a folder, the network out, and a port carried in and answered
+        from this Mac. Alpine is installed as a package first."""
+        out = self.m.run("log vm:")
+        self.check("vm: VT-x, locked on by the firmware" in out,
+                   "the kernel did not find VT-x on: " + out.strip()[-120:])
+        self.m.run("install alpine")
+        self.m.run("mkdir /Home/Temporary")
+        self.m.run("mkdir /Home/Temporary/m700")
+        out, _ = self.test("a sandbox's task", "sandbox run alpine -- echo $((6*7)); uname -m; exit 3")
+        self.check("\n42\n" in "\n" + out and "x86_64" in out and "exited 3" in out,
+                   "Alpine x86-64 did not run a task and say its exit code: " + out.strip()[-200:])
+        self.check("Power off not available" not in out, "Linux's halt line reached the console")
+        boot = number(r"up in (\d+\.\d+) s", out)
+
+        if boot is not None:
+            self.note("sandbox boot s", boot)
+
+        self.m.put('printf "HTTP/1.0 200 OK\\r\\n\\r\\nfrom a sandbox\\n"\n',
+                   "/Home/Temporary/m700/serve.sh")
+        out, _ = self.test("a sandbox's folder", "sandbox run alpine --share /Home/Temporary/m700:/srv:ro -- "
+                                                 "cat /srv/serve.sh")
+        self.check("from a sandbox" in out, "a folder shared read only was not read: " + out.strip()[-200:])
+        out, _ = self.test("a sandbox's network", "sandbox run alpine --network -- "
+                                                  "wget -qO- http://example.com | head -c 40")
+        self.check("<!doctype html>" in out.lower() and "exited 0" in out,
+                   "a sandbox did not fetch a page through Kosmos: " + out.strip()[-200:])
+
+        got = {}
+
+        def fetch():
+            import urllib.request
+
+            for _ in range(10):
+                time.sleep(2)
+
+                try:
+                    got["page"] = urllib.request.urlopen("http://%s:8081/" % self.m.host, timeout=3).read()
+                    return
+                except OSError:
+                    continue
+
+        import threading
+
+        reader = threading.Thread(target=fetch)
+        reader.start()
+        self.test("a sandbox's port", "sandbox run alpine --port 8081:80 --share /Home/Temporary/m700:/srv:ro -- "
+                                      "timeout 20 nc -l -p 80 -e sh /srv/serve.sh")
+        reader.join()
+        self.check(got.get("page", b"").strip() == b"from a sandbox",
+                   "a page served in a sandbox did not reach the Mac through port 8081: %r"
+                   % got.get("page"))
+
+
     def network(self):
         e1000 = self.m.run("log e1000:")
         self.outputs["log e1000"] = e1000
@@ -438,6 +494,7 @@ def main(argv):
     s.network()
     s.usb_and_disk()
     s.sound()
+    s.sandboxes()
     print("m700: real performance")
     s.performance()
     print("m700: every application")

@@ -203,6 +203,21 @@ PL011's nature; a busy console is what virtio-console is for, later.
    - **X3 - Alpine x86-64 as a package**, as `alpine-arm64` is: its kernel
      and initramfs, and a sandbox the same definition on either machine.
 
+   **X1 built 0.11.201, X2 and X3 0.11.203** (`testing.md` 18.595, 18.597).
+   On the M700, the first time it was tried: `sandbox run alpine -- uname
+   -a` answered "Linux ... 6.18.52-0-virt ... x86_64", booted in 0.3 s and
+   gone in 1.2; a task's exit code, a folder read only, a page fetched
+   through Kosmos's gateway, a page served on Kosmos's port 8081 and
+   fetched from the Mac, and a shell in the Sandboxes window. Linux sees
+   one i7-6700 at 3.4 GHz with what the monitor gives it - SSE to 4.2, AES,
+   RDRAND - and not AVX, XSAVE or VT-x, whose state the monitor does not
+   carry: a sandbox inside a sandbox is not offered. The monitor is three
+   files now: `vmm.c` what both machines share, `vmm_arm.c` and
+   `vmm_x86.c`, and the PC's devices are `x86dev.c`, pure and held on the
+   Mac by `tools/test_x86dev.c`. Each guest is entered in long mode at the
+   bzImage's 64-bit entry, with no firmware; the RTC reads a fixed date
+   (1 January 2026) until the monitor reads Kosmos's clock - roadmap.
+
 **What a sandbox is, and is not** (Diego, 13 October 2026: "we need to tell
 the user that sandboxes does not behave like qemu that emulates a full
 pc"). A **microVM**, as Firecracker and Apple's Virtualization framework

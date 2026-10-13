@@ -36,8 +36,8 @@ local MONITOR_SAYS = {
   [11] = "it was given no setup page",
   [12] = "its setup did not describe its RAM",
   [13] = "it could not map the guest's RAM",
-  [14] = "the guest's device tree did not fit",
-  [15] = "this machine cannot run a guest yet - it was not started with virtualization on",
+  [14] = "the guest's machine could not be laid out - its device tree, or its boot",
+  [15] = "this machine cannot run a guest - its processor has no virtualization, or it is off",
   [16] = "there was no room for another guest",
   [17] = "the guest's RAM or its processor was refused",
   [18] = "it could not start a thread on processor 0",
@@ -325,17 +325,50 @@ function sandboxes.start(s)
     return true
   end
 
-  if not load(image .. "/Image", kernel.size, 0) then return nil, "could not read " .. image .. "/Image" end
+  --
+  -- **Which kernel, for which machine**: an arm64 `Image` - "ARM\x64" at
+  -- 56 - loaded at the start of the RAM, or an x86-64 bzImage - "HdrS" at
+  -- 0x202 - loaded so its protected-mode kernel is at 16 MB, its setup
+  -- sectors just below (`docs/sandboxes.md` X2, `x86dev.h`). Each needs
+  -- room from where it is loaded to unpack itself, and the initramfs goes
+  -- after that. A kernel for the other machine is said, not tried.
+  --
+  if fs.read_into(image .. "/Image", window, 0, math.min(kernel.size, 4096)) ~= math.min(kernel.size, 4096) then
+    return nil, "could not read " .. image .. "/Image"
+  end
 
-  local head = sys.region_read(ram, 0, 64)
+  local head = sys.region_read(window, 0, 4096)
+  local x86 = #head >= 0x270 and head:sub(0x203, 0x206) == "HdrS"
+  local on_x86 = (sys.info() or {}).cpu_arch == 2
+  local kernel_at, room
 
-  if head:sub(57, 60) ~= "ARM\x64" then return nil, image .. "/Image is not an arm64 Linux kernel" end
+  if x86 then
+    local sects = head:byte(0x1f2)
+
+    if sects == 0 then sects = 4 end
+
+    kernel_at = 0x1000000 - (sects + 1) * 512
+    room = 0x1000000 + string.unpack("<I4", head, 0x261)
+  elseif head:sub(57, 60) == "ARM\x64" then
+    kernel_at = 0
+    room = math.max(string.unpack("<I8", head, 17), kernel.size)
+  else
+    return nil, image .. "/Image is not a Linux kernel this can start"
+  end
+
+  if x86 ~= on_x86 then
+    return nil, ("%s is Linux for %s, and this machine is %s"):format(s.image,
+      x86 and "x86-64" or "ARM", on_x86 and "x86-64" or "ARM")
+  end
+
+  if kernel_at + kernel.size > ram_bytes or not load(image .. "/Image", kernel.size, kernel_at) then
+    return nil, ("%d MB is not room for %s's kernel"):format(s.memory, s.image)
+  end
 
   local initrd_at, initrd_bytes = 0, initrd and initrd.size or 0
 
   if initrd_bytes > 0 then
-    local room = math.max(string.unpack("<I8", head, 17), kernel.size)
-
+    room = math.max(room, kernel_at + kernel.size)
     initrd_at = (room + ALIGN - 1) // ALIGN * ALIGN
 
     if initrd_at + initrd_bytes > ram_bytes - ALIGN or not load(image .. "/initramfs", initrd_bytes, initrd_at) then
@@ -348,7 +381,7 @@ function sandboxes.start(s)
   local token = ("kosmos-end-%x"):format(sys.ticks() % 0x7fffffff)
   -- `quiet` and no `earlycon`: a sandbox's console is its command's, and
   -- the kernel's boot is in it only when the kernel has something to say.
-  local line = "console=ttyAMA0 quiet panic=-1 kosmos.name=" .. s.name
+  local line = (x86 and "console=ttyS0" or "console=ttyAMA0") .. " quiet panic=-1 kosmos.name=" .. s.name
 
   if s.command and s.command ~= "" then
     line = line .. " kosmos.run=" .. hex(s.command) .. " kosmos.end=" .. token
@@ -389,7 +422,7 @@ function sandboxes.start(s)
   if #line > 511 then return nil, "its command and folders are too long for a kernel's command line" end
 
   sys.region_write(setup, 0, string.pack("<I4I4I8I8I8I8I8", 0x4b766d6d, 1, ram_bytes,
-                                          0, kernel.size, initrd_at, initrd_bytes)
+                                          kernel_at, kernel.size, initrd_at, initrd_bytes)
                              .. line .. ("\0"):rep(512 - #line)
                              .. s.name .. ("\0"):rep(16 - #s.name)
                              .. token .. ("\0"):rep(24 - #token)

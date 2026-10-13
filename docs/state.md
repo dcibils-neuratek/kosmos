@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-13, afternoon (0.11.202; Magnet's keys, after VT-x in the kernel)
+Last updated: 2026-10-13, afternoon (0.11.203; Alpine x86-64 in a sandbox on the M700)
 
 ---
 
@@ -11,7 +11,7 @@ Last updated: 2026-10-13, afternoon (0.11.202; Magnet's keys, after VT-x in the 
 **Pushed: up to 0.11.198** (1ee26bee). **Not pushed: 0.11.199** (kfs
 version 2, a file's Created), **0.11.200** (the virtualization probe - the
 M700: "vm: VT-x, locked on by the firmware"), **0.11.201** (X1),
-**0.11.202** (Magnet's keys).
+**0.11.202** (Magnet's keys), **0.11.203** (X2, X3).
 
 - **X1, VT-x in the kernel (0.11.201)** (`docs/sandboxes.md` S5,
   `testing.md` 18.595): `arch/x86_64/vcpu.c` and `vmx.S` behind the same
@@ -19,11 +19,13 @@ M700: "vm: VT-x, locked on by the firmware"), **0.11.201** (X1),
   run on a real machine by `opt/kosmos/vmtest`. **On the M700, first try:
   "vmtest: a guest ran and stopped as it should"**; its control (the data
   page left out of EPT) failed at 5 with an EPT violation at 0x11000.
-- **Next: X2**, the monitor's x86-64 half - Linux's 64-bit direct boot, a
-  16550, the PIC and PIT, CPUID and MSRs, virtio-mmio by decoding the
-  instruction that stopped - then **X3**, Alpine x86-64 as a package.
-  `vmm.c` should be split into what both machines share and one file a
-  machine when X2 starts.
+- **X2 and X3 (0.11.203)** (`testing.md` 18.597): Alpine Linux x86-64
+  runs in a sandbox on the M700 - tasks, folders, the network, ports, a
+  shell in the window. The monitor is `vmm.c` + `vmm_arm.c` + `vmm_x86.c`,
+  the PC's devices `x86dev.c` (host test, 91 checks); the `alpine`
+  package is x86-64 now. `tools/run_m700.py` checks sandboxes (6).
+  Left: a sandbox's clock (roadmap), more than one processor, the help
+  screen (to be drawn).
 - **Magnet's keys (0.11.202)** (`testing.md` 18.596): Diego said yes to
   the encoding - Super and Alt in a sequence's modifier number, a character
   with Super as `ESC [ 27 ; 9 ; c ~` - and Super with the arrows, Super+Alt

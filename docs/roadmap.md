@@ -355,6 +355,24 @@ October** (`testing.md` 18.549); each core's speed shows where the processor
 says it (18.548), which the M700 and the T14 will, and QEMU does not. The speed comes from the measurement above, so the
 two land together.
 
+**A sandbox's clock** - found building X2, 13 October 2026: a guest reads
+its date from the monitor - a fixed 1 January 2026 on a PC's RTC, nothing
+on ARM - so a sandbox's `date`, and anything that checks a certificate,
+is wrong. The monitor reads Kosmos's own clock (`clock_epoch`) and gives
+it: the CMOS registers on a PC, a PL031 on ARM.
+
+**Monitor: the processor's features** - Diego, 13 October 2026: "can we add
+the CPU features to the CPU monitor app below the processors count and
+speed", "like VT-X, SSE, etc that shows all the features and capabilities
+of the cpu". In the processor's card, under its count and speed: what it
+can do, read from CPUID on a PC and the ID registers on ARM - which the
+kernel already reads raw for `sysinfo` (`CPU_RAW_*`) - grouped (vector:
+SSE to AVX-512, NEON, SVE; virtualization: VT-x and what its firmware
+decided, EL2; security: AES, SHA, RDRAND, SMEP, SMAP; and the rest), each
+named as a person knows it. Decoding the words is a small kit, since About
+and neofetch want the same list. A change to an agreed window, so drawn in
+`docs/monitor.html` first and agreed before it is built.
+
 **Mail: always show a sender's pictures** - Diego, 10 October 2026: "mail
 app needs a way to set 'always show images from this sender' somehere
 because i cant click load images for every email". A choice beside Load

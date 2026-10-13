@@ -24945,3 +24945,42 @@ Super+Shift+C and Super+C three keys. `x86-switcher` (Alt+Tab, Alt+Shift+Tab)
 and `x86-shortcuts` pass. **Control**: Super left out of a sequence's
 modifier number - Magnet's four arrow checks fail ("Super+Right did not put
 Tracker in the right half") and the kernel's test names the sequence it got.
+
+## 18.597 Sandboxes on x86-64: Alpine on the M700 (X2, X3)
+
+`docs/sandboxes.md` X2 and X3. **The monitor split in three**: `vmm.c`
+what both machines share (the console ring, keys, `/Running`, the setup,
+its folders and network), `vmm_arm.c` the ARM machine moved as it was, and
+`vmm_x86.c`, through `vmm.h`. **The PC's devices**, `x86dev.c`, pure: two
+8259As as Linux's `i8259.c` programs and probes them, levels held and the
+cascade; an 8254, channel 0 periodic or one-shot, channel 2 behind port
+0x61; a 16550A that passes `8250_port.c`'s autoconfig and THRE test, its
+line gated by OUT2; CPUID without APIC, x2APIC, XSAVE, AVX, VMX, PCID,
+RDTSCP or the speculation MSRs, one processor, the TSC's frequency kept;
+Linux's 64-bit boot - the zero page with the setup header copied, e820 in
+three, the command line, a GDT with `__BOOT_CS` and `__BOOT_DS`, the first
+4 GB identity in 2 MB pages, entered at 16 MB + 0x200; the guest's page
+tables walked; and the `mov` forms of `readl`/`writel` decoded for MMIO.
+**The run**: ports, CPUID, MSRs (EFER, PAT; the rest 0), CR0/CR4, MMIO by
+EPT violation and decoding, `hlt` - waiting with interrupts on, ended with
+them off - and the 8259's vector injected when the guest can take it, an
+interrupt window asked for when it cannot. The command line adds `noapic
+nolapic acpi=off pci=off nokaslr tsc=reliable 8250.nr_uarts=1` and each
+virtio device as `virtio_mmio.device=0x200@0xd0000000:5` and on.
+`sandboxes.lua` loads an x86 bzImage so its protected-mode kernel is at
+16 MB, and says it when an image is for the other machine; `alpine.py
+--arch x86_64` makes the PC's image, which the `alpine` package now is.
+The end line found anywhere in a line (a `wget -qO-` page without a
+newline lost its exit code), and Linux's "Power off not available" kept
+off the console. `sandbox run` refused (a folder outside `/Home`) now
+says why instead of a Lua error - found by the M700 suite's new checks.
+
+**Tests.** `tools/test_x86dev.c`, host, 91 checks; control: CPUID leaving
+the APIC showing fails "the APIC was not hidden". ARM's arm-sandbox,
+arm-sandbox-linux and arm-sandboxwin pass over the split. **On the M700**
+(0.11.203), `tools/run_m700.py`'s new sandbox checks, 6: VT-x found; a
+task's 42, `x86_64` and exit code 3; a folder read only; a page fetched
+through the network; a page served on port 8081 fetched from the Mac. And
+by hand, a shell in the Sandboxes window answering `uname -a`. Linux asked
+seven MSRs nobody answers (0x8b, 0x3a, 0x140, 0xce, 0x64e, 0x34,
+0xc0011029) and booted on the zeros.
