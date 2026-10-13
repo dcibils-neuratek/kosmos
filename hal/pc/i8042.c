@@ -228,6 +228,7 @@ static unsigned extended_code(uint8_t scan)
 static bool shift;
 static bool ctrl;
 static bool caps;
+static bool alt;
 
 /*
  * Super, and whether anything was pressed while it was held.
@@ -530,6 +531,7 @@ static void kbd_byte(uint8_t b)
     case KEY_LEFTCTRL:
     case KEY_RIGHTCTRL:  ctrl = down;  return;
     case KEY_CAPSLOCK:   if (down) { caps = !caps; } return;
+    case KEY_LEFTALT:    alt = down;   return;   /* the right is AltGr, which types */
 
     case KEY_LEFTMETA:
     case KEY_RIGHTMETA:
@@ -541,7 +543,7 @@ static void kbd_byte(uint8_t b)
              * combination has already been sent and this release says
              * nothing. */
             if (super && !super_used) {
-                put_sequence(hal_key_super(0, buffer));
+                put_sequence(hal_key_super(0, 0, buffer));
             }
 
             super = false;
@@ -555,9 +557,12 @@ static void kbd_byte(uint8_t b)
         return;
     }
 
-    sequence = hal_key_sequence(code, shift, ctrl, buffer);
+    sequence = hal_key_sequence(code, (shift ? KEY_MOD_SHIFT : 0u) | (alt ? KEY_MOD_ALT : 0u)
+                                      | (ctrl ? KEY_MOD_CTRL : 0u)
+                                      | (super ? KEY_MOD_SUPER : 0u), buffer);
 
     if (sequence != NULL) {
+        super_used = super_used || super;
         put_sequence(sequence);
         return;
     }
@@ -575,7 +580,7 @@ static void kbd_byte(uint8_t b)
      */
     if (super) {
         super_used = true;
-        put_sequence(hal_key_super(c, buffer));
+        put_sequence(hal_key_super(c, alt ? KEY_MOD_ALT : 0u, buffer));
         return;
     }
 

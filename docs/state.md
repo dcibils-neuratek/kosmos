@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-13, afternoon (0.11.201; VT-x in the kernel, proved on the M700)
+Last updated: 2026-10-13, afternoon (0.11.202; Magnet's keys, after VT-x in the kernel)
 
 ---
 
@@ -10,7 +10,8 @@ Last updated: 2026-10-13, afternoon (0.11.201; VT-x in the kernel, proved on the
 
 **Pushed: up to 0.11.198** (1ee26bee). **Not pushed: 0.11.199** (kfs
 version 2, a file's Created), **0.11.200** (the virtualization probe - the
-M700: "vm: VT-x, locked on by the firmware"), **0.11.201** (X1).
+M700: "vm: VT-x, locked on by the firmware"), **0.11.201** (X1),
+**0.11.202** (Magnet's keys).
 
 - **X1, VT-x in the kernel (0.11.201)** (`docs/sandboxes.md` S5,
   `testing.md` 18.595): `arch/x86_64/vcpu.c` and `vmx.S` behind the same
@@ -23,8 +24,18 @@ M700: "vm: VT-x, locked on by the firmware"), **0.11.201** (X1).
   instruction that stopped - then **X3**, Alpine x86-64 as a package.
   `vmm.c` should be split into what both machines share and one file a
   machine when X2 starts.
-- **Waiting on Diego**: Super+arrow for Magnet (the proposal on the
-  board); the Sandboxes help screen is to be drawn first (`roadmap.md`).
+- **Magnet's keys (0.11.202)** (`testing.md` 18.596): Diego said yes to
+  the encoding - Super and Alt in a sequence's modifier number, a character
+  with Super as `ESC [ 27 ; 9 ; c ~` - and Super with the arrows, Super+Alt
+  with them, Super+Alt+1 to 5 and Super+C put the window in front. Thirds
+  are Super+Alt+number, not the mockup's Super+number, because the browser
+  has Super+1 to 9 for tabs: said to Diego, his to change.
+- **Files to the M700 go by packages, never Telnet `put`**:
+  `python3 tools/packages.py`, then `install doom quake snes developer`
+  over Telnet - 53 s for all four (Diego: "why is file sending so slow?").
+  SMB cannot carry them yet: `smbd` is read only (`sharing.md` N12b).
+- **Waiting on Diego**: the Sandboxes help screen is to be drawn first
+  (`roadmap.md`).
 - The M700 is netbooted with `opt/kosmos/vmtest=1` on its command line;
   `make netboot` without it drops the word, which is fine.
 

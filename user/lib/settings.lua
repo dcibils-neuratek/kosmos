@@ -422,8 +422,8 @@ settings.ITEMS = {
   -- **Magnet** (`docs/magnet.html`, `ui.md` 16.31): kept in
   -- `/Home/Preferences/magnet`, which the window manager reads at its start,
   -- and each told to it the moment it changes (`live = "magnet"`). The
-  -- keys' group comes with the keys: listing Super+arrows here before the
-  -- keyboard sends them would say something that is not so.
+  -- keys' group came with the keys (13 October), once the keyboard sent
+  -- Super with an arrow at all.
   --
   item{ category = "magnet", group = "Magnet",
         label = "Magnet", note = "Windows snap into halves, quarters and the whole room",
@@ -441,6 +441,12 @@ settings.ITEMS = {
         label = "Space between snapped windows", note = "Round each, and between two",
         kind = "choice", file = settings.MAGNET, key = "gap", default = 6, live = "magnet",
         choices = { { 0, "None" }, { 4, "4 points" }, { 6, "6 points" }, { 10, "10 points" } } },
+  item{ category = "magnet", group = "Keys",
+        label = "From the keyboard", note = "Super with the arrows: halves, the whole room and back",
+        kind = "switch", file = settings.MAGNET, key = "keys", default = true, live = "magnet" },
+  item{ category = "magnet", group = "Keys",
+        label = "Every key", note = "Super+Alt with the arrows for quarters, with 1 to 5 for thirds",
+        kind = "open", program = "shortcuts" },
 }
 
 --

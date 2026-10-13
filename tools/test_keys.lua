@@ -116,21 +116,34 @@ check(same(decode("a\27[99~b"), { 97, 98 }),
       "an unknown number was not dropped whole: " .. show(decode("a\27[99~b")))
 
 -- Super's, which the window manager hands on when it has no binding: the
--- character held with Super, never the character - even with a digit as its
--- last byte, and with Shift already in it (`roadmap.md` 6zz d2). Super
--- tapped alone is the manager's, and reaches nobody.
-local SUPER = keys.SUPER
+-- character held with Super, never the character - a digit too, and with
+-- Shift already in it (`roadmap.md` 6zz d2) - in xterm's `ESC [ 27 ; m ; c
+-- ~`; and a key with a sequence carrying Super in its modifier number, so
+-- Super+C and Super+Right are two keys (13 October, Magnet's). Super tapped
+-- alone is the manager's, and reaches nobody.
+local SUPER, ALT = keys.SUPER, keys.ALT
 
-check(same(decode("a\27[1;9tb"), { 97, keys.with(116, SUPER), 98 }),
-      "Super+T did not reach a window as Super+T: " .. show(decode("a\27[1;9tb")))
-check(same(decode("a\27[1;91b"), { 97, keys.with(49, SUPER), 98 }),
+check(same(decode("a\27[27;9;116~b"), { 97, keys.with(116, SUPER), 98 }),
+      "Super+T did not reach a window as Super+T: " .. show(decode("a\27[27;9;116~b")))
+check(same(decode("a\27[27;9;49~b"), { 97, keys.with(49, SUPER), 98 }),
       "Super+1 did not reach a window, or ate the key after it: "
-      .. show(decode("a\27[1;91b")))
-check(same(decode("a\27[1;9}b"), { 97, keys.with(125, SUPER), 98 }),
-      "Super+Shift+] is not Super+}: " .. show(decode("a\27[1;9}b")))
+      .. show(decode("a\27[27;9;49~b")))
+check(same(decode("a\27[27;9;125~b"), { 97, keys.with(125, SUPER), 98 }),
+      "Super+Shift+] is not Super+}: " .. show(decode("a\27[27;9;125~b")))
+check(same(decode("a\27[27;11;49~b"), { 97, keys.with(49, SUPER | ALT), 98 }),
+      "Super+Alt+1 is not Super+Alt+1: " .. show(decode("a\27[27;11;49~b")))
 check(same(decode("a\27[1;9~b"), { 97, 98 }),
       "Super tapped alone reached a window: " .. show(decode("a\27[1;9~b")))
-local super_t = decode("\27[1;9t")[1]
+check(same(decode("\27[1;9C\27[27;9;67~\27[27;9;99~"),
+           { keys.with(keys.RIGHT, SUPER), keys.with(67, SUPER), keys.with(99, SUPER) }),
+      "Super+Right, Super+Shift+C and Super+C are not three keys: "
+      .. show(decode("\27[1;9C\27[27;9;67~\27[27;9;99~")))
+check(same(decode("\27[1;11A\27[1;10B"),
+           { keys.with(keys.UP, SUPER | ALT), keys.with(keys.DOWN, SUPER | keys.SHIFT) }),
+      "Super+Alt+Up and Super+Shift+Down: " .. show(decode("\27[1;11A\27[1;10B")))
+check(same(decode("a\27[27;9;999~b"), { 97, 98 }),
+      "a character past 255 with Super was not dropped: " .. show(decode("a\27[27;9;999~b")))
+local super_t = decode("\27[27;9;116~")[1]
 
 check(super_t and super_t < 0 and select(2, keys.parts(super_t)) == SUPER,
       "Super+T is a number a widget could type, or not Super when taken apart")

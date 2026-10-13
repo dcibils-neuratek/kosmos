@@ -24916,3 +24916,32 @@ and stopped as it should", the first try, and the desktop came up after it.
 0000000000011000, at 0000000000010000": an EPT violation, on the guest's
 first instruction, at the page it was not given. The real kernel booted
 again afterwards and passed.
+
+## 18.596 Magnet from the keyboard, and Super inside a key's sequence
+
+`docs/magnet.html`, `ui.md` 16.31. Diego agreed the encoding on 13 October
+("Yes on the super + arrow proposal"). `hal/keys.c` puts every modifier in a
+sequence's modifier number - Shift 1, Alt 2, Control 4, Super 8, so `m` is
+two digits up to 16 - and a character with Super is xterm's
+`ESC [ 27 ; m ; c ~`; Super tapped alone stays `ESC [ 1 ; 9 ~`. The PS/2,
+virtio and pushed (USB) keyboards track the left Alt - the right is AltGr -
+and a sequence typed with Super now marks Super used, so letting it go
+after Super+→ opens no menu. VNC sends the same shapes. The applications'
+decoder (`keys.lua`) reads both; the window manager reads each sequence
+whole before deciding whether it is a chord, and hands on whole what is not
+- which also took Alt+Shift+Tab's `ESC [ Z` out of a watcher that, with
+Alt held, had handed the first two bytes of any sequence straight to the
+window. Bindings: Super+arrows, Super+Alt+arrows, Super+Shift+↑/↓,
+Super+Alt+1 to 5, Super+C (`OUT.magnet_key`); a Keys group on the Magnet
+page.
+
+**Tests.** `x86-magnet` 8 -> 14: through QEMU's PS/2 keyboard, Super+Right
+the right half to the pixel, Super+Alt+Up the upper quarter on that side,
+Super+Up the whole room, Super+Down back where it was, Super+Alt+1 the
+left third to the pixel, Super+C the middle at its size. The kernel's
+sequence test grew six Super and Alt cases and the three Super shapes;
+`tools/test_keys.lua` 77 checks, the decoder reading them back - Super+Right,
+Super+Shift+C and Super+C three keys. `x86-switcher` (Alt+Tab, Alt+Shift+Tab)
+and `x86-shortcuts` pass. **Control**: Super left out of a sequence's
+modifier number - Magnet's four arrow checks fail ("Super+Right did not put
+Tracker in the right half") and the kernel's test names the sequence it got.

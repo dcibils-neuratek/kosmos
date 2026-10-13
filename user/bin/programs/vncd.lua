@@ -272,13 +272,21 @@ local function translate(held, keysym, down)
   if held.super then held.super_used = true end
 
   local m = 1 + (held.shift and 1 or 0) + (held.alt and 2 or 0) + (held.ctrl and 4 or 0)
+            + (held.super and 8 or 0)
   local special = SPECIAL[keysym]
 
   if special then
     if not down then return special.code, "" end
 
     if special.final then return special.code, sequence(special.n, m, special.final, special.ss3) end
-    if keysym == 0xff09 and held.shift and not held.ctrl then return special.code, "\27[Z" end
+    if keysym == 0xff09 and held.shift and not held.ctrl and not held.super then
+      return special.code, "\27[Z"
+    end
+
+    -- Tab, Enter and the rest held with Super: Super+Tab is the switcher's.
+    if held.super then
+      return special.code, ("\27[27;%d;%d~"):format(held.alt and 11 or 9, special.char)
+    end
 
     return special.code, string.char(special.char)
   end
@@ -293,7 +301,11 @@ local function translate(held, keysym, down)
 
   if held.caps and c >= 0x61 and c <= 0x7a and not held.shift then c = c - 32 end
 
-  if held.super then return code, "\27[1;9" .. string.char(c) end
+  -- A character with Super, as the kernel makes it (`hal_key_super`): xterm's
+  -- `ESC [ 27 ; m ; c ~`, Alt in `m` and Shift already in `c`.
+  if held.super then
+    return code, ("\27[27;%d;%d~"):format(held.alt and 11 or 9, c)
+  end
 
   if held.ctrl then
     local lower = (c >= 0x41 and c <= 0x5a) and c + 32 or c

@@ -196,6 +196,7 @@ static bool      super;
 static bool      super_used;
 static bool      ctrl;
 static bool      caps;
+static bool      alt;
 
 /*
  * Where the pointer is, rebuilt from the events as they arrive.
@@ -743,6 +744,11 @@ static int keyboard_getchar_locked(void)
             continue;
         }
 
+        if (event.code == KEY_LEFTALT) {      /* the right is AltGr, which types */
+            alt = (event.value != 0);
+            continue;
+        }
+
         if (event.code == KEY_CAPSLOCK) {
             if (event.value == 1) {
                 caps = !caps;
@@ -770,7 +776,7 @@ static int keyboard_getchar_locked(void)
                 if (tapped) {
                     char buffer[KEY_SEQUENCE_MAX];
 
-                    queue(hal_key_super(0, buffer));
+                    queue(hal_key_super(0, 0, buffer));
                     return (unsigned char)pending[pending_at++];
                 }
             }
@@ -788,10 +794,12 @@ static int keyboard_getchar_locked(void)
          */
         {
             char buffer[KEY_SEQUENCE_MAX];
-            const char *sequence = hal_key_sequence(event.code, shift, ctrl,
-                                                    buffer);
+            const char *sequence = hal_key_sequence(event.code,
+                (shift ? KEY_MOD_SHIFT : 0u) | (alt ? KEY_MOD_ALT : 0u)
+                | (ctrl ? KEY_MOD_CTRL : 0u) | (super ? KEY_MOD_SUPER : 0u), buffer);
 
             if (sequence != NULL) {
+                super_used = super_used || super;
                 queue(sequence);
                 return (unsigned char)pending[pending_at++];
             }
@@ -814,7 +822,7 @@ static int keyboard_getchar_locked(void)
             char buffer[KEY_SEQUENCE_MAX];
 
             super_used = true;
-            queue(hal_key_super(c, buffer));
+            queue(hal_key_super(c, alt ? KEY_MOD_ALT : 0u, buffer));
             return (unsigned char)pending[pending_at++];
         }
 

@@ -148,15 +148,16 @@ lit outline of that half and takes it when let go; the top edge, the whole
 room; a corner - a square of 48 points either side of the screen's corner -
 a quarter; a gap of 6 round each; dragged away again, its size back, held
 where it was held. Kept in `/Home/Preferences/magnet`, changed live by
-`handlers.magnet`. **Left**: **the keys** - Super+arrow does not reach the
-window manager at all: `hal/keys.c` sends an arrow's sequence before it
-looks at Super, Alt is not tracked, and `ESC [ 1 ; 9 C` would be Super+→
-and Super+Shift+C alike, so the encoding is decided first, on both boards
-(asked of Diego on the card, 13 October, with a proposal: xterm's form for
-both - Super+arrows `ESC [ 1 ; 9 C`, Alt adding 2, and Super with a
-character as `ESC [ 27 ; 9 ; code ~`). **The Magnet page, built 0.11.197**
+`handlers.magnet`. **The keys, built 0.11.202** (`testing.md` 18.596,
+`ui.md` 16.31): Super with the arrows, Super+Alt with the arrows for
+quarters, Super+Shift+↑ and ↓ for the top and bottom halves, Super+Alt with
+1 to 5 for thirds - Super with a number is the browser's tabs - and Super+C
+the middle; the encoding first, as Diego agreed on 13 October ("Yes on the
+super + arrow proposal"): xterm's, Super and Alt in an arrow's modifier
+number (`ESC [ 1 ; 9 C`) and a character with Super as
+`ESC [ 27 ; 9 ; code ~`, on both boards. **The Magnet page, built 0.11.197**
 (`testing.md` 18.591): on, by dragging, the outline, back to size and the
-gap, each told to the window manager as it changes; its Keys group comes
+gap, each told to the window manager as it changes; its Keys group came
 with the keys.
 
 **SATA (AHCI), and `/Home` on the M700's own drive** - Diego, 12 October

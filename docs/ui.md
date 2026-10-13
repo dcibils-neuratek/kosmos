@@ -2072,6 +2072,27 @@ beside Appearance in Preferences: Magnet, Snap when dragged, Show where it
 will land, Back to its size, and the space between snapped windows - each
 row `live = "magnet"`, so `live` sends its key and value to the window
 manager before it is kept (`APPLY` now looks a row up by its `live`, then
-its key). The keys' group arrives with the keys: a row naming Super+← that
-does nothing would be a row that says what is not so.
+its key).
+
+**From the keyboard** (0.11.202; Diego agreed the encoding on 13 October):
+Super+← and Super+→ the halves, Super+↑ the whole room, Super+↓ back where
+it was before the first of them; Super+Alt with an arrow a quarter -
+↑ and ↓ the upper and lower on the side the window is on, ← and → the left
+and right in the half it is in, so Super+←, then Super+Alt+↑ and
+Super+Alt+↓ on two others, is the mockup's IDE, web and terminal;
+Super+Shift+↑ and ↓ the top and bottom halves; Super+Alt+1, 2 and 3 the
+thirds, 4 and 5 two thirds; Super+C the middle at the window's own size.
+**Thirds are Super+Alt with a number**, not the mockup's Super with one,
+because Super with a number is the browser's tabs; Shortcuts moves any of
+them (`OUT.magnet_key`, the bindings in `wm/keys.lua`). The page's Keys
+group: From the keyboard, and Every key, which opens Shortcuts.
+
+**Which needed the keyboard to say Super with an arrow at all.** `hal/keys.c`
+sent an arrow's sequence before it looked at Super, and Super with a
+character was `ESC [ 1 ; 9 c` - so Super+→ and Super+Shift+C would have been
+the same six bytes. Now every modifier travels in the sequence's modifier
+number, Super 8 and Alt 2 among them (`ESC [ 1 ; 9 C`, `ESC [ 1 ; 11 A`),
+and a character with Super is xterm's `ESC [ 27 ; 9 ; 99 ~`; the window
+manager reads each sequence whole before deciding whether it is a chord,
+and hands on what is not.
 

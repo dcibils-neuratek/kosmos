@@ -7197,60 +7197,82 @@ static bool test_a_modified_key_is_one_sequence(void)
         unsigned code;
         bool shift, ctrl;
         const char *want;
+        unsigned more;                  /* KEY_MOD_ALT, KEY_MOD_SUPER */
     } cases[] = {
-        { KEY_UP,       false, false, "\x1b[A" },
-        { KEY_UP,       true,  false, "\x1b[1;2A" },
-        { KEY_LEFT,     false, true,  "\x1b[1;5D" },
-        { KEY_RIGHT,    true,  true,  "\x1b[1;6C" },
-        { KEY_HOME,     false, false, "\x1b[H" },
-        { KEY_END,      true,  false, "\x1b[1;2F" },
-        { KEY_PAGEUP,   false, false, "\x1b[5~" },
-        { KEY_PAGEDOWN, true,  false, "\x1b[6;2~" },
-        { KEY_DELETE,   false, true,  "\x1b[3;5~" },
-        { KEY_INSERT,   false, false, "\x1b[2~" },
-        { KEY_F1,       false, false, "\x1bOP" },
-        { KEY_F1 + 3,   true,  false, "\x1b[1;2S" },     /* Shift+F4 */
-        { KEY_F1 + 4,   false, false, "\x1b[15~" },      /* F5, Run */
-        { KEY_F1 + 4,   true,  false, "\x1b[15;2~" },    /* Shift+F5, Stop */
-        { KEY_F1 + 5,   false, false, "\x1b[17~" },      /* F6: no 16 */
-        { KEY_F1 + 6,   false, false, "\x1b[18~" },      /* F7, check */
-        { KEY_F10,      false, false, "\x1b[21~" },
-        { KEY_F11,      false, false, "\x1b[23~" },
-        { KEY_F12,      true,  true,  "\x1b[24;6~" },
-        { KEY_TAB,      true,  false, "\x1b[Z" },
-        { KEY_TAB,      false, true,  "\x1b[9;5u" },
-        { 57,           false, true,  "\x1b[32;5u" },    /* Ctrl+Space */
-        { 28,           false, true,  "\x1b[13;5u" },    /* Ctrl+Enter */
-        { 53,           false, true,  "\x1b[47;5u" },    /* Ctrl+/ */
-        { 41,           true,  true,  "\x1b[96;6u" },    /* the longest */
-        { 33,           true,  true,  "\x1b[102;6u" },   /* Ctrl+Shift+F */
+        { KEY_UP,       false, false, "\x1b[A", 0 },
+        { KEY_UP,       true,  false, "\x1b[1;2A", 0 },
+        { KEY_LEFT,     false, true,  "\x1b[1;5D", 0 },
+        { KEY_RIGHT,    true,  true,  "\x1b[1;6C", 0 },
+        { KEY_HOME,     false, false, "\x1b[H", 0 },
+        { KEY_END,      true,  false, "\x1b[1;2F", 0 },
+        { KEY_PAGEUP,   false, false, "\x1b[5~", 0 },
+        { KEY_PAGEDOWN, true,  false, "\x1b[6;2~", 0 },
+        { KEY_DELETE,   false, true,  "\x1b[3;5~", 0 },
+        { KEY_INSERT,   false, false, "\x1b[2~", 0 },
+        { KEY_F1,       false, false, "\x1bOP", 0 },
+        { KEY_F1 + 3,   true,  false, "\x1b[1;2S", 0 },     /* Shift+F4 */
+        { KEY_F1 + 4,   false, false, "\x1b[15~", 0 },      /* F5, Run */
+        { KEY_F1 + 4,   true,  false, "\x1b[15;2~", 0 },    /* Shift+F5, Stop */
+        { KEY_F1 + 5,   false, false, "\x1b[17~", 0 },      /* F6: no 16 */
+        { KEY_F1 + 6,   false, false, "\x1b[18~", 0 },      /* F7, check */
+        { KEY_F10,      false, false, "\x1b[21~", 0 },
+        { KEY_F11,      false, false, "\x1b[23~", 0 },
+        { KEY_F12,      true,  true,  "\x1b[24;6~", 0 },
+        { KEY_TAB,      true,  false, "\x1b[Z", 0 },
+        { KEY_TAB,      false, true,  "\x1b[9;5u", 0 },
+        { 57,           false, true,  "\x1b[32;5u", 0 },    /* Ctrl+Space */
+        { 28,           false, true,  "\x1b[13;5u", 0 },    /* Ctrl+Enter */
+        { 53,           false, true,  "\x1b[47;5u", 0 },    /* Ctrl+/ */
+        { 41,           true,  true,  "\x1b[96;6u", 0 },    /* the longest */
+        { 33,           true,  true,  "\x1b[102;6u", 0 },   /* Ctrl+Shift+F */
+
+        /* Super and Alt in the modifier number (Magnet's keys, 13 October). */
+        { KEY_RIGHT,    false, false, "\x1b[1;9C",  KEY_MOD_SUPER },
+        { KEY_LEFT,     false, false, "\x1b[1;9D",  KEY_MOD_SUPER },
+        { KEY_UP,       true,  false, "\x1b[1;10A", KEY_MOD_SUPER },
+        { KEY_DOWN,     false, false, "\x1b[1;11B", KEY_MOD_SUPER | KEY_MOD_ALT },
+        { KEY_RIGHT,    false, false, "\x1b[1;3C",  KEY_MOD_ALT },
+        { KEY_F12,      true,  true,  "\x1b[24;16~", KEY_MOD_SUPER | KEY_MOD_ALT },
     };
     char buffer[KEY_SEQUENCE_MAX];
     bool ok = true;
     unsigned i;
 
     for (i = 0; i < sizeof cases / sizeof cases[0]; i++) {
-        const char *got = hal_key_sequence(cases[i].code, cases[i].shift,
-                                           cases[i].ctrl, buffer);
+        const char *got = hal_key_sequence(cases[i].code,
+            (cases[i].shift ? KEY_MOD_SHIFT : 0u) | (cases[i].ctrl ? KEY_MOD_CTRL : 0u)
+            | cases[i].more, buffer);
 
         if (got == NULL || strcmp(got, cases[i].want) != 0) {
             kputs("\n   (key ");
             kputu(cases[i].code);
             kputs(cases[i].shift ? " with Shift" : "");
             kputs(cases[i].ctrl ? " with Control" : "");
+            kputs((cases[i].more & KEY_MOD_ALT) ? " with Alt" : "");
+            kputs((cases[i].more & KEY_MOD_SUPER) ? " with Super" : "");
             kputs(got == NULL ? " made no sequence)" : " made another sequence)");
             ok = false;
         }
     }
 
+    /*
+     * And a character with Super is xterm's other shape, the character in
+     * decimal - so Super+C and Super+Right are no longer one sequence - and
+     * Super tapped alone the one no key makes.
+     */
     return ok
-        && hal_key_sequence(30, false, false, buffer) == NULL        /* a */
-        && hal_key_sequence(30, false, true, buffer) == NULL         /* ^A */
+        && hal_key_sequence(30, 0, buffer) == NULL                    /* a */
+        && hal_key_sequence(30, KEY_MOD_CTRL, buffer) == NULL         /* ^A */
+        && hal_key_sequence(30, KEY_MOD_SUPER, buffer) == NULL        /* Super+A: a character */
         && hal_key_char(30, false, true, false) == 1
-        && hal_key_sequence(KEY_TAB, false, false, buffer) == NULL
-        && hal_key_sequence(57, true, false, buffer) == NULL         /* Space */
-        && hal_key_sequence(28, false, false, buffer) == NULL        /* Enter */
-        && strcmp(hal_key_super(0, buffer), "\x1b[1;9~") == 0;
+        && hal_key_sequence(KEY_TAB, 0, buffer) == NULL
+        && hal_key_sequence(KEY_TAB, KEY_MOD_SHIFT | KEY_MOD_SUPER, buffer) == NULL
+        && hal_key_sequence(57, KEY_MOD_SHIFT, buffer) == NULL        /* Space */
+        && hal_key_sequence(28, 0, buffer) == NULL                    /* Enter */
+        && strcmp(hal_key_super(0, 0, buffer), "\x1b[1;9~") == 0
+        && strcmp(hal_key_super('c', 0, buffer), "\x1b[27;9;99~") == 0
+        && strcmp(hal_key_super('1', KEY_MOD_ALT, buffer), "\x1b[27;11;49~") == 0
+        && strcmp(hal_key_super(255, KEY_MOD_ALT, buffer), "\x1b[27;11;255~") == 0;
 }
 
 static bool test_the_boot_announced_every_stage(void)

@@ -44,8 +44,10 @@
 #define KEY_LEFTCTRL    29
 #define KEY_LEFTSHIFT   42
 #define KEY_RIGHTSHIFT  54
+#define KEY_LEFTALT     56
 #define KEY_CAPSLOCK    58
 #define KEY_RIGHTCTRL   97
+#define KEY_RIGHTALT    100
 
 /*
  * **The key with three names and one meaning.**
@@ -110,23 +112,34 @@ bool keys_pushed_char_pending(void);
 #define KEY_SEQUENCE_MAX 16
 
 /*
- * The escape sequence a terminal would have sent for a key, with Shift and
- * Control where they were held, or NULL for a key that is a character.
+ * **The modifiers held**, as xterm counts them: its modifier number less
+ * one. A sequence carries them as that number - 1 plus these - so Super with
+ * Right is `ESC [ 1 ; 9 C` and Super with Alt and Right `ESC [ 1 ; 11 C`.
+ */
+#define KEY_MOD_SHIFT   1u
+#define KEY_MOD_ALT     2u
+#define KEY_MOD_CTRL    4u
+#define KEY_MOD_SUPER   8u
+
+/*
+ * The escape sequence a terminal would have sent for a key, with the
+ * modifiers that were held, or NULL for a key that is a character.
  * Written into `out`, which the caller owns, so that two keyboards on two
  * cores cannot write one buffer; `keys.c` has the shapes and why they are
  * xterm's.
  */
-const char *hal_key_sequence(unsigned code, bool shift, bool ctrl,
+const char *hal_key_sequence(unsigned code, unsigned mods,
                              char out[KEY_SEQUENCE_MAX]);
 
 /* The character a key produces, or -1 for a key that says nothing. */
 int hal_key_char(unsigned code, bool shift, bool ctrl, bool caps);
 
 /*
- * A key held with Super as one escape sequence, or Super tapped alone when
- * `c` is not positive, written into `out`. `keys.c` has the shape and why
- * it is xterm's.
+ * A character typed with Super held as one escape sequence - Alt, when
+ * `mods` has it, inside it too - or Super tapped alone when `c` is not
+ * positive, written into `out`. `keys.c` has the shapes and why they are
+ * xterm's.
  */
-const char *hal_key_super(int c, char out[KEY_SEQUENCE_MAX]);
+const char *hal_key_super(int c, unsigned mods, char out[KEY_SEQUENCE_MAX]);
 
 #endif

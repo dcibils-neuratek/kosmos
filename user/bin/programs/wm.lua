@@ -2498,7 +2498,7 @@ end
 -- live by the Magnet page (`handlers.magnet`).
 --------------------------------------------------------------------------
 
-local magnet = { on = true, drag = true, outline = true, back = true, gap = 6 }
+local magnet = { on = true, drag = true, keys = true, outline = true, back = true, gap = 6 }
 
 do
   local kept = prefs.read("magnet")
@@ -2555,17 +2555,33 @@ function OUT.magnet_rect(zone)
   local th = (rh - 3 * g) // 2
   local left = { x0 + g, lw }
   local right = { x0 + 2 * g + lw, rw - 3 * g - lw }
+  local full_w = { x0 + g, rw - 2 * g }
   local full_h = { y0 + g, rh - 2 * g }
   local upper = { y0 + g, th }
   local lower = { y0 + 2 * g + th, rh - 3 * g - th }
+
+  -- Thirds, from the keys: three columns and the gaps between them, the
+  -- odd pixel to the last; two thirds are two columns and the gap.
+  local tw = (rw - 4 * g) // 3
+  local third = {
+    { x0 + g, tw }, { x0 + 2 * g + tw, tw }, { x0 + 3 * g + 2 * tw, rw - 4 * g - 2 * tw },
+  }
   local across, down
 
   if zone == "left" then across, down = left, full_h
   elseif zone == "right" then across, down = right, full_h
+  elseif zone == "top" then across, down = full_w, upper
+  elseif zone == "bottom" then across, down = full_w, lower
   elseif zone == "top_left" then across, down = left, upper
   elseif zone == "top_right" then across, down = right, upper
   elseif zone == "bottom_left" then across, down = left, lower
   elseif zone == "bottom_right" then across, down = right, lower
+  elseif zone == "third_1" then across, down = third[1], full_h
+  elseif zone == "third_2" then across, down = third[2], full_h
+  elseif zone == "third_3" then across, down = third[3], full_h
+  elseif zone == "two_thirds_left" then across, down = { x0 + g, 2 * tw + g }, full_h
+  elseif zone == "two_thirds_right" then
+    across, down = { third[2][1], rw - 3 * g - tw }, full_h
   else return nil end
 
   return across[1], down[1], across[2], down[2]
@@ -2634,6 +2650,70 @@ function OUT.magnet_unsnap(win, held_x)
 end
 
 function OUT.magnet_shows() return magnet.on and magnet.outline end
+
+--
+-- **From the keyboard** (`wm/keys.lua`'s Super bindings): the window in
+-- front put where `what` says - a zone `magnet_rect` knows; "whole", the
+-- room; "back", where it was before any of this; "middle", centred in the
+-- room at its own size; or a quarter by direction, "quarter_up" and the
+-- rest, on the side and in the half the window is in now - so the IDE on
+-- the left half by Super+Left, then Super+Alt+Up and Super+Alt+Down put the
+-- web and a terminal one over the other on the right, as the mockup draws.
+-- Each press starts from the window's place now, and "back" always goes to
+-- where it was before the first.
+--
+function OUT.magnet_key(what)
+  if not (magnet.on and magnet.keys) then return false end
+
+  local win = focused_window()
+
+  if not win or win.backdrop or win.strip or win.hidden then return false end
+
+  if what == "back" then
+    if not win.restore then return false end
+
+    print(("wm: magnet gave %s back its place"):format(tostring(win.title)))
+    return maximise(win)                -- which, maximised, gives it back
+  end
+
+  if what == "whole" then
+    if win.restore then maximise(win) end
+
+    local done = maximise(win)
+
+    if done then print(("wm: magnet put %s in the whole room"):format(tostring(win.title))) end
+
+    return done
+  end
+
+  local y0, rh = top_limit(), H - reserved_top - reserved_bottom
+
+  if what == "middle" then
+    damage_window(win)
+    win.x = math.max(0, (W - win.w) // 2)
+    win.y = math.max(y0, y0 + (rh - win.h) // 2)
+    damage_window(win)
+    post(win, { type = "moved", x = win.x, y = win.y })
+    print(("wm: magnet put %s in the middle, %d,%d %dx%d"):format(
+          tostring(win.title), win.x, win.y, win.w, win.h))
+    return true
+  end
+
+  local dir = what:match("^quarter_(%a+)$")
+
+  if dir then
+    local on_right = win.x + win.w // 2 >= W // 2
+    local in_lower = win.y + win.h // 2 >= y0 + rh // 2
+    local across = (dir == "left" and "left") or (dir == "right" and "right")
+                   or (on_right and "right" or "left")
+    local down = (dir == "up" and "top") or (dir == "down" and "bottom")
+                 or (in_lower and "bottom" or "top")
+
+    what = down .. "_" .. across
+  end
+
+  return OUT.magnet_put(win, what)
+end
 
 --
 -- Out of sight, and the Deskbar is how it comes back.

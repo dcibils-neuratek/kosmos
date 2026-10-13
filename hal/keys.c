@@ -95,7 +95,7 @@ static bool pushed_put(unsigned code, bool down)
 
 static unsigned char pushed_chars[PUSHED_CHARS];
 static unsigned pushed_chars_head, pushed_chars_tail;
-static bool pushed_shift, pushed_ctrl, pushed_caps, pushed_super;
+static bool pushed_shift, pushed_ctrl, pushed_caps, pushed_super, pushed_alt;
 
 /*
  * Whether anything was pressed while Super was held: Super let go with
@@ -164,11 +164,14 @@ static bool pushed_meaning(unsigned code)
     const char *sequence;
     int c;
 
-    sequence = hal_key_sequence(code, pushed_shift, pushed_ctrl, buffer);
+    sequence = hal_key_sequence(code, (pushed_shift ? KEY_MOD_SHIFT : 0u)
+                                      | (pushed_alt ? KEY_MOD_ALT : 0u)
+                                      | (pushed_ctrl ? KEY_MOD_CTRL : 0u)
+                                      | (pushed_super ? KEY_MOD_SUPER : 0u), buffer);
 
     if (sequence != NULL) {
         pushed_string(sequence);
-        return true;
+        return !pushed_super;           /* Super with an arrow is a command */
     }
 
     c = hal_key_char(code, pushed_shift, pushed_ctrl, pushed_caps);
@@ -178,7 +181,7 @@ static bool pushed_meaning(unsigned code)
     }
 
     if (pushed_super) {
-        pushed_string(hal_key_super(c, buffer));
+        pushed_string(hal_key_super(c, pushed_alt ? KEY_MOD_ALT : 0u, buffer));
         return false;
     }
 
@@ -196,6 +199,7 @@ static void pushed_typed(unsigned code, bool down)
     case KEY_LEFTCTRL:
     case KEY_RIGHTCTRL:   pushed_ctrl = down;  return;
     case KEY_CAPSLOCK:    if (down) { pushed_caps = !pushed_caps; } return;
+    case KEY_LEFTALT:     pushed_alt = down;   return;  /* the right is AltGr */
     case KEY_LEFTMETA:
     case KEY_RIGHTMETA:
         if (down) {
@@ -208,7 +212,7 @@ static void pushed_typed(unsigned code, bool down)
             pushed_super = false;
 
             if (tapped) {
-                pushed_string(hal_key_super(0, buffer));
+                pushed_string(hal_key_super(0, 0, buffer));
             }
         }
 
@@ -387,7 +391,7 @@ static const unsigned char keymap_shift[128] = {
  *
  * The shapes are xterm's, so a terminal at the far end of a cable would
  * read them too, and `m` is its modifier number, 1 plus 1 for Shift, 2 for
- * Alt and 4 for Control:
+ * Alt, 4 for Control and 8 for Super - so `m` runs to 16, two digits:
  *
  *   an arrow, Home, End            ESC [ A        ESC [ 1 ; m A
  *   Insert, Delete, the page keys  ESC [ 5 ~      ESC [ 5 ; m ~
@@ -442,7 +446,12 @@ static const char *sequence_of(char out[KEY_SEQUENCE_MAX], unsigned number,
 
     if (m > 1) {
         out[at++] = ';';
-        out[at++] = (char)('0' + m);
+
+        if (m >= 10) {                  /* Super's, 9 to 16 */
+            out[at++] = (char)('0' + m / 10u);
+        }
+
+        out[at++] = (char)('0' + m % 10u);
     }
 
     out[at++] = final;
@@ -450,10 +459,11 @@ static const char *sequence_of(char out[KEY_SEQUENCE_MAX], unsigned number,
     return out;
 }
 
-const char *hal_key_sequence(unsigned code, bool shift, bool ctrl,
+const char *hal_key_sequence(unsigned code, unsigned mods,
                              char out[KEY_SEQUENCE_MAX])
 {
-    unsigned m = 1u + (shift ? 1u : 0u) + (ctrl ? 4u : 0u);
+    unsigned m = 1u + (mods & 15u);
+    bool shift = (mods & KEY_MOD_SHIFT) != 0, ctrl = (mods & KEY_MOD_CTRL) != 0;
     unsigned char plain;
 
     switch (code) {
@@ -487,7 +497,8 @@ const char *hal_key_sequence(unsigned code, bool shift, bool ctrl,
         return sequence_of(out, numbers[i], m, '~', false);
     }
 
-    if (code == KEY_TAB && shift && !ctrl) {
+    /* Alt does not change it: Alt+Shift+Tab is back round the windows. */
+    if (code == KEY_TAB && (mods & (KEY_MOD_SHIFT | KEY_MOD_CTRL | KEY_MOD_SUPER)) == KEY_MOD_SHIFT) {
         return sequence_of(out, 0, 1, 'Z', false);
     }
 
@@ -522,31 +533,68 @@ const char *hal_key_sequence(unsigned code, bool shift, bool ctrl,
  * means rather than which character it is - so it needs a sequence of its
  * own, exactly as the arrow keys do.
  *
- * `ESC [ 1 ; 9 x`, which is xterm's shape for a modified key with 9 as the
- * modifier. Following a convention that exists costs nothing and means a
- * terminal on the other end of a cable would understand it; inventing one
- * would have meant explaining it forever.
+ * **Two shapes, both xterm's** (Diego, 13 October 2026, agreeing the
+ * proposal on Magnet's card): a key that has a sequence carries Super in
+ * its modifier number like any other modifier - Super with Right is
+ * `ESC [ 1 ; 9 C`, with Alt as well `ESC [ 1 ; 11 C` (`hal_key_sequence`);
+ * and a character typed with Super is xterm's "modifyOtherKeys" form,
+ * `ESC [ 27 ; m ; c ~`, `c` the character in decimal - Super+T is
+ * `ESC [ 27 ; 9 ; 116 ~`. It used to be `ESC [ 1 ; 9 c`, the character as
+ * the sequence's last byte, which made Super+C and Super+Right the same six
+ * bytes and kept the arrows from carrying Super at all. Shift is already in
+ * the character - Super Shift ] is `}` - so `m` says Super, and Alt.
  *
- * **And Super alone, tapped, is `ESC [ 1 ; 9 ~`.** A modifier that does
- * something by itself is unusual and is what opens the menu, so it is
- * emitted on *release* and only when nothing was pressed in between - which
- * is the difference between tapping the key and using it to hold a
- * combination.
+ * **And Super alone, tapped, is `ESC [ 1 ; 9 ~`**, which no key makes: a
+ * modifier that does something by itself is unusual and is what opens the
+ * menu, so it is emitted on *release* and only when nothing was pressed in
+ * between - which is the difference between tapping the key and using it
+ * to hold a combination.
  *
  * Written into the caller's buffer. It was one static buffer, shared by the
  * PS/2 keyboard's interrupt and a USB keyboard's pushed keys, which on a PC
  * run on whichever cores they like.
  */
-const char *hal_key_super(int c, char out[KEY_SEQUENCE_MAX])
+const char *hal_key_super(int c, unsigned mods, char out[KEY_SEQUENCE_MAX])
 {
-    out[0] = 0x1b;
-    out[1] = '[';
-    out[2] = '1';
-    out[3] = ';';
-    out[4] = '9';
-    out[5] = (char)((c > 0) ? c : '~');
-    out[6] = 0;
+    unsigned at = 0, m = 1u + KEY_MOD_SUPER + (mods & KEY_MOD_ALT);
+    unsigned n = (unsigned)c & 0xffu;
+    char digits[3];
+    unsigned d = 0;
 
+    out[at++] = 0x1b;
+    out[at++] = '[';
+
+    if (c <= 0) {
+        out[at++] = '1';
+        out[at++] = ';';
+        out[at++] = '9';
+        out[at++] = '~';
+        out[at] = '\0';
+        return out;
+    }
+
+    out[at++] = '2';
+    out[at++] = '7';
+    out[at++] = ';';
+
+    if (m >= 10) {
+        out[at++] = (char)('0' + m / 10u);
+    }
+
+    out[at++] = (char)('0' + m % 10u);
+    out[at++] = ';';
+
+    do {
+        digits[d++] = (char)('0' + n % 10u);
+        n /= 10u;
+    } while (n > 0 && d < sizeof(digits));
+
+    while (d > 0) {
+        out[at++] = digits[--d];
+    }
+
+    out[at++] = '~';
+    out[at] = '\0';
     return out;
 }
 

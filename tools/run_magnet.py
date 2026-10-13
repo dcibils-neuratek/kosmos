@@ -13,6 +13,12 @@ dragged by its header:
   - to the top: the whole room;
   - away, and to the bottom left corner: a quarter.
 
+And from the keyboard (13 October), each key through QEMU's PS/2 keyboard
+and the kernel's encoding, so Super with an arrow arrives as a chord rather
+than as an arrow: Super+Right, the right half; Super+Alt+Up, the upper
+quarter on that side; Super+Up, the whole room; Super+Down, back where it
+was; Super+Alt+1, the left third; Super+C, the middle at its own size.
+
 Usage: run_magnet.py IMAGE
 """
 
@@ -28,7 +34,7 @@ sys.path.insert(0, HERE)
 import run_screenshot as R                                  # noqa: E402
 import run_servers as S                                     # noqa: E402
 
-CHECKS = 8
+CHECKS = 14
 GAP = 6
 
 OPEN = ('local r = fs.send("/Running/wm", { type = "launch", program = "tracker", args = "/Home" })\n'
@@ -143,6 +149,32 @@ def main():
               "let go in the bottom left corner, Tracker was not given that quarter: %r"
               % (quarter and quarter.group(0)))
 
+        # From the keyboard: Tracker has the keyboard, having just been dragged.
+        def key(name, pattern):
+            mark = len(guest.seen)
+            guest.sendkey(name)
+            return line(pattern, mark, 8)
+
+        right = key("meta_l-right", r"wm: magnet put Tracker at the right, (\d+),(\d+) (\d+)x(\d+)")
+        check(right is not None and int(right.group(1)) == 2 * GAP + lw,
+              "Super+Right did not put Tracker in the right half: %r" % (right and right.group(0)))
+        upper = key("meta_l-alt-up", r"wm: magnet put Tracker at the top right, (\d+),(\d+) (\d+)x(\d+)")
+        check(upper is not None and int(upper.group(2)) > 0 and int(upper.group(3)) == sw - 3 * GAP - lw,
+              "Super+Alt+Up did not put Tracker in the upper quarter on its side: %r"
+              % (upper and upper.group(0)))
+        check(key("meta_l-up", r"wm: magnet put Tracker in the whole room") is not None,
+              "Super+Up did not give Tracker the whole room")
+        check(key("meta_l-down", r"wm: magnet gave Tracker back its place") is not None,
+              "Super+Down did not put Tracker back where it was")
+        third = key("meta_l-alt-1", r"wm: magnet put Tracker at the third 1, (\d+),(\d+) (\d+)x(\d+)")
+        check(third is not None and int(third.group(1)) == GAP
+              and int(third.group(3)) == (sw - 4 * GAP) // 3,
+              "Super+Alt+1 did not put Tracker in the left third: %r" % (third and third.group(0)))
+        middle = key("meta_l-c", r"wm: magnet put Tracker in the middle, (\d+),(\d+) (\d+)x(\d+)")
+        check(middle is not None and abs(int(middle.group(1)) * 2 + int(middle.group(3)) - sw) <= 1
+              and (third is None or int(middle.group(3)) == int(third.group(3))),
+              "Super+C did not put Tracker in the middle at its size: %r" % (middle and middle.group(0)))
+
         # "Snap when dragged" off, as the Magnet page turns it off: kept, and
         # a window dropped at the right edge stays where it was dropped.
         off = session.run("/Temporary/off.lua").decode(errors="replace")
@@ -150,7 +182,10 @@ def main():
               % off.strip()[-80:])
         moved = line(r"wm: moved Tracker by its header to (\d+),(\d+)", 0, 1)
         mark = len(guest.seen)
-        drag(6 + bx, int(quarter.group(2)) + by if quarter else sh // 2, sw - 1, sh // 2)
+        if middle:
+            drag(int(middle.group(1)) + bx, int(middle.group(2)) + by, sw - 1, sh // 2)
+        else:
+            drag(6 + bx, int(quarter.group(2)) + by if quarter else sh // 2, sw - 1, sh // 2)
         time.sleep(1)
         guest._read_available()
         snapped = re.findall(r"wm: magnet (?:shows|put)[^\r\n]*", guest.seen[mark:])
@@ -187,7 +222,9 @@ def main():
 
     print("PASS: %d checks on Magnet (the right edge's outline and the right half, the gaps to "
           "the pixel; dragged away, its size back; the top edge, the whole room; a corner, a "
-          "quarter; dragging turned off and kept, and nothing snapping; the Magnet page)" % CHECKS)
+          "quarter; Super+Right, Super+Alt+Up, Super+Up, Super+Down, Super+Alt+1 and Super+C "
+          "from the keyboard; dragging turned off and kept, and nothing snapping; the Magnet "
+          "page)" % CHECKS)
     return 0
 
 

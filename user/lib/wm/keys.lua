@@ -169,20 +169,56 @@ return function(ctx)
   -- **Super, and why it needs a parser rather than a comparison.**
   --
   -- Windows on a PC keyboard, Command on an Apple one. `hal/keys.c` turns it
-  -- into `ESC [ 1 ; 9 x` for a combination and `ESC [ 1 ; 9 ~` for a tap,
-  -- because this system's input language is characters and escape sequences
-  -- and a *held* modifier has nowhere else to go.
+  -- into an escape sequence, because this system's input language is
+  -- characters and escape sequences and a *held* modifier has nowhere else
+  -- to go - xterm's two shapes (13 October 2026, for Magnet's keys): a key
+  -- with a sequence of its own carries Super in its modifier number, Super
+  -- with Right `ESC [ 1 ; 9 C`, with Alt as well `ESC [ 1 ; 11 C`; a
+  -- character typed with Super is `ESC [ 27 ; 9 ; c ~`, the character in
+  -- decimal; and Super tapped alone `ESC [ 1 ; 9 ~`.
   --
-  -- Which means six bytes arrive one at a time, and five of them look exactly
-  -- like the beginning of something an application was entitled to receive.
-  -- So they are **buffered and flushed through** when they turn out not to be
-  -- ours: an editor pressing Escape and then a bracket must still get both,
-  -- in order, or the window manager has quietly eaten somebody's keystroke.
+  -- Which means a sequence arrives a byte at a time, and every byte of it
+  -- looks like the beginning of something an application was entitled to
+  -- receive. So **a sequence is held until it ends**, and what turns out not
+  -- to be Super's goes on to the window whole and in order: an editor's
+  -- arrow, or Escape and then a bracket, must still arrive, or the window
+  -- manager has quietly eaten somebody's keystroke.
   --
   -- That is the whole reason this is a state machine and not `if c == 27`.
   --
-  local SUPER_HEAD = { 27, 91, 49, 59, 57 }       -- ESC [ 1 ; 9
-  local super_at = 0
+  local held_seq = nil            -- the bytes of a sequence not yet ended
+
+  local ARROW = { [65] = keys.UP, [66] = keys.DOWN, [67] = keys.RIGHT, [68] = keys.LEFT }
+
+  --
+  -- **A whole sequence, as Super's chord** - its code, as `SUPER_KEYS` and
+  -- the bindings name one: the character, 126 for Super alone, an arrow's
+  -- `keys` number, each with Alt or Shift in it as `keys.with` puts them -
+  -- or nil when it is not Super's.
+  --
+  local function super_chord(params, final)
+    if params == "1;9" and final == 126 then return 126 end      -- tapped
+
+    local p = {}
+
+    for field in (params .. ";"):gmatch("([^;]*);") do p[#p + 1] = tonumber(field) or 0 end
+
+    local mods = (p[2] or 1) - 1
+
+    if mods < keys.SUPER or mods > 15 then return nil end
+
+    mods = mods - keys.SUPER
+
+    if final == 126 and p[1] == 27 and p[3] and p[3] > 0 and p[3] < 256 then
+      return keys.with(p[3], mods & keys.ALT)    -- Shift is in the character
+    end
+
+    if ARROW[final] and (p[1] == 1) and (mods & keys.CTRL) == 0 then
+      return keys.with(ARROW[final], mods)
+    end
+
+    return nil
+  end
 
   --
   -- What Super plus a key does. True when it was ours, false to hand the
@@ -207,16 +243,15 @@ return function(ctx)
     return true
   end
 
-  local function flush_super(upto, extra)
-    local i
+  -- What was held, and a byte after it, on to the window.
+  local function flush_held(extra)
+    local was = held_seq
 
-    for i = 1, upto do
-      to_focused(SUPER_HEAD[i])
-    end
+    held_seq = nil
+
+    for _, b in ipairs(was or {}) do to_focused(b) end
 
     if extra then to_focused(extra) end
-
-    super_at = 0
   end
 
   --
@@ -360,6 +395,62 @@ return function(ctx)
     { key = 104, shown = "Super+H", action = "hide", group = "desktop",
       what = "Get the window in front out of the way",
       run = function() minimise_focused() end },
+
+    --
+    -- **Magnet from the keyboard** (`docs/magnet.html`, agreed 10 October;
+    -- the keys' encoding 13 October): the window in front put where a drag
+    -- to an edge or a corner would put it, and more. Thirds are Super+Alt
+    -- with a number rather than the mockup's Super with one, since Super
+    -- with a number is the browser's tabs; Shortcuts moves any of them.
+    --
+    { key = keys.LEFT, shown = "Super+Left", action = "snap_left", group = "windows",
+      what = "The window in front on the left half",
+      run = function() OUT.magnet_key("left") end },
+    { key = keys.RIGHT, shown = "Super+Right", action = "snap_right", group = "windows",
+      what = "The window in front on the right half",
+      run = function() OUT.magnet_key("right") end },
+    { key = keys.UP, shown = "Super+Up", action = "snap_whole", group = "windows",
+      what = "The window in front over the whole room",
+      run = function() OUT.magnet_key("whole") end },
+    { key = keys.DOWN, shown = "Super+Down", action = "snap_back", group = "windows",
+      what = "The window in front back as it was",
+      run = function() OUT.magnet_key("back") end },
+    { key = keys.with(keys.UP, keys.ALT), shown = "Super+Alt+Up", action = "snap_quarter_up",
+      group = "windows", what = "The window in front in the upper quarter on its side",
+      run = function() OUT.magnet_key("quarter_up") end },
+    { key = keys.with(keys.DOWN, keys.ALT), shown = "Super+Alt+Down", action = "snap_quarter_down",
+      group = "windows", what = "The window in front in the lower quarter on its side",
+      run = function() OUT.magnet_key("quarter_down") end },
+    { key = keys.with(keys.LEFT, keys.ALT), shown = "Super+Alt+Left", action = "snap_quarter_left",
+      group = "windows", what = "The window in front in the left quarter of its half",
+      run = function() OUT.magnet_key("quarter_left") end },
+    { key = keys.with(keys.RIGHT, keys.ALT), shown = "Super+Alt+Right", action = "snap_quarter_right",
+      group = "windows", what = "The window in front in the right quarter of its half",
+      run = function() OUT.magnet_key("quarter_right") end },
+    { key = keys.with(keys.UP, keys.SHIFT), shown = "Super+Shift+Up", action = "snap_top",
+      group = "windows", what = "The window in front on the top half",
+      run = function() OUT.magnet_key("top") end },
+    { key = keys.with(keys.DOWN, keys.SHIFT), shown = "Super+Shift+Down", action = "snap_bottom",
+      group = "windows", what = "The window in front on the bottom half",
+      run = function() OUT.magnet_key("bottom") end },
+    { key = keys.with(49, keys.ALT), shown = "Super+Alt+1", action = "snap_third_1", group = "windows",
+      what = "The window in front in the left third",
+      run = function() OUT.magnet_key("third_1") end },
+    { key = keys.with(50, keys.ALT), shown = "Super+Alt+2", action = "snap_third_2", group = "windows",
+      what = "The window in front in the middle third",
+      run = function() OUT.magnet_key("third_2") end },
+    { key = keys.with(51, keys.ALT), shown = "Super+Alt+3", action = "snap_third_3", group = "windows",
+      what = "The window in front in the right third",
+      run = function() OUT.magnet_key("third_3") end },
+    { key = keys.with(52, keys.ALT), shown = "Super+Alt+4", action = "snap_two_thirds_left",
+      group = "windows", what = "The window in front in the left two thirds",
+      run = function() OUT.magnet_key("two_thirds_left") end },
+    { key = keys.with(53, keys.ALT), shown = "Super+Alt+5", action = "snap_two_thirds_right",
+      group = "windows", what = "The window in front in the right two thirds",
+      run = function() OUT.magnet_key("two_thirds_right") end },
+    { key = 99, shown = "Super+C", action = "snap_middle", group = "windows",
+      what = "The window in front in the middle, its size kept",
+      run = function() OUT.magnet_key("middle") end },
   }
 
   --
@@ -434,25 +525,46 @@ return function(ctx)
     return nil
   end
 
-  -- A byte after `ESC [ 1 ; 9`, as the chord a person pressed.
-  local function byte_chord(byte)
-    if byte == 126 then return "Super" end
+  local ARROW_WORD = { [keys.UP] = "Up", [keys.DOWN] = "Down",
+                       [keys.RIGHT] = "Right", [keys.LEFT] = "Left" }
 
-    local word, shift = key_word(byte)
+  -- A chord's code (`super_chord`) as the chord a person pressed: a
+  -- character, or an arrow, with Alt or Shift where they were held.
+  local function byte_chord(code)
+    if code == 126 then return "Super" end
+
+    local key, mods = keys.parts(code)
+    local alt = (mods & keys.ALT) ~= 0 and "Alt+" or ""
+    local word, shift
+
+    if ARROW_WORD[key] then
+      word, shift = ARROW_WORD[key], (mods & keys.SHIFT) ~= 0
+    elseif key >= 0 then
+      word, shift = key_word(key)
+    end
 
     if not word then return nil end
 
-    return shift and ("Super+Shift+" .. word) or ("Super+" .. word)
+    return "Super+" .. (shift and "Shift+" or "") .. alt .. word
   end
 
-  -- And a chord back into its byte; nil for one that is not Super and one
-  -- more key, with or without Shift.
+  -- And a chord back into its code; nil for one that is not Super and one
+  -- more key, with Shift, Alt or neither.
   local BYTE_OF = {}
 
   for byte = 32, 126 do
-    local chord = byte_chord(byte)
+    for _, mods in ipairs({ 0, keys.ALT }) do
+      local code = keys.with(byte, mods)
+      local chord = byte_chord(code)
 
-    if chord then BYTE_OF[chord] = byte end
+      if chord and not BYTE_OF[chord] then BYTE_OF[chord] = code end
+    end
+  end
+
+  for arrow in pairs(ARROW_WORD) do
+    for _, mods in ipairs({ 0, keys.ALT, keys.SHIFT }) do
+      BYTE_OF[byte_chord(keys.with(arrow, mods))] = keys.with(arrow, mods)
+    end
   end
 
   BYTE_OF["Super+Tab"] = 9
@@ -647,16 +759,12 @@ return function(ctx)
 
   --
   -- **Alt+Tab** (`docs/switcher.html`): the windows stepped, with nothing
-  -- shown - what Super+Tab did before the switcher. The keyboard sends Alt
-  -- as nothing, so Alt+Tab arrives as a Tab, and Alt+Shift+Tab as Shift+Tab's
+  -- shown - what Super+Tab did before the switcher. A character does not
+  -- carry Alt, so Alt+Tab arrives as a Tab, and Alt+Shift+Tab as Shift+Tab's
   -- `ESC [ Z`: both kept from the window while the left Alt is held - not the
   -- right, which is AltGr on a Spanish keyboard and types @ - and acted on
-  -- here. **Not with Super held**: every Super chord begins `ESC [ 1 ; 9`,
-  -- and holding its `ESC [` back as a possible Shift+Tab broke them all -
-  -- the switcher, once open, takes every character anyway.
+  -- here.
   --
-  local alt_seq = 0
-
   -- Back one: the window in front under every other - each other raised in
   -- its order, which is the inverse of `cycle_windows` raising the bottom.
   local function cycle_back()
@@ -675,44 +783,17 @@ return function(ctx)
     for _, other in ipairs(order) do raise(other) end
   end
 
+  --
+  -- Alt+Tab here, and Alt+Shift+Tab where every sequence is read whole
+  -- (`ESC [ Z`, in `key` below): it used to be collected here too, which
+  -- took any sequence typed with Alt held - Super+Alt with an arrow among
+  -- them - and handed its first two bytes straight to the window.
+  --
   local function alt_tab(c)
-    local left_alt = OUT.chord.held[56]
-
-    if not left_alt then
-      if alt_seq > 0 then
-        local was = alt_seq
-
-        alt_seq = 0
-        to_focused(27)
-        if was > 1 then to_focused(91) end
-      end
-
-      return false
-    end
-
-    if c == 9 then
+    if c == 9 and OUT.chord.held[56] then
       cycle_windows()
       print("wm: Alt+Tab")
       return true
-    end
-
-    if alt_seq == 0 and c == 27 then alt_seq = 1 return true end
-    if alt_seq == 1 and c == 91 then alt_seq = 2 return true end
-
-    if alt_seq == 2 and c == 90 then
-      alt_seq = 0
-      cycle_back()
-      print("wm: Alt+Shift+Tab")
-      return true
-    end
-
-    -- Not Shift+Tab after all: what was kept goes on to the window.
-    if alt_seq > 0 then
-      local was = alt_seq
-
-      alt_seq = 0
-      to_focused(27)
-      if was > 1 then to_focused(91) end
     end
 
     return false
@@ -725,15 +806,6 @@ return function(ctx)
 
     if c ~= nil and alt_tab(c) then return end
 
-    -- The end of what was read, with Shift+Tab's start held back: it was an
-    -- Escape after all, and goes on.
-    if c == nil and alt_seq > 0 then
-      local was = alt_seq
-
-      alt_seq = 0
-      to_focused(27)
-      if was > 1 then to_focused(91) end
-    end
 
     --
     -- **Given nil, the input just read has ended** (`roadmap.md` 6zz l3):
@@ -744,52 +816,52 @@ return function(ctx)
     -- next key: the browser's Escape stopped nothing until another came.
     --
     if c == nil then
-      if super_at > 0 then
-        local was = super_at
-
-        super_at = 0
-        flush_super(was, nil)
-      end
+      if held_seq then flush_held(nil) end
 
       return
     end
 
     --
-    -- Collecting `ESC [ 1 ; 9`. Each byte either continues the sequence or
-    -- ends the attempt, and ending it hands back everything taken so far.
+    -- Collecting a sequence: `ESC`, `[`, its parameters, and the byte that
+    -- ends it. Super's is acted on; anything else goes on whole.
     --
-    if super_at > 0 then
-      if super_at == #SUPER_HEAD then
-        local was = super_at
-
-        super_at = 0
-
-        -- Shortcuts recording a chord has it, rather than its action.
-        if listened(c) then
+    if held_seq then
+      if #held_seq == 1 then
+        if c == 91 then                                   -- [
+          held_seq[2] = c
           return
         end
 
-        if super_command(c) then
+        flush_held(nil)
+        -- fall through: an Escape that started nothing, and this byte
+      elseif c >= 0x20 and c <= 0x3f and #held_seq < 18 then
+        held_seq[#held_seq + 1] = c                       -- a parameter
+        return
+      elseif c >= 0x40 and c <= 0x7e then
+        local params = string.char(table.unpack(held_seq, 3))
+        local chord = super_chord(params, c)
+
+        -- Alt+Shift+Tab: back round the windows.
+        if params == "" and c == 90 and OUT.chord.held[56] then
+          held_seq = nil
+          cycle_back()
+          print("wm: Alt+Shift+Tab")
           return
         end
 
-        -- Not a binding we have, so it was never ours to keep.
-        flush_super(was, c)
+        -- Shortcuts recording a chord has it, rather than its action; a
+        -- binding acts; and what is neither was never ours to keep.
+        if chord and (listened(chord) or super_command(chord)) then
+          held_seq = nil
+          return
+        end
+
+        flush_held(c)
         return
+      else
+        flush_held(nil)
+        -- fall through: the sequence was cut short, and this byte is a key
       end
-
-      if c == SUPER_HEAD[super_at + 1] then
-        super_at = super_at + 1
-        return
-      end
-
-      -- A different sequence - an arrow, or a person pressing Escape. Give
-      -- back what was taken and let this byte be handled on its own merits.
-      local was = super_at
-
-      super_at = 0
-      flush_super(was, nil)
-      -- fall through, so this byte is dispatched normally
     end
 
     --
@@ -841,8 +913,8 @@ return function(ctx)
       return
     end
 
-    if c == SUPER_HEAD[1] and super_at == 0 then
-      super_at = 1
+    if c == 27 and not held_seq then
+      held_seq = { 27 }
       return
     end
 
