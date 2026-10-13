@@ -13,6 +13,7 @@
   number", "Show the cpu name and model in a nice way", "Bars are a 'show
   cores bars' option", "Mockup first". The page to build it from, once
   agreed. The numbers in it are made up, in the shape of the M700's.
+  13 October 2026: the processor's features added, from Diego's ask.
 -->
 <title>Monitor, refreshed</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -119,6 +120,28 @@ code { font-family: var(--mono); font-size: 13px; }
 .menu div.mark::before { content: "\2713"; position: absolute; left: 10px; color: var(--a-ink); }
 .menu div.hi { background: #2f6bdc; }
 .menu hr { border: 0; border-top: 1px solid #424b5d; margin: 5px 4px; }
+/* The processor's features: a row of the ones people ask about, and all of them in groups. */
+.feats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; align-items: center; }
+.pill { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: #313a4b; color: var(--a-ink);
+        border: 1px solid #3f495c; white-space: nowrap; }
+.pill.virt { background: #1e3b2a; border-color: #2f6b45; color: #b9f0c9; }
+.more { font-size: 12px; color: #7fb0ff; margin-left: 2px; white-space: nowrap; }
+.allfeats { background: var(--a-raised); border: 1px solid var(--a-line); border-top: 0; border-radius: 0 0 10px 10px;
+            margin-top: -6px; padding: 14px 16px 12px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 22px; }
+.allfeats .g b { display: block; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--a-dim);
+                 margin-bottom: 6px; font-weight: 600; }
+.allfeats .g div { display: flex; flex-wrap: wrap; gap: 5px; }
+.f { font-size: 11.5px; padding: 1px 7px; border-radius: 5px; background: #313a4b; border: 1px solid #3f495c;
+     white-space: nowrap; position: relative; }
+.f.no { background: transparent; color: #6c7586; border-style: dashed; text-decoration: line-through; text-decoration-color: #5a6372; }
+.f.tip { outline: 2px solid #2f6bdc; }
+.f.tip::after { content: attr(data-what); position: absolute; left: 0; top: 24px; width: 230px; white-space: normal;
+                background: #0f1218; color: #e9ecf1; border: 1px solid #424b5d; border-radius: 7px; padding: 7px 9px;
+                font-size: 11.5px; line-height: 1.4; z-index: 4; box-shadow: 0 10px 26px rgba(0,0,0,.5); }
+.chip.open { border-radius: 10px 10px 0 0; }
+.feattable { border-collapse: collapse; margin: 10px 0; font-size: 13.5px; }
+.feattable td, .feattable th { border-bottom: 1px solid var(--rule); padding: 5px 10px; text-align: left; vertical-align: top; }
+.feattable th { font-family: var(--display); }
 </style>
 </head>
 <body>
@@ -147,6 +170,37 @@ code { font-family: var(--mono); font-size: 13px; }
 <h2>Sixteen cores</h2>
 <div class="scroller"><div class="win" id="w5"></div></div>
 <p class="cap">Still four across, now four rows deep, and each graph 60 tall rather than 84, so the window fits a 1280 by 720 screen. The rule, as <code>roadmap.md</code> 6h asked: <b>the window is never taller than the screen</b>. Up to 8 cores, four across at 84. From 9 to 16, four across at 60. From 17 to 32, eight across in a window twice as wide, at 60. Past 32, one graph for the whole machine, with a graph for each core one choice away in the dots' menu. With the bars shown at 16 cores, they sit in two columns of eight.</p>
+
+<h2>The processor's features</h2>
+<div class="q"><b>Diego, 13 October 2026</b>: "can we add the CPU features to the CPU monitor app below the processors count and speed", "like VT-X, SSE, etc that shows all the features and capabilities of the cpu" - "the cpu features i want to show are not in the sandbox app, but in the cpu monitor app in kosmos".</div>
+<div class="scroller"><div class="win" id="w6"></div></div>
+<p class="cap">Under the count and the clock, a row of what people ask a processor about: <b>64-bit</b>, its virtualization and whether it is on - green, since Kosmos runs its sandboxes on it - the widest vector unit it has, and the instructions that matter most to Kosmos's own kits: AES for the Crypto Kit, RDRAND for its generator. Then <b>Every feature</b>.</p>
+
+<h2>Every feature</h2>
+<div class="scroller"><div class="win" id="w7"></div></div>
+<p class="cap"><b>Every feature</b> opens the card downwards, in place, and the graphs move down to make room; the same words close it. Every feature the processor reports, in four groups, each named as a person knows it - <b>AES-NI</b>, not <code>CPUID.1:ECX[25]</code>. What it has, plain; what it lacks, struck through and dashed, so <b>AVX-512</b> missing on the M700 is something you can see rather than look for. The pointer over one says what it is for, in a sentence - here <b>VT-x</b>, with what its firmware decided. Kept open or closed as the window's own choice, as the bars are.</p>
+
+<h2>The other machines</h2>
+<div class="pair">
+<div class="scroller"><div class="win" id="w8"></div></div>
+<div class="scroller"><div class="win" id="w9"></div></div>
+</div>
+<p class="cap">The T14, an 11th-generation Core, has AVX-512, SHA and CET where the M700 does not. An ARM board says its own features in its own words - Neon, the crypto extensions, LSE atomics, SVE if it has it - and its virtualization is EL2; under QEMU, what QEMU's processor offers.</p>
+
+<h2>What it is made of: the features</h2>
+<ul>
+  <li><b>The kernel reads the words; it does not name them.</b> It already hands Monitor CPUID's feature words, leaves 1 and 7 (<code>sysinfo.cpu_raw</code>), raw, as the layer that says what the hardware said. Six more words, still raw: on a PC, leaf 7's EDX, leaf 0x80000001's ECX and EDX (64-bit, NX, 1 GB pages, RDTSCP, LZCNT), leaf 0x80000007's EDX (the invariant TSC), and leaf 6's EAX (Turbo Boost); on ARM, <code>ID_AA64ISAR1</code>, <code>ID_AA64ISAR2</code> and <code>ID_AA64PFR1</code> beside the ISAR0 and PFR0 it reads now. <code>CPU_RAW_WORDS</code> grows from 10 to 16.</li>
+  <li><b>A kit names them</b>: <code>user/lib/cpufeatures.lua</code>, one table - which word, which bit, its name, its group, a sentence - for each architecture, and the decoding nothing else repeats. Monitor is its first user; About and neofetch want the same list (<code>roadmap.md</code>, About This Machine). Pure Lua, held on the Mac by <code>tools/test_cpufeatures.lua</code> to the M700's and the T14's real words.</li>
+  <li><b>Virtualization</b> is the kernel's own probe (<code>sysinfo.virt</code>), not a CPUID bit alone, so it says what the firmware decided as well as what the processor has: <i>VT-x, on</i>; <i>VT-x, off in this machine's setup</i>; <i>EL2</i>.</li>
+  <li><b>Read once</b>, when the window opens: a processor's features do not change, so nothing about them is on the window's clock.</li>
+</ul>
+<table class="feattable">
+<tr><th>Group</th><th>On a PC</th><th>On ARM</th></tr>
+<tr><td>Vector</td><td>MMX, SSE to SSE4.2, AVX, AVX2, FMA, F16C, AVX-512 (F, and the rest by name)</td><td>FP, Neon, FP16, dot product, SVE, SVE2</td></tr>
+<tr><td>Virtualization</td><td>VT-x or AMD-V, as the kernel found it</td><td>EL2</td></tr>
+<tr><td>Security</td><td>AES-NI, CLMUL, SHA, RDRAND, RDSEED, NX, SMEP, SMAP, SGX, CET</td><td>AES, PMULL, SHA-1, SHA-2, SHA-3, SHA-512, RNDR, pointer authentication, BTI, MTE</td></tr>
+<tr><td>System</td><td>64-bit, 1 GB pages, PCID, INVPCID, x2APIC, Hyper-Threading, invariant TSC, TSC deadline, Turbo Boost, XSAVE, FSGSBASE, BMI1, BMI2, ADX, POPCNT, LZCNT, MOVBE, RDTSCP</td><td>CRC32, LSE atomics, RDM, 16-bit ASIDs, the generic timer's virtual counter</td></tr>
+</table>
 
 <h2>What it is made of</h2>
 <ul>
@@ -230,6 +284,52 @@ const G16 = Array.from({length: 16}, (_, i) => 3.0 + (i % 3) * 0.05), P16 = Arra
 document.getElementById("w5").innerHTML = head(false) + '<div class="body">' +
   chip("AMD", "Ryzen 9 5950X", "16 processors &middot; rated 3.40 GHz", "3.05 GHz", "now, across all cores") +
   cores(16, G16, P16) + "</div>";
+
+// ---- the processor's features (13 October) ----
+function pills(list, more) {
+  return '<div class="feats">' + list.map(([t, v]) => `<span class="pill${v ? " virt" : ""}">${t}</span>`).join("")
+    + `<span class="more">${more}</span></div>`;
+}
+function chipf(maker, model, facts, now, nowNote, row, open) {
+  return `<div class="chip${open ? " open" : ""}" style="align-items:start"><div class="die"></div>
+    <div><div class="maker">${maker}</div><div class="model">${model}</div><div class="facts">${facts}</div>${row}</div>
+    <div class="now"><b>${now}</b><span>${nowNote}</span></div></div>`;
+}
+function groups(gs, tip) {
+  return '<div class="allfeats">' + gs.map(([name, fs]) => `<div class="g"><b>${name}</b><div>` +
+    fs.map(f => { const no = f.startsWith("-"), n = no ? f.slice(1) : f;
+      const t = tip && tip[0] === n ? ` tip" data-what="${tip[1]}` : "";
+      return `<span class="f${no ? " no" : ""}${t}">${n}</span>`; }).join("") + "</div></div>").join("") + "</div>";
+}
+const M700ROW = pills([["64-bit"], ["VT-x on", true], ["AVX2"], ["AES-NI"], ["RDRAND"], ["8 threads"]], "Every feature &rsaquo;");
+const M700G = [
+  ["Vector", ["MMX", "SSE", "SSE2", "SSE3", "SSSE3", "SSE4.1", "SSE4.2", "AVX", "AVX2", "FMA", "F16C", "-AVX-512"]],
+  ["Virtualization", ["VT-x", "-AMD-V"]],
+  ["Security", ["AES-NI", "CLMUL", "-SHA", "RDRAND", "RDSEED", "NX", "SMEP", "SMAP", "SGX", "-CET"]],
+  ["System", ["64-bit", "1 GB pages", "PCID", "INVPCID", "x2APIC", "Hyper-Threading", "Invariant TSC", "TSC deadline", "Turbo Boost", "XSAVE", "FSGSBASE", "BMI1", "BMI2", "ADX", "POPCNT", "LZCNT", "MOVBE", "RDTSCP"]],
+];
+document.getElementById("w6").innerHTML = head(false) + '<div class="body">' +
+  chipf("Intel", "Core i7-6700", "8 processors &middot; rated 3.40 GHz", "3.70 GHz", "now, across all cores", M700ROW, false) +
+  cores(CORES, GHZ, PCT) + "</div>";
+document.getElementById("w7").innerHTML = head(false) + '<div class="body">' +
+  chipf("Intel", "Core i7-6700", "8 processors &middot; rated 3.40 GHz", "3.70 GHz", "now, across all cores",
+        pills([["64-bit"], ["VT-x on", true], ["AVX2"], ["AES-NI"], ["RDRAND"], ["8 threads"]], "Fewer &lsaquo;"), true) +
+  groups(M700G, ["VT-x", "Intel's virtualization: runs a guest's code on the processor itself. On, and locked on by this machine's firmware - Kosmos runs its sandboxes on it."]) +
+  cores(4, GHZ, PCT) + "</div>";
+document.getElementById("w8").innerHTML = head(false) + '<div class="body">' +
+  chipf("Intel &middot; 11th Gen", "Core i5-1145G7", "8 processors &middot; rated 2.60 GHz", "2.60 GHz", "now",
+        pills([["64-bit"], ["VT-x on", true], ["AVX-512"], ["AES-NI"], ["SHA"]], "Fewer &lsaquo;"), true) +
+  groups([["Vector", ["SSE4.2", "AVX", "AVX2", "FMA", "AVX-512", "VNNI"]], ["Virtualization", ["VT-x"]],
+          ["Security", ["AES-NI", "VAES", "SHA", "RDRAND", "RDSEED", "NX", "SMEP", "SMAP", "CET", "-SGX"]],
+          ["System", ["64-bit", "1 GB pages", "PCID", "Hyper-Threading", "Invariant TSC", "Turbo Boost", "BMI2", "ADX"]]]) +
+  "</div>";
+document.getElementById("w9").innerHTML = head(false) + '<div class="body">' +
+  chipf("Arm", "Cortex-A76", "4 processors &middot; rated 2.40 GHz", "2.40 GHz", "now",
+        pills([["64-bit"], ["EL2", true], ["Neon"], ["AES"], ["SHA-2"]], "Fewer &lsaquo;"), true) +
+  groups([["Vector", ["FP", "Neon", "FP16", "Dot product", "-SVE", "-SVE2"]], ["Virtualization", ["EL2"]],
+          ["Security", ["AES", "PMULL", "SHA-1", "SHA-2", "-SHA-3", "-RNDR", "-Pointer auth", "-BTI", "-MTE"]],
+          ["System", ["64-bit", "CRC32", "LSE atomics", "RDM", "16-bit ASIDs"]]]) +
+  "</div>";
 </script>
 </body>
 </html>

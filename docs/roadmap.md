@@ -372,7 +372,12 @@ SSE to AVX-512, NEON, SVE; virtualization: VT-x and what its firmware
 decided, EL2; security: AES, SHA, RDRAND, SMEP, SMAP; and the rest), each
 named as a person knows it. Decoding the words is a small kit, since About
 and neofetch want the same list. A change to an agreed window, so drawn in
-`docs/monitor.html` first and agreed before it is built.
+`docs/monitor.html` first and agreed before it is built. **Drawn 13
+October** (`docs/monitor.html`, *The processor's features*): a row of
+headline features under the count and clock, VT-x green when on; *Every
+feature* opening the card in place, four groups, what is missing struck
+through; the kernel reading six more raw words (`CPU_RAW_WORDS` 10 -> 16)
+and `user/lib/cpufeatures.lua` naming them. Waiting for Diego's word.
 
 **Mail: always show a sender's pictures** - Diego, 10 October 2026: "mail
 app needs a way to set 'always show images from this sender' somehere
