@@ -1980,6 +1980,24 @@ and Reset columns. **The arrangement is a line of text** (`cols:text`,
 where it likes: Tracker in its settings, or as a `columns` attribute on a
 folder that keeps its own.
 
+**Processes moved onto it second** (0.11.194), and asked two things of it
+that Tracker had not: **a column that fills** - its `file`, a path, takes
+what the others leave, never under 120, and its edge is not dragged - and
+**its headings' rule**, which the kit took for every list: the column
+sorted by has its heading in the text's colour and a drawn arrow saying
+which way, on the side its words start from, and no column is narrower than
+its heading with that arrow. Tracker's headings changed with it. Cells take
+their options as a table made once (`right`, `indent`, `keep_end` for a path
+cut from the front, `role`), since a list that is also the desktop should
+allocate nothing a paint. Processes sorts on a heading's release, through
+`ui.click`, and asks the kit only where the edges and the columns are; its
+widths are kept in its own settings.
+
+**Mail is not a list of columns**, and the drawing that said "Processes and
+Mail after" was wrong about it: each message is a card of three lines - who
+and when, the subject, the preview - each already cut by `ui.fitted`, with
+nothing to sort by from a heading and no heading to drag.
+
 **Not done**: the pointer as a two-way arrow over an edge. The window
 manager draws one pointer and an application cannot ask for another shape
 yet; the guide and the width say where the edge is meanwhile

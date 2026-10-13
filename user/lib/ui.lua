@@ -4685,6 +4685,7 @@ end
 --   local cols = ui.columns{
 --     columns = { { key = "name", title = "Name", w = 330, always = true },
 --                 { key = "size", title = "Size", w = 80, align = "right" },
+--                 { key = "file", title = "file", fill = true, min = 120 },
 --                 { key = "added", title = "Added", w = 150, hidden = true } },
 --     widest = function(col) return pixels end,   -- for a double-click's fit
 --     on_change = function(cols) end,             -- widths or columns changed
@@ -4701,20 +4702,23 @@ end
 --
 -- **What it leaves to the list**: the rows, the selection, sorting, and
 -- where the arrangement is kept. Name never goes narrower than 120 and the
--- rest than 60; wider than the list, it scrolls a column at a time with the
--- first held in place, so nothing is ever drawn cut by the list's edge
--- rather than by an ellipsis.
+-- rest than 60, nor any column than its heading with the sort's arrow; a
+-- column that `fill`s takes what the others leave of the list (Processes'
+-- file) and its edge is not dragged. Wider than the list, it scrolls a
+-- column at a time with the first held in place, so nothing is ever drawn
+-- cut by the list's edge rather than by an ellipsis.
 --------------------------------------------------------------------------
 
 function ui.columns(spec)
   local c = { all = {}, first = 1, drag = nil, last_edge = nil,
-              widest = spec.widest, on_change = spec.on_change }
-  local PAD, SLOP = 8, 4
+              widest = spec.widest, on_change = spec.on_change, role = spec.role }
+  local PAD, SLOP, ARROW = 8, 4, 15
+  local NO_OPTIONS = {}
 
   for i, d in ipairs(spec.columns or {}) do
     local min = d.min or (i == 1 and 120 or 60)
 
-    c.all[i] = { key = d.key, title = d.title, align = d.align or "left",
+    c.all[i] = { key = d.key, title = d.title, align = d.align or "left", fill = d.fill,
                  min = min, w = math.max(min, d.w or 100), always = d.always or i == 1,
                  shown = not d.hidden, start_w = math.max(min, d.w or 100),
                  start_shown = not d.hidden }
@@ -4725,24 +4729,39 @@ function ui.columns(spec)
   end
 
   -- The columns shown, in order, each with its `x` from the list's left.
-  -- The first is always there; after it, those scrolled past are not.
-  function c:shown(left)
+  -- The first is always there; after it, those scrolled past are not. A
+  -- column that fills takes what the rest leave of `room`, when it is said.
+  function c:shown(left, room)
     local out, x, n = {}, left or 0, 0
+    local fixed, filling = 0, nil
 
     self.left = left or 0
+    room = room or self.room
+    self.room = room
 
     for _, col in ipairs(self.all) do
       if col.shown then
         n = n + 1
 
+        -- Never narrower than its heading with the sort's arrow beside it,
+        -- in whatever face the look draws headings in.
+        col.w = math.max(col.w, gfx.measure(col.title, self.role) + ARROW + 2 + PAD)
+
         if n == 1 or n > self.first then
-          col.x = x
           out[#out + 1] = col
-          x = x + col.w
+
+          if col.fill then filling = col else fixed = fixed + col.w end
         else
           col.x = nil
         end
       end
+    end
+
+    if filling then filling.w = math.max(filling.min, (room or fixed + filling.min) - fixed) end
+
+    for _, col in ipairs(out) do
+      col.x = x
+      x = x + col.w
     end
 
     return out, x - (left or 0)
@@ -4792,16 +4811,20 @@ function ui.columns(spec)
 
   --
   -- **A cell**: `text` in column `key` of a row at `y`, cut with an
-  -- ellipsis at the column's edge - or at `right`, the list's, if that
+  -- ellipsis at the column's edge - or at `o.right`, the list's, if that
   -- comes first - and against the column's right edge for numbers.
-  -- `indent` leaves room at its left, for an icon. Its `x`, or nil when
-  -- the column is not shown.
+  -- `o.indent` leaves room at its left, for an icon; `o.keep_end` cuts from
+  -- the front, for a path, whose end is its own name; `o.role` is the face.
+  -- Its `x`, or nil when the column is not shown.
   --
-  function c:cell(g, key, y, text, fg, bg, right, role, indent)
+  function c:cell(g, key, y, text, fg, bg, o)
     local col = self:get(key)
+
+    o = o or NO_OPTIONS
 
     if not col or not col.x then return nil end
 
+    local right, role, indent = o.right, o.role, o.indent
     local x = col.x + (indent or 0)
     local room = col.x + col.w - PAD - x
 
@@ -4815,7 +4838,7 @@ function ui.columns(spec)
 
     if room < 8 then return col.x end
 
-    text = ui.fitted(text, room, role)
+    text = ui.fitted(text, room, role, o.keep_end)
 
     if col.align == "right" then
       g:text(col.x + col.w - PAD - gfx.measure(text, role), y, text, fg, bg, role)
@@ -4832,30 +4855,42 @@ function ui.columns(spec)
   -- edge so there is something to see where a drag begins.
   --
   function c:headings(g, left, y, h, right, ground, sort_by, reversed)
-    local shown = self:shown(left)
+    local shown = self:shown(left, right - left)
 
     self.right = right
     local ty = y + (h - gfx.height()) // 2
 
+    --
+    -- The column sorted by has its heading in the text's colour and an
+    -- arrow saying which way - an order you cannot see is an order you
+    -- cannot trust (Processes said it first). The arrow goes on the side
+    -- the words start from, so a column of numbers keeps its heading over
+    -- its last digit.
+    --
     for i, col in ipairs(shown) do
       if col.x >= right or (i > 1 and col.x + col.w > right) then break end
 
-      local title = col.title .. ((sort_by == col.key) and (reversed and " \u{2193}" or " \u{2191}") or "")
-      local room = math.min(col.w, right - col.x) - PAD
+      local on = sort_by == col.key
+      local room = math.min(col.w, right - col.x) - PAD - (on and ARROW + 2 or 0)
 
       if room > 8 then
-        title = ui.fitted(title, room)
+        local title = ui.fitted(col.title, room, self.role)
+        local tw = gfx.measure(title, self.role)
+        local tx = (col.align == "right") and (col.x + col.w - PAD - tw) or col.x
 
-        if col.align == "right" then
-          g:text(col.x + col.w - PAD - gfx.measure(title), ty, title, theme.text_dim, ground)
-        else
-          g:text(col.x, ty, title, theme.text_dim, ground)
+        g:text(tx, ty, title, on and theme.text or theme.text_dim, ground, self.role)
+
+        if on then
+          local ax = (col.align == "right") and (tx - ARROW - 1) or (tx + tw + 1)
+
+          g:line_icon(ax, y + (h - ARROW) // 2, reversed and "descending" or "ascending",
+                      theme.text_dim)
         end
       end
 
       local edge = col.x + col.w - PAD // 2
 
-      if edge < right then g:fill(edge, y + 5, 1, h - 10, theme.line_soft) end
+      if edge < right and not col.fill then g:fill(edge, y + 5, 1, h - 10, theme.line_soft) end
     end
 
     self:arrows(g, y, h, right, ground)
@@ -4880,6 +4915,8 @@ function ui.columns(spec)
     local x0 = right - bw - ow
     local ty = y + (h - gfx.height()) // 2
 
+    ground = ground or theme.sunken
+
     g:fill(x0 - 4, y + 1, right - x0 + 4, h - 2, ground)
     g:fill(x0 - 4, y + 5, 1, h - 10, theme.line_soft)
     g:text(x0 + 5, ty, back, self.first > 1 and theme.text or theme.line_soft, ground)
@@ -4903,10 +4940,13 @@ function ui.columns(spec)
     return true
   end
 
-  -- The column whose right edge is under `x`, within a few pixels.
+  -- The column whose right edge is under `x`, within a few pixels: not
+  -- one that fills, whose width is what the others leave.
   function c:edge_at(x)
     for _, col in ipairs(self.all) do
-      if col.x and math.abs(x - (col.x + col.w - PAD // 2)) <= SLOP then return col end
+      if col.x and not col.fill and math.abs(x - (col.x + col.w - PAD // 2)) <= SLOP then
+        return col
+      end
     end
   end
 

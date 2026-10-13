@@ -17,6 +17,7 @@
 -- that something exists is not being able to reach it.
 
 local ui = use("/Kosmos/Libraries/ui.lua")
+local prefs = use("/Kosmos/Libraries/prefs.lua")
 local duration = use("/Kosmos/Libraries/clock.lua").duration   -- up 12:34
 -- The *kit's* palette, not a copy of it.
 --
@@ -194,75 +195,100 @@ local table_view = ui.view{ x = 0, y = LIST_Y, w = W, h = H - LIST_Y,
                             follow = { "left", "right", "top", "bottom" } }
 
 --
--- The columns: a name and a width each, and the name's column takes what is
--- left. One table, read by the heading and by the rows, because two
--- functions agreeing about geometry by coincidence is how a column ends up
--- labelled in one place and drawn in another. `right` is a column of
--- numbers, read down its last digit.
+-- **The columns, the kit's** (`ui.columns`, `docs/tracker-list.html`):
+-- each a key, a heading and a width, read by the heading and by the rows,
+-- because two functions agreeing about geometry by coincidence is how a
+-- column ends up labelled in one place and drawn in another. `right` is a
+-- column of numbers, read down its last digit. They drag wider by their
+-- headings' edges, fit by a double-click there, and are shown or hidden
+-- from the headings' menu - Processes was the second of the three lists
+-- that drew their own, and moved onto the kit after Tracker.
 --
-local GAP = 12
+local widest_of             -- a column's widest entry, once there are rows
 
-local COLUMNS = {
-  { key = "id",        text = "id",        w = 36 },
-  { key = "name",      text = "name",      w = 120 },
-  --
-  -- **The file it runs, whole** (`roadmap.md` 6m): Diego, "so i can tell if
-  -- doom is running where is running from", "like the whole path and file
-  -- name". What the process said as it named itself, kept by the kernel
-  -- beside the name; a process built into the image runs no file and says
-  -- so. The one column that takes what is left, since a path is the one
-  -- thing here whose length is not known.
-  --
-  { key = "file",      text = "file",      w = 0 },
-  { key = "kind",      text = "kind",      w = 70 },
-  { key = "privilege", text = "privilege", w = 64 },
-  { key = "draws",     text = "draws",     w = 76 },
-  { key = "priority",  text = "priority",  w = 70 },
-  --
-  -- **"core" is a fact, not a sample, and that is why it is worth a
-  -- column.**
-  --
-  -- On a system that migrates threads this would be the core it happened to
-  -- be on when the list was built, different on the next pass and useless
-  -- to look at. Kosmos does not migrate: `t->sched.cpu` is set once when
-  -- the thread is created and never changes, so this is where the process
-  -- lives for its whole life. `docs/smp.md` has why the kernel is built
-  -- that way and what it buys.
-  --
-  { key = "core",      text = "core",      w = 40 },
-  --
-  -- **Its threads** (`roadmap.md` 6m), the first among them: a program with
-  -- workers - Cafesa3D rendering on four - reads 5 rather than being one
-  -- line among many that look alike.
-  --
-  { key = "threads",   text = "threads",   w = 56, right = true },
-  { key = "memory",    text = "memory",    w = 80, right = true },
-  { key = "processor", text = "processor", w = 120 },
+local cols = ui.columns{
+  role = "ui",
+  columns = {
+    { key = "id",        title = "id",        w = 36 },
+    { key = "name",      title = "name",      w = 120, min = 80 },
+    --
+    -- **The file it runs, whole** (`roadmap.md` 6m): Diego, "so i can tell
+    -- if doom is running where is running from", "like the whole path and
+    -- file name". What the process said as it named itself, kept by the
+    -- kernel beside the name; a process built into the image runs no file
+    -- and says so. The one column that takes what is left, since a path is
+    -- the one thing here whose length is not known.
+    --
+    { key = "file",      title = "file",      fill = true, min = 120 },
+    { key = "kind",      title = "kind",      w = 70 },
+    { key = "privilege", title = "privilege", w = 64 },
+    { key = "draws",     title = "draws",     w = 76 },
+    { key = "priority",  title = "priority",  w = 70 },
+    --
+    -- **"core" is a fact, not a sample, and that is why it is worth a
+    -- column.**
+    --
+    -- On a system that migrates threads this would be the core it happened
+    -- to be on when the list was built, different on the next pass and
+    -- useless to look at. Kosmos does not migrate: `t->sched.cpu` is set
+    -- once when the thread is created and never changes, so this is where
+    -- the process lives for its whole life. `docs/smp.md` has why the
+    -- kernel is built that way and what it buys.
+    --
+    { key = "core",      title = "core",      w = 40 },
+    --
+    -- **Its threads** (`roadmap.md` 6m), the first among them: a program
+    -- with workers - Cafesa3D rendering on four - reads 5 rather than being
+    -- one line among many that look alike.
+    --
+    { key = "threads",   title = "threads",   w = 56, align = "right" },
+    { key = "memory",    title = "memory",    w = 80, align = "right" },
+    { key = "processor", title = "processor", w = 120 },
+  },
+  widest = function(c) return widest_of(c.key) end,
+  on_change = function(c)
+    local kept = prefs.read("procs") or {}
+
+    kept.columns = c:text()
+    prefs.write("procs", kept)
+    print("procs: columns " .. kept.columns)
+  end,
 }
 
--- The sort arrow beside a heading: a line icon, and a pixel on each side.
-local ARROW = 15
+cols:set_text((prefs.read("procs") or {}).columns)
 
--- Where each column starts for a row `room` wide. A column is never
--- narrower than its heading with the arrow beside it, whatever face the
--- look draws headings in, so choosing one never pushes its arrow into its
--- neighbour's word.
-local function columns(room)
-  local fixed = 0
+-- A cell's options, made once and set each pass: nothing allocated a row.
+local CELL, PATH_CELL = { right = 0 }, { right = 0, keep_end = true }
 
-  for _, c in ipairs(COLUMNS) do
-    c.cw = (c.w > 0) and math.max(c.w, gfx.measure(c.text) + ARROW + 2) or 0
-    fixed = fixed + c.cw
-  end
+-- Each column by its key, for the processor's bar: the kit's own tables,
+-- which reordering the columns does not replace.
+local COL = {}
 
-  local x = PAD
-  local rest = math.max(60, room - 2 * PAD - fixed - GAP * (#COLUMNS - 1))
+for _, c in ipairs(cols.all) do COL[c.key] = c end
 
-  for _, c in ipairs(COLUMNS) do
-    c.x = x
-    if c.w == 0 then c.cw = rest end
-    x = x + c.cw + GAP
-  end
+-- What a row says in column `key`, for fitting that column to its widest.
+local function text_of(r, key)
+  if key == "id" then return tostring(r.id) end
+  if key == "name" then return r.name end
+  if key == "file" then return r.from or (r.synthetic and "" or "built in") end
+  if key == "kind" then return r.kind or "" end
+  if key == "privilege" then return privilege(r.level) end
+  if key == "draws" then return r.video or "" end
+  if key == "priority" then return r.band or "" end
+  if key == "core" then return r.cpu and tostring(r.cpu + 1) or "" end
+  if key == "threads" then return tostring(r.threads or "") end
+  if key == "memory" then return ("%d KB"):format(r.kb or 0) end
+  return "100%"
+end
+
+function widest_of(key)
+  if key == "processor" then return 120 end    -- a bar and its number
+
+  local most = 0
+
+  for _, r in ipairs(rows) do most = math.max(most, gfx.measure(text_of(r, key))) end
+
+  return most
 end
 
 --
@@ -397,7 +423,7 @@ function table_view:draw(g)
 
   local room = self.w - (self.bar and ui.SCROLL_W + 2 or 0)
 
-  columns(room)
+  cols:shown(PAD, room - 2 * PAD)
 
   -- Where the window and its headings are, once there are rows to say:
   -- `tools/run_sysapps.py` presses where these say rather than holding pixel
@@ -405,44 +431,32 @@ function table_view:draw(g)
   if not self.told and #rows > 0 then
     local at = {}
 
-    for _, c in ipairs(COLUMNS) do
-      at[#at + 1] = ("%s %d,%d"):format(c.key, self.x + c.x + c.cw // 2,
+    for _, c in ipairs(cols:shown(PAD)) do
+      at[#at + 1] = ("%s %d,%d"):format(c.key, self.x + c.x + c.w // 2,
                                         self.y + 1 + ROW // 2)
+    end
+
+    local edges = {}
+
+    for _, c in ipairs(cols:shown(PAD)) do
+      edges[#edges + 1] = ("%s@%d"):format(c.key, self.x + c.x + c.w - 4)
     end
 
     print(("procs: window at %d,%d"):format(win.origin_x or 0, win.origin_y or 0))
     print("procs: headings " .. table.concat(at, "; "))
+    print("procs: edges " .. table.concat(edges, " "))
     say_rows("rows")
     self.told = true
   end
 
-  local ty = 1 + (ROW - gfx.height()) // 2
-
-  --
-  -- The column the list is sorted by has its heading in the text's colour
-  -- and an arrow saying which way: an order you cannot see is an order you
-  -- cannot trust. The arrow goes on the side the column's words start from,
-  -- so a column of numbers keeps its heading over its last digit.
-  --
-  for _, c in ipairs(COLUMNS) do
-    local on = (c.key == sort_key)
-    local tw = gfx.measure(c.text)
-    local x = c.right and (c.x + c.cw - tw) or c.x
-
-    g:text(x, ty, c.text, on and theme.text or theme.text_dim, nil, "ui")
-
-    if on then
-      g:line_icon(c.right and (x - ARROW - 1) or (x + tw + 1),
-                  1 + (ROW - ARROW) // 2,
-                  sort_down and "descending" or "ascending", theme.text_dim)
-    end
-  end
+  -- The headings: the kit's, the one sorted by in the text's colour with
+  -- an arrow saying which way.
+  cols:headings(g, PAD, 1, ROW, room - PAD, theme.sunken, sort_key, sort_down)
 
   g:fill(0, ROW, self.w, 1, theme.line_soft)
 
-  local col = {}
-
-  for _, c in ipairs(COLUMNS) do col[c.key] = c end
+  local col = COL
+  CELL.right, PATH_CELL.right = room - PAD, room - PAD
 
   for i = top, math.min(top + visible - 1, #rows) do
     local r = rows[i]
@@ -464,30 +478,28 @@ function table_view:draw(g)
     local dim = lit and theme.text_on or theme.text_dim
     local wy = y + (ROW - gfx.height()) // 2
 
-    g:text(col.id.x, wy, tostring(r.id), dim, bg)
-    g:text(col.name.x, wy, ui.fitted(r.name, col.name.cw),
-           r.exited and theme.text_dim or fg, bg)
+    cols:cell(g, "id", wy, tostring(r.id), dim, bg, CELL)
+    cols:cell(g, "name", wy, r.name, r.exited and theme.text_dim or fg, bg, CELL)
 
     -- Where it came from, or that it came with the image. The kernel's own
     -- row is neither and says nothing. Cut from the front: the end of a
     -- path is the file's own name, which is the part somebody is reading
     -- the column for.
     if r.from then
-      g:text(col.file.x, wy, ui.fitted(r.from, col.file.cw, nil, true), dim, bg)
+      cols:cell(g, "file", wy, r.from, dim, bg, PATH_CELL)
     elseif not r.synthetic then
-      g:text(col.file.x, wy, "built in", dim, bg)
+      cols:cell(g, "file", wy, "built in", dim, bg, CELL)
     end
 
     -- What the row *is*, dimmer than what it is called, since the name is
     -- what you are looking for; how it draws, and its band, the same.
-    g:text(col.kind.x, wy, r.kind or "", dim, bg)
+    cols:cell(g, "kind", wy, r.kind or "", dim, bg, CELL)
 
     -- The kernel's in the text's colour and every process's dimmer, so the
     -- one row that is not like the others reads as not like them.
-    g:text(col.privilege.x, wy, privilege(r.level),
-           (r.level > 0) and fg or dim, bg)
-    g:text(col.draws.x, wy, r.video or "", dim, bg)
-    g:text(col.priority.x, wy, r.band or "", fg, bg)
+    cols:cell(g, "privilege", wy, privilege(r.level), (r.level > 0) and fg or dim, bg, CELL)
+    cols:cell(g, "draws", wy, r.video or "", dim, bg, CELL)
+    cols:cell(g, "priority", wy, r.band or "", fg, bg, CELL)
 
     --
     -- Its home processor. Blank rather than a number when the process has
@@ -496,22 +508,18 @@ function table_view:draw(g)
     -- first of those.
     --
     -- From one, as Monitor names them; `t->sched.cpu` counts from zero.
-    g:text(col.core.x, wy, r.cpu and tostring(r.cpu + 1) or "", fg, bg)
+    cols:cell(g, "core", wy, r.cpu and tostring(r.cpu + 1) or "", fg, bg, CELL)
 
     -- Its threads, and nothing for one that has ended: it has none, and a
     -- 0 down a column of ones reads as a fault rather than as gone.
     if r.threads and not r.exited then
-      local n = tostring(r.threads)
-
-      g:text(col.threads.x + col.threads.cw - gfx.measure(n), wy, n, fg, bg)
+      cols:cell(g, "threads", wy, tostring(r.threads), fg, bg, CELL)
     end
 
     -- What it holds: the image, the heap, the stacks and any surface it
     -- asked for.
     if not r.synthetic then
-      local kb = ("%d KB"):format(r.kb or 0)
-
-      g:text(col.memory.x + col.memory.cw - gfx.measure(kb), wy, kb, fg, bg)
+      cols:cell(g, "memory", wy, ("%d KB"):format(r.kb or 0), fg, bg, CELL)
     end
 
     --
@@ -520,22 +528,28 @@ function table_view:draw(g)
     -- drawings' level, 8 high and round-ended, in the accent and in the
     -- warning colour past sixty.
     --
-    local right = r.exited and "gone" or ("%d%%"):format(r.pct)
-    local num_w = 34
-    local bar_x = col.processor.x
-    local bar_w = col.processor.cw - num_w - 8
-    local by = y + (ROW - 8) // 2
+    -- Not when its column is hidden, scrolled past, or past the edge.
+    local pc = col.processor
 
-    g:fill_round(bar_x, by, bar_w, 8, theme.track, 4)
+    if pc.x and pc.x + pc.w <= room - PAD then
+      local right = r.exited and "gone" or ("%d%%"):format(r.pct)
+      local num_w = 34
+      local inner = pc.w - 8                -- the kit's gap after a column
+      local bar_x = pc.x
+      local bar_w = inner - num_w - 8
+      local by = y + (ROW - 8) // 2
 
-    local filled = bar_w * r.pct // 100
+      g:fill_round(bar_x, by, bar_w, 8, theme.track, 4)
 
-    if filled > 0 then
-      g:fill_round(bar_x, by, math.max(8, filled), 8,
-                   (r.pct > 60) and theme.bad or theme.accent, 4)
+      local filled = bar_w * r.pct // 100
+
+      if filled > 0 then
+        g:fill_round(bar_x, by, math.max(8, filled), 8,
+                     (r.pct > 60) and theme.bad or theme.accent, 4)
+      end
+
+      g:text(bar_x + inner - gfx.measure(right), wy, right, dim, bg)
     end
-
-    g:text(bar_x + col.processor.cw - gfx.measure(right), wy, right, dim, bg)
   end
 end
 
@@ -573,24 +587,54 @@ function table_view:mouse(action, x, y)
   local function heading_at(px, py)
     if py < 0 or py >= 1 + ROW then return nil end
 
-    for _, c in ipairs(COLUMNS) do
-      if px >= c.x - GAP // 2 and px < c.x + c.cw + GAP // 2 then
-        return "column:" .. c.key, function()
-          if sort_key == c.key then
-            sort_down = not sort_down
-          else
-            sort_key, sort_down = c.key, DOWN_FIRST[c.key] or false
-          end
+    local c = cols:at(px)
 
-          sort_rows()
-          followed = nil
-          say_rows(("sorted by %s, %s"):format(sort_key,
-                   sort_down and "descending" or "ascending"))
+    if c then
+      return "column:" .. c.key, function()
+        if sort_key == c.key then
+          sort_down = not sort_down
+        else
+          sort_key, sort_down = c.key, DOWN_FIRST[c.key] or false
         end
+
+        sort_rows()
+        followed = nil
+        say_rows(("sorted by %s, %s"):format(sort_key,
+                 sort_down and "descending" or "ascending"))
       end
     end
 
     return nil
+  end
+
+  --
+  -- **An edge of the headings** (`ui.columns`): held and dragged, or fitted
+  -- by a double-click, before a heading's own click is considered - an
+  -- edge is between two headings and belongs to neither.
+  --
+  if cols.drag then
+    if action == "move" then cols:move(x) end
+
+    if action == "release" then
+      local c = cols.drag.col
+
+      cols:release()
+      print(("procs: column %s now %d"):format(c.key, c.w))
+    end
+
+    return true
+  end
+
+  if action == "press" and y < 1 + ROW and self.click_key == nil then
+    if cols:arrows_press(x) then return true end
+
+    if cols:edge_at(x) then
+      local _, c = cols:press(x)
+
+      if not cols.drag then print(("procs: column %s fitted to %d"):format(c.key, c.w)) end
+
+      return true
+    end
   end
 
   if self.click_key ~= nil or y < 1 + ROW then
@@ -615,6 +659,15 @@ function table_view:mouse(action, x, y)
 end
 
 table_view.focusable = true
+
+-- A right click on the headings: which columns, and Fit and Reset.
+function table_view:on_context(x, y)
+  if y >= 1 + ROW then return false end
+
+  win:open_menu((win.origin_x or 0) + self.x + x, (win.origin_y or 0) + self.y + y, cols:menu())
+  print("procs: the headings' menu")
+  return true
+end
 
 -- The wheel moves the rows, three a notch; the selection stays with its
 -- process, and `draw` keeps the view inside the list.

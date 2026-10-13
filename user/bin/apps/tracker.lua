@@ -838,6 +838,11 @@ search = ui.field{ w = 200, text = "", hint = "Search", icon = "search" }
 -- (`e.made_guessed`), and one with neither a dash.
 --
 local NAME_INDENT = 24      -- the icon, at 16, and the gap after it
+
+-- A cell's options, made once and set each row rather than a table a cell
+-- a paint: this view is the desktop too, and a paint should make nothing.
+local NAME_CELL = { right = 0, indent = NAME_INDENT }
+local CELL = { right = 0 }
 local COL_LEFT = 10         -- where the first column starts
 local cols                  -- made below, once `widest` can see the rows
 
@@ -1167,7 +1172,7 @@ cols = ui.columns{
     { key = "created",  title = "Created",  w = 150 },
   },
   widest = function(col)
-    local most = gfx.measure(col.title .. " \u{2191}")
+    local most = gfx.measure(col.title) + 17     -- and the sort's arrow
 
     for _, e in ipairs(rows.shown or {}) do
       local text
@@ -1864,11 +1869,13 @@ function rows:draw(g)
     -- tracker wont show folder icons in list view? it just shows a blue
     -- square beside folders", "we do have small icon set right?".
     --
-    local name_x = cols:cell(g, "name", y, files.label(e), fg, bg, wide, nil, NAME_INDENT)
+    NAME_CELL.right, CELL.right = wide, wide
+
+    local name_x = cols:cell(g, "name", y, files.label(e), fg, bg, NAME_CELL)
 
     if name_x then files.icon(g, name_x, ry + (LROW - 16) // 2, e, path_of(e), 16) end
 
-    cols:cell(g, "size", y, (e.kind == "directory") and "--" or files.size(e.size), fg, bg, wide)
+    cols:cell(g, "size", y, (e.kind == "directory") and "--" or files.size(e.size), fg, bg, CELL)
     --
     -- The attributes go with the name, or the Kind column can only ever
     -- read an extension.
@@ -1880,10 +1887,10 @@ function rows:draw(g)
     -- all saying "file", all 0 B, with nothing on screen to say what they
     -- were.
     --
-    cols:cell(g, "kind", y, e.kind_words or types.describe(e.name, e.attrs), fg, bg, wide)
-    cols:cell(g, "modified", y, e.when or "\u{2013}", fg, bg, wide)
+    cols:cell(g, "kind", y, e.kind_words or types.describe(e.name, e.attrs), fg, bg, CELL)
+    cols:cell(g, "modified", y, e.when or "\u{2013}", fg, bg, CELL)
     cols:cell(g, "created", y, e.made or "\u{2013}",
-              (e.made_guessed and not on) and theme.text_dim or fg, bg, wide)
+              (e.made_guessed and not on) and theme.text_dim or fg, bg, CELL)
   end
 
   -- An edge being dragged: its guide down the list, and its width.

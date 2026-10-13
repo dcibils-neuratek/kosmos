@@ -387,7 +387,10 @@ in grey. Tracker opens 1060 wide, which holds the five columns as drawn.
   their Modified there, in grey.
 - **The pointer's shape over an edge** - a two-way arrow needs the window
   manager to take a shape from an application, which it cannot yet.
-- **Processes and Mail onto `ui.columns`**, as the drawing says.
+- ~~Processes and Mail onto `ui.columns`~~ - **Processes moved, 0.11.194**
+  (`ui.md` 16.29), the kit gaining a column that fills and Processes'
+  heading rule for every list. **Mail is not a list of columns** - each
+  message is a three-line card with no headings - so it stays as it is.
 - Added and Location, the drawing's extra columns - nothing records when a
   file arrived in a folder, and a search's results have no list of their
   own yet.

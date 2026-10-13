@@ -24696,3 +24696,25 @@ it now says `filetypes.describe`'s words, as Info does, worked out once a
 listing and sorted by. `x86-trackerlist` 8 -> 9: the film's kind is
 "Film". **Control**: the extension again - "mp4", and the suite fails.
 
+## 18.588 Processes on the kit's columns
+
+`ui.md` 16.29. Processes' own column table and layout - a width each, the
+file's taking what was left, a gap of 12 - became `ui.columns`, which grew
+a column that fills (`file`, never under 120, its edge not dragged) and
+took Processes' heading rule for every list: the sorted heading in the
+text's colour with a drawn arrow, and no column narrower than its heading
+with it - Tracker's headings with them. Every cell through `cols:cell`,
+the file cut from the front; the processor's bar from the kit's column,
+and not drawn when that column is hidden or past the edge. Widths kept in
+Processes' settings; the headings' menu by a right click. Sorting stays on
+a heading's release (`ui.click`); a press on an edge is the kit's first.
+
+**Tests.** `x86-sysapps` 35 -> 37: name's edge dragged 40 wider and the
+width kept, and the headings' menu by a right click - beside its six
+presses on five headings, each order still as the column sorts.
+**Control**: an edge's press not taken - nothing dragged or kept, and the
+suite fails. **Whole gate**: 78 of 79 - the host suite's line-icon check
+read `col.align == "right"` inside a `line_icon` call as an icon named
+"right"; the position is worked out before the call now, and the host suite
+and both column suites pass.
+

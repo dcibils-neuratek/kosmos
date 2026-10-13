@@ -258,6 +258,40 @@ def main():
                   "sorted by %s, %s, the order is %s where it should be %s"
                   % (key, way, [r["id"] for r in got], [r["id"] for r in want]))
 
+        # **The kit's columns** (`ui.columns`): name's edge dragged 40 wider
+        # and kept, and the headings' menu by a right click.
+        edges = dict((k, int(v)) for k, v in re.findall(r"(\w+)@(\d+)",
+                                                       said("procs: edges ", 0, 2) or ""))
+        if "name" in edges and "name" in heads:
+            hy = heads["name"][1]
+            mark = len(guest.seen)
+            guest.mouse_to(*R._to_tablet(ox + edges["name"], oy + hy, width, height))
+            time.sleep(0.3)
+            guest.mouse_button(True)
+            time.sleep(0.2)
+            for step in range(1, 5):
+                guest.mouse_to(*R._to_tablet(ox + edges["name"] + 10 * step, oy + hy, width, height))
+                time.sleep(0.1)
+            guest.mouse_button(False)
+            dragged = said("procs: column name now ", mark, 5)
+            kept = said("procs: columns ", mark, 5)
+            m = re.match(r"(\d+)", dragged or "")
+            check(m is not None and kept is not None and ("name %s" % m.group(1)) in kept,
+                  "Processes' name column dragged wider was not kept: %r, %r" % (dragged, kept))
+
+            mark = len(guest.seen)
+            guest.mouse_to(*R._to_tablet(ox + heads["kind"][0], oy + hy, width, height))
+            time.sleep(0.3)
+            guest.mouse_button(True, "right")
+            time.sleep(0.1)
+            guest.mouse_button(False, "right")
+            check(said("procs: the headings' menu", mark, 5) is not None,
+                  "a right click on Processes' headings did not open their menu")
+            guest.sendkey("esc")
+            time.sleep(0.5)
+        else:
+            check(False, "Processes did not say where its headings' edges are")
+
         # And where the rows with nothing in the column went.
         files = parse(said("procs: sorted by file, ascending: ", 0, 1))
         if files:
@@ -420,7 +454,7 @@ def main():
             print("  " + f)
         return 1
 
-    print("PASS: %d checks on Processes and Monitor (its file, its threads and its "
+    print("PASS: %d checks on Processes and Monitor (its columns dragged and their menu; its file, its threads and its "
           "privilege in every row; six presses on five headings, each order as the "
           "column sorts; each of Monitor's three paces kept by the clock; its processor "
           "named in a card, and each core's bar shown and put away, the window with it)" % checks)
