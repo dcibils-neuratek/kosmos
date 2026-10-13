@@ -42,6 +42,7 @@
 #include "vmmproto.h"
 #include "appproto.h"
 #include "fdt.h"
+#include "vdev.h"
 #include "vmmfs.h"
 #include "init/say.h"
 
@@ -1028,7 +1029,8 @@ void vmm_server(long running_cap, long ram_cap, long setup_cap, long home_cap)
 
     /* Its folders, served from `/Home` - which it was handed only if it has
      * any (`fs.vm_start`). */
-    vmmfs_start(home_cap, ram, setup.ram_bytes, VMM_RAM_BASE);
+    vdev_memory(ram, setup.ram_bytes, VMM_RAM_BASE);
+    vmmfs_start(home_cap);
 
     for (unsigned i = 0; i < VMM_SHARES; i++) {
         char tag[8] = "share0";

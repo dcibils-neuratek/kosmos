@@ -30,40 +30,12 @@
 
 #include "kosmos.h"
 #include "diskproto.h"
+#include "vdev.h"
 #include "vmmfs.h"
 
-/* virtio-mmio's registers (VIRTIO 1.2, 4.2.2), and virtio-fs's number. */
-#define MAGIC           0x000
-#define VERSION         0x004
-#define DEVICE_ID       0x008
-#define VENDOR_ID       0x00c
-#define DEV_FEATURES    0x010
-#define DEV_FEAT_SEL    0x014
-#define DRV_FEATURES    0x020
-#define DRV_FEAT_SEL    0x024
-#define QUEUE_SEL       0x030
-#define QUEUE_NUM_MAX   0x034
-#define QUEUE_NUM       0x038
-#define QUEUE_READY     0x044
-#define QUEUE_NOTIFY    0x050
-#define INT_STATUS      0x060
-#define INT_ACK         0x064
-#define STATUS          0x070
-#define DESC_LOW        0x080
-#define DESC_HIGH       0x084
-#define AVAIL_LOW       0x090
-#define AVAIL_HIGH      0x094
-#define USED_LOW        0x0a0
-#define USED_HIGH       0x0a4
-#define CONFIG_GEN      0x0fc
-#define CONFIG          0x100
-
+/* virtio-fs's number, and its queues: hiprio and one request queue. */
 #define VIRTIO_ID_FS    26u
-#define QUEUES          2u                  /* hiprio, and one request queue */
-#define QUEUE_MOST      128u
-
-#define DESC_NEXT       1u
-#define DESC_WRITE      2u
+#define QUEUES          2u
 
 /* FUSE: the operations answered, and the errors said. */
 enum {
@@ -96,13 +68,6 @@ enum {
 #define READ_MOST       (128u * 1024)
 #define REQUEST_MOST    (READ_MOST + 4096)
 
-struct queue {
-    uint32_t num;
-    bool     ready;
-    uint64_t desc, avail, used;
-    uint16_t last;                          /* the next avail entry to take */
-};
-
 struct node {
     char    *path;                          /* "/Home/Projects/site/a.txt" */
 };
@@ -122,8 +87,7 @@ struct share {
     char     tag[36];
     char     root[DISK_PATH_MAX];
     bool     read_only;
-    uint32_t status, int_status, dev_sel, drv_sel, sel;
-    struct queue q[QUEUES];
+    struct vdev dev;                        /* its transport (`vdev.c`) */
     struct node *nodes;                     /* nodes[1] is the root */
     uint64_t nodes_n;
     struct handle *handles;
@@ -131,8 +95,6 @@ struct share {
 };
 
 static struct share shares[VMMFS_MOST];
-static uint8_t *ram;
-static uint64_t ram_bytes, ram_base;
 static long home = -1;
 
 /*
@@ -143,25 +105,12 @@ static long home = -1;
 static uint8_t *request;
 static uint8_t *reply;
 
-/* ---------------------------------------------------------------------
- * The guest's memory, by its physical addresses.
- * --------------------------------------------------------------------- */
-
-static uint8_t *guest(uint64_t gpa, uint64_t len)
-{
-    if (gpa < ram_base || gpa - ram_base > ram_bytes || len > ram_bytes - (gpa - ram_base)) {
-        return NULL;
-    }
-
-    return ram + (gpa - ram_base);
-}
-
-static uint16_t get16(const uint8_t *p) { return (uint16_t)(p[0] | p[1] << 8); }
-static uint32_t get32(const uint8_t *p) { return (uint32_t)get16(p) | (uint32_t)get16(p + 2) << 16; }
-static uint64_t get64(const uint8_t *p) { return (uint64_t)get32(p) | (uint64_t)get32(p + 4) << 32; }
-static void put16(uint8_t *p, uint16_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
-static void put32(uint8_t *p, uint32_t v) { put16(p, (uint16_t)v); put16(p + 2, (uint16_t)(v >> 16)); }
-static void put64(uint8_t *p, uint64_t v) { put32(p, (uint32_t)v); put32(p + 4, (uint32_t)(v >> 32)); }
+#define get16 vget16
+#define get32 vget32
+#define get64 vget64
+#define put16 vput16
+#define put32 vput32
+#define put64 vput64
 
 /* ---------------------------------------------------------------------
  * The disk, through `/Home`: `diskproto.h` as a client, as `smbd` is.
@@ -885,194 +834,70 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
 }
 
 /* ---------------------------------------------------------------------
- * A queue: every request the guest has made available, answered.
+ * Its queues: every request the guest has made available, answered.
  * --------------------------------------------------------------------- */
 
-static void serve_queue(struct share *s, struct queue *q)
+static void notify(struct vdev *d, unsigned q)
 {
-    uint8_t *avail = guest(q->avail, 4 + 2 * (uint64_t)q->num);
-    uint8_t *used = guest(q->used, 4 + 8 * (uint64_t)q->num);
-    uint8_t *desc = guest(q->desc, 16 * (uint64_t)q->num);
+    struct share *s = d->owner;
+    struct vdev_chain c;
 
-    if (!q->ready || avail == NULL || used == NULL || desc == NULL || q->num == 0
-        || request == NULL || reply == NULL) {
-        return;
-    }
+    while (vdev_pop(d, q, &c)) {
+        uint32_t in_len = vdev_gather(&c, request, REQUEST_MOST), written = 0, room = 0, i;
 
-    while (q->last != get16(avail + 2)) {
-        uint16_t head = get16(avail + 4 + 2 * (q->last % q->num));
-        uint16_t d = head;
-        uint32_t in_len = 0, written = 0, hops = 0;
-        uint8_t *outs[QUEUE_MOST];
-        uint32_t out_lens[QUEUE_MOST], nout = 0;
-        long body;
-
-        /* Gather what the guest wrote; note where the answer goes. */
-        for (;;) {
-            uint8_t *e = desc + 16 * (uint64_t)(d % q->num);
-            uint64_t addr = get64(e);
-            uint32_t len = get32(e + 8);
-            uint16_t flags = get16(e + 12);
-            uint8_t *at = guest(addr, len);
-
-            if (at != NULL) {
-                if ((flags & DESC_WRITE) != 0) {
-                    if (nout < QUEUE_MOST) {
-                        outs[nout] = at;
-                        out_lens[nout++] = len;
-                    }
-                } else if (in_len + len <= REQUEST_MOST) {
-                    memcpy(request + in_len, at, len);
-                    in_len += len;
-                }
-            }
-
-            if ((flags & DESC_NEXT) == 0 || ++hops >= q->num) {
-                break;
-            }
-
-            d = get16(e + 14);
+        for (i = 0; i < c.nout; i++) {
+            room += c.out_len[i];
         }
 
-        /* Answer: `fuse_out_header` and the body, scattered back. */
-        if (in_len >= 40) {
-            uint32_t op = get32(request + 4);
-            uint64_t unique = get64(request + 8), nodeid = get64(request + 16);
-            uint32_t room = 0, i;
+        room = room > REQUEST_MOST ? REQUEST_MOST : room;
 
-            for (i = 0; i < nout; i++) {
-                room += out_lens[i];
-            }
+        /* A `fuse_in_header`, and the answer behind a `fuse_out_header`. */
+        if (in_len >= 40 && room >= 16) {
+            long body = fuse(s, get32(request + 4), get64(request + 16), request + 40,
+                             in_len - 40, reply + 16, room - 16);
 
-            room = room > REQUEST_MOST ? REQUEST_MOST : room;
-            body = fuse(s, op, nodeid, request + 40, in_len - 40, reply + 16,
-                        room > 16 ? room - 16 : 0);
-
-            if (body != NO_REPLY && room >= 16) {
-                uint32_t total = 16 + (body > 0 ? (uint32_t)body : 0), left;
+            if (body != NO_REPLY) {
+                uint32_t total = 16 + (body > 0 ? (uint32_t)body : 0);
 
                 put32(reply, total);
                 put32(reply + 4, body < 0 ? (uint32_t)body : 0);
-                put64(reply + 8, unique);
-                left = total;
-
-                for (i = 0; i < nout && left > 0; i++) {
-                    uint32_t n = left < out_lens[i] ? left : out_lens[i];
-
-                    memcpy(outs[i], reply + (total - left), n);
-                    left -= n;
-                }
-
-                written = total - left;
+                put64(reply + 8, get64(request + 8));
+                written = vdev_scatter(&c, reply, total);
             }
         }
 
-        put32(used + 4 + 8 * (get16(used + 2) % q->num), head);
-        put32(used + 4 + 8 * (get16(used + 2) % q->num) + 4, written);
-        put16(used + 2, (uint16_t)(get16(used + 2) + 1));
-        q->last++;
-        s->int_status |= 1;
+        vdev_push(d, q, c.head, written);
     }
 }
 
-/* ---------------------------------------------------------------------
- * The transport's registers.
- * --------------------------------------------------------------------- */
-
-static void reset(struct share *s)
+/* `struct virtio_fs_config`: its tag, and one request queue. */
+static void config(struct vdev *d, uint64_t off, uint8_t *out, unsigned size)
 {
-    s->status = 0;
-    s->int_status = 0;
-    s->dev_sel = s->drv_sel = s->sel = 0;
-    memset(s->q, 0, sizeof(s->q));
+    struct share *s = d->owner;
+    uint8_t cfg[40];
+    unsigned k;
+
+    memset(cfg, 0, sizeof(cfg));
+    memcpy(cfg, s->tag, strlen(s->tag));
+    put32(cfg + 36, 1);
+
+    for (k = 0; k < size && off + k < sizeof(cfg); k++) {
+        out[k] = cfg[off + k];
+    }
 }
 
 bool vmmfs_mmio(unsigned i, uint64_t off, unsigned size, bool write, uint64_t *value)
 {
-    struct share *s = i < VMMFS_MOST ? &shares[i] : NULL;
-    struct queue *q;
-
-    if (s == NULL || !s->on) {
+    if (i >= VMMFS_MOST || !shares[i].on) {
         return false;
     }
 
-    q = &s->q[s->sel < QUEUES ? s->sel : 0];
-
-    if (off >= CONFIG) {
-        /* `struct virtio_fs_config`: its tag, and one request queue. */
-        uint8_t cfg[40];
-        uint64_t at = off - CONFIG, v = 0;
-        unsigned k;
-
-        memset(cfg, 0, sizeof(cfg));
-        memcpy(cfg, s->tag, strlen(s->tag));
-        put32(cfg + 36, 1);
-
-        for (k = 0; !write && k < size && at + k < sizeof(cfg); k++) {
-            v |= (uint64_t)cfg[at + k] << (8 * k);
-        }
-
-        if (!write) {
-            *value = v;
-        }
-
-        return true;
-    }
-
-    if (write) {
-        uint32_t v = (uint32_t)*value;
-
-        switch (off) {
-        case DEV_FEAT_SEL: s->dev_sel = v; break;
-        case DRV_FEAT_SEL: s->drv_sel = v; break;
-        case QUEUE_SEL:    s->sel = v; break;
-        case QUEUE_NUM:    q->num = v <= QUEUE_MOST ? v : QUEUE_MOST; break;
-        case QUEUE_READY:  q->ready = v != 0; break;
-        case QUEUE_NOTIFY:
-            if (v < QUEUES) {
-                serve_queue(s, &s->q[v]);
-            }
-            break;
-        case INT_ACK:      s->int_status &= ~v; break;
-        case STATUS:
-            if (v == 0) {
-                reset(s);
-            } else {
-                s->status = v;
-            }
-            break;
-        case DESC_LOW:     q->desc = (q->desc & ~0xffffffffull) | v; break;
-        case DESC_HIGH:    q->desc = (q->desc & 0xffffffffull) | (uint64_t)v << 32; break;
-        case AVAIL_LOW:    q->avail = (q->avail & ~0xffffffffull) | v; break;
-        case AVAIL_HIGH:   q->avail = (q->avail & 0xffffffffull) | (uint64_t)v << 32; break;
-        case USED_LOW:     q->used = (q->used & ~0xffffffffull) | v; break;
-        case USED_HIGH:    q->used = (q->used & 0xffffffffull) | (uint64_t)v << 32; break;
-        default: break;                     /* driver features: VERSION_1 is all */
-        }
-
-        return true;
-    }
-
-    switch (off) {
-    case MAGIC:         *value = 0x74726976; break;     /* "virt" */
-    case VERSION:       *value = 2; break;
-    case DEVICE_ID:     *value = VIRTIO_ID_FS; break;
-    case VENDOR_ID:     *value = 0x534f4d4b; break;     /* "KMOS" */
-    case DEV_FEATURES:  *value = s->dev_sel == 1 ? 1 : 0; break;   /* VIRTIO_F_VERSION_1 */
-    case QUEUE_NUM_MAX: *value = s->sel < QUEUES ? QUEUE_MOST : 0; break;
-    case QUEUE_READY:   *value = q->ready ? 1 : 0; break;
-    case INT_STATUS:    *value = s->int_status; break;
-    case STATUS:        *value = s->status; break;
-    case CONFIG_GEN:    *value = 0; break;
-    default:            *value = 0; break;
-    }
-
-    return true;
+    return vdev_mmio(&shares[i].dev, off, size, write, value);
 }
 
 bool vmmfs_raised(unsigned i)
 {
-    return i < VMMFS_MOST && shares[i].on && shares[i].int_status != 0;
+    return i < VMMFS_MOST && shares[i].on && vdev_raised(&shares[i].dev);
 }
 
 bool vmmfs_add(unsigned i, const char *tag, const char *root, bool read_only)
@@ -1090,6 +915,11 @@ bool vmmfs_add(unsigned i, const char *tag, const char *root, bool read_only)
     s->read_only = read_only;
     s->nodes_n = 1;                         /* 0 is no node */
     s->handles_n = 1;                       /* and 0 is no handle */
+    s->dev.id = VIRTIO_ID_FS;
+    s->dev.queues = QUEUES;
+    s->dev.owner = s;
+    s->dev.config = config;
+    s->dev.notify = notify;
 
     if (node_for(s, root) != 1) {
         return false;
@@ -1099,12 +929,9 @@ bool vmmfs_add(unsigned i, const char *tag, const char *root, bool read_only)
     return true;
 }
 
-void vmmfs_start(long home_cap, uint8_t *guest_ram, uint64_t guest_ram_bytes, uint64_t base)
+void vmmfs_start(long home_cap)
 {
     home = home_cap;
     request = malloc(REQUEST_MOST);
     reply = malloc(REQUEST_MOST);
-    ram = guest_ram;
-    ram_bytes = guest_ram_bytes;
-    ram_base = base;
 }

@@ -15,7 +15,7 @@
 #define VMMFS_MOST      4u
 
 bool vmmfs_add(unsigned i, const char *tag, const char *root, bool read_only);
-void vmmfs_start(long home_cap, uint8_t *guest_ram, uint64_t guest_ram_bytes, uint64_t base);
+void vmmfs_start(long home_cap);
 bool vmmfs_mmio(unsigned i, uint64_t off, unsigned size, bool write, uint64_t *value);
 bool vmmfs_raised(unsigned i);
 
