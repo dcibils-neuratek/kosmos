@@ -1262,6 +1262,7 @@ static int l_info(lua_State *L)
 
     /* Whether a guest can run here: a sandbox's (`vm.h`). */
     SET("guests", info.guests);
+    SET("virt", info.virt);
 
     /*
      * What the firmware says the machine is. `machine_source` is always

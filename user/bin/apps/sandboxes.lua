@@ -59,7 +59,8 @@ local function refresh(full)
 
     local info = sys.info() or {}
 
-    machine = { cpus = info.cpus or 1, ram = info.ram_size or 0, guests = info.guests == 1 }
+    machine = { cpus = info.cpus or 1, ram = info.ram_size or 0, guests = info.guests == 1,
+                virt = info.virt or 0 }
   end
 
   all = sandboxes.all()
@@ -312,8 +313,15 @@ function side:draw(g)
          theme.text_dim, nil, "ui")
   y = y + gfx.height() + 4
 
-  for _, line in ipairs(ui.wrapped(machine.guests and "Virtualization: EL2, a guest a core"
-                                   or "This machine cannot run sandboxes yet", self.w - 36, "ui", 3)) do
+  -- What the processor and its firmware allow (`sysinfo.virt`, probed at
+  -- boot): on a PC, whether VT-x is there and what its setup decided.
+  local virt = machine.guests and "Virtualization: EL2, a guest a core"
+               or ({ [1] = "VT-x is off in this machine's setup: turn on Intel Virtualization Technology",
+                     [2] = "VT-x is on; Kosmos does not drive it yet",
+                     [3] = "VT-x is here and not locked; Kosmos does not drive it yet" })[machine.virt]
+               or "This machine cannot run sandboxes yet"
+
+  for _, line in ipairs(ui.wrapped(virt, self.w - 36, "ui", 3)) do
     g:text(20, y, line, machine.guests and theme.text_dim or theme.io_out, nil, "ui")
     y = y + gfx.height() + 2
   end

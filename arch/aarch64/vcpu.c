@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include "context.h"
+#include "../../kernel/syscall.h"
 #include "cpu.h"
 #include "hyp.h"
 #include "mmu.h"
@@ -192,6 +193,12 @@ void stage2_code_written(const void *start, unsigned long bytes)
  * of its own - EL2 reads it with its translation off, at the address the
  * identity map gives it.
  */
+/* On ARM the question is only whether this core started at EL2. */
+unsigned arch_vm_probe(void)
+{
+    return arch_vm_available() ? VIRT_EL2 : VIRT_NONE;
+}
+
 bool arch_vm_available(void)
 {
     unsigned i;

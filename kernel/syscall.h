@@ -1388,8 +1388,21 @@ struct sysinfo {
      * window says in its Machine panel, rather than finding out by failing.
      */
     uint32_t guests;
-    uint32_t guests_reserved;
+
+    /*
+     * **What the processor and its firmware allow** (`VIRT_*`), probed at
+     * boot: on x86-64 whether there is VT-x and whether the firmware locked
+     * it on or off - which says what a person must do in its setup before a
+     * guest can run, before VT-x is written (`docs/sandboxes.md`, S5).
+     */
+    uint32_t virt;
 };
+
+#define VIRT_NONE      0u   /* nothing to run a guest with */
+#define VIRT_OFF       1u   /* VT-x, locked off by the firmware: its setup turns it on */
+#define VIRT_ON        2u   /* VT-x, locked on by the firmware */
+#define VIRT_UNLOCKED  3u   /* VT-x, not locked: the kernel may turn it on itself */
+#define VIRT_EL2       4u   /* ARM, started at EL2 */
 
 /*
  * What SYS_NET_INFO answers.

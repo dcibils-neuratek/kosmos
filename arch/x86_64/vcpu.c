@@ -14,8 +14,42 @@
 #include <stdint.h>
 
 #include "../../kernel/vm.h"
+#include "../../kernel/syscall.h"
 
 bool arch_vm_available(void) { return false; }
+
+/*
+ * **The probe**, before VT-x is written (`docs/sandboxes.md`, S5): whether
+ * the processor has VMX, and what its firmware decided. Intel SDM vol. 2,
+ * CPUID leaf 1, ECX bit 5 is VMX; vol. 3 §24.7 and vol. 4,
+ * `IA32_FEATURE_CONTROL` (MSR 0x3A): bit 0 locks it until reset, bit 2
+ * allows VMXON outside SMX. The MSR is read only when CPUID says VMX
+ * exists - on a processor without it, reading it faults.
+ */
+#define CPUID_VMX               (1u << 5)
+#define MSR_FEATURE_CONTROL     0x3Au
+#define FEATURE_LOCKED          (1u << 0)
+#define FEATURE_VMX_OUTSIDE_SMX (1u << 2)
+
+unsigned arch_vm_probe(void)
+{
+    uint32_t a, b, c, d, lo, hi;
+
+    __asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1u), "c"(0u));
+
+    if ((c & CPUID_VMX) == 0) {
+        return VIRT_NONE;
+    }
+
+    __asm__ volatile("rdmsr" : "=a"(lo), "=d"(hi) : "c"(MSR_FEATURE_CONTROL));
+    (void)hi;
+
+    if ((lo & FEATURE_LOCKED) == 0) {
+        return VIRT_UNLOCKED;
+    }
+
+    return (lo & FEATURE_VMX_OUTSIDE_SMX) != 0 ? VIRT_ON : VIRT_OFF;
+}
 bool arch_vm_here(void) { return false; }
 unsigned arch_vm_tags(void) { return 0; }
 void *arch_guest_tables(void) { return NULL; }

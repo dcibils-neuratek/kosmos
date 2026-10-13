@@ -12,6 +12,8 @@
 #include <stdint.h>
 
 #include "vm.h"
+#include "console.h"
+#include "syscall.h"
 #include "ipc.h"
 #include "memobj.h"
 #include "mmu.h"
@@ -66,8 +68,29 @@ static void fresh_vcpu(void *object)
     ((struct vcpu *)object)->generation = 1;
 }
 
+static unsigned virt_found;
+
+unsigned vm_virt(void)
+{
+    return virt_found;
+}
+
 void vm_init(void)
 {
+    static const char *const said[] = {
+        "nothing to run a guest with",
+        "VT-x, locked off by the firmware - turn on Intel Virtualization Technology in its setup",
+        "VT-x, locked on by the firmware",
+        "VT-x, not locked - the kernel may turn it on",
+        "EL2",
+    };
+
+    /* What the processor and its firmware allow, said once at boot. */
+    virt_found = arch_vm_probe();
+    kputs("vm: ");
+    kputs(virt_found < sizeof said / sizeof said[0] ? said[virt_found] : "?");
+    kputs("\n");
+
     pool_init(&guests, "guests", sizeof(struct guest),
               pool_ceiling_for(sizeof(struct guest) + 4 * PAGE_SIZE, 16), 4, fresh);
     pool_init(&vcpus, "vcpus", sizeof(struct vcpu),

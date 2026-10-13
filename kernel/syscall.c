@@ -839,6 +839,7 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
     }
 
     info.guests = arch_vm_available() ? 1u : 0u;
+    info.virt = vm_virt();
     info.epoch = (uint64_t)hal_rtc_seconds();
 
     if (hal_snd_present()) {

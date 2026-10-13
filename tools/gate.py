@@ -309,6 +309,7 @@ SUITES = [
     Suite("x86-wallpapers", ["python3", "tools/run_wallpapers.py", X86], x86=True),
     Suite("x86-magnet", ["python3", "tools/run_magnet.py", X86], x86=True),
     Suite("x86-ahci", ["python3", "tools/run_ahci.py", X86], x86=True),
+    Suite("x86-virtprobe", ["python3", "tools/run_virtprobe.py", X86], x86=True),
     # Quick Look (`docs/quicklook.html`, Q1): Space shows a file in a panel
     # over Tracker - a picture at its own size, anything else as its facts,
     # the arrows through the folder, Escape and Return.

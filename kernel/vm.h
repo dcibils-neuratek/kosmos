@@ -43,6 +43,7 @@ struct vcpu;
 
 /* The pools, once at boot. */
 void vm_init(void);
+unsigned vm_virt(void);                 /* VIRT_*, as probed at boot */
 
 /* The four syscalls; each answers a capability index, 0, or SYS_ERR_*. */
 long vm_guest_create(struct thread *t);
@@ -67,6 +68,7 @@ unsigned vm_vcpus_in_use(void);
  * registers in whatever form the architecture keeps them.
  */
 bool  arch_vm_available(void);          /* any core can enter a guest */
+unsigned arch_vm_probe(void);           /* VIRT_*: what the processor and firmware allow */
 bool  arch_vm_here(void);               /* this one can */
 unsigned arch_vm_tags(void);            /* VMIDs there are, beside the host's */
 void *arch_guest_tables(void);

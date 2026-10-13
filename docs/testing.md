@@ -24848,3 +24848,20 @@ upgrading - the two new checks of Tracker's suite fail. Whole gate: 81 of
 nothing here touches, late once under the gate's load and 203 of 203 alone;
 watched for a second time.
 
+## 18.594 The virtualization probe, before VT-x
+
+`docs/sandboxes.md`, S5. Before VT-x is written, the kernel says at boot
+what the processor and its firmware allow (`arch_vm_probe`): on x86-64 CPUID
+leaf 1 ECX bit 5 for VMX, and only then `IA32_FEATURE_CONTROL` (MSR 0x3A) -
+bit 0 locked, bit 2 VMX outside SMX - as "vm: VT-x, locked on by the
+firmware", "... locked off ... turn on Intel Virtualization Technology in
+its setup", "... not locked", or "nothing to run a guest with"; on ARM, EL2
+or nothing. `sysinfo.virt` carries it (`VIRT_*`, in what was
+`guests_reserved`), and the Sandboxes window's Machine panel says it - so
+the M700's first netboot says whether its setup needs changing.
+
+**Tests.** `x86-virtprobe`, new, 2 checks: QEMU's x86, which has no VMX,
+says "nothing to run a guest with" at boot and goes on to its prompt - the
+probe neither faults nor stays silent. The other answers are the M700's to
+give.
+
