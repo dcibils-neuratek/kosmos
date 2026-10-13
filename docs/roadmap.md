@@ -9214,6 +9214,13 @@ click sent at (880, 422) arrived at (844, 467) - 36 to the left, and the
 height stretched by about 1.07 and moved 15 down - so a tab was missed for
 the panel under it. `vncd`'s scaling of the viewer's position into the
 pointer's range, held to a test that clicks each corner of the screen.
+**Not reproduced, 13 October, on 0.11.210**: a click sent at (800, 700)
+is "wm: button down at 800,700"; one on Files' Desktop row and one on the
+Sandboxes window's Stopped row each land on the row, the pointer drawn on
+it. `vncd` passes the viewer's position through and `wm` maps it with the
+screen's own range, so there is no scaling to be wrong. The likeliest
+reading of the first report is a click aimed from a screenshot taken
+before the window moved. Closed unless it is seen again.
 
 **The keyboard in a sandbox's console** - Diego, 13 October 2026: "the
 console in sandboxes is missing some keystrokes from my keyboard and also
