@@ -9446,17 +9446,18 @@ def check_places(guest):
 
     #
     # **The sidebar as the drawings order it** (`roadmap.md` 6w): Home and
-    # Desktop, the six places a person keeps - each made by Tracker the
-    # first time it is missing, so a home with nothing in it has all six -
-    # and the Trash last. Downloads, the sixth, since 9 October.
+    # Desktop, the seven places a person keeps - each made by Tracker the
+    # first time it is missing, so a home with nothing in it has all seven -
+    # and the Trash last. Downloads, the sixth, since 9 October; Wallpapers
+    # since 13 October.
     #
     sidebar = guest.wait_for_line("tracker: sidebar ",
                                   "Tracker to say what its sidebar holds",
                                   mark)
 
-    if sidebar != ("Home, Desktop, Documents, Downloads, Photos, Movies, "
+    if sidebar != ("Home, Desktop, Documents, Downloads, Photos, Wallpapers, Movies, "
                    "Captures, Music, Trash"):
-        raise Failure("Tracker's sidebar is not Home, Desktop, the six "
+        raise Failure("Tracker's sidebar is not Home, Desktop, the seven "
                       "places a person keeps and the Trash: %r" % sidebar)
 
     time.sleep(3.0)

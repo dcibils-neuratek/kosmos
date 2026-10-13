@@ -31,6 +31,8 @@
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local settings = use("/Kosmos/Libraries/settings.lua")
+local panel = use("/Kosmos/Libraries/panel.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 local hardware = use("/Kosmos/Libraries/hardware.lua")
 local audio = use("/Kosmos/Libraries/audio.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
@@ -231,6 +233,7 @@ local rebuild                      -- forward, so the list can call it
 
 -- How far down the page is scrolled, and how tall it is (`page:wheel`).
 local scroll, page_h = 0, 0
+local row_at = {}                   -- each row's top on the page, by its key
 
 -- Taken hold of like the header beside it, in a look with no title bars:
 -- one band across the top of the window, as `docs/nochrome.html` draws it.
@@ -605,14 +608,133 @@ end
 
 local now_label = nil               -- the clock's row, which keeps time
 
+--
+-- **The Wallpaper row: a carousel of cards** (`docs/wallpapers.html`;
+-- Diego, 10 October 2026: "yes to small preview of the picture is great as
+-- now is impossible to tell which is which"). None, the desk's own colour;
+-- the pictures in `/Home/Wallpapers`, newest first; the ones Kosmos
+-- carries; and Choose a picture... last - also a button at the row's right,
+-- there whichever way the row is scrolled. One click sets it at once.
+--
+local function wallpaper_cards(current)
+  local cards, listed = {}, false
+
+  for _, c in ipairs(settings.wallpapers()) do
+    local card = { value = c[1], name = c[2] }
+
+    if c[1] == "" then
+      card.colour, card.note = theme.desktop, "the desk's own colour"
+    else
+      card.picture, card.note = c[1], c.mine and "in Wallpapers" or "comes with Kosmos"
+    end
+
+    listed = listed or c[1] == current
+    cards[#cards + 1] = card
+  end
+
+  -- One chosen from the top of /Home before there was a folder: still the
+  -- desktop's, so still shown, second.
+  if not listed and current ~= "" then
+    table.insert(cards, 2, { value = current, name = current:match("([^/]+)$") or current,
+                             picture = current, note = "chosen before" })
+  end
+
+  cards[#cards + 1] = { add = true, name = "Choose a picture...", note = "from anywhere" }
+  return cards
+end
+
+local function is_picture(name)
+  local suffix = tostring(name):lower():match("%.([%a]+)$")
+
+  return suffix == "png" or suffix == "jpg" or suffix == "jpeg"
+end
+
+--
+-- **Choose a picture...**: the Open window, pictures only, starting in
+-- Photos. What it chooses is set, and copied into `/Home/Wallpapers` - so it
+-- is in the row next time and stays when the original goes - unless it is
+-- there already. A file of the same name there that is not the same file
+-- gets a number, never overwritten.
+--
+local function choose_wallpaper(it, row)
+  local chooser = panel.open{
+    start = "/Home/Photos", title = "Choose a picture",
+    button = "Use as wallpaper", filter = is_picture,
+    on_choose = function(path)
+      local dest = path
+
+      if path:sub(1, #settings.WALLPAPERS + 1) ~= settings.WALLPAPERS .. "/" then
+        files.make_folder(settings.WALLPAPERS)
+
+        local name = path:match("([^/]+)$")
+        local stem, ext = name:match("^(.*)(%.[^.]+)$")
+        local n = 1
+
+        dest = settings.WALLPAPERS .. "/" .. name
+
+        while fs.getattr(dest) and (fs.getattr(dest) or {}).size ~= (fs.getattr(path) or {}).size do
+          n = n + 1
+          dest = ("%s/%s %d%s"):format(settings.WALLPAPERS, stem, n, ext)
+        end
+
+        if not fs.getattr(dest) then
+          local ok, why = files.copy(path, dest)
+
+          if not ok then
+            print("preferences: the picture was not copied: " .. tostring(why))
+            dest = path
+          end
+        end
+      end
+
+      if live(it, dest) then settings.set(it, dest) end
+
+      row:set_cards(wallpaper_cards(dest), dest)
+      print(("preferences: wallpaper chosen %s, kept as %s"):format(path, dest))
+      win:paint()
+    end,
+  }
+
+  if chooser then
+    print(("preferences: choose a picture at %d,%d"):format(chooser.origin_x or 0,
+          (chooser.origin_y or 0) + (chooser.head_h or 0)))
+    chooser:run()
+  end
+end
+
+local function wallpaper_row(it)
+  local current = settings.get(it) or ""
+  local row
+
+  row = ui.carousel{
+    w = row_room, window = win, cards = wallpaper_cards(current), chosen = current,
+    on_choose = function(self, card)
+      if card.add then return choose_wallpaper(it, self) end
+
+      if live(it, card.value) then settings.set(it, card.value) end
+
+      print(("preferences: wallpaper %s"):format(card.value == "" and "none" or card.value))
+      win:paint()
+    end,
+  }
+
+  row.below = true
+  row:show_chosen()
+
+  local said = "Choose a picture..."
+
+  row.aside = ui.button{ w = gfx.measure(said) + 28, h = 26, text = said,
+                         on_click = function() choose_wallpaper(it, row) end }
+  return row
+end
+
 local function control_for(it, x, y, changed)
   if it.key == "palette" then return swatches(it) end
 
-  -- The wallpapers are whatever `/Home` and the image hold at the moment the
-  -- page is drawn, so the list is made here rather than in the schema.
-  if it.key == "wallpaper" then
-    it = setmetatable({ choices = settings.wallpapers() }, { __index = it })
-  end
+  -- The wallpapers are whatever `/Home/Wallpapers` and the image hold at
+  -- the moment the page is drawn, so the row is made here rather than in
+  -- the schema.
+  if it.key == "wallpaper" then return wallpaper_row(it) end
   if it.kind == "switch" then
     local sw = ui.switch{ x = x, y = y, on = settings.get(it) == true,
                           on_change = function(_, on)
@@ -1132,6 +1254,8 @@ rebuild = function()
       --
       local words = LINE_LABEL + (it.note and LINE_NOTE or 0)
       local least = (i == n) and ROW_MIN or (ROW_MIN - 1)
+
+      if it.key then row_at[it.key] = y + scroll end
       local h = math.max(least, 2 * ROW_PAD + math.max(words, ch))
 
       -- A control that goes under the row's words, across the card - the
@@ -1140,13 +1264,33 @@ rebuild = function()
 
       if below then
         h = 2 * ROW_PAD + words + ROW_PAD + c.h
-        taken = 0
+
+        -- Its words stop short of what it keeps at their right, or the
+        -- label, added after, lies over that button and takes its press.
+        taken = c.aside and c.aside.w or 0
       end
 
       if below then
         c.x = cx + 1 + ROW_IN
         c.y = y + ROW_PAD + words + ROW_PAD
         page:add(c)
+
+        -- And what it keeps at the row's right, on its words' line - the
+        -- Wallpaper row's Choose a picture...
+        if c.aside then
+          c.aside.x = right - c.aside.w
+          c.aside.y = y + ROW_PAD + (words - c.aside.h) // 2
+          page:add(c.aside)
+        end
+
+        -- Where the wallpapers' cards are, for a harness.
+        if it.key == "wallpaper" and c.card_middle then
+          local mx, my = c:card_middle(2)
+
+          print(("preferences wallpapers: at %d,%d, %d cards, the second at %d,%d; choose at %d,%d"):format(
+                SIDE + c.x, c.y, #c.cards, SIDE + c.x + mx, c.y + my,
+                SIDE + c.aside.x + c.aside.w // 2, c.aside.y + c.aside.h // 2))
+        end
       elseif c then
         c.x = right - c.w
         c.y = y + (h - c.h) // 2
@@ -1298,6 +1442,22 @@ rebuild = function()
 end
 
 rebuild()
+
+--
+-- **Opened at a row**: `wm preferences:appearance --row wallpaper` scrolls
+-- the page so that row is at its top - what a harness needs to reach the
+-- Wallpaper row, and what a "Change the wallpaper..." on the desktop would.
+--
+do
+  local key = tostring(args or ""):match("%-%-row%s+(%S+)")
+
+  if key and row_at[key] then
+    local most = math.max(0, page_h - page.h)
+
+    scroll = math.max(0, math.min(most, row_at[key] - HEAD - 12))
+    rebuild()
+  end
+end
 
 --
 -- **The time, kept**: twice a second the clock's row says it again, placed

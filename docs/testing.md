@@ -24718,3 +24718,43 @@ read `col.align == "right"` inside a `line_icon` call as an icon named
 "right"; the position is worked out before the call now, and the host suite
 and both column suites pass.
 
+## 18.589 Wallpapers: a folder, a carousel of thumbnails, Choose a picture
+
+`docs/wallpapers.html`, `ui.md` 16.30. `/Home/Wallpapers` joins the places
+(`places.STANDARD`, after Photos), so the desktop's Tracker makes it at
+boot and Tracker's sidebar lists it; `settings.wallpapers` reads it, newest
+first, where it read the top of `/Home`. Preferences' Wallpaper row is a
+`ui.carousel` - None, the folder's pictures, the twelve carried, Choose a
+picture... - with that button also at the row's right, and opens scrolled
+to the one in use; `--row KEY` opens Preferences scrolled to a row. Choose
+a picture... is the Open window from Photos, pictures only, its button "Use
+as wallpaper" (`panel.open`'s `button`, now for opening as well as
+folders); the picture is set and copied into the folder, a same-named
+different file getting a number.
+
+**Found on the way**: a carousel built with no height stood at `ui.view`'s
+default of 0, so the page laid the next rows over it; the label, as wide as
+the row, took the button's press; the window manager's thumbnails were
+never drawn, a kit window painting itself; and, once they were made in
+Preferences, the window manager could not find 20 MB for the wallpaper on a
+512 MB machine - `malloc` kept every decode's size for good. **The libc now
+gives back an arena left wholly free that is a megabyte or more**
+(`runtime/libc/malloc.c`), the first, `heap_init`'s, excepted.
+
+**Tests.** `x86-wallpapers`, new, 7 checks, with `/Home` on a disk holding a
+picture in Wallpapers and one in Photos: Wallpapers beside Photos in
+Tracker's places; the row's 15 cards; a thumbnail of the folder's picture,
+and every thumbnail made once; a click on it making it the desktop's
+wallpaper, which the window manager places; Choose a picture... opening the
+Open window, Return choosing the picture in Photos, set and kept as
+`/Home/Wallpapers/sunset.jpg`, whole. Thirteen thumbnails took 231 to 452
+ms each under TCG. **Controls**: no thumbnail asked for - none made, two
+checks fail; no arena given back - "no region for a shared 3440x1440
+surface (-105)" and the wallpaper not placed. `test_places.lua` and the
+display harness's sidebar check now name Wallpapers. **Whole gate**: 78 of
+80 - x86-display-3 read "preferences: wallpapers at ..." as Preferences'
+layout line, so the line is "preferences wallpapers: at ..." now, as the
+sliders' are; and x86-packages, once, read the others still installed after
+a removal under the gate's load - passing alone, and watched for a second
+time.
+

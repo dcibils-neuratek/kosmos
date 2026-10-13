@@ -5124,6 +5124,285 @@ function ui.columns(spec)
   return c
 end
 
+--------------------------------------------------------------------------
+-- **A carousel** (`docs/wallpapers.html`): a row of cards that scrolls
+-- sideways, one of them chosen - Preferences' wallpapers first, and the
+-- Shortcuts app's sections and Music's albums on a narrow window after.
+-- Diego, 10 October 2026: "we can do like a carrousel of cards of
+-- thumbnails of the images in /home/wallpapers".
+--
+--   ui.carousel{ w =, window = win, chosen = value, on_choose = fn(card),
+--                cards = { { value =, name =, note =, picture = path },
+--                          { value = "", name = "None", colour = 0xff3a6ea5 },
+--                          { add = true, name = "Choose a picture..." } } }
+--
+-- **Each card a picture and a name under it**: the picture a thumbnail made
+-- once at the card's size in this process (`thumb:WxH:` and its name, the
+-- kit's `picture`), **one a pass** through the window's `soon` - a decode
+-- at a time, the cards in view first, and the card's own ground until its
+-- picture is there; a colour instead, for a card that is one; or, `add`,
+-- an outline and a plus. The chosen card is ringed in the accent and
+-- ticked.
+--
+-- **It scrolls** by the wheel, by dragging, and by an arrow at either end
+-- when there is more that way, and opens scrolled to the card chosen. A
+-- click - a press and a release on the same card, not moved - chooses.
+--------------------------------------------------------------------------
+
+function ui.carousel(spec)
+  local CW, CH = spec.card_w or 150, spec.card_h or 94
+  local GAP, RING, ARROW_R = 12, 5, 14
+  local name_h = gfx.height("label") + 2
+  local note_h = gfx.height("label") + 2
+
+  -- Its height before it is a view: `ui.view` makes the spec the view, and
+  -- gives one with no height a default that would then stand.
+  spec.h = spec.h or (RING + CH + 6 + name_h + note_h + RING)
+
+  local v = ui.view(spec)
+
+  v.focusable = true
+  v.cards = spec.cards or {}
+  v.chosen = spec.chosen
+  v.scroll = 0
+  v.ready = {}              -- a thumbnail's name: true once the wm has it, false if it never will
+
+  local function thumb_of(card)
+    return card.picture and ("thumb:%dx%d:%s"):format(CW, CH, card.picture) or nil
+  end
+
+  local function card_x(i) return RING + (i - 1) * (CW + GAP) - v.scroll end
+
+  local function most()
+    return math.max(0, RING * 2 + #v.cards * (CW + GAP) - GAP - v.w)
+  end
+
+  -- Scrolled so the chosen card is in view.
+  function v:show_chosen()
+    for i, card in ipairs(self.cards) do
+      if card.value ~= nil and card.value == self.chosen then
+        local x = card_x(i) + self.scroll
+
+        if x < self.scroll or x + CW > self.scroll + self.w then
+          self.scroll = math.max(0, math.min(most(), x - (self.w - CW) // 2))
+        end
+      end
+    end
+  end
+
+  --
+  -- **The next thumbnail**, on the window's next pass: the first card in
+  -- view without one, then the rest, each asked once.
+  --
+  local asking = false
+
+  local function want(self)
+    if asking or not spec.window then return end
+
+    local first, later
+
+    for i, card in ipairs(self.cards) do
+      local t = thumb_of(card)
+
+      if t and self.ready[t] == nil then
+        local x = card_x(i)
+
+        if x + CW > 0 and x < self.w then first = first or t else later = later or t end
+      end
+    end
+
+    local t = first or later
+
+    if not t then return end
+
+    asking = true
+    spec.window:soon(function()
+      asking = false
+
+      self.ready[t] = ui.picture(t) and true or false
+      want(self)
+    end)
+  end
+
+  function v:set_cards(cards, chosen)
+    self.cards = cards
+    self.chosen = chosen
+    self:show_chosen()
+  end
+
+  -- The picture, cut to what of it is inside the view and the clip.
+  local function picture(self, g, asset, x, y)
+    local ax, ay = g.ox + x, g.oy + y
+    local x0 = math.max(ax, g.cx, g.ox)
+    local x1 = math.min(ax + CW, g.cx + g.cw, g.ox + self.w)
+    local y0 = math.max(ay, g.cy)
+    local y1 = math.min(ay + CH, g.cy + g.ch)
+
+    if x1 <= x0 or y1 <= y0 then return end
+
+    g.ops[#g.ops + 1] = { op = "image", asset = asset, sx = x0 - ax, sy = y0 - ay,
+                          w = x1 - x0, h = y1 - y0, x = x0, y = y0 }
+  end
+
+  local function draw_cards(self, g)
+    self.scroll = math.max(0, math.min(self.scroll, most()))
+
+    for i, card in ipairs(self.cards) do
+      local x, y = card_x(i), RING
+
+      if x + CW + RING > 0 and x - RING < self.w then
+        local on = card.value ~= nil and card.value == self.chosen
+
+        if on then
+          for k = 0, 2 do
+            g:frame_round(x - RING + k, y - RING + k, CW + 2 * (RING - k), CH + 2 * (RING - k),
+                          theme.accent, 8 + RING - k)
+          end
+        end
+
+        if card.add then
+          g:fill_round(x, y, CW, CH, theme.sunken, 8)
+          g:frame_round(x, y, CW, CH, theme.line, 8)
+          g:frame_round(x + 1, y + 1, CW - 2, CH - 2, theme.line, 7)
+          g:text(x + (CW - gfx.measure("+", "title")) // 2, y + (CH - gfx.height("title")) // 2,
+                 "+", theme.text_dim, nil, "title")
+        elseif card.picture then
+          local t = thumb_of(card)
+
+          if self.ready[t] then
+            picture(self, g, t, x, y)
+          else
+            g:fill_round(x, y, CW, CH, theme.track, 8)
+          end
+
+          g:frame_round(x, y, CW, CH, theme.line_soft, 8)
+        else
+          g:fill_round(x, y, CW, CH, card.colour or theme.desktop, 8)
+          g:frame_round(x, y, CW, CH, theme.line_soft, 8)
+        end
+
+        if on then
+          g:fill_round(x + CW - 26, y + CH - 26, 20, 20, theme.accent, 10)
+          g:line_icon(x + CW - 16 - 7, y + CH - 16 - 7, "check", theme.text_on)
+        end
+
+        local ny = y + CH + 6
+
+        g:text(x, ny, ui.fitted(card.name or "", CW, "label"), theme.text, nil, "label")
+
+        if card.note then
+          g:text(x, ny + name_h, ui.fitted(card.note, CW, "label"), theme.text_dim, nil, "label")
+        end
+      end
+    end
+
+    -- An arrow at either end with more that way: round, over the cards.
+    local ay = RING + CH // 2
+
+    self.arrows = {}
+
+    if self.scroll > 0 then
+      g:fill_round(2, ay - ARROW_R, 2 * ARROW_R, 2 * ARROW_R, theme.window, ARROW_R)
+      g:frame_round(2, ay - ARROW_R, 2 * ARROW_R, 2 * ARROW_R, theme.line, ARROW_R)
+      g:text(ARROW_R + 2 - gfx.measure("\u{2039}") // 2, ay - gfx.height() // 2, "\u{2039}", theme.text)
+      self.arrows.back = true
+    end
+
+    if self.scroll < most() then
+      local cx = self.w - ARROW_R - 3
+
+      g:fill_round(cx - ARROW_R, ay - ARROW_R, 2 * ARROW_R, 2 * ARROW_R, theme.window, ARROW_R)
+      g:frame_round(cx - ARROW_R, ay - ARROW_R, 2 * ARROW_R, 2 * ARROW_R, theme.line, ARROW_R)
+      g:text(cx - gfx.measure("\u{203a}") // 2, ay - gfx.height() // 2, "\u{203a}", theme.text)
+      self.arrows.on = true
+    end
+
+    want(self)
+  end
+
+  -- Inside its own rectangle: a card at either end is cut by the row, not
+  -- drawn past it.
+  function v:draw(g)
+    local saved = g:push(0, 0, self.w, self.h)
+
+    draw_cards(self, g)
+    g:pop(saved)
+  end
+
+  -- The card under `x`, `y`, or "back" or "on" for an arrow.
+  function v:card_at(x, y)
+    local ay = RING + CH // 2
+
+    if self.arrows and self.arrows.back and (x - ARROW_R - 2) ^ 2 + (y - ay) ^ 2 <= ARROW_R ^ 2 then
+      return "back"
+    end
+
+    if self.arrows and self.arrows.on and (x - (self.w - ARROW_R - 3)) ^ 2 + (y - ay) ^ 2 <= ARROW_R ^ 2 then
+      return "on"
+    end
+
+    for i, card in ipairs(self.cards) do
+      local cx = card_x(i)
+
+      if x >= cx and x < cx + CW and y >= RING and y < RING + CH + 6 + name_h then return card, i end
+    end
+  end
+
+  -- Where card `i`'s middle is, in the view: for a harness.
+  function v:card_middle(i)
+    return card_x(i) + CW // 2, RING + CH // 2
+  end
+
+  function v:wheel(n)
+    self.scroll = math.max(0, math.min(most(), self.scroll - n * (CW + GAP)))
+    return true
+  end
+
+  function v:mouse(action, x, y)
+    if action == "press" then
+      self.held = { x = x, scroll = self.scroll, on = self:card_at(x, y), moved = false }
+      return true
+    end
+
+    local held = self.held
+
+    if not held then return false end
+
+    if action == "move" then
+      if math.abs(x - held.x) > 6 then held.moved = true end
+
+      if held.moved then self.scroll = math.max(0, math.min(most(), held.scroll - (x - held.x))) end
+
+      return true
+    end
+
+    if action == "release" then
+      self.held = nil
+
+      if held.moved then return true end
+
+      local now = self:card_at(x, y)
+
+      if now ~= held.on then return true end
+
+      if now == "back" then
+        self.scroll = math.max(0, self.scroll - (CW + GAP) * 2)
+      elseif now == "on" then
+        self.scroll = math.min(most(), self.scroll + (CW + GAP) * 2)
+      elseif now then
+        if not now.add then self.chosen = now.value end
+        if spec.on_choose then spec.on_choose(self, now) end
+      end
+
+      return true
+    end
+
+    return false
+  end
+
+  return v
+end
+
 --
 -- Editable text, over several lines.
 --
@@ -6671,10 +6950,70 @@ do
     lent[name] = surface
   end
 
+  --
+  -- **A thumbnail** (`docs/wallpapers.html`): `thumb:WxH:` and a picture's
+  -- name - a file or one the image carries - decoded once, the middle of it
+  -- with the thumbnail's shape shrunk to W by H, and the picture given back
+  -- at once. **Made here, in the window's own process**, as everything it
+  -- draws is (`docs/astra-display.md` D2): a decode in Preferences, never
+  -- one that stops the desktop composing. Twenty wallpapers in the row are
+  -- twenty surfaces of 56 KB at 150 by 94, not twenty the size of a screen.
+  -- The last 64 kept, the oldest freed; what each cost said once.
+  --
+  local thumbs, thumbs_made = {}, {}
+  local counter_hz = nil
+
+  local function thumbnail(name, w, h, of)
+    local got = thumbs[name]
+
+    if got ~= nil then return got or nil end
+
+    thumbs[name] = false
+
+    if w < 1 or h < 1 or w > 512 or h > 512 then return nil end
+
+    counter_hz = counter_hz or (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+
+    local began = sys.ticks()
+    local full = use("/Kosmos/Libraries/pictures.lua").from(of)
+
+    if not full then return nil end
+
+    local pw, ph = full:size()
+    local cw, ch = pw, ph
+
+    if pw * h > ph * w then cw = ph * w // h else ch = pw * h // w end
+
+    local made = gfx.surface{ w = w, h = h }
+
+    made:fill(0, 0, w, h, 0xff000000)
+    made:stretch(full, (pw - cw) // 2, (ph - ch) // 2, cw, ch, 0, 0, w, h, nil, true)
+    full:free()
+
+    thumbs[name] = made
+    thumbs_made[#thumbs_made + 1] = name
+
+    while #thumbs_made > 64 do
+      local old = table.remove(thumbs_made, 1)
+
+      if thumbs[old] then thumbs[old]:free() end
+
+      thumbs[old] = nil
+    end
+
+    print(("ui: thumbnail %dx%d of %s, from %dx%d, in %d ms"):format(
+          w, h, of, pw, ph, (sys.ticks() - began) * 1000 // counter_hz))
+    return made
+  end
+
   -- A picture carried in the image, decoded once: a line icon, an icon -
-  -- or, named by a path, a file.
+  -- or, named by a path, a file; or a thumbnail of either.
   local function picture(name)
     if lent[name] then return lent[name] end
+
+    local tw, th, of = tostring(name):match("^thumb:(%d+)x(%d+):(.+)$")
+
+    if tw then return thumbnail(name, tonumber(tw), tonumber(th), of) end
 
     if tostring(name):sub(1, 1) == "/" then
       files_kept = files_kept or use("/Kosmos/Libraries/pictures.lua").kept(4)
@@ -6699,6 +7038,10 @@ do
     pictures[name] = got
     return got or nil
   end
+
+  -- The same, for a widget that wants a picture made before it is drawn -
+  -- the carousel's thumbnails, one a pass, outside a paint.
+  ui.picture = picture
 
   --
   -- **A frame's commands, drawn here** (`docs/astra-display.md` D2): what a
@@ -7585,6 +7928,18 @@ local function serve_properties(self)
 
     pcall(sys.reply, who, reply)
   end
+end
+
+--
+-- **Something to do on the window's next pass, not now** - and never in a
+-- paint, which draws what the window has already heard (`CLAUDE.md`,
+-- *nothing on the desktop waits on a server*). The carousel asks for its
+-- thumbnails this way, one a pass, so the window manager decodes one
+-- picture at a time between frames rather than twenty in one request.
+--
+function window:soon(fn)
+  self.soon_list = self.soon_list or {}
+  self.soon_list[#self.soon_list + 1] = fn
 end
 
 -- Out of the window, with the keyboard kept on whatever it was on - or on
@@ -8813,6 +9168,10 @@ function window:run()
       end
     end
 
+    -- Something to do on the next pass (`window:soon`): a tick's wait at
+    -- most, so it is done promptly and still never inside a paint.
+    if self.soon_list and #self.soon_list > 0 then wait = 1 end
+
     local reply = wmproto.poll(self.handle, wait)
 
     --
@@ -9006,6 +9365,17 @@ function window:run()
       local held = decode_key(nil)
 
       if held and dispatch(self, held) then changed = true end
+    end
+
+    -- What was asked to be done on this pass (`window:soon`), each once.
+    if self.soon_list and #self.soon_list > 0 then
+      local list = self.soon_list
+
+      self.soon_list = {}
+
+      for _, fn in ipairs(list) do fn() end
+
+      changed = true
     end
 
     -- A replicant with a `tick` is something that changes on its own - a

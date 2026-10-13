@@ -241,14 +241,21 @@ local function open(spec, mode)
     win:add(chooser)
     panel.button_at = { x = chooser.x + chooser.w // 2, y = chooser.y + chooser.h // 2 }
   else
+    -- What opening means here, when the caller says - Preferences' "Use as
+    -- wallpaper" - wider than 96 when the words are.
+    local said = spec.button or "Open"
+    local bw = math.max(96, gfx.measure(said) + 24)
+
     win:add(ui.button{
-      x = bx, y = H - FOOT + 10, w = 96, h = 24, text = "Open",
+      x = bx + 96 - bw, y = H - FOOT + 10, w = bw, h = 24, text = said,
       on_click = function() act(entries[listing.selected]) end,
     })
+    panel.button_at = { x = bx + 96 - bw // 2, y = H - FOOT + 22 }
   end
 
   win:add(ui.button{
-    x = bx - 104, y = H - FOOT + 10, w = 96, h = 24, text = "Cancel",
+    x = bx - 104 - math.max(0, gfx.measure(spec.button or "") + 24 - 96), y = H - FOOT + 10,
+    w = 96, h = 24, text = "Cancel",
     on_click = function()
       win:close()
 

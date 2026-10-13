@@ -215,7 +215,7 @@ settings.ITEMS = {
                     { "large", "Large" }, { "larger", "Larger" } } },
 
   item{ category = "appearance", group = "Look",
-        label = "Wallpaper", note = "Carried in the image, or a picture in /Home",
+        label = "Wallpaper", note = "A picture in /Home/Wallpapers, or one Kosmos carries",
         kind = "choice", file = settings.APPEARANCE, key = "wallpaper",
         default = "", choices = nil },   -- filled at run time from the image
 
@@ -529,8 +529,11 @@ end
 
 --
 -- **The wallpapers there are to choose from**, as `{ value, name }` pairs
--- for the Wallpaper row: none, then the pictures in `/Home`, then the
--- pictures the image carries.
+-- for the Wallpaper row: none, then the pictures in `/Home/Wallpapers`,
+-- newest first, then the pictures the image carries (`docs/wallpapers.html`;
+-- Diego, 10 October 2026: "yes to /home/wallpapers"). It read the top of
+-- `/Home`; a picture chosen from there before is still a path, and still
+-- the desktop's, though the row no longer lists it.
 --
 -- The value is what `/Home/Preferences/appearance` keeps and what the window manager
 -- is sent - a path in `/Home`, or `wallpaper/<file>` in the image - and ""
@@ -556,16 +559,32 @@ function settings.wallpaper_name(name)
   return table.concat(words, " ")
 end
 
-function settings.wallpapers()
-  local out, seen = { { "", "None" } }, {}
+settings.WALLPAPERS = "/Home/Wallpapers"
 
-  for _, name in ipairs(fs.list("/Home") or {}) do
+function settings.wallpapers()
+  local out, seen, mine = { { "", "None" } }, {}, {}
+
+  for _, name in ipairs(fs.list(settings.WALLPAPERS) or {}) do
     local suffix = name:lower():match("%.([%a]+)$")
 
     if suffix == "png" or suffix == "jpg" or suffix == "jpeg" then
-      out[#out + 1] = { "/Home/" .. name, name }
-      seen[name] = true
+      local path = settings.WALLPAPERS .. "/" .. name
+      local a = fs.getattr(path) or {}
+
+      mine[#mine + 1] = { path, name, when = a.modified or a.mtime or 0 }
     end
+  end
+
+  -- Newest first: the one just added is the one looked for.
+  table.sort(mine, function(a, b)
+    if a.when ~= b.when then return a.when > b.when end
+
+    return a[2] < b[2]
+  end)
+
+  for _, it in ipairs(mine) do
+    out[#out + 1] = { it[1], it[2], mine = true }
+    seen[it[2]] = true
   end
 
   for _, name in ipairs(sys.asset() or {}) do

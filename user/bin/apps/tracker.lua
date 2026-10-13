@@ -220,7 +220,7 @@ if backdrop then
 end
 
 --
--- **The places a person keeps** - Documents, Downloads, Photos, Movies,
+-- **The places a person keeps** - Documents, Downloads, Photos, Wallpapers, Movies,
 -- Captures and Music (`places.STANDARD`, `roadmap.md` 6w) - made whenever a Tracker finds
 -- one missing, as the desktop makes `Desktop`: a folder that only exists
 -- once somebody thinks to make it is a folder nobody makes.

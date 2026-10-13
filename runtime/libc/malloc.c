@@ -232,6 +232,9 @@ static void split(struct block *b, size_t want)
  */
 #define GROW_PAGES  64u
 
+/* An arena this large, left wholly free, is given back (`free`). */
+#define RETURN_BYTES (1024u * 1024u)
+
 /*
  * More heap, from the kernel, as a new arena.
  *
@@ -439,6 +442,27 @@ void free(void *p)
         absorb(prev);           /* takes in `b` */
         b = prev;
     }
+
+#ifdef KOSMOS_USER
+    /*
+     * **An arena left wholly free, a megabyte or more, goes back to the
+     * kernel** rather than into a bin. A large allocation is an arena of
+     * its own (`grow` sizes one to it), so a picture decoded and freed -
+     * a JPEG is decoded into `malloc`'s memory before it becomes a surface
+     * - used to leave its whole size in this process's heap for good:
+     * Preferences making thirteen wallpapers' thumbnails kept 30 MB it
+     * would never use again, and on a 512 MB machine the window manager
+     * then could not find room for a wallpaper (13 October 2026). The first
+     * arena is the one `heap_init` was handed, not one `grow` mapped, and
+     * stays; one smaller than a megabyte stays too, since the next growth
+     * would only ask for it again.
+     */
+    if (b != first && b->prev == NULL && b->next == NULL && b->size + HEADER >= RETURN_BYTES) {
+        total -= b->size;
+        (void)kosmos_unmap((unsigned long)(uintptr_t)b, (b->size + HEADER) / 4096u);
+        return;
+    }
+#endif
 
     bin_insert(b);
 }

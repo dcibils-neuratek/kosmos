@@ -414,7 +414,21 @@ chosen from elsewhere copied into `/Home/Wallpapers` so the folder is the
 whole list. Thumbnails made once at the size drawn; the row a kit piece,
 `ui.carousel`. **Drawn and agreed** -
 `docs/wallpapers.html`; Diego, 12 October 2026: "Wallpapers mockup is
-perfect". Built after Tracker's list view.
+perfect". Built after Tracker's list view. **Built, 0.11.195**
+(`testing.md` 18.589, `ui.md` 16.30): `/Home/Wallpapers` made at boot and in
+Tracker's places beside Photos; `settings.wallpapers` reading it, newest
+first; Preferences' Wallpaper row a `ui.carousel` of thumbnails - None, the
+folder's, the twelve carried, Choose a picture... - with the button at the
+row's right; Choose a picture... the Open window, pictures only, from
+Photos, its button "Use as wallpaper", and the picture copied into the
+folder. **Two departures from the drawing, both for the desktop's sake**:
+the thumbnails are made in Preferences, not by the window manager - a kit
+window draws itself (D2), and a decode in the window manager stops it
+composing - and the libc now gives a wholly free arena of a megabyte or more
+back to the kernel, without which a process that decoded a large picture
+kept its size for good. Nothing of the drawing is left: a picture dropped
+on the Wallpapers place in Tracker is Tracker's ordinary copy, and is in the
+row the next time Preferences opens.
 
 **The bar at the bottom by default, and Processor Cores gone** - Diego, 12
 October 2026: "by default the bottom bar should be in the bottom setting,

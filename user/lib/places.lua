@@ -49,6 +49,12 @@ places.STANDARD = {
   { name = "Documents", path = "/Home/Documents", icon = "document" },
   { name = "Downloads", path = "/Home/Downloads", icon = "downloads" },
   { name = "Photos",    path = "/Home/Photos",    icon = "pictures" },
+  --
+  -- **Wallpapers** (`docs/wallpapers.html`): the folder Preferences' row
+  -- lists, beside Photos so a picture can be dropped there as well as
+  -- chosen - made, empty, the first time a Tracker finds it missing.
+  --
+  { name = "Wallpapers", path = "/Home/Wallpapers", icon = "pictures" },
   { name = "Movies",    path = "/Home/Movies",    icon = "movies" },
   { name = "Captures",  path = "/Home/Captures",  icon = "captures" },
   { name = "Music",     path = "/Home/Music",     icon = "music" },

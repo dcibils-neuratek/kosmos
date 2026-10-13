@@ -2002,3 +2002,44 @@ nothing to sort by from a heading and no heading to drag.
 manager draws one pointer and an application cannot ask for another shape
 yet; the guide and the width say where the edge is meanwhile
 (`roadmap.md`).
+
+## 16.30 A carousel, thumbnails, and something done on the next pass
+
+`docs/wallpapers.html`, agreed by Diego on 12 October 2026 ("Wallpapers
+mockup is perfect"): Preferences' Wallpaper row as cards of thumbnails.
+Three pieces went into the kit for it, each once.
+
+**`ui.carousel`**: a row of cards that scrolls sideways, one chosen - by
+the wheel, by dragging, and by a round arrow at either end when there is
+more that way; it opens scrolled to the card chosen, and a click (a press
+and a release on the same card, not moved) chooses. Each card is a picture
+and a name under it, with a note in the dim colour; a card may be a colour
+(None, the desk's own) or `add`, an outline and a plus (Choose a
+picture...). The chosen card is ringed in the accent and ticked. It draws
+inside its own rectangle (`g:push`), so the card at either end is cut by
+the row. The Shortcuts app's sections and Music's albums on a narrow window
+are the next users the drawing names.
+
+**A thumbnail is a picture's name** - `thumb:150x94:` and a file's path or
+a carried picture's - and **the kit makes it, in the window's own
+process**: decoded once (`pictures.from`), the middle of it with the
+thumbnail's shape shrunk with `stretch`, the picture freed at once, the
+last 64 kept. The drawing had the window manager make them, through the
+door `ui.image` uses; since D2 a kit window draws its own commands with the
+kit's pictures, so the window manager's would never be seen - and a decode
+there is a decode the desktop composes nothing during. In Preferences it
+costs Preferences: 230 to 450 ms a picture under emulation, each said once
+("ui: thumbnail ...").
+
+**`win:soon(fn)`**: something done on the window's next pass, never inside
+a paint - the window waits a tick rather than a second while one is
+pending. The carousel asks for its thumbnails this way, one a pass, the
+cards in view first, each showing its ground until its picture is there:
+a window draws what it already has (`CLAUDE.md`, *nothing on the desktop
+waits on a server*).
+
+**And a row that goes under its words may keep a control at their right**
+(`aside`): the Wallpaper row's Choose a picture..., there whichever way the
+row is scrolled. The words stop short of it - added after it and as wide as
+the row, the label lay over the button and took its press.
+
