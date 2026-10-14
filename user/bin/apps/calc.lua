@@ -156,6 +156,11 @@ local SIGN = { ["+"] = "+", ["-"] = "−", ["*"] = "×", ["/"] = "÷" }
 display = ui.view{ x = 0, y = 0, w = W, h = DISPLAY,
                    follow = { "left", "right", "top" } }
 
+-- Published by name (`window:controls`, `docs/automations.md` A1): the
+-- display read as `display/Result` - the number it shows.
+display.control, display.label = "display", "Result"
+function display:read() return shown end
+
 function display:draw(g)
   g:fill(0, 0, self.w, self.h - 1, theme.sunken)
   g:fill(0, self.h - 1, self.w, 1, theme.line_soft)
@@ -206,6 +211,10 @@ local function key(x, y, w, label)
   local k = ui.view{ x = x, y = y, w = w, h = KEY_H }
   local op = SIGN[label] or label == "⌫" or label == "C"
   local eq = (label == "=")
+
+  -- A button by its face, `button/7` or `button/×`, pressed as a click is.
+  k.control, k.label = "button", SIGN[label] or label
+  function k:press() press(label) end
 
   function k:draw(g)
     local fill = eq and theme.accent

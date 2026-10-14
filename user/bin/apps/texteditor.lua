@@ -448,8 +448,10 @@ end
 
 local function on_off(b) return b and "On" or "Off" end
 
-more.on_click = function()
-  win:open_menu(win.origin_x + more.x, win.origin_y + L.head, {
+-- What the dots open, said as the button's `menu` so it is also
+-- `menu/more/<item>` under the window's controls (`docs/automations.md` A1).
+more.menu = function()
+  return {
     { text = "New window",   hint = "Ctrl N", on_choose = function() launch(nil) end },
     { text = "Open...",      hint = "Ctrl O", on_choose = function() open_file() end },
     { text = "Open recent",  submenu = recent_items() },
@@ -473,7 +475,11 @@ more.on_click = function()
     { separator = true },
     { text = "Show in Tracker", disabled = (path == nil),
       on_choose = show_in_tracker },
-  })
+  }
+end
+
+more.on_click = function()
+  win:open_menu(win.origin_x + more.x, win.origin_y + L.head, more.menu())
 end
 
 -- After the page, so the focus starts in it.

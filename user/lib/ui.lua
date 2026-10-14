@@ -1728,6 +1728,7 @@ end
 
 function ui.button(spec)
   local v = ui.view(spec)
+  v.control = v.control or "button"     -- published by name (`window:controls`)
   --
   -- Sized from the theme's `button_pad` when a caller gives no size: 5 by
   -- 12 in every theme but Plex, which is the 10 and 24 this said before
@@ -1907,6 +1908,7 @@ end
 
 function ui.checkbox(spec)
   local v = ui.view(spec)
+  v.control = v.control or "checkbox"     -- published by name (`window:controls`)
   v.h = v.h > 0 and v.h or ROW
   v.w = v.w > 0 and v.w
         or ((v.text or "") == "" and 18
@@ -2028,6 +2030,7 @@ local KNOB_SHADOW = 0x38000000
 
 function ui.switch(spec)
   local v = ui.view(spec)
+  v.control = v.control or "switch"     -- published by name (`window:controls`)
   local W, H, KNOB = 40, 23, 18
 
   --
@@ -2108,6 +2111,7 @@ end
 --
 function ui.dropdown(spec)
   local v = ui.view(spec)
+  v.control = v.control or "dropdown"     -- published by name (`window:controls`)
 
   v.focusable = true
   v.choices = v.choices or {}
@@ -2402,6 +2406,7 @@ end
 
 function ui.field(spec)
   local v = ui.view(spec)
+  v.control = v.control or "field"     -- published by name (`window:controls`)
   --
   -- **The inset is the theme's `field_pad`**, 3 by 4 in every theme but
   -- Plex - the 6 and the 4 this had written in (`roadmap.md` 5s) - and it
@@ -3144,6 +3149,7 @@ local L = ui.layout
 --
 function ui.segments(spec)
   local v = ui.view(spec)
+  v.control = v.control or "segments"     -- published by name (`window:controls`)
   local PAD = 11
 
   v.items = v.items or {}
@@ -3330,6 +3336,11 @@ end
 function ui.iconbutton(spec)
   local v = ui.view(spec)
 
+  -- Published as a button by its icon's name, or the name given it; and a
+  -- `menu` - a list, or a function called when asked, as a menubar's - is
+  -- what it opens, published as `menu/<name>/<item>` (`window:controls`).
+  v.control = v.control or "button"
+
   v.w = v.w > 0 and v.w or 26
   v.h = v.h > 0 and v.h or 26
   v.focusable = not v.disabled
@@ -3413,6 +3424,7 @@ function ui.tabs(spec)
   spec.follow = spec.follow or { "left", "right", "top" }
 
   local v = ui.view(spec)
+  v.control = v.control or "tabs"     -- published by name (`window:controls`)
 
   v.h = v.h > 0 and v.h or TAB_H
   v.items = v.items or {}
@@ -3791,6 +3803,7 @@ end
 --
 function ui.slider(spec)
   local v = ui.view(spec)
+  v.control = v.control or "slider"     -- published by name (`window:controls`)
 
   v.w = v.w > 0 and v.w or 160
   v.h = v.h > 0 and v.h or 20
@@ -4323,6 +4336,12 @@ function ui.cards(spec)
         local h = math.max(least - ((i < #rows) and 1 or 0),
                            2 * pad + math.max(words, ch))
         local taken = 0
+
+        -- A row's control is called what the row is called - `switch/Wi-Fi`
+        -- - when it has no words of its own (`window:controls`).
+        if c and row.label and row.label ~= "" and c.label == nil and c.name == nil then
+          c.label = row.label
+        end
 
         if c then
           if c.fill then
@@ -7978,13 +7997,297 @@ function window:resize(w, h)
   return true, self.w, self.h
 end
 
+--------------------------------------------------------------------------
+-- **Every control, published by what a person sees** (`docs/automations.md`
+-- A1; Diego, 12 October 2026: "How are ui kit elements addressed in Lua
+-- automations?"). A window answers `/Running/<name>/controls` - its kinds,
+-- `controls/button` the buttons by their words, and `controls/button/Send`
+-- itself: `read` what it shows, `write` what it is set to, `press` what a
+-- click does - **the same handler a click calls**, so an automation can do
+-- nothing a person could not. Nobody writes this per application: the kit's
+-- own controls describe themselves here, and a view an application drew
+-- itself (Calculator's keys) says `control = "button"`, a `label` and a
+-- `press`, and is one.
+--------------------------------------------------------------------------
+
+local function word_of(x)
+  if type(x) == "table" then return tostring(x.label or x.text or x[2] or x[1] or "") end
+  return tostring(x or "")
+end
+
+local function on_or_off(s)
+  s = tostring(s or ""):lower():gsub("%s+$", "")
+  return s == "on" or s == "true" or s == "1" or s == "yes"
+end
+
+-- A menu's items, each `menu/<menu>/<item>`.
+local function menu_controls(menus, out)
+  for _, m in ipairs(menus or {}) do
+    for _, it in ipairs(ui.menu_items(m)) do
+      if type(it) == "table" and it.text and not it.separator then
+        out[#out + 1] = { kind = "menu", label = tostring(m.title) .. "/" .. tostring(it.text),
+                          disabled = it.disabled,
+                          press = it.on_choose and function() it.on_choose(it) end }
+      end
+    end
+  end
+end
+
+-- Each kind of the kit's controls: what it is called and what it does, as a
+-- list of entries `{ kind, label, read, write, press }` - most one, segments
+-- and tabs one an item.
+local CONTROLS = {}
+
+CONTROLS.button = function(v)
+  -- The kit's own by its words and `on_click`; one an application drew
+  -- itself by the `label` and `press` it gave it.
+  local out = { { kind = "button", label = v.name or v.text or v.label or v.icon,
+                  read = function()
+                    return tostring(v.read and v:read() or v.text or v.label or "")
+                  end,
+                  press = (v.on_click and function() v.on_click(v) end)
+                          or (v.press and function() v:press() end) } }
+
+  -- What it opens, when it says: the dots' menu is `menu/more/<item>`.
+  if v.menu then
+    menu_controls({ { title = v.name or v.text or v.icon, items = v.menu } }, out)
+  end
+
+  return out
+end
+
+CONTROLS.checkbox = function(v)
+  return { { kind = "checkbox", label = v.name or v.text or v.label,
+             read = function() return v.checked and "on" or "off" end,
+             write = function(value)
+               local on = on_or_off(value)
+               if on ~= v.checked then
+                 v.checked = on
+                 if v.on_change then v.on_change(v, on) end
+               end
+             end,
+             press = function()
+               v.checked = not v.checked
+               if v.on_change then v.on_change(v, v.checked) end
+             end } }
+end
+
+CONTROLS.switch = function(v)
+  return { { kind = "switch", label = v.name or v.label or v.text,
+             read = function() return v.on and "on" or "off" end,
+             write = function(value)
+               local on = on_or_off(value)
+               if on ~= v.on then
+                 v.on = on
+                 if v.on_change then v.on_change(v, on) end
+               end
+             end,
+             press = function()
+               v.on = not v.on
+               if v.on_change then v.on_change(v, v.on) end
+             end } }
+end
+
+CONTROLS.dropdown = function(v)
+  local function current()
+    for _, c in ipairs(v.choices or {}) do
+      local value = type(c) == "table" and c[1] or c
+      if value == v.value then return word_of(c) end
+    end
+    return tostring(v.value or "")
+  end
+
+  return { { kind = "dropdown", label = v.name or v.label,
+             read = current,
+             write = function(word)
+               word = tostring(word or ""):gsub("%s+$", "")
+               for _, c in ipairs(v.choices or {}) do
+                 local value = type(c) == "table" and c[1] or c
+                 if word_of(c) == word or tostring(value) == word then
+                   v.value = value
+                   if v.on_change then v.on_change(v, value) end
+                   return
+                 end
+               end
+               error("no choice called " .. word)
+             end } }
+end
+
+CONTROLS.field = function(v)
+  return { { kind = "field", label = v.name or v.label or v.placeholder,
+             read = function() return tostring(v.text or "") end,
+             write = function(text)
+               v.text = tostring(text or "")
+               v.caret = #v.text + 1
+               if v.on_change then v.on_change(v, v.text) end
+             end,
+             press = v.on_submit and function() v.on_submit(v, v.text) end } }
+end
+
+local function items_of(v, kind)
+  local out = {}
+
+  for i, item in ipairs(v.items or {}) do
+    out[#out + 1] = { kind = kind, label = word_of(item),
+                      read = function() return v.on == i and "on" or "off" end,
+                      press = function()
+                        if v.on ~= i then
+                          v.on = i
+                          if v.on_change then v.on_change(v, i) end
+                        end
+                      end }
+  end
+
+  return out
+end
+
+CONTROLS.segments = function(v) return items_of(v, "segment") end
+CONTROLS.tabs = function(v) return items_of(v, "tab") end
+
+CONTROLS.slider = function(v)
+  return { { kind = "slider", label = v.name or v.label,
+             read = function() return tostring(v.value or 0) end,
+             write = function(n)
+               n = tonumber(n)
+               if not n then error("a slider is set to a number") end
+               v.value = math.max(v.min or 0, math.min(v.max or 100, n))
+               if v.on_change then v.on_change(v, v.value) end
+             end } }
+end
+
+-- Every control the window shows now, each with its address: hidden views
+-- left out, and two of one address told apart by `#2`.
+function window:controls()
+  local out, seen = {}, {}
+
+  local function add(entry, view)
+    if entry.label == nil or entry.label == "" then return end
+
+    local address = entry.kind .. "/" .. tostring(entry.label)
+
+    seen[address] = (seen[address] or 0) + 1
+    if seen[address] > 1 then address = address .. "#" .. seen[address] end
+
+    entry.address = address
+    entry.view = view
+    out[#out + 1] = entry
+  end
+
+  local function walk(v)
+    if v.hidden then return end
+
+    local describe = v.control and CONTROLS[v.control]
+
+    if describe then
+      for _, e in ipairs(describe(v)) do add(e, v) end
+    elseif v.control then
+      -- A view the application drew itself, saying what it is.
+      add({ kind = v.control, label = v.name or v.label,
+            read = v.read and function() return tostring(v:read()) end,
+            write = v.write and function(value) v:write(value) end,
+            press = v.press and function() v:press() end }, v)
+    end
+
+    if v.control == "menubar" then
+      local items = {}
+      menu_controls(v.menus, items)
+      for _, e in ipairs(items) do add(e, v) end
+    end
+
+    for _, child in ipairs(v.children or {}) do walk(child) end
+  end
+
+  local direct = {}
+  menu_controls(self.direct_menus, direct)
+  for _, e in ipairs(direct) do add(e, nil) end
+
+  walk(self.root)
+  return out
+end
+
+-- A request under `controls`: `rest` is what follows it, "" for the folder.
+function window:control_reply(req, rest)
+  local list = self:controls()
+
+  if rest == "" then
+    local kinds, have = {}, {}
+
+    for _, c in ipairs(list) do
+      if not have[c.kind] then have[c.kind] = true kinds[#kinds + 1] = c.kind end
+    end
+
+    table.sort(kinds)
+
+    if req.type == "list" then return { ok = true, entries = kinds } end
+    if req.type == "getattr" then return { ok = true, attrs = { kind = "directory" } } end
+
+    return { ok = false, error = "controls is a folder: its kinds" }
+  end
+
+  -- A folder on the way to a control - `button`, or `menu/more` - lists
+  -- the next part of each address under it.
+  local names, have = {}, {}
+
+  for _, c in ipairs(list) do
+    if c.address:sub(1, #rest + 1) == rest .. "/" then
+      local part = c.address:sub(#rest + 2):match("^[^/]+")
+
+      if part and not have[part] then have[part] = true names[#names + 1] = part end
+    end
+  end
+
+  if #names > 0 then
+    if req.type == "list" then return { ok = true, entries = names } end
+    if req.type == "getattr" then return { ok = true, attrs = { kind = "directory" } } end
+  end
+
+  local found
+
+  for _, c in ipairs(list) do
+    if c.address == rest then found = c break end
+  end
+
+  if not found then return { ok = false, error = "no control at " .. rest } end
+
+  if found.disabled or (found.view and found.view.disabled) then
+    return { ok = false, error = "disabled" }
+  end
+
+  if req.type == "getattr" then
+    return { ok = true, attrs = { kind = "control", control = found.kind,
+                                  writable = found.write ~= nil, pressable = found.press ~= nil } }
+  elseif req.type == "read" then
+    if not found.read then return { ok = false, error = rest .. " cannot be read" } end
+    local ok, value = pcall(found.read)
+    return ok and { ok = true, value = tostring(value) } or { ok = false, error = tostring(value) }
+  elseif req.type == "write" then
+    if not found.write then return { ok = false, error = rest .. " cannot be written" } end
+    local ok, why = pcall(found.write, (tostring(req.value or ""):gsub("\n$", "")))
+    return ok and { ok = true } or { ok = false, error = tostring(why) }, true
+  elseif req.type == "press" then
+    if not found.press then return { ok = false, error = rest .. " cannot be pressed" } end
+    local ok, why = pcall(found.press)
+    return ok and { ok = true } or { ok = false, error = tostring(why) }, true
+  end
+
+  return { ok = false, error = "a control is read, written or pressed" }
+end
+
 --
 -- The answer to one request about this window's properties, and whether it
 -- wrote one. From the endpoint below, or from this process asking about its
 -- own name, which `fs.answer_here` hands straight to this (`roadmap.md` 6zb).
 --
 function window:property_reply(req)
-  local name = tostring(req.path or ""):match("([^/]+)$")
+  -- Under `controls`: every control, by what a person sees (above).
+  local path = tostring(req.path or "")
+  local rest = path:match("^/?controls/?(.*)$") or path:match("/controls/?(.*)$")
+
+  if rest ~= nil then
+    return self:control_reply(req, (rest:gsub("/$", "")))
+  end
+
+  local name = path:match("([^/]+)$")
   local p = name and self.properties[name]
   local reply, wrote = nil, false
 
@@ -8283,6 +8586,7 @@ ui.menu_items = menu_items
 
 function ui.menubar(spec)
   local v = ui.view(spec)
+  v.control = v.control or "menubar"     -- published by name (`window:controls`)
 
   v.h = v.h > 0 and v.h or ROW
   v.menus = v.menus or {}

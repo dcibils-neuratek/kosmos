@@ -344,6 +344,7 @@ SUITES = [
     # 2): a banner that keeps nobody's keys, gone by itself; an alert, its
     # cross; a press that opens; Do Not Disturb; the history from the clock.
     Suite("x86-notify", ["python3", "tools/run_notify.py", X86], x86=True),
+    Suite("x86-controls", ["python3", "tools/run_controls.py", X86], x86=True),
 
     # **The browser, browsing** (`roadmap.md` 6zz a, b): the test page in
     # `assets/www/` served from this Mac - drawn, scrolled, reloaded, a link

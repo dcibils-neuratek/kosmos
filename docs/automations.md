@@ -279,6 +279,14 @@ nothing beside a Tracker window that is open.
    `/Running/<app>/controls`; a guest suite presses Calculator's buttons and
    reads its display, and chooses a Text Editor menu item, by name. The
    largest step, and useful the day it lands without Automations.
+   **Built 0.11.218** (`testing.md` 18.613): `window:controls()` and
+   `window:control_reply()` in `ui.lua`; buttons, checkboxes, switches,
+   dropdowns, fields, segments, tabs, sliders, a menubar's items and an
+   icon button's own `menu` (the dots' menu, `menu/more/...`) describe
+   themselves; a view an application drew itself says `control`, `label`
+   and `read` or `press` - Calculator's keys and display. Two of one
+   address are told apart by `#2`; the cards' names (`Network/field/...`)
+   and the consent of A5 are not built, and any process may press today.
 2. **A2 - the verbs**: `automate.lua`, and `mailout.lua` moved out of Mail;
    a program, `automate`, runs one step at the prompt.
 3. **A3 - `autod`**: triggers, history, `/Home/Automations`; started by the

@@ -634,6 +634,12 @@ menus". So an automation is cards or a Lua script handed `auto` - the same
 verbs - and nothing else, run as a process of its own; cards can be copied
 as a script; and `automate.lua` is how any program drives an application
 by its controls' names. Step A6.
+**A1 built, 0.11.218** (`testing.md` 18.613): every window answers
+`/Running/<name>/controls` - its kinds, each kind's labels, and each
+control read, written and pressed by name, with the handler a click calls.
+`x86-controls` presses 7 × 6 = on Calculator and reads 42, and chooses the
+Text Editor's Find and replace from its dots' menu. Left for later in A1's
+own terms: addresses by a card's heading, and the consent that A5 adds.
 
 **Network Monitor, an app** - Diego, 12 October 2026: "i realizsed we need
 network monitor app as well to see network input and output". What goes in

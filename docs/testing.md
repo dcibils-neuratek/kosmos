@@ -25480,3 +25480,40 @@ passed three times alone, and the ten suites that wait for `telnetd`, run
 together twice, all passed. `telnetd` waits for DHCP from QEMU's network;
 before G3 it was never recorded. Watched: a third time is investigated
 before anything else lands.
+
+## 18.613 Every control published, by what a person sees
+
+`docs/automations.md` A1: the kit names its controls, and a window answers
+for them at `/Running/<name>/controls`, so any application can be driven by
+name without its author writing anything.
+
+**What it is.** `window:controls()` walks the window's views, skipping
+hidden ones, and each of the kit's controls describes itself - a button by
+its words or the name it was given, a checkbox or switch read and set
+`on`/`off`, a dropdown chosen by an item's words, a field typed into,
+segments and tabs one control an item, a slider a number, a menubar's items
+`menu/<menu>/<item>`. An icon button that says what it opens (`menu`, a list
+or a function as a menubar's) publishes that as `menu/<icon>/<item>`, which
+is how the Text Editor's dots became `menu/more/Find and replace`. A view an
+application drew itself says `control`, a `label` and `read` or `press`:
+Calculator's keys are `button/7` and `button/×`, its display
+`display/Result`. A press runs **the handler a click runs**, and a disabled
+control refuses with "disabled".
+
+**A folder at any depth** lists the next part of every address under it -
+`controls` its kinds, `controls/button` its labels, `controls/menu/more` the
+dots' items. The first version knew only one level, and the suite's own
+`menu/more` listing was what failed.
+
+**And a key it would have missed.** The kit's button description read only
+`text` and `on_click`; Calculator's keys give `label` and a `press` method,
+so they would have been left out silently. It takes either now.
+
+**Test.** `x86-controls` (`tools/run_controls.py`), one boot over Telnet,
+names only: Calculator's kinds and its eighteen keys listed by their faces,
+its display read 0, C 7 × 6 = pressed by name and the display read 42, a
+key that is not there and a press on the display refused; the Text Editor's
+dots' menu listed, its Replace button not a control while the find bar is
+hidden, and `menu/more/Find and replace` chosen by name bringing it. 11
+checks, 25 s. **Control**: with an icon button's `menu` not published, 3
+of the 11 fail - the listing, the choice, and the Replace button.
