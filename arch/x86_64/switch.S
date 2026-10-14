@@ -163,6 +163,14 @@ thread_entry:
      */
     call    thread_switch_finished
 
+    /*
+     * **And only now interrupts**, which `context_init` planted off. Until
+     * `thread_switch_finished` has run, the thread this core left is still
+     * marked as on it (`on_cpu`), and a wake of it from an interrupt here
+     * would wait for that mark with this very core masked under it.
+     */
+    sti
+
     movq    %r12, %rdi
     call    *%rbx
 

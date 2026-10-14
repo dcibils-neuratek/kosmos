@@ -172,11 +172,12 @@ context_switch:
 .global thread_entry
 thread_entry:
     /*
-     * Arrives already on SP_EL0 with interrupts enabled, because
+     * Arrives already on SP_EL0 with IRQ and FIQ masked, because
      * context_switch restored both from this thread's context and
-     * thread_create left both at zero. That matters most when a thread is
+     * context_init planted them so. The stack matters most when a thread is
      * started from inside the vector's epilogue, where SPSel is 1 and the
-     * eret that would have cleared it is never reached.
+     * eret that would have cleared it is never reached; the mask is lifted
+     * below.
      */
 
     /*
@@ -185,6 +186,14 @@ thread_entry:
      * its argument are still there after it.
      */
     bl      thread_switch_finished
+
+    /*
+     * **And only now interrupts**, which `context_init` planted masked.
+     * Until `thread_switch_finished` has run, the thread this core left is
+     * still marked as on it (`on_cpu`), and a wake of it from an interrupt
+     * here would wait for that mark with this very core masked under it.
+     */
+    msr     daifclr, #3
 
     mov     x0, x20
     blr     x19

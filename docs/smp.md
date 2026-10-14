@@ -238,7 +238,10 @@ reader should take away:
   and unnecessary here. "Does not migrate" until 14 October 2026; game
   mode's core of its own (`docs/scheduler.md` G4) brought the one move -
   taken up by the thread itself as it blocks, with `on_cpu` waited for by
-  its waker (`testing.md` 18.612).
+  its waker (`testing.md` 18.612). That wait makes the far side of every
+  switch matter, **so a switch is masked on both sides, a new thread's
+  included**: a new thread is planted with interrupts off and `thread_entry`
+  turns them on after `thread_switch_finished`, which checks it (18.614).
 
 Both are argued at length in *The decisions* below.
 

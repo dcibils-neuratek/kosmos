@@ -1211,9 +1211,15 @@ struct thread *thread_create_on(unsigned cpu, const char *name,
  * registers are saved and this processor is off its stacks. So a thread that
  * exited in that switch has left, and its slot may be handed out.
  *
- * One store, and only this processor writes its own `leaving`. An interrupt
- * that arrives before it and switches again only means a different arriving
- * thread makes the same store first - and what it says is just as true then.
+ * **With interrupts masked, both ways in** - a resumed thread because the
+ * switch saved masked flags, a new one because `context_init` plants them
+ * masked and `thread_entry` lifts the mask only after this. It started new
+ * threads unmasked, which was harmless while this was one store to
+ * `leaving`; with `on_cpu` it was not. An interrupt in that window could
+ * switch again and overwrite `switching_from`, leaving a thread marked on
+ * this core for ever, or wake the thread just left and wait for that mark
+ * with this core masked under it - which is what `x86-share` hung on, one
+ * run in three, from 0.11.217 (`testing.md` 18.614).
  */
 /*
  * **The thread switched away from is off this processor now** (`on_cpu`):
@@ -1235,6 +1241,14 @@ static void arrived(struct percpu *me)
 
 void thread_switch_finished(void)
 {
+    /* Checked rather than hoped, as `switch_into` checks its own: a new
+     * thread planted unmasked fails here on the first one of every boot,
+     * not one run in three of a suite that happens to wake the right
+     * thread at the wrong instant. */
+    if (cpu_interrupts_enabled()) {
+        panic("thread: a new thread started with interrupts enabled");
+    }
+
     arrived(this_cpu());
 }
 

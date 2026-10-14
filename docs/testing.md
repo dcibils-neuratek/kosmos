@@ -25517,3 +25517,50 @@ dots' menu listed, its Replace button not a control while the find bar is
 hidden, and `menu/more/Find and replace` chosen by name bringing it. 11
 checks, 25 s. **Control**: with an icon button's `menu` not published, 3
 of the 11 fail - the listing, the choice, and the Replace button.
+
+## 18.614 A new thread starts masked: the hang G4 brought
+
+**Found by the gate for A1**: `x86-share` stopped answering at a different
+step each time, the guest silent, no panic. It had passed at 0.11.217's
+gate. Attributed before explained: with the kernel files of 0.11.216 - before
+threads could move - it passed twice; with 0.11.217's it hung three runs of
+three. Nothing in SMB had changed.
+
+**What a probe said.** A spinlock here panics after a bounded wait, so a
+silent hang is an unbounded spin, and G4 added exactly one: `thread_wake`
+waiting for a thread's `on_cpu` to clear. Bounded and made to name names, it
+fired: `smbfs` on core 0 waking `init`, whose mark was never cleared; the
+core's last switch was from `init` *to* `smbfs`, and the switch count one
+ahead of the arrivals. So `smbfs` was running without ever having passed
+`arrived()`. The per-CPU pointer was the same after the switch (probed), and
+no thread had switched from outside its own stacks (probed).
+
+**The cause.** `context_switch` ends with `popfq` (`msr daif` on AArch64),
+the incoming thread's flags, and says "nothing that matters happens after
+it". A resumed thread's flags are masked, since `switch_into` runs masked.
+**A new thread's were planted unmasked** - `rflags = 0x202`, `daif = 0` - so
+`thread_entry` ran with interrupts on until `thread_switch_finished`. Before
+G4 that call stored `leaving`, and an interrupt in the window only made the
+same store first. With `on_cpu` it matters twice over: an interrupt there
+can wake the thread just left - still marked on this core - and wait for the
+mark with the core masked under it, for ever; or preempt, overwriting
+`switching_from` and leaving a thread marked on a core it is not on.
+
+**The fix.** A new thread is planted masked (`0x002`; `daif` I and F), and
+`thread_entry` lifts the mask (`sti`; `msr daifclr, #3`) right after
+`thread_switch_finished`. The thread's own function still starts with
+interrupts on. Both architectures; AArch64 had the same window.
+
+**Test.** `thread_switch_finished` panics if it runs unmasked - "a new thread
+started with interrupts enabled" - so the invariant is checked on the first
+new thread of every boot rather than by a race one run in three.
+**Control**: either architecture's thread planted unmasked again, and its
+kernel suite panics at once with that line (`x86-kernel`, `arm-kernel`).
+`x86-share` then passed nine runs of nine; the kernel suites, both, and
+`x86-scheduler` pass.
+
+**The `telnetd` flake of 18.612 is probably this.** A core stuck in that
+spin is lost for good while the others go on, and a suite whose `telnetd`
+was homed there waits two minutes for it - seen only since G3/G4, under the
+gate's load. Watched still: if it is seen again, this was not all of it.
+

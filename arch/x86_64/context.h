@@ -152,9 +152,13 @@ void thread_entry(void);
  * something that mattered.
  *
  * rbx and r12 because they are the first two slots of the saved context and
- * so the easiest to plant, and `thread_entry` reads them from there. 0x202
- * is IF set and bit 1, which reads as 1 always: a thread that could not be
- * preempted would keep the machine the moment it chose not to yield.
+ * so the easiest to plant, and `thread_entry` reads them from there. 0x002
+ * is bit 1, which reads as 1 always, and IF *clear*: a new thread starts
+ * masked and `thread_entry` turns interrupts on once the switch that started
+ * it is over (`thread_switch_finished`). It used to be 0x202, on from the
+ * first instruction - and an interrupt in that window woke the thread just
+ * switched away from while it was still marked on this core, and waited for
+ * it there with interrupts masked, for ever (`testing.md` 18.614).
  */
 static inline void context_init(struct context *ctx, void (*entry)(void *),
                                 void *arg, void *stack_top,
@@ -164,7 +168,7 @@ static inline void context_init(struct context *ctx, void (*entry)(void *),
     ctx->r12 = (uint64_t)(uintptr_t)arg;
     ctx->rip = (uint64_t)(uintptr_t)thread_entry;
     ctx->rsp = (uint64_t)(uintptr_t)stack_top;
-    ctx->rflags = 0x202;
+    ctx->rflags = 0x002;
     ctx->kernel_stack = (uint64_t)(uintptr_t)exception_top;
 
     /*

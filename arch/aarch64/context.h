@@ -158,12 +158,16 @@ static inline void context_init(struct context *ctx, void (*entry)(void *),
     ctx->sp_el1 = (uint64_t)(uintptr_t)exception_top;
 
     /*
-     * A new thread starts on SP_EL0 with interrupts enabled. Both are zero
-     * and the caller's memset already produced them, but leaving either
-     * implicit makes the first thread that starts on the wrong stack, or
-     * with interrupts masked, a mystery rather than a line to read.
+     * A new thread starts on SP_EL0 with IRQ and FIQ *masked* - I and F,
+     * what `msr daifset, #3` sets - and `thread_entry` unmasks them once the
+     * switch that started it is over (`thread_switch_finished`). It used to
+     * start unmasked, and an interrupt in that window could wake the thread
+     * just switched away from while it was still marked on this core, and
+     * wait for it there with interrupts masked, for ever (`testing.md`
+     * 18.614). Both written out: a thread that starts on the wrong stack is
+     * a mystery rather than a line to read.
      */
-    ctx->daif = 0;
+    ctx->daif = 0xC0;
     ctx->spsel = 0;
 }
 
