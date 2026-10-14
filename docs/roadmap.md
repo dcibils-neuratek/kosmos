@@ -9211,6 +9211,21 @@ the applications make the system useful, and is not pulled forward.
   wanted is by where the page came from - a page from the network may not
   open one from this machine - and it is checked where the link is
   followed, for both engines at once.
+- **A real browser engine - studied first, then ported** (Diego, 14 October
+  2026: "I want to start using kosmos as a daily os so we need actual apps
+  to do work and else", "The major problem now ia the browser which is very
+  basic and can't open any major websites", "So we need to improve it
+  either porting a better engine like Mozilla or else or chromium or
+  something"). NetSurf has no JavaScript and partial modern layout, so the
+  sites a day needs do not open. **First a study for Diego to decide**,
+  `docs/browser-engine.md`: Chromium, Gecko, WebKit (WPE), Servo and
+  Ladybird, each with what it needs of Kosmos (C++ and its library in a
+  process, threads for programs, POSIX-shaped sockets, files and timers
+  inside the process only, FreeType and HarfBuzz, the GPU), what exists,
+  what is missing, steps and an honest size, and how it renders the sites
+  Diego uses. Then the groundwork the choice needs, and the port. Remote
+  Screen, a real browser on the Mac shown in a Kosmos window, is the
+  meantime.
 - **JavaScript, later.** Diego, 30 September, told there is none - NetSurf's
   libraries here parse `<script>` into the document and nothing runs it:
   "yes add it for later". After the browser is fast and redrawn (6zz). The
