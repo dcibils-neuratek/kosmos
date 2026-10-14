@@ -138,13 +138,13 @@ code { font-family: var(--mono); font-size: 13px; }
   <div class="setup"><div class="card">
     <h3>Setting Linux up</h3>
     <p class="d">Once: Alpine and Chromium onto Linux's own disk, through Kosmos's network. After this it starts in a few seconds, where it was left.</p>
-    <div class="step"><span class="k">&#10003;</span><span>Linux's disk made</span><span style="color:#6b7484">4 GB, /Home/Sandboxes/Disks</span></div>
+    <div class="step"><span class="k">&#10003;</span><span>Linux's disk made</span><span style="color:#6b7484">4 GB, in /Sandboxes</span></div>
     <div class="step"><span class="k">&#10003;</span><span>Alpine installed</span><span style="color:#6b7484">58 MB</span></div>
     <div class="step"><span>&#8230;</span><span>Chromium and its fonts</span><span style="color:#6b7484">412 of 640 MB</span><div class="bar"><i></i></div></div>
     <div class="step"><span class="n">&#9675;</span><span class="n">Downloads shared, the browser set to start</span><span></span></div>
   </div></div>
 </div></div>
-<p class="cap">Everything Linux installs comes through Kosmos's own network - the sandbox's gateway - and goes onto a disk of its own, a file in <code>/Home</code>. Nothing is installed on Kosmos itself.</p>
+<p class="cap">Everything Linux installs comes through Kosmos's own network - the sandbox's gateway - and goes onto a disk of its own, a file in <code>/Sandboxes</code>, a drive kept for guests' disks so none of them can fill <code>/Home</code>. Nothing is installed on Kosmos itself.</p>
 
 <h2>Its settings</h2>
 <div class="scroller"><div class="win" style="width:760px">
@@ -164,7 +164,7 @@ code { font-family: var(--mono); font-size: 13px; }
 
 <h2>For Diego to decide</h2>
 <div class="q"><b>1. Chromium alone, or a Linux desktop.</b> Chromium alone (<code>cage</code>) is the quickest to a browser and the lightest; a desktop (Xfce) gives a terminal and Linux's own applications. Recommended: Chromium alone first, a desktop as a choice in settings later.</div>
-<div class="q"><b>2. Where Linux's disk lives.</b> Alpine with Chromium is 600-800 MB, and 2-4 GB gives it room; the M700's <code>/Home</code> on the stick has 1.8 GB free. A bigger <code>/Home</code> (the stick made again with a 16 GB home - recommended), the M700's internal drive formatted as Kosmos's, or a disk that grows on the stick until the stick runs out.</div>
+<div class="q"><b>2. Where Linux's disk lives.</b> Diego's idea: <b>a drive of its own, <code>/Sandboxes</code></b> - a third partition in the stick's free space (the Kingston is 128 GB; <code>/Home</code> uses 2), formatted as Kosmos's, every sandbox's disk a file in it. <code>/Home</code> untouched and never filled by a guest; as large as the stick allows. Recommended, at 32 GB.</div>
 <div class="q"><b>3. How much of the machine.</b> Recommended: 2 GB of memory and one core until Linux can use more.</div>
 </div>
 </body>

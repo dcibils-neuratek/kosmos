@@ -99,11 +99,11 @@
       <div class="row" style="grid-template-columns:1fr 1fr 1fr 1fr">
         <div class="box new"><span class="tag">NEW</span><b>vmm: virtio-gpu, 2D</b><p>the flushed rectangle copied from the guest's RAM into the screen's region, a pulse to the window <span class="f">F3 F4</span></p></div>
         <div class="box new"><span class="tag">NEW</span><b>vmm: virtio-input</b><p>a keyboard and a tablet, read from the window's ring</p></div>
-        <div class="box new"><span class="tag">NEW</span><b>vmm: virtio-blk</b><p>Linux's disk, a file in <code>/Home</code>, through <code>diskfs</code>'s <code>WRITE_AT</code></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>vmm: virtio-blk</b><p>Linux's disk, a file in <code>/Sandboxes</code> - a drive of its own - through <code>diskfs</code>'s <code>WRITE_AT</code></p></div>
         <div class="box"><b>vmm, as it is</b><p><code>vdev.c</code> virtio-mmio, <code>vmmnet.c</code> the gateway, <code>vmmfs.c</code> folders, <code>x86dev.c</code></p></div>
       </div>
       <div class="row" style="grid-template-columns:1fr 1fr;margin-top:10px">
-        <div class="box"><b>diskfs</b><p>the disk's file, a piece a write, each a transaction (N14)</p></div>
+        <div class="box new"><span class="tag">NEW DRIVE</span><b>diskfs at /Sandboxes</b><p>a partition of its own for guests' disks; a piece a write, each a transaction (N14)</p></div>
         <div class="box"><b>window manager</b><p>the Linux window composed <span class="f">F6</span></p></div>
       </div>
     </div>

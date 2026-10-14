@@ -65,7 +65,8 @@ paints and hands it the window's keys and pointer.
 | Its devices' transport | virtio-mmio (`vdev.c`), as the folders' and the network's | no |
 | **A screen**: the guest draws, the monitor shows | **virtio-gpu, 2D**, in `vmm`: resources in the guest's RAM, transferred into a region the window can see, flushes said as damage | **new, in vmm** |
 | **Keyboard and pointer** | **virtio-input**: a keyboard and a tablet (absolute), fed from a ring the window writes | **new, in vmm** |
-| **A disk that keeps** | **virtio-blk**, backed by a file in `/Home` through `diskfs` - read into a region, written with `DISK_OP_WRITE_AT` (N14's, 0.11.237), a piece a request | **new, in vmm** |
+| **A disk that keeps** | **virtio-blk**, backed by a file in `/Sandboxes` - a drive of its own (question 2) - through `diskfs`: read into a region, written with `DISK_OP_WRITE_AT` (N14's, 0.11.237), a piece a request | **new, in vmm** |
+| **`/Sandboxes`, a drive for guests' disks** | a partition of its own on the stick, a second `diskfs`, mounted beside `/Home` | **new** |
 | The network | virtio-net and the gateway (`vmmnet.c`, S4) | no |
 | Folders of `/Home` | virtio-fs (`vmmfs.c`, S3) - its 16 MB write cap lifted with `WRITE_AT` | grows |
 | Starting, stopping, a definition | the Sandboxes kit and `sandbox`, `vmmproto.h` | grows: a screen's region and an input ring |
@@ -120,8 +121,9 @@ ring. Then each step is tried on the M700 before the next, as X1-X3 were.
 
 ## Steps
 
-1. **L1 - a disk that keeps**: virtio-blk on a file in `/Home`; a file
-   written in the guest, the sandbox stopped and started, the file there.
+1. **L1 - a disk that keeps**: `/Sandboxes` made and mounted, and
+   virtio-blk on a file in it; a file written in the guest, the sandbox
+   stopped and started, the file there.
 2. **L2 - a screen**: virtio-gpu 2D and the Linux window showing it - the
    guest's console drawn in the window.
 3. **L3 - keyboard and pointer**: virtio-input from the window - typed into
@@ -142,11 +144,16 @@ ring. Then each step is tried on the M700 before the next, as X1-X3 were.
    settings later.
 2. **Where Linux's disk lives.** Alpine with Chromium is 600-800 MB, and
    2-4 GB gives it room. The M700's `/Home`, on the stick, has 1.8 GB free.
-   The choices: **a bigger `/Home`** - the stick made again with a larger
-   home partition (the Kingston sticks are 128 GB) - which is a stick
-   written; **the M700's internal drive** - which Kosmos would have to
-   format as its own; or **a disk image on the stick that grows as Linux
-   writes it**, starting small and capped where the stick runs out.
-   Recommended: **a bigger `/Home`**, 16 GB, written once.
+   **Diego's idea, the same evening: a drive of its own, `/Sandboxes`** -
+   "what if instead /home we crate a new /Sandboxes drive with virtual
+   machibes disks?". A third partition in the stick's free space (the
+   Kingston is 128 GB, of which `/Home` uses 2), formatted kfs, served by a
+   second `diskfs` and mounted at `/Sandboxes`, each sandbox's disk a file
+   in it - `/Sandboxes/linux.img`. `/Home` is untouched and cannot be
+   filled by a guest; the drive is as large as the stick allows, shows in
+   Tracker as a drive of its own, and could move to the M700's internal
+   drive later with nothing above it changing. **Recommended**, at 32 GB.
+   The other choices were a bigger `/Home` (the stick written again), the
+   internal drive formatted as Kosmos's, or a disk that grows in `/Home`.
 3. **How much of the machine**: memory and cores. Recommended: 2 GB of the
    M700's 8, one core until L6.
