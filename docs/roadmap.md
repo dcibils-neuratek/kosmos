@@ -705,6 +705,11 @@ performance and responsiveness, and else in a visual way", "mockup first".
   so the policy is chosen in the window, kept as a setting and applied when
   Kosmos starts, with Restart now beside it. Game mode, being Balanced with
   a band and a core given to one application, turns on and off at once.
+- **G3 built 14 October (0.11.216)**: game mode for one application - its
+  `kosmos: kind` a game or an emulator, Super+G for the one in front, or
+  chosen on the Scheduler's card - its normal threads in the game band
+  while it is in front, under a second's budget, and a notification as it
+  starts and ends (`testing.md` 18.611). Next: G4, a core of its own.
 - **G2 built 14 October (0.11.215)**: the window as drawn - the modes as
   cards, who ran on each core over two seconds, the bands as a ladder, a
   turn and what it trades, switches a second and the keys' longest wait

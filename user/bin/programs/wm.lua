@@ -3823,6 +3823,9 @@ handlers.open = function(req, who, cap)
   win.program = said or pending_program
   pending_program = nil
 
+  -- A game's window: game mode for it (`wm/gamemode.lua`).
+  if OUT.game then OUT.game.opened(win) end
+
   -- Its first window: no longer starting.
   if win.program then
     stop_starting(function(s) return s.path == win.program end)
@@ -4299,6 +4302,43 @@ end
 -- thing that brings windows back, which is the same argument that gives the
 -- Deskbar no minimise box of its own.
 --
+--
+-- **Game mode, for the Scheduler** (`docs/scheduler.md` G3): `{ op = "state"
+-- }` says which application has it and lists the applications with a
+-- window, `{ op = "start", pid = }` gives it to one of those, and `{ op =
+-- "stop" }` ends it. Only an application with a window here can be chosen,
+-- since the band is only ever the window manager's to give.
+--
+handlers.game = function(req)
+  local op = type(req) == "table" and req.op
+
+  if op == "start" then
+    for _, w in ipairs(windows) do
+      if w.pid == req.pid and not w.tip then
+        OUT.game.start(w.pid, w.program, w.title)
+        return { ok = true, state = OUT.game.state() }
+      end
+    end
+
+    return { ok = false, error = "no application with a window is that one" }
+  elseif op == "stop" then
+    OUT.game.stop()
+  end
+
+  local apps, seen = {}, {}
+
+  for i = #windows, 1, -1 do
+    local w = windows[i]
+
+    if w.pid and not w.tip and not seen[w.pid] then
+      seen[w.pid] = true
+      apps[#apps + 1] = { pid = w.pid, program = w.program, title = w.title }
+    end
+  end
+
+  return { ok = true, state = OUT.game.state(), apps = apps }
+end
+
 handlers.minimise = function(req)
   local win = by_handle[tonumber(req.window) or -1]
 
@@ -6509,6 +6549,12 @@ local pointer_pass = use("/Kosmos/Libraries/wm/pointer.lua"){
 --
 -- The app switcher, Super+Tab (`docs/switcher.html`): its keys come to it
 -- first, through `capture_key`, and its panel is the scene's.
+-- Game mode: one application whose work comes first while it is in front
+-- (`docs/scheduler.md` G3).
+OUT.game = use("/Kosmos/Libraries/wm/gamemode.lua"){
+  focused_window = focused_window, windows = windows,
+}
+
 OUT.switcher = use("/Kosmos/Libraries/wm/switcher.lua"){
   OUT = OUT, windows = windows, raise = raise, post = post, add_damage = add_damage,
   picture_from = picture_from, px = function(n) return scale.px(n) end, W = W, H = H,
@@ -7060,6 +7106,9 @@ while OUT.running do
 
   -- 3b. Whoever asked to be told the list changed, before the answers go.
   tell_watchers()
+
+  -- The game band to the game while it is in front (`wm/gamemode.lua`).
+  OUT.game.pass()
 
   step("waiting")
   -- 4. Anybody who has been waiting long enough, or now has something.

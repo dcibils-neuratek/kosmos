@@ -541,6 +541,7 @@ int process_thread_create(struct process *p, unsigned long entry,
     }
 
     t->process = p;
+    t->sched.game = p->game;            /* a game's new threads are the game's */
     t->space = p->space;
     t->caps = &p->caps;
     t->index = index;
@@ -1795,6 +1796,42 @@ int process_kill_any(unsigned id)
         }
 
         return process_kill(c->parent, id);
+    }
+
+    return -1;
+}
+
+int process_set_game(struct process *parent, unsigned id, bool on)
+{
+    unsigned i;
+
+    for (i = 0; i < procs_made(); i++) {
+        struct process *c = proc(i);
+        unsigned long flags;
+        struct thread *t;
+
+        if (!c->in_use || c->parent != parent || c->id != id || c->exited) {
+            continue;
+        }
+
+        /*
+         * The process's flag for the threads it makes, and each thread's
+         * own, read by the scheduler as the thread is next queued. Under
+         * the lock that guards the list of its threads.
+         */
+        flags = spin_lock(&processes_lock);
+        c->game = on;
+
+        if (c->thread != NULL) {
+            c->thread->sched.game = on;
+        }
+
+        for (t = c->threads; t != NULL; t = t->sibling) {
+            t->sched.game = on;
+        }
+
+        spin_unlock(&processes_lock, flags);
+        return 0;
     }
 
     return -1;

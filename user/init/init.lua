@@ -5323,7 +5323,8 @@ query. `find` and `watch` are built on exactly these two calls.
     if rows then
       -- The bands by name. A number here would be five values nobody can
       -- read; `help "sys"` is where the scheduler is explained.
-      local BAND = { [0] = "idle", "low", "normal", "display", "audio", "input" }
+      -- The kernel's names for its bands, which a new band changes.
+      local BAND = (sys.scheduler() or {}).band_names or {}
 
       out(("%-4s %-16s %-8s %6s %8s\n")
           :format("id", "name", "band", "cpu", "caps"))

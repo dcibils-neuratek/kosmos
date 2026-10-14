@@ -7560,17 +7560,19 @@ def check_camera(guest):
     First, **the USB driver runs in the display band**, read at the prompt
     before anything calls it and lends it one: at NORMAL a busy desktop held
     it off its core long enough for QEMU to drop the C920's events
-    (`roadmap.md` 6i). 3 is `SCHED_PRIO_DISPLAY`.
+    (`roadmap.md` 6i). The band by the kernel's name for it
+    (`sys.scheduler().band_names`), not its number, which game mode moved
+    from 3 to 4 on 14 October.
     """
     mark = len(guest.seen)
-    guest.type('for _, p in ipairs(sys.processes() or {}) do '
-               'if p.name == "xhci" then print("BAND" .. "-XHCI", p.priority, '
+    guest.type('local n = sys.scheduler().band_names for _, p in ipairs(sys.processes() or {}) do '
+               'if p.name == "xhci" then print("BAND" .. "-XHCI", n[p.priority], '
                'p.owns & 16, p.parent) end end print("BAND" .. "-READ")')
     guest.wait_for("BAND-READ", "the USB driver's band")
-    bands = re.findall(r"BAND-XHCI\s+(\d+)\s+(\d+)\s+(\d+)",
+    bands = re.findall(r"BAND-XHCI\s+(\S+)\s+(\d+)\s+(\d+)",
                        guest.seen[mark:])
 
-    if [b[0] for b in bands] != ["3"]:
+    if [b[0] for b in bands] != ["display"]:
         raise Failure("the USB driver is not in the display band: %r - a "
                       "process holding device authority is given it "
                       "(`process_grant_devices`)" % bands)

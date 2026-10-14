@@ -54,15 +54,21 @@ do
   CORES = math.max(1, n)
 end
 
--- The bands as the kernel numbers them (`kernel/sched.h`), and their
--- colours as the drawing has them - a sign, the same in every look.
-local INPUT, AUDIO, DISPLAY, NORMAL, LOW = 5, 4, 3, 2, 1
+-- The bands by the kernel's names for its numbers (`band_names`), so this
+-- page does not keep a numbering of its own; and their colours as the
+-- drawing has them - a sign, the same in every look.
+local BAND = {}
+
+for number, name in pairs(info.band_names or {}) do BAND[name] = number end
+
+local INPUT, AUDIO, DISPLAY = BAND.input or -1, BAND.audio or -1, BAND.display or -1
+local GAME, NORMAL, LOW = BAND.game or -1, BAND.normal or -1, BAND.low or -1
 local IDLE = 255
-local BAND_INK = {
-  [INPUT] = 0xffe85d75, [AUDIO] = 0xffb07cf0, [DISPLAY] = 0xff4f8cf0,
-  [NORMAL] = 0xff4bb07a, [LOW] = 0xff3a7a5a, [0] = 0xff2f5c47,
-}
 local GAME_INK = 0xfff0b43c
+local BAND_INK = {
+  [INPUT] = 0xffe85d75, [AUDIO] = 0xffb07cf0, [DISPLAY] = 0xff4f8cf0, [GAME] = GAME_INK,
+  [NORMAL] = 0xff4bb07a, [LOW] = 0xff3a7a5a, [BAND.idle or 0] = 0xff2f5c47,
+}
 local GOOD, COST = 0xff7fdc9d, 0xffe3a04f
 local SELECT = 0xff2f6bdc
 
@@ -80,16 +86,16 @@ local MODES = {
   { key = "round-robin", title = "Fair", tag = "round-robin",
     text = "Every thread takes the same turns, whoever it is. For comparing, and for seeing why Balanced exists. Chosen, it applies at once and at every start.",
     good = "Nothing starves", cost = "the pointer waits behind a build" },
-  { key = "game", title = "Game mode", tag = "next",
-    text = "The game in front gets a band and a core of its own. The screen, sound and keys stay above it. On and off at once, no restart.",
-    good = "Steady frames", cost = "other programs share one core fewer", later = true },
+  { key = "game", title = "Game mode", tag = "an application",
+    text = "The game in front gets a band of its own, above every other program. The screen, sound and keys stay above it. On and off at once, no restart.",
+    good = "Steady frames", cost = "other programs wait for it", game = true },
 }
 
 local RUNGS = {
   { band = INPUT, name = "Input", text = "keys and the pointer, read the moment they come" },
   { band = AUDIO, name = "Audio", text = "sound - Groove, Music - never late" },
   { band = DISPLAY, name = "Display", text = "the window manager and the window server" },
-  { band = "game", name = "Game", text = "nobody - game mode is the next step" },
+  { band = "game", name = "Game", text = "nobody - game mode is off" },
   { band = NORMAL, name = "Normal", text = "applications, servers, builds, downloads" },
   { band = LOW, name = "Low", text = "what can wait: indexing, thumbnails" },
 }
@@ -137,17 +143,37 @@ local function sample()
   keys_wait_ms = keys > 0 and keys * 1000 / counter_hz or 0
 end
 
+--
+-- **Game mode is the window manager's** (`wm/gamemode.lua`): which
+-- application has it, and the applications with a window to give it to,
+-- asked twice a second with the lanes.
+--
+local game = { state = {}, apps = {} }
+
+local function read_game(op, pid)
+  local ok, reply = pcall(fs.send, "/Running/wm", { type = "game", op = op or "state", pid = pid })
+
+  if ok and type(reply) == "table" and reply.ok ~= false then
+    game.state = reply.state or {}
+    game.apps = reply.apps or game.apps
+  end
+
+  return ok and reply
+end
+
 local function refresh(words)
   info = sys.scheduler() or info
   said = words or said
 end
 
-local function choose_mode(i)
+local game_menu                       -- forward: the Game mode card's menu
+local win, err                        -- made below, once the page is measured
+
+local function choose_mode(i, spot)
   local m = MODES[i]
 
-  if m.later then
-    refresh("game mode is the next step")
-    print("scheduler: game mode is the next step")
+  if m.game then
+    game_menu(spot)
     return
   end
 
@@ -166,6 +192,39 @@ local function choose_mode(i)
           or ("%s was refused: %s"):format(m.title, tostring(why)))
   print(("scheduler: chose %s - %s, the kernel says %s"):format(m.key, ok and "in force" or tostring(why),
         policy_name()))
+end
+
+--
+-- **The Game mode card asks which application** (`docs/scheduler.md`: "the
+-- running ones ... and any can be chosen"): a menu of the applications with
+-- a window, the one that has it ticked, and "Game mode off".
+--
+function game_menu(spot)
+  read_game("state")
+
+  local items = {}
+
+  for _, a in ipairs(game.apps) do
+    local title = tostring(a.title or a.program or a.pid)
+
+    items[#items + 1] = { text = title, mark = game.state.pid == a.pid, on_choose = function()
+      read_game("start", a.pid)
+      refresh(("game mode for %s"):format(title))
+      print(("scheduler: game mode for %s, the window manager says %s"):format(title, tostring(game.state.title)))
+    end }
+  end
+
+  if game.state.pid then
+    items[#items + 1] = { separator = true }
+    items[#items + 1] = { text = "Game mode off", on_choose = function()
+      read_game("stop")
+      refresh("game mode off")
+      print("scheduler: game mode off, the window manager says " .. tostring(game.state.title))
+    end }
+  end
+
+  print(("scheduler: game mode menu, %d application%s"):format(#game.apps, #game.apps == 1 and "" or "s"))
+  win:open_menu(win.origin_x + spot.x, win.origin_y + L.head + spot.y + spot.h, items)
 end
 
 local function choose_turn(ms)
@@ -223,7 +282,7 @@ local LEFT_H = LANES_H + GAP + TILE_H
 local RIGHT_H = LADDER_H + GAP + TURN_H
 local H = L.head + PANES_Y + math.max(LEFT_H, RIGHT_H) + PAD
 
-local win, err = ui.window{ title = "Scheduler", w = W, h = H, x = 120, y = 70, header = true }
+win, err = ui.window{ title = "Scheduler", w = W, h = H, x = 120, y = 70, header = true }
 
 if not win then
   print("scheduler: " .. tostring(err))
@@ -265,8 +324,9 @@ local function draw_modes(g)
 
   for i, m in ipairs(MODES) do
     local x, y = PAD + (i - 1) * (MODE_W + GAP), MODES_Y
-    local on = i == using
-    local tag = on and "in use" or m.tag
+    local on = i == using or (m.game and game.state.pid ~= nil)
+    local tag = m.game and game.state.pid and ("on for " .. ui.fitted(tostring(game.state.title), MODE_W // 3, LBL))
+                or (on and "in use" or m.tag)
     local tw = gfx.measure(tag, LBL) + 14
 
     g:fill_round(x, y, MODE_W, mode_h, on and theme.mix(theme.raised, SELECT, 150) or theme.raised, 11)
@@ -302,8 +362,10 @@ local function draw_modes(g)
       ty = ty + LH
     end
 
-    spots[#spots + 1] = { x = x, y = y, w = MODE_W, h = mode_h, key = "mode " .. m.key,
-                          act = function() choose_mode(i) end }
+    local spot = { x = x, y = y, w = MODE_W, h = mode_h, key = "mode " .. m.key }
+
+    spot.act = function() choose_mode(i, spot) end
+    spots[#spots + 1] = spot
   end
 end
 
@@ -400,11 +462,15 @@ local function draw_ladder(g, x, y, w)
 
   for _, r in ipairs(RUNGS) do
     local ink = r.band == "game" and GAME_INK or BAND_INK[r.band]
-    local dim = r.band == "game" or fair
+    local playing = r.band == "game" and game.state.pid
+    local dim = (r.band == "game" and not playing) or fair
+    local words = playing and ("%s - %s"):format(tostring(game.state.title),
+                  game.state.in_front and "in front, before every other program" or "not in front: as every program")
+                  or r.text
 
     g:fill_round(x + 12, ry, bw, LH + 2, dim and theme.mix(theme.sunken, ink, 430) or ink, 5)
     g:text(x + 12 + (bw - gfx.measure(r.name, LBL)) // 2, ry + 1, r.name, dim and theme.text_dim or 0xff12151b, nil, LBL)
-    g:text(x + 12 + bw + 10, ry + 1, ui.fitted(r.text, w - 24 - bw - 10, LBL), dim and theme.text_dim or theme.text, nil, LBL)
+    g:text(x + 12 + bw + 10, ry + 1, ui.fitted(words, w - 24 - bw - 10, LBL), dim and theme.text_dim or theme.text, nil, LBL)
     ry = ry + LH + 8
   end
 
@@ -514,6 +580,7 @@ local said_lanes = false
 
 function clock:tick()
   sample()
+  read_game("state")
   head.sub = said ~= "read from the kernel, not remembered" and said or sub()
 
   if TELL and not said_lanes and switches_per_second then

@@ -49,7 +49,8 @@ local STATE = { [0] = "unused", "ready", "running", "blocked", "dead" }
 -- is busy, and nothing on this screen said what it was: a process at 90% and
 -- a process at 90% *in the display band* are different situations.
 --
-local BANDS = { [0] = "idle", "low", "normal", "display", "audio", "input" }
+-- The kernel's names for its bands (`sys.scheduler().band_names`).
+local BANDS = (sys.scheduler() or {}).band_names or {}
 
 -- A share as a bar of characters, as `monitor` draws one (`text.lua`).
 local meter = use("/Kosmos/Libraries/text.lua").meter

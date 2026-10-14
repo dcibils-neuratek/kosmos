@@ -25376,3 +25376,44 @@ pressed is round-robin in the kernel; a turn of 20 ms; Game mode says it is
 next; Balanced puts priority back. **Control**: the refusal of 0.11.213
 put back - Fair failed with "this process does not hold that device", the
 words Diego saw on the M700.
+
+## 18.611 Game mode, for one application
+
+`docs/scheduler.md` G3. Diego, 11 October: "Let's do per app game mode
+yes"; Super+G as Windows has it; a notification as it starts and ends; and
+any application chosen in the Scheduler.
+
+**The band** (`SCHED_PRIO_GAME`) sits between normal and display, so DISPLAY,
+AUDIO and INPUT moved up one: 4, 5 and 6. A thread's `game` flag puts its
+normal work there, read as it is next queued - waking, yielding, preempted
+- since a priority queue files a thread under its band and a band cannot
+change under a queued thread. **The budget**: a game thread that runs a
+second without sleeping is held at normal until it sleeps. **The bands'
+names** are now the kernel's (`schedinfo.band`, `sys.scheduler().band_names`):
+`init.lua`, `htop`, Processes and the Scheduler each kept a list, and a new
+band would have left all four wrong.
+
+**Who gives it**: only a process's parent (`process_set_game`,
+`SCHED_SET_GAME`), the authority `kill` has - nothing promotes itself. The
+window manager opens applications, so it is their parent: `wm/gamemode.lua`
+holds one application at a time with game mode, gives its process the band
+while one of its windows is in front and takes it back when another is, and
+ends it when the last window goes. An application has it when its window
+opens if its header's `kosmos: kind` is `game` or `emulator` (Doom, Quake
+and the Super Nintendo already said so; the design's new word would have
+been a second one); Super+G gives it to the application in front or takes
+it away; the Scheduler's Game mode card lists the applications with a
+window and gives it to the one chosen. A program started by a shell has the
+shell for a parent and cannot be given it - written down, not hidden.
+
+**Tests.** Kernel, both architectures: `sched: game mode, given by a
+parent` - the system image made into a process: refused to anyone not its
+parent, given and taken by "no parent", every thread marked; a game thread
+on core one that works and sleeps runs in the game band, above normal and
+below display; one that spins a second and a half is held at normal.
+**Controls**: a budget never spent, and the flag ignored, each failed it.
+`x86-scheduler` 8 -> 11: Super+G over the Scheduler gives it game mode and
+the band while it is in front; its card's menu offers the applications;
+Super+G again ends it. **Control**: the band never asked of the kernel
+failed it. `arm-synth-load` still holds Groove's sound under four display
+spinners after the renumbering.

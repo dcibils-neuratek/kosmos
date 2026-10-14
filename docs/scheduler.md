@@ -142,6 +142,13 @@ shows the same numbers live.
 - **G3** - the `GAME` band and its guard; game mode for one application -
   a header's `kosmos: game` while in front, Super+G for the one in front,
   or chosen in the window - and a notification as it starts and ends.
+  **Built 14 October (0.11.216)** (`testing.md` 18.611): the band between
+  normal and display, a second's budget; given only by a process's parent
+  (`process_set_game`), which the window manager is for what it opens; the
+  header word is the `kosmos: kind` games already have (`game`, `emulator`)
+  rather than a new `kosmos: game`; the bands' names are the kernel's
+  (`schedinfo.band`), so Processes, `htop`, init and the Scheduler keep no
+  list of their own.
 - **G4** - a core of its own: placement kept off it, and the one move of a
   sleeping thread.
 - **G5** - 1000 Hz while it is on; measured against Doom, Quake and the Super

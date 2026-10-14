@@ -2699,6 +2699,101 @@ static bool test_a_core_says_what_it_ran(void)
 }
 
 /*
+ * **Game mode** (`SCHED_PRIO_GAME`, `docs/scheduler.md` G3). Given only by
+ * a process's parent: the system image made into a process with no parent,
+ * game mode given by "no parent" and refused to anybody else, and every
+ * thread it has marked. Then the band itself, on core one: a game thread
+ * that works and sleeps runs in the game band - above normal, below display;
+ * and one that spins past its budget without sleeping is held at normal.
+ */
+static volatile bool game_stop;
+static volatile unsigned game_seen_band;
+static volatile bool game_spun_out;
+
+static void game_worker(void *arg)
+{
+    bool spin = arg != NULL;
+    struct thread *me = thread_current();
+    uint64_t until = cntpct() + cntfrq() * 3 / 2;
+
+    me->sched.game = true;
+    thread_yield();                     /* queued again: the band applies */
+    game_seen_band = me->sched.effective;
+
+    if (spin) {
+        while (!game_stop && cntpct() < until) {
+            /* a second and a half without sleeping */
+        }
+
+        game_spun_out = me->sched.effective == SCHED_PRIO_NORMAL && me->sched.game_spent;
+    }
+
+    while (!game_stop) {
+        thread_sleep_until(thread_deadline_in(1));
+    }
+}
+
+static bool test_game_mode(void)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    struct process *q = process_create("t-game", init_image, (size_t)init_image_len, 0);
+    uint64_t deadline;
+    bool ok;
+
+    if (q == NULL) {
+        return false;
+    }
+
+    ok = process_set_game(q, q->id, true) == -1          /* not its own parent */
+      && !q->game
+      && process_set_game(NULL, q->id, true) == 0
+      && q->game && q->thread != NULL && q->thread->sched.game
+      && process_set_game(NULL, q->id, false) == 0
+      && !q->thread->sched.game;
+
+    process_abandon(q);
+
+    if (!ok || smp_online() < 2) {
+        return ok;
+    }
+
+    /* The band, worked and slept. */
+    game_stop = false;
+    game_seen_band = 0;
+
+    if (thread_create_on(1, "game", game_worker, NULL) == NULL) {
+        return false;
+    }
+
+    deadline = cntpct() + cntfrq();
+    while (game_seen_band == 0 && cntpct() < deadline) { }
+
+    ok = game_seen_band == SCHED_PRIO_GAME
+      && SCHED_PRIO_GAME > SCHED_PRIO_NORMAL && SCHED_PRIO_GAME < SCHED_PRIO_DISPLAY;
+
+    /* The budget, spun through. */
+    game_spun_out = false;
+    game_seen_band = 0;
+
+    if (thread_create_on(1, "game-spin", game_worker, (void *)1) == NULL) {
+        game_stop = true;
+        return false;
+    }
+
+    deadline = cntpct() + cntfrq() * 3;
+    while (!game_spun_out && cntpct() < deadline) { }
+
+    ok = ok && game_spun_out;
+    game_stop = true;
+
+    deadline = cntpct() + cntfrq() / 4;
+    while (cntpct() < deadline) { }
+
+    return ok;
+}
+
+/*
  * Two threads on *another* processor, neither of which yields.
  *
  * **The regression this exists for went unnoticed for three releases and
@@ -10568,6 +10663,7 @@ static const struct test tests[] = {
     { "smp: a secondary preempts a spinner",   test_a_secondary_preempts_a_thread_that_never_yields },
     { "sched: the policy changes on every core", test_the_policy_changes_on_every_core },
     { "sched: a core says what it ran",     test_a_core_says_what_it_ran },
+    { "sched: game mode, given by a parent",  test_game_mode },
     { "smp: a new thread avoids a loaded core", test_placement_avoids_a_loaded_processor },
     { "smp: a changed mapping reaches every core", test_a_changed_mapping_reaches_every_processor },
     { "smp: a reply reaches a caller on another core", test_a_reply_reaches_a_caller_on_another_processor },

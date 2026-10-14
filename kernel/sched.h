@@ -120,6 +120,7 @@ struct scheduler {
  *   IDLE     runs only when nothing else will. The idle thread.
  *   LOW      background work nobody is waiting for.
  *   NORMAL   everything, unless there is a reason.
+ *   GAME     a game's normal threads, while game mode is on for it.
  *   DISPLAY  the compositor: what the eye is waiting for.
  *   AUDIO    a thread that renders or mixes sound: what the ear is
  *            waiting for, on a deadline the device sets every period.
@@ -132,9 +133,27 @@ struct scheduler {
 #define SCHED_PRIO_IDLE     0u
 #define SCHED_PRIO_LOW      1u
 #define SCHED_PRIO_NORMAL   2u
-#define SCHED_PRIO_DISPLAY  3u
-#define SCHED_PRIO_AUDIO    4u
-#define SCHED_PRIO_INPUT    5u
+#define SCHED_PRIO_GAME     3u
+#define SCHED_PRIO_DISPLAY  4u
+#define SCHED_PRIO_AUDIO    5u
+#define SCHED_PRIO_INPUT    6u
+
+/*
+ * **The game band** (`docs/scheduler.md` G3, 14 October 2026): between
+ * normal and display, so a game in front outranks every ordinary thread -
+ * builds, downloads, indexing - and the screen, the sound and the keys
+ * still outrank it. Not asked for: a process's parent puts it there
+ * (`process_set_game`), as the window manager does for the game in front,
+ * and its normal threads run in it from their next turn. **Under a budget**,
+ * as audio's band is: a thread there that runs a whole second without
+ * sleeping drops back to normal until it next sleeps, so a game that hangs
+ * cannot keep its band. The bands' names are the kernel's, said in
+ * `struct schedinfo`, so nothing above has to know a number.
+ */
+#define SCHED_GAME_BUDGET_TICKS  TICK_HZ
+
+/* What each band is called, by its number: `sched_band_name`. */
+const char *sched_band_name(unsigned band);
 
 /*
  * **Sound above every program, and the budget that makes that safe**

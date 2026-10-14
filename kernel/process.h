@@ -460,6 +460,13 @@ struct process {
     /* May put its threads in the audio band (`SPAWN_AUDIO_BAND`). */
     bool              owns_audio_band;
 
+    /*
+     * **In game mode** (`SCHED_PRIO_GAME`), set by its parent and by nobody
+     * else: every thread it has and makes runs its normal work in the game
+     * band from its next turn (`process_set_game`).
+     */
+    bool              game;
+
     /* Raw sectors. The strongest grant in the system - it is every file on
      * the machine, under every namespace - so it goes to one process. */
     bool              owns_disk;
@@ -764,6 +771,16 @@ int process_wait(struct process *parent, unsigned *id, int *code,
  * and nothing else may. It does not take effect here - see `killed`.
  */
 int process_kill(struct process *parent, unsigned id);
+
+/*
+ * **Game mode for a child, given or taken by its parent** (`docs/scheduler.md`
+ * G3): 0, or -1 when `parent` has no child `id`. The same authority as
+ * `process_kill` - a parent acts on what it started, by the number it was
+ * given for it - and the only way into the game band, so nothing promotes
+ * itself. The window manager is the parent of the applications it opens,
+ * and gives it to the one in front.
+ */
+int process_set_game(struct process *parent, unsigned id, bool on);
 
 /* Ends any process, for a caller the kernel has granted SPAWN_PROCCTL.
  * Refuses init: ending it ends the system. */

@@ -10,7 +10,9 @@ window opened on a machine of four processors, and held to:
   * **Fair chosen** on its card: round-robin in force on every core, as the
     kernel then says - refused on any machine of two cores until 0.11.214;
   * **a turn of 20 ms** chosen;
-  * **Game mode** saying it is the next step, and nothing changed;
+  * **game mode**: Super+G over the Scheduler gives it the game band while
+    it is in front, its card's menu offers the applications, and Super+G
+    again ends it;
   * **Balanced chosen again**, and the kernel back on priority.
 
 Usage: run_scheduler.py <image>
@@ -103,11 +105,6 @@ def main():
             check(until(r"scheduler: a turn of 20 ms - in force", at, 15) is not None,
                   "a turn of 20 ms was not put in force")
 
-        if "mode game" in spots:
-            at = len(guest.seen)
-            click("mode game")
-            check(until(r"scheduler: game mode is the next step", at, 15) is not None,
-                  "Game mode did not say it is the next step")
 
         if "mode priority" in spots:
             at = len(guest.seen)
@@ -115,6 +112,32 @@ def main():
             back = until(r"scheduler: chose priority - ([^,\n]*), the kernel says (\S+)", at, 15)
             check(back is not None and back.group(2) == "priority",
                   "Balanced did not put priority back: %r" % (back and back.group(0)))
+
+        # **Game mode** (G3): Super+G over the window in front - the
+        # Scheduler itself, since any application can have it - gives it,
+        # and the band with it while it is in front; the card says who has
+        # it; its menu offers the applications; Super+G again ends it.
+        if "mode game" in spots:
+            at = len(guest.seen)
+            guest.sendkey("meta_l-g")
+            on = until(r"wm: game mode on for ([^\n(]*) \(", at, 15)
+            check(on is not None and on.group(1).strip() == "Scheduler",
+                  "Super+G did not give the Scheduler game mode: %r" % (on and on.group(0)))
+            check(until(r"wm: game band given for Scheduler\n", at, 15) is not None,
+                  "the game band was not given to the window in front")
+
+            at = len(guest.seen)
+            click("mode game")
+            menu = until(r"scheduler: game mode menu, (\d+) application", at, 15)
+            check(menu is not None and int(menu.group(1)) >= 1,
+                  "the Game mode card did not offer the applications: %r" % (menu and menu.group(0)))
+            guest.sendkey("esc")
+            time.sleep(0.3)
+
+            at = len(guest.seen)
+            guest.sendkey("meta_l-g")
+            check(until(r"wm: game mode off for Scheduler", at, 15) is not None,
+                  "Super+G again did not end game mode")
 
         with open(os.path.join("build", "gate", "x86-scheduler.ppm"), "wb") as f:
             f.write(guest.screendump())
@@ -130,8 +153,8 @@ def main():
         return 1
 
     print("PASS: %d checks on the Scheduler window, %d processors (its lanes read and switches "
-          "counted; Fair put in force on every core and Balanced back; a turn of 20 ms; Game mode "
-          "the next step)" % (checks, cores))
+          "counted; Fair put in force on every core and Balanced back; a turn of 20 ms; game mode "
+          "given by Super+G with its band, offered by its card, and ended)" % (checks, cores))
     return 0
 
 

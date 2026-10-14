@@ -1742,6 +1742,19 @@ static int l_scheduler(lua_State *L)
 
     lua_setfield(L, -2, "policies");
 
+    /* Each band's name by its number, from 0 - the kernel's numbering, said
+     * by the kernel, so nothing above keeps a list of its own. */
+    lua_newtable(L);
+
+    for (i = 0; i < 8; i++) {
+        if (info.band[i][0] != '\0') {
+            lua_pushstring(L, info.band[i]);
+            lua_rawseti(L, -2, (lua_Integer)i);
+        }
+    }
+
+    lua_setfield(L, -2, "band_names");
+
     return 1;
 }
 
@@ -1782,6 +1795,25 @@ static int l_sched_lane(lua_State *L)
     return 1;
 }
 
+/*
+ * `sys.set_game(id, on)` - game mode for a child of this process, given or
+ * taken back (`SCHED_SET_GAME`): its normal threads run in the game band
+ * from their next turn. Refused for a process that is not this one's child;
+ * the window manager is the parent of what it opens (`docs/scheduler.md` G3).
+ */
+static int l_set_game(lua_State *L)
+{
+    long id = (long)luaL_checkinteger(L, 1);
+    long status = kosmos_sched_set(lua_toboolean(L, 2) ? SCHED_SET_GAME : SCHED_UNSET_GAME, id);
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 /* `sys.set_quantum(ticks)` - how long a turn lasts. */
 static int l_set_quantum(lua_State *L)
 {
@@ -1803,8 +1835,9 @@ static int l_set_quantum(lua_State *L)
  * one thing a caller must understand is that it only goes one way. Asking
  * for a band at or above the current one is refused.
  *
- * `sys.scheduler().bands` says how many there are; NORMAL is 2 and the
- * compositor's DISPLAY is 3. `/Kosmos/Programs/spin.lua` is the caller this exists for.
+ * `sys.scheduler().bands` says how many there are, and `band_names` what
+ * each number is called - NORMAL is 2, GAME 3 and the compositor's DISPLAY
+ * 4. `/Kosmos/Programs/spin.lua` is the caller this exists for.
  */
 static int l_step_down(lua_State *L)
 {
@@ -2921,6 +2954,7 @@ static const luaL_Reg sys_functions[] = {
     { "release",  l_release },
     { "scheduler",   l_scheduler },
     { "sched_lane",  l_sched_lane },
+    { "set_game",    l_set_game },
     { "set_quantum", l_set_quantum },
     { "set_policy",  l_set_policy },
     { "step_down",   l_step_down },

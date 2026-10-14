@@ -396,6 +396,13 @@ return function(ctx)
       what = "Get the window in front out of the way",
       run = function() minimise_focused() end },
 
+    -- **Game mode for the application in front**, or off again (Diego, 11
+    -- October: "Windows has this super+g key shortcut that sets game mode
+    -- for the app in front"; `docs/scheduler.md` G3).
+    { key = 103, shown = "Super+G", action = "game_mode", group = "desktop",
+      what = "Game mode for the application in front, or off",
+      run = function() OUT.game.toggle_front() end },
+
     --
     -- **Magnet from the keyboard** (`docs/magnet.html`, agreed 10 October;
     -- the keys' encoding 13 October): the window in front put where a drag

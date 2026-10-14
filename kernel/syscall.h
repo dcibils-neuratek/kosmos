@@ -782,6 +782,14 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 #define SCHED_SET_AUDIO_BAND  3
 
 /*
+ * **Game mode for a child of the caller, on and off** (`docs/scheduler.md`
+ * G3): the value is the child's id, as `SYS_KILL` takes it. A parent acts
+ * on what it started; nothing puts itself in the game band.
+ */
+#define SCHED_SET_GAME        4
+#define SCHED_UNSET_GAME      5
+
+/*
  * What SYS_SCREEN reports.
  *
  * The address is in the *caller's* address space, because the framebuffer is
@@ -829,6 +837,15 @@ struct schedinfo {
     uint32_t tick_hz;       /* ticks per second */
     uint32_t priorities;    /* how many bands */
     char     name[SCHED_POLICY_MAX][SCHED_NAME_MAX];
+
+    /*
+     * **Each band's name, by its number** - "idle", "low", "normal",
+     * "game", "display", "audio", "input"; empty for a number no band has.
+     * The kernel owns the numbering, so it says what each is, and Processes,
+     * `htop`, init and the Scheduler read it rather than each keeping a list
+     * that a new band - game, on 14 October - would leave wrong.
+     */
+    char     band[8][SCHED_NAME_MAX];
 };
 
 struct screen_info {

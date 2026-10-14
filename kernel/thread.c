@@ -1301,8 +1301,26 @@ void thread_set_idle(struct thread *t)
  */
 static void refresh_effective(struct thread *t)
 {
-    t->sched.effective = t->sched.inherited > t->sched.priority
-                       ? t->sched.inherited : t->sched.priority;
+    unsigned band = t->sched.inherited > t->sched.priority
+                  ? t->sched.inherited : t->sched.priority;
+
+    /* A game's normal thread, while game mode is on and its budget lasts. */
+    if (band == SCHED_PRIO_NORMAL && t->sched.game && !t->sched.game_spent) {
+        band = SCHED_PRIO_GAME;
+    }
+
+    t->sched.effective = band;
+}
+
+static const char *const band_names[SCHED_PRIORITIES] = {
+    [SCHED_PRIO_IDLE] = "idle", [SCHED_PRIO_LOW] = "low", [SCHED_PRIO_NORMAL] = "normal",
+    [SCHED_PRIO_GAME] = "game", [SCHED_PRIO_DISPLAY] = "display", [SCHED_PRIO_AUDIO] = "audio",
+    [SCHED_PRIO_INPUT] = "input",
+};
+
+const char *sched_band_name(unsigned band)
+{
+    return band < SCHED_PRIORITIES && band_names[band] != NULL ? band_names[band] : "";
 }
 
 unsigned thread_effective_priority(const struct thread *t)
@@ -1757,6 +1775,18 @@ void thread_tick(void)
         spin_unlock(&runq_lock[here()], flags);
     }
 
+    /*
+     * **The game band's budget** (`sched.h`): a game thread that has run a
+     * second without sleeping is held at normal until it sleeps, and the
+     * switch asked for so whatever it was holding off runs.
+     */
+    if (current->sched.effective == SCHED_PRIO_GAME
+        && ++current->sched.game_run_ticks > SCHED_GAME_BUDGET_TICKS) {
+        current->sched.game_spent = true;
+        refresh_effective(current);
+        this_cpu()->preempt_pending = true;
+    }
+
     if (core_policy[here()]->tick(current)) {
         this_cpu()->preempt_pending = true;
     }
@@ -1834,6 +1864,7 @@ void thread_preempt_if_needed(void)
         unsigned long flags = spin_lock(&runq_lock[cpu]);
 
         choosing();
+        refresh_effective(current);     /* game mode, from its next turn */
         core_policy[cpu]->enqueue(cpu, current);
         next = core_policy[cpu]->pick_next(cpu);
 
@@ -1940,6 +1971,7 @@ void thread_yield(void)
         next = core_policy[cpu]->pick_next(cpu);
 
         if (next != NULL) {
+            refresh_effective(current);
             core_policy[cpu]->enqueue(cpu, current);
         }
 
@@ -2314,6 +2346,12 @@ void thread_wake(struct thread *t)
 
         t->state = THREAD_READY;
         t->woken_at = cpu_cycles();
+
+        /* It slept: a game thread's budget is whole again, and whether its
+         * process is in game mode now is read as it is queued. */
+        t->sched.game_spent = false;
+        t->sched.game_run_ticks = 0;
+        refresh_effective(t);
 
         /* A sound thread that slept is doing a sound thread's work again:
          * back in the audio band, with its budget whole. */

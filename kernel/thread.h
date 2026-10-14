@@ -221,6 +221,17 @@ struct thread {
         unsigned long  audio_overruns;
 
         /*
+         * **Game mode for its process** (`SCHED_PRIO_GAME`): a normal thread
+         * runs in the game band while `game` is set - by its process, for
+         * every thread it has and makes - unless it has spent its budget,
+         * `game_run_ticks` past `SCHED_GAME_BUDGET_TICKS` without sleeping,
+         * and then `game_spent` holds it at normal until it sleeps.
+         */
+        bool           game;
+        bool           game_spent;
+        unsigned       game_run_ticks;
+
+        /*
          * Which processor's runqueue this thread belongs to.
          *
          * **A thread has a home, and it does not move.** That is the

@@ -2583,6 +2583,18 @@ void syscall_dispatch(struct syscall_frame *sc)
 
         memset(&info, 0, sizeof(info));
 
+        _Static_assert(sizeof(info.band) / sizeof(info.band[0]) == SCHED_PRIORITIES,
+                       "a name a band");
+
+        for (i = 0; i < SCHED_PRIORITIES; i++) {
+            const char *name = sched_band_name(i);
+            unsigned    j;
+
+            for (j = 0; j + 1 < SCHED_NAME_MAX && name[j] != '\0'; j++) {
+                info.band[i][j] = name[j];
+            }
+        }
+
         info.policy     = sched_policy_index();
         info.policies   = sched_policy_count();
         info.quantum    = sched_get_quantum();
@@ -2666,6 +2678,14 @@ void syscall_dispatch(struct syscall_frame *sc)
 
         case SCHED_SET_POLICY:
             result = sched_switch_to((unsigned)sc->arg[1]) ? 0 : SYS_ERR_DENIED;
+            break;
+
+        case SCHED_SET_GAME:
+        case SCHED_UNSET_GAME:
+            /* Only a child of the caller: the authority `SYS_KILL` has. */
+            result = process_set_game(p, (unsigned)sc->arg[1],
+                                      (unsigned)sc->arg[0] == SCHED_SET_GAME) == 0
+                     ? 0 : SYS_ERR_DENIED;
             break;
 
         case SCHED_SET_MY_BAND:
