@@ -3,6 +3,7 @@
 -- kosmos: icon App_Clock
 -- kosmos: name Automations
 -- kosmos: section applications
+-- kosmos: opens automation
 --
 -- Automations: tasks strung together and run on a trigger, as drawn in
 -- `docs/automations.html` (`docs/automations.md` A4).
@@ -1108,10 +1109,23 @@ end)
 for _, v in ipairs({ side, main, header }) do win:add(v) end
 
 load()
+
+-- **A file of one, opened from Tracker, runs it** (`automations.md`: "which
+-- Tracker shows and a double-click runs"): chosen, and Run now pressed.
+local opened = files.words(tostring(args or ""))[1]
+local opened_name = opened and tostring(opened):match("([^/]+)%.automation$")
+
+if opened_name and entry(opened_name) then
+  chosen = opened_name
+  print("automations: opened " .. opened_name .. " from its file")
+end
+
 refresh_status()
 header.sub = counts()
 win:focus_on(main)
 print(("automations: window at %d,%d, %d listed, autod %s"):format(win.origin_x or 0, win.origin_y or 0,
       #list, next(status) and "running" or (ask_autod{ type = "status" } and "running" or "not running")))
+
+if opened_name and entry(opened_name) then run_now() end
 
 win:run()

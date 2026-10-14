@@ -12,6 +12,8 @@ any application's are - on a machine with a disk for /Home:
   4. **+ New** makes one; **Change** gives it a trigger - every 15 minutes -
      which the list then says; **Add a step**'s sheet keeps an Open of
      Calculator, read back as the step's sentence.
+  5. **Its file opened**, as Tracker opens one: the automation chosen and
+     run.
 
 Usage: run_automationswin.py IMAGE
 """
@@ -47,6 +49,14 @@ print("W " .. tostring(A.write{ name = "Answer", when = { kind = "hand" }, steps
 print("W " .. tostring(A.write{ name = "Good morning", when = { kind = "at", time = "8:00",
   days = { "mon", "tue", "wed", "thu", "fri" } }, steps = { { verb = "notify", title = "Morning" } } }))
 '''
+
+# What Tracker does with a double-click: the type's opener, launched with
+# the file.
+OPENER = ('local ft = use("/Kosmos/Libraries/filetypes.lua")\n'
+          'local p = ft.opener(args, fs.getattr(args))\n'
+          'print("OPENER " .. tostring(p))\n'
+          'if p then fs.send("/Running/wm", { type = "launch", program = p,\n'
+          '  args = use("/Kosmos/Libraries/files.lua").quote(args) }) end\n')
 
 FILE = ('local a = fs.read("/Home/Automations/" .. (args:gsub(\'"\', "")) .. ".automation")\n'
         'print("FILE " .. tostring(type(a) == "table" and a.on) .. " " ..\n'
@@ -90,6 +100,7 @@ def main():
 
         session.put(WRITE.encode(), "/Temporary/write.lua")
         session.put(FILE.encode(), "/Temporary/file.lua")
+        session.put(OPENER.encode(), "/Temporary/opener.lua")
         said["write"] = session.run("/Temporary/write.lua").decode(errors="replace")
 
         # ---- 1: it opens on them ----
@@ -161,6 +172,17 @@ def main():
         check(line("automations: kept New automation", mark) is not None, "the step was not kept")
         out = step("read Automations step/1")
         check("Open Calculator" in out, "the new step did not read as Open Calculator: %r" % out)
+
+        # ---- 5: its file opened, as Tracker opens it: chosen and run ----
+        mark = len(guest.seen)
+        said["open file"] = session.run("/Temporary/opener.lua /Home/Automations/Answer.automation")\
+            .decode(errors="replace")
+        check("OPENER automations" in said["open file"],
+              "Tracker would not open an .automation with Automations: %r" % said["open file"])
+        check(line("automations: opened Answer from its file", mark) is not None,
+              "opening Answer's file did not choose it: %r" % said["open file"])
+        check(line("automations: Answer ran - ", mark, 60) == "done",
+              "opening Answer's file did not run it")
     except Exception as e:                  # noqa: BLE001 - said below
         check(False, "the steps stopped: %s: %s" % (type(e).__name__, str(e)[:500]))
     finally:
@@ -179,7 +201,7 @@ def main():
     print("PASS: %d checks on the Automations window (opened on two, its controls published; "
           "Run now ran Answer, lit and done, the row and the history saying so; its switch "
           "off kept and told to autod; + New, Change to every 15 minutes, Add a step's Open of "
-          "Calculator kept, all by name)" % checks)
+          "Calculator kept, all by name; its file opened as Tracker opens it, chosen and run)" % checks)
     return 0
 
 

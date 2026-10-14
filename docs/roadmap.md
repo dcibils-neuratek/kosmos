@@ -665,6 +665,9 @@ with their history. **Left for A3b**: a mail arriving as a trigger -
 which A4's window brings.
 **A4 built, 0.11.224** (`testing.md` 18.619): the Automations window as
 drawn, its controls published so `automate` drives it as it drives Mail.
+**The `.automation` file type, 0.11.225** (18.620): Tracker opens one with
+Automations, which runs it. A3b's mail trigger is left, for Diego to
+choose how `maild` tells `autod` without either waiting on the other.
 
 **Network Monitor, an app** - Diego, 12 October 2026: "i realizsed we need
 network monitor app as well to see network input and output". What goes in

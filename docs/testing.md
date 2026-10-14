@@ -25746,3 +25746,15 @@ Calculator". **Control**: a switch that is not kept - 2 fail.
 
 
 **Whole gate**: 89 of 89.
+
+## 18.620 An automation's file, opened from Tracker, runs
+
+`docs/automations.md`: automations are files "which Tracker shows and a
+double-click runs". The window declares `kosmos: opens automation`, so
+`filetypes.opener` names it for an `.automation`; started with such a
+file it chooses that automation and presses Run now. **Test**:
+`x86-automations`, 3 more checks, 31 in all - the opener Tracker would ask
+is `automations`, and launching it with `Answer.automation` chooses Answer
+and runs it to "done". **Control**: the header declaring another type - 3
+fail ("OPENER nil"). Only the app changed: its suite, not the whole gate.
+
