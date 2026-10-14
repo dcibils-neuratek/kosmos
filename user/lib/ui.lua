@@ -8405,7 +8405,10 @@ local function serve_properties(self)
 
   self.written_here = false
 
-  while true do
+  -- **Until the window has gone**, too: a request can close it - Send in
+  -- the composer does - and `close` takes the endpoint with it, so the next
+  -- receive would be on nothing and end the whole process (Mail did).
+  while self.control do
     local req, who = sys.receive(self.control, true)
 
     if not req then return changed end
@@ -8422,6 +8425,8 @@ local function serve_properties(self)
       pcall(sys.reply, who, { ok = false, error = "the answer does not fit in one message" })
     end
   end
+
+  return changed
 end
 
 -- The same, for a window that runs its own loop: `wmproto.poll` calls it.

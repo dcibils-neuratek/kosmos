@@ -653,9 +653,10 @@ itself says what its controls are - `win:publish_controls(fn)`, entries as
 what they do (`button/Reply`, `button/New Message`, `button/Get Mail`),
 disabled as a click would find them, the dots' menu as `menu/more/...`, and
 `field/Search`. The click and the published press run one function each.
-**Left in A1b**: Mail's message list and mailboxes as lists; the composer
-(To, Subject, Send - its rows are drawn too), which `mail:press("Send")`
-needs; then Groove, Paint, Cafesa3D and Maps.
+**The composer by name, 0.11.222** (`testing.md` 18.617): To, Cc, Bcc,
+Subject, Message and Send - a mail written and sent from a script through
+the window, as the design's example has it. **Left in A1b**: Mail's message
+list and mailboxes as lists; then Groove, Paint, Cafesa3D and Maps.
 
 **Network Monitor, an app** - Diego, 12 October 2026: "i realizsed we need
 network monitor app as well to see network input and output". What goes in

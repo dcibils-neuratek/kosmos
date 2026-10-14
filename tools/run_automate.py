@@ -196,6 +196,25 @@ def main():
         except Exception:                  # noqa: BLE001 - its check says
             composer = None
         check(composer is not None, "pressing New Message opened no composer")
+        # The composer it opened, written in and sent by name - the
+        # design's own example, mail:press("Send").
+        out = step('press "New Message" Send')
+        check("Who is it to?" in out, "Send with no address was not refused in words: %r" % out)
+        out = step('type "New Message" To ana@example.test')
+        check("field/To" in out, "the composer's To was not typed into: %r" % out)
+        out = step('read "New Message" To')
+        check("ana@example.test" in out, "To did not read back its address: %r" % out)
+        step('type "New Message" Subject "Written by name"')
+        step('type "New Message" Message "Hello from a script."')
+        mark = len(guest.seen)
+        out = step('press "New Message" Send')
+        check("button/Send" in out, "Send was not pressed by name: %r" % out)
+        try:
+            sent = guest.wait_for_line("mail: composer ", "the composer sending", mark)
+        except Exception:                  # noqa: BLE001 - its check says
+            sent = None
+        check(sent is not None and "sent to 1" in sent, "the composer did not send: %r" % sent)
+
         out = step("type Mail Search Invoice")
         check("field/Search" in out, "Mail's search was not typed into: %r" % out)
         out = step("read Mail Search")
@@ -208,6 +227,9 @@ def main():
         check(re.search(r"OUT \w+ from auto@example.test to ana@example.test subject A stable build "
                         r"eml [1-9]\d* A stable build", said["outbox"]) is not None,
               "the Outbox did not hold the message and its envelope: %r" % said["outbox"])
+        check(re.search(r"OUT \w+ from auto@example.test to ana@example.test subject Written by "
+                        r"name eml [1-9]\d* Written by name", said["outbox"]) is not None,
+              "the composer's message, written by name, was not in the Outbox: %r" % said["outbox"])
 
         # ---- 4: a page checked ----
         out = step("check http://10.0.2.2:%d/builds -stable" % port)

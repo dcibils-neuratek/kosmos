@@ -175,9 +175,62 @@ function compose.open(spec)
   c.attach_b = { icon = "attachment" }
   c.focused_at = sys.ticks()
 
+  -- Its rows and Send, published by name (`win:publish_controls`, A1b).
+  c.win:publish_controls(function() return c:published() end)
+
   print(("mail: composer %s open, %s"):format(c.id, c.title))
   c:save()
   return c
+end
+
+--
+-- **The composer, by name** (`docs/automations.md` A1b): `field/To`, `Cc`
+-- and `Bcc` - every address written as one line, made chips as typing them
+-- would - `field/Subject`, `field/Message`, and `button/Send`. What is
+-- written is kept as typing keeps it (`edited`). A Send that cannot go - no
+-- address, one that is not - refuses with the sentence the window shows,
+-- rather than looking pressed.
+--
+function C:published()
+  local out = {}
+
+  for _, name in ipairs({ "to", "cc", "bcc" }) do
+    local row = self.rows[name]
+
+    out[#out + 1] = {
+      kind = "field", label = name:sub(1, 1):upper() .. name:sub(2),
+      read = function()
+        local all = {}
+
+        for _, a in ipairs(row.chips) do all[#all + 1] = a.address end
+        if row.text ~= "" then all[#all + 1] = row.text end
+        return table.concat(all, ", ")
+      end,
+      write = function(text)
+        row.chips, row.text = {}, tostring(text or "")
+        self:settle(name)
+        self:edited()
+      end,
+    }
+  end
+
+  out[#out + 1] = { kind = "field", label = "Subject",
+                    read = function() return self.rows.subject.text end,
+                    write = function(text)
+                      self.rows.subject.text = tostring(text or "")
+                      self:edited()
+                    end }
+  out[#out + 1] = { kind = "field", label = "Message",
+                    read = function() return self.page:content() end,
+                    write = function(text)
+                      self.page:set(tostring(text or ""))
+                      self:edited()
+                    end }
+  out[#out + 1] = { kind = "button", label = "Send",
+                    press = function()
+                      if not self:send() then error(self.said or "not sent", 0) end
+                    end }
+  return out
 end
 
 -- A draft kept here, opened again where it was left.
@@ -1078,6 +1131,12 @@ function C:tend()
   if not reply then
     self:close()
     return false
+  end
+
+  -- Written or pressed from outside, answered inside the poll: drawn.
+  if self.win.served_change then
+    self.win.served_change = false
+    self.dirty = true
   end
 
   for _, ev in ipairs(reply.events or {}) do

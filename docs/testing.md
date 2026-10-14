@@ -25645,3 +25645,30 @@ Search Invoice` and `read` it back. **Control**: Mail publishing nothing -
 
 
 **Whole gate**: 86 of 87, x86-film the known load flake (18.589 and before), passing alone twice.
+
+## 18.617 The composer by name: a mail written and sent from a script
+
+A1b's second window, and the design's own example - `mail:press("Send")`.
+The composer publishes `field/To`, `Cc`, `Bcc` - every address as one line,
+made chips as typing makes them - `field/Subject`, `field/Message` and
+`button/Send`. A write is kept as typing keeps it (`edited`); a Send that
+cannot go raises the sentence the window shows, so the press is refused in
+words - "Who is it to?" - rather than looking pressed. The composer's loop
+takes `served_change` as something to draw.
+
+**And a crash it found**: Send closes the window *inside* the request, and
+`close` takes the endpoint; `serve_properties` went round for the next
+request and called `sys.receive(nil)`, which ended Mail - "Mail stopped",
+an alert. It serves only while the window has its endpoint now.
+
+**Test.** `x86-automate`, 6 more checks, 46 in all: `press "New Message"
+Send` with nobody to send to refused "Who is it to?"; To typed and read
+back; Subject and Message typed; Send pressed by name, the composer saying
+"sent to 1", and the message - "Written by name", from the account - in the
+Outbox; and Mail still there after, its search typed and read. **Controls**:
+the composer publishing nothing - 6 fail; and before the endpoint fix the
+same suite lost Mail after Send - its two search checks failed, "Mail is
+not open".
+
+
+**Whole gate**: 87 of 87.
