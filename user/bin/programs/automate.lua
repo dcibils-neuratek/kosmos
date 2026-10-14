@@ -18,6 +18,8 @@
 --   automate notify "Done" "Copied a.txt"
 --   automate wait 2                          seconds
 --   automate run hello world                 a program, to its end
+--   automate automation "Good morning"       an automation run now, by autod
+--   automate automations                     each one, and how its last run went
 --
 -- Words with spaces in quotes. Says what it did, or why not, in a line, and
 -- that line is what an automation's history will show for the same step.
@@ -38,6 +40,8 @@ local USAGE = {
   "  copy <from> <to>           move <from> <to>",
   "  notify <title> [line]      wait <seconds>",
   "  run <program> [words]",
+  "  automation <name>          run an automation now, by autod",
+  "  automations                each one: its trigger, its next time, its last run",
 }
 
 local function done(ok, why, said)
@@ -117,6 +121,26 @@ elseif verb == "notify" and a1 then
   done(auto.notify(a1, a2))
 elseif verb == "wait" then
   done(auto.wait(tonumber(a1) or 1), nil, "waited")
+elseif verb == "automation" and a1 then
+  local ok, r = pcall(fs.send, "/Running/autod", { type = "run", name = a1 })
+
+  if ok and type(r) == "table" and r.ok then
+    print(a1 .. " runs")
+  else
+    print("automate: " .. (ok and r == nil and "autod is not running" or tostring(r and r.error or r)))
+  end
+elseif verb == "automations" then
+  local ok, r = pcall(fs.send, "/Running/autod", { type = "status" })
+
+  if not (ok and type(r) == "table" and r.ok) then
+    print("automate: autod is not running")
+  else
+    for _, a in ipairs(r.automations or {}) do
+      print(("%-28s %-7s %s%s"):format(a.name, a.bad and "bad" or (a.on and a.kind or "off"),
+            a.bad or (a.last_ok == nil and "not run yet" or (a.last_ok and "last run ok" or "last run failed")),
+            a.last_why and (" - " .. a.last_why) or ""))
+    end
+  end
 elseif verb == "run" and a1 then
   local ok, why = auto.run(a1, table.concat(words, " ", 2))
 

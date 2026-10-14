@@ -4717,6 +4717,9 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	@# Which control a label means and which windows are an application's,
 	@# for every automation that presses something by name (A2).
 	$(HOSTDIR)/lua tools/test_automate.lua
+	@# And when an automation fires next, what a step found in the next
+	@# one's words, and what makes a file not an automation (A3).
+	$(HOSTDIR)/lua tools/test_automations.lua
 	@# And every method an application calls on its window: Lua resolves one
 	@# at the call, so a name the kit does not have is a control that ends
 	@# the program when somebody presses it, and nothing else notices.

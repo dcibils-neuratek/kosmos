@@ -657,6 +657,12 @@ disabled as a click would find them, the dots' menu as `menu/more/...`, and
 Subject, Message and Send - a mail written and sent from a script through
 the window, as the design's example has it. **Left in A1b**: Mail's message
 list and mailboxes as lists; then Groove, Paint, Cafesa3D and Maps.
+**A3 built, 0.11.223** (`testing.md` 18.618): automations as files in
+`/Home/Automations`, `autod` running them on a time, every so many
+minutes, Kosmos starting, a file appearing, a drive arriving or by hand,
+with their history. **Left for A3b**: a mail arriving as a trigger -
+`maild` telling `autod` - and `.automation` a file type Tracker knows,
+which A4's window brings.
 
 **Network Monitor, an app** - Diego, 12 October 2026: "i realizsed we need
 network monitor app as well to see network input and output". What goes in

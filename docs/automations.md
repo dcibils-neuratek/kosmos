@@ -309,6 +309,18 @@ nothing beside a Tracker window that is open.
    menu and its search. The composer next, so a script can write and send.
 3. **A3 - `autod`**: triggers, history, `/Home/Automations`; started by the
    desktop.
+   **Built 0.11.223** (`testing.md` 18.618): `automations.lua` - the file
+   (a table: `name`, `on`, `when = { kind = at | every | start | folder |
+   drive | hand, ... }`, `steps` of `{ verb = ..., ... }`), checked in
+   words; when each fires next; `{name}` filled from what earlier steps
+   found; the run and its history (`/Home/Automations/History/<name>`, the
+   last fifty). `autod` - started at login when there is an automation -
+   sleeps until the nearest time, looks at folders and drives every five
+   seconds, answers `run`, `status` and `reload` at `/Running/autod`
+   between steps, and says a failure once. `automate automation <name>` and
+   `automate automations`. **Not yet**: mail arriving as a trigger (`maild`
+   telling `autod`, its own step); `.automation` as a file type Tracker
+   opens and runs (with A4's window).
 4. **A4 - the window**: as drawn - the list, the editor, the controls
    picker, the history.
 5. **A5 - consent**: the first press in an application asks, and remembers.

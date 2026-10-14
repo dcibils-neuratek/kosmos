@@ -440,7 +440,9 @@ local SEEN = "/Temporary/automate"
 -- A web page fetched: `{ url, status, title, text }`, or nil and why - and
 -- nil too when it does not pass what `opts` asks: `has` words it must have,
 -- `lacks` words it must not, `changed = true` that it differs from when it
--- was last checked here.
+-- was last checked here. Then a third answer, "unmet": the page was there
+-- and did not say what was asked, which an automation takes as "stop
+-- here", not as a failure.
 --
 function auto.check(url, opts)
   opts = opts or {}
@@ -463,11 +465,11 @@ function auto.check(url, opts)
                  title = (title:gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")), text = text }
 
   if opts.has and not text:find(opts.has, 1, true) then
-    return nil, ("%s does not say \u{201c}%s\u{201d}"):format(page.url, opts.has)
+    return nil, ("%s does not say \u{201c}%s\u{201d}"):format(page.url, opts.has), "unmet"
   end
 
   if opts.lacks and text:find(opts.lacks, 1, true) then
-    return nil, ("%s says \u{201c}%s\u{201d}"):format(page.url, opts.lacks)
+    return nil, ("%s says \u{201c}%s\u{201d}"):format(page.url, opts.lacks), "unmet"
   end
 
   if opts.changed then
@@ -477,7 +479,7 @@ function auto.check(url, opts)
     files.make_folder(SEEN)
     fs.write(key, text)
 
-    if before == text then return nil, page.url .. " has not changed" end
+    if before == text then return nil, page.url .. " has not changed", "unmet" end
   end
 
   return page

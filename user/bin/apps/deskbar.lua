@@ -2600,6 +2600,26 @@ if not tostring(args or ""):match("%-%-again") then
 
     print(("deskbar: launch maild -> %s"):format(tostring(sent)))
   end
+
+  --
+  -- **The automations' runner** (`docs/automations.md` A3): `autod`, started
+  -- the same way when `/Home/Automations` holds one, so they run on their
+  -- triggers whether the Automations window is open or not.
+  --
+  local has_automation = false
+
+  for _, name in ipairs(fs.list("/Home/Automations") or {}) do
+    if tostring(type(name) == "table" and name.name or name):match("%.automation$") then
+      has_automation = true
+      break
+    end
+  end
+
+  if has_automation and not fs.getattr("/Running/autod") then
+    local sent = fs.send("/Running/wm", { type = "launch", program = "autod" })
+
+    print(("deskbar: launch autod -> %s"):format(tostring(sent)))
+  end
 end
 
 -- Repainted every pass while a program breathes on the bar - the passes

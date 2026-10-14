@@ -25672,3 +25672,39 @@ not open".
 
 
 **Whole gate**: 87 of 87.
+
+## 18.618 Automations on their triggers: `autod`
+
+`docs/automations.md` A3. **`automations.lua`** is the model: an
+automation is a table in `/Home/Automations/<name>.automation` - its
+trigger (`at` a time on chosen days, `every` so many minutes, `start`, a
+`folder`'s new file, a `drive` arriving, by `hand`) and its steps, each a
+verb of `automate.lua` with its words - checked in words before it is run
+or kept. What a step finds is named for the next (`{page title}`,
+`{answer}`, `{file}`); a `check` whose page does not say what was asked,
+and `stop_unless`, stop the run as a success. Each run is kept with every
+step's sentence, outcome and time, the last fifty.
+
+**`autod`** is started by the Deskbar at login when there is one, as
+`maild` is. It sleeps until the nearest time, looks at the folders and
+drives it watches every five seconds, and answers `run`, `status` and
+`reload` at `/Running/autod` - a run is queued and answered at once, and
+between a run's steps it answers whoever asked meanwhile. A failure is a
+banner the first time, none while it goes on failing.
+
+**Tests.** Host: `tools/test_automations.lua`, 21 checks - 8:00 asked at
+7:59:30 is this morning, 7:00 is tomorrow, Mondays' 7:00 next Monday, a
+weekend time Saturday; every 30 minutes from its last run; `{page title}`
+filled and `{nothing}` left as written; seven ways a file is not an
+automation, each in words. **Control**: the days ignored - 2 fail. Guest:
+`x86-autod`, 16 checks, 56 s - five files written (one with a verb nobody
+knows, said so and not run); `automate automation Answer` opens
+Calculator, presses 7 × 6 =, reads Result as `{answer}` and posts "The
+answer is 42", its history 8 of 8 steps; a file put in `/Temporary/inbox`
+copied to `/Temporary/out`; Broken fails with "no control called Launch"
+and a banner, and again with none; `automate automations` saying which
+failed and which is bad; Stops kept as stopped, not failed. **Controls**:
+a banner for every failure, and folders never looked at - 3 fail.
+
+
+**Whole gate**: 88 of 88.
