@@ -2,15 +2,15 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-14, morning (0.11.222; Automations A1, A2, Mail and its composer by name)
+Last updated: 2026-10-14, morning (0.11.223; Automations A1-A3)
 
 ---
 
 ## 14 October, the night into morning: Automations A1-A2, a kernel hang, Mail by name
 
-**Pushed: up to 0.11.198.** **On `main`, not pushed: 0.11.199-0.11.222.**
-The whole gate passed at 0.11.219 (86/86, the first clean one since G3) and
-at 0.11.222 (87/87). Diego asleep, "Keep building".
+**Pushed: up to 0.11.198.** **On `main`, not pushed: 0.11.199-0.11.223.**
+The whole gate passed at 0.11.219 (86/86, the first clean one since G3) at 0.11.222 (87/87)
+and at 0.11.223 (88/88). Diego asleep, "Keep building".
 
 - **A1, every control published by name** (0.11.218, `testing.md` 18.613):
   `/Running/<app>/controls` - kinds, labels, and each control read, written
@@ -37,9 +37,13 @@ at 0.11.222 (87/87). Diego asleep, "Keep building".
   To, Cc, Bcc, Subject, Message, Send - a mail written and sent from a
   script through the window. A crash found: Send closing the window
   mid-request ended Mail.
-- **Next in Automations**: A3, `autod` - triggers, history,
-  `/Home/Automations`. Left in A1b: Mail's list and mailboxes as lists;
-  Groove, Paint, Cafesa3D, Maps.
+- **A3, `autod`** (0.11.223, 18.618): automations as files in
+  `/Home/Automations`, run on a time, every N minutes, at start, a file
+  appearing, a drive arriving or by hand; history; a failure said once.
+  Started by the Deskbar at login when there is one.
+- **Next in Automations**: A4, the window as drawn (`docs/automations.html`).
+  Left: A3b (mail as a trigger, the `.automation` file type), A1b's rest
+  (Mail's lists; Groove, Paint, Cafesa3D, Maps), A5 consent, A6 scripts.
 - **Still waiting on Diego**, unchanged from the night before: the sandbox
   console keys on the M700 (`vmm.c` uncommitted), the M700's screen and
   G1-G4 seen there, the Screens and PDF Viewer designs, fix 1 or 2 for the
