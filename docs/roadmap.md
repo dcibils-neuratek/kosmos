@@ -9231,7 +9231,9 @@ the applications make the system useful, and is not pulled forward.
   Media Source Extensions, long-lived streaming single-page apps), so each
   engine is judged by those sites first and by its size second, and
   JavaScript bolted onto NetSurf is ruled out - it would never open them.
-  Gmail is also Kosmos Mail's, natively.
+  Gmail is also Kosmos Mail's, natively. **Its turn: after the queue as it
+  stands** - Diego, 14 October: "The browser comes after our current queue",
+  "Not before" - Pulses, the PDF reader, Remote Screen and Music first.
 - **JavaScript, later.** Diego, 30 September, told there is none - NetSurf's
   libraries here parse `<script>` into the document and nothing runs it:
   "yes add it for later". After the browser is fast and redrawn (6zz). The
