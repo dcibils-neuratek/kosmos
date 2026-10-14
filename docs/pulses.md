@@ -146,7 +146,13 @@ path serves the Open/Save window and the desktop's icons.
 - **P4 - folders**: a change pulse from `diskfs` and `ramfs` to whoever
   watches a folder - `autod` stops listing, and **Tracker, the Open/Save
   window and the desktop show a change at once**, through the window
-  manager (*Tracker, live*, above).
+  manager (*Tracker, live*, above). **Built 0.11.229** (`testing.md`
+  18.624): `folderwatch.c`, one door both servers use; `DISK_OP_WATCH` and
+  `RAM_OP_FOLDER_WATCH`; `fs.watch_folder`; the window manager's
+  `watch_code` and `changed` events; the kit's `win:watch_folder(path,
+  fn)`; Tracker. **Not yet in P4**: `autod`'s folder triggers still list
+  every five seconds, and the Open/Save window and the desktop's icons do
+  not watch yet - each is a `watch_folder` call when its turn comes.
 
 ## For Diego to decide
 

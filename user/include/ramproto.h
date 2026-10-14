@@ -66,6 +66,11 @@
  * others follow (`deviceproto.h`). */
 #define RAM_OP_PROGRAMS 13u
 
+/* A folder that tells (`docs/pulses.md` P4), as `diskproto.h`'s: `path` the
+ * folder, `offset` the code, the capability to pulse passed with it. */
+#define RAM_OP_FOLDER_WATCH   14u
+#define RAM_OP_FOLDER_UNWATCH 15u
+
 #define RAM_OK               0u
 #define RAM_ERR_NO_PATH      1u
 #define RAM_ERR_NOT_DIR      2u

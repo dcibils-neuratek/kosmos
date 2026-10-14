@@ -25864,3 +25864,40 @@ to read, so **every suite's guest now keeps its whole serial line** in
 `build/gate/serial/<suite>-<n>.log` (`Guest.close`, `KOSMOS_SUITE` from the
 gate). Watched, with the whole log next time. Second run: 89 of 89.
 
+## 18.624 Folders that tell: Tracker sees a change at once
+
+`docs/pulses.md` P4; Diego, 14 October: "Will this allow then tracker so
+see filesystem changes in real time? Right now you need to refresh the app
+to see new files". **The servers**: `folderwatch.c`, one door both
+filesystem servers use - a watch is a folder, the capability passed with
+it, a code and who asked; a change of a name in that folder pulses every
+watcher of it; the same asker and code moves a watch, its old capability
+let go; a watcher whose endpoint is gone is let go at the next change; the
+list grows. `diskfs` answers `DISK_OP_WATCH`/`UNWATCH` (14, 15) and tells
+watchers wherever it already noted "anything that may have changed the
+disk", for a change that happened - a rename's destination too. `ramfs`
+answers `RAM_OP_FOLDER_WATCH`/`UNWATCH` (14, 15), told by the store whether
+its last answer was the one asked for (`ram_answered_ok`). **The
+namespace**: `fs.watch_folder(path, code, pass)` and `fs.unwatch_folder`,
+in each server's own protocol; and `fs.send` now returns a capability that
+came back with an answer, as `reply.passed`, where it was dropped unread.
+**The window manager**: `watch_code` hands a window a code and passes a
+capability to its own endpoint; a pulse there with a code it handed out
+becomes a `changed` event in that window's poll, and any other is dropped.
+**The kit**: `win:watch_folder(path, fn)`, one folder a window, taken back
+when it watches another or closes. **Tracker** watches the folder it shows
+and lists it again when told, the chosen file still chosen.
+
+**Test.** Host: `tools/test_folderwatch.c`, 15 checks - the folder a change
+is in told and no other, whatever the slashes; moved by its owner and code,
+the old door let go; taken back by its owner only; a gone subscriber let
+go; a hundred kept. **Control**: the parent computed wrong - 5 fail. Guest:
+`x86-folders` (`tools/run_livefolders.py`), 14 checks, 22 s - Tracker on
+`/Home/Live` and `/Temporary/Live`, each saying it tells; a file written,
+renamed and deleted by another program over Telnet listed again by itself
+each time, in 0.13-0.16 s including the Telnet round trip; a change in
+another folder telling it nothing. **Control**: the servers never pulsing -
+6 of 14 fail, every change unseen.
+
+
+**Whole gate**: 90 of 90.

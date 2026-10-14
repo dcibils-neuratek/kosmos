@@ -58,6 +58,7 @@
 #include "clock_epoch.h"
 #include "diskcache.h"
 #include "diskdoor.h"
+#include "folderwatch.h"
 #include "progcount.h"
 #include "drives_decode.h"
 #include "drivers/usb/storage_decode.h"
@@ -1580,6 +1581,36 @@ static void op_format(const struct disk_request *rq, struct disk_reply *rp)
  * ------------------------------------------------------------------------
  */
 
+/*
+ * **Folders that tell** (`folderwatch.c`, `docs/pulses.md` P4): a window
+ * showing a folder hands its pulse here with a code, and every change of a
+ * name in that folder pulses it - so Tracker shows a file the moment
+ * another program writes it, and nothing lists a folder on a clock.
+ */
+static long watch_pulse(long cap, uint32_t code, uint64_t value)
+{
+    return kosmos_pulse(cap, code, value);
+}
+
+static void watch_drop(long cap)
+{
+    (void)kosmos_cap_drop(cap);
+}
+
+static struct folderwatch watches = { .pulse = watch_pulse, .drop = watch_drop, .grow = realloc };
+
+/* Who is asking: a door forwards for its caller, which it left in `caller`. */
+static uint32_t asker(const struct door *through)
+{
+    struct sender_info who;
+
+    if (through != NULL) {
+        return through->caller;
+    }
+
+    return kosmos_sender(&who) == 0 ? (uint32_t)who.id : 0;
+}
+
 static void answer(const struct message *msg, uint64_t sender)
 {
     static struct message out;
@@ -1631,6 +1662,17 @@ static void answer(const struct message *msg, uint64_t sender)
         case DISK_OP_MKDIR:   op_mkdir(rq, rp); break;
         case DISK_OP_SETATTR: op_setattr(rq, rp); break;
         case DISK_OP_QUERY:   op_query(rq, rp); break;
+        case DISK_OP_WATCH:
+            if (cap < 0 || !folderwatch_add(&watches, rq->path, cap, (uint32_t)rq->offset,
+                                            asker(through))) {
+                rp->error = DISK_ERR_BAD_OP;
+            } else {
+                cap = -1;                   /* kept by the watch, not let go below */
+            }
+            break;
+        case DISK_OP_UNWATCH:
+            folderwatch_remove(&watches, (uint32_t)rq->offset, asker(through));
+            break;
         default:              rp->error = DISK_ERR_BAD_OP; break;
         }
     }
@@ -1656,6 +1698,21 @@ static void answer(const struct message *msg, uint64_t sender)
         || rq->op == DISK_OP_MKDIR || rq->op == DISK_OP_SETATTR
         || rq->op == DISK_OP_FORMAT) {
         generation++;
+
+        /* And a change that happened is told to the folder's watchers -
+         * a rename's destination's too, when it went to another folder. */
+        if (rp->error == 0 && rq->op != DISK_OP_FORMAT) {
+            (void)folderwatch_changed(&watches, rq->path);
+
+            if (rq->op == DISK_OP_RENAME && rq->length < DISK_PATH_MAX
+                && memchr(rq->u.to, '/', rq->length) != NULL) {
+                char to[DISK_PATH_MAX];
+
+                memcpy(to, rq->u.to, rq->length);
+                to[rq->length] = '\0';
+                (void)folderwatch_changed(&watches, to);
+            }
+        }
     }
 
     /* A region handed over is given back on every path, answered or not. */

@@ -46,6 +46,16 @@
 #define DISK_OP_FORMAT   12u    /* `u.data`: the words that say it may */
 #define DISK_OP_PROGRAMS 13u    /* `.programs`: `struct disk_program` rows from `offset` */
 
+/*
+ * **A folder that tells** (`docs/pulses.md` P4): `path` the folder, `offset`
+ * the code, and the capability to pulse passed with the request. Every
+ * later change of a name in it - written, made, deleted, renamed - pulses
+ * that capability with the code. UNWATCH, the same code, takes it back;
+ * each is the asker's own (`folderwatch.c`).
+ */
+#define DISK_OP_WATCH    14u
+#define DISK_OP_UNWATCH  15u
+
 /* The request's region is the bytes: read into it, or written from it. */
 #define DISK_REGION       1u
 

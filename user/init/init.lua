@@ -1828,8 +1828,8 @@ local function new_namespace()
   -- for a file in `/Home`, which on a machine with no disk is this store
   -- too - true of the server and wrong for the person reading it.
   --
-  local function ram_call(capability, shown, bytes)
-    local raw, why = sys.call_raw(capability, bytes)
+  local function ram_call(capability, shown, bytes, pass)
+    local raw, why = sys.call_raw(capability, bytes, pass)
 
     if not raw then return nil, tostring(why) end
     if #raw < 1044 then return nil, "a /Temporary reply of the wrong size" end
@@ -3682,6 +3682,46 @@ local function new_namespace()
   -- polling and not on a timer, and it wakes when something it cares about
   -- happened. Pass the answer you already have as `known`.
   --
+  --
+  -- **A folder that tells** (`docs/pulses.md` P4): from now on every change
+  -- of a name in `path` pulses `pass` - a capability, handed to the folder's
+  -- own server - with `code`. The window manager's endpoint, for a window
+  -- (`window:watch_folder`); any endpoint for a program. Taken back with
+  -- the same code. True, or nil and why; a place whose server cannot tell
+  -- says so, and its folder is looked at as before.
+  --
+  local FOLDER_WATCH, FOLDER_UNWATCH = 14, 15
+
+  local function folder_watch_call(path, op, code, pass)
+    local capability, rest, _, proto = resolve(path)
+
+    if not capability then return nil, "no such path: " .. tostring(path) end
+
+    if proto == "disk" then
+      local r, e = disk_call(capability, op, rest, code, 0, 0, "", pass)
+
+      if not r then return nil, e end
+      return true
+    end
+
+    if proto == "ram" then
+      local r, e = ram_call(capability, path, ram_pack(op, rest, code), pass)
+
+      if not r then return nil, e end
+      return true
+    end
+
+    return nil, tostring(path) .. " cannot tell when it changes"
+  end
+
+  function ns.watch_folder(path, code, pass)
+    return folder_watch_call(path, FOLDER_WATCH, math.floor(tonumber(code) or 0), pass)
+  end
+
+  function ns.unwatch_folder(path, code)
+    return folder_watch_call(path, FOLDER_UNWATCH, math.floor(tonumber(code) or 0))
+  end
+
   function ns.watch(path, where, known)
     local capability, _, prefix, _, root = resolve(path)
 
@@ -3860,6 +3900,14 @@ local function new_namespace()
 
     if not reply then return nil, err end
     if not reply.ok then return nil, reply.error end
+
+    -- A capability that came back with the answer, at its index in this
+    -- process's table: the window manager handing a window a door
+    -- (`watch_code`). It was dropped before, unread.
+    if type(reply) == "table" and math.type(err) == "integer" and err >= 0 then
+      reply.passed = err
+    end
+
     return reply
   end
 

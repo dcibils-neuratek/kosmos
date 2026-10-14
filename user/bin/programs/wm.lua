@@ -4989,6 +4989,54 @@ handlers.clip_get = function()
   return { ok = true, text = clipboard }
 end
 
+--
+-- **Folders that tell, for windows** (`docs/pulses.md` P4). A window that
+-- shows a folder asks for a code; the answer carries a capability to this
+-- endpoint, which the window hands, with the code, to the folder's own
+-- server (`fs.watch_folder`). When a name in the folder changes the server
+-- pulses here - never waiting - and the pulse becomes a `changed` event in
+-- that window's next poll, as a key or a click is. **A window is told only
+-- of what it asked for**: a code is this manager's to hand out, and a pulse
+-- with a code it did not - or whose window has gone - is dropped.
+--
+local folder_codes = {}         -- code -> the window's handle
+local next_folder_code = 1
+
+handlers.watch_code = function(req, who)
+  local win = by_handle[tonumber(req.window) or -1]
+
+  if not win then return { ok = false, error = "no such window" } end
+
+  local code = next_folder_code
+
+  next_folder_code = next_folder_code + 1
+  folder_codes[code] = win.handle
+
+  -- The answer, with this endpoint passed beside it.
+  pcall(sys.reply, who, { ok = true, code = code }, ep)
+  return DEFER
+end
+
+handlers.drop_code = function(req)
+  local code = tonumber(req.code)
+
+  if code and folder_codes[code] == tonumber(req.window) then folder_codes[code] = nil end
+  return { ok = true }
+end
+
+-- A folder's server pulsed: its window told, or the code let go.
+local function folder_told(code)
+  local handle = folder_codes[code]
+  local win = handle and by_handle[handle]
+
+  if not win then
+    folder_codes[code] = nil
+    return
+  end
+
+  post(win, { type = "changed", code = code })
+end
+
 handlers.poll = function(req, who)
   local win = by_handle[req.window]
   if not win then return { ok = false, error = "no such window" } end
@@ -6964,6 +7012,12 @@ while OUT.running do
 
     if raw then
       frame.request(req, who)
+      goto next_request
+    end
+
+    -- News from a folder's server (`folder_told`), from nobody to answer.
+    if req.pulse then
+      folder_told(req.code)
       goto next_request
     end
 

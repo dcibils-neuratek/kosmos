@@ -2,6 +2,7 @@
 #ifndef KOSMOS_RAMSTORE_H
 #define KOSMOS_RAMSTORE_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -24,6 +25,9 @@ void ram_store_init(size_t ceiling);
  * watch whose answer has not changed - later, when a write changes it.
  */
 void ram_answer(const void *data, size_t length, uint64_t sender);
+
+/* Whether the last request `ram_answer` took was answered as asked. */
+bool ram_answered_ok(void);
 
 /* What the store has read and written (`.device`): the server adds the time
  * each read and write took, which only it can measure. */

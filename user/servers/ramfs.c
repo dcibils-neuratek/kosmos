@@ -21,15 +21,37 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "kosmos.h"
 #include "ramproto.h"
 #include "ramstore.h"
 #include "progcount.h"
+#include "folderwatch.h"
 
 /* Which programs read and wrote /Temporary (`.programs`, Disk Monitor D2). */
 static struct progcount programs;
+
+/* Folders that tell (`folderwatch.c`, `docs/pulses.md` P4), as `diskfs`'s. */
+static long watch_pulse(long cap, uint32_t code, uint64_t value)
+{
+    return kosmos_pulse(cap, code, value);
+}
+
+static void watch_drop(long cap)
+{
+    (void)kosmos_cap_drop(cap);
+}
+
+static struct folderwatch watches = { .pulse = watch_pulse, .drop = watch_drop, .grow = realloc };
+
+static uint32_t asker(void)
+{
+    struct sender_info who;
+
+    return kosmos_sender(&who) == 0 ? (uint32_t)who.id : 0;
+}
 
 void ram_reply(uint64_t to, const struct ram_reply *rep)
 {
@@ -112,7 +134,46 @@ void ramfs_server(long endpoint)
                 continue;
             }
 
+            if (whole && (req.op == RAM_OP_FOLDER_WATCH || req.op == RAM_OP_FOLDER_UNWATCH)) {
+                struct ram_reply rep;
+                long cap = msg.cap_plus_one ? (long)msg.cap_plus_one - 1 : -1;
+
+                memset(&rep, 0, sizeof(rep));
+
+                if (req.op == RAM_OP_FOLDER_UNWATCH) {
+                    folderwatch_remove(&watches, req.offset, asker());
+                } else if (cap < 0 || !folderwatch_add(&watches, req.path, cap, req.offset, asker())) {
+                    rep.error = RAM_ERR_BAD_OP;
+
+                    if (cap >= 0) {
+                        (void)kosmos_cap_drop(cap);
+                    }
+                }
+
+                ram_reply(sender, &rep);
+                continue;
+            }
+
             ram_answer(msg.data, msg.length, sender);
+
+            /* A change that happened, told to the folder's watchers. */
+            if (whole && ram_answered_ok()
+                && (req.op == RAM_OP_WRITE || req.op == RAM_OP_DELETE || req.op == RAM_OP_RENAME
+                    || req.op == RAM_OP_MKDIR || req.op == RAM_OP_SETATTR)) {
+                (void)folderwatch_changed(&watches, req.path);
+
+                /* Where it went, too: one folder told twice is one pulse
+                 * counted twice. */
+                if (req.op == RAM_OP_RENAME) {
+                    char to[RAM_PATH_MAX];
+                    const char *end = memchr(req.u.data, '\0', RAM_PATH_MAX - 1);
+                    size_t n = end ? (size_t)(end - req.u.data) : RAM_PATH_MAX - 1;
+
+                    memcpy(to, req.u.data, n);
+                    to[n] = '\0';
+                    (void)folderwatch_changed(&watches, to);
+                }
+            }
 
             if (whole && (req.op == RAM_OP_READ || req.op == RAM_OP_WRITE)) {
                 bool wrote = req.op == RAM_OP_WRITE;

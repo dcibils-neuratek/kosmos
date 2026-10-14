@@ -348,6 +348,7 @@ SUITES = [
     Suite("x86-automate", ["python3", "tools/run_automate.py", X86], x86=True),
     Suite("x86-autod", ["python3", "tools/run_autod.py", X86], x86=True),
     Suite("x86-automations", ["python3", "tools/run_automationswin.py", X86], x86=True),
+    Suite("x86-folders", ["python3", "tools/run_livefolders.py", X86], x86=True),
 
     # **The browser, browsing** (`roadmap.md` 6zz a, b): the test page in
     # `assets/www/` served from this Mac - drawn, scrolled, reloaded, a link

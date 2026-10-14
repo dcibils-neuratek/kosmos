@@ -8594,6 +8594,9 @@ end
 function window:close()
   if self.closed then return end
 
+  -- A folder it watched, taken back: its server lets the door go.
+  self:unwatch_folder()
+
   wmproto.banded[self.handle] = nil
   wmproto.served[self.handle] = nil
   self.closed = true
@@ -9131,7 +9134,71 @@ function window:direct_event(ev)
     return true
   end
 
+  -- A folder this window watches changed (`watch_folder`).
+  if ev.type == "changed" then
+    self:folder_changed(ev)
+    return true
+  end
+
   return false
+end
+
+--
+-- **A folder that tells this window when it changes** (`docs/pulses.md`
+-- P4): `fn(path)` is called when a name in `path` is added, removed,
+-- renamed or written - by anything, in any program - with nothing looked
+-- at on a clock. One folder a window, the one it shows: watching another
+-- lets the first go, and `nil` stops. True, or nil and why - a place whose
+-- server cannot tell (a share, a drive) says so, and the window looks as
+-- before.
+--
+-- The window manager hands the code and a door to itself; the folder's
+-- server keeps the door and pulses it; the manager turns the pulse into a
+-- `changed` event in this window's poll (`wm.lua`, `folder_told`).
+--
+function window:watch_folder(path, fn)
+  self:unwatch_folder()
+
+  if path == nil then return true end
+
+  local r, why = fs.send("/Running/wm", { type = "watch_code", window = self.handle })
+
+  if not (r and r.code and r.passed) then return nil, why or "the window manager gave no code" end
+
+  local ok, no = fs.watch_folder(path, r.code, r.passed)
+
+  -- Its copy is the server's now; this process's goes.
+  pcall(sys.release, r.passed)
+
+  if not ok then
+    pcall(fs.send, "/Running/wm", { type = "drop_code", code = r.code, window = self.handle })
+    return nil, no
+  end
+
+  self.folder_watch = { path = path, code = r.code, fn = fn }
+  return true
+end
+
+function window:unwatch_folder()
+  local w = self.folder_watch
+
+  if not w then return end
+
+  self.folder_watch = nil
+  pcall(fs.unwatch_folder, w.path, w.code)
+  pcall(fs.send, "/Running/wm", { type = "drop_code", code = w.code, window = self.handle })
+end
+
+function window:folder_changed(ev)
+  local w = self.folder_watch
+
+  if w and w.code == ev.code and w.fn then
+    local ok, err = pcall(w.fn, w.path)
+
+    if not ok then print("ui: a folder's change was not taken: " .. tostring(err)) end
+
+    self.served_change = true
+  end
 end
 
 -- Everything from `from` upward, closed. `close_menus()` closes the lot.
@@ -9736,6 +9803,9 @@ function window:run()
       elseif ev.type == "clicks" then
         -- Preferences' double-click speed, for every double click here.
         set_double_click(ev.double_click_ms)
+      elseif ev.type == "changed" then
+        -- A folder this window watches changed (`watch_folder`).
+        self:folder_changed(ev)
       elseif ev.type == "theme" then
         --
         -- The desktop changed its appearance and every window is being told.

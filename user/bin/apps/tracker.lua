@@ -2595,6 +2595,32 @@ local function recount()
   end
 end
 
+--
+-- **The folder shown tells when it changes** (`docs/pulses.md` P4; Diego,
+-- 14 October 2026: "Will this allow then tracker so see filesystem changes
+-- in real time? Right now you need to refresh the app to see new files").
+-- Its server pulses when a name in it is added, removed, renamed or
+-- written - by any program - and it is listed again at once, the file that
+-- was chosen still chosen. Nothing is looked at on a clock. A place whose
+-- server cannot tell (a share, a drive) is shown as before.
+--
+local watched = nil
+
+local function folder_changed(path)
+  if path ~= where then return end
+
+  local keep = entries[selected] and entries[selected].name
+
+  show(path)
+
+  for i, e in ipairs(entries) do
+    if e.name == keep then selected = i break end
+  end
+
+  print(("tracker: %s changed, listed again"):format(path))
+  win:paint()
+end
+
 function show(path)
   local listed, why = files.entries(path)
 
@@ -2678,6 +2704,18 @@ function show(path)
   -- list nobody could account for.
   where, entries, found, asked = path, listed, nil, nil
   selected = (#listed > 0) and 1 or 0
+
+  -- Told when it changes, from now on (`folder_changed`, above).
+  if watched ~= path then
+    watched = path
+
+    local told, no = win:watch_folder(path, folder_changed)
+
+    if not backdrop then
+      print(("tracker: %s %s"):format(path, told and "tells when it changes"
+                                           or ("is looked at as before - " .. tostring(no))))
+    end
+  end
 
   -- The header says where you are, which is the innermost segment and not
   -- the whole path: the whole path is what pressing it opens.

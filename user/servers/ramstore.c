@@ -684,6 +684,15 @@ struct disk_device *ram_counts(void)
     return &counted;
 }
 
+/* Whether the last request was answered as asked - a change that happened,
+ * for the folders' watchers (`ramfs.c`, `folderwatch.c`). */
+static bool answered_ok;
+
+bool ram_answered_ok(void)
+{
+    return answered_ok;
+}
+
 void ram_answer(const void *data, size_t length, uint64_t sender)
 {
     struct ram_request req;
@@ -691,6 +700,8 @@ void ram_answer(const void *data, size_t length, uint64_t sender)
     char path[RAM_PATH_MAX];
     struct node *n;
     unsigned i;
+
+    answered_ok = false;
 
     if (length < sizeof(req)) {
         fail(sender, RAM_ERR_BAD_OP);
@@ -1158,6 +1169,7 @@ void ram_answer(const void *data, size_t length, uint64_t sender)
         return;
     }
 
+    answered_ok = true;
     ram_reply(sender, &rep);
 }
 
