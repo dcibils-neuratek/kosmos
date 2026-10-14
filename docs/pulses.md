@@ -140,6 +140,6 @@ path serves the Open/Save window and the desktop's icons.
 ## For Diego to decide
 
 1. ~~QNX's shape or seL4's~~ - **QNX's**, Diego, 14 October.
-2. **The ring's size** - 32 a endpoint, or grown as the pools grow.
-3. **P4 in this piece or later** - folders telling is the larger change,
-   two filesystem servers in C; I recommend after P3 has been lived with.
+2. ~~The ring's size~~ - **32 an endpoint**, Diego: "Agree to Both".
+3. ~~P4 in this piece or later~~ - **in this piece**, P1 to P4 in order,
+   each with its own tests, Tracker live at the end.
