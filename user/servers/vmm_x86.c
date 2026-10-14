@@ -45,6 +45,7 @@
 #include "vmmnet.h"
 #include "vmmblk.h"
 #include "vmmgpu.h"
+#include "vmminput.h"
 #include "x86dev.h"
 #include "vmm.h"
 #include "init/say.h"
@@ -64,6 +65,8 @@ static const unsigned share_irq[VMM_SHARES] = { 5, 7, 9, 10 };
 #define X86_BLK_IRQ         12u
 #define X86_GPU_BASE        (X86_BLK_BASE + 0x200ul)   /* its screen (L2) */
 #define X86_GPU_IRQ         14u
+#define X86_INPUT_BASE      (X86_GPU_BASE + 0x200ul)   /* keyboard, pointer (L3) */
+static const unsigned input_irq[2] = { 15, 6 };
 #define X86_UART_IRQ        4u
 #define X86_UART_PORT       0x3f8u
 
@@ -185,6 +188,10 @@ bool vmm_machine_prepare(void)
 
     if (vmmgpu_on()) {
         append_device(X86_GPU_BASE, X86_GPU_IRQ);
+    }
+
+    for (unsigned i = 0; vmminput_on() && i < 2; i++) {
+        append_device(X86_INPUT_BASE + 0x200ul * i, input_irq[i]);
     }
 
     if (!x86_boot(vmm_ram, vmm_cfg.ram_bytes, vmm_cfg.kernel_offset, vmm_cfg.kernel_bytes,
@@ -421,6 +428,9 @@ static void mmio(struct vcpu_regs *r)
         done = vmmblk_mmio(gpa - X86_BLK_BASE, m.size, m.write, &v);
     } else if (gpa >= X86_GPU_BASE && gpa < X86_GPU_BASE + 0x200 && vmmgpu_on()) {
         done = vmmgpu_mmio(gpa - X86_GPU_BASE, m.size, m.write, &v);
+    } else if (gpa >= X86_INPUT_BASE && gpa < X86_INPUT_BASE + 0x400 && vmminput_on()) {
+        done = vmminput_mmio((unsigned)((gpa - X86_INPUT_BASE) / 0x200),
+                             (gpa - X86_INPUT_BASE) % 0x200, m.size, m.write, &v);
     } else if (gpa >= X86_VIRTIO_BASE && gpa < X86_VIRTIO_BASE + 0x200ul * VMM_SHARES) {
         unsigned i = (unsigned)((gpa - X86_VIRTIO_BASE) / 0x200);
 
@@ -460,6 +470,11 @@ static void deliver(struct vcpu_regs *r)
     x86_pic_level(&pic, X86_NET_IRQ, vmm_networked() && vmmnet_raised());
     x86_pic_level(&pic, X86_BLK_IRQ, vmmblk_raised());
     x86_pic_level(&pic, X86_GPU_IRQ, vmmgpu_raised());
+    vmminput_pump();
+
+    for (unsigned i = 0; i < 2; i++) {
+        x86_pic_level(&pic, input_irq[i], vmminput_raised(i));
+    }
 
     for (unsigned i = 0; i < VMM_SHARES; i++) {
         x86_pic_level(&pic, share_irq[i], vmmfs_raised(i));

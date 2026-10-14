@@ -1983,6 +1983,57 @@ static int l_release(lua_State *L)
 }
 
 /* `sys.region_write(cap, offset, data)` - bytes into the region. */
+/*
+ * **`sys.ring_push(cap, at, item)`: one item onto a ring in a region**, as
+ * the other side's C reads it - `head`, `tail`, `count`, `item` bytes,
+ * then the items (`vmmscreen.h`'s input ring is one). The item is written
+ * before `head` is moved past it, with the barrier between, which Lua
+ * cannot say; true, or false when the ring is full and nothing was written.
+ */
+static int l_ring_push(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    lua_Integer offset = luaL_checkinteger(L, 2);
+    size_t len;
+    const char *data = luaL_checklstring(L, 3, &len);
+    uintptr_t at;
+    size_t bytes;
+    volatile uint32_t *r;
+    uint32_t head, tail, count, item;
+
+    if (!region_of(cap, &at, &bytes)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "that is not a region this process can map: %s", region_fail);
+        return 2;
+    }
+
+    if (offset < 0 || offset % 4 != 0 || (size_t)offset + 16 > bytes) {
+        return luaL_error(L, "ring_push: no ring at %d", (int)offset);
+    }
+
+    r = (volatile uint32_t *)(at + (uintptr_t)offset);
+    count = r[2];
+    item = r[3];
+
+    if (count == 0 || item == 0 || len != item
+        || (size_t)offset + 16 + (size_t)count * item > bytes) {
+        return luaL_error(L, "ring_push: not a ring this item fits");
+    }
+
+    head = r[0];
+    tail = __atomic_load_n(&r[1], __ATOMIC_ACQUIRE);
+
+    if (head - tail >= count) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+
+    memcpy((void *)(at + (uintptr_t)offset + 16 + (size_t)(head % count) * item), data, len);
+    __atomic_store_n(&r[0], head + 1, __ATOMIC_RELEASE);
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 static int l_region_write(lua_State *L)
 {
     long cap = (long)luaL_checkinteger(L, 1);
@@ -2989,6 +3040,7 @@ static const luaL_Reg sys_functions[] = {
     { "memory_map",  l_memory_map },
     { "memory_size", l_memory_size },
     { "region_write", l_region_write },
+    { "ring_push",    l_ring_push },
     { "region_read",  l_region_read },
     { "region_load32", l_region_load32 },
     { "disk",        l_disk },

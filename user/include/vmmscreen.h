@@ -42,4 +42,42 @@ struct vmm_screen {
 
 _Static_assert(sizeof(struct vmm_screen) == 40, "ten words");
 
+/*
+ * **The keyboard and the pointer, the other way** (`docs/linux.md` L3): a
+ * ring in the same first page, from `VMM_INPUT_AT` - the window writes
+ * events, the monitor reads them into the guest's two virtio-input
+ * devices. Linux's own `input_event`s, in the guest's codes: a key's
+ * number is Kosmos's own raw key's, which is the same numbering; the
+ * pointer is absolute, `0` to `VMM_INPUT_ABS_MOST` across the picture.
+ *
+ * A single-producer, single-consumer ring of the shape `sys.ring_push`
+ * writes (`sys_user.c`): `head` the window's, `tail` the monitor's, each
+ * stored after what it covers, nothing else shared.
+ */
+#define VMM_INPUT_AT        1024u
+#define VMM_INPUT_EVENTS    128u
+#define VMM_INPUT_DEVICES   2u
+#define VMM_INPUT_KEYBOARD  0u
+#define VMM_INPUT_TABLET    1u
+#define VMM_INPUT_ABS_MOST  32767u
+
+struct vmm_input_event {
+    uint16_t device;                /* VMM_INPUT_KEYBOARD or _TABLET */
+    uint16_t type, code;            /* EV_KEY, EV_ABS, EV_REL, EV_SYN */
+    uint16_t reserved;
+    uint32_t value;
+    uint32_t reserved2;
+};
+
+struct vmm_input_ring {
+    volatile uint32_t head;         /* the window's: events written */
+    volatile uint32_t tail;         /* the monitor's: events taken */
+    uint32_t count;                 /* VMM_INPUT_EVENTS */
+    uint32_t item;                  /* sizeof(struct vmm_input_event) */
+    struct vmm_input_event ev[VMM_INPUT_EVENTS];
+};
+
+_Static_assert(sizeof(struct vmm_input_event) == 16, "four words an event");
+_Static_assert(VMM_INPUT_AT + sizeof(struct vmm_input_ring) <= 4096u, "in the first page");
+
 #endif

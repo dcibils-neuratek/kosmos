@@ -9145,7 +9145,11 @@ to the M700's stick without touching `/Home` (Diego runs it once, with
 and `--disk`, and `diskask.c` - one C door to the disk protocol where four
 servers had a copy each. **L2 built** (`testing.md` 18.638): virtio-gpu 2D
 in the monitor, a screen region the window draws, and the Linux window -
-Alpine's console in it. **L3 next**: keyboard and pointer, virtio-input. Later, when measured: the disk off the vCPU's thread, and the
+Alpine's console in it. **L3 built** (18.639): keyboard and pointer by
+virtio-input, from a ring the window writes. **L4 next**: Chromium - Alpine
+installed onto Linux's disk, `cage`, Linux in the Deskbar, Downloads
+shared, 2 GB - **Epiphany rather than Chromium** (Diego, 14 October: "chrome
+is too big", "Your call"; `docs/linux.md`, decision 4). Later, when measured: the disk off the vCPU's thread, and the
 disk server keeping a client's region mapped between requests.
 
 **Found, 10 October - a question to an application waits for its tick.**

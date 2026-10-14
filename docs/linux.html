@@ -1,7 +1,7 @@
 <!--
   Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
   Linux on Kosmos: Alpine in a sandbox, its screen, keyboard and pointer in
-  a Kosmos window - Chromium for the web Kosmos's own browser does not try
+  a Kosmos window - Epiphany for the web Kosmos's own browser does not try
   to host. Drawn on 14 October 2026, before it is built, from Diego's "can
   we prioritize linux on kosmos so we can run a web browser ?". Its feature
   set and architecture are docs/linux.md, its diagram
@@ -55,7 +55,7 @@ code { font-family: var(--mono); font-size: 13px; }
 .lights { display: flex; gap: 7px; }
 .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
 
-/* Linux's screen inside it: Chromium, as cage shows it - one window, no desktop. */
+/* Linux's screen inside it: Epiphany, as cage shows it - one window, no desktop. */
 .screen { background: #dfe3ea; height: 540px; display: flex; flex-direction: column; }
 .cr-tabs { display: flex; align-items: flex-end; gap: 2px; padding: 8px 10px 0; background: #dee3ea; }
 .cr-tab { background: #c9d0db; border-radius: 9px 9px 0 0; padding: 7px 14px; font-size: 12px; color: #3a4252; width: 190px; white-space: nowrap; overflow: hidden; }
@@ -102,10 +102,10 @@ code { font-family: var(--mono); font-size: 13px; }
 <body>
 <div class="wrap">
 <h1>Linux on Kosmos</h1>
-<p class="sub">Alpine Linux in a sandbox, its screen, keyboard and pointer in a Kosmos window - Chromium for the web Kosmos's own browser does not try to host, and any Linux application beside it. It runs at the processor's speed under VT-x, as sandboxes already do on the M700. Drawn before it is built, 14 October 2026.</p>
+<p class="sub">Alpine Linux in a sandbox, its screen, keyboard and pointer in a Kosmos window - Epiphany for the web Kosmos's own browser does not try to host, and any Linux application beside it. It runs at the processor's speed under VT-x, as sandboxes already do on the M700. Drawn before it is built, 14 October 2026.</p>
 <p class="sub">Diego: "the linux guest idea is great as well to run chromium in alpine linux and see it on the kosmos screen", and "can we prioritize linux on kosmos so we can run a web browser ?".</p>
 
-<h2>Linux, running Chromium</h2>
+<h2>Linux, running Epiphany</h2>
 <div class="scroller"><div class="win">
   <div class="band"><span class="t">Linux</span><span class="m">Linux</span><span class="m on">View</span><span class="m">Edit</span><span class="grow"></span>
     <span class="m" style="font-size:12px">Alpine &middot; 1 core &middot; 2 GB &middot; outgoing</span>
@@ -129,7 +129,7 @@ code { font-family: var(--mono); font-size: 13px; }
     <hr><div>Show the console<kbd></kbd></div>
   </div>
 </div></div>
-<p class="cap">Chromium fills the window - <code>cage</code> runs one application and nothing else. Linux's screen follows the window's size; the View menu also fits or shows actual pixels, and goes full screen. The keys and the pointer go to Linux while the window has them; Super and Kosmos's own shortcuts stay Kosmos's. Edit has Paste from Kosmos and Copy to Kosmos for text. The band says what it was given: Alpine, one core, 2 GB, the network outgoing. Downloads land in Kosmos's Downloads.</p>
+<p class="cap">Epiphany fills the window - <code>cage</code> runs one application and nothing else. Linux's screen follows the window's size; the View menu also fits or shows actual pixels, and goes full screen. The keys and the pointer go to Linux while the window has them; Super and Kosmos's own shortcuts stay Kosmos's. Edit has Paste from Kosmos and Copy to Kosmos for text. The band says what it was given: Alpine, one core, 2 GB, the network outgoing. Downloads land in Kosmos's Downloads.</p>
 
 <h2>The first time: Linux set up</h2>
 <div class="scroller"><div class="win">
@@ -137,10 +137,10 @@ code { font-family: var(--mono); font-size: 13px; }
     <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
   <div class="setup"><div class="card">
     <h3>Setting Linux up</h3>
-    <p class="d">Once: Alpine and Chromium onto Linux's own disk, through Kosmos's network. After this it starts in a few seconds, where it was left.</p>
+    <p class="d">Once: Alpine and Epiphany onto Linux's own disk, through Kosmos's network. After this it starts in a few seconds, where it was left.</p>
     <div class="step"><span class="k">&#10003;</span><span>Linux's disk made</span><span style="color:#6b7484">4 GB, in /Sandboxes</span></div>
     <div class="step"><span class="k">&#10003;</span><span>Alpine installed</span><span style="color:#6b7484">58 MB</span></div>
-    <div class="step"><span>&#8230;</span><span>Chromium and its fonts</span><span style="color:#6b7484">412 of 640 MB</span><div class="bar"><i></i></div></div>
+    <div class="step"><span>&#8230;</span><span>Epiphany and its fonts</span><span style="color:#6b7484">340 of 580 MB</span><div class="bar"><i></i></div></div>
     <div class="step"><span class="n">&#9675;</span><span class="n">Downloads shared, the browser set to start</span><span></span></div>
   </div></div>
 </div></div>
@@ -151,7 +151,7 @@ code { font-family: var(--mono); font-size: 13px; }
   <div class="band"><span class="t">Linux settings</span><span class="grow"></span>
     <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
   <div class="sheet">
-    <div class="l">Runs</div><div><span class="seg"><span class="on">Chromium alone</span><span>A Linux desktop</span></span><div class="note">Chromium alone fills the window; a desktop is Xfce, with a terminal and Linux's own applications.</div></div>
+    <div class="l">Runs</div><div><span class="seg"><span class="on">The browser alone</span><span>A Linux desktop</span></span><div class="note">The browser alone fills the window; a desktop is Xfce, with a terminal and Linux's own applications.</div></div>
     <div class="l">Memory</div><div><span class="drop">2 GB &#9662;</span><div class="note">Of the M700's 8 GB.</div></div>
     <div class="l">Processors</div><div><span class="drop">1 &#9662;</span><div class="note">More once Linux can use them (L6).</div></div>
     <div class="l">Disk</div><div><span class="drop">4 GB &#9662;</span> <span class="note" style="margin-left:8px">1.1 GB used</span></div>
@@ -163,9 +163,10 @@ code { font-family: var(--mono); font-size: 13px; }
 <p class="cap">The same choices a sandbox has, put for one purpose. Linux is a card in Sandboxes too, started and stopped from either place.</p>
 
 <h2>Decided by Diego, 14 October</h2>
-<div class="q"><b>1. Chromium alone, in <code>cage</code>, for now</b> - "cage for now but i might want other apps as well". What <code>cage</code> runs is a setting, so another Linux application, or later a desktop, is a choice rather than a redesign.</div>
+<div class="q"><b>1. One browser alone, in <code>cage</code>, for now</b> - "cage for now but i might want other apps as well". What <code>cage</code> runs is a setting, so another Linux application, or later a desktop, is a choice rather than a redesign.</div>
 <div class="q"><b>2. A drive of its own, <code>/Sandboxes</code></b> - Diego's idea: a partition of its own on the stick, formatted as Kosmos's, every sandbox's disk a file in it, so no guest can fill <code>/Home</code>. 32 GB.</div>
 <div class="q"><b>3. 2 GB of memory</b>, one core until Linux can use more.</div>
+<div class="q"><b>4. Epiphany rather than Chromium</b> - "chrome is too big", "Your call". WebKit, Safari's engine: 322 MB installed against Chromium's 463 and Firefox's 336, and the lightest drawing in software, which is how it draws here. Firefox or Chromium can be added later for a site that wants one.</div>
 </div>
 </body>
 </html>

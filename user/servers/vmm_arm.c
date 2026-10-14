@@ -38,6 +38,7 @@
 #include "vmmnet.h"
 #include "vmmblk.h"
 #include "vmmgpu.h"
+#include "vmminput.h"
 #include "vmm.h"
 
 #define DTB_SPACE       0x200000ul          /* the top 2 MB of RAM */
@@ -243,6 +244,19 @@ static size_t write_tree(uint8_t *at, size_t cap)
         uint32_t irq[3] = { 0, VMM_GPU_IRQ - 32, 1 };
 
         fdt_node(&f, "virtio_mmio@a000c00");
+        fdt_prop_str(&f, "compatible", "virtio,mmio");
+        fdt_prop_cells(&f, "reg", reg, 4);
+        fdt_prop_cells(&f, "interrupts", irq, 3);
+        fdt_prop_empty(&f, "dma-coherent");
+        fdt_end_node(&f);
+    }
+
+    /* Its keyboard and pointer (L3): two more, after its screen. */
+    for (unsigned i = 0; vmminput_on() && i < 2; i++) {
+        uint32_t reg[4] = { 0, (uint32_t)(VMM_INPUT_BASE + 0x200ul * i), 0, 0x200 };
+        uint32_t irq[3] = { 0, VMM_INPUT_IRQ + i - 32, 1 };
+
+        fdt_node(&f, i == 0 ? "virtio_mmio@a000e00" : "virtio_mmio@a001000");
         fdt_prop_str(&f, "compatible", "virtio,mmio");
         fdt_prop_cells(&f, "reg", reg, 4);
         fdt_prop_cells(&f, "interrupts", irq, 3);
@@ -476,6 +490,15 @@ static bool emulate(struct vcpu_regs *r)
         }
 
         got = v;
+    } else if (at >= VMM_INPUT_BASE && at < VMM_INPUT_BASE + 0x400) {
+        uint64_t v = value;
+
+        if (!vmminput_mmio((unsigned)((at - VMM_INPUT_BASE) / 0x200),
+                           (at - VMM_INPUT_BASE) % 0x200, size, write, &v)) {
+            return false;
+        }
+
+        got = v;
     } else if (at >= VMM_SHARE_BASE && at < VMM_SHARE_BASE + 0x200ul * VMM_SHARES) {
         uint64_t v = value;
         unsigned i = (unsigned)((at - VMM_SHARE_BASE) / 0x200);
@@ -590,6 +613,15 @@ static bool deliver(struct vcpu_regs *r)
     if (vmmgpu_raised()) {
         offer(r, VMM_GPU_IRQ);
         any = true;
+    }
+
+    vmminput_pump();
+
+    for (unsigned i = 0; i < 2; i++) {
+        if (vmminput_raised(i)) {
+            offer(r, VMM_INPUT_IRQ + i);
+            any = true;
+        }
     }
 
     for (unsigned i = 0; i < VMM_SHARES; i++) {

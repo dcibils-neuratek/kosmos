@@ -18,6 +18,9 @@
 bool vmmgpu_start(long screen_cap);
 
 bool vmmgpu_on(void);
+
+/* The screen region's first page, where its input ring is (`vmminput.h`). */
+void *vmmgpu_page(void);
 bool vmmgpu_mmio(uint64_t off, unsigned size, bool write, uint64_t *value);
 bool vmmgpu_raised(void);
 

@@ -446,6 +446,14 @@ bool vmmgpu_start(long screen_cap)
     }
 
     G.screen->pitch = G.screen->width * 4;
+
+    /* The input ring's shape, said for `sys.ring_push` (`vmmscreen.h`). */
+    {
+        struct vmm_input_ring *ring = (struct vmm_input_ring *)((uint8_t *)G.screen + VMM_INPUT_AT);
+
+        ring->count = VMM_INPUT_EVENTS;
+        ring->item = sizeof(struct vmm_input_event);
+    }
     G.dev.id = VIRTIO_ID_GPU;
     G.dev.queues = 2;
     G.dev.config = config;
@@ -457,6 +465,11 @@ bool vmmgpu_start(long screen_cap)
 bool vmmgpu_on(void)
 {
     return G.on;
+}
+
+void *vmmgpu_page(void)
+{
+    return G.on ? (void *)G.screen : NULL;
 }
 
 bool vmmgpu_mmio(uint64_t off, unsigned size, bool write, uint64_t *value)

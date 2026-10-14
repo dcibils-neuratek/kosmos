@@ -157,7 +157,7 @@ fi
 if grep -q kosmos.screen /proc/cmdline; then
     for m in i2c-core backlight fb syscopyarea sysfillrect sysimgblt fb_sys_fops \
              drm_panel_orientation_quirks drm drm_kms_helper drm_client_lib \
-             virtio_dma_buf drm_shmem_helper virtio-gpu; do
+             virtio_dma_buf drm_shmem_helper virtio-gpu virtio_input; do
         [ -f /kosmos/modules/$m.ko ] && insmod /kosmos/modules/$m.ko
     done
 fi
@@ -211,7 +211,9 @@ MODULES = ("kernel/drivers/virtio/virtio_mmio.ko", "kernel/fs/fuse/fuse.ko",
            "kernel/drivers/gpu/drm/clients/drm_client_lib.ko",
            "kernel/drivers/virtio/virtio_dma_buf.ko",
            "kernel/drivers/gpu/drm/drm_shmem_helper.ko",
-           "kernel/drivers/gpu/drm/virtio/virtio-gpu.ko")
+           "kernel/drivers/gpu/drm/virtio/virtio-gpu.ko",
+           # Its keyboard and pointer (L3).
+           "kernel/drivers/virtio/virtio_input.ko")
 # Built in on one architecture and a module on another: taken when there.
 OPTIONAL = ("backlight.ko",)
 KERNEL_VERSION = "6.18.52-0-virt"

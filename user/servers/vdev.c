@@ -85,8 +85,20 @@ bool vdev_mmio(struct vdev *d, uint64_t off, unsigned size, bool write, uint64_t
         uint8_t bytes[8];
         unsigned k;
 
-        if (write || size > sizeof(bytes)) {
-            return true;                    /* nothing here is written */
+        if (size > sizeof(bytes)) {
+            return true;
+        }
+
+        if (write) {
+            for (k = 0; k < size; k++) {
+                bytes[k] = (uint8_t)(*value >> (8 * k));
+            }
+
+            if (d->config_write != NULL) {
+                d->config_write(d, off - CONFIG, bytes, size);
+            }
+
+            return true;
         }
 
         memset(bytes, 0, sizeof(bytes));

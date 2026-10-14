@@ -33,6 +33,7 @@
 #include "vdev.h"
 #include "vmmblk.h"
 #include "vmmgpu.h"
+#include "vmminput.h"
 #include "vmmfs.h"
 #include "vmmnet.h"
 #include "init/say.h"
@@ -481,6 +482,11 @@ void vmm_server(long running_cap, long ram_cap, long setup_cap, long more1, long
             /* And its screen's region, after the drive (`docs/linux.md` L2). */
             if (vmm_cfg.screen != 0 && !vmmgpu_start(more[next])) {
                 kosmos_exit(VMM_BAD_SCREEN);
+            }
+
+            /* And its keyboard and pointer, with its screen (L3). */
+            if (vmmgpu_on()) {
+                vmminput_start(vmmgpu_page());
             }
         }
 

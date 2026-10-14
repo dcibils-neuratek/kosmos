@@ -38,6 +38,10 @@ struct vdev {
     /* Its configuration space, from `off`: `size` bytes into `out`. */
     void   (*config)(struct vdev *d, uint64_t off, uint8_t *out, unsigned size);
 
+    /* Its configuration space written, from `off`: `size` bytes of `in`.
+     * NULL: nothing there is written. */
+    void   (*config_write)(struct vdev *d, uint64_t off, const uint8_t *in, unsigned size);
+
     /* The guest said queue `q` has work. */
     void   (*notify)(struct vdev *d, unsigned q);
 

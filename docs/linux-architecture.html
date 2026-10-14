@@ -2,7 +2,7 @@
 <!--
   Linux on Kosmos, and what it stands on: the Linux window on top, the
   sandbox monitor's new devices beneath it, the guest beside them, Nebula's
-  VT-x under all. A frame of Chromium drawn through it (F). Drawn on 14
+  VT-x under all. A frame of Epiphany drawn through it (F). Drawn on 14
   October 2026, before any of it is built; docs/linux.md is the argument and
   docs/linux.html the window. Rendered to docs/linux-architecture.png by
   headless Chrome at twice its size.
@@ -71,7 +71,7 @@
   <span><i style="border-color:var(--guest-line);background:var(--guest)"></i>the Linux guest</span>
   <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers, in C</span>
   <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
-  <span class="f">F</span><span>a frame of Chromium</span>
+  <span class="f">F</span><span>a frame of Epiphany</span>
 </div>
 <div class="grid">
   <div>
@@ -90,9 +90,9 @@
     </div>
     <div class="layer guest"><h2>The Linux guest - Alpine, in the sandbox</h2>
       <div class="row" style="grid-template-columns:1fr 1fr 1fr">
-        <div class="box"><b>Chromium, in <code>cage</code></b><p>draws each frame in software <span class="f">F1</span></p></div>
+        <div class="box"><b>Epiphany, in <code>cage</code></b><p>draws each frame in software <span class="f">F1</span></p></div>
         <div class="box"><b>linux-virt's drivers</b><p><code>virtio_gpu</code> asks a rectangle transferred and flushed <span class="f">F2</span>; <code>virtio_input</code>, <code>virtio_blk</code></p></div>
-        <div class="box"><b>its disk, <code>/dev/vda</code></b><p>Alpine and Chromium, installed once by the first run</p></div>
+        <div class="box"><b>its disk, <code>/dev/vda</code></b><p>Alpine and Epiphany, installed once by the first run</p></div>
       </div>
     </div>
     <div class="layer srv"><h2>Servers, in C</h2>
@@ -115,15 +115,15 @@
     </div>
   </div>
   <div class="side">
-    <div class="card"><h3>F - a frame of Chromium</h3><ol>
-      <li><span class="f">F1</span> Chromium draws the frame into its buffer, in the guest.</li>
+    <div class="card"><h3>F - a frame of Epiphany</h3><ol>
+      <li><span class="f">F1</span> Epiphany draws the frame into its buffer, in the guest.</li>
       <li><span class="f">F2</span> the guest's <code>virtio_gpu</code> asks the changed rectangle transferred and flushed.</li>
       <li><span class="f">F3</span> the monitor copies it from the guest's RAM into the screen's region - C, a row at a time.</li>
       <li><span class="f">F4</span> a pulse tells the Linux window which buffer, with the damage beside it.</li>
       <li><span class="f">F5</span> the window blits the rectangle into its surface (C) and commits it.</li>
       <li><span class="f">F6</span> the window manager composes it on the screen.</li></ol></div>
     <div class="card"><h3>Where the time goes</h3><table>
-      <tr><td>Chromium drawing</td><td>in software, one core - most of it; L6 gives it more</td></tr>
+      <tr><td>Epiphany drawing</td><td>in software, one core - most of it; L6 gives it more</td></tr>
       <tr><td>A frame's copies</td><td>a full 1280x800 is 4 MB, twice; a scroll a few hundred KB</td></tr>
       <tr><td>A key or a click</td><td>a ring entry and a pulse</td></tr>
       <tr><td>The disk</td><td>4 KB pieces, a transaction each; the first run the heaviest</td></tr></table></div>

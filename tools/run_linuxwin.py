@@ -13,7 +13,13 @@ through virtio-gpu, the sandbox's monitor lays what it flushes into a region
     console's black, with light text on it (the line the window's shell
     prints, and its prompt), rather than one flat colour;
   * **the window's own part**: its header above the picture, which is not
-    Linux's black.
+    Linux's black;
+  * **the pointer** (L3): clicks and moves over the picture reaching the
+    guest's virtio-input tablet - its interrupts counted by the guest, said
+    on its serial line, which the window passes on with `--tell`;
+  * **the keyboard** (L3): `poweroff -f` typed on QEMU's keyboard, into the
+    window, run by Linux's shell on its screen - the sandbox ending, and
+    the window saying so.
 
 The screen is kept in `build/gate/arm-sandbox-linuxwin.ppm`.
 
@@ -120,6 +126,58 @@ def main():
                   % (px, py, light, dark))
             check(header is not None and sum(header) >= 120,
                   "the window's header above the picture was not drawn: %r" % (header,))
+
+        if shown:
+            width, height, _ = R.pixel_reader(guest.screendump())
+
+            def to(x, y):
+                guest.mouse_to(*R._to_tablet(x, y, width, height))
+                time.sleep(0.2)
+
+            def click(x, y):
+                to(x, y)
+                guest.mouse_button(True)
+                time.sleep(0.12)
+                guest.mouse_button(False)
+                time.sleep(0.2)
+
+            # Each device's interrupts, as the guest says them a second at a
+            # time: the tablet is the last virtio device (screen, keyboard,
+            # tablet), the highest-numbered.
+            def tablet_count(since):
+                lines = re.findall(r"linux: serial: [^\n]*?(\d+) GICv3 \d+ Edge virtio(\d+)",
+                                   guest.seen[since:])
+                counts = {}
+                for n, dev in lines:
+                    counts[int(dev)] = int(n)
+                return counts.get(max(counts)) if counts else None
+
+            until(r"linux: serial: [^\n]*virtio", 0, 30)
+            before = tablet_count(0) or 0
+            at = len(guest.seen)
+
+            for i in range(4):
+                click(px + 40 + 60 * i, py + 120 + 30 * i)
+
+            until(r"linux: serial: [^\n]*virtio", at, 10)
+            time.sleep(2.5)
+            guest._read_available()
+            after = tablet_count(at)
+            check(after is not None and after > before,
+                  "clicks over the picture did not reach the guest's tablet: its "
+                  "interrupts %r before, %r after" % (before, after))
+
+            # Keys: the shell on Linux's screen has them, since the window
+            # was clicked into.
+            at = len(guest.seen)
+
+            # `-f`: straight off - the sandbox's /init is a script, which a
+            # plain `poweroff` asks and it does not answer.
+            for k in ("p", "o", "w", "e", "r", "o", "f", "f", "spc", "minus", "f", "ret"):
+                guest.sendkey(k)
+
+            check(until(r"linux: stopped", at, 60) is not None,
+                  "poweroff typed into the window did not end Linux: %r" % guest.seen[-800:])
 
         os.makedirs(os.path.join("build", "gate"), exist_ok=True)
 

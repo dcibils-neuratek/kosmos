@@ -26307,3 +26307,33 @@ QEMU's screen there is Linux's console - light text on black - and the
 window's header is above it. **Controls**: the monitor converting with red
 and blue swapped reads `#302010`, refused; the window not blitting the
 picture leaves no light pixel, refused.
+
+## 18.639 Typed into and pointed at: virtio-input (Linux L3)
+
+`docs/linux.md` L3: the Linux window's keys and pointer, to the guest.
+
+**What it is.** `vmminput.c`: two virtio-input devices in the sandbox's
+monitor (VIRTIO 1.2 §5.8), a keyboard and an absolute tablet, each telling
+the guest what it is through its configuration space - its name, ids, the
+events it sends, the tablet's axes from 0 to 32767 - which needed `vdev.c`
+to let a driver write a device's configuration (`config_write`; nothing
+had). Events come from the window through a ring in the screen region's
+first page (`vmmscreen.h`), Linux's own `input_event`s in the guest's codes
+- Kosmos's raw key numbers are Linux's - and go into the buffers the guest
+has given, in order, as many as there are; the monitor looks every time it
+wakes, which is a scheduler tick at most when the guest is idle. The window
+writes the ring through **`sys.ring_push`**, a generic single-producer push
+in C with the barrier Lua cannot say. It forwards every raw key, and every
+move, press and wheel over the picture (`wmproto.track` for moves with no
+button held); the header stays the window's. And it notices when Linux has
+stopped, once a second, and says so.
+
+**Tests.** `arm-sandbox-linuxwin`, now 5: four clicks over the picture
+raising the guest's tablet interrupts - the guest says its virtio
+interrupts on its serial line a second at a time, which the window passes
+on with `--tell` - and `poweroff -f` typed on QEMU's keyboard, run by
+Linux's shell on its screen, the sandbox ending and the window saying so.
+**Control**: the window pushing nothing - the tablet at 0 interrupts before
+and after, and Linux not ending - both checks failing. Found on the way: a
+plain `poweroff` is typed and run, and does nothing, since the sandbox's
+`/init` is a script that does not answer it.

@@ -14,8 +14,13 @@
 -- it whenever the monitor's count of frames moves - asked on the window's
 -- own clock, never waited for. No pixel passes through this file.
 --
--- What is shown until the keyboard arrives (L3) is Linux's own console on
--- its screen: a shell on `tty1`, its prompt and what it says.
+-- **And the keyboard and the pointer** (L3): each raw key and each move,
+-- press and turn of the wheel over the picture, as Linux's own input
+-- events, into the ring in the screen region's first page (`vmmscreen.h`),
+-- which the monitor feeds to the guest's virtio-input keyboard and tablet.
+-- Kosmos's own keys - Super and its shortcuts - are the window manager's
+-- and never arrive here. What is shown until L4 brings Chromium is Linux's
+-- own console on its screen: a shell on `tty1`.
 --
 --   linux                  a 1024 by 768 screen
 --   linux 1280x800         at that size (a width a multiple of 16)
@@ -65,6 +70,14 @@ s.screen = ("%dx%d"):format(SW, SH)
 s.command = "setsid sh -c 'exec sh -l <>/dev/tty1 >&0 2>&0' & "
             .. "echo 'Alpine Linux in a Kosmos window' > /dev/tty1; wait"
 
+-- With `--tell`, the guest says its virtio interrupts on its serial line
+-- once a second, which this passes on - how a test sees the pointer's
+-- events arrive (`tools/run_linuxwin.py`).
+if TELL then
+  s.command = "(while sleep 1; do grep -i virtio /proc/interrupts | tr -s ' ' > /dev/console; done) & "
+              .. s.command
+end
+
 local state = "Starting Alpine..."
 local picture, region, last = nil, nil, -1
 
@@ -78,6 +91,38 @@ if id then
 else
   state = "Linux would not start: " .. tostring(why)
   print("linux: " .. tostring(why))
+end
+
+--------------------------------------------------------------------------
+-- Keys and the pointer, to Linux (`vmmscreen.h`'s input ring).
+--------------------------------------------------------------------------
+
+local INPUT_AT, KEYBOARD, TABLET = 1024, 0, 1
+local EV_SYN, EV_KEY, EV_REL, EV_ABS = 0, 1, 2, 3
+local BUTTON = { left = 0x110, right = 0x111, middle = 0x112 }
+
+local function push(device, type, code, value)
+  if region then
+    sys.ring_push(region.cap, INPUT_AT,
+                  string.pack("<I2I2I2I2I4I4", device, type, code, 0, value & 0xffffffff, 0))
+  end
+end
+
+local function key(code, down)
+  push(KEYBOARD, EV_KEY, code, down and 1 or 0)
+  push(KEYBOARD, EV_SYN, 0, 0)
+end
+
+-- Where the pointer is over the picture, as the tablet's 0 to 32767; false
+-- outside it.
+local function point(x, y)
+  local px, py = x, y - L.head
+
+  if px < 0 or py < 0 or px >= SW or py >= SH then return false end
+
+  push(TABLET, EV_ABS, 0, px * 32767 // (SW - 1))
+  push(TABLET, EV_ABS, 1, py * 32767 // (SH - 1))
+  return true
 end
 
 -- How many frames the monitor has laid in: four bytes of its header.
@@ -103,6 +148,12 @@ end
 
 if not draw_all() then return end
 
+-- Moves with no button held too: Linux draws its own pointer's hover.
+wmproto.track(win.handle, true)
+
+local hz = (sys.info() or {}).counter_hz or 62500000
+local looked, heard = sys.ticks(), 0
+
 while win.running do
   local now = frames()
 
@@ -118,6 +169,27 @@ while win.running do
     draw_all()
   end
 
+  -- Once a second: whether Linux is still running - and, told to, what
+  -- its serial line said.
+  if id and sys.ticks() - looked >= hz then
+    looked = sys.ticks()
+
+    local text, next_at, r = sandboxes.read(s.name, heard)
+
+    if text and TELL and #text > 0 then
+      for line in text:gmatch("[^\n]+") do print("linux: serial: " .. line) end
+    end
+
+    heard = next_at or heard
+
+    if not r or not r.running then
+      id = nil
+      state = "Linux has stopped"
+      if TELL then print("linux: stopped") end
+      draw_all()
+    end
+  end
+
   local reply = wmproto.poll(win.handle, 1)
 
   if not reply then break end
@@ -129,6 +201,17 @@ while win.running do
       win:close()
     elseif ev.type == "mouse" and not ev.menu and ev.action == "press" and ev.y < L.head then
       win:take_hold(ev.x, ev.y)
+    elseif ev.type == "mouse" and not ev.menu then
+      if point(ev.x or 0, ev.y or 0) and (ev.action == "press" or ev.action == "release") then
+        push(TABLET, EV_KEY, BUTTON[ev.button or "left"] or BUTTON.left,
+             ev.action == "press" and 1 or 0)
+      end
+      push(TABLET, EV_SYN, 0, 0)
+    elseif ev.type == "wheel" and point(ev.x or 0, ev.y or 0) then
+      push(TABLET, EV_REL, 8, ev.n or 0)
+      push(TABLET, EV_SYN, 0, 0)
+    elseif ev.type == "rawkey" and ev.code then
+      key(ev.code, ev.down)
     end
   end
 end

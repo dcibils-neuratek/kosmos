@@ -1,8 +1,8 @@
 # Linux on Kosmos
 
 Linux in a Kosmos window: Alpine, in a sandbox, with its screen, keyboard
-and pointer in a window of its own - **Chromium there for the web Kosmos's
-own browser does not try to host**, and any other Linux application beside
+and pointer in a window of its own - **a real browser there - Epiphany, WebKit -
+for the web Kosmos's own browser does not try to host**, and any other Linux application beside
 it. Diego, 14 October 2026: "the linux guest idea is great as well to run
 chromium in alpine linux and see it on the kosmos screen. that also serves
 as a way to run native linux apps on kosmos. Linux-on-Kosmos feature" - and
@@ -26,18 +26,18 @@ this adds.
 ## What it does
 
 - **Opens Linux in a window** - Linux in the Deskbar and the launcher pad,
-  as an application. The first time, it sets Linux up: Alpine and Chromium
+  as an application. The first time, it sets Linux up: Alpine and Epiphany
   installed onto Linux's disk, with progress said as it goes; after that,
   it starts in a few seconds where it was left.
-- **The browser**: Chromium, filling the window, as `cage` runs one
-  application - or a whole Linux desktop, Xfce, with Chromium in it and a
+- **The browser**: Epiphany, filling the window, as `cage` runs one
+  application - or a whole Linux desktop, Xfce, with Epiphany in it and a
   terminal beside (decided: `cage` first, the application a setting).
 - **Typed into and pointed at** like any window: the keyboard, the pointer,
   the wheel, a click; Super keys and Kosmos's own shortcuts stay Kosmos's.
 - **Resized**, and Linux's screen follows the window's size; Full screen
   from the View menu.
 - **Files both ways**: `/Home/Downloads` shared into Linux, read and write,
-  so what Chromium downloads is in Kosmos's Downloads; more folders from
+  so what Epiphany downloads is in Kosmos's Downloads; more folders from
   its settings, each read only or read and write, as a sandbox's are.
 - **Copy and paste text** between Linux and Kosmos.
 - **On the network as Kosmos is**: outgoing through Kosmos's stack, with
@@ -48,7 +48,7 @@ this adds.
   card like any sandbox; its disk keeps everything between starts.
 
 Not in the first version: **sound**; **3D** in the guest (the screen is a
-2D framebuffer, so Chromium draws in software - fine for the web, not for
+2D framebuffer, so Epiphany draws in software - fine for the web, not for
 games); **more than one processor** for Linux (one core first - step L6);
 USB devices; pictures on the clipboard.
 
@@ -72,7 +72,7 @@ paints and hands it the window's keys and pointer.
 | Folders of `/Home` | virtio-fs (`vmmfs.c`, S3) - its 16 MB write cap lifted with `WRITE_AT` | grows |
 | Starting, stopping, a definition | the Sandboxes kit and `sandbox`, `vmmproto.h` | grows: a screen's region and an input ring |
 | The window: the screen blitted, keys and pointer sent, menus | **the Linux application** (Lua, a direct window), blits in C (`gfx`) | **new app** |
-| First-run setup | a script Linux runs from its initramfs: the disk formatted, Alpine and Chromium installed with `apk` through the gateway | **new** |
+| First-run setup | a script Linux runs from its initramfs: the disk formatted, Alpine and Epiphany installed with `apk` through the gateway | **new** |
 | Linux's kernel and its drivers | Alpine's `linux-virt`: `virtio_gpu`, `virtio_input`, `virtio_blk` are in it | no |
 
 **What is C and what is Lua.** C: every device (the monitor is a server),
@@ -93,7 +93,7 @@ window, its menus, its settings, the first-run's progress.
 
 ## Its busiest path, and where the time goes
 
-**A frame of Chromium.** Chromium draws into its buffer in the guest; the
+**A frame of Epiphany.** Epiphany draws into its buffer in the guest; the
 guest's virtio-gpu driver asks for the changed rectangle to be transferred
 and flushed. The monitor copies that rectangle from the guest's RAM into
 the screen region (C, a memcpy a row), and pulses the window; the window
@@ -102,7 +102,7 @@ manager composes. A full 1280x800 frame is 4 MB copied twice - well inside
 what the M700's memory moves sixty times a second. Scrolling a page is a
 few hundred kilobytes.
 
-**Where the time is expected to go**: Chromium's own drawing, in software,
+**Where the time is expected to go**: Epiphany's own drawing, in software,
 on one core - which is why more cores (L6) comes before anything else once
 it works. Measured on the M700, as everything here is.
 
@@ -149,17 +149,41 @@ ring. Then each step is tried on the M700 before the next, as X1-X3 were.
    L4 makes Linux a sandbox of its own that keeps running.
 3. **L3 - keyboard and pointer**: virtio-input from the window - typed into
    the guest's console, a click where it was pointed.
-4. **L4 - Chromium**: the first-run setup, `cage` (or Xfce) and Chromium,
+   **Built** (`testing.md` 18.639): `vmminput.c`, a keyboard and a tablet,
+   fed from a ring in the screen region's first page that the window writes
+   through `sys.ring_push`.
+4. **L4 - the browser**: the first-run setup, `cage` and Epiphany (decision 4),
    Downloads shared; Linux in the Deskbar.
+   **How, worked out after L3** (14 October 2026):
+   - **Its kernel's modules from its own release.** The sandbox boots
+     Alpine's netboot kernel (6.18.52); the repository's `linux-virt` is
+     already 6.18.56, whose modules will not load into it. The netboot
+     release carries `modloop-virt`, every module for its own kernel, as
+     squashfs - so the image gains it, the guest mounts it through a
+     read-only share of the image's folder (`squashfs` and `loop` are in
+     the initramfs), and `ext4`, `evdev` and the rest come from there.
+   - **The first run** (a blank disk): `e2fsprogs` added to the initramfs's
+     own userland, the disk made ext4, and Alpine - `alpine-base`, `cage`,
+     `seatd`, `epiphany`, `mesa-dri-gallium`, `font-dejavu` - installed onto
+     it with `apk --root`, through the sandbox's network; said line by line
+     to the window, which shows it as the mockup's setup page.
+   - **Every run after**: the disk mounted, the modules bound in, and
+     `switch_root` into it - `seatd`, then `cage -- epiphany`, wlroots drawing with pixman on the
+     virtio-gpu screen, Epiphany drawing in software (no 3D, as decided).
+   - **Tested without the internet**: the packages fetched once on the Mac,
+     held to Alpine's index, and served to the guest from the Mac - as the
+     network checks already serve a page. The gate proves the path with a
+     small Wayland client in `cage`; Epiphany itself, too heavy under TCG,
+     has a longer suite of its own outside the gate, and the M700.
 5. **L5 - the window's size followed, and copy and paste.**
 6. **L6 - more processors**: the guest given several cores (an APIC and
    IOAPIC in the monitor, a vCPU a thread).
 
 ## Decided by Diego, 14 October 2026
 
-1. **Chromium alone, in `cage`, for now** - "cage for now but i might want
-   other apps as well". So `cage` runs one application and Chromium is the
-   first; what it runs is a setting rather than a constant, so another Linux
+1. **One browser alone, in `cage`, for now** - "cage for now but i might want
+   other apps as well". So `cage` runs one application and the browser is
+   the first - Epiphany since decision 4, Chromium before it; what it runs is a setting rather than a constant, so another Linux
    application - or, later, a desktop such as Xfce - is a choice in Linux's
    settings and not a redesign. Nothing in the devices or the window
    depends on which.
@@ -173,3 +197,16 @@ ring. Then each step is tried on the M700 before the next, as X1-X3 were.
    guest; the drive shows in Tracker as one of its own, and could move to
    the M700's internal drive later with nothing above it changing. 32 GB.
 3. **2 GB of memory**, of the M700's 8; one core until L6.
+4. **Epiphany, not Chromium** - Diego, after L3: "Perhaps chrome is too big
+   for this and we can try other lighter Linux browsers", then "Your call".
+   Measured from Alpine 3.24's index, installed beyond the session's 256 MB
+   (aarch64): Chromium 463 MB, Firefox 336, **Epiphany 322** (WebKitGTK),
+   the bare WebKit shells vimb and badwolf 271; NetSurf 50, Dillo 9 and
+   Links 2 run no JavaScript, which is what Kosmos's own browser already
+   lacks and the reason this exists. The cost that matters is memory and
+   processor - the screen has no 3D, so the engine draws in software - and
+   that is where WebKit is lightest; Epiphany is it with a browser a person
+   expects (tabs, an address bar, bookmarks, downloads) for 50 MB over the
+   shells. It is Safari's engine, which runs Gmail-sized sites. What `cage`
+   runs stays a setting, so Firefox or Chromium can be added for a site that
+   wants one.

@@ -127,6 +127,8 @@ struct vmm_setup {
 #define VMM_BLK_IRQ         (VMM_NET_IRQ + 1u)
 #define VMM_GPU_BASE        (VMM_BLK_BASE + 0x200ul)
 #define VMM_GPU_IRQ         (VMM_BLK_IRQ + 1u)
+#define VMM_INPUT_BASE      (VMM_GPU_BASE + 0x200ul)    /* two, 0x200 apart */
+#define VMM_INPUT_IRQ       (VMM_GPU_IRQ + 1u)          /* and two lines */
 
 _Static_assert(sizeof(struct vmm_setup) == 600 + VMM_SHARES * 264 + 8 + VMM_PORTS * 4 + 8 + 264 + 8,
                "six words, a magic, a version, a line, a name, a token, its folders, its network, its ports, the time, its disk, its screen");
