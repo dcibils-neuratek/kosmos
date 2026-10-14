@@ -682,9 +682,12 @@ an endpoint without the sender waiting, received by the same receive as a
 request. It is what a real publish and subscribe needs - `maild` telling
 `autod`, `autod` told of a folder's change instead of looking, the Deskbar
 and Monitor told instead of asking on a clock - and it is a kernel
-addition: a bounded queue an endpoint, a syscall, no heap. **A design note
-first, `docs/pulses.md`, agreed before any code**; then `mailarrived.lua`
-is the one file the mail trigger changes.
+addition: a bounded queue an endpoint, a syscall, no heap. **Designed in
+`docs/pulses.md`; QNX's shape chosen** (Diego: "Qnx sounds better"); then
+`mailarrived.lua` is the one file the mail trigger changes. **And Tracker
+live** - Diego: "Will this allow then tracker so see filesystem changes in
+real time?" - yes, P4: a folder's server pulses through the window
+manager, and Tracker, Open/Save and the desktop show a new file at once.
 
 **Network Monitor, an app** - Diego, 12 October 2026: "i realizsed we need
 network monitor app as well to see network input and output". What goes in

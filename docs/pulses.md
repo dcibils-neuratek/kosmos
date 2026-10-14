@@ -1,6 +1,7 @@
 # Pulses: one-way messages in Nebula
 
-*For Diego to decide, 14 October 2026. Nothing here is built.*
+*Designed 14 October 2026. Nothing here is built. **QNX's shape chosen** -
+Diego: "Qnx sounds better".*
 
 Diego, 14 October 2026, asked why `maild` tells `autod` about new mail
 through a file rather than by publish and subscribe: "Go ahead with files
@@ -90,6 +91,35 @@ lends nothing, since nobody waits on it.
 | `autod` lists watched folders every 5 s | the filesystem server pulses a watcher when a folder changes - a step of its own after this |
 | the Deskbar asks the network, battery and sound on its clock | each server pulses what changed |
 | the window manager's `post` to a window, held until its next poll | unchanged: a window already has nothing else to answer |
+| **Tracker relists on a clock, or on Refresh** - a folder changed by something else is not seen until then | the folder's server pulses, and Tracker shows the new file at once |
+
+## Tracker, live
+
+Diego, 14 October 2026: "Will this allow then tracker so see filesystem
+changes in real time? Right now you need to refresh the app to see new
+files for example being added". **Yes - it is P4's reason.**
+
+The namespace already has the waiting half: `fs.watch` blocks until a
+folder's answer changes (`ramstore.c` answers it). Tracker cannot use it,
+and says why in its own comments: a window waits in the window manager's
+`poll`, and a Lua process cannot wait on two things at once.
+
+**So a window's pulse goes through the window manager**, which already is
+every window's mailbox:
+
+1. Tracker asks the window manager for a subscription code for the folder
+   it shows, and hands the folder's server a capability to the manager's
+   pulse endpoint with that code.
+2. The server, when a name is added, removed or renamed in the folder,
+   pulses with the code - and never waits on anybody.
+3. The manager turns the pulse into a `changed` event in that window's
+   next `poll` answer, as a key or a click is, and Tracker lists the
+   folder again.
+
+**A window is told only about what it asked for**: the manager hands out
+each code and refuses a pulse with a code it did not, so a capability to
+its pulse endpoint cannot be used to send another window events. The same
+path serves the Open/Save window and the desktop's icons.
 
 ## Steps
 
@@ -103,15 +133,13 @@ lends nothing, since nobody waits on it.
 - **P3 - the first user**: `maild` and `autod`; `mailarrived.lua` asks
   instead of reading a file, and the file goes.
 - **P4 - folders**: a change pulse from `diskfs` and `ramfs` to whoever
-  watches a folder, and `autod` stops listing.
+  watches a folder - `autod` stops listing, and **Tracker, the Open/Save
+  window and the desktop show a change at once**, through the window
+  manager (*Tracker, live*, above).
 
 ## For Diego to decide
 
-1. **Pulses as above** - QNX's shape, a code and a value, coalescing when
-   full - or **seL4's notification**: one word of bits per endpoint that
-   senders OR into, no queue at all. seL4's is smaller and can never be
-   full, but says only *which* things happened, not how many or in what
-   order. I recommend QNX's.
+1. ~~QNX's shape or seL4's~~ - **QNX's**, Diego, 14 October.
 2. **The ring's size** - 32 a endpoint, or grown as the pools grow.
 3. **P4 in this piece or later** - folders telling is the larger change,
    two filesystem servers in C; I recommend after P3 has been lived with.
