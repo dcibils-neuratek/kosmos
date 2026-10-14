@@ -82,12 +82,13 @@ local GRAPH_H  = (CORES <= 8) and 84 or 60
 local GRAPH_TOP = 22                  -- a graph's line of words above it
 local GAP_X, GAP_Y = 12, 12
 local COLUMNS  = 60                   -- a column a sample
-local DIE      = 42                   -- condensed (13 October): from 58
+local DIE      = 64                   -- the chip with its maker's mark (13 October, "B for the chip")
 local CHIP_FACE = ui.sized("title", 21)   -- the drawing's 18 against its 12, at Kosmos's larger "ui"
 -- Its model, its facts and its features' line, and 13 above and below: 83
 -- on the M700, from the 116 the drawing had before it was condensed.
-local CHIP_H   = 26 + gfx.height(CHIP_FACE) + gfx.height("ui")
-                 * (#pulse.processor_features() > 0 and 2 or 1)
+-- And at least the chip and 13 above and below it, which B's chip makes 91.
+local CHIP_H   = math.max(26 + gfx.height(CHIP_FACE) + gfx.height("ui")
+                 * (#pulse.processor_features() > 0 and 2 or 1), DIE + 27)
 local BAR_ROW  = 40                   -- a row of the bars, when they are shown
 local BAR_SPLIT = CORES > 8           -- the bars in two columns
 
@@ -262,22 +263,18 @@ do
   print("sysmon: features " .. table.concat(words, " \u{b7} "))
 end
 
--- A die on its pins, drawn: the processor's icon, the same in every look.
+-- The chip, with its maker's mark and its part on the lid (`ui.processor_chip`):
+-- "Core i7-6700" is "i7-6700" there, "Cortex-A76" is "A76".
+-- A maker with no name here - QEMU's processor says only its model - is
+-- the model's first word on the lid, and nothing under it.
+local ON_LID = (MAKER or "") ~= "" and MAKER or ((MODEL or ""):match("^(%S+)") or "")
+local PART = (MAKER or "") ~= "" and ((MODEL or ""):match("(%S+)$") or ""):gsub("^Cortex%-", "") or ""
+
 local function die(g, x, y)
-  local pin = 0xff6b768a
-
-  for i = 0, 4 do
-    local at = 7 + i * 7
-    g:fill(x + at, y - 3, 2, 3, pin)
-    g:fill(x + at, y + DIE, 2, 3, pin)
-    g:fill(x - 3, y + at, 3, 2, pin)
-    g:fill(x + DIE, y + at, 3, 2, pin)
-  end
-
-  g:fill_round(x, y, DIE, DIE, 0xff323a4a, 6)
-  g:frame_round(x, y, DIE, DIE, 0xff4a5468, 6)
-  g:fill_round(x + 9, y + 9, DIE - 18, DIE - 18, 0xff4b5873, 3)
+  ui.processor_chip(g, x, y, DIE, ON_LID, PART)
 end
+
+print(("sysmon: chip %s | %s, %d square"):format(ON_LID, PART, DIE))
 
 -- How fast the machine runs now: the mean of the cores that said, in GHz.
 local function machine_speed()
@@ -315,7 +312,8 @@ local function draw_chip(g, x, y, w)
   -- The kit's card (`ui.meter_card`), with the die as its picture.
   ui.meter_card(g, x, y, w, CHIP_H, {
     picture = die, size = DIE, model_face = BIG, inline = true, line = FEATURES,
-    maker = MAKER, model = MODEL, facts = FACTS,
+    -- The maker is on the chip now, so not beside the model as well.
+    maker = nil, model = MODEL, facts = FACTS,
     now = big ~= "" and { { big, theme.text, BIG }, { note, theme.text_dim, "ui" } } or nil,
   })
 end

@@ -9556,11 +9556,15 @@ a roadmap question; nothing decided. What it would take, honestly:
   as a stack of squares the column's width, a pixel apart, each the colour
   of the series it falls in. Not kept.
 
-- **AGREED on 13 October - the processor maker's logo in Monitor's chip.**
+- **BUILT on 13 October (0.11.213) - the processor maker's logo in Monitor's chip.**
   Diego, with a picture of BeOS's CPU Monitor, a PowerPC chip with its
   logo and speed on it: "can we try adding the processor brand logo inside
   the chip of our cpu monitor?", "in this case the Intel logo", "can we
-  mock it up first?". Drawn in `docs/monitor.html` first.
+  mock it up first?". Drawn in `docs/monitor.html` three ways; Diego: "B
+  for the chip" - a chip half as large again with the maker's mark and the
+  model on it, and the maker's word beside the model gone. **Built** as
+  `ui.processor_chip` in the kit, so About and neofetch can draw the same
+  chip (`testing.md` 18.608).
 
 - **DONE on 13 October (0.11.212) - a person's looks, editable, under
   Preferences.** Diego: "all settings and preferences files should be

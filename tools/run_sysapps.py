@@ -409,6 +409,18 @@ def main():
 
             # **Its features, in one line under the facts** (13 October):
             # said, and with no VT-x under QEMU, whose processor has none.
+            # **Its chip, its maker's mark on the lid** (13 October, "B for
+            # the chip"): 64 square, and the maker's word on it - or, for a
+            # processor that names no maker, the model's first word.
+            chip = said("sysmon: chip ", start, 5)
+            parts = [p.strip() for p in named.split("|")] if named else []
+            maker = parts[0] if parts else ""
+            model = parts[1] if len(parts) > 1 else ""
+            want_word = (maker.split() or model.split() or [""])[0]
+            check(chip is not None and chip.startswith("%s |" % want_word)
+                  and chip.endswith(", 64 square"),
+                  "Monitor's chip is not 64 square with %r on its lid: %r" % (want_word, chip))
+
             feats = said("sysmon: features", start, 5)
             check(feats is not None and "VT-x on" not in feats,
                   "Monitor did not say its processor's features, or claimed what QEMU has not: %r" % feats)

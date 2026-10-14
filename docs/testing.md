@@ -25280,3 +25280,24 @@ header, then the first console line shown, past the old monitor's "vmm:
 stopped, as asked", is the first line the first boot showed; and shell1
 running again. **Control**: without the new-console check it showed
 nothing within two minutes and failed.
+
+## 18.608 Monitor's chip, its maker's mark on the lid
+
+`docs/monitor.html`'s option B, Diego's choice on 13 October ("B for the
+chip"), after BeOS's CPU Monitor and its PowerPC chip. `ui.processor_chip`
+in the kit draws a processor's chip at any size: the die on its pins, a lid
+with light on its upper half, the maker's mark across it in the look's bold
+face at the largest size the lid holds, and the part small under it. The
+marks are drawn rather than pictures - Intel's word set with a dotless i and
+its square above, AMD's capitals, Arm's lower case - and a maker with none
+here is its name set plainly: under QEMU's own processor, "QEMU".
+
+Monitor draws it at 64 where the die was 42, takes the maker's word away
+from beside the model since the chip says it, and the card is 91 tall
+rather than 83 (`DIE + 27`). The part is the model's last word, "i7-6700",
+without "Cortex-" on an ARM board.
+
+**Tests.** `x86-sysapps` 38 -> 39: Monitor says its chip, 64 square, with
+the maker's first word on its lid, or the model's for a processor that names
+no maker, held to the processor it names. Seen under QEMU as its own
+processor and as `-cpu Skylake-Client`, which names Intel.

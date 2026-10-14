@@ -4052,6 +4052,84 @@ function ui.history.draw(g, x, y, w, h, list, spec)
 end
 
 --
+-- **A processor's chip, its maker's mark on its lid** (Diego, 13 October
+-- 2026, with BeOS's CPU Monitor beside it - a PowerPC chip with its logo
+-- on it: "can we try adding the processor brand logo inside the chip of
+-- our cpu monitor?", and of `docs/monitor.html`'s three drawings, "B for
+-- the chip"). A `size` square at `x`, `y`: the die on its pins, a lid, the
+-- maker's mark across it in the look's bold face as large as the lid
+-- holds, and `part` small under it - "i7-6700".
+--
+-- **The marks are drawn, not pictures**, so they are sharp at every scale
+-- and in every look: Intel's word with its square over the i, AMD's
+-- capitals, Arm's lower case. A maker with no mark here - QEMU's, one not
+-- known - has its name set plainly, so a chip is never blank. Monitor's is
+-- the first; About and neofetch can draw the same chip.
+--
+local CHIP_MARKS = {
+  intel = { word = "\u{131}ntel", dot = 0xff9fd4ff },    -- a dotless i, and Intel's square above it
+  amd   = { word = "AMD" },
+  arm   = { word = "arm" },
+}
+
+function ui.processor_chip(g, x, y, size, maker, part)
+  local pin = 0xff6b768a
+  local pins = math.max(3, size // 9)
+  local span = size - 14
+
+  for i = 0, pins - 1 do
+    local at = 7 + (span * i) // (pins - 1) - 1
+    g:fill(x + at, y - 3, 2, 3, pin)
+    g:fill(x + at, y + size, 2, 3, pin)
+    g:fill(x - 3, y + at, 3, 2, pin)
+    g:fill(x + size, y + at, 3, 2, pin)
+  end
+
+  g:fill_round(x, y, size, size, 0xff323a4a, 6)
+  g:frame_round(x, y, size, size, 0xff4a5468, 6)
+
+  local inset = size // 9
+  local lid = size - 2 * inset
+
+  g:fill_round(x + inset, y + inset, lid, lid, 0xff6f7a8e, 4)
+  g:fill_round(x + inset, y + inset, lid, lid // 2, 0xff7d889c, 4)    -- the light on its upper half
+  g:frame_round(x + inset, y + inset, lid, lid, 0xff8e98aa, 4)
+
+  local key = tostring(maker or ""):match("^(%S+)")
+  local mark = CHIP_MARKS[(key or ""):lower()]
+  local word = mark and mark.word or (key or "")
+  local small = part and part ~= "" and ui.sized("label", math.max(8, size // 7), "semibold") or nil
+  local below = small and gfx.height(small) or 0
+
+  -- The largest bold face the lid holds the word in, with room for the part.
+  local face, px = nil, math.max(10, size // 3)
+
+  while px >= 8 do
+    face = ui.sized("ui", px, "bold")
+    if gfx.measure(word, face) <= lid - 8 and gfx.height(face) + below <= lid - 6 then break end
+    px = px - 1
+  end
+
+  local wh = gfx.height(face)
+  local top = y + inset + (lid - wh - below) // 2
+  local wx = x + inset + (lid - gfx.measure(word, face)) // 2
+
+  g:text(wx, top, word, 0xffffffff, nil, face)
+
+  -- Intel's square, over the dotless i, the width of its stem.
+  if mark and mark.dot then
+    local iw = gfx.measure("\u{131}", face)
+    local side = math.max(2, px // 5)
+
+    g:fill(wx + (iw - side) // 2, top + wh // 5 - side // 2, side, side, mark.dot)
+  end
+
+  if small then
+    g:text(x + inset + (lid - gfx.measure(part, small)) // 2, top + wh, part, 0xffe6eaf2, nil, small)
+  end
+end
+
+--
 -- **A device's card**: its picture at the left, its maker small above its
 -- model large and a line of facts under them, and at the right what it is
 -- doing now - a list of lines, each `{ text, colour, face }`, the first the
