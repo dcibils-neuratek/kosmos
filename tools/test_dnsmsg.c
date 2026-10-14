@@ -199,6 +199,29 @@ int main(void)
         check(!dns_read_record(shortm, len, &a2, &rec), "a record longer than the message refused");
     }
 
+    /* A record written (N13) is a record read back the same: its owner, type,
+     * class with the flush bit, time to live and data. */
+    {
+        uint8_t w[128], srv[64];
+        unsigned at = 0, sl, wl;
+        struct dns_record rec;
+
+        srv[0] = 0; srv[1] = 0; srv[2] = 0; srv[3] = 0;        /* priority, weight */
+        srv[4] = 0x01; srv[5] = 0xbd;                           /* port 445 */
+        sl = 6 + dns_put_name(srv + 6, sizeof(srv) - 6, "kosmos.local", 12);
+        wl = dns_put_record(w, sizeof(w), "KOSMOS._smb._tcp.local", DNS_TYPE_SRV,
+                            0x8001u, 120, srv, sl);
+        check(wl > 0 && dns_read_record(w, wl, &at, &rec) && at == wl
+              && strcmp(rec.name, "KOSMOS._smb._tcp.local") == 0 && rec.type == DNS_TYPE_SRV
+              && rec.class == 0x8001u && rec.ttl == 120 && rec.length == sl
+              && memcmp(w + rec.data, srv, sl) == 0,
+              "a record written reads back the same");
+        check(dns_put_record(w, 20, "KOSMOS._smb._tcp.local", DNS_TYPE_SRV, 1, 120, srv, sl) == 0,
+              "a record that does not fit is refused");
+        check(dns_put_record(w, sizeof(w), "a..b", DNS_TYPE_A, 1, 120, srv, 4) == 0,
+              "a record whose name is not one is refused");
+    }
+
     if (failed) {
         printf("FAIL: %d of %d checks on DNS messages\n", failed, failed + passed);
         return 1;
@@ -207,6 +230,6 @@ int main(void)
     printf("PASS: %d checks on DNS messages (a name written and read; a multicast DNS answer - "
            "PTR, SRV, TXT and A, compressed - read to its end; a pointer onto itself, forward "
            "and in a loop, a label past the end, a reserved label, a name over 255 and a "
-           "record past the message, refused)\n", passed);
+           "record past the message, refused; a record written read back the same)\n", passed);
     return 0;
 }

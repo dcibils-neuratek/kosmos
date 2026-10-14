@@ -26059,3 +26059,29 @@ and closed, the textless document opened in a new window, and doc.pdf
 opened from that window's recent documents - a process that never saw it -
 at page 4, at 100%. `x86-editor` and `x86-controls` pass on the Text
 Editor's move.
+
+## 18.631 Kosmos announced on the network (N13)
+
+`docs/sharing.md` N13, moved up on 14 October (Diego: "i dont see kosmos on
+the mac network", "do N13 and N14 next"). `mdnsd`, which only listened,
+answers for this machine: what a server here publishes through the new
+`MDNS_OP_PUBLISH` (`mdnsproto.h`; the request gains the instance's name)
+is answered when the network asks - `_services._dns-sd._udp`, the type's
+PTR, the instance's SRV and TXT, `_device-info._tcp` (`model=Kosmos`) and
+the host's own A, `kosmos.local` from the name on the network - announced
+twice a second apart on publishing and when the address changes, and said
+gone with a time to live of 0 on `MDNS_OP_UNPUBLISH`. `smbd` publishes
+`_smb._tcp` while it serves, under the name on the network, and takes it
+back when it stops - the server that offers a thing says so, with the
+declared shape both compile, rather than a second packing in Lua. A record
+of this machine's heard back is never listed as seen. `dnsmsg.c` gains
+`dns_put_record`. Not done: probing for a name another machine holds (RFC
+6762 8.1).
+
+**Tests**: `tools/test_dnsmsg.c`, 22 - a record written reads back the same,
+one that does not fit and one whose name is not one refused. `x86-mdns`, 14
+- a fifth boot, on a disk, sharing started at the prompt as Studio2:
+announced unasked; asked for `_smb._tcp.local` as Finder asks, answered with
+an SRV on 445 at `studio2.local` and its A, 10.9.0.2; asked what it is,
+`model=Kosmos`; `sharing stop`, a goodbye at 0. **Controls**: asked before
+sharing started, silent; asked about a name it does not hold, silent.

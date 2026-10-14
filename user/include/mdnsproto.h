@@ -25,6 +25,11 @@
                                    host, port and address */
 #define MDNS_OP_RESOLVE   3u    /* `name` a `.local` name: -> its address, the caller
                                    parked up to `wait_ticks` for it */
+#define MDNS_OP_PUBLISH   4u    /* `name` a service type, `instance` what this machine
+                                   calls itself, `index` the port: answered for
+                                   and announced, as this machine's (N13) */
+#define MDNS_OP_UNPUBLISH 5u    /* the same `name` and `instance`: said gone
+                                   (a time to live of 0) and no longer answered */
 
 #define MDNS_OK           0u
 #define MDNS_ERR_BAD_OP   1u
@@ -39,10 +44,11 @@
 
 struct mdns_request {
     uint32_t op;
-    uint32_t index;
+    uint32_t index;                 /* instance: which; publish: the port */
     uint32_t wait_ticks;            /* scheduler ticks, as every wait */
     uint32_t reserved;
     char     name[MDNS_NAME_MAX + 1];
+    char     instance[MDNS_INSTANCE_MAX + 1];   /* publish and unpublish */
 };
 
 struct mdns_reply {
@@ -55,8 +61,8 @@ struct mdns_reply {
     char     host[MDNS_NAME_MAX + 1];
 };
 
-_Static_assert(sizeof(struct mdns_request) == 272,
-               "mdns.lua packs \"<I4I4I4I4c256\"");
+_Static_assert(sizeof(struct mdns_request) == 336,
+               "mdns.lua packs \"<I4I4I4I4c256c64\"");
 _Static_assert(sizeof(struct mdns_reply) == 336,
                "mdns.lua reads \"<I4I4I2I2c4c64c256\"");
 

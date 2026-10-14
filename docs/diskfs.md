@@ -313,3 +313,34 @@ before (`doom.elf` and the rest) reads it as the zero it always was.
 can ask for it as for `modified`. A version 3 disk is refused, as an unknown
 one always was.
 
+
+
+## Writing at an offset (N14, decided 14 October 2026)
+
+**Why**: `DISK_OP_WRITE` replaces a file whole, from a region, and that was
+enough while every writer was a program holding the whole file. A copy
+from another computer over SMB (`docs/sharing.md` N14) arrives a megabyte
+at a time, at offsets, and a file can be larger than the memory there is.
+Two ways were put to Diego: `smbd` collecting the pieces in memory and
+writing once at close, which caps a copy at the memory to spare; or the
+filesystem writing a range. Diego: "go with B" - the filesystem.
+
+**What**: `DISK_OP_WRITE_AT` - `path`, `offset`, the bytes in the region (or
+`u.data`), and whether to create the file when it is not there. The file
+grows when the range ends past it; a gap between its end and `offset` reads
+as zeroes.
+
+**How it stays safe**: as a whole file is written today, **the new bytes go
+to blocks nothing points at yet**, never through the journal. Every block
+the range touches is written anew - its old bytes read, the new laid over -
+and then **one journalled transaction** swaps those blocks into the file's
+extents, grows its size and frees the old ones. A power cut before the
+commit leaves the file exactly as it was; after it, the piece is there.
+Nothing is ever half one and half the other, and no block a reader holds is
+written over in place.
+
+**What it costs**: a piece rewrites the blocks at its two ends (a block is
+4 KB) and the file's extent list; a sequential copy writes each block once
+and appends to the list, and coalescing keeps it short. Held on the Mac by
+`tools/test_kfs.lua` - pieces in order and out of order, a gap, a power
+cut between data and commit - against the same bytes written whole.

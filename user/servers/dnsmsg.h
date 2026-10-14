@@ -54,6 +54,13 @@ struct dns_record {
  * 0 when it does not fit or a label is empty or too long. */
 unsigned dns_put_name(uint8_t *out, unsigned room, const char *name, unsigned len);
 
+/* A record into `out` - its owner `name` (dots between labels), type,
+ * class, time to live and `len` bytes of data, as RFC 1035 4.1.3 lays
+ * one out - for `mdnsd`'s answers (N13): the bytes written, or 0 when it
+ * does not fit or the name is not one. */
+unsigned dns_put_record(uint8_t *out, unsigned room, const char *name, uint16_t type,
+                        uint16_t class, uint32_t ttl, const uint8_t *data, unsigned len);
+
 /* The header from `msg`; false when the message is shorter than one. */
 bool dns_read_header(const uint8_t *msg, unsigned len, struct dns_header *out);
 

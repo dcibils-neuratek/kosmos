@@ -49,6 +49,7 @@
 #include "diskproto.h"
 #include "keyproto.h"
 #include "smbdproto.h"
+#include "mdnsproto.h"
 #include "init/say.h"
 #include "smbpath.h"
 #include "smbrpc.h"
@@ -2236,8 +2237,38 @@ static void arrived(struct smb2_context *smb2, void *data)
  * at a port that would not open. */
 #define A_SECOND  250u
 
+/*
+ * **This machine's sharing, said on the network** (N13): `mdnsd` is asked
+ * to answer for `_smb._tcp` under the name on the network while this
+ * serves, and to say it gone when it stops - so the Mac's Finder lists the
+ * machine in its Locations without an address typed. Told, never waited
+ * on: `mdnsd` answers at once.
+ */
+static long mdns = -1;
+
+static void discovery(uint32_t op)
+{
+    struct mdns_request req;
+    struct message out, back;
+
+    if (mdns < 0) {
+        return;
+    }
+
+    memset(&req, 0, sizeof(req));
+    req.op = op;
+    req.index = server.port;
+    memcpy(req.name, "_smb._tcp", 10);
+    snprintf(req.instance, sizeof req.instance, "%s", server.hostname);
+
+    memset(&out, 0, sizeof(out));
+    out.length = sizeof(req);
+    memcpy(out.data, &req, sizeof(req));
+    (void)kosmos_call(mdns, &out, &back);
+}
+
 void smbd_server(long net_cap, long console_cap, long disk_cap, long door_cap,
-                 long keyring_cap)
+                 long keyring_cap, long mdns_cap)
 {
     static struct message msg;
     uint64_t sender;
@@ -2246,6 +2277,7 @@ void smbd_server(long net_cap, long console_cap, long disk_cap, long door_cap,
     disk = disk_cap;
     door = door_cap;
     keyring = keyring_cap;
+    mdns = mdns_cap;
     smb_kit_start(net_cap);
 
     memset(&server, 0, sizeof(server));
@@ -2293,7 +2325,9 @@ void smbd_server(long net_cap, long console_cap, long disk_cap, long door_cap,
         snprintf(port, sizeof port, "%u", (unsigned)server.port);
         said("sharing on port ", port, ", SMB 2 and 3");
 
+        discovery(MDNS_OP_PUBLISH);
         listen_error = smb2_serve_port(&server, 16, arrived, NULL);
+        discovery(MDNS_OP_UNPUBLISH);
         forget_everything();
         connections = 0;
         visitors_gone();

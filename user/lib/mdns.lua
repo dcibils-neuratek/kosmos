@@ -6,6 +6,7 @@
 --   mdns.browse("_smb._tcp")            -> how many are known; asks again
 --   mdns.instances("_smb._tcp")         -> { { name, host, port, address }, ... }
 --   mdns.resolve("studio.local", ticks) -> four bytes, or nil and why
+--   mdns.publish("_smb._tcp", "KOSMOS", 445) -> this machine's, announced
 --
 -- `browse` is asked and answered at once from what `mdnsd` keeps, and sets
 -- it asking the network for the next ten seconds; a window that lists
@@ -15,9 +16,9 @@
 
 local M = {}
 
-local REQUEST = "<I4I4I4I4c256"
+local REQUEST = "<I4I4I4I4c256c64"
 local REPLY = "<I4I4I2I2c4c64c256"
-local OP = { browse = 1, instance = 2, resolve = 3 }
+local OP = { browse = 1, instance = 2, resolve = 3, publish = 4, unpublish = 5 }
 local ERRORS = {
   [1] = "the discovery server did not understand that",
   [2] = "that is not a service type or a .local name",
@@ -30,9 +31,11 @@ local ERRORS = {
 -- A string up to its first zero byte.
 local function cut(s) return (s:gsub("%z.*$", "")) end
 
-local function ask(op, name, index, ticks)
+local function ask(op, name, index, ticks, instance)
+  instance = instance or ""
   local bytes = string.pack(REQUEST, op, index or 0, ticks or 0, 0,
-                            name .. string.rep("\0", 256 - #name))
+                            name .. string.rep("\0", 256 - #name),
+                            instance .. string.rep("\0", 64 - #instance))
   local ok, reply, why = pcall(fs.raw, "/Discovery", bytes, nil, "mdns")
 
   if not ok then return nil, tostring(reply) end
@@ -69,6 +72,25 @@ function M.instances(type_)
   end
 
   return list
+end
+
+-- **This machine's, published** (N13): `type_` offered as `instance` on
+-- `port`, answered for and announced by `mdnsd` until `unpublish` - as
+-- `smbd` does for file sharing.
+function M.publish(type_, instance, port)
+  if #type_ > 255 or #instance > 63 then return nil, ERRORS[2] end
+
+  local r, why = ask(OP.publish, type_, port, 0, instance)
+
+  return r ~= nil, why
+end
+
+function M.unpublish(type_, instance)
+  if #type_ > 255 or #instance > 63 then return nil, ERRORS[2] end
+
+  local r, why = ask(OP.unpublish, type_, 0, 0, instance)
+
+  return r ~= nil, why
 end
 
 function M.resolve(name, ticks)

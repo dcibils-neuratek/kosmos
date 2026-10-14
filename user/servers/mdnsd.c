@@ -20,6 +20,17 @@
  * `INSTANCE` answer at once from what is kept; `RESOLVE` parks its caller
  * and answers when the address comes or its wait ends, while this goes on
  * answering everybody else.
+ *
+ * **And it answers for this machine** (N13): what a server here publishes
+ * (`PUBLISH` - `smbd`'s file sharing) is answered for when the network asks
+ * - the service list, the type, the instance's SRV and TXT, what kind of
+ * machine it is (`_device-info._tcp`), and the host's own address - and
+ * announced twice, a second apart, when it is published or the address
+ * changes (RFC 6762 8.3), and said gone with a time to live of 0 when it
+ * is taken back (10.1). This machine's own are never listed among what was
+ * seen, so a window browsing here does not find the machine it is on.
+ * Not done: probing for a name another machine has (8.1); two machines
+ * named alike answer alike.
  */
 
 #include <stdbool.h>
@@ -100,6 +111,27 @@ TABLE(struct instance, instances);
 TABLE(struct hostaddr, hosts);
 TABLE(struct browse, browses);
 TABLE(struct resolving, resolvings);
+
+/* What this machine offers (N13). */
+struct published {
+    char type[MDNS_NAME_MAX + 1];       /* `_smb._tcp` */
+    char instance[MDNS_INSTANCE_MAX + 1];
+    uint16_t port;
+    unsigned announced;                 /* of ANNOUNCE_TIMES */
+    uint64_t next_announce;
+};
+
+TABLE(struct published, publisheds);
+
+/* This machine's address, asked of the stack now and then; and its host
+ * name, `kosmos.local`, from the first instance published. */
+static struct {
+    bool known;
+    struct net_addr address;
+    uint64_t next_look;
+} self;
+
+static char host_name[MDNS_INSTANCE_MAX + 8];
 
 static void *grow(void *list, unsigned *cap, size_t each)
 {
@@ -232,33 +264,18 @@ static void bind_port(void)
     say_line("mdnsd: listening on 224.0.0.251 port 5353");
 }
 
-/* One question, to the group. */
-static void ask(const char *name, uint16_t type)
+/* A message, to the group. */
+static void send_datagram(const uint8_t *m, unsigned n)
 {
-    uint8_t m[NET_DATAGRAM_MAX];
     struct net_datagram d;
     struct net_request req;
     struct net_reply rep;
-    unsigned n, k;
+    unsigned k;
     uint32_t write, space;
 
-    if (!port.bound) {
+    if (!port.bound || n == 0) {
         return;
     }
-
-    memset(m, 0, DNS_HEADER);
-    m[5] = 1;                           /* one question; id and flags 0 (RFC 6762 18) */
-    n = dns_put_name(m + DNS_HEADER, sizeof(m) - DNS_HEADER - 4, name, (unsigned)strlen(name));
-
-    if (n == 0) {
-        return;
-    }
-
-    n += DNS_HEADER;
-    m[n++] = (uint8_t)(type >> 8);
-    m[n++] = (uint8_t)type;
-    m[n++] = 0;
-    m[n++] = DNS_CLASS_IN;
 
     memset(&d, 0, sizeof(d));
     d.addr = GROUP;
@@ -286,6 +303,33 @@ static void ask(const char *name, uint16_t type)
     req.op = NET_OP_PUSH;
     req.handle = port.handle;
     (void)net_ask(&req, &rep, NULL);
+}
+
+/* One question, to the group. */
+static void ask(const char *name, uint16_t type)
+{
+    uint8_t m[NET_DATAGRAM_MAX];
+    unsigned n;
+
+    if (!port.bound) {
+        return;
+    }
+
+    memset(m, 0, DNS_HEADER);
+    m[5] = 1;                           /* one question; id and flags 0 (RFC 6762 18) */
+    n = dns_put_name(m + DNS_HEADER, sizeof(m) - DNS_HEADER - 4, name, (unsigned)strlen(name));
+
+    if (n == 0) {
+        return;
+    }
+
+    n += DNS_HEADER;
+    m[n++] = (uint8_t)(type >> 8);
+    m[n++] = (uint8_t)type;
+    m[n++] = 0;
+    m[n++] = DNS_CLASS_IN;
+
+    send_datagram(m, n);
 }
 
 /*------------------------------------------------------------------------
@@ -435,6 +479,326 @@ static void follow_up(const struct instance *in)
 }
 
 /*------------------------------------------------------------------------
+ * What this machine offers (N13): answered for, and announced.
+ *----------------------------------------------------------------------*/
+
+#define TTL_HOST        120u        /* an address and an SRV: RFC 6762 10 */
+#define TTL_OTHER      4500u        /* a PTR and a TXT */
+#define FLUSH        0x8000u        /* the cache-flush bit: this record is all of it */
+#define ANNOUNCE_TIMES    2u        /* RFC 6762 8.3: at least two, a second apart */
+#define SERVICES "_services._dns-sd._udp.local"
+
+static struct published *published_of(const char *type, const char *instance)
+{
+    unsigned i;
+
+    for (i = 0; i < publisheds_n; i++) {
+        if (same_name(publisheds[i].type, type) && same_name(publisheds[i].instance, instance)) {
+            return &publisheds[i];
+        }
+    }
+
+    return NULL;
+}
+
+/* `Kosmos M700` -> `kosmos-m700.local`: letters and digits kept, lower
+ * case, anything else a hyphen, none at either end. */
+static void host_from(const char *instance)
+{
+    unsigned n = 0, i;
+
+    for (i = 0; instance[i] != '\0' && n < MDNS_INSTANCE_MAX; i++) {
+        char c = instance[i];
+
+        if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+            host_name[n++] = c;
+        } else if (n > 0 && host_name[n - 1] != '-') {
+            host_name[n++] = '-';
+        }
+    }
+
+    while (n > 0 && host_name[n - 1] == '-') n--;
+
+    if (n == 0) {
+        memcpy(host_name, "kosmos", 6);
+        n = 6;
+    }
+
+    memcpy(host_name + n, ".local", 7);
+}
+
+/* This machine's address, asked of the stack every five seconds: a new
+ * one - a lease from another router - is announced at once. */
+static void learn_self(void)
+{
+    struct net_request req;
+    struct net_reply rep;
+    unsigned i;
+
+    if (net < 0 || now() < self.next_look) {
+        return;
+    }
+
+    self.next_look = now() + 5u * hz;
+    memset(&req, 0, sizeof(req));
+    req.op = NET_OP_INFO;
+
+    if (!net_ask(&req, &rep, NULL) || rep.status != NET_OK
+        || (rep.address.byte[0] | rep.address.byte[1] | rep.address.byte[2]
+            | rep.address.byte[3]) == 0) {
+        return;
+    }
+
+    if (self.known && memcmp(&self.address, &rep.address, sizeof(rep.address)) == 0) {
+        return;
+    }
+
+    self.known = true;
+    self.address = rep.address;
+
+    for (i = 0; i < publisheds_n; i++) {
+        publisheds[i].announced = 0;
+        publisheds[i].next_announce = now();
+    }
+}
+
+/* An answer being made: every record in the answer section, as RFC 6762
+ * 6 allows, each of this machine's at most once. */
+struct out_msg {
+    uint8_t m[NET_DATAGRAM_MAX];
+    unsigned n, count;
+    bool host, services;
+};
+
+static void out_begin(struct out_msg *o)
+{
+    memset(o->m, 0, DNS_HEADER);
+    o->m[2] = 0x84;                     /* a response, authoritative (RFC 6762 18) */
+    o->n = DNS_HEADER;
+    o->count = 0;
+    o->host = o->services = false;
+}
+
+static void out_add(struct out_msg *o, const char *name, uint16_t type, uint16_t class,
+                    uint32_t ttl, const uint8_t *data, unsigned len)
+{
+    unsigned w = dns_put_record(o->m + o->n, sizeof(o->m) - o->n, name, type, class, ttl,
+                                data, len);
+
+    if (w != 0) {
+        o->n += w;
+        o->count++;
+    }
+}
+
+static void out_send(struct out_msg *o)
+{
+    if (o->count == 0) {
+        return;
+    }
+
+    o->m[6] = (uint8_t)(o->count >> 8);
+    o->m[7] = (uint8_t)o->count;
+    send_datagram(o->m, o->n);
+}
+
+static void full_of(char *out, const struct published *p, const char *type)
+{
+    strcpy(out, p->instance);
+    strcat(out, ".");
+    strcat(out, type);
+    strcat(out, ".local");
+}
+
+static void add_host(struct out_msg *o, uint32_t ttl)
+{
+    if (!self.known || host_name[0] == '\0' || o->host) {
+        return;
+    }
+
+    o->host = true;
+    out_add(o, host_name, DNS_TYPE_A, FLUSH | DNS_CLASS_IN, ttl, self.address.byte, 4);
+}
+
+static void add_srv(struct out_msg *o, const struct published *p, uint32_t ttl)
+{
+    char full[MDNS_NAME_MAX * 2 + 8];
+    uint8_t data[8 + DNS_NAME_MAX];
+    unsigned n;
+
+    full_of(full, p, p->type);
+    memset(data, 0, 4);                 /* priority, weight */
+    data[4] = (uint8_t)(p->port >> 8);
+    data[5] = (uint8_t)p->port;
+    n = dns_put_name(data + 6, sizeof(data) - 6, host_name, (unsigned)strlen(host_name));
+
+    if (n != 0) {
+        out_add(o, full, DNS_TYPE_SRV, FLUSH | DNS_CLASS_IN, ttl, data, 6 + n);
+    }
+}
+
+static void add_txt(struct out_msg *o, const struct published *p, uint32_t ttl)
+{
+    static const uint8_t empty[1] = { 0 };     /* RFC 6763 6.1: one empty string */
+    char full[MDNS_NAME_MAX * 2 + 8];
+
+    full_of(full, p, p->type);
+    out_add(o, full, DNS_TYPE_TXT, FLUSH | DNS_CLASS_IN, ttl, empty, 1);
+}
+
+static void add_ptr(struct out_msg *o, const struct published *p, uint32_t ttl)
+{
+    char type[MDNS_NAME_MAX + 8], full[MDNS_NAME_MAX * 2 + 8];
+    uint8_t data[DNS_NAME_MAX + 1];
+    unsigned n;
+
+    type_local(type, p->type);
+    full_of(full, p, p->type);
+    n = dns_put_name(data, sizeof(data), full, (unsigned)strlen(full));
+
+    if (n != 0) {
+        out_add(o, type, DNS_TYPE_PTR, DNS_CLASS_IN, ttl, data, n);
+    }
+}
+
+/* What kind of machine this is, which Finder draws by (`_device-info._tcp`,
+ * a TXT `model=`): Kosmos, which it does not know, so a computer. */
+static void add_device(struct out_msg *o, const struct published *p, uint32_t ttl)
+{
+    static const char model[] = "model=Kosmos";
+    char full[MDNS_NAME_MAX * 2 + 8];
+    uint8_t data[sizeof(model)];
+
+    full_of(full, p, "_device-info._tcp");
+    data[0] = (uint8_t)(sizeof(model) - 1);
+    memcpy(data + 1, model, sizeof(model) - 1);
+    out_add(o, full, DNS_TYPE_TXT, FLUSH | DNS_CLASS_IN, ttl, data, sizeof(model));
+}
+
+static void add_service(struct out_msg *o, const struct published *p, uint32_t ttl)
+{
+    char type[MDNS_NAME_MAX + 8];
+    uint8_t data[DNS_NAME_MAX + 1];
+    unsigned n;
+
+    type_local(type, p->type);
+    n = dns_put_name(data, sizeof(data), type, (unsigned)strlen(type));
+
+    if (n != 0) {
+        out_add(o, SERVICES, DNS_TYPE_PTR, DNS_CLASS_IN, ttl, data, n);
+    }
+}
+
+/* Everything of `p`, at `ttl` - 0 for a goodbye. */
+static void add_all(struct out_msg *o, const struct published *p, bool goodbye)
+{
+    add_ptr(o, p, goodbye ? 0 : TTL_OTHER);
+    add_srv(o, p, goodbye ? 0 : TTL_HOST);
+    add_txt(o, p, goodbye ? 0 : TTL_OTHER);
+    add_device(o, p, goodbye ? 0 : TTL_OTHER);
+    add_service(o, p, goodbye ? 0 : TTL_OTHER);
+
+    if (!goodbye) {
+        add_host(o, TTL_HOST);
+    }
+}
+
+/* A question from the network about what is this machine's: answered to
+ * the group, everything asked for in one message. */
+static void respond(const uint8_t *m, unsigned len, const struct dns_header *h)
+{
+    static struct out_msg o;
+    unsigned at = DNS_HEADER, i, k;
+
+    if (publisheds_n == 0 || !self.known) {
+        return;
+    }
+
+    out_begin(&o);
+
+    for (i = 0; i < h->questions; i++) {
+        char name[MDNS_NAME_MAX + 1];
+        uint16_t type, class;
+        bool any;
+
+        if (!dns_read_question(m, len, &at, name, sizeof(name), &type, &class)) {
+            break;
+        }
+
+        any = type == DNS_TYPE_ANY;
+
+        for (k = 0; k < publisheds_n; k++) {
+            const struct published *p = &publisheds[k];
+            char tl[MDNS_NAME_MAX + 8], full[MDNS_NAME_MAX * 2 + 8];
+
+            type_local(tl, p->type);
+
+            if ((type == DNS_TYPE_PTR || any) && same_name(name, SERVICES)) {
+                add_service(&o, p, TTL_OTHER);
+            }
+
+            if ((type == DNS_TYPE_PTR || any) && same_name(name, tl)) {
+                add_ptr(&o, p, TTL_OTHER);
+                add_srv(&o, p, TTL_HOST);
+                add_txt(&o, p, TTL_OTHER);
+                add_host(&o, TTL_HOST);
+            }
+
+            full_of(full, p, p->type);
+
+            if (same_name(name, full)) {
+                if (type == DNS_TYPE_SRV || any) add_srv(&o, p, TTL_HOST);
+                if (type == DNS_TYPE_TXT || any) add_txt(&o, p, TTL_OTHER);
+                add_host(&o, TTL_HOST);
+            }
+
+            full_of(full, p, "_device-info._tcp");
+
+            if ((type == DNS_TYPE_TXT || any) && same_name(name, full)) {
+                add_device(&o, p, TTL_OTHER);
+            }
+        }
+
+        if ((type == DNS_TYPE_A || any) && host_name[0] != '\0' && same_name(name, host_name)) {
+            add_host(&o, TTL_HOST);
+        }
+    }
+
+    out_send(&o);
+}
+
+/* Announcements due, sent: each published thing twice, a second apart. */
+static void announce(void)
+{
+    static struct out_msg o;
+    unsigned i;
+
+    if (!port.bound || !self.known) {
+        return;
+    }
+
+    for (i = 0; i < publisheds_n; i++) {
+        struct published *p = &publisheds[i];
+
+        if (p->announced >= ANNOUNCE_TIMES || now() < p->next_announce) {
+            continue;
+        }
+
+        out_begin(&o);
+        add_all(&o, p, false);
+        out_send(&o);
+        p->announced++;
+        p->next_announce = now() + hz;
+
+        if (p->announced == 1) {
+            say_line("mdnsd: announcing this machine's file sharing");
+        }
+    }
+}
+
+/*------------------------------------------------------------------------
  * What the network said.
  *----------------------------------------------------------------------*/
 
@@ -472,6 +836,12 @@ static void record(const uint8_t *m, unsigned len, const struct dns_record *r, b
             }
 
             target[tl - fl - 1] = '\0';
+
+            /* This machine's own, heard back: not something seen. */
+            if (published_of(browses[i].type, target) != NULL) {
+                continue;
+            }
+
             in = instance_of(browses[i].type, target);
 
             if (r->ttl == 0) {                   /* a goodbye: RFC 6762 10.1 */
@@ -524,8 +894,13 @@ static void message(const uint8_t *m, unsigned len)
     struct dns_header h;
     unsigned at = DNS_HEADER, i, records;
 
-    if (!dns_read_header(m, len, &h) || (h.flags & 0x8000u) == 0) {
-        return;                         /* a question: answering is N13's */
+    if (!dns_read_header(m, len, &h)) {
+        return;
+    }
+
+    if ((h.flags & 0x8000u) == 0) {
+        respond(m, len, &h);            /* a question: this machine's, answered (N13) */
+        return;
     }
 
     for (i = 0; i < h.questions; i++) {
@@ -616,6 +991,8 @@ static void tick(void)
     unsigned i = 0;
 
     bind_port();
+    learn_self();
+    announce();
 
     for (i = 0; i < browses_n; i++) {
         struct browse *b = &browses[i];
@@ -700,6 +1077,12 @@ static bool busy(void)
         return true;
     }
 
+    for (i = 0; i < publisheds_n; i++) {
+        if (publisheds[i].announced < ANNOUNCE_TIMES) {
+            return true;
+        }
+    }
+
     for (i = 0; i < browses_n; i++) {
         if (now() < browses[i].wanted_until) {
             return true;
@@ -728,8 +1111,66 @@ static void serve(const struct message *msg, uint64_t sender)
 
     memcpy(&req, msg->data, sizeof(req));
     req.name[MDNS_NAME_MAX] = '\0';
+    req.instance[MDNS_INSTANCE_MAX] = '\0';
 
     switch (req.op) {
+    case MDNS_OP_PUBLISH:
+    case MDNS_OP_UNPUBLISH: {
+        struct published *p;
+
+        /* An instance is one label (RFC 6763 4.1.1): no dot in it, as the
+         * name writer would split it. */
+        if (!service_type(req.name) || req.instance[0] == '\0' || strchr(req.instance, '.')
+            || (req.op == MDNS_OP_PUBLISH && (req.index == 0 || req.index > 0xffffu))) {
+            rep.error = MDNS_ERR_BAD_NAME;
+            break;
+        }
+
+        p = published_of(req.name, req.instance);
+
+        if (req.op == MDNS_OP_UNPUBLISH) {
+            if (p != NULL) {
+                static struct out_msg o;
+
+                out_begin(&o);
+                add_all(&o, p, true);           /* a goodbye: RFC 6762 10.1 */
+                out_send(&o);
+                remove_at(publisheds, &publisheds_n, (unsigned)(p - publisheds),
+                          sizeof(*publisheds));
+                say_line("mdnsd: no longer announcing it");
+            }
+
+            if (publisheds_n == 0) {
+                host_name[0] = '\0';
+            }
+
+            break;
+        }
+
+        if (p == NULL) {
+            if (!ROOM(publisheds)) {
+                rep.error = MDNS_ERR_FULL;
+                break;
+            }
+
+            p = &publisheds[publisheds_n++];
+            memset(p, 0, sizeof(*p));
+            strncpy(p->type, req.name, MDNS_NAME_MAX);
+            strncpy(p->instance, req.instance, MDNS_INSTANCE_MAX);
+        }
+
+        if (host_name[0] == '\0') {
+            host_from(req.instance);
+        }
+
+        p->port = (uint16_t)req.index;
+        p->announced = 0;
+        p->next_announce = now();
+        self.next_look = 0;                     /* its address, asked now */
+        tick();
+        break;
+    }
+
     case MDNS_OP_BROWSE: {
         struct browse *b;
         unsigned i;

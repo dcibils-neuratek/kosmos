@@ -9103,6 +9103,21 @@ Copy, Go to page, Back, and `pdf.boxes`. **Step 5 built in 0.11.235**
 (18.630): where each document was left and recent documents, through
 `recentdocs.lua`. **Done**; next in the queue, Remote Screen.
 
+**AGREED, 14 October - Kosmos on the Mac's network, writable, next** (before
+Remote Screen). Diego, after the PDF reader: "i want to copy pdf from my mac
+to kosmos but i dont see kosmos on the mac network", "why cant we write to
+kosmos over smb yet?", "do N13 and N14 next" - and "also i dont have a way
+in tracker to browse my network devices". So, from `docs/sharing.md`:
+**N13**, the M700 announced (`_smb._tcp`, `_device-info._tcp`) and in
+Finder's Locations; **N14**, `smbd` read-write - create, write at offsets
+from a region, delete, rename, folders, size and dates, the Mac's `._`
+and `.DS_Store` answered, writing only to folders marked so; and
+**Tracker's Network made browsable**: the machines on the network listed
+as places, opened to their shares, without typing an address first.
+**N14's way, decided the same day**: the filesystem writes a file in
+pieces at offsets (`DISK_OP_WRITE_AT`, `docs/diskfs.md`), rather than `smbd`
+holding a copy in memory - Diego: "go with B". **N13 built in 0.11.236.**
+
 **Found, 10 October - a question to an application waits for its tick.**
 The launcher waited 840 ms of every press for the Deskbar to say where the
 dock is (`testing.md` 18.512): a kit window answers `/Running/<name>` only

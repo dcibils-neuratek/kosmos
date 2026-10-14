@@ -109,7 +109,7 @@ void smbfs_server(long endpoint, long net, long console, long keyring);
 /* /Discovery (`docs/sharing.md` N11c): its own endpoint, the network
  * stack's to bind its port through, and the console's. */
 void mdnsd_server(long endpoint, long net, long console);
-void smbd_server(long net, long console, long disk, long door, long keyring);
+void smbd_server(long net, long console, long disk, long door, long keyring, long mdns);
 void vmm_server(long running, long ram, long setup, long more1, long more2);
 
 #define ROLE_AUDIO    16UL
@@ -903,7 +903,8 @@ int main(unsigned long arg)
 
     if (arg == ROLE_SMBD) {
         named("smbd");
-        smbd_server(0, 1, 2, 3, kosmos_cap_check(4) == 0 ? 4 : -1);
+        smbd_server(0, 1, 2, 3, kosmos_cap_check(4) == 0 ? 4 : -1,
+                    kosmos_cap_check(5) == 0 ? 5 : -1);
         kosmos_exit(0);
     }
 

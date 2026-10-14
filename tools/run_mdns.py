@@ -17,6 +17,14 @@ an empty TXT and the host's A, names compressed against each other; and for
     name nobody asked about, and will not answer for it: nobody answered -
     what nobody here asked for was not kept.
 
+And the other way (N13), as a Mac's Finder sees a machine: sharing started
+at the prompt as Studio2, and announced to the group - its PTR, SRV, TXT,
+`_device-info._tcp` and address; asked for `_smb._tcp.local`, answered with
+`Studio2._smb._tcp.local` on port 445 at `studio2.local`, 10.9.0.2; asked
+what kind of machine it is, `model=Kosmos`; asked about a name it does not
+hold, silent, and asked before sharing started, silent (the controls); and
+sharing stopped, a goodbye, a time to live of 0.
+
 Usage: run_mdns.py IMAGE
 """
 
@@ -94,6 +102,57 @@ def questions(packet):
         at += 4
         out.append((".".join(labels), kind))
     return out
+
+
+def read_name(data, at):
+    """A name at `at`, pointers followed; and where it ends."""
+    labels, end, jumps = [], None, 0
+    while at < len(data):
+        n = data[at]
+        if n == 0:
+            at += 1
+            break
+        if n & 0xc0 == 0xc0:
+            if end is None:
+                end = at + 2
+            at = ((n & 0x3f) << 8) | data[at + 1]
+            jumps += 1
+            if jumps > 20:
+                break
+            continue
+        labels.append(data[at + 1:at + 1 + n].decode(errors="replace"))
+        at += 1 + n
+    return ".".join(labels), (end if end is not None else at)
+
+
+def answers(packet):
+    """The records of a multicast DNS response from the guest: (name, type,
+    ttl, data, the message), or [] for anything else."""
+    u = U.udp_of(packet)
+    if not u or u[2] != 5353 or u[1] != MDNS:
+        return []
+    data = u[4]
+    if len(data) < 12 or not (struct.unpack("!H", data[2:4])[0] & 0x8000):
+        return []
+    qd, an, ns, ar = struct.unpack("!HHHH", data[4:12])
+    at, out = 12, []
+    for _ in range(qd):
+        _, at = read_name(data, at)
+        at += 4
+    for _ in range(an + ns + ar):
+        owner, at = read_name(data, at)
+        if at + 10 > len(data):
+            break
+        kind, _, ttl, length = struct.unpack("!HHIH", data[at:at + 10])
+        at += 10
+        out.append((owner, kind, ttl, data[at:at + length], data, at))
+        at += length
+    return out
+
+
+def query(qname, kind):
+    head = struct.pack("!HHHHHH", 0, 0, 1, 0, 0, 0)
+    return head + name(qname) + struct.pack("!HH", kind, 1)
 
 
 def boot(image, command, setup=None, done=None):
@@ -207,19 +266,153 @@ def main():
         fails.append("Connect did not find studio.local: %r"
                      % re.findall(r"connect: [^\n]*", seen)[-3:])
 
+    # **This machine, seen as a Mac sees it** (N13).
+    fails += announced(image)
+
     if fails:
-        print("FAIL: %d of 7 checks on finding what is on the network by name:" % len(fails))
+        print("FAIL: %d of 14 checks on finding what is on the network by name:" % len(fails))
         for f in fails:
             print("  " + f)
         return 1
 
-    print("PASS: 7 checks on finding what is on the network by name (mdnsd on a wire with a "
+    print("PASS: 14 checks on finding what is on the network by name (mdnsd on a wire with a "
           "file server called Studio: _smb._tcp.local asked of the group at a time to live of "
           "255; Studio listed with studio.local:445 and 10.9.0.1 from its PTR, SRV and A, "
           "compressed; studio.local resolved; an A nobody asked for not kept; Studio in "
           "Tracker's Network group, seen and not signed into; and Connect given "
-          "smb://studio.local finding 10.9.0.1)")
+          "smb://studio.local finding 10.9.0.1; and this machine sharing as Studio2, announced, "
+          "answering for _smb._tcp with 445 at studio2.local and 10.9.0.2 and model=Kosmos, "
+          "silent before it shares and for a name it does not hold, and saying goodbye at 0 when "
+          "it stops)")
     return 0
+
+
+def announced(image):
+    """Sharing started as Studio2, and the network told (N13)."""
+    fails = []
+    ours, theirs = random.randint(20000, 40000), random.randint(40001, 60000)
+    seg = U.Segment(ours, theirs)
+
+    # A disk for /Home: a shared folder is a folder on one, and the keyring
+    # keeps the account's password on it (as `run_smbd.py` gives its own).
+    import scratch
+    import subprocess
+    disk = os.path.join(scratch.directory("mdns"), "home.img")
+    note = os.path.join(scratch.directory("mdns"), "note.txt")
+    with open(note, "w") as f:
+        f.write("a note\n")
+    if os.path.exists(disk):
+        os.remove(disk)
+    root = os.path.dirname(HERE)
+    subprocess.run([os.path.join(root, "build", "host", "lua"), os.path.join(HERE, "kfs.lua"),
+                    "create", disk, "16", note + ":/Home/Notes/note.txt"],
+                   check=True, capture_output=True, cwd=root)
+
+    board = "X86_ARGS" if R.machine(image) == "x86_64" else "QEMU_ARGS"
+    blk = "virtio-blk-pci" if board == "X86_ARGS" else "virtio-blk-device"
+    saved = getattr(R, board)
+    setattr(R, board, saved + [
+        "-netdev", "dgram,id=net0,local.type=inet,local.host=127.0.0.1,local.port=%d,"
+                   "remote.type=inet,remote.host=127.0.0.1,remote.port=%d" % (theirs, ours),
+        "-device", R.device(image, "net") + ",netdev=net0",
+        "-fw_cfg", "name=opt/kosmos/net_address,string=10.9.0.2/24",
+        "-drive", "file=%s,format=raw,if=none,id=mdnsdisk" % disk,
+        "-device", "%s,drive=mdnsdisk" % blk,
+    ])
+    try:
+        guest = R.Guest(image, 120)
+    finally:
+        setattr(R, board, saved)
+
+    def records(seconds, test):
+        """Every record the guest sent to the group for `seconds`, until
+        `test(records)` is satisfied."""
+        got = []
+        end = R.time.monotonic() + seconds
+        while R.time.monotonic() < end:
+            seg.pump(0.2)
+            for _, packet in seg.frames:
+                got += answers(packet)
+            seg.frames.clear()
+            guest._read_available()
+            if test(got):
+                break
+        return got
+
+    INST = "Studio2._smb._tcp.local"
+
+    try:
+        guest.wait_for("mdnsd: listening on 224.0.0.251 port 5353", "mdnsd listening")
+        seg.pump(1)
+
+        # Not sharing yet: asked, silent - it says it shares only while it does.
+        seg.frames.clear()
+        seg.udp(U.group_mac(MDNS), MDNS, 5353, 5353, query("_smb._tcp.local", 12))
+        got = records(4, lambda g: False)
+        if any(r[0] == "_smb._tcp.local" for r in got):
+            fails.append("before sharing started, _smb._tcp was answered")
+
+        for line in ("sharing account kosmos n13-password",
+                     "sharing folders Notes:/Home/Notes",
+                     "sharing start kosmos name Studio2"):
+            guest.type(line)
+            seg.pump(1.0)
+            seg.frames.clear()
+
+        # Announced, unasked: a PTR to Studio2, sent twice.
+        got = records(20, lambda g: sum(1 for r in g if r[1] == 12 and r[2] > 0
+                                        and read_name(r[4], r[5])[0] == INST) >= 1)
+        ptrs = [r for r in got if r[1] == 12 and r[0] == "_smb._tcp.local"
+                and read_name(r[4], r[5])[0] == INST]
+        if not ptrs:
+            fails.append("sharing started, Studio2 was not announced: %r"
+                         % [(r[0], r[1]) for r in got][:8])
+
+        # Asked as Finder asks: the type.
+        seg.frames.clear()
+        seg.udp(U.group_mac(MDNS), MDNS, 5353, 5353, query("_smb._tcp.local", 12))
+        got = records(10, lambda g: any(r[1] == 33 for r in g) and any(r[1] == 1 for r in g))
+        srv = [r for r in got if r[1] == 33 and r[0] == INST]
+        addr = [r for r in got if r[1] == 1 and r[0] == "studio2.local"]
+        if not srv or struct.unpack("!H", srv[0][3][4:6])[0] != 445 \
+                or read_name(srv[0][4], srv[0][5] + 6)[0] != "studio2.local":
+            fails.append("asked for _smb._tcp, no SRV for Studio2 on 445 at studio2.local: %r"
+                         % [(r[0], r[1]) for r in got][:8])
+        if not addr or addr[0][3] != bytes([10, 9, 0, 2]):
+            fails.append("studio2.local's address was not 10.9.0.2: %r" % [a[3] for a in addr])
+
+        # What kind of machine.
+        seg.frames.clear()
+        seg.udp(U.group_mac(MDNS), MDNS, 5353, 5353, query("Studio2._device-info._tcp.local", 16))
+        got = records(10, lambda g: any(r[1] == 16 and "device-info" in r[0] for r in g))
+        dev = [r for r in got if r[1] == 16 and r[0] == "Studio2._device-info._tcp.local"]
+        if not dev or b"model=Kosmos" not in dev[0][3]:
+            fails.append("asked what Studio2 is, no model=Kosmos: %r" % [d[3] for d in dev])
+
+        # The control: a name it does not hold, no answer at all.
+        seg.frames.clear()
+        seg.udp(U.group_mac(MDNS), MDNS, 5353, 5353, query("nobody-here.local", 1))
+        got = records(4, lambda g: False)
+        if any(r[0] == "nobody-here.local" for r in got):
+            fails.append("a name this machine does not hold was answered")
+
+        # Stopped: a goodbye, the PTR at 0.
+        seg.frames.clear()
+        guest.type("sharing stop")
+        got = records(15, lambda g: any(r[1] == 12 and r[2] == 0 for r in g))
+        if not any(r[1] == 12 and r[2] == 0 and r[0] == "_smb._tcp.local" for r in got):
+            fails.append("sharing stopped, no goodbye at a time to live of 0: %r"
+                         % [(r[0], r[1], r[2]) for r in got][:8])
+    except Exception as e:                  # noqa: BLE001 - said below
+        fails.append("the announcing boot stopped: %s: %s" % (type(e).__name__, str(e)[:300]))
+    finally:
+        seen = guest.seen
+        guest.close()
+
+    if fails:
+        print("--- the announcing boot said ---\n" + "\n".join(
+            l for l in seen.splitlines() if l.startswith(("mdnsd", "smbd", "sharing")))[-2000:])
+    return fails
 
 
 if __name__ == "__main__":

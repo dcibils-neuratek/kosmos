@@ -1289,8 +1289,15 @@ Then, each when its time comes:
   (`testing.md`, the M700 suite) - which is the stack's item already on the
   roadmap.
 - **N13 - announced**: `_smb._tcp` and `_device-info._tcp`, and the M700 in
-  Finder's Locations.
-- **N14 - smbd read-write.**
+  Finder's Locations. **Built 14 October, 0.11.236** (`testing.md`
+  18.631): `mdnsd` answers for what this machine publishes, `smbd`
+  publishes while it serves; announced, answered, said gone. No probing
+  for a name another machine has.
+- **N14 - smbd read-write.** Decided 14 October: the filesystem writes at
+  offsets (`docs/diskfs.md`, *Writing at an offset*), so a copy of any size
+  goes to the disk a piece at a time. Then `smbd`: CREATE with every
+  disposition, WRITE, SET_INFO (rename, delete, size, dates), folders, only
+  in shares marked writable, the Mac's `._` and `.DS_Store` taken as files.
 
 ---
 

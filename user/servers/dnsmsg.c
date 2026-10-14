@@ -47,6 +47,35 @@ unsigned dns_put_name(uint8_t *out, unsigned room, const char *name, unsigned le
     return at;
 }
 
+/* RFC 1035 4.1.3: the owner, then type, class, time to live and the data's
+ * length, all big-endian, then the data. */
+unsigned dns_put_record(uint8_t *out, unsigned room, const char *name, uint16_t type,
+                        uint16_t class, uint32_t ttl, const uint8_t *data, unsigned len)
+{
+    unsigned n = dns_put_name(out, room, name, (unsigned)strlen(name));
+
+    if (n == 0 || len > 0xffffu || n + 10u + len > room) {
+        return 0;
+    }
+
+    out[n++] = (uint8_t)(type >> 8);
+    out[n++] = (uint8_t)type;
+    out[n++] = (uint8_t)(class >> 8);
+    out[n++] = (uint8_t)class;
+    out[n++] = (uint8_t)(ttl >> 24);
+    out[n++] = (uint8_t)(ttl >> 16);
+    out[n++] = (uint8_t)(ttl >> 8);
+    out[n++] = (uint8_t)ttl;
+    out[n++] = (uint8_t)(len >> 8);
+    out[n++] = (uint8_t)len;
+
+    if (len > 0) {
+        memcpy(out + n, data, len);
+    }
+
+    return n + len;
+}
+
 /* RFC 1035 4.1.1: twelve bytes, six numbers. */
 bool dns_read_header(const uint8_t *msg, unsigned len, struct dns_header *out)
 {

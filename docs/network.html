@@ -1,0 +1,167 @@
+<!--
+  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+  Tracker's Network view: every computer on the network, the ones you can
+  connect to and the ones you are signed into. Drawn on 14 October 2026,
+  before it is built, from Diego's "i dont have a way in tracker to browse
+  my network devices", "like a network view of available computers to
+  connect to", and "tracker has all of the network already but it does not
+  show computers, it shows folders of connected devices". The rest of
+  sharing is `docs/sharing.md` and `docs/sharing.html`.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tracker's Network view</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --w-bg: #ffffff; --w-side: #f4f5f7; --w-line: #e3e6eb; --w-ink: #1b2330; --w-dim: #6b7484;
+  --w-sel: #dfe8fb; --w-accent: #2f6bdc; --w-good: #2e9b5f; --w-desk: #3a63c9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 28px; max-width: 74ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); }
+p, li { max-width: 76ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 84ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 820px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+
+/* The window, as Tracker draws itself in the Plex look. */
+.win { width: 960px; background: var(--w-bg); color: var(--w-ink); border-radius: 12px; overflow: hidden;
+       box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; }
+.head { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 14px; border-bottom: 1px solid var(--w-line); }
+.head .t { font-weight: 600; font-size: 14px; }
+.head .s { color: var(--w-dim); }
+.grow { flex: 1; }
+.btn { padding: 4px 12px; border: 1px solid var(--w-line); border-radius: 7px; background: #f7f8fa; white-space: nowrap; }
+.btn.go { background: var(--w-accent); color: #fff; border-color: var(--w-accent); }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.body { display: flex; min-height: 460px; }
+.side { width: 210px; background: var(--w-side); border-right: 1px solid var(--w-line); padding: 12px 8px; }
+.side .g { color: var(--w-dim); font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; margin: 12px 8px 4px; display: flex; }
+.side .g span { flex: 1; }
+.side .g a { color: var(--w-accent); text-transform: none; letter-spacing: 0; }
+.side .r { padding: 4px 10px; border-radius: 6px; display: flex; gap: 8px; align-items: center; }
+.side .r.on { background: var(--w-sel); }
+.side .r small { color: var(--w-dim); margin-left: auto; }
+.main { flex: 1; padding: 18px 22px; }
+.main h3 { margin: 0 0 4px; font-size: 15px; }
+.main .n { color: var(--w-dim); margin: 0 0 16px; }
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.pc { border: 1px solid var(--w-line); border-radius: 10px; padding: 14px 12px 12px; text-align: center; }
+.pc.on { border-color: var(--w-accent); background: #f5f8fe; }
+.pc .ic { width: 64px; height: 46px; margin: 0 auto 10px; border-radius: 6px; background: #c9d2e0; position: relative; }
+.pc .ic::after { content: ""; position: absolute; left: 22px; right: 22px; bottom: -8px; height: 6px; background: #aeb8c8; border-radius: 0 0 3px 3px; }
+.pc .ic.k { background: #2a3550; }
+.pc .ic.nas { width: 44px; height: 54px; background: #b9c2d0; }
+.pc .ic.nas::after { display: none; }
+.pc b { display: block; font-size: 13.5px; }
+.pc .what { color: var(--w-dim); font-size: 12px; }
+.pc .st { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; margin-top: 8px; color: var(--w-dim); }
+.pc .st i { width: 7px; height: 7px; border-radius: 50%; background: #b6bdc8; }
+.pc .st.in i { background: var(--w-good); }
+.foot { border-top: 1px solid var(--w-line); padding: 6px 14px; color: var(--w-dim); font-size: 12px; display: flex; }
+.rows { border: 1px solid var(--w-line); border-radius: 8px; overflow: hidden; }
+.rows div { display: grid; grid-template-columns: 1.4fr 1fr 1fr; padding: 8px 12px; border-top: 1px solid var(--w-line); }
+.rows div:first-child { border-top: 0; color: var(--w-dim); font-size: 12px; }
+.card { max-width: 420px; margin: 40px auto; border: 1px solid var(--w-line); border-radius: 12px; padding: 22px; text-align: center; }
+.card .ic { width: 72px; height: 52px; margin: 0 auto 12px; border-radius: 6px; background: #c9d2e0; }
+.field { border: 1px solid var(--w-line); border-radius: 7px; padding: 6px 10px; text-align: left; color: var(--w-dim); margin: 8px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Tracker's Network view</h1>
+<p class="sub">All of the network, as computers rather than folders: every machine seen on the network beside the ones you are signed into, each saying what it offers, one double-click away from its shares. Drawn before it is built, 14 October 2026.</p>
+<p class="sub">Diego: "i dont have a way in tracker to browse my network devices", "like a network view of available computers to connect to", and "tracker has all of the network already but it does not show computers, it shows folders of connected devices".</p>
+
+<h2>All of the network</h2>
+<div class="scroller"><div class="win">
+  <div class="head"><span class="t">Network</span><span class="s">4 computers</span><span class="grow"></span>
+    <span class="btn">Connect to Server...</span>
+    <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="body">
+    <div class="side">
+      <div class="g"><span>Places</span></div>
+      <div class="r">Home</div><div class="r">Desktop</div><div class="r">Documents</div><div class="r">Downloads</div>
+      <div class="g"><span>Drives</span></div>
+      <div class="r">Home <small>kfs</small></div>
+      <div class="g"><span>Network</span><a>Connect...</a></div>
+      <div class="r">Diego's Mac mini</div>
+      <div class="r" style="padding-left:26px">Documents</div>
+      <div class="r" style="padding-left:26px">Music</div>
+      <div class="r on">All of the network</div>
+    </div>
+    <div class="main">
+      <h3>On this network</h3>
+      <p class="n">Seen by their own announcements, as Finder sees them - nothing typed.</p>
+      <div class="grid">
+        <div class="pc on"><div class="ic"></div><b>Diego's Mac mini</b><span class="what">Mac &middot; files, screen</span><br><span class="st in"><i></i>Signed in &middot; 2 shares</span></div>
+        <div class="pc"><div class="ic"></div><b>Studio</b><span class="what">Mac &middot; files</span><br><span class="st"><i></i>Not signed in</span></div>
+        <div class="pc"><div class="ic k"></div><b>Kosmos ThinkPad</b><span class="what">Kosmos &middot; files, screen</span><br><span class="st"><i></i>Not signed in</span></div>
+        <div class="pc"><div class="ic nas"></div><b>nas</b><span class="what">Server &middot; files</span><br><span class="st"><i></i>Not signed in</span></div>
+      </div>
+      <h3 style="margin-top:26px">Connected by address</h3>
+      <p class="n">A server you typed an address for, which does not announce itself.</p>
+      <div class="grid">
+        <div class="pc"><div class="ic nas"></div><b>192.168.1.20</b><span class="what">files</span><br><span class="st in"><i></i>Signed in &middot; 1 share</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="grow">Looking for computers every few seconds</span><span>/Network</span></div>
+</div></div>
+<p class="cap">What a computer is comes from what it announces (mDNS, which <code>mdnsd</code> already hears): file sharing (<code>_smb._tcp</code>), screen sharing (<code>_rfb._tcp</code>), and what kind of machine it is (<code>_device-info._tcp</code> - a Mac's model, or Kosmos). One computer announcing several things is one card. A computer you are signed into is ringed and says how many shares; double-click it and its shares open as folders, as they do today. A computer not signed into opens the sign-in card. This machine is not listed - it is the one you are sitting at.</p>
+
+<h2>A computer opened: signed in, and not</h2>
+<div class="scroller"><div class="win">
+  <div class="head"><span class="t">Diego's Mac mini</span><span class="s">over the network</span><span class="grow"></span>
+    <span class="btn">Disconnect</span>
+    <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="body" style="min-height:250px">
+    <div class="side" style="width:210px"></div>
+    <div class="main">
+      <div class="rows"><div><span>Name</span><span>Kind</span><span>Modified</span></div>
+        <div><span>Documents</span><span>Shared folder</span><span>Today, 10:12</span></div>
+        <div><span>Music</span><span>Shared folder</span><span>Yesterday</span></div></div>
+    </div>
+  </div>
+</div></div>
+<div class="scroller" style="margin-top:18px"><div class="win">
+  <div class="head"><span class="t">Studio</span><span class="s">seen on the network &middot; not signed in</span><span class="grow"></span>
+    <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="body" style="min-height:300px">
+    <div class="side" style="width:210px"></div>
+    <div class="main"><div class="card"><div class="ic"></div><b>Studio</b><div class="what" style="color:var(--w-dim)">Mac &middot; studio.local &middot; 192.168.1.44</div>
+      <div class="field">Name</div><div class="field">Password</div>
+      <div style="text-align:left;color:var(--w-dim);font-size:12px">&#9745; Remember in the keyring</div>
+      <div style="margin-top:12px"><span class="btn go">Sign in</span></div></div></div>
+  </div>
+</div></div>
+<p class="cap">Signed in, a computer is its shares - today's page, unchanged. Not signed in, it is the sign-in card Tracker already has for a server seen (N11d), reached now from the Network view as well as the sidebar.</p>
+
+<h2>For Diego to decide</h2>
+<div class="q"><b>1. Which computers.</b> Every machine that announces file sharing or screen sharing (recommended: the screen is what Remote Screen opens, next in the queue), or only file sharing.</div>
+<div class="q"><b>2. Icons or a list.</b> Cards as drawn, like Finder's Network (recommended), or rows with a name, a kind and a state, like a folder in list view.</div>
+<div class="q"><b>3. The sidebar.</b> Keep every seen computer in the Network group as now (recommended while there are few), or only the ones signed into, with All of the network for the rest.</div>
+</div>
+</body>
+</html>

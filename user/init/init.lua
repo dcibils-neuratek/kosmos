@@ -6267,9 +6267,10 @@ if role == ROLE_INIT then
   -- **smbd** (`docs/sharing.md` N12c), at every boot and idle: it opens no
   -- port until its own door, lent to the Servers window and `sharing`
   -- alone, says START - with the shares they set and the account whose NT
-  -- hash it keeps through the keyring's `sharing` door.
+  -- hash it keeps through the keyring's `sharing` door - and `mdnsd`'s,
+  -- to say on the network that this machine shares (N13).
   start("the file sharing server", ROLE_SMBD, { NET_EP, CONSOLE_EP, DISKFS_EP,
-                                                SMBD_EP, KEYRING_SHARING_EP })
+                                                SMBD_EP, KEYRING_SHARING_EP, MDNS_EP })
 
   if may_pass_screen() then
     local id, err = sys.spawn(ROLE_WINDOWSERVER, { WINDOW_EP, CONSOLE_EP }, SPAWN_SCREEN)
