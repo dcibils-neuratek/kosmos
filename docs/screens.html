@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!--
-  Screens - a VNC client: another computer's screen in a Kosmos window, with
+  Remote Screen - a VNC client: another computer's screen in a Kosmos window, with
   this machine's keys and pointer sent back. Drawn on 13 October 2026, before
   any of it is built, from the roadmap's entry (Diego, 12 October: "is there
   any way we can create a quick vnc client for kosmos so i can access my mac
@@ -13,7 +13,7 @@
   `docs/screens.md`; its diagram `docs/screens-architecture.png`.
   Made-up machines and a made-up Mac desktop throughout.
 -->
-<title>Screens</title>
+<title>Remote Screen</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
@@ -131,7 +131,7 @@ ul.feats li { margin: 4px 0; }
 </head>
 <body>
 <div class="wrap">
-<h1>Screens</h1>
+<h1>Remote Screen</h1>
 <p class="sub">Another computer's screen in a Kosmos window - your Mac's, over VNC - with this machine's keyboard and pointer sent back to it. The other side of what <code>vncd</code> already does for the M700. Drawn before it is built; the name is a working one, yours to change.</p>
 
 <div class="q"><b>Diego, 12 October 2026</b>: "is there any way we can create a quick vnc client for kosmos so i can access my mac over vnc from kosmos?", then "yes add the vnc client to the queue after sata".</div>
@@ -198,12 +198,12 @@ const FOOT = '<div class="foot"><span><span class="dot"></span><b>Connected</b><
 
 // 1: connected, fitted. The window's body 1060 wide; the Mac is 3440x1440 = 2.39:1.
 document.getElementById("w1").innerHTML =
-  head("Screens", "Diego's Mac mini &middot; 192.168.1.38", TOOLS) +
+  head("Remote Screen", "Diego's Mac mini &middot; 192.168.1.38", TOOLS) +
   `<div class="remote" style="height:450px">${mac(1060, 444, [58, 48])}</div>` + FOOT;
 
 // 2: the Keys menu, open.
 document.getElementById("w2").innerHTML =
-  head("Screens", "Diego's Mac mini", '<span class="seg"><span class="on">Fit</span><span>Actual size</span></span><span class="toggle on"><i></i>Control</span><span class="btn" style="background:#2f4f8f;border-color:#4f8cff">Keys &#9662;</span><span class="btn quiet">Disconnect</span>') +
+  head("Remote Screen", "Diego's Mac mini", '<span class="seg"><span class="on">Fit</span><span>Actual size</span></span><span class="toggle on"><i></i>Control</span><span class="btn" style="background:#2f4f8f;border-color:#4f8cff">Keys &#9662;</span><span class="btn quiet">Disconnect</span>') +
   `<div class="remote" style="height:322px">${mac(758, 317)}</div>` + FOOT.replace("2.1 MB/s", "1.4 MB/s") +
   `<div class="menu" style="right:118px;top:44px">
      <div class="hi">Switch applications<kbd>&#8984; Tab</kbd></div>
@@ -214,7 +214,7 @@ document.getElementById("w2").innerHTML =
      <div>Lock the Mac<kbd>&#8963; &#8984; Q</kbd></div></div>`;
 
 // 3: the first window.
-document.getElementById("w3").innerHTML = head("Screens", "") +
+document.getElementById("w3").innerHTML = head("Remote Screen", "") +
   `<div style="display:flex;min-height:390px">
     <div class="side">
       <h5>On this network</h5>
@@ -238,7 +238,7 @@ document.getElementById("w3").innerHTML = head("Screens", "") +
   </div>`;
 
 // 4: the Mac said no.
-document.getElementById("w4").innerHTML = head("Screens", "") +
+document.getElementById("w4").innerHTML = head("Remote Screen", "") +
   `<div class="form" style="padding:20px 24px">
      <div class="warn"><b>Diego's Mac mini did not take that password.</b> It is the one under "VNC viewers may control screen with password" in the Mac's Screen Sharing settings, not the Mac's own.</div>
      <div class="field"><label>Password</label><span class="input focus"></span></div>

@@ -205,7 +205,8 @@ window's surface, never through Lua. **One RFB kit for both sides**: the
 pixel formats, encodings and messages that `vncd` holds today move into a
 kit the client uses too, rather than a second copy of the protocol. Designed
 before it is built - feature set, mockup, architecture, diagram. **Designed
-on 13 October, for Diego to agree**: *Screens*, a working name -
+on 13 October, for Diego to agree**: *Remote Screen* - Diego, 14 October:
+"I don't love the name, let's call it Remote Screen" (it was *Screens*) -
 `docs/screens.md` (what it does, what it is made of, its busiest path, the
 steps), `docs/screens.html`, `docs/screens-architecture.png`. DES is in the
 Crypto Kit already (`crypto.des`, `vncd`'s sign-in); what is new is

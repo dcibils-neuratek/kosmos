@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  Screens, and what it stands on: the window on top; the RFB kit shared with
+  Remote Screen, and what it stands on: the window on top; the RFB kit shared with
   vncd; the network, compression and graphics kits whose loops carry the
   picture in C; the servers it asks. A frame from the Mac drawn through it
   (F). Drawn on 13 October 2026, before any of it is built; docs/screens.md
@@ -10,7 +10,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Kosmos Screens architecture</title>
+<title>Kosmos Remote Screen architecture</title>
 <style>
   @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
   @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
@@ -60,7 +60,7 @@
 </style>
 </head>
 <body>
-<h1>Screens - what it stands on</h1>
+<h1>Remote Screen - what it stands on</h1>
 <p class="sub">The window only shows and asks. RFB is one kit, <code>rfb.lua</code>, which <code>vncd</code> moves onto as well, so the protocol exists once. The picture never becomes a Lua value: from the connection's ring to the window's surface it goes through three kits' C, region to region, and Lua carries only offsets, lengths and twelve-byte headers.</p>
 <div class="legend">
   <span><i style="border-color:var(--new);background:#fff"></i>new</span>
@@ -75,7 +75,7 @@
   <div>
     <div class="layer app"><h2>Applications and programs</h2>
       <div class="row" style="grid-template-columns:1.3fr 1fr">
-        <div class="box new"><span class="tag">NEW</span><b>Screens</b><p>the window: fitted or actual size, Control, the Keys menu, full screen, the foot's numbers; the first window - found, recent, an address; what went wrong. Keys and the pointer to RFB messages. <span class="f">F3 F6</span></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>Remote Screen</b><p>the window: fitted or actual size, Control, the Keys menu, full screen, the foot's numbers; the first window - found, recent, an address; what went wrong. Keys and the pointer to RFB messages. <span class="f">F3 F6</span></p></div>
         <div class="box new"><span class="tag">ONTO THE KIT</span><b>vncd</b><p>the M700's own screen to a viewer, as now - its messages and keysyms from <code>rfb.lua</code> rather than its own</p></div>
       </div>
     </div>

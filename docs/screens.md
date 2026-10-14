@@ -1,4 +1,4 @@
-# Screens: another computer's screen in a Kosmos window
+# Remote Screen: another computer's screen in a Kosmos window
 
 A VNC client. The other side of what `vncd` already does for the M700: a
 window showing a VNC server's screen - Diego's Mac's, first - with this
@@ -114,7 +114,7 @@ frames as the network and these steps allow, and an idle one is none.
 2. **The three C pieces**, each held on the Mac: `zrle_decode` to the
    encoder and to `test_zrle.c`'s own decoder; `unpack` to `pack`;
    `zstream:inflate` to `deflate` - and `read_into`.
-3. **Screens, connected**: to `vncd` on another Kosmos under QEMU in the
+3. **Remote Screen, connected**: to `vncd` on another Kosmos under QEMU in the
    suite - two machines, one showing the other's screen, the picture held
    to the other's own screendump - and then to the Mac.
 4. **The first window**: machines found, machines remembered, the keyring.
