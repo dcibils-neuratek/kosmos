@@ -199,6 +199,18 @@ do
         and by["10.9.0.9"].screen_only,
         "a machine offering only its screen: " .. tp.what)
 
+  -- Signed into by its address and announcing a name: called by the name;
+  -- signed in with no share open, said so (the M700, 14 October).
+  local mini = ns.servers({ { address = "192.168.1.38", name = "", state = "connected" } },
+                          { "192.168.1.38" }, function() return {} end, {},
+                          { { name = "diego's Mac mini", address = "192.168.1.38", port = 445,
+                              model = "Macmini9,1" } }, {})
+  local mc = ns.card(mini[1])
+  check(#mini == 1 and mc.title == "diego's Mac mini" and mc.what == "Mac \u{b7} files"
+        and mc.state == "Signed in \u{b7} no share open",
+        "a Mac signed into by address is called by its own name, no share open: "
+        .. mc.title .. " / " .. mc.state)
+
   local by_address = ns.card({ address = "192.168.1.20", name = "192.168.1.20",
                                state = "connected", shares = { {} }, offers = { files = true } })
   check(by_address.group == "address" and by_address.state == "Signed in \u{b7} 1 share",

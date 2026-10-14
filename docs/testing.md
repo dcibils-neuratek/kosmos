@@ -26151,3 +26151,16 @@ kinds from models. `x86-mdns`, 15 - Tracker opened on /Network on a wire
 where Studio (`Macmini9,1`, files and screen) and Pixel (only its screen)
 answer: two cards, Studio "Mac · files, screen; Not signed in" and Pixel
 "Computer · screen; Screen sharing".
+
+## 18.634 A Mac signed into by address, called by its own name
+
+Seen on the M700 the evening it was built: All of the network called
+Diego's Mac mini "192.168.1.38", and said "Signed in · 0 shares". He had
+signed into it by its address, and when the network's announcement was
+matched to that record its name was kept aside unused. Now a machine
+announcing a name is called by it - on its card and in the sidebar - and
+one signed into with no share open says "Signed in · no share open" rather
+than a count that reads as nothing shared. **Test**: `test_netshares.lua`,
+42 - a server signed into at 192.168.1.38 and announced as "diego's Mac
+mini", a `Macmini9,1`: one card, "diego's Mac mini", "Mac · files",
+"Signed in · no share open".

@@ -181,7 +181,9 @@ function netshares.servers(status, listing, shares_of, recent, discovered, scree
     if one then
       one.model = one.model or d.model
       one.announced = true
-      if not one.discovered and one.state ~= "seen" then one.heard_as = d.name end
+      -- Signed into by its address, and announcing a name of its own: the
+      -- name is what a card calls it (diego's Mac mini, not 192.168.1.38).
+      if d.name and d.name ~= "" then one.heard_as = d.name end
     end
   end
 
@@ -245,7 +247,9 @@ function netshares.card(s)
   local n = #(s.shares or {})
   local state
 
-  if signed then
+  if signed and n == 0 then
+    state = "Signed in \u{b7} no share open"
+  elseif signed then
     state = ("Signed in \u{b7} %d share%s"):format(n, n == 1 and "" or "s")
   elseif s.screen_only then
     state = "Screen sharing"
@@ -256,7 +260,7 @@ function netshares.card(s)
   end
 
   return {
-    title = s.name or s.address, kind = kind,
+    title = s.heard_as or s.name or s.address, kind = kind,
     what = kind .. " \u{b7} " .. (#offers > 0 and table.concat(offers, ", ") or "nothing shared"),
     state = state, signed_in = signed,
     group = s.announced and "network" or "address",
@@ -278,7 +282,7 @@ function netshares.rows(servers)
 
   for _, s in ipairs(servers or {}) do
     rows[#rows + 1] = {
-      id = "#server:" .. s.address, name = s.name, icon = "server",
+      id = "#server:" .. s.address, name = s.heard_as or s.name, icon = "server",
       path = s.path, dot = s.dot, lock = s.lock, note = s.note,
       dim = (s.dot == "warn") or nil, server = s, again = true,
     }
