@@ -2,9 +2,48 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-14, early morning (0.11.217; game mode with a core of its own)
+Last updated: 2026-10-14, morning (0.11.222; Automations A1, A2, Mail and its composer by name)
 
 ---
+
+## 14 October, the night into morning: Automations A1-A2, a kernel hang, Mail by name
+
+**Pushed: up to 0.11.198.** **On `main`, not pushed: 0.11.199-0.11.222.**
+The whole gate passed at 0.11.219 (86/86, the first clean one since G3) and
+at 0.11.222 (87/87). Diego asleep, "Keep building".
+
+- **A1, every control published by name** (0.11.218, `testing.md` 18.613):
+  `/Running/<app>/controls` - kinds, labels, and each control read, written
+  and pressed with the handler a click calls; an icon button's `menu` as
+  `menu/<icon>/<item>`. Suite `x86-controls`.
+- **A kernel hang G4 brought, fixed** (0.11.219, 18.614): new threads were
+  planted with interrupts on; an interrupt in `thread_entry` before
+  `thread_switch_finished` could wake the thread just left, still `on_cpu`,
+  and wait for it with the core masked. `x86-share` hung 1 run in 3. Now
+  masked until the switch is over, both architectures, checked with a
+  panic. **Probably the "telnetd late" flake too** - watch whether it comes
+  back.
+- **A2, the verbs** (0.11.220, 18.615): `automate.lua` (open by the name an
+  app declares, press/menu/read/type/set/choose by label, mail, check,
+  copy, move, notify, wait, run) and `automate` at the prompt; `mailout.lua`
+  is the Outbox's one door, Mail's composer its first user. Two old hangs
+  found: an oversized window reply left the caller waiting forever (now
+  answered, and controls come a page at a time), and a window in its own
+  loop (Mail, Groove, Cafesa3D) never answered `/Running` (now
+  `wmproto.poll` serves every kit window). Suite `x86-automate`.
+- **A1b, windows that draw themselves name their controls**:
+  `win:publish_controls`. Mail (0.11.221, 18.616): its header by what each
+  button does, the dots' menu, Search. The composer (0.11.222, 18.617):
+  To, Cc, Bcc, Subject, Message, Send - a mail written and sent from a
+  script through the window. A crash found: Send closing the window
+  mid-request ended Mail.
+- **Next in Automations**: A3, `autod` - triggers, history,
+  `/Home/Automations`. Left in A1b: Mail's list and mailboxes as lists;
+  Groove, Paint, Cafesa3D, Maps.
+- **Still waiting on Diego**, unchanged from the night before: the sandbox
+  console keys on the M700 (`vmm.c` uncommitted), the M700's screen and
+  G1-G4 seen there, the Screens and PDF Viewer designs, fix 1 or 2 for the
+  ended background program, and a push.
 
 ## 13-14 October, evening and night: memory, sandboxes, looks, Monitor's chip, the Scheduler
 
@@ -50,8 +89,8 @@ flaky under load, fixed). Diego went to sleep saying "Keep building".
   likely its monitor off for the night; the desktop cannot start without a
   screen. Not seen on the M700 tonight: G1-G4, the Monitor chip after
   restart. Check its screen first in the morning.
-- **Unexplained, watched**: "telnetd never listening within 120s" twice in
-  the full gate since G3 (18.612's note) - each passes alone.
+- **Watched**: "telnetd never listening within 120s" twice in the full
+  gate since G3 (18.612's note) - probably the hang fixed in 0.11.219.
 - **Tried and dropped**: the graph as squares (Diego: "i dont like the new
   proposed look").
 - **The sandbox console's keys** (Diego: missing and repeated from the USB
