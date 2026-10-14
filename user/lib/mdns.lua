@@ -4,7 +4,7 @@
 --
 --   local mdns = use("/Kosmos/Libraries/mdns.lua")
 --   mdns.browse("_smb._tcp")            -> how many are known; asks again
---   mdns.instances("_smb._tcp")         -> { { name, host, port, address }, ... }
+--   mdns.instances("_smb._tcp")         -> { { name, host, port, address, model }, ... }
 --   mdns.resolve("studio.local", ticks) -> four bytes, or nil and why
 --   mdns.publish("_smb._tcp", "KOSMOS", 445) -> this machine's, announced
 --
@@ -17,7 +17,7 @@
 local M = {}
 
 local REQUEST = "<I4I4I4I4c256c64"
-local REPLY = "<I4I4I2I2c4c64c256"
+local REPLY = "<I4I4I2I2c4c64c256c48"
 local OP = { browse = 1, instance = 2, resolve = 3, publish = 4, unpublish = 5 }
 local ERRORS = {
   [1] = "the discovery server did not understand that",
@@ -39,14 +39,14 @@ local function ask(op, name, index, ticks, instance)
   local ok, reply, why = pcall(fs.raw, "/Discovery", bytes, nil, "mdns")
 
   if not ok then return nil, tostring(reply) end
-  if type(reply) ~= "string" or #reply < 336 then return nil, tostring(why or reply) end
+  if type(reply) ~= "string" or #reply < 384 then return nil, tostring(why or reply) end
 
-  local err, count, port, has, address, instance, host = string.unpack(REPLY, reply)
+  local err, count, port, has, address, instance, host, model = string.unpack(REPLY, reply)
 
   if err ~= 0 then return nil, ERRORS[err] or ("error " .. err) end
 
   return { count = count, port = port, address = has ~= 0 and address or nil,
-           name = cut(instance), host = cut(host) }
+           name = cut(instance), host = cut(host), model = cut(model) }
 end
 
 function M.browse(type_)
@@ -67,7 +67,8 @@ function M.instances(type_)
     if not r then break end
 
     list[#list + 1] = { name = r.name, host = r.host ~= "" and r.host or nil,
-                        port = r.port ~= 0 and r.port or nil, address = r.address }
+                        port = r.port ~= 0 and r.port or nil, address = r.address,
+                        model = r.model ~= "" and r.model or nil }
     i = i + 1
   end
 

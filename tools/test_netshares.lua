@@ -165,11 +165,54 @@ for _, r in ipairs(list) do
   check(r.password == nil, "a password is never among what is remembered")
 end
 
+-- **The Network view's cards** (`docs/network.html`): every machine that
+-- offers files or its screen, one card each, its kind and what it offers.
+do
+  local status = { { address = "10.9.0.1", name = "MACPEER", state = "connected" } }
+  local listing = { "MACPEER" }
+  local discovered = {
+    { name = "Diego's Mac mini", address = "10.9.0.1", port = 445, model = "Macmini9,1" },
+    { name = "nas", address = "10.9.0.7", port = 445 },
+  }
+  local screens = {
+    { name = "Diego's Mac mini", address = "10.9.0.1", port = 5900 },
+    { name = "Kosmos ThinkPad", address = "10.9.0.9", port = 5900, model = "Kosmos" },
+  }
+  local list = ns.servers(status, listing, function() return { "Documents", "Music" } end,
+                          {}, discovered, screens)
+  local by = {}
+  for _, s in ipairs(list) do by[s.address:gsub(":%d+$", "")] = s end
+
+  check(#list == 3, "three machines, one card each, not one per thing offered: " .. #list)
+
+  local mac = ns.card(by["10.9.0.1"])
+  check(mac.what == "Mac \u{b7} files, screen" and mac.signed_in and mac.group == "network"
+        and mac.state == "Signed in \u{b7} 2 shares",
+        "the Mac signed into, announced too: " .. mac.what .. " / " .. mac.state)
+
+  local nas = ns.card(by["10.9.0.7"])
+  check(nas.what == "Server \u{b7} files" and nas.state == "Not signed in",
+        "a server seen with files alone: " .. nas.what)
+
+  local tp = ns.card(by["10.9.0.9"])
+  check(tp.what == "Kosmos \u{b7} screen" and tp.state == "Screen sharing"
+        and by["10.9.0.9"].screen_only,
+        "a machine offering only its screen: " .. tp.what)
+
+  local by_address = ns.card({ address = "192.168.1.20", name = "192.168.1.20",
+                               state = "connected", shares = { {} }, offers = { files = true } })
+  check(by_address.group == "address" and by_address.state == "Signed in \u{b7} 1 share",
+        "a server reached by its address alone goes under Connected by address")
+
+  check(ns.kind("MacBookPro18,3") == "Mac" and ns.kind("Kosmos") == "Kosmos"
+        and ns.kind(nil, { files = true }) == "Server", "kinds from models")
+end
+
 if failed == 0 then
   print(("PASS: %d checks on shares as a window shows them (addresses as "
          .. "typed; the Network group's servers, their shares, states and "
          .. "the remembered ones; a path under /Network, its trail, a status "
-         .. "line, a gone-away banner; the recent servers)."):format(checks))
+         .. "line, a gone-away banner; the recent servers; the Network view's cards)."):format(checks))
 else
   print(("FAIL: %d of %d checks"):format(failed, checks))
   os.exit(1)

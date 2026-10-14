@@ -9117,6 +9117,14 @@ as places, opened to their shares, without typing an address first.
 **N14's way, decided the same day**: the filesystem writes a file in
 pieces at offsets (`DISK_OP_WRITE_AT`, `docs/diskfs.md`), rather than `smbd`
 holding a copy in memory - Diego: "go with B". **N13 built in 0.11.236.**
+**N14 built in 0.11.237.** **Tracker's Network view AGREED the same day**
+(`docs/network.html`; Diego: "Mockup is great", "Every machine", "Cards",
+"All"): All of the network shows every computer offering file sharing or
+screen sharing as a card - its name, what kind of machine, what it offers,
+signed in or not - beside the servers connected by address; double-click
+opens its shares or its sign-in card; the sidebar keeps every computer
+seen.
+**Built in 0.11.238** (`testing.md` 18.633).
 
 **Found, 10 October - a question to an application waits for its tick.**
 The launcher waited 840 ms of every press for the Deskbar to say where the

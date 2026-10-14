@@ -26123,3 +26123,31 @@ byte, a folder made with a file put in it, a rename, a shorter file put
 over a longer one and fetched as the shorter, a delete, and a folder with
 something in it kept. **Control**: the same put into Projects, read only,
 refused.
+
+## 18.633 Tracker's Network view: the computers, as cards
+
+`docs/network.html`, agreed the same day - Diego: "Mockup is great",
+"Every machine", "Cards", "All". All of the network shows every machine
+offering files (`_smb._tcp`) or its screen (`_rfb._tcp`) as a card - its
+name, what kind of machine, what it offers, signed in or not - those the
+network announces under "On this network" and those reached by an address
+under "Connected by address"; a double-click opens its shares, or its
+sign-in card, and a machine offering only its screen says Remote Screen
+will open it. The foot counts the computers. The sidebar keeps every one.
+
+What kind of machine is `mdnsd`'s to find out: each instance it keeps has
+its `<name>._device-info._tcp` TXT asked once, and its `model=` kept and
+returned (`mdns_reply.model`). `netshares.servers` makes one machine of
+what announces files and its screen, and joins what the network announces
+to a server already signed into; `netshares.card` says what a card shows
+and `netshares.kind` turns a model into Mac, Kosmos, Server or Computer.
+Each computer is published as `computer/<name>`.
+
+**Tests**: `tools/test_netshares.lua`, 41 - five announcements as three
+machines, the Mac signed into and announced as one card "Mac · files,
+screen · Signed in · 2 shares", a server seen with files alone, a machine
+with only its screen, an address-only server under Connected by address,
+kinds from models. `x86-mdns`, 15 - Tracker opened on /Network on a wire
+where Studio (`Macmini9,1`, files and screen) and Pixel (only its screen)
+answer: two cards, Studio "Mac · files, screen; Not signed in" and Pixel
+"Computer · screen; Screen sharing".

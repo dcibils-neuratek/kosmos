@@ -71,6 +71,8 @@ struct instance {
     uint16_t port;
     bool has_srv;
     bool fresh;                         /* new in the message being read */
+    bool asked_kind;                    /* its `_device-info._tcp` asked for */
+    char model[MDNS_MODEL_MAX + 1];     /* what kind of machine: `Macmini9,1` */
     uint64_t until;
 };
 
@@ -462,9 +464,20 @@ static void host_known(const char *host, const uint8_t *a, uint32_t ttl)
     }
 }
 
-/* What an instance still lacks, asked for: its SRV, then its host's A. */
-static void follow_up(const struct instance *in)
+/* What an instance still lacks, asked for: its SRV, then its host's A -
+ * and once, what kind of machine it is (its `_device-info._tcp` TXT, which
+ * a Mac answers for though nobody browses it). */
+static void follow_up(struct instance *in)
 {
+    if (!in->asked_kind) {
+        char kind[MDNS_INSTANCE_MAX + 32];
+
+        in->asked_kind = true;
+        strcpy(kind, in->name);
+        strcat(kind, "._device-info._tcp.local");
+        ask(kind, DNS_TYPE_TXT);
+    }
+
     if (!in->has_srv) {
         char full[MDNS_NAME_MAX * 2 + 8];
 
@@ -886,6 +899,39 @@ static void record(const uint8_t *m, unsigned len, const struct dns_record *r, b
         }
     } else if (r->type == DNS_TYPE_A && r->length == 4 && host_wanted(r->name)) {
         host_known(r->name, m + r->data, r->ttl);
+    } else if (r->type == DNS_TYPE_TXT) {
+        /* `Studio._device-info._tcp.local`: `model=` for every instance kept
+         * under that name - strings, each its length and its bytes. */
+        static const char suffix[] = "._device-info._tcp.local";
+        size_t nl = strlen(r->name), sl = sizeof(suffix) - 1;
+
+        if (nl > sl && same_name(r->name + nl - sl, suffix) && nl - sl <= MDNS_INSTANCE_MAX) {
+            char who[MDNS_INSTANCE_MAX + 1];
+            unsigned at = 0;
+
+            memcpy(who, r->name, nl - sl);
+            who[nl - sl] = '\0';
+
+            while (at < r->length) {
+                unsigned n = m[r->data + at];
+                const char *text = (const char *)m + r->data + at + 1;
+
+                if (at + 1 + n > r->length) {
+                    break;
+                }
+
+                if (n > 6 && n - 6 <= MDNS_MODEL_MAX && strncmp(text, "model=", 6) == 0) {
+                    for (i = 0; i < instances_n; i++) {
+                        if (same_name(instances[i].name, who)) {
+                            memcpy(instances[i].model, text + 6, n - 6);
+                            instances[i].model[n - 6] = '\0';
+                        }
+                    }
+                }
+
+                at += 1 + n;
+            }
+        }
     }
 }
 
@@ -1228,6 +1274,7 @@ static void serve(const struct message *msg, uint64_t sender)
 
             rep.error = MDNS_OK;
             strncpy(rep.instance, in->name, MDNS_INSTANCE_MAX);
+            strncpy(rep.model, in->model, MDNS_MODEL_MAX);
 
             if (in->has_srv) {
                 strncpy(rep.host, in->host, MDNS_NAME_MAX);

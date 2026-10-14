@@ -1441,7 +1441,8 @@ function seen_card:draw(g)
   g:text(cx + (CARD_W - gfx.measure(title, "heading")) // 2, cy + 58, title,
          theme.text, theme.raised, "heading")
 
-  local sub = s.remembered and "Remembered \u{b7} not signed in"
+  local sub = s.screen_only and "Screen sharing \u{b7} Remote Screen will open it"
+              or s.remembered and "Remembered \u{b7} not signed in"
               or s.discovered and "Seen on the network \u{b7} not signed in"
               or "Not signed in"
 
@@ -1472,6 +1473,7 @@ function seen_card:draw(g)
 
   sign_in.y, forget.y = by, by
   forget.hidden = s.discovered ~= nil
+  sign_in.hidden = s.screen_only == true
 
   if forget.hidden then
     sign_in.x = cx + (CARD_W - sign_in.w) // 2
@@ -1481,6 +1483,179 @@ function seen_card:draw(g)
 
   forget.x = sign_in.x + sign_in.w + 10
 end
+
+--
+-- **All of the network, as computers** (`docs/network.html`, agreed 14
+-- October 2026 - Diego: "Every machine", "Cards", "All"): every machine
+-- that offers files or its screen, a card each - its name, what kind of
+-- machine, what it offers, signed in or not - those the network announces
+-- first and those reached by an address after. A double-click opens its
+-- shares, or its sign-in card; a machine that offers only its screen is
+-- Remote Screen's to open. Drawn from `net.servers`, what the clock last
+-- heard, and asks nothing.
+--
+local machines = ui.view{ x = SIDE_W, y = CONTENT_Y, w = W - SIDE_W,
+                          h = H - CONTENT_Y - FOOT_H, hidden = true,
+                          follow = { "left", "right", "top", "bottom" } }
+
+machines.CARD_W, machines.CARD_H, machines.GAP = 200, 150, 14
+machines.places = {}            -- each card drawn: { x, y, s }
+machines.chosen = nil           -- the address of the card chosen
+machines.said = nil
+machines.last = nil             -- the last press: { address, at }
+
+function machines.groups()
+  local net_here, by_address = {}, {}
+
+  for _, s in ipairs(net.servers) do
+    local c = netshares.card(s)
+
+    c.s = s
+    if c.group == "network" then net_here[#net_here + 1] = c else by_address[#by_address + 1] = c end
+  end
+
+  return net_here, by_address
+end
+
+function machines:draw(g)
+  g:fill(0, 0, self.w, self.h, theme.window)
+
+  local here, by_address = machines.groups()
+  local MCARD_W, MCARD_H, MGAP = machines.CARD_W, machines.CARD_H, machines.GAP
+  local cols = math.max(1, (self.w - 2 * 24 + MGAP) // (MCARD_W + MGAP))
+  local y = 20
+
+  self.places = {}
+
+  local function group(title, sub, list)
+    if #list == 0 then return end
+
+    g:text(24, y, title, theme.text, nil, "label")
+    y = y + gfx.height("label") + 2
+    g:text(24, y, sub, theme.text_dim)
+    y = y + gfx.height() + 12
+
+    for i, c in ipairs(list) do
+      local col, row = (i - 1) % cols, (i - 1) // cols
+      local cx, cy = 24 + col * (MCARD_W + MGAP), y + row * (MCARD_H + MGAP)
+      local chosen = machines.chosen == c.s.address
+
+      g:fill_round(cx, cy, MCARD_W, MCARD_H, chosen and theme.raised or theme.window, 10)
+      g:frame_round(cx, cy, MCARD_W, MCARD_H, chosen and theme.accent or theme.line_soft, 10)
+      g:line_icon(cx + (MCARD_W - 30) // 2, cy + 16,
+                  c.kind == "Server" and "server" or "display",
+                  c.signed_in and theme.accent or theme.text_dim, 30)
+
+      local title = ui.fitted(c.title, MCARD_W - 20)
+
+      g:text(cx + (MCARD_W - gfx.measure(title)) // 2, cy + 60, title, theme.text)
+
+      local what = ui.fitted(c.what, MCARD_W - 20)
+
+      g:text(cx + (MCARD_W - gfx.measure(what)) // 2, cy + 60 + gfx.height() + 4, what,
+             theme.text_dim)
+
+      local st = ui.fitted(c.state, MCARD_W - 40)
+      local sw = gfx.measure(st) + 13
+      local sx = cx + (MCARD_W - sw) // 2
+      local sy = cy + MCARD_H - 30
+
+      g:fill_round(sx, sy + (gfx.height() - 7) // 2, 7, 7,
+                   c.signed_in and theme.good or theme.line, 3)
+      g:text(sx + 13, sy, st, theme.text_dim)
+
+      self.places[#self.places + 1] = { x = cx, y = cy, s = c.s, card = c }
+    end
+
+    y = y + ((#list + cols - 1) // cols) * (MCARD_H + MGAP) + 18
+  end
+
+  group("On this network", "Seen by their own announcements, as Finder sees them", here)
+  group("Connected by address", "Servers you typed an address for", by_address)
+
+  if #here + #by_address == 0 then
+    local a, b = "No computers seen yet",
+                 "A Mac shows here when its File Sharing or Screen Sharing is on"
+
+    g:text((self.w - gfx.measure(a, "label")) // 2, self.h // 2 - 20, a, theme.text, nil, "label")
+    g:text((self.w - gfx.measure(b)) // 2, self.h // 2 + 4, b, theme.text_dim)
+  end
+
+  -- What it shows, said once a change - for whoever reads the log, and the
+  -- harness that presses a card.
+  local words = {}
+
+  for _, p in ipairs(self.places) do
+    words[#words + 1] = ("%s (%s; %s) at %d,%d"):format(p.card.title, p.card.what, p.card.state,
+                                                       self.x + p.x + machines.CARD_W // 2,
+                                                       self.y + p.y + machines.CARD_H // 2)
+  end
+
+  local said = table.concat(words, "; ")
+
+  if said ~= self.said then
+    self.said = said
+    print(("tracker: network view, %d computer%s: %s"):format(#self.places,
+          #self.places == 1 and "" or "s", said))
+  end
+end
+
+-- A computer opened: its shares when signed in, its sign-in card when not;
+-- one that offers only its screen is said to be Remote Screen's.
+function machines.open(s)
+  print("tracker: network view, opened " .. tostring(s.name or s.address))
+
+  if s.path then
+    visit(s.path)
+  elseif s.screen_only then
+    status.text = (s.name or s.address) .. " offers its screen \u{b7} Remote Screen will open it"
+    win.dirty = true
+  else
+    show_seen(s)
+  end
+end
+
+function machines:mouse(action, x, y)
+  if action ~= "press" then return true end
+
+  for _, p in ipairs(self.places) do
+    if x >= p.x and x < p.x + machines.CARD_W and y >= p.y and y < p.y + machines.CARD_H then
+      local now = sys.ticks()
+      local again = self.last and self.last.address == p.s.address
+                    and now - self.last.at <= ui.double_click_ticks()
+
+      self.chosen = p.s.address
+      self.last = { address = p.s.address, at = now }
+      win.dirty = true
+
+      if again then
+        self.last = nil
+        machines.open(p.s)
+      end
+
+      return true
+    end
+  end
+
+  self.chosen = nil
+  win.dirty = true
+  return true
+end
+
+-- Published by name (`window:controls`): each computer shown a button,
+-- `computer/<name>`, pressed as the double-click opens it.
+win:publish_controls(function()
+  local out = {}
+
+  if machines.hidden then return out end
+
+  for _, p in ipairs(machines.places) do
+    out[#out + 1] = { kind = "computer", label = p.card.title,
+                      press = function() machines.open(p.s) end }
+  end
+
+  return out
+end)
 
 sign_in.on_click = function()
   local s = net.seen
@@ -2812,6 +2987,27 @@ end
 -- arriving. Asks nothing - `net_frame` has asked.
 --
 function net_view()
+  -- All of the network: the computers, as cards, in place of the folder
+  -- `/Network` is - unless a page stands there (a server not signed into).
+  local all = net.on and where == netshares.ROOT and net.seen == nil
+
+  if machines.hidden == all then
+    machines.hidden = not all
+    if all then rows.hidden = true elseif net.seen == nil then rows.hidden = false end
+    win.dirty = true
+  end
+
+  -- Its foot counts the computers, not `/Network`'s folders.
+  if all then
+    local n = #net.servers
+    local words = n == 0 and "no computers seen" or (n == 1 and "1 computer" or (n .. " computers"))
+
+    if count.text ~= words then
+      count.text = words
+      win.dirty = true
+    end
+  end
+
   local label, share = netshares.under(where)
   local s = (label and label ~= "") and netshares.find(net.servers, label) or nil
   local was_hidden = banner.hidden
@@ -3511,7 +3707,10 @@ local function net_key(servers)
 
     parts[#parts + 1] = table.concat({ sv.address, tostring(sv.label),
                                        tostring(sv.dot), tostring(sv.lock),
-                                       tostring(sv.note), table.concat(names, ",") }, "|")
+                                       tostring(sv.note), table.concat(names, ","),
+                                       tostring(sv.model),
+                                       tostring(sv.offers and sv.offers.screen),
+                                       tostring(sv.announced) }, "|")
   end
 
   return table.concat(parts, ";")
@@ -3633,21 +3832,27 @@ local function net_frame()
   -- `/Discovery` has heard of, asked with this pass - answered at once from
   -- what `mdnsd` keeps, and keeping it asking - never in a paint.
   --
-  local discovered = {}
+  local discovered, screens = {}, {}
 
-  if mdns.browse("_smb._tcp") then
-    for _, d in ipairs(mdns.instances("_smb._tcp")) do
+  local function heard(kind, into)
+    if not mdns.browse(kind) then return end
+
+    for _, d in ipairs(mdns.instances(kind)) do
       if d.address then
-        discovered[#discovered + 1] = { name = d.name, host = d.host, port = d.port,
-                                        address = ipv4.text(d.address) }
+        into[#into + 1] = { name = d.name, host = d.host, port = d.port, model = d.model,
+                            address = ipv4.text(d.address) }
       end
     end
   end
 
+  -- Files, and - for the Network view's cards - screens (`docs/network.html`).
+  heard("_smb._tcp", discovered)
+  heard("_rfb._tcp", screens)
+
   local was_here = net.here and net.here.state
   local servers = netshares.servers(list, listing, function(label)
     return fs.list(netshares.ROOT .. "/" .. label) or {}
-  end, net.recent, discovered)
+  end, net.recent, discovered, screens)
   local key = net_key(servers)
 
   net.servers = servers
@@ -4393,6 +4598,7 @@ chrome(pane_ground)
 win:add(rows)
 chrome(banner)
 chrome(seen_card)
+chrome(machines)
 chrome(places)
 chrome(side_head)
 chrome(side_menu)

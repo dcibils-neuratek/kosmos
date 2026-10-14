@@ -41,6 +41,7 @@
 
 #define MDNS_NAME_MAX     255u
 #define MDNS_INSTANCE_MAX  63u  /* a label: RFC 6763 4.1.1 */
+#define MDNS_MODEL_MAX     47u
 
 struct mdns_request {
     uint32_t op;
@@ -59,11 +60,13 @@ struct mdns_reply {
     struct net_addr address;        /* instance and resolve */
     char     instance[MDNS_INSTANCE_MAX + 1];
     char     host[MDNS_NAME_MAX + 1];
+    char     model[MDNS_MODEL_MAX + 1]; /* instance: what kind of machine, from its
+                                           `_device-info._tcp` TXT - `Macmini9,1` */
 };
 
 _Static_assert(sizeof(struct mdns_request) == 336,
                "mdns.lua packs \"<I4I4I4I4c256c64\"");
-_Static_assert(sizeof(struct mdns_reply) == 336,
-               "mdns.lua reads \"<I4I4I2I2c4c64c256\"");
+_Static_assert(sizeof(struct mdns_reply) == 384,
+               "mdns.lua reads \"<I4I4I2I2c4c64c256c48\"");
 
 #endif

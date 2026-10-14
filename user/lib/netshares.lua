@@ -88,7 +88,7 @@ end
 -- asked; a server refused, or remembered and not signed into, is `lock`ed
 -- - the drawing's "seen, not signed in", whose page offers Sign in.
 --
-function netshares.servers(status, listing, shares_of, recent, discovered)
+function netshares.servers(status, listing, shares_of, recent, discovered, screens)
   local out, seen = {}, {}
 
   -- An address as smbfs keeps it - "10.9.0.1", or "10.9.0.1:4466" for
@@ -161,7 +161,106 @@ function netshares.servers(status, listing, shares_of, recent, discovered)
     end
   end
 
+  --
+  -- **What each one offers, and what kind of machine it is** (Tracker's
+  -- Network view, `docs/network.html`): files for every server above; a
+  -- server signed into that the network also announces is one machine, its
+  -- model and its being on this network taken from that.
+  --
+  local function host_of(address) return (tostring(address):gsub(":%d+$", "")) end
+  local by_host = {}
+
+  for _, one in ipairs(out) do
+    one.offers = { files = true }
+    by_host[host_of(one.address)] = by_host[host_of(one.address)] or one
+  end
+
+  for _, d in ipairs(discovered or {}) do
+    local one = d.address and by_host[host_of(d.address)]
+
+    if one then
+      one.model = one.model or d.model
+      one.announced = true
+      if not one.discovered and one.state ~= "seen" then one.heard_as = d.name end
+    end
+  end
+
+  --
+  -- And every machine that offers its screen (`_rfb._tcp`): beside its
+  -- files when it offers both, a machine of its own when it offers only
+  -- that - which Remote Screen opens, and nothing here signs into.
+  --
+  for _, d in ipairs(screens or {}) do
+    if d.address then
+      local one = by_host[host_of(d.address)]
+
+      if one then
+        one.offers.screen = true
+        one.model = one.model or d.model
+        one.announced = true
+      else
+        one = { address = d.address, name = d.name or d.address, state = "screen",
+                shares = {}, offers = { screen = true }, model = d.model, announced = true,
+                screen_only = true, discovered = d }
+        by_host[host_of(d.address)] = one
+        out[#out + 1] = one
+      end
+    end
+  end
+
   return out
+end
+
+--
+-- **What kind of machine**, from the model its `_device-info._tcp` gave -
+-- a Mac's is `Macmini9,1` or `MacBookPro18,3`, Kosmos's `Kosmos` - or, with
+-- none, from what it offers: files alone is a server.
+--
+function netshares.kind(model, offers)
+  model = tostring(model or "")
+
+  if model == "Kosmos" then return "Kosmos" end
+  if model:match("^Mac") or model:match("^iMac") then return "Mac" end
+  if model:match("^RackMac") or model:match("^Xserve") then return "Server" end
+  if model ~= "" then return "Computer" end
+
+  return (offers and offers.screen) and "Computer" or "Server"
+end
+
+--
+-- **A machine as the Network view's card says it** (`docs/network.html`):
+-- its name, its kind and what it offers - "Mac · files, screen" - and
+-- signed in with how many shares, or not; and the group it goes in: on
+-- this network when the network announces it, connected by address when
+-- only an address reached it.
+--
+function netshares.card(s)
+  local offers = {}
+
+  if s.offers and s.offers.files then offers[#offers + 1] = "files" end
+  if s.offers and s.offers.screen then offers[#offers + 1] = "screen" end
+
+  local kind = netshares.kind(s.model, s.offers)
+  local signed = s.state == "connected"
+  local n = #(s.shares or {})
+  local state
+
+  if signed then
+    state = ("Signed in \u{b7} %d share%s"):format(n, n == 1 and "" or "s")
+  elseif s.screen_only then
+    state = "Screen sharing"
+  elseif s.state == "away" then
+    state = "Not answering"
+  else
+    state = "Not signed in"
+  end
+
+  return {
+    title = s.name or s.address, kind = kind,
+    what = kind .. " \u{b7} " .. (#offers > 0 and table.concat(offers, ", ") or "nothing shared"),
+    state = state, signed_in = signed,
+    group = s.announced and "network" or "address",
+  }
 end
 
 --

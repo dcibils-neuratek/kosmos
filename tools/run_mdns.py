@@ -77,6 +77,26 @@ def studio_answer():
     return bytes(msg)
 
 
+def screens_answer():
+    """Two machines offering their screens (`_rfb._tcp`): Studio, which offers
+    its files too, and Pixel, which offers only its screen."""
+    recs = []
+    for inst, host, ip in (("Studio", "studio.local", U.PEER_IP),
+                           ("Pixel", "pixel.local", bytes([10, 9, 0, 5]))):
+        full = inst + "._rfb._tcp.local"
+        recs.append(record(name("_rfb._tcp.local"), 12, name(full), ttl=4500, flush=False))
+        recs.append(record(name(full), 33, struct.pack("!HHH", 0, 0, 5900) + name(host)))
+        recs.append(record(name(host), 1, ip))
+    return struct.pack("!HHHHHH", 0, 0x8400, 0, len(recs), 0, 0) + b"".join(recs)
+
+
+def device_answer(inst, model):
+    """What kind of machine `inst` is: its `_device-info._tcp` TXT."""
+    text = ("model=" + model).encode()
+    return (struct.pack("!HHHHHH", 0, 0x8400, 0, 1, 0, 0)
+            + record(name(inst + "._device-info._tcp.local"), 16, bytes([len(text)]) + text))
+
+
 def a_answer(host, address):
     head = struct.pack("!HHHHHH", 0, 0x8400, 0, 1, 0, 0)
     return head + record(name(host), 1, address)
@@ -155,7 +175,7 @@ def query(qname, kind):
     return head + name(qname) + struct.pack("!HH", kind, 1)
 
 
-def boot(image, command, setup=None, done=None):
+def boot(image, command, setup=None, done=None, shot=None):
     """One boot running `command`, the peer answering, until `done(seen)` -
     by default, until the `mdns` program has said something."""
     done = done or (lambda seen: "mdns: " in seen.split("mdnsd: listening")[-1])
@@ -198,12 +218,23 @@ def boot(image, command, setup=None, done=None):
                     answered.add(key)
                     if q.lower() == "_smb._tcp.local" and kind == 12:
                         seg.udp(U.group_mac(MDNS), MDNS, 5353, 5353, studio_answer())
+                    elif q.lower() == "_rfb._tcp.local" and kind == 12:
+                        seg.udp(U.group_mac(MDNS), MDNS, 5353, 5353, screens_answer())
+                    elif q.lower() == "studio._device-info._tcp.local" and kind == 16:
+                        seg.udp(U.group_mac(MDNS), MDNS, 5353, 5353,
+                                device_answer("Studio", "Macmini9,1"))
+                    elif q.lower() == "pixel.local" and kind == 1:
+                        seg.udp(U.group_mac(MDNS), MDNS, 5353, 5353,
+                                a_answer("pixel.local", bytes([10, 9, 0, 5])))
                     elif q.lower() == "studio.local" and kind == 1:
                         seg.udp(U.group_mac(MDNS), MDNS, 5353, 5353, a_answer("studio.local", U.PEER_IP))
             seg.frames.clear()
             guest._read_available()
         R.time.sleep(1)
         guest._read_available()
+        if shot:
+            with open(shot, "wb") as f:
+                f.write(guest.screendump())
     finally:
         seen = guest.seen
         guest.close()
@@ -266,16 +297,32 @@ def main():
         fails.append("Connect did not find studio.local: %r"
                      % re.findall(r"connect: [^\n]*", seen)[-3:])
 
+    # **All of the network, as computers** (`docs/network.html`): Tracker on
+    # /Network, the cards - Studio a Mac offering files and its screen, one
+    # card for both, and Pixel offering only its screen.
+    def cards_done(seen):
+        m = re.findall(r"tracker: network view, (\d+) computers?: ([^\n]*)", seen)
+        return bool(m) and "Pixel" in m[-1][1] and "Mac \u00b7 files, screen" in m[-1][1]
+
+    seen, _ = boot(image, "wm notifications,desktop,tracker:/Network", done=cards_done)
+    views = re.findall(r"tracker: network view, (\d+) computers?: ([^\n]*)", seen)
+    last = views[-1] if views else ("0", "")
+    if not (last[0] == "2"
+            and re.search(r"Studio \(Mac \u00b7 files, screen; Not signed in\)", last[1])
+            and re.search(r"Pixel \(Computer \u00b7 screen; Screen sharing\)", last[1])):
+        fails.append("All of the network did not show Studio (a Mac, files and screen) and "
+                     "Pixel (its screen) as two cards: %r" % (views[-3:],))
+
     # **This machine, seen as a Mac sees it** (N13).
     fails += announced(image)
 
     if fails:
-        print("FAIL: %d of 14 checks on finding what is on the network by name:" % len(fails))
+        print("FAIL: %d of 15 checks on finding what is on the network by name:" % len(fails))
         for f in fails:
             print("  " + f)
         return 1
 
-    print("PASS: 14 checks on finding what is on the network by name (mdnsd on a wire with a "
+    print("PASS: 15 checks on finding what is on the network by name (mdnsd on a wire with a "
           "file server called Studio: _smb._tcp.local asked of the group at a time to live of "
           "255; Studio listed with studio.local:445 and 10.9.0.1 from its PTR, SRV and A, "
           "compressed; studio.local resolved; an A nobody asked for not kept; Studio in "
@@ -283,7 +330,7 @@ def main():
           "smb://studio.local finding 10.9.0.1; and this machine sharing as Studio2, announced, "
           "answering for _smb._tcp with 445 at studio2.local and 10.9.0.2 and model=Kosmos, "
           "silent before it shares and for a name it does not hold, and saying goodbye at 0 when "
-          "it stops)")
+          "it stops; and Tracker's All of the network showing Studio and Pixel as two cards)")
     return 0
 
 
