@@ -9126,6 +9126,15 @@ opens its shares or its sign-in card; the sidebar keeps every computer
 seen.
 **Built in 0.11.238** (`testing.md` 18.633).
 
+**Moved up, 14 October - Linux-on-Kosmos next**, ahead of Remote Screen and
+Music. Diego: "can we prioritize linux on kosmos so we can run a web
+browser ?". **Designed the same evening, for Diego to agree**:
+`docs/linux.md`, `docs/linux.html`, `docs/linux-architecture.png` - three
+virtio devices in the sandbox monitor (a 2D screen, a keyboard and tablet,
+a disk on a file in `/Home` through `WRITE_AT`) and a Linux window; steps
+L1-L6; three questions (Chromium alone or a desktop, where the disk lives,
+how much of the machine).
+
 **Found, 10 October - a question to an application waits for its tick.**
 The launcher waited 840 ms of every press for the Deskbar to say where the
 dock is (`testing.md` 18.512): a kit window answers `/Running/<name>` only

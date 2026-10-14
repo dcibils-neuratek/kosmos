@@ -1,0 +1,171 @@
+<!--
+  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+  Linux on Kosmos: Alpine in a sandbox, its screen, keyboard and pointer in
+  a Kosmos window - Chromium for the web Kosmos's own browser does not try
+  to host. Drawn on 14 October 2026, before it is built, from Diego's "can
+  we prioritize linux on kosmos so we can run a web browser ?". Its feature
+  set and architecture are docs/linux.md, its diagram
+  docs/linux-architecture.png. The page drawn in the browser is made up.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Linux on Kosmos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --w-bg: #ffffff; --w-side: #f4f5f7; --w-line: #e3e6eb; --w-ink: #1b2330; --w-dim: #6b7484;
+  --w-accent: #2f6bdc; --w-good: #2e9b5f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 22px; max-width: 76ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); }
+p, li { max-width: 78ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 86ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 840px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+
+/* The Kosmos window: its band - title, menus, the three - as a direct
+   window with a menu bar has it. */
+.win { width: 980px; background: var(--w-bg); color: var(--w-ink); border-radius: 12px; overflow: hidden;
+       box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; position: relative; }
+.band { display: flex; align-items: center; gap: 18px; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--w-line); background: #f7f8fa; }
+.band .t { font-weight: 600; font-size: 14px; }
+.band .m { color: var(--w-dim); }
+.band .m.on { color: #fff; background: var(--w-accent); border-radius: 6px; padding: 2px 9px; margin: 0 -9px; }
+.grow { flex: 1; }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+
+/* Linux's screen inside it: Chromium, as cage shows it - one window, no desktop. */
+.screen { background: #dfe3ea; height: 540px; display: flex; flex-direction: column; }
+.cr-tabs { display: flex; align-items: flex-end; gap: 2px; padding: 8px 10px 0; background: #dee3ea; }
+.cr-tab { background: #c9d0db; border-radius: 9px 9px 0 0; padding: 7px 14px; font-size: 12px; color: #3a4252; width: 190px; white-space: nowrap; overflow: hidden; }
+.cr-tab.on { background: #fff; color: #111; }
+.cr-bar { background: #fff; display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-bottom: 1px solid #e3e6eb; }
+.cr-bar .nav { color: #6b7484; letter-spacing: 6px; }
+.cr-bar .url { flex: 1; background: #f1f3f4; border-radius: 16px; padding: 6px 14px; color: #3a4252; font-size: 12.5px; }
+.page { flex: 1; background: #fff; display: grid; grid-template-columns: 200px 1fr; }
+.page .nav-side { border-right: 1px solid #eef0f3; padding: 16px; color: #5a6474; font-size: 12.5px; }
+.page .nav-side div { padding: 6px 10px; border-radius: 14px; }
+.page .nav-side .on { background: #e8f0fd; color: #1d3f7a; font-weight: 600; }
+.page .list { padding: 8px 0; }
+.mail { display: grid; grid-template-columns: 170px 1fr 60px; gap: 10px; padding: 9px 18px; border-bottom: 1px solid #f1f2f5; font-size: 12.5px; }
+.mail b { font-weight: 600; }
+.mail span { color: #6b7484; }
+
+.menu { position: absolute; left: 156px; top: 40px; background: #fff; border: 1px solid #dfe3ea; border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,.18); padding: 6px; width: 250px; font-size: 13px; }
+.menu div { display: flex; justify-content: space-between; padding: 6px 10px; border-radius: 6px; }
+.menu div:first-child { background: var(--w-accent); color: #fff; }
+.menu kbd { font-family: var(--body); color: inherit; opacity: .7; }
+.menu hr { border: 0; border-top: 1px solid #eef0f3; margin: 5px 4px; }
+
+/* First run. */
+.setup { height: 470px; background: #1d222b; display: grid; place-items: center; }
+.setup .card { width: 520px; background: #fff; border-radius: 16px; padding: 26px 30px; color: var(--w-ink); }
+.setup h3 { margin: 0 0 4px; font-size: 18px; }
+.setup .d { color: var(--w-dim); margin: 0 0 16px; font-size: 13px; }
+.step { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; padding: 7px 0; border-top: 1px solid #f0f1f4; font-size: 13px; }
+.step .k { color: var(--w-good); font-weight: 700; }
+.step .n { color: #b6bdc8; }
+.bar { height: 6px; background: #eef0f3; border-radius: 3px; margin: 4px 0 0; grid-column: 2 / 4; }
+.bar i { display: block; height: 6px; width: 64%; background: var(--w-accent); border-radius: 3px; }
+
+/* Settings. */
+.sheet { padding: 22px 26px; display: grid; grid-template-columns: 180px 1fr; gap: 12px 20px; font-size: 13.5px; }
+.sheet .l { color: var(--w-dim); padding-top: 5px; }
+.drop { display: inline-flex; gap: 8px; align-items: center; border: 1px solid #dfe3ea; border-radius: 7px; padding: 4px 12px; }
+.seg { display: inline-flex; background: #eef0f3; border-radius: 8px; padding: 3px; }
+.seg span { padding: 3px 12px; border-radius: 6px; color: var(--w-dim); }
+.seg span.on { background: #fff; color: var(--w-ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.note { color: var(--w-dim); font-size: 12.5px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Linux on Kosmos</h1>
+<p class="sub">Alpine Linux in a sandbox, its screen, keyboard and pointer in a Kosmos window - Chromium for the web Kosmos's own browser does not try to host, and any Linux application beside it. It runs at the processor's speed under VT-x, as sandboxes already do on the M700. Drawn before it is built, 14 October 2026.</p>
+<p class="sub">Diego: "the linux guest idea is great as well to run chromium in alpine linux and see it on the kosmos screen", and "can we prioritize linux on kosmos so we can run a web browser ?".</p>
+
+<h2>Linux, running Chromium</h2>
+<div class="scroller"><div class="win">
+  <div class="band"><span class="t">Linux</span><span class="m">Linux</span><span class="m on">View</span><span class="m">Edit</span><span class="grow"></span>
+    <span class="m" style="font-size:12px">Alpine &middot; 1 core &middot; 2 GB &middot; outgoing</span>
+    <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="screen">
+    <div class="cr-tabs"><div class="cr-tab on">Inbox - mail.example.com</div><div class="cr-tab">Notes - docs.example.com</div><div class="cr-tab">Videos</div></div>
+    <div class="cr-bar"><span class="nav">&#8592; &#8594; &#8635;</span><span class="url">https://mail.example.com/inbox</span></div>
+    <div class="page">
+      <div class="nav-side"><div class="on">Inbox &nbsp; 12</div><div>Starred</div><div>Sent</div><div>Drafts</div></div>
+      <div class="list">
+        <div class="mail"><b>Ana Torres</b><div><b>Dinner on Friday</b> <span>- shall we book the place by the river?</span></div><span>19:02</span></div>
+        <div class="mail"><b>Kosmos build</b><div><b>0.11.240 is ready</b> <span>- the M700 is on it</span></div><span>18:44</span></div>
+        <div class="mail"><b>Lucas</b><div>Photos from the weekend <span>- 14 attached</span></div><span>17:20</span></div>
+        <div class="mail"><b>Bank</b><div>Your statement is ready <span>- October</span></div><span>Mon</span></div>
+        <div class="mail"><b>Marta</b><div>The plan for Saturday <span>- see the doc</span></div><span>Sun</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="menu">
+    <div>Fit the window<kbd></kbd></div><div>Actual pixels<kbd></kbd></div><div>Full screen<kbd>Ctrl F11</kbd></div>
+    <hr><div>Show the console<kbd></kbd></div>
+  </div>
+</div></div>
+<p class="cap">Chromium fills the window - <code>cage</code> runs one application and nothing else. Linux's screen follows the window's size; the View menu also fits or shows actual pixels, and goes full screen. The keys and the pointer go to Linux while the window has them; Super and Kosmos's own shortcuts stay Kosmos's. Edit has Paste from Kosmos and Copy to Kosmos for text. The band says what it was given: Alpine, one core, 2 GB, the network outgoing. Downloads land in Kosmos's Downloads.</p>
+
+<h2>The first time: Linux set up</h2>
+<div class="scroller"><div class="win">
+  <div class="band"><span class="t">Linux</span><span class="m">Linux</span><span class="m">View</span><span class="m">Edit</span><span class="grow"></span>
+    <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="setup"><div class="card">
+    <h3>Setting Linux up</h3>
+    <p class="d">Once: Alpine and Chromium onto Linux's own disk, through Kosmos's network. After this it starts in a few seconds, where it was left.</p>
+    <div class="step"><span class="k">&#10003;</span><span>Linux's disk made</span><span style="color:#6b7484">4 GB, /Home/Sandboxes/Disks</span></div>
+    <div class="step"><span class="k">&#10003;</span><span>Alpine installed</span><span style="color:#6b7484">58 MB</span></div>
+    <div class="step"><span>&#8230;</span><span>Chromium and its fonts</span><span style="color:#6b7484">412 of 640 MB</span><div class="bar"><i></i></div></div>
+    <div class="step"><span class="n">&#9675;</span><span class="n">Downloads shared, the browser set to start</span><span></span></div>
+  </div></div>
+</div></div>
+<p class="cap">Everything Linux installs comes through Kosmos's own network - the sandbox's gateway - and goes onto a disk of its own, a file in <code>/Home</code>. Nothing is installed on Kosmos itself.</p>
+
+<h2>Its settings</h2>
+<div class="scroller"><div class="win" style="width:760px">
+  <div class="band"><span class="t">Linux settings</span><span class="grow"></span>
+    <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="sheet">
+    <div class="l">Runs</div><div><span class="seg"><span class="on">Chromium alone</span><span>A Linux desktop</span></span><div class="note">Chromium alone fills the window; a desktop is Xfce, with a terminal and Linux's own applications.</div></div>
+    <div class="l">Memory</div><div><span class="drop">2 GB &#9662;</span><div class="note">Of the M700's 8 GB.</div></div>
+    <div class="l">Processors</div><div><span class="drop">1 &#9662;</span><div class="note">More once Linux can use them (L6).</div></div>
+    <div class="l">Disk</div><div><span class="drop">4 GB &#9662;</span> <span class="note" style="margin-left:8px">1.1 GB used</span></div>
+    <div class="l">Folders</div><div>Downloads &nbsp;<span class="drop">Read and write &#9662;</span><div class="note">Add a folder of /Home&#8230;</div></div>
+    <div class="l">Network</div><div><span class="drop">Outgoing &#9662;</span></div>
+    <div class="l">Starts</div><div><span class="drop">When opened &#9662;</span></div>
+  </div>
+</div></div>
+<p class="cap">The same choices a sandbox has, put for one purpose. Linux is a card in Sandboxes too, started and stopped from either place.</p>
+
+<h2>For Diego to decide</h2>
+<div class="q"><b>1. Chromium alone, or a Linux desktop.</b> Chromium alone (<code>cage</code>) is the quickest to a browser and the lightest; a desktop (Xfce) gives a terminal and Linux's own applications. Recommended: Chromium alone first, a desktop as a choice in settings later.</div>
+<div class="q"><b>2. Where Linux's disk lives.</b> Alpine with Chromium is 600-800 MB, and 2-4 GB gives it room; the M700's <code>/Home</code> on the stick has 1.8 GB free. A bigger <code>/Home</code> (the stick made again with a 16 GB home - recommended), the M700's internal drive formatted as Kosmos's, or a disk that grows on the stick until the stick runs out.</div>
+<div class="q"><b>3. How much of the machine.</b> Recommended: 2 GB of memory and one core until Linux can use more.</div>
+</div>
+</body>
+</html>

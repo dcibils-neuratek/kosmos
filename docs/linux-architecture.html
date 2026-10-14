@@ -1,0 +1,138 @@
+<!doctype html>
+<!--
+  Linux on Kosmos, and what it stands on: the Linux window on top, the
+  sandbox monitor's new devices beneath it, the guest beside them, Nebula's
+  VT-x under all. A frame of Chromium drawn through it (F). Drawn on 14
+  October 2026, before any of it is built; docs/linux.md is the argument and
+  docs/linux.html the window. Rendered to docs/linux-architecture.png by
+  headless Chrome at twice its size.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Linux architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --guest: #f1f4f8; --guest-line: #b9c3d3; --guest-ink: #34425a;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code, td code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .guest { background: var(--guest); border-color: var(--guest-line); } .guest h2 { color: var(--guest-ink); } .guest .box { border-color: var(--guest-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Linux on Kosmos - what it stands on</h1>
+<p class="sub">Alpine runs in a sandbox at the processor's speed, under VT-x, as it already does on the M700. What is new is three virtio devices in the sandbox monitor - a screen, a keyboard and pointer, a disk that keeps - so any sandbox can have them, and the Linux window that shows the screen and hands it the keys. Frames and input cross in a region, with pulses to say so; no frame is ever a message.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--guest-line);background:var(--guest)"></i>the Linux guest</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers, in C</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">F</span><span>a frame of Chromium</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications</h2>
+      <div class="row" style="grid-template-columns:1.4fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Linux</b><p>a direct window: the screen's region blitted as it is told (C), keys and the pointer into the input ring, the first run's progress, its menus and settings <span class="f">F5</span></p></div>
+        <div class="box"><b>Sandboxes</b><p>Linux is a card there too: started, stopped, watched</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in each process)</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box new"><span class="tag">GROWS</span><b>the Sandboxes kit, <code>sandbox</code></b><p>a definition gains a screen, input and a disk; <code>vmmproto.h</code> the screen's region and the input ring</p></div>
+        <div class="box"><b>ui.lua, pixelkit</b><p>the band and its menus, the settings sheet</p></div>
+        <div class="box"><b>prefs.lua</b><p>Linux's settings: memory, cores, disk, folders</p></div>
+      </div>
+    </div>
+    <div class="layer guest"><h2>The Linux guest - Alpine, in the sandbox</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>Chromium, in <code>cage</code></b><p>draws each frame in software <span class="f">F1</span></p></div>
+        <div class="box"><b>linux-virt's drivers</b><p><code>virtio_gpu</code> asks a rectangle transferred and flushed <span class="f">F2</span>; <code>virtio_input</code>, <code>virtio_blk</code></p></div>
+        <div class="box"><b>its disk, <code>/dev/vda</code></b><p>Alpine and Chromium, installed once by the first run</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers, in C</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>vmm: virtio-gpu, 2D</b><p>the flushed rectangle copied from the guest's RAM into the screen's region, a pulse to the window <span class="f">F3 F4</span></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>vmm: virtio-input</b><p>a keyboard and a tablet, read from the window's ring</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>vmm: virtio-blk</b><p>Linux's disk, a file in <code>/Home</code>, through <code>diskfs</code>'s <code>WRITE_AT</code></p></div>
+        <div class="box"><b>vmm, as it is</b><p><code>vdev.c</code> virtio-mmio, <code>vmmnet.c</code> the gateway, <code>vmmfs.c</code> folders, <code>x86dev.c</code></p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr 1fr;margin-top:10px">
+        <div class="box"><b>diskfs</b><p>the disk's file, a piece a write, each a transaction (N14)</p></div>
+        <div class="box"><b>window manager</b><p>the Linux window composed <span class="f">F6</span></p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box"><b>VT-x (X1)</b><p>the guest's code on the processor; its exits handed to the monitor</p></div>
+        <div class="box"><b>pulses, regions</b><p>the screen and the ring are regions; a pulse says a frame or a key is there</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>F - a frame of Chromium</h3><ol>
+      <li><span class="f">F1</span> Chromium draws the frame into its buffer, in the guest.</li>
+      <li><span class="f">F2</span> the guest's <code>virtio_gpu</code> asks the changed rectangle transferred and flushed.</li>
+      <li><span class="f">F3</span> the monitor copies it from the guest's RAM into the screen's region - C, a row at a time.</li>
+      <li><span class="f">F4</span> a pulse tells the Linux window which buffer, with the damage beside it.</li>
+      <li><span class="f">F5</span> the window blits the rectangle into its surface (C) and commits it.</li>
+      <li><span class="f">F6</span> the window manager composes it on the screen.</li></ol></div>
+    <div class="card"><h3>Where the time goes</h3><table>
+      <tr><td>Chromium drawing</td><td>in software, one core - most of it; L6 gives it more</td></tr>
+      <tr><td>A frame's copies</td><td>a full 1280x800 is 4 MB, twice; a scroll a few hundred KB</td></tr>
+      <tr><td>A key or a click</td><td>a ring entry and a pulse</td></tr>
+      <tr><td>The disk</td><td>4 KB pieces, a transaction each; the first run the heaviest</td></tr></table></div>
+    <div class="card"><h3>Who else uses what is new</h3><table>
+      <tr><td>a screen</td><td>any sandbox: a Linux desktop, a game, another OS that boots from a kernel</td></tr>
+      <tr><td>input</td><td>the same, and Remote Screen's own keys, later</td></tr>
+      <tr><td>a disk that keeps</td><td>any sandbox that installs software</td></tr>
+      <tr><td><code>WRITE_AT</code> lifting virtio-fs's cap</td><td>every shared folder</td></tr></table></div>
+  </div>
+</div>
+</body>
+</html>

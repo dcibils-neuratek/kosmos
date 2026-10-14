@@ -117,6 +117,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - The Servers app - Web, Command line by Telnet, Screen by VNC - as drawn and then built (the screen looked at; keys and the pointer next): `docs/servers.html`
 - Remote Screen, a VNC client - another computer's screen in a Kosmos window - agreed, to be built: `docs/screens.md`, `docs/screens.html`, `docs/screens-architecture.png`
 - Pulses, one-way messages in Nebula, and Tracker live - agreed, to be built: `docs/pulses.md`
+- Linux on Kosmos - Alpine in a sandbox, its screen and input in a Kosmos window, Chromium there - before it is built: `docs/linux.md`, `docs/linux.html`, `docs/linux-architecture.png`
 - How Cafesa3D renders across several machines, before it is built: `docs/renderfarm.md`
 - Video in hardware on the M700 - what it takes, for Diego to decide: `docs/m700-gpu.md`
 - The desktop on the M700's GPU, 2D first - the plan, for Diego to decide: `docs/m700-2d.md`
