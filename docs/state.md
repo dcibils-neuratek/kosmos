@@ -2,9 +2,38 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-14, morning (0.11.225; Automations A1-A4, the file type)
+Last updated: 2026-10-14, afternoon (0.11.230; Pulses, the web decided)
 
 ---
+
+## 14 October, the day: Pulses, and the web decided
+
+**On `main`, not pushed: 0.11.199-0.11.230.** Whole gates 89/89 (0.11.226),
+88/89 (0.11.227, x86-dock under load), 89/89 (0.11.228), 90/90 (0.11.229).
+
+- **Diego's answers**: A5 consent (a), as designed - a design note first;
+  the mail trigger by file, then pulses designed instead; the PDF reader,
+  Remote Screen (renamed from Screens) and Music designs agreed ("This is
+  good").
+- **Mail as a trigger** (0.11.226, 18.621), first through a file.
+- **Pulses** (`docs/pulses.md`, QNX's shape, 32 an endpoint): P1 the
+  kernel (0.11.227, 18.622); P3 `maild` tells `autod` by pulse, the file
+  gone (0.11.228, 18.623); P4 folders tell - `diskfs` and `ramfs` through
+  `folderwatch.c`, the window manager's `changed` event, `win:watch_folder`,
+  **Tracker sees a change at once** (0.11.229, 18.624); `autod`'s folder
+  automations on the pulse (0.11.230, 18.625).
+- **The web, decided** (`docs/browser-engine.md`, README): native apps for
+  the work; a light browser of Kosmos's own to read the modern web, not
+  Gmail-sized apps; **Linux-on-Kosmos** - Chromium and native Linux apps in
+  an Alpine guest shown in a Kosmos window. Queue: PDF reader, Remote
+  Screen, Music, then Linux-on-Kosmos; the light browser last.
+- **Watched**: the telnetd-late flake came back in `x86-mail-3` (the
+  network never got an address); every suite now keeps its guest's whole
+  serial line in `build/gate/serial/` for when it comes again.
+- **Next**: the PDF reader, as agreed (`docs/pdfview.md`).
+- **Still waiting on Diego**: the sandbox console keys on the M700
+  (`vmm.c` uncommitted); the M700's screen; background programs fix 1 or
+  2; the Shortcuts cheat sheet; About in Preferences; a push.
 
 ## 14 October, the night into morning: Automations A1-A2, a kernel hang, Mail by name
 
