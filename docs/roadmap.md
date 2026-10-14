@@ -211,6 +211,8 @@ steps), `docs/screens.html`, `docs/screens-architecture.png`. DES is in the
 Crypto Kit already (`crypto.des`, `vncd`'s sign-in); what is new is
 `rfb.lua` from `vncd`'s own code, `conn:read_into`, `zstream:inflate`,
 `surface:zrle_decode` and `surface:unpack`, and a `keyring-screens` door.
+**Agreed 14 October** - Diego, shown the mockup, diagram and document again:
+"This is good".
 
 **Maps: a satellite view, and directions** - Diego, 10 October 2026: "Maps
 need a switch to satellite view", "As most maps", "And directions". A
@@ -9085,6 +9087,7 @@ on 13 October, for Diego to agree**: `docs/pdfview.md`, `docs/pdfview.html`,
 `docs/pdfview-architecture.png` - and what is new is the PDF Kit's: a page's
 text (`pdf.text`, through `ToUnicode`), the outline (`pdf.outline`), and
 pictures drawn in a page, which every other user of the kit gains.
+**Agreed 14 October** - Diego: "This is good".
 To start with: a menu bar (File, View, Go), zoom (in, out, fit width, fit
 page, actual size), scrolling through the document rather than a page at a
 time, page thumbnails in a sidebar, go to page, the window resizable with
@@ -9826,7 +9829,8 @@ a roadmap question; nothing decided. What it would take, honestly:
   meter wants left and right, where the server publishes one peak a stream.
   FLAC as above. `docs/music.html` drawn again and **agreed the same evening**
   ("music mockup is perfect"); `docs/music.md` and its diagram next, before
-  code. On the queue after Doom's and Quake's sound.
+  code. On the queue after Doom's and Quake's sound. **`docs/music.md` and
+  its diagram agreed 14 October** - Diego: "This is good"; steps M1-M6.
 
   **And drawing them needs a triangle command**, found while building: an
   application that draws through commands has `fill`, `text` and `image` and
