@@ -25822,3 +25822,45 @@ not yet laid out at its new height - a new signature for this suite under
 load; it passed alone twice (3:47, 3:41). Nothing sends a pulse yet, so
 nothing P1 changed runs in that path. Watched.
 
+## 18.623 maild tells autod by pulse; the file goes
+
+`docs/pulses.md` P3. `mailarrived.lua` is still the one door, with both
+halves now: in `maild` it keeps the last fifty arrivals, numbered, each
+with the counter when it came, and pulses every subscriber once a batch
+(`sys.pulse`, code 1, the newest number); a subscriber whose endpoint is
+gone is let go. It answers `subscribe` - the subscriber's endpoint passed
+beside it, which `maild`'s loop now keeps from `sys.receive` - and
+`arrived`. In `autod` a pulse is taken in its receive loop with no reply
+(nobody waits) and sets mail due; `autod` then asks what came after the
+newest it saw. `/Temporary/maild/arrived` is gone.
+
+**A race the suite found at once**: Bob's message arrives during `maild`'s
+first IDLE, seconds after it starts - before `autod`'s next look had
+subscribed - and subscribing then took "newest" as seen, so Bob was never
+news. In use the Deskbar starts `maild` and `autod` together, in either
+order. Now a first subscription to a `maild` looks at everything it kept
+and takes what came since *`autod`* started, by each arrival's counter.
+
+**Tests.** Host: `test_automations.lua`, 30 checks - a subscription needs
+an endpoint passed with it; a request it does not know is left for
+`maild`; each batch pulses a subscriber once with the newest number; a
+gone subscriber is released; what came after a number, in order; fifty
+kept. Guest: `x86-mail-2`, against the Mac's IMAP server - `autod` with
+three mail automations started before `maild`; Bob's message, delivered
+during IDLE, runs "Bob wrote" and its banner carries `{sender}` and
+`{subject}`, and "Zed wrote" does not run; the long letter delivered much
+later runs "Digest arrived". **Control**: `maild` keeping arrivals but
+pulsing nobody - the digest's automation never runs, since nothing in
+`autod` looks for mail on a clock (2 of 15 fail).
+
+**Whole gate**, first run: 86 of 89. `x86-autod`'s "no second banner"
+matched the *first* banner's "notifications: banners at ..." reaching the
+serial line after the mark - the suite's check, not `autod`; it looks for
+a second post of the failure now. `x86-film`, the known flake. And
+`x86-mail-3`: telnetd never listening, the network never given an address
+- 18.612's flake, back after the fix it was thought to be part of. With
+only the suite's last 3000 characters there was nothing before the silence
+to read, so **every suite's guest now keeps its whole serial line** in
+`build/gate/serial/<suite>-<n>.log` (`Guest.close`, `KOSMOS_SUITE` from the
+gate). Watched, with the whole log next time. Second run: 89 of 89.
+

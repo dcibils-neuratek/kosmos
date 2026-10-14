@@ -16,9 +16,8 @@ One boot with a disk for /Home. Automations are written as files in
   4. **Stop unless**: a run that stops where its text lacks the words, as a
      success, not a failure.
   5. **A file that is not an automation** is said so, and not run.
-  6. **A mail arriving**, as `maild` writes it down: the automation for its
-     sender runs with {sender} and {subject}, the one for another sender
-     does not, and what arrived before `autod` started is not news.
+  A mail arriving, told by `maild`'s pulse, is `x86-mail-2`'s: it needs a
+  real `maild` and a mail server (`tools/run_mail.py`).
 
 Usage: run_autod.py IMAGE
 """
@@ -63,12 +62,6 @@ keep{ name = "Broken", when = { kind = "hand" }, steps = {
 keep{ name = "Stops", when = { kind = "hand" }, steps = {
   { verb = "stop_unless", text = "nothing stable here", has = "-stable" },
   { verb = "notify", title = "Stops should have stopped" } } }
-keep{ name = "Mail in", when = { kind = "mail", from = "ana@" }, steps = {
-  { verb = "notify", title = "Mail from {sender}: {subject}" } } }
-keep{ name = "Mail other", when = { kind = "mail", from = "zed@" }, steps = {
-  { verb = "notify", title = "Zed wrote" } } }
--- What arrived before autod started is not news to it.
-use("/Kosmos/Libraries/mailarrived.lua").add{ { from = "ana@example.test", subject = "Before" } }
 -- Not an automation: a verb nobody knows, kept anyway to see it refused.
 files = use("/Kosmos/Libraries/files.lua")
 print("BAD " .. tostring(fs.write("/Home/Automations/Bad.automation",
@@ -88,8 +81,6 @@ HISTORY = ('local h = use("/Kosmos/Libraries/automations.lua").history(args)\n'
 
 OUT = 'print("OUT " .. tostring(fs.read("/Temporary/out/note.txt")))\n'
 
-ARRIVE = ('print("ARRIVED " .. tostring(use("/Kosmos/Libraries/mailarrived.lua").add{\n'
-          '  { account = "me@example.test", from = "ana@example.test", subject = "Lunch" } }))\n')
 
 
 def main():
@@ -120,19 +111,18 @@ def main():
         guest.wait_for("telnetd: on port ", "telnetd listening")
         session = S.connect(telnet)
 
-        for name, text in (("write", WRITE), ("launch", LAUNCH), ("history", HISTORY), ("out", OUT),
-                           ("arrive", ARRIVE)):
+        for name, text in (("write", WRITE), ("launch", LAUNCH), ("history", HISTORY), ("out", OUT)):
             session.put(text.encode(), "/Temporary/%s.lua" % name)
 
         session.run("mkdir /Temporary/inbox")
         session.run("mkdir /Temporary/out")
         said["write"] = session.run("/Temporary/write.lua").decode(errors="replace")
-        check(len(re.findall(r"WROTE [\w ]+ true", said["write"])) == 6,
-              "the six automations were not written: %r" % said["write"])
+        check(len(re.findall(r"WROTE [\w ]+ true", said["write"])) == 4,
+              "the four automations were not written: %r" % said["write"])
 
         mark = len(guest.seen)
         session.run("/Temporary/launch.lua")
-        listed = line("autod: 7 automations - ", "autod's first reading", mark)
+        listed = line("autod: 5 automations - ", "autod's first reading", mark)
         check(listed is not None and "Answer" in listed and "Inbox" in listed,
               "autod did not read the automations: %r" % listed)
         bad = line("autod: Bad: step 1 does nothing Automations knows", "the bad file", mark, 5)
@@ -174,7 +164,10 @@ def main():
         check(again is not None, "the second run did not fail")
         time.sleep(2)
         guest._read_available()
-        check("notifications: banner" not in guest.seen[mark:],
+        # A second *post* of the failure, not any line about banners: the
+        # first one's "notifications: banners at ..." can reach the serial
+        # line after the mark (the gate, 14 October).
+        check(re.search(r'notify: \d+ "Broken failed"', guest.seen[mark:]) is None,
               "the second failure gave a second banner")
         said["status"] = session.run("automate automations").decode(errors="replace")
         check(re.search(r"Broken\s+hand\s+last run failed", said["status"]) is not None
@@ -190,18 +183,6 @@ def main():
         said["stops"] = session.run("/Temporary/history.lua Stops").decode(errors="replace")
         check("last ok, 0 of 1 steps ok, stopped" in said["stops"],
               "a stop was kept as a failure: %r" % said["stops"])
-        # ---- 5: a mail arriving, as maild writes it down ----
-        guest._read_available()
-        check("Mail in queued" not in guest.seen, "mail from before autod started ran an automation")
-        mark = len(guest.seen)
-        said["arrive"] = session.run("/Temporary/arrive.lua").decode(errors="replace")
-        done = line("autod: Mail in done in ", "the mail's automation", mark, 30)
-        check(done is not None, "a mail from ana@ did not run Mail in")
-        banner = line("notifications: banner ", "the mail's banner", mark, 20)
-        check(banner is not None and "Mail from ana@example.test: Lunch" in banner,
-              "the banner did not carry {sender} and {subject}: %r" % banner)
-        guest._read_available()
-        check("Mail other queued" not in guest.seen[mark:], "mail from ana@ ran the automation for zed@")
     except Exception as e:                  # noqa: BLE001 - said below
         check(False, "the steps stopped: %s: %s" % (type(e).__name__, str(e)[:500]))
     finally:

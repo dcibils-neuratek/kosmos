@@ -772,7 +772,27 @@ class Guest:
         suite that spent a fifth of its time here (`testing.md` 18.265).
         Connected now if it was not, and SIGTERM behind it, which QEMU also
         takes as a clean shutdown - closing a WAV it was writing properly.
+
+        **And everything the guest said is kept**, under the gate, in
+        `build/gate/serial/<suite>-<n>.log`: a suite prints its last few
+        thousand characters when it fails, and the telnetd-late flake of
+        `testing.md` 18.612 came back on 14 October with nothing before the
+        network's silence to read.
         """
+        suite = os.environ.get("KOSMOS_SUITE")
+
+        if suite:
+            try:
+                folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                      "build", "gate", "serial")
+                os.makedirs(folder, exist_ok=True)
+                n = 1
+                while os.path.exists(os.path.join(folder, "%s-%d.log" % (suite, n))):
+                    n += 1
+                with open(os.path.join(folder, "%s-%d.log" % (suite, n)), "w", errors="replace") as f:
+                    f.write(self.seen)
+            except Exception:               # noqa: BLE001 - keeping it is a courtesy
+                pass
         try:
             if self.qmp is not None:
                 self.qmp.close()

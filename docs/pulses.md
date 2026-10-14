@@ -134,7 +134,15 @@ path serves the Open/Save window and the desktop's icons.
 - **P2 - the runtime**: `sys.pulse`, a pulse from `sys.receive` as a table, and the
   C kit for servers (`kosmos_pulse`).
 - **P3 - the first user**: `maild` and `autod`; `mailarrived.lua` asks
-  instead of reading a file, and the file goes.
+  instead of reading a file, and the file goes. **Built 0.11.228**
+  (`testing.md` 18.623): `autod` subscribes, handing `maild` its endpoint;
+  `maild` keeps the last fifty arrivals and pulses each subscriber once a
+  batch; `autod`, pulsed, asks what came after the newest it saw. Each
+  arrival carries the moment it came, so mail that arrived between `maild`
+  starting and `autod` subscribing counts, and a restarted `autod` does not
+  run old mail again. The subscription is renewed on `autod`'s five-second
+  look while a mail automation exists - one small call, so a `maild`
+  started later or again learns of it; the mail itself is never looked for.
 - **P4 - folders**: a change pulse from `diskfs` and `ramfs` to whoever
   watches a folder - `autod` stops listing, and **Tracker, the Open/Save
   window and the desktop show a change at once**, through the window

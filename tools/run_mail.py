@@ -361,6 +361,19 @@ local ok, why = fs.write("/Home/Mail/USER/account", {
 print("SETUP " .. tostring(ok) .. " " .. tostring(why) .. " DONE")
 """
 
+# Two automations on mail arriving (`docs/pulses.md` P3): one for Bob, whose
+# message the server delivers during IDLE, and one for somebody else.
+AUTOS = r"""
+local A = use("/Kosmos/Libraries/automations.lua")
+local bob = A.write{ name = "Bob wrote", when = { kind = "mail", from = "Bob" },
+  steps = { { verb = "notify", title = "Mail from {sender}: {subject}" } } }
+local zed = A.write{ name = "Zed wrote", when = { kind = "mail", from = "Zed" },
+  steps = { { verb = "notify", title = "Zed wrote" } } }
+local digest = A.write{ name = "Digest arrived", when = { kind = "mail", from = "Digest" },
+  steps = { { verb = "notify", title = "The digest: {subject}" } } }
+print("AUTOS " .. tostring(bob and zed and digest and true) .. " DONE")
+"""
+
 LOOK = r"""
 local dir = "/Home/Mail/USER/INBOX"
 local names = {}
@@ -407,7 +420,7 @@ def part2(image):
     work, peer, imap_port, smtp_port = setup()
     scripts = {"setup.lua": fill(SETUP, imap_port, smtp_port),
                "look.lua": fill(LOOK, imap_port, smtp_port), "sync.lua": SYNC,
-               "stale.lua": fill(STALE, imap_port, smtp_port)}
+               "stale.lua": fill(STALE, imap_port, smtp_port), "autos.lua": AUTOS}
     guest, R = boot(image, work, scripts)
     who = mailpeer.USER
     looks, error, said = [], None, ""
@@ -430,12 +443,28 @@ def part2(image):
         guest.type("mailpass keep imap://10.0.2.2:%d %s %s" % (imap_port, who, mailpeer.PASSWORD))
         guest.wait_for_line("mailpass: kept", "the password kept", since=mark)
 
+        # The automations' runner first, with one waiting for Bob's mail
+        # (`docs/pulses.md` P3): maild is told of it when maild starts.
+        mark = len(guest.seen)
+        guest.type("/Home/autos.lua")
+        guest.wait_for_line("AUTOS true DONE", "the automations written", since=mark)
+        guest.type("autod &")
+        guest.wait_for("autod: watching /Home/Automations", "autod")
+
         guest.type("maild &")
         guest.wait_for("maild: %s: 3 messages kept, 3 unseen" % who, "the Inbox kept")
 
         # IDLE: the server delivers while maild waits, and it says so.
         guest.wait_for("maild: %s: INBOX: 1 new, 0 changed, 0 gone" % who, "the arrival fetched")
         guest.wait_for('"Bob" from /Kosmos/Programs/maild.lua', "the arrival said")
+
+        # And autod, subscribed, is pulsed and runs Bob's automation - not
+        # the other one - with what arrived in its words.
+        guest.wait_for("autod: told of mail by maild", "autod subscribed")
+        guest.wait_for("autod: Bob wrote done in ", "the mail's automation run")
+        guest.wait_for('"Mail from Bob: ', "the automation's banner, with {sender} and {subject}")
+        if "Zed wrote queued" in guest.seen:
+            error = error or "mail from Bob ran the automation for Zed"
         look()
 
         # Facts from an older reading, worked out again at the next look.
@@ -466,6 +495,11 @@ def part2(image):
         guest.type("/Home/sync.lua")
         guest.wait_for_line("maild: %s: INBOX: 1 new, 0 changed, 0 gone" % who,
                             "the long letter fetched", since=mark)
+        # Long after autod subscribed, and nothing in autod looks at mail on
+        # a clock: only maild's pulse can start this one.
+        guest.wait_for_line("autod: Digest arrived done in ", "the digest's automation, by pulse",
+                            since=mark)
+        guest.wait_for_line('"The digest: A long letter"', "its banner", since=mark)
         look()
     except Exception as e:                  # noqa: BLE001 - said below
         error = "%s: %s" % (type(e).__name__, str(e).splitlines()[0])

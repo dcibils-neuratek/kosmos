@@ -78,22 +78,36 @@ check(r, "a name with a slash was not refused: " .. tostring(why))
 check(A.check({ name = "Mail in", when = { kind = "mail", from = "ana" }, steps = good.steps }) == true,
       "a mail trigger was refused")
 
--- What arrived, numbered and kept fifty deep (`mailarrived.lua`), over a
--- file kept in a table.
-local store = {}
-fs.read = function(path) return store[path] end
-fs.write = function(path, value) store[path] = value return true end
+-- What arrived, kept by `maild` and told by pulse (`mailarrived.lua`,
+-- `docs/pulses.md` P3), with the kernel's answers stood in for.
+local pulses, released = {}, {}
+sys.pulse = function(cap, code, value)
+  if cap == 13 then return nil, "no such capability" end   -- a subscriber gone
+  pulses[#pulses + 1] = { cap = cap, code = code, value = value }
+  return true
+end
+sys.release = function(cap) released[#released + 1] = cap end
 
 local arrived = dofile("user/lib/mailarrived.lua")
 
-check(arrived.newest() == 0, "nothing arrived was not number 0")
-arrived.add{ { account = "me", from = "ana@x", subject = "Hello" } }
-arrived.add{ { from = "bob@x", subject = "Two" }, { from = "cy@x", subject = "Three" } }
-local after_one, newest = arrived.since(1)
-check(newest == 3 and #after_one == 2 and after_one[1].from == "bob@x" and after_one[2].seq == 3,
+local refused = arrived.answer({ type = "subscribe", name = "autod" }, nil)
+check(refused and refused.ok == false, "a subscription with no endpoint passed was taken")
+check(arrived.answer({ type = "subscribe", name = "autod" }, 7).ok, "a subscription was refused")
+check(arrived.answer({ type = "subscribe", name = "gone" }, 13).ok, "a second subscription was refused")
+check(arrived.answer({ type = "other" }, nil) == nil, "a request mailarrived does not answer was answered")
+
+arrived.add{ { account = "me", from = "Ana", subject = "Hello" } }
+arrived.add{ { from = "Bob", subject = "Two" }, { from = "Cy", subject = "Three" } }
+check(#pulses == 2 and pulses[1].cap == 7 and pulses[1].code == arrived.CODE and pulses[2].value == 3,
+      "each batch did not pulse the subscriber once with the newest number")
+check(#released == 1 and released[1] == 13, "a subscriber whose endpoint is gone was not let go")
+
+local r = arrived.answer({ type = "arrived", after = 1 }, nil)
+check(r.newest == 3 and #r.list == 2 and r.list[1].from == "Bob" and r.list[2].seq == 3,
       "what came after the first was not the second and third, in order")
-for i = 1, 60 do arrived.add{ { from = "n" .. i } } end
-local all = arrived.since(0)
+
+for n = 1, 60 do arrived.add{ { from = "n" .. n } } end
+local all = arrived.answer({ type = "arrived", after = 0 }, nil).list
 check(#all == 50 and all[#all].seq == 63 and all[1].seq == 14,
       ("not the newest fifty kept: %d, %s..%s"):format(#all, tostring(all[1] and all[1].seq),
       tostring(all[#all] and all[#all].seq)))
@@ -105,7 +119,7 @@ check(A.said({ verb = "press", app = "Mail", control = "Get Mail" }) == "Press G
 if #fails == 0 then
   print(("PASS: %d checks on automations.lua (a time today, tomorrow, next Monday and at the "
          .. "weekend; every so many minutes from its last run; what a step found filled in and "
-         .. "a name nothing found left; seven ways a file is not an automation, each in words; a mail trigger, and what arrived numbered and kept fifty deep)")
+         .. "a name nothing found left; seven ways a file is not an automation, each in words; a mail trigger; what arrived numbered, kept fifty deep, and each subscriber pulsed once a batch, a gone one let go)")
         :format(checks))
   os.exit(0)
 end

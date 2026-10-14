@@ -1,66 +1,127 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
--- **What mail arrived, kept for whoever looks** (`docs/automations.md`, a
--- mail arriving as a trigger).
+-- **What mail arrived, told to whoever subscribed** (`docs/automations.md`, a
+-- mail arriving as a trigger; `docs/pulses.md` P3).
 --
---   local arrived = use("/Kosmos/Libraries/mailarrived.lua")
---   arrived.add{ { account =, from =, subject =, path = }, ... }   maild
---   arrived.since(seq)   -> the ones after `seq`, oldest first, and the newest seq
---   arrived.newest()     -> the newest seq, 0 when none
+-- In `maild`:
+--   arrived.add{ { account =, from =, subject =, path = }, ... }   kept, and told
+--   arrived.answer(req, cap)    `subscribe` and `arrived` requests, or nil
+-- In a subscriber (`autod`):
+--   arrived.subscribe(ep, name) -> true and maild's start number, or nil and why
+--   arrived.since(seq)          -> what came after `seq`, oldest first, and the newest seq
+--   arrived.CODE                 the pulse's code: mail arrived
 --
--- **Written, not called**: `maild` adds to a file and `autod` reads it on
--- its five-second look, as it looks at folders. A call from one to the
--- other would have `maild` wait while `autod` is inside a step - Diego, 14
--- October 2026, agreeing this over the call: "Your recommendations are ok".
--- When programs have threads of their own, a call can replace it.
+-- **Told, not looked for.** A subscriber hands `maild` its endpoint once;
+-- `maild` keeps the last fifty arrivals, numbered, and when mail comes it
+-- **pulses** each subscriber (`sys.pulse`): sixteen bytes on the
+-- subscriber's endpoint, and `maild` goes on - it never waits on anybody.
+-- The subscriber, when it is ready, asks what came after the newest number
+-- it has seen: *control by message*, the pulse saying only that something
+-- happened. Two arrivals before it looks are one pulse counted twice.
 --
--- The last fifty, each with its number; a reader keeps the newest number
--- it has seen and asks for what came after. In /Temporary: what arrived
--- before this start of Kosmos is not news to anybody.
+-- It was a file in `/Temporary/maild` that `autod` read every five seconds,
+-- because Nebula's IPC had no way to tell without waiting (0.11.226); Diego
+-- then: "Go ahead with files And then we will design pulses". Pulses came
+-- in 0.11.227, and this is the one file that changed.
+--
+-- What arrived before `maild` started is not news; the numbers start again
+-- with it, and a subscriber learns that from the start number `subscribe`
+-- answers. Each arrival carries `at`, the counter when it came, so a
+-- subscriber that started after `maild` - `autod` and `maild` are started
+-- together at login, in either order - takes what came since *it* started
+-- and not before.
 
 local arrived = {}
 
-arrived.PATH = "/Temporary/maild/arrived"
+arrived.CODE = 1
 arrived.KEPT = 50
 
-local function read()
-  local t = fs.read(arrived.PATH)
+--------------------------------------------------------------------------
+-- maild's half.
+--------------------------------------------------------------------------
 
-  if type(t) ~= "table" then return { seq = 0, list = {} } end
-  t.seq, t.list = tonumber(t.seq) or 0, type(t.list) == "table" and t.list or {}
-  return t
-end
+local kept, seq = {}, 0
+local subscribers = {}      -- name -> capability to the subscriber's endpoint
+local started = sys.ticks()
 
+-- Kept, numbered, and each subscriber pulsed once for the lot. One that is
+-- gone - its endpoint destroyed - is let go.
 function arrived.add(messages)
-  if not messages or #messages == 0 then return true end
-
-  local t = read()
+  if not messages or #messages == 0 then return end
 
   for _, m in ipairs(messages) do
-    t.seq = t.seq + 1
-    t.list[#t.list + 1] = { seq = t.seq, account = tostring(m.account or ""),
-                            from = tostring(m.from or ""), subject = tostring(m.subject or ""),
-                            path = m.path and tostring(m.path) or nil }
+    seq = seq + 1
+    kept[#kept + 1] = { seq = seq, at = sys.ticks(), account = tostring(m.account or ""),
+                        from = tostring(m.from or ""), subject = tostring(m.subject or ""),
+                        path = m.path and tostring(m.path) or nil }
   end
 
-  while #t.list > arrived.KEPT do table.remove(t.list, 1) end
+  while #kept > arrived.KEPT do table.remove(kept, 1) end
 
-  pcall(function() use("/Kosmos/Libraries/files.lua").make_folder("/Temporary/maild") end)
-  return fs.write(arrived.PATH, t)
+  for name, cap in pairs(subscribers) do
+    local ok, why = sys.pulse(cap, arrived.CODE, seq)
+
+    if not ok and tostring(why):find("no such capability", 1, true) then
+      subscribers[name] = nil
+      pcall(sys.release, cap)
+    end
+  end
 end
 
-function arrived.since(seq)
-  local t = read()
+local function after(n)
   local out = {}
 
-  for _, m in ipairs(t.list) do
-    if m.seq > (seq or 0) then out[#out + 1] = m end
+  for _, m in ipairs(kept) do
+    if m.seq > (n or 0) then out[#out + 1] = m end
   end
 
-  return out, t.seq
+  return out
 end
 
-function arrived.newest()
-  return read().seq
+-- A request this answers - `subscribe`, with the subscriber's endpoint
+-- passed beside it, or `arrived` - or nil for one it does not.
+function arrived.answer(req, cap)
+  if req.type == "subscribe" then
+    local name = tostring(req.name or "")
+
+    if name == "" or not cap or cap < 0 then
+      return { ok = false, why = "a subscription is a name and an endpoint passed with it" }
+    end
+
+    -- The same subscriber again - started over - replaces its old door.
+    if subscribers[name] and subscribers[name] ~= cap then pcall(sys.release, subscribers[name]) end
+
+    subscribers[name] = cap
+    return { ok = true, newest = seq, started = started }
+  end
+
+  if req.type == "arrived" then
+    return { ok = true, list = after(tonumber(req.after) or 0), newest = seq, started = started }
+  end
+end
+
+--------------------------------------------------------------------------
+-- A subscriber's half.
+--------------------------------------------------------------------------
+
+local function ask(req, pass)
+  local ok, reply = pcall(fs.send, "/Running/maild", req, pass)
+
+  if ok and type(reply) == "table" and reply.ok then return reply end
+  return nil, ok and type(reply) == "table" and reply.why or "maild is not running"
+end
+
+function arrived.subscribe(ep, name)
+  local r, why = ask({ type = "subscribe", name = tostring(name) }, ep)
+
+  if not r then return nil, why end
+  return r.started, r.newest
+end
+
+function arrived.since(n)
+  local r, why = ask{ type = "arrived", after = n or 0 }
+
+  if not r then return nil, why end
+  return r.list or {}, r.newest or 0, r.started
 end
 
 return arrived

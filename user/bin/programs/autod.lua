@@ -8,8 +8,8 @@
 --
 -- **Asleep between triggers.** It wakes at the nearest time an automation
 -- is due, every five seconds to look at the folders and drives it was
--- asked to watch - a listing each - and at the mail `maild` wrote down as
--- arrived (`mailarrived.lua`), and when somebody asks it something at
+-- asked to watch - a listing each - when `maild` pulses that mail arrived
+-- (`mailarrived.lua`), and when somebody asks it something at
 -- `/Running/autod`:
 --
 --   { type = "run", name = }       run it now, by hand; answered at once,
@@ -109,32 +109,84 @@ local function reload(starting)
   end
 end
 
--- What mail has arrived, by number: only what comes after autod started.
+-- **Mail, told by pulse** (`mailarrived.lua`, `docs/pulses.md` P3). While
+-- an automation waits for mail, `autod` is subscribed to `maild`: `maild`
+-- pulses this endpoint when mail comes, and `autod` then asks what came
+-- after the newest number it has seen. Nothing is read on a clock. The
+-- subscription is renewed on the five-second look - one small call, only
+-- while a mail automation exists - so a `maild` started later, or again,
+-- learns of `autod`; its numbers start again with it, which the start
+-- number it answers says.
 local arrived = use("/Kosmos/Libraries/mailarrived.lua")
-local mail_seen = arrived.newest()
+local mail_started, mail_seen = nil, 0
+local mail_due = false
+local autod_started = sys.ticks()       -- mail that came before this is not news
 
 local function has(text, words)
   return words == nil or words == "" or tostring(text):lower():find(tostring(words):lower(), 1, true) ~= nil
 end
 
--- Folders, drives and mail, looked at: something that was not there is a
--- trigger.
-local function look()
-  local fresh, newest = arrived.since(mail_seen)
+local function wants_mail()
+  for _, k in pairs(known) do
+    if k.a and k.a.on ~= false and k.a.when.kind == "mail" then return true end
+  end
+  return false
+end
+
+local control                                   -- this program's endpoint, below
+
+local function subscribe()
+  if not control or not wants_mail() then return end
+
+  local started = arrived.subscribe(control, "autod")
+
+  if started and started ~= mail_started then
+    -- A maild new to this autod: everything it kept is looked at, and what
+    -- came since this autod started is news - a mail can arrive in the
+    -- seconds between maild starting and this subscribing.
+    mail_started, mail_seen = started, 0
+    mail_due = true
+    print("autod: told of mail by maild")
+  elseif not started then
+    mail_started = nil
+  end
+end
+
+local function take_mail()
+  mail_due = false
+
+  local list, newest, started = arrived.since(mail_seen)
+
+  if not list then return end
+
+  if started ~= mail_started then
+    -- A maild started again since: subscribed afresh on the next look.
+    mail_started = nil
+    return
+  end
 
   mail_seen = newest
 
-  for _, m in ipairs(fresh) do
+  for _, m in ipairs(list) do
+    -- Mail that came before this autod started is not news to it.
+    local fresh = (tonumber(m.at) or 0) >= autod_started
+
     for name, k in pairs(known) do
       local a = k.a
 
-      if a and a.on ~= false and a.when.kind == "mail" and has(m.from, a.when.from)
+      if fresh and a and a.on ~= false and a.when.kind == "mail" and has(m.from, a.when.from)
          and has(m.subject, a.when.subject) then
         queued(name, { sender = m.from, subject = m.subject, message = m.path },
                "mail from " .. tostring(m.from))
       end
     end
   end
+end
+
+-- Folders and drives, looked at: a name that was not there is a trigger -
+-- and mail's subscription renewed.
+local function look()
+  subscribe()
 
   for name, k in pairs(known) do
     local a = k.a
@@ -230,7 +282,7 @@ local function run_one(q)
   end
 end
 
-local control = sys.endpoint()
+control = sys.endpoint()
 
 if control then fs.send("/Running", { type = "register", name = "autod" }, control) end
 
@@ -273,13 +325,20 @@ function serve(wait)
   local req, who = sys.receive(control, not wait, wait or nil)
 
   while req do
-    pcall(sys.reply, who, answer(type(req) == "table" and req or {}))
+    if type(req) == "table" and req.pulse then
+      -- News, from nobody to answer: mail arrived.
+      if req.code == arrived.CODE then mail_due = true end
+    else
+      pcall(sys.reply, who, answer(type(req) == "table" and req or {}))
+    end
+
     req, who = sys.receive(control, true)
   end
 end
 
 print("autod: watching " .. automations.DIR)
 reload(true)
+subscribe()
 
 local looked_at = sys.ticks()
 
@@ -287,6 +346,8 @@ while true do
   while #queue > 0 do run_one(table.remove(queue, 1)) end
 
   serve(sleep_ticks())
+
+  if mail_due then take_mail() end
 
   if (sys.ticks() - looked_at) / counter_hz >= LOOK_SECONDS then
     looked_at = sys.ticks()

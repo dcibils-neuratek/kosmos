@@ -1260,12 +1260,21 @@ local asked = 0
 
 local function answer()
   while control do
-    local req, who = sys.receive(control, true)
+    local req, who, cap = sys.receive(control, true)
 
     if not req then return end
 
     local reply = { ok = false }
     local t = type(req) == "table" and req.type
+
+    -- What arrived, and who wants to be told (`mailarrived.lua`): a
+    -- subscriber's endpoint comes as the capability passed beside it.
+    local told = type(req) == "table" and use("/Kosmos/Libraries/mailarrived.lua").answer(req, cap)
+
+    if told then
+      pcall(sys.reply, who, told)
+      goto next
+    end
     local a = type(req) == "table" and account_named(tostring(req.account or ""))
 
     asked = sys.ticks()
@@ -1354,6 +1363,8 @@ local function answer()
     end
 
     pcall(sys.reply, who, reply)
+
+    ::next::
   end
 end
 

@@ -713,9 +713,13 @@ def run(suite, lock, started):
     begin = time.monotonic()
 
     with open(suite.log, "wb") as out:
+        # The suite's name, so its guests keep their whole serial lines
+        # under build/gate/serial/ (`run_screenshot.Guest.close`): a flake
+        # read from a suite's last 3000 characters is a flake not read.
+        env = dict(os.environ, KOSMOS_SUITE=suite.name)
         proc = subprocess.Popen(suite.cmd, cwd=ROOT, stdout=out,
                                 stderr=subprocess.STDOUT,
-                                start_new_session=True)
+                                start_new_session=True, env=env)
 
         try:
             suite.code = proc.wait(timeout=SUITE_LIMIT)
@@ -850,6 +854,9 @@ def main():
         return 1
 
     os.makedirs(LOGS, exist_ok=True)
+
+    # The last run's serial lines go: a gate's are its own.
+    shutil.rmtree(os.path.join(LOGS, "serial"), ignore_errors=True)
     started = time.monotonic()
     # What is in the temporary directory before any suite runs, so that what
     # is there after is what this run left (`scratch.py`).
