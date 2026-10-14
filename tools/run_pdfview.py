@@ -27,7 +27,10 @@ the viewer on a desktop:
     number; a page's text selected and copied, read back from the
     clipboard; a selection dragged with the pointer and copied;
   - and the control: the same document without its text map, where Find
-    says there is no text rather than finding nothing.
+    says there is no text rather than finding nothing;
+  - where it was left (step 5): the document closed at page 4 at Actual
+    size, and opened again from the other window's recent documents - a
+    process that never saw it - at page 4, at 100%.
 
 Usage: run_pdfview.py IMAGE
 """
@@ -447,6 +450,9 @@ def main():
               "page 4 was not rendered again at the new size: %r" % (rerendered and rerendered.group(0)))
 
         # ---- the control: no text map, so no text - said, not "none" ----
+        # Left at Actual size, for step 5 to find again.
+        ask("press", "menu/View/Actual size")
+        time.sleep(0.5)
         mark = len(guest.seen)
         ask("press", "menu/File/Close")
         line(r"process \d+ \(pdfview\) ended", mark, 15)
@@ -461,6 +467,16 @@ def main():
         check(none is not None and none.group(1) == "0" and none.group(3) is not None,
               "without a text map Find did not say the document has no text: %r"
               % (none and none.group(0)))
+
+        # ---- where it was left: from another window's recent documents ----
+        out = ask("list", "recent")
+        said["recent"] = out
+        mark = len(guest.seen)
+        out = ask("press", "recent/" + NAME)
+        again = line(r"pdfview: opened where it was left: page (\d+), ([^\r\n]+)", mark, 30)
+        check(again is not None and again.group(1) == "4" and again.group(2).strip() == "100%",
+              "doc.pdf did not open again where it was left, page 4 at 100%%: %r %r"
+              % (out, again and again.group(0)))
     except Exception as e:                  # noqa: BLE001 - said below
         check(False, "the steps stopped: %s: %s" % (type(e).__name__, str(e)[:500]))
     finally:
@@ -481,7 +497,7 @@ def main():
           "time, Next page and the Page field by name; thumbnails, one clicked; Control-B; the "
           "contents by name; Find typed and stepped, Back, Control-G, Copy and a dragged "
           "selection read back from the clipboard; resized, laid out again, the sidebar hidden; "
-          "no text map said as no text)"
+          "no text map said as no text; opened again where it was left)"
           % (checks, said.get("red")))
     return 0
 

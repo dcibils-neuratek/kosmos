@@ -41,6 +41,7 @@ local files    = use("/Kosmos/Libraries/files.lua")
 local L = ui.layout
 
 local prefs    = use("/Kosmos/Libraries/prefs.lua")
+local recentdocs = use("/Kosmos/Libraries/recentdocs.lua")
 local DOCUMENTS = "/Home/Documents"
 local RECENT    = 8          -- documents Open recent remembers
 local FIND_H    = 42         -- the find bar, under the header
@@ -69,23 +70,18 @@ local markdown = (path == nil) or markdown_name(path)
 -- Its settings, through the settings kit (`prefs.lua`): wrapping, and what
 -- was opened lately - beside the text size, which `textsize` keeps there.
 local store = prefs.open("texteditor")
-local settings = { wrap = store.wrap, recent = store.recent }
+local settings = { wrap = store.wrap, recent = recentdocs.parse(store.recent, RECENT) }
 
 local function keep_settings()
-  local ok, why = store:set{ wrap = settings.wrap, recent = settings.recent }
+  local ok, why = store:set{ wrap = settings.wrap, recent = recentdocs.format(settings.recent) }
 
   if not ok then print("texteditor: settings not kept: " .. tostring(why)) end
 end
 
--- What was opened lately, the newest first and each once.
+-- What was opened lately, the newest first and each once - the recent
+-- documents library's (`recentdocs.lua`), which the PDF Viewer keeps too.
 local function remember(p)
-  local list = { p }
-
-  for _, q in ipairs(settings.recent or {}) do
-    if q ~= p and #list < RECENT then list[#list + 1] = q end
-  end
-
-  settings.recent = list
+  settings.recent = recentdocs.add(settings.recent, p, nil, RECENT)
   keep_settings()
 end
 
@@ -434,16 +430,7 @@ header = ui.header{
 header.sub = unread and ("could not read it: " .. unread) or describe(page)
 
 local function recent_items()
-  local items = {}
-
-  for _, p in ipairs(settings.recent or {}) do
-    items[#items + 1] = { text = base(p), hint = files.parent(p),
-                          on_choose = function() open_document(p) end }
-  end
-
-  if #items == 0 then items[1] = { text = "Nothing yet", disabled = true } end
-
-  return items
+  return recentdocs.items(settings.recent, function(p) open_document(p) end)
 end
 
 local function on_off(b) return b and "On" or "Off" end

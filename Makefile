@@ -4516,6 +4516,9 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	@# And its history on the disk, a file a day: recorded once a day each,
 	@# lately across days, searched, and let go after its days (6zz d4).
 	$(HOSTDIR)/lua tools/test_history.lua
+	@# The documents opened lately and where each was left, one library
+	@# for the Text Editor and the PDF Viewer (`docs/pdfview.md` step 5).
+	$(HOSTDIR)/lua tools/test_recentdocs.lua
 	@# And its settings: read back as written, false included, and what is
 	@# not one of the choices the default (6zz d5).
 	$(HOSTDIR)/lua tools/test_browserprefs.lua

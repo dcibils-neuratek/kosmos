@@ -16,7 +16,8 @@
 -- document scrolled whole or a page at a time, zoom by fitting or by steps,
 -- a window that resizes and lays its pages out again, and a cache of
 -- rendered pages. The sidebar (step 3): thumbnails and contents. Find,
--- Copy, Go to page and Back (step 4). Where a document was left is next.
+-- Copy, Go to page and Back (step 4). Each document opened where it was
+-- left, and the documents opened lately (step 5).
 --
 -- **What a PDF is belongs to the PDF Kit** (`pdf.lua`, its one door):
 -- the pages, their sizes, a page drawn into a surface at a scale, its
@@ -46,6 +47,8 @@ local pdf     = use("/Kosmos/Libraries/pdf.lua")
 local keys    = use("/Kosmos/Libraries/keys.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 local pk      = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
+local prefs   = use("/Kosmos/Libraries/prefs.lua")
+local recentdocs = use("/Kosmos/Libraries/recentdocs.lua")
 
 local theme = ui.theme
 
@@ -117,8 +120,17 @@ local TABS_H  = 48                    -- the tabs at the sidebar's top
 local LABEL_H = 20                    -- a thumbnail's number under it
 local ROW_H   = 28                    -- a row of the contents
 
-local sidebar = true                  -- wanted
-local tab = "pages"                   -- "pages" or "contents"
+--
+-- **What is kept** (step 5), by the settings kit (`prefs.lua`): the sidebar
+-- as it was, and the documents opened lately - each with where it was
+-- left, its page, how far down it and its zoom (`recentdocs.lua`, the one
+-- door the Text Editor's recent documents go through too).
+--
+local store = prefs.open("pdfview", { sidebar = true, tab = "pages" })
+local recent = recentdocs.parse(store.recent)
+
+local sidebar = store.sidebar ~= false  -- wanted
+local tab = (store.tab == "contents") and "contents" or "pages"
 local side_top = 0                    -- the sidebar's own scroll
 local thumbs = {}                     -- `thumbs[i]`: a page drawn small
 local thumb_place = {}                -- `thumb_place[i] = { y, w, h }`
@@ -217,6 +229,8 @@ local MENUS = {
   { title = "File", items = function()
       return {
         { text = "Open...", hint = "Ctrl O", on_choose = function() act.choose() end },
+        { text = "Open recent",
+          submenu = recentdocs.items(recent, function(p) act.open(p) end) },
         { separator = true },
         { text = "Close", hint = "Ctrl W", on_choose = function() act.close() end },
       }
@@ -1037,6 +1051,33 @@ end
 -- What the menus, the keys and the header do.
 --------------------------------------------------------------------------
 
+-- **Where this document is left**, kept in its entry of the recent
+-- documents: the page at the top of the view and how far down it, and the
+-- zoom. Written when the page or the zoom changes - not on every pixel of
+-- a scroll - and as the window closes or another document opens.
+local kept_said = nil
+
+local function keep_place(force)
+  if not (doc and path) then return end
+
+  local at, into = anchor()
+
+  if single and place[current] then at, into = current, top / math.max(1, place[current].h) end
+
+  local zoom = fit or tostring(pct)
+  local sig = ("%d %s %s"):format(at, zoom, tostring(single))
+
+  if not force and sig == kept_said then return end
+
+  kept_said = sig
+  recent = recentdocs.add(recent, path, { page = at, into = math.floor(into * 1000 + 0.5) / 1000,
+                                          zoom = zoom, single = single })
+
+  local ok, why = store:set("recent", recentdocs.format(recent))
+
+  if not ok then print("pdfview: where it was left not kept: " .. tostring(why)) end
+end
+
 local function open(file)
   local attrs, why = fs.getattr(file)
 
@@ -1065,6 +1106,9 @@ local function open(file)
     print("pdfview: " .. said)
     return
   end
+
+  -- The document before it, left where it is.
+  keep_place(true)
 
   for i in pairs(cache) do free(i) end
   if doc and doc.source.close then doc.source.close() end
@@ -1120,7 +1164,38 @@ local function open(file)
   current, top, left = 1, 0, 0
   print(("pdfview: %s, %d pages, %d in its contents, read in %d ms"):format(file, #sizes,
         #contents, (sys.ticks() - started) // PER_MS))
+
+  -- **Opened where it was left**: its zoom, a page at a time or not, its
+  -- page and how far down it.
+  local was = recentdocs.find(recent, file)
+
+  if was then
+    local z = tostring(was.zoom or "width")
+
+    if z == "width" or z == "page" then
+      fit = z
+    else
+      fit, pct = nil, math.max(STEPS[1], math.min(STEPS[#STEPS], tonumber(z) or 100))
+    end
+
+    single = was.single == true
+    current = math.max(1, math.min(math.floor(tonumber(was.page) or 1), #sizes))
+  end
+
   lay_out(false)
+
+  if was and place[current] then
+    local into = math.max(0, math.min(tonumber(was.into) or 0, 1))
+    local y = (single and 0 or place[current].y) + into * place[current].h
+
+    top = math.max(0, math.min(math.floor(y), total_h - view_h()))
+    side_follow()
+    print(("pdfview: opened where it was left: page %d, %s"):format(current, zoom_label()))
+  end
+
+  -- At the top of the recent documents, whether it was there or not.
+  kept_said = nil
+  keep_place(true)
 end
 
 function act.go(n)
@@ -1195,11 +1270,20 @@ end
 
 function act.close() win:close() end
 
+-- The sidebar's state is kept as it changes, so the next window opens
+-- with it as this one has it.
+local function keep_sidebar()
+  store:set{ sidebar = sidebar, tab = (tab == "found") and store.tab or tab }
+end
+
 function act.sidebar(on)
   sidebar = on
   lay_out(true)
   side_follow()
+  keep_sidebar()
 end
+
+function act.open(p) open(p) end
 
 function act.tab(which)
   tab = which
@@ -1209,6 +1293,7 @@ function act.tab(which)
   if not sidebar then sidebar = true lay_out(true) end
 
   side_follow()
+  keep_sidebar()
   print(("pdfview: the sidebar shows its %s"):format(tab))
 end
 
@@ -1425,6 +1510,12 @@ win:publish_controls(function()
       press = function() act.find_step(-1) end },
     { kind = "button", label = "Back", disabled = #history == 0, press = function() act.back() end },
   }
+
+  -- The documents opened lately, each by its name.
+  for _, e in ipairs(recent) do
+    out[#out + 1] = { kind = "recent", label = e.path:match("([^/]+)$") or e.path,
+                      press = function() act.open(e.path) end }
+  end
 
   -- The contents, each entry a button by its title: a script goes to a
   -- chapter by its name.
@@ -1786,6 +1877,9 @@ while win.running do
   local held = decode(nil)
   if held and key(held) then dirty = true end
 
+  -- Where it is, kept when the page or the zoom has changed.
+  keep_place(false)
+
   -- Nothing waiting, and a page wanted: rendered now, and drawn.
   if #events == 0 and not dirty and work and win.running then
     if work_kind == "thumb" then render_thumb(work)
@@ -1794,5 +1888,7 @@ while win.running do
     dirty = true
   end
 end
+
+keep_place(true)
 
 for i in pairs(cache) do free(i) end

@@ -8,7 +8,7 @@ Last updated: 2026-10-14, afternoon (0.11.230; Pulses, the web decided)
 
 ## 14 October, the day: Pulses, and the web decided
 
-**On `main`, not pushed: 0.11.234.** Whole gates 89/89 (0.11.226),
+**On `main`, not pushed: 0.11.234-0.11.235.** Whole gates 89/89 (0.11.226),
 88/89 (0.11.227, x86-dock under load), 89/89 (0.11.228), 90/90 (0.11.229),
 90/91 (0.11.231, x86-film's sound under load; passes alone),
 92/92 (0.11.232), 92/92 (0.11.233, prepush), 92/92 (0.11.234).
@@ -50,8 +50,11 @@ Last updated: 2026-10-14, afternoon (0.11.230; Pulses, the web decided)
   or a page; Control-G; Back after a jump; `pdf.boxes` in the kit.
 - **Pushed** up to 0.11.233 (`ea15779a`, 14 October, Diego's "push when
   ready").
-- **Next**: the PDF reader's step 5 - where it was left, recent documents
-  (`docs/pdfview.md`).
+- **The PDF reader, step 5** (0.11.235, 18.630): each document opened
+  where it was left; File > Open recent; `recentdocs.lua`, the one door the
+  Text Editor's recent documents go through too. **The PDF reader made
+  again is done.**
+- **Next**: Remote Screen (`docs/screens.md`), as the queue says.
 - **Still waiting on Diego**: the sandbox console keys on the M700
   (`vmm.c` uncommitted); the M700's screen; background programs fix 1 or
   2; the Shortcuts cheat sheet; About in Preferences; a push.

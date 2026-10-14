@@ -121,4 +121,6 @@ with the 377 pages of the Odyssey.
 4. **Find**, Copy, Go to page, back. **Built in 0.11.234** (`testing.md`
    18.629), with `pdf.boxes` in the kit for where words are. Go to page is
    the header's number made editable rather than a sheet.
-5. **Where it was left**, and recent documents.
+5. **Where it was left**, and recent documents. **Built in 0.11.235**
+   (`testing.md` 18.630), through `recentdocs.lua`, which the Text Editor
+   uses too. **The PDF reader made again is done.**

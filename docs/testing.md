@@ -26034,3 +26034,28 @@ where the searching began; Control-G 5; page 5 selected and copied, and
 the clipboard read back; a selection dragged with the pointer across page
 1 and copied; **control**: the document without its text map, where Find
 says the document has no text.
+
+## 18.630 The PDF Viewer opens a document where it was left
+
+Step 5, the last (`docs/pdfview.md`). Each document is kept in the
+viewer's recent documents with where it was left - the page at the top of
+the view, how far down it, the zoom and whether a page at a time - written
+by the settings kit as the page or the zoom changes and as the window
+closes; opened again, it opens there. File > Open recent lists them, and
+each is published as `recent/<name>`. The sidebar and its tab are kept
+too.
+
+**One door for recent documents**: `user/lib/recentdocs.lua`, which the
+Text Editor's list now goes through as well - it had its own, and the
+viewer was about to write a second. An entry is a path and what the
+application wants back, so where a document was left is bounded by the
+list: one that falls off the end is forgotten whole. The Text Editor's
+list of plain paths reads as entries, so nothing it remembered is lost.
+
+**Tests**: `tools/test_recentdocs.lua` in `host`, 13 checks - old plain
+paths kept, once each and newest first, fields carried and bounded by the
+list, the menu. `x86-pdfview`, 38: doc.pdf left at page 4 at Actual size
+and closed, the textless document opened in a new window, and doc.pdf
+opened from that window's recent documents - a process that never saw it -
+at page 4, at 100%. `x86-editor` and `x86-controls` pass on the Text
+Editor's move.

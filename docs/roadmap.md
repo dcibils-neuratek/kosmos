@@ -9099,8 +9099,9 @@ document was left.
 0.11.232** (18.627): the window - menus, header, the whole document
 scrolled, zoom, resize, the cache. **Step 3 built in 0.11.233** (18.628): the
 sidebar, pages and contents. **Step 4 built in 0.11.234** (18.629): Find,
-Copy, Go to page, Back, and `pdf.boxes`. Next, step 5: where it was left,
-and recent documents.
+Copy, Go to page, Back, and `pdf.boxes`. **Step 5 built in 0.11.235**
+(18.630): where each document was left and recent documents, through
+`recentdocs.lua`. **Done**; next in the queue, Remote Screen.
 
 **Found, 10 October - a question to an application waits for its tick.**
 The launcher waited 840 ms of every press for the Deskbar to say where the
