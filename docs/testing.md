@@ -25977,3 +25977,27 @@ page at a time, Go, Next page, and the Page field written 4 and read back,
 by name; back to the whole document at page 4; the window made 620 by 520
 by the window manager, laid out again smaller at Fit width, at page 4, and
 rendered again at the new size.
+
+## 18.628 The PDF Viewer's sidebar: pages and contents
+
+Step 3 (`docs/pdfview.md`): a sidebar beside the pages, shown or hidden by
+the header's first button, View > Sidebar or Control-B, and hidden by
+itself when the window is narrower than 720 - coming back when there is
+room. Two tabs. **Pages**: each page drawn 96 wide into a surface of its
+own, the page being read ringed in the accent, a click going to it; drawn
+one a pass after the pages in view are ready, the few in the sidebar's
+sight and a dozen either side kept, so a long book never holds them all.
+**Contents**: the document's outline from `pdf.outline` (step 1),
+flattened with its depth as indent, the part being read lit, a click
+going to it; a document without one says so. The sidebar follows the page
+being read, and scrolls by its own wheel. Each entry of the contents is
+published by its title (`contents/<title>`), so a script goes to a chapter
+by name.
+
+**Test**: `x86-pdfview`, now 25 checks: the six pages' contents read on
+opening; the sidebar's thumbnails rendered and one clicked with the
+pointer, going to page 3; Control-B hiding the sidebar and Fit width
+growing into the room, and again bringing it back at the width it was;
+View > Contents, and `contents/Page 5` pressed by name; and the window
+made 620 wide, the sidebar hidden. `arm-writeapp`, which opens Write's
+export in the viewer, passes.

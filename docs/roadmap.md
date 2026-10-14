@@ -9097,7 +9097,8 @@ document was left.
 **Step 1 built in 0.11.231** (`testing.md` 18.626): the kit's three -
 `pdf.text`, `pdf.outline`, JPEG pictures in `pdf.render`. **Step 2 built in
 0.11.232** (18.627): the window - menus, header, the whole document
-scrolled, zoom, resize, the cache. Next, step 3: the sidebar.
+scrolled, zoom, resize, the cache. **Step 3 built in 0.11.233** (18.628): the
+sidebar, pages and contents. Next, step 4: Find, Copy, Go to page, back.
 
 **Found, 10 October - a question to an application waits for its tick.**
 The launcher waited 840 ms of every press for the Deskbar to say where the

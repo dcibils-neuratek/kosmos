@@ -15,7 +15,12 @@ the viewer on a desktop:
     out one page, the Go menu's Next page turns it, and the published
     Page field takes a number;
   - the window made smaller by the window manager lays its pages out
-    again, at Fit width a smaller zoom, at the same page.
+    again, at Fit width a smaller zoom, at the same page - and, narrower
+    than the sidebar leaves room for, hides it;
+  - the sidebar (step 3): thumbnails rendered for the pages in it, one
+    clicked with the pointer going to its page and ringing it; Control-B
+    hiding it and the pages growing into the room; the Contents tab from the
+    View menu, and a chapter in it pressed by its title.
 
 Usage: run_pdfview.py IMAGE
 """
@@ -67,7 +72,7 @@ RESIZE = ('local wmproto = use("/Kosmos/Libraries/wmproto.lua")\n'
 
 RED = (0xd0, 0x28, 0x28)
 
-LAYOUT = r"pdfview: (\d+) of (\d+), ([^,]+), (\d+)%, ([^,]+), the view (\d+)x(\d+)"
+LAYOUT = r"pdfview: (\d+) of (\d+), ([^,]+), (\d+)%, ([^,]+), the view (\d+)x(\d+), the sidebar (\w+)"
 
 
 def fixture(work):
@@ -144,12 +149,13 @@ def main():
         # ---- it opens: the whole document at Fit width ----
         mark = len(guest.seen)
         session.run("/Temporary/launch.lua " + PATH)
-        opened = line(r"pdfview: %s, (\d+) pages" % re.escape(PATH), mark, 40)
-        check(opened is not None and opened.group(1) == str(PAGES),
-              "the document did not open with its %d pages: %r" % (PAGES, opened and opened.group(0)))
+        opened = line(r"pdfview: %s, (\d+) pages, (\d+) in its contents" % re.escape(PATH), mark, 40)
+        check(opened is not None and opened.group(1) == str(PAGES) and opened.group(2) == str(PAGES),
+              "the document did not open with its %d pages and %d entries of contents: %r"
+              % (PAGES, PAGES, opened and opened.group(0)))
         laid = line(LAYOUT, mark, 10)
         check(laid is not None and laid.group(1) == "1" and laid.group(3) == "Fit width"
-              and laid.group(5) == "the whole document",
+              and laid.group(5) == "the whole document" and laid.group(8) == "pages",
               "it did not open on page 1, Fit width, the whole document: %r" % (laid and laid.group(0)))
         fit_pct = int(laid.group(4)) if laid else 0
         view = (int(laid.group(6)), int(laid.group(7))) if laid else (0, 0)
@@ -243,6 +249,62 @@ def main():
         check(laid is not None and laid.group(5) == "the whole document" and laid.group(1) == "4",
               "back to the whole document, page 4 was not kept: %r" % (laid and laid.group(0)))
 
+        # ---- the sidebar: thumbnails, one clicked ----
+        thumbs = {}
+        for m in re.finditer(r"pdfview: thumbnail (\d+) of %d at (\d+),(\d+)" % PAGES, guest.seen):
+            thumbs[int(m.group(1))] = (int(m.group(2)), int(m.group(3)))
+        if 3 not in thumbs:
+            line(r"pdfview: thumbnail 3 of %d at " % PAGES, 0, 20)
+            for m in re.finditer(r"pdfview: thumbnail (\d+) of %d at (\d+),(\d+)" % PAGES, guest.seen):
+                thumbs[int(m.group(1))] = (int(m.group(2)), int(m.group(3)))
+        check(all(k in thumbs for k in (1, 2, 3)),
+              "the sidebar's thumbnails were not rendered: %r" % sorted(thumbs))
+        said["thumbs"] = sorted(thumbs)
+
+        if 3 in thumbs:
+            width, height, _ = R.parse_ppm(guest.screendump())
+            mark = len(guest.seen)
+            guest.mouse_to(*R._to_tablet(thumbs[3][0], thumbs[3][1], width, height))
+            time.sleep(0.4)
+            guest.mouse_button(True)
+            time.sleep(0.1)
+            guest.mouse_button(False)
+            at = line(r"pdfview: at page (\d+) of %d" % PAGES, mark, 10)
+            check(at is not None and at.group(1) == "3",
+                  "a click on page 3's thumbnail did not go to page 3: %r" % (at and at.group(0)))
+
+        # ---- Control-B: hidden, and the pages given the room ----
+        mark = len(guest.seen)
+        guest.sendkey("ctrl-b")
+        hidden = line(LAYOUT, mark, 10)
+        check(hidden is not None and hidden.group(8) == "hidden"
+              and int(hidden.group(6)) > view[0] and int(hidden.group(4)) > fit_pct,
+              "Control-B did not hide the sidebar and widen the pages: %r (the view was %r at %d%%)"
+              % (hidden and hidden.group(0), view, fit_pct))
+        mark = len(guest.seen)
+        guest.sendkey("ctrl-b")
+        shown = line(LAYOUT, mark, 10)
+        check(shown is not None and shown.group(8) == "pages" and int(shown.group(6)) == view[0],
+              "Control-B again did not bring the sidebar back: %r" % (shown and shown.group(0)))
+
+        # ---- the contents, from the View menu, and a chapter by its title ----
+        mark = len(guest.seen)
+        ask("press", "menu/View/Contents")
+        told = line(r"pdfview: the sidebar shows its (\w+)", mark, 10)
+        check(told is not None and told.group(1) == "contents",
+              "View, Contents did not show the contents: %r" % (told and told.group(0)))
+        mark = len(guest.seen)
+        out = ask("press", "contents/Page 5")
+        at = line(r"pdfview: at page (\d+) of %d" % PAGES, mark, 10)
+        check(at is not None and at.group(1) == "5",
+              "the contents' Page 5 did not go to page 5: %r %r" % (out, at and at.group(0)))
+        mark = len(guest.seen)
+        ask("press", "menu/Go/Previous page")
+        at = line(r"pdfview: at page (\d+) of %d" % PAGES, mark, 10)
+        mark = len(guest.seen)
+        ask("press", "contents/Page 4")
+        line(r"pdfview: at page (\d+) of %d" % PAGES, mark, 10)
+
         # ---- resized: laid out again, smaller at Fit width, the same page ----
         mark = len(guest.seen)
         out = session.run("/Temporary/resize.lua 620 520").decode(errors="replace")
@@ -250,8 +312,9 @@ def main():
         laid = last(LAYOUT, mark, 10)
         check(laid is not None and (int(laid.group(6)), int(laid.group(7))) != view
               and int(laid.group(6)) < view[0] and int(laid.group(4)) < fit_pct
-              and laid.group(1) == "4",
-              "resized, the pages were not laid out again smaller at page 4: %r (was %r at %d%%)"
+              and laid.group(1) == "4" and laid.group(8) == "hidden",
+              "resized, the pages were not laid out again smaller at page 4, the sidebar hidden: "
+              "%r (was %r at %d%%)"
               % (laid and laid.group(0), view, fit_pct))
         rerendered = line(r"pdfview: page 4 of %d, .* at (\d+)%%" % PAGES, mark, 30)
         check(rerendered is not None and laid is not None and rerendered.group(1) == laid.group(4),
@@ -273,7 +336,8 @@ def main():
 
     print("PASS: %d checks on the PDF Viewer's window (six pages at Fit width with the "
           "picture on the screen - red %s; End and Home; a zoom step and back; one page at a "
-          "time, Next page and the Page field by name; resized and laid out again)"
+          "time, Next page and the Page field by name; thumbnails, one clicked; Control-B; the "
+          "contents by name; resized, laid out again, the sidebar hidden)"
           % (checks, said.get("red")))
     return 0
 

@@ -8,7 +8,7 @@ Last updated: 2026-10-14, afternoon (0.11.230; Pulses, the web decided)
 
 ## 14 October, the day: Pulses, and the web decided
 
-**On `main`, not pushed: 0.11.199-0.11.232.** Whole gates 89/89 (0.11.226),
+**On `main`, not pushed: 0.11.199-0.11.233.** Whole gates 89/89 (0.11.226),
 88/89 (0.11.227, x86-dock under load), 89/89 (0.11.228), 90/90 (0.11.229),
 90/91 (0.11.231, x86-film's sound under load; passes alone),
 92/92 (0.11.232).
@@ -41,7 +41,12 @@ Last updated: 2026-10-14, afternoon (0.11.230; Pulses, the web decided)
   scrolled or a page at a time; Fit width, Fit page, Actual size and steps;
   resized and laid out again; pages rendered into a cache a pass at a time.
   `x86-pdfview` holds it. `window:retitle` redraws a direct window's band.
-- **Next**: the PDF reader's step 3, the sidebar (`docs/pdfview.md`).
+- **The PDF reader, step 3** (0.11.233, 18.628): the sidebar - Pages as
+  thumbnails rendered after the pages in view, the one being read ringed;
+  Contents from the outline, the part being read lit; Control-B; hidden
+  below 720 wide.
+- **Next**: the PDF reader's step 4 - Find, Copy, Go to page, back
+  (`docs/pdfview.md`).
 - **Still waiting on Diego**: the sandbox console keys on the M700
   (`vmm.c` uncommitted); the M700's screen; background programs fix 1 or
   2; the Shortcuts cheat sheet; About in Preferences; a push.

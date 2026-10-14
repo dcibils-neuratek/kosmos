@@ -116,6 +116,7 @@ with the 377 pages of the Odyssey.
    document's name, where every direct window with a menu has them, and the
    header's controls in the row under it - the mockup's two rows in the
    other order.
-3. **The sidebar**: thumbnails, then contents.
+3. **The sidebar**: thumbnails, then contents. **Built in 0.11.233**
+   (`testing.md` 18.628): hidden by itself below 720 wide.
 4. **Find**, Copy, Go to page, back.
 5. **Where it was left**, and recent documents.

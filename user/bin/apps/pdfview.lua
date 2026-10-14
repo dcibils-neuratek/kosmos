@@ -99,10 +99,36 @@ local cache = {}
 -- at that scale, or the loop would ask on every pass.
 local refused = {}
 
+local thumbs_in_view                  -- the sidebar's, defined with `wanted`
+local draw_sidebar                    -- defined with `frame`
+
 local W, H = math.min(1100, sw - 80), math.min(sh - 100, 900)
 
-local function view_w() return W - BAR_W end
+--
+-- **The sidebar** (step 3): the pages as thumbnails, or the document's own
+-- contents. Wanted or not is the person's (`sidebar`); shown is that and
+-- room for it - below `NARROW` the pages need the width, and it comes back
+-- when the window is wide again.
+--
+local SIDE_W  = 176                   -- the sidebar's width
+local NARROW  = 720                   -- below this the sidebar is hidden
+local THUMB_W = 96                    -- a thumbnail's width
+local TABS_H  = 48                    -- the tabs at the sidebar's top
+local LABEL_H = 20                    -- a thumbnail's number under it
+local ROW_H   = 28                    -- a row of the contents
+
+local sidebar = true                  -- wanted
+local tab = "pages"                   -- "pages" or "contents"
+local side_top = 0                    -- the sidebar's own scroll
+local thumbs = {}                     -- `thumbs[i]`: a page drawn small
+local thumb_place = {}                -- `thumb_place[i] = { y, w, h }`
+local thumbs_h = 0
+local contents = {}                   -- the outline, flat: { title, page, depth }
+
+local function side_w() return (sidebar and W >= NARROW) and SIDE_W or 0 end
+local function view_w() return math.max(40, W - BAR_W - side_w()) end
 local function view_h() return math.max(1, H - TOOL_H - FOOT_H) end
+local function list_h() return math.max(1, view_h() - TABS_H) end
 
 local PER_MS = math.max(1, ((fs.read("/Devices/cpu") or {}).counter_hz or 62500000) // 1000)
 
@@ -136,6 +162,12 @@ local function view_items()
       on_choose = function() act.single(false) end },
     { text = "One page at a time", mark = single,
       on_choose = function() act.single(true) end },
+    { separator = true },
+    { text = "Sidebar", hint = "Ctrl B", mark = sidebar,
+      on_choose = function() act.sidebar(not sidebar) end },
+    { text = "Pages", mark = tab == "pages", on_choose = function() act.tab("pages") end },
+    { text = "Contents", mark = tab == "contents",
+      on_choose = function() act.tab("contents") end },
   }
 end
 
@@ -284,10 +316,10 @@ local function lay_out(keep)
     if not place[i] then free(i) end
   end
 
-  print(("pdfview: %d of %d, %s, %d%%, %s, the view %dx%d")
+  print(("pdfview: %d of %d, %s, %d%%, %s, the view %dx%d, the sidebar %s")
         :format(current, #sizes, zoom_label(), shown_pct(),
                 single and "one page at a time" or "the whole document",
-                view_w(), view_h()))
+                view_w(), view_h(), side_w() > 0 and tab or "hidden"))
 end
 
 -- The pages any of whose rows are in view, in order.
@@ -318,6 +350,42 @@ local function reading()
   return order[#order] or 1
 end
 
+-- The row of the contents being read: the last entry at or before the
+-- page being read.
+local function contents_at()
+  local at = nil
+
+  for k, e in ipairs(contents) do
+    if e.page and e.page <= current then at = k end
+  end
+
+  return at
+end
+
+-- The sidebar scrolled so the page being read - its thumbnail, or its part
+-- of the contents - is in it.
+local function side_follow()
+  local y, h
+
+  if tab == "pages" then
+    local t = thumb_place[current]
+    if not t then return end
+    y, h = t.y, t.h + LABEL_H
+  else
+    local k = contents_at()
+    if not k then return end
+    y, h = (k - 1) * ROW_H, ROW_H
+  end
+
+  local lh = list_h()
+
+  if y < side_top then
+    side_top = math.max(0, y - 8)
+  elseif y + h > side_top + lh then
+    side_top = y + h - lh + 8
+  end
+end
+
 local function scrolled()
   if single or not doc then return end
 
@@ -325,6 +393,7 @@ local function scrolled()
 
   if now ~= current then
     current = now
+    side_follow()
     print(("pdfview: at page %d of %d"):format(current, #sizes))
   end
 end
@@ -341,6 +410,20 @@ end
 --------------------------------------------------------------------------
 -- Rendering, a page at a time.
 --------------------------------------------------------------------------
+
+-- The thumbnails any of which is in the sidebar's view, in order.
+thumbs_in_view = function()
+  local out = {}
+  local lh = list_h()
+
+  for i = 1, #sizes do
+    local t = thumb_place[i]
+
+    if t and t.y < side_top + lh and t.y + t.h + LABEL_H > side_top then out[#out + 1] = i end
+  end
+
+  return out
+end
 
 -- The page that most wants rendering at `scale`: one in view first, then
 -- the one either side. Nil when every one of them is ready.
@@ -364,6 +447,14 @@ local function wanted()
     if i and place[i] and wants(i) then return i end
   end
 
+  -- The pages ready, the thumbnails in the sidebar's view: after them,
+  -- because a page being read matters more than its picture beside it.
+  if side_w() > 0 and tab == "pages" then
+    for _, i in ipairs(thumbs_in_view()) do
+      if thumbs[i] == nil then return i, true end
+    end
+  end
+
   return nil
 end
 
@@ -378,6 +469,60 @@ local function trim()
 
   for i in pairs(cache) do
     if i < lo or i > hi then free(i) end
+  end
+
+  -- Thumbnails a sidebar's height away from its view let go too: a
+  -- 377-page book draws the few in sight, never all of them.
+  local near = thumbs_in_view()
+  local tlo, thi = (near[1] or 1) - 12, (near[#near] or 0) + 12
+
+  for i, t in pairs(thumbs) do
+    if i < tlo or i > thi or side_w() == 0 or tab ~= "pages" then
+      if t then t:free() end
+      thumbs[i] = nil
+    end
+  end
+end
+
+-- A page drawn small for the sidebar: false when it could not be, so it is
+-- not asked for again.
+local function render_thumb(i)
+  local sz = sizes[i]
+  local t = thumb_place[i]
+
+  if not (sz and t) then return end
+
+  local surface
+  local made = pcall(function () surface = gfx.surface{ w = t.w, h = t.h } end)
+
+  if not made or not surface then
+    thumbs[i] = false
+    return
+  end
+
+  surface:fill(0, 0, t.w, t.h, PAPER)
+
+  local ok = pcall(pdf.render, doc, doc:page(i), surface, t.w / sz.w, INK)
+
+  thumbs[i] = surface
+
+  -- Where its middle is on the screen as it is drawn, for whoever presses
+  -- it from outside - the harnesses.
+  local ox, oy = win.origin_x or 0, (win.origin_y or 0) + (win.head_h or 0)
+
+  print(("pdfview: thumbnail %d of %d at %d,%d%s"):format(i, #sizes, ox + SIDE_W // 2,
+        oy + TOOL_H + TABS_H + t.y - side_top + t.h // 2, ok and "" or ", not drawn"))
+end
+
+-- Where each thumbnail goes in the sidebar, under the one before.
+local function lay_out_thumbs()
+  thumb_place, thumbs_h = {}, 8
+
+  for i, sz in ipairs(sizes) do
+    local th = math.max(8, math.floor(THUMB_W * sz.h / sz.w + 0.5))
+
+    thumb_place[i] = { y = thumbs_h, w = THUMB_W, h = th }
+    thumbs_h = thumbs_h + th + LABEL_H + 10
   end
 end
 
@@ -426,10 +571,12 @@ end
 --------------------------------------------------------------------------
 
 -- The header's controls, placed by `frame` and read by a press.
+local toggle = { icon = "sidebar" }
 local back = { icon = "back" }
 local forward = { icon = "forward" }
 local pagebox = { w = 52, h = 30 }
 local zoombox = { w = 128, h = 30 }
+local tabs = { items = { { text = "Pages" }, { text = "Contents" } } }
 
 -- Where the controls are, said once a place, for whoever presses them from
 -- outside - the harnesses.
@@ -478,6 +625,74 @@ local function draw_page(s, i, vx, vy, vw, vh)
   end
 end
 
+-- The sidebar: its two tabs, then the thumbnails - the page being read
+-- ringed - or the contents, the part being read lit.
+draw_sidebar = function(s, top_y, vh)
+  s:fill(0, top_y, SIDE_W - 1, vh, theme.window)
+  s:fill(SIDE_W - 1, top_y, 1, vh, theme.line_soft)
+
+  tabs.x, tabs.y, tabs.w = 12, top_y + 10, SIDE_W - 24
+  tabs.chosen = tab == "pages" and 1 or 2
+  pk.segments(s, tabs)
+
+  local ly = top_y + TABS_H
+  local lh = list_h()
+
+  if tab == "pages" then
+    for _, i in ipairs(thumbs_in_view()) do
+      local t = thumb_place[i]
+      local x = (SIDE_W - t.w) // 2
+      local y = ly + t.y - side_top
+
+      -- Clipped to the list, which starts under the tabs.
+      local y0, y1 = math.max(y, ly), math.min(y + t.h, ly + lh)
+
+      if i == current then
+        s:fill_round(x - 4, math.max(y - 4, ly), t.w + 8,
+                     math.min(y + t.h + 4, ly + lh) - math.max(y - 4, ly), theme.accent, 5)
+      end
+
+      if y1 > y0 then
+        if thumbs[i] then
+          s:blit(thumbs[i], 0, y0 - y, t.w, y1 - y0, x, y0)
+        else
+          s:fill(x, y0, t.w, y1 - y0, PAPER)
+        end
+      end
+
+      local label = tostring(i)
+      local lty = y + t.h + 4
+
+      if lty >= ly and lty + gfx.height() <= ly + lh then
+        s:text((SIDE_W - gfx.measure(label)) // 2, lty, label,
+               i == current and theme.text or theme.text_dim, nil, "ui")
+      end
+    end
+  elseif #contents == 0 then
+    pk.empty(s, 0, ly, SIDE_W - 1, math.min(lh, 120), { "No contents",
+                                                         "This document has none" })
+  else
+    local lit = contents_at()
+    local first = side_top // ROW_H + 1
+
+    for k = first, math.min(#contents, first + lh // ROW_H + 1) do
+      local e = contents[k]
+      local y = ly + (k - 1) * ROW_H - side_top
+
+      if y >= ly and y + ROW_H <= ly + lh then
+        if k == lit then s:fill_round(6, y + 1, SIDE_W - 13, ROW_H - 2, theme.line, 6) end
+
+        local indent = 12 + math.min(e.depth, 6) * 12
+        local words = ui.fitted(e.title ~= "" and e.title or ("Page " .. tostring(e.page)),
+                                SIDE_W - indent - 12)
+
+        s:text(indent, y + (ROW_H - gfx.height()) // 2, words,
+               e.page and theme.text or theme.text_dim, nil, "ui")
+      end
+    end
+  end
+end
+
 local function frame()
   local s = win:surface()
 
@@ -492,15 +707,19 @@ local function frame()
 
   local cy = (TOOL_H - 1 - 30) // 2
 
-  back.x, back.y = 12, cy + 2
+  toggle.x, toggle.y = 12, cy + 2
+  toggle.disabled = W < NARROW
+  pk.iconbutton(s, toggle)
+
+  back.x, back.y = 48, cy + 2
   back.disabled = (not doc) or current <= 1
   pk.iconbutton(s, back)
 
-  forward.x, forward.y = 40, cy + 2
+  forward.x, forward.y = 76, cy + 2
   forward.disabled = (not doc) or current >= n
   pk.iconbutton(s, forward)
 
-  pagebox.x, pagebox.y = 76, cy
+  pagebox.x, pagebox.y = 112, cy
   pk.field(s, pagebox, false)
 
   local number = doc and tostring(current) or "-"
@@ -518,25 +737,28 @@ local function frame()
 
   -- The pages.
   local top_y = TOOL_H
+  local dx = side_w()
 
-  s:fill(0, top_y, vw, vh, desk_colour())
+  s:fill(dx, top_y, vw, vh, desk_colour())
 
   if doc then
-    for _, i in ipairs(in_view()) do draw_page(s, i, 0, top_y, vw, vh) end
+    for _, i in ipairs(in_view()) do draw_page(s, i, dx, top_y, vw, vh) end
   else
-    pk.empty(s, 0, top_y, vw, vh, { "No document open",
-                                     "File, Open... or Ctrl O, or a PDF from Tracker" })
+    pk.empty(s, dx, top_y, vw, vh, { "No document open",
+                                      "File, Open... or Ctrl O, or a PDF from Tracker" })
   end
 
   -- The scroll bar: its thumb as long as the view is of the whole.
-  s:fill(vw, top_y, BAR_W, vh, theme.window)
+  s:fill(dx + vw, top_y, BAR_W, vh, theme.window)
 
   if total_h > vh then
     local th = math.max(28, vh * vh // total_h)
     local ty_ = top_y + (vh - th) * top // math.max(1, total_h - vh)
 
-    s:fill_round(vw + 3, ty_ + 2, BAR_W - 6, th - 4, theme.line, 3)
+    s:fill_round(dx + vw + 3, ty_ + 2, BAR_W - 6, th - 4, theme.line, 3)
   end
+
+  if dx > 0 then draw_sidebar(s, top_y, vh) end
 
   -- The foot: the zoom, and where the document came from.
   local fy = H - FOOT_H
@@ -614,14 +836,36 @@ local function open(file)
     sizes[i] = { w = math.max(1, math.abs(w)), h = math.max(1, math.abs(h)) }
   end
 
+  -- The contents, flat in reading order, each with its depth.
+  contents = {}
+
+  local ok_o, outline = pcall(pdf.outline, doc)
+
+  local function flatten(list)
+    for _, e in ipairs(list) do
+      contents[#contents + 1] = { title = e.title, page = e.page, depth = e.depth }
+      flatten(e.children or {})
+    end
+  end
+
+  if ok_o then flatten(outline) end
+
   doc:forget()
+
+  for i, t in pairs(thumbs) do
+    if t then t:free() end
+    thumbs[i] = nil
+  end
+
+  side_top = 0
+  lay_out_thumbs()
 
   title = file:match("([^/]+)$") or file
   win:retitle(title)
 
   current, top, left = 1, 0, 0
-  print(("pdfview: %s, %d pages, read in %d ms"):format(file, #sizes,
-        (sys.ticks() - started) // PER_MS))
+  print(("pdfview: %s, %d pages, %d in its contents, read in %d ms"):format(file, #sizes,
+        #contents, (sys.ticks() - started) // PER_MS))
   lay_out(false)
 end
 
@@ -639,6 +883,8 @@ function act.go(n)
     -- last page is the one being read even when it cannot reach the top.
     top = math.max(0, math.min(place[n].y - GAP, total_h - view_h()))
   end
+
+  side_follow()
 
   print(("pdfview: at page %d of %d"):format(current, #sizes))
 end
@@ -695,6 +941,23 @@ end
 
 function act.close() win:close() end
 
+function act.sidebar(on)
+  sidebar = on
+  lay_out(true)
+  side_follow()
+end
+
+function act.tab(which)
+  tab = which
+  side_top = 0
+
+  -- Asked for, so shown: the tab is what the person wants to see.
+  if not sidebar then sidebar = true lay_out(true) end
+
+  side_follow()
+  print(("pdfview: the sidebar shows its %s"):format(tab))
+end
+
 local function zoom_menu()
   local items = {}
 
@@ -717,8 +980,7 @@ end
 -- what they do, and the page as a field that reads the page being read.
 win:publish_controls(function()
   local n = doc and #sizes or 0
-
-  return {
+  local out = {
     { kind = "button", label = "Previous page", disabled = current <= 1,
       press = function() act.go(current - 1) end },
     { kind = "button", label = "Next page", disabled = current >= n,
@@ -729,7 +991,18 @@ win:publish_controls(function()
         if k then act.go(math.floor(k)) end
       end },
     { kind = "field", label = "Zoom", read = function() return zoom_label() end },
+    { kind = "button", label = "Sidebar", press = function() act.sidebar(not sidebar) end },
   }
+
+  -- The contents, each entry a button by its title: a script goes to a
+  -- chapter by its name.
+  for _, e in ipairs(contents) do
+    if e.page and e.title ~= "" then
+      out[#out + 1] = { kind = "contents", label = e.title, press = function() act.go(e.page) end }
+    end
+  end
+
+  return out
 end)
 
 local function key(c)
@@ -741,6 +1014,7 @@ local function key(c)
   elseif ctrl and k == 45 then act.zoom_by(-1)
   elseif ctrl and k == 48 then act.fit("width")
   elseif ctrl and k == 49 then act.step(100)
+  elseif c == 2 then act.sidebar(not sidebar)             -- Ctrl B
   elseif c == 15 then act.choose()                         -- Ctrl O
   elseif c == 23 then act.close()                          -- Ctrl W
   elseif c == 43 or c == 61 then act.zoom_by(1)
@@ -778,9 +1052,46 @@ local function thumb()
   return th, TOOL_H + (vh - th) * top // math.max(1, total_h - vh)
 end
 
+-- A press in the sidebar: a tab, a thumbnail, a row of the contents.
+local function press_side(x, y)
+  local which = pk.segment_at(tabs, x, y)
+
+  if which then
+    act.tab(which == 1 and "pages" or "contents")
+    return
+  end
+
+  local ly = y - TOOL_H - TABS_H
+
+  if ly < 0 then return end
+
+  if tab == "pages" then
+    for _, i in ipairs(thumbs_in_view()) do
+      local t = thumb_place[i]
+      local ty = t.y - side_top
+
+      if ly >= ty and ly < ty + t.h + LABEL_H then
+        act.go(i)
+        return
+      end
+    end
+  else
+    local e = contents[(ly + side_top) // ROW_H + 1]
+
+    if e and e.page then act.go(e.page) end
+  end
+end
+
 local function press(x, y)
+  if y >= TOOL_H and y < H - FOOT_H and x < side_w() then
+    press_side(x, y)
+    return
+  end
+
   if y < TOOL_H then
-    if pk.inside(back, x, y) and not back.disabled then
+    if pk.inside(toggle, x, y) and not toggle.disabled then
+      pk.hold(toggle, function() act.sidebar(not sidebar) end)
+    elseif pk.inside(back, x, y) and not back.disabled then
       pk.hold(back, function() act.go(current - 1) end)
     elseif pk.inside(forward, x, y) and not forward.disabled then
       pk.hold(forward, function() act.go(current + 1) end)
@@ -792,7 +1103,7 @@ local function press(x, y)
   end
 
   -- The scroll bar: the thumb held and dragged, the track a view at a time.
-  if x >= view_w() and y < H - FOOT_H and total_h > view_h() then
+  if x >= side_w() + view_w() and y < H - FOOT_H and total_h > view_h() then
     local th, ty = thumb()
 
     if y >= ty and y < ty + th then
@@ -831,7 +1142,7 @@ while win.running do
     dirty = false
   end
 
-  local work = wanted()
+  local work, work_thumb = wanted()
   local reply = wmproto.poll(win.handle, work and 0 or 25)
 
   if not reply then break end
@@ -864,7 +1175,12 @@ while win.running do
         if key(c) then dirty = true end
       end
     elseif ev.type == "wheel" then
-      if doc then
+      if doc and (ev.x or W) < side_w() then
+        local whole = tab == "pages" and thumbs_h or #contents * ROW_H
+
+        side_top = math.max(0, math.min(side_top - (ev.n or 0) * 3 * 40, whole - list_h()))
+        dirty = true
+      elseif doc then
         scroll_to(top - (ev.n or 0) * 3 * 40)
         dirty = true
       end
@@ -888,7 +1204,7 @@ while win.running do
 
   -- Nothing waiting, and a page wanted: rendered now, and drawn.
   if #events == 0 and not dirty and work and win.running then
-    render(work)
+    if work_thumb then render_thumb(work) else render(work) end
     dirty = true
   end
 end
