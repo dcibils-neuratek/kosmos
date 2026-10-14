@@ -26,8 +26,19 @@ branch directly and inflates only when the filter says FlateDecode, so
 uncompressed is both simpler here and one less thing between the file and
 the first glyph.
 
+**And what a reader needs beyond drawing** (`docs/pdfview.md` step 1), each
+an option, as real producers write them:
+
+  --tounicode   a `/ToUnicode` map from each glyph back to its character,
+                which is how a reader finds the text of an Identity-H font;
+  --outline     the document's contents: every line starting `# ` an entry,
+                titled by the rest of it, pointing at its page;
+  --jpeg FILE   a picture - DCTDecode, the JPEG as it is - drawn on page 1
+                200 points square at (72, 400), so a test knows where.
+
 Usage:
     mkpdf.py <text file> <out.pdf> [--font assets/fonts/IBMPlexSans-Regular.ttf]
+             [--tounicode] [--outline] [--jpeg FILE]
              [--title "The Odyssey"]
 """
 
@@ -199,6 +210,28 @@ class TrueType:
 
 # --------------------------------------------------------------------------
 
+def jpeg_size(data):
+    """A JPEG's width and height, from its first frame header (SOF0-SOF2)."""
+    i = 2
+
+    while i + 9 < len(data):
+        if data[i] != 0xFF:
+            i += 1
+            continue
+
+        marker = data[i + 1]
+        length = (data[i + 2] << 8) | data[i + 3]
+
+        if marker in (0xC0, 0xC1, 0xC2):
+            height = (data[i + 5] << 8) | data[i + 6]
+            width = (data[i + 7] << 8) | data[i + 8]
+            return width, height
+
+        i += 2 + length
+
+    raise ValueError("no frame header in the JPEG")
+
+
 def layout(text, columns=88):
     """Wrap the source text into pages of lines.
 
@@ -239,6 +272,9 @@ def main():
     ap.add_argument("--font", default="assets/fonts/IBMPlexSans-Regular.ttf")
     ap.add_argument("--title", default=None)
     ap.add_argument("--size", type=float, default=11.0)
+    ap.add_argument("--tounicode", action="store_true")
+    ap.add_argument("--outline", action="store_true")
+    ap.add_argument("--jpeg", default=None)
     args = ap.parse_args()
 
     with open(args.font, "rb") as f:
@@ -257,6 +293,7 @@ def main():
     # 3000-glyph face would be most of the file.
     #
     used = set()
+    char_of = {}                # glyph -> the character it was, for ToUnicode
 
     def gids(s):
         out = []
@@ -266,8 +303,10 @@ def main():
 
             if gid is None:
                 gid = ttf.cmap.get(ord("?"), 0)
+                ch = "?"
 
             used.add(gid)
+            char_of.setdefault(gid, ch)
             out.append(gid)
 
         return out
@@ -281,37 +320,34 @@ def main():
 
     page_ids = [first_page + i * 2 for i in range(len(pages))]
 
-    objs[1] = b"<< /Type /Catalog /Pages 2 0 R >>"
+    # What follows the pages: the ToUnicode map, the picture, the outline.
+    extra = first_page + 2 * len(pages)
+    TOUNI, IMAGE, OUTLINES = extra, extra + 1, extra + 2
+
+    outline = []                # (title, page index)
+
+    if args.outline:
+        for i, lines in enumerate(pages):
+            for ln in lines:
+                if ln.startswith("# "):
+                    outline.append((ln[2:].strip(), i))
+
+    catalog = "<< /Type /Catalog /Pages 2 0 R"
+
+    if outline:
+        catalog += " /Outlines %d 0 R /PageMode /UseOutlines" % OUTLINES
+
+    objs[1] = (catalog + " >>").encode()
     objs[2] = ("<< /Type /Pages /Kids [%s] /Count %d >>"
                % (" ".join("%d 0 R" % p for p in page_ids), len(page_ids))).encode()
 
-    objs[FONT] = ("<< /Type /Font /Subtype /Type0 /BaseFont /%s "
-                  "/Encoding /Identity-H /DescendantFonts [%d 0 R] >>"
-                  % (ttf.ps_name, CIDFONT)).encode()
-
-    widths = " ".join("%d [%d]" % (g, ttf.width(g)) for g in sorted(used))
-
-    objs[CIDFONT] = ("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /%s "
-                     "/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) "
-                     "/Supplement 0 >> /FontDescriptor %d 0 R "
-                     "/CIDToGIDMap /Identity /DW 500 /W [%s] >>"
-                     % (ttf.ps_name, DESCR, widths)).encode()
-
-    objs[DESCR] = ("<< /Type /FontDescriptor /FontName /%s /Flags 32 "
-                   "/FontBBox [-1000 -400 2000 1100] /ItalicAngle 0 "
-                   "/Ascent 900 /Descent -200 /CapHeight 700 /StemV 80 "
-                   "/FontFile2 %d 0 R >>" % (ttf.ps_name, FILE)).encode()
-
-    objs[FILE] = (b"<< /Length %d /Length1 %d >>\nstream\n" %
-                  (len(ttf_bytes), len(ttf_bytes)) + ttf_bytes + b"\nendstream")
+    # The pages first, so `used` and `char_of` are complete for the map.
+    page_bodies = []
 
     title = args.title
     leading = args.size * 1.55
 
     for i, lines in enumerate(pages):
-        pid = page_ids[i]
-        cid = pid + 1
-
         s = []
         y = 742.0
 
@@ -331,11 +367,95 @@ def main():
         s += ["BT", "/F1 9 Tf", "300 40 Td",
               "%s Tj" % hexstr("%d" % (i + 1)), "ET"]
 
-        body = "\n".join(s).encode("latin-1")
+        if args.jpeg and i == 0:
+            s += ["q", "200 0 0 200 72 400 cm", "/Im1 Do", "Q"]
+
+        page_bodies.append("\n".join(s).encode("latin-1"))
+
+    font = ("<< /Type /Font /Subtype /Type0 /BaseFont /%s "
+            "/Encoding /Identity-H /DescendantFonts [%d 0 R]"
+            % (ttf.ps_name, CIDFONT))
+
+    if args.tounicode:
+        font += " /ToUnicode %d 0 R" % TOUNI
+
+        lines = ["/CIDInit /ProcSet findresource begin", "12 dict begin", "begincmap",
+                 "/CMapName /Kosmos-UCS def", "/CMapType 2 def",
+                 "1 begincodespacerange", "<0000> <FFFF>", "endcodespacerange"]
+        pairs = sorted(char_of.items())
+
+        # A hundred to a block, as the specification allows.
+        for at in range(0, len(pairs), 100):
+            block = pairs[at:at + 100]
+            lines.append("%d beginbfchar" % len(block))
+
+            for gid, ch in block:
+                utf16 = ch.encode("utf-16-be").hex().upper()
+                lines.append("<%04X> <%s>" % (gid, utf16))
+
+            lines.append("endbfchar")
+
+        lines += ["endcmap", "CMapName currentdict /CMap defineresource pop", "end", "end"]
+        cmap = "\n".join(lines).encode("latin-1")
+        objs[TOUNI] = b"<< /Length %d >>\nstream\n" % len(cmap) + cmap + b"\nendstream"
+
+    objs[FONT] = (font + " >>").encode()
+
+    if args.jpeg:
+        with open(args.jpeg, "rb") as f:
+            jpeg = f.read()
+
+        width, height = jpeg_size(jpeg)
+        objs[IMAGE] = (b"<< /Type /XObject /Subtype /Image /Width %d /Height %d "
+                       b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode "
+                       b"/Length %d >>\nstream\n" % (width, height, len(jpeg))
+                       + jpeg + b"\nendstream")
+
+    if outline:
+        first_item = OUTLINES + 1
+        items = []
+
+        for k, (name, page) in enumerate(outline):
+            n = first_item + k
+            entry = "<< /Title (%s) /Parent %d 0 R /Dest [%d 0 R /XYZ 0 792 null]" % (
+                name.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)"),
+                OUTLINES, page_ids[page])
+
+            if k > 0:
+                entry += " /Prev %d 0 R" % (n - 1)
+            if k < len(outline) - 1:
+                entry += " /Next %d 0 R" % (n + 1)
+
+            items.append(entry + " >>")
+            objs[n] = items[-1].encode()
+
+        objs[OUTLINES] = ("<< /Type /Outlines /First %d 0 R /Last %d 0 R /Count %d >>"
+                          % (first_item, first_item + len(outline) - 1, len(outline))).encode()
+
+    widths = " ".join("%d [%d]" % (g, ttf.width(g)) for g in sorted(used))
+
+    objs[CIDFONT] = ("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /%s "
+                     "/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) "
+                     "/Supplement 0 >> /FontDescriptor %d 0 R "
+                     "/CIDToGIDMap /Identity /DW 500 /W [%s] >>"
+                     % (ttf.ps_name, DESCR, widths)).encode()
+
+    objs[DESCR] = ("<< /Type /FontDescriptor /FontName /%s /Flags 32 "
+                   "/FontBBox [-1000 -400 2000 1100] /ItalicAngle 0 "
+                   "/Ascent 900 /Descent -200 /CapHeight 700 /StemV 80 "
+                   "/FontFile2 %d 0 R >>" % (ttf.ps_name, FILE)).encode()
+
+    objs[FILE] = (b"<< /Length %d /Length1 %d >>\nstream\n" %
+                  (len(ttf_bytes), len(ttf_bytes)) + ttf_bytes + b"\nendstream")
+
+    for i, body in enumerate(page_bodies):
+        pid = page_ids[i]
+        cid = pid + 1
+        xobjects = " /XObject << /Im1 %d 0 R >>" % IMAGE if (args.jpeg and i == 0) else ""
 
         objs[pid] = ("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-                     "/Resources << /Font << /F1 %d 0 R >> >> "
-                     "/Contents %d 0 R >>" % (FONT, cid)).encode()
+                     "/Resources << /Font << /F1 %d 0 R >>%s >> "
+                     "/Contents %d 0 R >>" % (FONT, xobjects, cid)).encode()
 
         objs[cid] = (b"<< /Length %d >>\nstream\n" % len(body)
                      + body + b"\nendstream")

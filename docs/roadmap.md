@@ -9094,6 +9094,9 @@ page, actual size), scrolling through the document rather than a page at a
 time, page thumbnails in a sidebar, go to page, the window resizable with
 the pages laid out again, search in the text, and remembering where each
 document was left.
+**Step 1 built in 0.11.231** (`testing.md` 18.626): the kit's three -
+`pdf.text`, `pdf.outline`, JPEG pictures in `pdf.render`. Next, step 2: the
+window.
 
 **Found, 10 October - a question to an application waits for its tick.**
 The launcher waited 840 ms of every press for the Deskbar to say where the

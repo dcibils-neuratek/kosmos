@@ -8,8 +8,9 @@ Last updated: 2026-10-14, afternoon (0.11.230; Pulses, the web decided)
 
 ## 14 October, the day: Pulses, and the web decided
 
-**On `main`, not pushed: 0.11.199-0.11.230.** Whole gates 89/89 (0.11.226),
-88/89 (0.11.227, x86-dock under load), 89/89 (0.11.228), 90/90 (0.11.229).
+**On `main`, not pushed: 0.11.199-0.11.231.** Whole gates 89/89 (0.11.226),
+88/89 (0.11.227, x86-dock under load), 89/89 (0.11.228), 90/90 (0.11.229),
+90/91 (0.11.231, x86-film's sound under load; passes alone).
 
 - **Diego's answers**: A5 consent (a), as designed - a design note first;
   the mail trigger by file, then pulses designed instead; the PDF reader,
@@ -30,7 +31,11 @@ Last updated: 2026-10-14, afternoon (0.11.230; Pulses, the web decided)
 - **Watched**: the telnetd-late flake came back in `x86-mail-3` (the
   network never got an address); every suite now keeps its guest's whole
   serial line in `build/gate/serial/` for when it comes again.
-- **Next**: the PDF reader, as agreed (`docs/pdfview.md`).
+- **The PDF reader, step 1** (0.11.231, 18.626): the PDF Kit reads a
+  page's text through `ToUnicode` with where each run is (`pdf.text`), the
+  outline (`pdf.outline`), and draws JPEG pictures in a page; `mkpdf.py`
+  writes all three; `x86-pdfkit` holds them, with a control each.
+- **Next**: the PDF reader's step 2, the window (`docs/pdfview.md`).
 - **Still waiting on Diego**: the sandbox console keys on the M700
   (`vmm.c` uncommitted); the M700's screen; background programs fix 1 or
   2; the Shortcuts cheat sheet; About in Preferences; a push.

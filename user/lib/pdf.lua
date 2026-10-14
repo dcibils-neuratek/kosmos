@@ -45,7 +45,9 @@ local pdf = {}
 --   pdf.open(path or source)     a document, its structure read
 --   pdf.file(path)               a source over a file, read a window at a time
 --   pdf.render(doc, page, surface, scale, colour)
---                                a page drawn (`pdfpage.lua`)
+--                                a page drawn (`pdfpage.lua`), its pictures in it
+--   pdf.text(doc, page)          a page's text, and where each run of it is
+--   pdf.outline(doc)             the document's contents, entries and pages
 --   pdf.write(path, set, measure, info)
 --                                pages written as a PDF (`pdfwrite.lua`)
 --
@@ -739,6 +741,89 @@ end
 -- A page drawn: `pdfpage.render`, through the door.
 function pdf.render(...)
   return use("/Kosmos/Libraries/pdfpage.lua").render(...)
+end
+
+-- A page's text and where each run of it is (`pdfpage.text`), through the
+-- door: `pdf.text(doc, page)` with the page from `doc:page(n)`.
+function pdf.text(...)
+  return use("/Kosmos/Libraries/pdfpage.lua").text(...)
+end
+
+--
+-- **The document's contents** (`docs/pdfview.md` step 1): its `/Outlines`
+-- as `{ { title =, page =, depth =, children = { ... } }, ... }`, `page` the
+-- number in `doc.pages` the entry goes to (nil when it goes nowhere this
+-- reader can follow). Read from the catalog: each entry's `/Dest`, or a
+-- GoTo action's `/D`, a page reference first. Named destinations, which
+-- need the `/Dests` tree, are left to when a document needs them. An empty
+-- list for a document with none.
+--
+function pdf.outline(doc)
+  local by_number = {}
+
+  for i, at in ipairs(doc.pages or {}) do
+    if type(at) == "number" then by_number[at] = i end
+  end
+
+  local root = doc:resolve(doc.catalog and doc.catalog.Outlines)
+
+  if type(root) ~= "table" then return {} end
+
+  local seen = {}
+
+  local function page_of(item)
+    local dest = doc:resolve(item.Dest)
+
+    if dest == nil then
+      local action = doc:resolve(item.A)
+
+      if type(action) == "table" and action.S == "GoTo" then dest = doc:resolve(action.D) end
+    end
+
+    if type(dest) == "table" and pdf.isref(dest[1]) then return by_number[dest[1].num] end
+
+    return nil
+  end
+
+  local function title_of(item)
+    local t = doc:resolve(item.Title)
+
+    if type(t) ~= "string" then return "" end
+
+    -- UTF-16 with its mark, as a title may be written; Latin bytes otherwise.
+    if t:sub(1, 2) == "\254\255" then
+      local out = {}
+
+      for i = 3, #t - 1, 2 do out[#out + 1] = utf8.char(t:byte(i) * 256 + t:byte(i + 1)) end
+      return table.concat(out)
+    end
+
+    return t
+  end
+
+  local function level(first, depth)
+    local out = {}
+    local ref = first
+
+    while ref ~= nil and #out < 10000 do
+      local key = pdf.isref(ref) and ref.num or ref
+
+      if seen[key] then break end      -- a loop a broken file could make
+      seen[key] = true
+
+      local item = doc:resolve(ref)
+
+      if type(item) ~= "table" then break end
+
+      out[#out + 1] = { title = title_of(item), page = page_of(item), depth = depth,
+                        children = depth < 32 and level(item.First, depth + 1) or {} }
+      ref = item.Next
+    end
+
+    return out
+  end
+
+  return level(root.First, 0)
 end
 
 -- Pages written as a PDF: `pdfwrite.write`, through the door.

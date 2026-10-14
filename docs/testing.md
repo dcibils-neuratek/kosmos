@@ -25916,3 +25916,32 @@ pulsing - the automation never runs (30 s, not 5): a folder that says it
 tells is not looked at, so nothing else could have run it. Its suites:
 `x86-autod`, `x86-mail-2`, `x86-automations` pass.
 
+
+## 18.626 The PDF Kit reads a page's text, its outline and its pictures
+
+The PDF reader's step 1 (`docs/pdfview.md`), in the kit rather than the
+application, so Quick Look, Write and anything after can have them through
+the same door: `pdf.text(doc, page)` gives the page's characters in reading
+order and, for each run, where it is - which Find and Copy will draw over;
+`pdf.outline(doc)` gives the document's contents, titled, with their pages;
+and `pdf.render` now draws a JPEG picture (`DCTDecode`) where the page's
+matrix puts it, before the text, decoded by `gfx.jpeg` straight from a
+region and stretched in C. The text comes through the font's `/ToUnicode`
+map - bfchar and bfrange, deflated when it is - because an Identity-H font's
+codes are glyph ids, and a glyph id is not a character.
+
+`tools/mkpdf.py` learned to write the three, as real producers do
+(`--tounicode`, `--outline`, `--jpeg`), so the fixture is made in the test
+rather than kept. **Test**: `x86-pdfkit`, 16 checks - two sentences on page
+1 in order and nothing of page 2, the first run at the top left, the
+outline's two chapters on pages 1 and 2, and each of
+`test-quads.jpg`'s four colours where the page puts it. **Controls**: the
+same text made without each addition - no map is no text at all rather
+than wrong text, no outline is no entries, no picture is the paper's own
+grey where the quadrants were.
+
+The suite found two faults in the picture path on its first run, neither
+of which reading would have shown: an image's dictionary is the stream's
+`.dict`, not the object, so every picture was "not an image"; and a
+region was handed to `read_into` where it takes the region's capability.
+And `stretch`'s alpha is 0 to 255 - there is no "opaque" of -1.

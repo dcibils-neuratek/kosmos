@@ -18,8 +18,10 @@
 -- stream is a sequence of two-byte *glyph numbers* in the embedded font.
 -- Drawing them needs no more than that. Knowing what they *say* needs the
 -- font's `/ToUnicode` table, which is a separate object and is parsed here
--- too - so `runs` is for drawing and `text` is for reading, and neither is
--- built on a guess about the other.
+-- too (`pdfpage.unicode`, `pdfpage.text`) - so `render` is for drawing and
+-- `text` is for reading, and neither is built on a guess about the other.
+-- (This said so for months while no code did: the text path was removed in
+-- a review as superseded and the sentence stayed, until 14 October.)
 
 local pdfpage = {}
 
@@ -297,7 +299,8 @@ function pdfpage.font(doc, ref)
 
   if key and doc.fonts[key] then return doc.fonts[key] end
 
-  local font = { subtype = dict.Subtype, base = dict.BaseFont, two_byte = false }
+  local font = { subtype = dict.Subtype, base = dict.BaseFont, two_byte = false,
+                 to_unicode = dict.ToUnicode }
 
   if key then doc.fonts[key] = font end
 
@@ -434,6 +437,253 @@ end
 -- A page, as pixels.
 --------------------------------------------------------------------------
 
+--------------------------------------------------------------------------
+-- A page's text (`docs/pdfview.md` step 1): what Find searches and Copy
+-- copies, which drawing never needed.
+--------------------------------------------------------------------------
+
+-- UTF-16BE, in hex, as UTF-8: a ToUnicode map's way of naming characters,
+-- surrogate pairs included.
+local function utf16_hex(hex)
+  local out, i, n = {}, 1, #hex
+
+  while i + 3 <= n do
+    local u = tonumber(hex:sub(i, i + 3), 16) or 0xFFFD
+
+    i = i + 4
+
+    if u >= 0xD800 and u <= 0xDBFF and i + 3 <= n then
+      local lo = tonumber(hex:sub(i, i + 3), 16) or 0
+
+      if lo >= 0xDC00 and lo <= 0xDFFF then
+        u = 0x10000 + ((u - 0xD800) << 10) + (lo - 0xDC00)
+        i = i + 4
+      end
+    end
+
+    out[#out + 1] = utf8.char(u)
+  end
+
+  return table.concat(out)
+end
+
+--
+-- **A font's map from codes to characters** - its `/ToUnicode` CMap, read
+-- once a font: `beginbfchar` pairs a code with a character, `beginbfrange`
+-- a run of codes with a run of characters or a list of them. Nil when the
+-- font has none, and its codes are then read as Latin bytes.
+--
+function pdfpage.unicode(doc, font)
+  if font.unicode ~= nil then return font.unicode or nil end
+
+  font.unicode = false
+
+  local ref = font.to_unicode
+
+  if not ref then return nil end
+
+  local offset, length, filter = doc:stream_range(ref)
+
+  if not offset or length <= 0 or length > 1024 * 1024 then return nil end
+
+  local bytes = doc.source.read(offset, length) or ""
+
+  if filter[1] == "FlateDecode" then
+    local ok, inflated = pcall(compress.inflate, bytes)
+
+    if not ok then return nil end
+    bytes = inflated
+  end
+
+  local map = {}
+
+  for block in bytes:gmatch("beginbfchar(.-)endbfchar") do
+    for code, to in block:gmatch("<(%x+)>%s*<(%x*)>") do
+      map[tonumber(code, 16)] = utf16_hex(to)
+    end
+  end
+
+  for block in bytes:gmatch("beginbfrange(.-)endbfrange") do
+    for first, last, rest in block:gmatch("<(%x+)>%s*<(%x+)>%s*(%b[]|<%x*>)") do
+      local a, b = tonumber(first, 16), tonumber(last, 16)
+
+      if b - a > 65535 then b = a + 65535 end
+
+      if rest:sub(1, 1) == "[" then
+        local k = 0
+
+        for to in rest:gmatch("<(%x*)>") do
+          map[a + k] = utf16_hex(to)
+          k = k + 1
+        end
+      else
+        local base = rest:match("<(%x*)>") or ""
+        local start = tonumber(base:sub(-4), 16) or 0
+        local prefix = base:sub(1, -5)
+
+        for code = a, b do
+          map[code] = utf16_hex(prefix .. ("%04X"):format(start + code - a))
+        end
+      end
+    end
+  end
+
+  font.unicode = map
+  return map
+end
+
+-- The characters `bytes` shows in `font`, as UTF-8.
+local function decoded(doc, font, bytes)
+  local map = pdfpage.unicode(doc, font)
+  local step = font.two_byte and 2 or 1
+  local out = {}
+
+  for i = 1, #bytes, step do
+    local code = step == 2 and (bytes:byte(i) * 256 + (bytes:byte(i + 1) or 0)) or bytes:byte(i)
+    local ch = map and map[code]
+
+    if not ch then
+      ch = (step == 1 and code >= 32) and utf8.char(code) or ""
+    end
+
+    out[#out + 1] = ch
+  end
+
+  return table.concat(out)
+end
+
+--
+-- **A page's text**: `{ text = "...", runs = { { x, y, w, size, from, to } } }`
+-- - the words in reading order, a line to a line of the page, and each run
+-- of them with where it is on the page (points, from the top-left, as a
+-- reader draws) and which bytes of `text` it is, so Find can mark a match
+-- where it is. A page whose fonts have no map and no Latin bytes - a scan,
+-- or glyph numbers alone - has little or no text, and says so by that.
+--
+function pdfpage.text(doc, page)
+  local resources = doc:resolve(page.Resources) or {}
+  local dicts     = doc:resolve(resources.Font) or {}
+  local fonts     = {}
+
+  for name, dict in pairs(dicts) do fonts[name] = pdfpage.font(doc, dict) end
+
+  local box    = doc:resolve(page.MediaBox) or { 0, 0, 612, 792 }
+  local height = box[4] or 792
+
+  local offset, length, filter = doc:stream_range(page.dict.Contents)
+
+  if not offset then return { text = "", runs = {} } end
+
+  local b = page_buffers()
+  if not b then error("pdfpage: no memory for the page buffers") end
+  if length > b.raw_max then
+    error(("pdfpage: a %d byte stream needs a bigger buffer"):format(length))
+  end
+
+  local done = doc.source.read_into(b.raw, offset, length) or 0
+  local size = done
+
+  if filter[1] == "FlateDecode" then
+    size = compress.inflate_into(b.raw_at, done, b.out_at, b.out_max)
+  end
+
+  local at = filter[1] == "FlateDecode" and b.out_at or b.raw_at
+  local shown = {}
+
+  pdfpage.walk(at, size, fonts, function (x, y, px, font, bytes)
+    local words = decoded(doc, font, bytes)
+
+    if words == "" then return end
+
+    local w, step = 0, font.two_byte and 2 or 1
+
+    for i = 1, #bytes, step do
+      local code = step == 2 and (bytes:byte(i) * 256 + (bytes:byte(i + 1) or 0)) or bytes:byte(i)
+      w = w + (pdfpage.width(font, code) / 1000) * px
+    end
+
+    shown[#shown + 1] = { x = x, y = height - y, w = w, size = px, words = words }
+  end)
+
+  doc:forget()
+
+  -- Reading order: top to bottom, a line being runs whose baselines agree
+  -- within a third of their size; left to right within it.
+  table.sort(shown, function (p, q)
+    if math.abs(p.y - q.y) > math.max(p.size, q.size) / 3 then return p.y < q.y end
+    return p.x < q.x
+  end)
+
+  local parts, runs, at_byte, last = {}, {}, 0, nil
+
+  for _, r in ipairs(shown) do
+    local sep = ""
+
+    if last then
+      if math.abs(r.y - last.y) > math.max(r.size, last.size) / 3 then
+        sep = "\n"
+      elseif r.x - (last.x + last.w) > r.size * 0.2 then
+        sep = " "
+      end
+    end
+
+    parts[#parts + 1] = sep .. r.words
+    at_byte = at_byte + #sep
+
+    runs[#runs + 1] = { x = r.x, y = r.y - r.size, w = r.w, size = r.size,
+                        from = at_byte + 1, to = at_byte + #r.words }
+    at_byte = at_byte + #r.words
+    last = r
+  end
+
+  return { text = table.concat(parts), runs = runs }
+end
+
+--
+-- **A picture in a page** (`docs/pdfview.md` step 1): an image XObject,
+-- drawn into the rectangle the unit square maps to - the page's matrix at
+-- its `Do`. JPEG (`DCTDecode`) only, so far: decoded by `gfx.jpeg` from a
+-- region the stream is read into, never a Lua string, since a photo is
+-- megabytes and a heap is not; and scaled into place in C. Another filter
+-- is left blank, as every picture was before. True when drawn.
+--
+function pdfpage.picture(doc, ref, at, surface, scale, height)
+  local xo = doc:resolve(ref)
+
+  -- A stream: its dictionary is `.dict`, beside where its bytes are.
+  if type(xo) ~= "table" or not xo.dict or xo.dict.Subtype ~= "Image" then return false end
+
+  local offset, length, filter = doc:stream_range(ref)
+
+  if not offset or filter[1] ~= "DCTDecode" or length <= 0 then return false end
+
+  local r = regions.make(length)
+
+  if not r then return false end
+
+  local done = doc.source.read_into(r.cap, offset, length) or 0
+  local ok, image = pcall(gfx.jpeg, r.at, done)
+
+  regions.free(r)
+
+  if not ok or not image then return false end
+
+  local iw, ih = image:size()
+  local x0, x1 = math.min(at.e, at.e + at.a), math.max(at.e, at.e + at.a)
+  local y0, y1 = math.min(at.f, at.f + at.d), math.max(at.f, at.f + at.d)
+  local dx = math.floor(x0 * scale + 0.5)
+  local dy = math.floor((height - y1) * scale + 0.5)
+  local dw = math.floor((x1 - x0) * scale + 0.5)
+  local dh = math.floor((y1 - y0) * scale + 0.5)
+
+  if dw > 0 and dh > 0 then
+    surface:stretch(image, 0, 0, iw, ih, dx, dy, dw, dh, 255, true)
+  end
+
+  image:free()
+  return dw > 0 and dh > 0
+end
+
 function pdfpage.render(doc, page, surface, scale, colour)
   local resources = doc:resolve(page.Resources) or {}
   local dicts     = doc:resolve(resources.Font) or {}
@@ -477,6 +727,8 @@ function pdfpage.render(doc, page, surface, scale, colour)
   -- One bucket per face and size actually used on this page.
   local buckets, order = {}, {}
 
+  local pictures = {}
+
   pdfpage.walk(at, size, fonts, function (x, y, px, font, bytes)
     local at_px = math.floor(px * scale + 0.5)
 
@@ -508,7 +760,21 @@ function pdfpage.render(doc, page, surface, scale, colour)
 
       pen = pen + (pdfpage.width(font, code) / 1000) * px
     end
+  end, function (name, a, _, _, d, e, f)
+    pictures[#pictures + 1] = { name = name, a = a, d = d, e = e, f = f }
   end)
+
+  -- The pictures first: a page's text is drawn over them.
+  local xobjects = doc:resolve(resources.XObject) or {}
+  local shown = 0
+
+  for _, pic in ipairs(pictures) do
+    if pdfpage.picture(doc, xobjects[pic.name], pic, surface, scale, height) then
+      shown = shown + 1
+    end
+  end
+
+  doc.pictures_drawn = shown
 
   local drawn, faces, missing = 0, 0, 0
 
@@ -610,7 +876,7 @@ end
 -- plus one per line part, was the 2 MB heap gone before the page finished.
 -- A callback costs nothing and the caller keeps only what it actually
 -- wants, which for reading is one string per line.
-function pdfpage.walk(at, length, fonts, emit)
+function pdfpage.walk(at, length, fonts, emit, picture)
   local NUMBER      = pdfkit.NUMBER
   local NAME        = pdfkit.NAME
   local STRING      = pdfkit.STRING
@@ -726,6 +992,13 @@ function pdfpage.walk(at, length, fonts, emit)
           if #stored > 0 then
             copy_into(stored[#stored], ctm)
             stored[#stored] = nil
+          end
+
+        -- A picture (or a form) by name, in the unit square the current
+        -- matrix maps: where it lands is the matrix's, so it goes out as one.
+        elseif op == "Do" then
+          if picture and type(stack[#stack]) == "string" then
+            picture(stack[#stack], ctm.a, ctm.b, ctm.c, ctm.d, ctm.e, ctm.f)
           end
 
         elseif op == "BT" then

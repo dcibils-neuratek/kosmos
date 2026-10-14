@@ -107,7 +107,9 @@ with the 377 pages of the Odyssey.
 
 1. **The kit's three additions**, each held by a test of its own: a page's
    text (held to the text a known PDF says it holds), the outline, and JPEG
-   pictures drawn in a page.
+   pictures drawn in a page. **Built in 0.11.231** (`testing.md` 18.626,
+   `x86-pdfkit`): `pdf.text`, `pdf.outline`, and `pdf.render` drawing
+   JPEGs.
 2. **The window**: menu bar, header, the whole document scrolled, zoom,
    resize, the cache.
 3. **The sidebar**: thumbnails, then contents.
