@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-14, afternoon (0.11.230; Pulses, the web decided)
+Last updated: 2026-10-14, evening (0.11.241; Linux-on-Kosmos L1a)
 
 ---
 
@@ -65,6 +65,19 @@ Last updated: 2026-10-14, afternoon (0.11.230; Pulses, the web decided)
   last 207 bytes the deflater kept (0.11.240, 18.635)
   drawn for Diego (`docs/network.html`, three questions). Then Remote
   Screen.
+- **Linux-on-Kosmos, moved to the top** ("can we prioritize linux on kosmos
+  so we can run a web browser ?") and designed (`docs/linux.md`, `.html`,
+  `-architecture.png`); **agreed the same evening**: Chromium alone in
+  `cage` for now, what it runs a setting; guests' disks on a drive of their
+  own, `/Sandboxes` (Diego's idea); 2 GB, one core until L6.
+- **L1a, `/Sandboxes`** (0.11.241, 18.636): a second disk server on the partition
+  `opt/kosmos/sandboxes` names, both drives guarded by the USB driver, and
+  `tools/sandboxes_drive.py` to give the M700's stick the partition without
+  touching `/Home` - **Diego runs it once, with sudo, when the stick is at
+  the Mac** (`sudo python3 tools/sandboxes_drive.py /dev/rdiskN`, the stick
+  unmounted), and the netboot's words then carry the GUID it prints.
+  **Next: L1b**, virtio-blk in the monitor on a file there; then L2 the
+  screen.
 - **Still waiting on Diego**: the sandbox console keys on the M700
   (`vmm.c` uncommitted); the M700's screen; background programs fix 1 or
   2; the Shortcuts cheat sheet; About in Preferences; a push.

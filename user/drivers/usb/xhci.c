@@ -78,6 +78,7 @@
 #include "ethproto.h"
 #include "ethring.h"
 #include "notifyproto.h"
+#include "servers/drives_decode.h"
 #include "cameraproto.h"
 #include "midiproto.h"
 #include "storage_decode.h"
@@ -489,10 +490,13 @@ struct stick {
     /* Whether a flush it kept has been said yet (USB step 5e). */
     bool          flushed;
 
-    /* The partition that is `/Home`: refused to reads on `/Devices/blocks`
-     * (`BLOCK_OP_GUARD`, keyring K7). `guard_count` 0 is none. */
-    uint64_t      guard_lba;
-    uint64_t      guard_count;
+    /* The partitions a disk server serves - `/Home`, and `/Sandboxes`
+     * since `docs/linux.md` L1 - refused to reads on `/Devices/blocks`
+     * (`BLOCK_OP_GUARD`, keyring K7). As many as a disk server reads of a
+     * stick's GPT, `DRIVES_PARTS_MAX` - a partition past those is never
+     * served, so never guarded; `guards` of them used. */
+    struct { uint64_t lba, count; } guard[DRIVES_PARTS_MAX];
+    unsigned      guards;
 
     /* Its bulk endpoints' packets, for a chained transfer's TD Size. */
     unsigned      in_packet;
@@ -3374,8 +3378,7 @@ static void first_blocks(struct controller *c, struct device *d,
      */
     if (capacity.block_size <= BLOCK_TRANSFER_MOST) {
         s->blocks = capacity.blocks;
-        s->guard_lba = 0;           /* a stick of its own: guarded by nobody yet */
-        s->guard_count = 0;
+        s->guards = 0;              /* a stick of its own: guarded by nobody yet */
         s->block_size = capacity.block_size;
 
         if (!s->ready) {
@@ -6663,6 +6666,20 @@ static bool find_unit(uint32_t unit, struct controller **c_out,
     return false;
 }
 
+/* Whether any of `count` blocks from `lba` is in a partition a disk server
+ * guards. */
+static bool guarded(const struct stick *s, uint64_t lba, uint64_t count)
+{
+    for (unsigned i = 0; i < s->guards; i++) {
+        if (lba < s->guard[i].lba + s->guard[i].count
+            && lba + count > s->guard[i].lba) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static struct opened *opened_by(uint32_t handle)
 {
     uint32_t place = handle & 0xFFu;
@@ -6990,10 +7007,9 @@ static void block_answer(const struct message *in, uint64_t sender, long cap,
             }
             break;
         case BLOCK_OP_READ:
-            /* `/Home`'s blocks, to anybody but the disk server: refused. */
-            if (!may_write && find_unit(req->unit, &c, &s) && s->guard_count > 0
-                && req->lba < s->guard_lba + s->guard_count
-                && req->lba + req->count > s->guard_lba) {
+            /* A disk server's blocks, to anybody but a disk server: refused. */
+            if (!may_write && find_unit(req->unit, &c, &s)
+                && guarded(s, req->lba, req->count)) {
                 rep->error = BLOCK_ERR_GUARDED;
             } else {
                 block_read(req, line, rep);
@@ -7005,8 +7021,17 @@ static void block_answer(const struct message *in, uint64_t sender, long cap,
             } else if (!find_unit(req->unit, &c, &s)) {
                 rep->error = BLOCK_ERR_NO_UNIT;
             } else {
-                s->guard_lba = req->lba;
-                s->guard_count = req->count;
+                if (!guarded(s, req->lba, req->count)) {
+                    if (s->guards == DRIVES_PARTS_MAX) {
+                        rep->error = BLOCK_ERR_BAD_OP;
+                        break;
+                    }
+
+                    s->guard[s->guards].lba = req->lba;
+                    s->guard[s->guards].count = req->count;
+                    s->guards++;
+                }
+
                 say_begin(line);
                 say_text(line, "xhci: unit ");
                 say_dec(line, req->unit);
@@ -7014,7 +7039,7 @@ static void block_answer(const struct message *in, uint64_t sender, long cap,
                 say_dec(line, (unsigned long)req->lba);
                 say_text(line, " on, ");
                 say_dec(line, (unsigned long)req->count);
-                say_text(line, " of them, kept from /Devices/blocks: /Home's");
+                say_text(line, " of them, kept from /Devices/blocks: a disk server's");
                 say_send(console, line);
             }
             break;

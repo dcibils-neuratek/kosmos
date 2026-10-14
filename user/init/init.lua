@@ -42,6 +42,7 @@ local ROLE_BACKLIGHT  = 21 -- Intel's backlight PWMs: /Devices/backlight
 local ROLE_E1000      = 22 -- an Intel Ethernet controller, where there is one
 local ROLE_AHCI       = 31 -- a SATA controller, where there is one
 local ROLE_VMTEST     = 32 -- a guest entered and left, said (`vmtest.c`)
+local ROLE_SANDBOXFS  = 33 -- serves /Sandboxes: guests' disks (`docs/linux.md` L1)
 local ROLE_NOTIFY     = 23 -- serves /Notifications: what applications have said
 local ROLE_SMBFS      = 24 -- shares over the network: SMB 2 and 3 (`sharing.md`)
 local ROLE_KEYRING    = 25 -- the passwords Kosmos keeps, sealed (`keyring.md`)
@@ -4288,7 +4289,8 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap,
                           midi_cap, notify_cap, share_cap, keyring_cap, tiles_cap,
-                          mail_keys_cap, window_cap, mdns_cap, sharing_cap)
+                          mail_keys_cap, window_cap, mdns_cap, sharing_cap,
+                          sandboxes_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -4367,6 +4369,13 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
 
   -- And what is on it, by name (`docs/sharing.md` N11c).
   if mdns_cap then ns.mount("/Discovery", mdns_cap, nil, "mdns") end
+  -- `/Sandboxes` only where init started its server: on the word init
+  -- read, so the two cannot disagree (`docs/linux.md` L1).
+  if sys.boot and sys.boot("opt/kosmos/sandboxes") then
+    ns.mount("/Sandboxes", sandboxes_cap, "/Sandboxes", "disk")
+  else
+    sandboxes_cap = nil
+  end
   -- smbd's door (`docs/sharing.md` N12c): the shell holds it to pass on,
   -- and to send what is to be shared when it starts with the machine.
   if sharing_cap then ns.sharing_door(sharing_cap) end
@@ -5126,6 +5135,9 @@ query. `find` and `watch` are built on exactly these two calls.
     -- /Discovery (`docs/sharing.md` N11c) to every program, as `/Network`
     -- is: what is on the network is part of having it.
     local mdns = mdns_cap
+    -- And `/Sandboxes` (`docs/linux.md` L1), where the machine has one, as
+    -- `/Home` is: a drive, to every program.
+    local sandboxes = sandboxes_cap
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -5177,6 +5189,8 @@ query. `find` and `watch` are built on exactly these two calls.
     if mdns then caps[#caps + 1] = mdns; mdns_at = #caps - 1 end
     local sharing_at = nil
     if sharing then caps[#caps + 1] = sharing; sharing_at = #caps - 1 end
+    local sandboxes_at = nil
+    if sandboxes then caps[#caps + 1] = sandboxes; sandboxes_at = #caps - 1 end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
     local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags)
@@ -5194,7 +5208,7 @@ query. `find` and `watch` are built on exactly these two calls.
       backlight = 12, notify = 13, share = share_cap and 14 or nil,
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
       mailkeys = mailkeys_at, windowserver = window_at, mdns = mdns_at,
-      sharing = sharing_at,
+      sharing = sharing_at, sandboxes = sandboxes_at,
       home_in_memory = home_in_memory or nil,
       protostamp = sys.protostamp,
     })
@@ -5932,6 +5946,10 @@ if role == ROLE_INIT then
   -- **/Discovery** (`docs/sharing.md` N11c): `mdnsd`, what is on the
   -- network by name, for every program, as `/Network` is.
   local MDNS_EP = sys.endpoint()
+  -- `/Sandboxes` (`docs/linux.md` L1): its own disk server, on the partition
+  -- `opt/kosmos/sandboxes` names, and only on a machine started with one.
+  local SANDBOXES_EP = sys.boot and sys.boot("opt/kosmos/sandboxes")
+                       and sys.endpoint() or nil
   local KEYRING_SMB_EP = sys.endpoint()
   local KEYRING_MANAGE_EP = sys.endpoint()
   local KEYRING_MAIL_EP = sys.endpoint()     -- the keyring's `mail` door (`mail.md` M0)
@@ -6069,6 +6087,20 @@ if role == ROLE_INIT then
                         { DISKFS_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DEVICES_EP,
                           CONSOLE_EP, KEYRING_DISK_EP, MAPS_CACHE_DISK_EP },
                         sys.disk() and SPAWN_DISK or 0)
+
+  --
+  -- **`/Sandboxes`, guests' disks on a drive of their own** (`docs/linux.md`
+  -- L1; Diego, 14 October 2026: "what if instead /home we crate a new
+  -- /Sandboxes drive", "that pollutes the home?"). The same disk server in
+  -- a second process, on the stick's partition `opt/kosmos/sandboxes` names,
+  -- so a guest that fills its disk fills its own drive and never `/Home`.
+  -- No disk grant: it is a stick's partition or nothing, and the kernel's
+  -- disk is `/Home`'s.
+  --
+  if SANDBOXES_EP then
+    start("the sandboxes drive", ROLE_SANDBOXFS,
+          { SANDBOXES_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DEVICES_EP, CONSOLE_EP }, 0)
+  end
 
   --
   -- The sound device goes here and nowhere else.
@@ -6456,7 +6488,8 @@ if role == ROLE_INIT then
                         APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP, BLOCKS_EP,
                         DRIVES_EP, BACKLIGHT_EP, CAMERA_EP, MIDI_EP,
                         NOTIFY_EP, SMBFS_EP, KEYRING_MANAGE_EP, TILES_EP,
-                        KEYRING_MAIL_EP, WINDOW_EP, MDNS_EP, SMBD_EP },
+                        KEYRING_MAIL_EP, WINDOW_EP, MDNS_EP, SMBD_EP,
+                        SANDBOXES_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -6529,7 +6562,8 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+             22)
   return
 end
 
@@ -6696,6 +6730,7 @@ if role == ROLE_RUNNER then
   ns.mount("/Kosmos/Kits", true, nil, "kits")
   if req.app     then ns.mount_registry("/Running", req.app, "app") end
   if req.disk    then ns.mount("/Home", req.disk, "/Home", "disk") end
+  if req.sandboxes then ns.mount("/Sandboxes", req.sandboxes, "/Sandboxes", "disk") end
 
   -- After the disk, because this replaces what that mounted. The shell
   -- decided once, at boot, whether there is a filesystem to put `/Home` on;
@@ -6899,6 +6934,14 @@ if role == ROLE_RUNNER then
       mdns_at = #caps - 1
     end
 
+    -- And `/Sandboxes`, as `/Home` is (`docs/linux.md` L1).
+    local sandboxes_at = nil
+
+    if req.sandboxes then
+      caps[#caps + 1] = req.sandboxes
+      sandboxes_at = #caps - 1
+    end
+
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
 
@@ -6972,6 +7015,7 @@ if role == ROLE_RUNNER then
       backlight = 12, notify = 13, share = req.share and 14 or nil,
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
       mailkeys = mailkeys_at, mdns = mdns_at, sharing = sharing_at,
+      sandboxes = sandboxes_at,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Which protocols the system speaks, for an image built for others

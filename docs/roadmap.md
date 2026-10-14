@@ -9136,8 +9136,12 @@ L1-L6. **Agreed by Diego the same evening**: Chromium alone in `cage` for
 now, what `cage` runs a setting ("i might want other apps as well"); guests'
 disks on a drive of their own, `/Sandboxes`, a partition of its own rather
 than files in `/Home` (his idea: "and not just 1 big drive", "that pollutes
-the home?"), 32 GB; 2 GB of memory, one core until L6. **L1 next**:
-`/Sandboxes` made and mounted, virtio-blk on a file in it.
+the home?"), 32 GB; 2 GB of memory, one core until L6. **L1a built**
+(`testing.md` 18.636): `/Sandboxes`, a second disk server on its own
+partition, guarded as `/Home` is, and `tools/sandboxes_drive.py` to add it
+to the M700's stick without touching `/Home` (Diego runs it once, with
+`sudo`, when the stick is at the Mac). **L1b next**: virtio-blk in the
+monitor on a file in it.
 
 **Found, 10 October - a question to an application waits for its tick.**
 The launcher waited 840 ms of every press for the Deskbar to say where the

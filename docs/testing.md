@@ -26192,3 +26192,45 @@ whole, 172 continuous updates in 20 s decoded, and TigerVNC connected and
 staying - and Diego: "tigervnc works now again". `test_zrle` also gained
 400 bands of runs of 17 to 127 colours, which passed before the fix: the
 encoder was never the fault.
+
+## 18.636 `/Sandboxes`: guests' disks on a drive of their own (Linux L1a)
+
+Diego, 14 October 2026, on where Linux's disk lives: "what if instead /home
+we crate a new /Sandboxes drive with virtual machibes disks?", "and not
+just 1 big drive", "that pollutes the home?" (`docs/linux.md`). So a guest's
+disk is a file on a partition of its own, served by a second disk server,
+and a guest that fills its disk fills its own drive and never `/Home`.
+
+**What it is.** `diskfs.c` serves either drive: `/Home`, or - as the role
+`sandboxfs` - `/Sandboxes`, on the stick partition `opt/kosmos/sandboxes`
+names by its GUID and nothing else (never `usb`, which is the first Kosmos
+partition and so `/Home`'s, and never the kernel's disk). A blank one is
+formatted with `/Sandboxes` at its root. init starts it only on a machine
+started with the word, and the shell mounts `/Sandboxes` on the same word,
+so the two cannot disagree; every program gets it as it gets `/Home`. The
+USB driver guarded one partition a stick - `/Home`'s, keyring K7 - and now
+keeps a list, as many as a disk server reads of a GPT, so both drives are
+refused to `/Devices/blocks`. The Drives list calls it Sandboxes, opening
+at `/Sandboxes`.
+
+**Putting it on a stick in use**: `tools/sandboxes_drive.py`. A stick's
+GPT ends where its image did - about 2 GB into a 128 GB Kingston - and a
+new image would take `/Home` with it; the tool moves the table to the
+stick's real end, adds `KOSMOS SANDBOXES` after the last partition with its
+first megabyte zeroed, and puts the word on the stick's command line. A
+second run changes nothing.
+
+**Tests.** `usb_sandboxes` in `x86-usb-2`, 6 checks over three boots of a
+stick given `/Sandboxes` by that tool: both partitions formatted, each by
+its own server; a file written to `/Sandboxes`, its partition's blocks
+refused to a program, the Drives list naming it; the file there on a second
+boot and, read off the stick on the Mac with `kfs.lua`, in the second
+partition and not `/Home`'s; and named a partition no stick has, `/Sandboxes`
+saying so with nothing formatted. `tools/test_sandboxes_drive.py` in
+`host`, 9 checks: the table moved whole with both copies agreeing, one
+aligned partition of the size asked, `/Home`'s entry and every byte of it
+unchanged, the word added with the others kept, a second run identical.
+**Controls**: the driver made to look at its first guard only - the
+`/Sandboxes` block read is answered and the check fails (1 of 6); and the
+tool refuses, writing nothing, a drive past the room there is and a table
+whose header does not hold to its CRC.

@@ -516,7 +516,7 @@ SUITES = [
                         "usb_stack"],
           x86=True),
     Suite("x86-usb-2", ["python3", "tools/run_x86.py", X86, "--parts",
-                        "usb_home_named,usb_home_large,usb_drives,"
+                        "usb_home_named,usb_sandboxes,usb_home_large,usb_drives,"
                         "usb_flush_refused,"
                         "cmdline_long,usb_hotplug,usb_mouse,usb_mouse_recovers,"
                         "usb_keyboard,"

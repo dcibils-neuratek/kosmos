@@ -1372,7 +1372,7 @@ def usb_home(image, check):
           "%d - %d sectors - on both boots:\n    %s\n    %s"
           % (first, last, last - first + 1, shown(one), shown(two)))
 
-    check(re.search(r"inside:\tnil\tthat block is /Home's", one) is not None
+    check(re.search(r"inside:\tnil\tthat block is a drive's a disk server holds", one) is not None
           and re.search(r"outside:\t512", one) is not None,
           "a program's read of block %d, inside /Home's partition, was not "
           "refused, or block 1 outside it not answered:\n    %s"
@@ -1870,6 +1870,158 @@ def usb_home_named(image, check):
     check(after == before,
           "the stick whose partition was not named was written:\n    %s"
           % shown)
+
+
+def usb_sandboxes(image, check):
+    """**`docs/linux.md` L1: `/Sandboxes`, guests' disks on a drive of their
+    own.**
+
+    Diego, 14 October 2026: "what if instead /home we crate a new /Sandboxes
+    drive with virtual machibes disks?", "that pollutes the home?". A stick
+    with `/Home` on it, made larger than its image as a 128 GB stick is, and
+    given `/Sandboxes` by `tools/sandboxes_drive.py` - the tool a stick in
+    use is given it with - each partition named by its own GUID as the
+    loader names them. Three boots:
+
+      1. both formatted, each on its own; a file written to `/Sandboxes`; a
+         program's read of a block inside its partition refused, as
+         `/Home`'s is; and the Drives list calling it Sandboxes, at
+         `/Sandboxes`;
+      2. the file there again on a machine that has never seen the stick -
+         and, read off the stick on the Mac, in the second partition and
+         not in `/Home`'s;
+      3. **the control**: `opt/kosmos/sandboxes` naming a partition that is
+         on no stick. `/Sandboxes` has to say it is not there - never take
+         the first Kosmos partition, which is `/Home`'s - and `/Home` has to
+         be untouched.
+    """
+    import uuid
+
+    stick = scratch.path("x86-usb-sandboxes.img")
+    home_id = str(uuid.uuid4()).upper()
+    h_first, h_last = stick_with_home(stick, megabytes=24, unique=home_id)
+
+    with open(stick, "r+b") as f:
+        f.truncate(48 * 1024 * 1024)
+
+    made = subprocess.run([sys.executable, os.path.join(
+                               os.path.dirname(os.path.abspath(__file__)),
+                               "sandboxes_drive.py"),
+                           stick, "--mb", "20", "--no-cmdline"],
+                          capture_output=True, text=True)
+    at = re.search(r"at sectors (\d+) to (\d+)", made.stdout)
+    named = re.search(r"its GUID: (\S+)", made.stdout)
+
+    if made.returncode != 0 or not at or not named:
+        check(False, "sandboxes_drive.py did not give the stick /Sandboxes: %s"
+              % (made.stdout + made.stderr))
+        return
+
+    s_first, s_last = int(at.group(1)), int(at.group(2))
+    sand_id = named.group(1)
+
+    def extra(sandboxes):
+        return ("-device", "qemu-xhci,id=usb0",
+                "-drive", "file=%s,format=raw,if=none,id=stick" % stick,
+                "-device", "usb-storage,bus=usb0.0,drive=stick",
+                "-fw_cfg", "name=opt/kosmos/home,string=%s" % home_id,
+                "-fw_cfg", "name=opt/kosmos/sandboxes,string=%s" % sandboxes)
+
+    guard = ('fs.write("/Temporary/guard.lua", [[local r = '
+             'use("/Kosmos/Libraries/blocks.lua").open() '
+             'local b, why = r:read(0, %d, 1) print("inside:", b and #b, why) '
+             'r:close()]])' % (s_first + 64))
+    labels = ('local dl = use("/Kosmos/Libraries/drivelist.lua") '
+              'for _, d in ipairs(dl.drives()) do for _, v in ipairs(d.volumes) do '
+              'print("drives" .. ": volume " .. dl.label(v) .. " at " .. dl.path(v) '
+              '.. " opens " .. tostring(dl.opens(v))) end end')
+    put = ('fs.write("/Sandboxes/linux.img", "a guest disk") '
+           'print("written:", fs.read("/Sandboxes/linux.img"))')
+
+    one = boot(image, None, 150.0,
+               typed=("save notes.txt in home", put, guard,
+                      "/Temporary/guard.lua",
+                      "fs.write('/Temporary/dl.lua', %r)" % labels,
+                      "/Temporary/dl.lua", "ls /Sandboxes"),
+               extra=extra(sand_id), after="its backup")
+
+    two = boot(image, None, 150.0,
+               typed=('print("again:", fs.read("/Sandboxes/linux.img"))',
+                      'print("home has it:", fs.read("/Home/linux.img") ~= nil)'),
+               extra=extra(sand_id), after="its backup")
+
+    three = boot(image, None, 150.0,
+                 typed=('print("missing:", fs.read("/Sandboxes/x"))',
+                        "cat /Home/notes.txt"),
+                 extra=extra(str(uuid.uuid4()).upper()), after="its backup")
+
+    if one is None or two is None or three is None:
+        check(False, "the machine would not boot with a stick for /Home and "
+                     "/Sandboxes")
+        return
+
+    def shown(out):
+        return "\n    ".join(l.strip() for l in out.splitlines()
+                              if "disk:" in l or "sandboxes:" in l
+                              or "written:" in l or "inside:" in l
+                              or "drives: volume" in l or "again:" in l
+                              or "home has it" in l or "missing:" in l
+                              or "saved" in l or "in home" in l)
+
+    check(one.count("it was blank, so it has been formatted") == 2
+          and "sandboxes: it was blank, so it has been formatted" in one
+          and "written:\ta guest disk" in one and "saved notes.txt" in one,
+          "the two partitions were not each formatted by their own server, "
+          "or a file not written to /Sandboxes and /Home:\n    %s" % shown(one))
+
+    check(re.search(r"inside:\tnil\tthat block is a drive's a disk server "
+                    r"holds", one) is not None,
+          "a program's read of block %d, inside /Sandboxes' partition, was "
+          "not refused:\n    %s" % (s_first + 64, shown(one)))
+
+    volumes = [l.strip() for l in one.splitlines() if "drives: volume " in l]
+
+    check("drives: volume Sandboxes at /Sandboxes opens true" in volumes
+          and "drives: volume Home at /Home opens true" in volumes,
+          "the Drives list did not call the two partitions Home and "
+          "Sandboxes, each opening where it is served:\n    %s"
+          % ("\n    ".join(volumes) or "(nothing listed)"))
+
+    check("again:\ta guest disk" in two and "home has it:\tfalse" in two,
+          "the file written to /Sandboxes was not there on a second boot, or "
+          "was in /Home:\n    %s" % shown(two))
+
+    # Off the stick, on the Mac: the second partition's own filesystem has
+    # the file, and `/Home`'s has not.
+    tools = os.path.dirname(os.path.abspath(__file__))
+    found = {}
+
+    for name, (first, last), want in (("home", (h_first, h_last), "/Home/linux.img"),
+                                      ("sandboxes", (s_first, s_last),
+                                       "/Sandboxes/linux.img")):
+        part, got = stick + "." + name, stick + "." + name + ".got"
+
+        with open(stick, "rb") as f, open(part, "wb") as out:
+            f.seek(first * 512)
+            out.write(f.read((last - first + 1) * 512))
+
+        if os.path.exists(got):
+            os.remove(got)
+
+        subprocess.run([os.path.join("build", "host", "lua"),
+                        os.path.join(tools, "kfs.lua"), "get", part, want, got],
+                       capture_output=True)
+        found[name] = open(got, "rb").read() if os.path.exists(got) else None
+
+    check(found["sandboxes"] == b"a guest disk" and found["home"] is None,
+          "read on the Mac, the file was not in /Sandboxes' partition alone - "
+          "there: %r, in /Home's: %r" % (found["sandboxes"], found["home"]))
+
+    check("missing:\tnil" in three
+          and "in home" in three.split("cat /Home/notes.txt")[-1]
+          and three.count("it was blank, so it has been formatted") == 0,
+          "named a partition no stick has, /Sandboxes did not say it is not "
+          "there, or /Home was not read as before:\n    %s" % shown(three))
 
 
 def usb_home_large(image, check):
@@ -5286,7 +5438,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -5365,6 +5517,8 @@ def main():
         usb_home_late(image, check)
     if 'usb_home_named' in wanted:
         usb_home_named(image, check)
+    if 'usb_sandboxes' in wanted:
+        usb_sandboxes(image, check)
     if 'usb_home_large' in wanted:
         usb_home_large(image, check)
     if 'usb_drives' in wanted:

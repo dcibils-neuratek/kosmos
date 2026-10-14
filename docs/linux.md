@@ -125,6 +125,12 @@ ring. Then each step is tried on the M700 before the next, as X1-X3 were.
 1. **L1 - a disk that keeps**: `/Sandboxes` made and mounted, and
    virtio-blk on a file in it; a file written in the guest, the sandbox
    stopped and started, the file there.
+   - **L1a, `/Sandboxes`: built** (`testing.md` 18.636) - a second disk
+     server on the partition `opt/kosmos/sandboxes` names, the USB driver
+     guarding both drives, and `tools/sandboxes_drive.py` to give a stick
+     in use the partition with `/Home` left as it is (the table moved to
+     the stick's end; run once with `sudo` on the unmounted stick).
+   - **L1b, virtio-blk** in the monitor on a file there: next.
 2. **L2 - a screen**: virtio-gpu 2D and the Linux window showing it - the
    guest's console drawn in the window.
 3. **L3 - keyboard and pointer**: virtio-input from the window - typed into

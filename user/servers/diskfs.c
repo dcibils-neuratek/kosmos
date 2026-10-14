@@ -67,6 +67,8 @@
 
 void diskfs_server(long endpoint, long blocks_read, long blocks_write,
                    long devices, long console, long keyring, long maps_cache);
+void sandboxfs_server(long endpoint, long blocks_read, long blocks_write,
+                      long devices, long console);
 
 /* The names a Kosmos disk keeps for itself (the Lua server's `RESERVED`). */
 static const char *const RESERVED[] = { ".super", ".format", ".device" };
@@ -140,6 +142,28 @@ static uint64_t generation;
  */
 static const char HOME_ROOT[] = "Home";
 
+/*
+ * **Which drive this process serves** (`docs/linux.md`, L1): `/Home`, or
+ * `/Sandboxes` - a partition of its own for guests' disks, so no guest can
+ * fill `/Home` (Diego, 14 October 2026: "what if instead /home we crate a
+ * new /Sandboxes drive", "that pollutes the home?"). The same server in a
+ * second process: the boot word that names its partition, the folder its
+ * door reaches, the one a blank partition is formatted with, and what the
+ * log calls it. `/Sandboxes` is a stick's partition named by its GUID and
+ * nothing else - never the kernel's disk, which is `/Home`'s, and never
+ * `usb`, which is the first Kosmos partition and so `/Home`'s too.
+ */
+static const char *const HOME_LAYOUT[] = { "/Home", NULL };
+static const char *const SANDBOXES_LAYOUT[] = { "/Sandboxes", NULL };
+
+static struct {
+    const char *option;
+    const char *root;
+    const char *const *layout;
+    const char *called;
+    bool sandboxes;
+} drive = { "opt/kosmos/home", HOME_ROOT, HOME_LAYOUT, "/Home", false };
+
 struct door {
     const char *root;
     long        ep;
@@ -180,7 +204,7 @@ static void tell(const char *a, unsigned long n, bool with_n, const char *b)
     }
 
     say_begin(&line);
-    say_text(&line, "disk: ");
+    say_text(&line, drive.sandboxes ? "sandboxes: " : "disk: ");
     say_text(&line, a);
 
     if (with_n) {
@@ -247,7 +271,7 @@ static uint64_t stamp(void)
 static struct disk_device cost;
 
 static struct {
-    bool use;                   /* /Home is on a stick */
+    bool use;                   /* the drive is on a stick */
     bool have_wanted;
     char wanted[40];            /* one partition, by its own GUID */
     long region;
@@ -316,6 +340,11 @@ static bool look(void)
 
     if (stick.found) {
         return true;
+    }
+
+    /* `/Sandboxes` is named or is not there: never the first one found. */
+    if (drive.sandboxes && !stick.have_wanted) {
+        return false;
     }
 
     stick.looks++;
@@ -448,8 +477,8 @@ static bool look(void)
 
                     if (!ask(blocks_write, BLOCK_OP_GUARD, u, lo,
                              (uint32_t)(hi - lo + 1), -1, &g, &ignored)) {
-                        tell("the driver would not keep /Home's partition from "
-                             "/Devices/blocks", 0, false, NULL);
+                        tell("the driver would not keep this drive's partition "
+                             "from /Devices/blocks", 0, false, NULL);
                     }
                 }
 
@@ -483,7 +512,7 @@ static bool stick_found(void)
         return true;
     }
 
-    if (stick.waited) {
+    if (stick.waited || (drive.sandboxes && !stick.have_wanted)) {
         return false;
     }
 
@@ -509,7 +538,9 @@ static bool device(uint64_t *sectors, uint32_t *most, const char **why)
 {
     if (stick.use) {
         if (!stick_found()) {
-            *why = "the USB stick's Kosmos partition is not there yet";
+            *why = drive.sandboxes && !stick.have_wanted
+                   ? "this machine was not started with a drive for sandboxes"
+                   : "the USB stick's Kosmos partition is not there yet";
             return false;
         }
 
@@ -658,7 +689,7 @@ static bool mounted(void)
 
     if (kfs_mount(&A->kfs, &SB) != KFS_OK) {
         if (blank()) {
-            int r = kfs_mkfs(&A->kfs, sectors, stamp(), NULL, &SB);
+            int r = kfs_mkfs(&A->kfs, sectors, stamp(), drive.layout, &SB);
 
             if (r != KFS_OK) {
                 tell("it is blank and would not format: ", 0, false, kfs_why(r));
@@ -1607,7 +1638,7 @@ static void op_format(const struct disk_request *rq, struct disk_reply *rp)
 
     A->kfs.disk.most = most;
     diskcache_clear(&A->cache);
-    r = kfs_mkfs(&A->kfs, sectors, stamp(), NULL, &SB);
+    r = kfs_mkfs(&A->kfs, sectors, stamp(), drive.layout, &SB);
 
     if (r != KFS_OK) {
         mounted_ok = false;
@@ -1674,7 +1705,7 @@ static void answer(const struct message *msg, uint64_t sender)
 
     if (msg->length != sizeof *rq || memchr(rq->path, '\0', DISK_PATH_MAX) == NULL) {
         rp->error = DISK_ERR_BAD_OP;
-    } else if (!disk_door_allows(rq, through ? through->root : HOME_ROOT, through != NULL)) {
+    } else if (!disk_door_allows(rq, through ? through->root : drive.root, through != NULL)) {
         /* A path: not there, through this door. The disk itself: not this
          * door's to ask about. */
         bool disk = rq->op == DISK_OP_SUPER || rq->op == DISK_OP_DEVICE
@@ -1811,8 +1842,8 @@ static void door_main(unsigned long which)
     }
 }
 
-void diskfs_server(long endpoint, long read_ep, long write_ep, long devices_ep,
-                   long console_ep, long keyring_ep, long maps_cache_ep)
+static void serve(long endpoint, long read_ep, long write_ep, long devices_ep,
+                  long console_ep, long keyring_ep, long maps_cache_ep)
 {
     long at = kosmos_map((sizeof(struct arena) + 4095u) / 4096u);
     struct kfs_disk dev = { NULL, device_read, device_write, 1 };
@@ -1831,13 +1862,22 @@ void diskfs_server(long endpoint, long read_ep, long write_ep, long devices_ep,
 
     A = (struct arena *)(uintptr_t)at;
 
-    /* `/Home` on a stick: `usb` for the first Kosmos partition, or one by GUID. */
-    n = kosmos_boot_option("opt/kosmos/home", home, sizeof home - 1);
+    /*
+     * `/Home` on a stick: `usb` for the first Kosmos partition, or one by
+     * GUID. `/Sandboxes` by GUID only, and nothing at all without one: a
+     * drive that is not there says so to every request, rather than being
+     * served from a disk that is somebody else's.
+     */
+    n = kosmos_boot_option(drive.option, home, sizeof home - 1);
+
+    if (drive.sandboxes) {
+        stick.use = true;
+    }
 
     if (n > 0) {
         home[n < (long)sizeof home ? n : (long)sizeof home - 1] = '\0';
 
-        if (strcmp(home, "usb") == 0) {
+        if (strcmp(home, "usb") == 0 && !drive.sandboxes) {
             stick.use = true;
         } else if (strlen(home) == 36) {
             stick.use = true;
@@ -1892,4 +1932,24 @@ void diskfs_server(long endpoint, long read_ep, long write_ep, long devices_ep,
 
         answer(&msg, sender);
     }
+}
+
+void diskfs_server(long endpoint, long read_ep, long write_ep, long devices_ep,
+                   long console_ep, long keyring_ep, long maps_cache_ep)
+{
+    serve(endpoint, read_ep, write_ep, devices_ep, console_ep, keyring_ep,
+          maps_cache_ep);
+}
+
+/* `/Sandboxes`: the same server on the partition `opt/kosmos/sandboxes`
+ * names, with no further doors - nothing but the Sandboxes reach in. */
+void sandboxfs_server(long endpoint, long read_ep, long write_ep, long devices_ep,
+                      long console_ep)
+{
+    drive.option = "opt/kosmos/sandboxes";
+    drive.root = "Sandboxes";
+    drive.layout = SANDBOXES_LAYOUT;
+    drive.called = "/Sandboxes";
+    drive.sandboxes = true;
+    serve(endpoint, read_ep, write_ep, devices_ep, console_ep, -1, -1);
 }

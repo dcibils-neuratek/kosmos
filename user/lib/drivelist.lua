@@ -87,26 +87,45 @@ end
 -- disk server has it open - so it read "Untitled" and "not opened", the one
 -- volume on the machine that is open (Diego, on the M700, 27 September).
 --
-function drivelist.is_home(volume)
-  local want = sys.boot and sys.boot("opt/kosmos/home")
+local function named_by(word, volume)
+  local want = sys.boot and sys.boot(word)
 
   return type(want) == "string" and type(volume.id) == "string"
          and volume.id:upper() == ("gpt:" .. want):upper()
 end
 
--- What a volume is called: its label, or Home for the one that is `/Home`.
-function drivelist.label(volume)
-  return drivelist.is_home(volume) and "Home" or volume.name
+function drivelist.is_home(volume)
+  return named_by("opt/kosmos/home", volume)
 end
 
--- Whether it opens: one the drive server reads, or `/Home`.
+--
+-- **And `/Sandboxes`, guests' disks on a drive of their own**
+-- (`docs/linux.md` L1): the partition `opt/kosmos/sandboxes` names, served
+-- by a disk server of its own, the same way.
+--
+function drivelist.is_sandboxes(volume)
+  return named_by("opt/kosmos/sandboxes", volume)
+end
+
+-- What a volume is called: its label, or Home or Sandboxes for the two the
+-- disk servers hold.
+function drivelist.label(volume)
+  if drivelist.is_home(volume) then return "Home" end
+  if drivelist.is_sandboxes(volume) then return "Sandboxes" end
+
+  return volume.name
+end
+
+-- Whether it opens: one the drive server reads, or one a disk server holds.
 function drivelist.opens(volume)
   return volume.readable or drivelist.is_home(volume)
+         or drivelist.is_sandboxes(volume)
 end
 
 -- Where a volume opens in Tracker.
 function drivelist.path(volume)
   if drivelist.is_home(volume) then return "/Home" end
+  if drivelist.is_sandboxes(volume) then return "/Sandboxes" end
 
   return "/Drives/" .. volume.name
 end

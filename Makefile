@@ -4483,6 +4483,11 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	@# images and the same words both times (step 2; held to the Lua's until
 	@# step 4 took the Lua out).
 	python3 tools/test_kfs_tool.py
+	@# `/Sandboxes` added to a stick with `/Home` left as it was: the table
+	@# moved to the stick's end, one partition after `/Home`, the word on
+	@# the command line - and a stick it refuses left byte for byte
+	@# (`docs/linux.md` L1).
+	python3 tools/test_sandboxes_drive.py
 	@# The disk server's reader of `sys.pack`'s tables, held to the
 	@# serialiser itself (step 3).
 	$(HOSTDIR)/lua tools/test_packflat.lua

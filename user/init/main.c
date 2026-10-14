@@ -90,6 +90,8 @@ void drives_server(long endpoint, long blocks, long console);
  * clock, and the console's to say what it did. */
 void diskfs_server(long endpoint, long blocks_read, long blocks_write,
                    long devices, long console, long keyring, long maps_cache);
+void sandboxfs_server(long endpoint, long blocks_read, long blocks_write,
+                      long devices, long console);
 void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep);
 
 /* The window server (`docs/astra-display.md` D3b-2): its endpoint, the
@@ -136,6 +138,7 @@ void vmm_server(long running, long ram, long setup, long more1, long more2);
 #define ROLE_VMM      30UL    /* a sandbox's monitor (`docs/virtualization.md`) */
 #define ROLE_AHCI     31UL    /* a SATA controller, where there is one */
 #define ROLE_VMTEST   32UL    /* a guest entered and left, said (`vmtest.c`) */
+#define ROLE_SANDBOXFS 33UL   /* serves /Sandboxes: guests' disks (`docs/linux.md`) */
 
 /* `vmtest.c`: a guest made, run and stopped twice; 0, or the first check failed. */
 int vm_selftest(uint64_t detail[4]);
@@ -868,6 +871,12 @@ int main(unsigned long arg)
         named("diskfs");
         diskfs_server(0, 1, 2, 3, 4, kosmos_cap_check(5) == 0 ? 5 : -1,
                       kosmos_cap_check(6) == 0 ? 6 : -1);
+    }
+
+    if (arg == ROLE_SANDBOXFS) {
+        named("sandboxfs");
+        sandboxfs_server(0, 1, 2, 3, 4);
+        kosmos_exit(0);             /* never into init's chunk below */
     }
 
     if (arg == ROLE_NOTIFY) {

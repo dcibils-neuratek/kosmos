@@ -45,7 +45,7 @@ local ERRORS = {
   [7] = "that writes, and this endpoint only reads",
   [8] = "every open slot is taken",
   [9] = "the stick does not write out a cache",
-  [10] = "that block is /Home's, and only the disk server reads it",
+  [10] = "that block is a drive's a disk server holds - /Home or /Sandboxes - and only it reads it",
 }
 
 local function trimmed(s)
