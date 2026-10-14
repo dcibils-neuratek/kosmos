@@ -8,9 +8,10 @@ Last updated: 2026-10-14, afternoon (0.11.230; Pulses, the web decided)
 
 ## 14 October, the day: Pulses, and the web decided
 
-**On `main`, not pushed: 0.11.199-0.11.231.** Whole gates 89/89 (0.11.226),
+**On `main`, not pushed: 0.11.199-0.11.232.** Whole gates 89/89 (0.11.226),
 88/89 (0.11.227, x86-dock under load), 89/89 (0.11.228), 90/90 (0.11.229),
-90/91 (0.11.231, x86-film's sound under load; passes alone).
+90/91 (0.11.231, x86-film's sound under load; passes alone),
+92/92 (0.11.232).
 
 - **Diego's answers**: A5 consent (a), as designed - a design note first;
   the mail trigger by file, then pulses designed instead; the PDF reader,
@@ -35,7 +36,12 @@ Last updated: 2026-10-14, afternoon (0.11.230; Pulses, the web decided)
   page's text through `ToUnicode` with where each run is (`pdf.text`), the
   outline (`pdf.outline`), and draws JPEG pictures in a page; `mkpdf.py`
   writes all three; `x86-pdfkit` holds them, with a control each.
-- **Next**: the PDF reader's step 2, the window (`docs/pdfview.md`).
+- **The PDF reader, step 2** (0.11.232, 18.627): the window - the band's
+  File, Edit, View, Go; the header's page and zoom; the whole document
+  scrolled or a page at a time; Fit width, Fit page, Actual size and steps;
+  resized and laid out again; pages rendered into a cache a pass at a time.
+  `x86-pdfview` holds it. `window:retitle` redraws a direct window's band.
+- **Next**: the PDF reader's step 3, the sidebar (`docs/pdfview.md`).
 - **Still waiting on Diego**: the sandbox console keys on the M700
   (`vmm.c` uncommitted); the M700's screen; background programs fix 1 or
   2; the Shortcuts cheat sheet; About in Preferences; a push.

@@ -25945,3 +25945,35 @@ of which reading would have shown: an image's dictionary is the stream's
 `.dict`, not the object, so every picture was "not an image"; and a
 region was handed to `read_into` where it takes the region's capability.
 And `stretch`'s alpha is 0 to 255 - there is no "opaque" of -1.
+
+## 18.627 The PDF Viewer's window
+
+Step 2 of the PDF reader made again (`docs/pdfview.md`): `pdfview.lua`
+rewritten as the window the mockup draws. The kit's band carries the
+document's name and its menus - File, Edit, View, Go - and under it the
+header has back and forward a page, the page and its count, and the zoom
+as a chooser; under that the whole document as one column of pages on a
+grey desk, a scroll bar, and a foot saying the zoom and where the file is.
+Zoom by Fit width (the default, following the window), Fit page, Actual
+size (96 to the inch), and steps from 50% to 400% - Control-plus, -minus,
+-0, -1. One page at a time from the View menu. The window resizes and lays
+its pages out again at the page being read.
+
+**Scrolling is a blit**: each page is rendered once at the zoom into a
+surface of its own, the pages in view and one either side, one a pass while
+nothing else waits - and a page at another zoom is drawn stretched until
+it is rendered again, so a zoom answers at once. The menus are the kit's,
+so published by name, and the header's buttons and the page are published
+beside them (`menu/View/One page at a time`, `field/Page`) - Automations
+can drive it, and the suite does. `window:retitle` now redraws a direct
+window's band, which said "PDF Viewer" over every document before.
+
+**Test**: `x86-pdfview`, 19 checks, on six pages made by `mkpdf.py` with a
+picture on the first: open at Fit width with page 1 and page 2 rendered
+and the picture's red on the screen (3 red points before, 14,455 after);
+End and Home, the page arriving in view rendered; Control-plus a step in
+from Fit width and page 1 rendered again at it, Control-0 back; View, One
+page at a time, Go, Next page, and the Page field written 4 and read back,
+by name; back to the whole document at page 4; the window made 620 by 520
+by the window manager, laid out again smaller at Fit width, at page 4, and
+rendered again at the new size.

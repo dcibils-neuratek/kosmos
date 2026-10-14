@@ -9663,6 +9663,12 @@ function window:retitle(text)
     self.dirty = true
   end
 
+  -- A direct window's band is drawn by this kit into its buffers, once a
+  -- version: the new title is a new version, drawn into each buffer as it
+  -- is next asked for. Without this the PDF Viewer's band said "PDF
+  -- Viewer" over every document it opened.
+  if self.band then self.band.version = self.band.version + 1 end
+
   return fs.send("/Running/wm", { type = "retitle", window = self.handle,
                               title = self.title })
 end

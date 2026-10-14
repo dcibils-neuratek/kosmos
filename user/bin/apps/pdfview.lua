@@ -5,53 +5,179 @@
 -- kosmos: opens pdf
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 --
--- A PDF, as it was typeset.
+-- A PDF, as it was typeset: the whole document as one column of pages.
 --
 --   wm pdfview
 --   wm pdfview:/Home/odyssey.pdf
 --
---   arrows / PageUp / PageDown    scroll
---   , and .                       previous and next page
---   + and -                       zoom
+-- Made again on 14 October 2026 (`docs/pdfview.md`, `docs/pdfview.html`),
+-- from Diego's "it needs a menu, zoom, better navigation, window resizing".
+-- This is step 2, the window: its menu bar, the header's page and zoom,
+-- the document scrolled whole or a page at a time, zoom by fitting or by
+-- steps, a window that resizes and lays its pages out again, and a cache
+-- of rendered pages. The sidebar, Find and Copy, and where a document was
+-- left are the steps after.
 --
--- **Built so that scrolling costs nothing.** The page is rendered once into
--- an offscreen surface as tall as the whole page, and a frame is one blit of
--- the visible band out of it. Nothing re-runs the content interpreter,
--- nothing re-rasterises a glyph; moving a line copies the pixels that moved
--- and stops. Rendering per frame would mean two thousand glyphs and a stack
--- machine over fourteen kilobytes of operators, sixty times a second - which
--- is not something to optimise, it is the wrong shape.
+-- **What a PDF is belongs to the PDF Kit** (`pdf.lua`, its one door):
+-- the pages, their sizes, a page drawn into a surface at a scale, its
+-- pictures. This is the window: layout, scrolling, zoom and the menus.
 --
--- **A direct window** (`gfx.md` 19.4). The ordinary path sends drawing
--- commands and the compositor owns every pixel, which is what lets a hung
--- application keep its window - the right trade for a dialog and the wrong
--- one here, where the whole surface changes and describing it costs more
--- than copying it. So this process owns the pixels, draws into the buffer
--- the compositor is not showing, and commits with damage.
+-- **Scrolling costs a blit.** A page is rendered once at the zoom in force
+-- into a surface of its own, and a frame copies the band of each page in
+-- view out of it - nothing interpreted, no glyph drawn. The cache holds the
+-- pages in view and one either side, rendered one a pass while nothing
+-- else is happening, so a page scrolled to is usually ready.
 --
--- Two things underneath make the render itself quick, and both are C:
+-- **A zoom answers at once.** The pages already rendered are drawn
+-- stretched to the new size until each is rendered again at it, a pass at a
+-- time - so the window moves when it is asked to and sharpens after, and
+-- no key waits behind a render.
 --
---   * a glyph is rasterised **once per face per size** and blitted from a
---     cache after that. A page of Times New Roman is about a hundred
---     distinct glyphs against two thousand drawn.
---   * a page is **two or three crossings**, not two thousand: the glyphs go
---     into a flat array per face and each becomes one call.
---
--- Still missing: images, so a cover page is blank. `DCTDecode` is JPEG and
--- `stb_image` is the same vendor as the rasteriser already here.
+-- **A direct window** (`gfx.md` 19.4) whose band - its title and its
+-- menus' titles - the kit draws; the header under it, the pages and the
+-- foot are this file's, drawn with `pixelkit` as Mail and Maps draw theirs.
+-- The menus are the kit's, and so published by name (`window:controls`):
+-- `menu/View/One page at a time` is pressed from outside as by a click.
 
-local ui       = use("/Kosmos/Libraries/ui.lua")
-local files    = use("/Kosmos/Libraries/files.lua")
-local panel    = use("/Kosmos/Libraries/panel.lua")
-local pdf      = use("/Kosmos/Libraries/pdf.lua")
+local ui      = use("/Kosmos/Libraries/ui.lua")
+local files   = use("/Kosmos/Libraries/files.lua")
+local panel   = use("/Kosmos/Libraries/panel.lua")
+local pdf     = use("/Kosmos/Libraries/pdf.lua")
+local keys    = use("/Kosmos/Libraries/keys.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
+local pk      = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
 
-local W, H = 760, 620
-local BAR  = 22                       -- the status line along the bottom
+local theme = ui.theme
+
+local screen = gfx.screen()
+local sw, sh = 1280, 800
+
+if screen then sw, sh = screen:size() end
 
 local path = files.words(args)[1]
 
+local TOOL_H = 46                     -- the header under the band
+local FOOT_H = 26                     -- the foot
+local BAR_W  = 12                     -- the scroll bar
+local GAP    = 16                     -- desk between pages, and round them
+
+-- The zoom's steps, in per cent of actual size.
+local STEPS = { 50, 67, 75, 90, 100, 110, 125, 150, 175, 200, 250, 300, 400 }
+
+-- **Actual size**: a point at the screen density this desktop assumes, 96
+-- to the inch - a page at its printed size. 100% is this.
+local ACTUAL = 96 / 72
+
+local INK   = 0xff101418              -- what a page's text is drawn in
+local PAPER = 0xfffdfdfb              -- a page, whatever the look
+
+--------------------------------------------------------------------------
+-- The state.
+--------------------------------------------------------------------------
+
+local doc = nil
+local sizes = {}                      -- each page's { w, h } in points
+local fit = "width"                   -- "width", "page" or nil: a step
+local pct = 100                       -- the step, when `fit` is nil
+local single = false                  -- one page at a time
+local current = 1                     -- the page being read
+local scale = 1                       -- pixels a point, from the above
+local top, left = 0, 0                -- the scroll, in pixels of the layout
+local said = nil                      -- a sentence for the foot, or nil
+local title = "PDF Viewer"
+
+-- Where each page is in the layout, at `scale`: `place[i] = { y, w, h }`,
+-- only for the pages laid out - all of them, or the one in single mode.
+local place, order = {}, {}
+local total_h, total_w = 0, 0
+
+-- Rendered pages: `cache[i] = { surface, scale, w, h }`. An entry at
+-- another scale is drawn stretched until it is rendered again.
+local cache = {}
+
+-- A page that could not be given a surface at a scale: not asked for again
+-- at that scale, or the loop would ask on every pass.
+local refused = {}
+
+local W, H = math.min(1100, sw - 80), math.min(sh - 100, 900)
+
+local function view_w() return W - BAR_W end
+local function view_h() return math.max(1, H - TOOL_H - FOOT_H) end
+
+local PER_MS = math.max(1, ((fs.read("/Devices/cpu") or {}).counter_hz or 62500000) // 1000)
+
+--------------------------------------------------------------------------
+-- The menus. Their `items` are functions, so each opens saying what is in
+-- force now - the zoom's mark, a page that has no next.
+--------------------------------------------------------------------------
+
+local act = {}                        -- filled in below, before any opens
+
+local function zoom_label()
+  if fit == "width" then return "Fit width" end
+  if fit == "page" then return "Fit page" end
+  return pct .. "%"
+end
+
+local function shown_pct() return math.floor(scale / ACTUAL * 100 + 0.5) end
+
+local function view_items()
+  return {
+    { text = "Zoom in", hint = "Ctrl +", on_choose = function() act.zoom_by(1) end },
+    { text = "Zoom out", hint = "Ctrl -", on_choose = function() act.zoom_by(-1) end },
+    { separator = true },
+    { text = "Fit width", hint = "Ctrl 0", mark = fit == "width",
+      on_choose = function() act.fit("width") end },
+    { text = "Fit page", mark = fit == "page", on_choose = function() act.fit("page") end },
+    { text = "Actual size", hint = "Ctrl 1", mark = (fit == nil and pct == 100),
+      on_choose = function() act.step(100) end },
+    { separator = true },
+    { text = "The whole document, scrolled", mark = not single,
+      on_choose = function() act.single(false) end },
+    { text = "One page at a time", mark = single,
+      on_choose = function() act.single(true) end },
+  }
+end
+
+local function go_items()
+  local n = doc and #doc.pages or 0
+
+  return {
+    { text = "Next page", hint = ".", disabled = current >= n or nil,
+      on_choose = function() act.go(current + 1) end },
+    { text = "Previous page", hint = ",", disabled = current <= 1 or nil,
+      on_choose = function() act.go(current - 1) end },
+    { separator = true },
+    { text = "First page", hint = "Home", disabled = n == 0 or nil,
+      on_choose = function() act.go(1) end },
+    { text = "Last page", hint = "End", disabled = n == 0 or nil,
+      on_choose = function() act.go(n) end },
+  }
+end
+
+local MENUS = {
+  { title = "File", items = function()
+      return {
+        { text = "Open...", hint = "Ctrl O", on_choose = function() act.choose() end },
+        { separator = true },
+        { text = "Close", hint = "Ctrl W", on_choose = function() act.close() end },
+      }
+    end },
+  -- Copy and Find are step 4 (`docs/pdfview.md`), and say so by being
+  -- there and not yet able.
+  { title = "Edit", items = function()
+      return {
+        { text = "Copy", hint = "Ctrl C", disabled = true },
+        { text = "Find", hint = "Ctrl F", disabled = true },
+      }
+    end },
+  { title = "View", items = view_items },
+  { title = "Go", items = go_items },
+}
+
 local win, err = ui.window{
-  title = "PDF", w = W, h = H, x = 70, y = 40, direct = true,
+  title = title, w = W, h = H, centre = true, direct = true, resizable = true,
+  menubar = MENUS,
 }
 
 if not win then
@@ -64,171 +190,389 @@ if not win:surface() then
   return
 end
 
-local INK   = 0xff101418            -- the text
-local PAPER = 0xfff4f1ea            -- the page
-local CHROME= 0xff20262e
-local LABEL = 0xffb8c2cc
+W, H = win.w, win.h
 
---
--- The bar's buttons, declared before anything draws them. Their actions are
--- filled in further down, once the functions they call exist.
---
-local BUTTONS = {
-  { x =   6, w = 54, text = "Open" },
-  { x =  66, w = 54, text = "Prev" },
-  { x = 126, w = 54, text = "Next" },
-}
+--------------------------------------------------------------------------
+-- The layout: where every page goes at the zoom in force.
+--------------------------------------------------------------------------
 
-local doc, current = nil, 1
-local paper, paper_w, paper_h = nil, 0, 0
-local top, zoom = 0, 1.0
-local said = "no document"
-local render_ms, glyph_count = 0, 0
+local function free(i)
+  local c = cache[i]
 
--- The counter's ticks in a millisecond, read once: the counter runs at
--- 62.5 MHz under QEMU's emulation and in gigahertz on a PC, so a constant
--- would be one machine's number.
-local PER_MS = math.max(1, ((fs.read("/Devices/cpu") or {}).counter_hz or 62500000) // 1000)
+  if c then
+    c.surface:free()
+    cache[i] = nil
+  end
+end
+
+-- The page at the top of the view and how far down it the view starts, so
+-- a new layout puts the same words at the top.
+local function anchor()
+  for _, i in ipairs(order) do
+    local p = place[i]
+
+    if p.y + p.h > top then
+      return i, math.max(0, (top - p.y) / p.h)
+    end
+  end
+
+  return order[1] or 1, 0
+end
+
+local function lay_out(keep)
+  if not doc then return end
+
+  local at, into = 1, 0
+
+  if keep then at, into = anchor() end
+
+  local widest, tallest = 1, 1
+  local list = {}
+
+  if single then
+    list[1] = current
+  else
+    for i = 1, #sizes do list[i] = i end
+  end
+
+  for _, i in ipairs(list) do
+    widest = math.max(widest, sizes[i].w)
+    tallest = math.max(tallest, sizes[i].h)
+  end
+
+  local room_w = math.max(40, view_w() - 2 * GAP)
+  local room_h = math.max(40, view_h() - 2 * GAP)
+
+  if fit == "width" then
+    scale = room_w / widest
+  elseif fit == "page" then
+    local s = sizes[single and current or (at or 1)] or sizes[1]
+    scale = math.min(room_w / s.w, room_h / s.h)
+  else
+    scale = ACTUAL * pct / 100
+  end
+
+  scale = math.max(0.05, scale)
+
+  place, order = {}, list
+  local y = GAP
+
+  for _, i in ipairs(list) do
+    local pw = math.max(1, math.floor(sizes[i].w * scale + 0.5))
+    local ph = math.max(1, math.floor(sizes[i].h * scale + 0.5))
+
+    place[i] = { y = y, w = pw, h = ph }
+    y = y + ph + GAP
+  end
+
+  total_h = y
+  total_w = math.floor(widest * scale + 0.5) + 2 * GAP
+
+  -- The same place again, at the new scale.
+  if keep and place[at] then
+    top = math.floor(place[at].y + into * place[at].h)
+  elseif not keep then
+    top = 0
+  end
+
+  top = math.max(0, math.min(top, total_h - view_h()))
+  left = math.max(0, math.min(left, total_w - view_w()))
+
+  -- Rendered pages no longer laid out are let go; those at another scale
+  -- are kept, to be drawn stretched until they are rendered again.
+  for i in pairs(cache) do
+    if not place[i] then free(i) end
+  end
+
+  print(("pdfview: %d of %d, %s, %d%%, %s, the view %dx%d")
+        :format(current, #sizes, zoom_label(), shown_pct(),
+                single and "one page at a time" or "the whole document",
+                view_w(), view_h()))
+end
+
+-- The pages any of whose rows are in view, in order.
+local function in_view()
+  local out = {}
+  local vh = view_h()
+
+  for _, i in ipairs(order) do
+    local p = place[i]
+
+    if p.y < top + vh and p.y + p.h > top then out[#out + 1] = i end
+  end
+
+  return out
+end
+
+-- The page being read: the first in view whose lower part reaches past a
+-- third of the way down.
+local function reading()
+  local mark = top + view_h() // 3
+
+  for _, i in ipairs(order) do
+    local p = place[i]
+
+    if p.y + p.h > mark then return i end
+  end
+
+  return order[#order] or 1
+end
+
+local function scrolled()
+  if single or not doc then return end
+
+  local now = reading()
+
+  if now ~= current then
+    current = now
+    print(("pdfview: at page %d of %d"):format(current, #sizes))
+  end
+end
+
+local function scroll_to(y)
+  top = math.max(0, math.min(math.floor(y), total_h - view_h()))
+  scrolled()
+end
+
+local function pan_to(x)
+  left = math.max(0, math.min(math.floor(x), total_w - view_w()))
+end
+
+--------------------------------------------------------------------------
+-- Rendering, a page at a time.
+--------------------------------------------------------------------------
+
+-- The page that most wants rendering at `scale`: one in view first, then
+-- the one either side. Nil when every one of them is ready.
+local function wanted()
+  if not doc then return nil end
+
+  local seen = in_view()
+
+  local function wants(i)
+    local c = cache[i]
+    return (not c or c.scale ~= scale) and refused[i] ~= scale
+  end
+
+  for _, i in ipairs(seen) do
+    if wants(i) then return i end
+  end
+
+  local first, last = seen[1], seen[#seen]
+
+  for _, i in ipairs({ last and last + 1, first and first - 1 }) do
+    if i and place[i] and wants(i) then return i end
+  end
+
+  return nil
+end
+
+-- Pages further than one from the view let go: the cache is the pages in
+-- view and one either side, so a long book never holds more than a few.
+local function trim()
+  local seen = in_view()
+
+  if #seen == 0 then return end
+
+  local lo, hi = seen[1] - 1, seen[#seen] + 1
+
+  for i in pairs(cache) do
+    if i < lo or i > hi then free(i) end
+  end
+end
+
+local function render(i)
+  local p = place[i]
+
+  if not p then return end
+
+  local surface
+
+  local made = pcall(function () surface = gfx.surface{ w = p.w, h = p.h } end)
+
+  if not made or not surface then
+    said = ("no memory for a %dx%d page"):format(p.w, p.h)
+    refused[i] = scale
+    print("pdfview: " .. said)
+    return
+  end
+
+  surface:fill(0, 0, p.w, p.h, PAPER)
+
+  local started = sys.ticks()
+  local ok, drawn, _, missing = pcall(pdf.render, doc, doc:page(i), surface, scale, INK)
+  local ms = (sys.ticks() - started) // PER_MS
+
+  if not ok then
+    -- Drawn as blank paper, and said, rather than asked for again forever.
+    said = ("page %d: %s"):format(i, tostring(drawn))
+    print("pdfview: " .. said)
+  else
+    print(("pdfview: page %d of %d, %d glyphs, %d faces missing, %d pictures, %d ms at %d%%")
+          :format(i, #sizes, drawn or 0, missing or 0, doc.pictures_drawn or 0, ms,
+                  shown_pct()))
+
+    if (missing or 0) > 0 then
+      said = ("%d face%s would not load"):format(missing, missing == 1 and "" or "s")
+    end
+  end
+
+  free(i)
+  cache[i] = { surface = surface, scale = scale, w = p.w, h = p.h }
+end
 
 --------------------------------------------------------------------------
 -- Drawing.
 --------------------------------------------------------------------------
 
-local function frame(damage_all)
+-- The header's controls, placed by `frame` and read by a press.
+local back = { icon = "back" }
+local forward = { icon = "forward" }
+local pagebox = { w = 52, h = 30 }
+local zoombox = { w = 128, h = 30 }
+
+-- Where the controls are, said once a place, for whoever presses them from
+-- outside - the harnesses.
+local controls_said = nil
+
+local function say_controls()
+  local ox, oy = win.origin_x or 0, (win.origin_y or 0) + (win.head_h or 0)
+  local key = ("%d,%d,%d"):format(ox, oy, W)
+
+  if key == controls_said then return end
+  controls_said = key
+
+  print(("pdfview: controls back %d,%d forward %d,%d zoom %d,%d")
+        :format(ox + back.x + 13, oy + back.y + 13, ox + forward.x + 13, oy + forward.y + 13,
+                ox + zoombox.x + zoombox.w // 2, oy + zoombox.y + zoombox.h // 2))
+end
+
+-- The desk's colour: the look's sunken well a fifth of the way to its
+-- text - a grey a white page stands out on in a light look, and a little
+-- lifted from the dark in a dark one. Towards the edge's shadow it was the
+-- page's own white in Plex, and a page had no edge.
+local function desk_colour()
+  return theme.mix(theme.sunken, theme.text, 200)
+end
+
+local function draw_page(s, i, vx, vy, vw, vh)
+  local p = place[i]
+  local c = cache[i]
+
+  local x = (math.max(total_w, vw) - p.w) // 2 - left
+  local y = p.y - top
+
+  -- The part of the page inside the view, in the view's coordinates.
+  local x0, y0 = math.max(x, 0), math.max(y, 0)
+  local x1, y1 = math.min(x + p.w, vw), math.min(y + p.h, vh)
+
+  if x1 <= x0 or y1 <= y0 then return end
+
+  if c and c.scale == scale then
+    s:blit(c.surface, x0 - x, y0 - y, x1 - x0, y1 - y0, vx + x0, vy + y0)
+  elseif c then
+    s:stretch(c.surface, 0, 0, c.w, c.h, vx + x, vy + y, p.w, p.h, 255, false,
+              vx + x0, vy + y0, x1 - x0, y1 - y0)
+  else
+    s:fill(vx + x0, vy + y0, x1 - x0, y1 - y0, PAPER)
+  end
+end
+
+local function frame()
   local s = win:surface()
 
   if not s then return end
 
-  local view_h = H - BAR
+  local vw, vh = view_w(), view_h()
+  local n = doc and #sizes or 0
 
-  if paper then
-    -- The whole of scrolling. `top` is a pixel offset into a surface that
-    -- already holds the page.
-    local band = math.min(view_h, paper_h - top)
+  -- The header: back and forward a page, the page and its count, the zoom.
+  s:fill(0, 0, W, TOOL_H - 1, theme.window)
+  s:fill(0, TOOL_H - 1, W, 1, theme.line_soft)
 
-    if band > 0 then
-      s:fill(0, 0, W, view_h, PAPER)
-      s:blit(paper, 0, top, math.min(paper_w, W), band, 0, 0)
-    else
-      s:fill(0, 0, W, view_h, PAPER)
-    end
+  local cy = (TOOL_H - 1 - 30) // 2
+
+  back.x, back.y = 12, cy + 2
+  back.disabled = (not doc) or current <= 1
+  pk.iconbutton(s, back)
+
+  forward.x, forward.y = 40, cy + 2
+  forward.disabled = (not doc) or current >= n
+  pk.iconbutton(s, forward)
+
+  pagebox.x, pagebox.y = 76, cy
+  pk.field(s, pagebox, false)
+
+  local number = doc and tostring(current) or "-"
+  local ty = cy + (30 - gfx.height()) // 2
+
+  s:text(pagebox.x + (pagebox.w - gfx.measure(number)) // 2, ty, number, theme.text, nil, "ui")
+
+  local count = "of " .. n
+  s:text(pagebox.x + pagebox.w + 8, ty, count, theme.text_dim, nil, "ui")
+
+  zoombox.x = pagebox.x + pagebox.w + 8 + gfx.measure(count) + 18
+  zoombox.y = cy
+  zoombox.text = zoom_label()
+  pk.chooser(s, zoombox)
+
+  -- The pages.
+  local top_y = TOOL_H
+
+  s:fill(0, top_y, vw, vh, desk_colour())
+
+  if doc then
+    for _, i in ipairs(in_view()) do draw_page(s, i, 0, top_y, vw, vh) end
   else
-    s:fill(0, 0, W, view_h, CHROME)
-    s:text(12, 12, "Open a document:  wm pdfview:/Home/odyssey.pdf", LABEL)
-    s:text(12, 32, "arrows scroll, , and . turn pages, + and - zoom", LABEL)
+    pk.empty(s, 0, top_y, vw, vh, { "No document open",
+                                     "File, Open... or Ctrl O, or a PDF from Tracker" })
   end
 
-  --
-  -- The bar: three buttons this file draws itself, then whatever it has to
-  -- say in the space left over. A direct window owns every pixel, so a
-  -- widget would have nothing to draw into - the buttons are rectangles
-  -- with known positions and a click is a comparison against them.
-  --
-  s:fill(0, view_h, W, BAR, CHROME)
+  -- The scroll bar: its thumb as long as the view is of the whole.
+  s:fill(vw, top_y, BAR_W, vh, theme.window)
 
-  local right = 6
+  if total_h > vh then
+    local th = math.max(28, vh * vh // total_h)
+    local ty_ = top_y + (vh - th) * top // math.max(1, total_h - vh)
 
-  for _, b in ipairs(BUTTONS) do
-    --
-    -- Drawn with fills, because a *surface* has `fill`, `blit` and `text`
-    -- and nothing else. `frame` is a method of the drawing context the
-    -- widget kit hands out, and calling it here raised - which, in a
-    -- direct window, means nothing is written and the compositor shows an
-    -- undrawn buffer. A black window and no error at all.
-    --
-    local bx, by, bw, bh = b.x, view_h + 3, b.w, BAR - 6
-
-    s:fill(bx, by, bw, bh, 0xff2c3440)
-    s:fill(bx, by, bw, 1, 0xff46525f)
-    s:fill(bx, by + bh - 1, bw, 1, 0xff46525f)
-    s:fill(bx, by, 1, bh, 0xff46525f)
-    s:fill(bx + bw - 1, by, 1, bh, 0xff46525f)
-    s:text(bx + 8, view_h + 4, b.text, LABEL)
-    right = b.x + b.w
+    s:fill_round(vw + 3, ty_ + 2, BAR_W - 6, th - 4, theme.line, 3)
   end
 
-  s:text(right + 12, view_h + 4, said, LABEL)
+  -- The foot: the zoom, and where the document came from.
+  local fy = H - FOOT_H
 
-  win:commit(damage_all and nil
-             or { x = 0, y = 0, w = W, h = H })
+  s:fill(0, fy, W, FOOT_H, theme.window)
+  s:fill(0, fy, W, 1, theme.line_soft)
+
+  local left_words = doc and (zoom_label() == (shown_pct() .. "%") and zoom_label()
+                              or (zoom_label() .. " \194\183 " .. shown_pct() .. "%"))
+                     or ""
+
+  if said then left_words = left_words .. (left_words ~= "" and "   " or "") .. said end
+
+  local fty = fy + (FOOT_H - gfx.height()) // 2
+
+  s:text(12, fty, left_words, theme.text_dim, nil, "ui")
+
+  if path and doc then
+    local where = ui.fitted(path, W // 2)
+    s:text(W - 12 - gfx.measure(where), fty, where, theme.text_dim, nil, "ui")
+  end
+
+  win:commit{ x = 0, y = 0, w = W, h = H }
+  say_controls()
 end
 
 --------------------------------------------------------------------------
--- Pages.
+-- What the menus, the keys and the header do.
 --------------------------------------------------------------------------
-
-local function show(n)
-  if not doc then return end
-
-  if n < 1 then n = 1 end
-  if n > #doc.pages then n = #doc.pages end
-
-  current = n
-
-  local page = doc:page(n)
-  local box  = doc:resolve(page.MediaBox) or { 0, 0, 612, 792 }
-  local pw   = (box[3] or 612) - (box[1] or 0)
-  local ph   = (box[4] or 792) - (box[2] or 0)
-
-  -- Scaled to the window's width, so a page always fits across and zoom is
-  -- a multiplier on top of that.
-  local scale = (W / pw) * zoom
-
-  local want_w = math.floor(pw * scale + 0.5)
-  local want_h = math.floor(ph * scale + 0.5)
-
-  if paper and (paper_w ~= want_w or paper_h ~= want_h) then
-    paper:free()
-    paper = nil
-  end
-
-  if not paper then
-    local made = pcall(function ()
-      paper = gfx.surface{ w = want_w, h = want_h }
-    end)
-
-    if not made or not paper then
-      said = ("no memory for a %dx%d page"):format(want_w, want_h)
-      return
-    end
-
-    paper_w, paper_h = want_w, want_h
-  end
-
-  paper:fill(0, 0, paper_w, paper_h, PAPER)
-
-  local started = sys.ticks()
-  local ok, drawn, _, missing = pcall(pdf.render, doc, page, paper,
-                                      scale, INK)
-  render_ms = (sys.ticks() - started) // PER_MS
-
-  if not ok then
-    said = ("page %d: %s"):format(n, tostring(drawn))
-    glyph_count = 0
-  else
-    glyph_count = drawn or 0
-    said = ("page %d of %d - %d glyphs in %d ms - %.0f%%")
-           :format(n, #doc.pages, glyph_count, render_ms, zoom * 100)
-
-    -- Said out loud rather than left to be inferred from a blank page.
-    if (missing or 0) > 0 then
-      said = said .. (" - %d face%s would not load"):format(
-               missing, missing == 1 and "" or "s")
-    end
-
-    -- And to the log, for a person reading it and a harness alike.
-    print(("pdfview: page %d of %d, %d glyphs, %d faces missing"):format(
-      n, #doc.pages, glyph_count, missing or 0))
-  end
-
-  top = 0
-end
 
 local function open(file)
   local attrs, why = fs.getattr(file)
 
   if not attrs then
     said = ("cannot open %s: %s"):format(file, tostring(why))
+    print("pdfview: " .. said)
     return
   end
 
@@ -238,133 +582,315 @@ local function open(file)
 
   if not source then
     said = tostring(oops)
+    print("pdfview: " .. said)
     return
   end
 
+  local started = sys.ticks()
   local ok, got = pcall(pdf.open, source)
 
   if not ok then
     source.close()
     said = tostring(got)
+    print("pdfview: " .. said)
     return
   end
 
+  for i in pairs(cache) do free(i) end
   if doc and doc.source.close then doc.source.close() end
 
-  doc = got
+  doc, path, said = got, file, nil
 
-  -- The first page with a font on it: a cover is a single image and this
-  -- cannot draw images yet, so opening on one looks like a failure.
-  local first = 1
+  -- Every page's size, once: the layout is the whole document's, so the
+  -- scroll bar is true from the start rather than growing as pages are met.
+  sizes = {}
 
   for i = 1, #doc.pages do
-    local resources = doc:resolve(doc:page(i).Resources) or {}
-    if doc:resolve(resources.Font) then first = i break end
+    local page = doc:page(i)
+    local box = page and doc:resolve(page.MediaBox) or nil
+    local w = box and ((box[3] or 612) - (box[1] or 0)) or 612
+    local h = box and ((box[4] or 792) - (box[2] or 0)) or 792
+
+    sizes[i] = { w = math.max(1, math.abs(w)), h = math.max(1, math.abs(h)) }
   end
 
-  show(first)
+  doc:forget()
+
+  title = file:match("([^/]+)$") or file
+  win:retitle(title)
+
+  current, top, left = 1, 0, 0
+  print(("pdfview: %s, %d pages, read in %d ms"):format(file, #sizes,
+        (sys.ticks() - started) // PER_MS))
+  lay_out(false)
 end
 
---------------------------------------------------------------------------
+function act.go(n)
+  if not doc then return end
 
---------------------------------------------------------------------------
--- Events.
---
--- A direct window draws its own pixels, so `window:paint` has nothing to
--- send and returns early - but the event loop is still the kit's, and it
--- routes keys and clicks through the view tree. So there is one view here,
--- the size of the window, and it never draws: it exists to be the thing
--- events arrive at. `dispatch` applies focus itself, which is why that
--- still works with no painting.
---
--- The first version of this called `win:poll()`, which does not exist. The
--- window rendered its first frame, the loop raised on the first pass, and
--- the process died - leaving the compositor showing the last frame it had
--- been given. It looked exactly like a working viewer that would not
--- scroll.
---------------------------------------------------------------------------
+  n = math.max(1, math.min(n, #sizes))
 
-local sink = ui.view{ x = 0, y = 0, w = W, h = H }
-sink.focusable = true
+  current = n
 
-local function chooser()
+  if single then
+    lay_out(false)
+  else
+    -- The page's top at the view's, as far as the end allows - so the
+    -- last page is the one being read even when it cannot reach the top.
+    top = math.max(0, math.min(place[n].y - GAP, total_h - view_h()))
+  end
+
+  print(("pdfview: at page %d of %d"):format(current, #sizes))
+end
+
+function act.fit(how)
+  fit = how
+  lay_out(true)
+end
+
+function act.step(p)
+  fit, pct = nil, p
+  lay_out(true)
+end
+
+-- A step in or out from what is shown now, whatever chose it.
+function act.zoom_by(d)
+  local now = shown_pct()
+  local to = nil
+
+  if d > 0 then
+    for _, p in ipairs(STEPS) do
+      if p > now then to = p break end
+    end
+  else
+    for k = #STEPS, 1, -1 do
+      if STEPS[k] < now then to = STEPS[k] break end
+    end
+  end
+
+  if to then act.step(to) end
+end
+
+function act.single(on)
+  if single == on then return end
+
+  single = on
+  lay_out(false)
+
+  -- Back to the whole document at the page that was being read.
+  if not single and doc and place[current] then
+    top = math.max(0, math.min(place[current].y - GAP, total_h - view_h()))
+  end
+end
+
+function act.choose()
   local start_at = path and path:match("^(.*)/") or "/Home"
   local picked = panel.open{
     start = start_at,
-    on_choose = function (chosen) path = chosen ; open(chosen) end,
+    on_choose = function (chosen) open(chosen) end,
   }
 
   if picked then picked:run() end
-
-  frame()
 end
 
--- The wheel: three of an arrow's forty pixels a notch (`roadmap.md` 5zv).
-function sink:wheel(n)
-  local last = math.max(0, paper_h - (H - BAR))
+function act.close() win:close() end
 
-  top = math.max(0, math.min(top - n * 3 * 40, last))
-  frame()
-  return true
+local function zoom_menu()
+  local items = {}
+
+  items[#items + 1] = { text = "Fit width", mark = fit == "width",
+                        on_choose = function() act.fit("width") end }
+  items[#items + 1] = { text = "Fit page", mark = fit == "page",
+                        on_choose = function() act.fit("page") end }
+  items[#items + 1] = { separator = true }
+
+  for _, p in ipairs(STEPS) do
+    items[#items + 1] = { text = p .. "%", mark = (fit == nil and pct == p),
+                          on_choose = function() act.step(p) end }
+  end
+
+  win:open_menu((win.origin_x or 0) + zoombox.x,
+                (win.origin_y or 0) + (win.head_h or 0) + zoombox.y + zoombox.h + 2, items)
 end
 
-function sink:key(c)
-  local last = math.max(0, paper_h - (H - BAR))
-  local page_step = H - BAR - 24
+-- Published beside the menus (`window:controls`): the header's buttons by
+-- what they do, and the page as a field that reads the page being read.
+win:publish_controls(function()
+  local n = doc and #sizes or 0
 
-  if     c == -2 then top = math.min(top + 40, last)
-  elseif c == -1 then top = math.max(0, top - 40)
-  elseif c == -3 then top = math.min(top + page_step, last)
-  elseif c == -4 then top = math.max(0, top - page_step)
-  elseif c == 46 then show(current + 1)          -- '.'
-  elseif c == 44 then show(current - 1)          -- ','
-  elseif c == 43 or c == 61 then
-    zoom = math.min(zoom * 1.25, 4.0) ; show(current)
-  elseif c == 45 then
-    zoom = math.max(zoom / 1.25, 0.5) ; show(current)
-  elseif c == 111 then chooser() ; return true   -- 'o'
+  return {
+    { kind = "button", label = "Previous page", disabled = current <= 1,
+      press = function() act.go(current - 1) end },
+    { kind = "button", label = "Next page", disabled = current >= n,
+      press = function() act.go(current + 1) end },
+    { kind = "field", label = "Page", read = function() return tostring(current) end,
+      write = function(text)
+        local k = tonumber(text)
+        if k then act.go(math.floor(k)) end
+      end },
+    { kind = "field", label = "Zoom", read = function() return zoom_label() end },
+  }
+end)
+
+local function key(c)
+  local k, mods = keys.parts(c)
+  local ctrl = (mods & keys.CTRL) ~= 0
+  local vh = view_h()
+
+  if ctrl and (k == 61 or k == 43) then act.zoom_by(1)
+  elseif ctrl and k == 45 then act.zoom_by(-1)
+  elseif ctrl and k == 48 then act.fit("width")
+  elseif ctrl and k == 49 then act.step(100)
+  elseif c == 15 then act.choose()                         -- Ctrl O
+  elseif c == 23 then act.close()                          -- Ctrl W
+  elseif c == 43 or c == 61 then act.zoom_by(1)
+  elseif c == 45 then act.zoom_by(-1)
+  elseif not doc then return false
+  elseif c == keys.DOWN then scroll_to(top + 40)
+  elseif c == keys.UP then scroll_to(top - 40)
+  elseif c == keys.PAGEDOWN or c == keys.SPACE then
+    if single and top >= total_h - vh then act.go(current + 1) else scroll_to(top + vh - 40) end
+  elseif c == keys.PAGEUP then
+    if single and top <= 0 then act.go(current - 1) else scroll_to(top - vh + 40) end
+  elseif c == keys.HOME then act.go(1)
+  elseif c == keys.END then act.go(#sizes)
+  elseif c == keys.RIGHT then
+    if total_w > view_w() then pan_to(left + 40) else act.go(current + 1) end
+  elseif c == keys.LEFT then
+    if total_w > view_w() then pan_to(left - 40) else act.go(current - 1) end
+  elseif c == 46 then act.go(current + 1)                  -- .
+  elseif c == 44 then act.go(current - 1)                  -- ,
   else return false end
 
-  frame()
   return true
 end
 
---
--- The chrome is drawn rather than built from widgets, because a direct
--- window owns every pixel and a widget would have nothing to draw into. So
--- the buttons are rectangles this file knows the position of, and a click
--- is a comparison.
---
-BUTTONS[1].on = function () chooser() end
-BUTTONS[2].on = function () show(current - 1) end
-BUTTONS[3].on = function () show(current + 1) end
+--------------------------------------------------------------------------
+-- The pointer.
+--------------------------------------------------------------------------
 
--- What a click at `x, y` does: a bar button, `key, act` - acted on the
--- release over the same one (`ui.click`; Diego, 9 October 2026: "mouse
--- click is working in mouse down not in a real click which is mouse
--- down+mouse up").
-local function target_at(x, y)
-  if y < H - BAR then return nil end
+local dragging = nil                  -- the scroll bar's thumb, held
 
-  for i, b in ipairs(BUTTONS) do
-    if x >= b.x and x < b.x + b.w then
-      return i, function()
-        b.on()
-        frame()
-      end
+local function thumb()
+  local vh = view_h()
+  local th = math.max(28, vh * vh // math.max(1, total_h))
+
+  return th, TOOL_H + (vh - th) * top // math.max(1, total_h - vh)
+end
+
+local function press(x, y)
+  if y < TOOL_H then
+    if pk.inside(back, x, y) and not back.disabled then
+      pk.hold(back, function() act.go(current - 1) end)
+    elseif pk.inside(forward, x, y) and not forward.disabled then
+      pk.hold(forward, function() act.go(current + 1) end)
+    elseif pk.inside(zoombox, x, y) then
+      zoom_menu()
+    end
+
+    return
+  end
+
+  -- The scroll bar: the thumb held and dragged, the track a view at a time.
+  if x >= view_w() and y < H - FOOT_H and total_h > view_h() then
+    local th, ty = thumb()
+
+    if y >= ty and y < ty + th then
+      dragging = { from = y, top = top, th = th }
+    elseif y < ty then
+      scroll_to(top - view_h() + 40)
+    else
+      scroll_to(top + view_h() - 40)
     end
   end
 end
 
-function sink:mouse(action, x, y)
-  ui.click(self, action, x, y, target_at)
+local function drag(y)
+  if not dragging then return false end
 
+  local room = math.max(1, view_h() - dragging.th)
+
+  scroll_to(dragging.top + (y - dragging.from) * (total_h - view_h()) / room)
   return true
 end
 
-win:add(sink)
+--------------------------------------------------------------------------
+-- The loop: events, then a frame when something changed, then one page
+-- rendered when nothing is waiting.
+--------------------------------------------------------------------------
 
 if path then open(path) end
 
-frame()
-win:run()
+local decode = keys.decoder()
+local dirty = true
+
+while win.running do
+  if dirty then
+    trim()
+    frame()
+    dirty = false
+  end
+
+  local work = wanted()
+  local reply = wmproto.poll(win.handle, work and 0 or 25)
+
+  if not reply then break end
+
+  -- Something pressed from outside (`window:controls`), answered inside
+  -- the poll: drawn as a click would be.
+  if win.served_change then
+    win.served_change = false
+    dirty = true
+  end
+
+  local events = reply.events or {}
+
+  for _, ev in ipairs(events) do
+    if win:direct_event(ev) then
+      dirty = true
+    elseif ev.type == "resize" then
+      W, H = ev.w, ev.h
+      controls_said = nil
+      lay_out(true)
+      dirty = true
+    elseif ev.type == "close" then
+      win:close()
+    elseif ev.type == "theme" then
+      dirty = true
+    elseif ev.type == "key" then
+      local a, b = decode(ev.code)
+
+      for _, c in ipairs({ a, b }) do
+        if key(c) then dirty = true end
+      end
+    elseif ev.type == "wheel" then
+      if doc then
+        scroll_to(top - (ev.n or 0) * 3 * 40)
+        dirty = true
+      end
+    elseif ev.type == "mouse" and not ev.menu then
+      local x, y = ev.x or 0, ev.y or 0
+
+      if ev.action == "press" and (ev.button or "left") == "left" then
+        press(x, y)
+        dirty = true
+      elseif ev.action == "move" then
+        if drag(y) then dirty = true end
+      elseif ev.action == "release" then
+        dragging = nil
+        if pk.release(x, y) then dirty = true end
+      end
+    end
+  end
+
+  local held = decode(nil)
+  if held and key(held) then dirty = true end
+
+  -- Nothing waiting, and a page wanted: rendered now, and drawn.
+  if #events == 0 and not dirty and work and win.running then
+    render(work)
+    dirty = true
+  end
+end
+
+for i in pairs(cache) do free(i) end

@@ -9095,8 +9095,9 @@ time, page thumbnails in a sidebar, go to page, the window resizable with
 the pages laid out again, search in the text, and remembering where each
 document was left.
 **Step 1 built in 0.11.231** (`testing.md` 18.626): the kit's three -
-`pdf.text`, `pdf.outline`, JPEG pictures in `pdf.render`. Next, step 2: the
-window.
+`pdf.text`, `pdf.outline`, JPEG pictures in `pdf.render`. **Step 2 built in
+0.11.232** (18.627): the window - menus, header, the whole document
+scrolled, zoom, resize, the cache. Next, step 3: the sidebar.
 
 **Found, 10 October - a question to an application waits for its tick.**
 The launcher waited 840 ms of every press for the Deskbar to say where the

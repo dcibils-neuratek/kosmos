@@ -111,7 +111,11 @@ with the 377 pages of the Odyssey.
    `x86-pdfkit`): `pdf.text`, `pdf.outline`, and `pdf.render` drawing
    JPEGs.
 2. **The window**: menu bar, header, the whole document scrolled, zoom,
-   resize, the cache.
+   resize, the cache. **Built in 0.11.232** (`testing.md` 18.627,
+   `x86-pdfview`). The menus' titles sit in the kit's band beside the
+   document's name, where every direct window with a menu has them, and the
+   header's controls in the row under it - the mockup's two rows in the
+   other order.
 3. **The sidebar**: thumbnails, then contents.
 4. **Find**, Copy, Go to page, back.
 5. **Where it was left**, and recent documents.
