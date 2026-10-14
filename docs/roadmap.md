@@ -9230,7 +9230,11 @@ the applications make the system useful, and is not pulled forward.
      question for its turn, against this new bar rather than the five sites.
   3. **Linux-on-Kosmos**: Alpine in a sandbox, its screen and input in a
      Kosmos window (Sandboxes V5 and after) - Chromium there for the giant
-     web apps, and any native Linux application beside it.
+     web apps, and any native Linux application beside it. Alpine's own
+     desktops (Xfce, or `cage` with one application) run there. Designed
+     before it is built; **its turn: after Pulses, the PDF reader, Music
+     and Remote Screen** - Diego: "i want those apps before we jump into
+     sandboxes again".
   The study below stays as the record of why.
 - **A real browser engine - studied first, then ported** (Diego, 14 October
   2026: "I want to start using kosmos as a daily os so we need actual apps
