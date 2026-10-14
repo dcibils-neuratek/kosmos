@@ -33,6 +33,9 @@ the prompt. Held to:
     `sandbox disk new`, written by one sandbox at its first sector and one
     far into it, read back by another, its file's size and extents as they
     were - written in place - and given read only, a write refused;
+  * **a screen**, by virtio-gpu (`docs/linux.md` L2): a 640x480
+    framebuffer in the guest, a pixel written to it arriving in the screen's
+    region as Kosmos's own colour;
   * **the network**, by virtio-net and the monitor's gateway: its gateway
     pinged, a page on this Mac fetched through Kosmos's own TCP, and a name
     that cannot exist answered NXDOMAIN by its name server; and a port
@@ -310,6 +313,22 @@ def main():
         check(re.search(r"Operation not permitted|Read-only|I/O error|can't open", said) is not None
               and "\nkosmos-disk-L1\n" in said,
               "a read-only disk was written to, or not read: %r" % said[-400:])
+
+        # **A screen** (`docs/linux.md` L2): virtio-gpu, the guest's
+        # framebuffer at the size asked, a pixel written into /dev/fb0 at
+        # the screen's middle - away from the corner the console's cursor
+        # blinks in - arriving in the screen's region as Kosmos's own
+        # colour: blue 0x30, green 0x20, red 0x10 in, #102030 out.
+        said = do("sandbox run alpine --screen 640x480 -- cat /sys/class/graphics/fb0/virtual_size; "
+                  "printf '\\060\\040\\020\\000' | dd of=/dev/fb0 bs=4 seek=153920 2>/dev/null; "
+                  "sleep 1; echo drew",
+                  "the sandbox is gone", 240)
+        check("\n640,480\n" in said and "\ndrew\n" in said,
+              "the guest did not find a 640x480 framebuffer and draw in it: %r" % said[-500:])
+        shown = re.search(r"its screen flushed (\d+) frame\(s\), the pixel at its middle (#[0-9a-f]{6})", said)
+        check(shown is not None and int(shown.group(1)) > 0 and shown.group(2) == "#102030",
+              "what the guest drew did not reach the screen's region: %r"
+              % (shown.group(0) if shown else said[-300:]))
 
         # **The network** (S4): the gateway pinged, a page on this Mac
         # fetched through Kosmos's own connection, and a name that cannot

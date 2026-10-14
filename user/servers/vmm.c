@@ -32,6 +32,7 @@
 #include "appproto.h"
 #include "vdev.h"
 #include "vmmblk.h"
+#include "vmmgpu.h"
 #include "vmmfs.h"
 #include "vmmnet.h"
 #include "init/say.h"
@@ -365,6 +366,7 @@ static void answer(const struct vmm_request *req, struct vmm_reply *rep)
 #define VMM_NO_NAME         19
 #define VMM_BAD_SHARE       20
 #define VMM_BAD_DISK        21
+#define VMM_BAD_SCREEN      22
 
 /*
  * **Registered in `/Running` as `sandbox-<name>`**, with an endpoint of its
@@ -403,7 +405,7 @@ static long register_name(long running)
 }
 
 void vmm_server(long running_cap, long ram_cap, long setup_cap, long more1, long more2,
-                long more3)
+                long more3, long more4)
 {
     long home_cap = -1, net_cap = -1;
     long at, guest, thread, endpoint;
@@ -467,12 +469,18 @@ void vmm_server(long running_cap, long ram_cap, long setup_cap, long more1, long
         /* And the drive its disk is on, after those (`docs/linux.md` L1). */
         vmm_cfg.disk.path[sizeof vmm_cfg.disk.path - 1] = '\0';
 
-        if (vmm_cfg.disk.path[0] != '\0') {
-            long more[3] = { more1, more2, more3 };
-            long disk_cap = more[(folders ? 1 : 0) + (vmm_networked() ? 1 : 0)];
+        {
+            long more[4] = { more1, more2, more3, more4 };
+            unsigned next = (folders ? 1u : 0u) + (vmm_networked() ? 1u : 0u);
 
-            if (!vmmblk_start(disk_cap, vmm_cfg.disk.path, vmm_cfg.disk.read_only != 0)) {
+            if (vmm_cfg.disk.path[0] != '\0'
+                && !vmmblk_start(more[next++], vmm_cfg.disk.path, vmm_cfg.disk.read_only != 0)) {
                 kosmos_exit(VMM_BAD_DISK);
+            }
+
+            /* And its screen's region, after the drive (`docs/linux.md` L2). */
+            if (vmm_cfg.screen != 0 && !vmmgpu_start(more[next])) {
+                kosmos_exit(VMM_BAD_SCREEN);
             }
         }
 

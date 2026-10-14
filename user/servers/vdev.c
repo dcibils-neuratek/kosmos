@@ -38,6 +38,11 @@
 #define CONFIG_GEN      0x0fc
 #define CONFIG          0x100
 
+#define SHM_LEN_LOW     0x0b0u
+#define SHM_LEN_HIGH    0x0b4u
+#define SHM_BASE_LOW    0x0b8u
+#define SHM_BASE_HIGH   0x0bcu
+
 #define DESC_NEXT       1u
 #define DESC_WRITE      2u
 
@@ -54,7 +59,7 @@ void vdev_memory(uint8_t *guest_ram, uint64_t bytes, uint64_t base)
 }
 
 /* The guest's memory at `gpa`, `len` bytes of it, or NULL outside its RAM. */
-static uint8_t *guest(uint64_t gpa, uint64_t len)
+uint8_t *vdev_guest(uint64_t gpa, uint64_t len)
 {
     if (ram == NULL || gpa < ram_base || gpa - ram_base > ram_bytes
         || len > ram_bytes - (gpa - ram_base)) {
@@ -140,6 +145,16 @@ bool vdev_mmio(struct vdev *d, uint64_t off, unsigned size, bool write, uint64_t
     case INT_STATUS:    *value = d->int_status; break;
     case STATUS:        *value = d->status; break;
     case CONFIG_GEN:    *value = 0; break;
+    /*
+     * **No shared memory region**, which virtio-mmio says as a length of
+     * all ones (VIRTIO 1.2 4.2.2, SHMLen): a driver asks every device, and
+     * virtio-gpu read the 0 this used to answer as a region of no bytes at
+     * 0, failed to reserve it, and gave up (`docs/linux.md` L2).
+     */
+    case SHM_LEN_LOW:
+    case SHM_LEN_HIGH:
+    case SHM_BASE_LOW:
+    case SHM_BASE_HIGH: *value = 0xffffffffu; break;
     default:            *value = 0; break;
     }
 
@@ -152,9 +167,9 @@ static bool queue_in_memory(struct vdev_queue *q, uint8_t **avail, uint8_t **use
         return false;
     }
 
-    *avail = guest(q->avail, 4 + 2 * (uint64_t)q->num);
-    *used = guest(q->used, 4 + 8 * (uint64_t)q->num);
-    *desc = guest(q->desc, 16 * (uint64_t)q->num);
+    *avail = vdev_guest(q->avail, 4 + 2 * (uint64_t)q->num);
+    *used = vdev_guest(q->used, 4 + 8 * (uint64_t)q->num);
+    *desc = vdev_guest(q->desc, 16 * (uint64_t)q->num);
     return *avail != NULL && *used != NULL && *desc != NULL;
 }
 
@@ -186,7 +201,7 @@ bool vdev_pop(struct vdev *d, unsigned qi, struct vdev_chain *c)
         uint8_t *e = desc + 16 * (uint64_t)(at % q->num);
         uint32_t len = vget32(e + 8);
         uint16_t flags = vget16(e + 12);
-        uint8_t *p = guest(vget64(e), len);
+        uint8_t *p = vdev_guest(vget64(e), len);
 
         if (p != NULL) {
             if ((flags & DESC_WRITE) != 0 && c->nout < VDEV_SEGMENTS) {

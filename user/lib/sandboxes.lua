@@ -15,6 +15,7 @@
 -- its guest's console, so anybody may read it from where they left off.
 
 local files = use("/Kosmos/Libraries/files.lua")
+local regions = use("/Kosmos/Libraries/regions.lua")
 
 local sandboxes = {}
 
@@ -51,6 +52,7 @@ local MONITOR_SAYS = {
   [19] = "its name was taken in /Running - is it running already?",
   [20] = "a folder it was given is not one it can serve",
   [21] = "its disk is not a file it can use - is it there, and a whole number of sectors?",
+  [22] = "its screen's region was not one it can draw into",
 }
 
 --------------------------------------------------------------------------
@@ -447,9 +449,33 @@ function sandboxes.start(s)
     line = line .. " kosmos.disk=1"
   end
 
+  -- Its screen (`docs/linux.md` L2): `WxH`, a width a multiple of 16 - a
+  -- region made here, its header said (`vmmscreen.h`), handed to the
+  -- monitor, and kept on `s.screen_region` for a window to draw from.
+  local screen = nil
+
+  if (s.screen or "") ~= "" then
+    local w, h = tostring(s.screen):match("^(%d+)x(%d+)$")
+
+    w, h = math.tointeger(tonumber(w)), math.tointeger(tonumber(h))
+
+    if not w or not h or w < 64 or h < 64 or w > 4096 or h > 4096 or w % 16 ~= 0 then
+      return nil, "a screen is WIDTHxHEIGHT, the width a multiple of 16"
+    end
+
+    local region, why = regions.make(4096 + w * h * 4)
+
+    if not region then return nil, why end
+
+    sys.region_write(region.cap, 0, string.pack("<I4I4I4I4", 0x7263734b, w, h, w * 4))
+    screen = region
+    s.screen_region = { cap = region.cap, at = region.at, width = w, height = h }
+    line = line .. " kosmos.screen=1"
+  end
+
   if #line > 511 then return nil, "its command and folders are too long for a kernel's command line" end
 
-  sys.region_write(setup, 0, string.pack("<I4I4I8I8I8I8I8", 0x4b766d6d, 2, ram_bytes,
+  sys.region_write(setup, 0, string.pack("<I4I4I8I8I8I8I8", 0x4b766d6d, 3, ram_bytes,
                                           kernel_at, kernel.size, initrd_at, initrd_bytes)
                              .. line .. ("\0"):rep(512 - #line)
                              .. s.name .. ("\0"):rep(16 - #s.name)
@@ -459,10 +485,11 @@ function sandboxes.start(s)
                              .. ports .. ("\0"):rep(16 - #ports)
                              .. string.pack("<I8", math.tointeger(clock_epoch()) or 0)
                              .. (disk_path or "") .. ("\0"):rep(256 - #(disk_path or ""))
-                             .. string.pack("<I4I4", disk_ro and 1 or 0, 0))
+                             .. string.pack("<I4I4", disk_ro and 1 or 0, 0)
+                             .. string.pack("<I4I4", screen and 1 or 0, 0))
 
   local id, why = fs.vm_start(ram, setup, #(s.folders or {}) > 0, outgoing or #ports > 0,
-                              disk_path)
+                              disk_path, screen and screen.cap)
 
   if not id then return nil, why end
 
@@ -517,7 +544,31 @@ function sandboxes.make_disk(path, megabytes, say)
   return true
 end
 
-function sandboxes.run(image, command, memory, say, folders, network, ports, disk)
+--
+-- **What a sandbox's screen shows, in brief** (`docs/linux.md` L2): how many
+-- frames the guest has flushed, and the colour of the pixel at its middle
+-- as `#rrggbb` - away from the corner a console's cursor blinks in - for
+-- `sandbox` to say, and a test to hold. Nil when it has no screen.
+--
+function sandboxes.screen_probe(s)
+  local r = s and s.screen_region
+
+  if not r then return nil end
+
+  local head = sys.region_read(r.cap, 0, 24)
+  local middle = (r.height // 2) * r.width + r.width // 2
+  local pixel = sys.region_read(r.cap, 4096 + middle * 4, 4)
+
+  if not head or not pixel then return nil end
+
+  local _, _, _, _, frames, shown = string.unpack("<I4I4I4I4I4I4", head)
+  local p = string.unpack("<I4", pixel)
+
+  return { frames = frames, shown = shown ~= 0,
+           middle = ("#%06x"):format(p & 0xffffff) }
+end
+
+function sandboxes.run(image, command, memory, say, folders, network, ports, disk, screen)
   local name = ("task-%d"):format(sys.ticks() % 100000)
   local s = sandboxes.parse("", name)
   local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
@@ -528,6 +579,7 @@ function sandboxes.run(image, command, memory, say, folders, network, ports, dis
   s.network = network and "outgoing" or "none"
   s.ports = ports or {}
   s.disk = disk
+  s.screen = screen
 
   local id, why = sandboxes.start(s)
 
@@ -555,7 +607,8 @@ function sandboxes.run(image, command, memory, say, folders, network, ports, dis
   until not r.running and #text == 0
 
   sandboxes.stop(name)                -- its monitor may go
-  return last and last.exit_code or nil, up, (sys.ticks() - began) / hz, last
+  return last and last.exit_code or nil, up, (sys.ticks() - began) / hz, last,
+         sandboxes.screen_probe(s)
 end
 
 -- Processor time the guest has had, as a share of `seconds` - for a card.

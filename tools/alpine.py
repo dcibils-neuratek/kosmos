@@ -136,7 +136,7 @@ unhex() { echo "$1" | awk '{ h = "0123456789abcdef"
     for (i = 1; i < length($0); i += 2)
         printf "%c", (index(h, substr($0, i, 1)) - 1) * 16 + index(h, substr($0, i + 1, 1)) - 1 }'; }
 # The transport its folders and its network both stand on.
-if grep -q "kosmos.share\\|kosmos.net\\|kosmos.disk" /proc/cmdline && [ -f /kosmos/modules/virtio_mmio.ko ]; then
+if grep -q "kosmos.share\\|kosmos.net\\|kosmos.disk\\|kosmos.screen" /proc/cmdline && [ -f /kosmos/modules/virtio_mmio.ko ]; then
     insmod /kosmos/modules/virtio_mmio.ko
 fi
 # Its network, when it was given one: virtio-net, and the monitor's gateway
@@ -151,6 +151,15 @@ fi
 # Its disk, when it was given one: virtio-blk, /dev/vda (`docs/linux.md` L1).
 if grep -q kosmos.disk /proc/cmdline && [ -f /kosmos/modules/virtio_blk.ko ]; then
     insmod /kosmos/modules/virtio_blk.ko
+fi
+# Its screen, when it was given one: virtio-gpu and the DRM it stands on,
+# in `modules.dep`'s order, and a framebuffer at /dev/fb0 (`docs/linux.md` L2).
+if grep -q kosmos.screen /proc/cmdline; then
+    for m in i2c-core backlight fb syscopyarea sysfillrect sysimgblt fb_sys_fops \
+             drm_panel_orientation_quirks drm drm_kms_helper drm_client_lib \
+             virtio_dma_buf drm_shmem_helper virtio-gpu; do
+        [ -f /kosmos/modules/$m.ko ] && insmod /kosmos/modules/$m.ko
+    done
 fi
 # Its folders: share<i>, each a virtio-fs device the monitor serves, at the
 # path and in the mode its command line says.
@@ -189,7 +198,22 @@ exec poweroff -f
 MODULES = ("kernel/drivers/virtio/virtio_mmio.ko", "kernel/fs/fuse/fuse.ko",
            "kernel/fs/fuse/virtiofs.ko", "kernel/net/core/failover.ko",
            "kernel/drivers/net/net_failover.ko", "kernel/drivers/net/virtio_net.ko",
-           "kernel/drivers/block/virtio_blk.ko")
+           "kernel/drivers/block/virtio_blk.ko",
+           # A screen (`docs/linux.md` L2): virtio-gpu and what it needs.
+           "kernel/drivers/i2c/i2c-core.ko", "kernel/drivers/video/backlight/backlight.ko",
+           "kernel/drivers/video/fbdev/core/fb.ko",
+           "kernel/drivers/video/fbdev/core/syscopyarea.ko",
+           "kernel/drivers/video/fbdev/core/sysfillrect.ko",
+           "kernel/drivers/video/fbdev/core/sysimgblt.ko",
+           "kernel/drivers/video/fbdev/core/fb_sys_fops.ko",
+           "kernel/drivers/gpu/drm/drm_panel_orientation_quirks.ko",
+           "kernel/drivers/gpu/drm/drm.ko", "kernel/drivers/gpu/drm/drm_kms_helper.ko",
+           "kernel/drivers/gpu/drm/clients/drm_client_lib.ko",
+           "kernel/drivers/virtio/virtio_dma_buf.ko",
+           "kernel/drivers/gpu/drm/drm_shmem_helper.ko",
+           "kernel/drivers/gpu/drm/virtio/virtio-gpu.ko")
+# Built in on one architecture and a module on another: taken when there.
+OPTIONAL = ("backlight.ko",)
 KERNEL_VERSION = "6.18.52-0-virt"
 
 
@@ -221,7 +245,7 @@ def modules():
         i = j + filesize
         i += (-i) % 4
 
-    missing = [m for m in wanted.values() if m not in found]
+    missing = [m for m in wanted.values() if m not in found and m not in OPTIONAL]
 
     if missing:
         raise SystemExit("alpine: initramfs-virt has no %s" % ", ".join(missing))

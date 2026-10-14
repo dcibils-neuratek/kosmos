@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-14, evening (0.11.242; Linux-on-Kosmos L1)
+Last updated: 2026-10-14, evening (0.11.243; Linux-on-Kosmos L2)
 
 ---
 
@@ -81,8 +81,11 @@ Last updated: 2026-10-14, evening (0.11.242; Linux-on-Kosmos L1)
   runs of zeroes, `fs.size`, `sandbox disk new FILE MB` and `--disk`;
   `diskask.c`, one C client of the disk protocol for `smbd`, the keyring,
   tiles, `vmmfs` and the disk. Alpine on ARM writes, reads back and is
-  refused read only. **Next: L2**, the screen - virtio-gpu 2D and the
-  Linux window; on the M700, the disk once the stick has `/Sandboxes`.
+  refused read only.
+- **L2, the screen** (0.11.243, 18.638): virtio-gpu 2D in the monitor (`vmmgpu.c`),
+  the screen region (`vmmscreen.h`), and the **Linux** window - Alpine's
+  console drawn in a Kosmos window. **Next: L3**, keyboard and pointer
+  (virtio-input); on the M700, the disk once the stick has `/Sandboxes`.
 - **Still waiting on Diego**: the sandbox console keys on the M700
   (`vmm.c` uncommitted); the M700's screen; background programs fix 1 or
   2; the Shortcuts cheat sheet; About in Preferences; a push.

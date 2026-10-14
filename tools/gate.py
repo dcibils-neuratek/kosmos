@@ -92,6 +92,9 @@ SUITES = [
 
     # And the Sandboxes window, by the pointer and the keyboard (S2).
     Suite("arm-sandboxwin", ["python3", "tools/run_sandboxwin.py", ARM]),
+    # Linux in a Kosmos window: its screen through virtio-gpu (`docs/linux.md`
+    # L2). Named `arm-sandbox-` so it runs with the sandboxes' in every gate.
+    Suite("arm-sandbox-linuxwin", ["python3", "tools/run_linuxwin.py", ARM]),
 
     # And the same machine with nothing plugged into it. A second boot, but
     # of the ordinary image rather than the test one: what it checks is init

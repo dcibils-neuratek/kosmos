@@ -142,6 +142,11 @@ ring. Then each step is tried on the M700 before the next, as X1-X3 were.
      server each request.
 2. **L2 - a screen**: virtio-gpu 2D and the Linux window showing it - the
    guest's console drawn in the window.
+   **Built** (`testing.md` 18.638): `vmmgpu.c` in the monitor, the screen
+   region (`vmmscreen.h`) made by whoever starts the sandbox, and the Linux
+   window drawing it - Alpine's console in a Kosmos window. 512 MB until L4
+   gives it 2 GB; the window starts the sandbox and stops it on close until
+   L4 makes Linux a sandbox of its own that keeps running.
 3. **L3 - keyboard and pointer**: virtio-input from the window - typed into
    the guest's console, a click where it was pointed.
 4. **L4 - Chromium**: the first-run setup, `cage` (or Xfce) and Chromium,

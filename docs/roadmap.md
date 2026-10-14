@@ -9143,8 +9143,9 @@ to the M700's stick without touching `/Home` (Diego runs it once, with
 `sudo`, when the stick is at the Mac). **L1b built** (`testing.md`
 18.637): virtio-blk in the monitor, written in place, `sandbox disk new`
 and `--disk`, and `diskask.c` - one C door to the disk protocol where four
-servers had a copy each. **L2 next**: a screen, virtio-gpu 2D and the Linux
-window. Later, when measured: the disk off the vCPU's thread, and the
+servers had a copy each. **L2 built** (`testing.md` 18.638): virtio-gpu 2D
+in the monitor, a screen region the window draws, and the Linux window -
+Alpine's console in it. **L3 next**: keyboard and pointer, virtio-input. Later, when measured: the disk off the vCPU's thread, and the
 disk server keeping a client's region mapped between requests.
 
 **Found, 10 October - a question to an application waits for its tick.**

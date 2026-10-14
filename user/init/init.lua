@@ -3991,7 +3991,7 @@ local function new_namespace()
   -- change to one given read only - as `smbd` serves shares. Handed only to
   -- a monitor with folders to serve.
   --
-  function ns.vm_start(ram, setup, folders, network, disk)
+  function ns.vm_start(ram, setup, folders, network, disk, screen)
     local running = resolve("/Running")
     local caps = { running, ram, setup }
 
@@ -4024,6 +4024,10 @@ local function new_namespace()
 
       caps[#caps + 1] = drive
     end
+
+    -- And its screen's region, last (`docs/linux.md` L2): one the program
+    -- made, as its RAM and setup are.
+    if screen then caps[#caps + 1] = screen end
 
     local id, why = sys.spawn(ROLE_VMM, caps)
 

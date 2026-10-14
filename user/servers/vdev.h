@@ -61,6 +61,11 @@ struct vdev_chain {
 /* Where the guest's RAM is in this process, and at which guest address. */
 void vdev_memory(uint8_t *ram, uint64_t bytes, uint64_t base);
 
+/* The guest's memory at `gpa`, `len` bytes of it, or NULL outside its RAM:
+ * for a device whose buffers are named by guest address in a request
+ * rather than by the queue - virtio-gpu's backing pages. */
+uint8_t *vdev_guest(uint64_t gpa, uint64_t len);
+
 /* A register access to `d`: answers false for one it has no register at. */
 bool vdev_mmio(struct vdev *d, uint64_t off, unsigned size, bool write, uint64_t *value);
 

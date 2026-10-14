@@ -26273,3 +26273,37 @@ call (517 against 517) - each failing its check.
 each disk operation by a function of its own - so `fs.size` is one, and
 `sandbox disk new` had made nothing; the suite then waited 240 s at every
 step after, which read as a hang.
+
+## 18.638 Linux's screen in a Kosmos window: virtio-gpu 2D (Linux L2)
+
+`docs/linux.md` L2: the guest draws, and a Kosmos window shows it.
+
+**What it is.** `vmmgpu.c`, virtio-gpu 2D in the sandbox's monitor (VIRTIO
+1.2 §5.7): one display, the size its screen region says; resources made,
+given backing pages of the guest's RAM, transferred and flushed; a flush of
+the scanout's resource laid into the **screen region** (`vmmscreen.h`) as
+Kosmos's own pixels - opaque, blue-green-red-alpha in memory, a surface's
+pitch - and counted in its header's `frames`. Whoever starts the sandbox
+makes the region and hands it over (`screen WxH`, setup version 3), as
+Camera hands its ring to the camera server. The **Linux** window
+(`user/bin/apps/linux.lua`) wraps the region as a surface (`gfx.wrap`) and
+blits it when `frames` moved, on its own clock; no pixel passes through Lua.
+Alpine loads `virtio-gpu` and the DRM it stands on for `kosmos.screen`, all
+from its own initramfs. The window starts Alpine with a shell on `tty1`, so
+what is seen until L3 is Linux's console.
+
+**Found on the way**: the first boot's driver said "Could not reserve host
+visible region" and gave up. virtio-mmio's shared-memory registers read 0
+here, which a driver takes for a region of no bytes; "none" is a length of
+all ones (VIRTIO 4.2.2), and `vdev.c` says so now for every device. Then the
+pixel written at `/dev/fb0`'s corner read black: the console's cursor blinks
+there, so the check writes and reads the middle.
+
+**Tests.** `arm-sandbox-linux`, two more: a 640x480 `/dev/fb0` in the guest,
+and a pixel written at its middle - blue 0x30, green 0x20, red 0x10 - read
+from the region as `#102030` after 9 flushes. `arm-sandbox-linuxwin`, new,
+3 checks: the window says where its picture is when the first frame came,
+QEMU's screen there is Linux's console - light text on black - and the
+window's header is above it. **Controls**: the monitor converting with red
+and blue swapped reads `#302010`, refused; the window not blitting the
+picture leaves no light pixel, refused.

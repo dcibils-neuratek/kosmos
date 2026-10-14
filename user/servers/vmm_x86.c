@@ -44,6 +44,7 @@
 #include "vmmfs.h"
 #include "vmmnet.h"
 #include "vmmblk.h"
+#include "vmmgpu.h"
 #include "x86dev.h"
 #include "vmm.h"
 #include "init/say.h"
@@ -61,6 +62,8 @@ static const unsigned share_irq[VMM_SHARES] = { 5, 7, 9, 10 };
 #define X86_NET_IRQ         11u
 #define X86_BLK_BASE        (X86_NET_BASE + 0x200ul)   /* its disk (`docs/linux.md` L1) */
 #define X86_BLK_IRQ         12u
+#define X86_GPU_BASE        (X86_BLK_BASE + 0x200ul)   /* its screen (L2) */
+#define X86_GPU_IRQ         14u
 #define X86_UART_IRQ        4u
 #define X86_UART_PORT       0x3f8u
 
@@ -178,6 +181,10 @@ bool vmm_machine_prepare(void)
 
     if (vmmblk_on()) {
         append_device(X86_BLK_BASE, X86_BLK_IRQ);
+    }
+
+    if (vmmgpu_on()) {
+        append_device(X86_GPU_BASE, X86_GPU_IRQ);
     }
 
     if (!x86_boot(vmm_ram, vmm_cfg.ram_bytes, vmm_cfg.kernel_offset, vmm_cfg.kernel_bytes,
@@ -412,6 +419,8 @@ static void mmio(struct vcpu_regs *r)
         done = vmmnet_mmio(gpa - X86_NET_BASE, m.size, m.write, &v);
     } else if (gpa >= X86_BLK_BASE && gpa < X86_BLK_BASE + 0x200 && vmmblk_on()) {
         done = vmmblk_mmio(gpa - X86_BLK_BASE, m.size, m.write, &v);
+    } else if (gpa >= X86_GPU_BASE && gpa < X86_GPU_BASE + 0x200 && vmmgpu_on()) {
+        done = vmmgpu_mmio(gpa - X86_GPU_BASE, m.size, m.write, &v);
     } else if (gpa >= X86_VIRTIO_BASE && gpa < X86_VIRTIO_BASE + 0x200ul * VMM_SHARES) {
         unsigned i = (unsigned)((gpa - X86_VIRTIO_BASE) / 0x200);
 
@@ -450,6 +459,7 @@ static void deliver(struct vcpu_regs *r)
     vmmnet_pump();
     x86_pic_level(&pic, X86_NET_IRQ, vmm_networked() && vmmnet_raised());
     x86_pic_level(&pic, X86_BLK_IRQ, vmmblk_raised());
+    x86_pic_level(&pic, X86_GPU_IRQ, vmmgpu_raised());
 
     for (unsigned i = 0; i < VMM_SHARES; i++) {
         x86_pic_level(&pic, share_irq[i], vmmfs_raised(i));

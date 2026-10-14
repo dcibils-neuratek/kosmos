@@ -10,6 +10,8 @@
 --                                       ... Kosmos's port 8080 carried to its 80
 --   sandbox run alpine --disk /Sandboxes/linux.img -- mkfs.ext4 /dev/vda
 --                                       ... given a disk of its own (`:ro`: read only)
+--   sandbox run alpine --screen 1024x768 -- ...
+--                                       ... given a screen: virtio-gpu, /dev/fb0
 --   sandbox disk new /Sandboxes/linux.img 4096
 --                                       a disk, 4096 MB of zeroes, to give one
 --   sandbox run alpine                  a shell in a new one, until it ends
@@ -123,9 +125,10 @@ if verb == "run" then
 
   if command then
     local began = sys.ticks()
-    local code, up, took, last = sandboxes.run(image, command, memory, say, options.shares,
-                                                     options.network, options.ports,
-                                                     options.disk)
+    local code, up, took, last, screen = sandboxes.run(image, command, memory, say,
+                                                             options.shares, options.network,
+                                                             options.ports, options.disk,
+                                                             options.screen)
 
     -- Refused before it started: `sandboxes.run` answers nil and why - a
     -- folder outside /Home, a name in use - and the why is its second value.
@@ -139,6 +142,12 @@ if verb == "run" then
 
     if last and (options.network or options.ports) then
       carried = ("; it carried %s in and %s out"):format(files.size(last.net_in), files.size(last.net_out))
+    end
+
+    -- And what its screen showed, when it had one (`docs/linux.md` L2).
+    if screen then
+      carried = carried .. ("; its screen flushed %d frame(s), the pixel at its middle %s")
+                           :format(screen.frames, screen.middle)
     end
 
     print(("sandbox: %s exited %s after %.1f s, up in %.1f s%s; the sandbox is gone")

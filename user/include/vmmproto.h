@@ -19,7 +19,7 @@
 #include <stdint.h>
 
 #define VMM_SETUP_MAGIC     0x4b766d6du     /* "Kvmm" */
-#define VMM_SETUP_VERSION   2u
+#define VMM_SETUP_VERSION   3u
 #define VMM_CMDLINE_MAX     512u
 
 /* Where things are in every guest's physical address space - QEMU `virt`'s
@@ -109,6 +109,14 @@ struct vmm_setup {
         uint32_t read_only;
         uint32_t reserved;
     } disk;
+
+    /*
+     * **Its screen** (`docs/linux.md` L2): 1 when it has one - virtio-gpu,
+     * drawn into a region the monitor is handed after the drive
+     * (`vmmscreen.h`), whose own header says how large it is. 0: none.
+     */
+    uint32_t screen;
+    uint32_t screen_reserved;
 };
 
 #define VMM_NET_NONE        0u
@@ -117,9 +125,11 @@ struct vmm_setup {
 #define VMM_NET_IRQ         (VMM_SHARE_IRQ + VMM_SHARES)
 #define VMM_BLK_BASE        (VMM_NET_BASE + 0x200ul)
 #define VMM_BLK_IRQ         (VMM_NET_IRQ + 1u)
+#define VMM_GPU_BASE        (VMM_BLK_BASE + 0x200ul)
+#define VMM_GPU_IRQ         (VMM_BLK_IRQ + 1u)
 
-_Static_assert(sizeof(struct vmm_setup) == 600 + VMM_SHARES * 264 + 8 + VMM_PORTS * 4 + 8 + 264,
-               "six words, a magic, a version, a line, a name, a token, its folders, its network, its ports, the time, its disk");
+_Static_assert(sizeof(struct vmm_setup) == 600 + VMM_SHARES * 264 + 8 + VMM_PORTS * 4 + 8 + 264 + 8,
+               "six words, a magic, a version, a line, a name, a token, its folders, its network, its ports, the time, its disk, its screen");
 _Static_assert(sizeof(struct vmm_setup) <= 4096, "a setup is a page");
 
 /*

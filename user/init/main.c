@@ -112,7 +112,8 @@ void smbfs_server(long endpoint, long net, long console, long keyring);
  * stack's to bind its port through, and the console's. */
 void mdnsd_server(long endpoint, long net, long console);
 void smbd_server(long net, long console, long disk, long door, long keyring, long mdns);
-void vmm_server(long running, long ram, long setup, long more1, long more2, long more3);
+void vmm_server(long running, long ram, long setup, long more1, long more2, long more3,
+                long more4);
 
 #define ROLE_AUDIO    16UL
 #define ROLE_DEVICES   9UL
@@ -921,7 +922,8 @@ int main(unsigned long arg)
         named("vmm");
         vmm_server(0, 1, 2, kosmos_cap_check(3) == 0 ? 3 : -1,
                    kosmos_cap_check(4) == 0 ? 4 : -1,
-                   kosmos_cap_check(5) == 0 ? 5 : -1);
+                   kosmos_cap_check(5) == 0 ? 5 : -1,
+                   kosmos_cap_check(6) == 0 ? 6 : -1);
         kosmos_exit(0);
     }
 
