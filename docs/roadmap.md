@@ -9544,14 +9544,17 @@ a roadmap question; nothing decided. What it would take, honestly:
 
 ### Smaller, and wanted
 
-- **AGREED on 13 October - a graph as squares, like a meter's lights.**
+- **TRIED AND DROPPED on 13 October - a graph as squares, like a meter's
+  lights.** Built and shown on the M700, where a Monitor column is two
+  pixels wide and the squares read as dots; Diego: "keep the graphs are
+  now, i dont like the new proposed look". Solid bars stay.
   Diego, with a picture of a green-over-red LED meter: "i want try a small
   change the graph widget to be little square rather than a full bar",
   "the bars should be the same width as right now but just not a full
   bar". The kit's history graph (`ui.history.draw`) - Monitor's cores,
   Sandboxes' panels, the network's mirrored in and out - draws each column
   as a stack of squares the column's width, a pixel apart, each the colour
-  of the series it falls in. A try: Diego decides whether it stays.
+  of the series it falls in. Not kept.
 
 - **AGREED on 13 October - the processor maker's logo in Monitor's chip.**
   Diego, with a picture of BeOS's CPU Monitor, a PowerPC chip with its
