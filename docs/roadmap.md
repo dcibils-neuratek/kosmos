@@ -663,6 +663,8 @@ minutes, Kosmos starting, a file appearing, a drive arriving or by hand,
 with their history. **Left for A3b**: a mail arriving as a trigger -
 `maild` telling `autod` - and `.automation` a file type Tracker knows,
 which A4's window brings.
+**A4 built, 0.11.224** (`testing.md` 18.619): the Automations window as
+drawn, its controls published so `automate` drives it as it drives Mail.
 
 **Network Monitor, an app** - Diego, 12 October 2026: "i realizsed we need
 network monitor app as well to see network input and output". What goes in

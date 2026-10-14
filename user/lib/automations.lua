@@ -113,7 +113,8 @@ function automations.check(a)
     return nil, a.name .. ": a folder trigger needs the folder"
   end
 
-  if type(a.steps) ~= "table" or #a.steps == 0 then return nil, a.name .. ": it has no steps" end
+  -- No steps yet is a draft the window keeps; a run of it says so.
+  if type(a.steps) ~= "table" then return nil, a.name .. ": it has no list of steps" end
 
   for i, step in ipairs(a.steps) do
     local needs = type(step) == "table" and VERBS[step.verb]
@@ -338,11 +339,12 @@ end
 --
 -- Every step of `a` in turn, each with what the ones before found - `found`
 -- starting as what the trigger gave. Stops at the first that fails, or at
--- a stop. `between`, when given, is called after each step: `autod`
+-- a stop. `before`, when given, is called before each step with its number,
+-- and `between` after it: `autod`
 -- answers whoever asked meanwhile. Returns the run as the history keeps it:
 -- `{ at, trigger, ok, stopped, why, ms, steps = { { said, ok, why, ms } } }`.
 --
-function automations.run(a, found, between, trigger)
+function automations.run(a, found, between, trigger, before)
   local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
   local now = use("/Kosmos/Libraries/clock.lua").now()
   local run = { at = now and now.epoch or 0, trigger = trigger or "by hand", ok = true, steps = {} }
@@ -350,8 +352,16 @@ function automations.run(a, found, between, trigger)
 
   found = found or {}
 
+  if #(a.steps or {}) == 0 then
+    run.ok, run.why, run.ms = false, "it has no steps yet - add one", 0
+    return run
+  end
+
   for i, step in ipairs(a.steps or {}) do
     local s = filled(step, found)
+
+    if before then pcall(before, i) end
+
     local started = sys.ticks()
     local ok, result, why, stop = pcall(do_step, s, found)
 

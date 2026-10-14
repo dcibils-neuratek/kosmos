@@ -38,6 +38,7 @@ local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local known = {}          -- name -> { a = automation, next_at, last, failing, seen, drives }
 local queue = {}          -- { name =, found =, trigger = }
 local said_listing = nil
+local running = nil       -- { name, step }: what is running now, for the window
 
 local function now_epoch()
   local n = clock.now()
@@ -179,7 +180,11 @@ local function run_one(q)
     print(("autod: %s step %d %s - %s%s"):format(q.name, i, step.said, step.ok and "ok" or "failed",
           step.why and (": " .. step.why) or ""))
     serve(false)
-  end, q.trigger)
+  end, q.trigger, function(i)
+    running = { name = q.name, step = i }
+  end)
+
+  running = nil
 
   automations.keep(q.name, run)
   k.last_run = run
@@ -223,7 +228,7 @@ local function answer(req)
     end
 
     table.sort(out, function(x, y) return x.name < y.name end)
-    return { ok = true, automations = out }
+    return { ok = true, automations = out, running = running }
   elseif req.type == "reload" then
     reload(false)
     return { ok = true }

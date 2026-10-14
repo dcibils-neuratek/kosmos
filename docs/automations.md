@@ -323,6 +323,17 @@ nothing beside a Tracker window that is open.
    opens and runs (with A4's window).
 4. **A4 - the window**: as drawn - the list, the editor, the controls
    picker, the history.
+   **Built 0.11.224** (`testing.md` 18.619): `Automations` in
+   `/Kosmos/Apps` - the list grouped by what starts each, with how its last
+   run went and a switch; the chosen one's When card and its steps as
+   cards, their words in boxes; Run now through `autod`, the running step
+   lit and each card's time and outcome after; + New, Change (the
+   trigger's sheet), Add a step (a verb, then its words' sheet, with Pick
+   for an open application's controls), History, Rename, Duplicate,
+   Delete. The window publishes its own rows, switches, steps and verbs,
+   so it is driven by name as everything else is. **Not yet**: the Script
+   side (A6), consent (A5), and a step's boxes edited one at a time - a
+   press on a card opens all of its words in one sheet.
 5. **A5 - consent**: the first press in an application asks, and remembers.
 6. **A6 - scripts**: the Script side of the editor, a script run as a
    process of its own on its trigger, Copy as script; and `automate.lua`

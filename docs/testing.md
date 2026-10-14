@@ -25708,3 +25708,41 @@ a banner for every failure, and folders never looked at - 3 fail.
 
 
 **Whole gate**: 88 of 88.
+
+## 18.619 The Automations window
+
+`docs/automations.md` A4, as `docs/automations.html` draws it: the list on
+the left grouped by what starts each automation - on a schedule, when
+something happens, by hand - each with its trigger in words, how its last
+run went in green or red, and a switch; on the right the chosen one's name
+and runs, its **When** card (the trigger in words and boxes, when it next
+runs, Change) and its **Do** cards - number, picture, sentence with its
+words in boxes, a line saying what the step does, and after a run its
+time and a tick or a cross. Run now asks `autod` (starting it when it is
+the first) and the window asks `autod` on its own clock - four times a
+second, never in a paint - which step is running, lighting that card.
+Sheets: the trigger (a kind and its words), a step's words (with Pick, the
+open applications' published controls), History, Rename. The window
+publishes its rows (`row/<name>`, read as its last run), switches, steps
+(`step/<n>`, read as its sentence) and the verbs of Add a step
+(`menu/Add a step/...`), so it is driven by name.
+
+**Two things the kit had wrong, found by driving it so.** A dropdown's
+method for the words it shows was called `name`, which is what a control
+is published by - a dropdown given a name was published as
+`dropdown/function: 0x...`. It is `shown` now. And `theme.mix` moves toward
+its *second* colour: the first tints here were the accent, not a wash of
+it - read the comment, not the name.
+
+**Test.** `x86-automations` (`tools/run_automationswin.py`), 28 checks, 53
+s, all through `automate`: two automations written and the window opening
+on them, its controls published; `row/Answer` chosen and Run now pressed -
+`autod` started, the run done, the row reading "ran 7:36, done", step 7
+reading as its sentence, History holding the run; `switch/Answer` set off,
+kept in the file and `autod` saying it is off; + New, Change, "Every so
+many minutes" chosen and 15 typed and kept; Add a step's Open of
+Calculator chosen, its Application typed and kept, `step/1` reading "Open
+Calculator". **Control**: a switch that is not kept - 2 fail.
+
+
+**Whole gate**: 89 of 89.

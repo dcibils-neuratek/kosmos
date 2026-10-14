@@ -121,7 +121,8 @@ OPEN = ["tracker", "gallery", "music", "preferences", "terminal", "calc",
         "glgears", "machine", "procs", "sysmon", "netmon", "diskmon", "cube3d",
         "cafesa3d:--rendered", "ide:/Kosmos/Libraries/files.lua",
         "texteditor:/Temporary/Grooves.md", "groove:--play", "servers",
-        "writer:/Temporary/Gallery.write", "passwords", "maps", "sandboxes"]
+        "writer:/Temporary/Gallery.write", "passwords", "maps", "sandboxes",
+        "automations"]
 
 # `tile` last, told how many windows to wait for: sixteen applications
 # starting at once under QEMU - twenty-two now - do not all open inside the three still

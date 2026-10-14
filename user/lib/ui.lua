@@ -2149,7 +2149,9 @@ function ui.dropdown(spec)
   v.h = v.h > 0 and v.h or 31
   v:fit()
 
-  function v:name()
+  -- The words of the value shown. `shown`, not `name`: a name is what a
+  -- control is published by (`window:controls`), and this took it.
+  function v:shown()
     for _, c in ipairs(self.choices) do
       if c[1] == self.value then return tostring(c[2]) end
     end
@@ -2162,7 +2164,7 @@ function ui.dropdown(spec)
     g:frame_round(0, 0, self.w, self.h,
                   self.focused and self.keyed and theme.ring or theme.line_soft, 7)
 
-    g:text(1 + PAD, centred(self.h), self:name(), theme.text)
+    g:text(1 + PAD, centred(self.h), self:shown(), theme.text)
 
     --
     -- The chevron, as the button's (`chevron` above it).
