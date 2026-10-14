@@ -204,7 +204,13 @@ the Mac's 3440x1440 is 20 MB a frame raw - decoded in C straight into the
 window's surface, never through Lua. **One RFB kit for both sides**: the
 pixel formats, encodings and messages that `vncd` holds today move into a
 kit the client uses too, rather than a second copy of the protocol. Designed
-before it is built - feature set, mockup, architecture, diagram.
+before it is built - feature set, mockup, architecture, diagram. **Designed
+on 13 October, for Diego to agree**: *Screens*, a working name -
+`docs/screens.md` (what it does, what it is made of, its busiest path, the
+steps), `docs/screens.html`, `docs/screens-architecture.png`. DES is in the
+Crypto Kit already (`crypto.des`, `vncd`'s sign-in); what is new is
+`rfb.lua` from `vncd`'s own code, `conn:read_into`, `zstream:inflate`,
+`surface:zrle_decode` and `surface:unpack`, and a `keyring-screens` door.
 
 **Maps: a satellite view, and directions** - Diego, 10 October 2026: "Maps
 need a switch to satellite view", "As most maps", "And directions". A

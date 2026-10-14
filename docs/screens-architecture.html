@@ -1,0 +1,134 @@
+<!doctype html>
+<!--
+  Screens, and what it stands on: the window on top; the RFB kit shared with
+  vncd; the network, compression and graphics kits whose loops carry the
+  picture in C; the servers it asks. A frame from the Mac drawn through it
+  (F). Drawn on 13 October 2026, before any of it is built; docs/screens.md
+  is the argument and docs/screens.html the window. Rendered to
+  docs/screens-architecture.png by headless Chrome at twice its size.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Screens architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code, td code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Screens - what it stands on</h1>
+<p class="sub">The window only shows and asks. RFB is one kit, <code>rfb.lua</code>, which <code>vncd</code> moves onto as well, so the protocol exists once. The picture never becomes a Lua value: from the connection's ring to the window's surface it goes through three kits' C, region to region, and Lua carries only offsets, lengths and twelve-byte headers.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--later);background:#fff;border-style:dashed"></i>later</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications and programs</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>kits in C, in the process</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers, in C</span>
+  <span class="f">F</span><span>a frame from the Mac</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications and programs</h2>
+      <div class="row" style="grid-template-columns:1.3fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Screens</b><p>the window: fitted or actual size, Control, the Keys menu, full screen, the foot's numbers; the first window - found, recent, an address; what went wrong. Keys and the pointer to RFB messages. <span class="f">F3 F6</span></p></div>
+        <div class="box new"><span class="tag">ONTO THE KIT</span><b>vncd</b><p>the M700's own screen to a viewer, as now - its messages and keysyms from <code>rfb.lua</code> rather than its own</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in each process)</h2>
+      <div class="row" style="grid-template-columns:1.3fr 1fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW KIT</span><b>rfb.lua</b><p>RFB's messages, both sides; the handshake and security types; VNC's sign-in (<code>crypto.des</code>); keysyms both ways; rectangle headers <span class="f">F3</span></p></div>
+        <div class="box"><b>mdns.lua</b><p><code>browse("_rfb._tcp")</code>: who shares a screen</p></div>
+        <div class="box"><b>prefs.lua</b><p><code>screens</code>: the machines used</p></div>
+        <div class="box"><b>ui.lua, paint.lua</b><p>the window and its controls</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>Kits in C (in the process) - where the picture goes</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>network kit</b><p><code>conn:read_into(at, cap)</code>: the ring's bytes into a region, never a string <span class="f">F2</span></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>Compression Kit</b><p><code>zstream:inflate</code>: ZRLE's one zlib stream, as <code>vncd</code>'s deflates it <span class="f">F4</span></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>Graphics Kit</b><p><code>surface:zrle_decode</code> beside the encoder; <code>surface:unpack</code> for Raw; drawing at another size <span class="f">F5 F6</span></p></div>
+        <div class="box"><b>Crypto Kit</b><p><code>crypto.des</code>, the sign-in; AES and Diffie-Hellman for Apple's, later</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers, in C</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr 1fr">
+        <div class="box"><b>net</b><p>TCP to the Mac: a connection's two rings in a shared region (<code>tcpring.h</code>) <span class="f">F1</span></p></div>
+        <div class="box"><b>mdnsd</b><p>hears <code>_rfb._tcp</code> already</p></div>
+        <div class="box new"><span class="tag">NEW DOOR</span><b>keyring</b><p><code>keyring-screens</code>, as Mail has <code>keyring-mail</code>: the password kept</p></div>
+        <div class="box"><b>window manager</b><p>the window composed with the rest; Super-Tab kept Kosmos's</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box"><b>regions</b><p>the ring, the read buffer, the inflated tiles, the remote screen's surface</p></div>
+        <div class="box"><b>IPC</b><p>"something arrived" from <code>net</code>; a commit to the window manager</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>F - a frame from the Mac</h3><ol>
+      <li><span class="f">F1</span> the Mac's bytes land in the connection's ring in <code>net</code>, which wakes the window.</li>
+      <li><span class="f">F2</span> <code>read_into</code> copies them into a region of the window's process.</li>
+      <li><span class="f">F3</span> <code>rfb.lua</code> reads each rectangle's twelve-byte header and ZRLE's length.</li>
+      <li><span class="f">F4</span> <code>inflate</code> turns the zlib stream into ZRLE's tiles, in a second region.</li>
+      <li><span class="f">F5</span> <code>zrle_decode</code> writes the tiles' pixels into the remote screen's surface.</li>
+      <li><span class="f">F6</span> the changed rectangle drawn fitted into the window and committed as damage; the next update asked for.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3><table>
+      <tr><td>The picture</td><td>regions only, C to C</td></tr>
+      <tr><td>Headers</td><td>twelve bytes a rectangle, read by Lua</td></tr>
+      <tr><td>Keys, the pointer</td><td>an RFB message each, a few bytes</td></tr>
+      <tr><td>The password</td><td>to the keyring once; never in a file</td></tr></table></div>
+    <div class="card"><h3>Who else uses what is new</h3><table>
+      <tr><td><code>rfb.lua</code></td><td><code>vncd</code>; a VNC test tool on the guest</td></tr>
+      <tr><td><code>read_into</code></td><td>anything streaming from the network: Music's radio, video, the browser's downloads</td></tr>
+      <tr><td><code>zstream:inflate</code></td><td>any zlib stream: HTTP's deflate, PNG read as it arrives</td></tr>
+      <tr><td><code>unpack</code></td><td>any picture in another pixel format: a camera's, a screenshot's</td></tr></table></div>
+  </div>
+</div>
+</body>
+</html>

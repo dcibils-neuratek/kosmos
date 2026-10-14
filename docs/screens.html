@@ -1,0 +1,256 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Screens - a VNC client: another computer's screen in a Kosmos window, with
+  this machine's keys and pointer sent back. Drawn on 13 October 2026, before
+  any of it is built, from the roadmap's entry (Diego, 12 October: "is there
+  any way we can create a quick vnc client for kosmos so i can access my mac
+  over vnc from kosmos?"). Its feature set and architecture are
+  `docs/screens.md`; its diagram `docs/screens-architecture.png`.
+  Made-up machines and a made-up Mac desktop throughout.
+-->
+<title>Screens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* Astra's dark look, as the M700 shows it. */
+  --a-win: #1f2430; --a-raised: #262c39; --a-sunken: #171b23; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-accent: #4f8cff; --a-green: #34c759; --a-red: #ff6b5f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 28px; max-width: 74ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 76ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 84ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 820px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+.pair { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+
+/* The window. */
+.win { background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line); border-radius: 12px;
+       box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; flex: none; overflow: hidden; }
+.head { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 14px; }
+.head .s { color: var(--a-dim); }
+.head .grow { flex: 1; }
+.lights { display: flex; gap: 7px; margin-left: 6px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.seg { display: inline-flex; background: var(--a-sunken); border: 1px solid var(--a-line); border-radius: 7px; overflow: hidden; }
+.seg span { padding: 3px 10px; color: var(--a-dim); white-space: nowrap; }
+.seg span.on { background: var(--a-raised); color: var(--a-ink); box-shadow: inset 0 0 0 1px #3d4658; }
+.btn { padding: 4px 11px; border: 1px solid var(--a-line); border-radius: 7px; background: var(--a-raised); color: var(--a-ink); white-space: nowrap; }
+.btn.primary { background: var(--a-accent); border-color: var(--a-accent); color: #fff; font-weight: 600; }
+.btn.quiet { background: transparent; color: var(--a-dim); }
+.toggle { display: inline-flex; align-items: center; gap: 7px; color: var(--a-dim); }
+.toggle i { width: 28px; height: 16px; border-radius: 8px; background: #3a4356; position: relative; display: inline-block; }
+.toggle i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #c9d0dc; }
+.toggle.on i { background: var(--a-accent); }
+.toggle.on i::after { left: 14px; background: #fff; }
+.foot { display: flex; gap: 14px; align-items: center; height: 30px; padding: 0 14px; border-top: 1px solid var(--a-line);
+        color: var(--a-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+.foot b { color: var(--a-ink); font-weight: 500; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--a-green); margin-right: 6px; }
+
+/* The other machine's screen: a made-up Mac desktop, scaled into the window. */
+.remote { position: relative; background: #0d0f14; display: grid; place-items: center; }
+.mac { position: relative; overflow: hidden; background:
+         radial-gradient(120% 90% at 20% 110%, #f08a5d 0%, transparent 55%),
+         radial-gradient(90% 80% at 85% 0%, #5b5bd6 0%, transparent 60%),
+         linear-gradient(160deg, #22305a, #6a3d7a 55%, #d0646c); }
+.mac .bar { position: absolute; left: 0; right: 0; top: 0; height: 4.2%; background: rgba(20,22,30,.45); backdrop-filter: blur(6px);
+            display: flex; align-items: center; gap: 2.2%; padding: 0 1.2%; color: #fff; font-family: -apple-system, "Helvetica Neue", sans-serif; }
+.mac .bar b { font-weight: 700; }
+.mac .bar .r { margin-left: auto; opacity: .9; }
+.mac .fw { position: absolute; background: #1e1f24; border-radius: 1.2% / 2.6%; box-shadow: 0 10px 30px rgba(0,0,0,.45);
+           border: 1px solid rgba(255,255,255,.1); overflow: hidden; }
+.mac .fw .tb { height: 9%; background: #2a2b31; display: flex; align-items: center; gap: 1.2%; padding: 0 2%; }
+.mac .fw .tb i { width: 1.6%; aspect-ratio: 1; border-radius: 50%; display: block; }
+.mac .fw .side { position: absolute; left: 0; top: 9%; bottom: 0; width: 22%; background: #25262c; }
+.mac .fw .side span { display: block; height: 7%; margin: 4% 10%; border-radius: 3px; background: rgba(255,255,255,.08); }
+.mac .fw .grid { position: absolute; left: 25%; right: 3%; top: 14%; bottom: 4%; display: grid; grid-template-columns: repeat(8, 1fr); gap: 5% 4%; align-content: start; }
+.mac .fw .grid span { aspect-ratio: 1; border-radius: 12%; background: linear-gradient(160deg, #6aa8ff, #2f6bdc); opacity: .85; }
+.mac .term { position: absolute; background: rgba(18,18,22,.92); border-radius: 1% / 2%; border: 1px solid rgba(255,255,255,.1);
+             font-family: var(--mono); color: #b9f6c3; padding: 1.2%; line-height: 1.35; overflow: hidden; }
+.mac .dock { position: absolute; left: 50%; bottom: 1.6%; transform: translateX(-50%); display: flex; gap: .6%;
+             padding: .5% .8%; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.22); border-radius: 22% / 50%; width: 34%; }
+.mac .dock span { flex: 1; aspect-ratio: 1; border-radius: 22%; }
+.cursor { position: absolute; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent;
+          border-bottom: 14px solid #fff; transform: rotate(-28deg); filter: drop-shadow(0 1px 1px rgba(0,0,0,.6)); }
+
+/* The first window: machines found and remembered, and one by address. */
+.side { width: 230px; background: var(--a-raised); border-right: 1px solid var(--a-line); padding: 12px 10px; }
+.side h5 { margin: 6px 6px 6px; font-size: 11px; color: var(--a-dim); letter-spacing: .08em; text-transform: uppercase; font-weight: 600; }
+.row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 8px; }
+.row.on { background: #2f4f8f; }
+.row .ic { width: 30px; height: 22px; border-radius: 4px; border: 2px solid #8ea0bf; position: relative; flex: none; }
+.row .ic::after { content: ""; position: absolute; left: 30%; right: 30%; bottom: -6px; height: 3px; background: #8ea0bf; border-radius: 2px; }
+.row .n { line-height: 1.25; }
+.row .n small { display: block; color: var(--a-dim); font-size: 11.5px; }
+.row.on .n small { color: #c9d6f0; }
+.form { flex: 1; padding: 22px 26px; }
+.form h3 { margin: 0 0 4px; font-size: 18px; font-family: var(--display); }
+.form .lead { color: var(--a-dim); margin: 0 0 18px; }
+.field { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: 12px; margin: 10px 0; }
+.field label { color: var(--a-dim); text-align: right; }
+.input { background: var(--a-sunken); border: 1px solid var(--a-line); border-radius: 7px; padding: 6px 10px; color: var(--a-ink); font-variant-numeric: tabular-nums; }
+.input.focus { border-color: var(--a-accent); box-shadow: 0 0 0 3px rgba(79,140,255,.25); }
+.check { display: flex; gap: 8px; align-items: center; color: var(--a-dim); }
+.check i { width: 15px; height: 15px; border-radius: 4px; background: var(--a-accent); display: inline-grid; place-items: center; color: #fff; font-style: normal; font-size: 11px; }
+.actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.note { margin-top: 18px; padding: 10px 12px; border-radius: 8px; background: var(--a-sunken); color: var(--a-dim); font-size: 12.5px; }
+.warn { margin: 0 0 14px; padding: 9px 12px; border-radius: 8px; background: rgba(255,107,95,.12); border: 1px solid rgba(255,107,95,.35); color: #ffb4ad; }
+.menu { position: absolute; background: #2b3242; border: 1px solid #424b5d; border-radius: 9px; padding: 5px; width: 230px;
+        box-shadow: 0 12px 30px rgba(0,0,0,.4); z-index: 3; }
+.menu div { padding: 5px 10px; border-radius: 6px; display: flex; justify-content: space-between; }
+.menu div kbd { color: var(--a-dim); font-family: var(--body); }
+.menu div.hi { background: #2f6bdc; }
+.menu div.hi kbd { color: #dfe8ff; }
+.menu hr { border: 0; border-top: 1px solid #424b5d; margin: 5px 4px; }
+ul.feats li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Screens</h1>
+<p class="sub">Another computer's screen in a Kosmos window - your Mac's, over VNC - with this machine's keyboard and pointer sent back to it. The other side of what <code>vncd</code> already does for the M700. Drawn before it is built; the name is a working one, yours to change.</p>
+
+<div class="q"><b>Diego, 12 October 2026</b>: "is there any way we can create a quick vnc client for kosmos so i can access my mac over vnc from kosmos?", then "yes add the vnc client to the queue after sata".</div>
+
+<h2>Connected to the Mac, fitted to the window</h2>
+<div class="scroller"><div class="win" id="w1" style="width:1060px"></div></div>
+<p class="cap">The Mac's 3440 by 1440 screen, scaled to fit the window and kept to its shape, with a sliver of dark either side. The header says whose screen it is; <b>Fit</b> and <b>Actual size</b> switch between this and one pixel to one pixel, scrolled; <b>Control</b> off makes it view only, so a stray key cannot type into the Mac; <b>Keys</b> sends what the M700's own desktop would otherwise keep (Command-Tab, Command-Space, Command-Q); the button at the right ends it. The pointer is the Mac's, drawn by the Mac. The line at the foot says how it is going, as the Servers window does for <code>vncd</code>: the encoding, frames a second and the rate, quietly.</p>
+
+<h2>The Keys menu</h2>
+<div class="scroller"><div class="win" id="w2" style="width:760px;position:relative"></div></div>
+<p class="cap">Keys the M700 itself answers to, sent to the other machine instead. While the window has the focus, everything else typed goes to the Mac as it is - Super as Command, so Super-C copies there - except Super-Tab and the launcher pad's key, which stay Kosmos's, so the way out of the window is never lost.</p>
+
+<h2>The first window: what is on the network, what was used, or an address</h2>
+<div class="scroller"><div class="win" id="w3" style="width:820px"></div></div>
+<p class="cap"><b>On this network</b> is every machine that says it shares its screen (<code>_rfb._tcp</code>, which <code>mdnsd</code> already hears). <b>Recent</b> is what was connected to before, in the settings kit's file. Choosing one fills the form; an address can be typed instead. The password is the one the Mac's Screen Sharing sets under "VNC viewers may control screen with password", and kept in the keyring if asked - never in a settings file. Double-clicking a machine connects at once when its password is kept.</p>
+
+<h2>When the Mac says no</h2>
+<div class="pair">
+<div class="scroller"><div class="win" id="w4" style="width:560px"></div></div>
+</div>
+<p class="cap">Said as it is, with the next step: a wrong password; a machine that answers but only offers Apple's own sign-in, which the first version does not speak; one that does not answer at all. A connection that drops while in use says so over the last picture, greyed, with <b>Connect again</b>.</p>
+
+<h2>Full screen</h2>
+<div class="scroller"><div class="win" id="w5" style="width:1060px"></div></div>
+<p class="cap">The Mac's screen as the whole of the M700's, at the M700's 1720 by 1440: scaled to fit, the header gone, and a small bar that slides down from the top edge when the pointer rests there - the same three controls, and <b>Leave full screen</b>. Super-F, or the bar's button, goes back.</p>
+
+<h2>What it does</h2>
+<ul class="feats">
+  <li>Shows another computer's screen, as it changes, fitted to the window or at actual size.</li>
+  <li>Sends this machine's keys and pointer to it, or only watches.</li>
+  <li>Finds machines sharing their screen on the network, remembers the ones used, and takes an address.</li>
+  <li>Signs in with a VNC password, kept in the keyring if asked.</li>
+  <li>Says how it is going: the encoding, frames a second, the rate.</li>
+  <li>Full screen, and back.</li>
+  <li>Later, not in the first version: Apple's sign-in with the Mac's own account; the clipboard both ways; more than one screen at once.</li>
+</ul>
+<p class="cap">The rest - what it is made of, which kits it uses and which are new, and its busiest path - is <code>docs/screens.md</code>, drawn in <code>docs/screens-architecture.png</code>.</p>
+</div>
+
+<script>
+const LIGHTS = '<span class="lights"><i style="background:#3fbf4f"></i><i style="background:#f2b233"></i><i style="background:#ee5048"></i></span>';
+
+function head(title, sub, tools) {
+  return `<div class="head"><span class="t">${title}</span>${sub ? `<span class="s">${sub}</span>` : ""}<span class="grow"></span>${tools || ""}${LIGHTS}</div>`;
+}
+const TOOLS = '<span class="seg"><span class="on">Fit</span><span>Actual size</span></span>' +
+              '<span class="toggle on"><i></i>Control</span><span class="btn">Keys &#9662;</span><span class="btn quiet">Disconnect</span>';
+
+function mac(w, h, cursor) {
+  const fs = Math.max(7, Math.round(h * 0.024));
+  return `<div class="mac" style="width:${w}px;height:${h}px;font-size:${fs}px">
+    <div class="bar"><b>&#63743;</b><b>Finder</b><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span class="r">Tue 13 Oct&nbsp;&nbsp;21:42</span></div>
+    <div class="fw" style="left:7%;top:12%;width:40%;height:56%"><div class="tb"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div>
+      <div class="side"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="grid">${"<span></span>".repeat(24)}</div></div>
+    <div class="term" style="left:52%;top:20%;width:36%;height:44%;font-size:${Math.max(6, Math.round(fs * .8))}px">diego@mac ~ % telnet 192.168.1.40<br>kosmos&gt; sysinfo<br>Nebula 0.11.213 &middot; 8 processors<br>kosmos&gt; <span style="background:#b9f6c3;color:#111">&nbsp;</span></div>
+    <div class="dock">${["#4f8cff","#ff9f0a","#34c759","#ff375f","#bf5af2","#64d2ff","#ffd60a","#8e8e93"].map(c => `<span style="background:${c}"></span>`).join("")}</div>
+    ${cursor ? `<span class="cursor" style="left:${cursor[0]}%;top:${cursor[1]}%"></span>` : ""}
+  </div>`;
+}
+
+const FOOT = '<div class="foot"><span><span class="dot"></span><b>Connected</b></span><span>3440 &times; 1440, shown at 30%</span>' +
+             '<span>ZRLE</span><span>24 frames a second</span><span>2.1 MB/s</span><span style="margin-left:auto">Control on</span></div>';
+
+// 1: connected, fitted. The window's body 1060 wide; the Mac is 3440x1440 = 2.39:1.
+document.getElementById("w1").innerHTML =
+  head("Screens", "Diego's Mac mini &middot; 192.168.1.38", TOOLS) +
+  `<div class="remote" style="height:450px">${mac(1060, 444, [58, 48])}</div>` + FOOT;
+
+// 2: the Keys menu, open.
+document.getElementById("w2").innerHTML =
+  head("Screens", "Diego's Mac mini", '<span class="seg"><span class="on">Fit</span><span>Actual size</span></span><span class="toggle on"><i></i>Control</span><span class="btn" style="background:#2f4f8f;border-color:#4f8cff">Keys &#9662;</span><span class="btn quiet">Disconnect</span>') +
+  `<div class="remote" style="height:322px">${mac(758, 317)}</div>` + FOOT.replace("2.1 MB/s", "1.4 MB/s") +
+  `<div class="menu" style="right:118px;top:44px">
+     <div class="hi">Switch applications<kbd>&#8984; Tab</kbd></div>
+     <div>Spotlight<kbd>&#8984; Space</kbd></div>
+     <div>Quit the application<kbd>&#8984; Q</kbd></div>
+     <div>Mission Control<kbd>&#8963; &#8593;</kbd></div>
+     <hr><div>Force quit&hellip;<kbd>&#8997; &#8984; Esc</kbd></div>
+     <div>Lock the Mac<kbd>&#8963; &#8984; Q</kbd></div></div>`;
+
+// 3: the first window.
+document.getElementById("w3").innerHTML = head("Screens", "") +
+  `<div style="display:flex;min-height:390px">
+    <div class="side">
+      <h5>On this network</h5>
+      <div class="row on"><span class="ic"></span><span class="n">Diego's Mac mini<small>192.168.1.38 &middot; screen sharing</small></span></div>
+      <div class="row"><span class="ic"></span><span class="n">Studio iMac<small>192.168.1.52 &middot; screen sharing</small></span></div>
+      <div class="row"><span class="ic"></span><span class="n">ThinkPad T14<small>192.168.1.41 &middot; Kosmos</small></span></div>
+      <h5 style="margin-top:16px">Recent</h5>
+      <div class="row"><span class="ic"></span><span class="n">Diego's Mac mini<small>yesterday, 22:10</small></span></div>
+      <div class="row"><span class="ic"></span><span class="n">office.example.net:5901<small>9 October</small></span></div>
+    </div>
+    <div class="form">
+      <h3>Diego's Mac mini</h3>
+      <p class="lead">Shares its screen. Its password is the one set in the Mac's Screen Sharing, under "VNC viewers may control screen with password".</p>
+      <div class="field"><label>Address</label><span class="input">192.168.1.38</span></div>
+      <div class="field"><label>Port</label><span class="input" style="width:90px">5900</span></div>
+      <div class="field"><label>Password</label><span class="input focus">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</span></div>
+      <div class="field"><label></label><span class="check"><i>&#10003;</i>Keep it in the keyring</span></div>
+      <div class="field"><label></label><span class="check"><i>&#10003;</i>Control the screen, not only watch it</span></div>
+      <div class="actions"><span class="btn">Cancel</span><span class="btn primary">Connect</span></div>
+    </div>
+  </div>`;
+
+// 4: the Mac said no.
+document.getElementById("w4").innerHTML = head("Screens", "") +
+  `<div class="form" style="padding:20px 24px">
+     <div class="warn"><b>Diego's Mac mini did not take that password.</b> It is the one under "VNC viewers may control screen with password" in the Mac's Screen Sharing settings, not the Mac's own.</div>
+     <div class="field"><label>Password</label><span class="input focus"></span></div>
+     <div class="actions"><span class="btn">Cancel</span><span class="btn primary">Try again</span></div>
+     <div class="note">Also said here, each as itself: <b>Only Apple's sign-in is offered</b> - turn on "VNC viewers may control screen with password" on the Mac. <b>Nothing answered at 192.168.1.38:5900</b> - is Screen Sharing on? <b>The connection ended</b> - over the last picture, greyed, with Connect again.</div>
+   </div>`;
+
+// 5: full screen, the bar slid down. The M700 is 1720x1440 = 1.19:1; the Mac fits its width.
+document.getElementById("w5").innerHTML =
+  `<div class="remote" style="height:888px;position:relative">${mac(1060, 444, [40, 30])}
+     <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);display:flex;gap:10px;align-items:center;padding:8px 12px;background:rgba(31,36,48,.94);border:1px solid var(--a-line);border-top:0;border-radius:0 0 12px 12px;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+       <b style="font-weight:600;white-space:nowrap">Diego's Mac mini</b><span class="seg"><span class="on">Fit</span><span>Actual size</span></span><span class="toggle on"><i></i>Control</span><span class="btn">Keys &#9662;</span><span class="btn">Leave full screen</span><span class="btn quiet">Disconnect</span></div></div>`;
+</script>
+</body>
+</html>
