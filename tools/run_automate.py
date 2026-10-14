@@ -53,6 +53,7 @@ ACCOUNT = ('files = use("/Kosmos/Libraries/files.lua")\n'
            'files.make_folder("/Home/Mail/auto@example.test")\n'
            'print("ACCOUNT " .. tostring(fs.write("/Home/Mail/auto@example.test/account",\n'
            '  { address = "auto@example.test", name = "Auto",\n'
+           '    imap = { host = "10.0.2.2", port = 9, security = "none" },\n'
            '    smtp = { host = "10.0.2.2", port = 9, security = "none" } })))\n')
 
 # The Outbox, as it was left: each message's envelope and its head.
@@ -172,14 +173,35 @@ def main():
             pressed = None
         check(pressed is not None, "Key 117's own handler did not run")
 
-        # ---- 2c: a window that draws itself answers too ----
+        # ---- 2c: a window that draws itself, by the names it gives ----
+        # Its account first, so Mail opens on its mailboxes and not on the
+        # sheet that asks for one.
+        said["account"] = session.run("/Temporary/account.lua").decode(errors="replace")
         out = step("open Mail")
         check("open as Mail" in out, "Mail did not open: %r" % out)
         out = step("controls Mail")
-        check("automate:" not in out, "Mail, in a loop of its own, did not answer: %r" % out)
+        for want in ("button/New Message", "button/Get Mail", "button/Reply", "button/more",
+                     "menu/more/Get Mail", "field/Search"):
+            check(re.search("^" + re.escape(want) + r"\s", out, re.M) is not None,
+                  "Mail did not publish %s: %r" % (want, out[-600:]))
+        check(re.search(r"^button/Reply\s.*\(disabled\)", out, re.M) is not None,
+              "Reply was not disabled with no message chosen: %r" % out[-600:])
+        out = step("press Mail Reply")
+        check("disabled" in out, "Reply with no message was pressed: %r" % out)
+        mark = len(guest.seen)
+        out = step('press Mail "New Message"')
+        check("button/New Message" in out, "New Message was not pressed by name: %r" % out)
+        try:
+            composer = guest.wait_for_line("wm: window New Message at ", "the composer", mark)
+        except Exception:                  # noqa: BLE001 - its check says
+            composer = None
+        check(composer is not None, "pressing New Message opened no composer")
+        out = step("type Mail Search Invoice")
+        check("field/Search" in out, "Mail's search was not typed into: %r" % out)
+        out = step("read Mail Search")
+        check("Invoice" in out, "Mail's search did not read back: %r" % out)
 
         # ---- 3: a mail, into the Outbox ----
-        said["account"] = session.run("/Temporary/account.lua").decode(errors="replace")
         out = step('mail ana@example.test "A stable build" "0.11.219 is stable."')
         check("in the Outbox as " in out, "the mail was not written: %r" % out)
         said["outbox"] = session.run("/Temporary/outbox.lua").decode(errors="replace")

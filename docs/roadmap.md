@@ -647,6 +647,15 @@ windows that draw themselves name their controls**: Mail, Groove, Paint,
 Cafesa3D and Maps draw their buttons as pixels, so they publish nothing and
 `mail:press("Send")` cannot work yet. Each says what it drew, as
 Calculator's keys do (`control`, `label`, `press`), Mail first.
+**A1b, Mail, built 0.11.221** (`testing.md` 18.616): a window that draws
+itself says what its controls are - `win:publish_controls(fn)`, entries as
+`controls()` lists them - and Mail is the first: its header's buttons by
+what they do (`button/Reply`, `button/New Message`, `button/Get Mail`),
+disabled as a click would find them, the dots' menu as `menu/more/...`, and
+`field/Search`. The click and the published press run one function each.
+**Left in A1b**: Mail's message list and mailboxes as lists; the composer
+(To, Subject, Send - its rows are drawn too), which `mail:press("Send")`
+needs; then Groove, Paint, Cafesa3D and Maps.
 
 **Network Monitor, an app** - Diego, 12 October 2026: "i realizsed we need
 network monitor app as well to see network input and output". What goes in

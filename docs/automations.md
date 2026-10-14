@@ -304,6 +304,9 @@ nothing beside a Tracker window that is open.
    **Not yet**: a window that draws its own controls - Mail's buttons are
    pixels - publishes none until it names them, as Calculator's keys do;
    that is a step of its own before `mail:press("Send")` works.
+   **A1b, a window that draws itself names its controls** - begun 0.11.221
+   with Mail (`win:publish_controls`; `roadmap.md`): its header, the dots'
+   menu and its search. The composer next, so a script can write and send.
 3. **A3 - `autod`**: triggers, history, `/Home/Automations`; started by the
    desktop.
 4. **A4 - the window**: as drawn - the list, the editor, the controls

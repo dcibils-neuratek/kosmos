@@ -8208,7 +8208,35 @@ function window:controls()
   menu_controls(self.direct_menus, direct)
   for _, e in ipairs(direct) do add(e, nil) end
 
+  -- **A window that draws its own controls says what they are**
+  -- (`publish_controls`): Mail's buttons are pixels, not views, so nothing
+  -- above could find them. Each entry is `{ kind, label, read, write, press,
+  -- disabled }`; a `menu` entry's label is `<menu>/<item>`.
+  if self.drawn_controls then
+    local ok, list = pcall(self.drawn_controls)
+
+    for _, e in ipairs(ok and list or {}) do add(e, nil) end
+  end
+
   walk(self.root)
+  return out
+end
+
+-- What a window that draws itself publishes beside its views: `fn` returns
+-- its controls as `controls()` lists them - each `{ kind =, label =, read =,
+-- write =, press =, disabled = }`, `menu` entries labelled `<menu>/<item>` -
+-- asked whenever somebody asks, so it says what is there now. **The press
+-- is the function the click runs**, never a second copy of it.
+function window:publish_controls(fn)
+  self.drawn_controls = fn
+end
+
+-- A menu's items as published controls, for `publish_controls`: `items` the
+-- list a menu opens with, `title` the menu's name in the address.
+function ui.menu_controls(title, items)
+  local out = {}
+
+  menu_controls({ { title = title, items = items } }, out)
   return out
 end
 

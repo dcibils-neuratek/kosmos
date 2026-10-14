@@ -2205,7 +2205,9 @@ local function attachment_menu(chip)
   end
 end
 
-local function dots_menu()
+-- What the dots open - also published as `menu/more/<item>`. A field of
+-- the dots' own entry: this file's chunk is at Lua's two hundred locals.
+function controls.dots.items()
   local items = {
     { text = "Add Account\u{2026}", on_choose = function() open_sheet() end },
     { text = "Get Mail", on_choose = function() ask{ type = "sync" } end },
@@ -2222,7 +2224,11 @@ local function dots_menu()
     }
   end
 
-  local m = win:open_menu(win.origin_x + controls.dots.x, win.origin_y + L.head, items)
+  return items
+end
+
+local function dots_menu()
+  local m = win:open_menu(win.origin_x + controls.dots.x, win.origin_y + L.head, controls.dots.items())
 
   -- Where it opened, for whoever drives Mail from outside.
   if m then print(("mail: dots menu at %d,%d, %d wide, rows of %d"):format(m.x, m.y, m.w, m.row)) end
@@ -2368,6 +2374,78 @@ local function release(x, y)
   return false
 end
 
+--
+-- **What each header button does**, by the name a script presses it by
+-- (`docs/automations.md` A1b): the click below runs these and so does a
+-- press from outside, so there is one of each. `row` marks the ones that
+-- need a message chosen; without one they are disabled, as they do nothing
+-- when clicked. Fields of each button's own entry in `controls`, since this
+-- file's chunk is at Lua's two hundred locals.
+--
+do
+  local function act(key, name, needs_row, run)
+    controls[key].name, controls[key].row, controls[key].run = name, needs_row, run
+  end
+
+  act("side", "Sidebar", false, function()
+    sidebar = not sidebar
+    print("mail: sidebar " .. (sidebar and "shown" or "hidden"))
+  end)
+  act("compose", "New Message", false, function() write_new() end)
+  act("reply", "Reply", true, function() write_answer("reply") end)
+  act("replyall", "Reply All", true, function() write_answer("replyall") end)
+  act("forward", "Forward", true, function() write_answer("forward") end)
+  act("fetch", "Get Mail", false, function()
+    ask{ type = "sync" }
+    said = "Getting mail\u{2026}"
+  end)
+  act("flag", "Flag", true, function()
+    local row = chosen_row()
+    if row then set_flag(row, "flagged", not facts_of(row).flagged) end
+  end)
+  act("read", "Mark as Read", true, function()
+    local row = chosen_row()
+    if row then set_flag(row, "seen", not facts_of(row).seen) end
+  end)
+  act("archive", "Archive", true, function() take_away("archive") end)
+  act("delete", "Delete", true, function() take_away("delete") end)
+end
+
+--
+-- **Mail, published by name** (`window:publish_controls`, A1b): the header's
+-- buttons by what they do - `button/Reply` - the dots and their menu as
+-- `menu/more/...`, and the search field. Its buttons are pixels, so it says
+-- what they are; a press runs what the click runs. While the account sheet
+-- is up the header answers nothing, as it does to a click.
+--
+win:publish_controls(function()
+  local row = chosen_row()
+  local out = {}
+
+  for _, key in ipairs({ "side", table.unpack(RIGHT) }) do
+    local c = controls[key]
+
+    if c and key ~= "dots" then
+      out[#out + 1] = { kind = "button", label = c.name, press = c.run,
+                        disabled = sheet ~= nil or (c.row and not row) }
+    end
+  end
+
+  out[#out + 1] = { kind = "button", label = "more", press = function() dots_menu() end,
+                    disabled = sheet ~= nil }
+
+  for _, e in ipairs(ui.menu_controls("more", controls.dots.items())) do out[#out + 1] = e end
+
+  out[#out + 1] = { kind = "field", label = "Search", read = function() return search.text end,
+                    write = function(text)
+                      search.text, query = text, text
+                      filter()
+                      print(("mail: %d shown for %q%s"):format(#shown, query,
+                            search_all and " in all mail" or ""))
+                    end }
+  return out
+end)
+
 local function press(x, y)
   if sheet then
     if y < L.head then win:take_hold(x, y) else press_sheet(x, y) end
@@ -2378,35 +2456,21 @@ local function press(x, y)
 
   -- The header's buttons: held on the press, done on the release over them
   -- (`pk.hold`). The dots open their menu on the press, as a menu does.
-  if pk.inside(controls.side, x, y) then
-    pk.hold(controls.side, function()
-      sidebar = not sidebar
-      print("mail: sidebar " .. (sidebar and "shown" or "hidden"))
-    end)
-  elseif pk.inside(controls.dots, x, y) then
+  if pk.inside(controls.dots, x, y) then
     dots_menu()
-  elseif pk.inside(controls.compose, x, y) then
-    pk.hold(controls.compose, write_new)
-  elseif row and pk.inside(controls.reply, x, y) then
-    pk.hold(controls.reply, function() write_answer("reply") end)
-  elseif row and pk.inside(controls.replyall, x, y) then
-    pk.hold(controls.replyall, function() write_answer("replyall") end)
-  elseif row and pk.inside(controls.forward, x, y) then
-    pk.hold(controls.forward, function() write_answer("forward") end)
-  elseif pk.inside(controls.fetch, x, y) then
-    pk.hold(controls.fetch, function()
-      ask{ type = "sync" }
-      said = "Getting mail\u{2026}"
-    end)
-  elseif row and pk.inside(controls.flag, x, y) then
-    pk.hold(controls.flag, function() set_flag(row, "flagged", not facts_of(row).flagged) end)
-  elseif row and pk.inside(controls.read, x, y) then
-    pk.hold(controls.read, function() set_flag(row, "seen", not facts_of(row).seen) end)
-  elseif row and pk.inside(controls.archive, x, y) then
-    pk.hold(controls.archive, function() take_away("archive") end)
-  elseif row and pk.inside(controls.delete, x, y) then
-    pk.hold(controls.delete, function() take_away("delete") end)
-  elseif y < L.head then
+    return
+  end
+
+  for _, key in ipairs({ "side", table.unpack(RIGHT) }) do
+    local c = controls[key]
+
+    if c and c.run and (row or not c.row) and pk.inside(c, x, y) then
+      pk.hold(c, c.run)
+      return
+    end
+  end
+
+  if y < L.head then
     win:take_hold(x, y)
   else
     if pk.inside(search_scope, x, y) then
@@ -2572,6 +2636,13 @@ while win.running do
   local reply = wmproto.poll(win.handle, (dirty or fetching or #composers > 0) and 1 or 12)
 
   if not reply then break end
+
+  -- Something pressed or typed from outside (`publish_controls`), answered
+  -- inside the poll: drawn as a click would be.
+  if win.served_change then
+    win.served_change = false
+    dirty = true
+  end
 
   for _, ev in ipairs(reply.events or {}) do
     if win:direct_event(ev) then

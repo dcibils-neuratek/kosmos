@@ -25617,3 +25617,31 @@ mark, so the removal's check read the install's states. The check now reads
 the `states` printed after the removal's own `done`. It passed alone before
 and after; the race is the suite's, nothing in Packages.
 
+## 18.616 Mail, by name: a window that draws itself says what it drew
+
+`docs/automations.md` A1b. Mail's header is pixels, so `window:controls()`
+found nothing in it and a script could not press Reply. **The kit**:
+`win:publish_controls(fn)`, a function asked whenever somebody asks, whose
+entries are what `controls()` lists - `{ kind, label, read, write, press,
+disabled }` - and `ui.menu_controls(title, items)` for a menu's items.
+**Mail**: each header button's action is a field of its own entry in
+`controls` - `run`, its `name`, whether it needs a message - and the click
+and the published press both run it, so there is one of each. (Fields, not
+a new table: Mail's chunk was at Lua's limit of two hundred locals.) The
+dots' items come from one function, the menu and the publishing both call
+it. Published: the header's ten buttons by what they do, disabled while no
+message is chosen or the account sheet is up, as a click finds them; the
+dots and `menu/more/...`; `field/Search`. **A press from outside is drawn**:
+`wmproto.poll` answers it and marks `served_change`, which Mail's loop
+takes as `dirty`.
+
+**Test.** `x86-automate`, 11 more checks, 40 in all: with an account
+written first so Mail opens on its mailboxes, `automate controls Mail`
+lists New Message, Get Mail, Reply, more, `menu/more/Get Mail` and
+`field/Search`, Reply among them disabled; `press Mail Reply` refused as
+disabled; `press Mail "New Message"` opens the composer window; `type Mail
+Search Invoice` and `read` it back. **Control**: Mail publishing nothing -
+12 of 40 fail.
+
+
+**Whole gate**: 86 of 87, x86-film the known load flake (18.589 and before), passing alone twice.
