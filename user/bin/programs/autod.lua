@@ -72,6 +72,42 @@ end
 -- reading when it is still there - its last run, what its folder held - so
 -- a reload is not a trigger.
 --
+-- **Folders that tell** (`docs/pulses.md` P4): each folder automation
+-- watches its folder with this endpoint and a code of its own, and the
+-- folder's server pulses here when a name in it changes. The five-second
+-- look is kept only for a folder whose server cannot tell - a share, a
+-- drive. Codes start above mail's.
+local next_folder_code = 1000
+local by_folder_code = {}       -- code -> the automation's name
+local control                   -- this program's endpoint, below
+
+local function watch_folder_of(name, k)
+  local path = k.a and k.a.on ~= false and k.a.when.kind == "folder" and k.a.when.path or nil
+
+  if k.watched_path == path then return end
+
+  if k.watched_path and k.code then
+    pcall(fs.unwatch_folder, k.watched_path, k.code)
+    by_folder_code[k.code] = nil
+  end
+
+  k.watched_path, k.told = path, false
+
+  if path and control then
+    if not k.code then
+      k.code = next_folder_code
+      next_folder_code = next_folder_code + 1
+    end
+
+    local ok, why = fs.watch_folder(path, k.code, control)
+
+    k.told = ok and true or false
+    by_folder_code[k.code] = name
+    print(("autod: %s %s"):format(path, k.told and "tells when it changes"
+                                       or ("is looked at every five seconds - " .. tostring(why))))
+  end
+end
+
 local function reload(starting)
   local names = automations.list()
   local fresh = {}
@@ -99,7 +135,17 @@ local function reload(starting)
     end
   end
 
+  -- One that went: its folder no longer watched.
+  for name, k in pairs(known) do
+    if not fresh[name] and k.watched_path and k.code then
+      pcall(fs.unwatch_folder, k.watched_path, k.code)
+      by_folder_code[k.code] = nil
+    end
+  end
+
   known = fresh
+
+  for name, k in pairs(known) do watch_folder_of(name, k) end
 
   local line = table.concat(names, ", ")
 
@@ -133,7 +179,6 @@ local function wants_mail()
   return false
 end
 
-local control                                   -- this program's endpoint, below
 
 local function subscribe()
   if not control or not wants_mail() then return end
@@ -183,8 +228,23 @@ local function take_mail()
   end
 end
 
--- Folders and drives, looked at: a name that was not there is a trigger -
--- and mail's subscription renewed.
+-- A folder's listing against what it held: a name that was not there is
+-- a trigger. On its pulse, or on the look for one that cannot tell.
+local function folder_look(name, k)
+  local a = k.a
+  local now = listing(a.when.path)
+
+  for n in pairs(now) do
+    if not k.seen[n] then
+      queued(name, { file = a.when.path:gsub("/$", "") .. "/" .. n }, "a file appeared: " .. n)
+    end
+  end
+
+  k.seen = now
+end
+
+-- Folders that cannot tell and drives, looked at - and mail's subscription
+-- renewed.
 local function look()
   subscribe()
 
@@ -192,15 +252,7 @@ local function look()
     local a = k.a
 
     if a and a.on ~= false and a.when.kind == "folder" then
-      local now = listing(a.when.path)
-
-      for n in pairs(now) do
-        if not k.seen[n] then
-          queued(name, { file = a.when.path:gsub("/$", "") .. "/" .. n }, "a file appeared: " .. n)
-        end
-      end
-
-      k.seen = now
+      if not k.told then folder_look(name, k) end
     elseif a and a.on ~= false and a.when.kind == "drive" then
       local now = listing("/Drives")
 
@@ -326,8 +378,15 @@ function serve(wait)
 
   while req do
     if type(req) == "table" and req.pulse then
-      -- News, from nobody to answer: mail arrived.
-      if req.code == arrived.CODE then mail_due = true end
+      -- News, from nobody to answer: mail arrived, or a folder changed.
+      if req.code == arrived.CODE then
+        mail_due = true
+      elseif by_folder_code[req.code] then
+        local name = by_folder_code[req.code]
+        local k = known[name]
+
+        if k and k.a and k.a.on ~= false and k.seen then folder_look(name, k) end
+      end
     else
       pcall(sys.reply, who, answer(type(req) == "table" and req or {}))
     end

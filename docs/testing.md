@@ -25901,3 +25901,18 @@ another folder telling it nothing. **Control**: the servers never pulsing -
 
 
 **Whole gate**: 90 of 90.
+
+## 18.625 autod's folders tell too
+
+P4's last named piece: a folder automation in `autod` watches its folder
+with `autod`'s endpoint and a code of its own (from 1000, above mail's 1),
+and the folder's pulse runs the same comparison the five-second look made.
+The look stays only for a folder whose server cannot tell (a share) and for
+`/Drives`. A watch follows its automation: moved when the path changes,
+taken back when it goes or is turned off. **Test**: `x86-autod`, 18 checks
+- `/Temporary/inbox` says it tells, and a file put there runs "Inbox" at
+once ("done in 9 ms" after the put). **Control**: the servers never
+pulsing - the automation never runs (30 s, not 5): a folder that says it
+tells is not looked at, so nothing else could have run it. Its suites:
+`x86-autod`, `x86-mail-2`, `x86-automations` pass.
+

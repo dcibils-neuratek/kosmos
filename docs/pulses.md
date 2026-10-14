@@ -150,9 +150,11 @@ path serves the Open/Save window and the desktop's icons.
   18.624): `folderwatch.c`, one door both servers use; `DISK_OP_WATCH` and
   `RAM_OP_FOLDER_WATCH`; `fs.watch_folder`; the window manager's
   `watch_code` and `changed` events; the kit's `win:watch_folder(path,
-  fn)`; Tracker. **Not yet in P4**: `autod`'s folder triggers still list
-  every five seconds, and the Open/Save window and the desktop's icons do
-  not watch yet - each is a `watch_folder` call when its turn comes.
+  fn)`; Tracker. **And `autod` (0.11.230, 18.625)**: a folder automation
+  watches its folder by pulse and runs at once; the five-second look is
+  kept for a folder whose server cannot tell and for drives. **Not yet**:
+  the Open/Save window and the desktop's icons - a `watch_folder` call each
+  when its turn comes; and `/Drives`, whose server does not tell.
 
 ## For Diego to decide
 

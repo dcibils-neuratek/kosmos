@@ -141,11 +141,17 @@ def main():
         check("HISTORY 1 runs, last ok, 8 of 8 steps ok" in said["history"],
               "the history did not keep the run: %r" % said["history"])
 
-        # ---- 2: a file appearing ----
+        # ---- 2: a file appearing, told by the folder's pulse ----
+        check("autod: /Temporary/inbox tells when it changes" in guest.seen,
+              "the inbox folder did not say it tells when it changes")
         mark = len(guest.seen)
+        started = time.monotonic()
         session.put(b"a note\n", "/Temporary/inbox/note.txt")
         done = line("autod: Inbox done in ", "the folder's automation", mark, 30)
+        took = time.monotonic() - started
         check(done is not None, "a file appearing did not run the folder's automation")
+        check(took < 3.0, "the folder's automation took %.1f s - looked for, not told" % took)
+        said["inbox took"] = "%.2f s" % took
         said["out"] = session.run("/Temporary/out.lua").decode(errors="replace")
         check("OUT a note" in said["out"], "the file was not copied: %r" % said["out"])
 
