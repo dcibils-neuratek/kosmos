@@ -1745,6 +1745,43 @@ static int l_scheduler(lua_State *L)
     return 1;
 }
 
+/*
+ * `sys.sched_lane(cpu)` - what processor `cpu` ran (cores counted from 1, as
+ * Lua counts): `{ ticks, switches, waits = { a band each, in counter ticks },
+ * bands = a string of SCHED_LANE_TICKS bytes, the band at each tick, 255
+ * for idle, the oldest at ticks % SCHED_LANE_TICKS + 1 }`. Nil for a core
+ * that is not there. The Scheduler's "who ran" (`docs/scheduler.md` G2).
+ */
+static int l_sched_lane(lua_State *L)
+{
+    static struct sched_lane lane;      /* 600 bytes: not on a Lua stack's C frame */
+    long cpu = (long)luaL_checkinteger(L, 1) - 1;
+    long status = kosmos_sched_lane(cpu, &lane);
+    int i;
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+    lua_createtable(L, 0, 4);
+    lua_pushinteger(L, (lua_Integer)lane.ticks);
+    lua_setfield(L, -2, "ticks");
+    lua_pushinteger(L, (lua_Integer)lane.switches);
+    lua_setfield(L, -2, "switches");
+
+    lua_createtable(L, 8, 0);
+
+    for (i = 0; i < 8; i++) {
+        lua_pushinteger(L, (lua_Integer)lane.wait_counter_max[i]);
+        lua_rawseti(L, -2, i + 1);
+    }
+
+    lua_setfield(L, -2, "waits");
+    lua_pushlstring(L, (const char *)lane.band, SCHED_LANE_TICKS);
+    lua_setfield(L, -2, "bands");
+    return 1;
+}
+
 /* `sys.set_quantum(ticks)` - how long a turn lasts. */
 static int l_set_quantum(lua_State *L)
 {
@@ -2883,6 +2920,7 @@ static const luaL_Reg sys_functions[] = {
     { "destroy",  l_destroy },
     { "release",  l_release },
     { "scheduler",   l_scheduler },
+    { "sched_lane",  l_sched_lane },
     { "set_quantum", l_set_quantum },
     { "set_policy",  l_set_policy },
     { "step_down",   l_step_down },

@@ -409,6 +409,12 @@ struct thread {
     void *exception_stack;
 
     unsigned long switches;     /* how many times this thread was resumed */
+
+    /*
+     * The counter when it was last woken, until it runs: the wait the
+     * Scheduler shows for each band (`sched_lane`), 0 when it is not waiting.
+     */
+    uint64_t      woken_at;
 };
 
 /* Installs the strict-priority policy unless `sched_use` already chose

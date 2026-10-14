@@ -25340,3 +25340,39 @@ puts its threads on other cores itself. `tools/test_scheduling.lua` (host),
 7: a choice kept by name, made the kernel's number at the start, nothing
 set that is already so, an unknown policy said; control: `index_of` finding
 nothing failed 3.
+
+## 18.610 The Scheduler window, as drawn
+
+`docs/scheduler.md` G2, `docs/scheduler.html` agreed on 11 October
+("Perfect"). The window was two cards of facts and two dropdowns; it is now
+the drawing: **the modes as cards** - Balanced (priority) and Fair
+(round-robin), each saying what it is for, what it buys and what it costs,
+the one in force marked, a click putting it in force on every core and
+keeping it; Game mode drawn and marked *next*, which says so when pressed.
+**Who ran**: a lane a processor over its last 512 ticks - two seconds - a
+colour a band, idle empty. **The bands** as a ladder with what lives in
+each; under Fair, said to be unasked. **A turn**: 4, 12, 20, 40 and 100 ms,
+the one in force lit, and a bar from snappier to more work done. **The
+numbers**: switches a second, the keys' longest wait, and a game's slowest
+frame, which waits for game mode. Sizes are measured from the faces in
+force rather than copied from the drawing's pixels, so a larger look fits.
+
+**What the kernel had to say for it** (`SYS_SCHED_LANE`, `struct
+sched_lane`): each core writes, at every tick, the band of what it is
+running into a ring of 512; counts its switches; and keeps, for each band,
+the longest a thread waited from its wake to running over this second and
+the one before - in counter ticks, named so (`wait_counter_max`). A thread
+is stamped when woken (`woken_at`) and the wait taken when it is switched
+in. Each core writes only its own; a reader's snapshot may be a tick old.
+
+**Tests.** Kernel, both architectures: `sched: a core says what it ran` - a
+thread on core one working two milliseconds and sleeping a tick: its lane
+shows the normal band at recent ticks, its switches climb, its wakes leave
+a wait in the normal band's slot, and a core that is not there answers no.
+**Control**: a wake that does not stamp the thread failed it. New suite
+`x86-scheduler` (8), on four processors: the window opens on priority, says
+where its cards and turns are, reads every lane and counts switches; Fair
+pressed is round-robin in the kernel; a turn of 20 ms; Game mode says it is
+next; Balanced puts priority back. **Control**: the refusal of 0.11.213
+put back - Fair failed with "this process does not hold that device", the
+words Diego saw on the M700.

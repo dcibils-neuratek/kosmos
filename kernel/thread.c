@@ -18,6 +18,7 @@
 #include "ipc.h"
 #include "mmu.h"
 #include "sched.h"
+#include "syscall.h"
 #include "pool.h"
 
 /*
@@ -143,6 +144,82 @@ static const struct scheduler *policy;
  * structure its core's policy reads, whichever policy that is.
  */
 static const struct scheduler *core_policy[NR_CPUS];
+
+/*
+ * **What each core ran, kept for whoever wants to see it** (the Scheduler's
+ * "who ran", `docs/scheduler.md` G2): the band of the thread running at each
+ * of a core's last `SCHED_LANE_TICKS` ticks, `SCHED_LANE_IDLE` for idle;
+ * how many times it switched; and, for each band, the longest a thread
+ * waited from being woken to running, over the current second and the one
+ * before. Each core writes only its own, and a reader gets a snapshot that
+ * may be a tick old - which is what a picture of the last two seconds is.
+ */
+_Static_assert(sizeof(((struct sched_lane *)0)->wait_counter_max) / sizeof(uint64_t)
+               == SCHED_PRIORITIES, "a wait a band");
+
+static uint8_t  lane_band[NR_CPUS][SCHED_LANE_TICKS];
+static uint64_t lane_ticks[NR_CPUS];
+static uint64_t lane_switches[NR_CPUS];
+static uint64_t lane_wait[NR_CPUS][2][SCHED_PRIORITIES];
+static uint64_t lane_second[NR_CPUS][2];
+
+/* A wait from wake to run, kept in this second's bucket for its band. */
+static void lane_waited(unsigned cpu, unsigned band, uint64_t counter_ticks)
+{
+    uint64_t second = lane_ticks[cpu] / TICK_HZ;
+    unsigned b = (unsigned)(second & 1);
+
+    if (band >= SCHED_PRIORITIES) {
+        return;
+    }
+
+    if (lane_second[cpu][b] != second) {
+        unsigned i;
+
+        for (i = 0; i < SCHED_PRIORITIES; i++) {
+            lane_wait[cpu][b][i] = 0;
+        }
+
+        lane_second[cpu][b] = second;
+    }
+
+    if (counter_ticks > lane_wait[cpu][b][band]) {
+        lane_wait[cpu][b][band] = counter_ticks;
+    }
+}
+
+bool sched_lane(unsigned cpu, struct sched_lane *out)
+{
+    uint64_t second;
+    unsigned i, b;
+
+    if (cpu >= NR_CPUS || cpu >= smp_online()) {
+        return false;
+    }
+
+    out->ticks = lane_ticks[cpu];
+    out->switches = lane_switches[cpu];
+    second = out->ticks / TICK_HZ;
+
+    for (i = 0; i < SCHED_PRIORITIES; i++) {
+        uint64_t most = 0;
+
+        /* This second's and the one before's, and nothing older. */
+        for (b = 0; b < 2; b++) {
+            if (second - lane_second[cpu][b] <= 1 && lane_wait[cpu][b][i] > most) {
+                most = lane_wait[cpu][b][i];
+            }
+        }
+
+        out->wait_counter_max[i] = most;
+    }
+
+    for (i = 0; i < SCHED_LANE_TICKS; i++) {
+        out->band[i] = lane_band[cpu][i];
+    }
+
+    return true;
+}
 
 static unsigned next_id = 1;
 
@@ -1114,6 +1191,12 @@ static void switch_into(struct thread *prev, struct thread *next)
 
     next->state = THREAD_RUNNING;
     next->switches++;
+    lane_switches[me->index]++;
+
+    if (next->woken_at != 0) {
+        lane_waited(me->index, next->sched.effective, cpu_cycles() - next->woken_at);
+        next->woken_at = 0;
+    }
     *running_slot(me) = next;
 
     /*
@@ -1643,6 +1726,11 @@ void thread_tick(void)
      * where moving the stack is safe.
      */
     current->ticks++;
+
+    /* What ran this tick, for the Scheduler's lanes. */
+    lane_band[here()][lane_ticks[here()] % SCHED_LANE_TICKS] =
+        current == this_cpu()->idle_thread ? SCHED_LANE_IDLE : (uint8_t)current->sched.effective;
+    lane_ticks[here()]++;
 
     /*
      * **The audio band's budget** (`sched.h`): a thread there that has run
@@ -2225,6 +2313,7 @@ void thread_wake(struct thread *t)
         }
 
         t->state = THREAD_READY;
+        t->woken_at = cpu_cycles();
 
         /* A sound thread that slept is doing a sound thread's work again:
          * back in the audio band, with its budget whole. */

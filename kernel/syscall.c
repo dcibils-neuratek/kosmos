@@ -2607,6 +2607,29 @@ void syscall_dispatch(struct syscall_frame *sc)
         break;
     }
 
+    case SYS_SCHED_LANE: {
+        /*
+         * What one core ran, readable by anyone, as `SYS_SCHED_INFO` is: it
+         * says how the machine is being scheduled, which is authority over
+         * nothing (the Scheduler's "who ran", `docs/scheduler.md` G2).
+         */
+        struct sched_lane lane;
+
+        if (!process_may_write(p, (uintptr_t)sc->arg[1], sizeof(lane))) {
+            result = SYS_ERR_FAULT;
+            break;
+        }
+
+        if (!sched_lane((unsigned)sc->arg[0], &lane)) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        memcpy((void *)(uintptr_t)sc->arg[1], &lane, sizeof(lane));
+        result = 0;
+        break;
+    }
+
     case SYS_SCHED_SET:
         /*
          * Writable by anyone too, and that is a decision rather than an

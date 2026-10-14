@@ -134,6 +134,11 @@ shows the same numbers live.
 - **G2** - the window redesigned as drawn (`docs/scheduler.html`): the
   modes as cards, a timeline of who ran on each core, the bands as a
   ladder, the quantum with what it trades, and the numbers that matter.
+  **Built 14 October (0.11.215)** (`testing.md` 18.610): each core records
+  the band it ran at every tick, its switches, and each band's longest
+  wait from wake to run (`SYS_SCHED_LANE`); the window draws them. Game
+  mode's card and its tile, a game's slowest frame, wait for G3 and G5 and
+  say so.
 - **G3** - the `GAME` band and its guard; game mode for one application -
   a header's `kosmos: game` while in front, Super+G for the one in front,
   or chosen in the window - and a notification as it starts and ends.

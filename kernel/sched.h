@@ -197,6 +197,11 @@ const char *sched_policy_name(unsigned index);
 unsigned    sched_policy_index(void);
 bool        sched_switch_to(unsigned index);
 
+/* What processor `cpu` ran, for the Scheduler (`struct sched_lane`,
+ * `syscall.h`); false for a core that is not there. */
+struct sched_lane;
+bool        sched_lane(unsigned cpu, struct sched_lane *out);
+
 /*
  * Installs a policy. Legal only before `thread_init`, or from a test that
  * knows exactly which threads exist: swapping policies with threads queued

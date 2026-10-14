@@ -546,6 +546,12 @@ static inline long kosmos_sched_info(void *out)
     return sys1(SYS_SCHED_INFO, (long)(uintptr_t)out);
 }
 
+/* What processor `cpu` ran (`struct sched_lane`): the Scheduler's lanes. */
+static inline long kosmos_sched_lane(long cpu, void *out)
+{
+    return sys2(SYS_SCHED_LANE, cpu, (long)(uintptr_t)out);
+}
+
 static inline long kosmos_sched_set(long what, long value)
 {
     return sys2(SYS_SCHED_SET, what, value);

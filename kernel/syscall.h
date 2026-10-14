@@ -620,7 +620,8 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 #define SYS_VCPU_CREATE 69  /* (guest)                -> vcpu cap or error  */
 #define SYS_VCPU_RUN    70  /* (vcpu, &vcpu_regs)     -> VCPU_EXIT_* or error */
 
-#define SYS_MAX         71
+#define SYS_SCHED_LANE  71  /* (cpu, &sched_lane)     -> 0 or error         */
+#define SYS_MAX         72
 
 #define PROFILE_START   1u
 #define PROFILE_READ    2u  /* up to `max` samples into `buf`: how many */
@@ -803,6 +804,24 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  * line. The constants above may live outside because a `#define` is
  * meaningful to both; a type is not.
  */
+/*
+ * **What one core ran** (`SYS_SCHED_LANE`, the Scheduler's "who ran"): the
+ * band of the thread running at each of its last `SCHED_LANE_TICKS` ticks,
+ * oldest at `ticks % SCHED_LANE_TICKS`, `SCHED_LANE_IDLE` for idle; its
+ * switches since it started; and for each band the longest a thread waited
+ * from its wake to running over the last second or two - in counter ticks,
+ * named so, since a number that crosses a boundary says which clock it is.
+ */
+#define SCHED_LANE_TICKS  512
+#define SCHED_LANE_IDLE   0xFFu
+
+struct sched_lane {
+    uint64_t ticks;                          /* ticks recorded on this core */
+    uint64_t switches;
+    uint64_t wait_counter_max[8];            /* a band each: SCHED_PRIORITIES */
+    uint8_t  band[SCHED_LANE_TICKS];
+};
+
 struct schedinfo {
     uint32_t policy;        /* index of the one installed */
     uint32_t policies;      /* how many there are */

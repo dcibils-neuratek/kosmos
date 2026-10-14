@@ -2624,6 +2624,81 @@ static bool test_the_policy_changes_on_every_core(void)
 }
 
 /*
+ * **What a core ran, as the Scheduler draws it** (`sched_lane`,
+ * `docs/scheduler.md` G2): a thread on core one that works for a while and
+ * sleeps a tick, over and over - so its core's lane shows the normal band
+ * at its recent ticks, its switches climb, and its wakes leave a wait from
+ * wake to run in the normal band's slot. A core that is not there answers
+ * no.
+ */
+static volatile bool nap_stop;
+static volatile unsigned long nap_rounds;
+
+static void napper(void *arg)
+{
+    (void)arg;
+
+    while (!nap_stop) {
+        uint64_t until = cntpct() + cntfrq() / 500;
+
+        while (cntpct() < until) {
+            /* two milliseconds of work */
+        }
+
+        nap_rounds++;
+        thread_sleep_until(thread_deadline_in(1));
+    }
+}
+
+static bool test_a_core_says_what_it_ran(void)
+{
+    static struct sched_lane before, after;
+    uint64_t deadline;
+    unsigned i, normal = 0;
+    bool ok;
+
+    if (smp_online() < 2) {
+        return true;
+    }
+
+    nap_stop = false;
+    nap_rounds = 0;
+
+    if (!sched_lane(1, &before) || thread_create_on(1, "naps", napper, NULL) == NULL) {
+        return false;
+    }
+
+    deadline = cntpct() + cntfrq();
+
+    while (nap_rounds < 20 && cntpct() < deadline) {
+        /* waiting for it to have worked and slept a while */
+    }
+
+    ok = sched_lane(1, &after);
+    nap_stop = true;
+
+    if (!ok) {
+        return false;
+    }
+
+    /* The last fifty ticks: some of them the napper's band. */
+    for (i = 1; i <= 50 && i <= after.ticks; i++) {
+        normal += after.band[(after.ticks - i) % SCHED_LANE_TICKS] == SCHED_PRIO_NORMAL;
+    }
+
+    for (i = 0; i < 16; i++) {
+        thread_yield();
+    }
+
+    return nap_rounds >= 20
+        && after.ticks > before.ticks
+        && after.switches > before.switches
+        && normal > 0
+        && after.wait_counter_max[SCHED_PRIO_NORMAL] > 0
+        && !sched_lane(NR_CPUS, &after);
+}
+
+/*
  * Two threads on *another* processor, neither of which yields.
  *
  * **The regression this exists for went unnoticed for three releases and
@@ -10492,6 +10567,7 @@ static const struct test tests[] = {
     { "sched: both sides keep running",        test_preemption_does_not_lose_the_preempted_thread },
     { "smp: a secondary preempts a spinner",   test_a_secondary_preempts_a_thread_that_never_yields },
     { "sched: the policy changes on every core", test_the_policy_changes_on_every_core },
+    { "sched: a core says what it ran",     test_a_core_says_what_it_ran },
     { "smp: a new thread avoids a loaded core", test_placement_avoids_a_loaded_processor },
     { "smp: a changed mapping reaches every core", test_a_changed_mapping_reaches_every_processor },
     { "smp: a reply reaches a caller on another core", test_a_reply_reaches_a_caller_on_another_processor },

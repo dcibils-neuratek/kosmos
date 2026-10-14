@@ -705,6 +705,10 @@ performance and responsiveness, and else in a visual way", "mockup first".
   so the policy is chosen in the window, kept as a setting and applied when
   Kosmos starts, with Restart now beside it. Game mode, being Balanced with
   a band and a core given to one application, turns on and off at once.
+- **G2 built 14 October (0.11.215)**: the window as drawn - the modes as
+  cards, who ran on each core over two seconds, the bands as a ladder, a
+  turn and what it trades, switches a second and the keys' longest wait
+  (`testing.md` 18.610). Next: G3, game mode.
 - **G1 built 13 October (0.11.214)**: the policy changes on every core,
   live - each core changes over by itself at its next tick - and is kept
   by name and put back by the window manager at every start

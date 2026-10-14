@@ -378,6 +378,9 @@ SUITES = [
     # level on one and a ring on the other.
     Suite("arm-sysapps", ["python3", "tools/run_sysapps.py", ARM]),
     Suite("x86-sysapps", ["python3", "tools/run_sysapps.py", X86], x86=True),
+    # The Scheduler: its lanes, Fair on every core and back, a turn, and
+    # game mode said to be next (`docs/scheduler.md` G1-G2).
+    Suite("x86-scheduler", ["python3", "tools/run_scheduler.py", X86], x86=True),
     Suite("x86-netmon", ["python3", "tools/run_netmon.py", X86], x86=True),
     Suite("x86-install", ["python3", "tools/run_install.py", X86], x86=True),
     Suite("x86-diskmon", ["python3", "tools/run_diskmon.py", X86], x86=True),
