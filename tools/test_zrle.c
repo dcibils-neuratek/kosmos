@@ -351,6 +351,60 @@ int main(void)
         free(px); free(out);
     }
 
+    /*
+     * **Runs of many colours, at random** - the M700, 14 October 2026: a
+     * live screen's band that TigerVNC and `kosmos_vnc.py` both could not
+     * read past its sixteenth tile. Tiles of 17 to 127 colours in runs of 1
+     * to 600, across the 255 and 510 a length is written around, a tile 56
+     * wide at the right as the screen's edge leaves one - each decoded back
+     * and compared, in TigerVNC's own format.
+     */
+    {
+        unsigned w = 1080, h = 64, trial;
+        size_t pitch = w + 13, n = (size_t)w * h, cap = gfx_zrle_bound(w, h);
+        uint32_t *src = calloc(pitch * h, 4), *back = calloc(n, 4);
+        uint8_t *out = malloc(cap);
+        int kinds[5] = { 0 }, bad = 0;
+
+        for (trial = 0; trial < 400 && !bad; trial++) {
+            unsigned colours = 17 + rnd() % 111;
+            size_t i = 0;
+
+            while (i < n) {
+                size_t run = 1 + rnd() % (trial % 2 ? 600 : 40);
+                uint32_t c = 0xFF000000u | ((rnd() % colours) * 0x030507u);
+
+                for (; run > 0 && i < n; run--, i++) {
+                    src[(i / w) * pitch + i % w] = c;
+                }
+            }
+
+            {
+                size_t got = gfx_zrle_rect(src, pitch, w, h, &formats[0].f, formats[0].depth,
+                                           out, cap);
+                const char *why = decode(out, got, w, h, formats[0].cp, formats[0].f.big,
+                                         formats[0].high, back, kinds);
+
+                for (i = 0; why == NULL && i < n; i++) {
+                    if ((back[i] & 0xFFFFFFu) != (src[(i / w) * pitch + i % w] & 0xFFFFFFu)) {
+                        why = "a pixel decoded wrong";
+                    }
+                }
+
+                if (why != NULL) {
+                    bad = 1;
+                    CHECK(0, "runs of many colours, trial %u (%u colours): %s", trial, colours, why);
+                }
+            }
+        }
+
+        if (!bad) {
+            printf("runs of many colours: 400 bands of 1080x64 decoded back exactly\n");
+        }
+
+        free(src); free(back); free(out);
+    }
+
     if (failures) {
         printf("FAIL: %d checks\n", failures);
         return 1;

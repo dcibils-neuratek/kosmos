@@ -26164,3 +26164,31 @@ than a count that reads as nothing shared. **Test**: `test_netshares.lua`,
 42 - a server signed into at 192.168.1.38 and announced as "diego's Mac
 mini", a `Macmini9,1`: one card, "diego's Mac mini", "Mac · files",
 "Signed in · no share open".
+
+## 18.635 The tail of a compressed band: ZRLE that TigerVNC hung up on
+
+Diego, from his iMac the evening of 0.11.238: "tigervnc closed and now ...
+it loads for a second the screen and it quits" - every connection after a
+first one that had worked. `vncd` logged each viewer as leaving, with no
+error; TigerVNC run on the home Mac said "End of stream" after 36 ZRLE
+rectangles. `kosmos_vnc.py` asking as TigerVNC does, an update after an
+update, stopped on the third: a band of 1080x64 whose tiles wanted 60
+bytes more than it carried. That band fetched alone - raw, and as ZRLE -
+and encoded on the Mac by `zrle.c` was 76,401 bytes, the same as the M700's
+for its first 76,194 and then nothing: **the encoder was right and the
+stream lost its tail.** `compress.zstream`'s deflate stopped at the first
+call that gave less than a 16 KB buffer, while miniz still held 207 bytes
+in its lookahead - exactly the missing ones. It happens only when a piece
+deflates to more than a buffer and the deflater's buffers fill just before
+its end: a photograph's band on the M700, never QEMU's plain desktop.
+
+**The fix**: `user/kits/compress/zsync.c`, a piece deflated and flushed
+until the input is taken, the output given and the lookahead empty -
+`zstream:deflate` through it. **Test**: `tools/test_zsync.c` in `host`,
+400 pieces on streams of their own, all over a buffer, and 40 on one,
+each inflated back byte for byte. **Control**: the old stopping rule on the
+same pieces leaves 4 of the 400 short. On the M700, 0.11.240: the band
+whole, 172 continuous updates in 20 s decoded, and TigerVNC connected and
+staying - and Diego: "tigervnc works now again". `test_zrle` also gained
+400 bands of runs of 17 to 127 colours, which passed before the fix: the
+encoder was never the fault.

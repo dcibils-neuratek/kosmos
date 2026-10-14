@@ -40,6 +40,7 @@
 
 #include "kosmos.h"
 #include "miniz.h"
+#include "zsync.h"
 
 /* The deflater's state: its dictionary, its hash chains, its output. */
 static tdefl_compressor *state;
@@ -245,9 +246,14 @@ static int l_zstream(lua_State *L)
     return 1;
 }
 
+/* What the deflater gives, onto the Lua buffer being built. */
+static void onto_buffer(void *ctx, const uint8_t *out, size_t n)
+{
+    luaL_addlstring((luaL_Buffer *)ctx, (const char *)out, n);
+}
+
 static int l_zstream_deflate(lua_State *L)
 {
-    static uint8_t chunk[16384];
     struct zstream *z = luaL_checkudata(L, 1, ZSTREAM);
     const uint8_t *in;
     size_t left;
@@ -271,24 +277,11 @@ static int l_zstream_deflate(lua_State *L)
 
     luaL_buffinit(L, &b);
 
-    /* Until all of it is taken and the flush is out: a full chunk may mean
-     * more is waiting, and asking again with nothing costs nothing. */
-    for (;;) {
-        size_t in_size = left, out_size = sizeof chunk;
+    /* Flushed whole - its lookahead too (`zsync.c` has why). */
+    st = zsync_deflate(z->d, in, left, onto_buffer, &b);
 
-        st = tdefl_compress(z->d, in, &in_size, chunk, &out_size, TDEFL_SYNC_FLUSH);
-
-        if (st != TDEFL_STATUS_OKAY) {
-            return luaL_error(L, "zstream: would not deflate (%d)", (int)st);
-        }
-
-        in += in_size;
-        left -= in_size;
-        luaL_addlstring(&b, (const char *)chunk, out_size);
-
-        if (left == 0 && out_size < sizeof chunk) {
-            break;
-        }
+    if (st != TDEFL_STATUS_OKAY) {
+        return luaL_error(L, "zstream: would not deflate (%d)", (int)st);
     }
 
     luaL_pushresult(&b);
