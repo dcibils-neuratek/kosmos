@@ -127,6 +127,24 @@ void fp_forget(struct thread *t)
 }
 
 /*
+ * **A thread about to move to another core gives its registers back**
+ * (`thread.c`, `take_up_move`): if this core's FP registers are still its -
+ * saved lazily, only when another thread here wants them - they are written
+ * into its context now, so the core it moves to loads what it really had.
+ * Called on this core, by the thread itself as it blocks, with interrupts
+ * masked.
+ */
+void fp_hand_back(struct thread *t)
+{
+    if (t != NULL && owner == t) {
+        fpen_allow();
+        fp_save(&t->ctx);
+        owner = NULL;
+        fpen_trap();
+    }
+}
+
+/*
  * Whether a thread currently holds the registers. For the tests, which
  * otherwise could not tell a lazy save that works from one that is quietly
  * saving everything every time.

@@ -150,7 +150,14 @@ shows the same numbers live.
   (`schedinfo.band`), so Processes, `htop`, init and the Scheduler keep no
   list of their own.
 - **G4** - a core of its own: placement kept off it, and the one move of a
-  sleeping thread.
+  sleeping thread. **Built 14 October (0.11.217)** (`testing.md` 18.612):
+  while the game has the band, the least busy core but zero is kept for its
+  first thread - nothing new placed there, everybody else's movable threads
+  asked to leave it. A move is taken up by the thread itself as it blocks,
+  on its own core, its FP registers handed back first; the waker of a moved
+  thread waits until its old core is off its stack (`on_cpu`), as Linux's
+  does. `docs/smp.md`'s "a thread has a home and does not migrate" now
+  reads: it moves only when asked, and only as it blocks.
 - **G5** - 1000 Hz while it is on; measured against Doom, Quake and the Super
   Nintendo under load.
 

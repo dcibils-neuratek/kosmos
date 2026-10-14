@@ -221,6 +221,17 @@ struct thread {
         unsigned long  audio_overruns;
 
         /*
+         * **A move to another home core** (`thread_move`, game mode's core
+         * of its own, `docs/scheduler.md` G4): the core to take up, plus
+         * one, 0 for none - taken up by the thread itself the next time it
+         * blocks, on its own core, where its FP registers can be saved. A
+         * thread made for a given core (`thread_create_on`) is `pinned` and
+         * never moved.
+         */
+        unsigned       move_to;
+        bool           pinned;
+
+        /*
          * **Game mode for its process** (`SCHED_PRIO_GAME`): a normal thread
          * runs in the game band while `game` is set - by its process, for
          * every thread it has and makes - unless it has spent its budget,
@@ -422,6 +433,15 @@ struct thread {
     unsigned long switches;     /* how many times this thread was resumed */
 
     /*
+     * **On a processor**: from the moment it is switched in until the next
+     * thread on that processor has finished switching away from it. A
+     * thread that moved cores may be woken on its new one while its old one
+     * is still leaving its stack; the new one waits for this to clear before
+     * running it (`switch_into`) - Linux's `on_cpu`, for the same reason.
+     */
+    bool          on_cpu;
+
+    /*
      * The counter when it was last woken, until it runs: the wait the
      * Scheduler shows for each band (`sched_lane`), 0 when it is not waiting.
      */
@@ -584,6 +604,20 @@ void thread_set_idle(struct thread *t);
  * already on a queue stays where it was enqueued, which is one quantum of
  * imprecision and not worth a requeue to remove.
  */
+/*
+ * **Moving threads between cores, for game mode's core of its own**
+ * (`docs/scheduler.md` G4). `thread_move` asks a thread to take up another
+ * home the next time it blocks (false for one that may not move);
+ * `thread_reserve_core` keeps a core from new threads, -1 for none;
+ * `thread_give_core` reserves the least busy core but zero, asks `main` to
+ * move there and every other movable thread to leave it, and says which
+ * core, or -1 on a machine of fewer than three.
+ */
+bool thread_move(struct thread *t, unsigned to);
+void thread_reserve_core(int cpu);
+int  thread_reserved_core(void);
+int  thread_give_core(struct thread *main);
+
 void thread_set_priority(struct thread *t, unsigned priority);
 void thread_enter_audio_band(struct thread *t);
 

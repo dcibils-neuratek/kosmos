@@ -89,6 +89,13 @@ struct percpu {
     struct thread *leaving;
 
     /*
+     * **The thread this processor is switching away from**, until the
+     * thread it switches to has arrived (`thread_switch_finished`), which
+     * then marks it off this core (`on_cpu`). Only this processor writes it.
+     */
+    struct thread *switching_from;
+
+    /*
      * Where the processor's time went, in scheduler ticks.
      *
      * Per core because load is measured per core or it is not measured:

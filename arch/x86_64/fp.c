@@ -74,3 +74,10 @@ void fp_forget(struct thread *t)
 {
     (void)t;
 }
+
+/* Nothing to give back either: a switch here saves the registers it leaves
+ * (`fp_hand_back` on AArch64 says what the lazy one has to do). */
+void fp_hand_back(struct thread *t)
+{
+    (void)t;
+}

@@ -43,11 +43,13 @@ return function(ctx)
   local function grant(on)
     if not G.pid or G.granted == on then return end
 
-    local ok, why = sys.set_game(G.pid, on)
+    local ok, core = sys.set_game(G.pid, on)
 
     G.granted = on and ok and true or false
-    print(("wm: game band %s for %s%s"):format(on and "given" or "taken back", tostring(G.title),
-          ok and "" or (" - " .. tostring(why))))
+    G.core = on and ok and math.type(core) == "integer" and core or nil
+    print(("wm: game band %s for %s%s%s"):format(on and "given" or "taken back", tostring(G.title),
+          G.core and (", core " .. G.core .. " its own") or "",
+          ok and "" or (" - " .. tostring(core))))
   end
 
   function G.stop(quiet)
@@ -131,7 +133,7 @@ return function(ctx)
 
   -- For the Scheduler: which application has it, and whether it is in front.
   function G.state()
-    return { pid = G.pid, program = G.program, title = G.title, in_front = G.granted }
+    return { pid = G.pid, program = G.program, title = G.title, in_front = G.granted, core = G.core }
   end
 
   return G

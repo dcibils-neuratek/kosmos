@@ -228,6 +228,39 @@ static unsigned next_id = 1;
 static unsigned next_cpu;
 
 /*
+ * **A core kept for one game** (`docs/scheduler.md` G4): no new thread is
+ * placed on it while it is reserved, -1 when none is. Only on a machine of
+ * three cores or more, where keeping one still leaves the rest two.
+ */
+static int reserved_core = -1;
+
+/* A thread taking up a move (`move_to`) as it blocks, on its own core, under
+ * its core's queue lock: its FP registers given back from this core's (they
+ * are saved lazily on AArch64) and its home changed - so its next wake puts
+ * it on the new core, which waits for this one to be off its stack
+ * (`on_cpu`) before running it. */
+void fp_hand_back(struct thread *t);
+
+static void take_up_move(struct thread *t)
+{
+    unsigned to;
+
+    if (t == NULL || t->sched.move_to == 0) {
+        return;
+    }
+
+    to = t->sched.move_to - 1;
+    t->sched.move_to = 0;
+
+    if (to == t->sched.cpu || to >= smp_online()) {
+        return;
+    }
+
+    fp_hand_back(t);
+    __atomic_store_n(&t->sched.cpu, to, __ATOMIC_RELEASE);
+}
+
+/*
  * Which processor a new thread should live on.
  *
  * **Least loaded, with a rotating tie-break**, and both halves are needed.
@@ -294,6 +327,11 @@ static unsigned place_new_thread(void)
         unsigned c = (start + n) % cores;
         struct percpu *pc = percpu_at(c);
         unsigned i, load = 0, live = 0;
+
+        /* A core kept for a game (`thread_reserve_core`) takes nobody new. */
+        if ((int)c == reserved_core && cores > 2) {
+            continue;
+        }
 
         for (i = 0; i < made; i++) {
             const struct thread *t = slot(i);
@@ -500,6 +538,109 @@ bool sched_switch_to(unsigned index)
     spin_unlock(&runq_lock[here()], irqstate);
 
     return true;
+}
+
+/*
+ * **A thread to another home** (`docs/scheduler.md` G4; Diego, 11 October:
+ * yes to "allow Nebula to move a sleeping thread to another home, once,
+ * when game mode starts"). Asked, never forced: the thread takes it up the
+ * next time it blocks, on its own core (`take_up_move`). Not a thread made
+ * for a core, not an idle thread, not to a core that is not there.
+ */
+bool thread_move(struct thread *t, unsigned to)
+{
+    if (t == NULL || t->sched.pinned || to >= smp_online()
+        || t == percpu_at(t->sched.cpu)->idle_thread) {
+        return false;
+    }
+
+    __atomic_store_n(&t->sched.move_to, t->sched.cpu == to ? 0 : to + 1, __ATOMIC_RELEASE);
+    return true;
+}
+
+/* The core kept for a game, or -1 to keep none (`reserved_core`). */
+void thread_reserve_core(int cpu)
+{
+    reserved_core = (cpu >= 0 && (unsigned)cpu < smp_online() && smp_online() > 2) ? cpu : -1;
+}
+
+int thread_reserved_core(void)
+{
+    return reserved_core;
+}
+
+/* The least busy core but `skip` and core zero, by runnable threads homed
+ * there; -1 on a machine with fewer than three. */
+static int least_busy_except(int skip)
+{
+    unsigned c, best_load = ~0u;
+    int best = -1;
+
+    for (c = 1; c < smp_online() && c < NR_CPUS; c++) {
+        unsigned i, load = 0;
+
+        if ((int)c == skip) {
+            continue;
+        }
+
+        for (i = 0; i < slots_made(); i++) {
+            const struct thread *t = slot(i);
+
+            if (t->sched.cpu == c && (t->state == THREAD_READY || t->state == THREAD_RUNNING)) {
+                load++;
+            }
+        }
+
+        if (load < best_load) {
+            best_load = load;
+            best = (int)c;
+        }
+    }
+
+    return best;
+}
+
+/*
+ * **A core made a game's** (`docs/scheduler.md` G4): the least busy core
+ * other than zero - which wakes the machine's sleepers and reads its input -
+ * reserved, the game's busiest thread `main` asked to move there, and every
+ * other thread that may move, not the game's, asked to leave it for the
+ * least busy of the rest. The game's other threads stay where they are, so
+ * its workers are not crowded onto one core. -1 when the machine has too
+ * few cores to keep one.
+ */
+int thread_give_core(struct thread *main)
+{
+    const void *keep = main != NULL ? (const void *)main->process : NULL;
+    int core = least_busy_except(-1);
+    unsigned i;
+
+    if (core < 0) {
+        return -1;
+    }
+
+    thread_reserve_core(core);
+
+    for (i = 0; i < slots_made(); i++) {
+        struct thread *t = slot(i);
+
+        if (t->state == THREAD_UNUSED || t->state == THREAD_DEAD) {
+            continue;
+        }
+
+        if (t == main) {
+            (void)thread_move(t, (unsigned)core);
+        } else if (t->sched.cpu == (unsigned)core
+                   && (keep == NULL || (const void *)t->process != keep)) {
+            int to = least_busy_except(core);
+
+            if (to >= 0) {
+                (void)thread_move(t, (unsigned)to);
+            }
+        }
+    }
+
+    return core;
 }
 
 const struct scheduler *sched_policy_on(unsigned cpu)
@@ -995,6 +1136,13 @@ struct thread *thread_create_suspended(const char *name,
 
     }
     t->switches = 0;
+    t->woken_at = 0;
+    t->on_cpu = false;
+    t->sched.move_to = 0;
+    t->sched.pinned = false;
+    t->sched.game = false;
+    t->sched.game_spent = false;
+    t->sched.game_run_ticks = 0;
 
     copy_name(t->name, name);
 
@@ -1047,6 +1195,7 @@ struct thread *thread_create_on(unsigned cpu, const char *name,
 
     if (t != NULL) {
         t->sched.cpu = cpu;
+        t->sched.pinned = true;         /* made for this core: never moved */
         thread_wake(t);
     }
 
@@ -1066,9 +1215,27 @@ struct thread *thread_create_on(unsigned cpu, const char *name,
  * that arrives before it and switches again only means a different arriving
  * thread makes the same store first - and what it says is just as true then.
  */
+/*
+ * **The thread switched away from is off this processor now** (`on_cpu`):
+ * its registers are saved and nothing here stands on its stack, so a core
+ * it has moved to may run it. Before `leaving` is let go, which may hand
+ * its slot to somebody else.
+ */
+static void arrived(struct percpu *me)
+{
+    struct thread *was = me->switching_from;
+
+    if (was != NULL) {
+        __atomic_store_n(&was->on_cpu, false, __ATOMIC_RELEASE);
+        me->switching_from = NULL;
+    }
+
+    me->leaving = NULL;
+}
+
 void thread_switch_finished(void)
 {
-    this_cpu()->leaving = NULL;
+    arrived(this_cpu());
 }
 
 /*
@@ -1220,10 +1387,27 @@ static void switch_into(struct thread *prev, struct thread *next)
         as_switch(next->space);
     }
 
+    /*
+     * Marked on this core until the next thread here has arrived (`arrived`)
+     * - which is what `thread_wake` waits for before it hands a thread that
+     * moved to its new core. **The wait is the waker's and never this
+     * switch's**: a switch waiting for another core's switch can wait for
+     * one that is waiting for it - two cores each switching to the thread
+     * the other is leaving, both with interrupts masked, both for ever. That
+     * was the first version, and the kernel suite's TLB shootdown found the
+     * core it left hanging. Linux waits in the waker for the same reason.
+     */
+    next->on_cpu = true;
+    me->switching_from = prev;
+
     context_switch(&prev->ctx, &next->ctx);
 
-    /* Reached as whichever thread this processor has just resumed. */
-    me->leaving = NULL;         /* `thread_switch_finished`, with `me` */
+    /*
+     * Reached as whichever thread this processor has just resumed - **and
+     * this processor read again**: since a thread can move, the core it
+     * resumes on is not necessarily the one it switched away from.
+     */
+    arrived(this_cpu());
 }
 
 static void switch_to(struct thread *next)
@@ -2058,6 +2242,7 @@ void thread_block_and_release(struct spinlock *lock, unsigned long flags)
     rq = spin_lock(&runq_lock[cpu]);
 
     (*running_slot(me))->state = THREAD_BLOCKED;
+    take_up_move(*running_slot(me));
     choosing();
     next = core_policy[cpu]->pick_next(cpu);
 
@@ -2138,6 +2323,7 @@ void thread_block(void)
     flags = spin_lock(&runq_lock[cpu]);
 
     current->state = THREAD_BLOCKED;
+    take_up_move(current);
     choosing();
     next = core_policy[cpu]->pick_next(cpu);
 
@@ -2327,8 +2513,20 @@ void thread_wake(struct thread *t)
          * stops being true, which is one of the reasons work stealing is
          * not here.
          */
-        unsigned      cpu   = t->sched.cpu;
+        unsigned      cpu   = __atomic_load_n(&t->sched.cpu, __ATOMIC_ACQUIRE);
         unsigned long flags = spin_lock(&runq_lock[cpu]);
+
+        /*
+         * **Its home, asked again under the lock that guards it**: a thread
+         * that took up a move as it blocked (`take_up_move`) changed its home
+         * under its old core's lock, so a home read before that lock was
+         * taken may be the one it left. The new one, then.
+         */
+        while (t->sched.cpu != cpu) {
+            spin_unlock(&runq_lock[cpu], flags);
+            cpu = __atomic_load_n(&t->sched.cpu, __ATOMIC_ACQUIRE);
+            flags = spin_lock(&runq_lock[cpu]);
+        }
 
         /*
          * And now, holding the lock that guards the transition, ask again.
@@ -2342,6 +2540,20 @@ void thread_wake(struct thread *t)
         if (t->state != THREAD_BLOCKED) {
             spin_unlock(&runq_lock[cpu], flags);
             return;
+        }
+
+        /*
+         * **A thread that moved may still be leaving its old core**: it
+         * blocked there, took up its move (`take_up_move`), and is being
+         * woken onto its new one before that core has finished switching
+         * away from it - for a few instructions, with interrupts masked and
+         * nothing to wait for. Until then its stack is in use, so it is not
+         * put where another core could run it. The waker is never in the
+         * middle of a switch, so this always ends; a thread that did not
+         * move is off its core by the time anything can wake it.
+         */
+        while (__atomic_load_n(&t->on_cpu, __ATOMIC_ACQUIRE)) {
+            cpu_relax();
         }
 
         t->state = THREAD_READY;

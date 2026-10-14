@@ -705,6 +705,11 @@ performance and responsiveness, and else in a visual way", "mockup first".
   so the policy is chosen in the window, kept as a setting and applied when
   Kosmos starts, with Restart now beside it. Game mode, being Balanced with
   a band and a core given to one application, turns on and off at once.
+- **G4 built 14 October (0.11.217)**: a core of its own while the game is
+  in front - the least busy but zero, kept from new threads, everybody
+  else's asked off it; Nebula moves a thread for the first time, only as it
+  blocks (`testing.md` 18.612). Next: G5, 1000 Hz while a game plays,
+  measured on the M700.
 - **G3 built 14 October (0.11.216)**: game mode for one application - its
   `kosmos: kind` a game or an emulator, Super+G for the one in front, or
   chosen on the Scheduler's card - its normal threads in the game band

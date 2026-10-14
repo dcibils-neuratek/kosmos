@@ -25417,3 +25417,66 @@ the band while it is in front; its card's menu offers the applications;
 Super+G again ends it. **Control**: the band never asked of the kernel
 failed it. `arm-synth-load` still holds Groove's sound under four display
 spinners after the renumbering.
+
+## 18.612 A core of the game's own, and the first thread that moves
+
+`docs/scheduler.md` G4. Diego, 11 October, to "allow Nebula to move a
+sleeping thread to another home, once, when game mode starts": yes.
+
+**Placement and the give.** While a process has the game band, the least
+busy core other than zero - zero wakes the sleepers and reads the input - is
+reserved (`reserved_core`): `place_new_thread` skips it, the game's first
+thread is asked to move there, and every other movable thread living there
+is asked to move to the least busy of the rest (`thread_give_core`). Taken
+back with the band, and the core is open again. The window manager says
+which core in the log, and the Scheduler on its Game rung.
+
+**The move.** Nebula has never moved a thread, and three things in it
+assumed so:
+
+- a thread's floating point is saved lazily on AArch64 - in its core's
+  registers until another thread there wants them - so a thread that ran on
+  another core would load stale values: **a move is taken up only by the
+  thread itself as it blocks, on its own core** (`take_up_move`), which
+  first hands its registers back into its context (`fp_hand_back`);
+- a thread that has just blocked is still running on its core's stack until
+  the switch away is over, and its home core is the only one that could pick
+  it up, which was always busy finishing that switch: **a thread is
+  `on_cpu` from being switched in until the next thread on that core has
+  arrived**, and the waker of a thread waits for that before handing it to
+  its (new) core;
+- `switch_into` read its core once, since what resumes is always on the
+  same core: it reads it again after the switch.
+
+**And a home read before its lock may be stale**: `thread_wake` asks for the
+thread's home again under the lock, and follows it if it moved. Threads
+made for a core (`thread_create_on`, `THREAD_START_ON`) are `pinned`, and
+idle threads are never moved.
+
+**The first version deadlocked, and the suite found it.** It put the wait
+in the switch - the core about to run a moved thread waited for its old
+core to be off it. Two cores each switching to the thread the other was
+leaving waited for each other with interrupts masked, for ever; on the
+third of eight runs `x86-kernel` panicked "tlb: processor 1 never answered
+a shootdown". The wait is the waker's now, which is never in the middle of
+a switch - as in Linux - and ten runs of both kernel suites in a row passed.
+
+**Tests.** Kernel, both architectures: `sched: a thread moves cores` -
+three threads working and sleeping; one asked to core two is homed there
+and seen running there within a second; core three given to it as a game's,
+everybody else off it, and twelve threads placed across every core none of
+them there; all still running after. **Controls**: moves never taken up
+failed it; placement ignoring the reservation failed it once the placed
+threads were held until all twelve were placed (before that the control
+passed, which is how the first version of the check was found vacuous).
+Not held here: a moved thread's floating point, since the kernel suite has
+none; a game on the M700 is where that shows. `x86-scheduler` 11 -> 12: on
+four processors the game is given a core, and not core one.
+
+**Seen twice in the gate since G3, and not explained**: a suite that waits
+for `telnetd` at boot ("the guest never telnetd listening within 120s") -
+`x86-drawself` in the gate at 0.11.216, `x86-tracker` at 0.11.217. Each
+passed three times alone, and the ten suites that wait for `telnetd`, run
+together twice, all passed. `telnetd` waits for DHCP from QEMU's network;
+before G3 it was never recorded. Watched: a third time is investigated
+before anything else lands.

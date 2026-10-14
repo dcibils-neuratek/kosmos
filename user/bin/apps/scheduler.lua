@@ -465,7 +465,9 @@ local function draw_ladder(g, x, y, w)
     local playing = r.band == "game" and game.state.pid
     local dim = (r.band == "game" and not playing) or fair
     local words = playing and ("%s - %s"):format(tostring(game.state.title),
-                  game.state.in_front and "in front, before every other program" or "not in front: as every program")
+                  game.state.in_front and (game.state.core and ("in front, core %d its own"):format(game.state.core)
+                                           or "in front, before every other program")
+                  or "not in front: as every program")
                   or r.text
 
     g:fill_round(x + 12, ry, bw, LH + 2, dim and theme.mix(theme.sunken, ink, 430) or ink, 5)

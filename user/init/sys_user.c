@@ -1806,11 +1806,19 @@ static int l_set_game(lua_State *L)
     long id = (long)luaL_checkinteger(L, 1);
     long status = kosmos_sched_set(lua_toboolean(L, 2) ? SCHED_SET_GAME : SCHED_UNSET_GAME, id);
 
-    if (status != 0) {
+    if (status < 0) {
         return fail(L, status);
     }
 
+    /* And the core it was given, counted from 1 as Monitor shows them, or
+     * nothing when none was. */
     lua_pushboolean(L, 1);
+
+    if (status > 0) {
+        lua_pushinteger(L, (lua_Integer)status);
+        return 2;
+    }
+
     return 1;
 }
 

@@ -573,6 +573,7 @@ int process_thread_create(struct process *p, unsigned long entry,
      * waking, the one moment a home can be set (`thread_create_on`). */
     if (cpu >= 0) {
         t->sched.cpu = (unsigned)cpu;
+        t->sched.pinned = true;         /* asked for a core: never moved */
     }
 
     thread_wake(t);
@@ -1831,7 +1832,21 @@ int process_set_game(struct process *parent, unsigned id, bool on)
         }
 
         spin_unlock(&processes_lock, flags);
-        return 0;
+
+        /*
+         * **And a core of its own while it has the band** (G4): its first
+         * thread - the one a game draws and thinks on - given the least
+         * busy core but zero, nothing new placed there, and everybody
+         * else's threads asked to leave it. Given back when the band is.
+         */
+        if (on) {
+            int core = thread_give_core(c->thread);
+
+            return core >= 0 ? core : 0x7fffffff;
+        }
+
+        thread_reserve_core(-1);
+        return 0x7fffffff;
     }
 
     return -1;

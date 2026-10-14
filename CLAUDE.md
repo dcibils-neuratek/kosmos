@@ -538,11 +538,18 @@ between an intention and a fact.
   structures worth locking are reached from both a syscall and an interrupt
   handler, so a lock held with interrupts on is a self-deadlock waiting for
   a tick. A critical section is therefore short, always.
-- **A thread has a home and does not migrate.** One runqueue per processor,
-  a thread assigned to one when it is created. That is what lets IPC release
-  its lock before the context switch rather than handing it to the next
-  thread, and it is what would have to be revisited before any kind of
-  balancing or work stealing.
+- **A thread has a home, and moves only when asked, as it blocks.** One
+  runqueue per processor, a thread assigned to one when it is created. That
+  is what lets IPC release its lock before the context switch rather than
+  handing it to the next thread. It said "does not migrate" until 14
+  October 2026, when game mode's core of its own needed one move (Diego:
+  yes to "allow Nebula to move a sleeping thread to another home"): a move
+  is asked for (`thread_move`) and taken up only by the thread itself as it
+  blocks, on its own core, its FP registers handed back first; and a thread
+  is `on_cpu` until the next thread on its old core has arrived, which the
+  waker of a moved thread waits for - the waker, never a switch, or two
+  switches can wait for each other (`testing.md` 18.612). Balancing or work
+  stealing would still have to revisit all of it.
 
 **No hardware addresses outside `hal/`.** Not one.
 

@@ -232,9 +232,13 @@ reader should take away:
 - **Every lock masks interrupts**, and there is no second flavour, because
   the structures worth locking are reached from a syscall *and* an interrupt
   handler alike.
-- **A thread has a home processor and does not migrate**, which is what lets
-  IPC release its lock *before* the context switch instead of handing it to
-  the next thread — the textbook answer, and unnecessary here.
+- **A thread has a home processor and moves only when asked, as it
+  blocks**, which is what lets IPC release its lock *before* the context
+  switch instead of handing it to the next thread — the textbook answer,
+  and unnecessary here. "Does not migrate" until 14 October 2026; game
+  mode's core of its own (`docs/scheduler.md` G4) brought the one move -
+  taken up by the thread itself as it blocks, with `on_cpu` waited for by
+  its waker (`testing.md` 18.612).
 
 Both are argued at length in *The decisions* below.
 

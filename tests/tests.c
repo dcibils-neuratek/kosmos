@@ -2747,10 +2747,11 @@ static bool test_game_mode(void)
 
     ok = process_set_game(q, q->id, true) == -1          /* not its own parent */
       && !q->game
-      && process_set_game(NULL, q->id, true) == 0
+      && process_set_game(NULL, q->id, true) >= 0       /* its core, or none */
       && q->game && q->thread != NULL && q->thread->sched.game
-      && process_set_game(NULL, q->id, false) == 0
-      && !q->thread->sched.game;
+      && process_set_game(NULL, q->id, false) >= 0
+      && !q->thread->sched.game
+      && thread_reserved_core() == -1;                   /* given back with the band */
 
     process_abandon(q);
 
@@ -2791,6 +2792,143 @@ static bool test_game_mode(void)
     while (cntpct() < deadline) { }
 
     return ok;
+}
+
+/*
+ * **A thread moved to another core** (`thread_move`, `docs/scheduler.md`
+ * G4): taken up as it next blocks, on its own core, and safe because a core
+ * waits for a moved thread to be off its old core before running it
+ * (`on_cpu`). Threads that work and sleep, each saying the core it last ran
+ * on and keeping a sum on its stack across the move. **Not held here**: a
+ * moved thread's floating point, which AArch64 saves lazily and a move must
+ * hand back (`fp_hand_back`) - this suite is general-registers-only and its
+ * threads have none; a game moved on the M700 is where that shows.
+ */
+static volatile bool mover_stop;
+static volatile unsigned mover_core[3];
+static volatile unsigned long mover_rounds[3];
+static volatile bool mover_sum_wrong;
+
+static void mover(void *arg)
+{
+    unsigned i = (unsigned)(uintptr_t)arg;
+    uint64_t sum = 0, want = 0;
+
+    while (!mover_stop) {
+        uint64_t until = cntpct() + cntfrq() / 1000;
+
+        while (cntpct() < until) { }
+
+        sum += mover_rounds[i] * 3u + 1u;
+        want += mover_rounds[i] * 3u + 1u;
+        mover_sum_wrong = mover_sum_wrong || sum != want;
+        mover_core[i] = this_cpu()->index;
+        mover_rounds[i]++;
+        thread_sleep_until(thread_deadline_in(1));
+    }
+}
+
+static bool test_a_thread_moves_cores(void)
+{
+    struct thread *t[3];
+    uint64_t deadline;
+    unsigned i, placed_on_3 = 0;
+    bool ok;
+
+    if (smp_online() < 4) {
+        return true;
+    }
+
+    mover_stop = false;
+    mover_sum_wrong = false;
+
+    for (i = 0; i < 3; i++) {
+        mover_rounds[i] = 0;
+        mover_core[i] = 99;
+        t[i] = thread_create(i == 0 ? "mover" : "stayer", mover, (void *)(uintptr_t)i);
+
+        if (t[i] == NULL) {
+            mover_stop = true;
+            return false;
+        }
+    }
+
+    deadline = cntpct() + cntfrq();
+    while ((mover_rounds[0] < 5 || mover_rounds[1] < 5 || mover_rounds[2] < 5) && cntpct() < deadline) { }
+
+    /* One moved to core 2, asked, and seen there. */
+    ok = thread_move(t[0], 2);
+    deadline = cntpct() + cntfrq();
+    while ((t[0]->sched.cpu != 2 || mover_core[0] != 2) && cntpct() < deadline) { }
+    ok = ok && t[0]->sched.cpu == 2 && mover_core[0] == 2;
+
+    /* And core 3 given to it as a game's: everybody else leaves, and what is
+     * made now goes elsewhere. */
+    ok = ok && thread_give_core(t[0]) >= 0;
+
+    {
+        int core = thread_reserved_core();
+        bool left;
+
+        deadline = cntpct() + cntfrq();
+
+        do {
+            left = t[0]->sched.cpu == (unsigned)core;
+
+            for (i = 1; i < 3; i++) {
+                left = left && t[i]->sched.cpu != (unsigned)core;
+            }
+        } while (!left && cntpct() < deadline);
+
+        ok = ok && core > 0 && left;
+
+        /* Placement across every core for this, as a plain boot has it: the
+         * suite narrows it to core zero, where nothing reserved could show. */
+        thread_place_across(smp_online());
+
+        {
+            /* Twelve, each counted on its core as it is placed so the next
+             * goes elsewhere - as threads that exist do - and given back
+             * together after. */
+            struct thread *placed[12];
+
+            for (i = 0; i < 12; i++) {
+                placed[i] = thread_create_suspended("placed", mover, (void *)2);
+
+                if (placed[i] != NULL) {
+                    placed_on_3 += placed[i]->sched.cpu == (unsigned)core;
+                }
+            }
+
+            for (i = 0; i < 12; i++) {
+                if (placed[i] != NULL) {
+                    placed[i]->state = THREAD_DEAD;     /* never started */
+                }
+            }
+        }
+
+        thread_place_across(1);
+        ok = ok && placed_on_3 == 0;
+    }
+
+    thread_reserve_core(-1);
+
+    {
+        unsigned long before[3];
+
+        for (i = 0; i < 3; i++) before[i] = mover_rounds[i];
+
+        deadline = cntpct() + cntfrq() / 2;
+        while (cntpct() < deadline) { }
+
+        for (i = 0; i < 3; i++) ok = ok && mover_rounds[i] > before[i];
+    }
+
+    mover_stop = true;
+    deadline = cntpct() + cntfrq() / 4;
+    while (cntpct() < deadline) { }
+
+    return ok && !mover_sum_wrong;
 }
 
 /*
@@ -10664,6 +10802,7 @@ static const struct test tests[] = {
     { "sched: the policy changes on every core", test_the_policy_changes_on_every_core },
     { "sched: a core says what it ran",     test_a_core_says_what_it_ran },
     { "sched: game mode, given by a parent",  test_game_mode },
+    { "sched: a thread moves cores",         test_a_thread_moves_cores },
     { "smp: a new thread avoids a loaded core", test_placement_avoids_a_loaded_processor },
     { "smp: a changed mapping reaches every core", test_a_changed_mapping_reaches_every_processor },
     { "smp: a reply reaches a caller on another core", test_a_reply_reaches_a_caller_on_another_processor },

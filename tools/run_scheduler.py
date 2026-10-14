@@ -123,8 +123,14 @@ def main():
             on = until(r"wm: game mode on for ([^\n(]*) \(", at, 15)
             check(on is not None and on.group(1).strip() == "Scheduler",
                   "Super+G did not give the Scheduler game mode: %r" % (on and on.group(0)))
-            check(until(r"wm: game band given for Scheduler\n", at, 15) is not None,
-                  "the game band was not given to the window in front")
+            given = until(r"wm: game band given for Scheduler(, core (\d+) its own)?\n", at, 15)
+            check(given is not None, "the game band was not given to the window in front")
+
+            # **And a core of its own** (G4) on a machine of three or more:
+            # never core zero, which wakes the sleepers and reads the input.
+            check(cores < 3 or (given is not None and given.group(2) is not None
+                                and int(given.group(2)) > 1),
+                  "the game was not given a core of its own, not core 1: %r" % (given and given.group(0)))
 
             at = len(guest.seen)
             click("mode game")

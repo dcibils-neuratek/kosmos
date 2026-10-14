@@ -780,7 +780,7 @@ int process_kill(struct process *parent, unsigned id);
  * itself. The window manager is the parent of the applications it opens,
  * and gives it to the one in front.
  */
-int process_set_game(struct process *parent, unsigned id, bool on);
+int process_set_game(struct process *parent, unsigned id, bool on);   /* its core, or a large number for none */
 
 /* Ends any process, for a caller the kernel has granted SPAWN_PROCCTL.
  * Refuses init: ending it ends the system. */

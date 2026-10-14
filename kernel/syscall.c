@@ -2682,10 +2682,17 @@ void syscall_dispatch(struct syscall_frame *sc)
 
         case SCHED_SET_GAME:
         case SCHED_UNSET_GAME:
-            /* Only a child of the caller: the authority `SYS_KILL` has. */
-            result = process_set_game(p, (unsigned)sc->arg[1],
-                                      (unsigned)sc->arg[0] == SCHED_SET_GAME) == 0
-                     ? 0 : SYS_ERR_DENIED;
+            /*
+             * Only a child of the caller: the authority `SYS_KILL` has. The
+             * answer is the core it was given, plus one, or 0 for none.
+             */
+            {
+                int core = process_set_game(p, (unsigned)sc->arg[1],
+                                            (unsigned)sc->arg[0] == SCHED_SET_GAME);
+
+                result = core < 0 ? SYS_ERR_DENIED
+                       : core == 0x7fffffff ? 0 : (long)core + 1;
+            }
             break;
 
         case SCHED_SET_MY_BAND:
