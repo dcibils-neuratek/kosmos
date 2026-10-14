@@ -2227,6 +2227,7 @@ local function new_namespace()
     "a directory entry is malformed", "more attributes than fit in a block",
     "this is not an attribute block", "a directory larger than this can edit",
     "a block write longer than a block",
+    "a write in place past the file's end",
   }
 
   -- How finding a stick's `/Home` stopped, a look at a time (`stick` in
@@ -2926,6 +2927,24 @@ local function new_namespace()
       return { ok = true, value = disk_super(r.blob) }
     end
 
+    --
+    -- **A file's size set** (`docs/linux.md` L1b): `size`, the bytes it
+    -- ends at - grown with zeroes or cut - and made when `create` says so;
+    -- WRITE_AT with nothing written and DISK_CUT. How a sandbox's disk of
+    -- gigabytes is made, a piece at a time.
+    --
+    if op == "size" then
+      local size = math.tointeger(tonumber(extra.size))
+
+      if not size or size < 0 then return nil, "a size is a whole number of bytes" end
+
+      local r, e = disk_call(capability, 16, rest, size, 0, 4 | (extra.create and 2 or 0))
+
+      if not r then return nil, e end
+
+      return { ok = true }
+    end
+
     local code = DISK_OPS[op]
 
     if not code then
@@ -3496,6 +3515,19 @@ local function new_namespace()
     return r.bytes
   end
 
+  --
+  -- **A file's size set** (`docs/linux.md` L1b): grown with zeroes or cut
+  -- to `bytes`, and made first when `create` - a sandbox's disk, made a
+  -- piece at a time. A disk's files only: anything else says it cannot.
+  --
+  function ns.size(path, bytes, create)
+    local r, e = request("size", path, { size = bytes, create = create and true or nil })
+
+    if not r then return nil, e end
+
+    return true
+  end
+
   function ns.chunks(path)
     local offset = 0
     local done = false
@@ -3959,7 +3991,7 @@ local function new_namespace()
   -- change to one given read only - as `smbd` serves shares. Handed only to
   -- a monitor with folders to serve.
   --
-  function ns.vm_start(ram, setup, folders, network)
+  function ns.vm_start(ram, setup, folders, network, disk)
     local running = resolve("/Running")
     local caps = { running, ram, setup }
 
@@ -3981,6 +4013,16 @@ local function new_namespace()
       if not net then return nil, "no /Network for it to reach" end
 
       caps[#caps + 1] = net
+    end
+
+    -- And the drive its disk is on, when it has one (`docs/linux.md` L1):
+    -- `/Sandboxes`, or wherever the path is served from.
+    if disk then
+      local drive = resolve(disk)
+
+      if not drive then return nil, "no drive for its disk, " .. tostring(disk) end
+
+      caps[#caps + 1] = drive
     end
 
     local id, why = sys.spawn(ROLE_VMM, caps)

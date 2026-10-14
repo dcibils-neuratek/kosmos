@@ -36,6 +36,7 @@
 #include "vdev.h"
 #include "vmmfs.h"
 #include "vmmnet.h"
+#include "vmmblk.h"
 #include "vmm.h"
 
 #define DTB_SPACE       0x200000ul          /* the top 2 MB of RAM */
@@ -215,6 +216,19 @@ static size_t write_tree(uint8_t *at, size_t cap)
         uint32_t irq[3] = { 0, VMM_NET_IRQ - 32, 1 };
 
         fdt_node(&f, "virtio_mmio@a000800");
+        fdt_prop_str(&f, "compatible", "virtio,mmio");
+        fdt_prop_cells(&f, "reg", reg, 4);
+        fdt_prop_cells(&f, "interrupts", irq, 3);
+        fdt_prop_empty(&f, "dma-coherent");
+        fdt_end_node(&f);
+    }
+
+    /* Its disk (`docs/linux.md` L1): one more, after its network. */
+    if (vmmblk_on()) {
+        uint32_t reg[4] = { 0, (uint32_t)VMM_BLK_BASE, 0, 0x200 };
+        uint32_t irq[3] = { 0, VMM_BLK_IRQ - 32, 1 };
+
+        fdt_node(&f, "virtio_mmio@a000a00");
         fdt_prop_str(&f, "compatible", "virtio,mmio");
         fdt_prop_cells(&f, "reg", reg, 4);
         fdt_prop_cells(&f, "interrupts", irq, 3);
@@ -432,6 +446,14 @@ static bool emulate(struct vcpu_regs *r)
         }
 
         got = v;
+    } else if (at >= VMM_BLK_BASE && at < VMM_BLK_BASE + 0x200) {
+        uint64_t v = value;
+
+        if (!vmmblk_mmio(at - VMM_BLK_BASE, size, write, &v)) {
+            return false;
+        }
+
+        got = v;
     } else if (at >= VMM_SHARE_BASE && at < VMM_SHARE_BASE + 0x200ul * VMM_SHARES) {
         uint64_t v = value;
         unsigned i = (unsigned)((at - VMM_SHARE_BASE) / 0x200);
@@ -535,6 +557,11 @@ static bool deliver(struct vcpu_regs *r)
 
     if (vmmnet_raised()) {
         offer(r, VMM_NET_IRQ);
+        any = true;
+    }
+
+    if (vmmblk_raised()) {
+        offer(r, VMM_BLK_IRQ);
         any = true;
     }
 

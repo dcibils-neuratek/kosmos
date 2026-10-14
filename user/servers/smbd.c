@@ -47,6 +47,7 @@
 
 #include "kosmos.h"
 #include "diskproto.h"
+#include "diskask.h"
 #include "keyproto.h"
 #include "smbdproto.h"
 #include "mdnsproto.h"
@@ -59,7 +60,6 @@
 #include "md4.h"
 
 static long console = -1;
-static long disk = -1;
 static uint32_t connections;        /* clients connected now */
 static bool local_only;             /* This network only, as START said */
 static struct smb2_server server;   /* the one this serves; its name for the share list */
@@ -98,39 +98,7 @@ static void put_text(char *field, size_t size, const char *text)
  * ------------------------------------------------------------------------
  */
 
-static struct message dmsg, drep;
-
-static uint32_t disk_ask(uint32_t op, const char *path, uint32_t flags,
-                         uint64_t offset, uint64_t bytes, long region)
-{
-    struct disk_request *rq = (struct disk_request *)dmsg.data;
-    const struct disk_reply *rp = (const struct disk_reply *)drep.data;
-
-    if (disk < 0) {
-        return DISK_ERR_NO_DISK;
-    }
-
-    memset(&dmsg, 0, sizeof dmsg);
-    memset(&drep, 0, sizeof drep);
-    dmsg.length = sizeof *rq;
-    dmsg.cap_plus_one = region >= 0 ? (uint32_t)region + 1 : 0;
-    rq->op = op;
-    rq->flags = flags;
-    rq->offset = offset;
-    rq->bytes = bytes;
-    put_text(rq->path, sizeof rq->path, path);
-
-    if (kosmos_call(disk, &dmsg, &drep) != 0 || drep.length < sizeof *rp) {
-        return DISK_ERR_NO_DISK;
-    }
-
-    return rp->error;
-}
-
-static const struct disk_reply *disk_said(void)
-{
-    return (const struct disk_reply *)drep.data;
-}
+static struct diskask disk = { .ep = -1 };
 
 /*
  * One region for every read, made once at the size of the largest read
@@ -177,11 +145,11 @@ static bool facts_of(const char *path, struct facts *f)
 {
     const struct disk_node *node;
 
-    if (disk_ask(DISK_OP_GETATTR, path, 0, 0, 0, -1) != DISK_OK) {
+    if (diskask(&disk, DISK_OP_GETATTR, path, 0, 0, 0, -1, NULL, 0) != DISK_OK) {
         return false;
     }
 
-    node = &disk_said()->node;
+    node = &diskask_said(&disk)->node;
 
     if (node->kind != DISK_KIND_FILE && node->kind != DISK_KIND_DIR) {
         return false;
@@ -1067,8 +1035,8 @@ static int create(struct smb2_server *server, struct smb2_context *smb2,
             status = SMB2_STATUS_OBJECT_NAME_NOT_FOUND;
         } else if (!here) {
             /* Made: a folder, or an empty file. */
-            status = status_of(dir ? disk_ask(DISK_OP_MKDIR, path, 0, 0, 0, -1)
-                                   : disk_ask(DISK_OP_WRITE, path, 0, 0, 0, -1));
+            status = status_of(dir ? diskask(&disk, DISK_OP_MKDIR, path, 0, 0, 0, -1, NULL, 0)
+                                   : diskask(&disk, DISK_OP_WRITE, path, 0, 0, 0, -1, NULL, 0));
 
             if (status == 0 && !facts_of(path, &f)) {
                 status = SMB2_STATUS_UNSUCCESSFUL;
@@ -1078,7 +1046,7 @@ static int create(struct smb2_server *server, struct smb2_context *smb2,
         } else if (!f.dir && (disp == SMB2_FILE_SUPERSEDE || disp == SMB2_FILE_OVERWRITE
                               || disp == SMB2_FILE_OVERWRITE_IF)) {
             /* Emptied, to be written again. */
-            status = status_of(disk_ask(DISK_OP_WRITE, path, 0, 0, 0, -1));
+            status = status_of(diskask(&disk, DISK_OP_WRITE, path, 0, 0, 0, -1, NULL, 0));
 
             if (status == 0 && !facts_of(path, &f)) {
                 status = SMB2_STATUS_UNSUCCESSFUL;
@@ -1147,7 +1115,7 @@ static int close_handle(struct smb2_server *server, struct smb2_context *smb2,
 
     /* N14: a file or folder marked to go, gone; one written, as it is now. */
     if (h->delete_on_close) {
-        if (disk_ask(DISK_OP_DELETE, h->path, 0, 0, 0, -1) == DISK_OK) {
+        if (diskask(&disk, DISK_OP_DELETE, h->path, 0, 0, 0, -1, NULL, 0) == DISK_OK) {
             said("deleted ", h->path, NULL);
         }
     } else if (h->writable) {
@@ -1181,11 +1149,11 @@ static bool list_folder(struct handle *h)
         const struct disk_reply *rp;
         char *bigger;
 
-        if (disk_ask(DISK_OP_LIST, h->path, 0, offset, 0, -1) != DISK_OK) {
+        if (diskask(&disk, DISK_OP_LIST, h->path, 0, offset, 0, -1, NULL, 0) != DISK_OK) {
             return false;
         }
 
-        rp = disk_said();
+        rp = diskask_said(&disk);
         bigger = realloc(h->names, h->names_bytes + rp->length + 1);
 
         if (bigger == NULL) {
@@ -1477,11 +1445,11 @@ static void space(uint64_t *units, uint64_t *available, uint32_t *sectors_per_un
     *available = 0;
     *sectors_per_unit = 8;
 
-    if (disk_ask(DISK_OP_SUPER, "/Home", 0, 0, 0, -1) != DISK_OK) {
+    if (diskask(&disk, DISK_OP_SUPER, "/Home", 0, 0, 0, -1, NULL, 0) != DISK_OK) {
         return;
     }
 
-    sb = &disk_said()->u.super;
+    sb = &diskask_said(&disk)->u.super;
     if (sb->block_size >= 512) {
         *sectors_per_unit = sb->block_size / 512;
     }
@@ -1650,11 +1618,11 @@ static int read_file(struct smb2_server *server, struct smb2_context *smb2,
     }
 
     if (!read_region()
-        || disk_ask(DISK_OP_READ, h->path, DISK_REGION, req->offset, want, read_cap) != DISK_OK) {
+        || diskask(&disk, DISK_OP_READ, h->path, DISK_REGION, req->offset, want, read_cap, NULL, 0) != DISK_OK) {
         return refuse(smb2, SMB2_READ, SMB2_STATUS_UNEXPECTED_IO_ERROR);
     }
 
-    want = disk_said()->bytes;
+    want = diskask_said(&disk)->bytes;
 
     if (want == 0) {
         return refuse(smb2, SMB2_READ, SMB2_STATUS_END_OF_FILE);
@@ -1708,8 +1676,7 @@ static int write_file(struct smb2_server *server, struct smb2_context *smb2,
         }
 
         memcpy(read_at, req->buf, req->length);
-        status = status_of(disk_ask(DISK_OP_WRITE_AT, h->path, DISK_REGION, req->offset,
-                                    req->length, read_cap));
+        status = status_of(diskask(&disk, DISK_OP_WRITE_AT, h->path, DISK_REGION, req->offset, req->length, read_cap, NULL, 0));
 
         if (status != 0) {
             return refuse(smb2, SMB2_WRITE, status);
@@ -1730,27 +1697,13 @@ static int write_file(struct smb2_server *server, struct smb2_context *smb2,
 /* A disk request with a second path, `u.to`: a rename's destination. */
 static uint32_t disk_rename(const char *from, const char *to)
 {
-    struct disk_request *rq = (struct disk_request *)dmsg.data;
-    const struct disk_reply *rp = (const struct disk_reply *)drep.data;
     size_t n = strlen(to);
 
-    if (disk < 0 || n >= sizeof rq->u.to) {
+    if (n >= DISK_PATH_MAX) {
         return DISK_ERR_BAD_OP;
     }
 
-    memset(&dmsg, 0, sizeof dmsg);
-    memset(&drep, 0, sizeof drep);
-    dmsg.length = sizeof *rq;
-    rq->op = DISK_OP_RENAME;
-    put_text(rq->path, sizeof rq->path, from);
-    memcpy(rq->u.to, to, n + 1);
-    rq->length = (uint32_t)n;
-
-    if (kosmos_call(disk, &dmsg, &drep) != 0 || drep.length < sizeof *rp) {
-        return DISK_ERR_NO_DISK;
-    }
-
-    return rp->error;
+    return diskask(&disk, DISK_OP_RENAME, from, 0, 0, 0, -1, to, (uint32_t)n);
 }
 
 /*
@@ -1789,7 +1742,7 @@ static int set_info(struct smb2_server *server, struct smb2_context *smb2,
         }
 
         memcpy(&end, in, 8);            /* little-endian, as this machine is */
-        status = status_of(disk_ask(DISK_OP_WRITE_AT, h->path, DISK_CUT, end, 0, -1));
+        status = status_of(diskask(&disk, DISK_OP_WRITE_AT, h->path, DISK_CUT, end, 0, -1, NULL, 0));
 
         if (status == 0) {
             h->facts.size = end;
@@ -1846,7 +1799,7 @@ static int set_info(struct smb2_server *server, struct smb2_context *smb2,
                 break;
             }
 
-            status = status_of(disk_ask(DISK_OP_DELETE, to, 0, 0, 0, -1));
+            status = status_of(diskask(&disk, DISK_OP_DELETE, to, 0, 0, 0, -1, NULL, 0));
 
             if (status != 0) {
                 break;
@@ -2527,7 +2480,7 @@ void smbd_server(long net_cap, long console_cap, long disk_cap, long door_cap,
     uint64_t sender;
 
     console = console_cap;
-    disk = disk_cap;
+    disk.ep = disk_cap;
     door = door_cap;
     keyring = keyring_cap;
     mdns = mdns_cap;

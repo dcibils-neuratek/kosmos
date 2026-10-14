@@ -53,6 +53,7 @@ const char *kfs_why(int status)
     case KFS_E_NOT_ATTRS:   return "this is not an attribute block";
     case KFS_E_DIR_BIG:     return "a directory larger than this can edit";
     case KFS_E_BLOCK_LONG:  return "a block write longer than a block";
+    case KFS_E_PAST_END:    return "a write in place past the file's end";
     default:                return "an error this does not know";
     }
 }
@@ -72,6 +73,8 @@ void kfs_init(struct kfs *k, const struct kfs_disk *disk)
     k->held = 0;
     k->freed_runs = 0;
     k->dir_len = 0;
+    k->zeros = NULL;
+    k->zero_blocks = 0;
 }
 
 /*
@@ -1035,6 +1038,95 @@ static int read_extent(struct kfs *k, void *ctx, const struct kfs_extent *x)
     return KFS_OK;
 }
 
+struct placing {
+    uint64_t offset, finish, start;
+    const uint8_t *from;
+};
+
+/* `read_extent` the other way round: whole blocks in one write, a block at
+ * an end read, laid over and written back. */
+static int place_extent(struct kfs *k, void *ctx, const struct kfs_extent *x)
+{
+    struct placing *pl = ctx;
+    uint64_t span = (uint64_t)x->count * KFS_BLOCK;
+    uint64_t start = pl->start;
+    uint64_t now = pl->offset > start ? pl->offset : start;
+    uint64_t end = min64(pl->finish, start + span);
+
+    pl->start += span;
+
+    if (start >= pl->finish) return KFS_OK;
+
+    while (now < end) {
+        uint32_t block = (uint32_t)((now - start) / KFS_BLOCK);
+        uint64_t skip = now - (start + (uint64_t)block * KFS_BLOCK);
+        const uint8_t *from = pl->from + (now - pl->offset);
+        int r;
+
+        if (skip == 0 && end - now >= KFS_BLOCK) {
+            uint32_t whole = (uint32_t)((end - now) / KFS_BLOCK);
+
+            r = disk_write(k, x->start + block, whole, from);
+
+            if (r != KFS_OK) return r;
+
+            now += (uint64_t)whole * KFS_BLOCK;
+        } else {
+            uint64_t take = min64(KFS_BLOCK - skip, end - now);
+
+            r = kfs_read_block(k, x->start + block, k->part);
+
+            if (r != KFS_OK) return r;
+
+            memcpy(k->part + skip, from, (size_t)take);
+            r = disk_write(k, x->start + block, 1, k->part);
+
+            if (r != KFS_OK) return r;
+
+            now += take;
+        }
+    }
+
+    return KFS_OK;
+}
+
+int kfs_write_in_place(struct kfs *k, const struct kfs_super *sb,
+                       const struct kfs_inode *node, uint64_t offset,
+                       const void *bytes, uint64_t len)
+{
+    struct placing pl = { offset, offset + len, 0, bytes };
+
+    (void)sb;
+
+    if (node->kind != KFS_KIND_FILE) {
+        return KFS_E_IS_DIR;
+    }
+
+    if (offset + len < offset || offset + len > node->size) {
+        return KFS_E_PAST_END;
+    }
+
+    if (len == 0) {
+        return KFS_OK;
+    }
+
+    return each_extent(k, node, false, place_extent, &pl);
+}
+
+int kfs_place_at(struct kfs *k, const struct kfs_super *sb, const char *path,
+                 size_t len, uint64_t offset, const void *bytes, uint64_t size)
+{
+    struct kfs_inode node;
+    uint32_t number;
+    int r = kfs_find(k, sb, path, len, &number, &node);
+
+    if (r != KFS_OK) {
+        return r;
+    }
+
+    return kfs_write_in_place(k, sb, &node, offset, bytes, size);
+}
+
 int kfs_read_range(struct kfs *k, const struct kfs_super *sb,
                    const struct kfs_inode *node, uint64_t offset, uint64_t want,
                    void *to, uint64_t *placed)
@@ -1394,6 +1486,27 @@ static int write_new(struct kfs *k, uint32_t start, uint32_t count, uint64_t log
             }
 
             b += whole;
+            continue;
+        }
+
+        /* Blocks wholly in the gap, past the old end and before the range:
+         * zeroes, as many a call as the caller gave. */
+        if (k->zeros != NULL && logical + b >= old_blocks && lo + KFS_BLOCK <= offset) {
+            uint32_t run = 1;
+            int r;
+
+            while (b + run < count && run < k->zero_blocks
+                   && lo + (uint64_t)(run + 1) * KFS_BLOCK <= offset) {
+                run++;
+            }
+
+            r = disk_write(k, start + b, run, k->zeros);
+
+            if (r != KFS_OK) {
+                return r;
+            }
+
+            b += run;
             continue;
         }
 

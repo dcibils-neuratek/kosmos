@@ -43,6 +43,7 @@
 #include "vmmproto.h"
 #include "vmmfs.h"
 #include "vmmnet.h"
+#include "vmmblk.h"
 #include "x86dev.h"
 #include "vmm.h"
 #include "init/say.h"
@@ -58,6 +59,8 @@
 static const unsigned share_irq[VMM_SHARES] = { 5, 7, 9, 10 };
 
 #define X86_NET_IRQ         11u
+#define X86_BLK_BASE        (X86_NET_BASE + 0x200ul)   /* its disk (`docs/linux.md` L1) */
+#define X86_BLK_IRQ         12u
 #define X86_UART_IRQ        4u
 #define X86_UART_PORT       0x3f8u
 
@@ -171,6 +174,10 @@ bool vmm_machine_prepare(void)
 
     if (vmm_networked()) {
         append_device(X86_NET_BASE, X86_NET_IRQ);
+    }
+
+    if (vmmblk_on()) {
+        append_device(X86_BLK_BASE, X86_BLK_IRQ);
     }
 
     if (!x86_boot(vmm_ram, vmm_cfg.ram_bytes, vmm_cfg.kernel_offset, vmm_cfg.kernel_bytes,
@@ -403,6 +410,8 @@ static void mmio(struct vcpu_regs *r)
 
     if (gpa >= X86_NET_BASE && gpa < X86_NET_BASE + 0x200 && vmm_networked()) {
         done = vmmnet_mmio(gpa - X86_NET_BASE, m.size, m.write, &v);
+    } else if (gpa >= X86_BLK_BASE && gpa < X86_BLK_BASE + 0x200 && vmmblk_on()) {
+        done = vmmblk_mmio(gpa - X86_BLK_BASE, m.size, m.write, &v);
     } else if (gpa >= X86_VIRTIO_BASE && gpa < X86_VIRTIO_BASE + 0x200ul * VMM_SHARES) {
         unsigned i = (unsigned)((gpa - X86_VIRTIO_BASE) / 0x200);
 
@@ -440,6 +449,7 @@ static void deliver(struct vcpu_regs *r)
     x86_pic_level(&pic, X86_UART_IRQ, x86_uart_raised(&uart, &console));
     vmmnet_pump();
     x86_pic_level(&pic, X86_NET_IRQ, vmm_networked() && vmmnet_raised());
+    x86_pic_level(&pic, X86_BLK_IRQ, vmmblk_raised());
 
     for (unsigned i = 0; i < VMM_SHARES; i++) {
         x86_pic_level(&pic, share_irq[i], vmmfs_raised(i));

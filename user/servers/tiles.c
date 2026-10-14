@@ -31,6 +31,7 @@
 
 #include "kosmos.h"
 #include "diskproto.h"
+#include "diskask.h"
 #include "netproto.h"
 #include "../init/say.h"
 #include "tileproto.h"
@@ -45,7 +46,6 @@ void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep);
 #define ARRIVED_KEPT 512u                    /* what `arrived` can look back on */
 
 static long console = -1;
-static long disk = -1;
 static unsigned long counter_hz = 62500000ul;      /* from sysinfo, at start */
 
 /*
@@ -135,31 +135,7 @@ static bool parse_url(const char *url, bool *tls, char *host, size_t host_room,
  * The disk, through this server's door.
  * --------------------------------------------------------------------- */
 
-static struct message dmsg, drep;
-
-static uint32_t disk_ask(uint32_t op, const char *path, uint32_t flags, uint64_t bytes,
-                         long region)
-{
-    struct disk_request *rq = (struct disk_request *)dmsg.data;
-    const struct disk_reply *rp = (const struct disk_reply *)drep.data;
-
-    if (disk < 0) return DISK_ERR_NO_DISK;
-
-    memset(&dmsg, 0, sizeof dmsg);
-    memset(&drep, 0, sizeof drep);
-    dmsg.length = sizeof *rq;
-    dmsg.cap_plus_one = region >= 0 ? (uint32_t)region + 1 : 0;
-    rq->op = op;
-    rq->flags = flags;
-    rq->bytes = bytes;
-    snprintf(rq->path, sizeof rq->path, "%s", path);
-
-    if (kosmos_call(disk, &dmsg, &drep) != 0 || drep.length < sizeof *rp) {
-        return DISK_ERR_NO_DISK;
-    }
-
-    return rp->error;
-}
+static struct diskask disk = { .ep = -1 };
 
 /* The folders down to `path`, made where they are not (an error from one
  * that is there already is not one). */
@@ -174,7 +150,7 @@ static void folders(const char *path)
         if (path[i] == '/' || path[i] == '\0') {
             memcpy(at, path, i);
             at[i] = '\0';
-            (void)disk_ask(DISK_OP_MKDIR, at, 0, 0, -1);
+            (void)diskask(&disk, DISK_OP_MKDIR, at, 0, 0, 0, -1, NULL, 0);
         }
     }
 }
@@ -226,7 +202,7 @@ static bool cache_put(const char *dir, const char *name, const uint8_t *bytes, s
 
     memcpy(region_at, bytes, n);
 
-    uint32_t e = disk_ask(DISK_OP_WRITE, path, DISK_REGION, (uint64_t)n, region_cap);
+    uint32_t e = diskask(&disk, DISK_OP_WRITE, path, DISK_REGION, 0, (uint64_t)n, region_cap, NULL, 0);
 
     if (e != 0) {
         char text[96];
@@ -902,7 +878,7 @@ void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep)
     static struct message in, out;
 
     console = console_ep;
-    disk = disk_ep;
+    disk.ep = disk_ep;
     net_client_start(net_ep);
     link_reset(&tl, TILE_MOST);
     link_reset(&finder.link, FIND_MOST);

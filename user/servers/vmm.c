@@ -31,6 +31,7 @@
 #include "vmmproto.h"
 #include "appproto.h"
 #include "vdev.h"
+#include "vmmblk.h"
 #include "vmmfs.h"
 #include "vmmnet.h"
 #include "init/say.h"
@@ -363,6 +364,7 @@ static void answer(const struct vmm_request *req, struct vmm_reply *rep)
 #define VMM_NO_THREAD       18
 #define VMM_NO_NAME         19
 #define VMM_BAD_SHARE       20
+#define VMM_BAD_DISK        21
 
 /*
  * **Registered in `/Running` as `sandbox-<name>`**, with an endpoint of its
@@ -400,7 +402,8 @@ static long register_name(long running)
     return endpoint;
 }
 
-void vmm_server(long running_cap, long ram_cap, long setup_cap, long more1, long more2)
+void vmm_server(long running_cap, long ram_cap, long setup_cap, long more1, long more2,
+                long more3)
 {
     long home_cap = -1, net_cap = -1;
     long at, guest, thread, endpoint;
@@ -460,6 +463,18 @@ void vmm_server(long running_cap, long ram_cap, long setup_cap, long more1, long
 
         home_cap = folders ? more1 : -1;
         net_cap = vmm_networked() ? (folders ? more2 : more1) : -1;
+
+        /* And the drive its disk is on, after those (`docs/linux.md` L1). */
+        vmm_cfg.disk.path[sizeof vmm_cfg.disk.path - 1] = '\0';
+
+        if (vmm_cfg.disk.path[0] != '\0') {
+            long more[3] = { more1, more2, more3 };
+            long disk_cap = more[(folders ? 1 : 0) + (vmm_networked() ? 1 : 0)];
+
+            if (!vmmblk_start(disk_cap, vmm_cfg.disk.path, vmm_cfg.disk.read_only != 0)) {
+                kosmos_exit(VMM_BAD_DISK);
+            }
+        }
 
         if (vmm_networked()) {
             uint16_t from[VMM_PORTS], to[VMM_PORTS];

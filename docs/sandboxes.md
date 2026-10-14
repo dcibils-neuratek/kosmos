@@ -37,9 +37,11 @@ In the window, as drawn:
 - **Get an image** - Alpine's, as a package (`pkg install alpine`).
 
 At the Terminal, the same through `sandbox`: `sandbox run IMAGE [--share
-FOLDER[:PATH[:ro]]] [--port N:M] -- COMMAND` for a task, which says how fast
-it came up and its command's exit, and throws the guest away; `sandbox list`,
-`start`, `stop`, and `console` into a running one.
+FOLDER[:PATH[:ro]]] [--port N:M] [--disk FILE[:ro]] -- COMMAND` for a task,
+which says how fast it came up and its command's exit, and throws the guest
+away; `sandbox list`, `start`, `stop`, and `console` into a running one; and
+`sandbox disk new FILE MB`, a disk that keeps - `/dev/vda` in the guest, a
+file in `/Sandboxes` on Kosmos (`docs/linux.md` L1).
 
 **Built in this order, and said when it is not there yet**: the cards,
 groups, images, machine, New sandbox, start and stop, and the console come

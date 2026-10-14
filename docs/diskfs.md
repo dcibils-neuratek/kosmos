@@ -344,3 +344,37 @@ written over in place.
 and appends to the list, and coalescing keeps it short. Held on the Mac by
 `tools/test_kfs.lua` - pieces in order and out of order, a gap, a power
 cut between data and commit - against the same bytes written whole.
+
+## Writing in place, and a gap of zeroes in runs (Linux L1b, 14 October 2026)
+
+A sandbox's disk (`docs/linux.md`) is a file its guest writes over a block
+at a time, for as long as it lives. `WRITE_AT` writes every range anew, to
+blocks nothing points at yet - right for a file a person saves, because a
+power cut leaves it whole one way or the other - and wrong for this: a disk
+image written a 4 KB block at a time that way ends in a piece a write, and
+`KFS_FILE_RUNS` is reached in an afternoon.
+
+**`DISK_IN_PLACE`**, a flag on `WRITE_AT` (`kfs_write_in_place`,
+`kfs_place_at`): the bytes laid over the blocks the file has, none taken,
+its inode, extents, size and time untouched, refused past its end with
+nothing written. **Not a transaction**: what a guest writes is the guest's
+filesystem's to keep whole, with its own journal, as on any disk - which is
+what a raw disk image on ext4 or APFS is given too. It is not told to a
+folder's watchers, since nothing a folder lists has changed. And
+**`DISK_OP_FLUSH`**: a stick asked to write out what it holds, for a guest
+that flushes its disk.
+
+**A gap written many blocks a call.** A file grown past its end has the gap
+written as zeroes, and that was a block a call from `part` - a million calls
+for a 4 GB disk. The disk server gives `kfs` a megabyte of zeroes
+(`zeros`, `zero_blocks`), and a block wholly in the gap goes out in runs of
+it. **Zeroes rather than blocks only reserved**, because a guest reads its
+whole disk: blocks handed over unwritten would show it whatever the drive
+held before. `fs.size(path, bytes, create)` sets a file's size - `WRITE_AT`
+with nothing written and `DISK_CUT` - and `sandbox disk new` grows a disk a
+256 MB piece at a time, so it is said as it goes.
+
+Held by `tools/test_kfs.lua` (eight checks: only the file's own blocks
+written, its extents and time as they were, the refusals, and a 2 MB gap in
+517 calls without the buffer and far fewer with it - each with a control
+that bites) and `arm-sandbox-linux` (`testing.md` 18.637).

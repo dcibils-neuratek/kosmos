@@ -911,6 +911,8 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/x86dev.c \
              user/servers/vmmfs.c \
              user/servers/vdev.c \
+             user/servers/vmmblk.c \
+             user/servers/diskask.c \
              user/servers/vmmnet.c \
              user/servers/fdt.c \
              user/kits/tls/tls_kosmos.c \

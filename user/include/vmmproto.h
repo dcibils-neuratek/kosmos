@@ -19,7 +19,7 @@
 #include <stdint.h>
 
 #define VMM_SETUP_MAGIC     0x4b766d6du     /* "Kvmm" */
-#define VMM_SETUP_VERSION   1u
+#define VMM_SETUP_VERSION   2u
 #define VMM_CMDLINE_MAX     512u
 
 /* Where things are in every guest's physical address space - QEMU `virt`'s
@@ -97,15 +97,29 @@ struct vmm_setup {
      * monitor counts on from it with its own counter.
      */
     uint64_t epoch;
+
+    /*
+     * **Its disk** (`docs/linux.md` L1): a file the guest sees as virtio-blk,
+     * `/dev/vda` - in `/Sandboxes`, its own drive, so a guest that fills it
+     * fills nothing else. The monitor is handed the drive it is on. An empty
+     * `path` is none; `read_only`, a disk the guest cannot change.
+     */
+    struct vmm_disk {
+        char     path[256];
+        uint32_t read_only;
+        uint32_t reserved;
+    } disk;
 };
 
 #define VMM_NET_NONE        0u
 #define VMM_NET_OUT         1u
 #define VMM_NET_BASE        (VMM_SHARE_BASE + 0x200ul * VMM_SHARES)
 #define VMM_NET_IRQ         (VMM_SHARE_IRQ + VMM_SHARES)
+#define VMM_BLK_BASE        (VMM_NET_BASE + 0x200ul)
+#define VMM_BLK_IRQ         (VMM_NET_IRQ + 1u)
 
-_Static_assert(sizeof(struct vmm_setup) == 600 + VMM_SHARES * 264 + 8 + VMM_PORTS * 4 + 8,
-               "six words, a magic, a version, a line, a name, a token, its folders, its network, its ports, the time");
+_Static_assert(sizeof(struct vmm_setup) == 600 + VMM_SHARES * 264 + 8 + VMM_PORTS * 4 + 8 + 264,
+               "six words, a magic, a version, a line, a name, a token, its folders, its network, its ports, the time, its disk");
 _Static_assert(sizeof(struct vmm_setup) <= 4096, "a setup is a page");
 
 /*

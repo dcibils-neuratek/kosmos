@@ -1147,6 +1147,45 @@ static int l_store_at(lua_State *L)
     return 1;
 }
 
+/* `place_at(sb, path, offset, bytes)`: a range written where the file's
+ * blocks are (`kfs_place_at`, `docs/linux.md` L1b) - true, or nil and why. */
+static int l_place_at(lua_State *L)
+{
+    struct kfs_super sb;
+    const char *path, *bytes;
+    size_t len, size;
+    lua_Integer offset;
+
+    get_sb(L, 1, &sb);
+    path = luaL_checklstring(L, 2, &len);
+    offset = luaL_checkinteger(L, 3);
+    bytes = luaL_checklstring(L, 4, &size);
+    enter(L);
+
+    if (offset < 0) {
+        return answer(L, KFS_E_PAST_END);
+    }
+
+    return answer(L, kfs_place_at(K, &sb, path, len, (uint64_t)offset, bytes, size));
+}
+
+/* `zeros(n)`: a gap written `n` blocks a call from a buffer of zeroes, as
+ * the disk server gives one; 0 for a block a call. */
+static uint8_t host_zeros[64 * KFS_BLOCK];
+
+static int l_zeros(lua_State *L)
+{
+    lua_Integer n = luaL_checkinteger(L, 1);
+
+    if (n < 0 || n > 64) {
+        return luaL_error(L, "zeros: 0 to 64 blocks");
+    }
+
+    K->zeros = n > 0 ? host_zeros : NULL;
+    K->zero_blocks = (uint32_t)n;
+    return 0;
+}
+
 static int l_rename(lua_State *L)
 {
     struct kfs_super sb;
@@ -1324,6 +1363,8 @@ static int luaopen_kfsc(lua_State *L)
         { "mkdir",           l_mkdir },
         { "store",           l_store },
         { "store_at",        l_store_at },
+        { "place_at",        l_place_at },
+        { "zeros",           l_zeros },
         { "rename",          l_rename },
         { "unlink",          l_unlink },
         { "mkfs",            l_mkfs },

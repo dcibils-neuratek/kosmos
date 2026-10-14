@@ -43,6 +43,7 @@
 
 #include "kosmos.h"
 #include "diskproto.h"
+#include "diskask.h"
 #include "keyproto.h"
 
 #include "../init/say.h"
@@ -62,7 +63,6 @@ static const char FILE_PATH[] = "/Keyring/keyring";
 
 static long console = -1;
 static long devices = -1;
-static long disk = -1;
 static long smb = -1;
 
 static uint8_t key[KEYFILE_KEY_BYTES];
@@ -144,46 +144,7 @@ static uint64_t now(void)
  * ------------------------------------------------------------------------
  */
 
-static struct message dmsg, drep;
-
-static uint32_t disk_ask(uint32_t op, const char *path, uint32_t flags,
-                         uint64_t offset, uint64_t bytes, const void *data,
-                         uint32_t length, long region)
-{
-    struct disk_request *rq = (struct disk_request *)dmsg.data;
-    const struct disk_reply *rp = (const struct disk_reply *)drep.data;
-
-    if (disk < 0) {
-        return DISK_ERR_NO_DISK;
-    }
-
-    memset(&dmsg, 0, sizeof dmsg);
-    memset(&drep, 0, sizeof drep);
-    dmsg.length = sizeof *rq;
-    dmsg.cap_plus_one = region >= 0 ? (uint32_t)region + 1 : 0;
-    rq->op = op;
-    rq->flags = flags;
-    rq->offset = offset;
-    rq->bytes = bytes;
-    rq->length = length;
-    put_text(rq->path, sizeof rq->path, path);
-    if (length > 0) {
-        memcpy(rq->u.data, data, length);
-    }
-
-    if (kosmos_call(disk, &dmsg, &drep) != 0 || drep.length < sizeof *rp) {
-        memset(&dmsg, 0, sizeof dmsg);
-        return DISK_ERR_NO_DISK;
-    }
-
-    memset(rq->u.data, 0, sizeof rq->u.data);
-    return rp->error;
-}
-
-static const struct disk_reply *disk_said(void)
-{
-    return (const struct disk_reply *)drep.data;
-}
+static struct diskask disk = { .ep = -1 };
 
 /* A region of `bytes`, mapped: its capability and where it is. */
 struct region {
@@ -227,12 +188,12 @@ static void region_free(struct region *r)
 /* A file's size, or -1 when there is none. */
 static long file_size(const char *path)
 {
-    if (disk_ask(DISK_OP_GETATTR, path, 0, 0, 0, NULL, 0, -1) != 0
-        || disk_said()->node.kind != DISK_KIND_FILE) {
+    if (diskask(&disk, DISK_OP_GETATTR, path, 0, 0, 0, -1, NULL, 0) != 0
+        || diskask_said(&disk)->node.kind != DISK_KIND_FILE) {
         return -1;
     }
 
-    return (long)disk_said()->node.size;
+    return (long)diskask_said(&disk)->node.size;
 }
 
 /* A whole file into a region made for it: one read, which `diskfs.c`
@@ -245,8 +206,8 @@ static bool file_read(const char *path, struct region *r, size_t *bytes)
         return false;
     }
 
-    if (disk_ask(DISK_OP_READ, path, DISK_REGION, 0, (uint64_t)size, NULL, 0, r->cap) != 0
-        || disk_said()->bytes != (uint64_t)size) {
+    if (diskask(&disk, DISK_OP_READ, path, DISK_REGION, 0, (uint64_t)size, r->cap, NULL, 0) != 0
+        || diskask_said(&disk)->bytes != (uint64_t)size) {
         region_free(r);
         return false;
     }
@@ -291,7 +252,7 @@ static void set_aside(const char *path, const char *why)
         to[n] = '\0';
     }
 
-    if (disk_ask(DISK_OP_RENAME, path, 0, 0, 0, to, (uint32_t)strlen(to), -1) == 0) {
+    if (diskask(&disk, DISK_OP_RENAME, path, 0, 0, 0, -1, to, (uint32_t)strlen(to)) == 0) {
         say_begin(&line);
         say_text(&line, "keyring: ");
         say_text(&line, path);
@@ -314,7 +275,7 @@ static bool make_key(void)
         return false;
     }
 
-    if (disk_ask(DISK_OP_WRITE, KEY_PATH, 0, 0, 0, key, sizeof key, -1) != 0) {
+    if (diskask(&disk, DISK_OP_WRITE, KEY_PATH, 0, 0, 0, -1, key, sizeof key) != 0) {
         memset(key, 0, sizeof key);
         tell("the key could not be written", 0, false, NULL);
         return false;
@@ -333,16 +294,16 @@ static bool load_key(void)
     }
 
     if (size != (long)sizeof key
-        || disk_ask(DISK_OP_READ, KEY_PATH, 0, 0, sizeof key, NULL, 0, -1) != 0
-        || disk_said()->length != sizeof key) {
+        || diskask(&disk, DISK_OP_READ, KEY_PATH, 0, 0, sizeof key, -1, NULL, 0) != 0
+        || diskask_said(&disk)->length != sizeof key) {
         /* A key that is not one: kept, and another made, so the file it
          * sealed will be kept aside too rather than overwritten. */
         set_aside(KEY_PATH, "is not a key");
         return make_key();
     }
 
-    memcpy(key, disk_said()->u.data, sizeof key);
-    memset(drep.data, 0, sizeof drep.data);
+    memcpy(key, diskask_said(&disk)->u.data, sizeof key);
+    memset(disk.rep.data, 0, sizeof disk.rep.data);
     return true;
 }
 
@@ -399,8 +360,7 @@ static bool save(void)
 
     sealed = keyfile_seal(key, nonce, records, count, next_id, r.at, r.pages * 4096u);
     e = sealed < 0 ? DISK_ERR_NO_DISK
-                   : disk_ask(DISK_OP_WRITE, FILE_PATH, DISK_REGION, 0,
-                              (uint64_t)sealed, NULL, 0, r.cap);
+                   : diskask(&disk, DISK_OP_WRITE, FILE_PATH, DISK_REGION, 0, (uint64_t)sealed, r.cap, NULL, 0);
     region_free(&r);
     return e == 0;
 }
@@ -483,11 +443,11 @@ static void take_back(void)
             const struct disk_reply *rp;
             uint32_t used = 0;
 
-            if (disk_ask(DISK_OP_LIST, "/Keyring", 0, offset, 0, NULL, 0, -1) != 0) {
+            if (diskask(&disk, DISK_OP_LIST, "/Keyring", 0, offset, 0, -1, NULL, 0) != 0) {
                 return;
             }
 
-            rp = disk_said();
+            rp = diskask_said(&disk);
 
             while (used < rp->length) {
                 const char *name = rp->u.data + used;
@@ -917,21 +877,21 @@ void keyring_server(long smb_door, long manage_door, long disk_door, long device
     doors[0].ep = manage_door;
     doors[1].ep = mail_door;
     doors[2].ep = sharing_door;
-    disk = disk_door;
+    disk.ep = disk_door;
     devices = devices_ep;
     console = console_ep;
 
     /* The folder, on a disk made before there was a keyring: made here, the
      * one place it is made (`testing.md` 18.418). */
-    disk_ok = disk >= 0;
+    disk_ok = disk.ep >= 0;
     if (!disk_ok) {
         file_state = KEY_FILE_NO_DISK;
     }
     if (disk_ok) {
-        uint32_t e = disk_ask(DISK_OP_MKDIR, "/Keyring", 0, 0, 0, NULL, 0, -1);
+        uint32_t e = diskask(&disk, DISK_OP_MKDIR, "/Keyring", 0, 0, 0, -1, NULL, 0);
 
-        if (e != 0 && (disk_ask(DISK_OP_GETATTR, "/Keyring", 0, 0, 0, NULL, 0, -1) != 0
-                       || disk_said()->node.kind != DISK_KIND_DIR)) {
+        if (e != 0 && (diskask(&disk, DISK_OP_GETATTR, "/Keyring", 0, 0, 0, -1, NULL, 0) != 0
+                       || diskask_said(&disk)->node.kind != DISK_KIND_DIR)) {
             tell("there is no disk to keep it on; it holds nothing for now", 0, false, NULL);
             disk_ok = false;
             file_state = KEY_FILE_NO_DISK;

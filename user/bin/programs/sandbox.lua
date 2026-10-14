@@ -8,10 +8,14 @@
 --                                       ... and the network, outgoing
 --   sandbox run alpine --port 8080:80 -- httpd -f -p 80
 --                                       ... Kosmos's port 8080 carried to its 80
+--   sandbox run alpine --disk /Sandboxes/linux.img -- mkfs.ext4 /dev/vda
+--                                       ... given a disk of its own (`:ro`: read only)
+--   sandbox disk new /Sandboxes/linux.img 4096
+--                                       a disk, 4096 MB of zeroes, to give one
 --   sandbox run alpine                  a shell in a new one, until it ends
 --   sandbox list                        every sandbox, and how it is doing
 --   sandbox new web --image alpine [--memory 256] [--service] [--at-start] [--network]
---                   [--share FOLDER] [--port N:M] [-- COMMAND]
+--                   [--share FOLDER] [--port N:M] [--disk FILE] [-- COMMAND]
 --   sandbox start web | stop web | console web | delete web
 --   sandbox images                      the images there are to start from
 --
@@ -120,7 +124,8 @@ if verb == "run" then
   if command then
     local began = sys.ticks()
     local code, up, took, last = sandboxes.run(image, command, memory, say, options.shares,
-                                                     options.network, options.ports)
+                                                     options.network, options.ports,
+                                                     options.disk)
 
     -- Refused before it started: `sandboxes.run` answers nil and why - a
     -- folder outside /Home, a name in use - and the why is its second value.
@@ -149,6 +154,7 @@ if verb == "run" then
   s.folders = options.shares or {}
   s.network = options.network and "outgoing" or "none"
   s.ports = options.ports or {}
+  s.disk = options.disk ~= true and options.disk or nil
 
   local id, why = sandboxes.start(s)
 
@@ -183,6 +189,28 @@ if verb == "list" or verb == nil then
   return
 end
 
+--
+-- **A disk made** (`docs/linux.md` L1): zeroes, the size asked, said as it
+-- grows - a guest's disk lives in `/Sandboxes`, its own drive.
+--
+if verb == "disk" then
+  local path, mb = options[2], math.tointeger(tonumber(options[3] or ""))
+
+  if options[1] ~= "new" or not path or not mb then
+    print("sandbox: sandbox disk new FILE MEGABYTES - a disk for a sandbox, in /Sandboxes")
+    sys.exit(1)
+  end
+
+  local ok, why = sandboxes.make_disk(path, mb, function(made, of)
+    say(("\rsandbox: %s, %d of %d MB"):format(path, made, of))
+  end)
+
+  print(ok and ("\nsandbox: %s made, %d MB - --disk %s gives it to a sandbox"):format(path, mb, path)
+           or ("\nsandbox: " .. tostring(why)))
+  if not ok then sys.exit(1) end
+  return
+end
+
 if verb == "images" then
   local images = sandboxes.images()
 
@@ -198,7 +226,7 @@ end
 local name = options[1]
 
 if not name then
-  print("sandbox: run, list, new, start, stop, console, delete or images - sandbox.lua says how")
+  print("sandbox: run, list, new, start, stop, console, delete, disk or images - sandbox.lua says how")
   sys.exit(1)
 end
 
@@ -211,6 +239,7 @@ if verb == "new" then
   s.starts = options["at-start"] and "with Kosmos" or "by hand"
   s.network = options.network and "outgoing" or "none"
   s.command = command or ""
+  s.disk = options.disk ~= true and options.disk or nil
 
   for _, text in ipairs(options.shares or {}) do
     local f, why = sandboxes.folder(text)

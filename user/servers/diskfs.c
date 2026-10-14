@@ -100,6 +100,10 @@ struct arena {
     uint8_t pending[PENDING_BYTES];
     char path[DISK_PATH_MAX * 2];
 
+    /* Zeroes, the most one call moves, for a gap a range write leaves - a
+     * sandbox's disk of gigabytes made (`kfs.h`, `zeros`). */
+    uint8_t zeros[STICK_MOST];
+
     /*
      * **A query's whole answer, from one scan**, and what it answered: the
      * folder and the terms, and the disk as it was then. A page after the
@@ -581,6 +585,27 @@ static int stick_io(uint32_t op, uint32_t block, uint32_t count)
                &r, &error) ? 0 : -1;
 }
 
+/* What a stick holds in its cache, written out - asked every time, and why
+ * not remembered when it cannot (the Lua server has why). The kernel's
+ * disk writes through. */
+static void device_flush(void)
+{
+    struct block_reply f;
+    uint32_t error;
+
+    if (!stick.use || !stick.found) {
+        return;
+    }
+
+    if (!ask(blocks_write, BLOCK_OP_FLUSH, stick.unit, 0, 0, -1, &f, &error)
+        && (error == BLOCK_ERR_NO_FLUSH || stick.flush_why[0] == '\0')) {
+        put_text(stick.flush_why, sizeof stick.flush_why,
+                 error == BLOCK_ERR_NO_FLUSH
+                 ? "the stick does not do SYNCHRONIZE CACHE"
+                 : "the stick failed it, or did not answer");
+    }
+}
+
 static int device_read(void *ctx, uint32_t block, uint32_t count, void *to)
 {
     uint64_t began = kosmos_ticks();
@@ -626,16 +651,7 @@ static int device_write(void *ctx, uint32_t block, uint32_t count, const void *f
          * has why).
          */
         if (r == 0 && get_le32(from) == KFS_J_MAGIC) {
-            struct block_reply f;
-            uint32_t error;
-
-            if (!ask(blocks_write, BLOCK_OP_FLUSH, stick.unit, 0, 0, -1, &f, &error)
-                && (error == BLOCK_ERR_NO_FLUSH || stick.flush_why[0] == '\0')) {
-                put_text(stick.flush_why, sizeof stick.flush_why,
-                         error == BLOCK_ERR_NO_FLUSH
-                         ? "the stick does not do SYNCHRONIZE CACHE"
-                         : "the stick failed it, or did not answer");
-            }
+            device_flush();
         }
     } else {
         long wrote = kosmos_disk_write((unsigned long)block * KFS_PER_BLOCK, from, bytes);
@@ -1001,6 +1017,46 @@ static void op_write_at(const struct disk_request *rq, struct disk_reply *rp, lo
 
     if (reserved(name, len)) {
         rp->error = DISK_ERR_RESERVED;
+        return;
+    }
+
+    /* In place: over the blocks the file has, outside any transaction. */
+    if (rq->flags & DISK_IN_PLACE) {
+        const void *from = rq->u.data;
+        uint64_t bytes = rq->length;
+        struct region region = { 0 };
+
+        if (create || cut) {
+            rp->error = DISK_ERR_BAD_OP;
+            return;
+        }
+
+        if (rq->flags & DISK_REGION) {
+            if (!map_region(cap, &region) || rq->bytes > region.bytes) {
+                unmap_region(&region);
+                rp->error = DISK_ERR_REGION;
+                return;
+            }
+
+            from = region.at;
+            bytes = rq->bytes;
+        } else if (rq->length > DISK_DATA_MAX) {
+            rp->error = DISK_ERR_BAD_OP;
+            return;
+        }
+
+        r = kfs_place_at(&A->kfs, &SB, rq->path, strlen(rq->path), rq->offset, from, bytes);
+
+        if (rq->flags & DISK_REGION) {
+            unmap_region(&region);
+        }
+
+        rp->bytes = bytes;
+
+        if (r != KFS_OK) {
+            rp->error = kfs_error(r);
+        }
+
         return;
     }
 
@@ -1738,6 +1794,7 @@ static void answer(const struct message *msg, uint64_t sender)
         case DISK_OP_MKDIR:   op_mkdir(rq, rp); break;
         case DISK_OP_SETATTR: op_setattr(rq, rp); break;
         case DISK_OP_QUERY:   op_query(rq, rp); break;
+        case DISK_OP_FLUSH:   device_flush(); break;
         case DISK_OP_WATCH:
             if (cap < 0 || !folderwatch_add(&watches, rq->path, cap, (uint32_t)rq->offset,
                                             asker(through))) {
@@ -1771,7 +1828,9 @@ static void answer(const struct message *msg, uint64_t sender)
     }
 
     /* Anything that may have changed the disk makes a kept answer stale. */
-    if (rq->op == DISK_OP_WRITE || rq->op == DISK_OP_WRITE_AT || rq->op == DISK_OP_DELETE
+    if (rq->op == DISK_OP_WRITE
+        || (rq->op == DISK_OP_WRITE_AT && !(rq->flags & DISK_IN_PLACE))
+        || rq->op == DISK_OP_DELETE
         || rq->op == DISK_OP_RENAME || rq->op == DISK_OP_MKDIR || rq->op == DISK_OP_SETATTR
         || rq->op == DISK_OP_FORMAT) {
         generation++;
@@ -1921,6 +1980,8 @@ static void serve(long endpoint, long read_ep, long write_ep, long devices_ep,
     diskcache_init(&A->cache, &dev, DISKCACHE_MOST, 4);
     kfs_init(&A->kfs, &(struct kfs_disk){ 0 });
     A->kfs.disk = diskcache_disk(&A->cache);
+    A->kfs.zeros = A->zeros;
+    A->kfs.zero_blocks = STICK_MOST / KFS_BLOCK;
 
     for (;;) {
         static struct message msg;

@@ -29,6 +29,10 @@ the prompt. Held to:
   * **a folder of `/Home`**, by virtio-fs: read only - listed, read, and a
     write refused - and read and write, a file the guest made there read
     back by Kosmos at the prompt;
+  * **a disk of its own**, by virtio-blk (`docs/linux.md` L1): made by
+    `sandbox disk new`, written by one sandbox at its first sector and one
+    far into it, read back by another, its file's size and extents as they
+    were - written in place - and given read only, a write refused;
   * **the network**, by virtio-net and the monitor's gateway: its gateway
     pinged, a page on this Mac fetched through Kosmos's own TCP, and a name
     that cannot exist answered NXDOMAIN by its name server; and a port
@@ -268,6 +272,44 @@ def main():
         # after 30 (13 October), with the right bytes.
         said = do("cat /Home/Projects/site/out.txt", "\nkosmos> ", 120)
         check("\nmade in alpine\n" in said, "what the guest wrote did not reach /Home: %r" % said[-300:])
+
+        # **A disk of its own** (`docs/linux.md` L1): made by `sandbox disk
+        # new`, zeroes; the guest writing its first sector and one far into
+        # it as /dev/vda; a second sandbox reading both back; the bytes in
+        # Kosmos's file, its size and its extents as they were - written in
+        # place; and the same disk given read only, a write refused.
+        disk = "/Home/Sandboxes/test.img"
+        said = do("sandbox disk new %s 8" % disk, "\nkosmos> ", 120)
+        check("%s made, 8 MB" % disk in said, "a disk was not made: %r" % said[-300:])
+        before = do('local a = fs.getattr("%s") print("disk:", a and a.size, a and a.extents)' % disk,
+                    "\nkosmos> ", 60)
+        said = do("sandbox run alpine --disk %s -- cat /sys/block/vda/size; "
+                  "echo kosmos-disk-L1 | dd of=/dev/vda bs=512 count=1 conv=sync 2>/dev/null; "
+                  "echo far-in | dd of=/dev/vda bs=512 seek=12345 count=1 conv=sync 2>/dev/null; "
+                  "sync; echo wrote" % disk,
+                  "the sandbox is gone", 240)
+        check("\n16384\n" in said and "\nwrote\n" in said,
+              "the guest did not see an 8 MB disk and write to it: %r" % said[-400:])
+        said = do("sandbox run alpine --disk %s -- dd if=/dev/vda bs=512 count=1 2>/dev/null "
+                  "| head -c 14; echo; dd if=/dev/vda bs=512 skip=12345 count=1 2>/dev/null "
+                  "| head -c 6; echo" % disk,
+                  "the sandbox is gone", 240)
+        check("\nkosmos-disk-L1\n" in said and "\nfar-in\n" in said,
+              "a second sandbox did not read back what the first wrote: %r" % said[-400:])
+        after = do('local a = fs.getattr("%s") print("disk:", a and a.size, a and a.extents) '
+                   'for p in fs.chunks("%s") do print("first:", p:sub(1, 14)) break end'
+                   % (disk, disk), "\nkosmos> ", 60)
+        sizes = re.findall(r"disk:\t(\d+)\t(\d+)", before + after)
+        check(len(sizes) == 2 and sizes[0] == sizes[1] and sizes[0][0] == str(8 * 1024 * 1024)
+              and "first:\tkosmos-disk-L1" in after,
+              "the disk's file did not keep its size and extents, written in place, "
+              "with the guest's bytes in it: %r %r" % (sizes, after[-200:]))
+        said = do("sandbox run alpine --disk %s:ro -- echo no | dd of=/dev/vda bs=512 count=1 "
+                  "conv=sync; dd if=/dev/vda bs=512 count=1 2>/dev/null | head -c 14; echo" % disk,
+                  "the sandbox is gone", 240)
+        check(re.search(r"Operation not permitted|Read-only|I/O error|can't open", said) is not None
+              and "\nkosmos-disk-L1\n" in said,
+              "a read-only disk was written to, or not read: %r" % said[-400:])
 
         # **The network** (S4): the gateway pinged, a page on this Mac
         # fetched through Kosmos's own connection, and a name that cannot

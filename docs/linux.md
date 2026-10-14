@@ -130,7 +130,16 @@ ring. Then each step is tried on the M700 before the next, as X1-X3 were.
      guarding both drives, and `tools/sandboxes_drive.py` to give a stick
      in use the partition with `/Home` left as it is (the table moved to
      the stick's end; run once with `sudo` on the unmounted stick).
-   - **L1b, virtio-blk** in the monitor on a file there: next.
+   - **L1b, virtio-blk: built** (`testing.md` 18.637) - `vmmblk.c` in the
+     monitor on a file named in the setup, written in place
+     (`DISK_IN_PLACE`), `sandbox disk new` and `--disk`; Alpine writes and
+     reads back its disk under QEMU. One C door to the disk protocol,
+     `diskask.c`, for it and the four that had copies. **On the M700**: once
+     the stick has `/Sandboxes` (`tools/sandboxes_drive.py`), `sandbox disk
+     new /Sandboxes/linux.img 4096` and a sandbox given it.
+   - What L1 leaves for later, measured first: the vCPU waits while its
+     disk is read or written (one thread); the region is mapped by the disk
+     server each request.
 2. **L2 - a screen**: virtio-gpu 2D and the Linux window showing it - the
    guest's console drawn in the window.
 3. **L3 - keyboard and pointer**: virtio-input from the window - typed into

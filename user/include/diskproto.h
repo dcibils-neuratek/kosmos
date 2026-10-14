@@ -65,12 +65,29 @@
  */
 #define DISK_OP_WRITE_AT 16u
 
+/*
+ * **What the disk was given, kept** (`docs/linux.md` L1b): a stick asked to
+ * write out the cache it holds writes in - a sandbox's guest flushing its
+ * disk. A commit already does this for the filesystem's own journal.
+ */
+#define DISK_OP_FLUSH    17u
+
 /* The request's region is the bytes: read into it, or written from it. */
 #define DISK_REGION       1u
 /* WRITE_AT: the file made when it is not there. */
 #define DISK_CREATE       2u
 /* WRITE_AT: the file ends where the bytes do - shorter or longer. */
 #define DISK_CUT          4u
+/*
+ * WRITE_AT: **in place** (`docs/linux.md` L1b) - the bytes laid over the
+ * blocks the file has, none taken, its size, extents and time unchanged,
+ * and refused past its end. A sandbox's disk, which its guest writes over
+ * a block at a time: written anew each time it would end in a piece a
+ * write. Not a transaction - the guest's own filesystem keeps its journal,
+ * as a disk's does - and not told to a folder's watchers, since nothing a
+ * folder lists has changed.
+ */
+#define DISK_IN_PLACE     8u
 
 #define DISK_OK                 0u
 #define DISK_ERR_BAD_OP         1u  /* no such operation, the wrong size, a path with no end */

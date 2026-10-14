@@ -163,6 +163,7 @@ enum {
     KFS_E_NOT_ATTRS     = -27,
     KFS_E_DIR_BIG       = -28,
     KFS_E_BLOCK_LONG    = -29,
+    KFS_E_PAST_END      = -30,
 };
 
 const char *kfs_why(int status);
@@ -250,6 +251,15 @@ struct kfs {
     uint32_t spare_n;
     struct kfs_extent spare[KFS_FILE_RUNS];
     uint8_t head[KFS_BLOCK];            /* the journal's header, the superblock */
+
+    /*
+     * **Zeroes to write a gap with, many blocks a call** (`docs/linux.md`
+     * L1b): `zero_blocks` blocks of them, the caller's, or none - and then a
+     * gap a range write leaves is written a block a call from `part`. A
+     * sandbox's 4 GB disk is a million of those.
+     */
+    const uint8_t *zeros;
+    uint32_t zero_blocks;
 };
 
 void kfs_init(struct kfs *k, const struct kfs_disk *disk);
@@ -400,6 +410,23 @@ int kfs_store(struct kfs *k, const struct kfs_super *sb, const char *path,
 int kfs_write_range(struct kfs *k, const struct kfs_super *sb, uint32_t number,
                     struct kfs_inode *node, uint64_t offset, const void *bytes, uint64_t len,
                     bool cut);
+
+/*
+ * **A range of a file written where it is** (`docs/linux.md` L1b): `len`
+ * bytes at `offset` laid over the blocks the file has, none taken and its
+ * inode, extents and size untouched - KFS_E_PAST_END for a range that
+ * reaches past its end. What a sandbox's disk is written with: a guest's
+ * own filesystem keeps its journal, and a guest's block written anew to
+ * fresh blocks each time would leave its disk in a piece a write.
+ * No transaction is needed and none is used.
+ */
+int kfs_write_in_place(struct kfs *k, const struct kfs_super *sb,
+                       const struct kfs_inode *node, uint64_t offset,
+                       const void *bytes, uint64_t len);
+
+/* The same by path. */
+int kfs_place_at(struct kfs *k, const struct kfs_super *sb, const char *path,
+                 size_t len, uint64_t offset, const void *bytes, uint64_t size);
 
 /* The same by path: the file made first when `create` and it is not there.
  * Its inode's number. */

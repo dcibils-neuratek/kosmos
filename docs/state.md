@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-14, evening (0.11.241; Linux-on-Kosmos L1a)
+Last updated: 2026-10-14, evening (0.11.242; Linux-on-Kosmos L1)
 
 ---
 
@@ -76,8 +76,13 @@ Last updated: 2026-10-14, evening (0.11.241; Linux-on-Kosmos L1a)
   touching `/Home` - **Diego runs it once, with sudo, when the stick is at
   the Mac** (`sudo python3 tools/sandboxes_drive.py /dev/rdiskN`, the stick
   unmounted), and the netboot's words then carry the GUID it prints.
-  **Next: L1b**, virtio-blk in the monitor on a file there; then L2 the
-  screen.
+- **L1b, a disk that keeps** (0.11.242, 18.637): virtio-blk in the monitor
+  (`vmmblk.c`), kfs writing a file in place (`DISK_IN_PLACE`) and a gap in
+  runs of zeroes, `fs.size`, `sandbox disk new FILE MB` and `--disk`;
+  `diskask.c`, one C client of the disk protocol for `smbd`, the keyring,
+  tiles, `vmmfs` and the disk. Alpine on ARM writes, reads back and is
+  refused read only. **Next: L2**, the screen - virtio-gpu 2D and the
+  Linux window; on the M700, the disk once the stick has `/Sandboxes`.
 - **Still waiting on Diego**: the sandbox console keys on the M700
   (`vmm.c` uncommitted); the M700's screen; background programs fix 1 or
   2; the Shortcuts cheat sheet; About in Preferences; a push.

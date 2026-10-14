@@ -1227,6 +1227,87 @@ do
 end
 
 --------------------------------------------------------------------------
+-- **A range written in place** (`docs/linux.md` L1b): a sandbox's disk, a
+-- file whose blocks a guest writes over again and again. Laid over the
+-- blocks the file has - only those written, none taken, its extents, size
+-- and time as they were - and refused past its end, with nothing written.
+-- And a gap written with a buffer of zeroes many blocks a call, which is
+-- how a guest's disk of gigabytes is made.
+--------------------------------------------------------------------------
+
+do
+  local function body(n, seed)
+    local t = {}
+    for i = 1, n do t[i] = string.char((i * 37 + seed * 11) % 251) end
+    return table.concat(t)
+  end
+
+  sb = fresh()
+  local image = body(400000, 5)
+  assert(kfs.begin()) assert(kfs.store(sb, "/disk.img", image, 1)) assert(kfs.commit(sb))
+  local _, before = kfs.find(sb, "/disk.img")
+  local free = kfs.free_blocks(sb)
+  local mine = {}
+
+  for _, e in ipairs(before.extents) do
+    for b = e.start, e.start + e.count - 1 do mine[b] = true end
+  end
+
+  written = {}
+  local patch = body(20000, 9)
+  check(kfs.place_at(sb, "/disk.img", 5000, patch) ~= nil,
+        "a range written in place, across blocks and off their edges")
+
+  local _, after = kfs.find(sb, "/disk.img")
+  check(kfs.read_file(sb, after) == image:sub(1, 5000) .. patch .. image:sub(25001),
+        "and the file reads back with the range laid over it")
+
+  local others, count = 0, 0
+  for b in pairs(written) do
+    count = count + 1
+    if not mine[b] then others = others + 1 end
+  end
+  check(others == 0 and count == 6,
+        ("and only its own six blocks were written: %d, %d of them not its"):format(count, others))
+
+  local same = #after.extents == #before.extents and after.size == before.size
+               and after.mtime == before.mtime
+  for i, e in ipairs(before.extents) do
+    same = same and after.extents[i].start == e.start and after.extents[i].count == e.count
+  end
+  check(same and kfs.free_blocks(sb) == free,
+        "and its extents, size and time are as they were, no block taken")
+
+  written = {}
+  check(kfs.place_at(sb, "/disk.img", 399999, "ab") == nil and next(written) == nil,
+        "a range reaching past the end is refused, and nothing written")
+  check(kfs.place_at(sb, "/nowhere.img", 0, "x") == nil,
+        "a range of a file that is not there is refused")
+
+  -- The gap, with zeroes many blocks a call and without.
+  local function grow(n)
+    sb = fresh()
+    kfs.zeros(n)
+    write_calls = 0
+    assert(kfs.begin())
+    assert(kfs.store_at(sb, "/grown.img", 2 * 1024 * 1024, "", true, 1, true))
+    assert(kfs.commit(sb))
+    local calls = write_calls
+    local _, node = kfs.find(sb, "/grown.img")
+    local bytes = node and kfs.read_file(sb, node)
+    kfs.zeros(0)
+    return calls, bytes
+  end
+
+  local with, zeroed = grow(16)
+  local without, plain = grow(0)
+  check(zeroed == string.rep("\0", 2 * 1024 * 1024) and plain == zeroed,
+        "a file grown to 2 MB reads as zeroes, with the buffer and without")
+  check(with * 8 < without,
+        ("and the buffer writes the gap in far fewer calls: %d against %d"):format(with, without))
+end
+
+--------------------------------------------------------------------------
 
 if failed > 0 then
   print(("\nFAIL: %d of %d checks on the format failed (kfs.c%s).")

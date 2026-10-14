@@ -26234,3 +26234,42 @@ unchanged, the word added with the others kept, a second run identical.
 `/Sandboxes` block read is answered and the check fails (1 of 6); and the
 tool refuses, writing nothing, a drive past the room there is and a table
 whose header does not hold to its CRC.
+
+## 18.637 A sandbox's disk: virtio-blk, written in place (Linux L1b)
+
+`docs/linux.md` L1, the second half: a guest given a disk that keeps.
+
+**What it is.** `vmmblk.c`, virtio-blk on virtio-mmio in the sandbox's
+monitor (VIRTIO 1.2 §5.2): read, write, flush and its id; a request's bytes
+cross between the guest's RAM and the file through one 1 MB region, a piece
+at a time, never as a message. The file is named in the sandbox's setup
+(`vmm_setup.disk`, version 2), and the monitor is handed the drive it is
+on - `/Sandboxes`, or wherever the path is served. On ARM it is
+`virtio_mmio@a000a00` at SPI 21; on x86 the next 0x200 after the network,
+line 12, said on the command line. Alpine loads `virtio_blk.ko` when
+`kosmos.disk` is on its line. Written **in place** (`DISK_IN_PLACE`,
+`diskfs.md`), so the file keeps the blocks it was made with; `sandbox disk
+new FILE MB` makes one, zeroes grown 256 MB a piece (`fs.size`), and
+`--disk FILE[:ro]` gives it to `run`, `new` and a shell.
+
+**One door for the disk protocol from C**, `diskask.c`: `smbd`, the
+keyring, the map's tiles and `vmmfs` each had a `disk_ask` of their own,
+the same request built and reply read four times over (`CLAUDE.md`'s
+premise); the disk would have been the fifth. All five use it now; it wipes
+what it sent after every call, as the keyring's did.
+
+**Tests.** `arm-sandbox-linux`, five checks more, Alpine at EL2 under QEMU:
+an 8 MB disk made; a sandbox seeing 16384 sectors and writing its first
+sector and the 12345th; a second sandbox reading both back; the file's size
+and extents (2) as they were with the guest's bytes at its start, read by
+Kosmos; and the disk given read only - "Operation not permitted", and the
+bytes still read. `tools/test_kfs.lua` (142, eight new). **Controls**: the
+disk server made to ignore `DISK_IN_PLACE` - every write still lands, and
+the file goes from 2 extents to 4, which the check refuses; `kfs`'s in-place
+write made to lay down one byte short, and its gap writer kept to a block a
+call (517 against 517) - each failing its check.
+
+**Found on the way**: `fs.send` refuses a disk path - the namespace speaks
+each disk operation by a function of its own - so `fs.size` is one, and
+`sandbox disk new` had made nothing; the suite then waited 240 s at every
+step after, which read as a hang.

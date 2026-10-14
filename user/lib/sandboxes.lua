@@ -50,6 +50,7 @@ local MONITOR_SAYS = {
   [18] = "it could not start a thread on processor 0",
   [19] = "its name was taken in /Running - is it running already?",
   [20] = "a folder it was given is not one it can serve",
+  [21] = "its disk is not a file it can use - is it there, and a whole number of sectors?",
 }
 
 --------------------------------------------------------------------------
@@ -83,8 +84,10 @@ end
 function sandboxes.format(s)
   local lines = { "# A sandbox; docs/sandboxes.md. A line a fact." }
 
-  for _, key in ipairs({ "image", "kind", "command", "processors", "memory", "network", "starts" }) do
-    lines[#lines + 1] = ("%-11s %s"):format(key, tostring(s[key] or ""))
+  for _, key in ipairs({ "image", "kind", "command", "processors", "memory", "network", "starts", "disk" }) do
+    if key ~= "disk" or (s.disk or "") ~= "" then
+      lines[#lines + 1] = ("%-11s %s"):format(key, tostring(s[key] or ""))
+    end
   end
 
   for _, f in ipairs(s.folders or {}) do lines[#lines + 1] = ("%-11s %s"):format("folder", f) end
@@ -428,9 +431,25 @@ function sandboxes.start(s)
 
   if outgoing or #ports > 0 then line = line .. " kosmos.net=1" end
 
+  -- Its disk (`docs/linux.md` L1): a file - in `/Sandboxes`, its own
+  -- drive - the guest sees as `/dev/vda`; `:ro` after it, read only.
+  local disk_path, disk_ro = nil, false
+
+  if (s.disk or "") ~= "" then
+    disk_path, disk_ro = tostring(s.disk):match("^(.-)(:ro)$")
+    disk_path, disk_ro = disk_path or s.disk, disk_ro ~= nil
+
+    local node = fs.getattr(disk_path)
+
+    if not node then return nil, disk_path .. " is not there; `sandbox disk new` makes one" end
+    if #disk_path > 255 then return nil, "the path of its disk is too long" end
+
+    line = line .. " kosmos.disk=1"
+  end
+
   if #line > 511 then return nil, "its command and folders are too long for a kernel's command line" end
 
-  sys.region_write(setup, 0, string.pack("<I4I4I8I8I8I8I8", 0x4b766d6d, 1, ram_bytes,
+  sys.region_write(setup, 0, string.pack("<I4I4I8I8I8I8I8", 0x4b766d6d, 2, ram_bytes,
                                           kernel_at, kernel.size, initrd_at, initrd_bytes)
                              .. line .. ("\0"):rep(512 - #line)
                              .. s.name .. ("\0"):rep(16 - #s.name)
@@ -438,9 +457,12 @@ function sandboxes.start(s)
                              .. shares .. ("\0"):rep((4 - #(s.folders or {})) * 264)
                              .. string.pack("<I4I4", outgoing and 1 or 0, 0)
                              .. ports .. ("\0"):rep(16 - #ports)
-                             .. string.pack("<I8", math.tointeger(clock_epoch()) or 0))
+                             .. string.pack("<I8", math.tointeger(clock_epoch()) or 0)
+                             .. (disk_path or "") .. ("\0"):rep(256 - #(disk_path or ""))
+                             .. string.pack("<I4I4", disk_ro and 1 or 0, 0))
 
-  local id, why = fs.vm_start(ram, setup, #(s.folders or {}) > 0, outgoing or #ports > 0)
+  local id, why = fs.vm_start(ram, setup, #(s.folders or {}) > 0, outgoing or #ports > 0,
+                              disk_path)
 
   if not id then return nil, why end
 
@@ -465,7 +487,37 @@ end
 -- given the guest's console as it comes; answers the command's exit code,
 -- and how long the sandbox took to come up and to finish, in seconds.
 --
-function sandboxes.run(image, command, memory, say, folders, network, ports)
+--
+-- **A disk made** (`docs/linux.md` L1b): a file of `megabytes`, zeroes
+-- throughout, grown a piece at a time so a disk of gigabytes is said as it
+-- goes - `say(made, of)` in megabytes - rather than one call nobody hears
+-- from for a minute. Zeroes, because a guest reads its whole disk and must
+-- see nothing that was on the drive before. True, or nil and why.
+--
+function sandboxes.make_disk(path, megabytes, say)
+  local mb = math.tointeger(tonumber(megabytes))
+  local STEP = 256
+
+  if not mb or mb < 1 then return nil, "a disk's size is a whole number of megabytes" end
+  if fs.getattr(path) then return nil, path .. " is there already" end
+
+  for made = math.min(STEP, mb), mb + STEP - 1, STEP do
+    local size = math.min(made, mb)
+    local ok, why = fs.size(path, size * 1024 * 1024, size <= STEP)
+
+    if not ok then
+      fs.send(path, { type = "delete" })
+      return nil, why or "the drive refused it"
+    end
+
+    if say then say(size, mb) end
+    if size == mb then break end
+  end
+
+  return true
+end
+
+function sandboxes.run(image, command, memory, say, folders, network, ports, disk)
   local name = ("task-%d"):format(sys.ticks() % 100000)
   local s = sandboxes.parse("", name)
   local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
@@ -475,6 +527,7 @@ function sandboxes.run(image, command, memory, say, folders, network, ports)
   s.folders = folders or {}
   s.network = network and "outgoing" or "none"
   s.ports = ports or {}
+  s.disk = disk
 
   local id, why = sandboxes.start(s)
 

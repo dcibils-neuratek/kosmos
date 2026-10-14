@@ -30,6 +30,7 @@
 
 #include "kosmos.h"
 #include "diskproto.h"
+#include "diskask.h"
 #include "vdev.h"
 #include "vmmfs.h"
 
@@ -95,7 +96,6 @@ struct share {
 };
 
 static struct share shares[VMMFS_MOST];
-static long home = -1;
 
 /*
  * A request gathered and its reply, allocated when the monitor starts:
@@ -113,71 +113,12 @@ static uint8_t *reply;
 #define put64 vput64
 
 /* ---------------------------------------------------------------------
- * The disk, through `/Home`: `diskproto.h` as a client, as `smbd` is.
+ * The disk, through `/Home`: `diskproto.h` as a client, through `diskask.c`.
  * --------------------------------------------------------------------- */
 
-static struct message dmsg, drep;
+static struct diskask disk = { .ep = -1 };
 static long read_cap = -1, write_cap = -1;
 static uint8_t *read_at, *write_at;
-
-static uint32_t disk_ask(uint32_t op, const char *path, uint32_t flags, uint64_t offset,
-                         uint64_t bytes, long region, const char *to)
-{
-    struct disk_request *rq = (struct disk_request *)dmsg.data;
-    const struct disk_reply *rp = (const struct disk_reply *)drep.data;
-
-    if (home < 0) {
-        return DISK_ERR_NO_DISK;
-    }
-
-    memset(&dmsg, 0, sizeof dmsg);
-    memset(&drep, 0, sizeof drep);
-    dmsg.length = sizeof *rq;
-    dmsg.cap_plus_one = region >= 0 ? (uint32_t)region + 1 : 0;
-    rq->op = op;
-    rq->flags = flags;
-    rq->offset = offset;
-    rq->bytes = bytes;
-    strncpy(rq->path, path, sizeof rq->path - 1);
-
-    if (to != NULL) {
-        strncpy(rq->u.to, to, sizeof rq->u.to - 1);
-        rq->length = (uint32_t)strlen(rq->u.to);
-    }
-
-    if (kosmos_call(home, &dmsg, &drep) != 0 || drep.length < sizeof *rp) {
-        return DISK_ERR_NO_DISK;
-    }
-
-    return rp->error;
-}
-
-static const struct disk_reply *disk_said(void)
-{
-    return (const struct disk_reply *)drep.data;
-}
-
-static bool region(long *cap, uint8_t **at, uint32_t bytes)
-{
-    long a;
-
-    if (*cap >= 0) {
-        return true;
-    }
-
-    if ((*cap = kosmos_mem_create(bytes / 4096u)) < 0) {
-        return false;
-    }
-
-    if ((a = kosmos_mem_map(*cap)) < 0) {
-        kosmos_cap_drop(*cap);
-        *cap = -1;
-        return false;
-    }
-
-    *at = (uint8_t *)(uintptr_t)a;
-    return true;
-}
 
 /* ---------------------------------------------------------------------
  * Nodes: a number the guest names a path by, the root being 1.
@@ -244,11 +185,11 @@ static int attr(struct share *s, uint64_t node, uint8_t *a)
     const struct disk_node *n;
     bool dir;
 
-    if (path == NULL || disk_ask(DISK_OP_GETATTR, path, 0, 0, 0, -1, NULL) != DISK_OK) {
+    if (path == NULL || diskask(&disk, DISK_OP_GETATTR, path, 0, 0, 0, -1, NULL, 0) != DISK_OK) {
         return -E_NOENT;
     }
 
-    n = &disk_said()->node;
+    n = &diskask_said(&disk)->node;
 
     if (n->kind != DISK_KIND_FILE && n->kind != DISK_KIND_DIR && node != 1) {
         return -E_NOENT;
@@ -319,15 +260,15 @@ static bool load_whole(struct share *s, struct handle *h, bool empty)
         return true;
     }
 
-    while (path != NULL && region(&read_cap, &read_at, READ_MOST)) {
+    while (path != NULL && diskask_region(&read_cap, &read_at, READ_MOST)) {
         uint64_t got;
         uint8_t *more;
 
-        if (disk_ask(DISK_OP_READ, path, DISK_REGION, at, READ_MOST, read_cap, NULL) != DISK_OK) {
+        if (diskask(&disk, DISK_OP_READ, path, DISK_REGION, at, READ_MOST, read_cap, NULL, 0) != DISK_OK) {
             return at == 0;                 /* a new file has nothing to read */
         }
 
-        got = disk_said()->bytes;
+        got = diskask_said(&disk)->bytes;
 
         if (got == 0) {
             return true;
@@ -362,12 +303,9 @@ static int write_back(struct share *s, struct handle *h)
 
     pages = (uint32_t)((h->size + 4095) / 4096);
 
-    if (write_cap >= 0) {
-        kosmos_cap_drop(write_cap);
-        write_cap = -1;
-    }
+    diskask_drop(&write_cap);
 
-    if (!region(&write_cap, &write_at, pages > 0 ? pages * 4096 : 4096)) {
+    if (!diskask_region(&write_cap, &write_at, pages > 0 ? pages * 4096 : 4096)) {
         return -E_IO;
     }
 
@@ -376,7 +314,7 @@ static int write_back(struct share *s, struct handle *h)
     }
 
     if (path == NULL
-        || disk_ask(DISK_OP_WRITE, path, DISK_REGION, 0, h->size, write_cap, NULL) != DISK_OK) {
+        || diskask(&disk, DISK_OP_WRITE, path, DISK_REGION, 0, h->size, write_cap, NULL, 0) != DISK_OK) {
         return -E_IO;
     }
 
@@ -450,7 +388,7 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
             return err;
         }
 
-        if (disk_ask(DISK_OP_GETATTR, path, 0, 0, 0, -1, NULL) != DISK_OK) {
+        if (diskask(&disk, DISK_OP_GETATTR, path, 0, 0, 0, -1, NULL, 0) != DISK_OK) {
             return -E_NOENT;
         }
 
@@ -494,12 +432,12 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
             const struct disk_reply *rp;
             char *bigger;
 
-            if (disk_ask(DISK_OP_LIST, p, 0, offset, 0, -1, NULL) != DISK_OK) {
+            if (diskask(&disk, DISK_OP_LIST, p, 0, offset, 0, -1, NULL, 0) != DISK_OK) {
                 handle_free(s, fh);
                 return -E_NOTDIR;
             }
 
-            rp = disk_said();
+            rp = diskask_said(&disk);
             bigger = realloc(h->names, h->names_bytes + rp->length + 1);
 
             if (bigger == NULL) {
@@ -635,16 +573,16 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
             return (long)n;
         }
 
-        if (p == NULL || !region(&read_cap, &read_at, READ_MOST)) {
+        if (p == NULL || !diskask_region(&read_cap, &read_at, READ_MOST)) {
             return -E_IO;
         }
 
-        if (disk_ask(DISK_OP_READ, p, DISK_REGION, offset, size, read_cap, NULL) != DISK_OK) {
+        if (diskask(&disk, DISK_OP_READ, p, DISK_REGION, offset, size, read_cap, NULL, 0) != DISK_OK) {
             return 0;                       /* past its end */
         }
 
-        memcpy(out, read_at, (size_t)disk_said()->bytes);
-        return (long)disk_said()->bytes;
+        memcpy(out, read_at, (size_t)diskask_said(&disk)->bytes);
+        return (long)diskask_said(&disk)->bytes;
     }
 
     case FUSE_WRITE: {
@@ -707,7 +645,7 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
             return err;
         }
 
-        if (disk_ask(DISK_OP_WRITE, path, 0, 0, 0, -1, NULL) != DISK_OK) {
+        if (diskask(&disk, DISK_OP_WRITE, path, 0, 0, 0, -1, NULL, 0) != DISK_OK) {
             return -E_IO;
         }
 
@@ -733,7 +671,7 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
             return err;
         }
 
-        if (disk_ask(DISK_OP_MKDIR, path, 0, 0, 0, -1, NULL) != DISK_OK) {
+        if (diskask(&disk, DISK_OP_MKDIR, path, 0, 0, 0, -1, NULL, 0) != DISK_OK) {
             return -E_EXIST;
         }
 
@@ -749,7 +687,7 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
             return err;
         }
 
-        return disk_ask(DISK_OP_DELETE, path, 0, 0, 0, -1, NULL) == DISK_OK
+        return diskask(&disk, DISK_OP_DELETE, path, 0, 0, 0, -1, NULL, 0) == DISK_OK
                ? 0 : (op == FUSE_RMDIR ? -E_NOTEMPTY : -E_NOENT);
 
     case FUSE_RENAME:
@@ -767,7 +705,7 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
             return err;
         }
 
-        return disk_ask(DISK_OP_RENAME, path, 0, 0, 0, -1, path2) == DISK_OK ? 0 : -E_IO;
+        return diskask(&disk, DISK_OP_RENAME, path, 0, 0, 0, -1, path2, (uint32_t)strlen(path2)) == DISK_OK ? 0 : -E_IO;
     }
 
     case FUSE_SETATTR: {
@@ -931,7 +869,7 @@ bool vmmfs_add(unsigned i, const char *tag, const char *root, bool read_only)
 
 void vmmfs_start(long home_cap)
 {
-    home = home_cap;
+    disk.ep = home_cap;
     request = malloc(REQUEST_MOST);
     reply = malloc(REQUEST_MOST);
 }
