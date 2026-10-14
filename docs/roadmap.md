@@ -640,6 +640,13 @@ control read, written and pressed by name, with the handler a click calls.
 `x86-controls` presses 7 × 6 = on Calculator and reads 42, and chooses the
 Text Editor's Find and replace from its dots' menu. Left for later in A1's
 own terms: addresses by a card's heading, and the consent that A5 adds.
+**A2 built, 0.11.220** (`testing.md` 18.615): `automate.lua`, the verbs,
+and `automate` at the prompt runs one; `mailout.lua` the Outbox's one door,
+Mail's composer its first user. **Found on the way and wanted next - A1b,
+windows that draw themselves name their controls**: Mail, Groove, Paint,
+Cafesa3D and Maps draw their buttons as pixels, so they publish nothing and
+`mail:press("Send")` cannot work yet. Each says what it drew, as
+Calculator's keys do (`control`, `label`, `press`), Mail first.
 
 **Network Monitor, an app** - Diego, 12 October 2026: "i realizsed we need
 network monitor app as well to see network input and output". What goes in

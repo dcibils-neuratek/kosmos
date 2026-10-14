@@ -345,6 +345,7 @@ SUITES = [
     # cross; a press that opens; Do Not Disturb; the history from the clock.
     Suite("x86-notify", ["python3", "tools/run_notify.py", X86], x86=True),
     Suite("x86-controls", ["python3", "tools/run_controls.py", X86], x86=True),
+    Suite("x86-automate", ["python3", "tools/run_automate.py", X86], x86=True),
 
     # **The browser, browsing** (`roadmap.md` 6zz a, b): the test page in
     # `assets/www/` served from this Mac - drawn, scrolled, reloaded, a link

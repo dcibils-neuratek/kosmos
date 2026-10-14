@@ -198,7 +198,12 @@ def main():
             check(finished is not None and finished.startswith("ok"),
                   "removing base and addon did not finish well: %r" % finished)
 
-            states = said("packages: states ", mark, 30)
+            # The states the window read *after* this removal was done: the
+            # install's own relist prints a states line too, and under the
+            # gate's load it arrived after `mark` and was read as this one -
+            # "the others still installed" (testing.md 18.589, 18.615).
+            after = guest.seen.find("packages: done ", mark)
+            states = said("packages: states ", after if after >= 0 else mark, 30)
             check(states == "hello=installed 2.0, base=absent, addon=absent",
                   "after removing, the window does not read hello 2.0 installed and the "
                   "others absent: %r" % states)

@@ -122,6 +122,14 @@ end
 --
 wmproto.banded = {}
 
+--
+-- **Windows whose requests `poll` answers** (`ui.window`): every window the
+-- kit made, so one that runs its own loop around `poll` - Mail, Groove,
+-- Cafesa3D - answers `/Running/<name>` as one in `win:run` does, rather
+-- than leaving whoever asked waiting for good.
+--
+wmproto.served = {}
+
 function wmproto.poll(handle, wait_ticks)
   local reply = fs.send(wmproto.WM, {
     type = "poll",
@@ -132,6 +140,10 @@ function wmproto.poll(handle, wait_ticks)
   local win = wmproto.banded[handle]
 
   if win and reply and reply.events then win:band_events(reply.events) end
+
+  local asked = wmproto.served[handle]
+
+  if asked and asked.control and asked.serve then asked:serve() end
 
   return reply
 end

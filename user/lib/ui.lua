@@ -7610,6 +7610,13 @@ function ui.window(spec)
   -- events through `band_events` for.
   if band then wmproto.banded[w.handle] = w end
 
+  -- **And whatever asks it something, answered in every poll.** `run`
+  -- serves its endpoint each pass; a window that draws itself runs its own
+  -- loop around `wmproto.poll` and never did, so a request to it - its
+  -- controls, its title - waited for good (`automations.md` A2: Mail did).
+  -- `poll` answers for it now, whichever loop it is.
+  wmproto.served[w.handle] = w
+
   -- The frame the window draws, hits and resizes: the header and `root`
   -- under it, or `root` itself when the kit adds no header.
   if auto_head then
@@ -8114,7 +8121,7 @@ CONTROLS.dropdown = function(v)
 end
 
 CONTROLS.field = function(v)
-  return { { kind = "field", label = v.name or v.label or v.placeholder,
+  return { { kind = "field", label = v.name or v.label or v.hint,
              read = function() return tostring(v.text or "") end,
              write = function(text)
                v.text = tostring(text or "")
@@ -8220,6 +8227,37 @@ function window:control_reply(req, rest)
 
     if req.type == "list" then return { ok = true, entries = kinds } end
     if req.type == "getattr" then return { ok = true, attrs = { kind = "directory" } } end
+
+    -- **Every address, a page at a time**, and what each can be asked: a
+    -- request a page where walking the folders is one a level, so a script
+    -- that names a control by its label alone - "Send" - finds `button/Send`
+    -- in a round trip or two (`automate.lua`). Each entry is four letters -
+    -- `r`, `w`, `p` for what it can be asked and `d` when disabled, `-` for
+    -- each it is not - and the address. **A page because a message is 2048
+    -- bytes**: the Text Editor with its find bar open did not fit in one,
+    -- and the caller waited for a reply that could never be sent.
+    -- `from` is where a page starts and `next` where the following one
+    -- does, absent on the last.
+    if req.type == "addresses" then
+      local out, size = {}, 0
+      local from = math.max(1, math.floor(tonumber(req.from) or 1))
+
+      for i = from, #list do
+        local c = list[i]
+        local off = c.disabled or (c.view and c.view.disabled)
+        local entry = (c.read and "r" or "-") .. (c.write and "w" or "-")
+                      .. (c.press and "p" or "-") .. (off and "d" or "-") .. c.address
+
+        if size + #entry + 8 > 1200 and #out > 0 then
+          return { ok = true, entries = out, next = i }
+        end
+
+        out[#out + 1] = entry
+        size = size + #entry + 8
+      end
+
+      return { ok = true, entries = out }
+    end
 
     return { ok = false, error = "controls is a folder: its kinds" }
   end
@@ -8348,8 +8386,26 @@ local function serve_properties(self)
 
     if wrote then changed = true end
 
-    pcall(sys.reply, who, reply)
+    -- **Answered, always.** A reply that does not fit in a message raises,
+    -- and swallowing that left the caller blocked on an answer that would
+    -- never come - a script asking the Text Editor for its controls hung
+    -- for good. So it is told why instead.
+    if not pcall(sys.reply, who, reply) then
+      pcall(sys.reply, who, { ok = false, error = "the answer does not fit in one message" })
+    end
   end
+end
+
+-- The same, for a window that runs its own loop: `wmproto.poll` calls it.
+-- True when a request changed something, as `serve_properties` says - and
+-- kept for `run`, which polls through `wmproto.poll` too and would otherwise
+-- find the request already answered and nothing to repaint.
+function window:serve()
+  local changed = serve_properties(self)
+
+  if changed then self.served_change = true end
+
+  return changed
 end
 
 --
@@ -8504,6 +8560,7 @@ function window:close()
   if self.closed then return end
 
   wmproto.banded[self.handle] = nil
+  wmproto.served[self.handle] = nil
   self.closed = true
   self.running = false
 
@@ -9613,7 +9670,9 @@ function window:run()
     -- Whoever is scripting this window, before its own events: a property
     -- write is somebody asking for something and an event is something
     -- that already happened.
-    local changed = serve_properties(self)
+    local changed = serve_properties(self) or self.served_change
+
+    self.served_change = false
 
     --
     -- For a window that is also a server.

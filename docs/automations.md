@@ -289,6 +289,21 @@ nothing beside a Tracker window that is open.
    and the consent of A5 are not built, and any process may press today.
 2. **A2 - the verbs**: `automate.lua`, and `mailout.lua` moved out of Mail;
    a program, `automate`, runs one step at the prompt.
+   **Built 0.11.220** (`testing.md` 18.615): `automate.lua` - `open`
+   (by the name an application declares, `kosmos: name Calculator`, or a
+   program's path; found when it is open), `app`, `windows`, `wait_for`,
+   and on an application `press`, `menu`, `read`, `type`, `set`, `choose`,
+   `wait`, `controls`; `mail`, `check` (`has`, `lacks`, `changed`), `copy`,
+   `move`, `notify`, `wait`, `run`. A label alone when one control has it,
+   refused with every address when two do. `mailout.lua` is the Outbox's
+   one door, which the composer now writes through. **Two things the kit
+   did not do and does now**: a window's controls come a page at a time
+   (`addresses`), since a message is 2048 bytes; and a window that runs
+   its own loop - Mail, Groove, Cafesa3D - answers its `/Running` name in
+   every `wmproto.poll`, where before a request to it waited for good.
+   **Not yet**: a window that draws its own controls - Mail's buttons are
+   pixels - publishes none until it names them, as Calculator's keys do;
+   that is a step of its own before `mail:press("Send")` works.
 3. **A3 - `autod`**: triggers, history, `/Home/Automations`; started by the
    desktop.
 4. **A4 - the window**: as drawn - the list, the editor, the controls

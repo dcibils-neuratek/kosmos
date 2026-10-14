@@ -45,9 +45,9 @@ local regions = use("/Kosmos/Libraries/regions.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
 local docview = use("/Kosmos/Libraries/docview.lua")
 local addresses = use("/Kosmos/Libraries/addresses.lua")
-local filetypes = use("/Kosmos/Libraries/filetypes.lua")
 local panel = use("/Kosmos/Libraries/panel.lua")
 local mailkit = use("/Kosmos/Kits/mail")
+local mailout = use("/Kosmos/Libraries/mailout.lua")
 local pk = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
 
 local theme = ui.theme
@@ -111,16 +111,8 @@ local function written(who)
   return who.name ~= "" and ("%s <%s>"):format(who.name, who.address) or who.address
 end
 
-local function random_id()
-  local ok, crypto = pcall(use, "/Kosmos/Kits/crypto")
-  local bytes = ok and crypto and crypto.random(10)
-
-  if not bytes then
-    bytes = tostring(sys.ticks()) .. tostring(math.random(1, 1 << 30))
-  end
-
-  return (bytes:gsub(".", function(c) return ("%02x"):format(c:byte()) end)):sub(1, 20)
-end
+-- A message's own name (`mailout.lua`, which the Outbox's writing is).
+local random_id = mailout.new_id
 
 --------------------------------------------------------------------------
 -- Making a composer.
@@ -517,54 +509,16 @@ end
 -- The message as it would be sent, into `path`; true, or nil and why.
 function C:build(path)
   local s = self:state()
-  local now = clock.now()
   local domain = tostring(self.account and self.account.address or ""):match("@(.+)$") or "kosmos"
-  local spec = { from = { name = self.account.name or "", address = self.account.address },
-                 to = self.rows.to.chips, cc = self.rows.cc.chips, subject = s.subject,
-                 text = s.body, date = now and now.epoch or 0, zone = clock.offset(),
-                 id = self.id .. "@" .. domain, in_reply_to = self.in_reply_to,
-                 references = self.references, attachments = {} }
-  local held, carried = {}, 0
 
-  -- Each file into a region for the kit to read; base64 is a third more.
-  for _, f in ipairs(self.files) do
-    local fr, size = regions.read_whole(f.path)
-
-    if not fr then
-      for _, h in ipairs(held) do regions.free(h) end
-      return nil, f.name .. " could not be read"
-    end
-
-    held[#held + 1] = fr
-    spec.attachments[#spec.attachments + 1] = { name = f.name, type = filetypes.mime_type(f.name),
-                                                at = fr.at, bytes = size }
-    carried = carried + size
-  end
-
-  local room = #s.body * 3 + carried * 4 // 3 + carried // 38 + 16384 + #self.files * 1024
-  local r = regions.make(room)
-  local n, need, ok, why
-
-  if r then
-    n, need = mailkit.build(spec, r.at, r.size)
-
-    if not n then
-      regions.free(r)
-      r = regions.make(need)
-      n = r and mailkit.build(spec, r.at, r.size)
-    end
-  end
-
-  if r and n then
-    ok, why = regions.write_file(path, r, n)
-  else
-    ok, why = nil, "no memory to write it in"
-  end
-
-  if r then regions.free(r) end
-  for _, h in ipairs(held) do regions.free(h) end
-
-  return ok, why
+  -- Written by `mailout.lua`, the one door to the Outbox an automation's
+  -- mail goes through too: the head and text are this window's, the files
+  -- its chips.
+  return mailout.write(path, { from = { name = self.account.name or "", address = self.account.address },
+                               to = self.rows.to.chips, cc = self.rows.cc.chips, subject = s.subject,
+                               text = s.body, id = self.id .. "@" .. domain,
+                               in_reply_to = self.in_reply_to, references = self.references },
+                       self.files)
 end
 
 local function ask(req)
@@ -608,13 +562,13 @@ function C:send()
     return false
   end
 
-  fs.write(OUTBOX .. "/" .. self.id .. ".send", { account = self.account.address, rcpt = rcpt,
-           subject = self.rows.subject.text, draft = self.id, replaces = self.replaces })
+  local asked, no = mailout.post(self.id, { account = self.account.address, rcpt = rcpt,
+                                            subject = self.rows.subject.text, draft = self.id,
+                                            replaces = self.replaces })
+
   files.remove(DRAFTS .. "/" .. self.id .. ".draft")
   if fs.getattr(DRAFTS .. "/" .. self.id .. "-files") then files.remove(DRAFTS .. "/" .. self.id .. "-files") end
   self.sent = true
-
-  local asked, no = ask{ type = "send", name = self.id }
 
   print(("mail: composer %s sent to %d, maild %s"):format(self.id, #rcpt,
         asked and "has it" or ("not running: " .. tostring(no))))

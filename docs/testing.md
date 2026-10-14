@@ -25564,3 +25564,56 @@ spin is lost for good while the others go on, and a suite whose `telnetd`
 was homed there waits two minutes for it - seen only since G3/G4, under the
 gate's load. Watched still: if it is seen again, this was not all of it.
 
+## 18.615 The verbs of an automation, and two ways a window did not answer
+
+`docs/automations.md` A2. **`automate.lua`** is the verbs: an application
+opened by the name it declares and found when it is open, and on it
+`press`, `menu`, `read`, `type`, `set`, `choose`, `wait` by what a person
+sees - a label alone when one control has it, refused with every address
+when two do - and `mail`, `check`, `copy`, `move`, `notify`, `wait`, `run`.
+**`mailout.lua`** is the Outbox's writing, taken out of the composer
+rather than copied: the composer builds and posts through it, and so does
+`auto.mail`. **`automate`** runs one verb at the prompt.
+
+**Two hangs, both older than A2, found by its suite.**
+
+- *A reply too big for a message.* The first `addresses` answer was a
+  table per control; the Text Editor with its find bar open was more than
+  2048 bytes, `sys.reply` raised, and the window's `pcall` swallowed it - so
+  the caller waited for good. Now every window request is answered, with
+  "the answer does not fit in one message" when the real one does not; and
+  `addresses` comes a page at a time, four letters and an address an entry.
+- *A window in a loop of its own.* Mail draws itself and loops around
+  `wmproto.poll`; only `win:run` served the window's endpoint, so any
+  request to `/Running/Mail` - its controls, its title - waited for ever.
+  `ui.window` now registers every window with `wmproto`, and `poll` answers
+  its requests on every pass; a change it answers is kept for `run`, which
+  polls the same way and would otherwise not repaint.
+
+**Mail publishes nothing yet**: its buttons are pixels. Roadmap A1b.
+
+**Tests.** Host: `tools/test_automate.lua`, 19 checks - an address said
+exactly, a label alone, two of one label refused with both named, `#2`,
+the kind deciding a field from a button beside it, a missing label said;
+an application's windows by name, by number (`Mail2`) and by title (`notes.md
+- Text Editor`), and never `Mailbox` for Mail. **Control**: `resolve` taking
+the first of two - 2 fail. Guest: `x86-automate` (`tools/run_automate.py`),
+29 checks over Telnet, `automate` lines only: Calculator opened by its name
+and found again, C 7 × 6 = pressed and Result read 42, a missing label
+said; the Text Editor opened with a file, Find and replace chosen, its Find
+field typed into by its hint and read back; a window of 120 buttons listed
+whole and Key 117 pressed by name, its own handler running; Mail answering;
+a mail written to the Outbox with its envelope; a page this Mac serves
+checked by its title and one refused in words; a copy into a folder, a
+banner, a wait, a program run. 67 s. **Controls**, together: paging off and
+`poll` answering nothing - the 120 refused in words ("does not fit in one
+message") rather than hanging, and Mail never answering.
+
+**Whole gate**: 86 of 87. `x86-packages` read "the others still installed"
+after a removal - its second time (18.589 watched for it). Found: the
+install step waited for the window's `listed` line and moved on, and the
+`states` line that follows it reached the serial line after the removal's
+mark, so the removal's check read the install's states. The check now reads
+the `states` printed after the removal's own `done`. It passed alone before
+and after; the race is the suite's, nothing in Packages.
+
