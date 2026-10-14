@@ -9008,7 +9008,11 @@ builds", "it needs a menu, zoom, better navigation, window resizing, etc".
 at a time, a window that does not resize. **Designed first, as any app**
 (`CLAUDE.md`): its feature set, a mockup in `docs/pdfview.html`, and its
 architecture and diagram - what the PDF Kit, `pdfpage.lua`, the kit's
-menus and the Open window already supply - shown to Diego before code.
+menus and the Open window already supply - shown to Diego before code. **Designed
+on 13 October, for Diego to agree**: `docs/pdfview.md`, `docs/pdfview.html`,
+`docs/pdfview-architecture.png` - and what is new is the PDF Kit's: a page's
+text (`pdf.text`, through `ToUnicode`), the outline (`pdf.outline`), and
+pictures drawn in a page, which every other user of the kit gains.
 To start with: a menu bar (File, View, Go), zoom (in, out, fit width, fit
 page, actual size), scrolling through the document rather than a page at a
 time, page thumbnails in a sidebar, go to page, the window resizable with

@@ -1,0 +1,234 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  PDF Viewer, made again: a menu, zoom, the document scrolled whole, pages in
+  a sidebar, a window that resizes, search, and each document opened where it
+  was left. Drawn on 13 October 2026 before any of it is built, from Diego's
+  ask of 10 October. Its feature set and architecture are `docs/pdfview.md`;
+  its diagram `docs/pdfview-architecture.png`. The document drawn is the one
+  the reader has always been tried on, Butler's Odyssey.
+-->
+<title>PDF Viewer, made again</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --serif: "IBM Plex Serif", Georgia, serif;
+  --a-win: #1f2430; --a-raised: #262c39; --a-sunken: #171b23; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-accent: #4f8cff; --a-desk: #2a303d;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 28px; max-width: 74ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 76ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 84ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 820px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+.pair { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+
+.win { background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line); border-radius: 12px;
+       box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; flex: none; overflow: hidden; position: relative; }
+.head { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 14px; white-space: nowrap; }
+.head .s { color: var(--a-dim); white-space: nowrap; }
+.head .grow { flex: 1; }
+.lights { display: flex; gap: 7px; margin-left: 4px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.menubar { display: flex; gap: 2px; height: 30px; align-items: center; padding: 0 8px; border-bottom: 1px solid var(--a-line); background: var(--a-raised); }
+.menubar span { padding: 3px 10px; border-radius: 6px; color: var(--a-ink); }
+.menubar span.on { background: #2f6bdc; }
+.tools { display: flex; align-items: center; gap: 8px; }
+.btn { padding: 3px 10px; border: 1px solid var(--a-line); border-radius: 7px; background: var(--a-raised); color: var(--a-ink); white-space: nowrap; }
+.btn.icon { padding: 3px 8px; }
+.pagebox { display: inline-flex; align-items: center; gap: 6px; color: var(--a-dim); white-space: nowrap; }
+.pagebox b { display: inline-block; min-width: 34px; text-align: center; padding: 2px 6px; border-radius: 6px; background: var(--a-sunken); border: 1px solid var(--a-line); color: var(--a-ink); font-weight: 500; }
+.search { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 7px; background: var(--a-sunken); border: 1px solid var(--a-line); color: var(--a-dim); width: 190px; }
+.search.on { border-color: var(--a-accent); box-shadow: 0 0 0 3px rgba(79,140,255,.25); color: var(--a-ink); }
+.body { display: flex; }
+.thumbs { width: 150px; background: var(--a-raised); border-right: 1px solid var(--a-line); padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 12px; overflow: hidden; }
+.thumb { text-align: center; color: var(--a-dim); font-size: 11.5px; }
+.thumb .pg { width: 84px; height: 110px; background: #fbfaf6; border-radius: 2px; margin: 0 auto 4px; position: relative; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+.thumb.on .pg { outline: 3px solid var(--a-accent); outline-offset: 2px; }
+.thumb.on { color: var(--a-ink); }
+.thumb .pg i { position: absolute; left: 12%; right: 12%; height: 2px; background: #b9b5aa; }
+.desk { flex: 1; background: var(--a-desk); position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 18px 0; }
+.page { background: #fbfaf6; color: #23201a; box-shadow: 0 3px 14px rgba(0,0,0,.45); font-family: var(--serif); position: relative; flex: none; }
+.page h3 { font-family: var(--serif); font-weight: 600; text-align: center; margin: 0; }
+.page .em { font-style: italic; text-align: center; color: #5a554a; }
+.page p { margin: 0; text-align: justify; hyphens: auto; max-width: none; }
+.page .n { position: absolute; bottom: 4%; left: 0; right: 0; text-align: center; color: #8a857a; }
+mark { background: #ffd84d; color: inherit; border-radius: 2px; padding: 0 1px; }
+mark.cur { background: #ff9f1a; box-shadow: 0 0 0 2px #ff9f1a; }
+.foot { display: flex; gap: 14px; align-items: center; height: 28px; padding: 0 14px; border-top: 1px solid var(--a-line); color: var(--a-dim); font-size: 12px; }
+.menu { position: absolute; background: #2b3242; border: 1px solid #424b5d; border-radius: 9px; padding: 5px; width: 250px;
+        box-shadow: 0 12px 30px rgba(0,0,0,.4); z-index: 3; font-size: 13px; }
+.menu div { padding: 4px 10px 4px 26px; border-radius: 6px; display: flex; justify-content: space-between; position: relative; }
+.menu div kbd { color: var(--a-dim); font-family: var(--body); }
+.menu div.hi { background: #2f6bdc; } .menu div.hi kbd { color: #dfe8ff; }
+.menu div.mark::before { content: "\2713"; position: absolute; left: 9px; }
+.menu hr { border: 0; border-top: 1px solid #424b5d; margin: 5px 4px; }
+.sheet { position: absolute; left: 50%; top: 76px; transform: translateX(-50%); background: var(--a-raised); border: 1px solid #424b5d; border-top: 0;
+         border-radius: 0 0 12px 12px; padding: 16px 18px; width: 320px; box-shadow: 0 14px 30px rgba(0,0,0,.45); z-index: 3; }
+.input { background: var(--a-sunken); border: 1px solid var(--a-accent); border-radius: 7px; padding: 5px 10px; box-shadow: 0 0 0 3px rgba(79,140,255,.25); }
+.btn.primary { background: var(--a-accent); border-color: var(--a-accent); color: #fff; font-weight: 600; }
+.outline { padding: 6px 10px; width: 100%; font-size: 12.5px; }
+.outline div { padding: 4px 8px; border-radius: 6px; color: var(--a-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.outline div.sub { padding-left: 20px; color: var(--a-dim); }
+.outline div.on { background: #2f4f8f; }
+.tabs2 { display: flex; gap: 4px; padding: 0 10px 8px; width: 100%; }
+.tabs2 span { flex: 1; text-align: center; padding: 2px 0; border-radius: 6px; color: var(--a-dim); }
+.tabs2 span.on { background: var(--a-sunken); color: var(--a-ink); }
+ul.feats li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>PDF Viewer, made again</h1>
+<p class="sub">The reader from the first builds - a page at a time, no menu, a window that does not resize - as a reader of today: a menu, zoom, the whole document scrolled, pages and contents in a sidebar, search, the window resizable, and every document opened where it was left. Drawn before it is built.</p>
+
+<div class="q"><b>Diego, 10 October 2026</b>: "we need to revisit our pdf reader which hasnt been updated since the first kosmos builds", "it needs a menu, zoom, better navigation, window resizing, etc".</div>
+
+<h2>As it opens: the document scrolled whole, its pages beside it</h2>
+<div class="scroller"><div class="win" id="w1" style="width:1000px"></div></div>
+<p class="cap">The menu bar under the header - <b>File, Edit, View, Go</b> - as every Kosmos window with a menu has it. In the header: the page as a number to type into and its count, back and forward by a page, the zoom with its levels a click away, the sidebar shown or hidden, and Find. The pages are one column, scrolled with the wheel, the keys or the scroll bar, each with a gap of desk between; the sidebar's thumbnails follow, the page in view ringed. The foot says the zoom and where the document came from.</p>
+
+<h2>The View menu, and the zoom's levels</h2>
+<div class="scroller"><div class="win" id="w2" style="width:820px"></div></div>
+<p class="cap"><b>Fit width</b> - the default - lays the pages as wide as the window and follows it as the window is resized; <b>Fit page</b> a whole page in view; <b>Actual size</b> a page at its printed size at the screen's density; and steps between 50% and 400%. <b>One page at a time</b> is there for a document read as slides. The sidebar shows the pages, or the document's own contents when it has them.</p>
+
+<h2>Find</h2>
+<div class="scroller"><div class="win" id="w3" style="width:1000px"></div></div>
+<p class="cap">Typed into the header's field, every match found through the whole document and marked, the current one stronger; Return and Shift-Return go to the next and the one before, and the sidebar lists the matches by page with a few words round each. A document whose text cannot be read as letters - a scan - says so rather than finding nothing.</p>
+
+<h2>Contents, and Go to page</h2>
+<div class="pair">
+<div class="scroller"><div class="win" id="w4" style="width:560px"></div></div>
+<div class="scroller"><div class="win" id="w5" style="width:460px"></div></div>
+</div>
+<p class="cap">The sidebar's other tab, <b>Contents</b>, is the document's own outline when it has one - its books and chapters - and the part being read lit. <b>Go to page</b> (Command-G, or a click on the number in the header) is a small sheet that takes a number.</p>
+
+<h2>A narrow window</h2>
+<div class="scroller"><div class="win" id="w6" style="width:520px"></div></div>
+<p class="cap">Resized, the pages are laid out again at the window's width and nothing is cut: the header keeps the page, the zoom and Find, and puts the rest in the menu; the sidebar is hidden below a width and comes back when there is room.</p>
+
+<h2>What it does</h2>
+<ul class="feats">
+  <li>Opens a PDF from Tracker, the Open window, or the File menu's recent documents.</li>
+  <li>Shows the whole document as one column of pages, scrolled; or one page at a time.</li>
+  <li>Zooms: fit width, fit page, actual size, and steps between 50% and 400%; Command-plus and -minus; pinching where there is a trackpad.</li>
+  <li>Goes: next and previous page, first and last, a page by number, back to where it was before a jump.</li>
+  <li>Shows its pages as thumbnails, and its contents when it has an outline.</li>
+  <li>Finds text through the whole document, every match marked.</li>
+  <li>Shows the pictures in its pages, which the reader of today leaves blank.</li>
+  <li>Copies selected text.</li>
+  <li>Resizes, laying its pages out again.</li>
+  <li>Opens each document where it was left: its page, its zoom.</li>
+  <li>Later, not in the first version: printing, which Kosmos does not do yet; a PDF's forms and annotations; two pages side by side.</li>
+</ul>
+<p class="cap">What it is made of - the PDF Kit's one door, what is new in it, the thumbnails and the cache of rendered pages, and the busiest path - is <code>docs/pdfview.md</code>, drawn in <code>docs/pdfview-architecture.png</code>.</p>
+</div>
+
+<script>
+const LIGHTS = '<span class="lights"><i style="background:#3fbf4f"></i><i style="background:#f2b233"></i><i style="background:#ee5048"></i></span>';
+const MENUS = (on) => '<div class="menubar">' + ["File", "Edit", "View", "Go"].map(m => `<span class="${m === on ? "on" : ""}">${m}</span>`).join("") + "</div>";
+
+function head(page, of, zoom, search, narrow) {
+  return `<div class="head"><span class="t">${narrow ? "Odyssey" : "The Odyssey"}</span>${narrow ? "" : '<span class="s">Homer, tr. Samuel Butler</span>'}<span class="grow"></span>
+    <span class="tools">${narrow ? "" : '<span class="btn icon">&#9776;</span>'}
+      <span class="pagebox"><span class="btn icon">&#8249;</span><b>${page}</b>of ${of}<span class="btn icon">&#8250;</span></span>
+      <span class="btn">${zoom} &#9662;</span>
+      ${search === null ? "" : `<span class="search${search ? " on" : ""}">&#9906; ${search || "Find"}</span>`}</span>${LIGHTS}</div>`;
+}
+
+const PARA = [
+  "Tell me, O Muse, of that ingenious hero who travelled far and wide after he had sacked the famous town of Troy. Many cities did he visit, and many were the nations with whose manners and customs he was acquainted; moreover he suffered much by sea while trying to save his own life and bring his men safely home; but do what he might he could not save his men, for they perished through their own sheer folly in eating the cattle of the Sun-god Hyperion.",
+  "So now all who escaped death in battle or by shipwreck had got safely home except Ulysses, and he, though he was longing to return to his wife and country, was detained by the goddess Calypso, who had got him into a large cave and wanted to marry him.",
+  "But as years went by, there came a time when the gods settled that he should go back to Ithaca; even then, however, when he was among his own people, his troubles were not yet over; nevertheless all the gods had now begun to pity him except Neptune, who still persecuted him without ceasing.",
+];
+
+function page(w, n, opts) {
+  const fs = Math.max(6, w * 0.0205), pad = w * 0.11;
+  const mark = (t) => opts && opts.find ? t.replace(/Ulysses/g, (m, i) => `<mark${opts.cur && i < 400 ? ' class="cur"' : ""}>${m}</mark>`) : t;
+  return `<div class="page" style="width:${w}px;height:${w * 1.294}px;padding:${pad * .9}px ${pad}px;font-size:${fs}px;line-height:1.5">
+    ${n === 1 ? `<h3 style="font-size:${fs * 1.8}px;margin-bottom:${fs}px">THE ODYSSEY</h3><div class="em" style="margin-bottom:${fs * 2}px">Book I</div>` : ""}
+    ${(n === 1 ? PARA : PARA.slice(1).concat(PARA)).map(t => `<p style="margin-bottom:${fs * .7}px;text-indent:${fs * 1.5}px">${mark(t)}</p>`).join("")}
+    <div class="n" style="font-size:${fs * .85}px">${n}</div></div>`;
+}
+
+function thumbs(on, n, from) {
+  from = from || 1;
+  let out = '<div class="thumbs"><div class="tabs2"><span class="on">Pages</span><span>Contents</span></div>';
+  for (let i = from; i < from + n; i++) {
+    let lines = "";
+    for (let k = 0; k < 9; k++) lines += `<i style="top:${(i === 1 ? 34 : 14) + k * 8}%;right:${12 + (k % 3) * 6}%"></i>`;
+    out += `<div class="thumb${i === on ? " on" : ""}"><div class="pg">${lines}</div>${i}</div>`;
+  }
+  return out + "</div>";
+}
+
+// 1: as it opens.
+document.getElementById("w1").innerHTML = head(1, 377, "Fit width", "") + MENUS() +
+  `<div class="body" style="height:620px">${thumbs(1, 5)}<div class="desk">${page(560, 1)}${page(560, 2)}</div></div>` +
+  '<div class="foot"><span>Fit width &middot; 91%</span><span style="margin-left:auto">/Home/Documents/odyssey.pdf</span></div>';
+
+// 2: the View menu open.
+document.getElementById("w2").innerHTML = head(12, 377, "100%", "") + MENUS("View") +
+  `<div class="body" style="height:430px">${thumbs(12, 4, 11)}<div class="desk">${page(430, 12)}</div></div>` +
+  `<div class="menu" style="left:150px;top:74px">
+     <div>Zoom in<kbd>&#8984; +</kbd></div><div>Zoom out<kbd>&#8984; &minus;</kbd></div>
+     <hr><div class="mark hi">Fit width<kbd>&#8984; 0</kbd></div><div>Fit page</div><div>Actual size<kbd>&#8984; 1</kbd></div>
+     <hr><div class="mark">The whole document, scrolled</div><div>One page at a time</div>
+     <hr><div class="mark">Sidebar<kbd>&#8984; B</kbd></div><div>Pages</div><div>Contents</div></div>`;
+
+// 3: Find.
+document.getElementById("w3").innerHTML = head(1, 377, "Fit width", "Ulysses") + MENUS() +
+  `<div class="body" style="height:560px"><div class="thumbs" style="align-items:stretch;padding:12px 10px">
+     <div style="color:var(--a-dim);font-size:12px;margin:0 4px 8px">412 matches on 301 pages</div>
+     <div class="outline" style="padding:0">
+       <div class="on">Page 1 &middot; &hellip;except <b>Ulysses</b>, and he&hellip;</div>
+       <div>Page 2 &middot; &hellip;home except <b>Ulysses</b>&hellip;</div>
+       <div>Page 3 &middot; &hellip;Telemachus son of <b>Ulysses</b>&hellip;</div>
+       <div>Page 3 &middot; &hellip;if <b>Ulysses</b> comes back&hellip;</div>
+       <div>Page 5 &middot; &hellip;was <b>Ulysses</b> in the&hellip;</div></div></div>
+   <div class="desk">${page(560, 1, { find: true, cur: true })}</div></div>` +
+  '<div class="foot"><span>1 of 412 &middot; Return for the next, Shift-Return for the one before</span><span style="margin-left:auto">Fit width &middot; 91%</span></div>';
+
+// 4: Contents.
+document.getElementById("w4").innerHTML = head(24, 377, "Fit page", null, true) + MENUS() +
+  `<div class="body" style="height:400px"><div class="thumbs" style="width:200px;align-items:stretch">
+     <div class="tabs2"><span>Pages</span><span class="on">Contents</span></div>
+     <div class="outline"><div>Preface</div><div>Book I</div><div class="sub">Minerva visits Telemachus</div><div class="on">Book II</div><div class="sub">Assembly of the people</div><div>Book III</div><div>Book IV</div><div>Book V</div><div>Book VI</div></div></div>
+   <div class="desk" style="justify-content:center">${page(260, 24)}</div></div>`;
+
+// 5: Go to page.
+document.getElementById("w5").innerHTML = head(24, 377, "Fit page", null, true) + MENUS("Go") +
+  `<div class="body" style="height:400px"><div class="desk" style="justify-content:center">${page(270, 24)}</div></div>
+   <div class="sheet" style="top:76px;width:280px"><div style="font-weight:600;margin-bottom:8px">Go to page</div>
+     <div style="display:flex;gap:8px;align-items:center"><span class="input" style="flex:1">212</span><span style="color:var(--a-dim)">of 377</span></div>
+     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><span class="btn">Cancel</span><span class="btn primary">Go</span></div></div>`;
+
+// 6: narrow.
+document.getElementById("w6").innerHTML = head(2, 377, "Fit width", "", true) + MENUS() +
+  `<div class="body" style="height:560px"><div class="desk">${page(480, 2)}</div></div>`;
+</script>
+</body>
+</html>

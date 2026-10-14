@@ -1,0 +1,121 @@
+<!doctype html>
+<!--
+  PDF Viewer, made again, and what it stands on: the window on top, the PDF
+  Kit's one door and what is new behind it, the Graphics Kit's C. A page
+  scrolled into view drawn through it (S). Drawn on 13 October 2026, before
+  any of it is built; docs/pdfview.md is the argument and docs/pdfview.html
+  the window. Rendered to docs/pdfview-architecture.png by headless Chrome
+  at twice its size.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos PDF Viewer architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code, td code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>PDF Viewer - what it stands on</h1>
+<p class="sub">The reader is the window: layout, scrolling, zoom, the sidebar, Find's marks. What a PDF is - its pages, its text, its outline, its pictures - is the PDF Kit's, behind its one door <code>pdf.lua</code>, so Present, Sheets, the browser and Kosmos Write get each addition too. Scrolling is a blit of pages already rendered; only a page arriving in view is drawn.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>kits in C, in the process</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers, in C</span>
+  <span class="f">S</span><span>a page scrolled into view</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications</h2>
+      <div class="row" style="grid-template-columns:1.4fr 1fr">
+        <div class="box new"><span class="tag">MADE AGAIN</span><b>PDF Viewer</b><p>menu bar; the whole document scrolled or a page at a time; zoom; the sidebar's pages and contents; Find and its marks; Copy; Go to page and back; resizing; the cache of rendered pages <span class="f">S1 S4</span></p></div>
+        <div class="box"><b>its other users</b><p>Present, Sheets, the browser, Kosmos Write - each gains the kit's text, outline and pictures</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in each process)</h2>
+      <div class="row" style="grid-template-columns:1.3fr 1fr 1fr 1fr">
+        <div class="box new"><span class="tag">GROWS</span><b>pdf.lua, the PDF Kit's door</b><p><code>open</code>, <code>file</code>, <code>render</code> as now; <em>new</em>: <code>text(doc, page)</code> and <code>outline(doc)</code> <span class="f">S2</span></p></div>
+        <div class="box new"><span class="tag">GROWS</span><b>pdfpage.lua</b><p>a page drawn; <em>new</em>: its pictures, and its glyphs mapped to letters through <code>ToUnicode</code> <span class="f">S3</span></p></div>
+        <div class="box"><b>panel.lua, recent.lua</b><p>the Open window; recent documents</p></div>
+        <div class="box"><b>prefs.lua, ui.lua</b><p>where each was left; the menu bar and controls</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>Kits in C (in the process)</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>PDF Kit's scanner</b><p><code>pdftok.c</code>: a page's content stream tokenised <span class="f">S2</span></p></div>
+        <div class="box"><b>Graphics Kit</b><p>glyphs rasterised once a face a size and blitted; <code>gfx.jpeg</code>; a picture scaled into place; the visible band blitted <span class="f">S3 S4</span></p></div>
+        <div class="box"><b>Compression Kit</b><p>a page's stream inflated; <code>FlateDecode</code> pictures</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers, in C</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box"><b>diskfs</b><p>the file, read into regions by <code>pdf.file</code></p></div>
+        <div class="box"><b>window manager</b><p>the window composed; the reader draws itself and commits damage</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>S - a page scrolled into view</h3><ol>
+      <li><span class="f">S1</span> the reader's layout says page 213 is about to show and is not in the cache.</li>
+      <li><span class="f">S2</span> <code>pdf.render</code>: its content stream read and tokenised in C, the operators run in Lua.</li>
+      <li><span class="f">S3</span> its glyphs drawn from the cache, its pictures decoded and placed - C - into a surface at the zoom.</li>
+      <li><span class="f">S4</span> every frame after: the visible band of each page in view blitted to the window, C, nothing redrawn.</li></ol></div>
+    <div class="card"><h3>Where the time goes</h3><table>
+      <tr><td>Scrolling</td><td>a blit a page in view - nothing else</td></tr>
+      <tr><td>A page arriving</td><td>one render, one page ahead while idle</td></tr>
+      <tr><td>A zoom</td><td>the pages in view again; the old ones scaled meanwhile</td></tr>
+      <tr><td>The first Find</td><td>each page's text read once and kept</td></tr></table></div>
+    <div class="card"><h3>Who else uses what is new</h3><table>
+      <tr><td><code>pdf.text</code></td><td>Kosmos Write importing a PDF; Spotlight-like search, later</td></tr>
+      <tr><td><code>pdf.outline</code></td><td>Present's slide list</td></tr>
+      <tr><td>pictures in pages</td><td>Present, the browser, Write's previews</td></tr></table></div>
+  </div>
+</div>
+</body>
+</html>
