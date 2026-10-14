@@ -9211,6 +9211,27 @@ the applications make the system useful, and is not pulled forward.
   wanted is by where the page came from - a page from the network may not
   open one from this machine - and it is checked where the link is
   followed, for both engines at once.
+- **The web, decided: apps for real work, a light browser, and Linux for
+  the rest** (Diego, 14 October 2026, after reading `docs/browser-engine.md`:
+  "i think that browsers have become larg OSes themselves", "apps for real
+  tasks (writing, listening music, presentations, email, drawing) and stop
+  reliying on websites for these and have a light weight browser that is
+  powerful enoigh to browse modern websites but not to run gmail and that
+  types of huge apps that require 30 million lines of code", and "the linux
+  guest idea is great as well to run chromium in alpine linux and see it on
+  the kosmos screen. that also serves as a way to run native linux apps on
+  kosmos. Linux-on-Kosmos feature"). So:
+  1. **Native applications for the work** - Write, Mail, Present, Music,
+     Paint - built from kits, as the premise says; not web apps.
+  2. **A light browser of Kosmos's own**, able to read the modern web -
+     JavaScript, modern CSS layout, current TLS - but not built to host
+     Gmail- or Docs-sized applications. Which engine that is (NetSurf grown
+     with QuickJS and layout, or Ladybird, or WebKit's smaller paths) is a
+     question for its turn, against this new bar rather than the five sites.
+  3. **Linux-on-Kosmos**: Alpine in a sandbox, its screen and input in a
+     Kosmos window (Sandboxes V5 and after) - Chromium there for the giant
+     web apps, and any native Linux application beside it.
+  The study below stays as the record of why.
 - **A real browser engine - studied first, then ported** (Diego, 14 October
   2026: "I want to start using kosmos as a daily os so we need actual apps
   to do work and else", "The major problem now ia the browser which is very

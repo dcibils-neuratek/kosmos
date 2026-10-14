@@ -119,6 +119,38 @@ static inline cap_t message_get_cap(const struct message *m)
 #define IPC_ERR_NO_PEER    (-3)     /* replying to a thread that is not waiting */
 #define IPC_ERR_NO_SPACE   (-4)     /* out of endpoints, or out of capability slots */
 #define IPC_NO_MESSAGE     (-7)     /* nobody was waiting, and blocking was refused */
+#define IPC_ERR_FULL       (-8)     /* a pulse of a new code, and the ring is full */
+
+/*
+ * **A pulse: a small message sent without waiting** (`docs/pulses.md`).
+ *
+ * Call and reply makes a sender wait for its receiver, which is right for a
+ * request and wrong for news: a publisher that calls its subscribers waits
+ * on each of them. A pulse is queued on the endpoint and the sender goes on
+ * - QNX's answer, and its shape: a `code` saying what happened and a
+ * `value` with it. It arrives through the same receive a request does, with
+ * the tag below and no sender to answer.
+ *
+ * **Bounded, and merged when full.** Each endpoint keeps `PULSE_RING`; a
+ * pulse whose code is already waiting adds to that one's `count` and
+ * replaces its value, so a receiver that fell behind learns "seven times"
+ * rather than a sender being made to wait. A new code into a full ring is
+ * refused with `IPC_ERR_FULL`, which the sender sees. Never blocked, never
+ * silently lost.
+ */
+#define PULSE_RING 32u
+
+#define MSG_TAG_PULSE 0x50554c5345000000ull   /* "PULSE" - no request uses it */
+
+struct pulse {
+    uint32_t code;
+    uint32_t count;      /* how many arrived since it was last received */
+    uint64_t value;      /* the newest one's */
+};
+
+_Static_assert(sizeof(struct pulse) == 16, "a pulse is two words");
+
+int ipc_pulse(cap_t index, uint32_t code, uint64_t value);
 
 /*
  * How many capabilities a thread may hold.

@@ -117,13 +117,19 @@ struct endpoint {
      * first.
      */
     struct thread *watcher;
+
+    /* Pulses waiting to be received, oldest at `pulse_head` (`ipc.h`). */
+    struct pulse pulses[PULSE_RING];
+    unsigned     pulse_head;
+    unsigned     pulse_len;
 };
 
 /*
  * **The pool, which grows** (`kernel/pool.h`, `threads.md` step 1b): ninety-six
  * at boot, as there were, and an endpoint for every `ENDPOINT_RAM_EACH` of
- * memory at most - an endpoint is seventy-two bytes, so the ceiling costs
- * nothing until it is reached.
+ * memory at most - an endpoint is about six hundred bytes since it keeps a
+ * ring of 32 pulses (`ipc.h`), still nothing beside the 64 KB of memory
+ * each one is allowed, so the ceiling costs nothing until it is reached.
  */
 #define ENDPOINT_BOOT_SLOTS 96u
 #define ENDPOINT_RAM_EACH   (64u * 1024u)
@@ -1138,6 +1144,8 @@ again:
 
         ep->in_use = true;
         ep->owner = self->process;
+        ep->pulse_head = 0;
+        ep->pulse_len = 0;
         ep->senders = NULL;
         ep->receivers = NULL;
         ep->watcher = NULL;
@@ -1488,6 +1496,84 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
     return IPC_OK;
 }
 
+/* A pulse as the message a receiver gets: its tag, and the pulse as data. */
+static void pulse_into(struct message *msg, const struct pulse *pl)
+{
+    msg->tag = MSG_TAG_PULSE;
+    msg->cap_plus_one = 0;
+    msg->length = sizeof(*pl);
+    memcpy(msg->data, pl, sizeof(*pl));
+}
+
+/*
+ * **A pulse sent: handed to a receiver already waiting, or kept** - merged
+ * into one of its code, or a slot of its own - and the sender never waits.
+ * Whoever holds a capability to the endpoint may pulse it, as whoever holds
+ * one may call it; nothing more is needed and nothing less is allowed.
+ */
+int ipc_pulse(cap_t index, uint32_t code, uint64_t value)
+{
+    struct thread *self = thread_current();
+    struct endpoint *ep = resolve(self, index);
+    struct thread *receiver;
+    unsigned long  epflags;
+    unsigned       i;
+
+    if (ep == NULL) {
+        return IPC_ERR_BAD_CAP;
+    }
+
+    epflags = spin_lock(&ep->lock);
+
+    /* Somebody is waiting for exactly this: theirs at once, as a call's
+     * message would be, and woken - with no sender, so no reply is owed. */
+    receiver = (ep->pulse_len == 0) ? queue_pop(&ep->receivers) : NULL;
+
+    if (receiver != NULL) {
+        struct pulse pl = { code, 1, value };
+
+        pulse_into(&receiver->ipc.msg, &pl);
+        receiver->ipc.peer = NULL;
+        deliver(receiver, IPC_OK);
+        spin_unlock(&ep->lock, epflags);
+        return IPC_OK;
+    }
+
+    /* One of the same code waiting: merged - counted, and the newest value. */
+    for (i = 0; i < ep->pulse_len; i++) {
+        struct pulse *pl = &ep->pulses[(ep->pulse_head + i) % PULSE_RING];
+
+        if (pl->code == code) {
+            if (pl->count < UINT32_MAX) {
+                pl->count++;
+            }
+            pl->value = value;
+            spin_unlock(&ep->lock, epflags);
+            return IPC_OK;
+        }
+    }
+
+    if (ep->pulse_len == PULSE_RING) {
+        spin_unlock(&ep->lock, epflags);
+        return IPC_ERR_FULL;
+    }
+
+    ep->pulses[(ep->pulse_head + ep->pulse_len) % PULSE_RING] = (struct pulse){ code, 1, value };
+    ep->pulse_len++;
+
+    /* A thread watching for a caller is watching for this too (`ipc_call`
+     * says why under the lines' lock). */
+    if (ep->watcher != NULL) {
+        struct thread *w = ep->watcher;
+
+        ep->watcher = NULL;
+        irq_wake_watcher(w);
+    }
+
+    spin_unlock(&ep->lock, epflags);
+    return IPC_OK;
+}
+
 int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
                 bool nonblocking, unsigned long timeout)
 {
@@ -1526,6 +1612,20 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
         }
 
         queue_push(&ep->awaiting_reply, s);
+        spin_unlock(&ep->lock, epflags);
+        return IPC_OK;
+    }
+
+    /*
+     * **A pulse waiting**, after any caller - a caller is a thread blocked
+     * until this answers, and a pulse is nobody's wait. Taken as a message
+     * with the pulse's tag and no sender, so there is nothing to reply to.
+     */
+    if (ep->pulse_len > 0) {
+        pulse_into(msg, &ep->pulses[ep->pulse_head]);
+        ep->pulse_head = (ep->pulse_head + 1) % PULSE_RING;
+        ep->pulse_len--;
+        *sender = NULL;
         spin_unlock(&ep->lock, epflags);
         return IPC_OK;
     }
@@ -1658,9 +1758,9 @@ int ipc_wait_for_caller(cap_t index, unsigned long ticks, bool or_input)
 
     epflags = spin_lock(&ep->lock);
 
-    if (ep->senders != NULL) {
+    if (ep->senders != NULL || ep->pulse_len > 0) {
         spin_unlock(&ep->lock, epflags);
-        return IPC_OK;                  /* somebody is already there */
+        return IPC_OK;                  /* somebody, or a pulse, is already there */
     }
 
     if (ep->watcher != NULL && ep->watcher != self) {
@@ -1729,7 +1829,7 @@ void ipc_endpoint_unlock(struct endpoint *ep, unsigned long flags)
 
 bool ipc_endpoint_has_caller(const struct endpoint *ep)
 {
-    return ep->senders != NULL;
+    return ep->senders != NULL || ep->pulse_len > 0;
 }
 
 bool ipc_endpoint_watch(struct endpoint *ep, struct thread *t, unsigned slot)

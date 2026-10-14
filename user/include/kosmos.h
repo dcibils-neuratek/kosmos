@@ -861,6 +861,29 @@ static inline long kosmos_reply(uint64_t sender, const struct message *msg)
 }
 
 /*
+ * **A pulse: news sent without waiting** (`docs/pulses.md`). Returns at once
+ * - 0, -8 when its code is new and the endpoint's ring of 32 is full, or -1
+ * for a capability that names nothing. A receiver gets it from
+ * `kosmos_receive` as a message tagged `KOSMOS_PULSE_TAG`, its data a
+ * `struct kosmos_pulse`, with sender 0: there is nobody to answer. The same
+ * shape as the kernel's `struct pulse` (`kernel/ipc.h`), checked in
+ * `user/init/sys_user.c`.
+ */
+#define KOSMOS_PULSE_TAG 0x50554c5345000000ull
+#define KOSMOS_PULSE_FULL (-8)
+
+struct kosmos_pulse {
+    uint32_t code;
+    uint32_t count;
+    uint64_t value;
+};
+
+static inline long kosmos_pulse(long cap, uint32_t code, uint64_t value)
+{
+    return sys3(SYS_PULSE, cap, (long)code, (long)value);
+}
+
+/*
  * The address space a process is given. Fixed rather than negotiated,
  * because there is nothing yet to negotiate with; `design.md` §9.2's
  * manifest is what decides this at M5, and it will decide it per process.

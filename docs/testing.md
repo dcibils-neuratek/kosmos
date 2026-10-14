@@ -25789,3 +25789,36 @@ run.
 
 
 **Whole gate**: 89 of 89.
+
+## 18.622 Pulses in Nebula: news sent without waiting
+
+`docs/pulses.md` P1, and the runtime half of P2. **The kernel**: each
+endpoint keeps a ring of 32 `struct pulse` - a code, a count, a value -
+beside its queues (`ipc.h`, about 600 bytes an endpoint now). `ipc_pulse`
+hands a pulse straight to a receiver already waiting, or merges it into a
+waiting pulse of the same code (counted, the newest value), or takes a free
+slot, or refuses a new code into a full ring with `IPC_ERR_FULL` (-8) - and
+never blocks. `ipc_receive` takes a waiting caller first, then a pulse, as
+a message tagged `MSG_TAG_PULSE` with no sender, so a reply to it is
+refused (`ipc_reply_token(0)`). `wait_for_caller` and `has_caller` count
+pulses, so a server sleeping until somebody calls wakes for one too. A new
+endpoint starts with an empty ring; a destroyed one takes its pulses.
+`SYS_PULSE` is 72. **The runtime**: `kosmos_pulse` and `struct
+kosmos_pulse` in `kosmos.h` (the layout checked against the kernel's in
+`sys_user.c`), `sys.pulse(cap, code, value)`, and `sys.receive` returning
+`{ pulse = true, code, count, value }` and no sender.
+
+**Test.** Kernel, both architectures: "ipc: a pulse is sent without
+waiting" - two of code 7 and one of 9 with nobody receiving read back as
+code 7 counted twice with the newest value, then 9, then nothing; 32 codes
+fill the ring, a 33rd is refused at once and one already there still
+merges, and the 32 drain in order; a thread blocked in receive gets a pulse
+directly, with no sender; a destroyed endpoint refuses a pulse. **Control**:
+merging off - the test fails on both, naming merged, second, empty,
+merged-when-full and drained.
+
+**Whole gate**: 88 of 89. `x86-dock` read Preferences, made 160 taller,
+not yet laid out at its new height - a new signature for this suite under
+load; it passed alone twice (3:47, 3:41). Nothing sends a pulse yet, so
+nothing P1 changed runs in that path. Watched.
+

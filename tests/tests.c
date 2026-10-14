@@ -3625,6 +3625,155 @@ static bool test_a_caller_ends_a_watched_sleep(void)
         && watched_caller_result == IPC_OK;
 }
 
+/*
+ * **A pulse: news sent without waiting** (`docs/pulses.md` P1). Kept on the
+ * endpoint while nobody receives: merged by code - counted, the newest
+ * value - and a new code into a full ring of 32 refused, never blocked.
+ * Received as a message with the pulse tag and no sender, after nothing
+ * else; handed straight to a receiver already waiting; nothing to reply to;
+ * gone with its endpoint.
+ */
+static volatile bool pulse_waiter_done;
+static volatile uint32_t pulse_waiter_code;
+static volatile uint64_t pulse_waiter_value;
+static volatile bool pulse_waiter_no_sender;
+static cap_t pulse_waiter_cap;
+
+static bool pulse_of(const struct message *m, uint32_t code, uint32_t count, uint64_t value)
+{
+    struct pulse pl;
+
+    if (m->tag != MSG_TAG_PULSE || m->length != sizeof(pl)) {
+        return false;
+    }
+
+    memcpy(&pl, m->data, sizeof(pl));
+    return pl.code == code && pl.count == count && pl.value == value;
+}
+
+static void pulse_waiter(void *arg)
+{
+    struct message msg = { 0 };
+    struct thread *sender = (struct thread *)1;
+
+    (void)arg;
+
+    if (ipc_receive(pulse_waiter_cap, &msg, &sender, false, 4u * TICK_HZ) == IPC_OK
+        && msg.tag == MSG_TAG_PULSE) {
+        struct pulse pl;
+
+        memcpy(&pl, msg.data, sizeof(pl));
+        pulse_waiter_code = pl.code;
+        pulse_waiter_value = pl.value;
+        pulse_waiter_no_sender = (sender == NULL);
+    }
+
+    pulse_waiter_done = true;
+    thread_exit();
+}
+
+static bool test_a_pulse_is_sent_without_waiting(void)
+{
+    struct message msg = { 0 };
+    struct thread *sender = NULL;
+    struct thread *waiter;
+    cap_t ep;
+    bool merged, second, empty, full, merged_when_full, drained, direct, gone;
+    uint64_t give_up;
+    unsigned i, got;
+
+    ep = ipc_endpoint_create();
+    if (ep < 0) {
+        return false;
+    }
+
+    /* Kept while nobody receives, and merged by code. */
+    if (ipc_pulse(ep, 7, 100) != IPC_OK || ipc_pulse(ep, 7, 200) != IPC_OK
+        || ipc_pulse(ep, 9, 1) != IPC_OK) {
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    merged = ipc_receive(ep, &msg, &sender, true, 0) == IPC_OK
+             && pulse_of(&msg, 7, 2, 200) && sender == NULL;
+    second = ipc_receive(ep, &msg, &sender, true, 0) == IPC_OK && pulse_of(&msg, 9, 1, 1);
+    empty = ipc_receive(ep, &msg, &sender, true, 0) == IPC_NO_MESSAGE;
+
+    /* Thirty-two codes fill the ring; a thirty-third is refused at once, and
+     * one already there still merges. */
+    for (i = 0; i < PULSE_RING; i++) {
+        (void)ipc_pulse(ep, 1000 + i, i);
+    }
+
+    full = ipc_pulse(ep, 2000, 0) == IPC_ERR_FULL;
+    merged_when_full = ipc_pulse(ep, 1000, 99) == IPC_OK;
+
+    got = 0;
+    drained = true;
+
+    while (ipc_receive(ep, &msg, &sender, true, 0) == IPC_OK) {
+        if (!pulse_of(&msg, 1000 + got, got == 0 ? 2 : 1, got == 0 ? 99 : got)) {
+            drained = false;
+        }
+        got++;
+    }
+
+    drained = drained && got == PULSE_RING;
+
+    /* A receiver already waiting has it at once, with no sender. */
+    pulse_waiter_done = false;
+    pulse_waiter_code = 0;
+    pulse_waiter_value = 0;
+    pulse_waiter_no_sender = false;
+    waiter = thread_create_suspended("pulse-waiter", pulse_waiter, NULL);
+
+    if (waiter == NULL) {
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    pulse_waiter_cap = ipc_cap_grant(waiter, ep);
+    thread_wake(waiter);
+
+    /* Until it is on the receiver queue: a pulse sent before would be kept
+     * rather than handed, which this is not testing. */
+    give_up = thread_deadline_in(2u * TICK_HZ);
+
+    while (waiter->state != THREAD_BLOCKED && cpu_cycles() < give_up) {
+        thread_yield();
+    }
+
+    (void)ipc_pulse(ep, 42, 4242);
+
+    give_up = thread_deadline_in(4u * TICK_HZ);
+
+    while (!pulse_waiter_done && cpu_cycles() < give_up) {
+        thread_yield();
+    }
+
+    direct = pulse_waiter_done && pulse_waiter_code == 42 && pulse_waiter_value == 4242
+             && pulse_waiter_no_sender;
+
+    /* Gone with its endpoint. */
+    (void)ipc_endpoint_destroy(ep);
+    gone = ipc_pulse(ep, 1, 1) == IPC_ERR_BAD_CAP;
+
+    if (!(merged && second && empty && full && merged_when_full && drained && direct && gone)) {
+        kputs("pulse: merged ");      kputu(merged);
+        kputs(" second ");            kputu(second);
+        kputs(" empty ");             kputu(empty);
+        kputs(" full ");              kputu(full);
+        kputs(" merged-when-full ");  kputu(merged_when_full);
+        kputs(" drained ");           kputu(drained);
+        kputs(" got ");               kputu(got);
+        kputs(" direct ");            kputu(direct);
+        kputs(" gone ");              kputu(gone);
+        kputs("\n");
+    }
+
+    return merged && second && empty && full && merged_when_full && drained && direct && gone;
+}
+
 static bool test_ipc_call_and_reply(void)
 {
     struct message msg = { 0 };
@@ -10825,6 +10974,7 @@ static const struct test tests[] = {
     { "cap: a table holds more than it has room for", test_a_table_holds_more_than_it_has_room_for },
     { "smp: a parent waits for children on other cores", test_a_parent_waits_for_children_on_other_processors },
     { "ipc: call and reply",                   test_ipc_call_and_reply },
+    { "ipc: a pulse is sent without waiting",  test_a_pulse_is_sent_without_waiting },
     { "ipc: a caller ends a watched sleep",    test_a_caller_ends_a_watched_sleep },
     { "ipc: both arrival orders work",         test_ipc_works_in_both_arrival_orders },
     { "ipc: destroy wakes the blocked",        test_destroying_an_endpoint_wakes_the_blocked },

@@ -127,7 +127,10 @@ path serves the Open/Save window and the desktop's icons.
   returning a pulse, coalescing and refusing; a kernel test on both
   architectures with controls (a full ring merging; a dead endpoint
   refusing; a pulse from an interrupt handler's context, if a driver should
-  ever want one).
+  ever want one). **Built 0.11.227** (`testing.md` 18.622) - and with it
+  P2's runtime half: `kosmos_pulse` for C, `sys.pulse` for Lua, and a
+  received pulse as `{ pulse = true, code, count, value }` with no sender.
+  From an interrupt handler: not built - nothing wants it yet.
 - **P2 - the runtime**: `sys.pulse`, a pulse from `sys.receive` as a table, and the
   C kit for servers (`kosmos_pulse`).
 - **P3 - the first user**: `maild` and `autod`; `mailarrived.lua` asks

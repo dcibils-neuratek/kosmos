@@ -2797,6 +2797,12 @@ void syscall_dispatch(struct syscall_frame *sc)
         result = sys_reply(p, sc->arg[0], sc->arg[1]);
         break;
 
+    case SYS_PULSE:
+        /* News, never a wait: `ipc_pulse` returns at once, whatever the
+         * receiver is doing. */
+        result = ipc_pulse((cap_t)sc->arg[0], (uint32_t)sc->arg[1], (uint64_t)sc->arg[2]);
+        break;
+
     case SYS_SPAWN:
         result = sys_spawn(p, sc->arg[0], sc->arg[1], (size_t)sc->arg[2], sc->arg[3]);
         break;

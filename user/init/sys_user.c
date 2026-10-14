@@ -33,11 +33,13 @@
  * be read as a disagreement about the contents. */
 _Static_assert(sizeof(struct message) == 8 + 4 + MSG_BYTES + 4,
                "struct message must match kernel/ipc.h");
+_Static_assert(sizeof(struct kosmos_pulse) == 16, "struct kosmos_pulse must match kernel/ipc.h");
 
 static const char *ipc_error(long status)
 {
     switch (status) {
     case -1:   return "no such capability";
+    case -8:   return "its ring of pulses is full";
     case -2:   return "the endpoint was destroyed";
     case -3:   return "that thread is not waiting for a reply";
     case -4:   return "out of endpoints or capability slots";
@@ -897,6 +899,27 @@ static int l_receive(lua_State *L)
         return 4;
     }
 
+    /*
+     * **A pulse** (`docs/pulses.md`): news, from nobody to answer - a table
+     * that says so, and no sender. Read by its tag, before the payload is
+     * taken for a serialised table, which it is not.
+     */
+    if (msg.tag == KOSMOS_PULSE_TAG && msg.length >= sizeof(struct kosmos_pulse)) {
+        struct kosmos_pulse pl;
+
+        memcpy(&pl, msg.data, sizeof(pl));
+        lua_createtable(L, 0, 4);
+        lua_pushboolean(L, 1);
+        lua_setfield(L, -2, "pulse");
+        lua_pushinteger(L, (lua_Integer)pl.code);
+        lua_setfield(L, -2, "code");
+        lua_pushinteger(L, (lua_Integer)pl.count);
+        lua_setfield(L, -2, "count");
+        lua_pushinteger(L, (lua_Integer)pl.value);
+        lua_setfield(L, -2, "value");
+        return 1;
+    }
+
     push_message(L, &msg);
 
     /*
@@ -913,6 +936,32 @@ static int l_receive(lua_State *L)
     lua_pushinteger(L, (lua_Integer)((msg.cap_plus_one == 0)
                                      ? -1 : (long)msg.cap_plus_one - 1));
     return 3;
+}
+
+/*
+ * `sys.pulse(cap, code, value)`: news to an endpoint, never a wait
+ * (`docs/pulses.md`). True, or nil and why - "its ring of pulses is full"
+ * when its code is new and 32 others wait.
+ */
+static int l_pulse(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    lua_Integer code = luaL_checkinteger(L, 2);
+    lua_Integer value = luaL_optinteger(L, 3, 0);
+    long status;
+
+    if (code < 0 || code > (lua_Integer)UINT32_MAX) {
+        return luaL_argerror(L, 2, "a pulse's code is 0 to 4294967295");
+    }
+
+    status = kosmos_pulse(cap, (uint32_t)code, (uint64_t)value);
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
 }
 
 /*
@@ -2972,6 +3021,7 @@ static const luaL_Reg sys_functions[] = {
     { "call_raw", l_call_raw },
     { "receive",  l_receive },
     { "receive_raw", l_receive_raw },
+    { "pulse",    l_pulse },
     { "reply",    l_reply },
     { "reply_raw", l_reply_raw },
     { "pack",     l_pack },

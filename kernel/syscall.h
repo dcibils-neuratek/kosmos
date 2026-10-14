@@ -621,7 +621,16 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 #define SYS_VCPU_RUN    70  /* (vcpu, &vcpu_regs)     -> VCPU_EXIT_* or error */
 
 #define SYS_SCHED_LANE  71  /* (cpu, &sched_lane)     -> 0 or error         */
-#define SYS_MAX         72
+
+/*
+ * **A pulse: news sent without waiting** (`docs/pulses.md`, `ipc.h`). To an
+ * endpoint the caller holds, as a call is; returns at once - 0, or
+ * IPC_ERR_FULL when its code is new and the endpoint's ring is full, or
+ * IPC_ERR_BAD_CAP. It is received by SYS_RECEIVE as a message tagged
+ * MSG_TAG_PULSE, whose data is a `struct pulse` and whose sender is 0.
+ */
+#define SYS_PULSE       72  /* (cap, code, value)     -> 0 or error         */
+#define SYS_MAX         73
 
 #define PROFILE_START   1u
 #define PROFILE_READ    2u  /* up to `max` samples into `buf`: how many */
