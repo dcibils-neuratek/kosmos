@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-14, night (0.11.214; the scheduler's policy changes on every core)
+Last updated: 2026-10-14, early morning (0.11.217; game mode with a core of its own)
 
 ---
 
@@ -30,11 +30,28 @@ flaky under load, fixed). Diego went to sleep saying "Keep building".
   should be under preferences".
 - **Monitor's chip with its maker's mark**, Diego's option B
   (0.11.213, 18.608): `ui.processor_chip` in the kit. Seen on the M700.
-- **The scheduler's policy changes on every core** (0.11.214, 18.609,
-  `scheduler.md` G1): each core changes over at its next tick; kept by
-  name in `scheduling.lua`, put back by the window manager at start. No
-  Restart needed - recorded as a decision in `README.md`. **Next: G2**, the
-  window as `docs/scheduler.html` draws it.
+- **The Scheduler, G1 to G4** (`docs/scheduler.md`):
+  - G1 (0.11.214, 18.609): the policy changes on every core, live - each
+    core changes over at its next tick; kept by name (`scheduling.lua`),
+    put back by the window manager at start; no Restart needed.
+  - G2 (0.11.215, 18.610): the window as drawn - who ran on each core
+    (`SYS_SCHED_LANE`), the bands, a turn, switches a second, keys' wait.
+    New suite `x86-scheduler`.
+  - G3 (0.11.216, 18.611): game mode for one application - a GAME band
+    under a second's budget, given only by a parent (the window manager);
+    by `kosmos: kind` game/emulator, Super+G, or the Scheduler's card. The
+    bands are named by the kernel now (`band_names`).
+  - G4 (0.11.217, 18.612): a core of its own while in front - and Nebula's
+    first thread move: only as it blocks, FP handed back, the waker waits
+    on `on_cpu`. A deadlock in the first version was found by the kernel
+    suite; `CLAUDE.md`'s "does not migrate" rewritten.
+  - **Next: G5**, 1000 Hz while a game plays, measured on the M700.
+- **The M700 booted 0.11.216 with "Display none"** at about 4:00 - most
+  likely its monitor off for the night; the desktop cannot start without a
+  screen. Not seen on the M700 tonight: G1-G4, the Monitor chip after
+  restart. Check its screen first in the morning.
+- **Unexplained, watched**: "telnetd never listening within 120s" twice in
+  the full gate since G3 (18.612's note) - each passes alone.
 - **Tried and dropped**: the graph as squares (Diego: "i dont like the new
   proposed look").
 - **The sandbox console's keys** (Diego: missing and repeated from the USB
