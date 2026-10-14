@@ -2,9 +2,54 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-13, afternoon (0.11.205; apk works in a sandbox on the M700)
+Last updated: 2026-10-14, night (0.11.214; the scheduler's policy changes on every core)
 
 ---
+
+## 13-14 October, evening and night: memory, sandboxes, looks, Monitor's chip, the Scheduler
+
+**Pushed: up to 0.11.198** (1ee26bee). **On `main`, not pushed:
+0.11.199-0.11.214** and the doc commits between them - each with its suites
+and controls; the full gate passed at 0.11.213 and at 0.11.214 (one suite
+flaky under load, fixed). Diego went to sleep saying "Keep building".
+
+- **Memory given on first touch** (0.11.210, `testing.md` 18.604): a
+  process's image, heap and stack a page at a time, and `_start` no longer
+  re-zeroes `.bss`. The M700's desktop 682 -> 524 MB; a C server 5.8 MB ->
+  16 KB. On x86 the switch a page fault owes waits for the next interrupt
+  (#PF is on `tss.ist[0]`).
+- **A sandbox's RAM given on touch** (0.11.211, 18.605): `MEM_ON_TOUCH`
+  regions, filled by the monitor's faults (`sharemap_fill`) and by EPT or
+  stage-2 misses inside `vm_vcpu_run`. shell86 84 of 256 MB on the M700;
+  the Overview's Memory graph and `sandbox list` show it.
+- **Sandboxes**: the help page (0.11.208); the machine's whole memory, 8
+  GB not 3 (0.11.209); **Restart seen** - the new boot read from its first
+  line (0.11.212, 18.607).
+- **A person's looks in `/Home/Preferences/Themes`** (0.11.212, 18.606):
+  one named like a shipped look replaces it; Diego: "all preferences
+  should be under preferences".
+- **Monitor's chip with its maker's mark**, Diego's option B
+  (0.11.213, 18.608): `ui.processor_chip` in the kit. Seen on the M700.
+- **The scheduler's policy changes on every core** (0.11.214, 18.609,
+  `scheduler.md` G1): each core changes over at its next tick; kept by
+  name in `scheduling.lua`, put back by the window manager at start. No
+  Restart needed - recorded as a decision in `README.md`. **Next: G2**, the
+  window as `docs/scheduler.html` draws it.
+- **Tried and dropped**: the graph as squares (Diego: "i dont like the new
+  proposed look").
+- **The sandbox console's keys** (Diego: missing and repeated from the USB
+  keyboard): a key log showed they arrive wrong before the window; the
+  vCPU is moved off core 0 on x86 (`vmm.c`, **uncommitted**, on the M700),
+  waiting for Diego to type a line and say whether it is smooth. The M700
+  build also carries a temporary key log in `sandboxes.lua` - added only to
+  M700 builds from `scratchpad/sandboxes.lua.probe`, never committed.
+- **Designed, waiting for Diego to agree**: *Screens*, a VNC client
+  (`docs/screens.md`, `.html`, `-architecture.png`); the PDF Viewer made
+  again (`docs/pdfview.md`, `.html`, `-architecture.png`). Asked on the
+  board too: the ended background program, fix 1 or 2 (I recommend 2).
+- **Board tidied**: Mail's status bar, its pictures from a sender, and
+  Nebula's memory in Processes were built on 12 October and left in the
+  queue; moved to Done.
 
 ## 13 October, afternoon: sandboxes on x86-64
 
