@@ -135,6 +135,15 @@ static inline struct thread **running_slot(struct percpu *p)
  */
 static const struct scheduler *policy;
 
+/*
+ * **And the policy each core is running now**, which is the one above once
+ * that core has changed over (`sched_switch_to`, 13 October 2026). A core's
+ * entry changes only under its own queue lock, and everything that touches
+ * a core's queue holds that lock - so a thread is always queued in the
+ * structure its core's policy reads, whichever policy that is.
+ */
+static const struct scheduler *core_policy[NR_CPUS];
+
 static unsigned next_id = 1;
 
 /* Which processor the next thread created will call home. See where it is
@@ -245,7 +254,14 @@ static void refresh_effective(struct thread *t);
 
 void sched_use(const struct scheduler *p)
 {
+    unsigned c;
+
     policy = p;
+
+    for (c = 0; c < NR_CPUS; c++) {
+        core_policy[c] = p;
+    }
+
     policy->init();
 }
 
@@ -316,24 +332,60 @@ static inline unsigned here(void)
 }
 
 /*
+ * **This core takes up the policy asked for**, if it has not: what is queued
+ * here drained out of the policy it runs and given to the new one, after the
+ * new one has emptied this core's queues (`reset`). The caller holds this
+ * core's queue lock, which is what makes the change one step to everybody
+ * else - a wake onto this core waits for the lock, and finds the new policy.
+ */
+static void change_over(unsigned cpu)
+{
+    const struct scheduler *want = __atomic_load_n(&policy, __ATOMIC_ACQUIRE);
+    const struct scheduler *was = core_policy[cpu];
+    struct thread *drained = NULL;
+    struct thread **tail = &drained;
+
+    if (was == want) {
+        return;
+    }
+
+    for (;;) {
+        struct thread *t = was->pick_next(cpu);
+
+        if (t == NULL) {
+            break;
+        }
+
+        t->sched.next = NULL;
+        *tail = t;
+        tail = &t->sched.next;
+    }
+
+    want->reset(cpu);
+    core_policy[cpu] = want;
+
+    while (drained != NULL) {
+        struct thread *t = drained;
+
+        drained = t->sched.next;
+        t->sched.next = NULL;
+        want->enqueue(cpu, t);
+    }
+}
+
+/*
  * Change policy with threads already queued in the old one.
  *
  * `sched_use` calls `init`, which empties the queues - correct at boot,
  * where nothing is in them, and a way to lose every runnable thread on the
  * machine at any other time. The threads are not in a list the kernel keeps;
  * they are in whatever structure the policy chose, and the only handle on
- * them is `pick_next`.
- *
- * So they are drained one at a time out of the old policy and handed to the
- * new one, before the new one is installed. Interrupts are masked for the
- * duration: a tick landing halfway through would ask a policy that owns half
- * the runnable threads which one should run next.
+ * them is `pick_next` - so each core drains its own out of the old policy
+ * and hands them to the new (`change_over`).
  */
 bool sched_switch_to(unsigned index)
 {
     const struct scheduler *next;
-    struct thread *drained = NULL;
-    struct thread **tail = &drained;
     unsigned long irqstate;
 
     if (index >= sched_policy_count()) {
@@ -347,69 +399,35 @@ bool sched_switch_to(unsigned index)
     }
 
     /*
-     * **Refused once more than one processor schedules, and that is a real
-     * loss recorded as one.**
+     * **A core at a time, each its own queue** (13 October 2026; Diego: "I
+     * cant change the scheduler policy any more"). It was refused once more
+     * than one processor scheduled - since 0.10.22, every machine - because
+     * swapping meant draining every core's queue at once, which needs one
+     * core holding every core's lock and the others stopped.
      *
-     * Swapping the policy means draining every runnable thread out of the
-     * old one and pouring it into the new. With one runqueue that is a local
-     * operation. With one per core it is *every* core's queue at once - this
-     * core would have to hold all of them simultaneously, which makes this
-     * the single operation that defines a global lock order, and it would
-     * have to stop the other cores mid-decision to do it.
-     *
-     * The honest answer is not to make that work but to say it does not.
-     * Switching schedulers at runtime is a thing this system can do because
-     * the policy is a vtable, and it exists to demonstrate that the
-     * mechanism and the policy are genuinely separable - which it has done.
-     * It is not a thing anybody needs while the machine is running four
-     * cores' worth of work.
-     *
-     * `sysinfo` still reports the policy, `sched` still lists them, and the
-     * suite still swaps them - because the suite runs with one scheduling
-     * core. The day a secondary takes work, this returns false and says why.
+     * It does not need that, because a thread never leaves its home core: a
+     * core's queue holds only its own threads, so each core can change over
+     * by itself, under its own lock, while the others still run the policy
+     * before. The one asking changes now; every other core at its next tick
+     * (`thread_tick`). In between, a thread woken onto a core is queued in
+     * whatever that core runs, under that core's lock, and moves over with
+     * the rest of its queue - so none is stranded. `docs/scheduler.md` had
+     * this written down "in case it is ever wanted"; a setting applied at
+     * start could not avoid it either, since `/Home` is read through servers
+     * already running on every core.
      */
-    if (thread_cpu_count() > 1) {
-        return false;
-    }
+    __atomic_store_n(&policy, next, __ATOMIC_RELEASE);
 
-    /*
-     * Masked for the duration, and holding this core's queue. A tick landing
-     * between the drain and the install would ask a policy that owns half
-     * the runnable threads which one runs next.
-     */
     irqstate = spin_lock(&runq_lock[here()]);
-
-    /*
-     * Drained into a list through `sched.next`, which a thread off every
-     * queue is not using - not into an array on this stack, which was sized
-     * by the pool and is not any more.
-     */
-    for (;;) {
-        struct thread *t = policy->pick_next(here());
-
-        if (t == NULL) {
-            break;
-        }
-
-        t->sched.next = NULL;
-        *tail = t;
-        tail = &t->sched.next;
-    }
-
-    policy = next;
-    policy->init();
-
-    while (drained != NULL) {
-        struct thread *t = drained;
-
-        drained = t->sched.next;
-        t->sched.next = NULL;
-        policy->enqueue(here(), t);
-    }
-
+    change_over(here());
     spin_unlock(&runq_lock[here()], irqstate);
 
     return true;
+}
+
+const struct scheduler *sched_policy_on(unsigned cpu)
+{
+    return cpu < NR_CPUS ? core_policy[cpu] : NULL;
 }
 
 const struct scheduler *sched_current(void)
@@ -1574,7 +1592,7 @@ void thread_tick(void)
 
     /* Before thread_init has run there is nothing to preempt, and the timer
      * starts before the first thread exists. */
-    if (current == NULL || policy->tick == NULL) {
+    if (current == NULL || core_policy[here()]->tick == NULL) {
         return;
     }
 
@@ -1640,7 +1658,18 @@ void thread_tick(void)
         this_cpu()->preempt_pending = true;
     }
 
-    if (policy->tick(current)) {
+    /*
+     * **And this core takes up a policy asked for elsewhere**
+     * (`sched_switch_to`), before its own decides about the thread here.
+     */
+    if (core_policy[here()] != __atomic_load_n(&policy, __ATOMIC_ACQUIRE)) {
+        unsigned long flags = spin_lock(&runq_lock[here()]);
+
+        change_over(here());
+        spin_unlock(&runq_lock[here()], flags);
+    }
+
+    if (core_policy[here()]->tick(current)) {
         this_cpu()->preempt_pending = true;
     }
 }
@@ -1717,8 +1746,8 @@ void thread_preempt_if_needed(void)
         unsigned long flags = spin_lock(&runq_lock[cpu]);
 
         choosing();
-        policy->enqueue(cpu, current);
-        next = policy->pick_next(cpu);
+        core_policy[cpu]->enqueue(cpu, current);
+        next = core_policy[cpu]->pick_next(cpu);
 
         spin_unlock(&runq_lock[cpu], flags);
     }
@@ -1742,7 +1771,7 @@ bool thread_any_ready(void)
     unsigned long flags;
     bool          any;
 
-    if (policy->ready == NULL) {
+    if (core_policy[here()]->ready == NULL) {
         return false;
     }
 
@@ -1756,7 +1785,7 @@ bool thread_any_ready(void)
      */
     cpu = here();
     flags = spin_lock(&runq_lock[cpu]);
-    any = policy->ready(cpu);
+    any = core_policy[cpu]->ready(cpu);
     spin_unlock(&runq_lock[cpu], flags);
 
     return any;
@@ -1820,10 +1849,10 @@ void thread_yield(void)
         unsigned long flags = spin_lock(&runq_lock[cpu]);
 
         choosing();
-        next = policy->pick_next(cpu);
+        next = core_policy[cpu]->pick_next(cpu);
 
         if (next != NULL) {
-            policy->enqueue(cpu, current);
+            core_policy[cpu]->enqueue(cpu, current);
         }
 
         spin_unlock(&runq_lock[cpu], flags);
@@ -1910,7 +1939,7 @@ void thread_block_and_release(struct spinlock *lock, unsigned long flags)
 
     (*running_slot(me))->state = THREAD_BLOCKED;
     choosing();
-    next = policy->pick_next(cpu);
+    next = core_policy[cpu]->pick_next(cpu);
 
     spin_unlock(&runq_lock[cpu], rq);
 
@@ -1990,7 +2019,7 @@ void thread_block(void)
 
     current->state = THREAD_BLOCKED;
     choosing();
-    next = policy->pick_next(cpu);
+    next = core_policy[cpu]->pick_next(cpu);
 
     spin_unlock(&runq_lock[cpu], flags);
 
@@ -2208,7 +2237,7 @@ void thread_wake(struct thread *t)
             }
         }
 
-        policy->enqueue(cpu, t);
+        core_policy[cpu]->enqueue(cpu, t);
 
         /*
          * **And if it outranks whoever is running *there*, say so there.**
@@ -2266,7 +2295,7 @@ void thread_wake(struct thread *t)
 
             if (running != NULL && t != running
                 && t->sched.effective > running->sched.effective
-                && policy->preempts != NULL && policy->preempts(running, t)) {
+                && core_policy[cpu]->preempts != NULL && core_policy[cpu]->preempts(running, t)) {
                 target->preempt_pending = true;
             }
         }
@@ -2408,7 +2437,7 @@ void thread_exit(void)
 
         current->state = THREAD_DEAD;
         choosing();
-        next = policy->pick_next(cpu);
+        next = core_policy[cpu]->pick_next(cpu);
 
         spin_unlock(&runq_lock[cpu], flags);
     }

@@ -572,6 +572,28 @@ local function load_appearance()
 end
 
 --
+-- **How the machine schedules, as its person left it** (`docs/scheduler.md`
+-- G1): the policy and the quantum chosen in the Scheduler, put in force as
+-- the desktop starts, as the look is above. Said either way, so a choice
+-- that did not come back is found in the log rather than guessed at.
+--
+do
+  local ok, scheduling = pcall(use, "/Kosmos/Libraries/scheduling.lua")
+
+  if ok then
+    local kept = scheduling.saved()
+
+    if kept.policy or kept.quantum then
+      local applied, why = scheduling.apply()
+
+      print(("wm: scheduling %s%s%s"):format(tostring(kept.policy or "as it was"),
+            kept.quantum and (", quantum " .. kept.quantum) or "",
+            applied and "" or (" - " .. tostring(why))))
+    end
+  end
+end
+
+--
 -- **The window server** (`docs/astra-display.md` D3b-2): started by init at
 -- boot, and its manager door lent to this program alone. It holds the
 -- screen and composes what this process describes; this process neither

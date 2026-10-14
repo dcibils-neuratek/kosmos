@@ -25301,3 +25301,42 @@ without "Cortex-" on an ARM board.
 the maker's first word on its lid, or the model's for a processor that names
 no maker, held to the processor it names. Seen under QEMU as its own
 processor and as `-cpu Skylake-Client`, which names Intel.
+
+## 18.609 The scheduler's policy, changed on every core
+
+`docs/scheduler.md` G1. Diego, 11 October: "I cant change the scheduler
+policy any more". `sched_switch_to` refused once more than one core
+scheduled - every machine since 0.10.22 - because swapping drained every
+core's queue at once. The design said: keep the choice as a setting and
+apply it when Kosmos starts, "before a second core takes work". That could
+not work either: the setting is in `/Home`, read through servers that are
+already running on every core.
+
+**Each core changes over by itself.** The kernel keeps the policy asked for
+and the policy each core runs (`core_policy[]`); a core's entry changes only
+under its own queue lock, where everything that touches its queue already
+holds it. `change_over` drains that core's queue out of the policy it runs,
+empties the new policy's queues for that core (`reset`, new beside `init`),
+and enqueues what it drained. The core that asks changes at once; every
+other at its next tick, before its policy judges the thread running there.
+A thread woken onto a core in between is queued in whatever that core runs,
+under its lock, and moves over with the rest - none is stranded.
+
+The choice is kept by name in `/Home/Preferences/scheduler`
+(`scheduling.lua`), and the window manager puts it back as the desktop
+starts, saying so in the log. The Scheduler window keeps every choice made
+in it and says when one is refused, with the policy's name.
+
+**Tests.** Kernel, both architectures: `sched: the policy changes on every
+core` - two threads on every other core that only yield, so each has one
+queued while the other runs; round-robin asked for from core zero; every
+core seen running it within a second; every thread still moving after; and
+back. **Controls**: a changeover that dropped what it drained failed it, and
+`sched: the higher priority runs first` and `a wake preempts a lower band`
+with it; the old refusal put back did *not* fail it, because the suite
+narrows placement to one core (`thread_cpu_count` is 1 there) and the
+refusal asked that, which is how the suite never saw the bug - the new test
+puts its threads on other cores itself. `tools/test_scheduling.lua` (host),
+7: a choice kept by name, made the kernel's number at the start, nothing
+set that is already so, an unknown policy said; control: `index_of` finding
+nothing failed 3.

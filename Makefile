@@ -4713,6 +4713,7 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	@# category that exists, every default on its own list of choices, and
 	@# a write that keeps what another program put in the same file.
 	$(HOSTDIR)/lua tools/test_settings.lua
+	$(HOSTDIR)/lua tools/test_scheduling.lua
 	@# And every method an application calls on its window: Lua resolves one
 	@# at the call, so a name the kit does not have is a control that ends
 	@# the program when somebody presses it, and nothing else notices.

@@ -38,6 +38,7 @@
 -- identical and every quantum is unused.
 
 local ui    = use("/Kosmos/Libraries/ui.lua")
+local scheduling = use("/Kosmos/Libraries/scheduling.lua")
 local theme = ui.theme
 
 local W, H = 560, 520
@@ -109,13 +110,22 @@ local function groups()
     turns[#turns + 1] = { ticks, ("%d ms"):format(ms(ticks)) }
   end
 
+  --
+  -- **In force at once, on every core, and kept** (`docs/scheduler.md` G1):
+  -- each core changes over at its next tick (`sched_switch_to`), and the
+  -- choice is a setting the desktop applies at every start
+  -- (`scheduling.lua`). It was refused on every machine with two cores and
+  -- said "could not" with the refusal's code.
+  --
   local policy = ui.dropdown{
     choices = policies, value = info.policy,
     on_change = function(_, index)
       local ok, why = sys.set_policy(index)
 
-      refresh(ok and ("now scheduling with " .. info.policies[index])
-              or ("could not: " .. tostring(why)))
+      if ok then scheduling.keep{ policy = info.policies[index] } end
+
+      refresh(ok and ("scheduling with %s on every core, and at every start"):format(info.policies[index])
+              or ("%s was refused: %s"):format(info.policies[index] or "that policy", tostring(why)))
     end,
   }
 
@@ -124,8 +134,10 @@ local function groups()
     on_change = function(_, ticks)
       local ok, why = sys.set_quantum(ticks)
 
-      refresh(ok and ("a turn is now %d ms"):format(ms(ticks))
-              or ("could not: " .. tostring(why)))
+      if ok then scheduling.keep{ quantum = ticks } end
+
+      refresh(ok and ("a turn is now %d ms, and at every start"):format(ms(ticks))
+              or ("a turn of %d ms was refused: %s"):format(ms(ticks), tostring(why)))
     end,
   }
 

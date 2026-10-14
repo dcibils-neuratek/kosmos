@@ -138,17 +138,25 @@ static inline unsigned level_of(const struct thread *t)
     return t->sched.effective;
 }
 
+/* One core's queues emptied, as it takes this policy up (`sched.h`). */
+static void prio_reset(unsigned cpu)
+{
+    unsigned i;
+
+    for (i = 0; i < SCHED_PRIORITIES; i++) {
+        head[cpu][i] = NULL;
+        tail[cpu][i] = NULL;
+    }
+
+    occupied[cpu] = 0;
+}
+
 static void prio_init(void)
 {
-    unsigned c, i;
+    unsigned c;
 
     for (c = 0; c < NR_CPUS; c++) {
-        for (i = 0; i < SCHED_PRIORITIES; i++) {
-            head[c][i] = NULL;
-            tail[c][i] = NULL;
-        }
-
-        occupied[c] = 0;
+        prio_reset(c);
     }
 }
 
@@ -255,6 +263,7 @@ unsigned sched_get_quantum(void)
 const struct scheduler sched_priority = {
     .name      = "priority",
     .init      = prio_init,
+    .reset     = prio_reset,
     .enqueue   = prio_enqueue,
     .pick_next = prio_pick_next,
     .ready     = prio_ready,

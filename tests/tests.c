@@ -982,9 +982,12 @@ static struct thread *lifo_pick_next(unsigned cpu)
 
 static bool lifo_tick(struct thread *running) { (void)running; return false; }
 
+static void lifo_reset(unsigned cpu) { (void)cpu; lifo_top = NULL; }
+
 static const struct scheduler sched_lifo = {
     .name      = "test-lifo",
     .init      = lifo_init,
+    .reset     = lifo_reset,
     .enqueue   = lifo_enqueue,
     .pick_next = lifo_pick_next,
     .tick      = lifo_tick,
@@ -2502,6 +2505,122 @@ static bool test_a_thread_that_never_yields_is_preempted(void)
     }
 
     return ran;
+}
+
+/*
+ * **The policy changed while every core schedules** (`sched_switch_to`, 13
+ * October 2026; Diego: "I cant change the scheduler policy any more"). It
+ * was refused on any machine with more than one core. Now each core changes
+ * over by itself, under its own lock: the one asking at once, the others at
+ * their next tick.
+ *
+ * Two threads on every other core that do nothing but yield, so each core
+ * always has one queued while the other runs - the queue a changeover must
+ * drain and refill. Every core is seen running the new policy within the
+ * deadline; every thread still runs after it, so none was stranded in the
+ * old policy's queue; and the same back again.
+ */
+static volatile bool turn_stop;
+static volatile unsigned long turn_laps[16];
+
+static void turn_taker(void *arg)
+{
+    unsigned i = (unsigned)(uintptr_t)arg;
+
+    while (!turn_stop) {
+        turn_laps[i]++;
+        thread_yield();
+    }
+}
+
+static bool every_core_runs(const struct scheduler *want, uint64_t deadline)
+{
+    unsigned c;
+
+    for (;;) {
+        bool all = true;
+
+        for (c = 0; c < smp_online() && c < NR_CPUS; c++) {
+            all = all && sched_policy_on(c) == want;
+        }
+
+        if (all) {
+            return true;
+        }
+
+        if (cntpct() > deadline) {
+            return false;
+        }
+    }
+}
+
+static bool every_thread_moves(unsigned n)
+{
+    unsigned long before[16];
+    uint64_t deadline = cntpct() + cntfrq();
+    unsigned i;
+    bool all;
+
+    for (i = 0; i < n; i++) {
+        before[i] = turn_laps[i];
+    }
+
+    do {
+        all = true;
+
+        for (i = 0; i < n; i++) {
+            all = all && turn_laps[i] > before[i];
+        }
+    } while (!all && cntpct() < deadline);
+
+    return all;
+}
+
+static bool test_the_policy_changes_on_every_core(void)
+{
+    unsigned was = sched_policy_index(), rr = 0, i, c, n = 0;
+    bool ok;
+
+    if (smp_online() < 2) {
+        return true;
+    }
+
+    for (i = 0; i < sched_policy_count(); i++) {
+        if (strcmp(sched_policy_name(i), "round-robin") == 0) {
+            rr = i;
+        }
+    }
+
+    turn_stop = false;
+
+    for (c = 1; c < smp_online() && n + 2 <= 16; c++) {
+        for (i = 0; i < 2; i++, n++) {
+            turn_laps[n] = 0;
+
+            if (thread_create_on(c, "turns", turn_taker, (void *)(uintptr_t)n) == NULL) {
+                turn_stop = true;
+                return false;
+            }
+        }
+    }
+
+    ok = every_thread_moves(n)
+      && sched_switch_to(rr)
+      && sched_policy_on(0) == &sched_round_robin
+      && every_core_runs(&sched_round_robin, cntpct() + cntfrq())
+      && every_thread_moves(n)
+      && sched_switch_to(was)
+      && every_core_runs(sched_current(), cntpct() + cntfrq())
+      && sched_current() == &sched_priority
+      && every_thread_moves(n);
+
+    turn_stop = true;
+
+    for (i = 0; i < 16; i++) {
+        thread_yield();
+    }
+
+    return ok;
 }
 
 /*
@@ -10372,6 +10491,7 @@ static const struct test tests[] = {
     { "sched: a spinning thread is preempted", test_a_thread_that_never_yields_is_preempted },
     { "sched: both sides keep running",        test_preemption_does_not_lose_the_preempted_thread },
     { "smp: a secondary preempts a spinner",   test_a_secondary_preempts_a_thread_that_never_yields },
+    { "sched: the policy changes on every core", test_the_policy_changes_on_every_core },
     { "smp: a new thread avoids a loaded core", test_placement_avoids_a_loaded_processor },
     { "smp: a changed mapping reaches every core", test_a_changed_mapping_reaches_every_processor },
     { "smp: a reply reaches a caller on another core", test_a_reply_reaches_a_caller_on_another_processor },

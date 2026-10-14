@@ -36,6 +36,14 @@ struct scheduler {
     void (*init)(void);
 
     /*
+     * Processor `cpu`'s queues emptied, and nothing else: what a core does
+     * as it takes this policy up while others still run the one before
+     * (`sched_switch_to`). The caller holds that core's queue lock and has
+     * already drained what was queued.
+     */
+    void (*reset)(unsigned cpu);
+
+    /*
      * This thread is runnable and wants a turn, on processor `cpu`.
      *
      * **The queue is named rather than implied, and that is the whole of
@@ -181,7 +189,8 @@ unsigned sched_get_quantum(void);
  * `sched_use` is the boot-time one and empties the queues; `sched_switch_to`
  * drains the runnable threads out of the old policy into the new one first,
  * which is the difference between changing your mind and losing every
- * thread on the machine.
+ * thread on the machine - **a core at a time**, each its own queue under its
+ * own lock: the one that asks at once, every other at its next tick.
  */
 unsigned    sched_policy_count(void);
 const char *sched_policy_name(unsigned index);
@@ -195,6 +204,10 @@ bool        sched_switch_to(unsigned index);
  */
 void sched_use(const struct scheduler *policy);
 const struct scheduler *sched_current(void);
+
+/* The policy processor `cpu` runs now: the one asked for, once that core has
+ * changed over - at its next tick after `sched_switch_to`. */
+const struct scheduler *sched_policy_on(unsigned cpu);
 
 /* The policies that exist. */
 extern const struct scheduler sched_round_robin;

@@ -185,8 +185,12 @@ def main():
             if "Restart" in spots and first_line:
                 at = len(guest.seen)
                 click(ox + spots["Restart"][0], oy + spots["Restart"][1])
-                # The old monitor's last word first ("vmm: stopped, as asked").
-                again = until(r"sandboxes: console shell1: (?!vmm: )([^\n]*)\n", at, 120)
+                # The old monitor's last word first ("vmm: stopped, as asked"),
+                # and whatever the old shell was still saying before it - so
+                # the first line *after* that word is the new boot's.
+                bye = until(r"sandboxes: console shell1: vmm: stopped, as asked\n", at, 60)
+                after = guest.seen.find("vmm: stopped, as asked", at) if bye else at
+                again = until(r"sandboxes: console shell1: (?!vmm: )([^\n]*)\n", after, 120)
                 check(again is not None and again.group(1).rstrip("\r") == first_line.group(1).rstrip("\r"),
                       "after Restart the console did not show the new boot from its start: %r, not %r"
                       % (again and again.group(1), first_line.group(1)))

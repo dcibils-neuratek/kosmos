@@ -44,7 +44,9 @@ stays possible on one core, where the suite exercises it.
 
 Changing live on every core *could* be done - a thread never leaves its
 home, so each core could change its own queue at its next decision - and is
-written down here in case it is ever wanted, not built.
+written down here in case it is ever wanted, not built. **Built on 13
+October**, because the setting applied at the start could not avoid it: by
+the time `/Home` can be read, its servers run on every core.
 
 **Game mode is not a policy swap**: it is Balanced with a band and a core
 given to one application, so it turns on and off at once.
@@ -121,7 +123,14 @@ shows the same numbers live.
 
 - **G1** - the policy chosen in the window, kept as a setting and applied
   when Kosmos starts, with Restart now beside it; the window saying why
-  when anything is refused.
+  when anything is refused. **Built 13 October (0.11.214)**, and live
+  rather than at a restart: applying at the start met the same wall as
+  changing live, since `/Home` is read through servers already running on
+  every core, so each core now changes over by itself - the one asking at
+  once, every other at its next tick, under its own lock (`change_over`,
+  `testing.md` 18.609). The choice is kept by name (`scheduling.lua`) and
+  the window manager puts it back at every start; no Restart button is
+  needed.
 - **G2** - the window redesigned as drawn (`docs/scheduler.html`): the
   modes as cards, a timeline of who ran on each core, the bands as a
   ladder, the quantum with what it trades, and the numbers that matter.

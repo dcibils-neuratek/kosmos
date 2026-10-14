@@ -48,13 +48,19 @@
 static struct thread *head[NR_CPUS];
 static struct thread *tail[NR_CPUS];
 
+/* One core's queue emptied, as it takes this policy up (`sched.h`). */
+static void rr_reset(unsigned cpu)
+{
+    head[cpu] = NULL;
+    tail[cpu] = NULL;
+}
+
 static void rr_init(void)
 {
     unsigned c;
 
     for (c = 0; c < NR_CPUS; c++) {
-        head[c] = NULL;
-        tail[c] = NULL;
+        rr_reset(c);
     }
 }
 
@@ -117,6 +123,7 @@ static bool rr_tick(struct thread *running)
 const struct scheduler sched_round_robin = {
     .name      = "round-robin",
     .init      = rr_init,
+    .reset     = rr_reset,
     .enqueue   = rr_enqueue,
     .pick_next = rr_pick_next,
     .ready     = rr_ready,
