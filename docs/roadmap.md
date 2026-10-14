@@ -9131,9 +9131,13 @@ Music. Diego: "can we prioritize linux on kosmos so we can run a web
 browser ?". **Designed the same evening, for Diego to agree**:
 `docs/linux.md`, `docs/linux.html`, `docs/linux-architecture.png` - three
 virtio devices in the sandbox monitor (a 2D screen, a keyboard and tablet,
-a disk on a file in `/Home` through `WRITE_AT`) and a Linux window; steps
-L1-L6; three questions (Chromium alone or a desktop, where the disk lives,
-how much of the machine).
+a disk on a file through `WRITE_AT`) and a Linux window; steps
+L1-L6. **Agreed by Diego the same evening**: Chromium alone in `cage` for
+now, what `cage` runs a setting ("i might want other apps as well"); guests'
+disks on a drive of their own, `/Sandboxes`, a partition of its own rather
+than files in `/Home` (his idea: "and not just 1 big drive", "that pollutes
+the home?"), 32 GB; 2 GB of memory, one core until L6. **L1 next**:
+`/Sandboxes` made and mounted, virtio-blk on a file in it.
 
 **Found, 10 October - a question to an application waits for its tick.**
 The launcher waited 840 ms of every press for the Deskbar to say where the

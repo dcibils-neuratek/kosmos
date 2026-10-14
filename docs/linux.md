@@ -13,7 +13,8 @@ Designed before it is built (`CLAUDE.md`, *How to work here*): this file
 is its feature set and its architecture, `docs/linux.html` its window,
 `docs/linux-architecture.png` its diagram, drawn from
 `docs/linux-architecture.html`. **None of it is built until Diego has
-agreed all four.**
+agreed all four.** He answered its three questions on 14 October
+(*Decided by Diego*, at the end).
 
 **What it stands on is already running.** Sandboxes (`docs/sandboxes.md`)
 boot Alpine on the M700 under VT-x in about a second (X1-X3, 0.11.201-
@@ -30,7 +31,7 @@ this adds.
   it starts in a few seconds where it was left.
 - **The browser**: Chromium, filling the window, as `cage` runs one
   application - or a whole Linux desktop, Xfce, with Chromium in it and a
-  terminal beside (question 1).
+  terminal beside (decided: `cage` first, the application a setting).
 - **Typed into and pointed at** like any window: the keyboard, the pointer,
   the wheel, a click; Super keys and Kosmos's own shortcuts stay Kosmos's.
 - **Resized**, and Linux's screen follows the window's size; Full screen
@@ -65,7 +66,7 @@ paints and hands it the window's keys and pointer.
 | Its devices' transport | virtio-mmio (`vdev.c`), as the folders' and the network's | no |
 | **A screen**: the guest draws, the monitor shows | **virtio-gpu, 2D**, in `vmm`: resources in the guest's RAM, transferred into a region the window can see, flushes said as damage | **new, in vmm** |
 | **Keyboard and pointer** | **virtio-input**: a keyboard and a tablet (absolute), fed from a ring the window writes | **new, in vmm** |
-| **A disk that keeps** | **virtio-blk**, backed by a file in `/Sandboxes` - a drive of its own (question 2) - through `diskfs`: read into a region, written with `DISK_OP_WRITE_AT` (N14's, 0.11.237), a piece a request | **new, in vmm** |
+| **A disk that keeps** | **virtio-blk**, backed by a file in `/Sandboxes` - a drive of its own (decided) - through `diskfs`: read into a region, written with `DISK_OP_WRITE_AT` (N14's, 0.11.237), a piece a request | **new, in vmm** |
 | **`/Sandboxes`, a drive for guests' disks** | a partition of its own on the stick, a second `diskfs`, mounted beside `/Home` | **new** |
 | The network | virtio-net and the gateway (`vmmnet.c`, S4) | no |
 | Folders of `/Home` | virtio-fs (`vmmfs.c`, S3) - its 16 MB write cap lifted with `WRITE_AT` | grows |
@@ -134,26 +135,21 @@ ring. Then each step is tried on the M700 before the next, as X1-X3 were.
 6. **L6 - more processors**: the guest given several cores (an APIC and
    IOAPIC in the monitor, a vCPU a thread).
 
-## For Diego to decide
+## Decided by Diego, 14 October 2026
 
-1. **Chromium alone, or a Linux desktop.** `cage`: Chromium fills the
-   window and nothing else is there - the quickest to a browser, and the
-   lightest. Xfce: a whole Linux desktop in the window - Chromium, a
-   terminal, Linux's own applications and menu. Recommended: **cage first**,
-   for the browser you asked for; Xfce as a second choice in Linux's
-   settings later.
-2. **Where Linux's disk lives.** Alpine with Chromium is 600-800 MB, and
-   2-4 GB gives it room. The M700's `/Home`, on the stick, has 1.8 GB free.
-   **Diego's idea, the same evening: a drive of its own, `/Sandboxes`** -
-   "what if instead /home we crate a new /Sandboxes drive with virtual
-   machibes disks?". A third partition in the stick's free space (the
-   Kingston is 128 GB, of which `/Home` uses 2), formatted kfs, served by a
-   second `diskfs` and mounted at `/Sandboxes`, each sandbox's disk a file
-   in it - `/Sandboxes/linux.img`. `/Home` is untouched and cannot be
-   filled by a guest; the drive is as large as the stick allows, shows in
-   Tracker as a drive of its own, and could move to the M700's internal
-   drive later with nothing above it changing. **Recommended**, at 32 GB.
-   The other choices were a bigger `/Home` (the stick written again), the
-   internal drive formatted as Kosmos's, or a disk that grows in `/Home`.
-3. **How much of the machine**: memory and cores. Recommended: 2 GB of the
-   M700's 8, one core until L6.
+1. **Chromium alone, in `cage`, for now** - "cage for now but i might want
+   other apps as well". So `cage` runs one application and Chromium is the
+   first; what it runs is a setting rather than a constant, so another Linux
+   application - or, later, a desktop such as Xfce - is a choice in Linux's
+   settings and not a redesign. Nothing in the devices or the window
+   depends on which.
+2. **Guests' disks on a drive of their own, `/Sandboxes`** - Diego's own
+   idea: "what if instead /home we crate a new /Sandboxes drive with virtual
+   machibes disks?", "and not just 1 big drive", "that pollutes the home?".
+   A partition of its own in the stick's free space (the Kingston is 128
+   GB, of which `/Home` uses 2), formatted kfs, served by a second `diskfs`
+   and mounted at `/Sandboxes`, each sandbox's disk a file in it -
+   `/Sandboxes/linux.img`. `/Home` is untouched and cannot be filled by a
+   guest; the drive shows in Tracker as one of its own, and could move to
+   the M700's internal drive later with nothing above it changing. 32 GB.
+3. **2 GB of memory**, of the M700's 8; one core until L6.
