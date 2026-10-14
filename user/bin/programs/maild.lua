@@ -324,6 +324,16 @@ local function say_arrived(a)
 
   if #list == 0 then return end
 
+  -- And kept for `autod`, whose automations may start on a mail arriving
+  -- (`mailarrived.lua`): written, so nobody here waits on it.
+  local kept = {}
+
+  for _, m in ipairs(list) do
+    kept[#kept + 1] = { account = a.address, from = m.facts.from, subject = m.facts.subject, path = m.path }
+  end
+
+  pcall(function() use("/Kosmos/Libraries/mailarrived.lua").add(kept) end)
+
   if #list > SAY_EACH then
     notify.post{ title = ("%d new messages"):format(#list),
                  body = a.address, open = a.inbox_folder }

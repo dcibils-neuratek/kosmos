@@ -316,11 +316,11 @@ nothing beside a Tracker window that is open.
    found; the run and its history (`/Home/Automations/History/<name>`, the
    last fifty). `autod` - started at login when there is an automation -
    sleeps until the nearest time, looks at folders and drives every five
-   seconds, answers `run`, `status` and `reload` at `/Running/autod`
+   seconds, a mail arriving as `maild` writes it down (0.11.226; pulses
+   will replace the file, `roadmap.md`), answers `run`, `status` and
+   `reload` at `/Running/autod`
    between steps, and says a failure once. `automate automation <name>` and
-   `automate automations`. **Not yet**: mail arriving as a trigger (`maild`
-   telling `autod`, its own step); `.automation` as a file type Tracker
-   opens and runs (with A4's window).
+   `automate automations`.
 4. **A4 - the window**: as drawn - the list, the editor, the controls
    picker, the history.
    **Built 0.11.224** (`testing.md` 18.619): `Automations` in

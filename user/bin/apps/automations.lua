@@ -60,12 +60,13 @@ local sheet = nil
 
 local GROUPS = {
   { id = "schedule", name = "ON A SCHEDULE", kinds = { at = true, every = true } },
-  { id = "happens", name = "WHEN SOMETHING HAPPENS", kinds = { start = true, folder = true, drive = true } },
+  { id = "happens", name = "WHEN SOMETHING HAPPENS",
+    kinds = { start = true, folder = true, drive = true, mail = true } },
   { id = "hand", name = "BY HAND", kinds = { hand = true } },
 }
 
 local KIND_ICON = { at = "datetime", every = "recent", start = "startup", folder = "folder",
-                    drive = "drive", hand = "run" }
+                    drive = "drive", hand = "run", mail = "mail" }
 
 local VERB_ICON = { open = "open", press = "mouse", menu = "menu", type = "keyboard",
                     choose = "textbox", set = "settings", read = "page", mail = "mail",
@@ -156,6 +157,9 @@ local function trigger_words(w)
   if w.kind == "folder" then return "A file in " .. tostring(w.path) end
   if w.kind == "drive" then
     return w.name and ("When the stick %s appears"):format(w.name) or "When a drive appears"
+  end
+  if w.kind == "mail" then
+    return w.from and ("A mail from %s"):format(w.from) or "When a mail arrives"
   end
   return "By hand"
 end
@@ -525,6 +529,7 @@ local function next_words(w)
   if w.kind == "start" then return "Each time Kosmos starts, once the desktop is up." end
   if w.kind == "folder" then return "Looked at every five seconds; finds {file}." end
   if w.kind == "drive" then return "Looked for every five seconds; finds {drive}." end
+  if w.kind == "mail" then return "As maild fetches it; finds {sender} and {subject}." end
   if w.kind == "hand" then return "Run now runs it, or automate automation at the prompt." end
   if not t then return "" end
 
@@ -587,6 +592,10 @@ function main:draw(g)
   elseif w.kind == "start" then P = { { text = "When Kosmos starts" } }
   elseif w.kind == "folder" then P = { { text = "When a file appears in " }, { chip = w.path } }
   elseif w.kind == "drive" then P = { { text = "When " }, { chip = w.name or "a drive" }, { text = " appears" } }
+  elseif w.kind == "mail" then
+    P = { { text = "When a mail arrives" } }
+    if w.from then P[#P + 1] = { text = " from " } P[#P + 1] = { chip = w.from } end
+    if w.subject then P[#P + 1] = { text = " about " } P[#P + 1] = { chip = w.subject } end
   else P = { { text = "By hand" } } end
 
   sentence(g, PAD + 62, y + 13, P)
@@ -864,13 +873,17 @@ function open_when_sheet()
   local kind = w.kind
   local KINDS = { { "at", "At a time" }, { "every", "Every so many minutes" },
                   { "start", "When Kosmos starts" }, { "folder", "When a file appears in a folder" },
-                  { "drive", "When a drive appears" }, { "hand", "By hand" } }
+                  { "drive", "When a drive appears" }, { "mail", "When a mail arrives" },
+                  { "hand", "By hand" } }
   local time = ui.field{ x = 18, y = 120, w = 120, text = w.time or "8:00", hint = "8:00", name = "Time" }
   local minutes = ui.field{ x = 18, y = 120, w = 120, text = tostring(w.minutes or 30), hint = "30",
                             name = "Minutes" }
   local path = ui.field{ x = 18, y = 120, w = 484, text = w.path or "/Home/Downloads",
                          hint = "/Home/Downloads", name = "Folder" }
   local drive = ui.field{ x = 18, y = 120, w = 240, text = w.name or "", hint = "Any drive", name = "Drive" }
+  local from = ui.field{ x = 18, y = 120, w = 240, text = w.from or "", hint = "Anyone", name = "From" }
+  local about = ui.field{ x = 262, y = 120, w = 240, text = w.subject or "", hint = "Any subject",
+                          name = "Subject" }
   local set = {}
 
   for _, d in ipairs(w.days or {}) do set[d] = true end
@@ -888,16 +901,18 @@ function open_when_sheet()
     minutes.hidden = kind ~= "every"
     path.hidden = kind ~= "folder"
     drive.hidden = kind ~= "drive"
+    from.hidden, about.hidden = kind ~= "mail", kind ~= "mail"
     for _, b in pairs(boxes) do b.hidden = kind ~= "at" end
     label.text = ({ at = "The time, and the days - none ticked is every day", every = "Minutes",
-                    folder = "The folder", drive = "The drive's name" })[kind] or ""
+                    folder = "The folder", drive = "The drive's name",
+                    mail = "From, and words in its subject - empty is any" })[kind] or ""
   end
 
   s:put(ui.label{ x = 18, y = 46, text = "What starts it", color = "text_dim" })
   s:put(ui.dropdown{ x = 18, y = 64, w = 484, choices = KINDS, value = kind, name = "What starts it",
                      on_change = function(_, v) kind = v show() end })
 
-  for _, v in ipairs({ label, time, minutes, path, drive }) do s:put(v) end
+  for _, v in ipairs({ label, time, minutes, path, drive, from, about }) do s:put(v) end
   for _, d in ipairs(DAY_ORDER) do s:put(boxes[d]) end
 
   local function close() s:close() sheet = nil end
@@ -916,6 +931,9 @@ function open_when_sheet()
       new.path = path.text
     elseif kind == "drive" then
       new.name = drive.text ~= "" and drive.text or nil
+    elseif kind == "mail" then
+      new.from = from.text ~= "" and from.text or nil
+      new.subject = about.text ~= "" and about.text or nil
     end
 
     local old = e.a.when

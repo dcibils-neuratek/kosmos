@@ -8,7 +8,8 @@
 --
 -- **Asleep between triggers.** It wakes at the nearest time an automation
 -- is due, every five seconds to look at the folders and drives it was
--- asked to watch - a listing each - and when somebody asks it something at
+-- asked to watch - a listing each - and at the mail `maild` wrote down as
+-- arrived (`mailarrived.lua`), and when somebody asks it something at
 -- `/Running/autod`:
 --
 --   { type = "run", name = }       run it now, by hand; answered at once,
@@ -108,8 +109,33 @@ local function reload(starting)
   end
 end
 
--- Folders and drives, looked at: a name that was not there is a trigger.
+-- What mail has arrived, by number: only what comes after autod started.
+local arrived = use("/Kosmos/Libraries/mailarrived.lua")
+local mail_seen = arrived.newest()
+
+local function has(text, words)
+  return words == nil or words == "" or tostring(text):lower():find(tostring(words):lower(), 1, true) ~= nil
+end
+
+-- Folders, drives and mail, looked at: something that was not there is a
+-- trigger.
 local function look()
+  local fresh, newest = arrived.since(mail_seen)
+
+  mail_seen = newest
+
+  for _, m in ipairs(fresh) do
+    for name, k in pairs(known) do
+      local a = k.a
+
+      if a and a.on ~= false and a.when.kind == "mail" and has(m.from, a.when.from)
+         and has(m.subject, a.when.subject) then
+        queued(name, { sender = m.from, subject = m.subject, message = m.path },
+               "mail from " .. tostring(m.from))
+      end
+    end
+  end
+
   for name, k in pairs(known) do
     local a = k.a
 

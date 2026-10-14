@@ -25758,3 +25758,34 @@ is `automations`, and launching it with `Answer.automation` chooses Answer
 and runs it to "done". **Control**: the header declaring another type - 3
 fail ("OPENER nil"). Only the app changed: its suite, not the whole gate.
 
+## 18.621 Mail as a trigger, through a file
+
+An automation can start on a mail arriving - from someone, about
+something, or any. **`maild` writes, `autod` reads**: `say_arrived`
+adds each message to `/Temporary/maild/arrived` through
+`mailarrived.lua` - numbered, the last fifty - and `autod`'s five-second
+look takes what came after the newest number it has seen, starting from
+the newest when it starts, so old mail is not news. `{sender}`,
+`{subject}` and `{message}` are what it finds. The window knows the
+trigger: its words, its card, From and Subject in the When sheet. **Why a
+file, not a call**: Nebula's IPC is call and reply, so `maild` calling
+would wait while `autod` is in a step, and `autod` holding a call could not
+answer anything else. Pulses - one-way messages - are to be designed
+(`roadmap.md`); the file is behind one library, which is all that changes.
+
+**And a failure 0.11.225 carried**: the new `.automation` type had no
+group on Preferences' File types page, which grew an "Other" the drawing
+does not have - `host`'s `test_filetypes` said so, and 0.11.225 ran only
+the window's own suite. The type is in the Kosmos group now, with its
+sentence. A file type is `filetypes.lua`'s, a shared piece: the whole gate.
+
+**Tests.** Host: `test_automations.lua`, 25 checks - a mail trigger is an
+automation; what arrived numbered in order, what came after a number, and
+the newest fifty kept. **Control**: the cap at five hundred - the fifty
+check fails. Guest: `x86-autod`, 21 checks - a mail written down before
+`autod` started runs nothing; one from ana@ runs "Mail in", whose banner
+says "Mail from ana@example.test: Lunch"; the automation for zed@ does not
+run.
+
+
+**Whole gate**: 89 of 89.

@@ -74,6 +74,30 @@ check(r, "a verb that does not exist was not refused: " .. tostring(why))
 r, why = refused({ name = "a/b", when = at("8:00"), steps = good.steps }, "no name")
 check(r, "a name with a slash was not refused: " .. tostring(why))
 
+-- Mail as a trigger, its words optional.
+check(A.check({ name = "Mail in", when = { kind = "mail", from = "ana" }, steps = good.steps }) == true,
+      "a mail trigger was refused")
+
+-- What arrived, numbered and kept fifty deep (`mailarrived.lua`), over a
+-- file kept in a table.
+local store = {}
+fs.read = function(path) return store[path] end
+fs.write = function(path, value) store[path] = value return true end
+
+local arrived = dofile("user/lib/mailarrived.lua")
+
+check(arrived.newest() == 0, "nothing arrived was not number 0")
+arrived.add{ { account = "me", from = "ana@x", subject = "Hello" } }
+arrived.add{ { from = "bob@x", subject = "Two" }, { from = "cy@x", subject = "Three" } }
+local after_one, newest = arrived.since(1)
+check(newest == 3 and #after_one == 2 and after_one[1].from == "bob@x" and after_one[2].seq == 3,
+      "what came after the first was not the second and third, in order")
+for i = 1, 60 do arrived.add{ { from = "n" .. i } } end
+local all = arrived.since(0)
+check(#all == 50 and all[#all].seq == 63 and all[1].seq == 14,
+      ("not the newest fifty kept: %d, %s..%s"):format(#all, tostring(all[1] and all[1].seq),
+      tostring(all[#all] and all[#all].seq)))
+
 -- A step said as a sentence, for the history.
 check(A.said({ verb = "press", app = "Mail", control = "Get Mail" }) == "Press Get Mail in Mail",
       "a press was not said as a sentence")
@@ -81,7 +105,7 @@ check(A.said({ verb = "press", app = "Mail", control = "Get Mail" }) == "Press G
 if #fails == 0 then
   print(("PASS: %d checks on automations.lua (a time today, tomorrow, next Monday and at the "
          .. "weekend; every so many minutes from its last run; what a step found filled in and "
-         .. "a name nothing found left; seven ways a file is not an automation, each in words)")
+         .. "a name nothing found left; seven ways a file is not an automation, each in words; a mail trigger, and what arrived numbered and kept fifty deep)")
         :format(checks))
   os.exit(0)
 end

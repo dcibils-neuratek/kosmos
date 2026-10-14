@@ -666,8 +666,25 @@ which A4's window brings.
 **A4 built, 0.11.224** (`testing.md` 18.619): the Automations window as
 drawn, its controls published so `automate` drives it as it drives Mail.
 **The `.automation` file type, 0.11.225** (18.620): Tracker opens one with
-Automations, which runs it. A3b's mail trigger is left, for Diego to
-choose how `maild` tells `autod` without either waiting on the other.
+Automations, which runs it.
+**Mail as a trigger, 0.11.226** (`testing.md` 18.621): `maild` writes what
+arrived to `/Temporary/maild/arrived` (`mailarrived.lua`, the one door) and
+`autod` reads it on its five-second look. Diego, 14 October 2026, choosing
+a file over a call: "Your recommendations are ok", and then, asked why not
+publish and subscribe: "Go ahead with files And then we will design
+pulses".
+
+**Pulses - one-way messages in Nebula, to be designed** (Diego, 14 October
+2026). Nebula's IPC is call and reply only, so a publisher that calls
+waits on its subscriber, and a subscriber that holds a call cannot answer
+anything else. QNX's answer is the pulse: a small fixed message queued on
+an endpoint without the sender waiting, received by the same receive as a
+request. It is what a real publish and subscribe needs - `maild` telling
+`autod`, `autod` told of a folder's change instead of looking, the Deskbar
+and Monitor told instead of asking on a clock - and it is a kernel
+addition: a bounded queue an endpoint, a syscall, no heap. **A design note
+first, `docs/pulses.md`, agreed before any code**; then `mailarrived.lua`
+is the one file the mail trigger changes.
 
 **Network Monitor, an app** - Diego, 12 October 2026: "i realizsed we need
 network monitor app as well to see network input and output". What goes in

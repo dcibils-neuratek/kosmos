@@ -27,13 +27,15 @@
 -- `when.kind` is one of `at` (a `time` and its `days`, every day without
 -- them), `every` (`minutes`), `start` (when Kosmos starts), `folder` (a
 -- file appearing in `path`), `drive` (one arriving, by `name`, any without)
--- and `hand` (only when asked). Mail arriving waits for `maild` to tell.
+-- `hand` (only when asked) and `mail` (a message arriving, `from` and
+-- `subject` words it must have when given).
 --
 -- **Each verb is `automate.lua`'s** - this decides what a step means and
 -- in what order, never how a button is pressed. What a step finds is named
 -- for the next: `check` gives `{page title}` and `{page url}`, `read`
 -- gives `{value}` or the name in its `as`, `copy` and `move` `{file}`, a
--- folder trigger `{file}` and a drive trigger `{drive}`. `stop_unless`
+-- folder trigger `{file}`, a drive trigger `{drive}`, and a mail trigger
+-- `{sender}`, `{subject}` and `{message}`, the message's file. `stop_unless`
 -- stops the run, as a success, when its `text` does not have `has` - and
 -- so does a `check` whose page does not say what was asked.
 
@@ -48,7 +50,8 @@ automations.KEPT_RUNS = 50
 
 local DAYS = { sun = 0, mon = 1, tue = 2, wed = 3, thu = 4, fri = 5, sat = 6 }
 
-local KINDS = { at = true, every = true, start = true, folder = true, drive = true, hand = true }
+local KINDS = { at = true, every = true, start = true, folder = true, drive = true, hand = true,
+                mail = true }
 
 -- What each verb needs, by name, and what it is said as.
 local VERBS = {
@@ -94,7 +97,7 @@ function automations.check(a)
   local w = a.when
 
   if type(w) ~= "table" or not KINDS[w.kind] then
-    return nil, a.name .. ": what starts it is not one of at, every, start, folder, drive, hand"
+    return nil, a.name .. ": what starts it is not one of at, every, start, folder, drive, mail, hand"
   end
 
   if w.kind == "at" then

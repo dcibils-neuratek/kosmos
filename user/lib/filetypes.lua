@@ -274,7 +274,7 @@ filetypes.GROUPS = {
   { "Pictures", { "png", "jpg", "jpeg" } },
   { "Sound and film", { "mp3", "wav", "mp4" } },
   { "Games", { "wad", "sfc", "smc" } },
-  { "Kosmos", { "zip", "launcher", "favorite" } },
+  { "Kosmos", { "zip", "launcher", "favorite", "automation" } },
 }
 
 -- What only a sentence says about a type: opening a Lua file runs it.
@@ -283,6 +283,7 @@ local TOLD = {
   launcher = "Opening starts it; Edit uses this",
   favorite = "A page kept in /Home/Favorites; opening shows it",
   zip = "Opening extracts it",
+  automation = "Opening runs it; Automations shows and edits it",
 }
 
 function filetypes.page(store, read, filter)
