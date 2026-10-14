@@ -9225,7 +9225,13 @@ the applications make the system useful, and is not pulled forward.
   what is missing, steps and an honest size, and how it renders the sites
   Diego uses. Then the groundwork the choice needs, and the port. Remote
   Screen, a real browser on the Mac shown in a Kosmos window, is the
-  meantime.
+  meantime. **The bar is Diego's day** - "I do Gmail, Google Docs, Gemini,
+  Claude, YouTube, and a lot of browsing": four of the heaviest web
+  applications there are (a document drawn on a canvas, video through
+  Media Source Extensions, long-lived streaming single-page apps), so each
+  engine is judged by those sites first and by its size second, and
+  JavaScript bolted onto NetSurf is ruled out - it would never open them.
+  Gmail is also Kosmos Mail's, natively.
 - **JavaScript, later.** Diego, 30 September, told there is none - NetSurf's
   libraries here parse `<script>` into the document and nothing runs it:
   "yes add it for later". After the browser is fast and redrawn (6zz). The
