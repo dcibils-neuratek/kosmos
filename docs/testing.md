@@ -26085,3 +26085,41 @@ announced unasked; asked for `_smb._tcp.local` as Finder asks, answered with
 an SRV on 445 at `studio2.local` and its A, 10.9.0.2; asked what it is,
 `model=Kosmos`; `sharing stop`, a goodbye at 0. **Controls**: asked before
 sharing started, silent; asked about a name it does not hold, silent.
+
+## 18.632 Writing to Kosmos over SMB (N14), and the filesystem writing in pieces
+
+`docs/sharing.md` N14, and the way Diego chose for it ("go with B"): the
+filesystem writes a file in pieces rather than `smbd` collecting a copy in
+memory. **`kfs_write_range`** writes bytes at an offset: every block the
+range touches is written anew to blocks nothing points at, the file's
+extents rebuilt - its runs before, the new ones, its runs after, joined
+where they meet - and the replaced blocks and the old chain given back,
+all in the transaction it runs in. With `cut`, the file ends where the
+range does: shorter or longer, a size set, zeroes - never the old bytes -
+past a cut when it grows again. `kfs_write_file`'s tail is shared as
+`store_runs` rather than copied. `diskfs` answers **`DISK_OP_WRITE_AT`**
+(`DISK_CREATE`, `DISK_CUT`), counted as a write, a change watchers are told
+of, and one transaction a piece.
+
+**`smbd` writes**, in shares marked so: CREATE with every disposition -
+made, opened, emptied by overwrite or supersede, a folder made - and
+delete-on-close; WRITE through its region into `DISK_OP_WRITE_AT`;
+SET_INFO's rename (replace-if-exists), disposition (a folder with
+something in it refused at once) and end of file (a cut); its dates and
+allocation taken as hints. A writable share answers full access at tree
+connect. The Servers window's folders read only or read and write, as
+`docs/sharing.html` drew them; `sharing folders NAME:/Home/FOLDER:write`.
+
+**Tests**: `tools/test_kfs.lua`, 134 checks, plain and through the block
+cache - six pieces off any block's edge read back as the whole with no
+block more than it needs and the bitmap agreeing; a piece past the end, the
+gap zeroes, filled in out of order; the middle written over; a power cut
+before a piece's commit, the file as it was and its blocks still free; two
+files written in turn past twelve extents and a range across the chain;
+cut shorter, longer, on a block's edge and to nothing; refused outside a
+transaction and for a file not there. `x86-smbd`, 38: into Notes, shared
+read and write, a 5 MB file put a megabyte a write and fetched back byte for
+byte, a folder made with a file put in it, a rename, a shorter file put
+over a longer one and fetched as the shorter, a delete, and a folder with
+something in it kept. **Control**: the same put into Projects, read only,
+refused.

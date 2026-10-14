@@ -1115,6 +1115,38 @@ static int l_store(lua_State *L)
     return 1;
 }
 
+/* `store_at(sb, path, offset, bytes, create, time, cut)`: a range of a
+ * file written (`kfs_store_at`) - its inode's number, or nil and why. */
+static int l_store_at(lua_State *L)
+{
+    struct kfs_super sb;
+    const char *path, *bytes;
+    size_t len, size;
+    uint32_t number;
+    lua_Integer offset;
+    int r;
+
+    get_sb(L, 1, &sb);
+    path = luaL_checklstring(L, 2, &len);
+    offset = luaL_checkinteger(L, 3);
+    bytes = luaL_checklstring(L, 4, &size);
+    enter(L);
+
+    if (offset < 0) {
+        return answer(L, KFS_E_TOO_BIG);
+    }
+
+    r = kfs_store_at(K, &sb, path, len, (uint64_t)offset, bytes, size, opt_time(L, 6),
+                     lua_toboolean(L, 5), lua_toboolean(L, 7), &number);
+
+    if (r != KFS_OK) {
+        return answer(L, r);
+    }
+
+    lua_pushinteger(L, number);
+    return 1;
+}
+
 static int l_rename(lua_State *L)
 {
     struct kfs_super sb;
@@ -1291,6 +1323,7 @@ static int luaopen_kfsc(lua_State *L)
         { "list",            l_list },
         { "mkdir",           l_mkdir },
         { "store",           l_store },
+        { "store_at",        l_store_at },
         { "rename",          l_rename },
         { "unlink",          l_unlink },
         { "mkfs",            l_mkfs },

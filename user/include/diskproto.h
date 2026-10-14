@@ -56,8 +56,21 @@
 #define DISK_OP_WATCH    14u
 #define DISK_OP_UNWATCH  15u
 
+/*
+ * **A range of a file written** (`docs/diskfs.md`, *Writing at an offset*):
+ * `bytes` from the region (or `length` of `u.data`) at `offset`, the file
+ * grown when they end past it. With DISK_CREATE, made when it is not there.
+ * Each piece is one transaction: a power cut leaves the file as it was
+ * before that piece, or with it.
+ */
+#define DISK_OP_WRITE_AT 16u
+
 /* The request's region is the bytes: read into it, or written from it. */
 #define DISK_REGION       1u
+/* WRITE_AT: the file made when it is not there. */
+#define DISK_CREATE       2u
+/* WRITE_AT: the file ends where the bytes do - shorter or longer. */
+#define DISK_CUT          4u
 
 #define DISK_OK                 0u
 #define DISK_ERR_BAD_OP         1u  /* no such operation, the wrong size, a path with no end */

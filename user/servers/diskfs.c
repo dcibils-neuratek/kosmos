@@ -958,6 +958,50 @@ static void op_write(const struct disk_request *rq, struct disk_reply *rp, long 
     }
 }
 
+/* A range of a file, written at `offset` (`kfs_store_at`). */
+static void op_write_at(const struct disk_request *rq, struct disk_reply *rp, long cap)
+{
+    uint32_t number;
+    size_t len;
+    const char *name = last_name(rq->path, &len);
+    bool create = (rq->flags & DISK_CREATE) != 0;
+    bool cut = (rq->flags & DISK_CUT) != 0;
+    int r;
+
+    if (reserved(name, len)) {
+        rp->error = DISK_ERR_RESERVED;
+        return;
+    }
+
+    if (rq->flags & DISK_REGION) {
+        struct region region;
+
+        if (!map_region(cap, &region) || rq->bytes > region.bytes) {
+            unmap_region(&region);
+            rp->error = DISK_ERR_REGION;
+            return;
+        }
+
+        ATOMIC(r, kfs_store_at(&A->kfs, &SB, rq->path, strlen(rq->path), rq->offset,
+                               region.at, rq->bytes, stamp(), create, cut, &number));
+        unmap_region(&region);
+        rp->bytes = rq->bytes;
+    } else {
+        if (rq->length > DISK_DATA_MAX) {
+            rp->error = DISK_ERR_BAD_OP;
+            return;
+        }
+
+        ATOMIC(r, kfs_store_at(&A->kfs, &SB, rq->path, strlen(rq->path), rq->offset,
+                               rq->u.data, rq->length, stamp(), create, cut, &number));
+        rp->bytes = rq->length;
+    }
+
+    if (r != KFS_OK) {
+        rp->error = kfs_error(r);
+    }
+}
+
 static void op_delete(const struct disk_request *rq, struct disk_reply *rp)
 {
     size_t len;
@@ -1657,6 +1701,7 @@ static void answer(const struct message *msg, uint64_t sender)
         case DISK_OP_LIST:    op_list(rq, rp); break;
         case DISK_OP_READ:    op_read(rq, rp, cap); break;
         case DISK_OP_WRITE:   op_write(rq, rp, cap); break;
+        case DISK_OP_WRITE_AT: op_write_at(rq, rp, cap); break;
         case DISK_OP_DELETE:  op_delete(rq, rp); break;
         case DISK_OP_RENAME:  op_rename(rq, rp); break;
         case DISK_OP_MKDIR:   op_mkdir(rq, rp); break;
@@ -1680,9 +1725,10 @@ static void answer(const struct message *msg, uint64_t sender)
     /* A read or a write answered, put to its program's row: what it was
      * given or what it gave - a small read's bytes are in `length`, one into
      * a region in `bytes`, and a write says `bytes` either way. */
-    if (rp->error == 0 && (rq->op == DISK_OP_READ || rq->op == DISK_OP_WRITE)) {
+    if (rp->error == 0 && (rq->op == DISK_OP_READ || rq->op == DISK_OP_WRITE
+                           || rq->op == DISK_OP_WRITE_AT)) {
         struct sender_info who;
-        bool wrote = rq->op == DISK_OP_WRITE;
+        bool wrote = rq->op != DISK_OP_READ;
         uint64_t bytes = wrote ? rp->bytes
                        : ((rq->flags & DISK_REGION) ? rp->bytes : rp->length);
 
@@ -1694,8 +1740,8 @@ static void answer(const struct message *msg, uint64_t sender)
     }
 
     /* Anything that may have changed the disk makes a kept answer stale. */
-    if (rq->op == DISK_OP_WRITE || rq->op == DISK_OP_DELETE || rq->op == DISK_OP_RENAME
-        || rq->op == DISK_OP_MKDIR || rq->op == DISK_OP_SETATTR
+    if (rq->op == DISK_OP_WRITE || rq->op == DISK_OP_WRITE_AT || rq->op == DISK_OP_DELETE
+        || rq->op == DISK_OP_RENAME || rq->op == DISK_OP_MKDIR || rq->op == DISK_OP_SETATTR
         || rq->op == DISK_OP_FORMAT) {
         generation++;
 

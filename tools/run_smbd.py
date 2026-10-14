@@ -8,7 +8,7 @@ A disk made here with made-up files on it, port 445 forwarded to this Mac,
 and at the prompt the `sharing` program, which holds smbd's door (N12c):
 
   - a copy of `sharing` run from /Home: not handed the door;
-  - `sharing folders Projects:/Home/Projects Notes:/Home/Notes`, then
+  - `sharing folders Projects:/Home/Projects Notes:/Home/Notes:write`, then
     `sharing start kosmos` before any password is kept: refused;
   - `sharing start kosmos patient`, as Start with the machine is at boot:
     waiting for the keyring; then `sharing account kosmos <the fixture
@@ -28,7 +28,12 @@ Then Samba's own `smbclient` - a client that is not Kosmos - asking:
   - a file fetched, byte for byte; one of 1.5 MB, which takes more than one
     read, byte for byte; and one inside a folder;
   - the second share listed, so the shares' list is read past its first;
-  - a file put: refused, "access denied", since N12b shares read only;
+  - a file put into Projects, shared read only: refused, "access denied";
+  - and Notes, shared read and write (N14): a 5 MB file put, a megabyte a
+    write, and fetched back byte for byte; a folder made and a file put in
+    it; a file renamed; a shorter file put over a longer one, and fetched
+    back as the shorter - cut where it ends; a file deleted; a folder with
+    something in it refused deletion;
   - a climb out of the share (`..\\Private\\secret.txt`): never served -
     which Samba's client never sends as it is, since it cleans ".." out of a
     name first; smbd's own refusal of one is `tools/test_smbpath.c`'s;
@@ -64,7 +69,7 @@ sys.path.insert(0, HERE)
 
 import scratch                                              # noqa: E402
 
-CHECKS = 34
+CHECKS = 38
 PASSWORD = "test-only-word"
 NEW_PASSWORD = "second-test-word"
 SMBCLIENT = "/opt/homebrew/bin/smbclient"
@@ -394,7 +399,7 @@ def main():
               "a copy of sharing in /Home was handed smbd's door:\n"
               + guest.seen[mark:][-300:])
 
-        guest.type("sharing folders Projects:/Home/Projects Notes:/Home/Notes")
+        guest.type("sharing folders Projects:/Home/Projects Notes:/Home/Notes:write")
         guest.wait_for("2 folders, 0 connected", "two folders set")
 
         mark = len(guest.seen)
@@ -485,6 +490,43 @@ def main():
         # 7. Read only.
         put = ask(port, "Projects", "kosmos", PASSWORD, "put hello.txt written.txt", cwd=got)
         check("NT_STATUS_ACCESS_DENIED" in put, "a file was not refused: %r" % put[-300:])
+
+        # 7b. Read and write (N14): Notes.
+        payload = os.urandom(5 * 1024 * 1024 + 4321)
+        with open(os.path.join(got, "five.bin"), "wb") as f:
+            f.write(payload)
+        with open(os.path.join(got, "short.txt"), "wb") as f:
+            f.write(b"short\n")
+        for name in ("back.bin", "short-back.txt"):
+            if os.path.exists(os.path.join(got, name)):
+                os.remove(os.path.join(got, name))
+
+        wrote = ask(port, "Notes", "kosmos", PASSWORD,
+                    "put five.bin five.bin; get five.bin back.bin", cwd=got)
+        said["put"] = wrote[-400:]
+        check(read(os.path.join(got, "back.bin")) == payload,
+              "a 5 MB file put into a share read and write did not come back byte for byte: %r"
+              % wrote[-400:])
+
+        made = ask(port, "Notes", "kosmos", PASSWORD,
+                   "mkdir Inbox; put short.txt Inbox\\a.txt; rename five.bin renamed.bin; ls; "
+                   "cd Inbox; ls", cwd=got)
+        check(re.search(r"^\s+renamed\.bin\s+\w*\s+%d\s" % len(payload), made, re.M) is not None
+              and re.search(r"^\s+five\.bin\s", made, re.M) is None
+              and re.search(r"^\s+Inbox\s+D", made, re.M) is not None
+              and re.search(r"^\s+a\.txt\s+\w*\s+6\s", made, re.M) is not None,
+              "a folder made, a file put in it and a file renamed were not all so: %r" % made[-600:])
+
+        cut = ask(port, "Notes", "kosmos", PASSWORD,
+                  "put short.txt renamed.bin; get renamed.bin short-back.txt", cwd=got)
+        check(read(os.path.join(got, "short-back.txt")) == b"short\n",
+              "a shorter file put over a longer one did not come back as the shorter: %r" % cut[-300:])
+
+        gone = ask(port, "Notes", "kosmos", PASSWORD, "rmdir Inbox; del renamed.bin; ls", cwd=got)
+        check(re.search(r"^\s+renamed\.bin\s", gone, re.M) is None
+              and re.search(r"^\s+Inbox\s+D", gone, re.M) is not None
+              and ("NOT_EMPTY" in gone or "DIRECTORY_NOT_EMPTY" in gone),
+              "a file deleted, and a folder with something in it kept: %r" % gone[-600:])
 
         # 8. Out of the share, never.
         climbed = os.path.join(got, "secret.txt")
@@ -579,6 +621,8 @@ def main():
           "port: the account and the fixture word signed in, SMB dialect %s; Projects listed with "
           "its sizes and folder; hello.txt, a 1.5 MB file over more than one read, and a "
           "file in a folder fetched byte for byte; the second share listed; a put refused "
+          "in a share read only; in one read and write a 5 MB file put and fetched back, a folder "
+          "made, a rename, a file cut shorter, a delete, and a full folder kept; "
           "as read only; a climb to a folder not shared never served; a share not offered "
           "'bad network name'; a wrong password a logon failure; another account refused; "
           "the server answering after all of it; stopped, nothing answering, and started "

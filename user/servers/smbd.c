@@ -202,6 +202,7 @@ static bool facts_of(const char *path, struct facts *f)
 struct share {
     char name[64];
     char path[DISK_PATH_MAX];   /* "/Home/Public" */
+    bool writable;              /* N14: marked so; read only otherwise */
 };
 
 static struct share *shares;
@@ -299,6 +300,11 @@ struct handle {
     uint32_t tree;
     char path[DISK_PATH_MAX];
     struct facts facts;
+
+    /* N14: opened to change it, in a writable share; and to be deleted
+     * when it is closed. */
+    bool writable;
+    bool delete_on_close;
 
     /* A folder's names, read when it is first listed. */
     char *names;
@@ -705,6 +711,8 @@ static int logoff(struct smb2_server *server, struct smb2_context *smb2)
 /* Read only: read data, attributes and extended attributes, list and
  * traverse, read the security descriptor, wait on it. */
 #define READ_ACCESS  0x001200a9u
+/* Everything a file can be asked: what a writable share answers (N14). */
+#define FULL_ACCESS  0x001f01ffu
 
 /*
  * A share, by the last part of `\\machine\Share`: one of the shares by
@@ -775,7 +783,7 @@ static int tree_connect(struct smb2_server *server, struct smb2_context *smb2,
 
     memset(&ok, 0, sizeof ok);
     ok.share_type = SMB2_SHARE_TYPE_DISK;
-    ok.maximal_access = READ_ACCESS;
+    ok.maximal_access = shares[i].writable ? FULL_ACCESS : READ_ACCESS;
 
     pdu = smb2_cmd_tree_connect_reply_async(smb2, &ok, TREE_BASE + (uint32_t)i, NULL, NULL);
     if (pdu == NULL) {
@@ -788,7 +796,8 @@ static int tree_connect(struct smb2_server *server, struct smb2_context *smb2,
 
     smb2_set_pdu_message_id(smb2, pdu, smb2->message_id);
     smb2_queue_pdu(smb2, pdu);
-    said("opened the share ", shares[i].name, ", read only");
+    said("opened the share ", shares[i].name,
+         shares[i].writable ? ", read and write" : ", read only");
 
     {
         struct visitor *v = visitor_of(smb2);
@@ -832,7 +841,36 @@ static int tree_disconnect(struct smb2_server *server, struct smb2_context *smb2
                        | 0x00010000u | 0x00040000u | 0x00080000u               \
                        | SMB2_GENERIC_WRITE | SMB2_GENERIC_ALL)
 
-#define FILE_OPENED  1u
+#define FILE_SUPERSEDED   0u
+#define FILE_OPENED       1u
+#define FILE_CREATED      2u
+#define FILE_OVERWRITTEN  3u
+
+/*
+ * What the disk said, as the status an SMB client expects (N14): the
+ * filesystem's own refusals arrive as DISK_ERR_KFS plus `-KFS_E_*`
+ * (`diskproto.h`, `kfs.h`).
+ */
+#define KFS_REFUSED(n)  (DISK_ERR_KFS + (n))
+
+static uint32_t status_of(uint32_t e)
+{
+    switch (e) {
+    case DISK_OK:                       return 0;
+    case KFS_REFUSED(7):                /* no such file */
+    case KFS_REFUSED(8):                return SMB2_STATUS_OBJECT_PATH_NOT_FOUND;
+    case KFS_REFUSED(9):                return SMB2_STATUS_FILE_IS_A_DIRECTORY;
+    case KFS_REFUSED(10):               return SMB2_STATUS_OBJECT_NAME_COLLISION;
+    case KFS_REFUSED(11):               return SMB2_STATUS_DIRECTORY_NOT_EMPTY;
+    case KFS_REFUSED(12):
+    case KFS_REFUSED(13):               return SMB2_STATUS_DISK_FULL;
+    case KFS_REFUSED(20):
+    case KFS_REFUSED(21):
+    case KFS_REFUSED(18):               return SMB2_STATUS_OBJECT_NAME_INVALID;
+    case DISK_ERR_RESERVED:             return SMB2_STATUS_ACCESS_DENIED;
+    default:                            return SMB2_STATUS_UNSUCCESSFUL;
+    }
+}
 
 /*
  * ------------------------------------------------------------------------
@@ -987,7 +1025,8 @@ static int create(struct smb2_server *server, struct smb2_context *smb2,
     struct handle *h;
     struct facts f;
     char path[DISK_PATH_MAX];
-    uint32_t tree, status = 0;
+    uint32_t tree, status = 0, action = FILE_OPENED;
+    bool writable = false;
 
     (void)server;
 
@@ -1001,17 +1040,54 @@ static int create(struct smb2_server *server, struct smb2_context *smb2,
         status = SMB2_STATUS_NETWORK_NAME_DELETED;
     } else if (!smb_share_path(s->path, req->name, path, sizeof path)) {
         status = SMB2_STATUS_OBJECT_NAME_INVALID;
-    } else if ((req->desired_access & WRITE_ACCESS) != 0
-               || (req->create_options & SMB2_FILE_DELETE_ON_CLOSE) != 0
-               || (req->create_disposition != SMB2_FILE_OPEN
-                   && req->create_disposition != SMB2_FILE_OPEN_IF)) {
-        status = SMB2_STATUS_ACCESS_DENIED;
-    } else if (!facts_of(path, &f)) {
-        status = SMB2_STATUS_OBJECT_NAME_NOT_FOUND;
-    } else if (f.dir && (req->create_options & SMB2_FILE_NON_DIRECTORY_FILE)) {
-        status = SMB2_STATUS_FILE_IS_A_DIRECTORY;
-    } else if (!f.dir && (req->create_options & SMB2_FILE_DIRECTORY_FILE)) {
-        status = SMB2_STATUS_NOT_A_DIRECTORY;
+    } else {
+        /*
+         * N14: what a writable share allows - a file or a folder made, a
+         * file emptied (overwrite, supersede), opened to be written or
+         * deleted - and a share marked read only refuses, as it always did.
+         */
+        uint32_t disp = req->create_disposition;
+        bool wants = (req->desired_access & WRITE_ACCESS) != 0
+                     || (req->create_options & SMB2_FILE_DELETE_ON_CLOSE) != 0
+                     || (disp != SMB2_FILE_OPEN && disp != SMB2_FILE_OPEN_IF);
+        bool dir = (req->create_options & SMB2_FILE_DIRECTORY_FILE) != 0;
+        bool here = facts_of(path, &f);
+
+        if (wants && !s->writable) {
+            status = here || disp == SMB2_FILE_OPEN_IF || disp == SMB2_FILE_OPEN
+                     ? (here ? SMB2_STATUS_ACCESS_DENIED : SMB2_STATUS_OBJECT_NAME_NOT_FOUND)
+                     : SMB2_STATUS_ACCESS_DENIED;
+        } else if (here && f.dir && (req->create_options & SMB2_FILE_NON_DIRECTORY_FILE)) {
+            status = SMB2_STATUS_FILE_IS_A_DIRECTORY;
+        } else if (here && !f.dir && dir) {
+            status = SMB2_STATUS_NOT_A_DIRECTORY;
+        } else if (here && disp == SMB2_FILE_CREATE) {
+            status = SMB2_STATUS_OBJECT_NAME_COLLISION;
+        } else if (!here && (disp == SMB2_FILE_OPEN || disp == SMB2_FILE_OVERWRITE)) {
+            status = SMB2_STATUS_OBJECT_NAME_NOT_FOUND;
+        } else if (!here) {
+            /* Made: a folder, or an empty file. */
+            status = status_of(dir ? disk_ask(DISK_OP_MKDIR, path, 0, 0, 0, -1)
+                                   : disk_ask(DISK_OP_WRITE, path, 0, 0, 0, -1));
+
+            if (status == 0 && !facts_of(path, &f)) {
+                status = SMB2_STATUS_UNSUCCESSFUL;
+            }
+
+            action = FILE_CREATED;
+        } else if (!f.dir && (disp == SMB2_FILE_SUPERSEDE || disp == SMB2_FILE_OVERWRITE
+                              || disp == SMB2_FILE_OVERWRITE_IF)) {
+            /* Emptied, to be written again. */
+            status = status_of(disk_ask(DISK_OP_WRITE, path, 0, 0, 0, -1));
+
+            if (status == 0 && !facts_of(path, &f)) {
+                status = SMB2_STATUS_UNSUCCESSFUL;
+            }
+
+            action = disp == SMB2_FILE_SUPERSEDE ? FILE_SUPERSEDED : FILE_OVERWRITTEN;
+        }
+
+        writable = wants && s->writable;
     }
 
     if (status == 0) {
@@ -1023,6 +1099,8 @@ static int create(struct smb2_server *server, struct smb2_context *smb2,
 
             put_text(h->path, sizeof h->path, path);
             h->facts = f;
+            h->writable = writable;
+            h->delete_on_close = (req->create_options & SMB2_FILE_DELETE_ON_CLOSE) != 0;
 
             if (v != NULL) {
                 memcpy(v->last, rep->file_id, sizeof v->last);
@@ -1045,7 +1123,7 @@ static int create(struct smb2_server *server, struct smb2_context *smb2,
     }
 
     rep->oplock_level = 0;
-    rep->create_action = FILE_OPENED;
+    rep->create_action = action;
     rep->creation_time = rep->last_access_time = filetime(f.written);
     rep->last_write_time = rep->change_time = filetime(f.written);
     rep->allocation_size = allocated(&f);
@@ -1065,6 +1143,15 @@ static int close_handle(struct smb2_server *server, struct smb2_context *smb2,
 
     if (h == NULL) {
         return refuse(smb2, SMB2_CLOSE, SMB2_STATUS_FILE_CLOSED);
+    }
+
+    /* N14: a file or folder marked to go, gone; one written, as it is now. */
+    if (h->delete_on_close) {
+        if (disk_ask(DISK_OP_DELETE, h->path, 0, 0, 0, -1) == DISK_OK) {
+            said("deleted ", h->path, NULL);
+        }
+    } else if (h->writable) {
+        (void)facts_of(h->path, &h->facts);
     }
 
     if (req->flags & CLOSE_POSTQUERY) {
@@ -1604,15 +1691,184 @@ static int write_file(struct smb2_server *server, struct smb2_context *smb2,
         return 0;
     }
 
+    /*
+     * N14: a file opened to be written, in a writable share - its bytes
+     * through the region into `DISK_OP_WRITE_AT`, one transaction a piece,
+     * so a copy of any size takes this one region and no more.
+     */
+    if (h != NULL && h->writable && !h->facts.dir) {
+        uint32_t status;
+
+        if (req->buf == NULL || req->length > READ_MOST) {
+            return refuse(smb2, SMB2_WRITE, SMB2_STATUS_INVALID_PARAMETER);
+        }
+
+        if (!read_region()) {
+            return refuse(smb2, SMB2_WRITE, SMB2_STATUS_INSUFFICIENT_RESOURCES);
+        }
+
+        memcpy(read_at, req->buf, req->length);
+        status = status_of(disk_ask(DISK_OP_WRITE_AT, h->path, DISK_REGION, req->offset,
+                                    req->length, read_cap));
+
+        if (status != 0) {
+            return refuse(smb2, SMB2_WRITE, status);
+        }
+
+        if (req->offset + req->length > h->facts.size) {
+            h->facts.size = req->offset + req->length;
+        }
+
+        rep->count = req->length;
+        rep->remaining = 0;
+        return 0;
+    }
+
     return refuse(smb2, SMB2_WRITE, SMB2_STATUS_ACCESS_DENIED);
 }
 
+/* A disk request with a second path, `u.to`: a rename's destination. */
+static uint32_t disk_rename(const char *from, const char *to)
+{
+    struct disk_request *rq = (struct disk_request *)dmsg.data;
+    const struct disk_reply *rp = (const struct disk_reply *)drep.data;
+    size_t n = strlen(to);
+
+    if (disk < 0 || n >= sizeof rq->u.to) {
+        return DISK_ERR_BAD_OP;
+    }
+
+    memset(&dmsg, 0, sizeof dmsg);
+    memset(&drep, 0, sizeof drep);
+    dmsg.length = sizeof *rq;
+    rq->op = DISK_OP_RENAME;
+    put_text(rq->path, sizeof rq->path, from);
+    memcpy(rq->u.to, to, n + 1);
+    rq->length = (uint32_t)n;
+
+    if (kosmos_call(disk, &dmsg, &drep) != 0 || drep.length < sizeof *rp) {
+        return DISK_ERR_NO_DISK;
+    }
+
+    return rp->error;
+}
+
+/*
+ * N14: what a client changes about an open file - its name (MS-FSCC
+ * 2.4.37), that it is to go when closed (2.4.11), where it ends (2.4.13).
+ * Its dates and its allocation are taken and let be: the disk keeps when a
+ * file was written itself, and has nothing to reserve ahead.
+ */
 static int set_info(struct smb2_server *server, struct smb2_context *smb2,
                     struct smb2_set_info_request *req)
 {
+    struct handle *h = handle_of(smb2, req->file_id);
+    const uint8_t *in = req->input_data;
+    uint32_t len = req->buffer_length, tree, status = 0;
+
     (void)server;
-    (void)req;
-    return refuse(smb2, SMB2_SET_INFO, SMB2_STATUS_ACCESS_DENIED);
+
+    if (h == NULL || h->pipe) {
+        return refuse(smb2, SMB2_SET_INFO, SMB2_STATUS_INVALID_PARAMETER);
+    }
+
+    if (!h->writable || req->info_type != SMB2_0_INFO_FILE || in == NULL) {
+        return refuse(smb2, SMB2_SET_INFO, SMB2_STATUS_ACCESS_DENIED);
+    }
+
+    switch (req->file_info_class) {
+    case SMB2_FILE_BASIC_INFORMATION:
+    case SMB2_FILE_ALLOCATION_INFORMATION:
+        return 0;
+
+    case SMB2_FILE_END_OF_FILE_INFORMATION: {
+        uint64_t end;
+
+        if (len < 8 || h->facts.dir) {
+            return refuse(smb2, SMB2_SET_INFO, SMB2_STATUS_INVALID_PARAMETER);
+        }
+
+        memcpy(&end, in, 8);            /* little-endian, as this machine is */
+        status = status_of(disk_ask(DISK_OP_WRITE_AT, h->path, DISK_CUT, end, 0, -1));
+
+        if (status == 0) {
+            h->facts.size = end;
+        }
+
+        break;
+    }
+
+    case SMB2_FILE_DISPOSITION_INFORMATION:
+        if (len < 1) {
+            return refuse(smb2, SMB2_SET_INFO, SMB2_STATUS_INVALID_PARAMETER);
+        }
+
+        /* A folder with something in it is not let go, said now rather
+         * than at the close. */
+        if (in[0] != 0 && h->facts.dir && (!list_folder(h) || h->name_count > 0)) {
+            status = SMB2_STATUS_DIRECTORY_NOT_EMPTY;
+            break;
+        }
+
+        h->delete_on_close = in[0] != 0;
+        break;
+
+    case SMB2_FILE_RENAME_INFORMATION: {
+        uint32_t name_bytes;
+        const struct share *s = share_here(smb2, &tree);
+        const char *name;
+        char to[DISK_PATH_MAX];
+        struct facts there;
+
+        if (len < 20 || s == NULL) {
+            return refuse(smb2, SMB2_SET_INFO, SMB2_STATUS_INVALID_PARAMETER);
+        }
+
+        memcpy(&name_bytes, in + 16, 4);
+
+        if (name_bytes == 0 || name_bytes % 2 != 0 || 20u + name_bytes > len) {
+            return refuse(smb2, SMB2_SET_INFO, SMB2_STATUS_INVALID_PARAMETER);
+        }
+
+        name = smb2_utf16_to_utf8((const uint16_t *)(const void *)(in + 20), name_bytes / 2);
+
+        if (name == NULL || !smb_share_path(s->path, name, to, sizeof to)) {
+            free((void *)name);
+            status = SMB2_STATUS_OBJECT_NAME_INVALID;
+            break;
+        }
+
+        free((void *)name);
+
+        if (facts_of(to, &there) && strcasecmp(to, h->path) != 0) {
+            if (in[0] == 0 || there.dir) {
+                status = SMB2_STATUS_OBJECT_NAME_COLLISION;
+                break;
+            }
+
+            status = status_of(disk_ask(DISK_OP_DELETE, to, 0, 0, 0, -1));
+
+            if (status != 0) {
+                break;
+            }
+        }
+
+        status = status_of(disk_rename(h->path, to));
+
+        if (status == 0) {
+            said("renamed to ", to, NULL);
+            put_text(h->path, sizeof h->path, to);
+        }
+
+        break;
+    }
+
+    default:
+        snprintf(refusing, sizeof refusing, "set info class %u", (unsigned)req->file_info_class);
+        return refuse(smb2, SMB2_SET_INFO, SMB2_STATUS_NOT_SUPPORTED);
+    }
+
+    return status != 0 ? refuse(smb2, SMB2_SET_INFO, status) : 0;
 }
 
 /* A pipe's answer for TRANSCEIVE, kept until libsmb2 has copied it. */
@@ -1912,10 +2168,6 @@ static uint32_t add_share(const struct smbd_share *sh)
         return SMBD_ERR_SHARE;
     }
 
-    if (sh->flags & SMBD_SHARE_WRITE) {
-        return SMBD_ERR_LATER;
-    }
-
     for (i = 0; i < share_count; i++) {
         if (strcasecmp(shares[i].name, sh->name) == 0) {
             return SMBD_ERR_SHARE;
@@ -1933,6 +2185,7 @@ static uint32_t add_share(const struct smbd_share *sh)
     s = &shares[share_count++];
     put_text(s->name, sizeof s->name, sh->name);
     put_text(s->path, sizeof s->path, sh->path);
+    s->writable = (sh->flags & SMBD_SHARE_WRITE) != 0;
 
     while ((n = strlen(s->path)) > 5 && s->path[n - 1] == '/') {
         s->path[n - 1] = '\0';

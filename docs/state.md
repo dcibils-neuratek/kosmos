@@ -8,10 +8,10 @@ Last updated: 2026-10-14, afternoon (0.11.230; Pulses, the web decided)
 
 ## 14 October, the day: Pulses, and the web decided
 
-**Pushed: up to 0.11.235.** **On `main`, not pushed: 0.11.236.** Whole gates 89/89 (0.11.226),
+**Pushed: up to 0.11.235.** **On `main`, not pushed: 0.11.236-0.11.237.** Whole gates 89/89 (0.11.226),
 88/89 (0.11.227, x86-dock under load), 89/89 (0.11.228), 90/90 (0.11.229),
 90/91 (0.11.231, x86-film's sound under load; passes alone),
-92/92 (0.11.232), 92/92 (0.11.233, prepush), 92/92 (0.11.234), 91/92 (0.11.235 prepush: x86-smbd under load, 34/34 alone), 90/92 (0.11.236: x86-profile's samples and x86-servers' QEMU start under load, both whole alone).
+92/92 (0.11.232), 92/92 (0.11.233, prepush), 92/92 (0.11.234), 91/92 (0.11.235 prepush: x86-smbd under load, 34/34 alone), 90/92 (0.11.236: x86-profile's samples and x86-servers' QEMU start under load, both whole alone), 92/92 (0.11.237).
 
 - **Diego's answers**: A5 consent (a), as designed - a design note first;
   the mail trigger by file, then pulses designed instead; the PDF reader,
@@ -56,7 +56,9 @@ Last updated: 2026-10-14, afternoon (0.11.230; Pulses, the web decided)
   again is done.**
 - **Moved up, 14 October**: Kosmos on the Mac's network - N13 announced
   (0.11.236, 18.631: `mdnsd` answers for this machine, `smbd` publishes
-  while it serves), N14 `smbd` read-write next, and Tracker's Network view
+  while it serves), N14 read-write (0.11.237, 18.632: the filesystem writes
+  in pieces, `smbd` creates, writes, renames, deletes and cuts in shares
+  marked read and write), and Tracker's Network view
   drawn for Diego (`docs/network.html`, three questions). Then Remote
   Screen.
 - **Still waiting on Diego**: the sandbox console keys on the M700

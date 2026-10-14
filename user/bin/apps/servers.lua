@@ -501,10 +501,10 @@ end
 
 --
 -- **File sharing, as drawn** (`docs/sharing.html`): on or off, the address,
--- which folders of `/Home`, who may sign in, and how it is set up. Read and
--- write is drawn and kept off until smbd writes (N14); encryption until
--- libsmb2's server can ask a client to seal; This network only and who is
--- connected come with N12c-3.
+-- which folders of `/Home`, who may sign in, and how it is set up. Each
+-- folder read only or read and write, as drawn - writing since smbd writes
+-- (N14); encryption until libsmb2's server can ask a client to seal; This
+-- network only and who is connected come with N12c-3.
 --
 local panel = use("/Kosmos/Libraries/panel.lua")
 local sharing_switch, share_button, password_button, account_field = nil, nil, nil, nil
@@ -649,14 +649,24 @@ local function page_sharing(s)
   for i, sh in ipairs(c.shares) do
     local size = fs.getattr(sh.path)
 
+    -- Read only or read and write, as drawn, and Remove beside them.
     folders[#folders + 1] = {
       label = sh.name,
-      note = sh.path .. (size and "" or " · not there now") .. " · Read only",
-      control = ui.button{ text = "Remove", on_click = function()
-        table.remove(c.shares, i)
-        shares_changed(s)
-        rebuild()
-      end } }
+      note = sh.path .. (size and "" or " · not there now"),
+      control = ui.dropdown{ name = sh.name .. " access",
+                             choices = { { "read", "Read only" }, { "write", "Read and write" },
+                                         { "remove", "Remove" } },
+                             value = sh.write and "write" or "read",
+                             on_change = function(_, v)
+                               if v == "remove" then
+                                 table.remove(c.shares, i)
+                               else
+                                 sh.write = v == "write" or nil
+                               end
+
+                               shares_changed(s)
+                               rebuild()
+                             end } }
   end
 
   -- The folder window runs as the Open window always does, until it is
@@ -673,7 +683,7 @@ local function page_sharing(s)
   end }
 
   folders[#folders + 1] = { label = #c.shares == 0 and "None yet" or "",
-                            note = "Read and write comes in a later step",
+                            note = "Each one read only, or read and write",
                             control = share_button }
 
   password_button = ui.button{ text = "Change...", on_click = function() change_password(s) end }

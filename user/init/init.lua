@@ -2390,7 +2390,7 @@ local function new_namespace()
     "a password is 1 to 128 bytes",
     "already sharing - stop first",
     "no connection after that one",
-    "read and write comes in a later step",
+    "encryption comes in a later step",
   }
 
   local function fits(text, room, what)

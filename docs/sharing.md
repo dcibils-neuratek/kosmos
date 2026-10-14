@@ -1298,6 +1298,9 @@ Then, each when its time comes:
   goes to the disk a piece at a time. Then `smbd`: CREATE with every
   disposition, WRITE, SET_INFO (rename, delete, size, dates), folders, only
   in shares marked writable, the Mac's `._` and `.DS_Store` taken as files.
+  **Built 14 October, 0.11.237** (`testing.md` 18.632): `kfs_write_range`
+  and `DISK_OP_WRITE_AT`, then `smbd`'s CREATE, WRITE and SET_INFO in
+  shares marked read and write, chosen per folder in the Servers window.
 
 ---
 

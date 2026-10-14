@@ -1094,6 +1094,138 @@ do
   check(not kfs.mount(), "a version 3 disk was mounted")
 end
 
+
+--------------------------------------------------------------------------
+-- **A range of a file written** (`docs/diskfs.md`, *Writing at an offset*;
+-- `docs/sharing.md` N14): the bytes at an offset, as a copy from another
+-- computer sends them, a piece a transaction - held to the same bytes
+-- written whole, and to the bitmap, so no piece leaks a block.
+--------------------------------------------------------------------------
+
+do
+  local function body(n, seed)
+    local t = {}
+    for i = 1, n do t[i] = string.char((i * 31 + seed * 7) % 251) end
+    return table.concat(t)
+  end
+
+  local function piece(sb, path, offset, bytes, create)
+    assert(kfs.begin())
+    local n, why = kfs.store_at(sb, path, offset, bytes, create ~= false, 1)
+    if n then assert(kfs.commit(sb)) else kfs.rollback() end
+    return n, why
+  end
+
+  local function read(sb, path)
+    local _, node = kfs.find(sb, path)
+    return node and kfs.read_file(sb, node)
+  end
+
+  -- In order: six pieces, none on a block's edge.
+  sb = fresh()
+  local whole = body(6 * 9973 + 17, 1)
+  local before = kfs.free_blocks(sb)
+  local at, ok = 0, true
+
+  while at < #whole do
+    local take = math.min(9973, #whole - at)
+    ok = piece(sb, "/copied.bin", at, whole:sub(at + 1, at + take)) and ok
+    at = at + take
+  end
+
+  check(ok and read(sb, "/copied.bin") == whole,
+        "a file sent in six pieces reads back as the whole")
+  local used = before - kfs.free_blocks(sb)
+  check(used == (#whole + kfs.BLOCK - 1) // kfs.BLOCK,
+        ("and holds its blocks and no more: %d for %d"):format(used, (#whole + kfs.BLOCK - 1) // kfs.BLOCK))
+  check(kfs.free_blocks(sb) == free_by_bits(sb), "and the bitmap agrees with the count")
+
+  -- Out of order: the last piece first, a gap of zeroes until it is filled.
+  sb = fresh()
+  local third = body(5000, 2)
+  check(piece(sb, "/late.bin", 10000, third:sub(1, 2000)) ~= nil,
+        "a piece past the end of a new file is written")
+  local gap = read(sb, "/late.bin")
+  check(gap and #gap == 12000 and gap:sub(1, 10000) == string.rep("\0", 10000),
+        "and the gap before it reads as zeroes")
+  piece(sb, "/late.bin", 0, third:sub(1, 5000))
+  piece(sb, "/late.bin", 5000, third:sub(1, 5000))
+  local filled = read(sb, "/late.bin")
+  check(filled == third:sub(1, 5000) .. third:sub(1, 5000) .. third:sub(1, 2000),
+        "and filled in, in any order, reads as the pieces laid down")
+
+  -- The middle overwritten; the rest as it was.
+  sb = fresh()
+  local base = body(50000, 3)
+  assert(kfs.begin()) assert(kfs.store(sb, "/doc", base, 1)) assert(kfs.commit(sb))
+  local patch = string.rep("X", 9000)
+  piece(sb, "/doc", 20001, patch)
+  check(read(sb, "/doc") == base:sub(1, 20001) .. patch .. base:sub(29002),
+        "the middle of a file written over, its ends untouched")
+  check(kfs.free_blocks(sb) == free_by_bits(sb), "with the blocks replaced given back")
+
+  -- The power, before a piece commits: the file as it was.
+  local kept_free = kfs.free_blocks(sb)
+  assert(kfs.begin())
+  assert(kfs.store_at(sb, "/doc", 100, string.rep("Z", 30000), true, 2))
+  kfs.rollback()
+  local after = assert(kfs.mount())
+  check(read(after, "/doc") == base:sub(1, 20001) .. patch .. base:sub(29002),
+        "a piece cut off before its commit leaves the file as it was")
+  check(kfs.free_blocks(after) == kept_free, "and every block it took still free")
+
+  -- Two files a piece each in turn: many runs, a chain of them, rewritten.
+  sb = fresh()
+  local a, b = body(40 * 2 * kfs.BLOCK, 4), body(40 * 2 * kfs.BLOCK, 5)
+  for i = 0, 39 do
+    local off = i * 2 * kfs.BLOCK
+    piece(sb, "/a.bin", off, a:sub(off + 1, off + 2 * kfs.BLOCK))
+    piece(sb, "/b.bin", off, b:sub(off + 1, off + 2 * kfs.BLOCK))
+  end
+  local _, an = kfs.find(sb, "/a.bin")
+  check(an and an.extent_count > kfs.EXTENTS,
+        ("written in turn, a file has more runs than its inode holds: %d"):format(an and an.extent_count or -1))
+  check(read(sb, "/a.bin") == a and read(sb, "/b.bin") == b, "and both read back whole")
+  piece(sb, "/a.bin", 13 * kfs.BLOCK + 5, string.rep("M", 7 * kfs.BLOCK))
+  check(read(sb, "/a.bin") == a:sub(1, 13 * kfs.BLOCK + 5) .. string.rep("M", 7 * kfs.BLOCK)
+                                .. a:sub(20 * kfs.BLOCK + 6),
+        "a range across its chained runs written over")
+  check(read(sb, "/b.bin") == b, "and the other file untouched")
+  check(kfs.free_blocks(sb) == free_by_bits(sb), "and no block lost or held twice")
+
+  -- Cut: a size set, shorter and longer, the blocks past it given back.
+  sb = fresh()
+  local long = body(10 * kfs.BLOCK + 300, 6)
+  assert(kfs.begin()) assert(kfs.store(sb, "/cut.bin", long, 1)) assert(kfs.commit(sb))
+  local function cut(size)
+    assert(kfs.begin())
+    local n = kfs.store_at(sb, "/cut.bin", size, "", false, 1, true)
+    if n then assert(kfs.commit(sb)) else kfs.rollback() end
+    return n
+  end
+  cut(3 * kfs.BLOCK + 10)
+  check(read(sb, "/cut.bin") == long:sub(1, 3 * kfs.BLOCK + 10), "a file cut shorter keeps its start")
+  cut(5 * kfs.BLOCK)
+  check(read(sb, "/cut.bin") == long:sub(1, 3 * kfs.BLOCK + 10) .. string.rep("\0", 2 * kfs.BLOCK - 10),
+        "made longer again, what was cut away reads as zeroes, not the old bytes")
+  cut(2 * kfs.BLOCK)
+  local _, cn = kfs.find(sb, "/cut.bin")
+  check(cn and cn.size == 2 * kfs.BLOCK and read(sb, "/cut.bin") == long:sub(1, 2 * kfs.BLOCK),
+        "cut on a block's edge")
+  cut(0)
+  check(read(sb, "/cut.bin") == "", "cut to nothing")
+  check(kfs.free_blocks(sb) == free_by_bits(sb), "and every block cut away given back")
+  local kept = kfs.free_blocks(sb)
+  assert(kfs.begin()) assert(kfs.store(sb, "/probe", "x", 1)) assert(kfs.commit(sb))
+  check(kfs.free_blocks(sb) == kept - 1, "and the disk's count still true after")
+
+  -- Refused: outside a transaction, and a file not there when not made.
+  check(kfs.store_at(sb, "/a.bin", 0, "x", true, 3) == nil,
+        "a range written outside a transaction is refused")
+  check(piece(sb, "/nowhere.bin", 0, "x", false) == nil,
+        "a range of a file that is not there, not to be made, is refused")
+end
+
 --------------------------------------------------------------------------
 
 if failed > 0 then

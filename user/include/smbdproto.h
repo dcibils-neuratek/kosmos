@@ -119,7 +119,7 @@ struct smbd_reply {
 #define SMBD_ERR_PASSWORD    7u  /* an empty password, or a longer one than fits */
 #define SMBD_ERR_SERVING     8u  /* START while serving: STOP first */
 #define SMBD_ERR_NONE        9u  /* no connection after that one */
-#define SMBD_ERR_LATER      10u  /* read and write, before N14 */
+#define SMBD_ERR_LATER      10u  /* encryption: libsmb2's server cannot ask for it yet */
 
 _Static_assert(sizeof(struct smbd_start) == 88, "smbd_start has no padding");
 _Static_assert(sizeof(struct smbd_share) == 584, "smbd_share has no padding");

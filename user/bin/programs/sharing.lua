@@ -4,7 +4,8 @@
 --
 --   sharing                              how it is
 --   sharing account NAME PASSWORD        NAME's password kept, as its NT hash
---   sharing folders NAME:/Home/FOLDER ...
+--   sharing folders NAME:/Home/FOLDER[:write] ...
+--                                        `:write` read and write (N14)
 --                                        what is shared, in place of what was
 --   sharing start ACCOUNT [port N] [name HOST] [local] [patient]
 --                                        local: this network only; patient:
@@ -69,14 +70,14 @@ elseif verb == "folders" then
   local list = {}
 
   for i = 2, #words do
-    local name, path = words[i]:match("^([^:]+):(/.*)$")
+    local name, path, how = words[i]:match("^([^:]+):(/[^:]*):?(%a*)$")
 
-    if not name then
-      print("sharing: a folder is NAME:/Home/FOLDER, not " .. words[i])
+    if not name or (how ~= "" and how ~= "write") then
+      print("sharing: a folder is NAME:/Home/FOLDER, or NAME:/Home/FOLDER:write, not " .. words[i])
       return
     end
 
-    list[#list + 1] = { name = name, path = path }
+    list[#list + 1] = { name = name, path = path, write = how == "write" }
   end
 
   local r, why = fs.sharing_shares(list)
@@ -124,7 +125,7 @@ elseif verb == "stop" then
   if said(r, why) then show(r) end
 
 else
-  print("usage: sharing [account NAME PASSWORD | folders NAME:/Home/FOLDER ... |")
+  print("usage: sharing [account NAME PASSWORD | folders NAME:/Home/FOLDER[:write] ... |")
   print("                start ACCOUNT [port N] [name HOST] [local] | who |")
   print("                disconnect ID | stop]")
 end

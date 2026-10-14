@@ -1119,6 +1119,10 @@ static int write_data(struct kfs *k, uint32_t first, const uint8_t *bytes,
     return disk_write(k, first + whole, 1, k->part);
 }
 
+static int store_runs(struct kfs *k, const struct kfs_super *sb, uint32_t number,
+                      struct kfs_inode *node, uint64_t size, uint32_t *chain,
+                      uint32_t *chained);
+
 int kfs_write_file(struct kfs *k, const struct kfs_super *sb, uint32_t number,
                    struct kfs_inode *node, const void *bytes, uint64_t size)
 {
@@ -1173,7 +1177,27 @@ int kfs_write_file(struct kfs *k, const struct kfs_super *sb, uint32_t number,
         left -= got;
     }
 
-    /* Twelve or fewer: in the inode, exactly as a file always was. */
+    r = store_runs(k, sb, number, node, size, chain, &chained);
+
+    if (r != KFS_OK) {
+        give_back(k, sb, chain, chained);
+    }
+
+    return r;
+}
+
+/*
+ * `k->runs` as `node`'s extents, `size` its size, and the inode written:
+ * twelve or fewer in the inode, exactly as a file always was; more, eleven
+ * there and the rest in a chain of extent blocks taken into `chain` - which
+ * the caller gives back if this fails.
+ */
+static int store_runs(struct kfs *k, const struct kfs_super *sb, uint32_t number,
+                      struct kfs_inode *node, uint64_t size, uint32_t *chain,
+                      uint32_t *chained)
+{
+    int r;
+
     if (k->runs_n <= KFS_EXTENTS) {
         for (uint32_t i = 0; i < k->runs_n; i++) node->extent[i] = k->runs[i];
 
@@ -1196,14 +1220,13 @@ int kfs_write_file(struct kfs *k, const struct kfs_super *sb, uint32_t number,
         for (uint32_t b = 0; b < blocks; b++) {
             uint32_t got;
 
-            r = kfs_alloc_run(k, sb, 1, &chain[chained], &got);
+            r = kfs_alloc_run(k, sb, 1, &chain[*chained], &got);
 
             if (r != KFS_OK) {
-                give_back(k, sb, chain, chained);
                 return r;
             }
 
-            chained++;
+            (*chained)++;
         }
 
         for (uint32_t b = 0; b < blocks; b++) {
@@ -1223,7 +1246,6 @@ int kfs_write_file(struct kfs *k, const struct kfs_super *sb, uint32_t number,
             r = disk_write(k, chain[b], 1, k->ext);
 
             if (r != KFS_OK) {
-                give_back(k, sb, chain, chained);
                 return r;
             }
         }
@@ -1238,6 +1260,299 @@ int kfs_write_file(struct kfs *k, const struct kfs_super *sb, uint32_t number,
     node->size = size;
     k->runs_n = 0;
     return kfs_write_inode(k, sb, number, node);
+}
+
+/*
+ * ------------------------------------------------------------------------
+ * **A range of a file written** (`docs/diskfs.md`, *Writing at an offset*).
+ *
+ * The blocks `[first, last)` the range touches are written anew - those at
+ * its ends from their old bytes with the new laid over, those inside it
+ * straight from the bytes - to blocks nothing points at yet, as a whole file
+ * is. Then the file's extents are made again: its runs before `first`, the
+ * new ones, its runs after `last`; the replaced blocks and the old chain are
+ * given back; and the inode is written. A cut ends the file at the range's
+ * end: what lay past it is given back too, and the end block zeroed past it. All of that is held by the
+ * transaction this runs in, so until it commits the file is as it was - and
+ * a failure anywhere is a rollback, with nothing to give back by hand.
+ * ------------------------------------------------------------------------
+ */
+
+static int collect_extent(struct kfs *k, void *ctx, const struct kfs_extent *x)
+{
+    (void)ctx;
+
+    if (k->runs_n == KFS_FILE_RUNS) {
+        return KFS_E_FRAGMENTED;
+    }
+
+    k->runs[k->runs_n++] = *x;
+    return KFS_OK;
+}
+
+/* The blocks of a file's chain of extents, as `each_extent` walks them. */
+static int chain_of(struct kfs *k, const struct kfs_inode *node, uint32_t *out,
+                    uint32_t *n)
+{
+    uint32_t left = node->extents > KFS_EXTENTS ? node->extents - (KFS_EXTENTS - 1) : 0;
+    uint32_t block = node->extents > KFS_EXTENTS ? node->extent[KFS_EXTENTS - 1].start : 0;
+
+    *n = 0;
+
+    while (left > 0) {
+        int r;
+
+        if (block == 0 || *n >= KFS_FILE_RUNS / KFS_EXT_PER_BLOCK + 2) {
+            return KFS_E_BAD_INODE;
+        }
+
+        out[(*n)++] = block;
+        r = kfs_read_block(k, block, k->ext);
+
+        if (r != KFS_OK) {
+            return r;
+        }
+
+        left -= left < KFS_EXT_PER_BLOCK ? left : KFS_EXT_PER_BLOCK;
+        block = get_le32(k->ext + KFS_EXT_PER_BLOCK * 8);
+    }
+
+    return KFS_OK;
+}
+
+/* Where a file's `logical` block is, in `k->runs` - its runs as they were. */
+static uint32_t physical_of(const struct kfs *k, uint64_t logical)
+{
+    uint64_t at = 0;
+
+    for (uint32_t i = 0; i < k->runs_n; i++) {
+        if (logical < at + k->runs[i].count) {
+            return k->runs[i].start + (uint32_t)(logical - at);
+        }
+
+        at += k->runs[i].count;
+    }
+
+    return 0;
+}
+
+/* A run onto the end of `k->spare`, joined to the one before it when it
+ * goes on where that one ends. */
+static int spare_push(struct kfs *k, uint32_t start, uint32_t count)
+{
+    if (count == 0) {
+        return KFS_OK;
+    }
+
+    if (k->spare_n > 0) {
+        struct kfs_extent *prev = &k->spare[k->spare_n - 1];
+
+        if (prev->start + prev->count == start && prev->count + count > prev->count) {
+            prev->count += count;
+            return KFS_OK;
+        }
+    }
+
+    if (k->spare_n == KFS_FILE_RUNS) {
+        return KFS_E_FRAGMENTED;
+    }
+
+    k->spare[k->spare_n].start = start;
+    k->spare[k->spare_n].count = count;
+    k->spare_n++;
+    return KFS_OK;
+}
+
+/*
+ * The new blocks of a run, `count` from `start`, holding the file's logical
+ * blocks from `logical`: a block wholly inside the range from the bytes, a
+ * run of such blocks in one write; a block at an end from its old bytes, or
+ * zeroes past the old end, with the range's laid over.
+ */
+static int write_new(struct kfs *k, uint32_t start, uint32_t count, uint64_t logical,
+                     uint64_t offset, const uint8_t *from, uint64_t len, uint64_t old_blocks,
+                     bool cut)
+{
+    uint64_t end = offset + len;
+    uint32_t b = 0;
+
+    while (b < count) {
+        uint64_t lo = (logical + b) * KFS_BLOCK;
+
+        if (lo >= offset && lo + KFS_BLOCK <= end) {
+            uint32_t whole = 1;
+            int r;
+
+            while (b + whole < count && lo + (uint64_t)(whole + 1) * KFS_BLOCK <= end) {
+                whole++;
+            }
+
+            r = disk_write(k, start + b, whole, from + (lo - offset));
+
+            if (r != KFS_OK) {
+                return r;
+            }
+
+            b += whole;
+            continue;
+        }
+
+        if (logical + b < old_blocks) {
+            int r = kfs_read_block(k, physical_of(k, logical + b), k->part);
+
+            if (r != KFS_OK) {
+                return r;
+            }
+        } else {
+            memset(k->part, 0, KFS_BLOCK);
+        }
+
+        {
+            uint64_t a = lo > offset ? lo : offset;
+            uint64_t z = lo + KFS_BLOCK < end ? lo + KFS_BLOCK : end;
+            int r;
+
+            if (z > a) {
+                memcpy(k->part + (a - lo), from + (a - offset), (size_t)(z - a));
+            }
+
+            /* Cut: nothing of the old file past the new end, in this block. */
+            if (cut && end < lo + KFS_BLOCK) {
+                memset(k->part + (end > lo ? end - lo : 0), 0,
+                       (size_t)(lo + KFS_BLOCK - (end > lo ? end : lo)));
+            }
+
+            r = disk_write(k, start + b, 1, k->part);
+
+            if (r != KFS_OK) {
+                return r;
+            }
+        }
+
+        b++;
+    }
+
+    return KFS_OK;
+}
+
+int kfs_write_range(struct kfs *k, const struct kfs_super *sb, uint32_t number,
+                    struct kfs_inode *node, uint64_t offset, const void *bytes, uint64_t len,
+                    bool cut)
+{
+    const uint8_t *from = bytes;
+    uint64_t old_size = node->size;
+    uint64_t end = offset + len;
+    uint64_t new_size = cut ? end : (end > old_size ? end : old_size);
+    uint64_t old_blocks = (old_size + KFS_BLOCK - 1) / KFS_BLOCK;
+    uint64_t first, last, at, want, logical;
+    uint32_t chain[KFS_FILE_RUNS / KFS_EXT_PER_BLOCK + 2], chained = 0;
+    uint32_t old_chain[KFS_FILE_RUNS / KFS_EXT_PER_BLOCK + 2], old_chained = 0;
+    int r;
+
+    if (!k->open) {
+        return KFS_E_NOT_OPEN;
+    }
+
+    if (end < offset || new_size / KFS_BLOCK > UINT32_MAX) {
+        return KFS_E_TOO_BIG;
+    }
+
+    if (len == 0 && (cut ? offset == old_size : offset <= old_size)) {
+        return KFS_OK;
+    }
+
+    /* From the block holding the old end when the range starts past it, so
+     * the gap between is written as zeroes too. */
+    first = (offset < old_size ? offset : old_size) / KFS_BLOCK;
+    last = (end + KFS_BLOCK - 1) / KFS_BLOCK;
+
+    /* A range that ends inside the block it starts in still rewrites that
+     * block; a cut keeps no block past the one holding its end - none at
+     * all for a cut to nothing, or on a block's edge. */
+    if (last <= first) {
+        last = cut ? first : first + 1;
+    }
+
+    k->runs_n = 0;
+    r = each_extent(k, node, false, collect_extent, NULL);
+
+    if (r == KFS_OK) {
+        r = chain_of(k, node, old_chain, &old_chained);
+    }
+
+    if (r != KFS_OK) {
+        k->runs_n = 0;
+        return r;
+    }
+
+    /* Its runs before `first`, as they were. */
+    k->spare_n = 0;
+    at = 0;
+
+    for (uint32_t i = 0; i < k->runs_n && at < first && r == KFS_OK; i++) {
+        uint64_t keep = first - at < k->runs[i].count ? first - at : k->runs[i].count;
+
+        r = spare_push(k, k->runs[i].start, (uint32_t)keep);
+        at += k->runs[i].count;
+    }
+
+    /* The new blocks, taken and written. */
+    want = last - first;
+    logical = first;
+
+    while (want > 0 && r == KFS_OK) {
+        uint32_t start, got;
+
+        r = kfs_alloc_run(k, sb, (uint32_t)(want < UINT32_MAX ? want : UINT32_MAX), &start, &got);
+
+        if (r == KFS_OK) {
+            r = write_new(k, start, got, logical, offset, from, len, old_blocks, cut);
+        }
+
+        if (r == KFS_OK) {
+            r = spare_push(k, start, got);
+        }
+
+        logical += got;
+        want -= got;
+    }
+
+    /* Its runs after `last`, as they were; and the blocks replaced, given
+     * back - kept from being handed out again until this commits. */
+    at = 0;
+
+    for (uint32_t i = 0; i < k->runs_n && r == KFS_OK; i++) {
+        uint64_t lo = at, hi = at + k->runs[i].count;
+        uint64_t a = lo > first ? lo : first, z = hi < last ? hi : last;
+
+        /* Cut: what lies past the new end is given back, not kept. */
+        if (cut && hi > last) {
+            z = hi;
+        } else if (hi > last) {
+            uint64_t skip = last > lo ? last - lo : 0;
+
+            r = spare_push(k, k->runs[i].start + (uint32_t)skip, (uint32_t)(hi - lo - skip));
+        }
+
+        if (r == KFS_OK && z > a) {
+            r = kfs_free_run(k, sb, k->runs[i].start + (uint32_t)(a - lo), (uint32_t)(z - a));
+        }
+
+        at = hi;
+    }
+
+    for (uint32_t i = 0; i < old_chained && r == KFS_OK; i++) {
+        r = kfs_free_run(k, sb, old_chain[i], 1);
+    }
+
+    if (r != KFS_OK) {
+        k->runs_n = 0;
+        return r;
+    }
+
+    memcpy(k->runs, k->spare, (size_t)k->spare_n * sizeof k->spare[0]);
+    k->runs_n = k->spare_n;
+    return store_runs(k, sb, number, node, new_size, chain, &chained);
 }
 
 /*
@@ -1859,6 +2174,87 @@ int kfs_store(struct kfs *k, const struct kfs_super *sb, const char *path,
     node.created = created_from(now);
     node.mtime = now == KFS_NO_TIME ? 0 : now;
     r = kfs_write_file(k, sb, *number, &node, bytes, size);
+
+    if (r != KFS_OK) {
+        return r;
+    }
+
+    return link(k, sb, dir_number, &dir, name, name_len, *number);
+}
+
+int kfs_store_at(struct kfs *k, const struct kfs_super *sb, const char *path,
+                 size_t len, uint64_t offset, const void *bytes, uint64_t size,
+                 uint64_t now, bool create, bool cut, uint32_t *number)
+{
+    struct kfs_inode dir, node;
+    uint32_t dir_number, at, existing;
+    const char *name;
+    size_t name_len;
+    int r = kfs_parent_of(k, sb, path, len, &dir_number, &dir, &name, &name_len);
+
+    if (r != KFS_OK) {
+        return r;
+    }
+
+    r = kfs_open_dir(k, sb, &dir);
+
+    if (r != KFS_OK) {
+        return r;
+    }
+
+    if (dir_find(k, name, name_len, false, &at, &existing)) {
+        r = kfs_read_inode(k, sb, existing, &node);
+
+        if (r != KFS_OK) {
+            return r;
+        }
+
+        if (node.kind == KFS_KIND_DIR) {
+            return KFS_E_IS_DIR;
+        }
+
+        if (now != KFS_NO_TIME) {
+            node.mtime = now;
+
+            if (size == 0 && (cut ? offset == node.size : offset <= node.size)) {
+                r = kfs_write_inode(k, sb, existing, &node);
+
+                if (r != KFS_OK) {
+                    return r;
+                }
+            }
+        }
+
+        *number = existing;
+        return kfs_write_range(k, sb, existing, &node, offset, bytes, size, cut);
+    }
+
+    if (!create) {
+        return KFS_E_NO_FILE;
+    }
+
+    /* New: an empty file, the range written into it, then the entry. */
+    r = check_name(name, name_len);
+
+    if (r != KFS_OK) {
+        return r;
+    }
+
+    r = kfs_alloc_inode(k, sb, number);
+
+    if (r != KFS_OK) {
+        return r;
+    }
+
+    memset(&node, 0, sizeof node);
+    node.kind = KFS_KIND_FILE;
+    node.created = created_from(now);
+    node.mtime = now == KFS_NO_TIME ? 0 : now;
+    r = kfs_write_inode(k, sb, *number, &node);
+
+    if (r == KFS_OK) {
+        r = kfs_write_range(k, sb, *number, &node, offset, bytes, size, cut);
+    }
 
     if (r != KFS_OK) {
         return r;

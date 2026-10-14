@@ -244,6 +244,11 @@ struct kfs {
     /* A file's runs while it is written (`KFS_FILE_RUNS`). */
     uint32_t runs_n;
     struct kfs_extent runs[KFS_FILE_RUNS];
+
+    /* A file's runs as a range write makes them, from `runs` - its runs as
+     * they were - and the new blocks (`kfs_write_range`). */
+    uint32_t spare_n;
+    struct kfs_extent spare[KFS_FILE_RUNS];
     uint8_t head[KFS_BLOCK];            /* the journal's header, the superblock */
 };
 
@@ -383,6 +388,24 @@ int kfs_mkdir(struct kfs *k, const struct kfs_super *sb, const char *path,
 int kfs_store(struct kfs *k, const struct kfs_super *sb, const char *path,
               size_t len, const void *bytes, uint64_t size, uint64_t now,
               uint32_t *number);
+
+/*
+ * **A range of a file written** (`docs/diskfs.md`, *Writing at an offset*):
+ * `len` bytes at `offset`, the file grown when they end past it and a gap
+ * read as zeroes. Every block the range touches is written anew, to blocks
+ * nothing points at yet, and the file's extents changed to them in the
+ * transaction this runs in - which it must: KFS_E_NOT_OPEN otherwise. With
+ * `cut`, the file ends where the range does - shorter or longer, a size set.
+ */
+int kfs_write_range(struct kfs *k, const struct kfs_super *sb, uint32_t number,
+                    struct kfs_inode *node, uint64_t offset, const void *bytes, uint64_t len,
+                    bool cut);
+
+/* The same by path: the file made first when `create` and it is not there.
+ * Its inode's number. */
+int kfs_store_at(struct kfs *k, const struct kfs_super *sb, const char *path,
+                 size_t len, uint64_t offset, const void *bytes, uint64_t size,
+                 uint64_t now, bool create, bool cut, uint32_t *number);
 
 /* `to` is a name in the same directory, or a path anywhere on this disk. */
 int kfs_rename(struct kfs *k, const struct kfs_super *sb, const char *path,
