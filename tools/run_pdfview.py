@@ -20,7 +20,14 @@ the viewer on a desktop:
   - the sidebar (step 3): thumbnails rendered for the pages in it, one
     clicked with the pointer going to its page and ringing it; Control-B
     hiding it and the pages growing into the room; the Contents tab from the
-    View menu, and a chapter in it pressed by its title.
+    View menu, and a chapter in it pressed by its title;
+  - Find, Copy, Go to page and Back (step 4): words typed into Find found
+    on every page and stepped through with Return and Shift-Return, the
+    Found tab listing them; Back to where the search began; Control-G and a
+    number; a page's text selected and copied, read back from the
+    clipboard; a selection dragged with the pointer and copied;
+  - and the control: the same document without its text map, where Find
+    says there is no text rather than finding nothing.
 
 Usage: run_pdfview.py IMAGE
 """
@@ -59,6 +66,10 @@ ASK = ('local app, verb, address, value = args:match("^([^|]*)|([^|]*)|([^|]*)|?
        'print(("ASK %s %s %s %s"):format(verb, address, r and "ok" or "refused",\n'
        '      tostring(r and r.value or why)))\n')
 
+# What the clipboard holds.
+PASTE = ('local wmproto = use("/Kosmos/Libraries/wmproto.lua")\n'
+         'print("PASTE<<" .. tostring(wmproto.paste()):gsub("\\n", "|") .. ">>")\n')
+
 # The viewer's window made `args` ("W H") in size, by the window manager.
 RESIZE = ('local wmproto = use("/Kosmos/Libraries/wmproto.lua")\n'
           'local w, h = args:match("^(%d+) (%d+)$")\n'
@@ -75,9 +86,9 @@ RED = (0xd0, 0x28, 0x28)
 LAYOUT = r"pdfview: (\d+) of (\d+), ([^,]+), (\d+)%, ([^,]+), the view (\d+)x(\d+), the sidebar (\w+)"
 
 
-def fixture(work):
+def fixture(work, name="doc.pdf", flags=("--tounicode", "--outline")):
     text = os.path.join(work, "doc.txt")
-    out = os.path.join(work, "doc.pdf")
+    out = os.path.join(work, name)
     with open(text, "w") as f:
         # 46 lines a page (`mkpdf.py`'s `layout`), and no line after the
         # last: a trailing newline is a line, and a seventh page.
@@ -86,8 +97,8 @@ def fixture(work):
             lines += ["# Page %d" % n, "This is the page numbered %d of the document." % n]
             lines += [""] * (44 if n < PAGES else 0)
         f.write("\n".join(lines))
-    subprocess.run([sys.executable, os.path.join(HERE, "mkpdf.py"), text, out,
-                    "--tounicode", "--outline", "--jpeg", "assets/images/test-quads.jpg"],
+    subprocess.run([sys.executable, os.path.join(HERE, "mkpdf.py"), text, out]
+                   + list(flags) + ["--jpeg", "assets/images/test-quads.jpg"],
                    check=True, capture_output=True, cwd=ROOT)
     with open(out, "rb") as f:
         return f.read()
@@ -106,6 +117,7 @@ def reds(guest):
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
     pdf = fixture(scratch.directory("pdfview"))
+    bare = fixture(scratch.directory("pdfview"), "bare.pdf", ())
 
     telnet, web = random.randint(20000, 40000), random.randint(40001, 60000)
     guest = S.boot(image, telnet, web)
@@ -140,9 +152,11 @@ def main():
         guest.wait_for("telnetd: on port ", "telnetd listening")
         session = S.connect(telnet)
 
-        for name, text in (("launch", LAUNCH), ("names", NAMES), ("ask", ASK), ("resize", RESIZE)):
+        for name, text in (("launch", LAUNCH), ("names", NAMES), ("ask", ASK), ("resize", RESIZE),
+                           ("paste", PASTE)):
             session.put(text.encode(), "/Temporary/%s.lua" % name)
         session.put(pdf, PATH)
+        session.put(bare, "/Temporary/bare.pdf")
 
         red_before = reds(guest)
 
@@ -305,6 +319,118 @@ def main():
         ask("press", "contents/Page 4")
         line(r"pdfview: at page (\d+) of %d" % PAGES, mark, 10)
 
+        # ---- Find: typed, every page read, stepped through ----
+        mark = len(guest.seen)
+        guest.sendkey("ctrl-f")
+        time.sleep(0.3)
+        for k in "page":
+            guest.sendkey(k)
+        found = line(r'pdfview: found "page" (\d+) times on (\d+) pages', mark, 30)
+        check(found is not None and found.group(1) == str(2 * PAGES) and found.group(2) == str(PAGES),
+              "Find did not find \"page\" twice on each of the %d pages: %r"
+              % (PAGES, found and found.group(0)))
+        first = line(r"pdfview: match (\d+) of (\d+), page (\d+)", mark, 5)
+        said["first match"] = first and first.group(0)
+        check(first is not None and first.group(3) == "4",
+              "the first match was not on the page being read, 4: %r" % (first and first.group(0)))
+
+        mark = len(guest.seen)
+        guest.sendkey("ret")
+        # Page 4's matches are the 7th and 8th of 12: the first found, then
+        # Return the next, then Shift-Return the one before again.
+        nxt = line(r"pdfview: match (\d+) of (\d+), page (\d+)", mark, 10)
+        check(nxt is not None and nxt.group(1) == "8" and nxt.group(2) == str(2 * PAGES)
+              and nxt.group(3) == "4",
+              "Return did not go to the next match, the 8th, on page 4: %r" % (nxt and nxt.group(0)))
+        mark = len(guest.seen)
+        guest.sendkey("shift-ret")
+        prev = line(r"pdfview: match (\d+) of (\d+), page (\d+)", mark, 10)
+        check(prev is not None and prev.group(1) == "7" and prev.group(3) == "4",
+              "Shift-Return did not go back to the 7th match: %r" % (prev and prev.group(0)))
+
+        out = ask("read", "field/Find")
+        check("ok page" in out, "the Find field does not read what was typed: %r" % out)
+
+        # Escape, and the next search by name: one match, on page 2.
+        guest.sendkey("esc")
+        mark = len(guest.seen)
+        ask("write", "field/Find", "numbered 2")
+        found = line(r'pdfview: found "numbered 2" (\d+) times', mark, 20)
+        at = line(r"pdfview: match (\d+) of (\d+), page (\d+)", mark, 10)
+        check(found is not None and found.group(1) == "1" and at is not None and at.group(3) == "2",
+              "\"numbered 2\" was not found once, on page 2: %r %r"
+              % (found and found.group(0), at and at.group(0)))
+
+        # Back: to where the search began, page 4.
+        mark = len(guest.seen)
+        ask("press", "button/Back")
+        back = line(r"pdfview: back to page (\d+)", mark, 10)
+        check(back is not None and back.group(1) == "4",
+              "Back did not return to page 4, where the search began: %r" % (back and back.group(0)))
+        ask("write", "field/Find", "")
+
+        # ---- Go to page: Control-G, a number, Return ----
+        mark = len(guest.seen)
+        guest.sendkey("ctrl-g")
+        time.sleep(0.3)
+        guest.sendkey("5")
+        guest.sendkey("ret")
+        at = line(r"pdfview: at page (\d+) of %d" % PAGES, mark, 10)
+        check(at is not None and at.group(1) == "5", "Control-G 5 did not go to page 5: %r"
+              % (at and at.group(0)))
+
+        # ---- Copy: the page's text, read back from the clipboard ----
+        mark = len(guest.seen)
+        ask("press", "menu/Edit/Select all on this page")
+        ask("press", "menu/Edit/Copy")
+        copied = line(r"pdfview: copied (\d+) characters", mark, 10)
+        pasted = session.run("/Temporary/paste.lua").decode(errors="replace")
+        said["paste"] = pasted
+        check(copied is not None and "This is the page numbered 5 of the document." in pasted
+              and "Page 5" in pasted,
+              "page 5's text was not copied to the clipboard: %r %r" % (copied and copied.group(0), pasted))
+
+        # ---- A selection dragged with the pointer, on page 1 ----
+        mark = len(guest.seen)
+        guest.sendkey("home")
+        line(r"pdfview: at page 1 of", mark, 10)
+        time.sleep(1.0)
+        placed = None
+        for m in re.finditer(r"pdfview: page 1 of %d, .* at (\d+)%%, on the screen at (\d+),(\d+)"
+                             % PAGES, guest.seen):
+            if int(m.group(1)) == fit_pct:
+                placed = m
+        check(placed is not None, "page 1's place on the screen at Fit width was not said")
+
+        if placed is not None:
+            px, py = int(placed.group(2)), int(placed.group(3))
+            sc = fit_pct / 100 * 96 / 72
+            width, height, _ = R.parse_ppm(guest.screendump())
+            mark = len(guest.seen)
+            guest.mouse_to(*R._to_tablet(px + 40 * sc, py + 30 * sc, width, height))
+            time.sleep(0.4)
+            guest.mouse_button(True)
+            time.sleep(0.2)
+            for k in range(1, 6):
+                guest.mouse_to(*R._to_tablet(px + (40 + 90 * k) * sc, py + (30 + 12 * k) * sc,
+                                             width, height))
+                time.sleep(0.15)
+            guest.mouse_button(False)
+            chosen = line(r"pdfview: selected (\d+) characters on page (\d+)", mark, 10)
+            mark = len(guest.seen)
+            guest.sendkey("ctrl-c")
+            line(r"pdfview: copied ", mark, 10)
+            pasted = session.run("/Temporary/paste.lua").decode(errors="replace")
+            said["dragged"] = pasted
+            check(chosen is not None and chosen.group(2) == "1"
+                  and "This is the page numbered 1 of the document." in pasted,
+                  "a selection dragged across page 1 did not copy its sentence: %r %r"
+                  % (chosen and chosen.group(0), pasted))
+
+        # Page 4 again, for the resize to keep.
+        ask("write", "field/Page", "4")
+        time.sleep(0.5)
+
         # ---- resized: laid out again, smaller at Fit width, the same page ----
         mark = len(guest.seen)
         out = session.run("/Temporary/resize.lua 620 520").decode(errors="replace")
@@ -319,6 +445,22 @@ def main():
         rerendered = line(r"pdfview: page 4 of %d, .* at (\d+)%%" % PAGES, mark, 30)
         check(rerendered is not None and laid is not None and rerendered.group(1) == laid.group(4),
               "page 4 was not rendered again at the new size: %r" % (rerendered and rerendered.group(0)))
+
+        # ---- the control: no text map, so no text - said, not "none" ----
+        mark = len(guest.seen)
+        ask("press", "menu/File/Close")
+        line(r"process \d+ \(pdfview\) ended", mark, 15)
+        mark = len(guest.seen)
+        session.run("/Temporary/launch.lua /Temporary/bare.pdf")
+        line(r"pdfview: /Temporary/bare.pdf, ", mark, 40)
+        time.sleep(1.5)
+        mark = len(guest.seen)
+        ask("write", "field/Find", "page")
+        none = line(r'pdfview: found "page" (\d+) times on (\d+) pages(, the document has no text)?',
+                    mark, 30)
+        check(none is not None and none.group(1) == "0" and none.group(3) is not None,
+              "without a text map Find did not say the document has no text: %r"
+              % (none and none.group(0)))
     except Exception as e:                  # noqa: BLE001 - said below
         check(False, "the steps stopped: %s: %s" % (type(e).__name__, str(e)[:500]))
     finally:
@@ -337,7 +479,9 @@ def main():
     print("PASS: %d checks on the PDF Viewer's window (six pages at Fit width with the "
           "picture on the screen - red %s; End and Home; a zoom step and back; one page at a "
           "time, Next page and the Page field by name; thumbnails, one clicked; Control-B; the "
-          "contents by name; resized, laid out again, the sidebar hidden)"
+          "contents by name; Find typed and stepped, Back, Control-G, Copy and a dragged "
+          "selection read back from the clipboard; resized, laid out again, the sidebar hidden; "
+          "no text map said as no text)"
           % (checks, said.get("red")))
     return 0
 

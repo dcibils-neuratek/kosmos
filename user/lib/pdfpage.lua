@@ -532,11 +532,15 @@ function pdfpage.unicode(doc, font)
   return map
 end
 
--- The characters `bytes` shows in `font`, as UTF-8.
-local function decoded(doc, font, bytes)
+-- The characters `bytes` shows in `font`, as UTF-8, how wide they are at
+-- `px`, and where each begins: `edges` is flat, a character's first byte
+-- (from 0) then its x (points from the run's start), with the end of the
+-- last after it - so a stretch of the words has a box that is the glyphs'
+-- own widths rather than a share of the run's (`pdfpage.boxes`).
+local function decoded(doc, font, bytes, px)
   local map = pdfpage.unicode(doc, font)
   local step = font.two_byte and 2 or 1
-  local out = {}
+  local out, edges, n, w = {}, {}, 0, 0
 
   for i = 1, #bytes, step do
     local code = step == 2 and (bytes:byte(i) * 256 + (bytes:byte(i + 1) or 0)) or bytes:byte(i)
@@ -546,14 +550,24 @@ local function decoded(doc, font, bytes)
       ch = (step == 1 and code >= 32) and utf8.char(code) or ""
     end
 
-    out[#out + 1] = ch
+    if ch ~= "" then
+      edges[#edges + 1] = n
+      edges[#edges + 1] = w
+      out[#out + 1] = ch
+      n = n + #ch
+    end
+
+    w = w + (pdfpage.width(font, code) / 1000) * px
   end
 
-  return table.concat(out)
+  edges[#edges + 1] = n
+  edges[#edges + 1] = w
+
+  return table.concat(out), w, edges
 end
 
 --
--- **A page's text**: `{ text = "...", runs = { { x, y, w, size, from, to } } }`
+-- **A page's text**: `{ text = "...", runs = { { x, y, w, size, from, to, edges } } }`
 -- - the words in reading order, a line to a line of the page, and each run
 -- of them with where it is on the page (points, from the top-left, as a
 -- reader draws) and which bytes of `text` it is, so Find can mark a match
@@ -591,18 +605,11 @@ function pdfpage.text(doc, page)
   local shown = {}
 
   pdfpage.walk(at, size, fonts, function (x, y, px, font, bytes)
-    local words = decoded(doc, font, bytes)
+    local words, w, edges = decoded(doc, font, bytes, px)
 
     if words == "" then return end
 
-    local w, step = 0, font.two_byte and 2 or 1
-
-    for i = 1, #bytes, step do
-      local code = step == 2 and (bytes:byte(i) * 256 + (bytes:byte(i + 1) or 0)) or bytes:byte(i)
-      w = w + (pdfpage.width(font, code) / 1000) * px
-    end
-
-    shown[#shown + 1] = { x = x, y = height - y, w = w, size = px, words = words }
+    shown[#shown + 1] = { x = x, y = height - y, w = w, size = px, words = words, edges = edges }
   end)
 
   doc:forget()
@@ -631,7 +638,7 @@ function pdfpage.text(doc, page)
     at_byte = at_byte + #sep
 
     runs[#runs + 1] = { x = r.x, y = r.y - r.size, w = r.w, size = r.size,
-                        from = at_byte + 1, to = at_byte + #r.words }
+                        from = at_byte + 1, to = at_byte + #r.words, edges = r.edges }
     at_byte = at_byte + #r.words
     last = r
   end
@@ -640,6 +647,44 @@ function pdfpage.text(doc, page)
 end
 
 --
+-- Where a run's character at byte `byte` (from 0) begins, in points from
+-- the run's start: the edge at or before it.
+local function x_at(r, byte)
+  local e = r.edges
+
+  if not e then return r.w * byte / math.max(1, r.to - r.from + 1) end
+
+  local x = 0
+
+  for k = 1, #e, 2 do
+    if e[k] > byte then break end
+    x = e[k + 1]
+  end
+
+  return x
+end
+
+--
+-- **Where a stretch of a page's text is** (`docs/pdfview.md` step 4): the
+-- bytes `from` to `to` of `t.text` (`pdfpage.text`), as one box a run they
+-- cross - `{ x, y, w, h }` in points from the page's top left, a run's
+-- height a line's. What Find marks and a selection shows.
+--
+function pdfpage.boxes(t, from, to)
+  local out = {}
+
+  for _, r in ipairs(t.runs or {}) do
+    if r.to >= from and r.from <= to then
+      local xa = x_at(r, math.max(from, r.from) - r.from)
+      local xb = x_at(r, math.min(to, r.to) - r.from + 1)
+
+      out[#out + 1] = { x = r.x + xa, y = r.y, w = math.max(1, xb - xa), h = r.size * 1.25 }
+    end
+  end
+
+  return out
+end
+
 -- **A picture in a page** (`docs/pdfview.md` step 1): an image XObject,
 -- drawn into the rectangle the unit square maps to - the page's matrix at
 -- its `Do`. JPEG (`DCTDecode`) only, so far: decoded by `gfx.jpeg` from a

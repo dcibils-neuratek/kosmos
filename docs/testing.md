@@ -26001,3 +26001,36 @@ growing into the room, and again bringing it back at the width it was;
 View > Contents, and `contents/Page 5` pressed by name; and the window
 made 620 wide, the sidebar hidden. `arm-writeapp`, which opens Write's
 export in the viewer, passes.
+
+## 18.629 The PDF Viewer finds, copies, goes to a page and back
+
+Step 4 (`docs/pdfview.md`). **Find**: a field at the header's right end,
+Control-F; each page's text read once through `pdf.text` and kept, the
+pages read a pass at a time from the page being read round to it again,
+so a key typed is answered at once and the matches arrive after. Every
+match marked on its page, the current one stronger; Return and
+Shift-Return between them (Shift read from the keys' own `rawkey` events,
+since the board sends Shift-Return as Return); a Found tab in the sidebar
+listing them by page with the words round each; a document with no text
+says so rather than finding nothing. **Copy**: a selection dragged across
+a page - the runs the rectangle touches - or Select all on this page, and
+Control-C, which the window manager sends as a `copy` event, to its
+clipboard. **Go to page**: Control-G or a click on the number, a number
+typed, Return. **Back**: a jump - a chapter, a thumbnail, a page by number,
+the first match of a search, Home and End - remembers where it came from,
+and Go > Back (Alt Left) returns there.
+
+**Where words are is the kit's**: `pdf.text`'s runs now carry each
+character's edge from the glyphs' own widths, and `pdf.boxes(text, from,
+to)` is the door to where a stretch of text is. The viewer's first try
+shared a run's width out by bytes, and its mark sat a letter to the left.
+
+**Tests**: `x86-pdfkit`, 17 checks - `pdf.boxes` gives an m (9.60 points)
+wider than an i (2.75), which a share of the run could not, and a whole
+sentence its run's box. `x86-pdfview`, 37: "page" typed into Find, found 12
+times on 6 pages, the first on the page being read, Return the next and
+Shift-Return back; "numbered 2" by name, once, on page 2; Back to page 4,
+where the searching began; Control-G 5; page 5 selected and copied, and
+the clipboard read back; a selection dragged with the pointer across page
+1 and copied; **control**: the document without its text map, where Find
+says the document has no text.

@@ -48,6 +48,7 @@ local pdf = {}
 --                                a page drawn (`pdfpage.lua`), its pictures in it
 --   pdf.text(doc, page)          a page's text, and where each run of it is
 --   pdf.outline(doc)             the document's contents, entries and pages
+--   pdf.boxes(text, from, to)    where bytes of a page's text are on it
 --   pdf.write(path, set, measure, info)
 --                                pages written as a PDF (`pdfwrite.lua`)
 --
@@ -747,6 +748,12 @@ end
 -- door: `pdf.text(doc, page)` with the page from `doc:page(n)`.
 function pdf.text(...)
   return use("/Kosmos/Libraries/pdfpage.lua").text(...)
+end
+
+-- Where bytes `from` to `to` of a page's text (`pdf.text`) are on it: a box
+-- a run they cross, in points from its top left (`pdfpage.boxes`).
+function pdf.boxes(...)
+  return use("/Kosmos/Libraries/pdfpage.lua").boxes(...)
 end
 
 --

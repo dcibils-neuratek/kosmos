@@ -8,10 +8,10 @@ Last updated: 2026-10-14, afternoon (0.11.230; Pulses, the web decided)
 
 ## 14 October, the day: Pulses, and the web decided
 
-**On `main`, not pushed: 0.11.199-0.11.233.** Whole gates 89/89 (0.11.226),
+**On `main`, not pushed: 0.11.234.** Whole gates 89/89 (0.11.226),
 88/89 (0.11.227, x86-dock under load), 89/89 (0.11.228), 90/90 (0.11.229),
 90/91 (0.11.231, x86-film's sound under load; passes alone),
-92/92 (0.11.232).
+92/92 (0.11.232), 92/92 (0.11.233, prepush), 92/92 (0.11.234).
 
 - **Diego's answers**: A5 consent (a), as designed - a design note first;
   the mail trigger by file, then pulses designed instead; the PDF reader,
@@ -45,7 +45,12 @@ Last updated: 2026-10-14, afternoon (0.11.230; Pulses, the web decided)
   thumbnails rendered after the pages in view, the one being read ringed;
   Contents from the outline, the part being read lit; Control-B; hidden
   below 720 wide.
-- **Next**: the PDF reader's step 4 - Find, Copy, Go to page, back
+- **The PDF reader, step 4** (0.11.234, 18.629): Find through the whole
+  document, a pass at a time, marks, Found tab; Copy of a dragged selection
+  or a page; Control-G; Back after a jump; `pdf.boxes` in the kit.
+- **Pushed** up to 0.11.233 (`ea15779a`, 14 October, Diego's "push when
+  ready").
+- **Next**: the PDF reader's step 5 - where it was left, recent documents
   (`docs/pdfview.md`).
 - **Still waiting on Diego**: the sandbox console keys on the M700
   (`vmm.c` uncommitted); the M700's screen; background programs fix 1 or

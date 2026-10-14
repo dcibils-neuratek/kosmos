@@ -11,7 +11,10 @@ through the kit's door alone:
     each run says where it is;
   - `pdf.outline`: the two chapters, titled, on pages 1 and 2;
   - `pdf.render`: the picture is on the page, each quadrant its colour
-    where the page puts it.
+    where the page puts it;
+  - `pdf.boxes`: where a stretch of the text is, from each glyph's own
+    width - an m wider than an i, which a share of the run would make the
+    same - and a whole sentence its run's box.
 
 And the same three on a PDF made without each addition, as controls: no
 map is no text (the codes are glyph ids, not characters), no outline
@@ -65,6 +68,21 @@ if not ok1 then print("PDFKIT text failed " .. tostring(t)) else
   local r = t.runs[1]
   if r then print(("PDFKIT run1 %d %d %d %d"):format(r.x // 1, r.y // 1, r.w // 1, r.size // 1)) end
   print("PDFKIT text<<" .. t.text:gsub("\n", "|") .. ">>")
+end
+
+-- Where words are, from the glyphs' own widths: an m wider than an i, and
+-- the sentence's own box the run's.
+local s1 = ok1 and t.text:find("The quick", 1, true)
+if s1 then
+  local i_at = t.text:find("i", s1, true)
+  local m_at = t.text:find("m", s1, true)
+  local bi = pdf.boxes(t, i_at, i_at)[1]
+  local bm = pdf.boxes(t, m_at, m_at)[1]
+  local whole = pdf.boxes(t, s1, s1 + #"The quick brown fox jumps over the lazy dog." - 1)[1]
+  local run
+  for _, r in ipairs(t.runs) do if r.from == s1 then run = r end end
+  print(("PDFKIT boxes i %.2f m %.2f whole %.2f %.2f run %.2f %.2f"):format(bi.w, bm.w, whole.x,
+        whole.w, run and run.x or -1, run and run.w or -1))
 end
 
 local ok2, out = pcall(pdf.outline, doc)
@@ -149,6 +167,14 @@ def main():
         check(m is not None and 30 <= int(m.group(1)) <= 100 and 0 <= int(m.group(2)) <= 120
               and int(m.group(3)) > 50 and int(m.group(4)) >= 8,
               "the first run is not at the top left: %r" % (m and m.group(0)))
+
+        # Where words are: each glyph its own width, the sentence its run.
+        m = re.search(r"PDFKIT boxes i ([\d.]+) m ([\d.]+) whole ([\d.]+) ([\d.]+) run ([\d.-]+) ([\d.-]+)", out)
+        check(m is not None and float(m.group(2)) > 1.5 * float(m.group(1))
+              and abs(float(m.group(3)) - float(m.group(5))) < 0.01
+              and abs(float(m.group(4)) - float(m.group(6))) < 0.01,
+              "pdf.boxes does not give each glyph its width, or the sentence its run: %r"
+              % (m and m.group(0)))
 
         # The outline.
         entries = re.findall(r"PDFKIT entry ([^|\r\n]*)\|(\d+)\|(\d+)", out)

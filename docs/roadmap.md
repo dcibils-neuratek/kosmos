@@ -9098,7 +9098,9 @@ document was left.
 `pdf.text`, `pdf.outline`, JPEG pictures in `pdf.render`. **Step 2 built in
 0.11.232** (18.627): the window - menus, header, the whole document
 scrolled, zoom, resize, the cache. **Step 3 built in 0.11.233** (18.628): the
-sidebar, pages and contents. Next, step 4: Find, Copy, Go to page, back.
+sidebar, pages and contents. **Step 4 built in 0.11.234** (18.629): Find,
+Copy, Go to page, Back, and `pdf.boxes`. Next, step 5: where it was left,
+and recent documents.
 
 **Found, 10 October - a question to an application waits for its tick.**
 The launcher waited 840 ms of every press for the Deskbar to say where the

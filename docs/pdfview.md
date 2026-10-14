@@ -118,5 +118,7 @@ with the 377 pages of the Odyssey.
    other order.
 3. **The sidebar**: thumbnails, then contents. **Built in 0.11.233**
    (`testing.md` 18.628): hidden by itself below 720 wide.
-4. **Find**, Copy, Go to page, back.
+4. **Find**, Copy, Go to page, back. **Built in 0.11.234** (`testing.md`
+   18.629), with `pdf.boxes` in the kit for where words are. Go to page is
+   the header's number made editable rather than a sheet.
 5. **Where it was left**, and recent documents.

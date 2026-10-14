@@ -12,11 +12,11 @@
 --
 -- Made again on 14 October 2026 (`docs/pdfview.md`, `docs/pdfview.html`),
 -- from Diego's "it needs a menu, zoom, better navigation, window resizing".
--- This is step 2, the window: its menu bar, the header's page and zoom,
--- the document scrolled whole or a page at a time, zoom by fitting or by
--- steps, a window that resizes and lays its pages out again, and a cache
--- of rendered pages. The sidebar, Find and Copy, and where a document was
--- left are the steps after.
+-- The window (step 2): its menu bar, the header's page and zoom, the
+-- document scrolled whole or a page at a time, zoom by fitting or by steps,
+-- a window that resizes and lays its pages out again, and a cache of
+-- rendered pages. The sidebar (step 3): thumbnails and contents. Find,
+-- Copy, Go to page and Back (step 4). Where a document was left is next.
 --
 -- **What a PDF is belongs to the PDF Kit** (`pdf.lua`, its one door):
 -- the pages, their sizes, a page drawn into a surface at a scale, its
@@ -110,7 +110,7 @@ local W, H = math.min(1100, sw - 80), math.min(sh - 100, 900)
 -- room for it - below `NARROW` the pages need the width, and it comes back
 -- when the window is wide again.
 --
-local SIDE_W  = 176                   -- the sidebar's width
+local SIDE_W  = 216                   -- the sidebar's width: three tabs' words
 local NARROW  = 720                   -- below this the sidebar is hidden
 local THUMB_W = 96                    -- a thumbnail's width
 local TABS_H  = 48                    -- the tabs at the sidebar's top
@@ -124,6 +124,27 @@ local thumbs = {}                     -- `thumbs[i]`: a page drawn small
 local thumb_place = {}                -- `thumb_place[i] = { y, w, h }`
 local thumbs_h = 0
 local contents = {}                   -- the outline, flat: { title, page, depth }
+
+--
+-- **Find, Copy, Go to page and back** (step 4). A page's text is the PDF
+-- Kit's (`pdf.text`): read the first time anything asks, and kept - a few
+-- kilobytes a page. Find reads the pages a pass at a time while nothing
+-- else waits, so a key typed into it is answered at once and the matches
+-- arrive after.
+--
+local texts = {}                      -- `texts[i]`: { text, runs, lower }
+local find = { query = "", matches = {}, by_page = {} }
+local focus = nil                     -- "find" or "page": where keys go
+local page_typed = ""                 -- a page number being typed
+local selection = nil                 -- { page, runs = { k... } }
+local history = {}                    -- where each jump came from
+local FIND_W = 220
+
+-- Shift, held: the board sends Shift-Return as Return, so which it was is
+-- read from the keys' own events (`rawkey`), which every window is sent.
+local shift_held = false
+local KEY_LEFTSHIFT, KEY_RIGHTSHIFT = 42, 54
+local match_index                     -- defined with Find's reading
 
 local function side_w() return (sidebar and W >= NARROW) and SIDE_W or 0 end
 local function view_w() return math.max(40, W - BAR_W - side_w()) end
@@ -181,9 +202,14 @@ local function go_items()
       on_choose = function() act.go(current - 1) end },
     { separator = true },
     { text = "First page", hint = "Home", disabled = n == 0 or nil,
-      on_choose = function() act.go(1) end },
+      on_choose = function() act.jump(1) end },
     { text = "Last page", hint = "End", disabled = n == 0 or nil,
-      on_choose = function() act.go(n) end },
+      on_choose = function() act.jump(n) end },
+    { separator = true },
+    { text = "Go to page...", hint = "Ctrl G", disabled = n == 0 or nil,
+      on_choose = function() act.goto_focus() end },
+    { text = "Back", hint = "Alt Left", disabled = #history == 0 or nil,
+      on_choose = function() act.back() end },
   }
 end
 
@@ -195,12 +221,22 @@ local MENUS = {
         { text = "Close", hint = "Ctrl W", on_choose = function() act.close() end },
       }
     end },
-  -- Copy and Find are step 4 (`docs/pdfview.md`), and say so by being
-  -- there and not yet able.
   { title = "Edit", items = function()
+      local found = #find.matches > 0
+
       return {
-        { text = "Copy", hint = "Ctrl C", disabled = true },
-        { text = "Find", hint = "Ctrl F", disabled = true },
+        { text = "Copy", hint = "Ctrl C",
+          disabled = not (selection and #selection.runs > 0) or nil,
+          on_choose = function() act.copy() end },
+        { text = "Select all on this page", hint = "Ctrl A", disabled = not doc or nil,
+          on_choose = function() act.select_page() end },
+        { separator = true },
+        { text = "Find", hint = "Ctrl F", disabled = not doc or nil,
+          on_choose = function() act.find_focus() end },
+        { text = "Find next", hint = "Return", disabled = not found or nil,
+          on_choose = function() act.find_step(1) end },
+        { text = "Find previous", hint = "Shift Return", disabled = not found or nil,
+          on_choose = function() act.find_step(-1) end },
       }
     end },
   { title = "View", items = view_items },
@@ -371,6 +407,10 @@ local function side_follow()
     local t = thumb_place[current]
     if not t then return end
     y, h = t.y, t.h + LABEL_H
+  elseif tab == "found" then
+    local k = find.current and match_index(find.current)
+    if not k then return end
+    y, h = (k - 1) * ROW_H, ROW_H
   else
     local k = contents_at()
     if not k then return end
@@ -447,15 +487,113 @@ local function wanted()
     if i and place[i] and wants(i) then return i end
   end
 
+  -- The pages ready, Find's reading, a pass at a time: what was asked for
+  -- comes before pictures nobody asked for.
+  if find.queue and find.qi <= #find.queue then return 0, "find" end
+
   -- The pages ready, the thumbnails in the sidebar's view: after them,
   -- because a page being read matters more than its picture beside it.
   if side_w() > 0 and tab == "pages" then
     for _, i in ipairs(thumbs_in_view()) do
-      if thumbs[i] == nil then return i, true end
+      if thumbs[i] == nil then return i, "thumb" end
     end
   end
 
   return nil
+end
+
+-- A page's text, read once.
+local function text_of(i)
+  local t = texts[i]
+
+  if t then return t end
+
+  local ok, got = pcall(pdf.text, doc, doc:page(i))
+
+  t = (ok and type(got) == "table") and got or { text = "", runs = {} }
+  t.lower = t.text:lower()
+  texts[i] = t
+
+  -- The text is kept; what the parser holds for it is not.
+  doc:forget()
+  return t
+end
+
+-- Where the characters `from` to `to` of a page's text are: the PDF Kit's
+-- answer, from each glyph's own width.
+local function boxes(t, from, to) return pdf.boxes(t, from, to) end
+
+-- Where a match is in the list, which moves as pages before it are read.
+match_index = function(m)
+  for k, x in ipairs(find.matches) do
+    if x == m then return k end
+  end
+end
+
+local show_match                      -- defined with the actions
+
+-- One page of Find's reading: its matches, in page order with the rest.
+local function find_page(i)
+  local t = text_of(i)
+  local q = find.lower
+  local from = 1
+
+  find.chars = find.chars + #t.text
+
+  while true do
+    local a, b = t.lower:find(q, from, true)
+
+    if not a then break end
+
+    local m = { page = i, from = a, to = b }
+
+    find.matches[#find.matches + 1] = m
+    find.by_page[i] = find.by_page[i] or {}
+    find.by_page[i][#find.by_page[i] + 1] = m
+    from = b + 1
+  end
+
+  table.sort(find.matches, function(x, y)
+    if x.page ~= y.page then return x.page < y.page end
+    return x.from < y.from
+  end)
+end
+
+-- Find's reading, as far as it goes without waiting: pages already read
+-- are searched together, and the first that has to be read ends the pass.
+local function find_some()
+  local read = 0
+
+  while find.qi <= #find.queue do
+    local i = find.queue[find.qi]
+
+    if not texts[i] then
+      if read > 0 then break end
+      read = read + 1
+    end
+
+    find_page(i)
+    find.qi = find.qi + 1
+
+    -- The first match from where the reader was: gone to, once.
+    if not find.current and find.by_page[i] then
+      show_match(find.by_page[i][1])
+    end
+  end
+
+  if find.qi > #find.queue then
+    find.done = true
+
+    local pages = 0
+    for _ in pairs(find.by_page) do pages = pages + 1 end
+
+    if find.chars == 0 then
+      said = "this document has no text to find in - a scan, perhaps"
+    end
+
+    print(("pdfview: found %q %d times on %d pages%s"):format(find.query, #find.matches, pages,
+          find.chars == 0 and ", the document has no text" or ""))
+  end
 end
 
 -- Pages further than one from the view let go: the cache is the pages in
@@ -553,9 +691,15 @@ local function render(i)
     said = ("page %d: %s"):format(i, tostring(drawn))
     print("pdfview: " .. said)
   else
-    print(("pdfview: page %d of %d, %d glyphs, %d faces missing, %d pictures, %d ms at %d%%")
+    -- And where its top left is on the screen as it is drawn, for whoever
+    -- drags across it from outside - the harnesses.
+    local sx = (win.origin_x or 0) + side_w() + (math.max(total_w, view_w()) - p.w) // 2 - left
+    local sy = (win.origin_y or 0) + (win.head_h or 0) + TOOL_H + p.y - top
+
+    print(("pdfview: page %d of %d, %d glyphs, %d faces missing, %d pictures, %d ms at %d%%, "
+           .. "on the screen at %d,%d")
           :format(i, #sizes, drawn or 0, missing or 0, doc.pictures_drawn or 0, ms,
-                  shown_pct()))
+                  shown_pct(), sx, sy))
 
     if (missing or 0) > 0 then
       said = ("%d face%s would not load"):format(missing, missing == 1 and "" or "s")
@@ -576,7 +720,13 @@ local back = { icon = "back" }
 local forward = { icon = "forward" }
 local pagebox = { w = 52, h = 30 }
 local zoombox = { w = 128, h = 30 }
+local findbox = { w = 220, h = 30 }
 local tabs = { items = { { text = "Pages" }, { text = "Contents" } } }
+
+-- The tabs, with Found among them while there is something to find.
+local TWO = { { text = "Pages" }, { text = "Contents" } }
+local THREE = { { text = "Pages" }, { text = "Contents" }, { text = "Found" } }
+local TAB_OF = { "pages", "contents", "found" }
 
 -- Where the controls are, said once a place, for whoever presses them from
 -- outside - the harnesses.
@@ -623,6 +773,39 @@ local function draw_page(s, i, vx, vy, vw, vh)
   else
     s:fill(vx + x0, vy + y0, x1 - x0, y1 - y0, PAPER)
   end
+
+  -- Over the page, each box clipped to the part of it in view: what Find
+  -- found - the current one stronger - and what is selected.
+  local function mark(b, colour)
+    local bx0 = math.max(x + b.x * scale, x0)
+    local by0 = math.max(y + b.y * scale, y0)
+    local bx1 = math.min(x + (b.x + b.w) * scale, x1)
+    local by1 = math.min(y + (b.y + b.h) * scale, y1)
+
+    if bx1 > bx0 and by1 > by0 then
+      s:fill_round(vx + math.floor(bx0), vy + math.floor(by0), math.ceil(bx1 - bx0),
+                   math.ceil(by1 - by0), colour, 2)
+    end
+  end
+
+  local t = texts[i]
+
+  if t and find.by_page[i] then
+    for _, m in ipairs(find.by_page[i]) do
+      local colour = (m == find.current) and 0x99ff8c00 or 0x55ffc400
+
+      for _, b in ipairs(boxes(t, m.from, m.to)) do mark(b, colour) end
+    end
+  end
+
+  if t and selection and selection.page == i then
+    local colour = 0x50000000 | (theme.accent & 0xffffff)
+
+    for _, k in ipairs(selection.runs) do
+      local r = t.runs[k]
+      mark({ x = r.x, y = r.y, w = r.w, h = r.size * 1.25 }, colour)
+    end
+  end
 end
 
 -- The sidebar: its two tabs, then the thumbnails - the page being read
@@ -632,7 +815,8 @@ draw_sidebar = function(s, top_y, vh)
   s:fill(SIDE_W - 1, top_y, 1, vh, theme.line_soft)
 
   tabs.x, tabs.y, tabs.w = 12, top_y + 10, SIDE_W - 24
-  tabs.chosen = tab == "pages" and 1 or 2
+  tabs.items = find.query ~= "" and THREE or TWO
+  tabs.chosen = tab == "pages" and 1 or (tab == "contents" and 2 or 3)
   pk.segments(s, tabs)
 
   local ly = top_y + TABS_H
@@ -666,6 +850,38 @@ draw_sidebar = function(s, top_y, vh)
       if lty >= ly and lty + gfx.height() <= ly + lh then
         s:text((SIDE_W - gfx.measure(label)) // 2, lty, label,
                i == current and theme.text or theme.text_dim, nil, "ui")
+      end
+    end
+  elseif tab == "found" then
+    if #find.matches == 0 then
+      pk.empty(s, 0, ly, SIDE_W - 1, math.min(lh, 120),
+               find.done and { "No matches", find.chars == 0 and "The document has no text"
+                                                or ("for " .. find.query) }
+                         or { "Looking", "through the pages" })
+    else
+      local first = side_top // ROW_H + 1
+
+      for k = first, math.min(#find.matches, first + lh // ROW_H + 1) do
+        local m = find.matches[k]
+        local y = ly + (k - 1) * ROW_H - side_top
+
+        if y >= ly and y + ROW_H <= ly + lh then
+          if m == find.current then
+            s:fill_round(6, y + 1, SIDE_W - 13, ROW_H - 2, theme.line, 6)
+          end
+
+          local num = tostring(m.page)
+          local t = texts[m.page]
+          -- From a few letters before the match, so the words found are
+          -- the ones the row shows.
+          local lead = m.from > 8 and "..." or ""
+          local around = t and (lead .. t.text:sub(math.max(1, m.from - 8), m.to + 40))
+                               :gsub("%s+", " ") or ""
+
+          s:text(12, y + (ROW_H - gfx.height()) // 2, num, theme.text_dim, nil, "ui")
+          s:text(40, y + (ROW_H - gfx.height()) // 2, ui.fitted(around, SIDE_W - 52), theme.text,
+                 nil, "ui")
+        end
       end
     end
   elseif #contents == 0 then
@@ -720,9 +936,9 @@ local function frame()
   pk.iconbutton(s, forward)
 
   pagebox.x, pagebox.y = 112, cy
-  pk.field(s, pagebox, false)
+  pk.field(s, pagebox, focus == "page")
 
-  local number = doc and tostring(current) or "-"
+  local number = focus == "page" and (page_typed .. "|") or (doc and tostring(current) or "-")
   local ty = cy + (30 - gfx.height()) // 2
 
   s:text(pagebox.x + (pagebox.w - gfx.measure(number)) // 2, ty, number, theme.text, nil, "ui")
@@ -734,6 +950,38 @@ local function frame()
   zoombox.y = cy
   zoombox.text = zoom_label()
   pk.chooser(s, zoombox)
+
+  -- Find, at the header's right end: the words, and how many were found
+  -- and which one this is.
+  findbox.w = math.min(FIND_W, W - (zoombox.x + zoombox.w) - 24)
+  findbox.x, findbox.y, findbox.h = W - findbox.w - 12, cy, 30
+
+  if findbox.w >= 90 then
+    pk.field(s, findbox, focus == "find")
+    pk.icon(s, "search", findbox.x + 9, cy + 8, theme.text_dim)
+
+    local tally = ""
+
+    if find.query ~= "" then
+      local k = find.current and match_index(find.current)
+
+      if find.done and #find.matches == 0 then tally = "none"
+      elseif k then tally = ("%d of %d"):format(k, #find.matches)
+      else tally = tostring(#find.matches) end
+
+      if not find.done then tally = tally .. "..." end
+    end
+
+    local room = findbox.w - 40 - (tally ~= "" and gfx.measure(tally) + 10 or 0)
+    local words = find.query ~= "" and ui.fitted(find.query, room, nil, true) or "Find"
+
+    s:text(findbox.x + 30, ty, words .. (focus == "find" and "|" or ""),
+           find.query ~= "" and theme.text or theme.text_dim, nil, "ui")
+
+    if tally ~= "" then
+      s:text(findbox.x + findbox.w - 10 - gfx.measure(tally), ty, tally, theme.text_dim, nil, "ui")
+    end
+  end
 
   -- The pages.
   local top_y = TOOL_H
@@ -820,6 +1068,12 @@ local function open(file)
 
   for i in pairs(cache) do free(i) end
   if doc and doc.source.close then doc.source.close() end
+
+  -- What was read, found, selected and jumped from belongs to the document
+  -- before.
+  texts, selection, history, focus = {}, nil, {}, nil
+  find = { query = "", matches = {}, by_page = {} }
+  if tab == "found" then tab = "pages" end
 
   doc, path, said = got, file, nil
 
@@ -958,6 +1212,177 @@ function act.tab(which)
   print(("pdfview: the sidebar shows its %s"):format(tab))
 end
 
+-- **A jump** - to a chapter, a thumbnail, a page by number, a match, the
+-- first or the last - remembers where it came from, for Back. Turning a
+-- page or scrolling does not: Back is "where I was before I went there".
+function act.jump(n)
+  if not doc then return end
+
+  local at, into = anchor()
+
+  history[#history + 1] = { page = at, into = into }
+  if #history > 50 then table.remove(history, 1) end
+
+  act.go(n)
+end
+
+function act.back()
+  local e = table.remove(history)
+
+  if not (e and doc) then return end
+
+  current = e.page
+
+  if single then
+    lay_out(false)
+  elseif place[e.page] then
+    top = math.max(0, math.min(math.floor(place[e.page].y + e.into * place[e.page].h),
+                               total_h - view_h()))
+  end
+
+  side_follow()
+  print(("pdfview: back to page %d of %d"):format(current, #sizes))
+end
+
+function act.goto_focus()
+  if not doc then return end
+  focus, page_typed = "page", ""
+end
+
+function act.goto_typed()
+  local n = tonumber(page_typed)
+
+  focus, page_typed = nil, ""
+  if n then act.jump(math.floor(n)) end
+end
+
+-- The words to find: the reading starts again from the page being read,
+-- through to the end and round to it. Pages already read are searched at
+-- once; the rest a pass at a time.
+function act.find_set(q)
+  find = { query = q, lower = q:lower(), matches = {}, by_page = {}, chars = 0, qi = 1 }
+
+  if q ~= "" and doc then
+    find.queue = {}
+
+    for i = current, #sizes do find.queue[#find.queue + 1] = i end
+    for i = 1, current - 1 do find.queue[#find.queue + 1] = i end
+
+    find.jumped = false
+
+    if side_w() > 0 then tab = "found" side_top = 0 end
+  elseif tab == "found" then
+    tab = "pages"
+  end
+end
+
+function act.find_focus()
+  if not doc then return end
+  focus = "find"
+end
+
+function act.find_close()
+  focus = nil
+  act.find_set("")
+  said = nil
+end
+
+-- The match `m` brought into view, a third of the way down, and made the
+-- current one. The first of a search is a jump; the ones after it are not.
+show_match = function(m)
+  if not (m and doc) then return end
+
+  if not find.jumped then
+    local at, into = anchor()
+    history[#history + 1] = { page = at, into = into }
+    find.jumped = true
+  end
+
+  find.current = m
+  current = m.page
+
+  local b = boxes(text_of(m.page), m.from, m.to)[1]
+  local yb = b and b.y * scale or 0
+
+  if single then
+    lay_out(false)
+    top = math.max(0, math.min(math.floor(yb - view_h() / 3), total_h - view_h()))
+  elseif place[m.page] then
+    local y = place[m.page].y + yb
+
+    if y < top or y > top + view_h() - 40 then
+      top = math.max(0, math.min(math.floor(y - view_h() / 3), total_h - view_h()))
+    end
+  end
+
+  side_follow()
+  print(("pdfview: match %d of %d, page %d"):format(match_index(m) or 0, #find.matches, m.page))
+end
+
+function act.find_step(d)
+  local n = #find.matches
+
+  if n == 0 then return end
+
+  local k = find.current and match_index(find.current)
+
+  if k then
+    k = (k - 1 + d) % n + 1
+  else
+    k = 1
+    for j, m in ipairs(find.matches) do
+      if m.page >= current then k = j break end
+    end
+  end
+
+  show_match(find.matches[k])
+end
+
+-- The selected runs' text, a line between runs on different lines.
+local function selected_text()
+  if not selection then return "" end
+
+  local t = text_of(selection.page)
+  local parts, last = {}, nil
+
+  for _, k in ipairs(selection.runs) do
+    local r = t.runs[k]
+    local words = t.text:sub(r.from, r.to)
+
+    if last then
+      parts[#parts + 1] = math.abs(r.y - last.y) > math.max(r.size, last.size) / 3 and "\n" or " "
+    end
+
+    parts[#parts + 1] = words
+    last = r
+  end
+
+  return table.concat(parts)
+end
+
+function act.copy()
+  local text = selected_text()
+
+  if text == "" then return end
+
+  local taken, left_out = wmproto.copy(text)
+
+  said = taken and ((left_out or 0) > 0 and ("copied the first %d characters"):format(taken)
+                    or "copied") or "the clipboard did not take it"
+  print(("pdfview: copied %d characters of %d: %q"):format(taken or 0, #text, text:sub(1, 80)))
+end
+
+function act.select_page()
+  if not doc then return end
+
+  local t = text_of(current)
+
+  selection = { page = current, runs = {} }
+  for k = 1, #t.runs do selection.runs[k] = k end
+
+  print(("pdfview: selected page %d, %d characters"):format(current, #selected_text()))
+end
+
 local function zoom_menu()
   local items = {}
 
@@ -988,33 +1413,92 @@ win:publish_controls(function()
     { kind = "field", label = "Page", read = function() return tostring(current) end,
       write = function(text)
         local k = tonumber(text)
-        if k then act.go(math.floor(k)) end
+        if k then act.jump(math.floor(k)) end
       end },
     { kind = "field", label = "Zoom", read = function() return zoom_label() end },
     { kind = "button", label = "Sidebar", press = function() act.sidebar(not sidebar) end },
+    { kind = "field", label = "Find", read = function() return find.query end,
+      write = function(text) act.find_set(text) end },
+    { kind = "button", label = "Next match", disabled = #find.matches == 0,
+      press = function() act.find_step(1) end },
+    { kind = "button", label = "Previous match", disabled = #find.matches == 0,
+      press = function() act.find_step(-1) end },
+    { kind = "button", label = "Back", disabled = #history == 0, press = function() act.back() end },
   }
 
   -- The contents, each entry a button by its title: a script goes to a
   -- chapter by its name.
   for _, e in ipairs(contents) do
     if e.page and e.title ~= "" then
-      out[#out + 1] = { kind = "contents", label = e.title, press = function() act.go(e.page) end }
+      out[#out + 1] = { kind = "contents", label = e.title, press = function() act.jump(e.page) end }
     end
   end
 
   return out
 end)
 
+-- A key for the field that has them: the words to find, or a page's
+-- number. True when it was the field's.
+local function field_key(c)
+  local k, mods = keys.parts(c)
+
+  if c == 27 then
+    if focus == "find" then act.find_close() else focus, page_typed = nil, "" end
+    return true
+  end
+
+  if k == 13 or c == 10 then
+    if focus == "page" then
+      act.goto_typed()
+    else
+      act.find_step(((mods & keys.SHIFT) ~= 0 or shift_held) and -1 or 1)
+    end
+
+    return true
+  end
+
+  if c == 8 or c == 127 then
+    if focus == "page" then
+      page_typed = page_typed:sub(1, -2)
+    elseif find.query ~= "" then
+      local q = find.query
+      act.find_set(q:sub(1, (utf8.offset(q, -1) or (#q + 1)) - 1))
+    end
+
+    return true
+  end
+
+  if c >= 32 and c < 256 and mods == 0 then
+    if focus == "page" then
+      if c >= 48 and c <= 57 and #page_typed < 6 then page_typed = page_typed .. string.char(c) end
+    else
+      act.find_set(find.query .. string.char(c))
+    end
+
+    return true
+  end
+
+  return false
+end
+
 local function key(c)
   local k, mods = keys.parts(c)
   local ctrl = (mods & keys.CTRL) ~= 0
   local vh = view_h()
+
+  if focus and field_key(c) then return true end
 
   if ctrl and (k == 61 or k == 43) then act.zoom_by(1)
   elseif ctrl and k == 45 then act.zoom_by(-1)
   elseif ctrl and k == 48 then act.fit("width")
   elseif ctrl and k == 49 then act.step(100)
   elseif c == 2 then act.sidebar(not sidebar)             -- Ctrl B
+  elseif c == 6 then act.find_focus()                      -- Ctrl F
+  elseif c == 7 then act.goto_focus()                      -- Ctrl G
+  elseif k == keys.LEFT and (mods & keys.ALT) ~= 0 then act.back()
+  elseif c == 27 then
+    if selection then selection = nil elseif find.query ~= "" then act.find_close() end
+  elseif c == 13 and #find.matches > 0 then act.find_step(shift_held and -1 or 1)
   elseif c == 15 then act.choose()                         -- Ctrl O
   elseif c == 23 then act.close()                          -- Ctrl W
   elseif c == 43 or c == 61 then act.zoom_by(1)
@@ -1026,8 +1510,8 @@ local function key(c)
     if single and top >= total_h - vh then act.go(current + 1) else scroll_to(top + vh - 40) end
   elseif c == keys.PAGEUP then
     if single and top <= 0 then act.go(current - 1) else scroll_to(top - vh + 40) end
-  elseif c == keys.HOME then act.go(1)
-  elseif c == keys.END then act.go(#sizes)
+  elseif c == keys.HOME then act.jump(1)
+  elseif c == keys.END then act.jump(#sizes)
   elseif c == keys.RIGHT then
     if total_w > view_w() then pan_to(left + 40) else act.go(current + 1) end
   elseif c == keys.LEFT then
@@ -1057,7 +1541,7 @@ local function press_side(x, y)
   local which = pk.segment_at(tabs, x, y)
 
   if which then
-    act.tab(which == 1 and "pages" or "contents")
+    act.tab(TAB_OF[which])
     return
   end
 
@@ -1071,25 +1555,89 @@ local function press_side(x, y)
       local ty = t.y - side_top
 
       if ly >= ty and ly < ty + t.h + LABEL_H then
-        act.go(i)
+        act.jump(i)
         return
       end
     end
   else
-    local e = contents[(ly + side_top) // ROW_H + 1]
+    local e = tab == "contents" and contents[(ly + side_top) // ROW_H + 1] or nil
 
-    if e and e.page then act.go(e.page) end
+    if tab == "found" then
+      local m = find.matches[(ly + side_top) // ROW_H + 1]
+      if m then show_match(m) end
+    elseif e and e.page then
+      act.jump(e.page)
+    end
   end
 end
 
+-- The page under a point of the window, and the point in its own points
+-- from its top left - or nil over the desk.
+local function page_at(x, y)
+  local vx, vy, vw = side_w(), TOOL_H, view_w()
+
+  for _, i in ipairs(in_view()) do
+    local p = place[i]
+    local px = vx + (math.max(total_w, vw) - p.w) // 2 - left
+    local py = vy + p.y - top
+
+    if x >= px and x < px + p.w and y >= py and y < py + p.h then
+      return i, (x - px) / scale, (y - py) / scale
+    end
+  end
+end
+
+-- **A selection** is the runs of one page a dragged rectangle touches, in
+-- reading order: what Copy copies, marked in the accent.
+local selecting = nil
+
+local function select_to(x, y)
+  local i, px, py = page_at(x, y)
+
+  if not selecting or i ~= selecting.page then
+    if not selecting then return false end
+
+    -- Past the page's edge: held at the edge, on the page it began on.
+    local p = place[selecting.page]
+    local vx = side_w() + (math.max(total_w, view_w()) - p.w) // 2 - left
+    local vy = TOOL_H + p.y - top
+
+    px = math.max(0, math.min((x - vx) / scale, p.w / scale))
+    py = math.max(0, math.min((y - vy) / scale, p.h / scale))
+  end
+
+  local x0, x1 = math.min(selecting.x, px), math.max(selecting.x, px)
+  local y0, y1 = math.min(selecting.y, py), math.max(selecting.y, py)
+  local t = text_of(selecting.page)
+
+  selection = { page = selecting.page, runs = {} }
+
+  for k, r in ipairs(t.runs) do
+    if r.x < x1 and r.x + r.w > x0 and r.y < y1 and r.y + r.size * 1.25 > y0 then
+      selection.runs[#selection.runs + 1] = k
+    end
+  end
+
+  return true
+end
+
 local function press(x, y)
+  -- A press anywhere but in a field takes the keys back from it.
+  local was = focus
+
+  if not (pk.inside(findbox, x, y) or pk.inside(pagebox, x, y)) then focus = nil end
+
   if y >= TOOL_H and y < H - FOOT_H and x < side_w() then
     press_side(x, y)
     return
   end
 
   if y < TOOL_H then
-    if pk.inside(toggle, x, y) and not toggle.disabled then
+    if pk.inside(findbox, x, y) and doc then
+      focus = "find"
+    elseif pk.inside(pagebox, x, y) and doc then
+      if was ~= "page" then act.goto_focus() end
+    elseif pk.inside(toggle, x, y) and not toggle.disabled then
       pk.hold(toggle, function() act.sidebar(not sidebar) end)
     elseif pk.inside(back, x, y) and not back.disabled then
       pk.hold(back, function() act.go(current - 1) end)
@@ -1101,6 +1649,17 @@ local function press(x, y)
 
     return
   end
+
+  -- On a page: a selection begins, and the last one goes.
+  local i, px, py = page_at(x, y)
+
+  if i then
+    selecting = { page = i, x = px, y = py }
+    selection = nil
+    return
+  end
+
+  if x < side_w() + view_w() then selection = nil end
 
   -- The scroll bar: the thumb held and dragged, the track a view at a time.
   if x >= side_w() + view_w() and y < H - FOOT_H and total_h > view_h() then
@@ -1142,7 +1701,7 @@ while win.running do
     dirty = false
   end
 
-  local work, work_thumb = wanted()
+  local work, work_kind = wanted()
   local reply = wmproto.poll(win.handle, work and 0 or 25)
 
   if not reply then break end
@@ -1168,6 +1727,15 @@ while win.running do
       win:close()
     elseif ev.type == "theme" then
       dirty = true
+    elseif ev.type == "rawkey" then
+      if ev.code == KEY_LEFTSHIFT or ev.code == KEY_RIGHTSHIFT then shift_held = ev.down end
+    elseif ev.type == "copy" then
+      -- Control-C and its fellows come as what they mean (`wm/keys.lua`).
+      act.copy()
+      dirty = true
+    elseif ev.type == "selectall" then
+      if focus ~= "find" then act.select_page() end
+      dirty = true
     elseif ev.type == "key" then
       local a, b = decode(ev.code)
 
@@ -1192,8 +1760,24 @@ while win.running do
         dirty = true
       elseif ev.action == "move" then
         if drag(y) then dirty = true end
+        if selecting and select_to(x, y) then dirty = true end
       elseif ev.action == "release" then
         dragging = nil
+
+        if selecting then
+          select_to(x, y)
+
+          if selection and #selection.runs == 0 then selection = nil end
+
+          if selection then
+            print(("pdfview: selected %d characters on page %d"):format(#selected_text(),
+                                                                      selection.page))
+          end
+
+          selecting = nil
+          dirty = true
+        end
+
         if pk.release(x, y) then dirty = true end
       end
     end
@@ -1204,7 +1788,9 @@ while win.running do
 
   -- Nothing waiting, and a page wanted: rendered now, and drawn.
   if #events == 0 and not dirty and work and win.running then
-    if work_thumb then render_thumb(work) else render(work) end
+    if work_kind == "thumb" then render_thumb(work)
+    elseif work_kind == "find" then find_some()
+    else render(work) end
     dirty = true
   end
 end
