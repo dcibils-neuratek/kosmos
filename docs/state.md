@@ -2,13 +2,13 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-14, morning (0.11.224; Automations A1-A4)
+Last updated: 2026-10-14, morning (0.11.225; Automations A1-A4, the file type)
 
 ---
 
 ## 14 October, the night into morning: Automations A1-A2, a kernel hang, Mail by name
 
-**Pushed: up to 0.11.198.** **On `main`, not pushed: 0.11.199-0.11.224.**
+**Pushed: up to 0.11.198.** **On `main`, not pushed: 0.11.199-0.11.225.**
 The whole gate passed at 0.11.219 (86/86, the first clean one since G3) at 0.11.222 (87/87)
 and at 0.11.223 (88/88). Diego asleep, "Keep building".
 
@@ -44,9 +44,14 @@ and at 0.11.223 (88/88). Diego asleep, "Keep building".
 - **A4, the Automations window** (0.11.224, 18.619): as drawn; Run now
   through `autod`, the running step lit; the window drivable by name too.
   Whole gate 89/89.
-- **Next in Automations**: A5, consent - the first press in an application
-  asks. Left: A6 scripts, A3b (mail as a trigger, the `.automation` file
-  type), A1b's rest (Mail's lists; Groove, Paint, Cafesa3D, Maps).
+- **An `.automation` opened from Tracker runs** (0.11.225, 18.620).
+- **Asked on the Automations card, for Diego**: A5 consent - (a) the
+  namespace hands a program an app's `/Running` name only once allowed, as
+  designed, or (b) the window manager keeps an allowed list the kit asks;
+  I recommend (a). The mail trigger - (a) `maild` calls `autod`, or (b) a
+  file `autod` looks at every five seconds; I recommend (b) for now. Left
+  after those: A6 scripts, A1b's rest (Mail's lists; Groove, Paint,
+  Cafesa3D, Maps).
 - **Still waiting on Diego**, unchanged from the night before: the sandbox
   console keys on the M700 (`vmm.c` uncommitted), the M700's screen and
   G1-G4 seen there, the Screens and PDF Viewer designs, fix 1 or 2 for the
