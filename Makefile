@@ -143,7 +143,8 @@ VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $
 # also the boundary of the first PDPT slot: the kernel gets slot 0 and a
 # process gets 1 upward, which is the same arrangement AArch64 has one level
 # up. `mmu_init` panics if RAM would reach that far.
-USER_BASE := $(if $(filter x86_64,$(ARCH)),0x40000000,0x80000000)
+# AArch64's is at 256 GB, above any RAM its boards have (`arch/aarch64/mmu.h`).
+USER_BASE := $(if $(filter x86_64,$(ARCH)),0x40000000,0x4000000000)
 
 # What the image was built for, in the boot banner and along the bottom of
 # the desktop. One place, because it was two: the kernel's generated

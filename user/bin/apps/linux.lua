@@ -144,6 +144,13 @@ local function start(how)
     s.network = "outgoing"
     s.disk = DISK
     s.folders = { IMAGE .. ":/kosmos/image:ro" }
+
+    -- Kosmos's Downloads as Linux's own, read and write: what the browser
+    -- saves is where Kosmos keeps what it saves (`docs/linux.md`).
+    if how == "run" then
+      if not fs.getattr("/Home/Downloads") then fs.send("/Home/Downloads", { type = "mkdir" }) end
+      s.folders[#s.folders + 1] = "/Home/Downloads:/root/Downloads"
+    end
     s.words[#s.words + 1] = "kosmos.modloop=" .. sandboxes.hex("/kosmos/image/modloop")
 
     if how == "setup" then

@@ -18,7 +18,9 @@
 
 #include "../user/include/elfimage.h"
 
-#define BASE   0x80000000ull
+/* Where an AArch64 process is linked: 256 GB since 14 October 2026
+ * (`arch/aarch64/mmu.h`), the same number as the Makefile's `USER_BASE`. */
+#define BASE   0x4000000000ull
 #define MOST   (40ull * 1024 * 1024)
 #define PAGE   4096u
 

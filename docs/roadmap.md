@@ -9156,7 +9156,15 @@ check outside the gate, then the M700), Linux in the Deskbar, Downloads
 shared. Noticed: Alpine's `/init` asks `grep -q kosmos.<word>` for the
 other words too (`screen`, `disk`, `net`, `share`), which a longer word
 with the same start would match - to be read exactly, as `kosmos.root` is;
-and a 26-pixel strip under `foot` in `cage`, to look at with L5's sizes. Later, when measured: the disk off the vCPU's thread, and the
+and a 26-pixel strip under `foot` in `cage`, to look at with L5's sizes. **Downloads shared**: Kosmos's
+`/Home/Downloads` is Linux's `~/Downloads`, read and write, carried into its
+root at `switch_root`.
+
+**Found, 14 October - three ARM suites broken while ARM was paused**
+(since 8 October): `arm-queries` (the themes' folder listing), `arm-media`
+(an MP3's cover drawn at its size) and `arm-synth` (Groove's bar). They
+fail the same way with processes at the old address, so they are not the
+move to 256 GB (`testing.md` 18.641). To mend when Diego resumes ARM. Later, when measured: the disk off the vCPU's thread, and the
 disk server keeping a client's region mapped between requests.
 
 **Found, 10 October - a question to an application waits for its tick.**

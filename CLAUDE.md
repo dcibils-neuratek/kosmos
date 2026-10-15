@@ -96,7 +96,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 
 **Active target today: QEMU `virt` aarch64, and nothing else.** Real hardware is on the wishlist and the serial cable is not here yet. Do not write Pi code, but do respect the `arch/` vs `hal/` separation.
 
-**Kosmos is 64-bit, and only 64-bit.** AArch64 everywhere: `HCR_EL2.RW` is set so EL1 runs AArch64 rather than AArch32, the virtual address space is 39 bits through three levels of long-descriptor tables, and processes use addresses above the 4 GB line. There is no 32-bit path and there is not going to be one.
+**Kosmos is 64-bit, and only 64-bit.** AArch64 everywhere: `HCR_EL2.RW` is set so EL1 runs AArch64 rather than AArch32, the virtual address space is 39 bits through three levels of long-descriptor tables, and processes use addresses from 256 GB, above the 4 GB line and above any RAM (`arch/aarch64/mmu.h`; on x86-64 they start at 1 GB, which its code model needs). It said "above the 4 GB line" for months while ARM's started at 2 GB, and past a gigabyte of RAM the kernel's map ran into them (`testing.md` 18.641). There is no 32-bit path and there is not going to be one.
 
 **That is a constraint on *word size*, not on architecture.** More than one `arch/` is expected: AArch64 today, **x86-64 later**, which is a second instruction set, a different interrupt controller, a different boot protocol and a different memory model - and none of that disturbs the 64-bit assumptions, which is exactly why the line is drawn here and not around ARM. A board like the Pi 5 is a new `hal/`; a machine like an x86-64 PC is a new `arch/`; a 32-bit machine is neither, because it is out of scope. `hal.md` records the Pi 1 argument and why it was answered no.
 

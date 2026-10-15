@@ -353,6 +353,19 @@ void mmu_init(void)
     fine_end = ((uintptr_t)__framebuffer_start + BLOCK_2M - 1)
                & ~(uintptr_t)(BLOCK_2M - 1);
 
+    /*
+     * **RAM must end below every process's region**, whose top-level slots
+     * every space shares with this map (`mmu.h`, `USER_VA_BASE`). It did not
+     * have to, and with more than a gigabyte - RAM from 1 GB on QEMU's
+     * `virt` - the kernel's blocks filled the slot processes start in: the
+     * first process faulted at its first push (14 October 2026, a Linux
+     * sandbox wanting a 2 GB machine). x86-64 has said this since its first
+     * day (`arch/x86_64/mmu.c`).
+     */
+    if (ram.base + ram.size > USER_VA_BASE) {
+        panic("mmu_init: RAM reaches the processes' region");
+    }
+
     map_pages(kernel_l1, ram.base, ram.base,
               (fine_end - ram.base) / PAGE_SIZE, MAP_RW);
 

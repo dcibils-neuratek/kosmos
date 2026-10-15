@@ -208,6 +208,15 @@ if [ "$(arg kosmos.root)" = 1 ]; then
     modprobe ext4; modprobe evdev
     mkdir -p /newroot && mount -t ext4 /dev/vda /newroot || { echo "alpine: no root on the disk"; poweroff -f; }
     mkdir -p /newroot/lib/modules /newroot/kosmos && mount --bind /.modloop/modules /newroot/lib/modules
+    # Its folders of /Home, carried into its root where they were - Kosmos's
+    # Downloads as its own, among them.
+    for i in 0 1 2 3; do
+        share=$(arg kosmos.share$i)
+        [ -n "$share" ] || continue
+        at=$(unhex "${share%%:*}")
+        [ "$at" = /kosmos/image ] && continue
+        mkdir -p "/newroot$at" && mount --move "$at" "/newroot$at"
+    done
     app=$(unhex "$(arg kosmos.app)")
     cat > /newroot/kosmos/session <<SESSION
 #!/bin/sh

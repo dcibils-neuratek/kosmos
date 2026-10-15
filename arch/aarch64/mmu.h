@@ -232,10 +232,20 @@ unsigned as_total(void);
 void as_pool_init(unsigned ceiling, unsigned boot);
 
 /*
- * Where a space may map things: level 1 slot 2 upwards. The kernel occupies
- * slots 0 and 1, being devices below 1 GB and RAM from 1 to 2 GB.
+ * Where a space may map things: **from 256 GB, level 1 slot 256**, the top
+ * half of a 39-bit space. The kernel's devices and RAM are identity mapped
+ * below it, in slots every space shares.
+ *
+ * It was slot 2, 0x80000000 - "devices below 1 GB and RAM from 1 to 2 GB" -
+ * which held while QEMU's `virt` had a gigabyte of RAM. With more, the RAM
+ * reached the processes' slot and the first process faulted (14 October
+ * 2026); a Raspberry Pi 5, whose RAM starts at 0 and runs to 8 GB, would
+ * have done the same on its first boot. At 256 GB it is above any RAM this
+ * system's boards have, `mmu_init` refuses a machine where it is not, and
+ * every process's addresses are above 4 GB, as `CLAUDE.md` always said they
+ * were - so an address kept in 32 bits fails here, at once.
  */
-#define USER_VA_BASE    0x80000000UL
+#define USER_VA_BASE    0x4000000000UL
 #define USER_VA_END     (512UL * 1024 * 1024 * 1024)    /* a 39-bit VA */
 
 struct addrspace;

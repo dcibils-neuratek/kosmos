@@ -13,10 +13,17 @@ The Linux window opened with a small application in place of the browser -
     Kosmos's network, the window saying how far it has got;
   * **booted from it**: the sandbox started again from its disk, its
     modules from the modloop, and `cage` showing `foot`;
+  * **Downloads shared**: a file Linux wrote to its `~/Downloads` read back
+    from Kosmos's `/Home/Downloads`;
   * **on the screen**: the picture at its middle is foot's own background,
     not Linux's console.
 
-Usage: run_linuxsetup.py <image>
+**`--browser`**: the same with Epiphany, the browser itself (decision 4) -
+its 277 packages, a 2 GB disk, waits four times as long, and the picture
+held to being a window drawn with many colours rather than foot's one.
+Not in the gate: under TCG it takes most of an hour.
+
+Usage: run_linuxsetup.py <image> [--browser]
 """
 
 import functools
@@ -35,7 +42,13 @@ import run_screenshot as R                                   # noqa: E402
 import scratch                                               # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PACKAGES = "alpine-base eudev seatd cage font-dejavu foot"
+BROWSER = "--browser" in sys.argv
+# foot, after a file written to Linux's Downloads - Kosmos's own, shared.
+APP = ("dbus-run-session epiphany" if BROWSER
+       else "sh -c 'echo made in Linux > /root/Downloads/from-linux.txt; exec foot'")
+PACKAGES = ("alpine-base eudev seatd cage mesa-dri-gallium font-dejavu dbus epiphany"
+            if BROWSER else "alpine-base eudev seatd cage font-dejavu foot")
+DISK_MB, HOME_MB, SLOW = (2048, 3072, 4) if BROWSER else (512, 1024, 1)
 
 
 def main():
@@ -53,7 +66,7 @@ def main():
     for step in ([sys.executable, os.path.join(HERE, "alpine.py"), alpine],
                  [sys.executable, os.path.join(HERE, "alpine_repo.py"), "aarch64"]
                  + PACKAGES.split() + ["e2fsprogs"],
-                 [sys.executable, os.path.join(HERE, "homeimage.py"), folder, disk, "1024"]):
+                 [sys.executable, os.path.join(HERE, "homeimage.py"), folder, disk, str(HOME_MB)]):
         made = subprocess.run(step, capture_output=True, text=True)
 
         if made.returncode != 0:
@@ -68,7 +81,7 @@ def main():
     port = httpd.server_address[1]
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
-    R.virtualize("1G")
+    R.virtualize("2G" if BROWSER else "1G")
     R.extra_args(image, ["-drive", "file=%s,format=raw,if=none,id=home" % disk,
                          "-device", R.device(image, "blk") + ",drive=home",
                          "-netdev", "user,id=net0",
@@ -102,22 +115,44 @@ def main():
         until(r"NET-UP", at, 60)
 
         at = len(guest.seen)
-        guest.type('wm linux:--tell 640x480 --memory 512 --disk-mb 512 --app foot '
-                   '--packages "%s" --repo http://10.0.2.2:%d/v3.24' % (PACKAGES, port))
+        guest.type('wm linux:--tell 640x480 --memory %d --disk-mb %d --app "%s" '
+                   '--packages "%s" --repo http://10.0.2.2:%d/v3.24'
+                   % (768 if BROWSER else 512, DISK_MB, APP, PACKAGES, port))
 
-        check(until(r"linux: Making Linux's disk, 512 of 512 MB", at, 120) is not None,
+        check(until(r"linux: Making Linux's disk, %d of %d MB" % (DISK_MB, DISK_MB), at, 120 * SLOW)
+              is not None,
               "the window did not make Linux's disk: %r" % guest.seen[-800:])
-        installing = until(r"linux: Installing Linux, ([1-9]\d*)%", at, 240)
+        installing = until(r"linux: Installing Linux, ([1-9]\d*)%", at, 240 * SLOW)
         check(installing is not None,
               "the setup did not say what it was installing: %r" % guest.seen[-1500:])
-        check(until(r"linux: set up", at, 480) is not None,
+        check(until(r"linux: set up", at, 480 * SLOW) is not None,
               "Alpine was not installed onto Linux's disk: %r" % guest.seen[-2000:])
-        check(until(r"linux: serial: kosmos-session: cage foot", at, 180) is not None,
+        check(until(r"linux: serial: kosmos-session: cage " + re.escape(APP), at, 180 * SLOW) is not None,
               "Linux did not start from its disk into cage: %r" % guest.seen[-2000:])
 
         shown = until(r"linux: picture at (\d+),(\d+), (\d+)x(\d+)", at, 30)
         middle = None
-        deadline = time.monotonic() + 90
+        deadline = time.monotonic() + 90 * SLOW
+
+        # The browser: a window drawn - many colours over the picture - and
+        # still running, rather than one colour or Linux's console.
+        while BROWSER and shown and time.monotonic() < deadline:
+            px, py, pw, ph = (int(v) for v in shown.groups())
+            width, height, pixel = R.pixel_reader(guest.screendump())
+            colours = {pixel(x, y) for y in range(py, py + ph, 8) for x in range(px, px + pw, 8)}
+            middle = len(colours)
+
+            if middle >= 40:
+                break
+
+            time.sleep(10)
+
+        if BROWSER:
+            check(middle is not None and middle >= 40
+                  and "kosmos-session: ended" not in guest.seen[at:],
+                  "Epiphany did not draw a window in cage: %r colours, the session %s"
+                  % (middle, "ended" if "kosmos-session: ended" in guest.seen[at:] else "running"))
+            shown = None
 
         # foot's own background, #242424, filling the screen once it draws.
         while shown and time.monotonic() < deadline:
@@ -130,23 +165,39 @@ def main():
 
             time.sleep(3)
 
-        check(middle is not None and all(abs(c - 0x24) <= 4 for c in middle),
-              "the picture's middle was not foot's background, #242424: %r" % (middle,))
+        if not BROWSER:
+            check(middle is not None and all(abs(c - 0x24) <= 4 for c in middle),
+                  "the picture's middle was not foot's background, #242424: %r" % (middle,))
 
         os.makedirs(os.path.join("build", "gate"), exist_ok=True)
 
-        with open(os.path.join("build", "gate", "arm-sandbox-linuxsetup.ppm"), "wb") as f:
+        with open(os.path.join("build", "gate", "arm-sandbox-linux%s.ppm" % ("browser" if BROWSER else "setup")), "wb") as f:
             f.write(guest.screendump())
     finally:
         transcript = guest.seen
         guest.close()
         httpd.shutdown()
 
+    # **Downloads shared**: what Linux saved in its Downloads, in Kosmos's -
+    # read off the `/Home` disk on this Mac once the machine has stopped,
+    # since the desktop has the serial line's keys while it runs.
+    if not BROWSER:
+        got = disk + ".from-linux.txt"
+
+        if os.path.exists(got):
+            os.remove(got)
+
+        subprocess.run([os.path.join("build", "host", "lua"), os.path.join(HERE, "kfs.lua"),
+                        "get", disk, "/Home/Downloads/from-linux.txt", got], capture_output=True)
+        found = open(got).read().strip() if os.path.exists(got) else None
+        check(found == "made in Linux",
+              "a file Linux wrote to its Downloads was not in Kosmos's: %r" % (found,))
+
     # The whole of what it said, kept: the setup's lines are long gone from
     # the tail a failure prints.
     os.makedirs(os.path.join("build", "gate"), exist_ok=True)
 
-    with open(os.path.join("build", "gate", "arm-sandbox-linuxsetup.serial"), "w",
+    with open(os.path.join("build", "gate", "arm-sandbox-linux%s.serial" % ("browser" if BROWSER else "setup")), "w",
               errors="replace") as f:
         f.write(transcript)
 

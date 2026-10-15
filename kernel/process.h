@@ -91,7 +91,7 @@ struct thread;
  * rather than in whatever happened to be next.
  *
  * **The offsets are the invariant; the base is the board's.**
- * `USER_VA_BASE` comes from `-DKOSMOS_USER_BASE` and is 0x80000000 on
+ * `USER_VA_BASE` comes from `-DKOSMOS_USER_BASE` and is 0x4000000000 on
  * AArch64 and 0x40000000 on x86-64 - so these used to carry absolute
  * addresses in their comments and half of them were wrong on the second
  * machine. What is true on both is the distance between the regions.

@@ -10,7 +10,7 @@
  *                  "/Home/Developer/libgcc.a" },     -- head first
  *     prelude  = "/Home/Developer/include/kosmos_lua.h",
  *     defines  = { "main=demo_main" },        -- a project's, as -D
- *     base     = 0x80000000,              -- this machine's when left out
+ *     base     = 0x4000000000,            -- this machine's when left out
  *     reader   = function(path) return address, size end,  -- or nil
  *   }
  *   -- r.ok; r.problems = { { file, line, severity, text }, ... };

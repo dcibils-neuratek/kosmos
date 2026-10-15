@@ -26374,3 +26374,39 @@ session and the picture checks fail. The first try of that control passed,
 and was right to: it renamed the word to `kosmos.rootless`, and `/init` asked
 `grep -q kosmos.root`, which that matches - so `/init` reads the word's
 value exactly now, and the control leaves the word out.
+
+## 18.641 More than a gigabyte on ARM: processes moved to 256 GB
+
+Found trying Epiphany in a 2 GB ARM machine: `init` - the first process -
+died at its first push, a permission fault on a 2 MB block, and then
+`pmm_free_page: double free`. Every ARM machine with more than 1 GB **and**
+a disk did it; 1 GB, or no disk, booted.
+
+**The cause.** AArch64 put processes at 0x80000000, level 1 slot 2, and
+every space shares the kernel's top-level slots below. The kernel identity
+maps RAM, and QEMU's `virt` puts RAM at 1 GB: with one gigabyte it ended at
+exactly 0x80000000; with more, the kernel's own blocks were in the slot
+processes start in. `mmu.h` said the split was "enforced rather than
+documented"; past a gigabyte it was neither. x86-64's `mmu_init` has always
+refused RAM that reaches its processes' region; ARM's never had the check.
+A Raspberry Pi 5 - RAM from 0 to 8 GB - would have failed on its first boot.
+
+**The fix.** Processes from 256 GB (0x4000000000), level 1 slot 256, the
+top half of the 39-bit space; `mmu_init` panics if RAM would reach it. And
+`CLAUDE.md`'s "processes use addresses above the 4 GB line", which was
+never true on either architecture, is now true on ARM: any address kept in
+32 bits fails here at once.
+
+**Tests.** A 2 GB machine with a disk reaches the prompt (it did not), and
+a 1 GB one still does; then every suite, ARM's included (`make test
+ARM=1`), since every ARM process moved.
+
+**And Downloads shared** (the same day): Kosmos's `/Home/Downloads` is
+Linux's `~/Downloads`, read and write - a share mounted in the initramfs and
+moved into Linux's root at `switch_root` (`mount --move`), which the image's
+folder is not. `arm-sandbox-linuxsetup` gains its sixth check: a file the
+application line writes to `/root/Downloads` read from the `/Home` disk on
+this Mac once the machine has stopped (the desktop has the serial line's
+keys while it runs, so `fs.read` typed there never ran). **Control**: no
+Downloads share - the file is not there.
+
