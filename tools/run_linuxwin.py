@@ -87,7 +87,7 @@ def main():
         guest.wait_for("kosmos> ", "reached a prompt")
 
         at = len(guest.seen)
-        guest.type("wm linux:--tell 640x480 --memory 256")
+        guest.type("wm linux:--tell --console 640x480 --memory 256")
         shown = until(r"linux: picture at (\d+),(\d+), (\d+)x(\d+); frames (\d+)", at, 240)
         check(shown is not None, "the Linux window never said its first frame had arrived: %r"
               % guest.seen[-1500:])

@@ -26337,3 +26337,40 @@ Linux's shell on its screen, the sandbox ending and the window saying so.
 and after, and Linux not ending - both checks failing. Found on the way: a
 plain `poweroff` is typed and run, and does nothing, since the sandbox's
 `/init` is a script that does not answer it.
+
+## 18.640 Linux from its own disk: set up once, then booted into `cage` (Linux L4, the path)
+
+`docs/linux.md` L4, everything but the browser's own weight: the Linux
+window makes Linux's disk, Linux sets it up, and boots from it into `cage`.
+
+**What it is.** The image gains `modloop`, every module its kernel has (the
+netboot's own, since the repository's kernel has moved on), which the guest
+mounts through a read-only share of the image's folder - `squashfs` and
+`loop` added to its initramfs. The guest's `/init` gains two paths:
+**setup** - `ext4`, `e2fsprogs` into the initramfs's userland, the disk made
+ext4, `apk --root` installing what it is told from the repository it is
+told, said as a percentage through `apk --progress-fd`; and **root** - the
+disk mounted, the modules carried in, a session written and `switch_root`
+into it: its network, `udevd`, `seatd`, and `cage` with one application.
+The window runs the stages a step a pass so it keeps drawing: the disk
+grown 256 MB a pass (`fs.size`), the setup's progress in its header, a
+`.ready` beside the disk when it is done, and Linux started again from it.
+A sandbox can carry words of its own for the guest's line (`s.words`).
+`tools/alpine_repo.py` fetches Alpine's packages once, with what they need,
+held to the signed index's sizes, laid out as a mirror.
+
+**Found on the way**: the window's `--disk-mb` was never read - a `-` in a
+Lua pattern is a repetition; Alpine 3.24's `apk` draws a bar into a pipe
+and names no package, hence `--progress-fd`; and the script's backslashes
+were Python's before they were the shell's.
+
+**Tests.** `arm-sandbox-linuxsetup`, new, 5 checks: the disk made, 512 MB;
+the install's percentage said; Linux set up from this Mac's copy of Alpine
+through Kosmos's network; started from its disk into `cage`; and the
+picture's middle foot's own background, #242424. The whole serial line is
+kept in `build/gate/arm-sandbox-linuxsetup.serial`. **Control**: the window not
+asking Linux to start from its disk - it boots its console instead, and the
+session and the picture checks fail. The first try of that control passed,
+and was right to: it renamed the word to `kosmos.rootless`, and `/init` asked
+`grep -q kosmos.root`, which that matches - so `/init` reads the word's
+value exactly now, and the control leaves the word out.

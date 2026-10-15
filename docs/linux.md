@@ -154,6 +154,10 @@ ring. Then each step is tried on the M700 before the next, as X1-X3 were.
    through `sys.ring_push`.
 4. **L4 - the browser**: the first-run setup, `cage` and Epiphany (decision 4),
    Downloads shared; Linux in the Deskbar.
+   **The path built** (`testing.md` 18.640): the disk made, Alpine set up
+   on it through Kosmos's network, Linux booted from it into `cage` - shown
+   with `foot`, a terminal, which the gate can afford; Epiphany is the same
+   path with its packages, tried with a check of its own and on the M700.
    **How, worked out after L3** (14 October 2026):
    - **Its kernel's modules from its own release.** The sandbox boots
      Alpine's netboot kernel (6.18.52); the repository's `linux-virt` is

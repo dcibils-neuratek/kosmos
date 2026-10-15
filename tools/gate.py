@@ -95,6 +95,9 @@ SUITES = [
     # Linux in a Kosmos window: its screen through virtio-gpu (`docs/linux.md`
     # L2). Named `arm-sandbox-` so it runs with the sandboxes' in every gate.
     Suite("arm-sandbox-linuxwin", ["python3", "tools/run_linuxwin.py", ARM]),
+    # And from its own disk (L4): made, set up from this Mac's copy of Alpine,
+    # booted into `cage` - about four minutes, most of it the install.
+    Suite("arm-sandbox-linuxsetup", ["python3", "tools/run_linuxsetup.py", ARM]),
 
     # And the same machine with nothing plugged into it. A second boot, but
     # of the ordinary image rather than the test one: what it checks is init

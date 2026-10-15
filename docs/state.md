@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-14, evening (0.11.244; Linux-on-Kosmos L3)
+Last updated: 2026-10-14, evening (0.11.245; Linux-on-Kosmos L4 path)
 
 ---
 
@@ -87,10 +87,13 @@ Last updated: 2026-10-14, evening (0.11.244; Linux-on-Kosmos L3)
   console drawn in a Kosmos window.
 - **L3, keyboard and pointer** (0.11.244, 18.639): virtio-input in the monitor
   (`vmminput.c`), a ring in the screen region the window writes
-  (`sys.ring_push`); typed into and clicked in, Linux answers. **Next: L4**,
-  Chromium - Alpine installed on its disk, `cage`, 2 GB; on the M700 that
-  wants the stick's `/Sandboxes` (Diego) and the x86 guest's devices tried
-  there, since QEMU has no VT-x.
+  (`sys.ring_push`); typed into and clicked in, Linux answers.
+- **L4, the path** (0.11.245, 18.640): Linux makes its disk, is set up on it from a
+  repository with `apk`, and boots from it into `cage` - `foot` in the
+  gate; the browser is Epiphany (decision 4). **Next: L4's rest** -
+  Epiphany's own run, Linux in the Deskbar, Downloads shared; on the M700
+  that wants the stick's `/Sandboxes` (Diego) and the x86 guest's devices
+  tried there, since QEMU has no VT-x.
 - **Still waiting on Diego**: the sandbox console keys on the M700
   (`vmm.c` uncommitted); the M700's screen; background programs fix 1 or
   2; the Shortcuts cheat sheet; About in Preferences; a push.

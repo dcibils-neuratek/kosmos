@@ -9149,7 +9149,14 @@ Alpine's console in it. **L3 built** (18.639): keyboard and pointer by
 virtio-input, from a ring the window writes. **L4 next**: Chromium - Alpine
 installed onto Linux's disk, `cage`, Linux in the Deskbar, Downloads
 shared, 2 GB - **Epiphany rather than Chromium** (Diego, 14 October: "chrome
-is too big", "Your call"; `docs/linux.md`, decision 4). Later, when measured: the disk off the vCPU's thread, and the
+is too big", "Your call"; `docs/linux.md`, decision 4). **The path built** (`testing.md`
+18.640): disk made, Alpine set up on it from a repository, booted into
+`cage` - proved with `foot`. **Left of L4**: Epiphany's own run (a longer
+check outside the gate, then the M700), Linux in the Deskbar, Downloads
+shared. Noticed: Alpine's `/init` asks `grep -q kosmos.<word>` for the
+other words too (`screen`, `disk`, `net`, `share`), which a longer word
+with the same start would match - to be read exactly, as `kosmos.root` is;
+and a 26-pixel strip under `foot` in `cage`, to look at with L5's sizes. Later, when measured: the disk off the vCPU's thread, and the
 disk server keeping a client's region mapped between requests.
 
 **Found, 10 October - a question to an application waits for its tick.**

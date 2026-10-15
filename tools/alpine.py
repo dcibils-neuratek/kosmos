@@ -173,6 +173,65 @@ if grep -q kosmos.share /proc/cmdline; then
         mount -t virtiofs "share$i" "$at" -o "${share##*:}" || echo "alpine: share$i would not mount at $at"
     done
 fi
+# **Linux on Kosmos** (`docs/linux.md` L4). Every module its kernel has,
+# from the image's modloop, read through a share - ext4 and evdev among them.
+modloop=$(arg kosmos.modloop)
+if [ -n "$modloop" ]; then
+    insmod /kosmos/modules/squashfs.ko; insmod /kosmos/modules/loop.ko
+    mkdir -p /.modloop /lib/modules
+    mount -o loop,ro "$(unhex "$modloop")" /.modloop && mount --bind /.modloop/modules /lib/modules \
+        || echo "alpine: the modloop would not mount"
+fi
+# Its disk set up, once: made ext4, Alpine and what it runs installed onto
+# it from the repository named, through the sandbox's network.
+setup=$(arg kosmos.setup)
+if [ -n "$setup" ]; then
+    repo=$(unhex "$setup"); wanted=$(unhex "$(arg kosmos.packages)")
+    say() { echo "kosmos-setup: $*"; }
+    say "preparing the disk"
+    modprobe ext4 && apk add -q --no-cache -X "$repo/main" -X "$repo/community" e2fsprogs \
+        && mkfs.ext4 -F -q /dev/vda && mkdir -p /mnt && mount -t ext4 /dev/vda /mnt \
+        || { say "failed: the disk could not be made"; poweroff -f; }
+    mkdir -p /mnt/etc/apk && cp -r /etc/apk/keys /mnt/etc/apk/
+    printf '%s/main\\n%s/community\\n' "$repo" "$repo" > /mnt/etc/apk/repositories
+    say "installing $wanted"
+    apk add --root /mnt --initdb --no-cache --progress-fd 3 $wanted 3>&1 >/dev/null 2>&1 \
+        | awk -F/ '{ p = int($1 * 100 / ($2 > 0 ? $2 : 1)); if (p >= shown + 5) { shown = p; print "kosmos-setup: " p "%"; fflush() } }'
+    [ -x /mnt/sbin/apk ] || { say "failed: Alpine did not install"; poweroff -f; }
+    sync; umount /mnt
+    say "done"
+    poweroff -f
+fi
+# Its disk as its root: mounted, the modules carried in, and the session
+# started there - seatd, udev, and `cage` showing one application.
+if [ "$(arg kosmos.root)" = 1 ]; then
+    modprobe ext4; modprobe evdev
+    mkdir -p /newroot && mount -t ext4 /dev/vda /newroot || { echo "alpine: no root on the disk"; poweroff -f; }
+    mkdir -p /newroot/lib/modules /newroot/kosmos && mount --bind /.modloop/modules /newroot/lib/modules
+    app=$(unhex "$(arg kosmos.app)")
+    cat > /newroot/kosmos/session <<SESSION
+#!/bin/sh
+mount -t proc proc /proc; mount -t sysfs sysfs /sys; mount -t devtmpfs devtmpfs /dev 2>/dev/null
+mkdir -p /dev/pts /run /tmp && mount -t devpts devpts /dev/pts
+hostname "${name:-linux}"
+ip link set lo up
+if [ -e /sys/class/net/eth0 ]; then
+    ip link set eth0 up && ip addr add 10.0.3.15/24 dev eth0 && ip route add default via 10.0.3.2
+    echo "nameserver 10.0.3.3" > /etc/resolv.conf
+fi
+udevd --daemon && udevadm trigger && udevadm settle
+seatd -g video >/dev/null 2>&1 &
+export XDG_RUNTIME_DIR=/run/xdg HOME=/root WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1
+mkdir -p \\$XDG_RUNTIME_DIR && chmod 700 \\$XDG_RUNTIME_DIR
+sleep 1
+echo "kosmos-session: cage $app" > /dev/@CONSOLE@
+cage -- $app > /dev/@CONSOLE@ 2>&1
+echo "kosmos-session: ended" > /dev/@CONSOLE@
+poweroff -f
+SESSION
+    chmod 755 /newroot/kosmos/session
+    exec switch_root /newroot /kosmos/session
+fi
 run=$(arg kosmos.run)
 if [ -z "$run" ]; then
     echo "alpine: Alpine Linux $(cat /etc/alpine-release), $(uname -sr), in a Kosmos sandbox"
@@ -213,7 +272,9 @@ MODULES = ("kernel/drivers/virtio/virtio_mmio.ko", "kernel/fs/fuse/fuse.ko",
            "kernel/drivers/gpu/drm/drm_shmem_helper.ko",
            "kernel/drivers/gpu/drm/virtio/virtio-gpu.ko",
            # Its keyboard and pointer (L3).
-           "kernel/drivers/virtio/virtio_input.ko")
+           "kernel/drivers/virtio/virtio_input.ko",
+           # And its modloop, every other module (L4).
+           "kernel/fs/squashfs/squashfs.ko", "kernel/drivers/block/loop.ko")
 # Built in on one architecture and a module on another: taken when there.
 OPTIONAL = ("backlight.ko",)
 KERNEL_VERSION = "6.18.52-0-virt"
@@ -351,8 +412,17 @@ def main():
     with open(os.path.join(out, "initramfs"), "wb") as f:
         f.write(archive)
 
-    print("alpine: Image, %d bytes, and initramfs, %d bytes - Alpine 3.24.2 for %s, in %s"
-          % (len(image), len(archive), ARCH, out))
+    # Every module its kernel has (`docs/linux.md` L4), for a sandbox that
+    # mounts it - Linux on Kosmos, whose disk wants ext4 and its input evdev.
+    with tarfile.open(fetched(*release("netboot"))) as t:
+        modloop = t.extractfile("boot/modloop-virt").read()
+
+    with open(os.path.join(out, "modloop"), "wb") as f:
+        f.write(modloop)
+
+    print("alpine: Image, %d bytes, initramfs, %d bytes, and modloop, %d bytes - "
+          "Alpine 3.24.2 for %s, in %s"
+          % (len(image), len(archive), len(modloop), ARCH, out))
 
 
 if __name__ == "__main__":

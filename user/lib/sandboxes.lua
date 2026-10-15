@@ -473,6 +473,18 @@ function sandboxes.start(s)
     line = line .. " kosmos.screen=1"
   end
 
+  -- Words of its own for the guest's command line, `name=value` each - how
+  -- Linux on Kosmos says where its modules are and whether its disk is set
+  -- up yet (`docs/linux.md` L4). Not kept in `sandbox.txt`: whoever starts
+  -- it says them.
+  for _, word in ipairs(s.words or {}) do
+    if not tostring(word):match("^kosmos%.[%w_]+=[%w]*$") then
+      return nil, "a word for the guest is kosmos.NAME=VALUE, the value letters and digits"
+    end
+
+    line = line .. " " .. word
+  end
+
   if #line > 511 then return nil, "its command and folders are too long for a kernel's command line" end
 
   sys.region_write(setup, 0, string.pack("<I4I4I8I8I8I8I8", 0x4b766d6d, 3, ram_bytes,
@@ -550,6 +562,12 @@ end
 -- as `#rrggbb` - away from the corner a console's cursor blinks in - for
 -- `sandbox` to say, and a test to hold. Nil when it has no screen.
 --
+-- Text as hexadecimal, as a guest's command line carries anything with
+-- spaces or quotes in it - for a word of `s.words`.
+function sandboxes.hex(text)
+  return hex(text)
+end
+
 function sandboxes.screen_probe(s)
   local r = s and s.screen_region
 
