@@ -26410,3 +26410,18 @@ this Mac once the machine has stopped (the desktop has the serial line's
 keys while it runs, so `fs.read` typed there never ran). **Control**: no
 Downloads share - the file is not there.
 
+## 18.642 Epiphany, the browser itself, in Linux on Kosmos (Linux L4)
+
+`run_linuxsetup.py --browser`: the same path with Epiphany (decision 4) -
+277 packages, 223 MB fetched once onto this Mac, a 2 GB disk, a 2 GB ARM
+machine (which 18.641 made possible) - and the picture held to being a
+window drawn in many colours. **Passed in under nine minutes** under TCG:
+Alpine and Epiphany set up on Linux's disk, Linux started from it into
+`cage -- dbus-run-session epiphany`, and Epiphany's window - its address
+bar, "Welcome to Web" - in the Kosmos window
+(`docs/screenshots/2026-10-14-linux-epiphany.png`). Its first run asked to
+be the default browser; the session now writes a GSettings override first
+(`ask-for-default=false`), and the second run opened on its start page.
+Not in the gate: nine minutes is the gate's whole budget. On the M700 next,
+under VT-x, once its stick has `/Sandboxes`.
+

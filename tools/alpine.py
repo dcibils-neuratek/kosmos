@@ -232,6 +232,11 @@ udevd --daemon && udevadm trigger && udevadm settle
 seatd -g video >/dev/null 2>&1 &
 export XDG_RUNTIME_DIR=/run/xdg HOME=/root WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1
 mkdir -p \\$XDG_RUNTIME_DIR && chmod 700 \\$XDG_RUNTIME_DIR
+# The browser is Kosmos's only one here: not asked to be the default.
+if command -v glib-compile-schemas >/dev/null && [ -d /usr/share/glib-2.0/schemas ]; then
+    printf '[org.gnome.Epiphany]\\nask-for-default=false\\n' > /usr/share/glib-2.0/schemas/90-kosmos.gschema.override
+    glib-compile-schemas /usr/share/glib-2.0/schemas
+fi
 sleep 1
 echo "kosmos-session: cage $app" > /dev/@CONSOLE@
 cage -- $app > /dev/@CONSOLE@ 2>&1

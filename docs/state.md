@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-14, evening (0.11.246; ARM processes at 256 GB, Downloads)
+Last updated: 2026-10-14, evening (0.11.247; Epiphany in Linux on Kosmos)
 
 ---
 
@@ -91,6 +91,11 @@ Last updated: 2026-10-14, evening (0.11.246; ARM processes at 256 GB, Downloads)
 - **L4, the path** (0.11.245, 18.640): Linux makes its disk, is set up on it from a
   repository with `apk`, and boots from it into `cage` - `foot` in the
   gate; the browser is Epiphany (decision 4). Downloads shared (0.11.246).
+- **Epiphany runs in Linux on Kosmos** (0.11.247, 18.642): set up on its
+  disk and opened in `cage` in a 2 GB ARM machine, in under nine minutes;
+  `run_linuxsetup.py --browser`, outside the gate. **Next**: the M700 -
+  Diego adds `/Sandboxes` to its stick (`tools/sandboxes_drive.py`), then
+  the x86 guest's screen and input tried there for the first time.
 - **ARM processes moved to 256 GB** (0.11.246, 18.641): more than a gigabyte
   of RAM ran into them; found wanting a 2 GB machine for Epiphany. `make
   test ARM=1` then: three ARM suites broken while ARM was paused

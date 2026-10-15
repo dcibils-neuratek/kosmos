@@ -154,6 +154,9 @@ ring. Then each step is tried on the M700 before the next, as X1-X3 were.
    through `sys.ring_push`.
 4. **L4 - the browser**: the first-run setup, `cage` and Epiphany (decision 4),
    Downloads shared; Linux in the Deskbar.
+   **Epiphany running** (`testing.md` 18.642): set up and opened in a 2 GB
+   ARM machine under QEMU, its start page in the Kosmos window. Left: the
+   M700, Linux in the Deskbar's own place, and its settings.
    **The path built** (`testing.md` 18.640): the disk made, Alpine set up
    on it through Kosmos's network, Linux booted from it into `cage` - shown
    with `foot`, a terminal, which the gate can afford; Epiphany is the same
