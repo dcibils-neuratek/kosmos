@@ -26734,3 +26734,37 @@ ran; results in the next entry.
 into Linux's console, the meter has timed keys (5 to 12 ms there, under
 QEMU) and counted frames. **Control**: no key's time taken - the meter's
 lines say `keys=` and nothing, and the check fails.
+
+## 18.654 Linux's desktop apps on the M700, measured (L6a)
+
+Epiphany in the Linux window on the M700 (Core i7-6700, Linux with one
+processor and 2 GB), `tools/linuxbench.py` and the window's meter:
+
+| | |
+|---|---|
+| a key to the screen | median **14 ms**, slowest 27 (20 keys) |
+| scrolling (wheel, ten notches a second) | 26-29 frames a second, longest gap under 55 ms |
+| the processors while scrolling | ~20% of one core; the other seven idle |
+| frames while a page draws | up to 51 and 63 in a second |
+| YouTube, Big Buck Bunny (60 fps upload), its 640x360 player | **13-14 frames a second**, gaps 80-130 ms |
+| the processors while it plays | **Linux's core at 99%** (`vmm` 88% of a core); the other seven idle |
+
+**What it says.** Pages and typing are fine, and scrolling is held by how
+the test scrolls rather than by the machine. **Video is held by Linux's one
+processor**: decoding and drawing in software on one core while seven
+watch - which is L6b, Linux given more than one. The first suspect for
+scrolling, the monitor sleeping a whole 4 ms tick for a guest timer due
+sooner, was tried (yielding until due) and changed nothing; undone.
+
+**Found on the way**, each on the roadmap:
+
+- **Keys dropped when typed quickly**: an address typed by VNC at full
+  speed arrived as one letter, and a key's release lost left Shift held in
+  Linux - the next address came out `eWWW>YOUTUB>COM`. Typed a key every
+  120 ms, every key arrived.
+- **cage fell over once more while an address was typed**, on the second
+  page of a run; under `gdb` it did not, three times in three.
+- **A file Linux rewrites in a shared folder keeps its old tail** - the
+  session's log read as this run's start and an older run's end.
+- **"Page Unresponsive"** on YouTube once, with the machine idle - the
+  player clicked twice, played and paused; a reload and one click played.

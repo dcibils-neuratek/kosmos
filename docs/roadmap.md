@@ -9187,6 +9187,20 @@ right for graphical applications is what these say:
   if L6a says that is the bound.
 - **L6c, no copies of a frame** - the window handing the compositor
   Linux's region rather than copying it - if L6a says the copies show.
+- **The measure that decides it** (Diego, the same day: "one important
+  measure is if epiphany in Linux on Kosmos (LoK) can play a youtube video
+  at full fps and resolution"): a fixed YouTube video in Epiphany, the
+  window at 1920x1080, its frames a second, the processors' shares and
+  YouTube's own dropped frames. Wants GStreamer's decoders on Linux's
+  disk, and **sound** - Linux has no sound device on Kosmos; virtio-sound
+  into Kosmos's audio server is its own step.
+- **Measured** (`testing.md` 18.654): keys 14 ms to the screen; pages
+  fine; scrolling held by the test's own pace. **YouTube plays at 13-14
+  frames a second with Linux's one core at 99% and seven idle** - so L6b,
+  more than one processor, is what video wants. Found and to fix: keys
+  dropped when typed quickly (Shift left held in Linux); cage falling over
+  once more while typing; a file rewritten in a shared folder keeping its
+  old tail (`vmmfs`, truncation).
 - After them, agreed the same day ("go ahead with the plan"): kfs's
   unwritten extents, so a Linux disk is made at once, and the audit of
   every fixed number below.

@@ -21,8 +21,9 @@ sequence in Epiphany and writes the numbers down:
   * **where the time went**: each process's share of the machine while a
     page loaded and while it scrolled, and each core's.
 
-Linux must not be open when it starts: it opens it, with `--tell`, and
-leaves it open.
+It opens Linux with `--tell` and leaves it open; a run that finds it open
+uses it, which is right only when this opened it - the meter speaks only
+with `--tell`.
 
 Usage: linuxbench.py [ADDRESS] [--out FILE]
        ADDRESS defaults to 192.168.1.40, the M700.
@@ -33,6 +34,7 @@ import os
 import re
 import statistics
 import sys
+import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -120,16 +122,17 @@ def main():
     session = K.Session(address)
     session.put(LOAD.encode(), "/Temporary/linuxload.lua")
 
-    if "sandbox-linux" in session.run("ls /Running").decode(errors="replace"):
-        print("linuxbench: Linux is running already - close its window first, so it "
-              "opens with --tell")
-        return 1
+    # Running already, from an earlier run of this - its meter is on, and its
+    # picture is where it last said; otherwise opened, with `--tell`.
+    running = "sandbox-linux" in session.run("ls /Running").decode(errors="replace")
+    started = 0.0 if running else now_on(session)
 
-    started = now_on(session)
-    session.run("open linux --tell")
+    if not running:
+        session.run("open linux --tell")
+
     picture = None
 
-    for _ in range(120):
+    for _ in range(3 if running else 120):
         said = session.run("log linux: picture").decode(errors="replace")
         found = [m for m in re.finditer(r"^\[(\d+\.\d+)\] linux: picture at (\d+),(\d+), (\d+)x(\d+)",
                                         said, re.M) if float(m.group(1)) > started]
@@ -137,6 +140,17 @@ def main():
             picture = tuple(int(v) for v in found[-1].groups()[1:])
             break
         time.sleep(2)
+
+    # Remembered from the run that opened it: the meter's lines push "picture
+    # at" out of the machine's log within minutes.
+    where = os.path.join("build", "linuxbench", "where.txt")
+
+    if picture:
+        os.makedirs(os.path.dirname(where), exist_ok=True)
+        with open(where, "w") as f:
+            f.write("%d %d %d %d\n" % picture)
+    elif running and os.path.exists(where):
+        picture = tuple(int(v) for v in open(where).read().split())
 
     if not picture:
         print("linuxbench: Linux's picture never arrived")
@@ -146,12 +160,13 @@ def main():
 
     # Epiphany up and settled: until a second with no frames, after the
     # session has started.
-    for _ in range(90):
+    for _ in range(0 if running else 90):
         time.sleep(2)
         if "kosmos-session: cage" in session.run("log kosmos-session").decode(errors="replace"):
             break
 
-    time.sleep(20)
+    if not running:
+        time.sleep(20)
 
     viewer = V.Viewer(address)
     bar = (px + pw // 2, py + 22)
@@ -176,18 +191,24 @@ def main():
         procs, cores = load(session, 12)
         time.sleep(4)
         seen = meters_since(session, mark)
-        active = [m for m in seen if m[1] > 0]
-        # Loaded: the last drawing second before two quiet ones.
+        # Loaded: the last second Linux drew in earnest - five frames or
+        # more. A text cursor blinking draws two a second for ever, and the
+        # first version counted those: every page "loaded" when the window
+        # it was measured over ended, the longest gap the blink's 500 ms.
         end = None
-        for i, m in enumerate(seen):
-            if m[1] > 0:
+        for m in seen:
+            if m[1] >= 5:
                 end = m[0]
         took = (end - mark) if end else None
+        active = [m for m in seen if m[1] >= 5]
 
         click(middle)
         mark = now_on(session)
-        wheel(viewer, middle[0], middle[1], 50, 0.1)
-        sprocs, scores = load(session, 1)
+        # The wheel turned while the machine's shares are taken, not after.
+        turning = threading.Thread(target=wheel, args=(viewer, middle[0], middle[1], 50, 0.1))
+        turning.start()
+        sprocs, scores = load(session, 4)
+        turning.join()
         time.sleep(2)
         scrolled = [m for m in meters_since(session, mark) if m[1] > 0]
 
@@ -198,7 +219,7 @@ def main():
             "load_procs": procs, "load_cores": cores,
             "scroll_fps": [m[1] for m in scrolled],
             "scroll_gap": max((m[2] for m in scrolled), default=0),
-            "scroll_procs": sprocs,
+            "scroll_procs": sprocs, "scroll_cores": scores,
         })
 
     click(bar)
@@ -228,6 +249,7 @@ def main():
         lines.append("- while it loaded, each core busy %%: %s" % " ".join(str(c) for c in r["load_cores"]))
         lines.append("- while it scrolled, %% of a core: %s"
                      % ", ".join("%s %d" % p for p in r["scroll_procs"][:6]))
+        lines.append("- while it scrolled, each core busy %%: %s" % " ".join(str(c) for c in r["scroll_cores"]))
         lines.append("")
 
     if keys:

@@ -286,6 +286,9 @@ echo "kosmos-session: cage $app" > /dev/@CONSOLE@
 # gdb installed - its backtrace beside cage's account. (No backquotes in
 # here: this is written by an unquoted here-document, and a quoted path in
 # a comment was run as a command - "/root/.kosmos-gdb: not found".)
+# Removed before it is written: a file rewritten in a shared folder keeps
+# its old tail past the new end (roadmap: vmmfs truncation).
+rm -f /root/Downloads/.kosmos-cage.log
 if [ -e /root/.kosmos-gdb ] && command -v gdb >/dev/null; then
     gdb -batch -ex run -ex "bt full" -ex "info registers" --args /usr/bin/cage -d -- $app > /root/Downloads/.kosmos-cage.log 2>&1
 else
