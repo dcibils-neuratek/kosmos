@@ -26600,8 +26600,8 @@ programs through `launch`; with both, it passes.
 the store's applications, and `x86-scene` failed every time - its window,
 a file in `/Temporary` started through the desktop, closed and left one
 picture held (20 before it, 22 open, 21 after). Refusing only `program`s
-mends the suite; that **a window from a process without the screen keeps a
-picture after it closes** is a leak of its own, on the roadmap.
+mended the suite. It was taken for a leak of its own, and was not - the
+check read its count at the wrong moment (18.652).
 
 ## 18.649 Keys in Linux's applications: `/dev/shm` for cage's keymap
 
@@ -26689,3 +26689,30 @@ in two, with "a thread moves cores" beside it.
 The third, "a processor held off is counted" (ARM, 0.11.250's gate),
 already measures five times over and is left as it is; it is the host
 stopping QEMU inside its window, which the count exists to show.
+
+## 18.652 Not a leak: when `x86-scene` read the pictures held
+
+18.648 recorded that a window from a process without the screen "keeps a
+picture after it closes". **It does not.** Run again with that version and
+the check given twelve seconds rather than two: 20 pictures before the
+window, 22 while open, **20** as the window manager closed it - and 21
+after, which was Tracker's: its sidebar gains a row for a machine it has
+just seen on the network ("diego's Mac mini" - the Mac's own mDNS reaches
+the guest through QEMU's user network) and drops it again, a picture each
+time. Two things in the check made that a failure:
+
+- it took the *last* count after the close, where another window's
+  picture can arrive - now the **fewest**;
+- it started counting at the program's "CLOSER closed", and the window
+  manager says its count as it closes the window, before or after that
+  line as the scheduler has it. Out of the display band the program spoke
+  second, and the count of 20 fell before the point read from. It counts
+  from the manager's own "closed Closer" now.
+
+With both, the version that failed three times in three passes twice in
+two. **Control**: the closer opening a second window it keeps - 20
+before, 24 open, 22 at fewest after, and the check fails.
+
+**Noticed**: the gate's guests see this Mac's network services by mDNS
+(Tracker's sidebar row comes and goes). The suites are not as sealed as
+they look; on the roadmap.

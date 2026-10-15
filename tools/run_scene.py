@@ -151,7 +151,17 @@ def main():
         guest.wait_for("CLOSER closed", "the window that closes")
         # Where the line is, not how much has been read: what follows it
         # may already have arrived with it.
+        #
+        # From the window manager's own "closed", not the program's: the
+        # manager says what it holds as it closes the window, and which of
+        # the two lines comes first is the scheduler's choice - a program
+        # not in the display band said its line after the count, and the
+        # count fell before the point it was read from.
         said["closed"] = guest.seen.find("CLOSER closed", said["before"])
+        closed_by_wm = guest.seen.find("wm: closed Closer", said["before"])
+
+        if 0 <= closed_by_wm < said["closed"]:
+            said["closed"] = closed_by_wm
         deadline = time.time() + 30
 
         while time.time() < deadline:
@@ -211,11 +221,16 @@ def main():
         after = [n for at, n in held if at >= said["closed"]]
         if not before or not during or not after:
             fails.append("the pictures held were not said around the window: %r" % held[-12:])
-        elif not (max(during) > before[-1] and after[-1] == before[-1]):
+        # **The fewest held after**, not the last: another window may take
+        # a picture of its own after this one has gone - Tracker's sidebar
+        # gaining a row for a machine it has just seen on the network did,
+        # 21 after 20, and the check read that as this window's picture
+        # kept (`testing.md` 18.652).
+        elif not (max(during) > before[-1] and min(after) == before[-1]):
             fails.append("a closed window's pictures were not let go: %d held before it, "
-                         "%d while open, %d after" % (before[-1], max(during), after[-1]))
+                         "%d while open, %d at fewest after" % (before[-1], max(during), min(after)))
         else:
-            said["held"] = (before[-1], max(during), after[-1])
+            said["held"] = (before[-1], max(during), min(after))
 
     if "console" not in said:
         fails.append("the window manager was not killed, or the screen not given back")

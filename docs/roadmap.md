@@ -9178,10 +9178,13 @@ the desktop never paints over it, so its last line stayed after it ended.
 composes, a program that is not an application is not handed the screen.
 Left: every program still has it otherwise, and an application has it for
 its size alone - `needs screen` granted only on its declaration, once a
-program that yields at NORMAL is not starved (`init.lua`, beside the grant). Found on the way: a window
-from a process that was not handed the screen keeps one of the window
-server's pictures after it closes (`testing.md` 18.648) - to be found
-before the screen is granted only on its declaration.
+program that yields at NORMAL is not starved (`init.lua`, beside the grant). A window from a process
+not handed the screen seemed to keep a picture after it closed; it did
+not - `x86-scene` read its count at the wrong moment (`testing.md`
+18.652). **Noticed there**: the gate's guests see this Mac's services by
+mDNS through QEMU's user network - Tracker's sidebar gains and loses a
+row for the Mac mid-suite. To decide whether a suite's network should be
+sealed from the host's multicast.
 
 **Noticed, 15 October - the kernel's scheduler checks fail under the
 gate's load.** Three different ones, a gate each, and each passing alone
