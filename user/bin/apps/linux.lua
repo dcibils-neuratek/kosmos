@@ -46,6 +46,9 @@ local L = ui.layout
 local ARGS = tostring(args or "")
 local TELL = ARGS:find("--tell", 1, true) ~= nil
 local CONSOLE = ARGS:find("--console", 1, true) ~= nil
+-- Each key the window is given, said - for following a key from the
+-- keyboard or a VNC viewer to Linux (`testing.md` 18.655).
+local KEYS = ARGS:find("--keys", 1, true) ~= nil
 
 -- `--name value`, or `--name "a value with spaces"`. The name's own `-`
 -- escaped, since in a pattern it is a repetition: `disk-mb` was never found.
@@ -302,10 +305,40 @@ local INPUT_AT, KEYBOARD, TABLET = 1024, 0, 1
 local EV_SYN, EV_KEY, EV_REL, EV_ABS = 0, 1, 2, 3
 local BUTTON = { left = 0x110, right = 0x111, middle = 0x112 }
 
+-- **Held, not lost, when the ring is full** (`testing.md` 18.655): the
+-- ring to Linux holds 128 events and a key is four - its press, its
+-- release and a sync after each - so an address typed at full speed filled
+-- it, and every event after was dropped: on the M700 an address arrived as
+-- one letter, and a Shift released in the lost part stayed held in Linux.
+-- What does not fit waits here, in order, and goes as the ring empties.
+local waiting, first, after = {}, 1, 1     -- events held: [first, after)
+local held = 0                             -- how many have been, said with --keys
+
+local function drain()
+  while first < after do
+    if not (region and id) then
+      waiting, first, after = {}, 1, 1
+      return
+    end
+
+    if not sys.ring_push(region.cap, INPUT_AT, waiting[first]) then return end
+
+    waiting[first] = nil
+    first = first + 1
+  end
+
+  waiting, first, after = {}, 1, 1
+end
+
 local function push(device, type, code, value)
   if region and id then
-    sys.ring_push(region.cap, INPUT_AT,
-                  string.pack("<I2I2I2I2I4I4", device, type, code, 0, value & 0xffffffff, 0))
+    local event = string.pack("<I2I2I2I2I4I4", device, type, code, 0, value & 0xffffffff, 0)
+
+    if first < after or not sys.ring_push(region.cap, INPUT_AT, event) then
+      waiting[after] = event
+      after = after + 1
+      held = held + 1
+    end
   end
 end
 
@@ -517,6 +550,8 @@ while win.running do
   -- time, since a commit flips two surfaces and each must catch up.
   local now = id and frames() or last
 
+  drain()
+
   -- The meter: every frame Linux hands over counted as it is seen, drawn
   -- or not, and a second's worth said.
   do
@@ -663,6 +698,9 @@ while win.running do
       push(TABLET, EV_REL, 8, ev.n or 0)
       push(TABLET, EV_SYN, 0, 0)
     elseif ev.type == "rawkey" and ev.code then
+      if KEYS then
+        print(("linux: key %d %s, %d held so far"):format(ev.code, ev.down and "down" or "up", held))
+      end
       key(ev.code, ev.down)
     end
   end

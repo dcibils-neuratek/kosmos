@@ -276,6 +276,17 @@ def main():
         said = do("cat /Home/Projects/site/out.txt", "\nkosmos> ", 120)
         check("\nmade in alpine\n" in said, "what the guest wrote did not reach /Home: %r" % said[-300:])
 
+        # **Rewritten shorter, and only that** (`testing.md` 18.656): the
+        # file written again with fewer bytes - `>`, which truncates - and
+        # Kosmos reading the new line and nothing after it. A shared folder
+        # kept the old file's tail past the new end: the session's log read
+        # as one run's start and an older run's end.
+        do("sandbox run alpine --share /Home/Projects/site:/work -- echo short > /work/out.txt",
+           "the sandbox is gone", 240)
+        said = do("cat /Home/Projects/site/out.txt", "\nkosmos> ", 120)
+        check("\nshort\n" in said and "alpine" not in said.split("cat /Home/Projects/site/out.txt")[-1],
+              "a file rewritten shorter in a shared folder kept its old tail: %r" % said[-300:])
+
         # **A disk of its own** (`docs/linux.md` L1): made by `sandbox disk
         # new`, zeroes; the guest writing its first sector and one far into
         # it as /dev/vda; a second sandbox reading both back; the bytes in

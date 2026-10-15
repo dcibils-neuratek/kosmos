@@ -683,6 +683,7 @@ class Guest:
             got += chunk
 
         time.sleep(0.02)
+        return got
 
     def mouse_to(self, x, y):
         """Absolute position, in the tablet's own 0..32767 range."""

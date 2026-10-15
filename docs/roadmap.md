@@ -9197,10 +9197,14 @@ right for graphical applications is what these say:
 - **Measured** (`testing.md` 18.654): keys 14 ms to the screen; pages
   fine; scrolling held by the test's own pace. **YouTube plays at 13-14
   frames a second with Linux's one core at 99% and seven idle** - so L6b,
-  more than one processor, is what video wants. Found and to fix: keys
-  dropped when typed quickly (Shift left held in Linux); cage falling over
-  once more while typing; a file rewritten in a shared folder keeping its
-  old tail (`vmmfs`, truncation).
+  more than one processor, is what video wants. **Fixed** (`testing.md`
+  18.655, 18.656): keys dropped when typed quickly - the window's ring to
+  Linux now holds what does not fit; a file rewritten shorter in a shared
+  folder keeping its old tail. **Open**: cage falling over once more
+  while typing, waited for under `gdb` on the M700; letters drawn with
+  dots above them in Epiphany's address bar (a font, to look at). **Diego
+  uses it before L6b** (15 October: "let me use it myself for a bit
+  before adding more processors").
 - After them, agreed the same day ("go ahead with the plan"): kfs's
   unwritten extents, so a Linux disk is made at once, and the audit of
   every fixed number below.

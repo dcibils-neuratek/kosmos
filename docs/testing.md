@@ -26768,3 +26768,52 @@ sooner, was tried (yielding until due) and changed nothing; undone.
   session's log read as this run's start and an older run's end.
 - **"Page Unresponsive"** on YouTube once, with the machine idle - the
   player clicked twice, played and paused; a reload and one click played.
+
+## 18.655 Keys typed fast into Linux: held, not lost
+
+**What the M700 showed**: an address typed into Epiphany at a VNC viewer's
+full speed arrived as one letter, and a Shift released in the lost part
+stayed held in Linux - the next address came out `eWWW>YOUTUB>COM`.
+
+**Followed key by key.** The Linux window says each key it is given with
+`--keys`, and how many it has had to hold. Two things were in the way:
+
+- **The window's ring to Linux was written without looking.** It holds
+  128 events and a key is four - its press, its release and a sync after
+  each - and `sys.ring_push` answers false when it is full; nothing read
+  the answer, so a burst while Linux was slow to take them lost the rest.
+  What does not fit now waits in the window, in order, and goes as the
+  ring empties. On the M700, three fast addresses made it **hold 70
+  events** - each one a key or a release that was being lost - and every
+  key arrived, Shift pressed and released five times each.
+- **Not lost at all, the rest of the way**: `vncd`, the window manager's
+  queue and its replies all carry every event - 86 of 86, 82 of 82 on the
+  M700 - which the first counts seemed to deny because `log FILTER` shows
+  the last forty lines only; the whole log, saved, has them.
+
+**`keys`**, a program: text typed into the window keys go to, through the
+window manager's remote door as `vncd` types a viewer's, every key at
+once - `keys [--to TITLE] [--after MS] TEXT`. The desktop lends its door
+only to a program it launches (`open keys ...`), not to its start-up list.
+
+**Tests.** `arm-sandbox-linuxwin`, 8 checks: `keys`, launched beside Linux,
+types `echo` and 52 letters to Linux's serial line, and all of them come
+back. **Its control does not bite in QEMU** - Linux there takes events as
+fast as they come and the ring never fills, with the queue or without it;
+the M700's 70 held events are the evidence the queue is what fixed it.
+
+## 18.656 A file rewritten shorter in a shared folder
+
+**What it was**: Linux opens a file for `>` without `O_TRUNC` - it keeps
+that back - and then sets its size to 0 with no handle named (`valid`
+0x208: the size and the lock owner). `vmmfs` set the size through a
+handle of its own, written back at once, while the handle Linux was
+writing through kept the file's old bytes - and wrote them all back on
+release, the new line over their start. Followed with a note at each
+step: open (15 bytes loaded), set size 0 (no handle), write 6 at 0,
+release 15. A size set now reaches every handle open on the file.
+
+**Tests.** `arm-sandbox-linux`, 36 checks: a file made `made in alpine`,
+written again `short` by `>`, and Kosmos reading `short` and nothing
+after. **Control**: before the change, Kosmos read `short` and then
+`n alpine`.

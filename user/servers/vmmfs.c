@@ -247,6 +247,28 @@ static struct handle *handle(struct share *s, uint64_t fh)
     return fh >= 1 && fh < s->handles_n && s->handles[fh].used ? &s->handles[fh] : NULL;
 }
 
+/* A file held in memory made `size` long: cut, or grown with zeros. */
+static bool resize(struct handle *h, uint64_t size)
+{
+    uint8_t *bigger;
+
+    if (size == h->size) {
+        return true;
+    }
+
+    if ((bigger = realloc(h->data, (size_t)(size > 0 ? size : 1))) == NULL) {
+        return false;
+    }
+
+    if (size > h->size) {
+        memset(bigger + h->size, 0, (size_t)(size - h->size));
+    }
+
+    h->data = bigger;
+    h->size = (size_t)size;
+    return true;
+}
+
 /* A file whole into memory, for writing. */
 static bool load_whole(struct share *s, struct handle *h, bool empty)
 {
@@ -734,22 +756,28 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
                 return -E_FBIG;
             }
 
-            if (size != h->size) {
-                uint8_t *bigger = realloc(h->data, (size_t)(size > 0 ? size : 1));
-
-                if (bigger == NULL) {
-                    return -E_IO;
-                }
-
-                if (size > h->size) {
-                    memset(bigger + h->size, 0, (size_t)(size - h->size));
-                }
-
-                h->data = bigger;
-                h->size = (size_t)size;
+            if (!resize(h, size)) {
+                return -E_IO;
             }
 
             h->dirty = true;
+
+            /*
+             * **And every handle open on it, at the same size.** Linux opens
+             * a file for `>` without O_TRUNC and then sets its size to 0
+             * with no handle named, so the size went to the file through a
+             * handle of its own while the one Linux was writing through
+             * kept the old bytes - and wrote them all back, the new line
+             * over their start: a session's log read as this run's start
+             * and an older run's end (`testing.md` 18.656).
+             */
+            for (uint64_t i = 1; i < s->handles_n; i++) {
+                struct handle *o = &s->handles[i];
+
+                if (o != h && o->used && o->writing && o->node == nodeid && !resize(o, size)) {
+                    return -E_IO;
+                }
+            }
 
             if (h == &t) {
                 err = write_back(s, h);

@@ -41,6 +41,8 @@ import scratch                                               # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+LETTERS = "qwertyuiopasdfghjklzxcvbnm" * 2
+
 def main():
     image = sys.argv[1]
     folder = scratch.path("linuxwin-home")
@@ -93,7 +95,12 @@ def main():
                  'for _ = 1, 600 do local o = w.windows() or {} '
                  'for _, x in ipairs(o.windows or {}) do if x.title == \\"Linux\\" then '
                  'sys.sleep(200) fs.send(\\"/Running/wm\\", { type = \\"launch\\", program = \\"linux\\", '
-                 'args = \\"--tell --console 640x480 --memory 256\\" }) return end end sys.sleep(50) end')
+                 'args = \\"--tell --console 640x480 --memory 256\\" }) '
+                 # And `keys`, by `launch`: the desktop lends its keyboard only
+                 # to a program it launches, not to its start-up list.
+                 'fs.send(\\"/Running/wm\\", { type = \\"launch\\", program = \\"keys\\", '
+                 'args = \\"--to Linux --after 25000 echo %s >/dev/ttyAMA0\\\\\\\\n\\" }) '
+                 'return end end sys.sleep(50) end' % LETTERS)
         guest.type('fs.write("/Temporary/again.lua", "%s")' % again)
         time.sleep(1)
 
@@ -189,6 +196,21 @@ def main():
             check(after is not None and after > before,
                   "clicks over the picture did not reach the guest's tablet: its "
                   "interrupts %r before, %r after" % (before, after))
+
+            # **A burst of keys, none lost** (`testing.md` 18.655): `keys`,
+            # started beside Linux, typed an echo of 52 letters to Linux's
+            # serial line through the window manager's remote door - as
+            # VNC sends a viewer's keys - every press and release at once,
+            # once Linux's shell is reading: some 300 events, more than the
+            # window's ring to Linux holds. Sent the moment the window
+            # opened, they reached a Linux not yet reading its keyboard,
+            # under the gate's load, and were lost there - not here.
+            # Typed by VNC at full speed on the M700, an address arrived as
+            # one letter and Shift stayed held.
+            burst = until(r"linux: serial: " + LETTERS, 0, 90)
+            check(burst is not None,
+                  "a burst of keys lost some on the way to Linux: %r"
+                  % re.findall(r"linux: serial: [^\n]*(?:echo|qwer)[^\n]*", guest.seen)[-3:])
 
             # Keys: the shell on Linux's screen has them, since the window
             # was clicked into.
