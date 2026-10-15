@@ -26716,3 +26716,21 @@ before, 24 open, 22 at fewest after, and the check fails.
 **Noticed**: the gate's guests see this Mac's network services by mDNS
 (Tracker's sidebar row comes and goes). The suites are not as sealed as
 they look; on the roadmap.
+
+## 18.653 Linux's meter (L6a)
+
+The Linux window counts, each second, the frames Linux hands it, the
+longest wait between two while it draws, and each key's time from being
+handed to Linux to Linux's next frame - in its header, and said with
+`--tell` (`linux: meter fps=N gap=MS keys=MS,MS`). A frame after a key is
+not proof it was the key's - a cursor blinks - so a key's time is an
+upper bound only while nothing else draws. `tools/linuxbench.py` drives
+Epiphany on a Kosmos machine from this Mac by Telnet and VNC - three pages
+loaded, each scrolled for five seconds, twenty letters typed - and writes
+what the meter said, with each process's share and each core's while it
+ran; results in the next entry.
+
+**Tests.** `arm-sandbox-linuxwin`, 7 checks: after `poweroff -f` typed
+into Linux's console, the meter has timed keys (5 to 12 ms there, under
+QEMU) and counted frames. **Control**: no key's time taken - the meter's
+lines say `keys=` and nothing, and the check fails.

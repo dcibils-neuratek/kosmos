@@ -189,10 +189,26 @@ end
 -- into both surfaces, a frame each.
 local whole = 2
 
+--
+-- **How Linux feels, measured** (`docs/linux.md` L6a; Diego, 15 October
+-- 2026: "lets make the measurements and understand if its a real thing").
+-- Each second: the frames Linux handed over, the longest wait between two
+-- of them while it was drawing, and the time from each key handed to Linux
+-- to the next frame it drew - shown in the header, and with `--tell` said.
+-- A frame after a key is not proof it was the key's (a cursor blinks), so
+-- the key's time is an upper bound only when nothing else is drawing.
+--
+local meter = { seen = -1, frames = 0, last_at = nil, gap = 0, key_at = nil,
+                keys = {}, second_at = 0, shown = "" }
+
+local function header_text()
+  return meter.shown ~= "" and (state .. "  ·  " .. meter.shown) or state
+end
+
 local function draw_all()
   local surface = win:surface()
 
-  pk.header(surface, 0, 0, W, "Linux", state)
+  pk.header(surface, 0, 0, W, "Linux", header_text())
 
   surface:fill(0, L.head, W, H - L.head, 0xff101114)
 
@@ -294,6 +310,8 @@ local function push(device, type, code, value)
 end
 
 local function key(code, down)
+  if down and region and id and not meter.key_at then meter.key_at = sys.ticks() end
+
   push(KEYBOARD, EV_KEY, code, down and 1 or 0)
   push(KEYBOARD, EV_SYN, 0, 0)
 end
@@ -499,7 +517,57 @@ while win.running do
   -- time, since a commit flips two surfaces and each must catch up.
   local now = id and frames() or last
 
-  if now ~= last and sys.ticks() - drew_at >= hz // 60 then
+  -- The meter: every frame Linux hands over counted as it is seen, drawn
+  -- or not, and a second's worth said.
+  do
+    local t = sys.ticks()
+
+    if id and meter.seen >= 0 and now > meter.seen then
+      if meter.last_at and t - meter.last_at < hz then
+        meter.gap = math.max(meter.gap, t - meter.last_at)
+      end
+
+      if meter.key_at then
+        if t - meter.key_at < 2 * hz then
+          meter.keys[#meter.keys + 1] = (t - meter.key_at) * 1000 // hz
+        end
+        meter.key_at = nil
+      end
+
+      meter.frames, meter.last_at = meter.frames + (now - meter.seen), t
+    end
+
+    meter.seen = id and now or -1
+
+    if t - meter.second_at >= hz then
+      local keys, shown = meter.keys, ""
+
+      if meter.frames > 0 or #keys > 0 then
+        shown = ("%d fps, gap %d ms"):format(meter.frames, meter.gap * 1000 // hz)
+
+        if #keys > 0 then
+          table.sort(keys)
+          shown = shown .. (", key %d ms"):format(keys[(#keys + 1) // 2])
+        end
+
+        if TELL then
+          print(("linux: meter fps=%d gap=%d keys=%s"):format(meter.frames,
+                meter.gap * 1000 // hz, table.concat(keys, ",")))
+        end
+      end
+
+      if shown ~= meter.shown then
+        meter.shown, whole = shown, 2
+      end
+
+      meter.frames, meter.gap, meter.keys, meter.second_at = 0, 0, {}, t
+    end
+  end
+
+  -- A changed header is the whole window twice, not the header alone: a
+  -- commit flips the two surfaces, and one of the header only would leave
+  -- the other a frame of the picture behind.
+  if region and (now ~= last or whole > 0) and sys.ticks() - drew_at >= hz // 60 then
     if TELL and last <= 0 and now > 0 then
       print(("linux: picture at %d,%d, %dx%d; frames %d")
             :format(win.origin_x, win.origin_y + L.head, SW, SH, now))

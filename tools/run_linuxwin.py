@@ -202,6 +202,14 @@ def main():
             check(until(r"linux: stopped", at, 60) is not None,
                   "poweroff typed into the window did not end Linux: %r" % guest.seen[-800:])
 
+            # **The meter** (`docs/linux.md` L6a): each second, the frames
+            # Linux handed over and each key's time to its next frame - the
+            # keys just typed among them.
+            timed = re.findall(r"linux: meter fps=\d+ gap=\d+ keys=(\d[\d,]*)", guest.seen[at:])
+            check(len(timed) > 0 and re.search(r"linux: meter fps=[1-9]", guest.seen) is not None,
+                  "the window's meter did not time the keys typed, or count frames: %r"
+                  % re.findall(r"linux: meter [^\n]*", guest.seen)[-4:])
+
         os.makedirs(os.path.join("build", "gate"), exist_ok=True)
 
         with open(os.path.join("build", "gate", "arm-sandbox-linuxwin.ppm"), "wb") as f:
