@@ -37,7 +37,7 @@ struct vmm_screen {
     /* The monitor's, after the pixels of each flush are in. */
     volatile uint32_t frames;       /* flushes laid in, counted */
     volatile uint32_t shown;        /* 1 once the guest showed a picture */
-    uint32_t x, y, w, h;            /* the last flush's rectangle */
+    uint32_t x, y, w, h;            /* flushed since `cleared` (below) */
 
     /*
      * **A new size asked for** (`docs/linux.md` L5): the window writes
@@ -48,7 +48,15 @@ struct vmm_screen {
      */
     uint32_t most_width, most_height;
     volatile uint32_t sized;
-    uint32_t reserved;
+
+    /*
+     * **What the window has drawn, up to**: the count of frames it last
+     * took (`docs/linux.md`). `x`, `y`, `w`, `h` are then everything the
+     * guest flushed since - the monitor starts them again when `cleared`
+     * has caught up with `frames`, and adds to them when it has not - so a
+     * window drawing at its own pace draws what changed and nothing more.
+     */
+    volatile uint32_t cleared;
 };
 
 _Static_assert(sizeof(struct vmm_screen) == 56, "fourteen words");

@@ -9162,6 +9162,17 @@ the size but something constant (the window, or `cage`'s layout). **Downloads sh
 `/Home/Downloads` is Linux's `~/Downloads`, read and write, carried into its
 root at `switch_root`.
 
+**Noticed, 15 October - a program draws over the desktop.** `monitor`,
+run at a prompt reached by telnet while the desktop ran on the M700, drew
+its status bar across the bottom of the screen, under the Deskbar and over
+the wallpaper: it is handed the screen (`kosmos: needs screen`) and writes
+the kernel console's two reserved rows, with no compositor between. VNC
+does not see it - it reads the desktop's picture, not the screen - and
+the desktop never paints over it, so its last line stayed after it ended.
+While the window server composes, the screen is its alone: a program
+asking for it is to be told no, or given a window. `gfx.screen()` and
+whatever grants `needs screen` are where to look.
+
 **Proposed, 14 October - every fixed number audited** (Diego: "why do we
 have limits in the first place", "for things like memories, processes,
 threads, etc?"). Two kinds: ceilings derived from the machine's memory,

@@ -26513,3 +26513,55 @@ resized Linux reaches - right of the old width, below the old height. The
 first try sampled near the corner and landed in a 26-pixel strip along the
 picture's foot that is there at any size (on the roadmap). **Control**: the
 session without the follower - the picture stays 640x480 and the check fails.
+
+## 18.647 Linux on the M700: a quiet window, one of it, and its RAM given back
+
+**What the M700 showed** (15 October 2026, a photograph of Processes and
+Monitor): the desktop very slow and the machine off the network, with the
+Linux window's process at 100% of a core in the display band, `vmm` at
+100% of another, 2.9 GB in use and three Linux windows open. Three causes,
+each its own fix:
+
+- **The window drew everything, as often as it was told.** Every flush the
+  guest made - up to 250 a second while Epiphany drew - was a whole 3 MB
+  picture blitted and committed, in the display band, with nothing between
+  passes. It now draws at most sixty times a second, and only what changed:
+  the monitor keeps, in the screen's header, the union of every rectangle
+  flushed since the window last took a frame (`cleared`, the header's last
+  word, which was reserved), and the window draws that and the rectangle it
+  drew before - a commit flips two surfaces, and each has to catch up. The
+  header and the panel are drawn whole twice, once a surface, when they
+  change. A stopped window polls a quarter of a second at a time.
+- **Each start kept the last guest's RAM.** `sandboxes.start` handed the
+  monitor its RAM region and kept its own capability to it for as long as
+  the window ran, so a window that started Linux again - the setup, then
+  the run - held the gigabytes of the one before. It lets go of the RAM,
+  the window and the setup once the monitor has them, and the window lets
+  go of the last screen before it makes a new one.
+- **Linux opened again opened another Linux.** It brings the window already
+  open forward and goes (`wmproto.windows`, `raise`).
+
+And two from the same evening: **Epiphany ended at once** without a D-Bus
+session ("Cannot autolaunch D-Bus"), so the default application is
+`dbus-run-session epiphany` and `dbus` is among the default packages; and
+**virtio-blk wrote at 1.3 MB/s** with the guest's kernel reporting soft
+lockups - Linux split every write into single segments, since the device
+offered no `SEG_MAX`. It offers `SEG_MAX` (62, what a chain holds less
+the header and the status) and `BLK_SIZE` (4096), and Alpine's install
+wrote at 9.6 MB/s on the same stick. The setup's steps say what each is
+doing: the package being installed, *N of M*, and apk's own error when it
+fails.
+
+**Tests.** `arm-sandbox-linuxwin`, 6 checks: a program the desktop starts
+beside Linux waits for its window and asks for Linux again; the second says
+it brought the first forward and ends, and one picture arrives, not two -
+typed at the prompt, the second never started, since the desktop has the
+serial line's keys. **Control**: the check for an open window looking for
+another title - the second Linux starts, and the check fails. The whole
+transcript is kept in `build/gate/arm-sandbox-linuxwin.serial`.
+
+`arm-sandbox-linuxsetup` failed once on the way, and rightly: the filter
+reading apk's progress was rewritten to want `done/total` alone on a line,
+and apk's progress arrives otherwise, so the setup said its packages and
+never a percentage. It takes the last `done/total` anywhere in what is
+left of a line once a package's line is taken out of it.

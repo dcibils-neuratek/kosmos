@@ -64,9 +64,11 @@ do
 end
 
 local MEMORY = math.tointeger(tonumber(option("memory") or "")) or 2048
-local APP = option("app") or "epiphany"
+-- Inside a D-Bus session of its own: Epiphany ends at once without one
+-- ("Cannot autolaunch D-Bus without X11 $DISPLAY", the M700).
+local APP = option("app") or "dbus-run-session epiphany"
 local PACKAGES = option("packages")
-                 or "alpine-base eudev seatd cage wlr-randr mesa-dri-gallium font-dejavu " .. APP
+                 or "alpine-base eudev seatd cage wlr-randr dbus mesa-dri-gallium font-dejavu epiphany"
 local REPO = option("repo") or "http://dl-cdn.alpinelinux.org/alpine/v3.24"
 local DISK_MB = math.tointeger(tonumber(option("disk-mb") or "")) or 4096
 local IMAGE = "/Home/Sandboxes/Images/alpine"
@@ -94,6 +96,21 @@ do
   MOST_H = math.max(SH, screen.height or 1080)
 end
 
+-- **One Linux**: a second opened brings the first forward and goes, rather
+-- than starting a second sandbox of the same name beside it (the M700, 15
+-- October 2026: three Linux windows, each redrawing at once).
+do
+  local open = wmproto.windows()
+
+  for _, w in ipairs(open and open.windows or {}) do
+    if w.title == "Linux" and w.handle then
+      fs.send("/Running/wm", { type = "raise", window = w.handle })
+      tell("already open; brought forward")
+      return
+    end
+  end
+end
+
 local win = ui.window{ title = "Linux", w = W, h = H, x = 80, y = 60,
                        direct = true, header = true, resizable = true }
 
@@ -117,14 +134,19 @@ local made = 0                          -- MB of its disk made so far
 -- over the picture while it is set up, a step a row - its disk, its
 -- filesystem, Alpine and the browser - each with a bar, as the mockup's
 -- setup page draws it (`docs/linux.html`).
+-- Each step says what it is doing now, under its bar (Diego: "why dont the
+-- setting up linux says what is doing in every step").
 local steps = {
-  { name = "Linux's disk", done = 0, of = 1, said = "" },
-  { name = "Its filesystem", done = 0, of = 1, said = "" },
-  { name = "Alpine and the browser", done = 0, of = 100, said = "" },
+  { name = "Linux's disk", done = 0, of = 1, said = "",
+    detail = ("Reserving %d MB on %s"):format(DISK_MB, DISK:match("^(/[^/]+)") or DISK) },
+  { name = "Its filesystem", done = 0, of = 1, said = "",
+    detail = "Waiting for the disk" },
+  { name = "Alpine and the browser", done = 0, of = 100, said = "",
+    detail = "Downloaded from Alpine's servers and installed onto Linux's disk" },
 }
 
 local function panel(surface)
-  local pw, ph = math.min(460, W - 40), 64 + #steps * 54
+  local pw, ph = math.min(480, W - 40), 64 + #steps * 74
   local px, py = (W - pw) // 2, L.head + math.max(20, (H - L.head - ph) // 2)
   local th = gfx.height()
 
@@ -133,7 +155,7 @@ local function panel(surface)
   surface:text(px + 22, py + 18, "Setting up Linux", 0xff1b1d22, 0xfff7f8fa, "heading")
 
   for i, step in ipairs(steps) do
-    local y = py + 52 + (i - 1) * 54
+    local y = py + 52 + (i - 1) * 74
     local whole = step.of > 0 and step.done >= step.of
     local share = step.of > 0 and math.min(1, step.done / step.of) or 0
     local ink = whole and 0xff2f9e5b or 0xff1b1d22
@@ -151,8 +173,21 @@ local function panel(surface)
       surface:fill_round(px + 22, y + th + 8, math.max(8, math.floor((pw - 44) * share)), 8,
                          whole and 0xff2f9e5b or 0xff3b82f6, 4)
     end
+
+    -- What it is doing now, cut to the panel's width.
+    local detail = tostring(step.detail or "")
+
+    while #detail > 3 and gfx.measure(detail) > pw - 44 do
+      detail = detail:sub(1, -5) .. "..."
+    end
+
+    surface:text(px + 22, y + th + 22, detail, 0xff6b7484, 0xfff7f8fa, "ui")
   end
 end
+
+-- Whole frames still owed: a change to the header or the size is drawn
+-- into both surfaces, a frame each.
+local whole = 2
 
 local function draw_all()
   local surface = win:surface()
@@ -174,12 +209,19 @@ end
 
 local function say(text)
   state = text
+  whole = 2
   tell(text)
   draw_all()
 end
 
 -- A sandbox for this stage: `console`, the disk's `setup`, or `run` from it.
 local function start(how)
+  -- The last one's screen given back: a new one is made for this.
+  if s and s.screen_region then
+    picture = nil
+    sys.release(s.screen_region.cap)
+  end
+
   s = sandboxes.parse("", "linux")
   s.image, s.memory = "alpine", MEMORY
   s.screen = ("%dx%d"):format(SW, SH)
@@ -232,7 +274,7 @@ local function start(how)
   region = s.screen_region
   picture = gfx.wrap{ at = region.at + 4096, w = region.width, h = region.height,
                       region = region.cap, offset = 4096 }
-  last = -1
+  last, whole = -1, 2
   return true
 end
 
@@ -361,11 +403,13 @@ local function make_disk()
 
   made = done
   steps[1].done, steps[1].said = made, ("%d of %d MB"):format(made, DISK_MB)
+  steps[1].detail = ("Writing zeroes, so Linux never reads what was on the drive")
   say(("Making Linux's disk, %d of %d MB"):format(made, DISK_MB))
 
   if made >= DISK_MB then
     stage = "setup"
-    steps[2].said = "waiting"
+    steps[1].detail = ("%d MB on %s, made"):format(DISK_MB, DISK:match("^(/[^/]+)") or DISK)
+    steps[2].said, steps[2].detail = "waiting", "Starting Linux to make it"
     if start("setup") then say("Setting up Linux") end
   end
 end
@@ -386,13 +430,22 @@ local function heard_setup(line)
   elseif what == "preparing the disk" then
     -- ext4 being made: the filesystem's step, half way while it runs.
     steps[2].done, steps[2].said = 0.5, "making ext4"
+    steps[2].detail = "Making an ext4 filesystem on Linux's disk"
     say("Making Linux's filesystem")
+  elseif what:match("^package ") then
+    -- The package apk is on: downloaded, then unpacked onto the disk.
+    local name, n, of = what:match("^package (%S+) (%d+) (%d+)")
+
+    if name then
+      steps[2].done, steps[2].said, steps[2].detail = 1, "ext4", "Made"
+      steps[3].detail = ("Downloading and installing %s - %s of %s packages"):format(name, n, of)
+    end
   else
     local percent = math.tointeger(tonumber(what:match("^(%d+)%%$") or ""))
 
     -- Installing begins once the filesystem is made.
     if what:match("^installing") or percent then
-      steps[2].done, steps[2].said = 1, "ext4"
+      steps[2].done, steps[2].said, steps[2].detail = 1, "ext4", "Made"
     end
 
     if percent then
@@ -421,6 +474,8 @@ elseif stage == "disk" and fs.getattr(DISK) then
   if (there.size or 0) >= DISK_MB * 1024 * 1024 then
     made, stage = DISK_MB, "setup"
     steps[1].done, steps[1].of, steps[1].said = DISK_MB, DISK_MB, DISK_MB .. " MB"
+    steps[1].detail = "Made already"
+    steps[2].detail = "Starting Linux to make it"
     if start("setup") then say("Setting up Linux") end
   else
     fs.send(DISK, { type = "delete" })
@@ -431,22 +486,50 @@ end
 wmproto.track(win.handle, true)
 
 local looked, heard, partial = sys.ticks(), 0, ""
+local drew_at, prev = 0, { 0, 0, 0, 0 }
 
 while win.running do
   if stage == "disk" then make_disk() end
 
-  local now = frames()
+  -- **At most sixty times a second, and only what changed** (the M700, 15
+  -- October 2026: the window drew and handed over its whole 3 MB each time
+  -- the guest flushed, up to 250 times a second, in the display band - and
+  -- held its core, and the network with it). The monitor keeps everything
+  -- flushed since `cleared`; the window draws that and what it drew last
+  -- time, since a commit flips two surfaces and each must catch up.
+  local now = id and frames() or last
 
-  -- **The whole window when a frame moved**: two surfaces and a commit
-  -- that flips them, as the Camera's (`camera.lua`).
-  if now ~= last then
+  if now ~= last and sys.ticks() - drew_at >= hz // 60 then
     if TELL and last <= 0 and now > 0 then
       print(("linux: picture at %d,%d, %dx%d; frames %d")
             :format(win.origin_x, win.origin_y + L.head, SW, SH, now))
     end
 
-    last = now
-    draw_all()
+    local head = sys.region_read(region.cap, 16, 24)
+    local _, _, x, y, w, h = string.unpack("<I4I4I4I4I4I4", head)
+
+    sys.region_write(region.cap, 52, string.pack("<I4", now))
+    last, drew_at = now, sys.ticks()
+
+    if whole > 0 or w == 0 then
+      whole = math.max(0, whole - 1)
+      draw_all()
+    else
+      local ux, uy = math.min(x, prev[1]), math.min(y, prev[2])
+      local ur = math.max(x + w, prev[1] + prev[3])
+      local ub = math.max(y + h, prev[2] + prev[4])
+      local surface = win:surface()
+
+      ux, uy = math.max(0, ux), math.max(0, uy)
+      ur, ub = math.min(SW, ur), math.min(SH, ub)
+
+      if ur > ux and ub > uy then
+        surface:blit(picture, ux, uy, ur - ux, ub - uy, ux, L.head + uy)
+        win:commit{ x = ux, y = L.head + uy, w = ur - ux, h = ub - uy }
+      end
+    end
+
+    prev = { x, y, w, h }
   end
 
   -- Twice a second: what Linux said on its serial line - the setup's
@@ -486,7 +569,8 @@ while win.running do
     end
   end
 
-  local reply = wmproto.poll(win.handle, 1)
+  -- Resting when there is nothing to watch: Linux stopped, or failed.
+  local reply = wmproto.poll(win.handle, (id or stage == "disk") and 1 or 25)
 
   if not reply then break end
 
@@ -497,6 +581,7 @@ while win.running do
       win:close()
     elseif ev.type == "resize" and ev.w and ev.h then
       follow(ev.w, ev.h)
+      whole = 2
       draw_all()
     elseif ev.type == "mouse" and not ev.menu and ev.action == "press" and ev.y < L.head then
       win:take_hold(ev.x, ev.y)

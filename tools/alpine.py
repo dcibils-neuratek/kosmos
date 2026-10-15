@@ -195,9 +195,21 @@ if [ -n "$setup" ]; then
     mkdir -p /mnt/etc/apk && cp -r /etc/apk/keys /mnt/etc/apk/
     printf '%s/main\\n%s/community\\n' "$repo" "$repo" > /mnt/etc/apk/repositories
     say "installing $wanted"
-    apk add --root /mnt --initdb --no-cache --progress-fd 3 $wanted 3>&1 >/dev/null 2>&1 \
-        | awk -F/ '{ p = int($1 * 100 / ($2 > 0 ? $2 : 1)); if (p >= shown + 5) { shown = p; print "kosmos-setup: " p "%"; fflush() } }'
-    [ -x /mnt/sbin/apk ] || { say "failed: Alpine did not install"; poweroff -f; }
+    apk add --root /mnt --initdb --no-cache --progress-fd 3 $wanted 3>&1 2>/tmp/apk.err \\
+        | awk '{ s = $0
+                 # "( 5/103) Installing name (version)": the package, and how far.
+                 if (match(s, /\\( *[0-9]+\\/[0-9]+\\) Installing [^ ]+/)) {
+                   t = substr(s, RSTART + 1, RLENGTH - 1); s = substr(s, 1, RSTART - 1) substr(s, RSTART + RLENGTH)
+                   gsub(/^ +/, "", t); split(t, n, /[\\/) ]+/)
+                   print "kosmos-setup: package " n[4] " " n[1] " " n[2]; fflush() }
+                 # What is left: the progress apk writes, "done/total", the last one.
+                 got = ""
+                 while (match(s, /[0-9]+\\/[0-9]+/)) { got = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH) }
+                 if (got != "") { split(got, d, "/"); p = int(d[1] * 100 / (d[2] > 0 ? d[2] : 1))
+                   if (p >= shown + 2) { shown = p; print "kosmos-setup: " p "%"; fflush() } } }'
+    # What apk said last, when it failed: the panel shows it, where
+    # "did not install" alone sent a person to a log they cannot read.
+    [ -x /mnt/sbin/apk ] || { say "failed: Alpine did not install - $(grep -v '^ *$' /tmp/apk.err | tail -n 1)"; poweroff -f; }
     sync; umount /mnt
     say "done"
     poweroff -f

@@ -23,7 +23,9 @@
 #include "vmmblk.h"
 
 #define VIRTIO_ID_BLOCK     2u
+#define BLK_F_SEG_MAX       (1ull << 2)
 #define BLK_F_RO            (1ull << 5)
+#define BLK_F_BLK_SIZE      (1ull << 6)
 #define BLK_F_FLUSH         (1ull << 9)
 
 #define T_IN                0u
@@ -198,15 +200,27 @@ static void notify(struct vdev *d, unsigned q)
     }
 }
 
-/* `struct virtio_blk_config`: its capacity in sectors, and nothing else
- * this offers. */
+/*
+ * `struct virtio_blk_config`: its capacity in sectors; how many segments a
+ * request may have; and a block of 4 KB, the filesystem's own.
+ *
+ * **Without `seg_max` a guest sends one segment a request** - a page - and
+ * Linux wrote to its disk on the M700 at 1.3 MB/s, a round trip to the
+ * stick each 4 KB, with its processor stuck long enough to call it a soft
+ * lockup (15 October 2026). A request may carry as many as a chain holds,
+ * less its header and its status.
+ */
 static void config(struct vdev *d, uint64_t off, uint8_t *out, unsigned size)
 {
-    uint8_t cfg[8];
+    uint8_t cfg[24];
     uint64_t sectors = B.bytes / SECTOR;
+    uint32_t seg_max = VDEV_SEGMENTS - 2, blk_size = 4096;
 
     (void)d;
+    memset(cfg, 0, sizeof cfg);
     memcpy(cfg, &sectors, 8);
+    memcpy(cfg + 12, &seg_max, 4);
+    memcpy(cfg + 20, &blk_size, 4);
 
     for (unsigned k = 0; k < size; k++) {
         out[k] = off + k < sizeof cfg ? cfg[off + k] : 0;
@@ -239,7 +253,7 @@ bool vmmblk_start(long disk_cap, const char *path, bool read_only)
     B.bytes = rp->node.size / SECTOR * SECTOR;
     B.read_only = read_only;
     B.dev.id = VIRTIO_ID_BLOCK;
-    B.dev.features = BLK_F_FLUSH | (read_only ? BLK_F_RO : 0);
+    B.dev.features = BLK_F_FLUSH | BLK_F_SEG_MAX | BLK_F_BLK_SIZE | (read_only ? BLK_F_RO : 0);
     B.dev.queues = 1;
     B.dev.config = config;
     B.dev.notify = notify;

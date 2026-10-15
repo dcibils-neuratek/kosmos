@@ -316,10 +316,25 @@ static uint32_t flush(const uint8_t *q, uint32_t n)
             }
         }
 
-        G.screen->x = sx;
-        G.screen->y = sy;
-        G.screen->w = w;
-        G.screen->h = h;
+        /* Everything flushed since the window last drew: this rectangle
+         * alone when it has drawn them all, or added to what it has not. */
+        if (__atomic_load_n(&G.screen->cleared, __ATOMIC_ACQUIRE) == G.screen->frames
+            || G.screen->w == 0) {
+            G.screen->x = sx;
+            G.screen->y = sy;
+            G.screen->w = w;
+            G.screen->h = h;
+        } else {
+            uint32_t x0 = sx < G.screen->x ? sx : G.screen->x;
+            uint32_t y0 = sy < G.screen->y ? sy : G.screen->y;
+            uint32_t x1 = sx + w > G.screen->x + G.screen->w ? sx + w : G.screen->x + G.screen->w;
+            uint32_t y1 = sy + h > G.screen->y + G.screen->h ? sy + h : G.screen->y + G.screen->h;
+
+            G.screen->x = x0;
+            G.screen->y = y0;
+            G.screen->w = x1 - x0;
+            G.screen->h = y1 - y0;
+        }
         __atomic_store_n(&G.screen->shown, 1u, __ATOMIC_RELEASE);
         __atomic_store_n(&G.screen->frames, G.screen->frames + 1u, __ATOMIC_RELEASE);
     }

@@ -86,8 +86,19 @@ def main():
     try:
         guest.wait_for("kosmos> ", "reached a prompt")
 
+        # A second Linux asked for once the first's window is there, by a
+        # program the desktop starts beside it: the serial line is the
+        # desktop's once it runs, so nothing can be typed at a prompt then.
+        again = ('local w = use(\\"/Kosmos/Libraries/wmproto.lua\\") '
+                 'for _ = 1, 600 do local o = w.windows() or {} '
+                 'for _, x in ipairs(o.windows or {}) do if x.title == \\"Linux\\" then '
+                 'sys.sleep(200) fs.send(\\"/Running/wm\\", { type = \\"launch\\", program = \\"linux\\", '
+                 'args = \\"--tell --console 640x480 --memory 256\\" }) return end end sys.sleep(50) end')
+        guest.type('fs.write("/Temporary/again.lua", "%s")' % again)
+        time.sleep(1)
+
         at = len(guest.seen)
-        guest.type("wm linux:--tell --console 640x480 --memory 256")
+        guest.type("wm linux:--tell --console 640x480 --memory 256,/Temporary/again.lua")
         shown = until(r"linux: picture at (\d+),(\d+), (\d+)x(\d+); frames (\d+)", at, 240)
         check(shown is not None, "the Linux window never said its first frame had arrived: %r"
               % guest.seen[-1500:])
@@ -126,6 +137,20 @@ def main():
                   % (px, py, light, dark))
             check(header is not None and sum(header) >= 120,
                   "the window's header above the picture was not drawn: %r" % (header,))
+
+        # **One Linux**: opened again, the window already there is brought
+        # forward and no second sandbox starts (the M700, 15 October 2026,
+        # three of them at once).
+        if shown:
+            mark = at
+            again = until(r"linux: already open; brought forward", mark, 60)
+            time.sleep(3)
+            guest._read_available()
+            later = guest.seen[at:].replace("\r", "")
+            check(again is not None and later.count("linux: picture at") == 1
+                  and "Linux would not start" not in later,
+                  "Linux opened a second time did not bring the first forward and "
+                  "go: %r" % later[-800:])
 
         if shown:
             width, height, _ = R.pixel_reader(guest.screendump())
@@ -184,6 +209,13 @@ def main():
     finally:
         transcript = guest.seen
         guest.close()
+
+    # The whole of what it said, kept: a failure prints only the tail.
+    os.makedirs(os.path.join("build", "gate"), exist_ok=True)
+
+    with open(os.path.join("build", "gate", "arm-sandbox-linuxwin.serial"), "w",
+              errors="replace") as f:
+        f.write(transcript)
 
     if failed:
         print("FAIL: %d of %d checks on the Linux window:" % (len(failed), checks))

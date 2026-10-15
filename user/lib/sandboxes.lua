@@ -515,7 +515,19 @@ function sandboxes.start(s)
   local id, why = fs.vm_start(ram, setup, #(s.folders or {}) > 0, outgoing or #ports > 0,
                               disk_path, screen and screen.cap)
 
-  if not id then return nil, why end
+  -- **Its RAM let go of here**, started or not: the monitor holds its own
+  -- capabilities to it and its setup, and this one kept every page the
+  -- guest touched for as long as whoever started it ran - a Linux window
+  -- that started Linux again kept the last one's gigabytes (the M700, 15
+  -- October 2026: 2.9 GB in use with no guest running).
+  sys.release(ram)
+  sys.release(window)
+  sys.release(setup)
+
+  if not id then
+    if screen then sys.release(screen.cap) s.screen_region = nil end
+    return nil, why
+  end
 
   -- Found in /Running, or ended first and said why.
   for _ = 1, 200 do
