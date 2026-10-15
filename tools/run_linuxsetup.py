@@ -16,7 +16,10 @@ The Linux window opened with a small application in place of the browser -
   * **Downloads shared**: a file Linux wrote to its `~/Downloads` read back
     from Kosmos's `/Home/Downloads`;
   * **on the screen**: the picture at its middle is foot's own background,
-    not Linux's console.
+    not Linux's console;
+  * **its size following the window's** (L5): the window's corner dragged
+    larger, and foot's background reaching past where the old picture
+    ended.
 
 **`--browser`**: the same with Epiphany, the browser itself (decision 4) -
 its 277 packages, a 2 GB disk, waits four times as long, and the picture
@@ -46,8 +49,8 @@ BROWSER = "--browser" in sys.argv
 # foot, after a file written to Linux's Downloads - Kosmos's own, shared.
 APP = ("dbus-run-session epiphany" if BROWSER
        else "sh -c 'echo made in Linux > /root/Downloads/from-linux.txt; exec foot'")
-PACKAGES = ("alpine-base eudev seatd cage mesa-dri-gallium font-dejavu dbus epiphany"
-            if BROWSER else "alpine-base eudev seatd cage font-dejavu foot")
+PACKAGES = ("alpine-base eudev seatd cage wlr-randr mesa-dri-gallium font-dejavu dbus epiphany"
+            if BROWSER else "alpine-base eudev seatd cage wlr-randr font-dejavu foot")
 DISK_MB, HOME_MB, SLOW = (2048, 3072, 4) if BROWSER else (512, 1024, 1)
 
 
@@ -169,6 +172,55 @@ def main():
             check(middle is not None and all(abs(c - 0x24) <= 4 for c in middle),
                   "the picture's middle was not foot's background, #242424: %r" % (middle,))
 
+        # **Its size following the window's** (L5): the window's corner
+        # dragged 200 right and 150 down; the window says its picture's new
+        # size, and foot's background reaches where the old picture ended -
+        # Linux told its display changed, and cage taking the new size.
+        if not BROWSER and shown:
+            px, py, pw, ph = (int(v) for v in shown.groups())
+            width, height, pixel = R.pixel_reader(guest.screendump())
+            corner_x, corner_y = px + pw - 6, py + ph - 6
+
+            def to(x, y):
+                guest.mouse_to(*R._to_tablet(x, y, width, height))
+                time.sleep(0.15)
+
+            mark = len(guest.seen)
+            to(corner_x, corner_y)
+            guest.mouse_button(True)
+            time.sleep(0.2)
+
+            for step in range(1, 11):
+                to(corner_x + 20 * step, corner_y + 15 * step)
+
+            guest.mouse_button(False)
+            sized = until(r"linux: size (\d+)x(\d+)", mark, 30)
+            check(sized is not None and int(sized.group(1)) > pw and int(sized.group(2)) > ph,
+                  "the window did not take a larger picture when its corner was dragged: %r"
+                  % (sized.group(0) if sized else guest.seen[-600:]))
+
+            beyond = None
+            deadline = time.monotonic() + 90
+
+            # Two points only a resized Linux reaches: right of the old
+            # width, and below the old height - each well inside the new
+            # picture, clear of the strip along its foot (roadmap).
+            def foot_bg(p):
+                return p is not None and all(abs(c - 0x24) <= 4 for c in p)
+
+            while sized and time.monotonic() < deadline:
+                width, height, pixel = R.pixel_reader(guest.screendump())
+                beyond = (pixel(px + pw + 60, py + 100), pixel(px + 100, py + ph + 60))
+
+                if all(foot_bg(p) for p in beyond):
+                    break
+
+                time.sleep(3)
+
+            check(beyond is not None and all(foot_bg(p) for p in beyond),
+                  "Linux did not fill the larger picture - foot's background past where "
+                  "the old one ended: %r" % (beyond,))
+
         os.makedirs(os.path.join("build", "gate"), exist_ok=True)
 
         with open(os.path.join("build", "gate", "arm-sandbox-linux%s.ppm" % ("browser" if BROWSER else "setup")), "wb") as f:
@@ -192,6 +244,13 @@ def main():
         found = open(got).read().strip() if os.path.exists(got) else None
         check(found == "made in Linux",
               "a file Linux wrote to its Downloads was not in Kosmos's: %r" % (found,))
+
+        # What the guest's size follower said, kept beside the run's serial
+        # line - its only witness, since udev keeps a rule's output.
+        sizelog = os.path.join("build", "gate", "arm-sandbox-linuxsetup.size.log")
+        subprocess.run([os.path.join("build", "host", "lua"), os.path.join(HERE, "kfs.lua"),
+                        "get", disk, "/Home/Downloads/.kosmos-size.log", sizelog],
+                       capture_output=True)
 
     # The whole of what it said, kept: the setup's lines are long gone from
     # the tail a failure prints.

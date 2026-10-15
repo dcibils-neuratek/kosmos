@@ -185,7 +185,7 @@ def main():
     subprocess.run([sys.executable, os.path.join(ROOT, "tools", "alpine.py"), "--arch", "x86_64",
                     alpine], check=True, stdout=subprocess.DEVNULL)
     made.append(make(dict(common, into="/Home/Sandboxes/Images/alpine", **ALPINE), "alpine",
-                     [(os.path.join(alpine, f), f) for f in ("Image", "initramfs")]))
+                     [(os.path.join(alpine, f), f) for f in ("Image", "initramfs", "modloop")]))
 
     with open(os.path.join(OUT, "index.txt"), "w") as f:
         f.write("# The packages, a paragraph each; tools/packages.py.\n")

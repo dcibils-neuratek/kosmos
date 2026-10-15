@@ -9156,9 +9156,22 @@ check outside the gate, then the M700), Linux in the Deskbar, Downloads
 shared. Noticed: Alpine's `/init` asks `grep -q kosmos.<word>` for the
 other words too (`screen`, `disk`, `net`, `share`), which a longer word
 with the same start would match - to be read exactly, as `kosmos.root` is;
-and a 26-pixel strip under `foot` in `cage`, to look at with L5's sizes. **Downloads shared**: Kosmos's
+and a 26-pixel strip under `foot` in `cage`, to look at with L5's sizes -
+still there after L5's resize, the same 26 pixels at 832x630, so it is not
+the size but something constant (the window, or `cage`'s layout). **Downloads shared**: Kosmos's
 `/Home/Downloads` is Linux's `~/Downloads`, read and write, carried into its
 root at `switch_root`.
+
+**Proposed, 14 October - every fixed number audited** (Diego: "why do we
+have limits in the first place", "for things like memories, processes,
+threads, etc?"). Two kinds: ceilings derived from the machine's memory,
+which are the point - no program makes the kernel spend all of it - and
+numbers that fell out of how something was built, which are defects: the
+region index's gigabyte (`testing.md` 18.645), ARM's processes at 2 GB
+(18.641). Proposed: Nebula and the servers read for every compiled-in
+number - a sandbox's four folders and four ports among the known - each
+removed, or derived from the machine, or kept with its reason written
+beside it. For Diego to agree.
 
 **Found, 14 October - three ARM suites broken while ARM was paused**
 (since 8 October): `arm-queries` (the themes' folder listing), `arm-media`

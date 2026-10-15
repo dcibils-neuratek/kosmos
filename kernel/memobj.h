@@ -93,13 +93,17 @@
  * Lua value, and at 4563 pages it was refused as "no room". Then 32 MB, which
  * is where the sixteen index pointers a descriptor carried ran out.
  *
- * Now a descriptor carries **one directory page**, itself a page of pointers
- * to index pages, so the pages a region can hold is 512 index pages of 512
- * pages each: a gigabyte. `memobj_pages_max` is that, or half the machine's
- * memory if that is less - a region larger than half of RAM is a request no
- * machine can serve and a number no caller should have to know.
+ * Then a descriptor carried **one directory page**, a page of pointers to
+ * index pages: 512 index pages of 512 pages each, a gigabyte. That held until
+ * a Linux sandbox was given two (14 October 2026, `docs/linux.md`: its RAM is
+ * one region), and was refused as "no room for 2048 MB of RAM" on a machine
+ * with eight.
  *
- * A descriptor is smaller for it: one pointer where there were sixteen.
+ * Now a descriptor carries **one top page** of up to 512 directory pages,
+ * so a region can hold 512 GB - more than any machine here has, which is the
+ * point: `memobj_pages_max` is half the machine's memory, and the index is
+ * never what refuses. A directory page is taken only when a region reaches
+ * it, so a small region costs what it did, a top page more.
  */
 size_t memobj_pages_max(void);
 
@@ -113,14 +117,15 @@ struct memobj {
     unsigned refs;                  /* how many capability slots hold it */
 
     /*
-     * The pages, indexed rather than contiguous, through a directory:
-     * `dir` is a page from the allocator holding up to 512 pointers to index
-     * pages, each of which holds up to 512 page pointers - so page `i` of the
-     * region is `dir[i / 512][i % 512]`. Use `memobj_page` rather than
-     * reaching in, so the arithmetic lives in one place.
+     * The pages, indexed rather than contiguous, three levels down: `top`
+     * is a page holding up to 512 pointers to directory pages, each holding
+     * up to 512 pointers to index pages, each holding up to 512 page
+     * pointers. Use `memobj_page` and `memobj_fill` rather than reaching
+     * in, so the arithmetic lives in one place (`memobj.c`, `index_page`).
      */
-    void  ***dir;
-    size_t   indexes;               /* index pages in use, under `dir` */
+    void ****top;
+    size_t   dirs;                  /* directory pages in use, under `top` */
+    size_t   indexes;               /* index pages in use, under those */
     size_t   pages;
 
     /*

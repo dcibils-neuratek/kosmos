@@ -615,6 +615,7 @@ static bool deliver(struct vcpu_regs *r)
         any = true;
     }
 
+    vmmgpu_pump();
     vmminput_pump();
 
     for (unsigned i = 0; i < 2; i++) {

@@ -210,9 +210,18 @@ if verb == "disk" then
     sys.exit(1)
   end
 
+  -- `--report FILE`: how far it has got, `MADE OF` in megabytes, written
+  -- there as it grows - for a window that starts this in a process of its
+  -- own and draws a bar, rather than waiting on the drive itself (the Linux
+  -- window, `docs/linux.md` L4). `failed WHY` when it could not.
+  local report = options.report ~= true and options.report or nil
+
   local ok, why = sandboxes.make_disk(path, mb, function(made, of)
     say(("\rsandbox: %s, %d of %d MB"):format(path, made, of))
+    if report then fs.write(report, ("%d %d\n"):format(made, of)) end
   end)
+
+  if report and not ok then fs.write(report, "failed " .. tostring(why) .. "\n") end
 
   print(ok and ("\nsandbox: %s made, %d MB - --disk %s gives it to a sandbox"):format(path, mb, path)
            or ("\nsandbox: " .. tostring(why)))

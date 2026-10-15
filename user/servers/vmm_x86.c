@@ -470,6 +470,7 @@ static void deliver(struct vcpu_regs *r)
     x86_pic_level(&pic, X86_NET_IRQ, vmm_networked() && vmmnet_raised());
     x86_pic_level(&pic, X86_BLK_IRQ, vmmblk_raised());
     x86_pic_level(&pic, X86_GPU_IRQ, vmmgpu_raised());
+    vmmgpu_pump();
     vmminput_pump();
 
     for (unsigned i = 0; i < 2; i++) {

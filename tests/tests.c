@@ -5803,6 +5803,51 @@ static bool test_a_region_larger_than_the_old_cap(void)
 }
 
 /*
+ * **A region past a gigabyte** (14 October 2026, `docs/linux.md`): a Linux
+ * sandbox's 2 GB of RAM is one region, and a region's index stopped at 512 by
+ * 512 pages - "no room for 2048 MB of RAM" on an eight-gigabyte M700. One
+ * given on touch, so it costs no memory until a page is touched: made 1 GB
+ * and 1 MB long, a page touched past the old end and read back, its last
+ * page there, and everything given back. A machine whose half is under a
+ * gigabyte cannot be asked, and says so by passing.
+ */
+static bool test_a_region_past_a_gigabyte(void)
+{
+    const size_t old_most = MEMOBJ_PER_INDEX * MEMOBJ_PER_INDEX;
+    const size_t pages = old_most + 256;
+    size_t before = pmm_free_pages();
+    struct memobj *m;
+    unsigned char *past;
+    bool reached;
+
+    /* By the machine's memory, not by `memobj_pages_max`: that was the cap
+     * itself, and asked it a gigabyte's index passed by skipping. */
+    if (pmm_total_pages() / 2 < pages) {
+        return true;                    /* this machine is too small to say */
+    }
+
+    m = memobj_create(pages, false, true);
+
+    if (m == NULL) {
+        return false;
+    }
+
+    past = memobj_fill(m, old_most + 7);
+    reached = past != NULL && memobj_page(m, old_most + 7) == past
+           && memobj_fill(m, pages - 1) != NULL
+           && memobj_page(m, pages) == NULL;
+
+    if (past != NULL) {
+        past[0] = 0x5a;
+        reached = reached && ((unsigned char *)memobj_page(m, old_most + 7))[0] == 0x5a;
+    }
+
+    memobj_unref(m);
+
+    return reached && pmm_free_pages() == before;
+}
+
+/*
  * A region a device could walk, and the refusal that protects one.
  *
  * A USB controller reads its command ring itself, in physical addresses,
@@ -11069,6 +11114,7 @@ static const struct test tests[] = {
     { "con: a write carries no capability",    test_console_write_carries_no_capability },
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
     { "mem: a region larger than the old cap",  test_a_region_larger_than_the_old_cap },
+    { "mem: a region past a gigabyte",          test_a_region_past_a_gigabyte },
     { "mem: a region's count holds on every core", test_a_regions_count_holds_on_every_core },
     { "mem: a region given on touch",          test_a_region_given_on_touch },
     { "mem: a reference is taken only for the region it names", test_a_reference_is_taken_only_for_the_region_it_names },

@@ -77,6 +77,9 @@ static struct {
     uint32_t           scan_x, scan_y;  /* where in it the display starts */
     uint8_t           *req;
     uint32_t           req_room;
+    uint32_t           width, height;   /* the display's, as the guest is told */
+    uint32_t           sized;           /* the window's count of sizes, as last seen */
+    uint32_t           events;          /* `events_read`: 1, the display changed */
 } G;
 
 static uint32_t get32(const uint8_t *p) { uint32_t v; memcpy(&v, p, 4); return v; }
@@ -292,7 +295,7 @@ static uint32_t flush(const uint8_t *q, uint32_t n)
     {
         uint32_t sx = x - G.scan_x, sy = y - G.scan_y;
 
-        if (!clip(&sx, &sy, &w, &h, G.screen->width, G.screen->height)) {
+        if (!clip(&sx, &sy, &w, &h, G.width, G.height)) {
             return RESP_OK_NODATA;
         }
 
@@ -300,7 +303,7 @@ static uint32_t flush(const uint8_t *q, uint32_t n)
 
         for (uint32_t row = 0; row < h; row++) {
             const uint32_t *from = r->pixels + (size_t)(y + row) * r->width + x;
-            uint32_t *to = G.out + (size_t)(sy + row) * G.screen->width + sx;
+            uint32_t *to = G.out + (size_t)(sy + row) * G.width + sx;
 
             for (uint32_t i = 0; i < w; i++) {
                 uint32_t p = from[i];
@@ -362,8 +365,8 @@ static void notify(struct vdev *d, unsigned qi)
         switch (type) {
         case CMD_GET_DISPLAY_INFO:
             answer = RESP_OK_DISPLAY_INFO;
-            put32(reply + HDR + 8, G.screen->width);
-            put32(reply + HDR + 12, G.screen->height);
+            put32(reply + HDR + 8, G.width);
+            put32(reply + HDR + 12, G.height);
             put32(reply + HDR + 16, 1);         /* enabled */
             written = HDR + SCANOUTS_MOST * 24;
             break;
@@ -411,18 +414,54 @@ static void notify(struct vdev *d, unsigned qi)
     }
 }
 
-/* `struct virtio_gpu_config`: no events, one scanout, no 3D capsets. */
+/* `struct virtio_gpu_config`: its events, one scanout, no 3D capsets. */
 static void config(struct vdev *d, uint64_t off, uint8_t *out, unsigned size)
 {
     uint8_t cfg[16];
 
     (void)d;
     memset(cfg, 0, sizeof cfg);
+    put32(cfg, G.events);
     put32(cfg + 8, 1);
 
     for (unsigned k = 0; k < size; k++) {
         out[k] = off + k < sizeof cfg ? cfg[off + k] : 0;
     }
+}
+
+/* `events_clear`: the guest has read what changed. */
+static void config_write(struct vdev *d, uint64_t off, const uint8_t *in, unsigned size)
+{
+    (void)d;
+
+    if (off == 4 && size == 4) {
+        G.events &= ~get32(in);
+    }
+}
+
+void vmmgpu_pump(void)
+{
+    uint32_t sized, w, h;
+
+    if (!G.on || (sized = __atomic_load_n(&G.screen->sized, __ATOMIC_ACQUIRE)) == G.sized) {
+        return;
+    }
+
+    G.sized = sized;
+    w = G.screen->width;
+    h = G.screen->height;
+
+    /* A size the region holds, or the one it had: a window's word is not
+     * room. */
+    if (w == 0 || w % 16 != 0 || h == 0 || w > G.screen->most_width
+        || h > G.screen->most_height || (w == G.width && h == G.height)) {
+        return;
+    }
+
+    G.width = w;
+    G.height = h;
+    G.events |= 1u;                         /* VIRTIO_GPU_EVENT_DISPLAY */
+    vdev_config_changed(&G.dev);
 }
 
 bool vmmgpu_start(long screen_cap)
@@ -446,6 +485,19 @@ bool vmmgpu_start(long screen_cap)
     }
 
     G.screen->pitch = G.screen->width * 4;
+    G.width = G.screen->width;
+    G.height = G.screen->height;
+
+    /* The largest it may become: what the region was made for, and no
+     * less than what it is. */
+    if (G.screen->most_width < G.width || G.screen->most_height < G.height
+        || (uint64_t)pages * 4096 < VMM_SCREEN_HEAD
+                                    + (uint64_t)G.screen->most_width * G.screen->most_height * 4) {
+        G.screen->most_width = G.width;
+        G.screen->most_height = G.height;
+    }
+
+    G.sized = G.screen->sized;
 
     /* The input ring's shape, said for `sys.ring_push` (`vmmscreen.h`). */
     {
@@ -457,6 +509,7 @@ bool vmmgpu_start(long screen_cap)
     G.dev.id = VIRTIO_ID_GPU;
     G.dev.queues = 2;
     G.dev.config = config;
+    G.dev.config_write = config_write;
     G.dev.notify = notify;
     G.on = true;
     return true;

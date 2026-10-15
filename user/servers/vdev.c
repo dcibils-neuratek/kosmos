@@ -156,7 +156,7 @@ bool vdev_mmio(struct vdev *d, uint64_t off, unsigned size, bool write, uint64_t
     case QUEUE_READY:   *value = q->ready ? 1 : 0; break;
     case INT_STATUS:    *value = d->int_status; break;
     case STATUS:        *value = d->status; break;
-    case CONFIG_GEN:    *value = 0; break;
+    case CONFIG_GEN:    *value = d->config_gen; break;
     /*
      * **No shared memory region**, which virtio-mmio says as a length of
      * all ones (VIRTIO 1.2 4.2.2, SHMLen): a driver asks every device, and
@@ -286,4 +286,10 @@ uint32_t vdev_gather(const struct vdev_chain *c, uint8_t *to, uint32_t room)
 bool vdev_raised(const struct vdev *d)
 {
     return d->int_status != 0;
+}
+
+void vdev_config_changed(struct vdev *d)
+{
+    d->config_gen++;
+    d->int_status |= 2u;                    /* VIRTIO_MMIO_INT_CONFIG */
 }

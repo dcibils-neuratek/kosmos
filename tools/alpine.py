@@ -228,6 +228,28 @@ if [ -e /sys/class/net/eth0 ]; then
     ip link set eth0 up && ip addr add 10.0.3.15/24 dev eth0 && ip route add default via 10.0.3.2
     echo "nameserver 10.0.3.3" > /etc/resolv.conf
 fi
+# Its size following the window's (docs/linux.md L5): the display changed is
+# a new preferred mode on its connector, and cage keeps the mode it began
+# with - so a loop beside it, with cage's own environment, sets each new
+# preferred mode through wlr-randr. A udev rule ran it in an environment of
+# udev's, where wlr-randr said nothing and did nothing.
+cat > /kosmos/size <<'SIZE'
+#!/bin/sh
+last=
+while sleep 0.5; do
+    for c in /sys/class/drm/card0-*; do
+        [ "\\$(cat \\$c/status 2>/dev/null)" = connected ] || continue
+        mode=\\$(head -n 1 \\$c/modes 2>/dev/null)
+        [ -n "\\$mode" ] && [ "\\$mode" != "\\$last" ] || continue
+        if [ -n "\\$last" ]; then
+            echo "kosmos-session: size \\$mode"
+            wlr-randr --output \\${c##*/card0-} --custom-mode \\$mode 2>&1
+        fi
+        last=\\$mode
+    done
+done
+SIZE
+chmod 755 /kosmos/size
 udevd --daemon && udevadm trigger && udevadm settle
 seatd -g video >/dev/null 2>&1 &
 export XDG_RUNTIME_DIR=/run/xdg HOME=/root WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1
@@ -239,6 +261,7 @@ if command -v glib-compile-schemas >/dev/null && [ -d /usr/share/glib-2.0/schema
 fi
 sleep 1
 echo "kosmos-session: cage $app" > /dev/@CONSOLE@
+/kosmos/size > /dev/@CONSOLE@ 2>&1 &
 cage -- $app > /dev/@CONSOLE@ 2>&1
 echo "kosmos-session: ended" > /dev/@CONSOLE@
 poweroff -f

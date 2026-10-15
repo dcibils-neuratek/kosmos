@@ -26442,3 +26442,74 @@ word alone and lost the others, `/Home`'s among them. The test's tenth
 check is that stick - no command line on it - refused, nothing written;
 control: the guard off, and a line written.
 
+
+## 18.644 Linux on the M700: its screen and keys under VT-x
+
+0.11.248 netbooted on the M700 with `opt/kosmos/sandboxes=4F8760C3-...` -
+the stick's new partition, made by `tools/sandboxes_drive.py` - and the x86
+Alpine package with its modloop installed from the Mac. `/Sandboxes` was
+found blank and formatted on the first boot, and Tracker's sidebar lists it.
+`open linux --console --tell 1024x768 --memory 512`: Alpine's console in the
+Linux window, the guest's virtio screen (line 14), keyboard (15) and tablet
+(6) all counting interrupts - **the x86 devices' first run anywhere**, since
+QEMU has no VT-x. **And Diego, at the M700: "typing works in the linux
+window".**
+
+## 18.645 A region past a gigabyte: a third level in its index
+
+Diego, on the M700, opening Linux with its 2 GB: "the linux window says no
+room for 2048 mb ram". A region's index was a directory page of 512 index
+pages of 512 pages - a gigabyte, the shape of the structure rather than a
+decision - and a sandbox's RAM is one region. Now a top page holds up to 512
+directory pages, each taken only when a region reaches it: 512 GB, so the
+ceiling is `memobj_pages_max`'s other half - half the machine's memory -
+and the index never refuses. Every reach into it goes through
+`index_slot` and `page_slot`, in `memobj.c`, once.
+
+Diego asked why there are limits at all. The pools' ceilings - threads,
+processes, endpoints, regions - are derived from the machine's memory on
+purpose, so no program can make the kernel spend all of it; a number that
+falls out of how a thing was built, as this one did, is a defect.
+
+**Test.** `mem: a region past a gigabyte`, in the guest suite: a region
+given on touch, 1 GB and 1 MB long, a page past the old end filled, written
+and read back, its last page there, everything given back. It asks the
+machine's memory whether it can be asked - the first version asked
+`memobj_pages_max`, which was the cap itself, and passed by skipping. The
+suites' 512 MB machine skips it; run at 4 GB: **control**, the old index -
+`not ok`; the new - `ok`, 211 of 211.
+
+## 18.646 Linux's size following its window; its setup shown; Disk Monitor's sticks (L5, L4)
+
+**Its size, following the window's** (`docs/linux.md` L5). The Linux window
+is resizable: its region is made for the desktop's size (`most_width`,
+`most_height` in `vmmscreen.h`), and a new size is written into its header
+and counted in `sized`; the monitor sees the count move, tells the guest by
+virtio-gpu's display event and a configuration-change interrupt (`vdev.c`
+learned to raise one, and `config_gen`), and answers its next display query
+with the new size. `cage` keeps the mode it began with, so the session runs
+a loop beside it that sets each new preferred mode through `wlr-randr`. A
+`udev` rule did that first and was useless: under udev, `wlr-randr` printed
+nothing and did nothing.
+
+**Its setup, shown** (Diego, at the M700: "a progress bar showing the disk
+creation process", "a modal window", "from the linux app", "to show the
+progress of the filesystem being created"): a panel over the picture, three
+steps each with a bar - Linux's disk, its filesystem, Alpine and the browser.
+The disk is made by `sandbox disk new ... --report FILE` in a process of its
+own, a 64 MB step at a time; the window reads the report four times a
+second. It had made the disk itself, and a drive writing zeroes answers
+nobody else, so the window dropped the pointer for a quarter of a minute a
+step on the M700's stick (about 8 MB/s - the stick is the bound).
+
+**Disk Monitor's sticks**: a stick's volume was read at `/Drives/<name>`,
+whose server counts nothing, so `/Sandboxes` - its server had written 2.2
+GB - showed no activity (Diego: "i dont see activity in the usb drive").
+It asks `drivelist.path` where each is served now.
+
+**Tests.** `arm-sandbox-linuxsetup`, 8 checks now: the window's corner
+dragged, its picture 832x630, and foot's background at two points only a
+resized Linux reaches - right of the old width, below the old height. The
+first try sampled near the corner and landed in a 26-pixel strip along the
+picture's foot that is there at any size (on the roadmap). **Control**: the
+session without the follower - the picture stays 640x480 and the check fails.

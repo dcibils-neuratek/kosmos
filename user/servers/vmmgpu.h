@@ -19,6 +19,10 @@ bool vmmgpu_start(long screen_cap);
 
 bool vmmgpu_on(void);
 
+/* A new size the window asked for, told to the guest as its display
+ * changing (`docs/linux.md` L5). Called whenever the monitor looks. */
+void vmmgpu_pump(void);
+
 /* The screen region's first page, where its input ring is (`vmminput.h`). */
 void *vmmgpu_page(void);
 bool vmmgpu_mmio(uint64_t off, unsigned size, bool write, uint64_t *value);

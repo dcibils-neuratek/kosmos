@@ -38,9 +38,20 @@ struct vmm_screen {
     volatile uint32_t frames;       /* flushes laid in, counted */
     volatile uint32_t shown;        /* 1 once the guest showed a picture */
     uint32_t x, y, w, h;            /* the last flush's rectangle */
+
+    /*
+     * **A new size asked for** (`docs/linux.md` L5): the window writes
+     * `width`, `height` and `pitch`, then counts it in `sized`; the monitor,
+     * seeing the count move, tells the guest its display changed. The
+     * region is made for the largest - `most_width` by `most_height`, the
+     * desktop's - so a size is never more room than there is.
+     */
+    uint32_t most_width, most_height;
+    volatile uint32_t sized;
+    uint32_t reserved;
 };
 
-_Static_assert(sizeof(struct vmm_screen) == 40, "ten words");
+_Static_assert(sizeof(struct vmm_screen) == 56, "fourteen words");
 
 /*
  * **The keyboard and the pointer, the other way** (`docs/linux.md` L3): a

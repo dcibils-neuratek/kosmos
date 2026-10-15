@@ -86,9 +86,15 @@ local function find_drives()
       if drivelist.is_home(v) then
         home_on = d
       elseif drivelist.opens(v) then
-        out[#out + 1] = { key = "/Drives/" .. v.name, path = "/Drives/" .. v.name,
-                          name = d.name, kind = "usb",
-                          sub = "USB stick \u{b7} /Drives/" .. v.name }
+        -- Where the volume is served, from the one library that knows:
+        -- `/Sandboxes` for its partition, which a disk server counts - it
+        -- was read at `/Drives/<name>`, whose server counts nothing, and
+        -- Linux's disk being written showed as no activity at all (Diego on
+        -- the M700, 14 October 2026: "i dont see activity in the usb drive").
+        local path = drivelist.path(v)
+
+        out[#out + 1] = { key = path, path = path, name = d.name, kind = "usb",
+                          sub = "USB stick \u{b7} " .. path }
       end
     end
   end

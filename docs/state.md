@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-14, evening (0.11.248; pushed)
+Last updated: 2026-10-14, evening (0.11.249; Linux on the M700, L5 size)
 
 ---
 
@@ -96,6 +96,13 @@ Last updated: 2026-10-14, evening (0.11.248; pushed)
   `run_linuxsetup.py --browser`, outside the gate. **Next**: the M700 -
   Diego adds `/Sandboxes` to its stick (`tools/sandboxes_drive.py`), then
   the x86 guest's screen and input tried there for the first time.
+- **0.11.249**: a region past a gigabyte (18.645: a third level in its
+  index; Linux's 2 GB was refused on the M700); Linux's size following its
+  window (L5, 18.646: virtio-gpu's display event, a `wlr-randr` follower
+  beside `cage`); its setup in a panel of progress bars, the disk made in a
+  process of its own; Disk Monitor reading `/Sandboxes` where it is served.
+  On the M700 (18.644): `/Sandboxes` on the stick, Linux's console in a
+  window under VT-x, Diego: "typing works in the linux window".
 - **ARM processes moved to 256 GB** (0.11.246, 18.641): more than a gigabyte
   of RAM ran into them; found wanting a 2 GB machine for Epiphany. `make
   test ARM=1` then: three ARM suites broken while ARM was paused

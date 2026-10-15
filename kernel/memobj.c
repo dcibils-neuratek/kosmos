@@ -33,7 +33,7 @@ static struct pool objects;
  */
 size_t memobj_pages_max(void)
 {
-    size_t addressable = MEMOBJ_PER_INDEX * MEMOBJ_PER_INDEX;
+    size_t addressable = MEMOBJ_PER_INDEX * MEMOBJ_PER_INDEX * MEMOBJ_PER_INDEX;
     size_t half = pmm_total_pages() / 2;
 
     return half < addressable ? half : addressable;
@@ -60,13 +60,25 @@ void memobj_init(void)
               MEMOBJ_BOOT_SLOTS, memobj_fresh);
 }
 
+/* Where index page `k` of a region is kept: its directory's slot for it. */
+static void ***index_slot(const struct memobj *m, size_t k)
+{
+    return &m->top[k / MEMOBJ_PER_INDEX][k % MEMOBJ_PER_INDEX];
+}
+
+/* Where page `i` of a region is kept: its index page's slot for it. */
+static void **page_slot(const struct memobj *m, size_t i)
+{
+    return &(*index_slot(m, i / MEMOBJ_PER_INDEX))[i % MEMOBJ_PER_INDEX];
+}
+
 void *memobj_page(const struct memobj *m, size_t i)
 {
     if (m == NULL || i >= m->pages) {
         return NULL;
     }
 
-    return m->dir[i / MEMOBJ_PER_INDEX][i % MEMOBJ_PER_INDEX];
+    return *page_slot(m, i);
 }
 
 /*
@@ -87,7 +99,7 @@ void *memobj_fill(struct memobj *m, size_t i)
         return NULL;
     }
 
-    slot = &m->dir[i / MEMOBJ_PER_INDEX][i % MEMOBJ_PER_INDEX];
+    slot = page_slot(m, i);
 
     if ((page = __atomic_load_n(slot, __ATOMIC_ACQUIRE)) != NULL) {
         return page;
@@ -111,6 +123,30 @@ size_t memobj_touched(const struct memobj *m)
     return m == NULL ? 0 : m->on_touch ? m->touched : m->pages;
 }
 
+/* Its index given back: the index pages, the directory pages, the top. */
+static void free_index(struct memobj *m)
+{
+    size_t k;
+
+    for (k = 0; k < m->indexes; k++) {
+        pmm_free_page(*index_slot(m, k));
+        *index_slot(m, k) = NULL;
+    }
+
+    for (k = 0; k < m->dirs; k++) {
+        pmm_free_page(m->top[k]);
+        m->top[k] = NULL;
+    }
+
+    if (m->top != NULL) {
+        pmm_free_page(m->top);
+        m->top = NULL;
+    }
+
+    m->indexes = 0;
+    m->dirs = 0;
+}
+
 /*
  * Everything a half-built region has taken, given back, and the slot with
  * it. Called only from `memobj_create`, which claims the slot before it
@@ -126,17 +162,7 @@ static void unwind(struct memobj *m, size_t built)
         }
     }
 
-    for (i = 0; i < m->indexes; i++) {
-        pmm_free_page(m->dir[i]);
-        m->dir[i] = NULL;
-    }
-
-    if (m->dir != NULL) {
-        pmm_free_page(m->dir);
-        m->dir = NULL;
-    }
-
-    m->indexes = 0;
+    free_index(m);
     m->pages = 0;
     m->contiguous = false;
     m->on_touch = false;
@@ -184,7 +210,8 @@ struct memobj *memobj_create(size_t pages, bool contiguous, bool on_touch)
         return NULL;                    /* a run is had at once or not at all */
     }
 
-    if (!pmm_room_for_user((on_touch ? 0 : pages) + pages / MEMOBJ_PER_INDEX + 2)) {
+    if (!pmm_room_for_user((on_touch ? 0 : pages) + pages / MEMOBJ_PER_INDEX
+                           + pages / MEMOBJ_PER_INDEX / MEMOBJ_PER_INDEX + 3)) {
         return NULL;
     }
 
@@ -222,19 +249,33 @@ again:
         m->contiguous = false;
         m->on_touch = false;
         m->touched = 0;
-        m->dir = pmm_alloc_page();      /* the page of index pages */
+        m->dirs = 0;
+        m->top = pmm_alloc_page();      /* the page of directory pages */
 
-        if (m->dir == NULL) {
+        if (m->top == NULL) {
             unwind(m, 0);
             return NULL;
         }
 
-        memset(m->dir, 0, PAGE_SIZE);
+        memset(m->top, 0, PAGE_SIZE);
 
         for (k = 0; k < indexes; k++) {
-            m->dir[k] = pmm_alloc_page();
+            /* A directory page each 512 index pages, as they are reached. */
+            if (k % MEMOBJ_PER_INDEX == 0) {
+                m->top[k / MEMOBJ_PER_INDEX] = pmm_alloc_page();
 
-            if (m->dir[k] == NULL) {
+                if (m->top[k / MEMOBJ_PER_INDEX] == NULL) {
+                    unwind(m, 0);
+                    return NULL;
+                }
+
+                memset(m->top[k / MEMOBJ_PER_INDEX], 0, PAGE_SIZE);
+                m->dirs = k / MEMOBJ_PER_INDEX + 1;
+            }
+
+            *index_slot(m, k) = pmm_alloc_page();
+
+            if (*index_slot(m, k) == NULL) {
                 unwind(m, 0);
                 return NULL;
             }
@@ -243,7 +284,7 @@ again:
 
             /* Empty slots read NULL, which a region given on touch relies
              * on and every other kind fills straight over. */
-            memset(m->dir[k], 0, PAGE_SIZE);
+            memset(*index_slot(m, k), 0, PAGE_SIZE);
         }
 
         /* **Given on touch**: the index is all there is until somebody
@@ -288,8 +329,7 @@ again:
             memset(run, 0, pages * PAGE_SIZE);
 
             for (n = 0; n < pages; n++) {
-                m->dir[n / MEMOBJ_PER_INDEX][n % MEMOBJ_PER_INDEX] =
-                    run + n * PAGE_SIZE;
+                *page_slot(m, n) = run + n * PAGE_SIZE;
             }
 
             m->contiguous = true;
@@ -318,7 +358,7 @@ again:
             }
 
             memset(page, 0, PAGE_SIZE);
-            m->dir[n / MEMOBJ_PER_INDEX][n % MEMOBJ_PER_INDEX] = page;
+            *page_slot(m, n) = page;
         }
 
         m->refs = 1;
@@ -456,18 +496,7 @@ void memobj_unref(struct memobj *m)
         }
     }
 
-    {
-        size_t k;
-
-        for (k = 0; k < m->indexes; k++) {
-            pmm_free_page(m->dir[k]);
-            m->dir[k] = NULL;
-        }
-
-        pmm_free_page(m->dir);
-        m->dir = NULL;
-        m->indexes = 0;
-    }
+    free_index(m);
 
     m->pages = 0;
     release(m);

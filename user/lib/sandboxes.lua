@@ -463,11 +463,23 @@ function sandboxes.start(s)
       return nil, "a screen is WIDTHxHEIGHT, the width a multiple of 16"
     end
 
-    local region, why = regions.make(4096 + w * h * 4)
+    -- Room for the largest it may become (`screen_most`, `WxH`), so a
+    -- window resized needs no new region (`docs/linux.md` L5).
+    local mw, mh = tostring(s.screen_most or ""):match("^(%d+)x(%d+)$")
+
+    mw, mh = math.tointeger(tonumber(mw)) or w, math.tointeger(tonumber(mh)) or h
+    mw, mh = math.max(mw, w), math.max(mh, h)
+
+    if mw % 16 ~= 0 or mw > 4096 or mh > 4096 then
+      return nil, "a screen's largest is WIDTHxHEIGHT, the width a multiple of 16"
+    end
+
+    local region, why = regions.make(4096 + mw * mh * 4)
 
     if not region then return nil, why end
 
     sys.region_write(region.cap, 0, string.pack("<I4I4I4I4", 0x7263734b, w, h, w * 4))
+    sys.region_write(region.cap, 40, string.pack("<I4I4", mw, mh))
     screen = region
     s.screen_region = { cap = region.cap, at = region.at, width = w, height = h }
     line = line .. " kosmos.screen=1"
@@ -535,7 +547,9 @@ end
 --
 function sandboxes.make_disk(path, megabytes, say)
   local mb = math.tointeger(tonumber(megabytes))
-  local STEP = 256
+  -- 64 MB a step: a few seconds of a USB stick's writing, so what is said
+  -- moves smoothly (it was 256, and a step a quarter of a minute).
+  local STEP = 64
 
   if not mb or mb < 1 then return nil, "a disk's size is a whole number of megabytes" end
   if fs.getattr(path) then return nil, path .. " is there already" end

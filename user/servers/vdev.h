@@ -46,6 +46,7 @@ struct vdev {
     void   (*notify)(struct vdev *d, unsigned q);
 
     uint32_t status, int_status, dev_sel, drv_sel, sel;
+    uint32_t config_gen;                    /* moved by every change said */
     struct vdev_queue q[VDEV_QUEUES];
 };
 
@@ -72,6 +73,10 @@ uint8_t *vdev_guest(uint64_t gpa, uint64_t len);
 
 /* A register access to `d`: answers false for one it has no register at. */
 bool vdev_mmio(struct vdev *d, uint64_t off, unsigned size, bool write, uint64_t *value);
+
+/* Its configuration changed: the guest told, by the interrupt's second
+ * reason and a new generation, to read it again. */
+void vdev_config_changed(struct vdev *d);
 
 /* The next request on queue `q`, or false when there is none. */
 bool vdev_pop(struct vdev *d, unsigned q, struct vdev_chain *c);
