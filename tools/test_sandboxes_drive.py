@@ -209,6 +209,24 @@ def main():
           "a second run was not a stick left as it was, the same GUID said: %r"
           % (two.stdout + two.stderr))
 
+    # **A line it cannot read is not written** (14 October 2026): a stick
+    # whose EFI partition has no command line - read as empty, the tool
+    # would have written the new word alone, the others lost.
+    bare = scratch.path("sandboxes-drive-bare.img")
+    stick(bare, 128)
+    _, _, p0, _ = table(bare)
+    esp0 = next(p for p in parts(p0["entries"])
+                if p["type"] == mkusb_image.guid_bytes(mkusb_image.ESP_TYPE_GUID))
+    target = "%s@@%d" % (bare, esp0["first"] * SECTOR)
+    subprocess.run(["mdel", "-i", target, "::/boot/kosmos.cmdline"], capture_output=True)
+    refused = run(bare, "--mb", "64")
+    left = subprocess.run(["mtype", "-i", target, "::/boot/kosmos.cmdline"],
+                          capture_output=True, text=True)
+    check(refused.returncode != 0 and "could not be read" in refused.stderr
+          and left.returncode != 0,
+          "a stick whose command line could not be read was written one: %r"
+          % (refused.stdout + refused.stderr))
+
     print("%s: %d checks on sandboxes_drive.py" % ("PASS" if not failed else "FAIL",
                                                    passed + failed))
     return 1 if failed else 0

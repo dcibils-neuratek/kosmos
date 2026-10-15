@@ -141,25 +141,23 @@ def main():
                 guest.mouse_button(False)
                 time.sleep(0.2)
 
-            # Each device's interrupts, as the guest says them a second at a
-            # time: the tablet is the last virtio device (screen, keyboard,
-            # tablet), the highest-numbered.
+            # The tablet's interrupts, as the guest says them a second at a
+            # time: its line is SPI 24, 56 on the GIC (`VMM_INPUT_IRQ` + 1) -
+            # named rather than taken as the highest-numbered device, which a
+            # read that had not yet reached its line took to be the screen's.
             def tablet_count(since):
-                lines = re.findall(r"linux: serial: [^\n]*?(\d+) GICv3 \d+ Edge virtio(\d+)",
-                                   guest.seen[since:])
-                counts = {}
-                for n, dev in lines:
-                    counts[int(dev)] = int(n)
-                return counts.get(max(counts)) if counts else None
+                counts = re.findall(r"linux: serial: [^\n]*?(\d+) GICv3 56 Edge virtio\d+",
+                                    guest.seen[since:])
+                return int(counts[-1]) if counts else None
 
-            until(r"linux: serial: [^\n]*virtio", 0, 30)
+            until(r"linux: serial: [^\n]*GICv3 56 Edge", 0, 30)
             before = tablet_count(0) or 0
             at = len(guest.seen)
 
             for i in range(4):
                 click(px + 40 + 60 * i, py + 120 + 30 * i)
 
-            until(r"linux: serial: [^\n]*virtio", at, 10)
+            until(r"linux: serial: [^\n]*GICv3 56 Edge", at, 10)
             time.sleep(2.5)
             guest._read_available()
             after = tablet_count(at)

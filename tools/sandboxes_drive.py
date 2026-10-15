@@ -241,22 +241,83 @@ def esp_offset(fd):
     raise Refused("the stick has no EFI partition to put the word in")
 
 
-def put_word(path, offset, guid):
-    """`opt/kosmos/sandboxes=<guid>` on the stick's command line, once."""
-    target = "%s@@%d" % (path, offset)
-    have = subprocess.run(["mtype", "-i", target, "::/boot/kosmos.cmdline"],
-                          capture_output=True, text=True)
-    had = have.stdout.split() if have.returncode == 0 else []
+def new_line(had, guid):
+    """The command line with the word, the others kept; None when it has it."""
     words = [w for w in had if not w.startswith(WORD)] + [WORD + guid]
-    line = " ".join(words)
 
-    # Said already: not written again, so a second run changes no byte.
     if words == had:
-        return line
+        return None
+
+    line = " ".join(words)
 
     if len(line) > 384:
         raise Refused("the command line would be %d characters, past the 384 "
                       "the loader reads" % len(line))
+
+    return line
+
+
+def put_word_mounted(path, guid):
+    """On a Mac's disk: its EFI partition mounted, and the file edited there.
+    `mtools` cannot open a whole disk macOS holds ("Resource busy" - Diego's
+    stick, 14 October 2026)."""
+    esp = path.replace("/dev/rdisk", "/dev/disk") + "s1"
+    mounted = subprocess.run(["diskutil", "mount", esp], capture_output=True, text=True)
+
+    if mounted.returncode != 0:
+        raise Refused("its EFI partition would not mount: %s" % mounted.stderr.strip())
+
+    point = None
+
+    for line in subprocess.run(["diskutil", "info", esp], capture_output=True,
+                               text=True).stdout.splitlines():
+        if line.strip().startswith("Mount Point:"):
+            point = line.split(":", 1)[1].strip()
+
+    try:
+        at = os.path.join(point or "", "boot", "kosmos.cmdline")
+
+        if not point or not os.path.exists(at):
+            raise Refused("the stick has no boot/kosmos.cmdline; nothing written")
+
+        had = open(at).read().split()
+        line = new_line(had, guid)
+
+        if line is not None:
+            with open(at + ".new", "w") as out:
+                out.write(line + "\n")
+
+            os.replace(at + ".new", at)
+
+        return line or " ".join(had)
+    finally:
+        subprocess.run(["diskutil", "unmount", esp], capture_output=True)
+
+
+def put_word(path, offset, guid):
+    """`opt/kosmos/sandboxes=<guid>` on the stick's command line, once.
+
+    **The line is read before it is written, and a line that cannot be read
+    is not written**: a failed read taken for an empty line would have put
+    back the new word alone, and the rest - `/Home`'s own word among them -
+    lost."""
+    if path.startswith("/dev/") and sys.platform == "darwin":
+        return put_word_mounted(path, guid)
+
+    target = "%s@@%d" % (path, offset)
+    have = subprocess.run(["mtype", "-i", target, "::/boot/kosmos.cmdline"],
+                          capture_output=True, text=True)
+
+    if have.returncode != 0:
+        raise Refused("the stick's command line could not be read (%s); nothing written"
+                      % have.stderr.strip().splitlines()[0] if have.stderr.strip() else "?")
+
+    had = have.stdout.split()
+    line = new_line(had, guid)
+
+    # Said already: not written again, so a second run changes no byte.
+    if line is None:
+        return " ".join(had)
 
     tmp = os.path.join(os.environ.get("TMPDIR", "/tmp"),
                        "kosmos-cmdline-%d" % os.getpid())

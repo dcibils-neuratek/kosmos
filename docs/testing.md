@@ -26425,3 +26425,20 @@ be the default browser; the session now writes a GSettings override first
 Not in the gate: nine minutes is the gate's whole budget. On the M700 next,
 under VT-x, once its stick has `/Sandboxes`.
 
+## 18.643 Two found at the push: a test reading the wrong device, and the stick's command line
+
+**`arm-sandbox-linuxwin` under load** read the tablet's interrupts as the
+highest-numbered virtio device seen so far - and a read that had not yet
+reached the tablet's line took the screen's: "16 before, 12 after". It
+names the tablet's own line now, GIC 56 (`VMM_INPUT_IRQ` + 1). `x86-pdfview`
+failed the same gate under load and passed alone, 38 of 38.
+
+**`tools/sandboxes_drive.py` on Diego's stick** made the partition and
+could not write its word: `mtools` cannot open a whole disk macOS holds
+("Resource busy"). On a Mac's disk it mounts the EFI partition with
+`diskutil` and edits the file there now. And a line it cannot read is not
+written: a failed read taken for an empty line would have written the new
+word alone and lost the others, `/Home`'s among them. The test's tenth
+check is that stick - no command line on it - refused, nothing written;
+control: the guard off, and a line written.
+
