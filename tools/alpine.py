@@ -282,8 +282,10 @@ echo "kosmos-session: cage $app" > /dev/@CONSOLE@
 # Kosmos's - since the console keeps only its last lines, and the last of
 # them is all there is when it falls over (the M700, 15 October 2026: a
 # segmentation fault as an address was typed into Epiphany).
-# Under the debugger when the disk asks for it - `/root/.kosmos-gdb`, and
-# gdb installed - its backtrace beside cage's account.
+# Under the debugger when the disk asks for it - /root/.kosmos-gdb, and
+# gdb installed - its backtrace beside cage's account. (No backquotes in
+# here: this is written by an unquoted here-document, and a quoted path in
+# a comment was run as a command - "/root/.kosmos-gdb: not found".)
 if [ -e /root/.kosmos-gdb ] && command -v gdb >/dev/null; then
     gdb -batch -ex run -ex "bt full" -ex "info registers" --args /usr/bin/cage -d -- $app > /root/Downloads/.kosmos-cage.log 2>&1
 else

@@ -2,7 +2,40 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-14, evening (0.11.249; Linux on the M700, L5 size)
+Last updated: 2026-10-15, afternoon (0.11.254; Linux on the M700 browses)
+
+---
+
+## 15 October: Linux on the M700, usable
+
+**Pushed: up to 0.11.248.** **On `main`, not pushed: 0.11.249-0.11.254.**
+Whole gates: 93/94 (0.11.250: `arm-sandbox` "a processor held off" under
+load), 94 less three on 0.11.251's second (all whole alone), 93/94
+(0.11.253: `x86-kernel` "game mode, given by a parent" under load).
+
+- **The slow M700** (0.11.250, 18.647): the Linux window drew its whole
+  picture up to 250 times a second in the display band; now at most 60,
+  only what changed (`cleared` in `vmmscreen.h`), resting when stopped.
+  One Linux at a time (a second brings the first forward). A restart kept
+  the last guest's RAM - given back now. Epiphany under `dbus-run-session`.
+  virtio-blk offers `SEG_MAX`/`BLK_SIZE`: 1.3 -> 9.6 MB/s on the stick.
+- **A bar under the Deskbar** (0.11.251, 18.648): my `monitor` over
+  Telnet drew into the screen's last rows. A console program from the
+  store is not handed the screen while the desktop composes. Found on the
+  way: a window from a process without the screen keeps a picture after
+  it closes (roadmap).
+- **Typing crashed Epiphany** (0.11.252, 18.649): cage died at the first
+  key - no `/dev/shm` for its keymap. Mounted; on the M700 example.com and
+  en.wikipedia.org load, typed into Epiphany, pictures and all; closing
+  Linux ends its monitor and the machine goes back to idle.
+- **A monitor's reason** (0.11.253, 18.650): one that ends before its
+  guest runs leaves its last note in the setup page; the start says it.
+  The M700's one "could not be laid out" will say which, next time.
+- **Diego's, waiting**: kfs unwritten extents (fast disk making), the
+  limits audit, the push of 0.11.249 onward.
+- **Next**: the kernel's scheduler checks that fail under the gate's load
+  (roadmap); a font with wider coverage for Linux (example.com drew one
+  line as boxes); the picture a screenless window keeps.
 
 ---
 
