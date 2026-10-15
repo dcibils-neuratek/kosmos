@@ -9183,6 +9183,14 @@ from a process that was not handed the screen keeps one of the window
 server's pictures after it closes (`testing.md` 18.648) - to be found
 before the screen is granted only on its declaration.
 
+**Noticed, 15 October - the kernel's scheduler checks fail under the
+gate's load.** Three different ones, a gate each, and each passing alone
+at once: "a processor held off is counted" (ARM), "a new thread avoids a
+loaded core" and "game mode, given by a parent" (x86). They measure time
+on a machine the Mac shares with ninety other suites; to be made to hold
+on a loaded host - waited for rather than timed, as the rest of the gate
+was made to (`testing.md`, the gate in five to ten minutes).
+
 **Proposed, 14 October - every fixed number audited** (Diego: "why do we
 have limits in the first place", "for things like memories, processes,
 threads, etc?"). Two kinds: ceilings derived from the machine's memory,

@@ -522,26 +522,36 @@ function sandboxes.start(s)
   -- October 2026: 2.9 GB in use with no guest running).
   sys.release(ram)
   sys.release(window)
-  sys.release(setup)
 
   if not id then
+    sys.release(setup)
     if screen then sys.release(screen.cap) s.screen_region = nil end
     return nil, why
   end
 
-  -- Found in /Running, or ended first and said why.
+  -- Found in /Running, or ended first and said why - its own words, which
+  -- it leaves in the setup page (`VMM_SETUP_WHY_AT`), after the sentence
+  -- its exit code stands for.
   for _ = 1, 200 do
-    if sandboxes.state(s.name) then return id end
+    if sandboxes.state(s.name) then
+      sys.release(setup)
+      return id
+    end
 
     local done, code = sys.wait(true)
 
     if done == id then
-      return nil, ("its monitor ended: %s"):format(MONITOR_SAYS[code] or ("code " .. tostring(code)))
+      local said = (sys.region_read(setup, 3584, 512) or ""):match("^([^%z]*)") or ""
+
+      sys.release(setup)
+      return nil, ("its monitor ended: %s%s"):format(MONITOR_SAYS[code] or ("code " .. tostring(code)),
+                                                     said ~= "" and (" (" .. said .. ")") or "")
     end
 
     sys.sleep(5)
   end
 
+  sys.release(setup)
   return nil, "its monitor never answered"
 end
 

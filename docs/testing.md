@@ -26630,3 +26630,29 @@ line typed through the virtio keyboard - `echo typed >/root/Downloads/
 typed.txt` - and the file read off the `/Home` disk afterwards.
 **Control**: the session without the `tmpfs` - nothing written, the
 session ended, and the check fails.
+
+## 18.650 Why a monitor ended before its guest ran, in its own words
+
+**What the M700 showed** (14 October 2026): Linux, set up, failed to start
+the first time with "its monitor ended: the guest's machine could not be
+laid out - its device tree, or its boot", and started the second time.
+The monitor knew why - `x86_boot` has five reasons and says one through
+`vmm_note` - but a note goes into the monitor's own ring, which the window
+reads while the guest runs, and a monitor that ends before its guest runs
+takes the ring with it.
+
+**So the last note before the guest runs is left in the setup page**, the
+page whoever started it made and still holds: its last half kilobyte,
+`VMM_SETUP_WHY_AT` in `vmmproto.h`, after the setup itself.
+`sandboxes.start` keeps its capability to the page until it has found the
+sandbox in `/Running` or seen its monitor end, and on an end reads the
+reason and says it after the exit code's sentence. The drive's refusals
+say which: no file, not a file, smaller than a sector, no region to read
+it through. The M700's failure has not been seen since; when it is, it
+will say which of `x86_boot`'s five it was.
+
+**Tests.** `arm-sandbox-linux`, 35 checks: a ten-byte file as a sandbox's
+disk - the library passes it, the monitor refuses it - and the error says
+`its disk: smaller than a sector: /Home/tiny-disk.img`. **Control**:
+`sandboxes.start` not reading the page - the exit code's sentence alone,
+and the check fails.

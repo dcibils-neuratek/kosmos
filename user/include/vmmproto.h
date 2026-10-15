@@ -135,6 +135,18 @@ _Static_assert(sizeof(struct vmm_setup) == 600 + VMM_SHARES * 264 + 8 + VMM_PORT
 _Static_assert(sizeof(struct vmm_setup) <= 4096, "a setup is a page");
 
 /*
+ * **Why it ended before its guest ran**: the monitor's last note, written
+ * into the setup page's last half kilobyte, where whoever started it reads
+ * it once it has gone (`sandboxes.lua`). Its notes are otherwise in its own
+ * ring, which ends with it - and the M700's "the guest's machine could not
+ * be laid out", 15 October 2026, came with no reason anybody could read.
+ */
+#define VMM_SETUP_WHY_AT    3584u
+#define VMM_SETUP_WHY_MAX   512u
+
+_Static_assert(sizeof(struct vmm_setup) <= VMM_SETUP_WHY_AT, "the reason after the setup");
+
+/*
  * **What a running sandbox answers** (`docs/sandboxes.md` S1). Each `vmm`
  * registers its own endpoint in `/Running` as `sandbox-<name>`, and the
  * window and `sandbox` ask it:

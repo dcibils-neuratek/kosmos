@@ -21,6 +21,8 @@
 #include "diskask.h"
 #include "vdev.h"
 #include "vmmblk.h"
+#include "init/say.h"
+#include "vmm.h"
 
 #define VIRTIO_ID_BLOCK     2u
 #define BLK_F_SEG_MAX       (1ull << 2)
@@ -227,6 +229,17 @@ static void config(struct vdev *d, uint64_t off, uint8_t *out, unsigned size)
     }
 }
 
+static void refused(const char *why, const char *path)
+{
+    struct say_line line;
+
+    say_begin(&line);
+    say_text(&line, "its disk: ");
+    say_text(&line, why);
+    say_text(&line, path);
+    vmm_note(line.text);
+}
+
 bool vmmblk_start(long disk_cap, const char *path, bool read_only)
 {
     const struct disk_reply *rp;
@@ -239,14 +252,26 @@ bool vmmblk_start(long disk_cap, const char *path, bool read_only)
     B.disk.ep = disk_cap;
     strcpy(B.path, path);
 
+    /* Each refusal said, for whoever started it to read (`vmm_note`). */
     if (diskask(&B.disk, DISK_OP_GETATTR, B.path, 0, 0, 0, -1, NULL, 0) != DISK_OK) {
+        refused("no file at ", path);
         return false;
     }
 
     rp = diskask_said(&B.disk);
 
-    if (rp->node.kind != DISK_KIND_FILE || rp->node.size < SECTOR
-        || !diskask_region(&B.region, &B.at, PIECE)) {
+    if (rp->node.kind != DISK_KIND_FILE) {
+        refused("not a file: ", path);
+        return false;
+    }
+
+    if (rp->node.size < SECTOR) {
+        refused("smaller than a sector: ", path);
+        return false;
+    }
+
+    if (!diskask_region(&B.region, &B.at, PIECE)) {
+        refused("no region to read it through: ", path);
         return false;
     }
 

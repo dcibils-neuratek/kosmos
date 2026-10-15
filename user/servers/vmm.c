@@ -275,9 +275,24 @@ void vmm_guest_byte(char c)
     }
 }
 
+/* The setup page, mapped: the last note goes into it until the guest runs. */
+static char *setup_page;
+static bool guest_running;
+
 /* A line of the monitor's own, into the console's ring. */
 void vmm_note(const char *text)
 {
+    if (setup_page != NULL && !guest_running) {
+        size_t n = strlen(text);
+
+        if (n > VMM_SETUP_WHY_MAX - 1) {
+            n = VMM_SETUP_WHY_MAX - 1;
+        }
+
+        memcpy(setup_page + VMM_SETUP_WHY_AT, text, n);
+        setup_page[VMM_SETUP_WHY_AT + n] = '\0';
+    }
+
     vmm_flush_out();
     ring_put("vmm: ", 5);
     ring_put(text, strlen(text));
@@ -437,6 +452,7 @@ void vmm_server(long running_cap, long ram_cap, long setup_cap, long more1, long
     }
 
     s = (const struct vmm_setup *)at;
+    setup_page = (char *)at;
     vmm_cfg = *s;
     vmm_cfg.cmdline[VMM_CMDLINE_MAX - 1] = '\0';
     vmm_cfg.name[VMM_NAME_MAX - 1] = '\0';
@@ -564,6 +580,8 @@ void vmm_server(long running_cap, long ram_cap, long setup_cap, long more1, long
      * `hyp_present`). A board's firmware that starts every core at EL2 would
      * let it run anywhere, and so would a PC, whose every core has VT-x.
      */
+    guest_running = true;
+
     thread = kosmos_thread_start_on(vmm_machine_run, 0, 0);
 
     if (thread < 0) {

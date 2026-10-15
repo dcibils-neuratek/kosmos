@@ -314,6 +314,17 @@ def main():
               and "\nkosmos-disk-L1\n" in said,
               "a read-only disk was written to, or not read: %r" % said[-400:])
 
+        # **Why a monitor ended before its guest ran**, in its own words
+        # (`testing.md` 18.650): a disk of ten bytes, which the library
+        # passes and the monitor refuses - its exit code's sentence, and
+        # after it the monitor's note, left in the setup page.
+        do('fs.write("/Home/tiny-disk.img", "ten bytes!")', "kosmos> ", 10)
+        said = do("sandbox run alpine --disk /Home/tiny-disk.img -- echo never",
+                  "its monitor ended", 60)
+        check("its disk: smaller than a sector: /Home/tiny-disk.img" in said
+              and "\nnever\n" not in said,
+              "a monitor that ended over a missing disk did not say why: %r" % said[-400:])
+
         # **A screen** (`docs/linux.md` L2): virtio-gpu, the guest's
         # framebuffer at the size asked, a pixel written into /dev/fb0 at
         # the screen's middle - away from the corner the console's cursor
