@@ -9160,7 +9160,12 @@ and a 26-pixel strip under `foot` in `cage`, to look at with L5's sizes -
 still there after L5's resize, the same 26 pixels at 832x630, so it is not
 the size but something constant (the window, or `cage`'s layout). **Downloads shared**: Kosmos's
 `/Home/Downloads` is Linux's `~/Downloads`, read and write, carried into its
-root at `switch_root`.
+root at `switch_root`. **Keys in its applications**
+(`testing.md` 18.649): cage fell over at the first key with no `/dev/shm`
+for its keymap - mounted now, and Epiphany loads a page typed into it on
+the M700. Noticed there: a line of example.com in a script with no font
+in the image drawn as boxes - a font with wider coverage (Noto) among the
+default packages, to look at.
 
 **Noticed, 15 October - a program draws over the desktop.** `monitor`,
 run at a prompt reached by telnet while the desktop ran on the M700, drew

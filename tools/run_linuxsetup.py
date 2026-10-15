@@ -221,6 +221,30 @@ def main():
                   "Linux did not fill the larger picture - foot's background past where "
                   "the old one ended: %r" % (beyond,))
 
+        # **Keys, typed into the application** (`testing.md` 18.649): foot
+        # given a line that writes a file to Linux's Downloads, read back
+        # below. cage hands each client the keyboard's keymap in shared
+        # memory, and with no `/dev/shm` it had none to hand and fell over
+        # at the first key - Epiphany on the M700, as an address was typed.
+        if not BROWSER and shown:
+            px, py, pw, ph = (int(v) for v in shown.groups())
+            width, height, _ = R.pixel_reader(guest.screendump())
+            guest.mouse_to(*R._to_tablet(px + 100, py + 100, width, height))
+            time.sleep(0.2)
+            guest.mouse_button(True)
+            time.sleep(0.1)
+            guest.mouse_button(False)
+            time.sleep(1)
+
+            keys = ([c for c in "echo"] + ["spc"] + [c for c in "typed"] + ["spc", "shift-dot"]
+                    + ["slash"] + [c for c in "root"] + ["slash"] + ["shift-d"] + [c for c in "ownloads"]
+                    + ["slash"] + [c for c in "typed"] + ["dot"] + [c for c in "txt"] + ["ret"])
+
+            for k in keys:
+                guest.sendkey(k)
+
+            time.sleep(5)
+
         os.makedirs(os.path.join("build", "gate"), exist_ok=True)
 
         with open(os.path.join("build", "gate", "arm-sandbox-linux%s.ppm" % ("browser" if BROWSER else "setup")), "wb") as f:
@@ -244,6 +268,18 @@ def main():
         found = open(got).read().strip() if os.path.exists(got) else None
         check(found == "made in Linux",
               "a file Linux wrote to its Downloads was not in Kosmos's: %r" % (found,))
+
+        typed = disk + ".typed.txt"
+
+        if os.path.exists(typed):
+            os.remove(typed)
+
+        subprocess.run([os.path.join("build", "host", "lua"), os.path.join(HERE, "kfs.lua"),
+                        "get", disk, "/Home/Downloads/typed.txt", typed], capture_output=True)
+        line = open(typed).read().strip() if os.path.exists(typed) else None
+        check(line == "typed",
+              "a line typed into foot did not run - cage given keys, foot a command: %r, "
+              "the session %s" % (line, "ended" if "kosmos-session: ended" in transcript else "running"))
 
         # What the guest's size follower said, kept beside the run's serial
         # line - its only witness, since udev keeps a rule's output.

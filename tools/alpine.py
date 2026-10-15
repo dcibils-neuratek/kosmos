@@ -233,6 +233,10 @@ if [ "$(arg kosmos.root)" = 1 ]; then
     cat > /newroot/kosmos/session <<SESSION
 #!/bin/sh
 mount -t proc proc /proc; mount -t sysfs sysfs /sys; mount -t devtmpfs devtmpfs /dev 2>/dev/null
+# Shared memory, where wlroots makes the keyboard's keymap to hand to a
+# client: without it cage said "Failed to allocate shm file for keymap"
+# and fell over at the first key (the M700, 15 October 2026).
+mkdir -p /dev/shm && mount -t tmpfs -o mode=1777,nosuid,nodev shm /dev/shm
 mkdir -p /dev/pts /run /tmp && mount -t devpts devpts /dev/pts
 hostname "${name:-linux}"
 ip link set lo up
@@ -274,8 +278,20 @@ fi
 sleep 1
 echo "kosmos-session: cage $app" > /dev/@CONSOLE@
 /kosmos/size > /dev/@CONSOLE@ 2>&1 &
-cage -- $app > /dev/@CONSOLE@ 2>&1
-echo "kosmos-session: ended" > /dev/@CONSOLE@
+# cage's own account, kept where Kosmos reads it - Linux's Downloads are
+# Kosmos's - since the console keeps only its last lines, and the last of
+# them is all there is when it falls over (the M700, 15 October 2026: a
+# segmentation fault as an address was typed into Epiphany).
+# Under the debugger when the disk asks for it - `/root/.kosmos-gdb`, and
+# gdb installed - its backtrace beside cage's account.
+if [ -e /root/.kosmos-gdb ] && command -v gdb >/dev/null; then
+    gdb -batch -ex run -ex "bt full" -ex "info registers" --args /usr/bin/cage -d -- $app > /root/Downloads/.kosmos-cage.log 2>&1
+else
+    cage -d -- $app > /root/Downloads/.kosmos-cage.log 2>&1
+fi
+ended=\\$?
+tail -n 30 /root/Downloads/.kosmos-cage.log > /dev/@CONSOLE@
+echo "kosmos-session: ended, cage said \\$ended" > /dev/@CONSOLE@
 poweroff -f
 SESSION
     chmod 755 /newroot/kosmos/session

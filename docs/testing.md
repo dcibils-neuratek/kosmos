@@ -26602,3 +26602,31 @@ a file in `/Temporary` started through the desktop, closed and left one
 picture held (20 before it, 22 open, 21 after). Refusing only `program`s
 mends the suite; that **a window from a process without the screen keeps a
 picture after it closes** is a leak of its own, on the roadmap.
+
+## 18.649 Keys in Linux's applications: `/dev/shm` for cage's keymap
+
+**What the M700 showed** (15 October 2026): Epiphany up in the Linux
+window, and Linux gone the moment an address was typed into it - Diego,
+"it crashes when i type in the url". Its menu, a popup, opened and closed
+without harm; one letter typed into the page, not the address bar, ended
+it too. The console said only `Lost connection to Wayland compositor` and
+`Segmentation fault`: `cage` had died, and Epiphany with it.
+
+**Found by keeping cage's account.** The session writes `cage -d`'s output
+to Linux's Downloads, which are Kosmos's, so it is read from `/Home` after
+the guest has stopped - and it said, at the start, `Failed to allocate shm
+file for keymap`. wlroots hands each client the keyboard's keymap in
+shared memory; Linux's root from its disk had no `/dev/shm`, so there was
+no keymap to hand, and the first key fell over. The session mounts a
+`tmpfs` there. With it, `example.com` typed into Epiphany on the M700
+loaded, the page drawn in the window.
+
+The session also runs `cage` under `gdb` when the disk has
+`/root/.kosmos-gdb` and gdb installed, its backtrace into the same file -
+for the next one of these. It was not needed for this.
+
+**Tests.** `arm-sandbox-linuxsetup`, 9 checks: `foot` clicked into and a
+line typed through the virtio keyboard - `echo typed >/root/Downloads/
+typed.txt` - and the file read off the `/Home` disk afterwards.
+**Control**: the session without the `tmpfs` - nothing written, the
+session ended, and the check fails.
