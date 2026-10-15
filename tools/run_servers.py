@@ -630,6 +630,12 @@ def main():
         session = connect(telnet)
         said["help"] = session.run("help").decode(errors="replace")
 
+        # **The screen is the desktop's** (`testing.md` 18.648): `monitor`,
+        # which draws a bar into the screen's last rows, run at this prompt
+        # while the desktop composes - refused, and saying why, where on the
+        # M700 it drew under the Deskbar and stayed there.
+        said["monitor"] = session.run("monitor 1").decode(errors="replace")
+
         # An application written here, pushed and opened on this desktop -
         # `open` asking the window manager, as the Deskbar does. Moved here
         # from `run_telnetd.py`'s boot of its own, which was this boot.
@@ -739,6 +745,10 @@ def main():
 
     if "this session's own:" not in said.get("help", ""):
         fails.append("help did not list the session's own words: %r" % said.get("help"))
+
+    if "monitor: the desktop has the screen" not in said.get("monitor", ""):
+        fails.append("a program at a prompt was handed the screen while the desktop "
+                     "ran: %r" % said.get("monitor"))
 
     if "open: started servers" not in said.get("open", ""):
         fails.append("open servers did not start the window: %r" % said.get("open"))

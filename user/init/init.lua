@@ -5174,8 +5174,25 @@ query. `find` and `watch` are built on exactly these two calls.
     -- `edit`), so the change is one line here once yielding at NORMAL is
     -- fair. See `docs/state.md`.
     --
-    local flags = may_pass_screen() and SPAWN_SCREEN or 0
+    -- **But not to a program at a prompt while the desktop composes**
+    -- (15 October 2026). `monitor`, run at a prompt reached by telnet on
+    -- the M700, drew its bar into the screen's last rows beneath the
+    -- desktop, which never paints over them - so it stayed after it ended,
+    -- and VNC, which shows the desktop's picture, never saw it. While the
+    -- window server is running the screen is its own: a console program -
+    -- what the store calls a `program`, `monitor` and `edit` among them,
+    -- which would draw on it - is not handed it, and says so. Anything else
+    -- still is: an application asks it for its size, and a file of
+    -- somebody's own in `/Home` or `/Temporary` says nothing of what it is
+    -- (an installed application's among them), so it is not refused for
+    -- what it might be - the first version refused all but applications in
+    -- the store, and a window from `/Temporary` kept a picture after it
+    -- closed (`testing.md` 18.648).
+    --
     local attrs = ns.getattr(path)
+    local desktop = (attrs and attrs.kind == "program")
+                    and ns.getattr("/Running/wm") ~= nil
+    local flags = (may_pass_screen() and not desktop) and SPAWN_SCREEN or 0
     local camera, midi, keyring, tiles, mailkeys, window = nil, nil, nil, nil, nil, nil
     local sharing = nil
     -- /Discovery (`docs/sharing.md` N11c) to every program, as `/Network`
@@ -6969,8 +6986,13 @@ if role == ROLE_RUNNER then
     -- `edit`), so the change is one line here once yielding at NORMAL is
     -- fair. See `docs/state.md`.
     --
-    local flags = may_pass_screen() and SPAWN_SCREEN or 0
+    -- And not to a program while the desktop composes, as the shell's
+    -- `run_program` above: this is how a Telnet session or a Terminal
+    -- starts one (`testing.md` 18.648).
     local attrs = ns.getattr(path)
+    local desktop = (attrs and attrs.kind == "program")
+                    and ns.getattr("/Running/wm") ~= nil
+    local flags = (may_pass_screen() and not desktop) and SPAWN_SCREEN or 0
     local camera_at, midi_at, keyring_at, tiles_at, mailkeys_at = nil, nil, nil, nil, nil
     local mdns_at, sharing_at = nil, nil
 

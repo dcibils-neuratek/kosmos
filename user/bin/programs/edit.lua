@@ -34,7 +34,12 @@ end
 local screen = gfx.screen()
 
 if not screen then
-  print("edit: this process was not given the screen")
+  -- The desktop's while it runs: a program at a prompt is not handed it.
+  if fs.getattr("/Running/wm") then
+    print("edit: the desktop has the screen; Text Editor is the same in a window")
+  else
+    print("edit: this process was not given the screen")
+  end
   return
 end
 

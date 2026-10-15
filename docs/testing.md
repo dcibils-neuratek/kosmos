@@ -26565,3 +26565,40 @@ reading apk's progress was rewritten to want `done/total` alone on a line,
 and apk's progress arrives otherwise, so the setup said its packages and
 never a percentage. It takes the last `done/total` anywhere in what is
 left of a line once a package's line is taken out of it.
+
+## 18.648 The screen is the desktop's while it runs
+
+**What the M700 showed** (15 October 2026, a photograph): a line of green
+text along the foot of the screen, under the Deskbar - `x8 cpu [.........]
+0% 49/32208 thr 34/8064` - which VNC's pictures did not have. It was
+`monitor`, run at a prompt this session reached by Telnet: it is handed the
+screen and draws into the two rows the kernel's console keeps for itself,
+with no window server between. VNC shows the desktop's picture, not the
+screen, so it never saw it, and the desktop never paints those rows, so the
+bar's last line stayed after `monitor` ended - its thread count, 49, was
+the machine's of an hour before.
+
+**Every program had the screen**, which `init.lua` said beside both places a
+process is started ("the screen to everything, which is wrong and is
+staying for now") - granting it only on `kosmos: needs screen` had once
+starved programs that yield at NORMAL, and that is not this change. This
+one is narrower: **while the window server composes, a console program -
+what the store calls a `program` - is not handed the screen**, at the
+shell's prompt (`run_program`) and where a Telnet session or a Terminal
+starts one (`launch`). Anything else still is: an application asks it for
+its size, and a file of somebody's own in `/Home` or `/Temporary` says
+nothing of what it is - an installed application among them. `monitor` and `edit` say the desktop has the screen, and what
+does the same in a window.
+
+**Tests.** `x86-servers`, 35 checks: `monitor 1` at the Telnet prompt,
+while the desktop runs, says `monitor: the desktop has the screen`.
+**Control**: the first build held only the prompt's path, and the check
+failed - `monitor` drew, saying nothing - since a Telnet session starts
+programs through `launch`; with both, it passes.
+
+**And one the gate found**: the first version refused the screen to all but
+the store's applications, and `x86-scene` failed every time - its window,
+a file in `/Temporary` started through the desktop, closed and left one
+picture held (20 before it, 22 open, 21 after). Refusing only `program`s
+mends the suite; that **a window from a process without the screen keeps a
+picture after it closes** is a leak of its own, on the roadmap.

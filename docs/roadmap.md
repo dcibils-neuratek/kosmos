@@ -9169,9 +9169,14 @@ the wallpaper: it is handed the screen (`kosmos: needs screen`) and writes
 the kernel console's two reserved rows, with no compositor between. VNC
 does not see it - it reads the desktop's picture, not the screen - and
 the desktop never paints over it, so its last line stayed after it ended.
-While the window server composes, the screen is its alone: a program
-asking for it is to be told no, or given a window. `gfx.screen()` and
-whatever grants `needs screen` are where to look.
+**Done the same day** (`testing.md` 18.648): while the window server
+composes, a program that is not an application is not handed the screen.
+Left: every program still has it otherwise, and an application has it for
+its size alone - `needs screen` granted only on its declaration, once a
+program that yields at NORMAL is not starved (`init.lua`, beside the grant). Found on the way: a window
+from a process that was not handed the screen keeps one of the window
+server's pictures after it closes (`testing.md` 18.648) - to be found
+before the screen is granted only on its declaration.
 
 **Proposed, 14 October - every fixed number audited** (Diego: "why do we
 have limits in the first place", "for things like memories, processes,

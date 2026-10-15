@@ -27,7 +27,12 @@ local seconds = tonumber(args) or 600
 local screen = gfx.screen()
 
 if not screen then
-  print("monitor: this process was not given the screen")
+  -- The desktop's while it runs: a program at a prompt is not handed it.
+  if fs.getattr("/Running/wm") then
+    print("monitor: the desktop has the screen; Monitor and Processes show the same")
+  else
+    print("monitor: this process was not given the screen")
+  end
   return
 end
 
