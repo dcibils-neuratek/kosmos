@@ -26656,3 +26656,36 @@ disk - the library passes it, the monitor refuses it - and the error says
 `its disk: smaller than a sector: /Home/tiny-disk.img`. **Control**:
 `sandboxes.start` not reading the page - the exit code's sentence alone,
 and the check fails.
+
+## 18.651 Two kernel checks that judged the host
+
+**"Game mode, given by a parent"** failed at the end of 0.11.253's gate
+and passed alone at once. Its spinner spun a second and a half by the
+counter and the test waited one second for the band and three for the
+budget to run out - and under the gate's load, with the Mac giving this
+machine a share of a core, the counter ran on while the thread had not
+yet run its budget. The spinner now spins until its budget is spent, and
+the test waits for each thing to happen; ten and fifteen seconds are caps
+a passing run never reaches.
+
+**"A new thread avoids a loaded core"** failed under load the same way,
+and here the test was wrong rather than slow. The policy takes the core
+with the fewest *runnable* threads and counts blocked ones only to break
+a tie; the test parks three blocked threads on a core and wanted the next
+thread elsewhere - which is right only while some other core has nothing
+runnable. With twelve busy processes on the Mac it reproduced, "placed on
+the loaded core, 2", and the choice was correct: every other core had a
+thread waiting. The test now looks first (`runnable_on`, counted as
+`place_new_thread` counts) and fails a landing on the loaded core only
+when a core with nothing runnable was there to take instead; otherwise it
+says the round was not counted.
+
+**Tests.** `x86-kernel` and `arm-sandbox` pass quiet, and three times
+each with eight busy processes on the Mac (both failed under twelve before:
+game mode did not, placement did). **Control**: placement as plain round
+robin - "a new thread avoids a loaded core" fails on a quiet machine, twice
+in two, with "a thread moves cores" beside it.
+
+The third, "a processor held off is counted" (ARM, 0.11.250's gate),
+already measures five times over and is left as it is; it is the host
+stopping QEMU inside its window, which the count exists to show.

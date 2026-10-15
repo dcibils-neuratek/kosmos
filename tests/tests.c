@@ -2710,19 +2710,31 @@ static volatile bool game_stop;
 static volatile unsigned game_seen_band;
 static volatile bool game_spun_out;
 
+/*
+ * **Waited for, not timed** (15 October 2026): the spinner spun a second and
+ * a half and the test waited one second, then three, by the counter - and
+ * under the whole gate's load, with the Mac giving this machine a share of
+ * a core, the counter ran on while the thread had not run its budget, and
+ * the check failed though nothing was wrong ("game mode, given by a
+ * parent", passing alone at once). The spinner now spins until its budget
+ * is spent, and the test waits for the band and for that; ten and fifteen
+ * seconds are caps a passing run never reaches.
+ */
 static void game_worker(void *arg)
 {
     bool spin = arg != NULL;
     struct thread *me = thread_current();
-    uint64_t until = cntpct() + cntfrq() * 3 / 2;
+    uint64_t until = cntpct() + cntfrq() * 10;
 
     me->sched.game = true;
     thread_yield();                     /* queued again: the band applies */
     game_seen_band = me->sched.effective;
 
     if (spin) {
-        while (!game_stop && cntpct() < until) {
-            /* a second and a half without sleeping */
+        /* Read through volatile: the tick sets it, and nothing in this loop
+         * tells the compiler it can change. */
+        while (!game_stop && !*(volatile bool *)&me->sched.game_spent && cntpct() < until) {
+            /* without sleeping, until the band's budget is spent */
         }
 
         game_spun_out = me->sched.effective == SCHED_PRIO_NORMAL && me->sched.game_spent;
@@ -2767,7 +2779,7 @@ static bool test_game_mode(void)
         return false;
     }
 
-    deadline = cntpct() + cntfrq();
+    deadline = cntpct() + cntfrq() * 10;
     while (game_seen_band == 0 && cntpct() < deadline) { }
 
     ok = game_seen_band == SCHED_PRIO_GAME
@@ -2782,7 +2794,7 @@ static bool test_game_mode(void)
         return false;
     }
 
-    deadline = cntpct() + cntfrq() * 3;
+    deadline = cntpct() + cntfrq() * 15;
     while (!game_spun_out && cntpct() < deadline) { }
 
     ok = ok && game_spun_out;
@@ -3062,6 +3074,31 @@ static void parks(void *arg)
     thread_block();
 }
 
+/*
+ * The threads that want core `c` now - ready or running, its idle thread
+ * not among them - counted as `place_new_thread` counts them.
+ */
+static unsigned runnable_on(unsigned c)
+{
+    const struct percpu *pc = percpu_at(c);
+    unsigned i, n = 0, made = thread_slots_made();
+
+    for (i = 0; i < made; i++) {
+        const struct thread *t = thread_by_index(i);
+
+        if (t == NULL || t->sched.cpu != c
+            || (pc != NULL && (const struct thread *)pc->idle_thread == t)) {
+            continue;
+        }
+
+        if (t->state == THREAD_READY || t->state == THREAD_RUNNING) {
+            n++;
+        }
+    }
+
+    return n;
+}
+
 static bool test_placement_avoids_a_loaded_processor(void)
 {
     unsigned cores = smp_online();
@@ -3101,6 +3138,7 @@ static bool test_placement_avoids_a_loaded_processor(void)
         struct thread *placed;
         unsigned i;
         unsigned landed;
+        bool idle_elsewhere;
 
         for (i = 0; i < 3; i++) {
             fill[i] = thread_create_on(loaded, "fill", parks, NULL);
@@ -3152,6 +3190,30 @@ static bool test_placement_avoids_a_loaded_processor(void)
             }
         }
 
+        /*
+         * **Whether there was a better core to go to**, looked at just
+         * before: the policy takes the fewest runnable threads first and
+         * counts blocked ones only to break a tie, so the loaded core - its
+         * fillers blocked, nothing runnable - is the right answer when every
+         * other core has something runnable at that instant. On a quiet
+         * machine one always has none; under the whole gate's load, with
+         * the Mac handing this machine a fraction of a core, sometimes none
+         * did, and the check failed a correct choice (15 October 2026,
+         * "placed on the loaded core, 2"). So landing there fails only when
+         * a core with nothing runnable was there to take instead.
+         */
+        {
+            unsigned c;
+
+            idle_elsewhere = false;
+
+            for (c = 0; c < cores; c++) {
+                if (c != loaded && (int)c != thread_reserved_core() && runnable_on(c) == 0) {
+                    idle_elsewhere = true;
+                }
+            }
+        }
+
         placed = thread_create_suspended("placed", short_thread, NULL);
 
         if (placed == NULL) {
@@ -3176,12 +3238,18 @@ static bool test_placement_avoids_a_loaded_processor(void)
             thread_yield();
         }
 
-        if (landed == loaded) {
+        if (landed == loaded && idle_elsewhere) {
             kputs("\n   (placed on the loaded core, ");
             kputu(loaded);
-            kputs(", with its fillers blocked there)\n");
+            kputs(", with its fillers blocked there and a core with nothing runnable)\n");
             thread_place_across(1);
             return false;
+        }
+
+        if (landed == loaded) {
+            kputs("\n   (core ");
+            kputu(loaded);
+            kputs(": every other core had something runnable, so not counted)\n");
         }
     }
 

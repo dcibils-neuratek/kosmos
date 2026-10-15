@@ -9189,7 +9189,10 @@ at once: "a processor held off is counted" (ARM), "a new thread avoids a
 loaded core" and "game mode, given by a parent" (x86). They measure time
 on a machine the Mac shares with ninety other suites; to be made to hold
 on a loaded host - waited for rather than timed, as the rest of the gate
-was made to (`testing.md`, the gate in five to ten minutes).
+was made to (`testing.md`, the gate in five to ten minutes). **Two done** (`testing.md`
+18.651): game mode waits for the thing; placement judged against what the
+cores held. "A processor held off" left as it is - it measures five times
+and is the host stopping QEMU, which it exists to count.
 
 **Proposed, 14 October - every fixed number audited** (Diego: "why do we
 have limits in the first place", "for things like memories, processes,
