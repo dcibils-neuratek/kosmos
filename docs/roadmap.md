@@ -9167,6 +9167,30 @@ the M700. Noticed there: a line of example.com in a script with no font
 in the image drawn as boxes - a font with wider coverage (Noto) among the
 default packages, to look at.
 
+**Agreed, 15 October - Linux's desktop apps, measured before anything
+is made faster** (Diego: "lets make the measurements and understand if
+its a real thing we might be using graphic apps or just text apps on
+linux", and "having a usable linux experience in kosmos its a great plan
+B" - since a browser is too hard to port: WebKit is millions of lines of
+C++ on `fork`, sockets and signals, `docs/browser-engine.md`). Linux on
+Kosmos is already right for services, Python and models; whether it is
+right for graphical applications is what these say:
+
+- **L6a, measured**: in the Linux window, the time from a key handed to
+  Linux to its next frame, frames a second and the longest gap while a
+  page scrolls, shown in its header; a script from the Mac running a
+  fixed sequence on the M700 - pages loaded, scrolled, typed into - and
+  writing the numbers down, with where the M700's processors spend the
+  time while it runs.
+- **L6b, more than one processor for Linux** - it has one (`vmm_x86.c`,
+  `noapic nolapic`) and WebKit is three processes and JavaScript on it -
+  if L6a says that is the bound.
+- **L6c, no copies of a frame** - the window handing the compositor
+  Linux's region rather than copying it - if L6a says the copies show.
+- After them, agreed the same day ("go ahead with the plan"): kfs's
+  unwritten extents, so a Linux disk is made at once, and the audit of
+  every fixed number below.
+
 **Noticed, 15 October - a program draws over the desktop.** `monitor`,
 run at a prompt reached by telnet while the desktop ran on the M700, drew
 its status bar across the bottom of the screen, under the Deskbar and over
