@@ -6891,6 +6891,11 @@ local function sleep_for()
   -- pass that slept would be a load that crawled.
   if #launching > 0 then return 0 end
 
+  -- A frame held back for a flip on its way (`m700-2d.md` step 4b): asked
+  -- again a tick later, so the last of a drag is not left until the next
+  -- mouse report.
+  if WS.held_back and #damage > 0 then shortest = math.min(shortest, 1) end
+
   --
   -- **Rounded up, and that is the difference between idle and a core at a
   -- hundred per cent** (`testing.md` 18.345). It was rounded down, so a

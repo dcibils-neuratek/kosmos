@@ -3841,7 +3841,26 @@ processors, and still what follows USB:
    window's, a texture's and a game's swap chain later - a flip latched at
    vertical blank and answered at once, and flip-done asked for. 4a times
    the window server's copy apart, 4b flips, 4c a full-screen program flips
-   its own buffers.
+   its own buffers. **4b's flips done** (18.662, 0.11.264; Diego: "m700
+   desktop works perfect"); the pacing next - composing at most once a
+   refresh. **Agreed the same evening, to build:** (Diego: "we need to
+   vreate a gpu monitor app now to see memory pressure, gpu usage, etc",
+   with Windows' GPU page as the picture) **a GPU monitor**, designed first
+   as every app is - its graphs what the machine can say now (the GPU's
+   clock and RC6 residency, power from RAPL, GPU memory by buffer and by
+   holder, the display's refresh, flips and frames) and each engine's
+   busyness once Kosmos submits work to it; **a label beside the version**
+   on the desktop saying whether the desktop is drawn with the GPU's help
+   and how ("i need to know if kosmos is using gpu acceleration on the
+   desktop in some way, like a label somewhere in the desktop, perhaps
+   beside the kernel version"); and, asked ("will this enavble is to change
+   resolutions once booted?"), **a resolution chosen after boot** - first
+   by the pipe's scaler over a smaller desktop, a few registers on top of
+   the flips, and a true mode change (timings, clocks, the DisplayPort
+   link) after the blitter. **And `neofetch` says the GPU** (Diego, the
+   same evening: "also neofetch needs to add the gpu info as ell"): a GPU
+   row - the model, and what the desktop is drawn with, the label's words
+   - from `/Devices/gpu`, as About's Machine line could be.
    **And video in hardware, on the wishlist since 27 September** - Diego:
    "Can't we use the gpu for hardware encoding and decoding video?", and yes
    to keeping it here. The ThinkPad's and the M700's Intel graphics encode
@@ -9515,6 +9534,16 @@ the applications make the system useful, and is not pulled forward.
   client (6ze) all go through.
 
 ### The system
+
+**Bluetooth, for a mouse and a keyboard** - Diego, 17 October 2026: "add
+for the roadmap: bluetooth driver to support mouse and keyboard devices".
+A host controller driver - on the M700 and the ThinkPad the radio is a
+USB device behind xHCI, so the first piece is HCI over USB - then L2CAP,
+pairing and its keys kept in the keyring, and HID over Bluetooth: a
+Bluetooth mouse moving the one pointer as a USB mouse does
+(`hal_pointer_move`) and a keyboard giving characters as any other. Its
+feature set and architecture before it is built; a paired device listed
+in the devices indicator (5m).
 
 **The Sandboxes window, as drawn, and every setting editable** - Diego,
 13 October 2026, using it on the M700: "the sandboxes app still is not

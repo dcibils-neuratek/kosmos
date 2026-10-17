@@ -1,0 +1,125 @@
+<!doctype html>
+<!--
+  GPU Monitor, and what it stands on: the application on top, the kit's
+  meters as Network Monitor made them, the GPU's driver answering one new
+  verb from its registers and its buffer table, and Nebula's sysinfo with
+  RAPL's graphics energy. The window's once-a-pace reads drawn through it
+  (W), and the desktop's label (L). Drawn on 17 October 2026, before any of
+  it is built; docs/gpumonitor.md is the argument and docs/gpumonitor.html
+  the window. Rendered to docs/gpumonitor-architecture.png by headless
+  Chrome at twice its size.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos GPU Monitor architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>GPU Monitor - what it stands on</h1>
+<p class="sub">It measures nothing itself. The GPU's driver reads the display engine's and the GT's own counters - clock, sleep, flips, frames, underruns - and keeps a table of the buffers it made and who holds each; Nebula reads the one counter only ring 0 can, the GPU's energy. GPU Monitor asks once a pace and draws. The desktop's label is the window manager saying what it already knows.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--later);background:#fff;border-style:dashed"></i>later</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers and drivers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">W</span><span>the window, once a pace</span><span class="f">L</span><span>the desktop's label</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications</h2>
+      <div class="row" style="grid-template-columns:1.4fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>GPU Monitor - <code>gpumon.lua</code></b><p>the GPU's card; busy by engine, clock and sleep, memory and the display over the minute; the facts down the right; who holds its memory. Asks <span class="f">W1</span>, takes the differences <span class="f">W3</span>, draws <span class="f">W4</span>.</p></div>
+        <div class="box new"><span class="tag">+ LABEL</span><b>the window manager - <code>wm.lua</code></b><p>the version line ends with what draws the desktop: <code>GPU: HD 530 - cursor plane, page flips</code> <span class="f">L1</span></p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in its process)</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>ui.history, ui.meter_card</b><p>the minute and the card - Network Monitor's</p></div>
+        <div class="box new"><span class="tag">+ STATS</span><b>gpu.lua</b><p>the one door to <code>/Devices/gpu</code>, as for the cursor: <code>gpu.stats()</code></p></div>
+        <div class="box"><b>sys.processes(), sys.info()</b><p>a holder's name; the energy counter</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers and drivers</h2>
+      <div class="row" style="grid-template-columns:1.3fr 1fr">
+        <div class="box new"><span class="tag">+ GPU_OP_STATS</span><b>intelgpu - <code>/Devices/gpu</code></b><p>reads <code>GEN6_RPSTAT1</code> (the clock), <code>GEN6_GT_GFX_RC6</code> (asleep), <code>PIPE_FLIPCOUNT</code> and <code>PIPE_FRMCOUNT</code> (flips, frames), the underrun bit <span class="f">W2</span>; its buffer table with each holder, counted by <code>SYS_SENDER</code></p></div>
+        <div class="box"><span class="tag">+ A WORD</span><b>windowserver</b><p>frames it held back, said with each flip; whether it flips <span class="f">L1</span></p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr;margin-top:10px">
+        <div class="box later-box"><span class="tag later">LATER</span><b>each engine's busy time</b><p>from the engine's own timestamps, once the driver sends it work - the blitter first (<code>m700-2d.md</code> step 5)</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box new"><span class="tag">+ ENERGY</span><b>sysinfo</b><p>RAPL's graphics energy, <code>MSR_PP1_ENERGY_STATUS</code>, and its unit - a model-specific register only ring 0 reads <span class="f">W2</span></p></div>
+        <div class="box"><b>SYS_SENDER, SYS_DEV_MAP</b><p>who asked; the GPU's registers in the driver - as they are</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>W - the window, once a pace</h3><ol>
+      <li><span class="f">W1</span> <code>gpu.stats()</code>: one message to the driver; one <code>sys.info()</code>.</li>
+      <li><span class="f">W2</span> the driver reads a handful of registers and copies its buffer table into the reply; Nebula reads the energy counter.</li>
+      <li><span class="f">W3</span> rates as differences: flips and frames a second, sleep as RC6 time over time, watts as energy over time.</li>
+      <li><span class="f">W4</span> a column on each graph, the holders, a paint.</li></ol></div>
+    <div class="card"><h3>L - the label</h3><ol>
+      <li><span class="f">L1</span> the window manager knows whether the display draws the pointer and whether the window server flips; the version line says so. Nothing is asked.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3><table>
+      <tr><td>Counters, the buffer table</td><td>a reply to one request, in <code>gpuproto.h</code>'s shape</td></tr>
+      <tr><td>The energy counter</td><td>a field of <code>sysinfo</code></td></tr>
+      <tr><td>Pixels</td><td>never near the window</td></tr></table></div>
+    <div class="card"><h3>Who else uses what is new</h3><table>
+      <tr><td><code>GPU_OP_STATS</code></td><td><code>gpustat</code> at the prompt; Monitor's power line; Processes' GPU memory column</td></tr>
+      <tr><td>GPU energy in <code>sysinfo</code></td><td>Monitor, the battery's estimate on a laptop</td></tr></table></div>
+  </div>
+</div>
+</body>
+</html>

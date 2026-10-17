@@ -31,6 +31,11 @@
                                    WS_SHOW, put on the screen too */
 
 #define WS_SHOW            1u   /* compose's flags */
+/* Only if the screen can take a frame now (`m700-2d.md` step 4b): with a
+ * flip still on its way, the answer is `height` 1 and nothing composed,
+ * and the caller keeps its damage for a later pass - so the desktop
+ * composes at most once a refresh, not once a mouse report. */
+#define WS_IF_READY        2u
 
 #define WS_OK              0u
 #define WS_ERR_BAD_OP      1u

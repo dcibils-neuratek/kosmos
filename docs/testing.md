@@ -27033,3 +27033,38 @@ refusal other than "no GPU here" is said now.
 **Tests.** The gate holds the copying path, which every QEMU machine
 takes. The flips have no test but the M700.
 
+## 18.663 One frame a refresh (`m700-2d.md` step 4b, pacing)
+
+`WS_OP_COMPOSE` takes `WS_IF_READY`: with a flip still on its way, the
+window server answers `height` 1 at once and composes nothing, and the
+window manager keeps its damage for a later pass - asked again within a
+tick (`sleep_for`), so the last of a drag is not left for the next mouse
+report. Only composed frames are counted by `frames`.
+
+**The first try was slower, and Diego felt it** ("it feel sloweer now the
+dragging", "much slower than before"): 36 frames a second, but 10 million
+pixels composed in each on a screen of two and a half - 18 ms a pass. The
+window manager kept every rectangle it was given, and while a frame waited
+each mouse report added the dragged window's old and new places, all
+overlapping. **Now overlapping damage is merged** before composing (`merge`
+in `wm/compose.lua`): two rectangles that overlap become their bounding
+box when it is no larger than the two together.
+
+**The M700, 17 October, a window dragged in circles for 30 seconds**
+(1720x1440 this boot - the firmware chose it):
+
+| | flips only (18.661, 3440x1440) | paced, merged |
+|---|---|---|
+| frames composed a second | 514 | **60** |
+| busy, of 30 s | 29.6 s | **5.2 s** |
+| mean pass | 1916 us | 175 us |
+| worst pass | 4.66 ms | 3.62 ms |
+| a composed frame | 1.37 + 0.45 ms copy | 0.82 + 0.38 ms copy |
+
+Every frame composed is one the screen shows, and the desktop uses a sixth
+of what it did. Diego: "it feels faster now".
+
+**Tests.** The gate's display suites hold the QEMU path, where nothing is
+held back and the merge composes the same pixels; the pacing has no test
+but the M700.
+

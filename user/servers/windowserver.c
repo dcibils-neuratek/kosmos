@@ -547,6 +547,31 @@ static bool present(void)
     return false;
 }
 
+/*
+ * Whether a frame can go to the screen now: no flip on its way, or the one
+ * that was has been taken. While one is still on its way, composing now
+ * would only make a frame that waits - and the next would replace it.
+ */
+static bool ready_for_frame(void)
+{
+    struct gpu_reply rep;
+
+    if (!flipping || !flip_pending) {
+        return true;
+    }
+
+    if (gpu_ask(GPU_OP_FLIPPED, 0, 0, &rep, NULL) != GPU_OK) {
+        return true;
+    }
+
+    if (rep.flip.shown != buffer_id[shown]) {
+        return false;
+    }
+
+    flip_pending = false;
+    return true;
+}
+
 /* Back to the firmware's screen, for the console, and the flips ended. */
 static void flips_stop(void)
 {
@@ -791,6 +816,13 @@ static void answer(const struct message *in, uint64_t sender)
 
     case WS_OP_COMPOSE: {
         uint32_t error = WS_OK;
+
+        /* Not now: the scene is not read and the caller keeps its damage. */
+        if ((req.flags & WS_IF_READY) != 0 && !ready_for_frame()) {
+            rep->height = 1;
+            rep->width = nheld;
+            break;
+        }
 
         rep->drawn = compose((req.flags & WS_SHOW) != 0, &error, rep);
         rep->error = error;

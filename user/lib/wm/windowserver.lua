@@ -26,7 +26,7 @@ local REQUEST = "<I4I4I4I4I4I4I8"
 local REPLY = "<I4I4I4I4I4I4"
 
 local OP = { hello = 1, back = 2, scene = 3, picture = 4, forget = 5, compose = 6 }
-local SHOW = 1
+local SHOW, IF_READY = 1, 2
 local ERRORS = {
   [1] = "a request it does not know",
   [2] = "it has no screen",
@@ -169,7 +169,9 @@ return function()
   -- The damage, composed there, and with `show` put on the screen: the
   -- pixels drawn and the pictures it holds, or nil and why.
   --
-  local COMPOSE = { [true] = request(OP.compose, 0, 0, 0, 0, SHOW),
+  -- Shown, and only if the screen can take a frame now (`IF_READY`): with
+  -- a flip on its way, nothing is composed and `held_back` says so.
+  local COMPOSE = { [true] = request(OP.compose, 0, 0, 0, 0, SHOW | IF_READY),
                     [false] = request(OP.compose) }
 
   function WS.compose(scene, damage, show)
@@ -186,9 +188,12 @@ return function()
       if not ok then return nil, "the scene does not fit its region" end
     end
 
-    local done, why, _, drawn, compose_us, copy_us = ask(COMPOSE[show == true])
+    local done, why, held_back, drawn, compose_us, copy_us = ask(COMPOSE[show == true])
 
     if not done then return nil, why end
+
+    WS.held_back = held_back == 1
+    if WS.held_back then return 0, why, 0, 0, true end
 
     -- And how many pictures it holds now, the first word of the reply -
     -- said when it changes, which a window opened or closed does: what the
