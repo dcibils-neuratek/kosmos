@@ -1174,6 +1174,7 @@ struct cpuload {
 #define HEAT_NONE       (-1000)
 #define HELD_HOT        1u
 #define HELD_POWER      2u
+#define HEAT_GPU_ENERGY 2u   /* sysinfo.heat_known: `gpu_energy_uj` is measured */
 
 /*
  * How many processors this interface can describe.
@@ -1428,14 +1429,19 @@ struct sysinfo {
      * used since boot, so a power is two readings' difference over the time
      * between them.
      */
-    uint32_t heat_known;
+    uint32_t heat_known;        /* bit 0: the package's; HEAT_GPU_ENERGY: the GPU's too */
     int32_t  package_c;
     int32_t  limit_c;
     uint32_t held;
     uint32_t power_limit_mw;
     uint32_t power_burst_mw;
     uint32_t power_window_ms;
-    uint32_t heat_reserved;
+    /* The GPU's share of `energy_uj` - RAPL's graphics plane, PP1 - in
+     * microjoules, a running total that wraps at 32 bits (about twenty
+     * minutes at 3 W: take differences modulo 2^32); 0 where it is not
+     * known (`gpu_energy_known`). In the word this struct kept spare, so
+     * its size and every field after it stay where they were. */
+    uint32_t gpu_energy_uj;
     uint64_t energy_uj;
 
     /*

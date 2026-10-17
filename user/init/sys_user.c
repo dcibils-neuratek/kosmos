@@ -1307,6 +1307,12 @@ static int l_info(lua_State *L)
         SET("power_burst_mw",  info.power_burst_mw);
         SET("power_window_ms", info.power_window_ms);
         SET("energy_uj",       info.energy_uj);
+
+        /* The GPU's share, where RAPL has a graphics plane: microjoules,
+         * wrapping at 32 bits (`kernel/syscall.h`). */
+        if (info.heat_known & HEAT_GPU_ENERGY) {
+            SET("gpu_energy_uj", info.gpu_energy_uj);
+        }
     }
 
     /* Whether a guest can run here: a sandbox's (`vm.h`). */

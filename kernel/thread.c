@@ -1789,6 +1789,7 @@ int thread_speed_cpu(unsigned index)
 static struct cpu_heat heat_now;
 static bool heat_known;
 static uint64_t heat_energy_uj;
+static uint32_t heat_gpu_energy_uj;     /* wraps, as sysinfo says */
 
 static void heat_tick(void)
 {
@@ -1802,13 +1803,19 @@ static void heat_tick(void)
         uint64_t used = (uint32_t)(h.energy_raw - heat_now.energy_raw);
 
         heat_energy_uj += (used * 1000000u) >> h.energy_shift;
+
+        if (h.gpu_known) {
+            uint64_t gpu = (uint32_t)(h.gpu_energy_raw - heat_now.gpu_energy_raw);
+
+            heat_gpu_energy_uj += (uint32_t)((gpu * 1000000u) >> h.energy_shift);
+        }
     }
 
     heat_now = h;
     __atomic_store_n(&heat_known, true, __ATOMIC_RELEASE);
 }
 
-bool thread_heat(struct cpu_heat *out, uint64_t *energy_uj)
+bool thread_heat(struct cpu_heat *out, uint64_t *energy_uj, uint32_t *gpu_energy_uj)
 {
     if (!__atomic_load_n(&heat_known, __ATOMIC_ACQUIRE)) {
         return false;
@@ -1816,6 +1823,7 @@ bool thread_heat(struct cpu_heat *out, uint64_t *energy_uj)
 
     *out = heat_now;
     *energy_uj = heat_energy_uj;
+    *gpu_energy_uj = heat_gpu_energy_uj;
     return true;
 }
 

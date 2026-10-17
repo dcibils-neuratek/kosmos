@@ -2161,6 +2161,24 @@ do
         or "wm: the pointer composited")
 end
 
+--
+-- **What draws the desktop, beside the version** (`docs/gpumonitor.md`,
+-- G0; Diego: "i need to know if kosmos is using gpu acceleration on the
+-- desktop in some way, like a label somewhere in the desktop, perhaps
+-- beside the kernel version"): the GPU's driver's own words where there is
+-- an Intel GPU - its cursor plane and its page flips, both settled by now -
+-- virtio-gpu's cursor under QEMU, and none otherwise.
+--
+do
+  local ok, gpu = pcall(use, "/Kosmos/Libraries/gpu.lua")
+  local s = ok and gpu.stats() or nil
+  local words = s and gpu.desktop_words(s)
+                or (OUT.hw_cursor and "virtio - cursor" or "none - software")
+
+  stamp = stamp .. "  |  GPU: " .. words
+  print("wm: the desktop drawn with: " .. words)
+end
+
 --------------------------------------------------------------------------
 -- Compositing.
 --

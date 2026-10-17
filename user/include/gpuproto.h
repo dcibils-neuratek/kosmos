@@ -49,6 +49,20 @@
 #define GPU_OP_FLIP          7u
 #define GPU_OP_FLIPPED       8u
 
+/*
+ * **What the GPU is doing** (`docs/gpumonitor.md`, step G1): a snapshot of
+ * its counters and of the buffers the driver made, answered in a reply of
+ * its own shape, `struct gpu_stats`, rather than `gpu_reply`'s seven words.
+ * Rates are the caller's: two snapshots' difference over the time between.
+ */
+#define GPU_OP_STATS         9u
+
+#define GPU_STATS_BUFFERS    16u
+#define GPU_DESKTOP_CURSOR   1u     /* the pointer is on the cursor plane */
+#define GPU_DESKTOP_FLIPS    2u     /* the screen is shown by flips */
+#define GPU_BUFFER_SCANOUT   0u     /* a buffer's kind: a screen */
+#define GPU_BUFFER_CURSOR    1u     /*                  the pointer */
+
 #define GPU_OK               0u
 #define GPU_ERR_NO_DEVICE    1u     /* no Intel GPU this driver knows */
 #define GPU_ERR_BAD_OP       2u
@@ -92,6 +106,31 @@ struct gpu_reply {
         uint32_t words[7];
     };
 };
+
+struct gpu_stats {
+    uint32_t error;
+    uint32_t device;                /* the PCI device id: 0x1912, an HD 530 */
+    uint32_t width, height;         /* the running pipe's */
+    uint32_t freq_mhz;              /* now: GEN6_RPSTAT1's, 50/3 MHz a step */
+    uint32_t freq_max_mhz;          /* GEN6_RP_STATE_CAP's RP0, 50 MHz a step */
+    uint32_t freq_min_mhz;          /*                     RPn */
+    uint32_t rpstat_raw;            /* GEN6_RPSTAT1 as read, for step G1's check */
+    uint32_t rc6;                   /* GEN6_GT_GFX_RC6: time asleep, 1280 ns a count, wrapping */
+    uint32_t flips;                 /* PIPE_FLIPCOUNT: wrapping */
+    uint32_t frames;                /* PIPE_FRMCOUNT: wrapping, so the refresh is measured */
+    uint32_t underrun;              /* the pipe's underrun bit is set */
+    uint32_t desktop;               /* GPU_DESKTOP_* */
+    uint32_t shown;                 /* the buffer scanned out, ~0u for none of ours */
+    uint32_t nbuffers;
+    uint32_t reserved;
+    struct {
+        uint32_t id, holder;        /* the holder's process id; 0 the firmware */
+        uint32_t width, height, pages, kind;
+    } buffers[GPU_STATS_BUFFERS];
+};
+
+_Static_assert(sizeof(struct gpu_stats) == 64 + GPU_STATS_BUFFERS * 24,
+               "gpu.lua unpacks sixteen words and then sixteen rows of six");
 
 _Static_assert(sizeof(struct gpu_request) == 32,
                "the GPU request is eight words, gpu.lua packs \"<I4I4i4i4I4I4I4I4\"");

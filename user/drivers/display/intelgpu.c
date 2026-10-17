@@ -312,6 +312,14 @@ static void look(long console)
 #define CURSOR_BLOCKS       32u         /* skl_cursor_allocation, one pipe on */
 #define WM_ENABLE           (1u << 31)
 
+/* The process whose request is being answered: its id, or 0. */
+static uint32_t holder_of_request(void)
+{
+    static struct sender_info who;
+
+    return kosmos_sender(&who) == 0 ? who.id : 0u;
+}
+
 static void wreg(uint32_t offset, uint32_t value)
 {
     mmio_write32(G.regs + offset, value);
@@ -406,6 +414,7 @@ static struct {
     unsigned long index;            /* its first GTT slot */
     uint32_t     *pixels;           /* 64 x 64, mapped here */
     int           hot_x, hot_y;
+    uint32_t      holder;           /* who handed it its picture */
 } C;
 
 static uint32_t cursor_prepare(long console)
@@ -539,6 +548,7 @@ static uint32_t cursor_set(long console, long cap, const struct gpu_request *rq)
     kosmos_share_unmap((unsigned long)at, (unsigned long)pages);
 
     flush_lines(C.pixels, CURSOR_PAGES * 4096u);
+    C.holder = holder_of_request();
     C.hot_x = (int)rq->hot_x;
     C.hot_y = (int)rq->hot_y;
     cursor_show(rq->x, rq->y);
@@ -602,8 +612,14 @@ static void cursor_test(long console, unsigned seconds, struct gpu_reply *rep)
 
 #define BUFFERS_MAX 16u                 /* the screen's two, and room after */
 
+/* The screen shown by flips: from the moment a second screen is made,
+ * since a screen buffer is made only to be flipped to - so the desktop's
+ * label, asked before the first frame, says so too. */
+static bool flips_seen;
+
 static struct buffer {
     bool          used;
+    uint32_t      holder;               /* the process that asked for it */
     long          cap;                  /* the driver's own hold on it */
     uint32_t      gtt;                  /* its GTT address */
     unsigned long pages;
@@ -693,6 +709,8 @@ static uint32_t buffer_new(long console, const struct gpu_request *rq,
     (void)reg(G.regs, GFX_FLSH_CNTL);
 
     B[id].used = true;
+    flips_seen = true;
+    B[id].holder = holder_of_request();
     B[id].cap = region;
     B[id].gtt = (uint32_t)(next_slot << 12);
     B[id].pages = pages;
@@ -762,10 +780,83 @@ static uint32_t flip(const struct gpu_request *rq, struct gpu_reply *rep)
     }
 
     step = (uint32_t)G.pipe * IGPU_PIPE_STRIDE;
+    flips_seen = flips_seen || id != 0;
     wreg(IGPU_PLANE_STRIDE_1_A + step, B[id].pitch / 64u);
     wreg(IGPU_PLANE_SURF_1_A + step, B[id].gtt);
     flip_state(rep);
     return GPU_OK;
+}
+
+/*
+ * **What the GPU is doing** (`docs/gpumonitor.md`, G1): its clock now and
+ * its range, its time asleep, the pipe's flips and frames and underrun,
+ * what the desktop takes from it, and every buffer the driver made with
+ * who holds it. Registers read now; nothing sampled on a clock of its own.
+ */
+static void stats(struct gpu_stats *st)
+{
+    uint32_t step, cap;
+    unsigned id;
+
+    memset(st, 0, sizeof *st);
+
+    if (!G.found) {
+        st->error = GPU_ERR_NO_DEVICE;
+        return;
+    }
+
+    st->device = G.dev.line;      /* the device id, as `hal/pc/devices.c` gives it */
+    st->rpstat_raw = reg(G.regs, IGPU_RPSTAT1);
+    st->freq_mhz = ((st->rpstat_raw >> 23) & 0x1FFu) * 50u / 3u;
+    cap = reg(G.regs, IGPU_RP_STATE_CAP);
+    st->freq_max_mhz = (cap & 0xFFu) * 50u;
+    st->freq_min_mhz = ((cap >> 16) & 0xFFu) * 50u;
+    st->rc6 = reg(G.regs, IGPU_RC6_RESIDENCY);
+
+    if (G.pipe < 0) {
+        st->shown = ~0u;
+        return;
+    }
+
+    buffers_init();
+    step = (uint32_t)G.pipe * IGPU_PIPE_STRIDE;
+    st->width = G.width;
+    st->height = G.height;
+    st->flips = reg(G.regs, IGPU_PIPE_FLIPCOUNT_A + step);
+    st->frames = reg(G.regs, IGPU_PIPE_FRMCOUNT_A + step);
+    st->underrun = (reg(G.regs, DE_PIPE_IIR_A + 0x10u * (uint32_t)G.pipe) & PIPE_FIFO_UNDERRUN) ? 1u : 0u;
+    st->desktop = (C.shown ? GPU_DESKTOP_CURSOR : 0u) | (flips_seen ? GPU_DESKTOP_FLIPS : 0u);
+
+    {
+        struct gpu_reply fl;
+
+        flip_state(&fl);
+        st->shown = fl.flip.shown;
+    }
+
+    for (id = 0; id < BUFFERS_MAX && st->nbuffers < GPU_STATS_BUFFERS; id++) {
+        if (B[id].used) {
+            unsigned n = st->nbuffers++;
+
+            st->buffers[n].id = id;
+            st->buffers[n].holder = B[id].holder;
+            st->buffers[n].width = B[id].width;
+            st->buffers[n].height = B[id].height;
+            st->buffers[n].pages = (uint32_t)B[id].pages;
+            st->buffers[n].kind = GPU_BUFFER_SCANOUT;
+        }
+    }
+
+    if (C.ready && st->nbuffers < GPU_STATS_BUFFERS) {
+        unsigned n = st->nbuffers++;
+
+        st->buffers[n].id = ~0u;
+        st->buffers[n].holder = C.holder;
+        st->buffers[n].width = 64;
+        st->buffers[n].height = 64;
+        st->buffers[n].pages = CURSOR_PAGES;
+        st->buffers[n].kind = GPU_BUFFER_CURSOR;
+    }
 }
 
 void intelgpu_server(long console, long endpoint)
@@ -819,6 +910,8 @@ void intelgpu_server(long console, long endpoint)
             case GPU_OP_FLIP:
                 rep.error = flip(&rq, &rep);
                 break;
+            case GPU_OP_STATS:
+                break;              /* answered below, in its own shape */
             case GPU_OP_FLIPPED:
                 if (G.found && G.pipe >= 0) {
                     buffers_init();
@@ -840,6 +933,18 @@ void intelgpu_server(long console, long endpoint)
         }
 
         memset(&out, 0, sizeof out);
+
+        if (msg.length >= 8 && rq.op == GPU_OP_STATS) {
+            static struct gpu_stats st;
+
+            stats(&st);
+            out.tag = msg.tag;
+            out.length = (uint32_t)sizeof st;
+            memcpy(out.data, &st, sizeof st);
+            (void)kosmos_reply(sender, &out);
+            continue;
+        }
+
         out.tag = msg.tag;
         out.cap_plus_one = pass >= 0 ? (uint32_t)pass + 1u : 0u;  /* a copy: the driver keeps its own */
         out.length = (uint32_t)sizeof rep;

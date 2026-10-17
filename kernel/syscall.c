@@ -829,8 +829,9 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
         _Static_assert(HEAT_NONE == CPU_HEAT_NONE && HELD_HOT == CPU_HELD_HOT
                        && HELD_POWER == CPU_HELD_POWER, "one meaning each side");
 
-        if (thread_heat(&h, &info.energy_uj)) {
-            info.heat_known      = 1;
+        if (thread_heat(&h, &info.energy_uj, &info.gpu_energy_uj)) {
+            info.heat_known |= h.gpu_known ? HEAT_GPU_ENERGY : 0u;
+            info.heat_known     |= 1;
             info.package_c       = h.package_c;
             info.limit_c         = h.limit_c;
             info.held            = h.held;

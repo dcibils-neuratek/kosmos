@@ -393,6 +393,7 @@ bool cpu_clock_counts(uint64_t *actual, uint64_t *reference)
 #define MSR_RAPL_POWER_UNIT           0x606u
 #define MSR_PKG_POWER_LIMIT           0x610u
 #define MSR_PKG_ENERGY_STATUS         0x611u
+#define MSR_PP1_ENERGY_STATUS         0x641u   /* the graphics plane: the GPU */
 
 /* Family 6 models with a digital sensor, TjMax and package RAPL - Sandy
  * Bridge on - as Linux's `intel_rapl_common.c` lists them, cores only. */
@@ -406,6 +407,21 @@ static const uint8_t heat_models[] = {
     0xB7, 0xBA, 0xBF, 0xAA, 0xAC, 0xBD,         /* Raptor, Meteor, Lunar Lake */
     0xC5, 0xC6,                                 /* Arrow Lake */
 };
+
+/*
+ * **The client processors with a graphics plane in RAPL** (PP1, 0x641):
+ * Sandy Bridge to Comet Lake, as Linux's `intel_rapl` gives them the
+ * domain. Not the servers in the list above, which have no GPU on the die
+ * - and an MSR a processor does not have is a fault in ring 0, so this is
+ * a list rather than a try (`docs/gpumonitor.md`).
+ */
+static const uint8_t gpu_energy_models[] = {
+    0x2A, 0x3A,                                 /* Sandy Bridge, Ivy Bridge */
+    0x3C, 0x45, 0x46, 0x3D, 0x47,               /* Haswell, Broadwell */
+    0x4E, 0x5E, 0x8E, 0x9E, 0xA5, 0xA6,         /* Skylake to Comet Lake */
+};
+
+static bool heat_gpu_energy;            /* this model has PP1 */
 
 static int heat_kept;                   /* 0 not asked, 1 kept, 2 not */
 static int heat_limit_c;                /* TjMax, read once */
@@ -432,6 +448,10 @@ static bool heat_asked(void)
             for (unsigned i = 0; i < sizeof(heat_models); i++) {
                 known = known || heat_models[i] == model;
             }
+        }
+
+        for (unsigned i = 0; known && i < sizeof(gpu_energy_models); i++) {
+            heat_gpu_energy = heat_gpu_energy || gpu_energy_models[i] == model;
         }
 
         if (known) {
@@ -489,6 +509,8 @@ bool cpu_package_heat(struct cpu_heat *out)
     out->pl1_window_ms = (uint32_t)((((uint64_t)1000u << y) * (4u + z) / 4u) >> time_shift);
     out->energy_raw = (uint32_t)read_msr(MSR_PKG_ENERGY_STATUS);
     out->energy_shift = (heat_power_units >> 8) & 0x1fu;
+    out->gpu_known = heat_gpu_energy;
+    out->gpu_energy_raw = heat_gpu_energy ? (uint32_t)read_msr(MSR_PP1_ENERGY_STATUS) : 0;
     return true;
 }
 

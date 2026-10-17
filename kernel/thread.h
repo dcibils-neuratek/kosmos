@@ -684,7 +684,7 @@ int  thread_speed_cpu(unsigned index);
  * (`cpu_package_heat`). */
 struct cpu_heat;
 int  thread_temp_cpu(unsigned index);
-bool thread_heat(struct cpu_heat *out, uint64_t *energy_uj);
+bool thread_heat(struct cpu_heat *out, uint64_t *energy_uj, uint32_t *gpu_energy_uj);
 
 /* One tick in the counter's units, once the clock has one (`main.c`), and
  * how long a processor's ticks were held off past it (`percpu.h`). */

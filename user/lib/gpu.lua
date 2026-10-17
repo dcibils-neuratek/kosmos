@@ -89,4 +89,80 @@ function gpu.cursor_hide()
   return r and true, why
 end
 
+--
+-- **What the GPU is doing** (`docs/gpumonitor.md`, G1): one snapshot of its
+-- counters and its buffers, as `gpuproto.h`'s `struct gpu_stats` says -
+-- sixteen words, then a row of six for each buffer. Counters wrap at 32
+-- bits; a rate is the difference of two snapshots, `gpu.since(a, b)`.
+--
+local STATS_HEAD = "<I4I4I4I4I4I4I4I4I4I4I4I4I4I4I4I4"
+local STATS_ROW = "<I4I4I4I4I4I4"
+local OP_STATS = 9
+
+assert(#string.pack(STATS_HEAD, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) == 64,
+       "gpu: the stats layout does not match gpuproto.h")
+
+-- The names of the GPUs this driver has met, by device id; the rest by id.
+gpu.MODELS = {
+  [0x1902] = "HD Graphics 510", [0x1912] = "HD Graphics 530", [0x191B] = "HD Graphics 530",
+  [0x5912] = "HD Graphics 630", [0x591B] = "HD Graphics 630", [0x3E92] = "UHD Graphics 630",
+  [0x9BC5] = "UHD Graphics 630", [0x9B41] = "UHD Graphics", [0x9A49] = "Iris Xe Graphics",
+}
+
+gpu.KINDS = { [0] = "scanned out", [1] = "cursor plane" }
+
+function gpu.stats()
+  local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, OP_STATS, 0, 0, 0, 0, 0, 0, 0),
+                            nil, "gpu")
+
+  if not reply then return nil, tostring(why) end
+  if #reply < 64 then return nil, "the GPU's driver sent a reply of the wrong size" end
+
+  local err, device, width, height, mhz, max_mhz, min_mhz, rpstat, rc6, flips, frames,
+        underrun, desktop, shown, n = string.unpack(STATS_HEAD, reply)
+
+  if err ~= 0 then return nil, gpu.ERRORS[err] or ("gpu error " .. err), err end
+
+  local s = { device = device, model = gpu.MODELS[device] or ("Intel GPU 8086:%04x"):format(device),
+              width = width, height = height, mhz = mhz, max_mhz = max_mhz, min_mhz = min_mhz,
+              rpstat = rpstat, rc6 = rc6, flips = flips, frames = frames,
+              underrun = underrun ~= 0, cursor = desktop & 1 ~= 0, page_flips = desktop & 2 ~= 0,
+              shown = shown ~= 0xffffffff and shown or nil, buffers = {}, ticks = sys.ticks() }
+
+  for i = 1, math.min(n, (#reply - 64) // 24) do
+    local id, holder, w, h, pages, kind = string.unpack(STATS_ROW, reply, 64 + (i - 1) * 24 + 1)
+
+    s.buffers[i] = { id = id ~= 0xffffffff and id or nil, holder = holder, width = w, height = h,
+                     bytes = pages * 4096, kind = gpu.KINDS[kind] or ("kind " .. kind) }
+  end
+
+  return s
+end
+
+-- Two snapshots' difference, as rates a second: flips, frames (the
+-- refresh, measured) and the share of the time asleep in RC6.
+function gpu.since(a, b, counter_hz)
+  local seconds = (b.ticks - a.ticks) / counter_hz
+  local function d(x, y) return (y - x) & 0xffffffff end
+
+  if seconds <= 0 then return nil end
+
+  return { seconds = seconds,
+           flips = d(a.flips, b.flips) / seconds,
+           frames = d(a.frames, b.frames) / seconds,
+           asleep = math.min(1, d(a.rc6, b.rc6) * 1280e-9 / seconds) }
+end
+
+-- What the desktop is drawn with, in the words of its label: nil when
+-- there is no GPU this driver knows.
+function gpu.desktop_words(s)
+  local parts = {}
+
+  if s.cursor then parts[#parts + 1] = "cursor plane" end
+  if s.page_flips then parts[#parts + 1] = "page flips" end
+
+  return s.model:gsub("^U?HD Graphics ", "HD "):gsub("^Iris Xe Graphics", "Iris Xe")
+         .. " - " .. (#parts > 0 and table.concat(parts, ", ") or "software")
+end
+
 return gpu

@@ -27068,3 +27068,62 @@ of what it did. Diego: "it feels faster now".
 held back and the merge composes the same pixels; the pacing has no test
 but the M700.
 
+## 18.664 The GPU says what it is doing (`gpumonitor.md` G0 and G1)
+
+**G1, the driver.** `GPU_OP_STATS` answers in a shape of its own,
+`struct gpu_stats` (64 bytes and a row of 24 for each buffer): the device
+id; the clock now, `GEN6_RPSTAT1`'s CAGF in 31:23 at 50/3 MHz a step, and
+its range from `GEN6_RP_STATE_CAP` (the MCHBAR mirror's 0x5998: RP0 in
+7:0, RPn in 23:16, 50 MHz a step on Skylake); `GEN6_GT_GFX_RC6`, 1280 ns a
+count; `PIPE_FLIPCOUNT` and `PIPE_FRMCOUNT`, so the refresh is measured;
+the underrun bit; what the desktop takes from it; and every buffer the
+driver made, with the process that asked for it (`SYS_SENDER`) - the
+cursor's too. Each unit is i915's own: `intel_rps.c` and `intel_rc6.c` and
+`intel_mchbar_regs.h`, fetched from Linux 6.12 into `build/downloads/i915/`.
+`gpu.lua` reads it (`gpu.stats`, `gpu.since`), and `gpustat` prints it.
+
+**Nebula, the GPU's power.** RAPL's graphics plane, `MSR_PP1_ENERGY_STATUS`
+(0x641), read beside the package's each tick and added up in microjoules
+- in `sysinfo`'s spare word, wrapping at 32 bits, so the struct did not
+change size; `heat_known`'s `HEAT_GPU_ENERGY` says it is measured. **Only
+on a list of client processors**, Sandy Bridge to Comet Lake: an MSR a
+processor does not have is a fault in ring 0, and the kernel has no safe
+read, so the list rather than a try.
+
+**G0, the label**, and `neofetch`'s row: the version line at the bottom
+right ends with `GPU:` and what draws the desktop. A screen buffer counts
+as flips from the moment it is made - the label is asked before the first
+frame, and the first try said only "cursor plane".
+
+**The M700, 17 October:**
+
+    HD Graphics 530 (8086:1912)
+      clock      asleep, of 350 to 1150 MHz    (RPSTAT1 00000000)
+      asleep     100% of 2.0 s in RC6
+      power      0.00 W
+      display    1720x1440, 60.0 frames a second, 3.5 flips a second
+      desktop    HD 530 - cursor plane, page flips
+      0    the firmware     1720x1440    9.5 MB  scanned out
+      1    windowserver     1720x1440    9.5 MB  scanned out
+      -    wm               64x64        0.0 MB  cursor plane
+
+    GPU        HD Graphics 530, 350 to 1150 MHz, 19 MB in buffers;
+               the desktop: cursor plane, page flips              (neofetch)
+
+    ... | PC x86-64 | GPU: HD 530 - cursor plane, page flips      (the desktop)
+
+**What it says.** The range is the HD 530's own; the refresh is measured
+at 60.0; the GT sleeps through the whole of an idle desktop - RPSTAT1
+reads 0 in RC6, which `gpustat` prints as "asleep" - because the display
+engine, which does all the GPU's desktop work so far, lives outside it.
+The power reads 0.00 W idle; whether PP1 moves is for G2's window to show
+when an engine has work.
+
+**Gate**: 93 of 94, then 94 - `x86-udp` missed its "ready" word at 576
+s into the run, with every datagram check passed, and passed alone in 19 s:
+the late-gate shape the Telnet suites have shown before.
+
+**Tests.** Under QEMU there is no Intel GPU: `gpu.stats` answers "no
+Intel GPU", `neofetch` has no GPU row, and the label says `virtio -
+cursor` or `none - software`, which the display suites see in the corner.
+

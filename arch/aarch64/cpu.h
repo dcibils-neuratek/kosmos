@@ -143,6 +143,8 @@ struct cpu_heat {
     uint32_t pl1_window_ms;     /* how long PL1 is averaged over */
     uint32_t energy_raw;        /* a running total that wraps at 32 bits */
     unsigned energy_shift;      /* its unit, 1/2^shift joules */
+    bool     gpu_known;         /* the GPU's share: never, on this architecture */
+    uint32_t gpu_energy_raw;
 };
 
 bool cpu_core_temperature(int *celsius);

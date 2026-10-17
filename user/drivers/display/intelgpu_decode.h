@@ -42,6 +42,12 @@
 #define IGPU_PLANE_STRIDE       0x100u      /* plane 2 is 0x70280 */
 #define IGPU_PLANES             3u          /* the M700's pipes have three */
 #define IGPU_PLANE_SURFLIVE_1_A 0x701acu    /* the surface being scanned now */
+#define IGPU_PIPE_FRMCOUNT_A    0x70040u    /* frames the pipe has scanned */
+/* The GT's clock and sleep (`intel_gt_regs.h`, `intel_mchbar_regs.h`, and
+ * `intel_rps.c` and `intel_rc6.c` for their units on Gen9). */
+#define IGPU_RPSTAT1            0x0a01cu    /* GEN6_RPSTAT1: CAGF in 31:23, 50/3 MHz */
+#define IGPU_RP_STATE_CAP       0x145998u   /* MCHBAR mirror + 0x5998: RP0 7:0, RPn 23:16, 50 MHz */
+#define IGPU_RC6_RESIDENCY      0x138108u   /* GEN6_GT_GFX_RC6: 1280 ns a count */
 #define IGPU_PIPE_FLIPCOUNT_A   0x70044u    /* flips the pipe has latched */
 #define IGPU_CURCNTR_A          0x70080u
 #define IGPU_CURBASE_A          0x70084u

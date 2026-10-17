@@ -231,6 +231,24 @@ else
   row("Display", "none; this machine is serial-only")
 end
 
+-- The GPU, and what the desktop takes from it - the desktop label's words
+-- (Diego, 17 October 2026: "also neofetch needs to add the gpu info as
+-- ell"). Only where the GPU's driver knows one: QEMU's has no row.
+do
+  local ok, gpu = pcall(use, "/Kosmos/Libraries/gpu.lua")
+  local s = ok and gpu.stats() or nil
+
+  if s then
+    local mb = 0
+
+    for _, buf in ipairs(s.buffers) do mb = mb + buf.bytes / 1048576 end
+
+    row("GPU", ("%s, %d to %d MHz, %.0f MB in buffers; the desktop: %s")
+               :format(s.model, s.min_mhz, s.max_mhz, mb,
+                       gpu.desktop_words(s):gsub("^.- %- ", "")))
+  end
+end
+
 --
 -- The disk, asked about through the filesystem rather than through the
 -- block device. `/Home/.super` is what the one process holding the disk
