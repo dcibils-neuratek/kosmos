@@ -26948,3 +26948,41 @@ up; a pulse (`pulses.md`) is what would take the reply away.
 gate's pointer phases hold the QEMU path. The plane itself has no test
 but the M700's monitor.
 
+## 18.661 The copy to the screen, timed apart (`m700-2d.md` step 4a)
+
+The window server's reply grew two words, `compose_us` and `copy_us` - its
+composing into the back buffer and its copy from there to the screen,
+apart, in microseconds because a counter tick means nothing in another
+process - and `frames` prints them. The reply is six words now
+(`windowproto.h`), `wm/windowserver.lua` reads them, and the profile adds
+them up.
+
+**The M700, 17 October, Diego dragging a window in circles for 30
+seconds** (0.11.262 and this):
+
+    15426 passes, 15426 of which composed something
+    busy 1916 us mean, 4.655 ms WORST; composing 97.5% of busy
+    composed 1197392 px a frame; drew 2490613 (2.08x the damage)
+    window server: composing 1.37 ms a frame, the copy to the screen
+                   0.45 ms (25%), 0.93 ms at worst
+
+**Two things it says.**
+
+- **The copy is a quarter of the window server's time**, not half. 18.657
+  read "drew 2.02x the damage" as the frame composed and then copied; it is
+  not - `drawn` is what `scene_compose` drew, and the 2x is overdraw, layers
+  over layers. Composing straight into the screen's buffers would save at
+  most that quarter and cost a cache flush on every line, since the display
+  does not snoop the processor's caches. So step 4b keeps the copy, into
+  whichever buffer is not shown, and the render engine takes it away.
+- **The desktop composed 514 frames a second** for a 60 Hz screen: every
+  pointer report from the mouse is a pass, and every pass composes. Seven
+  frames in eight were never seen. A flip latched at vertical blank is what
+  gives the compositor a beat to keep - compose once a refresh, and the
+  pointer's reports in between only move the cursor plane, which composes
+  nothing since 3b. That is most of what 4b buys on this machine, before
+  any pixel is drawn faster.
+
+**Tests.** The gate's display suites read the reply at its new length; the
+times themselves are the M700's.
+

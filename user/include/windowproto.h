@@ -65,12 +65,17 @@ struct ws_reply {
                                    compose: the pictures held */
     uint32_t height;
     uint32_t drawn;             /* compose: the pixels drawn */
+    /* compose: how long composing took and how long the copy to the
+     * screen, apart (`m700-2d.md` step 4a) - microseconds, said here
+     * rather than counter ticks, which mean nothing in another process. */
+    uint32_t compose_us;
+    uint32_t copy_us;
 };
 
 _Static_assert(sizeof(struct ws_request) == 32,
                "the window server's request: wm.lua packs \"<I4I4I4I4I4I4I8\"");
-_Static_assert(sizeof(struct ws_reply) == 16,
-               "the window server's reply is four words: wm.lua reads \"<I4I4I4I4\"");
+_Static_assert(sizeof(struct ws_reply) == 24,
+               "the window server's reply is six words: wm.lua reads \"<I4I4I4I4I4I4\"");
 
 /*
  * **The scene, as written into the region they share** (`WS_OP_SCENE`):

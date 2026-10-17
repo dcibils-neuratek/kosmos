@@ -340,11 +340,22 @@ static bool read_scene(const struct ws_rect **rects, uint32_t *nrect)
 }
 
 /* The scene composed into the back buffer, and with `show`, the screen. */
-static uint32_t compose(bool show, uint32_t *error)
+static unsigned long counter_hz;     /* the counter's ticks a second */
+
+/* Counter ticks to microseconds, held to a word. */
+static uint32_t in_us(unsigned long ticks)
+{
+    unsigned long us = counter_hz ? ticks / (counter_hz / 1000000ul ? counter_hz / 1000000ul : 1) : 0;
+
+    return us > 0xffffffffu ? 0xffffffffu : (uint32_t)us;
+}
+
+static uint32_t compose(bool show, uint32_t *error, struct ws_reply *rep)
 {
     const struct ws_rect *rects;
     uint32_t nrect, k;
     uint64_t drawn = 0;
+    unsigned long composing = 0, copying = 0, t0, t1;
 
     if (back_region.cap < 0 || scene_region.cap < 0 || sc == NULL) {
         *error = WS_ERR_NO_SCENE;
@@ -371,7 +382,10 @@ static uint32_t compose(bool show, uint32_t *error)
             continue;
         }
 
+        t0 = kosmos_ticks();
         got = scene_compose(sc, x, y, w, h);
+        t1 = kosmos_ticks();
+        composing += t1 - t0;
 
         if (got < 0) {
             *error = WS_ERR_NO_ROOM;
@@ -383,9 +397,12 @@ static uint32_t compose(bool show, uint32_t *error)
         if (show && have_screen) {
             blit_on(&screen_surface, &back, x, y, w, h, x, y);
             (void)kosmos_screen_flush((unsigned)x, (unsigned)y, (unsigned)w, (unsigned)h);
+            copying += kosmos_ticks() - t1;
         }
     }
 
+    rep->compose_us = in_us(composing);
+    rep->copy_us = in_us(copying);
     return drawn > 0xffffffffu ? 0xffffffffu : (uint32_t)drawn;
 }
 
@@ -538,7 +555,7 @@ static void answer(const struct message *in, uint64_t sender)
     case WS_OP_COMPOSE: {
         uint32_t error = WS_OK;
 
-        rep->drawn = compose((req.flags & WS_SHOW) != 0, &error);
+        rep->drawn = compose((req.flags & WS_SHOW) != 0, &error, rep);
         rep->error = error;
         rep->width = nheld;
         break;
@@ -632,6 +649,14 @@ void windowserver_server(long endpoint, long console_cap)
      * fifth of a second, however fast the scheduler ticks. */
     if (kosmos_sched_info(&info) == 0 && info.tick_hz >= 5) {
         watch_ticks = info.tick_hz / 5;
+    }
+
+    {
+        static struct sysinfo machine;  /* large: not on the stack */
+
+        if (kosmos_sysinfo(&machine) == 0) {
+            counter_hz = machine.counter_hz;
+        }
     }
 
     for (;;) {

@@ -162,6 +162,16 @@ local function report(p)
                           p.drawn / p.px))
     end
 
+    -- The window server's halves (`m700-2d.md` step 4a): composing into
+    -- the back buffer, and the copy from it to the screen.
+    if p.ws_compose_us and p.ws_compose_us + p.ws_copy_us > 0 then
+      local all = p.ws_compose_us + p.ws_copy_us
+      print(string.format("  window server: composing %.2f ms a frame, the copy to the screen "
+                          .. "%.2f ms (%.0f%%), %.2f ms at worst",
+                          p.ws_compose_us / 1000.0 / p.frames, p.ws_copy_us / 1000.0 / p.frames,
+                          100.0 * p.ws_copy_us / all, p.ws_copy_max / 1000.0))
+    end
+
     -- What a pixel cost, which is the number that can be compared against
     -- the C primitives measured on their own. The difference between the
     -- two is what the Lua around them is worth.

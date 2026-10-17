@@ -23,7 +23,7 @@
 --
 
 local REQUEST = "<I4I4I4I4I4I4I8"
-local REPLY = "<I4I4I4I4"
+local REPLY = "<I4I4I4I4I4I4"
 
 local OP = { hello = 1, back = 2, scene = 3, picture = 4, forget = 5, compose = 6 }
 local SHOW = 1
@@ -49,13 +49,13 @@ return function()
     local ok, reply, why = pcall(fs.raw, "/Windowserver", bytes, cap, "windowserver")
 
     if not ok then return nil, tostring(reply) end
-    if type(reply) ~= "string" or #reply < 16 then return nil, tostring(why or reply) end
+    if type(reply) ~= "string" or #reply < 24 then return nil, tostring(why or reply) end
 
-    local err, a, b, c = string.unpack(REPLY, reply)
+    local err, a, b, c, d, e = string.unpack(REPLY, reply)
 
     if err ~= 0 then return nil, ERRORS[err] or ("error " .. err) end
 
-    return true, a, b, c
+    return true, a, b, c, d, e
   end
 
   local function request(op, slot, w, h, pitch, flags, offset)
@@ -186,7 +186,7 @@ return function()
       if not ok then return nil, "the scene does not fit its region" end
     end
 
-    local done, why, _, drawn = ask(COMPOSE[show == true])
+    local done, why, _, drawn, compose_us, copy_us = ask(COMPOSE[show == true])
 
     if not done then return nil, why end
 
@@ -198,7 +198,7 @@ return function()
       print(("wm: the window server holds %d pictures"):format(why))
     end
 
-    return drawn, why
+    return drawn, why, compose_us, copy_us
   end
 
   --

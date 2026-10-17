@@ -37,12 +37,18 @@ return function(ctx)
 
     describe()
 
-    local drawn, why = ws.compose(scene, damage, true)
+    local drawn, why, compose_us, copy_us = ws.compose(scene, damage, true)
 
     if not drawn then
       print("wm: the window server did not compose: " .. tostring(why))
     elseif P.measuring then
       P.prof.drawn = P.prof.drawn + drawn
+      -- The window server's own two halves, in microseconds: composing
+      -- into the back buffer, and the copy from it to the screen
+      -- (`m700-2d.md` step 4a) - what page flips could take away.
+      P.prof.ws_compose_us = P.prof.ws_compose_us + (compose_us or 0)
+      P.prof.ws_copy_us = P.prof.ws_copy_us + (copy_us or 0)
+      if (copy_us or 0) > P.prof.ws_copy_max then P.prof.ws_copy_max = copy_us end
     end
 
     -- On the screen already; to whoever watches it from here, from the back

@@ -3831,8 +3831,17 @@ processors, and still what follows USB:
    and reads the display back, writing nothing - pipe A on at 3440x1440,
    plane 1 XRGB8888 linear from GTT page 0 (memory `0xBC000000`), the cursor
    plane off. **Step 3a done** (18.659): the cursor plane shows a test
-   picture on the M700 - read back, no underrun, and put back. **Next, 3b**:
-   the window manager's pointer handed to it through `/Devices/gpu`.
+   picture on the M700 - read back, no underrun, and put back. **Step 3b done**
+   (18.660, 0.11.262): the window manager's pointer on the cursor plane
+   through `/Devices/gpu` (Diego: "Mouse works perfect"). **Step 4, page
+   flips, planned for 3D** (Diego, 17 October: "Remember we want to do 3d
+   composition in the future as welll as 3d acceleration", "For games and
+   apps", "So plan for it"; `m700-2d.md`, *Step 4, planned for 3D*): GPU
+   buffers the driver owns and maps in the GTT - the screen's two now, a
+   window's, a texture's and a game's swap chain later - a flip latched at
+   vertical blank and answered at once, and flip-done asked for. 4a times
+   the window server's copy apart, 4b flips, 4c a full-screen program flips
+   its own buffers.
    **And video in hardware, on the wishlist since 27 September** - Diego:
    "Can't we use the gpu for hardware encoding and decoding video?", and yes
    to keeping it here. The ThinkPad's and the M700's Intel graphics encode

@@ -90,6 +90,7 @@ local function buckets() return { 0, 0, 0, 0, 0, 0, 0 } end
 function P.reset(hz)
   P.hz = hz or P.hz or 62500000
   P.prof = { passes = 0, frames = 0, rects = 0, px = 0, drawn = 0,
+           ws_compose_us = 0, ws_copy_us = 0, ws_copy_max = 0,
            busy = { total = 0, max = 0, hist = buckets() },
            gc = { collections = 0, worst = 0, hist = buckets() },
            input = { n = 0, total = 0, max = 0, stale = 0, hist = buckets() } }
@@ -211,6 +212,8 @@ function P.report()
   local out = { ok = true, profiling = P.profiling,
                 passes = P.prof.passes, frames = P.prof.frames,
                 rects = P.prof.rects, px = P.prof.px, drawn = P.prof.drawn,
+                ws_compose_us = P.prof.ws_compose_us, ws_copy_us = P.prof.ws_copy_us,
+                ws_copy_max = P.prof.ws_copy_max,
                 busy_total = P.prof.busy.total, busy_max = P.prof.busy.max,
                 collections = P.prof.gc.collections, gc_worst = P.prof.gc.worst,
                 input_n = P.prof.input.n, input_total = P.prof.input.total,
