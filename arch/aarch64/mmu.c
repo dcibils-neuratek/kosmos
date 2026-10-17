@@ -224,6 +224,18 @@ static void unmap_page(uint64_t *root, uintptr_t va)
  */
 static struct spinlock kernel_map_lock = SPINLOCK("the kernel's map");
 
+/*
+ * Nothing to do on this board: `MAP_USER_FB` is `MAP_USER_RW` here (QEMU's
+ * ramfb and virtio-gpu read through the same coherent memory), so a
+ * write-combining region is mapped as every other one and no line can be
+ * written back over it. A board whose display does not snoop - the Pi's -
+ * cleans to the point of coherency here (`dc civac`).
+ */
+void mmu_clean_page(void *page)
+{
+    (void)page;
+}
+
 void mmu_unmap_page(uintptr_t va)
 {
     unsigned long flags = spin_lock(&kernel_map_lock);

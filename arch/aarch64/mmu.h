@@ -192,6 +192,15 @@ bool mmu_is_enabled(void);
  * stacks, which land in the part of RAM mapped as blocks. */
 void mmu_unmap_page(uintptr_t va);
 
+/*
+ * A page's lines written out of the processor's caches to memory and
+ * dropped from them, through the kernel's own mapping of it - before a
+ * process maps the page write-combining (`MEM_WRITE_COMBINE`), so that a
+ * line the kernel dirtied zeroing it cannot be written back later over
+ * what a display engine is reading.
+ */
+void mmu_clean_page(void *page);
+
 /* The level 3 descriptor for a virtual address, or NULL when the address is
  * not described by a page-granular mapping. For tests and inspection. */
 uint64_t *mmu_page_entry(uintptr_t va);

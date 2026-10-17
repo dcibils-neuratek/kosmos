@@ -392,6 +392,24 @@ static void unmap_page(uint64_t *root, uintptr_t va)
  */
 static struct spinlock kernel_map_lock = SPINLOCK("the kernel's map");
 
+/*
+ * `clflush` every 64 bytes - the smallest line any x86-64 has, so a larger
+ * one is flushed twice and never missed - and an `mfence` after: `clflush` is ordered against stores but not against
+ * other `clflush`es to other lines, and the fence is what says all of them
+ * have reached memory before the page is handed out (Intel SDM vol. 2A,
+ * CLFLUSH).
+ */
+void mmu_clean_page(void *page)
+{
+    uintptr_t at = (uintptr_t)page, end = at + PAGE_SIZE;
+
+    for (; at < end; at += 64) {
+        __asm__ volatile("clflush (%0)" : : "r"(at) : "memory");
+    }
+
+    __asm__ volatile("mfence" : : : "memory");
+}
+
 void mmu_unmap_page(uintptr_t va)
 {
     unsigned long flags = spin_lock(&kernel_map_lock);

@@ -26986,3 +26986,50 @@ seconds** (0.11.262 and this):
 **Tests.** The gate's display suites read the reply at its new length; the
 times themselves are the M700's.
 
+## 18.662 Page flips on the M700 (`m700-2d.md` step 4b)
+
+**Nebula, a write-combining region.** `SYS_MEM_CREATE` takes
+`MEM_WRITE_COMBINE`: the region's pages are zeroed, cleaned out of the
+processor's caches a line at a time (`mmu_clean_page`: `clflush` every 64
+bytes and an `mfence`; nothing on AArch64, where `MAP_USER_FB` is
+`MAP_USER_RW`), and every mapping of it in a process is `MAP_USER_FB`, the
+screen's memory type. A display engine does not look in the processor's
+caches, so a buffer it scans out cannot be write-back - and Mesa's buffers
+will want the same. Not with `MEM_ON_TOUCH` (`SYS_ERR_FLAGS`, -114, a new
+code, in the duplicate-case check).
+
+**The driver** makes GPU buffers (`GPU_OP_BUFFER_NEW`): contiguous and
+write-combining, entered in GTT slots past the cursor's, a megabyte
+aligned, handed out as a region beside the reply. Buffer 0 is the
+firmware's framebuffer. `GPU_OP_FLIP` writes the plane's stride and then
+its surface, which the display takes at the next vertical blank, and is
+answered at once; `GPU_OP_FLIPPED` reads `PLANE_SURFLIVE` and
+`PIPE_FLIPCOUNT` and says which buffer is being scanned. The GTT is now
+mapped once, all 8 MB of it: it was a page mapped per entry and never
+unmapped, which four cursor pages could afford and a screen's 4838 cannot.
+
+**The window server** asks for a screen-sized buffer when it takes the
+screen, and from then on composes into its back buffer as before, then
+copies into whichever of the two the display is not showing - what was
+composed since and what the other one was given last time, the back buffer
+always holding the whole frame - and flips. It touches a buffer only once
+`FLIPPED` says the display has left it; until then what was composed is
+owed, and the receive loop looks again a tick later. When the window
+manager goes, the firmware's screen is flipped back for the console, and
+the cursor plane hidden. With no Intel GPU - QEMU - nothing changes.
+
+**The M700, 17 October**:
+
+    intelgpu: buffer 1, 3440x1440 at GTT 01400000 = memory 00064dd000, write-combining
+    windowserver: page flips, between the firmware's screen and buffer 1
+    intelgpu: pipe A plane 1: ... surface at GTT 01400000 = memory 00064dd000
+
+The first try made no buffer and said nothing: the window server sent the
+width and not the height, and the driver refused a buffer of no rows. A
+refusal other than "no GPU here" is said now.
+
+**Diego, at the monitor: "m700 desktop works perfect", "Desktop works perfectly on m700".** Full gate 94/94 in 9:26.
+
+**Tests.** The gate holds the copying path, which every QEMU machine
+takes. The flips have no test but the M700.
+

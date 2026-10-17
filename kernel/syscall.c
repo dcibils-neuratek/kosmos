@@ -1916,13 +1916,39 @@ void syscall_dispatch(struct syscall_frame *sc)
          * is what every existing one wants - a window's double buffer has
          * no business asking for a run and would sometimes fail if it did.
          */
-        struct memobj *m = memobj_create((size_t)sc->arg[0],
-                                         (sc->arg[1] & MEM_CONTIGUOUS) != 0,
-                                         (sc->arg[1] & MEM_ON_TOUCH) != 0);
+        struct memobj *m;
+
+        /* Write-combining pages are zeroed and cleaned now, all of them, so
+         * they cannot be given a page at a time. */
+        if ((sc->arg[1] & MEM_WRITE_COMBINE) != 0 && (sc->arg[1] & MEM_ON_TOUCH) != 0) {
+            result = SYS_ERR_FLAGS;
+            break;
+        }
+
+        m = memobj_create((size_t)sc->arg[0],
+                          (sc->arg[1] & MEM_CONTIGUOUS) != 0,
+                          (sc->arg[1] & MEM_ON_TOUCH) != 0);
 
         if (m == NULL) {
             result = SYS_ERR_NO_ROOM;
             break;
+        }
+
+        /*
+         * **Write-combining** (`m700-2d.md` step 4b): the pages were zeroed
+         * through the kernel's write-back mapping, so their lines are
+         * cleaned out of the caches before any process maps them otherwise
+         * - a dirty line evicted later would land on top of what was
+         * written through the write-combining mapping.
+         */
+        if ((sc->arg[1] & MEM_WRITE_COMBINE) != 0) {
+            size_t i;
+
+            for (i = 0; i < m->pages; i++) {
+                mmu_clean_page(memobj_page(m, i));
+            }
+
+            m->write_combining = true;
         }
 
         result = ipc_install_memory(thread_current(), m);
@@ -1996,7 +2022,7 @@ void syscall_dispatch(struct syscall_frame *sc)
             if (memobj_page(m, i) != NULL
                 && as_map(p->space, base + i * PAGE_SIZE,
                           virt_to_phys(memobj_page(m, i)),
-                          1, MAP_USER_RW) != AS_OK) {
+                          1, m->write_combining ? MAP_USER_FB : MAP_USER_RW) != AS_OK) {
                 break;
             }
         }

@@ -97,7 +97,7 @@ void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep);
 
 /* The window server (`docs/astra-display.md` D3b-2): its endpoint, the
  * manager door, and the console's. Given the screen when it is spawned. */
-void windowserver_server(long endpoint, long console_ep);
+void windowserver_server(long endpoint, long console_ep, long gpu_ep);
 void keyring_server(long smb_door, long manage_door, long disk, long devices,
                     long console, long mail_door, long sharing_door);
 
@@ -910,7 +910,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_WINDOWSERVER) {
         named("windowserver");
-        windowserver_server(0, 1);
+        windowserver_server(0, 1, 2);
     }
 
     if (arg == ROLE_MDNSD) {

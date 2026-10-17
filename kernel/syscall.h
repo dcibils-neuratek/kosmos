@@ -201,6 +201,10 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 /* Pages given as they are first touched, by a process mapping the region
  * or a guest holding it, rather than all at once: a sandbox's memory. */
 #define MEM_ON_TOUCH    2u
+/* Mapped write-combining, the screen's memory type (`MAP_USER_FB`) rather
+ * than write-back: a buffer a display engine scans out, which does not see
+ * the processor's caches (`m700-2d.md` step 4b). Not with MEM_ON_TOUCH. */
+#define MEM_WRITE_COMBINE 4u
 #define SYS_SCHED_SET  33   /* (what, value)          -> 0 or error         */
 
 /*
@@ -1639,6 +1643,7 @@ struct diskinfo {
 #define SYS_ERR_NOT_IMAGE (-111)    /* SYS_SPAWN_IMAGE's bytes are not an image */
 #define SYS_ERR_BUSY      (-112)    /* one at a time, and another has it */
 #define SYS_ERR_GONE      (-113)    /* the process asked about has ended */
+#define SYS_ERR_FLAGS     (-114)    /* flags that cannot be had together */
 
 /*
  * Everything above is plain preprocessor because user programs written in
@@ -1682,6 +1687,7 @@ static inline void sys_result_codes_are_distinct(long result)
     case SYS_ERR_NOT_IMAGE:
     case SYS_ERR_BUSY:
     case SYS_ERR_GONE:
+    case SYS_ERR_FLAGS:
     default:
         break;
     }

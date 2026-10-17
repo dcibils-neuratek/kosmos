@@ -31,6 +31,24 @@
 #define GPU_OP_CURSOR_MOVE   4u
 #define GPU_OP_CURSOR_HIDE   5u
 
+/*
+ * **GPU buffers and flips** (step 4b, `m700-2d.md` *Step 4, planned for
+ * 3D*): pages the driver owns and enters in the global GTT, handed out as a
+ * write-combining region - the screen's two now, a window's, a texture's
+ * and a game's swap chain later. Buffer 0 is the firmware's framebuffer.
+ *
+ * `BUFFER_NEW` takes `x` by `y` pixels, XRGB8888, and answers with the
+ * region beside the reply and the buffer's id, GTT address and pitch.
+ * `FLIP` (`x`, a buffer) writes the plane's surface and is answered at
+ * once: the display takes it at the next vertical blank, and nothing here
+ * waits for that. `FLIPPED` says which buffer the display is scanning now
+ * and how many flips it has taken - so a buffer is drawn into only once
+ * the display has left it.
+ */
+#define GPU_OP_BUFFER_NEW    6u
+#define GPU_OP_FLIP          7u
+#define GPU_OP_FLIPPED       8u
+
 #define GPU_OK               0u
 #define GPU_ERR_NO_DEVICE    1u     /* no Intel GPU this driver knows */
 #define GPU_ERR_BAD_OP       2u
@@ -39,6 +57,7 @@
 #define GPU_ERR_GTT_BUSY     5u     /* the GTT slots chosen were in use */
 #define GPU_ERR_UNCHANGED    6u     /* written, and read back different */
 #define GPU_ERR_IN_USE       7u     /* a test, while somebody's arrow is shown */
+#define GPU_ERR_NO_BUFFER    8u     /* no such buffer, or not the screen's size */
 
 struct gpu_request {
     uint32_t op;
@@ -49,14 +68,29 @@ struct gpu_request {
 };
 
 /*
- * The registers as read back, for the test: the cursor's control, base and
+ * Seven words after the error, meaning what the verb says: for the cursor
+ * test the registers as read back - the cursor's control, base and
  * position, its share of the display buffer and its first watermark, and
- * the pipe's underrun flag before and after.
+ * the pipe's underrun flag before and after - and for a buffer or a flip
+ * what is named below.
  */
 struct gpu_reply {
     uint32_t error;
-    uint32_t curcntr, curbase, curpos, buf_cfg, wm0;
-    uint32_t underrun_before, underrun_after;
+    union {
+        struct {                    /* the cursor test */
+            uint32_t curcntr, curbase, curpos, buf_cfg, wm0;
+            uint32_t underrun_before, underrun_after;
+        } cursor;
+        struct {                    /* BUFFER_NEW */
+            uint32_t id, gtt, pitch, pages;
+        } buffer;
+        struct {                    /* FLIP and FLIPPED */
+            uint32_t flips;         /* PIPE_FLIPCOUNT: flips latched */
+            uint32_t live;          /* PLANE_SURFLIVE: the GTT address scanned */
+            uint32_t shown;         /* the buffer that is, or ~0u for none */
+        } flip;
+        uint32_t words[7];
+    };
 };
 
 _Static_assert(sizeof(struct gpu_request) == 32,

@@ -42,6 +42,7 @@
 #include <string.h>
 
 #include "kosmos.h"
+#include "gpuproto.h"
 #include "windowproto.h"
 #include "init/say.h"
 #include "kits/gfx/surface.h"
@@ -81,6 +82,7 @@ static unsigned npictures;
 static uint32_t nheld;              /* of them, holding a region */
 
 static struct scene *sc;
+
 
 /* A region that came with a message, mapped; false when none came or it
  * would not map, and then nothing is held. */
@@ -340,6 +342,229 @@ static bool read_scene(const struct ws_rect **rects, uint32_t *nrect)
 }
 
 /* The scene composed into the back buffer, and with `show`, the screen. */
+/*--------------------------------------------------------------------------
+ * **Page flips** (`docs/m700-2d.md` step 4b), where the GPU's driver has
+ * buffers to give: the screen is two buffers, the firmware's (buffer 0)
+ * and one the driver made, and the display shows one while the other is
+ * brought up to date from the back buffer and then flipped to, at the
+ * display's next vertical blank. No frame is seen half drawn.
+ *
+ * The buffer not shown is two frames old when its turn comes: it lacks
+ * what was copied into the other one last time (`given`) and what has
+ * been composed since (`owed`), so both are copied - the back buffer
+ * always holds the whole frame. A flip is answered at once, and the buffer
+ * it left is not touched until the driver says the display has left it;
+ * until then what is composed is owed, and the receive loop looks again a
+ * tick later. Where there is no such driver - QEMU, any machine without an
+ * Intel GPU - the back buffer is copied to the screen as before.
+ *------------------------------------------------------------------------*/
+
+#define DAMAGE_MAX 64u
+
+struct damage {
+    unsigned n;
+    bool whole;                     /* more than fit: the whole screen */
+    struct { long x, y, w, h; } r[DAMAGE_MAX];
+};
+
+static long gpu = -1;               /* the GPU's driver's door, if init gave one */
+static bool flipping;
+static struct held flip_region = { -1, 0, 0 };
+static struct surface buffers[2];   /* 0: the firmware's; 1: the driver's */
+static uint32_t buffer_id[2];
+static unsigned shown;              /* which of the two the display shows */
+static bool flip_pending;           /* a flip asked for, not yet seen taken */
+static struct damage owed, given;
+static unsigned long copy_ticks;    /* since the last reply, for `copy_us` */
+
+static void damage_add(struct damage *d, long x, long y, long w, long h)
+{
+    if (d->whole) {
+        return;
+    }
+
+    if (d->n == DAMAGE_MAX) {
+        d->whole = true;
+        return;
+    }
+
+    d->r[d->n].x = x;
+    d->r[d->n].y = y;
+    d->r[d->n].w = w;
+    d->r[d->n].h = h;
+    d->n++;
+}
+
+static uint32_t gpu_ask(uint32_t op, int32_t x, int32_t y, struct gpu_reply *rep, long *cap)
+{
+    static struct message msg, got;
+    struct gpu_request rq;
+
+    if (gpu < 0) {
+        return GPU_ERR_NO_DEVICE;
+    }
+
+    memset(&rq, 0, sizeof rq);
+    rq.op = op;
+    rq.x = x;
+    rq.y = y;
+    memset(&msg, 0, sizeof msg);
+    msg.length = (uint32_t)sizeof rq;
+    memcpy(msg.data, &rq, sizeof rq);
+
+    if (kosmos_call(gpu, &msg, &got) != 0 || got.length < sizeof *rep) {
+        return GPU_ERR_NO_DEVICE;
+    }
+
+    memcpy(rep, got.data, sizeof *rep);
+
+    if (cap != NULL) {
+        *cap = got.cap_plus_one > 0 ? (long)got.cap_plus_one - 1 : -1;
+    } else if (got.cap_plus_one > 0) {
+        (void)kosmos_cap_drop((long)got.cap_plus_one - 1);
+    }
+
+    return rep->error;
+}
+
+/* A second screen from the GPU's driver, once the screen is taken. */
+static void flips_start(void)
+{
+    struct gpu_reply rep;
+    struct say_line line;
+    long cap = -1;
+
+    if (flipping || gpu < 0 || !have_screen) {
+        return;
+    }
+
+    {
+        uint32_t error = gpu_ask(GPU_OP_BUFFER_NEW, (int32_t)screen.width, (int32_t)screen.height, &rep, &cap);
+
+        if (error != GPU_OK) {
+            if (cap >= 0) {
+                (void)kosmos_cap_drop(cap);
+            }
+
+            /* No such driver here - QEMU - is the usual answer, and quiet:
+             * copying, as before. Anything else is said. */
+            if (error != GPU_ERR_NO_DEVICE) {
+                say_begin(&line);
+                say_text(&line, "windowserver: no page flips, the GPU's driver said ");
+                say_dec(&line, error);
+                say_send(console, &line);
+            }
+
+            return;
+        }
+    }
+
+    if (!take(cap, &flip_region)
+        || flip_region.bytes < (size_t)rep.buffer.pitch * screen.height) {
+        let_go(&flip_region);
+        return;
+    }
+
+    buffer_id[0] = 0;
+    buffer_id[1] = rep.buffer.id;
+    buffers[0] = screen_surface;
+    surface_over(&buffers[1], flip_region.at, screen.width, screen.height, rep.buffer.pitch);
+    shown = 0;
+    flip_pending = false;
+    owed.n = given.n = 0;
+    owed.whole = false;
+    given.whole = true;             /* the new buffer holds nothing yet */
+    flipping = true;
+
+    say_begin(&line);
+    say_text(&line, "windowserver: page flips, between the firmware's screen and buffer ");
+    say_dec(&line, rep.buffer.id);
+    say_send(console, &line);
+}
+
+static void copy_damage(struct surface *to, const struct damage *d)
+{
+    unsigned k;
+
+    if (d->whole) {
+        blit_on(to, &back, 0, 0, (long)screen.width, (long)screen.height, 0, 0);
+        return;
+    }
+
+    for (k = 0; k < d->n; k++) {
+        blit_on(to, &back, d->r[k].x, d->r[k].y, d->r[k].w, d->r[k].h, d->r[k].x, d->r[k].y);
+    }
+}
+
+/*
+ * What is owed, put on the screen if the display has left the other buffer:
+ * copied into it, and flipped to. Returns whether something is still owed.
+ */
+static bool present(void)
+{
+    struct gpu_reply rep;
+    unsigned hidden;
+    unsigned long t0;
+
+    if (!flipping || (owed.n == 0 && !owed.whole)) {
+        return false;
+    }
+
+    if (flip_pending) {
+        if (gpu_ask(GPU_OP_FLIPPED, 0, 0, &rep, NULL) != GPU_OK) {
+            return true;
+        }
+
+        if (rep.flip.shown != buffer_id[shown]) {
+            return true;            /* still on the other one: a tick later */
+        }
+
+        flip_pending = false;
+    }
+
+    hidden = 1u - shown;
+    t0 = kosmos_ticks();
+    copy_damage(&buffers[hidden], &given);
+    copy_damage(&buffers[hidden], &owed);
+
+#if defined(__x86_64__)
+    /* Write-combining stores drained before the display is pointed at
+     * them: `sfence` orders them ahead of the flip's register write. */
+    __asm__ volatile("sfence" ::: "memory");
+#endif
+
+    copy_ticks += kosmos_ticks() - t0;
+
+    if (gpu_ask(GPU_OP_FLIP, (int32_t)buffer_id[hidden], 0, &rep, NULL) != GPU_OK) {
+        return true;
+    }
+
+    shown = hidden;
+    flip_pending = true;
+    given = owed;
+    owed.n = 0;
+    owed.whole = false;
+    return false;
+}
+
+/* Back to the firmware's screen, for the console, and the flips ended. */
+static void flips_stop(void)
+{
+    struct gpu_reply rep;
+
+    if (!flipping) {
+        return;
+    }
+
+    if (shown != 0) {
+        (void)gpu_ask(GPU_OP_FLIP, 0, 0, &rep, NULL);
+    }
+
+    flipping = false;
+    flip_pending = false;
+    shown = 0;
+}
+
 static unsigned long counter_hz;     /* the counter's ticks a second */
 
 /* Counter ticks to microseconds, held to a word. */
@@ -394,13 +619,21 @@ static uint32_t compose(bool show, uint32_t *error, struct ws_reply *rep)
 
         drawn += (uint64_t)got;
 
-        if (show && have_screen) {
+        if (show && flipping) {
+            damage_add(&owed, x, y, w, h);
+        } else if (show && have_screen) {
             blit_on(&screen_surface, &back, x, y, w, h, x, y);
             (void)kosmos_screen_flush((unsigned)x, (unsigned)y, (unsigned)w, (unsigned)h);
             copying += kosmos_ticks() - t1;
         }
     }
 
+    if (show && flipping) {
+        (void)present();
+    }
+
+    copying += copy_ticks;
+    copy_ticks = 0;
     rep->compose_us = in_us(composing);
     rep->copy_us = in_us(copying);
     return drawn > 0xffffffffu ? 0xffffffffu : (uint32_t)drawn;
@@ -494,6 +727,10 @@ static void answer(const struct message *in, uint64_t sender)
          */
         if (have_screen && !screen_taken) {
             screen_taken = kosmos_screen_take(1) >= 0;
+        }
+
+        if (screen_taken) {
+            flips_start();
         }
 
         break;
@@ -600,8 +837,13 @@ static void manager_gone(void)
         sc = NULL;
     }
 
+    flips_stop();
+
     if (screen_taken) {
+        struct gpu_reply rep;
+
         (void)kosmos_cursor_hide();
+        (void)gpu_ask(GPU_OP_CURSOR_HIDE, 0, 0, &rep, NULL);
         (void)kosmos_screen_take(0);
         screen_taken = false;
     }
@@ -615,11 +857,12 @@ static void manager_gone(void)
     }
 }
 
-void windowserver_server(long endpoint, long console_cap)
+void windowserver_server(long endpoint, long console_cap, long gpu_cap)
 {
     struct schedinfo info;
     unsigned long watch_ticks = 50;     /* scheduler ticks: a fifth of a second at 250 */
     console = console_cap;
+    gpu = gpu_cap;
     memset(&screen, 0, sizeof(screen));
     have_screen = kosmos_screen(&screen) >= 0;
 
@@ -662,13 +905,19 @@ void windowserver_server(long endpoint, long console_cap)
     for (;;) {
         struct message msg;
         uint64_t sender = 0;
-        long got = kosmos_receive(endpoint, &msg, &sender, 0, manager >= 0 ? watch_ticks : 0);
+        /* A tick when a frame is owed to a display still on its way to the
+         * last one; a fifth of a second while a manager is to be watched. */
+        unsigned long wait = (flipping && (owed.n > 0 || owed.whole)) ? 1ul
+                           : manager >= 0 ? watch_ticks : 0;
+        long got = kosmos_receive(endpoint, &msg, &sender, 0, wait);
 
         if (got == 0) {
             answer(&msg, sender);
         } else if (got != -7) {
             return;
         }
+
+        (void)present();
 
         if (manager >= 0 && kosmos_cap_check(manager) < 0) {
             manager_gone();

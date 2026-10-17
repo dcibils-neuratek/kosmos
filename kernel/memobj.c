@@ -248,6 +248,7 @@ again:
         m->indexes = 0;
         m->contiguous = false;
         m->on_touch = false;
+        m->write_combining = false;
         m->touched = 0;
         m->dirs = 0;
         m->top = pmm_alloc_page();      /* the page of directory pages */

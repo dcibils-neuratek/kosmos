@@ -6378,7 +6378,7 @@ if role == ROLE_INIT then
                                                 SMBD_EP, KEYRING_SHARING_EP, MDNS_EP })
 
   if may_pass_screen() then
-    local id, err = sys.spawn(ROLE_WINDOWSERVER, { WINDOW_EP, CONSOLE_EP }, SPAWN_SCREEN)
+    local id, err = sys.spawn(ROLE_WINDOWSERVER, { WINDOW_EP, CONSOLE_EP, GPU_EP }, SPAWN_SCREEN)
 
     if id then
       names[id] = "the window server"

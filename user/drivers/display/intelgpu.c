@@ -145,6 +145,7 @@ static struct {
     unsigned      width, height;    /* its source size */
     uint32_t      surface;          /* its plane 1's GTT address */
     unsigned      fb_pages;         /* the pages plane 1 scans out */
+    unsigned      fb_pitch;         /* and its bytes a row */
 } G = { .pipe = -1 };
 
 static void look(long console)
@@ -255,6 +256,7 @@ static void look(long console)
             if (G.pipe == (int)pipe && plane == 0) {
                 G.surface = p.surface;
                 G.fb_pages = (unsigned)(((uint64_t)p.stride_bytes * p.height + 4095u) / 4096u);
+            G.fb_pitch = p.stride_bytes;
             }
 
             got = gtt_entry((unsigned long)dev.base + IGPU_GTT_AT, p.surface, &entry);
@@ -350,18 +352,37 @@ static void test_picture(uint32_t *argb)
     }
 }
 
-/* One GTT entry, written: the high word first and the present bit last. */
+/*
+ * One GTT entry, written: the high word first and the present bit last.
+ *
+ * Through the whole GTT mapped once, its 8 MB the first time an entry is
+ * written: it was a page mapped for each entry, and never unmapped, which
+ * four cursor pages could afford and a screen's buffer - nearly five
+ * thousand entries - cannot.
+ */
+#define GTT_ENTRIES (IGPU_GTT_AT / 8u)          /* 8 MB of 8-byte entries */
+
+static uintptr_t gtt_window;
+
 static bool gtt_write(unsigned long index, uint64_t value, uint64_t *was)
 {
-    unsigned long at = (unsigned long)G.dev.base + IGPU_GTT_AT + index * 8u;
-    long page = kosmos_dev_map(at & ~0xFFFul, 1);
     uintptr_t p;
 
-    if (page < 0) {
+    if (index >= GTT_ENTRIES) {
         return false;
     }
 
-    p = (uintptr_t)page + (at & 0xFFFu);
+    if (gtt_window == 0) {
+        long at = kosmos_dev_map((unsigned long)G.dev.base + IGPU_GTT_AT, IGPU_GTT_AT / 4096u);
+
+        if (at < 0) {
+            return false;
+        }
+
+        gtt_window = (uintptr_t)at;
+    }
+
+    p = gtt_window + index * 8u;
 
     if (was != NULL) {
         *was = (uint64_t)mmio_read32(p) | (uint64_t)mmio_read32(p + 4) << 32;
@@ -536,7 +557,7 @@ static void cursor_test(long console, unsigned seconds, struct gpu_reply *rep)
         return;
     }
 
-    rep->underrun_before = reg(G.regs, DE_PIPE_IIR_A + 0x10u * (uint32_t)G.pipe) & PIPE_FIFO_UNDERRUN;
+    rep->cursor.underrun_before = reg(G.regs, DE_PIPE_IIR_A + 0x10u * (uint32_t)G.pipe) & PIPE_FIFO_UNDERRUN;
 
     test_picture(C.pixels);
     flush_lines(C.pixels, CURSOR_PAGES * 4096u);
@@ -544,33 +565,207 @@ static void cursor_test(long console, unsigned seconds, struct gpu_reply *rep)
     cursor_show((int)(G.width - 64u) / 2, (int)(G.height - 64u) / 2);
     kosmos_sleep(25);
 
-    rep->curcntr = reg(G.regs, IGPU_CURCNTR_A + C.step);
-    rep->curbase = reg(G.regs, IGPU_CURBASE_A + C.step);
-    rep->curpos = reg(G.regs, IGPU_CURPOS_A + C.step);
-    rep->buf_cfg = reg(G.regs, IGPU_CUR_BUF_CFG_A + C.step);
-    rep->wm0 = reg(G.regs, IGPU_CUR_WM_A_0 + C.step);
+    rep->cursor.curcntr = reg(G.regs, IGPU_CURCNTR_A + C.step);
+    rep->cursor.curbase = reg(G.regs, IGPU_CURBASE_A + C.step);
+    rep->cursor.curpos = reg(G.regs, IGPU_CURPOS_A + C.step);
+    rep->cursor.buf_cfg = reg(G.regs, IGPU_CUR_BUF_CFG_A + C.step);
+    rep->cursor.wm0 = reg(G.regs, IGPU_CUR_WM_A_0 + C.step);
 
-    if ((rep->curcntr & 0x27u) != CURSOR_ARGB_64 || rep->curbase != (uint32_t)(C.index << 12)) {
+    if ((rep->cursor.curcntr & 0x27u) != CURSOR_ARGB_64 || rep->cursor.curbase != (uint32_t)(C.index << 12)) {
         rep->error = GPU_ERR_UNCHANGED;
     }
 
     kosmos_sleep((unsigned long)seconds * 250u);   /* ticks: 250 a second */
 
-    rep->underrun_after = reg(G.regs, DE_PIPE_IIR_A + 0x10u * (uint32_t)G.pipe) & PIPE_FIFO_UNDERRUN;
+    rep->cursor.underrun_after = reg(G.regs, DE_PIPE_IIR_A + 0x10u * (uint32_t)G.pipe) & PIPE_FIFO_UNDERRUN;
     cursor_hide();
 
     say_begin(&line);
     say_text(&line, "intelgpu: cursor test: read back control ");
-    say_hex(&line, rep->curcntr, 8);
+    say_hex(&line, rep->cursor.curcntr, 8);
     say_text(&line, ", base ");
-    say_hex(&line, rep->curbase, 8);
+    say_hex(&line, rep->cursor.curbase, 8);
     say_text(&line, ", buffer ");
-    say_hex(&line, rep->buf_cfg, 8);
+    say_hex(&line, rep->cursor.buf_cfg, 8);
     say_text(&line, "; underrun before ");
-    say_text(&line, rep->underrun_before ? "yes" : "no");
+    say_text(&line, rep->cursor.underrun_before ? "yes" : "no");
     say_text(&line, ", after ");
-    say_text(&line, rep->underrun_after ? "yes" : "no");
+    say_text(&line, rep->cursor.underrun_after ? "yes" : "no");
     say_send(console, &line);
+}
+
+/*--------------------------------------------------------------------------
+ * **GPU buffers and flips** (`docs/m700-2d.md` step 4b): pages the driver
+ * owns in the global GTT, handed out as write-combining regions, and the
+ * plane's surface pointed at one of them at the next vertical blank.
+ *------------------------------------------------------------------------*/
+
+#define BUFFERS_MAX 16u                 /* the screen's two, and room after */
+
+static struct buffer {
+    bool          used;
+    long          cap;                  /* the driver's own hold on it */
+    uint32_t      gtt;                  /* its GTT address */
+    unsigned long pages;
+    unsigned      width, height, pitch;
+} B[BUFFERS_MAX];
+
+static unsigned long next_slot;         /* the next free GTT slot past the cursor's */
+
+/* Buffer 0: the firmware's framebuffer, as `look` found it. */
+static void buffers_init(void)
+{
+    if (B[0].used || G.pipe < 0) {
+        return;
+    }
+
+    B[0].used = true;
+    B[0].cap = -1;
+    B[0].gtt = G.surface;
+    B[0].pages = G.fb_pages;
+    B[0].width = G.width;
+    B[0].height = G.height;
+    B[0].pitch = G.fb_pitch;
+
+    /* Past the framebuffer, then past the cursor's slots, a megabyte
+     * aligned: linear surfaces want 256 KB on Gen9 (i915's
+     * `intel_linear_alignment`), and a megabyte is a whole number of them. */
+    next_slot = (((unsigned long)(G.surface >> 12) + G.fb_pages + 255u) & ~255ul);
+    next_slot = (next_slot + CURSOR_PAGES + 255u) & ~255ul;
+}
+
+static uint32_t buffer_new(long console, const struct gpu_request *rq,
+                           struct gpu_reply *rep, long *pass)
+{
+    struct say_line line;
+    unsigned width = (unsigned)rq->x, height = (unsigned)rq->y, pitch, id;
+    unsigned long pages, i;
+    long region, phys;
+
+    if (!G.found) {
+        return GPU_ERR_NO_DEVICE;
+    }
+
+    if (G.pipe < 0) {
+        return GPU_ERR_NO_PIPE;
+    }
+
+    buffers_init();
+
+    if (rq->x <= 0 || rq->y <= 0 || width > 16384u || height > 16384u) {
+        return GPU_ERR_BAD_OP;
+    }
+
+    for (id = 1; id < BUFFERS_MAX && B[id].used; id++) {
+    }
+
+    if (id == BUFFERS_MAX) {
+        return GPU_ERR_NO_MEMORY;
+    }
+
+    pitch = (width * 4u + 63u) & ~63u;  /* PLANE_STRIDE counts 64 bytes, linear */
+    pages = ((unsigned long)pitch * height + 4095u) / 4096u;
+
+    if (next_slot + pages > GTT_ENTRIES) {
+        return GPU_ERR_GTT_BUSY;
+    }
+
+    /* One run, because `kosmos_mem_phys` names only one; write-combining,
+     * because the display does not look in the processor's caches. */
+    region = kosmos_mem_create_flags(pages, MEM_CONTIGUOUS | MEM_WRITE_COMBINE);
+
+    if (region < 0 || (phys = kosmos_mem_phys(region)) < 0) {
+        if (region >= 0) {
+            (void)kosmos_cap_drop(region);
+        }
+
+        return GPU_ERR_NO_MEMORY;
+    }
+
+    for (i = 0; i < pages; i++) {
+        if (!gtt_write(next_slot + i, (uint64_t)(phys + (long)(i * 4096u)) | 1u, NULL)) {
+            (void)kosmos_cap_drop(region);
+            return GPU_ERR_GTT_BUSY;
+        }
+    }
+
+    wreg(GFX_FLSH_CNTL, 1u);
+    (void)reg(G.regs, GFX_FLSH_CNTL);
+
+    B[id].used = true;
+    B[id].cap = region;
+    B[id].gtt = (uint32_t)(next_slot << 12);
+    B[id].pages = pages;
+    B[id].width = width;
+    B[id].height = height;
+    B[id].pitch = pitch;
+    next_slot = (next_slot + pages + 255u) & ~255ul;
+
+    rep->buffer.id = id;
+    rep->buffer.gtt = B[id].gtt;
+    rep->buffer.pitch = pitch;
+    rep->buffer.pages = (uint32_t)pages;
+    *pass = region;
+
+    say_begin(&line);
+    say_text(&line, "intelgpu: buffer ");
+    say_dec(&line, id);
+    say_text(&line, ", ");
+    say_dec(&line, width);
+    say_text(&line, "x");
+    say_dec(&line, height);
+    say_text(&line, " at GTT ");
+    say_hex(&line, B[id].gtt, 8);
+    say_text(&line, " = memory ");
+    say_hex(&line, (unsigned long)phys, 10);
+    say_text(&line, ", write-combining");
+    say_send(console, &line);
+
+    return GPU_OK;
+}
+
+static void flip_state(struct gpu_reply *rep)
+{
+    uint32_t step = (uint32_t)G.pipe * IGPU_PIPE_STRIDE;
+    unsigned id;
+
+    rep->flip.flips = reg(G.regs, IGPU_PIPE_FLIPCOUNT_A + step);
+    rep->flip.live = reg(G.regs, IGPU_PLANE_SURFLIVE_1_A + step) & ~0xFFFu;
+    rep->flip.shown = ~0u;
+
+    for (id = 0; id < BUFFERS_MAX; id++) {
+        if (B[id].used && B[id].gtt == rep->flip.live) {
+            rep->flip.shown = id;
+        }
+    }
+}
+
+/*
+ * The plane pointed at a buffer: its stride, then its surface, whose write
+ * is what arms the update - the display takes both at the next vertical
+ * blank (i915's `skl_program_plane_arm`: `PLANE_SURF` last). Answered now.
+ */
+static uint32_t flip(const struct gpu_request *rq, struct gpu_reply *rep)
+{
+    uint32_t step;
+    unsigned id = (unsigned)rq->x;
+
+    if (!G.found || G.pipe < 0) {
+        return G.found ? GPU_ERR_NO_PIPE : GPU_ERR_NO_DEVICE;
+    }
+
+    buffers_init();
+
+    if (rq->x < 0 || id >= BUFFERS_MAX || !B[id].used
+        || B[id].width != G.width || B[id].height != G.height) {
+        return GPU_ERR_NO_BUFFER;
+    }
+
+    step = (uint32_t)G.pipe * IGPU_PIPE_STRIDE;
+    wreg(IGPU_PLANE_STRIDE_1_A + step, B[id].pitch / 64u);
+    wreg(IGPU_PLANE_SURF_1_A + step, B[id].gtt);
+    flip_state(rep);
+    return GPU_OK;
 }
 
 void intelgpu_server(long console, long endpoint)
@@ -582,7 +777,7 @@ void intelgpu_server(long console, long endpoint)
         uint64_t sender = 0;
         struct gpu_request rq;
         struct gpu_reply rep;
-        long cap;
+        long cap, pass = -1;
 
         if (kosmos_receive(endpoint, &msg, &sender, 0, 0) != 0) {
             continue;
@@ -618,6 +813,20 @@ void intelgpu_server(long console, long endpoint)
             case GPU_OP_CURSOR_HIDE:
                 cursor_hide();
                 break;
+            case GPU_OP_BUFFER_NEW:
+                rep.error = buffer_new(console, &rq, &rep, &pass);
+                break;
+            case GPU_OP_FLIP:
+                rep.error = flip(&rq, &rep);
+                break;
+            case GPU_OP_FLIPPED:
+                if (G.found && G.pipe >= 0) {
+                    buffers_init();
+                    flip_state(&rep);
+                } else {
+                    rep.error = G.found ? GPU_ERR_NO_PIPE : GPU_ERR_NO_DEVICE;
+                }
+                break;
             default:
                 rep.error = GPU_ERR_BAD_OP;
                 break;
@@ -632,6 +841,7 @@ void intelgpu_server(long console, long endpoint)
 
         memset(&out, 0, sizeof out);
         out.tag = msg.tag;
+        out.cap_plus_one = pass >= 0 ? (uint32_t)pass + 1u : 0u;  /* a copy: the driver keeps its own */
         out.length = (uint32_t)sizeof rep;
         memcpy(out.data, &rep, sizeof rep);
         (void)kosmos_reply(sender, &out);

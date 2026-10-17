@@ -152,6 +152,15 @@ struct memobj {
      */
     bool     on_touch;
     size_t   touched;
+
+    /*
+     * **Mapped write-combining** (`MEM_WRITE_COMBINE`): every mapping of it
+     * in a process is `MAP_USER_FB`, the screen's memory type, because a
+     * display engine reads these pages without looking in the processor's
+     * caches. A memory type is a property of a mapping, so it is kept here,
+     * where every mapping of the region is made from.
+     */
+    bool     write_combining;
 };
 
 /*

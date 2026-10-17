@@ -41,6 +41,8 @@
 #define IGPU_PLANE_OFFSET_1_A   0x701a4u
 #define IGPU_PLANE_STRIDE       0x100u      /* plane 2 is 0x70280 */
 #define IGPU_PLANES             3u          /* the M700's pipes have three */
+#define IGPU_PLANE_SURFLIVE_1_A 0x701acu    /* the surface being scanned now */
+#define IGPU_PIPE_FLIPCOUNT_A   0x70044u    /* flips the pipe has latched */
 #define IGPU_CURCNTR_A          0x70080u
 #define IGPU_CURBASE_A          0x70084u
 #define IGPU_CURPOS_A           0x70088u
