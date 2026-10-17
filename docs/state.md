@@ -2,9 +2,31 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-15, afternoon (0.11.254; Linux on the M700 browses)
+Last updated: 2026-10-17, evening (0.11.262; the M700's pointer on its GPU's cursor plane)
 
 ---
+
+## 17 October: the M700's GPU, display engine first (`docs/m700-2d.md`)
+
+**Pushed: up to 0.11.259.** **On `main`, not pushed: 0.11.260-0.11.262.**
+
+- Step 2 (0.11.260): `intelgpu` finds the HD 530 and reads pipes, planes,
+  cursor, display-buffer shares, watermarks and the GTT (`testing.md` 18.658).
+- Step 3a (0.11.261): `gpu cursor`, a test picture on the cursor plane,
+  seen on the monitor, no underrun (18.659).
+- Step 3b (0.11.262): the window manager's arrow on the cursor plane through
+  `/Devices/gpu` and `gpu.lua` - Diego: "Mouse works perfect", "And dragging
+  windows work great" (18.660). Full gate 94/94 in 9:13.
+- **Next: step 4, page flips** - a second framebuffer in the GTT and
+  `PLANE_SURF` written at vertical blank. Then the blitter (5-6), then the
+  render engine and a 3D compositor (7; Diego: 3D games and a compositor
+  with translucency, glass and animation are the goal).
+- Still open from Linux: physical-keyboard keys lost in Epiphany (0.11.260's
+  drop counters on the M700, `linux --tell --keys`, Diego to type), the cage
+  crash, Epiphany's dotted letters, no sound.
+- `user/servers/vmm.c` holds an uncommitted x86 hunk (the vCPU off core
+  zero) - keep it out of commits.
+
 
 ## 15 October: Linux on the M700, usable
 

@@ -372,133 +372,201 @@ static bool gtt_write(unsigned long index, uint64_t value, uint64_t *was)
     return true;
 }
 
-static void cursor_test(long console, unsigned seconds, struct gpu_reply *rep)
+/*
+ * **The cursor, set up once and kept** (step 3b): its pages, its GTT
+ * slots, its share of the display buffer and its watermark. `hide` turns
+ * the plane off and keeps the rest, so the next `set` is three register
+ * writes; nothing is given back while the driver runs.
+ */
+static struct {
+    bool          ready;
+    bool          shown;
+    uint32_t      step;
+    unsigned long index;            /* its first GTT slot */
+    uint32_t     *pixels;           /* 64 x 64, mapped here */
+    int           hot_x, hot_y;
+} C;
+
+static uint32_t cursor_prepare(long console)
 {
     struct say_line line;
-    uint32_t step, buf_start, cur_x, cur_y;
-    unsigned long index;
-    uint64_t was[CURSOR_PAGES];
     long region, mapped, phys;
-    unsigned i, plane_start, plane_end;
+    unsigned i, plane_start, plane_end, buf_start;
+
+    if (C.ready) {
+        return GPU_OK;
+    }
 
     if (!G.found) {
-        rep->error = GPU_ERR_NO_DEVICE;
-        return;
+        return GPU_ERR_NO_DEVICE;
     }
 
     if (G.pipe < 0) {
-        rep->error = GPU_ERR_NO_PIPE;
-        return;
+        return GPU_ERR_NO_PIPE;
     }
 
-    step = (uint32_t)G.pipe * IGPU_PIPE_STRIDE;
-
-    /* The picture, in pages whose addresses the hardware is told. */
+    C.step = (uint32_t)G.pipe * IGPU_PIPE_STRIDE;
     region = kosmos_mem_create_flags(CURSOR_PAGES, MEM_CONTIGUOUS);
 
     if (region < 0 || (mapped = kosmos_mem_map(region)) < 0
         || (phys = kosmos_mem_phys(region)) < 0) {
-        rep->error = GPU_ERR_NO_MEMORY;
-        return;
+        return GPU_ERR_NO_MEMORY;
     }
 
-    test_picture((uint32_t *)mapped);
-    flush_lines((const void *)mapped, CURSOR_PAGES * 4096u);
+    C.pixels = (uint32_t *)mapped;
 
-    /* GTT slots past the framebuffer's, a megabyte on: free ones, or none. */
-    index = (((unsigned long)(G.surface >> 12) + G.fb_pages + 255u) & ~255ul);
+    /* GTT slots past the framebuffer's, a megabyte on. */
+    C.index = (((unsigned long)(G.surface >> 12) + G.fb_pages + 255u) & ~255ul);
 
     for (i = 0; i < CURSOR_PAGES; i++) {
-        uint64_t entry = (uint64_t)(phys + (long)i * 4096) | 1u;
-
-        if (!gtt_write(index + i, entry, &was[i])) {
-            rep->error = GPU_ERR_GTT_BUSY;
-            return;
+        if (!gtt_write(C.index + i, (uint64_t)(phys + (long)i * 4096) | 1u, NULL)) {
+            return GPU_ERR_GTT_BUSY;
         }
     }
 
     wreg(GFX_FLSH_CNTL, 1u);
     (void)reg(G.regs, GFX_FLSH_CNTL);
 
+    /* Its share of the display buffer, just past plane 1's, and one
+     * watermark - as `cursor_test` proved on the M700 (18.659). */
+    igpu_decode_buf(reg(G.regs, IGPU_PLANE_BUF_CFG_1_A + C.step), &plane_start, &plane_end);
+    buf_start = plane_end + 1u;
+    wreg(IGPU_CUR_BUF_CFG_A + C.step, ((buf_start + CURSOR_BLOCKS - 1u) << 16) | buf_start);
+    wreg(IGPU_CUR_WM_A_0 + C.step, WM_ENABLE | (1u << 14) | 8u);
+
+    for (i = 1; i < IGPU_WM_LEVELS; i++) {
+        wreg(IGPU_CUR_WM_A_0 + C.step + i * 4u, 0);
+    }
+
+    wreg(IGPU_CUR_WM_TRANS_A + C.step, 0);
+
+    C.ready = true;
+
     say_begin(&line);
-    say_text(&line, "intelgpu: cursor test: picture at memory ");
+    say_text(&line, "intelgpu: the cursor plane ready: picture at memory ");
     say_hex(&line, (unsigned long)phys, 10);
     say_text(&line, ", GTT ");
-    say_hex(&line, index << 12, 8);
-    say_text(&line, " (its entries were ");
-    say_hex(&line, (unsigned long)was[0], 16);
-    say_text(&line, " ...)");
+    say_hex(&line, C.index << 12, 8);
+    say_text(&line, ", display buffer ");
+    say_dec(&line, buf_start);
+    say_text(&line, "-");
+    say_dec(&line, buf_start + CURSOR_BLOCKS - 1u);
     say_send(console, &line);
 
-    /* The cursor's share of the display buffer: just past plane 1's. */
-    igpu_decode_buf(reg(G.regs, IGPU_PLANE_BUF_CFG_1_A + step), &plane_start, &plane_end);
-    buf_start = plane_end + 1u;
+    return GPU_OK;
+}
+
+/* `CURPOS`: the picture's top left, each coordinate its own sign bit. */
+static uint32_t curpos(int x, int y)
+{
+    uint32_t v = 0;
+
+    if (x < 0) { v |= 1u << 15; x = -x; }
+    if (y < 0) { v |= 1u << 31; y = -y; }
+
+    return v | ((uint32_t)y & 0x7FFFu) << 16 | ((uint32_t)x & 0x7FFFu);
+}
+
+/* Position, then base: the base's write is what the rest waits for. */
+static void cursor_place(int x, int y)
+{
+    wreg(IGPU_CURPOS_A + C.step, curpos(x - C.hot_x, y - C.hot_y));
+    wreg(IGPU_CURBASE_A + C.step, (uint32_t)(C.index << 12));
+}
+
+static void cursor_show(int x, int y)
+{
+    wreg(IGPU_CURCNTR_A + C.step, CURSOR_ARGB_64);
+    cursor_place(x, y);
+    C.shown = true;
+}
+
+static void cursor_hide(void)
+{
+    if (C.ready && C.shown) {
+        wreg(IGPU_CURCNTR_A + C.step, 0);
+        wreg(IGPU_CURBASE_A + C.step, (uint32_t)(C.index << 12));
+        C.shown = false;
+    }
+}
+
+/* The window manager's arrow: copied from its region, row by row. */
+static uint32_t cursor_set(long console, long cap, const struct gpu_request *rq)
+{
+    uint32_t error = cursor_prepare(console);
+    long pages, at;
+    unsigned row;
+
+    if (error != GPU_OK) {
+        return error;
+    }
+
+    /* Checked against the region's size before it is mapped: a picture
+     * that would run past its end is refused rather than read. */
+    if (cap < 0 || rq->hot_x >= 64 || rq->hot_y >= 64 || rq->pitch < 256
+        || (pages = kosmos_mem_size(cap)) <= 0
+        || (unsigned long)rq->offset + 63ul * rq->pitch + 256ul > (unsigned long)pages * 4096ul
+        || (at = kosmos_mem_map(cap)) < 0) {
+        return GPU_ERR_BAD_OP;
+    }
+
+    for (row = 0; row < 64; row++) {
+        __builtin_memcpy(&C.pixels[row * 64],
+                         (const char *)at + rq->offset + row * rq->pitch, 256);
+    }
+
+    kosmos_share_unmap((unsigned long)at, (unsigned long)pages);
+
+    flush_lines(C.pixels, CURSOR_PAGES * 4096u);
+    C.hot_x = (int)rq->hot_x;
+    C.hot_y = (int)rq->hot_y;
+    cursor_show(rq->x, rq->y);
+    return GPU_OK;
+}
+
+/* The test of 18.659, on the pieces above: a picture of its own in the
+ * middle of the screen for `seconds`, read back, and hidden again. */
+static void cursor_test(long console, unsigned seconds, struct gpu_reply *rep)
+{
+    struct say_line line;
+    uint32_t error = cursor_prepare(console);
+
+    if (error != GPU_OK || (error = C.shown ? GPU_ERR_IN_USE : GPU_OK) != GPU_OK) {
+        rep->error = error;
+        return;
+    }
 
     rep->underrun_before = reg(G.regs, DE_PIPE_IIR_A + 0x10u * (uint32_t)G.pipe) & PIPE_FIFO_UNDERRUN;
 
-    wreg(IGPU_CUR_BUF_CFG_A + step, ((buf_start + CURSOR_BLOCKS - 1u) << 16) | buf_start);
-    wreg(IGPU_CUR_WM_A_0 + step, WM_ENABLE | (1u << 14) | 8u);
+    test_picture(C.pixels);
+    flush_lines(C.pixels, CURSOR_PAGES * 4096u);
+    C.hot_x = C.hot_y = 0;
+    cursor_show((int)(G.width - 64u) / 2, (int)(G.height - 64u) / 2);
+    kosmos_sleep(25);
 
-    for (i = 1; i < IGPU_WM_LEVELS; i++) {
-        wreg(IGPU_CUR_WM_A_0 + step + i * 4u, 0);
-    }
+    rep->curcntr = reg(G.regs, IGPU_CURCNTR_A + C.step);
+    rep->curbase = reg(G.regs, IGPU_CURBASE_A + C.step);
+    rep->curpos = reg(G.regs, IGPU_CURPOS_A + C.step);
+    rep->buf_cfg = reg(G.regs, IGPU_CUR_BUF_CFG_A + C.step);
+    rep->wm0 = reg(G.regs, IGPU_CUR_WM_A_0 + C.step);
 
-    wreg(IGPU_CUR_WM_TRANS_A + step, 0);
-
-    cur_x = (G.width - 64u) / 2u;
-    cur_y = (G.height - 64u) / 2u;
-    wreg(IGPU_CURPOS_A + step, (cur_y << 16) | cur_x);
-    wreg(IGPU_CURCNTR_A + step, CURSOR_ARGB_64);
-    wreg(IGPU_CURBASE_A + step, (uint32_t)(index << 12));   /* arms the rest */
-
-    kosmos_sleep(25);                   /* a few frames */
-
-    rep->curcntr = reg(G.regs, IGPU_CURCNTR_A + step);
-    rep->curbase = reg(G.regs, IGPU_CURBASE_A + step);
-    rep->curpos = reg(G.regs, IGPU_CURPOS_A + step);
-    rep->buf_cfg = reg(G.regs, IGPU_CUR_BUF_CFG_A + step);
-    rep->wm0 = reg(G.regs, IGPU_CUR_WM_A_0 + step);
-
-    say_begin(&line);
-    say_text(&line, "intelgpu: cursor test: on at ");
-    say_dec(&line, cur_x);
-    say_text(&line, ",");
-    say_dec(&line, cur_y);
-    say_text(&line, "; read back control ");
-    say_hex(&line, rep->curcntr, 8);
-    say_text(&line, ", base ");
-    say_hex(&line, rep->curbase, 8);
-    say_text(&line, ", buffer ");
-    say_hex(&line, rep->buf_cfg, 8);
-    say_text(&line, ", watermark ");
-    say_hex(&line, rep->wm0, 8);
-    say_send(console, &line);
-
-    if ((rep->curcntr & 0x27u) != CURSOR_ARGB_64 || rep->curbase != (uint32_t)(index << 12)) {
+    if ((rep->curcntr & 0x27u) != CURSOR_ARGB_64 || rep->curbase != (uint32_t)(C.index << 12)) {
         rep->error = GPU_ERR_UNCHANGED;
     }
 
     kosmos_sleep((unsigned long)seconds * 250u);   /* ticks: 250 a second */
 
     rep->underrun_after = reg(G.regs, DE_PIPE_IIR_A + 0x10u * (uint32_t)G.pipe) & PIPE_FIFO_UNDERRUN;
-
-    /* Off, and everything as the firmware left it. */
-    wreg(IGPU_CURCNTR_A + step, 0);
-    wreg(IGPU_CURBASE_A + step, 0);
-    kosmos_sleep(25);
-    wreg(IGPU_CUR_WM_A_0 + step, 0);
-    wreg(IGPU_CUR_BUF_CFG_A + step, 0);
-    wreg(IGPU_CURBASE_A + step, 0);
-
-    for (i = 0; i < CURSOR_PAGES; i++) {
-        (void)gtt_write(index + i, was[i], NULL);
-    }
-
-    wreg(GFX_FLSH_CNTL, 1u);
-    (void)reg(G.regs, GFX_FLSH_CNTL);
+    cursor_hide();
 
     say_begin(&line);
-    say_text(&line, "intelgpu: cursor test: off again; underrun before ");
+    say_text(&line, "intelgpu: cursor test: read back control ");
+    say_hex(&line, rep->curcntr, 8);
+    say_text(&line, ", base ");
+    say_hex(&line, rep->curbase, 8);
+    say_text(&line, ", buffer ");
+    say_hex(&line, rep->buf_cfg, 8);
+    say_text(&line, "; underrun before ");
     say_text(&line, rep->underrun_before ? "yes" : "no");
     say_text(&line, ", after ");
     say_text(&line, rep->underrun_after ? "yes" : "no");
@@ -514,26 +582,52 @@ void intelgpu_server(long console, long endpoint)
         uint64_t sender = 0;
         struct gpu_request rq;
         struct gpu_reply rep;
+        long cap;
 
         if (kosmos_receive(endpoint, &msg, &sender, 0, 0) != 0) {
             continue;
         }
 
         memset(&rep, 0, sizeof rep);
+        memset(&rq, 0, sizeof rq);
+        cap = msg.cap_plus_one != 0 ? (long)msg.cap_plus_one - 1 : -1;
 
-        if (msg.length < sizeof rq) {
+        if (msg.length < 8) {
             rep.error = GPU_ERR_BAD_OP;
         } else {
-            memcpy(&rq, msg.data, sizeof rq);
+            memcpy(&rq, msg.data, msg.length < sizeof rq ? msg.length : sizeof rq);
 
-            if (rq.op == GPU_OP_LOOK) {
+            switch (rq.op) {
+            case GPU_OP_LOOK:
                 look(console);
                 rep.error = G.found ? GPU_OK : GPU_ERR_NO_DEVICE;
-            } else if (rq.op == GPU_OP_CURSOR_TEST) {
+                break;
+            case GPU_OP_CURSOR_TEST:
                 cursor_test(console, rq.seconds < 1 ? 1 : rq.seconds > 30 ? 30 : rq.seconds, &rep);
-            } else {
+                break;
+            case GPU_OP_CURSOR_SET:
+                rep.error = cursor_set(console, cap, &rq);
+                break;
+            case GPU_OP_CURSOR_MOVE:
+                if (C.ready && C.shown) {
+                    cursor_place(rq.x, rq.y);
+                } else {
+                    rep.error = GPU_ERR_NO_PIPE;
+                }
+                break;
+            case GPU_OP_CURSOR_HIDE:
+                cursor_hide();
+                break;
+            default:
                 rep.error = GPU_ERR_BAD_OP;
+                break;
             }
+        }
+
+        /* A region that came with the message is the driver's own copy of
+         * the capability: let go once the picture is copied. */
+        if (cap >= 0) {
+            (void)kosmos_cap_drop(cap);
         }
 
         memset(&out, 0, sizeof out);

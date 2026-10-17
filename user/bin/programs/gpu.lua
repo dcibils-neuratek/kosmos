@@ -9,19 +9,12 @@
 -- engine. It is seen on the machine's own monitor and not by VNC, which
 -- shows what the window manager composed and not what the display adds.
 
-local REQUEST, REPLY = "<I4I4", "<I4I4I4I4I4I4I4I4"
-local OP_LOOK, OP_CURSOR_TEST = 1, 2
-local SAYS = {
-  [1] = "no Intel GPU this driver knows",
-  [2] = "a request the driver does not know",
-  [3] = "no pipe running to show it on",
-  [4] = "no contiguous pages for the picture",
-  [5] = "the GTT slots chosen could not be written",
-  [6] = "written, and read back different",
-}
+-- The test refuses while the window manager's arrow is on the plane, which
+-- on the M700 is always once the desktop is up (step 3b).
+
+local gpu = use("/Kosmos/Libraries/gpu.lua")
 
 local words = use("/Kosmos/Libraries/files.lua").words(args, 2)
-local op = words[1] == "cursor" and OP_CURSOR_TEST or OP_LOOK
 local seconds = math.tointeger(tonumber(words[2] or "")) or 10
 
 if words[1] and words[1] ~= "cursor" then
@@ -29,28 +22,24 @@ if words[1] and words[1] ~= "cursor" then
   return
 end
 
-if op == OP_CURSOR_TEST then
-  print(("gpu: a test cursor in the middle of the screen for %d seconds - look at the monitor"):format(seconds))
-end
-
-local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, op, seconds), nil, "gpu")
-
-if not reply then
-  print("gpu: " .. tostring(why))
+if words[1] ~= "cursor" then
+  local ok, why = gpu.look()
+  print(ok and "gpu: said in the log - `log intelgpu`" or ("gpu: " .. why))
   return
 end
 
-local err, cntr, base, pos, buf, wm0, before, after = string.unpack(REPLY, reply)
+print(("gpu: a test cursor in the middle of the screen for %d seconds - look at the monitor"):format(seconds))
 
-if err ~= 0 then
-  print("gpu: " .. (SAYS[err] or ("error " .. err)))
+local r, why, code = gpu.cursor_test(seconds)
+
+if not r then
+  print("gpu: " .. why)
+  if code ~= 6 then return end
 end
 
-if op == OP_CURSOR_TEST and err ~= 1 and err ~= 3 and err ~= 4 then
+if r then
   print(("gpu: read back - control %08x, base %08x, position %08x, buffer %08x, watermark %08x")
-        :format(cntr, base, pos, buf, wm0))
-  print(("gpu: underrun before %s, after %s"):format(before ~= 0 and "yes" or "no",
-                                                    after ~= 0 and "yes" or "no"))
-elseif op == OP_LOOK and err == 0 then
-  print("gpu: said in the log - `log intelgpu`")
+        :format(r.curcntr, r.curbase, r.curpos, r.buf_cfg, r.wm0))
+  print(("gpu: underrun before %s, after %s"):format(r.underrun_before and "yes" or "no",
+                                                    r.underrun_after and "yes" or "no"))
 end

@@ -2138,6 +2138,21 @@ do
   end
 
   OUT.hw_cursor = gfx.cursor and gfx.cursor(picture, 0, 0, PT.x, PT.y) == true
+  OUT.cursor_move, OUT.cursor_hide = gfx.cursor_move, gfx.cursor_hide
+
+  -- **Or the Intel GPU's cursor plane** (`docs/m700-2d.md` step 3b): the
+  -- M700's display has no virtio cursor queue but has a plane of its own,
+  -- which its driver at `/Devices/gpu` drives. It copies the picture, so it
+  -- is freed below either way the display says yes.
+  if not OUT.hw_cursor then
+    local ok, gpu = pcall(use, "/Kosmos/Libraries/gpu.lua")
+
+    if ok and gpu.cursor(picture, 0, 0, PT.x, PT.y) then
+      OUT.hw_cursor = true
+      OUT.cursor_move, OUT.cursor_hide = gpu.cursor_move, gpu.cursor_hide
+      print("wm: the pointer on the GPU's cursor plane")
+    end
+  end
 
   -- Kept where the display does not draw it: the scene composes the arrow
   -- from this, over everything.
@@ -7246,7 +7261,7 @@ end
 -- again from the top rather than restoring something nobody kept - and the
 -- display's pointer with it, which the console has no use for. By the
 -- window server when there is one, as soon as this process has ended.
-if OUT.hw_cursor then gfx.cursor_hide() end
+if OUT.hw_cursor then OUT.cursor_hide() end
 
 
 back:free()

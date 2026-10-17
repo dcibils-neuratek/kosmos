@@ -26907,3 +26907,44 @@ window manager composed - which is the point of it.
 display buffer and a watermark among them. The writes have no test but the
 machine; under QEMU there is no Intel GPU, the driver says so and answers
 `GPU_ERR_NO_DEVICE`.
+
+## 18.660 The window manager's arrow on the M700's cursor plane (`m700-2d.md` step 3b)
+
+The cursor of 18.659, set up once and kept: its four pages, its GTT slots,
+its share of the display buffer and its watermark are taken at the first
+`GPU_OP_CURSOR_SET` and never given back, so a later `set` is a copy and
+three registers, a `MOVE` one position and the base that arms it, and a
+`HIDE` the plane off. `gpuproto.h` grew three verbs and a request of eight
+words - where, the hot spot, and the picture's place in the region that
+comes with the message, which the driver checks against the region's size
+before mapping it, copies, and unmaps. `gpu.lua` is the one door, and the
+`gpu` program its first user.
+
+**The window manager** tries `gfx.cursor` first - the kernel's virtio-gpu
+cursor, under QEMU - and, when that says no, `gpu.cursor`; the move and
+the hide are whichever said yes (`OUT.cursor_move`, `OUT.cursor_hide`).
+Under QEMU nothing changes: virtio says yes where it is, and where it is
+not the GPU's driver answers "no Intel GPU" and the arrow is composited as
+before.
+
+**The M700, 17 October** (0.11.261 and this, netbooted):
+
+    intelgpu: the cursor plane ready: picture at memory 0008b7a000,
+              GTT 01300000, display buffer 446-477
+    wm: the pointer on the GPU's cursor plane
+    wm: the pointer drawn by the display
+
+**Diego, at the monitor: "Mouse works perfect", "And dragging windows work great".**
+
+The test picture is refused while an arrow is on the plane
+(`GPU_ERR_IN_USE`), which on the M700 is always once the desktop is up.
+
+**Each move is a call to the driver** - a round trip through
+`fs.raw` - where virtio's was a system call. The driver answers a move
+with two register writes and never waits, so it cannot hold the pointer
+up; a pulse (`pulses.md`) is what would take the reply away.
+
+**Tests.** `host`: `test_intelgpu_decode`, 21 checks, unchanged; the
+gate's pointer phases hold the QEMU path. The plane itself has no test
+but the M700's monitor.
+
