@@ -401,6 +401,7 @@ SUITES = [
     Suite("x86-netmon", ["python3", "tools/run_netmon.py", X86], x86=True),
     Suite("x86-install", ["python3", "tools/run_install.py", X86], x86=True),
     Suite("x86-diskmon", ["python3", "tools/run_diskmon.py", X86], x86=True),
+    Suite("x86-gpumon", ["python3", "tools/run_gpumon.py", X86], x86=True),
     Suite("x86-packages", ["python3", "tools/run_packages.py", X86], x86=True),
 
     # **The editor, typed at through a keyboard** (`roadmap.md` 6n, steps 0

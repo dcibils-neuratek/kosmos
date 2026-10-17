@@ -27127,3 +27127,35 @@ the late-gate shape the Telnet suites have shown before.
 Intel GPU", `neofetch` has no GPU row, and the label says `virtio -
 cursor` or `none - software`, which the display suites see in the corner.
 
+## 18.665 GPU Monitor, the window (`gpumonitor.md` G2)
+
+`gpumon.lua`, as `docs/gpumonitor.html` draws it and Diego agreed ("go
+ahead, build it as drawn"): the GPU's card - the kit's processor chip with
+Intel's mark, the model, its range, its clock now and how much it slept -
+then **Busy** with a chip for each engine and the sentence that no engine
+has been sent work, **Clock** over the minute, **Memory** in buffers,
+**The display**'s flips against its frames, and **who holds its memory**;
+down the right the facts as Windows lists them, and "Desktop drawn with"
+in the label's words. One `gpu.stats()` and one `sys.info()` a pace,
+Network Monitor's sampling and pace menu, and no state of its own beyond
+the last reading.
+
+**The M700, 17 October** (0.11.266, netbooted): HD Graphics 530, 350 to
+1150 MHz, asleep 100%, 19.0 MB in 3 buffers - the firmware's screen, the
+window server's, the window manager's pointer - 1720 x 1440 at 60 Hz, 17
+flips a second of 60 frames while windows redrew, cursor plane and page
+flips lit and the 3D compositor not. The label in the corner beside it.
+
+**That boot took four tries**, and the reason is worth keeping: this Mac's
+address had moved from .38 to .32 since the netboot server started at
+12:42, and `dnsmasq --bind-interfaces` kept answering for the old one -
+the M700's firmware was pointed at a server that was no longer there and
+fell back to the stick. Diego restarted `make netboot-serve`; the kernel's
+command line was moved to .32 with it.
+
+**Tests.** `x86-gpumon`, new, 4 checks in 28 s: under QEMU `gpustat` says
+"no Intel GPU this driver knows", the desktop's label says `virtio -
+cursor` or `none - software`, and GPU Monitor opens and says it has no GPU
+to watch. **Its control bites**: GPU Monitor's words changed, 1 of 4 fails.
+GPU Monitor joins the dated screenshot (`run_gallery.py`).
+

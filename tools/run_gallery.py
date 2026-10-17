@@ -118,7 +118,7 @@ ABS = 32767
 # the prompt's: a title, a table and a chart.
 #
 OPEN = ["tracker", "gallery", "music", "preferences", "terminal", "calc",
-        "glgears", "machine", "procs", "sysmon", "netmon", "diskmon", "cube3d",
+        "glgears", "machine", "procs", "sysmon", "netmon", "diskmon", "gpumon", "cube3d",
         "cafesa3d:--rendered", "ide:/Kosmos/Libraries/files.lua",
         "texteditor:/Temporary/Grooves.md", "groove:--play", "servers",
         "writer:/Temporary/Gallery.write", "passwords", "maps", "sandboxes",

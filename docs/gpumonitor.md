@@ -90,12 +90,15 @@ takes.
 
 1. **G0 - the label**: the version line says what draws the desktop; the
    display suites read it under QEMU (`virtio - cursor`, `none - software`).
+   **Done in 0.11.266** (`testing.md` 18.664), with `neofetch`'s GPU row.
 2. **G1 - the driver says**: `GPU_OP_STATS` and a program `gpustat` that
    prints it, as `netstat` and `diskstat` do; RAPL's graphics energy in
    `sysinfo`. On the M700: the clock, RC6, flips and frames read and seen
    to move while a window is dragged; under QEMU, "no Intel GPU".
+   **Done in 0.11.266** (`testing.md` 18.664).
 3. **G2 - the window**: as drawn, its suite reading "no Intel GPU" under
    QEMU and the window drawn; its picture in the dated screenshot.
+   **Done in 0.11.267** (`testing.md` 18.665), its suite `x86-gpumon`.
 4. **G3 - an engine's busyness**, when the blitter has work (step 5).
 
 Only x86-64 runs the tests for now (`CLAUDE.md`).
