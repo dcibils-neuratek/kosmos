@@ -2,31 +2,45 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-17, evening (0.11.262; the M700's pointer on its GPU's cursor plane)
+Last updated: 2026-10-17, night (0.11.267; the M700's GPU: flips, pacing, GPU Monitor)
 
 ---
 
 ## 17 October: the M700's GPU, display engine first (`docs/m700-2d.md`)
 
-**Pushed: up to 0.11.259.** **On `main`, not pushed: 0.11.260-0.11.262.**
+**Pushed: up to 0.11.267** (on Diego's "push it", after `make prepush`).
 
-- Step 2 (0.11.260): `intelgpu` finds the HD 530 and reads pipes, planes,
-  cursor, display-buffer shares, watermarks and the GTT (`testing.md` 18.658).
-- Step 3a (0.11.261): `gpu cursor`, a test picture on the cursor plane,
-  seen on the monitor, no underrun (18.659).
-- Step 3b (0.11.262): the window manager's arrow on the cursor plane through
-  `/Devices/gpu` and `gpu.lua` - Diego: "Mouse works perfect", "And dragging
-  windows work great" (18.660). Full gate 94/94 in 9:13.
-- **Next: step 4, page flips** - a second framebuffer in the GTT and
-  `PLANE_SURF` written at vertical blank. Then the blitter (5-6), then the
-  render engine and a 3D compositor (7; Diego: 3D games and a compositor
-  with translucency, glass and animation are the goal).
-- Still open from Linux: physical-keyboard keys lost in Epiphany (0.11.260's
-  drop counters on the M700, `linux --tell --keys`, Diego to type), the cage
-  crash, Epiphany's dotted letters, no sound.
+- Step 2 (0.11.260): `intelgpu` finds the HD 530 and reads the display.
+- Step 3 (0.11.261-262): the cursor plane - the window manager's arrow
+  drawn by the display (Diego: "Mouse works perfect").
+- Step 4a (0.11.263): the window server's copy timed apart - 25% of a
+  frame; and 514 frames composed a second for a 60 Hz screen.
+  `m700-2d.md` step 4 replanned for 3D (Diego: "So plan for it"): GPU
+  buffers in the GTT, flips, flip state - the shape Vulkan/GLES (Mesa's
+  anv/iris, later) present through.
+- Step 4b (0.11.264-265): Nebula's write-combining regions
+  (`MEM_WRITE_COMBINE`), the driver's buffers and flips, the window server
+  flipping between two screens; then one frame a refresh (`WS_IF_READY`,
+  damage merged): a drag 60 frames a second, 5.2 s busy of 30 rather than
+  29.6 (18.663).
+- GPU Monitor (0.11.266-267): `GPU_OP_STATS`, the GPU's RAPL energy in
+  `sysinfo` (client CPUs only), `gpustat`, neofetch's GPU row, the
+  desktop label `GPU: HD 530 - cursor plane, page flips`, and the window
+  (`gpumon.lua`, suite `x86-gpumon`).
+- **Next on the GPU: step 5, the blitter** - forcewake, a ring on the
+  blit engine, a batch that stores a value; then step 6, the compositor's
+  opaque copies and fills on it; step 7 the render engine. Also agreed:
+  a resolution after boot (the pipe's scaler first), Bluetooth for a mouse
+  and keyboard (roadmap, The system).
+- **The netboot server binds the Mac's address at its start**: the Mac
+  moved .38 -> .32 on 17 October and the M700 fell back to its stick
+  until Diego restarted `make netboot-serve`. The kernel's command line
+  (build/netboot/boot/kosmos.cmdline) says .32 now; the M700 is at .28.
+  A DHCP reservation would end it - Diego's router.
+- Still open from Linux: keys lost in Epiphany with the physical keyboard,
+  the cage crash, Epiphany's dotted letters, no sound.
 - `user/servers/vmm.c` holds an uncommitted x86 hunk (the vCPU off core
   zero) - keep it out of commits.
-
 
 ## 15 October: Linux on the M700, usable
 
