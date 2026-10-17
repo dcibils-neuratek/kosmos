@@ -124,3 +124,16 @@ bool igpu_decode_gtt(uint64_t entry, uint64_t *physical)
     *physical = entry & GTT_ADDRESS_MASK;
     return (entry & GTT_PRESENT) != 0;
 }
+
+void igpu_decode_buf(uint32_t v, unsigned *start, unsigned *end)
+{
+    *start = v & 0x1FFFu;
+    *end = (v >> 16) & 0x1FFFu;
+}
+
+void igpu_decode_wm(uint32_t v, bool *enabled, unsigned *lines, unsigned *blocks)
+{
+    *enabled = (v & (1u << 31)) != 0;
+    *lines = (v >> 14) & 0x1FFFu;
+    *blocks = v & 0x1FFFu;
+}

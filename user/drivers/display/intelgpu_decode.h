@@ -44,6 +44,16 @@
 #define IGPU_CURCNTR_A          0x70080u
 #define IGPU_CURBASE_A          0x70084u
 #define IGPU_CURPOS_A           0x70088u
+/* The display buffer's shares and their watermarks (`skl_universal_plane_
+ * regs.h`, `intel_cursor_regs.h`): plane 1's, the next plane 0x100 on, and
+ * the cursor's; eight levels each, a word apart, and one for transitions. */
+#define IGPU_PLANE_BUF_CFG_1_A  0x7027cu
+#define IGPU_PLANE_WM_1_A_0     0x70240u
+#define IGPU_PLANE_WM_TRANS_1_A 0x70268u
+#define IGPU_CUR_BUF_CFG_A      0x7017cu
+#define IGPU_CUR_WM_A_0         0x70140u
+#define IGPU_CUR_WM_TRANS_A     0x70168u
+#define IGPU_WM_LEVELS          8u
 #define IGPU_GTT_AT             0x800000u   /* GTTMMADR's second half, Gen8 on */
 #define IGPU_REGISTERS_BYTES    0x200000u   /* the first 2 MB */
 
@@ -74,6 +84,13 @@ const char *igpu_cursor_mode(uint32_t curcntr);
 
 /* `CURPOS`: x and y, each signed by its own bit. */
 void igpu_decode_curpos(uint32_t v, int *x, int *y);
+
+/* A share of the display buffer: blocks from `start` to `end`, inclusive
+ * (`PLANE_BUF_START` 12:0, `PLANE_BUF_END` 28:16); none when both are 0. */
+void igpu_decode_buf(uint32_t v, unsigned *start, unsigned *end);
+
+/* A watermark: enabled (31), lines (26:14), blocks (12:0). */
+void igpu_decode_wm(uint32_t v, bool *enabled, unsigned *lines, unsigned *blocks);
 
 /* One global GTT entry: whether present, and the physical page it maps. */
 bool igpu_decode_gtt(uint64_t entry, uint64_t *physical);

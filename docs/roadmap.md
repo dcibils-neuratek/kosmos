@@ -3830,7 +3830,9 @@ processors, and still what follows USB:
    **Step 2 done** (`testing.md` 18.658): `intelgpu` finds the GPU (8086:1912)
    and reads the display back, writing nothing - pipe A on at 3440x1440,
    plane 1 XRGB8888 linear from GTT page 0 (memory `0xBC000000`), the cursor
-   plane off. **Next, step 3**: the cursor plane.
+   plane off. **Step 3a done** (18.659): the cursor plane shows a test
+   picture on the M700 - read back, no underrun, and put back. **Next, 3b**:
+   the window manager's pointer handed to it through `/Devices/gpu`.
    **And video in hardware, on the wishlist since 27 September** - Diego:
    "Can't we use the gpu for hardware encoding and decoding video?", and yes
    to keeping it here. The ThinkPad's and the M700's Intel graphics encode

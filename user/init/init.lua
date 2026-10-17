@@ -4337,7 +4337,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap,
                           midi_cap, notify_cap, share_cap, keyring_cap, tiles_cap,
                           mail_keys_cap, window_cap, mdns_cap, sharing_cap,
-                          sandboxes_cap)
+                          gpu_cap, sandboxes_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -4384,6 +4384,10 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- program may change - and the driver keeps a floor no caller can go
   -- under (`backlightproto.h`).
   --
+  if gpu_cap then
+    ns.mount("/Devices/gpu", gpu_cap, nil, "gpu")
+  end
+
   if backlight_cap then
     ns.mount("/Devices/backlight", backlight_cap, nil, "backlight")
   end
@@ -5202,6 +5206,8 @@ query. `find` and `watch` are built on exactly these two calls.
     -- And `/Sandboxes` (`docs/linux.md` L1), where the machine has one, as
     -- `/Home` is: a drive, to every program.
     local sandboxes = sandboxes_cap
+    -- And the GPU's driver, as the backlight's is: a device of the machine.
+    local gpu = gpu_cap
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -5255,6 +5261,8 @@ query. `find` and `watch` are built on exactly these two calls.
     if sharing then caps[#caps + 1] = sharing; sharing_at = #caps - 1 end
     local sandboxes_at = nil
     if sandboxes then caps[#caps + 1] = sandboxes; sandboxes_at = #caps - 1 end
+    local gpu_at = nil
+    if gpu then caps[#caps + 1] = gpu; gpu_at = #caps - 1 end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
     local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags)
@@ -5272,7 +5280,7 @@ query. `find` and `watch` are built on exactly these two calls.
       backlight = 12, notify = 13, share = share_cap and 14 or nil,
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
       mailkeys = mailkeys_at, windowserver = window_at, mdns = mdns_at,
-      sharing = sharing_at, sandboxes = sandboxes_at,
+      sharing = sharing_at, sandboxes = sandboxes_at, gpu = gpu_at,
       home_in_memory = home_in_memory or nil,
       protostamp = sys.protostamp,
     })
@@ -6049,6 +6057,7 @@ if role == ROLE_INIT then
   local PCI_FRAMES_EP = sys.endpoint()
   local DRIVES_EP = sys.endpoint()
   local BACKLIGHT_EP = sys.endpoint()
+  local GPU_EP = sys.endpoint()             -- /Devices/gpu: the GPU's driver
 
   --
   -- **`/Devices/camera`**, answered by the USB driver (`usb.md` §11 8d). Handed
@@ -6417,13 +6426,14 @@ if role == ROLE_INIT then
   end
 
   --
-  -- **The GPU's display, looked at** (`docs/m700-2d.md` step 2): which
-  -- pipes run, what each plane scans out and from where, and whether a
-  -- cursor plane is on - said once, nothing written, and gone. A machine
-  -- without an Intel GPU hears that it has none.
+  -- **The GPU's driver** (`docs/m700-2d.md`): it looks at the display
+  -- engine once - which pipes run, what each plane scans out and from
+  -- where, whether a cursor plane is on - and then answers `/Devices/gpu`,
+  -- the cursor plane's test first (step 3). A machine without an Intel GPU
+  -- hears that it has none, and the driver answers that.
   --
   do
-    local _, err = sys.spawn(ROLE_INTELGPU, { CONSOLE_EP }, SPAWN_DEVICES)
+    local _, err = sys.spawn(ROLE_INTELGPU, { CONSOLE_EP, GPU_EP }, SPAWN_DEVICES)
 
     if err then
       line("init: no GPU look: " .. tostring(err))
@@ -6567,7 +6577,9 @@ if role == ROLE_INIT then
                         DRIVES_EP, BACKLIGHT_EP, CAMERA_EP, MIDI_EP,
                         NOTIFY_EP, SMBFS_EP, KEYRING_MANAGE_EP, TILES_EP,
                         KEYRING_MAIL_EP, WINDOW_EP, MDNS_EP, SMBD_EP,
-                        SANDBOXES_EP },
+                        -- Before `/Sandboxes`, which a machine may not have:
+                        -- a list with a gap in it ends at the gap.
+                        GPU_EP, SANDBOXES_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -6641,7 +6653,7 @@ if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
   shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
-             22)
+             22, 23)
   return
 end
 
@@ -6824,6 +6836,10 @@ if role == ROLE_RUNNER then
   if req.net     then ns.mount("/Network",         req.net, nil, "net", req.share) end
   if req.blocks  then ns.mount("/Devices/blocks",  req.blocks, nil, "blocks") end
   if req.drives  then ns.mount("/Drives",          req.drives, nil, "drives") end
+  if req.gpu then
+    ns.mount("/Devices/gpu", req.gpu, nil, "gpu")
+  end
+
   if req.backlight then
     ns.mount("/Devices/backlight", req.backlight, nil, "backlight")
   end
@@ -7025,6 +7041,14 @@ if role == ROLE_RUNNER then
       sandboxes_at = #caps - 1
     end
 
+    -- And the GPU's driver (`docs/m700-2d.md`).
+    local gpu_at = nil
+
+    if req.gpu then
+      caps[#caps + 1] = req.gpu
+      gpu_at = #caps - 1
+    end
+
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
 
@@ -7098,7 +7122,7 @@ if role == ROLE_RUNNER then
       backlight = 12, notify = 13, share = req.share and 14 or nil,
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
       mailkeys = mailkeys_at, mdns = mdns_at, sharing = sharing_at,
-      sandboxes = sandboxes_at,
+      sandboxes = sandboxes_at, gpu = gpu_at,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Which protocols the system speaks, for an image built for others

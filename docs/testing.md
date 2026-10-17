@@ -26876,3 +26876,34 @@ bits beside it ignored, `CURPOS`'s signs, and a GTT entry's present bit and
 address with the bits above 45 dropped. The first run failed on the test's
 own stride - 1720 x 4 is not a multiple of 64, which no firmware sets.
 Under QEMU, which has no Intel GPU, the driver says so and ends.
+
+## 18.659 The cursor plane, tried: the first picture Kosmos showed with the M700's display engine (`m700-2d.md` step 3a)
+
+`intelgpu` is a server now, `/Devices/gpu` (`gpuproto.h`), threaded through
+init as `/Sandboxes` was - before it in the shell's list, since a list
+with a gap ends there. Its first verb is a test, and `gpu cursor 20` asks
+it: a 64 by 64 picture in four contiguous pages, out of the caches
+(`clflush`), entered in four GTT slots a megabyte past the framebuffer's
+(the GTT flushed through `GFX_FLSH_CNTL`), the cursor's share of the
+display buffer just past plane 1's - blocks 446 to 477, which nothing
+used: the firmware gave plane 1 0-445 of 896 - one watermark, its
+position, its mode, and its base last, which arms the rest. Read back,
+shown for the seconds asked, then off and every register and GTT entry as
+the firmware left it.
+
+**The M700, 17 October, Diego at the monitor** - the square in the middle
+of the screen, white frame, orange inside, the wallpaper through the clear
+square at its centre (his photograph); and:
+
+    picture at memory 0009be5000, GTT 01300000 (its entries were 00000000bd300001 ...)
+    on at 1688,688; read back control 00000027, base 01300000,
+        buffer 01dd01be, watermark 80004008
+    off again; underrun before no, after no
+
+**Nothing VNC sees**: the plane is added by the display, after what the
+window manager composed - which is the point of it.
+
+**Tests.** `host`: `test_intelgpu_decode`, 21 checks, a share of the
+display buffer and a watermark among them. The writes have no test but the
+machine; under QEMU there is no Intel GPU, the driver says so and answers
+`GPU_ERR_NO_DEVICE`.

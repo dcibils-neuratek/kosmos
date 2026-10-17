@@ -75,7 +75,7 @@ void net_server(long endpoint, long console, long frames, long frames2);
  * endpoint of its own: it is a driver, and it reports as a client. */
 void powerbutton_server(long console);
 void backlight_server(long console, long endpoint);
-void intelgpu_look(long console);
+void intelgpu_server(long console, long endpoint);
 void xhci_server(long console, long blocks, long writes, long frames,
                  long camera, long midi, long notify);
 void e1000_server(long console, long frames);
@@ -841,7 +841,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_INTELGPU) {
         named("intelgpu");
-        intelgpu_look(0);           /* ends itself: `kosmos_exit` */
+        intelgpu_server(0, 1);
     }
 
     if (arg == ROLE_XHCI) {

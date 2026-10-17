@@ -89,6 +89,18 @@ int main(void)
     check(igpu_decode_gtt(0xFFFF000000001001ull, &phys) && phys == 0x1000ull,
           "bits above 45 are not the address");
 
+    {
+        unsigned start, end, lines, blocks;
+        bool on;
+
+        igpu_decode_buf((895u << 16) | 0u, &start, &end);
+        check(start == 0 && end == 895, "a share: start 12:0, end 28:16");
+        igpu_decode_wm((1u << 31) | (3u << 14) | 47u, &on, &lines, &blocks);
+        check(on && lines == 3 && blocks == 47, "a watermark: enable, lines, blocks");
+        igpu_decode_wm(47u, &on, &lines, &blocks);
+        check(!on && blocks == 47, "a watermark off keeps its blocks");
+    }
+
     printf("%s: %d checks on intelgpu_decode\n", failed ? "FAIL" : "PASS", checks);
     return failed != 0;
 }
