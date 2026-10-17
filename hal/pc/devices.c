@@ -175,22 +175,57 @@ static bool nth_intel_ethernet(unsigned index, struct pci_device *out)
  * Asked afresh each time, and nothing kept: three configuration reads, and
  * nothing is enabled or sized that a second answer could spend twice.
  */
-static bool intel_backlight(struct hal_device *out)
+/* GTTMMADR, and the device's identifier, when 0/2/0 is Intel's graphics. */
+static bool intel_gpu_base(uint64_t *base, uint32_t *id_out)
 {
     uint32_t id = pci_config_read(0, IGD_SLOT, 0, 0x00);
     uint32_t class_word = pci_config_read(0, IGD_SLOT, 0, PCI_CLASS_WORD);
     uint32_t low = pci_config_read(0, IGD_SLOT, 0, IGD_BAR0_LOW);
-    uint64_t base;
 
     if ((id & 0xFFFFu) != INTEL || (class_word >> 24) != CLASS_DISPLAY
         || (low & 0x7u) != IGD_BAR0_64BIT) {
         return false;
     }
 
-    base = ((uint64_t)pci_config_read(0, IGD_SLOT, 0, IGD_BAR0_HIGH) << 32)
-         | (low & IGD_BASE_MASK);
+    *base = ((uint64_t)pci_config_read(0, IGD_SLOT, 0, IGD_BAR0_HIGH) << 32)
+          | (low & IGD_BASE_MASK);
+    *id_out = id;
 
-    if (base == 0) {
+    return *base != 0;
+}
+
+/*
+ * **The whole window**, for the display engine's driver (`m700-2d.md` step
+ * 2): GTTMMADR's 16 MB, which the manual gives on Gen8 and later - not
+ * sized, for the reason above.
+ */
+#define IGD_GTTMMADR_BYTES  0x1000000u
+
+static bool intel_gpu(struct hal_device *out)
+{
+    uint64_t base;
+    uint32_t id;
+
+    if (!intel_gpu_base(&base, &id)) {
+        return false;
+    }
+
+    out->base  = (unsigned long)base;
+    out->size  = IGD_GTTMMADR_BYTES;
+    out->intid = 0;
+    out->line  = id >> 16;
+    out->where = IGD_SLOT << 3;
+    out->id    = (id & 0xFFFFu) << 16 | id >> 16;
+
+    return true;
+}
+
+static bool intel_backlight(struct hal_device *out)
+{
+    uint64_t base;
+    uint32_t id;
+
+    if (!intel_gpu_base(&base, &id)) {
         return false;
     }
 
@@ -211,6 +246,10 @@ bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out)
 
     if (out != NULL && kind == HAL_DEV_INTEL_BACKLIGHT) {
         return index == 0 && intel_backlight(out);
+    }
+
+    if (out != NULL && kind == HAL_DEV_INTEL_GPU) {
+        return index == 0 && intel_gpu(out);
     }
 
     /*

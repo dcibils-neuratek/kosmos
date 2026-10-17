@@ -313,6 +313,7 @@ void hal_irq_set_masked(unsigned intid, bool masked);
 #define HAL_DEV_INTEL_BACKLIGHT  3u     /* the page of Intel's backlight PWMs */
 #define HAL_DEV_INTEL_ETHERNET   4u     /* an Intel Ethernet controller, on PCI */
 #define HAL_DEV_AHCI             5u     /* a SATA controller in AHCI mode, on PCI */
+#define HAL_DEV_INTEL_GPU        6u     /* an Intel GPU's register window, on PCI */
 
 struct hal_device {
     unsigned long base;

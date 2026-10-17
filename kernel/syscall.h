@@ -114,8 +114,13 @@
  * of them and far below anything that would exhaust the share window, so it
  * is a bound that catches a wrong number rather than a budget anybody is
  * meant to plan against.
+ *
+ * **Sixteen since 17 October 2026**: an Intel GPU's register window is
+ * 16 MB - its registers and its global GTT's entries in one BAR - and the
+ * M700's display driver maps it whole (`docs/m700-2d.md`, agreed with
+ * Diego: "`SYS_DEV_MAP`'s bound raised for this device").
  */
-#define DEV_MAP_PAGES_MAX  1024u
+#define DEV_MAP_PAGES_MAX  4096u
 
 /*
  * **And being told the device has something to say**, which is the third of
@@ -1755,6 +1760,16 @@ void syscall_dispatch(struct syscall_frame *sc);
  * (8086:a102), and q35's own ICH9 (8086:2922) is the one QEMU gives.
  */
 #define DEV_AHCI             5u
+
+/*
+ * **An Intel GPU's whole register window** (`docs/m700-2d.md` step 2):
+ * `base` and `size` are GTTMMADR, its first BAR - 16 MB on Gen8 and later,
+ * the registers in the first 2 MB and the global GTT's entries from 8 MB
+ * (Linux's `gen6_gttadr_offset`) - `where` is its place on PCI and `line`
+ * its device identifier. The driver of the display engine, then of the
+ * blitter and the render engine, starts from this.
+ */
+#define DEV_INTEL_GPU        6u
 
 struct dev_info {
     uint32_t kind;

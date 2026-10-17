@@ -75,6 +75,7 @@ void net_server(long endpoint, long console, long frames, long frames2);
  * endpoint of its own: it is a driver, and it reports as a client. */
 void powerbutton_server(long console);
 void backlight_server(long console, long endpoint);
+void intelgpu_look(long console);
 void xhci_server(long console, long blocks, long writes, long frames,
                  long camera, long midi, long notify);
 void e1000_server(long console, long frames);
@@ -140,6 +141,7 @@ void vmm_server(long running, long ram, long setup, long more1, long more2, long
 #define ROLE_AHCI     31UL    /* a SATA controller, where there is one */
 #define ROLE_VMTEST   32UL    /* a guest entered and left, said (`vmtest.c`) */
 #define ROLE_SANDBOXFS 33UL   /* serves /Sandboxes: guests' disks (`docs/linux.md`) */
+#define ROLE_INTELGPU 34UL    /* an Intel GPU's display, looked at (`m700-2d.md`) */
 
 /* `vmtest.c`: a guest made, run and stopped twice; 0, or the first check failed. */
 int vm_selftest(uint64_t detail[4]);
@@ -835,6 +837,11 @@ int main(unsigned long arg)
     if (arg == ROLE_BACKLIGHT) {
         named("backlight");
         backlight_server(0, 1);
+    }
+
+    if (arg == ROLE_INTELGPU) {
+        named("intelgpu");
+        intelgpu_look(0);           /* ends itself: `kosmos_exit` */
     }
 
     if (arg == ROLE_XHCI) {

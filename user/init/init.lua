@@ -39,6 +39,7 @@ local ROLE_POWERBUTTON = 18 -- drives the power key, where there is one
 local ROLE_XHCI       = 19 -- drives the USB host controllers, where there are any
 local ROLE_DRIVES     = 20 -- serves /Drives: every volume on every drive, read only
 local ROLE_BACKLIGHT  = 21 -- Intel's backlight PWMs: /Devices/backlight
+local ROLE_INTELGPU   = 34 -- an Intel GPU's display engine, looked at once
 local ROLE_E1000      = 22 -- an Intel Ethernet controller, where there is one
 local ROLE_AHCI       = 31 -- a SATA controller, where there is one
 local ROLE_VMTEST     = 32 -- a guest entered and left, said (`vmtest.c`)
@@ -6412,6 +6413,20 @@ if role == ROLE_INIT then
 
     if err then
       line("init: no backlight driver: " .. tostring(err))
+    end
+  end
+
+  --
+  -- **The GPU's display, looked at** (`docs/m700-2d.md` step 2): which
+  -- pipes run, what each plane scans out and from where, and whether a
+  -- cursor plane is on - said once, nothing written, and gone. A machine
+  -- without an Intel GPU hears that it has none.
+  --
+  do
+    local _, err = sys.spawn(ROLE_INTELGPU, { CONSOLE_EP }, SPAWN_DEVICES)
+
+    if err then
+      line("init: no GPU look: " .. tostring(err))
     end
   end
 

@@ -422,6 +422,7 @@ struct mouse {
     uint16_t      held[8];
     unsigned      holding;
     unsigned long keys;                 /* changes pushed, for its last line */
+    unsigned long refused;              /* of them, refused by a full queue */
 
     /*
      * **An Xbox One or Series pad** (`xone`) is spoken to as well: its
@@ -2380,7 +2381,23 @@ static void keyboard_report(struct controller *c, unsigned slot, unsigned got)
 
     for (i = 0; i < n; i++) {
         keyboard_hold(m, changes[i].code, changes[i].down != 0);
-        (void)kosmos_key_push(changes[i].code, changes[i].down);
+
+        /* Refused when the kernel's queue of key events is full: said, the
+         * first five and then at each power of ten (`testing.md` 18.657). */
+        if (kosmos_key_push(changes[i].code, changes[i].down) != 0) {
+            m->refused++;
+
+            if (m->refused <= 5 || m->refused == 100 || m->refused == 1000
+                || m->refused == 10000) {
+                about(&line, c);
+                say_text(&line, " port ");
+                say_dec(&line, m->port);
+                say_text(&line, ": a key refused, the kernel's queue full; ");
+                say_dec(&line, m->refused);
+                say_text(&line, " so far");
+                say_send(console, &line);
+            }
+        }
     }
 
     if (n > 0 && m->keys == 0) {

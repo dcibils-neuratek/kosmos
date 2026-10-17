@@ -26817,3 +26817,62 @@ release 15. A size set now reaches every handle open on the file.
 written again `short` by `>`, and Kosmos reading `short` and nothing
 after. **Control**: before the change, Kosmos read `short` and then
 `n alpine`.
+
+## 18.657 The M700's desktop measured, before its GPU (`m700-2d.md` step 1)
+
+`frames 20` on the M700 (Core i7-6700, 1720x1440, 0.11.259) while a
+window's header was dragged in circles by VNC for sixteen seconds:
+
+    3723 passes, 1444 of which composed something
+    busy 11006 ms total, 2956 us mean, 18.4 ms WORST
+    composing 98.6% of busy; keys, requests, pointer, polls, reaping <1% each
+    composed 2127 rects, 2.23 Mpx a frame; drew 4.51 Mpx a frame (2.02x)
+    3.4 ns a pixel, 7.52 ms a composing pass
+    passes by busy ms: <1 2994, <8 46, <16.7 650, <33.3 11
+    the worst pass a collection (16.95 ms)
+
+**The time is pixels, and the processor is at its limit**: a full-screen
+drag composes at 7.5 ms a pass on four vector lanes, and twice the damage
+is drawn - composed into memory, then copied to the screen. At 3440x1440,
+twice the pixels, the same drag would want about 15 ms a pass. Page flips
+take the copy away; the render engine takes the composing.
+
+Also from this machine, kept for the key loss that is still open: the
+console server and the USB driver now say when a key event is dropped -
+`console: N key events dropped, nobody waiting for them` and `a key
+refused, the kernel's queue full` - so typing into Linux on the M700 can
+say where its keys go (`roadmap.md`, Linux).
+
+## 18.658 The M700's GPU found and read (`m700-2d.md` step 2)
+
+A driver of the display engine, its first half: `intelgpu`, started by init
+with device authority, finds the GPU (`DEV_INTEL_GPU`, a new kind -
+GTTMMADR, BAR0 of 0/2/0, 16 MB, `hal/pc/devices.c` sharing its checks with
+the backlight's), maps its first 2 MB, reads three pipes, three planes each
+and a cursor each, and the global GTT's entry behind each surface - and
+writes nothing. `SYS_DEV_MAP`'s bound rose from 4 MB to 16 for it, as
+agreed. Every offset and field is Linux's i915, fetched into
+`build/downloads/i915/` and cited in `intelgpu_decode.h`.
+
+**The M700 said**, at its first boot with it (0.11.259 and this):
+
+    intelgpu: Intel GPU 1912 at 00:02.0, GTTMMADR 00de000000, 16 MB
+    intelgpu: pipe A on, 3440x1440, transcoder c0000000
+    intelgpu: pipe A plane 1: 3440x1440 at 0,0, XRGB8888, linear,
+              13760 bytes a row, surface at GTT 00000000 = memory 00bc000000
+    intelgpu: pipe A cursor plane off
+    intelgpu: pipe B off, 1x1; pipe C off, 1x1
+    intelgpu: 1 pipe running; nothing written
+
+**What it means for the next steps**: one pipe, one plane, linear 32-bit
+XRGB with no padding, scanning from GTT page 0 - the firmware's screen in
+stolen memory at `0xBC000000` - and the cursor plane free. The cursor plane
+(step 3) and page flips (step 4) both start from here.
+
+**Tests.** `host`: `test_intelgpu_decode`, 18 checks - a plane's format,
+tiling, size, position and stride in each of its units (64 bytes linear,
+512 X, 128 Y), a surface's bits 31:12, `PIPESRC`, a cursor's mode with the
+bits beside it ignored, `CURPOS`'s signs, and a GTT entry's present bit and
+address with the bits above 45 dropped. The first run failed on the test's
+own stride - 1720 x 4 is not a multiple of 64, which no firmware sets.
+Under QEMU, which has no Intel GPU, the driver says so and ends.

@@ -3807,7 +3807,30 @@ processors, and still what follows USB:
    the first wins are the display engine's - a cursor plane, then page
    flips, which remove the 19.8 MB copy a frame at 3440x1440 - then the
    blitter for opaque work, then the render engine; a stick to measure the
-   desktop first.
+   desktop first. **Started, 17 October** (Diego: "start work on the m700
+   2d"): the plan as written - the display engine first (cursor, then
+   flips), the desktop measured first with `frames`, `SYS_DEV_MAP`'s bound
+   raised for the GPU and no IOMMU for now, each step a build on the M700
+   by netboot rather than a stick. **And 3D is the goal, not only 2D** (Diego, the
+   same day: "Is not only 2d is also 3d to be able to play 3d games in the
+   future and have a 3d compositor for the desktop for effects like
+   translucent and glass and animations"). One road: the display engine
+   (cursor, flips); the foundation (forcewake, GTT, submission), proven on
+   the blitter and then the render engine; **a 3D compositor** on the render
+   engine - windows as textures, blending, blur for glass, animation - from
+   a handful of fixed shaders compiled once on the Mac with Mesa's Intel
+   compiler and shipped as binaries; and **3D for applications**, Vulkan or
+   OpenGL, by Mesa's `anv` or `iris` inside each process over a Kosmos GPU
+   server with a declared protocol - months, the largest piece.
+   **Step 1 measured** (`testing.md` 18.657): a window dragged on the M700 at
+   1720x1440 - composing 98.6% of the desktop's busy time, 7.5 ms a pass and
+   18 ms at worst, 4.5 Mpx drawn a frame for 2.2 Mpx of damage (the copy to
+   the screen), 3.4 ns a pixel: the processor at its limit, the time all
+   pixels - what flips and then the render engine take away.
+   **Step 2 done** (`testing.md` 18.658): `intelgpu` finds the GPU (8086:1912)
+   and reads the display back, writing nothing - pipe A on at 3440x1440,
+   plane 1 XRGB8888 linear from GTT page 0 (memory `0xBC000000`), the cursor
+   plane off. **Next, step 3**: the cursor plane.
    **And video in hardware, on the wishlist since 27 September** - Diego:
    "Can't we use the gpu for hardware encoding and decoding video?", and yes
    to keeping it here. The ThinkPad's and the M700's Intel graphics encode

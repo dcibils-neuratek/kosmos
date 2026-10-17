@@ -526,6 +526,36 @@ static void fill_pointer(struct con_reply *rep)
  */
 static unsigned events_wanted;
 
+/* Whether a window manager has ever asked, and what was dropped since. */
+static bool desktop_waited;
+static unsigned long dropped_events, dropped_times;
+
+static size_t add_text(char *line, size_t size, size_t at, const char *text)
+{
+    while (*text != '\0' && at + 1 < size) {
+        line[at++] = *text++;
+    }
+
+    return at;
+}
+
+static size_t add_dec(char *line, size_t size, size_t at, unsigned long n)
+{
+    char digits[24];
+    int k = 0;
+
+    do {
+        digits[k++] = (char)('0' + n % 10);
+        n /= 10;
+    } while (n > 0);
+
+    while (k > 0 && at + 1 < size) {
+        line[at++] = digits[--k];
+    }
+
+    return at;
+}
+
 /*
  * The endpoint `CON_OP_WATCH` asked for, in this process's table, or -1.
  *
@@ -581,11 +611,13 @@ static void answer(const struct message *msg, uint64_t sender)
 
     case CON_OP_KEYS:
         events_wanted = 64;
+        desktop_waited = true;
         drain_keys(&rep);
         break;
 
     case CON_OP_WAIT: {
         events_wanted = 64;
+        desktop_waited = true;
 
         drain_keys(&rep);
         drain_key_events(&rep);
@@ -796,8 +828,36 @@ void console_server(long endpoint)
         } else {
             unsigned code;
             unsigned down;
+            unsigned long n = 0;
 
             while (kosmos_key_event(&code, &down) == 0) {
+                n++;
+            }
+
+            /*
+             * **Said, once a desktop has asked for them** (`testing.md`
+             * 18.657): at a prompt nobody collects events and dropping
+             * them is right, but a key thrown away while a window manager
+             * runs is one a window - Linux's, which reads only events -
+             * never sees. The first five, then at each power of ten.
+             */
+            if (n > 0 && desktop_waited) {
+                dropped_events += n;
+                dropped_times++;
+
+                if (dropped_times <= 5 || dropped_times == 100 || dropped_times == 1000
+                    || dropped_times == 10000) {
+                    char line[96];
+                    size_t at = 0;
+
+                    at = add_text(line, sizeof line, at, "console: ");
+                    at = add_dec(line, sizeof line, at, n);
+                    at = add_text(line, sizeof line, at,
+                                  " key events dropped, nobody waiting for them; ");
+                    at = add_dec(line, sizeof line, at, dropped_events);
+                    at = add_text(line, sizeof line, at, " so far\n");
+                    put(line, at, 0);
+                }
             }
         }
 
