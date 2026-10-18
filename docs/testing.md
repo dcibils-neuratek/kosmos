@@ -27774,3 +27774,45 @@ the global GTT and `MI_BATCH_BUFFER_END`. `x86-gpumon`, 12 checks: `gpu
 state` says there is no Intel GPU under QEMU. `LICENSE`, 31 entries. Full
 gate 95 of 96 in 9:19; `x86-controls` had QEMU exit before the desktop
 started, in no time at all, and passed alone, 11 checks.
+
+## 18.683 A texture drawn by the 3D pipeline (`m700-2d.md` 7c)
+
+A 64 by 64 picture sampled through the render engine's whole 3D pipeline -
+vertices, a rectangle, the rasteriser, a pixel shader sampling it, the
+render target - into another, and held to it pixel for pixel: `gpu render`.
+
+**The batch is built on the Mac**, by `tools/render_batch.c`: intel-gpu-
+tools' `_gen9_render_op` (`lib/rendercopy_gen9.c`) followed command for
+command - fifty-odd commands and the state they point at - and packed by
+the genxml packers it generates from its `gen90.xml`, so no field's bits are
+written by hand. The packers call `__gen_combine_address` for every address,
+and the tool's records where it is and whose - the batch's own (surface,
+dynamic and instruction state's bases, the vertex buffer), the
+destination's, the source's: six relocations. It writes
+`intelgpu_render.h`, committed; the driver copies the batch into a GTT page,
+adds the addresses, and runs it with `MI_BATCH_BUFFER_START` after the
+starting state (18.682), between a PIPE_CONTROL that invalidates and one that
+flushes the render target. Every MOCS field is index 1: genxml lets none be
+0, and Kosmos programs no MOCS table, so caching follows the GTT entries.
+
+**On the M700, the first try**: 4096 of 4096 pixels as the texture has them
+- a pattern in which every pixel differs from its neighbours, alpha
+included - none past the destination, no error in `RING_ESR`, 149 us; again
+after a restart, 147 us. **The control, on the machine**: the source's
+address left as the batch's - "written, and read back different", 0 of
+4096.
+
+**And each USB device's speed on its card** (Diego, the same afternoon: "also
+can we tell what speed are the usb devices connected ?"): `usb.lua` gives
+each device its speed's words, and This Machine's place line says them -
+"USB port 18 · SuperSpeed · 0951:1666"; on the M700 the mouse and the
+keyboard's receiver full speed, the stick SuperSpeed. The memory slots he
+asked about next are on the roadmap (SMBIOS types 16 and 17).
+
+**Tests.** `test_devices.lua`, 34 checks: the stick's place with its speed;
+**control**: the speed left out fails it. `x86-gpumon`, 13 checks: `gpu
+render` says there is no Intel GPU under QEMU. `LICENSE`, 32 entries.
+Full gate 95 of 96 in 9:22: `x86-folders` failed one of its 14 checks -
+Tracker's live folders, which nothing here touched - and passed alone,
+14 of 14; which check it was is not in what the gate kept, and a rerun
+over its log lost the rest.

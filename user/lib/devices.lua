@@ -290,8 +290,11 @@ function devices.gather(src)
       picture = u.driven and USB_PICTURE[u.kind] or nil,
       label = u.driven and (u.kind or ""):upper():sub(1, 4) or "USB",
       name = name, driven = u.driven, driver = u.driven and "xhci" or nil,
-      place = ("USB port %d · %04x:%04x"):format(u.port or 0, u.vendor or 0,
-                                                 u.product or 0),
+      -- The speed it was connected at, as `usb.lua` names it - what tells a
+      -- stick on a USB 2 port from one on a USB 3 (Diego, 18 October: "can
+      -- we tell what speed are the usb devices connected ?").
+      place = ("USB port %d · %s%04x:%04x"):format(u.port or 0,
+                u.speed_name and (u.speed_name .. " · ") or "", u.vendor or 0, u.product or 0),
       detail = u.driven and (u.kind == "keyboard" and "the keyboard"
                              or u.kind == "mouse" and "the pointer" or nil)
                or ("class %02x/%02x/%02x"):format(u.class or 0, u.subclass or 0,

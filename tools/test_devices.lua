@@ -41,7 +41,7 @@ local usb = {
     class = 0, subclass = 0, protocol = 0 },
   { controller = 0, port = 5, pci = xhci, kind = "keyboard", driven = true,
     vendor = 0x25a7, product = 0xfa70, name = "2.4G Wireless Receiver" },
-  { controller = 0, port = 18, pci = xhci, kind = "stick", driven = true,
+  { controller = 0, port = 18, pci = xhci, kind = "stick", driven = true, speed_name = "SuperSpeed",
     vendor = 0x0951, product = 0x1666, name = "DataTraveler 3.0" },
   { controller = 0, port = 7, pci = xhci, kind = "none", driven = false,
     vendor = 0x0403, product = 0x6001, name = "FT232R USB UART",
@@ -111,6 +111,8 @@ check(by["usb:0:7"].detail == "class ff/ff/ff" and not by["usb:0:7"].driven,
       "the UART was not listed undriven with its class")
 check(by["usb:0:18"].busy == "in use" and by["usb:0:18"].detail == "KOSMOS, Home and Sandboxes on it",
       "the stick did not say what is on it: " .. tostring(by["usb:0:18"].detail))
+check(by["usb:0:18"].place == "USB port 18 · SuperSpeed · 0951:1666",
+      "the stick did not say the speed it is connected at: " .. tostring(by["usb:0:18"].place))
 check(by["usb:0:3"].picture == "mouse" and by["usb:0:5"].picture == "keyboard"
       and by["usb:0:18"].picture == "stick",
       "a USB device was not drawn as what it is")

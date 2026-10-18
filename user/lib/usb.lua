@@ -44,7 +44,8 @@ function usb.devices()
         string.unpack(DEVICE, reply, 16 + (i - 1) * 48 + 1)
 
       out[#out + 1] = {
-        controller = ctl, port = port, speed = speed, kind = usb.KINDS[kind] or ("kind " .. kind),
+        controller = ctl, port = port, speed = speed, speed_name = usb.SPEEDS[speed],
+        kind = usb.KINDS[kind] or ("kind " .. kind),
         kind_code = kind, driven = driven ~= 0, class = class, subclass = subclass,
         protocol = protocol, vendor = vendor, product = product, pci = pci,
         name = (name:match("^[^%z]*") or ""),

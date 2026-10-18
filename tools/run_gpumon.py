@@ -79,6 +79,17 @@ def main():
         while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
             time.sleep(0.1)
 
+        # And a texture drawn by the 3D pipeline (7c), the same.
+        mark = len(guest.seen)
+        guest.type("gpu render")
+        got = said("gpu: ", mark, 30)
+        check(got == "no Intel GPU this driver knows",
+              "gpu render did not say there is no Intel GPU here: %r" % got)
+
+        deadline = time.monotonic() + 30
+        while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
+            time.sleep(0.1)
+
         # And the render engine's starting state (7c), the same.
         mark = len(guest.seen)
         guest.type("gpu state")

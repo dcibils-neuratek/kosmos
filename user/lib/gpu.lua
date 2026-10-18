@@ -112,6 +112,26 @@ function gpu.render_state()
   return gpu.last_state
 end
 
+-- **A texture drawn by the 3D pipeline** (`m700-2d.md` 7c): a 64 by 64
+-- picture sampled by the render engine into another and held to it pixel
+-- for pixel. { right, past, elapsed_us, ... }, or nil and why; the registers
+-- after in `gpu.last_render`.
+function gpu.render_test()
+  local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, 17, 0, 0, 0, 0, 0, 0, 0), nil, "gpu")
+
+  if not reply then return nil, tostring(why) end
+  if #reply < 32 then return nil, "the GPU's driver sent a reply of the wrong size" end
+
+  local err, right, head, tail, past, mode, esr, us = string.unpack(REPLY, reply)
+
+  gpu.last_render = { right = right, past = past, head = head, tail = tail, mode = mode, esr = esr,
+                      elapsed_us = us }
+
+  if err ~= 0 then return nil, gpu.ERRORS[err] or ("gpu error " .. err), err end
+
+  return gpu.last_render
+end
+
 function gpu.compute_test(colour)
   local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, 15, 0, (colour or 0x5a) & 0xff, 0, 0, 0, 0, 0),
                             nil, "gpu")

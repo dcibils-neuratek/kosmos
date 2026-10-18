@@ -31,6 +31,7 @@
 #include "intelgpu_decode.h"
 #include "intelgpu_fill.h"
 #include "intelgpu_renderstate.h"
+#include "intelgpu_render.h"
 #include "mmio.h"
 #include "init/say.h"
 
@@ -1402,6 +1403,163 @@ static void render_state_test(long console, struct gpu_reply *rep)
 }
 
 /*
+ * **A texture drawn by the 3D pipeline** (`m700-2d.md` 7c): the batch
+ * `tools/render_batch.c` wrote from intel-gpu-tools' render copy
+ * (`intelgpu_render.h`), its relocations made - the batch's own address,
+ * the destination's and the source's added where it says - and run from
+ * the ring after the starting state. The source is a pattern every pixel of
+ * which differs from its neighbours, alpha included; the destination is
+ * held to it pixel for pixel, and the page after it to zero.
+ */
+#define RT_PAGES  ((INTELGPU_RENDER_PITCH * INTELGPU_RENDER_H + 4095u) / 4096u)
+
+static volatile uint32_t *rt_batch, *rt_src, *rt_dst;
+static uint32_t rt_batch_gtt, rt_src_gtt, rt_dst_gtt;
+
+static uint32_t rt_pattern(uint32_t x, uint32_t y)
+{
+    return ((x * 4u) & 0xffu) | (((y * 4u) & 0xffu) << 8) | (((x ^ y) * 9u & 0xffu) << 16)
+           | ((0x40u + x + y) & 0xffu) << 24;
+}
+
+static void render_test(long console, struct gpu_reply *rep)
+{
+    struct say_line line;
+    uint32_t error, right = 0, past = 0, fence, i;
+    const uint32_t pixels = INTELGPU_RENDER_W * INTELGPU_RENDER_H;
+    unsigned long t0, t1;
+
+    if (!G.found) {
+        rep->error = GPU_ERR_NO_DEVICE;
+        return;
+    }
+
+    if (!forcewake(true)) {
+        rep->error = GPU_ERR_NO_WAKE;
+        return;
+    }
+
+    error = render_state();
+
+    if (error == GPU_OK && rt_batch == NULL
+        && (!gtt_pages(1, &rt_batch, &rt_batch_gtt) || !gtt_pages(RT_PAGES, &rt_src, &rt_src_gtt)
+            || !gtt_pages(RT_PAGES + 1u, &rt_dst, &rt_dst_gtt))) {
+        error = GPU_ERR_NO_MEMORY;
+    }
+
+    if (error == GPU_OK && !engine_idle(&RCS)) {
+        error = GPU_ERR_BUSY;
+    }
+
+    if (error == GPU_OK) {
+        for (i = 0; i < sizeof(intelgpu_render) / 4u; i++) {
+            rt_batch[i] = intelgpu_render[i];
+        }
+
+        for (i = 0; i < sizeof(intelgpu_render_relocs) / sizeof(intelgpu_render_relocs[0]); i++) {
+            uint32_t at = intelgpu_render_relocs[i].at / 4u;
+            uint32_t kind = intelgpu_render_relocs[i].kind;
+            uint32_t base = kind == 1u ? rt_batch_gtt : kind == 2u ? rt_dst_gtt : rt_src_gtt;
+
+            rt_batch[at] += base;               /* the GTT is under 4 GB: the high half stays */
+        }
+
+        for (i = 0; i < pixels; i++) {
+            rt_src[i] = rt_pattern(i % INTELGPU_RENDER_W, i / INTELGPU_RENDER_W);
+        }
+
+        for (i = 0; i < (RT_PAGES + 1u) * 1024u; i++) {
+            rt_dst[i] = 0;
+        }
+
+        {
+            const uint32_t before[6] = { IGPU_PIPE_CONTROL,
+                                         IGPU_PC_CS_STALL | IGPU_PC_RT_FLUSH | IGPU_PC_INVALIDATE,
+                                         0, 0, 0, 0 };
+            const uint32_t start[3] = { IGPU_MI_BB_START, rt_batch_gtt, 0 };
+            const uint32_t after[6] = { IGPU_PIPE_CONTROL, IGPU_PC_CS_STALL | IGPU_PC_RT_FLUSH | IGPU_PC_DC_FLUSH,
+                                        0, 0, 0, 0 };
+
+#if defined(__x86_64__)
+            __asm__ volatile("sfence" ::: "memory");
+#endif
+            emit(&RCS, before, 6);
+            emit(&RCS, start, 3);
+            emit(&RCS, after, 6);
+        }
+
+        t0 = kosmos_ticks();
+        fence = submit(&RCS);
+
+        for (i = 0; i < 20000 && fence_reached(&RCS) != fence; i++) {
+            __asm__ volatile("" ::: "memory");
+        }
+
+        for (i = 0; i < 100 && fence_reached(&RCS) != fence; i++) {
+            kosmos_sleep(1);
+        }
+
+        t1 = kosmos_ticks();
+
+        if (fence_reached(&RCS) != fence) {
+            error = GPU_ERR_NO_ANSWER;
+        }
+
+        for (i = 0; i < pixels; i++) {
+            right += rt_dst[i] == rt_src[i];
+        }
+
+        for (i = pixels; i < pixels + 1024u; i++) {
+            past += rt_dst[i] != 0;
+        }
+
+        rep->engine.value = right;
+        rep->engine.ctl = past;
+
+        {
+            static struct sysinfo machine;     /* large: not on the stack */
+            unsigned long per_us;
+
+            per_us = kosmos_sysinfo(&machine) == 0 && machine.counter_hz >= 1000000u
+                   ? machine.counter_hz / 1000000u : 1u;
+            rep->engine.elapsed_us = (uint32_t)((t1 - t0) / per_us);
+        }
+
+        if (error == GPU_OK && (right != pixels || past != 0)) {
+            error = GPU_ERR_UNCHANGED;
+        }
+    }
+
+    (void)forcewake(true);
+    rep->engine.head = eng(&RCS, IGPU_RING_HEAD);
+    rep->engine.tail = eng(&RCS, IGPU_RING_TAIL);
+    rep->engine.mode = eng(&RCS, IGPU_RING_MODE);
+    rep->engine.esr = eng(&RCS, IGPU_RING_ESR);
+    rep->error = error;
+
+    for (i = 0; i < 100 && !engine_idle(&RCS); i++) {
+        kosmos_sleep(1);
+    }
+
+    say_begin(&line);
+    say_text(&line, "intelgpu: the 3D pipeline drew ");
+    say_dec(&line, right);
+    say_text(&line, " of 4096 pixels as the texture has them, ");
+    say_dec(&line, past);
+    say_text(&line, " bytes past; first ");
+    say_hex(&line, rt_dst ? rt_dst[0] : 0, 8);
+    say_text(&line, " for ");
+    say_hex(&line, rt_src ? rt_src[0] : 0, 8);
+    say_text(&line, "; head ");
+    say_hex(&line, rep->engine.head, 8);
+    say_text(&line, " tail ");
+    say_hex(&line, rep->engine.tail, 8);
+    say_text(&line, " esr ");
+    say_hex(&line, rep->engine.esr, 8);
+    say_send(console, &line);
+}
+
+/*
  * **A region another process drew in, handed to the GPU** (step 6): each
  * of its pages entered in a GTT slot of its own, from `kosmos_mem_page_phys`,
  * so it need not be one run. The window server's back buffer is the
@@ -1883,6 +2041,9 @@ void intelgpu_server(long console, long endpoint)
                 break;
             case GPU_OP_RENDER_STATE:
                 render_state_test(console, &rep);
+                break;
+            case GPU_OP_RENDER_TEST:
+                render_test(console, &rep);
                 break;
             case GPU_OP_BUFFER_IMPORT:
                 rep.error = buffer_import(console, cap, &rq, &rep);

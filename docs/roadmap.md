@@ -131,6 +131,18 @@ as what it is, By kind and By connection, a pill for driven or not. Steps
 M1 the USB driver's list (done in 0.11.276, `lsusb`), M2 `devices.lua`, M3
 the window, M4 the Deskbar's devices indicator (5q).
 
+**Memory slots in This Machine** - Diego, 18 October 2026: "can we tell in
+the this machine app if the memory slots are all occupied ? because it can
+let the user know if there is room for more memory". The firmware's SMBIOS
+tables say it: type 16, the memory array, how many slots and the most it
+takes; type 17, a record per slot, empty ones with a size of 0, filled ones
+with the module's size, type and speed. The kernel already reads SMBIOS
+for the machine's name; this is two more record types through the same
+door, and the memory card says "2 of 4 slots used · 8 GB of 64 GB ·
+DDR4-2133". The SMBus controller (00:1f.4, no driver today) reaches each
+module's own SPD chip for its maker and exact timings - a later step, if
+SMBIOS's words are not enough.
+
 **Magnet: windows snapped to halves, quarters and the whole screen** -
 Diego, 10 October 2026, after Magnet for the Mac (magnet.crowdcafe.com):
 "dragging a window to the right of the screen will show that it can be

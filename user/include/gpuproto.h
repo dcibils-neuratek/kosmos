@@ -99,6 +99,15 @@
  */
 #define GPU_OP_RENDER_STATE  16u
 
+/*
+ * **A texture drawn by the 3D pipeline** (7c): a 64 by 64 picture sampled
+ * through the render engine's whole pipeline into another, and held to it
+ * pixel for pixel. The engine reply's `value` is how many of the 4096
+ * pixels arrived as they are in the picture, `ctl` how many bytes past the
+ * destination were written.
+ */
+#define GPU_OP_RENDER_TEST   17u
+
 #define GPU_BLIT_RECTS       64u
 #define GPU_BUFFER_IMPORTED  2u     /* a buffer's kind: a region handed in, shared */
 

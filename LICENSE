@@ -95,6 +95,11 @@ Vendored third-party code keeps its own licence, which travels beside it:
       user/drivers/display/intelgpu_renderstate.h, from Linux 6.12's
       drivers/gpu/drm/i915/gt/gen9_renderstate.c, credited there
 
+  intel-gpu-tools' render copy for generation 9, by Intel Corporation, MIT
+      user/drivers/display/intelgpu_render.h - its pixel shader, and the
+      batch tools/render_batch.c writes after lib/rendercopy_gen9.c with
+      the genxml packers igt-gpu-tools 2.6 generates - credited there
+
   The fonts
       assets/fonts/, each under the LICENSE file beside it. A font
       whose licence is not beside it is not committed, and the build

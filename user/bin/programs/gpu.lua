@@ -17,6 +17,7 @@
 --   gpu compute [colour]    the first program on the execution units: a
 --                       64 by 4 surface filled with a byte (step 7b)
 --   gpu state           the render engine's starting state, run once (7c)
+--   gpu render          a 64 by 64 texture drawn by the 3D pipeline (7c)
 --
 -- The test refuses while the window manager's arrow is on the plane, which
 -- on the M700 is always once the desktop is up (step 3b).
@@ -26,8 +27,23 @@ local gpu = use("/Kosmos/Libraries/gpu.lua")
 local words = use("/Kosmos/Libraries/files.lua").words(args, 3)
 local seconds = math.tointeger(tonumber(words[2] or "")) or 10
 
-if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" and words[1] ~= "state" then
+if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" and words[1] ~= "state" and words[1] ~= "render" then
   print("gpu: gpu [cursor [seconds] | engine [render] [n] | compute [colour]]")
+  return
+end
+
+if words[1] == "render" then
+  local r, why = gpu.render_test()
+  local c = gpu.last_render
+
+  print(r and ("gpu: the 3D pipeline drew %d of 4096 pixels as the texture has them, %d us"):format(r.right, r.elapsed_us)
+          or ("gpu: " .. tostring(why)))
+
+  if c then
+    print(("gpu: %d of 4096 right, %d bytes written past; ring head %08x, tail %08x, errors %08x")
+          :format(c.right, c.past, c.head, c.tail, c.esr))
+  end
+
   return
 end
 
