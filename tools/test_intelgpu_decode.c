@@ -112,6 +112,15 @@ int main(void)
     check(((IGPU_FORCEWAKE_KERNEL << 16) | IGPU_FORCEWAKE_KERNEL) == 0x00010001u,
           "forcewake asked: a masked write, bit 16 saying bit 0 is meant");
 
+    /* Step 6's copy and fence, as i915 builds them: XY_SRC_COPY_BLT_CMD |
+     * BLT_WRITE_RGBA | (10 - 2) (`intel_migrate.c`), and MI_FLUSH_DW + 1 |
+     * MI_FLUSH_DW_OP_STOREDW (`gen8_engine_cs.h`). */
+    check(IGPU_XY_SRC_COPY_BLT == 0x54f00008u, "XY_SRC_COPY_BLT: client 2, opcode 0x53, RGBA, ten dwords");
+    check((IGPU_BLT_DEPTH_32 | IGPU_BLT_ROP_SRC_COPY | 6912u) == 0x03cc1b00u,
+          "32 bits a pixel, the copy ROP, a pitch of 6912 bytes");
+    check(IGPU_MI_FLUSH_DW_STORE == 0x13004002u, "MI_FLUSH_DW, a dword longer, storing a dword");
+    check(IGPU_MI_FLUSH_DW_GTT == 4u, "its address in the global GTT, bit 2");
+
     printf("%s: %d checks on intelgpu_decode\n", failed ? "FAIL" : "PASS", checks);
     return failed != 0;
 }

@@ -377,6 +377,23 @@ static bool flip_pending;           /* a flip asked for, not yet seen taken */
 static struct damage owed, given;
 static unsigned long copy_ticks;    /* since the last reply, for `copy_us` */
 
+/*
+ * **The copy on the blitter** (`m700-2d.md` step 6): the back buffer
+ * handed to the GPU once (`back_id`), and the copy into the hidden screen
+ * given to the blit engine rather than done here. A frame is then three
+ * stages, each looked at a tick later when it is not done: the blit given,
+ * its fence reached, the flip taken. Anything the driver refuses but
+ * "busy" puts the copying back here, said once.
+ */
+static bool blitting;               /* the copy is the blitter's */
+static uint32_t back_id;
+static bool blit_pending;           /* given, its fence not yet reached */
+static uint32_t blit_fence;
+static unsigned blit_target;        /* the buffer it copies into */
+static struct damage sent;          /* what that blit copies: `given` once it is shown */
+static unsigned checks_left = 20;   /* frames compared pixel by pixel, from the first */
+static uint64_t checked_px, wrong_px;
+
 static void damage_add(struct damage *d, long x, long y, long w, long h)
 {
     if (d->whole) {
@@ -395,22 +412,20 @@ static void damage_add(struct damage *d, long x, long y, long w, long h)
     d->n++;
 }
 
-static uint32_t gpu_ask(uint32_t op, int32_t x, int32_t y, struct gpu_reply *rep, long *cap)
+/* One request to the GPU's driver, of any shape, a capability beside it
+ * when `pass` is one; the reply's own beside it into `cap`. */
+static uint32_t gpu_send(const void *req, size_t bytes, long pass, struct gpu_reply *rep, long *cap)
 {
     static struct message msg, got;
-    struct gpu_request rq;
 
     if (gpu < 0) {
         return GPU_ERR_NO_DEVICE;
     }
 
-    memset(&rq, 0, sizeof rq);
-    rq.op = op;
-    rq.x = x;
-    rq.y = y;
     memset(&msg, 0, sizeof msg);
-    msg.length = (uint32_t)sizeof rq;
-    memcpy(msg.data, &rq, sizeof rq);
+    msg.length = (uint32_t)bytes;
+    msg.cap_plus_one = pass >= 0 ? (uint32_t)pass + 1u : 0u;
+    memcpy(msg.data, req, bytes);
 
     if (kosmos_call(gpu, &msg, &got) != 0 || got.length < sizeof *rep) {
         return GPU_ERR_NO_DEVICE;
@@ -427,6 +442,17 @@ static uint32_t gpu_ask(uint32_t op, int32_t x, int32_t y, struct gpu_reply *rep
     return rep->error;
 }
 
+static uint32_t gpu_ask(uint32_t op, int32_t x, int32_t y, struct gpu_reply *rep, long *cap)
+{
+    struct gpu_request rq;
+
+    memset(&rq, 0, sizeof rq);
+    rq.op = op;
+    rq.x = x;
+    rq.y = y;
+    return gpu_send(&rq, sizeof rq, -1, rep, cap);
+}
+
 /* A second screen from the GPU's driver, once the screen is taken. */
 static void flips_start(void)
 {
@@ -438,7 +464,10 @@ static void flips_start(void)
         return;
     }
 
-    {
+    /* The second screen is made once and kept: a window manager started
+     * again flips with the same one rather than leaving another 4.6 MB a
+     * million pixels behind each time. */
+    if (flip_region.cap < 0) {
         uint32_t error = gpu_ask(GPU_OP_BUFFER_NEW, (int32_t)screen.width, (int32_t)screen.height, &rep, &cap);
 
         if (error != GPU_OK) {
@@ -457,18 +486,19 @@ static void flips_start(void)
 
             return;
         }
-    }
 
-    if (!take(cap, &flip_region)
-        || flip_region.bytes < (size_t)rep.buffer.pitch * screen.height) {
-        let_go(&flip_region);
-        return;
+        if (!take(cap, &flip_region)
+            || flip_region.bytes < (size_t)rep.buffer.pitch * screen.height) {
+            let_go(&flip_region);
+            return;
+        }
+
+        buffer_id[1] = rep.buffer.id;
+        surface_over(&buffers[1], flip_region.at, screen.width, screen.height, rep.buffer.pitch);
     }
 
     buffer_id[0] = 0;
-    buffer_id[1] = rep.buffer.id;
     buffers[0] = screen_surface;
-    surface_over(&buffers[1], flip_region.at, screen.width, screen.height, rep.buffer.pitch);
     shown = 0;
     flip_pending = false;
     owed.n = given.n = 0;
@@ -476,9 +506,26 @@ static void flips_start(void)
     given.whole = true;             /* the new buffer holds nothing yet */
     flipping = true;
 
+    /* The back buffer handed to the GPU, so the blitter can copy from it. */
+    {
+        struct gpu_request rq;
+        struct gpu_reply got;
+
+        memset(&rq, 0, sizeof rq);
+        rq.op = GPU_OP_BUFFER_IMPORT;
+        rq.x = (int32_t)back.width;
+        rq.y = (int32_t)back.height;
+        rq.pitch = back.pitch;
+        rq.offset = 0;
+        blitting = gpu_send(&rq, sizeof rq, back_region.cap, &got, NULL) == GPU_OK;
+        back_id = got.buffer.id;
+        blit_pending = false;
+    }
+
     say_begin(&line);
     say_text(&line, "windowserver: page flips, between the firmware's screen and buffer ");
-    say_dec(&line, rep.buffer.id);
+    say_dec(&line, buffer_id[1]);
+    say_text(&line, blitting ? "; the copy into them on the blitter" : "; the copy into them here");
     say_send(console, &line);
 }
 
@@ -500,13 +547,114 @@ static void copy_damage(struct surface *to, const struct damage *d)
  * What is owed, put on the screen if the display has left the other buffer:
  * copied into it, and flipped to. Returns whether something is still owed.
  */
+/* The rectangles of `d`, or the whole screen, into a blit's list. */
+static unsigned blit_rects(struct gpu_blit *b, const struct damage *d)
+{
+    unsigned k;
+
+    if (d->whole || b->n + d->n > GPU_BLIT_RECTS) {
+        b->n = 1;
+        b->rects[0].x = 0;
+        b->rects[0].y = 0;
+        b->rects[0].w = (int32_t)screen.width;
+        b->rects[0].h = (int32_t)screen.height;
+        return 1;
+    }
+
+    for (k = 0; k < d->n && b->n < GPU_BLIT_RECTS; k++) {
+        b->rects[b->n].x = (int32_t)d->r[k].x;
+        b->rects[b->n].y = (int32_t)d->r[k].y;
+        b->rects[b->n].w = (int32_t)d->r[k].w;
+        b->rects[b->n].h = (int32_t)d->r[k].h;
+        b->n++;
+    }
+
+    return b->n;
+}
+
+/*
+ * The first frames the blitter copies, compared with the back buffer they
+ * came from, pixel by pixel - the plan's "compared pixel for pixel with
+ * what the processor draws" - and said once, after twenty.
+ */
+static void check_blit(const struct gpu_blit *b, const struct surface *to, size_t to_bytes)
+{
+    unsigned k;
+
+    if (checks_left == 0) {
+        return;
+    }
+
+    for (k = 0; k < b->n; k++) {
+        long x0 = b->rects[k].x, y0 = b->rects[k].y, x, y;
+
+        for (y = y0 < 0 ? 0 : y0; y < y0 + b->rects[k].h && y < (long)screen.height; y++) {
+            /* A surface's `pitch` is bytes and its `pixels` 32-bit words, so
+             * a row is found through a byte pointer - added to `pixels`
+             * itself it was four rows' worth too far, and the first check
+             * read past its buffer and took the window server down
+             * (`testing.md` 18.667). */
+            const uint32_t *want = (const uint32_t *)((const uint8_t *)back.pixels + (size_t)y * back.pitch);
+            const volatile uint32_t *got =
+                (const volatile uint32_t *)((const uint8_t *)to->pixels + (size_t)y * to->pitch);
+
+            /* Every row held to the regions it is read from: a window
+             * server that faults takes the desktop with it (18.667). */
+            if ((size_t)y * to->pitch + (size_t)screen.width * 4u > to_bytes
+                || (size_t)y * back.pitch + (size_t)screen.width * 4u > back_region.bytes) {
+                struct say_line line;
+
+                say_begin(&line);
+                say_text(&line, "windowserver: a checked row past its region: y ");
+                say_dec(&line, (unsigned long)y);
+                say_text(&line, ", to ");
+                say_hex(&line, (unsigned long)(uintptr_t)to->pixels, 12);
+                say_text(&line, " pitch ");
+                say_dec(&line, to->pitch);
+                say_text(&line, " of ");
+                say_dec(&line, (unsigned long)to_bytes);
+                say_text(&line, ", back pitch ");
+                say_dec(&line, back.pitch);
+                say_text(&line, " of ");
+                say_dec(&line, (unsigned long)back_region.bytes);
+                say_send(console, &line);
+                checks_left = 1;
+                break;
+            }
+
+            for (x = x0 < 0 ? 0 : x0; x < x0 + b->rects[k].w && x < (long)screen.width; x++) {
+                checked_px++;
+                wrong_px += (got[x] & 0x00ffffffu) != (want[x] & 0x00ffffffu);
+            }
+        }
+    }
+
+    if (--checks_left == 0) {
+        struct say_line line;
+
+        say_begin(&line);
+        say_text(&line, "windowserver: the blitter's copies checked, 20 frames, ");
+        say_dec(&line, (unsigned long)checked_px);
+        say_text(&line, " pixels, ");
+        say_dec(&line, (unsigned long)wrong_px);
+        say_text(&line, " different");
+        say_send(console, &line);
+    }
+}
+
+/*
+ * What is owed, put on the screen if the display has left the other buffer:
+ * copied into it - by the blitter, or here - and flipped to. Returns whether
+ * something is still to be done, which the receive loop looks at again a
+ * tick later.
+ */
 static bool present(void)
 {
     struct gpu_reply rep;
     unsigned hidden;
     unsigned long t0;
 
-    if (!flipping || (owed.n == 0 && !owed.whole)) {
+    if (!flipping || (owed.n == 0 && !owed.whole && !blit_pending)) {
         return false;
     }
 
@@ -522,7 +670,82 @@ static bool present(void)
         flip_pending = false;
     }
 
+    /* A blit given: flipped to once its fence is reached. */
+    if (blit_pending) {
+        if (gpu_ask(GPU_OP_FENCE, 0, 0, &rep, NULL) != GPU_OK
+            || (int32_t)(rep.engine.value - blit_fence) < 0) {
+            return true;
+        }
+
+        blit_pending = false;
+
+        if (gpu_ask(GPU_OP_FLIP, (int32_t)buffer_id[blit_target], 0, &rep, NULL) != GPU_OK) {
+            return true;
+        }
+
+        shown = blit_target;
+        flip_pending = true;
+        given = sent;
+        return owed.n > 0 || owed.whole;
+    }
+
     hidden = 1u - shown;
+
+    if (blitting) {
+        static struct gpu_blit b;
+
+        memset(&b, 0, sizeof b);
+        b.op = GPU_OP_BLIT;
+        b.src = back_id;
+        b.dst = buffer_id[hidden];
+        b.n = 0;
+        (void)blit_rects(&b, &given);
+        (void)blit_rects(&b, &owed);
+
+        uint32_t error = gpu_send(&b, 16 + b.n * 16u, -1, &rep, NULL);
+
+
+        if (error == GPU_OK) {
+            blit_pending = true;
+            blit_fence = rep.engine.value;
+            blit_target = hidden;
+            sent = owed;
+            owed.n = 0;
+            owed.whole = false;
+
+            /* The first frames: the blit waited for here, so its pixels
+             * can be compared before anything else touches them. */
+            if (checks_left > 0) {
+                for (unsigned i = 0; i < 250; i++) {
+                    if (gpu_ask(GPU_OP_FENCE, 0, 0, &rep, NULL) == GPU_OK
+                        && (int32_t)(rep.engine.value - blit_fence) >= 0) {
+                        check_blit(&b, &buffers[hidden],
+                                   hidden == 0 ? (size_t)screen.pitch * screen.height
+                                               : flip_region.bytes);
+                        break;
+                    }
+
+                    kosmos_sleep(1);
+                }
+            }
+
+            return true;
+        }
+
+        if (error != GPU_ERR_BUSY) {
+            struct say_line line;
+
+            blitting = false;
+            say_begin(&line);
+            say_text(&line, "windowserver: the blitter refused a copy (");
+            say_dec(&line, error);
+            say_text(&line, "); copying here from now on");
+            say_send(console, &line);
+        }
+
+        return true;
+    }
+
     t0 = kosmos_ticks();
     copy_damage(&buffers[hidden], &given);
     copy_damage(&buffers[hidden], &owed);
@@ -556,7 +779,21 @@ static bool ready_for_frame(void)
 {
     struct gpu_reply rep;
 
-    if (!flipping || !flip_pending) {
+    if (!flipping || (!flip_pending && !blit_pending)) {
+        return true;
+    }
+
+    /* A copy on the blitter still running, or its flip still to be asked:
+     * the frame it carries is not on the screen yet. */
+    if (blit_pending) {
+        (void)present();
+
+        if (blit_pending) {
+            return false;
+        }
+    }
+
+    if (!flip_pending) {
         return true;
     }
 
@@ -585,6 +822,21 @@ static void flips_stop(void)
         (void)gpu_ask(GPU_OP_FLIP, 0, 0, &rep, NULL);
     }
 
+    /* The back buffer the GPU was given goes with the manager: forgotten
+     * once the blitter has stopped reading it, a second at most. */
+    if (blitting) {
+        for (unsigned i = 0; i < 250; i++) {
+            if (gpu_ask(GPU_OP_BUFFER_FORGET, (int32_t)back_id, 0, &rep, NULL) != GPU_ERR_BUSY) {
+                break;
+            }
+
+            kosmos_sleep(1);
+        }
+
+        blitting = false;
+    }
+
+    blit_pending = false;
     flipping = false;
     flip_pending = false;
     shown = 0;
@@ -939,7 +1191,7 @@ void windowserver_server(long endpoint, long console_cap, long gpu_cap)
         uint64_t sender = 0;
         /* A tick when a frame is owed to a display still on its way to the
          * last one; a fifth of a second while a manager is to be watched. */
-        unsigned long wait = (flipping && (owed.n > 0 || owed.whole)) ? 1ul
+        unsigned long wait = (flipping && (owed.n > 0 || owed.whole || blit_pending)) ? 1ul
                            : manager >= 0 ? watch_ticks : 0;
         long got = kosmos_receive(endpoint, &msg, &sender, 0, wait);
 

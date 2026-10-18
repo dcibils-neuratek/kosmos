@@ -683,7 +683,14 @@ static inline long kosmos_mem_create_flags(unsigned long pages,
 
 static inline long kosmos_mem_phys(long cap)
 {
-    return sys1(SYS_MEM_PHYS, cap);
+    return sys2(SYS_MEM_PHYS, cap, 0);      /* the nought passed: the kernel reads arg[1] */
+}
+
+/* Where page `index` of a region is in physical memory, contiguous or not -
+ * for a GPU's table, which maps a page at a time. Device authority only. */
+static inline long kosmos_mem_page_phys(long cap, unsigned long index)
+{
+    return sys2(SYS_MEM_PHYS, cap, (long)(index + 1u));
 }
 
 /*

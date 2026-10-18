@@ -27204,3 +27204,70 @@ GTT), the blitter's RING_CTL and RING_TAIL, and forcewake's masked write.
 and touches nothing. The engine itself has no test but the M700.
 Full gate 95/95 in 9:04.
 
+## 18.667 The copy to the screen on the blitter (`m700-2d.md` step 6a)
+
+**Nebula**: `SYS_MEM_PHYS` also answers where *one page* of any region is
+(`arg[1]` the page's index plus one; nought the old question, a contiguous
+region's start), still only to a process with device authority - a GPU's
+table maps a page at a time, so a buffer another process drew in reaches
+the GPU without being one run. `kosmos_mem_phys` passes its nought now
+rather than leaving the register to chance; `kosmos_mem_page_phys` is new.
+
+**The driver**: `GPU_OP_BUFFER_IMPORT` enters a region handed over in the
+GTT page by page; `GPU_OP_BLIT` copies up to 64 rectangles from one buffer
+to the same place in another as `XY_SRC_COPY_BLT` (`intel_migrate.c`'s
+`emit_copy`) and ends with a fence - `MI_FLUSH_DW` storing a dword to the
+status page once the engine's writes are flushed (`gen8_engine_cs.h`) -
+answered at once; `GPU_OP_FENCE` says which fence is reached;
+`GPU_OP_BUFFER_FORGET` gives an import's slots back. The ring is four
+pages now, commands wrap with `MI_NOOP` to its end, and the GT is held
+awake from a submission until its fence is seen, then let go to sleep.
+
+**The window server** hands its back buffer to the GPU when it takes the
+screen, and from then on a frame is three stages: the copy of what the
+hidden screen lacks given to the blitter, its fence reached, the flip
+asked - each looked at again a tick later when not done, the window
+manager held back meanwhile (`WS_IF_READY`). Anything the driver refuses
+but "busy" puts the copy back on the processor, said once. **The first 20
+frames are compared pixel by pixel** with the back buffer they came from,
+and said. The second screen is now made once and kept: a window manager
+started again made another before, 9.5 MB at 1720x1440 each time.
+
+**Three bugs on the way, all mine:**
+
+- **The ring would not start** ("the blitter refused a copy (10)"): the
+  first blit came with no engine test before it, and the GT was asleep in
+  RC6 - register writes to it are lost. The engine's start wakes it now.
+- **The window server died at 1.6 s** on a read of an unmapped page, the
+  desktop never came, and a Telnet `restart` could not be heard - Diego
+  power-cycled the M700 three times. It was the check: a surface's
+  `pixels` is 32-bit words and its `pitch` bytes, so `pixels + y * pitch`
+  went four rows' worth too far. Found by keeping each served image and
+  reading the fault's address against it (the first reading was against
+  a newer build, and fell mid-instruction - `keep-the-failing-binary`).
+- `restart` over Telnet needs the desktop: with the window server dead it
+  is not taken, so a stuck M700 is a power cycle.
+
+**The M700, 17 October**:
+
+    windowserver: page flips, between the firmware's screen and buffer 1;
+                  the copy into them on the blitter
+    windowserver: the blitter's copies checked, 20 frames, 37464344 pixels, 0 different
+
+Diego: "works perfect". A window dragged in circles for 30 s:
+
+| | flips only (18.661) | paced (18.663) | **the blitter copies** |
+|---|---|---|---|
+| the copy to the screen, a frame | 0.45 ms | 0.38 ms | **0.00 ms** |
+| the window server composing, a frame | 1.37 ms | 0.82 ms | 0.80 ms |
+| busy, of 30 s | 29.6 s | 5.2 s | **4.8 s** |
+| frames composed a second | 514 | 60 | 57 |
+
+**Tests.** `host`: `test_intelgpu_decode`, 29 checks - the copy's header
+(0x54f00008) and its second dword, and the fence's (0x13004002) and its
+address bit. Under QEMU nothing of this runs: no Intel GPU, the window
+server copies as before, and the display suites hold that path. The
+pixel check on every M700 boot is the blitter's test there. Full gate
+94 of 95, `x86-automations` - QEMU gone before its first step, 385 s in -
+passing alone, 31 checks in 57 s.
+

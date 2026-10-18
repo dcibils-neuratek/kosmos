@@ -66,6 +66,24 @@
  */
 #define GPU_OP_ENGINE_TEST   10u
 
+/*
+ * **The blitter's copies** (`m700-2d.md` step 6). `BUFFER_IMPORT` enters a
+ * region the caller hands over - `x` by `y` pixels at `pitch`, from
+ * `offset` - in the GTT, page by page, and answers its buffer id; the
+ * window server's back buffer is the first. `BLIT` copies rectangles from
+ * one buffer to another, each to the same place, in `struct gpu_blit`'s
+ * shape, and answers at once with the fence its last command will write;
+ * `FENCE` says which fence the blitter has reached. `BUFFER_FORGET` gives
+ * an imported buffer's slots back.
+ */
+#define GPU_OP_BUFFER_IMPORT 11u
+#define GPU_OP_BLIT          12u
+#define GPU_OP_FENCE         13u
+#define GPU_OP_BUFFER_FORGET 14u
+
+#define GPU_BLIT_RECTS       64u
+#define GPU_BUFFER_IMPORTED  2u     /* a buffer's kind: a region handed in */
+
 #define GPU_STATS_BUFFERS    16u
 #define GPU_DESKTOP_CURSOR   1u     /* the pointer is on the cursor plane */
 #define GPU_DESKTOP_FLIPS    2u     /* the screen is shown by flips */
@@ -84,6 +102,7 @@
 #define GPU_ERR_NO_WAKE      9u     /* forcewake asked for and not acknowledged */
 #define GPU_ERR_NO_RING      10u    /* the ring would not take RING_VALID */
 #define GPU_ERR_NO_ANSWER    11u    /* the command was given and its number never came */
+#define GPU_ERR_BUSY         12u    /* the blitter has not reached the last fence yet */
 
 struct gpu_request {
     uint32_t op;
@@ -126,6 +145,18 @@ struct gpu_reply {
         uint32_t words[7];
     };
 };
+
+struct gpu_blit {
+    uint32_t op;                    /* GPU_OP_BLIT */
+    uint32_t src, dst;              /* buffer ids */
+    uint32_t n;                     /* rectangles that follow, up to GPU_BLIT_RECTS */
+    struct {
+        int32_t x, y, w, h;         /* the same place in both */
+    } rects[GPU_BLIT_RECTS];
+};
+
+_Static_assert(sizeof(struct gpu_blit) == 16 + GPU_BLIT_RECTS * 16,
+               "a blit is four words and sixty-four rectangles of four");
 
 struct gpu_stats {
     uint32_t error;

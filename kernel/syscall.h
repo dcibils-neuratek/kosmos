@@ -87,7 +87,7 @@
  * unless the region was made with `MEM_CONTIGUOUS`, since reporting a base
  * for scattered pages would point hardware at somebody else's heap.
  */
-#define SYS_MEM_PHYS   44   /* (cap)                  -> address or error   */
+#define SYS_MEM_PHYS   44   /* (cap, page + 1 or 0)   -> address or error   */
 
 /*
  * `SYS_DEV_MAP` is the other half, and the one that makes a driver possible

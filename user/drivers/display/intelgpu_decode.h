@@ -77,6 +77,19 @@
 #define IGPU_MI_NOOP            0u
 #define IGPU_MI_STORE_DWORD     ((0x20u << 23) | 2u)
 #define IGPU_MI_USE_GGTT        (1u << 22)
+/* The copy (`intel_migrate.c`'s `emit_copy`, Gen8 on): XY_SRC_COPY_BLT,
+ * ten dwords - the header with RGB and alpha written; 32 bits a pixel, the
+ * copy ROP 0xcc and the destination's pitch; its top left and bottom right
+ * (exclusive), y in 31:16; its GTT address, low and high; the source's top
+ * left, its pitch, its address. */
+#define IGPU_XY_SRC_COPY_BLT    ((2u << 29) | (0x53u << 22) | (3u << 20) | (10u - 2u))
+#define IGPU_BLT_DEPTH_32       (3u << 24)
+#define IGPU_BLT_ROP_SRC_COPY   (0xccu << 16)
+/* The fence (`gen8_engine_cs.h`'s `gen8_emit_ggtt_write`): MI_FLUSH_DW, a
+ * dword longer on Gen8, storing a dword to a GTT address once the engine's
+ * writes are flushed - the address 8-aligned and its bit 5 clear. */
+#define IGPU_MI_FLUSH_DW_STORE  ((((0x26u << 23) | 1u) + 1u) | (1u << 14))
+#define IGPU_MI_FLUSH_DW_GTT    (1u << 2)
 #define IGPU_PIPE_FLIPCOUNT_A   0x70044u    /* flips the pipe has latched */
 #define IGPU_CURCNTR_A          0x70080u
 #define IGPU_CURBASE_A          0x70084u

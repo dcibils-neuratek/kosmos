@@ -2373,6 +2373,22 @@ void syscall_dispatch(struct syscall_frame *sc)
             break;
         }
 
+        /*
+         * **Or where one page of it is** (`m700-2d.md` step 6): `arg[1]`
+         * is the page's index plus one, for any region, scattered or not -
+         * a GPU's table maps a page at a time, so a buffer another process
+         * drew in can be handed to the GPU without being one run. Nought
+         * asks the old question, a contiguous region's start. A page not
+         * there yet - a region given on touch - has no address to give.
+         */
+        if (sc->arg[1] != 0) {
+            size_t i = (size_t)sc->arg[1] - 1u;
+            void *page = i < m->pages ? memobj_page(m, i) : NULL;
+
+            result = page != NULL ? (long)virt_to_phys(page) : SYS_ERR_DENIED;
+            break;
+        }
+
         result = (long)memobj_phys(m);
 
         if (result == 0) {
