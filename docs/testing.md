@@ -28046,3 +28046,60 @@ loaded and assembled on Kosmos.
   refusal says the line; and the fill's text assembles to
   `intelgpu_fill.h`.
 - **`x86-gpumon`**: `gpu kernel` says there is no Intel GPU here.
+
+## 18.689 The Compute Kit (`compute.md` C3)
+
+`use("/Kosmos/Kits/compute")`: programs of their own on the GPU, from Lua,
+with the driver's verbs from 18.688 behind one door.
+
+- `compute.kernel(text)`: the kit assembles the text with `eu.lua` in the
+  program's own process and hands the driver the bytes in a region. A
+  refusal comes back as "line N: why", whether eu.lua's or the driver's,
+  by the line each instruction came from.
+- `compute.buffer(bytes)` and `compute.picture(w, h)`: regions the kit
+  makes, write-combining (*Coherence* in `compute.md`), entered in the
+  GPU's table. Bytes are rows of a page; a picture's rows are whole 64-byte
+  lines, up to 8176 pixels wide, the widest whose pitch the import takes.
+  `b:write`, `b:read`, and `p:surface()`, a gfx surface over the same pages,
+  so a window shows what the GPU wrote without a copy. A weak-keyed table
+  keeps the buffer alive for as long as its surface lives.
+- `compute.run{ kernel, grid, simd, buffers, constants }`: the message
+  built by `compute_core.c`, against `gpuproto.h`, and answered at once
+  with a ticket. The ticket holds the run's kernel and buffers until it is
+  collected. `t:done()`, `t:wait(ms)`, and `t:time()`, the GPU's own
+  nanoseconds for the run.
+
+A second run before the first is done answers "busy", for the program to
+try again on its own clock.
+
+**The GPU's own time.** The driver stores the render engine's clock
+(`RING_TIMESTAMP`, its rate measured at start) before the walker and again
+after a stall that waits for the last thread. They go into sixteen slots of
+their own on the status page, by fence. `GPU_OP_RUN_TIME` answers the
+difference in nanoseconds: busy until the run is done, and no longer
+answered once sixteen more runs have come.
+
+**One copy of the program's environment for both C kits.** The Window Kit's
+`program_has` and `library` - the program's own `use` and `fs`, found in
+the `_ENV` of the Lua that called - are `user/kits/kitenv.c` now, with
+`kit_capability` beside them. A second copy in the Compute Kit would have
+been the defect the premise names.
+
+**And no second copy of the run in Lua.** C2's packing of a run, a
+kernel's region and an import in `gpu.lua` is gone: `gpu kernel` uses the
+kit. Under QEMU it first hands the kit a kernel with a mistake, which comes
+back by its line before any GPU is asked.
+
+**Tests.**
+- **`tools/test_compute.c` in `host`, 28 checks**: the shapes of a buffer
+  and a picture, both edges included; a run's message read where the driver
+  reads it, its constants padded to whole registers of 32; and eight things
+  refused before anything is sent, buffer 0, the screen, among them.
+  **Control**: a core that does not pad the constants and lets buffer 0
+  through fails both, by name.
+- **`x86-gpumon`, 17 checks**: `gpu kernel` says "line 2: no instruction
+  frobnicate" from the kit on Kosmos, and then that there is no Intel GPU.
+- **Full gate 94 of 96 in 9:32.** `x86-automate` (telnetd not listening
+  within 120 s) and `x86-network` (the second DNS lookup unanswered) both
+  stalled on the network path under the gate's load; alone they passed,
+  46 and 36 checks.

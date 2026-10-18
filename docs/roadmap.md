@@ -146,7 +146,9 @@ to C6 there. **Diego's decisions, the same day**: kernels as assembly,
 assembled on Kosmos by `eu.lua` (D1 A), and every kernel checked before it
 runs (D2 A). **C1 done** (0.11.288, 18.687): `eu.lua`. **C2 built**
 (18.688): the driver's kernel, run and forget verbs, the check, `gpu
-kernel`; its run on the M700 waits for the machine. Next C3, the kit.
+kernel`; its run on the M700 waits for the machine. **C3 built**
+(18.689): `/Kosmos/Kits/compute`, buffers, pictures, runs, tickets and the
+GPU's own time. Next C4, GPU Fractal.
 **And the lesson, C6** (Diego, the same
 day): what a compute kernel is and how it differs from a processor's
 program, the two taught as complementary - "they are completely

@@ -155,7 +155,9 @@ GPU wrote is read from memory after. The first run holds both to it.
    `jmpi` counts from the instruction after it, and a send's destination is
    `:uw` at a stride of one, as Mesa's compiler writes it.
 3. **C3 - the Compute Kit**: buffers, runs, tickets and the GPU's time, from
-   Lua; a host-side check of what it sends.
+   Lua; a host-side check of what it sends. **Built** (`testing.md` 18.689):
+   `/Kosmos/Kits/compute`, the GPU's own time by `GPU_OP_RUN_TIME`, and
+   `gpu kernel` on it; held on the Mac by `test_compute.c`.
 4. **C4 - GPU Fractal**, as drawn: the Mandelbrot kernel, the processor's in
    C, the switch and the timings; its suite under QEMU (no GPU there - it
    says so and draws the processor's), the picture in the dated screenshot,

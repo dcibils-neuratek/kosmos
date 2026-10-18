@@ -145,6 +145,15 @@
 #define GPU_OP_KERNEL_FORGET 22u
 #define GPU_OP_RUN           23u
 
+/*
+ * **What a run cost the GPU** (`compute.md` C3): `x` a run's fence; the
+ * engine's own clock before its first thread and after its last, in
+ * nanoseconds, `engine.value` the low word and `engine.head` the high,
+ * `engine.tail` the clock's ticks. GPU_ERR_BUSY until the run is done,
+ * GPU_ERR_NO_ANSWER for one sixteen runs or more ago.
+ */
+#define GPU_OP_RUN_TIME      24u
+
 #define GPU_RUN_BUFFERS      8u
 #define GPU_RUN_CONSTANTS    256u   /* bytes: r1 onwards, eight registers */
 

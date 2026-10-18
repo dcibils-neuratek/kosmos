@@ -739,6 +739,8 @@ static bool forcewake(bool on)
 #define SCRATCH_AT   80u                /* a qword the invalidation's post-sync write lands in: byte 320 */
 #define TS_AT        96u                /* the engine's clock before and after each copy: */
 #define TS_SLOTS     16u                /*   two dwords a fence, sixteen fences round */
+#define RUN_TS_AT    128u               /* a run's clock before and after: two dwords a run, */
+#define RUN_TS_SLOTS 16u                /*   sixteen runs round, by fence, never zeroed */
 #define RING_ROOM    (RING_DWORDS - 256u)   /* what may be in flight, a margin kept */
 
 /*
@@ -1537,7 +1539,7 @@ static uint32_t run(const struct gpu_run *q, struct gpu_reply *rep)
         return GPU_ERR_NO_MEMORY;
     }
 
-    if ((run_given && (int32_t)(fence_reached(&RCS) - run_fence) < 0) || RCS.in_flight + 96u > RING_ROOM) {
+    if ((run_given && (int32_t)(fence_reached(&RCS) - run_fence) < 0) || RCS.in_flight + 112u > RING_ROOM) {
         (void)engine_idle(&RCS);
         return GPU_ERR_BUSY;
     }
@@ -1614,9 +1616,22 @@ static uint32_t run(const struct gpu_run *q, struct gpu_reply *rep)
                 emit(&RCS, curbe, 4);
             }
 
+            /* The engine's clock around the walker - the second after a
+             * stall, so after the last thread has ended - into the run's
+             * slot, kept for GPU_OP_RUN_TIME. */
+            const uint32_t slot = RUN_TS_AT + 2u * ((RCS.issued + 1u) % RUN_TS_SLOTS);
+            const uint32_t t0[4] = { IGPU_MI_STORE_REG_MEM, IGPU_RENDER_BASE + IGPU_RING_TIMESTAMP,
+                                     RCS.status_gtt + slot * 4u, 0 };
+            const uint32_t stall[6] = { IGPU_PIPE_CONTROL, IGPU_PC_CS_STALL, 0, 0, 0, 0 };
+            const uint32_t t1[4] = { IGPU_MI_STORE_REG_MEM, IGPU_RENDER_BASE + IGPU_RING_TIMESTAMP,
+                                     RCS.status_gtt + (slot + 1u) * 4u, 0 };
+
             emit(&RCS, idl, 4);
+            emit(&RCS, t0, 4);
             emit(&RCS, walk, 15);
             emit(&RCS, flush, 2);
+            emit(&RCS, stall, 6);
+            emit(&RCS, t1, 4);
         }
     }
 
@@ -1627,6 +1642,43 @@ static uint32_t run(const struct gpu_run *q, struct gpu_reply *rep)
     run_fence = submit(&RCS);
     run_given = true;
     rep->engine.value = run_fence;
+    return GPU_OK;
+}
+
+/*
+ * **What a run cost the GPU** (`compute.md` C3): its two clock readings,
+ * by its fence, in nanoseconds - `engine.value` the low word and
+ * `engine.head` the high. Busy until the fence is reached; refused for a
+ * run more than sixteen ago, whose slot has been written again.
+ */
+static uint32_t run_time(const struct gpu_request *rq, struct gpu_reply *rep)
+{
+    uint32_t fence = (uint32_t)rq->x, slot, ticks;
+    uint64_t ns;
+
+    if (!G.found) {
+        return GPU_ERR_NO_DEVICE;
+    }
+
+    if (!RCS.ready || RCS.ts_hz == 0 || fence == 0 || (int32_t)(RCS.issued - fence) < 0) {
+        return GPU_ERR_BAD_OP;
+    }
+
+    if ((int32_t)(fence_reached(&RCS) - fence) < 0) {
+        (void)engine_idle(&RCS);
+        return GPU_ERR_BUSY;
+    }
+
+    if (RCS.issued - fence >= RUN_TS_SLOTS) {
+        return GPU_ERR_NO_ANSWER;
+    }
+
+    slot = RUN_TS_AT + 2u * (fence % RUN_TS_SLOTS);
+    ticks = RCS.status[slot + 1u] - RCS.status[slot];
+    ns = (uint64_t)ticks * 1000000000ull / RCS.ts_hz;
+    rep->engine.value = (uint32_t)ns;
+    rep->engine.head = (uint32_t)(ns >> 32);
+    rep->engine.tail = ticks;
     return GPU_OK;
 }
 
@@ -3033,6 +3085,9 @@ void intelgpu_server(long console, long endpoint)
                 break;
             case GPU_OP_KERNEL_FORGET:
                 rep.error = kernel_forget(&rq);
+                break;
+            case GPU_OP_RUN_TIME:
+                rep.error = run_time(&rq, &rep);
                 break;
             case GPU_OP_RUN: {
                 static struct gpu_run q;

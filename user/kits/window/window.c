@@ -25,6 +25,7 @@
 #include "lauxlib.h"
 
 #include "kosmos_window.h"
+#include "kits/kitenv.h"
 #include "wmproto.h"
 
 extern lua_State *kosmos_lua_state;
@@ -59,73 +60,6 @@ static void say(const char *text)
 const char *kw_why(void)
 {
     return why;
-}
-
-/*
- * The program's own `name` - `use`, `fs` - on the stack, or 0. A program's
- * world is its environment, not Lua's globals (`init.lua`, `env.use`): a
- * library is loaded with the caller's environment and reaches what the
- * caller can and nothing more. So the kit looks where a library would - the
- * `_ENV` of the nearest Lua function that called into this C, which is the
- * program's.
- */
-static int program_has(lua_State *L, const char *want)
-{
-    lua_Debug ar;
-
-    for (int level = 0; lua_getstack(L, level, &ar); level++) {
-        lua_getinfo(L, "f", &ar);
-
-        for (int n = 1;; n++) {
-            const char *name = lua_getupvalue(L, -1, n);
-
-            if (name == NULL) {
-                break;
-            }
-
-            if (strcmp(name, "_ENV") == 0 && lua_istable(L, -1)) {
-                lua_getfield(L, -1, want);
-
-                if (!lua_isnil(L, -1)) {
-                    lua_replace(L, -3);         /* over the function */
-                    lua_pop(L, 1);              /* the environment */
-                    return 1;
-                }
-
-                lua_pop(L, 1);
-            }
-
-            lua_pop(L, 1);
-        }
-
-        lua_pop(L, 1);
-    }
-
-    say("no program's environment above this C to open a window from");
-    return 0;
-}
-
-/* use(path), kept: the library's table on the stack, or 0 and why. */
-static int library(lua_State *L, int *ref, const char *path)
-{
-    if (*ref == LUA_NOREF) {
-        if (!program_has(L, "use")) {
-            return 0;
-        }
-
-        lua_pushstring(L, path);
-
-        if (lua_pcall(L, 1, 1, 0) != LUA_OK || !lua_istable(L, -1)) {
-            say(lua_isstring(L, -1) ? lua_tostring(L, -1) : "a library would not load");
-            lua_pop(L, 1);
-            return 0;
-        }
-
-        *ref = luaL_ref(L, LUA_REGISTRYINDEX);
-    }
-
-    lua_rawgeti(L, LUA_REGISTRYINDEX, *ref);
-    return 1;
 }
 
 /* window:<method>(...) with `nargs` already pushed after the method's
@@ -163,7 +97,7 @@ struct kw_window *kw_open(const char *title, unsigned width, unsigned height,
 
     top = lua_gettop(L);
 
-    if (!library(L, &ui_ref, "/Kosmos/Libraries/ui.lua")) {
+    if (!kit_library(L, &ui_ref, "/Kosmos/Libraries/ui.lua", why, sizeof why)) {
         return NULL;
     }
 
@@ -231,16 +165,8 @@ struct kw_window *kw_open(const char *title, unsigned width, unsigned height,
 
     /* The window manager's endpoint, once: `fs.capability`, an index this
      * process already holds for `/Running/wm`. */
-    if (program_has(L, "fs")) {
-        lua_getfield(L, -1, "capability");
-        lua_pushstring(L, "/Running/wm");
-
-        if (lua_pcall(L, 1, 1, 0) == LUA_OK && lua_isinteger(L, -1)) {
-            w->wm = (long)lua_tointeger(L, -1);
-        }
-    }
-
     lua_settop(L, top);
+    w->wm = kit_capability(L, "/Running/wm");
 
     if (w->wm < 0) {
         say("the window manager's endpoint was not found for the frame path");

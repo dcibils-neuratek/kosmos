@@ -137,10 +137,15 @@ def main():
         # And a program's own kernel (compute.md C2): eu.lua and the
         # kernels' text loaded on Kosmos, assembled there, the region handed
         # over - and the driver's answer, the same.
+        # The Compute Kit (C3): a mistake said by its line, from eu.lua in
+        # this process, and then the driver's answer.
         mark = len(guest.seen)
         guest.type("gpu kernel")
-        got = said("gpu: ", mark, 30)
-        check(got == "no Intel GPU this driver knows",
+        got = said("gpu: a kernel with a mistake: ", mark, 30)
+        check(got is not None and got.startswith("line 2: no instruction frobnicate"),
+              "the Compute Kit did not say the kernel's mistake by its line: %r" % got)
+        got = said("gpu: no Intel", mark, 30)
+        check(got == "GPU this driver knows",
               "gpu kernel did not say there is no Intel GPU here: %r" % got)
 
         deadline = time.monotonic() + 30

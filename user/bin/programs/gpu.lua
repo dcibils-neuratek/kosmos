@@ -103,66 +103,51 @@ if words[1] == "state" then
 end
 
 if words[1] == "kernel" then
-  local eu = use("/Kosmos/Libraries/eu.lua")
+  local compute = use("/Kosmos/Kits/compute")
   local kernels = use("/Kosmos/Libraries/eukernels.lua")
-  local regions = use("/Kosmos/Libraries/regions.lua")
   local colour = (tonumber(words[2] or "") or 0x5a) & 0xff
 
+  -- A mistake is said by its line before any GPU is asked: the kit
+  -- assembles in this process, by eu.lua.
+  local _, mistake = compute.kernel("mov (16|M0) r10.0<1>:f r11.0<8;8,1>:f\nfrobnicate (16) r1 r2\n")
+
+  print("gpu: a kernel with a mistake: " .. tostring(mistake))
+
+  local ok, why = compute.available()
+
+  if not ok then print("gpu: " .. tostring(why)) return end
+
   -- What must be refused, first: the check is the point of the verb.
-  local wild, wild_lines = eu.assemble(kernels.wild)
-  local no, why, code = gpu.kernel(wild, wild_lines)
+  local wild, wwhy, code = compute.kernel(kernels.wild)
 
-  if no then
-    print("gpu: the stateless kernel was kept as " .. no .. " - it should have been refused")
+  if wild then
+    print("gpu: the stateless kernel was kept - it should have been refused")
+    wild:forget()
   elseif code == 13 then
-    print("gpu: the stateless kernel refused, " .. tostring(why))
+    print("gpu: the stateless kernel refused, " .. tostring(wwhy))
   else
-    print("gpu: " .. tostring(why))
+    print("gpu: " .. tostring(wwhy))
     return
   end
 
-  if no then gpu.forget_kernel(no) end
+  local k, kwhy = compute.kernel(kernels.fill)
 
-  local code, lines = eu.assemble(kernels.fill)
+  if not k then print("gpu: the fill kernel was not kept: " .. tostring(kwhy)) return end
 
-  if not code then print("gpu: the fill did not assemble: " .. tostring(lines)) return end
+  -- 64 by 4 bytes, seen as R8; the rest of the page is what was written past.
+  local b, bwhy = compute.buffer(4096)
 
-  local id, kwhy = gpu.kernel(code, lines)
-
-  if not id then print("gpu: the fill kernel was not kept: " .. tostring(kwhy)) return end
-
-  -- 64 by 4 bytes, imported as 16 by 4 pixels at a pitch of 64, seen as
-  -- bytes (R8); the page's other 3840 bytes are what was written past.
-  local r, rwhy = regions.unmapped(4096)
-
-  if not r then print("gpu: " .. tostring(rwhy)) gpu.forget_kernel(id) return end
-
-  sys.region_write(r.cap, 0, string.rep("\0", 4096))
-
-  local buf, bwhy = gpu.import(r.cap, 16, 4, 64, 0)
-
-  if not buf then
-    print("gpu: the buffer was not imported: " .. tostring(bwhy))
-    gpu.forget_kernel(id)
-    regions.free(r)
-    return
-  end
+  if not b then print("gpu: " .. tostring(bwhy)) k:forget() return end
 
   local t0 = sys.ticks()
-  local fence, fwhy = gpu.run{ kernel = id, simd = 16, groups_x = 4, groups_y = 4,
-                               buffers = { { buf, gpu.R8 } }, constants = string.char(colour) }
-  local reached
+  local t, rwhy = compute.run{ kernel = k, simd = 16, grid = { 4, 4 },
+                               buffers = { { b, "r8" } }, constants = string.char(colour) }
+  local done, dwhy = false, rwhy
 
-  if fence then
-    for _ = 1, 200 do
-      reached = gpu.fence()
-      if reached and reached - fence >= 0 then break end
-      sys.sleep(1)
-    end
-  end
+  if t then done, dwhy = t:wait(1000) end
 
   local t1 = sys.ticks()
-  local bytes = sys.region_read(r.cap, 0, 4096)
+  local bytes = b:read(0, 4096)
   local right, past = 0, 0
 
   for i = 1, 256 do right = right + (bytes:byte(i) == colour and 1 or 0) end
@@ -170,21 +155,20 @@ if words[1] == "kernel" then
 
   local hz = (fs.read("/Devices/cpu") or {}).counter_hz
 
-  if not fence then
-    print("gpu: the run was refused: " .. tostring(fwhy))
-  elseif not reached or reached - fence < 0 then
-    print(("gpu: the run's fence %d never came; the engine is at %s"):format(fence, tostring(reached)))
+  if not done then
+    print("gpu: the run did not finish: " .. tostring(dwhy))
   else
-    print(("gpu: kernel %d ran: %d of 256 bytes %02x, %d written past, %s")
-          :format(id, right, colour, past,
+    local ns = t:time()
+
+    print(("gpu: kernel ran: %d of 256 bytes %02x, %d written past; %s on the GPU, %s here")
+          :format(right, colour, past, ns and ("%d us"):format(ns // 1000) or "time unknown",
                   hz and ("%d us"):format((t1 - t0) * 1000000 // hz) or "time unknown"))
   end
 
-  print((right == 256 and past == 0 and fence) and "gpu: kernel run held" or "gpu: kernel run NOT held")
+  print((done and right == 256 and past == 0) and "gpu: kernel run held" or "gpu: kernel run NOT held")
 
-  gpu.forget(buf)
-  gpu.forget_kernel(id)
-  regions.free(r)
+  b:free()
+  k:forget()
   return
 end
 
