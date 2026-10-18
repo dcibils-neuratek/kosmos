@@ -679,7 +679,7 @@ local function rendering_list(it)
   local M = mode_metrics()
 
   -- The legend, wrapped to the row's width: each colour where it lands.
-  local LEGEND = { { "cpu", "the processor" }, { "display", "the GPU's display engine" },
+  local LEGEND = { { "cpu", "the CPU" }, { "display", "the GPU's display engine" },
                    { "gpu", "the GPU's blitter or 3D engine" }, { "none", "not done" } }
   local legend_at, lx, ly = {}, 0, 0
 
