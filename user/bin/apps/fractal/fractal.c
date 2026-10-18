@@ -23,46 +23,16 @@
  * edge now and then, which `differ` counts.
  */
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "lua.h"
 #include "lauxlib.h"
 
 #include "kits/gfx/gfx_draw.h"
+#include "fractal_core.h"
 
 void kosmos_fractal_kit(lua_State *L);
-
-static uint32_t colour(int32_t n, int32_t most)
-{
-    if (n >= most) {
-        return 0xff000000u;
-    }
-
-    return 0xff000000u | (((uint32_t)(n * 9) & 0xffu) << 16) | (((uint32_t)(n * 4) & 0xffu) << 8)
-         | ((uint32_t)(n * 15) & 0xffu);
-}
-
-static int32_t escape(float cx, float cy, int32_t most)
-{
-    float zx = 0.0f, zy = 0.0f;
-    int32_t n = 0, k;
-
-    for (k = 0; k < most; k++) {
-        float xx = zx * zx, yy = zy * zy, t;
-
-        if (!(xx + yy < 4.0f)) {
-            break;
-        }
-
-        n++;
-        t = zx * zy;
-        zy = (t + t) + cy;
-        zx = (xx - yy) + cx;
-    }
-
-    return n;
-}
 
 /* fractal.draw(surface, x0, dx, y0, dy, most) */
 static int l_draw(lua_State *L)
@@ -80,7 +50,7 @@ static int l_draw(lua_State *L)
         float cy = y0 + (float)y * dy;
 
         for (x = 0; x < w; x++) {
-            row[x] = colour(escape(x0 + (float)x * dx, cy, (int32_t)most), (int32_t)most);
+            row[x] = fractal_colour(fractal_escape(x0 + (float)x * dx, cy, (int32_t)most), (int32_t)most);
         }
     }
 

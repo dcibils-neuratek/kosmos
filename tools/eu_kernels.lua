@@ -133,6 +133,46 @@ case("while-misaligned", BRANCH, 9, poke(shaped, 9, 96, 127, (-24) & 0xffffffff)
 case("endif-through-a-register", BRANCH, 5, poke(shaped, 5, 41, 42, 1))
 case("halt", OPCODE, 5, poke(shaped, 5, 0, 6, 42))
 
+-- Lanes through the structured branches, for the emulator (test_eu_emu.c):
+-- each its own count, odd lanes leaving the loop early by break, then each
+-- side of an if; written to buffer 0 by an untyped write.
+kernel("branches", OK, 0, [[
+// Each lane its own count: up until it passes the lane's number, odd
+// lanes leaving a step early by break; then ten times the count, plus one
+// on an odd lane and two on an even, written to buffer 0 at lane * 4.
+mov (8|M0) r10.0<1>:uw 0x76543210:v
+add (8|M0) r10.8<1>:uw r10.0<8;8,1>:uw 8:uw
+mov (16|M0) r12.0<1>:d r10.0<8;8,1>:uw
+and (16|M0) r14.0<1>:d r12.0<8;8,1>:d 1:d
+mov (16|M0) r16.0<1>:d 0:d
+loop:
+add (16|M0) r16.0<1>:d r16.0<8;8,1>:d 1:d
+add (16|M0) r18.0<1>:d r16.0<8;8,1>:d 1:d
+cmp (16|M0) (gt)f0.0 r20.0<1>:d r18.0<8;8,1>:d r12.0<8;8,1>:d
+and (16|M0) r22.0<1>:d r20.0<8;8,1>:d r14.0<8;8,1>:d
+cmp (16|M0) (ne)f0.0 null<1>:d r22.0<8;8,1>:d 0:d
+(f0.0) break (16|M0) jip: wend uip: done
+cmp (16|M0) (le)f0.0 null<1>:d r16.0<8;8,1>:d r12.0<8;8,1>:d
+wend:
+(f0.0) while (16|M0) jip: loop
+done:
+mul (16|M0) r24.0<1>:d r16.0<8;8,1>:d 10:d
+cmp (16|M0) (ne)f0.0 null<1>:d r14.0<8;8,1>:d 0:d
+(f0.0) if (16|M0) jip: other uip: joined
+add (16|M0) r24.0<1>:d r24.0<8;8,1>:d 1:d
+else (16|M0) jip: joined uip: joined
+other:
+add (16|M0) r24.0<1>:d r24.0<8;8,1>:d 2:d
+joined:
+endif (16|M0) jip: write
+write:
+shl (16|M0) r30.0<1>:ud r12.0<8;8,1>:ud 0x2:ud
+mov (16|M0) r32.0<1>:ud r24.0<8;8,1>:ud
+send.hdc1 (16|M0) null r30 0x00000000 0x08025E00
+mov (8|M0) r112.0<1>:ud r0.0<8;8,1>:ud
+send.ts (16|M0) null r112:d 0x00000000 0x02000010 {EOT}
+]])
+
 -- The bits eu.lua does not write, put in by hand.
 local plain = kernel("plain", OK, 0, "add (16|M0) r10.0<1>:d r11.0<8;8,1>:d 1:d\n" .. END_THREAD)
 

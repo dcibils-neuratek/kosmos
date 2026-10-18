@@ -28268,3 +28268,53 @@ must land on an instruction of the kernel. `halt`, `call`, `ret` and
   refused, each at its instruction. **Control**: a check that ignores UIP
   fails `if-uip-before`, by name.
 - **`host` and `x86-gpumon` pass; the full gate 97 of 97 in 9:28.**
+
+## 18.693 An emulator of the execution units (`cafesa3d-gpu.md` R2)
+
+`tools/eu_emu.c`, decision E3: a kernel `eu.lua` assembled, run on the
+Mac as the M700's HD 530 would run it. Each group of the grid is a thread,
+eight or sixteen lanes, with r0 the group's place and r1 onwards the
+constants, as the driver dispatches it. It runs:
+- the GRF with its regions, types, source modifiers and saturation;
+- the flags and the predicates, lane by lane and by group;
+- every instruction in `eu.lua`'s subset, `mad` fused;
+- the data port's media block and untyped reads and writes, into the run's
+  buffers, bounded as the hardware bounds a surface;
+- the thread's end.
+
+What it does not run, it refuses by name rather than guesses.
+
+**The structured branches are the PRM's.** The Haswell PRM's
+pseudocode, which generation 9 kept, gives every lane its own instruction
+pointer, PcIP, and a lane runs an instruction when its PcIP is the
+thread's. `if` sends the lanes it fails to JIP; `else` sends the lanes
+arriving at it to JIP; `endif` jumps on when no lane is at it; `while`
+sends its lanes back; `break` and `continue` send theirs to UIP; and a
+branch jumps when no lane is left at the next instruction. A compiler that
+gets a JIP or a UIP wrong therefore draws a wrong picture here, which is
+the point. Reading the PRM also found that an `if` with an `else` must
+send its failing lanes to the instruction *after* the `else`. R1's test
+kernel only checked the encoding; the compiler (R3) must write it that way.
+
+**GPU Fractal's arithmetic is one copy**, `fractal_core.h`, which
+`fractal.c` draws with and the emulator's test holds the kernel to.
+
+**Tests.**
+- **`tools/test_eu_emu.c` in `host`, 10 checks**:
+  - intel-gpu-tools' fill: 256 bytes of the colour and none past them, in
+    16 threads;
+  - GPU Fractal's 47-instruction kernel at 800 by 600: all **480,000
+    pixels the same as `fractal.c`'s**, 15.4 million instructions in
+    30,000 threads;
+  - lesson 15's pattern: every pixel as its formula;
+  - a kernel of lanes through `if`, `else`, `while` and `break`
+    (`eu_kernels.lua`'s `branches`): each lane its own count, held to the
+    same loop in C.
+- **Controls**: an `else` that keeps its lanes rather than sending them
+  to JIP fails the branches, lane 5 drawing 53 for 51; a `break` that
+  sends its lanes to JIP rather than UIP fails lane 2, 0 for 32.
+- **`x86-fractal`**, with `fractal.c` on `fractal_core.h`, passes its 11
+  checks.
+
+It is held to the M700 in its turn: the same kernels, run there, are the
+emulator's own test.
