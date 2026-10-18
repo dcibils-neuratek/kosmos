@@ -866,6 +866,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/kitenv.c \
              user/kits/compute/compute_kosmos.c \
              user/kits/compute/compute_core.c \
+             user/bin/apps/fractal/fractal.c \
              user/init/syscalls.c \
              user/kits/game/game.c \
              user/kits/game/gamesoft.c \

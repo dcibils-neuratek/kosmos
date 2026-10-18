@@ -28103,3 +28103,72 @@ back by its line before any GPU is asked.
   within 120 s) and `x86-network` (the second DNS lookup unanswered) both
   stalled on the network path under the gate's load; alone they passed,
   46 and 36 checks.
+
+## 18.690 GPU Fractal (`compute.md` C4)
+
+`wm fractal`, in Demos: the Mandelbrot set, 800 by 600, computed by the
+GPU's execution units, with the same picture computed on the processor and
+the two times side by side. Drawn as `compute.html` agreed:
+- the picture, with its time in a badge;
+- the GPU or Processor switch, and Kernel and Reset;
+- "This frame", the two times as bars and how many times as fast;
+- "The run", the grid, the threads, the iterations and the buffer, or the
+  kernel itself, read-only, when Kernel is pressed;
+- the centre and scale along the foot.
+
+Drag to move, scroll to zoom; the iterations rise as it zooms, 128 at the
+whole set and 48 more for each doubling.
+
+**What it stands on.**
+- **The kernel**, `kernels.mandelbrot` in `eukernels.lua`: 47 instructions,
+  a thread for sixteen pixels of a row and a lane a pixel. The lanes'
+  numbers come from a `:v` immediate and the point from two `mad`s. The
+  loop is z = z² + c with the count taken by a predicated add while
+  |z|² < 4, back by `jmpi` while any lane is still inside and the steps are
+  under the most. The colour is a byte each of 9n, 4n and 15n, black inside,
+  written by the data port's media block write, 64 bytes a row.
+- **Every line but the branches and the sends assembles exactly as Mesa's
+  gentool makes it**: 43 lines, compared on the Mac. The driver's check
+  passes it (`eu_kernels.lua`'s `gpu-fractal`).
+- **Each frame is one `compute.run`**, its constants the corner, a pixel's
+  size and the most iterations, and a ticket asked on the window's clock at
+  60 a second, never waited for. The picture is a kit buffer, lent to the
+  window as it is.
+- **The processor's half is `fractal.c`**, GPU Fractal's own C (the kit
+  `fractal`), the kernel's arithmetic step for step: single precision, the
+  same order of operations and the same colours. The one place the two may
+  part is the kernel's `mad`, which rounds once where C rounds twice. The
+  first time both pictures are of one view, `fractal.differ` says how many
+  of the 480,000 pixels disagree. That line is the M700's to read.
+- **Under QEMU** the GPU half says "no Intel GPU this driver knows" and the
+  processor draws: 323 ms for the whole set at 128 iterations, by TCG.
+
+**The IDE's Mandelbrot template stays as it is**: a lesson in C, in
+double precision with its own palette, made by `tcc` in the program's own
+project. GPU Fractal's C is the kernel's twin, which the template's could
+not be without becoming something else.
+
+**Tests.**
+- **`x86-fractal`, `tools/run_fractal.py`, 11 checks**: no Intel GPU, said
+  in the driver's words; the processor's first frame said, the whole set at
+  128 iterations; the picture drawn, with the cardioid's centre black, a
+  point left of the set coloured, and more than twelve colours; GPU pressed
+  says there is nothing to switch to; Kernel pressed shows the kernel; a
+  drag of a hundred pixels moves the centre from -0.6 to -1.0 and the
+  processor draws it again. **Control**: a `fractal.c` that paints the
+  inside 0x102030 fails the black check, by its colour.
+- **`eu_kernels.lua`, 31 kernels**: the Mandelbrot passes the driver's
+  check.
+- **The dated screenshot** opens GPU Fractal with the rest (`OPEN` in
+  `run_gallery.py`).
+- **Full gate 93 of 97 in 9:54.** Four failed, none on anything C4
+  touches:
+  - `x86-maps`: QEMU exited in its first second, before the Deskbar.
+  - `x86-kernel` and `arm-sandbox`: cut short, one test of 208 and of 211
+    missing.
+  - `x86-profile`: 788 samples where about 1060 were due.
+
+  Run alone, the first three passed together. `x86-profile` failed once
+  more beside them, 788 again, and passed on its own: 981 samples, none
+  lost. The Mac's load average was 8 to 10 throughout, and a missed timer
+  sample is what a loaded host does to a guest.

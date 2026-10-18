@@ -124,7 +124,7 @@
 <div class="wrap">
 
 <h1>Kosmos IDE Tutorial</h1>
-<p class="lead">Fourteen lessons that build real apps in the IDE, from a button to 3D: first in Lua, then with C. Each one ends by opening the bundled Kosmos app that does the same thing for real, so the system's own apps become the worked examples. Planned here to be agreed before any lesson is written.</p>
+<p class="lead">Fifteen lessons that build real apps in the IDE, from a button to 3D: first in Lua, then with C. Each one ends by opening the bundled Kosmos app that does the same thing for real, so the system's own apps become the worked examples. Planned here to be agreed before any lesson is written.</p>
 
 <h2>How a lesson works</h2>
 <p><b>A page and a project.</b> Each lesson is a page with pictures, taken in QEMU by a tool so they can be retaken when an app changes. It comes with a small project that is complete at every step. Open it from the IDE's <b>Help</b> menu: <b>Tutorial</b> shows the contents in the browser, and each lesson's <b>Open this lesson's project</b> copies its folder into <code>/Home/development/</code> and opens it in the IDE.</p>
@@ -237,6 +237,11 @@
       <p>A lit, turning model you can orbit with the pointer.</p>
       <dl class="facts"><dt>Teaches</dt><dd>the 3D Kit, a scene, a camera, light, and when TinyGL is the better door</dd>
       <dt>Real thing</dt><dd>Cafesa3D, the cube, the solar system</dd></dl></div></li>
+    <li class="lesson"><span class="num">15</span><div class="lesson-body">
+      <div class="title-row"><h3>A program for the GPU</h3><span class="lang lua">Lua</span></div>
+      <p>A moving pattern, every pixel of it computed by a kernel on the GPU, sixty times a second.</p>
+      <dl class="facts"><dt>Teaches</dt><dd>the Compute Kit, what a kernel is, a grid of threads and their lanes, what a branch costs the processor and the GPU, the two as partners (<code>compute-lesson.html</code>, agreed 18 October)</dd>
+      <dt>Real thing</dt><dd>GPU Fractal</dd></dl></div></li>
   </ol>
 </div>
 

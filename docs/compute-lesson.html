@@ -1,0 +1,429 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  The IDE's lesson on GPU compute (docs/compute.md C6), drawn before it is
+  written. Diego, 18 October 2026: "the compute kit needs a learning lesson
+  on the ide tutorials to explain what a compute kernel is, how it differs
+  from regular cpu programs", "gpu compute is very different from cpu and
+  they are completely complenentary so its good to teach that", and "we can
+  design visual diagrams to understand both paradigms". The lesson below is
+  drawn as Kosmos's browser will show it; its four diagrams become pictures
+  for that browser, which draws an SVG's shapes but not its text, once they
+  are agreed.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>A Program for the GPU</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #eef0f4; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea; --card: #ffffff;
+    --page: #fbfaf8; --page-ink: #1f2328; --code: #f0ece6; --code-line: #d9d2c7;
+    --cpu: #2f6fb3; --cpu-soft: #dce8f6; --gpu: #7c4bd0; --gpu-soft: #ebe2fa;
+    --off: #c9ced8; --good: #2f7a4b; --warn: #a3461f;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #13161b; --ink: #e6e9ee; --muted: #9ea7b5; --rule: #2a3039; --card: #1b1f26;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #13161b; --ink: #e6e9ee; --muted: #9ea7b5; --rule: #2a3039; --card: #1b1f26;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body);
+         font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 36px 16px 80px; }
+  h1.plan { font-family: var(--display); font-size: 30px; margin: 0 0 6px; text-wrap: balance; }
+  .sub { color: var(--muted); max-width: 74ch; margin: 0 0 22px; }
+  h2.plan { font-family: var(--display); font-size: 20px; margin: 40px 0 10px; padding-top: 20px;
+            border-top: 1px solid var(--rule); }
+  .q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px;
+       margin: 10px 0; max-width: 820px; }
+  .q b { font-family: var(--display); }
+  ol.decide { max-width: 820px; padding-left: 1.2em; }
+  ol.decide li { margin: 8px 0; }
+  .scroller { overflow-x: auto; max-width: 100%; }
+
+  /* The lesson, as Kosmos's browser shows it: lesson 5's own style. */
+  .browser { background: var(--card); border: 1px solid var(--rule); border-radius: 12px;
+             box-shadow: 0 12px 34px rgba(0,0,0,.14); overflow: hidden; }
+  .bar { display: flex; gap: 10px; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--rule);
+         font: 13px var(--mono); color: var(--muted); }
+  .bar i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; background: var(--off); }
+  .page { background: var(--page); color: var(--page-ink); padding: 8px 24px 40px; }
+  .page .inner { max-width: 46em; margin: 0 auto; font-size: 17px; line-height: 1.55; }
+  .page h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+  .page h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+  .page p.lead { font-size: 19px; color: #3d4652; }
+  .page p.nav { font-size: 15px; color: #6b7280; }
+  .page p.note { font-style: italic; color: #5b6470; }
+  .page p.tip { color: #1f6b3a; }
+  .page code { font-family: var(--mono); font-size: 15px; color: #1f4e8c; }
+  .page pre { font-family: var(--mono); font-size: 14px; color: #1f2328; background: var(--code);
+              border: 1px solid var(--code-line); border-radius: 6px; padding: 0.6em 0.8em; overflow-x: auto; }
+  .page pre .c { color: #7d8590; }
+  .page b.ui { color: #1f4e8c; font-weight: 600; }
+  .page kbd { font-family: var(--mono); font-size: 15px; color: #8a3d1c; background: var(--code);
+              border: 1px solid var(--code-line); border-radius: 4px; padding: 0 0.35em; }
+  .page p.caption { font-size: 14px; color: #6b7280; margin-top: 0.3em; }
+  .shot { border: 1px dashed #c8c1b5; border-radius: 6px; background: #f2efea; color: #8b8378;
+          font-size: 14px; display: grid; place-items: center; text-align: center; padding: 18px; margin-top: 1.2em; }
+  table.two { border-collapse: collapse; width: 100%; font-size: 16px; margin: 0.8em 0; }
+  table.two th, table.two td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid #e3ddd3; }
+  table.two th { font-weight: 600; }
+  table.two th.cpu { color: var(--cpu); } table.two th.gpu { color: var(--gpu); }
+
+  /* The diagrams: drawn on the lesson's own ground. */
+  figure.dia { margin: 1.4em 0 0.4em; background: #ffffff; border: 1px solid #e3ddd3; border-radius: 8px;
+               padding: 12px; overflow-x: auto; }
+  figure.dia svg { display: block; width: 100%; height: auto; min-width: 640px; font-family: var(--body); }
+  figcaption { font-size: 14px; color: #6b7280; margin-top: 0.4em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1 class="plan">A Program for the GPU</h1>
+<p class="sub">The IDE tutorial's lesson on GPU compute (<code>compute.md</code> C6), drawn here to be agreed before it is
+written: what a compute kernel is, and the processor and the GPU taught as partners - each good at what the
+other is not. Below it is the lesson as Kosmos's browser will show it from the IDE's Help, with its four
+diagrams, and then what is yours to decide.</p>
+<div class="q"><b>Diego, 18 October 2026</b>: "the compute kit needs a learning lesson on the ide tutorials to
+explain what a compute kernel is, how it differs from regular cpu programs", "gpu compute is very different from
+cpu and they are completely complenentary so its good to teach that", and "we can design visual diagrams to
+understand both paradigms".</div>
+
+<h2 class="plan">The lesson, as Kosmos shows it</h2>
+
+<div class="scroller">
+<div class="browser" style="min-width: 760px">
+<div class="bar"><i></i><i></i><i></i><span>asset:tutorial/ide/15-gpu.html</span></div>
+<div class="page"><div class="inner">
+
+<p class="nav">Previous: A world in 3D - Contents</p>
+<h1>15. A program for the GPU</h1>
+<p class="lead">A window whose picture is computed, sixty times a second, by a program running on the
+GPU - a <b>kernel</b>. On the way: why a computer has two kinds of processor, what each is good at, how a
+kernel is written and run, and how the two share one job.</p>
+<div class="shot" style="height: 250px">The finished lesson: a 640 by 400 pattern, moving, in its window -
+"0.4 ms a frame on the GPU" in its corner. Taken in QEMU by the tutorial's tool, on the M700 for the GPU's.</div>
+<p class="caption">What you will have at the end of this lesson.</p>
+
+<h2>Two kinds of processor</h2>
+<p>Every program you have written so far ran on the <b>processor</b> - the CPU. The M700 has four of its
+cores. Each one runs a program of its own, one instruction after another, and follows its own path through
+it: this <code>if</code> one way, that loop five times, a call into a kit. A core is fast at a single thing and
+very good at deciding.</p>
+<p>The <b>GPU</b> was made for pictures, where the same small sum is done for every one of a million pixels. It
+has many more, much simpler hands: the M700's has 24 execution units, each running seven threads, each
+thread sixteen <b>lanes</b> wide - 2,688 lanes. They do not each run a program of their own. A thread's
+sixteen lanes all do the same instruction at the same moment, each on its own pixel.</p>
+
+<figure class="dia">
+<svg viewBox="0 0 900 330" role="img" aria-label="Four processor cores each on its own path through a program, beside a GPU thread whose sixteen lanes step through one kernel together">
+  <!-- The processor -->
+  <text x="20" y="28" font-size="17" font-weight="600" fill="#2f6fb3">The processor: a few cores, each on its own path</text>
+  <g font-size="12" fill="#1f2328">
+    <g transform="translate(20,48)">
+      <rect width="96" height="262" rx="8" fill="#dce8f6"/>
+      <text x="48" y="20" text-anchor="middle" font-weight="600">core 1</text>
+      <rect x="12" y="34" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="48" text-anchor="middle" fill="#fff">read file</text>
+      <rect x="12" y="62" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="76" text-anchor="middle" fill="#fff">if size &gt; 0</text>
+      <rect x="12" y="90" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="104" text-anchor="middle" fill="#fff">decode</text>
+      <rect x="12" y="118" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="132" text-anchor="middle" fill="#fff">loop × 5</text>
+      <rect x="12" y="146" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="160" text-anchor="middle" fill="#fff">call a kit</text>
+    </g>
+    <g transform="translate(130,48)">
+      <rect width="96" height="262" rx="8" fill="#dce8f6"/>
+      <text x="48" y="20" text-anchor="middle" font-weight="600">core 2</text>
+      <rect x="12" y="34" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="48" text-anchor="middle" fill="#fff">key pressed</text>
+      <rect x="12" y="62" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="76" text-anchor="middle" fill="#fff">find window</text>
+      <rect x="12" y="90" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="104" text-anchor="middle" fill="#fff">send it</text>
+    </g>
+    <g transform="translate(240,48)">
+      <rect width="96" height="262" rx="8" fill="#dce8f6"/>
+      <text x="48" y="20" text-anchor="middle" font-weight="600">core 3</text>
+      <rect x="12" y="34" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="48" text-anchor="middle" fill="#fff">mix sound</text>
+      <rect x="12" y="62" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="76" text-anchor="middle" fill="#fff">sleep</text>
+      <rect x="12" y="90" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="104" text-anchor="middle" fill="#fff">mix sound</text>
+      <rect x="12" y="118" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="132" text-anchor="middle" fill="#fff">sleep</text>
+    </g>
+    <g transform="translate(350,48)">
+      <rect width="96" height="262" rx="8" fill="#dce8f6"/>
+      <text x="48" y="20" text-anchor="middle" font-weight="600">core 4</text>
+      <rect x="12" y="34" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="48" text-anchor="middle" fill="#fff">parse page</text>
+      <rect x="12" y="62" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="76" text-anchor="middle" fill="#fff">if &lt;img&gt;</text>
+      <rect x="12" y="90" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="104" text-anchor="middle" fill="#fff">fetch it</text>
+      <rect x="12" y="118" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="132" text-anchor="middle" fill="#fff">lay it out</text>
+      <rect x="12" y="146" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="160" text-anchor="middle" fill="#fff">draw text</text>
+      <rect x="12" y="174" width="72" height="20" rx="4" fill="#2f6fb3"/><text x="48" y="188" text-anchor="middle" fill="#fff">if link</text>
+    </g>
+    <text x="20" y="326" fill="#5b6470">Four programs, four paths, each decided as it goes.</text>
+  </g>
+
+  <!-- The GPU -->
+  <text x="490" y="28" font-size="17" font-weight="600" fill="#7c4bd0">The GPU: one kernel, lanes in step</text>
+  <g font-size="12" fill="#1f2328" transform="translate(490,48)">
+    <rect width="390" height="262" rx="8" fill="#ebe2fa"/>
+    <text x="10" y="20" font-weight="600">one thread, sixteen lanes - one pixel each</text>
+    <g id="lanes">
+      <!-- lane headers -->
+      <g fill="#7c4bd0" font-size="10" text-anchor="middle">
+        <text x="20" y="40">0</text><text x="42" y="40">1</text><text x="64" y="40">2</text><text x="86" y="40">3</text>
+        <text x="108" y="40">4</text><text x="130" y="40">5</text><text x="152" y="40">6</text><text x="174" y="40">7</text>
+        <text x="196" y="40">8</text><text x="218" y="40">9</text><text x="240" y="40">10</text><text x="262" y="40">11</text>
+        <text x="284" y="40">12</text><text x="306" y="40">13</text><text x="328" y="40">14</text><text x="350" y="40">15</text>
+      </g>
+    </g>
+    <!-- four steps, every lane lit -->
+    <g fill="#7c4bd0">
+      <rect x="10" y="48" width="352" height="20" rx="4" opacity="0.18"/>
+      <rect x="10" y="76" width="352" height="20" rx="4" opacity="0.18"/>
+      <rect x="10" y="104" width="352" height="20" rx="4" opacity="0.18"/>
+      <rect x="10" y="132" width="352" height="20" rx="4" opacity="0.18"/>
+    </g>
+    <g fill="#7c4bd0">
+      <circle cx="20" cy="58" r="6"/><circle cx="42" cy="58" r="6"/><circle cx="64" cy="58" r="6"/><circle cx="86" cy="58" r="6"/><circle cx="108" cy="58" r="6"/><circle cx="130" cy="58" r="6"/><circle cx="152" cy="58" r="6"/><circle cx="174" cy="58" r="6"/><circle cx="196" cy="58" r="6"/><circle cx="218" cy="58" r="6"/><circle cx="240" cy="58" r="6"/><circle cx="262" cy="58" r="6"/><circle cx="284" cy="58" r="6"/><circle cx="306" cy="58" r="6"/><circle cx="328" cy="58" r="6"/><circle cx="350" cy="58" r="6"/>
+      <circle cx="20" cy="86" r="6"/><circle cx="42" cy="86" r="6"/><circle cx="64" cy="86" r="6"/><circle cx="86" cy="86" r="6"/><circle cx="108" cy="86" r="6"/><circle cx="130" cy="86" r="6"/><circle cx="152" cy="86" r="6"/><circle cx="174" cy="86" r="6"/><circle cx="196" cy="86" r="6"/><circle cx="218" cy="86" r="6"/><circle cx="240" cy="86" r="6"/><circle cx="262" cy="86" r="6"/><circle cx="284" cy="86" r="6"/><circle cx="306" cy="86" r="6"/><circle cx="328" cy="86" r="6"/><circle cx="350" cy="86" r="6"/>
+      <circle cx="20" cy="114" r="6"/><circle cx="42" cy="114" r="6"/><circle cx="64" cy="114" r="6"/><circle cx="86" cy="114" r="6"/><circle cx="108" cy="114" r="6"/><circle cx="130" cy="114" r="6"/><circle cx="152" cy="114" r="6"/><circle cx="174" cy="114" r="6"/><circle cx="196" cy="114" r="6"/><circle cx="218" cy="114" r="6"/><circle cx="240" cy="114" r="6"/><circle cx="262" cy="114" r="6"/><circle cx="284" cy="114" r="6"/><circle cx="306" cy="114" r="6"/><circle cx="328" cy="114" r="6"/><circle cx="350" cy="114" r="6"/>
+      <circle cx="20" cy="142" r="6"/><circle cx="42" cy="142" r="6"/><circle cx="64" cy="142" r="6"/><circle cx="86" cy="142" r="6"/><circle cx="108" cy="142" r="6"/><circle cx="130" cy="142" r="6"/><circle cx="152" cy="142" r="6"/><circle cx="174" cy="142" r="6"/><circle cx="196" cy="142" r="6"/><circle cx="218" cy="142" r="6"/><circle cx="240" cy="142" r="6"/><circle cx="262" cy="142" r="6"/><circle cx="284" cy="142" r="6"/><circle cx="306" cy="142" r="6"/><circle cx="328" cy="142" r="6"/><circle cx="350" cy="142" r="6"/>
+    </g>
+    <g font-family="IBM Plex Mono, monospace" font-size="11" fill="#1f2328">
+      <text x="10" y="176">x = group × 16 + lane</text>
+      <text x="10" y="194">colour = f(x, y)</text>
+      <text x="10" y="212">write the colour</text>
+      <text x="10" y="230">end the thread</text>
+    </g>
+    <text x="10" y="252" fill="#5b6470">Each row is one instruction; every lane does it at once.</text>
+  </g>
+</svg>
+<figcaption>The processor's cores each follow their own program. A GPU thread's sixteen lanes follow one, together - and there are 168 such threads at once on the M700.</figcaption>
+</figure>
+
+<table class="two">
+<tr><th></th><th class="cpu">The processor</th><th class="gpu">The GPU</th></tr>
+<tr><td>How many</td><td>4 cores</td><td>2,688 lanes</td></tr>
+<tr><td>Each one runs</td><td>its own program</td><td>the kernel, with fifteen others in step</td></tr>
+<tr><td>Good at</td><td>deciding: branches, files, the network, a window, anything one step after another</td><td>the same sum for a million things at once: pixels, samples, particles, rays</td></tr>
+<tr><td>Starting work</td><td>a function call</td><td>a message to the GPU's driver, and a moment before it begins</td></tr>
+</table>
+
+<h2>What a kernel is</h2>
+<p>A <b>kernel</b> is the work for <i>one</i> pixel - or one sample, one particle - written once. You do not write
+the loop over the picture: the GPU runs the kernel once for every pixel, and each copy finds out which pixel is
+its own from where it sits in the <b>grid</b>.</p>
+
+<figure class="dia">
+<svg viewBox="0 0 900 260" role="img" aria-label="A 640 by 400 picture divided into a grid of thread groups sixteen pixels wide, one row high; one group enlarged into sixteen lanes">
+  <g font-size="12" fill="#1f2328">
+    <rect x="20" y="20" width="400" height="220" fill="#f4f1fb" stroke="#7c4bd0"/>
+    <g stroke="#cdbdf0" stroke-width="1">
+      <line x1="45" y1="20" x2="45" y2="240"/><line x1="70" y1="20" x2="70" y2="240"/><line x1="95" y1="20" x2="95" y2="240"/>
+      <line x1="120" y1="20" x2="120" y2="240"/><line x1="145" y1="20" x2="145" y2="240"/><line x1="170" y1="20" x2="170" y2="240"/>
+      <line x1="195" y1="20" x2="195" y2="240"/><line x1="220" y1="20" x2="220" y2="240"/><line x1="245" y1="20" x2="245" y2="240"/>
+      <line x1="270" y1="20" x2="270" y2="240"/><line x1="295" y1="20" x2="295" y2="240"/><line x1="320" y1="20" x2="320" y2="240"/>
+      <line x1="345" y1="20" x2="345" y2="240"/><line x1="370" y1="20" x2="370" y2="240"/><line x1="395" y1="20" x2="395" y2="240"/>
+      <line x1="20" y1="40" x2="420" y2="40"/><line x1="20" y1="60" x2="420" y2="60"/><line x1="20" y1="80" x2="420" y2="80"/>
+      <line x1="20" y1="100" x2="420" y2="100"/><line x1="20" y1="120" x2="420" y2="120"/><line x1="20" y1="140" x2="420" y2="140"/>
+      <line x1="20" y1="160" x2="420" y2="160"/><line x1="20" y1="180" x2="420" y2="180"/><line x1="20" y1="200" x2="420" y2="200"/>
+      <line x1="20" y1="220" x2="420" y2="220"/>
+    </g>
+    <rect x="95" y="100" width="25" height="20" fill="#7c4bd0"/>
+    <text x="20" y="14" fill="#5b6470">the picture, 640 × 400: a grid of 40 × 400 thread groups (fewer drawn)</text>
+    <path d="M120 110 L 480 70" stroke="#7c4bd0" stroke-width="1.5" fill="none"/>
+    <path d="M120 110 L 480 150" stroke="#7c4bd0" stroke-width="1.5" fill="none"/>
+    <text x="480" y="52" font-weight="600" fill="#7c4bd0">group (3, 4): one thread, sixteen pixels of row 4</text>
+    <g transform="translate(480,64)">
+      <rect width="400" height="92" rx="6" fill="#ebe2fa"/>
+      <g fill="#7c4bd0">
+        <rect x="8" y="10" width="20" height="40" rx="3"/><rect x="32" y="10" width="20" height="40" rx="3"/><rect x="56" y="10" width="20" height="40" rx="3"/><rect x="80" y="10" width="20" height="40" rx="3"/>
+        <rect x="104" y="10" width="20" height="40" rx="3"/><rect x="128" y="10" width="20" height="40" rx="3"/><rect x="152" y="10" width="20" height="40" rx="3"/><rect x="176" y="10" width="20" height="40" rx="3"/>
+        <rect x="200" y="10" width="20" height="40" rx="3"/><rect x="224" y="10" width="20" height="40" rx="3"/><rect x="248" y="10" width="20" height="40" rx="3"/><rect x="272" y="10" width="20" height="40" rx="3"/>
+        <rect x="296" y="10" width="20" height="40" rx="3"/><rect x="320" y="10" width="20" height="40" rx="3"/><rect x="344" y="10" width="20" height="40" rx="3"/><rect x="368" y="10" width="20" height="40" rx="3"/>
+      </g>
+      <g fill="#fff" font-size="10" text-anchor="middle">
+        <text x="18" y="34">48</text><text x="42" y="34">49</text><text x="66" y="34">50</text><text x="90" y="34">51</text>
+        <text x="114" y="34">52</text><text x="138" y="34">53</text><text x="162" y="34">54</text><text x="186" y="34">55</text>
+        <text x="210" y="34">56</text><text x="234" y="34">57</text><text x="258" y="34">58</text><text x="282" y="34">59</text>
+        <text x="306" y="34">60</text><text x="330" y="34">61</text><text x="354" y="34">62</text><text x="378" y="34">63</text>
+      </g>
+      <text x="8" y="72" font-family="IBM Plex Mono, monospace" font-size="11">lane 5: x = 3 × 16 + 5 = 53, y = 4</text>
+    </g>
+    <text x="480" y="186" fill="#5b6470">The grid is given with the run: { 40, 400 }.</text>
+    <text x="480" y="204" fill="#5b6470">The GPU tells each thread its group, r0.1 and r0.6;</text>
+    <text x="480" y="222" fill="#5b6470">the lanes are numbered 0 to 15 inside it.</text>
+  </g>
+</svg>
+<figcaption>The run's grid: 16,000 threads for a 640 by 400 picture, a lane a pixel. Nothing in the kernel loops over the picture.</figcaption>
+</figure>
+
+<p>The kernel is written in the GPU's own instructions, as text in your program, and the Compute Kit has
+<code>eu.lua</code> turn it into the GPU's numbers. Here is this lesson's, the part that works out the pixel:</p>
+<pre><span class="c">// the lanes 0 to 15, and the group's first pixel</span>
+mov (8|M0)  r10.0&lt;1&gt;:uw  0x76543210:v
+add (8|M0)  r10.8&lt;1&gt;:uw  r10.0&lt;8;8,1&gt;:uw  8:uw
+mul (1|M0)  r2.0&lt;1&gt;:ud   r0.1&lt;0;1,0&gt;:ud   0x10:ud
+<span class="c">// x for every lane at once - sixteen additions, one instruction</span>
+add (16|M0) r12.0&lt;1&gt;:ud  r10.0&lt;8;8,1&gt;:uw  r2.0&lt;0;1,0&gt;:ud</pre>
+<p>Each line is one instruction. <code>(16|M0)</code> says sixteen lanes do it. <code>r12</code> is a register -
+each lane has its own part of it, so <code>r12</code> holds sixteen different x's after that last line.</p>
+
+<h2>Running it</h2>
+<pre>local compute = use("/Kosmos/Kits/compute")
+
+local kernel = compute.kernel(text)                <span class="c">-- assembled here, checked by the driver</span>
+local picture = compute.picture(640, 400)          <span class="c">-- memory the GPU and the program share</span>
+
+local ticket = compute.run{ kernel = kernel, grid = { 40, 400 },
+                            buffers = { picture },
+                            constants = string.pack("&lt;i4", frame) }</pre>
+<p><code>compute.run</code> does not wait. It sends one message to the GPU's driver and answers at once with a
+<b>ticket</b>; the window asks <code>ticket:done()</code> on its clock and paints when it says yes. Meanwhile the
+processor is free - to read keys, or to get the next frame ready.</p>
+<p class="note">The kernel can reach only the buffers its run is handed. The GPU's driver reads every instruction
+before it keeps a kernel, and refuses one that could touch anything else - another window's pixels, the screen -
+and says at which line. That is Kosmos's rule about capabilities - what you were not handed, you cannot
+reach - one layer down, inside the GPU.</p>
+
+<h2>When lanes disagree</h2>
+<p>On the processor, an <code>if</code> costs almost nothing: each core goes the way its own data says. On the GPU
+the sixteen lanes of a thread share one instruction. When some lanes want one side and some the other, the
+thread walks <i>both</i> sides, switching off the lanes each side is not for.</p>
+
+<figure class="dia">
+<svg viewBox="0 0 900 250" role="img" aria-label="On the processor two cores each take one side of a branch; on the GPU a thread runs both sides with half its lanes switched off each time">
+  <g font-size="12" fill="#1f2328">
+    <text x="20" y="24" font-size="16" font-weight="600" fill="#2f6fb3">The processor: each core takes its own side</text>
+    <g transform="translate(20,40)">
+      <rect width="380" height="190" rx="8" fill="#dce8f6"/>
+      <rect x="140" y="14" width="100" height="24" rx="4" fill="#2f6fb3"/><text x="190" y="30" text-anchor="middle" fill="#fff">if inside</text>
+      <path d="M190 38 L 100 70" stroke="#2f6fb3" stroke-width="2" fill="none"/>
+      <path d="M190 38 L 280 70" stroke="#2f6fb3" stroke-width="2" fill="none"/>
+      <rect x="40" y="70" width="120" height="24" rx="4" fill="#2f6fb3"/><text x="100" y="86" text-anchor="middle" fill="#fff">core 1: black</text>
+      <rect x="220" y="70" width="120" height="24" rx="4" fill="#2f6fb3"/><text x="280" y="86" text-anchor="middle" fill="#fff">core 2: a colour</text>
+      <text x="20" y="130" fill="#5b6470">Two cores, two paths, no time lost:</text>
+      <text x="20" y="148" fill="#5b6470">each does only its own side.</text>
+    </g>
+    <text x="470" y="24" font-size="16" font-weight="600" fill="#7c4bd0">The GPU: one thread walks both sides</text>
+    <g transform="translate(470,40)">
+      <rect width="410" height="190" rx="8" fill="#ebe2fa"/>
+      <text x="12" y="24">if inside</text>
+      <g>
+        <circle cx="120" cy="20" r="6" fill="#7c4bd0"/><circle cx="138" cy="20" r="6" fill="#7c4bd0"/><circle cx="156" cy="20" r="6" fill="#7c4bd0"/><circle cx="174" cy="20" r="6" fill="#7c4bd0"/>
+        <circle cx="192" cy="20" r="6" fill="#7c4bd0"/><circle cx="210" cy="20" r="6" fill="#7c4bd0"/><circle cx="228" cy="20" r="6" fill="#7c4bd0"/><circle cx="246" cy="20" r="6" fill="#7c4bd0"/>
+        <circle cx="264" cy="20" r="6" fill="#7c4bd0"/><circle cx="282" cy="20" r="6" fill="#7c4bd0"/><circle cx="300" cy="20" r="6" fill="#7c4bd0"/><circle cx="318" cy="20" r="6" fill="#7c4bd0"/>
+        <circle cx="336" cy="20" r="6" fill="#7c4bd0"/><circle cx="354" cy="20" r="6" fill="#7c4bd0"/><circle cx="372" cy="20" r="6" fill="#7c4bd0"/><circle cx="390" cy="20" r="6" fill="#7c4bd0"/>
+      </g>
+      <text x="12" y="62">black</text>
+      <g>
+        <circle cx="120" cy="58" r="6" fill="#7c4bd0"/><circle cx="138" cy="58" r="6" fill="#7c4bd0"/><circle cx="156" cy="58" r="6" fill="#7c4bd0"/><circle cx="174" cy="58" r="6" fill="#7c4bd0"/>
+        <circle cx="192" cy="58" r="6" fill="#7c4bd0"/><circle cx="210" cy="58" r="6" fill="#7c4bd0"/><circle cx="228" cy="58" r="6" fill="#c9ced8"/><circle cx="246" cy="58" r="6" fill="#c9ced8"/>
+        <circle cx="264" cy="58" r="6" fill="#c9ced8"/><circle cx="282" cy="58" r="6" fill="#c9ced8"/><circle cx="300" cy="58" r="6" fill="#c9ced8"/><circle cx="318" cy="58" r="6" fill="#c9ced8"/>
+        <circle cx="336" cy="58" r="6" fill="#c9ced8"/><circle cx="354" cy="58" r="6" fill="#c9ced8"/><circle cx="372" cy="58" r="6" fill="#c9ced8"/><circle cx="390" cy="58" r="6" fill="#c9ced8"/>
+      </g>
+      <text x="12" y="100">a colour</text>
+      <g>
+        <circle cx="120" cy="96" r="6" fill="#c9ced8"/><circle cx="138" cy="96" r="6" fill="#c9ced8"/><circle cx="156" cy="96" r="6" fill="#c9ced8"/><circle cx="174" cy="96" r="6" fill="#c9ced8"/>
+        <circle cx="192" cy="96" r="6" fill="#c9ced8"/><circle cx="210" cy="96" r="6" fill="#c9ced8"/><circle cx="228" cy="96" r="6" fill="#7c4bd0"/><circle cx="246" cy="96" r="6" fill="#7c4bd0"/>
+        <circle cx="264" cy="96" r="6" fill="#7c4bd0"/><circle cx="282" cy="96" r="6" fill="#7c4bd0"/><circle cx="300" cy="96" r="6" fill="#7c4bd0"/><circle cx="318" cy="96" r="6" fill="#7c4bd0"/>
+        <circle cx="336" cy="96" r="6" fill="#7c4bd0"/><circle cx="354" cy="96" r="6" fill="#7c4bd0"/><circle cx="372" cy="96" r="6" fill="#7c4bd0"/><circle cx="390" cy="96" r="6" fill="#7c4bd0"/>
+      </g>
+      <text x="12" y="140" fill="#5b6470">Grey lanes are switched off and wait. Both sides cost the whole thread,</text>
+      <text x="12" y="158" fill="#5b6470">so a branch the lanes agree on is cheap and one they split on is not -</text>
+      <text x="12" y="176" fill="#5b6470">which is why the Mandelbrot's edge takes the GPU longest.</text>
+    </g>
+  </g>
+</svg>
+<figcaption>A branch is free on the processor and shared on the GPU. Kernels are written so neighbouring lanes mostly agree.</figcaption>
+</figure>
+
+<h2>Who does what</h2>
+<p>The two are partners. GPU Fractal, which comes with Kosmos, divides every frame between them like this:</p>
+
+<figure class="dia">
+<svg viewBox="0 0 900 230" role="img" aria-label="A frame of GPU Fractal: the processor reads the drag and sends one message, the GPU computes 480,000 pixels, the processor paints them">
+  <g font-size="12" fill="#1f2328">
+    <rect x="20" y="20" width="860" height="70" rx="8" fill="#dce8f6"/>
+    <text x="34" y="42" font-weight="600" fill="#2f6fb3">the processor</text>
+    <rect x="34" y="52" width="150" height="26" rx="4" fill="#2f6fb3"/><text x="109" y="69" text-anchor="middle" fill="#fff">read the drag</text>
+    <rect x="194" y="52" width="150" height="26" rx="4" fill="#2f6fb3"/><text x="269" y="69" text-anchor="middle" fill="#fff">the new view</text>
+    <rect x="354" y="52" width="120" height="26" rx="4" fill="#2f6fb3"/><text x="414" y="69" text-anchor="middle" fill="#fff">one message</text>
+    <rect x="484" y="52" width="200" height="26" rx="4" fill="#9fbde3"/><text x="584" y="69" text-anchor="middle">free: keys, sound, other windows</text>
+    <rect x="694" y="52" width="80" height="26" rx="4" fill="#2f6fb3"/><text x="734" y="69" text-anchor="middle" fill="#fff">ticket done</text>
+    <rect x="784" y="52" width="80" height="26" rx="4" fill="#2f6fb3"/><text x="824" y="69" text-anchor="middle" fill="#fff">paint</text>
+
+    <path d="M414 78 L 414 120" stroke="#5b6470" stroke-width="1.5" marker-end="url(#a)"/>
+    <path d="M684 140 L 734 78" stroke="#5b6470" stroke-width="1.5" marker-end="url(#a)"/>
+    <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#5b6470"/></marker></defs>
+
+    <rect x="20" y="120" width="860" height="70" rx="8" fill="#ebe2fa"/>
+    <text x="34" y="142" font-weight="600" fill="#7c4bd0">the GPU</text>
+    <rect x="414" y="152" width="270" height="26" rx="4" fill="#7c4bd0"/><text x="549" y="169" text-anchor="middle" fill="#fff">30,000 threads · 480,000 pixels</text>
+    <text x="20" y="214" fill="#5b6470">The processor decides what to compute - a few hundred instructions. The GPU computes it - a few hundred million.</text>
+  </g>
+</svg>
+<figcaption>A frame of GPU Fractal. Neither could do the other's part well: the GPU cannot read a drag, and the processor would take a hundred times as long over the pixels.</figcaption>
+</figure>
+
+<p><b>Use the GPU</b> when the same work is done for very many things, each on its own: pixels, sound samples,
+points of a simulation. <b>Keep the processor</b> for everything else - a small job, where the message costs more
+than the work; a job where each step needs the last; anything that reads files, talks to the network or decides
+what a person meant.</p>
+
+<h2>Run it</h2>
+<p>Press <kbd>F5</kbd>. The pattern moves, and the corner says how long the GPU took over the last frame.</p>
+<div class="shot" style="height: 200px">The IDE with the lesson's project open and its window moving beside it.</div>
+<p class="tip">The finished lesson is in <b class="ui">Lesson's Project</b>, under the three dots: <code>15-GPU</code>.
+Under QEMU, which has no Intel GPU, the window says so and the processor draws the pattern instead.</p>
+
+<h2>Try changing</h2>
+<ul>
+<li>Change the colour sum in the kernel: <code>xor</code> x and y for a chequer, or shift the frame number further.</li>
+<li>Make the window bigger: the grid is the picture's width over sixteen, by its height.</li>
+<li>Draw the same pattern in Lua, a pixel at a time, and time it beside the GPU's.</li>
+</ul>
+
+<h2>How Kosmos does it</h2>
+<p>The kernel is assembled in your program by <code>eu.lua</code>; the Compute Kit puts its numbers in memory
+and asks the GPU's driver to keep it, and the driver checks every instruction first. A picture is a region of
+memory shared by your program, the GPU and the window, so the pixels are never copied: the run is one message
+- which kernel, which buffers, a grid - and the pixels stay where they are (control by message, data by shared
+memory). The ticket is the render engine's fence: a number the GPU writes when it has finished.</p>
+
+<h2>The real thing</h2>
+<p>GPU Fractal computes the Mandelbrot set on the GPU and the same picture on the processor, the two times
+side by side, and its <b class="ui">Kernel</b> button shows its kernel - forty-seven instructions. Open the IDE's
+<b class="ui">System</b> tab, then <code>/Kosmos/Apps/fractal</code>.</p>
+<p class="nav">Previous: A world in 3D - Contents</p>
+
+</div></div>
+</div>
+</div>
+
+<h2 class="plan">What's yours to decide</h2>
+<ol class="decide">
+<li><b>Where it goes</b>: lesson 15, the last of Part four, The system's kits, after A world in 3D.
+<i>Recommended</i>: it uses a kit like the rest of Part four, and the 3D lesson before it has just shown what the
+GPU is for.</li>
+<li><b>Its project</b>: a moving pattern, 640 by 400, computed from each pixel's x and y and the frame's number -
+a kernel of about twenty instructions with no loop, so the lesson is about the grid and the lanes, and the
+Mandelbrot's loop and branches stay GPU Fractal's. <i>Recommended</i>. Or the Mandelbrot itself, which shows
+divergence for real and is four times the kernel.</li>
+<li><b>The four diagrams</b> as drawn: the two kinds of processor, the grid, what a branch does to each, and a
+frame divided between them. In the IDE they are pictures, made on the Mac from this page, since Kosmos's browser
+draws an SVG's shapes but not its words.</li>
+<li><b>The table</b> of the two side by side, after the first diagram. <i>Recommended</i>: it is the lesson's
+point in four rows.</li>
+</ol>
+
+</div>
+</body>
+</html>

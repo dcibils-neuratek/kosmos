@@ -148,7 +148,12 @@ runs (D2 A). **C1 done** (0.11.288, 18.687): `eu.lua`. **C2 built**
 (18.688): the driver's kernel, run and forget verbs, the check, `gpu
 kernel`; its run on the M700 waits for the machine. **C3 built**
 (18.689): `/Kosmos/Kits/compute`, buffers, pictures, runs, tickets and the
-GPU's own time. Next C4, GPU Fractal.
+GPU's own time. **C4 built** (18.690): GPU Fractal, `wm fractal`. The
+M700 runs `gpu kernel` and GPU Fractal next; then C5, Cafesa3D's design.
+**C6 drawn and agreed** (`compute-lesson.html`, Diego: "go ahead with the
+recommended choices for the lesson"): lesson 15, "A program for the GPU",
+the last of Part four - a moving pattern from a kernel with no loop, four
+diagrams of the two paradigms and a table.
 **And the lesson, C6** (Diego, the same
 day): what a compute kernel is and how it differs from a processor's
 program, the two taught as complementary - "they are completely

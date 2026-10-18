@@ -161,7 +161,10 @@ GPU wrote is read from memory after. The first run holds both to it.
 4. **C4 - GPU Fractal**, as drawn: the Mandelbrot kernel, the processor's in
    C, the switch and the timings; its suite under QEMU (no GPU there - it
    says so and draws the processor's), the picture in the dated screenshot,
-   and the two pictures held to each other on the M700.
+   and the two pictures held to each other on the M700. **Built** (`testing.md`
+   18.690): `wm fractal`, the kernel in `eukernels.lua`, `fractal.c`,
+   `x86-fractal`; the GPU's picture and the two held to each other wait
+   for the M700.
 5. **C5 - Cafesa3D on the GPU**, its own design first (`cafesa3d` docs): a
    ray tracer as a kernel on the same kit.
 6. **C6 - the IDE's lesson**, on GPU Fractal - Diego, 18 October: "the
@@ -184,7 +187,12 @@ GPU wrote is read from memory after. The first run holds both to it.
    few cores each following its own path through a program, beside the
    GPU's grid of lanes stepping through one kernel together - and what a
    branch does to each; a frame of GPU Fractal divided between the two.
-   Drawn with the other lessons and agreed before it is written.
+   Drawn with the other lessons and agreed before it is written. **Drawn**
+   (18 October): `compute-lesson.html` - lesson 15, "A program for the
+   GPU", at the end of Part four; its project a moving pattern, a kernel of
+   about twenty instructions with no loop; four diagrams and a table of the
+   two side by side. **Agreed** - Diego, the same evening: "go ahead with
+   the recommended choices for the lesson".
 
 Only x86-64 runs the tests for now (`CLAUDE.md`), and the GPU itself is the
 M700's.

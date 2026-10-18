@@ -2873,6 +2873,7 @@ void kosmos_synth_kit(lua_State *L);
 void kosmos_net_kit(lua_State *L);
 void kosmos_crypto_kit(lua_State *L);
 void kosmos_compute_kit(lua_State *L);
+void kosmos_fractal_kit(lua_State *L);
 void kosmos_window_kit(lua_State *L);
 /* The C Kit, TinyCC, in the full image alone (`docs/tinycc.md`, C3). */
 void kosmos_tcc_kit(lua_State *L) __attribute__((weak));
@@ -2936,6 +2937,8 @@ static const struct {
     { "tls",      kosmos_tls_kit, 0 },
     /* Programs of their own on the GPU's execution units (`docs/compute.md`). */
     { "compute",  kosmos_compute_kit, 0 },
+    /* GPU Fractal's processor half, beside the GPU's (`docs/compute.md` C4). */
+    { "fractal",  kosmos_fractal_kit, 0 },
     /* A window from C: its door is `kosmos_window.h` (`docs/windowkit.md`). */
     { "window",   kosmos_window_kit, 0 },
     /* C, compiled inside Kosmos into a program file (`docs/tinycc.md`). */

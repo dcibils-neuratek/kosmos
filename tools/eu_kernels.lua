@@ -63,6 +63,9 @@ mov (8|M0) r4.0<1>:ud r0.0<8;8,1>:ud
 send.hdc1 (16|M0) acc0 r4 0x00000000 0x060A8002
 ]] .. END_THREAD)
 
+-- GPU Fractal's, as the app hands it over (`eukernels.lua`).
+kernel("gpu-fractal", OK, 0, dofile("user/lib/eukernels.lua").mandelbrot)
+
 -- A branch to the very first instruction, and one to the last.
 kernel("branch-to-first-and-last", OK, 0, [[
 top:

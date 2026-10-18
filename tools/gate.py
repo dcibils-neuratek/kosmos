@@ -405,6 +405,7 @@ SUITES = [
     # This Machine: every device a card, By connection and No driver
     # pressed (`docs/machine.md` M3).
     Suite("x86-machine", ["python3", "tools/run_machine.py", X86], x86=True),
+    Suite("x86-fractal", ["python3", "tools/run_fractal.py", X86], x86=True),
     Suite("x86-packages", ["python3", "tools/run_packages.py", X86], x86=True),
 
     # **The editor, typed at through a keyboard** (`roadmap.md` 6n, steps 0
