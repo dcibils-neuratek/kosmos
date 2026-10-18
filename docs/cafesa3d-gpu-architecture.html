@@ -1,0 +1,144 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Cafesa3D's renderer on the GPU, and what it stands on: Cafesa3D on top,
+  the kernel language and eu.lua in its process, the 3D Kit packing the
+  scene and the Compute Kit running it, the driver's check learning the
+  GPU's branches, and an emulator on the Mac that tests every kernel. A
+  pass of the Rendered view drawn through it (P). Drawn on 18 October 2026,
+  before any of it is built; docs/cafesa3d-gpu.md is the argument and
+  docs/cafesa3d-gpu.html the window. Rendered to
+  docs/cafesa3d-gpu-architecture.png by headless Chrome at twice its size.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cafesa3D on the GPU - architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --gpu: #f3ecfd; --gpu-line: #c4a8ef; --gpu-ink: #4b2a8a;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 1000px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 390px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code, li code, td code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .88; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .gpu { background: var(--gpu); border-color: var(--gpu-line); } .gpu h2 { color: var(--gpu-ink); } .gpu .box { border-color: var(--gpu-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 42%; }
+</style>
+</head>
+<body>
+<h1>Cafesa3D on the GPU - what it stands on</h1>
+<p class="sub">The ray tracer, written once in Kosmos's own kernel language and compiled on Kosmos to the GPU's assembly; the scene packed into Compute Kit buffers by the 3D Kit; each pass one message. The driver checks whatever the compiler writes, so the compiler is never trusted with the GPU's safety. An emulator on the Mac runs every kernel in <code>make test</code>, where there is no GPU. Recommended answers to E1-E4 drawn; <code>cafesa3d-gpu.md</code> has the others.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--later);background:#fff;border-style:dashed"></i>later</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>kits (C, in the program)</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>drivers</span>
+  <span><i style="border-color:var(--gpu-line);background:var(--gpu)"></i>the GPU</span>
+  <span class="f">P</span><span>a pass of the Rendered view</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications</h2>
+      <div class="row" style="grid-template-columns:1.4fr 1fr">
+        <div class="box new"><span class="tag">R6</span><b>Cafesa3D</b><p>Renderer: Processor or GPU, in the Render tab; the Render window's two times and how close the pictures are. Sets the camera and the pass <span class="f">P1</span>, runs <span class="f">P2</span>, shows the picture <span class="f">P7</span>.</p></div>
+        <div class="box"><b>GPU Fractal, the lesson's project</b><p>kernels by hand, as they are - the language is for kernels too large for that</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in its process)</h2>
+      <div class="row" style="grid-template-columns:1.2fr 1fr">
+        <div class="box new"><span class="tag">R3</span><b><code>kc.lua</code> - the kernel language</b><p>C-shaped: numbers, <code>vec3</code>, <code>if</code>, <code>while</code>, functions inlined, buffers by name; every variable a lane's own; SIMD8 or SIMD16. Compiled to <code>eu.lua</code>'s text, once a scene <span class="f">P0</span></p></div>
+        <div class="box new"><span class="tag">R1</span><b><code>eu.lua</code></b><p>learns <code>if</code>, <code>else</code>, <code>endif</code>, <code>while</code>, <code>break</code>, <code>math</code>, and the data port's untyped reads and writes - each form held to Mesa's gentool</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>Kits (C, in its process)</h2>
+      <div class="row" style="grid-template-columns:1.2fr 1fr">
+        <div class="box new"><span class="tag">R4</span><b>the 3D Kit - <code>k3d_gpu.c</code></b><p>the scene <code>k3d_render_new</code> builds - objects, the hierarchy flattened, triangles, materials, lamps - packed into buffers, once a scene change</p></div>
+        <div class="box"><b>the Compute Kit</b><p>buffers, <code>compute.run</code>, a ticket, the GPU's time <span class="f">P2</span> - as it is</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr;margin-top:10px">
+        <div class="box"><b>the 3D Kit's processor tracer - <code>k3d_trace.c</code></b><p>the picture the GPU's is held to; Processor in the Render tab - as it is</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Drivers</h2>
+      <div class="row" style="grid-template-columns:1.3fr 1fr">
+        <div class="box new"><span class="tag">R1</span><b>intelgpu - the kernel check</b><p>allows the GPU's structured branches - each jump held inside the kernel - and still refuses any message to memory the run was not handed <span class="f">P3</span></p></div>
+        <div class="box"><b><code>GPU_OP_RUN</code></b><p>the walker over 160 × 720 groups, the fence - as it is</p></div>
+      </div>
+    </div>
+    <div class="layer gpu"><h2>The GPU</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box"><b>24 execution units, SIMD8</b><p>a lane a pixel: the ray, the tree of boxes from a buffer, each lane's stack in a buffer of its own <span class="f">P4</span>, shading, shadows <span class="f">P5</span></p></div>
+        <div class="box"><b>the samples, then the colours</b><p>added into a float buffer; a second kernel turns the sums into the picture <span class="f">P6</span></p></div>
+      </div>
+    </div>
+    <div class="layer kern" style="background:#f1f4f1;border-color:#b9cdb9"><h2 style="color:#2e5a2e">On the Mac, in <code>make test</code></h2>
+      <div class="row" style="grid-template-columns:1fr">
+        <div class="box new" style="border-color:var(--new)"><span class="tag">R2</span><b>an emulator of the execution units - <code>tools/</code></b><p>the instructions <code>eu.lua</code> writes, run lane by lane with masks, flags and the sends to buffers; every kernel - the fill, the Mandelbrot, the lesson's, the tracer's - held to the processor's answer where there is no GPU</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>P - a pass of the Rendered view</h3><ol>
+      <li><span class="f">P0</span> once a scene: the tracer compiled and assembled, the scene packed into buffers.</li>
+      <li><span class="f">P1</span> the camera, the pass, the bounces into the run's constants.</li>
+      <li><span class="f">P2</span> <code>compute.run</code>: one message, 160 × 720 groups of eight pixels.</li>
+      <li><span class="f">P3</span> the driver: the state page, the walker, the fence - as GPU Fractal's.</li>
+      <li><span class="f">P4</span> each lane walks the tree of boxes for its ray, its stack in a buffer.</li>
+      <li><span class="f">P5</span> shading, a shadow ray to each lamp, the bounces.</li>
+      <li><span class="f">P6</span> the sample added in; a second run makes the colours.</li>
+      <li><span class="f">P7</span> the ticket asked on Cafesa3D's clock; the view shows the picture as it is.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3><table>
+      <tr><td>The tracer</td><td>once, as a kernel, to <code>GPU_OP_KERNEL</code> - checked</td></tr>
+      <tr><td>The scene</td><td>buffers, written once a change</td></tr>
+      <tr><td>A pass</td><td>one message: the camera and the pass</td></tr>
+      <tr><td>Samples, pixels</td><td>buffers the program and the GPU both see</td></tr>
+      <tr><td>The time</td><td>the GPU's own clock, from the ticket</td></tr></table></div>
+    <div class="card"><h3>Who else uses what is new</h3><table>
+      <tr><td>The kernel language</td><td>every kernel too large to write by hand: video filters, sound effects, the planet simulation</td></tr>
+      <tr><td>The emulator</td><td>every kernel's test, from the fill on</td></tr>
+      <tr><td>The structured branches</td><td>any kernel whose lanes disagree</td></tr></table></div>
+  </div>
+</div>
+</body>
+</html>

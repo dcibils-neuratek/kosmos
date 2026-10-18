@@ -155,7 +155,11 @@ recommended choices for the lesson"): lesson 15, "A program for the GPU",
 the last of Part four - a moving pattern from a kernel with no loop, four
 diagrams of the two paradigms and a table. **Written** (18.691): the
 page, the diagrams and the `15-GPU` project; its screenshots of the pattern
-on the M700.
+on the M700. **C5 designed** (18 October): `cafesa3d-gpu.md`,
+`cafesa3d-gpu.html`, `cafesa3d-gpu-architecture.png` - the tracer in a kernel
+language of Kosmos's own compiled on Kosmos, an emulator of the execution
+units for the tests, the scene packed by the 3D Kit, Preview first; steps R1
+to R7. Waits for Diego's word on E1 to E4.
 **And the lesson, C6** (Diego, the same
 day): what a compute kernel is and how it differs from a processor's
 program, the two taught as complementary - "they are completely

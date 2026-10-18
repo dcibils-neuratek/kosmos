@@ -1,0 +1,213 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Cafesa3D's renderer on the GPU, drawn before it is built (docs/cafesa3d-gpu.md,
+  compute.md C5). Diego, 18 October 2026: "I WANT CAFESA3e to use gpu compute
+  for its rendering engine if possible beyond the cpu raytracing option", and
+  "cafesa 3d should show the increased rendering speed from cpu to gpu right?".
+  The times below are placeholders for the first run on the M700 to replace.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cafesa3D on the GPU</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea; --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --w-body: #fafafb; --w-line: #e0e2e6; --w-ink: #1d1f24; --w-dim: #74787f;
+    --w-accent: #2a55c9; --w-sel: #e9eefb; --w-head: #ffffff;
+    --vp: #3a3d43; --vp-ink: #d9dde4; --vp-dim: #9aa1ad;
+    --cpu: #2f6fb3; --gpu: #7c4bd0; --good: #2f7a4b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #14171c; --ink: #e6e9ee; --muted: #9ea7b5; --rule: #2a3039; --card: #1b1f26; }
+  }
+  :root[data-theme="dark"] { --ground: #14171c; --ink: #e6e9ee; --muted: #9ea7b5; --rule: #2a3039; --card: #1b1f26; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 36px 16px 80px; }
+  h1 { font-family: var(--display); font-size: 30px; margin: 0 0 6px; }
+  .sub { color: var(--muted); max-width: 76ch; margin: 0 0 22px; }
+  h2 { font-family: var(--display); font-size: 20px; margin: 40px 0 10px; padding-top: 20px; border-top: 1px solid var(--rule); }
+  p { max-width: 78ch; }
+  code { font-family: var(--mono); font-size: 13px; }
+  .q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 820px; }
+  .q b { font-family: var(--display); }
+  .cap { color: var(--muted); font-size: 13.5px; margin: 10px 0 0; max-width: 90ch; }
+  .scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+
+  .win { background: var(--w-body); color: var(--w-ink); border: 1px solid var(--w-line); border-radius: 12px;
+         box-shadow: 0 14px 38px rgba(0,0,0,.18); overflow: hidden; font-size: 13px; }
+  .head { display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 14px; background: var(--w-head);
+          border-bottom: 1px solid var(--w-line); }
+  .head .t { font-weight: 600; font-size: 14px; } .head .s { color: var(--w-dim); }
+  .grow { flex: 1; }
+  .lights { display: flex; gap: 7px; } .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+
+  /* The main window: the viewport and the Render tab. */
+  .main { width: 1120px; }
+  .main .body { display: grid; grid-template-columns: 1fr 330px; height: 520px; }
+  .vp { background: var(--vp); position: relative; overflow: hidden; }
+  .vp canvas { display: block; width: 100%; height: 100%; }
+  .vp .lab { position: absolute; left: 12px; top: 10px; color: var(--vp-ink); font-size: 12.5px; line-height: 1.45;
+             background: rgba(30,32,36,.72); padding: 6px 10px; border-radius: 7px; }
+  .vp .lab span { color: var(--vp-dim); }
+  .vp .lab b { color: #c9b2f5; font-weight: 600; }
+  .side { border-left: 1px solid var(--w-line); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .side h4 { margin: 0; font-size: 15px; }
+  .label { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--w-dim); margin-top: 6px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { border: 1px solid var(--w-line); border-radius: 7px; padding: 3px 11px; background: #fff; }
+  .chip.on { background: var(--w-sel); border-color: #b7c6ef; color: var(--w-accent); font-weight: 600; }
+  .chip.off { color: #b0b4bb; background: #f4f5f7; }
+  .row { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: center; }
+  .field { border: 1px solid var(--w-line); border-radius: 6px; padding: 2px 8px; background: #fff; font-variant-numeric: tabular-nums; }
+  .note { color: var(--w-dim); font-size: 12.5px; }
+  .new { outline: 2px dashed #b48ef0; outline-offset: 4px; border-radius: 8px; }
+
+  /* The Render window. */
+  .render { width: 1000px; }
+  .render .body { display: grid; grid-template-columns: 1fr 300px; }
+  .render .pic { background: #000; height: 380px; position: relative; }
+  .render .pic canvas { width: 100%; height: 100%; display: block; }
+  .panel { padding: 14px 16px; border-left: 1px solid var(--w-line); display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+  .bars { display: grid; gap: 7px; }
+  .bar { display: grid; grid-template-columns: 74px 1fr 52px; gap: 8px; align-items: center; font-variant-numeric: tabular-nums; }
+  .bar .track { height: 10px; background: #eceef2; border-radius: 6px; overflow: hidden; }
+  .bar .fill { height: 100%; border-radius: 6px; }
+  .bar em { font-style: normal; text-align: right; color: var(--w-dim); }
+  .facts { display: grid; grid-template-columns: 92px 1fr; gap: 3px 10px; }
+  .facts span { color: var(--w-dim); }
+  .held { color: var(--good); font-weight: 500; }
+  ol.decide { max-width: 860px; padding-left: 1.2em; } ol.decide li { margin: 8px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Cafesa3D on the GPU</h1>
+<p class="sub">Cafesa3D's renderer on the GPU's execution units, chosen beside the processor's, the same scene
+rendered by each and the two times side by side - and the GPU's picture held to the processor's. Drawn before
+it is built; <code>cafesa3d-gpu.md</code> is what it is made of and what is yours to decide.</p>
+<div class="q"><b>Diego, 18 October 2026</b>: "I WANT CAFESA3e to use gpu compute for its rendering engine if
+possible beyond the cpu raytracing option", and "cafesa 3d should show the increased rendering speed from cpu to
+gpu right?"</div>
+
+<h2>The Render tab: a renderer to choose</h2>
+<div class="scroller">
+<div class="win main">
+  <div class="head"><span class="t">Cafesa3D</span><span class="s">still-life.scene</span><span class="grow"></span>
+    <span class="chip">Object</span><span class="chip">Edit</span><span class="chip on">Rendered</span><span class="chip">Render F12</span>
+    <span class="lights"><i style="background:#3bb54a"></i><i style="background:#f5b62a"></i><i style="background:#ee5a52"></i></span></div>
+  <div class="body">
+    <div class="vp"><canvas id="vp" width="790" height="476"></canvas>
+      <div class="lab">User Perspective<br><span>Collection | Cube</span><br>Sample 41/64 <span>·</span> <b>GPU</b> <span>· 212 samples a second</span></div></div>
+    <div class="side">
+      <h4>Render</h4>
+      <div class="new">
+        <div class="label">Renderer</div>
+        <div class="chips"><span class="chip">Processor</span><span class="chip on">GPU</span></div>
+        <div class="note" style="margin-top:6px">The GPU: Intel HD 530, 24 execution units. The processor: 4 cores.</div>
+      </div>
+      <div class="label">Integrator</div>
+      <div class="chips"><span class="chip on">Final</span><span class="chip">Preview</span></div>
+      <div class="row"><span>Samples</span><span class="field">256</span></div>
+      <div class="row"><span>View samples</span><span class="field">64</span></div>
+      <div class="row"><span>Bounces</span><span class="field">6</span></div>
+      <div class="label">Size</div>
+      <div class="chips"><span class="chip on">640 × 360</span><span class="chip">1280 × 720</span><span class="chip">1920 × 1080</span></div>
+      <div class="note">Final traces as Cycles does; Preview is Whitted's, quicker and harder. The renderer is who traces it - the processor's cores or the GPU's execution units - and the picture is the same either way.</div>
+    </div>
+  </div>
+</div>
+</div>
+<p class="cap">The new row, dashed: <b>Renderer</b>, Processor or GPU, above the integrator. The Rendered view's corner
+says which drew it. Under QEMU, which has no Intel GPU, the GPU chip is grey and says "no Intel GPU here".</p>
+
+<h2>The Render window: the two times, and the picture held</h2>
+<div class="scroller">
+<div class="win render">
+  <div class="head"><span class="t">Render</span><span class="s">still-life.scene · 640 × 360 · 256 samples</span><span class="grow"></span>
+    <span class="chip">Save as PNG</span><span class="chip">Stop</span>
+    <span class="lights"><i style="background:#3bb54a"></i><i style="background:#f5b62a"></i><i style="background:#ee5a52"></i></span></div>
+  <div class="body">
+    <div class="pic"><canvas id="pic" width="700" height="380"></canvas></div>
+    <div class="panel">
+      <b>Done in 2.1 s</b>
+      <div class="new">
+        <div class="label">This scene, by each</div>
+        <div class="bars">
+          <div class="bar"><span>GPU</span><span class="track"><span class="fill" style="width:22%;background:var(--gpu);display:block"></span></span><em>2.1 s</em></div>
+          <div class="bar"><span>Processor</span><span class="track"><span class="fill" style="width:100%;background:var(--cpu);display:block"></span></span><em>9.4 s</em></div>
+        </div>
+        <div style="margin-top:6px">4.5 times as fast on the GPU</div>
+        <div class="held" style="margin-top:4px">Held to the processor's: the same picture, within the noise of 256 samples</div>
+      </div>
+      <div class="label">Light paths</div>
+      <div class="facts">
+        <span>Renderer</span><b>GPU · 24 execution units</b>
+        <span>Integrator</span><b>Final · path tracing</b>
+        <span>Bounces</span><b>up to 6</b>
+        <span>Rays</span><b>61.3 million, 29 a microsecond</b>
+        <span>Kernel</span><b>2,140 instructions, SIMD8</b>
+      </div>
+      <div class="note">The times are the last render of each at this scene, size and samples. Placeholders here: the M700's first run replaces them.</div>
+    </div>
+  </div>
+</div>
+</div>
+<p class="cap">Dashed, the new part: the time of each renderer for this scene, how many times as fast, and the
+comparison - pixel for pixel in Preview, within the noise in Final - said the first time both have rendered
+it. The facts gain the renderer and the kernel's size.</p>
+
+<h2>What's yours to decide</h2>
+<ol class="decide">
+<li><b>E1, how the tracer's kernel is written</b>: in <b>Kosmos's own kernel language</b>, C-shaped, compiled on
+Kosmos to <code>eu.lua</code>'s assembly and checked by the driver like any kernel <i>(recommended)</i>; or Mesa's
+compiler on the Mac from OpenCL C, which needs a GPU address space per program first; or a smaller tracer by hand
+in assembly.</li>
+<li><b>E2</b>: Preview first, held pixel for pixel, then Final <i>(recommended)</i>; or both at once.</li>
+<li><b>E3</b>: an emulator of the execution units on the Mac, so <code>make test</code> runs every kernel - the
+tracer's included - without a GPU <i>(recommended)</i>.</li>
+<li><b>E4</b>: until image textures reach the GPU (R7), a textured object drawn in its base colour, said in the
+window <i>(recommended)</i>; or the GPU refused for such a scene.</li>
+</ol>
+
+</div>
+<script>
+// A still life, drawn by a tiny tracer here only for the picture: spheres on a plane under a sky.
+function draw(id, noisy) {
+  const c = document.getElementById(id), g = c.getContext('2d'), W = c.width, H = c.height;
+  const img = g.createImageData(W, H), d = img.data;
+  const S = [[-1.1, 0.7, 4.2, 0.7, [0.85, 0.35, 0.25]], [0.4, 0.55, 3.4, 0.55, [0.92, 0.92, 0.95]], [1.6, 0.45, 4.6, 0.45, [0.3, 0.55, 0.9]]];
+  const L = [0.5, 0.8, -0.3], ln = Math.hypot(...L), l = L.map(v => v / ln);
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const dx = (x - W / 2) / H * 1.2, dy = -(y - H * 0.42) / H * 1.2;
+    const n0 = Math.hypot(dx, dy, 1), rd = [dx / n0, dy / n0, 1 / n0], ro = [0, 1, 0];
+    let t = 1e9, hit = null;
+    for (const s of S) { const oc = [ro[0] - s[0], ro[1] - s[1], ro[2] - s[2]]; const b = oc[0]*rd[0]+oc[1]*rd[1]+oc[2]*rd[2];
+      const cc = oc[0]**2+oc[1]**2+oc[2]**2 - s[3]**2, h = b*b - cc; if (h > 0) { const tt = -b - Math.sqrt(h); if (tt > 0 && tt < t) { t = tt; hit = s; } } }
+    let col;
+    if (hit) { const p = ro.map((v, i) => v + rd[i] * t), n = [(p[0]-hit[0])/hit[3], (p[1]-hit[1])/hit[3], (p[2]-hit[2])/hit[3]];
+      const k = Math.max(0, n[0]*l[0]+n[1]*l[1]+n[2]*l[2]) * 0.8 + 0.2; col = hit[4].map(v => v * k); }
+    else if (rd[1] < 0) { const tp = -ro[1] / rd[1], px = ro[0] + rd[0] * tp, pz = ro[2] + rd[2] * tp;
+      let sh = 1; for (const s of S) { const dxs = px - s[0], dzs = pz - s[2]; if (dxs*dxs + dzs*dzs < s[3]*s[3]*1.1) sh = 0.55; }
+      col = [0.78 * sh, 0.76 * sh, 0.72 * sh]; }
+    else { const k = Math.min(1, rd[1] * 2); col = [0.62 + 0.2 * (1-k), 0.75 + 0.1 * (1-k), 0.95]; }
+    const nz = noisy ? (rnd() - 0.5) * 0.12 : 0, o = (y * W + x) * 4;
+    d[o] = Math.min(255, (col[0] + nz) * 255); d[o+1] = Math.min(255, (col[1] + nz) * 255); d[o+2] = Math.min(255, (col[2] + nz) * 255); d[o+3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+}
+draw('vp', true); draw('pic', false);
+</script>
+</body>
+</html>
