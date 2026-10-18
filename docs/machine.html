@@ -1,0 +1,166 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  This Machine, redesigned: every device the machine has, driven or not.
+  Drawn on 18 October 2026 from Diego's ask: "lets redesign the about this
+  machine app to show all hardware components detected, driven and not
+  driven in a visual and nice way", "mockup first". docs/machine.md is what
+  it is made of. The devices are the M700's; the lines of what each is
+  doing are illustrative.
+-->
+<title>This Machine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --a-win: #1f2430; --a-raised: #262c39; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-faint: #6b7486; --a-accent: #5b8def; --a-side: #1b2029;
+  --driven: #4fb878; --none: #7d8597; --busy: #5b8def;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; }
+.sub { color: var(--muted); margin: 0 0 24px; max-width: 74ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); }
+p { max-width: 76ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13.5px; margin: 10px 0 0; max-width: 88ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 820px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+
+.win { width: 1120px; background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line);
+       border-radius: 12px; box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; overflow: hidden; }
+.head { display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 14px; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 14px; flex: 1; }
+.btn { border: 1px solid #4a5468; border-radius: 7px; padding: 3px 12px; color: var(--a-ink); font-size: 12.5px; }
+.lights { display: flex; gap: 7px; } .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+
+.hero { display: grid; grid-template-columns: 76px 1fr auto; gap: 18px; align-items: center; padding: 18px 22px;
+        border-bottom: 1px solid var(--a-line); background: linear-gradient(180deg, #232a37, var(--a-win)); }
+.box { width: 76px; height: 64px; border-radius: 8px; background: linear-gradient(160deg, #4a5262, #2a303c); border: 1px solid #596277; position: relative; }
+.box::before { content: ""; position: absolute; left: 10px; top: 12px; width: 8px; height: 8px; border-radius: 50%; background: #5fd08a; box-shadow: 0 0 6px #5fd08a; }
+.box::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 12px; height: 4px; border-radius: 2px; background: #1a1e26; }
+.hero .maker { color: var(--a-dim); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+.hero .model { font-family: var(--display); font-size: 24px; font-weight: 600; line-height: 1.15; }
+.hero .facts { color: var(--a-dim); font-size: 12.5px; margin-top: 3px; }
+.counts { display: flex; gap: 10px; }
+.count { background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 9px; padding: 8px 14px; text-align: center; min-width: 92px; }
+.count b { display: block; font-family: var(--display); font-size: 22px; }
+.count small { color: var(--a-dim); font-size: 11.5px; }
+
+.bar { display: flex; gap: 8px; align-items: center; padding: 12px 22px; border-bottom: 1px solid var(--a-line); }
+.chip { border: 1px solid var(--a-line); border-radius: 999px; padding: 3px 12px; color: var(--a-dim); font-size: 12.5px; }
+.chip.on { background: var(--a-accent); border-color: var(--a-accent); color: #fff; }
+.bar .grow { flex: 1; }
+
+.body { padding: 6px 22px 22px; }
+.group { margin-top: 16px; }
+.group h4 { margin: 0 0 8px; font-family: var(--display); font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--a-faint); font-weight: 600; }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.dev { background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 10px; padding: 12px 14px;
+       display: grid; grid-template-columns: 44px 1fr; gap: 12px; }
+.dev.off { background: #22272f; }
+.ic { width: 44px; height: 44px; border-radius: 9px; position: relative; display: grid; place-items: center;
+      font: 600 11px var(--display); color: #fff; letter-spacing: .04em; }
+.dev b { font-size: 13.5px; display: block; line-height: 1.3; }
+.dev .kind { font: 600 10.5px var(--display); letter-spacing: .07em; text-transform: uppercase; color: var(--a-faint); }
+.dev .where { color: var(--a-faint); font-size: 11.5px; font-family: var(--mono); }
+.dev .doing { color: var(--a-dim); font-size: 12px; margin-top: 4px; }
+.pill { display: inline-block; font-size: 11px; border-radius: 999px; padding: 1px 8px; margin-top: 6px; border: 1px solid; }
+.pill.driven { color: var(--driven); border-color: var(--driven); }
+.pill.none { color: var(--none); border-color: #4a5160; }
+.pill.busy { color: var(--busy); border-color: var(--busy); margin-left: 4px; }
+
+.k-cpu { background: linear-gradient(145deg, #3f6fd0, #284a96); }
+.k-gpu { background: linear-gradient(145deg, #8c62da, #5b3b9e); }
+.k-mem { background: linear-gradient(145deg, #2f8a5a, #1d5b3b); }
+.k-disk { background: linear-gradient(145deg, #4a5a74, #2e394c); }
+.k-usb { background: linear-gradient(145deg, #c8862f, #8e5a17); }
+.k-net { background: linear-gradient(145deg, #2a8fa6, #1b5e6e); }
+.k-snd { background: linear-gradient(145deg, #c2505e, #87303c); }
+.k-in { background: linear-gradient(145deg, #6c7a92, #464f61); }
+.k-pwr { background: linear-gradient(145deg, #a8a23a, #6d6820); }
+.k-oth { background: linear-gradient(145deg, #3e4452, #2a2f39); color: #9aa3b2; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>This Machine</h1>
+<p class="sub">Every piece of hardware the machine has, seen at once: what it is, where it sits, whether Kosmos drives it and with what, and what it is doing - grouped by kind, filtered to what has no driver in one press, and the full text report behind a button.</p>
+
+<div class="q"><b>Diego, 18 October 2026</b>: "lets redesign the about this machine app to show all hardware components detected, driven and not driven in a visual and nice way so i can see all the hardware my computer has, usb drives and devices, disks, network, cpu, gpu, memory, audio, etc", "mockup first".</div>
+
+<h2>As it opens, on the M700</h2>
+<div class="scroller"><div class="win" id="w"></div></div>
+<p class="cap"><b>The machine in a header</b>: its name as the firmware gives it, Kosmos's version, and three counts - devices, driven, no driver yet. <b>A filter</b>: All, Driven, No driver. <b>Every device as a card</b>, grouped by kind, each with a picture of what it is, its name, where it sits - a PCI address, a USB port - <b>a pill for its state</b> - green "Driven by" and the driver's name, grey "Detected, no driver" with the class it reported, blue "In use" where it is busy - and a line of what it is doing now. <b>Other</b> is what the bus has that belongs nowhere else - the chipset's bridges, the management engine, the SMBus. A stick plugged in appears while the window is open.</p>
+</div>
+
+<script>
+const D = [
+  ["Processor", [
+    ["cpu", "CPU", "Intel Core i7-6700", "4 cores, 8 threads · Skylake", "driven", "Nebula", "8 processors · 2.9 GHz now · 54 °C · 5 W"]]],
+  ["Graphics", [
+    ["gpu", "GPU", "Intel HD Graphics 530", "PCI 00:02.0 · 8086:1912", "driven", "intelgpu", "Page flips · 1720 × 1440, 60 Hz · asleep 97%"]]],
+  ["Memory", [
+    ["mem", "RAM", "8 GB", "installed · the firmware's memory map", "driven", "Nebula", "228 MB used of 8,049 MB"]]],
+  ["Storage", [
+    ["disk", "SATA", "SATA controller", "PCI 00:17.0 · AHCI", "driven", "ahci", "no disk on its ports"],
+    ["usb", "USB", "Kingston DataTraveler 3.0", "USB port 18 · 128 GB", "driven", "xhci", "/Home and /Sandboxes on it", "in use"]]],
+  ["Network", [
+    ["net", "LAN", "Intel Ethernet I219-V", "PCI 00:1f.6 · 8086:15b8", "driven", "e1000", "192.168.1.28 · 1000 Mb/s, full duplex", "in use"]]],
+  ["Audio", [
+    ["snd", "HDA", "Intel HD Audio", "PCI 00:1f.3 · Realtek ALC233", "driven", "audio", "48 kHz, stereo · 2 streams"]]],
+  ["USB", [
+    ["usb", "xHCI", "USB 3.0 controller", "PCI 00:14.0 · 8086:a12f", "driven", "xhci", "18 ports · 3 devices"],
+    ["in", "MOUSE", "USB optical mouse", "USB port 3 · Logitech", "driven", "xhci", "the pointer"],
+    ["in", "KEYS", "USB keyboard", "USB port 5 · Lenovo", "driven", "xhci", "the keyboard"]]],
+  ["Power", [
+    ["pwr", "PSU", "Mains power", "no battery", "driven", "acpi", "on mains · package 54 °C"]]],
+  ["Other - on the bus, no driver yet", [
+    ["oth", "ME", "Management Engine", "PCI 00:16.0 · communication", "none", "", "class 07 80 00"],
+    ["oth", "SMB", "SMBus controller", "PCI 00:1f.4 · serial bus", "none", "", "class 0c 05 00"],
+    ["oth", "LPC", "LPC bridge", "PCI 00:1f.0 · bridge", "none", "", "class 06 01 00"],
+    ["oth", "PMC", "Power management", "PCI 00:1f.2 · memory", "none", "", "class 05 80 00"],
+    ["oth", "TH", "Thermal subsystem", "PCI 00:14.2 · signal processing", "none", "", "class 11 80 00"],
+    ["oth", "HB", "Host bridge", "PCI 00:00.0 · bridge", "none", "", "class 06 00 00"]]],
+];
+
+function card(g, d) {
+  return `<div class="dev${d[4] === "none" ? " off" : ""}"><div class="ic k-${d[0]}">${d[1]}</div><div>
+    <div class="kind">${g}</div><b>${d[2]}</b><div class="where">${d[3]}</div>
+    <span class="pill ${d[4]}">${d[4] === "driven" ? "Driven by " + d[5] : "Detected, no driver"}</span>${d[7] ? `<span class="pill busy">${d[7]}</span>` : ""}
+    <div class="doing">${d[6]}</div></div></div>`;
+}
+
+let total = 0, driven = 0;
+for (const [, devs] of D) for (const d of devs) { total++; if (d[4] === "driven") driven++; }
+
+document.getElementById("w").innerHTML = `
+<div class="head"><span class="t">This Machine</span><span class="btn">Full report</span><span class="lights"><i style="background:#3fbf4f"></i><i style="background:#f2b233"></i><i style="background:#ee5048"></i></span></div>
+<div class="hero"><div class="box"></div>
+  <div><div class="maker">Lenovo</div><div class="model">ThinkCentre M700</div><div class="facts">10J0S1CK00 · named by SMBIOS 3.0 · Kosmos 0.11.275, Nebula on x86-64</div></div>
+  <div class="counts"><div class="count"><b>${total}</b><small>devices</small></div><div class="count"><b style="color:var(--driven)">${driven}</b><small>driven</small></div><div class="count"><b style="color:var(--none)">${total - driven}</b><small>no driver yet</small></div></div>
+</div>
+<div class="bar"><span class="chip on">All</span><span class="chip">Driven</span><span class="chip">No driver</span><span class="grow"></span><span class="chip">Refreshed every 2 s</span></div>
+<div class="body">
+  <div class="group"><h4>Driven and detected</h4><div class="grid">${D.filter(([g]) => !g.startsWith("Other")).map(([g, devs]) => devs.map(d => card(g, d)).join("")).join("")}</div></div>
+  ${D.filter(([g]) => g.startsWith("Other")).map(([g, devs]) => `<div class="group"><h4>${g}</h4><div class="grid">${devs.map(d => card("Other", d)).join("")}</div></div>`).join("")}
+</div>`;
+</script>
+</body>
+</html>

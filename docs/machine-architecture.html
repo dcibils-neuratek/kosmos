@@ -1,0 +1,119 @@
+<!doctype html>
+<!--
+  This Machine, redesigned, and what it stands on: the window; one new
+  library, devices.lua, that gathers every source into one list; the one
+  new verb, the USB driver's USB_OP_LIST; and everything else as it is.
+  Drawn on 18 October 2026, before any of it is built; docs/machine.md is
+  the argument and docs/machine.html the window. Rendered to
+  docs/machine-architecture.png by headless Chrome at twice its size.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos This Machine architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>This Machine - what it stands on</h1>
+<p class="sub">It finds nothing itself. One new library gathers every source the system already has into one list of devices - kind, name, maker, place, driver, state, what it is doing - and the window draws it. The one thing nothing could say before is every USB device on every port, driven or not: the USB driver knows it and wrote it only to the log; one verb lets a program ask.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers and drivers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">O</span><span>the window opened</span><span class="f">R</span><span>every two seconds</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications</h2>
+      <div class="row" style="grid-template-columns:1.3fr 1fr">
+        <div class="box new"><span class="tag">REDESIGNED</span><b>This Machine - <code>machine.lua</code></b><p>the machine in a header with its counts; every device a card - its kind, name, place, a pill for its state, what it is doing; All, Driven, No driver; the full text report behind a button <span class="f">O1</span></p></div>
+        <div class="box"><span class="tag later">LATER</span><b>the Deskbar's devices indicator, <code>neofetch</code></b><p>the same list, from the same library (roadmap 5q)</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries</h2>
+      <div class="row" style="grid-template-columns:1.2fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>devices.lua</b><p>one door: every source into <code>{ kind, name, maker, place, driver, state, detail }</code> <span class="f">O2</span> <span class="f">R1</span></p></div>
+        <div class="box"><b>hardware.lua</b><p>PCI names; more classes, and drivers by vendor and device</p></div>
+        <div class="box"><b>drivelist, gpu, pulse, audio, net</b><p>disks and sticks, the GPU, the processor, sound, the network - as they are</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers and drivers</h2>
+      <div class="row" style="grid-template-columns:1.2fr 1fr 1fr">
+        <div class="box new"><span class="tag">+ USB_OP_LIST</span><b>xhci - the USB driver</b><p>every device on every port: speed, vendor, product, class, its names, and the kind the driver made of it - or none - in <code>usbproto.h</code>'s shape <span class="f">O3</span></p></div>
+        <div class="box"><b>devices - <code>/Devices</code></b><p>cpu, memory, screen, battery - as they are</p></div>
+        <div class="box"><b>intelgpu, audio, net, diskfs</b><p>each answering its own door - as they are</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box"><b>sys.bus()</b><p>every PCI device and whether a driver claimed it <span class="f">O4</span></p></div>
+        <div class="box"><b>sys.info()</b><p>the machine's name, temperatures, power, battery</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>O - the window opened</h3><ol>
+      <li><span class="f">O1</span> asks <code>devices.list()</code>, draws the cards.</li>
+      <li><span class="f">O2</span> the library reads each source once and merges: a PCI device a driver claimed, the USB devices on it, what each server says it is doing.</li>
+      <li><span class="f">O3</span> one message to the USB driver: its list, copied from what it keeps.</li>
+      <li><span class="f">O4</span> one <code>sys.bus()</code>: up to 64 devices, each claimed or not.</li></ol></div>
+    <div class="card"><h3>R - every two seconds</h3><ol>
+      <li><span class="f">R1</span> the lines that move - speed, clock, memory, rates - and the USB list, so a stick plugged in appears.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3><table>
+      <tr><td>The USB list</td><td>one reply, a declared shape</td></tr>
+      <tr><td>Everything else</td><td>the doors that exist</td></tr></table></div>
+    <div class="card"><h3>Who else uses what is new</h3><table>
+      <tr><td><code>USB_OP_LIST</code></td><td><code>lsusb</code>; the devices indicator; Preferences' Mouse and Keyboard pages naming the device</td></tr>
+      <tr><td><code>devices.lua</code></td><td>the indicator, <code>neofetch</code>, <code>devices</code> at the prompt</td></tr></table></div>
+  </div>
+</div>
+</body>
+</html>

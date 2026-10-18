@@ -1633,6 +1633,15 @@ the about this machine into a panel into the preferences app to simplify
 apps like macos does"): the machine's picture and name, its processor,
 memory and screens, the system's version, the disks - and This Machine's
 full report behind a button, rather than an application of its own.
+**And redesigned to show every piece of hardware** (agreed 18 October
+2026; Diego: "lets redesign the about this machine app to show all
+hardware components detected, driven and not driven in a visual and nice
+way so i can see all the hardware my computer has, usb drives and devices,
+disks, network, cpu, gpu, memory, audio, etc", "mockup first"): every
+device the machine has - the processor, the GPU, memory, disks, sticks and
+other USB devices, network, audio, input, power - each drawn as what it
+is, with whether Kosmos drives it and with what, and what it is doing;
+designed first (feature set, mockup, architecture, diagram).
 
 **The mouse's speed and the double click's** in Preferences' Mouse panel
 (Diego, 3 October: "i need a mouse pointer speed setting in the mouse
