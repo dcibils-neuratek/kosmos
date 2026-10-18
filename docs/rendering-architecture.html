@@ -1,0 +1,121 @@
+<!doctype html>
+<!--
+  Rendering modes, and what they stand on: Preferences' Displays page and
+  the small table of modes, the window manager that switches the pointer
+  and tells the window server, the window server's flips and blits made
+  switchable, the GPU's driver as it is. A switch drawn through it (S), and
+  the page's live numbers (N). Drawn on 18 October 2026, before any of it
+  is built; docs/rendering.md is the argument and docs/rendering.html the
+  page. Rendered to docs/rendering-architecture.png by headless Chrome at
+  twice its size.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos rendering modes architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Rendering modes - what they stand on</h1>
+<p class="sub">Every mode is already in the tree as a step measured on the M700; what is new is making the choice a setting rather than a build. Preferences writes the mode and tells the window manager; the window manager does the pointer itself and asks the window server for the rest with one verb; the window server turns its flips and its blits on or off. The GPU's driver does not change.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers and drivers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">S</span><span>a mode chosen</span><span class="f">N</span><span>the page's numbers, once a second</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box new"><span class="tag">+ RENDERING</span><b>Preferences, the Displays page</b><p>the modes, each with what it does, its six-stage strip and its memory; chosen <span class="f">S1</span>, the keep-or-go-back bar; the live numbers <span class="f">N1</span></p></div>
+        <div class="box new"><span class="tag">+ A SWITCH</span><b>the window manager, <code>wm.lua</code></b><p>the mode at start from the settings; told of a change <span class="f">S2</span>: the pointer to the cursor plane or into the frame, then the window server asked <span class="f">S3</span>; answers the page's question <span class="f">N2</span></p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>rendering.lua</b><p>the modes: names, sentences, stages, what each needs - one table for the page, GPU Monitor and the desktop's label</p></div>
+        <div class="box"><b>settings.lua, prefs</b><p>the group and the key <code>rendering</code> in the appearance file, as the look is kept</p></div>
+        <div class="box"><b>gpu.lua</b><p>the cursor plane, <code>gpu.stats</code> and <code>gpu.since</code> for the numbers - as they are</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers and drivers</h2>
+      <div class="row" style="grid-template-columns:1.3fr 1fr">
+        <div class="box new"><span class="tag">+ WS_OP_RENDERING</span><b>windowserver</b><p>flips on or off (<code>flips_start</code>, <code>flips_stop</code>), the copy here or on the blitter, the blitter composing or not - made switchable; the whole screen composed once on a switch <span class="f">S4</span></p></div>
+        <div class="box"><b>intelgpu - <code>/Devices/gpu</code></b><p>buffers, flips, blits, fences, stats - as they are <span class="f">S5</span></p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr">
+        <div class="box"><b>IPC, regions, write-combining memory</b><p>as they are: nothing in the kernel knows a mode</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>S - a mode chosen</h3><ol>
+      <li><span class="f">S1</span> Preferences writes <code>rendering</code> and shows the bar: 15 seconds to keep it.</li>
+      <li><span class="f">S2</span> the window manager is told, as of a new look, and moves the pointer: the cursor plane, or composed into the frame.</li>
+      <li><span class="f">S3</span> it asks the window server, one small message: flips, the blitter's copy, the blitter composing.</li>
+      <li><span class="f">S4</span> the window server switches and composes the whole screen once, so the mode starts from a whole frame.</li>
+      <li><span class="f">S5</span> the driver keeps its second screen once made; going back to Framebuffer flips to the firmware's.</li></ol></div>
+    <div class="card"><h3>N - the numbers</h3><ol>
+      <li><span class="f">N1</span> once a second while the page is open: <code>gpu.stats</code> - flips, the blitter, memory.</li>
+      <li><span class="f">N2</span> and the window manager's own count of frames and the processor's time a frame, as <code>frames</code> reads it.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3><table>
+      <tr><td>The mode</td><td>a key in a settings file, one message to wm, one to the window server</td></tr>
+      <tr><td>Pixels</td><td>nowhere new</td></tr></table></div>
+    <div class="card"><h3>Who else uses what is new</h3><table>
+      <tr><td><code>rendering.lua</code></td><td>GPU Monitor's "Desktop drawn with", the desktop's label, neofetch</td></tr>
+      <tr><td><code>WS_OP_RENDERING</code></td><td>a test suite switching modes; GPU composing, step 7, as one more mode</td></tr></table></div>
+  </div>
+</div>
+</body>
+</html>

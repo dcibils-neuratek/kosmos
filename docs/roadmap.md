@@ -3861,7 +3861,21 @@ processors, and still what follows USB:
    18.664-665). **Step 5 done** (18.666): the blitter's legacy ring on
    the M700, the first command Kosmos has given a GPU - 3 us from doorbell
    to memory; next, step 6, its copies and fills for the compositor, and
-   the Blitter's busy time in GPU Monitor. **And `neofetch` says the GPU** (Diego, the
+   the Blitter's busy time in GPU Monitor. **Rendering modes, chosen in
+   Preferences and tried live** (agreed 18 October 2026; Diego: "We need
+   options", "Let's setup a preferences panel for the gpu where the user
+   can select the desktop rendering settings and try it", "Because we are
+   trying many things and some work better than others", "I feel that
+   there were several steps that worked good without using a lot of
+   memory in the gpu", "perhaps we can create like 4 o 5 rendering
+   settings form the basic frame buffer we were using before any gpu work
+   that worked great all the way up to gpu composing"): each step measured
+   on the M700 a mode of its own - the framebuffer, the cursor plane, page
+   flips, the blitter's copy, the blitter composing, and GPU composing when
+   step 7 is built - on Preferences' Displays page, with what each costs in
+   GPU memory and what it measures, switched without a restart and kept
+   only when confirmed. Designed first (`docs/rendering.md`,
+   `docs/rendering.html`, `docs/rendering-architecture.png`). **And `neofetch` says the GPU** (Diego, the
    same evening: "also neofetch needs to add the gpu info as ell"): a GPU
    row - the model, and what the desktop is drawn with, the label's words
    - from `/Devices/gpu`, as About's Machine line could be.

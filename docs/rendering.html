@@ -1,0 +1,177 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Rendering modes, on Preferences' Displays page. Drawn on 18 October 2026
+  from Diego's ask: "Let's setup a preferences panel for the gpu where the
+  user can select the desktop rendering settings and try it", "4 o 5
+  rendering settings form the basic frame buffer ... all the way up to gpu
+  composing", "And indicate what mode does what". docs/rendering.md is what
+  it is made of. The numbers are the M700's, from testing.md 18.661-18.669.
+-->
+<title>Rendering modes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* Astra's night look. */
+  --a-win: #1f2430; --a-raised: #262c39; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-faint: #6b7486; --a-side: #1b2029; --a-sel: #2c3342;
+  --a-accent: #5b8def;
+  /* Who does a stage, as docs/composing.png colours it. */
+  --cpu: #4f7fd6; --gpu: #9d74e8; --disp: #4fb878; --none: #3a414f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 24px; max-width: 74ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); }
+p, li { max-width: 76ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13.5px; margin: 10px 0 0; max-width: 88ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 820px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+
+.win { width: 1060px; background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line);
+       border-radius: 12px; box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; position: relative; overflow: hidden; }
+.head { display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 14px; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 14px; flex: 1; }
+.lights { display: flex; gap: 7px; } .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.split { display: grid; grid-template-columns: 200px 1fr; }
+.side { background: var(--a-side); border-right: 1px solid var(--a-line); padding: 12px 8px; }
+.side div { padding: 7px 12px; border-radius: 7px; color: var(--a-dim); }
+.side div.on { background: var(--a-sel); color: var(--a-ink); }
+.side hr { border: 0; border-top: 1px solid var(--a-line); margin: 8px 6px; }
+.page { padding: 18px 22px 22px; }
+.group { font-family: var(--display); font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--a-faint); margin: 4px 2px 8px; }
+.rowcard { background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 10px; margin-bottom: 18px; }
+.row { display: flex; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--a-line); }
+.row:last-child { border-bottom: 0; }
+.row span:last-child { color: var(--a-dim); }
+
+.mode { display: grid; grid-template-columns: 22px 1fr 330px 120px; gap: 14px; align-items: center;
+        padding: 12px 14px; border-bottom: 1px solid var(--a-line); }
+.mode:last-child { border-bottom: 0; }
+.mode.chosen { background: #24304a; }
+.mode.off { opacity: .5; }
+.radio { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--a-dim); position: relative; }
+.chosen .radio { border-color: var(--a-accent); }
+.chosen .radio::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--a-accent); }
+.mode b { font-size: 14px; }
+.tag { font-size: 11px; border: 1px solid #4a5468; color: var(--a-dim); border-radius: 4px; padding: 0 6px; margin-left: 6px; vertical-align: 1px; }
+.tag.best { border-color: var(--disp); color: var(--disp); }
+.mode p { margin: 2px 0 0; color: var(--a-dim); font-size: 12.5px; line-height: 1.45; }
+.strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
+.strip i { height: 24px; border-radius: 4px; position: relative; display: block; }
+.strip i::after { content: attr(data-s); position: absolute; inset: 0; display: grid; place-items: center; font: 500 10px var(--body); color: #fff; opacity: .92; }
+.strip-label { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; font-size: 10px; color: var(--a-faint); text-align: center; margin-top: 3px; }
+.c { background: var(--cpu); } .g { background: var(--gpu); } .d { background: var(--disp); } .n { background: var(--none); }
+.mem { text-align: right; font-variant-numeric: tabular-nums; }
+.mem b { display: block; font-size: 14px; }
+.mem small { color: var(--a-dim); font-size: 11.5px; }
+
+.legend { display: flex; gap: 16px; font-size: 12px; color: var(--a-dim); margin: 0 2px 8px; }
+.legend span::before { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; background: var(--c); }
+
+.now { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.now div { background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 8px; padding: 9px 12px; font-variant-numeric: tabular-nums; }
+.now small { display: block; color: var(--a-dim); font-size: 11.5px; }
+.now b { font-size: 17px; font-family: var(--display); }
+
+.keep { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); background: #2f3a52; border: 1px solid #4b5b7e;
+        border-radius: 10px; padding: 10px 14px; display: flex; gap: 14px; align-items: center; box-shadow: 0 12px 30px rgba(0,0,0,.45); font-size: 13.5px; }
+.btn { border: 1px solid #5a6a8c; border-radius: 7px; padding: 4px 12px; }
+.btn.primary { background: var(--a-accent); border-color: var(--a-accent); color: #fff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Rendering modes</h1>
+<p class="sub">How the desktop is drawn, chosen on Preferences' Displays page and tried at once: every step measured on the M700, from the plain framebuffer to GPU composing, each saying what it does, who does each stage of a frame, what it costs in GPU memory and what it measures - kept only when you say so.</p>
+
+<div class="q"><b>Diego, 18 October 2026</b>: "Let's setup a preferences panel for the gpu where the user can select the desktop rendering settings and try it", "perhaps we can create like 4 o 5 rendering settings form the basic frame buffer we were using before any gpu work that worked great all the way up to gpu composing", "And indicate what mode does what".</div>
+
+<h2>The Displays page, a mode just chosen</h2>
+<div class="scroller"><div class="win" id="w"></div></div>
+<p class="cap"><b>Each mode in a row</b>: its name; a sentence of what it does; <b>a strip of the six stages a frame goes through</b> - the window draws, the desktop is described, the frame composed, copied to the screen, shown, and the pointer - each coloured by who does it, as <code>docs/composing.png</code> draws them; and what it costs in GPU memory at this screen's size. <b>Choosing one switches the desktop at once</b>, and the bar at the bottom counts down: nothing answered in 15 seconds goes back to the mode before, so a mode that breaks the screen undoes itself. <b>Under the list, what the mode in use is doing now</b>, a second at a time, so two modes can be compared on this machine. A mode this machine cannot have is greyed with its reason; GPU composing until step 7 is built.</p>
+
+<h2>Under QEMU</h2>
+<p>No Intel GPU: Framebuffer, and Cursor plane where QEMU's display is virtio-gpu - the rest greyed with "needs an Intel GPU".</p>
+</div>
+
+<script>
+const S = ["Draw", "Describe", "Compose", "Copy", "Show", "Pointer"];
+const MODES = [
+  { name: "Framebuffer", sentence: "The processor composes each frame and copies it into the screen while the display reads it; the pointer is drawn into every frame. No GPU.",
+    strip: "c c c c c c", mem: "none", note: "what Kosmos did before" },
+  { name: "Cursor plane", sentence: "As Framebuffer, and the display draws the pointer over the screen - moving the mouse composes nothing.",
+    strip: "c c c c c d", mem: "16 KB", note: "a 64 x 64 picture" },
+  { name: "Page flips", sentence: "Two screens: the processor copies into the hidden one and the display flips to it at its blank - no tearing, a frame a refresh.",
+    strip: "c c c c d d", mem: "9.5 MB", note: "one more screen" },
+  { name: "Blitter copy", tag: "best measured", best: true, sentence: "As Page flips, and the GPU's blit engine does the copy into the hidden screen - the processor only composes.",
+    strip: "c c c g d d", mem: "9.5 MB", note: "the back buffer shared", chosen: true },
+  { name: "Blitter composing", tag: "experimental", sentence: "As Blitter copy, and windows' opaque interiors copied by the blitter from their own buffers. Less processor; on this GPU, fewer frames.",
+    strip: "c c g/c g d d", mem: "9.5 MB", note: "and windows' buffers shared" },
+  { name: "GPU composing", tag: "not yet", sentence: "The render engine composes the whole frame - blending, glass, animation - into the screen; the processor only describes it.",
+    strip: "c c g n d d", mem: "-", note: "step 7", off: true },
+];
+
+function strip(spec) {
+  return `<div><div class="strip">${spec.split(" ").map((k, i) =>
+    k === "g/c" ? `<i style="background:linear-gradient(90deg,var(--gpu) 0 55%,var(--cpu) 55%)" data-s="${S[i]}"></i>`
+                : `<i class="${k}" data-s="${S[i]}"></i>`).join("")}</div></div>`;
+}
+
+document.getElementById("w").innerHTML = `
+<div class="head"><span class="t">Preferences</span><span class="lights"><i style="background:#3fbf4f"></i><i style="background:#f2b233"></i><i style="background:#ee5048"></i></span></div>
+<div class="split">
+  <div class="side">
+    <div>Appearance</div><div>Magnet</div><div class="on">Displays</div><div>Notifications</div><div>Sound</div><div>Power</div>
+    <hr><div>Network</div><div>Keyboard</div><div>Mouse</div><div>Startup</div><hr><div>File types</div><div>Date &amp; Time</div><div>System</div>
+  </div>
+  <div class="page">
+    <div class="group">Screen</div>
+    <div class="rowcard">
+      <div class="row"><span>Resolution</span><span>1720 x 1440, 60 Hz</span></div>
+      <div class="row"><span>Size of everything</span><span>100%</span></div>
+    </div>
+
+    <div class="group">Rendering - how the desktop is drawn</div>
+    <div class="legend"><span style="--c:var(--cpu)">the processor</span><span style="--c:var(--gpu)">a GPU engine</span><span style="--c:var(--disp)">the display</span><span style="--c:var(--none)">not done</span></div>
+    <div class="rowcard">
+      ${MODES.map(m => `<div class="mode${m.chosen ? " chosen" : ""}${m.off ? " off" : ""}">
+        <span class="radio"></span>
+        <div><b>${m.name}</b>${m.tag ? `<span class="tag${m.best ? " best" : ""}">${m.tag}</span>` : ""}<p>${m.sentence}</p></div>
+        ${strip(m.strip)}
+        <div class="mem"><b>${m.mem}</b><small>${m.note}</small></div>
+      </div>`).join("")}
+    </div>
+
+    <div class="group">Now, in Blitter copy - the last 10 seconds</div>
+    <div class="now">
+      <div><small>Frames shown a second</small><b>58</b></div>
+      <div><small>Processor, a frame</small><b>0.81 ms</b></div>
+      <div><small>The blitter, busy</small><b>2.1%</b></div>
+      <div><small>GPU memory</small><b>19 MB in 3 buffers</b></div>
+    </div>
+    <div style="height:64px"></div>
+  </div>
+</div>
+<div class="keep"><span>Keeping <b>Blitter copy</b> in 12 s</span><span class="btn primary">Keep it</span><span class="btn">Go back</span></div>`;
+</script>
+</body>
+</html>
