@@ -27648,3 +27648,21 @@ order, a GPU its driver answers for driven by `intelgpu` though the bus
 says unclaimed, the brand string said plainly, three volumes listed.
 **Controls**: the children left unsorted fails the order; the GPU left as
 the bus says fails `intelgpu`. `host`, `x86-machine` and `x86-usb-2` pass.
+
+## 18.679 The USB indicator in the Deskbar (`roadmap.md` 5q, `machine.md` M4)
+
+The plug from Lucide (`usb`, rendered at its four sizes and the other line
+icons left as committed) and beside it how many devices are on the USB
+ports - every one, driven or not, as Diego chose - in the bar and in the
+dock's strip, read on the bar's own second from `usb.lua`, nothing drawn
+where no USB driver answers. A click opens This Machine on `machine usb`:
+the devices on the ports alone, until a filter is pressed - none of the
+filters chosen, so All is a change too. The bar says "N on the USB ports, M
+driven" in the log when it changes.
+
+**Tests.** Full gate 96/96 in 9:22. `x86-machine`, 13 checks now: started with the Deskbar, the bar
+says "0 on the USB ports" - the harness has no xHCI, and the driver answers
+an empty list since 18.676 - and a second boot opens `machine:usb`, which
+shows the USB view with no devices of the machine's others. **Controls**:
+the bar's reading left out fails the first, `usb_only` left false the
+second.

@@ -127,6 +127,7 @@ ICONS = {
     "wired":      ("ethernet-port", None),
     "wifi":       ("wifi", None),
     "offline":    ("wifi-off", None),
+    "usb":        ("usb", None),          # the devices on the ports (5q)
     "battery-full":     ("battery-full", None),
     "battery-medium":   ("battery-medium", None),
     "battery-low":      ("battery-low", None),

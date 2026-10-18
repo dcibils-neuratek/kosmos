@@ -5001,6 +5001,10 @@ processors, and still what follows USB:
    listed with the rest; and the icon counts every device, with the panel
    saying which Kosmos drives and which it does not - "no drivers
    available for example" - so the count and the list agree.
+   **Built in 0.11.280** (`testing.md` 18.679), with This Machine
+   (`docs/machine.md` M4): the plug and the count in the bar, and a click
+   opens This Machine on the USB devices alone, each with what drives it or
+   "Detected, no driver" and its class.
 
 5p. **AGREED on 21 September - a network indicator in the bar.** Diego:
    "we need a topbar network indicator icon and status", "so we know the

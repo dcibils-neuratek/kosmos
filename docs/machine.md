@@ -106,6 +106,8 @@ when it is closed.
    dated screenshot. **Built in 0.11.278** (`testing.md` 18.677), with the
    pictures in the kit as `ui.device_picture`; on the way, the USB list
    made to answer on a machine with no controller (18.676).
-4. **M4 - the Deskbar's devices indicator** (5q) on the same library.
+4. **M4 - the Deskbar's devices indicator** (5q) on the same library. **Done
+   in 0.11.280** (`testing.md` 18.679): the plug and the count of devices on
+   the USB ports, a click opening `machine usb`.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`).

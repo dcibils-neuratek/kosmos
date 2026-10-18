@@ -12,7 +12,11 @@ Opened on the desktop, under QEMU:
   and the grey of a "Detected, no driver" one;
 - **By connection**, pressed: the same devices as a tree;
 - **No driver**, pressed: only those, every group's count adding up to the
-  window's own "with no driver".
+  window's own "with no driver";
+- **the Deskbar's USB indicator** says how many devices are on the ports -
+  none here, QEMU's harness having no xHCI - and **`machine usb`**, what a
+  click on it opens, shows the USB devices alone: none of the machine's
+  others (`roadmap.md` 5q).
 
 The M700's cards are its own to show (`testing.md`).
 
@@ -29,7 +33,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                   # noqa: E402
 
-LINE = re.compile(r"machine: (by kind|by connection|the report), (all|driven|no driver) - "
+LINE = re.compile(r"machine: (by kind|by connection|the report), (all|driven|no driver|usb) - "
                   r"(\d+) devices, (\d+) driven, (\d+) with no driver; (.*)")
 DRIVEN = (0x4f, 0xb8, 0x78)      # machine.lua's DRIVEN_C
 NONE = (0x8b, 0x93, 0xa3)        # and NONE_C
@@ -75,7 +79,7 @@ def main():
         guest.wait_for("kosmos> ", "reached a prompt")
 
         mark = len(guest.seen)
-        guest.type("wm machine")
+        guest.type("wm deskbar,machine")
         R.started(guest)
 
         first = said(LINE, mark, 60)
@@ -151,9 +155,30 @@ def main():
                   "No driver, pressed, did not show only the %d with no driver: %r"
                   % (none, only and only.group(0)))
 
+        bar = said(re.compile(r"deskbar: (\d+) on the USB ports, (\d+) driven"), 0, 20)
+        check(bar is not None and bar.group(1) == "0",
+              "the Deskbar did not say the USB ports hold nothing: %r" % (bar and bar.group(0)))
+
         time.sleep(1)
         check("machine.lua:" not in guest.seen[mark:] and "About This Machine stopped" not in guest.seen[mark:],
               "This Machine said an error: %r" % guest.seen[mark:][-800:])
+    finally:
+        guest.close()
+
+    # What the indicator opens: the USB devices alone.
+    guest = R.Guest(image, 120)
+
+    try:
+        guest.wait_for("kosmos> ", "reached a prompt")
+        mark = len(guest.seen)
+        guest.type("wm machine:usb")
+        R.started(guest, seconds=60)
+
+        usb = said(LINE, mark, 60)
+        check(usb is not None and usb.group(2) == "usb" and usb.group(6).strip() == ""
+              and int(usb.group(3)) >= 6,
+              "machine usb did not show the USB devices alone - none, here: %r"
+              % (usb and usb.group(0)))
     finally:
         guest.close()
 

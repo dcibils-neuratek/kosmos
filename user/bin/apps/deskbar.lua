@@ -384,6 +384,30 @@ end
 -- The battery, from `/Devices/battery`, or nil when the machine reads none -
 -- the devices server lists that node only when the board has a reading.
 --
+--
+-- **The devices on the USB ports**, from the USB driver's list (`usb.lua`,
+-- `roadmap.md` 5q; Diego: "a usb top bar indicator that upon clicking
+-- shows all things connected and detected on the usb ports"): how many,
+-- and how many of them Kosmos drives - the icon counts every one, as he
+-- chose, and This Machine says which is which. nil where no USB driver
+-- answers, and then nothing is drawn.
+--
+local have_usb, usb = pcall(use, "/Kosmos/Libraries/usb.lua")
+
+local function usb_now()
+  if not have_usb then return nil end
+
+  local ok, list = pcall(usb.devices)
+
+  if not ok or type(list) ~= "table" then return nil end
+
+  local driven = 0
+
+  for _, d in ipairs(list) do if d.driven then driven = driven + 1 end end
+
+  return { count = #list, driven = driven }
+end
+
 local function battery_now()
   local ok, b = pcall(fs.read, "/Devices/battery")
 
@@ -464,6 +488,7 @@ local function listen()
   heard.level, heard.muted = volume_now()
   heard.network = network_now() and "wired" or "offline"
   heard.battery = battery_now()
+  heard.usb = usb_now()
   heard.busy = load_now()
   heard.used, heard.total = memory_now()
 
@@ -1601,6 +1626,30 @@ function bar:draw(g)
     self.network_x = nil
   end
 
+  --
+  -- **The USB ports**: the plug and how many devices are on them, which a
+  -- click opens This Machine on (5q). Said in the log when it changes.
+  --
+  local u = heard.usb
+
+  if u then
+    local label = tostring(u.count)
+
+    x = x - PAD - LINE - 3 - gfx.measure(label)
+    g:line_icon(x, ly, "usb", theme.tab_text, LINE)
+    g:text(x + LINE + 3, ty, label, theme.tab_text)
+    self.usb_x = x
+
+    local said = ("%d on the USB ports, %d driven"):format(u.count, u.driven)
+
+    if self.usb_said ~= said then
+      print("deskbar: " .. said)
+      self.usb_said = said
+    end
+  else
+    self.usb_x = nil
+  end
+
   x = draw_reach(self, g, x, ly, PAD, theme.tab_text)
 
   --
@@ -1784,6 +1833,12 @@ local function opens(program)
   return function() fs.send("/Running/wm", { type = "launch", program = program }) end
 end
 
+-- This Machine, showing the devices on the USB ports alone.
+local function open_usb()
+  fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/machine.lua", args = "usb" })
+  print("deskbar: This Machine asked for, the USB devices")
+end
+
 local function bar_target(self, x)
   if self.volume_x and x >= self.volume_x - 4 and x < self.volume_x + LINE + 4 then
     return "volume", opens("/Kosmos/Apps/mixer.lua")
@@ -1791,6 +1846,10 @@ local function bar_target(self, x)
 
   if self.network_x and x >= self.network_x - 4 and x < self.network_x + LINE + 4 then
     return "network", opens("/Kosmos/Apps/network.lua")
+  end
+
+  if self.usb_x and x >= self.usb_x - 4 and x < self.usb_x + LINE + 18 then
+    return "usb", open_usb
   end
 
   local reach, reach_act = reach_at(self, x)
@@ -2397,7 +2456,7 @@ if DOCKED then
 
     local x = self.w - 18
 
-    self.volume_x, self.network_x, self.battery_x, self.bell_x = nil, nil, nil, nil
+    self.volume_x, self.network_x, self.battery_x, self.bell_x, self.usb_x = nil, nil, nil, nil, nil
 
     local bat = heard.battery
 
@@ -2423,6 +2482,17 @@ if DOCKED then
       x = x - LINE
       g:line_icon(x, ly, heard.network, ink, LINE)
       self.network_x = x
+      x = x - 14
+    end
+
+    if heard.usb then
+      local label = tostring(heard.usb.count)
+
+      x = x - gfx.measure(label)
+      shadowed(g, x, ty, label, ink)
+      x = x - 3 - LINE
+      g:line_icon(x, ly, "usb", ink, LINE)
+      self.usb_x = x
       x = x - 14
     end
 
@@ -2465,6 +2535,7 @@ if DOCKED then
     if reach then return reach, reach_act end
     if near(strip.volume_x) then return "volume", opens("/Kosmos/Apps/mixer.lua") end
     if near(strip.network_x) then return "network", opens("/Kosmos/Apps/network.lua") end
+    if strip.usb_x and x >= strip.usb_x - 6 and x < strip.usb_x + LINE + 20 then return "usb", open_usb end
     if x < (strip.clock_w or 0) + 16 then return "clock", open_history end
 
     return nil

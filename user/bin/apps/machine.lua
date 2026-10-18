@@ -19,6 +19,8 @@
 --   machine          the cards
 --   machine tree     By connection first
 --   machine report   the full report first
+--   machine usb      the devices on the USB ports alone - the Deskbar's
+--                    indicator opens this
 --
 -- **The full report stays**, behind a button: the text this window was
 -- until 0.11.278, which is what a bug report wants. It is below, and
@@ -562,7 +564,13 @@ local showing_report = START == "report"
 local FILTERS = { "All", "Driven", "No driver" }
 local filter = 1
 
+-- Opened from the Deskbar's USB indicator (`machine usb`): the devices on
+-- the ports alone, until a filter is pressed.
+local usb_only = START == "usb"
+
 local function wanted(d)
+  if usb_only and not d.id:match("^usb:") then return false end
+
   return filter == 1 or (filter == 2 and d.driven) or (filter == 3 and not d.driven)
 end
 
@@ -692,7 +700,7 @@ local function say()
 
   local line = ("machine: %s, %s - %d devices, %d driven, %d with no driver; %s"):format(
                showing_report and "the report" or (by_tree and "by connection" or "by kind"),
-               FILTERS[filter]:lower(), counts.total, counts.driven, counts.undriven,
+               usb_only and "usb" or FILTERS[filter]:lower(), counts.total, counts.driven, counts.undriven,
                table.concat(parts, ", "))
 
   if line ~= said then
@@ -711,9 +719,11 @@ view_seg = ui.segments{ x = L.page_side, y = L.head + HERO_H + 10,
                         end }
 
 filter_seg = ui.segments{ x = L.page_side + 250, y = L.head + HERO_H + 10,
-                          items = FILTERS, on = filter,
+                          -- None chosen while the USB devices alone are
+                          -- shown, so pressing All is a change too.
+                          items = FILTERS, on = usb_only and 0 or filter,
                           on_change = function(_, i)
-                            filter = i
+                            filter, usb_only = i, false
                             cards.top = 0
                             say()
                             win:paint()
