@@ -390,7 +390,7 @@ static unsigned long copy_ticks;    /* since the last reply, for `copy_us` */
  * its fence reached, the flip taken. Anything the driver refuses but
  * "busy" puts the copying back here, said once.
  */
-static unsigned rendering = 3;      /* the mode asked for (`docs/rendering.md`); 3 until told */
+static unsigned rendering = 2;      /* the mode asked for (`docs/rendering.md`); Page flips until told */
 static bool can_blit;               /* the back buffer is in the GPU's table */
 static bool flips_seen, blit_seen;  /* what this machine has shown it can do */
 static bool blitting;               /* the copy is the blitter's */

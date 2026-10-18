@@ -83,7 +83,7 @@ def main():
         # GPU Monitor, and the rendering modes switched while the desktop
         # runs (`docs/rendering.md` R1): Framebuffer given as asked, then
         # Blitter copy given as the most QEMU has - Cursor plane or less.
-        guest.type("wm gpumon,rendering:0 3")
+        guest.type("wm gpumon,rendering:0 3,preferences:displays")
 
         label = said("wm: the desktop drawn with: ", mark, 90)
         check(label in ("virtio - cursor plane", "none - framebuffer"),
@@ -104,6 +104,11 @@ def main():
         told3 = said("windowserver: rendering 3", at0 + 1 if at0 >= 0 else mark, 30)
         check(told0 is not None and told3 is not None,
               "the window server was not told 0 and then 3: %r, %r" % (told0, told3))
+
+        # Preferences' Displays page lists the six modes (R2).
+        listed = said("preferences: the rendering list, ", mark, 90)
+        check(listed is not None and listed.startswith("6 modes"),
+              "Preferences' Displays page did not list the six modes: %r" % listed)
 
         opened = said("gpumon: ", mark, 90)
         check(opened == "no GPU: no Intel GPU this driver knows",

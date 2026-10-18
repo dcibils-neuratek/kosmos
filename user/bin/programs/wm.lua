@@ -2224,6 +2224,15 @@ function OUT.set_rendering(mode)
 
   OUT.rendering, OUT.rendering_now = mode, now
 
+  -- And the most this machine can have, the same steps from the top.
+  local top = 4
+
+  if most < 3 then top = 2 end
+  if most < 2 then top = 1 end
+  if not OUT.has_cursor_plane then top = 0 end
+
+  OUT.rendering_most = top
+
   stamp = stamp_base .. "  |  GPU: " .. OUT.gpu_model .. " - "
           .. rendering.name(OUT.rendering_now):lower()
   add_damage(0, 0, W, H)
@@ -5639,11 +5648,12 @@ end
 -- The rendering mode, from Preferences: `{ type = "rendering", mode = 3 }`
 -- (`docs/rendering.md`), switched at once.
 handlers.rendering = function(req)
-  OUT.set_rendering(req.mode)
+  -- With no mode, only asked: what is in use, what was asked, and the most
+  -- this machine can have - for Preferences' list and GPU Monitor.
+  if req.mode ~= nil then OUT.set_rendering(req.mode) end
 
-  -- Answered with what this machine gave, which a page that offered the
-  -- mode needs to say.
-  return { ok = true, mode = OUT.rendering_now, asked = OUT.rendering }
+  return { ok = true, mode = OUT.rendering_now, asked = OUT.rendering,
+           most = OUT.rendering_most }
 end
 
 handlers.wallpaper_fit = function(req)

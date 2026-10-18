@@ -27387,3 +27387,36 @@ mode ignored, every answer under QEMU's plain display is still
 "Framebuffer", and the suite passed - telling what the window server was
 asked is what fails it (1 of 8). Full gate 95/95 in 9:17.
 
+## 18.671 Rendering modes in Preferences (`rendering.md` R2)
+
+**The Displays page**, as `docs/rendering.html` draws it and Diego agreed
+("Mockup is perfect"): a group **Rendering - how the desktop is drawn**,
+its **Mode** row the six modes under its words - the legend of who does a
+stage; each mode's radio, name, tag, memory at the right, its sentence,
+and its strip of six stages coloured by who does each - and its **Now** row
+four tiles a second: frames shown a second and the processor's time a
+frame from the window manager's profile (`frames`' own count), the
+blitter's share and the GPU's memory from `gpu.stats`. A mode this machine
+cannot have is greyed with why: "needs an Intel GPU", "not yet". **Choosing
+one switches the desktop at once**, and a bar over the window's foot counts
+fifteen seconds - "Keep it" writes `rendering` to the appearance file,
+"Go back" or nothing at all asks for the mode before. The window manager
+answers a request with no mode in it: in use, asked, the most here.
+**GPU Monitor** says the mode in use and its strip, where "Desktop drawn
+with" was (Diego: "also the gpu monitor needs to show the current
+rendering mode selected").
+
+**The M700, 18 October**: `preferences: the rendering list, 6 modes, asked
+3, in use 3, the most here 4`, drawn as the mockup. **Diego, trying each:
+"page flips is by far the smoothest".** So Page flips is the default now,
+tagged "smoothest", and Blitter copy "least processor": it saves the copy,
+but the window server sees the blitter's fence a scheduler tick late (4
+ms), and its frames reach the screen late by a varying amount. The GPU's
+interrupt, waking the window server at the fence, is on the roadmap for it.
+
+**Tests.** `x86-gpumon`, 9 checks: `wm gpumon,rendering:0 3,preferences:
+displays` - and the Displays page lists six modes. Its first run read the
+page's own line as the `rendering` program's answer, both saying
+"rendering: "; the page's says "the rendering list" now. Full gate 95/95
+in 9:10.
+

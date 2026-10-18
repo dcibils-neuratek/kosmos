@@ -621,6 +621,274 @@ end
 
 local now_label = nil               -- the clock's row, which keeps time
 
+--------------------------------------------------------------------------
+-- **Rendering modes** (`docs/rendering.md` R2, `docs/rendering.html`):
+-- each mode in a row - its name, what it does, a strip of the six stages a
+-- frame goes through coloured by who does each, and its GPU memory - one
+-- chosen tried at once, and a bar at the window's foot counting down
+-- fifteen seconds to keep it or go back.
+--------------------------------------------------------------------------
+
+local rendering = use("/Kosmos/Libraries/rendering.lua")
+local gpu_ok, gpu = pcall(use, "/Kosmos/Libraries/gpu.lua")
+
+-- Who does a stage, as `docs/composing.png` colours it.
+local STAGE_COLOUR = { cpu = 0xff4f7fd6, gpu = 0xff9d74e8, display = 0xff4fb878,
+                       none = 0xff3a414f }
+local KEEP_SECONDS = 15
+local HZ = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+
+-- What the window manager says: in use, asked for, the most this machine
+-- has. Nil where there is no window manager to ask.
+local function rendering_state()
+  local r = fs.send("/Running/wm", { type = "rendering" })
+
+  return type(r) == "table" and r.ok and r or nil
+end
+
+local keep_bar                      -- made below, with the window's foot
+
+local MODE_LINE, MODE_NOTE, MODE_STRIP, MODE_PAD = 22, 16, 20, 9
+
+local function rendering_list(it)
+  local state = rendering_state() or { mode = 0, asked = 0, most = 0 }
+  local rows, y = {}, 22               -- the legend's line first
+
+  for m = 0, 5 do
+    local mode = rendering.MODES[m]
+    local lines = ui.wrapped(mode.sentence, row_room - 30, "label", 3)
+    local h = MODE_PAD + MODE_LINE + #lines * MODE_NOTE + 6 + MODE_STRIP + MODE_PAD
+
+    rows[#rows + 1] = { m = m, mode = mode, y = y, h = h, lines = lines }
+    y = y + h
+  end
+
+  local v = ui.view{ w = row_room, h = y }
+
+  v.below = true
+  v.focusable = true
+  v.state = state
+  v.value = state.asked
+
+  print(("preferences: the rendering list, %d modes, asked %d, in use %d, the most here %d"):format(
+        #rows, state.asked or -1, state.mode or -1, state.most or -1))
+
+  -- Whether this machine can have it, and if not why.
+  local function refused(m)
+    if rendering.MODES[m].unbuilt then return "not yet" end
+    if m > (v.state.most or 0) then return m >= 2 and "needs an Intel GPU" or "needs a cursor plane" end
+    return nil
+  end
+
+  local function choose(m)
+    if m == v.value or refused(m) then return end
+
+    local before = v.value
+    local r = fs.send("/Running/wm", { type = "rendering", mode = m })
+
+    if type(r) ~= "table" or not r.ok then return end
+
+    v.value = m
+    v.state = r
+    print(("preferences: rendering %d tried, %s given - keep it or go back"):format(m,
+          rendering.name(r.mode)))
+
+    keep_bar.start(m, before, function()        -- kept
+      settings.set(it, m)
+      print(("preferences: rendering %d kept"):format(m))
+    end, function()                             -- gone back
+      local back = fs.send("/Running/wm", { type = "rendering", mode = before })
+
+      v.value = before
+      if type(back) == "table" and back.ok then v.state = back end
+      print(("preferences: rendering back to %d"):format(before))
+      win:paint()
+    end)
+
+    win:paint()
+  end
+
+  function v:draw(g)
+    local x = 0
+
+    -- The legend: who each colour is.
+    for _, part in ipairs({ { "cpu", "the processor" }, { "gpu", "a GPU engine" },
+                            { "display", "the display" }, { "none", "not done" } }) do
+      g:fill_round(x, 5, 11, 11, STAGE_COLOUR[part[1]], 3)
+      g:text(x + 16, (16 - gfx.height("label")) // 2 + 3, part[2], theme.text_dim, nil, "label")
+      x = x + 16 + gfx.measure(part[2], "label") + 16
+    end
+
+    for _, r in ipairs(rows) do
+      local why = refused(r.m)
+      local dim = why ~= nil
+      local chosen = r.m == self.value
+      local ink = dim and theme.text_dim or theme.text
+      local ty = r.y + MODE_PAD
+
+      if chosen then
+        g:fill_round(-6, r.y + 2, self.w + 12, r.h - 4, theme.selection or theme.raised, 8)
+      end
+
+      -- The radio, its name, its tag, and its memory at the right.
+      g:frame_round(2, ty + 3, 16, 16, chosen and theme.accent or theme.text_dim, 8)
+      if chosen then g:fill_round(6, ty + 7, 8, 8, theme.accent, 4) end
+
+      g:text(26, ty + (MODE_LINE - gfx.height("heading")) // 2, r.mode.name, ink, nil, "heading")
+
+      local tag = why or r.mode.tag
+
+      if tag then
+        local tx = 26 + gfx.measure(r.mode.name, "heading") + 8
+        local tw = gfx.measure(tag, "label") + 12
+
+        g:frame_round(tx, ty + 3, tw, 17, theme.line_soft, 4)
+        g:text(tx + 6, ty + 3 + (17 - gfx.height("label")) // 2, tag, theme.text_dim, nil, "label")
+      end
+
+      local mem = r.mode.memory
+      g:text(self.w - gfx.measure(mem, "label"), ty + (MODE_LINE - gfx.height("label")) // 2, mem,
+             theme.text_dim, nil, "label")
+
+      -- What it does.
+      for i, line in ipairs(r.lines) do
+        g:text(26, ty + MODE_LINE + (i - 1) * MODE_NOTE, line, theme.text_dim, nil, "label")
+      end
+
+      -- The six stages, coloured by who does each.
+      local sy = ty + MODE_LINE + #r.lines * MODE_NOTE + 6
+      local sw = (self.w - 26 - 5 * 3) // 6
+
+      for i, who in ipairs(r.mode.stages) do
+        local sx = 26 + (i - 1) * (sw + 3)
+        local word = rendering.STAGES[i]
+
+        if who == "gpu+cpu" then
+          g:fill_round(sx, sy, sw, MODE_STRIP, STAGE_COLOUR.cpu, 4)
+          g:fill_round(sx, sy, sw * 55 // 100, MODE_STRIP, STAGE_COLOUR.gpu, 4)
+        else
+          g:fill_round(sx, sy, sw, MODE_STRIP, STAGE_COLOUR[who] or STAGE_COLOUR.none, 4)
+        end
+
+        if gfx.measure(word, "label") <= sw - 4 then
+          g:text(sx + (sw - gfx.measure(word, "label")) // 2, sy + (MODE_STRIP - gfx.height("label")) // 2,
+                 word, 0xffffffff, nil, "label")
+        end
+      end
+    end
+
+    if self.focused then g:fill(0, self.h - 1, self.w, 1, theme.ring) end
+  end
+
+  function v:key(c)
+    local to = (c == -1 and self.value - 1) or (c == -2 and self.value + 1) or nil
+
+    while to and to >= 0 and to <= 5 and refused(to) do to = to + (c == -1 and -1 or 1) end
+
+    if not to or to < 0 or to > 5 then return c == -1 or c == -2 end
+
+    choose(to)
+    return true
+  end
+
+  local function mode_at(x, y)
+    for _, r in ipairs(rows) do
+      if y >= r.y and y < r.y + r.h and not refused(r.m) then
+        return r.m, function() choose(r.m) end
+      end
+    end
+
+    return nil
+  end
+
+  function v:mouse(action, x, y)
+    ui.click(self, action, x, y, mode_at)
+    return true
+  end
+
+  -- Where the modes are, for a harness: each one's middle on the window.
+  v.mode_middle = function(m)
+    for _, r in ipairs(rows) do
+      if r.m == m then return 100, r.y + r.h // 2 end
+    end
+  end
+
+  return v
+end
+
+-- **The mode in use, measured**: frames shown a second and the processor's
+-- time a frame from the window manager's own count (the profile `frames`
+-- reads), the blitter's share and the GPU's memory from its driver - each
+-- the difference between two readings a second apart.
+local function rendering_now()
+  local v = ui.view{ w = row_room, h = 52 }
+  local last, last_gpu = nil, nil
+
+  v.below = true
+  v.cells = { { "Frames shown a second", "-" }, { "Processor, a frame", "-" },
+              { "The blitter, busy", "-" }, { "GPU memory", "-" } }
+
+  -- The window manager's count started fresh; read from now on.
+  fs.send("/Running/wm", { type = "profile", on = true })
+
+  function v:tick()
+    local t = sys.ticks()
+
+    if self.next and t < self.next then return end
+    self.next = t + HZ
+
+    local p = fs.send("/Running/wm", { type = "profile" })
+    local s = gpu_ok and gpu.stats() or nil
+
+    if type(p) == "table" and p.frames then
+      if last then
+        local frames = p.frames - last.frames
+        local seconds = (t - last.t) / HZ
+        local busy = (p.busy_total or 0) - (last.busy or 0)
+
+        self.cells[1][2] = seconds > 0 and ("%.0f"):format(frames / seconds) or "-"
+        self.cells[2][2] = frames > 0 and ("%.2f ms"):format(busy / (p.hz or HZ) * 1000 / frames) or "-"
+      end
+
+      last = { frames = p.frames, busy = p.busy_total, t = t }
+    end
+
+    if s then
+      local bytes = 0
+
+      for _, b in ipairs(s.buffers) do bytes = bytes + b.bytes end
+      self.cells[4][2] = ("%.0f MB in %d buffers"):format(bytes / 1048576, #s.buffers)
+
+      if last_gpu then
+        local r = gpu.since(last_gpu, s, HZ)
+        if r then self.cells[3][2] = ("%.1f%%"):format(r.blitter * 100) end
+      end
+
+      last_gpu = s
+    else
+      self.cells[3][2], self.cells[4][2] = "no GPU", "none"
+    end
+
+    win:paint()
+  end
+
+  function v:draw(g)
+    local cw = (self.w - 3 * 8) // 4
+
+    for i, c in ipairs(self.cells) do
+      local x = (i - 1) * (cw + 8)
+
+      g:fill_round(x, 0, cw, self.h, theme.raised, 8)
+      g:frame_round(x, 0, cw, self.h, theme.line_soft, 8)
+      g:text(x + 10, 8, ui.fitted(c[1], cw - 16, "label"), theme.text_dim, theme.raised, "label")
+      g:text(x + 10, 8 + gfx.height("label") + 2, ui.fitted(c[2], cw - 16, "heading"),
+             theme.text, theme.raised, "heading")
+    end
+  end
+
+  return v
+end
+
 --
 -- **The Wallpaper row: a carousel of cards** (`docs/wallpapers.html`;
 -- Diego, 10 October 2026: "yes to small preview of the picture is great as
@@ -895,6 +1163,9 @@ local function control_for(it, x, y, changed)
     box:add(said)
     return box
   end
+
+  if it.kind == "rendering" then return rendering_list(it) end
+  if it.kind == "rendering_now" then return rendering_now() end
 
   if it.kind == "brightness" then
     local now = backlight_ok and backlight.get() or nil
@@ -1497,6 +1768,83 @@ function ticker:tick()
 end
 
 win:add(ticker)
+
+--
+-- **Keep this mode, or go back** (`docs/rendering.html`): over the window's
+-- foot while a rendering mode is being tried, counting fifteen seconds -
+-- nothing answered goes back, so a mode that breaks the screen undoes
+-- itself.
+--
+keep_bar = ui.view{ x = 0, y = 0, w = 0, h = 0 }
+keep_bar.hidden = true
+
+do
+  local kept_fn, back_fn, ends, mode
+  local BAR_W, BAR_H = 400, 44
+
+  function keep_bar.start(m, _, on_keep, on_back)
+    mode, kept_fn, back_fn = m, on_keep, on_back
+    ends = sys.ticks() + KEEP_SECONDS * HZ
+    keep_bar.x, keep_bar.y = (W - BAR_W) // 2, H - BAR_H - 18
+    keep_bar.w, keep_bar.h = BAR_W, BAR_H
+    keep_bar.hidden = false
+    print(("preferences: keep bar at %d,%d; keep at %d,%d; go back at %d,%d"):format(
+          keep_bar.x, keep_bar.y, keep_bar.x + BAR_W - 170, keep_bar.y + BAR_H // 2,
+          keep_bar.x + BAR_W - 60, keep_bar.y + BAR_H // 2))
+  end
+
+  local function finish(keep)
+    keep_bar.hidden = true
+    keep_bar.w, keep_bar.h = 0, 0
+
+    if keep then kept_fn() else back_fn() end
+
+    win:paint()
+  end
+
+  function keep_bar:tick()
+    if self.hidden then return end
+
+    if sys.ticks() >= ends then
+      finish(false)
+    else
+      win:paint()
+    end
+  end
+
+  function keep_bar:draw(g)
+    if self.hidden then return end
+
+    local left = math.max(0, (ends - sys.ticks() + HZ - 1) // HZ)
+    local words = ("Keeping %s in %d s"):format(rendering.name(mode), left)
+
+    g:fill_round(0, 0, self.w, self.h, theme.raised, 10)
+    g:frame_round(0, 0, self.w, self.h, theme.accent, 10)
+    g:text(14, (self.h - gfx.height()) // 2, words, theme.text, theme.raised, "ui")
+
+    g:fill_round(self.w - 170, 8, 92, self.h - 16, theme.accent, 7)
+    g:text(self.w - 170 + (92 - gfx.measure("Keep it", "label")) // 2,
+           (self.h - gfx.height("label")) // 2, "Keep it", 0xffffffff, nil, "label")
+    g:frame_round(self.w - 70, 8, 60, self.h - 16, theme.line_soft, 7)
+    g:text(self.w - 70 + (60 - gfx.measure("Go back", "label")) // 2,
+           (self.h - gfx.height("label")) // 2, "Go back", theme.text, nil, "label")
+  end
+
+  local function button_at(x, y)
+    if y < 8 or y > BAR_H - 8 then return nil end
+    if x >= BAR_W - 170 and x < BAR_W - 78 then return "keep", function() finish(true) end end
+    if x >= BAR_W - 70 and x < BAR_W - 10 then return "back", function() finish(false) end end
+    return nil
+  end
+
+  function keep_bar:mouse(action, x, y)
+    if self.hidden then return false end
+    ui.click(self, action, x, y, button_at)
+    return true
+  end
+end
+
+win:add(keep_bar)
 
 -- A new size: the cards again at it, the scroll held inside what there is.
 win.on_resize = function()

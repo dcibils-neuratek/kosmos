@@ -319,6 +319,21 @@ settings.ITEMS = {
   item{ category = "displays", group = "Screen",
         label = "Brightness", kind = "brightness" },
 
+  --
+  -- **How the desktop is drawn** (`docs/rendering.md`, `docs/rendering.html`):
+  -- every step measured on the M700 a mode, chosen here and tried at once,
+  -- kept only when it is confirmed. The list is drawn by Preferences from
+  -- `rendering.lua`; the numbers under it are the mode in use, measured.
+  --
+  item{ category = "displays", group = "Rendering - how the desktop is drawn",
+        label = "Mode", note = "Tried at once; kept when you say so",
+        kind = "rendering", file = settings.APPEARANCE, key = "rendering",
+        default = 2 },
+
+  item{ category = "displays", group = "Rendering - how the desktop is drawn",
+        label = "Now", note = "The mode in use, the last few seconds",
+        kind = "rendering_now" },
+
   ------------------------------------------------------------ notifications
   --
   -- What `notifications` reads when something arrives (`docs/

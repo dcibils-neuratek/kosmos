@@ -16,7 +16,12 @@ local rendering = {}
 
 rendering.STAGES = { "Draw", "Describe", "Compose", "Copy", "Show", "Pointer" }
 
-rendering.DEFAULT = 3
+-- Page flips: Diego, on the M700, trying each on 18 October - "page flips
+-- is by far the smoothest". Blitter copy saves the processor its copy, but
+-- the window server sees the blitter's fence a scheduler tick late and the
+-- frame reaches the screen late by a varying amount; until the GPU's
+-- interrupt wakes it, the eye prefers the processor's copy.
+rendering.DEFAULT = 2
 
 rendering.MODES = {
   [0] = {
@@ -38,10 +43,10 @@ rendering.MODES = {
     sentence = "Two screens: the processor copies into the hidden one and the display "
                .. "flips to it at its blank - no tearing, a frame a refresh.",
     stages = { "cpu", "cpu", "cpu", "cpu", "display", "display" },
-    memory = "one screen", note = "one more screen",
+    memory = "one screen", note = "one more screen", tag = "smoothest",
   },
   [3] = {
-    name = "Blitter copy", tag = "best measured",
+    name = "Blitter copy", tag = "least processor",
     sentence = "As Page flips, and the GPU's blit engine does the copy into the hidden "
                .. "screen - the processor only composes.",
     stages = { "cpu", "cpu", "cpu", "gpu", "display", "display" },

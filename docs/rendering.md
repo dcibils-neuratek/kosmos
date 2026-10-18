@@ -29,7 +29,12 @@ Each is one of the steps measured on the M700 (`m700-2d.md`, `testing.md`
 | **Blitter composing** *(experimental)* | As above, and windows' opaque interiors copied by the blitter straight from their buffers; the processor composes only edges, shadows and translucency | every window's buffers in the GPU's table | 42 frames a second - the blitter cannot keep up - 3.9 s busy of 30, 0.43 ms composing |
 | **GPU composing** *(not yet)* | The render engine composes the whole frame - blending, glass, animation - into the screen's buffer; the processor only describes it | textures and the screens | step 7 |
 
-**The default is Blitter copy**, the best measured; a machine where a mode
+**The default is Page flips** - Diego, trying each on the M700 on 18
+October: "page flips is by far the smoothest". Blitter copy measured the
+least processor, but the window server sees the blitter's fence a scheduler
+tick late, so its frames reach the screen late by a varying amount; it
+stays a mode, and may be smooth once the GPU's interrupt wakes the window
+server at the fence (`roadmap.md`). A machine where a mode
 cannot be had shows it with the reason - "needs an Intel GPU" under QEMU,
 where Framebuffer is all there is, and Cursor plane is virtio-gpu's.
 
@@ -92,7 +97,10 @@ manager a second. Nothing when it is closed.
    `rendering` at the prompt; the measuring is R2's page.
 2. **R2 - the page**: the Rendering group as drawn, the strips, the
    keep-or-go-back bar, the live numbers; its suite choosing a mode and
-   letting it go back; the picture in the dated screenshot.
+   letting it go back; the picture in the dated screenshot. **Done in
+   0.11.273** (`testing.md` 18.671); Page flips the default on Diego's
+   word. Choosing a mode under QEMU has nothing to switch to - the suite
+   holds the list, the M700 the switching.
 3. **R3 - GPU composing** joins the list when step 7 is built.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`).

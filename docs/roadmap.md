@@ -3875,7 +3875,33 @@ processors, and still what follows USB:
    step 7 is built - on Preferences' Displays page, with what each costs in
    GPU memory and what it measures, switched without a restart and kept
    only when confirmed. Designed first (`docs/rendering.md`,
-   `docs/rendering.html`, `docs/rendering-architecture.png`). **And `neofetch` says the GPU** (Diego, the
+   `docs/rendering.html`, `docs/rendering-architecture.png`). **R1 done**
+   (0.11.272, 18.670): the modes switchable live, `rendering` at the
+   prompt. **GPU Monitor shows the mode in use** (Diego: "also the gpu
+   monitor needs to show the current rendering mode selected") - with R2.
+   **Resolution and refresh rate from what the monitor reports** (Diego,
+   18 October: "my monitor is a 144hz monitr, will the screen preferecens
+   panel allow me to change resolution and refresh rate per the reported
+   by the monitor?"): the monitor's EDID read over DDC (I2C on the GMBUS)
+   or DisplayPort's AUX channel - its modes, 144 Hz among them - listed on
+   the Displays page, and a mode set: the pipe's timings, the clock (DPLL)
+   and, for DisplayPort, the link trained again - the full mode change
+   this entry already promised after the blitter, now with the EDID first
+   so the list is the monitor's own. Today the firmware chooses (60 Hz,
+   and 3440x1440 or 1720x1440 by boot). **Cafesa3D's ray tracer on the
+   GPU's 24 execution units** (Diego, the same day: "can we make cafesa3d
+   use the gpu rendering for faster raytracing using the 24 Execution
+   Units?"): GPU compute - the render engine's GPGPU pipeline, a context,
+   kernels compiled once on the Mac with Mesa's Intel compiler, buffers in
+   the GTT - the same foundation as step 7's compositor, and a kit of its
+   own (a compute kit, so the next program that wants the EUs - video
+   effects, the planet simulation - uses the same door); the tracer's
+   per-ray loop rewritten as a kernel, its output checked against the
+   processor's. After step 7's foundation. **The GPU's interrupt** (from
+   18 October): the blitter's fence and a flip taken said by MSI rather
+   than looked for a scheduler tick later - what Blitter copy needs to be
+   as smooth as Page flips, which Diego found "by far the smoothest", and
+   what every GPU mode after it will want. **And `neofetch` says the GPU** (Diego, the
    same evening: "also neofetch needs to add the gpu info as ell"): a GPU
    row - the model, and what the desktop is drawn with, the label's words
    - from `/Devices/gpu`, as About's Machine line could be.

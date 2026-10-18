@@ -23,6 +23,7 @@
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local gpu = use("/Kosmos/Libraries/gpu.lua")
+local rendering = use("/Kosmos/Libraries/rendering.lua")
 local theme = ui.theme
 local L = ui.layout
 
@@ -69,10 +70,20 @@ local watts = nil                       -- the GPU's power, where it is known
 local why_not = nil                     -- the driver's sentence when there is no GPU
 local clock_h, mem_h, disp_h, busy_h = {}, {}, {}, {}
 local names = {}
+local mode = nil                        -- the rendering mode in use, the window manager's word
+
+-- Who does a stage, as `docs/composing.png` colours it.
+local STAGE_COLOUR = { cpu = 0xff4f7fd6, gpu = 0xff9d74e8, display = 0xff4fb878,
+                       none = 0xff3a414f }
 
 local function sample()
   local s, why = gpu.stats()
   local info = sys.info() or {}
+  local r = fs.send("/Running/wm", { type = "rendering" })
+
+  -- The rendering mode in use (`docs/rendering.md`; Diego: "also the gpu
+  -- monitor needs to show the current rendering mode selected").
+  mode = type(r) == "table" and r.ok and r.mode or mode
 
   if not s then
     why_not = why
@@ -295,20 +306,32 @@ local function side(g, x, y)
   fact("Display", s and s.width > 0 and ("%d x %d, %.0f Hz"):format(s.width, s.height, rate and rate.frames or 0) or "-",
        DISP_COLOUR)
 
-  g:text(x, y, "Desktop drawn with", theme.text_dim, ground, "label")
-  y = y + gfx.height("label") + 4
+  -- The rendering mode in use, and the six stages it gives whom.
+  g:text(x, y, "Rendering mode", theme.text_dim, ground, "label")
+  y = y + gfx.height("label") + 2
+  g:text(x, y, mode and rendering.name(mode) or "-", theme.text, ground, "heading")
+  y = y + gfx.height("heading") + 6
 
-  for _, b in ipairs({ { "cursor plane", s and s.cursor }, { "page flips", s and s.page_flips },
-                       { "3D compositor", false } }) do
-    local w = gfx.measure(b[1], "label") + 14
-    local colour = b[2] and DISP_COLOUR or theme.text_dim
+  if mode and rendering.MODES[mode] then
+    local sw = (SIDE_W - 36 - 5 * 2) // 6
 
-    g:frame_round(x, y, w, 20, colour, 5)
-    g:text(x + 7, y + (20 - gfx.height("label")) // 2, b[1], colour, ground, "label")
-    y = y + 26
+    for i, who in ipairs(rendering.MODES[mode].stages) do
+      local sx = x + (i - 1) * (sw + 2)
+
+      if who == "gpu+cpu" then
+        g:fill_round(sx, y, sw, 14, STAGE_COLOUR.cpu, 3)
+        g:fill_round(sx, y, sw * 55 // 100, 14, STAGE_COLOUR.gpu, 3)
+      else
+        g:fill_round(sx, y, sw, 14, STAGE_COLOUR[who] or STAGE_COLOUR.none, 3)
+      end
+    end
+
+    y = y + 20
+    g:text(x, y, "draw, describe, compose, copy, show, pointer", theme.text_dim, ground, "label")
+    y = y + gfx.height("label")
   end
 
-  y = y + 10
+  y = y + 14
 
   for _, kv in ipairs({ { "Vulkan", "not yet" }, { "OpenGL ES", "not yet" },
                         { "Device", s and ("8086:%04x"):format(s.device) or "-" } }) do
