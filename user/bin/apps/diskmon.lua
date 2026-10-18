@@ -144,12 +144,17 @@ local function picture(kind, size)
   return function(g, x, y)
     local s = size
 
+    -- A disk and a stick as the kit draws them for every card that is one
+    -- (`ui.device_picture`, This Machine's too); a share and memory are
+    -- this monitor's own.
+    if kind == "usb" or kind == "disk" then
+      ui.device_picture(g, x, y, s, kind == "usb" and "stick" or "ssd")
+      return
+    end
+
     g:fill_round(x, y, s, s, 0xff2b3240, s // 6)
 
-    if kind == "usb" then
-      g:fill_round(x + s * 30 // 100, y + s * 12 // 100, s * 40 // 100, s * 62 // 100, 0xff4a5468, 4)
-      g:fill(x + s * 38 // 100, y + s * 74 // 100, s * 24 // 100, s * 16 // 100, 0xffaab4c4)
-    elseif kind == "share" then
+    if kind == "share" then
       g:fill_round(x + s // 6, y + s * 30 // 100, s * 2 // 3, s * 40 // 100, 0xff3b82f6, 4)
       g:fill(x + s * 45 // 100, y + s * 70 // 100, s // 10, s // 8, 0xffaab4c4)
       g:fill(x + s // 4, y + s * 82 // 100, s // 2, 2, 0xffaab4c4)
@@ -159,9 +164,6 @@ local function picture(kind, size)
       for i = 0, 3 do
         g:fill(x + s // 5 + i * s * 16 // 100, y + s * 40 // 100, s // 10, s // 6, 0xff16181d)
       end
-    else
-      g:fill_round(x + s // 8, y + s // 4, s * 3 // 4, s // 2, 0xff4a5468, 4)
-      g:fill(x + s * 22 // 100, y + s * 40 // 100, s * 30 // 100, s // 5, 0xff16181d)
     end
   end
 end

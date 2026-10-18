@@ -698,6 +698,9 @@ static long console = -1;
  * this does rather than pretending to a generality it has not got.
  */
 static long frames_endpoint = -1;
+
+/* The device list's (`/Devices/usb`, `docs/machine.md` M1), on every wait. */
+static long usb_endpoint = -1;
 static struct eth_ring *frames_ring;    /* the stack's region, mapped here */
 static long frames_ring_cap = -1;
 static struct controller *frames_on;    /* whose adapter the stack has */
@@ -7209,13 +7212,17 @@ static void serve_without_controllers(int code)
     struct say_line line;
     struct message msg;
     uint64_t sender = 0;
-    const long ends[4] = { blocks_endpoint, frames_endpoint,
-                           camera_endpoint_now(), midi_endpoint_now() };
+    /* And the device list's (`/Devices/usb`): asked on a machine with no
+     * controller as on any other, and a call to an endpoint not on this
+     * wait waits for ever - `lsusb` did, and This Machine with it. */
+    const long ends[5] = { blocks_endpoint, frames_endpoint,
+                           camera_endpoint_now(), midi_endpoint_now(),
+                           usb_endpoint };
 
     say_begin(&line);
 
     if (blocks_endpoint < 0 && frames_endpoint < 0 && ends[2] < 0
-        && ends[3] < 0) {
+        && ends[3] < 0 && usb_endpoint < 0) {
         kosmos_exit(code);
     }
 
@@ -7232,7 +7239,7 @@ static void serve_without_controllers(int code)
         /* Forever, unless a stream wants looking at: the test pattern's
          * frames, and a lease, come round on the clock (`/Devices/camera`). */
         long woke = kosmos_irq_wait_any(NULL, 0, ticks_for(camera_wait_ms(0)),
-                                        ends, 4u);
+                                        ends, 5u);
 
         if (woke < 0 && woke != SYS_NO_INTERRUPT) {
             kosmos_exit(code);
@@ -8406,9 +8413,9 @@ static void midi_answer(const struct message *in, uint64_t sender, long cap,
  * ports of each controller in order, each with what was plugged into it,
  * what the driver made of it and whether it reads it - a port whose device
  * never answered its name too, as a device with nothing known. A page of
- * `USB_LIST_MAX` from `first`, and how many there are in all.
+ * `USB_LIST_MAX` from `first`, and how many there are in all. Its endpoint
+ * is with the others, above, where the waits that watch it are.
  */
-static long usb_endpoint = -1;
 
 static void usb_list(uint32_t first, struct usb_reply *rep)
 {
@@ -8603,14 +8610,14 @@ static void watch(struct controller *list, unsigned count,
          * which is what watching one cost and is why the kernel now watches
          * three. A caller answers IRQ_WAIT_CALLER + its place, a line with
          * an interrupt first; all three are served after every wake. */
-        const long ends[5] = { writes_endpoint, blocks_endpoint,
+        const long ends[6] = { writes_endpoint, blocks_endpoint,
                                frames_endpoint, camera_endpoint,
-                               midi_endpoint };
+                               midi_endpoint, usb_endpoint };
 
         if (waited > 0) {
             woke = kosmos_irq_wait_any(lines, waited,
                                        ticks_for(camera_wait_ms(WATCH_MS)),
-                                       ends, 5u);
+                                       ends, 6u);
         }
 
         /* Nothing to wait on, or a wait refused: slept instead, never spun.

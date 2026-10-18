@@ -7914,7 +7914,7 @@ def check_clipboard(guest):
         raise Failure(f"no point tried on the window at {win} is clear of "
                       f"the one at {other}")
 
-    guest.type("wm machine,gallery")
+    guest.type("wm machine:report,gallery")
     started(guest)
 
     report = placed("This Machine")

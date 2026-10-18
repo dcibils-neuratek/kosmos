@@ -4164,6 +4164,120 @@ function ui.processor_chip(g, x, y, size, maker, part)
 end
 
 --
+-- **A device drawn as what it is**, in a `size` square at `x`, `y`: This
+-- Machine's cards (`docs/machine.md`; Diego, 18 October 2026: "I want the
+-- cards to use icons based on the hardware type", "We already have that for
+-- cpu monitor gpu monitor network monitor etc"). One door for every kind,
+-- so the monitors, This Machine and the Deskbar's devices indicator draw a
+-- port or a stick the same way:
+--
+--   cpu       the processor's chip, its maker's mark on it (`maker`)
+--   gpu       the same chip, "GPU" on it
+--   memory    a module, its chips and its gold edge
+--   ssd       a drive                 stick     a USB stick
+--   port      an Ethernet socket      speaker   a speaker and its wave
+--   usb       a USB socket            mouse     a mouse
+--   keyboard  a keyboard              plug      a plug
+--
+-- and anything else - a device with no driver, a kind with no picture - a
+-- dim chip with `label` on it, the short word its card gives it ("ME",
+-- "SMB"). Drawn at any size; the proportions are the drawing's at 44.
+--
+local PICTURE_TILE, PICTURE_EDGE = 0xff313848, 0xff4a5468
+
+function ui.device_picture(g, x, y, size, kind, label, maker)
+  local s = size
+
+  local function at(n) return n * s // 44 end
+
+  local function tile()
+    g:fill_round(x, y, s, s, PICTURE_TILE, at(9))
+    g:frame_round(x, y, s, s, PICTURE_EDGE, at(9))
+  end
+
+  if kind == "cpu" or kind == "gpu" then
+    -- The monitors' chip, its pins inside the square.
+    ui.processor_chip(g, x + 4, y + 4, s - 8, kind == "gpu" and (maker or "") or maker,
+                      kind == "gpu" and "GPU" or nil)
+    return
+  end
+
+  tile()
+
+  if kind == "memory" then
+    g:fill_round(x + at(5), y + at(13), s - at(10), at(18), 0xff2f8a5a, 2)
+
+    for i = 0, 3 do
+      g:fill(x + at(9) + i * at(7), y + at(16), at(5), at(9), 0xff1b2029)
+    end
+
+    for px = x + at(7), x + s - at(7) - 2, 3 do g:fill(px, y + at(31), 2, at(3), 0xffd4a72c) end
+  elseif kind == "ssd" then
+    g:fill_round(x + at(3), y + at(8), s - at(6), s - at(16), 0xff2b3a4d, 3)
+    g:frame_round(x + at(3), y + at(8), s - at(6), s - at(16), 0xff5b6d88, 3)
+
+    for px = x + at(9), x + s - at(16) - at(4), at(7) do
+      g:fill(px, y + at(15), at(4), s - at(30), 0xff8fa3c2)
+    end
+  elseif kind == "stick" then
+    g:fill_round(x + at(17), y + at(3), s - at(34), at(12), 0xff9aa3b2, 2)
+    g:fill(x + at(17), y + at(3) + 2, s - at(34), at(3), 0xff6b7486)
+    g:fill_round(x + at(14), y + at(13), s - at(28), s - at(16), 0xffc9ced6, 4)
+  elseif kind == "port" then
+    -- Network Monitor's socket and its eight pins.
+    g:fill_round(x + at(10), y + at(10), at(24), at(18), 0xff16181d, 3)
+    g:fill(x + at(16), y + at(28), at(12), at(6), 0xff16181d)
+
+    for i = 0, 7 do g:fill(x + at(13) + i * at(18) // 8, y + at(12), math.max(1, at(1)), at(5), 0xffd4a72c) end
+  elseif kind == "speaker" then
+    g:fill(x + at(9), y + at(15), at(8), at(14), 0xffe9ecf1)
+
+    -- The cone, a row at a time: wider as it goes right.
+    for i = 0, at(12) - 1 do
+      local half = at(4) + (i * at(9)) // math.max(1, at(12))
+      g:fill(x + at(15) + i, y + s // 2 - half, 1, 2 * half, 0xffe9ecf1)
+    end
+
+    g:frame_round(x + at(22), y + at(12), at(14), at(20), 0xff9aa3b2, at(10))
+    g:fill(x + at(22), y + at(11), at(7), at(22), PICTURE_TILE)
+  elseif kind == "usb" then
+    g:fill_round(x + at(9), y + at(14), at(26), at(16), 0xff9aa3b2, 2)
+    g:fill(x + at(11), y + at(16), at(22), at(12), 0xff16181d)
+    g:fill(x + at(13), y + at(18), at(18), at(5), 0xff4f7fd6)
+  elseif kind == "mouse" then
+    g:fill_round(x + at(13), y + at(6), at(18), at(30), 0xffd5d9e0, at(9))
+    g:fill(x + at(21), y + at(8), math.max(2, at(2)), at(9), 0xff7d8597)
+  elseif kind == "keyboard" then
+    g:fill_round(x + at(4), y + at(13), s - at(8), at(18), 0xffd5d9e0, 3)
+
+    for px = x + at(7), x + s - at(7) - at(3), at(5) do
+      g:fill(px, y + at(16), at(3), at(9), 0xff7d8597)
+    end
+
+    g:fill(x + at(12), y + at(27), s - at(24), math.max(2, at(2)), 0xff7d8597)
+  elseif kind == "plug" then
+    g:fill(x + at(18), y + at(3), math.max(2, at(2)), at(5), 0xffd4c95a)
+    g:fill(x + at(24), y + at(3), math.max(2, at(2)), at(5), 0xffd4c95a)
+    g:fill_round(x + at(15), y + at(8), at(14), at(16), 0xffd4c95a, 3)
+    g:fill(x + at(21), y + at(24), math.max(2, at(2)), at(14), 0xffd4c95a)
+  else
+    -- A dim chip, its short word on it.
+    g:fill_round(x + at(8), y + at(8), s - at(16), s - at(16), 0xff262b34, 4)
+    g:frame_round(x + at(8), y + at(8), s - at(16), s - at(16), 0xff59606e, 4)
+
+    local word = tostring(label or "")
+
+    if word ~= "" then
+      local face = ui.sized("label", math.max(8, at(10)), "bold")
+
+      word = ui.fitted(word, s - at(18), face)
+      g:text(x + (s - gfx.measure(word, face)) // 2, y + (s - gfx.height(face)) // 2,
+             word, 0xff8b93a3, nil, face)
+    end
+  end
+end
+
+--
 -- **A device's card**: its picture at the left, its maker small above its
 -- model large and a line of facts under them, and at the right what it is
 -- doing now - a list of lines, each `{ text, colour, face }`, the first the

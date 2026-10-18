@@ -4463,6 +4463,31 @@ def usb_list(image, check):
           % (controller, row(tree, "QEMU USB Tablet")))
 
 
+def usb_list_none(image, check):
+    """**The device list answers with no controller to list** - `lsusb` on a
+    machine with no xHCI says "nothing plugged in" and returns.
+
+    The driver stays on such a machine to answer `/Devices/blocks` and the
+    rest, waiting on their endpoints; the list's was not on that wait, so
+    a call to it waited for ever - `lsusb` hung, and This Machine's window
+    with it, the first time it was opened under QEMU without a USB
+    controller (`testing.md` 18.676).
+    """
+    out = boot(image, None, 60.0, typed=("lsusb", "lsdev"), until="lsdev: ")
+
+    if out is None:
+        check(False, "the machine would not boot")
+        return
+
+    out = out.replace("\r", "")
+
+    check("lsusb: nothing plugged in" in out,
+          "lsusb with no USB controller did not answer \"nothing plugged in\": %r"
+          % out[out.find("lsusb"):][:300])
+    check(re.search(r"lsdev: \d+ devices", out) is not None,
+          "lsdev with no USB controller did not answer: %r" % out[out.find("lsdev"):][:300])
+
+
 def usb_keyboard(image, check):
     """**A USB keyboard, on a machine whose only keyboard it is** -
     `usb.md` step 9b, `roadmap.md` 5zd-b.
@@ -5528,7 +5553,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -5633,6 +5658,10 @@ def main():
     # And every USB device listed to a program, driven or not (M1).
     if 'usb_list' in wanted:
         usb_list(image, check)
+
+    # And the list answering where there is no controller at all.
+    if 'usb_list_none' in wanted:
+        usb_list_none(image, check)
 
     if 'usb_ethernet' in wanted:
         usb_ethernet(image, check)

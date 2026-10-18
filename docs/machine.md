@@ -103,7 +103,9 @@ when it is closed.
    prompt as `lsdev` and `lsdev tree`, since `devices` is the shell's own
    word.
 3. **M3 - the window**: as drawn, its suite under QEMU, the picture in the
-   dated screenshot.
+   dated screenshot. **Built in 0.11.278** (`testing.md` 18.677), with the
+   pictures in the kit as `ui.device_picture`; on the way, the USB list
+   made to answer on a machine with no controller (18.676).
 4. **M4 - the Deskbar's devices indicator** (5q) on the same library.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`).

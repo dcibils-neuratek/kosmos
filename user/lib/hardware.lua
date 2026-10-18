@@ -85,10 +85,23 @@ hardware.CLASSES = {
 -- rather than a vendor and a device. `class` is zero there, which is how
 -- the two shapes are told apart.
 hardware.VIRTIO = {
-  [1] = "virtio-net", [2] = "virtio-blk", [3] = "virtio-console",
+  [1] = "virtio-net", [2] = "virtio-blk", [3] = "virtio-console", [4] = "virtio-rng",
   [16] = "virtio-gpu", [18] = "virtio-input", [19] = "virtio-vsock",
   [25] = "virtio-sound",
 }
+
+-- A virtio device's type from its PCI device number: 1040h plus the type
+-- for a modern device, and for a transitional one the legacy numbers the
+-- specification lists (virtio 1.1, 4.1.2.1) - QEMU's random number source
+-- is 1005h.
+local VIRTIO_LEGACY = { [0x1000] = 1, [0x1001] = 2, [0x1003] = 3, [0x1005] = 4,
+                        [0x1009] = 9 }
+
+function hardware.virtio_type(device)
+  if device >= 0x1040 then return device - 0x1040 end
+
+  return VIRTIO_LEGACY[device]
+end
 
 -- Where a device is, in its board's own terms: a PCI address - bus, slot and
 -- function, with the bus in `where`'s high byte now that a PC's scan follows

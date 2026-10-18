@@ -90,6 +90,7 @@ local CLASSES = {
 local VIRTIO = {
   [1]  = { "Network", "LAN", "port" },
   [2]  = { "Storage", "BLK", "ssd" },
+  [4]  = { "Other", "RNG" },
   [16] = { "Graphics", "GPU", "gpu" },
   [18] = { "Input", "IN" },
   [25] = { "Audio", "SND", "speaker" },
@@ -108,7 +109,7 @@ function devices.driver_of(d)
 
   if class == 0 then return hardware.VIRTIO[d.device] end
   if d.vendor == 0x1af4 then
-    return hardware.VIRTIO[(d.device or 0) - 0x1040] or "virtio"
+    return hardware.VIRTIO[hardware.virtio_type(d.device or 0) or -1] or "virtio"
   end
   if class == 0x0c0330 then return "xhci" end
   if class == 0x010601 then return "ahci" end
@@ -163,8 +164,13 @@ function devices.gather(src)
     or cpu.arch or "Processor"
   local present = cpu.cores_present or cpu.cores or info.cpus_present or 1
 
+  -- CPUID's vendor strings, said as the makers' names - which is also what
+  -- the chip's mark is keyed on.
+  local maker = cpu.implementer or cpu.vendor
+  maker = ({ GenuineIntel = "Intel", AuthenticAMD = "AMD" })[maker] or maker
+
   add { id = "cpu", group = "Processor", picture = "cpu", label = "CPU",
-        name = model, maker = cpu.implementer or cpu.vendor,
+        name = model, maker = maker,
         place = cpu.arch, driven = true, driver = "Nebula",
         detail = ("%d processor%s"):format(present, present == 1 and "" or "s") }
 
@@ -210,6 +216,17 @@ function devices.gather(src)
     local known = (hardware.NETWORK_NAMES[d.vendor] or {})[d.device]
 
     if known then name = maker .. " " .. known end
+
+    -- A virtio device by its type, which says more than its PCI class:
+    -- QEMU's random number source is class 00ff, "unclassified".
+    local vt = d.vendor == 0x1af4 and hardware.virtio_type(d.device) or nil
+
+    if vt and hardware.VIRTIO[vt] then
+      local v = VIRTIO[vt]
+
+      name = hardware.VIRTIO[vt]
+      if v then group, label, picture = v[1], v[2], v[3] end
+    end
 
     if group == "Graphics" and gpu and gpu.model and d.claimed then
       name = gpu.model

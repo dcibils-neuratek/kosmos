@@ -27554,3 +27554,67 @@ storage. `usb_list` in `x86-usb-2` runs `lsdev` and `lsdev tree` too, 11
 checks now: the keyboard driven by xhci and the tablet with no driver, the
 groups in order, the counts adding up, and the tablet one level under its
 controller.
+
+## 18.676 The USB list answers with no controller
+
+This Machine's window, opened under QEMU with no USB controller, drew once
+and then answered nothing - not its two-second refresh, not a click. It was
+`devices.read` asking `/Devices/usb`, and `lsusb` at a prompt hung the same
+way: on a machine with no xHCI the driver stays to answer `/Devices/blocks`,
+the network stack's frames, the camera and MIDI, waiting on those four
+endpoints - and the list's endpoint, added in 0.11.276, was not one of them,
+so a call to it was never received. On the M700 it answered because a
+driver with controllers wakes every `WATCH_MS` regardless, which is why M1
+never saw it there; its endpoint was off that wait too, and answered up to
+a sixtieth of a second late.
+
+Now `usb_endpoint` is on both waits - five endpoints with no controller,
+six with - inside the kernel's eight, and declared with the others.
+
+**Tests.** `usb_list_none` in `x86-usb-2`: no xHCI, `lsusb` says "nothing
+plugged in" and `lsdev` answers. **The control**: the endpoint taken off
+the no-controller wait hangs both, and both checks fail.
+
+## 18.677 This Machine, the window (`machine.md` M3)
+
+As drawn in `machine.html`: the machine in a header - its maker, its model
+(the product, except a Lenovo's, whose version is its name), Kosmos's
+version, and three counts; By kind or By connection, and All, Driven or No
+driver; every device a card in its group, drawn as what it is, with a pill
+for "Driven by xhci" or "Detected, no driver" and a blue one where it is in
+use. Groups sit side by side where they fit, each name over its own first
+card, so a machine of many small groups is not a column down the left. By
+connection is the tree from the processor: memory beside it, the PCI bus
+behind the host bridge, a controller's ports under it. The list is asked
+again every two seconds and drawn again when it changes. The full report
+is behind a button, and `machine report` opens on it.
+
+**The pictures are the kit's**: `ui.device_picture(g, x, y, size, kind,
+label, maker)` draws the processor's and the GPU's chip, a memory module,
+a drive, a stick, an Ethernet port, a speaker, a USB socket, a mouse, a
+keyboard and a plug, and a dim chip with its short word for anything else.
+Network Monitor's port and Disk Monitor's drive and stick draw through it
+now rather than keeping copies.
+
+**The report was wrong in three places**, and is not now: it said nothing
+drives a display controller and no program can ask for the USB devices -
+it has a Graphics and a USB section from `devices.lua` - and that the
+kernel's pools are fixed, which they stopped being when they began to
+grow. The temperature is read where the kernel reads one.
+
+**Under QEMU** the processor's vendor is AuthenticAMD, CPUID's string;
+`devices.lua` says the maker's name, which is also what the chip's mark is
+keyed on. QEMU's random number source is a transitional virtio device,
+1af4:1005; `hardware.virtio_type` reads the legacy numbers too, and it is
+named virtio-rng.
+
+**Tests.** Full gate 96/96 in 9:21. `tools/run_machine.py`, `x86-machine`, 11 checks: the window
+says what it shows - by kind, all, the counts adding up and every group's
+too, the processor first and Other holding what has no driver; its picture
+holds the green of a Driven pill and the grey of a no-driver one; By
+connection pressed shows the same devices as a tree; No driver pressed
+shows only those, its groups adding up to the window's own count. The
+window says where its two choices are on the screen, as Shortcuts says its
+links, and the suite presses them there. **The control**: a filter that
+lets everything through fails No driver. The display test that selects the
+report and resizes its window opens `machine:report`.

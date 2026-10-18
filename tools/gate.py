@@ -402,6 +402,9 @@ SUITES = [
     Suite("x86-install", ["python3", "tools/run_install.py", X86], x86=True),
     Suite("x86-diskmon", ["python3", "tools/run_diskmon.py", X86], x86=True),
     Suite("x86-gpumon", ["python3", "tools/run_gpumon.py", X86], x86=True),
+    # This Machine: every device a card, By connection and No driver
+    # pressed (`docs/machine.md` M3).
+    Suite("x86-machine", ["python3", "tools/run_machine.py", X86], x86=True),
     Suite("x86-packages", ["python3", "tools/run_packages.py", X86], x86=True),
 
     # **The editor, typed at through a keyboard** (`roadmap.md` 6n, steps 0
@@ -526,7 +529,7 @@ SUITES = [
                         "usb_home_named,usb_sandboxes,usb_home_large,usb_drives,"
                         "usb_flush_refused,"
                         "cmdline_long,usb_hotplug,usb_mouse,usb_mouse_recovers,"
-                        "usb_keyboard,usb_list,"
+                        "usb_keyboard,usb_list,usb_list_none,"
                         "pointer"],
           x86=True),
     # The clocks a PC does not state, measured with QEMU stopped as they

@@ -118,14 +118,9 @@ local FACTS = info.card and ("%s \u{b7} MTU %d"):format(address(info.address), i
 
 print(("netmon: card %s | %s | %s"):format(MAKER, MODEL, FACTS))
 
--- An Ethernet port, as the drawing has it: a socket and its eight pins.
-local function port(g, x, y)
-  g:fill_round(x, y, PORT, PORT, 0xff2b3240, 10)
-  g:fill_round(x + 10, y + 14, PORT - 20, PORT - 22, 0xff0d1117, 4)
-  g:fill(x + 20, y + PORT - 10, PORT - 40, 4, 0xff0d1117)
-
-  for i = 0, 7 do g:fill(x + 14 + i * 4, y + 16, 2, 7, 0xffd4a72c) end
-end
+-- An Ethernet port, as the kit draws one for every card that is a network's
+-- (`ui.device_picture`, This Machine's too).
+local function port(g, x, y) ui.device_picture(g, x, y, PORT, "port") end
 
 --------------------------------------------------------------------------
 -- What the window shows, refreshed a sample at a time.
