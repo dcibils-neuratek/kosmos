@@ -27455,3 +27455,33 @@ GPU's table when Blitter composing is left: GPU Monitor showed 11 buffers,
 **Tests.** The eleven suites that open Preferences or GPU Monitor, 11 of
 11.
 
+## 18.673 Rounded shapes clipped; the theme tiles and the carousel at any width
+
+Diego, with Preferences widened: "the wallpaper selector looks off", "we
+need to work oon the carrousel component", "the theme selector thimbnails
+are stretched because we widened the screen".
+
+**The carousel's last card ran past its row to the window's edge**, and the
+cause was the kit, not the carousel: `ui.carousel` clips to its own
+rectangle, but `gc:fill_round` and `gc:frame_round` put their ops in the
+list without the clip, and every other primitive had been clipped before it
+was sent. **Now a rounded op carries the clip in force** (`cx`, `cy`, `cw`,
+`ch`) when it reaches past it, and is not sent at all when it is wholly
+outside; `paint.lua` scales the clip with the shape and passes it on; and
+`gfx.c`'s `fill_round` and `frame_round` take an optional clip rectangle
+and draw into a view of the surface that is only that rectangle - the same
+pixels, a smaller width and height - so their per-pixel bounds checks are
+the clip. Every application's rounded cards, buttons and pills are clipped
+by this, not only the carousel.
+
+**The theme gallery** had four columns whatever the width, and a preview a
+fixed 58 tall: at the wider column each desk was stretched sideways. Now as
+many columns as fit at about the drawing's 108-wide tile, four at least,
+and each preview's height in proportion to its width.
+
+**The M700**: the themes as desks again, four across at 860; the
+carousel's fourth card cut at its row's edge.
+
+**Tests.** Full gate 95/95 in 9:08 - every suite that draws a window draws
+rounded shapes through the changed path.
+

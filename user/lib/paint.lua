@@ -50,12 +50,12 @@ function paint.new(picture_named, sized, always)
     --
     fill_round = function(s, o)
       s:fill_round(o.x or 0, o.y or 0, o.w or 0, o.h or 0,
-                   o.color or 0xff000000, o.r or 0)
+                   o.color or 0xff000000, o.r or 0, o.cx, o.cy, o.cw, o.ch)
     end,
 
     frame_round = function(s, o)
       s:frame_round(o.x or 0, o.y or 0, o.w or 0, o.h or 0,
-                    o.color or 0xff000000, o.r or 0)
+                    o.color or 0xff000000, o.r or 0, o.cx, o.cy, o.cw, o.ch)
     end,
 
     --
@@ -232,6 +232,16 @@ function paint.scale(o, pct, picture_named)
     -- is rounded a half more rather than keeping the pixels of a smaller
     -- screen.
     if o.r then o.r = px(o.r, pct) end
+
+    -- And a rounded shape's clip, by its two edges as the shape is.
+    if o.cx then
+      local cx, cy = tonumber(o.cx) or 0, tonumber(o.cy) or 0
+      local cw, ch = tonumber(o.cw) or 0, tonumber(o.ch) or 0
+      local cx0, cy0 = px(cx, pct), px(cy, pct)
+
+      o.cx, o.cy = cx0, cy0
+      o.cw, o.ch = px(cx + cw, pct) - cx0, px(cy + ch, pct) - cy0
+    end
   elseif kind == "text" then
     o.x = px(tonumber(o.x) or 0, pct)
     o.y = px(tonumber(o.y) or 0, pct)

@@ -228,12 +228,31 @@ end
 -- own clipping, and every caller here draws a control that is inside its
 -- view already.
 --
+--
+-- **Clipped like everything else**: the clip in force travels with the op,
+-- and the shape is drawn into only that rectangle (`gfx.c`, `round_view`).
+-- It did not, and a rounded card or button at a view's edge was drawn past
+-- it - the wallpaper carousel's last card, to the window's border. A shape
+-- wholly outside the clip is not sent at all.
+--
 local function round_op(self, kind, x, y, w, h, color, r)
   if w <= 0 or h <= 0 then return end
 
-  self.ops[#self.ops + 1] = { op = kind, x = self.ox + x, y = self.oy + y,
-                              w = w, h = h, color = shade(color),
-                              r = r or 0 }
+  local ax, ay = self.ox + x, self.oy + y
+
+  if self.cw and (ax >= self.cx + self.cw or ay >= self.cy + self.ch
+                  or ax + w <= self.cx or ay + h <= self.cy) then
+    return
+  end
+
+  local o = { op = kind, x = ax, y = ay, w = w, h = h, color = shade(color), r = r or 0 }
+
+  if self.cw and (ax < self.cx or ay < self.cy or ax + w > self.cx + self.cw
+                  or ay + h > self.cy + self.ch) then
+    o.cx, o.cy, o.cw, o.ch = self.cx, self.cy, self.cw, self.ch
+  end
+
+  self.ops[#self.ops + 1] = o
 end
 
 function gc:fill_round(x, y, w, h, color, r)

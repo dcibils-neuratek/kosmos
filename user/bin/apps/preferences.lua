@@ -523,10 +523,22 @@ local GALLERY_COLS, GALLERY_GAP = 4, 10
 local PREVIEW_H, NAME_H = 58, 24
 local EDGE = 0x1f000000                  -- the drawing's rgba(0,0,0,.12)
 
+--
+-- **As many across as fit at the drawing's shape** (18 October 2026; Diego,
+-- once the window was widened: "the theme selector thimbnails are
+-- stretched because we widened the screen"): four columns was the drawing's
+-- at its 470 column, and stretching four across a wider one made each desk
+-- wider and no taller. Now the columns are as many as fit at about the
+-- drawing's width, and each desk keeps its proportions.
+--
+local GALLERY_TILE = 108                 -- the drawing's tile, 470 across in four
+
 local function swatches(it)
   local names = LOOKS.order
+  local GALLERY_COLS = math.max(4, (row_room + GALLERY_GAP) // (GALLERY_TILE + GALLERY_GAP))
   local rows = (#names + GALLERY_COLS - 1) // GALLERY_COLS
   local tile_w = (row_room - (GALLERY_COLS - 1) * GALLERY_GAP) // GALLERY_COLS
+  local PREVIEW_H = tile_w * 58 // GALLERY_TILE
   local tile_h = PREVIEW_H + NAME_H
   local v = ui.view{ w = row_room, h = rows * tile_h + (rows - 1) * GALLERY_GAP }
 

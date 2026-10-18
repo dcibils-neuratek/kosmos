@@ -904,22 +904,77 @@ static int l_line(lua_State *L)
 }
 
 
+/*
+ * **A rounded shape, clipped** (18 October 2026): arguments 8 to 11, when
+ * given, are a clip rectangle, and the shape is drawn into a view of the
+ * surface that is only that rectangle - the same pixels, a smaller width
+ * and height, and the shape moved by its corner - so nothing of it lands
+ * outside. Every other primitive was clipped by the kit's graphics context
+ * before it reached here; these two were passed whole, and a card at the
+ * end of Preferences' wallpaper carousel was drawn past its row to the
+ * window's edge (Diego: "the wallpaper selector looks off").
+ */
+static bool round_view(lua_State *L, struct surface *dst, struct surface *view, long *dx, long *dy)
+{
+    long cx, cy, cw, ch;
+
+    *view = *dst;
+    *dx = *dy = 0;
+
+    if (lua_isnoneornil(L, 8)) {
+        return true;
+    }
+
+    cx = (long)luaL_checkinteger(L, 8);
+    cy = (long)luaL_checkinteger(L, 9);
+    cw = (long)luaL_checkinteger(L, 10);
+    ch = (long)luaL_checkinteger(L, 11);
+
+    if (cx < 0) { cw += cx; cx = 0; }
+    if (cy < 0) { ch += cy; cy = 0; }
+    if (cx + cw > (long)dst->width) { cw = (long)dst->width - cx; }
+    if (cy + ch > (long)dst->height) { ch = (long)dst->height - cy; }
+
+    if (cw <= 0 || ch <= 0 || dst->pixels == NULL) {
+        return false;
+    }
+
+    view->pixels = (uint32_t *)(void *)((uint8_t *)dst->pixels + (size_t)cy * dst->pitch) + cx;
+    view->width = (unsigned)cw;
+    view->height = (unsigned)ch;
+    *dx = cx;
+    *dy = cy;
+    return true;
+}
+
 static int l_fill_round(lua_State *L)
 {
-    fill_round_on(check_surface(L, 1), (long)luaL_checkinteger(L, 2),
-                  (long)luaL_checkinteger(L, 3), (long)luaL_checkinteger(L, 4),
-                  (long)luaL_checkinteger(L, 5), (uint32_t)luaL_checkinteger(L, 6),
-                  (long)luaL_optinteger(L, 7, 0));
+    struct surface view;
+    long dx, dy;
+
+    if (round_view(L, check_surface(L, 1), &view, &dx, &dy)) {
+        fill_round_on(&view, (long)luaL_checkinteger(L, 2) - dx,
+                      (long)luaL_checkinteger(L, 3) - dy, (long)luaL_checkinteger(L, 4),
+                      (long)luaL_checkinteger(L, 5), (uint32_t)luaL_checkinteger(L, 6),
+                      (long)luaL_optinteger(L, 7, 0));
+    }
+
     return 0;
 }
 
 
 static int l_frame_round(lua_State *L)
 {
-    frame_round_on(check_surface(L, 1), (long)luaL_checkinteger(L, 2),
-                   (long)luaL_checkinteger(L, 3), (long)luaL_checkinteger(L, 4),
-                   (long)luaL_checkinteger(L, 5), (uint32_t)luaL_checkinteger(L, 6),
-                   (long)luaL_optinteger(L, 7, 0));
+    struct surface view;
+    long dx, dy;
+
+    if (round_view(L, check_surface(L, 1), &view, &dx, &dy)) {
+        frame_round_on(&view, (long)luaL_checkinteger(L, 2) - dx,
+                       (long)luaL_checkinteger(L, 3) - dy, (long)luaL_checkinteger(L, 4),
+                       (long)luaL_checkinteger(L, 5), (uint32_t)luaL_checkinteger(L, 6),
+                       (long)luaL_optinteger(L, 7, 0));
+    }
+
     return 0;
 }
 
