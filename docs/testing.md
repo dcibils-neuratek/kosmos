@@ -27618,3 +27618,33 @@ window says where its two choices are on the screen, as Shortcuts says its
 links, and the suite presses them there. **The control**: a filter that
 lets everything through fails No driver. The display test that selects the
 report and resizes its window opens `machine:report`.
+
+## 18.678 This Machine on the M700
+
+Netbooted on the M700 and opened: fifteen devices, ten driven, five with no
+driver - the management engine, the ISA bridge, the power management
+controller, the SMBus controller and the host bridge, which is the list
+`machine.html` drew from the M700's bus before any of it was built.
+
+Three things it showed that QEMU could not:
+
+- **The GPU said "no driver"**, beside a desktop it was drawing:
+  `intelgpu` reaches the device's registers through the board and claims
+  no interrupt, so the bus's `claimed` is false. A graphics device is
+  driven when its driver answers for it (`gpu.stats`), by `intelgpu`, with
+  the model the driver gives and the rendering mode as its line.
+- **The tree put port 18 before port 3**: children came in By kind's group
+  order, and the stick is Storage. They are in the order they were found
+  now - ports by number, the bus by address.
+- **"Intel(R) Core(TM) i7-6700 CPU @ 3.40GHz"** is CPUID's brand string;
+  the card says "Intel Core i7-6700", as CPU Monitor does. And the stick's
+  volumes by what a person calls them, `drivelist.label`'s - "KOSMOS, Home
+  and Sandboxes", not "KOSMOS and Untitled and Untitled 2".
+
+The window takes the screen's height up to 980.
+
+**Tests.** `test_devices.lua`, 33 checks now: the ports in the driver's
+order, a GPU its driver answers for driven by `intelgpu` though the bus
+says unclaimed, the brand string said plainly, three volumes listed.
+**Controls**: the children left unsorted fails the order; the GPU left as
+the bus says fails `intelgpu`. `host`, `x86-machine` and `x86-usb-2` pass.

@@ -58,7 +58,7 @@ do
     W, H = 700, 720
   elseif sc.width and sc.height then
     W = math.max(700, math.min(W, sc.width - 120))
-    H = math.max(560, math.min(H, sc.height - 120))
+    H = math.max(560, math.min(980, sc.height - 200))
   end
 end
 

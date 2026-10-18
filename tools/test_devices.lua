@@ -49,11 +49,13 @@ local usb = {
 }
 
 local list, counts = devices.gather {
-  cpu = { name = "Intel Core i7-6700", cores = 8, cores_present = 8 },
+  cpu = { name = "Intel(R) Core(TM) i7-6700 CPU @ 3.40GHz", implementer = "GenuineIntel",
+          cores = 8, cores_present = 8 },
   memory = { total_mb = 8049, free_mb = 7821 },
   bus = bus, usb = usb,
   gpu = { model = "Intel HD Graphics 530", detail = "page flips" },
-  drives = { { kind = "USB stick", volumes = { { name = "Home" }, { name = "Sandboxes" } } } },
+  drives = { { kind = "USB stick", volumes = { { name = "KOSMOS" }, { name = "Home" },
+                                               { name = "Sandboxes" } } } },
   net = { address = "192.168.1.28" },
 }
 
@@ -79,6 +81,9 @@ local function holds(id, group, driver, why)
 end
 
 holds("cpu", "Processor", "Nebula", "the processor")
+check(by.cpu.name == "Intel Core i7-6700" and by.cpu.maker == "Intel",
+      ("the processor was not called as CPU Monitor calls it: %q by %q"):format(by.cpu.name,
+       tostring(by.cpu.maker)))
 holds("memory", "Memory", "Nebula", "the memory")
 holds(id_of(at(0, 2, 0)), "Graphics", "intelgpu", "the GPU")
 holds(id_of(xhci), "USB", "xhci", "the USB controller")
@@ -104,7 +109,7 @@ check(by[id_of(at(0, 0x16, 0))].label == "ME",
       "the management engine's chip did not say ME")
 check(by["usb:0:7"].detail == "class ff/ff/ff" and not by["usb:0:7"].driven,
       "the UART was not listed undriven with its class")
-check(by["usb:0:18"].busy == "in use" and by["usb:0:18"].detail == "Home and Sandboxes on it",
+check(by["usb:0:18"].busy == "in use" and by["usb:0:18"].detail == "KOSMOS, Home and Sandboxes on it",
       "the stick did not say what is on it: " .. tostring(by["usb:0:18"].detail))
 check(by["usb:0:3"].picture == "mouse" and by["usb:0:5"].picture == "keyboard"
       and by["usb:0:18"].picture == "stick",
@@ -123,6 +128,25 @@ check(#roots == 1 and roots[1].id == "cpu", "the tree had more than the processo
 check(by[hb].parent == "cpu", "the host bridge did not hang from the processor")
 check(by[id_of(at(0, 2, 0))].parent == hb, "the GPU did not hang from the host bridge")
 check(#(children[id_of(xhci)] or {}) == 4, "the controller did not hold its four ports")
+
+local ports = {}
+for _, c in ipairs(children[id_of(xhci)] or {}) do ports[#ports + 1] = c.id end
+check(table.concat(ports, " ") == "usb:0:3 usb:0:5 usb:0:18 usb:0:7",
+      "the ports were not in the order the driver listed them: " .. table.concat(ports, " "))
+
+-- The M700's GPU: its driver answers, though the bus says no interrupt
+-- was claimed for it.
+local unclaimed = {}
+for i, d in ipairs(bus) do unclaimed[i] = d end
+unclaimed[2] = { where = at(0, 2, 0), vendor = 0x8086, device = 0x1912, class = 0x030000, claimed = false }
+
+local again = devices.gather { bus = unclaimed, gpu = { model = "Intel HD Graphics 530" } }
+local gpu_card
+for _, d in ipairs(again) do if d.id == id_of(at(0, 2, 0)) then gpu_card = d end end
+
+check(gpu_card and gpu_card.driven and gpu_card.driver == "intelgpu"
+      and gpu_card.name == "Intel HD Graphics 530",
+      "a GPU its driver answers for was not driven by intelgpu")
 check(by["memory"].parent == "cpu", "the memory did not sit beside the processor")
 
 -- A machine that answers nothing still has a processor, and nothing else.

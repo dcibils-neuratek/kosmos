@@ -162,6 +162,12 @@ function devices.gather(src)
   local model = cpu.name
     or cpu.implementer and (("%s %s"):format(cpu.implementer, cpu.part or ""))
     or cpu.arch or "Processor"
+
+  -- CPUID's brand string as CPU Monitor says it: "Intel(R) Core(TM)
+  -- i7-6700 CPU @ 3.40GHz" is an Intel Core i7-6700, its speed said where
+  -- speeds are.
+  model = model:gsub("%(R%)", ""):gsub("%(TM%)", ""):gsub("%s*@.*$", "")
+               :gsub(" CPU$", ""):gsub(" CPU ", " "):gsub("%s+", " "):match("^%s*(.-)%s*$")
   local present = cpu.cores_present or cpu.cores or info.cpus_present or 1
 
   -- CPUID's vendor strings, said as the makers' names - which is also what
@@ -228,18 +234,26 @@ function devices.gather(src)
       if v then group, label, picture = v[1], v[2], v[3] end
     end
 
-    if group == "Graphics" and gpu and gpu.model and d.claimed then
-      name = gpu.model
-      detail = gpu.detail
+    --
+    -- **The GPU is driven when its driver answers for it**, whatever the
+    -- bus says: `intelgpu` maps the device's registers through the board
+    -- rather than claiming an interrupt, so `claimed` is false on the M700
+    -- with the desktop drawn by it. The driver's own model is the name.
+    --
+    local driven = d.claimed
+
+    if group == "Graphics" and gpu and gpu.model and d.vendor == 0x8086 then
+      name, detail, driven = gpu.model, gpu.detail, true
     end
 
-    if not d.claimed then
+    if not driven then
       detail = class ~= 0 and class_words(class) or nil
       picture = nil                  -- a dim chip with its short word
     end
 
     add { id = id, group = group, picture = picture, label = label, name = name,
-          maker = maker, driven = d.claimed, driver = devices.driver_of(d),
+          maker = maker, driven = driven,
+          driver = devices.driver_of(d) or (driven and group == "Graphics" and "intelgpu" or nil),
           place = class ~= 0
                   and ("PCI %s · %04x:%04x"):format(pci_place(d.where),
                                                     d.vendor, d.device)
@@ -304,7 +318,10 @@ function devices.gather(src)
       if d then
         d.volumes = vols
         if #vols > 0 then
-          d.detail, d.busy = table.concat(vols, " and ") .. " on it", "in use"
+          local said = #vols == 1 and vols[1]
+                       or table.concat(vols, ", ", 1, #vols - 1) .. " and " .. vols[#vols]
+
+          d.detail, d.busy = said .. " on it", "in use"
         end
       end
     end
@@ -360,6 +377,12 @@ function devices.tree(list)
     end
   end
 
+  -- Each device's children in the order they were found - ports by
+  -- number, the bus by address - rather than By kind's group order.
+  for _, list in pairs(children) do
+    table.sort(list, function(a, b) return (a.found or 0) < (b.found or 0) end)
+  end
+
   return roots, children
 end
 
@@ -387,8 +410,17 @@ function devices.read()
                 detail = gpu.desktop_words(stats):gsub("^.- %- ", "") }
   end
 
+  -- A volume by what a person calls it: Home and Sandboxes for the two
+  -- the disk servers hold, whose labels say "Untitled" (`drivelist.label`).
   local drivelist = lib("/Kosmos/Libraries/drivelist.lua")
-  if drivelist then src.drives = drivelist.drives() end
+
+  if drivelist then
+    src.drives = drivelist.drives()
+
+    for _, drive in ipairs(src.drives or {}) do
+      for _, v in ipairs(drive.volumes or {}) do v.name = drivelist.label(v) end
+    end
+  end
 
   local ipv4 = lib("/Kosmos/Libraries/ipv4.lua")
 
