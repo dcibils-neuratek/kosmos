@@ -734,7 +734,18 @@ static bool forcewake(bool on)
 #define TS_SLOTS     16u                /*   two dwords a fence, sixteen fences round */
 #define RING_ROOM    (RING_DWORDS - 256u)   /* what may be in flight, a margin kept */
 
-static struct {
+/*
+ * **An engine with a ring** (`m700-2d.md` 5 and 7a): the blitter at
+ * 0x22000 and the render engine at 0x2000, two of one thing - the same ring
+ * registers at their own base, started the same way (i915's `xcs_resume`
+ * is one function for every engine), each with its own ring, status page
+ * and fence. Only the fence's command differs, MI_FLUSH_DW against
+ * PIPE_CONTROL (`submit`).
+ */
+struct engine {
+    uint32_t          base;             /* where its registers are */
+    bool              render;           /* the render engine: its fence is PIPE_CONTROL */
+    const char       *name;             /* as the log says it */
     bool              ready;
     volatile uint32_t *ring, *status, *target;
     uint32_t          ring_gtt, status_gtt, target_gtt;
@@ -748,23 +759,26 @@ static struct {
     uint32_t          counted;          /* the last fence whose copy's time is added */
     uint64_t          busy_ts;          /* the engine's clock ticks spent copying, in all */
     uint32_t          in_flight;        /* dwords given since the ring was last idle */
-} E;
+};
 
-static uint32_t eng(uint32_t offset)
+static struct engine BCS = { .base = IGPU_BLT_BASE, .name = "the blitter" };
+static struct engine RCS = { .base = IGPU_RENDER_BASE, .render = true, .name = "the render engine" };
+
+static uint32_t eng(const struct engine *e, uint32_t offset)
 {
-    return reg(G.regs, IGPU_BLT_BASE + offset);
+    return reg(G.regs, e->base + offset);
 }
 
-static void eng_write(uint32_t offset, uint32_t value)
+static void eng_write(const struct engine *e, uint32_t offset, uint32_t value)
 {
-    wreg(IGPU_BLT_BASE + offset, value);
+    wreg(e->base + offset, value);
 }
 
-static uint32_t engine_start(void)
+static uint32_t engine_start(struct engine *e)
 {
     unsigned i;
 
-    if (E.ready) {
+    if (e->ready) {
         return GPU_OK;
     }
 
@@ -775,41 +789,41 @@ static uint32_t engine_start(void)
         return GPU_ERR_NO_WAKE;
     }
 
-    if (!gtt_pages(RING_PAGES, &E.ring, &E.ring_gtt) || !gtt_pages(1, &E.status, &E.status_gtt)
-        || !gtt_pages(1, &E.target, &E.target_gtt)) {
+    if (!gtt_pages(RING_PAGES, &e->ring, &e->ring_gtt) || !gtt_pages(1, &e->status, &e->status_gtt)
+        || !gtt_pages(1, &e->target, &e->target_gtt)) {
         return GPU_ERR_NO_MEMORY;
     }
 
     /* stop_ring: emptied, disabled, reset. */
-    eng_write(IGPU_RING_HEAD, eng(IGPU_RING_TAIL));
-    (void)eng(IGPU_RING_HEAD);
-    eng_write(IGPU_RING_CTL, 0);
-    (void)eng(IGPU_RING_CTL);
-    eng_write(IGPU_RING_HEAD, 0);
-    eng_write(IGPU_RING_TAIL, 0);
+    eng_write(e, IGPU_RING_HEAD, eng(e, IGPU_RING_TAIL));
+    (void)eng(e, IGPU_RING_HEAD);
+    eng_write(e, IGPU_RING_CTL, 0);
+    (void)eng(e, IGPU_RING_CTL);
+    eng_write(e, IGPU_RING_HEAD, 0);
+    eng_write(e, IGPU_RING_TAIL, 0);
 
     /* The status page, its writes all masked. */
-    eng_write(IGPU_RING_HWS_PGA, E.status_gtt);
-    (void)eng(IGPU_RING_HWS_PGA);
-    eng_write(IGPU_RING_HWSTAM, ~0u);
+    eng_write(e, IGPU_RING_HWS_PGA, e->status_gtt);
+    (void)eng(e, IGPU_RING_HWS_PGA);
+    eng_write(e, IGPU_RING_HWSTAM, ~0u);
 
     /* Then the ring itself: where, empty, its size, valid. */
-    (void)eng(IGPU_RING_HEAD);
-    eng_write(IGPU_RING_START, E.ring_gtt);
-    eng_write(IGPU_RING_HEAD, 0);
-    eng_write(IGPU_RING_TAIL, 0);
-    (void)eng(IGPU_RING_TAIL);
-    eng_write(IGPU_RING_CTL, ((RING_PAGES - 1u) << 12) | IGPU_RING_VALID);
+    (void)eng(e, IGPU_RING_HEAD);
+    eng_write(e, IGPU_RING_START, e->ring_gtt);
+    eng_write(e, IGPU_RING_HEAD, 0);
+    eng_write(e, IGPU_RING_TAIL, 0);
+    (void)eng(e, IGPU_RING_TAIL);
+    eng_write(e, IGPU_RING_CTL, ((RING_PAGES - 1u) << 12) | IGPU_RING_VALID);
 
-    for (i = 0; i < 50 && (eng(IGPU_RING_CTL) & IGPU_RING_VALID) == 0; i++) {
+    for (i = 0; i < 50 && (eng(e, IGPU_RING_CTL) & IGPU_RING_VALID) == 0; i++) {
         kosmos_sleep(1);
     }
 
-    if ((eng(IGPU_RING_CTL) & IGPU_RING_VALID) == 0) {
+    if ((eng(e, IGPU_RING_CTL) & IGPU_RING_VALID) == 0) {
         return GPU_ERR_NO_RING;
     }
 
-    eng_write(IGPU_RING_MI_MODE, IGPU_STOP_RING << 16);     /* masked: STOP_RING off */
+    eng_write(e, IGPU_RING_MI_MODE, IGPU_STOP_RING << 16);     /* masked: STOP_RING off */
 
     /*
      * **The engine's clock's rate, measured** rather than worked out from
@@ -822,57 +836,67 @@ static uint32_t engine_start(void)
         uint32_t ts0, ts1;
         unsigned long c0, c1;
 
-        ts0 = eng(IGPU_RING_TIMESTAMP);
+        ts0 = eng(e, IGPU_RING_TIMESTAMP);
         c0 = kosmos_ticks();
         kosmos_sleep(5);
-        ts1 = eng(IGPU_RING_TIMESTAMP);
+        ts1 = eng(e, IGPU_RING_TIMESTAMP);
         c1 = kosmos_ticks();
 
         if (kosmos_sysinfo(&machine) == 0 && c1 > c0 && ts1 != ts0) {
-            E.ts_hz = (unsigned long)((uint64_t)(uint32_t)(ts1 - ts0) * machine.counter_hz / (c1 - c0));
+            e->ts_hz = (unsigned long)((uint64_t)(uint32_t)(ts1 - ts0) * machine.counter_hz / (c1 - c0));
         }
     }
 
-    E.tail = 0;
-    E.status[FENCE_AT] = 0;
-    E.issued = 0;
-    E.next_value = 0x4b6f7301u;                             /* "Kos" and a count */
-    E.ready = true;
+    e->tail = 0;
+    e->status[FENCE_AT] = 0;
+    e->issued = 0;
+    e->next_value = 0x4b6f7301u;                             /* "Kos" and a count */
+    e->ready = true;
     return GPU_OK;
 }
 
 /* The fence the blitter has reached. */
-static uint32_t fence_reached(void)
+static uint32_t fence_reached(const struct engine *e)
 {
-    return E.status[FENCE_AT];
+    return e->status[FENCE_AT];
 }
 
 /* Whether everything given has been done - and if so the GT let go, and
  * the time it worked added to its count. */
-static bool engine_idle(void)
+static bool engine_quiet(const struct engine *e)
+{
+    return !e->ready || fence_reached(e) == e->issued;
+}
+
+/* Whether everything given this engine has been done - and the GT let go
+ * when neither engine has work, since one forcewake serves both. */
+static bool engine_idle(struct engine *e)
 {
     /* The copies finished since: each one's time, by the engine's own
      * clock, added - fences the engine test made store no times and are
      * skipped by having their slot zeroed. */
-    if (E.ready) {
-        uint32_t reached = fence_reached();
+    if (e->ready) {
+        uint32_t reached = fence_reached(e);
 
-        while ((int32_t)(reached - E.counted) > 0) {
-            volatile uint32_t *t = &E.status[TS_AT + 2u * (++E.counted % TS_SLOTS)];
+        while ((int32_t)(reached - e->counted) > 0) {
+            volatile uint32_t *t = &e->status[TS_AT + 2u * (++e->counted % TS_SLOTS)];
 
-            E.busy_ts += (uint32_t)(t[1] - t[0]);
+            e->busy_ts += (uint32_t)(t[1] - t[0]);
             t[0] = t[1] = 0;
         }
     }
 
-    if (!E.ready || fence_reached() == E.issued) {
-        E.in_flight = 0;
-        if (E.busy_since != 0) {
-            E.busy_counter += kosmos_ticks() - E.busy_since;
-            E.busy_since = 0;
+    if (engine_quiet(e)) {
+        e->in_flight = 0;
+        if (e->busy_since != 0) {
+            e->busy_counter += kosmos_ticks() - e->busy_since;
+            e->busy_since = 0;
         }
 
-        (void)forcewake(false);
+        if (engine_quiet(&BCS) && engine_quiet(&RCS)) {
+            (void)forcewake(false);
+        }
+
         return true;
     }
 
@@ -886,46 +910,62 @@ static bool engine_idle(void)
  * tail did. What is written since the ring was last idle is counted, and
  * a submission refused (`GPU_ERR_BUSY`) before it could reach the head.
  */
-static void emit(const uint32_t *dw, uint32_t n)
+static void emit(struct engine *e, const uint32_t *dw, uint32_t n)
 {
     uint32_t i;
 
-    if (E.tail + n > RING_DWORDS) {
-        E.in_flight += RING_DWORDS - E.tail;
+    if (e->tail + n > RING_DWORDS) {
+        e->in_flight += RING_DWORDS - e->tail;
 
-        while (E.tail < RING_DWORDS) {
-            E.ring[E.tail++] = IGPU_MI_NOOP;
+        while (e->tail < RING_DWORDS) {
+            e->ring[e->tail++] = IGPU_MI_NOOP;
         }
 
-        E.tail = 0;
+        e->tail = 0;
     }
 
-    E.in_flight += n;
+    e->in_flight += n;
 
     for (i = 0; i < n; i++) {
-        E.ring[E.tail++] = dw[i];
+        e->ring[e->tail++] = dw[i];
     }
 
-    E.tail %= RING_DWORDS;
+    e->tail %= RING_DWORDS;
 }
 
 /* The fence after them, and the doorbell: the tail moved, with the GT
  * awake. Answers the fence to look for. */
-static uint32_t submit(void)
+static uint32_t submit(struct engine *e)
 {
-    uint32_t fence = ++E.issued;
-    uint32_t dw[4] = {
-        IGPU_MI_FLUSH_DW_STORE,
-        (E.status_gtt + FENCE_AT * 4u) | IGPU_MI_FLUSH_DW_GTT,
-        0,
-        fence,
-    };
+    uint32_t fence = ++e->issued;
 
-    emit(dw, 4);
+    if (e->render) {
+        /* PIPE_CONTROL's post-sync write: a qword, at FENCE_AT (byte 256,
+         * 8-aligned), the dword after it written over and unused. */
+        uint32_t dw[6] = {
+            IGPU_PIPE_CONTROL,
+            IGPU_PC_CS_STALL | IGPU_PC_QW_WRITE | IGPU_PC_GLOBAL_GTT,
+            e->status_gtt + FENCE_AT * 4u,
+            0,
+            fence,
+            0,
+        };
 
-    if ((E.tail & 1u) != 0) {               /* the tail is in qwords */
+        emit(e, dw, 6);
+    } else {
+        uint32_t dw[4] = {
+            IGPU_MI_FLUSH_DW_STORE,
+            (e->status_gtt + FENCE_AT * 4u) | IGPU_MI_FLUSH_DW_GTT,
+            0,
+            fence,
+        };
+
+        emit(e, dw, 4);
+    }
+
+    if ((e->tail & 1u) != 0) {               /* the tail is in qwords */
         uint32_t noop = IGPU_MI_NOOP;
-        emit(&noop, 1);
+        emit(e, &noop, 1);
     }
 
 #if defined(__x86_64__)
@@ -933,12 +973,12 @@ static uint32_t submit(void)
 #endif
 
     (void)forcewake(true);
-    E.busy_since = kosmos_ticks();
-    eng_write(IGPU_RING_TAIL, E.tail * 4u);
+    e->busy_since = kosmos_ticks();
+    eng_write(e, IGPU_RING_TAIL, e->tail * 4u);
     return fence;
 }
 
-static void engine_test(long console, struct gpu_reply *rep)
+static void engine_test(long console, struct engine *e, struct gpu_reply *rep)
 {
     struct say_line line;
     uint32_t value = 0, error;
@@ -955,39 +995,39 @@ static void engine_test(long console, struct gpu_reply *rep)
         return;
     }
 
-    error = engine_start();
+    error = engine_start(e);
 
-    if (error == GPU_OK && !engine_idle()) {
+    if (error == GPU_OK && !engine_idle(e)) {
         error = GPU_ERR_BUSY;
     }
 
     if (error == GPU_OK) {
         uint32_t dw[4];
 
-        value = E.next_value++;
-        E.target[0] = 0;
+        value = e->next_value++;
+        e->target[0] = 0;
         dw[0] = IGPU_MI_STORE_DWORD | IGPU_MI_USE_GGTT;
-        dw[1] = E.target_gtt;
+        dw[1] = e->target_gtt;
         dw[2] = 0;
         dw[3] = value;
-        emit(dw, 4);
+        emit(e, dw, 4);
 
         t0 = kosmos_ticks();
-        (void)submit();
+        (void)submit(e);
 
         /* Looked for without sleeping first, a few thousand reads, so the
          * time said is the GPU's rather than a scheduler tick's; then a
          * tick at a time, up to a hundred. */
-        for (i = 0; i < 20000 && E.target[0] != value; i++) {
+        for (i = 0; i < 20000 && e->target[0] != value; i++) {
             __asm__ volatile("" ::: "memory");
         }
 
-        for (i = 0; i < 100 && E.target[0] != value; i++) {
+        for (i = 0; i < 100 && e->target[0] != value; i++) {
             kosmos_sleep(1);
         }
 
         t1 = kosmos_ticks();
-        rep->engine.value = E.target[0];
+        rep->engine.value = e->target[0];
 
         {
             static struct sysinfo machine;     /* large: not on the stack */
@@ -998,29 +1038,30 @@ static void engine_test(long console, struct gpu_reply *rep)
             rep->engine.elapsed_us = (uint32_t)((t1 - t0) / per_us);
         }
 
-        if (E.target[0] != value) {
+        if (e->target[0] != value) {
             error = GPU_ERR_NO_ANSWER;
         }
     }
 
     (void)forcewake(true);
-    rep->engine.head = eng(IGPU_RING_HEAD);
-    rep->engine.tail = eng(IGPU_RING_TAIL);
-    rep->engine.ctl = eng(IGPU_RING_CTL);
-    rep->engine.mode = eng(IGPU_RING_MODE);
-    rep->engine.esr = eng(IGPU_RING_ESR);
+    rep->engine.head = eng(e, IGPU_RING_HEAD);
+    rep->engine.tail = eng(e, IGPU_RING_TAIL);
+    rep->engine.ctl = eng(e, IGPU_RING_CTL);
+    rep->engine.mode = eng(e, IGPU_RING_MODE);
+    rep->engine.esr = eng(e, IGPU_RING_ESR);
     rep->error = error;
 
-    for (i = 0; i < 100 && !engine_idle(); i++) {
+    for (i = 0; i < 100 && !engine_idle(e); i++) {
         kosmos_sleep(1);
     }
 
     say_begin(&line);
-    say_text(&line, "intelgpu: the blitter ");
-    say_text(&line, error == GPU_OK ? "wrote " : "did not write; read ");
+    say_text(&line, "intelgpu: ");
+    say_text(&line, e->name);
+    say_text(&line, error == GPU_OK ? " wrote " : " did not write; read ");
     say_hex(&line, rep->engine.value, 8);
     say_text(&line, ", ring at GTT ");
-    say_hex(&line, E.ring_gtt, 8);
+    say_hex(&line, e->ring_gtt, 8);
     say_text(&line, ", head ");
     say_hex(&line, rep->engine.head, 8);
     say_text(&line, " tail ");
@@ -1127,7 +1168,7 @@ static uint32_t buffer_forget(const struct gpu_request *rq)
         return GPU_ERR_NO_BUFFER;
     }
 
-    if (!engine_idle()) {
+    if (!engine_idle(&BCS)) {
         return GPU_ERR_BUSY;            /* the blitter may still be reading it */
     }
 
@@ -1166,28 +1207,28 @@ static uint32_t blit(const struct gpu_blit *b, struct gpu_reply *rep)
     src = &B[b->src];
     dst = &B[b->dst];
 
-    if ((error = engine_start()) != GPU_OK) {
+    if ((error = engine_start(&BCS)) != GPU_OK) {
         return error;
     }
 
-    (void)engine_idle();
+    (void)engine_idle(&BCS);
 
     /* Room for it all - ten dwords a copy and twenty around them - or not
      * now: several may be in flight, never more than the ring holds. */
-    if (E.in_flight + b->n * 10u + 40u > RING_ROOM
-        || (int32_t)(E.issued + 1u - E.counted) > (int32_t)TS_SLOTS - 1) {
+    if (BCS.in_flight + b->n * 10u + 40u > RING_ROOM
+        || (int32_t)(BCS.issued + 1u - BCS.counted) > (int32_t)TS_SLOTS - 1) {
         return GPU_ERR_BUSY;
     }
 
     /* The engine's clock stored first, and again after the copies have
      * been flushed to memory: the difference is their time (G3), in the
      * slot of the fence they end with. */
-    timed = TS_AT + 2u * ((E.issued + 1u) % TS_SLOTS);
+    timed = TS_AT + 2u * ((BCS.issued + 1u) % TS_SLOTS);
 
     {
         uint32_t dw[4] = { IGPU_MI_STORE_REG_MEM, IGPU_BLT_BASE + IGPU_RING_TIMESTAMP,
-                           E.status_gtt + timed * 4u, 0 };
-        emit(dw, 4);
+                           BCS.status_gtt + timed * 4u, 0 };
+        emit(&BCS, dw, 4);
     }
 
     for (k = 0; k < b->n; k++) {
@@ -1225,19 +1266,19 @@ static uint32_t blit(const struct gpu_blit *b, struct gpu_reply *rep)
         dw[7] = src->pitch;
         dw[8] = src->gtt;
         dw[9] = 0;
-        emit(dw, 10);
+        emit(&BCS, dw, 10);
         given++;
     }
 
     {
         uint32_t dw[8] = { IGPU_MI_FLUSH_DW, 0, 0, 0,
                            IGPU_MI_STORE_REG_MEM, IGPU_BLT_BASE + IGPU_RING_TIMESTAMP,
-                           E.status_gtt + (timed + 1u) * 4u, 0 };
-        emit(dw, 8);
+                           BCS.status_gtt + (timed + 1u) * 4u, 0 };
+        emit(&BCS, dw, 8);
     }
 
-    E.blits += given;
-    rep->engine.value = submit();
+    BCS.blits += given;
+    rep->engine.value = submit(&BCS);
     rep->engine.head = given;
     return GPU_OK;
 }
@@ -1406,8 +1447,8 @@ static void stats(struct gpu_stats *st)
     st->freq_max_mhz = (cap & 0xFFu) * 50u;
     st->freq_min_mhz = ((cap >> 16) & 0xFFu) * 50u;
     st->rc6 = reg(G.regs, IGPU_RC6_RESIDENCY);
-    (void)engine_idle();
-    st->blitter_busy_us = E.ts_hz ? (uint32_t)(E.busy_ts * 1000000u / E.ts_hz) : 0u;
+    (void)engine_idle(&BCS);
+    st->blitter_busy_us = BCS.ts_hz ? (uint32_t)(BCS.busy_ts * 1000000u / BCS.ts_hz) : 0u;
 
     if (G.pipe < 0) {
         st->shown = ~0u;
@@ -1509,7 +1550,7 @@ void intelgpu_server(long console, long endpoint)
             case GPU_OP_STATS:
                 break;              /* answered below, in its own shape */
             case GPU_OP_ENGINE_TEST:
-                engine_test(console, &rep);
+                engine_test(console, rq.x == 1 ? &RCS : &BCS, &rep);
                 break;
             case GPU_OP_BUFFER_IMPORT:
                 rep.error = buffer_import(console, cap, &rq, &rep);
@@ -1530,9 +1571,9 @@ void intelgpu_server(long console, long endpoint)
                 break;
             }
             case GPU_OP_FENCE:
-                rep.engine.value = E.ready ? fence_reached() : 0;
-                rep.engine.tail = E.issued;
-                (void)engine_idle();
+                rep.engine.value = BCS.ready ? fence_reached(&BCS) : 0;
+                rep.engine.tail = BCS.issued;
+                (void)engine_idle(&BCS);
                 break;
             case GPU_OP_FLIPPED:
                 if (G.found && G.pipe >= 0) {

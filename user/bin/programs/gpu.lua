@@ -13,13 +13,14 @@
 --                       given to its blit engine, one command in it - a
 --                       number written to memory - and whether it came
 --                       (`docs/m700-2d.md` step 5)
+--   gpu engine render [n]   the same on the render engine (step 7a)
 --
 -- The test refuses while the window manager's arrow is on the plane, which
 -- on the M700 is always once the desktop is up (step 3b).
 
 local gpu = use("/Kosmos/Libraries/gpu.lua")
 
-local words = use("/Kosmos/Libraries/files.lua").words(args, 2)
+local words = use("/Kosmos/Libraries/files.lua").words(args, 3)
 local seconds = math.tointeger(tonumber(words[2] or "")) or 10
 
 if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" then
@@ -29,12 +30,14 @@ end
 
 if words[1] == "engine" then
   -- `gpu engine 300`: that many in a row, past the ring's 256 and round.
-  local times = math.tointeger(tonumber(words[2] or "")) or 1
+  local render = words[2] == "render"
+  local times = math.tointeger(tonumber(words[render and 3 or 2] or "")) or 1
+  local who = render and "the render engine" or "the blitter"
   local r, why
   local done, fastest, slowest, total = 0, math.huge, 0, 0
 
   for _ = 1, math.max(1, times) do
-    r, why = gpu.engine_test()
+    r, why = gpu.engine_test(render and "render" or nil)
     if not r then break end
     done = done + 1
     fastest, slowest = math.min(fastest, r.elapsed_us), math.max(slowest, r.elapsed_us)
@@ -42,7 +45,7 @@ if words[1] == "engine" then
   end
 
   if r and times <= 1 then
-    print(("gpu: the blitter wrote %08x where it was told, %d us after its tail moved"):format(r.value, r.elapsed_us))
+    print(("gpu: %s wrote %08x where it was told, %d us after its tail moved"):format(who, r.value, r.elapsed_us))
   elseif done > 0 then
     print(("gpu: %d of %d written, the last %08x; %d us fastest, %d slowest, %d on average")
           :format(done, times, gpu.last_engine.value, fastest, slowest, total // done))

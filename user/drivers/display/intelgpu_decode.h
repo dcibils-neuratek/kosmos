@@ -57,6 +57,7 @@
 /* An engine's ring (`intel_engine_regs.h`), from its base: the blitter's
  * is BLT_RING_BASE (`i915_reg.h`). */
 #define IGPU_BLT_BASE           0x22000u
+#define IGPU_RENDER_BASE        0x02000u    /* RENDER_RING_BASE (`i915_reg.h`): the same ring registers */
 #define IGPU_RING_TAIL          0x30u
 #define IGPU_RING_HEAD          0x34u
 #define IGPU_RING_START         0x38u
@@ -92,6 +93,20 @@
 #define IGPU_MI_FLUSH_DW_GTT    (1u << 2)
 /* The same flush with nothing stored: it waits for the engine's writes. */
 #define IGPU_MI_FLUSH_DW        (((0x26u << 23) | 1u) + 1u)
+
+/*
+ * **The render engine's fence** (`m700-2d.md` 7a): MI_FLUSH_DW is the
+ * blitter's and video's, and the render engine's is PIPE_CONTROL with a
+ * post-sync write - `gen8_emit_ggtt_write_rcs` in `gen8_engine_cs.h`: six
+ * dwords, GFX_OP_PIPE_CONTROL(6), the flags with QW_WRITE and GLOBAL_GTT,
+ * the address (8-byte aligned, the write being a qword), its high half,
+ * the value, and a dword it writes over. CS_STALL holds the command
+ * streamer until what came before is done, so the value means "done".
+ */
+#define IGPU_PIPE_CONTROL       ((0x3u << 29) | (0x3u << 27) | (0x2u << 24) | (6u - 2u))
+#define IGPU_PC_QW_WRITE        (1u << 14)
+#define IGPU_PC_CS_STALL        (1u << 20)
+#define IGPU_PC_GLOBAL_GTT      (1u << 24)
 /* A register's value stored to memory (`intel_gpu_commands.h`:
  * MI_STORE_REGISTER_MEM_GEN8, MI_SRM_LRM_GLOBAL_GTT): four dwords - itself,
  * the register's offset, the address low and high. The blitter's busy time

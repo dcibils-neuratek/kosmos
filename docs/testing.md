@@ -27666,3 +27666,36 @@ an empty list since 18.676 - and a second boot opens `machine:usb`, which
 shows the USB view with no devices of the machine's others. **Controls**:
 the bar's reading left out fails the first, `usb_only` left false the
 second.
+
+## 18.680 The render engine runs a command (`m700-2d.md` 7a)
+
+The driver's engine is a structure now, `struct engine` with its base and a
+name: the blitter `BCS` at 0x22000 and the render engine `RCS` at 0x2000,
+two of one thing - started by the same function, as i915's legacy start is
+one for every engine (`xcs_resume`), each with its own ring, status page
+and fence, and one forcewake held while either has work. The fence is the
+one difference: the blitter's is `MI_FLUSH_DW` storing a dword, and the
+render engine's a `PIPE_CONTROL` with a post-sync qword write to the
+global GTT and `CS_STALL` (`gen8_emit_ggtt_write_rcs`) - six dwords, to
+byte 256 of the status page, which is 8-aligned as a qword write must be.
+`gpu engine render [n]` asks for it; the request's `x` says which engine.
+
+**On the M700, the first try**: the render engine wrote its value 5 us
+after its tail moved; 300 in a row, 4 us on average and 9 at worst; 500,
+round the 16 KB ring - the head's offset back at the tail's, its wrap count
+in bit 21 at one - with no error in `RING_ESR`. The blitter after the
+refactor: 50 of 50, 4 us on average, as before, and again after the render
+engine had run.
+
+**Tests.** `test_intelgpu_decode`, 34 checks: the render ring's registers
+at 0x2030 and 0x203c, `PIPE_CONTROL` as 0x7a000004, and its post-sync
+write's bits. `x86-gpumon`, 10 checks: `gpu engine render` says there is no
+Intel GPU under QEMU, in the driver's words. The engines themselves are the
+M700's to show.
+
+**The gate**: 94 of 96 at once, in 9:14 - with Mesa being compiled on the
+same Mac (for 7b), which is the likely reason `x86-smbd` waited its 120
+seconds out; it passed alone, 38 checks. `x86-machine` failed on its
+picture: it took the screendump as the window said what it shows, a moment
+before the picture reached the screen, and found no pills. It looks again
+each second for up to 15 now; both passed together in 1:44.

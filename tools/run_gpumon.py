@@ -79,6 +79,17 @@ def main():
         while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
             time.sleep(0.1)
 
+        # And the render engine's (7a), the same answer.
+        mark = len(guest.seen)
+        guest.type("gpu engine render")
+        got = said("gpu: ", mark, 30)
+        check(got == "no Intel GPU this driver knows",
+              "gpu engine render did not say there is no Intel GPU here: %r" % got)
+
+        deadline = time.monotonic() + 30
+        while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
+            time.sleep(0.1)
+
         mark = len(guest.seen)
         # GPU Monitor, and the rendering modes switched while the desktop
         # runs (`docs/rendering.md` R1): Framebuffer given as asked, then

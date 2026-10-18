@@ -118,8 +118,22 @@ def main():
                         n += 1
             return n
 
-        check(count(DRIVEN) > 40, "This Machine drew no green \"Driven by\" pill")
-        check(count(NONE) > 40, "This Machine drew no grey \"no driver\" pill")
+        # Looked for until they are there: the line above is said as the
+        # window draws, a moment before its picture reaches the screen.
+        deadline = time.monotonic() + 15
+        green = grey = 0
+
+        while True:
+            green, grey = count(DRIVEN), count(NONE)
+
+            if (green > 40 and grey > 40) or time.monotonic() > deadline:
+                break
+
+            time.sleep(1)
+            width, height, px = R.parse_ppm(guest.screendump())
+
+        check(green > 40, "This Machine drew no green \"Driven by\" pill")
+        check(grey > 40, "This Machine drew no grey \"no driver\" pill")
 
         # The two choices, where the window said they are.
         def where(items):

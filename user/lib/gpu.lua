@@ -66,10 +66,13 @@ end
 -- **The blitter's first work** (`m700-2d.md` step 5): the driver wakes the
 -- GPU, gives its blit engine a ring, puts one command in it and looks for
 -- the number it writes. The registers as left, in `gpu.last_engine`,
--- whether it worked or not.
+-- whether it worked or not. `engine` "render" asks the render engine
+-- instead (step 7a), its ring at 0x2000 and its fence a PIPE_CONTROL - the
+-- request's `x`, 1 for it.
 --
-function gpu.engine_test()
-  local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, 10, 0, 0, 0, 0, 0, 0, 0), nil, "gpu")
+function gpu.engine_test(engine)
+  local which = engine == "render" and 1 or 0
+  local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, 10, 0, which, 0, 0, 0, 0, 0), nil, "gpu")
 
   if not reply then return nil, tostring(why) end
   if #reply < 32 then return nil, "the GPU's driver sent a reply of the wrong size" end

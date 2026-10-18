@@ -124,6 +124,15 @@ int main(void)
     check(IGPU_MI_STORE_REG_MEM == 0x12400002u, "MI_STORE_REGISTER_MEM_GEN8 with the global GTT");
     check(IGPU_MI_FLUSH_DW == 0x13000002u, "MI_FLUSH_DW, a dword longer, storing nothing");
 
+    /* The render engine (7a): its ring at RENDER_RING_BASE, and its fence a
+     * PIPE_CONTROL - GFX_OP_PIPE_CONTROL(6) is 0x7a000004 - with the post-
+     * sync write's bits as `intel_gpu_commands.h` numbers them. */
+    check(IGPU_RENDER_BASE + IGPU_RING_TAIL == 0x2030u && IGPU_RENDER_BASE + IGPU_RING_CTL == 0x203cu,
+          "the render engine's ring: RCS_RING_TAIL 0x2030, RING_CTL 0x203c");
+    check(IGPU_PIPE_CONTROL == 0x7a000004u, "PIPE_CONTROL, six dwords");
+    check(IGPU_PC_QW_WRITE == 0x4000u && IGPU_PC_CS_STALL == 0x100000u && IGPU_PC_GLOBAL_GTT == 0x1000000u,
+          "its post-sync write: QW_WRITE 14, CS_STALL 20, GLOBAL_GTT 24");
+
     printf("%s: %d checks on intelgpu_decode\n", failed ? "FAIL" : "PASS", checks);
     return failed != 0;
 }
