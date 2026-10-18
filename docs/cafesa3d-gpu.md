@@ -154,14 +154,17 @@ the suites, and then on the M700.
 1. **R1 - `eu.lua` and the check learn what a tracer needs.** The structured
    branches `if`, `else`, `endif`, `while`, `break` and `cont`, each target
    held inside the kernel; `math`'s forms; the untyped reads and writes.
-   Every new form is held to Mesa's gentool in the corpus.
+   Every new form is held to Mesa's gentool in the corpus. **Done in
+   0.11.293** (`testing.md` 18.692).
 2. **R2 - the emulator**, in C on the Mac: the subset run lane by lane,
    with masks, flags and the sends to buffers. It is held to the GPU's
    answers already known - the fill, the Mandelbrot against `fractal.c`,
-   the lesson's pattern - and then to the M700's.
+   the lesson's pattern - and then to the M700's. **Done in 0.11.294**
+   (18.693): GPU Fractal emulated is `fractal.c` on all 480,000 pixels.
 3. **R3 - the language**, `kc.lua`: lexer, parser, checks, the lanes'
    control flow, registers, and `eu.lua` text out. Its tests compile
-   programs and run them in the emulator.
+   programs and run them in the emulator. **Done** (18.694): `kc.lua`,
+   25 checks through the emulator in SIMD8 and SIMD16.
 4. **R4 - the scene in buffers**, `k3d_gpu.c`: what `k3d_render_new`
    builds, flattened to arrays, held on the Mac to the processor's
    structures.

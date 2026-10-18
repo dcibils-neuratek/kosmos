@@ -335,7 +335,7 @@ static const char *two_source(struct thread *t, const uint32_t *w, unsigned op, 
     bool sat = bits(w, 31, 31) != 0;
     struct src s0, s1;
     struct val out[LANES];
-    bool write[LANES], flag_out[LANES], has_flag = false, ok = true;
+    bool write[LANES], flag_out[LANES], raw[LANES] = { false }, has_flag = false, ok = true;
     unsigned lane;
 
     if (bits(w, 63, 63) || (f0 != FILE_IMM && bits(w, 79, 79)) || (f0 != FILE_IMM && f1 != FILE_IMM && bits(w, 111, 111))) {
@@ -368,10 +368,14 @@ static const char *two_source(struct thread *t, const uint32_t *w, unsigned op, 
         if (op == 0x10) {                               /* cmp: a flag, and the destination 0 or ~0 */
             bool c = compare(cond, a, b);
 
+            /* All ones or nought, whatever the destination's type: a
+             * float destination holds the bits, which Mesa then ands with
+             * 1.0's to make a boolean a number. */
             if (pred) {
                 flag_out[lane] = c;
                 has_flag = true;
-                out[lane] = dst_type == T_F ? fval(c ? 1.0f : 0.0f) : ival(c ? 4294967295.0 : 0);
+                out[lane] = ival(c ? 4294967295.0 : 0);
+                raw[lane] = true;
                 write[lane] = true;
             }
 
@@ -423,7 +427,13 @@ static const char *two_source(struct thread *t, const uint32_t *w, unsigned op, 
                     return "a destination past r127";
                 }
 
-                store(&t->grf[at], dst_type, out[lane], sat);
+                if (raw[lane]) {
+                    uint32_t u = wrap(out[lane].i);
+
+                    memcpy(&t->grf[at], &u, type_bytes(dst_type) > 4 ? 4 : type_bytes(dst_type));
+                } else {
+                    store(&t->grf[at], dst_type, out[lane], sat);
+                }
             }
         }
 

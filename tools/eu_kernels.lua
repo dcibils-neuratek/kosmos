@@ -173,6 +173,25 @@ mov (8|M0) r112.0<1>:ud r0.0<8;8,1>:ud
 send.ts (16|M0) null r112:d 0x00000000 0x02000010 {EOT}
 ]])
 
+-- A kernel kc.lua compiled (cafesa3d-gpu.md R3): what the compiler writes
+-- is checked as any kernel is - Collatz's steps, lanes that disagree.
+do
+  local code, info = dofile("user/lib/kc.lua").assemble([[
+buffer out;
+void main() {
+  int n = group_x * simd + lane + 1;
+  int steps = 0;
+  while (n != 1) {
+    if (n % 2 == 0) { n = n / 2; } else { n = 3 * n + 1; }
+    steps += 1;
+  }
+  store(out, (group_x * simd + lane) * 4, steps);
+}
+]], { simd = 8 })
+
+  case("kc-collatz", OK, 0, assert(code, info))
+end
+
 -- The bits eu.lua does not write, put in by hand.
 local plain = kernel("plain", OK, 0, "add (16|M0) r10.0<1>:d r11.0<8;8,1>:d 1:d\n" .. END_THREAD)
 

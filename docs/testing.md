@@ -28318,3 +28318,62 @@ kernel only checked the encoding; the compiler (R3) must write it that way.
 
 It is held to the M700 in its turn: the same kernels, run there, are the
 emulator's own test.
+
+## 18.694 Kosmos's kernel language (`cafesa3d-gpu.md` R3)
+
+`user/lib/kc.lua`, decision E1 A: a kernel written C-shaped and compiled
+on Kosmos, in the program's own process, to `eu.lua`'s text. `eu.lua`
+assembles it and the driver checks it as it checks any kernel, so the
+compiler is never trusted with the GPU's safety.
+
+**The language**:
+- constants, buffers and functions; `int`, `float`, `bool`, `vec3`;
+- the arithmetic, comparisons, `&&`, `||`, `!` and `? :`;
+- `if`, `else`, `while`, `for`, `break`, `continue`, `return`;
+- the built-ins the tracer needs: maths, `vec3`'s `dot`, `cross`,
+  `normalize` and `length`, and the buffers' `load`, `loadi`, `load3`,
+  `store` and `store3` by a byte offset.
+
+Every variable is a lane's own: a register in SIMD8, two in SIMD16,
+scoped and given back when its block ends.
+
+**How it compiles**:
+- A comparison writes all ones or nought, as the hardware's `cmp` does.
+  The emulator now does too: it had written 1.0 into a float destination.
+- Control flow is the GPU's structured branches, with targets as the PRM
+  has them. An `if` sends failing lanes past its `else`. `break` and
+  `continue` go to the innermost block's end, then on. A `for`'s step runs
+  before each `continue`, as well as before its `while`.
+- Functions are inlined. One that returns early runs inside a loop that
+  runs once, and its `return` is a `break` out of it. A `return` from
+  inside a loop is refused, rather than half done.
+- Floats are rounded as C rounds them, with no fused multiply-adds, so a
+  kernel can be held to the 3D Kit's arithmetic.
+- A constant is never an instruction's first source: `5 - x` puts the 5
+  in a register rather than swapping it. That bug was found on reading
+  the code back, before any test ran.
+
+**`tools/eu_run.c`**: the emulator from the command line, buffers given
+by size or by their bytes, so the compiler's tests can be written in Lua.
+
+**Tests.**
+- **`tools/test_kc.lua` in `host`, 25 checks.** Each program is compiled,
+  assembled, run in the emulator in SIMD8 and SIMD16, and every lane held
+  to the same program worked out in Lua, single precision rounded at each
+  step:
+  - integers and where a lane is; floats and conversions;
+  - Collatz's steps, every lane a different number of them;
+  - `for` with `continue`, nested `if`s with `break`, `while (true)`, a
+    ternary;
+  - functions returning early from inside `if`s; `vec3` and its cross and
+    dot products;
+  - the GPU's maths, within 1e-5;
+  - buffers through `load3` and `store3`.
+
+  Seven mistakes are refused at their lines, and the constants are packed
+  as laid out.
+- **The driver's check passes what the compiler writes**: `eu_kernels.lua`'s
+  `kc-collatz`.
+- **Controls**: an `if` whose failing lanes go to its `else` rather than
+  past it leaves a thread that never ends; a `continue` sent to the loop's
+  end rather than its `while` gets lane 0 wrong, 2001 for 2151.
