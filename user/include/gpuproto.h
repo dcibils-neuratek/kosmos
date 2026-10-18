@@ -82,6 +82,15 @@
 #define GPU_OP_FENCE         13u
 #define GPU_OP_BUFFER_FORGET 14u
 
+/*
+ * **The first program on the execution units** (`m700-2d.md` 7b): the
+ * render engine's GPGPU pipeline runs a kernel that fills a 64 by 4
+ * surface with the colour in `x`'s low byte. The engine reply's `value` is
+ * how many of its 256 bytes are the colour, `ctl` how many bytes after it
+ * were written that should not have been.
+ */
+#define GPU_OP_COMPUTE_TEST  15u
+
 #define GPU_BLIT_RECTS       64u
 #define GPU_BUFFER_IMPORTED  2u     /* a buffer's kind: a region handed in, shared */
 

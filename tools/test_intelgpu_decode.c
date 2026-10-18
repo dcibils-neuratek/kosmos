@@ -133,6 +133,16 @@ int main(void)
     check(IGPU_PC_QW_WRITE == 0x4000u && IGPU_PC_CS_STALL == 0x100000u && IGPU_PC_GLOBAL_GTT == 0x1000000u,
           "its post-sync write: QW_WRITE 14, CS_STALL 20, GLOBAL_GTT 24");
 
+    /* The GPGPU pipeline (7b): each command as intel-gpu-tools emits it
+     * for Skylake, its words worked out by hand from GFXPIPE. */
+    check(IGPU_PIPELINE_SELECT == 0x69040302u, "PIPELINE_SELECT, the mask and GPGPU");
+    check(IGPU_STATE_BASE_ADDRESS == 0x61010011u, "STATE_BASE_ADDRESS, nineteen dwords");
+    check(IGPU_MEDIA_VFE_STATE == 0x70000007u, "MEDIA_VFE_STATE, nine dwords");
+    check(IGPU_MEDIA_CURBE_LOAD == 0x70010002u && IGPU_MEDIA_IDL == 0x70020002u,
+          "MEDIA_CURBE_LOAD and MEDIA_INTERFACE_DESCRIPTOR_LOAD, four dwords each");
+    check(IGPU_MEDIA_STATE_FLUSH == 0x70040000u, "MEDIA_STATE_FLUSH, two dwords");
+    check(IGPU_GPGPU_WALKER == 0x7105000du, "GPGPU_WALKER, fifteen dwords");
+
     printf("%s: %d checks on intelgpu_decode\n", failed ? "FAIL" : "PASS", checks);
     return failed != 0;
 }

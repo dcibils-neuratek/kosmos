@@ -86,6 +86,11 @@ Vendored third-party code keeps its own licence, which travels beside it:
       in README.kosmos.md beside it. Not in the system's image: `make
       apps` links it into snes.elf, installed in /Home/Apps/SNES
 
+  intel-gpu-tools' GPGPU fill kernel, by Intel Corporation, MIT
+      The ten instructions in user/drivers/display/intelgpu_fill.h, the
+      first program Kosmos runs on the M700's execution units, from
+      igt-gpu-tools 2.6's lib/gpgpu_fill.c, credited there
+
   The fonts
       assets/fonts/, each under the LICENSE file beside it. A font
       whose licence is not beside it is not committed, and the build

@@ -27699,3 +27699,46 @@ seconds out; it passed alone, 38 checks. `x86-machine` failed on its
 picture: it took the screendump as the window said what it shows, a moment
 before the picture reached the screen, and found no pills. It looks again
 each second for up to 15 now; both passed together in 1:44.
+
+## 18.681 The first program on the execution units (`m700-2d.md` 7b)
+
+The render engine switched to its GPGPU pipeline and given a kernel:
+`gpu compute [colour]` walks sixteen thread groups over a 64 by 4 surface,
+each filling 16 bytes of a row with a colour, and counts what arrived.
+Set up as intel-gpu-tools sets up its fill for Skylake (`lib/gpu_cmds.c`,
+igt-gpu-tools 2.6, fetched into `build/downloads/igt`, SHA-256 5d5190de...,
+MIT): one page in the GTT holding the kernel, its constants, the interface
+descriptor, the binding table and a 2D R8 surface state, which is the base
+of the surface, dynamic and instruction state; and in the render ring a
+PIPE_CONTROL invalidating the caches, PIPELINE_SELECT to GPGPU,
+STATE_BASE_ADDRESS, MEDIA_VFE_STATE, the constants' and the descriptor's
+loads, GPGPU_WALKER, MEDIA_STATE_FLUSH, and a PIPE_CONTROL flushing the
+data cache before the fence. The 256 bytes after the surface are held to
+zero, so a walk past it would be seen.
+
+**The kernel is intel-gpu-tools' own ten instructions**
+(`intelgpu_fill.h`, credited there and in `LICENSE`), run on Skylake by its
+own tests, so the first try had the batch around it as its only unknown.
+**Mesa's `gentool`** - its new assembler and disassembler for generation 9
+and after, `src/intel/compiler/gen` in Mesa 26.2.5 (SHA-256 794b3d17...) -
+was built on the Mac by hand for this, since Mesa builds `src/intel` only
+with an Intel driver and none builds on macOS: the `gen` library, its two
+generated tables, `dev`'s device info and three generated files, Mesa's
+`ralloc` and `lut`, and a page of stubs for the kernel queries and the
+environment. It passes Mesa's own 2474 round-trip cases, Skylake's among
+them, and is what reads the kernel's words in the header's comment. Written
+back from that reading it assembles the same words but one: the write's
+`send`, whose extended descriptor gentool reads from `a0.0` in the original
+and writes as an immediate - so the words are the original's.
+
+**On the M700, the first try**: 256 of 256 bytes, 0 written past, no error
+in `RING_ESR`, 85 us from doorbell to fence; then 0x11, 0xa7, 0xff and 0x01,
+each 256 of 256 in 51 us; the blitter and the render engine's store after,
+20 of 20 each, and the desktop drawn throughout. **The control, on the
+machine**: the colour plus one put in the kernel's constants - "written, and
+read back different", 0 of 256.
+
+**Tests.** Full gate 96/96 in 9:18. `test_intelgpu_decode`, 40 checks: the GPGPU pipeline's commands
+as their words, from GFXPIPE by hand. `x86-gpumon`, 11 checks: `gpu compute`
+says there is no Intel GPU under QEMU. `LICENSE` names the kernel (`host`'s
+licence check, 30 entries).

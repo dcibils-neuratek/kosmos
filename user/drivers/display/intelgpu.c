@@ -29,6 +29,7 @@
 #include "kosmos.h"
 #include "gpuproto.h"
 #include "intelgpu_decode.h"
+#include "intelgpu_fill.h"
 #include "mmio.h"
 #include "init/say.h"
 
@@ -1076,6 +1077,208 @@ static void engine_test(long console, struct engine *e, struct gpu_reply *rep)
 }
 
 /*
+ * **The first program on the execution units** (`m700-2d.md` 7b): the
+ * render engine switched to its GPGPU pipeline, given a kernel, and walked
+ * over sixteen thread groups - four across, four down - each filling 16
+ * bytes of a 64 by 4 surface with `colour` (`intelgpu_fill.h`). Set up as
+ * intel-gpu-tools sets up its fill for Skylake (`lib/gpu_cmds.c`): the
+ * state in one page that is the base of the surface, dynamic and
+ * instruction state - the kernel, its constants, the interface descriptor,
+ * the binding table and the surface - and the commands in the ring itself.
+ * Answers how many of the 256 bytes are the colour, and the 256 after them
+ * are held to zero, so a walk past the surface is seen.
+ */
+#define CS_KERNEL_AT  0x000u
+#define CS_CURBE_AT   0x100u
+#define CS_IDD_AT     0x140u
+#define CS_BT_AT      0x180u
+#define CS_SS_AT      0x1c0u
+#define CS_W          64u                /* the surface, in bytes */
+#define CS_H          4u                 /*   and rows */
+
+static volatile uint32_t *cs_state, *cs_target;
+static uint32_t cs_state_gtt, cs_target_gtt;
+
+static void compute_test(long console, uint32_t colour, struct gpu_reply *rep)
+{
+    struct say_line line;
+    volatile uint8_t *bytes;
+    uint32_t error, right = 0, past = 0;
+    unsigned long t0, t1;
+    unsigned i;
+
+    if (!G.found) {
+        rep->error = GPU_ERR_NO_DEVICE;
+        return;
+    }
+
+    if (!forcewake(true)) {
+        rep->error = GPU_ERR_NO_WAKE;
+        return;
+    }
+
+    error = engine_start(&RCS);
+
+    if (error == GPU_OK && !engine_idle(&RCS)) {
+        error = GPU_ERR_BUSY;
+    }
+
+    if (error == GPU_OK && cs_state == NULL
+        && (!gtt_pages(1, &cs_state, &cs_state_gtt) || !gtt_pages(1, &cs_target, &cs_target_gtt))) {
+        error = GPU_ERR_NO_MEMORY;
+    }
+
+    if (error == GPU_OK) {
+        volatile uint32_t *k = cs_state + CS_KERNEL_AT / 4u;
+        volatile uint32_t *idd = cs_state + CS_IDD_AT / 4u;
+        volatile uint32_t *ss = cs_state + CS_SS_AT / 4u;
+        const uint32_t *words = &intelgpu_fill_kernel[0][0];
+        uint32_t sba_lo = cs_state_gtt | 1u;            /* the base, and modify */
+
+        for (i = 0; i < 1024u; i++) {
+            cs_state[i] = 0;
+            cs_target[i] = 0;
+        }
+
+        for (i = 0; i < sizeof(intelgpu_fill_kernel) / 4u; i++) {
+            k[i] = words[i];
+        }
+
+        cs_state[CS_CURBE_AT / 4u] = colour & 0xffu;    /* r1's first byte */
+
+        idd[0] = CS_KERNEL_AT;                          /* from the instruction base */
+        idd[2] = 1u << 18;                              /* single program flow, IEEE */
+        idd[4] = CS_BT_AT;                              /* from the surface base, 32-aligned */
+        idd[5] = 1u << 16;                              /* one register of constants: r1 */
+        idd[6] = 1u;                                    /* one thread a group */
+
+        cs_state[CS_BT_AT / 4u] = CS_SS_AT;             /* surface 0 */
+
+        ss[0] = (1u << 29) | (IGPU_SURFACEFORMAT_R8_UNORM << 18) | (1u << 16) | (1u << 14) | (1u << 8);
+        ss[2] = (CS_W - 1u) | ((CS_H - 1u) << 16);
+        ss[3] = CS_W - 1u;                              /* the pitch, less one */
+        ss[7] = (4u << 25) | (5u << 22) | (6u << 19) | (7u << 16);   /* R, G, B, A */
+        ss[8] = cs_target_gtt;
+
+        {
+            const uint32_t before[6] = { IGPU_PIPE_CONTROL, IGPU_PC_CS_STALL | IGPU_PC_INVALIDATE, 0, 0, 0, 0 };
+            const uint32_t select = IGPU_PIPELINE_SELECT;
+            const uint32_t sba[19] = {
+                IGPU_STATE_BASE_ADDRESS,
+                1u, 0,                                  /* general: 0, modified */
+                1u,                                     /* stateless data port */
+                sba_lo, 0,                              /* surface state */
+                sba_lo, 0,                              /* dynamic state */
+                0, 0,                                   /* indirect objects */
+                sba_lo, 0,                              /* instructions */
+                0xfffff000u | 1u, 0x1000u | 1u,         /* sizes: general, dynamic - a page */
+                0xfffff000u | 1u, 0x1000u | 1u,         /*   indirect, instructions - a page */
+                1u, 0, 0xfffff000u,                     /* bindless surface state */
+            };
+            const uint32_t vfe[9] = { IGPU_MEDIA_VFE_STATE, 0, 0, (1u << 16) | (1u << 8), 0, 1u, 0, 0, 0 };
+            const uint32_t curbe[4] = { IGPU_MEDIA_CURBE_LOAD, 0, 64u, CS_CURBE_AT };
+            const uint32_t idl[4] = { IGPU_MEDIA_IDL, 0, 32u, CS_IDD_AT };
+            const uint32_t walk[15] = {
+                IGPU_GPGPU_WALKER, 0, 0, 0,
+                1u << 30,                               /* SIMD16, a thread a group */
+                0, 0, CS_W / 16u,                       /* groups across */
+                0, 0, CS_H,                             /*   and down */
+                0, 1u,
+                0xffffu, 0xffffffffu,                   /* every channel right and bottom */
+            };
+            const uint32_t flush[2] = { IGPU_MEDIA_STATE_FLUSH, 0 };
+            const uint32_t after[6] = { IGPU_PIPE_CONTROL, IGPU_PC_CS_STALL | IGPU_PC_DC_FLUSH | IGPU_PC_RT_FLUSH,
+                                        0, 0, 0, 0 };
+
+            emit(&RCS, before, 6);
+            emit(&RCS, &select, 1);
+            emit(&RCS, sba, 19);
+            emit(&RCS, vfe, 9);
+            emit(&RCS, curbe, 4);
+            emit(&RCS, idl, 4);
+            emit(&RCS, walk, 15);
+            emit(&RCS, flush, 2);
+            emit(&RCS, after, 6);
+        }
+
+#if defined(__x86_64__)
+        __asm__ volatile("sfence" ::: "memory");    /* the state's writes out before the doorbell */
+#endif
+
+        t0 = kosmos_ticks();
+        {
+            uint32_t fence = submit(&RCS);
+
+            for (i = 0; i < 20000 && fence_reached(&RCS) != fence; i++) {
+                __asm__ volatile("" ::: "memory");
+            }
+
+            for (i = 0; i < 100 && fence_reached(&RCS) != fence; i++) {
+                kosmos_sleep(1);
+            }
+
+            if (fence_reached(&RCS) != fence) {
+                error = GPU_ERR_NO_ANSWER;
+            }
+        }
+        t1 = kosmos_ticks();
+
+        bytes = (volatile uint8_t *)cs_target;
+
+        for (i = 0; i < CS_W * CS_H; i++) {
+            right += bytes[i] == (uint8_t)colour;
+        }
+
+        for (i = CS_W * CS_H; i < 2u * CS_W * CS_H; i++) {
+            past += bytes[i] != 0;
+        }
+
+        rep->engine.value = right;
+        rep->engine.ctl = past;
+
+        {
+            static struct sysinfo machine;     /* large: not on the stack */
+            unsigned long per_us;
+
+            per_us = kosmos_sysinfo(&machine) == 0 && machine.counter_hz >= 1000000u
+                   ? machine.counter_hz / 1000000u : 1u;
+            rep->engine.elapsed_us = (uint32_t)((t1 - t0) / per_us);
+        }
+
+        if (error == GPU_OK && (right != CS_W * CS_H || past != 0)) {
+            error = GPU_ERR_UNCHANGED;
+        }
+    }
+
+    (void)forcewake(true);
+    rep->engine.head = eng(&RCS, IGPU_RING_HEAD);
+    rep->engine.tail = eng(&RCS, IGPU_RING_TAIL);
+    rep->engine.mode = eng(&RCS, IGPU_RING_MODE);
+    rep->engine.esr = eng(&RCS, IGPU_RING_ESR);
+    rep->error = error;
+
+    for (i = 0; i < 100 && !engine_idle(&RCS); i++) {
+        kosmos_sleep(1);
+    }
+
+    say_begin(&line);
+    say_text(&line, "intelgpu: the execution units ");
+    say_text(&line, error == GPU_OK ? "filled " : "did not fill; ");
+    say_dec(&line, right);
+    say_text(&line, " of 256 bytes with ");
+    say_hex(&line, colour & 0xffu, 2);
+    say_text(&line, ", ");
+    say_dec(&line, past);
+    say_text(&line, " written past; head ");
+    say_hex(&line, rep->engine.head, 8);
+    say_text(&line, " tail ");
+    say_hex(&line, rep->engine.tail, 8);
+    say_text(&line, " esr ");
+    say_hex(&line, rep->engine.esr, 8);
+    say_send(console, &line);
+}
+
+/*
  * **A region another process drew in, handed to the GPU** (step 6): each
  * of its pages entered in a GTT slot of its own, from `kosmos_mem_page_phys`,
  * so it need not be one run. The window server's back buffer is the
@@ -1551,6 +1754,9 @@ void intelgpu_server(long console, long endpoint)
                 break;              /* answered below, in its own shape */
             case GPU_OP_ENGINE_TEST:
                 engine_test(console, rq.x == 1 ? &RCS : &BCS, &rep);
+                break;
+            case GPU_OP_COMPUTE_TEST:
+                compute_test(console, (uint32_t)rq.x, &rep);
                 break;
             case GPU_OP_BUFFER_IMPORT:
                 rep.error = buffer_import(console, cap, &rq, &rep);

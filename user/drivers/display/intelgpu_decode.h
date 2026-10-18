@@ -107,6 +107,26 @@
 #define IGPU_PC_QW_WRITE        (1u << 14)
 #define IGPU_PC_CS_STALL        (1u << 20)
 #define IGPU_PC_GLOBAL_GTT      (1u << 24)
+#define IGPU_PC_DC_FLUSH        (1u << 5)   /* the data port's writes out */
+#define IGPU_PC_RT_FLUSH        (1u << 12)  /* the render target cache */
+#define IGPU_PC_INVALIDATE      ((1u << 11) | (1u << 10) | (1u << 3) | (1u << 2))
+                                            /* instruction, texture, constant, state */
+
+/*
+ * **The GPGPU pipeline** (`m700-2d.md` 7b), as intel-gpu-tools sets it up
+ * for Skylake (`lib/gpu_cmds.c`, `lib/gen7_media.h`, `lib/gen8_media.h`):
+ * GFXPIPE(pipeline, opcode, sub-opcode) is 3 << 29 | those at 27, 24 and
+ * 16, and each command's low bits its length less two.
+ */
+#define IGPU_GFXPIPE(p, o, s)   ((3u << 29) | ((p) << 27) | ((o) << 24) | ((s) << 16))
+#define IGPU_PIPELINE_SELECT    (IGPU_GFXPIPE(1u, 1u, 4u) | (3u << 8) | 2u)  /* mask, GPGPU */
+#define IGPU_STATE_BASE_ADDRESS (IGPU_GFXPIPE(0u, 1u, 1u) | (19u - 2u))
+#define IGPU_MEDIA_VFE_STATE    (IGPU_GFXPIPE(2u, 0u, 0u) | (9u - 2u))
+#define IGPU_MEDIA_CURBE_LOAD   (IGPU_GFXPIPE(2u, 0u, 1u) | (4u - 2u))
+#define IGPU_MEDIA_IDL          (IGPU_GFXPIPE(2u, 0u, 2u) | (4u - 2u))
+#define IGPU_MEDIA_STATE_FLUSH  (IGPU_GFXPIPE(2u, 0u, 4u) | (2u - 2u))
+#define IGPU_GPGPU_WALKER       (IGPU_GFXPIPE(2u, 1u, 5u) | (15u - 2u))
+#define IGPU_SURFACEFORMAT_R8_UNORM 0x140u
 /* A register's value stored to memory (`intel_gpu_commands.h`:
  * MI_STORE_REGISTER_MEM_GEN8, MI_SRM_LRM_GLOBAL_GTT): four dwords - itself,
  * the register's offset, the address low and high. The blitter's busy time
