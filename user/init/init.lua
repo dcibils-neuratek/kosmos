@@ -4337,7 +4337,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap,
                           midi_cap, notify_cap, share_cap, keyring_cap, tiles_cap,
                           mail_keys_cap, window_cap, mdns_cap, sharing_cap,
-                          gpu_cap, sandboxes_cap)
+                          usb_cap, gpu_cap, sandboxes_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -4386,6 +4386,13 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   --
   if gpu_cap then
     ns.mount("/Devices/gpu", gpu_cap, nil, "gpu")
+  end
+
+  -- `/Devices/usb`: every device on every USB port, driven or not
+  -- (`docs/machine.md` M1, `usbproto.h`) - mounted for everybody, as the
+  -- GPU's is: a list, and nothing in it to change.
+  if usb_cap then
+    ns.mount("/Devices/usb", usb_cap, nil, "usb")
   end
 
   if backlight_cap then
@@ -5208,6 +5215,7 @@ query. `find` and `watch` are built on exactly these two calls.
     local sandboxes = sandboxes_cap
     -- And the GPU's driver, as the backlight's is: a device of the machine.
     local gpu = gpu_cap
+    local usb = usb_cap
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -5263,6 +5271,8 @@ query. `find` and `watch` are built on exactly these two calls.
     if sandboxes then caps[#caps + 1] = sandboxes; sandboxes_at = #caps - 1 end
     local gpu_at = nil
     if gpu then caps[#caps + 1] = gpu; gpu_at = #caps - 1 end
+    local usb_at = nil
+    if usb then caps[#caps + 1] = usb; usb_at = #caps - 1 end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
     local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags)
@@ -5280,7 +5290,7 @@ query. `find` and `watch` are built on exactly these two calls.
       backlight = 12, notify = 13, share = share_cap and 14 or nil,
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
       mailkeys = mailkeys_at, windowserver = window_at, mdns = mdns_at,
-      sharing = sharing_at, sandboxes = sandboxes_at, gpu = gpu_at,
+      sharing = sharing_at, sandboxes = sandboxes_at, gpu = gpu_at, usb = usb_at,
       home_in_memory = home_in_memory or nil,
       protostamp = sys.protostamp,
     })
@@ -6058,6 +6068,7 @@ if role == ROLE_INIT then
   local DRIVES_EP = sys.endpoint()
   local BACKLIGHT_EP = sys.endpoint()
   local GPU_EP = sys.endpoint()             -- /Devices/gpu: the GPU's driver
+  local USB_EP = sys.endpoint()             -- /Devices/usb: the USB driver's list of devices
 
   --
   -- **`/Devices/camera`**, answered by the USB driver (`usb.md` §11 8d). Handed
@@ -6270,7 +6281,7 @@ if role == ROLE_INIT then
   do
     local _, err = sys.spawn(ROLE_XHCI,
                              { CONSOLE_EP, BLOCKS_EP, BLOCKS_WRITE_EP,
-                               FRAMES_EP, CAMERA_EP, MIDI_EP, NOTIFY_EP },
+                               FRAMES_EP, CAMERA_EP, MIDI_EP, NOTIFY_EP, USB_EP },
                              SPAWN_DEVICES)
 
     if err then
@@ -6579,7 +6590,7 @@ if role == ROLE_INIT then
                         KEYRING_MAIL_EP, WINDOW_EP, MDNS_EP, SMBD_EP,
                         -- Before `/Sandboxes`, which a machine may not have:
                         -- a list with a gap in it ends at the gap.
-                        GPU_EP, SANDBOXES_EP },
+                        USB_EP, GPU_EP, SANDBOXES_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -6653,7 +6664,7 @@ if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
   shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
-             22, 23)
+             22, 23, 24)
   return
 end
 
@@ -6836,6 +6847,10 @@ if role == ROLE_RUNNER then
   if req.net     then ns.mount("/Network",         req.net, nil, "net", req.share) end
   if req.blocks  then ns.mount("/Devices/blocks",  req.blocks, nil, "blocks") end
   if req.drives  then ns.mount("/Drives",          req.drives, nil, "drives") end
+  if req.usb then
+    ns.mount("/Devices/usb", req.usb, nil, "usb")
+  end
+
   if req.gpu then
     ns.mount("/Devices/gpu", req.gpu, nil, "gpu")
   end
@@ -7042,7 +7057,12 @@ if role == ROLE_RUNNER then
     end
 
     -- And the GPU's driver (`docs/m700-2d.md`).
-    local gpu_at = nil
+    local gpu_at, usb_at = nil, nil
+
+    if req.usb then
+      caps[#caps + 1] = req.usb
+      usb_at = #caps - 1
+    end
 
     if req.gpu then
       caps[#caps + 1] = req.gpu
@@ -7122,7 +7142,7 @@ if role == ROLE_RUNNER then
       backlight = 12, notify = 13, share = req.share and 14 or nil,
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
       mailkeys = mailkeys_at, mdns = mdns_at, sharing = sharing_at,
-      sandboxes = sandboxes_at, gpu = gpu_at,
+      sandboxes = sandboxes_at, gpu = gpu_at, usb = usb_at,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Which protocols the system speaks, for an image built for others

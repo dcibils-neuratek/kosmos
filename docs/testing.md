@@ -27485,3 +27485,32 @@ carousel's fourth card cut at its row's edge.
 **Tests.** Full gate 95/95 in 9:08 - every suite that draws a window draws
 rounded shapes through the changed path.
 
+
+## 18.674 The USB driver says its devices (`machine.md` M1)
+
+This Machine's first step: every device on every USB port, driven or not,
+said to a program rather than only to the log. **`USB_OP_LIST`** in a
+declared shape (`user/include/usbproto.h`): a request names the first
+device it wants, and a reply carries up to sixteen of 48 bytes each -
+controller and port, speed, the kind the driver made of the device
+(keyboard, mouse, gamepad, stick, network, camera, MIDI, another HID
+device, or none), whether anything reads it, its class triple, vendor and
+product, the controller's PCI place, and the name its strings gave.
+`xhci.c` records the speed and the class as `describe` reads them and the
+kind as `use_device` takes the device up, clears them on unplug, and
+answers on an endpoint of its own between the events it already waits for.
+`init.lua` mounts it as `/Devices/usb`; `usb.lua` pages through it, and
+`lsusb` at the prompt prints it.
+
+**The M700**: its mouse on port 3, its keyboard's receiver on port 5 and
+the stick on port 18, all three driven - "3 devices, 3 driven".
+
+**Tests.** Full gate 95/95 in 9:13. `usb_list`, in `x86-usb-2`: QEMU's xHCI with a keyboard, a boot
+mouse and a tablet, and `lsusb` after the driver has watched for devices.
+Three rows; the keyboard and the mouse driven as what they are; the tablet
+"no driver" with its class, 03/00/00 - a HID device that is not a boot
+mouse, which nothing here reads; and "3 devices, 2 driven". **The
+control**: the list's kind set to none for every device fails the keyboard
+and the mouse, naming both rows. QEMU's `usb-serial`, the plainer device
+with no driver, never reached a port of `qemu-xhci` and was dropped from
+the part.

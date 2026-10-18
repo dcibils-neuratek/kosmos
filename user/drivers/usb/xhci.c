@@ -81,6 +81,7 @@
 #include "servers/drives_decode.h"
 #include "cameraproto.h"
 #include "midiproto.h"
+#include "usbproto.h"
 #include "storage_decode.h"
 #include "pad_decode.h"
 #include "usb_decode.h"
@@ -661,6 +662,18 @@ struct controller {
     uint16_t      vendor[DEVICES_MAX + 1];
     uint16_t      product[DEVICES_MAX + 1];
     char          name[DEVICES_MAX + 1][NAME_MAX_CHARS + 1];
+
+    /*
+     * **What the driver made of each slot's device** (`docs/machine.md`
+     * M1): its speed, the kind - a `USB_KIND_*` - whether it reads it, and
+     * the class of the interface it chose or of the first; `USB_OP_LIST`
+     * answers from these. Set where each decision is made, cleared when the
+     * device leaves - the log said all of it already, and only the log.
+     */
+    uint8_t       speed_of[DEVICES_MAX + 1];
+    uint8_t       kind_of[DEVICES_MAX + 1];
+    bool          driven_of[DEVICES_MAX + 1];
+    uint8_t       class_of[DEVICES_MAX + 1][3];
 
     /* Each slot's mouse, when its device is one. */
     struct mouse  mouse[DEVICES_MAX + 1];
@@ -1918,7 +1931,7 @@ static bool describe(struct controller *c, struct device *d,
                      struct say_line *line)
 {
     char name[NAME_MAX_CHARS + 1];
-    unsigned vendor, product, bcd, class, iproduct;
+    unsigned vendor, product, bcd, class, subclass, protocol, iproduct;
 
     name[0] = '\0';
 
@@ -1963,6 +1976,8 @@ static bool describe(struct controller *c, struct device *d,
 
     bcd = d->buffer[2] | (unsigned)d->buffer[3] << 8;
     class = d->buffer[4];
+    subclass = d->buffer[5];
+    protocol = d->buffer[6];
     d->configurations = d->buffer[17];
     vendor = d->buffer[8] | (unsigned)d->buffer[9] << 8;
     product = d->buffer[10] | (unsigned)d->buffer[11] << 8;
@@ -2007,6 +2022,12 @@ static bool describe(struct controller *c, struct device *d,
     c->named++;
 
     c->described[d->slot] = true;
+    c->speed_of[d->slot] = (uint8_t)d->speed;
+    c->kind_of[d->slot] = USB_KIND_NONE;
+    c->driven_of[d->slot] = false;
+    c->class_of[d->slot][0] = (uint8_t)class;
+    c->class_of[d->slot][1] = (uint8_t)subclass;
+    c->class_of[d->slot][2] = (uint8_t)protocol;
     c->vendor[d->slot] = (uint16_t)vendor;
     c->product[d->slot] = (uint16_t)product;
     memcpy(c->name[d->slot], name, sizeof(c->name[d->slot]));
@@ -5793,6 +5814,8 @@ static void use_device(struct controller *c, struct device *d,
         usb_decode_ecm(d->buffer, total, &ecm);
 
         if (ecm.ok) {
+            c->kind_of[d->slot] = USB_KIND_NETWORK;
+            c->driven_of[d->slot] = true;
             use_ethernet(c, d, &ecm, line);
             return;
         }
@@ -5805,6 +5828,8 @@ static void use_device(struct controller *c, struct device *d,
             uvc_decode_config(d->buffer, total, &camera);
 
             if (camera.ok) {
+                c->kind_of[d->slot] = USB_KIND_CAMERA;
+                c->driven_of[d->slot] = true;
                 use_camera(c, d, &camera, line);
                 return;
             }
@@ -5817,6 +5842,8 @@ static void use_device(struct controller *c, struct device *d,
             midi_decode_config(d->buffer, total, &midi);
 
             if (midi.ok) {
+                c->kind_of[d->slot] = USB_KIND_MIDI;
+                c->driven_of[d->slot] = true;
                 use_midi(c, d, &midi, line);
                 return;
             }
@@ -5826,6 +5853,43 @@ static void use_device(struct controller *c, struct device *d,
     /* None of them: what is said is about the first, as it always was. */
     if (index == count) {
         found = first;
+    }
+
+    /* What it is, as this decided it, for `USB_OP_LIST`: driven where the
+     * branches below read it, not where they say they do not. */
+    if (found.first_class != 0) {
+        c->class_of[d->slot][0] = found.first_class;
+        c->class_of[d->slot][1] = found.first_subclass;
+        c->class_of[d->slot][2] = found.first_protocol;
+    }
+
+    switch (found.kind) {
+    case USB_CONFIG_BULK_ONLY:
+        c->kind_of[d->slot] = USB_KIND_STICK;
+        c->driven_of[d->slot] = true;
+        break;
+    case USB_CONFIG_BOOT_MOUSE:
+        c->kind_of[d->slot] = USB_KIND_MOUSE;
+        c->driven_of[d->slot] = d->speed < 4u;
+        break;
+    case USB_CONFIG_BOOT_KEYBOARD:
+        c->kind_of[d->slot] = USB_KIND_KEYBOARD;
+        c->driven_of[d->slot] = d->speed < 4u;
+        break;
+    case USB_CONFIG_XBOX360:
+    case USB_CONFIG_XBOXONE:
+        c->kind_of[d->slot] = USB_KIND_GAMEPAD;
+        c->driven_of[d->slot] = d->speed < 4u;
+        break;
+    case USB_CONFIG_HID_OTHER:
+        c->kind_of[d->slot] = USB_KIND_HID;
+        break;
+    case USB_CONFIG_STORAGE_OTHER:
+        c->kind_of[d->slot] = USB_KIND_STORAGE;
+        break;
+    default:
+        c->kind_of[d->slot] = USB_KIND_NONE;
+        break;
     }
 
     if (found.kind == USB_CONFIG_NEITHER) {
@@ -6459,6 +6523,8 @@ static void detach(struct controller *c, unsigned port, struct say_line *line)
         memset(&c->stick[slot], 0, sizeof(c->stick[slot]));
         disable_slot(c, slot);
         c->described[slot] = false;
+        c->kind_of[slot] = USB_KIND_NONE;
+        c->driven_of[slot] = false;
     }
 
     c->port_slot[port] = 0;
@@ -7135,6 +7201,7 @@ static void serve_camera(struct say_line *line);
 static unsigned long camera_wait_ms(unsigned long otherwise);
 static long camera_endpoint_now(void);
 static void serve_midi(struct say_line *line);
+static void serve_usb(void);
 static long midi_endpoint_now(void);
 
 static void serve_without_controllers(int code)
@@ -7181,6 +7248,7 @@ static void serve_without_controllers(int code)
         serve_frames(&line);
         serve_camera(&line);
         serve_midi(&line);
+        serve_usb();
     }
 }
 
@@ -8331,6 +8399,89 @@ static void midi_answer(const struct message *in, uint64_t sender, long cap,
     (void)kosmos_reply(sender, &out);
 }
 
+/*-------------------------------------------------------- the device list */
+
+/*
+ * **Every device on every port** (`docs/machine.md` M1; `usbproto.h`): the
+ * ports of each controller in order, each with what was plugged into it,
+ * what the driver made of it and whether it reads it - a port whose device
+ * never answered its name too, as a device with nothing known. A page of
+ * `USB_LIST_MAX` from `first`, and how many there are in all.
+ */
+static long usb_endpoint = -1;
+
+static void usb_list(uint32_t first, struct usb_reply *rep)
+{
+    unsigned ci, port, index = 0;
+
+    for (ci = 0; ci < controllers_found; ci++) {
+        const struct controller *c = &controllers[ci];
+
+        for (port = 1; port <= c->ports && port <= PORTS_MAX; port++) {
+            unsigned slot = c->port_slot[port];
+            struct usb_device_info *u;
+
+            if (slot == 0) {
+                continue;
+            }
+
+            if (index >= first && rep->count < USB_LIST_MAX) {
+                u = &rep->devices[rep->count++];
+                memset(u, 0, sizeof(*u));
+                u->controller = (uint8_t)ci;
+                u->port = (uint8_t)port;
+                u->pci = c->where;
+
+                if (slot != PORT_FAILED && c->described[slot]) {
+                    u->speed = c->speed_of[slot];
+                    u->kind = c->kind_of[slot];
+                    u->driven = c->driven_of[slot] ? 1u : 0u;
+                    u->class_code = c->class_of[slot][0];
+                    u->subclass = c->class_of[slot][1];
+                    u->protocol = c->class_of[slot][2];
+                    u->vendor = c->vendor[slot];
+                    u->product = c->product[slot];
+                    memcpy(u->name, c->name[slot],
+                           sizeof(u->name) - 1 < sizeof(c->name[slot])
+                           ? sizeof(u->name) - 1 : sizeof(c->name[slot]));
+                    u->name[sizeof(u->name) - 1] = '\0';
+                }
+            }
+
+            index++;
+        }
+    }
+
+    rep->total = index;
+}
+
+static void serve_usb(void)
+{
+    static struct message msg, out;
+    uint64_t sender = 0;
+
+    while (usb_endpoint >= 0 && kosmos_receive(usb_endpoint, &msg, &sender, 1, 0) == 0) {
+        struct usb_reply *rep = (struct usb_reply *)(void *)out.data;
+        const struct usb_request *req = (const struct usb_request *)(const void *)msg.data;
+
+        memset(&out, 0, sizeof(out));
+        out.tag = msg.tag;
+        out.length = (uint32_t)sizeof(*rep);
+
+        if (msg.length != sizeof(*req) || req->op != USB_OP_LIST) {
+            rep->error = USB_ERR_BAD_OP;
+        } else {
+            usb_list(req->first, rep);
+        }
+
+        if (msg.cap_plus_one > 0) {
+            (void)kosmos_cap_drop((long)msg.cap_plus_one - 1);
+        }
+
+        (void)kosmos_reply(sender, &out);
+    }
+}
+
 static void serve_midi(struct say_line *line)
 {
     struct message msg;
@@ -8495,6 +8646,7 @@ static void watch(struct controller *list, unsigned count,
         serve_frames(line);
         serve_camera(line);
         serve_midi(line);
+        serve_usb();
     }
 }
 
@@ -8505,7 +8657,7 @@ static long camera_endpoint_now(void)
 
 void xhci_server(long console_cap, long blocks_cap, long writes_cap,
                  long frames_cap, long camera_cap, long midi_cap,
-                 long notify_cap)
+                 long notify_cap, long usb_cap)
 {
     struct sysinfo info = { 0 };
     struct dev_info dev;
@@ -8523,6 +8675,7 @@ void xhci_server(long console_cap, long blocks_cap, long writes_cap,
     camera_options();
     midi_endpoint = midi_cap;
     midi_options();
+    usb_endpoint = usb_cap;
 
     if (kosmos_sysinfo(&info) == 0) {
         tick_hz = info.tick_hz != 0 ? info.tick_hz : tick_hz;

@@ -4373,6 +4373,46 @@ def core(image, check, fails):
 
 
 
+def usb_list(image, check):
+    """**Every USB device, driven or not, said to a program** - `docs/
+    machine.md` M1, `usbproto.h`.
+
+    QEMU's xHCI with a keyboard, a boot mouse and a tablet - the last a
+    HID device that is not a boot mouse, which nothing in Kosmos reads - and
+    `lsusb` asked once the driver has watched for devices: three lines, the
+    keyboard and the mouse driven as what they are, the tablet "no driver"
+    with its class. The driver knew all of it before and said it only to
+    the log. (QEMU's `usb-serial` would be the plainer stranger, but it
+    never reaches a port of `qemu-xhci`.)
+    """
+    extra = ("-device", "qemu-xhci,id=usb0",
+             "-device", "usb-kbd,bus=usb0.0",
+             "-device", "usb-mouse,bus=usb0.0",
+             "-device", "usb-tablet,bus=usb0.0")
+
+    out = boot(image, None, 90.0, typed=("lsusb",), extra=extra,
+               after="xhci: watching for devices plugged in and out",
+               until="lsusb: ")
+
+    if out is None:
+        check(False, "the machine would not boot with three USB devices")
+        return
+
+    out = out.replace("\r", "")
+    rows = [l for l in out.splitlines() if re.match(r"\S+ port \d+ +[0-9a-f]{4}:[0-9a-f]{4}", l)]
+    shown = "\n    ".join(rows) or "(lsusb listed nothing)"
+
+    check(len(rows) == 3, "lsusb listed %d devices, not 3:\n    %s" % (len(rows), shown))
+    check(any("driven: keyboard" in l for l in rows),
+          "the keyboard was not listed as one, driven:\n    " + shown)
+    check(any("driven: mouse" in l for l in rows),
+          "the mouse was not listed as one, driven:\n    " + shown)
+    check(any("Tablet" in l and "no driver" in l and "class 03/00/00" in l for l in rows),
+          "the tablet was not listed with no driver and its class:\n    " + shown)
+    check(re.search(r"lsusb: 3 devices, 2 driven", out) is not None,
+          "lsusb did not count 3 devices, 2 driven: %r" % (re.findall(r"lsusb: .*", out),))
+
+
 def usb_keyboard(image, check):
     """**A USB keyboard, on a machine whose only keyboard it is** -
     `usb.md` step 9b, `roadmap.md` 5zd-b.
@@ -5438,7 +5478,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -5539,6 +5579,10 @@ def main():
         usb_mouse(image, check)
     if 'usb_keyboard' in wanted:
         usb_keyboard(image, check)
+
+    # And every USB device listed to a program, driven or not (M1).
+    if 'usb_list' in wanted:
+        usb_list(image, check)
 
     if 'usb_ethernet' in wanted:
         usb_ethernet(image, check)

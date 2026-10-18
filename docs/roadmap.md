@@ -123,6 +123,14 @@ system-info.txt file to send for inspection or debugging?" To be designed
 as an app is (feature set, mockup, architecture, diagram) and agreed before
 code; the answer to his question goes with the design.
 
+**Designed and agreed on 18 October 2026** ("lets redesign the about this
+machine app to show all hardware components detected, driven and not
+driven", then "Great it looks good now! Do it"): `docs/machine.md`,
+`machine.html`, `machine-architecture.png` - every device as a card drawn
+as what it is, By kind and By connection, a pill for driven or not. Steps
+M1 the USB driver's list (done in 0.11.276, `lsusb`), M2 `devices.lua`, M3
+the window, M4 the Deskbar's devices indicator (5q).
+
 **Magnet: windows snapped to halves, quarters and the whole screen** -
 Diego, 10 October 2026, after Magnet for the Mac (magnet.crowdcafe.com):
 "dragging a window to the right of the screen will show that it can be

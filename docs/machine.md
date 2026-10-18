@@ -94,7 +94,9 @@ when it is closed.
 1. **M1 - the USB driver says its devices**: `USB_OP_LIST` and `usbproto.h`;
    a program `lsusb` that prints it; under QEMU the virtual keyboard,
    tablet and stick listed, each with its kind; on the M700 its mouse,
-   keyboard and stick, and any device with no driver.
+   keyboard and stick, and any device with no driver. **Done in 0.11.276**
+   (`testing.md` 18.674): under QEMU a keyboard, a mouse and a tablet the
+   driver does not read, the tablet listed "no driver" with its class.
 2. **M2 - `devices.lua`**: every source into one list; `devices` at the
    prompt prints it; a host test feeds it a bus and a USB list and holds
    the merged list.

@@ -77,7 +77,7 @@ void powerbutton_server(long console);
 void backlight_server(long console, long endpoint);
 void intelgpu_server(long console, long endpoint);
 void xhci_server(long console, long blocks, long writes, long frames,
-                 long camera, long midi, long notify);
+                 long camera, long midi, long notify, long usb);
 void e1000_server(long console, long frames);
 void ahci_server(long console);
 
@@ -846,7 +846,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_XHCI) {
         named("xhci");
-        xhci_server(0, 1, 2, 3, 4, 5, 6);
+        xhci_server(0, 1, 2, 3, 4, 5, 6, 7);
     }
 
     if (arg == ROLE_E1000) {

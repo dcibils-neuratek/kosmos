@@ -526,7 +526,7 @@ SUITES = [
                         "usb_home_named,usb_sandboxes,usb_home_large,usb_drives,"
                         "usb_flush_refused,"
                         "cmdline_long,usb_hotplug,usb_mouse,usb_mouse_recovers,"
-                        "usb_keyboard,"
+                        "usb_keyboard,usb_list,"
                         "pointer"],
           x86=True),
     # The clocks a PC does not state, measured with QEMU stopped as they
