@@ -598,6 +598,13 @@ def main():
         check(said('"Kitchen Timer", an alert', mark, 10) is not None,
               "lesson 5's finished project rang without a notification")
         stop_desktop()
+        # Lesson 15's: its kernel assembled and the GPU asked for, and
+        # under QEMU, which has none, the window saying so.
+        mark = len(guest.seen)
+        guest.type("wm /Kosmos/Tutorial/15-GPU/pattern.lua")
+        check(said("pattern: ", mark, 120) == "no Intel GPU here - no Intel GPU this driver knows",
+              "lesson 15's finished project did not say there is no Intel GPU here")
+        stop_desktop()
         mark = len(guest.seen)
         guest.type("wm ide:/Home/development/asks.lua")
         said("ide: opened /Home/development/asks.lua", mark, 120)

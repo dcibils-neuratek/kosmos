@@ -153,7 +153,9 @@ M700 runs `gpu kernel` and GPU Fractal next; then C5, Cafesa3D's design.
 **C6 drawn and agreed** (`compute-lesson.html`, Diego: "go ahead with the
 recommended choices for the lesson"): lesson 15, "A program for the GPU",
 the last of Part four - a moving pattern from a kernel with no loop, four
-diagrams of the two paradigms and a table.
+diagrams of the two paradigms and a table. **Written** (18.691): the
+page, the diagrams and the `15-GPU` project; its screenshots of the pattern
+on the M700.
 **And the lesson, C6** (Diego, the same
 day): what a compute kernel is and how it differs from a processor's
 program, the two taught as complementary - "they are completely

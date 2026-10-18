@@ -28172,3 +28172,57 @@ not be without becoming something else.
   more beside them, 788 again, and passed on its own: 981 samples, none
   lost. The Mac's load average was 8 to 10 throughout, and a missed timer
   sample is what a loaded host does to a guest.
+
+## 18.691 Lesson 15, A program for the GPU (`compute.md` C6)
+
+The IDE's lesson on GPU compute, written as agreed in `compute-lesson.html`
+(Diego: "go ahead with the recommended choices for the lesson"):
+`docs/ide-tutorial/15-gpu.html`, in the contents after Part one, under the
+later parts, as the one written ahead of them. It teaches the processor and
+the GPU as partners:
+- two kinds of processor, and a list of the two side by side;
+- what a kernel is, and the grid and its lanes;
+- running one with the Compute Kit and a ticket, and the driver's check as
+  the capability rule inside the GPU;
+- what a branch costs each;
+- a frame of GPU Fractal divided between them, and when to use which.
+
+**The four diagrams are pictures**, `gpu-*.png`, made on the Mac from the
+agreed page's SVGs by headless Chrome at 860 wide, with the licence line
+in a `tEXt` chunk as the tutorial's tools write it. Kosmos's browser draws
+an SVG's shapes but not its words.
+
+**Its project**, `user/tutorial/15-GPU/pattern.lua`, is "GPU Pattern": a
+640 by 400 picture moving sixty times a second. Its kernel has 24
+instructions and no loop: red from x and the frame, green from y and the
+frame, blue from x xor y. Every line but the sends assembles as Mesa's
+gentool makes it, and the driver's check passes it (`eu_kernels.lua`'s
+`lesson-15`). Each frame is one run and a ticket, its GPU time shown
+under the picture.
+
+**Two changes from the drawn page**, both forced by the system and said in
+the lesson:
+- Under QEMU the window says there is no Intel GPU, rather than the
+  processor drawing the pattern: a per-pixel loop would have to be C, and
+  the lesson's project is Lua.
+- "Draw it in Lua, a pixel at a time" became "time the run with
+  `ticket:time()`", since pixels never go through Lua here.
+
+**What the tutorial's own checker found** (`test_tutorial.lua`, in `host`),
+each now fixed:
+- the table, which Kosmos's browser does not draw, is a list;
+- the comments coloured with `<span>` inside `<pre>` are plain;
+- the pictures had no licence line;
+- "Kernel" was named as though it were one of the IDE's controls, where it
+  is GPU Fractal's button.
+
+The pictures of the pattern itself, its window and the IDE beside it, are
+the M700's to take, since QEMU has no GPU to draw it.
+
+**Tests.**
+- **`x86-ide`, 51 checks**: lesson 15's finished project runs and says
+  "no Intel GPU here - no Intel GPU this driver knows".
+- **`host`**: the tutorial's 735 checks over 7 pages and 15 pictures, and
+  the lesson's kernel in `test_intelgpu_kernel`'s 32.
+- **Seen in Kosmos's browser under QEMU**: `asset:tutorial/ide/15-gpu.html`,
+  3607 pixels tall, the first band's pictures decoded with none missing.

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>15. A program for the GPU</title>
+<style>
+body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: #1f2328; background: #fbfaf8;
+       max-width: 46em; margin: 2em auto; padding: 0 1.2em; font-size: 17px; line-height: 1.55; }
+h1 { font-size: 30px; font-weight: 600; color: #1d2a3a; }
+h2 { font-size: 22px; font-weight: 600; color: #1d2a3a; margin-top: 1.6em; }
+h3 { font-size: 18px; font-weight: 600; color: #8a3d1c; }
+p.lead { font-size: 19px; color: #3d4652; }
+p.nav { font-size: 15px; color: #6b7280; }
+p.note { font-style: italic; color: #5b6470; }
+p.tip { color: #1f6b3a; }
+b.ui { color: #1f4e8c; font-weight: 600; }
+kbd { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #8a3d1c; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 4px; padding: 0 0.35em; }
+code { font-family: "IBM Plex Mono", monospace; font-size: 15px; color: #1f4e8c; }
+pre { font-family: "IBM Plex Mono", monospace; font-size: 14px; color: #1f2328; background: #f0ece6;
+      border: 1px solid #d9d2c7; border-radius: 6px; padding: 0.6em 0.8em; }
+li { margin: 0.3em 0; }
+img { display: block; max-width: 100%; height: auto; margin: 1.2em 0 0.3em;
+      border: 1px solid #d9d2c7; border-radius: 6px; }
+p.caption { font-size: 14px; color: #6b7280; margin-top: 0; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Contents</a></p>
+<h1>15. A program for the GPU</h1>
+<p class="lead">A window whose picture is computed, sixty times a second, by a program running on the
+GPU - a <b>kernel</b>. On the way: why a computer has two kinds of processor, what each is good at, how a
+kernel is written and run, and how the two share one job.</p>
+
+
+<h2>Two kinds of processor</h2>
+<p>Every program you have written so far ran on the <b>processor</b> - the CPU. The M700 has four of its
+cores. Each one runs a program of its own, one instruction after another, and follows its own path through
+it: this <code>if</code> one way, that loop five times, a call into a kit. A core is fast at a single thing and
+very good at deciding.</p>
+<p>The <b>GPU</b> was made for pictures, where the same small sum is done for every one of a million pixels. It
+has many more, much simpler hands: the M700's has 24 execution units, each running seven threads, each
+thread sixteen <b>lanes</b> wide - 2,688 lanes. They do not each run a program of their own. A thread's
+sixteen lanes all do the same instruction at the same moment, each on its own pixel.</p>
+
+<img src="gpu-two-kinds.png" width="860" height="315" alt="Four processor cores each on its own path through a program, beside a GPU thread whose sixteen lanes step through one kernel together">
+<p class="caption">The processor's cores each follow their own program. A GPU thread's sixteen lanes follow one, together - and there are 168 such threads at once on the M700.</p>
+
+<ul>
+<li><b>How many</b>: the processor, 4 cores; the GPU, 2,688 lanes.</li>
+<li><b>Each one runs</b>: on the processor, its own program; on the GPU, the kernel, with fifteen others in step.</li>
+<li><b>Good at</b>: the processor, deciding - branches, files, the network, a window, anything one step after another; the GPU, the same sum for a million things at once - pixels, samples, particles, rays.</li>
+<li><b>Starting work</b>: on the processor, a function call; on the GPU, a message to its driver, and a moment before it begins.</li>
+</ul>
+
+<h2>What a kernel is</h2>
+<p>A <b>kernel</b> is the work for <i>one</i> pixel - or one sample, one particle - written once. You do not write
+the loop over the picture: the GPU runs the kernel once for every pixel, and each copy finds out which pixel is
+its own from where it sits in the <b>grid</b>.</p>
+
+<img src="gpu-grid.png" width="860" height="248" alt="A 640 by 400 picture divided into a grid of thread groups sixteen pixels wide, one row high; one group enlarged into sixteen lanes">
+<p class="caption">The run's grid: 16,000 threads for a 640 by 400 picture, a lane a pixel. Nothing in the kernel loops over the picture.</p>
+
+<p>The kernel is written in the GPU's own instructions, as text in your program, and the Compute Kit has
+<code>eu.lua</code> turn it into the GPU's numbers. Here is this lesson's, the part that works out the pixel:</p>
+<pre>// the lanes 0 to 15, and the group's first pixel
+mov (8|M0)  r10.0&lt;1&gt;:uw  0x76543210:v
+add (8|M0)  r10.8&lt;1&gt;:uw  r10.0&lt;8;8,1&gt;:uw  8:uw
+mul (1|M0)  r2.0&lt;1&gt;:ud   r0.1&lt;0;1,0&gt;:ud   0x10:ud
+// x for every lane at once - sixteen additions, one instruction
+add (16|M0) r12.0&lt;1&gt;:ud  r10.0&lt;8;8,1&gt;:uw  r2.0&lt;0;1,0&gt;:ud</pre>
+<p>Each line is one instruction. <code>(16|M0)</code> says sixteen lanes do it. <code>r12</code> is a register -
+each lane has its own part of it, so <code>r12</code> holds sixteen different x's after that last line.</p>
+
+<h2>Running it</h2>
+<pre>local compute = use("/Kosmos/Kits/compute")
+
+local kernel = compute.kernel(text)                -- assembled here, checked by the driver
+local picture = compute.picture(640, 400)          -- memory the GPU and the program share
+
+local ticket = compute.run{ kernel = kernel, grid = { 40, 400 },
+                            buffers = { picture },
+                            constants = string.pack("&lt;i4", frame) }</pre>
+<p><code>compute.run</code> does not wait. It sends one message to the GPU's driver and answers at once with a
+<b>ticket</b>; the window asks <code>ticket:done()</code> on its clock and paints when it says yes. Meanwhile the
+processor is free - to read keys, or to get the next frame ready.</p>
+<p class="note">The kernel can reach only the buffers its run is handed. The GPU's driver reads every instruction
+before it keeps a kernel, and refuses one that could touch anything else - another window's pixels, the screen -
+and says at which line. That is Kosmos's rule about capabilities - what you were not handed, you cannot
+reach - one layer down, inside the GPU.</p>
+
+<h2>When lanes disagree</h2>
+<p>On the processor, an <code>if</code> costs almost nothing: each core goes the way its own data says. On the GPU
+the sixteen lanes of a thread share one instruction. When some lanes want one side and some the other, the
+thread walks <i>both</i> sides, switching off the lanes each side is not for.</p>
+
+<img src="gpu-branch.png" width="860" height="239" alt="On the processor two cores each take one side of a branch; on the GPU a thread runs both sides with half its lanes switched off each time">
+<p class="caption">A branch is free on the processor and shared on the GPU. Kernels are written so neighbouring lanes mostly agree.</p>
+
+<h2>Who does what</h2>
+<p>The two are partners. GPU Fractal, which comes with Kosmos, divides every frame between them like this:</p>
+
+<img src="gpu-partners.png" width="860" height="220" alt="A frame of GPU Fractal: the processor reads the drag and sends one message, the GPU computes 480,000 pixels, the processor paints them">
+<p class="caption">A frame of GPU Fractal. Neither could do the other's part well: the GPU cannot read a drag, and the processor would take a hundred times as long over the pixels.</p>
+
+<p><b>Use the GPU</b> when the same work is done for very many things, each on its own: pixels, sound samples,
+points of a simulation. <b>Keep the processor</b> for everything else - a small job, where the message costs more
+than the work; a job where each step needs the last; anything that reads files, talks to the network or decides
+what a person meant.</p>
+
+<h2>Run it</h2>
+<p>Press <kbd>F5</kbd>. The pattern moves, and the corner says how long the GPU took over the last frame.</p>
+
+<p class="tip">The finished lesson is in <b class="ui">Lesson's Project</b>, under the three dots: <code>15-GPU</code>.
+Under QEMU, which has no Intel GPU, the window says so: a kernel needs the real thing - the M700's HD 530, or another Intel GPU of its generation.</p>
+
+<h2>Try changing</h2>
+<ul>
+<li>Change the colour sum in the kernel: <code>xor</code> x and y for a chequer, or shift the frame number further.</li>
+<li>Make the window bigger: the grid is the picture's width over sixteen, by its height.</li>
+<li>Time the run: <code>ticket:time()</code> is the GPU's own clock, in nanoseconds, from its first thread to its last.</li>
+</ul>
+
+<h2>How Kosmos does it</h2>
+<p>The kernel is assembled in your program by <code>eu.lua</code>; the Compute Kit puts its numbers in memory
+and asks the GPU's driver to keep it, and the driver checks every instruction first. A picture is a region of
+memory shared by your program, the GPU and the window, so the pixels are never copied: the run is one message
+- which kernel, which buffers, a grid - and the pixels stay where they are (control by message, data by shared
+memory). The ticket is the render engine's fence: a number the GPU writes when it has finished.</p>
+
+<h2>The real thing</h2>
+<p>GPU Fractal computes the Mandelbrot set on the GPU and the same picture on the processor, the two times
+side by side, and its Kernel button shows its kernel - forty-seven instructions. Open the IDE's
+<b class="ui">System</b> tab, then <code>/Kosmos/Apps/fractal</code>.</p>
+<p class="nav"><a href="index.html">Contents</a></p>
+</body>
+</html>

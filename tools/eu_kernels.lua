@@ -66,6 +66,10 @@ send.hdc1 (16|M0) acc0 r4 0x00000000 0x060A8002
 -- GPU Fractal's, as the app hands it over (`eukernels.lua`).
 kernel("gpu-fractal", OK, 0, dofile("user/lib/eukernels.lua").mandelbrot)
 
+-- The IDE's lesson 15, as its finished project hands it over.
+kernel("lesson-15", OK, 0,
+       assert(io.open("user/tutorial/15-GPU/pattern.lua")):read("a"):match("local KERNEL = %[%[\n(.-)%]%]"))
+
 -- A branch to the very first instruction, and one to the last.
 kernel("branch-to-first-and-last", OK, 0, [[
 top:

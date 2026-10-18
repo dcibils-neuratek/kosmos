@@ -192,7 +192,9 @@ GPU wrote is read from memory after. The first run holds both to it.
    GPU", at the end of Part four; its project a moving pattern, a kernel of
    about twenty instructions with no loop; four diagrams and a table of the
    two side by side. **Agreed** - Diego, the same evening: "go ahead with
-   the recommended choices for the lesson".
+   the recommended choices for the lesson". **Written** (`testing.md`
+   18.691): `ide-tutorial/15-gpu.html`, its four diagrams and its project,
+   `15-GPU`; the pattern's own pictures wait for the M700.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`), and the GPU itself is the
 M700's.
