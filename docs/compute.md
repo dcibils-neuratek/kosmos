@@ -146,7 +146,7 @@ GPU wrote is read from memory after. The first run holds both to it.
 
 1. **C1 - `eu.lua`**, the assembler's subset, and the host test against
    `gentool`: every instruction the fill kernel and a Mandelbrot kernel use,
-   bit for bit.
+   bit for bit. **Done in 0.11.288** (`testing.md` 18.687).
 2. **C2 - the driver's verbs**: `GPU_OP_KERNEL` with D2's check,
    `GPU_OP_RUN`; the fill kernel run through them, from Lua, its result held
    as 7b's is.
@@ -158,7 +158,23 @@ GPU wrote is read from memory after. The first run holds both to it.
    and the two pictures held to each other on the M700.
 5. **C5 - Cafesa3D on the GPU**, its own design first (`cafesa3d` docs): a
    ray tracer as a kernel on the same kit.
-6. **C6 - the IDE's lesson**, on GPU Fractal.
+6. **C6 - the IDE's lesson**, on GPU Fractal - Diego, 18 October: "the
+   compute kit needs a learning lesson on the ide tutorials to explain what
+   a compute kernel is, how it differs from regular cpu programs", and
+   "gpu compute is very different from cpu and they are completely
+   complementary so its good to teach that". So the lesson teaches the two
+   as partners, not rivals: **the processor** - a few fast cores, each
+   running its own program with its own branches, good at decisions and at
+   anything that must happen one step after another; **the GPU** - hundreds
+   of lanes running one small program, the kernel, in lockstep on
+   different data, good at the same arithmetic done millions of times. What
+   a kernel is (one pixel's or one item's work, written once, run for each);
+   threads, lanes and a grid; why a branch costs a GPU what it does not cost
+   a processor (lanes that disagree wait for each other); memory shared
+   through buffers rather than variables; and how the two divide a job -
+   the processor deciding what to compute and the GPU computing it, as GPU
+   Fractal does every frame. Drawn with the other lessons and agreed before
+   it is written.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`), and the GPU itself is the
 M700's.

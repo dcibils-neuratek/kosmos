@@ -27941,3 +27941,31 @@ programs them, the fence's flushes, the vertex fetcher's invalidation. Full
 gate 95 of 96 in 9:44: `x86-film`'s sound was off by more than two steps in
 a third of a second of it - the suite load is known to upset - and passed
 alone, 13 of 13.
+
+## 18.687 The GPU's instructions assembled on Kosmos (`compute.md` C1)
+
+`user/lib/eu.lua`: a kernel's text to the execution units' 128-bit
+instructions for generation 9, in the syntax Mesa's tools print - lines,
+labels, comments, a branch's offset worked out from its label. The subset a
+compute kernel needs: moves and conversions; add, mul, and three-source mad
+in align16; and, or, xor, shl, shr; cmp into a flag, predication by a lane
+or by any of a group (`.any16h`), sel; jmpi; send to the thread spawner and
+the data ports. Every field where Mesa's `pre_xe.json` puts it. A line
+outside the subset is refused with its number and why.
+
+**What holds it is Mesa's own assembler**: `tools/eu_corpus.py` writes 44
+lines covering the subset, has `gentool` assemble each for Skylake and print
+it back in its canonical form - which must assemble to the same bytes
+again - and commits `tools/eu_corpus.txt`, line and bytes. A branch is kept
+as written, gentool printing its target as a label it then reads
+differently. Two things the bytes taught that the table did not: an
+immediate that is the only source has its type in the second source's field
+too, and a send's descriptors are bare hexadecimal.
+
+**Tests.** `tools/test_eu.lua` in `host`, 58 checks: the 44 lines bit for
+bit; a kernel with a label behind and one ahead - the branch back -32
+bytes, the branch ahead 32, the last instruction ending the thread; and six
+lines refused at their line numbers. **Control**: a destination's register
+put one bit higher fails 32 of the 58. `scratch.py`'s check caught the
+corpus tool making its own temporary directory; it uses
+`scratch.directory` now, and writes the same corpus. `host` passes.

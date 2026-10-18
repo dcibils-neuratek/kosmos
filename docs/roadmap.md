@@ -144,7 +144,10 @@ GPU against the processor, the times side by side), then Cafesa3D's
 renderer on the GPU beside its processor's with both times shown. Steps C1
 to C6 there. **Diego's decisions, the same day**: kernels as assembly,
 assembled on Kosmos by `eu.lua` (D1 A), and every kernel checked before it
-runs (D2 A). Building from C1.
+runs (D2 A). Building from C1. **And the lesson, C6** (Diego, the same
+day): what a compute kernel is and how it differs from a processor's
+program, the two taught as complementary - "they are completely
+complementary so its good to teach that".
 
 **Memory slots in This Machine** - Diego, 18 October 2026: "can we tell in
 the this machine app if the memory slots are all occupied ? because it can

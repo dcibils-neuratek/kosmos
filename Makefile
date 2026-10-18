@@ -4770,6 +4770,9 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	@# ports handed in, each device in its group, driven by whom, and hung
 	@# from what (machine.md M2).
 	$(HOSTDIR)/lua tools/test_devices.lua
+	@# And the GPU's own instructions assembled on Kosmos: every line of the
+	@# corpus held bit for bit to Mesa's assembler (compute.md C1).
+	$(HOSTDIR)/lua tools/test_eu.lua
 	@# And every method an application calls on its window: Lua resolves one
 	@# at the call, so a name the kit does not have is a control that ends
 	@# the program when somebody presses it, and nothing else notices.
