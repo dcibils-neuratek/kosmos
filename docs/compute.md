@@ -173,8 +173,12 @@ GPU wrote is read from memory after. The first run holds both to it.
    a processor (lanes that disagree wait for each other); memory shared
    through buffers rather than variables; and how the two divide a job -
    the processor deciding what to compute and the GPU computing it, as GPU
-   Fractal does every frame. Drawn with the other lessons and agreed before
-   it is written.
+   Fractal does every frame. **With diagrams of both** (Diego: "we can
+   design visual diagrams to understand both paradigms"): the processor's
+   few cores each following its own path through a program, beside the
+   GPU's grid of lanes stepping through one kernel together - and what a
+   branch does to each; a frame of GPU Fractal divided between the two.
+   Drawn with the other lessons and agreed before it is written.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`), and the GPU itself is the
 M700's.
