@@ -102,12 +102,24 @@ end
 -- page - Appearance - once the space between groups is the 20 every other
 -- page of cards uses rather than the drawing's 42.
 --
-local W, H       = 740, 680
+--
+-- **Wider where the screen has room**, since 18 October 2026 - Diego, with
+-- the Displays page's rendering modes on the M700's 1720 x 1440: "the
+-- prerences app needs to default to a wider size as its too compressed
+-- now", "measure the current width so we adapt the panels to the current
+-- width as default". Half the screen's width, never under the 740 it was
+-- nor over 1000; as tall as the screen allows up to 860; and the column of
+-- cards whatever the window leaves after the sidebar and its margins, up to
+-- 760, so a line of words stays readable.
+--
 local SIDE       = 216
+local BODY_SIDE  = 26
+local SCREEN_W, SCREEN_H = gfx.screen():size()
+local W          = math.max(740, math.min(1000, (SCREEN_W or 1480) // 2))
+local H          = math.max(680, math.min(860, (SCREEN_H or 800) - 200))
 local HEAD       = 46
 local BODY_TOP   = 22
-local BODY_SIDE  = 26
-local BODY_W     = 470
+local BODY_W     = math.min(760, W - SIDE - 2 * BODY_SIDE)
 local GROUP_LINE = 19
 local GROUP_CARD = 26
 local CARD_NEXT  = 20
@@ -648,16 +660,45 @@ end
 
 local keep_bar                      -- made below, with the window's foot
 
-local MODE_LINE, MODE_NOTE, MODE_STRIP, MODE_PAD = 22, 16, 20, 9
+--
+-- **Spaced by the faces' own heights** (Diego, on the M700: "the display
+-- setting looks very compressed in the real app with a lot of thigs
+-- overlappingg"): the first version spaced its lines by fixed numbers
+-- smaller than the look's faces, and each mode's sentence ran into the next
+-- line and into its strip.
+--
+local function mode_metrics()
+  local label = gfx.height("label")
+
+  return { line = gfx.height("heading") + 6, note = label + 3,
+           strip = label + 8, pad = 14, gap = 8 }
+end
 
 local function rendering_list(it)
   local state = rendering_state() or { mode = 0, asked = 0, most = 0 }
-  local rows, y = {}, 22               -- the legend's line first
+  local M = mode_metrics()
+
+  -- The legend, wrapped to the row's width: each colour where it lands.
+  local LEGEND = { { "cpu", "the processor" }, { "display", "the GPU's display engine" },
+                   { "gpu", "the GPU's blitter or 3D engine" }, { "none", "not done" } }
+  local legend_at, lx, ly = {}, 0, 0
+
+  for i, part in ipairs(LEGEND) do
+    local w = 16 + gfx.measure(part[2], "label")
+
+    if lx > 0 and lx + w > row_room then lx, ly = 0, ly + gfx.height("label") + 6 end
+    legend_at[i] = { lx, ly }
+    lx = lx + w + 16
+  end
+
+  local rows, y = {}, ly + gfx.height("label") + 14   -- the legend first
 
   for m = 0, 5 do
     local mode = rendering.MODES[m]
-    local lines = ui.wrapped(mode.sentence, row_room - 30, "label", 3)
-    local h = MODE_PAD + MODE_LINE + #lines * MODE_NOTE + 6 + MODE_STRIP + MODE_PAD
+    local lines = ui.wrapped(mode.sentence, row_room - 30, "label", 4)
+
+    lines[#lines + 1] = "Needs: " .. mode.needs
+    local h = M.pad + M.line + #lines * M.note + M.gap + M.strip + M.pad
 
     rows[#rows + 1] = { m = m, mode = mode, y = y, h = h, lines = lines }
     y = y + h
@@ -712,11 +753,12 @@ local function rendering_list(it)
     local x = 0
 
     -- The legend: who each colour is.
-    for _, part in ipairs({ { "cpu", "the processor" }, { "gpu", "a GPU engine" },
-                            { "display", "the display" }, { "none", "not done" } }) do
-      g:fill_round(x, 5, 11, 11, STAGE_COLOUR[part[1]], 3)
-      g:text(x + 16, (16 - gfx.height("label")) // 2 + 3, part[2], theme.text_dim, nil, "label")
-      x = x + 16 + gfx.measure(part[2], "label") + 16
+    for i, part in ipairs(LEGEND) do
+      local lh = gfx.height("label")
+      local px, py = legend_at[i][1], legend_at[i][2]
+
+      g:fill_round(px, py + (lh - 11) // 2 + 2, 11, 11, STAGE_COLOUR[part[1]], 3)
+      g:text(px + 16, py + 2, part[2], theme.text_dim, nil, "label")
     end
 
     for _, r in ipairs(rows) do
@@ -724,17 +766,19 @@ local function rendering_list(it)
       local dim = why ~= nil
       local chosen = r.m == self.value
       local ink = dim and theme.text_dim or theme.text
-      local ty = r.y + MODE_PAD
+      local ty = r.y + M.pad
 
       if chosen then
         g:fill_round(-6, r.y + 2, self.w + 12, r.h - 4, theme.selection or theme.raised, 8)
       end
 
       -- The radio, its name, its tag, and its memory at the right.
-      g:frame_round(2, ty + 3, 16, 16, chosen and theme.accent or theme.text_dim, 8)
-      if chosen then g:fill_round(6, ty + 7, 8, 8, theme.accent, 4) end
+      local ry = ty + (M.line - 16) // 2
 
-      g:text(26, ty + (MODE_LINE - gfx.height("heading")) // 2, r.mode.name, ink, nil, "heading")
+      g:frame_round(2, ry, 16, 16, chosen and theme.accent or theme.text_dim, 8)
+      if chosen then g:fill_round(6, ry + 4, 8, 8, theme.accent, 4) end
+
+      g:text(26, ty + (M.line - gfx.height("heading")) // 2, r.mode.name, ink, nil, "heading")
 
       local tag = why or r.mode.tag
 
@@ -742,21 +786,26 @@ local function rendering_list(it)
         local tx = 26 + gfx.measure(r.mode.name, "heading") + 8
         local tw = gfx.measure(tag, "label") + 12
 
-        g:frame_round(tx, ty + 3, tw, 17, theme.line_soft, 4)
-        g:text(tx + 6, ty + 3 + (17 - gfx.height("label")) // 2, tag, theme.text_dim, nil, "label")
+        local th = gfx.height("label") + 4
+
+        g:frame_round(tx, ty + (M.line - th) // 2, tw, th, theme.line_soft, 4)
+        g:text(tx + 6, ty + (M.line - th) // 2 + 2, tag, theme.text_dim, nil, "label")
       end
 
       local mem = r.mode.memory
-      g:text(self.w - gfx.measure(mem, "label"), ty + (MODE_LINE - gfx.height("label")) // 2, mem,
+      g:text(self.w - gfx.measure(mem, "label"), ty + (M.line - gfx.height("label")) // 2, mem,
              theme.text_dim, nil, "label")
 
       -- What it does.
       for i, line in ipairs(r.lines) do
-        g:text(26, ty + MODE_LINE + (i - 1) * MODE_NOTE, line, theme.text_dim, nil, "label")
+        local needs = i == #r.lines
+
+        g:text(26, ty + M.line + (i - 1) * M.note, line,
+               needs and (dim and theme.text_dim or theme.text) or theme.text_dim, nil, "label")
       end
 
       -- The six stages, coloured by who does each.
-      local sy = ty + MODE_LINE + #r.lines * MODE_NOTE + 6
+      local sy = ty + M.line + #r.lines * M.note + M.gap
       local sw = (self.w - 26 - 5 * 3) // 6
 
       for i, who in ipairs(r.mode.stages) do
@@ -764,14 +813,14 @@ local function rendering_list(it)
         local word = rendering.STAGES[i]
 
         if who == "gpu+cpu" then
-          g:fill_round(sx, sy, sw, MODE_STRIP, STAGE_COLOUR.cpu, 4)
-          g:fill_round(sx, sy, sw * 55 // 100, MODE_STRIP, STAGE_COLOUR.gpu, 4)
+          g:fill_round(sx, sy, sw, M.strip, STAGE_COLOUR.cpu, 4)
+          g:fill_round(sx, sy, sw * 55 // 100, M.strip, STAGE_COLOUR.gpu, 4)
         else
-          g:fill_round(sx, sy, sw, MODE_STRIP, STAGE_COLOUR[who] or STAGE_COLOUR.none, 4)
+          g:fill_round(sx, sy, sw, M.strip, STAGE_COLOUR[who] or STAGE_COLOUR.none, 4)
         end
 
-        if gfx.measure(word, "label") <= sw - 4 then
-          g:text(sx + (sw - gfx.measure(word, "label")) // 2, sy + (MODE_STRIP - gfx.height("label")) // 2,
+        if gfx.measure(word, "label") <= sw - 6 then
+          g:text(sx + (sw - gfx.measure(word, "label")) // 2, sy + (M.strip - gfx.height("label")) // 2,
                  word, 0xffffffff, nil, "label")
         end
       end
@@ -821,7 +870,8 @@ end
 -- reads), the blitter's share and the GPU's memory from its driver - each
 -- the difference between two readings a second apart.
 local function rendering_now()
-  local v = ui.view{ w = row_room, h = 52 }
+  local tile_h = gfx.height("label") + gfx.height("heading") + 18
+  local v = ui.view{ w = row_room, h = 2 * tile_h + 8 }
   local last, last_gpu = nil, nil
 
   v.below = true
@@ -872,16 +922,18 @@ local function rendering_now()
     win:paint()
   end
 
+  -- Two rows of two: four across did not fit the page's width.
   function v:draw(g)
-    local cw = (self.w - 3 * 8) // 4
+    local cw = (self.w - 8) // 2
 
     for i, c in ipairs(self.cells) do
-      local x = (i - 1) * (cw + 8)
+      local x = ((i - 1) % 2) * (cw + 8)
+      local y = ((i - 1) // 2) * (tile_h + 8)
 
-      g:fill_round(x, 0, cw, self.h, theme.raised, 8)
-      g:frame_round(x, 0, cw, self.h, theme.line_soft, 8)
-      g:text(x + 10, 8, ui.fitted(c[1], cw - 16, "label"), theme.text_dim, theme.raised, "label")
-      g:text(x + 10, 8 + gfx.height("label") + 2, ui.fitted(c[2], cw - 16, "heading"),
+      g:fill_round(x, y, cw, tile_h, theme.raised, 8)
+      g:frame_round(x, y, cw, tile_h, theme.line_soft, 8)
+      g:text(x + 12, y + 8, ui.fitted(c[1], cw - 20, "label"), theme.text_dim, theme.raised, "label")
+      g:text(x + 12, y + 10 + gfx.height("label"), ui.fitted(c[2], cw - 20, "heading"),
              theme.text, theme.raised, "heading")
     end
   end

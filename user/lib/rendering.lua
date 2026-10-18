@@ -10,7 +10,12 @@
 --
 -- `stages` is who does each of a frame's six stages, as `docs/composing.png`
 -- draws them: "cpu", "gpu", "display", "none", or "gpu+cpu" for a stage
--- shared.
+-- shared. "display" is the GPU's display engine - the part of the graphics
+-- chip that reads a buffer and sends it to the monitor - and "gpu" its
+-- drawing engines, the blitter and the 3D engine; `needs` says it in words
+-- (Diego, 18 October: "what is 'the display'? the gpu itself? ... its
+-- confusing", "framebuffer works without a gpu driver", "but page flips
+-- does need gpu access").
 
 local rendering = {}
 
@@ -25,42 +30,42 @@ rendering.DEFAULT = 2
 
 rendering.MODES = {
   [0] = {
-    name = "Framebuffer",
+    name = "Framebuffer", needs = "no GPU driver - the firmware's screen",
     sentence = "The processor composes each frame and copies it into the screen while "
                .. "the display reads it; the pointer is drawn into every frame. No GPU.",
     stages = { "cpu", "cpu", "cpu", "cpu", "cpu", "cpu" },
     memory = "none", note = "what Kosmos did before",
   },
   [1] = {
-    name = "Cursor plane",
+    name = "Cursor plane", needs = "the GPU's display engine",
     sentence = "As Framebuffer, and the display draws the pointer over the screen - "
                .. "moving the mouse composes nothing.",
     stages = { "cpu", "cpu", "cpu", "cpu", "cpu", "display" },
     memory = "16 KB", note = "a 64 x 64 picture",
   },
   [2] = {
-    name = "Page flips",
+    name = "Page flips", needs = "the GPU's display engine",
     sentence = "Two screens: the processor copies into the hidden one and the display "
                .. "flips to it at its blank - no tearing, a frame a refresh.",
     stages = { "cpu", "cpu", "cpu", "cpu", "display", "display" },
     memory = "one screen", note = "one more screen", tag = "smoothest",
   },
   [3] = {
-    name = "Blitter copy", tag = "least processor",
+    name = "Blitter copy", needs = "the GPU's display engine and its blitter", tag = "least processor",
     sentence = "As Page flips, and the GPU's blit engine does the copy into the hidden "
                .. "screen - the processor only composes.",
     stages = { "cpu", "cpu", "cpu", "gpu", "display", "display" },
     memory = "one screen", note = "the back buffer shared",
   },
   [4] = {
-    name = "Blitter composing", tag = "experimental",
+    name = "Blitter composing", needs = "the GPU's display engine and its blitter", tag = "experimental",
     sentence = "As Blitter copy, and windows' opaque interiors copied by the blitter from "
                .. "their own buffers. Less processor; on this GPU, fewer frames.",
     stages = { "cpu", "cpu", "gpu+cpu", "gpu", "display", "display" },
     memory = "one screen", note = "and windows' buffers shared",
   },
   [5] = {
-    name = "GPU composing", tag = "not yet",
+    name = "GPU composing", needs = "the GPU's display engine and its 3D engine", tag = "not yet",
     sentence = "The render engine composes the whole frame - blending, glass, animation - "
                .. "into the screen; the processor only describes it.",
     stages = { "cpu", "cpu", "gpu", "none", "display", "display" },

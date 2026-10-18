@@ -4767,15 +4767,22 @@ def check_appearance(guest):
     checks = 1
 
     #
-    # **740 by 680, which is Diego's call over the drawing's 840 by 920**:
-    # "the entire preferences app looks too big with a lot of whitespace
-    # unused" (24 September). The column is the drawing's; the window is
-    # the column with its margins and as tall as the tallest page.
+    # **Sized from the screen, since 18 October 2026** - Diego, on the
+    # M700: "the prerences app needs to default to a wider size as its too
+    # compressed now", "measure the current width so we adapt the panels to
+    # the current width as default". Half the screen's width between 740 -
+    # his call of 24 September, "too big with a lot of whitespace unused",
+    # stays the floor - and 1000; the screen's height less 200 between 680
+    # and 860. The screen's size is the window manager's word.
     #
-    if (width, height) != (740, 680):
-        raise Failure("Preferences is %dx%d; it is 740x680 - the drawing's "
-                      "column with its margins, as tall as Appearance"
-                      % (width, height))
+    screen = re.search(r"the window server answers, the screen (\d+)x(\d+)", guest.seen)
+    sw, sh = (int(screen.group(1)), int(screen.group(2))) if screen else (1480, 880)
+    want = (max(740, min(1000, sw // 2)), max(680, min(860, sh - 200)))
+
+    if (width, height) != want:
+        raise Failure("Preferences is %dx%d on a %dx%d screen; it is %dx%d - half the "
+                      "screen's width and its height less 200, within 740-1000 by 680-860"
+                      % (width, height, sw, sh, want[0], want[1]))
 
     checks += 1
 

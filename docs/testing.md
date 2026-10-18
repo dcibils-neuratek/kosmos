@@ -27420,3 +27420,38 @@ page's own line as the `rendering` program's answer, both saying
 "rendering: "; the page's says "the rendering list" now. Full gate 95/95
 in 9:10.
 
+## 18.672 The Displays page made room, and its words made plain
+
+**Spaced by the faces' heights.** Diego, on the M700: "the display setting
+looks very compressed in the real app with a lot of thigs overlappingg".
+The rendering list spaced its lines by fixed numbers smaller than the
+look's faces, so each mode's sentence ran into its strip; the spacing is
+the faces' own heights now, and the Now row's four tiles are two rows of
+two.
+
+**Preferences sized from the screen.** "the prerences app needs to default
+to a wider size as its too compressed now", "measure the current width so
+we adapt the panels to the current width as default": half the screen's
+width between 740 - his floor of 24 September, "too big with a lot of
+whitespace unused" - and 1000, the screen's height less 200 between 680
+and 860, and the column of cards what the window leaves after the sidebar
+and its margins, up to 760. On the M700's 1720 x 1440: 860 x 860.
+`run_screenshot.py`'s appearance phase holds the rule, reading the screen's
+size from the window manager.
+
+**"The display" said as the GPU's.** "on the rendering preferences, what is
+'the display'? the gpu itself? i dont indertand if 'page flips' uses the gpu
+in any way at all", "its confusing", "framebuffer works without a gpu
+driver", "but page flips does need gpu access", "right?" - right: the
+legend is "the processor", "the GPU's display engine", "the GPU's blitter
+or 3D engine", "not done", wrapped to the row; each mode says what it
+needs - Framebuffer "no GPU driver - the firmware's screen", Cursor plane
+and Page flips "the GPU's display engine", the blitter's two "the GPU's
+display engine and its blitter", GPU composing "and its 3D engine" - and
+GPU Monitor says the same under the mode in use. Window pictures leave the
+GPU's table when Blitter composing is left: GPU Monitor showed 11 buffers,
+63 MB, after it was tried.
+
+**Tests.** The eleven suites that open Preferences or GPU Monitor, 11 of
+11.
+

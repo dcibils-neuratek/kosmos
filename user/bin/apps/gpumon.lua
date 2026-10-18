@@ -327,7 +327,8 @@ local function side(g, x, y)
     end
 
     y = y + 20
-    g:text(x, y, "draw, describe, compose, copy, show, pointer", theme.text_dim, ground, "label")
+    g:text(x, y, ui.fitted("Needs " .. rendering.MODES[mode].needs, SIDE_W - 36, "label"),
+           theme.text_dim, ground, "label")
     y = y + gfx.height("label")
   end
 

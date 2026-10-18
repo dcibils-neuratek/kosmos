@@ -151,7 +151,7 @@ document.getElementById("w").innerHTML = `
     </div>
 
     <div class="group">Rendering - how the desktop is drawn</div>
-    <div class="legend"><span style="--c:var(--cpu)">the processor</span><span style="--c:var(--gpu)">a GPU engine</span><span style="--c:var(--disp)">the display</span><span style="--c:var(--none)">not done</span></div>
+    <div class="legend"><span style="--c:var(--cpu)">the processor</span><span style="--c:var(--disp)">the GPU's display engine</span><span style="--c:var(--gpu)">the GPU's blitter or 3D engine</span><span style="--c:var(--none)">not done</span></div>
     <div class="rowcard">
       ${MODES.map(m => `<div class="mode${m.chosen ? " chosen" : ""}${m.off ? " off" : ""}">
         <span class="radio"></span>

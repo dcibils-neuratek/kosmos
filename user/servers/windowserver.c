@@ -1397,6 +1397,18 @@ static uint32_t set_rendering(unsigned mode)
 
     blitting = flipping && can_blit && rendering >= 3;
     blit_composing = blitting && rendering >= 4;
+
+    /* Windows' pictures out of the GPU's table when the blitter no longer
+     * composes from them: GPU Monitor showed eleven buffers, 63 MB, after
+     * Blitter composing was tried and left. */
+    if (!blit_composing) {
+        unsigned k;
+
+        for (k = 0; k < npictures; k++) {
+            picture_gpu_forget(k);
+        }
+    }
+
     owed.n = 0;
     owed.whole = false;
     given.whole = true;
