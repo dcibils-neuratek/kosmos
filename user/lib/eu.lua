@@ -16,6 +16,8 @@
 --   (f0.0) sel (16|M0)  r30.0<1>:f  r31.0<8;8,1>:f  r32.0<8;8,1>:f
 --   mad (16)  r12<0>:f  r1<0;0>.r:f  r10<0;0>:f  r1.2<0>.r:f {Align16}
 --   (f0.0.any16h) jmpi (1)  loop
+--   (f0.0) if (16|M0)  jip: other  uip: done
+--   math.sqt (16|M0)  r12.0<1>:f  r10.0<8;8,1>:f  null<8;8,1>:f
 --   send.ts (16|M0)  null  r112  0x00000000  0x02000010  {EOT}
 --   loop:
 --
@@ -29,9 +31,12 @@
 --
 -- **The subset a compute kernel needs**, and every form of it held bit for
 -- bit to Mesa's assembler by `tools/test_eu.lua` over `tools/eu_corpus.txt`:
--- moves and conversions; add, mul, three-source mad; and, or, xor, shl,
--- shr; cmp into a flag, predication, sel; jmpi; send. Each field's bits are
--- where Mesa's `pre_xe.json` puts them. A line outside the subset is
+-- moves and conversions; add, mul, three-source mad, frc and the
+-- roundings; and, or, xor, not, shl, shr, asr; cmp into a flag,
+-- predication, sel; `math` - inv, sqt, rsq, sin, cos, log, exp, fdiv,
+-- pow; jmpi; the structured branches `if`, `else`, `endif`, `while`,
+-- `break`, `continue` (`cafesa3d-gpu.md` R1); send. SIMD8 and SIMD16. Each
+-- field's bits are where Mesa's `pre_xe.json` puts them. A line outside the subset is
 -- refused with its number and why, never guessed at.
 --
 -- This turns text into numbers once, when a program starts: Lua, in the
@@ -68,10 +73,24 @@ end
 --------------------------------------------------------------------------
 
 eu.OPCODES = {
-  mov = 0x01, sel = 0x02, ["and"] = 0x05, ["or"] = 0x06, xor = 0x07,
-  shr = 0x08, shl = 0x09, cmp = 0x10, jmpi = 0x20, send = 0x31,
-  add = 0x40, mul = 0x41, mad = 0x5b,
+  mov = 0x01, sel = 0x02, ["not"] = 0x04, ["and"] = 0x05, ["or"] = 0x06, xor = 0x07,
+  shr = 0x08, shl = 0x09, asr = 0x0c, cmp = 0x10, jmpi = 0x20,
+  ["if"] = 0x22, ["else"] = 0x24, endif = 0x25, ["while"] = 0x27, ["break"] = 0x28,
+  continue = 0x29, send = 0x31, math = 0x38,
+  add = 0x40, mul = 0x41, frc = 0x43, rndu = 0x44, rndd = 0x45, rnde = 0x46, rndz = 0x47,
+  mad = 0x5b,
 }
+
+-- The structured branches (`docs/cafesa3d-gpu.md` R1): each lane's mask
+-- kept by the hardware as they nest. `if`, `else`, `break` and `continue`
+-- take two targets, `jip:` and `uip:`; `endif` and `while` one. Both are
+-- counted in bytes from the branch itself - unlike `jmpi`, from the next.
+local TWO_TARGETS = { ["if"] = true, ["else"] = true, ["break"] = true, continue = true }
+local ONE_TARGET = { endif = true, ["while"] = true }
+
+-- `math`'s functions, by the names Mesa prints (`gen_names.c`), in bits
+-- 24 to 27 where a send keeps its unit.
+local MATH = { inv = 1, log = 2, exp = 3, sqt = 4, rsq = 5, sin = 6, cos = 7, fdiv = 9, pow = 10 }
 
 -- A register operand's type; an immediate's are the same but for :v.
 local TYPES = { ud = 0, d = 1, uw = 2, w = 3, ub = 4, b = 5, df = 6, f = 7 }
@@ -206,6 +225,7 @@ local function controls(w, ins)
     field(w, 32, 32, ins.cond.sub)
   end
 
+  if ins.name == "math" then field(w, 24, 27, ins.sfid) end
   if ins.nomask then field(w, 34, 34, 1) end
   if ins.eot then field(w, 127, 127, 1) end
 end
@@ -402,6 +422,8 @@ local function parse(text)
 
   if name == "send" then
     ins.sfid = SFIDS[unit] or fail("no unit " .. unit .. " a send here can address")
+  elseif name == "math" then
+    ins.sfid = MATH[unit] or fail("no math function " .. unit)
   elseif unit ~= "" then
     fail("no instruction " .. op)
   end
@@ -440,7 +462,26 @@ local function parse(text)
       break
     end
 
-    if name == "jmpi" and #ins.ops == 0 then
+    if (TWO_TARGETS[name] or ONE_TARGET[name]) and tok:match("^[ju]ip:") then
+      -- `jip: else1`, `uip:64`: a label, or an offset in bytes.
+      local which, rest = tok:match("^([ju]ip):(.*)$")
+
+      if rest == "" then
+        i = i + 1
+        rest = t[i] or fail("no target after " .. which)
+      end
+
+      local n = rest:match("^%-?%d+$") and tonumber(rest)
+                or rest:match("^%-?0x%x+$") and tonumber(rest:gsub("0x", ""), 16)
+
+      if n then
+        ins[which] = n
+      elseif rest:match("^[%a_][%w_]*$") then
+        ins[which .. "_label"] = rest
+      else
+        fail("a branch goes to a label or an offset: " .. rest)
+      end
+    elseif name == "jmpi" and #ins.ops == 0 then
       local n = tok:match("^(%-?0?x?%x+):d$")
 
       if n then
@@ -463,8 +504,33 @@ local function parse(text)
   return ins
 end
 
+-- `if (16|M0) jip: a uip: b`: an immediate dword source, the targets in
+-- the last two dwords - UIP then JIP - and for one target, the second
+-- source's file and type as Mesa fills a source that is not there.
+local function encode_branch(ins)
+  local w = { 0, 0, 0, 0 }
+
+  if ins.jip == nil then fail(ins.name .. " needs jip:") end
+  if TWO_TARGETS[ins.name] and ins.uip == nil then fail(ins.name .. " needs uip:") end
+
+  controls(w, ins)
+  field(w, 41, 42, FILE_IMM)
+  field(w, 43, 46, IMM_TYPES.d)
+
+  if TWO_TARGETS[ins.name] then
+    field(w, 64, 95, ins.uip & 0xffffffff)
+  else
+    field(w, 89, 90, FILE_ARF)
+    field(w, 91, 94, IMM_TYPES.d)
+  end
+
+  field(w, 96, 127, ins.jip & 0xffffffff)
+  return bytes(w)
+end
+
 local function encode(ins, offset)
   if ins.name == "jmpi" then return encode_jmpi(ins, offset or 0) end
+  if TWO_TARGETS[ins.name] or ONE_TARGET[ins.name] then return encode_branch(ins) end
   if ins.name == "send" then return encode_send(ins) end
   if ins.name == "mad" then return encode_three(ins) end
 
@@ -480,7 +546,7 @@ function eu.encode_line(text)
   local ok, out = pcall(function()
     local ins = parse(text)
 
-    if ins.label then fail("a label needs the whole kernel") end
+    if ins.label or ins.jip_label or ins.uip_label then fail("a label needs the whole kernel") end
 
     return encode(ins, ins.target)
   end)
@@ -539,6 +605,19 @@ function eu.assemble(text)
       end
 
       offset = labels[ins.label] - (at + 16)
+    end
+
+    -- The structured branches' targets, from the branch itself.
+    for _, which in ipairs { "jip", "uip" } do
+      local name = ins[which .. "_label"]
+
+      if name then
+        if not labels[name] then
+          return nil, ("line %d: no label %s"):format(ins.line, name)
+        end
+
+        ins[which] = labels[name] - at
+      end
     end
 
     local ok, b = pcall(encode, ins, offset)

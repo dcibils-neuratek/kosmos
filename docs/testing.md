@@ -28226,3 +28226,45 @@ the M700's to take, since QEMU has no GPU to draw it.
   the lesson's kernel in `test_intelgpu_kernel`'s 32.
 - **Seen in Kosmos's browser under QEMU**: `asset:tutorial/ide/15-gpu.html`,
   3607 pixels tall, the first band's pictures decoded with none missing.
+
+## 18.692 The GPU's branches and maths (`cafesa3d-gpu.md` R1)
+
+Diego took the four recommended choices for C5 ("go ahead with the
+recommended choices for C5"): a kernel language of Kosmos's own, Preview
+first, an emulator of the execution units, and textures in base colour
+until R7. R1 is what a tracer needs that `eu.lua` and the driver's check
+did not have.
+
+**`eu.lua`** now assembles:
+- **the structured branches** `if`, `else`, `endif`, `while`, `break`
+  and `continue`, whose lane masks the hardware keeps as they nest.
+  `jip:` and `uip:` take a label or a number. They count from the branch
+  itself, as gentool counts them, unlike `jmpi`'s from the next;
+- **`math`**, by Mesa's names: `inv`, `sqt`, `rsq`, `sin`, `cos`, `log`,
+  `exp`, `fdiv`, `pow`, with the function in bits 24 to 27;
+- **`not`, `asr`, `frc`** and the four roundings;
+- **SIMD8 forms** of what a register-hungry kernel uses.
+
+**The corpus is 72 lines**, every new form assembled by gentool. A
+branch's line, and a `math` with one source, are kept as written: gentool
+prints the first's targets as labels it cannot place outside a one-line
+program, and the second's null source without the region it reads back.
+`sel` with a condition, for min and max, gentool would not parse.
+`cmp` and a predicated `sel` do the same, and are in the corpus already.
+
+**The driver's check** (`intelgpu_kernel.c`) allows the structured
+branches only with immediate targets. JIP, and UIP where there is one,
+must land on an instruction of the kernel. `halt`, `call`, `ret` and
+`goto` stay refused.
+
+**Tests.**
+- **`test_eu.lua`, 90 checks**: the 72 lines bit for bit; and a whole
+  kernel, an `if` with an `else`, a `while` with a `break`, and three
+  `math`s, by their labels, held to the 208 bytes gentool made of the
+  same text.
+- **`test_intelgpu_kernel`, 41 checks over 38 kernels**: a branching
+  kernel passes; an `if` past the end, a UIP before the start, a
+  misaligned `while`, an `endif` through a register, and `halt` are
+  refused, each at its instruction. **Control**: a check that ignores UIP
+  fails `if-uip-before`, by name.
+- **`host` and `x86-gpumon` pass; the full gate 97 of 97 in 9:28.**

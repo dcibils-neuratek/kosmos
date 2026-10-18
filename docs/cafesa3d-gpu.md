@@ -87,7 +87,12 @@ any kernel is, so the compiler is never trusted with the GPU's safety: a
 mistake in it is a refused kernel or a wrong picture, never a write
 somewhere else.
 
-## Decisions, Diego's
+## Decisions, Diego's - taken on 18 October 2026: the four recommended
+
+Diego: "go ahead with the recommended choices for C5" - **E1 A**, a kernel
+language of Kosmos's own compiled on Kosmos; **E2**, Preview first; **E3**,
+an emulator of the execution units on the Mac; **E4**, a textured object in
+its base colour until R7. Recorded in `README.md`'s decision log.
 
 **E1 - how the ray tracer's kernel is written.**
 

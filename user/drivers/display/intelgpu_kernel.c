@@ -40,7 +40,7 @@ static uint32_t bits(const uint32_t *w, unsigned lo, unsigned hi)
 #define ARF_IP          0xa0u
 
 /* The instructions a kernel may use, by their operands' layout. */
-enum shape { NONE, TWO, THREE, ALONE, BRANCH, SEND };
+enum shape { NONE, TWO, THREE, ALONE, BRANCH, STRUCTURED, SEND };
 
 static enum shape shape_of(uint32_t op)
 {
@@ -60,11 +60,14 @@ static enum shape shape_of(uint32_t op)
         return ALONE;
     case OP_JMPI:
         return BRANCH;
+    case 34: case 36: case 40: case 41:               /* if else break continue: JIP, UIP */
+    case 37: case 39:                                 /* endif while: JIP */
+        return STRUCTURED;
     case OP_SEND:
     case OP_SENDC:
         return SEND;
     default:
-        return NONE;    /* movi, smov, wait, sends, and every other branch */
+        return NONE;    /* movi, smov, wait, sends, halt, call, ret, goto */
     }
 }
 
@@ -236,6 +239,38 @@ static uint32_t branch(const uint32_t *w, uint32_t at, uint32_t bytes)
     return GPU_KERNEL_OK;
 }
 
+/*
+ * The structured branches (`docs/cafesa3d-gpu.md` R1) - `if`, `else`,
+ * `endif`, `while`, `break`, `continue`: the hardware keeps each lane's mask
+ * as they nest, and every target is an immediate counted in bytes from the
+ * branch itself. Each one must land on an instruction of the kernel; the
+ * second, UIP, is there for `if`, `else`, `break` and `continue`.
+ */
+static uint32_t structured(const uint32_t *w, uint32_t op, uint32_t at, uint32_t bytes)
+{
+    int64_t here = (int64_t)at * 16, jip, uip;
+
+    if (bits(w, 41, 42) != FILE_IMM) {
+        return GPU_KERNEL_BRANCH;
+    }
+
+    jip = here + (int64_t)(int32_t)bits(w, 96, 127);
+
+    if (jip < 0 || jip >= (int64_t)bytes || (jip & 15) != 0) {
+        return GPU_KERNEL_BRANCH;
+    }
+
+    if (op != 37u && op != 39u) {
+        uip = here + (int64_t)(int32_t)bits(w, 64, 95);
+
+        if (uip < 0 || uip >= (int64_t)bytes || (uip & 15) != 0) {
+            return GPU_KERNEL_BRANCH;
+        }
+    }
+
+    return GPU_KERNEL_OK;
+}
+
 uint32_t igpu_kernel_check(const uint32_t *words, uint32_t bytes,
                            struct igpu_kernel_verdict *out)
 {
@@ -264,6 +299,7 @@ uint32_t igpu_kernel_check(const uint32_t *words, uint32_t bytes,
             case THREE:  why = GPU_KERNEL_OK; break;    /* every operand a GRF, directly */
             case ALONE:  why = GPU_KERNEL_OK; break;
             case BRANCH: why = branch(w, i, bytes); break;
+            case STRUCTURED: why = structured(w, op, i, bytes); break;
             case SEND:   why = send(w, out); break;
             default:     why = GPU_KERNEL_OPCODE; break;
             }

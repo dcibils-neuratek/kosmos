@@ -78,6 +78,44 @@ if code then
   check(code:byte(6 * 16) & 0x80 == 0x80, "the last instruction does not end the thread")
 end
 
+-- The structured branches by their labels (`cafesa3d-gpu.md` R1): an if
+-- with an else, a while with a break, and math - the whole kernel held to
+-- the 208 bytes Mesa's gentool made of the same text, its targets counted
+-- from each branch itself as gentool counts them.
+do
+  local text = [[
+cmp (16|M0) (lt)f0.0 null<1>:f r10.0<8;8,1>:f 0x40800000:f
+(f0.0) if (16|M0) jip: else1 uip: end1
+add (16|M0) r10.0<1>:f r10.0<8;8,1>:f 0x3f800000:f
+else1:
+else (16|M0) jip: end1 uip: end1
+add (16|M0) r10.0<1>:f r10.0<8;8,1>:f 0x40000000:f
+end1:
+endif (16|M0) jip: loop
+loop:
+add (16|M0) r10.0<1>:f r10.0<8;8,1>:f 0x3f800000:f
+cmp (16|M0) (lt)f0.0 null<1>:f r10.0<8;8,1>:f 0x41000000:f
+(f0.0) break (16|M0) jip: wend uip: done
+wend:
+while (16|M0) jip: loop
+done:
+math.sqt (16|M0) r12.0<1>:f r10.0<8;8,1>:f null<8;8,1>:f
+math.inv (16|M0) r12.0<1>:f r10.0<8;8,1>:f null<8;8,1>:f
+math.fdiv (16|M0) r12.0<1>:f r10.0<8;8,1>:f r11.0<8;8,1>:f
+]]
+  local mesa = "10008005e03a002040018d3e00008040 22008100000e00004000000020000000 "
+            .. "40008000e83a402140018d3e0000803f 24008000000e00002000000020000000 "
+            .. "40008000e83a402140018d3e00000040 25008000000e00000000000810000000 "
+            .. "40008000e83a402140018d3e0000803f 10008005e03a002040018d3e00000041 "
+            .. "28008100000e00002000000010000000 27008000000e000000000008d0ffffff "
+            .. "38008004e83a802140018d3800008d00 38008001e83a802140018d3800008d00 "
+            .. "38008009e83a802140018d3a60018d00"
+  local got, why = eu.assemble(text)
+
+  check(got and hex(got) == mesa:gsub(" ", ""),
+        "the structured branches did not assemble as gentool's:\n      " .. (got and hex(got) or tostring(why)))
+end
+
 -- intel-gpu-tools' fill kernel, as the M700 runs it (`intelgpu_fill.h`):
 -- its text as `gpu kernel` hands it in (`eukernels.lua`), assembled to the
 -- same 160 bytes.

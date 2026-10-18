@@ -159,7 +159,7 @@ on the M700. **C5 designed** (18 October): `cafesa3d-gpu.md`,
 `cafesa3d-gpu.html`, `cafesa3d-gpu-architecture.png` - the tracer in a kernel
 language of Kosmos's own compiled on Kosmos, an emulator of the execution
 units for the tests, the scene packed by the 3D Kit, Preview first; steps R1
-to R7. Waits for Diego's word on E1 to E4.
+to R7. **Agreed** the same evening - the four recommended ("go ahead with the recommended choices for C5"). Building from R1.
 **And the lesson, C6** (Diego, the same
 day): what a compute kernel is and how it differs from a processor's
 program, the two taught as complementary - "they are completely

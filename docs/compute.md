@@ -167,7 +167,7 @@ GPU wrote is read from memory after. The first run holds both to it.
    for the M700.
 5. **C5 - Cafesa3D on the GPU**, its own design first (`cafesa3d` docs): a
    ray tracer as a kernel on the same kit. **Designed** (18 October): `cafesa3d-gpu.md`
-   and its mockup and diagram; waits for Diego's word on E1 to E4.
+   and its mockup and diagram; **agreed** with the four recommended choices, building from R1.
 6. **C6 - the IDE's lesson**, on GPU Fractal - Diego, 18 October: "the
    compute kit needs a learning lesson on the ide tutorials to explain what
    a compute kernel is, how it differs from regular cpu programs", and

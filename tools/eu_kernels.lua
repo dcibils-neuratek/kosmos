@@ -107,6 +107,32 @@ kernel("branch-before", BRANCH, 0, "jmpi (1) -32:d\n" .. END_THREAD)
 kernel("branch-past", BRANCH, 0, "jmpi (1) 32:d\n" .. END_THREAD)
 kernel("branch-misaligned", BRANCH, 0, "jmpi (1) 8:d\n" .. END_THREAD)
 
+-- The structured branches (cafesa3d-gpu.md R1): an if with an else, a while
+-- with a break, and math - and their targets outside the kernel refused.
+local shaped = kernel("structured", OK, 0, [[
+cmp (8|M0) (lt)f0.0 null<1>:f r10.0<8;8,1>:f 0x40800000:f
+(f0.0) if (8|M0) jip: else1 uip: end1
+add (8|M0) r10.0<1>:f r10.0<8;8,1>:f 0x3f800000:f
+else1:
+else (8|M0) jip: end1 uip: end1
+math.sqt (8|M0) r10.0<1>:f r10.0<8;8,1>:f null<8;8,1>:f
+end1:
+endif (8|M0) jip: loop
+loop:
+add (8|M0) r10.0<1>:f r10.0<8;8,1>:f 0x3f800000:f
+cmp (8|M0) (lt)f0.0 null<1>:f r10.0<8;8,1>:f 0x41000000:f
+(f0.0) break (8|M0) jip: wend uip: done
+wend:
+while (8|M0) jip: loop
+done:
+]] .. END_THREAD)
+
+case("if-past-the-end", BRANCH, 1, poke(shaped, 1, 96, 127, 16 * 40))
+case("if-uip-before", BRANCH, 1, poke(shaped, 1, 64, 95, (-32) & 0xffffffff))
+case("while-misaligned", BRANCH, 9, poke(shaped, 9, 96, 127, (-24) & 0xffffffff))
+case("endif-through-a-register", BRANCH, 5, poke(shaped, 5, 41, 42, 1))
+case("halt", OPCODE, 5, poke(shaped, 5, 0, 6, 42))
+
 -- The bits eu.lua does not write, put in by hand.
 local plain = kernel("plain", OK, 0, "add (16|M0) r10.0<1>:d r11.0<8;8,1>:d 1:d\n" .. END_THREAD)
 

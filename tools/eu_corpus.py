@@ -17,6 +17,7 @@ are. Lines gentool refuses are said and left out.
 """
 
 import os
+import re
 import subprocess
 import sys
 
@@ -74,7 +75,38 @@ shr (16|M0) r5.0<1>:ud r6.0<8;8,1>:ud 0x00000010:ud
 jmpi (1) -64:d
 send.ts (16|M0) null r112 a0.0 0x02000010 {EOT}
 send.hdc1 (16|M0) acc0 r4 a0.0 0x060A8000
+(f0.0) if (16|M0) jip: 32 uip: 64
+else (16|M0) jip: 32 uip: 32
+endif (16|M0) jip: 16
+while (16|M0) jip: -48
+(f0.0) while (16|M0) jip: -96
+(f0.0) break (16|M0) jip: 16 uip: 32
+(f0.0) continue (16|M0) jip: 16 uip: -32
+(f0.0) if (8|M0) jip: 48 uip: 48
+math.inv (16|M0) r12.0<1>:f r10.0<8;8,1>:f null<8;8,1>:f
+math.sqt (16|M0) r12.0<1>:f r10.0<8;8,1>:f null<8;8,1>:f
+math.rsq (8|M0) r12.0<1>:f r10.0<8;8,1>:f null<8;8,1>:f
+math.sin (16|M0) r12.0<1>:f r10.0<8;8,1>:f null<8;8,1>:f
+math.cos (16|M0) r12.0<1>:f r10.0<8;8,1>:f null<8;8,1>:f
+math.log (16|M0) r12.0<1>:f r10.0<8;8,1>:f null<8;8,1>:f
+math.exp (16|M0) r12.0<1>:f r10.0<8;8,1>:f null<8;8,1>:f
+math.fdiv (16|M0) r12.0<1>:f r10.0<8;8,1>:f r11.0<8;8,1>:f
+math.pow (16|M0) r12.0<1>:f r10.0<8;8,1>:f r11.0<8;8,1>:f
+mov (8|M0) r10.0<1>:f r11.0<8;8,1>:f
+add (8|M0) r10.0<1>:f r11.0<8;8,1>:f r12.0<8;8,1>:f
+mad (8) r14<0>:f r12<0;0>:f r4<0;0>:f r4<0>:f {Align16}
+cmp (8|M0) (lt)f0.0 null<1>:f r24.0<8;8,1>:f 0x40800000:f
+(f0.0) sel (8|M0) r30.0<1>:f r31.0<8;8,1>:f r32.0<8;8,1>:f
+mov (16|M0) r30.0<1>:f (abs)r31.0<8;8,1>:f
+mov (16|M0) r30.0<1>:d r31.0<8;8,1>:f
+rndd (16|M0) r30.0<1>:f r31.0<8;8,1>:f
+frc (16|M0) r30.0<1>:f r31.0<8;8,1>:f
+not (16|M0) r30.0<1>:ud r31.0<8;8,1>:ud
+asr (16|M0) r30.0<1>:d r31.0<8;8,1>:d 0x00000002:d
 """
+
+
+BRANCH = re.compile(r"^(\(~?f\d\.\d[^)]*\)\s*)?(jmpi|if|else|endif|while|break|continue)\b")
 
 
 def run(args, data=None):
@@ -112,6 +144,13 @@ def main():
             print("eu_corpus: not one instruction: %s (%d bytes)" % (line, len(raw)))
             continue
 
+        # A branch is kept as written: its targets are offsets in bytes,
+        # which gentool prints as labels and will not print at all when they
+        # fall outside a one-line program.
+        if BRANCH.match(line):
+            kept.append((line, raw.hex()))
+            continue
+
         dis = run([GENTOOL, "disasm", "-p", "skl", "-v", binf]).stdout.decode().strip()
         canon = dis.split("//")[0].strip()
 
@@ -126,7 +165,9 @@ def main():
             # A branch is printed with a label or a bare number gentool
             # reads back differently; eu.lua takes the line as written,
             # with its offset in bytes, so that is what is kept.
-            if " jmpi " in " " + line:
+            # And a one-source `math`, whose null second source gentool
+            # prints without the region it reads back.
+            if BRANCH.match(line) or (line.startswith("math.") and line.endswith("null<8;8,1>:f")):
                 kept.append((line, raw.hex()))
                 continue
 
