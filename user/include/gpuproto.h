@@ -57,6 +57,15 @@
  */
 #define GPU_OP_STATS         9u
 
+/*
+ * **The blitter's first work** (`m700-2d.md` step 5): the GPU woken
+ * (forcewake), a ring buffer given to its blit engine in the global GTT,
+ * and one command put in it - `MI_STORE_DWORD_IMM`, a number written to a
+ * page of memory - and then whether the number arrived. The first time
+ * Kosmos submits work to the GPU. Answered in `gpu_reply`'s `engine`.
+ */
+#define GPU_OP_ENGINE_TEST   10u
+
 #define GPU_STATS_BUFFERS    16u
 #define GPU_DESKTOP_CURSOR   1u     /* the pointer is on the cursor plane */
 #define GPU_DESKTOP_FLIPS    2u     /* the screen is shown by flips */
@@ -72,6 +81,9 @@
 #define GPU_ERR_UNCHANGED    6u     /* written, and read back different */
 #define GPU_ERR_IN_USE       7u     /* a test, while somebody's arrow is shown */
 #define GPU_ERR_NO_BUFFER    8u     /* no such buffer, or not the screen's size */
+#define GPU_ERR_NO_WAKE      9u     /* forcewake asked for and not acknowledged */
+#define GPU_ERR_NO_RING      10u    /* the ring would not take RING_VALID */
+#define GPU_ERR_NO_ANSWER    11u    /* the command was given and its number never came */
 
 struct gpu_request {
     uint32_t op;
@@ -98,6 +110,14 @@ struct gpu_reply {
         struct {                    /* BUFFER_NEW */
             uint32_t id, gtt, pitch, pages;
         } buffer;
+        struct {                    /* ENGINE_TEST */
+            uint32_t value;         /* what arrived where the command was to write */
+            uint32_t head, tail;    /* the ring's, after: head reaching tail is done */
+            uint32_t ctl;           /* RING_CTL: RING_VALID, and RING_WAIT */
+            uint32_t mode;          /* RING_MODE_GEN7: execlists' bit should be clear */
+            uint32_t esr;           /* RING_ESR: errors the engine saw */
+            uint32_t elapsed_us;    /* from the tail written to the number seen */
+        } engine;
         struct {                    /* FLIP and FLIPPED */
             uint32_t flips;         /* PIPE_FLIPCOUNT: flips latched */
             uint32_t live;          /* PLANE_SURFLIVE: the GTT address scanned */

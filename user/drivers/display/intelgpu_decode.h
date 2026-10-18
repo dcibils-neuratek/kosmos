@@ -48,6 +48,35 @@
 #define IGPU_RPSTAT1            0x0a01cu    /* GEN6_RPSTAT1: CAGF in 31:23, 50/3 MHz */
 #define IGPU_RP_STATE_CAP       0x145998u   /* MCHBAR mirror + 0x5998: RP0 7:0, RPn 23:16, 50 MHz */
 #define IGPU_RC6_RESIDENCY      0x138108u   /* GEN6_GT_GFX_RC6: 1280 ns a count */
+/* Waking the GT (`intel_gt_regs.h`; `intel_uncore.c`'s `__gen9_fw_ranges`
+ * puts the blitter's registers, 0x22000-0x243ff, in the GT's domain). The
+ * request is a masked write - bit 16 + n says bit n is meant. */
+#define IGPU_FORCEWAKE_GT       0x0a188u    /* FORCEWAKE_GT_GEN9 */
+#define IGPU_FORCEWAKE_ACK_GT   0x130044u   /* FORCEWAKE_ACK_GT_GEN9 */
+#define IGPU_FORCEWAKE_KERNEL   (1u << 0)
+/* An engine's ring (`intel_engine_regs.h`), from its base: the blitter's
+ * is BLT_RING_BASE (`i915_reg.h`). */
+#define IGPU_BLT_BASE           0x22000u
+#define IGPU_RING_TAIL          0x30u
+#define IGPU_RING_HEAD          0x34u
+#define IGPU_RING_START         0x38u
+#define IGPU_RING_CTL           0x3cu       /* (pages - 1) << 12 | RING_VALID */
+#define IGPU_RING_ACTHD         0x74u
+#define IGPU_RING_HWS_PGA       0x80u
+#define IGPU_RING_HWSTAM        0x98u
+#define IGPU_RING_MI_MODE       0x9cu       /* masked: STOP_RING 8, MODE_IDLE 9 */
+#define IGPU_RING_ESR           0xb8u
+#define IGPU_RING_MODE          0x29cu      /* RING_MODE_GEN7: GFX_RUN_LIST_ENABLE 15 */
+#define IGPU_RING_TIMESTAMP     0x358u
+#define IGPU_RING_VALID         (1u << 0)
+#define IGPU_STOP_RING          (1u << 8)
+/* Commands (`intel_gpu_commands.h`): MI_INSTR(opcode, flags) is opcode << 23
+ * | flags; MI_STORE_DWORD_IMM_GEN4 is opcode 0x20 with length 2 - four
+ * dwords: itself, the address low and high, the value - and MI_USE_GGTT
+ * says the address is in the global GTT. */
+#define IGPU_MI_NOOP            0u
+#define IGPU_MI_STORE_DWORD     ((0x20u << 23) | 2u)
+#define IGPU_MI_USE_GGTT        (1u << 22)
 #define IGPU_PIPE_FLIPCOUNT_A   0x70044u    /* flips the pipe has latched */
 #define IGPU_CURCNTR_A          0x70080u
 #define IGPU_CURBASE_A          0x70084u

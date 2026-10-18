@@ -101,6 +101,17 @@ int main(void)
         check(!on && blocks == 47, "a watermark off keeps its blocks");
     }
 
+    /* Step 5's command, as i915 builds it: MI_INSTR(0x20, 2) is the client
+     * (0) in 31:29, the opcode in 28:23 and the length in the low bits -
+     * four dwords, less two - and MI_USE_GGTT bit 22. A wrong shift sends
+     * the engine some other command. */
+    check(IGPU_MI_STORE_DWORD == 0x10000002u, "MI_STORE_DWORD_IMM: opcode 0x20 << 23, length 2");
+    check((IGPU_MI_STORE_DWORD | IGPU_MI_USE_GGTT) == 0x10400002u, "and the global GTT, bit 22");
+    check(IGPU_BLT_BASE + IGPU_RING_CTL == 0x2203cu && IGPU_BLT_BASE + IGPU_RING_TAIL == 0x22030u,
+          "the blitter's RING_CTL and RING_TAIL, from BLT_RING_BASE");
+    check(((IGPU_FORCEWAKE_KERNEL << 16) | IGPU_FORCEWAKE_KERNEL) == 0x00010001u,
+          "forcewake asked: a masked write, bit 16 saying bit 0 is meant");
+
     printf("%s: %d checks on intelgpu_decode\n", failed ? "FAIL" : "PASS", checks);
     return failed != 0;
 }

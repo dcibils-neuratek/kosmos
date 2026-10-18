@@ -27159,3 +27159,48 @@ cursor` or `none - software`, and GPU Monitor opens and says it has no GPU
 to watch. **Its control bites**: GPU Monitor's words changed, 1 of 4 fails.
 GPU Monitor joins the dated screenshot (`run_gallery.py`).
 
+## 18.666 The GPU's first work: the blitter writes a number (`m700-2d.md` step 5)
+
+**The first command Kosmos has submitted to a GPU.** `gpu engine` asks the
+driver (`GPU_OP_ENGINE_TEST`) to:
+
+- **wake the GT**: `FORCEWAKE_GT_GEN9` (0xa188), a masked write of bit 0,
+  acknowledged at 0x130044 - `intel_uncore.c`'s `__gen9_fw_ranges` puts
+  the blitter's registers, 0x22000 on, in the GT's domain;
+- **give the blit engine a ring**: three pages of its own - the ring, a
+  status page, a target - write-combining, in one run, entered in GTT
+  slots past the cursor's; then i915's legacy `xcs_resume`, step for step
+  (`intel_ring_submission.c`, Linux 6.12): the ring stopped, emptied and
+  reset, `RING_HWS_PGA` and `RING_HWSTAM`, `RING_START`, head and tail at
+  nought, `RING_CTL` one page and `RING_VALID`, waited for, and
+  `STOP_RING` taken away in `RING_MI_MODE`;
+- **put one command in it**: `MI_STORE_DWORD_IMM` with `MI_USE_GGTT` -
+  four dwords, the target's GTT address and a number - an `sfence`, and
+  the tail moved past it, which is the doorbell;
+- **look for the number**, without sleeping for a few thousand reads and
+  then a tick at a time.
+
+**The M700, 17 October, the first try:**
+
+    gpu: the blitter wrote 4b6f7301 where it was told, 3 us after its tail moved
+    gpu: ring head 00000010, tail 00000010, ctl 00000001, mode 00000000, errors 00000000
+
+    gpu: 300 of 300 written, the last 4b6f742d; 2 us fastest, 24 slowest, 3 on average
+    gpu: ring head 002002d0, tail 000002d0, ctl 00000001, mode 00000000, errors 00000000
+
+**What it says.** The legacy ring buffer works on Gen9's blitter with no
+context image - the path `m700-gpu.md` called untested territory, since no
+open driver uses it on Gen9 (`RING_MODE_GEN7` reads 0: execlists off). A
+command takes about 3 us from the doorbell to memory, the GT's wake from
+RC6 included. Three hundred in a row went round the one-page ring once -
+the head's wrap count in its bits 31:21 says so - and stopped where the
+tail is, with nothing in `RING_ESR`. Before the spin, the first runs said
+7.9 ms: that was the driver's own tick, not the GPU.
+
+**Tests.** `host`: `test_intelgpu_decode`, 25 checks - the command's
+encoding as i915 builds it (0x10000002, and 0x10400002 with the global
+GTT), the blitter's RING_CTL and RING_TAIL, and forcewake's masked write.
+`x86-gpumon`, 5 checks: under QEMU `gpu engine` says there is no Intel GPU
+and touches nothing. The engine itself has no test but the M700.
+Full gate 95/95 in 9:04.
+

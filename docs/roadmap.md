@@ -3857,7 +3857,11 @@ processors, and still what follows USB:
    resolutions once booted?"), **a resolution chosen after boot** - first
    by the pipe's scaler over a smaller desktop, a few registers on top of
    the flips, and a true mode change (timings, clocks, the DisplayPort
-   link) after the blitter. **And `neofetch` says the GPU** (Diego, the
+   link) after the blitter. **GPU Monitor built** (0.11.266-267,
+   18.664-665). **Step 5 done** (18.666): the blitter's legacy ring on
+   the M700, the first command Kosmos has given a GPU - 3 us from doorbell
+   to memory; next, step 6, its copies and fills for the compositor, and
+   the Blitter's busy time in GPU Monitor. **And `neofetch` says the GPU** (Diego, the
    same evening: "also neofetch needs to add the gpu info as ell"): a GPU
    row - the model, and what the desktop is drawn with, the label's words
    - from `/Devices/gpu`, as About's Machine line could be.

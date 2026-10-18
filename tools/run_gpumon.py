@@ -67,6 +67,18 @@ def main():
         while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
             time.sleep(0.1)
 
+        # The blitter's test (`m700-2d.md` step 5): with no GPU, said - and
+        # nothing touched.
+        mark = len(guest.seen)
+        guest.type("gpu engine")
+        got = said("gpu: ", mark, 30)
+        check(got == "no Intel GPU this driver knows",
+              "gpu engine did not say there is no Intel GPU here: %r" % got)
+
+        deadline = time.monotonic() + 30
+        while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
+            time.sleep(0.1)
+
         mark = len(guest.seen)
         guest.type("wm gpumon")
 
@@ -92,8 +104,8 @@ def main():
             print("  " + f)
         return 1
 
-    print("PASS: %d checks on GPU Monitor without a GPU (gpustat says none, in the "
-          "driver's words; the desktop's label says what QEMU draws with; the window "
+    print("PASS: %d checks on GPU Monitor without a GPU (gpustat and gpu engine say "
+          "none, in the driver's words; the desktop's label says what QEMU draws with; the window "
           "opens and says so)" % checks)
     return 0
 

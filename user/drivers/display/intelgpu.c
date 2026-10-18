@@ -650,6 +650,233 @@ static void buffers_init(void)
     next_slot = (next_slot + CURSOR_PAGES + 255u) & ~255ul;
 }
 
+/*--------------------------------------------------------------------------
+ * **The blitter's first work** (`docs/m700-2d.md` step 5): forcewake, a
+ * ring, one command, and the number it writes looked for. The sequence is
+ * i915's legacy `xcs_resume` (`intel_ring_submission.c`, Linux 6.12): stop
+ * the ring, point the status page, start, head and tail at nought, the
+ * size and RING_VALID, wait for it to take, take STOP_RING away - and then
+ * the tail moved past what was written is the doorbell.
+ *------------------------------------------------------------------------*/
+
+/* Pages of our own, write-combining and in one run, entered in GTT slots
+ * past the ones already given out: their address for the processor and for
+ * the GPU. */
+static bool gtt_pages(unsigned long pages, volatile uint32_t **cpu, uint32_t *gtt)
+{
+    long region = kosmos_mem_create_flags(pages, MEM_CONTIGUOUS | MEM_WRITE_COMBINE);
+    long at, phys;
+    unsigned long i;
+
+    buffers_init();
+
+    if (region < 0 || (at = kosmos_mem_map(region)) < 0 || (phys = kosmos_mem_phys(region)) < 0
+        || next_slot + pages > GTT_ENTRIES) {
+        return false;
+    }
+
+    for (i = 0; i < pages; i++) {
+        if (!gtt_write(next_slot + i, (uint64_t)(phys + (long)(i * 4096u)) | 1u, NULL)) {
+            return false;
+        }
+    }
+
+    wreg(GFX_FLSH_CNTL, 1u);
+    (void)reg(G.regs, GFX_FLSH_CNTL);
+
+    *cpu = (volatile uint32_t *)at;
+    *gtt = (uint32_t)(next_slot << 12);
+    next_slot = (next_slot + pages + 255u) & ~255ul;
+    return true;
+}
+
+/* The GT kept awake: asked, then its acknowledgement waited for, fifty
+ * scheduler ticks at most - i915 allows 50 ms. Released the same way. */
+static bool forcewake(bool on)
+{
+    unsigned i;
+
+    wreg(IGPU_FORCEWAKE_GT, (IGPU_FORCEWAKE_KERNEL << 16) | (on ? IGPU_FORCEWAKE_KERNEL : 0u));
+
+    for (i = 0; i < 50; i++) {
+        uint32_t ack = reg(G.regs, IGPU_FORCEWAKE_ACK_GT) & IGPU_FORCEWAKE_KERNEL;
+
+        if ((ack != 0) == on) {
+            return true;
+        }
+
+        kosmos_sleep(1);
+    }
+
+    return false;
+}
+
+static struct {
+    bool              ready;
+    volatile uint32_t *ring, *status, *target;
+    uint32_t          ring_gtt, status_gtt, target_gtt;
+    uint32_t          tail;
+    uint32_t          next_value;
+} E;
+
+static uint32_t eng(uint32_t offset)
+{
+    return reg(G.regs, IGPU_BLT_BASE + offset);
+}
+
+static void eng_write(uint32_t offset, uint32_t value)
+{
+    wreg(IGPU_BLT_BASE + offset, value);
+}
+
+static uint32_t engine_start(void)
+{
+    unsigned i;
+
+    if (E.ready) {
+        return GPU_OK;
+    }
+
+    if (!gtt_pages(1, &E.ring, &E.ring_gtt) || !gtt_pages(1, &E.status, &E.status_gtt)
+        || !gtt_pages(1, &E.target, &E.target_gtt)) {
+        return GPU_ERR_NO_MEMORY;
+    }
+
+    /* stop_ring: emptied, disabled, reset. */
+    eng_write(IGPU_RING_HEAD, eng(IGPU_RING_TAIL));
+    (void)eng(IGPU_RING_HEAD);
+    eng_write(IGPU_RING_CTL, 0);
+    (void)eng(IGPU_RING_CTL);
+    eng_write(IGPU_RING_HEAD, 0);
+    eng_write(IGPU_RING_TAIL, 0);
+
+    /* The status page, its writes all masked. */
+    eng_write(IGPU_RING_HWS_PGA, E.status_gtt);
+    (void)eng(IGPU_RING_HWS_PGA);
+    eng_write(IGPU_RING_HWSTAM, ~0u);
+
+    /* Then the ring itself: where, empty, one page, valid. */
+    (void)eng(IGPU_RING_HEAD);
+    eng_write(IGPU_RING_START, E.ring_gtt);
+    eng_write(IGPU_RING_HEAD, 0);
+    eng_write(IGPU_RING_TAIL, 0);
+    (void)eng(IGPU_RING_TAIL);
+    eng_write(IGPU_RING_CTL, ((1u - 1u) << 12) | IGPU_RING_VALID);
+
+    for (i = 0; i < 50 && (eng(IGPU_RING_CTL) & IGPU_RING_VALID) == 0; i++) {
+        kosmos_sleep(1);
+    }
+
+    if ((eng(IGPU_RING_CTL) & IGPU_RING_VALID) == 0) {
+        return GPU_ERR_NO_RING;
+    }
+
+    eng_write(IGPU_RING_MI_MODE, IGPU_STOP_RING << 16);     /* masked: STOP_RING off */
+    E.tail = 0;
+    E.next_value = 0x4b6f7301u;                             /* "Kos" and a count */
+    E.ready = true;
+    return GPU_OK;
+}
+
+static void engine_test(long console, struct gpu_reply *rep)
+{
+    struct say_line line;
+    uint32_t value, error;
+    unsigned long t0, t1 = 0;
+    unsigned i;
+
+    if (!G.found) {
+        rep->error = GPU_ERR_NO_DEVICE;
+        return;
+    }
+
+    if (!forcewake(true)) {
+        rep->error = GPU_ERR_NO_WAKE;
+        return;
+    }
+
+    error = engine_start();
+
+    if (error == GPU_OK) {
+        uint32_t at = E.tail / 4u;
+
+        value = E.next_value++;
+        E.target[0] = 0;
+
+        /* The command, four dwords, at the ring's tail: a page of 1024,
+         * and the tail wraps to its start when the page is full. */
+        if (at + 4u > 1024u) {
+            at = 0;
+        }
+
+        E.ring[at + 0] = IGPU_MI_STORE_DWORD | IGPU_MI_USE_GGTT;
+        E.ring[at + 1] = E.target_gtt;
+        E.ring[at + 2] = 0;
+        E.ring[at + 3] = value;
+        E.tail = ((at + 4u) * 4u) % 4096u;
+
+#if defined(__x86_64__)
+        __asm__ volatile("sfence" ::: "memory");    /* the ring's writes out before the doorbell */
+#endif
+
+        t0 = kosmos_ticks();
+        eng_write(IGPU_RING_TAIL, E.tail);
+
+        /* Looked for without sleeping first, a few thousand reads, so the
+         * time said is the GPU's rather than a scheduler tick's; then a
+         * tick at a time, up to a hundred. */
+        for (i = 0; i < 20000 && E.target[0] != value; i++) {
+            __asm__ volatile("" ::: "memory");
+        }
+
+        for (i = 0; i < 100 && E.target[0] != value; i++) {
+            kosmos_sleep(1);
+        }
+
+        t1 = kosmos_ticks();
+        rep->engine.value = E.target[0];
+
+        {
+            static struct sysinfo machine;     /* large: not on the stack */
+            unsigned long per_us;
+
+            per_us = kosmos_sysinfo(&machine) == 0 && machine.counter_hz >= 1000000u
+                   ? machine.counter_hz / 1000000u : 1u;
+            rep->engine.elapsed_us = (uint32_t)((t1 - t0) / per_us);
+        }
+
+        if (E.target[0] != value) {
+            error = GPU_ERR_NO_ANSWER;
+        }
+    }
+
+    rep->engine.head = eng(IGPU_RING_HEAD);
+    rep->engine.tail = eng(IGPU_RING_TAIL);
+    rep->engine.ctl = eng(IGPU_RING_CTL);
+    rep->engine.mode = eng(IGPU_RING_MODE);
+    rep->engine.esr = eng(IGPU_RING_ESR);
+    rep->error = error;
+    (void)forcewake(false);
+
+    say_begin(&line);
+    say_text(&line, "intelgpu: the blitter ");
+    say_text(&line, error == GPU_OK ? "wrote " : "did not write; read ");
+    say_hex(&line, rep->engine.value, 8);
+    say_text(&line, ", ring at GTT ");
+    say_hex(&line, E.ring_gtt, 8);
+    say_text(&line, ", head ");
+    say_hex(&line, rep->engine.head, 8);
+    say_text(&line, " tail ");
+    say_hex(&line, rep->engine.tail, 8);
+    say_text(&line, " ctl ");
+    say_hex(&line, rep->engine.ctl, 8);
+    say_text(&line, " mode ");
+    say_hex(&line, rep->engine.mode, 8);
+    say_text(&line, " esr ");
+    say_hex(&line, rep->engine.esr, 8);
+    say_send(console, &line);
+}
+
 static uint32_t buffer_new(long console, const struct gpu_request *rq,
                            struct gpu_reply *rep, long *pass)
 {
@@ -912,6 +1139,9 @@ void intelgpu_server(long console, long endpoint)
                 break;
             case GPU_OP_STATS:
                 break;              /* answered below, in its own shape */
+            case GPU_OP_ENGINE_TEST:
+                engine_test(console, &rep);
+                break;
             case GPU_OP_FLIPPED:
                 if (G.found && G.pipe >= 0) {
                     buffers_init();
