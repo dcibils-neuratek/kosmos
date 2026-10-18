@@ -28,6 +28,21 @@ as the full text behind a button - it is what a bug report wants.
   - **Detected, no driver yet** - grey, with the class it reported;
   - **In use** where a device is busy now - a stick mounted at /Drives/X,
     a card with an address.
+- **Each card's picture is what the device is**, drawn as the monitors
+  draw theirs (Diego: "I want the cards to use icons based on the hardware
+  type", "We already have that for cpu monitor gpu monitor network monitor
+  etc"): the CPU as CPU Monitor's chip with its maker's mark, the GPU as
+  GPU Monitor's, the network card as Network Monitor's port, a disk and a
+  stick as Disk Monitor's, and a memory module, a speaker, a USB port, a
+  mouse, a keyboard and a plug in the same hand; a device with no driver a
+  dim chip with its short name.
+- **See how it is all connected** ("perhaps show some hierarchy on devices
+  how are they connected?"): **By connection** beside **By kind** - the same
+  devices as a tree from the processor down: memory beside it, the PCI bus
+  behind its host bridge, each device at its address, under the USB
+  controller each port and what is plugged into it, and under a stick its
+  volumes. A device with no driver drawn dim in its place. Where the bus
+  says nothing more, the tree does not guess.
 - **See what each is doing**, in a line on its card: the processor's cores
   and speed, the GPU's clock and the rendering mode, memory used of
   installed, a disk's size and what is on it, the network's address and
@@ -55,7 +70,8 @@ as the full text behind a button - it is what a bug report wants.
 | Audio | `/Devices/audio`, `hardware.audio` | as it is |
 | Battery, temperatures, power | `/Devices/battery`, `sys.info()` | as it is |
 | The machine's name | `hardware.name(sys.info())` | as it is |
-| Pictures for each kind | Haiku's icons, as the rest of the desktop | as it is |
+| Pictures for each kind | drawn by the kit as the monitors' are: `ui.processor_chip`, the GPU's chip, the port, the SSD and the stick - and a module, a speaker, a USB port, a mouse, a keyboard, a plug added beside them, for the monitors and the Deskbar's indicator to draw too | the five there are; **new**, the six beside them, in the kit |
+| The tree | the PCI places from `sys.bus()`, the USB ports from `USB_OP_LIST`, the volumes from `drivelist` | from the sources above |
 
 **One door, many sources**: `devices.lua` is a Lua library rather than a
 server - it is run, not asked (`glossary.md`), and every source it reads is

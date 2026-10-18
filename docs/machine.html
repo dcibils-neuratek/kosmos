@@ -75,8 +75,7 @@ code { font-family: var(--mono); font-size: 13px; }
 .dev { background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 10px; padding: 12px 14px;
        display: grid; grid-template-columns: 44px 1fr; gap: 12px; }
 .dev.off { background: #22272f; }
-.ic { width: 44px; height: 44px; border-radius: 9px; position: relative; display: grid; place-items: center;
-      font: 600 11px var(--display); color: #fff; letter-spacing: .04em; }
+.ic { width: 44px; height: 44px; border-radius: 9px; position: relative; display: grid; place-items: center; }
 .dev b { font-size: 13.5px; display: block; line-height: 1.3; }
 .dev .kind { font: 600 10.5px var(--display); letter-spacing: .07em; text-transform: uppercase; color: var(--a-faint); }
 .dev .where { color: var(--a-faint); font-size: 11.5px; font-family: var(--mono); }
@@ -86,16 +85,51 @@ code { font-family: var(--mono); font-size: 13px; }
 .pill.none { color: var(--none); border-color: #4a5160; }
 .pill.busy { color: var(--busy); border-color: var(--busy); margin-left: 4px; }
 
-.k-cpu { background: linear-gradient(145deg, #3f6fd0, #284a96); }
-.k-gpu { background: linear-gradient(145deg, #8c62da, #5b3b9e); }
-.k-mem { background: linear-gradient(145deg, #2f8a5a, #1d5b3b); }
-.k-disk { background: linear-gradient(145deg, #4a5a74, #2e394c); }
-.k-usb { background: linear-gradient(145deg, #c8862f, #8e5a17); }
-.k-net { background: linear-gradient(145deg, #2a8fa6, #1b5e6e); }
-.k-snd { background: linear-gradient(145deg, #c2505e, #87303c); }
-.k-in { background: linear-gradient(145deg, #6c7a92, #464f61); }
-.k-pwr { background: linear-gradient(145deg, #a8a23a, #6d6820); }
-.k-oth { background: linear-gradient(145deg, #3e4452, #2a2f39); color: #9aa3b2; }
+/* Each kind drawn as what it is, as the monitors draw theirs: the chip of
+   CPU Monitor and GPU Monitor, Network Monitor's port, Disk Monitor's SSD
+   and stick. */
+.ic { background: linear-gradient(145deg,#3c4556,#262c39); border: 1px solid #4a5468; overflow: hidden; }
+.ic i, .ic s, .ic u { position: absolute; display: block; }
+.chip i { inset: 8px; border-radius: 4px; background: #2a3550; border: 1px solid #6d8fd6; }
+.chip s { left: 3px; right: 3px; top: 50%; height: 0; border-top: 2px dotted #8e98aa; }
+.chip u { top: 3px; bottom: 3px; left: 50%; width: 0; border-left: 2px dotted #8e98aa; }
+.chip b { position: relative; z-index: 1; font: 700 10px var(--display); color: #cfe0ff; letter-spacing: .02em; }
+.chip.gpu i { background: #2a1f3f; border-color: #b98cff; } .chip.gpu b { color: #d8c2ff; }
+.chip.dim i { background: #262b34; border-color: #59606e; } .chip.dim b { color: #8b93a3; }
+.dimm i { left: 5px; right: 5px; top: 13px; height: 18px; border-radius: 2px; background: #2f8a5a; }
+.dimm s { left: 9px; right: 9px; top: 16px; height: 9px; background: repeating-linear-gradient(90deg, #1b2029 0 5px, transparent 5px 8px); }
+.dimm u { left: 7px; right: 7px; top: 31px; height: 3px; background: repeating-linear-gradient(90deg, #d4a72c 0 2px, transparent 2px 3px); }
+.ssd i { left: 3px; right: 3px; top: 8px; bottom: 8px; border-radius: 3px; background: #2b3a4d; border: 1px solid #5b6d88; }
+.ssd s { left: 9px; right: 16px; top: 15px; bottom: 15px; background: repeating-linear-gradient(90deg, #8fa3c2 0 4px, transparent 4px 7px); }
+.stick i { left: 14px; right: 14px; top: 13px; bottom: 3px; border-radius: 4px; background: #c9ced6; }
+.stick s { left: 17px; right: 17px; top: 3px; height: 10px; border-radius: 2px 2px 0 0; background: #9aa3b2; box-shadow: inset 0 3px 0 #6b7486; }
+.port i { left: 10px; top: 10px; width: 24px; height: 18px; background: #16181d; border-radius: 3px; }
+.port s { left: 16px; top: 28px; width: 12px; height: 6px; background: #16181d; }
+.port u { left: 13px; top: 12px; width: 18px; height: 5px; background: repeating-linear-gradient(90deg, #d4a72c 0 1px, transparent 1px 3px); }
+.speaker i { left: 9px; top: 15px; width: 8px; height: 14px; background: #e9ecf1; border-radius: 1px; }
+.speaker s { left: 15px; top: 9px; width: 0; height: 0; border-top: 13px solid transparent; border-bottom: 13px solid transparent; border-right: 12px solid #e9ecf1; }
+.speaker u { left: 26px; top: 12px; width: 12px; height: 20px; border-radius: 0 12px 12px 0; border: 2px solid #9aa3b2; border-left: 0; }
+.usb i { left: 9px; top: 14px; width: 26px; height: 16px; border-radius: 2px; background: #16181d; border: 2px solid #9aa3b2; }
+.usb s { left: 13px; top: 18px; width: 18px; height: 5px; background: #4f7fd6; }
+.mouse i { left: 13px; top: 6px; width: 18px; height: 30px; border-radius: 9px; background: #d5d9e0; }
+.mouse s { left: 21px; top: 8px; width: 2px; height: 9px; background: #7d8597; }
+.keys i { left: 4px; right: 4px; top: 13px; height: 18px; border-radius: 3px; background: #d5d9e0; }
+.keys s { left: 7px; right: 7px; top: 16px; height: 9px; background: repeating-linear-gradient(90deg, #7d8597 0 3px, transparent 3px 5px); }
+.keys u { left: 12px; right: 12px; top: 27px; height: 2px; background: #7d8597; }
+.plug i { left: 15px; top: 8px; width: 14px; height: 16px; border-radius: 3px 3px 6px 6px; background: #d4c95a; }
+.plug s { left: 18px; top: 3px; width: 8px; height: 5px; border-left: 2px solid #d4c95a; border-right: 2px solid #d4c95a; }
+.plug u { left: 21px; top: 24px; width: 2px; height: 14px; background: #d4c95a; }
+
+/* The tree: how each device is reached from the processor. */
+.tree { padding: 14px 22px 22px; font-size: 13px; }
+.node { display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: center; padding: 5px 0; position: relative; }
+.node b { font-size: 13px; } .node .where { color: var(--a-faint); font-size: 11.5px; font-family: var(--mono); margin-left: 8px; }
+.node .doing { color: var(--a-dim); font-size: 12px; }
+.node .pill { margin: 0; }
+.lvl { border-left: 1px solid #3a4252; margin-left: 15px; padding-left: 18px; }
+.lvl > .node::before { content: ""; position: absolute; left: -18px; top: 50%; width: 14px; border-top: 1px solid #3a4252; }
+.node.off b { color: var(--a-dim); }
+.vol { color: var(--a-dim); font-size: 12px; padding: 3px 0 3px 46px; font-family: var(--mono); }
 </style>
 </head>
 <body>
@@ -105,9 +139,13 @@ code { font-family: var(--mono); font-size: 13px; }
 
 <div class="q"><b>Diego, 18 October 2026</b>: "lets redesign the about this machine app to show all hardware components detected, driven and not driven in a visual and nice way so i can see all the hardware my computer has, usb drives and devices, disks, network, cpu, gpu, memory, audio, etc", "mockup first".</div>
 
-<h2>As it opens, on the M700</h2>
+<h2>As it opens, on the M700 - by kind</h2>
 <div class="scroller"><div class="win" id="w"></div></div>
 <p class="cap"><b>The machine in a header</b>: its name as the firmware gives it, Kosmos's version, and three counts - devices, driven, no driver yet. <b>A filter</b>: All, Driven, No driver. <b>Every device as a card</b>, grouped by kind, each with a picture of what it is, its name, where it sits - a PCI address, a USB port - <b>a pill for its state</b> - green "Driven by" and the driver's name, grey "Detected, no driver" with the class it reported, blue "In use" where it is busy - and a line of what it is doing now. <b>Other</b> is what the bus has that belongs nowhere else - the chipset's bridges, the management engine, the SMBus. A stick plugged in appears while the window is open.</p>
+
+<h2>By connection - how each device is reached</h2>
+<div class="scroller"><div class="win" id="t"></div></div>
+<p class="cap"><b>The same devices as a tree</b>, from the processor down: memory beside it, the PCI bus behind its host bridge, every device on that bus at its address, and under the USB controller each port and what is plugged into it - the stick with its volumes under it. A device with no driver is drawn dim in its place, so what Kosmos does not drive is seen where it sits. Where the bus says nothing more - which of the chipset's devices hangs off the LPC bridge - the tree does not guess.</p>
 </div>
 
 <script>
@@ -119,16 +157,16 @@ const D = [
   ["Memory", [
     ["mem", "RAM", "8 GB", "installed · the firmware's memory map", "driven", "Nebula", "228 MB used of 8,049 MB"]]],
   ["Storage", [
-    ["disk", "SATA", "SATA controller", "PCI 00:17.0 · AHCI", "driven", "ahci", "no disk on its ports"],
-    ["usb", "USB", "Kingston DataTraveler 3.0", "USB port 18 · 128 GB", "driven", "xhci", "/Home and /Sandboxes on it", "in use"]]],
+    ["sata", "SATA", "SATA controller", "PCI 00:17.0 · AHCI", "driven", "ahci", "no disk on its ports"],
+    ["stick", "USB", "Kingston DataTraveler 3.0", "USB port 18 · 128 GB", "driven", "xhci", "/Home and /Sandboxes on it", "in use"]]],
   ["Network", [
     ["net", "LAN", "Intel Ethernet I219-V", "PCI 00:1f.6 · 8086:15b8", "driven", "e1000", "192.168.1.28 · 1000 Mb/s, full duplex", "in use"]]],
   ["Audio", [
     ["snd", "HDA", "Intel HD Audio", "PCI 00:1f.3 · Realtek ALC233", "driven", "audio", "48 kHz, stereo · 2 streams"]]],
   ["USB", [
     ["usb", "xHCI", "USB 3.0 controller", "PCI 00:14.0 · 8086:a12f", "driven", "xhci", "18 ports · 3 devices"],
-    ["in", "MOUSE", "USB optical mouse", "USB port 3 · Logitech", "driven", "xhci", "the pointer"],
-    ["in", "KEYS", "USB keyboard", "USB port 5 · Lenovo", "driven", "xhci", "the keyboard"]]],
+    ["mouse", "MOUSE", "USB optical mouse", "USB port 3 · Logitech", "driven", "xhci", "the pointer"],
+    ["keys", "KEYS", "USB keyboard", "USB port 5 · Lenovo", "driven", "xhci", "the keyboard"]]],
   ["Power", [
     ["pwr", "PSU", "Mains power", "no battery", "driven", "acpi", "on mains · package 54 °C"]]],
   ["Other - on the bus, no driver yet", [
@@ -140,8 +178,25 @@ const D = [
     ["oth", "HB", "Host bridge", "PCI 00:00.0 · bridge", "none", "", "class 06 00 00"]]],
 ];
 
+// Each kind as the monitors draw it.
+function icon(d) {
+  const k = d[0], label = d[1];
+  if (k === "cpu") return `<div class="ic chip"><s></s><u></u><i></i><b>intel</b></div>`;
+  if (k === "gpu") return `<div class="ic chip gpu"><s></s><u></u><i></i><b>GPU</b></div>`;
+  if (k === "mem") return `<div class="ic dimm"><i></i><s></s><u></u></div>`;
+  if (k === "sata") return `<div class="ic ssd"><i></i><s></s></div>`;
+  if (k === "stick") return `<div class="ic stick"><i></i><s></s></div>`;
+  if (k === "net") return `<div class="ic port"><i></i><s></s><u></u></div>`;
+  if (k === "snd") return `<div class="ic speaker"><i></i><s></s><u></u></div>`;
+  if (k === "usb") return `<div class="ic usb"><i></i><s></s></div>`;
+  if (k === "mouse") return `<div class="ic mouse"><i></i><s></s></div>`;
+  if (k === "keys") return `<div class="ic keys"><i></i><s></s><u></u></div>`;
+  if (k === "pwr") return `<div class="ic plug"><i></i><s></s><u></u></div>`;
+  return `<div class="ic chip dim"><s></s><u></u><i></i><b>${label}</b></div>`;
+}
+
 function card(g, d) {
-  return `<div class="dev${d[4] === "none" ? " off" : ""}"><div class="ic k-${d[0]}">${d[1]}</div><div>
+  return `<div class="dev${d[4] === "none" ? " off" : ""}">${icon(d)}<div>
     <div class="kind">${g}</div><b>${d[2]}</b><div class="where">${d[3]}</div>
     <span class="pill ${d[4]}">${d[4] === "driven" ? "Driven by " + d[5] : "Detected, no driver"}</span>${d[7] ? `<span class="pill busy">${d[7]}</span>` : ""}
     <div class="doing">${d[6]}</div></div></div>`;
@@ -156,10 +211,47 @@ document.getElementById("w").innerHTML = `
   <div><div class="maker">Lenovo</div><div class="model">ThinkCentre M700</div><div class="facts">10J0S1CK00 · named by SMBIOS 3.0 · Kosmos 0.11.275, Nebula on x86-64</div></div>
   <div class="counts"><div class="count"><b>${total}</b><small>devices</small></div><div class="count"><b style="color:var(--driven)">${driven}</b><small>driven</small></div><div class="count"><b style="color:var(--none)">${total - driven}</b><small>no driver yet</small></div></div>
 </div>
-<div class="bar"><span class="chip on">All</span><span class="chip">Driven</span><span class="chip">No driver</span><span class="grow"></span><span class="chip">Refreshed every 2 s</span></div>
+<div class="bar"><span class="chip on">By kind</span><span class="chip">By connection</span><span class="grow" style="flex:0 0 18px"></span><span class="chip on">All</span><span class="chip">Driven</span><span class="chip">No driver</span><span class="grow"></span><span class="chip">Refreshed every 2 s</span></div>
 <div class="body">
   <div class="group"><h4>Driven and detected</h4><div class="grid">${D.filter(([g]) => !g.startsWith("Other")).map(([g, devs]) => devs.map(d => card(g, d)).join("")).join("")}</div></div>
   ${D.filter(([g]) => g.startsWith("Other")).map(([g, devs]) => `<div class="group"><h4>${g}</h4><div class="grid">${devs.map(d => card("Other", d)).join("")}</div></div>`).join("")}
+</div>`;
+
+function node(d, extra) {
+  const on = d[4] !== "none";
+  return `<div class="node${on ? "" : " off"}">${icon(d)}<div><b>${d[2]}</b><span class="where">${d[3]}</span><div class="doing">${d[6]}</div></div>
+    <div><span class="pill ${d[4]}">${on ? "Driven by " + d[5] : "Detected, no driver"}</span>${d[7] ? `<span class="pill busy">${d[7]}</span>` : ""}</div></div>${extra || ""}`;
+}
+const F = {}; for (const [, devs] of D) for (const d of devs) F[d[2]] = d;
+
+document.getElementById("t").innerHTML = `
+<div class="head"><span class="t">This Machine</span><span class="btn">Full report</span><span class="lights"><i style="background:#3fbf4f"></i><i style="background:#f2b233"></i><i style="background:#ee5048"></i></span></div>
+<div class="bar"><span class="chip">By kind</span><span class="chip on">By connection</span><span class="grow" style="flex:0 0 18px"></span><span class="chip on">All</span><span class="chip">Driven</span><span class="chip">No driver</span><span class="grow"></span><span class="chip">Refreshed every 2 s</span></div>
+<div class="tree">
+  ${node(F["Intel Core i7-6700"])}
+  <div class="lvl">
+    ${node(F["8 GB"])}
+    ${node(F["Host bridge"])}
+    <div class="lvl">
+      ${node(F["Intel HD Graphics 530"])}
+      ${node(F["USB 3.0 controller"])}
+      <div class="lvl">
+        ${node(F["USB optical mouse"])}
+        ${node(F["USB keyboard"])}
+        ${node(F["Kingston DataTraveler 3.0"])}
+        <div class="vol">partition 2 - kfs, /Home, 512 MB<br>partition 3 - kfs, /Sandboxes, 32 GB</div>
+      </div>
+      ${node(F["Thermal subsystem"])}
+      ${node(F["Management Engine"])}
+      ${node(F["SATA controller"])}
+      ${node(F["LPC bridge"])}
+      ${node(F["Power management"])}
+      ${node(F["Intel HD Audio"])}
+      ${node(F["SMBus controller"])}
+      ${node(F["Intel Ethernet I219-V"])}
+    </div>
+    ${node(F["Mains power"])}
+  </div>
 </div>`;
 </script>
 </body>
