@@ -4384,13 +4384,18 @@ def usb_list(image, check):
     with its class. The driver knew all of it before and said it only to
     the log. (QEMU's `usb-serial` would be the plainer stranger, but it
     never reaches a port of `qemu-xhci`.)
+
+    And `lsdev` and `lsdev tree` after it (M2): the same three in the
+    machine's one list - the keyboard in USB, driven by `xhci`, the tablet
+    with no driver - and, by connection, the tablet under the controller
+    under the host bridge under the processor.
     """
     extra = ("-device", "qemu-xhci,id=usb0",
              "-device", "usb-kbd,bus=usb0.0",
              "-device", "usb-mouse,bus=usb0.0",
              "-device", "usb-tablet,bus=usb0.0")
 
-    out = boot(image, None, 90.0, typed=("lsusb",), extra=extra,
+    out = boot(image, None, 90.0, typed=("lsusb", "lsdev", "lsdev tree"), extra=extra,
                after="xhci: watching for devices plugged in and out",
                until="lsusb: ")
 
@@ -4411,6 +4416,51 @@ def usb_list(image, check):
           "the tablet was not listed with no driver and its class:\n    " + shown)
     check(re.search(r"lsusb: 3 devices, 2 driven", out) is not None,
           "lsusb did not count 3 devices, 2 driven: %r" % (re.findall(r"lsusb: .*", out),))
+
+    # The machine's one list: `lsdev`, then `lsdev tree`.
+    at = out.find("lsdev\n")
+    tree_at = out.find("lsdev tree\n")
+    by_kind = out[at:tree_at] if 0 <= at < tree_at else ""
+    tree = out[tree_at:] if tree_at >= 0 else ""
+
+    def row(text, name):
+        return next((l for l in text.splitlines() if name in l), None)
+
+    keyboard = row(by_kind, "QEMU USB Keyboard")
+    tablet = row(by_kind, "QEMU USB Tablet")
+
+    check(keyboard is not None and "driven: xhci" in keyboard,
+          "lsdev did not list the keyboard driven by xhci: %r" % keyboard)
+    check(tablet is not None and "no driver" in tablet and "class 03/00/00" in tablet,
+          "lsdev did not list the tablet with no driver: %r" % tablet)
+
+    groups = [l for l in by_kind.splitlines() if l in ("Processor", "Memory", "USB", "Other")]
+
+    check(groups[:2] == ["Processor", "Memory"] and "USB" in groups,
+          "lsdev did not group the machine Processor, Memory ... USB: %r" % groups)
+
+    totals = re.search(r"lsdev: (\d+) devices, (\d+) driven, (\d+) with no driver", by_kind)
+
+    check(totals is not None and int(totals.group(1)) == int(totals.group(2)) + int(totals.group(3))
+          and int(totals.group(1)) >= 6,
+          "lsdev did not count the machine: %r" % (totals and totals.group(0)))
+
+    # By connection: each line's indent is its depth.
+    def depth(name):
+        l = row(tree, name)
+        return (len(l) - len(l.lstrip(" "))) // 2 if l else None
+
+    controller = next((l for l in tree.splitlines() if "USB controller" in l), None)
+    deep = depth("QEMU USB Tablet")
+
+    first = row(tree, "driven: Nebula") or ""
+
+    check(first != "" and not first.startswith(" "),
+          "lsdev tree did not start at the processor: %r" % first)
+    check(controller is not None and deep is not None
+          and deep == (len(controller) - len(controller.lstrip(" "))) // 2 + 1,
+          "lsdev tree did not hang the tablet from its controller:\n    %s\n    %s"
+          % (controller, row(tree, "QEMU USB Tablet")))
 
 
 def usb_keyboard(image, check):

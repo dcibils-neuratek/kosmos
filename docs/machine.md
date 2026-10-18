@@ -99,7 +99,9 @@ when it is closed.
    driver does not read, the tablet listed "no driver" with its class.
 2. **M2 - `devices.lua`**: every source into one list; `devices` at the
    prompt prints it; a host test feeds it a bus and a USB list and holds
-   the merged list.
+   the merged list. **Done in 0.11.277** (`testing.md` 18.675) - at the
+   prompt as `lsdev` and `lsdev tree`, since `devices` is the shell's own
+   word.
 3. **M3 - the window**: as drawn, its suite under QEMU, the picture in the
    dated screenshot.
 4. **M4 - the Deskbar's devices indicator** (5q) on the same library.

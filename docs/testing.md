@@ -27514,3 +27514,43 @@ control**: the list's kind set to none for every device fails the keyboard
 and the mouse, naming both rows. QEMU's `usb-serial`, the plainer device
 with no driver, never reached a port of `qemu-xhci` and was dropped from
 the part.
+
+## 18.675 Every device in one list (`machine.md` M2)
+
+`user/lib/devices.lua`: the one door This Machine, the prompt and the
+Deskbar's devices indicator read the machine through. `devices.gather`
+takes what each source answered - `/Devices/cpu` and `/Devices/memory`,
+`sys.bus()`, the USB driver's list, the GPU's driver, the drives, the
+network's address, the battery - and gives one list of one shape: each
+device's group (Processor, Graphics, Memory, Storage, Network, Audio, USB,
+Input, Power, Other), its name and maker, where it is, whether it is driven
+and by which driver, a line of what it is doing, the picture the kit will
+draw for it, and what it hangs from By connection. `devices.read` asks the
+machine; `devices.tree` gives the roots and each device's children.
+
+A driver is named only where this tree has one that takes the device -
+`xhci`, `ahci`, `hda`, `e1000`, `intelgpu`, virtio's - and a device with no
+driver keeps its class code. Every PCI device hangs from the host bridge,
+because the bus enumeration does not say which bridge a device is behind.
+
+**At the prompt it is `lsdev`, not `devices`** as the design had it: the
+shell answers `devices` itself, with the nodes in /Devices, and its word
+wins. `lsdev` lists by kind, `lsdev tree` by connection. QEMU's standard
+VGA, vendor 1234h, is named "QEMU / Bochs" in `hardware.lua`.
+
+The device field is `picture`, not `icon`: `test_lineicons.py` reads every
+`icon = "..."` in the Lua as a line icon's name, and these are the
+monitors' drawn pictures, a different thing.
+
+**Tests.** `tools/test_devices.lua` in `host`, 30 checks: the M700's bus
+and its USB ports as its drivers answered on 18 October, and a UART nothing
+reads, handed in as tables - fourteen devices, ten driven; each in its
+group, driven by whom; the GPU named by its driver, the network card by
+`hardware.lua` with its address; the management engine a dim chip with its
+class; the stick with its volumes; the tree rooted at the processor, the
+four ports under their controller. **Controls**: the ports hung from the
+host bridge fails the controller's four; the stick put in USB fails it as
+storage. `usb_list` in `x86-usb-2` runs `lsdev` and `lsdev tree` too, 11
+checks now: the keyboard driven by xhci and the tablet with no driver, the
+groups in order, the counts adding up, and the tablet one level under its
+controller.

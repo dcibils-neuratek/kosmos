@@ -67,6 +67,7 @@ hardware.VENDORS = {
   [0x1af4] = "Red Hat / virtio",
   [0x8086] = "Intel",
   [0x1b36] = "Red Hat / QEMU",
+  [0x1234] = "QEMU / Bochs",           -- QEMU's standard VGA, `-vga std`
 }
 
 -- PCI class codes, high byte, and only the ones a machine here can show.

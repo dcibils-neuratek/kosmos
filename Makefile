@@ -4766,6 +4766,10 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	@# And when an automation fires next, what a step found in the next
 	@# one's words, and what makes a file not an automation (A3).
 	$(HOSTDIR)/lua tools/test_automations.lua
+	@# And every device as This Machine lists it: the M700's bus and USB
+	@# ports handed in, each device in its group, driven by whom, and hung
+	@# from what (machine.md M2).
+	$(HOSTDIR)/lua tools/test_devices.lua
 	@# And every method an application calls on its window: Lua resolves one
 	@# at the call, so a name the kit does not have is a control that ends
 	@# the program when somebody presses it, and nothing else notices.
