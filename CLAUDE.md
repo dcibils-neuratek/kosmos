@@ -130,6 +130,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - What a target is, and what a new machine costs: `docs/targets.md`
 - UI kit and window manager: `docs/ui.md`
 - The path pixels take: `docs/gfx.md`
+- How a frame is composed, without the GPU and with it - who does each stage, and what it cost on the M700: `docs/composing.png`, drawn from `docs/composing.html`
 - Measurement and regressions: `docs/testing.md`
 - BeOS lineage: `docs/beos.md`
 - Toolchain and build: `docs/setup.md`

@@ -1,0 +1,119 @@
+<!doctype html>
+<!--
+  How a frame of the desktop is drawn and composed, without the GPU and
+  with it: the same six stages in three columns - before the M700's GPU
+  work, today (0.11.270), and with the render engine (m700-2d.md step 7) -
+  each stage coloured by what does it, with what it costs where it was
+  measured. Diego, 17 October 2026: "After this job I want a diagram drawn
+  to understand how windows are drawn and composed without gpu and with
+  gpu". Rendered to docs/composing.png by headless Chrome at twice its
+  size, as the architecture diagrams are.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How a frame is composed</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7; --line: #e2ded3;
+    --cpu: #e8f0fd; --cpu-line: #7fa2e0; --cpu-ink: #1d3f7a;
+    --gpu: #f1e9fd; --gpu-line: #a985e6; --gpu-ink: #4b2a8a;
+    --disp: #e6f5ec; --disp-line: #72c08f; --disp-ink: #135c33;
+    --none: #f4f2ec; --none-line: #cfc9bb;
+    --cost: #b4232f;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 44px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 20px; max-width: 1060px; }
+  .legend { display: flex; gap: 24px; font-size: 13.5px; color: var(--dim); margin-bottom: 20px; }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .legend i { width: 18px; height: 14px; border-radius: 4px; border: 1.5px solid; display: inline-block; }
+  .grid { display: grid; grid-template-columns: 170px 1fr 1fr 1fr; gap: 10px 14px; align-items: stretch; }
+  .head { font-weight: 600; font-size: 17px; padding: 6px 4px 2px; }
+  .head small { display: block; font-weight: 400; font-size: 13px; color: var(--dim); }
+  .stage { font-weight: 600; font-size: 14px; color: var(--dim); padding: 12px 4px 0; text-transform: uppercase; letter-spacing: .05em; }
+  .stage small { display: block; text-transform: none; letter-spacing: 0; font-weight: 400; margin-top: 2px; }
+  .box { border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { display: block; font-weight: 600; font-size: 15px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 2px; }
+  .box code { font: 12.5px "Plex Mono", monospace; }
+  .cost { position: absolute; top: 9px; right: 11px; font: 600 12.5px "Plex Mono", monospace; color: var(--cost); }
+  .cpu { background: var(--cpu); border-color: var(--cpu-line); } .cpu b { color: var(--cpu-ink); }
+  .gpu { background: var(--gpu); border-color: var(--gpu-line); } .gpu b { color: var(--gpu-ink); }
+  .disp { background: var(--disp); border-color: var(--disp-line); } .disp b { color: var(--disp-ink); }
+  .none { background: var(--none); border-color: var(--none-line); border-style: dashed; } .none b { color: var(--dim); }
+  .totals { display: grid; grid-template-columns: 170px 1fr 1fr 1fr; gap: 14px; margin-top: 18px; }
+  .total { background: #fff; border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 13.5px; }
+  .total b { font-size: 15.5px; display: block; margin-bottom: 2px; }
+  .total .big { font: 600 22px "Plex"; }
+  .notes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; font-size: 13.5px; }
+  .note { background: #fff; border: 1.5px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .note h3 { font-size: 15.5px; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<h1>How a frame of the desktop is composed - without the GPU, and with it</h1>
+<p class="sub">The same six stages each time something on the desktop changes. What moved, step by step on the M700 (17 October 2026), is <b>who does each stage</b>: from the processor doing all of them, to the display and the blitter taking three, to the render engine taking the composing itself. Costs are a window dragged in circles on the M700, a frame (<code>frames 30</code>): the first column's at 3440 x 1440, the screen the firmware chose that boot (<code>testing.md</code> 18.661), today's at 1720 x 1440 (18.667) - a quarter of the copy's pixels and half the composing's.</p>
+<div class="legend">
+  <span><i style="background:var(--cpu);border-color:var(--cpu-line)"></i>the processor</span>
+  <span><i style="background:var(--gpu);border-color:var(--gpu-line)"></i>a GPU engine (blitter, render)</span>
+  <span><i style="background:var(--disp);border-color:var(--disp-line)"></i>the display engine</span>
+  <span><i style="background:var(--none);border-color:var(--none-line);border-style:dashed"></i>not done at all</span>
+  <span style="color:var(--cost);font-weight:600">0.80 ms</span><span>measured, a frame</span>
+</div>
+
+<div class="grid">
+  <div></div>
+  <div class="head">Without the GPU<small>QEMU, and the M700 before 0.11.261</small></div>
+  <div class="head">Today, 0.11.270<small>the M700: cursor plane, flips, the blitter</small></div>
+  <div class="head">With the render engine<small>step 7, to be built</small></div>
+
+  <div class="stage">1. A window draws<small>its own pixels</small></div>
+  <div class="box cpu"><b>The application, in its own buffer</b><p>Lua decides, the Graphics Kit's C fills the pixels - in a region it shares with the desktop</p></div>
+  <div class="box cpu"><b>The same</b><p>an application's drawing is its own business; nothing here changed</p></div>
+  <div class="box cpu"><b>The same - or the GPU, through Vulkan or OpenGL ES</b><p>a game or a 3D app renders into a GPU buffer (Mesa's <code>anv</code>, <code>iris</code>)</p></div>
+
+  <div class="stage">2. The desktop is described<small>what goes where</small></div>
+  <div class="box cpu"><b>The window manager, <code>wm.lua</code></b><p>which windows, where, in what order, what changed - a scene written to a region, damage merged</p></div>
+  <div class="box cpu"><b>The same</b><p>and asked <i>only if the screen can take a frame</i> - once a refresh, not once a mouse report</p></div>
+  <div class="box cpu"><b>The same</b><p>the scene is the one description; a GPU compositor reads it as the processor's does</p></div>
+
+  <div class="stage">3. The frame is composed<small>windows blended</small></div>
+  <div class="box cpu"><span class="cost">1.37 ms</span><b>The window server, in C</b><p>wallpaper, each window, shadows, corners, translucency - blended a pixel at a time, four at once, into its back buffer</p></div>
+  <div class="box cpu"><span class="cost">0.80 ms</span><b>The window server, in C</b><p>the same work; less of it, because damage is merged and a frame is composed only when it will be seen. <b>6b next:</b> opaque interiors and fills to the blitter</p></div>
+  <div class="box gpu"><b>The render engine</b><p>windows as textures, blended by shaders - glass, blur, animation - straight into the screen's buffer; the back buffer goes</p></div>
+
+  <div class="stage">4. To the screen's memory<small>the copy</small></div>
+  <div class="box cpu"><span class="cost">0.45 ms</span><b>The processor copies</b><p>the damaged rectangles, back buffer to screen, through write-combining memory</p></div>
+  <div class="box gpu"><span class="cost">0.00 ms</span><b>The blitter copies</b><p><code>XY_SRC_COPY_BLT</code> into whichever screen is hidden, a fence after - 1.3% of its time; checked, 0 pixels different</p></div>
+  <div class="box none"><b>No copy</b><p>the render engine composed into the screen's buffer already</p></div>
+
+  <div class="stage">5. Shown<small>the screen changes</small></div>
+  <div class="box cpu"><b>Into the one screen, as it is scanned</b><p>the copy lands while the display reads it - a tear is possible</p></div>
+  <div class="box disp"><b>A page flip</b><p>two screens; the display switches to the new one at its vertical blank - no tear, 60 a second</p></div>
+  <div class="box disp"><b>A page flip</b><p>the same - and a full-screen game flips its own buffers, the desktop out of the way</p></div>
+
+  <div class="stage">6. The pointer<small>the arrow</small></div>
+  <div class="box cpu"><b>Composed into every frame</b><p>moving the mouse damaged the screen: 514 frames a second while dragging</p></div>
+  <div class="box disp"><b>The cursor plane</b><p>a 64 x 64 picture the display lays over the screen; a move is two registers, nothing composed</p></div>
+  <div class="box disp"><b>The cursor plane</b><p>the same</p></div>
+</div>
+
+<div class="totals">
+  <div></div>
+  <div class="total"><b>The processor, a dragged window</b><span class="big">29.6 s</span> busy of 30 - a whole core; 514 frames a second, most never seen</div>
+  <div class="total"><b>The processor, the same drag</b><span class="big">4.8 s</span> busy of 30; 57 frames a second, every one shown; the GPU asleep 97%</div>
+  <div class="total"><b>The processor, the same drag</b><span class="big">little</span> - describing the scene; composing is the GPU's, and what the GPU can do more of: effects</div>
+</div>
+
+<div class="notes">
+  <div class="note"><h3>Why the blitter cannot do all of it</h3>Gen9's blitter copies and fills but does not blend. Composing is mostly blending - shadows, rounded corners, text, translucent bars - so the blitter can take only the opaque parts (6b), and the rest waits for the render engine: shaders, a pipeline, a context - the same work 3D needs.</div>
+  <div class="note"><h3>What stayed the same in every column</h3>Applications draw into their own regions, the window manager describes, the window server owns the screen - control by message, pixels in shared memory. The GPU took stages over without any application changing: each step swapped who does a stage, behind the same doors.</div>
+</div>
+</body>
+</html>
