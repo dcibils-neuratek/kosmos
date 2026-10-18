@@ -30,6 +30,13 @@
 #define WS_OP_COMPOSE      6u   /* the scene as written, composed; with
                                    WS_SHOW, put on the screen too */
 
+#define WS_OP_RENDERING    7u   /* the rendering mode, in `flags` (`docs/rendering.md`):
+                                   0 the framebuffer, 1 the cursor plane,
+                                   2 page flips, 3 the blitter's copy,
+                                   4 the blitter composing - switched now;
+                                   answered with the highest this machine
+                                   can have, in `width` */
+
 #define WS_SHOW            1u   /* compose's flags */
 /* Only if the screen can take a frame now (`m700-2d.md` step 4b): with a
  * flip still on its way, the answer is `height` 1 and nothing composed,

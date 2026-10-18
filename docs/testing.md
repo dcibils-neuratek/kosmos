@@ -27348,3 +27348,42 @@ RC6 97%, the blitter 1.4%, 0.02 W.
 **Tests.** As 18.667: the checks on every M700 boot, the encodings on the
 host, the processor's path under QEMU. Full gate 95/95 in 9:08.
 
+## 18.670 Rendering modes, switchable (`rendering.md` R1)
+
+**The modes, one table**: `rendering.lua` - Framebuffer, Cursor plane, Page
+flips, Blitter copy, Blitter composing, and GPU composing not yet - each
+with its sentence, its six stages and its memory, for Preferences, the
+label and GPU Monitor.
+
+**The window server** takes `WS_OP_RENDERING`: whatever the frame in
+flight is doing finished first, then flips started or stopped, the copy
+here or on the blitter, the blitter composing or not; it answers the
+highest mode the machine has shown it can have. **The window manager**
+keeps its arrow's picture either way and moves it between the cursor
+plane and the frame; reads `rendering` from the appearance file at start
+(Blitter copy when absent); takes `{ type = "rendering", mode = n }` and
+answers what it gave - a step down at a time: no blitter is Page flips, no
+flips is Cursor plane, no plane for the pointer is Framebuffer; redraws
+the whole screen; and its label names the mode -
+`GPU: HD 530 - blitter copy`. **`rendering`** at the prompt lists the
+modes, and `rendering 0 3` switches to each in turn.
+
+**The M700, 18 October** - each mode in turn, nothing ended:
+
+    rendering: 0, Framebuffer
+    rendering: 1, Cursor plane
+    rendering: 2, Page flips
+    rendering: 4, Blitter composing
+    rendering: 3, Blitter copy
+
+The first try answered nothing: the handler returned no reply, so every
+switch waited out its sender's time-out, a minute each, and said "no window
+manager to ask".
+
+**Tests.** `x86-gpumon`, 8 checks now: `wm gpumon,rendering:0 3` - mode 0
+answered Framebuffer, mode 3 answered the most QEMU gives, and the window
+server told 0 and then 3. **That last check is the control's**: with the
+mode ignored, every answer under QEMU's plain display is still
+"Framebuffer", and the suite passed - telling what the window server was
+asked is what fails it (1 of 8). Full gate 95/95 in 9:17.
+

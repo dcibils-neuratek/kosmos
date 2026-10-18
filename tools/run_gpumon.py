@@ -80,11 +80,30 @@ def main():
             time.sleep(0.1)
 
         mark = len(guest.seen)
-        guest.type("wm gpumon")
+        # GPU Monitor, and the rendering modes switched while the desktop
+        # runs (`docs/rendering.md` R1): Framebuffer given as asked, then
+        # Blitter copy given as the most QEMU has - Cursor plane or less.
+        guest.type("wm gpumon,rendering:0 3")
 
         label = said("wm: the desktop drawn with: ", mark, 90)
-        check(label in ("virtio - cursor", "none - software"),
+        check(label in ("virtio - cursor plane", "none - framebuffer"),
               "the desktop's label did not say what QEMU draws with: %r" % label)
+
+        first = said("rendering: ", mark, 90)
+        check(first == "0, Framebuffer", "rendering 0 did not answer Framebuffer: %r" % first)
+        at = guest.seen.find("rendering: 0, Framebuffer", mark)
+        second = said("rendering: ", at + 1 if at >= 0 else mark, 30)
+        check(second is not None and second.startswith(("1, Cursor plane - the most", "0, Framebuffer - the most")),
+              "rendering 3 did not answer the most QEMU gives: %r" % second)
+
+        # What was asked reached the window server, each in turn - under
+        # QEMU's plain display every mode is given as Framebuffer, so the
+        # answers alone cannot tell a mode heard from one ignored.
+        told0 = said("windowserver: rendering 0", mark, 30)
+        at0 = guest.seen.find("windowserver: rendering 0", mark)
+        told3 = said("windowserver: rendering 3", at0 + 1 if at0 >= 0 else mark, 30)
+        check(told0 is not None and told3 is not None,
+              "the window server was not told 0 and then 3: %r, %r" % (told0, told3))
 
         opened = said("gpumon: ", mark, 90)
         check(opened == "no GPU: no Intel GPU this driver knows",
@@ -93,7 +112,8 @@ def main():
         # Drawn, and still running a few samples later: a window whose
         # first paint faulted would have ended by now.
         time.sleep(3)
-        check("gpumon" in guest.seen[mark:] and "error" not in guest.seen[mark:].lower(),
+        check("gpumon" in guest.seen[mark:] and "gpumon: error" not in guest.seen[mark:].lower()
+              and "process died" not in guest.seen[mark:],
               "GPU Monitor's window said an error: %r" % guest.seen[mark:][-600:])
     finally:
         guest.close()

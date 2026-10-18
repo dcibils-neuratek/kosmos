@@ -480,6 +480,10 @@ local function load_appearance()
   if saved.corner ~= nil then OUT.want_corner = saved.corner and true end
   if saved.shadow ~= nil then OUT.want_shadow = saved.shadow and true end
 
+  -- The rendering mode (`docs/rendering.md`), applied once the window
+  -- server and the pointer are set up.
+  OUT.saved_rendering = saved.rendering
+
   -- Focus following the pointer (`wm/pointer.lua`), and its delay.
   OUT.focus_follows = saved.focus_follows == true
 
@@ -2139,6 +2143,7 @@ do
 
   OUT.hw_cursor = gfx.cursor and gfx.cursor(picture, 0, 0, PT.x, PT.y) == true
   OUT.cursor_move, OUT.cursor_hide = gfx.cursor_move, gfx.cursor_hide
+  OUT.cursor_set = gfx.cursor
 
   -- **Or the Intel GPU's cursor plane** (`docs/m700-2d.md` step 3b): the
   -- M700's display has no virtio cursor queue but has a plane of its own,
@@ -2150,34 +2155,85 @@ do
     if ok and gpu.cursor(picture, 0, 0, PT.x, PT.y) then
       OUT.hw_cursor = true
       OUT.cursor_move, OUT.cursor_hide = gpu.cursor_move, gpu.cursor_hide
+      OUT.cursor_set = gpu.cursor
       print("wm: the pointer on the GPU's cursor plane")
     end
   end
 
-  -- Kept where the display does not draw it: the scene composes the arrow
-  -- from this, over everything.
-  if OUT.hw_cursor then picture:free() else OUT.cursor_picture = picture end
+  -- Kept either way, since a rendering mode can move the arrow between the
+  -- display and the frame (`docs/rendering.md`); composed from this, over
+  -- everything, when the display does not draw it.
+  OUT.arrow = picture
+  OUT.has_cursor_plane = OUT.hw_cursor
+  OUT.cursor_picture = (not OUT.hw_cursor) and picture or nil
   print(OUT.hw_cursor and "wm: the pointer drawn by the display"
         or "wm: the pointer composited")
 end
 
 --
--- **What draws the desktop, beside the version** (`docs/gpumonitor.md`,
--- G0; Diego: "i need to know if kosmos is using gpu acceleration on the
--- desktop in some way, like a label somewhere in the desktop, perhaps
--- beside the kernel version"): the GPU's driver's own words where there is
--- an Intel GPU - its cursor plane and its page flips, both settled by now -
--- virtio-gpu's cursor under QEMU, and none otherwise.
+-- **The rendering mode, and what draws the desktop beside the version**
+-- (`docs/rendering.md`, `docs/gpumonitor.md` G0). The mode is kept under
+-- `rendering` in the appearance file and chosen on Preferences' Displays
+-- page; switched here without a restart - the pointer moved between the
+-- display and the frame, the window server asked for the rest, and the
+-- whole screen drawn again so the new mode starts from a whole frame.
 --
+-- The label says the GPU and the mode: Diego, "i need to know if kosmos is
+-- using gpu acceleration on the desktop in some way, like a label
+-- somewhere in the desktop, perhaps beside the kernel version".
+--
+local rendering = use("/Kosmos/Libraries/rendering.lua")
+local stamp_base = stamp
+
 do
   local ok, gpu = pcall(use, "/Kosmos/Libraries/gpu.lua")
   local s = ok and gpu.stats() or nil
-  local words = s and gpu.desktop_words(s)
-                or (OUT.hw_cursor and "virtio - cursor" or "none - software")
 
-  stamp = stamp .. "  |  GPU: " .. words
-  print("wm: the desktop drawn with: " .. words)
+  OUT.gpu_model = s and s.model:gsub("^U?HD Graphics ", "HD "):gsub("^Iris Xe Graphics", "Iris Xe")
+                  or (OUT.has_cursor_plane and "virtio" or "none")
 end
+
+-- The pointer on the display's plane or in the frame.
+local function pointer_on_plane(on)
+  if on and OUT.has_cursor_plane and not OUT.hw_cursor then
+    OUT.hw_cursor = OUT.cursor_set(OUT.arrow, 0, 0, PT.x, PT.y) == true
+  elseif not on and OUT.hw_cursor then
+    OUT.cursor_hide()
+    OUT.hw_cursor = false
+  end
+
+  OUT.cursor_picture = (not OUT.hw_cursor) and OUT.arrow or nil
+end
+
+function OUT.set_rendering(mode)
+  mode = rendering.valid(mode)
+
+  local most = WS.on and WS.rendering(mode) or 1
+
+  pointer_on_plane(mode >= 1)
+
+  -- What this machine gave of what was asked, a step down at a time: no
+  -- blitter is Page flips, no flips is Cursor plane, no plane for the
+  -- pointer is Framebuffer.
+  local now = mode
+
+  most = most or 1
+  if now >= 3 and most < 3 then now = 2 end
+  if now >= 2 and most < 2 then now = 1 end
+  if now >= 1 and not OUT.has_cursor_plane then now = 0 end
+
+  OUT.rendering, OUT.rendering_now = mode, now
+
+  stamp = stamp_base .. "  |  GPU: " .. OUT.gpu_model .. " - "
+          .. rendering.name(OUT.rendering_now):lower()
+  add_damage(0, 0, W, H)
+  print(("wm: rendering %d, %s - asked %s"):format(OUT.rendering_now,
+        rendering.name(OUT.rendering_now), rendering.name(mode)))
+  print("wm: the desktop drawn with: " .. OUT.gpu_model .. " - "
+        .. rendering.name(OUT.rendering_now):lower())
+end
+
+OUT.set_rendering(OUT.saved_rendering)
 
 --------------------------------------------------------------------------
 -- Compositing.
@@ -5580,6 +5636,16 @@ end
 -- How it covers the screen: `{ type = "wallpaper_fit", fit = "fill" }` or
 -- `"centre"`, Appearance's *Wallpaper size*. Placed again at once.
 --
+-- The rendering mode, from Preferences: `{ type = "rendering", mode = 3 }`
+-- (`docs/rendering.md`), switched at once.
+handlers.rendering = function(req)
+  OUT.set_rendering(req.mode)
+
+  -- Answered with what this machine gave, which a page that offered the
+  -- mode needs to say.
+  return { ok = true, mode = OUT.rendering_now, asked = OUT.rendering }
+end
+
 handlers.wallpaper_fit = function(req)
   local fit = (req.fit == "fill" or req.fit == "centre") and req.fit or nil
 

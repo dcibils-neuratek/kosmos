@@ -25,7 +25,7 @@
 local REQUEST = "<I4I4I4I4I4I4I8"
 local REPLY = "<I4I4I4I4I4I4"
 
-local OP = { hello = 1, back = 2, scene = 3, picture = 4, forget = 5, compose = 6 }
+local OP = { hello = 1, back = 2, scene = 3, picture = 4, forget = 5, compose = 6, rendering = 7 }
 local SHOW, IF_READY = 1, 2
 local ERRORS = {
   [1] = "a request it does not know",
@@ -173,6 +173,19 @@ return function()
   -- a flip on its way, nothing is composed and `held_back` says so.
   local COMPOSE = { [true] = request(OP.compose, 0, 0, 0, 0, SHOW | IF_READY),
                     [false] = request(OP.compose) }
+
+  --
+  -- The rendering mode switched (`docs/rendering.md`): flips, the copy on
+  -- the blitter, its composing. The highest mode this machine can have, or
+  -- nil and why.
+  --
+  function WS.rendering(mode)
+    local ok, most = ask(request(OP.rendering, 0, 0, 0, 0, mode))
+
+    if not ok then return nil, most end
+
+    return most
+  end
 
   function WS.compose(scene, damage, show)
     sweep()

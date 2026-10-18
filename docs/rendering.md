@@ -88,7 +88,8 @@ manager a second. Nothing when it is closed.
    and its use in the window manager, a mode from the settings file at
    start; under QEMU, Framebuffer and Cursor plane switched and the screen
    held to the same picture by the display suites; on the M700 each mode
-   tried and measured.
+   tried and measured. **Done in 0.11.272** (`testing.md` 18.670), with
+   `rendering` at the prompt; the measuring is R2's page.
 2. **R2 - the page**: the Rendering group as drawn, the strips, the
    keep-or-go-back bar, the live numbers; its suite choosing a mode and
    letting it go back; the picture in the dated screenshot.

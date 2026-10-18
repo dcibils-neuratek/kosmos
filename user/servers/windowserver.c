@@ -390,6 +390,9 @@ static unsigned long copy_ticks;    /* since the last reply, for `copy_us` */
  * its fence reached, the flip taken. Anything the driver refuses but
  * "busy" puts the copying back here, said once.
  */
+static unsigned rendering = 3;      /* the mode asked for (`docs/rendering.md`); 3 until told */
+static bool can_blit;               /* the back buffer is in the GPU's table */
+static bool flips_seen, blit_seen;  /* what this machine has shown it can do */
 static bool blitting;               /* the copy is the blitter's */
 static bool blit_composing;         /* and composing's opaque parts (6b) */
 static uint32_t back_id;
@@ -523,7 +526,10 @@ static void flips_start(void)
         rq.y = (int32_t)back.height;
         rq.pitch = back.pitch;
         rq.offset = 0;
-        blitting = gpu_send(&rq, sizeof rq, back_region.cap, &got, NULL) == GPU_OK;
+        can_blit = gpu_send(&rq, sizeof rq, back_region.cap, &got, NULL) == GPU_OK;
+        blit_seen = blit_seen || can_blit;
+        flips_seen = true;
+        blitting = can_blit && rendering >= 3;
         back_id = got.buffer.id;
         blit_pending = false;
     }
@@ -540,7 +546,7 @@ static void flips_start(void)
      * Diego: "it has some choppy moments". Responsiveness first: off, until
      * the blitter copies faster (XY_FAST_COPY_BLT, next).
      */
-    blit_composing = false;
+    blit_composing = blitting && rendering >= 4;
     say_text(&line, blitting ? "; the copy into them on the blitter" : "; the copy into them here");
     say_send(console, &line);
 }
@@ -856,6 +862,7 @@ static void flips_stop(void)
         blitting = false;
     }
 
+    can_blit = false;
     blit_composing = false;
     blit_pending = false;
     flipping = false;
@@ -1350,6 +1357,65 @@ static uint32_t compose(bool show, uint32_t *error, struct ws_reply *rep)
     return drawn > 0xffffffffu ? 0xffffffffu : (uint32_t)drawn;
 }
 
+/*
+ * **The rendering mode, switched** (`docs/rendering.md` R1): flips started
+ * or stopped, the copy here or on the blitter, the blitter composing or
+ * not - whatever the frame in flight is doing finished first, a second at
+ * most. The window manager redraws the whole screen after, so the new mode
+ * starts from a whole frame. Answers the highest mode this machine can
+ * have: 4 with flips and the back buffer in the GPU's table, 2 with flips
+ * alone, 1 otherwise - the pointer is the window manager's to judge.
+ */
+static uint32_t set_rendering(unsigned mode)
+{
+    unsigned i;
+
+    for (i = 0; i < 250 && (blit_pending || flip_pending); i++) {
+        if (blit_pending || flip_pending) {
+            (void)present();
+        }
+
+        if (blit_pending || flip_pending) {
+            struct gpu_reply rep;
+
+            if (flip_pending && gpu_ask(GPU_OP_FLIPPED, 0, 0, &rep, NULL) == GPU_OK
+                && rep.flip.shown == buffer_id[shown]) {
+                flip_pending = false;
+            }
+
+            kosmos_sleep(1);
+        }
+    }
+
+    rendering = mode > 4 ? 4 : mode;
+
+    if (rendering >= 2 && !flipping && screen_taken) {
+        flips_start();
+    } else if (rendering < 2 && flipping) {
+        flips_stop();
+    }
+
+    blitting = flipping && can_blit && rendering >= 3;
+    blit_composing = blitting && rendering >= 4;
+    owed.n = 0;
+    owed.whole = false;
+    given.whole = true;
+
+    {
+        struct say_line line;
+
+        say_begin(&line);
+        say_text(&line, "windowserver: rendering ");
+        say_dec(&line, rendering);
+        say_text(&line, flipping ? ", flips" : ", the framebuffer");
+        say_text(&line, blitting ? ", the copy on the blitter" : "");
+        say_text(&line, blit_composing ? ", composing's opaque parts on the blitter" : "");
+        say_send(console, &line);
+    }
+
+    return blit_seen ? 4u : (flips_seen ? 2u : 1u);
+}
+
 static void answer(const struct message *in, uint64_t sender)
 {
     struct message out;
@@ -1440,7 +1506,7 @@ static void answer(const struct message *in, uint64_t sender)
             screen_taken = kosmos_screen_take(1) >= 0;
         }
 
-        if (screen_taken) {
+        if (screen_taken && rendering >= 2) {
             flips_start();
         }
 
@@ -1515,6 +1581,10 @@ static void answer(const struct message *in, uint64_t sender)
         rep->width = nheld;
         break;
     }
+
+    case WS_OP_RENDERING:
+        rep->width = set_rendering(req.flags);
+        break;
 
     default:
         rep->error = WS_ERR_BAD_OP;
