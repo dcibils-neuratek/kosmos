@@ -5,7 +5,8 @@
  *   cc -std=c11 -I build/downloads/igt/out \
  *      -I build/downloads/igt/src/igt-gpu-tools-2.6/lib/intel/genxml \
  *      tools/render_batch.c -o build/render_batch
- *   build/render_batch > user/drivers/display/intelgpu_render.h
+ *   build/render_batch copy  > user/drivers/display/intelgpu_render.h
+ *   build/render_batch blend > user/drivers/display/intelgpu_blend.h
  *
  * A texture sampled through the whole 3D pipeline into a render target:
  * intel-gpu-tools' `_gen9_render_op` (`lib/rendercopy_gen9.c`, igt-gpu-tools
@@ -19,6 +20,11 @@
  * own, the destination's or the source's - packed as the offset into that
  * buffer. The driver adds the buffer's address in the GTT to the qword at
  * each place, as i915 relocates its starting state.
+ *
+ * **`blend`** is the same batch with the blender on, as the compositor
+ * lays a window over the back buffer (`over4` in `kits/gfx/surface.h`):
+ * colour by the source's alpha and its inverse, and alpha by one and the
+ * inverse - which keeps an opaque destination opaque.
  *
  * Neither this nor its inputs are part of the build: it needs the downloads
  * above, and what it writes is committed, as `tools/lineicons.py`'s
@@ -154,10 +160,22 @@ static uint32_t bind(uint32_t kind)
 static void vertex_2s(int16_t x, int16_t y) { out((uint32_t)(uint16_t)y << 16 | (uint16_t)x); }
 static void vertex_f(float f) { union { float f; uint32_t u; } v = { f }; out(v.u); }
 
-int main(void)
+static bool blending;
+
+int main(int argc, char **argv)
 {
+    const char *name, *NAME;
     uint32_t binding_table, sampler, kernel, cc_state, blend, cc_vp, sf_vp, scissor;
     unsigned i;
+
+    if (argc != 2 || (strcmp(argv[1], "copy") != 0 && strcmp(argv[1], "blend") != 0)) {
+        fprintf(stderr, "usage: render_batch copy|blend\n");
+        return 2;
+    }
+
+    blending = strcmp(argv[1], "blend") == 0;
+    name = blending ? "blend" : "render";
+    NAME = blending ? "BLEND" : "RENDER";
 
     /* The state, from STATE_AT. */
     bb.used = STATE_AT;
@@ -195,14 +213,25 @@ int main(void)
 
     align(64);
     blend = take((GFX9_BLEND_STATE_length + 16u * GFX9_BLEND_STATE_ENTRY_length) * 4u);
-    PACK(GFX9_BLEND_STATE, (uint8_t *)words + blend, bs) { }
+    PACK(GFX9_BLEND_STATE, (uint8_t *)words + blend, bs) { bs.IndependentAlphaBlendEnable = blending; }
     for (i = 0; i < 16; i++) {
         PACK(GFX9_BLEND_STATE_ENTRY, (uint8_t *)words + blend
              + (GFX9_BLEND_STATE_length + i * GFX9_BLEND_STATE_ENTRY_length) * 4u, e) {
-            e.DestinationBlendFactor = GFX9_BLENDFACTOR_ZERO;
-            e.SourceBlendFactor = GFX9_BLENDFACTOR_ONE;
             e.ColorBlendFunction = GFX9_BLENDFUNCTION_ADD;
+            e.AlphaBlendFunction = GFX9_BLENDFUNCTION_ADD;
             e.PreBlendColorClampEnable = true;
+            e.PostBlendColorClampEnable = blending;
+
+            if (blending) {
+                e.ColorBufferBlendEnable = true;
+                e.SourceBlendFactor = GFX9_BLENDFACTOR_SRC_ALPHA;
+                e.DestinationBlendFactor = GFX9_BLENDFACTOR_INV_SRC_ALPHA;
+                e.SourceAlphaBlendFactor = GFX9_BLENDFACTOR_ONE;
+                e.DestinationAlphaBlendFactor = GFX9_BLENDFACTOR_INV_SRC_ALPHA;
+            } else {
+                e.DestinationBlendFactor = GFX9_BLENDFACTOR_ZERO;
+                e.SourceBlendFactor = GFX9_BLENDFACTOR_ONE;
+            }
         }
     }
 
@@ -337,7 +366,20 @@ int main(void)
         ps.MaximumNumberofThreadsPerPSD = 63 - 1;
         ps.DispatchGRFStartRegisterForConstantSetupData0 = 6;
     }
-    EMIT(GFX9_3DSTATE_PS_BLEND, b) { b.HasWriteableRT = true; }
+    /* Render target 0's blend again, as Mesa keeps it: the same as the
+     * blend state's first entry. */
+    EMIT(GFX9_3DSTATE_PS_BLEND, b) {
+        b.HasWriteableRT = true;
+
+        if (blending) {
+            b.ColorBufferBlendEnable = true;
+            b.IndependentAlphaBlendEnable = true;
+            b.SourceBlendFactor = GFX9_BLENDFACTOR_SRC_ALPHA;
+            b.DestinationBlendFactor = GFX9_BLENDFACTOR_INV_SRC_ALPHA;
+            b.SourceAlphaBlendFactor = GFX9_BLENDFACTOR_ONE;
+            b.DestinationAlphaBlendFactor = GFX9_BLENDFACTOR_INV_SRC_ALPHA;
+        }
+    }
     EMIT(GFX9_3DSTATE_PS_EXTRA, x) { x.PixelShaderValid = true; x.AttributeEnable = true; }
 
     EMIT(GFX9_3DSTATE_BINDING_TABLE_POINTERS_PS, bt) { bt.PointertoPSBindingTable = binding_table; }
@@ -421,27 +463,29 @@ int main(void)
 
     /* The header. */
     printf("/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */\n");
-    printf("/*\n * **The render engine's copy** (`docs/m700-2d.md` 7c): a %ux%u B8G8R8A8\n", W, H);
+    printf("/*\n * **The render engine's %s** (`docs/m700-2d.md` 7c): a %ux%u B8G8R8A8\n",
+           blending ? "blend" : "copy", W, H);
     printf(" * texture sampled through the 3D pipeline into a render target of the\n");
-    printf(" * same size. Written by `tools/render_batch.c` from intel-gpu-tools'\n");
-    printf(" * `_gen9_render_op` and its generated genxml packers (igt-gpu-tools 2.6,\n");
-    printf(" * MIT, Copyright (c) Intel Corporation), its pixel shader intel-gpu-tools'\n");
-    printf(" * `ps_kernel_gen9` - so do not edit it: run the tool. Commands from byte 0\n");
-    printf(" * to the MI_BATCH_BUFFER_END, state from %u.\n *\n", STATE_AT);
+    printf(" * same size%s. Written by `tools/render_batch.c %s` from\n",
+           blending ? ", blended over what is there by the source's alpha" : "", argv[1]);
+    printf(" * intel-gpu-tools' `_gen9_render_op` and its generated genxml packers\n");
+    printf(" * (igt-gpu-tools 2.6, MIT, Copyright (c) Intel Corporation), its pixel\n");
+    printf(" * shader intel-gpu-tools' `ps_kernel_gen9` - so do not edit it: run the\n");
+    printf(" * tool. Commands from byte 0 to the MI_BATCH_BUFFER_END, state from %u.\n *\n", STATE_AT);
     printf(" * Each relocation is a byte offset holding a qword that is an offset into\n");
     printf(" * a buffer - 1 the batch itself, 2 the destination, 3 the source - to which\n");
     printf(" * that buffer's address in the GTT is added.\n */\n");
-    printf("#ifndef KOSMOS_INTELGPU_RENDER_H\n#define KOSMOS_INTELGPU_RENDER_H\n\n#include <stdint.h>\n\n");
-    printf("#define INTELGPU_RENDER_W        %uu\n#define INTELGPU_RENDER_H        %uu\n", W, H);
-    printf("#define INTELGPU_RENDER_PITCH    %uu\n", PITCH);
-    printf("#define INTELGPU_RENDER_VERTICES 0x%03xu   /* the three vertices */\n", vertices_at);
-    printf("#define INTELGPU_RENDER_SS_DST   0x%03xu   /* the surfaces' state */\n", surface_at[0]);
-    printf("#define INTELGPU_RENDER_SS_SRC   0x%03xu\n\n", surface_at[1]);
-    printf("static const struct { uint32_t at, kind; } intelgpu_render_relocs[] = {\n");
+    printf("#ifndef KOSMOS_INTELGPU_%s_H\n#define KOSMOS_INTELGPU_%s_H\n\n#include <stdint.h>\n\n", NAME, NAME);
+    printf("#define INTELGPU_%s_W        %uu\n#define INTELGPU_%s_H        %uu\n", NAME, W, NAME, H);
+    printf("#define INTELGPU_%s_PITCH    %uu\n", NAME, PITCH);
+    printf("#define INTELGPU_%s_VERTICES 0x%03xu   /* the three vertices */\n", NAME, vertices_at);
+    printf("#define INTELGPU_%s_SS_DST   0x%03xu   /* the surfaces' state */\n", NAME, surface_at[0]);
+    printf("#define INTELGPU_%s_SS_SRC   0x%03xu\n\n", NAME, surface_at[1]);
+    printf("static const struct { uint32_t at, kind; } intelgpu_%s_relocs[] = {\n", name);
     for (i = 0; i < reloc_count; i++) {
         printf("    { 0x%03x, %u },\n", relocs[i].at, relocs[i].kind);
     }
-    printf("};\n\nstatic const uint32_t intelgpu_render[] = {\n");
+    printf("};\n\nstatic const uint32_t intelgpu_%s[] = {\n", name);
     for (i = 0; i < BATCH_BYTES / 4u; i += 6) {
         unsigned j;
 

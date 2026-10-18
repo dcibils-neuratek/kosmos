@@ -6555,6 +6555,14 @@ not static**, since a static one is in every process.
 **Also asked on 27 September, for items already here**:
 - **The Kosmos IDE tutorial** - "still pending": 6n's step 6e, the lessons
   from a button to 3D, drawn and agreed before it is written.
+  **And a lesson building a GPU compute app in Lua** - Diego, 18 October
+  2026: "lets add a devlppment example to the ide tutorials to build a gpu
+  compute app in lua". Written on the compute kit (`m700-2d.md` 7b, the
+  door Cafesa3D's ray tracer also wants): a program hands the execution
+  units a kernel and a buffer, runs it over a grid, and reads the answer
+  back - the lesson that kit's first user, after 7c's blending, and drawn
+  with the other lessons before it is written. Today a program can only ask
+  the driver's own fill (`gpu.compute_test`, `gpu compute` at the prompt).
 - **A screen recording application** - "screen recording app that stores
   videos as mp4": 6x, an application of its own rather than only a key,
   saving into `/Home/Captures`.

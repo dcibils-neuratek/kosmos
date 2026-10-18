@@ -27816,3 +27816,34 @@ Full gate 95 of 96 in 9:22: `x86-folders` failed one of its 14 checks -
 Tracker's live folders, which nothing here touched - and passed alone,
 14 of 14; which check it was is not in what the gate kept, and a rerun
 over its log lost the rest.
+
+## 18.684 Blending on the GPU (`m700-2d.md` 7c)
+
+Diego: "go ahead with the blending". The same batch with the blender on,
+as the compositor lays a window over the back buffer: colour by the
+source's alpha and its inverse, alpha by one and the inverse, which keeps
+an opaque ground opaque - in the blend state's sixteen entries and in
+`3DSTATE_PS_BLEND`, which Mesa keeps the same as the first.
+`tools/render_batch.c` takes a mode now, `copy` or `blend`, and writes
+`intelgpu_render.h` and `intelgpu_blend.h`; the copy's words came out
+unchanged. `gpu render blend`.
+
+**What it is held to is the compositor's own arithmetic**, `over` in
+`kits/gfx/surface.h`, which the driver includes rather than repeating: a
+source with every alpha from 0 to 255 over an opaque ground differing from
+it in every channel. **The two cannot always agree to the bit**: the
+compositor rounds each of its two products, `mul255(s, a) + mul255(d, 255
+- a)`, and the GPU's blender works in its own precision and rounds once. So
+a pixel passes within one in every channel with its alpha 255, and the
+exact ones are counted beside.
+
+**On the M700, the first try**: 4096 of 4096 within one, 1767 of them
+exact, at most 1 apart anywhere, none past the destination, 143 us; the
+copy after it 4096 of 4096. One step of 255 in a channel is not something
+an eye can see, and a whole frame composed on the GPU will be held to the
+same bound. **The control, on the machine**: the blend test given the
+copy's batch - 16 of 4096, the sixteen pixels whose alpha is 255, where
+laying one over the other and copying agree.
+
+**Tests.** Full gate 96/96 in 9:33. `x86-gpumon`, 14 checks: `gpu render blend` says there is no
+Intel GPU under QEMU. `LICENSE`, 32 entries, naming both batches.

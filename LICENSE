@@ -96,8 +96,9 @@ Vendored third-party code keeps its own licence, which travels beside it:
       drivers/gpu/drm/i915/gt/gen9_renderstate.c, credited there
 
   intel-gpu-tools' render copy for generation 9, by Intel Corporation, MIT
-      user/drivers/display/intelgpu_render.h - its pixel shader, and the
-      batch tools/render_batch.c writes after lib/rendercopy_gen9.c with
+      user/drivers/display/intelgpu_render.h and intelgpu_blend.h - its
+      pixel shader, and the batches tools/render_batch.c writes after
+      lib/rendercopy_gen9.c with
       the genxml packers igt-gpu-tools 2.6 generates - credited there
 
   The fonts

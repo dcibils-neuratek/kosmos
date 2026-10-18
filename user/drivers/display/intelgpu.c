@@ -32,6 +32,8 @@
 #include "intelgpu_fill.h"
 #include "intelgpu_renderstate.h"
 #include "intelgpu_render.h"
+#include "intelgpu_blend.h"
+#include "kits/gfx/surface.h"          /* over(): the compositor's blend, to hold the GPU's to */
 #include "mmio.h"
 #include "init/say.h"
 
@@ -1422,12 +1424,65 @@ static uint32_t rt_pattern(uint32_t x, uint32_t y)
            | ((0x40u + x + y) & 0xffu) << 24;
 }
 
-static void render_test(long console, struct gpu_reply *rep)
+/* The ground a blend is drawn over: opaque, as a window's back buffer is,
+ * and differing from the source in every channel. */
+static uint32_t rt_ground(uint32_t x, uint32_t y)
+{
+    return 0xff000000u | ((255u - x * 3u) & 0xffu) << 16 | ((x * y) & 0xffu) << 8 | ((y * 5u) & 0xffu);
+}
+
+/* The source a blend lays over it: every alpha from 0 to 255 across the
+ * rows, 0 and 255 among them. */
+static uint32_t rt_blend_source(uint32_t x, uint32_t y)
+{
+    uint32_t a = (y * INTELGPU_BLEND_W + x) & 0xffu;
+
+    return (rt_pattern(x, y) & 0x00ffffffu) | a << 24;
+}
+
+/* The largest difference in any one channel between two pixels. */
+static uint32_t rt_apart(uint32_t a, uint32_t b)
+{
+    uint32_t most = 0, k;
+
+    for (k = 0; k < 32; k += 8) {
+        int d = (int)((a >> k) & 0xffu) - (int)((b >> k) & 0xffu);
+
+        if (d < 0) {
+            d = -d;
+        }
+
+        if ((uint32_t)d > most) {
+            most = (uint32_t)d;
+        }
+    }
+
+    return most;
+}
+
+/*
+ * **The copy, or the blend** (7c): `blend` lays the source over an opaque
+ * ground by its alpha, as the compositor lays a window over the back
+ * buffer, and holds the GPU to the compositor's own arithmetic - `over`, in
+ * `kits/gfx/surface.h`. The two cannot always agree to the bit: the
+ * compositor rounds each of its two products, the GPU's blender works in its
+ * own precision and rounds once. So a blended pixel passes within one in
+ * every channel, alpha exactly 255, and the reply counts the exact ones too:
+ * `value` the pixels within the bound, `mode` the exact ones, `ctl` bytes
+ * past the destination.
+ */
+static void render_test(long console, bool blend, struct gpu_reply *rep)
 {
     struct say_line line;
-    uint32_t error, right = 0, past = 0, fence, i;
+    uint32_t error, right = 0, exact = 0, worst = 0, past = 0, fence, i;
     const uint32_t pixels = INTELGPU_RENDER_W * INTELGPU_RENDER_H;
+    const uint32_t *batch = blend ? intelgpu_blend : intelgpu_render;
+    const uint32_t batch_words = blend ? sizeof(intelgpu_blend) / 4u : sizeof(intelgpu_render) / 4u;
     unsigned long t0, t1;
+
+    _Static_assert(INTELGPU_RENDER_W == INTELGPU_BLEND_W && INTELGPU_RENDER_H == INTELGPU_BLEND_H
+                   && sizeof(intelgpu_render_relocs) == sizeof(intelgpu_blend_relocs),
+                   "the copy's batch and the blend's differ only in the blending");
 
     if (!G.found) {
         rep->error = GPU_ERR_NO_DEVICE;
@@ -1452,24 +1507,30 @@ static void render_test(long console, struct gpu_reply *rep)
     }
 
     if (error == GPU_OK) {
-        for (i = 0; i < sizeof(intelgpu_render) / 4u; i++) {
-            rt_batch[i] = intelgpu_render[i];
+        for (i = 0; i < batch_words; i++) {
+            rt_batch[i] = batch[i];
         }
 
         for (i = 0; i < sizeof(intelgpu_render_relocs) / sizeof(intelgpu_render_relocs[0]); i++) {
-            uint32_t at = intelgpu_render_relocs[i].at / 4u;
-            uint32_t kind = intelgpu_render_relocs[i].kind;
+            uint32_t at = (blend ? intelgpu_blend_relocs[i].at : intelgpu_render_relocs[i].at) / 4u;
+            uint32_t kind = blend ? intelgpu_blend_relocs[i].kind : intelgpu_render_relocs[i].kind;
             uint32_t base = kind == 1u ? rt_batch_gtt : kind == 2u ? rt_dst_gtt : rt_src_gtt;
 
             rt_batch[at] += base;               /* the GTT is under 4 GB: the high half stays */
         }
 
-        for (i = 0; i < pixels; i++) {
-            rt_src[i] = rt_pattern(i % INTELGPU_RENDER_W, i / INTELGPU_RENDER_W);
-        }
-
         for (i = 0; i < (RT_PAGES + 1u) * 1024u; i++) {
             rt_dst[i] = 0;
+        }
+
+        for (i = 0; i < pixels; i++) {
+            uint32_t x = i % INTELGPU_RENDER_W, y = i / INTELGPU_RENDER_W;
+
+            rt_src[i] = blend ? rt_blend_source(x, y) : rt_pattern(x, y);
+
+            if (blend) {
+                rt_dst[i] = rt_ground(x, y);
+            }
         }
 
         {
@@ -1506,7 +1567,13 @@ static void render_test(long console, struct gpu_reply *rep)
         }
 
         for (i = 0; i < pixels; i++) {
-            right += rt_dst[i] == rt_src[i];
+            uint32_t x = i % INTELGPU_RENDER_W, y = i / INTELGPU_RENDER_W;
+            uint32_t want = blend ? over(rt_src[i], rt_ground(x, y), 255u) : rt_src[i];
+            uint32_t apart = rt_apart(rt_dst[i], want);
+
+            exact += apart == 0;
+            right += blend ? (apart <= 1u && (rt_dst[i] >> 24) == 255u) : apart == 0;
+            worst = apart > worst ? apart : worst;
         }
 
         for (i = pixels; i < pixels + 1024u; i++) {
@@ -1533,7 +1600,7 @@ static void render_test(long console, struct gpu_reply *rep)
     (void)forcewake(true);
     rep->engine.head = eng(&RCS, IGPU_RING_HEAD);
     rep->engine.tail = eng(&RCS, IGPU_RING_TAIL);
-    rep->engine.mode = eng(&RCS, IGPU_RING_MODE);
+    rep->engine.mode = exact;
     rep->engine.esr = eng(&RCS, IGPU_RING_ESR);
     rep->error = error;
 
@@ -1542,9 +1609,13 @@ static void render_test(long console, struct gpu_reply *rep)
     }
 
     say_begin(&line);
-    say_text(&line, "intelgpu: the 3D pipeline drew ");
+    say_text(&line, blend ? "intelgpu: the 3D pipeline blended " : "intelgpu: the 3D pipeline drew ");
     say_dec(&line, right);
-    say_text(&line, " of 4096 pixels as the texture has them, ");
+    say_text(&line, blend ? " of 4096 pixels within one of the compositor's, " : " of 4096 pixels as the texture has them, ");
+    say_dec(&line, exact);
+    say_text(&line, " exactly, at most ");
+    say_dec(&line, worst);
+    say_text(&line, " apart, ");
     say_dec(&line, past);
     say_text(&line, " bytes past; first ");
     say_hex(&line, rt_dst ? rt_dst[0] : 0, 8);
@@ -2043,7 +2114,7 @@ void intelgpu_server(long console, long endpoint)
                 render_state_test(console, &rep);
                 break;
             case GPU_OP_RENDER_TEST:
-                render_test(console, &rep);
+                render_test(console, rq.x == 1, &rep);
                 break;
             case GPU_OP_BUFFER_IMPORT:
                 rep.error = buffer_import(console, cap, &rq, &rep);

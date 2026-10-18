@@ -2,11 +2,11 @@
 /*
  * **The render engine's copy** (`docs/m700-2d.md` 7c): a 64x64 B8G8R8A8
  * texture sampled through the 3D pipeline into a render target of the
- * same size. Written by `tools/render_batch.c` from intel-gpu-tools'
- * `_gen9_render_op` and its generated genxml packers (igt-gpu-tools 2.6,
- * MIT, Copyright (c) Intel Corporation), its pixel shader intel-gpu-tools'
- * `ps_kernel_gen9` - so do not edit it: run the tool. Commands from byte 0
- * to the MI_BATCH_BUFFER_END, state from 2048.
+ * same size. Written by `tools/render_batch.c copy` from
+ * intel-gpu-tools' `_gen9_render_op` and its generated genxml packers
+ * (igt-gpu-tools 2.6, MIT, Copyright (c) Intel Corporation), its pixel
+ * shader intel-gpu-tools' `ps_kernel_gen9` - so do not edit it: run the
+ * tool. Commands from byte 0 to the MI_BATCH_BUFFER_END, state from 2048.
  *
  * Each relocation is a byte offset holding a qword that is an offset into
  * a buffer - 1 the batch itself, 2 the destination, 3 the source - to which

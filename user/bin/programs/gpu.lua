@@ -17,7 +17,8 @@
 --   gpu compute [colour]    the first program on the execution units: a
 --                       64 by 4 surface filled with a byte (step 7b)
 --   gpu state           the render engine's starting state, run once (7c)
---   gpu render          a 64 by 64 texture drawn by the 3D pipeline (7c)
+--   gpu render [blend]  a 64 by 64 texture drawn by the 3D pipeline, or
+--                       blended over a ground by its alpha (7c)
 --
 -- The test refuses while the window manager's arrow is on the plane, which
 -- on the M700 is always once the desktop is up (step 3b).
@@ -33,15 +34,22 @@ if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "c
 end
 
 if words[1] == "render" then
-  local r, why = gpu.render_test()
+  local blend = words[2] == "blend"
+  local r, why = gpu.render_test(blend)
   local c = gpu.last_render
 
-  print(r and ("gpu: the 3D pipeline drew %d of 4096 pixels as the texture has them, %d us"):format(r.right, r.elapsed_us)
-          or ("gpu: " .. tostring(why)))
+  if r and blend then
+    print(("gpu: the 3D pipeline blended %d of 4096 pixels within one of the compositor's, %d exactly, %d us")
+          :format(r.right, r.exact, r.elapsed_us))
+  elseif r then
+    print(("gpu: the 3D pipeline drew %d of 4096 pixels as the texture has them, %d us"):format(r.right, r.elapsed_us))
+  else
+    print("gpu: " .. tostring(why))
+  end
 
   if c then
-    print(("gpu: %d of 4096 right, %d bytes written past; ring head %08x, tail %08x, errors %08x")
-          :format(c.right, c.past, c.head, c.tail, c.esr))
+    print(("gpu: %d of 4096 right, %d exact, %d bytes written past; ring head %08x, tail %08x, errors %08x")
+          :format(c.right, c.exact, c.past, c.head, c.tail, c.esr))
   end
 
   return

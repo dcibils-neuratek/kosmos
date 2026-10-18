@@ -115,16 +115,19 @@ end
 -- **A texture drawn by the 3D pipeline** (`m700-2d.md` 7c): a 64 by 64
 -- picture sampled by the render engine into another and held to it pixel
 -- for pixel. { right, past, elapsed_us, ... }, or nil and why; the registers
--- after in `gpu.last_render`.
-function gpu.render_test()
-  local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, 17, 0, 0, 0, 0, 0, 0, 0), nil, "gpu")
+-- after in `gpu.last_render`. `blend` lays it over an opaque ground by its
+-- alpha instead, as the compositor lays a window: `right` the pixels within
+-- one of the compositor's arithmetic in every channel, `exact` those equal.
+function gpu.render_test(blend)
+  local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, 17, 0, blend and 1 or 0, 0, 0, 0, 0, 0),
+                            nil, "gpu")
 
   if not reply then return nil, tostring(why) end
   if #reply < 32 then return nil, "the GPU's driver sent a reply of the wrong size" end
 
-  local err, right, head, tail, past, mode, esr, us = string.unpack(REPLY, reply)
+  local err, right, head, tail, past, exact, esr, us = string.unpack(REPLY, reply)
 
-  gpu.last_render = { right = right, past = past, head = head, tail = tail, mode = mode, esr = esr,
+  gpu.last_render = { right = right, exact = exact, past = past, head = head, tail = tail, esr = esr,
                       elapsed_us = us }
 
   if err ~= 0 then return nil, gpu.ERRORS[err] or ("gpu error " .. err), err end
