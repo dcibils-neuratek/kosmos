@@ -135,6 +135,26 @@ function gpu.render_test(blend)
   return gpu.last_render
 end
 
+-- **A window at a window's proportions** (`m700-2d.md` 7c): a part of a
+-- 301 by 203 picture blended onto an 800 by 600 target at (123, 77), every
+-- pixel of the target held to the compositor. { right, exact, outside,
+-- elapsed_us, ... } or nil and why, in `gpu.last_draw` either way.
+function gpu.draw_test()
+  local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, 18, 0, 0, 0, 0, 0, 0, 0), nil, "gpu")
+
+  if not reply then return nil, tostring(why) end
+  if #reply < 32 then return nil, "the GPU's driver sent a reply of the wrong size" end
+
+  local err, right, head, tail, outside, exact, esr, us = string.unpack(REPLY, reply)
+
+  gpu.last_draw = { right = right, exact = exact, outside = outside, head = head, tail = tail, esr = esr,
+                    elapsed_us = us }
+
+  if err ~= 0 then return nil, gpu.ERRORS[err] or ("gpu error " .. err), err end
+
+  return gpu.last_draw
+end
+
 function gpu.compute_test(colour)
   local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, 15, 0, (colour or 0x5a) & 0xff, 0, 0, 0, 0, 0),
                             nil, "gpu")

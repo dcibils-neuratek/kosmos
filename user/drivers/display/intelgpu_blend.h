@@ -23,6 +23,7 @@
 #define INTELGPU_BLEND_VERTICES 0x940u   /* the three vertices */
 #define INTELGPU_BLEND_SS_DST   0x840u   /* the surfaces' state */
 #define INTELGPU_BLEND_SS_SRC   0x880u
+#define INTELGPU_BLEND_DRAWRECT 0x400u   /* the drawing rectangle */
 
 static const struct { uint32_t at, kind; } intelgpu_blend_relocs[] = {
     { 0x860, 2 },

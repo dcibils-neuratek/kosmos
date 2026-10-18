@@ -1461,28 +1461,214 @@ static uint32_t rt_apart(uint32_t a, uint32_t b)
 }
 
 /*
- * **The copy, or the blend** (7c): `blend` lays the source over an opaque
- * ground by its alpha, as the compositor lays a window over the back
- * buffer, and holds the GPU to the compositor's own arithmetic - `over`, in
- * `kits/gfx/surface.h`. The two cannot always agree to the bit: the
- * compositor rounds each of its two products, the GPU's blender works in its
- * own precision and rounds once. So a blended pixel passes within one in
- * every channel, alpha exactly 255, and the reply counts the exact ones too:
- * `value` the pixels within the bound, `mode` the exact ones, `ctl` bytes
- * past the destination.
+ * **A picture on the GPU, for drawing**: where it is in the GTT, its size
+ * and its pitch in bytes.
+ */
+struct gpu_picture {
+    uint32_t gtt;
+    uint32_t width, height, pitch;
+};
+
+static void put_float(volatile uint32_t *at, float f)
+{
+    union { float f; uint32_t u; } v;
+
+    v.f = f;
+    *at = v.u;
+}
+
+/*
+ * **A rectangle of one picture drawn onto another by the 3D pipeline**
+ * (`m700-2d.md` 7c): `w` by `h` from `sx`, `sy` in `src`, to `dx`, `dy` in
+ * `dst`, copied or - `blend` - laid over it by its alpha, as the compositor
+ * lays a window. The batch `tools/render_batch.c` wrote, with what depends
+ * on the pictures filled in: each surface's address, size and pitch, the
+ * drawing rectangle - the whole target - and the three vertices, the
+ * destination in pixels and the source in coordinates from 0 to 1, a
+ * pixel's centre falling on its texel so the nearest sampler takes it
+ * whole. Runs after the starting state and waits for its fence.
+ */
+static uint32_t draw(const struct gpu_picture *dst, const struct gpu_picture *src,
+                     uint32_t sx, uint32_t sy, uint32_t w, uint32_t h,
+                     uint32_t dx, uint32_t dy, bool blend, unsigned long *took)
+{
+    const uint32_t *batch = blend ? intelgpu_blend : intelgpu_render;
+    const uint32_t words = blend ? sizeof(intelgpu_blend) / 4u : sizeof(intelgpu_render) / 4u;
+    volatile uint32_t *ss, *v;
+    uint32_t error, fence, i;
+    unsigned long t0;
+
+    _Static_assert(INTELGPU_RENDER_SS_DST == INTELGPU_BLEND_SS_DST
+                   && INTELGPU_RENDER_SS_SRC == INTELGPU_BLEND_SS_SRC
+                   && INTELGPU_RENDER_VERTICES == INTELGPU_BLEND_VERTICES
+                   && INTELGPU_RENDER_DRAWRECT == INTELGPU_BLEND_DRAWRECT
+                   && sizeof(intelgpu_render_relocs) == sizeof(intelgpu_blend_relocs),
+                   "the copy's batch and the blend's differ only in the blending");
+
+    if (w == 0 || h == 0 || sx + w > src->width || sy + h > src->height
+        || dx + w > dst->width || dy + h > dst->height
+        || dst->width > 16384u || dst->height > 16384u || src->width > 16384u || src->height > 16384u) {
+        return GPU_ERR_BAD_OP;
+    }
+
+    if ((error = render_state()) != GPU_OK) {
+        return error;
+    }
+
+    if (rt_batch == NULL && !gtt_pages(1, &rt_batch, &rt_batch_gtt)) {
+        return GPU_ERR_NO_MEMORY;
+    }
+
+    if (!engine_idle(&RCS)) {
+        return GPU_ERR_BUSY;
+    }
+
+    for (i = 0; i < words; i++) {
+        rt_batch[i] = batch[i];
+    }
+
+    for (i = 0; i < sizeof(intelgpu_render_relocs) / sizeof(intelgpu_render_relocs[0]); i++) {
+        uint32_t at = (blend ? intelgpu_blend_relocs[i].at : intelgpu_render_relocs[i].at) / 4u;
+        uint32_t kind = blend ? intelgpu_blend_relocs[i].kind : intelgpu_render_relocs[i].kind;
+
+        rt_batch[at] += kind == 1u ? rt_batch_gtt : kind == 2u ? dst->gtt : src->gtt;
+    }
+
+    /* Each surface's size and pitch: RENDER_SURFACE_STATE's dwords 2 and 3. */
+    ss = rt_batch + INTELGPU_RENDER_SS_DST / 4u;
+    ss[2] = (dst->width - 1u) | (dst->height - 1u) << 16;
+    ss[3] = dst->pitch - 1u;
+    ss = rt_batch + INTELGPU_RENDER_SS_SRC / 4u;
+    ss[2] = (src->width - 1u) | (src->height - 1u) << 16;
+    ss[3] = src->pitch - 1u;
+
+    /* The drawing rectangle, the whole target: its maximum in dword 2. */
+    rt_batch[INTELGPU_RENDER_DRAWRECT / 4u + 2u] = (dst->width - 1u) | (dst->height - 1u) << 16;
+
+    /* A rectangle list's three corners: bottom right, bottom left, top left. */
+    v = rt_batch + INTELGPU_RENDER_VERTICES / 4u;
+    v[0] = (dx + w) | (dy + h) << 16;
+    put_float(&v[1], (float)(sx + w) / (float)src->width);
+    put_float(&v[2], (float)(sy + h) / (float)src->height);
+    v[3] = dx | (dy + h) << 16;
+    put_float(&v[4], (float)sx / (float)src->width);
+    put_float(&v[5], (float)(sy + h) / (float)src->height);
+    v[6] = dx | dy << 16;
+    put_float(&v[7], (float)sx / (float)src->width);
+    put_float(&v[8], (float)sy / (float)src->height);
+
+    {
+        const uint32_t before[6] = { IGPU_PIPE_CONTROL,
+                                     IGPU_PC_CS_STALL | IGPU_PC_RT_FLUSH | IGPU_PC_INVALIDATE,
+                                     0, 0, 0, 0 };
+        const uint32_t start[3] = { IGPU_MI_BB_START, rt_batch_gtt, 0 };
+        const uint32_t after[6] = { IGPU_PIPE_CONTROL, IGPU_PC_CS_STALL | IGPU_PC_RT_FLUSH | IGPU_PC_DC_FLUSH,
+                                    0, 0, 0, 0 };
+
+#if defined(__x86_64__)
+        __asm__ volatile("sfence" ::: "memory");
+#endif
+        emit(&RCS, before, 6);
+        emit(&RCS, start, 3);
+        emit(&RCS, after, 6);
+    }
+
+    t0 = kosmos_ticks();
+    fence = submit(&RCS);
+
+    for (i = 0; i < 20000 && fence_reached(&RCS) != fence; i++) {
+        __asm__ volatile("" ::: "memory");
+    }
+
+    for (i = 0; i < 200 && fence_reached(&RCS) != fence; i++) {
+        kosmos_sleep(1);
+    }
+
+    if (took != NULL) {
+        static struct sysinfo machine;     /* large: not on the stack */
+        unsigned long per_us;
+
+        per_us = kosmos_sysinfo(&machine) == 0 && machine.counter_hz >= 1000000u
+               ? machine.counter_hz / 1000000u : 1u;
+        *took = (kosmos_ticks() - t0) / per_us;
+    }
+
+    return fence_reached(&RCS) == fence ? GPU_OK : GPU_ERR_NO_ANSWER;
+}
+
+
+/*
+ * **The pictures held to the compositor**, after a draw: every pixel of
+ * `dst` inside the rectangle against `want` - the source's, or `over` it
+ * on the ground, the compositor's own arithmetic from `kits/gfx/surface.h`
+ * - and every pixel outside against the ground, untouched. A blended pixel
+ * passes within one in every channel with its alpha 255 (the compositor
+ * rounds each of its two products, the GPU's blender once); a copied one,
+ * and one outside, exactly. Answers the pixels that pass, `exact` those
+ * equal, `worst` the largest difference, `outside` those outside that
+ * changed.
+ */
+struct held { uint32_t right, exact, worst, outside, pixels; };
+
+static struct held hold(const volatile uint32_t *dst, const struct gpu_picture *d,
+                        const volatile uint32_t *src, const struct gpu_picture *s,
+                        uint32_t sx, uint32_t sy, uint32_t w, uint32_t h, uint32_t dx, uint32_t dy,
+                        bool blend, uint32_t (*ground)(uint32_t x, uint32_t y))
+{
+    struct held r = { 0, 0, 0, 0, d->width * d->height };
+    uint32_t x, y;
+
+    for (y = 0; y < d->height; y++) {
+        for (x = 0; x < d->width; x++) {
+            uint32_t got = dst[y * (d->pitch / 4u) + x];
+            uint32_t was = ground(x, y);
+            bool in = x >= dx && x < dx + w && y >= dy && y < dy + h;
+            uint32_t want = was, apart;
+
+            if (in) {
+                uint32_t sp = src[(sy + y - dy) * (s->pitch / 4u) + sx + x - dx];
+
+                want = blend ? over(sp, was, 255u) : sp;
+            }
+
+            apart = rt_apart(got, want);
+            r.exact += apart == 0;
+            r.worst = apart > r.worst ? apart : r.worst;
+
+            if (in && blend) {
+                r.right += apart <= 1u && (got >> 24) == 255u;
+            } else {
+                r.right += apart == 0;
+                r.outside += !in && apart != 0;
+            }
+        }
+    }
+
+    return r;
+}
+
+static uint32_t rt_zero(uint32_t x, uint32_t y)
+{
+    (void)x; (void)y;
+    return 0;
+}
+
+/*
+ * **The copy, or the blend, of a 64 by 64 texture** (7c): `gpu render
+ * [blend]`. The source a pattern every pixel of which differs from its
+ * neighbours - for the blend, with every alpha from 0 to 255 - and the
+ * ground nothing for the copy, an opaque pattern for the blend. The reply's
+ * `value` is the pixels that pass, `mode` the exact ones, `ctl` the bytes
+ * written past the destination.
  */
 static void render_test(long console, bool blend, struct gpu_reply *rep)
 {
     struct say_line line;
-    uint32_t error, right = 0, exact = 0, worst = 0, past = 0, fence, i;
-    const uint32_t pixels = INTELGPU_RENDER_W * INTELGPU_RENDER_H;
-    const uint32_t *batch = blend ? intelgpu_blend : intelgpu_render;
-    const uint32_t batch_words = blend ? sizeof(intelgpu_blend) / 4u : sizeof(intelgpu_render) / 4u;
-    unsigned long t0, t1;
-
-    _Static_assert(INTELGPU_RENDER_W == INTELGPU_BLEND_W && INTELGPU_RENDER_H == INTELGPU_BLEND_H
-                   && sizeof(intelgpu_render_relocs) == sizeof(intelgpu_blend_relocs),
-                   "the copy's batch and the blend's differ only in the blending");
+    struct gpu_picture d = { 0, INTELGPU_RENDER_W, INTELGPU_RENDER_H, INTELGPU_RENDER_PITCH };
+    struct gpu_picture s = d;
+    struct held r = { 0, 0, 0, 0, 0 };
+    uint32_t error = GPU_OK, past = 0, i;
+    unsigned long took = 0;
 
     if (!G.found) {
         rep->error = GPU_ERR_NO_DEVICE;
@@ -1494,113 +1680,46 @@ static void render_test(long console, bool blend, struct gpu_reply *rep)
         return;
     }
 
-    error = render_state();
-
-    if (error == GPU_OK && rt_batch == NULL
-        && (!gtt_pages(1, &rt_batch, &rt_batch_gtt) || !gtt_pages(RT_PAGES, &rt_src, &rt_src_gtt)
-            || !gtt_pages(RT_PAGES + 1u, &rt_dst, &rt_dst_gtt))) {
+    if (rt_src == NULL
+        && (!gtt_pages(RT_PAGES, &rt_src, &rt_src_gtt) || !gtt_pages(RT_PAGES + 1u, &rt_dst, &rt_dst_gtt))) {
         error = GPU_ERR_NO_MEMORY;
     }
 
-    if (error == GPU_OK && !engine_idle(&RCS)) {
-        error = GPU_ERR_BUSY;
-    }
-
     if (error == GPU_OK) {
-        for (i = 0; i < batch_words; i++) {
-            rt_batch[i] = batch[i];
-        }
-
-        for (i = 0; i < sizeof(intelgpu_render_relocs) / sizeof(intelgpu_render_relocs[0]); i++) {
-            uint32_t at = (blend ? intelgpu_blend_relocs[i].at : intelgpu_render_relocs[i].at) / 4u;
-            uint32_t kind = blend ? intelgpu_blend_relocs[i].kind : intelgpu_render_relocs[i].kind;
-            uint32_t base = kind == 1u ? rt_batch_gtt : kind == 2u ? rt_dst_gtt : rt_src_gtt;
-
-            rt_batch[at] += base;               /* the GTT is under 4 GB: the high half stays */
-        }
+        d.gtt = rt_dst_gtt;
+        s.gtt = rt_src_gtt;
 
         for (i = 0; i < (RT_PAGES + 1u) * 1024u; i++) {
             rt_dst[i] = 0;
         }
 
-        for (i = 0; i < pixels; i++) {
-            uint32_t x = i % INTELGPU_RENDER_W, y = i / INTELGPU_RENDER_W;
+        for (i = 0; i < d.width * d.height; i++) {
+            uint32_t x = i % d.width, y = i / d.width;
 
             rt_src[i] = blend ? rt_blend_source(x, y) : rt_pattern(x, y);
-
-            if (blend) {
-                rt_dst[i] = rt_ground(x, y);
-            }
+            rt_dst[i] = blend ? rt_ground(x, y) : 0;
         }
 
-        {
-            const uint32_t before[6] = { IGPU_PIPE_CONTROL,
-                                         IGPU_PC_CS_STALL | IGPU_PC_RT_FLUSH | IGPU_PC_INVALIDATE,
-                                         0, 0, 0, 0 };
-            const uint32_t start[3] = { IGPU_MI_BB_START, rt_batch_gtt, 0 };
-            const uint32_t after[6] = { IGPU_PIPE_CONTROL, IGPU_PC_CS_STALL | IGPU_PC_RT_FLUSH | IGPU_PC_DC_FLUSH,
-                                        0, 0, 0, 0 };
+        error = draw(&d, &s, 0, 0, d.width, d.height, 0, 0, blend, &took);
+        r = hold(rt_dst, &d, rt_src, &s, 0, 0, d.width, d.height, 0, 0, blend,
+                 blend ? rt_ground : rt_zero);
 
-#if defined(__x86_64__)
-            __asm__ volatile("sfence" ::: "memory");
-#endif
-            emit(&RCS, before, 6);
-            emit(&RCS, start, 3);
-            emit(&RCS, after, 6);
-        }
-
-        t0 = kosmos_ticks();
-        fence = submit(&RCS);
-
-        for (i = 0; i < 20000 && fence_reached(&RCS) != fence; i++) {
-            __asm__ volatile("" ::: "memory");
-        }
-
-        for (i = 0; i < 100 && fence_reached(&RCS) != fence; i++) {
-            kosmos_sleep(1);
-        }
-
-        t1 = kosmos_ticks();
-
-        if (fence_reached(&RCS) != fence) {
-            error = GPU_ERR_NO_ANSWER;
-        }
-
-        for (i = 0; i < pixels; i++) {
-            uint32_t x = i % INTELGPU_RENDER_W, y = i / INTELGPU_RENDER_W;
-            uint32_t want = blend ? over(rt_src[i], rt_ground(x, y), 255u) : rt_src[i];
-            uint32_t apart = rt_apart(rt_dst[i], want);
-
-            exact += apart == 0;
-            right += blend ? (apart <= 1u && (rt_dst[i] >> 24) == 255u) : apart == 0;
-            worst = apart > worst ? apart : worst;
-        }
-
-        for (i = pixels; i < pixels + 1024u; i++) {
+        for (i = d.width * d.height; i < d.width * d.height + 1024u; i++) {
             past += rt_dst[i] != 0;
         }
 
-        rep->engine.value = right;
-        rep->engine.ctl = past;
-
-        {
-            static struct sysinfo machine;     /* large: not on the stack */
-            unsigned long per_us;
-
-            per_us = kosmos_sysinfo(&machine) == 0 && machine.counter_hz >= 1000000u
-                   ? machine.counter_hz / 1000000u : 1u;
-            rep->engine.elapsed_us = (uint32_t)((t1 - t0) / per_us);
-        }
-
-        if (error == GPU_OK && (right != pixels || past != 0)) {
+        if (error == GPU_OK && (r.right != r.pixels || past != 0)) {
             error = GPU_ERR_UNCHANGED;
         }
     }
 
     (void)forcewake(true);
+    rep->engine.value = r.right;
+    rep->engine.mode = r.exact;
+    rep->engine.ctl = past;
+    rep->engine.elapsed_us = (uint32_t)took;
     rep->engine.head = eng(&RCS, IGPU_RING_HEAD);
     rep->engine.tail = eng(&RCS, IGPU_RING_TAIL);
-    rep->engine.mode = exact;
     rep->engine.esr = eng(&RCS, IGPU_RING_ESR);
     rep->error = error;
 
@@ -1610,22 +1729,122 @@ static void render_test(long console, bool blend, struct gpu_reply *rep)
 
     say_begin(&line);
     say_text(&line, blend ? "intelgpu: the 3D pipeline blended " : "intelgpu: the 3D pipeline drew ");
-    say_dec(&line, right);
+    say_dec(&line, r.right);
     say_text(&line, blend ? " of 4096 pixels within one of the compositor's, " : " of 4096 pixels as the texture has them, ");
-    say_dec(&line, exact);
+    say_dec(&line, r.exact);
     say_text(&line, " exactly, at most ");
-    say_dec(&line, worst);
+    say_dec(&line, r.worst);
     say_text(&line, " apart, ");
     say_dec(&line, past);
-    say_text(&line, " bytes past; first ");
-    say_hex(&line, rt_dst ? rt_dst[0] : 0, 8);
-    say_text(&line, " for ");
-    say_hex(&line, rt_src ? rt_src[0] : 0, 8);
-    say_text(&line, "; head ");
+    say_text(&line, " bytes past; head ");
     say_hex(&line, rep->engine.head, 8);
     say_text(&line, " tail ");
     say_hex(&line, rep->engine.tail, 8);
     say_text(&line, " esr ");
+    say_hex(&line, rep->engine.esr, 8);
+    say_send(console, &line);
+}
+
+/*
+ * **A window at a window's proportions** (7c): `gpu draw`. A 301 by 203
+ * picture whose pitch is wider than its width, a 280 by 190 part of it from
+ * (7, 5), blended onto an 800 by 600 target - its pitch wider again - at
+ * (123, 77): every size odd, every pitch not the width, the source and the
+ * target places not the origin. Every pixel of the target held to the
+ * compositor's arithmetic inside the rectangle and to the ground outside.
+ * The reply's `value` is the pixels that pass of the 480,000, `mode` the
+ * exact ones, `ctl` the ones outside that changed.
+ */
+#define DT_SRC_W 301u
+#define DT_SRC_H 203u
+#define DT_SRC_PITCH 1216u              /* 301 * 4 is 1204: 64 bytes a step */
+#define DT_DST_W 800u
+#define DT_DST_H 600u
+#define DT_DST_PITCH 3328u              /* 800 * 4 is 3200 */
+
+static volatile uint32_t *dt_src, *dt_dst;
+static uint32_t dt_src_gtt, dt_dst_gtt;
+
+static uint32_t dt_ground(uint32_t x, uint32_t y)
+{
+    return 0xff000000u | ((x * 7u) & 0xffu) << 16 | ((y * 3u) & 0xffu) << 8 | ((x + y) & 0xffu);
+}
+
+static void draw_test(long console, struct gpu_reply *rep)
+{
+    struct say_line line;
+    struct gpu_picture d = { 0, DT_DST_W, DT_DST_H, DT_DST_PITCH };
+    struct gpu_picture s = { 0, DT_SRC_W, DT_SRC_H, DT_SRC_PITCH };
+    const uint32_t sx = 7, sy = 5, w = 280, h = 190, dx = 123, dy = 77;
+    struct held r = { 0, 0, 0, 0, 0 };
+    uint32_t error = GPU_OK, x, y, i;
+    unsigned long took = 0;
+
+    if (!G.found) {
+        rep->error = GPU_ERR_NO_DEVICE;
+        return;
+    }
+
+    if (!forcewake(true)) {
+        rep->error = GPU_ERR_NO_WAKE;
+        return;
+    }
+
+    if (dt_src == NULL
+        && (!gtt_pages((DT_SRC_PITCH * DT_SRC_H + 4095u) / 4096u, &dt_src, &dt_src_gtt)
+            || !gtt_pages((DT_DST_PITCH * DT_DST_H + 4095u) / 4096u, &dt_dst, &dt_dst_gtt))) {
+        error = GPU_ERR_NO_MEMORY;
+    }
+
+    if (error == GPU_OK) {
+        d.gtt = dt_dst_gtt;
+        s.gtt = dt_src_gtt;
+
+        for (y = 0; y < DT_SRC_H; y++) {
+            for (x = 0; x < DT_SRC_W; x++) {
+                dt_src[y * (DT_SRC_PITCH / 4u) + x] = (rt_pattern(x, y) & 0x00ffffffu)
+                                                      | ((x * 5u + y * 3u) & 0xffu) << 24;
+            }
+        }
+
+        for (y = 0; y < DT_DST_H; y++) {
+            for (x = 0; x < DT_DST_W; x++) {
+                dt_dst[y * (DT_DST_PITCH / 4u) + x] = dt_ground(x, y);
+            }
+        }
+
+        error = draw(&d, &s, sx, sy, w, h, dx, dy, true, &took);
+        r = hold(dt_dst, &d, dt_src, &s, sx, sy, w, h, dx, dy, true, dt_ground);
+
+        if (error == GPU_OK && r.right != r.pixels) {
+            error = GPU_ERR_UNCHANGED;
+        }
+    }
+
+    (void)forcewake(true);
+    rep->engine.value = r.right;
+    rep->engine.mode = r.exact;
+    rep->engine.ctl = r.outside;
+    rep->engine.elapsed_us = (uint32_t)took;
+    rep->engine.head = eng(&RCS, IGPU_RING_HEAD);
+    rep->engine.tail = eng(&RCS, IGPU_RING_TAIL);
+    rep->engine.esr = eng(&RCS, IGPU_RING_ESR);
+    rep->error = error;
+
+    for (i = 0; i < 100 && !engine_idle(&RCS); i++) {
+        kosmos_sleep(1);
+    }
+
+    say_begin(&line);
+    say_text(&line, "intelgpu: 280x190 of a 301x203 picture blended onto 800x600 at 123,77: ");
+    say_dec(&line, r.right);
+    say_text(&line, " of 480000 pass, ");
+    say_dec(&line, r.exact);
+    say_text(&line, " exactly, at most ");
+    say_dec(&line, r.worst);
+    say_text(&line, " apart, ");
+    say_dec(&line, r.outside);
+    say_text(&line, " outside changed; esr ");
     say_hex(&line, rep->engine.esr, 8);
     say_send(console, &line);
 }
@@ -2115,6 +2334,9 @@ void intelgpu_server(long console, long endpoint)
                 break;
             case GPU_OP_RENDER_TEST:
                 render_test(console, rq.x == 1, &rep);
+                break;
+            case GPU_OP_DRAW_TEST:
+                draw_test(console, &rep);
                 break;
             case GPU_OP_BUFFER_IMPORT:
                 rep.error = buffer_import(console, cap, &rq, &rep);

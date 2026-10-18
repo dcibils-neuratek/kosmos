@@ -27847,3 +27847,38 @@ laying one over the other and copying agree.
 
 **Tests.** Full gate 96/96 in 9:33. `x86-gpumon`, 14 checks: `gpu render blend` says there is no
 Intel GPU under QEMU. `LICENSE`, 32 entries, naming both batches.
+
+## 18.685 A window's proportions on the GPU (`m700-2d.md` 7c)
+
+The batch drew one 64 by 64 square in one place. Now `draw` in the driver
+takes any rectangle of one picture to any place in another, copied or
+blended: it fills in what depends on the pictures - each surface's address,
+size and pitch (RENDER_SURFACE_STATE's dwords 2 and 3), the drawing
+rectangle (the whole target), and the three corners of a rectangle list,
+the target's in pixels and the source's in coordinates from 0 to 1, each
+pixel's centre falling on its texel so the nearest sampler takes it whole.
+`tools/render_batch.c` says where the drawing rectangle is, beside the
+surfaces and the vertices. `gpu render [blend]` is the 64 by 64 case of it
+now, and `hold` holds any draw to the compositor: inside the rectangle to
+`over` within one, outside it to the untouched ground exactly.
+
+`gpu draw`: a 280 by 190 part, from (7, 5), of a 301 by 203 picture whose
+pitch is 1216 bytes, blended onto an 800 by 600 target whose pitch is 3328,
+at (123, 77) - odd sizes, pitches wider than the width, and neither place
+the origin.
+
+**On the M700, the first try**: 480,000 of 480,000 pixels pass - every one
+inside within one, none outside changed - 449,902 exactly, under a
+millisecond. The 64 by 64 copy and blend after it, 4096 of 4096 each.
+**The control, on the machine**: drawn one pixel to the right of where it
+is held - 427,693 of 480,000, and 190 outside changed, the rectangle's
+column past its edge.
+
+The times the tests print are from the doorbell to the fence seen, which
+after the first few thousand looks is a sleep a scheduler tick long - so
+the 64 by 64 tests read 423 us now where they read 143; the GPU's own time
+is for `RING_TIMESTAMP` around the batch to say, when the compositor is
+measured (7d).
+
+**Tests.** Full gate 96/96 in 9:13. `x86-gpumon`, 15 checks: `gpu draw` says there is no Intel GPU
+under QEMU.

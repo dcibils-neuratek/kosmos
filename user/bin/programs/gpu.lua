@@ -19,6 +19,8 @@
 --   gpu state           the render engine's starting state, run once (7c)
 --   gpu render [blend]  a 64 by 64 texture drawn by the 3D pipeline, or
 --                       blended over a ground by its alpha (7c)
+--   gpu draw            a part of a 301x203 picture blended onto 800x600
+--                       at (123, 77), every pixel held (7c)
 --
 -- The test refuses while the window manager's arrow is on the plane, which
 -- on the M700 is always once the desktop is up (step 3b).
@@ -28,8 +30,24 @@ local gpu = use("/Kosmos/Libraries/gpu.lua")
 local words = use("/Kosmos/Libraries/files.lua").words(args, 3)
 local seconds = math.tointeger(tonumber(words[2] or "")) or 10
 
-if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" and words[1] ~= "state" and words[1] ~= "render" then
+if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" and words[1] ~= "state" and words[1] ~= "render" and words[1] ~= "draw" then
   print("gpu: gpu [cursor [seconds] | engine [render] [n] | compute [colour]]")
+  return
+end
+
+if words[1] == "draw" then
+  local r, why = gpu.draw_test()
+  local c = gpu.last_draw
+
+  print(r and ("gpu: %d of 480000 pixels pass, %d exactly, %d outside changed, %d us")
+               :format(r.right, r.exact, r.outside, r.elapsed_us)
+          or ("gpu: " .. tostring(why)))
+
+  if c and not r then
+    print(("gpu: %d of 480000 pass, %d exact, %d outside changed; errors %08x")
+          :format(c.right, c.exact, c.outside, c.esr))
+  end
+
   return
 end
 

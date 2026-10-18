@@ -108,6 +108,14 @@
  */
 #define GPU_OP_RENDER_TEST   17u
 
+/*
+ * **A window at a window's proportions** (7c): a 280 by 190 part of a 301
+ * by 203 picture blended onto an 800 by 600 target at (123, 77), odd sizes
+ * and pitches wider than the width. `value` is the target's pixels that
+ * pass of 480,000, `mode` the exact ones, `ctl` those outside that changed.
+ */
+#define GPU_OP_DRAW_TEST     18u
+
 #define GPU_BLIT_RECTS       64u
 #define GPU_BUFFER_IMPORTED  2u     /* a buffer's kind: a region handed in, shared */
 

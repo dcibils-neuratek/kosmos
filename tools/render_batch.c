@@ -126,6 +126,7 @@ static const uint32_t ps_kernel[][4] = {
 
 static uint32_t surface_at[2];          /* the destination's and the source's state */
 static uint32_t vertices_at;
+static uint32_t drawrect_at;            /* 3DSTATE_DRAWING_RECTANGLE, its maximum in dword 2 */
 
 static uint32_t bind(uint32_t kind)
 {
@@ -392,6 +393,7 @@ int main(int argc, char **argv)
     EMIT(GFX9_3DSTATE_STENCIL_BUFFER, s) { s.MOCS = PTE_MOCS; }
     EMIT(GFX9_3DSTATE_CLEAR_PARAMS, cp) { cp.DepthClearValueValid = true; }
 
+    drawrect_at = bb.used;
     EMIT(GFX9_3DSTATE_DRAWING_RECTANGLE, dr) {
         dr.ClippedDrawingRectangleXMax = W - 1u;
         dr.ClippedDrawingRectangleYMax = H - 1u;
@@ -480,7 +482,8 @@ int main(int argc, char **argv)
     printf("#define INTELGPU_%s_PITCH    %uu\n", NAME, PITCH);
     printf("#define INTELGPU_%s_VERTICES 0x%03xu   /* the three vertices */\n", NAME, vertices_at);
     printf("#define INTELGPU_%s_SS_DST   0x%03xu   /* the surfaces' state */\n", NAME, surface_at[0]);
-    printf("#define INTELGPU_%s_SS_SRC   0x%03xu\n\n", NAME, surface_at[1]);
+    printf("#define INTELGPU_%s_SS_SRC   0x%03xu\n", NAME, surface_at[1]);
+    printf("#define INTELGPU_%s_DRAWRECT 0x%03xu   /* the drawing rectangle */\n\n", NAME, drawrect_at);
     printf("static const struct { uint32_t at, kind; } intelgpu_%s_relocs[] = {\n", name);
     for (i = 0; i < reloc_count; i++) {
         printf("    { 0x%03x, %u },\n", relocs[i].at, relocs[i].kind);
