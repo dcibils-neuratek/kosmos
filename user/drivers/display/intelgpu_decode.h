@@ -127,6 +127,12 @@
 #define IGPU_MEDIA_STATE_FLUSH  (IGPU_GFXPIPE(2u, 0u, 4u) | (2u - 2u))
 #define IGPU_GPGPU_WALKER       (IGPU_GFXPIPE(2u, 1u, 5u) | (15u - 2u))
 #define IGPU_SURFACEFORMAT_R8_UNORM 0x140u
+
+/* A batch from the ring (`gen8_emit_bb_start`): MI_BATCH_BUFFER_START_GEN8,
+ * MI_INSTR(0x31, 1), with bit 8 clear - from the global GTT, privileged -
+ * then the address, low and high. MI_BATCH_BUFFER_END ends one. */
+#define IGPU_MI_BB_START        ((0x31u << 23) | 1u)
+#define IGPU_MI_BB_END          (0x0au << 23)
 /* A register's value stored to memory (`intel_gpu_commands.h`:
  * MI_STORE_REGISTER_MEM_GEN8, MI_SRM_LRM_GLOBAL_GTT): four dwords - itself,
  * the register's offset, the address low and high. The blitter's busy time

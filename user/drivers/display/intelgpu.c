@@ -30,6 +30,7 @@
 #include "gpuproto.h"
 #include "intelgpu_decode.h"
 #include "intelgpu_fill.h"
+#include "intelgpu_renderstate.h"
 #include "mmio.h"
 #include "init/say.h"
 
@@ -1279,6 +1280,128 @@ static void compute_test(long console, uint32_t colour, struct gpu_reply *rep)
 }
 
 /*
+ * **The render engine's starting state** (`m700-2d.md` 7c): i915's batch
+ * for a new context (`intelgpu_renderstate.h`), placed as
+ * `render_state_setup` places it - each relocation the batch's own address
+ * plus the offset it holds - and run from the ring once. Kosmos gives the
+ * render engine no context, so this is what i915 would have run first.
+ */
+static volatile uint32_t *rs_batch;
+static uint32_t rs_batch_gtt;
+static bool rs_done;
+
+static uint32_t render_state(void)
+{
+    uint32_t error, fence, i, r = 0;
+    const uint32_t n = sizeof(intelgpu_renderstate) / 4u;
+
+    if (rs_done) {
+        return GPU_OK;
+    }
+
+    if ((error = engine_start(&RCS)) != GPU_OK) {
+        return error;
+    }
+
+    if (!engine_idle(&RCS)) {
+        return GPU_ERR_BUSY;
+    }
+
+    if (rs_batch == NULL && !gtt_pages(1, &rs_batch, &rs_batch_gtt)) {
+        return GPU_ERR_NO_MEMORY;
+    }
+
+    for (i = 0; i < n; i++) {
+        uint32_t w = intelgpu_renderstate[i];
+
+        if (r < sizeof(intelgpu_renderstate_relocs) / 4u && i * 4u == intelgpu_renderstate_relocs[r]) {
+            w += rs_batch_gtt;                  /* the high half after it stays 0 */
+            r++;
+        }
+
+        rs_batch[i] = w;
+    }
+
+    {
+        const uint32_t start[3] = { IGPU_MI_BB_START, rs_batch_gtt, 0 };
+
+#if defined(__x86_64__)
+        __asm__ volatile("sfence" ::: "memory");
+#endif
+        emit(&RCS, start, 3);
+    }
+
+    fence = submit(&RCS);
+
+    for (i = 0; i < 20000 && fence_reached(&RCS) != fence; i++) {
+        __asm__ volatile("" ::: "memory");
+    }
+
+    for (i = 0; i < 100 && fence_reached(&RCS) != fence; i++) {
+        kosmos_sleep(1);
+    }
+
+    if (fence_reached(&RCS) != fence) {
+        return GPU_ERR_NO_ANSWER;
+    }
+
+    rs_done = true;
+    return GPU_OK;
+}
+
+static void render_state_test(long console, struct gpu_reply *rep)
+{
+    struct say_line line;
+    unsigned long t0 = kosmos_ticks(), t1;
+    bool before = rs_done;
+    unsigned i;
+
+    if (!G.found) {
+        rep->error = GPU_ERR_NO_DEVICE;
+        return;
+    }
+
+    if (!forcewake(true)) {
+        rep->error = GPU_ERR_NO_WAKE;
+        return;
+    }
+
+    rep->error = render_state();
+    t1 = kosmos_ticks();
+
+    {
+        static struct sysinfo machine;     /* large: not on the stack */
+        unsigned long per_us;
+
+        per_us = kosmos_sysinfo(&machine) == 0 && machine.counter_hz >= 1000000u
+               ? machine.counter_hz / 1000000u : 1u;
+        rep->engine.elapsed_us = (uint32_t)((t1 - t0) / per_us);
+    }
+
+    (void)forcewake(true);
+    rep->engine.value = RCS.ready ? fence_reached(&RCS) : 0;
+    rep->engine.head = eng(&RCS, IGPU_RING_HEAD);
+    rep->engine.tail = eng(&RCS, IGPU_RING_TAIL);
+    rep->engine.mode = eng(&RCS, IGPU_RING_MODE);
+    rep->engine.esr = eng(&RCS, IGPU_RING_ESR);
+
+    for (i = 0; i < 100 && !engine_idle(&RCS); i++) {
+        kosmos_sleep(1);
+    }
+
+    say_begin(&line);
+    say_text(&line, "intelgpu: the render engine's starting state ");
+    say_text(&line, rep->error != GPU_OK ? "did not finish" : before ? "was run already" : "ran");
+    say_text(&line, "; head ");
+    say_hex(&line, rep->engine.head, 8);
+    say_text(&line, " tail ");
+    say_hex(&line, rep->engine.tail, 8);
+    say_text(&line, " esr ");
+    say_hex(&line, rep->engine.esr, 8);
+    say_send(console, &line);
+}
+
+/*
  * **A region another process drew in, handed to the GPU** (step 6): each
  * of its pages entered in a GTT slot of its own, from `kosmos_mem_page_phys`,
  * so it need not be one run. The window server's back buffer is the
@@ -1757,6 +1880,9 @@ void intelgpu_server(long console, long endpoint)
                 break;
             case GPU_OP_COMPUTE_TEST:
                 compute_test(console, (uint32_t)rq.x, &rep);
+                break;
+            case GPU_OP_RENDER_STATE:
+                render_state_test(console, &rep);
                 break;
             case GPU_OP_BUFFER_IMPORT:
                 rep.error = buffer_import(console, cap, &rq, &rep);

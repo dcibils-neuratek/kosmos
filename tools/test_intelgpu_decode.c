@@ -142,6 +142,8 @@ int main(void)
           "MEDIA_CURBE_LOAD and MEDIA_INTERFACE_DESCRIPTOR_LOAD, four dwords each");
     check(IGPU_MEDIA_STATE_FLUSH == 0x70040000u, "MEDIA_STATE_FLUSH, two dwords");
     check(IGPU_GPGPU_WALKER == 0x7105000du, "GPGPU_WALKER, fifteen dwords");
+    check(IGPU_MI_BB_START == 0x18800001u && IGPU_MI_BB_END == 0x05000000u,
+          "MI_BATCH_BUFFER_START from the global GTT, and MI_BATCH_BUFFER_END");
 
     printf("%s: %d checks on intelgpu_decode\n", failed ? "FAIL" : "PASS", checks);
     return failed != 0;

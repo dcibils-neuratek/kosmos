@@ -91,6 +91,10 @@ Vendored third-party code keeps its own licence, which travels beside it:
       first program Kosmos runs on the M700's execution units, from
       igt-gpu-tools 2.6's lib/gpgpu_fill.c, credited there
 
+  i915's starting render state for generation 9, by Intel Corporation, MIT
+      user/drivers/display/intelgpu_renderstate.h, from Linux 6.12's
+      drivers/gpu/drm/i915/gt/gen9_renderstate.c, credited there
+
   The fonts
       assets/fonts/, each under the LICENSE file beside it. A font
       whose licence is not beside it is not committed, and the build

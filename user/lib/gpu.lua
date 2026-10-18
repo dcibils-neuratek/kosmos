@@ -94,6 +94,24 @@ end
 -- bytes are the colour and how many after them were written - or nil, the
 -- driver's sentence and that, in `gpu.last_compute`, as far as it got.
 --
+-- **The render engine's starting state** (`m700-2d.md` 7c): i915's batch
+-- for a new context, run once before any 3D work. True, or nil and why;
+-- the registers after in `gpu.last_state`.
+function gpu.render_state()
+  local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, 16, 0, 0, 0, 0, 0, 0, 0), nil, "gpu")
+
+  if not reply then return nil, tostring(why) end
+  if #reply < 32 then return nil, "the GPU's driver sent a reply of the wrong size" end
+
+  local err, fence, head, tail, _, mode, esr, us = string.unpack(REPLY, reply)
+
+  gpu.last_state = { fence = fence, head = head, tail = tail, mode = mode, esr = esr, elapsed_us = us }
+
+  if err ~= 0 then return nil, gpu.ERRORS[err] or ("gpu error " .. err), err end
+
+  return gpu.last_state
+end
+
 function gpu.compute_test(colour)
   local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, 15, 0, (colour or 0x5a) & 0xff, 0, 0, 0, 0, 0),
                             nil, "gpu")

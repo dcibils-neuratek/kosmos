@@ -27742,3 +27742,35 @@ read back different", 0 of 256.
 as their words, from GFXPIPE by hand. `x86-gpumon`, 11 checks: `gpu compute`
 says there is no Intel GPU under QEMU. `LICENSE` names the kernel (`host`'s
 licence check, 30 entries).
+
+## 18.682 The render engine's starting state (`m700-2d.md` 7c, its first part)
+
+i915 runs a batch on every new context before anything else, so the 3D
+pipeline starts from a known state - every 3DSTATE given, null where
+nothing uses it: `gen9_null_state_batch` in Linux 6.12's
+`gt/gen9_renderstate.c` (MIT, fetched into `build/downloads/i915`, SHA-256
+866725da...), 960 dwords with four relocations, ending at dword 885.
+Kosmos gives the render engine no context, so the driver runs it itself,
+once: placed in a GTT page as `render_state_setup` places it - each
+relocation the batch's own address plus the offset it holds, which here is
+1, the base with its modify bit - and started from the ring by
+`MI_BATCH_BUFFER_START` from the global GTT (bit 8 clear, privileged).
+`intelgpu_renderstate.h`, credited there and in `LICENSE`. `gpu state`.
+
+**On the M700**: it ran, 21.8 ms with the ring's start and its clock's
+measuring, the ring idle after with no error in `RING_ESR`; the execution
+units' fill after it, 256 of 256 as before. Skylake has no pooled EUs, so
+i915's extra `MEDIA_POOL_STATE` for Broxton is not run.
+
+**What comes next in 7c**: the render copy's own state - about thirty
+commands in intel-gpu-tools' `rendercopy_gen9.c`, built there by Mesa's
+generated genxml packers. Rather than port each field's bits by hand, a
+tool on the Mac will build the batch from Mesa's `gen9_pack.h`, as this
+starting state was built by `null_state_gen`, and the driver fill in the
+addresses.
+
+**Tests.** `test_intelgpu_decode`, 41 checks: `MI_BATCH_BUFFER_START` from
+the global GTT and `MI_BATCH_BUFFER_END`. `x86-gpumon`, 12 checks: `gpu
+state` says there is no Intel GPU under QEMU. `LICENSE`, 31 entries. Full
+gate 95 of 96 in 9:19; `x86-controls` had QEMU exit before the desktop
+started, in no time at all, and passed alone, 11 checks.

@@ -16,6 +16,7 @@
 --   gpu engine render [n]   the same on the render engine (step 7a)
 --   gpu compute [colour]    the first program on the execution units: a
 --                       64 by 4 surface filled with a byte (step 7b)
+--   gpu state           the render engine's starting state, run once (7c)
 --
 -- The test refuses while the window manager's arrow is on the plane, which
 -- on the M700 is always once the desktop is up (step 3b).
@@ -25,8 +26,22 @@ local gpu = use("/Kosmos/Libraries/gpu.lua")
 local words = use("/Kosmos/Libraries/files.lua").words(args, 3)
 local seconds = math.tointeger(tonumber(words[2] or "")) or 10
 
-if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" then
+if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" and words[1] ~= "state" then
   print("gpu: gpu [cursor [seconds] | engine [render] [n] | compute [colour]]")
+  return
+end
+
+if words[1] == "state" then
+  local r, why = gpu.render_state()
+  local st = gpu.last_state
+
+  print(r and ("gpu: the render engine's starting state ran, %d us"):format(r.elapsed_us)
+          or ("gpu: " .. tostring(why)))
+
+  if st then
+    print(("gpu: ring head %08x, tail %08x, errors %08x"):format(st.head, st.tail, st.esr))
+  end
+
   return
 end
 

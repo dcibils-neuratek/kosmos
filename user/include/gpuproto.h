@@ -91,6 +91,14 @@
  */
 #define GPU_OP_COMPUTE_TEST  15u
 
+/*
+ * **The render engine's starting state** (7c): i915's batch for a new
+ * context, run once - every 3D state given - before the first 3D work.
+ * The engine reply's `value` is the fence it reached; asked again, it says
+ * so without running it twice.
+ */
+#define GPU_OP_RENDER_STATE  16u
+
 #define GPU_BLIT_RECTS       64u
 #define GPU_BUFFER_IMPORTED  2u     /* a buffer's kind: a region handed in, shared */
 
